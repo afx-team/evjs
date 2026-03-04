@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "webpack --config webpack.config.cjs",
-    "dev": "node --experimental-specifier-resolution=node dist/server.js",
+    "dev": "node --experimental-specifier-resolution=node dist/server/server.js",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {

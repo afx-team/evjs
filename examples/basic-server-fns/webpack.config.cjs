@@ -8,8 +8,8 @@ const clientConfig = {
   target: "web",
   entry: "./src/main.tsx",
   output: {
-    path: path.resolve(__dirname, "dist/public"),
-    filename: "bundle.js",
+    path: path.resolve(__dirname, "dist/client"),
+    filename: "client.js",
     clean: true,
   },
   resolve: {
@@ -62,9 +62,9 @@ const serverConfig = {
   target: "node",
   entry: "./src/server.ts",
   output: {
-    path: path.resolve(__dirname, "dist"),
+    path: path.resolve(__dirname, "dist/server"),
     filename: "server.js",
-    clean: false,
+    clean: true,
     library: { type: "module" },
   },
   experiments: {

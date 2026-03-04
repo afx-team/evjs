@@ -20,8 +20,8 @@ const server = createServer(async (req, res) => {
     return rpcHandler(req, res);
   }
 
-  // Serve static files from dist/public/
-  const publicDir = join(__dirname, "public");
+  // Serve static files from dist/client/
+  const publicDir = join(__dirname, "../client");
 
   if (url === "/" || url === "/index.html") {
     const html = readFileSync(join(publicDir, "index.html"), "utf-8");
