@@ -75,7 +75,7 @@ export default async function serverFnLoader(this: LoaderContext, source: string
     return source;
   }
 
-  const manifestCollector = (this as any)._compiler?._evai_manifest_collector;
+  const manifestCollector = (this as any)._compiler?._ev_manifest_collector;
 
   if (isServer) {
     // Server build: keep original + register
@@ -93,16 +93,16 @@ export default async function serverFnLoader(this: LoaderContext, source: string
       })
       .join("\n");
 
-    return `import { registerServerFn } from "evai-runtime/server";\n${source}\n${registrations}\n`;
+    return `import { registerServerFn } from "ev-runtime/server";\n${source}\n${registrations}\n`;
   }
 
   // Client build: replace with RPC stubs
   const stubCode = exportNames
     .map((name) => {
       const fnId = makeFnId(this.rootContext, this.resourcePath, name);
-      return `export function ${name}(...args) {\n  return __evai_rpc("${fnId}", args);\n}`;
+      return `export function ${name}(...args) {\n  return __ev_rpc("${fnId}", args);\n}`;
     })
     .join("\n\n");
 
-  return `import { __evai_rpc } from "evai-runtime/client";\n\n${stubCode}\n`;
+  return `import { __ev_rpc } from "ev-runtime/client";\n\n${stubCode}\n`;
 }

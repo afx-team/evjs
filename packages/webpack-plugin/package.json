@@ -1,7 +1,7 @@
 {
   "name": "@evjs/webpack-plugin",
   "version": "0.0.1-alpha.1",
-  "description": "Webpack plugin and loaders for the evai framework",
+  "description": "Webpack plugin and loaders for the ev framework",
   "type": "module",
   "main": "./esm/index.js",
   "exports": {
@@ -24,7 +24,7 @@
     "esm"
   ],
   "keywords": [
-    "evai",
+    "ev",
     "webpack",
     "plugin",
     "loader"

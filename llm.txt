@@ -12,7 +12,7 @@ A React framework built on `@tanstack/react-router` (code-based routing) and `@t
 - [x] Stage 2: React server functions (Data/AJAX)
   - [x] Server functions behave like RESTful API (send/receive JSON data)
   - [x] Bundler integration (server/client code splitting)
-  - [x] Stable IDs & `evjs-manifest.json` for production/hashing
+  - [x] Stable IDs & `ev-manifest.json` for production/hashing
   - [x] Example: `examples/basic-server-fns`
 - [ ] Stage 3: Server-side rendering (SSR)
   - [ ] Server entry point (`packages/runtime/src/server/`)

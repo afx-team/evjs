@@ -14,12 +14,12 @@ const program = new Command();
 
 program
   .name("evjs")
-  .description("CLI for the evjs framework")
+  .description("CLI for the ev framework")
   .version(pkg.version);
 
 program
   .command("init")
-  .description("Initialize a new evai project")
+  .description("Initialize a new ev project")
   .argument("[name]", "Project name")
   .option("-t, --template <template>", "Template to use")
   .action(async (name, options) => {
@@ -28,7 +28,7 @@ program
         type: name ? null : "text",
         name: "projectName",
         message: "Project name:",
-        initial: name || "my-evai-app",
+        initial: name || "my-ev-app",
       },
       {
         type: options.template ? null : "select",

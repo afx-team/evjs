@@ -1,4 +1,4 @@
-import { createRootRoute, Link, Outlet } from "evai-runtime/client";
+import { createRootRoute, Link, Outlet } from "ev-runtime/client";
 
 function Root() {
   return (

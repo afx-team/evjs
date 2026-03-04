@@ -13,13 +13,13 @@
   "devDependencies": {
     "typescript": "^5.7.3"
   },
-  "homepage": "https://github.com/evaijs/f#readme",
+  "homepage": "https://github.com/evjs/f#readme",
   "bugs": {
-    "url": "https://github.com/evaijs/f/issues"
+    "url": "https://github.com/evjs/f/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/evaijs/f.git"
+    "url": "git+https://github.com/evjs/f.git"
   },
   "license": "MIT",
   "author": "xusd320",

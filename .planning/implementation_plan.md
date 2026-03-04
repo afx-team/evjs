@@ -18,7 +18,7 @@ Provide a thin framework layer over `@tanstack/react-router` and `@tanstack/reac
 - Generates stable SHA-256 function IDs based on relative paths.
 - Strips bodies on client, wraps in registration on server.
 #### [NEW] [index.ts](../packages/webpack-plugin/src/index.ts)
-- `EvaiWebpackPlugin` for manifest generation.
+- `EvWebpackPlugin` for manifest generation.
 - Emits `manifest.json` mapping stable IDs to assets.
 
 ### CLI Tooling (`packages/cli`)

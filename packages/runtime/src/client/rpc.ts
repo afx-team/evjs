@@ -3,7 +3,7 @@
  *
  * When the Webpack loader transforms a `"use server"` module for the client
  * bundle, each exported function is replaced with a stub that calls
- * `__evai_rpc(fnId, args)`. This module provides that helper.
+ * `__ev_rpc(fnId, args)`. This module provides that helper.
  */
 
 export interface RpcOptions {
@@ -35,7 +35,7 @@ export function configureRpc(options: RpcOptions): void {
  *   JSON-serializable.
  * @returns A promise that resolves with the server function's return value.
  */
-export async function __evai_rpc(fnId: string, args: unknown[]): Promise<unknown> {
+export async function __ev_rpc(fnId: string, args: unknown[]): Promise<unknown> {
   const url = `${_options.baseUrl}${_options.endpoint}`;
 
   const res = await fetch(url, {
@@ -46,13 +46,13 @@ export async function __evai_rpc(fnId: string, args: unknown[]): Promise<unknown
 
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    throw new Error(`[evai/rpc] Server function "${fnId}" failed (${res.status}): ${text}`);
+    throw new Error(`[ev/rpc] Server function "${fnId}" failed (${res.status}): ${text}`);
   }
 
   const payload = await res.json();
 
   if (payload.error) {
-    throw new Error(`[evai/rpc] Server function "${fnId}" threw: ${payload.error}`);
+    throw new Error(`[ev/rpc] Server function "${fnId}" threw: ${payload.error}`);
   }
 
   return payload.result;

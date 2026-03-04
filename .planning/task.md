@@ -7,7 +7,7 @@
 
 ## Stage 2: React Server Functions (Data/AJAX)
 - [x] Implement SHA-256 stable IDs in `server-fn-loader.ts`
-- [x] Implement `EvaiWebpackPlugin` to emit `manifest.json`
+- [x] Implement `EvWebpackPlugin` to emit `manifest.json`
 - [x] Refactor loader to use `@swc/core` for transformations
 - [x] Migrate workspace to `swc-loader`
 - [x] Use project-relative paths in manifest metadata

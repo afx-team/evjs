@@ -42,7 +42,7 @@ export function createApp<TRouteTree extends AnyRoute>(
 
     if (!el) {
       throw new Error(
-        `[evai] Could not find container element: ${String(container)}`,
+        `[ev] Could not find container element: ${String(container)}`,
       );
     }
 
