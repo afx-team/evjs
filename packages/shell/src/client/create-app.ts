@@ -1,3 +1,4 @@
+import { createElement } from "react";
 import {
   QueryClient,
   type QueryClientConfig,
@@ -48,9 +49,11 @@ export function createApp<TRouteTree extends AnyRoute>(
 
     const root = createRoot(el);
     root.render(
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>,
+      createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(RouterProvider, { router }),
+      ),
     );
   }
 
