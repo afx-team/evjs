@@ -1,4 +1,4 @@
-import { createRoute } from "@evai/shell/client";
+import { createRoute } from "@evai/runtime/client";
 import { rootRoute } from "./__root";
 
 function Home() {
@@ -6,7 +6,7 @@ function Home() {
     <div>
       <h1>Welcome Home!</h1>
       <p>
-        A basic client-side rendered app built with <code>@evai/shell</code>.
+        A basic client-side rendered app built with <code>@evai/runtime</code>.
       </p>
     </div>
   );

@@ -1,4 +1,4 @@
-import { createApp } from "@evai/shell/client";
+import { createApp } from "@evai/runtime/client";
 import { rootRoute } from "./pages/__root";
 import { aboutRoute } from "./pages/about";
 import { homeRoute } from "./pages/home";

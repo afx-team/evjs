@@ -1,4 +1,4 @@
-import { createRoute } from "@evai/shell/client";
+import { createRoute } from "@evai/runtime/client";
 import { rootRoute } from "./__root";
 
 function About() {

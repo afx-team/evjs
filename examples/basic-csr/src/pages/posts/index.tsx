@@ -1,4 +1,4 @@
-import { createRoute, Link, Outlet } from "@evai/shell/client";
+import { createRoute, Link, Outlet } from "@evai/runtime/client";
 import { rootRoute } from "../__root";
 
 const posts = [
