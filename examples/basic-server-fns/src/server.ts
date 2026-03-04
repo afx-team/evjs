@@ -7,7 +7,6 @@ import { createHandler } from "@evai/runtime/server";
 // Import server function modules so they register themselves
 import "./api/users.server";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3001;
 
 const rpcHandler = createHandler();

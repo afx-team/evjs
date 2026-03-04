@@ -2,10 +2,9 @@
   "name": "example-basic-server-fns",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
   "scripts": {
     "build": "webpack --config webpack.config.cjs",
-    "dev": "node --experimental-specifier-resolution=node dist/server/index.js",
+    "dev": "node dist/server/index.js",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {

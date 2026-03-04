@@ -65,16 +65,14 @@ const serverConfig = {
     path: path.resolve(__dirname, "dist/server"),
     filename: "index.js",
     clean: true,
-    library: { type: "module" },
+    library: { type: "commonjs" },
   },
-  experiments: {
-    outputModule: true,
-  },
+
   resolve: {
     extensions: [".tsx", ".ts", ".js"],
   },
   externalsPresets: { node: true },
-  externals: [/node_modules/],
+  externals: [], // Inline all node_modules except built-ins
   module: {
     rules: [
       {
