@@ -1,6 +1,6 @@
 {
   "name": "evai-runtime",
-  "version": "0.0.1-alpha.5",
+  "version": "0.0.1-alpha.6",
   "description": "",
   "dependencies": {
     "@tanstack/react-query": "^5.90.21",
@@ -40,6 +40,10 @@
   },
   "scripts": {
     "build": "tsc",
-    "check-types": "tsc --noEmit"
-  }
+    "check-types": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "esm"
+  ]
 }

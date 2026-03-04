@@ -8,12 +8,12 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "evai-runtime": "^0.0.1-alpha.5",
+    "evai-runtime": "^0.0.1-alpha.6",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
-    "evai": "^0.0.1-alpha.5",
+    "evai": "^0.0.1-alpha.6",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
     "html-webpack-plugin": "^5.6.6",
