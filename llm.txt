@@ -13,14 +13,14 @@ A React framework built on `@tanstack/react-router` (code-based routing) and `@t
   - [ ] Server functions behave like RESTful API (send/receive JSON data)
   - [ ] Bundler integration (server/client code splitting)
   - [ ] Example: `examples/basic-server-fns`
-- [ ] Stage 3: React server functions (DOM Stream)
-  - [ ] Server functions return a React DOM stream to the client
-  - [ ] Integration with client-side rendering hooks
-- [ ] Stage 4: Server-side rendering (SSR)
+- [ ] Stage 3: Server-side rendering (SSR)
   - [ ] Server entry point (`packages/shell/src/server/`)
   - [ ] HTML streaming / `renderToPipeableStream`
   - [ ] Client hydration
   - [ ] Example: `examples/basic-ssr`
+- [ ] Stage 4: React server functions (DOM Stream)
+  - [ ] Server functions return a React DOM stream to the client
+  - [ ] Integration with client-side rendering hooks
 
 ## Package structure
 
