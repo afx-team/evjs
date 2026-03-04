@@ -9,10 +9,13 @@ A React framework built on `@tanstack/react-router` (code-based routing) and `@t
   - [x] Code-based routing (re-exports from `@tanstack/react-router`)
   - [x] ESM build via `tsc`
   - [x] Example: `examples/basic-csr` (Webpack)
-- [ ] Stage 2: React server functions
-  - [ ] Server function definition and invocation
+- [ ] Stage 2: React server functions (Data/AJAX)
+  - [ ] Server functions behave like RESTful API (send/receive JSON data)
   - [ ] Bundler integration (server/client code splitting)
   - [ ] Example: `examples/basic-server-fns`
+- [ ] Stage 3: React server functions (DOM Stream)
+  - [ ] Server functions return a React DOM stream to the client
+  - [ ] Integration with client-side rendering hooks
 - [ ] Stage 3: Server-side rendering (SSR)
   - [ ] Server entry point (`packages/shell/src/server/`)
   - [ ] HTML streaming / `renderToPipeableStream`
