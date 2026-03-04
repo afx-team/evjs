@@ -4,13 +4,9 @@
   "description": "",
   "dependencies": {
     "@tanstack/react-query": "^5.90.21",
-    "@tanstack/react-router": "^1.163.3",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "@tanstack/react-router": "^1.163.3"
   },
   "devDependencies": {
-    "@types/react": "^19.0.8",
-    "@types/react-dom": "^19.0.3",
     "typescript": "^5.7.3"
   },
   "homepage": "https://github.com/evaijs/f#readme",
@@ -32,6 +28,10 @@
     "./client": {
       "types": "./esm/client/index.d.ts",
       "import": "./esm/client/index.js"
+    },
+    "./server": {
+      "types": "./esm/server/index.d.ts",
+      "import": "./esm/server/index.js"
     }
   },
   "scripts": {

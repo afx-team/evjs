@@ -12,7 +12,7 @@ A React framework built on `@tanstack/react-router` (code-based routing) and `@t
 - [ ] Stage 2: React server functions
   - [ ] Server function definition and invocation
   - [ ] Bundler integration (server/client code splitting)
-  - [ ] Example: `examples/with-server-fns`
+  - [ ] Example: `examples/basic-server-fns`
 - [ ] Stage 3: Server-side rendering (SSR)
   - [ ] Server entry point (`packages/shell/src/server/`)
   - [ ] HTML streaming / `renderToPipeableStream`
