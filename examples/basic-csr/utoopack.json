@@ -1,0 +1,7 @@
+{
+  "entry": [
+    {
+      "import": "./index.html"
+    }
+  ]
+}
