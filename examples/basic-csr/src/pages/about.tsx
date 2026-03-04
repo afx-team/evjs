@@ -1,4 +1,4 @@
-import { createRoute } from "evai-runtime/client";
+import { createRoute } from "@evjs/runtime/client";
 import { rootRoute } from "./__root";
 
 function About() {

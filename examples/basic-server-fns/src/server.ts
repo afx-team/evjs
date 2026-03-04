@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createHandler } from "evai-runtime/server";
+import { createHandler } from "@evjs/runtime/server";
 
 // Import server function modules so they register themselves
 import "./api/users.server";

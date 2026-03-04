@@ -1,4 +1,4 @@
-# evai Implementation Plan (Client-First + Server Functions)
+# @evjs Implementation Plan (Client-First + Server Functions)
 
 Provide a thin framework layer over `@tanstack/react-router` and `@tanstack/react-query`.
 
@@ -23,7 +23,7 @@ Provide a thin framework layer over `@tanstack/react-router` and `@tanstack/reac
 
 ### CLI Tooling (`packages/cli`)
 #### [NEW] [package.json](../packages/cli/package.json)
-- Registers `evaicli` binary.
+- Registers `@evjscli` binary.
 #### [NEW] [index.ts](../packages/cli/src/index.ts)
 - `init`: Project scaffolding from templates.
 - `dev`/`build`: Wrapped Webpack commands.

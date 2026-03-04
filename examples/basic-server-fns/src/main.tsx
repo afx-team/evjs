@@ -4,7 +4,7 @@ import {
   createRoute,
   Outlet,
   Link,
-} from "evai-runtime/client";
+} from "@evjs/runtime/client";
 import { getUsers, createUser } from "./api/users.server";
 
 // ── Root Route ──

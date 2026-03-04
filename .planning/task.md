@@ -1,7 +1,7 @@
-# evai Task List
+# @evjs Task List
 
 ## Stage 1: Core Framework Skeleton
-- [x] Plan the `evai-runtime` client framework skeleton
+- [x] Plan the `@evjs/runtime` client framework skeleton
 - [x] Implement framework core in `packages/runtime/src/client/`
 - [x] Verify with `tsc --noEmit`
 
@@ -12,9 +12,9 @@
 - [x] Migrate workspace to `swc-loader`
 - [x] Use project-relative paths in manifest metadata
 
-## Stage 2.8: evaicli Implementation
+## Stage 2.8: @evjscli Implementation
 - [x] Initialize `packages/cli` with `package.json`
-- [x] Implement `evaicli` with `init`, `dev`, `build` commands
+- [x] Implement `@evjscli` with `init`, `dev`, `build` commands
 - [x] Verify with example project scaffolding
 
 ## Stage 3: Server-Side Rendering (SSR)

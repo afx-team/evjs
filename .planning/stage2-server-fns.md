@@ -54,10 +54,10 @@ function Profile() {
 ```ts
 // transformed client output for user.server.ts
 export function getUser(...args) {
-  return __evai_rpc("user_server_getUser", args);
+  return __@evjs_rpc("user_server_getUser", args);
 }
 export function updateUser(...args) {
-  return __evai_rpc("user_server_updateUser", args);
+  return __@evjs_rpc("user_server_updateUser", args);
 }
 ```
 
@@ -71,13 +71,13 @@ export function updateUser(...args) {
 
 A Webpack loader that:
 1. Detects `"use server"` directive at file top
-2. For client builds: replaces all exports with RPC stubs calling `__evai_rpc(fnId, args)`  
+2. For client builds: replaces all exports with RPC stubs calling `__@evjs_rpc(fnId, args)`  
 3. For server builds: keeps original code and registers exports in a function registry
 
 #### [NEW] `src/webpack/plugin.ts`
 
 A Webpack plugin that:
-1. Injects the `__evai_rpc` runtime helper into client bundles
+1. Injects the `__@evjs_rpc` runtime helper into client bundles
 2. Generates function ID manifest for both client and server
 
 ---
@@ -86,7 +86,7 @@ A Webpack plugin that:
 
 #### [NEW] `src/client/rpc.ts`
 
-The `__evai_rpc(fnId, args)` helper that:
+The `__@evjs_rpc(fnId, args)` helper that:
 1. Serializes args as JSON
 2. Sends `POST /api/rpc` with `{ fnId, args }` body
 3. Returns deserialized JSON response
@@ -120,7 +120,7 @@ The request handler that:
 - Webpack config with two entry points: client + server
 - A server function file demonstrating data fetch
 - Client page calling the server function
-- Express/Node server using `createHandler()` from `evai-runtime/server`
+- Express/Node server using `createHandler()` from `@evjs/runtime/server`
 
 ## Build Pipeline
 

@@ -1,4 +1,4 @@
-# @evai/runtime
+# @evjs/runtime
 
 A React framework built on `@tanstack/react-router` (code-based routing) and `@tanstack/react-query`. Planned to support server rendering (SSR) and React server functions. Currently in stage 1: client-only SPA.
 
@@ -12,7 +12,7 @@ A React framework built on `@tanstack/react-router` (code-based routing) and `@t
 - [x] Stage 2: React server functions (Data/AJAX)
   - [x] Server functions behave like RESTful API (send/receive JSON data)
   - [x] Bundler integration (server/client code splitting)
-  - [x] Stable IDs & `evai-manifest.json` for production/hashing
+  - [x] Stable IDs & `evjs-manifest.json` for production/hashing
   - [x] Example: `examples/basic-server-fns`
 - [ ] Stage 3: Server-side rendering (SSR)
   - [ ] Server entry point (`packages/runtime/src/server/`)
@@ -42,7 +42,7 @@ packages/runtime/
 Creates and bootstraps a client SPA. Internally wires up TanStack Router and React Query.
 
 ```tsx
-import { createApp, createRootRoute, createRoute, Outlet, Link } from "@evai/runtime";
+import { createApp, createRootRoute, createRoute, Outlet, Link } from "@evjs/runtime";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -104,7 +104,7 @@ src/
 Each page file exports its route and co-locates the component:
 
 ```tsx
-import { createRoute } from "@evai/runtime";
+import { createRoute } from "@evjs/runtime";
 import { rootRoute } from "../main";
 
 export const aboutRoute = createRoute({
@@ -118,7 +118,7 @@ export const aboutRoute = createRoute({
 
 ## Build
 
-`@evai/runtime` compiles to ESM via `tsc` into `esm/`. Consumers import the compiled output — no raw TypeScript source is exported.
+`@evjs/runtime` compiles to ESM via `tsc` into `esm/`. Consumers import the compiled output — no raw TypeScript source is exported.
 
 ```json
 {

@@ -1,6 +1,6 @@
 const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
-const { EvaiWebpackPlugin } = require("evai-webpack-plugin");
+const { EvaiWebpackPlugin } = require("@evjs/webpack-plugin");
 
 /** @type {import("webpack").Configuration} */
 const clientConfig = {
@@ -43,7 +43,7 @@ const clientConfig = {
             },
           },
           {
-            loader: "evai-webpack-plugin/server-fn-loader",
+            loader: "@evjs/webpack-plugin/server-fn-loader",
             options: { isServer: false },
           },
         ],
@@ -122,7 +122,7 @@ const serverConfig = {
             },
           },
           {
-            loader: "evai-webpack-plugin/server-fn-loader",
+            loader: "@evjs/webpack-plugin/server-fn-loader",
             options: { isServer: true },
           },
         ],

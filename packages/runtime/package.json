@@ -1,6 +1,6 @@
 {
-  "name": "evai-runtime",
-  "version": "0.0.1-alpha.6",
+  "name": "@evjs/runtime",
+  "version": "0.0.1-alpha.1",
   "description": "",
   "dependencies": {
     "@tanstack/react-query": "^5.90.21",

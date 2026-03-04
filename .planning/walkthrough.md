@@ -1,8 +1,8 @@
-# Walkthrough — evai Router Framework
+# Walkthrough — @evjs Router Framework
 
 ## What was built
 
-A minimal framework skeleton in `evai-runtime` that wraps **TanStack Router** and **React Query** behind an opinionated `createApp()` API.
+A minimal framework skeleton in `@evjs/runtime` that wraps **TanStack Router** and **React Query** behind an opinionated `createApp()` API.
 
 ## Key Files
 
@@ -15,7 +15,7 @@ A minimal framework skeleton in `evai-runtime` that wraps **TanStack Router** an
 ## Consumer usage
 
 ```tsx
-import { createApp, createRoute } from "evai-runtime";
+import { createApp, createRoute } from "@evjs/runtime";
 
 const app = createApp({ routeTree });
 app.render("#app");
