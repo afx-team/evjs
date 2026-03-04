@@ -6,39 +6,12 @@ A minimal framework skeleton in `@evai/shell` that wraps **TanStack Router** (co
 
 ## Files created
 
-**Custom Webpack Tooling** (`packages/webpack-plugin/`):
-- [server-fn-loader.ts](file:///Users/xusd320/Codes/github/evai/packages/webpack-plugin/src/server-fn-loader.ts) — A Webpack loader that detects `"use server"` directives and transforms files:
-    - **Client**: Replaces original code with fetch-based RPC stubs.
-    - **Server**: Keeps original code and appends registration calls to the server registry.
-
-**Core Runtime Support** (`packages/runtime/`):
-- [rpc.ts](file:///Users/xusd320/Codes/github/evai/packages/runtime/src/client/rpc.ts) — Client-side helper `__evai_rpc` that sends POST requests to `/api/rpc`.
-- [handler.ts](file:///Users/xusd320/Codes/github/evai/packages/runtime/src/server/handler.ts) — Server-side request handler that dispatches RPC calls to registered functions.
-
-**Example app** (`examples/basic-server-fns/`):
-- Demonstrates used of `"use server"` directive.
-- Uses a multi-compiler Webpack setup (Client + Server).
-- Uses `@evai/webpack-plugin/server-fn-loader` for transforms.
-- Provides a Node.js server that handles both static files and RPC requests.
-
-### Package exports updated
-
-**@evai/runtime**:
-```json
-{
-  ".":        { "types": "./esm/index.d.ts",        "import": "./esm/index.js" },
-  "./client": { "types": "./esm/client/index.d.ts",  "import": "./esm/client/index.js" },
-  "./server": { "types": "./esm/server/index.d.ts",  "import": "./esm/server/index.js" }
-}
-```
-
-**@evai/webpack-plugin**:
-```json
-{
-  ".": { "types": "./esm/index.d.ts", "import": "./esm/index.js" },
-  "./server-fn-loader": { "types": "./esm/server-fn-loader.d.ts", "default": "./esm/server-fn-loader.js" }
-}
-```
+| File | Purpose |
+|------|---------|
+| [route.ts](file:///Users/xusd320/Codes/github/evai/packages/shell/src/client/route.ts) | Re-exports of route creation APIs, components, hooks, and types from `@tanstack/react-router` |
+| [create-app.tsx](file:///Users/xusd320/Codes/github/evai/packages/shell/src/client/create-app.tsx) | `createApp()` factory — creates Router + QueryClient, returns `{ router, queryClient, render() }` |
+| [client/index.tsx](file:///Users/xusd320/Codes/github/evai/packages/shell/src/client/index.tsx) | Barrel export for the client module |
+| [src/index.ts](file:///Users/xusd320/Codes/github/evai/packages/shell/src/index.ts) | Root barrel — re-exports from `./client/` |
 
 ## Consumer usage
 

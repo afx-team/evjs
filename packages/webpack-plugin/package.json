@@ -3,10 +3,12 @@
   "version": "0.0.1",
   "description": "Webpack plugin and loaders for the evai framework",
   "type": "module",
+  "main": "./esm/index.js",
   "exports": {
     ".": {
       "types": "./esm/index.d.ts",
-      "import": "./esm/index.js"
+      "import": "./esm/index.js",
+      "require": "./esm/index.js"
     },
     "./server-fn-loader": {
       "types": "./esm/server-fn-loader.d.ts",

@@ -1,23 +1,4 @@
-/**
- * Webpack loader that transforms `"use server"` modules.
- *
- * - **Client builds** (`target: "web"`): Strips all server code and replaces
- *   each export with an RPC stub that calls `__evai_rpc(fnId, args)`.
- * - **Server builds** (`target: "node"`): Keeps the original code and appends
- *   calls to `registerServerFn(fnId, fn)` for each export.
- *
- * Usage in webpack.config.cjs:
- *
- * ```js
- * {
- *   test: /\.server\.tsx?$/,
- *   use: {
- *     loader: "@evai/runtime/webpack/server-fn-loader",
- *     options: { isServer: false }
- *   }
- * }
- * ```
- */
+import { createHash } from "node:crypto";
 
 interface LoaderContext {
   getOptions(): { isServer?: boolean };
@@ -26,22 +7,16 @@ interface LoaderContext {
 
 /**
  * Derive a stable function ID from the file path and export name.
- * e.g. `/src/server/user.server.ts` + `getUser` → `user_server__getUser`
  */
 function makeFnId(resourcePath: string, exportName: string): string {
-  // Extract meaningful path segment (after src/)
-  const match = resourcePath.match(/src[/\\](.+)\.[tj]sx?$/);
-  const stem = match ? match[1] : resourcePath;
-  const normalized = stem.replace(/[/\\]/g, "_").replace(/\./g, "_");
-  return `${normalized}__${exportName}`;
+  return createHash("sha256")
+    .update(`${resourcePath}:${exportName}`)
+    .digest("hex")
+    .slice(0, 16);
 }
 
 /**
  * Parse exported function/const names from the source using simple regex.
- * Handles:
- *   export async function foo(...)
- *   export function foo(...)
- *   export const foo = ...
  */
 function parseExportNames(source: string): string[] {
   const names: string[] = [];
@@ -57,7 +32,6 @@ function parseExportNames(source: string): string[] {
  * Check whether the source starts with the `"use server"` directive.
  */
 function hasUseServerDirective(source: string): boolean {
-  // Match "use server" or 'use server' at the very start (possibly after whitespace/comments)
   const trimmed = source.replace(/^(\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*/, "");
   return /^["']use server["'];?\s/.test(trimmed);
 }
@@ -74,11 +48,19 @@ export default function serverFnLoader(this: LoaderContext, source: string): str
     return source;
   }
 
+  // If a global manifest collector is provided (via EvaiWebpackPlugin), register the functions
+  const manifestCollector = (this as any)._compiler?._evai_manifest_collector;
+
   if (isServer) {
-    // ── Server build: keep original code + register each export ──
     const registrations = exportNames
       .map((name) => {
         const fnId = makeFnId(this.resourcePath, name);
+        if (manifestCollector) {
+          manifestCollector.addServerFn(fnId, {
+            file: this.resourcePath,
+            name: name,
+          });
+        }
         return `registerServerFn("${fnId}", ${name});`;
       })
       .join("\n");
@@ -86,7 +68,6 @@ export default function serverFnLoader(this: LoaderContext, source: string): str
     return `import { registerServerFn } from "@evai/runtime/server";\n${source}\n${registrations}\n`;
   }
 
-  // ── Client build: replace everything with RPC stubs ──
   const stubs = exportNames
     .map((name) => {
       const fnId = makeFnId(this.resourcePath, name);

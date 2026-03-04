@@ -1,5 +1,6 @@
 const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
+const { EvaiWebpackPlugin } = require("@evai/webpack-plugin");
 
 /** @type {import("webpack").Configuration} */
 const clientConfig = {
@@ -48,6 +49,7 @@ const clientConfig = {
     new HtmlWebpackPlugin({
       template: "./index.html",
     }),
+    new EvaiWebpackPlugin(),
   ],
   devServer: {
     port: 3000,
@@ -102,6 +104,9 @@ const serverConfig = {
       },
     ],
   },
+  plugins: [
+    new EvaiWebpackPlugin(),
+  ],
 };
 
 module.exports = [clientConfig, serverConfig];
