@@ -1,0 +1,31 @@
+{
+  "name": "evai-react-framework",
+  "version": "0.0.1",
+  "description": "",
+  "private": true,
+  "packageManager": "npm@11.6.2",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "homepage": "https://github.com/evaijs/f#readme",
+  "bugs": {
+    "url": "https://github.com/evaijs/f/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/evaijs/f.git"
+  },
+  "license": "MIT",
+  "author": "xusd320",
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "check-types": "turbo check-types"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.2"
+  }
+}

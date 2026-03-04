@@ -1,0 +1,134 @@
+# @evai/shell
+
+A React framework built on `@tanstack/react-router` (code-based routing) and `@tanstack/react-query`. Planned to support server rendering (SSR) and React server functions. Currently in stage 1: client-only SPA.
+
+## Roadmap
+
+- [x] Stage 1: Client-only SPA
+  - [x] `createApp()` factory (Router + React Query + DOM mount)
+  - [x] Code-based routing (re-exports from `@tanstack/react-router`)
+  - [x] ESM build via `tsc`
+  - [x] Example: `examples/basic-csr` (Webpack)
+- [ ] Stage 2: React server functions
+  - [ ] Server function definition and invocation
+  - [ ] Bundler integration (server/client code splitting)
+  - [ ] Example: `examples/with-server-fns`
+- [ ] Stage 3: Server-side rendering (SSR)
+  - [ ] Server entry point (`packages/shell/src/server/`)
+  - [ ] HTML streaming / `renderToPipeableStream`
+  - [ ] Client hydration
+  - [ ] Example: `examples/basic-ssr`
+
+## Package structure
+
+```
+packages/shell/
+  src/
+    index.ts                 # root barrel export
+    client/
+      index.tsx              # client barrel export
+      create-app.tsx         # createApp() factory
+      route.ts               # re-exports from @tanstack/react-router
+```
+
+## Key API
+
+### `createApp(options)`
+
+Creates and bootstraps a client SPA. Internally wires up TanStack Router and React Query.
+
+```tsx
+import { createApp, createRootRoute, createRoute, Outlet, Link } from "@evai/shell";
+
+const rootRoute = createRootRoute({
+  component: () => (
+    <div>
+      <nav>
+        <Link to="/">Home</Link>
+        <Link to="/about">About</Link>
+      </nav>
+      <Outlet />
+    </div>
+  ),
+});
+
+const indexRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/",
+  component: () => <h1>Home</h1>,
+});
+
+const routeTree = rootRoute.addChildren([indexRoute]);
+
+createApp({ routeTree }).render("#app");
+```
+
+#### Options
+
+- `routeTree` — route tree built via `createRootRoute` / `createRoute` / `addChildren`
+- `routerOptions` — optional overrides passed to TanStack `createRouter()` (e.g. `defaultPreload`)
+- `queryClientConfig` — optional React Query `QueryClient` config
+
+#### Returns
+
+- `router` — the TanStack Router instance
+- `queryClient` — the React Query client
+- `render(container)` — mounts the app into a DOM element or CSS selector
+
+### Re-exported from `@tanstack/react-router`
+
+Route creation: `createRootRoute`, `createRootRouteWithContext`, `createRoute`, `createRouteMask`, `createRouter`
+
+Components: `Outlet`, `Link`, `Navigate`, `CatchBoundary`, `ErrorComponent`, `RouterProvider`
+
+Hooks: `useRouter`, `useRouterState`, `useMatch`, `useParams`, `useSearch`, `useNavigate`, `useLoaderData`, `useLoaderDeps`, `useRouteContext`, `useLocation`, `useMatchRoute`, `useBlocker`, `useCanGoBack`
+
+Utilities: `redirect`, `isRedirect`, `notFound`, `isNotFound`, `getRouteApi`, `lazyRouteComponent`, `linkOptions`, `createLink`
+
+## Recommended project structure
+
+```
+src/
+  main.tsx          # rootRoute, route tree assembly, createApp().render()
+  pages/
+    home.tsx        # route definition + component
+    about.tsx       # route definition + component
+    posts/
+      index.tsx     # layout route + child routes + components
+```
+
+Each page file exports its route and co-locates the component:
+
+```tsx
+import { createRoute } from "@evai/shell";
+import { rootRoute } from "../main";
+
+export const aboutRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/about",
+  component: function About() {
+    return <h1>About</h1>;
+  },
+});
+```
+
+## Build
+
+`@evai/shell` compiles to ESM via `tsc` into `esm/`. Consumers import the compiled output — no raw TypeScript source is exported.
+
+```json
+{
+  "exports": {
+    ".": { "types": "./esm/index.d.ts", "import": "./esm/index.js" },
+    "./client": { "types": "./esm/client/index.d.ts", "import": "./esm/client/index.js" }
+  }
+}
+```
+
+## Monorepo
+
+This is an npm workspaces monorepo orchestrated by Turborepo.
+
+- `npm run build` — build all packages
+- `npm run check-types` — type-check all packages and examples
+- `npm run dev` — start dev servers

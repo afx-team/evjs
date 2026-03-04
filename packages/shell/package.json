@@ -1,0 +1,41 @@
+{
+  "name": "@evai/shell",
+  "version": "0.0.1",
+  "description": "",
+  "dependencies": {
+    "@tanstack/react-query": "^5.90.21",
+    "@tanstack/react-router": "^1.163.3",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "typescript": "^5.7.3"
+  },
+  "homepage": "https://github.com/evaijs/f#readme",
+  "bugs": {
+    "url": "https://github.com/evaijs/f/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/evaijs/f.git"
+  },
+  "license": "MIT",
+  "author": "xusd320",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./esm/index.d.ts",
+      "import": "./esm/index.js"
+    },
+    "./client": {
+      "types": "./esm/client/index.d.ts",
+      "import": "./esm/client/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "check-types": "tsc --noEmit"
+  }
+}
