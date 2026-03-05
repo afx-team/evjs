@@ -32,6 +32,7 @@
   "author": "xusd320",
   "license": "MIT",
   "dependencies": {
+    "@evjs/manifest": "0.0.1-alpha.1",
     "@swc/core": "^1.15.18"
   },
   "devDependencies": {
