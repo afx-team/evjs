@@ -1,0 +1,39 @@
+{
+  "name": "@evjs/manifest",
+  "version": "0.0.1-alpha.1",
+  "description": "Shared manifest types for the ev framework",
+  "type": "module",
+  "main": "./esm/index.js",
+  "exports": {
+    ".": {
+      "types": "./esm/index.d.ts",
+      "import": "./esm/index.js",
+      "require": "./esm/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "check-types": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "esm"
+  ],
+  "keywords": [
+    "ev",
+    "manifest"
+  ],
+  "author": "xusd320",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "homepage": "https://github.com/evjs/evjs#readme",
+  "bugs": {
+    "url": "https://github.com/evjs/evjs/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/evjs/evjs.git"
+  }
+}

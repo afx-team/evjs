@@ -2,51 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { glob } from "node:fs";
 import type { Compiler } from "webpack";
-
-/** Metadata for a registered server function. */
-interface ServerFnEntry {
-  /** Source file path relative to project root. */
-  file: string;
-  /** Exported function name. */
-  export: string;
-}
-
-/** SSR configuration (Stage 3 — reserved). */
-// interface SsrEntry {
-//   serverEntry: string;
-//   clientEntry: string;
-// }
-
-/** React Server Components (future — reserved). */
-// interface RscEntry {
-//   moduleId: string;
-//   export: string;
-// }
-
-/** Client assets for HTML injection (Stage 3 — reserved). */
-// interface AssetsEntry {
-//   js: string[];
-//   css: string[];
-// }
-
-/**
- * The ev build manifest.
- *
- * Version 1 supports:
- * - `serverFunctions`: AJAX RPC server functions.
- *
- * Future versions will add:
- * - `ssr`: Server-side rendering entry points.
- * - `assets`: Client JS/CSS assets for HTML injection.
- * - `serverComponents`: React Server Components.
- */
-interface EvManifest {
-  version: 1;
-  serverFunctions: Record<string, ServerFnEntry>;
-  // ssr?: SsrEntry;
-  // assets?: AssetsEntry;
-  // serverComponents?: Record<string, RscEntry>;
-}
+import type { EvManifest, ServerFnEntry } from "@evjs/manifest";
 
 class ManifestCollector {
   serverFunctions: Record<string, ServerFnEntry> = {};
