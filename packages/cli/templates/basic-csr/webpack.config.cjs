@@ -1,1 +1,0 @@
-../../../../examples/basic-csr/webpack.config.cjs

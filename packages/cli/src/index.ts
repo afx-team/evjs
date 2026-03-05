@@ -62,7 +62,36 @@ program
     }
 
     console.log(pc.blue(`Scaffolding project in ${targetDir}...`));
-    await fs.copy(templateDir, targetDir, { dereference: true });
+    await fs.copy(templateDir, targetDir, {
+      dereference: true,
+      filter: (src) => {
+        const basename = path.basename(src);
+        return !["node_modules", "dist", ".turbo", ".evjs"].includes(basename);
+      }
+    });
+
+    // Post-process package.json: sync @evjs/* versions and set project name
+    const pkgPath = path.join(targetDir, "package.json");
+    if (fs.existsSync(pkgPath)) {
+      const pkg = await fs.readJson(pkgPath);
+      pkg.name = projectName;
+      delete pkg.private; // Templates shouldn't be private by default
+
+      const updateDeps = (deps: any) => {
+        if (!deps) return;
+        for (const [name, val] of Object.entries(deps)) {
+          // Sync all @evjs/* packages to current CLI version
+          if (name.startsWith("@evjs/") && (val === "*" || (typeof val === "string" && val.includes("workspace")))) {
+            deps[name] = `^${VERSION}`;
+          }
+        }
+      };
+
+      updateDeps(pkg.dependencies);
+      updateDeps(pkg.devDependencies);
+
+      await fs.writeJson(pkgPath, pkg, { spaces: 2 });
+    }
 
     console.log(pc.green("\nDone! Now run:"));
     console.log(pc.cyan(`  cd ${projectName}`));

@@ -1,1 +1,0 @@
-../../../../examples/basic-server-fns/webpack.config.cjs
