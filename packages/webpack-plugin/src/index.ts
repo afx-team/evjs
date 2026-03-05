@@ -3,21 +3,62 @@ import path from "node:path";
 import { glob } from "node:fs";
 import type { Compiler } from "webpack";
 
-interface ServerFnMetadata {
+/** Metadata for a registered server function. */
+interface ServerFnEntry {
+  /** Source file path relative to project root. */
   file: string;
-  name: string;
+  /** Exported function name. */
+  export: string;
+}
+
+/** SSR configuration (Stage 3 — reserved). */
+// interface SsrEntry {
+//   serverEntry: string;
+//   clientEntry: string;
+// }
+
+/** React Server Components (future — reserved). */
+// interface RscEntry {
+//   moduleId: string;
+//   export: string;
+// }
+
+/** Client assets for HTML injection (Stage 3 — reserved). */
+// interface AssetsEntry {
+//   js: string[];
+//   css: string[];
+// }
+
+/**
+ * The ev build manifest.
+ *
+ * Version 1 supports:
+ * - `serverFunctions`: AJAX RPC server functions.
+ *
+ * Future versions will add:
+ * - `ssr`: Server-side rendering entry points.
+ * - `assets`: Client JS/CSS assets for HTML injection.
+ * - `serverComponents`: React Server Components.
+ */
+interface EvManifest {
+  version: 1;
+  serverFunctions: Record<string, ServerFnEntry>;
+  // ssr?: SsrEntry;
+  // assets?: AssetsEntry;
+  // serverComponents?: Record<string, RscEntry>;
 }
 
 class ManifestCollector {
-  serverFns: Record<string, ServerFnMetadata> = {};
+  serverFunctions: Record<string, ServerFnEntry> = {};
 
-  addServerFn(id: string, meta: ServerFnMetadata) {
-    this.serverFns[id] = meta;
+  addServerFn(id: string, meta: ServerFnEntry) {
+    this.serverFunctions[id] = meta;
   }
 
-  getManifest() {
+  getManifest(): EvManifest {
     return {
-      serverFns: this.serverFns,
+      version: 1,
+      serverFunctions: this.serverFunctions,
     };
   }
 }
@@ -101,7 +142,7 @@ export class EvWebpackPlugin {
     // Emit manifest
     compiler.hooks.emit.tap("EvWebpackPlugin", (compilation) => {
       const manifest = collector.getManifest();
-      if (Object.keys(manifest.serverFns).length === 0) {
+      if (Object.keys(manifest.serverFunctions).length === 0) {
         return;
       }
       const content = JSON.stringify(manifest, null, 2);

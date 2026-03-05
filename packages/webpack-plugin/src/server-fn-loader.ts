@@ -86,7 +86,7 @@ export default async function serverFnLoader(this: LoaderContext, source: string
           const relativePath = path.relative(this.rootContext, this.resourcePath);
           manifestCollector.addServerFn(fnId, {
             file: relativePath,
-            name: name,
+            export: name,
           });
         }
         return `registerServerFn("${fnId}", ${name});`;
