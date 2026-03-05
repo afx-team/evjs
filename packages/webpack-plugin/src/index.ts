@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { glob } from "node:fs";
 import type { Compiler } from "webpack";
@@ -22,60 +23,62 @@ class ManifestCollector {
 }
 
 /**
- * Options for the EvWebpackPlugin.
+ * Check if a file starts with the "use server" directive.
  */
-export interface EvWebpackPluginOptions {
-  /**
-   * Glob pattern to auto-discover server function files.
-   * When set, matching files are automatically added as Webpack entries
-   * so they don't need to be manually imported in server.ts.
-   *
-   * Example: `"./src/**\/*.server.ts"`
-   */
-  serverFunctions?: string;
+function hasUseServerDirective(filePath: string): boolean {
+  try {
+    const content = fs.readFileSync(filePath, "utf-8");
+    const firstLine = content.trimStart().split("\n")[0];
+    return /^["']use server["'];?\s*$/.test(firstLine.trim());
+  } catch {
+    return false;
+  }
 }
 
 /**
  * Webpack plugin for the ev framework.
  *
- * Handles:
- * 1. Auto-discovery and injection of server function entry points.
- * 2. Manifest generation (`ev-manifest.json`) for production builds.
+ * On server builds (target: "node"), automatically discovers files with
+ * the "use server" directive and adds them as entries.
+ * On all builds, emits the `ev-manifest.json` mapping function IDs to assets.
  */
 export class EvWebpackPlugin {
-  private options: EvWebpackPluginOptions;
-
-  constructor(options?: EvWebpackPluginOptions) {
-    this.options = options ?? {};
-  }
-
   apply(compiler: Compiler) {
     const collector = new ManifestCollector();
 
     // Attach collector to compiler so the loader can access it
     (compiler as any)._ev_manifest_collector = collector;
 
-    // Auto-discover and inject server function entries
-    if (this.options.serverFunctions) {
-      const pattern = this.options.serverFunctions;
+    // Auto-discover server function files on server builds
+    const isServer =
+      compiler.options.target === "node" ||
+      (Array.isArray(compiler.options.target) &&
+        compiler.options.target.includes("node"));
+
+    if (isServer) {
       const context = compiler.context;
 
       compiler.hooks.make.tapAsync("EvWebpackPlugin", (compilation, callback) => {
-        glob(pattern, { cwd: context }, (err, files) => {
+        // Scan all .ts/.tsx files under src/ for "use server" directive
+        glob("./src/**/*.{ts,tsx}", { cwd: context }, (err, files) => {
           if (err) {
             callback(err);
             return;
           }
 
-          if (files.length === 0) {
+          const serverFiles = files.filter((f) =>
+            hasUseServerDirective(path.resolve(context, f)),
+          );
+
+          if (serverFiles.length === 0) {
             callback();
             return;
           }
 
           const webpack = compiler.webpack;
-          let pending = files.length;
+          let pending = serverFiles.length;
 
-          for (const file of files) {
+          for (const file of serverFiles) {
             const absolutePath = path.resolve(context, file);
             const dep = webpack.EntryPlugin.createDependency(absolutePath, {
               name: undefined,
