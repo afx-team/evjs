@@ -112,7 +112,7 @@ const serverConfig = {
     ],
   },
   plugins: [
-    new EvWebpackPlugin(),
+    new EvWebpackPlugin({ serverFunctions: "./src/**/*.server.ts" }),
   ],
 };
 
