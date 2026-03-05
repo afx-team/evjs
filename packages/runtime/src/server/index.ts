@@ -2,4 +2,6 @@
  * Server-side runtime utilities.
  */
 
-export { createHandler, registerServerFn } from "./handler";
+export { createServer } from "./app";
+export type { CreateServerOptions } from "./app";
+export { createRpcMiddleware, registerServerFn } from "./handler";

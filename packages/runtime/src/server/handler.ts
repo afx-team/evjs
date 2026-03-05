@@ -1,27 +1,12 @@
 /**
- * Server-side handler for processing RPC requests from client-side
- * server function stubs.
+ * Hono middleware for dispatching RPC calls to registered server functions.
  *
- * Usage (with any HTTP server, e.g. Express / Node http):
- *
- * ```ts
- * import { createHandler } from "@evjs/runtime/server";
- *
- * const handler = createHandler();
- *
- * // Express
- * app.post("/api/rpc", handler);
- *
- * // Node http
- * http.createServer((req, res) => {
- *   if (req.method === "POST" && req.url === "/api/rpc") {
- *     handler(req, res);
- *   }
- * });
- * ```
+ * The Webpack server-fn-loader calls `registerServerFn()` at module load
+ * time, populating the registry. This middleware handles incoming
+ * `POST /api/rpc` requests and dispatches them to the correct function.
  */
 
-import type { IncomingMessage, ServerResponse } from "node:http";
+import { Hono } from "hono";
 
 /** A registered server function. */
 type ServerFn = (...args: unknown[]) => Promise<unknown>;
@@ -30,8 +15,8 @@ type ServerFn = (...args: unknown[]) => Promise<unknown>;
 const registry = new Map<string, ServerFn>();
 
 /**
- * Register a server function so it can be invoked by the RPC handler.
- * Called by the Webpack-transformed server bundles at module load time.
+ * Register a server function so it can be invoked via RPC.
+ * Called automatically by the Webpack-transformed server bundles at load time.
  *
  * @param fnId - The unique ID for this function.
  * @param fn - The actual function implementation.
@@ -41,59 +26,35 @@ export function registerServerFn(fnId: string, fn: ServerFn): void {
 }
 
 /**
- * Read the full request body as a string.
- */
-function readBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let data = "";
-    req.on("data", (chunk: Buffer) => {
-      data += chunk.toString();
-    });
-    req.on("end", () => resolve(data));
-    req.on("error", reject);
-  });
-}
-
-/**
- * Create a Node.js HTTP request handler that dispatches incoming RPC
- * calls to registered server functions.
+ * Create a Hono sub-app that handles RPC requests.
  *
- * Expects `POST` requests with JSON body `{ fnId: string, args: unknown[] }`.
+ * Expects `POST /` with JSON body `{ fnId: string, args: unknown[] }`.
  * Responds with `{ result: unknown }` on success or `{ error: string }` on failure.
  *
- * @returns An async function compatible with Node.js http.createServer or Express.
+ * @returns A Hono app to be mounted at the desired path (e.g. `/api/rpc`).
  */
-export function createHandler() {
-  return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    // Only accept POST
-    if (req.method !== "POST") {
-      res.writeHead(405, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Method not allowed" }));
-      return;
+export function createRpcMiddleware(): Hono {
+  const rpc = new Hono();
+
+  rpc.post("/", async (c) => {
+    const { fnId, args } = await c.req.json<{
+      fnId: string;
+      args: unknown[];
+    }>();
+
+    const fn = registry.get(fnId);
+    if (!fn) {
+      return c.json({ error: `Server function "${fnId}" not found` }, 404);
     }
 
     try {
-      const body = await readBody(req);
-      const { fnId, args } = JSON.parse(body) as {
-        fnId: string;
-        args: unknown[];
-      };
-
-      const fn = registry.get(fnId);
-      if (!fn) {
-        res.writeHead(404, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: `Server function "${fnId}" not found` }));
-        return;
-      }
-
       const result = await fn(...(args ?? []));
-
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ result }));
+      return c.json({ result });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: message }));
+      return c.json({ error: message }, 500);
     }
-  };
+  });
+
+  return rpc;
 }
