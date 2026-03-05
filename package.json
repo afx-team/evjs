@@ -9,13 +9,13 @@
     "packages/*",
     "examples/*"
   ],
-  "homepage": "https://github.com/evjs/f#readme",
+  "homepage": "https://github.com/evjs/evjs#readme",
   "bugs": {
-    "url": "https://github.com/evjs/f/issues"
+    "url": "https://github.com/evjs/evjs/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/evjs/f.git"
+    "url": "git+https://github.com/evjs/evjs.git"
   },
   "license": "MIT",
   "author": "xusd320",
