@@ -1,7 +1,7 @@
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { execSync } from "node:child_process";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
@@ -26,21 +26,30 @@ function main() {
   if (newVersion !== currentVersion) {
     console.log(`Bumping root version to ${newVersion}...`);
     pkg.version = newVersion;
-    fs.writeFileSync(rootPkgPath, JSON.stringify(pkg, null, 2) + "\n");
+    fs.writeFileSync(rootPkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 
     console.log("Synchronizing versions across workspaces...");
-    execSync("node scripts/sync-versions.js", { stdio: "inherit", cwd: rootDir });
+    execSync("node scripts/sync-versions.js", {
+      stdio: "inherit",
+      cwd: rootDir,
+    });
 
     console.log("Committing version bump...");
     execSync("git add -A", { stdio: "inherit", cwd: rootDir });
-    execSync(`git commit -m "chore: release v${newVersion}"`, { stdio: "inherit", cwd: rootDir });
+    execSync(`git commit -m "chore: release v${newVersion}"`, {
+      stdio: "inherit",
+      cwd: rootDir,
+    });
   }
 
   console.log(`\nBuilding packages...`);
   execSync("npm run build", { stdio: "inherit", cwd: rootDir });
 
   console.log(`\nPublishing packages with tag "${tag}"...`);
-  execSync(`npm publish --workspaces --if-present --access public --tag ${tag}`, { stdio: "inherit", cwd: rootDir });
+  execSync(
+    `npm publish --workspaces --if-present --access public --tag ${tag}`,
+    { stdio: "inherit", cwd: rootDir },
+  );
 
   console.log(`\n✅ Successfully published version ${pkg.version} (@${tag})!`);
 }

@@ -47,12 +47,12 @@ function Component() {
 
 #### B. Modular Proxy (Recommended for feature-based APIs)
 ```tsx
-import { createEvQueryProxy, createEvMutationProxy } from "@evjs/runtime/client";
+import { createQueryProxy, createMutationProxy } from "@evjs/runtime/client";
 import * as UsersAPI from "./api/users.server";
 
 const users = {
-  query: createEvQueryProxy(UsersAPI),
-  mutation: createEvMutationProxy(UsersAPI),
+  query: createQueryProxy(UsersAPI),
+  mutation: createMutationProxy(UsersAPI),
 };
 
 // Usage: users.query.getUsers.useQuery([])
@@ -74,11 +74,17 @@ const options = query(getUsers).queryOptions([id]);
 
 ## 4. Coding Style Prefs
 
-- **Type Safety**: Leverage tRPC-like inference via the proxies. Avoid `any` for response types.
+- **Top-Level Imports**: ALWAYS put all imports at the top of the file. No nested imports or mid-file imports allowed.
+- **Biome Compliance**: Follow strict Biome linting rules:
+  - Prefer `import type` for type-only imports.
+  - Avoid `any` - use explicit types or `unknown`.
+  - No namespace imports (`import * as`) unless strictly necessary (like `React` or internal API modules).
+- **Type Safety**: Leverage tRPC-like inference via the proxies.
 - **Invalidation**: Invalidate queries using the stable `evId`:
   ```tsx
   onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: [query(getUsers).evId] });
+    queryClient.invalidateQueries({ queryKey: [api.query.getUsers.evId] });
   }
   ```
+- **Mutation Arguments**: When using proxy mutations, pass arguments as a tuple: `mutate([arg1, arg2])`.
 - **Cleanup**: Do not create manual `server.ts` or `server-entry.ts` files; the framework generates them dynamically.

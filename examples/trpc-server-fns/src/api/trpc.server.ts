@@ -4,9 +4,10 @@ import { appRouter } from "../trpc";
 
 /**
  * A Server Function that acts as a tRPC handler.
- * This demonstrates how to combine tRPC's type-safety with 
+ * This demonstrates how to combine tRPC's type-safety with
  * @evjs's zero-config RPC infrastructure.
  */
+// biome-ignore lint/suspicious/noExplicitAny: request body
 export async function trpcHandler(reqBody: any) {
   // We simulate a fetch request for tRPC
   const url = new URL("http://localhost/trpc");

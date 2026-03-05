@@ -1,5 +1,5 @@
 {
-  "name": "example-basic-csr",
+  "name": "example-server-fns-query",
   "version": "0.0.0",
   "private": true,
   "scripts": {
@@ -13,10 +13,9 @@
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
-    "@types/react": "^19.0.8",
-    "@types/react-dom": "^19.0.3",
-    "@utoo/pack": "^1.2.12",
-    "@utoo/pack-cli": "^1.2.12",
+    "@evjs/webpack-plugin": "*",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.8",
     "html-webpack-plugin": "^5.6.6",
     "swc-loader": "^0.2.7",
     "typescript": "^5.7.3",

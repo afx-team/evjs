@@ -1,11 +1,14 @@
 import {
   createApp,
+  createMutationProxy,
+  createQueryProxy,
   createRootRoute,
   createRoute,
   Link,
   Outlet,
+  useQueryClient,
 } from "@evjs/runtime/client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { createUser, getUsers } from "./api/users.server";
 
 // ── Root Route ──
@@ -24,56 +27,45 @@ function Root() {
 
 const rootRoute = createRootRoute({ component: Root });
 
+// ── API Proxy ──
+const api = {
+  query: createQueryProxy({ getUsers, createUser }),
+  mutation: createMutationProxy({ getUsers, createUser }),
+};
+
 // ── Users Route ──
 
 function UsersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
 
-  const [users, setUsers] = useState<
-    { id: string; name: string; email: string }[]
-  >([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { data: users = [], isLoading } = api.query.getUsers.useQuery([]);
 
-  useEffect(() => {
-    let mounted = true;
-    getUsers()
-      .then((data) => {
-        if (mounted) {
-          setUsers(data);
-          setIsLoading(false);
-        }
-      })
-      .catch((err) => {
-        console.error(err);
-        if (mounted) setIsLoading(false);
+  const queryClient = useQueryClient();
+  const { mutateAsync: createMutation } = api.mutation.createUser.useMutation({
+    onSuccess: () => {
+      // Use the stable queryKey for cache invalidation
+      queryClient.invalidateQueries({
+        queryKey: api.query.getUsers.queryKey(),
       });
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    },
+  });
 
   async function handleCreate(e: { preventDefault: () => void }) {
     e.preventDefault();
     if (!name || !email) return;
-    try {
-      await createUser({ name, email });
-      setName("");
-      setEmail("");
-      const data = await getUsers();
-      setUsers(data);
-    } catch (err) {
-      console.error(err);
-    }
+    await createMutation([{ name, email }]);
+    setName("");
+    setEmail("");
   }
 
   if (isLoading) return <p>Loading users from server…</p>;
 
   return (
     <div>
-      <h2>Users (fetched via direct server function call)</h2>
+      <h2>Users (fetched via friendly useServerQuery)</h2>
       <ul>
-        {users.map((u) => (
+        {users.map((u: { id: string; name: string; email: string }) => (
           <li key={u.id}>
             {u.name} — {u.email}
           </li>

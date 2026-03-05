@@ -20,11 +20,19 @@
     "rules": {
       "recommended": true,
       "style": {
-        "useBlockStatements": "off"
+        "useBlockStatements": "off",
+        "useImportType": "warn",
+        "noNamespace": "warn"
       },
       "suspicious": {
         "noExplicitAny": "warn",
         "noArrayIndexKey": "warn"
+      },
+      "performance": {
+        "noBarrelFile": "warn"
+      },
+      "correctness": {
+        "noUnusedVariables": "warn"
       }
     }
   },

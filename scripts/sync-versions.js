@@ -6,7 +6,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
 
 // 1. Get current version from root package.json
-const rootPkg = JSON.parse(fs.readFileSync(path.resolve(rootDir, "package.json"), "utf8"));
+const rootPkg = JSON.parse(
+  fs.readFileSync(path.resolve(rootDir, "package.json"), "utf8"),
+);
 const rootVersion = rootPkg.version;
 
 console.log(`Syncing all @evjs packages to root version: ${rootVersion}\n`);
@@ -29,7 +31,11 @@ for (const pkg of packages) {
   }
 
   // Sync internal @evjs/* dependencies
-  for (const depType of ["dependencies", "devDependencies", "peerDependencies"]) {
+  for (const depType of [
+    "dependencies",
+    "devDependencies",
+    "peerDependencies",
+  ]) {
     if (pkgJson[depType]) {
       for (const depName of Object.keys(pkgJson[depType])) {
         if (depName.startsWith("@evjs/")) {
@@ -45,7 +51,7 @@ for (const pkg of packages) {
   }
 
   if (modified) {
-    fs.writeFileSync(pkgPath, JSON.stringify(pkgJson, null, 2) + "\n");
+    fs.writeFileSync(pkgPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
     console.log(`Updated packages/${pkg}/package.json`);
   }
 
@@ -54,7 +60,10 @@ for (const pkg of packages) {
   if (fs.existsSync(srcDir)) {
     const versionContent = `export const VERSION = "${rootVersion}";\n`;
     const versionPath = path.join(srcDir, "version.ts");
-    if (!fs.existsSync(versionPath) || fs.readFileSync(versionPath, "utf8") !== versionContent) {
+    if (
+      !fs.existsSync(versionPath) ||
+      fs.readFileSync(versionPath, "utf8") !== versionContent
+    ) {
       fs.writeFileSync(versionPath, versionContent);
       console.log(`Updated packages/${pkg}/src/version.ts`);
     }
@@ -75,21 +84,30 @@ for (const template of templates) {
 
   const expectedDep = `^${rootVersion}`;
 
-  if (pkgJson.dependencies?.["@evjs/runtime"] && pkgJson.dependencies["@evjs/runtime"] !== expectedDep) {
+  if (
+    pkgJson.dependencies?.["@evjs/runtime"] &&
+    pkgJson.dependencies["@evjs/runtime"] !== expectedDep
+  ) {
     pkgJson.dependencies["@evjs/runtime"] = expectedDep;
     modified = true;
   }
-  if (pkgJson.devDependencies?.["@evjs/webpack-plugin"] && pkgJson.devDependencies["@evjs/webpack-plugin"] !== expectedDep) {
+  if (
+    pkgJson.devDependencies?.["@evjs/webpack-plugin"] &&
+    pkgJson.devDependencies["@evjs/webpack-plugin"] !== expectedDep
+  ) {
     pkgJson.devDependencies["@evjs/webpack-plugin"] = expectedDep;
     modified = true;
   }
-  if (pkgJson.devDependencies?.["@evjs/cli"] && pkgJson.devDependencies["@evjs/cli"] !== expectedDep) {
+  if (
+    pkgJson.devDependencies?.["@evjs/cli"] &&
+    pkgJson.devDependencies["@evjs/cli"] !== expectedDep
+  ) {
     pkgJson.devDependencies["@evjs/cli"] = expectedDep;
     modified = true;
   }
 
   if (modified) {
-    fs.writeFileSync(pkgPath, JSON.stringify(pkgJson, null, 2) + "\n");
+    fs.writeFileSync(pkgPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
     console.log(`Updated packages/cli/templates/${template}/package.json`);
   }
 }

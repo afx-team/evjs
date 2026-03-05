@@ -26,6 +26,7 @@ export type {
   RouterState,
   SearchSchemaInput,
 } from "@tanstack/react-router";
+// biome-ignore lint/performance/noBarrelFile: This is a library entry point
 export {
   CatchBoundary,
   CatchNotFound,

@@ -12,7 +12,11 @@ import path from "node:path";
 /**
  * Derive a stable function ID from the file path and export name.
  */
-function makeFnId(rootContext: string, resourcePath: string, exportName: string): string {
+function makeFnId(
+  rootContext: string,
+  resourcePath: string,
+  exportName: string,
+): string {
   const relativePath = path.relative(rootContext, resourcePath);
   return createHash("sha256")
     .update(`${relativePath}:${exportName}`)
@@ -28,7 +32,10 @@ function hasUseServerDirective(source: string): boolean {
   return /^["']use server["'];?\s/.test(trimmed);
 }
 
-export default async function serverFnLoader(this: LoaderContext, source: string): Promise<string> {
+export default async function serverFnLoader(
+  this: LoaderContext,
+  source: string,
+): Promise<string> {
   if (!hasUseServerDirective(source)) {
     return source;
   }
@@ -37,7 +44,9 @@ export default async function serverFnLoader(this: LoaderContext, source: string
   const explicitOptions = this.getOptions() || {};
   let isServer = explicitOptions.isServer;
   if (typeof isServer === "undefined") {
+    // biome-ignore lint/suspicious/noExplicitAny: webpack compiler type
     const compilerName = (this as any)._compiler?.name;
+    // biome-ignore lint/suspicious/noExplicitAny: webpack compiler type
     const target = (this as any)._compiler?.options?.target;
     isServer = compilerName === "evServer" || target === "node";
   }
@@ -82,6 +91,7 @@ export default async function serverFnLoader(this: LoaderContext, source: string
     return source;
   }
 
+  // biome-ignore lint/suspicious/noExplicitAny: webpack compiler prop
   const manifestCollector = (this as any)._compiler?._ev_manifest_collector;
 
   if (isServer) {
@@ -90,7 +100,10 @@ export default async function serverFnLoader(this: LoaderContext, source: string
       .map((name) => {
         const fnId = makeFnId(this.rootContext, this.resourcePath, name);
         if (manifestCollector) {
-          const relativePath = path.relative(this.rootContext, this.resourcePath);
+          const relativePath = path.relative(
+            this.rootContext,
+            this.resourcePath,
+          );
           const moduleId = createHash("sha256")
             .update(relativePath)
             .digest("hex")
