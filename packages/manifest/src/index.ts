@@ -10,8 +10,8 @@
 
 /** A registered server function entry. */
 export interface ServerFnEntry {
-  /** Source file path relative to project root. */
-  file: string;
+  /** Webpack module identifier (hash-based, no source paths exposed). */
+  moduleId: string;
   /** Exported function name. */
   export: string;
 }

@@ -84,8 +84,12 @@ export default async function serverFnLoader(this: LoaderContext, source: string
         const fnId = makeFnId(this.rootContext, this.resourcePath, name);
         if (manifestCollector) {
           const relativePath = path.relative(this.rootContext, this.resourcePath);
+          const moduleId = createHash("sha256")
+            .update(relativePath)
+            .digest("hex")
+            .slice(0, 16);
           manifestCollector.addServerFn(fnId, {
-            file: relativePath,
+            moduleId,
             export: name,
           });
         }
