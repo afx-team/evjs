@@ -76,10 +76,36 @@ program
   .action(async () => {
     console.log(pc.blue("Starting development server..."));
     try {
-      await execa("npx", ["webpack", "serve", "--config", "webpack.config.cjs"], {
-        stdio: "inherit",
-        env: { ...process.env, NODE_ENV: "development" },
-      });
+      const hasServer = fs.existsSync(path.resolve(process.cwd(), "src/server.ts"));
+
+      if (hasServer) {
+        console.log(pc.cyan("Building initial server bundle..."));
+        await execa("npx", ["webpack", "--config", "webpack.config.cjs", "--config-name", "server"], {
+          stdio: "inherit",
+          env: { ...process.env, NODE_ENV: "development" }
+        });
+
+        console.log(pc.cyan("Starting client and API dev servers..."));
+        const client = execa("npx", ["webpack", "serve", "--config", "webpack.config.cjs", "--config-name", "client"], {
+          stdio: "inherit",
+          env: { ...process.env, NODE_ENV: "development" }
+        });
+        const serverBuild = execa("npx", ["webpack", "--watch", "--config", "webpack.config.cjs", "--config-name", "server"], {
+          stdio: "inherit",
+          env: { ...process.env, NODE_ENV: "development" }
+        });
+        const serverRun = execa("node", ["--watch", "dist/server/index.js"], {
+          stdio: "inherit",
+          env: { ...process.env, NODE_ENV: "development" }
+        });
+
+        await Promise.all([client, serverBuild, serverRun]);
+      } else {
+        await execa("npx", ["webpack", "serve", "--config", "webpack.config.cjs"], {
+          stdio: "inherit",
+          env: { ...process.env, NODE_ENV: "development" },
+        });
+      }
     } catch (e) {
       process.exit(1);
     }
