@@ -40,7 +40,7 @@ function hasUseServerDirective(filePath: string): boolean {
  *
  * On server builds (target: "node"), automatically discovers files with
  * the "use server" directive and adds them as entries.
- * On all builds, emits the `ev-manifest.json` mapping function IDs to assets.
+ * On all builds, emits the `manifest.json` mapping function IDs to assets.
  */
 export class EvWebpackPlugin {
   apply(compiler: Compiler) {
@@ -106,7 +106,7 @@ export class EvWebpackPlugin {
       }
       const content = JSON.stringify(manifest, null, 2);
 
-      compilation.assets["ev-manifest.json"] = {
+      compilation.assets["manifest.json"] = {
         source: () => content,
         size: () => content.length,
       } as any;

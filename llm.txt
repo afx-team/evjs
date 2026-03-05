@@ -14,7 +14,7 @@ A React framework built for speed and simplicity, leveraging `@tanstack/react-ro
 - [x] Stage 2: React Server Functions (Alpha)
   - [x] Isomorphic RPC calls (`"use server"`)
   - [x] Webpack plugin for server/client splitting
-  - [x] Stable manifest-based routing (`ev-manifest.json`)
+  - [x] Stable manifest-based routing (`manifest.json`)
 - [ ] Stage 3: Server-Side Rendering (SSR)
   - [ ] Node.js server entry point
   - [ ] HTML streaming & Hydration
