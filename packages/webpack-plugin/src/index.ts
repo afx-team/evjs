@@ -1,7 +1,5 @@
 import fs from "node:fs";
-import path from "node:path";
 import type { EvManifest, ServerFnEntry } from "@evjs/manifest";
-import { glob } from "glob";
 import type { Compiler } from "webpack";
 
 class ManifestCollector {
@@ -22,7 +20,7 @@ class ManifestCollector {
 /**
  * Webpack plugin for the ev framework.
  *
- * Automatically discovers files with the "use server" directive in src/
+ * Automatically discovers files with the "use server" directive based on the client dependencies
  * and manages the server-side build via a child compiler.
  */
 export class EvWebpackPlugin {
@@ -43,37 +41,56 @@ export class EvWebpackPlugin {
       compiler.hooks.make.tapAsync(
         "EvWebpackPlugin",
         async (compilation, callback) => {
-          // 1. Add src/ to context dependencies so webpack watches for new/deleted files
-          const srcDir = path.resolve(compiler.context, "src");
-          compilation.contextDependencies.add(srcDir);
-
-          // 2. Discover server functions
-          let hasServer = false;
-          const imports: string[] = [];
-          imports.push(`import { createServer } from "@evjs/runtime/server";`);
-
-          try {
-            const files = await glob("src/**/*.{ts,tsx}", {
-              cwd: compiler.context,
-            });
-            let id = 0;
-            for (const file of files) {
-              const fullPath = path.resolve(compiler.context, file);
-              const content = fs.readFileSync(fullPath, "utf-8");
-              const firstLine = content.trimStart().split("\n")[0];
-              const isServerFile = /^["']use server["'];?\s*$/.test(
-                firstLine.trim(),
+          // In Webpack 5, we can use the finishModules hook to inspect all parsed modules
+          compilation.hooks.finishModules.tapAsync(
+            "EvWebpackPlugin",
+            (modules, finishCallback) => {
+              let hasServer = false;
+              const imports: string[] = [];
+              imports.push(
+                `import { createServer } from "@evjs/runtime/server";`,
               );
 
-              if (isServerFile) {
-                hasServer = true;
-                imports.push(
-                  `import * as _fns_${id++} from "./${file.replace(/\\/g, "/")}";`,
-                );
-              }
-            }
+              let id = 0;
+              for (const module of modules) {
+                // Determine if this is a NormalModule with a resource path
+                // biome-ignore lint/suspicious/noExplicitAny: Webpack NormalModule
+                const resource = (module as any).resource;
+                if (!resource || typeof resource !== "string") continue;
 
-            if (hasServer) {
+                // Ensure it's a source file (not a node_module or internal webpack file)
+                if (
+                  resource.includes("node_modules") ||
+                  !/\.(ts|tsx|js|jsx)$/.test(resource)
+                ) {
+                  continue;
+                }
+
+                try {
+                  const content = fs.readFileSync(resource, "utf-8");
+                  const firstLine = content.trimStart().split("\n")[0];
+                  const isServerFile = /^["']use server["'];?\s*$/.test(
+                    firstLine.trim(),
+                  );
+
+                  if (isServerFile) {
+                    hasServer = true;
+                    // Compute a relative path from the compiler context (or just use absolute path)
+                    // But using absolute path avoids relative resolution issues completely.
+                    imports.push(
+                      `import * as _fns_${id++} from ${JSON.stringify(
+                        resource,
+                      )};`,
+                    );
+                  }
+                } catch (_err) {
+                  // Ignore read errors for dynamically generated Webpack modules
+                }
+              }
+
+              if (!hasServer) {
+                return finishCallback();
+              }
               imports.push(`createServer();`);
               const serverEntryContent = imports.join("\n");
 
@@ -143,22 +160,18 @@ export class EvWebpackPlugin {
               (childCompiler as any)._ev_manifest_collector = collector;
 
               childCompiler.runAsChild((err, _entries, childCompilation) => {
-                if (err) return callback(err);
+                if (err) return finishCallback(err);
                 if (
                   childCompilation?.errors &&
                   childCompilation.errors.length > 0
                 ) {
-                  return callback(childCompilation.errors[0]);
+                  return finishCallback(childCompilation.errors[0]);
                 }
-                callback();
+                finishCallback();
               });
-            } else {
-              callback();
-            }
-            // biome-ignore lint/suspicious/noExplicitAny: webpack error
-          } catch (err: any) {
-            callback(err);
-          }
+            },
+          );
+          callback();
         },
       );
     }

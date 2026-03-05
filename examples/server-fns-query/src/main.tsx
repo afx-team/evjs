@@ -9,6 +9,7 @@ import {
   useQueryClient,
 } from "@evjs/runtime/client";
 import { useState } from "react";
+import { createPost, getPosts } from "./api/posts.server";
 import { createUser, getUsers } from "./api/users.server";
 
 // ── Root Route ──
@@ -29,8 +30,14 @@ const rootRoute = createRootRoute({ component: Root });
 
 // ── API Proxy ──
 const api = {
-  query: createQueryProxy({ getUsers, createUser }),
-  mutation: createMutationProxy({ getUsers, createUser }),
+  users: {
+    query: createQueryProxy({ getUsers, createUser }),
+    mutation: createMutationProxy({ getUsers, createUser }),
+  },
+  posts: {
+    query: createQueryProxy({ getPosts, createPost }),
+    mutation: createMutationProxy({ getPosts, createPost }),
+  },
 };
 
 // ── Users Route ──
@@ -39,27 +46,53 @@ function UsersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
 
-  const { data: users = [], isLoading } = api.query.getUsers.useQuery([]);
+  const { data: users = [], isLoading: isLoadingUsers } =
+    api.users.query.getUsers.useQuery([]);
 
   const queryClient = useQueryClient();
-  const { mutateAsync: createMutation } = api.mutation.createUser.useMutation({
-    onSuccess: () => {
-      // Use the stable queryKey for cache invalidation
-      queryClient.invalidateQueries({
-        queryKey: api.query.getUsers.queryKey(),
-      });
-    },
-  });
+  const { mutateAsync: createUserMutation } =
+    api.users.mutation.createUser.useMutation({
+      onSuccess: () => {
+        // Use the stable queryKey for cache invalidation
+        queryClient.invalidateQueries({
+          queryKey: api.users.query.getUsers.queryKey(),
+        });
+      },
+    });
 
-  async function handleCreate(e: { preventDefault: () => void }) {
+  async function handleCreateUser(e: { preventDefault: () => void }) {
     e.preventDefault();
     if (!name || !email) return;
-    await createMutation([{ name, email }]);
+    await createUserMutation([{ name, email }]);
     setName("");
     setEmail("");
   }
 
-  if (isLoading) return <p>Loading users from server…</p>;
+  // Posts State
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+
+  const { data: posts = [], isLoading: isLoadingPosts } =
+    api.posts.query.getPosts.useQuery([]);
+
+  const { mutateAsync: createPostMutation } =
+    api.posts.mutation.createPost.useMutation({
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: api.posts.query.getPosts.queryKey(),
+        });
+      },
+    });
+
+  async function handleCreatePost(e: { preventDefault: () => void }) {
+    e.preventDefault();
+    if (!title || !content) return;
+    await createPostMutation([{ title, content }]);
+    setTitle("");
+    setContent("");
+  }
+
+  if (isLoadingUsers || isLoadingPosts) return <p>Loading data from server…</p>;
 
   return (
     <div>
@@ -73,7 +106,10 @@ function UsersPage() {
       </ul>
 
       <h3>Add User</h3>
-      <form onSubmit={handleCreate} style={{ display: "flex", gap: "0.5rem" }}>
+      <form
+        onSubmit={handleCreateUser}
+        style={{ display: "flex", gap: "0.5rem", marginBottom: "2rem" }}
+      >
         <input
           placeholder="Name"
           value={name}
@@ -84,7 +120,36 @@ function UsersPage() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
-        <button type="submit">Create</button>
+        <button type="submit">Create User</button>
+      </form>
+
+      <hr style={{ margin: "2rem 0", borderColor: "#eee" }} />
+
+      <h2>Posts</h2>
+      <ul>
+        {posts.map((p: { id: string; title: string; content: string }) => (
+          <li key={p.id}>
+            <strong>{p.title}</strong> — {p.content}
+          </li>
+        ))}
+      </ul>
+
+      <h3>Add Post</h3>
+      <form
+        onSubmit={handleCreatePost}
+        style={{ display: "flex", gap: "0.5rem" }}
+      >
+        <input
+          placeholder="Title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        <input
+          placeholder="Content"
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+        />
+        <button type="submit">Create Post</button>
       </form>
     </div>
   );
