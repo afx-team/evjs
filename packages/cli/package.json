@@ -1,6 +1,6 @@
 {
   "name": "@evjs/cli",
-  "version": "0.0.1-alpha.4",
+  "version": "0.0.1-alpha.5",
   "description": "Command line interface for the evjs framework",
   "type": "module",
   "main": "./dist/index.js",

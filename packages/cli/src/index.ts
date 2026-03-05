@@ -86,15 +86,41 @@ program
         });
 
         console.log(pc.cyan("Starting client and API dev servers..."));
-        const client = execa("npx", ["webpack", "serve", "--config", "webpack.config.cjs", "--config-name", "client"], {
-          stdio: "inherit",
-          env: { ...process.env, NODE_ENV: "development" }
-        });
+
         const serverBuild = execa("npx", ["webpack", "--watch", "--config", "webpack.config.cjs", "--config-name", "server"], {
           stdio: "inherit",
           env: { ...process.env, NODE_ENV: "development" }
         });
+
         const serverRun = execa("node", ["--watch", "dist/server/index.js"], {
+          stdio: "inherit",
+          env: { ...process.env, NODE_ENV: "development" }
+        });
+
+        console.log(pc.cyan("Waiting for API server to boot..."));
+
+        // Wait for port 3001 to become active
+        const http = await import("node:http");
+        await new Promise<void>((resolve) => {
+          let attempts = 0;
+          const interval = setInterval(() => {
+            attempts++;
+            const req = http.request({ method: "HEAD", host: "127.0.0.1", port: 3001, path: "/" }, (res) => {
+              clearInterval(interval);
+              resolve();
+            });
+            req.on("error", () => {
+              if (attempts > 30) {
+                // Give up after 3 seconds, let client start anyway
+                clearInterval(interval);
+                resolve();
+              }
+            });
+            req.end();
+          }, 100);
+        });
+
+        const client = execa("npx", ["webpack", "serve", "--config", "webpack.config.cjs", "--config-name", "client"], {
           stdio: "inherit",
           env: { ...process.env, NODE_ENV: "development" }
         });
