@@ -13,6 +13,8 @@ import { createRpcMiddleware } from "./handler";
 export interface CreateServerOptions {
   /** Port to listen on. Defaults to 3001. */
   port?: number;
+  /** RPC endpoint path. Defaults to "/api/rpc". */
+  rpcEndpoint?: string;
 }
 
 /**
@@ -25,12 +27,12 @@ export interface CreateServerOptions {
  * @returns The Hono app instance (for extension or testing).
  */
 export function createServer(options?: CreateServerOptions): Hono {
-  const { port = 3001 } = options ?? {};
+  const { port = 3001, rpcEndpoint = "/api/rpc" } = options ?? {};
 
   const app = new Hono();
 
   // Mount RPC endpoint
-  app.route("/api/rpc", createRpcMiddleware());
+  app.route(rpcEndpoint, createRpcMiddleware());
 
   serve({ fetch: app.fetch, port }, (info) => {
     console.log(`ev server running at http://localhost:${info.port}`);
