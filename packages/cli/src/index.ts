@@ -62,7 +62,7 @@ program
     }
 
     console.log(pc.blue(`Scaffolding project in ${targetDir}...`));
-    await fs.copy(templateDir, targetDir);
+    await fs.copy(templateDir, targetDir, { dereference: true });
 
     console.log(pc.green("\nDone! Now run:"));
     console.log(pc.cyan(`  cd ${projectName}`));
