@@ -48,6 +48,17 @@ for (const pkg of packages) {
     fs.writeFileSync(pkgPath, JSON.stringify(pkgJson, null, 2) + "\n");
     console.log(`Updated packages/${pkg}/package.json`);
   }
+
+  // Write version.ts explicitly to the src directory
+  const srcDir = path.join(packagesDir, pkg, "src");
+  if (fs.existsSync(srcDir)) {
+    const versionContent = `export const VERSION = "${rootVersion}";\n`;
+    const versionPath = path.join(srcDir, "version.ts");
+    if (!fs.existsSync(versionPath) || fs.readFileSync(versionPath, "utf8") !== versionContent) {
+      fs.writeFileSync(versionPath, versionContent);
+      console.log(`Updated packages/${pkg}/src/version.ts`);
+    }
+  }
 }
 
 // 3. Sync cli templates dependency versions

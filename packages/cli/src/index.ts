@@ -6,16 +6,16 @@ import { execa } from "execa";
 import pc from "picocolors";
 import prompts from "prompts";
 import { fileURLToPath } from "node:url";
+import { VERSION } from "./version.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const pkg = fs.readJsonSync(path.join(__dirname, "../package.json"));
 
 const program = new Command();
 
 program
   .name("evjs")
   .description("CLI for the ev framework")
-  .version(pkg.version);
+  .version(VERSION);
 
 program
   .command("init")
