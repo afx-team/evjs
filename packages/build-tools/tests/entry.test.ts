@@ -2,38 +2,17 @@ import { describe, expect, it } from "vitest";
 import { generateServerEntry } from "../src/entry.js";
 
 describe("generateServerEntry", () => {
-  it("generates entry with default app factory", () => {
+  it("generates entry with user functions and createApp", () => {
     const result = generateServerEntry(undefined, [
       "/project/src/api/users.server.ts",
     ]);
 
-    expect(result).toContain("import { createApp }");
-    expect(result).toContain("@evjs/runtime/server");
     expect(result).toContain("import * as _fns_0");
-    expect(result).toContain("const app = createApp()");
-    expect(result).toContain("export default app");
+    expect(result).toContain("export { _fns_0 }");
+    expect(result).toContain('export { createApp } from "@evjs/runtime/server"');
   });
 
-  it("always exports default app (environment-agnostic)", () => {
-    const result = generateServerEntry(undefined, [
-      "/project/src/api/users.server.ts",
-    ]);
-
-    expect(result).toContain("export default app");
-    expect(result).not.toContain("runNodeServer");
-  });
-
-  it("supports custom app factory", () => {
-    const result = generateServerEntry(
-      { appFactory: "./custom#myCreateApp" },
-      ["/project/src/api/users.server.ts"],
-    );
-
-    expect(result).toContain('import { myCreateApp } from "./custom"');
-    expect(result).toContain("const app = myCreateApp()");
-  });
-
-  it("imports all server modules", () => {
+  it("imports and re-exports all server modules", () => {
     const result = generateServerEntry(undefined, [
       "/project/src/api/users.server.ts",
       "/project/src/api/posts.server.ts",
@@ -43,6 +22,7 @@ describe("generateServerEntry", () => {
     expect(result).toContain("import * as _fns_0");
     expect(result).toContain("import * as _fns_1");
     expect(result).toContain("import * as _fns_2");
+    expect(result).toContain("export { _fns_0, _fns_1, _fns_2 }");
   });
 
   it("includes setup imports when configured", () => {
@@ -63,7 +43,8 @@ describe("generateServerEntry", () => {
   it("handles empty server modules array", () => {
     const result = generateServerEntry(undefined, []);
 
-    expect(result).toContain("const app = createApp()");
     expect(result).not.toContain("import * as _fns");
+    // Still exports createApp for the adapter layer
+    expect(result).toContain("export { createApp }");
   });
 });

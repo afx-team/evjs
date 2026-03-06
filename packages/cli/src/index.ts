@@ -147,13 +147,13 @@ program
               logger.info`Server bundle detected, starting Node API...`;
               started = true;
 
-              // Write a CJS bootstrap that imports the environment-agnostic
-              // server bundle and starts it with @hono/node-server.
+              // Write a CJS bootstrap that requires the server bundle,
+              // creates the app (sharing the function registry), and starts the server.
               fs.writeFileSync(
                 bootstrapPath,
                 [
                   `const bundle = require(${JSON.stringify(serverBundlePath)});`,
-                  `const app = bundle.default || bundle;`,
+                  `const app = bundle.createApp();`,
                   `const { serve } = require("@hono/node-server");`,
                   `const port = process.env.PORT || 3001;`,
                   `serve({ fetch: app.fetch, port }, (info) => {`,

@@ -7,23 +7,8 @@
  */
 
 import { Hono } from "hono";
+import { registry } from "./register";
 
-/** A registered server function. */
-type ServerFn = (...args: unknown[]) => Promise<unknown>;
-
-/** Internal registry mapping function IDs to implementations. */
-const registry = new Map<string, ServerFn>();
-
-/**
- * Register a server function so it can be invoked via RPC.
- * Called automatically by the Webpack-transformed server bundles at load time.
- *
- * @param fnId - The unique ID for this function.
- * @param fn - The actual function implementation.
- */
-export function registerServerFn(fnId: string, fn: ServerFn): void {
-  registry.set(fnId, fn);
-}
 
 /**
  * Create a Hono sub-app that handles RPC requests.

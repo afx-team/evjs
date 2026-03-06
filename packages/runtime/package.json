@@ -33,27 +33,38 @@
   "exports": {
     ".": {
       "types": "./esm/index.d.ts",
-      "import": "./esm/index.js"
+      "import": "./esm/index.js",
+      "default": "./esm/index.js"
     },
     "./client": {
       "types": "./esm/client/index.d.ts",
-      "import": "./esm/client/index.js"
+      "import": "./esm/client/index.js",
+      "default": "./esm/client/index.js"
     },
     "./client/transport": {
       "types": "./esm/client/transport.d.ts",
-      "import": "./esm/client/transport.js"
+      "import": "./esm/client/transport.js",
+      "default": "./esm/client/transport.js"
     },
     "./server": {
       "types": "./esm/server/index.d.ts",
-      "import": "./esm/server/index.js"
+      "import": "./esm/server/index.js",
+      "default": "./esm/server/index.js"
+    },
+    "./server/register": {
+      "types": "./esm/server/register.d.ts",
+      "import": "./esm/server/register.js",
+      "default": "./esm/server/register.js"
     },
     "./server/node": {
       "types": "./esm/server/environments/node.d.ts",
-      "import": "./esm/server/environments/node.js"
+      "import": "./esm/server/environments/node.js",
+      "default": "./esm/server/environments/node.js"
     },
     "./server/ecma": {
       "types": "./esm/server/environments/ecma.d.ts",
-      "import": "./esm/server/environments/ecma.js"
+      "import": "./esm/server/environments/ecma.js",
+      "default": "./esm/server/environments/ecma.js"
     }
   },
   "scripts": {

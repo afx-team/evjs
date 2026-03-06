@@ -1,13 +1,6 @@
 /** Configuration for the generated server entry. */
 export interface ServerEntryConfig {
   /**
-   * Module reference for the app factory.
-   * Format: "module#exportName"
-   * @default "@evjs/runtime/server#createApp"
-   */
-  appFactory?: string;
-
-  /**
    * Extra import statements to prepend to the server entry.
    * Useful for middleware, config, or side-effect imports.
    */
@@ -32,7 +25,7 @@ export interface TransformOptions {
 /** Runtime identifiers used in generated code. */
 export const RUNTIME = {
   /** Module paths */
-  serverModule: "@evjs/runtime/server",
+  serverModule: "@evjs/runtime/server/register",
   clientTransportModule: "@evjs/runtime/client/transport",
   /** Function / property names */
   registerServerFn: "registerServerFn",
