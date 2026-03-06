@@ -4,6 +4,6 @@
 
 export { createApp } from "./app";
 export type { CreateAppOptions } from "./app";
-export { runNodeServer } from "./runners/node";
-export type { NodeRunnerOptions } from "./runners/node";
+export { runNodeServer } from "./environments/node";
+export type { NodeRunnerOptions } from "./environments/node";
 export { createRpcMiddleware, registerServerFn } from "./handler";
