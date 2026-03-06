@@ -25,51 +25,7 @@
 - [`packages/webpack-plugin`](./packages/webpack-plugin): Webpack adapter for build-tools.
 - [`examples/`](./examples): Starter templates and reference implementations.
 
-### Architecture Overview
-
-```text
-  ┌────────────────────────────────────────────────────────┐
-  │ Development & Build Time                               │
-  │                                                        │
-  │     [ CLI Tool ]  ────────▶  [ Build Integration ]     │
-  │    (Scaffolding,              (Native awareness of      │
-  │     Dev & Build)               React directives:        │
-  │                                'use server'/'use client')│
-  │                                       ▼                 │
-  │                              [ Shared Manifest ]        │
-  │                           (Client-Server Contract)      │
-  │                                                        │
-  │  Current Builder: Webpack                              │
-  │  🔮 Future: Utoo(Turbopack)                            │
-  └───────────────────────────────────────┬────────────────┘
-                                          │
-                                          ▼
-  ┌────────────────────────────────────────────────────────┐
-  │ Application Runtime                                    │
-  │                                                        │
-  │   Client (Browser)            Server (Node/Edge/Bun)   │
-  │  ──────────────────           ──────────────────────   │
-  │                                                        │
-  │  [ React App ]                    [ Hono App ]         │
-  │        │                          (Runtime-Agnostic)   │
-  │        ▼                               │               │
-  │  [ TanStack Router ]                   ▼               │
-  │  (Type-Safe Routing)           [ Server Fns ]          │
-  │        │                         (use server)          │
-  │        ▼                               ▲               │
-  │  [ TanStack Query ]                    │               │
-  │ (Queries & Mutations)                  │               │
-  │        │                               │               │
-  │        ▼                               │               │
-  │  [ ServerTransport ]                   │               │
-  │  (Pluggable: fetch,  ━━━━━━━━━━━━━━━━━━┛               │
-  │   axios, WebSocket)                                    │
-  │                                                        │
-  │  🔮 Future Capabilities:                               │
-  │     - React Server Components (RSC)                    │
-  │     - Server-Side Rendering (SSR)                      │
-  └────────────────────────────────────────────────────────┘
-```
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed diagrams covering the build pipeline, server function transforms, and dev server setup.
 
 ## 🚀 Quick Start
 
