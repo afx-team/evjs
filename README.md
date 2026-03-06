@@ -29,8 +29,8 @@
   │ Development & Build Time                               │
   │                                                        │
   │     [ CLI Tool ]  ────────▶  [ Build Integration ]     │
-  │    (Scaffolding &             (Split server/client       │
-  │      Dev Server)                 & build both)           │
+  │    (Scaffolding,              (Split server/client       │
+  │     Dev & Build)                 & build both)           │
   │                                       │                  │
   │                                       ▼                  │
   │                              [ Shared Manifest ]         │
