@@ -133,7 +133,13 @@ Browser ──▶ Webpack Dev Server (port 3000)
 
 ## Roadmap
 
-- [x] Stage 1: Client-first SPA (Router + Query)
-- [x] Stage 2: React Server Functions (use server)
-- [ ] Stage 3: Server-Side Rendering (SSR)
-- [ ] Stage 4: React Server Components (RSC)
+- [x] **Stage 1: Client-first SPA (Router + Query)**
+- [x] **Stage 2: React Server Functions (use server)**
+- [ ] **Stage 3: Production Readiness & Architecture**
+  - [ ] **Parallel Compilation**: Move server build out of the `finishModules` blocked phase into a parallel sibling compiler for faster HMR.
+  - [ ] **Smart Serialization**: Integrate `superjson` or `seroval` to support Complex JS types (Date, Map, Set, Error) across the RPC boundary.
+  - [ ] **Server Context**: Implement `AsyncLocalStorage` to provide request context (Cookies, Headers, Auth) invisibly to server functions.
+  - [ ] **Error Boundaries**: Standardize how server-side RPC errors reflect in the client UI.
+- [ ] **Stage 4: Server-Side Rendering (SSR)**
+  - [ ] HTML streaming & Hydration
+- [ ] **Stage 5: React Server Components (RSC)**
