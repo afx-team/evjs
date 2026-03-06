@@ -28,13 +28,16 @@
   ┌────────────────────────────────────────────────────────┐
   │ Development & Build Time                               │
   │                                                        │
-  │  [ @evjs/cli ]  ────────▶  [ @evjs/webpack-plugin ]    │
-  │  (Scaffolding)             (AST Parser & Compiler)     │
+  │     [ CLI Tool ]  ────────▶  [ Build Integration ]     │
+  │    (Scaffolding &               (AST Parsing &         │
+  │      Dev Server)                Child Compilers)       │
   │                                       │                │
-  │       ➕ [ Vite / Turbopack ] (Future) │                │
   │                                       ▼                │
-  │                             [ @evjs/manifest ]         │
-  │                               (Shared Types)           │
+  │                              [ Shared Manifest ]       │
+  │                                 (RPC Schemas)          │
+  │                                                        │
+  │  Current Builder: Webpack                              │
+  │  🔮 Future: Vite, Turbopack, utoo                      │
   └───────────────────────────────────────┬────────────────┘
                                           │
                                           ▼
@@ -51,7 +54,7 @@
   │  (Data Fetching)                   [ Server Fns ]      │
   │        │                            (use server)       │
   │        ▼                                  ▲            │
-  │  [ @evjs/runtime/client ]                 │            │
+  │  [ Client Runtime ]                       │            │
   │  (RPC Stubs)  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛            │
   │                      RPC over HTTP                     │
   │                                                        │
