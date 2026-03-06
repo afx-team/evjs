@@ -31,6 +31,7 @@
   │  [ @evjs/cli ]  ────────▶  [ @evjs/webpack-plugin ]    │
   │  (Scaffolding)             (AST Parser & Compiler)     │
   │                                       │                │
+  │       ➕ [ Vite / Turbopack ] (Future) │                │
   │                                       ▼                │
   │                             [ @evjs/manifest ]         │
   │                               (Shared Types)           │
@@ -53,6 +54,10 @@
   │  [ @evjs/runtime/client ]                 │            │
   │  (RPC Stubs)  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛            │
   │                      RPC over HTTP                     │
+  │                                                        │
+  │  🔮 Future Capabilities:                               │
+  │     - React Server Components (RSC)                    │
+  │     - Server-Side Rendering (SSR)                      │
   └────────────────────────────────────────────────────────┘
 ```
 
