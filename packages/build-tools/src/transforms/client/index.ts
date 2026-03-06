@@ -13,13 +13,13 @@ export function buildClientOutput(
     );
     return [
       `export function ${name}(...args) { return ${RUNTIME.clientCall}(${fnId}, args); }`,
-      `${name}.${RUNTIME.fnIdProp} = ${fnId};`,
+      `${RUNTIME.clientRegister}(${name}, ${fnId});`,
     ].join("\n");
   });
 
   return emitCode(
     [
-      `import { ${RUNTIME.clientCall} } from "${RUNTIME.clientTransportModule}";`,
+      `import { ${RUNTIME.clientCall}, ${RUNTIME.clientRegister} } from "${RUNTIME.clientTransportModule}";`,
       ...stubs,
     ].join("\n"),
   );

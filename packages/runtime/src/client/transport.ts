@@ -131,12 +131,6 @@ export function configureTransport(options: TransportOptions): void {
  *
  * @internal This function is auto-injected by the Webpack loader.
  * Do not call directly — use server functions as normal imports instead.
- *
- * @param fnId - The unique identifier assigned to the server function by the
- *   Webpack loader (e.g. `"user_server_getUser"`).
- * @param args - The arguments to pass to the server function. Must be
- *   JSON-serializable.
- * @returns A promise that resolves with the server function's return value.
  */
 export async function __ev_call(
   fnId: string,
@@ -144,4 +138,30 @@ export async function __ev_call(
   context?: RequestContext,
 ): Promise<unknown> {
   return getTransport().send(fnId, args, context);
+}
+
+/**
+ * Internal registry mapping server function references to their IDs.
+ * Uses WeakMap so function stubs can be garbage collected.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: must accept any function shape
+const fnIdRegistry = new WeakMap<(...args: any[]) => any, string>();
+
+/**
+ * Register a server function stub with its ID.
+ *
+ * @internal Called by build-tools codegen. Do not use directly.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: must accept any function shape
+export function __ev_register(fn: (...args: any[]) => any, fnId: string): void {
+  fnIdRegistry.set(fn, fnId);
+}
+
+/**
+ * Look up the internal function ID for a server function stub.
+ * Returns undefined if the function is not a registered server function.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: must accept any function shape
+export function getFnId(fn: (...args: any[]) => any): string | undefined {
+  return fnIdRegistry.get(fn);
 }

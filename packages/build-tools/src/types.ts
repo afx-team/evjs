@@ -45,5 +45,5 @@ export const RUNTIME = {
   /** Function / property names */
   registerServerFn: "registerServerFn",
   clientCall: "__ev_call",
-  fnIdProp: "evId",
+  clientRegister: "__ev_register",
 } as const;
