@@ -31,8 +31,8 @@ Call server-side logic from the browser as normal async functions.
 
 Future directions under consideration. Nothing committed yet.
 
+- **Server context** _(next up)_: Providing request context (headers, cookies, auth) to server functions
+- **Pluggable serialization**: Extendable serialize/deserialize hooks so users can bring their own library (e.g. `superjson`, `devalue`) — framework stays JSON by default
 - **SSR**: Server-side rendering with HTML streaming and hydration
 - **RSC**: React Server Components via Flight protocol
-- **Pluggable serialization**: Extendable serialize/deserialize hooks so users can bring their own library (e.g. `superjson`, `devalue`) — framework stays JSON by default
-- **Server context**: Providing request context (headers, cookies) to server functions
 - **More bundlers**: Vite and Rspack plugins (leveraging `@evjs/build-tools`)
