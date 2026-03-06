@@ -45,40 +45,34 @@ const clientStub = await transformServerFile(source, {
 });
 ```
 
-## Source Layout
+## Architecture
 
-```
-src/
-  index.ts                Barrel re-exports
-  codegen.ts              SWC parseSync→printSync code emitter (emitCode)
-  entry.ts                Server entry generation
-  types.ts                Shared types + RUNTIME identifier constants
-  utils.ts                detectUseServer, makeFnId, parseModuleRef
-  transforms/
-    index.ts              Orchestrator: parse → extract → delegate
-    utils.ts              extractExportNames (AST traversal)
-    client/
-      index.ts            buildClientOutput (__ev_call stubs)
-    server/
-      index.ts            buildServerOutput (registerServerFn + manifest)
-```
+### Transform Pipeline
+
+`transformServerFile()` parses the source with SWC, extracts exported function names via AST traversal, then delegates to the appropriate transform:
+
+- **Client transform** — replaces function bodies with `__ev_call(fnId, args)` transport stubs and attaches `evId` for query cache keys.
+- **Server transform** — keeps original source, prepends the `registerServerFn` import, and appends registration calls for each export.
+
+### Entry Generation
+
+`generateServerEntry()` produces a self-contained server entry that imports all discovered `"use server"` modules, creates a Hono app via `createApp()`, and optionally invokes a runner (e.g., `runNodeServer`) for self-starting bundles.
+
+### Code Emitter
+
+All generated code passes through `emitCode()` — a SWC `parseSync → printSync` roundtrip that validates syntax at build time and produces consistently formatted output.
 
 ### RUNTIME Constants
 
-All runtime identifiers in generated code are centralized in `types.ts` — no hardcoded strings in templates:
+All runtime identifiers (module paths, function names, property names) are centralized in a single `RUNTIME` constant — no hardcoded strings in templates:
 
 ```ts
-import { RUNTIME } from "./types.js";
-// RUNTIME.serverModule        → "@evjs/runtime/server"
-// RUNTIME.clientTransportModule → "@evjs/runtime/client/transport"
-// RUNTIME.registerServerFn    → "registerServerFn"
-// RUNTIME.clientCall          → "__ev_call"
-// RUNTIME.fnIdProp            → "evId"
+RUNTIME.serverModule          // "@evjs/runtime/server"
+RUNTIME.clientTransportModule // "@evjs/runtime/client/transport"
+RUNTIME.registerServerFn      // "registerServerFn"
+RUNTIME.clientCall            // "__ev_call"
+RUNTIME.fnIdProp              // "evId"
 ```
-
-### Code Generation
-
-`emitCode()` from `codegen.ts` validates and formats generated source via a SWC `parseSync → printSync` roundtrip — catches syntax errors at build time and produces consistent output.
 
 ## Bundler Adapter Pattern
 
