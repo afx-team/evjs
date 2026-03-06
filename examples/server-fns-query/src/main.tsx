@@ -1,6 +1,6 @@
 import {
   createApp,
-  createEvRootRoute,
+  createAppRootRoute,
   createMutationProxy,
   createQueryProxy,
   createRoute,
@@ -26,7 +26,7 @@ function Root() {
   );
 }
 
-const rootRoute = createEvRootRoute({ component: Root });
+const rootRoute = createAppRootRoute({ component: Root });
 
 // ── API Proxy ──
 const api = {

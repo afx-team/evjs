@@ -3,8 +3,8 @@
  */
 
 export * from "@tanstack/react-query";
-export type { EvRouteContext } from "./context";
-export { createEvRootRoute } from "./context";
+export type { AppRouteContext } from "./context";
+export { createAppRootRoute } from "./context";
 export type { App, CreateAppOptions } from "./create-app";
 export { createApp } from "./create-app";
 export * from "./query";

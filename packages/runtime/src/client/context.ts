@@ -1,20 +1,20 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext } from "@tanstack/react-router";
 
-/** Default context available in ev route loaders. */
-export interface EvRouteContext {
+/** Default context available in route loaders. */
+export interface AppRouteContext {
   queryClient: QueryClient;
 }
 
 /**
- * Create a root route with ev's default context (queryClient).
+ * Create a root route with the app's default context (queryClient).
  *
  * Use this instead of `createRootRoute` when you want typed access
  * to `context.queryClient` in `loader` / `beforeLoad`.
  *
  * @example
  * ```tsx
- * const rootRoute = createEvRootRoute({ component: Root });
+ * const rootRoute = createAppRootRoute({ component: Root });
  *
  * const usersRoute = createRoute({
  *   getParentRoute: () => rootRoute,
@@ -24,4 +24,4 @@ export interface EvRouteContext {
  * });
  * ```
  */
-export const createEvRootRoute = createRootRouteWithContext<EvRouteContext>();
+export const createAppRootRoute = createRootRouteWithContext<AppRouteContext>();
