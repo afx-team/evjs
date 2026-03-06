@@ -44,17 +44,18 @@ export function createExampleTest(exampleName: string) {
         stdio: "pipe",
       });
 
-      // 2. Write a CJS bootstrap that requires the server bundle
-      //    (which registers server fns as side effect and exports the Hono app)
-      //    then starts it with @hono/node-server.
-      const bootstrapPath = path.join(exampleDir, "dist", "_e2e_start.cjs");
+      // 2. Read the server manifest to get the hashed entry filename
+      const manifestPath = path.join(exampleDir, "dist", "server", "server-entry.json");
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
       const serverEntryPath = path.join(
         exampleDir,
         "dist",
         "server",
-        "index.js",
+        manifest.main,
       );
 
+      // 3. Write a CJS bootstrap that requires the hashed server bundle
+      const bootstrapPath = path.join(exampleDir, "dist", "_e2e_start.cjs");
       fs.writeFileSync(
         bootstrapPath,
         [

@@ -137,15 +137,25 @@ program
 
       // The background Node API execution (will wait for child compiler output)
       const _serverRun = (async () => {
-        const serverBundlePath = path.resolve(cwd, "dist/server/index.js");
+        const manifestPath = path.resolve(cwd, "dist/server/server-entry.json");
         const bootstrapPath = path.resolve(cwd, "dist/server/_dev_start.cjs");
 
         let started = false;
         while (true) {
-          if (fs.existsSync(serverBundlePath)) {
+          if (fs.existsSync(manifestPath)) {
             if (!started) {
               logger.info`Server bundle detected, starting Node API...`;
               started = true;
+
+              // Read manifest to get hashed server bundle filename
+              const manifest = JSON.parse(
+                fs.readFileSync(manifestPath, "utf-8"),
+              );
+              const serverBundlePath = path.resolve(
+                cwd,
+                "dist/server",
+                manifest.main,
+              );
 
               // Write a CJS bootstrap that requires the server bundle,
               // creates the app (sharing the function registry), and starts the server.

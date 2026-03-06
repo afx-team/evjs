@@ -12,11 +12,13 @@
  */
 
 import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
 
 const require = createRequire(import.meta.url);
 
-// Load the function bundle and create the app
-const bundle = require("./server/index.js");
+// Read the entry manifest to find the server bundle
+const manifest = JSON.parse(readFileSync(new URL("./server/server-entry.json", import.meta.url), "utf-8"));
+const bundle = require(`./server/${manifest.main}`);
 const app = bundle.createApp();
 
 // Export via ECMA adapter — compatible with Deno, Bun, Workers

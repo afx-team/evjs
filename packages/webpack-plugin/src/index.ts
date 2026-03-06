@@ -101,8 +101,11 @@ export class EvWebpackPlugin {
               )}`;
 
               // Spawn the Node Server child compiler (webpack-specific)
+              const isProduction = compiler.options.mode === "production";
               const outputOptions = {
-                filename: "../server/index.js",
+                filename: isProduction
+                  ? "../server/[name].[contenthash:8].js"
+                  : "../server/index.js",
                 library: { type: "commonjs2" },
                 chunkFormat: "commonjs",
               };
@@ -170,6 +173,31 @@ export class EvWebpackPlugin {
                 ) {
                   return finishCallback(childCompilation.errors[0]);
                 }
+
+                // Emit server manifest mapping entry names to hashed filenames
+                if (childCompilation) {
+                  const manifest: Record<string, string> = {};
+                  for (const [name, entry] of childCompilation.entrypoints) {
+                    const files = entry.getFiles();
+                    if (files.length > 0) {
+                      // filenames are relative to client output (../server/main.xxxx.js)
+                      // normalize to just the basename
+                      const filename = files[0].replace(/^\.\.\/server\//, "");
+                      manifest[name] = filename;
+                    }
+                  }
+                  const manifestSource =
+                    new compiler.webpack.sources.RawSource(
+                      JSON.stringify(manifest, null, 2),
+                    );
+                  const entryManifestName = "../server/server-entry.json";
+                  if (compilation.getAsset(entryManifestName)) {
+                    compilation.updateAsset(entryManifestName, manifestSource);
+                  } else {
+                    compilation.emitAsset(entryManifestName, manifestSource);
+                  }
+                }
+
                 finishCallback();
               });
             },
