@@ -6,13 +6,13 @@ import { execa } from "execa";
 import fs from "fs-extra";
 import pc from "picocolors";
 import prompts from "prompts";
-import { VERSION } from "./version.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+const pkg = fs.readJsonSync(path.resolve(__dirname, "../package.json"));
 const program = new Command();
 
-program.name("evjs").description("CLI for the ev framework").version(VERSION);
+program.name("evjs").description("CLI for the ev framework").version(pkg.version);
 
 program
   .command("init")
@@ -87,7 +87,7 @@ program
             (val === "*" ||
               (typeof val === "string" && val.includes("workspace")))
           ) {
-            deps[name] = `^${VERSION}`;
+            deps[name] = `^${pkg.version}`;
           }
         }
       };
