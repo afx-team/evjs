@@ -6,6 +6,7 @@
  */
 
 import { Hono } from "hono";
+import { DEFAULT_RPC_ENDPOINT } from "../constants.js";
 import { createRpcMiddleware } from "./handler.js";
 
 /** Options for createApp. */
@@ -26,7 +27,7 @@ export interface CreateAppOptions {
  * @returns A runtime-agnostic Hono app instance.
  */
 export function createApp(options?: CreateAppOptions): Hono {
-  const { rpcEndpoint = "/api/rpc" } = options ?? {};
+  const { rpcEndpoint = DEFAULT_RPC_ENDPOINT } = options ?? {};
 
   const app = new Hono();
 
