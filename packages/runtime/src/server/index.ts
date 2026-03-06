@@ -11,6 +11,6 @@
 
 export type { CreateAppOptions } from "./app";
 export { createApp } from "./app";
-export { registerServerFn } from "./register";
-export type { ServerFn } from "./register";
 export { createRpcMiddleware } from "./handler";
+export type { ServerFn } from "./register";
+export { registerServerFn } from "./register";

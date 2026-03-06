@@ -1,14 +1,6 @@
-import { createHash } from "node:crypto";
-import path from "node:path";
 import { emitCode } from "../../codegen.js";
 import { RUNTIME, type TransformOptions } from "../../types.js";
-import { makeFnId } from "../../utils.js";
-
-/** Derive a stable module ID from a file path relative to root. */
-function makeModuleId(rootContext: string, resourcePath: string): string {
-  const relativePath = path.relative(rootContext, resourcePath);
-  return createHash("sha256").update(relativePath).digest("hex").slice(0, 16);
-}
+import { makeFnId, makeModuleId } from "../../utils.js";
 
 /** Notify the manifest collector about each server function. */
 function reportToManifest(

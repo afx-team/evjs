@@ -1,5 +1,5 @@
 import { emitCode } from "./codegen.js";
-import type { ServerEntryConfig } from "./types.js";
+import { RUNTIME, type ServerEntryConfig } from "./types.js";
 
 /**
  * Generate the server entry source code from discovered server modules.
@@ -29,7 +29,7 @@ export function generateServerEntry(
 
   return emitCode(
     [
-      `export { createApp } from "@evjs/runtime/server";`,
+      `export { createApp } from "${RUNTIME.appModule}";`,
       ...(config?.setup ?? []),
       moduleImports,
       allExports.length ? `export { ${allExports.join(", ")} };` : "",

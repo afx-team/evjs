@@ -15,6 +15,19 @@ export function parseModuleRef(ref: string): {
   return { module: ref.slice(0, idx), exportName: ref.slice(idx + 1) };
 }
 
+/** Hash a string to a 16-character hex digest (SHA-256, truncated). */
+export function hashString(input: string): string {
+  return createHash("sha256").update(input).digest("hex").slice(0, 16);
+}
+
+/** Derive a stable module ID from a file path relative to root. */
+export function makeModuleId(
+  rootContext: string,
+  resourcePath: string,
+): string {
+  return hashString(path.relative(rootContext, resourcePath));
+}
+
 /** Derive a stable function ID from the file path and export name. */
 export function makeFnId(
   rootContext: string,
@@ -22,10 +35,7 @@ export function makeFnId(
   exportName: string,
 ): string {
   const relativePath = path.relative(rootContext, resourcePath);
-  return createHash("sha256")
-    .update(`${relativePath}:${exportName}`)
-    .digest("hex")
-    .slice(0, 16);
+  return hashString(`${relativePath}:${exportName}`);
 }
 
 /** Check whether the source starts with the "use server" directive. */

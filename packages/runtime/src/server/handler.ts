@@ -9,7 +9,6 @@
 import { Hono } from "hono";
 import { registry } from "./register";
 
-
 /**
  * Create a Hono sub-app that handles RPC requests.
  *
@@ -22,18 +21,25 @@ export function createRpcMiddleware(): Hono {
   const rpc = new Hono();
 
   rpc.post("/", async (c) => {
-    const { fnId, args } = await c.req.json<{
+    const body = await c.req.json<{
       fnId: string;
       args: unknown[];
     }>();
 
-    const fn = registry.get(fnId);
+    if (!body.fnId || typeof body.fnId !== "string") {
+      return c.json(
+        { error: "Missing or invalid 'fnId' in request body" },
+        400,
+      );
+    }
+
+    const fn = registry.get(body.fnId);
     if (!fn) {
-      return c.json({ error: `Server function "${fnId}" not found` }, 404);
+      return c.json({ error: `Server function "${body.fnId}" not found` }, 404);
     }
 
     try {
-      const result = await fn(...(args ?? []));
+      const result = await fn(...(body.args ?? []));
       return c.json({ result });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

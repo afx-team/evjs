@@ -11,8 +11,6 @@ import { createRpcMiddleware } from "./handler";
 
 /** Options for createApp. */
 export interface CreateAppOptions {
-  /** Port to listen on. Defaults to 3001. */
-  port?: number;
   /** RPC endpoint path. Defaults to "/api/rpc". */
   rpcEndpoint?: string;
 }

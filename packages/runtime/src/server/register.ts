@@ -2,8 +2,8 @@
  * Minimal server function registry.
  *
  * This module is intentionally decoupled from the framework runtime
- * (Hono, RPC handler, etc.) so that the webpack server bundle only
- * contains user-defined functions + this tiny registry.
+ * (Hono, RPC handler, etc.) so that the server bundle only contains
+ * user-defined functions + this tiny registry.
  *
  * The framework runtime imports FROM this module to read the registry.
  */
@@ -16,7 +16,7 @@ export const registry = new Map<string, ServerFn>();
 
 /**
  * Register a server function so it can be invoked via RPC.
- * Called automatically by the Webpack-transformed server bundles at load time.
+ * Called automatically by the build-tools-transformed server bundles at load time.
  *
  * @param fnId - The unique ID for this function.
  * @param fn - The actual function implementation.
