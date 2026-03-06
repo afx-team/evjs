@@ -26,36 +26,32 @@
 
 ```text
   ┌─────────────────────────────────────────────────────────────┐
-  │ Build Time                                                  │
   │                                                             │
-  │  Your Code ──▶ "use server" Detection ──▶ Code Transform   │
-  │                                                             │
-  │            ┌──────────┴──────────┐                          │
-  │            ▼                     ▼                          │
-  │     Client Bundle          Server Bundle                    │
-  │     (Auto-generated        (Auto-registered                 │
-  │       function stubs)        server functions)              │
+  │  "use server"       ──▶  Build  ──▶   Client Bundle        │
+  │   Your Functions              │       (Transparent stubs)   │
+  │                               │                             │
+  │                               └──▶   Server Bundle          │
+  │                                      (Original functions)   │
   │                                                             │
   │  CLI: ev init · ev dev · ev build                           │
-  │  Current Builder: Webpack  🔮 Future: Utoo(Turbopack)      │
+  │  Builder: Webpack  ·  🔮 Future: Utoo(Turbopack)           │
   └─────────────────────────────────────────────────────────────┘
 
-  ┌─────────────────────────────────────────────────────────────┐
-  │ Runtime                                                     │
-  │                                                             │
-  │   Client (Browser)                  Server (Node.js)        │
-  │  ─────────────────                 ──────────────────       │
-  │                                                             │
-  │  React Components                   Hono HTTP Server        │
-  │        │                                  │                 │
-  │        ▼                                  ▼                 │
-  │  Query & Mutation Proxies         Function Dispatcher       │
-  │  (TanStack Query)                 (Auto-routing by ID)     │
-  │        │                                  ▲                 │
-  │        └──── Transparent Server Calls ────┘                 │
-  │                                                             │
-  │  🔮 Future: Server-Side Rendering · React Server Components │
-  └─────────────────────────────────────────────────────────────┘
+  ┌───────────────────────────┐     ┌───────────────────────────┐
+  │ Client (Browser)          │     │ Server (Node.js)          │
+  │                           │     │                           │
+  │ React Components          │     │ Hono HTTP Server          │
+  │         │                 │     │         │                 │
+  │         ▼                 │     │         ▼                 │
+  │ Query & Mutation Proxies  │     │ Function Dispatcher       │
+  │ (TanStack Query)          │ ──▶ │ (Auto-registered fns)     │
+  │                           │ ◀── │                           │
+  │ Call server functions     │     │ Execute & respond         │
+  │ as if they were local     │     │ transparently             │
+  │                           │     │                           │
+  └───────────────────────────┘     └───────────────────────────┘
+
+  🔮 Future: Server-Side Rendering · React Server Components
 ```
 
 ## 🚀 Quick Start
