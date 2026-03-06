@@ -2,15 +2,17 @@ const path = require("node:path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const { EvWebpackPlugin } = require("@evjs/webpack-plugin");
 
+const isProduction = process.env.NODE_ENV === "production";
+
 /** @type {import("webpack").Configuration} */
 const clientConfig = {
   name: "client",
-  mode: "development",
-  devtool: "source-map",
+  mode: isProduction ? "production" : "development",
+  devtool: isProduction ? "hidden-source-map" : "source-map",
   entry: "./src/main.tsx",
   output: {
     path: path.resolve(__dirname, "dist/client"),
-    filename: "index.js",
+    filename: isProduction ? "[name].[contenthash:8].js" : "index.js",
     clean: true,
   },
   resolve: {
@@ -56,12 +58,15 @@ const clientConfig = {
     new EvWebpackPlugin({
       server: {
         runner:
-          process.env.NODE_ENV === "development"
+          !isProduction
             ? "@evjs/runtime/server#runNodeServer"
             : undefined,
       },
     }),
   ],
+  optimization: isProduction
+    ? { splitChunks: { chunks: "all" } }
+    : undefined,
   devServer: {
     port: 3000,
     hot: true,

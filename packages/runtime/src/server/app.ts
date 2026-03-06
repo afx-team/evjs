@@ -31,6 +31,9 @@ export function createApp(options?: CreateAppOptions): Hono {
 
   const app = new Hono();
 
+  // Health check for load balancers / container orchestrators
+  app.get("/health", (c) => c.json({ status: "ok" }));
+
   // Mount RPC endpoint
   app.route(rpcEndpoint, createRpcMiddleware());
 
