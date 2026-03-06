@@ -118,3 +118,39 @@ Managed with Turborepo and npm workspaces.
 - `npm run build`: Build all libraries and examples.
 - `npm run dev`: Concurrent development mode.
 - `npm run release:alpha`: Build and publish all packages to `@evjs` scope.
+
+## Server Function Rules
+
+- **Directive**: Files must start with `"use server";`.
+- **Naming**: Files should end in `.server.ts` or be placed in `src/api/`.
+- **Exports**: Must be **async functions** with **named exports**.
+- **Transformation**: Build system replaces bodies with transport stubs (client) or registers them (server).
+
+## Query Patterns
+
+Always use `query` / `mutation` proxies from `@evjs/runtime/client`. Do NOT use `useQuery` with manual fetch.
+
+```tsx
+// Direct wrapper
+const { data } = query(getUsers).useQuery([]);
+
+// Module proxy
+const users = { query: createQueryProxy(UsersAPI) };
+users.query.getUsers.useQuery([]);
+
+// queryOptions (for prefetch, etc.)
+const opts = query(getUsers).queryOptions([id]);
+queryClient.prefetchQuery(opts);
+
+// Invalidation — use the stable evId
+queryClient.invalidateQueries({ queryKey: [getUsers.evId] });
+
+// Mutation args — pass as tuple
+mutation(createUser).useMutation().mutate([{ name: "Alice" }]);
+```
+
+## Coding Style
+
+- **Imports**: All imports at top of file. Use `import type` for type-only imports.
+- **Linting**: Biome — no `any`, no `import * as` unless necessary.
+- **No manual server entries**: The framework generates `server-entry.ts` dynamically.
