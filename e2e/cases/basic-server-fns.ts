@@ -1,4 +1,4 @@
-import { createExampleTest, expect } from "../../fixtures";
+import { createExampleTest, expect } from "../fixtures";
 
 const test = createExampleTest("basic-server-fns");
 
