@@ -25,43 +25,43 @@
 ### Architecture Overview
 
 ```text
-  ┌────────────────────────────────────────────────────────┐
-  │ Development & Build Time                               │
-  │                                                        │
-  │     [ CLI Tool ]  ────────▶  [ Build Integration ]     │
-  │    (Scaffolding,              (Unified server/client     │
-  │     Dev & Build)                bundling via 'use server') │
-  │                                       │                  │
-  │                                       ▼                  │
-  │                              [ Shared Manifest ]         │
-  │                           (Client-Server Contract)       │
-  │                                                        │
-  │  Current Builder: Webpack                              │
-  │  🔮 Future: Utoo(Turbopack)                            │
-  └───────────────────────────────────────┬────────────────┘
-                                          │
-                                          ▼
-  ┌────────────────────────────────────────────────────────┐
-  │ Application Runtime                                    │
-  │                                                        │
-  │   Client (Browser)                 Server (Node)       │
-  │  ──────────────────               ───────────────      │
-  │                                                        │
-  │  [ React App ]                        [ Hono ]         │
-  │        │                              (Server)         │
-  │        ▼                                  │            │
-  │  [ TanStack Query ]                       ▼            │
-  │ (Queries & Mutations)              [ Server Fns ]      │
-  │        │                            (use server)       │
-  │        ▼                                  ▲            │
-  │  [ Client Runtime ]                       │            │
-  │ (Server Interaction)  ━━━━━━━━━━━━━━━━━━━━━━━━┛            │
-  │                Client-Server Communication               │
-  │                                                        │
-  │  🔮 Future Capabilities:                               │
-  │     - React Server Components (RSC)                    │
-  │     - Server-Side Rendering (SSR)                      │
-  └────────────────────────────────────────────────────────┘
+  ┌─────────────────────────────────────────────────────────────┐
+  │ Build Time (Webpack + SWC)                                  │
+  │                                                             │
+  │  Source Files ──▶ [ Loader ] ──▶ Detects "use server"       │
+  │                       │                                     │
+  │            ┌──────────┴──────────┐                          │
+  │            ▼                     ▼                          │
+  │   Client Bundle             Server Bundle                   │
+  │   (Stub functions           (Original functions             │
+  │    that call RPC)            + auto-registration)           │
+  │            │                     │                          │
+  │            ▼                     ▼                          │
+  │        [ Manifest ] ◀── Function ID mapping ──▶ Registry   │
+  │                                                             │
+  │  CLI: ev init · ev dev · ev build                           │
+  │  Current Builder: Webpack  🔮 Future: Utoo(Turbopack)      │
+  └─────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────┐
+  │ Runtime                                                     │
+  │                                                             │
+  │   Client (Browser)                  Server (Node.js)        │
+  │  ─────────────────                 ──────────────────       │
+  │                                                             │
+  │  React App                          Hono HTTP Server        │
+  │    │                                     │                  │
+  │    ▼                                     ▼                  │
+  │  TanStack Query Proxies            RPC Dispatcher           │
+  │  · query(fn).useQuery()            POST /api/rpc            │
+  │  · mutation(fn).useMutation()        │                      │
+  │    │                                 ▼                      │
+  │    ▼                           Function Registry            │
+  │  Stub fn ── POST {fnId, args} ──▶ lookup(fnId)              │
+  │         ◀── { result } ──────────── execute(fn)             │
+  │                                                             │
+  │  🔮 Future: Server-Side Rendering · React Server Components │
+  └─────────────────────────────────────────────────────────────┘
 ```
 
 ## 🚀 Quick Start
