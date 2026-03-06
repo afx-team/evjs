@@ -9,8 +9,8 @@
  * When running in Node.js (no native SW APIs), mock implementations
  * are provided so the entry can be tested outside a browser.
  */
-import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 
 // ── Mock Service Worker APIs for Node.js testing ──
 
@@ -18,7 +18,10 @@ if (typeof self === "undefined") {
   const listeners = {};
   globalThis.self = /** @type {any} */ ({
     addEventListener(type, handler) {
-      (listeners[type] ||= []).push(handler);
+      if (!listeners[type]) {
+        listeners[type] = [];
+      }
+      listeners[type].push(handler);
     },
     __listeners: listeners,
   });
@@ -51,7 +54,9 @@ if (typeof FetchEvent === "undefined") {
 
 const require = createRequire(import.meta.url);
 
-const manifest = JSON.parse(readFileSync(new URL("./server/manifest.json", import.meta.url), "utf-8"));
+const manifest = JSON.parse(
+  readFileSync(new URL("./server/manifest.json", import.meta.url), "utf-8"),
+);
 const bundle = require(`./server/${manifest.entry}`);
 const app = bundle.createApp();
 
