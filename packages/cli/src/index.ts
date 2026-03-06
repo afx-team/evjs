@@ -135,31 +135,29 @@ program
               );
               started = true;
 
-              // Create a temporary launcher script for dev
-              const wrapperFile = path.resolve(cwd, ".ev-dev-server.mjs");
-              // The server bundle is a CJS script exporting { default: app }
-              const wrapperCode = `
-import { serve } from '@hono/node-server';
-import serverModule from './dist/server/index.js';
-
-// Handle CommonJS interop natively
-const app = serverModule.default || serverModule;
-
-serve({ fetch: app.fetch, port: 3001 }, (info) => {
-  console.log('\\x1b[32mev server API ready at http://localhost:' + info.port + '\\x1b[0m');
-});
-              `.trim();
-
-              fs.writeFileSync(wrapperFile, wrapperCode);
+              // We run a small inline eval script that imports the runner plugin from `@evjs/runtime/server`,
+              // dynamically imports the built edge app, and passes the app to the runner.
+              // Note: we ensure everything is resolved as absolute URIs for stability.
+              const runScript = `
+                import { runNodeServer } from '@evjs/runtime/server';
+                import { pathToFileURL } from 'node:url';
+                const serverUrl = pathToFileURL(${JSON.stringify(serverBundlePath)}).href;
+                import(serverUrl).then(mod => {
+                  const app = mod.default || mod;
+                  runNodeServer(app, { port: 3001 });
+                }).catch(err => {
+                  console.error('Failed to start ev server API:', err);
+                });
+              `;
 
               // We use execa but we don't await it here because it's long-running
               try {
                 await execa(
                   "node",
                   [
-                    "--watch",
-                    "--watch-preserve-output",
-                    wrapperFile,
+                    "--input-type=module",
+                    "-e",
+                    runScript
                   ],
                   {
                     stdio: "inherit",

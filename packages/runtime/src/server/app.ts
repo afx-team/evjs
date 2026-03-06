@@ -6,7 +6,7 @@
  */
 
 import { Hono } from "hono";
-import { createRpcMiddleware } from "./handler";
+import { createRpcMiddleware } from "./handler.js";
 
 /** Options for createApp. */
 export interface CreateAppOptions {
