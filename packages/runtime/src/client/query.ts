@@ -96,8 +96,8 @@ export type QueryProxy<TModule> = {
     infer TArgs,
     infer TResponse
   >
-    ? QueryProxyHandler<TArgs, TResponse>
-    : QueryProxy<TModule[K]>;
+  ? QueryProxyHandler<TArgs, TResponse>
+  : QueryProxy<TModule[K]>;
 };
 
 export type MutationProxy<TModule> = {
@@ -105,8 +105,8 @@ export type MutationProxy<TModule> = {
     infer TVars,
     infer TResponse
   >
-    ? MutationProxyHandler<TVars, TResponse>
-    : MutationProxy<TModule[K]>;
+  ? MutationProxyHandler<TVars, TResponse>
+  : MutationProxy<TModule[K]>;
 };
 
 // ── Implementation ───────────────────────────────────────
@@ -175,7 +175,7 @@ function createProxy(
   source?: unknown,
   path: string[] = [],
 ): unknown {
-  const target = source ?? (() => {});
+  const target = source ?? (() => { });
   return new Proxy(target as object, {
     get(_target, prop: string) {
       if (prop === "_evId") return (_target as { _evId?: string })._evId;
@@ -245,36 +245,3 @@ export const mutation = createProxy("mutation") as (<TVariables, TResponse>(
 ) => MutationProxyHandler<TVariables, TResponse>) &
   MutationProxy<Record<string, unknown>>;
 
-// ── Legacy Hooks (deprecated) ──────────────────────────
-
-/** @deprecated Use query.fnName.useQuery() */
-export function useServerQuery<
-  TArgs extends unknown[],
-  TResponse,
-  TError = Error,
->(
-  serverFn: ServerFunction<TArgs, TResponse>,
-  args: TArgs,
-  options?: Omit<UseQueryOptions<TResponse, TError>, "queryKey" | "queryFn">,
-): UseQueryResult<TResponse, TError> {
-  const queryKey = [serverFn._evId || serverFn.name, ...args];
-  return useQuery({
-    ...options,
-    queryKey,
-    queryFn: () => serverFn(...args),
-  });
-}
-
-/** @deprecated Use mutation.fnName.useMutation() */
-export function useServerMutation<TVariables, TResponse, TError = Error>(
-  serverFn: (args: TVariables) => Promise<TResponse>,
-  options?: Omit<
-    UseMutationOptions<TResponse, TError, TVariables>,
-    "mutationFn"
-  >,
-): UseMutationResult<TResponse, TError, TVariables> {
-  return useMutation({
-    ...options,
-    mutationFn: (variables: TVariables) => serverFn(variables),
-  });
-}

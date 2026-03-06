@@ -127,9 +127,9 @@ export default async function serverFnLoader(
   const stubCode = exportNames
     .map((name) => {
       const fnId = makeFnId(this.rootContext, this.resourcePath, name);
-      return `export function ${name}(...args) {\n  return __ev_rpc("${fnId}", args);\n}\n${name}.evId = "${fnId}";`;
+      return `export function ${name}(...args) {\n  return __ev_call("${fnId}", args);\n}\n${name}.evId = "${fnId}";`;
     })
     .join("\n\n");
 
-  return `import { __ev_rpc } from "@evjs/runtime/client";\n\n${stubCode}\n`;
+  return `import { __ev_call } from "@evjs/runtime/client/transport";\n\n${stubCode}\n`;
 }

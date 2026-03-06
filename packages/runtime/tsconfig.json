@@ -1,14 +1,21 @@
 {
-  "include": ["src"],
+  "include": [
+    "src"
+  ],
   "compilerOptions": {
     "target": "ESNext",
     "jsx": "react-jsx",
     "module": "ESNext",
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "moduleResolution": "Bundler",
     "outDir": "./esm",
     "rootDir": "./src",
     "declaration": true,
+    "stripInternal": true,
     "declarationMap": true,
     "sourceMap": true,
     "verbatimModuleSyntax": true,

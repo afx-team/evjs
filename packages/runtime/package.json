@@ -38,6 +38,10 @@
       "types": "./esm/client/index.d.ts",
       "import": "./esm/client/index.js"
     },
+    "./client/transport": {
+      "types": "./esm/client/transport.d.ts",
+      "import": "./esm/client/transport.js"
+    },
     "./server": {
       "types": "./esm/server/index.d.ts",
       "import": "./esm/server/index.js"
