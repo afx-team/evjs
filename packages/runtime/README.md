@@ -1,6 +1,6 @@
 # @evjs/runtime
 
-Core runtime for the **ev** framework. It provides isomorphic utilities for client-side routing, state management, and server-side handling via Hono.
+Core runtime for the **ev** framework. Provides client-side routing, data fetching, and server-side handling via Hono.
 
 ## Installation
 
@@ -8,16 +8,33 @@ Core runtime for the **ev** framework. It provides isomorphic utilities for clie
 npm install @evjs/runtime
 ```
 
-## Features
+## Exports
 
-- **`createApp`**: A unified factory to bootstrap TanStack Router + Query.
-- **Routing**: Re-exports the full power of `@tanstack/react-router`.
-- **Server Transport**: Pluggable `ServerTransport` interface for client-server communication.
-- **Hono Server**: Runtime-agnostic `createApp()` returns a Hono instance, startable via Runners.
+### `@evjs/runtime/client`
+
+| Export | Description |
+|--------|-------------|
+| `createApp` | Bootstrap TanStack Router + Query + DOM |
+| `query(fn)` | Universal query proxy for server functions |
+| `mutation(fn)` | Universal mutation proxy for server functions |
+| `createQueryProxy(module)` | Module-level query proxy |
+| `createMutationProxy(module)` | Module-level mutation proxy |
+| `configureTransport` | Set custom transport (fetch, axios, WebSocket) |
+| `createRootRoute`, `createRoute`, `Link`, `Outlet`, ... | Re-exports from `@tanstack/react-router` |
+| `useQuery`, `useMutation`, `useQueryClient`, ... | Re-exports from `@tanstack/react-query` |
+
+### `@evjs/runtime/server`
+
+| Export | Description |
+|--------|-------------|
+| `createApp` | Create a Hono app with RPC middleware |
+| `runNodeServer` | Start the app on Node.js (default port 3001) |
+| `registerServerFn` | Register a server function in the RPC registry |
+| `createRpcMiddleware` | Standalone Hono sub-app for RPC dispatch |
 
 ## Usage
 
-### Client Entry
+### Client
 
 ```tsx
 import { createApp, createRootRoute, query, mutation } from "@evjs/runtime/client";
@@ -44,7 +61,7 @@ const app = createApp();
 runNodeServer(app, { port: 3001 });
 ```
 
-In development, the `ev dev` command with a configured `runner` in `EvWebpackPlugin` handles this automatically.
+In development, `ev dev` with `runner` configured in `EvWebpackPlugin` handles this automatically.
 
 ### Custom Transport
 
@@ -59,4 +76,23 @@ configureTransport({
     },
   },
 });
+```
+
+### Query Proxy Patterns
+
+```tsx
+// A. Direct wrapper (single function)
+const { data } = query(getUsers).useQuery([]);
+
+// B. Module proxy (feature-based API)
+import * as UsersAPI from "./api/users.server";
+const users = {
+  query: createQueryProxy(UsersAPI),
+  mutation: createMutationProxy(UsersAPI),
+};
+users.query.getUsers.useQuery([]);
+
+// C. queryOptions (for prefetching, etc.)
+const options = query(getUsers).queryOptions([id]);
+queryClient.prefetchQuery(options);
 ```
