@@ -45,6 +45,11 @@ Bundler-agnostic build utilities for server functions.
 - `generateServerEntry(config, modules)`: Generates server entry source code.
 - `transformServerFile(source, options)`: SWC-based transform for `"use server"` files.
 - `detectUseServer()`, `makeFnId()`, `parseModuleRef()`: Pure utility functions.
+- `codegen.ts`: `emitCode()` — SWC `parseSync → printSync` roundtrip for validated, formatted output.
+- `types.ts`: `RUNTIME` constant — single source of truth for runtime identifiers (module paths, function names). No hardcoded strings in templates.
+- `transforms/client/`: Generates `__ev_call` transport stubs.
+- `transforms/server/`: Prepends `registerServerFn` calls + manifest reporting.
+- `transforms/utils.ts`: Shared `extractExportNames` AST traversal.
 
 ### `@evjs/webpack-plugin`
 Webpack adapter — thin wrapper over `@evjs/build-tools`.
