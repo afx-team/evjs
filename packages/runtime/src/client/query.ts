@@ -16,7 +16,7 @@ import {
 export type ServerFunction<TArgs extends unknown[], TResponse> = ((
   ...args: TArgs
 ) => Promise<TResponse>) & {
-  _evId?: string;
+  evId?: string;
 };
 
 /**
@@ -53,8 +53,8 @@ export interface QueryProxyHandler<TArgs extends unknown[], TResponse> {
   /** Returns the query key for this function and arguments. */
   queryKey(args?: TArgs): unknown[];
 
-  /** The stable function ID (internal). */
-  _evId: string;
+  /** The stable function ID. */
+  evId: string;
 }
 
 /**
@@ -82,8 +82,8 @@ export interface MutationProxyHandler<TVariables, TResponse> {
     mutationFn: (variables: TVariables) => Promise<TResponse>;
   };
 
-  /** The stable function ID (internal). */
-  _evId: string;
+  /** The stable function ID. */
+  evId: string;
 }
 
 /**
@@ -115,7 +115,7 @@ function createHandler(fn: ServerFunction<unknown[], unknown>, path: string[]) {
     ) => {
       return useQuery({
         ...options,
-        queryKey: [fn._evId || path.join("."), ...args],
+        queryKey: [fn.evId || path.join("."), ...args],
         queryFn: () => fn(...args),
       });
     },
@@ -128,7 +128,7 @@ function createHandler(fn: ServerFunction<unknown[], unknown>, path: string[]) {
     ) => {
       return useSuspenseQuery({
         ...options,
-        queryKey: [fn._evId || path.join("."), ...args],
+        queryKey: [fn.evId || path.join("."), ...args],
         queryFn: () => fn(...args),
       });
     },
@@ -146,7 +146,7 @@ function createHandler(fn: ServerFunction<unknown[], unknown>, path: string[]) {
     ) => {
       return {
         ...options,
-        queryKey: [fn._evId || path.join("."), ...args],
+        queryKey: [fn.evId || path.join("."), ...args],
         queryFn: () => fn(...args),
       };
     },
@@ -159,9 +159,9 @@ function createHandler(fn: ServerFunction<unknown[], unknown>, path: string[]) {
       };
     },
     queryKey: (args: unknown[] = []) => {
-      return [fn._evId || path.join("."), ...args];
+      return [fn.evId || path.join("."), ...args];
     },
-    _evId: fn._evId,
+    evId: fn.evId,
     path: path.join("."),
   };
 }
@@ -174,7 +174,7 @@ function createProxy(
   const target = source ?? (() => {});
   return new Proxy(target as object, {
     get(_target, prop: string) {
-      if (prop === "_evId") return (_target as { _evId?: string })._evId;
+      if (prop === "evId") return (_target as { evId?: string }).evId;
 
       const newPath = [...path, prop];
       const val = source

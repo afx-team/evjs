@@ -1,9 +1,12 @@
 /**
  * @evjs/runtime
  *
- * Core runtime for the ev framework, providing isomorphic utilities
- * for client-side routing, state management, and server-side RPC handling.
+ * Import from subpaths instead:
+ *   - @evjs/runtime/client
+ *   - @evjs/runtime/server
  */
 
-export * as client from "./client/index";
-export * as server from "./server/index";
+throw new Error(
+  '[ev] Do not import from "@evjs/runtime" directly. ' +
+    'Use "@evjs/runtime/client" or "@evjs/runtime/server" instead.',
+);

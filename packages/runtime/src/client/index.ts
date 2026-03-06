@@ -2,7 +2,31 @@
  * Client-side runtime utilities.
  */
 
-export * from "@tanstack/react-query";
+// Cherry-picked re-exports from @tanstack/react-query
+export type {
+  QueryClientConfig,
+  QueryKey,
+  UseInfiniteQueryOptions,
+  UseInfiniteQueryResult,
+  UseMutationOptions,
+  UseMutationResult,
+  UseQueryOptions,
+  UseQueryResult,
+  UseSuspenseQueryOptions,
+  UseSuspenseQueryResult,
+} from "@tanstack/react-query";
+export {
+  keepPreviousData,
+  QueryClient,
+  QueryClientProvider,
+  useInfiniteQuery,
+  useIsFetching,
+  useMutation,
+  usePrefetchQuery,
+  useQuery,
+  useQueryClient,
+  useSuspenseQuery,
+} from "@tanstack/react-query";
 export type { AppRouteContext } from "./context";
 export { createAppRootRoute } from "./context";
 export type { App, CreateAppOptions } from "./create-app";
