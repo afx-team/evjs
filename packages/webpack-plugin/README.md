@@ -1,6 +1,6 @@
 # @evjs/webpack-plugin
 
-Build-time integration for React Server Functions in the **ev** framework.
+Webpack adapter for the **ev** framework. Thin wrapper over [`@evjs/build-tools`](../build-tools) that connects bundler-agnostic build logic to Webpack's plugin and loader APIs.
 
 ## Features
 

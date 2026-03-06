@@ -40,13 +40,16 @@ Command-line interface for project management.
 - `ev dev`: Start unified dev server (Client HMR + Node Server Watch).
 - `ev build`: Single-command optimized build for both client and server.
 
+### `@evjs/build-tools`
+Bundler-agnostic build utilities for server functions.
+- `generateServerEntry(config, modules)`: Generates server entry source code.
+- `transformServerFile(source, options)`: SWC-based transform for `"use server"` files.
+- `detectUseServer()`, `makeFnId()`, `parseModuleRef()`: Pure utility functions.
+
 ### `@evjs/webpack-plugin`
-Build-time integration for React Server Functions.
-- `EvWebpackPlugin`: Configurable child compiler manager. Auto-discovers `"use server"` files, manages entry-generation.
-  - `server.appFactory`: Configurable app factory (default: `@evjs/runtime/server#createApp`).
-  - `server.runner`: Optional runner to bake into the bundle (e.g. `@evjs/runtime/server#runNodeServer`).
-  - `server.setup`: Extra import statements for middleware or config.
-- `server-fn-loader`: Transforms `"use server"` files. Auto-detects client/server context.
+Webpack adapter — thin wrapper over `@evjs/build-tools`.
+- `EvWebpackPlugin`: Child compiler manager. Delegates entry generation and module discovery to `@evjs/build-tools`.
+- `server-fn-loader`: Thin wrapper that calls `transformServerFile()` from build-tools.
 
 ## Key API
 
@@ -95,9 +98,10 @@ configureTransport({
 
 ## Architecture: Server Functions
 
-- **Child Compiler**: `EvWebpackPlugin` spawns a Node-targeted child compiler.
-- **Dynamic Discovery**: Plugin scans client modules for `"use server"` files and generates a virtual entry.
-- **Client build**: `server-fn-loader` replaces function bodies with `__ev_call(fnId, args)` stubs.
+- **Build-Tools Core**: `@evjs/build-tools` provides bundler-agnostic entry generation and file transformation.
+- **Webpack Adapter**: `EvWebpackPlugin` calls `generateServerEntry()` + spawns a child compiler.
+- **Dynamic Discovery**: Plugin scans client modules for `"use server"` files, passes paths to build-tools.
+- **Client build**: `server-fn-loader` delegates to `transformServerFile()` → replaces bodies with `__ev_call(fnId, args)` stubs.
 - **Server build**: `server-fn-loader` keeps bodies and injects `registerServerFn(fnId, fn)`.
 - **Manifest**: Emitted to `dist/server/manifest.json`, mapping function IDs to build assets.
 - **Dev**: `ev dev` runs Webpack Dev Server (port 3000) and a watched Node process (port 3001).

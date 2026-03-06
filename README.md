@@ -20,8 +20,9 @@
 
 - [`packages/cli`](./packages/cli): The command-line interface.
 - [`packages/runtime`](./packages/runtime): Core framework runtime (Client & Server).
+- [`packages/build-tools`](./packages/build-tools): Bundler-agnostic build utilities.
 - [`packages/manifest`](./packages/manifest): Shared manifest schema types.
-- [`packages/webpack-plugin`](./packages/webpack-plugin): Build-time integration for RSF.
+- [`packages/webpack-plugin`](./packages/webpack-plugin): Webpack adapter for build-tools.
 - [`examples/`](./examples): Starter templates and reference implementations.
 
 ### Architecture Overview

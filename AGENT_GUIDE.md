@@ -5,6 +5,7 @@ This guide provides context and patterns for AI agents (like Cursor, Copilot, an
 ## Framework Architecture
 
 - **Zero-Config**: The framework auto-discovers Server Functions and manages entries.
+- **Bundler-Agnostic Core**: `@evjs/build-tools` contains all build logic (entry generation, file transforms). Bundler plugins are thin adapters.
 - **Port 3000**: Webpack Dev Server (Client HMR).
 - **Port 3001**: API/Node Server (RPC Handler).
 - **Communication**: The Client proxies `/api/*` requests to Port 3001.
