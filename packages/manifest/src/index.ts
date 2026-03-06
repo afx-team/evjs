@@ -1,12 +1,22 @@
 /**
  * @evjs/manifest
  *
- * Shared manifest schema for the ev framework build system.
- * This package defines the structure of `manifest.json` emitted
- * by @evjs/webpack-plugin and consumed by @evjs/runtime.
+ * Shared manifest schemas for the ev framework build system.
+ *
+ * Each environment emits its own manifest file:
+ *   - dist/server/manifest.json → ServerManifest
+ *   - dist/client/manifest.json → ClientManifest (future)
  */
 
-// ─── Server Functions (Stage 2: AJAX RPC) ────────────────
+// ─── Shared ──────────────────────────────────────────────
+
+/** Base manifest fields shared by all environment manifests. */
+interface ManifestBase {
+  /** Schema version — bump on breaking changes. */
+  version: 1;
+}
+
+// ─── Server Manifest (dist/server/manifest.json) ─────────
 
 /** A registered server function entry. */
 export interface ServerFnEntry {
@@ -16,27 +26,7 @@ export interface ServerFnEntry {
   export: string;
 }
 
-// ─── SSR (Stage 3 — reserved) ────────────────────────────
-
-/** Server-side rendering configuration. */
-export interface SsrEntry {
-  /** Path to the server entry bundle. */
-  serverEntry: string;
-  /** Path to the client entry bundle. */
-  clientEntry: string;
-}
-
-/** Client assets for HTML injection during SSR. */
-export interface AssetsEntry {
-  /** JavaScript bundle paths. */
-  js: string[];
-  /** CSS bundle paths. */
-  css: string[];
-}
-
-// ─── React Server Components (future — reserved) ────────
-
-/** A React Server Component entry. */
+/** A React Server Component entry (future — reserved). */
 export interface RscEntry {
   /** Webpack module ID. */
   moduleId: string;
@@ -45,31 +35,38 @@ export interface RscEntry {
 }
 
 /**
- * The ev build manifest.
+ * Server manifest — emitted to `dist/server/manifest.json`.
  *
- * Version 1 supports:
- * - `server.fns`: AJAX RPC server functions.
- * - `server.entry`: Server bundle entry filename.
- *
- * Future versions will add:
- * - `ssr`: Server-side rendering entry points.
- * - `assets`: Client JS/CSS assets for HTML injection.
- * - `serverComponents`: React Server Components.
+ * Contains everything needed to boot and serve the server bundle:
+ * entry filename, registered server functions, and future RSC/SSR metadata.
  */
-export interface EvManifest {
-  /** Schema version — bump on breaking changes. */
-  version: 1;
-  /** Server build outputs. */
-  server: {
-    /** Server function registry (Stage 2). */
-    fns: Record<string, ServerFnEntry>;
-    /** Server bundle entry filename (e.g. "index.js" or "index.abc123.js"). */
-    entry: string;
-  };
-  /** SSR configuration (Stage 3 — reserved). */
-  ssr?: SsrEntry;
-  /** Client assets (Stage 3 — reserved). */
-  assets?: AssetsEntry;
+export interface ServerManifest extends ManifestBase {
+  /** Server bundle entry filename (e.g. "index.js" or "index.a1b2c3d4.js"). */
+  entry: string;
+  /** Registered server functions (fnId → module + export). */
+  fns: Record<string, ServerFnEntry>;
   /** React Server Components (future — reserved). */
-  serverComponents?: Record<string, RscEntry>;
+  rsc?: Record<string, RscEntry>;
 }
+
+// ─── Client Manifest (dist/client/manifest.json) ─────────
+
+/**
+ * Client manifest — emitted to `dist/client/manifest.json` (future).
+ *
+ * Contains everything needed for SSR HTML injection and asset preloading.
+ */
+export interface ClientManifest extends ManifestBase {
+  /** JavaScript bundle paths for HTML injection. */
+  js: string[];
+  /** CSS bundle paths for HTML injection. */
+  css: string[];
+}
+
+// ─── Legacy alias ────────────────────────────────────────
+
+/**
+ * @deprecated Use `ServerManifest` or `ClientManifest` directly.
+ * Kept for backward compatibility during migration.
+ */
+export type EvManifest = ServerManifest;

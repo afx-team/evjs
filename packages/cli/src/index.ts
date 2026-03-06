@@ -154,7 +154,7 @@ program
               const serverBundlePath = path.resolve(
                 cwd,
                 "dist/server",
-                manifest.server.entry,
+                manifest.entry,
               );
 
               // Write a CJS bootstrap that requires the server bundle,

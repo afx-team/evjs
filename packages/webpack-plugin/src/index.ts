@@ -4,24 +4,22 @@ import {
   generateServerEntry,
   type ServerEntryConfig,
 } from "@evjs/build-tools";
-import type { EvManifest, ServerFnEntry } from "@evjs/manifest";
+import type { ServerManifest, ServerFnEntry } from "@evjs/manifest";
 import type { Compiler } from "webpack";
 
 class ManifestCollector {
-  serverFns: Record<string, ServerFnEntry> = {};
+  fns: Record<string, ServerFnEntry> = {};
   entry: string = "index.js";
 
   addServerFn(id: string, meta: ServerFnEntry) {
-    this.serverFns[id] = meta;
+    this.fns[id] = meta;
   }
 
-  getManifest(): EvManifest {
+  getManifest(): ServerManifest {
     return {
       version: 1,
-      server: {
-        fns: this.serverFns,
-        entry: this.entry,
-      },
+      entry: this.entry,
+      fns: this.fns,
     };
   }
 }
@@ -207,7 +205,7 @@ export class EvWebpackPlugin {
         },
         () => {
           const manifest = collector.getManifest();
-          if (Object.keys(manifest.server.fns).length === 0) {
+          if (Object.keys(manifest.fns).length === 0) {
             return;
           }
           const content = JSON.stringify(manifest, null, 2);

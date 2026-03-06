@@ -16,9 +16,9 @@ import { readFileSync } from "node:fs";
 
 const require = createRequire(import.meta.url);
 
-// Read manifest to find the server bundle entry
+// Read server manifest to find the entry bundle
 const manifest = JSON.parse(readFileSync(new URL("./server/manifest.json", import.meta.url), "utf-8"));
-const bundle = require(`./server/${manifest.server.entry}`);
+const bundle = require(`./server/${manifest.entry}`);
 const app = bundle.createApp();
 
 // Export via ECMA adapter — compatible with Deno, Bun, Workers
