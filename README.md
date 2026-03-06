@@ -25,33 +25,43 @@
 ### Architecture Overview
 
 ```text
-  ┌─────────────────────────────────────────────────────────────┐
-  │                                                             │
-  │  "use server"       ──▶  Build  ──▶   Client Bundle        │
-  │   Your Functions              │       (Transparent stubs)   │
-  │                               │                             │
-  │                               └──▶   Server Bundle          │
-  │                                      (Original functions)   │
-  │                                                             │
-  │  CLI: ev init · ev dev · ev build                           │
-  │  Builder: Webpack  ·  🔮 Future: Utoo(Turbopack)           │
-  └─────────────────────────────────────────────────────────────┘
-
-  ┌───────────────────────────┐     ┌───────────────────────────┐
-  │ Client (Browser)          │     │ Server (Node.js)          │
-  │                           │     │                           │
-  │ React Components          │     │ Hono HTTP Server          │
-  │         │                 │     │         │                 │
-  │         ▼                 │     │         ▼                 │
-  │ Query & Mutation Proxies  │     │ Function Dispatcher       │
-  │ (TanStack Query)          │ ──▶ │ (Auto-registered fns)     │
-  │                           │ ◀── │                           │
-  │ Call server functions     │     │ Execute & respond         │
-  │ as if they were local     │     │ transparently             │
-  │                           │     │                           │
-  └───────────────────────────┘     └───────────────────────────┘
-
-  🔮 Future: Server-Side Rendering · React Server Components
+  ┌────────────────────────────────────────────────────────┐
+  │ Development & Build Time                               │
+  │                                                        │
+  │     [ CLI Tool ]  ────────▶  [ Build Integration ]     │
+  │    (Scaffolding,              (Native awareness of       │
+  │     Dev & Build)               React directives:         │
+  │                                'use server'/'use client')│
+  │                                       ▼                  │
+  │                              [ Shared Manifest ]         │
+  │                           (Client-Server Contract)       │
+  │                                                        │
+  │  Current Builder: Webpack                              │
+  │  🔮 Future: Utoo(Turbopack)                            │
+  └───────────────────────────────────────┬────────────────┘
+                                          │
+                                          ▼
+  ┌────────────────────────────────────────────────────────┐
+  │ Application Runtime                                    │
+  │                                                        │
+  │   Client (Browser)                 Server (Node)       │
+  │  ──────────────────               ───────────────      │
+  │                                                        │
+  │  [ React App ]                        [ Hono ]         │
+  │        │                              (Server)         │
+  │        ▼                                  │            │
+  │  [ TanStack Query ]                       ▼            │
+  │ (Queries & Mutations)              [ Server Fns ]      │
+  │        │                            (use server)       │
+  │        ▼                                  ▲            │
+  │  [ Client Runtime ]                       │            │
+  │ (Server Interaction)  ━━━━━━━━━━━━━━━━━━━━━━━━┛            │
+  │                Client-Server Communication               │
+  │                                                        │
+  │  🔮 Future Capabilities:                               │
+  │     - React Server Components (RSC)                    │
+  │     - Server-Side Rendering (SSR)                      │
+  └────────────────────────────────────────────────────────┘
 ```
 
 ## 🚀 Quick Start
