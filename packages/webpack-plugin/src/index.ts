@@ -15,11 +15,13 @@ class ManifestCollector {
     this.serverFns[id] = meta;
   }
 
-  getManifest(): EvManifest & { entry: string } {
+  getManifest(): EvManifest {
     return {
       version: 1,
-      serverFns: this.serverFns,
-      entry: this.entry,
+      server: {
+        fns: this.serverFns,
+        entry: this.entry,
+      },
     };
   }
 }
@@ -205,7 +207,7 @@ export class EvWebpackPlugin {
         },
         () => {
           const manifest = collector.getManifest();
-          if (Object.keys(manifest.serverFns).length === 0) {
+          if (Object.keys(manifest.server.fns).length === 0) {
             return;
           }
           const content = JSON.stringify(manifest, null, 2);

@@ -44,13 +44,12 @@ export interface RscEntry {
   export: string;
 }
 
-// ─── Manifest ────────────────────────────────────────────
-
 /**
  * The ev build manifest.
  *
  * Version 1 supports:
- * - `serverFunctions`: AJAX RPC server functions.
+ * - `server.fns`: AJAX RPC server functions.
+ * - `server.entry`: Server bundle entry filename.
  *
  * Future versions will add:
  * - `ssr`: Server-side rendering entry points.
@@ -60,8 +59,13 @@ export interface RscEntry {
 export interface EvManifest {
   /** Schema version — bump on breaking changes. */
   version: 1;
-  /** Server function registry (Stage 2). */
-  serverFns: Record<string, ServerFnEntry>;
+  /** Server build outputs. */
+  server: {
+    /** Server function registry (Stage 2). */
+    fns: Record<string, ServerFnEntry>;
+    /** Server bundle entry filename (e.g. "index.js" or "index.abc123.js"). */
+    entry: string;
+  };
   /** SSR configuration (Stage 3 — reserved). */
   ssr?: SsrEntry;
   /** Client assets (Stage 3 — reserved). */

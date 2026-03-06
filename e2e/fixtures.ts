@@ -51,7 +51,7 @@ export function createExampleTest(exampleName: string) {
         exampleDir,
         "dist",
         "server",
-        manifest.entry,
+        manifest.server.entry,
       );
 
       // 3. Write a CJS bootstrap that requires the hashed server bundle
