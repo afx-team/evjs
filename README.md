@@ -29,11 +29,13 @@
   │ Development & Build Time                               │
   │                                                        │
   │     [ CLI Tool ]  ────────▶  [ Build Integration ]     │
-  │    (Scaffolding &               (AST Parsing &         │
-  │      Dev Server)                Child Compilers)       │
-  │                                       │                │
-  │                                       ▼                │
-  │                              [ Shared Manifest ]       │
+  │    (Scaffolding &             (Split 'use server' &      │
+  │      Dev Server)               'use client' files,       │
+  │                               build client & server      │
+  │                                   simultaneously)        │
+  │                                       │                  │
+  │                                       ▼                  │
+  │                              [ Shared Manifest ]         │
   │                                 (RPC Schemas)          │
   │                                                        │
   │  Current Builder: Webpack                              │
