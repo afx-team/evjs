@@ -8,7 +8,7 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@evjs/runtime": "^0.0.1-alpha.10",
+    "@evjs/runtime": "^0.0.1-alpha.11",
     "@trpc/client": "^11.0.0-rc.825",
     "@trpc/react-query": "^11.0.0-rc.825",
     "@trpc/server": "^11.0.0-rc.825",
@@ -16,7 +16,7 @@
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
-    "@evjs/webpack-plugin": "^0.0.1-alpha.10",
+    "@evjs/webpack-plugin": "^0.0.1-alpha.11",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.8",
     "html-webpack-plugin": "^5.6.6",

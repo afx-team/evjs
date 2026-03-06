@@ -1,7 +1,7 @@
 {
   "name": "ev-react-framework",
   "type": "module",
-  "version": "0.0.1-alpha.10",
+  "version": "0.0.1-alpha.11",
   "description": "",
   "private": true,
   "packageManager": "npm@11.6.2",

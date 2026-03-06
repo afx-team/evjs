@@ -1,6 +1,6 @@
 {
   "name": "@evjs/runtime",
-  "version": "0.0.1-alpha.10",
+  "version": "0.0.1-alpha.11",
   "description": "",
   "dependencies": {
     "@hono/node-server": "^1.19.11",
