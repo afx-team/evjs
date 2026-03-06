@@ -2,7 +2,7 @@
 
 A React framework built for speed and simplicity, leveraging `@tanstack/react-router` for code-based routing and `@tanstack/react-query` for state management.
 
-- **Repository**: [evjs/evjs](https://github.com/evaijs/evjs)
+- **Repository**: [evaijs/evjs](https://github.com/evaijs/evjs)
 - **Organization**: `@evjs`
 - **CLI**: `ev`
 
@@ -26,7 +26,8 @@ A React framework built for speed and simplicity, leveraging `@tanstack/react-ro
 ### `@evjs/runtime`
 Core runtime providing isomorphic utilities.
 - `client`: `createApp`, `createRoute`, `Outlet`, `Link`, `configureTransport`, `ServerTransport`.
-- `server`: `createApp` (Hono), `runNodeServer` (Node runner), `registerServerFn`.
+- `server`: `createApp` (Hono, supports `rpcEndpoint` option), `runNodeServer` (Node runner), `registerServerFn`.
+- `server/ecma`: `createHandler` — ECMA-standard adapter for Deno, Bun, Cloudflare Workers.
 - Server powered by [Hono](https://hono.dev), runtime-agnostic (Node, Edge, Bun).
 
 ### `@evjs/manifest`
@@ -88,6 +89,17 @@ export async function getUsers() {
 ```
 Imported from client as a standard async function. The `@evjs/webpack-plugin` handles the transformation.
 
+### Custom Endpoint
+```tsx
+import { configureTransport } from "@evjs/runtime/client";
+
+// Point to a remote or custom-path RPC endpoint
+configureTransport({
+  baseUrl: "https://api.example.com",
+  endpoint: "/server-function",  // default: "/api/rpc"
+});
+```
+
 ### Custom Transport
 ```tsx
 import { configureTransport } from "@evjs/runtime/client";
@@ -110,8 +122,11 @@ configureTransport({
 - **Client build**: `server-fn-loader` delegates to `transformServerFile()` → replaces bodies with `__ev_call(fnId, args)` stubs.
 - **Server build**: `server-fn-loader` keeps bodies and injects `registerServerFn(fnId, fn)`.
 - **Manifest**: Emitted to `dist/server/manifest.json`, mapping function IDs to build assets.
+- **RPC Path**: Configurable via `createApp({ rpcEndpoint })` on the server and `configureTransport({ endpoint })` on the client. Default: `/api/rpc`.
 - **Dev**: `ev dev` runs Webpack Dev Server (port 3000) and a watched Node process (port 3001).
-- **Communication**: Reverse-proxy in Dev Server routes `/api/*` to the Node API server.
+- **Communication**: Reverse-proxy in Dev Server routes `/api/*` (or custom path) to the Node API server.
+- **ECMA Adapter**: `server.entry.mjs` + `@evjs/runtime/server/ecma` enables deployment to Deno, Bun, Workers.
+- **SW Adapter**: `swMock.entry.js` runs server functions inside a browser Service Worker (with Node.js mock APIs for testing).
 
 ## Monorepo Workflow
 

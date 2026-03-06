@@ -27,10 +27,16 @@ npm install @evjs/runtime
 
 | Export | Description |
 |--------|-------------|
-| `createApp` | Create a Hono app with RPC middleware |
+| `createApp` | Create a Hono app with RPC middleware (`rpcEndpoint` option) |
 | `runNodeServer` | Start the app on Node.js (default port 3001) |
 | `registerServerFn` | Register a server function in the RPC registry |
 | `createRpcMiddleware` | Standalone Hono sub-app for RPC dispatch |
+
+### `@evjs/runtime/server/ecma`
+
+| Export | Description |
+|--------|-------------|
+| `createHandler` | Wrap Hono app for Deno, Bun, Cloudflare Workers |
 
 ## Usage
 
@@ -62,6 +68,17 @@ runNodeServer(app, { port: 3001 });
 ```
 
 In development, `ev dev` with `runner` configured in `EvWebpackPlugin` handles this automatically.
+
+### Custom Endpoint
+
+```ts
+import { configureTransport } from "@evjs/runtime/client";
+
+configureTransport({
+  baseUrl: "https://api.example.com",
+  endpoint: "/server-function",  // default: "/api/rpc"
+});
+```
 
 ### Custom Transport
 

@@ -110,9 +110,26 @@ Browser ──▶ Webpack Dev Server (port 3000)
                └─ /api/* ──proxy──▶ Node Server (port 3001)
                                       │
                                       └─ Hono App
-                                           └─ POST /api/rpc
+                                           └─ POST /api/rpc (default, configurable via rpcEndpoint)
                                                 └─ registry.get(fnId)(...args)
 ```
+
+## Deployment Adapters
+
+```
+┌─ Node.js ──────────────────────────────────┐
+│  server.entry.mjs → @hono/node-server      │
+└────────────────────────────────────────────┘
+
+┌─ ECMA (Deno/Bun/Workers) ──────────────────┐
+│  server.entry.mjs → @evjs/runtime/server/ecma │
+│  export default createHandler(app)         │
+└────────────────────────────────────────────┘
+
+┌─ Service Worker (browser-offline) ─────────┐
+│  swMock.entry.js → self.addEventListener   │
+│  Intercepts fetch, routes to Hono app      │
+└────────────────────────────────────────────┘
 
 ## Roadmap
 

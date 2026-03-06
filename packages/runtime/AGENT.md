@@ -52,15 +52,27 @@ const usersRoute = createRoute({
 ### Transport
 ```tsx
 import { configureTransport } from "@evjs/runtime/client";
+
+// Simple: custom base URL and endpoint path
+configureTransport({
+  baseUrl: "https://api.example.com",
+  endpoint: "/server-function",  // default: "/api/rpc"
+});
+
+// Advanced: fully custom transport
 configureTransport({ transport: { send: async (fnId, args) => { /* custom */ } } });
 ```
 
 ## Server API (`@evjs/runtime/server`)
 
-- `createApp(options?)` — Create Hono app with RPC middleware.
+- `createApp(options?)` — Create Hono app with RPC middleware. Options: `{ rpcEndpoint?: string, port?: number }`. Default RPC path: `/api/rpc`.
 - `runNodeServer(app, { port?, host? })` — Start on Node.js (default port 3001).
 - `registerServerFn(fnId, fn)` — Register server function (called by build-tools).
 - `createRpcMiddleware()` — Standalone Hono RPC sub-app.
+
+## ECMA Adapter (`@evjs/runtime/server/ecma`)
+
+- `createHandler(app)` — Wraps a Hono app for deployment to Deno, Bun, Cloudflare Workers, or any Fetch API-compatible runtime.
 
 ## Server Functions
 Files must start with `"use server";`, use named async exports, and end in `.server.ts`.

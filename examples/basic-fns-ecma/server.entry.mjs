@@ -1,8 +1,8 @@
 /**
  * ECMA runtime adapter entry point.
  *
- * The server bundle exports user-defined functions and `createApp`.
- * This adapter creates the Hono app and exports a standard fetch handler.
+ * Loads the server bundle (which registers server functions via the runtime),
+ * creates a Hono app, and exports a standard fetch handler.
  *
  * Works in any Fetch API-compatible runtime:
  * - Deno: `deno serve start.mjs`

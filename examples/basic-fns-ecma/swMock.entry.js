@@ -2,7 +2,9 @@
  * Service Worker adapter — runs server functions in the browser.
  *
  * Mirrors server.entry.mjs but for the Service Worker environment.
- * Intercepts /api/* requests and handles them locally via Hono.
+ * Intercepts /api/* requests (matching the default rpcEndpoint) and
+ * handles them locally via Hono. Update the path prefix below if
+ * using a custom rpcEndpoint.
  *
  * When running in Node.js (no native SW APIs), mock implementations
  * are provided so the entry can be tested outside a browser.
