@@ -1,3 +1,4 @@
+import { emitCode } from "./codegen.js";
 import type { ServerEntryConfig } from "./types.js";
 import { parseModuleRef } from "./utils.js";
 
@@ -13,51 +14,40 @@ export function generateServerEntry(
   config: ServerEntryConfig | undefined,
   serverModulePaths: string[],
 ): string {
-  const imports: string[] = [];
-
-  // Resolve app factory
   const appFactoryRef = config?.appFactory ?? "@evjs/runtime/server#createApp";
   const appFactory = parseModuleRef(appFactoryRef);
-  imports.push(
-    `import { ${appFactory.exportName} } from ${JSON.stringify(appFactory.module)};`,
-  );
 
-  // Resolve optional runner
   let runner: { module: string; exportName: string } | null = null;
   if (config?.runner) {
     runner = parseModuleRef(config.runner);
-    if (runner.module !== appFactory.module) {
-      imports.push(
-        `import { ${runner.exportName} } from ${JSON.stringify(runner.module)};`,
-      );
-    } else {
-      // Rewrite the first import to include both exports
-      imports[0] = `import { ${appFactory.exportName}, ${runner.exportName} } from ${JSON.stringify(appFactory.module)};`;
-    }
   }
 
-  // Add user-provided setup imports
-  if (config?.setup) {
-    for (const stmt of config.setup) {
-      imports.push(stmt);
-    }
-  }
+  const appImport =
+    runner && runner.module === appFactory.module
+      ? `import { ${appFactory.exportName}, ${runner.exportName} } from ${JSON.stringify(appFactory.module)};`
+      : `import { ${appFactory.exportName} } from ${JSON.stringify(appFactory.module)};`;
 
-  // Import discovered server modules
-  let id = 0;
-  for (const modulePath of serverModulePaths) {
-    imports.push(
-      `import * as _fns_${id++} from ${JSON.stringify(modulePath)};`,
-    );
-  }
+  const runnerImport =
+    runner && runner.module !== appFactory.module
+      ? `import { ${runner.exportName} } from ${JSON.stringify(runner.module)};`
+      : "";
 
-  // Generate the app creation and export/runner
-  imports.push(`const app = ${appFactory.exportName}();`);
-  if (runner) {
-    imports.push(`${runner.exportName}(app);`);
-  } else {
-    imports.push(`export default app;`);
-  }
+  const moduleImports = serverModulePaths
+    .map((p, i) => `import * as _fns_${i} from ${JSON.stringify(p)};`)
+    .join("\n");
 
-  return imports.join("\n");
+  const tail = runner ? `${runner.exportName}(app);` : "export default app;";
+
+  return emitCode(
+    [
+      appImport,
+      runnerImport,
+      ...(config?.setup ?? []),
+      moduleImports,
+      `const app = ${appFactory.exportName}();`,
+      tail,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  );
 }
