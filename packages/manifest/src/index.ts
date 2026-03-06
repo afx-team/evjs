@@ -51,6 +51,14 @@ export interface ServerManifest extends ManifestBase {
 
 // ─── Client Manifest (dist/client/manifest.json) ─────────
 
+/** Per-page asset entry for MPA support (future — reserved). */
+export interface PageEntry {
+  /** JavaScript bundle paths for this page. */
+  js: string[];
+  /** CSS bundle paths for this page. */
+  css: string[];
+}
+
 /**
  * Client manifest — emitted to `dist/client/manifest.json` (future).
  *
@@ -61,6 +69,8 @@ export interface ClientManifest extends ManifestBase {
   js: string[];
   /** CSS bundle paths for HTML injection. */
   css: string[];
+  /** Per-page assets for MPA support (future — reserved). */
+  pages?: Record<string, PageEntry>;
 }
 
 // ─── Legacy alias ────────────────────────────────────────
