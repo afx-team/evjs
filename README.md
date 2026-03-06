@@ -26,18 +26,15 @@
 
 ```text
   ┌─────────────────────────────────────────────────────────────┐
-  │ Build Time (Webpack + SWC)                                  │
+  │ Build Time                                                  │
   │                                                             │
-  │  Source Files ──▶ [ Loader ] ──▶ Detects "use server"       │
-  │                       │                                     │
+  │  Your Code ──▶ "use server" Detection ──▶ Code Transform   │
+  │                                                             │
   │            ┌──────────┴──────────┐                          │
   │            ▼                     ▼                          │
-  │   Client Bundle             Server Bundle                   │
-  │   (Stub functions           (Original functions             │
-  │    that call RPC)            + auto-registration)           │
-  │            │                     │                          │
-  │            ▼                     ▼                          │
-  │        [ Manifest ] ◀── Function ID mapping ──▶ Registry   │
+  │     Client Bundle          Server Bundle                    │
+  │     (Auto-generated        (Auto-registered                 │
+  │       function stubs)        server functions)              │
   │                                                             │
   │  CLI: ev init · ev dev · ev build                           │
   │  Current Builder: Webpack  🔮 Future: Utoo(Turbopack)      │
@@ -49,16 +46,13 @@
   │   Client (Browser)                  Server (Node.js)        │
   │  ─────────────────                 ──────────────────       │
   │                                                             │
-  │  React App                          Hono HTTP Server        │
-  │    │                                     │                  │
-  │    ▼                                     ▼                  │
-  │  TanStack Query Proxies            RPC Dispatcher           │
-  │  · query(fn).useQuery()            POST /api/rpc            │
-  │  · mutation(fn).useMutation()        │                      │
-  │    │                                 ▼                      │
-  │    ▼                           Function Registry            │
-  │  Stub fn ── POST {fnId, args} ──▶ lookup(fnId)              │
-  │         ◀── { result } ──────────── execute(fn)             │
+  │  React Components                   Hono HTTP Server        │
+  │        │                                  │                 │
+  │        ▼                                  ▼                 │
+  │  Query & Mutation Proxies         Function Dispatcher       │
+  │  (TanStack Query)                 (Auto-routing by ID)     │
+  │        │                                  ▲                 │
+  │        └──── Transparent Server Calls ────┘                 │
   │                                                             │
   │  🔮 Future: Server-Side Rendering · React Server Components │
   └─────────────────────────────────────────────────────────────┘
