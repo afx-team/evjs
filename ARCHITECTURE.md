@@ -130,6 +130,7 @@ Browser ──▶ Webpack Dev Server (port 3000)
 │  swMock.entry.js → self.addEventListener   │
 │  Intercepts fetch, routes to Hono app      │
 └────────────────────────────────────────────┘
+```
 
 ## Roadmap
 
