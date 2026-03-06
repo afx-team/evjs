@@ -19,8 +19,6 @@ export type ServerFunction<TArgs extends unknown[], TResponse> = ((
   _evId?: string;
 };
 
-// ── Proxy Types ──────────────────────────────────────────
-
 /**
  * The interface for a single server function's query proxy.
  */
@@ -108,8 +106,6 @@ export type MutationProxy<TModule> = {
   ? MutationProxyHandler<TVars, TResponse>
   : MutationProxy<TModule[K]>;
 };
-
-// ── Implementation ───────────────────────────────────────
 
 function createHandler(fn: ServerFunction<unknown[], unknown>, path: string[]) {
   return {
