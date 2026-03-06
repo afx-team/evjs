@@ -1,14 +1,24 @@
 # @evjs/build-tools
 
-Bundler-agnostic build utilities for the **ev** framework. This package contains all the core logic for server function handling, decoupled from any specific bundler.
+Bundler-agnostic build utilities for the **ev** framework. Contains all core logic for server function handling, decoupled from any specific bundler.
 
-## Features
+## Installation
 
-- **`generateServerEntry(config, modules)`**: Generates server entry source code from discovered modules and app configuration.
-- **`transformServerFile(source, options)`**: SWC-based transformation for `"use server"` files — produces client stubs or server registrations.
-- **`detectUseServer(source)`**: Checks whether a file starts with the `"use server"` directive.
-- **`makeFnId(rootContext, resourcePath, exportName)`**: Derives a stable SHA-256 function ID.
-- **`parseModuleRef(ref)`**: Parses `"module#exportName"` reference strings.
+```bash
+npm install @evjs/build-tools
+```
+
+## Exports
+
+| Export | Description |
+|--------|-------------|
+| `generateServerEntry(config, modules)` | Generate server entry source from discovered modules |
+| `transformServerFile(source, options)` | SWC-based transform for `"use server"` files |
+| `detectUseServer(source)` | Check if a file starts with the `"use server"` directive |
+| `makeFnId(root, path, name)` | Derive a stable SHA-256 function ID |
+| `parseModuleRef(ref)` | Parse `"module#export"` reference strings |
+| `ServerEntryConfig` | Config type for server entry generation |
+| `TransformOptions` | Options type for file transformation |
 
 ## Usage
 
@@ -35,29 +45,42 @@ const clientStub = await transformServerFile(source, {
 });
 ```
 
-## Architecture
+## Source Layout
 
 ```
 src/
-  codegen.ts              ← SWC parseSync→printSync code emitter
-  entry.ts                ← Server entry generation
-  types.ts                ← Shared types + RUNTIME identifier constants
-  utils.ts                ← detectUseServer, makeFnId, parseModuleRef
-  index.ts                ← Barrel re-exports
+  index.ts                Barrel re-exports
+  codegen.ts              SWC parseSync→printSync code emitter (emitCode)
+  entry.ts                Server entry generation
+  types.ts                Shared types + RUNTIME identifier constants
+  utils.ts                detectUseServer, makeFnId, parseModuleRef
   transforms/
-    index.ts              ← Orchestrator: parse → extract → delegate
-    utils.ts              ← extractExportNames (AST traversal)
+    index.ts              Orchestrator: parse → extract → delegate
+    utils.ts              extractExportNames (AST traversal)
     client/
-      index.ts            ← buildClientOutput (__ev_call stubs)
+      index.ts            buildClientOutput (__ev_call stubs)
     server/
-      index.ts            ← buildServerOutput (registerServerFn + manifest)
+      index.ts            buildServerOutput (registerServerFn + manifest)
+```
+
+### RUNTIME Constants
+
+All runtime identifiers in generated code are centralized in `types.ts` — no hardcoded strings in templates:
+
+```ts
+import { RUNTIME } from "./types.js";
+// RUNTIME.serverModule        → "@evjs/runtime/server"
+// RUNTIME.clientTransportModule → "@evjs/runtime/client/transport"
+// RUNTIME.registerServerFn    → "registerServerFn"
+// RUNTIME.clientCall          → "__ev_call"
+// RUNTIME.fnIdProp            → "evId"
 ```
 
 ### Code Generation
 
-Generated code uses `emitCode()` from `codegen.ts` — a `parseSync → printSync` roundtrip through SWC for syntax validation and consistent formatting. Runtime identifiers (`registerServerFn`, `__ev_call`, `evId`, module paths) are centralized in `RUNTIME` from `types.ts` — no hardcoded strings in templates.
+`emitCode()` from `codegen.ts` validates and formats generated source via a SWC `parseSync → printSync` roundtrip — catches syntax errors at build time and produces consistent output.
 
-### Bundler Adapter Pattern
+## Bundler Adapter Pattern
 
 ```
 @evjs/build-tools (pure functions)     Bundler Adapters
