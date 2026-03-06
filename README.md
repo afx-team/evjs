@@ -1,5 +1,7 @@
 # ev
 
+[![Vibe Coded](https://img.shields.io/badge/vibe-coded-ff69b4?style=flat-square)](https://en.wikipedia.org/wiki/Vibe_coding)
+
 > **React Framework with Type-Safe Routing & Server Functions.**
 
 `ev` is a modern React framework built for speed, type-safety, and simplicity. It leverages the best-of-breed primitives from the TanStack ecosystem and adds seamless React Server Functions (RSF) with a Hono-based API server.
