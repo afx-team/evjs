@@ -49,7 +49,7 @@ export class EvWebpackPlugin {
               let hasServer = false;
               const imports: string[] = [];
               imports.push(
-                `import { createServer } from "@evjs/runtime/server";`,
+                `import { createApp } from "@evjs/runtime/server";`,
               );
 
               let id = 0;
@@ -92,7 +92,8 @@ export class EvWebpackPlugin {
               if (!hasServer) {
                 return finishCallback();
               }
-              imports.push(`createServer();`);
+              imports.push(`const app = createApp();`);
+              imports.push(`export default app;`);
               const serverEntryContent = imports.join("\n");
 
               // Use a Data URI as a virtual entry point
