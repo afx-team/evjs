@@ -1,9 +1,16 @@
 {
   "name": "evf",
   "version": "0.0.1-rc.3",
-  "description": "Command line interface for the evf framework",
+  "description": "The evf meta-framework",
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./dist/config.js",
+  "types": "./dist/config.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js"
+    }
+  },
   "publishConfig": {
     "access": "public"
   },

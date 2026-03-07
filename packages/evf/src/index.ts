@@ -117,25 +117,68 @@ program
     logger.info`  npm run dev`;
   });
 
+/**
+ * Resolve the webpack config path.
+ *
+ * If evf.config.ts exists, generate a temporary webpack config from it.
+ * Otherwise, fall back to webpack.config.cjs.
+ */
+async function resolveWebpackConfig(cwd: string): Promise<string> {
+  const { loadConfig } = await import("./load-config.js");
+
+  const evfConfig = await loadConfig(cwd);
+  if (evfConfig) {
+    // Generate webpack config and write as a temp file
+    const { createWebpackConfig } = await import("./create-webpack-config.js");
+    const webpackConfig = createWebpackConfig(evfConfig, cwd);
+    const tmpPath = path.resolve(
+      cwd,
+      "node_modules/.cache/evf/webpack.config.cjs",
+    );
+    fs.mkdirSync(path.dirname(tmpPath), { recursive: true });
+    fs.writeFileSync(
+      tmpPath,
+      `module.exports = ${JSON.stringify(webpackConfig, null, 2)};`,
+    );
+    logger.info`Using evf.config.ts`;
+    return tmpPath;
+  }
+
+  // Fallback to webpack.config.cjs
+  const fallback = path.resolve(cwd, "webpack.config.cjs");
+  if (fs.existsSync(fallback)) {
+    logger.info`Using webpack.config.cjs`;
+    return fallback;
+  }
+
+  logger.error`No evf.config.ts or webpack.config.cjs found.`;
+  process.exit(1);
+}
+
 program
   .command("dev")
   .description("Start development server")
   .action(async () => {
     const cwd = process.cwd();
+    const configPath = await resolveWebpackConfig(cwd);
+    const serverPort = (await import("./load-config.js"))
+      .loadConfig(cwd)
+      .then((c) => c?.build?.serverPort ?? 3001)
+      .catch(() => 3001);
+
     logger.info`Starting development server...`;
     try {
-      logger.info`Starting Webpack Dev Server...`;
-
       const clientRun = execa(
         "npx",
-        ["webpack", "serve", "--config", "webpack.config.cjs"],
+        ["webpack", "serve", "--config", configPath],
         {
           stdio: "inherit",
           env: { ...process.env, NODE_ENV: "development" },
         },
       );
 
-      // The background Node API execution (will wait for child compiler output)
+      // Background: wait for server bundle, then start Node API
+      const port = await serverPort;
       const _serverRun = (async () => {
         const manifestPath = path.resolve(cwd, "dist/server/manifest.json");
         const bootstrapPath = path.resolve(cwd, "dist/server/_dev_start.cjs");
@@ -147,7 +190,6 @@ program
               logger.info`Server bundle detected, starting Node API...`;
               started = true;
 
-              // Read manifest to get server bundle filename
               const manifest = JSON.parse(
                 fs.readFileSync(manifestPath, "utf-8"),
               );
@@ -157,15 +199,13 @@ program
                 manifest.entry,
               );
 
-              // Write a CJS bootstrap that requires the server bundle,
-              // creates the app (sharing the function registry), and starts the server.
               fs.writeFileSync(
                 bootstrapPath,
                 [
                   `const bundle = require(${JSON.stringify(serverBundlePath)});`,
                   `const app = bundle.createApp();`,
                   `const { serve } = require("@hono/node-server");`,
-                  `const port = process.env.PORT || 3001;`,
+                  `const port = process.env.PORT || ${port};`,
                   `serve({ fetch: app.fetch, port }, (info) => {`,
                   `  console.log("Server API ready at http://localhost:" + info.port);`,
                   `});`,
@@ -182,7 +222,6 @@ program
                   },
                 );
               } catch (_e) {
-                // If it crashes, mark as not started so it can retry or restart
                 started = false;
               }
             }
@@ -201,9 +240,12 @@ program
   .command("build")
   .description("Build project for production")
   .action(async () => {
+    const cwd = process.cwd();
+    const configPath = await resolveWebpackConfig(cwd);
+
     logger.info`Building for production...`;
     try {
-      await execa("npx", ["webpack", "--config", "webpack.config.cjs"], {
+      await execa("npx", ["webpack", "--config", configPath], {
         stdio: "inherit",
         env: { ...process.env, NODE_ENV: "production" },
       });

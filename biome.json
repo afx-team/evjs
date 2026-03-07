@@ -55,7 +55,7 @@
         "e2e/**",
         "examples/**",
         "scripts/**",
-        "packages/cli/scripts/**",
+        "packages/evf/**",
         "packages/runtime/**"
       ],
       "linter": {
