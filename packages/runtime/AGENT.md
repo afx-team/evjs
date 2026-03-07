@@ -1,39 +1,83 @@
-# @evjs/runtime
+# @evjs/runtime — Agent Guide
 
-Core runtime for the ev React framework. Provides client-side routing, data fetching, and server-side handling.
+> AI-agent reference for developing apps with the `@evjs/runtime` package.
 
-## Client API (`@evjs/runtime/client`)
+## Overview
+
+Core runtime for evjs apps. Two entry points:
+- `@evjs/runtime` + `@evjs/runtime/client` — client-side (React, TanStack)
+- `@evjs/runtime/server` — server-side (Hono)
+- `@evjs/runtime/server/ecma` — edge/serverless adapter
+
+## Client API
 
 ### App Bootstrap
-- `createApp({ routeTree, routerOptions?, queryClientConfig? })` — Bootstrap Router + Query + DOM. Injects `queryClient` into router context.
-- `createAppRootRoute(options)` — Create root route with typed `context.queryClient` for route loaders.
-
-### Server Function Proxies
-Always use these instead of raw `useQuery`/`useMutation` for server functions:
 
 ```tsx
-import { query, mutation, createQueryProxy, createMutationProxy } from "@evjs/runtime/client";
+import { createApp, createAppRootRoute, createRoute, createRouter } from "@evjs/runtime";
+
+const rootRoute = createAppRootRoute({ component: RootLayout });
+
+const homeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/",
+  component: HomePage,
+});
+
+const routeTree = rootRoute.addChildren([homeRoute]);
+
+createApp({ routeTree }).render("#app");
+```
+
+**Key functions:**
+| API | Import | Purpose |
+|-----|--------|---------|
+| `createApp` | `@evjs/runtime` | Bootstrap Router + QueryClient + render to DOM |
+| `createAppRootRoute` | `@evjs/runtime` | Root route with typed `context.queryClient` |
+| `createRoute` | `@evjs/runtime` | Define a route (re-export from TanStack Router) |
+
+### Server Function Proxies
+
+**Always use `query()` / `mutation()` wrappers.** Never call `useQuery` with manual fetch.
+
+```tsx
+import { query, mutation } from "@evjs/runtime/client";
 import { getUsers, createUser } from "./api/users.server";
 
-// Direct wrapper
-const { data } = query(getUsers).useQuery([]);
-const { mutate } = mutation(createUser).useMutation();
+// Data fetching
+const { data, isLoading, error } = query(getUsers).useQuery([]);
 
-// Module proxy
-const api = { query: createQueryProxy({ getUsers }), mutation: createMutationProxy({ createUser }) };
-api.query.getUsers.useQuery([]);
+// With arguments (always a tuple)
+const { data } = query(getUser).useQuery([userId]);
 
-// queryOptions (for loaders, prefetch)
+// Mutations
+const { mutate, isPending } = mutation(createUser).useMutation();
+mutate([{ name: "Alice", email: "alice@example.com" }]);
+
+// queryOptions — for route loaders, prefetching, cache control
 const opts = query(getUsers).queryOptions([]);
 queryClient.ensureQueryData(opts);
+queryClient.prefetchQuery(opts);
 
-// Query key (for invalidation)
+// Cache invalidation
 queryClient.invalidateQueries({ queryKey: query(getUsers).queryKey() });
+// or by evId
+queryClient.invalidateQueries({ queryKey: [getUsers.evId] });
+
+// Module proxy (for grouping)
+import { createQueryProxy, createMutationProxy } from "@evjs/runtime/client";
+const api = {
+  query: createQueryProxy({ getUsers, getUser }),
+  mutation: createMutationProxy({ createUser }),
+};
+api.query.getUsers.useQuery([]);
 ```
 
 ### Route Loader Pattern
+
+Prefetch data before route renders — no loading spinners:
+
 ```tsx
-const rootRoute = createAppRootRoute({ component: Root });
 const usersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/users",
@@ -43,36 +87,154 @@ const usersRoute = createRoute({
 });
 ```
 
-### Routing (re-exports from @tanstack/react-router)
-`createRootRoute`, `createRoute`, `createRouter`, `Link`, `Outlet`, `Navigate`, `useParams`, `useSearch`, `useNavigate`, `useLocation`, `useMatch`, `useLoaderData`, `redirect`, `notFound`, `lazyRouteComponent`
+### Transport Configuration
 
-### Data (re-exports from @tanstack/react-query)
-`useQuery`, `useMutation`, `useQueryClient`, `useSuspenseQuery`, `QueryClient`, `QueryClientProvider`
-
-### Transport
 ```tsx
 import { initTransport } from "@evjs/runtime/client";
 
-// Simple: custom base URL and endpoint path
+// Default HTTP transport (usually no config needed)
+initTransport({ endpoint: "/api/fn" });
+
+// Custom API host (e.g., separate backend)
 initTransport({
   baseUrl: "https://api.example.com",
-  endpoint: "/server-function",  // default: "/api/fn"
+  endpoint: "/api/fn",
 });
 
-// Advanced: fully custom transport
-initTransport({ transport: { send: async (fnId, args) => { /* custom */ } } });
+// WebSocket transport
+initTransport({
+  transport: {
+    send: async (fnId, args) => {
+      // custom WebSocket implementation
+    },
+  },
+});
+
+// Custom codec (e.g., MessagePack)
+initTransport({
+  codec: {
+    encode: (data) => msgpack.encode(data),
+    decode: (buffer) => msgpack.decode(buffer),
+    contentType: "application/msgpack",
+  },
+});
 ```
 
-## Server API (`@evjs/runtime/server`)
+### Routing Re-exports
 
-- `createApp(options?)` — Create Hono app with server function handler. Options: `{ endpoint?: string, port?: number }`. Default endpoint path: `/api/fn`.
-- `serve(app, { port?, host? })` — Start on Node.js (default port 3001).
-- `registerServerFn(fnId, fn)` — Register server function (called by build-tools).
-- `createHandler()` — Standalone Hono server function handler.
+From `@tanstack/react-router`:
+`createRootRoute`, `createRoute`, `createRouter`, `Link`, `Outlet`, `Navigate`, `useParams`, `useSearch`, `useNavigate`, `useLocation`, `useMatch`, `useLoaderData`, `redirect`, `notFound`, `lazyRouteComponent`
 
-## ECMA Adapter (`@evjs/runtime/server/ecma`)
+### Data Re-exports
 
-- `createFetchHandler(app)` — Wraps a Hono app for deployment to Deno, Bun, or any Fetch-compatible runtime.
+From `@tanstack/react-query`:
+`useQuery`, `useMutation`, `useQueryClient`, `useSuspenseQuery`, `QueryClient`, `QueryClientProvider`
 
 ## Server Functions
-Files must start with `"use server";`, use named async exports, and end in `.server.ts`.
+
+```ts
+// src/api/users.server.ts
+"use server";
+
+export async function getUsers() {
+  return await db.users.findMany();
+}
+
+export async function getUser(id: string) {
+  const user = await db.users.find(id);
+  if (!user) {
+    throw new ServerError("NOT_FOUND", { message: "User not found", id });
+  }
+  return user;
+}
+
+export async function createUser(name: string, email: string) {
+  return await db.users.create({ data: { name, email } });
+}
+```
+
+**Rules:**
+- File must start with `"use server";` directive
+- Only **named async function exports** are supported
+- No default exports, no arrow function exports
+- Arguments are positional, transported as a tuple
+- Use `.server.ts` extension or place in `src/api/`
+- Build system auto-discovers — no manual registration
+
+## Server API
+
+```ts
+import { createApp, serve, createHandler, registerMiddleware } from "@evjs/runtime/server";
+```
+
+| API | Purpose |
+|-----|---------|
+| `createApp({ endpoint? })` | Hono app with server function handler |
+| `serve(app, { port?, host? })` | Node.js HTTP server with graceful shutdown |
+| `createHandler()` | Standalone server function Hono handler |
+| `registerServerFn(id, fn)` | Register a server function (used by build tools) |
+| `registerMiddleware(fn)` | Register Hono middleware |
+
+### ECMA Adapter (Edge / Serverless)
+
+```ts
+import { createFetchHandler } from "@evjs/runtime/server/ecma";
+
+const app = createApp({ endpoint: "/api/fn" });
+const handler = createFetchHandler(app);
+
+// Deno
+Deno.serve(handler);
+
+// Bun
+export default { fetch: handler };
+
+// Cloudflare Workers
+export default { fetch: handler };
+```
+
+## Error Handling
+
+```ts
+import { ServerError } from "@evjs/runtime";
+
+// Server — throw structured errors
+export async function getUser(id: string) {
+  const user = await db.users.find(id);
+  if (!user) throw new ServerError("NOT_FOUND", { id });
+  return user;
+}
+
+// Client — catch typed errors
+import { ServerError } from "@evjs/runtime";
+
+try {
+  await getUser("123");
+} catch (e) {
+  if (e instanceof ServerError) {
+    e.code;  // "NOT_FOUND"
+    e.data;  // { id: "123" }
+  }
+}
+```
+
+## Middleware
+
+```ts
+// src/middleware/auth.ts
+import { registerMiddleware } from "@evjs/runtime/server";
+
+registerMiddleware(async (c, next) => {
+  const token = c.req.header("Authorization");
+  if (!token) return c.json({ error: "Unauthorized" }, 401);
+  await next();
+});
+```
+
+## Common Mistakes
+
+1. **Don't use raw `useQuery`** for server functions — use `query(fn).useQuery(args)`
+2. **Arguments must be a tuple** — `query(getUser).useQuery([id])` not `query(getUser).useQuery(id)`
+3. **Don't call server functions directly in components** — wrap with `query()` or `mutation()`
+4. **Don't forget `"use server";`** at the top of `.server.ts` files
+5. **Import `ServerError` from `@evjs/runtime`** — not from `/server` or `/client`

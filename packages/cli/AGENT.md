@@ -1,58 +1,120 @@
 # @evjs/cli — Agent Guide
 
-> AI-agent reference for the `@evjs/cli` CLI package.
+> AI-agent reference for developing apps with the `@evjs/cli` package.
 
-## What This Package Does
+## Overview
 
-The `@evjs/cli` package is the CLI and config layer of the ev meta-framework. It provides:
+`@evjs/cli` is the CLI and configuration layer. Users install it as a devDependency. It provides:
 
-1. **`ev init`** — scaffolds projects from templates
-2. **`ev dev`** — starts WebpackDevServer + Node API server
-3. **`ev build`** — runs production webpack build
-4. **`defineConfig`** — type-safe configuration export
+- **`ev init`** — scaffold a new project from templates
+- **`ev dev`** — start dev server (webpack-dev-server + API server)
+- **`ev build`** — production build (client + server bundles)
+- **`defineConfig`** — type-safe config export for `ev.config.ts`
 
-## Key Files
+## Quick Start
 
-| File | Purpose |
-|------|---------|
-| `src/index.ts` | CLI entry — Commander commands (`init`, `dev`, `build`) |
-| `src/config.ts` | `EvfConfig` types + `defineConfig()` helper |
-| `src/load-config.ts` | Loads `ev.config.ts` / `.js` / `.mjs` from project root |
-| `src/create-webpack-config.ts` | Generates webpack config object from `EvfConfig` |
-
-## Config Shape
-
-```ts
-interface EvfConfig {
-  client?: {
-    entry?: string;        // default: "./src/main.tsx"
-    html?: string;         // default: "./index.html"
-    dev?: { port?: number; ... };  // default port: 3000
-    transport?: { baseUrl?: string; endpoint?: string };
-  };
-  server?: {
-    runner?: string;
-    endpoint?: string;     // default: "/api/fn"
-    middleware?: string[];
-    dev?: { port?: number; ... };  // default port: 3001
-  };
-}
+```bash
+npx @evjs/cli@latest init my-app
+cd my-app && npm install
+ev dev     # http://localhost:3000
 ```
 
-## How Build Works
+## Configuration (`ev.config.ts`)
 
-1. `ev build` / `ev dev` calls `resolveWebpackConfig(cwd)`
-2. If `ev.config.ts` exists → load it, pass to `createWebpackConfig()`
-3. If no config and no `webpack.config.cjs` → use zero-config defaults
-4. `createWebpackConfig()` returns a webpack config **object** (no temp files)
-5. CLI calls `webpack()` Node API directly
+Optional — everything works zero-config. Create `ev.config.ts` in project root when needed:
 
-## Dependencies
+```ts
+import { defineConfig } from "@evjs/cli";
 
-Webpack toolchain (`webpack`, `webpack-dev-server`, `html-webpack-plugin`, `swc-loader`, `@evjs/webpack-plugin`) are **dependencies of @evjs/cli** — users don't need to install them separately.
+export default defineConfig({
+  client: {
+    entry: "./src/main.tsx",           // default
+    html: "./index.html",              // default
+    dev: {
+      port: 3000,                      // webpack-dev-server port
+      open: true,                      // auto-open browser
+      https: false,                    // enable HTTPS
+      historyApiFallback: true,        // SPA routing fallback
+    },
+    transport: {
+      baseUrl: "",                     // API base URL (for separate API host)
+      endpoint: "/api/fn",             // server function endpoint path
+    },
+  },
+  server: {
+    endpoint: "/api/fn",               // must match client transport endpoint
+    runner: "@evjs/runtime/server/node",
+    middleware: [
+      "./src/middleware/auth.ts",      // middleware module paths
+      "./src/middleware/logging.ts",
+    ],
+    dev: {
+      port: 3001,                      // API server port in dev mode
+    },
+  },
+});
+```
 
-## Rules
+### Config Defaults
 
-- Do NOT generate temp config files — use webpack Node API directly
-- Module resolution uses `createRequire(import.meta.url)` for reliable dep resolution
-- Config file name is `ev.config.ts` (not `ev.config.ts`)
+| Key | Default |
+|-----|---------|
+| `client.entry` | `"./src/main.tsx"` |
+| `client.html` | `"./index.html"` |
+| `client.dev.port` | `3000` |
+| `server.endpoint` | `"/api/fn"` |
+| `server.dev.port` | `3001` |
+| `server.runner` | `"@evjs/runtime/server/node"` |
+
+## Project Structure
+
+```
+my-app/
+├── ev.config.ts          # optional config
+├── index.html            # HTML template
+├── package.json
+├── tsconfig.json
+└── src/
+    ├── main.tsx           # client entry — createApp + routes
+    ├── api/               # server functions
+    │   ├── users.server.ts
+    │   └── posts.server.ts
+    └── middleware/         # server middleware (optional)
+        └── auth.ts
+```
+
+## CLI Commands
+
+### `ev init [project-name]`
+Interactive scaffolding. Templates:
+- `basic-csr` — client-side rendering only
+- `basic-server-fns` — server functions example
+- `configured-server-fns` — advanced config example
+- `trpc-server-fns` — tRPC integration
+
+### `ev dev`
+- Starts webpack-dev-server on port 3000
+- Auto-starts API server on port 3001
+- Proxies `/api/fn` requests to API server
+- Hot reloads client; restarts server on changes
+- `NODE_ENV=development`
+
+### `ev build`
+- Outputs client bundle to `dist/client/`
+- Outputs server bundle to `dist/server/`
+- Emits `dist/server/manifest.json` with server function registry
+- `NODE_ENV=production`
+
+## Common Mistakes
+
+1. **Don't create `webpack.config.cjs`** — use `ev.config.ts` instead
+2. **Don't install webpack manually** — it's a dependency of `@evjs/cli`
+3. **Config file must be `ev.config.ts`** — not `evjs.config.ts` or `evf.config.ts`
+4. **Import `defineConfig` from `@evjs/cli`** — not from `@evjs/runtime`
+
+## Dependencies (bundled)
+
+Users do NOT need to install these — they're included in `@evjs/cli`:
+- `webpack`, `webpack-dev-server`, `webpack-cli`
+- `html-webpack-plugin`, `swc-loader`, `@swc/core`
+- `@evjs/webpack-plugin`

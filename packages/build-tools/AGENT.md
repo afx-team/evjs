@@ -1,36 +1,80 @@
-# @evjs/build-tools
+# @evjs/build-tools — Agent Guide
 
-Bundler-agnostic build utilities for the ev framework's server function pipeline.
+> AI-agent reference for the `@evjs/build-tools` package. This is an internal package — application developers don't use it directly.
+
+## Overview
+
+Bundler-agnostic build utilities for the evjs server function pipeline. Consumed by `@evjs/webpack-plugin` and other bundler adapters.
 
 ## API
 
-- `transformServerFile(source, options)` — Transform `"use server"` files. Client: replaces bodies with `__ev_call` stubs. Server: keeps bodies, appends `registerServerFn` calls.
-- `generateServerEntry(config, modules)` — Generate server entry source importing all server modules and bootstrapping the Hono app.
-- `detectUseServer(source)` — Check if source starts with `"use server"` directive.
-- `makeFnId(rootContext, resourcePath, exportName)` — Derive stable SHA-256 function ID.
-- `parseModuleRef(ref)` — Parse `"module#exportName"` strings.
+### `transformServerFile(source, options): string`
 
-## TransformOptions
+Transforms a `"use server"` file for either client or server target.
+
+**Client transform:**
+```
+Input:  "use server"; export async function getUsers() { return db.find(); }
+Output: import { __ev_call } from "@evjs/runtime";
+        export const getUsers = __ev_call("hash:getUsers", "hash");
+```
+
+**Server transform:**
+```
+Input:  "use server"; export async function getUsers() { return db.find(); }
+Output: import { registerServerFn } from "@evjs/runtime/server";
+        export async function getUsers() { return db.find(); }
+        registerServerFn("hash:getUsers", getUsers);
+```
+
+### `generateServerEntry(config, modules): string`
+
+Generates server entry source code that imports all discovered server modules and bootstraps the Hono app.
+
+```ts
+generateServerEntry(
+  {
+    appFactory: "@evjs/runtime/server#createApp",
+    runner: "@evjs/runtime/server#serve",
+    middleware: ["./middleware/auth#default"],
+  },
+  ["./api/users.server", "./api/posts.server"]
+);
+```
+
+### `detectUseServer(source): boolean`
+
+Returns `true` if source starts with `"use server";` directive.
+
+### `makeFnId(rootContext, resourcePath, exportName): string`
+
+Derives a stable SHA-256 function ID from the project root, file path, and export name.
+
+### `parseModuleRef(ref): { module, export }`
+
+Parses `"module#exportName"` strings into module and export components.
+
+## Types
+
 ```ts
 interface TransformOptions {
-  resourcePath: string;   // Absolute path to source file
-  rootContext: string;     // Project root directory
-  isServer: boolean;       // true = server build, false = client build
+  resourcePath: string;   // absolute path to source file
+  rootContext: string;     // project root directory
+  isServer: boolean;       // true = server build, false = client
   onServerFn?: (fnId: string, meta: { moduleId: string; export: string }) => void;
 }
-```
 
-## ServerEntryConfig
-```ts
 interface ServerEntryConfig {
-  appFactory?: string;  // Default: "@evjs/runtime/server#createApp"
-  runner?: string;       // E.g. "@evjs/runtime/server#serve"
-  setup?: string[];      // Extra imports for server entry
+  appFactory?: string;     // default: "@evjs/runtime/server#createApp"
+  runner?: string;         // e.g. "@evjs/runtime/server#serve"
+  middleware?: string[];   // middleware module refs
 }
 ```
 
-## RUNTIME Constants
-All identifiers used in generated code:
+## Constants (`RUNTIME`)
+
+Identifiers used in generated code — bundler adapters should use these:
+
 ```ts
 RUNTIME.serverModule          // "@evjs/runtime/server"
 RUNTIME.clientTransportModule // "@evjs/runtime/client/transport"
@@ -39,8 +83,27 @@ RUNTIME.clientCall            // "__ev_call"
 RUNTIME.fnIdProp              // "evId"
 ```
 
-## Usage
-This package is consumed by bundler adapters, not application code:
-```ts
-import { generateServerEntry, transformServerFile, detectUseServer } from "@evjs/build-tools";
-```
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/transforms/index.ts` | `transformServerFile` — main transform |
+| `src/transforms/client/` | Client-side SWC transform (stub generation) |
+| `src/transforms/server/` | Server-side SWC transform (registration) |
+| `src/transforms/utils.ts` | AST utilities |
+| `src/entry.ts` | `generateServerEntry` |
+| `src/codegen.ts` | `detectUseServer` |
+| `src/utils.ts` | `makeFnId`, `parseModuleRef` |
+| `src/types.ts` | Type definitions |
+
+## Writing a New Bundler Adapter
+
+To integrate with a new bundler (e.g., Vite, Rollup):
+
+1. Use `detectUseServer(source)` to identify server function files
+2. Call `transformServerFile(source, { isServer, ... })` in your loader/plugin
+3. Collect server functions via `onServerFn` callback
+4. Call `generateServerEntry(config, collectedModules)` to create the server entry
+5. Emit the server entry as a virtual module
+
+See `@evjs/webpack-plugin` for reference implementation.
