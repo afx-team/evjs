@@ -99,7 +99,6 @@ const usersRoute = createRoute({
 ### Routing
 
 
-
 **Recommended structure:**
 
 ```
