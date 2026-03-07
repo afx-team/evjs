@@ -16,13 +16,6 @@ export interface CreateAppOptions<TRouteTree extends AnyRoute> {
   /** The root route tree produced by createRootRoute and addChildren. */
   routeTree: TRouteTree;
   /**
-   * Optional configuration for the TanStack Router.
-   */
-  routerOptions?: Omit<
-    Parameters<typeof import("@tanstack/react-router").createRouter>[0],
-    "routeTree"
-  >;
-  /**
    * Optional configuration for the TanStack Query Client.
    */
   queryClientConfig?: QueryClientConfig;
@@ -88,7 +81,7 @@ export interface App<TRouter> {
 export function createApp<TRouteTree extends AnyRoute>(
   options: CreateAppOptions<TRouteTree>,
 ) {
-  const { routeTree, routerOptions, queryClientConfig, endpoint } = options;
+  const { routeTree, queryClientConfig, endpoint } = options;
 
   if (endpoint) {
     initTransport({ endpoint: endpoint });
@@ -97,9 +90,9 @@ export function createApp<TRouteTree extends AnyRoute>(
   const queryClient = new QueryClient(queryClientConfig);
 
   const router = createRouter({
-    ...routerOptions,
     routeTree,
-    context: { queryClient, ...routerOptions?.context } as AppRouteContext,
+    defaultPreload: "intent",
+    context: { queryClient } as AppRouteContext,
   });
 
   function render(container: string | HTMLElement): void {
