@@ -1,7 +1,7 @@
 /**
  * Server configuration.
  *
- * Controls server function endpoint, runner, middleware, codec, and port.
+ * Controls server function endpoint, runner, middleware, codec, and dev options.
  */
 export interface ServerConfig {
   /** Server runner module. Default: "@evjs/runtime/server/node". */
@@ -14,7 +14,6 @@ export interface ServerConfig {
   dev?: {
     /** API server port (dev mode). Default: 3001. */
     port?: number;
-    [key: string]: unknown;
   };
 }
 
@@ -35,8 +34,12 @@ export interface ClientConfig {
   dev?: {
     /** Dev server port. Default: 3000. */
     port?: number;
-    /** Extra webpack-dev-server options (merged with defaults). */
-    [key: string]: unknown;
+    /** Enable HTTPS. */
+    https?: boolean;
+    /** Open browser on start. */
+    open?: boolean;
+    /** Enable history API fallback for SPA routing. */
+    historyApiFallback?: boolean;
   };
   /** Transport options for server function calls. */
   transport?: {
@@ -54,6 +57,19 @@ export interface EvfConfig {
   server?: ServerConfig;
   client?: ClientConfig;
 }
+
+/**
+ * Default configuration values.
+ *
+ * Single source of truth for all defaults across the framework.
+ */
+export const CONFIG_DEFAULTS = {
+  entry: "./src/main.tsx",
+  html: "./index.html",
+  clientPort: 3000,
+  serverPort: 3001,
+  endpoint: "/api/fn",
+} as const;
 
 /**
  * Define configuration for the evf framework.

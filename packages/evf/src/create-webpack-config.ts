@@ -1,25 +1,14 @@
 import { createRequire } from "node:module";
 import path from "node:path";
-import type { EvfConfig } from "./config.js";
+import { CONFIG_DEFAULTS, type EvfConfig } from "./config.js";
 
 const esmRequire = createRequire(import.meta.url);
 
 /**
- * Default values for evf configuration.
- */
-const DEFAULTS = {
-  entry: "./src/main.tsx",
-  html: "./index.html",
-  port: 3000,
-  serverPort: 3001,
-} as const;
-
-/**
  * Create a webpack configuration object from EvfConfig.
  *
- * This replaces the 70+ line webpack.config.cjs boilerplate that
- * every project had to maintain manually. Returns a plain object
- * that can be passed directly to the webpack Node API.
+ * Returns a plain object that can be passed directly to the webpack Node API.
+ * No temp files are generated.
  */
 export function createWebpackConfig(
   config: EvfConfig | undefined,
@@ -27,10 +16,11 @@ export function createWebpackConfig(
 ): Record<string, unknown> {
   const client = config?.client;
   const server = config?.server;
-  const entry = client?.entry ?? DEFAULTS.entry;
-  const html = client?.html ?? DEFAULTS.html;
-  const port = client?.dev?.port ?? DEFAULTS.port;
-  const serverPort = server?.dev?.port ?? DEFAULTS.serverPort;
+  const entry = client?.entry ?? CONFIG_DEFAULTS.entry;
+  const html = client?.html ?? CONFIG_DEFAULTS.html;
+  const clientPort = client?.dev?.port ?? CONFIG_DEFAULTS.clientPort;
+  const serverPort = server?.dev?.port ?? CONFIG_DEFAULTS.serverPort;
+  const endpoint = server?.endpoint ?? CONFIG_DEFAULTS.endpoint;
   const isProduction = process.env.NODE_ENV === "production";
 
   const HtmlWebpackPlugin = esmRequire("html-webpack-plugin");
@@ -50,6 +40,13 @@ export function createWebpackConfig(
       return id;
     }
   };
+
+  // Derive the proxy base path from the configured endpoint.
+  // e.g. "/api/fn" → "/api", "/rpc/v1" → "/rpc"
+  const proxyBase = `/${endpoint.split("/").filter(Boolean)[0] || "api"}`;
+
+  // Destructure port out of dev overrides to avoid passing it twice.
+  const { port: _p, ...devServerOverrides } = client?.dev ?? {};
 
   return {
     name: "client",
@@ -100,16 +97,16 @@ export function createWebpackConfig(
       ? { splitChunks: { chunks: "all" as const } }
       : undefined,
     devServer: {
-      port,
+      port: clientPort,
       hot: true,
       devMiddleware: { writeToDisk: true },
       proxy: [
         {
-          context: ["/api"],
+          context: [proxyBase],
           target: `http://localhost:${serverPort}`,
         },
       ],
-      ...client?.dev,
+      ...devServerOverrides,
     },
   };
 }

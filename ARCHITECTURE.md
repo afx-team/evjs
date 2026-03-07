@@ -150,7 +150,7 @@ Browser ──▶ WebpackDevServer (port 3000)
 
 ┌─ ECMA (Deno/Bun/Workers) ──────────────────┐
 │  server.entry.mjs → @evjs/runtime/server/ecma │
-│  export default createHandler(app)         │
+│  export default createFetchHandler(app)         │
 └────────────────────────────────────────────┘
 
 ┌─ Service Worker (browser-offline) ─────────┐

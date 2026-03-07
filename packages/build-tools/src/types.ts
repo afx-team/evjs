@@ -1,10 +1,9 @@
 /** Configuration for the generated server entry. */
 export interface ServerEntryConfig {
   /**
-   * Extra import statements to prepend to the server entry.
-   * Useful for middleware, config, or side-effect imports.
+   * Middleware module paths to auto-register in the server entry.
    */
-  setup?: string[];
+  middleware?: string[];
 }
 
 /** Options for transforming a "use server" file. */

@@ -47,7 +47,7 @@ npm install @evjs/runtime
 
 | Export | Description |
 |--------|-------------|
-| `createHandler` | Wrap Hono app for Deno, Bun, or any Fetch-compatible runtime |
+| `createFetchHandler` | Wrap Hono app for Deno, Bun, or any Fetch-compatible runtime |
 
 ## Usage
 

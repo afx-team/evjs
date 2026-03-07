@@ -7,6 +7,7 @@ import { Command } from "commander";
 import { execa } from "execa";
 import fs from "fs-extra";
 import prompts from "prompts";
+import { CONFIG_DEFAULTS } from "./config.js";
 
 const esmRequire = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -124,29 +125,20 @@ program
   });
 
 /**
- * Resolve the webpack configuration object.
+ * Load config and create webpack configuration object.
  *
- * If ev.config.ts exists, build config from it.
- * If neither ev.config.ts nor webpack.config.cjs exists, use zero-config defaults.
- * Falls back to webpack.config.cjs if present and no ev.config.ts.
+ * Uses ev.config.ts when present, otherwise falls back to zero-config defaults.
+ * No webpack.config.cjs fallback — the meta-framework owns the build config.
  */
-async function resolveWebpackConfig(
-  cwd: string,
-): Promise<Record<string, unknown>> {
+async function resolveWebpackConfig(cwd: string) {
   const { loadConfig } = await import("./load-config.js");
   const evfConfig = await loadConfig(cwd);
 
-  const fallback = path.resolve(cwd, "webpack.config.cjs");
-  if (evfConfig || !fs.existsSync(fallback)) {
-    const { createWebpackConfig } = await import("./create-webpack-config.js");
-    logger.info`Using ${evfConfig ? "ev.config.ts" : "zero-config defaults"}`;
-    return createWebpackConfig(evfConfig, cwd);
-  }
+  const { createWebpackConfig } = await import("./create-webpack-config.js");
+  logger.info`Using ${evfConfig ? "ev.config.ts" : "zero-config defaults"}`;
+  const webpackConfig = createWebpackConfig(evfConfig, cwd);
 
-  // Fallback to webpack.config.cjs
-  logger.info`Using webpack.config.cjs`;
-  const mod = await import(fallback);
-  return mod.default ?? mod;
+  return { evfConfig, webpackConfig };
 }
 
 program
@@ -155,11 +147,10 @@ program
   .action(async () => {
     const cwd = process.cwd();
     process.env.NODE_ENV ??= "development";
-    const webpackConfig = await resolveWebpackConfig(cwd);
 
-    const { loadConfig } = await import("./load-config.js");
-    const evfConfig = await loadConfig(cwd);
-    const serverPort = evfConfig?.server?.dev?.port ?? 3001;
+    const { evfConfig, webpackConfig } = await resolveWebpackConfig(cwd);
+    const serverPort =
+      evfConfig?.server?.dev?.port ?? CONFIG_DEFAULTS.serverPort;
 
     logger.info`Starting development server...`;
     try {
@@ -173,7 +164,7 @@ program
       await server.start();
 
       // Background: wait for server bundle, then start Node API
-      const _serverRun = (async () => {
+      void (async () => {
         const manifestPath = path.resolve(cwd, "dist/server/manifest.json");
         const bootstrapPath = path.resolve(cwd, "dist/server/_dev_start.cjs");
 
@@ -198,11 +189,8 @@ program
                 [
                   `const bundle = require(${JSON.stringify(serverBundlePath)});`,
                   `const app = bundle.createApp();`,
-                  `const { serve } = require("@hono/node-server");`,
-                  `const port = process.env.PORT || ${serverPort};`,
-                  `serve({ fetch: app.fetch, port }, (info) => {`,
-                  `  console.log("Server API ready at http://localhost:" + info.port);`,
-                  `});`,
+                  `const { serve } = require("@evjs/runtime/server/node");`,
+                  `serve(app, { port: ${serverPort} });`,
                 ].join("\n"),
               );
 
@@ -222,8 +210,12 @@ program
           }
           await new Promise((r) => setTimeout(r, 500));
         }
-      })();
-    } catch (_e) {
+      })().catch((err) => {
+        logger.error`Server runner failed: ${err}`;
+        process.exit(1);
+      });
+    } catch (err) {
+      logger.error`Dev server failed to start: ${err}`;
       process.exit(1);
     }
   });
@@ -234,7 +226,7 @@ program
   .action(async () => {
     const cwd = process.cwd();
     process.env.NODE_ENV ??= "production";
-    const webpackConfig = await resolveWebpackConfig(cwd);
+    const { webpackConfig } = await resolveWebpackConfig(cwd);
 
     logger.info`Building for production...`;
     const webpack = esmRequire("webpack");
@@ -271,4 +263,3 @@ program
   });
 
 program.parse();
-

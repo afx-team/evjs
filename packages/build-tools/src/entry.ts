@@ -30,7 +30,7 @@ export function generateServerEntry(
   return emitCode(
     [
       `export { createApp } from "${RUNTIME.appModule}";`,
-      ...(config?.setup ?? []),
+      ...(config?.middleware ?? []),
       moduleImports,
       allExports.length ? `export { ${allExports.join(", ")} };` : "",
     ]

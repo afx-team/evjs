@@ -27,10 +27,10 @@ describe("generateServerEntry", () => {
     expect(result).toContain("export { _fns_0, _fns_1, _fns_2 }");
   });
 
-  it("includes setup imports when configured", () => {
+  it("includes middleware imports when configured", () => {
     const result = generateServerEntry(
       {
-        setup: [
+        middleware: [
           'import "./instrument.js";',
           'import { config } from "dotenv";',
         ],

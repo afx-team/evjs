@@ -14,7 +14,7 @@ import type { Hono } from "hono";
  * export default createHandler(app);
  * ```
  */
-export function createHandler(app: Hono) {
+export function createFetchHandler(app: Hono) {
   return {
     fetch: app.fetch,
   };
