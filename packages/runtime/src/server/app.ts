@@ -6,7 +6,7 @@
  */
 
 import { Hono } from "hono";
-import type { Codec } from "../codec.js";
+import type { Codec } from "../codec";
 import { DEFAULT_RPC_ENDPOINT } from "../constants";
 import { createRpcMiddleware } from "./handler";
 

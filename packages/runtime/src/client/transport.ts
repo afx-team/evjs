@@ -6,9 +6,9 @@
  * `__ev_call(fnId, args)`. This module provides that helper.
  */
 
-import { type Codec, jsonCodec } from "../codec.js";
+import { type Codec, jsonCodec } from "../codec";
 import { DEFAULT_RPC_ENDPOINT } from "../constants";
-import { ServerFunctionError } from "../errors.js";
+import { ServerFunctionError } from "../errors";
 
 /**
  * Request context passed through server calls.

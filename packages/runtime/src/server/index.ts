@@ -9,8 +9,8 @@
  * - @evjs/runtime/server/register
  */
 
-export type { Codec } from "../codec.js";
-export { jsonCodec } from "../codec.js";
+export type { Codec } from "../codec";
+export { jsonCodec } from "../codec";
 export type { CreateAppOptions } from "./app";
 export { createApp } from "./app";
 export type {

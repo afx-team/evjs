@@ -27,9 +27,9 @@ export {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-export type { Codec } from "../codec.js";
-export { jsonCodec } from "../codec.js";
-export { ServerFunctionError } from "../errors.js";
+export type { Codec } from "../codec";
+export { jsonCodec } from "../codec";
+export { ServerFunctionError } from "../errors";
 export type { AppRouteContext } from "./context";
 export { createAppRootRoute } from "./context";
 export type { App, CreateAppOptions } from "./create-app";

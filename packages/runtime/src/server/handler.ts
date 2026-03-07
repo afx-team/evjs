@@ -6,7 +6,7 @@
  */
 
 import { Hono } from "hono";
-import { type Codec, jsonCodec } from "../codec.js";
+import { type Codec, jsonCodec } from "../codec";
 import { dispatch } from "./dispatch";
 
 export interface RpcMiddlewareOptions {
