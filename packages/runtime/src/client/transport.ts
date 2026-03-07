@@ -6,7 +6,9 @@
  * `__ev_call(fnId, args)`. This module provides that helper.
  */
 
+import { type Codec, jsonCodec } from "../codec.js";
 import { DEFAULT_RPC_ENDPOINT } from "../constants";
+import { ServerFunctionError } from "../errors.js";
 
 /**
  * Request context passed through server calls.
@@ -55,6 +57,8 @@ export interface TransportOptions {
   endpoint?: string;
   /** Custom transport. When provided, `baseUrl` and `endpoint` are ignored. */
   transport?: ServerTransport;
+  /** Custom codec. Defaults to JSON. */
+  codec?: Codec;
 }
 
 /**
@@ -63,6 +67,7 @@ export interface TransportOptions {
 function createFetchTransport(
   baseUrl: string,
   endpoint: string,
+  codec: Codec = jsonCodec,
 ): ServerTransport {
   return {
     async send(
@@ -75,25 +80,32 @@ function createFetchTransport(
       const res = await fetch(url, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type": codec.contentType ?? "application/json",
           ...context?.headers,
         },
-        body: JSON.stringify({ fnId, args }),
+        body: codec.serialize({ fnId, args }),
         signal: context?.signal,
       });
 
       if (!res.ok) {
         const text = await res.text().catch(() => res.statusText);
-        throw new Error(
-          `[ev] Server function "${fnId}" failed (${res.status}): ${text}`,
+        const name = getFnName(fnId);
+        throw new ServerFunctionError(
+          `Server function "${name}" failed (${res.status}): ${text}`,
+          fnId,
+          res.status,
         );
       }
 
-      const payload = await res.json();
+      const raw = await res.text();
+      const payload = codec.deserialize(raw) as Record<string, unknown>;
 
       if (payload.error) {
-        throw new Error(
-          `[ev] Server function "${fnId}" threw: ${payload.error}`,
+        const name = getFnName(fnId);
+        throw new ServerFunctionError(
+          `Server function "${name}" threw: ${payload.error}`,
+          (payload.fnId as string) ?? fnId,
+          500,
         );
       }
 
@@ -115,13 +127,20 @@ function getTransport(): ServerTransport {
  * Configure the server transport. Call once at app startup if you need to
  * customise the endpoint URL or provide a custom transport.
  */
-export function configureTransport(options: TransportOptions): void {
+export function initTransport(options: TransportOptions): void {
+  if (process.env.NODE_ENV !== "production" && _transport !== null) {
+    console.warn(
+      "[ev] initTransport() was called more than once. " +
+        "This overwrites the previous transport configuration.",
+    );
+  }
   if (options.transport) {
     _transport = options.transport;
   } else {
     _transport = createFetchTransport(
       options.baseUrl ?? "",
       options.endpoint ?? DEFAULT_RPC_ENDPOINT,
+      options.codec,
     );
   }
 }
@@ -148,13 +167,33 @@ export async function __ev_call(
 const fnIdRegistry = new WeakMap<(...args: any[]) => any, string>();
 
 /**
- * Register a server function stub with its ID.
+ * Internal registry mapping function IDs to human-readable export names.
+ */
+const fnNameRegistry = new Map<string, string>();
+
+/**
+ * Look up the human-readable export name for a function ID.
+ * Falls back to the fnId itself if no name is registered.
+ */
+export function getFnName(fnId: string): string {
+  return fnNameRegistry.get(fnId) ?? fnId;
+}
+
+/**
+ * Register a server function stub with its ID and optional export name.
  *
  * @internal Called by build-tools codegen. Do not use directly.
  */
-// biome-ignore lint/suspicious/noExplicitAny: must accept any function shape
-export function __ev_register(fn: (...args: any[]) => any, fnId: string): void {
+export function __ev_register(
+  // biome-ignore lint/suspicious/noExplicitAny: must accept any function shape
+  fn: (...args: any[]) => any,
+  fnId: string,
+  exportName?: string,
+): void {
   fnIdRegistry.set(fn, fnId);
+  if (exportName) {
+    fnNameRegistry.set(fnId, exportName);
+  }
 }
 
 /**

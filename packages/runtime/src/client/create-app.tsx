@@ -6,6 +6,7 @@ import {
 import type { AnyRoute, AnyRouter } from "@tanstack/react-router";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { createRoot } from "react-dom/client";
+import { initTransport } from "./transport";
 
 /**
  * Options for creating an ev application.
@@ -24,6 +25,11 @@ export interface CreateAppOptions<TRouteTree extends AnyRoute> {
    * Optional configuration for the TanStack Query Client.
    */
   queryClientConfig?: QueryClientConfig;
+  /**
+   * RPC endpoint path. When provided, automatically configures the transport.
+   * Defaults to `/api/rpc` if not specified.
+   */
+  rpcEndpoint?: string;
 }
 
 /**
@@ -59,7 +65,11 @@ export interface App {
 export function createApp<TRouteTree extends AnyRoute>(
   options: CreateAppOptions<TRouteTree>,
 ): App {
-  const { routeTree, routerOptions, queryClientConfig } = options;
+  const { routeTree, routerOptions, queryClientConfig, rpcEndpoint } = options;
+
+  if (rpcEndpoint) {
+    initTransport({ endpoint: rpcEndpoint });
+  }
 
   const queryClient = new QueryClient(queryClientConfig);
 

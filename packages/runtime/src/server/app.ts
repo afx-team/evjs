@@ -6,6 +6,7 @@
  */
 
 import { Hono } from "hono";
+import type { Codec } from "../codec.js";
 import { DEFAULT_RPC_ENDPOINT } from "../constants";
 import { createRpcMiddleware } from "./handler";
 
@@ -13,6 +14,8 @@ import { createRpcMiddleware } from "./handler";
 export interface CreateAppOptions {
   /** RPC endpoint path. Defaults to "/api/rpc". */
   rpcEndpoint?: string;
+  /** Custom codec for the RPC endpoint. Defaults to JSON. */
+  codec?: Codec;
 }
 
 /**
@@ -25,7 +28,7 @@ export interface CreateAppOptions {
  * @returns A runtime-agnostic Hono app instance.
  */
 export function createApp(options?: CreateAppOptions): Hono {
-  const { rpcEndpoint = DEFAULT_RPC_ENDPOINT } = options ?? {};
+  const { rpcEndpoint = DEFAULT_RPC_ENDPOINT, codec } = options ?? {};
 
   const app = new Hono();
 
@@ -33,7 +36,7 @@ export function createApp(options?: CreateAppOptions): Hono {
   app.get("/health", (c) => c.json({ status: "ok" }));
 
   // Mount RPC endpoint
-  app.route(rpcEndpoint, createRpcMiddleware());
+  app.route(rpcEndpoint, createRpcMiddleware({ codec }));
 
   return app;
 }

@@ -9,8 +9,17 @@
  * - @evjs/runtime/server/register
  */
 
+export type { Codec } from "../codec.js";
+export { jsonCodec } from "../codec.js";
 export type { CreateAppOptions } from "./app";
 export { createApp } from "./app";
+export type {
+  DispatchError,
+  DispatchResult,
+  DispatchSuccess,
+} from "./dispatch";
+export { dispatch } from "./dispatch";
+export type { RpcMiddlewareOptions } from "./handler";
 export { createRpcMiddleware } from "./handler";
 export type { ServerFn } from "./register";
 export { registerServerFn } from "./register";

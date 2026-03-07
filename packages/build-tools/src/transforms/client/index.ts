@@ -13,7 +13,7 @@ export function buildClientOutput(
     );
     return [
       `export function ${name}(...args) { return ${RUNTIME.clientCall}(${fnId}, args); }`,
-      `${RUNTIME.clientRegister}(${name}, ${fnId});`,
+      `${RUNTIME.clientRegister}(${name}, ${fnId}, ${JSON.stringify(name)});`,
     ].join("\n");
   });
 
