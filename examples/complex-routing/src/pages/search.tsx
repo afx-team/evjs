@@ -13,7 +13,7 @@ const styles = {
 
 function SearchPage() {
   const { q } = searchRoute.useSearch();
-  const { data: results } = query(getPosts).useQuery([q || undefined]);
+  const { data: results } = query(getPosts).useQuery(q || undefined);
 
   return (
     <div>

@@ -35,7 +35,7 @@ export const dashboardLayout = createRoute({
 // ── Dashboard page (/dashboard) ──
 
 function Dashboard() {
-  const { data: stats } = query(getStats).useQuery([]);
+  const { data: stats } = query(getStats).useQuery();
   if (!stats) return <p>Loading...</p>;
   return (
     <div>
@@ -76,6 +76,6 @@ export const dashboardRoute = createRoute({
   getParentRoute: () => dashboardLayout,
   path: "/dashboard",
   loader: ({ context }) =>
-    context.queryClient.ensureQueryData(query(getStats).queryOptions([])),
+    context.queryClient.ensureQueryData(query(getStats).queryOptions()),
   component: Dashboard,
 });

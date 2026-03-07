@@ -277,13 +277,13 @@ Always use `query` / `mutation` proxies. Do **NOT** use `useQuery` with manual f
 
 ```tsx
 // Hook usage
-const { data } = query(getUsers).useQuery([]);
+const { data } = query(getUsers).useQuery();
 
 // With arguments (tuple)
-const { data } = query(getUser).useQuery([userId]);
+const { data } = query(getUser).useQuery(userId);
 
 // queryOptions (prefetch, route loaders)
-const opts = query(getUsers).queryOptions([]);
+const opts = query(getUsers).queryOptions();
 queryClient.ensureQueryData(opts);
 
 // Cache invalidation — use stable queryKey

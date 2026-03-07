@@ -45,17 +45,17 @@ import { query, mutation } from "@evjs/runtime/client";
 import { getUsers, createUser } from "./api/users.server";
 
 // Data fetching
-const { data, isLoading, error } = query(getUsers).useQuery([]);
+const { data, isLoading, error } = query(getUsers).useQuery();
 
 // With arguments (always a tuple)
-const { data } = query(getUser).useQuery([userId]);
+const { data } = query(getUser).useQuery(userId);
 
 // Mutations
 const { mutate, isPending } = mutation(createUser).useMutation();
 mutate([{ name: "Alice", email: "alice@example.com" }]);
 
 // queryOptions — for route loaders, prefetching, cache control
-const opts = query(getUsers).queryOptions([]);
+const opts = query(getUsers).queryOptions();
 queryClient.ensureQueryData(opts);
 queryClient.prefetchQuery(opts);
 
@@ -70,7 +70,7 @@ const api = {
   query: createQueryProxy({ getUsers, getUser }),
   mutation: createMutationProxy({ createUser }),
 };
-api.query.getUsers.useQuery([]);
+api.query.getUsers.useQuery();
 ```
 
 ### Route Loader Pattern
@@ -163,7 +163,7 @@ const postDetailRoute = createRoute({
   component: PostDetail,
   loader: ({ params, context }) =>
     context.queryClient.ensureQueryData(
-      query(getUser).queryOptions([params.postId])
+      query(getUser).queryOptions(params.postId)
     ),
 });
 
@@ -373,7 +373,7 @@ registerMiddleware(async (c, next) => {
 ## Common Mistakes
 
 1. **Don't use raw `useQuery`** for server functions — use `query(fn).useQuery(args)`
-2. **Arguments must be a tuple** — `query(getUser).useQuery([id])` not `query(getUser).useQuery(id)`
+2. **Arguments are spread, not wrapped** — `query(getUser).useQuery(id)` not `query(getUser).useQuery([id])`
 3. **Don't call server functions directly in components** — wrap with `query()` or `mutation()`
 4. **Don't forget `"use server";`** at the top of `.server.ts` files
 5. **Import `ServerError` from `@evjs/runtime`** — not from `/server` or `/client`

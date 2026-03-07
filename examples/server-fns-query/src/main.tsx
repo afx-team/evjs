@@ -47,7 +47,7 @@ function UsersPage() {
   const [email, setEmail] = useState("");
 
   const { data: users = [], isLoading: isLoadingUsers } =
-    api.users.query.getUsers.useQuery([]);
+    api.users.query.getUsers.useQuery();
 
   const queryClient = useQueryClient();
   const { mutateAsync: createUserMutation } =
@@ -73,7 +73,7 @@ function UsersPage() {
   const [content, setContent] = useState("");
 
   const { data: posts = [], isLoading: isLoadingPosts } =
-    api.posts.query.getPosts.useQuery([]);
+    api.posts.query.getPosts.useQuery();
 
   const { mutateAsync: createPostMutation } =
     api.posts.mutation.createPost.useMutation({
@@ -162,10 +162,10 @@ const usersRoute = createRoute({
   loader: ({ context }) =>
     Promise.all([
       context.queryClient.ensureQueryData(
-        api.users.query.getUsers.queryOptions([]),
+        api.users.query.getUsers.queryOptions(),
       ),
       context.queryClient.ensureQueryData(
-        api.posts.query.getPosts.queryOptions([]),
+        api.posts.query.getPosts.queryOptions(),
       ),
     ]),
 });

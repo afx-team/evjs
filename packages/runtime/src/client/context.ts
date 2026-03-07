@@ -20,7 +20,7 @@ export interface AppRouteContext {
  *   getParentRoute: () => rootRoute,
  *   path: "/users",
  *   loader: ({ context }) =>
- *     context.queryClient.ensureQueryData(query(getUsers).queryOptions([])),
+ *     context.queryClient.ensureQueryData(query(getUsers).queryOptions()),
  * });
  * ```
  */

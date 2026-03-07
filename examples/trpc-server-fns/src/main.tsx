@@ -74,7 +74,7 @@ function HomePage() {
   const [trpcData, setTrpcData] = useState<unknown>(null);
   const { data: serverTime, refetch: refetchTime } = query(
     getServerTime,
-  ).useQuery([]);
+  ).useQuery();
 
   const refreshAction = useCallback(async () => {
     // 1. Call via tRPC (proxied through Server Function)

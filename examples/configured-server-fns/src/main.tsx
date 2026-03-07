@@ -46,7 +46,7 @@ function UsersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
 
-  const { data: users = [], isLoading } = api.users.query.getUsers.useQuery([]);
+  const { data: users = [], isLoading } = api.users.query.getUsers.useQuery();
 
   const queryClient = useQueryClient();
   const { mutateAsync: doCreateUser } =
@@ -103,7 +103,7 @@ const usersRoute = createRoute({
   component: UsersPage,
   loader: ({ context }) =>
     context.queryClient.ensureQueryData(
-      api.users.query.getUsers.queryOptions([]),
+      api.users.query.getUsers.queryOptions(),
     ),
 });
 

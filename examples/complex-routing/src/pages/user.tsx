@@ -8,7 +8,7 @@ const styles = {
 
 function UserProfile() {
   const { username } = userRoute.useParams();
-  const { data: user } = query(getUser).useQuery([username]);
+  const { data: user } = query(getUser).useQuery(username);
 
   if (!user) return <p>Loading...</p>;
   return (
@@ -26,7 +26,7 @@ export const userRoute = createRoute({
   path: "/users/$username",
   loader: ({ params, context }) =>
     context.queryClient.ensureQueryData(
-      query(getUser).queryOptions([params.username]),
+      query(getUser).queryOptions(params.username),
     ),
   component: UserProfile,
 });

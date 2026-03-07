@@ -22,7 +22,7 @@ const styles = {
 // ── Posts layout (/posts) ──
 
 function PostsLayout() {
-  const { data: posts } = query(getPosts).useQuery([]);
+  const { data: posts } = query(getPosts).useQuery();
   return (
     <div style={styles.sidebar}>
       <div style={styles.nav}>
@@ -69,7 +69,7 @@ export const postsIndexRoute = createRoute({
 
 function PostDetail() {
   const { postId } = postDetailRoute.useParams();
-  const { data: post } = query(getPost).useQuery([postId]);
+  const { data: post } = query(getPost).useQuery(postId);
 
   if (!post) return <p>Loading...</p>;
   return (
@@ -98,7 +98,7 @@ export const postDetailRoute = createRoute({
   path: "$postId",
   loader: ({ params, context }) =>
     context.queryClient.ensureQueryData(
-      query(getPost).queryOptions([params.postId]),
+      query(getPost).queryOptions(params.postId),
     ),
   component: PostDetail,
 });
