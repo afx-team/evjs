@@ -8,9 +8,9 @@
  * 4. Tears everything down after tests complete
  */
 
-import { type ChildProcess, execSync, spawn } from "node:child_process";
-import http from "node:http";
+import { execSync, spawn } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import { test as base, expect } from "@playwright/test";
 
@@ -42,11 +42,14 @@ export function createExampleTest(exampleName: string) {
   return base.extend<ExampleFixture, WorkerFixture>({
     _exampleApp: [
       // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture pattern
-      async ({ }, use, workerInfo) => {
+      async ({}, use, workerInfo) => {
         // Base port depends on both worker index and a hash of the example name
         // to avoid conflicts if multiple worker fixtures run sequentially.
-        const hash = Array.from(exampleName).reduce((sum, char) => sum + char.charCodeAt(0), 0);
-        const apiPort = 30000 + (workerInfo.workerIndex * 100) + (hash % 100);
+        const hash = Array.from(exampleName).reduce(
+          (sum, char) => sum + char.charCodeAt(0),
+          0,
+        );
+        const apiPort = 30000 + workerInfo.workerIndex * 100 + (hash % 100);
         const webPort = apiPort + 1;
 
         // 1. Build with webpack
@@ -56,7 +59,12 @@ export function createExampleTest(exampleName: string) {
         });
 
         // 2. Read the server manifest to get the hashed entry filename
-        const manifestPath = path.join(exampleDir, "dist", "server", "manifest.json");
+        const manifestPath = path.join(
+          exampleDir,
+          "dist",
+          "server",
+          "manifest.json",
+        );
         const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
         const serverEntryPath = path.join(
           exampleDir,

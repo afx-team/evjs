@@ -9,7 +9,9 @@ describe("generateServerEntry", () => {
 
     expect(result).toContain("import * as _fns_0");
     expect(result).toContain("export { _fns_0 }");
-    expect(result).toContain('export { createApp } from "@evjs/runtime/server"');
+    expect(result).toContain(
+      'export { createApp } from "@evjs/runtime/server"',
+    );
   });
 
   it("imports and re-exports all server modules", () => {

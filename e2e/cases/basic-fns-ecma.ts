@@ -16,24 +16,19 @@ test.describe("basic-fns-ecma", () => {
     await page.goto(baseURL);
 
     // Verify messages fetched from server
-    await expect(
-      page.getByText("Hello from the ECMA runtime!"),
-    ).toBeVisible();
+    await expect(page.getByText("Hello from the ECMA runtime!")).toBeVisible();
     await expect(
       page.getByText("This server runs on any Fetch-compatible runtime."),
     ).toBeVisible();
   });
 
-  test("posts a new message via server function", async ({
-    page,
-    baseURL,
-  }) => {
+  test("posts a new message via server function", async ({ page, baseURL }) => {
     await page.goto(baseURL);
 
     // Wait for initial load
-    await expect(
-      page.getByText("Hello from the ECMA runtime!"),
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("Hello from the ECMA runtime!")).toBeVisible({
+      timeout: 10_000,
+    });
 
     // Post a new message
     await page.fill('[placeholder="Message"]', "Test message from e2e");
@@ -43,8 +38,8 @@ test.describe("basic-fns-ecma", () => {
     await expect(page.locator('[placeholder="Message"]')).toHaveValue("");
 
     // Verify the new message appears
-    await expect(
-      page.getByText("Test message from e2e"),
-    ).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText("Test message from e2e")).toBeVisible({
+      timeout: 5_000,
+    });
   });
 });

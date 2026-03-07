@@ -163,12 +163,8 @@ describe("transformServerFile", () => {
 
       // Extract hex IDs from both outputs
       const hexPattern = /"([a-f0-9]{16})"/g;
-      const clientIds = [...clientResult.matchAll(hexPattern)].map(
-        (m) => m[1],
-      );
-      const serverIds = [...serverResult.matchAll(hexPattern)].map(
-        (m) => m[1],
-      );
+      const clientIds = [...clientResult.matchAll(hexPattern)].map((m) => m[1]);
+      const serverIds = [...serverResult.matchAll(hexPattern)].map((m) => m[1]);
 
       expect(clientIds.length).toBeGreaterThan(0);
       const uniqueClientIds = [...new Set(clientIds)].sort();

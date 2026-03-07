@@ -2,8 +2,16 @@
 
 /** Simulated message store. */
 const messages: { id: string; text: string; timestamp: string }[] = [
-  { id: "1", text: "Hello from the ECMA runtime!", timestamp: new Date().toISOString() },
-  { id: "2", text: "This server runs on any Fetch-compatible runtime.", timestamp: new Date().toISOString() },
+  {
+    id: "1",
+    text: "Hello from the ECMA runtime!",
+    timestamp: new Date().toISOString(),
+  },
+  {
+    id: "2",
+    text: "This server runs on any Fetch-compatible runtime.",
+    timestamp: new Date().toISOString(),
+  },
 ];
 
 /** Get all messages. */

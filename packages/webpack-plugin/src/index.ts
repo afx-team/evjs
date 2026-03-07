@@ -4,7 +4,7 @@ import {
   generateServerEntry,
   type ServerEntryConfig,
 } from "@evjs/build-tools";
-import type { ServerManifest, ServerFnEntry } from "@evjs/manifest";
+import type { ServerFnEntry, ServerManifest } from "@evjs/manifest";
 import type { Compiler } from "webpack";
 
 class ManifestCollector {

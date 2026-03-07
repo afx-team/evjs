@@ -57,9 +57,7 @@ const clientConfig = {
     }),
     new EvWebpackPlugin(),
   ],
-  optimization: isProduction
-    ? { splitChunks: { chunks: "all" } }
-    : undefined,
+  optimization: isProduction ? { splitChunks: { chunks: "all" } } : undefined,
   devServer: {
     port: 3000,
     hot: true,

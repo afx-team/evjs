@@ -25,9 +25,7 @@ describe("detectUseServer", () => {
       detectUseServer('// comment\n"use server";\nexport function foo() {}'),
     ).toBe(true);
     expect(
-      detectUseServer(
-        '/* block */\n"use server";\nexport function foo() {}',
-      ),
+      detectUseServer('/* block */\n"use server";\nexport function foo() {}'),
     ).toBe(true);
   });
 
