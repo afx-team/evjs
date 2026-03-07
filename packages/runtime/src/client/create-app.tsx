@@ -6,6 +6,7 @@ import {
 import type { AnyRoute } from "@tanstack/react-router";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { createRoot } from "react-dom/client";
+import type { AppRouteContext } from "./context";
 import { initTransport } from "./transport";
 
 /**
@@ -98,8 +99,8 @@ export function createApp<TRouteTree extends AnyRoute>(
   const router = createRouter({
     ...routerOptions,
     routeTree,
-    context: { queryClient, ...routerOptions?.context },
-  } as Parameters<typeof createRouter>[0]);
+    context: { queryClient, ...routerOptions?.context } as AppRouteContext,
+  });
 
   function render(container: string | HTMLElement): void {
     const el =
