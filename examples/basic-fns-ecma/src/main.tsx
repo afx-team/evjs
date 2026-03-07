@@ -15,8 +15,8 @@ function Root() {
     <div style={{ fontFamily: "system-ui, sans-serif", padding: "1rem" }}>
       <h1>ECMA Runtime Example</h1>
       <p style={{ color: "#666" }}>
-        Server bundle is environment-agnostic — works in Node.js, Deno, Bun,
-        any Fetch-compatible runtime.
+        Server bundle is environment-agnostic — works in Node.js, Deno, Bun, any
+        Fetch-compatible runtime.
       </p>
       <nav style={{ display: "flex", gap: "1rem", marginBottom: "1rem" }}>
         <Link to="/">Messages</Link>
