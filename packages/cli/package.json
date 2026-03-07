@@ -1,6 +1,6 @@
 {
   "name": "@evjs/cli",
-  "version": "0.0.1-rc.6",
+  "version": "0.0.1-rc.7",
   "description": "The evf meta-framework",
   "type": "module",
   "main": "./dist/config.js",
@@ -31,7 +31,7 @@
     "postpublish": "node scripts/restore-templates.js"
   },
   "dependencies": {
-    "@evjs/webpack-plugin": "0.0.1-rc.6",
+    "@evjs/webpack-plugin": "0.0.1-rc.7",
     "@logtape/logtape": "^2.0.4",
     "@swc/core": "^1.2.147",
     "commander": "^12.1.0",
