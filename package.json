@@ -32,7 +32,6 @@
   "devDependencies": {
     "@biomejs/biome": "2.4.5",
     "@playwright/test": "^1.58.2",
-    "@swc/core": "^1.15.18",
     "turbo": "^2.4.2",
     "vitest": "^4.0.18"
   }

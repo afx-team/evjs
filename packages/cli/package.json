@@ -33,6 +33,7 @@
   "dependencies": {
     "@evjs/webpack-plugin": "0.0.1-rc.5",
     "@logtape/logtape": "^2.0.4",
+    "@swc/core": "^1.2.147",
     "commander": "^12.1.0",
     "execa": "^9.5.2",
     "fs-extra": "^11.3.0",

@@ -58,7 +58,7 @@ for (const pkg of packages) {
 
 // 3. Sync cli templates dependency versions
 console.log(`\nSyncing template dependencies...`);
-const templatesDir = path.resolve(rootDir, "packages/evf/templates");
+const templatesDir = path.resolve(rootDir, "packages/cli/templates");
 const templates = fs.readdirSync(templatesDir);
 
 for (const template of templates) {
@@ -94,7 +94,7 @@ for (const template of templates) {
 
   if (modified) {
     fs.writeFileSync(pkgPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
-    console.log(`Updated packages/evf/templates/${template}/package.json`);
+    console.log(`Updated packages/cli/templates/${template}/package.json`);
   }
 }
 
