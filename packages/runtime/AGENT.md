@@ -98,91 +98,111 @@ const usersRoute = createRoute({
 
 ### Routing (Complex Example)
 
-```tsx
-import {
-  createApp, createAppRootRoute, createRoute,
-  Link, Outlet, Navigate, useParams, useSearch,
-  redirect, notFound, lazyRouteComponent,
-} from "@evjs/runtime";
-import { query } from "@evjs/runtime/client";
-import { getUsers, getUser, getPosts } from "./api/data.server";
+Structure routes via `pages/*` files:
 
-// ── Root layout ──
-const rootRoute = createAppRootRoute({
+```
+src/
+├── main.tsx                  ← route tree + type registration
+├── api/data.server.ts        ← server functions
+└── pages/
+    ├── __root.tsx             ← root layout + nav
+    ├── home.tsx               ← /
+    ├── posts/index.tsx        ← /posts (layout + index + $postId)
+    ├── user.tsx               ← /users/$username
+    ├── dashboard.tsx          ← pathless layout + /dashboard
+    ├── search.tsx             ← /search?q=
+    └── catch.tsx              ← redirect + 404
+```
+
+#### `src/pages/__root.tsx` — Root layout
+
+```tsx
+import { createAppRootRoute, Link, Outlet } from "@evjs/runtime/client";
+
+export const rootRoute = createAppRootRoute({
   component: () => (
     <div>
       <nav>
         <Link to="/">Home</Link>
-        <Link to="/dashboard">Dashboard</Link>
         <Link to="/posts">Posts</Link>
+        <Link to="/dashboard">Dashboard</Link>
       </nav>
       <Outlet />
     </div>
   ),
 });
+```
 
-// ── Static routes ──
-const homeRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/",
-  component: () => <h1>Home</h1>,
-});
+#### `src/pages/posts/index.tsx` — Nested group with dynamic `$postId`
 
-// ── Pathless layout (shared UI, no URL segment) ──
-const dashboardLayout = createRoute({
-  getParentRoute: () => rootRoute,
-  id: "dashboard-layout",     // `id` instead of `path` = pathless
-  component: () => (
-    <div className="dashboard">
-      <aside>Sidebar</aside>
-      <main><Outlet /></main>
-    </div>
-  ),
-});
+```tsx
+import { createRoute, Link, Outlet } from "@evjs/runtime/client";
+import { query } from "@evjs/runtime/client";
+import { getPost, getPosts } from "../../api/data.server";
+import { rootRoute } from "../__root";
 
-const dashboardRoute = createRoute({
-  getParentRoute: () => dashboardLayout,
-  path: "/dashboard",
-  component: DashboardPage,
-  loader: ({ context }) =>
-    context.queryClient.ensureQueryData(query(getUsers).queryOptions()),
-});
-
-// ── Nested group with dynamic param ──
-const postsRoute = createRoute({
+// Layout: /posts (sidebar + outlet)
+export const postsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/posts",
   component: () => (
-    <div style={{ display: "flex", gap: "1rem" }}>
+    <div style={{ display: "flex" }}>
       <PostsSidebar />
       <Outlet />
     </div>
   ),
 });
 
-const postsIndexRoute = createRoute({
+// Index: /posts/ (no post selected)
+export const postsIndexRoute = createRoute({
   getParentRoute: () => postsRoute,
-  path: "/",                   // /posts (index)
+  path: "/",
   component: () => <p>Select a post</p>,
 });
 
-const postDetailRoute = createRoute({
+// Detail: /posts/$postId (dynamic slug)
+export const postDetailRoute = createRoute({
   getParentRoute: () => postsRoute,
-  path: "$postId",             // /posts/:postId (dynamic slug)
-  component: PostDetail,
+  path: "$postId",
   loader: ({ params, context }) =>
-    context.queryClient.ensureQueryData(
-      query(getUser).queryOptions(params.postId)
-    ),
+    context.queryClient.ensureQueryData(query(getPost).queryOptions(params.postId)),
+  component: PostDetail,
 });
 
 function PostDetail() {
-  const { postId } = postDetailRoute.useParams();
+  const { postId } = postDetailRoute.useParams(); // postId: string (type-safe!)
+  const { data: post } = query(getPost).useQuery(postId);
   // ...
 }
+```
 
-// ── Search params ──
-const searchRoute = createRoute({
+#### `src/pages/dashboard.tsx` — Pathless layout
+
+```tsx
+import { createRoute, Outlet } from "@evjs/runtime/client";
+import { rootRoute } from "./__root";
+
+// Pathless layout: `id` instead of `path` — shared UI, no URL segment
+export const dashboardLayout = createRoute({
+  getParentRoute: () => rootRoute,
+  id: "dashboard-layout",
+  component: () => <div className="dashboard"><Outlet /></div>,
+});
+
+export const dashboardRoute = createRoute({
+  getParentRoute: () => dashboardLayout,
+  path: "/dashboard",
+  component: DashboardPage,
+});
+```
+
+#### `src/pages/search.tsx` — Typed search params
+
+```tsx
+import { createRoute } from "@evjs/runtime/client";
+import { rootRoute } from "./__root";
+
+export const searchRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/search",
   validateSearch: (search: Record<string, unknown>) => ({
@@ -193,31 +213,49 @@ const searchRoute = createRoute({
 });
 
 function SearchPage() {
-  const { q, page } = searchRoute.useSearch();
+  const { q, page } = searchRoute.useSearch(); // q: string, page: number (type-safe!)
   // <Link to="/search" search={{ q: "hello", page: 2 }}>
 }
+```
 
-// ── Redirect ──
-const oldRoute = createRoute({
+#### `src/pages/catch.tsx` — Redirect + 404
+
+```tsx
+import { createRoute, redirect } from "@evjs/runtime/client";
+import { rootRoute } from "./__root";
+
+export const redirectRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/old-path",
+  path: "/old-blog",
   beforeLoad: () => { throw redirect({ to: "/posts" }); },
 });
 
-// ── Catch-all (404) ──
-const notFoundRoute = createRoute({
+export const notFoundRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "*",
   component: () => <h1>404 — Not Found</h1>,
 });
+```
 
-// ── Route tree ──
+#### `src/main.tsx` — Route tree + type registration
+
+```tsx
+import { createApp } from "@evjs/runtime/client";
+import { rootRoute } from "./pages/__root";
+import { notFoundRoute, redirectRoute } from "./pages/catch";
+import { dashboardLayout, dashboardRoute } from "./pages/dashboard";
+import { homeRoute } from "./pages/home";
+import { postDetailRoute, postsIndexRoute, postsRoute } from "./pages/posts";
+import { searchRoute } from "./pages/search";
+import { userRoute } from "./pages/user";
+
 const routeTree = rootRoute.addChildren([
   homeRoute,
-  dashboardLayout.addChildren([dashboardRoute]),
   postsRoute.addChildren([postsIndexRoute, postDetailRoute]),
+  userRoute,
+  dashboardLayout.addChildren([dashboardRoute]),
   searchRoute,
-  oldRoute,
+  redirectRoute,
   notFoundRoute,
 ]);
 
