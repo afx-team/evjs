@@ -5,7 +5,7 @@ import type { Hono } from "hono";
  *
  * Exports the Hono app's fetch handler as a standard ECMA-compatible
  * module. Works in any runtime that supports the Fetch API standard
- * (Deno, Bun, Cloudflare Workers, Vercel Edge, etc.).
+ * (Deno, Bun, or any Fetch-compatible runtime.).
  *
  * Usage:
  * ```ts

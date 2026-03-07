@@ -16,7 +16,7 @@ See [ROADMAP.md](./ROADMAP.md) for the full, detailed roadmap.
 Core runtime providing isomorphic utilities.
 - `client`: `createApp`, `createRoute`, `Outlet`, `Link`, `initTransport`, `ServerTransport`.
 - `server`: `createApp` (Hono, supports `endpoint` option), `runNodeServer` (Node runner), `registerServerFn`.
-- `server/ecma`: `createHandler` — ECMA-standard adapter for Deno, Bun, Cloudflare Workers.
+- `server/ecma`: `createHandler` — ECMA-standard adapter for Deno, Bun, or any Fetch-compatible runtime.
 - Server powered by [Hono](https://hono.dev), runtime-agnostic (Node, Edge, Bun).
 
 ### `@evjs/manifest`

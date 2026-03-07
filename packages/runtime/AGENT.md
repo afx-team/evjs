@@ -72,7 +72,7 @@ initTransport({ transport: { send: async (fnId, args) => { /* custom */ } } });
 
 ## ECMA Adapter (`@evjs/runtime/server/ecma`)
 
-- `createHandler(app)` — Wraps a Hono app for deployment to Deno, Bun, Cloudflare Workers, or any Fetch API-compatible runtime.
+- `createHandler(app)` — Wraps a Hono app for deployment to Deno, Bun, or any Fetch-compatible runtime.
 
 ## Server Functions
 Files must start with `"use server";`, use named async exports, and end in `.server.ts`.

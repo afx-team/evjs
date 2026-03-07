@@ -12,9 +12,9 @@
 
 **Ev**aluation + **Ev**olution + **F**ramework
 
-- **Evaluation** — Run on any JavaScript runtime. Node.js, Deno, Bun, Cloudflare Workers, Vercel Edge — your code works everywhere with zero changes.
-- **Evolution** — Built to evolve with AI. First-class support for AI-assisted development, from code generation to intelligent tooling.
-- **Framework** — A batteries-included meta-framework that stays out of your way. Type-safe routing, server functions, and pluggable transports — all with minimal boilerplate.
+- **Evaluation** — Run on Node.js, Deno, Bun, and Edge runtimes with the same codebase.
+- **Evolution** — Evolving alongside AI tooling to improve the developer experience.
+- **Framework** — Type-safe routing, server functions, and pluggable transports built on TanStack and Hono.
 
 ## ⚡ Features
 
