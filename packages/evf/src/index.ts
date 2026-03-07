@@ -50,6 +50,10 @@ program
           choices: [
             { title: "Basic CSR (Client-Side Rendering)", value: "basic-csr" },
             { title: "Basic Server Functions", value: "basic-server-fns" },
+            {
+              title: "Configured Server Functions (ev.config.ts + Query)",
+              value: "configured-server-fns",
+            },
             { title: "tRPC + Server Functions", value: "trpc-server-fns" },
           ],
         },
