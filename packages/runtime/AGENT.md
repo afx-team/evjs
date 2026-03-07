@@ -14,7 +14,7 @@ Core runtime for evjs apps. Two entry points:
 ### App Bootstrap
 
 ```tsx
-import { createApp, createAppRootRoute, createRoute, createRouter } from "@evjs/runtime";
+import { createApp, createAppRootRoute, createRoute } from "@evjs/runtime";
 
 const rootRoute = createAppRootRoute({ component: RootLayout });
 
@@ -26,7 +26,16 @@ const homeRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([homeRoute]);
 
-createApp({ routeTree }).render("#app");
+const app = createApp({ routeTree });
+
+// REQUIRED for type-safe useParams, useSearch, Link, etc.
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: typeof app.router;
+  }
+}
+
+app.render("#app");
 ```
 
 **Key functions:**
@@ -47,7 +56,7 @@ import { getUsers, createUser } from "./api/users.server";
 // Data fetching
 const { data, isLoading, error } = query(getUsers).useQuery();
 
-// With arguments (always a tuple)
+// With arguments (spread, not wrapped in array)
 const { data } = query(getUser).useQuery(userId);
 
 // Mutations
@@ -82,7 +91,7 @@ const usersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/users",
   loader: ({ context }) =>
-    context.queryClient.ensureQueryData(query(getUsers).queryOptions([])),
+    context.queryClient.ensureQueryData(query(getUsers).queryOptions()),
   component: UsersPage,
 });
 ```
@@ -136,7 +145,7 @@ const dashboardRoute = createRoute({
   path: "/dashboard",
   component: DashboardPage,
   loader: ({ context }) =>
-    context.queryClient.ensureQueryData(query(getUsers).queryOptions([])),
+    context.queryClient.ensureQueryData(query(getUsers).queryOptions()),
 });
 
 // ── Nested group with dynamic param ──
@@ -212,7 +221,16 @@ const routeTree = rootRoute.addChildren([
   notFoundRoute,
 ]);
 
-createApp({ routeTree }).render("#app");
+const app = createApp({ routeTree });
+
+// REQUIRED for type-safe useParams, useSearch, Link, etc.
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: typeof app.router;
+  }
+}
+
+app.render("#app");
 ```
 
 **Key patterns:**
@@ -377,3 +395,5 @@ registerMiddleware(async (c, next) => {
 3. **Don't call server functions directly in components** — wrap with `query()` or `mutation()`
 4. **Don't forget `"use server";`** at the top of `.server.ts` files
 5. **Import `ServerError` from `@evjs/runtime`** — not from `/server` or `/client`
+6. **Always register the router type** — without `declare module "@tanstack/react-router" { interface Register { router: typeof app.router } }`, all route params/search will be `any`
+7. **Use `route.useParams()`** not the global `useParams()` — the route-scoped version gives proper type inference
