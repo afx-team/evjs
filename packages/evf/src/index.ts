@@ -13,23 +13,23 @@ await configure({
   sinks: { console: getConsoleSink() },
   loggers: [
     { category: ["logtape", "meta"], lowestLevel: "warning" },
-    { category: ["evjs"], sinks: ["console"], lowestLevel: "info" },
+    { category: ["evf"], sinks: ["console"], lowestLevel: "info" },
   ],
 });
 
-const logger = getLogger(["evjs", "cli"]);
+const logger = getLogger(["evf", "cli"]);
 
 const pkg = fs.readJsonSync(path.resolve(__dirname, "../package.json"));
 const program = new Command();
 
 program
-  .name("evjs")
-  .description("CLI for the ev framework")
+  .name("ev")
+  .description("CLI for the evf framework")
   .version(pkg.version);
 
 program
   .command("init")
-  .description("Initialize a new ev project")
+  .description("Initialize a new evf project")
   .argument("[name]", "Project name")
   .option("-t, --template <template>", "Template to use")
   .action(async (name, options) => {
@@ -39,7 +39,7 @@ program
           type: name ? null : "text",
           name: "projectName",
           message: "Project name:",
-          initial: name || "my-ev-app",
+          initial: name || "my-evf-app",
         },
         {
           type: options.template ? null : "select",

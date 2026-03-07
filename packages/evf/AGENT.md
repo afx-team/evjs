@@ -1,4 +1,4 @@
-# @evjs/cli
+# evf
 
 Command-line interface for the ev framework.
 

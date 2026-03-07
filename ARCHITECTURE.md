@@ -8,7 +8,7 @@
 ┌──────────────────────────────────────────────────────┐
 │ Build Time                                           │
 │                                                      │
-│   @evjs/cli             @evjs/build-tools            │
+│   evf             @evjs/build-tools            │
 │   (ev dev / build)      (bundler-agnostic core)      │
 │        │                     │                       │
 │        ▼                     ▼                       │
@@ -35,7 +35,7 @@
 ## Package Dependency Graph
 
 ```
-@evjs/cli
+evf
   └─▶ spawns webpack with @evjs/webpack-plugin
 
 @evjs/webpack-plugin

@@ -1,7 +1,7 @@
 {
-  "name": "@evjs/cli",
+  "name": "evf",
   "version": "0.0.1-rc.3",
-  "description": "Command line interface for the evjs framework",
+  "description": "Command line interface for the evf framework",
   "type": "module",
   "main": "./dist/index.js",
   "publishConfig": {
@@ -38,13 +38,13 @@
     "@types/prompts": "^2.4.9",
     "typescript": "^5.7.3"
   },
-  "homepage": "https://github.com/evaijs/evjs#readme",
+  "homepage": "https://github.com/evaijs/evf#readme",
   "bugs": {
-    "url": "https://github.com/evaijs/evjs/issues"
+    "url": "https://github.com/evaijs/evf/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/evaijs/evjs.git"
+    "url": "git+https://github.com/evaijs/evf.git"
   },
   "license": "MIT",
   "author": "xusd320"

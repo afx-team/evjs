@@ -43,12 +43,12 @@
     "typescript": "^5.7.3",
     "webpack": "^5.105.4"
   },
-  "homepage": "https://github.com/evaijs/evjs#readme",
+  "homepage": "https://github.com/evaijs/evf#readme",
   "bugs": {
-    "url": "https://github.com/evaijs/evjs/issues"
+    "url": "https://github.com/evaijs/evf/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/evaijs/evjs.git"
+    "url": "git+https://github.com/evaijs/evf.git"
   }
 }

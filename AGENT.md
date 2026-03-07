@@ -2,7 +2,7 @@
 
 A React framework built for speed and simplicity, leveraging `@tanstack/react-router` for code-based routing and `@tanstack/react-query` for state management.
 
-- **Repository**: [evaijs/evjs](https://github.com/evaijs/evjs)
+- **Repository**: [evaijs/evf](https://github.com/evaijs/evf)
 - **Organization**: `@evjs`
 - **CLI**: `ev`
 
@@ -25,7 +25,7 @@ Shared manifest schema types used by webpack-plugin (producer) and runtime (cons
 - `ClientManifest` — client manifest (reserved for future `dist/client/manifest.json`).
 - `ServerFnEntry`, `RscEntry`, `PageEntry`.
 
-### `@evjs/cli`
+### `evf`
 Command-line interface for project management.
 - `ev init [name]`: Scaffold a new project using dereferenced symlinks to examples.
 - `ev dev`: Start unified dev server (Client HMR + Node Server Watch).

@@ -1,11 +1,11 @@
-# @evjs/cli
+# evf
 
 Command-line interface for the **ev** framework.
 
 ## Installation
 
 ```bash
-npm install -g @evjs/cli
+npm install -g evf
 ```
 
 ## Commands

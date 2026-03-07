@@ -85,10 +85,10 @@ for (const template of templates) {
     modified = true;
   }
   if (
-    pkgJson.devDependencies?.["@evjs/cli"] &&
-    pkgJson.devDependencies["@evjs/cli"] !== expectedDep
+    pkgJson.devDependencies?.["evf"] &&
+    pkgJson.devDependencies["evf"] !== expectedDep
   ) {
-    pkgJson.devDependencies["@evjs/cli"] = expectedDep;
+    pkgJson.devDependencies["evf"] = expectedDep;
     modified = true;
   }
 

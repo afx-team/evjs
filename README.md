@@ -1,12 +1,12 @@
 # evf
 
-[![npm](https://img.shields.io/npm/v/@evjs/cli?style=flat-square&label=npm)](https://www.npmjs.com/package/@evjs/cli)
-[![DeepWiki](https://img.shields.io/badge/DeepWiki-evaijs%2Fevjs-blue?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTQgMTkuNXYtMTVBMi41IDIuNSAwIDAgMSA2LjUgMkgxOXYyMEg2LjVhMi41IDIuNSAwIDAgMS0yLjUtMi41eiIvPjxwYXRoIGQ9Ik04IDdoOCIvPjxwYXRoIGQ9Ik04IDExaDgiLz48cGF0aCBkPSJNOCAxNWg1Ii8+PC9zdmc+)](https://deepwiki.com/evaijs/evjs)
+[![npm](https://img.shields.io/npm/v/evf?style=flat-square&label=npm)](https://www.npmjs.com/package/evf)
+[![DeepWiki](https://img.shields.io/badge/DeepWiki-evaijs%2Fevjs-blue?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTQgMTkuNXYtMTVBMi41IDIuNSAwIDAgMSA2LjUgMkgxOXYyMEg2LjVhMi41IDIuNSAwIDAgMS0yLjUtMi41eiIvPjxwYXRoIGQ9Ik04IDdoOCIvPjxwYXRoIGQ9Ik04IDExaDgiLz48cGF0aCBkPSJNOCAxNWg1Ii8+PC9zdmc+)](https://deepwiki.com/evaijs/evf)
 [![Vibe Coding](https://img.shields.io/badge/vibe-coding-ff69b4?style=flat-square)](https://en.wikipedia.org/wiki/Vibe_coding)
 
-> **The React Meta-Framework for Every Runtime.**
+> **A React meta-framework with server functions and multi-runtime support.**
 
-**evf** is a modern React meta-framework built for the multi-runtime era. Write once, run everywhere — Node.js, Deno, Bun, and Edge runtimes.
+**evf** is a React meta-framework that brings type-safe routing, server functions, and pluggable transports together. It runs on Node.js, Deno, Bun, and Edge runtimes.
 
 ## 🎯 Our Goal
 
@@ -32,7 +32,7 @@
 
 ## 🏗️ Monorepo Structure
 
-- [`packages/cli`](./packages/cli) — Command-line interface.
+- [`packages/evf`](./packages/evf) — Meta-framework CLI and config.
 - [`packages/runtime`](./packages/runtime) — Core framework runtime (Client & Server).
 - [`packages/build-tools`](./packages/build-tools) — Bundler-agnostic build utilities.
 - [`packages/manifest`](./packages/manifest) — Shared manifest schema types.
@@ -45,7 +45,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed diagrams.
 
 ```bash
 # Install
-npm install -g @evjs/cli@alpha
+npm install -g evf@alpha
 
 # Scaffold
 mkdir my-app && cd my-app
