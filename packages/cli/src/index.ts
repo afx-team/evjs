@@ -16,11 +16,11 @@ await configure({
   sinks: { console: getConsoleSink() },
   loggers: [
     { category: ["logtape", "meta"], lowestLevel: "warning" },
-    { category: ["evf"], sinks: ["console"], lowestLevel: "info" },
+    { category: ["evjs"], sinks: ["console"], lowestLevel: "info" },
   ],
 });
 
-const logger = getLogger(["evf", "cli"]);
+const logger = getLogger(["evjs", "cli"]);
 
 const pkg = fs.readJsonSync(path.resolve(__dirname, "../package.json"));
 const program = new Command();

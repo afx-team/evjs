@@ -1,5 +1,5 @@
 {
-  "name": "evf",
+  "name": "@evjs/cli",
   "version": "0.0.1-rc.5",
   "description": "The evf meta-framework",
   "type": "module",

@@ -16,7 +16,7 @@
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
-    "evf": "^0.0.1-rc.5",
+    "@evjs/cli": "^0.0.1-rc.5",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.8",
     "typescript": "^5.7.3"

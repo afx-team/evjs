@@ -2,13 +2,13 @@
 
 ## Overview
 
-`evf` is a zero-config React meta-framework with type-safe routing (TanStack Router), data fetching (TanStack Query), and server functions (`"use server"`). It uses a Hono-based API server and is designed to be bundler-agnostic.
+`evjs` is a zero-config React meta-framework with type-safe routing (TanStack Router), data fetching (TanStack Query), and server functions (`"use server"`). It uses a Hono-based API server and is designed to be bundler-agnostic.
 
 ```
 ┌──────────────────────────────────────────────────────┐
 │ Build Time                                           │
 │                                                      │
-│   evf (CLI)            @evjs/build-tools             │
+│   @evjs/cli             @evjs/build-tools             │
 │   (ev dev / build)     (bundler-agnostic core)       │
 │        │                     │                       │
 │        ▼                     ▼                       │
@@ -35,7 +35,7 @@
 ## Package Dependency Graph
 
 ```
-evf
+@evjs/cli
   └─▶ webpack Node API (no temp files)
   └─▶ @evjs/webpack-plugin
 

@@ -34,6 +34,7 @@
     "@swc/core": "^1.15.18"
   },
   "devDependencies": {
+    "@swc/types": "^0.1.25",
     "typescript": "^5.7.3"
   },
   "homepage": "https://github.com/evaijs/evjs#readme",

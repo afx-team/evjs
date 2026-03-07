@@ -1,11 +1,11 @@
-# evf
+# @evjs/cli
 
-> CLI and configuration for the **evf** meta-framework.
+> CLI and configuration for the **@evjs/cli** meta-framework.
 
 ## Install
 
 ```bash
-npm install -g evf
+npm install -g @evjs/cli
 ```
 
 ## Zero-Config
@@ -48,7 +48,7 @@ Runs webpack via Node API with `NODE_ENV=production`:
 Create `ev.config.ts` in the project root (optional):
 
 ```ts
-import { defineConfig } from "evf";
+import { defineConfig } from "@evjs/cli";
 
 export default defineConfig({
   client: {

@@ -1,10 +1,10 @@
-# evf — Agent Guide
+# @evjs/cli — Agent Guide
 
-> AI-agent reference for the `evf` CLI package.
+> AI-agent reference for the `@evjs/cli` CLI package.
 
 ## What This Package Does
 
-The `evf` package is the CLI and config layer of the ev meta-framework. It provides:
+The `@evjs/cli` package is the CLI and config layer of the ev meta-framework. It provides:
 
 1. **`ev init`** — scaffolds projects from templates
 2. **`ev dev`** — starts WebpackDevServer + Node API server
@@ -49,10 +49,10 @@ interface EvfConfig {
 
 ## Dependencies
 
-Webpack toolchain (`webpack`, `webpack-dev-server`, `html-webpack-plugin`, `swc-loader`, `@evjs/webpack-plugin`) are **dependencies of evf** — users don't need to install them separately.
+Webpack toolchain (`webpack`, `webpack-dev-server`, `html-webpack-plugin`, `swc-loader`, `@evjs/webpack-plugin`) are **dependencies of @evjs/cli** — users don't need to install them separately.
 
 ## Rules
 
 - Do NOT generate temp config files — use webpack Node API directly
 - Module resolution uses `createRequire(import.meta.url)` for reliable dep resolution
-- Config file name is `ev.config.ts` (not `evf.config.ts`)
+- Config file name is `ev.config.ts` (not `ev.config.ts`)

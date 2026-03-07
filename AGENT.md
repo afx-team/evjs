@@ -1,10 +1,10 @@
-# evf — AI Agent Guide
+# evjs — AI Agent Guide
 
 > This file is optimized for AI coding agents. It describes the project structure, key APIs, patterns, rules, and common tasks.
 
 ## Project Identity
 
-- **Name**: evf (meta-framework), `@evjs/*` (package scope)
+- **Name**: evjs (meta-framework), `@evjs/*` (package scope)
 - **Repository**: [evaijs/evjs](https://github.com/evaijs/evjs)
 - **CLI command**: `ev`
 - **Config file**: `ev.config.ts` (optional — zero-config by default)
@@ -15,7 +15,7 @@
 
 | Package | Path | Purpose |
 |---------|------|---------|
-| `evf` | `packages/evf` | CLI (`ev init`, `ev dev`, `ev build`) + `defineConfig` |
+| `@evjs/cli` | `packages/cli` | CLI (`ev init`, `ev dev`, `ev build`) + `defineConfig` |
 | `@evjs/runtime` | `packages/runtime` | Client (React + TanStack) + Server (Hono) |
 | `@evjs/build-tools` | `packages/build-tools` | Bundler-agnostic server function transforms (SWC) |
 | `@evjs/manifest` | `packages/manifest` | Shared manifest schema types |
@@ -31,7 +31,7 @@ See [ROADMAP.md](./ROADMAP.md) for the roadmap.
 Optional — the framework works zero-config. When needed:
 
 ```ts
-import { defineConfig } from "evf";
+import { defineConfig } from "@evjs/cli";
 
 export default defineConfig({
   client: {
@@ -92,7 +92,7 @@ import { createFetchHandler } from "@evjs/runtime/server/ecma";
 
 ## Build System
 
-The `evf` CLI uses webpack Node API directly — no temp config files:
+The `@evjs/cli` CLI uses webpack Node API directly — no temp config files:
 
 1. `ev build` → loads `ev.config.ts` (or uses zero-config defaults) → creates webpack config object → calls `webpack()` Node API
 2. `ev dev` → same config → starts `WebpackDevServer` + watches for server bundle → auto-starts Node API server
@@ -146,7 +146,7 @@ mutation(createUser).useMutation().mutate([{ name: "Alice" }]);
 ### Add a new example
 
 1. Create directory under `examples/`
-2. Add `package.json` with `"evf": "*"` as devDep
+2. Add `package.json` with `"@evjs/cli": "*"` as devDep
 3. Add `src/main.tsx` + `index.html`
 4. Scripts: `"dev": "ev dev"`, `"build": "ev build"`
 
@@ -157,5 +157,5 @@ npm run build           # Build all packages + examples
 npm run test            # Unit tests (vitest)
 npm run test:e2e        # E2E tests (playwright)
 npm run dev             # Dev mode (turborepo)
-npm run release:alpha   # Publish all packages (@evjs/* + evf)
+npm run release:alpha   # Publish all packages (@evjs/*)
 ```

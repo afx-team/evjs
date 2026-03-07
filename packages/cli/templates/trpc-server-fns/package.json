@@ -1,5 +1,5 @@
 {
-  "name": "example-basic-csr",
+  "name": "example-trpc-server-fns",
   "version": "0.0.0",
   "private": true,
   "scripts": {
@@ -9,13 +9,16 @@
   },
   "dependencies": {
     "@evjs/runtime": "^0.0.1-rc.5",
+    "@trpc/client": "^11.0.0-rc.825",
+    "@trpc/react-query": "^11.0.0-rc.825",
+    "@trpc/server": "^11.0.0-rc.825",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
-    "@evjs/cli": "^0.0.1-rc.5",
-    "@types/react": "^19.0.8",
-    "@types/react-dom": "^19.0.3",
+    "evf": "^0.0.1-rc.5",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.8",
     "typescript": "^5.7.3"
   }
 }

@@ -1,4 +1,4 @@
-import { defineConfig } from "@evjs/cli";
+import { defineConfig } from "evf";
 
 /**
  * Advanced ev.config.ts example.
