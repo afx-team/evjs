@@ -98,7 +98,7 @@ const usersRoute = createRoute({
 
 ### Routing
 
-> See `examples/complex-routing/` for a full working example using `pages/*` file structure.
+
 
 **Recommended structure:**
 
