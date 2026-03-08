@@ -55,7 +55,10 @@ program
               title: "Configured Server Functions (ev.config.ts + Query)",
               value: "configured-server-fns",
             },
-            { title: "tRPC + Server Functions", value: "trpc-server-fns" },
+            {
+              title: "Complex Routing (params, search, layouts, loaders)",
+              value: "complex-routing",
+            },
           ],
         },
       ],

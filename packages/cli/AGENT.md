@@ -91,7 +91,7 @@ Interactive scaffolding. Templates:
 - `basic-csr` — client-side rendering only
 - `basic-server-fns` — server functions example
 - `configured-server-fns` — advanced config example
-- `trpc-server-fns` — tRPC integration
+- `complex-routing` — params, search, layouts, loaders
 
 ### `ev dev`
 - Starts webpack-dev-server on port 3000
