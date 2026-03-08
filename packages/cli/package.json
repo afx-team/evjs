@@ -61,6 +61,17 @@
     "type": "git",
     "url": "git+https://github.com/evaijs/evjs.git"
   },
+  "keywords": [
+    "evjs",
+    "cli",
+    "react",
+    "server-functions",
+    "scaffolding",
+    "dev-server",
+    "typescript",
+    "full-stack",
+    "framework"
+  ],
   "license": "MIT",
   "author": "xusd320"
 }

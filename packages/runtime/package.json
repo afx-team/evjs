@@ -1,7 +1,7 @@
 {
   "name": "@evjs/runtime",
   "version": "0.0.1-rc.7",
-  "description": "",
+  "description": "Client and server runtime for the evjs framework",
   "dependencies": {
     "@hono/node-server": "^1.19.11",
     "@logtape/logtape": "^2.0.4",
@@ -76,5 +76,16 @@
   "files": [
     "esm",
     "AGENT.md"
+  ],
+  "keywords": [
+    "evjs",
+    "react",
+    "server-functions",
+    "rpc",
+    "routing",
+    "tanstack",
+    "typescript",
+    "full-stack",
+    "framework"
   ]
 }

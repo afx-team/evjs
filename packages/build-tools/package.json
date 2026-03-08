@@ -24,9 +24,11 @@
     "AGENT.md"
   ],
   "keywords": [
-    "ev",
-    "build",
-    "server-functions"
+    "evjs",
+    "build-tools",
+    "server-functions",
+    "code-transform",
+    "typescript"
   ],
   "author": "xusd320",
   "license": "MIT",

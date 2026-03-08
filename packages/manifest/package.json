@@ -24,8 +24,9 @@
     "AGENT.md"
   ],
   "keywords": [
-    "ev",
-    "manifest"
+    "evjs",
+    "manifest",
+    "server-functions"
   ],
   "author": "xusd320",
   "license": "MIT",

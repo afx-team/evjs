@@ -28,10 +28,11 @@
     "AGENT.md"
   ],
   "keywords": [
-    "ev",
+    "evjs",
     "webpack",
     "plugin",
-    "loader"
+    "loader",
+    "server-functions"
   ],
   "author": "xusd320",
   "license": "MIT",
