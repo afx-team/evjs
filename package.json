@@ -27,11 +27,13 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "check-types": "turbo check-types",
-    "release": "node scripts/release.js"
+    "release": "node scripts/release.js",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.5",
     "@playwright/test": "^1.58.2",
+    "husky": "^9.1.7",
     "turbo": "^2.4.2",
     "vitest": "^4.0.18"
   }
