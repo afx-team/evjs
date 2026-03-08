@@ -4,17 +4,18 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version bump type"
+        description: "Version to release (e.g. 0.0.1-rc.8)"
+        required: true
+        type: string
+      tag:
+        description: "npm dist-tag"
         required: true
         type: choice
+        default: latest
         options:
-          - patch
-          - minor
-          - major
-          - prepatch
-          - preminor
-          - premajor
-          - prerelease
+          - latest
+          - alpha
+          - next
 
 jobs:
   release:
@@ -35,41 +36,48 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - run: npm install
+
+      - name: Sync & bump versions
+        run: |
+          node scripts/sync-versions.js ${{ inputs.version }}
+          npm version ${{ inputs.version }} --workspaces --no-git-tag-version
+          npm version ${{ inputs.version }} --no-git-tag-version --include-workspace-root
+
       - run: npm run build
       - run: npm test
+
+      - name: Deref templates for publishing
+        run: node packages/cli/scripts/deref-templates.js
 
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Bump versions
-        run: |
-          npm version ${{ inputs.version }} --workspaces --no-git-tag-version
-          npm version ${{ inputs.version }} --no-git-tag-version --include-workspace-root
-
       - name: Commit and tag
         run: |
-          VERSION=$(node -p "require('./package.json').version")
           git add -A
-          git commit -m "release: v${VERSION}"
-          git tag "v${VERSION}"
+          git commit -m "release: v${{ inputs.version }}"
+          git tag "v${{ inputs.version }}"
           git push origin main --tags
 
       - name: Publish packages
         run: |
-          npm publish --workspace=packages/build-tools --access public --provenance
-          npm publish --workspace=packages/runtime --access public --provenance
-          npm publish --workspace=packages/webpack-plugin --access public --provenance
-          npm publish --workspace=packages/cli --access public --provenance
+          npm publish --workspace=packages/manifest --access public --provenance --tag ${{ inputs.tag }}
+          npm publish --workspace=packages/build-tools --access public --provenance --tag ${{ inputs.tag }}
+          npm publish --workspace=packages/runtime --access public --provenance --tag ${{ inputs.tag }}
+          npm publish --workspace=packages/webpack-plugin --access public --provenance --tag ${{ inputs.tag }}
+          npm publish --workspace=packages/cli --access public --provenance --tag ${{ inputs.tag }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Restore templates
+        run: node packages/cli/scripts/restore-templates.js
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          gh release create "v${VERSION}" \
-            --title "v${VERSION}" \
+          gh release create "v${{ inputs.version }}" \
+            --title "v${{ inputs.version }}" \
             --generate-notes
