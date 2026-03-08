@@ -4,7 +4,7 @@
 
 ## Overview
 
-Core runtime for evjs apps. Two entry points:
+Core runtime for evjs apps. Three entry points:
 - `@evjs/runtime` + `@evjs/runtime/client` — client-side (React, TanStack)
 - `@evjs/runtime/server` — server-side (Hono)
 - `@evjs/runtime/server/ecma` — edge/serverless adapter
@@ -61,7 +61,7 @@ const { data } = query(getUser).useQuery(userId);
 
 // Mutations
 const { mutate, isPending } = mutation(createUser).useMutation();
-mutate([{ name: "Alice", email: "alice@example.com" }]);
+mutate({ name: "Alice", email: "alice@example.com" });
 
 // queryOptions — for route loaders, prefetching, cache control
 const opts = query(getUsers).queryOptions();
@@ -152,7 +152,7 @@ const { postId } = postDetailRoute.useParams();
 
 // ❌ Untyped — returns any
 const params = useParams({ from: "/posts/$postId" });
-
+```
 
 
 ### Transport Configuration
@@ -254,10 +254,7 @@ const handler = createFetchHandler(app);
 // Deno
 Deno.serve(handler);
 
-// Bun
-export default { fetch: handler };
-
-// Other edge runtimes
+// Bun / other edge runtimes
 export default { fetch: handler };
 ```
 

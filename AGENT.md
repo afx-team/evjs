@@ -279,7 +279,7 @@ Always use `query` / `mutation` proxies. Do **NOT** use `useQuery` with manual f
 // Hook usage
 const { data } = query(getUsers).useQuery();
 
-// With arguments (tuple)
+// With arguments (spread, not wrapped)
 const { data } = query(getUser).useQuery(userId);
 
 // queryOptions (prefetch, route loaders)
@@ -294,14 +294,14 @@ queryClient.invalidateQueries({ queryKey: [getUsers.evId] });
 
 // Mutation — args as tuple
 const { mutate } = mutation(createUser).useMutation();
-mutate([{ name: "Alice" }]);
+mutate({ name: "Alice" });
 
 // Route loader pattern
 const usersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/users",
   loader: ({ context }) =>
-    context.queryClient.ensureQueryData(query(getUsers).queryOptions([])),
+    context.queryClient.ensureQueryData(query(getUsers).queryOptions()),
   component: UsersPage,
 });
 ```
