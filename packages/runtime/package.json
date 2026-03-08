@@ -1,6 +1,6 @@
 {
   "name": "@evjs/runtime",
-  "version": "0.0.1-rc.7",
+  "version": "0.0.1-rc.8",
   "description": "Client and server runtime for the evjs framework",
   "dependencies": {
     "@hono/node-server": "^1.19.11",
