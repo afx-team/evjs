@@ -351,12 +351,13 @@ export default defineConfig({
 1. Create `src/api/[name].server.ts`
 2. Add `"use server";` at the top
 3. Export named async functions
-4. Import and use on client with `query()` or `mutation()`
+4. Import and use in `routes.tsx` with `query()` or `mutation()`
 
 ### Add a new route
 
-1. Create route with `createRoute({ getParentRoute, path, component })`
+1. Define route in `routes.tsx` with `createRoute({ getParentRoute, path, component })`
 2. Add to route tree via `parentRoute.addChildren([newRoute])`
+3. `main.tsx` stays unchanged for route additions
 
 ### Add a new example
 
@@ -400,7 +401,10 @@ npm run release -- <v> <t> # Publish all packages
 |---------|---------|
 | `*.server.ts` | Server function file (must have `"use server"` directive) |
 | `ev.config.ts` | Framework configuration file |
-| `src/main.tsx` | Client entry point |
+| `src/main.tsx` | Client entry — app bootstrap (keep minimal) |
+| `src/routes.tsx` | Route tree + route components |
 | `index.html` | HTML template |
 | `src/api/` | Conventional location for server function files |
+| `src/pages/` | Route components (for larger apps, split from routes.tsx) |
 | `src/middleware/` | Conventional location for server middleware |
+

@@ -13,8 +13,15 @@ Core runtime for evjs apps. Three entry points:
 
 ### App Bootstrap
 
+Separate route definitions from app bootstrap:
+
 ```tsx
-import { createApp, createAppRootRoute, createRoute } from "@evjs/runtime";
+// src/routes.tsx — route tree + components
+import { createAppRootRoute, createRoute, Outlet } from "@evjs/runtime";
+
+function RootLayout() {
+  return <div><Outlet /></div>;
+}
 
 const rootRoute = createAppRootRoute({ component: RootLayout });
 
@@ -24,7 +31,13 @@ const homeRoute = createRoute({
   component: HomePage,
 });
 
-const routeTree = rootRoute.addChildren([homeRoute]);
+export const routeTree = rootRoute.addChildren([homeRoute]);
+```
+
+```tsx
+// src/main.tsx — app bootstrap (keep minimal)
+import { createApp } from "@evjs/runtime";
+import { routeTree } from "./routes";
 
 const app = createApp({ routeTree });
 
@@ -107,16 +120,17 @@ const usersRoute = createRoute({
 
 ```
 src/
-├── main.tsx              ← route tree wiring + type registration
+├── main.tsx              ← app bootstrap (keep minimal ~12 lines)
+├── routes.tsx            ← route tree + components
 ├── api/*.server.ts       ← server functions
-└── pages/
-    ├── __root.tsx         ← root layout (nav + <Outlet />)
-    ├── home.tsx           ← static route
-    ├── posts/index.tsx    ← nested group (layout + index + $postId)
-    ├── dashboard.tsx      ← pathless layout + child route
-    ├── search.tsx         ← typed search params
-    └── catch.tsx          ← redirect + 404
+└── pages/                ← route components (for larger apps)
+    ├── __root.tsx
+    ├── home.tsx
+    └── posts/
 ```
+
+> For small apps, define routes and components together in `routes.tsx`.
+> For larger apps, split components into `pages/` directory (like `complex-routing` example).
 
 **Key patterns:**
 
@@ -134,7 +148,10 @@ src/
 **Type-safe routing (CRITICAL):**
 
 ```tsx
-// main.tsx — ALWAYS register the router type
+// src/main.tsx — ALWAYS register the router type
+import { createApp } from "@evjs/runtime";
+import { routeTree } from "./routes";
+
 const app = createApp({ routeTree });
 
 declare module "@tanstack/react-router" {

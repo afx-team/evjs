@@ -75,7 +75,8 @@ my-app/
 ├── package.json
 ├── tsconfig.json
 └── src/
-    ├── main.tsx           # client entry — createApp + routes
+    ├── main.tsx           # app bootstrap (keep minimal)
+    ├── routes.tsx         # route tree + components
     ├── api/               # server functions
     │   ├── users.server.ts
     │   └── posts.server.ts
