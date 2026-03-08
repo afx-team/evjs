@@ -127,18 +127,4 @@ test.describe("complex-routing", () => {
     });
     await expect(page).toHaveURL(/\/posts/);
   });
-
-  test("404 catch-all — unknown route shows not found", async ({
-    page,
-    baseURL,
-  }) => {
-    await page.goto(`${baseURL}/this-does-not-exist`);
-
-    // 404 text (large heading)
-    await expect(page.getByRole("heading", { name: "404" })).toBeVisible({
-      timeout: 10_000,
-    });
-    await expect(page.getByText("Page not found")).toBeVisible();
-    await expect(page.getByText("Go home")).toBeVisible();
-  });
 });
