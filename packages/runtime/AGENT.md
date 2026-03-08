@@ -257,7 +257,7 @@ Deno.serve(handler);
 // Bun
 export default { fetch: handler };
 
-// Cloudflare Workers
+// Other edge runtimes
 export default { fetch: handler };
 ```
 

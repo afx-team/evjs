@@ -167,7 +167,7 @@ import { createFetchHandler } from "@evjs/runtime/server/ecma";
 |-----|---------|
 | `createApp({ endpoint? })` | Hono app with server function handler |
 | `serve(app, { port?, host? })` | Node.js HTTP server with graceful shutdown |
-| `createFetchHandler(app)` | ECMA adapter for Deno, Bun, Cloudflare Workers |
+| `createFetchHandler(app)` | ECMA adapter for Deno, Bun, and other edge runtimes |
 | `createHandler()` | Standalone Hono handler (for custom server setups) |
 | `registerServerFn(id, fn)` | Register a server function (called by build tools) |
 | `registerMiddleware(fn)` | Register middleware (auth, logging, etc.) |
