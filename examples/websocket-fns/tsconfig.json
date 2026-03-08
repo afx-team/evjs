@@ -1,13 +1,16 @@
 {
+  "include": ["src"],
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "target": "ESNext",
     "jsx": "react-jsx",
-    "strict": true,
-    "esModuleInterop": true,
+    "module": "ESNext",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "moduleResolution": "Bundler",
+    "outDir": "./dist",
+    "rootDir": "./src",
     "skipLibCheck": true,
-    "outDir": "./dist"
-  },
-  "include": ["src"]
+    "strict": true,
+    "noEmit": true,
+    "verbatimModuleSyntax": true
+  }
 }
