@@ -175,7 +175,9 @@ program
         while (true) {
           if (fs.existsSync(manifestPath)) {
             if (!started) {
-              logger.info`Server bundle detected, starting Node API...`;
+              const runnerConfig = evjsConfig?.server?.runner ?? "node";
+              const [runner, ...runnerExtraArgs] = runnerConfig.split(/\s+/);
+              logger.info`Server bundle detected, starting ${runner} API...`;
               started = true;
 
               const manifest = JSON.parse(
@@ -197,10 +199,16 @@ program
                 ].join("\n"),
               );
 
+              // node gets --watch flags; other runtimes use their own args as-is
+              const runnerArgs =
+                runner === "node"
+                  ? ["--watch", "--watch-preserve-output", ...runnerExtraArgs, bootstrapPath]
+                  : [...runnerExtraArgs, bootstrapPath];
+
               try {
                 await execa(
-                  "node",
-                  ["--watch", "--watch-preserve-output", bootstrapPath],
+                  runner,
+                  runnerArgs,
                   {
                     stdio: "inherit",
                     env: { ...process.env, NODE_ENV: "development" },
