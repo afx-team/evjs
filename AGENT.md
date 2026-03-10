@@ -334,7 +334,7 @@ export default defineConfig({
 ## Rules
 
 1. **Imports**: All imports at top of file. Use `import type` for type-only imports.
-2. **Linting**: Biome — no `any`, no `import * as` unless necessary. **After editing files, run `npx biome check --write` to fix lint/format issues before committing.**
+2. **Linting**: Biome — no `any`, no `import * as` unless necessary. 
 3. **No manual server entries**: The framework generates server entry dynamically.
 4. **No manual webpack configs**: Use `ev.config.ts` or zero-config defaults.
 5. **No webpack.config.cjs fallback**: `ev.config.ts` is the sole config source.
