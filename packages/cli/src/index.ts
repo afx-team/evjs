@@ -59,6 +59,10 @@ program
               title: "Complex Routing (params, search, layouts, loaders)",
               value: "complex-routing",
             },
+            {
+              title: "FaaS / Server-Only (pure backend)",
+              value: "faas-only",
+            },
           ],
         },
       ],
@@ -136,12 +140,56 @@ program
 async function resolveWebpackConfig(cwd: string) {
   const { loadConfig } = await import("./load-config.js");
   const evjsConfig = await loadConfig(cwd);
+  const mode = evjsConfig?.mode ?? CONFIG_DEFAULTS.mode;
 
+  if (mode === "serverOnly") {
+    // FaaS / server-only mode: discover server files and build a standalone entry
+    const { glob } = await import("glob");
+    const { generateFaasEntry } = await import("@evjs/build-tools");
+
+    const serverEntryGlob =
+      evjsConfig?.server?.entry ?? CONFIG_DEFAULTS.serverEntry;
+    const patterns = Array.isArray(serverEntryGlob)
+      ? serverEntryGlob
+      : [serverEntryGlob];
+    const serverModulePaths: string[] = [];
+    for (const pattern of patterns) {
+      const matches = await glob(pattern, { cwd, absolute: true });
+      serverModulePaths.push(...matches);
+    }
+
+    if (serverModulePaths.length === 0) {
+      logger.warn`No server function files found matching: ${patterns.join(", ")}`;
+    } else {
+      logger.info`Found ${String(serverModulePaths.length)} server function file(s)`;
+    }
+
+    const endpoint = evjsConfig?.server?.endpoint ?? CONFIG_DEFAULTS.endpoint;
+    const middlewareConfig = evjsConfig?.server?.middleware?.length
+      ? { middleware: evjsConfig.server.middleware }
+      : undefined;
+    const faasEntryCode = generateFaasEntry(
+      middlewareConfig,
+      serverModulePaths,
+      endpoint,
+    );
+    const entryPath = `data:text/javascript,${encodeURIComponent(faasEntryCode)}`;
+
+    const { createServerWebpackConfig } = await import(
+      "./create-server-webpack-config.js"
+    );
+    logger.info`Using server-only (FaaS) mode`;
+    const webpackConfig = createServerWebpackConfig(evjsConfig, cwd, entryPath);
+
+    return { evjsConfig, webpackConfig, mode };
+  }
+
+  // Default fullstack mode
   const { createWebpackConfig } = await import("./create-webpack-config.js");
   logger.info`Using ${evjsConfig ? "ev.config.ts" : "zero-config defaults"}`;
   const webpackConfig = createWebpackConfig(evjsConfig, cwd);
 
-  return { evjsConfig, webpackConfig };
+  return { evjsConfig, webpackConfig, mode };
 }
 
 program
@@ -151,10 +199,94 @@ program
     const cwd = process.cwd();
     process.env.NODE_ENV ??= "development";
 
-    const { evjsConfig, webpackConfig } = await resolveWebpackConfig(cwd);
+    const { evjsConfig, webpackConfig, mode } = await resolveWebpackConfig(cwd);
     const serverPort =
       evjsConfig?.server?.dev?.port ?? CONFIG_DEFAULTS.serverPort;
 
+    if (mode === "serverOnly") {
+      // Server-only dev mode: webpack watch + auto-restart Node server
+      logger.info`Starting server-only dev mode...`;
+      const webpack = esmRequire("webpack");
+      const compiler = webpack(webpackConfig);
+
+      compiler.watch(
+        { ignored: /node_modules/ },
+        (
+          err: Error | null,
+          stats: {
+            hasErrors: () => boolean;
+            toString: (opts: object) => string;
+          },
+        ) => {
+          if (err) {
+            logger.error`Webpack watch error: ${err}`;
+            return;
+          }
+          console.log(
+            stats.toString({ colors: true, modules: false, children: true }),
+          );
+          if (stats.hasErrors()) return;
+          logger.info`Server bundle rebuilt`;
+        },
+      );
+
+      // Start server process after first build
+      void (async () => {
+        const serverBundlePath = path.resolve(cwd, "dist/server/main.js");
+        let started = false;
+        while (true) {
+          if (fs.existsSync(serverBundlePath)) {
+            if (!started) {
+              logger.info`Starting API server on port ${String(serverPort)}...`;
+              started = true;
+
+              const bootstrapPath = path.resolve(
+                cwd,
+                "dist/server/_dev_start.cjs",
+              );
+              fs.writeFileSync(
+                bootstrapPath,
+                [
+                  `const bundle = require(${JSON.stringify(serverBundlePath)});`,
+                  `const app = bundle.app || bundle.default;`,
+                  `const { serve } = require("@evjs/runtime/server/node");`,
+                  `serve(app, { port: ${serverPort} });`,
+                ].join("\n"),
+              );
+
+              const runnerConfig = evjsConfig?.server?.runner ?? "node";
+              const [runner, ...runnerExtraArgs] = runnerConfig.split(/\s+/);
+              const runnerArgs =
+                runner === "node"
+                  ? [
+                      "--watch",
+                      "--watch-preserve-output",
+                      ...runnerExtraArgs,
+                      bootstrapPath,
+                    ]
+                  : [...runnerExtraArgs, bootstrapPath];
+
+              try {
+                await execa(runner, runnerArgs, {
+                  stdio: "inherit",
+                  env: { ...process.env, NODE_ENV: "development" },
+                });
+              } catch (_e) {
+                started = false;
+              }
+            }
+          }
+          await new Promise((r) => setTimeout(r, 500));
+        }
+      })().catch((err) => {
+        logger.error`Server runner failed: ${err}`;
+        process.exit(1);
+      });
+
+      return;
+    }
+
+    // Fullstack dev mode: webpack-dev-server + backend proxy
     logger.info`Starting development server...`;
     try {
       const webpack = esmRequire("webpack");

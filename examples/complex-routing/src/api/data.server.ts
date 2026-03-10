@@ -6,7 +6,7 @@ const posts = [
   {
     id: "1",
     title: "Getting Started with evjs",
-    body: "evjs is a zero-config React meta-framework...",
+    body: "evjs is a zero-config full-stack framework...",
     author: "alice",
     tags: ["intro", "tutorial"],
   },

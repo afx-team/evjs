@@ -4,7 +4,7 @@
 
 ## Project Identity
 
-- **Name**: evjs (meta-framework), `@evjs/*` (package scope)
+- **Name**: evjs (full-stack framework), `@evjs/*` (package scope)
 - **Repository**: [evaijs/evjs](https://github.com/evaijs/evjs)
 - **CLI command**: `ev` (binary from `@evjs/cli`)
 - **Config file**: `ev.config.ts` (optional — zero-config by default)
@@ -27,6 +27,7 @@
 
 ```
 @evjs/cli
+  ├── @evjs/build-tools
   ├── @evjs/webpack-plugin
   │     ├── @evjs/build-tools
   │     └── @evjs/manifest
@@ -72,6 +73,8 @@ Server transform (@evjs/build-tools/transforms/server):
 
 Optional — the framework works zero-config. When needed:
 
+### Full-Stack Mode (default)
+
 ```ts
 import { defineConfig } from "@evjs/cli";
 
@@ -101,6 +104,26 @@ export default defineConfig({
   },
 });
 ```
+
+### Server-Only / FaaS Mode
+
+```ts
+import { defineConfig } from "@evjs/cli";
+
+export default defineConfig({
+  mode: "serverOnly",
+  server: {
+    endpoint: "/api/fn",
+  },
+});
+```
+
+In `serverOnly` mode:
+- No client bundle, no React, no HTML template
+- Server functions are auto-discovered via glob (`src/**/*.server.ts`)
+- Function IDs are human-readable (`src/api/hello.server#hello`)
+- Output: single `dist/server/main.js` bundle
+- `ev dev`: webpack watch + Node.js auto-restart (no WebpackDevServer)
 
 ### Default Values (`CONFIG_DEFAULTS` in `config.ts`)
 
@@ -239,7 +262,7 @@ initTransport({
 
 ## Build System
 
-### `ev build` Flow
+### `ev build` Flow (Full-Stack)
 
 1. `resolveWebpackConfig(cwd)` — loads `ev.config.ts` or uses zero-config defaults
 2. `createWebpackConfig(evjsConfig)` — generates webpack config object (no temp files)
@@ -250,7 +273,17 @@ initTransport({
    - Runs child compiler for server bundle
    - Emits `manifest.json` with server function registry
 
-### `ev dev` Flow
+### `ev build` Flow (Server-Only / FaaS)
+
+1. Loads `ev.config.ts` with `mode: "serverOnly"`
+2. `createServerWebpackConfig()` — Node.js-targeted webpack config
+3. Discovers `src/**/*.server.ts` via glob
+4. Generates FaaS entry via `generateFaasEntry()` — standalone `{ fetch }` export
+5. Bundles `@evjs/*` and `hono` into output (only true externals remain)
+6. Uses `readableIds` for human-readable function IDs
+7. Output: `dist/server/main.js`
+
+### `ev dev` Flow (Full-Stack)
 
 1. Same config resolution as `ev build`
 2. Starts `WebpackDevServer` for client
@@ -258,6 +291,12 @@ initTransport({
 4. Auto-starts Node API server via `@evjs/runtime/server/node`
 5. Sets up proxy: `devServer.proxy["/api/fn"] → localhost:3001`
 6. Graceful shutdown on process exit
+
+### `ev dev` Flow (Server-Only / FaaS)
+
+1. Webpack watch mode (no WebpackDevServer)
+2. Auto-restarts Node.js server on changes
+3. No proxy, no client
 
 ### Manifest (`manifest.json`)
 
@@ -361,13 +400,21 @@ export default defineConfig({
 
 ### Add a new example
 
+**Full-stack:**
 1. Create directory under `examples/`
 2. Add `package.json` with `"@evjs/cli": "*"` as devDep, `"private": true`
 3. Add `src/main.tsx` + `index.html`
 4. Scripts: `"dev": "ev dev"`, `"build": "ev build"`
 5. Symlink in `packages/cli/templates/` → `../../../examples/[name]`
 6. Add to `packages/cli/scripts/restore-templates.js` symlink map
-7. Add to root `turbo.json` if needed
+
+**FaaS / server-only:**
+1. Create directory under `examples/`
+2. Add `package.json` with `"@evjs/cli": "*"` as devDep, `"private": true`
+3. Add `ev.config.ts` with `mode: "serverOnly"`
+4. Add server functions in `src/api/*.server.ts`
+5. No `index.html`, no `main.tsx`
+6. Scripts: `"dev": "ev dev"`, `"build": "ev build"`
 
 ### Add a new transport
 

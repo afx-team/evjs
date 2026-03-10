@@ -55,6 +55,19 @@ export default defineConfig({
 });
 ```
 
+### Server-Only / FaaS Mode
+
+```ts
+import { defineConfig } from "@evjs/cli";
+
+export default defineConfig({
+  mode: "serverOnly",
+  server: { endpoint: "/api/fn" },
+});
+```
+
+In `serverOnly` mode, no `client` config is needed. Server functions are auto-discovered.
+
 ### Config Defaults
 
 | Key | Default |
@@ -92,18 +105,32 @@ Interactive scaffolding. Templates:
 - `basic-server-fns` — server functions example
 - `configured-server-fns` — advanced config example
 - `complex-routing` — params, search, layouts, loaders
+- `faas-only` — pure backend / FaaS (no React)
 
 ### `ev dev`
+
+**Full-stack mode:**
 - Starts webpack-dev-server on port 3000
 - Auto-starts API server on port 3001
 - Proxies `/api/fn` requests to API server
 - Hot reloads client; restarts server on changes
+
+**Server-only mode (`mode: "serverOnly"`):**
+- Webpack watch mode (no dev server)
+- Auto-restarts Node.js on changes
 - `NODE_ENV=development`
 
 ### `ev build`
+
+**Full-stack mode:**
 - Outputs client bundle to `dist/client/`
 - Outputs server bundle to `dist/server/`
-- Emits `dist/server/manifest.json` with server function registry
+- Emits `dist/server/manifest.json`
+
+**Server-only mode:**
+- Outputs `dist/server/main.js` only
+- No client bundle, no HTML
+- Human-readable function IDs
 - `NODE_ENV=production`
 
 ## Common Mistakes

@@ -41,26 +41,53 @@ describe("defineConfig", () => {
     };
     expect(defineConfig(config)).toBe(config);
   });
+
+  it("handles server-only (FaaS) config", () => {
+    const config: EvConfig = {
+      mode: "serverOnly",
+      server: {
+        endpoint: "/api/fn",
+        entry: "src/**/*.server.ts",
+      },
+    };
+    expect(defineConfig(config)).toBe(config);
+  });
+
+  it("handles server mode with array entry patterns", () => {
+    const config: EvConfig = {
+      mode: "serverOnly",
+      server: {
+        entry: ["src/api/**/*.server.ts", "src/rpc/**/*.server.ts"],
+        middleware: ['import "dotenv/config";'],
+      },
+    };
+    expect(defineConfig(config)).toBe(config);
+    expect(config.mode).toBe("serverOnly");
+  });
 });
 
 describe("CONFIG_DEFAULTS", () => {
   it("has expected default values", () => {
+    expect(CONFIG_DEFAULTS.mode).toBe("fullstack");
     expect(CONFIG_DEFAULTS.entry).toBe("./src/main.tsx");
     expect(CONFIG_DEFAULTS.html).toBe("./index.html");
     expect(CONFIG_DEFAULTS.clientPort).toBe(3000);
     expect(CONFIG_DEFAULTS.serverPort).toBe(3001);
     expect(CONFIG_DEFAULTS.endpoint).toBe("/api/fn");
+    expect(CONFIG_DEFAULTS.serverEntry).toBe("src/**/*.server.{ts,tsx,js,jsx}");
   });
 
   it("is readonly", () => {
     // TypeScript enforces this via `as const`, but verify no accidental mutation
     expect(Object.isFrozen(CONFIG_DEFAULTS)).toBe(false); // as const doesn't freeze at runtime
     expect(CONFIG_DEFAULTS).toEqual({
+      mode: "fullstack",
       entry: "./src/main.tsx",
       html: "./index.html",
       clientPort: 3000,
       serverPort: 3001,
       endpoint: "/api/fn",
+      serverEntry: "src/**/*.server.{ts,tsx,js,jsx}",
     });
   });
 });

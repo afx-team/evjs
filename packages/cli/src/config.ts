@@ -8,6 +8,12 @@ export interface ServerConfig {
   runner?: string;
   /** Server function endpoint path. Default: "/api/fn". */
   endpoint?: string;
+  /**
+   * Glob pattern(s) for server function entry files.
+   * Used in "server" mode to discover files without a client build.
+   * Default: "src/**\/*.server.{ts,tsx,js,jsx}"
+   */
+  entry?: string | string[];
   /** Middleware module paths to auto-register in server entry. */
   middleware?: string[];
   /** Dev server options. */
@@ -51,9 +57,24 @@ export interface ClientConfig {
 }
 
 /**
+ * Framework mode.
+ *
+ * - "fullstack": Default. Builds both client (React/TanStack) and server bundles.
+ * - "server": Server-only mode for FaaS / pure backend applications. No client
+ *   bundle, no React dependencies required.
+ */
+export type EvMode = "fullstack" | "serverOnly";
+
+/**
  * evjs framework configuration.
  */
 export interface EvConfig {
+  /**
+   * Framework mode.
+   * - "fullstack" (default): Full-stack React app with server functions.
+   * - "server": Pure backend / FaaS mode — server bundle only.
+   */
+  mode?: EvMode;
   server?: ServerConfig;
   client?: ClientConfig;
 }
@@ -64,11 +85,13 @@ export interface EvConfig {
  * Single source of truth for all defaults across the framework.
  */
 export const CONFIG_DEFAULTS = {
+  mode: "fullstack" as const,
   entry: "./src/main.tsx",
   html: "./index.html",
   clientPort: 3000,
   serverPort: 3001,
   endpoint: "/api/fn",
+  serverEntry: "src/**/*.server.{ts,tsx,js,jsx}",
 } as const;
 
 /**
@@ -76,7 +99,7 @@ export const CONFIG_DEFAULTS = {
  *
  * @example
  * ```ts
- * // ev.config.ts
+ * // ev.config.ts — fullstack (default)
  * import { defineConfig } from "@evjs/cli";
  *
  * export default defineConfig({
@@ -87,6 +110,19 @@ export const CONFIG_DEFAULTS = {
  *   server: {
  *     endpoint: "/api/fn",
  *     dev: { port: 3001 },
+ *   },
+ * });
+ * ```
+ *
+ * @example
+ * ```ts
+ * // ev.config.ts — server-only / FaaS
+ * import { defineConfig } from "@evjs/cli";
+ *
+ * export default defineConfig({
+ *   mode: "serverOnly",
+ *   server: {
+ *     endpoint: "/api/fn",
  *   },
  * });
  * ```

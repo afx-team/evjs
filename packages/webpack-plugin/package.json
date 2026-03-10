@@ -37,8 +37,8 @@
   "author": "xusd320",
   "license": "MIT",
   "dependencies": {
-    "@evjs/build-tools": "0.0.1-rc.8",
-    "@evjs/manifest": "0.0.1-rc.8"
+    "@evjs/build-tools": "*",
+    "@evjs/manifest": "*"
   },
   "devDependencies": {
     "typescript": "^5.7.3",

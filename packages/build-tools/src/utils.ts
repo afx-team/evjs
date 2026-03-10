@@ -38,6 +38,23 @@ export function makeFnId(
   return hashString(`${relativePath}:${exportName}`);
 }
 
+/**
+ * Derive a human-readable function ID from the file path and export name.
+ *
+ * Produces IDs like `src/api/hello.server#hello` — useful for FaaS mode
+ * where hashed IDs are unnecessary and readable IDs aid debugging.
+ */
+export function makeReadableFnId(
+  rootContext: string,
+  resourcePath: string,
+  exportName: string,
+): string {
+  const relativePath = path.relative(rootContext, resourcePath);
+  // Strip file extension for cleaner IDs
+  const withoutExt = relativePath.replace(/\.[^/.]+$/, "");
+  return `${withoutExt}#${exportName}`;
+}
+
 /** Check whether the source starts with the "use server" directive. */
 export function detectUseServer(source: string): boolean {
   const trimmed = source.replace(/^(\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*/, "");

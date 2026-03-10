@@ -50,6 +50,14 @@ Returns `true` if source starts with `"use server";` directive.
 
 Derives a stable SHA-256 function ID from the project root, file path, and export name.
 
+### `makeReadableFnId(rootContext, resourcePath, exportName): string`
+
+Derives a human-readable function ID: `"relativePath#exportName"` (e.g. `"src/api/hello.server#hello"`). Used in FaaS mode for debugging.
+
+### `generateFaasEntry(config, modules): string`
+
+Generates a standalone FaaS server entry that exports `{ fetch }` for FaaS platforms (Cloudflare Workers, Deno Deploy, etc.).
+
 ### `parseModuleRef(ref): { module, export }`
 
 Parses `"module#exportName"` strings into module and export components.
@@ -61,6 +69,7 @@ interface TransformOptions {
   resourcePath: string;   // absolute path to source file
   rootContext: string;     // project root directory
   isServer: boolean;       // true = server build, false = client
+  readableIds?: boolean;   // use human-readable IDs (FaaS mode)
   onServerFn?: (fnId: string, meta: { moduleId: string; export: string }) => void;
 }
 
@@ -91,9 +100,9 @@ RUNTIME.fnIdProp              // "evId"
 | `src/transforms/client/` | Client-side SWC transform (stub generation) |
 | `src/transforms/server/` | Server-side SWC transform (registration) |
 | `src/transforms/utils.ts` | AST utilities |
-| `src/entry.ts` | `generateServerEntry` |
+| `src/entry.ts` | `generateServerEntry`, `generateFaasEntry` |
 | `src/codegen.ts` | `detectUseServer` |
-| `src/utils.ts` | `makeFnId`, `parseModuleRef` |
+| `src/utils.ts` | `makeFnId`, `makeReadableFnId`, `parseModuleRef` |
 | `src/types.ts` | Type definitions |
 
 ## Writing a New Bundler Adapter

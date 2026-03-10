@@ -2,7 +2,7 @@
  * Bundler-agnostic build utilities for the ev framework.
  */
 
-export { generateServerEntry } from "./entry.js";
+export { generateFaasEntry, generateServerEntry } from "./entry.js";
 export { transformServerFile } from "./transforms/index.js";
 export type { ServerEntryConfig, TransformOptions } from "./types.js";
 export {
@@ -10,5 +10,6 @@ export {
   hashString,
   makeFnId,
   makeModuleId,
+  makeReadableFnId,
   parseModuleRef,
 } from "./utils.js";

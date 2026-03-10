@@ -14,6 +14,12 @@ export interface TransformOptions {
   rootContext: string;
   /** Whether this is a server-side build. */
   isServer: boolean;
+  /**
+   * Use human-readable function IDs (`relativePath#exportName`)
+   * instead of hashed IDs. Useful for FaaS mode where there's no
+   * client bundle and readable IDs aid debugging.
+   */
+  readableIds?: boolean;
   /** Callback to register a server function in the manifest. */
   onServerFn?: (
     fnId: string,

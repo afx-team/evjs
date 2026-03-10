@@ -4,7 +4,7 @@
 [![DeepWiki](https://img.shields.io/badge/DeepWiki-evaijs%2Fevjs-blue?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTQgMTkuNXYtMTVBMi41IDIuNSAwIDAgMSA2LjUgMkgxOXYyMEg2LjVhMi41IDIuNSAwIDAgMS0yLjUtMi41eiIvPjxwYXRoIGQ9Ik04IDdoOCIvPjxwYXRoIGQ9Ik04IDExaDgiLz48cGF0aCBkPSJNOCAxNWg1Ii8+PC9zdmc+)](https://deepwiki.com/evaijs/evjs)
 [![Vibe Coding](https://img.shields.io/badge/vibe-coding-ff69b4?style=flat-square)](https://en.wikipedia.org/wiki/Vibe_coding)
 
-React meta-framework, built on TanStack + Hono.
+Full-stack framework — React + TanStack + Hono, or pure backend for FaaS.
 
 > **ev** = **Ev**aluation · **Ev**olution — evaluate across runtimes, evolve with AI tooling.
 
@@ -20,6 +20,7 @@ React meta-framework, built on TanStack + Hono.
 - **Middleware** — `registerMiddleware()` for cross-cutting concerns.
 - **Typed Errors** — `ServerError` flows structured data server → client.
 - **Multi-Runtime** — Hono-based server with Node, Deno, Bun, Edge adapters.
+- **Server-Only / FaaS** — `mode: "serverOnly"` for pure backend, no React needed.
 - **CLI** — `ev init` · `ev dev` · `ev build`
 
 ## 🚀 Quick Start

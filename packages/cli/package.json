@@ -15,9 +15,10 @@
     "access": "public"
   },
   "bin": {
-    "ev": "dist/index.js"
+    "ev": "bin/ev.js"
   },
   "files": [
+    "bin",
     "dist",
     "templates",
     "AGENT.md"
@@ -27,12 +28,12 @@
     "dev": "tsc -w",
     "test": "vitest run",
     "check-types": "tsc --noEmit",
-    "prepare": "npm run build",
     "prepublishOnly": "node ../../scripts/sync-versions.js && npm run build && node scripts/deref-templates.js",
     "postpublish": "node scripts/restore-templates.js"
   },
   "dependencies": {
-    "@evjs/webpack-plugin": "0.0.1-rc.8",
+    "@evjs/build-tools": "*",
+    "@evjs/webpack-plugin": "*",
     "@logtape/logtape": "^2.0.4",
     "@swc/core": "^1.2.147",
     "commander": "^12.1.0",
