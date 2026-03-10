@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { generateFaasEntry, generateServerEntry } from "../src/entry.js";
+import { generateServerEntry } from "../src/entry.js";
 
 describe("generateServerEntry", () => {
-  it("generates entry with user functions and createApp", () => {
+  it("generates an isomorphic entry with user functions, createApp, and a default fetch handler", () => {
     const result = generateServerEntry(undefined, [
       "/project/src/api/users.server.ts",
     ]);
@@ -10,8 +10,10 @@ describe("generateServerEntry", () => {
     expect(result).toContain("import * as _fns_0");
     expect(result).toContain("export { _fns_0 }");
     expect(result).toContain(
-      'export { createApp } from "@evjs/runtime/server"',
+      'import { createApp } from "@evjs/runtime/server"',
     );
+    expect(result).toContain("export { createApp }");
+    expect(result).toContain("export default createFetchHandler(app)");
   });
 
   it("imports and re-exports all server modules", () => {
@@ -46,28 +48,13 @@ describe("generateServerEntry", () => {
     const result = generateServerEntry(undefined, []);
 
     expect(result).not.toContain("import * as _fns");
-    // Still exports createApp for the adapter layer
+    // Still creates app and exports handler
     expect(result).toContain("export { createApp }");
-  });
-});
-
-describe("generateFaasEntry", () => {
-  it("generates a standalone entry with createApp and fetch export", () => {
-    const result = generateFaasEntry(undefined, [
-      "/project/src/api/hello.server.ts",
-    ]);
-
-    expect(result).toContain("import * as _fns_0");
-    expect(result).toContain(
-      'import { createApp } from "@evjs/runtime/server"',
-    );
-    expect(result).toContain("const app = createApp(");
-    expect(result).toContain("fetch: app.fetch");
-    expect(result).toContain("export { app }");
+    expect(result).toContain("export default createFetchHandler(app)");
   });
 
   it("passes endpoint to createApp when provided", () => {
-    const result = generateFaasEntry(
+    const result = generateServerEntry(
       undefined,
       ["/project/src/api/hello.server.ts"],
       "/rpc/v1",
@@ -77,27 +64,15 @@ describe("generateFaasEntry", () => {
   });
 
   it("uses default createApp call when no endpoint is provided", () => {
-    const result = generateFaasEntry(undefined, [
+    const result = generateServerEntry(undefined, [
       "/project/src/api/hello.server.ts",
     ]);
 
     expect(result).toContain("const app = createApp()");
   });
 
-  it("imports all server modules", () => {
-    const result = generateFaasEntry(undefined, [
-      "/project/src/api/hello.server.ts",
-      "/project/src/api/users.server.ts",
-      "/project/src/api/orders.server.ts",
-    ]);
-
-    expect(result).toContain("import * as _fns_0");
-    expect(result).toContain("import * as _fns_1");
-    expect(result).toContain("import * as _fns_2");
-  });
-
   it("includes middleware imports before server modules", () => {
-    const result = generateFaasEntry(
+    const result = generateServerEntry(
       {
         middleware: ['import "dotenv/config";'],
       },
@@ -109,14 +84,5 @@ describe("generateFaasEntry", () => {
     const dotenvIndex = result.indexOf('import "dotenv/config"');
     const fnsIndex = result.indexOf("import * as _fns_0");
     expect(dotenvIndex).toBeLessThan(fnsIndex);
-  });
-
-  it("handles empty server modules array", () => {
-    const result = generateFaasEntry(undefined, []);
-
-    expect(result).not.toContain("import * as _fns");
-    // Should still create app and export handler
-    expect(result).toContain("const app = createApp(");
-    expect(result).toContain("fetch: app.fetch");
   });
 });

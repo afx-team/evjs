@@ -145,7 +145,7 @@ async function resolveWebpackConfig(cwd: string) {
   if (mode === "serverOnly") {
     // FaaS / server-only mode: discover server files and build a standalone entry
     const { glob } = await import("glob");
-    const { generateFaasEntry } = await import("@evjs/build-tools");
+    const { generateServerEntry } = await import("@evjs/build-tools");
 
     const serverEntryGlob =
       evjsConfig?.server?.entry ?? CONFIG_DEFAULTS.serverEntry;
@@ -168,7 +168,7 @@ async function resolveWebpackConfig(cwd: string) {
     const middlewareConfig = evjsConfig?.server?.middleware?.length
       ? { middleware: evjsConfig.server.middleware }
       : undefined;
-    const faasEntryCode = generateFaasEntry(
+    const faasEntryCode = generateServerEntry(
       middlewareConfig,
       serverModulePaths,
       endpoint,

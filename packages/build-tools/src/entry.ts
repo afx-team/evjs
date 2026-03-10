@@ -19,6 +19,7 @@ import { RUNTIME, type ServerEntryConfig } from "./types.js";
 export function generateServerEntry(
   config: ServerEntryConfig | undefined,
   serverModulePaths: string[],
+  endpoint?: string,
 ): string {
   const moduleImports = serverModulePaths
     .map((p, i) => `import * as _fns_${i} from ${JSON.stringify(p)};`)
@@ -27,59 +28,20 @@ export function generateServerEntry(
   const fnsExports = serverModulePaths.map((_p, i) => `_fns_${i}`);
   const allExports = [...fnsExports];
 
-  return emitCode(
-    [
-      `export { createApp } from "${RUNTIME.appModule}";`,
-      ...(config?.middleware ?? []),
-      moduleImports,
-      allExports.length ? `export { ${allExports.join(", ")} };` : "",
-    ]
-      .filter(Boolean)
-      .join("\n"),
-  );
-}
-
-/**
- * Generate a standalone server entry for FaaS / server-only mode.
- *
- * Unlike `generateServerEntry`, this generates a self-contained entry that:
- * 1. Imports user's "use server" modules (registering functions)
- * 2. Creates a Hono app via `createApp`
- * 3. Exports a default fetch handler for FaaS platforms (Cloudflare Workers, Deno Deploy, etc.)
- * 4. Auto-starts a Node.js HTTP server when run directly
- *
- * @param config - Server entry configuration (middleware, endpoint)
- * @param serverModulePaths - Absolute paths to discovered "use server" modules
- * @param endpoint - Server function endpoint path (default: "/api/fn")
- * @returns The generated FaaS entry source code string
- */
-export function generateFaasEntry(
-  config: ServerEntryConfig | undefined,
-  serverModulePaths: string[],
-  endpoint?: string,
-): string {
-  const moduleImports = serverModulePaths
-    .map((p, i) => `import * as _fns_${i} from ${JSON.stringify(p)};`)
-    .join("\n");
-
   const endpointArg = endpoint
     ? `{ endpoint: ${JSON.stringify(endpoint)} }`
     : "";
 
   return emitCode(
     [
-      // Middleware imports first (e.g. dotenv, instrumentation)
-      ...(config?.middleware ?? []),
-      // Import server modules to trigger registration
-      moduleImports,
-      // Import createApp and create the Hono app
       `import { createApp } from "${RUNTIME.appModule}";`,
       `import { createFetchHandler } from "@evjs/runtime/server/ecma";`,
+      ...(config?.middleware ?? []),
+      moduleImports,
+      allExports.length ? `export { ${allExports.join(", ")} };` : "",
+      `export { createApp };`,
       `const app = createApp(${endpointArg});`,
-      // Export for FaaS platforms (Cloudflare Workers, Deno, Bun) using the ecma runner
       `export default createFetchHandler(app);`,
-      // Export app for custom adapters
-      `export { app };`,
     ]
       .filter(Boolean)
       .join("\n"),
