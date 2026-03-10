@@ -10,7 +10,7 @@ const esmRequire = createRequire(import.meta.url);
  * Unlike the fullstack config, this:
  * - Targets Node.js (no browser polyfills)
  * - Has no HtmlWebpackPlugin or dev server
- * - Externalises all node_modules
+ * - Bundles node_modules (except Node.js built-ins)
  * - Uses only the server transform (no JSX/React)
  */
 export function createServerWebpackConfig(
@@ -51,27 +51,6 @@ export function createServerWebpackConfig(
       extensions: [".tsx", ".ts", ".js"],
     },
     externalsPresets: { node: true },
-    externals: [
-      // Externalise all node_modules except framework internals that must be bundled
-      (
-        { request }: { request?: string },
-        cb: (err?: Error | null, result?: string) => void,
-      ) => {
-        if (
-          request &&
-          typeof request === "string" &&
-          !request.startsWith(".") &&
-          !request.startsWith("/") &&
-          !request.startsWith("data:") &&
-          // Bundle framework internals (ESM packages that won't resolve in CJS output)
-          !request.startsWith("@evjs/") &&
-          !request.startsWith("hono")
-        ) {
-          return cb(null, request);
-        }
-        cb();
-      },
-    ],
     module: {
       rules: [
         {
