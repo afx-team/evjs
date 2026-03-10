@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { builtinModules } from "node:module";
 import {
   detectUseServer,
   generateServerEntry,
@@ -130,27 +131,7 @@ export class EvWebpackPlugin {
                         request &&
                         typeof request === "string" &&
                         (request.startsWith("node:") ||
-                          [
-                            "http",
-                            "https",
-                            "http2",
-                            "fs",
-                            "path",
-                            "crypto",
-                            "stream",
-                            "os",
-                            "assert",
-                            "util",
-                            "events",
-                            "url",
-                            "buffer",
-                            "zlib",
-                            "child_process",
-                            "net",
-                            "tls",
-                            "querystring",
-                            "worker_threads",
-                          ].includes(request))
+                          builtinModules.includes(request))
                       ) {
                         return cb(null, request);
                       }

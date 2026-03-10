@@ -30,6 +30,10 @@ cd my-app && npm install
 ev dev
 ```
 
+After `ev dev`, your browser opens to `http://localhost:3000` with hot module
+replacement. Server functions in `*.server.ts` files are auto-discovered — no
+config needed.
+
 ## 🏗️ Packages
 
 | Package | Purpose |
@@ -54,3 +58,4 @@ npm run test:e2e     # playwright
 ## 📄 License
 
 MIT © [xusd320](https://github.com/xusd320)
+

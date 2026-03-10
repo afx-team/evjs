@@ -11,13 +11,17 @@ function main() {
   const pkg = JSON.parse(fs.readFileSync(rootPkgPath, "utf8"));
   const currentVersion = pkg.version;
 
-  // Usage: npm run release [new-version] [tag]
-  // Node args start at [2]
-  const newVersionInput = process.argv[2];
-  const tagInput = process.argv[3];
+  const positionalArgs = process.argv
+    .slice(2)
+    .filter((a) => !a.startsWith("--"));
+  const dryRun = process.argv.includes("--dry-run");
 
-  const newVersion = newVersionInput || currentVersion;
-  const tag = tagInput || "latest";
+  const newVersion = positionalArgs[0] || currentVersion;
+  const tag = positionalArgs[1] || "latest";
+
+  if (dryRun) {
+    console.log("[DRY RUN] No changes will be made.\n");
+  }
 
   console.log(`Current version: ${currentVersion}`);
   console.log(`Target version:  ${newVersion}`);
@@ -25,33 +29,46 @@ function main() {
 
   if (newVersion !== currentVersion) {
     console.log(`Bumping root version to ${newVersion}...`);
-    pkg.version = newVersion;
-    fs.writeFileSync(rootPkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+    if (!dryRun) {
+      pkg.version = newVersion;
+      fs.writeFileSync(rootPkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+    }
 
     console.log("Synchronizing versions across workspaces...");
-    execSync("node scripts/sync-versions.js", {
-      stdio: "inherit",
-      cwd: rootDir,
-    });
+    if (!dryRun) {
+      execSync("node scripts/sync-versions.js", {
+        stdio: "inherit",
+        cwd: rootDir,
+      });
+    }
 
     console.log("Committing version bump...");
-    execSync("git add -A", { stdio: "inherit", cwd: rootDir });
-    execSync(`git commit -m "chore: release v${newVersion}"`, {
-      stdio: "inherit",
-      cwd: rootDir,
-    });
+    if (!dryRun) {
+      execSync("git add -A", { stdio: "inherit", cwd: rootDir });
+      execSync(`git commit -m "chore: release v${newVersion}"`, {
+        stdio: "inherit",
+        cwd: rootDir,
+      });
+    }
   }
 
   console.log(`\nBuilding packages...`);
-  execSync("npm run build", { stdio: "inherit", cwd: rootDir });
+  if (!dryRun) {
+    execSync("npm run build", { stdio: "inherit", cwd: rootDir });
+  }
 
   console.log(`\nPublishing packages with tag "${tag}"...`);
-  execSync(
-    `npm publish --workspaces --if-present --access public --tag ${tag}`,
-    { stdio: "inherit", cwd: rootDir },
-  );
+  if (!dryRun) {
+    execSync(
+      `npm publish --workspaces --if-present --access public --tag ${tag}`,
+      { stdio: "inherit", cwd: rootDir },
+    );
+  }
 
-  console.log(`\n✅ Successfully published version ${pkg.version} (@${tag})!`);
+  const suffix = dryRun ? " (dry run — nothing was published)" : "";
+  console.log(
+    `\n✅ Successfully published version ${newVersion} (@${tag})!${suffix}`,
+  );
 }
 
 try {

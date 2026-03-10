@@ -24,3 +24,12 @@ export const registry = new Map<string, ServerFn>();
 export function registerServerFn(fnId: string, fn: ServerFn): void {
   registry.set(fnId, fn);
 }
+
+/**
+ * Reset the server function registry. **Test-only** — not available in production builds.
+ * @internal
+ */
+export function __resetForTesting(): void {
+  if (process.env.NODE_ENV === "production") return;
+  registry.clear();
+}

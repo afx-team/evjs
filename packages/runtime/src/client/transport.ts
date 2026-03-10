@@ -209,3 +209,13 @@ export function __ev_register(
 export function getFnId(fn: (...args: any[]) => any): string | undefined {
   return fnIdRegistry.get(fn);
 }
+
+/**
+ * Reset all transport state. **Test-only** — not available in production builds.
+ * @internal
+ */
+export function __resetForTesting(): void {
+  if (process.env.NODE_ENV === "production") return;
+  _transport = null;
+  fnNameRegistry.clear();
+}

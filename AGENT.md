@@ -59,13 +59,14 @@ getUsers(args)            →  transport.send(fnId, args)    →  Hono route: PO
 Source: "use server"; export async function getUsers() { ... }
 
 Client transform (@evjs/build-tools/transforms/client):
-  → import { __ev_call } from "@evjs/runtime";
-  → export const getUsers = __ev_call("getUsers", "module-hash");
+  → import { __ev_call, __ev_register } from "@evjs/runtime/client/transport";
+  → export async function getUsers(...args) { return __ev_call(fnId, args); }
+  → __ev_register(getUsers, fnId, "getUsers");
 
 Server transform (@evjs/build-tools/transforms/server):
   → import { registerServerFn } from "@evjs/runtime/server";
   → export async function getUsers() { ... }  // body preserved
-  → registerServerFn("getUsers", getUsers);
+  → registerServerFn(fnId, getUsers);
 ```
 
 ## Configuration (`ev.config.ts`)
@@ -187,12 +188,14 @@ export async function getUser(id: string) {
 }
 
 // Client side — catch typed errors
+import { ServerFunctionError } from "@evjs/runtime/client";
+
 try {
   const user = await getUser("123");
 } catch (e) {
-  if (e instanceof ServerError) {
-    console.log(e.message);  // "User not found"
-    console.log(e.data);  // { id: "123" }
+  if (e instanceof ServerFunctionError) {
+    console.log(e.message);  // 'Server function "getUser" threw: User not found'
+    console.log(e.data);     // { id: "123" }
   }
 }
 ```

@@ -28,18 +28,34 @@ export function createHandler(options?: HandlerOptions): Hono {
   const handler = new Hono();
 
   handler.post("/", async (c) => {
-    const raw = await c.req.text();
-    const body = codec.deserialize(raw) as {
-      fnId: string;
-      args: unknown[];
-    };
+    let body: { fnId: string; args: unknown[] };
+
+    try {
+      const raw = await c.req.text();
+      body = codec.deserialize(raw) as { fnId: string; args: unknown[] };
+    } catch {
+      const contentType = codec.contentType ?? DEFAULT_CONTENT_TYPE;
+      return new Response(
+        codec.serialize({
+          error: "Malformed request body",
+          fnId: "",
+          status: 400,
+        }),
+        { status: 400, headers: { "Content-Type": contentType } },
+      );
+    }
 
     const response = await dispatch(body.fnId, body.args ?? []);
 
     const contentType = codec.contentType ?? DEFAULT_CONTENT_TYPE;
     const serialized = codec.serialize(
       "error" in response
-        ? { error: response.error, fnId: response.fnId, data: response.data }
+        ? {
+            error: response.error,
+            fnId: response.fnId,
+            status: response.status,
+            data: response.data,
+          }
         : { result: response.result },
     );
 

@@ -51,6 +51,15 @@ export function registerMiddleware(fn: Middleware): void {
   middlewares.push(fn);
 }
 
+/**
+ * Reset the middleware stack. **Test-only** — not available in production builds.
+ * @internal
+ */
+export function __resetForTesting(): void {
+  if (process.env.NODE_ENV === "production") return;
+  middlewares.length = 0;
+}
+
 /** Successful dispatch result. */
 export interface DispatchSuccess {
   result: unknown;

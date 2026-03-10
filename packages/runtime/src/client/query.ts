@@ -110,6 +110,15 @@ export type MutationProxy<TModule> = {
     : MutationProxy<TModule[K]>;
 };
 
+/**
+ * Split a raw argument list into function args and TanStack Query options.
+ *
+ * **Heuristic**: if the last element is a plain object (its prototype is
+ * `Object.prototype`), it is treated as the options bag. This means that if
+ * your server function's last positional parameter is a plain object, wrap
+ * it in an extra object or pass `undefined` as an explicit trailing arg to
+ * avoid it being consumed as options.
+ */
 function splitArgsAndOptions(rawArgs: unknown[]): {
   args: unknown[];
   options?: Record<string, unknown>;
@@ -204,11 +213,7 @@ function createHandler(fn: ServerFunction<unknown[], unknown>, path: string[]) {
   };
 }
 
-function createProxy(
-  type: "query" | "mutation",
-  source?: unknown,
-  path: string[] = [],
-): unknown {
+function createProxy(source?: unknown, path: string[] = []): unknown {
   const target = source ?? (() => {});
   return new Proxy(target as object, {
     get(_target, prop: string) {
@@ -226,7 +231,7 @@ function createProxy(
       }
 
       // Otherwise return a nested proxy
-      return createProxy(type, val, newPath);
+      return createProxy(val, newPath);
     },
     apply(_target, _thisArg, args) {
       const fn = args[0] as unknown as ServerFunction<unknown[], unknown>;
@@ -242,14 +247,14 @@ function createProxy(
  * Create a type-safe query proxy for a module or object.
  */
 export function createQueryProxy<T>(source?: T): QueryProxy<T> {
-  return createProxy("query", source) as QueryProxy<T>;
+  return createProxy(source) as QueryProxy<T>;
 }
 
 /**
  * Create a type-safe mutation proxy for a module or object.
  */
 export function createMutationProxy<T>(source?: T): MutationProxy<T> {
-  return createProxy("mutation", source) as MutationProxy<T>;
+  return createProxy(source) as MutationProxy<T>;
 }
 
 /**
@@ -260,10 +265,7 @@ export function createMutationProxy<T>(source?: T): MutationProxy<T> {
  * const api = createQueryProxy(getUsersModule);
  * const { data } = api.getUsers.useQuery();
  */
-export const query = createProxy("query") as (<
-  TArgs extends unknown[],
-  TResponse,
->(
+export const query = createProxy() as (<TArgs extends unknown[], TResponse>(
   fn: ServerFunction<TArgs, TResponse>,
 ) => QueryProxyHandler<TArgs, TResponse>) &
   QueryProxy<Record<string, unknown>>;
@@ -272,7 +274,7 @@ export const query = createProxy("query") as (<
  * The global mutation proxy/wrapper.
  * @example const { mutate } = mutation(createUser).useMutation();
  */
-export const mutation = createProxy("mutation") as (<TVariables, TResponse>(
+export const mutation = createProxy() as (<TVariables, TResponse>(
   fn: (args: TVariables) => Promise<TResponse>,
 ) => MutationProxyHandler<TVariables, TResponse>) &
   MutationProxy<Record<string, unknown>>;
