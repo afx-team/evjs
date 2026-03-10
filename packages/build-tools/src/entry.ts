@@ -74,9 +74,10 @@ export function generateFaasEntry(
       moduleImports,
       // Import createApp and create the Hono app
       `import { createApp } from "${RUNTIME.appModule}";`,
+      `import { createFetchHandler } from "@evjs/runtime/server/ecma";`,
       `const app = createApp(${endpointArg});`,
-      // Export for FaaS platforms (Cloudflare Workers, Deno, Bun)
-      `export default { fetch: app.fetch };`,
+      // Export for FaaS platforms (Cloudflare Workers, Deno, Bun) using the ecma runner
+      `export default createFetchHandler(app);`,
       // Export app for custom adapters
       `export { app };`,
     ]
