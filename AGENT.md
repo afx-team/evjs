@@ -45,7 +45,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for full diagrams.
 Client                          Build Time                       Server
 ──────                          ──────────                       ──────
 import { getUsers }       →  SWC transform strips body     →  original body kept
-  from "./users.server"      replaces with __ev_call stub      registered via registerServerFn()
+  from "./users.server"      replaces with __fn_call stub      registered via registerServerFn()
 
 getUsers(args)            →  transport.send(fnId, args)    →  Hono route: POST /api/fn
                           →  codec.encode(args)            →  codec.decode(body)
@@ -59,12 +59,12 @@ getUsers(args)            →  transport.send(fnId, args)    →  Hono route: PO
 Source: "use server"; export async function getUsers() { ... }
 
 Client transform (@evjs/build-tools/transforms/client):
-  → import { __ev_call, __ev_register } from "@evjs/runtime/client/transport";
-  → export async function getUsers(...args) { return __ev_call(fnId, args); }
-  → __ev_register(getUsers, fnId, "getUsers");
+  → import { __fn_call, __fn_register } from "@evjs/runtime/client/transport";
+  → export async function getUsers(...args) { return __fn_call(fnId, args); }
+  → __fn_register(getUsers, fnId, "getUsers");
 
 Server transform (@evjs/build-tools/transforms/server):
-  → import { registerServerFn } from "@evjs/runtime/server";
+  → import { registerServerFn } from "@evjs/runtime/server/register";
   → export async function getUsers() { ... }  // body preserved
   → registerServerFn(fnId, getUsers);
 ```

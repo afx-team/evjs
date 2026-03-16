@@ -20,7 +20,7 @@ const NON_SERVER_FILE = `export function helper() { return 42; }`;
 
 describe("transformServerFile", () => {
   describe("client transform", () => {
-    it("replaces function bodies with __ev_call stubs", async () => {
+    it("replaces function bodies with __fn_call stubs", async () => {
       const result = await transformServerFile(SERVER_FILE, {
         resourcePath: FILE,
         rootContext: ROOT,
@@ -32,7 +32,7 @@ describe("transformServerFile", () => {
       expect(result).toContain("export function createUser");
     });
 
-    it("emits __ev_register calls for each function", async () => {
+    it("emits __fn_register calls for each function", async () => {
       const result = await transformServerFile(SERVER_FILE, {
         resourcePath: FILE,
         rootContext: ROOT,
@@ -40,14 +40,14 @@ describe("transformServerFile", () => {
       });
 
       expect(result).toContain(RUNTIME.clientRegister);
-      // Should have an __ev_register call for each exported function
+      // Should have an __fn_register call for each exported function
       const registerCount = (
         result.match(new RegExp(RUNTIME.clientRegister, "g")) || []
       ).length;
       expect(registerCount).toBe(3); // import + getUsers + createUser
     });
 
-    it("imports __ev_call and __ev_register from transport module", async () => {
+    it("imports __fn_call and __fn_register from transport module", async () => {
       const result = await transformServerFile(SERVER_FILE, {
         resourcePath: FILE,
         rootContext: ROOT,

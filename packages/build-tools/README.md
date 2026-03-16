@@ -51,7 +51,7 @@ const clientStub = await transformServerFile(source, {
 
 `transformServerFile()` parses the source with SWC, extracts exported function names via AST traversal, then delegates to the appropriate transform:
 
-- **Client transform** — replaces function bodies with `__ev_call(fnId, args)` transport stubs and attaches `evId` for query cache keys.
+- **Client transform** — replaces function bodies with `__fn_call(fnId, args)` transport stubs and registers them via `__fn_register()` for query cache keys.
 - **Server transform** — keeps original source, prepends the `registerServerFn` import, and appends registration calls for each export.
 
 ### Entry Generation
@@ -67,11 +67,12 @@ All generated code passes through `emitCode()` — a SWC `parseSync → printSyn
 All runtime identifiers (module paths, function names, property names) are centralized in a single `RUNTIME` constant — no hardcoded strings in templates:
 
 ```ts
-RUNTIME.serverModule          // "@evjs/runtime/server"
+RUNTIME.serverModule          // "@evjs/runtime/server/register"
+RUNTIME.appModule             // "@evjs/runtime/server"
 RUNTIME.clientTransportModule // "@evjs/runtime/client/transport"
 RUNTIME.registerServerFn      // "registerServerFn"
-RUNTIME.clientCall            // "__ev_call"
-RUNTIME.fnIdProp              // "evId"
+RUNTIME.clientCall            // "__fn_call"
+RUNTIME.clientRegister        // "__fn_register"
 ```
 
 ## Bundler Adapter Pattern

@@ -15,14 +15,14 @@ Transforms a `"use server"` file for either client or server target.
 **Client transform:**
 ```
 Input:  "use server"; export async function getUsers() { return db.find(); }
-Output: import { __ev_call } from "@evjs/runtime";
-        export const getUsers = __ev_call("hash:getUsers", "hash");
+Output: import { __fn_call } from "@evjs/runtime";
+        export const getUsers = __fn_call("hash:getUsers", "hash");
 ```
 
 **Server transform:**
 ```
 Input:  "use server"; export async function getUsers() { return db.find(); }
-Output: import { registerServerFn } from "@evjs/runtime/server";
+Output: import { registerServerFn } from "@evjs/runtime/server/register";
         export async function getUsers() { return db.find(); }
         registerServerFn("hash:getUsers", getUsers);
 ```
@@ -76,11 +76,12 @@ interface ServerEntryConfig {
 Identifiers used in generated code — bundler adapters should use these:
 
 ```ts
-RUNTIME.serverModule          // "@evjs/runtime/server"
+RUNTIME.serverModule          // "@evjs/runtime/server/register"
+RUNTIME.appModule             // "@evjs/runtime/server"
 RUNTIME.clientTransportModule // "@evjs/runtime/client/transport"
 RUNTIME.registerServerFn      // "registerServerFn"
-RUNTIME.clientCall            // "__ev_call"
-RUNTIME.fnIdProp              // "evId"
+RUNTIME.clientCall            // "__fn_call"
+RUNTIME.clientRegister        // "__fn_register"
 ```
 
 ## Key Files

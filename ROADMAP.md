@@ -23,7 +23,7 @@ Call server-side logic from the browser as normal async functions.
 
 - [x] Build pipeline
   - [x] `"use server"` directive detection via SWC AST parsing
-  - [x] Client transform: function bodies → `__ev_call(fnId, args)` server function stubs
+  - [x] Client transform: function bodies → `__fn_call(fnId, args)` server function stubs
   - [x] Server transform: original bodies kept + `registerServerFn(fnId, fn)` injected
   - [x] Stable function IDs derived from file path + export name (SHA-256)
   - [x] Bundler-agnostic transforms in `@evjs/build-tools`

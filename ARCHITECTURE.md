@@ -27,7 +27,7 @@
 │   ────────────────          ──────────────────────   │
 │   TanStack Router           Hono App (createApp)     │
 │   TanStack Query            registerServerFn()       │
-│   __ev_call() stubs         createHandler()          │
+│   __fn_call() stubs         createHandler()          │
 │   ServerTransport           Runner API               │
 └──────────────────────────────────────────────────────┘
 ```
@@ -79,13 +79,12 @@ Source (.server.ts)
   │
   ├─ Client Build ──▶ transforms/client/
   │                   Replaces function bodies with:
-  │                     import { __ev_call } from "@evjs/runtime/client/transport"
-  │                     export function getUsers(...args) { return __ev_call(fnId, args) }
-  │                     getUsers.evId = fnId
+  │                     import { __fn_call } from "@evjs/runtime/client/transport"
+  │                     export function getUsers(...args) { return __fn_call(fnId, args) }
   │
   └─ Server Build ──▶ transforms/server/
                       Keeps original source, prepends:
-                        import { registerServerFn } from "@evjs/runtime/server"
+                        import { registerServerFn } from "@evjs/runtime/server/register"
                       Appends:
                         registerServerFn(fnId, getUsers)
 ```
@@ -103,7 +102,7 @@ packages/build-tools/src/
     index.ts              Orchestrator: parse → extract → delegate
     utils.ts              extractExportNames (AST traversal)
     client/
-      index.ts            buildClientOutput (__ev_call stubs)
+      index.ts            buildClientOutput (__fn_call stubs)
     server/
       index.ts            buildServerOutput (registerServerFn + manifest)
 ```
@@ -114,11 +113,12 @@ All runtime identifiers used in generated code are centralized in `types.ts`:
 
 ```ts
 export const RUNTIME = {
-  serverModule: "@evjs/runtime/server",
+  serverModule: "@evjs/runtime/server/register",
+  appModule: "@evjs/runtime/server",
   clientTransportModule: "@evjs/runtime/client/transport",
   registerServerFn: "registerServerFn",
-  clientCall: "__ev_call",
-  fnIdProp: "evId",
+  clientCall: "__fn_call",
+  clientRegister: "__fn_register",
 } as const;
 ```
 

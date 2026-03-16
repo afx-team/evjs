@@ -3,7 +3,7 @@
  *
  * When the Webpack loader transforms a `"use server"` module for the client
  * bundle, each exported function is replaced with a stub that calls
- * `__ev_call(fnId, args)`. This module provides that helper.
+ * `__fn_call(fnId, args)`. This module provides that helper.
  */
 
 import { type Codec, jsonCodec } from "../codec";
@@ -156,7 +156,7 @@ export function initTransport(options: TransportOptions): void {
  * @internal This function is auto-injected by the Webpack loader.
  * Do not call directly — use server functions as normal imports instead.
  */
-export async function __ev_call(
+export async function __fn_call(
   fnId: string,
   args: unknown[],
   context?: RequestContext,
@@ -189,7 +189,7 @@ export function getFnName(fnId: string): string {
  *
  * @internal Called by build-tools codegen. Do not use directly.
  */
-export function __ev_register(
+export function __fn_register(
   // biome-ignore lint/suspicious/noExplicitAny: must accept any function shape
   fn: (...args: any[]) => any,
   fnId: string,

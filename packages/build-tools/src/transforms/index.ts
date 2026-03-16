@@ -10,7 +10,7 @@ import { extractExportNames } from "./utils.js";
  * This is a pure function with no bundler dependency.
  *
  * - **Server**: keeps original source + appends `registerServerFn()` calls
- * - **Client**: replaces function bodies with `__ev_call()` transport stubs
+ * - **Client**: replaces function bodies with `__fn_call()` transport stubs
  */
 export async function transformServerFile(
   source: string,

@@ -41,7 +41,7 @@ export const RUNTIME = {
   /** Server function registration call name. */
   registerServerFn: "registerServerFn",
   /** Client-side server function call name. */
-  clientCall: "__ev_call",
+  clientCall: "__fn_call",
   /** Client-side function registration call name. */
-  clientRegister: "__ev_register",
+  clientRegister: "__fn_register",
 } as const;

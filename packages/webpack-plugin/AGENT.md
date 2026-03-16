@@ -35,7 +35,7 @@ new EvWebpackPlugin({
 ### What It Does (Build Pipeline)
 
 1. **Discovery** — globs for `*.server.{ts,js,tsx,jsx}` in source tree
-2. **Client transform** — `server-fn-loader` replaces function bodies with `__ev_call` stubs
+2. **Client transform** — `server-fn-loader` replaces function bodies with `__fn_call` stubs
 3. **Server entry generation** — calls `generateServerEntry()` from `@evjs/build-tools`
 4. **Child compiler** — spawns a webpack child compilation targeting `node` with the server entry
 5. **Manifest emission** — writes `manifest.json` via `processAssets` hook
@@ -80,7 +80,7 @@ Webpack loader for `"use server"` files. Automatically detects whether it's runn
 }
 ```
 
-**Client compiler** → replaces function bodies with `__ev_call` RPC stubs
+**Client compiler** → replaces function bodies with `__fn_call` RPC stubs
 **Server compiler** → preserves function bodies, appends `registerServerFn()` calls
 
 ## Key Files
