@@ -1,6 +1,8 @@
 name: Release
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       version:
@@ -23,7 +25,17 @@ jobs:
     permissions:
       contents: write
       id-token: write
+    env:
+      RELEASE_VERSION: ${{ github.event.release.tag_name && github.event.release.tag_name || inputs.version }}
+      NPM_TAG: ${{ github.event.release.prerelease && 'next' || inputs.tag || 'latest' }}
     steps:
+      - name: Resolve version and tag
+        run: |
+          VERSION="${RELEASE_VERSION#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "📦 Version: $VERSION"
+          echo "🏷️  npm tag: $NPM_TAG"
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -39,9 +51,9 @@ jobs:
 
       - name: Sync & bump versions
         run: |
-          node scripts/sync-versions.js ${{ inputs.version }}
-          npm version ${{ inputs.version }} --workspaces --no-git-tag-version --allow-same-version
-          npm version ${{ inputs.version }} --no-git-tag-version --include-workspace-root --allow-same-version
+          node scripts/sync-versions.js ${{ env.VERSION }}
+          npm version ${{ env.VERSION }} --workspaces --no-git-tag-version --allow-same-version
+          npm version ${{ env.VERSION }} --no-git-tag-version --include-workspace-root --allow-same-version
 
       - run: npm run build
       - run: npm test
@@ -57,27 +69,19 @@ jobs:
       - name: Commit and tag
         run: |
           git add -A
-          git commit -m "release: v${{ inputs.version }}"
-          git tag "v${{ inputs.version }}"
-          git push origin main --tags
+          git diff --cached --quiet && echo "No changes to commit" || git commit -m "release: v${{ env.VERSION }}"
+          git tag -f "v${{ env.VERSION }}"
+          git push origin main --tags --force
 
       - name: Publish packages
         run: |
-          npm publish --workspace=packages/manifest --access public --provenance --tag ${{ inputs.tag }}
-          npm publish --workspace=packages/build-tools --access public --provenance --tag ${{ inputs.tag }}
-          npm publish --workspace=packages/runtime --access public --provenance --tag ${{ inputs.tag }}
-          npm publish --workspace=packages/webpack-plugin --access public --provenance --tag ${{ inputs.tag }}
-          npm publish --workspace=packages/cli --access public --provenance --tag ${{ inputs.tag }}
+          npm publish --workspace=packages/manifest --access public --provenance --tag ${{ env.NPM_TAG }}
+          npm publish --workspace=packages/build-tools --access public --provenance --tag ${{ env.NPM_TAG }}
+          npm publish --workspace=packages/runtime --access public --provenance --tag ${{ env.NPM_TAG }}
+          npm publish --workspace=packages/webpack-plugin --access public --provenance --tag ${{ env.NPM_TAG }}
+          npm publish --workspace=packages/cli --access public --provenance --tag ${{ env.NPM_TAG }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Restore templates
         run: node packages/cli/scripts/restore-templates.js
-
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "v${{ inputs.version }}" \
-            --title "v${{ inputs.version }}" \
-            --generate-notes
