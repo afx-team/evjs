@@ -173,7 +173,8 @@ function createHandler(fn: ServerFunction<unknown[], unknown>, path: string[]) {
       const { invalidates, ...restOptions } = options ?? {};
       return useMutation({
         ...restOptions,
-        mutationFn: (variables: unknown) => fn(variables),
+        mutationFn: (variables: unknown) =>
+          Array.isArray(variables) ? fn(...variables) : fn(variables),
         onSuccess: (...onSuccessArgs) => {
           if (invalidates) {
             for (const target of invalidates) {
@@ -203,7 +204,8 @@ function createHandler(fn: ServerFunction<unknown[], unknown>, path: string[]) {
     ) => {
       return {
         ...options,
-        mutationFn: (variables: unknown) => fn(variables),
+        mutationFn: (variables: unknown) =>
+          Array.isArray(variables) ? fn(...variables) : fn(variables),
       };
     },
     queryKey: (...args: unknown[]) => {

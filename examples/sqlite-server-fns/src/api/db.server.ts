@@ -10,9 +10,7 @@ import Database from "better-sqlite3";
  * Creates a `data.db` file in the project root.
  * In production, configure the path via environment variables.
  */
-const db = new Database(
-  path.resolve(import.meta.dirname || process.cwd(), "..", "..", "data.db"),
-);
+const db = new Database(path.resolve(process.cwd(), "data.db"));
 
 // Enable WAL mode for better concurrent read performance
 db.pragma("journal_mode = WAL");

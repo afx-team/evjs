@@ -127,15 +127,32 @@ export class EvWebpackPlugin {
                       { request }: { request?: string },
                       cb: (err?: Error | null, result?: string) => void,
                     ) => {
+                      if (!request || typeof request !== "string") {
+                        return cb();
+                      }
+                      // Externalize Node builtins
                       if (
-                        request &&
-                        typeof request === "string" &&
-                        (request.startsWith("node:") ||
-                          builtinModules.includes(request))
+                        request.startsWith("node:") ||
+                        builtinModules.includes(request)
                       ) {
                         return cb(null, request);
                       }
-                      cb();
+                      // Never externalize relative, absolute, data-uri,
+                      // or @evjs/* imports (workspace ESM packages that
+                      // must be bundled into the CJS server output).
+                      if (
+                        request.startsWith(".") ||
+                        request.startsWith("/") ||
+                        request.startsWith("data:") ||
+                        request.startsWith("@evjs/")
+                      ) {
+                        return cb();
+                      }
+                      // Externalize all other bare-specifier imports
+                      // (third-party node_modules). This is essential for
+                      // native addons (e.g. better-sqlite3) whose .node
+                      // binaries cannot be bundled by webpack.
+                      cb(null, request);
                     },
                   ]),
                   new compiler.webpack.EntryPlugin(
