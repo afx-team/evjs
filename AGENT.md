@@ -156,6 +156,8 @@ export async function createUser(name: string, email: string) {
 - Use `.server.ts` extension or place in `src/api/` directory
 - Build system auto-discovers these files (no manual registration)
 - Arguments are passed as positional params, transported as a tuple
+- For single-arg server functions, mutations accept the arg directly: `mutate({ name, email })`
+- For multi-arg server functions, mutations accept a tuple: `mutate([name, email])`
 
 ### Server
 
@@ -380,12 +382,12 @@ export default defineConfig({
 
 ### Release a new version
 
-```bash
-npm run release -- <version> <tag>
-# Example: npm run release -- 0.0.1-rc.7 latest
-```
+1. Bump version: `npm version <version> --workspaces --no-git-tag-version && npm version <version> --no-git-tag-version`
+2. Build all packages: `npm run build`
+3. Commit, tag, and push: `git add -A && git commit -m "chore: release <version>" && git tag v<version> && git push && git push --tags`
+4. Create a GitHub release for the tag — the CI workflow auto-publishes to npm
 
-This runs: version bump → turbo build → npm publish (all workspaces).
+For prerelease (RC) tags, use `--prerelease` flag on the GitHub release.
 
 ## Monorepo Commands
 
@@ -395,7 +397,6 @@ npm run test               # Unit tests (vitest)
 npm run test:e2e           # E2E tests (playwright)
 npm run dev                # Dev mode (turborepo)
 npx biome check --write    # Fix lint/format
-npm run release -- <v> <t> # Publish all packages
 ```
 
 ## File Conventions

@@ -326,10 +326,11 @@ registerMiddleware(async (ctx, next) => {
 
 1. **Don't use raw `useQuery`** for server functions — use `query(fn).useQuery(args)`
 2. **Arguments are spread, not wrapped** — `query(getUser).useQuery(id)` not `query(getUser).useQuery([id])`
-3. **Don't call server functions directly in components** — wrap with `query()` or `mutation()`
-4. **Don't forget `"use server";`** at the top of `.server.ts` files
-5. **Throw `ServerError`** on the server, catch `ServerFunctionError` on the client
-6. **Always register the router type** — without `declare module "@tanstack/react-router" { ... }`, all route params/search will be `any`
-7. **Use `route.useParams()`** not the global `useParams()` — the route-scoped version gives proper type inference
-8. **Middleware receives `(ctx, next)`** where `ctx = { fnId, args }` — not a Hono context object
-9. **Use `invalidates` on `useMutation()`** for auto cache invalidation — `invalidate()` was removed
+3. **Mutation args are passed directly** — `mutate({ name, email })` not `mutate([{ name, email }])`
+4. **Don't call server functions directly in components** — wrap with `query()` or `mutation()`
+5. **Don't forget `"use server";`** at the top of `.server.ts` files
+6. **Throw `ServerError`** on the server, catch `ServerFunctionError` on the client
+7. **Always register the router type** — without `declare module "@tanstack/react-router" { ... }`, all route params/search will be `any`
+8. **Use `route.useParams()`** not the global `useParams()` — the route-scoped version gives proper type inference
+9. **Middleware receives `(ctx, next)`** where `ctx = { fnId, args }` — not a Hono context object
+10. **Use `invalidates` on `useMutation()`** for auto cache invalidation — `invalidate()` was removed

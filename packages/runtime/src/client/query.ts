@@ -110,7 +110,7 @@ export type QueryProxy<TModule> = {
 type UnwrapArgs<T extends unknown[]> = T extends [infer U]
   ? U
   : T extends []
-    ? void
+    ? undefined
     : T;
 
 export type MutationProxy<TModule> = {
