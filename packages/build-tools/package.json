@@ -1,6 +1,6 @@
 {
   "name": "@evjs/build-tools",
-  "version": "0.0.1-rc.13",
+  "version": "0.0.1-rc.14",
   "description": "Bundler-agnostic build utilities for the ev framework",
   "type": "module",
   "publishConfig": {
