@@ -60,7 +60,7 @@ function UsersPage() {
   async function handleCreate(e: { preventDefault: () => void }) {
     e.preventDefault();
     if (!name || !email) return;
-    await doCreateUser([{ name, email }]);
+    await doCreateUser({ name, email });
     setName("");
     setEmail("");
   }

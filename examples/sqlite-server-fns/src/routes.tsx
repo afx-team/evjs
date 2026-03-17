@@ -88,7 +88,7 @@ function UsersPage() {
     setError("");
     if (!name || !email) return;
     try {
-      await doCreateUser([{ name, email }]);
+      await doCreateUser({ name, email });
       setName("");
       setEmail("");
     } catch (err: unknown) {
@@ -145,7 +145,7 @@ function UsersPage() {
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    doDeleteUser([u.id]);
+                    doDeleteUser(u.id);
                   }}
                   style={{
                     color: "red",
@@ -229,7 +229,7 @@ function TodosSection({ userId }: { userId: number }) {
   async function handleAdd(e: { preventDefault: () => void }) {
     e.preventDefault();
     if (!title) return;
-    await doCreateTodo([{ userId, title }]);
+    await doCreateTodo({ userId, title });
     setTitle("");
   }
 
@@ -255,7 +255,7 @@ function TodosSection({ userId }: { userId: number }) {
             <input
               type="checkbox"
               checked={t.completed === 1}
-              onChange={() => doToggleTodo([t.id])}
+              onChange={() => doToggleTodo(t.id)}
             />
             <span
               style={{
@@ -268,7 +268,7 @@ function TodosSection({ userId }: { userId: number }) {
             </span>
             <button
               type="button"
-              onClick={() => doDeleteTodo([t.id])}
+              onClick={() => doDeleteTodo(t.id)}
               style={{
                 color: "red",
                 background: "none",

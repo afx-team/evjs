@@ -101,12 +101,24 @@ export type QueryProxy<TModule> = {
     : QueryProxy<TModule[K]>;
 };
 
+/**
+ * Unwrap single-element tuples for mutation variables.
+ * - `[T]` → `T` (single arg becomes the variable directly)
+ * - `[A, B, ...]` → `[A, B, ...]` (multi-arg stays as tuple)
+ * - `[]` → `void` (no args)
+ */
+type UnwrapArgs<T extends unknown[]> = T extends [infer U]
+  ? U
+  : T extends []
+    ? void
+    : T;
+
 export type MutationProxy<TModule> = {
   [K in keyof TModule]: TModule[K] extends ServerFunction<
     infer TVars,
     infer TResponse
   >
-    ? MutationProxyHandler<TVars, TResponse>
+    ? MutationProxyHandler<UnwrapArgs<TVars>, TResponse>
     : MutationProxy<TModule[K]>;
 };
 
@@ -173,8 +185,7 @@ function createHandler(fn: ServerFunction<unknown[], unknown>, path: string[]) {
       const { invalidates, ...restOptions } = options ?? {};
       return useMutation({
         ...restOptions,
-        mutationFn: (variables: unknown) =>
-          Array.isArray(variables) ? fn(...variables) : fn(variables),
+        mutationFn: (variables: unknown) => fn(variables),
         onSuccess: (...onSuccessArgs) => {
           if (invalidates) {
             for (const target of invalidates) {
@@ -204,8 +215,7 @@ function createHandler(fn: ServerFunction<unknown[], unknown>, path: string[]) {
     ) => {
       return {
         ...options,
-        mutationFn: (variables: unknown) =>
-          Array.isArray(variables) ? fn(...variables) : fn(variables),
+        mutationFn: (variables: unknown) => fn(variables),
       };
     },
     queryKey: (...args: unknown[]) => {
