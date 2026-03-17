@@ -38,6 +38,7 @@ new EvWebpackPlugin({
 2. **Client transform** — `server-fn-loader` replaces function bodies with `__fn_call` stubs
 3. **Server entry generation** — calls `generateServerEntry()` from `@evjs/build-tools`
 4. **Child compiler** — spawns a webpack child compilation targeting `node` with the server entry
+   - **Externals**: all third-party `node_modules` are externalized (essential for native addons like `better-sqlite3`); `@evjs/*` packages are bundled into the CJS output
 5. **Manifest emission** — writes `manifest.json` via `processAssets` hook
 
 ### Output
