@@ -5,13 +5,19 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
 
-// 1. Get current version from root package.json
-const rootPkg = JSON.parse(
-  fs.readFileSync(path.resolve(rootDir, "package.json"), "utf8"),
-);
-const rootVersion = rootPkg.version;
+// 1. Get or set version from root package.json
+const rootPkgPath = path.resolve(rootDir, "package.json");
+const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, "utf8"));
 
-console.log(`Syncing all @evjs packages to root version: ${rootVersion}\n`);
+const newVersion = process.argv[2];
+if (newVersion) {
+  rootPkg.version = newVersion;
+  fs.writeFileSync(rootPkgPath, `${JSON.stringify(rootPkg, null, 2)}\n`);
+  console.log(`Set root version to ${newVersion}`);
+}
+
+const rootVersion = rootPkg.version;
+console.log(`Syncing all packages to version: ${rootVersion}\n`);
 
 // 2. Sync packages/* version and internal cross-dependencies
 const packagesDir = path.resolve(rootDir, "packages");
