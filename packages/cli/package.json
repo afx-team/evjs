@@ -1,6 +1,6 @@
 {
   "name": "@evjs/cli",
-  "version": "0.0.1-rc.11",
+  "version": "0.0.1",
   "description": "CLI and configuration layer for the evjs framework",
   "type": "module",
   "main": "./dist/config.js",
@@ -30,7 +30,7 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@evjs/webpack-plugin": "*",
+    "@evjs/webpack-plugin": "0.0.1",
     "@logtape/logtape": "^2.0.4",
     "@swc/core": "^1.2.147",
     "commander": "^12.1.0",

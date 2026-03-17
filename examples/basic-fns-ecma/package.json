@@ -1,6 +1,6 @@
 {
   "name": "example-basic-fns-ecma",
-  "version": "0.0.1-rc.9",
+  "version": "0.0.1",
   "private": true,
   "scripts": {
     "dev": "ev dev",

@@ -1,7 +1,7 @@
 {
   "name": "ev-react-framework",
   "type": "module",
-  "version": "0.0.1-rc.11",
+  "version": "0.0.1",
   "description": "Zero-config React meta-framework built on TanStack + Hono",
   "private": true,
   "packageManager": "npm@11.6.2",
