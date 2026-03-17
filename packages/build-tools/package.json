@@ -16,8 +16,7 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
-    "check-types": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "check-types": "tsc --noEmit"
   },
   "files": [
     "esm",

@@ -59,17 +59,10 @@ jobs:
       - name: Deref templates for publishing
         run: node packages/cli/scripts/deref-templates.js
 
-      - name: Configure git
+      - name: Tag release
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Commit and tag
-        run: |
-          git add -A
-          git diff --cached --quiet && echo "No changes to commit" || git commit -m "release: v${{ env.VERSION }}"
           git tag -f "v${{ env.VERSION }}"
-          git push origin main --tags --force
+          git push origin "v${{ env.VERSION }}" --force
 
       - name: Publish packages
         run: |

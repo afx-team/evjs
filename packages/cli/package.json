@@ -27,9 +27,7 @@
     "dev": "tsc -w",
     "test": "vitest run",
     "check-types": "tsc --noEmit",
-    "prepare": "npm run build",
-    "prepublishOnly": "node ../../scripts/sync-versions.js && npm run build && node scripts/deref-templates.js",
-    "postpublish": "node scripts/restore-templates.js"
+    "prepare": "npm run build"
   },
   "dependencies": {
     "@evjs/webpack-plugin": "*",
