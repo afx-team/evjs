@@ -16,6 +16,7 @@ on:
         default: latest
         options:
           - latest
+          - rc
           - alpha
           - next
 
@@ -27,12 +28,26 @@ jobs:
       id-token: write
     env:
       RELEASE_VERSION: ${{ github.event.release.tag_name && github.event.release.tag_name || inputs.version }}
-      NPM_TAG: ${{ github.event.release.prerelease && 'next' || inputs.tag || 'latest' }}
     steps:
       - name: Resolve version and tag
         run: |
           VERSION="${RELEASE_VERSION#v}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+          # Auto-detect npm dist-tag from version string or workflow input
+          if [ -n "${{ inputs.tag }}" ]; then
+            NPM_TAG="${{ inputs.tag }}"
+          elif echo "$VERSION" | grep -q "\-rc"; then
+            NPM_TAG="rc"
+          elif echo "$VERSION" | grep -q "\-alpha"; then
+            NPM_TAG="alpha"
+          elif echo "$VERSION" | grep -q "\-"; then
+            NPM_TAG="next"
+          else
+            NPM_TAG="latest"
+          fi
+          echo "NPM_TAG=$NPM_TAG" >> "$GITHUB_ENV"
+
           echo "📦 Version: $VERSION"
           echo "🏷️  npm tag: $NPM_TAG"
 
