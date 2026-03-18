@@ -55,9 +55,9 @@ if (typeof FetchEvent === "undefined") {
 const require = createRequire(import.meta.url);
 
 const manifest = JSON.parse(
-  readFileSync(new URL("./server/manifest.json", import.meta.url), "utf-8"),
+  readFileSync(new URL("./manifest.json", import.meta.url), "utf-8"),
 );
-const bundle = require(`./server/${manifest.entry}`);
+const bundle = require(`./server/${manifest.server.entry}`);
 const app = bundle.createApp();
 
 // SW fetch event

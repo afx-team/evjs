@@ -4,19 +4,24 @@ Shared manifest schema types for the ev framework build system.
 
 ## Types
 
-- `ServerManifest` — Server manifest interface (`dist/server/manifest.json`).
-- `ClientManifest` — Client manifest interface (reserved for future `dist/client/manifest.json`).
+- `Manifest` — Unified manifest interface (`dist/manifest.json`) with `server` and `client` sections.
+- `ServerManifestSection` — Server section: `{ entry: string; fns: Record<string, ServerFnEntry>; rsc?: ... }`.
+- `ClientManifestSection` — Client section: `{ js: string[]; css: string[]; pages?: ... }`.
 - `ServerFnEntry` — `{ moduleId: string; export: string }` — server function metadata.
 - `RscEntry` — Reserved for future (React Server Components).
 - `PageEntry` — Reserved for future (MPA per-page assets).
+- `ServerManifest` — Deprecated alias for backward compat.
+- `ClientManifest` — Deprecated alias for backward compat.
 
-## Server Manifest (v1)
+## Manifest (v1)
 ```json
 {
   "version": 1,
-  "entry": "main.a1b2c3d4.js",
-  "fns": {
-    "<fnId>": { "moduleId": "f9b6...", "export": "getUsers" }
+  "server": {
+    "entry": "main.a1b2c3d4.js",
+    "fns": {
+      "<fnId>": { "moduleId": "f9b6...", "export": "getUsers" }
+    }
   }
 }
 ```
@@ -24,5 +29,5 @@ Shared manifest schema types for the ev framework build system.
 ## Usage
 Produced by `@evjs/webpack-plugin`, consumed by `@evjs/runtime` and adapters:
 ```ts
-import type { ServerManifest, ServerFnEntry } from "@evjs/manifest";
+import type { Manifest, ServerFnEntry } from "@evjs/manifest";
 ```

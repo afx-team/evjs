@@ -253,7 +253,7 @@ initTransport({
    - Discovers `*.server.ts` files via glob
    - Applies SWC transforms (client + server variants)
    - Runs child compiler for server bundle
-   - Emits `manifest.json` with server function registry
+   - Emits `dist/manifest.json` with server function registry
 
 ### `ev dev` Flow
 
@@ -264,14 +264,17 @@ initTransport({
 5. Sets up proxy: `devServer.proxy["/api/fn"] → localhost:3001`
 6. Graceful shutdown on process exit
 
-### Manifest (`manifest.json`)
+### Manifest (`dist/manifest.json`)
 
 ```json
 {
   "version": 1,
-  "serverFunctions": {
-    "getUsers": { "module": "./api/users.server", "export": "getUsers" },
-    "createUser": { "module": "./api/users.server", "export": "createUser" }
+  "server": {
+    "entry": "main.a1b2c3d4.js",
+    "fns": {
+      "getUsers": { "moduleId": "./api/users.server", "export": "getUsers" },
+      "createUser": { "moduleId": "./api/users.server", "export": "createUser" }
+    }
   }
 }
 ```

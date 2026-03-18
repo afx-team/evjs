@@ -138,7 +138,7 @@ Browser ──▶ WebpackDevServer (port 3000)
 
 `ev dev` uses the webpack Node API directly:
 1. Creates webpack compiler + WebpackDevServer in-process
-2. Polls for `dist/server/manifest.json`
+2. Polls for `dist/manifest.json`
 3. Writes a CJS bootstrap and runs it with `node --watch`
 
 ## Deployment Adapters

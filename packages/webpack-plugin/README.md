@@ -22,7 +22,7 @@ npm install @evjs/webpack-plugin
 1. **Scans client modules** for `"use server"` files via `detectUseServer()` from build-tools.
 2. **Generates a server entry** via `generateServerEntry()` — produces a virtual data-URI module.
 3. **Spawns a child compiler** targeting Node.js — builds the server bundle alongside the client.
-4. **Emits `manifest.json`** mapping function IDs to their module and export names.
+4. **Emits `dist/manifest.json`** mapping function IDs to their module and export names.
 
 ### server-fn-loader
 

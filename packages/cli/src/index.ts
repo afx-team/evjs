@@ -168,7 +168,7 @@ program
 
       // Background: wait for server bundle, then start Node API
       void (async () => {
-        const manifestPath = path.resolve(cwd, "dist/server/manifest.json");
+        const manifestPath = path.resolve(cwd, "dist/manifest.json");
         const bootstrapPath = path.resolve(cwd, "dist/server/_dev_start.cjs");
 
         let started = false;
@@ -186,7 +186,7 @@ program
               const serverBundlePath = path.resolve(
                 cwd,
                 "dist/server",
-                manifest.entry,
+                manifest.server.entry,
               );
 
               fs.writeFileSync(

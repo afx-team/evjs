@@ -103,7 +103,7 @@ Interactive scaffolding. Templates:
 ### `ev build`
 - Outputs client bundle to `dist/client/`
 - Outputs server bundle to `dist/server/`
-- Emits `dist/server/manifest.json` with server function registry
+- Emits `dist/manifest.json` with server function registry
 - `NODE_ENV=production`
 
 ## Common Mistakes

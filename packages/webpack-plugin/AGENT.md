@@ -10,7 +10,7 @@ Webpack adapter wrapping `@evjs/build-tools`. Provides:
 
 ## EvWebpackPlugin
 
-Auto-discovers `"use server"` files, generates server entry, spawns a server-targeted child compiler, and emits `manifest.json`.
+Auto-discovers `"use server"` files, generates server entry, spawns a server-targeted child compiler, and emits `dist/manifest.json`.
 
 ```js
 const { EvWebpackPlugin } = require("@evjs/webpack-plugin");
@@ -39,7 +39,7 @@ new EvWebpackPlugin({
 3. **Server entry generation** — calls `generateServerEntry()` from `@evjs/build-tools`
 4. **Child compiler** — spawns a webpack child compilation targeting `node` with the server entry
    - **Externals**: all third-party `node_modules` are externalized (essential for native addons like `better-sqlite3`); `@evjs/*` packages are bundled into the CJS output
-5. **Manifest emission** — writes `manifest.json` via `processAssets` hook
+5. **Manifest emission** — writes `dist/manifest.json` via `processAssets` hook
 
 ### Output
 
@@ -48,9 +48,9 @@ dist/
 ├── client/              # client webpack output
 │   ├── main.[hash].js
 │   └── index.html
+├── manifest.json        # unified manifest (server + client)
 └── server/
-    ├── server.js        # server bundle (Node.js)
-    └── manifest.json    # server function registry
+    └── main.[hash].js   # server bundle (Node.js)
 ```
 
 ### Manifest Format
@@ -58,10 +58,13 @@ dist/
 ```json
 {
   "version": 1,
-  "serverFunctions": {
-    "abc123:getUsers": {
-      "module": "./api/users.server",
-      "export": "getUsers"
+  "server": {
+    "entry": "main.a1b2c3d4.js",
+    "fns": {
+      "abc123:getUsers": {
+        "moduleId": "./api/users.server",
+        "export": "getUsers"
+      }
     }
   }
 }

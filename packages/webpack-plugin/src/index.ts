@@ -5,7 +5,7 @@ import {
   generateServerEntry,
   type ServerEntryConfig,
 } from "@evjs/build-tools";
-import type { ServerFnEntry, ServerManifest } from "@evjs/manifest";
+import type { Manifest, ServerFnEntry } from "@evjs/manifest";
 import type { Compiler } from "webpack";
 
 class ManifestCollector {
@@ -16,11 +16,13 @@ class ManifestCollector {
     this.fns[id] = meta;
   }
 
-  getManifest(): ServerManifest {
+  getManifest(): Manifest {
     return {
       version: 1,
-      entry: this.entry,
-      fns: this.fns,
+      server: {
+        entry: this.entry,
+        fns: this.fns,
+      },
     };
   }
 }
@@ -203,13 +205,13 @@ export class EvWebpackPlugin {
         },
         () => {
           const manifest = collector.getManifest();
-          if (Object.keys(manifest.fns).length === 0) {
+          if (Object.keys(manifest.server.fns).length === 0) {
             return;
           }
           const content = JSON.stringify(manifest, null, 2);
 
           compilation.emitAsset(
-            "../server/manifest.json",
+            "../manifest.json",
             new compiler.webpack.sources.RawSource(content),
           );
         },
