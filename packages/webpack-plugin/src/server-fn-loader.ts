@@ -2,7 +2,7 @@ import { transformServerFile } from "@evjs/build-tools";
 import type { Compiler } from "webpack";
 
 interface LoaderContext {
-  async(): (err: Error | null, result?: string, sourceMap?: any) => void;
+  async(): (err: Error | null, result?: string, sourceMap?: unknown) => void;
   getOptions(): { isServer?: boolean };
   resourcePath: string;
   rootContext: string;
