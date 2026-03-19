@@ -65,3 +65,35 @@ export default defineConfig({
 ```
 
 The `client.dev` and `server.dev` fields accept extra options that are merged with defaults.
+
+## Project Structure
+
+```
+my-app/
+├── ev.config.ts          # optional config
+├── index.html            # HTML template
+├── package.json
+├── tsconfig.json
+└── src/
+    ├── main.tsx           # app bootstrap (keep minimal)
+    ├── routes.tsx         # route tree + components
+    ├── api/               # server functions
+    │   ├── users.server.ts
+    │   └── posts.server.ts
+    └── middleware/         # server middleware (optional)
+        └── auth.ts
+```
+
+## Common Mistakes
+
+1. **Don't create `webpack.config.cjs`** — use `ev.config.ts` instead
+2. **Don't install webpack manually** — it's a dependency of `@evjs/cli`
+3. **Config file must be `ev.config.ts`** — not `evjs.config.ts`
+4. **Import `defineConfig` from `@evjs/cli`** — not from `@evjs/runtime`
+
+## Bundled Dependencies
+
+Users do NOT need to install these — they're included in `@evjs/cli`:
+- `webpack`, `webpack-dev-server`
+- `html-webpack-plugin`, `swc-loader`, `@swc/core`
+- `@evjs/webpack-plugin`, `@evjs/build-tools`

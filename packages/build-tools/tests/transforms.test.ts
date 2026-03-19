@@ -27,9 +27,9 @@ describe("transformServerFile", () => {
         isServer: false,
       });
 
-      expect(result).toContain(RUNTIME.clientCall);
-      expect(result).toContain("export function getUsers");
-      expect(result).toContain("export function createUser");
+      expect(result.code).toContain(RUNTIME.clientCall);
+      expect(result.code).toContain("export function getUsers");
+      expect(result.code).toContain("export function createUser");
     });
 
     it("emits __fn_register calls for each function", async () => {
@@ -39,10 +39,10 @@ describe("transformServerFile", () => {
         isServer: false,
       });
 
-      expect(result).toContain(RUNTIME.clientRegister);
+      expect(result.code).toContain(RUNTIME.clientRegister);
       // Should have an __fn_register call for each exported function
       const registerCount = (
-        result.match(new RegExp(RUNTIME.clientRegister, "g")) || []
+        result.code.match(new RegExp(RUNTIME.clientRegister, "g")) || []
       ).length;
       expect(registerCount).toBe(3); // import + getUsers + createUser
     });
@@ -54,8 +54,8 @@ describe("transformServerFile", () => {
         isServer: false,
       });
 
-      expect(result).toContain(RUNTIME.clientTransportModule);
-      expect(result).toContain(
+      expect(result.code).toContain(RUNTIME.clientTransportModule);
+      expect(result.code).toContain(
         `import { ${RUNTIME.clientCall}, ${RUNTIME.clientRegister} }`,
       );
     });
@@ -67,8 +67,8 @@ describe("transformServerFile", () => {
         isServer: false,
       });
 
-      expect(result).not.toContain("Alice");
-      expect(result).not.toContain("return [");
+      expect(result.code).not.toContain("Alice");
+      expect(result.code).not.toContain("return [");
     });
   });
 
@@ -80,9 +80,9 @@ describe("transformServerFile", () => {
         isServer: true,
       });
 
-      expect(result).toContain('"use server"');
-      expect(result).toContain("Alice");
-      expect(result).toContain("export async function getUsers");
+      expect(result.code).toContain('"use server"');
+      expect(result.code).toContain("Alice");
+      expect(result.code).toContain("export async function getUsers");
     });
 
     it("appends registerServerFn calls", async () => {
@@ -92,11 +92,11 @@ describe("transformServerFile", () => {
         isServer: true,
       });
 
-      expect(result).toContain(RUNTIME.registerServerFn);
-      expect(result).toContain(`${RUNTIME.registerServerFn}(`);
+      expect(result.code).toContain(RUNTIME.registerServerFn);
+      expect(result.code).toContain(`${RUNTIME.registerServerFn}(`);
       // One registration per exported function
       const registerCount = (
-        result.match(new RegExp(RUNTIME.registerServerFn, "g")) || []
+        result.code.match(new RegExp(RUNTIME.registerServerFn, "g")) || []
       ).length;
       // import + 2 registrations = 3
       expect(registerCount).toBe(3);
@@ -109,7 +109,7 @@ describe("transformServerFile", () => {
         isServer: true,
       });
 
-      expect(result).toContain(
+      expect(result.code).toContain(
         `import { ${RUNTIME.registerServerFn} } from "${RUNTIME.serverModule}"`,
       );
     });
@@ -143,7 +143,7 @@ describe("transformServerFile", () => {
         isServer: false,
       });
 
-      expect(result).toBe(NON_SERVER_FILE);
+      expect(result.code).toBe(NON_SERVER_FILE);
     });
   });
 
@@ -163,8 +163,12 @@ describe("transformServerFile", () => {
 
       // Extract hex IDs from both outputs
       const hexPattern = /"([a-f0-9]{16})"/g;
-      const clientIds = [...clientResult.matchAll(hexPattern)].map((m) => m[1]);
-      const serverIds = [...serverResult.matchAll(hexPattern)].map((m) => m[1]);
+      const clientIds = [...clientResult.code.matchAll(hexPattern)].map(
+        (m) => m[1],
+      );
+      const serverIds = [...serverResult.code.matchAll(hexPattern)].map(
+        (m) => m[1],
+      );
 
       expect(clientIds.length).toBeGreaterThan(0);
       const uniqueClientIds = [...new Set(clientIds)].sort();

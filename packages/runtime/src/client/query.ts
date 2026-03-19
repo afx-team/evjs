@@ -3,7 +3,6 @@ import {
   type UseMutationResult,
   type UseQueryOptions,
   type UseQueryResult,
-  type UseSuspenseQueryOptions,
   type UseSuspenseQueryResult,
   useMutation,
   useQuery,
@@ -26,26 +25,25 @@ export interface QueryProxyHandler<TArgs extends unknown[], TResponse> {
   /** Call the server function directly. */
   (...args: TArgs): Promise<TResponse>;
 
-  /** Use as a standard TanStack Query. */
-  useQuery(
-    ...args: [
-      ...args: TArgs,
-      options?: Omit<UseQueryOptions<TResponse, Error>, "queryKey" | "queryFn">,
-    ]
-  ): UseQueryResult<TResponse, Error>;
+  /**
+   * Use as a standard TanStack Query.
+   * Pass server function arguments directly (no options — use `.queryOptions()` for that).
+   */
+  useQuery(...args: TArgs): UseQueryResult<TResponse, Error>;
 
-  /** Use as a TanStack Suspense Query. */
-  useSuspenseQuery(
-    ...args: [
-      ...args: TArgs,
-      options?: Omit<
-        UseSuspenseQueryOptions<TResponse, Error>,
-        "queryKey" | "queryFn"
-      >,
-    ]
-  ): UseSuspenseQueryResult<TResponse, Error>;
+  /**
+   * Use as a TanStack Suspense Query.
+   * Pass server function arguments directly (no options — use `.queryOptions()` for that).
+   */
+  useSuspenseQuery(...args: TArgs): UseSuspenseQueryResult<TResponse, Error>;
 
-  /** Returns standard TanStack Query options. */
+  /**
+   * Returns standard TanStack Query options for use with `useQuery()`.
+   * Use this when you need to pass additional TanStack options like `staleTime`.
+   *
+   * @example
+   * useQuery(query(getUser).queryOptions(userId, { staleTime: 5000 }));
+   */
   queryOptions(
     ...args: [
       ...args: TArgs,
@@ -126,10 +124,9 @@ export type MutationProxy<TModule> = {
  * Split a raw argument list into function args and TanStack Query options.
  *
  * **Heuristic**: if the last element is a plain object (its prototype is
- * `Object.prototype`), it is treated as the options bag. This means that if
- * your server function's last positional parameter is a plain object, wrap
- * it in an extra object or pass `undefined` as an explicit trailing arg to
- * avoid it being consumed as options.
+ * `Object.prototype`), it is treated as the options bag. This is only used
+ * by `queryOptions()` — `useQuery()` and `useSuspenseQuery()` pass all
+ * arguments directly as server function args (no options support).
  */
 function splitArgsAndOptions(rawArgs: unknown[]): {
   args: unknown[];
@@ -155,19 +152,15 @@ function splitArgsAndOptions(rawArgs: unknown[]): {
 function createHandler(fn: ServerFunction<unknown[], unknown>, path: string[]) {
   const fnId = getFnId(fn);
   return {
-    useQuery: (...rawArgs: unknown[]) => {
-      const { args, options } = splitArgsAndOptions(rawArgs);
+    useQuery: (...args: unknown[]) => {
       return useQuery({
-        ...options,
         queryKey: [fnId || path.join("."), ...args],
         queryFn: ({ signal }) =>
           __fn_call(fnId || path.join("."), args, { signal }),
       });
     },
-    useSuspenseQuery: (...rawArgs: unknown[]) => {
-      const { args, options } = splitArgsAndOptions(rawArgs);
+    useSuspenseQuery: (...args: unknown[]) => {
       return useSuspenseQuery({
-        ...options,
         queryKey: [fnId || path.join("."), ...args],
         queryFn: ({ signal }) =>
           __fn_call(fnId || path.join("."), args, { signal }),

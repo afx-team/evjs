@@ -19,6 +19,12 @@ export interface MiddlewareContext {
   fnId: string;
   /** The arguments passed to the function. */
   args: unknown[];
+  /**
+   * Transport-specific metadata.
+   * When using the default HTTP handler, this contains `{ hono: Context }`.
+   * Custom transports (like WebSockets) can provide their own context maps here.
+   */
+  transport: Record<string, unknown>;
 }
 
 /**
@@ -97,6 +103,7 @@ export type DispatchResult = DispatchSuccess | DispatchError;
 export async function dispatch(
   fnId: string,
   args: unknown[],
+  transport: Record<string, unknown> = {},
 ): Promise<DispatchResult> {
   if (!fnId || typeof fnId !== "string") {
     return {
@@ -122,7 +129,7 @@ export async function dispatch(
     const next = (): Promise<unknown> => {
       if (index < middlewares.length) {
         const mw = middlewares[index++];
-        return mw({ fnId, args }, next);
+        return mw({ fnId, args, transport }, next);
       }
       return runFn();
     };

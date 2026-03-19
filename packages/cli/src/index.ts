@@ -166,65 +166,61 @@ program
       const server = new WebpackDevServer(devServerOptions, compiler);
       await server.start();
 
-      // Background: wait for server bundle, then start Node API
-      void (async () => {
+      // Background: start Node API when server bundle is ready
+      let apiStarted = false;
+      compiler.hooks.done.tap("EvDevServer", async () => {
+        if (apiStarted) return;
+
         const manifestPath = path.resolve(cwd, "dist/manifest.json");
         const bootstrapPath = path.resolve(cwd, "dist/server/_dev_start.cjs");
 
-        let started = false;
-        while (true) {
-          if (fs.existsSync(manifestPath)) {
-            if (!started) {
-              const runnerConfig = evjsConfig?.server?.runner ?? "node";
-              const [runner, ...runnerExtraArgs] = runnerConfig.split(/\s+/);
-              logger.info`Server bundle detected, starting ${runner} API...`;
-              started = true;
+        if (fs.existsSync(manifestPath)) {
+          apiStarted = true;
+          const backendConfig = evjsConfig?.server?.backend ?? "node";
+          const [backend, ...backendExtraArgs] = backendConfig.split(/\s+/);
+          logger.info`Server bundle detected, starting ${backend} API...`;
 
-              const manifest = JSON.parse(
-                fs.readFileSync(manifestPath, "utf-8"),
-              );
-              const serverBundlePath = path.resolve(
-                cwd,
-                "dist/server",
-                manifest.server.entry,
-              );
+          try {
+            const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+            const serverBundlePath = path.resolve(
+              cwd,
+              "dist/server",
+              manifest.server.entry,
+            );
 
-              fs.writeFileSync(
-                bootstrapPath,
-                [
-                  `const bundle = require(${JSON.stringify(serverBundlePath)});`,
-                  `const app = bundle.createApp({ endpoint: ${JSON.stringify(evjsConfig?.server?.endpoint ?? CONFIG_DEFAULTS.endpoint)} });`,
-                  `const { serve } = require("@evjs/runtime/server/node");`,
-                  `serve(app, { port: ${serverPort} });`,
-                ].join("\n"),
-              );
+            fs.writeFileSync(
+              bootstrapPath,
+              [
+                `const bundle = require(${JSON.stringify(serverBundlePath)});`,
+                `const app = bundle.createApp({ endpoint: ${JSON.stringify(evjsConfig?.server?.endpoint ?? CONFIG_DEFAULTS.endpoint)} });`,
+                `const { serve } = require("@evjs/runtime/server/node");`,
+                `serve(app, { port: ${serverPort} });`,
+              ].join("\n"),
+            );
 
-              // node gets --watch flags; other runtimes use their own args as-is
-              const runnerArgs =
-                runner === "node"
-                  ? [
-                      "--watch",
-                      "--watch-preserve-output",
-                      ...runnerExtraArgs,
-                      bootstrapPath,
-                    ]
-                  : [...runnerExtraArgs, bootstrapPath];
+            // node gets --watch flags; other runtimes use their own args as-is
+            const backendArgs =
+              backend === "node"
+                ? [
+                    "--watch",
+                    "--watch-preserve-output",
+                    ...backendExtraArgs,
+                    bootstrapPath,
+                  ]
+                : [...backendExtraArgs, bootstrapPath];
 
-              try {
-                await execa(runner, runnerArgs, {
-                  stdio: "inherit",
-                  env: { ...process.env, NODE_ENV: "development" },
-                });
-              } catch (_e) {
-                started = false;
-              }
-            }
+            // Don't await execa here since it's a long-running watch process
+            execa(backend, backendArgs, {
+              stdio: "inherit",
+              env: { ...process.env, NODE_ENV: "development" },
+            }).catch(() => {
+              apiStarted = false;
+            });
+          } catch (err) {
+            logger.error`Server backend failed: ${err}`;
+            apiStarted = false;
           }
-          await new Promise((r) => setTimeout(r, 500));
         }
-      })().catch((err) => {
-        logger.error`Server runner failed: ${err}`;
-        process.exit(1);
       });
     } catch (err) {
       logger.error`Dev server failed to start: ${err}`;

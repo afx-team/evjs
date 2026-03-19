@@ -1,11 +1,11 @@
 /**
  * Server configuration.
  *
- * Controls server function endpoint, runner, middleware, codec, and dev options.
+ * Controls server function endpoint, backend, middleware, codec, and dev options.
  */
 export interface ServerConfig {
-  /** Server runner module. Default: "@evjs/runtime/server/node". */
-  runner?: string;
+  /** Server backend command. Default: "node". */
+  backend?: string;
   /** Server function endpoint path. Default: "/api/fn". */
   endpoint?: string;
   /** Middleware module paths to auto-register in server entry. */

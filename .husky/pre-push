@@ -1,2 +1,10 @@
 npm run lint
 npm run check-types
+
+# Remind to update agent skills if package source changed
+if git diff --cached --name-only HEAD@{1} HEAD 2>/dev/null | grep -q '^packages/'; then
+  echo ""
+  echo "📝 Reminder: If you changed CLI commands, config, or runtime APIs,"
+  echo "   please update the relevant .agent/skills/ files to keep them in sync."
+  echo ""
+fi

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { parseSync } from "@swc/core";
 
 /** Parse a "module#export" reference string. */
 export function parseModuleRef(ref: string): {
@@ -40,6 +41,25 @@ export function makeFnId(
 
 /** Check whether the source starts with the "use server" directive. */
 export function detectUseServer(source: string): boolean {
-  const trimmed = source.replace(/^(\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*/, "");
-  return /^["']use server["'];?\s/.test(trimmed);
+  try {
+    const ast = parseSync(source, {
+      syntax: "typescript",
+      tsx: true,
+      target: "esnext",
+    });
+
+    if (ast.body && ast.body.length > 0) {
+      const firstNode = ast.body[0];
+      if (
+        firstNode.type === "ExpressionStatement" &&
+        firstNode.expression.type === "StringLiteral" &&
+        firstNode.expression.value === "use server"
+      ) {
+        return true;
+      }
+    }
+  } catch (_e) {
+    // Fallback if parsing completely fails for some reason
+  }
+  return false;
 }

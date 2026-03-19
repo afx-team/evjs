@@ -1,92 +1,53 @@
 name: Release
 
 on:
-  release:
-    types: [published]
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version to release (e.g. 0.0.1-rc.8)"
-        required: true
-        type: string
-      tag:
-        description: "npm dist-tag"
-        required: true
-        type: choice
-        default: latest
-        options:
-          - latest
-          - rc
-          - alpha
-          - next
+  push:
+    branches:
+      - main
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
   release:
+    name: Release
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
       id-token: write
-    env:
-      RELEASE_VERSION: ${{ github.event.release.tag_name && github.event.release.tag_name || inputs.version }}
     steps:
-      - name: Resolve version and tag
-        run: |
-          VERSION="${RELEASE_VERSION#v}"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Checkout Repo
+        uses: actions/checkout@v4
 
-          # Auto-detect npm dist-tag from version string or workflow input
-          if [ -n "${{ inputs.tag }}" ]; then
-            NPM_TAG="${{ inputs.tag }}"
-          elif echo "$VERSION" | grep -q "\-rc"; then
-            NPM_TAG="rc"
-          elif echo "$VERSION" | grep -q "\-alpha"; then
-            NPM_TAG="alpha"
-          elif echo "$VERSION" | grep -q "\-"; then
-            NPM_TAG="next"
-          else
-            NPM_TAG="latest"
-          fi
-          echo "NPM_TAG=$NPM_TAG" >> "$GITHUB_ENV"
-
-          echo "📦 Version: $VERSION"
-          echo "🏷️  npm tag: $NPM_TAG"
-
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: actions/setup-node@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           registry-url: "https://registry.npmjs.org"
 
-      - name: Sync & bump versions
-        run: node scripts/sync-versions.js ${{ env.VERSION }}
+      - name: Install Dependencies
+        run: npm install
 
-      - run: npm install
+      - name: Build Packages
+        run: npm run build
 
-      - run: npm run build
-      - run: npm test
+      - name: Run Tests
+        run: npm test
 
-      - name: Deref templates for publishing
+      - name: Deref templates
         run: node packages/cli/scripts/deref-templates.js
 
-      - name: Tag release
-        run: |
-          git tag -f "v${{ env.VERSION }}"
-          git push origin "v${{ env.VERSION }}" --force
-
-      - name: Publish packages
-        run: |
-          npm publish --workspace=packages/manifest --access public --provenance --tag ${{ env.NPM_TAG }}
-          npm publish --workspace=packages/build-tools --access public --provenance --tag ${{ env.NPM_TAG }}
-          npm publish --workspace=packages/runtime --access public --provenance --tag ${{ env.NPM_TAG }}
-          npm publish --workspace=packages/webpack-plugin --access public --provenance --tag ${{ env.NPM_TAG }}
-          npm publish --workspace=packages/cli --access public --provenance --tag ${{ env.NPM_TAG }}
+      - name: Create Release Pull Request or Publish to npm
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          publish: npm run release
+          commit: "chore: version packages"
+          title: "chore: version packages"
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Restore templates

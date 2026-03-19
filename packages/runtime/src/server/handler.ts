@@ -45,7 +45,7 @@ export function createHandler(options?: HandlerOptions): Hono {
       );
     }
 
-    const response = await dispatch(body.fnId, body.args ?? []);
+    const response = await dispatch(body.fnId, body.args ?? [], { hono: c });
 
     const contentType = codec.contentType ?? DEFAULT_CONTENT_TYPE;
     const serialized = codec.serialize(

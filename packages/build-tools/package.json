@@ -19,8 +19,7 @@
     "check-types": "tsc --noEmit"
   },
   "files": [
-    "esm",
-    "AGENT.md"
+    "esm"
   ],
   "keywords": [
     "evjs",

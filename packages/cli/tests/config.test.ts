@@ -19,7 +19,7 @@ describe("defineConfig", () => {
   it("handles full config", () => {
     const config: EvConfig = {
       server: {
-        runner: "./custom-runner.ts",
+        backend: "./custom-backend.ts",
         endpoint: "/api/v2",
         middleware: ['import "dotenv/config";'],
         dev: { port: 4000 },

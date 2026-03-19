@@ -56,7 +56,7 @@ const clientStub = await transformServerFile(source, {
 
 ### Entry Generation
 
-`generateServerEntry()` produces a self-contained server entry that imports all discovered `"use server"` modules, creates a Hono app via `createApp()`, and optionally invokes a runner (e.g., `serve`) for self-starting bundles.
+`generateServerEntry()` produces a self-contained server entry that imports all discovered `"use server"` modules, creates a Hono app via `createApp()`, and optionally invokes a backend (e.g., `serve`) for self-starting bundles.
 
 ### Code Emitter
 
@@ -86,3 +86,14 @@ RUNTIME.clientRegister        // "__fn_register"
 • makeFnId()
 • parseModuleRef()                     (future: @evjs/vite-plugin)
 ```
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/transforms/index.ts` | `transformServerFile` — main transform |
+| `src/transforms/client/` | Client-side SWC transform (stub generation) |
+| `src/transforms/server/` | Server-side SWC transform (registration) |
+| `src/entry.ts` | `generateServerEntry` |
+| `src/utils.ts` | `makeFnId`, `parseModuleRef`, `detectUseServer` |
+| `src/types.ts` | Type definitions |

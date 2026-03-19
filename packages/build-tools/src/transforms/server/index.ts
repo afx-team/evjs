@@ -1,4 +1,4 @@
-import { emitCode } from "../../codegen.js";
+import { type Module, parseSync } from "@swc/core";
 import { RUNTIME, type TransformOptions } from "../../types.js";
 import { makeFnId, makeModuleId } from "../../utils.js";
 
@@ -15,12 +15,12 @@ function reportToManifest(
   }
 }
 
-/** Server build: keep original source, prepend import, append registrations. */
+/** Server build: inject import and appends registrations as AST nodes. */
 export function buildServerOutput(
-  source: string,
+  program: Module,
   exportNames: string[],
   options: TransformOptions,
-): string {
+): Module {
   reportToManifest(exportNames, options);
 
   const registrations = exportNames.map((name) => {
@@ -30,9 +30,22 @@ export function buildServerOutput(
     return `${RUNTIME.registerServerFn}(${fnId}, ${name});`;
   });
 
-  return [
+  const injectCode = [
     `import { ${RUNTIME.registerServerFn} } from "${RUNTIME.serverModule}";`,
-    source,
-    emitCode(registrations.join("\n")),
+    ...registrations,
   ].join("\n");
+
+  const injectAst = parseSync(injectCode, { syntax: "ecmascript" });
+
+  // Prepend import
+  if (injectAst.body.length > 0) {
+    program.body.unshift(injectAst.body[0]);
+  }
+
+  // Append registrations
+  for (let i = 1; i < injectAst.body.length; i++) {
+    program.body.push(injectAst.body[i]);
+  }
+
+  return program;
 }

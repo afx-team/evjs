@@ -1,5 +1,7 @@
 "use server";
 
+import { ServerError } from "@evjs/runtime/server";
+
 /** Simulated user database. */
 const users = [
   { id: "1", name: "Alice", email: "alice@example.com" },
@@ -14,12 +16,28 @@ export async function getUsers() {
   return users;
 }
 
-/** Get a single user by ID. */
+/** Get a single user by ID. Throws ServerError if not found. */
 export async function getUser(id: string) {
   await new Promise((r) => setTimeout(r, 50));
   const user = users.find((u) => u.id === id);
-  if (!user) throw new Error(`User ${id} not found`);
+  if (!user) {
+    throw new ServerError("User not found", { status: 404, data: { id } });
+  }
   return user;
+}
+
+/** Search users by name and email (multi-arg). */
+export async function searchUsers(name: string, email: string) {
+  await new Promise((r) => setTimeout(r, 50));
+  return users.filter((u) => {
+    const matchName = name
+      ? u.name.toLowerCase().includes(name.toLowerCase())
+      : true;
+    const matchEmail = email
+      ? u.email.toLowerCase().includes(email.toLowerCase())
+      : true;
+    return matchName && matchEmail;
+  });
 }
 
 /** Create a new user. */

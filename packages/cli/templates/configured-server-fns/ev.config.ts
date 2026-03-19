@@ -39,9 +39,9 @@ export default defineConfig({
     // Server function endpoint path (default: "/api/fn")
     endpoint: "/api/fn",
 
-    // Server runner module (default: "@evjs/runtime/server/node")
+    // Server backend module (default: "@evjs/runtime/server/node")
     // For Deno/Bun/Workers, use: "@evjs/runtime/server/ecma"
-    runner: "@evjs/runtime/server/node",
+    backend: "@evjs/runtime/server/node",
 
     // Middleware module paths to auto-register in server entry
     // These are imported and applied in order

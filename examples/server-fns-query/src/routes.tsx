@@ -5,11 +5,14 @@ import {
   createRoute,
   Link,
   Outlet,
+  query,
+  ServerFunctionError,
   useQueryClient,
 } from "@evjs/runtime/client";
 import { useState } from "react";
 import * as postsApi from "./api/posts.server";
 import * as usersApi from "./api/users.server";
+import { getUser, searchUsers } from "./api/users.server";
 
 // ── API Proxy ──
 
@@ -32,6 +35,13 @@ function Root() {
       <h1>Server Functions Example</h1>
       <nav style={{ display: "flex", gap: "1rem", marginBottom: "1rem" }}>
         <Link to="/">Users</Link>
+        <Link to="/search">Search</Link>
+        <Link to="/user/$userId" params={{ userId: "1" }}>
+          User #1
+        </Link>
+        <Link to="/user/$userId" params={{ userId: "999" }}>
+          User #999 (error)
+        </Link>
       </nav>
       <Outlet />
     </div>
@@ -40,7 +50,7 @@ function Root() {
 
 const rootRoute = createAppRootRoute({ component: Root });
 
-// ── Users Route ──
+// ── Users Route (main page) ──
 
 function UsersPage() {
   const [name, setName] = useState("");
@@ -53,7 +63,6 @@ function UsersPage() {
   const { mutateAsync: createUserMutation } =
     api.users.mutation.createUser.useMutation({
       onSuccess: () => {
-        // Use the stable queryKey for cache invalidation
         queryClient.invalidateQueries({
           queryKey: api.users.query.getUsers.queryKey(),
         });
@@ -97,7 +106,7 @@ function UsersPage() {
   return (
     <div>
       <h2>Users (fetched via Query Proxy)</h2>
-      <ul>
+      <ul id="user-list">
         {users.map((u: { id: string; name: string; email: string }) => (
           <li key={u.id}>
             {u.name} — {u.email}
@@ -170,6 +179,109 @@ const usersRoute = createRoute({
     ]),
 });
 
+// ── Search Route (multi-arg server function) ──
+
+function SearchPage() {
+  const [searchName, setSearchName] = useState("");
+  const [searchEmail, setSearchEmail] = useState("");
+
+  const { data: results, isLoading } = query(searchUsers).useQuery(
+    searchName || "",
+    searchEmail || "",
+  );
+
+  function handleSearch(e: { preventDefault: () => void }) {
+    e.preventDefault();
+  }
+
+  return (
+    <div>
+      <h2>Search Users (multi-arg)</h2>
+      <form
+        onSubmit={handleSearch}
+        style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}
+      >
+        <input
+          placeholder="Name"
+          id="search-name"
+          value={searchName}
+          onChange={(e) => setSearchName(e.target.value)}
+        />
+        <input
+          placeholder="Email"
+          id="search-email"
+          value={searchEmail}
+          onChange={(e) => setSearchEmail(e.target.value)}
+        />
+        <button type="submit">Search</button>
+      </form>
+
+      {isLoading && <p>Searching…</p>}
+
+      {results && (
+        <div id="search-results">
+          <p>Found {results.length} result(s)</p>
+          <ul>
+            {results.map((u: { id: string; name: string; email: string }) => (
+              <li key={u.id}>
+                {u.name} — {u.email}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const searchRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/search",
+  component: SearchPage,
+});
+
+// ── User Detail Route (error handling with ServerError) ──
+
+function UserDetailPage() {
+  const { userId } = userDetailRoute.useParams();
+  const { data: user, error, isLoading } = query(getUser).useQuery(userId);
+
+  if (isLoading) return <p>Loading user…</p>;
+
+  if (error) {
+    const isServerError = error instanceof ServerFunctionError;
+    return (
+      <div id="user-error">
+        <h2>Error Loading User</h2>
+        <p id="error-message">{error.message}</p>
+        {isServerError && (
+          <p id="error-type">ServerFunctionError (status: {error.status})</p>
+        )}
+      </div>
+    );
+  }
+
+  if (!user) return null;
+
+  return (
+    <div id="user-detail">
+      <h2>User Detail</h2>
+      <p id="user-name">Name: {user.name}</p>
+      <p id="user-email">Email: {user.email}</p>
+    </div>
+  );
+}
+
+const userDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/user/$userId",
+  component: UserDetailPage,
+});
+
 // ── Route Tree ──
 
-export const routeTree = rootRoute.addChildren([usersRoute]);
+export const routeTree = rootRoute.addChildren([
+  usersRoute,
+  searchRoute,
+  userDetailRoute,
+]);

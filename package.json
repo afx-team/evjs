@@ -26,13 +26,19 @@
     "dev": "turbo dev",
     "lint": "biome check .",
     "format": "biome format --write .",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "changeset publish",
     "check-types": "turbo check-types",
+    "create-skill": "plop",
     "prepare": "husky"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.5",
+    "@changesets/cli": "^2.27.7",
     "@playwright/test": "^1.58.2",
     "husky": "^9.1.7",
+    "plop": "^4.0.5",
     "turbo": "^2.4.2",
     "vitest": "^4.0.18"
   }
