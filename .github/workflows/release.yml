@@ -23,7 +23,7 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Install Dependencies
-        run: npm install
+        run: npm ci
 
       - name: Sync version from release tag
         run: npm version "${GITHUB_REF_NAME#v}" --workspaces --no-git-tag-version
