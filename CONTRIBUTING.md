@@ -64,10 +64,9 @@
 5. Add to `packages/cli/scripts/restore-templates.js` symlink map
 
 ### Release a new version
-1. Run `npm run changeset` to create a changeset describing the change
-2. Push to `main` — CI will open a "Version Packages" PR
-3. Merge the PR — CI publishes to npm automatically
-4. **Do NOT bump versions locally** — the codebase keeps `"*"` for internal `@evjs/*` deps.
+1. Create a GitHub Release with a tag like `v0.1.0`
+2. The release workflow automatically syncs the version to all packages and publishes to npm
+3. **Do NOT bump versions locally** — the codebase keeps `"*"` for internal `@evjs/*` deps.
 
 ## Monorepo Commands
 
@@ -77,9 +76,7 @@ npm run test               # Unit tests (vitest)
 npm run test:e2e           # E2E tests (playwright)
 npm run dev                # Dev mode (turborepo)
 npx biome check --write    # Fix lint/format
-npm run changeset          # Create a changeset
-npm run version            # Apply changesets (CI does this)
-npm run release            # Publish to npm (CI does this)
+npm run create-skill       # Scaffold a new agent skill
 ```
 
 ## Build System Internals
@@ -105,6 +102,6 @@ npm run release            # Publish to npm (CI does this)
 
 ## Agent Skills
 
-The `.agent/skills/` directory contains user-facing guides for building apps with evjs. If you change CLI commands, config options, or runtime APIs, please update the relevant skills.
+The `packages/skills/` directory contains user-facing guides for building apps with evjs. If you change CLI commands, config options, or runtime APIs, please update the relevant skills.
 
 Available skills: `init`, `dev`, `build`, `server-functions`

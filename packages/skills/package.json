@@ -1,0 +1,36 @@
+{
+  "name": "@evjs/skills",
+  "version": "0.0.0",
+  "description": "AI agent skills for developing evjs applications",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "skills"
+  ],
+  "agentSkills": {
+    "skills": "skills"
+  },
+  "keywords": [
+    "evjs",
+    "ai",
+    "agent",
+    "skills",
+    "agent-skill",
+    "coding-assistant",
+    "claude",
+    "cursor",
+    "copilot"
+  ],
+  "author": "xusd320",
+  "license": "MIT",
+  "homepage": "https://github.com/evaijs/evjs#readme",
+  "bugs": {
+    "url": "https://github.com/evaijs/evjs/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/evaijs/evjs.git",
+    "directory": "packages/skills"
+  }
+}

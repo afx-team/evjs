@@ -25,6 +25,9 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      - name: Sync version from release tag
+        run: npm version "${GITHUB_REF_NAME#v}" --workspaces --no-git-tag-version
+
       - name: Build Packages
         run: npm run build
 
@@ -32,7 +35,7 @@ jobs:
         run: node packages/cli/scripts/deref-templates.js
 
       - name: Publish to npm
-        run: npm run release
+        run: npm publish --workspaces --access public
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
