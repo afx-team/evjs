@@ -1,4 +1,4 @@
-import { createRoute } from "@evjs/runtime/client";
+import { createRoute } from "@evjs/client";
 import { rootRoute } from "./__root";
 
 export const homeRoute = createRoute({

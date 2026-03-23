@@ -54,7 +54,7 @@ Minimal bootstrap that imports global configuration:
 
 ```tsx
 // src/main.tsx
-import { createApp } from "@evjs/runtime/client";
+import { createApp } from "@evjs/client";
 import { routeTree } from "./routes";
 import "./global"; // Initialize transport & typings
 
@@ -64,7 +64,7 @@ app.render("#app");
 
 ```tsx
 // src/global.ts
-import { initTransport } from "@evjs/runtime/client";
+import { initTransport } from "@evjs/client";
 
 // Global TanStack Router registration
 declare module "@tanstack/react-router" {

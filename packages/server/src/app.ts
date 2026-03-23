@@ -5,9 +5,9 @@
  * This app is runtime-agnostic and can be mounted in Node, Edge, or Bun.
  */
 
+import type { Codec } from "@evjs/shared";
+import { DEFAULT_ENDPOINT } from "@evjs/shared";
 import { Hono } from "hono";
-import type { Codec } from "../codec";
-import { DEFAULT_ENDPOINT } from "../constants";
 import { createHandler } from "./handler";
 
 /** Options for createApp. */

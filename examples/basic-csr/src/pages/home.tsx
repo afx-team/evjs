@@ -1,4 +1,4 @@
-import { createRoute } from "@evjs/runtime/client";
+import { createRoute } from "@evjs/client";
 import { rootRoute } from "./__root";
 
 function Home() {
@@ -6,7 +6,7 @@ function Home() {
     <div>
       <h1>Welcome Home!</h1>
       <p>
-        A basic client-side rendered app built with <code>@evjs/runtime</code>.
+        A basic client-side rendered app built with <code>@evjs/client</code>.
       </p>
     </div>
   );

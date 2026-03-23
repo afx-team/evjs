@@ -7,8 +7,7 @@
  * to build custom transport adapters (WebSocket, IPC, etc.).
  */
 
-import { DEFAULT_ERROR_STATUS } from "../constants";
-import { ServerError } from "../errors";
+import { DEFAULT_ERROR_STATUS, ServerError } from "@evjs/shared";
 import { registry } from "./register";
 
 /**

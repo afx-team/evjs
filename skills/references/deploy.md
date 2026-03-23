@@ -26,7 +26,7 @@ The default backend adapter is `node`. To run the application in production:
 // server.mjs
 import fs from "node:fs";
 import path from "node:path";
-import { serve } from "@evjs/runtime/server/node";
+import { serve } from "@evjs/server/node";
 import { serveStatic } from "@hono/node-server/serve-static";
 
 // 1. Import the built server functions bundle

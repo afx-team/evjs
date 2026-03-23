@@ -2,16 +2,15 @@
  * Server-side runtime utilities (environment-agnostic).
  *
  * For environment-specific adapters, use:
- * - @evjs/runtime/server/node
- * - @evjs/runtime/server/ecma
+ * - @evjs/server/node
+ * - @evjs/server/ecma
  *
  * For minimal function registration (no Hono), use:
- * - @evjs/runtime/server/register
+ * - @evjs/server/register
  */
 
-export type { Codec } from "../codec";
-export { jsonCodec } from "../codec";
-export { ServerError } from "../errors";
+export type { Codec } from "@evjs/shared";
+export { jsonCodec, ServerError } from "@evjs/shared";
 export type { CreateAppOptions } from "./app";
 export { createApp } from "./app";
 export type {

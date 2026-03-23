@@ -4,7 +4,7 @@ import { extractRoutes } from "../src/routes.js";
 describe("extractRoutes", () => {
   it("extracts path from a static route", () => {
     const source = `
-      import { createRoute } from "@evjs/runtime/client";
+      import { createRoute } from "@evjs/client";
       export const homeRoute = createRoute({
         getParentRoute: () => rootRoute,
         path: "/",
@@ -16,7 +16,7 @@ describe("extractRoutes", () => {
 
   it("extracts path with dynamic params", () => {
     const source = `
-      import { createRoute } from "@evjs/runtime/client";
+      import { createRoute } from "@evjs/client";
       export const userRoute = createRoute({
         getParentRoute: () => rootRoute,
         path: "/users/$username",
@@ -28,7 +28,7 @@ describe("extractRoutes", () => {
 
   it("skips pathless layouts (id-only routes)", () => {
     const source = `
-      import { createRoute } from "@evjs/runtime/client";
+      import { createRoute } from "@evjs/client";
       export const dashboardLayout = createRoute({
         getParentRoute: () => rootRoute,
         id: "dashboard-layout",
@@ -40,7 +40,7 @@ describe("extractRoutes", () => {
 
   it("extracts multiple routes from a single file", () => {
     const source = `
-      import { createRoute } from "@evjs/runtime/client";
+      import { createRoute } from "@evjs/client";
       export const postsRoute = createRoute({
         getParentRoute: () => rootRoute,
         path: "/posts",
@@ -58,7 +58,7 @@ describe("extractRoutes", () => {
 
   it("handles non-exported route declarations", () => {
     const source = `
-      import { createRoute } from "@evjs/runtime/client";
+      import { createRoute } from "@evjs/client";
       const internalRoute = createRoute({
         getParentRoute: () => rootRoute,
         path: "/internal",
@@ -85,7 +85,7 @@ describe("extractRoutes", () => {
 
   it("ignores createRoute calls without path", () => {
     const source = `
-      import { createRoute } from "@evjs/runtime/client";
+      import { createRoute } from "@evjs/client";
       const route = createRoute({
         getParentRoute: () => rootRoute,
         component: () => null,
@@ -96,7 +96,7 @@ describe("extractRoutes", () => {
 
   it("handles catch-all routes", () => {
     const source = `
-      import { createRoute } from "@evjs/runtime/client";
+      import { createRoute } from "@evjs/client";
       export const notFoundRoute = createRoute({
         getParentRoute: () => rootRoute,
         path: "*",

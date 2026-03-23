@@ -2,7 +2,7 @@
 
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { ServerError } from "@evjs/runtime/server";
+import { ServerError } from "@evjs/server";
 
 /**
  * SQLite database connection using Node.js built-in sqlite module.

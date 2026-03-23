@@ -199,7 +199,7 @@ program
               [
                 `const bundle = require(${JSON.stringify(serverBundlePath)});`,
                 `const app = bundle.createApp({ endpoint: ${JSON.stringify(evjsConfig?.server?.endpoint ?? CONFIG_DEFAULTS.endpoint)} });`,
-                `const { serve } = require("@evjs/runtime/server/node");`,
+                `const { serve } = require("@evjs/server/node");`,
                 `serve(app, { port: ${serverPort} });`,
               ].join("\n"),
             );

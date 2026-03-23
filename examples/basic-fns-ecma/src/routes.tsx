@@ -1,9 +1,4 @@
-import {
-  createRootRoute,
-  createRoute,
-  Link,
-  Outlet,
-} from "@evjs/runtime/client";
+import { createRootRoute, createRoute, Link, Outlet } from "@evjs/client";
 import { useEffect, useState } from "react";
 import { getMessages, postMessage } from "./api/messages.server";
 

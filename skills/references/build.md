@@ -28,14 +28,14 @@ dist/
 const bundle = require("./dist/server/server.js");
 const app = bundle.createApp({ endpoint: "/api/fn" });
 
-const { serve } = require("@evjs/runtime/server/node");
+const { serve } = require("@evjs/server/node");
 serve(app, { port: 3001 });
 ```
 
 For ECMA-based runtimes (Deno, Bun):
 
 ```ts
-import { createFetchHandler } from "@evjs/runtime/server/ecma";
+import { createFetchHandler } from "@evjs/server/ecma";
 const app = bundle.createApp({ endpoint: "/api/fn" });
 export default createFetchHandler(app);
 ```

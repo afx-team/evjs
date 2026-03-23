@@ -1,4 +1,4 @@
-import { createRoute, Link, useQuery } from "@evjs/runtime/client";
+import { createRoute, Link, useQuery } from "@evjs/client";
 import { getUser } from "../api/data.server";
 import { rootRoute } from "./__root";
 

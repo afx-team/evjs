@@ -33,7 +33,7 @@ evjs provides type-safe `useQuery` and `useSuspenseQuery` that accept server fun
 ### Direct usage (recommended)
 
 ```tsx
-import { useQuery, useSuspenseQuery, useMutation, useQueryClient, serverFn } from "@evjs/runtime/client";
+import { useQuery, useSuspenseQuery, useMutation, useQueryClient, serverFn } from "@evjs/client";
 import { getUsers, getUser, createUser } from "../api/users.server";
 
 // Queries — pass server functions directly, types are inferred
@@ -73,7 +73,7 @@ const { data } = useQuery({
 Middleware wraps server function calls (not HTTP requests):
 
 ```ts
-import { registerMiddleware } from "@evjs/runtime/server";
+import { registerMiddleware } from "@evjs/server";
 
 registerMiddleware(async (ctx, next) => {
   const start = Date.now();
@@ -93,13 +93,13 @@ export default defineConfig({
 ### Transport & Codec
 
 ```tsx
-import { initTransport } from "@evjs/runtime/client";
+import { initTransport } from "@evjs/client";
 
 // HTTP (default)
 initTransport({ endpoint: "/api/fn" });
 
 // WebSocket
-import { WebSocketTransport } from "@evjs/runtime/client";
+import { WebSocketTransport } from "@evjs/client";
 initTransport({ transport: new WebSocketTransport("ws://localhost:3001/ws") });
 ```
 
@@ -107,11 +107,11 @@ initTransport({ transport: new WebSocketTransport("ws://localhost:3001/ws") });
 
 ```ts
 // Server — throw structured errors
-import { ServerError } from "@evjs/runtime/server";
+import { ServerError } from "@evjs/server";
 throw new ServerError("User not found", { status: 404, data: { id } });
 
 // Client — catch typed errors
-import { ServerFunctionError } from "@evjs/runtime/client";
+import { ServerFunctionError } from "@evjs/client";
 if (e instanceof ServerFunctionError) {
   console.log(e.message, e.status, e.data);
 }

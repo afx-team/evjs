@@ -1,0 +1,66 @@
+{
+  "name": "@evjs/server",
+  "version": "0.0.0",
+  "description": "Server-side runtime for the evjs framework",
+  "dependencies": {
+    "@evjs/shared": "0.0.0",
+    "@hono/node-server": "^1.19.11",
+    "@logtape/logtape": "^2.0.4",
+    "hono": "^4.12.5"
+  },
+  "homepage": "https://github.com/evaijs/evjs#readme",
+  "bugs": {
+    "url": "https://github.com/evaijs/evjs/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/evaijs/evjs.git"
+  },
+  "license": "MIT",
+  "author": "xusd320",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./esm/index.d.ts",
+      "import": "./esm/index.js",
+      "default": "./esm/index.js"
+    },
+    "./register": {
+      "types": "./esm/register.d.ts",
+      "import": "./esm/register.js",
+      "default": "./esm/register.js"
+    },
+    "./node": {
+      "types": "./esm/environments/node.d.ts",
+      "import": "./esm/environments/node.js",
+      "default": "./esm/environments/node.js"
+    },
+    "./ecma": {
+      "types": "./esm/environments/ecma.d.ts",
+      "import": "./esm/environments/ecma.js",
+      "default": "./esm/environments/ecma.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "check-types": "tsc --noEmit"
+  },
+  "files": [
+    "esm"
+  ],
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "keywords": [
+    "evjs",
+    "server",
+    "hono",
+    "rpc",
+    "server-functions",
+    "typescript"
+  ]
+}

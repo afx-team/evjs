@@ -2,7 +2,7 @@
 
 ## Overview
 
-evjs routing is built on **TanStack Router**. All routing APIs are re-exported from `@evjs/runtime/client` — never import from `@tanstack/react-router` directly.
+evjs routing is built on **TanStack Router**. All routing APIs are re-exported from `@evjs/client` — never import from `@tanstack/react-router` directly.
 
 ## Project Structure
 
@@ -24,7 +24,7 @@ src/
 
 ```tsx
 // src/main.tsx
-import { createApp } from "@evjs/runtime/client";
+import { createApp } from "@evjs/client";
 import { rootRoute } from "./pages/__root";
 import { homeRoute } from "./pages/home";
 import { postsRoute, postsIndexRoute, postDetailRoute } from "./pages/posts";
@@ -51,7 +51,7 @@ app.render("#app");
 Every app needs a root route with `<Outlet />` to render child routes.
 
 ```tsx
-import { createAppRootRoute, Link, Outlet } from "@evjs/runtime/client";
+import { createAppRootRoute, Link, Outlet } from "@evjs/client";
 
 function RootLayout() {
   return (
@@ -71,7 +71,7 @@ export const rootRoute = createAppRootRoute({ component: RootLayout });
 ## Static Routes
 
 ```tsx
-import { createRoute } from "@evjs/runtime/client";
+import { createRoute } from "@evjs/client";
 import { rootRoute } from "./__root";
 
 export const homeRoute = createRoute({
@@ -86,7 +86,7 @@ export const homeRoute = createRoute({
 Use `$name` syntax for path parameters. Access them type-safely via `route.useParams()`.
 
 ```tsx
-import { createRoute, serverFn, useQuery } from "@evjs/runtime/client";
+import { createRoute, serverFn, useQuery } from "@evjs/client";
 import { getUser } from "../api/data.server";
 import { rootRoute } from "./__root";
 
@@ -113,7 +113,7 @@ Parent routes render `<Outlet />` to display child routes. Wire children via `ad
 
 ```tsx
 // pages/posts/index.tsx
-import { createRoute, Link, Outlet, serverFn } from "@evjs/runtime/client";
+import { createRoute, Link, Outlet, serverFn } from "@evjs/client";
 import { getPosts, getPost } from "../../api/data.server";
 import { rootRoute } from "../__root";
 
@@ -213,7 +213,7 @@ export const usersRoute = createRoute({
 Throw `redirect()` in `beforeLoad` to redirect before rendering.
 
 ```tsx
-import { createRoute, redirect } from "@evjs/runtime/client";
+import { createRoute, redirect } from "@evjs/client";
 
 export const redirectRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -239,7 +239,7 @@ export const notFoundRoute = createRoute({
 ## Navigation
 
 ```tsx
-import { Link, useNavigate, Navigate } from "@evjs/runtime/client";
+import { Link, useNavigate, Navigate } from "@evjs/client";
 
 // Declarative
 <Link to="/posts/$postId" params={{ postId: "1" }}>View</Link>
@@ -254,7 +254,7 @@ navigate({ to: "/posts" });
 
 ## Available Re-exports
 
-All from `@evjs/runtime/client`:
+All from `@evjs/client`:
 
 | Category | APIs |
 |----------|------|

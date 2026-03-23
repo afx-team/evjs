@@ -6,13 +6,14 @@
  * `__fn_call(fnId, args)`. This module provides that helper.
  */
 
-import { type Codec, jsonCodec } from "../codec";
 import {
+  type Codec,
   DEFAULT_CONTENT_TYPE,
   DEFAULT_ENDPOINT,
   DEFAULT_ERROR_STATUS,
-} from "../constants";
-import { ServerFunctionError } from "../errors";
+  jsonCodec,
+  ServerFunctionError,
+} from "@evjs/shared";
 
 /**
  * Request context passed through server calls.

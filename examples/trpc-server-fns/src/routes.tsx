@@ -1,9 +1,4 @@
-import {
-  createRootRoute,
-  createRoute,
-  Outlet,
-  useQuery,
-} from "@evjs/runtime/client";
+import { createRootRoute, createRoute, Outlet, useQuery } from "@evjs/client";
 import { createTRPCClient, type TRPCLink } from "@trpc/client";
 import { observable } from "@trpc/server/observable";
 import { useCallback, useEffect, useState } from "react";

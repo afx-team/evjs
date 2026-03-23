@@ -1,4 +1,4 @@
-import { createRootRoute, Link, Outlet } from "@evjs/runtime/client";
+import { createRootRoute, Link, Outlet } from "@evjs/client";
 import "../styles.css";
 
 function Root() {

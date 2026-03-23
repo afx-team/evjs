@@ -1,6 +1,6 @@
 "use server";
 
-import { ServerError } from "@evjs/runtime/server";
+import { ServerError } from "@evjs/server";
 
 /** Simulated user database. */
 const users = [

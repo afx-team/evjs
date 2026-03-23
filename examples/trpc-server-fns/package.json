@@ -8,7 +8,6 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@evjs/runtime": "*",
     "@trpc/client": "^11.0.0-rc.825",
     "@trpc/react-query": "^11.0.0-rc.825",
     "@trpc/server": "^11.0.0-rc.825",

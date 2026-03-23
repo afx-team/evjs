@@ -1,0 +1,62 @@
+{
+  "name": "@evjs/client",
+  "version": "0.0.0",
+  "description": "Client-side runtime for the evjs framework",
+  "dependencies": {
+    "@evjs/shared": "0.0.0",
+    "@tanstack/react-query": "^5.90.21",
+    "@tanstack/react-router": "^1.163.3"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "typescript": "^5.7.3"
+  },
+  "homepage": "https://github.com/evaijs/evjs#readme",
+  "bugs": {
+    "url": "https://github.com/evaijs/evjs/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/evaijs/evjs.git"
+  },
+  "license": "MIT",
+  "author": "xusd320",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./esm/index.d.ts",
+      "import": "./esm/index.js",
+      "default": "./esm/index.js"
+    },
+    "./transport": {
+      "types": "./esm/transport.d.ts",
+      "import": "./esm/transport.js",
+      "default": "./esm/transport.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "check-types": "tsc --noEmit"
+  },
+  "files": [
+    "esm"
+  ],
+  "keywords": [
+    "evjs",
+    "react",
+    "client",
+    "tanstack",
+    "routing",
+    "server-functions",
+    "typescript"
+  ]
+}

@@ -2,6 +2,8 @@
  * Client-side runtime utilities.
  */
 
+export type { Codec } from "@evjs/shared";
+export { jsonCodec, ServerFunctionError } from "@evjs/shared";
 // Cherry-picked re-exports from @tanstack/react-query
 export type {
   QueryClientConfig,
@@ -25,9 +27,6 @@ export {
   usePrefetchQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-export type { Codec } from "../codec";
-export { jsonCodec } from "../codec";
-export { ServerFunctionError } from "../errors";
 export type { AppRouteContext } from "./context";
 export { createAppRootRoute } from "./context";
 export type { App, CreateAppOptions } from "./create-app";

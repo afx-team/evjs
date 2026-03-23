@@ -59,7 +59,7 @@ The `server.backend` field supports any executable:
 - `"deno run --allow-net"` — split on whitespace, extra args forwarded
 
 > [!WARNING]
-> The ECMA environment adapter (`@evjs/runtime/server/ecma`) only exports a `{ fetch }` handler — it does **not** start a listening server. It is designed for production deployment targets like Deno or Bun's native serve API.
+> The ECMA environment adapter (`@evjs/server/ecma`) only exports a `{ fetch }` handler — it does **not** start a listening server. It is designed for production deployment targets like Deno or Bun's native serve API.
 >
 > For `ev dev`, you **must** use a backend that can start a listening HTTP server (default: `"node"`). If your production target is ECMA-based, keep the default `"node"` backend for development.
 

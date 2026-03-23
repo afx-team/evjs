@@ -1,4 +1,4 @@
-import { createApp } from "@evjs/runtime/client";
+import { createApp } from "@evjs/client";
 import { rootRoute } from "./pages/__root";
 import { aboutRoute } from "./pages/about";
 import { homeRoute } from "./pages/home";

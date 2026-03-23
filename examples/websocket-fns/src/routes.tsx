@@ -4,7 +4,7 @@ import {
   initTransport,
   Link,
   Outlet,
-} from "@evjs/runtime/client";
+} from "@evjs/client";
 import { useEffect, useState } from "react";
 import { createUser, getUsers } from "./api/users.server";
 

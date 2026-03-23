@@ -8,7 +8,7 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
-} from "@evjs/runtime/client";
+} from "@evjs/client";
 import { useState } from "react";
 import { createPost, getPosts } from "./api/posts.server";
 import { createUser, getUser, getUsers, searchUsers } from "./api/users.server";

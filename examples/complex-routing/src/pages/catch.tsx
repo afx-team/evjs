@@ -1,4 +1,4 @@
-import { createRoute, Link, redirect } from "@evjs/runtime/client";
+import { createRoute, Link, redirect } from "@evjs/client";
 import { rootRoute } from "./__root";
 
 // ── Redirect: /old-blog → /posts ──

@@ -6,7 +6,7 @@ import {
   getFnId,
   getFnName,
   initTransport,
-} from "../src/client/transport.js";
+} from "../src/transport.js";
 
 describe("__fn_register / getFnId / getFnName", () => {
   beforeEach(() => {

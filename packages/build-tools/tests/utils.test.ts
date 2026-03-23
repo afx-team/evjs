@@ -84,9 +84,9 @@ describe("makeFnId", () => {
 
 describe("parseModuleRef", () => {
   it("parses module#export format", () => {
-    const ref = parseModuleRef("@evjs/runtime/server#createApp");
+    const ref = parseModuleRef("@evjs/server#createApp");
     expect(ref).toEqual({
-      module: "@evjs/runtime/server",
+      module: "@evjs/server",
       exportName: "createApp",
     });
   });
@@ -97,8 +97,6 @@ describe("parseModuleRef", () => {
   });
 
   it("throws on missing # separator", () => {
-    expect(() => parseModuleRef("@evjs/runtime/server")).toThrow(
-      /Expected format/,
-    );
+    expect(() => parseModuleRef("@evjs/server")).toThrow(/Expected format/);
   });
 });

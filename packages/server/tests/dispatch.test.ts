@@ -1,7 +1,7 @@
+import { ServerError } from "@evjs/shared";
 import { beforeEach, describe, expect, it } from "vitest";
-import { ServerError } from "../src/errors.js";
-import { dispatch } from "../src/server/dispatch.js";
-import { registerServerFn, registry } from "../src/server/register.js";
+import { dispatch } from "../src/dispatch.js";
+import { registerServerFn, registry } from "../src/register.js";
 
 describe("dispatch", () => {
   beforeEach(() => {

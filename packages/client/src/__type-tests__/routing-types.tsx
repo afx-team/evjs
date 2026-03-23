@@ -13,12 +13,7 @@
  * meaning the type guard is broken.
  */
 
-import {
-  createApp,
-  createAppRootRoute,
-  createRoute,
-  Link,
-} from "@evjs/runtime/client";
+import { createApp, createAppRootRoute, createRoute, Link } from "@evjs/client";
 
 // ── Setup route tree ──
 

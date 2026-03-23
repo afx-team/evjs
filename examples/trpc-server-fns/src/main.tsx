@@ -1,4 +1,4 @@
-import { createApp } from "@evjs/runtime/client";
+import { createApp } from "@evjs/client";
 import { routeTree } from "./routes";
 
 const app = createApp({ routeTree });

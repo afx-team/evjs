@@ -1,0 +1,43 @@
+{
+  "name": "@evjs/shared",
+  "version": "0.0.0",
+  "description": "Shared types and utilities for the evjs framework",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./esm/index.d.ts",
+      "import": "./esm/index.js",
+      "default": "./esm/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "check-types": "tsc --noEmit"
+  },
+  "files": [
+    "esm"
+  ],
+  "homepage": "https://github.com/evaijs/evjs#readme",
+  "bugs": {
+    "url": "https://github.com/evaijs/evjs/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/evaijs/evjs.git"
+  },
+  "license": "MIT",
+  "author": "xusd320",
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "keywords": [
+    "evjs",
+    "shared",
+    "codec",
+    "errors",
+    "typescript"
+  ]
+}

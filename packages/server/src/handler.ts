@@ -5,9 +5,8 @@
  * function. For custom transports (WebSocket, IPC), use `dispatch()` directly.
  */
 
+import { type Codec, DEFAULT_CONTENT_TYPE, jsonCodec } from "@evjs/shared";
 import { Hono } from "hono";
-import { type Codec, jsonCodec } from "../codec";
-import { DEFAULT_CONTENT_TYPE } from "../constants";
 import { dispatch } from "./dispatch";
 
 export interface HandlerOptions {

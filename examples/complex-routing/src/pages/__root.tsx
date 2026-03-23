@@ -1,4 +1,4 @@
-import { createAppRootRoute, Link, Outlet } from "@evjs/runtime/client";
+import { createAppRootRoute, Link, Outlet } from "@evjs/client";
 
 const styles = {
   app: {
