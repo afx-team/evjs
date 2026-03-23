@@ -1,6 +1,6 @@
 {
   "name": "@evjs/webpack-plugin",
-  "version": "0.0.1-rc.25",
+  "version": "0.0.0",
   "description": "Webpack plugin and loaders for the ev framework",
   "type": "module",
   "publishConfig": {

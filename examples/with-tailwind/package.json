@@ -1,6 +1,6 @@
 {
   "name": "example-with-tailwind",
-  "version": "0.0.1-rc.25",
+  "version": "0.0.0",
   "private": true,
   "scripts": {
     "dev": "ev dev",

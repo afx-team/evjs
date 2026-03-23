@@ -1,6 +1,6 @@
 {
   "name": "@evjs/client",
-  "version": "0.0.1-rc.25",
+  "version": "0.0.0",
   "description": "Client-side runtime for the evjs framework",
   "dependencies": {
     "@evjs/shared": "0.0.0",
