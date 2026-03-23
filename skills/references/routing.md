@@ -113,7 +113,7 @@ Parent routes render `<Outlet />` to display child routes. Wire children via `ad
 
 ```tsx
 // pages/posts/index.tsx
-import { createRoute, Link, Outlet, serverFn, useQuery } from "@evjs/runtime/client";
+import { createRoute, Link, Outlet, serverFn } from "@evjs/runtime/client";
 import { getPosts, getPost } from "../../api/data.server";
 import { rootRoute } from "../__root";
 

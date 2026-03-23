@@ -122,7 +122,7 @@ function createFetchTransport(
         throw new ServerFunctionError(
           `Server function "${name}" threw: ${payload.error}`,
           (payload.fnId as string) ?? fnId,
-          DEFAULT_ERROR_STATUS,
+          (payload.status as number) ?? DEFAULT_ERROR_STATUS,
           { data: payload.data },
         );
       }
@@ -182,8 +182,8 @@ export async function __fn_call(
  * Internal registry mapping server function references to their IDs.
  * Uses WeakMap so function stubs can be garbage collected.
  */
-// biome-ignore lint/suspicious/noExplicitAny: must accept any function shape
-const fnIdRegistry = new WeakMap<(...args: any[]) => any, string>();
+// biome-ignore lint/complexity/noBannedTypes: must accept any function shape as WeakMap key
+const fnIdRegistry = new WeakMap<Function, string>();
 
 /**
  * Internal registry mapping function IDs to human-readable export names.
@@ -204,8 +204,8 @@ export function getFnName(fnId: string): string {
  * @internal Called by build-tools codegen. Do not use directly.
  */
 export function __fn_register(
-  // biome-ignore lint/suspicious/noExplicitAny: must accept any function shape
-  fn: (...args: any[]) => any,
+  // biome-ignore lint/complexity/noBannedTypes: must accept any function shape for registry
+  fn: Function,
   fnId: string,
   exportName?: string,
 ): void {
@@ -219,8 +219,8 @@ export function __fn_register(
  * Look up the internal function ID for a server function stub.
  * Returns undefined if the function is not a registered server function.
  */
-// biome-ignore lint/suspicious/noExplicitAny: must accept any function shape
-export function getFnId(fn: (...args: any[]) => any): string | undefined {
+// biome-ignore lint/complexity/noBannedTypes: must accept any function shape for lookup
+export function getFnId(fn: Function): string | undefined {
   return fnIdRegistry.get(fn);
 }
 
