@@ -18,6 +18,7 @@ Both arguments are optional — if omitted, the CLI prompts interactively.
 | `basic-server-fns` | Minimal server functions with `"use server"` |
 | `configured-server-fns` | Server functions with `ev.config.ts` + Query proxy |
 | `complex-routing` | Params, search, layouts, loaders, nested routes |
+| `with-tailwind` | Tailwind CSS via plugin loaders (`ev.config.ts`) |
 
 ## Project Structure
 
