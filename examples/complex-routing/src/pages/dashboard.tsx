@@ -1,12 +1,6 @@
-import { createRoute, Outlet, useQuery } from "@evjs/runtime/client";
+import { createRoute, Outlet, serverFn, useQuery } from "@evjs/runtime/client";
 import { getStats } from "../api/data.server";
 import { rootRoute } from "./__root";
-
-type Stats = {
-  totalPosts: number;
-  totalUsers: number;
-  tags: string[];
-};
 
 const styles = {
   card: {
@@ -41,7 +35,7 @@ export const dashboardLayout = createRoute({
 // ── Dashboard page (/dashboard) ──
 
 function Dashboard() {
-  const { data: stats } = useQuery<Stats>(getStats);
+  const { data: stats } = useQuery(serverFn(getStats));
   if (!stats) return <p>Loading...</p>;
   return (
     <div>
@@ -68,7 +62,7 @@ function Dashboard() {
       </div>
       <h3>All Tags</h3>
       <div>
-        {stats.tags.map((t: string) => (
+        {stats.tags.map((t) => (
           <span key={t} style={styles.tag}>
             {t}
           </span>

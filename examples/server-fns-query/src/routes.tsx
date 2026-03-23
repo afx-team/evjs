@@ -4,8 +4,10 @@ import {
   Link,
   Outlet,
   ServerFunctionError,
+  serverFn,
   useMutation,
   useQuery,
+  useQueryClient,
 } from "@evjs/runtime/client";
 import { useState } from "react";
 import { createPost, getPosts } from "./api/posts.server";
@@ -40,11 +42,16 @@ function UsersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
 
-  const { data: users = [], isLoading: isLoadingUsers } =
-    useQuery<{ id: string; name: string; email: string }[]>(getUsers);
+  const { data: users = [], isLoading: isLoadingUsers } = useQuery(
+    serverFn(getUsers),
+  );
 
-  const { mutateAsync: createUserMutation } = useMutation(createUser, {
-    invalidates: [getUsers],
+  const queryClient = useQueryClient();
+  const { mutateAsync: createUserMutation } = useMutation({
+    mutationFn: createUser,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: serverFn(getUsers).queryKey });
+    },
   });
 
   async function handleCreateUser(e: { preventDefault: () => void }) {
@@ -59,11 +66,15 @@ function UsersPage() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
 
-  const { data: posts = [], isLoading: isLoadingPosts } =
-    useQuery<{ id: string; title: string; content: string }[]>(getPosts);
+  const { data: posts = [], isLoading: isLoadingPosts } = useQuery(
+    serverFn(getPosts),
+  );
 
-  const { mutateAsync: createPostMutation } = useMutation(createPost, {
-    invalidates: [getPosts],
+  const { mutateAsync: createPostMutation } = useMutation({
+    mutationFn: createPost,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: serverFn(getPosts).queryKey });
+    },
   });
 
   async function handleCreatePost(e: { preventDefault: () => void }) {
@@ -80,7 +91,7 @@ function UsersPage() {
     <div>
       <h2>Users</h2>
       <ul id="user-list">
-        {users.map((u: { id: string; name: string; email: string }) => (
+        {users.map((u) => (
           <li key={u.id}>
             {u.name} — {u.email}
           </li>
@@ -109,7 +120,7 @@ function UsersPage() {
 
       <h2>Posts</h2>
       <ul>
-        {posts.map((p: { id: string; title: string; content: string }) => (
+        {posts.map((p) => (
           <li key={p.id}>
             <strong>{p.title}</strong> — {p.content}
           </li>
@@ -149,9 +160,9 @@ function SearchPage() {
   const [searchName, setSearchName] = useState("");
   const [searchEmail, setSearchEmail] = useState("");
 
-  const { data: results, isLoading } = useQuery<
-    { id: string; name: string; email: string }[]
-  >(searchUsers, searchName || "", searchEmail || "");
+  const { data: results, isLoading } = useQuery(
+    serverFn(searchUsers, searchName || "", searchEmail || ""),
+  );
 
   function handleSearch(e: { preventDefault: () => void }) {
     e.preventDefault();
@@ -185,7 +196,7 @@ function SearchPage() {
         <div id="search-results">
           <p>Found {results.length} result(s)</p>
           <ul>
-            {results.map((u: { id: string; name: string; email: string }) => (
+            {results.map((u) => (
               <li key={u.id}>
                 {u.name} — {u.email}
               </li>
@@ -207,15 +218,7 @@ const searchRoute = createRoute({
 
 function UserDetailPage() {
   const { userId } = userDetailRoute.useParams();
-  const {
-    data: user,
-    error,
-    isLoading,
-  } = useQuery<{
-    id: string;
-    name: string;
-    email: string;
-  }>(getUser, userId);
+  const { data: user, error, isLoading } = useQuery(serverFn(getUser, userId));
 
   if (isLoading) return <p>Loading user…</p>;
 

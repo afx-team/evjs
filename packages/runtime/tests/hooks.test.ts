@@ -1,13 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { buildQueryFn, getBaseKey } from "../src/client/hooks.js";
+import { getBaseKey, serverFn } from "../src/client/hooks.js";
 import {
   __fn_register,
   __resetForTesting,
   initTransport,
 } from "../src/client/transport.js";
-
-// We test the underlying helpers directly since the React hooks
-// (useQuery, useMutation) require a React + QueryClientProvider context.
 
 describe("getBaseKey", () => {
   beforeEach(() => {
@@ -15,10 +12,10 @@ describe("getBaseKey", () => {
   });
 
   it("returns fnId for registered server functions", () => {
-    const fn = async () => [];
-    __fn_register(fn, "mod:getUsers", "getUsers");
+    const myFn = async () => [];
+    __fn_register(myFn, "mod:getUsers", "getUsers");
 
-    expect(getBaseKey(fn)).toBe("mod:getUsers");
+    expect(getBaseKey(myFn)).toBe("mod:getUsers");
   });
 
   it("falls back to fn.name for unregistered named functions", () => {
@@ -28,28 +25,43 @@ describe("getBaseKey", () => {
     expect(getBaseKey(fetchGithubUser)).toBe("fetchGithubUser");
   });
 
-  it("falls back to 'query' for anonymous functions", () => {
-    const fn = async () => {};
-    // Assign empty name to simulate minified arrow function
-    Object.defineProperty(fn, "name", { value: "" });
-    expect(getBaseKey(fn)).toBe("unknown");
+  it("falls back to 'unknown' for anonymous functions", () => {
+    const myFn = async () => {};
+    Object.defineProperty(myFn, "name", { value: "" });
+    expect(getBaseKey(myFn)).toBe("unknown");
   });
 });
 
-describe("buildQueryFn", () => {
+describe("serverFn", () => {
   beforeEach(() => {
     __resetForTesting();
+  });
+
+  it("generates queryKey from fnId for registered server functions", () => {
+    const myFn = async () => [];
+    __fn_register(myFn, "mod:getUsers", "getUsers");
+
+    const opts = serverFn(myFn);
+    expect(opts.queryKey).toEqual(["mod:getUsers"]);
+  });
+
+  it("includes args in queryKey", () => {
+    const myFn = async (_id: string) => ({});
+    __fn_register(myFn, "mod:getUser", "getUser");
+
+    const opts = serverFn(myFn, "abc");
+    expect(opts.queryKey).toEqual(["mod:getUser", "abc"]);
   });
 
   it("uses __fn_call for registered server functions", async () => {
     const send = vi.fn().mockResolvedValue([{ id: 1 }]);
     initTransport({ transport: { send } });
 
-    const fn = async () => [];
-    __fn_register(fn, "mod:getUsers", "getUsers");
+    const myFn = async () => [];
+    __fn_register(myFn, "mod:getUsers", "getUsers");
 
-    const queryFn = buildQueryFn(fn, []);
-    const result = await queryFn({
+    const opts = serverFn(myFn);
+    const result = await opts.queryFn({
       signal: undefined as unknown as AbortSignal,
     });
 
@@ -62,21 +74,12 @@ describe("buildQueryFn", () => {
   it("calls raw function directly for unregistered functions", async () => {
     const rawFn = vi.fn().mockResolvedValue({ name: "evaijs" });
 
-    const queryFn = buildQueryFn(rawFn, ["evaijs"]);
-    const result = await queryFn({
+    const opts = serverFn(rawFn, "evaijs");
+    const result = await opts.queryFn({
       signal: undefined as unknown as AbortSignal,
     });
 
     expect(rawFn).toHaveBeenCalledWith("evaijs");
     expect(result).toEqual({ name: "evaijs" });
-  });
-
-  it("passes multiple args to raw function", async () => {
-    const rawFn = vi.fn().mockResolvedValue("ok");
-
-    const queryFn = buildQueryFn(rawFn, ["a", "b", "c"]);
-    await queryFn({ signal: undefined as unknown as AbortSignal });
-
-    expect(rawFn).toHaveBeenCalledWith("a", "b", "c");
   });
 });

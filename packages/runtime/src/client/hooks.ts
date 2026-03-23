@@ -1,26 +1,20 @@
 /**
- * Thin wrappers around TanStack Query hooks for server functions.
+ * Server function → TanStack Query options utility.
  *
- * These accept a server function directly and auto-generate queryKey + queryFn
- * using the build-time fnId. For non-server-function usage, import the raw
- * TanStack hooks from `@tanstack/react-query`.
+ * Converts a server function into `{ queryKey, queryFn }` that works with
+ * ANY TanStack Query hook: useQuery, useSuspenseQuery, usePrefetchQuery,
+ * useInfiniteQuery, queryClient.ensureQueryData, etc.
  *
  * @example
- * const { data } = useQuery(getUsers);
- * const { data } = useQuery(getUser, userId);
- * const { mutate } = useMutation(createUser, { invalidates: [getUsers] });
+ * import { fn } from "@evjs/runtime/client";
+ * import { useQuery, useSuspenseQuery } from "@evjs/runtime/client";
+ *
+ * useQuery(serverFn(getUsers));
+ * useSuspenseQuery(serverFn(getUser, userId));
+ * useInfiniteQuery({ ...serverFn(getPosts), getNextPageParam: ... });
+ * context.queryClient.ensureQueryData(serverFn(getUsers));
  */
 
-import type {
-  UseMutationOptions,
-  UseMutationResult,
-  UseQueryResult,
-} from "@tanstack/react-query";
-import {
-  useMutation as tanstackUseMutation,
-  useQuery as tanstackUseQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
 import { __fn_call, getFnId } from "./transport";
 
 /**
@@ -38,83 +32,29 @@ export function getBaseKey(fn: AnyFunction): string {
   return getFnId(fn) || fn.name || "unknown";
 }
 
-/** Build queryFn using RPC transport. */
-export function buildQueryFn(
-  fn: AnyFunction,
-  args: unknown[],
-): (ctx: { signal: AbortSignal }) => Promise<unknown> {
-  const fnId = getFnId(fn);
-  if (fnId) {
-    return ({ signal }) => __fn_call(fnId, args, { signal });
-  }
-  return () => fn(...args) as Promise<unknown>;
-}
-
-// ---------------------------------------------------------------------------
-// useQuery
-// ---------------------------------------------------------------------------
-
 /**
- * `useQuery` for server functions — auto-generates queryKey + queryFn.
+ * Convert a server function + args into TanStack Query options.
+ *
+ * Returns `{ queryKey, queryFn }` compatible with any TanStack Query hook.
  *
  * @example
- * useQuery(getUsers);
- * useQuery(getUser, userId);
+ * useQuery(serverFn(getUsers));
+ * useSuspenseQuery(serverFn(getUser, userId));
+ * context.queryClient.ensureQueryData(serverFn(getUsers));
  */
-export function useQuery<TData = unknown, TError = Error>(
-  fn: AnyFunction,
-  ...args: unknown[]
-): UseQueryResult<TData, TError> {
-  const baseKey = getBaseKey(fn);
-  return tanstackUseQuery<TData, TError>({
+export function serverFn<TArgs extends unknown[], TData>(
+  serverFn: (...args: TArgs) => Promise<TData>,
+  ...args: TArgs
+): {
+  queryKey: unknown[];
+  queryFn: (ctx: { signal: AbortSignal }) => Promise<TData>;
+} {
+  const baseKey = getBaseKey(serverFn as AnyFunction);
+  const fnId = getFnId(serverFn as AnyFunction);
+  return {
     queryKey: [baseKey, ...args],
-    queryFn: buildQueryFn(fn, args) as () => Promise<TData>,
-  });
-}
-
-// ---------------------------------------------------------------------------
-// useMutation
-// ---------------------------------------------------------------------------
-
-/**
- * `useMutation` for server functions — auto-generates mutationFn.
- *
- * @example
- * const { mutate } = useMutation(createUser);
- * const { mutate } = useMutation(createUser, { invalidates: [getUsers] });
- */
-export function useMutation<
-  TData = unknown,
-  TError = Error,
-  TVariables = unknown,
->(
-  fn: AnyFunction,
-  options?: Omit<
-    UseMutationOptions<TData, TError, TVariables>,
-    "mutationFn"
-  > & {
-    /** Server functions whose queries should be invalidated on success. */
-    invalidates?: AnyFunction[];
-  },
-): UseMutationResult<TData, TError, TVariables> {
-  const queryClient = useQueryClient();
-  const { invalidates, ...restOptions } = options ?? {};
-  return tanstackUseMutation<TData, TError, TVariables>({
-    ...(restOptions as Omit<
-      UseMutationOptions<TData, TError, TVariables>,
-      "mutationFn"
-    >),
-    mutationFn: (variables: TVariables) => fn(variables) as Promise<TData>,
-    onSuccess: (...onSuccessArgs) => {
-      if (invalidates) {
-        for (const target of invalidates) {
-          const targetKey = getBaseKey(target);
-          queryClient.invalidateQueries({ queryKey: [targetKey] });
-        }
-      }
-      (
-        restOptions as UseMutationOptions<TData, TError, TVariables>
-      )?.onSuccess?.(...onSuccessArgs);
-    },
-  });
+    queryFn: fnId
+      ? ({ signal }) => __fn_call(fnId, args, { signal }) as Promise<TData>
+      : () => serverFn(...args),
+  };
 }

@@ -21,7 +21,9 @@ export {
   QueryClientProvider,
   useInfiniteQuery,
   useIsFetching,
+  useMutation,
   usePrefetchQuery,
+  useQuery,
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
@@ -33,7 +35,7 @@ export { createAppRootRoute } from "./context";
 export type { App, CreateAppOptions } from "./create-app";
 export { createApp } from "./create-app";
 export type { ServerFunction } from "./hooks";
-export { useMutation, useQuery } from "./hooks";
+export { serverFn } from "./hooks";
 export type {
   AnyRootRoute,
   AnyRoute,

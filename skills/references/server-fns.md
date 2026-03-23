@@ -28,23 +28,31 @@ export async function createUser(name: string, email: string) {
 
 ## Query Patterns
 
-evjs's `useQuery` and `useMutation` accept server functions directly — auto-generating query keys and transport.
+evjs provides a `serverFn()` utility that converts server functions into TanStack-compatible `{ queryKey, queryFn }` options. This works with **any** TanStack hook.
 
-### Direct usage (recommended)
+### Using serverFn() with TanStack hooks
 
 ```tsx
-import { useQuery, useMutation } from "@evjs/runtime/client";
+import { fn, useQuery, useMutation, useSuspenseQuery, useQueryClient } from "@evjs/runtime/client";
 import { getUsers, getUser, createUser } from "../api/users.server";
 
-// Pass server functions directly — key + transport auto-generated
-const { data: users } = useQuery(getUsers);
-const { data: user } = useQuery(getUser, userId);
+// Works with any TanStack query hook — types are inferred from the server function
+const { data: users } = useQuery(serverFn(getUsers));
+const { data: user } = useQuery(serverFn(getUser, userId));
+const { data } = useSuspenseQuery(serverFn(getUsers));
 
-// Mutations
-const { mutate } = useMutation(createUser);
-const { mutate } = useMutation(createUser, {
-  invalidates: [getUsers],
+// Mutations use raw TanStack useMutation
+const queryClient = useQueryClient();
+const { mutate } = useMutation({
+  mutationFn: createUser,
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: serverFn(getUsers).queryKey });
+  },
 });
+
+// Route loaders / prefetching
+loader: ({ context }) =>
+  context.queryClient.ensureQueryData(serverFn(getUsers));
 ```
 
 ### Raw fetch / non-server functions

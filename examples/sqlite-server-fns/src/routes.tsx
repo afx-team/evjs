@@ -3,6 +3,7 @@ import {
   createRoute,
   Link,
   Outlet,
+  serverFn,
   useMutation,
   useQuery,
   useQueryClient,
@@ -63,19 +64,20 @@ function UsersPage() {
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [error, setError] = useState("");
 
-  const { data: users = [], isLoading } = useQuery<User[]>(getUsers);
+  const { data: users = [], isLoading } = useQuery(serverFn(getUsers));
 
   const queryClient = useQueryClient();
-  const { mutateAsync: doCreateUser, isPending: isCreating } = useMutation(
-    createUser,
-    {
-      invalidates: [getUsers],
-    },
-  );
-
-  const { mutateAsync: doDeleteUser } = useMutation(deleteUser, {
+  const { mutateAsync: doCreateUser, isPending: isCreating } = useMutation({
+    mutationFn: createUser,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["getUsers"] });
+      queryClient.invalidateQueries({ queryKey: serverFn(getUsers).queryKey });
+    },
+  });
+
+  const { mutateAsync: doDeleteUser } = useMutation({
+    mutationFn: deleteUser,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: serverFn(getUsers).queryKey });
       if (selectedUserId) setSelectedUserId(null);
     },
   });
@@ -196,24 +198,33 @@ function UsersPage() {
 function TodosSection({ userId }: { userId: number }) {
   const [title, setTitle] = useState("");
 
-  const { data: todos = [], isLoading } = useQuery<Todo[]>(getTodos, userId);
+  const { data: todos = [], isLoading } = useQuery(serverFn(getTodos, userId));
 
   const queryClient = useQueryClient();
-  const { mutateAsync: doCreateTodo } = useMutation(createTodo, {
+  const { mutateAsync: doCreateTodo } = useMutation({
+    mutationFn: createTodo,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["getTodos"] });
+      queryClient.invalidateQueries({
+        queryKey: serverFn(getTodos, userId).queryKey,
+      });
     },
   });
 
-  const { mutateAsync: doToggleTodo } = useMutation(toggleTodo, {
+  const { mutateAsync: doToggleTodo } = useMutation({
+    mutationFn: toggleTodo,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["getTodos"] });
+      queryClient.invalidateQueries({
+        queryKey: serverFn(getTodos, userId).queryKey,
+      });
     },
   });
 
-  const { mutateAsync: doDeleteTodo } = useMutation(deleteTodo, {
+  const { mutateAsync: doDeleteTodo } = useMutation({
+    mutationFn: deleteTodo,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["getTodos"] });
+      queryClient.invalidateQueries({
+        queryKey: serverFn(getTodos, userId).queryKey,
+      });
     },
   });
 

@@ -1,12 +1,6 @@
-import { createRoute, Link, useQuery } from "@evjs/runtime/client";
+import { createRoute, Link, serverFn, useQuery } from "@evjs/runtime/client";
 import { getUser } from "../api/data.server";
 import { rootRoute } from "./__root";
-
-type User = {
-  username: string;
-  name: string;
-  bio: string;
-};
 
 const styles = {
   card: { border: "1px solid #e5e7eb", borderRadius: 8, padding: "1rem" },
@@ -14,7 +8,7 @@ const styles = {
 
 function UserProfile() {
   const { username } = userRoute.useParams();
-  const { data: user } = useQuery<User>(getUser, username);
+  const { data: user } = useQuery(serverFn(getUser, username));
 
   if (!user) return <p>Loading...</p>;
   return (
