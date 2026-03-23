@@ -1,6 +1,6 @@
 {
   "name": "example-basic-csr",
-  "version": "0.0.0",
+  "version": "0.0.1-rc.25",
   "private": true,
   "scripts": {
     "dev": "ev dev",

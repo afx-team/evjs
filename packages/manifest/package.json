@@ -1,6 +1,6 @@
 {
   "name": "@evjs/manifest",
-  "version": "0.0.0",
+  "version": "0.0.1-rc.25",
   "description": "Shared manifest types for the ev framework",
   "type": "module",
   "publishConfig": {

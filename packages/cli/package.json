@@ -1,6 +1,6 @@
 {
   "name": "@evjs/cli",
-  "version": "0.0.0",
+  "version": "0.0.1-rc.25",
   "description": "CLI and configuration layer for the evjs framework",
   "type": "module",
   "main": "./dist/config.js",

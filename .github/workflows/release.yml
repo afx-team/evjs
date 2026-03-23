@@ -25,7 +25,42 @@ jobs:
         run: npm install
 
       - name: Sync version from release tag
-        run: npm version "${GITHUB_REF_NAME#v}" --workspaces --no-git-tag-version
+        run: |
+          node -e "
+            const fs = require('fs'), path = require('path');
+            const version = '${GITHUB_REF_NAME}'.replace(/^v/, '');
+            const dirs = ['.', 'packages', 'examples'];
+            const allPackages = [];
+
+            // 1. Collect all package.json paths
+            for (const dir of dirs) {
+              const entries = dir === '.' ? ['.'] : fs.readdirSync(dir).map(e => path.join(dir, e));
+              for (const entry of entries) {
+                const p = path.join(entry, 'package.json');
+                if (fs.existsSync(p)) allPackages.push(p);
+              }
+            }
+
+            // 2. Read all to get workspace package names
+            const workspaceNames = new Set(allPackages.map(p => JSON.parse(fs.readFileSync(p, 'utf8')).name));
+
+            // 3. Update version and internal workspace dependencies
+            for (const p of allPackages) {
+              const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+              pkg.version = version;
+              
+              for (const depType of ['dependencies', 'devDependencies', 'peerDependencies']) {
+                if (!pkg[depType]) continue;
+                for (const dep of Object.keys(pkg[depType])) {
+                  if (workspaceNames.has(dep) || dep.startsWith('@evjs/')) {
+                    pkg[depType][dep] = version;
+                  }
+                }
+              }
+              fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + '\n');
+            }
+            console.log('Synced all packages and internal deps to v' + version);
+          "
 
       - name: Build Packages
         run: npm run build

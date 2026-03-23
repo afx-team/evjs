@@ -1,6 +1,6 @@
 {
   "name": "@evjs/create-app",
-  "version": "0.0.0",
+  "version": "0.0.1-rc.25",
   "description": "Scaffold a new evjs project",
   "type": "module",
   "main": "./dist/index.js",

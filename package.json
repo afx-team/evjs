@@ -1,7 +1,7 @@
 {
   "name": "ev-react-framework",
   "type": "module",
-  "version": "0.0.0",
+  "version": "0.0.1-rc.25",
   "description": "React meta-framework built on TanStack + Hono",
   "private": true,
   "packageManager": "npm@11.6.2",
@@ -26,7 +26,6 @@
     "dev": "turbo dev",
     "lint": "biome check .",
     "format": "biome format --write .",
-
     "check-types": "turbo check-types",
     "prepare": "husky"
   },
