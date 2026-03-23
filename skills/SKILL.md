@@ -14,6 +14,7 @@ evjs is a React meta-framework built on TanStack Router, TanStack Query, and Hon
 - **Server Functions** — write backend logic in `.server.ts` files, call from React as if local
 - **Query/Mutation Proxies** — automatic query keys, transport, and cache invalidation
 - **Type-safe Routing** — TanStack Router with file-based route generation
+- **Plugin System** — extend builds with custom loaders (e.g. Tailwind, SVG)
 - **Convention over Configuration** — works out of the box, optionally configure via `ev.config.ts`
 
 ## Quick Start
@@ -41,3 +42,4 @@ For detailed guides on specific topics, see the `references/` directory:
 - Use `query()` / `mutation()` proxies, not raw `useQuery`
 - Arguments are spread: `useQuery(id)` not `useQuery([id])`
 - `ServerError` on server → `ServerFunctionError` on client
+- Use `client.plugins` to add custom loaders (Tailwind, CSS modules, etc.)

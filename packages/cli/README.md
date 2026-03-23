@@ -28,7 +28,7 @@ No configuration file is needed. `ev dev` and `ev build` work out of the box wit
 
 ### `ev init [name]`
 
-Templates: `basic-csr`, `basic-server-fns`, `trpc-server-fns`.
+Templates: `basic-csr`, `basic-server-fns`, `configured-server-fns`, `complex-routing`, `with-tailwind`.
 Option: `-t, --template <template>` to skip interactive selection.
 
 ### `ev dev`
@@ -54,6 +54,7 @@ export default defineConfig({
   client: {
     entry: "./src/main.tsx",
     html: "./index.html",
+    plugins: [{ name: "tailwind", loaders: [{ test: /\.css$/, use: ["style-loader", "css-loader", "postcss-loader"] }] }],
     dev: { port: 3000 },
   },
   server: {

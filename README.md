@@ -18,6 +18,7 @@ React meta-framework, built on TanStack + Hono.
 - **Server Functions** — `"use server"` directive, auto-discovered at build time.
 - **Pluggable Transport** — HTTP, WebSocket, or custom via `ServerTransport`.
 - **Pluggable Codec** — JSON / MessagePack / Protobuf / custom.
+- **Plugin System** — extend builds with custom loaders (Tailwind, SVG, etc.).
 - **Middleware** — `registerMiddleware()` for cross-cutting concerns.
 - **Typed Errors** — `ServerError` flows structured data server → client.
 - **Multi-Runtime** — Hono-based server with Node, Deno, Bun, Edge adapters.
@@ -43,6 +44,7 @@ config needed.
 | [`@evjs/runtime`](./packages/runtime) | Client (React) + Server (Hono) |
 | [`@evjs/build-tools`](./packages/build-tools) | Server function transforms |
 | [`@evjs/webpack-plugin`](./packages/webpack-plugin) | Webpack adapter |
+| [`@evjs/manifest`](./packages/manifest) | Shared manifest schema types |
 | [`examples/`](./examples) | Starter templates |
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) · [AGENT.md](./AGENT.md)

@@ -60,8 +60,9 @@
 1. Create directory under `examples/`
 2. Add `package.json` with `"@evjs/cli": "*"` as devDep, `"private": true`
 3. Add `src/main.tsx` + `index.html`
-4. Symlink in `packages/cli/templates/` → `../../../examples/[name]`
+4. Create symlink in `packages/cli/templates/` → `../../../examples/[name]`
 5. Add to `packages/cli/scripts/restore-templates.js` symlink map
+6. Add an e2e test in `e2e/cases/[name].ts`
 
 ### Release a new version
 1. Create a GitHub Release with a tag like `v0.1.0`
@@ -104,4 +105,4 @@ npm run create-skill       # Scaffold a new agent skill
 
 The `skills/` directory contains user-facing guides for building apps with evjs. If you change CLI commands, config options, or runtime APIs, please update the relevant skills.
 
-Available skills: `init`, `dev`, `build`, `server-functions`
+Available skill references: `init`, `dev`, `build`, `routing`, `server-fns`, `config`

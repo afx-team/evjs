@@ -12,6 +12,8 @@ Both arguments are optional — if omitted, the CLI prompts interactively.
 
 ## Available Templates
 
+Templates available via `ev init`:
+
 | Template | Description |
 |----------|-------------|
 | `basic-csr` | Client-side rendering only, no server functions |
@@ -19,6 +21,16 @@ Both arguments are optional — if omitted, the CLI prompts interactively.
 | `configured-server-fns` | Server functions with `ev.config.ts` + Query proxy |
 | `complex-routing` | Params, search, layouts, loaders, nested routes |
 | `with-tailwind` | Tailwind CSS via plugin loaders (`ev.config.ts`) |
+
+Additional examples in the `examples/` directory (not in `ev init`):
+
+| Example | Description |
+|---------|-------------|
+| `server-fns-query` | Advanced query/mutation patterns and prefetching |
+| `sqlite-server-fns` | Server functions with `node:sqlite` database |
+| `trpc-server-fns` | tRPC integration with server functions |
+| `websocket-fns` | WebSocket transport for server functions |
+| `basic-fns-ecma` | ECMA adapter (Deno/Bun) deployment |
 
 ## Project Structure
 

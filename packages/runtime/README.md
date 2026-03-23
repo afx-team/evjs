@@ -20,6 +20,7 @@ npm install @evjs/runtime
 | `createQueryProxy(module)` | Module-level query proxy |
 | `createMutationProxy(module)` | Module-level mutation proxy |
 | `initTransport` | One-time transport configuration (endpoint, custom transport, codec) |
+| `getFnName` | Get the original name of a server function stub |
 | `ServerFunctionError` | Structured error class for server function failures |
 | `jsonCodec` | Default JSON codec |
 | `createRootRoute`, `createRoute`, `Link`, `Outlet`, ... | Re-exports from `@tanstack/react-router` |
@@ -138,8 +139,8 @@ const { data } = query(getUsers).useQuery();
 // With args
 const { data } = query(getUser).useQuery(userId);
 
-// Query invalidation
-query(getUsers).invalidate();
+// Query invalidation (via TanStack QueryClient)
+queryClient.invalidateQueries({ queryKey: query(getUsers).queryKey() });
 
 // queryOptions (for prefetching)
 const options = query(getUsers).queryOptions();

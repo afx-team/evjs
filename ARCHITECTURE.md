@@ -44,8 +44,10 @@
 ev.config.ts ──► defineConfig({ client, server })
                     │
                     ├── client.entry, client.html ──► webpack entry + HtmlPlugin
+                    ├── client.plugins ──► EvPlugin[] (custom loaders, e.g. Tailwind)
                     ├── client.dev.port ──► WebpackDevServer port
                     ├── server.endpoint ──► EvWebpackPlugin options
+                    ├── server.plugins ──► EvPlugin[] (server bundle loaders)
                     ├── server.middleware ──► server entry middleware
                     └── server.dev.port ──► API server port
                     │

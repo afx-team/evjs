@@ -27,8 +27,14 @@ Defines the structure of the unified manifest file emitted by `@evjs/webpack-plu
     }
   },
   "client": {
-    "js": ["main.abc123.js"],
-    "css": ["main.def456.css"]
+    "assets": {
+      "js": ["main.abc123.js"],
+      "css": ["main.def456.css"]
+    },
+    "routes": [
+      { "path": "/" },
+      { "path": "/posts/$postId" }
+    ]
   }
 }
 ```
@@ -37,8 +43,9 @@ Defines the structure of the unified manifest file emitted by `@evjs/webpack-plu
 
 - **`Manifest`** — unified manifest (`dist/manifest.json`) with `server` and `client` sections.
 - **`ServerManifestSection`** — server section (`{ entry, fns, rsc? }`).
-- **`ClientManifestSection`** — client section (`{ js, css, pages? }`).
+- **`ClientManifestSection`** — client section (`{ assets: { js, css }, routes? }`).
 - **`ServerFnEntry`** — server function metadata (`{ moduleId, export }`).
+- **`RouteEntry`** — a discovered client route (`{ path }`).
 - **`RscEntry`** — React Server Components (reserved for future).
 - **`PageEntry`** — per-page assets for MPA (reserved for future).
 - **`ServerManifest`** — deprecated alias, use `Manifest` instead.

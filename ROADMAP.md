@@ -61,6 +61,19 @@ DX improvements: unified CLI and zero-config builds.
 - [x] All examples migrated to zero-config
 - [x] E2E tests use `ev build` directly
 
+## ✅ Stage 4 — Plugin System & Build Metadata
+
+Extensibility and richer build output.
+
+- [x] Plugin loaders system (`client.plugins` / `server.plugins`)
+  - [x] `EvPlugin` interface with `name` + `loaders`
+  - [x] `EvPluginLoader` with `test`, `exclude`, `use` (string or `{ loader, options }`)
+  - [x] Tailwind CSS example (`with-tailwind`) using `postcss-loader`
+- [x] Manifest client section
+  - [x] `client.assets: { js, css }` — bundle asset paths
+  - [x] `client.routes: RouteEntry[]` — discovered route paths
+- [x] Template symlinks for `ev init` (no duplication between examples and templates)
+
 ## 🔲 Exploring
 
 Future directions under consideration. Nothing committed yet.
