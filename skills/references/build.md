@@ -32,7 +32,7 @@ const { serve } = require("@evjs/runtime/server/node");
 serve(app, { port: 3001 });
 ```
 
-For ECMA-based runtimes (Deno, Bun, Cloudflare Workers):
+For ECMA-based runtimes (Deno, Bun):
 
 ```ts
 import { createFetchHandler } from "@evjs/runtime/server/ecma";

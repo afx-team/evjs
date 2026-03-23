@@ -171,7 +171,7 @@ The runtime command used to start the server. Supports:
 | `"deno run --allow-net"` | Split on whitespace, extra args forwarded |
 
 > [!WARNING]
-> The ECMA adapter (`@evjs/runtime/server/ecma`) only exports a `{ fetch }` handler — it does **not** start a listening server. For `ev dev`, always use `"node"` as the backend. Use ECMA adapters only for production targets like Cloudflare Workers or Deno Deploy.
+> The ECMA adapter (`@evjs/runtime/server/ecma`) only exports a `{ fetch }` handler — it does **not** start a listening server. For `ev dev`, always use `"node"` as the backend. Use ECMA adapters only for production targets like Deno or Bun.
 
 ### `server.middleware`
 Array of file paths to middleware modules. Each module should call `registerMiddleware()`:

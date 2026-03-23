@@ -77,7 +77,7 @@ CMD ["node", "server.mjs"]
 
 ## Option 3: Deno / Bun / Edge
 
-evjs server endpoints are built on [Hono](https://hono.dev), meaning they run natively on Deno, Bun, Cloudflare Workers, and more.
+evjs server endpoints are built on [Hono](https://hono.dev), meaning they run natively on Deno, Bun, and other Edge runtimes.
 
 ### Deno example
 Use the `basic-fns-ecma` template as a reference.
@@ -107,16 +107,6 @@ app.get("*", serveStatic({ path: "./dist/client/index.html" }));
 Deno.serve({ port: 3000 }, app.fetch);
 ```
 Run with `deno run --allow-net --allow-read server.ts`.
-
-### Cloudflare Workers
-Because the `dist/server/main.js` exposes a standard `fetch` handler via the Hono app, deploying to Cloudflare Workers is straightforward.
-
-Make sure to map the static assets (`dist/client`) to Cloudflare Pages or Workers Sites, and simply export the `app` as the worker handler:
-```ts
-import * as serverBundle from "./dist/server/main.js";
-const app = serverBundle.createApp();
-export default app;
-```
 
 ## Environment Variables
 During the `ev build` phase, environment variables are securely divided:
