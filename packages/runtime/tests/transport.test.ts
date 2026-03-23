@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __fn_call,
   __fn_register,
@@ -83,5 +83,59 @@ describe("initTransport + __fn_call", () => {
     initTransport({ transport: { send } });
 
     await expect(__fn_call("fn3", [])).rejects.toThrow("network failure");
+  });
+});
+
+describe("createFetchTransport (default)", () => {
+  beforeEach(() => {
+    __resetForTesting();
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("adds static headers from config", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ result: "ok" }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    initTransport({ headers: { Authorization: "Bearer xyz" } });
+    await __fn_call("myFn", []);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer xyz",
+        }),
+      }),
+    );
+  });
+
+  it("adds dynamic headers via factory function", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ result: "ok" }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    // Provide dynamic async headers
+    initTransport({
+      headers: async () => ({ Authorization: "Bearer dynamic-token" }),
+    });
+    await __fn_call("myFn", []);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer dynamic-token",
+        }),
+      }),
+    );
   });
 });

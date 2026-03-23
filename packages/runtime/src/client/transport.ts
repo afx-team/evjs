@@ -59,8 +59,12 @@ export interface TransportOptions {
   baseUrl?: string;
   /** Path prefix for the server function endpoint. Defaults to `/api/fn`. */
   endpoint?: string;
-  /** Custom transport. When provided, `baseUrl` and `endpoint` are ignored. */
+  /** Custom transport. When provided, `baseUrl`, `endpoint`, and `headers` are ignored. */
   transport?: ServerTransport;
+  /** Custom headers to send with requests, either static or a dynamic getter (e.g. for auth tokens). */
+  headers?:
+    | Record<string, string>
+    | (() => Record<string, string> | Promise<Record<string, string>>);
   /** Custom codec. Defaults to JSON. */
   codec?: Codec;
 }
@@ -72,6 +76,9 @@ function createFetchTransport(
   baseUrl: string,
   endpoint: string,
   codec: Codec = jsonCodec,
+  headersFactory?:
+    | Record<string, string>
+    | (() => Record<string, string> | Promise<Record<string, string>>),
 ): ServerTransport {
   return {
     async send(
@@ -81,10 +88,16 @@ function createFetchTransport(
     ): Promise<unknown> {
       const url = `${baseUrl}${endpoint}`;
 
+      const extraHeaders =
+        typeof headersFactory === "function"
+          ? await headersFactory()
+          : headersFactory;
+
       const res = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": codec.contentType ?? DEFAULT_CONTENT_TYPE,
+          ...extraHeaders,
           ...context?.headers,
         },
         body: codec.serialize({ fnId, args }),
@@ -146,6 +159,7 @@ export function initTransport(options: TransportOptions): void {
       options.baseUrl ?? "",
       options.endpoint ?? DEFAULT_ENDPOINT,
       options.codec,
+      options.headers,
     );
   }
 }
