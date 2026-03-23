@@ -34,7 +34,6 @@ export type { AppRouteContext } from "./context";
 export { createAppRootRoute } from "./context";
 export type { App, CreateAppOptions } from "./create-app";
 export { createApp } from "./create-app";
-export type { ServerFunction } from "./hooks";
 export { serverFn } from "./hooks";
 export type {
   AnyRootRoute,

@@ -33,7 +33,7 @@ evjs provides a `serverFn()` utility that converts server functions into TanStac
 ### Using serverFn() with TanStack hooks
 
 ```tsx
-import { fn, useQuery, useMutation, useSuspenseQuery, useQueryClient } from "@evjs/runtime/client";
+import { serverFn, useQuery, useMutation, useSuspenseQuery, useQueryClient } from "@evjs/runtime/client";
 import { getUsers, getUser, createUser } from "../api/users.server";
 
 // Works with any TanStack query hook — types are inferred from the server function
@@ -119,8 +119,8 @@ if (e instanceof ServerFunctionError) {
 
 ## Key Points
 
-- Use `useQuery(fn, ...args)` / `useMutation(fn, options?)` for server functions
-- Arguments are spread, not wrapped: `useQuery(getUser, id)` not `useQuery(getUser, [id])`
+- Use `serverFn(fn, ...args)` to get `{ queryKey, queryFn }` for any TanStack hook
+- Arguments are spread: `serverFn(getUser, id)` not `serverFn(getUser, [id])`
 - `ServerError` on server → `ServerFunctionError` on client (with status + data)
 - Middleware receives `(ctx, next)` where `ctx = { fnId, args }` — not a Hono context
 

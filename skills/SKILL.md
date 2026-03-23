@@ -40,7 +40,7 @@ For detailed guides on specific topics, see the `references/` directory:
 ## Key Rules
 
 - Server function files must start with `"use server";` directive
-- Use `query()` / `mutation()` proxies, not raw `useQuery`
-- Arguments are spread: `useQuery(id)` not `useQuery([id])`
+- Use `serverFn()` to convert server functions for TanStack hooks: `useQuery(serverFn(getUsers))`
+- Arguments are spread: `serverFn(getUser, id)` not `serverFn(getUser, [id])`
 - `ServerError` on server → `ServerFunctionError` on client
 - Use `client.plugins` to add custom loaders (Tailwind, CSS modules, etc.)

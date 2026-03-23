@@ -86,13 +86,13 @@ export const homeRoute = createRoute({
 Use `$name` syntax for path parameters. Access them type-safely via `route.useParams()`.
 
 ```tsx
-import { createRoute, query } from "@evjs/runtime/client";
+import { createRoute, serverFn, useQuery } from "@evjs/runtime/client";
 import { getUser } from "../api/data.server";
 import { rootRoute } from "./__root";
 
 function UserProfile() {
   const { username } = userRoute.useParams(); // { username: string }
-  const { data } = query(getUser).useQuery(username);
+  const { data } = useQuery(serverFn(getUser, username));
   return <h2>{data?.name}</h2>;
 }
 
@@ -101,7 +101,7 @@ export const userRoute = createRoute({
   path: "/users/$username",
   loader: ({ params, context }) =>
     context.queryClient.ensureQueryData(
-      query(getUser).queryOptions(params.username),
+      serverFn(getUser, params.username),
     ),
   component: UserProfile,
 });
@@ -142,7 +142,7 @@ export const postDetailRoute = createRoute({
   path: "$postId",
   loader: ({ params, context }) =>
     context.queryClient.ensureQueryData(
-      query(getPost).queryOptions(params.postId),
+      serverFn(getPost, params.postId),
     ),
   component: PostDetail,
 });
@@ -203,7 +203,7 @@ export const usersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/users",
   loader: ({ context }) =>
-    context.queryClient.ensureQueryData(query(getUsers).queryOptions()),
+    context.queryClient.ensureQueryData(serverFn(getUsers)),
   component: UsersPage,
 });
 ```
