@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { serverFn } from "../src/client/hooks.js";
 import {
   __fn_register,
@@ -50,5 +50,36 @@ describe("serverFn", () => {
     expect(() => serverFn(rawFn)).toThrow(
       /serverFn\(\) only accepts server functions/,
     );
+  });
+
+  // ── Type-safety assertions ──
+
+  it("infers TData from server function return type", () => {
+    type User = { id: number; name: string };
+    const getUsers = async () => [] as User[];
+    __fn_register(getUsers, "mod:getUsers", "getUsers");
+
+    const opts = serverFn(getUsers);
+    expectTypeOf(opts.queryKey).toEqualTypeOf<unknown[]>();
+    expectTypeOf(opts.queryFn).returns.resolves.toEqualTypeOf<User[]>();
+  });
+
+  it("infers TData for single-arg server functions", () => {
+    type User = { id: number; name: string };
+    const getUser = async (_id: string) => ({}) as User;
+    __fn_register(getUser, "mod:getUser", "getUser");
+
+    const opts = serverFn(getUser, "abc");
+    expectTypeOf(opts.queryFn).returns.resolves.toEqualTypeOf<User>();
+  });
+
+  it("infers TData for multi-arg server functions", () => {
+    type SearchResult = { id: number; name: string };
+    const searchUsers = async (_name: string, _email: string) =>
+      [] as SearchResult[];
+    __fn_register(searchUsers, "mod:searchUsers", "searchUsers");
+
+    const opts = serverFn(searchUsers, "alice", "alice@test.com");
+    expectTypeOf(opts.queryFn).returns.resolves.toEqualTypeOf<SearchResult[]>();
   });
 });
