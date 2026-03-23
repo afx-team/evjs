@@ -21,11 +21,11 @@ jobs:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
 
-      - name: Sync version from release tag
-        run: npm version "${GITHUB_REF_NAME#v}" --workspaces --include-workspace-root --no-git-tag-version
-
       - name: Install Dependencies
         run: npm install
+
+      - name: Sync version from release tag
+        run: npm version "${GITHUB_REF_NAME#v}" --workspaces --include-workspace-root --no-git-tag-version
 
       - name: Build Packages
         run: npm run build
