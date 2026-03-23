@@ -2,18 +2,31 @@ import fs from "node:fs";
 import { builtinModules } from "node:module";
 import {
   detectUseServer,
+  extractRoutes,
   generateServerEntry,
   type ServerEntryConfig,
 } from "@evjs/build-tools";
-import type { Manifest, ServerFnEntry } from "@evjs/manifest";
+import type { Manifest, RouteEntry, ServerFnEntry } from "@evjs/manifest";
 import type { Compiler } from "webpack";
 
 class ManifestCollector {
   fns: Record<string, ServerFnEntry> = {};
+  routes: RouteEntry[] = [];
   entry: string = "main.js";
+  private jsAssets: string[] = [];
+  private cssAssets: string[] = [];
 
   addServerFn(id: string, meta: ServerFnEntry) {
     this.fns[id] = meta;
+  }
+
+  addRoutes(entries: RouteEntry[]) {
+    this.routes.push(...entries);
+  }
+
+  setAssets(js: string[], css: string[]) {
+    this.jsAssets = js;
+    this.cssAssets = css;
   }
 
   getManifest(): Manifest {
@@ -22,6 +35,10 @@ class ManifestCollector {
       server: {
         entry: this.entry,
         fns: this.fns,
+      },
+      client: {
+        assets: { js: this.jsAssets, css: this.cssAssets },
+        routes: this.routes,
       },
     };
   }
@@ -84,6 +101,12 @@ export class EvWebpackPlugin {
                   const content = fs.readFileSync(resource, "utf-8");
                   if (detectUseServer(content)) {
                     serverModulePaths.push(resource);
+                  }
+
+                  // Extract route metadata from createRoute() calls
+                  const routes = extractRoutes(content);
+                  if (routes.length > 0) {
+                    collector.addRoutes(routes);
                   }
                 } catch (_err) {
                   // Ignore read errors for dynamically generated Webpack modules
@@ -204,8 +227,24 @@ export class EvWebpackPlugin {
           stage: compiler.webpack.Compilation.PROCESS_ASSETS_STAGE_ADDITIONS,
         },
         () => {
+          // Collect client assets from entrypoints
+          const jsFiles: string[] = [];
+          const cssFiles: string[] = [];
+          for (const [name, entrypoint] of compilation.entrypoints) {
+            if (name === "main" || !name.startsWith("HtmlWebpackPlugin")) {
+              for (const file of entrypoint.getFiles()) {
+                if (file.endsWith(".js")) jsFiles.push(file);
+                else if (file.endsWith(".css")) cssFiles.push(file);
+              }
+            }
+          }
+          collector.setAssets(jsFiles, cssFiles);
+
           const manifest = collector.getManifest();
-          if (Object.keys(manifest.server.fns).length === 0) {
+          if (
+            Object.keys(manifest.server.fns).length === 0 &&
+            manifest.client?.routes?.length === 0
+          ) {
             return;
           }
           const content = JSON.stringify(manifest, null, 2);

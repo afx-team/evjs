@@ -39,22 +39,23 @@ export interface ServerManifestSection {
   rsc?: Record<string, RscEntry>;
 }
 
-/** Per-page asset entry for MPA support (future — reserved). */
-export interface PageEntry {
-  /** JavaScript bundle paths for this page. */
-  js: string[];
-  /** CSS bundle paths for this page. */
-  css: string[];
+/** A discovered client route. */
+export interface RouteEntry {
+  /** Route path (e.g. "/", "/posts/$postId", "*"). */
+  path: string;
 }
 
 /** Client section of the manifest. */
 export interface ClientManifestSection {
-  /** JavaScript bundle paths for HTML injection. */
-  js: string[];
-  /** CSS bundle paths for HTML injection. */
-  css: string[];
-  /** Per-page assets for MPA support (future — reserved). */
-  pages?: Record<string, PageEntry>;
+  /** Bundle asset paths for HTML injection. */
+  assets: {
+    /** JavaScript bundle paths. */
+    js: string[];
+    /** CSS bundle paths. */
+    css: string[];
+  };
+  /** Discovered client routes. */
+  routes?: RouteEntry[];
 }
 
 /**
@@ -65,7 +66,7 @@ export interface ClientManifestSection {
 export interface Manifest extends ManifestBase {
   /** Server build metadata (entry, server functions, RSC). */
   server: ServerManifestSection;
-  /** Client build metadata (bundles, CSS, pages). Optional until client manifest is implemented. */
+  /** Client build metadata (bundles, CSS, routes). Optional until client manifest is implemented. */
   client?: ClientManifestSection;
 }
 

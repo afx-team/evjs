@@ -3,6 +3,8 @@
  */
 
 export { generateServerEntry } from "./entry.js";
+export type { ExtractedRoute } from "./routes.js";
+export { extractRoutes } from "./routes.js";
 export type { TransformResult } from "./transforms/index.js";
 export { transformServerFile } from "./transforms/index.js";
 export type { ServerEntryConfig, TransformOptions } from "./types.js";
