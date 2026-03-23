@@ -3,7 +3,9 @@ node_modules
 .turbo
 dist
 .next
-packages/runtime/esm
+packages/shared/esm
+packages/client/esm
+packages/server/esm
 esm
 .evjs
 test-results
