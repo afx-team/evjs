@@ -41,9 +41,20 @@ For detailed guides on specific topics, see the `references/` directory:
 
 ## Key Rules
 
-- Server function files must start with `"use server";` directive
+**Server Functions (RPC):**
+- Server function files must start with `"use server";` directive or Webpack will bypass them
 - Use `useQuery(getUsers)` to query server functions directly — type-safe args & data
-- Use `serverFn()` for loaders, prefetch, and invalidation: `serverFn(getUsers).queryKey`
 - Arguments are spread: `useQuery(getUser, id)` not `useQuery(getUser, [id])`
-- `ServerError` on server → `ServerFunctionError` on client
-- Use `client.plugins` to add custom loaders (Tailwind, CSS modules, etc.)
+- For mutations, wrap args in objects/arrays: `mutate({ name, email })` or `mutate([name, email])`
+- `ServerError` on server → automatically mapped to `ServerFunctionError` on client
+
+**REST Routes (`route()`):**
+- Use `route()` for REST API endpoints, webhooks, or standard Web Request/Response handling
+- If mixing `route()` endpoints, you must explicitly configure `server.entry` in `ev.config.ts`
+
+**React Data Loading:**
+- Route loaders should fetch using: `context.queryClient.ensureQueryData(serverFn(myFn))`
+- Invalidate cache after mutations: `queryClient.invalidateQueries({ queryKey: serverFn(myFn).queryKey })`
+
+**Misc:**
+- Use `client.plugins` in config to add custom Webpack loaders (Tailwind, SCSS, SVG, etc.)
