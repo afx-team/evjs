@@ -30,6 +30,5 @@ export function registerServerFn(fnId: string, fn: ServerFn): void {
  * @internal
  */
 export function __resetForTesting(): void {
-  if (process.env.NODE_ENV === "production") return;
   registry.clear();
 }
