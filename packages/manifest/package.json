@@ -29,7 +29,7 @@
   "author": "xusd320",
   "license": "MIT",
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.2"
   },
   "homepage": "https://github.com/evaijs/evjs#readme",
   "bugs": {

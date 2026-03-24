@@ -40,7 +40,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.19.15",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.2",
     "webpack": "^5.105.4"
   },
   "homepage": "https://github.com/evaijs/evjs#readme",

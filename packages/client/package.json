@@ -14,7 +14,7 @@
   "devDependencies": {
     "@types/react": ">=18.0.0",
     "@types/react-dom": ">=18.0.0",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.2"
   },
   "homepage": "https://github.com/evaijs/evjs#readme",
   "bugs": {

@@ -5,6 +5,7 @@
     "jsx": "react-jsx",
     "module": "ESNext",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["node"],
     "moduleResolution": "Bundler",
     "outDir": "./esm",
     "rootDir": "./src",

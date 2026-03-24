@@ -35,7 +35,7 @@
   },
   "devDependencies": {
     "@swc/types": "^0.1.25",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.2"
   },
   "homepage": "https://github.com/evaijs/evjs#readme",
   "bugs": {

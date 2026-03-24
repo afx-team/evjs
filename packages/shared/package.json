@@ -31,7 +31,7 @@
   "license": "MIT",
   "author": "xusd320",
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.2"
   },
   "keywords": [
     "evjs",

@@ -20,6 +20,6 @@
     "@evjs/server": "*",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.8",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.2"
   }
 }
