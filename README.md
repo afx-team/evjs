@@ -17,9 +17,8 @@ React meta-framework, built on TanStack + Hono.
 - **Data Fetching** — [TanStack Query](https://tanstack.com/query) with built-in proxies.
 - **Server Functions** — `"use server"` directive, auto-discovered at build time.
 - **Pluggable Transport** — HTTP, WebSocket, or custom via `ServerTransport`.
-- **Pluggable Codec** — JSON / MessagePack / Protobuf / custom.
 - **Plugin System** — extend builds with custom loaders (Tailwind, SVG, etc.).
-- **Middleware** — `registerMiddleware()` for cross-cutting concerns.
+- **Programmatic Route Handlers** — Standard Request/Response REST API endpoints via `route()`.
 - **Typed Errors** — `ServerError` flows structured data server → client.
 - **Multi-Runtime** — Hono-based server with Node, Deno, Bun, Edge adapters.
 - **CLI** — `ev dev` · `ev build`
@@ -42,7 +41,7 @@ config needed.
 |---------|---------|
 | [`@evjs/cli`](./packages/cli) | CLI + `defineConfig` |
 | [`@evjs/create-app`](./packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
-| [`@evjs/shared`](./packages/shared) | Shared codec, errors, constants |
+| [`@evjs/shared`](./packages/shared) | Shared errors, constants |
 | [`@evjs/client`](./packages/client) | Client runtime (React + TanStack) |
 | [`@evjs/server`](./packages/server) | Server runtime (Hono) |
 | [`@evjs/build-tools`](./packages/build-tools) | Server function transforms |

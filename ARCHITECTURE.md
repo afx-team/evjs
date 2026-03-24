@@ -19,7 +19,7 @@
 ┌──────── Client (Browser) ────────┐ ┌──────── Server (Node/Edge) ──────┐
 │                                  │ │                                   │
 │  TanStack Router                 │ │  Hono App (createApp)             │
-│  TanStack Query                  │ │  registerServerFn()               │
+│  TanStack Query                  │ │  registerServerFn() + route()     │
 │  __fn_call() stubs               │ │  createHandler()                  │
 │  ServerTransport ────────────────┼─┼──► POST /api/fn ──► registry     │
 │                                  │ │                                   │
@@ -49,7 +49,6 @@ ev.config.ts ──► defineConfig({ client, server })
                     ├── client.dev.port ──► WebpackDevServer port
                     ├── server.endpoint ──► EvWebpackPlugin options
                     ├── server.plugins ──► EvPlugin[] (server bundle loaders)
-                    ├── server.middleware ──► server entry middleware
                     └── server.dev.port ──► API server port
                     │
                     ▼

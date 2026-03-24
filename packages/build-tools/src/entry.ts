@@ -34,7 +34,6 @@ export function generateServerEntry(
   return emitCode(
     [
       appExport,
-      ...(config?.middleware ?? []),
       moduleImports,
       allExports.length ? `export { ${allExports.join(", ")} };` : "",
     ]

@@ -61,7 +61,6 @@ export default defineConfig({
     // ── Server functions ──
     endpoint: "/api/fn",
     backend: "node",                       // "node" | "bun" | "deno run --allow-net"
-    middleware: ["./src/middleware/auth.ts"], // Applied in order
 
     // ── Plugins ──
     plugins: [
@@ -173,20 +172,6 @@ The runtime command used to start the server. Supports:
 > [!WARNING]
 > The ECMA adapter (`@evjs/server/ecma`) only exports a `{ fetch }` handler — it does **not** start a listening server. For `ev dev`, always use `"node"` as the backend. Use ECMA adapters only for production targets like Deno or Bun.
 
-### `server.middleware`
-Array of file paths to middleware modules. Each module should call `registerMiddleware()`:
-
-```ts
-// src/middleware/auth.ts
-import { registerMiddleware } from "@evjs/server";
-
-registerMiddleware(async (ctx, next) => {
-  console.log(`Calling ${ctx.fnId}`);
-  return await next();
-});
-```
-
-Middleware is imported and applied in array order.
 
 ### `server.plugins`
 
@@ -229,18 +214,3 @@ export default defineConfig({
 });
 ```
 
-### With middleware and Bun backend
-
-```ts
-import { defineConfig } from "@evjs/cli";
-
-export default defineConfig({
-  server: {
-    backend: "bun",
-    middleware: [
-      "./src/middleware/auth.ts",
-      "./src/middleware/cors.ts",
-    ],
-  },
-});
-```

@@ -27,7 +27,7 @@ export function createWebpackConfig(
   const { EvWebpackPlugin } = esmRequire("@evjs/webpack-plugin");
 
   const pluginOptions = server
-    ? { server: { middleware: server.middleware, entry: server.entry } }
+    ? { server: { entry: server.entry } }
     : undefined;
 
   // Resolve loader paths from evjs's dependency tree so they work

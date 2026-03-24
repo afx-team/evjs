@@ -25,20 +25,7 @@ describe("generateServerEntry", () => {
     expect(result).toContain("export { _fns_0, _fns_1, _fns_2 }");
   });
 
-  it("includes middleware imports when configured", () => {
-    const result = generateServerEntry(
-      {
-        middleware: [
-          'import "./instrument.js";',
-          'import { config } from "dotenv";',
-        ],
-      },
-      ["/project/src/api/users.server.ts"],
-    );
 
-    expect(result).toContain('import "./instrument.js"');
-    expect(result).toContain('import { config } from "dotenv"');
-  });
 
   it("handles empty server modules array", () => {
     const result = generateServerEntry(undefined, []);

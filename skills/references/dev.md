@@ -43,7 +43,6 @@ export default defineConfig({
   server: {
     endpoint: "/api/fn",         // Default
     backend: "node",             // Or "bun", "deno", etc.
-    middleware: ["./src/middleware/auth.ts"],
     dev: {
       port: 3001,               // API port
     },

@@ -56,7 +56,7 @@ DX improvements: unified CLI and zero-config builds.
 
 - [x] Zero-config `ev build` / `ev dev` — no `webpack.config.cjs` needed
 - [x] `ev.config.ts` with `defineConfig()` for optional customization
-- [x] Config split: `ClientConfig` (entry, html, dev) + `ServerConfig` (endpoint, middleware, dev)
+- [x] Config split: `ClientConfig` (entry, html, dev) + `ServerConfig` (endpoint, dev)
 - [x] webpack Node API — no temp config files, no subprocess spawning
 - [x] All examples migrated to zero-config
 - [x] E2E tests use `ev build` directly
@@ -85,9 +85,7 @@ Future directions under consideration. Nothing committed yet.
 - [ ] **Server context** _(next up)_
   - [ ] Provide request context (headers, cookies, auth) to server functions
   - [ ] Transparent to user code — no manual parameter passing
-- [ ] **Pluggable serialization**
-  - [ ] Extendable serialize/deserialize hooks
-  - [ ] Framework stays JSON by default
+
 - [ ] **SSR**
   - [ ] Server-side rendering with fallback to CSR
   - [ ] HTML streaming and hydration

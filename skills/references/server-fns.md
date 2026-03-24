@@ -68,29 +68,7 @@ const { data } = useQuery({
 
 ## Configuration
 
-### Middleware
-
-Middleware wraps server function calls (not HTTP requests):
-
-```ts
-import { registerMiddleware } from "@evjs/server";
-
-registerMiddleware(async (ctx, next) => {
-  const start = Date.now();
-  const result = await next();
-  console.log(`${ctx.fnId} took ${Date.now() - start}ms`);
-  return result;
-});
-```
-
-Register in `ev.config.ts`:
-```ts
-export default defineConfig({
-  server: { middleware: ["./src/middleware/auth.ts"] },
-});
-```
-
-### Transport & Codec
+### Transport
 
 ```tsx
 import { initTransport } from "@evjs/client";
@@ -123,5 +101,4 @@ if (e instanceof ServerFunctionError) {
 - Use `serverFn(fn, ...args)` for loaders, prefetch, and cache invalidation
 - Arguments are spread: `useQuery(getUser, id)` not `useQuery(getUser, [id])`
 - `ServerError` on server → `ServerFunctionError` on client (with status + data)
-- Middleware receives `(ctx, next)` where `ctx = { fnId, args }` — not a Hono context
 

@@ -15,7 +15,7 @@ npm run dev -w example-websocket-fns
 | `src/main.tsx` | `initTransport` with WebSocket transport |
 | `src/routes.tsx` | UI with users CRUD |
 | `src/api/users.server.ts` | Server functions |
-| `ev.config.ts` | WebSocket middleware setup |
+
 
 ## What It Demonstrates
 

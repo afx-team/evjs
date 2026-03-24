@@ -10,8 +10,6 @@ export interface ServerConfig {
   entry?: string;
   /** Server function endpoint path. Default: "/api/fn". */
   endpoint?: string;
-  /** Middleware module paths to auto-register in server entry. */
-  middleware?: string[];
   /** Build plugins for the server bundle. */
   plugins?: EvPlugin[];
   /** Dev server options. */

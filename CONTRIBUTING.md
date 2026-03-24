@@ -16,7 +16,7 @@
 |---------|------|---------|
 | `@evjs/cli` | `packages/cli` | CLI (`ev dev`, `ev build`) + `defineConfig` |
 | `@evjs/create-app` | `packages/create-app` | Project scaffolding (`npx @evjs/create-app`) |
-| `@evjs/shared` | `packages/shared` | Shared codec, errors, constants |
+| `@evjs/shared` | `packages/shared` | Shared errors, constants |
 | `@evjs/client` | `packages/client` | Client (React + TanStack) |
 | `@evjs/server` | `packages/server` | Server (Hono) |
 | `@evjs/build-tools` | `packages/build-tools` | Bundler-agnostic server function transforms (SWC) |

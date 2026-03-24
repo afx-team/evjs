@@ -45,7 +45,7 @@ module.exports = {
         backend: process.env.NODE_ENV === "development"
           ? "@evjs/server/node#serve"
           : undefined,
-        // Extra imports (middleware, config, etc.)
+        // Extra imports (config, etc.)
         setup: [],
       },
     }),

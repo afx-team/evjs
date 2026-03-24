@@ -99,7 +99,7 @@ describe("createFetchTransport (default)", () => {
   it("adds static headers from config", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      text: async () => JSON.stringify({ result: "ok" }),
+      json: async () => ({ result: "ok" }),
     });
     vi.stubGlobal("fetch", mockFetch);
 
@@ -119,7 +119,7 @@ describe("createFetchTransport (default)", () => {
   it("adds dynamic headers via factory function", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      text: async () => JSON.stringify({ result: "ok" }),
+      json: async () => ({ result: "ok" }),
     });
     vi.stubGlobal("fetch", mockFetch);
 

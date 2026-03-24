@@ -21,7 +21,6 @@ describe("defineConfig", () => {
       server: {
         backend: "./custom-backend.ts",
         endpoint: "/api/v2",
-        middleware: ['import "dotenv/config";'],
         dev: { port: 4000 },
       },
       client: {

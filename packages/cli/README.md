@@ -55,7 +55,7 @@ export default defineConfig({
   },
   server: {
     endpoint: "/api/fn",
-    middleware: [],
+
     dev: { port: 3001 },
   },
 });
@@ -77,7 +77,7 @@ my-app/
     ├── api/               # server functions
     │   ├── users.server.ts
     │   └── posts.server.ts
-    └── middleware/         # server middleware (optional)
+
         └── auth.ts
 ```
 
