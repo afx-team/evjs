@@ -46,7 +46,7 @@ export function createApp(options?: CreateAppOptions): Hono {
 
     try {
       body = await c.req.json();
-    } catch (err) {
+    } catch (_err) {
       return c.json(
         { error: "Malformed request body", fnId: "", status: 400 },
         400,
@@ -66,6 +66,7 @@ export function createApp(options?: CreateAppOptions): Hono {
           }
         : { result: response.result };
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return c.json(payload, status as any);
   });
 
