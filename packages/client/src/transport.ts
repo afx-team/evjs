@@ -139,7 +139,7 @@ function getTransport(): ServerTransport {
  * customise the endpoint URL or provide a custom transport.
  */
 export function initTransport(options: TransportOptions): void {
-  if (process.env.NODE_ENV !== "production" && _transport !== null) {
+  if (_transport !== null) {
     console.warn(
       "[ev] initTransport() was called more than once. " +
         "This overwrites the previous transport configuration.",
@@ -221,7 +221,6 @@ export function getFnId(fn: Function): string | undefined {
  * @internal
  */
 export function __resetForTesting(): void {
-  if (process.env.NODE_ENV === "production") return;
   _transport = null;
   fnNameRegistry.clear();
 }
