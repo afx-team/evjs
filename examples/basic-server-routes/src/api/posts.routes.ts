@@ -8,7 +8,7 @@
  * - Custom status codes
  */
 
-import { createRouteHandler } from "@evjs/server";
+import { route } from "@evjs/server";
 
 /** Simulated post database. */
 interface Post {
@@ -36,7 +36,7 @@ const posts: Post[] = [
 let nextId = 3;
 
 /** List + Create posts. */
-export const postsHandler = createRouteHandler("/api/posts", {
+export const postsHandler = route("/api/posts", {
   GET: async (req) => {
     // Support ?limit query param
     const url = new URL(req.url);
@@ -70,7 +70,7 @@ export const postsHandler = createRouteHandler("/api/posts", {
 });
 
 /** Get, Update, Delete a single post. */
-export const postHandler = createRouteHandler("/api/posts/:id", {
+export const postHandler = route("/api/posts/:id", {
   GET: async (_req, { params }) => {
     const post = posts.find((p) => p.id === params.id);
     if (!post) {

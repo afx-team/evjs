@@ -6,9 +6,9 @@
  *
  * @example
  * ```ts
- * import { createRouteHandler } from "@evjs/server";
+ * import { route } from "@evjs/server";
  *
- * export const usersHandler = createRouteHandler("/api/users", {
+ * export const usersHandler = route("/api/users", {
  *   GET: async (req) => Response.json(await db.getUsers()),
  *   POST: async (req) => {
  *     const body = await req.json();
@@ -83,7 +83,7 @@ export interface RouteHandler {
  *
  * @example
  * ```ts
- * const handler = createRouteHandler("/api/users/:id", {
+ * const handler = route("/api/users/:id", {
  *   middleware: [authMiddleware],
  *   GET: async (req, { params }) => {
  *     const user = await db.getUser(params.id);
@@ -96,7 +96,7 @@ export interface RouteHandler {
  * });
  * ```
  */
-export function createRouteHandler(
+export function route(
   path: string,
   definition: RouteHandlerDefinition,
 ): RouteHandler {

@@ -5,4 +5,4 @@ export type {
   RouteHandlerFn,
   RouteMiddleware,
 } from "./route-handler";
-export { createRouteHandler } from "./route-handler";
+export { route } from "./route-handler";

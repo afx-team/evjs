@@ -16,7 +16,7 @@ export interface CreateAppOptions {
   endpoint?: string;
   /**
    * Route handlers to mount on the app.
-   * Created via `createRouteHandler()`.
+   * Created via `route()`.
    */
   routeHandlers?: RouteHandler[];
 }

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createRouteHandler } from "../src/routes/route-handler.js";
+import { route } from "../src/routes/route-handler.js";
 
 /**
  * Helper to make a Request and feed it through the route handler's Hono app.
  */
 async function fetch(
-  handler: ReturnType<typeof createRouteHandler>,
+  handler: ReturnType<typeof route>,
   path: string,
   init?: RequestInit,
 ): Promise<Response> {
@@ -14,9 +14,9 @@ async function fetch(
   return handler.app.fetch(req);
 }
 
-describe("createRouteHandler", () => {
+describe("route", () => {
   it("routes GET requests to the GET handler", async () => {
-    const handler = createRouteHandler("/api/items", {
+    const handler = route("/api/items", {
       GET: async () => Response.json({ items: [1, 2, 3] }),
     });
 
@@ -26,7 +26,7 @@ describe("createRouteHandler", () => {
   });
 
   it("routes POST requests to the POST handler", async () => {
-    const handler = createRouteHandler("/api/items", {
+    const handler = route("/api/items", {
       POST: async (req) => {
         const body = await req.json();
         return Response.json({ created: body }, { status: 201 });
@@ -43,7 +43,7 @@ describe("createRouteHandler", () => {
   });
 
   it("resolves dynamic params", async () => {
-    const handler = createRouteHandler("/api/users/:id", {
+    const handler = route("/api/users/:id", {
       GET: async (_req, { params }) => {
         return Response.json({ id: params.id });
       },
@@ -55,7 +55,7 @@ describe("createRouteHandler", () => {
   });
 
   it("returns 405 for undefined methods", async () => {
-    const handler = createRouteHandler("/api/items", {
+    const handler = route("/api/items", {
       GET: async () => Response.json({ ok: true }),
     });
 
@@ -65,7 +65,7 @@ describe("createRouteHandler", () => {
   });
 
   it("auto-implements OPTIONS with Allow header", async () => {
-    const handler = createRouteHandler("/api/items", {
+    const handler = route("/api/items", {
       GET: async () => Response.json([]),
       POST: async () => Response.json({}, { status: 201 }),
     });
@@ -79,7 +79,7 @@ describe("createRouteHandler", () => {
   });
 
   it("auto-derives HEAD from GET", async () => {
-    const handler = createRouteHandler("/api/items", {
+    const handler = route("/api/items", {
       GET: async () =>
         Response.json({ data: "hello" }, {
           headers: { "X-Custom": "test" },
@@ -97,7 +97,7 @@ describe("createRouteHandler", () => {
   it("runs middleware in order before the handler", async () => {
     const order: string[] = [];
 
-    const handler = createRouteHandler("/api/items", {
+    const handler = route("/api/items", {
       middleware: [
         async (_req, _ctx, next) => {
           order.push("mw1");
@@ -120,7 +120,7 @@ describe("createRouteHandler", () => {
   });
 
   it("middleware can short-circuit the request", async () => {
-    const handler = createRouteHandler("/api/items", {
+    const handler = route("/api/items", {
       middleware: [
         async () => new Response("Unauthorized", { status: 401 }),
       ],
@@ -133,7 +133,7 @@ describe("createRouteHandler", () => {
   });
 
   it("supports multiple method handlers on the same path", async () => {
-    const handler = createRouteHandler("/api/items/:id", {
+    const handler = route("/api/items/:id", {
       GET: async (_req, { params }) =>
         Response.json({ action: "get", id: params.id }),
       PUT: async (_req, { params }) =>
@@ -156,7 +156,7 @@ describe("createRouteHandler", () => {
     // This tests the integration path through createApp
     const { createApp } = await import("../src/app.js");
 
-    const items = createRouteHandler("/items", {
+    const items = route("/items", {
       GET: async () => Response.json(["a", "b"]),
     });
 
