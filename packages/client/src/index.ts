@@ -27,10 +27,10 @@ export {
   usePrefetchQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+export type { App, CreateAppOptions } from "./app";
+export { createApp } from "./app";
 export type { AppRouteContext } from "./context";
 export { createAppRootRoute } from "./context";
-export type { App, CreateAppOptions } from "./create-app";
-export { createApp } from "./create-app";
 export { serverFn, useQuery, useSuspenseQuery } from "./query";
 export type {
   AnyRootRoute,
