@@ -27,9 +27,13 @@ export function generateServerEntry(
   const fnsExports = serverModulePaths.map((_p, i) => `_fns_${i}`);
   const allExports = [...fnsExports];
 
+  const appExport = config?.entry
+    ? `export * from ${JSON.stringify(config.entry)};`
+    : `export { createApp } from "${RUNTIME.appModule}";`;
+
   return emitCode(
     [
-      `export { createApp } from "${RUNTIME.appModule}";`,
+      appExport,
       ...(config?.middleware ?? []),
       moduleImports,
       allExports.length ? `export { ${allExports.join(", ")} };` : "",

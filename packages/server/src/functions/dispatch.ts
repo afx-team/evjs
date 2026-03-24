@@ -10,61 +10,6 @@
 import { DEFAULT_ERROR_STATUS, ServerError } from "@evjs/shared";
 import { registry } from "./register";
 
-/**
- * Context passed to middleware functions.
- */
-export interface MiddlewareContext {
-  /** The function ID being called. */
-  fnId: string;
-  /** The arguments passed to the function. */
-  args: unknown[];
-  /**
-   * Transport-specific metadata.
-   * When using the default HTTP handler, this contains `{ hono: Context }`.
-   * Custom transports (like WebSockets) can provide their own context maps here.
-   */
-  transport: Record<string, unknown>;
-}
-
-/**
- * Middleware function type.
- * Call `next()` to proceed to the next middleware or the function itself.
- *
- * @example
- * ```ts
- * registerMiddleware(async (ctx, next) => {
- *   console.log(`Calling ${ctx.fnId}`);
- *   const start = Date.now();
- *   const result = await next();
- *   console.log(`${ctx.fnId} took ${Date.now() - start}ms`);
- *   return result;
- * });
- * ```
- */
-export type Middleware = (
-  ctx: MiddlewareContext,
-  next: () => Promise<unknown>,
-) => Promise<unknown>;
-
-const middlewares: Middleware[] = [];
-
-/**
- * Register a middleware that wraps all server function calls.
- * Middleware functions run in registration order.
- */
-export function registerMiddleware(fn: Middleware): void {
-  middlewares.push(fn);
-}
-
-/**
- * Reset the middleware stack. **Test-only** — not available in production builds.
- * @internal
- */
-export function __resetForTesting(): void {
-  if (process.env.NODE_ENV === "production") return;
-  middlewares.length = 0;
-}
-
 /** Successful dispatch result. */
 export interface DispatchSuccess {
   result: unknown;
@@ -102,7 +47,6 @@ export type DispatchResult = DispatchSuccess | DispatchError;
 export async function dispatch(
   fnId: string,
   args: unknown[],
-  transport: Record<string, unknown> = {},
 ): Promise<DispatchResult> {
   if (!fnId || typeof fnId !== "string") {
     return {
@@ -122,18 +66,7 @@ export async function dispatch(
   }
 
   try {
-    // Build middleware chain
-    let index = 0;
-    const runFn = () => fn(...args);
-    const next = (): Promise<unknown> => {
-      if (index < middlewares.length) {
-        const mw = middlewares[index++];
-        return mw({ fnId, args, transport }, next);
-      }
-      return runFn();
-    };
-
-    const result = await next();
+    const result = await fn(...args);
     return { result };
   } catch (err) {
     if (err instanceof ServerError) {

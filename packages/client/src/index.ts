@@ -2,8 +2,7 @@
  * Client-side runtime utilities.
  */
 
-export type { Codec } from "@evjs/shared";
-export { jsonCodec, ServerFunctionError } from "@evjs/shared";
+export { ServerFunctionError } from "@evjs/shared";
 // Cherry-picked re-exports from @tanstack/react-query
 export type {
   QueryClientConfig,

@@ -7,11 +7,8 @@
  */
 
 import {
-  type Codec,
-  DEFAULT_CONTENT_TYPE,
   DEFAULT_ENDPOINT,
   DEFAULT_ERROR_STATUS,
-  jsonCodec,
   ServerFunctionError,
 } from "@evjs/shared";
 
@@ -66,8 +63,6 @@ export interface TransportOptions {
   headers?:
     | Record<string, string>
     | (() => Record<string, string> | Promise<Record<string, string>>);
-  /** Custom codec. Defaults to JSON. */
-  codec?: Codec;
 }
 
 /**
@@ -76,7 +71,6 @@ export interface TransportOptions {
 function createFetchTransport(
   baseUrl: string,
   endpoint: string,
-  codec: Codec = jsonCodec,
   headersFactory?:
     | Record<string, string>
     | (() => Record<string, string> | Promise<Record<string, string>>),
@@ -97,11 +91,11 @@ function createFetchTransport(
       const res = await fetch(url, {
         method: "POST",
         headers: {
-          "Content-Type": codec.contentType ?? DEFAULT_CONTENT_TYPE,
+          "Content-Type": "application/json",
           ...extraHeaders,
           ...context?.headers,
         },
-        body: codec.serialize({ fnId, args }),
+        body: JSON.stringify({ fnId, args }),
         signal: context?.signal,
       });
 
@@ -115,8 +109,7 @@ function createFetchTransport(
         );
       }
 
-      const raw = await res.text();
-      const payload = codec.deserialize(raw) as Record<string, unknown>;
+      const payload = await res.json();
 
       if (payload.error) {
         const name = getFnName(fnId);
@@ -159,7 +152,6 @@ export function initTransport(options: TransportOptions): void {
     _transport = createFetchTransport(
       options.baseUrl ?? "",
       options.endpoint ?? DEFAULT_ENDPOINT,
-      options.codec,
       options.headers,
     );
   }

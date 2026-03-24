@@ -1,6 +1,10 @@
 /** Configuration for the generated server entry. */
 export interface ServerEntryConfig {
   /**
+   * Explicit server entry file. If provided, overrides auto-generated entry.
+   */
+  entry?: string;
+  /**
    * Middleware module paths to auto-register in the server entry.
    */
   middleware?: string[];

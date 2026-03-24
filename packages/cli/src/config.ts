@@ -6,6 +6,8 @@
 export interface ServerConfig {
   /** Server backend command. Default: "node". */
   backend?: string;
+  /** Explicit server entry file. If provided, overrides auto-generated entry. */
+  entry?: string;
   /** Server function endpoint path. Default: "/api/fn". */
   endpoint?: string;
   /** Middleware module paths to auto-register in server entry. */

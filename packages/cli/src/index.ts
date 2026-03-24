@@ -78,8 +78,8 @@ program
 
         if (fs.existsSync(manifestPath)) {
           const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
-          // Only start API server if there are actual server functions
-          if (Object.keys(manifest.server?.fns ?? {}).length === 0) return;
+          // Start API server if there's a server entry
+          if (!manifest.server?.entry) return;
           apiStarted = true;
           const backendConfig = evjsConfig?.server?.backend ?? "node";
           const [backend, ...backendExtraArgs] = backendConfig.split(/\s+/);
@@ -92,11 +92,12 @@ program
               manifest.server.entry,
             );
 
+            fs.ensureDirSync(path.dirname(bootstrapPath));
             fs.writeFileSync(
               bootstrapPath,
               [
                 `const bundle = require(${JSON.stringify(serverBundlePath)});`,
-                `const app = bundle.createApp({ endpoint: ${JSON.stringify(evjsConfig?.server?.endpoint ?? CONFIG_DEFAULTS.endpoint)} });`,
+                `const app = bundle.app || bundle.createApp({ endpoint: ${JSON.stringify(evjsConfig?.server?.endpoint ?? CONFIG_DEFAULTS.endpoint)} });`,
                 `const { serve } = require("@evjs/server/node");`,
                 `serve(app, { port: ${serverPort} });`,
               ].join("\n"),

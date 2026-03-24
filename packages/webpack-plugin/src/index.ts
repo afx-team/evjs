@@ -113,7 +113,8 @@ export class EvWebpackPlugin {
                 }
               }
 
-              if (serverModulePaths.length === 0) {
+              const explicitServerEntry = this.options.server?.entry;
+              if (serverModulePaths.length === 0 && !explicitServerEntry) {
                 return finishCallback();
               }
 

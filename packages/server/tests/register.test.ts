@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { registerServerFn, registry, type ServerFn } from "../src/register.js";
+import { registerServerFn, registry, type ServerFn } from "../src/functions/register.js";
 
 describe("registerServerFn", () => {
   beforeEach(() => {

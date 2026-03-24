@@ -26,8 +26,8 @@ export function createWebpackConfig(
   const HtmlWebpackPlugin = esmRequire("html-webpack-plugin");
   const { EvWebpackPlugin } = esmRequire("@evjs/webpack-plugin");
 
-  const pluginOptions = server?.middleware?.length
-    ? { server: { middleware: server.middleware } }
+  const pluginOptions = server
+    ? { server: { middleware: server.middleware, entry: server.entry } }
     : undefined;
 
   // Resolve loader paths from evjs's dependency tree so they work
@@ -107,6 +107,9 @@ export function createWebpackConfig(
     plugins: [
       new HtmlWebpackPlugin({ template: html }),
       new EvWebpackPlugin(pluginOptions),
+      ...(!isProduction
+        ? [new (esmRequire("webpack").HotModuleReplacementPlugin)()]
+        : []),
     ],
     optimization: isProduction
       ? { splitChunks: { chunks: "all" as const } }
