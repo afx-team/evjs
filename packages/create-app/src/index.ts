@@ -34,6 +34,10 @@ program
             { title: "Basic CSR (Client-Side Rendering)", value: "basic-csr" },
             { title: "Basic Server Functions", value: "basic-server-fns" },
             {
+              title: "Basic Server Routes (Programmatic REST API via route())",
+              value: "basic-server-routes",
+            },
+            {
               title: "Configured Server Functions (ev.config.ts + Query)",
               value: "configured-server-fns",
             },
