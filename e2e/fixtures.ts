@@ -74,7 +74,7 @@ export function createExampleTest(exampleName: string) {
           bootstrapPath,
           [
             `const bundle = require(${JSON.stringify(serverEntryPath)});`,
-            `const app = bundle.createApp();`,
+            `const app = bundle.app || bundle.createApp();`,
             `const { serve } = require("@hono/node-server");`,
             `serve({ fetch: app.fetch, port: ${apiPort} }, (info) => {`,
             `  console.log("E2E_SERVER_READY:" + info.port);`,
