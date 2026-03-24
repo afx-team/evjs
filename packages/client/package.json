@@ -5,7 +5,8 @@
   "dependencies": {
     "@evjs/shared": "*",
     "@tanstack/react-query": "^5.90.21",
-    "@tanstack/react-router": "^1.163.3"
+    "@tanstack/react-router": "^1.163.3",
+    "hono": "^4.12.5"
   },
   "peerDependencies": {
     "react": ">=18.0.0",

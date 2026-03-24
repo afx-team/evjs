@@ -77,7 +77,7 @@ export default defineConfig({
 On the frontend, use the `hc` (Hono Client) and pass it your `AppType`. This gives you flawless autocomplete and type-checking across the network boundary!
 
 ```tsx
-import { hc } from "hono/client";
+import { hc } from "@evjs/client";
 import type { AppType } from "./server";
 
 const client = hc<AppType>("/");

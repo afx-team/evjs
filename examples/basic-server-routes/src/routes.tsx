@@ -1,5 +1,4 @@
-import { createRootRoute, createRoute, Outlet } from "@evjs/client";
-import { hc } from "hono/client";
+import { createRootRoute, createRoute, hc, Outlet } from "@evjs/client";
 import { useState } from "react";
 import type { AppType } from "./server";
 

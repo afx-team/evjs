@@ -3,6 +3,7 @@
  */
 
 export { ServerFunctionError } from "@evjs/shared";
+
 // Cherry-picked re-exports from @tanstack/react-query
 export type {
   QueryClientConfig,
@@ -93,3 +94,32 @@ export type {
   TransportOptions,
 } from "./transport";
 export { getFnName, initTransport } from "./transport";
+
+// Cherry-picked re-exports from hono/client
+import { hc as _hc } from "hono/client";
+
+/**
+ * Creates a type-safe REST API client (Hono Client).
+ *
+ * Provides end-to-end type inference for your backend endpoints.
+ * Pass your backend `AppType` as a generic to unlock path-aware autocomplete.
+ *
+ * @example
+ * ```ts
+ * import { hc } from "@evjs/client";
+ * import type { AppType } from "./server";
+ *
+ * const client = hc<AppType>("/");
+ *
+ * // Fully typed!
+ * const res = await client.api.posts.$get();
+ * const data = await res.json();
+ * ```
+ */
+export const hc: typeof import("hono/client").hc = _hc;
+
+export type {
+  ClientResponse,
+  InferRequestType,
+  InferResponseType,
+} from "hono/client";
