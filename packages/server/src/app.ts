@@ -9,37 +9,26 @@ import { DEFAULT_ENDPOINT } from "@evjs/shared";
 import { Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { dispatch } from "./functions/dispatch.js";
-import type { RouteHandler } from "./routes";
 
 /** Options for createApp. */
 export interface CreateAppOptions {
   /** Server function endpoint path. Defaults to "/api/fn". */
   endpoint?: string;
-  /**
-   * Route handlers to mount on the app.
-   * Created via `route()`.
-   */
-  routeHandlers?: RouteHandler[];
 }
 
 /**
  * Create an ev API server application.
  *
- * Mounts the server function handler at the configured endpoint,
- * plus any programmatic route handlers.
+ * Mounts the server function handler at the configured endpoint.
+ * Additional programmatic REST routes can be mounted via `.route()`.
  *
  * @param options - Application configuration.
  * @returns A runtime-agnostic Hono app instance.
  */
 export function createApp(options?: CreateAppOptions): Hono {
-  const { endpoint = DEFAULT_ENDPOINT, routeHandlers = [] } = options ?? {};
+  const { endpoint = DEFAULT_ENDPOINT } = options ?? {};
 
   const app = new Hono();
-
-  // Mount route handlers (before server function endpoint for priority)
-  for (const handler of routeHandlers) {
-    app.route("/", handler.app);
-  }
 
   // Mount server function endpoint
   app.post(endpoint, async (c) => {

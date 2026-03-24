@@ -1,5 +1,9 @@
 import { createRootRoute, createRoute, Outlet } from "@evjs/client";
+import { hc } from "hono/client";
 import { useState } from "react";
+import type { AppType } from "./server";
+
+const client = hc<AppType>("/");
 
 // ── Types ──
 
@@ -41,7 +45,7 @@ function PostsPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/posts");
+      const res = await client.api.posts.$get();
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
       const data = await res.json();
       setPosts(data);
@@ -59,10 +63,8 @@ function PostsPage() {
 
     setIsCreating(true);
     try {
-      const res = await fetch("/api/posts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, body }),
+      const res = await client.api.posts.$post({
+        json: { title, body },
       });
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
       setTitle("");
@@ -78,7 +80,9 @@ function PostsPage() {
   // Delete a post via DELETE
   async function handleDelete(id: string) {
     try {
-      const res = await fetch(`/api/posts/${id}`, { method: "DELETE" });
+      const res = await client.api.posts[":id"].$delete({
+        param: { id },
+      });
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
       await fetchPosts();
     } catch (err) {
@@ -189,7 +193,7 @@ function HealthCheck() {
   const [health, setHealth] = useState<Record<string, unknown> | null>(null);
 
   async function checkHealth() {
-    const res = await fetch("/api/health");
+    const res = await client.api.health.$get();
     setHealth(await res.json());
   }
 

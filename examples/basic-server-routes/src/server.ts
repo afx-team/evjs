@@ -3,9 +3,9 @@
  */
 
 import { createApp } from "@evjs/server";
-import { healthHandler } from "./api/health.routes";
-import { postHandler, postsHandler } from "./api/posts.routes";
+import { healthApp } from "./api/health.routes";
+import { postsApp } from "./api/posts.routes";
 
-export const app = createApp({
-  routeHandlers: [healthHandler, postsHandler, postHandler],
-});
+export const app = createApp().route("/", healthApp).route("/", postsApp);
+
+export type AppType = typeof app;

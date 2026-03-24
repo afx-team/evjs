@@ -8,7 +8,7 @@
  * - Custom status codes
  */
 
-import { route } from "@evjs/server";
+import { Hono } from "hono";
 
 /** Simulated post database. */
 interface Post {
@@ -35,26 +35,19 @@ const posts: Post[] = [
 
 let nextId = 3;
 
-/** List + Create posts. */
-export const postsHandler = route("/api/posts", {
-  GET: async (req) => {
+/** REST Endpoints for Posts */
+export const postsApp = new Hono()
+  .get("/api/posts", (c) => {
     // Support ?limit query param
-    const url = new URL(req.url);
+    const url = new URL(c.req.url);
     const limit = Number(url.searchParams.get("limit")) || posts.length;
-    return Response.json(posts.slice(0, limit));
-  },
-
-  POST: async (req) => {
-    const { title, body } = (await req.json()) as {
-      title: string;
-      body: string;
-    };
+    return c.json(posts.slice(0, limit));
+  })
+  .post("/api/posts", async (c) => {
+    const { title, body } = await c.req.json<{ title: string; body: string }>();
 
     if (!title || !body) {
-      return Response.json(
-        { error: "title and body are required" },
-        { status: 400 },
-      );
+      return c.json({ error: "title and body are required" }, 400);
     }
 
     const post: Post = {
@@ -65,42 +58,38 @@ export const postsHandler = route("/api/posts", {
     };
     posts.push(post);
 
-    return Response.json(post, { status: 201 });
-  },
-});
-
-/** Get, Update, Delete a single post. */
-export const postHandler = route("/api/posts/:id", {
-  GET: async (_req, { params }) => {
-    const post = posts.find((p) => p.id === params.id);
+    return c.json(post, 201);
+  })
+  .get("/api/posts/:id", (c) => {
+    const id = c.req.param("id");
+    const post = posts.find((p) => p.id === id);
     if (!post) {
-      return Response.json({ error: "Post not found" }, { status: 404 });
+      return c.json({ error: "Post not found" }, 404);
     }
-    return Response.json(post);
-  },
-
-  PUT: async (req, { params }) => {
-    const idx = posts.findIndex((p) => p.id === params.id);
+    return c.json(post);
+  })
+  .put("/api/posts/:id", async (c) => {
+    const id = c.req.param("id");
+    const idx = posts.findIndex((p) => p.id === id);
     if (idx === -1) {
-      return Response.json({ error: "Post not found" }, { status: 404 });
+      return c.json({ error: "Post not found" }, 404);
     }
 
-    const { title, body } = (await req.json()) as {
+    const { title, body } = await c.req.json<{
       title?: string;
       body?: string;
-    };
+    }>();
     if (title) posts[idx].title = title;
     if (body) posts[idx].body = body;
 
-    return Response.json(posts[idx]);
-  },
-
-  DELETE: async (_req, { params }) => {
-    const idx = posts.findIndex((p) => p.id === params.id);
+    return c.json(posts[idx]);
+  })
+  .delete("/api/posts/:id", (c) => {
+    const id = c.req.param("id");
+    const idx = posts.findIndex((p) => p.id === id);
     if (idx === -1) {
-      return Response.json({ error: "Post not found" }, { status: 404 });
+      return c.json({ error: "Post not found" }, 404);
     }
     posts.splice(idx, 1);
     return new Response(null, { status: 204 });
-  },
-});
+  });

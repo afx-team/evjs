@@ -2,79 +2,59 @@
 
 ## Overview
 
-evjs provides programmatic `route()` handlers for creating standard Request/Response REST APIs. Rather than automagical `"use server"` RPC wrappers, route handlers give you full control over HTTP methods, headers, and standard Web `Request`/`Response` objects.
+evjs allows creating programmatic REST APIs using native Hono instances. Rather than automagical `"use server"` RPC wrappers, these handlers give you full control over HTTP methods, headers, and standard Web `Request`/`Response` objects—while maintaining **100% end-to-end type safety** via Hono's `hc` client.
 
 ## Usage
 
-Server routes are defined using the `route(path, definition)` factory from `@evjs/server`. You can then mount these routes using `createApp({ routeHandlers: [...] })`.
+Server routes are defined by creating standard `Hono` instances. You can then mount these routes using `createApp().route('/path', subApp)`.
 
 ```ts
 // src/api/posts.routes.ts
-import { route } from "@evjs/server";
+import { Hono } from "hono";
 
-export const postsRoute = route("/api/posts", {
-  GET: async (req, ctx) => {
-    return ctx.json([{ id: 1, title: "Hello World" }]);
-  },
-  POST: async (req, ctx) => {
-    const data = await req.json();
-    return ctx.json({ success: true, data }, 201);
-  }
-});
+export const postsApp = new Hono()
+  .get("/api/posts", async (c) => {
+    return c.json([{ id: 1, title: "Hello World" }]);
+  })
+  .post("/api/posts", async (c) => {
+    const data = await c.req.json<{ title: string }>();
+    return c.json({ success: true, data }, 201);
+  });
 ```
 
 ### Path Parameters & Dynamic Routes
 
-Dynamic path parameters are defined using the standard Hono syntax (e.g., `/:id`).
+Dynamic path parameters use the standard Hono syntax (`/:id`).
 
 ```ts
-export const postDetailsRoute = route("/api/posts/:id", {
-  GET: async (req, ctx) => {
-    const id = ctx.req.param("id");
-    return ctx.json({ id, title: "Post Details" });
-  }
-});
+export const postDetailsApp = new Hono()
+  .get("/api/posts/:id", async (c) => {
+    const id = c.req.param("id");
+    return c.json({ id, title: "Post Details" });
+  });
 ```
 
 ### Context & Middleware Chaining
 
-Route handlers receive the standard Web `Request` and a `RouteContext` which implements Hono's Context API.
-You can chain middleware seamlessly using arrays of handlers. If a middleware handler returns `null`, the chain proceeds to the next handler.
+Since these are native Hono apps, you can use any standard Hono middleware (e.g., `hono/cors`, `hono/logger`, or custom middleware) directly on your instances.
 
-```ts
-import { route } from "@evjs/server";
+## Configuration & Type Safety
 
-// Simple middleware
-const requireAuth = async (req, ctx) => {
-  const auth = req.headers.get("Authorization");
-  if (!auth) return ctx.json({ error: "Unauthorized" }, 401);
-  return null; // Return null to continue to the next handler
-};
-
-export const protectedRoute = route("/api/protected", {
-  GET: [
-    requireAuth,
-    async (req, ctx) => {
-      return ctx.json({ secret: "data" });
-    }
-  ]
-});
-```
-
-## Configuration
-
-To serve your routes, you must provide a server entry point that explicitly exports your app.
+To reap the benefits of `evjs`'s end-to-end type safety, you must structure your sub-apps correctly in a central `server.ts` entry file, then generate an `AppType`.
 
 ### 1. Build the App Server
 
 ```ts
 // src/server.ts
 import { createApp } from "@evjs/server";
-import { postsRoute, postDetailsRoute } from "./api/posts.routes";
+import { postsApp, postDetailsApp } from "./api/posts.routes";
 
-export const app = createApp({
-  routeHandlers: [postsRoute, postDetailsRoute]
-});
+// Mount the sub-apps and export the combined Type
+export const app = createApp()
+  .route("/", postsApp)
+  .route("/", postDetailsApp);
+
+export type AppType = typeof app;
 ```
 
 ### 2. Configure `ev.config.ts`
@@ -92,5 +72,22 @@ export default defineConfig({
 });
 ```
 
+### 3. Fetch Data Safely in React
+
+On the frontend, use the `hc` (Hono Client) and pass it your `AppType`. This gives you flawless autocomplete and type-checking across the network boundary!
+
+```tsx
+import { hc } from "hono/client";
+import type { AppType } from "./server";
+
+const client = hc<AppType>("/");
+
+async function fetchPosts() {
+  const res = await client.api.posts.$get();
+  const data = await res.json();
+  console.log(data); // Fully typed!
+}
+```
+
 > [!NOTE]
-> If you combine `routeHandlers` with `"use server"` Server Functions, `createApp()` will automatically handle **both**. The `routeHandlers` are mounted first, and the framework fallback handles your RPC POST requests at `/api/fn`.
+> If you combine programmatic Hono mounts with `"use server"` Server Functions, `createApp()` handles **both automatically**. Your programmatic routes are mounted first, and the framework fallback handles your RPC POST requests at `/api/fn`.

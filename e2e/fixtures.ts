@@ -8,7 +8,7 @@
  * 4. Tears everything down after tests complete
  */
 
-import { execSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -52,11 +52,7 @@ export function createExampleTest(exampleName: string) {
         const apiPort = 30000 + workerInfo.workerIndex * 100 + (hash % 100);
         const webPort = apiPort + 1;
 
-        // 1. Build with webpack
-        execSync("npx ev build", {
-          cwd: exampleDir,
-          stdio: "pipe",
-        });
+        // 1. (Skipped) Build is handled by turbo build at the root.
 
         // 2. Read the server manifest to get the hashed entry filename
         const manifestPath = path.join(exampleDir, "dist", "manifest.json");
