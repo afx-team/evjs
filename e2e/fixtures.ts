@@ -185,3 +185,77 @@ export function createExampleTest(exampleName: string) {
     },
   });
 }
+
+/**
+ * Create a test fixture for a CSR-only example (no server functions).
+ *
+ * Only serves static files from dist/client/ — no API server is started.
+ */
+export function createCsrExampleTest(exampleName: string) {
+  const exampleDir = path.resolve(
+    import.meta.dirname,
+    "..",
+    "examples",
+    exampleName,
+  );
+
+  return base.extend<ExampleFixture, WorkerFixture>({
+    _exampleApp: [
+      // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture pattern
+      async ({}, use, workerInfo) => {
+        const hash = Array.from(exampleName).reduce(
+          (sum, char) => sum + char.charCodeAt(0),
+          0,
+        );
+        const webPort = 30000 + workerInfo.workerIndex * 100 + (hash % 100) + 1;
+
+        const distDir = path.join(exampleDir, "dist", "client");
+        const indexHtml = fs.readFileSync(
+          path.join(distDir, "index.html"),
+          "utf-8",
+        );
+
+        const staticServer = http.createServer((req, res) => {
+          const url = req.url || "/";
+
+          if (url === "/" || url === "/index.html") {
+            res.writeHead(200, { "Content-Type": "text/html" });
+            res.end(indexHtml);
+            return;
+          }
+
+          const filePath = path.join(distDir, url);
+          if (fs.existsSync(filePath)) {
+            const ext = path.extname(filePath);
+            const contentType =
+              ext === ".js"
+                ? "application/javascript"
+                : ext === ".css"
+                  ? "text/css"
+                  : ext === ".map"
+                    ? "application/json"
+                    : "text/plain";
+            res.writeHead(200, { "Content-Type": contentType });
+            fs.createReadStream(filePath).pipe(res);
+          } else {
+            // SPA fallback
+            res.writeHead(200, { "Content-Type": "text/html" });
+            res.end(indexHtml);
+          }
+        });
+
+        await new Promise<void>((resolve) => {
+          staticServer.listen(webPort, resolve);
+        });
+
+        await use({ webPort, apiPort: 0 });
+
+        staticServer.close();
+      },
+      { scope: "worker" },
+    ],
+    baseURL: async ({ _exampleApp }, use) => {
+      await use(`http://localhost:${_exampleApp.webPort}`);
+    },
+  });
+}
