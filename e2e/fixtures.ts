@@ -41,7 +41,7 @@ export function createExampleTest(exampleName: string) {
 
   return base.extend<ExampleFixture, WorkerFixture>({
     _exampleApp: [
-      // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture pattern
+      // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture API requires object destructuring
       async ({}, use, workerInfo) => {
         // Base port depends on both worker index and a hash of the example name
         // to avoid conflicts if multiple worker fixtures run sequentially.
@@ -201,7 +201,7 @@ export function createCsrExampleTest(exampleName: string) {
 
   return base.extend<ExampleFixture, WorkerFixture>({
     _exampleApp: [
-      // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture pattern
+      // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture API requires object destructuring
       async ({}, use, workerInfo) => {
         const hash = Array.from(exampleName).reduce(
           (sum, char) => sum + char.charCodeAt(0),

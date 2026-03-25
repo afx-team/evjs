@@ -12,7 +12,7 @@ const exampleDir = path.resolve(
 
 const test = base.extend<{ baseURL: string }, { _app: { port: number } }>({
   _app: [
-    // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture pattern
+    // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture API requires object destructuring
     async ({}, use, workerInfo) => {
       const port = 31000 + workerInfo.workerIndex;
 

@@ -170,12 +170,14 @@ export async function __fn_call(
   return getTransport().send(fnId, args, context);
 }
 
+/** Minimal callable shape for server function stubs. */
+type AnyFn = (...args: never[]) => unknown;
+
 /**
  * Internal registry mapping server function references to their IDs.
  * Uses WeakMap so function stubs can be garbage collected.
  */
-// biome-ignore lint/complexity/noBannedTypes: must accept any function shape as WeakMap key
-const fnIdRegistry = new WeakMap<Function, string>();
+const fnIdRegistry = new WeakMap<AnyFn, string>();
 
 /**
  * Internal registry mapping function IDs to human-readable export names.
@@ -196,8 +198,7 @@ export function getFnName(fnId: string): string {
  * @internal Called by build-tools codegen. Do not use directly.
  */
 export function __fn_register(
-  // biome-ignore lint/complexity/noBannedTypes: must accept any function shape for registry
-  fn: Function,
+  fn: AnyFn,
   fnId: string,
   exportName?: string,
 ): void {
@@ -211,8 +212,7 @@ export function __fn_register(
  * Look up the internal function ID for a server function stub.
  * Returns undefined if the function is not a registered server function.
  */
-// biome-ignore lint/complexity/noBannedTypes: must accept any function shape for lookup
-export function getFnId(fn: Function): string | undefined {
+export function getFnId(fn: AnyFn): string | undefined {
   return fnIdRegistry.get(fn);
 }
 

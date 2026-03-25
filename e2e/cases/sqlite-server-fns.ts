@@ -50,14 +50,15 @@ test.describe("sqlite-server-fns", () => {
       page.getByRole("cell", { name: "Alice", exact: true }),
     ).toBeVisible({ timeout: 10_000 });
 
-    // Fill the create user form
-    await page.fill('[placeholder="Name"]', "E2E User");
+    // Use unique name per run to avoid conflicts with persistent DB
+    const uniqueName = `User ${Date.now()}`;
+    await page.fill('[placeholder="Name"]', uniqueName);
     await page.fill('[placeholder="Email"]', `e2e-${Date.now()}@example.com`);
     await page.click('button[type="submit"]');
 
     // Verify new user appears
     await expect(
-      page.getByRole("cell", { name: "E2E User", exact: true }),
+      page.getByRole("cell", { name: uniqueName, exact: true }).first(),
     ).toBeVisible({ timeout: 5_000 });
   });
 

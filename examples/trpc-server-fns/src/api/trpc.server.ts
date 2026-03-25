@@ -7,8 +7,7 @@ import { appRouter } from "../trpc";
  * This demonstrates how to combine tRPC's type-safety with
  * @evjs's RPC infrastructure.
  */
-// biome-ignore lint/suspicious/noExplicitAny: request body
-export async function trpcHandler(reqBody: any) {
+export async function trpcHandler(reqBody: unknown) {
   // We simulate a fetch request for tRPC
   const url = new URL("http://localhost/trpc");
 
