@@ -10,8 +10,8 @@ export type {
   ClientConfig,
   EvConfig,
   EvLoaderEntry,
+  EvModuleRule,
   EvPlugin,
-  EvPluginLoader,
   ServerConfig,
 } from "./config.js";
 export { CONFIG_DEFAULTS, defineConfig } from "./config.js";

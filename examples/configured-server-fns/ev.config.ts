@@ -18,12 +18,14 @@ export default defineConfig({
     plugins: [
       {
         name: "example-txt-plugin",
-        loaders: [
-          {
-            test: /\.txt$/,
-            use: "raw-loader",
-          },
-        ],
+        module: {
+          rules: [
+            {
+              test: /\.txt$/,
+              use: "raw-loader",
+            },
+          ],
+        },
       },
     ],
 

@@ -84,10 +84,10 @@ export function createWebpackConfig(
             },
           ],
         },
-        // Plugin-declared loaders (client + server)
+        // Plugin-declared module rules (client + server)
         ...[...(client?.plugins ?? []), ...(server?.plugins ?? [])].flatMap(
           (plugin) =>
-            (plugin.loaders ?? []).map((rule) => {
+            (plugin.module?.rules ?? []).map((rule) => {
               const entries = Array.isArray(rule.use) ? rule.use : [rule.use];
               return {
                 test: rule.test,

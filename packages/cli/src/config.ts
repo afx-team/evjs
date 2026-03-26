@@ -63,8 +63,8 @@ export type EvLoaderEntry =
   | string
   | { loader: string; options?: Record<string, unknown> };
 
-/** A loader rule declared by a plugin. */
-export interface EvPluginLoader {
+/** A module rule declared by a plugin. */
+export interface EvModuleRule {
   /** File matching pattern (e.g. /\.css$/, /\.svg$/). */
   test: RegExp;
   /** Pattern to exclude (e.g. /node_modules/). */
@@ -77,8 +77,11 @@ export interface EvPluginLoader {
 export interface EvPlugin {
   /** Plugin name for debugging and logging. */
   name: string;
-  /** Loaders to add to the build pipeline. */
-  loaders?: EvPluginLoader[];
+  /** Plugin's module configuration. */
+  module?: {
+    /** Module rules to add to the build pipeline. */
+    rules?: EvModuleRule[];
+  };
 }
 
 /**
