@@ -65,9 +65,9 @@ DX improvements: unified CLI and zero-config builds.
 
 Extensibility and richer build output.
 
-- [x] Plugin loaders system (`client.plugins` / `server.plugins`)
-  - [x] `EvPlugin` interface with `name` + `loaders`
-  - [x] `EvPluginLoader` with `test`, `exclude`, `use` (string or `{ loader, options }`)
+- [x] Plugin module rules system (`client.plugins` / `server.plugins`)
+  - [x] `EvPlugin` interface with `name` + `module.rules`
+  - [x] `EvModuleRule` with `test`, `exclude`, `use` (string or `{ loader, options }`)
   - [x] Tailwind CSS example (`with-tailwind`) using `postcss-loader`
 - [x] Manifest client section
   - [x] `client.assets: { js, css }` — bundle asset paths

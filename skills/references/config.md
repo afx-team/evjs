@@ -36,9 +36,11 @@ export default defineConfig({
     plugins: [
       {
         name: "tailwind",
-        loaders: [
-          { test: /\.css$/, use: ["style-loader", "css-loader", "postcss-loader"] },
-        ],
+        module: {
+          rules: [
+            { test: /\.css$/, use: ["style-loader", "css-loader", "postcss-loader"] },
+          ],
+        },
       },
     ],
 
@@ -85,17 +87,19 @@ Path to the HTML template. Must contain a mount element (e.g. `<div id="app">`).
 
 ### `client.plugins`
 
-Array of `EvPlugin` objects that extend the build pipeline. Each plugin can declare loaders.
+Array of `EvPlugin` objects that extend the build pipeline. Each plugin can declare module rules.
 
 #### Plugin Interface
 
 ```ts
 interface EvPlugin {
   name: string;
-  loaders?: EvPluginLoader[];
+  module?: {
+    rules?: EvModuleRule[];
+  };
 }
 
-interface EvPluginLoader {
+interface EvModuleRule {
   test: RegExp;          // File matching pattern
   exclude?: RegExp;      // Pattern to exclude
   use: EvLoaderEntry | EvLoaderEntry[];
@@ -111,29 +115,29 @@ type EvLoaderEntry =
 
 ```ts
 // Simple loader
-{ name: "css", loaders: [{ test: /\.css$/, use: "css-loader" }] }
+{ name: "css", module: { rules: [{ test: /\.css$/, use: "css-loader" }] } }
 
 // Loader chain
-{ name: "tailwind", loaders: [{
+{ name: "tailwind", module: { rules: [{
   test: /\.css$/,
   use: ["style-loader", "css-loader", "postcss-loader"],
-}]}
+}]}}
 
 // Per-loader options
-{ name: "css-modules", loaders: [{
+{ name: "css-modules", module: { rules: [{
   test: /\.module\.css$/,
   use: [
     "style-loader",
     { loader: "css-loader", options: { modules: true } },
   ],
-}]}
+}]}}
 
 // With exclude
-{ name: "svg", loaders: [{
+{ name: "svg", module: { rules: [{
   test: /\.svg$/,
   exclude: /node_modules/,
   use: "@svgr/webpack",
-}]}
+}]}}
 ```
 
 ### `client.dev`
@@ -168,7 +172,7 @@ The runtime command used to start the server. Supports:
 
 ### `server.plugins`
 
-Same `EvPlugin` interface as `client.plugins`. Server-side plugin loaders are applied to the server bundle.
+Same `EvPlugin` interface as `client.plugins`. Server-side plugin module rules are applied to the server bundle.
 
 ### `server.dev`
 
@@ -199,10 +203,12 @@ export default defineConfig({
   client: {
     plugins: [{
       name: "tailwind",
-      loaders: [{
-        test: /\.css$/,
-        use: ["style-loader", "css-loader", "postcss-loader"],
-      }],
+      module: {
+        rules: [{
+          test: /\.css$/,
+          use: ["style-loader", "css-loader", "postcss-loader"],
+        }],
+      },
     }],
   },
 });

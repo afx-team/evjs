@@ -45,10 +45,10 @@
 ev.config.ts ──► defineConfig({ client, server })
                     │
                     ├── client.entry, client.html ──► webpack entry + HtmlPlugin
-                    ├── client.plugins ──► EvPlugin[] (custom loaders, e.g. Tailwind)
+                    ├── client.plugins ──► EvPlugin[] (custom module rules, e.g. Tailwind)
                     ├── client.dev.port ──► WebpackDevServer port
                     ├── server.functions.endpoint ──► EvWebpackPlugin + proxy path
-                    ├── server.plugins ──► EvPlugin[] (server bundle loaders)
+                    ├── server.plugins ──► EvPlugin[] (server bundle module rules)
                     ├── server.dev.port ──► API server port
                     └── server.dev.https ──► HTTPS for API server
                     │

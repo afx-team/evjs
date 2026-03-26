@@ -50,7 +50,7 @@ export default defineConfig({
   client: {
     entry: "./src/main.tsx",
     html: "./index.html",
-    plugins: [{ name: "tailwind", loaders: [{ test: /\.css$/, use: ["style-loader", "css-loader", "postcss-loader"] }] }],
+    plugins: [{ name: "tailwind", module: { rules: [{ test: /\.css$/, use: ["style-loader", "css-loader", "postcss-loader"] }] } }],
     dev: { port: 3000 },
   },
   server: {
