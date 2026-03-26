@@ -40,9 +40,7 @@ app.use("/*", serveStatic({ root: "./dist/client" }));
 app.get("*", serveStatic({ path: "./dist/client/index.html" }));
 
 // 4. Start the Node HTTP server
-serve(app, { port: process.env.PORT || 3000 }, (info) => {
-  console.log(`Listening on http://localhost:${info.port}`);
-});
+serve(app, { port: process.env.PORT || 3000 });
 ```
 
 3. **Run** the server: `node server.mjs`
@@ -109,6 +107,5 @@ Deno.serve({ port: 3000 }, app.fetch);
 Run with `deno run --allow-net --allow-read server.ts`.
 
 ## Environment Variables
-During the `ev build` phase, environment variables are securely divided:
-- Variables starting with `VITE_` or `NEXT_PUBLIC_` (if explicitly configured) are bundled into the client via Webpack `DefinePlugin`.
-- Server secrets (e.g., `DATABASE_URL`) **remain safe** and evaluate at runtime on the server. Ensure they are injected into your Node/Docker environment before starting the app.
+
+Server secrets (e.g., `DATABASE_URL`) are safe — they only evaluate at runtime on the server. Ensure they are injected into your Node/Docker environment before starting the app.

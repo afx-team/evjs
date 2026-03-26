@@ -90,7 +90,7 @@ declare module "@tanstack/react-router" {
     "@evjs/cli": "*",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "typescript": "^5.7.0"
+    "typescript": "^6.0.2"
   }
 }
 ```

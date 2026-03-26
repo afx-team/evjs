@@ -26,7 +26,7 @@ dist/
 ```ts
 // start.js
 const bundle = require("./dist/server/server.js");
-const app = bundle.createApp({ endpoint: "/api/fn" });
+const app = bundle.createApp(); // uses DEFAULT_ENDPOINT from @evjs/shared
 
 const { serve } = require("@evjs/server/node");
 serve(app, { port: 3001 });
@@ -36,7 +36,7 @@ For ECMA-based runtimes (Deno, Bun):
 
 ```ts
 import { createFetchHandler } from "@evjs/server/ecma";
-const app = bundle.createApp({ endpoint: "/api/fn" });
+const app = bundle.createApp();
 export default createFetchHandler(app);
 ```
 

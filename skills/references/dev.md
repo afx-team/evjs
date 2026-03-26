@@ -31,20 +31,17 @@ export default defineConfig({
     html: "./index.html",        // Default
     dev: {
       port: 3000,               // WDS port
-      open: true,               // Open browser
       https: false,             // HTTPS mode
-      historyApiFallback: true, // SPA routing
-    },
-    transport: {
-      baseUrl: "http://localhost:3001",
-      endpoint: "/api/fn",
     },
   },
   server: {
-    endpoint: "/api/fn",         // Default
+    functions: {
+      endpoint: "/api/fn",       // Default
+    },
     backend: "node",             // Or "bun", "deno", etc.
     dev: {
       port: 3001,               // API port
+      https: false,             // HTTPS for API server
     },
   },
 });
@@ -61,6 +58,20 @@ The `server.backend` field supports any executable:
 > The ECMA environment adapter (`@evjs/server/ecma`) only exports a `{ fetch }` handler — it does **not** start a listening server. It is designed for production deployment targets like Deno or Bun's native serve API.
 >
 > For `ev dev`, you **must** use a backend that can start a listening HTTP server (default: `"node"`). If your production target is ECMA-based, keep the default `"node"` backend for development.
+
+## Programmatic API
+
+`ev dev` and `ev build` can also be used programmatically:
+
+```ts
+import { dev, build } from "@evjs/cli";
+
+// Start dev server with custom config
+await dev({ server: { dev: { port: 4001 } } }, { cwd: "./my-app" });
+
+// Run production build
+await build({ client: { entry: "./src/app.tsx" } }, { cwd: "./my-app" });
+```
 
 ## Transport & `initTransport`
 

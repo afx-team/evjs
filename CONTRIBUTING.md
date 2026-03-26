@@ -88,8 +88,8 @@ npx biome check --write    # Fix lint/format
 
 ### `ev build` Flow
 
-1. `resolveWebpackConfig(cwd)` — loads `ev.config.ts` or uses convention-based defaults
-2. `createWebpackConfig(evjsConfig)` — generates webpack config object (no temp files)
+1. `loadConfig(cwd)` — loads `ev.config.ts` or returns undefined for convention-based defaults
+2. `createWebpackConfig(config, cwd)` — generates webpack config object (no temp files)
 3. Calls `webpack()` Node API directly
 4. `@evjs/webpack-plugin` runs as a webpack plugin:
    - Discovers `*.server.ts` files via glob
@@ -103,7 +103,7 @@ npx biome check --write    # Fix lint/format
 2. Starts `WebpackDevServer` for client
 3. Uses `compiler.hooks.done` to detect server bundle
 4. Auto-starts Node API server via `@evjs/server/node`
-5. Sets up proxy: `devServer.proxy["/api/fn"] → localhost:3001`
+5. Sets up proxy: `devServer.proxy["/api"] → localhost:3001`
 
 ## Agent Skills
 

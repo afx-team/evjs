@@ -6,7 +6,7 @@
 
 | Package | Path | Key Files |
 |---------|------|-----------|
-| `@evjs/cli` | `packages/cli` | `src/index.ts` (CLI entry), `src/config.ts` (EvConfig types + defineConfig), `src/create-webpack-config.ts`, `src/load-config.ts` |
+| `@evjs/cli` | `packages/cli` | `src/cli.ts` (CLI entry), `src/index.ts` (programmatic API: `dev`, `build`), `src/config.ts` (EvConfig types + defineConfig), `src/create-webpack-config.ts`, `src/load-config.ts` |
 | `@evjs/create-app` | `packages/create-app` | `src/index.ts` (scaffolding logic) |
 | `@evjs/shared` | `packages/shared` | `src/errors.ts` (ServerError, ServerFunctionError), `src/constants.ts`, `src/http.ts` |
 | `@evjs/client` | `packages/client` | `src/query.ts` (useQuery, serverFn), `src/transport.ts` (__fn_call, initTransport), `src/route.ts`, `src/context.ts` |
@@ -33,7 +33,7 @@
 | API | Package | Purpose |
 |-----|---------|---------|
 | `createApp({ routeTree })` | `@evjs/client` | Client-side app factory (Router + QueryClient + DOM mount) |
-| `createApp({ endpoint, routeHandlers })` | `@evjs/server` | Server app factory (Hono + server function handler) |
+| `createApp({ routeHandlers })` | `@evjs/server` | Server app factory (Hono + server function handler) |
 | `useQuery(fn, ...args)` | `@evjs/client` | Type-safe query hook accepting server functions directly |
 | `serverFn(fn, ...args)` | `@evjs/client` | Convert server function to `{ queryKey, queryFn }` for loaders/prefetch |
 | `route(path, definition)` | `@evjs/server` | Programmatic REST route handler |
