@@ -18,7 +18,11 @@ const config: Config = {
 
   i18n: {
     defaultLocale: "en",
-    locales: ["en"],
+    locales: ["en", "zh-Hans"],
+    localeConfigs: {
+      en: { label: "English" },
+      "zh-Hans": { label: "简体中文" },
+    },
   },
 
   markdown: {
@@ -62,6 +66,10 @@ const config: Config = {
         {
           href: "https://github.com/evaijs/evjs",
           label: "GitHub",
+          position: "right",
+        },
+        {
+          type: "localeDropdown",
           position: "right",
         },
       ],

@@ -1,0 +1,144 @@
+# 服务端函数
+
+服务端函数允许你在 `.server.ts` 文件中编写后端逻辑，并在 React 组件中像调用本地函数一样调用它们。构建系统会自动将它们转换为 RPC 调用。
+
+## 基本用法
+
+```ts
+// src/api/users.server.ts
+"use server";
+
+export async function getUsers() {
+  return await db.users.findMany();
+}
+
+export async function createUser(name: string, email: string) {
+  return await db.users.create({ data: { name, email } });
+}
+```
+
+### 规则
+
+- 文件必须以 `"use server";` 指令开头
+- 只有 **命名的异步函数导出** 会被转换
+- 使用 `.server.ts` 扩展名或放在 `src/api/` 目录下
+- 不支持默认导出 —— 只支持命名导出
+
+## 查询模式
+
+evjs 提供类型安全的 `useQuery` 和 `useSuspenseQuery`，可直接接受服务端函数：
+
+### 直接使用（推荐）
+
+```tsx
+import {
+  useQuery,
+  useSuspenseQuery,
+  useMutation,
+  useQueryClient,
+  serverFn,
+} from "@evjs/client";
+import { getUsers, getUser, createUser } from "../api/users.server";
+
+// 查询 —— 直接传入服务端函数，类型自动推导
+const { data: users } = useQuery(getUsers);               // data: User[]
+const { data: user } = useQuery(getUser, userId);          // data: User
+const { data } = useSuspenseQuery(getUsers);               // data: User[]（保证有值）
+
+// 变更 —— 使用原始 TanStack useMutation
+const queryClient = useQueryClient();
+const { mutate } = useMutation({
+  mutationFn: createUser,
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: serverFn(getUsers).queryKey });
+  },
+});
+
+// 路由加载器 / 预取 —— 使用 serverFn()
+loader: ({ context }) =>
+  context.queryClient.ensureQueryData(serverFn(getUsers));
+```
+
+## 传输配置
+
+### HTTP（默认）
+
+```tsx
+import { initTransport } from "@evjs/client";
+initTransport({ endpoint: "/api/fn" });
+```
+
+### WebSocket
+
+```tsx
+import { WebSocketTransport, initTransport } from "@evjs/client";
+initTransport({
+  transport: new WebSocketTransport("ws://localhost:3001/ws"),
+});
+```
+
+## 错误处理
+
+### 服务端
+
+抛出带状态码和数据的结构化错误：
+
+```ts
+import { ServerError } from "@evjs/server";
+
+export async function getUser(id: string) {
+  const user = await db.users.findById(id);
+  if (!user) {
+    throw new ServerError("用户未找到", {
+      status: 404,
+      data: { id },
+    });
+  }
+  return user;
+}
+```
+
+### 客户端
+
+捕获类型化错误：
+
+```tsx
+import { ServerFunctionError } from "@evjs/client";
+
+try {
+  const user = await getUser("123");
+} catch (e) {
+  if (e instanceof ServerFunctionError) {
+    console.log(e.message);  // "用户未找到"
+    console.log(e.status);   // 404
+    console.log(e.data);     // { id: "123" }
+  }
+}
+```
+
+## 构建管道
+
+在构建时，`"use server"` 指令触发两个独立的转换：
+
+```mermaid
+flowchart TD
+    SRC[".server.ts 文件"] --> DETECT{"检测到 'use server'？"}
+    DETECT -->|是| CLIENT["客户端转换"]
+    DETECT -->|是| SERVER["服务端转换"]
+    DETECT -->|否| SKIP["跳过（普通模块）"]
+
+    CLIENT --> STUBS["__fn_call(fnId, args) 桩代码"]
+    SERVER --> REGISTER["registerServerFn(fnId, fn)"]
+    SERVER --> MANIFEST["manifest.json 条目"]
+```
+
+## 要点总结
+
+| 模式 | 用法 |
+|------|------|
+| 查询 | `useQuery(fn, ...args)` |
+| Suspense 查询 | `useSuspenseQuery(fn, ...args)` |
+| 加载器 / 预取 | `serverFn(fn, ...args)` → `{ queryKey, queryFn }` |
+| 缓存失效 | `serverFn(fn).queryKey` |
+| 参数传递 | 展开传入：`useQuery(getUser, id)` 而不是 `useQuery(getUser, [id])` |
+| 服务端错误 | 服务端 `ServerError` → 客户端 `ServerFunctionError` |
