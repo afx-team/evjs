@@ -20,7 +20,7 @@ Call server-side logic from the browser as normal async functions.
 - Hono-based server with multi-runtime adapters
 - Versioned manifest schema (`manifest.json` v1)
 
-## ✅ Stage 3 — Zero-Config Meta-Framework
+## ✅ Stage 3 — Zero-Config Fullstack Framework
 
 - Zero-config `ev build` / `ev dev` — no `webpack.config.cjs` needed
 - `ev.config.ts` with `defineConfig()` for optional customization

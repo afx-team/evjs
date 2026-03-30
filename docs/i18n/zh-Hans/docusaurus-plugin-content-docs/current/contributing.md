@@ -4,7 +4,7 @@
 
 ## 项目信息
 
-- **名称**：evjs（元框架），`@evjs/*`（包范围）
+- **名称**：evjs（全栈框架），`@evjs/*`（包范围）
 - **仓库**：[evaijs/evjs](https://github.com/evaijs/evjs)
 - **CLI 命令**：`ev`（来自 `@evjs/cli` 的二进制文件）
 - **Linter**：Biome（`npx biome check --write`）

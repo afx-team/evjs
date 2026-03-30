@@ -1,6 +1,6 @@
 ---
 name: evjs
-description: React meta-framework with type-safe routing, data fetching, and server functions.
+description: React fullstack framework with type-safe routing, data fetching, and server functions.
 ---
 
 # evjs Agent Skill
@@ -9,7 +9,7 @@ Use this skill when developing applications with the evjs framework.
 
 ## Overview
 
-evjs is a React meta-framework built on TanStack Router, TanStack Query, and Hono. It provides:
+evjs is a React fullstack framework built on TanStack Router, TanStack Query, and Hono. It provides:
 
 - **Server Functions** — write backend logic in files (we recommend using the `.server.ts` suffix), call from React as if local
 - **Server Routes** — build programmatic REST endpoints and APIs using the `route()` handler

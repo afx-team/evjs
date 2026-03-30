@@ -2,7 +2,7 @@
 
 ## Overview
 
-`evjs` is a React meta-framework with type-safe routing (TanStack Router), data fetching (TanStack Query), and server functions (`"use server"`). It uses a Hono-based API server and is designed to be bundler-agnostic.
+`evjs` is a React fullstack framework with type-safe routing (TanStack Router), data fetching (TanStack Query), and server functions (`"use server"`). It uses a Hono-based API server and is designed to be bundler-agnostic.
 
 ```
 ┌─────────────────────────── Build Time ───────────────────────────┐

@@ -20,7 +20,7 @@
 - 基于 Hono 的多运行时适配器服务器
 - 版本化的 manifest schema（`manifest.json` v1）
 
-## ✅ 阶段 3 —— 零配置元框架
+## ✅ 阶段 3 —— 零配置全栈框架
 
 - 零配置 `ev build` / `ev dev` —— 无需 `webpack.config.cjs`
 - `ev.config.ts` + `defineConfig()` 可选自定义

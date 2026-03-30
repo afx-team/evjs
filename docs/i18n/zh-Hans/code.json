@@ -1,6 +1,6 @@
 {
   "homepage.tagline": {
-    "message": "基于 TanStack + Hono 构建的 React 元框架",
+    "message": "基于 TanStack + Hono 构建的 React 全栈框架",
     "description": "The tagline on the homepage hero"
   },
   "homepage.getStarted": {

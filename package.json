@@ -2,7 +2,7 @@
   "name": "ev-react-framework",
   "type": "module",
   "version": "0.0.0",
-  "description": "React meta-framework built on TanStack + Hono",
+  "description": "React fullstack framework built on TanStack + Hono",
   "private": true,
   "packageManager": "npm@11.6.2",
   "workspaces": [

@@ -2,7 +2,7 @@
 
 ## 概述
 
-evjs 是一个 React 元框架，具有类型安全路由（TanStack Router）、数据获取（TanStack Query）和服务端函数（`"use server"`）。它使用基于 Hono 的 API 服务器，并且设计为与打包器无关。
+evjs 是一个 React 全栈框架，具有类型安全路由（TanStack Router）、数据获取（TanStack Query）和服务端函数（`"use server"`）。它使用基于 Hono 的 API 服务器，并且设计为与打包器无关。
 
 ## 构建时架构
 

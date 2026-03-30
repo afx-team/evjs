@@ -4,7 +4,7 @@
 
 ## Project Identity
 
-- **Name**: evjs (meta-framework), `@evjs/*` (package scope)
+- **Name**: evjs (fullstack framework), `@evjs/*` (package scope)
 - **Repository**: evaijs/evjs
 - **CLI command**: `ev` (binary from `@evjs/cli`)
 - **Linter**: Biome (`npx biome check --write`)

@@ -50,7 +50,7 @@ Call server-side logic from the browser as normal async functions.
   - [x] Reverse proxy in dev server (`/api/*` → API server)
   - [x] E2E tests with parallel execution and dynamic ports
 
-## ✅ Stage 3 — Zero-Config Meta-Framework
+## ✅ Stage 3 — Zero-Config Fullstack Framework
 
 DX improvements: unified CLI and zero-config builds.
 

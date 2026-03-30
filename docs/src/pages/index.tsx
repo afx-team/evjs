@@ -97,7 +97,7 @@ function HeroSection() {
         <h1 className={styles.heroTitle}>evjs</h1>
         <p className={styles.heroSubtitle}>
           <Translate id="homepage.tagline">
-            React meta-framework built on TanStack + Hono
+            React fullstack framework built on TanStack + Hono
           </Translate>
         </p>
         <div className={styles.heroButtons}>

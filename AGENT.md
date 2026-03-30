@@ -1,6 +1,6 @@
 # AGENT.md
 
-> Guide for AI coding agents working on the evjs meta-framework.
+> Guide for AI coding agents working on the evjs fullstack framework.
 
 ## Package Map
 

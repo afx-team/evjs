@@ -2,7 +2,7 @@
 
 > **ev** = **Ev**aluation · **Ev**olution — evaluate across runtimes, evolve with AI tooling.
 
-evjs is a zero-config React meta-framework built on [TanStack Router](https://tanstack.com/router), [TanStack Query](https://tanstack.com/query), and [Hono](https://hono.dev). It provides a seamless development experience for building type-safe, full-stack web applications.
+evjs is a zero-config React fullstack framework built on [TanStack Router](https://tanstack.com/router), [TanStack Query](https://tanstack.com/query), and [Hono](https://hono.dev). It provides a seamless development experience for building type-safe, full-stack web applications.
 
 ## Features
 
