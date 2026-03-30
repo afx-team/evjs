@@ -3,7 +3,7 @@ import {
   createRoute,
   Link,
   Outlet,
-  serverFn,
+  getFnQueryKey,
   useMutation,
   useQuery,
   useQueryClient,
@@ -51,7 +51,7 @@ function UsersPage() {
   const { mutateAsync: doCreateUser } = useMutation({
     mutationFn: createUser,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: serverFn(getUsers).queryKey });
+      queryClient.invalidateQueries({ queryKey: getFnQueryKey(getUsers) });
     },
   });
 

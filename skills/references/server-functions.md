@@ -33,7 +33,7 @@ evjs provides type-safe `useQuery` and `useSuspenseQuery` that accept server fun
 ### Direct usage (recommended)
 
 ```tsx
-import { useQuery, useSuspenseQuery, useMutation, useQueryClient, serverFn } from "@evjs/client";
+import { useQuery, useSuspenseQuery, useMutation, useQueryClient, getFnQueryKey, getFnQueryOptions } from "@evjs/client";
 import { getUsers, getUser, createUser } from "../api/users.server";
 
 // Queries — pass server functions directly, types are inferred
@@ -46,13 +46,13 @@ const queryClient = useQueryClient();
 const { mutate } = useMutation({
   mutationFn: createUser,
   onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: getUsers.queryKey() });
+    queryClient.invalidateQueries({ queryKey: getFnQueryKey(getUsers) });
   },
 });
 
-// Route loaders / prefetching — use serverFn()
+// Route loaders / prefetching — use getFnQueryOptions()
 loader: ({ context }) =>
-  context.queryClient.ensureQueryData(serverFn(getUsers));
+  context.queryClient.ensureQueryData(getFnQueryOptions(getUsers));
 ```
 
 ### Server function metadata
@@ -60,16 +60,16 @@ loader: ({ context }) =>
 Every registered server function stub carries these properties at runtime:
 
 ```ts
-getUsers.queryKey()         // → ["<fnId>"]
-getUsers.queryKey(someArg)  // → ["<fnId>", someArg]
+getFnQueryKey(getUsers)         // → ["<fnId>"]
+getFnQueryKey(getUsers, someArg)// → ["<fnId>", someArg]
 getUsers.fnId               // → "<hash>" (stable SHA-256)
 getUsers.fnName             // → "getUsers"
 ```
 
-- **`.queryKey(...args)`** — Build a TanStack Query key. Use for `invalidateQueries`, `setQueryData`, etc.
+- **`getFnQueryKey(fn, ...args)`** — Build a TanStack Query key. Use for `invalidateQueries`, `setQueryData`, etc.
 - **`.fnId`** — The stable internal function ID (read-only).
 - **`.fnName`** — The human-readable export name (read-only).
-- **`serverFn(fn, ...args)`** — Returns `{ queryKey, queryFn }` for loaders, prefetch, and `useInfiniteQuery`.
+- **`getFnQueryOptions(fn, ...args)`** — Returns `{ queryKey, queryFn }` for loaders, prefetch, and `useInfiniteQuery`.
 
 ### Raw fetch / non-server functions
 
@@ -114,8 +114,8 @@ if (e instanceof ServerFunctionError) {
 ## Key Points
 
 - Use `useQuery(fn, ...args)` for type-safe queries: `useQuery(getUsers)`
-- Use `fn.queryKey(...args)` for cache invalidation: `getUsers.queryKey()`
-- Use `serverFn(fn, ...args)` for loaders, prefetch, and `useInfiniteQuery`
+- Use `getFnQueryKey(fn, ...args)` for cache invalidation: `getFnQueryKey(getUsers)`
+- Use `getFnQueryOptions(fn, ...args)` for loaders, prefetch, and `useInfiniteQuery`
 - Arguments are spread: `useQuery(getUser, id)` not `useQuery(getUser, [id])`
 - `ServerError` on server → `ServerFunctionError` on client (with status + data)
 

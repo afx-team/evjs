@@ -36,7 +36,8 @@ import {
   useSuspenseQuery,
   useMutation,
   useQueryClient,
-  serverFn,
+  getFnQueryKey,
+  getFnQueryOptions,
 } from "@evjs/client";
 import { getUsers, getUser, createUser } from "../api/users.server";
 
@@ -50,13 +51,13 @@ const queryClient = useQueryClient();
 const { mutate } = useMutation({
   mutationFn: createUser,
   onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: getUsers.queryKey() });
+    queryClient.invalidateQueries({ queryKey: getFnQueryKey(getUsers) });
   },
 });
 
-// 路由加载器 / 预取 —— 使用 serverFn()
+// 路由加载器 / 预取 —— 使用 getFnQueryOptions()
 loader: ({ context }) =>
-  context.queryClient.ensureQueryData(serverFn(getUsers));
+  context.queryClient.ensureQueryData(getFnQueryOptions(getUsers));
 ```
 
 ### 服务端函数元信息
@@ -64,16 +65,16 @@ loader: ({ context }) =>
 每个注册的服务端函数桩在运行时携带以下属性：
 
 ```ts
-getUsers.queryKey()         // → ["<fnId>"]
-getUsers.queryKey(someArg)  // → ["<fnId>", someArg]
+getFnQueryKey(getUsers)         // → ["<fnId>"]
+getFnQueryKey(getUsers, someArg)// → ["<fnId>", someArg]
 getUsers.fnId               // → "<hash>"（稳定的 SHA-256）
 getUsers.fnName             // → "getUsers"
 ```
 
-- **`.queryKey(...args)`** — 构建 TanStack Query key。用于 `invalidateQueries`、`setQueryData` 等。
+- **`getFnQueryKey(fn, ...args)`** — 构建 TanStack Query key。用于 `invalidateQueries`、`setQueryData` 等。
 - **`.fnId`** — 稳定的内部函数 ID（只读）。
 - **`.fnName`** — 可读的导出名称（只读）。
-- **`serverFn(fn, ...args)`** — 返回 `{ queryKey, queryFn }`，用于加载器、预取和 `useInfiniteQuery`。
+- **`getFnQueryOptions(fn, ...args)`** — 返回 `{ queryKey, queryFn }`，用于加载器、预取和 `useInfiniteQuery`。
 
 ## 传输配置
 
@@ -154,8 +155,8 @@ flowchart TD
 |------|------|
 | 查询 | `useQuery(fn, ...args)` |
 | Suspense 查询 | `useSuspenseQuery(fn, ...args)` |
-| 缓存失效 | `fn.queryKey(...args)` |
-| 加载器 / 预取 | `serverFn(fn, ...args)` → `{ queryKey, queryFn }` |
+| 缓存失效 | `getFnQueryKey(fn, ...args)` |
+| 加载器 / 预取 | `getFnQueryOptions(fn, ...args)` → `{ queryKey, queryFn }` |
 | 函数元信息 | `fn.fnId`、`fn.fnName` |
 | 参数传递 | 展开传入：`useQuery(getUser, id)` 而不是 `useQuery(getUser, [id])` |
 | 服务端错误 | 服务端 `ServerError` → 客户端 `ServerFunctionError` |

@@ -99,7 +99,7 @@ export const userRoute = createRoute({
   path: "/users/$username",
   loader: ({ params, context }) =>
     context.queryClient.ensureQueryData(
-      serverFn(getUser, params.username),
+      getFnQueryOptions(getUser, params.username),
     ),
   component: UserProfile,
 });
@@ -139,7 +139,7 @@ export const postDetailRoute = createRoute({
   path: "$postId",
   loader: ({ params, context }) =>
     context.queryClient.ensureQueryData(
-      serverFn(getPost, params.postId),
+      getFnQueryOptions(getPost, params.postId),
     ),
   component: PostDetail,
 });
@@ -200,7 +200,7 @@ export const usersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/users",
   loader: ({ context }) =>
-    context.queryClient.ensureQueryData(serverFn(getUsers)),
+    context.queryClient.ensureQueryData(getFnQueryOptions(getUsers)),
   component: UsersPage,
 });
 ```

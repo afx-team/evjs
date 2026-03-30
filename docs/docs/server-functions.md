@@ -36,7 +36,8 @@ import {
   useSuspenseQuery,
   useMutation,
   useQueryClient,
-  serverFn,
+  getFnQueryKey,
+  getFnQueryOptions,
 } from "@evjs/client";
 import { getUsers, getUser, createUser } from "../api/users.server";
 
@@ -50,13 +51,13 @@ const queryClient = useQueryClient();
 const { mutate } = useMutation({
   mutationFn: createUser,
   onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: getUsers.queryKey() });
+    queryClient.invalidateQueries({ queryKey: getFnQueryKey(getUsers) });
   },
 });
 
-// Route loaders / prefetching — use serverFn()
+// Route loaders / prefetching — use getFnQueryOptions()
 loader: ({ context }) =>
-  context.queryClient.ensureQueryData(serverFn(getUsers));
+  context.queryClient.ensureQueryData(getFnQueryOptions(getUsers));
 ```
 
 ### Server Function Metadata
@@ -64,16 +65,16 @@ loader: ({ context }) =>
 Every registered server function stub carries these properties at runtime:
 
 ```ts
-getUsers.queryKey()         // → ["<fnId>"]
-getUsers.queryKey(someArg)  // → ["<fnId>", someArg]
+getFnQueryKey(getUsers)         // → ["<fnId>"]
+getFnQueryKey(getUsers, someArg)// → ["<fnId>", someArg]
 getUsers.fnId               // → "<hash>" (stable SHA-256)
 getUsers.fnName             // → "getUsers"
 ```
 
-- **`.queryKey(...args)`** — Build a TanStack Query key. Use for `invalidateQueries`, `setQueryData`, etc.
+- **`getFnQueryKey(fn, ...args)`** — Build a TanStack Query key. Use for `invalidateQueries`, `setQueryData`, etc.
 - **`.fnId`** — The stable internal function ID (read-only).
 - **`.fnName`** — The human-readable export name (read-only).
-- **`serverFn(fn, ...args)`** — Returns `{ queryKey, queryFn }` for loaders, prefetch, and `useInfiniteQuery`.
+- **`getFnQueryOptions(fn, ...args)`** — Returns `{ queryKey, queryFn }` for loaders, prefetch, and `useInfiniteQuery`.
 
 ### Mutation Arguments
 
@@ -198,8 +199,8 @@ flowchart TD
 |---------|-------|
 | Query | `useQuery(fn, ...args)` |
 | Suspense query | `useSuspenseQuery(fn, ...args)` |
-| Cache invalidation | `fn.queryKey(...args)` |
-| Loader / prefetch | `serverFn(fn, ...args)` → `{ queryKey, queryFn }` |
+| Cache invalidation | `getFnQueryKey(...args)` |
+| Loader / prefetch | `getFnQueryOptions(...args)` → `{ queryKey, queryFn }` |
 | Function metadata | `fn.fnId`, `fn.fnName` |
 | Arguments | Spread: `useQuery(getUser, id)` not `useQuery(getUser, [id])` |
 | Server errors | `ServerError` on server → `ServerFunctionError` on client |

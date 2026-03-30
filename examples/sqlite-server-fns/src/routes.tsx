@@ -3,7 +3,7 @@ import {
   createRoute,
   Link,
   Outlet,
-  serverFn,
+  getFnQueryKey,
   useMutation,
   useQuery,
   useQueryClient,
@@ -70,14 +70,14 @@ function UsersPage() {
   const { mutateAsync: doCreateUser, isPending: isCreating } = useMutation({
     mutationFn: createUser,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: serverFn(getUsers).queryKey });
+      queryClient.invalidateQueries({ queryKey: getFnQueryKey(getUsers) });
     },
   });
 
   const { mutateAsync: doDeleteUser } = useMutation({
     mutationFn: deleteUser,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: serverFn(getUsers).queryKey });
+      queryClient.invalidateQueries({ queryKey: getFnQueryKey(getUsers) });
       if (selectedUserId) setSelectedUserId(null);
     },
   });
@@ -205,7 +205,7 @@ function TodosSection({ userId }: { userId: number }) {
     mutationFn: createTodo,
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: serverFn(getTodos, userId).queryKey,
+        queryKey: getFnQueryKey(getTodos, userId),
       });
     },
   });
@@ -214,7 +214,7 @@ function TodosSection({ userId }: { userId: number }) {
     mutationFn: toggleTodo,
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: serverFn(getTodos, userId).queryKey,
+        queryKey: getFnQueryKey(getTodos, userId),
       });
     },
   });
@@ -223,7 +223,7 @@ function TodosSection({ userId }: { userId: number }) {
     mutationFn: deleteTodo,
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: serverFn(getTodos, userId).queryKey,
+        queryKey: getFnQueryKey(getTodos, userId),
       });
     },
   });

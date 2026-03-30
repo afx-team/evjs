@@ -6,6 +6,7 @@ import {
   getFnId,
   getFnName,
   initTransport,
+  type ServerFunction,
 } from "../src/transport.js";
 
 describe("__fn_register / getFnId / getFnName", () => {
@@ -96,6 +97,25 @@ describe("ServerFunction metadata (.queryKey, .fnId, .fnName)", () => {
     };
     expect(sfn.queryKey("abc")).toEqual(["mod:getUser", "abc"]);
     expect(sfn.queryKey("abc", 42)).toEqual(["mod:getUser", "abc", 42]);
+  });
+
+  it("attaches .queryOptions() that returns TanStack { queryKey, queryFn }", async () => {
+    const send = vi.fn().mockResolvedValue("test result");
+    initTransport({ transport: { send } });
+    
+    const fn = async (_id: string) => ({});
+    __fn_register(fn, "mod:getUser", "getUser");
+
+    const sfn = fn as unknown as ServerFunction<[string], unknown>;
+    const opts = sfn.queryOptions("abc");
+    
+    expect(opts.queryKey).toEqual(["mod:getUser", "abc"]);
+    
+    // Check queryFn uses __fn_call properly
+    const signal = new AbortController().signal;
+    const result = await opts.queryFn({ signal });
+    expect(send).toHaveBeenCalledWith("mod:getUser", ["abc"], { signal });
+    expect(result).toBe("test result");
   });
 });
 

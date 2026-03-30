@@ -57,7 +57,7 @@ export const userRoute = createRoute({
   path: "/users/$username",
   loader: ({ params, context }) =>
     context.queryClient.ensureQueryData(
-      serverFn(getUser, params.username),
+      getFnQueryOptions(getUser, params.username),
     ),
   component: () => {
     const { username } = userRoute.useParams();
@@ -129,7 +129,7 @@ export const usersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/users",
   loader: ({ context }) =>
-    context.queryClient.ensureQueryData(serverFn(getUsers)),
+    context.queryClient.ensureQueryData(getFnQueryOptions(getUsers)),
   component: UsersPage,
 });
 ```

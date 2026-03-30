@@ -54,9 +54,9 @@ For detailed guides on specific topics, see the `references/` directory:
 - If mixing `route()` endpoints, you must explicitly configure `server.entry` in `ev.config.ts`
 
 **React Data Loading:**
-- Route loaders should fetch using: `context.queryClient.ensureQueryData(serverFn(myFn))`
-- Invalidate cache after mutations: `queryClient.invalidateQueries({ queryKey: myFn.queryKey() })`
-- Access server function metadata: `myFn.fnId`, `myFn.fnName`, `myFn.queryKey(...args)`
+- Route loaders should fetch using: `context.queryClient.ensureQueryData(getFnQueryOptions(myFn))`
+- Invalidate cache after mutations: `queryClient.invalidateQueries({ queryKey: getFnQueryKey(myFn) })`
+- Access server function metadata: `myFn.fnId`, `myFn.fnName`, `getFnQueryKey(myFn, ...args)`
 
 **Misc:**
 - Use `client.plugins` in config to add custom Webpack loaders (Tailwind, SCSS, SVG, etc.)

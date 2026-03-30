@@ -201,6 +201,11 @@ export interface ServerFunction<
   (...args: TArgs): Promise<TData>;
   /** Build a TanStack Query key from the function ID + arguments. */
   queryKey(...args: TArgs): unknown[];
+  /** Returns a QueryOptions object with queryKey and queryFn for TanStack Query loaders/prefetching. */
+  queryOptions(...args: TArgs): {
+    queryKey: unknown[];
+    queryFn: (ctx?: { signal?: AbortSignal }) => Promise<TData>;
+  };
   /** The internal function ID (stable SHA-256 hash). */
   readonly fnId: string;
   /** The human-readable export name. */
@@ -246,6 +251,10 @@ export function __fn_register(
   // Augment the function with metadata properties
   const sfn = fn as unknown as ServerFunction;
   sfn.queryKey = (...args: unknown[]) => [fnId, ...args];
+  sfn.queryOptions = (...args: unknown[]) => ({
+    queryKey: sfn.queryKey(...args),
+    queryFn: (ctx?: { signal?: AbortSignal }) => __fn_call(fnId, args, { signal: ctx?.signal }) as Promise<unknown>,
+  });
   Object.defineProperty(sfn, "fnId", { value: fnId, writable: false });
   Object.defineProperty(sfn, "fnName", {
     value: exportName ?? fnId,

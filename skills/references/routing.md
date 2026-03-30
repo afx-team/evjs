@@ -86,7 +86,7 @@ export const homeRoute = createRoute({
 Use `$name` syntax for path parameters. Access them type-safely via `route.useParams()`.
 
 ```tsx
-import { createRoute, serverFn, useQuery } from "@evjs/client";
+import { createRoute, getFnQueryOptions, useQuery } from "@evjs/client";
 import { getUser } from "../api/data.server";
 import { rootRoute } from "./__root";
 
@@ -101,7 +101,7 @@ export const userRoute = createRoute({
   path: "/users/$username",
   loader: ({ params, context }) =>
     context.queryClient.ensureQueryData(
-      serverFn(getUser, params.username),
+      getFnQueryOptions(getUser, params.username),
     ),
   component: UserProfile,
 });
@@ -113,7 +113,7 @@ Parent routes render `<Outlet />` to display child routes. Wire children via `ad
 
 ```tsx
 // pages/posts/index.tsx
-import { createRoute, Link, Outlet, serverFn } from "@evjs/client";
+import { createRoute, Link, Outlet, getFnQueryOptions } from "@evjs/client";
 import { getPosts, getPost } from "../../api/data.server";
 import { rootRoute } from "../__root";
 
@@ -142,7 +142,7 @@ export const postDetailRoute = createRoute({
   path: "$postId",
   loader: ({ params, context }) =>
     context.queryClient.ensureQueryData(
-      serverFn(getPost, params.postId),
+      getFnQueryOptions(getPost, params.postId),
     ),
   component: PostDetail,
 });
@@ -203,7 +203,7 @@ export const usersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/users",
   loader: ({ context }) =>
-    context.queryClient.ensureQueryData(serverFn(getUsers)),
+    context.queryClient.ensureQueryData(getFnQueryOptions(getUsers)),
   component: UsersPage,
 });
 ```

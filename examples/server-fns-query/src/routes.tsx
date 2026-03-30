@@ -4,7 +4,7 @@ import {
   Link,
   Outlet,
   ServerFunctionError,
-  serverFn,
+  getFnQueryKey,
   useMutation,
   useQuery,
   useQueryClient,
@@ -48,7 +48,7 @@ function UsersPage() {
   const { mutateAsync: createUserMutation } = useMutation({
     mutationFn: createUser,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: serverFn(getUsers).queryKey });
+      queryClient.invalidateQueries({ queryKey: getFnQueryKey(getUsers) });
     },
   });
 
@@ -69,7 +69,7 @@ function UsersPage() {
   const { mutateAsync: createPostMutation } = useMutation({
     mutationFn: createPost,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: serverFn(getPosts).queryKey });
+      queryClient.invalidateQueries({ queryKey: getFnQueryKey(getPosts) });
     },
   });
 

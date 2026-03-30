@@ -18,9 +18,9 @@
  * // Cache invalidation — use .queryKey() directly:
  * queryClient.invalidateQueries({ queryKey: getUsers.queryKey() });
  *
- * // For other hooks (useInfiniteQuery, prefetch, loaders), use serverFn():
- * useInfiniteQuery({ ...serverFn(getPosts), getNextPageParam: ... });
- * context.queryClient.ensureQueryData(serverFn(getUsers));
+ * // For other hooks (useInfiniteQuery, prefetch, loaders), use .queryOptions():
+ * useInfiniteQuery({ ...getPosts.queryOptions(), getNextPageParam: ... });
+ * context.queryClient.ensureQueryData(getUsers.queryOptions());
  */
 
 import type {
@@ -33,42 +33,49 @@ import {
   useQuery as _useQuery,
   useSuspenseQuery as _useSuspenseQuery,
 } from "@tanstack/react-query";
-import { __fn_call, getFnId } from "./transport";
-
-// ── serverFn() — for loaders, prefetch, useInfiniteQuery, etc. ──
+import type { ServerFunction } from "./transport";
+import { getFnId } from "./transport";
 
 /**
- * Convert a server function + args into `{ queryKey, queryFn }`.
- * Use with any TanStack hook that accepts queryKey/queryFn options.
- *
- * For query-key-only use cases (e.g. cache invalidation), prefer
- * the `.queryKey()` method on the server function directly:
- * ```ts
- * queryClient.invalidateQueries({ queryKey: getUsers.queryKey() });
- * ```
- *
- * @example
- * context.queryClient.ensureQueryData(serverFn(getUsers));
- * useInfiniteQuery({ ...serverFn(getPosts), getNextPageParam: ... });
+ * Extracts the stable query key for a given server function and its arguments.
+ * 
+ * At runtime, server functions are augmented by the evjs compiler to carry internal metadata 
+ * (like unique function IDs and query key generators). However, in plain TypeScript, importing 
+ * a raw function from a `.server.ts` file only gives you its standard `() => Promise<T>` type signature.
+ * 
+ * This helper bridges the type gap, providing a completely type-safe way to extract the 
+ * underlying TanStack Query key from the server function stub without triggering static TS errors.
  */
-export function serverFn<TArgs extends unknown[], TData>(
-  fn: (...args: TArgs) => Promise<TData>,
-  ...args: TArgs
-): {
-  queryKey: unknown[];
-  queryFn: (ctx: { signal: AbortSignal }) => Promise<TData>;
-} {
+export function getFnQueryKey<T extends (...args: any[]) => Promise<any>>(
+  fn: T,
+  ...args: Parameters<T>
+): unknown[] {
   const fnId = getFnId(fn);
   if (!fnId) {
-    throw new Error(
-      `serverFn() only accepts server functions (with "use server" directive). Got: ${fn.name || "anonymous"}`,
-    );
+    throw new Error(`getFnQueryKey() only accepts server functions. Got: ${fn.name || "anonymous"}`);
   }
-  return {
-    queryKey: [fnId, ...args],
-    queryFn: ({ signal }) =>
-      __fn_call(fnId, args, { signal }) as Promise<TData>,
-  };
+  return (fn as unknown as ServerFunction).queryKey(...args);
+}
+
+/**
+ * Extracts the { queryKey, queryFn } object for TanStack Query options.
+ * 
+ * At runtime, server functions are augmented by the evjs compiler to carry internal metadata 
+ * (like unique function IDs and query key generators). However, in plain TypeScript, importing 
+ * a raw function from a `.server.ts` file only gives you its standard `() => Promise<T>` type signature.
+ * 
+ * This helper bridges the type gap, providing a completely type-safe way to extract the 
+ * underlying TanStack Query Options from the server function stub without triggering static TS errors.
+ */
+export function getFnQueryOptions<T extends (...args: any[]) => Promise<any>>(
+  fn: T,
+  ...args: Parameters<T>
+): { queryKey: unknown[]; queryFn: (ctx: { signal: AbortSignal }) => ReturnType<T> } {
+  const fnId = getFnId(fn);
+  if (!fnId) {
+    throw new Error(`getFnQueryOptions() only accepts server functions. Got: ${fn.name || "anonymous"}`);
+  }
+  return (fn as unknown as ServerFunction).queryOptions(...args) as any;
 }
 
 // ── useQuery — server function overload + TanStack pass-through ──
@@ -97,7 +104,13 @@ export function useQuery(
   ...args: unknown[]
 ): UseQueryResult {
   if (typeof fnOrOptions === "function") {
-    return _useQuery(serverFn(fnOrOptions, ...args));
+    const fnId = getFnId(fnOrOptions);
+    if (!fnId) {
+      throw new Error(
+        `useQuery() only accepts server functions (with "use server" directive). Got: ${fnOrOptions.name || "anonymous"}`,
+      );
+    }
+    return _useQuery((fnOrOptions as unknown as ServerFunction).queryOptions(...args));
   }
   return _useQuery(fnOrOptions);
 }
@@ -126,7 +139,13 @@ export function useSuspenseQuery(
   ...args: unknown[]
 ): UseSuspenseQueryResult {
   if (typeof fnOrOptions === "function") {
-    return _useSuspenseQuery(serverFn(fnOrOptions, ...args));
+    const fnId = getFnId(fnOrOptions);
+    if (!fnId) {
+      throw new Error(
+        `useSuspenseQuery() only accepts server functions (with "use server" directive). Got: ${fnOrOptions.name || "anonymous"}`,
+      );
+    }
+    return _useSuspenseQuery((fnOrOptions as unknown as ServerFunction).queryOptions(...args));
   }
   return _useSuspenseQuery(fnOrOptions);
 }
