@@ -76,38 +76,6 @@ const config: Config = {
     },
     footer: {
       style: "dark",
-      links: [
-        {
-          title: "Docs",
-          items: [
-            { label: "Quick Start", to: "/docs/quick-start" },
-            { label: "Architecture", to: "/docs/architecture" },
-            { label: "Server Functions", to: "/docs/server-functions" },
-            { label: "Routing", to: "/docs/routing" },
-          ],
-        },
-        {
-          title: "Reference",
-          items: [
-            { label: "Configuration", to: "/docs/config" },
-            { label: "Build", to: "/docs/build" },
-            { label: "Deploy", to: "/docs/deploy" },
-          ],
-        },
-        {
-          title: "Community",
-          items: [
-            {
-              label: "GitHub",
-              href: "https://github.com/evaijs/evjs",
-            },
-            {
-              label: "npm",
-              href: "https://www.npmjs.com/package/@evjs/cli",
-            },
-          ],
-        },
-      ],
       copyright:
         'Copyright (c) 2015-present <a href="https://xtech.antfin.com/" target="_blank" rel="noopener noreferrer">Ant UED</a>',
     },
