@@ -15,12 +15,12 @@
  * // Standard TanStack options — pass-through
  * const { data } = useQuery({ queryKey: [...], queryFn: ... });
  *
- * // Cache invalidation — use .queryKey() directly:
- * queryClient.invalidateQueries({ queryKey: getUsers.queryKey() });
+ * // Cache invalidation — use getFnQueryKey():
+ * queryClient.invalidateQueries({ queryKey: getFnQueryKey(getUsers) });
  *
- * // For other hooks (useInfiniteQuery, prefetch, loaders), use .queryOptions():
- * useInfiniteQuery({ ...getPosts.queryOptions(), getNextPageParam: ... });
- * context.queryClient.ensureQueryData(getUsers.queryOptions());
+ * // For other hooks (useInfiniteQuery, prefetch, loaders), use getFnQueryOptions():
+ * useInfiniteQuery({ ...getFnQueryOptions(getPosts), getNextPageParam: ... });
+ * context.queryClient.ensureQueryData(getFnQueryOptions(getUsers));
  */
 
 import type {
@@ -46,6 +46,7 @@ import { getFnId } from "./transport";
  * This helper bridges the type gap, providing a completely type-safe way to extract the
  * underlying TanStack Query key from the server function stub without triggering static TS errors.
  */
+// biome-ignore lint/suspicious/noExplicitAny: Required for broad generic inference
 export function getFnQueryKey<T extends (...args: any[]) => Promise<any>>(
   fn: T,
   ...args: Parameters<T>
@@ -69,6 +70,7 @@ export function getFnQueryKey<T extends (...args: any[]) => Promise<any>>(
  * This helper bridges the type gap, providing a completely type-safe way to extract the
  * underlying TanStack Query Options from the server function stub without triggering static TS errors.
  */
+// biome-ignore lint/suspicious/noExplicitAny: Required for broad generic inference
 export function getFnQueryOptions<T extends (...args: any[]) => Promise<any>>(
   fn: T,
   ...args: Parameters<T>
@@ -82,6 +84,7 @@ export function getFnQueryOptions<T extends (...args: any[]) => Promise<any>>(
       `getFnQueryOptions() only accepts server functions. Got: ${fn.name || "anonymous"}`,
     );
   }
+  // biome-ignore lint/suspicious/noExplicitAny: Bypass strict internal typing for user return
   return (fn as unknown as ServerFunction).queryOptions(...args) as any;
 }
 

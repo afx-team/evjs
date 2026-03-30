@@ -13,7 +13,6 @@ const CONFIG_FILES = ["ev.config.ts", "ev.config.js", "ev.config.mjs"];
  */
 async function ensureTsLoader(): Promise<void> {
   try {
-    // @ts-expect-error — optional dependency, may not be installed
     await import("@swc-node/register/esm-register");
   } catch {
     // Loader not available — Node may still handle .ts via --loader flag
