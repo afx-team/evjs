@@ -31,7 +31,6 @@
     "@evjs/webpack-plugin": "*",
     "@logtape/logtape": "^2.0.4",
     "@swc/core": "^1.15.21",
-    "@swc-node/register": "^1.11.1",
     "commander": "^12.1.0",
     "execa": "^9.6.1",
     "fs-extra": "^11.3.4",

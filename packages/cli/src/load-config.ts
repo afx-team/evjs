@@ -5,19 +5,10 @@ import type { EvConfig } from "./config.js";
 const CONFIG_FILES = ["ev.config.ts", "ev.config.js", "ev.config.mjs"];
 
 /**
- * Ensure a TypeScript loader is registered before importing `.ts` config files.
- * Tries `@swc-node/register/esm-register` (ships alongside `@swc/core` which
- * the CLI already bundles), then falls back to Node's built-in `--loader tsx`
- * pathway. If neither is available the raw `import()` is attempted anyway —
- * Node will throw a clear error telling the user to install a loader.
+ * Historically used @swc-node/register, but it causes ERR_REQUIRE_CYCLE_MODULE inside Node 22.
+ * Modern evjs relies on Node's native typescript handling or built-in --loader arguments.
  */
-async function ensureTsLoader(): Promise<void> {
-  try {
-    await import("@swc-node/register/esm-register");
-  } catch {
-    // Loader not available — Node may still handle .ts via --loader flag
-  }
-}
+async function ensureTsLoader(): Promise<void> {}
 
 /**
  * Load evjs config from the project root.
