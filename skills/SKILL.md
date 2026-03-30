@@ -30,15 +30,15 @@ npm run dev
 
 For detailed guides on specific topics, see the `references/` directory:
 
-- [init.md](references/init.md) — Scaffolding projects with `npx @evjs/create-app`
-- [project-structure.md](references/project-structure.md) — Recommended directory structure and domain-driven design (features)
-- [dev.md](references/dev.md) — Development server and configuration
-- [build.md](references/build.md) — Production builds
-- [deploy.md](references/deploy.md) — Deploying to Node, Docker, Deno, and Edge environments
-- [routing.md](references/routing.md) — Route definitions, layouts, params, loaders, navigation
-- [server-functions.md](references/server-functions.md) — Server functions, queries, mutations, error handling
-- [server-routes.md](references/server-routes.md) — Creating REST API endpoints using programmatic `route()`
-- [config.md](references/config.md) — `ev.config.ts` options, defaults, client/server settings
+- [init.md](../docs/docs/quick-start.md) — Scaffolding projects with `npx @evjs/create-app`
+- [project-structure.md](../docs/docs/project-structure.md) — Recommended directory structure and domain-driven design (features)
+- [dev.md](../docs/docs/dev.md) — Development server and configuration
+- [build.md](../docs/docs/build.md) — Production builds
+- [deploy.md](../docs/docs/deploy.md) — Deploying to Node, Docker, Deno, and Edge environments
+- [routing.md](../docs/docs/routing.md) — Route definitions, layouts, params, loaders, navigation
+- [server-functions.md](../docs/docs/server-functions.md) — Server functions, queries, mutations, error handling
+- [server-routes.md](../docs/docs/server-routes.md) — Creating REST API endpoints using programmatic `route()`
+- [config.md](../docs/docs/config.md) — `ev.config.ts` options, defaults, client/server settings
 
 ## Key Rules
 
