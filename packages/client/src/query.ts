@@ -15,6 +15,9 @@
  * // Standard TanStack options — pass-through
  * const { data } = useQuery({ queryKey: [...], queryFn: ... });
  *
+ * // Cache invalidation — use .queryKey() directly:
+ * queryClient.invalidateQueries({ queryKey: getUsers.queryKey() });
+ *
  * // For other hooks (useInfiniteQuery, prefetch, loaders), use serverFn():
  * useInfiniteQuery({ ...serverFn(getPosts), getNextPageParam: ... });
  * context.queryClient.ensureQueryData(serverFn(getUsers));
@@ -37,6 +40,12 @@ import { __fn_call, getFnId } from "./transport";
 /**
  * Convert a server function + args into `{ queryKey, queryFn }`.
  * Use with any TanStack hook that accepts queryKey/queryFn options.
+ *
+ * For query-key-only use cases (e.g. cache invalidation), prefer
+ * the `.queryKey()` method on the server function directly:
+ * ```ts
+ * queryClient.invalidateQueries({ queryKey: getUsers.queryKey() });
+ * ```
  *
  * @example
  * context.queryClient.ensureQueryData(serverFn(getUsers));

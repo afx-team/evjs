@@ -174,6 +174,40 @@ export async function __fn_call(
 type AnyFn = (...args: never[]) => unknown;
 
 /**
+ * A server function stub augmented with query metadata.
+ *
+ * These properties are attached at runtime by the build system's
+ * `__fn_register` call. TypeScript source types won't reflect them,
+ * so use this type when you need typed access to the metadata.
+ *
+ * @example
+ * import type { ServerFunction } from "@evjs/client";
+ * import { getUsers } from "./api/users.server";
+ *
+ * // Runtime properties (added by build system):
+ * getUsers.queryKey()   // → ["<fnId>"]
+ * getUsers.fnId         // → "<hash>"
+ * getUsers.fnName       // → "getUsers"
+ *
+ * // For typed access in generic code:
+ * function invalidate<T extends ServerFunction>(fn: T) {
+ *   queryClient.invalidateQueries({ queryKey: fn.queryKey() });
+ * }
+ */
+export interface ServerFunction<
+  TArgs extends unknown[] = unknown[],
+  TData = unknown,
+> {
+  (...args: TArgs): Promise<TData>;
+  /** Build a TanStack Query key from the function ID + arguments. */
+  queryKey(...args: TArgs): unknown[];
+  /** The internal function ID (stable SHA-256 hash). */
+  readonly fnId: string;
+  /** The human-readable export name. */
+  readonly fnName: string;
+}
+
+/**
  * Internal registry mapping server function references to their IDs.
  * Uses WeakMap so function stubs can be garbage collected.
  */
@@ -194,6 +228,8 @@ export function getFnName(fnId: string): string {
 
 /**
  * Register a server function stub with its ID and optional export name.
+ * Also augments the function with `.queryKey()`, `.fnId`, and `.fnName`
+ * properties so consumers can access metadata directly.
  *
  * @internal Called by build-tools codegen. Do not use directly.
  */
@@ -206,6 +242,15 @@ export function __fn_register(
   if (exportName) {
     fnNameRegistry.set(fnId, exportName);
   }
+
+  // Augment the function with metadata properties
+  const sfn = fn as unknown as ServerFunction;
+  sfn.queryKey = (...args: unknown[]) => [fnId, ...args];
+  Object.defineProperty(sfn, "fnId", { value: fnId, writable: false });
+  Object.defineProperty(sfn, "fnName", {
+    value: exportName ?? fnId,
+    writable: false,
+  });
 }
 
 /**

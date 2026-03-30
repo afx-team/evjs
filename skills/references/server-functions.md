@@ -28,7 +28,7 @@ export async function createUser(name: string, email: string) {
 
 ## Query Patterns
 
-evjs provides type-safe `useQuery` and `useSuspenseQuery` that accept server functions directly. For loaders and cache invalidation, use `serverFn()` to get `{ queryKey, queryFn }`.
+evjs provides type-safe `useQuery` and `useSuspenseQuery` that accept server functions directly. Server function stubs also carry `.queryKey()`, `.fnId`, and `.fnName` properties for cache invalidation and introspection.
 
 ### Direct usage (recommended)
 
@@ -46,7 +46,7 @@ const queryClient = useQueryClient();
 const { mutate } = useMutation({
   mutationFn: createUser,
   onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: serverFn(getUsers).queryKey });
+    queryClient.invalidateQueries({ queryKey: getUsers.queryKey() });
   },
 });
 
@@ -54,6 +54,22 @@ const { mutate } = useMutation({
 loader: ({ context }) =>
   context.queryClient.ensureQueryData(serverFn(getUsers));
 ```
+
+### Server function metadata
+
+Every registered server function stub carries these properties at runtime:
+
+```ts
+getUsers.queryKey()         // → ["<fnId>"]
+getUsers.queryKey(someArg)  // → ["<fnId>", someArg]
+getUsers.fnId               // → "<hash>" (stable SHA-256)
+getUsers.fnName             // → "getUsers"
+```
+
+- **`.queryKey(...args)`** — Build a TanStack Query key. Use for `invalidateQueries`, `setQueryData`, etc.
+- **`.fnId`** — The stable internal function ID (read-only).
+- **`.fnName`** — The human-readable export name (read-only).
+- **`serverFn(fn, ...args)`** — Returns `{ queryKey, queryFn }` for loaders, prefetch, and `useInfiniteQuery`.
 
 ### Raw fetch / non-server functions
 
@@ -98,7 +114,8 @@ if (e instanceof ServerFunctionError) {
 ## Key Points
 
 - Use `useQuery(fn, ...args)` for type-safe queries: `useQuery(getUsers)`
-- Use `serverFn(fn, ...args)` for loaders, prefetch, and cache invalidation
+- Use `fn.queryKey(...args)` for cache invalidation: `getUsers.queryKey()`
+- Use `serverFn(fn, ...args)` for loaders, prefetch, and `useInfiniteQuery`
 - Arguments are spread: `useQuery(getUser, id)` not `useQuery(getUser, [id])`
 - `ServerError` on server → `ServerFunctionError` on client (with status + data)
 

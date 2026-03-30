@@ -42,6 +42,63 @@ describe("__fn_register / getFnId / getFnName", () => {
   });
 });
 
+describe("ServerFunction metadata (.queryKey, .fnId, .fnName)", () => {
+  beforeEach(() => {
+    __resetForTesting();
+  });
+
+  it("attaches .fnId and .fnName on registration", () => {
+    const fn = async () => "result";
+    __fn_register(fn, "abc123", "getUsers");
+
+    const sfn = fn as unknown as { fnId: string; fnName: string };
+    expect(sfn.fnId).toBe("abc123");
+    expect(sfn.fnName).toBe("getUsers");
+  });
+
+  it("makes .fnId and .fnName read-only", () => {
+    const fn = async () => {};
+    __fn_register(fn, "abc123", "getUsers");
+
+    const sfn = fn as unknown as { fnId: string; fnName: string };
+    expect(() => {
+      sfn.fnId = "changed";
+    }).toThrow();
+    expect(() => {
+      sfn.fnName = "changed";
+    }).toThrow();
+  });
+
+  it("falls back .fnName to fnId when no export name given", () => {
+    const fn = async () => {};
+    __fn_register(fn, "hash-only");
+
+    const sfn = fn as unknown as { fnName: string };
+    expect(sfn.fnName).toBe("hash-only");
+  });
+
+  it("attaches .queryKey() that returns [fnId]", () => {
+    const fn = async () => [];
+    __fn_register(fn, "mod:getUsers", "getUsers");
+
+    const sfn = fn as unknown as {
+      queryKey: (...args: unknown[]) => unknown[];
+    };
+    expect(sfn.queryKey()).toEqual(["mod:getUsers"]);
+  });
+
+  it(".queryKey() includes args", () => {
+    const fn = async (_id: string) => ({});
+    __fn_register(fn, "mod:getUser", "getUser");
+
+    const sfn = fn as unknown as {
+      queryKey: (...args: unknown[]) => unknown[];
+    };
+    expect(sfn.queryKey("abc")).toEqual(["mod:getUser", "abc"]);
+    expect(sfn.queryKey("abc", 42)).toEqual(["mod:getUser", "abc", 42]);
+  });
+});
+
 describe("initTransport + __fn_call", () => {
   beforeEach(() => {
     __resetForTesting();

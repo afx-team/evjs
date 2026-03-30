@@ -21,4 +21,4 @@ npm run dev -w example-basic-server-fns
 - `"use server"` directive for auto-discovered server functions
 - `useQuery(getUsers)` for type-safe data fetching
 - `useMutation({ mutationFn: createUser })` for mutations
-- `serverFn(getUsers).queryKey` for cache invalidation
+- `getUsers.queryKey()` for cache invalidation

@@ -52,6 +52,26 @@ describe("serverFn", () => {
     );
   });
 
+  it("fn.queryKey() matches serverFn(fn).queryKey", () => {
+    const getUsers = async () => [];
+    __fn_register(getUsers, "mod:getUsers", "getUsers");
+
+    const sfn = getUsers as unknown as {
+      queryKey: (...args: unknown[]) => unknown[];
+    };
+    expect(sfn.queryKey()).toEqual(serverFn(getUsers).queryKey);
+  });
+
+  it("fn.queryKey(arg) matches serverFn(fn, arg).queryKey", () => {
+    const getUser = async (_id: string) => ({});
+    __fn_register(getUser, "mod:getUser", "getUser");
+
+    const sfn = getUser as unknown as {
+      queryKey: (...args: unknown[]) => unknown[];
+    };
+    expect(sfn.queryKey("abc")).toEqual(serverFn(getUser, "abc").queryKey);
+  });
+
   // ── Type-safety assertions ──
 
   it("infers TData from server function return type", () => {

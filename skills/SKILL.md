@@ -54,7 +54,8 @@ For detailed guides on specific topics, see the `references/` directory:
 
 **React Data Loading:**
 - Route loaders should fetch using: `context.queryClient.ensureQueryData(serverFn(myFn))`
-- Invalidate cache after mutations: `queryClient.invalidateQueries({ queryKey: serverFn(myFn).queryKey })`
+- Invalidate cache after mutations: `queryClient.invalidateQueries({ queryKey: myFn.queryKey() })`
+- Access server function metadata: `myFn.fnId`, `myFn.fnName`, `myFn.queryKey(...args)`
 
 **Misc:**
 - Use `client.plugins` in config to add custom Webpack loaders (Tailwind, SCSS, SVG, etc.)

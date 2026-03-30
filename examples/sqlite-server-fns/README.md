@@ -23,4 +23,4 @@ npm run dev -w example-sqlite-server-fns
 - Multi-table relationships (users → todos)
 - `useQuery(getUsers)` / `useMutation({ mutationFn })` with auto-generated query keys
 - Direct mutation args: `mutate(id)`, `mutate({ name, email })`
-- `serverFn(getUsers).queryKey` for cache invalidation
+- `getUsers.queryKey()` for cache invalidation

@@ -89,6 +89,7 @@ export {
 } from "./route";
 export type {
   RequestContext,
+  ServerFunction,
   ServerTransport,
   TransportOptions,
 } from "./transport";

@@ -26,7 +26,7 @@ export async function createUser(name: string, email: string) {
 
 ## Query Patterns
 
-evjs provides type-safe `useQuery` and `useSuspenseQuery` that accept server functions directly:
+evjs provides type-safe `useQuery` and `useSuspenseQuery` that accept server functions directly. Server function stubs also carry `.queryKey()`, `.fnId`, and `.fnName` properties for cache invalidation and introspection.
 
 ### Direct Usage (Recommended)
 
@@ -50,7 +50,7 @@ const queryClient = useQueryClient();
 const { mutate } = useMutation({
   mutationFn: createUser,
   onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: serverFn(getUsers).queryKey });
+    queryClient.invalidateQueries({ queryKey: getUsers.queryKey() });
   },
 });
 
@@ -58,6 +58,22 @@ const { mutate } = useMutation({
 loader: ({ context }) =>
   context.queryClient.ensureQueryData(serverFn(getUsers));
 ```
+
+### Server Function Metadata
+
+Every registered server function stub carries these properties at runtime:
+
+```ts
+getUsers.queryKey()         // → ["<fnId>"]
+getUsers.queryKey(someArg)  // → ["<fnId>", someArg]
+getUsers.fnId               // → "<hash>" (stable SHA-256)
+getUsers.fnName             // → "getUsers"
+```
+
+- **`.queryKey(...args)`** — Build a TanStack Query key. Use for `invalidateQueries`, `setQueryData`, etc.
+- **`.fnId`** — The stable internal function ID (read-only).
+- **`.fnName`** — The human-readable export name (read-only).
+- **`serverFn(fn, ...args)`** — Returns `{ queryKey, queryFn }` for loaders, prefetch, and `useInfiniteQuery`.
 
 ### Mutation Arguments
 
@@ -182,7 +198,8 @@ flowchart TD
 |---------|-------|
 | Query | `useQuery(fn, ...args)` |
 | Suspense query | `useSuspenseQuery(fn, ...args)` |
+| Cache invalidation | `fn.queryKey(...args)` |
 | Loader / prefetch | `serverFn(fn, ...args)` → `{ queryKey, queryFn }` |
-| Cache invalidation | `serverFn(fn).queryKey` |
+| Function metadata | `fn.fnId`, `fn.fnName` |
 | Arguments | Spread: `useQuery(getUser, id)` not `useQuery(getUser, [id])` |
 | Server errors | `ServerError` on server → `ServerFunctionError` on client |
