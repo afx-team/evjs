@@ -197,9 +197,7 @@ function TechStackSection() {
   const techs = [
     { icon: "⚛️", name: "React" },
     { icon: "🔥", name: "Hono" },
-    { icon: "🧭", name: "TanStack Router" },
-    { icon: "📦", name: "Vite" },
-    { icon: "🦀", name: "Rust (swc)" },
+    { icon: "🛣️", name: "TanStack Router" },
   ];
 
   return (
