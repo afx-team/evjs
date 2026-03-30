@@ -2,7 +2,7 @@
 
 ## Overview
 
-Server functions let you write backend logic in `.server.ts` files and call them from React components as if they were local functions. The build system transforms them into RPC calls automatically.
+Server functions let you write backend logic alongside your frontend code and call them from React components as if they were local functions. While not strictly required, we recommend suffixing server function files with `.server.ts`. The build system transforms them into RPC calls automatically.
 
 ## Usage
 
@@ -22,7 +22,7 @@ export async function createUser(name: string, email: string) {
 **Rules:**
 - File must start with `"use server";` directive
 - Only **named async function exports** are transformed
-- Use `.server.ts` extension or place in `src/api/` directory
+- **Recommendation**: Use the `.server.ts` extension (e.g. `users.server.ts`) or place them in a `src/api/` directory to help differentiate them from client code.
 - For single-arg mutations: `mutate({ name, email })`
 - For multi-arg mutations: `mutate([name, email])`
 

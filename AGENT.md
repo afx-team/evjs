@@ -20,7 +20,7 @@
 1. **ESM only** — all packages use `"type": "module"`. Use `.js` extensions in relative imports within compiled output.
 2. **Imports** — all imports at top, use `import type` for type-only imports.
 3. **Linter** — Biome. No `any`, no `import * as`. Run `npx biome check --write` before committing.
-4. **Server functions** — files must start with `"use server";`, use `.server.ts` suffix or `src/api/` convention.
+4. **Server functions** — files must start with `"use server";`. We recommend the `.server.ts` suffix or `src/api/` convention.
 5. **Server function exports** — named async functions only. No default exports, no arrow function exports.
 6. **Config file** — named `ev.config.ts` (not `evjs.config.ts`).
 7. **Dependency resolution** — CLI uses `createRequire(import.meta.url)` for loader path resolution.
@@ -61,7 +61,7 @@ npx biome check .    # Lint + format check
 
 ## Adding New Features
 
-- **New server function**: Create `src/api/[name].server.ts` with `"use server";`, export named async functions
+- **New server function**: Create `src/api/[name].server.ts` (recommended) with `"use server";`, export named async functions
 - **New route**: Define with `createRoute({ getParentRoute, path, component })`, add to route tree
 - **New example**: Create `examples/[name]/`, add symlink in `packages/cli/templates/`, add E2E test in `e2e/cases/`
 - **New route handler**: Use `route("/api/path", { GET, POST, ... })` and pass to `createApp({ routeHandlers })`

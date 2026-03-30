@@ -43,7 +43,7 @@
 2. **Linting**: Biome — no `any`, no `import * as` unless necessary.
 3. **No manual server entries**: The framework generates server entry dynamically.
 4. **No manual webpack configs**: Use `ev.config.ts` or convention-based defaults.
-5. **Server function files**: Must start with `"use server";`, use `.server.ts` or `src/api/`.
+5. **Server function files**: Must start with `"use server";`. We recommend the `.server.ts` suffix or placing them in `src/api/`.
 6. **Server function exports**: Must be named async function exports (no default exports).
 7. **Module type**: All packages are ESM (`"type": "module"`). Use `.js` extensions in relative imports within compiled output.
 8. **Config file**: Named `ev.config.ts` (not `evjs.config.ts`).

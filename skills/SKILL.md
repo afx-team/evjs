@@ -11,7 +11,7 @@ Use this skill when developing applications with the evjs framework.
 
 evjs is a React meta-framework built on TanStack Router, TanStack Query, and Hono. It provides:
 
-- **Server Functions** — write backend logic in `.server.ts` files, call from React as if local
+- **Server Functions** — write backend logic in files (we recommend using the `.server.ts` suffix), call from React as if local
 - **Server Routes** — build programmatic REST endpoints and APIs using the `route()` handler
 - **Query Integration** — type-safe `useQuery(getUsers)` with auto query keys and transport
 - **Type-safe Routing** — TanStack Router with file-based route generation
