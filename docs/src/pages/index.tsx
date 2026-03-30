@@ -191,32 +191,6 @@ function FeaturesSection() {
   );
 }
 
-/* ─── Tech Stack ─── */
-
-function TechStackSection() {
-  const techs = [
-    { icon: "⚛️", name: "React" },
-    { icon: "🔥", name: "Hono" },
-    { icon: "🛣️", name: "TanStack Router" },
-  ];
-
-  return (
-    <section className={styles.techSection}>
-      <div className={styles.techLabel}>
-        <Translate id="homepage.techStack.label">Powered by</Translate>
-      </div>
-      <div className={styles.techBadges}>
-        {techs.map((tech) => (
-          <div key={tech.name} className={styles.techBadge}>
-            <span className={styles.techBadgeIcon}>{tech.icon}</span>
-            <span className={styles.techBadgeName}>{tech.name}</span>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 /* ─── Icons ─── */
 
 function GitHubIcon() {
@@ -244,7 +218,6 @@ export default function Home() {
       <TerminalPreview />
       <main>
         <FeaturesSection />
-        <TechStackSection />
       </main>
     </Layout>
   );

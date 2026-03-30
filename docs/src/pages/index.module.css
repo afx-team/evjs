@@ -468,57 +468,6 @@
 }
 
 /* ═══════════════════════════════════════
-   Tech Stack Badges Section
-   ═══════════════════════════════════════ */
-
-.techSection {
-  padding: 3rem 2rem 4rem;
-  text-align: center;
-  background: var(--ev-surface-elevated);
-  border-top: 1px solid var(--ev-border);
-}
-
-.techLabel {
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ev-text-secondary);
-  margin-bottom: 1.5rem;
-}
-
-.techBadges {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 2.5rem;
-  flex-wrap: wrap;
-}
-
-.techBadge {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  opacity: 0.6;
-  transition: opacity 0.2s ease;
-}
-
-.techBadge:hover {
-  opacity: 1;
-}
-
-.techBadgeIcon {
-  font-size: 2rem;
-}
-
-.techBadgeName {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--ev-text-secondary);
-}
-
-/* ═══════════════════════════════════════
    Fade-in animation for sections
    ═══════════════════════════════════════ */
 
