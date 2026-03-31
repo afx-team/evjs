@@ -73,20 +73,26 @@ html {
 }
 
 .navbar {
-  backdrop-filter: saturate(180%) blur(16px);
-  -webkit-backdrop-filter: saturate(180%) blur(16px);
   border-bottom: 1px solid var(--ev-border);
   box-shadow: none;
-  z-index: 200;
+  position: relative;
 }
 
-/* Mobile sidebar – fix stacking context caused by backdrop-filter */
+/* Use pseudo-element for blur so it doesn't create a stacking context that clips the mobile sidebar */
+.navbar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  backdrop-filter: saturate(180%) blur(16px);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
+  z-index: -1;
+}
+
+/* Mobile sidebar – ensure it renders above page content */
 .navbar-sidebar {
-  z-index: 200;
-}
-
-.navbar-sidebar__backdrop {
-  z-index: 199;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: var(--ifm-navbar-background-color);
 }
 
 .navbar__title {
