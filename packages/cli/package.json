@@ -24,8 +24,7 @@
     "build": "tsc",
     "dev": "tsc -w",
     "test": "vitest run",
-    "check-types": "tsc --noEmit",
-    "prepare": "npm run build"
+    "check-types": "tsc --noEmit"
   },
   "dependencies": {
     "@evjs/bundler-webpack": "*",
