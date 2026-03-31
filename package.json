@@ -31,6 +31,9 @@
     "check-types": "turbo check-types",
     "prepare": "husky"
   },
+  "bin": {
+    "ev": "packages/cli/bin/ev.js"
+  },
   "devDependencies": {
     "@biomejs/biome": "2.4.5",
     "@playwright/test": "^1.58.2",

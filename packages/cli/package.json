@@ -18,7 +18,8 @@
     "ev": "bin/ev.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "bin"
   ],
   "scripts": {
     "build": "tsc",
