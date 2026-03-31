@@ -33,6 +33,18 @@ function useFeatures() {
       }),
     },
     {
+      icon: "🛣️",
+      title: translate({
+        id: "homepage.feature.serverRoutes.title",
+        message: "Server Routes",
+      }),
+      description: translate({
+        id: "homepage.feature.serverRoutes.description",
+        message:
+          "Standard Request/Response REST endpoints via route() — build APIs alongside your React app.",
+      }),
+    },
+    {
       icon: "🚀",
       title: translate({
         id: "homepage.feature.serverFn.title",
@@ -66,18 +78,6 @@ function useFeatures() {
         id: "homepage.feature.multiRuntime.description",
         message:
           "Hono-based server runs on Node.js, Deno, Bun, and edge runtimes out of the box.",
-      }),
-    },
-    {
-      icon: "🛣️",
-      title: translate({
-        id: "homepage.feature.serverRoutes.title",
-        message: "Server Routes",
-      }),
-      description: translate({
-        id: "homepage.feature.serverRoutes.description",
-        message:
-          "Standard Request/Response REST endpoints via route() — build APIs alongside your React app.",
       }),
     },
   ];
