@@ -23,7 +23,7 @@ jobs:
           cache: npm
 
       - name: Install Dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci
 
       - name: Build Packages
         run: npm run build
