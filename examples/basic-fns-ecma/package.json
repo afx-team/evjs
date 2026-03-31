@@ -3,8 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "ev dev",
-    "build": "ev build",
+    "dev": "npx ev dev",
+    "build": "npx ev build",
     "start": "node dist/server/start.mjs",
     "check-types": "tsc --noEmit"
   },

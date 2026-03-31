@@ -3,8 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "ev dev",
-    "build": "ev build",
+    "dev": "npx ev dev",
+    "build": "npx ev build",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
