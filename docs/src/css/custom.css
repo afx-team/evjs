@@ -130,7 +130,7 @@ html {
 .prism-code {
   font-size: 0.88rem;
   line-height: 1.6;
-  border-radius: 8px;
+  border-radius: 4px;
 }
 
 /* Dark code blocks in light mode for better contrast */
@@ -282,7 +282,7 @@ html[data-theme="dark"] div[class*="codeBlockContainer"] pre.prism-code {
 /* ─── Code blocks ─── */
 .codeBlockContainer_node_modules-\@docusaurus-theme-classic-lib-theme-CodeBlock-Container-styles-module,
 div[class*="codeBlockContainer"] {
-  border-radius: 8px;
+  border-radius: 4px;
   overflow: hidden;
   border: 1px solid var(--ev-border);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
