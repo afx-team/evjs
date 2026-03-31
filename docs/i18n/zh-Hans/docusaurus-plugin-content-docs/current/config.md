@@ -13,11 +13,11 @@ export default defineConfig({ /* ... */ });
 
 | 设置 | 默认值 |
 |------|--------|
-| `client.entry` | `./src/main.tsx` |
-| `client.html` | `./index.html` |
-| `client.dev.port` | `3000` |
+| `entry` | `./src/main.tsx` |
+| `html` | `./index.html` |
+| `dev.port` | `3000` |
 | `server.dev.port` | `3001` |
-| `server.functions.endpoint` | `/api/fn` |
+| `server.endpoint` | `/api/fn` |
 
 ## 完整参考
 
@@ -25,83 +25,93 @@ export default defineConfig({ /* ... */ });
 import { defineConfig } from "@evjs/cli";
 
 export default defineConfig({
-  client: {
-    entry: "./src/main.tsx",
-    html: "./index.html",
-    plugins: [
-      {
-        name: "tailwind",
-        module: {
-          rules: [
-            { test: /\.css$/, use: ["style-loader", "css-loader", "postcss-loader"] },
-          ],
-        },
-      },
-    ],
-    dev: {
-      port: 3000,
-      https: false,
-    },
+  entry: "./src/main.tsx",
+  html: "./index.html",
+  dev: {
+    port: 3000,
+    https: false,
   },
   server: {
     entry: "./src/server.ts",
     backend: "node",
-    functions: {
-      endpoint: "/api/fn",
-    },
-    plugins: [],
+    endpoint: "/api/fn",
     dev: {
       port: 3001,
       https: false,
     },
   },
+  // ── 插件 ──
+  plugins: [
+    {
+      name: "my-plugin",
+      config(config, ctx) {
+        // 框架级配置钩子
+        if (ctx.mode === "development") {
+          config.dev ??= {};
+          config.dev.port = 8080;
+        }
+      },
+      bundler(bundlerConfig, ctx) {
+        // 构建器级配置钩子 (例如 Webpack)
+        // bundlerConfig 是原始配置对象
+      }
+    },
+  ],
+
+  // ── 构建器逃生舱 ──
+  bundler: {
+    name: "webpack", // "webpack" | "utoopack" (未来支持)
+    config(bundlerConfig, ctx) {
+      // 直接访问底层构建器配置
+    }
+  }
 });
 ```
 
-## 客户端选项
+插件提供两个钩子来扩展框架：
 
-### `client.plugins`
-
-`EvPlugin` 对象数组，用于通过自定义模块规则扩展构建管道：
+### `config(config, ctx)`
+修改框架级别的 `EvConfig`。适用于更改端口、入口点或路由端点。
 
 ```ts
-interface EvPlugin {
-  name: string;
-  module?: { rules?: EvModuleRule[] };
-}
-
-interface EvModuleRule {
-  test: RegExp;
-  exclude?: RegExp;
-  use: EvLoaderEntry | EvLoaderEntry[];
+config(config, ctx) {
+  if (ctx.mode === "development") {
+    config.dev ??= {};
+    config.dev.port = 8080;
+  }
 }
 ```
 
-#### 插件示例
+### `bundler(bundlerConfig, ctx)`
+修改底层构建器配置（例如 Webpack）。`bundlerConfig` 参数为 `unknown`，因为它取决于当前激活的适配器。`ctx` 包含完整解析后的框架 `config`。
 
 ```ts
-// Tailwind CSS
-{ name: "tailwind", module: { rules: [{
-  test: /\.css$/,
-  use: ["style-loader", "css-loader", "postcss-loader"],
-}]}}
-
-// CSS Modules
-{ name: "css-modules", module: { rules: [{
-  test: /\.module\.css$/,
-  use: [
-    "style-loader",
-    { loader: "css-loader", options: { modules: true } },
-  ],
-}]}}
-
-// SVG
-{ name: "svg", module: { rules: [{
-  test: /\.svg$/,
-  exclude: /node_modules/,
-  use: "@svgr/webpack",
-}]}}
+bundler(bundlerConfig, ctx) {
+  const webpackConfig = bundlerConfig as any;
+  webpackConfig.module.rules.push({
+    test: /\.mdx$/,
+    use: ["mdx-loader"]
+  });
+}
 ```
+
+上下文类型：
+- `EvConfigCtx`: `{ mode: "development" | "production" }`
+- `EvBundlerCtx`: `{ mode: "development" | "production", config: EvConfig }`
+
+## 构建器选项
+
+`bundler` 字段允许访问底层编译引擎。
+
+| 选项 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `name` | `"webpack" \| "utoopack"` | `"webpack"` | 激活的构建器适配器 |
+| `config` | `(bundlerConfig: unknown, ctx: EvBundlerCtx) => void` | `undefined` | 修改构建器配置的逃生舱 |
+
+### 内置支持：CSS 和 Tailwind
+evjs 包含**内置的 PostCSS/Tailwind 支持**。如果项目根目录检测到 `postcss.config.js` 文件，内部 Webpack 适配器将自动启用 `postcss-loader`。标准 Tailwind 设置无需插件或自定义 `bundler` 钩子。
+
+插件可以直接修改配置对象，也可以返回一个新的配置对象。
 
 ## 服务端选项
 

@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { configure, getConsoleSink } from "@logtape/logtape";
 import { Command } from "commander";
-import fs from "fs-extra";
+import fs from "node:fs";
 import { build, dev } from "./index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -16,7 +16,7 @@ await configure({
   ],
 });
 
-const pkg = fs.readJsonSync(path.resolve(__dirname, "../package.json"));
+const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../package.json"), "utf-8"));
 const program = new Command();
 
 program
@@ -30,7 +30,7 @@ program
   .action(async () => {
     const cwd = process.cwd();
     const { loadConfig } = await import("./load-config.js");
-    const config = await loadConfig(cwd);
+    const config = await loadConfig(cwd, { mode: "development" });
     try {
       await dev(config ?? undefined, { cwd });
     } catch (err) {
@@ -45,7 +45,7 @@ program
   .action(async () => {
     const cwd = process.cwd();
     const { loadConfig } = await import("./load-config.js");
-    const config = await loadConfig(cwd);
+    const config = await loadConfig(cwd, { mode: "production" });
     try {
       await build(config ?? undefined, { cwd });
     } catch (err) {

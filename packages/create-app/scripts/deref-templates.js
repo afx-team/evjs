@@ -5,7 +5,7 @@
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import fs from "fs-extra";
+import fs from "node:fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const templatesDir = path.resolve(__dirname, "../templates");
@@ -17,8 +17,9 @@ for (const entry of fs.readdirSync(templatesDir)) {
   if (stat.isSymbolicLink()) {
     const realPath = fs.realpathSync(entryPath);
 
-    fs.removeSync(entryPath);
-    fs.copySync(realPath, entryPath, {
+    fs.rmSync(entryPath, { recursive: true, force: true });
+    fs.cpSync(realPath, entryPath, {
+      recursive: true,
       filter: (src) => {
         const basename = path.basename(src);
         return !["node_modules", "dist", ".turbo"].includes(basename);

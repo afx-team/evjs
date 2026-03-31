@@ -4,7 +4,7 @@
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import fs from "fs-extra";
+import fs from "node:fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const templatesDir = path.resolve(__dirname, "../templates");
@@ -22,7 +22,7 @@ for (const [name, target] of Object.entries(symlinkTargets)) {
   const stat = fs.lstatSync(entryPath, { throwIfNoEntry: false });
 
   if (stat && !stat.isSymbolicLink()) {
-    fs.removeSync(entryPath);
+    fs.rmSync(entryPath, { recursive: true, force: true });
     fs.symlinkSync(target, entryPath);
   }
 }

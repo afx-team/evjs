@@ -1,34 +1,30 @@
 import { createRequire } from "node:module";
 import path from "node:path";
-import { CONFIG_DEFAULTS, type EvConfig } from "./config.js";
+import fs from "node:fs";
+import type { EvBundlerCtx, ResolvedEvConfig } from "../../config.js";
 
 const esmRequire = createRequire(import.meta.url);
 
 /**
- * Create a webpack configuration object from EvfConfig.
+ * Create a webpack configuration object from EvConfig.
  *
  * Returns a plain object that can be passed directly to the webpack Node API.
  * No temp files are generated.
  */
 export function createWebpackConfig(
-  config: EvConfig | undefined,
+  config: ResolvedEvConfig,
   cwd: string,
 ): Record<string, unknown> {
-  const client = config?.client;
-  const server = config?.server;
-  const entry = client?.entry ?? CONFIG_DEFAULTS.entry;
-  const html = client?.html ?? CONFIG_DEFAULTS.html;
-  const clientPort = client?.dev?.port ?? CONFIG_DEFAULTS.clientPort;
-  const serverPort = server?.dev?.port ?? CONFIG_DEFAULTS.serverPort;
-  const endpoint = server?.functions?.endpoint ?? CONFIG_DEFAULTS.endpoint;
+  const { entry, html } = config;
+  const clientPort = config.dev.port;
+  const serverPort = config.server.dev.port;
+  const endpoint = config.server.endpoint;
   const isProduction = process.env.NODE_ENV === "production";
 
   const HtmlWebpackPlugin = esmRequire("html-webpack-plugin");
   const { EvWebpackPlugin } = esmRequire("@evjs/webpack-plugin");
 
-  const pluginOptions = server
-    ? { server: { entry: server.entry } }
-    : undefined;
+  const pluginOptions = { server: { entry: config.server.entry } };
 
   // Resolve loader paths from evjs's dependency tree so they work
   // even when the user's project doesn't list them as direct deps.
@@ -45,9 +41,9 @@ export function createWebpackConfig(
   const proxyBase = `/${endpoint.split("/").filter(Boolean)[0] || "api"}`;
 
   // Destructure port out of dev overrides to avoid passing it twice.
-  const { port: _p, ...devServerOverrides } = client?.dev ?? {};
+  const { port: _p, ...devServerOverrides } = config.dev;
 
-  return {
+  const webpackConfig: Record<string, unknown> = {
     name: "client",
     mode: isProduction ? "production" : "development",
     devtool: isProduction ? "hidden-source-map" : "source-map",
@@ -84,25 +80,28 @@ export function createWebpackConfig(
             },
           ],
         },
-        // Plugin-declared module rules (client + server)
-        ...[...(client?.plugins ?? []), ...(server?.plugins ?? [])].flatMap(
-          (plugin) =>
-            (plugin.module?.rules ?? []).map((rule) => {
-              const entries = Array.isArray(rule.use) ? rule.use : [rule.use];
-              return {
-                test: rule.test,
-                ...(rule.exclude ? { exclude: rule.exclude } : {}),
-                use: entries.map((entry) =>
-                  typeof entry === "string"
-                    ? { loader: resolveLoader(entry) }
-                    : {
-                        loader: resolveLoader(entry.loader),
-                        ...(entry.options ? { options: entry.options } : {}),
-                      },
-                ),
-              };
-            }),
-        ),
+        // Auto-detected CSS support.
+        // If postcss.config.js exists, include postcss-loader automatically.
+        (() => {
+          const postcssConfigs = [
+            "postcss.config.js",
+            "postcss.config.cjs",
+            "postcss.config.mjs",
+            ".postcssrc",
+            ".postcssrc.js",
+          ];
+          const hasPostCSS = postcssConfigs.some((f) =>
+            fs.existsSync(path.resolve(cwd, f)),
+          );
+          const cssLoaders = [
+            { loader: resolveLoader("style-loader") },
+            { loader: resolveLoader("css-loader") },
+            ...(hasPostCSS
+              ? [{ loader: resolveLoader("postcss-loader") }]
+              : []),
+          ];
+          return { test: /\.css$/, use: cssLoaders };
+        })(),
       ],
     },
     plugins: [
@@ -128,4 +127,21 @@ export function createWebpackConfig(
       ...devServerOverrides,
     },
   };
+
+  const ctx: EvBundlerCtx = { 
+    mode: isProduction ? "production" : "development",
+    config
+  };
+
+  // 1. Run plugins' bundler escape hatches
+  for (const plugin of config.plugins) {
+    if (plugin.bundler) {
+      plugin.bundler(webpackConfig, ctx);
+    }
+  }
+
+  // 2. Run user override bundler escape hatch
+  config.bundler.config(webpackConfig, ctx);
+
+  return webpackConfig;
 }

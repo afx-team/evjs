@@ -15,7 +15,7 @@ evjs is a React fullstack framework built on TanStack Router, TanStack Query, an
 - **Server Routes** — build programmatic REST endpoints and APIs using the `route()` handler
 - **Query Integration** — type-safe `useQuery(getUsers)` with auto query keys and transport
 - **Type-safe Routing** — TanStack Router with file-based route generation
-- **Plugin System** — extend builds with custom loaders (e.g. Tailwind, SVG)
+- **Plugin System** — extend the framework via `config` and `bundler` hooks in plugins
 - **Convention over Configuration** — works out of the box, optionally configure via `ev.config.ts`
 
 ## Quick Start
@@ -59,4 +59,4 @@ For detailed guides on specific topics, see the `references/` directory:
 - Access server function metadata: `myFn.fnId`, `myFn.fnName`, `getFnQueryKey(myFn, ...args)`
 
 **Misc:**
-- Use `client.plugins` in config to add custom Webpack loaders (Tailwind, SCSS, SVG, etc.)
+- Use `plugins` in config to extend the build pipeline via `config` and `bundler` hooks

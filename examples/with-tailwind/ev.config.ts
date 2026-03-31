@@ -1,22 +1,11 @@
 import { defineConfig } from "@evjs/cli";
 
 /**
- * Example: Using client plugins to add Tailwind CSS support.
+ * Example: Using Tailwind CSS.
+ * 
+ * Tailwind is supported out-of-the-box by the framework.
+ * Because a `postcss.config.js` file exists in this directory,
+ * `evjs` automatically applies `postcss-loader` alongside `css-loader`.
+ * No custom loaders or `bundler` hooks are needed!
  */
-export default defineConfig({
-  client: {
-    plugins: [
-      {
-        name: "tailwind",
-        module: {
-          rules: [
-            {
-              test: /\.css$/,
-              use: ["style-loader", "css-loader", "postcss-loader"],
-            },
-          ],
-        },
-      },
-    ],
-  },
-});
+export default defineConfig({});

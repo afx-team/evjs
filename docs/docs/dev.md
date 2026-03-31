@@ -35,22 +35,18 @@ flowchart LR
 import { defineConfig } from "@evjs/cli";
 
 export default defineConfig({
-  client: {
-    entry: "./src/main.tsx",     // Default
-    html: "./index.html",        // Default
-    dev: {
-      port: 3000,               // WDS port
-      https: false,             // HTTPS mode
-    },
+  entry: "./src/main.tsx",         // Default
+  html: "./index.html",            // Default
+  dev: {
+    port: 3000,                   // WDS port
+    https: false,                 // HTTPS mode
   },
   server: {
-    functions: {
-      endpoint: "/api/fn",       // Default
-    },
-    backend: "node",             // Or "bun", "deno", etc.
+    endpoint: "/api/fn",           // Default
+    backend: "node",               // Or "bun", "deno", etc.
     dev: {
-      port: 3001,               // API port
-      https: false,             // HTTPS for API server
+      port: 3001,                 // API port
+      https: false,               // HTTPS for API server
     },
   },
 });
@@ -58,12 +54,14 @@ export default defineConfig({
 
 ## How It Works
 
-1. `loadConfig(cwd)` loads `ev.config.ts` or returns convention-based defaults
-2. `createWebpackConfig()` generates a webpack config (no temp files)
-3. Starts `WebpackDevServer` for client HMR
-4. On `compiler.hooks.done`, detects server bundle output
-5. Auto-starts the API server via `@evjs/server/node`
-6. Sets up reverse proxy: `devServer.proxy["/api"] → localhost:3001`
+1. `loadConfig(cwd)` loads `ev.config.ts` (executing plugin `config` hooks).
+2. `getBundlerAdapter(config)` resolves the active adapter (e.g., Webpack).
+3. `BundlerAdapter.dev()` is invoked to start development.
+4. The adapter generates its specific configuration (applying plugin `bundler` hooks).
+5. Starts `WebpackDevServer` for client HMR.
+6. The adapter signals `onServerBundleReady` after discovery.
+7. The CLI core auto-starts the API server via `@evjs/server/node`.
+8. Sets up reverse proxy: `devServer.proxy["/api"] → localhost:3001`.
 
 ## Custom Backends
 
@@ -86,11 +84,11 @@ The ECMA environment adapter (`@evjs/server/ecma`) only exports a `{ fetch }` ha
 ```ts
 import { dev, build } from "@evjs/cli";
 
-// Start dev server with custom config
-await dev({ server: { dev: { port: 4001 } } }, { cwd: "./my-app" });
+// Start dev server (loads ev.config.ts and uses defaults)
+await dev({ dev: { port: 3000 } }, { cwd: "./my-app" });
 
 // Run production build
-await build({ client: { entry: "./src/app.tsx" } }, { cwd: "./my-app" });
+await build({ entry: "./src/app.tsx" }, { cwd: "./my-app" });
 ```
 
 ## Transport

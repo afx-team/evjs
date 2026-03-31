@@ -7,7 +7,8 @@
   "packageManager": "npm@11.6.2",
   "workspaces": [
     "packages/*",
-    "examples/*"
+    "examples/*",
+    "docs"
   ],
   "homepage": "https://github.com/evaijs/evjs#readme",
   "bugs": {

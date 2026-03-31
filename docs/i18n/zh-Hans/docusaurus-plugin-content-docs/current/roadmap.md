@@ -28,7 +28,7 @@
 
 ## ✅ 阶段 4 —— 插件系统和构建元数据
 
-- `EvPlugin` 接口，带 `name` + `module.rules`
+- 带 `name` + `config` + `bundler` 钩子的 `EvPlugin` 接口
 - Manifest 客户端部分（`client.assets`、`client.routes`）
 - `npx @evjs/create-app` 的模板符号链接
 

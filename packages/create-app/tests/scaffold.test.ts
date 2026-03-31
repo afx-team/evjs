@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import fs from "fs-extra";
+import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -63,8 +63,11 @@ describe("create-app scaffolding", () => {
       .map((d) => d.name);
 
     for (const template of templates) {
-      const pkg = fs.readJsonSync(
-        path.join(templatesDir, template, "package.json"),
+      const pkg = JSON.parse(
+        fs.readFileSync(
+          path.join(templatesDir, template, "package.json"),
+          "utf-8",
+        ),
       );
 
       const allDeps = {

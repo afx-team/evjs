@@ -33,9 +33,9 @@ flowchart LR
 ```ts
 import { dev, build } from "@evjs/cli";
 
-// 使用自定义配置启动开发服务器
-await dev({ server: { dev: { port: 4001 } } }, { cwd: "./my-app" });
+// 启动开发服务器（加载 ev.config.ts 并应用默认值）
+await dev({ dev: { port: 3000 } }, { cwd: "./my-app" });
 
 // 运行生产构建
-await build({ client: { entry: "./src/app.tsx" } }, { cwd: "./my-app" });
+await build({ entry: "./src/app.tsx" }, { cwd: "./my-app" });
 ```

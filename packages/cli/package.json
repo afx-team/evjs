@@ -33,7 +33,6 @@
     "@swc/core": "^1.15.21",
     "commander": "^12.1.0",
     "execa": "^9.6.1",
-    "fs-extra": "^11.3.4",
     "glob": "^13.0.6",
     "html-webpack-plugin": "^5.6.6",
     "picocolors": "^1.1.1",
@@ -43,7 +42,6 @@
     "webpack-dev-server": "^5.2.3"
   },
   "devDependencies": {
-    "@types/fs-extra": "^11.0.4",
     "@types/node": "^22.19.15",
     "typescript": "^6.0.2"
   },

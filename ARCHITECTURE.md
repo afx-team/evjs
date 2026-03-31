@@ -7,9 +7,10 @@
 ```
 ┌─────────────────────────── Build Time ───────────────────────────┐
 │                                                                  │
-│  @evjs/cli ──► @evjs/webpack-plugin ──► @evjs/manifest           │
-│                      ▲                    (manifest.json)        │
-│  @evjs/build-tools ──┘                                           │
+│  @evjs/cli ──► BundlerAdapter ──► @evjs/webpack-plugin        │
+│                      │           (adapter logic)             │
+│                      ▼                                       │
+│  @evjs/build-tools ──┴──► @evjs/manifest (manifest.json)     │
 │  (bundler-agnostic)                                              │
 │                                                                  │
 └──────────────────────────────┬───────────────────────────────────┘
@@ -29,9 +30,10 @@
 ## Package Dependency Graph
 
 ```
-@evjs/cli ──► @evjs/webpack-plugin ──► @evjs/build-tools ──► @swc/core
     │
-    └──► webpack (Node API)
+│  └──► BundlerAdapter (src/bundler/types.ts)
+│          └──► WebpackAdapter (src/bundler/webpack/)
+│                  └──► webpack (Node API)
 
 @evjs/shared (standalone, no deps)
 
@@ -42,18 +44,22 @@
 ## Configuration Flow
 
 ```
-ev.config.ts ──► defineConfig({ client, server })
+ev.config.ts ──► defineConfig({ entry, html, dev, server, plugins, bundler })
                     │
-                    ├── client.entry, client.html ──► webpack entry + HtmlPlugin
-                    ├── client.plugins ──► EvPlugin[] (custom module rules, e.g. Tailwind)
-                    ├── client.dev.port ──► WebpackDevServer port
-                    ├── server.functions.endpoint ──► EvWebpackPlugin + proxy path
-                    ├── server.plugins ──► EvPlugin[] (server bundle module rules)
-                    ├── server.dev.port ──► API server port
-                    └── server.dev.https ──► HTTPS for API server
+                    ├── entry, html ──► webpack entry + HtmlPlugin
+                    ├── dev.port ──► WebpackDevServer port
+                    ├── server.endpoint ──► EvWebpackPlugin + proxy path
+                    ├── plugins ──► EvPlugin[] (config + bundler hooks)
+                    └── bundler ──► BundlerAdapter configuration
                     │
                     ▼
-              createWebpackConfig() ──► webpack Node API
+            BundlerAdapter.dev/build()
+                    │
+                    ▼
+          adapter.createConfig() ──► apply hook: plugin.bundler()
+                    │
+                    ▼
+              webpack Node API ──► apply hook: config.bundler.config()
 ```
 
 ## Server Function Pipeline

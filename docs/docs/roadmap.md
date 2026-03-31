@@ -28,7 +28,7 @@ Call server-side logic from the browser as normal async functions.
 
 ## ✅ Stage 4 — Plugin System & Build Metadata
 
-- `EvPlugin` interface with `name` + `module.rules`
+- `EvPlugin` interface with `name` + `config` + `bundler` hooks
 - Manifest client section (`client.assets`, `client.routes`)
 - Template symlinks for `npx @evjs/create-app`
 

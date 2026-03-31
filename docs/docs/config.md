@@ -13,11 +13,11 @@ All fields are optional. These are the built-in defaults:
 
 | Setting | Default |
 |---------|---------|
-| `client.entry` | `./src/main.tsx` |
-| `client.html` | `./index.html` |
-| `client.dev.port` | `3000` |
+| `entry` | `./src/main.tsx` |
+| `html` | `./index.html` |
+| `dev.port` | `3000` |
 | `server.dev.port` | `3001` |
-| `server.functions.endpoint` | `/api/fn` |
+| `server.endpoint` | `/api/fn` |
 
 ## Full Reference
 
@@ -25,117 +25,67 @@ All fields are optional. These are the built-in defaults:
 import { defineConfig } from "@evjs/cli";
 
 export default defineConfig({
-  client: {
-    // ── Entry & HTML ──
-    entry: "./src/main.tsx",
-    html: "./index.html",
+  // ── Entry & HTML ──
+  entry: "./src/main.tsx",
+  html: "./index.html",
 
-    // ── Plugins ──
-    plugins: [
-      {
-        name: "tailwind",
-        module: {
-          rules: [
-            { test: /\.css$/, use: ["style-loader", "css-loader", "postcss-loader"] },
-          ],
-        },
-      },
-    ],
-
-    // ── Dev server ──
-    dev: {
-      port: 3000,
-      https: false,
-    },
+  // ── Client dev server ──
+  dev: {
+    port: 3000,
+    https: false,
   },
 
+  // ── Server (optional) ──
   server: {
-    // ── Entry ──
     entry: "./src/server.ts",        // Explicit server entry (optional)
-
-    // ── Backend ──
     backend: "node",                 // "node" | "bun" | "deno run --allow-net"
+    endpoint: "/api/fn",             // Server function RPC endpoint
 
-    // ── Server functions ──
-    functions: {
-      endpoint: "/api/fn",           // Server function RPC endpoint
-    },
-
-    // ── Plugins ──
-    plugins: [],                     // Same interface as client plugins
-
-    // ── Dev server ──
     dev: {
       port: 3001,
       https: false,
     },
   },
+
+  // ── Plugins ──
+  plugins: [
+    {
+      name: "my-plugin",
+      config(config, ctx) {
+        // Framework-level config hook
+        if (ctx.mode === "development") {
+          config.dev ??= {};
+          config.dev.port = 8080;
+        }
+      },
+      bundler(bundlerConfig, ctx) {
+        // Bundler-level config hook (e.g. Webpack)
+        // bundlerConfig is the raw configuration object
+      }
+    },
+  ],
+
+  // ── Bundler Escape Hatch ──
+  bundler: {
+    name: "webpack", // "webpack" | "utoopack" (future)
+    config(bundlerConfig, ctx) {
+      // Direct access to the underlying bundler configuration
+    }
+  }
 });
 ```
 
 ## Client Options
 
-### `client.entry`
+### `entry`
 
 Path to the client entry point. Must export the `createApp()` call.
 
-### `client.html`
+### `html`
 
 Path to the HTML template. Must contain a mount element (e.g. `<div id="app">`).
 
-### `client.plugins`
-
-Array of `EvPlugin` objects that extend the build pipeline with custom module rules.
-
-```ts
-interface EvPlugin {
-  name: string;
-  module?: {
-    rules?: EvModuleRule[];
-  };
-}
-
-interface EvModuleRule {
-  test: RegExp;          // File matching pattern
-  exclude?: RegExp;      // Pattern to exclude
-  use: EvLoaderEntry | EvLoaderEntry[];
-}
-
-type EvLoaderEntry =
-  | string
-  | { loader: string; options?: Record<string, unknown> };
-```
-
-#### Plugin Examples
-
-```ts
-// Simple loader
-{ name: "css", module: { rules: [{ test: /\.css$/, use: "css-loader" }] } }
-
-// Loader chain (Tailwind CSS)
-{ name: "tailwind", module: { rules: [{
-  test: /\.css$/,
-  use: ["style-loader", "css-loader", "postcss-loader"],
-}]}}
-
-// Loader with options (CSS Modules)
-{ name: "css-modules", module: { rules: [{
-  test: /\.module\.css$/,
-  use: [
-    "style-loader",
-    { loader: "css-loader", options: { modules: true } },
-  ],
-}]}}
-
-// With exclude pattern
-{ name: "svg", module: { rules: [{
-  test: /\.svg$/,
-  exclude: /node_modules/,
-  use: "@svgr/webpack",
-}]}}
-```
-
-### `client.dev`
+### `dev`
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -164,15 +114,11 @@ The ECMA adapter (`@evjs/server/ecma`) only exports a `{ fetch }` handler — it
 
 :::
 
-### `server.functions`
+### `server.endpoint`
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `endpoint` | `string` | `/api/fn` | Path for server function RPC calls |
-
-### `server.plugins`
-
-Same `EvPlugin` interface as `client.plugins`. Applied to the server bundle.
 
 ### `server.dev`
 
@@ -180,6 +126,51 @@ Same `EvPlugin` interface as `client.plugins`. Applied to the server bundle.
 |--------|------|---------|-------------|
 | `port` | `number` | `3001` | API server port in dev mode |
 | `https` | `boolean` | `false` | Enable HTTPS for the API server |
+
+Plugins offer two hooks to extend the framework:
+
+### `config(config, ctx)`
+Modifies the framework-level `EvConfig`. Useful for changing ports, entry points, or routing endpoints.
+
+```ts
+config(config, ctx) {
+  if (ctx.mode === "development") {
+    config.dev ??= {};
+    config.dev.port = 8080;
+  }
+}
+```
+
+### `bundler(bundlerConfig, ctx)`
+Modifies the underlying bundler configuration (e.g., Webpack). The `bundlerConfig` argument is `unknown`, as it depends on the active adapter. `ctx` includes the fully resolved framework `config`.
+
+```ts
+bundler(bundlerConfig, ctx) {
+  const webpackConfig = bundlerConfig as any;
+  webpackConfig.module.rules.push({
+    test: /\.mdx$/,
+    use: ["mdx-loader"]
+  });
+}
+```
+
+Context types:
+- `EvConfigCtx`: `{ mode: "development" | "production" }`
+- `EvBundlerCtx`: `{ mode: "development" | "production", config: EvConfig }`
+
+## Bundler Options
+
+The `bundler` field provides access to the underlying compilation engine.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `name` | `"webpack" \| "utoopack"` | `"webpack"` | The active bundler adapter |
+| `config` | `(bundlerConfig: unknown, ctx: EvBundlerCtx) => void` | `undefined` | Escape hatch to modify bundler config |
+
+### Built-in Support: CSS & Tailwind
+evjs includes **built-in PostCSS/Tailwind support**. If a `postcss.config.js` file is detected in the project root, the internal Webpack adapter automatically enables `postcss-loader`. No plugin or custom `bundler` hook is required for standard Tailwind setups.
+
+A plugin can either mutate the config object directly or return a new one.
 
 ## Examples
 
@@ -189,27 +180,27 @@ Same `EvPlugin` interface as `client.plugins`. Applied to the server bundle.
 import { defineConfig } from "@evjs/cli";
 
 export default defineConfig({
-  client: { dev: { port: 4000 } },
+  dev: { port: 4000 },
   server: { dev: { port: 4001 } },
 });
 ```
 
-### With Tailwind CSS
+### Plugin that adjusts config per mode
 
 ```ts
 import { defineConfig } from "@evjs/cli";
 
 export default defineConfig({
-  client: {
-    plugins: [{
-      name: "tailwind",
-      module: {
-        rules: [{
-          test: /\.css$/,
-          use: ["style-loader", "css-loader", "postcss-loader"],
-        }],
+  plugins: [
+    {
+      name: "env-config",
+      config(config, ctx) {
+        if (ctx.mode === "production") {
+          config.server ??= {};
+          config.server.endpoint = "/api/v2";
+        }
       },
-    }],
-  },
+    },
+  ],
 });
 ```

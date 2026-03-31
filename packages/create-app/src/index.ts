@@ -2,12 +2,12 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
-import fs from "fs-extra";
+import fs from "node:fs";
 import pc from "picocolors";
 import prompts from "prompts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const pkg = fs.readJsonSync(path.resolve(__dirname, "../package.json"));
+const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../package.json"), "utf-8"));
 
 const program = new Command();
 
@@ -76,7 +76,8 @@ program
     }
 
     console.log(pc.cyan(`⚡ Scaffolding project in ${targetDir}...`));
-    await fs.copy(templateDir, targetDir, {
+    fs.cpSync(templateDir, targetDir, {
+      recursive: true,
       dereference: true,
       filter: (src) => {
         const basename = path.basename(src);
@@ -87,7 +88,7 @@ program
     // Post-process package.json: sync @evjs/* versions and set project name
     const pkgPath = path.join(targetDir, "package.json");
     if (fs.existsSync(pkgPath)) {
-      const projPkg = await fs.readJson(pkgPath);
+      const projPkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
       projPkg.name = projectName;
       delete projPkg.private; // Templates shouldn't be private by default
 
@@ -107,7 +108,7 @@ program
       updateDeps(projPkg.dependencies);
       updateDeps(projPkg.devDependencies);
 
-      await fs.writeJson(pkgPath, projPkg, { spaces: 2 });
+      await fs.writeFileSync(pkgPath, JSON.stringify(projPkg, null, 2));
     }
 
     console.log(pc.green("✔ Done! Now run:"));

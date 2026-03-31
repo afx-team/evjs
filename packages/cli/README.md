@@ -47,21 +47,17 @@ Create `ev.config.ts` in the project root (optional):
 import { defineConfig } from "@evjs/cli";
 
 export default defineConfig({
-  client: {
-    entry: "./src/main.tsx",
-    html: "./index.html",
-    plugins: [{ name: "tailwind", module: { rules: [{ test: /\.css$/, use: ["style-loader", "css-loader", "postcss-loader"] }] } }],
-    dev: { port: 3000 },
-  },
+  entry: "./src/main.tsx",
+  html: "./index.html",
+  dev: { port: 3000 },
   server: {
     endpoint: "/api/fn",
-
     dev: { port: 3001 },
   },
 });
 ```
 
-The `client.dev` and `server.dev` fields accept extra options that are merged with defaults.
+The `dev` and `server.dev` fields accept extra options that are merged with defaults.
 
 ## Project Structure
 
