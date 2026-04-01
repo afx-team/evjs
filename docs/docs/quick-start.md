@@ -3,7 +3,7 @@
 ## Create a New Project
 
 ```bash
-npx create-evjs-app my-app
+npx create-ev-app my-app
 cd my-app && npm install
 ```
 
@@ -77,7 +77,7 @@ declare module "@tanstack/react-router" {
 | Package | Purpose |
 |---------|---------|
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | CLI (`ev dev`, `ev build`) + `defineConfig` |
-| [`create-evjs-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | Project scaffolding (`npx create-evjs-app`) |
+| [`create-ev-app`](https://github.com/evaijs/evjs/tree/main/packages/create-ev-app) | Project scaffolding (`npx create-ev-app`) |
 | [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Client runtime (React + TanStack) |
 | [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Server runtime (Hono) |
 | [`@evjs/build-tools`](https://github.com/evaijs/evjs/tree/main/packages/build-tools) | Server function transforms |

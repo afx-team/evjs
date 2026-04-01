@@ -26,7 +26,7 @@ React fullstack framework, built on TanStack + Hono.
 ## 🚀 Quick Start
 
 ```bash
-npx create-evjs-app my-app
+npx create-ev-app my-app
 cd my-app && npm install
 ev dev
 ```
@@ -40,7 +40,7 @@ config needed.
 | Package | Purpose |
 |---------|---------|
 | [`@evjs/cli`](./packages/cli) | CLI (`ev dev`, `ev build`) + `defineConfig` |
-| [`create-evjs-app`](./packages/create-app) | Project scaffolding (`npx create-evjs-app`) |
+| [`create-ev-app`](./packages/create-ev-app) | Project scaffolding (`npx create-ev-app`) |
 | [`@evjs/shared`](./packages/shared) | Shared errors, constants |
 | [`@evjs/client`](./packages/client) | Client runtime (React + TanStack) |
 | [`@evjs/server`](./packages/server) | Server runtime (Hono) |

@@ -13,7 +13,7 @@ Foundation: a zero-config React SPA with type-safe routing and data fetching.
   - [x] Re-exported hooks: `useQuery`, `useMutation`, `useSuspenseQuery`, etc.
   - [x] `QueryClientProvider` wired automatically
 - [x] CLI
-  - [x] `npx create-evjs-app` — scaffold from example templates
+  - [x] `npx create-ev-app` — scaffold from example templates
   - [x] `ev dev` — unified dev server (client HMR + server watch)
   - [x] `ev build` — single-command production build
 
@@ -72,7 +72,7 @@ Extensibility and richer build output.
 - [x] Manifest client section
   - [x] `client.assets: { js, css }` — bundle asset paths
   - [x] `client.routes: RouteEntry[]` — discovered route paths
-- [x] Template symlinks for `npx create-evjs-app` (no duplication between examples and templates)
+- [x] Template symlinks for `npx create-ev-app` (no duplication between examples and templates)
 
 ## 🔲 Exploring
 

@@ -7,7 +7,7 @@
 - `createApp({ routeTree })` —— 连接 Router + QueryClient + DOM 挂载
 - 基于代码的路由（TanStack Router，嵌套布局，类型化加载器）
 - 数据获取（TanStack Query，重新导出的 hooks）
-- CLI：`npx create-evjs-app`、`ev dev`、`ev build`
+- CLI：`npx create-ev-app`、`ev dev`、`ev build`
 
 ## ✅ 阶段 2 —— 服务端函数
 
@@ -30,7 +30,7 @@
 
 - 带 `name` + `config` + `bundler` 钩子的 `EvPlugin` 接口
 - Manifest 客户端部分（`client.assets`、`client.routes`）
-- `npx create-evjs-app` 的模板符号链接
+- `npx create-ev-app` 的模板符号链接
 
 ## 🔲 探索中
 

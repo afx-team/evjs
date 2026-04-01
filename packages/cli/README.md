@@ -25,7 +25,7 @@ No configuration file is needed. `ev dev` and `ev build` work out of the box wit
 | `ev dev` | Start dev server (client HMR + API watch) |
 | `ev build` | Production build (client + server) |
 
-> **Scaffolding:** Use `npx create-evjs-app` to scaffold a new project.
+> **Scaffolding:** Use `npx create-ev-app` to scaffold a new project.
 
 ### `ev dev`
 

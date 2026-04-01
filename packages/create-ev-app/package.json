@@ -1,11 +1,11 @@
 {
-  "name": "create-evjs-app",
+  "name": "create-ev-app",
   "version": "0.0.0",
   "description": "Scaffold a new evjs project",
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
-    "create-evjs-app": "dist/index.js"
+    "create-ev-app": "dist/index.js"
   },
   "files": [
     "dist",

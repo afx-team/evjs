@@ -56,7 +56,7 @@
         "examples/**",
         "scripts/**",
         "packages/cli/**",
-        "packages/create-app/**",
+        "packages/create-ev-app/**",
         "packages/shared/**",
         "packages/client/**",
         "packages/server/**"

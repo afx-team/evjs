@@ -14,7 +14,7 @@ const pkg = JSON.parse(
 const program = new Command();
 
 program
-  .name("create-evjs-app")
+  .name("create-ev-app")
   .description("Scaffold a new evjs project")
   .version(pkg.version)
   .argument("[name]", "Project name")

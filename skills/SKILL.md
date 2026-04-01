@@ -21,7 +21,7 @@ evjs is a React fullstack framework built on TanStack Router, TanStack Query, an
 ## Quick Start
 
 ```bash
-npx create-evjs-app my-app
+npx create-ev-app my-app
 cd my-app
 npm run dev
 ```
@@ -30,7 +30,7 @@ npm run dev
 
 For detailed guides on specific topics, see the `references/` directory:
 
-- [init.md](../docs/docs/quick-start.md) — Scaffolding projects with `npx create-evjs-app`
+- [init.md](../docs/docs/quick-start.md) — Scaffolding projects with `npx create-ev-app`
 - [project-structure.md](../docs/docs/project-structure.md) — Recommended directory structure and domain-driven design (features)
 - [dev.md](../docs/docs/dev.md) — Development server and configuration
 - [build.md](../docs/docs/build.md) — Production builds

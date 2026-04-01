@@ -7,7 +7,7 @@ Foundation: a zero-config React SPA with type-safe routing and data fetching.
 - `createApp({ routeTree })` — wires Router + QueryClient + DOM mount
 - Code-based routing via TanStack Router (nested layouts, typed loaders)
 - Data fetching via TanStack Query (re-exported hooks)
-- CLI: `npx create-evjs-app`, `ev dev`, `ev build`
+- CLI: `npx create-ev-app`, `ev dev`, `ev build`
 
 ## ✅ Stage 2 — Server Functions
 
@@ -30,7 +30,7 @@ Call server-side logic from the browser as normal async functions.
 
 - `EvPlugin` interface with `name` + `config` + `bundler` hooks
 - Manifest client section (`client.assets`, `client.routes`)
-- Template symlinks for `npx create-evjs-app`
+- Template symlinks for `npx create-ev-app`
 
 ## 🔲 Exploring
 

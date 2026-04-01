@@ -7,7 +7,7 @@
 | Package | Path | Key Files |
 |---------|------|-----------|
 | `@evjs/cli` | `packages/cli` | `src/cli.ts` (CLI entry), `src/index.ts` (programmatic API: `dev`, `build`), `src/config.ts` (EvConfig types + defineConfig), `src/create-webpack-config.ts`, `src/load-config.ts` |
-| `create-evjs-app` | `packages/create-app` | `src/index.ts` (scaffolding logic) |
+| `create-ev-app` | `packages/create-ev-app` | `src/index.ts` (scaffolding logic) |
 | `@evjs/shared` | `packages/shared` | `src/errors.ts` (ServerError, ServerFunctionError), `src/constants.ts`, `src/http.ts` |
 | `@evjs/client` | `packages/client` | `src/query.ts` (useQuery, getFnQueryOptions), `src/transport.ts` (__fn_call, initTransport), `src/route.ts`, `src/context.ts` |
 | `@evjs/server` | `packages/server` | `src/app.ts` (createApp), `src/functions/dispatch.ts`, `src/functions/register.ts`, `src/routes/route-handler.ts` |
