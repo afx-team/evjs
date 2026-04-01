@@ -52,7 +52,7 @@ For detailed guides on specific topics, see the `references/` directory:
 **REST Routes (`route()`):**
 - Use `route()` for REST API endpoints, webhooks, or standard Web Request/Response handling
 - If mixing `route()` endpoints, you must explicitly configure `server.entry` in `ev.config.ts`
-- **Route Paths:** Always use string literals for `path` values (e.g., `path: "/posts"`). Do **not** use template strings or dynamic variables, as these break the build-time static analysis.
+- **Route Paths:** Always use string literals for `path` values (e.g., `path: "/posts"`). The type system **rejects** broad `string` variables and template strings at compile time.
 
 **React Data Loading:**
 - Route loaders should fetch using: `context.queryClient.ensureQueryData(getFnQueryOptions(myFn))`

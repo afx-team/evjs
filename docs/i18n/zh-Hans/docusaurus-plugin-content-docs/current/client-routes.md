@@ -3,7 +3,19 @@
 evjs 路由基于 [TanStack Router](https://tanstack.com/router) 构建。所有路由 API 从 `@evjs/client` 重新导出 —— 不要直接从 `@tanstack/react-router` 导入。
 
 :::important
-**路由路径必须是字符串字面量。** 不要使用模板字符串（反引号）或动态变量来设置 `path` 属性。这是为了让构建系统能够正确生成类型安全的路由树。
+**路由路径必须是字符串字面量。** `path` 属性只接受字符串字面量类型——传入 `string` 类型的变量或模板字符串会产生 TypeScript 编译错误。这是通过类型系统强制执行的，以确保路由可被静态分析。
+
+```ts
+// ✅ 正确 — 字符串字面量
+createRoute({ path: "/users/$id", ... });
+
+// ❌ 编译错误 — 宽泛的 `string` 类型
+const p: string = "/users";
+createRoute({ path: p, ... });
+
+// ❌ 编译错误 — 模板字符串
+createRoute({ path: `/users/${segment}`, ... });
+```
 :::
 
 ## 入口配置

@@ -7,7 +7,16 @@ Server routes give you full control over HTTP methods, headers, and standard Web
 Define routes using `route(path, definition)` from `@evjs/server`:
 
 :::important
-**Route paths must be string literals.** Do not use template strings (with backticks) or dynamic variables for the `path` argument. This is required for static analysis and route discovery.
+**Route paths must be string literals.** The `path` argument only accepts string literal types — passing a `string` variable or template string will produce a TypeScript compile error. This is enforced by the type system to ensure routes are statically analyzable.
+
+```ts
+// ✅ Good — string literal
+route("/api/users", { ... });
+
+// ❌ Compile error — broad `string` type
+const p: string = "/api/users";
+route(p, { ... });
+```
 :::
 
 ```ts

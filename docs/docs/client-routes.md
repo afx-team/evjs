@@ -2,7 +2,19 @@
 evjs routing is built on [TanStack Router](https://tanstack.com/router). All routing APIs are re-exported from `@evjs/client` — never import from `@tanstack/react-router` directly.
 
 :::important
-**Route paths must be string literals.** Do not use template strings (with backticks) or dynamic variables for the `path` property. This is required for the build system to correctly generate type-safe route trees.
+**Route paths must be string literals.** The `path` property only accepts string literal types — passing a `string` variable or template string will produce a TypeScript compile error. This is enforced by the type system to ensure routes are statically analyzable.
+
+```ts
+// ✅ Good — string literal
+createRoute({ path: "/users/$id", ... });
+
+// ❌ Compile error — broad `string` type
+const p: string = "/users";
+createRoute({ path: p, ... });
+
+// ❌ Compile error — template string
+createRoute({ path: `/users/${segment}`, ... });
+```
 :::
 
 ## Project Structure
