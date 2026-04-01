@@ -40,8 +40,9 @@ export function createWebpackConfig(
   // e.g. "/api/fn" → "/api", "/rpc/v1" → "/rpc"
   const proxyBase = `/${endpoint.split("/").filter(Boolean)[0] || "api"}`;
 
-  // Destructure port and https out of dev overrides to avoid passing them directly.
-  const { port: _p, https: isHttps, ...devServerOverrides } = config.dev;
+  // Map evjs config.dev properties to their webpack-dev-server equivalents.
+  // Never spread config.dev directly — webpack-dev-server rejects unknown properties.
+  const isHttps = config.dev.https;
 
   const webpackConfig: Record<string, unknown> = {
     name: "client",
@@ -126,7 +127,6 @@ export function createWebpackConfig(
           secure: false,
         },
       ],
-      ...devServerOverrides,
     },
   };
 

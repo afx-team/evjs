@@ -5,7 +5,6 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 test.describe("Scaffolding CLI E2E", () => {
-  // Use a longer timeout for operational testing
   test.setTimeout(180_000);
 
   const appName = "e2e-scaffold-test";
@@ -45,38 +44,63 @@ test.describe("Scaffolding CLI E2E", () => {
     expect(fs.existsSync(path.join(targetDir, "package.json"))).toBe(true);
     expect(fs.existsSync(path.join(targetDir, "src", "main.tsx"))).toBe(true);
 
-    // 2. Rewrite local monorepo workspace dependencies to relative file: paths
-    // so they can be installed successfully from npm within the os.tmpdir() space.
-    const pkgPath = path.join(targetDir, "package.json");
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+    // 2. Pack monorepo packages into tarballs for clean isolation
+    console.log("Packing monorepo packages to tarballs...");
     const packagesDir = path.resolve(import.meta.dirname, "../../packages");
+    const packageTgzMap: Record<string, string> = {};
+    for (const pkg of fs.readdirSync(packagesDir)) {
+      const pkgPath = path.join(packagesDir, pkg);
+      if (!fs.statSync(pkgPath).isDirectory()) continue;
+      const tgzOutput = execSync(`npm pack --pack-destination ${targetDir}`, {
+        cwd: pkgPath,
+        encoding: "utf-8",
+      }).trim();
+      const pkgJson = JSON.parse(
+        fs.readFileSync(path.join(pkgPath, "package.json"), "utf8"),
+      );
+      packageTgzMap[pkgJson.name] = `file:./${tgzOutput}`;
+    }
 
-    const injectFileDeps = (deps?: Record<string, string>) => {
-      if (!deps) return;
-      for (const [key] of Object.entries(deps)) {
-        if (key.startsWith("@evjs/")) {
-          const folderName = key.replace("@evjs/", "");
-          deps[key] = `file:${path.join(packagesDir, folderName)}`;
+    // Rewrite @evjs/* deps to point at local tarballs
+    const pkgJsonPath = path.join(targetDir, "package.json");
+    const scaffoldPkg = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
+    for (const deps of [
+      scaffoldPkg.dependencies,
+      scaffoldPkg.devDependencies,
+    ]) {
+      if (!deps) continue;
+      for (const key of Object.keys(deps)) {
+        if (packageTgzMap[key]) {
+          deps[key] = packageTgzMap[key];
+        } else if (key.startsWith("@evjs/")) {
+          throw new Error(
+            `Workspace package ${key} not found during npm pack!`,
+          );
         }
       }
-    };
-    injectFileDeps(pkg.dependencies);
-    injectFileDeps(pkg.devDependencies);
-    fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
+    }
+    // Force transitive @evjs/* deps to use local tarballs too
+    // (e.g. @evjs/cli depends on @evjs/bundler-webpack: "*")
+    scaffoldPkg.overrides = {};
+    for (const [name, ref] of Object.entries(packageTgzMap)) {
+      scaffoldPkg.overrides[name] = ref;
+    }
+    fs.writeFileSync(pkgJsonPath, JSON.stringify(scaffoldPkg, null, 2));
+
+    // 3. Install dependencies (use a fresh npm cache to avoid stale 0.0.0 tarballs)
+    console.log("Installing dependencies...");
+    const npmCache = path.join(targetDir, ".npm-cache");
+    execSync(`npm install --no-fund --no-audit --cache ${npmCache}`, {
+      cwd: targetDir,
+      stdio: "inherit",
+      env: cleanEnv,
+    });
 
     // Force unique port to avoid EADDRINUSE
     fs.writeFileSync(
       path.join(targetDir, "ev.config.ts"),
       `export default { dev: { port: 39123 }, server: { dev: { port: 39124 } } };\n`,
     );
-
-    // 3. Install dependencies inside the isolated tmpdir
-    console.log("Installing monorepo dependencies in temp dir...");
-    execSync("npm install --no-fund --no-audit", {
-      cwd: targetDir,
-      stdio: "inherit",
-      env: cleanEnv,
-    });
 
     // 4. Test production build
     console.log("Running ev build...");
@@ -86,19 +110,19 @@ test.describe("Scaffolding CLI E2E", () => {
       env: cleanEnv,
     });
 
-    // Verify build outputs
     expect(
       fs.existsSync(path.join(targetDir, "dist", "client", "index.html")),
     ).toBe(true);
     expect(fs.existsSync(path.join(targetDir, "dist", "server"))).toBe(true);
 
     // 5. Test dev server
-    console.log("Running ev dev...");
-    await new Promise<void>((resolve, reject) => {
+    console.log("Starting dev server...");
+
+    return new Promise<void>((resolve, reject) => {
       const devProcess = spawn("npx", ["ev", "dev"], {
         cwd: targetDir,
-        stdio: "inherit",
         env: cleanEnv,
+        stdio: "inherit",
       });
 
       const timeout = setTimeout(() => {
@@ -129,8 +153,5 @@ test.describe("Scaffolding CLI E2E", () => {
         }
       });
     });
-
-    // Validated end-to-end scaffolding!
-    expect(true).toBe(true);
   });
 });
