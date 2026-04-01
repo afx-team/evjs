@@ -76,12 +76,12 @@ declare module "@tanstack/react-router" {
 
 | 包 | 用途 |
 |---|------|
-| [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | CLI + `defineConfig` |
-| [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | 项目脚手架 |
+| [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | CLI (`ev dev`, `ev build`) + `defineConfig` |
+| [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | 项目脚手架 (`npx create-evjs-app`) |
 | [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | 客户端运行时（React + TanStack） |
 | [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | 服务端运行时（Hono） |
 | [`@evjs/build-tools`](https://github.com/evaijs/evjs/tree/main/packages/build-tools) | 服务端函数转换 |
-| [`@evjs/bundler-webpack`](https://github.com/evaijs/evjs/tree/main/packages/webpack-plugin) | Webpack 适配器 |
+| [`@evjs/bundler-webpack`](https://github.com/evaijs/evjs/tree/main/packages/bundler-webpack) | Webpack 适配器 |
 | [`@evjs/manifest`](https://github.com/evaijs/evjs/tree/main/packages/manifest) | 共享 Manifest Schema |
 
 ## 必需依赖

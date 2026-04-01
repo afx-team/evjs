@@ -39,13 +39,13 @@ config needed.
 
 | Package | Purpose |
 |---------|---------|
-| [`@evjs/cli`](./packages/cli) | CLI + `defineConfig` |
+| [`@evjs/cli`](./packages/cli) | CLI (`ev dev`, `ev build`) + `defineConfig` |
 | [`@evjs/create-app`](./packages/create-app) | Project scaffolding (`npx create-evjs-app`) |
 | [`@evjs/shared`](./packages/shared) | Shared errors, constants |
 | [`@evjs/client`](./packages/client) | Client runtime (React + TanStack) |
 | [`@evjs/server`](./packages/server) | Server runtime (Hono) |
 | [`@evjs/build-tools`](./packages/build-tools) | Server function transforms |
-| [`@evjs/bundler-webpack`](./packages/webpack-plugin) | Webpack adapter |
+| [`@evjs/bundler-webpack`](./packages/bundler-webpack) | Webpack adapter |
 | [`@evjs/manifest`](./packages/manifest) | Shared manifest schema types |
 | [`examples/`](./examples) | Starter templates |
 
