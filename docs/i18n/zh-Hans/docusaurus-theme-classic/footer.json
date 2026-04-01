@@ -24,8 +24,8 @@
     "description": "The label of footer link with label Server Functions linking to /docs/server-functions"
   },
   "link.item.label.Routing": {
-    "message": "路由",
-    "description": "The label of footer link with label Routing linking to /docs/routing"
+    "message": "客户端路由",
+    "description": "The label of footer link with label Client Routes linking to /docs/client-routes"
   },
   "link.item.label.Configuration": {
     "message": "配置",
