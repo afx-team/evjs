@@ -1,6 +1,6 @@
 # @evjs/manifest
 
-Shared manifest schema types for the **ev** framework build system.
+Shared manifest schema types for the **evjs** fullstack framework.
 
 ## Installation
 

@@ -1,6 +1,6 @@
 # @evjs/build-tools
 
-Bundler-agnostic build utilities for the **ev** framework. Contains all core logic for server function handling, decoupled from any specific bundler.
+Bundler-agnostic build utilities for the **evjs** fullstack framework. Contains all core logic for server function handling, decoupled from any specific bundler.
 
 ## Installation
 

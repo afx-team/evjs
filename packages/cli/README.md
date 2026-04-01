@@ -1,6 +1,6 @@
 # @evjs/cli
 
-> CLI and configuration for the **@evjs/cli** fullstack framework.
+> CLI and configuration for the **evjs** fullstack framework.
 
 ## Install
 

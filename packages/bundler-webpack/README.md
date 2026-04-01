@@ -1,6 +1,6 @@
 # @evjs/bundler-webpack
 
-Webpack adapter for the **ev** framework. Thin wrapper over [`@evjs/build-tools`](../build-tools) that connects bundler-agnostic build logic to Webpack's plugin and loader APIs.
+Webpack adapter for the **evjs** fullstack framework. Thin wrapper over [`@evjs/build-tools`](../build-tools) that connects bundler-agnostic build logic to Webpack's plugin and loader APIs.
 
 ## Installation
 
