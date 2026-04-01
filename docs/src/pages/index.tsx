@@ -142,7 +142,7 @@ function TerminalPreview() {
           <div>
             <span className={styles.terminalPrompt}>$ </span>
             <span className={styles.terminalCmd}>npx</span>{" "}
-            <span className={styles.terminalArg}>create-evjs-app</span> my-app
+            <span className={styles.terminalArg}>create-ev-app</span> my-app
           </div>
           <div style={{ marginTop: "0.5rem" }}>
             <span className={styles.terminalComment}># Start developing</span>
