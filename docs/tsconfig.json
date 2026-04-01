@@ -3,9 +3,7 @@
   "compilerOptions": {
     "ignoreDeprecations": "6.0",
     "paths": {
-      "@site/*": [
-        "./*"
-      ]
+      "@site/*": ["./*"]
     }
   }
 }
