@@ -77,7 +77,7 @@ declare module "@tanstack/react-router" {
 | Package | Purpose |
 |---------|---------|
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | CLI (`ev dev`, `ev build`) + `defineConfig` |
-| [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | Project scaffolding (`npx create-evjs-app`) |
+| [`create-evjs-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | Project scaffolding (`npx create-evjs-app`) |
 | [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Client runtime (React + TanStack) |
 | [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Server runtime (Hono) |
 | [`@evjs/build-tools`](https://github.com/evaijs/evjs/tree/main/packages/build-tools) | Server function transforms |

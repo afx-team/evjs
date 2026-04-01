@@ -1,5 +1,5 @@
 {
-  "name": "@evjs/create-app",
+  "name": "create-evjs-app",
   "version": "0.0.0",
   "description": "Scaffold a new evjs project",
   "type": "module",

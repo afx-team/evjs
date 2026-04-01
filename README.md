@@ -40,7 +40,7 @@ config needed.
 | Package | Purpose |
 |---------|---------|
 | [`@evjs/cli`](./packages/cli) | CLI (`ev dev`, `ev build`) + `defineConfig` |
-| [`@evjs/create-app`](./packages/create-app) | Project scaffolding (`npx create-evjs-app`) |
+| [`create-evjs-app`](./packages/create-app) | Project scaffolding (`npx create-evjs-app`) |
 | [`@evjs/shared`](./packages/shared) | Shared errors, constants |
 | [`@evjs/client`](./packages/client) | Client runtime (React + TanStack) |
 | [`@evjs/server`](./packages/server) | Server runtime (Hono) |
