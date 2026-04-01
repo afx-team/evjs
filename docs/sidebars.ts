@@ -13,7 +13,7 @@ const sidebars: SidebarsConfig = {
       items: [
         "architecture",
         "project-structure",
-        "routing",
+        "client-routes",
         "server-functions",
         "server-routes",
       ],

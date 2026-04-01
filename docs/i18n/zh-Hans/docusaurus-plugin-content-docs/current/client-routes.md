@@ -2,6 +2,10 @@
 
 evjs 路由基于 [TanStack Router](https://tanstack.com/router) 构建。所有路由 API 从 `@evjs/client` 重新导出 —— 不要直接从 `@tanstack/react-router` 导入。
 
+:::important
+**路由路径必须是字符串字面量。** 不要使用模板字符串（反引号）或动态变量来设置 `path` 属性。这是为了让构建系统能够正确生成类型安全的路由树。
+:::
+
 ## 入口配置
 
 ```tsx

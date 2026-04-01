@@ -1,6 +1,9 @@
-# Client Route
-
+# Client Routes
 evjs routing is built on [TanStack Router](https://tanstack.com/router). All routing APIs are re-exported from `@evjs/client` — never import from `@tanstack/react-router` directly.
+
+:::important
+**Route paths must be string literals.** Do not use template strings (with backticks) or dynamic variables for the `path` property. This is required for the build system to correctly generate type-safe route trees.
+:::
 
 ## Project Structure
 

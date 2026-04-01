@@ -6,6 +6,10 @@ Server routes give you full control over HTTP methods, headers, and standard Web
 
 Define routes using `route(path, definition)` from `@evjs/server`:
 
+:::important
+**Route paths must be string literals.** Do not use template strings (with backticks) or dynamic variables for the `path` argument. This is required for static analysis and route discovery.
+:::
+
 ```ts
 // src/api/posts.routes.ts
 import { route } from "@evjs/server";

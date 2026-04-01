@@ -6,6 +6,10 @@
 
 使用 `@evjs/server` 的 `route(path, definition)` 定义路由：
 
+:::important
+**路由路径必须是字符串字面量。** 不要使用模板字符串（反引号）或动态变量来设置 `path` 参数。这是为了静态分析和路由发现所必需的。
+:::
+
 ```ts
 // src/api/posts.routes.ts
 import { route } from "@evjs/server";

@@ -35,7 +35,7 @@ For detailed guides on specific topics, see the `references/` directory:
 - [dev.md](../docs/docs/dev.md) — Development server and configuration
 - [build.md](../docs/docs/build.md) — Production builds
 - [deploy.md](../docs/docs/deploy.md) — Deploying to Node, Docker, Deno, and Edge environments
-- [routing.md](../docs/docs/routing.md) — Route definitions, layouts, params, loaders, navigation
+- [client-routes.md](../docs/docs/client-routes.md) — Route definitions, layouts, params, loaders, navigation
 - [server-functions.md](../docs/docs/server-functions.md) — Server functions, queries, mutations, error handling
 - [server-routes.md](../docs/docs/server-routes.md) — Creating REST API endpoints using programmatic `route()`
 - [config.md](../docs/docs/config.md) — `ev.config.ts` options, defaults, client/server settings
@@ -52,6 +52,7 @@ For detailed guides on specific topics, see the `references/` directory:
 **REST Routes (`route()`):**
 - Use `route()` for REST API endpoints, webhooks, or standard Web Request/Response handling
 - If mixing `route()` endpoints, you must explicitly configure `server.entry` in `ev.config.ts`
+- **Route Paths:** Always use string literals for `path` values (e.g., `path: "/posts"`). Do **not** use template strings or dynamic variables, as these break the build-time static analysis.
 
 **React Data Loading:**
 - Route loaders should fetch using: `context.queryClient.ensureQueryData(getFnQueryOptions(myFn))`
