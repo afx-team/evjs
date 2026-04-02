@@ -11,12 +11,13 @@ my-evjs-app/
 ├── tsconfig.json
 ├── public/                # Static assets (images, fonts, favicon, etc.)
 └── src/
-    ├── app.tsx            # Main application mounting point wrapper
+    ├── main.tsx           # Entry point: build route tree, createApp, register types
     │
-    ├── routes/            # (Core) TanStack Router file-based routing
-    │   ├── __root.tsx     # Root layout wrapping all pages
-    │   ├── index.tsx      # Entry page (matches `/`)
-    │   └── posts.$id.tsx  # Matches `/posts/:id`
+    ├── pages/             # (Core) TanStack Router code-based routing
+    │   ├── __root.tsx     # Root layout wrapping all pages (nav + <Outlet />)
+    │   ├── home.tsx       # Static route (e.g. `/`)
+    │   └── posts/
+    │       └── index.tsx  # Nested routes (`/posts`, `/posts/$postId`)
     │
     ├── api/               # (Core) Backend logic and server functions
     │   ├── fns/               # Pure Server Functions (transformed to RPC by the build system)
@@ -37,13 +38,13 @@ my-evjs-app/
     │
     ├── styles/            # Global stylesheets (Tailwind imports, custom CSS variables)
     │
-    └── root-types.ts      # (Optional) Global ambient type definitions
+    └── global.ts          # (Optional) Global typings & transport init
 ```
 
 ## Core Design Principles
 
-### 1. The `src/routes/` Folder is for Assembly
-We discourage writing massive amounts of business logic directly in the route component files. Instead, treat route files as "glue code"—they should import feature-specific components from the `features/` or `components/` folders and assemble them into a page. This significantly improves readability and testing.
+### 1. The `src/pages/` Folder is for Assembly
+Routes are defined with explicit `createRoute()` calls and assembled into a route tree via `addChildren()` in `main.tsx`. We discourage writing massive amounts of business logic directly in route component files. Instead, treat route files as "glue code"—they should import feature-specific components from the `features/` or `components/` folders and assemble them into a page. This significantly improves readability and testing.
 
 ### 2. The `src/api/` Folder is the Server Boundary
 Because `evjs` transforms `*.server.ts` files automatically, placing them anywhere works. However, we strongly recommend isolating all database interactions, schema definitions, and server-side utilities within `src/api/`. This creates a clear boundary, ensuring server secrets or Node.js built-ins don't inadvertently leak into frontend components.

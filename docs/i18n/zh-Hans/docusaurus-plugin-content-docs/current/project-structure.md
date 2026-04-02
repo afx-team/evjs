@@ -37,7 +37,7 @@ my-evjs-app/
     │
     ├── styles/            # 全局样式文件（如 Tailwind 核心入口、CSS 变量声明）
     │
-    └── root-types.ts      # (可选) 全局类型声明补充
+    └── global.ts          # (可选) 全局类型声明和传输初始化
 ```
 
 ## 核心设计考量
