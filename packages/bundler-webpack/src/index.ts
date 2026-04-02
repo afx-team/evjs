@@ -15,7 +15,7 @@ export { webpackAdapter };
 class ManifestCollector {
   fns: Record<string, ServerFnEntry> = {};
   routes: RouteEntry[] = [];
-  entry: string = "main.js";
+  entry: string | undefined = undefined;
   private jsAssets: string[] = [];
   private cssAssets: string[] = [];
 

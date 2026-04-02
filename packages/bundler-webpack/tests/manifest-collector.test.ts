@@ -34,7 +34,7 @@ describe("ManifestCollector", () => {
   class ManifestCollector {
     fns: Record<string, { moduleId: string; export: string }> = {};
     routes: Array<{ path: string }> = [];
-    entry = "main.js";
+    entry: string | undefined = undefined;
     private jsAssets: string[] = [];
     private cssAssets: string[] = [];
 
@@ -72,7 +72,7 @@ describe("ManifestCollector", () => {
 
     expect(manifest).toEqual({
       version: 1,
-      server: { entry: "main.js", fns: {} },
+      server: { entry: undefined, fns: {} },
       client: { assets: { js: [], css: [] }, routes: [] },
     });
   });

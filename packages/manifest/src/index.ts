@@ -31,8 +31,8 @@ export interface RscEntry {
 
 /** Server section of the manifest. */
 export interface ServerManifestSection {
-  /** Server bundle entry filename (e.g. "main.js" or "main.a1b2c3d4.js"). */
-  entry: string;
+  /** Server bundle entry filename (e.g. "main.js" or "main.a1b2c3d4.js"). Omitted when no server bundle exists. */
+  entry?: string;
   /** Registered server functions (fnId → module + export). */
   fns: Record<string, ServerFnEntry>;
   /** React Server Components (future — reserved). */
