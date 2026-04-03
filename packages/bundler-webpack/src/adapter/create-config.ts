@@ -20,11 +20,15 @@ export function createWebpackConfig(
   const serverPort = config.server.dev.port;
   const endpoint = config.server.endpoint;
   const isProduction = process.env.NODE_ENV === "production";
+  const serverEnabled = config.serverEnabled;
 
   const HtmlWebpackPlugin = esmRequire("html-webpack-plugin");
   const { EvWebpackPlugin } = esmRequire("@evjs/bundler-webpack");
 
-  const pluginOptions = { server: { entry: config.server.entry } };
+  const pluginOptions = {
+    server: { entry: config.server.entry },
+    serverEnabled,
+  };
 
   // Resolve loader paths from evjs's dependency tree so they work
   // even when the user's project doesn't list them as direct deps.
@@ -50,7 +54,7 @@ export function createWebpackConfig(
     devtool: isProduction ? "hidden-source-map" : "source-map",
     entry,
     output: {
-      path: path.resolve(cwd, "dist/client"),
+      path: path.resolve(cwd, serverEnabled ? "dist/client" : "dist"),
       filename: isProduction ? "[name].[contenthash:8].js" : "index.js",
       clean: true,
     },
@@ -120,13 +124,17 @@ export function createWebpackConfig(
       server: isHttps ? "https" : "http",
       hot: true,
       devMiddleware: { writeToDisk: true },
-      proxy: [
-        {
-          context: [proxyBase],
-          target: `${config.server.dev.https ? "https" : "http"}://localhost:${serverPort}`,
-          secure: false,
-        },
-      ],
+      ...(serverEnabled
+        ? {
+            proxy: [
+              {
+                context: [proxyBase],
+                target: `${config.server.dev.https ? "https" : "http"}://localhost:${serverPort}`,
+                secure: false,
+              },
+            ],
+          }
+        : {}),
     },
   };
 

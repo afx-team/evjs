@@ -23,9 +23,11 @@ export type ResolvedEvConfig = Required<
   Omit<EvConfig, "dev" | "server" | "bundler" | "plugins">
 > & {
   dev: Required<NonNullable<EvConfig["dev"]>>;
-  server: Required<Omit<NonNullable<EvConfig["server"]>, "entry" | "dev">> & {
+  /** Whether the server is enabled (true unless `server: false`). */
+  serverEnabled: boolean;
+  server: Required<Omit<NonNullable<Exclude<EvConfig["server"], false>>, "entry" | "dev">> & {
     entry?: string;
-    dev: Required<NonNullable<NonNullable<EvConfig["server"]>["dev"]>>;
+    dev: Required<NonNullable<NonNullable<Exclude<EvConfig["server"], false>>["dev"]>>;
   };
   bundler: Required<NonNullable<EvConfig["bundler"]>>;
   plugins: EvPlugin[];
@@ -67,22 +69,30 @@ export interface EvConfig {
     https?: boolean | { key: string; cert: string };
   };
 
-  /** Optional server configuration. */
-  server?: {
-    /** Explicit server entry file. If provided, overrides auto-generated entry. */
-    entry?: string;
-    /** Server runtime command. Default: "node". */
-    runtime?: string;
-    /** Server function endpoint path. Default: "/api/fn". */
-    endpoint?: string;
-    /** Server dev options. */
-    dev?: {
-      /** API server port (dev mode). Default: 3001. */
-      port?: number;
-      /** Enable HTTPS for the API server. Must provide explicit key/cert payloads or file paths. */
-      https?: { key: string; cert: string } | false;
-    };
-  };
+  /**
+   * Server configuration.
+   *
+   * Set to `false` to disable the server entirely (CSR-only mode).
+   * When `false`, build output goes to flat `dist/` instead of `dist/client/` + `dist/server/`,
+   * and any `"use server"` module will cause a build error.
+   */
+  server?:
+    | false
+    | {
+        /** Explicit server entry file. If provided, overrides auto-generated entry. */
+        entry?: string;
+        /** Server runtime command. Default: "node". */
+        runtime?: string;
+        /** Server function endpoint path. Default: "/api/fn". */
+        endpoint?: string;
+        /** Server dev options. */
+        dev?: {
+          /** API server port (dev mode). Default: 3001. */
+          port?: number;
+          /** Enable HTTPS for the API server. Must provide explicit key/cert payloads or file paths. */
+          https?: { key: string; cert: string } | false;
+        };
+      };
 
   /** Bundler adapter configuration. */
   bundler?: {
@@ -122,6 +132,8 @@ export function defineConfig(config: EvConfig): EvConfig {
  */
 export function resolveConfig(userConfig?: EvConfig): ResolvedEvConfig {
   const config = userConfig ?? {};
+  const serverEnabled = config.server !== false;
+  const serverConfig = config.server === false ? {} : (config.server ?? {});
 
   return {
     entry: config.entry ?? CONFIG_DEFAULTS.entry,
@@ -130,13 +142,14 @@ export function resolveConfig(userConfig?: EvConfig): ResolvedEvConfig {
       port: config.dev?.port ?? CONFIG_DEFAULTS.port,
       https: config.dev?.https ?? false,
     },
+    serverEnabled,
     server: {
-      entry: config.server?.entry,
-      runtime: config.server?.runtime ?? "node",
-      endpoint: config.server?.endpoint ?? CONFIG_DEFAULTS.endpoint,
+      entry: serverConfig.entry,
+      runtime: serverConfig.runtime ?? "node",
+      endpoint: serverConfig.endpoint ?? CONFIG_DEFAULTS.endpoint,
       dev: {
-        port: config.server?.dev?.port ?? CONFIG_DEFAULTS.serverPort,
-        https: config.server?.dev?.https ?? false,
+        port: serverConfig.dev?.port ?? CONFIG_DEFAULTS.serverPort,
+        https: serverConfig.dev?.https ?? false,
       },
     },
     bundler: {

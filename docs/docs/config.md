@@ -37,6 +37,8 @@ export default defineConfig({
   },
 
   // ── Server (optional) ──
+  // Set to `false` for CSR-only apps (flat dist/ output, no server bundle)
+  // server: false,
   server: {
     entry: "./src/server.ts",        // Explicit server entry (optional)
     runtime: "node",                 // "node" | "bun" | "deno run --allow-net"
@@ -68,6 +70,18 @@ Path to the HTML template. Must contain a mount element (e.g. `<div id="app">`).
 | `https` | `boolean \| { key: string; cert: string }` | `false` | Enable HTTPS. Pass `true` for auto-certs or an object with explicit key/cert. |
 
 ## Server Options
+
+The `server` field accepts an object for fullstack apps, or `false` to disable the server entirely (CSR-only mode).
+
+```ts
+// CSR-only: flat dist/ output, no server bundle
+export default defineConfig({ server: false });
+```
+
+When `server: false`:
+- Build output goes to `dist/` instead of `dist/client/` + `dist/server/`
+- Any `"use server"` module causes a **build error**
+- No API proxy is configured in dev mode
 
 ### `server.entry`
 

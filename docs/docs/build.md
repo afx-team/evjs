@@ -10,6 +10,8 @@ Sets `NODE_ENV=production` and produces optimized bundles.
 
 ## Output Structure
 
+### Fullstack (default)
+
 ```
 dist/
 ├── client/
@@ -21,6 +23,20 @@ dist/
     ├── manifest.json       # Server function registry
     └── main.[hash].js      # Server function bundle (CJS)
 ```
+
+### CSR-only (`server: false`)
+
+When `server: false` is set in `ev.config.ts`, the output is flat:
+
+```
+dist/
+├── manifest.json         # Client asset map + route metadata
+├── index.html            # Generated HTML
+├── main.[hash].js        # Client bundle
+└── [chunk].[hash].js     # Code-split chunks
+```
+
+> **Note:** With `server: false`, any `"use server"` module will cause a build error.
 
 ## What Happens During Build
 

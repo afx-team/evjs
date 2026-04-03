@@ -194,7 +194,7 @@ export function createExampleTest(exampleName: string) {
 /**
  * Create a test fixture for a CSR-only example (no server functions).
  *
- * Only serves static files from dist/client/ — no API server is started.
+ * Only serves static files from dist/ (flat output) — no API server is started.
  */
 export function createCsrExampleTest(exampleName: string) {
   const exampleDir = path.resolve(
@@ -214,7 +214,7 @@ export function createCsrExampleTest(exampleName: string) {
         );
         const webPort = 30000 + workerInfo.workerIndex * 100 + (hash % 100) + 1;
 
-        const distDir = path.join(exampleDir, "dist", "client");
+        const distDir = path.join(exampleDir, "dist");
         const indexHtml = fs.readFileSync(
           path.join(distDir, "index.html"),
           "utf-8",

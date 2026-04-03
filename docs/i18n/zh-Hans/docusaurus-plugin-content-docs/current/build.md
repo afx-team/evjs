@@ -10,6 +10,8 @@ ev build
 
 ## 输出结构
 
+### 全栈（默认）
+
 ```
 dist/
 ├── client/
@@ -21,6 +23,20 @@ dist/
     ├── manifest.json       # 服务端函数注册表
     └── main.[hash].js      # 服务端函数 bundle（CJS）
 ```
+
+### 纯 CSR（`server: false`）
+
+在 `ev.config.ts` 中设置 `server: false` 时，输出为扁平结构：
+
+```
+dist/
+├── manifest.json         # 客户端资源映射 + 路由元数据
+├── index.html            # 生成的 HTML
+├── main.[hash].js        # 客户端 bundle
+└── [chunk].[hash].js     # 代码分割的块
+```
+
+> **注意：** 设置 `server: false` 后，任何 `"use server"` 模块都会导致构建错误。
 
 ## 服务端函数转换
 

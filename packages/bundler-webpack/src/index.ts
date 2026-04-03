@@ -60,6 +60,8 @@ export type { ServerEntryConfig };
 
 export interface EvWebpackPluginOptions {
   server?: ServerEntryConfig;
+  /** Whether server features are enabled. Default: true. */
+  serverEnabled?: boolean;
 }
 
 /**
@@ -70,9 +72,11 @@ export interface EvWebpackPluginOptions {
  */
 export class EvWebpackPlugin {
   private options: EvWebpackPluginOptions;
+  private serverEnabled: boolean;
 
   constructor(options?: EvWebpackPluginOptions) {
     this.options = options ?? {};
+    this.serverEnabled = options?.serverEnabled ?? true;
   }
   apply(compiler: Compiler) {
     const collector = new ManifestCollector();
@@ -124,6 +128,19 @@ export class EvWebpackPlugin {
               }
 
               const explicitServerEntry = this.options.server?.entry;
+
+              // When server is disabled, error if any "use server" files exist
+              if (!this.serverEnabled) {
+                if (serverModulePaths.length > 0 || explicitServerEntry) {
+                  return finishCallback(
+                    new Error(
+                      `[evjs] server is disabled (server: false) but ${serverModulePaths.length} "use server" module(s) were found:\n${serverModulePaths.map((p) => `  - ${p}`).join("\n")}\nRemove "use server" directives or enable the server.`,
+                    ),
+                  );
+                }
+                return finishCallback();
+              }
+
               if (serverModulePaths.length === 0 && !explicitServerEntry) {
                 return finishCallback();
               }
@@ -260,6 +277,7 @@ export class EvWebpackPlugin {
           if (!hasContent) return;
 
           // Emit dist/client/manifest.json (relative to client output dir)
+          // When server is disabled, output goes to dist/ so this becomes dist/manifest.json
           compilation.emitAsset(
             "manifest.json",
             new compiler.webpack.sources.RawSource(
@@ -267,13 +285,15 @@ export class EvWebpackPlugin {
             ),
           );
 
-          // Emit dist/server/manifest.json (relative to client output dir)
-          compilation.emitAsset(
-            "../server/manifest.json",
-            new compiler.webpack.sources.RawSource(
-              JSON.stringify(serverManifest, null, 2),
-            ),
-          );
+          // Only emit server manifest when server is enabled
+          if (this.serverEnabled) {
+            compilation.emitAsset(
+              "../server/manifest.json",
+              new compiler.webpack.sources.RawSource(
+                JSON.stringify(serverManifest, null, 2),
+              ),
+            );
+          }
         },
       );
     });

@@ -3,9 +3,12 @@
  *
  * Shared manifest schemas for the ev framework build system.
  *
- * Two separate manifests are emitted during the build:
+ * Two separate manifests are emitted during fullstack builds:
  *   - `dist/server/manifest.json` — server build metadata
  *   - `dist/client/manifest.json` — client build metadata
+ *
+ * For CSR-only builds (`server: false`), only the client manifest
+ * is emitted to `dist/manifest.json` (flat output).
  */
 
 /** A registered server function entry. */
@@ -47,7 +50,8 @@ export interface RouteEntry {
 }
 
 /**
- * Client manifest — emitted to `dist/client/manifest.json`.
+ * Client manifest — emitted to `dist/client/manifest.json` (fullstack)
+ * or `dist/manifest.json` (CSR-only, `server: false`).
  *
  * Contains client bundle assets and discovered routes.
  */

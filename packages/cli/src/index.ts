@@ -67,7 +67,7 @@ export async function dev(
   let apiStarted = false;
 
   const handleServerBundleReady = () => {
-    if (apiStarted) return;
+    if (apiStarted || !config.serverEnabled) return;
 
     const manifestPath = path.resolve(cwd, "dist/server/manifest.json");
     if (!fs.existsSync(manifestPath)) return;

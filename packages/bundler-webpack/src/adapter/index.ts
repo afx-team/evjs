@@ -68,7 +68,7 @@ export const webpackAdapter: BundlerAdapter = {
 
     let apiReadyCalled = false;
     compiler.hooks.done.tap("EvDevServer", async () => {
-      if (apiReadyCalled) return;
+      if (apiReadyCalled || !config.serverEnabled) return;
       const manifestPath = path.resolve(cwd, "dist/server/manifest.json");
 
       if (fs.existsSync(manifestPath)) {
