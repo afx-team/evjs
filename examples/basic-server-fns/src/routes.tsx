@@ -1,5 +1,14 @@
-import { createRootRoute, createRoute, Link, Outlet } from "@evjs/client";
-import { useEffect, useState } from "react";
+import {
+  createRootRoute,
+  createRoute,
+  getFnQueryKey,
+  Link,
+  Outlet,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@evjs/client";
+import { useState } from "react";
 import { createUser, getUsers } from "./api/users.server";
 
 // ── Root Route ──
@@ -23,42 +32,26 @@ const rootRoute = createRootRoute({ component: Root });
 function UsersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const queryClient = useQueryClient();
 
-  const [users, setUsers] = useState<
-    { id: string; name: string; email: string }[]
-  >([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Use the framework's useQuery hook instead of manual useState + useEffect
+  const { data: users = [], isLoading } = useQuery(getUsers);
 
-  useEffect(() => {
-    let mounted = true;
-    getUsers()
-      .then((data) => {
-        if (mounted) {
-          setUsers(data);
-          setIsLoading(false);
-        }
-      })
-      .catch((err) => {
-        console.error(err);
-        if (mounted) setIsLoading(false);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  async function handleCreate(e: { preventDefault: () => void }) {
-    e.preventDefault();
-    if (!name || !email) return;
-    try {
-      await createUser({ name, email });
+  // Use useMutation for server function calls that modify data
+  const createUserMutation = useMutation({
+    mutationFn: createUser,
+    onSuccess: () => {
+      // Invalidate and refetch users list after successful creation
+      queryClient.invalidateQueries({ queryKey: getFnQueryKey(getUsers) });
       setName("");
       setEmail("");
-      const data = await getUsers();
-      setUsers(data);
-    } catch (err) {
-      console.error(err);
-    }
+    },
+  });
+
+  function handleCreate(e: { preventDefault: () => void }) {
+    e.preventDefault();
+    if (!name || !email) return;
+    createUserMutation.mutate({ name, email });
   }
 
   if (isLoading) return <p>Loading users from server…</p>;

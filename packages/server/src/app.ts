@@ -17,6 +17,11 @@ export interface CreateAppOptions {
   /** Server function endpoint path. Defaults to "/api/fn". */
   endpoint?: string;
   /**
+   * Maximum request body size in bytes for server function calls.
+   * Defaults to 1MB (1048576 bytes).
+   */
+  bodyLimit?: number;
+  /**
    * Route handlers to mount on the app.
    * Created via `route()`.
    */
@@ -33,7 +38,11 @@ export interface CreateAppOptions {
  * @returns A runtime-agnostic Hono app instance.
  */
 export function createApp(options?: CreateAppOptions): Hono {
-  const { endpoint = DEFAULT_ENDPOINT, routeHandlers = [] } = options ?? {};
+  const {
+    endpoint = DEFAULT_ENDPOINT,
+    bodyLimit: maxBodySize = 1024 * 1024,
+    routeHandlers = [],
+  } = options ?? {};
 
   const app = new Hono();
 
@@ -42,8 +51,8 @@ export function createApp(options?: CreateAppOptions): Hono {
     app.route("/", handler.app);
   }
 
-  // Mount server function endpoint with 1MB body size limit
-  app.post(endpoint, bodyLimit({ maxSize: 1024 * 1024 }), async (c) => {
+  // Mount server function endpoint with configurable body size limit
+  app.post(endpoint, bodyLimit({ maxSize: maxBodySize }), async (c) => {
     let body: { fnId: string; args: unknown[] };
 
     try {

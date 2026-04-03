@@ -64,8 +64,13 @@ export function detectUseServer(source: string): boolean {
         return true;
       }
     }
-  } catch (_e) {
-    // Fallback if parsing completely fails for some reason
+  } catch (e) {
+    // If parsing fails (syntax error or unsupported features), log for debugging
+    // but conservatively assume NOT a server module. Real errors surface during build.
+    // biome-ignore lint/suspicious/noConsole: Intentional debug output for build diagnostics
+    console.warn(
+      `[evjs] Failed to parse file for "use server" directive: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
   return false;
 }

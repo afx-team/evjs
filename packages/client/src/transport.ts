@@ -63,6 +63,8 @@ export interface TransportOptions {
   headers?:
     | Record<string, string>
     | (() => Record<string, string> | Promise<Record<string, string>>);
+  /** Suppress warnings when re-initializing transport. Useful for HMR. */
+  silent?: boolean;
 }
 
 /**
@@ -139,7 +141,7 @@ function getTransport(): ServerTransport {
  * customise the endpoint URL or provide a custom transport.
  */
 export function initTransport(options: TransportOptions): void {
-  if (_transport !== null) {
+  if (_transport !== null && !options.silent) {
     console.warn(
       "[ev] initTransport() was called more than once. " +
         "This overwrites the previous transport configuration.",

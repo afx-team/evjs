@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { configure, getConsoleSink } from "@logtape/logtape";
+import { configure, getConsoleSink, getLogger } from "@logtape/logtape";
 import { Command } from "commander";
 import { build, dev } from "./index.js";
 
@@ -26,6 +26,8 @@ program
   .description("CLI for the evjs framework")
   .version(pkg.version);
 
+const logger = getLogger(["evjs", "cli"]);
+
 program
   .command("dev")
   .description("Start development server")
@@ -36,7 +38,7 @@ program
     try {
       await dev(config ?? undefined, { cwd });
     } catch (err) {
-      console.error(err);
+      logger.error`Failed to start dev server: ${err}`;
       process.exit(1);
     }
   });
@@ -51,7 +53,7 @@ program
     try {
       await build(config ?? undefined, { cwd });
     } catch (err) {
-      console.error(err);
+      logger.error`Build failed: ${err}`;
       process.exit(1);
     }
   });
