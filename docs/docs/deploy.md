@@ -12,7 +12,8 @@ npm run build
 This creates:
 - `dist/client/` — Static React SPA and assets
 - `dist/server/` — Backend server functions bundle
-- `dist/manifest.json` — Metadata linking client and server builds
+- `dist/client/manifest.json` — Client asset map and route metadata
+- `dist/server/manifest.json` — Server function registry
 
 ## Option 1: Node.js (Default)
 

@@ -69,11 +69,11 @@ export async function dev(
   const handleServerBundleReady = () => {
     if (apiStarted) return;
 
-    const manifestPath = path.resolve(cwd, "dist/manifest.json");
+    const manifestPath = path.resolve(cwd, "dist/server/manifest.json");
     if (!fs.existsSync(manifestPath)) return;
 
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
-    if (!manifest.server?.entry) return;
+    if (!manifest.entry) return;
 
     apiStarted = true;
     const serverPort = config?.server?.dev?.port ?? CONFIG_DEFAULTS.serverPort;
@@ -83,11 +83,7 @@ export async function dev(
 
     const bootstrapPath = path.resolve(cwd, "dist/server/_dev_start.cjs");
     try {
-      const serverBundlePath = path.resolve(
-        cwd,
-        "dist/server",
-        manifest.server.entry,
-      );
+      const serverBundlePath = path.resolve(cwd, "dist/server", manifest.entry);
 
       if (!fs.existsSync(path.dirname(bootstrapPath))) {
         fs.mkdirSync(path.dirname(bootstrapPath), { recursive: true });

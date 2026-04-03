@@ -10,7 +10,7 @@ evjs is a React fullstack framework with type-safe routing (TanStack Router), da
 ┌─────────────────────────── Build Time ───────────────────────────┐
 │                                                                  │
 │  @evjs/cli ──► @evjs/bundler-webpack ──► @evjs/manifest           │
-│                      ▲                    (manifest.json)        │
+│                      ▲                    (manifests)            │
 │  @evjs/build-tools ──┘                                           │
 │  (bundler-agnostic)                                              │
 │                                                                  │
@@ -88,7 +88,7 @@ Browser ──(:3000)──► WebpackDevServer ──► HMR (static assets)
 
 `ev dev` uses the webpack Node API directly:
 1. Creates webpack compiler + WebpackDevServer in-process
-2. Polls for `dist/manifest.json`
+2. Polls for `dist/server/manifest.json`
 3. Writes a CJS bootstrap and runs it with `node --watch`
 
 ## Build Flow (`ev build`)
@@ -100,7 +100,7 @@ Browser ──(:3000)──► WebpackDevServer ──► HMR (static assets)
    - Discovers `*.server.ts` via glob
    - Applies SWC transforms (client + server variants)
    - Runs child compiler for server bundle
-   - Emits `dist/manifest.json` with function registry
+   - Emits `dist/server/manifest.json` and `dist/client/manifest.json`
 
 ## Deployment Adapters
 

@@ -37,7 +37,7 @@ Uses webpack Node API directly (no temp config files):
 
 Runs webpack via Node API with `NODE_ENV=production`:
 - `dist/client/` — optimized client assets with content hashes.
-- `dist/server/main.[hash].js` — server bundle (entry discovered via `dist/manifest.json`).
+- `dist/server/main.[hash].js` — server bundle (entry discovered via `dist/server/manifest.json`).
 
 ## Configuration
 

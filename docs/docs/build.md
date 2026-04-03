@@ -12,13 +12,14 @@ Sets `NODE_ENV=production` and produces optimized bundles.
 
 ```
 dist/
-├── manifest.json           # Server function registry + client asset map
 ├── client/
+│   ├── manifest.json       # Client asset map + route metadata
 │   ├── index.html          # Generated HTML
 │   ├── main.[hash].js      # Client bundle
 │   └── [chunk].[hash].js   # Code-split chunks
 └── server/
-    └── main.js             # Server function bundle (CJS)
+    ├── manifest.json       # Server function registry
+    └── main.[hash].js      # Server function bundle (CJS)
 ```
 
 ## What Happens During Build
@@ -43,22 +44,31 @@ Function IDs are stable SHA-256 hashes derived from `filePath + exportName`.
    - Discovers `*.server.ts` files via glob
    - Applies SWC transforms (client + server variants)
    - Runs child compiler for server bundle
-   - Emits `dist/manifest.json` with function registry and client assets
+   - Emits `dist/server/manifest.json` (function registry) and `dist/client/manifest.json` (asset map + routes)
 
-## Manifest (`dist/manifest.json`)
+## Server Manifest (`dist/server/manifest.json`)
 
-The manifest contains both server function mappings and client build metadata:
+Contains the server function registry:
 
 ```json
 {
   "version": 1,
-  "functions": {
-    "a1b2c3d4": { "module": "./api/users.server", "export": "getUsers" }
-  },
-  "client": {
-    "assets": { "js": ["main.abc123.js"], "css": ["styles.def456.css"] },
-    "routes": ["/", "/users", "/posts/:id"]
+  "entry": "main.a1b2c3d4.js",
+  "fns": {
+    "a1b2c3d4": { "moduleId": "f9b6...", "export": "getUsers" }
   }
+}
+```
+
+## Client Manifest (`dist/client/manifest.json`)
+
+Contains client build metadata:
+
+```json
+{
+  "version": 1,
+  "assets": { "js": ["main.abc123.js"], "css": ["styles.def456.css"] },
+  "routes": [{ "path": "/" }, { "path": "/users" }, { "path": "/posts/$postId" }]
 }
 ```
 

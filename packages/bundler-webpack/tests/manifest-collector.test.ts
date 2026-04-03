@@ -51,29 +51,36 @@ describe("ManifestCollector", () => {
       this.cssAssets = css;
     }
 
-    getManifest() {
+    getServerManifest() {
       return {
         version: 1,
-        server: {
-          entry: this.entry,
-          fns: this.fns,
-        },
-        client: {
-          assets: { js: this.jsAssets, css: this.cssAssets },
-          routes: this.routes,
-        },
+        entry: this.entry,
+        fns: this.fns,
+      };
+    }
+
+    getClientManifest() {
+      return {
+        version: 1,
+        assets: { js: this.jsAssets, css: this.cssAssets },
+        routes: this.routes,
       };
     }
   }
 
-  it("produces correct empty manifest shape", () => {
+  it("produces correct empty manifest shapes", () => {
     const collector = new ManifestCollector();
-    const manifest = collector.getManifest();
 
-    expect(manifest).toEqual({
+    expect(collector.getServerManifest()).toEqual({
       version: 1,
-      server: { entry: undefined, fns: {} },
-      client: { assets: { js: [], css: [] }, routes: [] },
+      entry: undefined,
+      fns: {},
+    });
+
+    expect(collector.getClientManifest()).toEqual({
+      version: 1,
+      assets: { js: [], css: [] },
+      routes: [],
     });
   });
 
@@ -89,13 +96,13 @@ describe("ManifestCollector", () => {
       export: "createUser",
     });
 
-    const manifest = collector.getManifest();
-    expect(Object.keys(manifest.server.fns)).toHaveLength(2);
-    expect(manifest.server.fns.abc123).toEqual({
+    const manifest = collector.getServerManifest();
+    expect(Object.keys(manifest.fns)).toHaveLength(2);
+    expect(manifest.fns.abc123).toEqual({
       moduleId: "src/api/users.server.ts",
       export: "getUsers",
     });
-    expect(manifest.server.fns.def456).toEqual({
+    expect(manifest.fns.def456).toEqual({
       moduleId: "src/api/users.server.ts",
       export: "createUser",
     });
@@ -107,9 +114,9 @@ describe("ManifestCollector", () => {
     collector.addRoutes([{ path: "/" }, { path: "/about" }]);
     collector.addRoutes([{ path: "/posts/$postId" }]);
 
-    const manifest = collector.getManifest();
-    expect(manifest.client.routes).toHaveLength(3);
-    expect(manifest.client.routes).toEqual([
+    const manifest = collector.getClientManifest();
+    expect(manifest.routes).toHaveLength(3);
+    expect(manifest.routes).toEqual([
       { path: "/" },
       { path: "/about" },
       { path: "/posts/$postId" },
@@ -124,23 +131,23 @@ describe("ManifestCollector", () => {
       ["main.abc12345.css"],
     );
 
-    const manifest = collector.getManifest();
-    expect(manifest.client.assets.js).toEqual([
+    const manifest = collector.getClientManifest();
+    expect(manifest.assets.js).toEqual([
       "main.abc12345.js",
       "vendor.def67890.js",
     ]);
-    expect(manifest.client.assets.css).toEqual(["main.abc12345.css"]);
+    expect(manifest.assets.css).toEqual(["main.abc12345.css"]);
   });
 
   it("allows overriding the server entry", () => {
     const collector = new ManifestCollector();
     collector.entry = "main.a1b2c3d4.js";
 
-    const manifest = collector.getManifest();
-    expect(manifest.server.entry).toBe("main.a1b2c3d4.js");
+    const manifest = collector.getServerManifest();
+    expect(manifest.entry).toBe("main.a1b2c3d4.js");
   });
 
-  it("produces complete manifest with all sections", () => {
+  it("produces complete manifests with all sections", () => {
     const collector = new ManifestCollector();
 
     collector.addServerFn("fn1", {
@@ -151,17 +158,16 @@ describe("ManifestCollector", () => {
     collector.setAssets(["index.js"], ["style.css"]);
     collector.entry = "server.hash.js";
 
-    const manifest = collector.getManifest();
-    expect(manifest).toEqual({
+    expect(collector.getServerManifest()).toEqual({
       version: 1,
-      server: {
-        entry: "server.hash.js",
-        fns: { fn1: { moduleId: "api/users.server.ts", export: "getUsers" } },
-      },
-      client: {
-        assets: { js: ["index.js"], css: ["style.css"] },
-        routes: [{ path: "/" }],
-      },
+      entry: "server.hash.js",
+      fns: { fn1: { moduleId: "api/users.server.ts", export: "getUsers" } },
+    });
+
+    expect(collector.getClientManifest()).toEqual({
+      version: 1,
+      assets: { js: ["index.js"], css: ["style.css"] },
+      routes: [{ path: "/" }],
     });
   });
 });

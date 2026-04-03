@@ -11,7 +11,8 @@ npm run build
 输出：
 - `dist/client/` —— 静态 React SPA 和资源
 - `dist/server/` —— 后端服务端函数 bundle
-- `dist/manifest.json` —— 连接客户端和服务端构建的元数据
+- `dist/client/manifest.json` —— 客户端资源映射和路由元数据
+- `dist/server/manifest.json` —— 服务端函数注册表
 
 ## 方案一：Node.js（默认）
 

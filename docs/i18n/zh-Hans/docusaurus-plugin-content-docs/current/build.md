@@ -12,13 +12,14 @@ ev build
 
 ```
 dist/
-├── manifest.json           # 服务端函数注册表 + 客户端资源映射
 ├── client/
+│   ├── manifest.json       # 客户端资源映射 + 路由元数据
 │   ├── index.html          # 生成的 HTML
 │   ├── main.[hash].js      # 客户端 bundle
 │   └── [chunk].[hash].js   # 代码分割的块
 └── server/
-    └── main.js             # 服务端函数 bundle（CJS）
+    ├── manifest.json       # 服务端函数注册表
+    └── main.[hash].js      # 服务端函数 bundle（CJS）
 ```
 
 ## 服务端函数转换

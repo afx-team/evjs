@@ -3,15 +3,10 @@
  *
  * Shared manifest schemas for the ev framework build system.
  *
- * A single unified manifest is emitted to `dist/manifest.json`,
- * containing both server and client build metadata.
+ * Two separate manifests are emitted during the build:
+ *   - `dist/server/manifest.json` — server build metadata
+ *   - `dist/client/manifest.json` — client build metadata
  */
-
-/** Base manifest fields shared by all environment manifests. */
-interface ManifestBase {
-  /** Schema version — bump on breaking changes. */
-  version: 1;
-}
 
 /** A registered server function entry. */
 export interface ServerFnEntry {
@@ -29,8 +24,14 @@ export interface RscEntry {
   export: string;
 }
 
-/** Server section of the manifest. */
-export interface ServerManifestSection {
+/**
+ * Server manifest — emitted to `dist/server/manifest.json`.
+ *
+ * Contains server bundle entry, registered server functions, and RSC metadata.
+ */
+export interface ServerManifest {
+  /** Schema version — bump on breaking changes. */
+  version: 1;
   /** Server bundle entry filename (e.g. "main.js" or "main.a1b2c3d4.js"). Omitted when no server bundle exists. */
   entry?: string;
   /** Registered server functions (fnId → module + export). */
@@ -45,8 +46,14 @@ export interface RouteEntry {
   path: string;
 }
 
-/** Client section of the manifest. */
-export interface ClientManifestSection {
+/**
+ * Client manifest — emitted to `dist/client/manifest.json`.
+ *
+ * Contains client bundle assets and discovered routes.
+ */
+export interface ClientManifest {
+  /** Schema version — bump on breaking changes. */
+  version: 1;
   /** Bundle asset paths for HTML injection. */
   assets: {
     /** JavaScript bundle paths. */
@@ -57,25 +64,3 @@ export interface ClientManifestSection {
   /** Discovered client routes. */
   routes?: RouteEntry[];
 }
-
-/**
- * Unified manifest — emitted to `dist/manifest.json`.
- *
- * Contains both server and client build metadata in a single file.
- */
-export interface Manifest extends ManifestBase {
-  /** Server build metadata (entry, server functions, RSC). */
-  server: ServerManifestSection;
-  /** Client build metadata (bundles, CSS, routes). Optional until client manifest is implemented. */
-  client?: ClientManifestSection;
-}
-
-/**
- * @deprecated Use `Manifest` instead. Kept for backward compatibility.
- */
-export type ServerManifest = ManifestBase & ServerManifestSection;
-
-/**
- * @deprecated Use `Manifest` instead. Kept for backward compatibility.
- */
-export type ClientManifest = ManifestBase & ClientManifestSection;

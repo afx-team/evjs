@@ -10,43 +10,43 @@ npm install @evjs/manifest
 
 ## Purpose
 
-Defines the structure of the unified manifest file emitted by `@evjs/bundler-webpack` and consumed by `@evjs/client` and `@evjs/server`. A single `dist/manifest.json` contains both server and client build metadata:
+Defines the structure of the manifest files emitted by `@evjs/bundler-webpack` and consumed by `@evjs/client` and `@evjs/server`. Two separate manifests are emitted during the build:
 
-## Manifest (v1)
+## Server Manifest (`dist/server/manifest.json`)
 
 ```json
 {
   "version": 1,
-  "server": {
-    "entry": "main.a1b2c3d4.js",
-    "fns": {
-      "<fnId>": {
-        "moduleId": "f9b6...",
-        "export": "getUsers"
-      }
+  "entry": "main.a1b2c3d4.js",
+  "fns": {
+    "<fnId>": {
+      "moduleId": "f9b6...",
+      "export": "getUsers"
     }
-  },
-  "client": {
-    "assets": {
-      "js": ["main.abc123.js"],
-      "css": ["main.def456.css"]
-    },
-    "routes": [
-      { "path": "/" },
-      { "path": "/posts/$postId" }
-    ]
   }
+}
+```
+
+## Client Manifest (`dist/client/manifest.json`)
+
+```json
+{
+  "version": 1,
+  "assets": {
+    "js": ["main.abc123.js"],
+    "css": ["main.def456.css"]
+  },
+  "routes": [
+    { "path": "/" },
+    { "path": "/posts/$postId" }
+  ]
 }
 ```
 
 ## Exported Types
 
-- **`Manifest`** — unified manifest (`dist/manifest.json`) with `server` and `client` sections.
-- **`ServerManifestSection`** — server section (`{ entry, fns, rsc? }`).
-- **`ClientManifestSection`** — client section (`{ assets: { js, css }, routes? }`).
+- **`ServerManifest`** — server manifest (`dist/server/manifest.json`) with `entry`, `fns`, and optional `rsc`.
+- **`ClientManifest`** — client manifest (`dist/client/manifest.json`) with `assets` and optional `routes`.
 - **`ServerFnEntry`** — server function metadata (`{ moduleId, export }`).
 - **`RouteEntry`** — a discovered client route (`{ path }`).
 - **`RscEntry`** — React Server Components (reserved for future).
-- **`PageEntry`** — per-page assets for MPA (reserved for future).
-- **`ServerManifest`** — deprecated alias, use `Manifest` instead.
-- **`ClientManifest`** — deprecated alias, use `Manifest` instead.

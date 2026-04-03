@@ -6,7 +6,12 @@ import {
   generateServerEntry,
   type ServerEntryConfig,
 } from "@evjs/build-tools";
-import type { Manifest, RouteEntry, ServerFnEntry } from "@evjs/manifest";
+import type {
+  ClientManifest,
+  RouteEntry,
+  ServerFnEntry,
+  ServerManifest,
+} from "@evjs/manifest";
 import type { Compiler } from "webpack";
 import { webpackAdapter } from "./adapter/index.js";
 
@@ -32,17 +37,19 @@ class ManifestCollector {
     this.cssAssets = css;
   }
 
-  getManifest(): Manifest {
+  getServerManifest(): ServerManifest {
     return {
       version: 1,
-      server: {
-        entry: this.entry,
-        fns: this.fns,
-      },
-      client: {
-        assets: { js: this.jsAssets, css: this.cssAssets },
-        routes: this.routes,
-      },
+      entry: this.entry,
+      fns: this.fns,
+    };
+  }
+
+  getClientManifest(): ClientManifest {
+    return {
+      version: 1,
+      assets: { js: this.jsAssets, css: this.cssAssets },
+      routes: this.routes,
     };
   }
 }
@@ -223,7 +230,7 @@ export class EvWebpackPlugin {
       );
     }
 
-    // Emit manifest using modern processAssets hook
+    // Emit manifests using modern processAssets hook
     compiler.hooks.thisCompilation.tap("EvWebpackPlugin", (compilation) => {
       compilation.hooks.processAssets.tap(
         {
@@ -244,18 +251,28 @@ export class EvWebpackPlugin {
           }
           collector.setAssets(jsFiles, cssFiles);
 
-          const manifest = collector.getManifest();
-          if (
-            Object.keys(manifest.server.fns).length === 0 &&
-            manifest.client?.routes?.length === 0
-          ) {
-            return;
-          }
-          const content = JSON.stringify(manifest, null, 2);
+          const serverManifest = collector.getServerManifest();
+          const clientManifest = collector.getClientManifest();
 
+          const hasContent =
+            Object.keys(serverManifest.fns).length > 0 ||
+            (clientManifest.routes?.length ?? 0) > 0;
+          if (!hasContent) return;
+
+          // Emit dist/client/manifest.json (relative to client output dir)
           compilation.emitAsset(
-            "../manifest.json",
-            new compiler.webpack.sources.RawSource(content),
+            "manifest.json",
+            new compiler.webpack.sources.RawSource(
+              JSON.stringify(clientManifest, null, 2),
+            ),
+          );
+
+          // Emit dist/server/manifest.json (relative to client output dir)
+          compilation.emitAsset(
+            "../server/manifest.json",
+            new compiler.webpack.sources.RawSource(
+              JSON.stringify(serverManifest, null, 2),
+            ),
           );
         },
       );

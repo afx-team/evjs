@@ -69,11 +69,11 @@ export const webpackAdapter: BundlerAdapter = {
     let apiReadyCalled = false;
     compiler.hooks.done.tap("EvDevServer", async () => {
       if (apiReadyCalled) return;
-      const manifestPath = path.resolve(cwd, "dist/manifest.json");
+      const manifestPath = path.resolve(cwd, "dist/server/manifest.json");
 
       if (fs.existsSync(manifestPath)) {
         const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
-        if (!manifest.server?.entry) return;
+        if (!manifest.entry) return;
 
         // Let the CLI framework know it's time to start the API runtime
         apiReadyCalled = true;

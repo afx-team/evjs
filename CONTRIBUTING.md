@@ -95,7 +95,7 @@ npx biome check --write    # Fix lint/format
    - Discovers `*.server.ts` files via glob
    - Applies SWC transforms (client + server variants)
    - Runs child compiler for server bundle
-   - Emits `dist/manifest.json` with server function registry
+   - Emits `dist/server/manifest.json` and `dist/client/manifest.json`
 
 ### `ev dev` Flow
 

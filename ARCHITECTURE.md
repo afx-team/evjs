@@ -10,7 +10,7 @@
 │  @evjs/cli ──► BundlerAdapter ──► @evjs/bundler-webpack        │
 │                      │           (adapter logic)             │
 │                      ▼                                       │
-│  @evjs/build-tools ──┴──► @evjs/manifest (manifest.json)     │
+│  @evjs/build-tools ──┴──► @evjs/manifest (manifests)          │
 │  (bundler-agnostic)                                              │
 │                                                                  │
 └──────────────────────────────┬───────────────────────────────────┘
@@ -124,7 +124,7 @@ Browser ──(:3000)──► WebpackDevServer ──► HMR (static assets)
 
 `ev dev` uses the webpack Node API directly:
 1. Creates webpack compiler + WebpackDevServer in-process
-2. Polls for `dist/manifest.json`
+2. Polls for `dist/server/manifest.json`
 3. Writes a CJS bootstrap and runs it with `node --watch`
 
 ## Deployment Adapters
