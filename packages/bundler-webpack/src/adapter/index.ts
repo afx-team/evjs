@@ -2,16 +2,24 @@ import "node:module";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import type { BundlerAdapter, ResolvedEvConfig } from "@evjs/shared";
+import type {
+  BundlerAdapter,
+  EvPluginHooks,
+  ResolvedEvConfig,
+} from "@evjs/shared";
 import { getLogger } from "@logtape/logtape";
 
 const esmRequire = createRequire(import.meta.url);
 const logger = getLogger(["evjs", "bundler-webpack"]);
 
 export const webpackAdapter: BundlerAdapter = {
-  async build(config: ResolvedEvConfig, cwd: string): Promise<void> {
+  async build(
+    config: ResolvedEvConfig,
+    cwd: string,
+    hooks: EvPluginHooks[],
+  ): Promise<void> {
     const { createWebpackConfig } = await import("./create-config.js");
-    const webpackConfig = createWebpackConfig(config, cwd);
+    const webpackConfig = createWebpackConfig(config, cwd, hooks);
 
     logger.info`Building for production...`;
     const webpack = esmRequire("webpack");
@@ -51,9 +59,10 @@ export const webpackAdapter: BundlerAdapter = {
     config: ResolvedEvConfig,
     cwd: string,
     callbacks: { onServerBundleReady: () => void },
+    hooks: EvPluginHooks[],
   ): Promise<void> {
     const { createWebpackConfig } = await import("./create-config.js");
-    const webpackConfig = createWebpackConfig(config, cwd);
+    const webpackConfig = createWebpackConfig(config, cwd, hooks);
 
     logger.info`Starting development server...`;
     const webpack = esmRequire("webpack");
@@ -74,8 +83,6 @@ export const webpackAdapter: BundlerAdapter = {
         if (manifest.version !== 1 || !manifest.entry) return;
 
         // Let the CLI framework know it's time to start the API runtime.
-        // The CLI manages the child process lifecycle (killing old
-        // processes before restart), so this can be called on every build.
         callbacks.onServerBundleReady();
       }
     });

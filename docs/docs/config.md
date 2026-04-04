@@ -116,60 +116,82 @@ The ECMA adapter (`@evjs/server/ecma`) only exports a `{ fetch }` handler — it
 | `port` | `number` | `3001` | API server port in dev mode |
 | `https` | `{ key: string; cert: string } \| false` | `false` | Enable HTTPS for the API server. Must provide explicit key/cert. |
 
-Plugins offer two hooks to extend the framework:
+## Plugins
 
-### `config(config, ctx)`
-Modifies the framework-level `EvConfig`. Useful for changing ports, entry points, or routing endpoints.
+Plugins use a `setup()` function that receives the resolved config and returns lifecycle hooks:
+
+### `setup(ctx)`
+
+Initialize the plugin and return lifecycle hooks. The context provides `mode` (`"development"` | `"production"`) and the fully resolved `config`.
 
 ```ts
-config(config, ctx) {
-  if (ctx.mode === "development") {
-    config.dev ??= {};
-    config.dev.port = 8080;
-  }
+{
+  name: "my-plugin",
+  setup(ctx) {
+    return {
+      buildStart() { /* before compilation */ },
+      bundler(config) { /* modify bundler config */ },
+      buildEnd(result) { /* after compilation, receives manifests */ },
+    };
+  },
 }
 ```
 
-### `bundler(bundlerConfig, ctx)`
-Modifies the underlying bundler configuration (e.g., Webpack). The `bundlerConfig` argument is `unknown`, as it depends on the active adapter. `ctx` includes the fully resolved framework `config`.
+### Lifecycle Hooks
+
+| Hook | Signature | When |
+|------|-----------|------|
+| `buildStart` | `() => void` | Before compilation begins |
+| `bundler` | `(config: unknown, ctx: EvBundlerCtx) => void` | During bundler config creation |
+| `buildEnd` | `(result: EvBuildResult) => void` | After compilation (every recompile in dev) |
+
+### Type-Safe Bundler Config
+
+Use the `webpack()` helper from `@evjs/bundler-webpack` for full type safety:
 
 ```ts
-bundler(bundlerConfig, ctx) {
-  const webpackConfig = bundlerConfig as any;
-  webpackConfig.module.rules.push({
-    test: /\.mdx$/,
-    use: ["mdx-loader"]
-  });
+import { webpack } from "@evjs/bundler-webpack";
+
+{
+  name: "mdx-support",
+  setup() {
+    return {
+      bundler: webpack((config) => {
+        config.module?.rules?.push({
+          test: /\.mdx$/,
+          use: ["mdx-loader"],
+        });
+      }),
+    };
+  },
 }
 ```
 
 Context types:
-- `EvConfigCtx`: `{ mode: "development" | "production" }`
+- `EvPluginContext`: `{ mode: "development" | "production", config: ResolvedEvConfig }`
 - `EvBundlerCtx`: `{ mode: "development" | "production", config: ResolvedEvConfig }`
+- `EvBuildResult`: `{ clientManifest: ClientManifest, serverManifest?: ServerManifest, isRebuild: boolean }`
 
 ## Bundler Options
 
-The `bundler` field provides access to the underlying compilation engine.
+The `bundler` field selects the compilation engine.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `name` | `"webpack" \| "utoopack"` | `"webpack"` | The active bundler adapter |
-| `config` | `(bundlerConfig: unknown, ctx: EvBundlerCtx) => void` | `undefined` | Escape hatch to modify bundler config |
 
 ### Built-in Support: CSS & Tailwind
-evjs includes **built-in PostCSS/Tailwind support**. If a `postcss.config.js` file is detected in the project root, the internal Webpack adapter automatically enables `postcss-loader`. No plugin or custom `bundler` hook is required for standard Tailwind setups.
+evjs includes **built-in PostCSS/Tailwind support**. If a `postcss.config.js` file is detected in the project root, the internal Webpack adapter automatically enables `postcss-loader`. No plugin or custom hook is required for standard Tailwind setups.
 
-A plugin can either mutate the config object directly or return a new one.
+### Complete Example
 
-### Meaningful Complete Example
-
-This example demonstrates a production-ready setup with custom loaders, environment variables, and specialized entry points.
+This example demonstrates a production-ready setup with custom loaders and build analytics.
 
 ```ts
 import { defineConfig } from "@evjs/cli";
+import { webpack } from "@evjs/bundler-webpack";
 
 export default defineConfig({
-  // 1. Custom Entry Points
   entry: "./src/entry-client.tsx",
   server: {
     entry: "./src/entry-server.ts",
@@ -179,38 +201,36 @@ export default defineConfig({
 
   dev: { port: 4000 },
 
-  // 2. Specialized Plugins
   plugins: [
     {
       name: "mdx-support",
-      bundler(bundlerConfig, ctx) {
-        // Only add MDX support for Webpack
-        if (ctx.config.bundler.name === "webpack") {
-          const webpackConfig = bundlerConfig as any;
-          webpackConfig.module.rules.push({
-            test: /\.mdx$/,
-            use: ["mdx-loader"],
-          });
-        }
+      setup() {
+        return {
+          bundler: webpack((config) => {
+            config.module?.rules?.push({
+              test: /\.mdx$/,
+              use: ["mdx-loader"],
+            });
+          }),
+        };
+      },
+    },
+    {
+      name: "build-timer",
+      setup(ctx) {
+        const t0 = Date.now();
+        return {
+          buildStart() {
+            console.log(`Building (${ctx.mode})...`);
+          },
+          buildEnd(result) {
+            console.log(`Done in ${Date.now() - t0}ms`);
+            console.log(`Assets: ${result.clientManifest.assets.js.length} JS`);
+          },
+        };
       },
     },
   ],
-
-  // 3. Direct Bundler Escape Hatch
-  bundler: {
-    config(bundlerConfig, ctx) {
-      // Inject global environment variables via Webpack
-      if (ctx.config.bundler.name === "webpack") {
-        const webpack = require("webpack");
-        const webpackConfig = bundlerConfig as any;
-        webpackConfig.plugins.push(
-          new webpack.DefinePlugin({
-            __VERSION__: JSON.stringify("1.2.3"),
-          })
-        );
-      }
-    },
-  },
 });
 ```
 

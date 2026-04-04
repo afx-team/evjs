@@ -54,10 +54,10 @@ export default defineConfig({
 
 ## How It Works
 
-1. `loadConfig(cwd)` loads `ev.config.ts` (executing plugin `config` hooks).
-2. `getBundlerAdapter(config)` resolves the active adapter (e.g., Webpack).
-3. `BundlerAdapter.dev()` is invoked to start development.
-4. The adapter generates its specific configuration (applying plugin `bundler` hooks).
+1. `loadConfig(cwd)` loads `ev.config.ts`.
+2. `resolveConfig()` applies defaults, then `plugin.setup()` collects lifecycle hooks.
+3. `hooks.buildStart()` runs before compilation.
+4. `BundlerAdapter.dev()` is invoked (applying plugin `bundler` hooks to the config).
 5. Starts `WebpackDevServer` for client HMR.
 6. The adapter signals `onServerBundleReady` after discovery.
 7. The CLI core auto-starts the API server via `@evjs/server/node`.

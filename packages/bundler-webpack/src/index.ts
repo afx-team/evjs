@@ -16,6 +16,7 @@ import type { Compiler } from "webpack";
 import { webpackAdapter } from "./adapter/index.js";
 
 export { webpackAdapter };
+export { webpack } from "./plugin-helper.js";
 
 class ManifestCollector {
   fns: Record<string, ServerFnEntry> = {};

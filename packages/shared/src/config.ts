@@ -1,12 +1,5 @@
-/**
- * Context passed to plugin config hooks.
- */
+import type { ClientManifest, ServerManifest } from "@evjs/manifest";
 import { DEFAULT_ENDPOINT } from "./constants.js";
-
-export interface EvConfigCtx {
-  /** The current mode. */
-  mode: "development" | "production";
-}
 
 /**
  * Context passed to plugin bundler hooks.
@@ -50,8 +43,6 @@ export interface ResolvedServerConfig {
 export interface ResolvedBundlerConfig {
   /** The active bundler. */
   name: "webpack" | "utoopack";
-  /** Escape hatch to modify the underlying bundler config. */
-  config: (bundlerConfig: unknown, ctx: EvBundlerCtx) => unknown;
 }
 
 /**
@@ -80,17 +71,58 @@ export interface ResolvedEvConfig {
 export interface EvPlugin {
   /** Plugin name for debugging and logging. */
   name: string;
-  /**
-   * Hook to modify the framework configuration.
-   */
-  config?:
-    | ((config: EvConfig, ctx: EvConfigCtx) => EvConfig)
-    | ((config: EvConfig, ctx: EvConfigCtx) => void);
 
   /**
-   * Hook to modify the underlying bundler configuration.
+   * Initialize the plugin and return lifecycle hooks.
+   *
+   * Receives the fully resolved config and build context. All returned
+   * hooks share state through closure.
    */
-  bundler?: (bundlerConfig: unknown, ctx: EvBundlerCtx) => unknown;
+  setup?: (
+    ctx: EvPluginContext,
+  ) => EvPluginHooks | void | Promise<EvPluginHooks | void>;
+}
+
+/**
+ * Context passed to plugin setup().
+ */
+export interface EvPluginContext {
+  /** Current mode. */
+  mode: "development" | "production";
+  /** The fully resolved framework config. */
+  config: ResolvedEvConfig;
+}
+
+/**
+ * Lifecycle hooks returned from plugin setup().
+ */
+export interface EvPluginHooks {
+  /** Called before compilation begins. */
+  buildStart?: () => void | Promise<void>;
+
+  /**
+   * Modify the underlying bundler configuration directly.
+   *
+   * The config type is `unknown` by default. Use the typed helper exported
+   * by each bundler adapter for type safety (e.g., `webpack()` from
+   * `@evjs/bundler-webpack`).
+   */
+  bundler?: (config: unknown, ctx: EvBundlerCtx) => void;
+
+  /** Called after compilation completes. Receives build result with manifests. */
+  buildEnd?: (result: EvBuildResult) => void | Promise<void>;
+}
+
+/**
+ * Build result passed to the buildEnd hook.
+ */
+export interface EvBuildResult {
+  /** The client manifest (assets, routes). */
+  clientManifest: ClientManifest;
+  /** The server manifest (entry, fns). Undefined if server is disabled. */
+  serverManifest?: ServerManifest;
+  /** True if this is a rebuild triggered by file change (dev watch mode only). */
+  isRebuild: boolean;
 }
 
 /**
@@ -139,11 +171,6 @@ export interface EvConfig {
   bundler?: {
     /** The active bundler. Default: "webpack". */
     name?: "webpack" | "utoopack";
-    /**
-     * Escape hatch to fully modify the underlying bundler configuration.
-     * The `config` type is `any` so the CLI remains bundler-agnostic.
-     */
-    config?: (bundlerConfig: unknown, ctx: EvBundlerCtx) => unknown;
   };
 
   /** Plugins applied to the build pipeline. */
@@ -195,7 +222,6 @@ export function resolveConfig(userConfig?: EvConfig): ResolvedEvConfig {
     },
     bundler: {
       name: config.bundler?.name ?? "webpack",
-      config: config.bundler?.config ?? (() => {}),
     },
     plugins: config.plugins ?? [],
   };

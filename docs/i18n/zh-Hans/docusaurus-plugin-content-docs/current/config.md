@@ -46,50 +46,72 @@ export default defineConfig({
 });
 ```
 
-插件提供两个钩子来扩展框架：
+## 插件
 
-### `config(config, ctx)`
-修改框架级别的 `EvConfig`。适用于更改端口、入口点或路由端点。
+插件使用 `setup()` 函数，接收已解析的配置并返回生命周期钩子：
+
+### `setup(ctx)`
+
+初始化插件并返回生命周期钩子。上下文提供 `mode`（`"development"` | `"production"`）和完整解析后的 `config`。
 
 ```ts
-config(config, ctx) {
-  if (ctx.mode === "development") {
-    config.dev ??= {};
-    config.dev.port = 8080;
-  }
+{
+  name: "my-plugin",
+  setup(ctx) {
+    return {
+      buildStart() { /* 编译前 */ },
+      bundler(config) { /* 修改构建器配置 */ },
+      buildEnd(result) { /* 编译后，接收 manifest */ },
+    };
+  },
 }
 ```
 
-### `bundler(bundlerConfig, ctx)`
-修改底层构建器配置（例如 Webpack）。`bundlerConfig` 参数为 `unknown`，因为它取决于当前激活的适配器。`ctx` 包含完整解析后的框架 `config`。
+### 生命周期钩子
+
+| 钩子 | 签名 | 时机 |
+|------|------|------|
+| `buildStart` | `() => void` | 编译开始前 |
+| `bundler` | `(config: unknown, ctx: EvBundlerCtx) => void` | 构建器配置创建期间 |
+| `buildEnd` | `(result: EvBuildResult) => void` | 编译后（开发模式每次重编译都触发） |
+
+### 类型安全的构建器配置
+
+使用 `@evjs/bundler-webpack` 导出的 `webpack()` 辅助函数获得完整类型安全：
 
 ```ts
-bundler(bundlerConfig, ctx) {
-  const webpackConfig = bundlerConfig as any;
-  webpackConfig.module.rules.push({
-    test: /\.mdx$/,
-    use: ["mdx-loader"]
-  });
+import { webpack } from "@evjs/bundler-webpack";
+
+{
+  name: "mdx-support",
+  setup() {
+    return {
+      bundler: webpack((config) => {
+        config.module?.rules?.push({
+          test: /\.mdx$/,
+          use: ["mdx-loader"],
+        });
+      }),
+    };
+  },
 }
 ```
 
 上下文类型：
-- `EvConfigCtx`: `{ mode: "development" | "production" }`
+- `EvPluginContext`: `{ mode: "development" | "production", config: ResolvedEvConfig }`
 - `EvBundlerCtx`: `{ mode: "development" | "production", config: ResolvedEvConfig }`
+- `EvBuildResult`: `{ clientManifest: ClientManifest, serverManifest?: ServerManifest, isRebuild: boolean }`
 
 ## 构建器选项
 
-`bundler` 字段允许访问底层编译引擎。
+`bundler` 字段选择编译引擎。
 
 | 选项 | 类型 | 默认值 | 描述 |
 |------|------|--------|------|
 | `name` | `"webpack" \| "utoopack"` | `"webpack"` | 激活的构建器适配器 |
-| `config` | `(bundlerConfig: unknown, ctx: EvBundlerCtx) => void` | `undefined` | 修改构建器配置的逃生舱 |
 
 ### 内置支持：CSS 和 Tailwind
-evjs 包含**内置的 PostCSS/Tailwind 支持**。如果项目根目录检测到 `postcss.config.js` 文件，内部 Webpack 适配器将自动启用 `postcss-loader`。标准 Tailwind 设置无需插件或自定义 `bundler` 钩子。
-
-插件可以直接修改配置对象，也可以返回一个新的配置对象。
+evjs 包含**内置的 PostCSS/Tailwind 支持**。如果项目根目录检测到 `postcss.config.js` 文件，内部 Webpack 适配器将自动启用 `postcss-loader`。标准 Tailwind 设置无需插件或自定义钩子。
 
 ## 服务端选项
 
@@ -121,15 +143,15 @@ ECMA 适配器（`@evjs/server/ecma`）只导出一个 `{ fetch }` 处理器 —
 
 ## 示例
 
-### 有意义的完整示例
+### 完整示例
 
-此示例展示了一个具备自定义加载器、环境变量和特定入口点的生产就绪设置。
+此示例展示了一个具备自定义加载器和构建分析的生产就绪设置。
 
 ```ts
 import { defineConfig } from "@evjs/cli";
+import { webpack } from "@evjs/bundler-webpack";
 
 export default defineConfig({
-  // 1. 自定义入口点
   entry: "./src/entry-client.tsx",
   server: {
     entry: "./src/entry-server.ts",
@@ -139,38 +161,36 @@ export default defineConfig({
 
   dev: { port: 4000 },
 
-  // 2. 专业插件
   plugins: [
     {
       name: "mdx-support",
-      bundler(bundlerConfig, ctx) {
-        // 仅为 Webpack 添加 MDX 支持
-        if (ctx.config.bundler.name === "webpack") {
-          const webpackConfig = bundlerConfig as any;
-          webpackConfig.module.rules.push({
-            test: /\.mdx$/,
-            use: ["mdx-loader"],
-          });
-        }
+      setup() {
+        return {
+          bundler: webpack((config) => {
+            config.module?.rules?.push({
+              test: /\.mdx$/,
+              use: ["mdx-loader"],
+            });
+          }),
+        };
+      },
+    },
+    {
+      name: "build-timer",
+      setup(ctx) {
+        const t0 = Date.now();
+        return {
+          buildStart() {
+            console.log(`构建中 (${ctx.mode})...`);
+          },
+          buildEnd(result) {
+            console.log(`完成，耗时 ${Date.now() - t0}ms`);
+            console.log(`资源: ${result.clientManifest.assets.js.length} 个 JS 文件`);
+          },
+        };
       },
     },
   ],
-
-  // 3. 直接构建器逃生舱
-  bundler: {
-    config(bundlerConfig, ctx) {
-      // 通过 Webpack 注入全局环境变量
-      if (ctx.config.bundler.name === "webpack") {
-        const webpack = require("webpack");
-        const webpackConfig = bundlerConfig as any;
-        webpackConfig.plugins.push(
-          new webpack.DefinePlugin({
-            __VERSION__: JSON.stringify("1.2.3"),
-          })
-        );
-      }
-    },
-  },
 });
 ```
 

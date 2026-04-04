@@ -6,10 +6,12 @@ export type { BundlerAdapter } from "./bundler.js";
 export {
   CONFIG_DEFAULTS,
   defineConfig,
+  type EvBuildResult,
   type EvBundlerCtx,
   type EvConfig,
-  type EvConfigCtx,
   type EvPlugin,
+  type EvPluginContext,
+  type EvPluginHooks,
   type ResolvedBundlerConfig,
   type ResolvedDevConfig,
   type ResolvedEvConfig,

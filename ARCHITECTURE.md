@@ -44,22 +44,21 @@
 ## Configuration Flow
 
 ```
-ev.config.ts ──► defineConfig({ entry, html, dev, server, plugins, bundler })
+ev.config.ts ──► defineConfig({ entry, html, dev, server, plugins })
                     │
                     ├── entry, html ──► webpack entry + HtmlPlugin
                     ├── dev.port ──► WebpackDevServer port
                     ├── server.endpoint ──► EvWebpackPlugin + proxy path
-                    ├── plugins ──► EvPlugin[] (config + bundler hooks)
-                    └── bundler ──► BundlerAdapter configuration
+                    └── plugins ──► EvPlugin[] (setup → buildStart/bundler/buildEnd)
                     │
                     ▼
-            BundlerAdapter.dev/build()
+            plugin.setup(ctx) → collect hooks
                     │
                     ▼
-          adapter.createConfig() ──► apply hook: plugin.bundler()
+            hooks.buildStart() → hooks.bundler(config) → BundlerAdapter.dev/build()
                     │
                     ▼
-              webpack Node API ──► apply hook: config.bundler.config()
+              webpack Node API → hooks.buildEnd(result)
 ```
 
 ## Server Function Pipeline

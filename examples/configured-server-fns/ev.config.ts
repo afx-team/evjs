@@ -1,3 +1,4 @@
+import { webpack } from "@evjs/bundler-webpack";
 import { defineConfig } from "@evjs/cli";
 
 /**
@@ -37,19 +38,20 @@ export default defineConfig({
     },
   },
 
-  // Build-time plugins (can also use the `bundler` escape hatch directly)
+  // Build-time plugins
   plugins: [
     {
       name: "example-txt-plugin",
-      bundler(bundlerConfig, ctx) {
-        // Direct access to the bundler (e.g. Webpack) configuration
-        if (ctx.config.bundler.name === "webpack") {
-          const webpackConfig = bundlerConfig as any;
-          webpackConfig.module.rules.push({
-            test: /\.txt$/,
-            use: "raw-loader",
-          });
-        }
+      setup() {
+        return {
+          // Type-safe webpack config via helper
+          bundler: webpack((config) => {
+            config.module?.rules?.push({
+              test: /\.txt$/,
+              use: "raw-loader",
+            });
+          }),
+        };
       },
     },
   ],

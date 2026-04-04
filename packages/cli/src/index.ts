@@ -1,14 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import { webpackAdapter } from "@evjs/bundler-webpack";
+import type { ClientManifest, ServerManifest } from "@evjs/manifest";
 import {
   type BundlerAdapter,
   CONFIG_DEFAULTS,
   defineConfig,
+  type EvBuildResult,
   type EvBundlerCtx,
   type EvConfig,
-  type EvConfigCtx,
   type EvPlugin,
+  type EvPluginContext,
+  type EvPluginHooks,
   type ResolvedEvConfig,
   resolveConfig,
 } from "@evjs/shared";
@@ -18,9 +21,11 @@ import { execa } from "execa";
 export {
   CONFIG_DEFAULTS,
   type EvConfig,
+  type EvBuildResult,
   type EvBundlerCtx,
-  type EvConfigCtx,
   type EvPlugin,
+  type EvPluginContext,
+  type EvPluginHooks,
   type ResolvedEvConfig,
   resolveConfig,
   defineConfig,
@@ -48,6 +53,79 @@ async function getBundlerAdapter(config?: EvConfig): Promise<BundlerAdapter> {
 }
 
 /**
+ * Run plugin setup() hooks and collect lifecycle hooks.
+ */
+async function collectPluginHooks(
+  plugins: EvPlugin[],
+  ctx: EvPluginContext,
+): Promise<EvPluginHooks[]> {
+  const allHooks: EvPluginHooks[] = [];
+  for (const plugin of plugins) {
+    if (plugin.setup) {
+      const hooks = await plugin.setup(ctx);
+      if (hooks) {
+        allHooks.push(hooks);
+      }
+    }
+  }
+  return allHooks;
+}
+
+/**
+ * Run all buildStart hooks sequentially.
+ */
+async function runBuildStartHooks(hooks: EvPluginHooks[]): Promise<void> {
+  for (const h of hooks) {
+    if (h.buildStart) {
+      await h.buildStart();
+    }
+  }
+}
+
+/**
+ * Run all buildEnd hooks sequentially.
+ */
+async function runBuildEndHooks(
+  hooks: EvPluginHooks[],
+  result: EvBuildResult,
+): Promise<void> {
+  for (const h of hooks) {
+    if (h.buildEnd) {
+      await h.buildEnd(result);
+    }
+  }
+}
+
+/**
+ * Read build manifests from disk.
+ */
+function readBuildResult(
+  cwd: string,
+  serverEnabled: boolean,
+  isRebuild: boolean,
+): EvBuildResult | null {
+  const clientManifestPath = serverEnabled
+    ? path.resolve(cwd, "dist/client/manifest.json")
+    : path.resolve(cwd, "dist/manifest.json");
+
+  if (!fs.existsSync(clientManifestPath)) return null;
+
+  const clientManifest: ClientManifest = JSON.parse(
+    fs.readFileSync(clientManifestPath, "utf-8"),
+  );
+
+  let serverManifest: ServerManifest | undefined;
+  if (serverEnabled) {
+    const serverManifestPath = path.resolve(cwd, "dist/server/manifest.json");
+    if (fs.existsSync(serverManifestPath)) {
+      serverManifest = JSON.parse(fs.readFileSync(serverManifestPath, "utf-8"));
+    }
+  }
+
+  return { clientManifest, serverManifest, isRebuild };
+}
+
+/**
  * Start the development server programmatically.
  *
  * @param config - evjs configuration object (from `defineConfig`)
@@ -61,11 +139,18 @@ export async function dev(
   const cwd = options?.cwd ?? process.cwd();
   process.env.NODE_ENV ??= "development";
 
+  // Collect plugin hooks
+  const pluginCtx: EvPluginContext = { mode: "development", config };
+  const hooks = await collectPluginHooks(config.plugins, pluginCtx);
+
+  // Run buildStart hooks
+  await runBuildStartHooks(hooks);
+
   const bundler = await getBundlerAdapter(config);
 
   // Track the running API server process for lifecycle management.
-  // Using a reference instead of a boolean allows proper restart on crash.
   let apiProcess: ReturnType<typeof execa> | null = null;
+  let isFirstBuild = true;
 
   const handleServerBundleReady = () => {
     if (!config.serverEnabled) return;
@@ -79,6 +164,19 @@ export async function dev(
       return;
     }
     if (!manifest.entry) return;
+
+    // Run buildEnd hooks with manifests
+    const buildResult = readBuildResult(
+      cwd,
+      config.serverEnabled,
+      !isFirstBuild,
+    );
+    if (buildResult) {
+      runBuildEndHooks(hooks, buildResult).catch((err) => {
+        logger.error`Plugin buildEnd hook failed: ${err}`;
+      });
+    }
+    isFirstBuild = false;
 
     // Kill previous process before restarting (handles both first start and restarts)
     if (apiProcess) {
@@ -139,9 +237,12 @@ export async function dev(
     }
   };
 
-  await bundler.dev(config, cwd, {
-    onServerBundleReady: handleServerBundleReady,
-  });
+  await bundler.dev(
+    config,
+    cwd,
+    { onServerBundleReady: handleServerBundleReady },
+    hooks,
+  );
 }
 
 /**
@@ -158,6 +259,19 @@ export async function build(
   const cwd = options?.cwd ?? process.cwd();
   process.env.NODE_ENV ??= "production";
 
+  // Collect plugin hooks
+  const pluginCtx: EvPluginContext = { mode: "production", config };
+  const hooks = await collectPluginHooks(config.plugins, pluginCtx);
+
+  // Run buildStart hooks
+  await runBuildStartHooks(hooks);
+
   const bundler = await getBundlerAdapter(config);
-  await bundler.build(config, cwd);
+  await bundler.build(config, cwd, hooks);
+
+  // Run buildEnd hooks with manifests
+  const buildResult = readBuildResult(cwd, config.serverEnabled, false);
+  if (buildResult) {
+    await runBuildEndHooks(hooks, buildResult);
+  }
 }

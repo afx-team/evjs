@@ -1,4 +1,4 @@
-import type { ResolvedEvConfig } from "./config.js";
+import type { EvPluginHooks, ResolvedEvConfig } from "./config.js";
 
 /**
  * Interface that all bundler adapters must implement.
@@ -7,7 +7,11 @@ export interface BundlerAdapter {
   /**
    * Run a production build.
    */
-  build(config: ResolvedEvConfig, cwd: string): Promise<void>;
+  build(
+    config: ResolvedEvConfig,
+    cwd: string,
+    hooks: EvPluginHooks[],
+  ): Promise<void>;
 
   /**
    * Start a development server.
@@ -19,5 +23,6 @@ export interface BundlerAdapter {
     config: ResolvedEvConfig,
     cwd: string,
     callbacks: { onServerBundleReady: () => void },
+    hooks: EvPluginHooks[],
   ): Promise<void>;
 }

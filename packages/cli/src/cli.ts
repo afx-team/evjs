@@ -34,7 +34,7 @@ program
   .action(async () => {
     const cwd = process.cwd();
     const { loadConfig } = await import("./load-config.js");
-    const config = await loadConfig(cwd, { mode: "development" });
+    const config = await loadConfig(cwd);
     try {
       await dev(config ?? undefined, { cwd });
     } catch (err) {
@@ -49,7 +49,7 @@ program
   .action(async () => {
     const cwd = process.cwd();
     const { loadConfig } = await import("./load-config.js");
-    const config = await loadConfig(cwd, { mode: "production" });
+    const config = await loadConfig(cwd);
     try {
       await build(config ?? undefined, { cwd });
     } catch (err) {

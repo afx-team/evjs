@@ -1,7 +1,11 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import type { EvBundlerCtx, ResolvedEvConfig } from "@evjs/shared";
+import type {
+  EvBundlerCtx,
+  EvPluginHooks,
+  ResolvedEvConfig,
+} from "@evjs/shared";
 
 const esmRequire = createRequire(import.meta.url);
 
@@ -14,6 +18,7 @@ const esmRequire = createRequire(import.meta.url);
 export function createWebpackConfig(
   config: ResolvedEvConfig,
   cwd: string,
+  hooks: EvPluginHooks[],
 ): Record<string, unknown> {
   const { entry, html } = config;
   const clientPort = config.dev.port;
@@ -143,15 +148,12 @@ export function createWebpackConfig(
     config,
   };
 
-  // 1. Run plugins' bundler escape hatches
-  for (const plugin of config.plugins) {
-    if (plugin.bundler) {
-      plugin.bundler(webpackConfig, ctx);
+  // Run plugin bundler hooks
+  for (const h of hooks) {
+    if (h.bundler) {
+      h.bundler(webpackConfig, ctx);
     }
   }
-
-  // 2. Run user override bundler escape hatch
-  config.bundler.config(webpackConfig, ctx);
 
   return webpackConfig;
 }

@@ -47,14 +47,20 @@ evjs is a React fullstack framework with type-safe routing (TanStack Router), da
 ev.config.ts ──► defineConfig({ entry, html, dev, server, plugins })
                     │
                     ├── entry, html ──► webpack entry + HtmlPlugin
-                    ├── plugins ──► EvPlugin[] (config hooks)
+                    ├── plugins ──► EvPlugin[] (setup → buildStart/bundler/buildEnd)
                     ├── dev.port ──► WebpackDevServer port
                     ├── server.endpoint ──► EvWebpackPlugin + proxy path
                     ├── server.dev.port ──► API server port
                     └── server.dev.https ──► HTTPS for API server
                     │
                     ▼
-              createWebpackConfig() ──► webpack Node API
+            plugin.setup(ctx) → collect hooks
+                    │
+                    ▼
+            hooks.buildStart() → hooks.bundler(config) → createWebpackConfig()
+                    │
+                    ▼
+              webpack Node API → hooks.buildEnd(result)
 ```
 
 ## Server Function Pipeline
