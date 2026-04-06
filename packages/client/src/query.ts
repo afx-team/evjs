@@ -24,17 +24,20 @@
  */
 
 import type {
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
   UseSuspenseQueryOptions,
   UseSuspenseQueryResult,
 } from "@tanstack/react-query";
 import {
+  useMutation as _useMutation,
   useQuery as _useQuery,
   useSuspenseQuery as _useSuspenseQuery,
 } from "@tanstack/react-query";
 import type { ServerFunction } from "./transport";
-import { getFnId } from "./transport";
+import { __fn_call, getFnId } from "./transport";
 
 /**
  * Extracts the stable query key for a given server function and its arguments.
@@ -162,4 +165,60 @@ export function useSuspenseQuery(
     );
   }
   return _useSuspenseQuery(fnOrOptions);
+}
+
+// ── useMutation — server function overload + TanStack pass-through ──
+
+/**
+ * Type-safe `useMutation` that accepts server functions directly.
+ *
+ * @example
+ * const { mutateAsync } = useMutation(createUser);
+ * await mutateAsync({ name: "Alice", email: "alice@example.com" });
+ *
+ * // With additional TanStack options:
+ * const { mutateAsync } = useMutation(createUser, {
+ *   onSuccess: () => queryClient.invalidateQueries({ queryKey: getFnQueryKey(getUsers) }),
+ * });
+ *
+ * // Standard TanStack pass-through:
+ * const { mutateAsync } = useMutation({ mutationFn: createUser });
+ */
+export function useMutation<TArgs extends unknown[], TData>(
+  fn: (...args: TArgs) => Promise<TData>,
+  options?: Omit<
+    UseMutationOptions<TData, Error, TArgs extends [infer A] ? A : TArgs>,
+    "mutationFn"
+  >,
+): UseMutationResult<TData, Error, TArgs extends [infer A] ? A : TArgs>;
+export function useMutation<
+  TData = unknown,
+  TError = Error,
+  TVariables = void,
+  TContext = unknown,
+>(
+  options: UseMutationOptions<TData, TError, TVariables, TContext>,
+): UseMutationResult<TData, TError, TVariables, TContext>;
+// biome-ignore lint/suspicious/noExplicitAny: Implementation signature must be wide enough for both overloads
+export function useMutation(
+  fnOrOptions:
+    | ((...args: unknown[]) => Promise<unknown>)
+    | UseMutationOptions<any, any, any, any>,
+  extraOptions?: Omit<UseMutationOptions<any, any, any, any>, "mutationFn">,
+): UseMutationResult<any, any, any, any> {
+  if (typeof fnOrOptions === "function") {
+    const fnId = getFnId(fnOrOptions);
+    if (!fnId) {
+      throw new Error(
+        `useMutation() only accepts server functions (with "use server" directive). Got: ${fnOrOptions.name || "anonymous"}`,
+      );
+    }
+    // biome-ignore lint/suspicious/noExplicitAny: Wrap server fn for single-arg call convention
+    const mutationFn = (vars: any) => {
+      const args = Array.isArray(vars) ? vars : [vars];
+      return __fn_call(fnId, args);
+    };
+    return _useMutation({ ...extraOptions, mutationFn });
+  }
+  return _useMutation(fnOrOptions);
 }

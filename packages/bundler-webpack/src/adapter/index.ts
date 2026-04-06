@@ -74,7 +74,12 @@ export const webpackAdapter: BundlerAdapter = {
       const manifestPath = path.resolve(cwd, "dist/server/manifest.json");
 
       if (fs.existsSync(manifestPath)) {
-        const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+        let manifest: { version?: number; entry?: string };
+        try {
+          manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+        } catch {
+          return; // Manifest partially written, wait for next rebuild
+        }
         if (manifest.version !== 1 || !manifest.entry) return;
 
         // Let the CLI framework know it's time to start the API runtime.

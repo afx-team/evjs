@@ -220,7 +220,7 @@ describe("generateHtml", () => {
 
     // Plugins should be able to mutate the document
     const comment = doc.createComment(" injected by plugin ");
-    doc.head!.appendChild(comment);
+    doc.head?.appendChild(comment);
 
     const result = doc.outerHTML;
     expect(result).toContain("<!-- injected by plugin -->");

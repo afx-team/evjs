@@ -110,15 +110,25 @@ function readBuildResult(
 
   if (!fs.existsSync(clientManifestPath)) return null;
 
-  const clientManifest: ClientManifest = JSON.parse(
-    fs.readFileSync(clientManifestPath, "utf-8"),
-  );
+  let clientManifest: ClientManifest;
+  try {
+    clientManifest = JSON.parse(fs.readFileSync(clientManifestPath, "utf-8"));
+  } catch (err) {
+    logger.warn`Failed to parse client manifest: ${err}`;
+    return null;
+  }
 
   let serverManifest: ServerManifest | undefined;
   if (serverEnabled) {
     const serverManifestPath = path.resolve(cwd, "dist/server/manifest.json");
     if (fs.existsSync(serverManifestPath)) {
-      serverManifest = JSON.parse(fs.readFileSync(serverManifestPath, "utf-8"));
+      try {
+        serverManifest = JSON.parse(
+          fs.readFileSync(serverManifestPath, "utf-8"),
+        );
+      } catch (err) {
+        logger.warn`Failed to parse server manifest: ${err}`;
+      }
     }
   }
 
@@ -158,7 +168,13 @@ export async function dev(
     const manifestPath = path.resolve(cwd, "dist/server/manifest.json");
     if (!fs.existsSync(manifestPath)) return;
 
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    let manifest: { version?: number; entry?: string };
+    try {
+      manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    } catch (err) {
+      logger.warn`Failed to parse server manifest: ${err}`;
+      return;
+    }
     if (manifest.version !== 1) {
       logger.warn`Unexpected server manifest version: ${manifest.version}. Expected 1.`;
       return;

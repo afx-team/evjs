@@ -90,7 +90,7 @@ export function createWebpackConfig(
         },
         // Auto-detected CSS support.
         // If postcss.config.js exists, include postcss-loader automatically.
-        (() => {
+        ...(() => {
           const postcssConfigs = [
             "postcss.config.js",
             "postcss.config.cjs",
@@ -101,17 +101,47 @@ export function createWebpackConfig(
           const hasPostCSS = postcssConfigs.some((f) =>
             fs.existsSync(path.resolve(cwd, f)),
           );
-          const cssLoaders = [
-            isProduction
-              ? { loader: MiniCssExtractPlugin.loader }
-              : { loader: resolveLoader("style-loader") },
-            { loader: resolveLoader("css-loader") },
-            ...(hasPostCSS
-              ? [{ loader: resolveLoader("postcss-loader") }]
-              : []),
+          const baseCssLoader = isProduction
+            ? { loader: MiniCssExtractPlugin.loader }
+            : { loader: resolveLoader("style-loader") };
+          const postcssLoader = hasPostCSS
+            ? [{ loader: resolveLoader("postcss-loader") }]
+            : [];
+
+          return [
+            // CSS Modules (*.module.css)
+            {
+              test: /\.module\.css$/,
+              use: [
+                baseCssLoader,
+                {
+                  loader: resolveLoader("css-loader"),
+                  options: { modules: true },
+                },
+                ...postcssLoader,
+              ],
+            },
+            // Global CSS
+            {
+              test: /\.css$/,
+              exclude: /\.module\.css$/,
+              use: [
+                baseCssLoader,
+                { loader: resolveLoader("css-loader") },
+                ...postcssLoader,
+              ],
+            },
           ];
-          return { test: /\.css$/, use: cssLoaders };
         })(),
+        // Static assets (images, fonts, SVGs, etc.)
+        {
+          test: /\.(png|jpe?g|gif|webp|avif|svg|ico)$/i,
+          type: "asset",
+        },
+        {
+          test: /\.(woff2?|eot|ttf|otf)$/i,
+          type: "asset/resource",
+        },
       ],
     },
     plugins: [
@@ -127,6 +157,7 @@ export function createWebpackConfig(
       port: clientPort,
       server: isHttps ? "https" : "http",
       hot: true,
+      historyApiFallback: true,
       devMiddleware: { writeToDisk: true },
       ...(serverEnabled
         ? {

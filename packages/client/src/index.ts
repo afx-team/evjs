@@ -22,7 +22,6 @@ export {
   QueryClientProvider,
   useInfiniteQuery,
   useIsFetching,
-  useMutation,
   usePrefetchQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -33,6 +32,7 @@ export { createAppRootRoute } from "./context";
 export {
   getFnQueryKey,
   getFnQueryOptions,
+  useMutation,
   useQuery,
   useSuspenseQuery,
 } from "./query";

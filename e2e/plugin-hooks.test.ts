@@ -256,7 +256,7 @@ describe("transformHtml DOM manipulation", () => {
             const meta = doc.createElement("meta");
             meta.setAttribute("name", "generator");
             meta.setAttribute("content", "evjs");
-            doc.head!.appendChild(meta);
+            doc.head?.appendChild(meta);
           },
         };
       },
@@ -282,7 +282,7 @@ describe("transformHtml DOM manipulation", () => {
           transformHtml(doc, result) {
             const count = result.clientManifest.assets.js.length;
             const comment = doc.createComment(` ${count} JS asset(s) `);
-            doc.body!.insertBefore(comment, doc.body!.firstChild);
+            doc.body?.insertBefore(comment, doc.body?.firstChild);
           },
         };
       },
@@ -313,7 +313,7 @@ describe("transformHtml composition", () => {
           const meta = doc.createElement("meta");
           meta.setAttribute("name", "plugin-1");
           meta.setAttribute("content", "first");
-          doc.head!.appendChild(meta);
+          doc.head?.appendChild(meta);
         },
       }),
     };
@@ -325,7 +325,7 @@ describe("transformHtml composition", () => {
           const meta = doc.createElement("meta");
           meta.setAttribute("name", "plugin-2");
           meta.setAttribute("content", "second");
-          doc.head!.appendChild(meta);
+          doc.head?.appendChild(meta);
         },
       }),
     };

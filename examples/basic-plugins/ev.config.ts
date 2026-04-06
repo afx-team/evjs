@@ -47,7 +47,7 @@ export default defineConfig({
             const comment = doc.createComment(
               ` Built with evjs | ${assetCount} asset(s) `,
             );
-            doc.head!.appendChild(comment);
+            doc.head?.appendChild(comment);
           },
         };
       },
