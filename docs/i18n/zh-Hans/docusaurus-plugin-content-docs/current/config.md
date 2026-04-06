@@ -48,59 +48,27 @@ export default defineConfig({
 
 ## 插件
 
-插件使用 `setup()` 函数，接收已解析的配置并返回生命周期钩子：
-
-### `setup(ctx)`
-
-初始化插件并返回生命周期钩子。上下文提供 `mode`（`"development"` | `"production"`）和完整解析后的 `config`。
+通过 `plugins` 数组注册插件。每个插件包含 `name` 和返回生命周期钩子的 `setup()` 函数：
 
 ```ts
-{
-  name: "my-plugin",
-  setup(ctx) {
-    return {
-      buildStart() { /* 编译前 */ },
-      bundler(config) { /* 修改构建器配置 */ },
-      buildEnd(result) { /* 编译后，接收 manifest */ },
-    };
-  },
-}
+export default defineConfig({
+  plugins: [
+    {
+      name: "my-plugin",
+      setup(ctx) {
+        return {
+          buildStart() { /* ... */ },
+          bundler(config) { /* ... */ },
+          transformHtml(doc) { /* ... */ },
+          buildEnd(result) { /* ... */ },
+        };
+      },
+    },
+  ],
+});
 ```
 
-### 生命周期钩子
-
-| 钩子 | 签名 | 时机 |
-|------|------|------|
-| `buildStart` | `() => void` | 编译开始前 |
-| `bundler` | `(config: unknown, ctx: EvBundlerCtx) => void` | 构建器配置创建期间 |
-| `buildEnd` | `(result: EvBuildResult) => void` | 编译后（开发模式每次重编译都触发） |
-
-### 类型安全的构建器配置
-
-使用 `@evjs/bundler-webpack` 导出的 `webpack()` 辅助函数获得完整类型安全：
-
-```ts
-import { webpack } from "@evjs/bundler-webpack";
-
-{
-  name: "mdx-support",
-  setup() {
-    return {
-      bundler: webpack((config) => {
-        config.module?.rules?.push({
-          test: /\.mdx$/,
-          use: ["mdx-loader"],
-        });
-      }),
-    };
-  },
-}
-```
-
-上下文类型：
-- `EvPluginContext`: `{ mode: "development" | "production", config: ResolvedEvConfig }`
-- `EvBundlerCtx`: `{ mode: "development" | "production", config: ResolvedEvConfig }`
-- `EvBuildResult`: `{ clientManifest: ClientManifest, serverManifest?: ServerManifest, isRebuild: boolean }`
+查看 **[插件指南](./plugins.md)** 获取完整 API 参考、`EvDocument` DOM 接口、类型安全构建器辅助函数和实用示例。
 
 ## 构建器选项
 

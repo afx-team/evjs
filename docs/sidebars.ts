@@ -16,6 +16,7 @@ const sidebars: SidebarsConfig = {
         "client-routes",
         "server-functions",
         "server-routes",
+        "plugins",
       ],
     },
     {

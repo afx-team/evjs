@@ -118,59 +118,27 @@ The ECMA adapter (`@evjs/server/ecma`) only exports a `{ fetch }` handler — it
 
 ## Plugins
 
-Plugins use a `setup()` function that receives the resolved config and returns lifecycle hooks:
-
-### `setup(ctx)`
-
-Initialize the plugin and return lifecycle hooks. The context provides `mode` (`"development"` | `"production"`) and the fully resolved `config`.
+Register plugins via the `plugins` array. Each plugin has a `name` and a `setup()` function that returns lifecycle hooks:
 
 ```ts
-{
-  name: "my-plugin",
-  setup(ctx) {
-    return {
-      buildStart() { /* before compilation */ },
-      bundler(config) { /* modify bundler config */ },
-      buildEnd(result) { /* after compilation, receives manifests */ },
-    };
-  },
-}
+export default defineConfig({
+  plugins: [
+    {
+      name: "my-plugin",
+      setup(ctx) {
+        return {
+          buildStart() { /* ... */ },
+          bundler(config) { /* ... */ },
+          transformHtml(doc) { /* ... */ },
+          buildEnd(result) { /* ... */ },
+        };
+      },
+    },
+  ],
+});
 ```
 
-### Lifecycle Hooks
-
-| Hook | Signature | When |
-|------|-----------|------|
-| `buildStart` | `() => void` | Before compilation begins |
-| `bundler` | `(config: unknown, ctx: EvBundlerCtx) => void` | During bundler config creation |
-| `buildEnd` | `(result: EvBuildResult) => void` | After compilation (every recompile in dev) |
-
-### Type-Safe Bundler Config
-
-Use the `webpack()` helper from `@evjs/bundler-webpack` for full type safety:
-
-```ts
-import { webpack } from "@evjs/bundler-webpack";
-
-{
-  name: "mdx-support",
-  setup() {
-    return {
-      bundler: webpack((config) => {
-        config.module?.rules?.push({
-          test: /\.mdx$/,
-          use: ["mdx-loader"],
-        });
-      }),
-    };
-  },
-}
-```
-
-Context types:
-- `EvPluginContext`: `{ mode: "development" | "production", config: ResolvedEvConfig }`
-- `EvBundlerCtx`: `{ mode: "development" | "production", config: ResolvedEvConfig }`
-- `EvBuildResult`: `{ clientManifest: ClientManifest, serverManifest?: ServerManifest, isRebuild: boolean }`
+See the **[Plugins guide](./plugins.md)** for the full API reference, `EvDocument` DOM interface, type-safe bundler helpers, and recipes.
 
 ## Bundler Options
 
