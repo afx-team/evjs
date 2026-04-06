@@ -32,7 +32,7 @@ flowchart LR
 
 ```ts
 // ev.config.ts
-import { defineConfig } from "@evjs/cli";
+import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
   entry: "./src/main.tsx",         // Default
@@ -82,7 +82,7 @@ The ECMA environment adapter (`@evjs/server/ecma`) only exports a `{ fetch }` ha
 `ev dev` and `ev build` can also be used programmatically:
 
 ```ts
-import { dev, build } from "@evjs/cli";
+import { dev, build } from "@evjs/ev";
 
 // Start dev server (loads ev.config.ts and uses defaults)
 await dev({ dev: { port: 3000 } }, { cwd: "./my-app" });

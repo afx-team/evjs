@@ -1,5 +1,5 @@
-import type { EvConfig } from "@evjs/shared";
-import { CONFIG_DEFAULTS, defineConfig } from "@evjs/shared";
+import type { EvConfig } from "@evjs/ev";
+import { CONFIG_DEFAULTS, defineConfig } from "@evjs/ev";
 import { describe, expect, it } from "vitest";
 
 describe("defineConfig", () => {

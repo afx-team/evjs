@@ -30,13 +30,12 @@
 ## Package Dependency Graph
 
 ```
-    │
-│  └──► BundlerAdapter (src/bundler/types.ts)
-│          └──► WebpackAdapter (src/bundler/webpack/)
-│                  └──► webpack (Node API)
+@evjs/ev ──► @evjs/manifest, @evjs/shared
 
-@evjs/shared ──► @evjs/manifest
+@evjs/shared (zero deps — runtime only: errors, HTTP, constants)
 
+@evjs/cli ──► @evjs/ev, @evjs/bundler-webpack
+@evjs/bundler-webpack ──► @evjs/ev, @evjs/build-tools, @evjs/manifest
 @evjs/server ──► @evjs/shared, hono, @hono/node-server
 @evjs/client ──► @evjs/shared, @tanstack/react-router, @tanstack/react-query
 ```

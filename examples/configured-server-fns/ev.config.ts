@@ -1,5 +1,5 @@
 import { webpack } from "@evjs/bundler-webpack";
-import { defineConfig } from "@evjs/cli";
+import { defineConfig } from "@evjs/ev";
 
 /**
  * Advanced ev.config.ts example.

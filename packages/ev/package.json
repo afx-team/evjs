@@ -1,7 +1,7 @@
 {
-  "name": "@evjs/shared",
+  "name": "@evjs/ev",
   "version": "0.0.0",
-  "description": "Shared types and utilities for the evjs framework",
+  "description": "Config, plugin, and bundler types for the evjs framework",
   "type": "module",
   "publishConfig": {
     "access": "public"
@@ -15,7 +15,6 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "vitest run",
     "check-types": "tsc --noEmit"
   },
   "files": [
@@ -31,15 +30,17 @@
   },
   "license": "MIT",
   "author": "xusd320",
-  "dependencies": {},
+  "dependencies": {
+    "@evjs/manifest": "*",
+    "@evjs/shared": "*"
+  },
   "devDependencies": {
     "typescript": "^6.0.2"
   },
   "keywords": [
     "evjs",
-    "shared",
-    "codec",
-    "errors",
+    "config",
+    "plugin",
     "typescript"
   ]
 }

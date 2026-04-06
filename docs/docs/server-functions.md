@@ -129,7 +129,7 @@ initTransport({ transport: wsTransport });
 
 ```ts
 // ev.config.ts
-import { defineConfig } from "@evjs/cli";
+import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
   server: {

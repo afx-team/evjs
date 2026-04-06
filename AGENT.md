@@ -6,7 +6,8 @@
 
 | Package | Path | Key Files |
 |---------|------|-----------|
-| `@evjs/cli` | `packages/cli` | `src/cli.ts` (CLI entry), `src/index.ts` (programmatic API: `dev`, `build`), `src/config.ts` (EvConfig types + defineConfig), `src/create-webpack-config.ts`, `src/load-config.ts` |
+| `@evjs/cli` | `packages/cli` | `src/cli.ts` (CLI entry), `src/index.ts` (programmatic API: `dev`, `build`), `src/load-config.ts` |
+| `@evjs/ev` | `packages/ev` | `src/config.ts` (EvConfig types, defineConfig, resolveConfig), `src/plugin.ts` (EvPlugin, hooks), `src/bundler.ts` (BundlerAdapter) |
 | `@evjs/create-app` | `packages/create-app` | `src/index.ts` (scaffolding logic) |
 | `@evjs/shared` | `packages/shared` | `src/errors.ts` (ServerError, ServerFunctionError), `src/constants.ts`, `src/http.ts` |
 | `@evjs/client` | `packages/client` | `src/query.ts` (useQuery, getFnQueryOptions), `src/transport.ts` (__fn_call, initTransport), `src/route.ts`, `src/context.ts` |
@@ -37,7 +38,7 @@
 | `useQuery(fn, ...args)` | `@evjs/client` | Type-safe query hook accepting server functions directly |
 | `getFnQueryOptions(fn, ...args)` | `@evjs/client` | Convert server function to `{ queryKey, queryFn }` for loaders/prefetch |
 | `route(path, definition)` | `@evjs/server` | Programmatic REST route handler |
-| `defineConfig(config)` | `@evjs/cli` | Type-safe `ev.config.ts` helper |
+| `defineConfig(config)` | `@evjs/ev` | Type-safe `ev.config.ts` helper |
 | `transformServerFile(source, options)` | `@evjs/build-tools` | SWC-based "use server" file transform |
 | `ServerError(message, { status, data })` | `@evjs/shared` | Structured error for server functions |
 

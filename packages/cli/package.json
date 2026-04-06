@@ -29,7 +29,7 @@
   },
   "dependencies": {
     "@evjs/bundler-webpack": "*",
-    "@evjs/shared": "*",
+    "@evjs/ev": "*",
     "@logtape/logtape": "^2.0.4",
     "commander": "^12.1.0",
     "execa": "^9.6.1"

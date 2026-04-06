@@ -1,11 +1,7 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import type {
-  EvBundlerCtx,
-  EvPluginHooks,
-  ResolvedEvConfig,
-} from "@evjs/shared";
+import type { EvBundlerCtx, EvPluginHooks, ResolvedEvConfig } from "@evjs/ev";
 
 const esmRequire = createRequire(import.meta.url);
 

@@ -3,7 +3,7 @@
 evjs **默认零配置**。你可以选择在项目根目录创建 `ev.config.ts` 来覆盖默认值。`defineConfig` 辅助函数提供完整的类型安全。
 
 ```ts
-import { defineConfig } from "@evjs/cli";
+import { defineConfig } from "@evjs/ev";
 export default defineConfig({ /* ... */ });
 ```
 
@@ -23,7 +23,7 @@ export default defineConfig({ /* ... */ });
 ## 完整参考
 
 ```ts
-import { defineConfig } from "@evjs/cli";
+import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
   entry: "./src/main.tsx",
@@ -148,7 +148,7 @@ ECMA 适配器（`@evjs/server/ecma`）只导出一个 `{ fetch }` 处理器 —
 此示例展示了一个具备自定义加载器和构建分析的生产就绪设置。
 
 ```ts
-import { defineConfig } from "@evjs/cli";
+import { defineConfig } from "@evjs/ev";
 import { webpack } from "@evjs/bundler-webpack";
 
 export default defineConfig({

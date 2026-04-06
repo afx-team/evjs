@@ -108,7 +108,7 @@ export const app = createApp({
 Then configure the server entry in `ev.config.ts`:
 
 ```ts
-import { defineConfig } from "@evjs/cli";
+import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
   server: {

@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { webpackAdapter } from "@evjs/bundler-webpack";
-import type { ClientManifest, ServerManifest } from "@evjs/manifest";
 import {
   type BundlerAdapter,
   CONFIG_DEFAULTS,
@@ -14,7 +13,8 @@ import {
   type EvPluginHooks,
   type ResolvedEvConfig,
   resolveConfig,
-} from "@evjs/shared";
+} from "@evjs/ev";
+import type { ClientManifest, ServerManifest } from "@evjs/manifest";
 import { getLogger } from "@logtape/logtape";
 import { execa } from "execa";
 

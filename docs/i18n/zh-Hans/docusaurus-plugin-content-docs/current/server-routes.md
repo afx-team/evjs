@@ -106,7 +106,7 @@ export const app = createApp({
 然后在 `ev.config.ts` 中配置服务端入口：
 
 ```ts
-import { defineConfig } from "@evjs/cli";
+import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
   server: {

@@ -31,7 +31,7 @@ flowchart LR
 ## 编程式 API
 
 ```ts
-import { dev, build } from "@evjs/cli";
+import { dev, build } from "@evjs/ev";
 
 // 启动开发服务器（加载 ev.config.ts 并应用默认值）
 await dev({ dev: { port: 3000 } }, { cwd: "./my-app" });

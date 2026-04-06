@@ -39,9 +39,10 @@ config needed.
 
 | Package | Purpose |
 |---------|---------|
-| [`@evjs/cli`](./packages/cli) | CLI (`ev dev`, `ev build`) + `defineConfig` |
+| [`@evjs/cli`](./packages/cli) | CLI binary (`ev dev`, `ev build`) |
+| [`@evjs/ev`](./packages/ev) | Config, plugin, and bundler types (`defineConfig`) |
 | [`@evjs/create-app`](./packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
-| [`@evjs/shared`](./packages/shared) | Shared errors, constants |
+| [`@evjs/shared`](./packages/shared) | Runtime shared: errors, HTTP utils, constants |
 | [`@evjs/client`](./packages/client) | Client runtime (React + TanStack) |
 | [`@evjs/server`](./packages/server) | Server runtime (Hono) |
 | [`@evjs/build-tools`](./packages/build-tools) | Server function transforms |

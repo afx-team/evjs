@@ -3,7 +3,7 @@
 evjs is **zero-config by default**. Optionally create `ev.config.ts` in the project root to override defaults. The `defineConfig` helper provides full type-safety.
 
 ```ts
-import { defineConfig } from "@evjs/cli";
+import { defineConfig } from "@evjs/ev";
 export default defineConfig({ /* ... */ });
 ```
 
@@ -23,7 +23,7 @@ All fields are optional. These are the built-in defaults:
 ## Full Reference
 
 ```ts
-import { defineConfig } from "@evjs/cli";
+import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
   // ── Entry & HTML ──
@@ -188,7 +188,7 @@ evjs includes **built-in PostCSS/Tailwind support**. If a `postcss.config.js` fi
 This example demonstrates a production-ready setup with custom loaders and build analytics.
 
 ```ts
-import { defineConfig } from "@evjs/cli";
+import { defineConfig } from "@evjs/ev";
 import { webpack } from "@evjs/bundler-webpack";
 
 export default defineConfig({

@@ -76,7 +76,8 @@ declare module "@tanstack/react-router" {
 
 | 包 | 用途 |
 |---|------|
-| [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | CLI (`ev dev`, `ev build`) + `defineConfig` |
+| [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | CLI 命令行工具 (`ev dev`, `ev build`) |
+| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | 配置、插件和构建器类型 (`defineConfig`) |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | 项目脚手架 (`npx @evjs/create-app`) |
 | [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | 客户端运行时（React + TanStack） |
 | [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | 服务端运行时（Hono） |
@@ -106,7 +107,7 @@ declare module "@tanstack/react-router" {
 ## 重要规则
 
 - 配置文件：`ev.config.ts`（不是 `evjs.config.ts`）
-- 从 `@evjs/cli` 导入 `defineConfig`，不是从 `@evjs/server`
+- 从 `@evjs/ev` 导入 `defineConfig`，不是从 `@evjs/server`
 - HTML 必须包含 `<div id="app">` 作为渲染目标
 - 不要在你的**项目** `package.json` 中添加 `"type": "module"` —— 服务端 bundle 使用 CJS 格式
 - `src/main.tsx` 应保持精简 —— 在 `routes.tsx` 中定义路由

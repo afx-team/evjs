@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { EvConfig } from "@evjs/shared";
+import type { EvConfig } from "@evjs/ev";
 
 const CONFIG_FILES = ["ev.config.ts", "ev.config.js", "ev.config.mjs"];
 

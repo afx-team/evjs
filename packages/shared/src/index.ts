@@ -1,24 +1,7 @@
 /**
- * @evjs/shared — types and utilities shared by @evjs/client and @evjs/server.
+ * @evjs/shared — runtime types and utilities shared by @evjs/client and @evjs/server.
  */
 
-export type { BundlerAdapter } from "./bundler.js";
-export {
-  CONFIG_DEFAULTS,
-  defineConfig,
-  type EvBuildResult,
-  type EvBundlerCtx,
-  type EvConfig,
-  type EvPlugin,
-  type EvPluginContext,
-  type EvPluginHooks,
-  type ResolvedBundlerConfig,
-  type ResolvedDevConfig,
-  type ResolvedEvConfig,
-  type ResolvedServerConfig,
-  type ResolvedServerDevConfig,
-  resolveConfig,
-} from "./config.js";
 export {
   DEFAULT_ENDPOINT,
   DEFAULT_ERROR_STATUS,

@@ -3,8 +3,8 @@ import type {
   EvPlugin,
   EvPluginContext,
   EvPluginHooks,
-} from "@evjs/shared";
-import { resolveConfig } from "@evjs/shared";
+} from "@evjs/ev";
+import { resolveConfig } from "@evjs/ev";
 import { describe, expect, it } from "vitest";
 
 /**

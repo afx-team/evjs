@@ -1,4 +1,4 @@
-import { defineConfig } from "@evjs/cli";
+import { defineConfig } from "@evjs/ev";
 
 /**
  * Example: Using Tailwind CSS.

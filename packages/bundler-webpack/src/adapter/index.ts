@@ -1,11 +1,7 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import type {
-  BundlerAdapter,
-  EvPluginHooks,
-  ResolvedEvConfig,
-} from "@evjs/shared";
+import type { BundlerAdapter, EvPluginHooks, ResolvedEvConfig } from "@evjs/ev";
 import { getLogger } from "@logtape/logtape";
 
 const esmRequire = createRequire(import.meta.url);

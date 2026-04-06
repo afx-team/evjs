@@ -1,4 +1,4 @@
-import { DEFAULT_ENDPOINT } from "./constants.js";
+import { DEFAULT_ENDPOINT } from "@evjs/shared";
 import type { EvPlugin } from "./plugin.js";
 
 export type {

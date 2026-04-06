@@ -1,4 +1,4 @@
-import type { EvBundlerCtx } from "@evjs/shared";
+import type { EvBundlerCtx } from "@evjs/ev";
 
 /**
  * Typed wrapper for webpack configuration in plugin bundler hooks.

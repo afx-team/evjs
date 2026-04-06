@@ -14,9 +14,10 @@
 
 | Package | Path | Purpose |
 |---------|------|---------|
-| `@evjs/cli` | `packages/cli` | CLI (`ev dev`, `ev build`) + `defineConfig` |
+| `@evjs/cli` | `packages/cli` | CLI binary (`ev dev`, `ev build`) |
+| `@evjs/ev` | `packages/ev` | Config, plugin, and bundler types (`defineConfig`) |
 | `@evjs/create-app` | `packages/create-app` | Project scaffolding (`npx @evjs/create-app`) |
-| `@evjs/shared` | `packages/shared` | Shared errors, constants |
+| `@evjs/shared` | `packages/shared` | Runtime shared: errors, HTTP utils, constants |
 | `@evjs/client` | `packages/client` | Client (React + TanStack) |
 | `@evjs/server` | `packages/server` | Server (Hono) |
 | `@evjs/build-tools` | `packages/build-tools` | Bundler-agnostic server function transforms (SWC) |
@@ -26,13 +27,11 @@
 ### Dependency Graph
 
 ```
-@evjs/cli
-  ├── @evjs/bundler-webpack
-  │     ├── @evjs/build-tools
-  │     └── @evjs/manifest
-  └── webpack / webpack-dev-server / swc-loader / @swc/core
+@evjs/cli ──► @evjs/ev, @evjs/bundler-webpack
+@evjs/bundler-webpack ──► @evjs/ev, @evjs/build-tools, @evjs/manifest
+@evjs/ev ──► @evjs/manifest, @evjs/shared
 
-@evjs/shared (standalone — depends only on @evjs/manifest for types)
+@evjs/shared (zero deps — runtime only)
 @evjs/client ──► @evjs/shared, @tanstack/react-router, @tanstack/react-query
 @evjs/server ──► @evjs/shared, hono, @hono/node-server
 ```
@@ -63,7 +62,7 @@
 
 ### Add a new example
 1. Create directory under `examples/`
-2. Add `package.json` with `"@evjs/cli": "*"` as devDep, `"private": true`
+2. Add `package.json` with `"@evjs/ev": "*"` and `"@evjs/cli": "*"` as devDeps, `"private": true`
 3. Add `src/main.tsx` + `index.html`
 4. Create symlink in `packages/create-app/templates/` → `../../../examples/[name]`
 5. Add to `packages/create-app/scripts/restore-templates.js` symlink map
