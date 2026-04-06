@@ -1,5 +1,6 @@
-import { createRootRoute, createRoute, Outlet } from "@evjs/client";
+import { createRoute } from "@evjs/client";
 import { useState } from "react";
+import { rootRoute } from "./__root";
 
 // ── Types ──
 
@@ -9,22 +10,6 @@ interface Post {
   body: string;
   createdAt: string;
 }
-
-// ── Root Route ──
-
-function Root() {
-  return (
-    <div style={{ fontFamily: "system-ui, sans-serif", padding: "1rem" }}>
-      <h1>Route Handlers Example</h1>
-      <p style={{ color: "#666" }}>
-        REST endpoints powered by <code>route()</code>
-      </p>
-      <Outlet />
-    </div>
-  );
-}
-
-const rootRoute = createRootRoute({ component: Root });
 
 // ── Posts Page ──
 
@@ -213,14 +198,8 @@ function HealthCheck() {
   );
 }
 
-// ── Route ──
-
-const postsRoute = createRoute({
+export const postsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: PostsPage,
 });
-
-// ── Route Tree ──
-
-export const routeTree = rootRoute.addChildren([postsRoute]);

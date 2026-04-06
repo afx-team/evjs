@@ -1,15 +1,12 @@
 import {
-  createAppRootRoute,
   createRoute,
   getFnQueryKey,
-  Link,
-  Outlet,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@evjs/client";
 import { useState } from "react";
-import type { Todo, User } from "./api/db.server";
+import type { Todo, User } from "../api/db.server";
 import {
   createTodo,
   createUser,
@@ -18,45 +15,10 @@ import {
   getTodos,
   getUsers,
   toggleTodo,
-} from "./api/db.server";
+} from "../api/db.server";
+import { rootRoute } from "./__root";
 
-// ── Root Route ──
-
-function Root() {
-  return (
-    <div
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        padding: "2rem",
-        maxWidth: "800px",
-        margin: "0 auto",
-      }}
-    >
-      <h1>📦 SQLite Server Functions</h1>
-      <p style={{ color: "#666" }}>
-        Real database-backed server functions using <code>node:sqlite</code>.
-      </p>
-      <nav
-        style={{
-          display: "flex",
-          gap: "1rem",
-          marginBottom: "1.5rem",
-          borderBottom: "1px solid #eee",
-          paddingBottom: "1rem",
-        }}
-      >
-        <Link to="/" style={{ textDecoration: "none", fontWeight: "bold" }}>
-          Users
-        </Link>
-      </nav>
-      <Outlet />
-    </div>
-  );
-}
-
-const rootRoute = createAppRootRoute({ component: Root });
-
-// ── Users Route ──
+// ── Users Page ──
 
 function UsersPage() {
   const [name, setName] = useState("");
@@ -302,12 +264,8 @@ function TodosSection({ userId }: { userId: number }) {
   );
 }
 
-// ── Routes ──
-
-const usersRoute = createRoute({
+export const usersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: UsersPage,
 });
-
-export const routeTree = rootRoute.addChildren([usersRoute]);

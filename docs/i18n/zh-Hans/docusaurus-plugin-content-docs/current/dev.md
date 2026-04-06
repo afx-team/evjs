@@ -31,11 +31,11 @@ flowchart LR
 ## 编程式 API
 
 ```ts
-import { dev, build } from "@evjs/ev";
+import { dev, build } from "@evjs/cli";
 
 // 启动开发服务器（加载 ev.config.ts 并应用默认值）
 await dev({ dev: { port: 3000 } }, { cwd: "./my-app" });
 
 // 运行生产构建
-await build({ entry: "./src/app.tsx" }, { cwd: "./my-app" });
+await build({ entry: "./src/main.tsx" }, { cwd: "./my-app" });
 ```

@@ -82,13 +82,13 @@ The ECMA environment adapter (`@evjs/server/ecma`) only exports a `{ fetch }` ha
 `ev dev` and `ev build` can also be used programmatically:
 
 ```ts
-import { dev, build } from "@evjs/ev";
+import { dev, build } from "@evjs/cli";
 
 // Start dev server (loads ev.config.ts and uses defaults)
 await dev({ dev: { port: 3000 } }, { cwd: "./my-app" });
 
 // Run production build
-await build({ entry: "./src/app.tsx" }, { cwd: "./my-app" });
+await build({ entry: "./src/main.tsx" }, { cwd: "./my-app" });
 ```
 
 ## Transport

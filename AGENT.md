@@ -64,5 +64,5 @@ npx biome check .    # Lint + format check
 
 - **New server function**: Create `src/api/[name].server.ts` (recommended) with `"use server";`, export named async functions
 - **New route**: Define with `createRoute({ getParentRoute, path, component })`, add to route tree
-- **New example**: Create `examples/[name]/`, add symlink in `packages/cli/templates/`, add E2E test in `e2e/cases/`
+- **New example**: Create `examples/[name]/`, add symlink in `packages/create-app/templates/`, add E2E test in `e2e/cases/`
 - **New route handler**: Use `route("/api/path", { GET, POST, ... })` and pass to `createApp({ routeHandlers })`

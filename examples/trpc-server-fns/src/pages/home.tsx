@@ -1,9 +1,10 @@
-import { createRootRoute, createRoute, Outlet, useQuery } from "@evjs/client";
+import { createRoute, useQuery } from "@evjs/client";
 import { createTRPCClient, type TRPCLink } from "@trpc/client";
 import { observable } from "@trpc/server/observable";
 import { useCallback, useEffect, useState } from "react";
-import { getServerTime, trpcHandler } from "./api/trpc.server";
-import type { AppRouter } from "./trpc";
+import { getServerTime, trpcHandler } from "../api/trpc.server";
+import type { AppRouter } from "../trpc";
+import { rootRoute } from "./__root";
 
 // ── tRPC Glue ──
 
@@ -29,40 +30,7 @@ const trpc = createTRPCClient<AppRouter>({
   links: [serverFnLink()],
 });
 
-// ── Root Route ──
-
-function Root() {
-  return (
-    <div
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        padding: "2rem",
-        maxWidth: "800px",
-        margin: "0 auto",
-      }}
-    >
-      <header
-        style={{
-          borderBottom: "1px solid #eee",
-          marginBottom: "2rem",
-          paddingBottom: "1rem",
-        }}
-      >
-        <h1 style={{ margin: 0 }}>@evjs + tRPC</h1>
-        <p style={{ color: "#666" }}>
-          Combining Zero-Config Server Functions with tRPC Type-Safety
-        </p>
-      </header>
-      <main>
-        <Outlet />
-      </main>
-    </div>
-  );
-}
-
-const rootRoute = createRootRoute({ component: Root });
-
-// ── Home Route ──
+// ── Home Page ──
 
 function HomePage() {
   const [trpcData, setTrpcData] = useState<unknown>(null);
@@ -135,12 +103,8 @@ function HomePage() {
   );
 }
 
-const homeRoute = createRoute({
+export const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: HomePage,
 });
-
-// ── Route Tree ──
-
-export const routeTree = rootRoute.addChildren([homeRoute]);

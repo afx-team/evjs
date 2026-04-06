@@ -1,12 +1,7 @@
-import {
-  createRootRoute,
-  createRoute,
-  initTransport,
-  Link,
-  Outlet,
-} from "@evjs/client";
+import { createRoute, initTransport } from "@evjs/client";
 import { useEffect, useState } from "react";
-import { createUser, getUsers } from "./api/users.server";
+import { createUser, getUsers } from "../api/users.server";
+import { rootRoute } from "./__root";
 
 // ── WebSocket Transport ──
 
@@ -76,23 +71,7 @@ initTransport({
   transport: createWebSocketTransport(wsUrl),
 });
 
-// ── Root Route ──
-
-function Root() {
-  return (
-    <div style={{ fontFamily: "system-ui, sans-serif", padding: "1rem" }}>
-      <h1>Server Functions Example (WebSocket)</h1>
-      <nav style={{ display: "flex", gap: "1rem", marginBottom: "1rem" }}>
-        <Link to="/">Users</Link>
-      </nav>
-      <Outlet />
-    </div>
-  );
-}
-
-const rootRoute = createRootRoute({ component: Root });
-
-// ── Users Route ──
+// ── Users Page ──
 
 function UsersPage() {
   const [name, setName] = useState("");
@@ -166,12 +145,8 @@ function UsersPage() {
   );
 }
 
-const usersRoute = createRoute({
+export const usersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: UsersPage,
 });
-
-// ── Route Tree ──
-
-export const routeTree = rootRoute.addChildren([usersRoute]);

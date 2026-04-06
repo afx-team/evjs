@@ -1,28 +1,7 @@
-import { createRootRoute, createRoute, Link, Outlet } from "@evjs/client";
+import { createRoute } from "@evjs/client";
 import { useEffect, useState } from "react";
-import { getMessages, postMessage } from "./api/messages.server";
-
-// ── Root Route ──
-
-function Root() {
-  return (
-    <div style={{ fontFamily: "system-ui, sans-serif", padding: "1rem" }}>
-      <h1>ECMA Runtime Example</h1>
-      <p style={{ color: "#666" }}>
-        Server bundle is environment-agnostic — works in Node.js, Deno, Bun, any
-        Fetch-compatible runtime.
-      </p>
-      <nav style={{ display: "flex", gap: "1rem", marginBottom: "1rem" }}>
-        <Link to="/">Messages</Link>
-      </nav>
-      <Outlet />
-    </div>
-  );
-}
-
-const rootRoute = createRootRoute({ component: Root });
-
-// ── Messages Route ──
+import { getMessages, postMessage } from "../api/messages.server";
+import { rootRoute } from "./__root";
 
 function MessagesPage() {
   const [text, setText] = useState("");
@@ -90,12 +69,8 @@ function MessagesPage() {
   );
 }
 
-const messagesRoute = createRoute({
+export const messagesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: MessagesPage,
 });
-
-// ── Route Tree ──
-
-export const routeTree = rootRoute.addChildren([messagesRoute]);

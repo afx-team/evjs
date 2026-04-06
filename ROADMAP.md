@@ -80,7 +80,7 @@ Future directions under consideration. Nothing committed yet.
 
 - [ ] **MPA (Multi-Page Application)**
   - [ ] `client.pages` field: `Record<string, { entry, html? }>`
-  - [ ] Multiple webpack entries + HtmlWebpackPlugin instances
+  - [ ] Multiple webpack entries + per-page `generateHtml()` calls
   - [ ] Takes precedence over `client.entry` / `client.html` when set
 - [ ] **Server context** _(next up)_
   - [ ] Provide request context (headers, cookies, auth) to server functions

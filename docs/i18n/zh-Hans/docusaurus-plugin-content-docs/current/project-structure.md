@@ -11,12 +11,13 @@ my-evjs-app/
 ├── tsconfig.json
 ├── public/                # 静态资源目录（图片、字体、favicon 等）
 └── src/
-    ├── app.tsx            # 应用全局根组件（可选，挂载点包装器）
+    ├── main.tsx           # 入口文件：构建路由树、createApp、注册类型
     │
-    ├── routes/            # (核心) 视图路由层 - TanStack Router 约定式路由
-    │   ├── __root.tsx     # 根路由布局 (Root Layout)包裹所有页面
-    │   ├── index.tsx      # 首页入口 (`/`)
-    │   └── posts.$id.tsx  # 动态路由匹配 (`/posts/:id`)
+    ├── pages/             # (核心) TanStack Router 代码式路由
+    │   ├── __root.tsx     # 根路由布局 (Root Layout) 包裹所有页面
+    │   ├── home.tsx       # 静态路由 (如 `/`)
+    │   └── posts/
+    │       └── index.tsx  # 嵌套路由 (`/posts`, `/posts/$postId`)
     │
     ├── api/               # (核心) 后端独占逻辑与服务端职能
     │   ├── fns/               # 纯服务端函数 (Server Functions，在构建时自动转换为 RPC)
@@ -42,8 +43,8 @@ my-evjs-app/
 
 ## 核心设计考量
 
-### 1. 将 `src/routes/` 视为组装车间
-我们**非常不提倡**在路由文件（如 `routes/index.tsx`）里堆砌成百上千行的复杂业务代码。路由文件应该被视为“胶水层”：它负责声明 URL 逻辑、处理页面级参数，然后直接引入位于 `features/` 或 `components/` 中的子组件进行界面的拼装。这样不仅能避免单个文件过大，还能极大提升代码复用性和可测试性。
+### 1. `src/pages/` 是组装车间
+路由通过显式的 `createRoute()` 调用定义，并在 `main.tsx` 中通过 `addChildren()` 组装成路由树。我们**非常不提倡**在路由文件里堆砌成百上千行的复杂业务代码。路由文件应该被视为"胶水层"——它负责声明 URL 逻辑、处理页面级参数，然后引入位于 `features/` 或 `components/` 中的子组件进行界面拼装。这样不仅能避免单个文件过大，还能极大提升代码复用性和可测试性。
 
 ### 2. 将 `src/api/` 作为不可逾越的服务端边界
 虽然基于 `"use server";` 和 `.server.ts` 后缀，服务端函数可以被放在 `src/` 的任何位置，但我们**强烈推荐**将所有与数据库交互、后端鉴权、核心机密逻辑相关的代码彻底收网到 `src/api/` 这个子目录中。这样做能从物理隔离的源头上，防止服务端特有模块误泄漏至纯客户端构建中。

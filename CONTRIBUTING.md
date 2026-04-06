@@ -57,8 +57,9 @@
 4. Import and use in client with `query()` or `mutation()`
 
 ### Add a new route
-1. Define route in `routes.tsx` with `createRoute({ getParentRoute, path, component })`
-2. Add to route tree via `parentRoute.addChildren([newRoute])`
+1. Create a new file under `src/pages/` (e.g. `src/pages/about.tsx`)
+2. Define route with `createRoute({ getParentRoute, path, component })` and export it
+3. Import in `src/main.tsx` and add to route tree via `parentRoute.addChildren([newRoute])`
 
 ### Add a new example
 1. Create directory under `examples/`

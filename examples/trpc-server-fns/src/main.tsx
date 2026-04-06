@@ -1,5 +1,8 @@
 import { createApp } from "@evjs/client";
-import { routeTree } from "./routes";
+import { rootRoute } from "./pages/__root";
+import { homeRoute } from "./pages/home";
+
+const routeTree = rootRoute.addChildren([homeRoute]);
 
 const app = createApp({ routeTree });
 

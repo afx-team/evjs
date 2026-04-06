@@ -1,66 +1,44 @@
 import {
-  createAppRootRoute,
   createRoute,
   getFnQueryKey,
-  Link,
-  Outlet,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@evjs/client";
 import { useState } from "react";
-import { createUser, getUsers } from "./api/users.server";
-
-// ── Root Route ──
-
-function Root() {
-  return (
-    <div style={{ fontFamily: "system-ui, sans-serif", padding: "2rem" }}>
-      <h1>Configured Server Functions</h1>
-      <p style={{ color: "#666" }}>
-        Custom <code>ev.config.ts</code> with server function queries.
-      </p>
-      <nav style={{ marginBottom: "1rem" }}>
-        <Link to="/" style={{ textDecoration: "none", fontWeight: "bold" }}>
-          Users
-        </Link>
-      </nav>
-      <Outlet />
-    </div>
-  );
-}
-
-const rootRoute = createAppRootRoute({ component: Root });
-
-// ── Users Route ──
+import { createUser, getUsers } from "../api/users.server";
+import { rootRoute } from "./__root";
 
 function UsersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const queryClient = useQueryClient();
 
+  // Use the framework's useQuery hook instead of manual useState + useEffect
   const { data: users = [], isLoading } = useQuery(getUsers);
 
-  const queryClient = useQueryClient();
-  const { mutateAsync: doCreateUser } = useMutation({
+  // Use useMutation for server function calls that modify data
+  const createUserMutation = useMutation({
     mutationFn: createUser,
     onSuccess: () => {
+      // Invalidate and refetch users list after successful creation
       queryClient.invalidateQueries({ queryKey: getFnQueryKey(getUsers) });
+      setName("");
+      setEmail("");
     },
   });
 
-  async function handleCreate(e: { preventDefault: () => void }) {
+  function handleCreate(e: { preventDefault: () => void }) {
     e.preventDefault();
     if (!name || !email) return;
-    await doCreateUser({ name, email });
-    setName("");
-    setEmail("");
+    createUserMutation.mutate({ name, email });
   }
 
   if (isLoading) return <p>Loading users from server…</p>;
 
   return (
     <div>
-      <h2>Users</h2>
+      <h2>Users (fetched via direct server function call)</h2>
       <ul>
         {users.map((u) => (
           <li key={u.id}>
@@ -68,6 +46,7 @@ function UsersPage() {
           </li>
         ))}
       </ul>
+
       <h3>Add User</h3>
       <form onSubmit={handleCreate} style={{ display: "flex", gap: "0.5rem" }}>
         <input
@@ -86,10 +65,8 @@ function UsersPage() {
   );
 }
 
-const usersRoute = createRoute({
+export const usersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: UsersPage,
 });
-
-export const routeTree = rootRoute.addChildren([usersRoute]);

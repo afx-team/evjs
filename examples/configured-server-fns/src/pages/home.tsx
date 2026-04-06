@@ -1,64 +1,41 @@
 import {
-  createRootRoute,
   createRoute,
   getFnQueryKey,
-  Link,
-  Outlet,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@evjs/client";
 import { useState } from "react";
-import { createUser, getUsers } from "./api/users.server";
-
-// ── Root Route ──
-
-function Root() {
-  return (
-    <div style={{ fontFamily: "system-ui, sans-serif", padding: "1rem" }}>
-      <h1>Server Functions Example</h1>
-      <nav style={{ display: "flex", gap: "1rem", marginBottom: "1rem" }}>
-        <Link to="/">Users</Link>
-      </nav>
-      <Outlet />
-    </div>
-  );
-}
-
-const rootRoute = createRootRoute({ component: Root });
-
-// ── Users Route ──
+import { createUser, getUsers } from "../api/users.server";
+import { rootRoute } from "./__root";
 
 function UsersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const queryClient = useQueryClient();
 
-  // Use the framework's useQuery hook instead of manual useState + useEffect
   const { data: users = [], isLoading } = useQuery(getUsers);
 
-  // Use useMutation for server function calls that modify data
-  const createUserMutation = useMutation({
+  const queryClient = useQueryClient();
+  const { mutateAsync: doCreateUser } = useMutation({
     mutationFn: createUser,
     onSuccess: () => {
-      // Invalidate and refetch users list after successful creation
       queryClient.invalidateQueries({ queryKey: getFnQueryKey(getUsers) });
-      setName("");
-      setEmail("");
     },
   });
 
-  function handleCreate(e: { preventDefault: () => void }) {
+  async function handleCreate(e: { preventDefault: () => void }) {
     e.preventDefault();
     if (!name || !email) return;
-    createUserMutation.mutate({ name, email });
+    await doCreateUser({ name, email });
+    setName("");
+    setEmail("");
   }
 
   if (isLoading) return <p>Loading users from server…</p>;
 
   return (
     <div>
-      <h2>Users (fetched via direct server function call)</h2>
+      <h2>Users</h2>
       <ul>
         {users.map((u) => (
           <li key={u.id}>
@@ -66,7 +43,6 @@ function UsersPage() {
           </li>
         ))}
       </ul>
-
       <h3>Add User</h3>
       <form onSubmit={handleCreate} style={{ display: "flex", gap: "0.5rem" }}>
         <input
@@ -85,12 +61,8 @@ function UsersPage() {
   );
 }
 
-const usersRoute = createRoute({
+export const usersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: UsersPage,
 });
-
-// ── Route Tree ──
-
-export const routeTree = rootRoute.addChildren([usersRoute]);
