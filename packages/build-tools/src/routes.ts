@@ -1,4 +1,3 @@
-import type { RouteEntry } from "@evjs/manifest";
 import { parseSync } from "@swc/core";
 import type {
   CallExpression,
@@ -70,7 +69,9 @@ export function extractRoutes(source: string): ExtractedRoute[] {
  * // => [{ path: "/posts" }, { path: "/posts/$postId" }]
  * ```
  */
-export function resolveRoutes(routes: ExtractedRoute[]): RouteEntry[] {
+export function resolveRoutes(
+  routes: ExtractedRoute[],
+): Array<{ path: string }> {
   // Build a lookup: varName → ExtractedRoute
   const byName = new Map<string, ExtractedRoute>();
   for (const r of routes) {
@@ -98,7 +99,7 @@ export function resolveRoutes(routes: ExtractedRoute[]): RouteEntry[] {
   }
 
   const seen = new Set<string>();
-  const result: RouteEntry[] = [];
+  const result: Array<{ path: string }> = [];
 
   for (const r of routes) {
     const fullPath = resolveParentPath(r);
