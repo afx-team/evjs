@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { DOMParser, type NodeRepr } from "domparser-rs";
+import { DOMParser, type Document } from "domparser-rs";
 
 /**
  * A single asset descriptor — either a plain filename string or an object
@@ -62,9 +62,9 @@ function normalizeAsset(asset: HtmlAsset): {
  * - CSS `<link>` tags are appended to `<head>`.
  * - JS `<script>` tags are appended to `<body>` (with `defer`).
  *
- * Returns the parsed DOM document. Call `doc.outerHTML` to serialize.
+ * Returns the parsed DOM document. Call `doc.toString()` to serialize.
  */
-export function generateHtml(options: GenerateHtmlOptions): NodeRepr {
+export function generateHtml(options: GenerateHtmlOptions): Document {
   const { template, js, css, publicPath = "/" } = options;
 
   const templateContent = fs.readFileSync(template, "utf-8");

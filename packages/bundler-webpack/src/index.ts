@@ -2,15 +2,16 @@ import fs from "node:fs";
 import { builtinModules } from "node:module";
 import {
   detectUseServer,
+  type ExtractedRoute,
   extractRoutes,
   generateHtml,
   generateServerEntry,
+  resolveRoutes,
   type ServerEntryConfig,
 } from "@evjs/build-tools";
-import type { EvPluginHooks } from "@evjs/ev";
+import type { EvDocument, EvPluginHooks } from "@evjs/ev";
 import type {
   ClientManifest,
-  RouteEntry,
   ServerFnEntry,
   ServerManifest,
 } from "@evjs/manifest";
@@ -22,7 +23,7 @@ export { webpack } from "./plugin-helper.js";
 
 class ManifestCollector {
   fns: Record<string, ServerFnEntry> = {};
-  routes: RouteEntry[] = [];
+  routes: ExtractedRoute[] = [];
   entry: string | undefined = undefined;
   private jsAssets: string[] = [];
   private cssAssets: string[] = [];
@@ -31,7 +32,7 @@ class ManifestCollector {
     this.fns[id] = meta;
   }
 
-  addRoutes(entries: RouteEntry[]) {
+  addRoutes(entries: ExtractedRoute[]) {
     this.routes.push(...entries);
   }
 
@@ -60,7 +61,7 @@ class ManifestCollector {
     return {
       version: 1,
       assets: { js: this.jsAssets, css: this.cssAssets },
-      routes: this.routes,
+      routes: resolveRoutes(this.routes),
     };
   }
 }
@@ -344,14 +345,14 @@ export class EvWebpackPlugin {
           };
           for (const h of hooks) {
             if (h.transformHtml) {
-              await h.transformHtml(doc, buildResult);
+              await h.transformHtml(doc as unknown as EvDocument, buildResult);
             }
           }
 
           // Serialize and emit index.html
           compilation.emitAsset(
             "index.html",
-            new compiler.webpack.sources.RawSource(doc.outerHTML),
+            new compiler.webpack.sources.RawSource(doc.toString()),
           );
         },
       );

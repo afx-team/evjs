@@ -35,7 +35,7 @@ describe("generateHtml", () => {
       js: ["main.abc12345.js"],
       css: [],
     });
-    const result = doc.outerHTML;
+    const result = doc.toString();
 
     // Parser serializes boolean `defer` as `defer=""`
     expect(result).toContain('src="/main.abc12345.js"');
@@ -49,7 +49,7 @@ describe("generateHtml", () => {
       js: [],
       css: ["main.abc12345.css"],
     });
-    const result = doc.outerHTML;
+    const result = doc.toString();
 
     expect(result).toContain(
       '<link rel="stylesheet" href="/main.abc12345.css">',
@@ -63,7 +63,7 @@ describe("generateHtml", () => {
       js: ["main.abc12345.js", "vendor.def67890.js"],
       css: ["main.abc12345.css"],
     });
-    const result = doc.outerHTML;
+    const result = doc.toString();
 
     expect(result).toContain('src="/main.abc12345.js"');
     expect(result).toContain('src="/vendor.def67890.js"');
@@ -76,7 +76,7 @@ describe("generateHtml", () => {
       js: ["main.js"],
       css: [],
     });
-    const result = doc.outerHTML;
+    const result = doc.toString();
 
     expect(result).toContain('<div id="app">');
     expect(result).toContain("<title>Test App</title>");
@@ -89,7 +89,7 @@ describe("generateHtml", () => {
       js: [],
       css: [],
     });
-    const result = doc.outerHTML;
+    const result = doc.toString();
 
     expect(result).not.toContain("<script");
     expect(result).not.toContain("<link");
@@ -103,7 +103,7 @@ describe("generateHtml", () => {
       css: ["main.css"],
       publicPath: "/static/",
     });
-    const result = doc.outerHTML;
+    const result = doc.toString();
 
     expect(result).toContain('src="/static/main.js"');
     expect(result).toContain('href="/static/main.css"');
@@ -115,7 +115,7 @@ describe("generateHtml", () => {
       js: ["first.js", "second.js"],
       css: ["a.css", "b.css"],
     });
-    const result = doc.outerHTML;
+    const result = doc.toString();
 
     const firstJsIdx = result.indexOf("first.js");
     const secondJsIdx = result.indexOf("second.js");
@@ -132,7 +132,7 @@ describe("generateHtml", () => {
       js: ["main.js"],
       css: [],
     });
-    const result = doc.outerHTML;
+    const result = doc.toString();
 
     expect(result).toMatch(/^<!DOCTYPE html>/i);
     expect(result).toContain("<html");
@@ -150,7 +150,7 @@ describe("generateHtml", () => {
       ],
       css: [],
     });
-    const result = doc.outerHTML;
+    const result = doc.toString();
 
     expect(result).toContain('crossorigin="anonymous"');
     expect(result).toContain('integrity="sha384-abc123"');
@@ -168,7 +168,7 @@ describe("generateHtml", () => {
         },
       ],
     });
-    const result = doc.outerHTML;
+    const result = doc.toString();
 
     expect(result).toContain('media="print"');
     expect(result).toContain('crossorigin="anonymous"');
@@ -181,7 +181,7 @@ describe("generateHtml", () => {
       js: [{ url: "analytics.js", attrs: { async: true } }],
       css: [],
     });
-    const result = doc.outerHTML;
+    const result = doc.toString();
 
     expect(result).toContain("async");
     // Should NOT have defer when async is explicitly set
@@ -201,7 +201,7 @@ describe("generateHtml", () => {
         { url: "theme.css", attrs: { media: "(prefers-color-scheme: dark)" } },
       ],
     });
-    const result = doc.outerHTML;
+    const result = doc.toString();
 
     expect(result).toContain('src="/vendor.js"');
     expect(result).toContain('src="/main.js"');
@@ -222,7 +222,7 @@ describe("generateHtml", () => {
     const comment = doc.createComment(" injected by plugin ");
     doc.head?.appendChild(comment);
 
-    const result = doc.outerHTML;
+    const result = doc.toString();
     expect(result).toContain("<!-- injected by plugin -->");
   });
 });

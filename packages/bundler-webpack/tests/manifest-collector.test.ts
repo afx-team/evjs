@@ -1,3 +1,4 @@
+import { type ExtractedRoute, resolveRoutes } from "@evjs/build-tools";
 import { describe, expect, it } from "vitest";
 import { EvWebpackPlugin } from "../src/index.js";
 
@@ -12,13 +13,14 @@ import { EvWebpackPlugin } from "../src/index.js";
 // ManifestCollector is not exported, so we reconstruct it from the module.
 // If it's not accessible, we test through the plugin interface instead.
 describe("ManifestCollector (via EvWebpackPlugin)", () => {
-  it("EvWebpackPlugin constructor accepts no options", () => {
-    const plugin = new EvWebpackPlugin();
+  it("EvWebpackPlugin constructor accepts minimal options", () => {
+    const plugin = new EvWebpackPlugin({ html: "index.html" });
     expect(plugin).toBeDefined();
   });
 
   it("EvWebpackPlugin constructor accepts server options", () => {
     const plugin = new EvWebpackPlugin({
+      html: "index.html",
       server: { entry: "./src/server.ts" },
     });
     expect(plugin).toBeDefined();
@@ -33,7 +35,7 @@ describe("ManifestCollector", () => {
   // Inline implementation matching the source for isolated testing
   class ManifestCollector {
     fns: Record<string, { moduleId: string; export: string }> = {};
-    routes: Array<{ path: string }> = [];
+    routes: ExtractedRoute[] = [];
     entry: string | undefined = undefined;
     private jsAssets: string[] = [];
     private cssAssets: string[] = [];
@@ -42,7 +44,7 @@ describe("ManifestCollector", () => {
       this.fns[id] = meta;
     }
 
-    addRoutes(entries: Array<{ path: string }>) {
+    addRoutes(entries: ExtractedRoute[]) {
       this.routes.push(...entries);
     }
 
@@ -63,7 +65,7 @@ describe("ManifestCollector", () => {
       return {
         version: 1,
         assets: { js: this.jsAssets, css: this.cssAssets },
-        routes: this.routes,
+        routes: resolveRoutes(this.routes),
       };
     }
   }
@@ -108,19 +110,47 @@ describe("ManifestCollector", () => {
     });
   });
 
-  it("accumulates routes", () => {
+  it("accumulates and resolves routes", () => {
     const collector = new ManifestCollector();
 
-    collector.addRoutes([{ path: "/" }, { path: "/about" }]);
-    collector.addRoutes([{ path: "/posts/$postId" }]);
+    collector.addRoutes([
+      { path: "/", parentName: "rootRoute", varName: "homeRoute" },
+      { path: "/about", parentName: "rootRoute", varName: "aboutRoute" },
+    ]);
+    collector.addRoutes([
+      { path: "/posts", parentName: "rootRoute", varName: "postsRoute" },
+      {
+        path: "$postId",
+        parentName: "postsRoute",
+        varName: "postDetailRoute",
+      },
+    ]);
 
     const manifest = collector.getClientManifest();
-    expect(manifest.routes).toHaveLength(3);
+    expect(manifest.routes).toHaveLength(4);
     expect(manifest.routes).toEqual([
       { path: "/" },
       { path: "/about" },
+      { path: "/posts" },
       { path: "/posts/$postId" },
     ]);
+  });
+
+  it("excludes index routes under non-root parents", () => {
+    const collector = new ManifestCollector();
+
+    collector.addRoutes([
+      { path: "/posts", parentName: "rootRoute", varName: "postsRoute" },
+      {
+        path: "/",
+        parentName: "postsRoute",
+        varName: "postsIndexRoute",
+      },
+    ]);
+
+    const manifest = collector.getClientManifest();
+    expect(manifest.routes).toHaveLength(1);
+    expect(manifest.routes).toEqual([{ path: "/posts" }]);
   });
 
   it("sets client assets", () => {
@@ -154,7 +184,9 @@ describe("ManifestCollector", () => {
       moduleId: "api/users.server.ts",
       export: "getUsers",
     });
-    collector.addRoutes([{ path: "/" }]);
+    collector.addRoutes([
+      { path: "/", parentName: "rootRoute", varName: "homeRoute" },
+    ]);
     collector.setAssets(["index.js"], ["style.css"]);
     collector.entry = "server.hash.js";
 
