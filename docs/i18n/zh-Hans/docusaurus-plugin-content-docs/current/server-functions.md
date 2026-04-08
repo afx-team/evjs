@@ -93,7 +93,7 @@ import { initTransport } from "@evjs/client";
 import type { ServerTransport } from "@evjs/client";
 
 const wsTransport: ServerTransport = {
-  call: async (fnId, args) => {
+  send: async (fnId, args) => {
     // 在这里实现你的 WebSocket 或自定义协议
   },
 };

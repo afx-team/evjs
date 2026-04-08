@@ -116,7 +116,7 @@ import { initTransport } from "@evjs/client";
 import type { ServerTransport } from "@evjs/client";
 
 const wsTransport: ServerTransport = {
-  call: async (fnId, args) => {
+  send: async (fnId, args) => {
     // Implement your WebSocket or custom protocol here
   },
 };
