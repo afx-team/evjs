@@ -41,6 +41,7 @@ describe("CONFIG_DEFAULTS", () => {
     expect(CONFIG_DEFAULTS.port).toBe(3000);
     expect(CONFIG_DEFAULTS.serverPort).toBe(3001);
     expect(CONFIG_DEFAULTS.endpoint).toBe("/api/fn");
+    expect(CONFIG_DEFAULTS.assetPrefix).toBe("/");
   });
 
   it("is readonly", () => {
@@ -52,6 +53,7 @@ describe("CONFIG_DEFAULTS", () => {
       port: 3000,
       serverPort: 3001,
       endpoint: "/api/fn",
+      assetPrefix: "/",
     });
   });
 });
