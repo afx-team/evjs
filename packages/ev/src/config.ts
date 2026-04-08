@@ -158,9 +158,7 @@ export function resolveConfig(userConfig?: EvConfig): ResolvedEvConfig {
   const serverConfig = config.server === false ? {} : (config.server ?? {});
 
   const rawPrefix = config.assetPrefix ?? CONFIG_DEFAULTS.assetPrefix;
-  const assetPrefix = rawPrefix.endsWith("/")
-    ? rawPrefix
-    : `${rawPrefix}/`;
+  const assetPrefix = rawPrefix.endsWith("/") ? rawPrefix : `${rawPrefix}/`;
 
   return {
     assetPrefix,

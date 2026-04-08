@@ -48,11 +48,17 @@ describe("resolveConfig", () => {
   });
 
   it("normalizes assetPrefix by adding a trailing slash if missing", () => {
-    const resolved = resolveConfig({ assetPrefix: "https://cdn.example.com/assets" });
+    const resolved = resolveConfig({
+      assetPrefix: "https://cdn.example.com/assets",
+    });
     expect(resolved.assetPrefix).toBe("https://cdn.example.com/assets/");
-    
-    const resolvedWithSlash = resolveConfig({ assetPrefix: "https://cdn.example.com/assets/" });
-    expect(resolvedWithSlash.assetPrefix).toBe("https://cdn.example.com/assets/");
+
+    const resolvedWithSlash = resolveConfig({
+      assetPrefix: "https://cdn.example.com/assets/",
+    });
+    expect(resolvedWithSlash.assetPrefix).toBe(
+      "https://cdn.example.com/assets/",
+    );
   });
 
   it("respects dev port and https overrides", () => {

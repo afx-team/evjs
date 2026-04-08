@@ -308,7 +308,9 @@ export class EvWebpackPlugin {
           collector.setAssets(jsFiles, cssFiles);
 
           const serverManifest = collector.getServerManifest();
-          const clientManifest = collector.getClientManifest(this.options.assetPrefix);
+          const clientManifest = collector.getClientManifest(
+            this.options.assetPrefix,
+          );
 
           // Always emit client manifest — it contains asset paths
           // needed by deployment tools even when there are no routes.
