@@ -4,6 +4,19 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.0.22] — 2026-04-10
+
+### ♻️ Refactoring
+
+- **Reorganized plugin architecture** — Split the monolithic `bundler-webpack/src/index.ts` (381 lines) into focused modules under `plugin/`:
+  - `plugin/index.ts` — `EvWebpackPlugin` orchestrator
+  - `plugin/server-compiler.ts` — "use server" module scanning and child compiler
+- **Moved `ManifestCollector` to `@evjs/manifest`** — Manifest building logic (`ManifestCollector`, `resolveRoutes`, `ExtractedRoute`) now lives in the zero-dependency manifest package alongside the types it produces
+- **Moved `buildHtml()` to `@evjs/ev`** — Framework-level HTML transforms (assetPrefix injection, plugin `transformHtml` hooks) extracted to the core package; accepts a pre-parsed doc to avoid heavy build-tool dependencies
+- **`@evjs/ev` stays lightweight** — Removed `@evjs/build-tools` dependency; `@evjs/ev` now only depends on `@evjs/manifest` and `@evjs/shared`
+
+---
+
 ## [0.0.21] — 2026-04-10
 
 ### ✨ Features
