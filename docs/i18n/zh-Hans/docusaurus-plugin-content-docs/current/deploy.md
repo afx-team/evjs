@@ -25,7 +25,7 @@ export default defineConfig({
 ```
 
 在 `ev build` 时，该前缀会被：
-1. 自动注入以加载异步 JS Chunk（通过 Webpack 自动机制）。
+1. 作为 Webpack 运行时 `publicPath`（通过 `window.assetPrefix`）—— 所有动态加载的 JS/CSS 分块、图片和字体都会基于该前缀进行解析。
 2. 直接写入 `dist/index.html` 的资源标签中。
 3. 作为客户端全局 `window.assetPrefix` 运行时变量暴露。你的部署服务器可以在分发 `index.html` 之前安全地动态替换它。
 

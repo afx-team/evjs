@@ -75,8 +75,10 @@ export interface EvConfig {
    * Use this when deploying static assets to a CDN on a different domain.
    *
    * At build time, this prefix is applied to all `<script>` and `<link>` tags
-   * in the generated HTML. A `<script>window.assetPrefix = "..."`</script>` tag
-   * is also injected so the value is available at runtime.
+   * in the generated HTML. It is also used as Webpack's runtime `publicPath`,
+   * so dynamically loaded chunks resolve against it. A
+   * `<script>window.assetPrefix = "..."</script>` tag is injected so the value
+   * is available at runtime and can be rewritten at deploy time.
    *
    * @example "https://cdn.example.com/assets/"
    * @default "/"

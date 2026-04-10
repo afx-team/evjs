@@ -10,7 +10,7 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 - **`assetPrefix` config option** — New top-level config field for deploying static assets to a CDN. Set `assetPrefix: "https://cdn.example.com/"` in `ev.config.ts` to prefix all JS/CSS asset URLs in the production build output
 - **Runtime `window.assetPrefix`** — The configured prefix is injected as a `<script>window.assetPrefix="..."</script>` tag in the `<head>` of `index.html`, enabling deployment-time rewriting and dynamic asset URL construction in React components
-- **Webpack `publicPath: "auto"`** — Production builds now use Webpack's automatic public path resolution, allowing lazily loaded chunks to correctly resolve relative to their CDN location without manual configuration
+- **Runtime `publicPath` via `window.assetPrefix`** — Webpack's chunk loader reads `window.assetPrefix` at runtime, so dynamically loaded chunks resolve against the deploy-time CDN URL without requiring a rebuild
 - **`assetPrefix` ignored in dev** — During `ev dev`, the prefix is always forced to `"/"` to preserve local HMR and dev server stability
 
 ### 📝 Documentation

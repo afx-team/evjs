@@ -52,11 +52,17 @@ export function createWebpackConfig(
   // Never spread config.dev directly — webpack-dev-server rejects unknown properties.
   const isHttps = config.dev.https;
 
+  // Runtime public path bootstrap — must execute before any dynamic import().
+  // Reads window.assetPrefix (injected into <head> by EvWebpackPlugin) and
+  // sets webpack's __webpack_require__.p so async chunks, asset modules, and
+  // CSS url() references resolve against the deploy-time CDN prefix.
+  const publicPathEntry = `data:text/javascript,__webpack_public_path__=window.assetPrefix||"/"`;
+
   const webpackConfig: Record<string, unknown> = {
     name: "client",
     mode: isProduction ? "production" : "development",
     devtool: isProduction ? "hidden-source-map" : "source-map",
-    entry,
+    entry: [publicPathEntry, entry],
     output: {
       path: path.resolve(cwd, serverEnabled ? "dist/client" : "dist"),
       filename: isProduction ? "[name].[contenthash:8].js" : "index.js",

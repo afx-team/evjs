@@ -26,7 +26,7 @@ export default defineConfig({
 ```
 
 During `ev build`, this prefix will be:
-1. Applied to dynamically loaded JS chunks automatically using Webpack's `auto` publicPath strategy.
+1. Used as Webpack's runtime `publicPath` via `window.assetPrefix` — all dynamically loaded JS/CSS chunks, images, and fonts resolve against this prefix at runtime.
 2. Written into `<script>` and `<link>` tags in `dist/index.html`.
 3. Exposed as a global `window.assetPrefix` runtime variable on the client, which can be safely mutated by your deployment tools before serving `index.html`.
 
