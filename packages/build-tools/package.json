@@ -31,6 +31,7 @@
   "author": "xusd320",
   "license": "MIT",
   "dependencies": {
+    "@evjs/manifest": "*",
     "@swc/core": "^1.15.21",
     "domparser-rs": "^0.1.0"
   },

@@ -199,12 +199,14 @@ export function useMutation<
 >(
   options: UseMutationOptions<TData, TError, TVariables, TContext>,
 ): UseMutationResult<TData, TError, TVariables, TContext>;
-// biome-ignore lint/suspicious/noExplicitAny: Implementation signature must be wide enough for both overloads
 export function useMutation(
   fnOrOptions:
     | ((...args: unknown[]) => Promise<unknown>)
+    // biome-ignore lint/suspicious/noExplicitAny: Implementation signature must be wide enough for both overloads
     | UseMutationOptions<any, any, any, any>,
+  // biome-ignore lint/suspicious/noExplicitAny: Implementation signature must be wide enough for both overloads
   extraOptions?: Omit<UseMutationOptions<any, any, any, any>, "mutationFn">,
+  // biome-ignore lint/suspicious/noExplicitAny: Implementation signature must be wide enough for both overloads
 ): UseMutationResult<any, any, any, any> {
   if (typeof fnOrOptions === "function") {
     const fnId = getFnId(fnOrOptions);

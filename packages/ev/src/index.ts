@@ -20,3 +20,4 @@ export {
   type ResolvedServerDevConfig,
   resolveConfig,
 } from "./config.js";
+export { type BuildHtmlOptions, buildHtml } from "./html.js";
