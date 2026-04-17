@@ -1,9 +1,9 @@
 /**
  * Client-side transport for calling server functions.
  *
- * When the Webpack loader transforms a `"use server"` module for the client
- * bundle, each exported function is replaced with a stub that calls
- * `__fn_call(fnId, args)`. This module provides that helper.
+ * When the build tools transform a `"use server"` module for the client
+ * bundle, each exported function is replaced with a stub created by
+ * `createServerReference(fnId, callServer)`. This module provides that factory.
  */
 
 import {
@@ -184,22 +184,15 @@ export function initTransport(options: TransportOptions): void {
 /**
  * Call a server function by its unique ID.
  *
- * @internal This function is auto-injected by the Webpack loader.
- * Do not call directly — use server functions as normal imports instead.
+ * @internal Used by createServerReference. Do not call directly.
  */
-export async function __fn_call(
+export async function callServer(
   fnId: string,
   args: unknown[],
   context?: RequestContext,
 ): Promise<unknown> {
   return getTransport().send(fnId, args, context);
 }
-
-/**
- * Alias for __fn_call to support utoopack's native "use server" transform.
- * @internal
- */
-export { __fn_call as callServer };
 
 /** Minimal callable shape for server function stubs. */
 type AnyFn = (...args: never[]) => unknown;
@@ -263,35 +256,45 @@ export function getFnName(fnId: string): string {
 }
 
 /**
- * Register a server function stub with its ID and optional export name.
- * Also augments the function with `.queryKey()`, `.fnId`, and `.fnName`
- * properties so consumers can access metadata directly.
+ * Create a server reference stub for a server function.
  *
- * @internal Called by build-tools codegen. Do not use directly.
+ * Returns a callable function that forwards calls to `callServerFn(fnId, args)`.
+ * The returned function is augmented with `.queryKey()`, `.queryOptions()`,
+ * `.fnId`, and `.fnName` metadata for use with TanStack Query.
+ *
+ * Follows the React Server Components convention.
+ *
+ * @param fnId - The unique function hash ID.
+ * @param callServerFn - The transport function (typically `callServer`).
+ * @param exportName - The human-readable export name.
+ * @returns An augmented server function stub.
  */
-export function __fn_register(
-  fn: AnyFn,
+export function createServerReference(
   fnId: string,
+  callServerFn: typeof callServer,
   exportName?: string,
-): void {
-  fnIdRegistry.set(fn, fnId);
+): ServerFunction {
+  const fn = ((...args: unknown[]) =>
+    callServerFn(fnId, args)) as unknown as ServerFunction;
+
+  fnIdRegistry.set(fn as unknown as AnyFn, fnId);
   if (exportName) {
     fnNameRegistry.set(fnId, exportName);
   }
 
-  // Augment the function with metadata properties
-  const sfn = fn as unknown as ServerFunction;
-  sfn.queryKey = (...args: unknown[]) => [fnId, ...args];
-  sfn.queryOptions = (...args: unknown[]) => ({
-    queryKey: sfn.queryKey(...args),
+  fn.queryKey = (...args: unknown[]) => [fnId, ...args];
+  fn.queryOptions = (...args: unknown[]) => ({
+    queryKey: fn.queryKey(...args),
     queryFn: (ctx?: { signal?: AbortSignal }) =>
-      __fn_call(fnId, args, { signal: ctx?.signal }) as Promise<unknown>,
+      callServerFn(fnId, args, { signal: ctx?.signal }) as Promise<unknown>,
   });
-  Object.defineProperty(sfn, "fnId", { value: fnId, writable: false });
-  Object.defineProperty(sfn, "fnName", {
+  Object.defineProperty(fn, "fnId", { value: fnId, writable: false });
+  Object.defineProperty(fn, "fnName", {
     value: exportName ?? fnId,
     writable: false,
   });
+
+  return fn;
 }
 
 /**

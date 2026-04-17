@@ -5,4 +5,4 @@ export type {
 } from "./dispatch";
 export { dispatch } from "./dispatch";
 export type { ServerFn } from "./register";
-export { registerServerFn } from "./register";
+export { registerServerReference } from "./register";

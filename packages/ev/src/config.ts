@@ -181,7 +181,7 @@ export function resolveConfig(userConfig?: EvConfig): ResolvedEvConfig {
       },
     },
     bundler: {
-      name: config.bundler?.name ?? "utoopack",
+      name: config.bundler?.name ?? "webpack",
     },
     plugins: config.plugins ?? [],
   };

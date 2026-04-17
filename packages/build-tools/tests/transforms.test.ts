@@ -20,34 +20,34 @@ const NON_SERVER_FILE = `export function helper() { return 42; }`;
 
 describe("transformServerFile", () => {
   describe("client transform", () => {
-    it("replaces function bodies with __fn_call stubs", async () => {
+    it("replaces function bodies with createServerReference stubs", async () => {
       const result = await transformServerFile(SERVER_FILE, {
         resourcePath: FILE,
         rootContext: ROOT,
         isServer: false,
       });
 
-      expect(result.code).toContain(RUNTIME.clientCall);
-      expect(result.code).toContain("export function getUsers");
-      expect(result.code).toContain("export function createUser");
+      expect(result.code).toContain(RUNTIME.createServerReference);
+      expect(result.code).toContain("export const getUsers");
+      expect(result.code).toContain("export const createUser");
     });
 
-    it("emits __fn_register calls for each function", async () => {
+    it("emits createServerReference calls for each function", async () => {
       const result = await transformServerFile(SERVER_FILE, {
         resourcePath: FILE,
         rootContext: ROOT,
         isServer: false,
       });
 
-      expect(result.code).toContain(RUNTIME.clientRegister);
-      // Should have an __fn_register call for each exported function
-      const registerCount = (
-        result.code.match(new RegExp(RUNTIME.clientRegister, "g")) || []
+      expect(result.code).toContain(RUNTIME.createServerReference);
+      // Should have a createServerReference call for each exported function
+      const refCount = (
+        result.code.match(new RegExp(RUNTIME.createServerReference, "g")) || []
       ).length;
-      expect(registerCount).toBe(3); // import + getUsers + createUser
+      expect(refCount).toBe(3); // import + getUsers + createUser
     });
 
-    it("imports __fn_call and __fn_register from transport module", async () => {
+    it("imports createServerReference and callServer from transport module", async () => {
       const result = await transformServerFile(SERVER_FILE, {
         resourcePath: FILE,
         rootContext: ROOT,
@@ -56,7 +56,7 @@ describe("transformServerFile", () => {
 
       expect(result.code).toContain(RUNTIME.clientTransportModule);
       expect(result.code).toContain(
-        `import { ${RUNTIME.clientCall}, ${RUNTIME.clientRegister} }`,
+        `import { ${RUNTIME.createServerReference}, ${RUNTIME.callServer} }`,
       );
     });
 
@@ -85,24 +85,25 @@ describe("transformServerFile", () => {
       expect(result.code).toContain("export async function getUsers");
     });
 
-    it("appends registerServerFn calls", async () => {
+    it("appends registerServerReference calls", async () => {
       const result = await transformServerFile(SERVER_FILE, {
         resourcePath: FILE,
         rootContext: ROOT,
         isServer: true,
       });
 
-      expect(result.code).toContain(RUNTIME.registerServerFn);
-      expect(result.code).toContain(`${RUNTIME.registerServerFn}(`);
+      expect(result.code).toContain(RUNTIME.registerServerReference);
+      expect(result.code).toContain(`${RUNTIME.registerServerReference}(`);
       // One registration per exported function
       const registerCount = (
-        result.code.match(new RegExp(RUNTIME.registerServerFn, "g")) || []
+        result.code.match(new RegExp(RUNTIME.registerServerReference, "g")) ||
+        []
       ).length;
       // import + 2 registrations = 3
       expect(registerCount).toBe(3);
     });
 
-    it("imports registerServerFn from server module", async () => {
+    it("imports registerServerReference from server module", async () => {
       const result = await transformServerFile(SERVER_FILE, {
         resourcePath: FILE,
         rootContext: ROOT,
@@ -110,7 +111,7 @@ describe("transformServerFile", () => {
       });
 
       expect(result.code).toContain(
-        `import { ${RUNTIME.registerServerFn} } from "${RUNTIME.serverModule}"`,
+        `import { ${RUNTIME.registerServerReference} } from "${RUNTIME.serverModule}"`,
       );
     });
 

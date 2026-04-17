@@ -1,33 +1,33 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  registerServerFn,
+  registerServerReference,
   registry,
   type ServerFn,
 } from "../src/functions/register.js";
 
-describe("registerServerFn", () => {
+describe("registerServerReference", () => {
   beforeEach(() => {
     registry.clear();
   });
 
   it("registers a function by ID", () => {
     const fn: ServerFn = async () => "result";
-    registerServerFn("test-fn", fn);
+    registerServerReference(fn, "test-fn");
     expect(registry.get("test-fn")).toBe(fn);
   });
 
   it("overwrites an existing registration", () => {
     const fn1: ServerFn = async () => "first";
     const fn2: ServerFn = async () => "second";
-    registerServerFn("fn", fn1);
-    registerServerFn("fn", fn2);
+    registerServerReference(fn1, "fn");
+    registerServerReference(fn2, "fn");
     expect(registry.get("fn")).toBe(fn2);
   });
 
   it("supports multiple registrations", () => {
-    registerServerFn("a", async () => "a");
-    registerServerFn("b", async () => "b");
-    registerServerFn("c", async () => "c");
+    registerServerReference(async () => "a", "a");
+    registerServerReference(async () => "b", "b");
+    registerServerReference(async () => "c", "c");
     expect(registry.size).toBe(3);
   });
 

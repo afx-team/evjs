@@ -1,28 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  __fn_call,
-  __fn_register,
   __resetForTesting,
+  callServer,
+  createServerReference,
   getFnId,
   getFnName,
   initTransport,
   type ServerFunction,
 } from "../src/transport.js";
 
-describe("__fn_register / getFnId / getFnName", () => {
+describe("createServerReference / getFnId / getFnName", () => {
   beforeEach(() => {
     __resetForTesting();
   });
 
-  it("registers a function and retrieves its ID", () => {
-    const fn = async () => "result";
-    __fn_register(fn, "test-id", "testFn");
-    expect(getFnId(fn)).toBe("test-id");
+  it("creates a function and retrieves its ID", () => {
+    const fn = createServerReference("test-id", callServer, "testFn");
+    expect(getFnId(fn as never)).toBe("test-id");
   });
 
   it("retrieves the export name from fnId", () => {
-    const fn = async () => {};
-    __fn_register(fn, "abc:myFn", "myFn");
+    createServerReference("abc:myFn", callServer, "myFn");
     expect(getFnName("abc:myFn")).toBe("myFn");
   });
 
@@ -35,10 +33,9 @@ describe("__fn_register / getFnId / getFnName", () => {
     expect(getFnId(fn)).toBeUndefined();
   });
 
-  it("handles registration without export name", () => {
-    const fn = async () => {};
-    __fn_register(fn, "no-name");
-    expect(getFnId(fn)).toBe("no-name");
+  it("handles creation without export name", () => {
+    const fn = createServerReference("no-name", callServer);
+    expect(getFnId(fn as never)).toBe("no-name");
     expect(getFnName("no-name")).toBe("no-name"); // fallback
   });
 });
@@ -48,70 +45,53 @@ describe("ServerFunction metadata (.queryKey, .fnId, .fnName)", () => {
     __resetForTesting();
   });
 
-  it("attaches .fnId and .fnName on registration", () => {
-    const fn = async () => "result";
-    __fn_register(fn, "abc123", "getUsers");
-
-    const sfn = fn as unknown as { fnId: string; fnName: string };
-    expect(sfn.fnId).toBe("abc123");
-    expect(sfn.fnName).toBe("getUsers");
+  it("attaches .fnId and .fnName on creation", () => {
+    const fn = createServerReference("abc123", callServer, "getUsers");
+    expect(fn.fnId).toBe("abc123");
+    expect(fn.fnName).toBe("getUsers");
   });
 
   it("makes .fnId and .fnName read-only", () => {
-    const fn = async () => {};
-    __fn_register(fn, "abc123", "getUsers");
+    const fn = createServerReference("abc123", callServer, "getUsers");
 
-    const sfn = fn as unknown as { fnId: string; fnName: string };
     expect(() => {
-      sfn.fnId = "changed";
+      (fn as unknown as { fnId: string }).fnId = "changed";
     }).toThrow();
     expect(() => {
-      sfn.fnName = "changed";
+      (fn as unknown as { fnName: string }).fnName = "changed";
     }).toThrow();
   });
 
   it("falls back .fnName to fnId when no export name given", () => {
-    const fn = async () => {};
-    __fn_register(fn, "hash-only");
-
-    const sfn = fn as unknown as { fnName: string };
-    expect(sfn.fnName).toBe("hash-only");
+    const fn = createServerReference("hash-only", callServer);
+    expect(fn.fnName).toBe("hash-only");
   });
 
   it("attaches .queryKey() that returns [fnId]", () => {
-    const fn = async () => [];
-    __fn_register(fn, "mod:getUsers", "getUsers");
-
-    const sfn = fn as unknown as {
-      queryKey: (...args: unknown[]) => unknown[];
-    };
-    expect(sfn.queryKey()).toEqual(["mod:getUsers"]);
+    const fn = createServerReference("mod:getUsers", callServer, "getUsers");
+    expect(fn.queryKey()).toEqual(["mod:getUsers"]);
   });
 
   it(".queryKey() includes args", () => {
-    const fn = async (_id: string) => ({});
-    __fn_register(fn, "mod:getUser", "getUser");
-
-    const sfn = fn as unknown as {
-      queryKey: (...args: unknown[]) => unknown[];
-    };
-    expect(sfn.queryKey("abc")).toEqual(["mod:getUser", "abc"]);
-    expect(sfn.queryKey("abc", 42)).toEqual(["mod:getUser", "abc", 42]);
+    const fn = createServerReference("mod:getUser", callServer, "getUser");
+    expect(fn.queryKey("abc")).toEqual(["mod:getUser", "abc"]);
+    expect(fn.queryKey("abc", 42)).toEqual(["mod:getUser", "abc", 42]);
   });
 
   it("attaches .queryOptions() that returns TanStack { queryKey, queryFn }", async () => {
     const send = vi.fn().mockResolvedValue("test result");
     initTransport({ transport: { send } });
 
-    const fn = async (_id: string) => ({});
-    __fn_register(fn, "mod:getUser", "getUser");
-
-    const sfn = fn as unknown as ServerFunction<[string], unknown>;
-    const opts = sfn.queryOptions("abc");
+    const fn = createServerReference(
+      "mod:getUser",
+      callServer,
+      "getUser",
+    ) as ServerFunction<[string], unknown>;
+    const opts = fn.queryOptions("abc");
 
     expect(opts.queryKey).toEqual(["mod:getUser", "abc"]);
 
-    // Check queryFn uses __fn_call properly
+    // Check queryFn uses callServer properly
     const signal = new AbortController().signal;
     const result = await opts.queryFn({ signal });
     expect(send).toHaveBeenCalledWith("mod:getUser", ["abc"], { signal });
@@ -119,7 +99,7 @@ describe("ServerFunction metadata (.queryKey, .fnId, .fnName)", () => {
   });
 });
 
-describe("initTransport + __fn_call", () => {
+describe("initTransport + callServer", () => {
   beforeEach(() => {
     __resetForTesting();
   });
@@ -128,7 +108,7 @@ describe("initTransport + __fn_call", () => {
     const send = vi.fn().mockResolvedValue({ greeting: "hello" });
     initTransport({ transport: { send } });
 
-    const result = await __fn_call("fn1", ["arg1", "arg2"]);
+    const result = await callServer("fn1", ["arg1", "arg2"]);
 
     expect(send).toHaveBeenCalledWith("fn1", ["arg1", "arg2"], undefined);
     expect(result).toEqual({ greeting: "hello" });
@@ -139,7 +119,7 @@ describe("initTransport + __fn_call", () => {
     initTransport({ transport: { send } });
 
     const signal = new AbortController().signal;
-    await __fn_call("fn2", [], { signal });
+    await callServer("fn2", [], { signal });
 
     expect(send).toHaveBeenCalledWith("fn2", [], { signal });
   });
@@ -159,7 +139,7 @@ describe("initTransport + __fn_call", () => {
     const send = vi.fn().mockRejectedValue(new Error("network failure"));
     initTransport({ transport: { send } });
 
-    await expect(__fn_call("fn3", [])).rejects.toThrow("network failure");
+    await expect(callServer("fn3", [])).rejects.toThrow("network failure");
   });
 });
 
@@ -181,7 +161,7 @@ describe("createFetchTransport (default)", () => {
     vi.stubGlobal("fetch", mockFetch);
 
     initTransport({ headers: { Authorization: "Bearer xyz" } });
-    await __fn_call("myFn", []);
+    await callServer("myFn", []);
 
     expect(mockFetch).toHaveBeenCalledWith(
       expect.any(String),
@@ -204,7 +184,7 @@ describe("createFetchTransport (default)", () => {
     initTransport({
       headers: async () => ({ Authorization: "Bearer dynamic-token" }),
     });
-    await __fn_call("myFn", []);
+    await callServer("myFn", []);
 
     expect(mockFetch).toHaveBeenCalledWith(
       expect.any(String),

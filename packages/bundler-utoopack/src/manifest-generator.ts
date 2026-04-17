@@ -68,7 +68,7 @@ export class UtoopackManifestGenerator {
       } else {
         this.currentRoutes.delete(filepath);
       }
-    } catch (err) {
+    } catch (_err) {
       this.currentRoutes.delete(filepath);
     }
   }

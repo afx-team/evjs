@@ -52,21 +52,38 @@ export function createWebpackConfig(
   // Never spread config.dev directly — webpack-dev-server rejects unknown properties.
   const isHttps = config.dev.https;
 
-  // Runtime public path bootstrap — must execute before any dynamic import().
-  // Reads window.assetPrefix (injected into <head> by EvWebpackPlugin) and
-  // sets webpack's __webpack_require__.p so async chunks, asset modules, and
-  // CSS url() references resolve against the deploy-time CDN prefix.
-  const publicPathEntry = `data:text/javascript,__webpack_public_path__=window.assetPrefix||"/"`;
+  const webpack = esmRequire("webpack");
+
+  // In production, override webpack's PublicPathRuntimeModule so the
+  // public path is resolved at page-load time from `window.assetPrefix`.
+  // This enables deploy-time CDN prefix rewriting without rebuilding.
+  class AssetPrefixRuntimePlugin {
+    apply(compiler: { hooks: Record<string, any> }): void {
+      compiler.hooks.compilation.tap(
+        "AssetPrefixRuntimePlugin",
+        (compilation: any) => {
+          compilation.hooks.runtimeModule.tap(
+            "AssetPrefixRuntimePlugin",
+            (mod: any) => {
+              if (mod.constructor.name === "PublicPathRuntimeModule") {
+                mod.getGeneratedCode = () =>
+                  `__webpack_require__.p = (typeof window !== "undefined" && window.assetPrefix) || "/";`;
+              }
+            },
+          );
+        },
+      );
+    }
+  }
 
   const webpackConfig: Record<string, unknown> = {
-    name: "client",
     mode: isProduction ? "production" : "development",
     devtool: isProduction ? "hidden-source-map" : "source-map",
-    entry: [publicPathEntry, entry],
+    entry,
     output: {
       path: path.resolve(cwd, serverEnabled ? "dist/client" : "dist"),
       filename: isProduction ? "[name].[contenthash:8].js" : "index.js",
-      publicPath: "auto",
+      publicPath: isProduction ? config.assetPrefix : "/",
       clean: true,
     },
     resolve: {
@@ -155,6 +172,11 @@ export function createWebpackConfig(
       new MiniCssExtractPlugin({
         filename: isProduction ? "[name].[contenthash:8].css" : "[name].css",
       }),
+      // HMR plugin must be in the config so it's present when the
+      // compiler is created — WDS hot:true adds it too late.
+      ...(!isProduction
+        ? [new webpack.HotModuleReplacementPlugin()]
+        : [new AssetPrefixRuntimePlugin()]),
     ],
     optimization: isProduction
       ? { splitChunks: { chunks: "all" as const } }
@@ -164,7 +186,11 @@ export function createWebpackConfig(
       server: isHttps ? "https" : "http",
       hot: true,
       historyApiFallback: true,
-      devMiddleware: { writeToDisk: true },
+      devMiddleware: {
+        // Only write server bundle to disk (node needs it as a file).
+        // Client assets are served from WDS memory to avoid HMR issues.
+        writeToDisk: (filePath: string) => filePath.includes("/server/"),
+      },
       ...(serverEnabled
         ? {
             proxy: [

@@ -18,7 +18,7 @@ export type {
   DispatchSuccess,
   ServerFn,
 } from "./functions";
-export { dispatch, registerServerFn } from "./functions";
+export { dispatch, registerServerReference } from "./functions";
 export type {
   RouteHandler,
   RouteHandlerDefinition,
