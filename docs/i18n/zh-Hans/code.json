@@ -52,7 +52,7 @@
     "description": "Title for Server Routes feature"
   },
   "homepage.feature.serverRoutes.description": {
-    "message": "通过 route() 构建标准 Request/Response REST 端点 —— 在 React 应用旁构建 API。",
+    "message": "通过 createRoute() 构建标准 Request/Response REST 端点 —— 在 React 应用旁构建 API。",
     "description": "Description for Server Routes feature"
   },
   "homepage.features.label": {
