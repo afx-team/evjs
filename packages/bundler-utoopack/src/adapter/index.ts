@@ -62,24 +62,40 @@ export const utoopackAdapter: BundlerAdapter = {
     );
     await generator.watch();
 
-    // Poll for server manifest readiness (utoopack emits server output
+    // Watch for server manifest readiness (utoopack emits server output
     // to dist/server/ when "use server" modules are discovered)
     if (config.serverEnabled) {
-      const manifestPath = path.resolve(cwd, "dist/server/manifest.json");
-      const checkInterval = setInterval(() => {
-        if (fs.existsSync(manifestPath)) {
-          let manifest: { version?: number; entry?: string };
-          try {
-            manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
-          } catch {
-            return; // Manifest partially written, wait for next check
-          }
-          if (manifest.version !== 1 || !manifest.entry) return;
+      const outDir = path.resolve(cwd, "dist/server");
+      const manifestPath = path.resolve(outDir, "manifest.json");
 
-          clearInterval(checkInterval);
-          callbacks.onServerBundleReady();
+      if (!fs.existsSync(outDir)) {
+        fs.mkdirSync(outDir, { recursive: true });
+      }
+
+      let ready = false;
+      const checkManifest = async () => {
+        if (ready) return;
+        try {
+          const content = await fs.promises.readFile(manifestPath, "utf-8");
+          const manifest = JSON.parse(content);
+          if (manifest.version === 1 && manifest.entry) {
+            ready = true;
+            callbacks.onServerBundleReady();
+            watcher?.close();
+          }
+        } catch {
+          // Manifest partially written or missing, wait for next event
         }
-      }, 500);
+      };
+
+      const watcher = fs.watch(outDir, (_eventType, filename) => {
+        if (filename === "manifest.json") {
+          checkManifest();
+        }
+      });
+
+      // Initial check in case it was written before the watcher attached
+      checkManifest();
     }
   },
 };

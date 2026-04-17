@@ -57,7 +57,7 @@ export function createUtoopackConfig(
       clean: true,
     },
     resolve: {
-      extensions: [".tsx", ".ts", ".js"],
+      extensions: [".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs"],
     },
     sourceMaps: !isProduction,
     stats: true,

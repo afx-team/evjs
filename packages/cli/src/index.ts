@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { utoopackAdapter } from "@evjs/bundler-utoopack";
 import {
   type BundlerAdapter,
   CONFIG_DEFAULTS,
@@ -47,6 +46,7 @@ export interface BuildOptions {
 async function getBundlerAdapter(config?: EvConfig): Promise<BundlerAdapter> {
   const bundlerName = config?.bundler?.name ?? "utoopack";
   if (bundlerName === "utoopack") {
+    const { utoopackAdapter } = await import("@evjs/bundler-utoopack");
     return utoopackAdapter;
   }
   if (bundlerName === "webpack") {
