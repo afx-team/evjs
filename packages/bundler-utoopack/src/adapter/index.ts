@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { BundlerAdapter, EvPluginHooks, ResolvedEvConfig } from "@evjs/ev";
 import { getLogger } from "@logtape/logtape";
+import { UtoopackManifestGenerator } from "../manifest-generator.js";
 
 const logger = getLogger(["evjs", "bundler-utoopack"]);
 
@@ -28,6 +29,14 @@ export const utoopackAdapter: BundlerAdapter = {
     const { build } = await import("@utoo/pack");
     await build({ config: utoopackConfig });
 
+    logger.info`Extracting routes and generating client manifest...`;
+    const generator = new UtoopackManifestGenerator(
+      cwd,
+      config.serverEnabled,
+      config.assetPrefix,
+    );
+    await generator.build();
+
     logger.info`Build complete!`;
   },
 
@@ -44,6 +53,14 @@ export const utoopackAdapter: BundlerAdapter = {
 
     const { serve } = await import("@utoo/pack");
     await serve({ config: utoopackConfig });
+
+    logger.info`Starting route watcher for dev manifest...`;
+    const generator = new UtoopackManifestGenerator(
+      cwd,
+      config.serverEnabled,
+      config.assetPrefix,
+    );
+    await generator.watch();
 
     // Poll for server manifest readiness (utoopack emits server output
     // to dist/server/ when "use server" modules are discovered)

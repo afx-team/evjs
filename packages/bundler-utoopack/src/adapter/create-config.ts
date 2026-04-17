@@ -60,6 +60,7 @@ export function createUtoopackConfig(
       extensions: [".tsx", ".ts", ".js"],
     },
     sourceMaps: !isProduction,
+    stats: true,
     react: {
       runtime: "automatic",
     },
