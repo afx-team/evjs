@@ -12,7 +12,7 @@ evjs is a zero-config React fullstack framework built on [TanStack Router](https
 - **Server Functions** — `"use server"` directive, auto-discovered at build time
 - **Pluggable Transport** — HTTP, WebSocket, or custom via `ServerTransport`
 - **Plugin System** — extend builds with custom module rules (Tailwind, SVG, etc.)
-- **Route Handlers** — Standard Request/Response REST endpoints via `route()`
+- **Route Handlers** — Standard Request/Response REST endpoints via `createRoute()`
 - **Typed Errors** — `ServerError` flows structured data from server → client
 - **Multi-Runtime** — Hono-based server with Node, Deno, Bun, Edge adapters
 

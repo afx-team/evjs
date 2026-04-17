@@ -37,7 +37,7 @@
 | `createApp({ routeHandlers })` | `@evjs/server` | Server app factory (Hono + server function handler) |
 | `useQuery(fn, ...args)` | `@evjs/client` | Type-safe query hook accepting server functions directly |
 | `getFnQueryOptions(fn, ...args)` | `@evjs/client` | Convert server function to `{ queryKey, queryFn }` for loaders/prefetch |
-| `route(path, definition)` | `@evjs/server` | Programmatic REST route handler |
+| `createRoute(path, definition)` | `@evjs/server` | Programmatic REST route handler |
 | `defineConfig(config)` | `@evjs/ev` | Type-safe `ev.config.ts` helper |
 | `transformServerFile(source, options)` | `@evjs/build-tools` | SWC-based "use server" file transform |
 | `ServerError(message, { status, data })` | `@evjs/shared` | Structured error for server functions |
@@ -65,4 +65,4 @@ npx biome check .    # Lint + format check
 - **New server function**: Create `src/api/[name].server.ts` (recommended) with `"use server";`, export named async functions
 - **New route**: Define with `createRoute({ getParentRoute, path, component })`, add to route tree
 - **New example**: Create `examples/[name]/`, add symlink in `packages/create-app/templates/`, add E2E test in `e2e/cases/`
-- **New route handler**: Use `route("/api/path", { GET, POST, ... })` and pass to `createApp({ routeHandlers })`
+- **New route handler**: Use `createRoute("/api/path", { GET, POST, ... })` and pass to `createApp({ routeHandlers })`

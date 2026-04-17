@@ -1,6 +1,6 @@
 # basic-server-routes
 
-Programmatic REST route handlers using `route()`.
+Programmatic REST route handlers using `createRoute()`.
 
 ## Run
 
@@ -18,7 +18,7 @@ npm run dev -w example-basic-server-routes
 
 ## What It Demonstrates
 
-- `route(path, { GET, POST, PUT, DELETE })` for REST endpoints
+- `createRoute(path, { GET, POST, PUT, DELETE })` for REST endpoints
 - Dynamic route params (`:id`)
 - Query string parsing (`?limit=N`)
 - Custom status codes (201, 204, 404)

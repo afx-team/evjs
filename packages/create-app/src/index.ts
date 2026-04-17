@@ -36,7 +36,8 @@ program
             { title: "Basic CSR (Client-Side Rendering)", value: "basic-csr" },
             { title: "Basic Server Functions", value: "basic-server-fns" },
             {
-              title: "Basic Server Routes (Programmatic REST API via route())",
+              title:
+                "Basic Server Routes (Programmatic REST API via createRoute())",
               value: "basic-server-routes",
             },
             {

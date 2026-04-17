@@ -11,11 +11,11 @@ Define routes using `createRoute(path, definition)` from `@evjs/server`:
 
 ```ts
 // ✅ Good — string literal
-route("/api/users", { ... });
+createRoute("/api/users", { ... });
 
 // ❌ Compile error — broad `string` type
 const p: string = "/api/users";
-route(p, { ... });
+createRoute(p, { ... });
 ```
 :::
 

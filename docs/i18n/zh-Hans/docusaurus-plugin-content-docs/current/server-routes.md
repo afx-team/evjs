@@ -11,11 +11,11 @@
 
 ```ts
 // ✅ 正确 — 字符串字面量
-route("/api/users", { ... });
+createRoute("/api/users", { ... });
 
 // ❌ 编译错误 — 宽泛的 `string` 类型
 const p: string = "/api/users";
-route(p, { ... });
+createRoute(p, { ... });
 ```
 :::
 

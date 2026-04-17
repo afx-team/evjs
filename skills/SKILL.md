@@ -12,7 +12,7 @@ Use this skill when developing applications with the evjs framework.
 evjs is a React fullstack framework built on TanStack Router, TanStack Query, and Hono. It provides:
 
 - **Server Functions** — write backend logic in files (we recommend using the `.server.ts` suffix), call from React as if local
-- **Server Routes** — build programmatic REST endpoints and APIs using the `route()` handler
+- **Server Routes** — build programmatic REST endpoints and APIs using the `createRoute()` handler
 - **Query Integration** — type-safe `useQuery(getUsers)` with auto query keys and transport
 - **Type-safe Routing** — TanStack Router with file-based route generation
 - **Plugin System** — extend the framework via `config` and `bundler` hooks in plugins
@@ -37,7 +37,7 @@ For detailed guides on specific topics, see the `references/` directory:
 - [deploy.md](../docs/docs/deploy.md) — Deploying to Node, Docker, Deno, and Edge environments
 - [client-routes.md](../docs/docs/client-routes.md) — Route definitions, layouts, params, loaders, navigation
 - [server-functions.md](../docs/docs/server-functions.md) — Server functions, queries, mutations, error handling
-- [server-routes.md](../docs/docs/server-routes.md) — Creating REST API endpoints using programmatic `route()`
+- [server-routes.md](../docs/docs/server-routes.md) — Creating REST API endpoints using programmatic `createRoute()`
 - [config.md](../docs/docs/config.md) — `ev.config.ts` options, defaults, client/server settings
 
 ## Key Rules
@@ -49,9 +49,9 @@ For detailed guides on specific topics, see the `references/` directory:
 - For mutations, wrap args in objects/arrays: `mutate({ name, email })` or `mutate([name, email])`
 - `ServerError` on server → automatically mapped to `ServerFunctionError` on client
 
-**REST Routes (`route()`):**
-- Use `route()` for REST API endpoints, webhooks, or standard Web Request/Response handling
-- If mixing `route()` endpoints, you must explicitly configure `server.entry` in `ev.config.ts`
+**REST Routes (`createRoute()`):**
+- Use `createRoute()` for REST API endpoints, webhooks, or standard Web Request/Response handling
+- If mixing `createRoute()` endpoints, you must explicitly configure `server.entry` in `ev.config.ts`
 - **Route Paths:** Always use string literals for `path` values (e.g., `path: "/posts"`). The type system **rejects** broad `string` variables and template strings at compile time.
 
 **React Data Loading:**

@@ -41,7 +41,7 @@ function useFeatures() {
       description: translate({
         id: "homepage.feature.serverRoutes.description",
         message:
-          "Standard Request/Response REST endpoints via route() — build APIs alongside your React app.",
+          "Standard Request/Response REST endpoints via createRoute() — build APIs alongside your React app.",
       }),
     },
     {

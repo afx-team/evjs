@@ -5,7 +5,7 @@ function Root() {
     <div style={{ fontFamily: "system-ui, sans-serif", padding: "1rem" }}>
       <h1>Route Handlers Example</h1>
       <p style={{ color: "#666" }}>
-        REST endpoints powered by <code>route()</code>
+        REST endpoints powered by <code>createRoute()</code>
       </p>
       <Outlet />
     </div>

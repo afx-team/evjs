@@ -8,7 +8,7 @@ test.describe("basic-server-routes", () => {
 
     await expect(page.locator("h1")).toHaveText("Route Handlers Example");
     await expect(
-      page.getByText("REST endpoints powered by route()"),
+      page.getByText("REST endpoints powered by createRoute()"),
     ).toBeVisible({
       timeout: 10_000,
     });

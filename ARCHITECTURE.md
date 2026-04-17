@@ -20,7 +20,7 @@
 ┌──────── Client (Browser) ────────┐ ┌──────── Server (Node/Edge) ──────┐
 │                                  │ │                                   │
 │  TanStack Router                 │ │  Hono App (createApp)             │
-│  TanStack Query                  │ │  registerServerFn() + route()     │
+│  TanStack Query                  │ │  registerServerFn() + createRoute()     │
 │  __fn_call() stubs               │ │  createFetchHandler()             │
 │  ServerTransport ────────────────┼─┼──► POST /api/fn ──► registry     │
 │                                  │ │                                   │
