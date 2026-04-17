@@ -173,7 +173,8 @@ export function createWebpackConfig(
         filename: isProduction ? "[name].[contenthash:8].css" : "[name].css",
       }),
       // HMR plugin must be in the config so it's present when the
-      // compiler is created — WDS hot:true adds it too late.
+      // compiler is created — WDS hot:true adds it too late when
+      // it receives a pre-created compiler instance.
       ...(!isProduction
         ? [new webpack.HotModuleReplacementPlugin()]
         : [new AssetPrefixRuntimePlugin()]),
@@ -186,11 +187,7 @@ export function createWebpackConfig(
       server: isHttps ? "https" : "http",
       hot: true,
       historyApiFallback: true,
-      devMiddleware: {
-        // Only write server bundle to disk (node needs it as a file).
-        // Client assets are served from WDS memory to avoid HMR issues.
-        writeToDisk: (filePath: string) => filePath.includes("/server/"),
-      },
+      devMiddleware: { writeToDisk: true },
       ...(serverEnabled
         ? {
             proxy: [

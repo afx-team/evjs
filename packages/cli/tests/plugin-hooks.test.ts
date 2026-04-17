@@ -50,7 +50,7 @@ const CTX: EvPluginContext = { mode: "production", config: TEST_CONFIG };
 describe("resolveConfig", () => {
   it("resolved config no longer exposes bundler.config escape hatch", () => {
     const config = resolveConfig({});
-    expect(config.bundler).toEqual({ name: "utoopack" });
+    expect(config.bundler).toEqual({ name: "webpack" });
     expect("config" in config.bundler).toBe(false);
   });
 });

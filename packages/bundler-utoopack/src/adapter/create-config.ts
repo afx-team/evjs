@@ -65,9 +65,9 @@ export function createUtoopackConfig(
                 : "[name].js",
             },
             functions: {
-              // Point to @evjs/client/transport's callServer implementation
-              callServerModule: "@evjs/client/transport",
-            },
+              clientProxy: "@evjs/client/transport",
+              serverRegister: "@evjs/server/register",
+            } as any, // 1.4.0-alpha.3 types might be lagging behind the runtime implementation
           },
         }
       : {}),
