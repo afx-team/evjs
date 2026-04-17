@@ -4,6 +4,18 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [Unreleased]
+
+### ✨ Features
+
+- **Added `@evjs/bundler-utoopack`** — Integrated the Turbopack-based `utoopack` bundler via a new adapter package. Leverages native `"use server"` support for lightning-fast server function compilation and HMR.
+
+### ♻️ Refactoring
+
+- **Renamed `route()` to `createRoute()`** — Aligned the server-side route factory naming with the existing client-side API for better consistency across the framework.
+
+---
+
 ## [0.0.22] — 2026-04-10
 
 ### ♻️ Refactoring

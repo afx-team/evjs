@@ -124,7 +124,7 @@ export interface EvConfig {
 
   /** Bundler adapter configuration. */
   bundler?: {
-    /** The active bundler. Default: "webpack". */
+    /** The active bundler. Default: "utoopack". */
     name?: "webpack" | "utoopack";
   };
 
@@ -181,7 +181,7 @@ export function resolveConfig(userConfig?: EvConfig): ResolvedEvConfig {
       },
     },
     bundler: {
-      name: config.bundler?.name ?? "webpack",
+      name: config.bundler?.name ?? "utoopack",
     },
     plugins: config.plugins ?? [],
   };

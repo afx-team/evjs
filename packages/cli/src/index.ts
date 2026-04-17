@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { webpackAdapter } from "@evjs/bundler-webpack";
+import { utoopackAdapter } from "@evjs/bundler-utoopack";
 import {
   type BundlerAdapter,
   CONFIG_DEFAULTS,
@@ -45,8 +45,12 @@ export interface BuildOptions {
  * Resolve the bundler adapter specified in the configuration.
  */
 async function getBundlerAdapter(config?: EvConfig): Promise<BundlerAdapter> {
-  const bundlerName = config?.bundler?.name ?? "webpack";
+  const bundlerName = config?.bundler?.name ?? "utoopack";
+  if (bundlerName === "utoopack") {
+    return utoopackAdapter;
+  }
   if (bundlerName === "webpack") {
+    const { webpackAdapter } = await import("@evjs/bundler-webpack");
     return webpackAdapter;
   }
   throw new Error(`Bundler '${bundlerName}' is not supported yet.`);

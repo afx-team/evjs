@@ -195,6 +195,12 @@ export async function __fn_call(
   return getTransport().send(fnId, args, context);
 }
 
+/**
+ * Alias for __fn_call to support utoopack's native "use server" transform.
+ * @internal
+ */
+export { __fn_call as callServer };
+
 /** Minimal callable shape for server function stubs. */
 type AnyFn = (...args: never[]) => unknown;
 

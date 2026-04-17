@@ -26,7 +26,7 @@ describe("resolveConfig", () => {
     expect(resolved.server.endpoint).toBe(CONFIG_DEFAULTS.endpoint);
     expect(resolved.server.dev.port).toBe(CONFIG_DEFAULTS.serverPort);
     expect(resolved.server.dev.https).toBe(false);
-    expect(resolved.bundler.name).toBe("webpack");
+    expect(resolved.bundler.name).toBe("utoopack");
     expect(resolved.plugins).toEqual([]);
   });
 
