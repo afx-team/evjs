@@ -9,6 +9,12 @@ import { useState } from "react";
 import { createUser, getUsers } from "../api/users.server";
 import { rootRoute } from "./__root";
 
+console.log(
+  "***** ", getUsers, createUser
+)
+
+Object.assign(window, {getUsers, createUser})
+
 function UsersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");

@@ -6,7 +6,10 @@
  * `server.functions.callServerModule` config field.
  */
 
+import { createRequire } from "node:module";
 import path from "node:path";
+
+const _require = createRequire(import.meta.url);
 import type { EvBundlerCtx, EvPluginHooks, ResolvedEvConfig } from "@evjs/ev";
 import type { ConfigComplete } from "@utoo/pack";
 
@@ -55,6 +58,7 @@ export function createUtoopackConfig(
     ...(serverEnabled
       ? {
           server: {
+            entry: config.server.entry ?? _require.resolve("@evjs/server"),
             output: {
               path: path.resolve(cwd, "dist/server"),
               filename: isProduction
@@ -64,10 +68,10 @@ export function createUtoopackConfig(
                 ? "[name].[contenthash:8].js"
                 : "[name].js",
             },
-            functions: {
+            function: {
               clientProxy: "@evjs/client/transport",
               serverRegister: "@evjs/server/register",
-            } as any, // 1.4.0-alpha.3 types might be lagging behind the runtime implementation
+            } ,
           },
         }
       : {}),
@@ -75,6 +79,17 @@ export function createUtoopackConfig(
     // Dev server configuration
     devServer: {
       hot: true,
+      ...(serverEnabled
+        ? {
+            proxy: [
+              {
+                context: [config.server.endpoint],
+                target: `http://localhost:${config.server.dev.port}`,
+                changeOrigin: true,
+              },
+            ],
+          }
+        : {}),
     },
   };
 

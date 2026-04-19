@@ -10,7 +10,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { dispatch } from "./functions/dispatch.js";
-import type { RouteHandler } from "./routes";
+import type { RouteHandler } from "./routes/index.js";
 
 /** Options for createApp. */
 export interface CreateAppOptions {

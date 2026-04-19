@@ -44,9 +44,7 @@ export function createWebpackConfig(
     }
   };
 
-  // Derive the proxy base path from the configured endpoint.
-  // e.g. "/api/fn" → "/api", "/rpc/v1" → "/rpc"
-  const proxyBase = `/${endpoint.split("/").filter(Boolean)[0] || "api"}`;
+  // Map evjs config.dev properties to their webpack-dev-server equivalents.
 
   // Map evjs config.dev properties to their webpack-dev-server equivalents.
   // Never spread config.dev directly — webpack-dev-server rejects unknown properties.
@@ -192,8 +190,9 @@ export function createWebpackConfig(
         ? {
             proxy: [
               {
-                context: [proxyBase],
+                context: [endpoint],
                 target: `${config.server.dev.https ? "https" : "http"}://localhost:${serverPort}`,
+                changeOrigin: true,
                 secure: false,
               },
             ],

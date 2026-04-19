@@ -12,11 +12,11 @@ export function buildClientOutput(
     const fnId = JSON.stringify(
       makeFnId(options.rootContext, options.resourcePath, name),
     );
-    return `export const ${name} = ${RUNTIME.createServerReference}(${fnId}, ${RUNTIME.callServer}, ${JSON.stringify(name)});`;
+    return `export const ${name} = ${RUNTIME.createServerReference}(${fnId}, ${JSON.stringify(name)});`;
   });
 
   const injectCode = [
-    `import { ${RUNTIME.createServerReference}, ${RUNTIME.callServer} } from "${RUNTIME.clientTransportModule}";`,
+    `import { ${RUNTIME.createServerReference} } from "${RUNTIME.clientTransportModule}";`,
     ...stubs,
   ].join("\n");
 

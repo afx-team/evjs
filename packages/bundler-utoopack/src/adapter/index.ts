@@ -66,32 +66,40 @@ export const utoopackAdapter: BundlerAdapter = {
     // to dist/server/ when "use server" modules are discovered)
     if (config.serverEnabled) {
       const outDir = path.resolve(cwd, "dist/server");
-      const manifestPath = path.resolve(outDir, "manifest.json");
+
 
       if (!fs.existsSync(outDir)) {
         fs.mkdirSync(outDir, { recursive: true });
       }
 
       let ready = false;
-      const checkManifest = async () => {
+      const checkManifest = async (filename?: string) => {
         if (ready) return;
-        try {
-          const content = await fs.promises.readFile(manifestPath, "utf-8");
-          const manifest = JSON.parse(content);
-          if (manifest.version === 1 && manifest.entry) {
-            ready = true;
-            callbacks.onServerBundleReady();
-            watcher?.close();
+        // Utoopack emits JS files directly into dist/server without a manifest
+        const hasJs = filename
+          ? filename.endsWith(".js")
+          : (await fs.promises.readdir(outDir).catch(() => [])).some((f) =>
+              f.endsWith(".js"),
+            );
+
+        if (hasJs) {
+          ready = true;
+          // Create synthetic manifest for the CLI
+          const manifestPath = path.resolve(outDir, "manifest.json");
+          if (!fs.existsSync(manifestPath)) {
+            fs.writeFileSync(
+              manifestPath,
+              JSON.stringify({ version: 1, entry: "index.js" }),
+            );
           }
-        } catch {
-          // Manifest partially written or missing, wait for next event
+          callbacks.onServerBundleReady();
+          watcher?.close();
         }
       };
 
       const watcher = fs.watch(outDir, (_eventType, filename) => {
-        if (filename === "manifest.json") {
-          checkManifest();
-        }
+        console.log(`[watcher] fs.watch event: ${_eventType}, filename: ${filename}`);
+        if (filename) checkManifest(filename);
       });
 
       // Initial check in case it was written before the watcher attached

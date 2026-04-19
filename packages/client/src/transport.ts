@@ -271,11 +271,10 @@ export function getFnName(fnId: string): string {
  */
 export function createServerReference(
   fnId: string,
-  callServerFn: typeof callServer,
   exportName?: string,
 ): ServerFunction {
   const fn = ((...args: unknown[]) =>
-    callServerFn(fnId, args)) as unknown as ServerFunction;
+    callServer(fnId, args)) as unknown as ServerFunction;
 
   fnIdRegistry.set(fn as unknown as AnyFn, fnId);
   if (exportName) {
@@ -286,7 +285,7 @@ export function createServerReference(
   fn.queryOptions = (...args: unknown[]) => ({
     queryKey: fn.queryKey(...args),
     queryFn: (ctx?: { signal?: AbortSignal }) =>
-      callServerFn(fnId, args, { signal: ctx?.signal }) as Promise<unknown>,
+      callServer(fnId, args, { signal: ctx?.signal }) as Promise<unknown>,
   });
   Object.defineProperty(fn, "fnId", { value: fnId, writable: false });
   Object.defineProperty(fn, "fnName", {

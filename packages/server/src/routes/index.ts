@@ -3,5 +3,5 @@ export type {
   RouteHandlerDefinition,
   RouteHandlerFn,
   RouteMiddleware,
-} from "./route-handler";
-export { createRoute } from "./route-handler";
+} from "./route-handler.js";
+export { createRoute } from "./route-handler.js";
