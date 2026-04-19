@@ -56,13 +56,13 @@ export function createWebpackConfig(
   // public path is resolved at page-load time from `window.assetPrefix`.
   // This enables deploy-time CDN prefix rewriting without rebuilding.
   class AssetPrefixRuntimePlugin {
-    apply(compiler: { hooks: Record<string, any> }): void {
+    apply(compiler: import("webpack").Compiler): void {
       compiler.hooks.compilation.tap(
         "AssetPrefixRuntimePlugin",
-        (compilation: any) => {
+        (compilation) => {
           compilation.hooks.runtimeModule.tap(
             "AssetPrefixRuntimePlugin",
-            (mod: any) => {
+            (mod) => {
               if (mod.constructor.name === "PublicPathRuntimeModule") {
                 mod.getGeneratedCode = () =>
                   `__webpack_require__.p = (typeof window !== "undefined" && window.assetPrefix) || "/";`;

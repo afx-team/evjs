@@ -67,7 +67,6 @@ export const utoopackAdapter: BundlerAdapter = {
     if (config.serverEnabled) {
       const outDir = path.resolve(cwd, "dist/server");
 
-
       if (!fs.existsSync(outDir)) {
         fs.mkdirSync(outDir, { recursive: true });
       }
@@ -98,7 +97,6 @@ export const utoopackAdapter: BundlerAdapter = {
       };
 
       const watcher = fs.watch(outDir, (_eventType, filename) => {
-        console.log(`[watcher] fs.watch event: ${_eventType}, filename: ${filename}`);
         if (filename) checkManifest(filename);
       });
 

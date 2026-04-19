@@ -10,6 +10,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 
 const _require = createRequire(import.meta.url);
+
 import type { EvBundlerCtx, EvPluginHooks, ResolvedEvConfig } from "@evjs/ev";
 import type { ConfigComplete } from "@utoo/pack";
 
@@ -71,7 +72,7 @@ export function createUtoopackConfig(
             function: {
               clientProxy: "@evjs/client/transport",
               serverRegister: "@evjs/server/register",
-            } ,
+            },
           },
         }
       : {}),
