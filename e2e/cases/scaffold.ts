@@ -24,7 +24,7 @@ test.describe("Scaffolding CLI E2E", () => {
     }
   });
 
-  test("create-app should scaffold, build, and run dev server", async () => {
+  test("create-app should scaffold, build, and run dev server", async ({}, testInfo) => {
     const cleanEnv = { ...process.env };
     for (const key of Object.keys(cleanEnv)) {
       if (key.startsWith("npm_")) delete cleanEnv[key];
@@ -50,10 +50,14 @@ test.describe("Scaffolding CLI E2E", () => {
     for (const pkg of fs.readdirSync(packagesDir)) {
       const pkgPath = path.join(packagesDir, pkg);
       if (!fs.statSync(pkgPath).isDirectory()) continue;
-      const tgzOutput = execSync(`npm pack --pack-destination ${targetDir}`, {
-        cwd: pkgPath,
-        encoding: "utf-8",
-      }).trim();
+
+      const tgzOutput = execSync(
+        `npm pack --pack-destination ${targetDir} --ignore-scripts`,
+        {
+          cwd: pkgPath,
+          encoding: "utf-8",
+        },
+      ).trim();
       const pkgJson = JSON.parse(
         fs.readFileSync(path.join(pkgPath, "package.json"), "utf8"),
       );
@@ -96,9 +100,11 @@ test.describe("Scaffolding CLI E2E", () => {
     });
 
     // Force unique port to avoid EADDRINUSE
+    const devPort = 35123 + testInfo.workerIndex * 2;
+    const serverDevPort = devPort + 1;
     fs.writeFileSync(
       path.join(targetDir, "ev.config.ts"),
-      `export default { dev: { port: 39123 }, server: { dev: { port: 39124 } } };\n`,
+      `export default { dev: { port: ${devPort} }, server: { dev: { port: ${serverDevPort} } } };\n`,
     );
 
     // 4. Test production build
@@ -144,7 +150,7 @@ test.describe("Scaffolding CLI E2E", () => {
 
       const checkServer = async () => {
         try {
-          const res = await fetch("http://127.0.0.1:39123/");
+          const res = await fetch(`http://127.0.0.1:${devPort}/`);
           if (res.ok) {
             clearTimeout(timeout);
             devProcess.kill("SIGTERM");
