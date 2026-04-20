@@ -28,7 +28,7 @@
     "lint": "biome check .",
     "format": "biome format --write .",
 
-    "check-types": "turbo check-types",
+    "check-types": "turbo check-types && tsc -p tsconfig.test.json --noEmit",
     "prepare": "husky"
   },
   "bin": {

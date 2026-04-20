@@ -1,6 +1,8 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, type PlaywrightTestOptions } from "@playwright/test";
 
-export default defineConfig({
+type ExtTestOptions = PlaywrightTestOptions & { bundlerName?: string };
+
+export default defineConfig<ExtTestOptions>({
   testDir: ".",
   testMatch: "cases/*.ts",
   timeout: 60_000,
@@ -11,19 +13,17 @@ export default defineConfig({
   projects: [
     {
       name: "webpack",
-      // biome-ignore lint/suspicious/noExplicitAny: custom fixture properties
       use: {
         browserName: "chromium",
         bundlerName: "webpack",
-      } as any,
+      },
     },
     {
       name: "utoopack",
-      // biome-ignore lint/suspicious/noExplicitAny: custom fixture properties
       use: {
         browserName: "chromium",
         bundlerName: "utoopack",
-      } as any,
+      },
     },
   ],
 });

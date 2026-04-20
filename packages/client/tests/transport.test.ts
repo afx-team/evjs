@@ -15,12 +15,12 @@ describe("createServerReference / getFnId / getFnName", () => {
   });
 
   it("creates a function and retrieves its ID", () => {
-    const fn = createServerReference("test-id", callServer, "testFn");
+    const fn = createServerReference("test-id", "testFn");
     expect(getFnId(fn as never)).toBe("test-id");
   });
 
   it("retrieves the export name from fnId", () => {
-    createServerReference("abc:myFn", callServer, "myFn");
+    createServerReference("abc:myFn", "myFn");
     expect(getFnName("abc:myFn")).toBe("myFn");
   });
 
@@ -34,7 +34,7 @@ describe("createServerReference / getFnId / getFnName", () => {
   });
 
   it("handles creation without export name", () => {
-    const fn = createServerReference("no-name", callServer);
+    const fn = createServerReference("no-name");
     expect(getFnId(fn as never)).toBe("no-name");
     expect(getFnName("no-name")).toBe("no-name"); // fallback
   });
@@ -46,13 +46,13 @@ describe("ServerFunction metadata (.queryKey, .fnId, .fnName)", () => {
   });
 
   it("attaches .fnId and .fnName on creation", () => {
-    const fn = createServerReference("abc123", callServer, "getUsers");
+    const fn = createServerReference("abc123", "getUsers");
     expect(fn.fnId).toBe("abc123");
     expect(fn.fnName).toBe("getUsers");
   });
 
   it("makes .fnId and .fnName read-only", () => {
-    const fn = createServerReference("abc123", callServer, "getUsers");
+    const fn = createServerReference("abc123", "getUsers");
 
     expect(() => {
       (fn as unknown as { fnId: string }).fnId = "changed";
@@ -63,17 +63,17 @@ describe("ServerFunction metadata (.queryKey, .fnId, .fnName)", () => {
   });
 
   it("falls back .fnName to fnId when no export name given", () => {
-    const fn = createServerReference("hash-only", callServer);
+    const fn = createServerReference("hash-only");
     expect(fn.fnName).toBe("hash-only");
   });
 
   it("attaches .queryKey() that returns [fnId]", () => {
-    const fn = createServerReference("mod:getUsers", callServer, "getUsers");
+    const fn = createServerReference("mod:getUsers", "getUsers");
     expect(fn.queryKey()).toEqual(["mod:getUsers"]);
   });
 
   it(".queryKey() includes args", () => {
-    const fn = createServerReference("mod:getUser", callServer, "getUser");
+    const fn = createServerReference("mod:getUser", "getUser");
     expect(fn.queryKey("abc")).toEqual(["mod:getUser", "abc"]);
     expect(fn.queryKey("abc", 42)).toEqual(["mod:getUser", "abc", 42]);
   });
@@ -84,7 +84,6 @@ describe("ServerFunction metadata (.queryKey, .fnId, .fnName)", () => {
 
     const fn = createServerReference(
       "mod:getUser",
-      callServer,
       "getUser",
     ) as ServerFunction<[string], unknown>;
     const opts = fn.queryOptions("abc");

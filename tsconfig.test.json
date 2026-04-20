@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": [
+    "e2e/**/*.ts",
+    "packages/*/tests/**/*.ts",
+    "packages/*/test/**/*.ts"
+  ]
+}

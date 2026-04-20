@@ -101,7 +101,8 @@ describe("webpack define plugin", () => {
 
     let injectedPluginCount = 0;
 
-    const envPlugin: EvPlugin<unknown> = {
+    // biome-ignore lint/suspicious/noExplicitAny: test mock generic bypass
+    const envPlugin: any = {
       name: "env-inject",
       setup() {
         return {
@@ -122,7 +123,8 @@ describe("webpack define plugin", () => {
 
     await build({
       server: false,
-      bundler: webpackAdapter,
+      // biome-ignore lint/suspicious/noExplicitAny: TS contravariance mismatch in test wrapper
+      bundler: webpackAdapter as any,
       plugins: [envPlugin],
     });
 
@@ -224,7 +226,8 @@ describe("plugin composition [webpack]", () => {
 
     let ruleCountSeenBySecondPlugin = 0;
 
-    const addRule: EvPlugin<unknown> = {
+    // biome-ignore lint/suspicious/noExplicitAny: test mock generic bypass
+    const addRule: any = {
       name: "add-rule",
       setup: () => ({
         bundlerConfig: webpack((config) => {
@@ -238,7 +241,8 @@ describe("plugin composition [webpack]", () => {
       }),
     };
 
-    const inspector: EvPlugin<unknown> = {
+    // biome-ignore lint/suspicious/noExplicitAny: test mock generic bypass
+    const inspector: any = {
       name: "inspector",
       setup: () => ({
         bundlerConfig: webpack((config) => {
@@ -256,7 +260,8 @@ describe("plugin composition [webpack]", () => {
 
     await build({
       server: false,
-      bundler: webpackAdapter,
+      // biome-ignore lint/suspicious/noExplicitAny: TS contravariance mismatch in test wrapper
+      bundler: webpackAdapter as any,
       plugins: [addRule, inspector],
     });
 
