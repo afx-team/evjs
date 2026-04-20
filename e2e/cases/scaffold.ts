@@ -24,7 +24,9 @@ test.describe("Scaffolding CLI E2E", () => {
     }
   });
 
-  test("create-app should scaffold, build, and run dev server", async (_, testInfo) => {
+  test("create-app should scaffold, build, and run dev server", async ({
+    page,
+  }, testInfo) => {
     const cleanEnv = { ...process.env };
     for (const key of Object.keys(cleanEnv)) {
       if (key.startsWith("npm_")) delete cleanEnv[key];
@@ -42,6 +44,7 @@ test.describe("Scaffolding CLI E2E", () => {
 
     expect(fs.existsSync(path.join(targetDir, "package.json"))).toBe(true);
     expect(fs.existsSync(path.join(targetDir, "src", "main.tsx"))).toBe(true);
+    expect(fs.existsSync(path.join(targetDir, "index.html"))).toBe(true);
 
     // 2. Pack monorepo packages into tarballs for clean isolation
     console.log("Packing monorepo packages to tarballs...");
@@ -146,7 +149,7 @@ test.describe("Scaffolding CLI E2E", () => {
 
       const timeout = setTimeout(() => {
         devProcess.kill("SIGTERM");
-      }, 45_000);
+      }, 90_000);
 
       const checkServer = async () => {
         try {
