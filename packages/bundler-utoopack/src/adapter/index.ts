@@ -10,11 +10,64 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { BundlerAdapter, EvPluginHooks, ResolvedEvConfig } from "@evjs/ev";
-import type { ConfigComplete } from "@utoo/pack";
 import { getLogger } from "@logtape/logtape";
+import type { ConfigComplete } from "@utoo/pack";
 import { UtoopackManifestGenerator } from "../manifest-generator.js";
 
 const logger = getLogger(["evjs", "bundler-utoopack"]);
+
+async function generateAndEmitHtml(
+  config: ResolvedEvConfig<ConfigComplete>,
+  cwd: string,
+  hooks: EvPluginHooks<ConfigComplete>[],
+) {
+  const isServerEnabled = config.serverEnabled;
+  const clientManifestPath = path.resolve(
+    cwd,
+    isServerEnabled ? "dist/client/manifest.json" : "dist/manifest.json",
+  );
+  if (!fs.existsSync(clientManifestPath)) return;
+  const clientManifest = JSON.parse(
+    await fs.promises.readFile(clientManifestPath, "utf-8"),
+  );
+
+  // biome-ignore lint/suspicious/noExplicitAny: match @evjs/manifest type
+  let serverManifest: any;
+  if (isServerEnabled) {
+    const serverManifestPath = path.resolve(cwd, "dist/server/manifest.json");
+    if (fs.existsSync(serverManifestPath)) {
+      serverManifest = JSON.parse(
+        await fs.promises.readFile(serverManifestPath, "utf-8"),
+      );
+    }
+  }
+
+  const { generateHtml } = await import("@evjs/build-tools");
+  const doc = generateHtml({
+    template: path.resolve(cwd, config.html),
+    js: clientManifest.assets.js,
+    css: clientManifest.assets.css,
+    assetPrefix: config.assetPrefix,
+  });
+
+  const { buildHtml } = await import("@evjs/ev");
+  const finalHtml = await buildHtml({
+    // biome-ignore lint/suspicious/noExplicitAny: DOM interfaces
+    doc: doc as any,
+    assetPrefix: config.assetPrefix,
+    // biome-ignore lint/suspicious/noExplicitAny: Bundler-agnostic hook generic
+    hooks: hooks as any,
+    clientManifest,
+    serverManifest,
+  });
+
+  const outPath = path.resolve(
+    cwd,
+    isServerEnabled ? "dist/client/index.html" : "dist/index.html",
+  );
+  await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
+  await fs.promises.writeFile(outPath, finalHtml, "utf-8");
+}
 
 export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
   name: "utoopack",
@@ -39,6 +92,9 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
     );
     await generator.build();
 
+    logger.info`Generating and emitting HTML...`;
+    await generateAndEmitHtml(config, cwd, hooks);
+
     logger.info`Build complete!`;
   },
 
@@ -62,7 +118,9 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
       config.serverEnabled,
       config.assetPrefix,
     );
-    await generator.watch();
+    await generator.watch(async () => {
+      await generateAndEmitHtml(config, cwd, hooks);
+    });
 
     // Watch for server bundle readiness (utoopack emits server output
     // to dist/server/ when "use server" modules are discovered)
@@ -87,6 +145,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
           // Re-generate manifests now that server stats are available
           await generator.loadServerStats();
           await generator.emit();
+          await generateAndEmitHtml(config, cwd, hooks);
           callbacks.onServerBundleReady();
           watcher?.close();
         }

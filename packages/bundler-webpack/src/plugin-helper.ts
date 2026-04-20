@@ -23,8 +23,14 @@ import type { EvBundlerCtx } from "@evjs/ev";
  * ```
  */
 export function webpack(
-  fn: (config: import("webpack").Configuration, ctx: EvBundlerCtx) => void,
-): (config: unknown, ctx: EvBundlerCtx) => void {
+  fn: (
+    config: import("webpack").Configuration,
+    ctx: EvBundlerCtx<import("webpack").Configuration>,
+  ) => void,
+): (
+  config: import("webpack").Configuration,
+  ctx: EvBundlerCtx<import("webpack").Configuration>,
+) => void {
   return (config, ctx) => {
     if (ctx.config.bundler?.name === "webpack") {
       fn(config as import("webpack").Configuration, ctx);

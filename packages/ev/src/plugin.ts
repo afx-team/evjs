@@ -83,11 +83,11 @@ export interface EvDocument {
 /**
  * Context passed to plugin bundler hooks.
  */
-export interface EvBundlerCtx {
+export interface EvBundlerCtx<TBundlerCfg = unknown> {
   /** The current mode. */
   mode: "development" | "production";
   /** The fully resolved framework config. */
-  config: ResolvedEvConfig<any>;
+  config: ResolvedEvConfig<TBundlerCfg>;
 }
 
 /**
@@ -105,7 +105,10 @@ export interface EvPlugin<TBundlerCfg = unknown> {
    */
   setup?: (
     ctx: EvPluginContext<TBundlerCfg>,
-  ) => EvPluginHooks<TBundlerCfg> | undefined | Promise<EvPluginHooks<TBundlerCfg> | undefined>;
+  ) =>
+    | EvPluginHooks<TBundlerCfg>
+    | undefined
+    | Promise<EvPluginHooks<TBundlerCfg> | undefined>;
 }
 
 /**
@@ -132,7 +135,7 @@ export interface EvPluginHooks<TBundlerCfg = unknown> {
    * by each bundler adapter for type safety (e.g., `webpack()` from
    * `@evjs/bundler-webpack`).
    */
-  bundlerConfig?: (config: TBundlerCfg, ctx: EvBundlerCtx) => void;
+  bundlerConfig?: (config: TBundlerCfg, ctx: EvBundlerCtx<TBundlerCfg>) => void;
 
   /** Called after compilation completes. Receives build result with manifests. */
   buildEnd?: (result: EvBuildResult) => void | Promise<void>;

@@ -270,10 +270,9 @@ describe("plugin composition [webpack]", () => {
 // Verifies that transformHtml receives a live DOM document that plugins
 // can mutate with standard DOM methods.
 
-// NOTE: transformHtml hooks are currently webpack-only because utoopack
-// generates HTML natively without going through buildHtml(). TODO: align.
-
-describe("transformHtml DOM manipulation [webpack]", () => {
+describe.each(
+  BUNDLERS,
+)("transformHtml DOM manipulation [%s]", (_name, bundler) => {
   it("injects a meta tag into the document via DOM API", async () => {
     process.chdir(CSR_APP);
 
@@ -293,7 +292,7 @@ describe("transformHtml DOM manipulation [webpack]", () => {
 
     await build({
       server: false,
-      bundler: webpackAdapter,
+      bundler,
       plugins: [htmlPlugin],
     });
 
@@ -323,7 +322,7 @@ describe("transformHtml DOM manipulation [webpack]", () => {
 
     await build({
       server: false,
-      bundler: webpackAdapter,
+      bundler,
       plugins: [commentPlugin],
     });
 
@@ -339,7 +338,7 @@ describe("transformHtml DOM manipulation [webpack]", () => {
 // Multiple plugins should all get the same document reference and their
 // mutations should accumulate in order.
 
-describe("transformHtml composition [webpack]", () => {
+describe.each(BUNDLERS)("transformHtml composition [%s]", (_name, bundler) => {
   it("multiple plugins accumulate DOM mutations", async () => {
     process.chdir(CSR_APP);
 
@@ -369,7 +368,7 @@ describe("transformHtml composition [webpack]", () => {
 
     await build({
       server: false,
-      bundler: webpackAdapter,
+      bundler,
       plugins: [plugin1, plugin2],
     });
 

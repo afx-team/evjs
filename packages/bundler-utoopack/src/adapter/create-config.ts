@@ -35,9 +35,6 @@ export function createUtoopackConfig(
     entry: [
       {
         import: config.entry,
-        html: {
-          template: path.resolve(cwd, config.html),
-        },
       },
     ],
     output: {
@@ -96,7 +93,7 @@ export function createUtoopackConfig(
   };
 
   // Run plugin bundler hooks
-  const ctx: EvBundlerCtx = {
+  const ctx: EvBundlerCtx<ConfigComplete> = {
     mode: isProduction ? "production" : "development",
     config,
   };

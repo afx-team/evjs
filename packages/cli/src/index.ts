@@ -45,14 +45,14 @@ export interface BuildOptions {
  * Falls back to utoopack when no bundler is explicitly provided.
  */
 async function getBundlerAdapter(
-  config?: ResolvedEvConfig<any>,
-): Promise<BundlerAdapter<any>> {
+  config?: ResolvedEvConfig<unknown>,
+): Promise<BundlerAdapter<unknown>> {
   if (config?.bundler) {
-    return config.bundler;
+    return config.bundler as BundlerAdapter<unknown>;
   }
   // Default: dynamically import utoopack so it's not a hard dependency
   const { utoopackAdapter } = await import("@evjs/bundler-utoopack");
-  return utoopackAdapter as BundlerAdapter<any>;
+  return utoopackAdapter as unknown as BundlerAdapter<unknown>;
 }
 
 /**

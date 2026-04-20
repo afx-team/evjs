@@ -199,7 +199,7 @@ export async function createWebpackConfig(
     },
   };
 
-  const ctx: EvBundlerCtx = {
+  const ctx: EvBundlerCtx<import("webpack").Configuration> = {
     mode: isProduction ? "production" : "development",
     config,
   };

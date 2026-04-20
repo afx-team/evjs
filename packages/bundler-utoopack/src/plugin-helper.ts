@@ -24,8 +24,8 @@ import type { ConfigComplete } from "@utoo/pack";
  * ```
  */
 export function utoopack(
-  fn: (config: ConfigComplete, ctx: EvBundlerCtx) => void,
-): (config: unknown, ctx: EvBundlerCtx) => void {
+  fn: (config: ConfigComplete, ctx: EvBundlerCtx<ConfigComplete>) => void,
+): (config: ConfigComplete, ctx: EvBundlerCtx<ConfigComplete>) => void {
   return (config, ctx) => {
     if (ctx.config.bundler?.name === "utoopack") {
       fn(config as ConfigComplete, ctx);

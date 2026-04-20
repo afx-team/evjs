@@ -119,7 +119,7 @@ describe("resolveConfig", () => {
       dev: async () => {},
     };
     const resolved = resolveConfig({
-      bundler: mockAdapter as any,
+      bundler: mockAdapter as unknown as BundlerAdapter<unknown>,
     });
     expect(resolved.bundler).toBe(mockAdapter);
   });

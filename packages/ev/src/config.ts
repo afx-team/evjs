@@ -138,12 +138,12 @@ export const CONFIG_DEFAULTS = {
   endpoint: DEFAULT_ENDPOINT,
 } as const;
 
-
-
 /**
  * Deeply merge user configuration with defaults.
  */
-export function resolveConfig<TBundlerCfg = unknown>(userConfig?: EvConfig<TBundlerCfg>): ResolvedEvConfig<TBundlerCfg> {
+export function resolveConfig<TBundlerCfg = unknown>(
+  userConfig?: EvConfig<TBundlerCfg>,
+): ResolvedEvConfig<TBundlerCfg> {
   const config = userConfig ?? {};
   const serverEnabled = config.server !== false;
   const serverConfig = config.server === false ? {} : (config.server ?? {});

@@ -236,7 +236,7 @@ export class UtoopackManifestGenerator {
   /**
    * Run manifest generation continually by watching the filesystem in development.
    */
-  async watch(onUpdate?: () => void) {
+  async watch(onUpdate?: () => void | Promise<void>) {
     await this.loadClientStats();
     await this.loadServerStats();
     const files = await fastGlob("src/**/*.{ts,tsx,js,jsx}", {
@@ -245,7 +245,7 @@ export class UtoopackManifestGenerator {
     });
     await Promise.all(files.map((f) => this.processFile(f)));
     await this.emit();
-    onUpdate?.();
+    await onUpdate?.();
 
     this.watcher = chokidar.watch("src/**/*.{ts,tsx,js,jsx}", {
       cwd: this.cwd,
@@ -256,14 +256,14 @@ export class UtoopackManifestGenerator {
       const fullPath = path.resolve(this.cwd, filepath);
       await this.processFile(fullPath);
       await this.emit();
-      onUpdate?.();
+      await onUpdate?.();
     };
 
     const handleUnlink = async (filepath: string) => {
       const fullPath = path.resolve(this.cwd, filepath);
       this.currentRoutes.delete(fullPath);
       await this.emit();
-      onUpdate?.();
+      await onUpdate?.();
     };
 
     this.watcher.on("add", handleChange);
