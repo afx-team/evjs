@@ -7,12 +7,12 @@ import { getLogger } from "@logtape/logtape";
 const esmRequire = createRequire(import.meta.url);
 const logger = getLogger(["evjs", "bundler-webpack"]);
 
-export const webpackAdapter: BundlerAdapter = {
+export const webpackAdapter: BundlerAdapter<import("webpack").Configuration> = {
   name: "webpack",
   async build(
-    config: ResolvedEvConfig,
+    config: ResolvedEvConfig<import("webpack").Configuration>,
     cwd: string,
-    hooks: EvPluginHooks[],
+    hooks: EvPluginHooks<import("webpack").Configuration>[],
   ): Promise<void> {
     const { createWebpackConfig } = await import("./create-config.js");
     const webpackConfig = await createWebpackConfig(config, cwd, hooks);
@@ -52,10 +52,10 @@ export const webpackAdapter: BundlerAdapter = {
   },
 
   async dev(
-    config: ResolvedEvConfig,
+    config: ResolvedEvConfig<import("webpack").Configuration>,
     cwd: string,
     callbacks: { onServerBundleReady: () => void },
-    hooks: EvPluginHooks[],
+    hooks: EvPluginHooks<import("webpack").Configuration>[],
   ): Promise<void> {
     const { createWebpackConfig } = await import("./create-config.js");
     const webpackConfig = await createWebpackConfig(config, cwd, hooks);

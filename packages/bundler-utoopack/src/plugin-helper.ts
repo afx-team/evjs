@@ -4,8 +4,8 @@ import type { ConfigComplete } from "@utoo/pack";
 /**
  * Typed wrapper for utoopack configuration in plugin bundler hooks.
  *
- * Use this in your plugin's `bundler` hook to get type-safe
- * utoopack configuration access.
+ * Use this in your plugin's `bundlerConfig` hook to get full `ConfigComplete`
+ * type safety instead of `unknown`.
  *
  * @example
  * ```ts
@@ -15,7 +15,7 @@ import type { ConfigComplete } from "@utoo/pack";
  *   name: "my-plugin",
  *   setup(ctx) {
  *     return {
- *       bundler: utoopack((config) => {
+ *       bundlerConfig: utoopack((config) => {
  *         // config is typed as ConfigComplete from @utoo/pack
  *       }),
  *     };

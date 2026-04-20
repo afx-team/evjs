@@ -12,10 +12,10 @@ const esmRequire = createRequire(import.meta.url);
  * No temp files are generated.
  */
 export async function createWebpackConfig(
-  config: ResolvedEvConfig,
+  config: ResolvedEvConfig<import("webpack").Configuration>,
   cwd: string,
-  hooks: EvPluginHooks[],
-): Promise<Record<string, unknown>> {
+  hooks: EvPluginHooks<import("webpack").Configuration>[],
+): Promise<import("webpack").Configuration> {
   const { entry, html } = config;
   const clientPort = config.dev.port;
   const serverPort = config.server.dev.port;
@@ -204,10 +204,9 @@ export async function createWebpackConfig(
     config,
   };
 
-  // Run plugin bundler hooks
   for (const h of hooks) {
-    if (h.bundler) {
-      h.bundler(webpackConfig, ctx);
+    if (h.bundlerConfig) {
+      h.bundlerConfig(webpackConfig, ctx);
     }
   }
 

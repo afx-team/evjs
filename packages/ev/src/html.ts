@@ -7,7 +7,7 @@ export interface BuildHtmlOptions {
   /** Asset prefix for CDN deployment. */
   assetPrefix?: string;
   /** Plugin hooks for transformHtml. */
-  hooks: EvPluginHooks[];
+  hooks: EvPluginHooks<any>[];
   /** Client manifest (passed to transformHtml hooks). */
   clientManifest: ClientManifest;
   /** Server manifest, if server is enabled. */

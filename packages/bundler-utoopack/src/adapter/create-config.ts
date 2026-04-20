@@ -23,9 +23,9 @@ import type { ConfigComplete } from "@utoo/pack";
  * @returns A config object suitable for `@utoo/pack`'s `build()` / `dev()` API
  */
 export function createUtoopackConfig(
-  config: ResolvedEvConfig,
+  config: ResolvedEvConfig<ConfigComplete>,
   cwd: string,
-  hooks: EvPluginHooks[],
+  hooks: EvPluginHooks<ConfigComplete>[],
 ): ConfigComplete {
   const isProduction = process.env.NODE_ENV === "production";
   const serverEnabled = config.serverEnabled;
@@ -102,8 +102,8 @@ export function createUtoopackConfig(
   };
 
   for (const h of hooks) {
-    if (h.bundler) {
-      h.bundler(utoopackConfig, ctx);
+    if (h.bundlerConfig) {
+      h.bundlerConfig(utoopackConfig, ctx);
     }
   }
 

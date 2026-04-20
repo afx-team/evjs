@@ -6,7 +6,7 @@ import { defineConfig } from "@evjs/ev";
  * Example: evjs plugin system.
  *
  * Demonstrates all available plugin hooks:
- * - `bundler`       — modify the underlying bundler config (type-safe via webpack() or utoopack() helpers)
+ * - `bundlerConfig` — modify the underlying bundler config (type-safe via webpack() or utoopack() helpers)
  * - `buildStart`    — run logic before compilation begins
  * - `buildEnd`      — run logic after compilation completes
  * - `transformHtml` — modify the output HTML document after asset injection
@@ -27,7 +27,7 @@ export default defineConfig({
 
           // Type-safe bundler config mutation via helpers.
           // These hooks only run when the corresponding bundler is active.
-          bundler(config, ctx) {
+          bundlerConfig(config, ctx) {
             webpack((cfg) => {
               cfg.module?.rules?.push({
                 test: /\.txt$/,

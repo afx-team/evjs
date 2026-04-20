@@ -14,7 +14,7 @@ export interface EvWebpackPluginOptions {
   /** Absolute path to the user's HTML template file. */
   html: string;
   /** Plugin hooks for transformHtml. */
-  hooks?: EvPluginHooks[];
+  hooks?: EvPluginHooks<import("webpack").Configuration>[];
   /** Asset prefix for CDN deployment. Injected into HTML as window.assetPrefix. */
   assetPrefix?: string;
 }

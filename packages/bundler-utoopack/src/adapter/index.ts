@@ -10,17 +10,18 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { BundlerAdapter, EvPluginHooks, ResolvedEvConfig } from "@evjs/ev";
+import type { ConfigComplete } from "@utoo/pack";
 import { getLogger } from "@logtape/logtape";
 import { UtoopackManifestGenerator } from "../manifest-generator.js";
 
 const logger = getLogger(["evjs", "bundler-utoopack"]);
 
-export const utoopackAdapter: BundlerAdapter = {
+export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
   name: "utoopack",
   async build(
-    config: ResolvedEvConfig,
+    config: ResolvedEvConfig<ConfigComplete>,
     cwd: string,
-    hooks: EvPluginHooks[],
+    hooks: EvPluginHooks<ConfigComplete>[],
   ): Promise<void> {
     const { createUtoopackConfig } = await import("./create-config.js");
     const utoopackConfig = createUtoopackConfig(config, cwd, hooks);
@@ -42,10 +43,10 @@ export const utoopackAdapter: BundlerAdapter = {
   },
 
   async dev(
-    config: ResolvedEvConfig,
+    config: ResolvedEvConfig<ConfigComplete>,
     cwd: string,
     callbacks: { onServerBundleReady: () => void },
-    hooks: EvPluginHooks[],
+    hooks: EvPluginHooks<ConfigComplete>[],
   ): Promise<void> {
     const { createUtoopackConfig } = await import("./create-config.js");
     const utoopackConfig = createUtoopackConfig(config, cwd, hooks);

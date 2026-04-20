@@ -3,7 +3,7 @@ import type { EvPluginHooks, ResolvedEvConfig } from "./config.js";
 /**
  * Interface that all bundler adapters must implement.
  */
-export interface BundlerAdapter {
+export interface BundlerAdapter<TBundlerCfg = unknown> {
   /** Human-readable bundler name (used by plugin helpers for type-narrowing). */
   readonly name: string;
 
@@ -11,9 +11,9 @@ export interface BundlerAdapter {
    * Run a production build.
    */
   build(
-    config: ResolvedEvConfig,
+    config: ResolvedEvConfig<TBundlerCfg>,
     cwd: string,
-    hooks: EvPluginHooks[],
+    hooks: EvPluginHooks<TBundlerCfg>[],
   ): Promise<void>;
 
   /**
@@ -23,9 +23,9 @@ export interface BundlerAdapter {
    * The CLI uses this to launch the API server runtime.
    */
   dev(
-    config: ResolvedEvConfig,
+    config: ResolvedEvConfig<TBundlerCfg>,
     cwd: string,
     callbacks: { onServerBundleReady: () => void },
-    hooks: EvPluginHooks[],
+    hooks: EvPluginHooks<TBundlerCfg>[],
   ): Promise<void>;
 }

@@ -3,7 +3,7 @@ import type { EvBundlerCtx } from "@evjs/ev";
 /**
  * Typed wrapper for webpack configuration in plugin bundler hooks.
  *
- * Use this in your plugin's `bundler` hook to get full `webpack.Configuration`
+ * Use this in your plugin's `bundlerConfig` hook to get full `webpack.Configuration`
  * type safety instead of `unknown`.
  *
  * @example
@@ -14,7 +14,7 @@ import type { EvBundlerCtx } from "@evjs/ev";
  *   name: "my-plugin",
  *   setup(ctx) {
  *     return {
- *       bundler: webpack((config) => {
+ *       bundlerConfig: webpack((config) => {
  *         config.module.rules.push({ test: /\.svg$/, use: ["@svgr/webpack"] });
  *       }),
  *     };

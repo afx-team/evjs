@@ -42,7 +42,7 @@ export interface ResolvedServerConfig {
 /**
  * A version of EvConfig where all fields with defaults are guaranteed.
  */
-export interface ResolvedEvConfig {
+export interface ResolvedEvConfig<TBundlerCfg = unknown> {
   /** Resolved asset prefix for CDN deployment, always ends with "/". */
   assetPrefix: string;
   /** Client entry point. */
@@ -56,15 +56,15 @@ export interface ResolvedEvConfig {
   /** Server configuration. */
   server: ResolvedServerConfig;
   /** Bundler adapter. When omitted, defaults to utoopack. */
-  bundler?: BundlerAdapter;
+  bundler?: BundlerAdapter<TBundlerCfg>;
   /** Active plugins. */
-  plugins: EvPlugin[];
+  plugins: EvPlugin<TBundlerCfg>[];
 }
 
 /**
  * evjs framework configuration.
  */
-export interface EvConfig {
+export interface EvConfig<TBundlerCfg = unknown> {
   /**
    * URL prefix for all client assets (JS, CSS, images, fonts).
    * Use this when deploying static assets to a CDN on a different domain.
@@ -118,10 +118,12 @@ export interface EvConfig {
       };
 
   /** Bundler adapter. When omitted, defaults to utoopack. */
-  bundler?: BundlerAdapter;
+  bundler?: BundlerAdapter<TBundlerCfg>;
 
-  /** Plugins applied to the build pipeline. */
-  plugins?: EvPlugin[];
+  /**
+   * Framework plugins to extend behavior or modify the bundler config.
+   */
+  plugins?: EvPlugin<TBundlerCfg>[];
 }
 
 /**
@@ -136,17 +138,12 @@ export const CONFIG_DEFAULTS = {
   endpoint: DEFAULT_ENDPOINT,
 } as const;
 
-/**
- * Define configuration for the evjs framework.
- */
-export function defineConfig(config: EvConfig): EvConfig {
-  return config;
-}
+
 
 /**
  * Deeply merge user configuration with defaults.
  */
-export function resolveConfig(userConfig?: EvConfig): ResolvedEvConfig {
+export function resolveConfig<TBundlerCfg = unknown>(userConfig?: EvConfig<TBundlerCfg>): ResolvedEvConfig<TBundlerCfg> {
   const config = userConfig ?? {};
   const serverEnabled = config.server !== false;
   const serverConfig = config.server === false ? {} : (config.server ?? {});
@@ -175,4 +172,15 @@ export function resolveConfig(userConfig?: EvConfig): ResolvedEvConfig {
     bundler: config.bundler,
     plugins: config.plugins ?? [],
   };
+}
+/**
+ * Define the evjs framework configuration with type inference.
+ *
+ * @param config - The framework configuration object.
+ * @returns The exact same configuration object.
+ */
+export function defineConfig<TBundlerCfg = unknown>(
+  config: EvConfig<TBundlerCfg>,
+): EvConfig<TBundlerCfg> {
+  return config;
 }
