@@ -17,7 +17,7 @@ const config: Config = {
   onBrokenMarkdownLinks: "warn",
 
   future: {
-    experimental_faster: {
+    faster: {
       swcJsLoader: true,
       swcJsMinimizer: true,
       swcHtmlMinimizer: true,

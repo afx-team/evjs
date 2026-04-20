@@ -23,14 +23,18 @@ function parseClientStats(stats: {
 }): { js: string[]; css: string[] } {
   const jsFiles: string[] = [];
   const cssFiles: string[] = [];
-  const mainEntry = stats.entrypoints?.main;
 
-  if (mainEntry && Array.isArray(mainEntry.assets)) {
-    for (const asset of mainEntry.assets) {
-      if (asset.name?.endsWith(".js")) {
-        jsFiles.push(asset.name);
-      } else if (asset.name?.endsWith(".css")) {
-        cssFiles.push(asset.name);
+  // Use first entrypoint — utoopack may name it by the output file rather than "main"
+  const entrypoints = stats.entrypoints;
+  const firstEntry = entrypoints ? Object.values(entrypoints)[0] : undefined;
+
+  if (firstEntry && Array.isArray(firstEntry.assets)) {
+    for (const asset of firstEntry.assets) {
+      const name = asset.name?.replace(/^\.\//, "");
+      if (name?.endsWith(".js")) {
+        jsFiles.push(name);
+      } else if (name?.endsWith(".css")) {
+        cssFiles.push(name);
       }
     }
   }
@@ -63,11 +67,14 @@ function parseServerStats(stats: {
   fns: Record<string, ServerFnEntry>;
 } {
   let entry: string | undefined;
-  const mainEntry = stats.entrypoints?.main;
 
-  if (mainEntry && Array.isArray(mainEntry.assets)) {
-    const jsAsset = mainEntry.assets.find((a) => a.name?.endsWith(".js"));
-    entry = jsAsset?.name;
+  // Use first entrypoint — utoopack may name it by the output file rather than "main"
+  const entrypoints = stats.entrypoints;
+  const firstEntry = entrypoints ? Object.values(entrypoints)[0] : undefined;
+
+  if (firstEntry && Array.isArray(firstEntry.assets)) {
+    const jsAsset = firstEntry.assets.find((a) => a.name?.endsWith(".js"));
+    entry = jsAsset?.name?.replace(/^\.\//, "");
   }
 
   return {
