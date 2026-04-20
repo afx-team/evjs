@@ -11,11 +11,11 @@ const esmRequire = createRequire(import.meta.url);
  * Returns a plain object that can be passed directly to the webpack Node API.
  * No temp files are generated.
  */
-export function createWebpackConfig(
-  config: ResolvedEvConfig,
+export async function createWebpackConfig(
+  config: ResolvedEvConfig<import("webpack").Configuration>,
   cwd: string,
-  hooks: EvPluginHooks[],
-): Record<string, unknown> {
+  hooks: EvPluginHooks<import("webpack").Configuration>[],
+): Promise<import("webpack").Configuration> {
   const { entry, html } = config;
   const clientPort = config.dev.port;
   const serverPort = config.server.dev.port;
@@ -23,7 +23,7 @@ export function createWebpackConfig(
   const isProduction = process.env.NODE_ENV === "production";
   const serverEnabled = config.serverEnabled;
 
-  const { EvWebpackPlugin } = esmRequire("@evjs/bundler-webpack");
+  const { EvWebpackPlugin } = await import("../plugin/index.js");
   const MiniCssExtractPlugin = esmRequire("mini-css-extract-plugin");
 
   const pluginOptions = {
@@ -44,33 +44,46 @@ export function createWebpackConfig(
     }
   };
 
-  // Derive the proxy base path from the configured endpoint.
-  // e.g. "/api/fn" → "/api", "/rpc/v1" → "/rpc"
-  const proxyBase = `/${endpoint.split("/").filter(Boolean)[0] || "api"}`;
-
   // Map evjs config.dev properties to their webpack-dev-server equivalents.
   // Never spread config.dev directly — webpack-dev-server rejects unknown properties.
   const isHttps = config.dev.https;
 
-  // Runtime public path bootstrap — must execute before any dynamic import().
-  // Reads window.assetPrefix (injected into <head> by EvWebpackPlugin) and
-  // sets webpack's __webpack_require__.p so async chunks, asset modules, and
-  // CSS url() references resolve against the deploy-time CDN prefix.
-  const publicPathEntry = `data:text/javascript,__webpack_public_path__=window.assetPrefix||"/"`;
+  const webpack = esmRequire("webpack");
+
+  // In production, override webpack's PublicPathRuntimeModule so the
+  // public path is resolved at page-load time from `window.assetPrefix`.
+  // This enables deploy-time CDN prefix rewriting without rebuilding.
+  class AssetPrefixRuntimePlugin {
+    apply(compiler: import("webpack").Compiler): void {
+      compiler.hooks.compilation.tap(
+        "AssetPrefixRuntimePlugin",
+        (compilation) => {
+          compilation.hooks.runtimeModule.tap(
+            "AssetPrefixRuntimePlugin",
+            (mod) => {
+              if (mod.constructor.name === "PublicPathRuntimeModule") {
+                mod.getGeneratedCode = () =>
+                  `__webpack_require__.p = (typeof window !== "undefined" && window.assetPrefix) || "/";`;
+              }
+            },
+          );
+        },
+      );
+    }
+  }
 
   const webpackConfig: Record<string, unknown> = {
-    name: "client",
     mode: isProduction ? "production" : "development",
     devtool: isProduction ? "hidden-source-map" : "source-map",
-    entry: [publicPathEntry, entry],
+    entry,
     output: {
       path: path.resolve(cwd, serverEnabled ? "dist/client" : "dist"),
       filename: isProduction ? "[name].[contenthash:8].js" : "index.js",
-      publicPath: "auto",
+      publicPath: isProduction ? config.assetPrefix : "/",
       clean: true,
     },
     resolve: {
-      extensions: [".tsx", ".ts", ".js"],
+      extensions: [".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs"],
     },
     module: {
       rules: [
@@ -155,6 +168,12 @@ export function createWebpackConfig(
       new MiniCssExtractPlugin({
         filename: isProduction ? "[name].[contenthash:8].css" : "[name].css",
       }),
+      // HMR plugin must be in the config so it's present when the
+      // compiler is created — WDS hot:true adds it too late when
+      // it receives a pre-created compiler instance.
+      ...(!isProduction
+        ? [new webpack.HotModuleReplacementPlugin()]
+        : [new AssetPrefixRuntimePlugin()]),
     ],
     optimization: isProduction
       ? { splitChunks: { chunks: "all" as const } }
@@ -169,8 +188,9 @@ export function createWebpackConfig(
         ? {
             proxy: [
               {
-                context: [proxyBase],
+                context: [endpoint],
                 target: `${config.server.dev.https ? "https" : "http"}://localhost:${serverPort}`,
+                changeOrigin: true,
                 secure: false,
               },
             ],
@@ -179,15 +199,14 @@ export function createWebpackConfig(
     },
   };
 
-  const ctx: EvBundlerCtx = {
+  const ctx: EvBundlerCtx<import("webpack").Configuration> = {
     mode: isProduction ? "production" : "development",
     config,
   };
 
-  // Run plugin bundler hooks
   for (const h of hooks) {
-    if (h.bundler) {
-      h.bundler(webpackConfig, ctx);
+    if (h.bundlerConfig) {
+      h.bundlerConfig(webpackConfig, ctx);
     }
   }
 

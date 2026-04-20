@@ -2,7 +2,7 @@
  * E2E test fixtures for evjs framework.
  *
  * Provides a custom test fixture that:
- * 1. Builds the example app with webpack
+ * 1. Builds the example app with the specified bundler (webpack or utoopack)
  * 2. Starts the API server by requiring the bundle and using @hono/node-server
  * 3. Starts a static file server for the client bundle
  * 4. Tears everything down after tests complete
@@ -96,10 +96,89 @@ function createStaticServer(
 }
 
 /**
+ * Load evjs config from an example directory's ev.config.ts.
+ *
+ * Since Playwright runs in plain Node.js (no TypeScript loader),
+ * we transpile the config file with @swc/core before importing.
+ */
+async function loadExampleConfig(
+  exampleDir: string,
+): Promise<import("@evjs/ev").EvConfig | undefined> {
+  const configPath = path.join(exampleDir, "ev.config.ts");
+  if (!fs.existsSync(configPath)) return undefined;
+
+  const swc = await import("@swc/core");
+  const source = fs.readFileSync(configPath, "utf-8");
+  const { code } = await swc.transform(source, {
+    filename: configPath,
+    jsc: {
+      parser: { syntax: "typescript", tsx: false },
+      target: "es2022",
+    },
+    module: { type: "es6" },
+  });
+
+  const tmpPath = path.join(exampleDir, "_ev.config.e2e.mjs");
+  fs.writeFileSync(tmpPath, code, "utf-8");
+  try {
+    const mod = await import(tmpPath);
+    return mod.default ?? mod;
+  } finally {
+    try {
+      fs.unlinkSync(tmpPath);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * Build an example app programmatically with the specified bundler.
+ *
+ * Loads the example's own ev.config.ts so that per-example settings
+ * (server.entry, plugins, etc.) are picked up during the build.
+ * Only the bundler adapter is overridden by the test configuration.
+ */
+async function buildExample(
+  exampleDir: string,
+  bundlerName: string,
+  serverEnabled: boolean,
+) {
+  const { build } = await import("@evjs/cli");
+  let bundler: import("@evjs/ev").BundlerAdapter<unknown> | undefined;
+  if (bundlerName === "webpack") {
+    const { webpackAdapter } = await import("@evjs/bundler-webpack");
+    bundler =
+      webpackAdapter as unknown as import("@evjs/ev").BundlerAdapter<unknown>;
+  }
+  // utoopack is the default — no bundler field needed
+
+  // Load the example's own ev.config.ts for per-example settings
+  const exampleConfig = await loadExampleConfig(exampleDir);
+
+  const savedCwd = process.cwd();
+  process.chdir(exampleDir);
+  process.env.NODE_ENV = "production";
+
+  try {
+    await build(
+      {
+        ...exampleConfig,
+        bundler,
+        server: serverEnabled ? (exampleConfig?.server ?? undefined) : false,
+      },
+      { cwd: exampleDir },
+    );
+  } finally {
+    process.chdir(savedCwd);
+  }
+}
+
+/**
  * Create a test fixture for a specific example directory.
  *
- * Builds with webpack, starts the server bundle via a CJS bootstrap
- * (imports the app + starts it with @hono/node-server), serves client on port 3000.
+ * Builds with the bundler specified in the Playwright project config,
+ * starts the server bundle via a CJS bootstrap, serves client on a random port.
  */
 export function createExampleTest(exampleName: string) {
   const exampleDir = path.resolve(
@@ -113,18 +192,23 @@ export function createExampleTest(exampleName: string) {
     _exampleApp: [
       // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture API requires object destructuring
       async ({}, use, workerInfo) => {
+        const bundlerName =
+          (workerInfo.project.use as unknown as { bundlerName?: string })
+            .bundlerName ?? "utoopack";
+
+        // Build with specified bundler (fullstack = server enabled)
+        await buildExample(exampleDir, bundlerName, true);
+
         // Base port depends on both worker index and a hash of the example name
         // to avoid conflicts if multiple worker fixtures run sequentially.
-        const hash = Array.from(exampleName).reduce(
+        const hash = Array.from(exampleName + bundlerName).reduce(
           (sum, char) => sum + char.charCodeAt(0),
           0,
         );
         const apiPort = 30000 + workerInfo.workerIndex * 100 + (hash % 100);
         const webPort = apiPort + 1;
 
-        // 1. (Skipped) Build is handled by turbo build at the root.
-
-        // 2. Read the server manifest to get the hashed entry filename
+        // Read the server manifest to get the hashed entry filename
         const manifestPath = path.join(
           exampleDir,
           "dist",
@@ -139,7 +223,7 @@ export function createExampleTest(exampleName: string) {
           manifest.entry,
         );
 
-        // 3. Write a CJS bootstrap that requires the hashed server bundle
+        // Write a CJS bootstrap that requires the hashed server bundle
         const bootstrapPath = path.join(exampleDir, "dist", "_e2e_start.cjs");
         fs.writeFileSync(
           bootstrapPath,
@@ -153,7 +237,7 @@ export function createExampleTest(exampleName: string) {
           ].join("\n"),
         );
 
-        // 3. Start the server
+        // Start the server
         const serverProcess = spawn("node", [bootstrapPath], {
           cwd: exampleDir,
           stdio: "pipe",
@@ -179,7 +263,7 @@ export function createExampleTest(exampleName: string) {
           });
         });
 
-        // 4. Serve the client bundle with API proxy
+        // Serve the client bundle with API proxy
         const distDir = path.join(exampleDir, "dist", "client");
         const staticServer = createStaticServer(distDir, { apiPort });
 
@@ -209,7 +293,7 @@ export function createExampleTest(exampleName: string) {
 /**
  * Create a test fixture for a CSR-only example (no server functions).
  *
- * Only serves static files from dist/ (flat output) — no API server is started.
+ * Builds with the specified bundler, serves static files from dist/ — no API server.
  */
 export function createCsrExampleTest(exampleName: string) {
   const exampleDir = path.resolve(
@@ -223,7 +307,14 @@ export function createCsrExampleTest(exampleName: string) {
     _exampleApp: [
       // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture API requires object destructuring
       async ({}, use, workerInfo) => {
-        const hash = Array.from(exampleName).reduce(
+        const bundlerName =
+          (workerInfo.project.use as unknown as { bundlerName?: string })
+            .bundlerName ?? "utoopack";
+
+        // Build with specified bundler (CSR = server disabled)
+        await buildExample(exampleDir, bundlerName, false);
+
+        const hash = Array.from(exampleName + bundlerName).reduce(
           (sum, char) => sum + char.charCodeAt(0),
           0,
         );

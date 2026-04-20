@@ -37,7 +37,7 @@ import {
   useSuspenseQuery as _useSuspenseQuery,
 } from "@tanstack/react-query";
 import type { ServerFunction } from "./transport";
-import { __fn_call, getFnId } from "./transport";
+import { callServer, getFnId } from "./transport";
 
 /**
  * Extracts the stable query key for a given server function and its arguments.
@@ -218,7 +218,7 @@ export function useMutation(
     // biome-ignore lint/suspicious/noExplicitAny: Wrap server fn for single-arg call convention
     const mutationFn = (vars: any) => {
       const args = Array.isArray(vars) ? vars : [vars];
-      return __fn_call(fnId, args);
+      return callServer(fnId, args);
     };
     return _useMutation({ ...extraOptions, mutationFn });
   }

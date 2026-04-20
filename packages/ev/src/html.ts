@@ -6,8 +6,8 @@ export interface BuildHtmlOptions {
   doc: EvDocument;
   /** Asset prefix for CDN deployment. */
   assetPrefix?: string;
-  /** Plugin hooks for transformHtml. */
-  hooks: EvPluginHooks[];
+  // biome-ignore lint/suspicious/noExplicitAny: HTML hooks are bundler agnostic
+  hooks: EvPluginHooks<any>[];
   /** Client manifest (passed to transformHtml hooks). */
   clientManifest: ClientManifest;
   /** Server manifest, if server is enabled. */

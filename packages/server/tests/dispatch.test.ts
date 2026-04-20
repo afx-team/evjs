@@ -1,7 +1,10 @@
 import { ServerError } from "@evjs/shared";
 import { beforeEach, describe, expect, it } from "vitest";
 import { dispatch } from "../src/functions/dispatch.js";
-import { registerServerFn, registry } from "../src/functions/register.js";
+import {
+  registerServerReference,
+  registry,
+} from "../src/functions/register.js";
 
 describe("dispatch", () => {
   beforeEach(() => {
@@ -9,14 +12,14 @@ describe("dispatch", () => {
   });
 
   it("dispatches a registered function and returns result", async () => {
-    registerServerFn("fn1", async () => ({ users: ["Alice"] }));
+    registerServerReference(async () => ({ users: ["Alice"] }), "fn1");
 
     const result = await dispatch("fn1", []);
     expect(result).toEqual({ result: { users: ["Alice"] } });
   });
 
   it("passes arguments to the function", async () => {
-    registerServerFn("fn2", async (name: unknown) => `Hello ${name}`);
+    registerServerReference(async (name: unknown) => `Hello ${name}`, "fn2");
 
     const result = await dispatch("fn2", ["World"]);
     expect(result).toEqual({ result: "Hello World" });
@@ -41,9 +44,9 @@ describe("dispatch", () => {
   });
 
   it("handles ServerError with status and data", async () => {
-    registerServerFn("fn3", async () => {
+    registerServerReference(async () => {
       throw new ServerError("Not found", { status: 404, data: { id: "123" } });
-    });
+    }, "fn3");
 
     const result = await dispatch("fn3", []);
     expect(result).toEqual({
@@ -55,9 +58,9 @@ describe("dispatch", () => {
   });
 
   it("handles generic Error with 500 status", async () => {
-    registerServerFn("fn4", async () => {
+    registerServerReference(async () => {
       throw new Error("Something broke");
-    });
+    }, "fn4");
 
     const result = await dispatch("fn4", []);
     expect(result).toEqual({
@@ -68,9 +71,9 @@ describe("dispatch", () => {
   });
 
   it("handles non-Error throws", async () => {
-    registerServerFn("fn5", async () => {
+    registerServerReference(async () => {
       throw "string error";
-    });
+    }, "fn5");
 
     const result = await dispatch("fn5", []);
     expect(result).toEqual({

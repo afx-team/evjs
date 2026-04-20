@@ -42,10 +42,10 @@ export const RUNTIME = {
   appModule: "@evjs/server",
   /** Module path for client-side transport stubs. */
   clientTransportModule: "@evjs/client/transport",
-  /** Server function registration call name. */
-  registerServerFn: "registerServerFn",
-  /** Client-side server function call name. */
-  clientCall: "__fn_call",
-  /** Client-side function registration call name. */
-  clientRegister: "__fn_register",
+  /** Server-side function registration (RSC convention). */
+  registerServerReference: "registerServerReference",
+  /** Client-side server reference factory (RSC convention). */
+  createServerReference: "createServerReference",
+  /** Client-side transport function for server calls. */
+  callServer: "callServer",
 } as const;

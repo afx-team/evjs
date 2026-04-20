@@ -4,7 +4,7 @@ import {
 } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useQuery, useSuspenseQuery } from "../src/query.js";
-import { __fn_register, __resetForTesting } from "../src/transport.js";
+import { __resetForTesting, createServerReference } from "../src/transport.js";
 
 vi.mock("@tanstack/react-query", async () => ({
   useQuery: vi.fn(),
@@ -25,8 +25,7 @@ describe("useQuery and useSuspenseQuery wrappers", () => {
   });
 
   it("delegates to original useQuery with queryOptions", () => {
-    const getUsers = async () => [];
-    __fn_register(getUsers, "mod:getUsers", "getUsers");
+    const getUsers = createServerReference("mod:getUsers", "getUsers");
 
     useQuery(getUsers);
 
@@ -39,8 +38,7 @@ describe("useQuery and useSuspenseQuery wrappers", () => {
   });
 
   it("delegates to original useSuspenseQuery with queryOptions", () => {
-    const getUser = async (_id: number) => ({});
-    __fn_register(getUser, "mod:getUser", "getUser");
+    const getUser = createServerReference("mod:getUser", "getUser");
 
     useSuspenseQuery(getUser, 42);
 

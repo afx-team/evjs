@@ -10,19 +10,19 @@
  */
 
 export { ServerError } from "@evjs/shared";
-export type { CreateAppOptions } from "./app";
-export { createApp } from "./app";
+export type { CreateAppOptions } from "./app.js";
+export { createApp } from "./app.js";
 export type {
   DispatchError,
   DispatchResult,
   DispatchSuccess,
   ServerFn,
-} from "./functions";
-export { dispatch, registerServerFn } from "./functions";
+} from "./functions/index.js";
+export { dispatch, registerServerReference } from "./functions/index.js";
 export type {
   RouteHandler,
   RouteHandlerDefinition,
   RouteHandlerFn,
   RouteMiddleware,
-} from "./routes";
-export { createRoute } from "./routes";
+} from "./routes/index.js";
+export { createRoute } from "./routes/index.js";

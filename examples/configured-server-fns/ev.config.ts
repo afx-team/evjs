@@ -4,7 +4,7 @@ import { defineConfig } from "@evjs/ev";
  * Advanced ev.config.ts example.
  *
  * This file demonstrates the available configuration options.
- * All fields are optional — evjs works out of the box.
+ * All fields are optional — evjs works out of the box with utoopack.
  */
 export default defineConfig({
   // Client entry point (default: "./src/main.tsx")

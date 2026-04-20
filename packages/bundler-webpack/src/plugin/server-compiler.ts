@@ -136,29 +136,16 @@ export function applyServerCompiler(
                   if (!request || typeof request !== "string") {
                     return cb();
                   }
-                  // Externalize Node builtins
+                  // Only externalize Node builtins — everything else
+                  // (including third-party node_modules) is bundled
+                  // into the single server output file.
                   if (
                     request.startsWith("node:") ||
                     builtinModules.includes(request)
                   ) {
                     return cb(null, request);
                   }
-                  // Never externalize relative, absolute, data-uri,
-                  // or @evjs/* imports (workspace ESM packages that
-                  // must be bundled into the CJS server output).
-                  if (
-                    request.startsWith(".") ||
-                    request.startsWith("/") ||
-                    request.startsWith("data:") ||
-                    request.startsWith("@evjs/")
-                  ) {
-                    return cb();
-                  }
-                  // Externalize all other bare-specifier imports
-                  // (third-party node_modules). This is essential for
-                  // native addons (e.g. better-sqlite3) whose .node
-                  // binaries cannot be bundled by webpack.
-                  cb(null, request);
+                  cb();
                 },
               ]),
               new compiler.webpack.EntryPlugin(

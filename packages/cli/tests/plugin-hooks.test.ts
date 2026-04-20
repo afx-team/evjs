@@ -48,10 +48,9 @@ const TEST_CONFIG = resolveConfig({});
 const CTX: EvPluginContext = { mode: "production", config: TEST_CONFIG };
 
 describe("resolveConfig", () => {
-  it("resolved config no longer exposes bundler.config escape hatch", () => {
+  it("resolved config uses undefined bundler by default (CLI falls back to utoopack)", () => {
     const config = resolveConfig({});
-    expect(config.bundler).toEqual({ name: "webpack" });
-    expect("config" in config.bundler).toBe(false);
+    expect(config.bundler).toBeUndefined();
   });
 });
 
@@ -59,7 +58,7 @@ describe("plugin setup edge cases", () => {
   it("plugins without setup or returning void are silently skipped", async () => {
     const plugins: EvPlugin[] = [
       { name: "no-setup" },
-      { name: "void-setup", setup: () => {} },
+      { name: "void-setup", setup: () => undefined },
       { name: "real", setup: () => ({ buildStart: () => {} }) },
     ];
     const hooks = await collectPluginHooks(plugins, CTX);

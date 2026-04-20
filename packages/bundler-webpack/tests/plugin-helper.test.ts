@@ -17,7 +17,10 @@ describe("webpack() typed helper", () => {
     const realConfig: Record<string, unknown> = {
       module: { rules: [] as unknown[] },
     };
-    bundlerHook(realConfig, { mode: "production", config: {} as never });
+    bundlerHook(realConfig, {
+      mode: "production",
+      config: { bundler: { name: "webpack" } } as never,
+    });
 
     const module = realConfig.module as { rules: unknown[] };
     expect(module.rules).toHaveLength(1);

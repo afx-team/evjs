@@ -18,10 +18,17 @@ export const registry = new Map<string, ServerFn>();
  * Register a server function so it can be invoked via the transport.
  * Called automatically by the build-tools-transformed server bundles at load time.
  *
- * @param fnId - The unique ID for this function.
+ * Follows the React Server Components convention (fn first, id second).
+ *
  * @param fn - The actual function implementation.
+ * @param fnId - The unique ID for this function.
+ * @param _exportName - The export name (reserved for future use).
  */
-export function registerServerFn(fnId: string, fn: ServerFn): void {
+export function registerServerReference(
+  fn: ServerFn,
+  fnId: string,
+  _exportName?: string,
+): void {
   registry.set(fnId, fn);
 }
 

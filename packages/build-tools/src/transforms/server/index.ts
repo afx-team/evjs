@@ -27,11 +27,11 @@ export function buildServerOutput(
     const fnId = JSON.stringify(
       makeFnId(options.rootContext, options.resourcePath, name),
     );
-    return `${RUNTIME.registerServerFn}(${fnId}, ${name});`;
+    return `${RUNTIME.registerServerReference}(${name}, ${fnId}, ${JSON.stringify(name)});`;
   });
 
   const injectCode = [
-    `import { ${RUNTIME.registerServerFn} } from "${RUNTIME.serverModule}";`,
+    `import { ${RUNTIME.registerServerReference} } from "${RUNTIME.serverModule}";`,
     ...registrations,
   ].join("\n");
 

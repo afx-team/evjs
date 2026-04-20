@@ -13,7 +13,6 @@ export {
   type EvPlugin,
   type EvPluginContext,
   type EvPluginHooks,
-  type ResolvedBundlerConfig,
   type ResolvedDevConfig,
   type ResolvedEvConfig,
   type ResolvedServerConfig,

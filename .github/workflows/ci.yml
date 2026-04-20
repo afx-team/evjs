@@ -22,7 +22,7 @@ jobs:
           node-version: 22
 
       - name: Install Dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build Core Packages
         run: npx turbo build --filter="./packages/*"

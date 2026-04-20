@@ -8,7 +8,7 @@
  */
 
 import { DEFAULT_ERROR_STATUS, ServerError } from "@evjs/shared";
-import { registry } from "./register";
+import { registry } from "./register.js";
 
 /** Successful dispatch result. */
 export interface DispatchSuccess {

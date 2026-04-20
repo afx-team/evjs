@@ -28,6 +28,7 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@evjs/bundler-utoopack": "*",
     "@evjs/bundler-webpack": "*",
     "@evjs/ev": "*",
     "@logtape/logtape": "^2.0.4",

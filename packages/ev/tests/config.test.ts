@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { BundlerAdapter } from "../src/bundler.js";
 import { CONFIG_DEFAULTS, defineConfig, resolveConfig } from "../src/config.js";
 
 describe("defineConfig", () => {
@@ -26,7 +27,7 @@ describe("resolveConfig", () => {
     expect(resolved.server.endpoint).toBe(CONFIG_DEFAULTS.endpoint);
     expect(resolved.server.dev.port).toBe(CONFIG_DEFAULTS.serverPort);
     expect(resolved.server.dev.https).toBe(false);
-    expect(resolved.bundler.name).toBe("webpack");
+    expect(resolved.bundler).toBeUndefined();
     expect(resolved.plugins).toEqual([]);
   });
 
@@ -112,11 +113,16 @@ describe("resolveConfig", () => {
     });
   });
 
-  it("respects bundler name override", () => {
+  it("passes bundler adapter through", () => {
+    const mockAdapter = {
+      name: "test",
+      build: async () => {},
+      dev: async () => {},
+    };
     const resolved = resolveConfig({
-      bundler: { name: "utoopack" },
+      bundler: mockAdapter as unknown as BundlerAdapter<unknown>,
     });
-    expect(resolved.bundler.name).toBe("utoopack");
+    expect(resolved.bundler).toBe(mockAdapter);
   });
 
   it("passes plugins through", () => {

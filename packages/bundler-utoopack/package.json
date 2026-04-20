@@ -1,0 +1,53 @@
+{
+  "name": "@evjs/bundler-utoopack",
+  "version": "0.0.0",
+  "description": "Utoopack bundler adapter for the evjs framework",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./esm/index.js",
+  "exports": {
+    ".": {
+      "types": "./esm/index.d.ts",
+      "import": "./esm/index.js",
+      "default": "./esm/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "check-types": "tsc --noEmit"
+  },
+  "files": [
+    "esm"
+  ],
+  "keywords": [
+    "evjs",
+    "utoopack",
+    "turbopack",
+    "bundler"
+  ],
+  "author": "xusd320",
+  "license": "MIT",
+  "dependencies": {
+    "@evjs/build-tools": "*",
+    "@evjs/ev": "*",
+    "@evjs/manifest": "*",
+    "@logtape/logtape": "^2.0.4",
+    "@utoo/pack": "^1.4.0",
+    "chokidar": "^3.6.0",
+    "fast-glob": "^3.3.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.15",
+    "typescript": "^6.0.2"
+  },
+  "homepage": "https://github.com/evaijs/evjs#readme",
+  "bugs": {
+    "url": "https://github.com/evaijs/evjs/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/evaijs/evjs.git"
+  }
+}
