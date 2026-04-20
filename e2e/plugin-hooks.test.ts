@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { webpack } from "@evjs/bundler-webpack";
+import { utoopackAdapter } from "@evjs/bundler-utoopack";
+import { webpack, webpackAdapter } from "@evjs/bundler-webpack";
 import { build } from "@evjs/cli";
-import type { EvPlugin } from "@evjs/ev";
+import type { BundlerAdapter, EvPlugin } from "@evjs/ev";
 import { configure, getConsoleSink } from "@logtape/logtape";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -10,12 +11,20 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
  * E2E tests — real plugin scenarios.
  *
  * Each test simulates a realistic plugin that a user would write,
- * runs a real webpack build, and verifies the plugin achieved its goal.
+ * runs a real build, and verifies the plugin achieved its goal.
+ *
+ * Bundler-agnostic scenarios run against both webpack and utoopack.
+ * Webpack-specific tests (e.g. DefinePlugin) run only with webpack.
  */
 
 const EXAMPLES = path.resolve(import.meta.dirname, "../examples");
 const CSR_APP = path.resolve(EXAMPLES, "basic-csr");
 const FULLSTACK_APP = path.resolve(EXAMPLES, "basic-server-fns");
+
+const BUNDLERS: [string, BundlerAdapter][] = [
+  ["webpack", webpackAdapter],
+  ["utoopack", utoopackAdapter],
+];
 
 let savedCwd: string;
 
@@ -45,7 +54,7 @@ afterEach(() => {
 // A plugin that captures build metadata for CI/CD — the most common
 // real-world use case for buildStart/buildEnd hooks.
 
-describe("build notifier plugin", () => {
+describe.each(BUNDLERS)("build notifier plugin [%s]", (_name, bundler) => {
   it("captures build metadata for CI reporting", async () => {
     process.chdir(CSR_APP);
 
@@ -72,7 +81,7 @@ describe("build notifier plugin", () => {
       },
     };
 
-    await build({ server: false, plugins: [buildNotifier] });
+    await build({ server: false, bundler, plugins: [buildNotifier] });
 
     expect(report.started).toBe(true);
     expect(report.duration).toBeGreaterThan(0);
@@ -84,6 +93,7 @@ describe("build notifier plugin", () => {
 // ─── Scenario 2: Webpack Define Plugin ──────────────────────────────────
 // A plugin that injects build-time constants via webpack.DefinePlugin.
 // Uses the typed webpack() helper for type-safe config mutation.
+// This is webpack-specific and only runs with the webpack bundler.
 
 describe("webpack define plugin", () => {
   it("injects build-time constants into webpack config", async () => {
@@ -110,7 +120,11 @@ describe("webpack define plugin", () => {
       },
     };
 
-    await build({ server: false, plugins: [envPlugin] });
+    await build({
+      server: false,
+      bundler: webpackAdapter,
+      plugins: [envPlugin],
+    });
 
     // The plugin was added to an existing plugins array
     expect(injectedPluginCount).toBeGreaterThan(1);
@@ -121,7 +135,7 @@ describe("webpack define plugin", () => {
 // A plugin that writes a custom deployment manifest after build.
 // Common for CI pipelines that need asset hashes or deploy metadata.
 
-describe("deployment manifest plugin", () => {
+describe.each(BUNDLERS)("deployment manifest plugin [%s]", (_name, bundler) => {
   it("writes a deploy manifest from build results", async () => {
     process.chdir(CSR_APP);
 
@@ -145,7 +159,7 @@ describe("deployment manifest plugin", () => {
       },
     };
 
-    await build({ server: false, plugins: [deployPlugin] });
+    await build({ server: false, bundler, plugins: [deployPlugin] });
 
     // Verify the plugin actually wrote the file
     expect(fs.existsSync(manifestPath)).toBe(true);
@@ -163,7 +177,9 @@ describe("deployment manifest plugin", () => {
 // A plugin that inspects server function metadata after a fullstack build.
 // Useful for documentation generators or API introspection tools.
 
-describe("server function discovery plugin", () => {
+describe.each(
+  BUNDLERS,
+)("server function discovery plugin [%s]", (_name, bundler) => {
   it("discovers server functions from fullstack build manifest", async () => {
     process.chdir(FULLSTACK_APP);
 
@@ -184,7 +200,7 @@ describe("server function discovery plugin", () => {
       },
     };
 
-    await build({ plugins: [discoveryPlugin] });
+    await build({ bundler, plugins: [discoveryPlugin] });
 
     // The basic-server-fns example has server functions
     expect(serverEntry).toBeDefined();
@@ -195,8 +211,9 @@ describe("server function discovery plugin", () => {
 // ─── Scenario 5: Composing Multiple Plugins ─────────────────────────────
 // Real apps use multiple plugins. Each plugin should see the effects of
 // previous plugins (e.g., plugin B sees the webpack rule plugin A added).
+// This test is webpack-specific because it mutates webpack config.
 
-describe("plugin composition", () => {
+describe("plugin composition [webpack]", () => {
   it("later plugins see config mutations from earlier plugins", async () => {
     process.chdir(CSR_APP);
 
@@ -232,7 +249,11 @@ describe("plugin composition", () => {
       }),
     };
 
-    await build({ server: false, plugins: [addRule, inspector] });
+    await build({
+      server: false,
+      bundler: webpackAdapter,
+      plugins: [addRule, inspector],
+    });
 
     // The inspector plugin should have found the rule added by addRule
     expect(ruleCountSeenBySecondPlugin).toBe(1);
@@ -244,7 +265,10 @@ describe("plugin composition", () => {
 // Verifies that transformHtml receives a live DOM document that plugins
 // can mutate with standard DOM methods.
 
-describe("transformHtml DOM manipulation", () => {
+// NOTE: transformHtml hooks are currently webpack-only because utoopack
+// generates HTML natively without going through buildHtml(). TODO: align.
+
+describe("transformHtml DOM manipulation [webpack]", () => {
   it("injects a meta tag into the document via DOM API", async () => {
     process.chdir(CSR_APP);
 
@@ -262,7 +286,11 @@ describe("transformHtml DOM manipulation", () => {
       },
     };
 
-    await build({ server: false, plugins: [htmlPlugin] });
+    await build({
+      server: false,
+      bundler: webpackAdapter,
+      plugins: [htmlPlugin],
+    });
 
     // Read the emitted index.html and verify the meta tag
     const html = fs.readFileSync(
@@ -288,7 +316,11 @@ describe("transformHtml DOM manipulation", () => {
       },
     };
 
-    await build({ server: false, plugins: [commentPlugin] });
+    await build({
+      server: false,
+      bundler: webpackAdapter,
+      plugins: [commentPlugin],
+    });
 
     const html = fs.readFileSync(
       path.join(CSR_APP, "dist", "index.html"),
@@ -302,7 +334,7 @@ describe("transformHtml DOM manipulation", () => {
 // Multiple plugins should all get the same document reference and their
 // mutations should accumulate in order.
 
-describe("transformHtml composition", () => {
+describe("transformHtml composition [webpack]", () => {
   it("multiple plugins accumulate DOM mutations", async () => {
     process.chdir(CSR_APP);
 
@@ -330,7 +362,11 @@ describe("transformHtml composition", () => {
       }),
     };
 
-    await build({ server: false, plugins: [plugin1, plugin2] });
+    await build({
+      server: false,
+      bundler: webpackAdapter,
+      plugins: [plugin1, plugin2],
+    });
 
     const html = fs.readFileSync(
       path.join(CSR_APP, "dist", "index.html"),
