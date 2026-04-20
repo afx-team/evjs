@@ -96,7 +96,48 @@ function createStaticServer(
 }
 
 /**
+ * Load evjs config from an example directory's ev.config.ts.
+ *
+ * Since Playwright runs in plain Node.js (no TypeScript loader),
+ * we transpile the config file with @swc/core before importing.
+ */
+async function loadExampleConfig(
+  exampleDir: string,
+): Promise<import("@evjs/ev").EvConfig | undefined> {
+  const configPath = path.join(exampleDir, "ev.config.ts");
+  if (!fs.existsSync(configPath)) return undefined;
+
+  const swc = await import("@swc/core");
+  const source = fs.readFileSync(configPath, "utf-8");
+  const { code } = await swc.transform(source, {
+    filename: configPath,
+    jsc: {
+      parser: { syntax: "typescript", tsx: false },
+      target: "es2022",
+    },
+    module: { type: "es6" },
+  });
+
+  const tmpPath = path.join(exampleDir, "_ev.config.e2e.mjs");
+  fs.writeFileSync(tmpPath, code, "utf-8");
+  try {
+    const mod = await import(tmpPath);
+    return mod.default ?? mod;
+  } finally {
+    try {
+      fs.unlinkSync(tmpPath);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
  * Build an example app programmatically with the specified bundler.
+ *
+ * Loads the example's own ev.config.ts so that per-example settings
+ * (server.entry, plugins, etc.) are picked up during the build.
+ * Only the bundler adapter is overridden by the test configuration.
  */
 async function buildExample(
   exampleDir: string,
@@ -112,13 +153,20 @@ async function buildExample(
   }
   // utoopack is the default — no bundler field needed
 
+  // Load the example's own ev.config.ts for per-example settings
+  const exampleConfig = await loadExampleConfig(exampleDir);
+
   const savedCwd = process.cwd();
   process.chdir(exampleDir);
   process.env.NODE_ENV = "production";
 
   try {
     await build(
-      { bundler, server: serverEnabled ? undefined : false },
+      {
+        ...exampleConfig,
+        bundler,
+        server: serverEnabled ? (exampleConfig?.server ?? undefined) : false,
+      },
       { cwd: exampleDir },
     );
   } finally {
