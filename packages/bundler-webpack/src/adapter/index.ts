@@ -15,7 +15,7 @@ export const webpackAdapter: BundlerAdapter = {
     hooks: EvPluginHooks[],
   ): Promise<void> {
     const { createWebpackConfig } = await import("./create-config.js");
-    const webpackConfig = createWebpackConfig(config, cwd, hooks);
+    const webpackConfig = await createWebpackConfig(config, cwd, hooks);
 
     logger.info`Building for production...`;
     const webpack = esmRequire("webpack");
@@ -58,7 +58,7 @@ export const webpackAdapter: BundlerAdapter = {
     hooks: EvPluginHooks[],
   ): Promise<void> {
     const { createWebpackConfig } = await import("./create-config.js");
-    const webpackConfig = createWebpackConfig(config, cwd, hooks);
+    const webpackConfig = await createWebpackConfig(config, cwd, hooks);
 
     logger.info`Starting development server...`;
     const webpack = esmRequire("webpack");

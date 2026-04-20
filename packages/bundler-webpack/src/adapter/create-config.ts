@@ -11,11 +11,11 @@ const esmRequire = createRequire(import.meta.url);
  * Returns a plain object that can be passed directly to the webpack Node API.
  * No temp files are generated.
  */
-export function createWebpackConfig(
+export async function createWebpackConfig(
   config: ResolvedEvConfig,
   cwd: string,
   hooks: EvPluginHooks[],
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   const { entry, html } = config;
   const clientPort = config.dev.port;
   const serverPort = config.server.dev.port;
@@ -23,7 +23,7 @@ export function createWebpackConfig(
   const isProduction = process.env.NODE_ENV === "production";
   const serverEnabled = config.serverEnabled;
 
-  const { EvWebpackPlugin } = esmRequire("@evjs/bundler-webpack");
+  const { EvWebpackPlugin } = await import("../plugin/index.js");
   const MiniCssExtractPlugin = esmRequire("mini-css-extract-plugin");
 
   const pluginOptions = {
