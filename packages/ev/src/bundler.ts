@@ -4,6 +4,9 @@ import type { EvPluginHooks, ResolvedEvConfig } from "./config.js";
  * Interface that all bundler adapters must implement.
  */
 export interface BundlerAdapter {
+  /** Human-readable bundler name (used by plugin helpers for type-narrowing). */
+  readonly name: string;
+
   /**
    * Run a production build.
    */

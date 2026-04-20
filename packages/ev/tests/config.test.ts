@@ -26,7 +26,7 @@ describe("resolveConfig", () => {
     expect(resolved.server.endpoint).toBe(CONFIG_DEFAULTS.endpoint);
     expect(resolved.server.dev.port).toBe(CONFIG_DEFAULTS.serverPort);
     expect(resolved.server.dev.https).toBe(false);
-    expect(resolved.bundler.name).toBe("utoopack");
+    expect(resolved.bundler).toBeUndefined();
     expect(resolved.plugins).toEqual([]);
   });
 
@@ -112,11 +112,16 @@ describe("resolveConfig", () => {
     });
   });
 
-  it("respects bundler name override", () => {
+  it("passes bundler adapter through", () => {
+    const mockAdapter = {
+      name: "test",
+      build: async () => {},
+      dev: async () => {},
+    };
     const resolved = resolveConfig({
-      bundler: { name: "utoopack" },
+      bundler: mockAdapter as any,
     });
-    expect(resolved.bundler.name).toBe("utoopack");
+    expect(resolved.bundler).toBe(mockAdapter);
   });
 
   it("passes plugins through", () => {

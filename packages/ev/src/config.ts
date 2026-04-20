@@ -1,4 +1,5 @@
 import { DEFAULT_ENDPOINT } from "@evjs/shared";
+import type { BundlerAdapter } from "./bundler.js";
 import type { EvPlugin } from "./plugin.js";
 
 export type {
@@ -38,12 +39,6 @@ export interface ResolvedServerConfig {
   dev: ResolvedServerDevConfig;
 }
 
-/** Resolved bundler configuration (all defaults applied). */
-export interface ResolvedBundlerConfig {
-  /** The active bundler. */
-  name: "webpack" | "utoopack";
-}
-
 /**
  * A version of EvConfig where all fields with defaults are guaranteed.
  */
@@ -60,8 +55,8 @@ export interface ResolvedEvConfig {
   serverEnabled: boolean;
   /** Server configuration. */
   server: ResolvedServerConfig;
-  /** Bundler adapter configuration. */
-  bundler: ResolvedBundlerConfig;
+  /** Bundler adapter. When omitted, defaults to utoopack. */
+  bundler?: BundlerAdapter;
   /** Active plugins. */
   plugins: EvPlugin[];
 }
@@ -122,11 +117,8 @@ export interface EvConfig {
         };
       };
 
-  /** Bundler adapter configuration. */
-  bundler?: {
-    /** The active bundler. Default: "utoopack". */
-    name?: "webpack" | "utoopack";
-  };
+  /** Bundler adapter. When omitted, defaults to utoopack. */
+  bundler?: BundlerAdapter;
 
   /** Plugins applied to the build pipeline. */
   plugins?: EvPlugin[];
@@ -180,9 +172,7 @@ export function resolveConfig(userConfig?: EvConfig): ResolvedEvConfig {
         https: serverConfig.dev?.https ?? false,
       },
     },
-    bundler: {
-      name: config.bundler?.name ?? "utoopack",
-    },
+    bundler: config.bundler,
     plugins: config.plugins ?? [],
   };
 }

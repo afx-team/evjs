@@ -27,7 +27,7 @@ export function utoopack(
   fn: (config: ConfigComplete, ctx: EvBundlerCtx) => void,
 ): (config: unknown, ctx: EvBundlerCtx) => void {
   return (config, ctx) => {
-    if (ctx.config.bundler.name === "utoopack") {
+    if (ctx.config.bundler?.name === "utoopack") {
       fn(config as ConfigComplete, ctx);
     }
   };

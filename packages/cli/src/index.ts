@@ -42,18 +42,17 @@ export interface BuildOptions {
 
 /**
  * Resolve the bundler adapter specified in the configuration.
+ * Falls back to utoopack when no bundler is explicitly provided.
  */
-async function getBundlerAdapter(config?: EvConfig): Promise<BundlerAdapter> {
-  const bundlerName = config?.bundler?.name ?? "utoopack";
-  if (bundlerName === "utoopack") {
-    const { utoopackAdapter } = await import("@evjs/bundler-utoopack");
-    return utoopackAdapter;
+async function getBundlerAdapter(
+  config?: ResolvedEvConfig,
+): Promise<BundlerAdapter> {
+  if (config?.bundler) {
+    return config.bundler;
   }
-  if (bundlerName === "webpack") {
-    const { webpackAdapter } = await import("@evjs/bundler-webpack");
-    return webpackAdapter;
-  }
-  throw new Error(`Bundler '${bundlerName}' is not supported yet.`);
+  // Default: dynamically import utoopack so it's not a hard dependency
+  const { utoopackAdapter } = await import("@evjs/bundler-utoopack");
+  return utoopackAdapter;
 }
 
 /**

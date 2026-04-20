@@ -8,6 +8,7 @@ const esmRequire = createRequire(import.meta.url);
 const logger = getLogger(["evjs", "bundler-webpack"]);
 
 export const webpackAdapter: BundlerAdapter = {
+  name: "webpack",
   async build(
     config: ResolvedEvConfig,
     cwd: string,

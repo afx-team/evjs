@@ -16,6 +16,7 @@ import { UtoopackManifestGenerator } from "../manifest-generator.js";
 const logger = getLogger(["evjs", "bundler-utoopack"]);
 
 export const utoopackAdapter: BundlerAdapter = {
+  name: "utoopack",
   async build(
     config: ResolvedEvConfig,
     cwd: string,

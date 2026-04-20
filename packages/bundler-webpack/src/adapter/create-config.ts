@@ -45,8 +45,6 @@ export function createWebpackConfig(
   };
 
   // Map evjs config.dev properties to their webpack-dev-server equivalents.
-
-  // Map evjs config.dev properties to their webpack-dev-server equivalents.
   // Never spread config.dev directly — webpack-dev-server rejects unknown properties.
   const isHttps = config.dev.https;
 
@@ -85,7 +83,7 @@ export function createWebpackConfig(
       clean: true,
     },
     resolve: {
-      extensions: [".tsx", ".ts", ".js"],
+      extensions: [".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs"],
     },
     module: {
       rules: [
