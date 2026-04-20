@@ -47,7 +47,7 @@ describe("transformServerFile", () => {
       expect(refCount).toBe(3); // import + getUsers + createUser
     });
 
-    it("imports createServerReference and callServer from transport module", async () => {
+    it("imports createServerReference from transport module", async () => {
       const result = await transformServerFile(SERVER_FILE, {
         resourcePath: FILE,
         rootContext: ROOT,
@@ -56,7 +56,7 @@ describe("transformServerFile", () => {
 
       expect(result.code).toContain(RUNTIME.clientTransportModule);
       expect(result.code).toContain(
-        `import { ${RUNTIME.createServerReference}, ${RUNTIME.callServer} }`,
+        `import { ${RUNTIME.createServerReference} }`,
       );
     });
 
