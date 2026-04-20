@@ -85,8 +85,9 @@ export function createUtoopackConfig(
             proxy: [
               {
                 context: [config.server.endpoint],
-                target: `http://localhost:${config.server.dev.port}`,
+                target: `${config.server.dev.https ? "https" : "http"}://localhost:${config.server.dev.port}`,
                 changeOrigin: true,
+                secure: false,
               },
             ],
           }
