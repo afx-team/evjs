@@ -11,6 +11,7 @@ export default defineConfig({
   projects: [
     {
       name: "webpack",
+      // biome-ignore lint/suspicious/noExplicitAny: custom fixture properties
       use: {
         browserName: "chromium",
         bundlerName: "webpack",
@@ -18,6 +19,7 @@ export default defineConfig({
     },
     {
       name: "utoopack",
+      // biome-ignore lint/suspicious/noExplicitAny: custom fixture properties
       use: {
         browserName: "chromium",
         bundlerName: "utoopack",

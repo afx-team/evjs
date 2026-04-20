@@ -21,9 +21,9 @@ const EXAMPLES = path.resolve(import.meta.dirname, "../examples");
 const CSR_APP = path.resolve(EXAMPLES, "basic-csr");
 const FULLSTACK_APP = path.resolve(EXAMPLES, "basic-server-fns");
 
-const BUNDLERS: [string, BundlerAdapter][] = [
-  ["webpack", webpackAdapter],
-  ["utoopack", utoopackAdapter],
+const BUNDLERS: [string, BundlerAdapter<unknown>][] = [
+  ["webpack", webpackAdapter as unknown as BundlerAdapter<unknown>],
+  ["utoopack", utoopackAdapter as unknown as BundlerAdapter<unknown>],
 ];
 
 let savedCwd: string;
@@ -64,7 +64,7 @@ describe.each(BUNDLERS)("build notifier plugin [%s]", (_name, bundler) => {
       duration: 0,
     };
 
-    const buildNotifier: EvPlugin = {
+    const buildNotifier: EvPlugin<unknown> = {
       name: "build-notifier",
       setup(_ctx) {
         let t0: number;
@@ -101,7 +101,7 @@ describe("webpack define plugin", () => {
 
     let injectedPluginCount = 0;
 
-    const envPlugin: EvPlugin = {
+    const envPlugin: EvPlugin<unknown> = {
       name: "env-inject",
       setup() {
         return {
@@ -141,7 +141,7 @@ describe.each(BUNDLERS)("deployment manifest plugin [%s]", (_name, bundler) => {
 
     const manifestPath = path.resolve(CSR_APP, "dist/deploy-manifest.json");
 
-    const deployPlugin: EvPlugin = {
+    const deployPlugin: EvPlugin<unknown> = {
       name: "deploy-manifest",
       setup(ctx) {
         return {
@@ -191,7 +191,7 @@ describe.each(
     let serverFnCount = 0;
     let serverEntry: string | undefined;
 
-    const discoveryPlugin: EvPlugin = {
+    const discoveryPlugin: EvPlugin<unknown> = {
       name: "fn-discovery",
       setup() {
         return {
@@ -224,7 +224,7 @@ describe("plugin composition [webpack]", () => {
 
     let ruleCountSeenBySecondPlugin = 0;
 
-    const addRule: EvPlugin = {
+    const addRule: EvPlugin<unknown> = {
       name: "add-rule",
       setup: () => ({
         bundlerConfig: webpack((config) => {
@@ -238,7 +238,7 @@ describe("plugin composition [webpack]", () => {
       }),
     };
 
-    const inspector: EvPlugin = {
+    const inspector: EvPlugin<unknown> = {
       name: "inspector",
       setup: () => ({
         bundlerConfig: webpack((config) => {
@@ -276,7 +276,7 @@ describe.each(
   it("injects a meta tag into the document via DOM API", async () => {
     process.chdir(CSR_APP);
 
-    const htmlPlugin: EvPlugin = {
+    const htmlPlugin: EvPlugin<unknown> = {
       name: "meta-injector",
       setup() {
         return {
@@ -307,7 +307,7 @@ describe.each(
   it("injects a comment node via DOM API", async () => {
     process.chdir(CSR_APP);
 
-    const commentPlugin: EvPlugin = {
+    const commentPlugin: EvPlugin<unknown> = {
       name: "comment-injector",
       setup() {
         return {
@@ -342,7 +342,7 @@ describe.each(BUNDLERS)("transformHtml composition [%s]", (_name, bundler) => {
   it("multiple plugins accumulate DOM mutations", async () => {
     process.chdir(CSR_APP);
 
-    const plugin1: EvPlugin = {
+    const plugin1: EvPlugin<unknown> = {
       name: "meta-1",
       setup: () => ({
         transformHtml(doc) {
@@ -354,7 +354,7 @@ describe.each(BUNDLERS)("transformHtml composition [%s]", (_name, bundler) => {
       }),
     };
 
-    const plugin2: EvPlugin = {
+    const plugin2: EvPlugin<unknown> = {
       name: "meta-2",
       setup: () => ({
         transformHtml(doc) {

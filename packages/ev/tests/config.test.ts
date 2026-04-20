@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { BundlerAdapter } from "../src/bundler.js";
 import { CONFIG_DEFAULTS, defineConfig, resolveConfig } from "../src/config.js";
 
 describe("defineConfig", () => {

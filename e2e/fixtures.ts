@@ -104,10 +104,11 @@ async function buildExample(
   serverEnabled: boolean,
 ) {
   const { build } = await import("@evjs/cli");
-  let bundler: import("@evjs/ev").BundlerAdapter | undefined;
+  let bundler: import("@evjs/ev").BundlerAdapter<unknown> | undefined;
   if (bundlerName === "webpack") {
     const { webpackAdapter } = await import("@evjs/bundler-webpack");
-    bundler = webpackAdapter;
+    bundler =
+      webpackAdapter as unknown as import("@evjs/ev").BundlerAdapter<unknown>;
   }
   // utoopack is the default — no bundler field needed
 
@@ -144,7 +145,8 @@ export function createExampleTest(exampleName: string) {
       // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture API requires object destructuring
       async ({}, use, workerInfo) => {
         const bundlerName =
-          (workerInfo.project.use as any).bundlerName ?? "utoopack";
+          (workerInfo.project.use as unknown as { bundlerName?: string })
+            .bundlerName ?? "utoopack";
 
         // Build with specified bundler (fullstack = server enabled)
         await buildExample(exampleDir, bundlerName, true);
@@ -258,7 +260,8 @@ export function createCsrExampleTest(exampleName: string) {
       // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture API requires object destructuring
       async ({}, use, workerInfo) => {
         const bundlerName =
-          (workerInfo.project.use as any).bundlerName ?? "utoopack";
+          (workerInfo.project.use as unknown as { bundlerName?: string })
+            .bundlerName ?? "utoopack";
 
         // Build with specified bundler (CSR = server disabled)
         await buildExample(exampleDir, bundlerName, false);
