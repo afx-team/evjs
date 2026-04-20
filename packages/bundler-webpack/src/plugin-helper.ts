@@ -22,18 +22,18 @@ import type { EvBundlerCtx } from "@evjs/ev";
  * };
  * ```
  */
-export function webpack(
+export function webpack<T = unknown>(
   fn: (
     config: import("webpack").Configuration,
     ctx: EvBundlerCtx<import("webpack").Configuration>,
   ) => void,
-): (
-  config: import("webpack").Configuration,
-  ctx: EvBundlerCtx<import("webpack").Configuration>,
-) => void {
+): (config: T, ctx: EvBundlerCtx<T>) => void {
   return (config, ctx) => {
     if (ctx.config.bundler?.name === "webpack") {
-      fn(config as import("webpack").Configuration, ctx);
+      fn(
+        config as unknown as import("webpack").Configuration,
+        ctx as unknown as EvBundlerCtx<import("webpack").Configuration>,
+      );
     }
   };
 }

@@ -23,12 +23,15 @@ import type { ConfigComplete } from "@utoo/pack";
  * };
  * ```
  */
-export function utoopack(
+export function utoopack<T = unknown>(
   fn: (config: ConfigComplete, ctx: EvBundlerCtx<ConfigComplete>) => void,
-): (config: ConfigComplete, ctx: EvBundlerCtx<ConfigComplete>) => void {
+): (config: T, ctx: EvBundlerCtx<T>) => void {
   return (config, ctx) => {
     if (ctx.config.bundler?.name === "utoopack") {
-      fn(config as ConfigComplete, ctx);
+      fn(
+        config as unknown as ConfigComplete,
+        ctx as unknown as EvBundlerCtx<ConfigComplete>,
+      );
     }
   };
 }
