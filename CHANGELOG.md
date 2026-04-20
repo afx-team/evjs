@@ -6,6 +6,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.0.23] — 2026-04-21
+
 ### ✨ Features
 
 - **Added `@evjs/bundler-utoopack`** — Integrated the Turbopack-based `utoopack` bundler via a new adapter package. Leverages native `"use server"` support for lightning-fast server function compilation and HMR.
@@ -13,6 +17,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 ### ♻️ Refactoring
 
 - **Renamed `route()` to `createRoute()`** — Aligned the server-side route factory naming with the existing client-side API for better consistency across the framework.
+
+### 🐛 Bug Fixes
+
+- **Resolved E2E timeouts** — Increased dev server timeout in e2e tests.
 
 ---
 
