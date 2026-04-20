@@ -62,8 +62,8 @@ interface EvPluginContext {
 
 ```mermaid
 flowchart LR
-    A[buildStart] --> B[bundler]
-    B --> C["webpack 编译"]
+    A[buildStart] --> B[bundlerConfig]
+    B --> C["bundler 编译"]
     C --> D["HTML 生成"]
     D --> E[transformHtml]
     E --> F[buildEnd]
@@ -72,7 +72,7 @@ flowchart LR
 | 钩子 | 签名 | 时机 |
 |------|------|------|
 | `buildStart` | `() => void` | 编译开始前 |
-| `bundler` | `(config, ctx) => void` | 构建器配置创建期间 |
+| `bundlerConfig` | `(config, ctx) => void` | 构建器配置创建期间 |
 | `transformHtml` | `(doc, result) => void` | 资源注入后、HTML 输出前 |
 | `buildEnd` | `(result) => void` | 编译完成后 |
 
@@ -96,14 +96,14 @@ setup() {
 
 ---
 
-### `bundler`
+### `bundlerConfig`
 
 直接修改底层构建器配置。`config` 类型默认为 `unknown` —— 使用类型辅助函数获得安全性。
 
 ```ts
 setup() {
   return {
-    bundler(config, ctx) {
+    bundlerConfig(config, ctx) {
       // `config` 是 `unknown` —— 使用下方的类型辅助函数
     },
   };
@@ -112,28 +112,38 @@ setup() {
 
 #### 类型安全的构建器配置
 
-从 `@evjs/bundler-webpack` 导入 `webpack()` 辅助函数以获得完整 TypeScript 支持：
+导入 `webpack()` 或 `utoopack()` 辅助函数以在不同的构建器中获得完整的 TypeScript 支持：
 
 ```ts
 import { webpack } from "@evjs/bundler-webpack";
+import { utoopack } from "@evjs/bundler-utoopack";
 
 {
   name: "yaml-support",
   setup() {
     return {
-      bundler: webpack((config) => {
-        // `config` 完全类型化为 webpack.Configuration
-        config.module?.rules?.push({
-          test: /\.yaml$/,
-          type: "json",
-        });
-      }),
+      bundlerConfig(config, ctx) {
+        // 使用 webpack 的安全修改
+        webpack((cfg) => {
+          cfg.module?.rules?.push({
+            test: /\.yaml$/,
+            type: "json",
+          });
+        })(config, ctx);
+
+        // 使用 utoopack 的安全修改
+        utoopack((cfg) => {
+          cfg.module ??= {};
+          cfg.module.rules ??= {};
+          cfg.module.rules[".yaml"] = { type: "json" };
+        })(config, ctx);
+      },
     };
   },
 }
 ```
 
-`webpack()` 辅助函数包装你的回调并收窄 config 类型。此模式可扩展到未来的构建器适配器（如 `utoopack()`）。
+这些辅助函数会包装你的回调，并仅在对应的构建器处于激活状态时执行。
 
 ---
 
@@ -227,21 +237,30 @@ setup() {
 
 ```ts
 import { webpack } from "@evjs/bundler-webpack";
+import { utoopack } from "@evjs/bundler-utoopack";
 
 {
   name: "env-inject",
   setup() {
     return {
-      bundler: webpack((config) => {
-        const { DefinePlugin } = require("webpack");
-        config.plugins ??= [];
-        config.plugins.push(
-          new DefinePlugin({
-            __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
-            __APP_VERSION__: JSON.stringify("1.0.0"),
-          }),
-        );
-      }),
+      bundlerConfig(config, ctx) {
+        webpack((cfg) => {
+          const { DefinePlugin } = require("webpack");
+          cfg.plugins ??= [];
+          cfg.plugins.push(
+            new DefinePlugin({
+              __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+              __APP_VERSION__: JSON.stringify("1.0.0"),
+            }),
+          );
+        })(config, ctx);
+
+        utoopack((cfg) => {
+          cfg.env ??= {};
+          cfg.env.__BUILD_TIME__ = JSON.stringify(new Date().toISOString());
+          cfg.env.__APP_VERSION__ = JSON.stringify("1.0.0");
+        })(config, ctx);
+      },
     };
   },
 }

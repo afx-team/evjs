@@ -51,13 +51,13 @@ ev.config.ts ──► defineConfig({ entry, html, dev, server, plugins })
                     ├── entry, html ──► webpack 入口 + HtmlPlugin
                     ├── dev.port ──► WebpackDevServer 端口
                     ├── server.endpoint ──► EvWebpackPlugin + 代理路径
-                    └── plugins ──► EvPlugin[]（setup → buildStart/bundler/transformHtml/buildEnd）
+                    └── plugins ──► EvPlugin[]（setup → buildStart/bundlerConfig/transformHtml/buildEnd）
                     │
                     ▼
             plugin.setup(ctx) → 收集生命周期钩子
                     │
                     ▼
-            hooks.buildStart() → hooks.bundler(config) → BundlerAdapter.dev/build()
+            hooks.buildStart() → hooks.bundlerConfig(config) → BundlerAdapter.dev/build()
                     │
                     ▼
               webpack Node API → generateHtml() → hooks.transformHtml(doc) → hooks.buildEnd(result)

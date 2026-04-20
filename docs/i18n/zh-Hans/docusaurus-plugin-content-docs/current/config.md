@@ -68,7 +68,7 @@ export default defineConfig({
       setup(ctx) {
         return {
           buildStart() { /* ... */ },
-          bundler(config) { /* ... */ },
+          bundlerConfig(config, ctx) { /* ... */ },
           transformHtml(doc) { /* ... */ },
           buildEnd(result) { /* ... */ },
         };
@@ -82,11 +82,20 @@ export default defineConfig({
 
 ## 构建器选项
 
-`bundler` 字段选择编译引擎。
+`bundler` 字段选择编译引擎。默认情况下，evjs 使用 **utoopack**（`@utoo/pack`）。你可以通过传递 webpack 适配器来切换到 webpack。
 
 | 选项 | 类型 | 默认值 | 描述 |
 |------|------|--------|------|
-| `name` | `"webpack"` | `"webpack"` | 激活的构建器适配器。未来计划：`"utoopack"` |
+| `bundler` | `BundlerAdapter` | utoopack | 激活的构建器适配器。从 `@evjs/bundler-webpack` 导入 `webpackAdapter` 以使用 webpack，而不是默认的 utoopack。 |
+
+```ts
+import { defineConfig } from "@evjs/ev";
+import { webpackAdapter } from "@evjs/bundler-webpack";
+
+export default defineConfig({
+  bundler: webpackAdapter,  // 使用 webpack 代替默认的 utoopack
+});
+```
 
 ### 内置支持：CSS 和 Tailwind
 evjs 包含**内置的 PostCSS/Tailwind 支持**。如果项目根目录检测到 `postcss.config.js` 文件，内部 Webpack 适配器将自动启用 `postcss-loader`。标准 Tailwind 设置无需插件或自定义钩子。
@@ -144,12 +153,14 @@ export default defineConfig({
       name: "mdx-support",
       setup() {
         return {
-          bundler: webpack((config) => {
-            config.module?.rules?.push({
-              test: /\.mdx$/,
-              use: ["mdx-loader"],
-            });
-          }),
+          bundlerConfig(config, ctx) {
+            webpack((cfg) => {
+              cfg.module?.rules?.push({
+                test: /\.mdx$/,
+                use: ["mdx-loader"],
+              });
+            })(config, ctx);
+          },
         };
       },
     },
