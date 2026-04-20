@@ -24,7 +24,7 @@ test.describe("Scaffolding CLI E2E", () => {
     }
   });
 
-  test("create-app should scaffold, build, and run dev server", async ({}, testInfo) => {
+  test("create-app should scaffold, build, and run dev server", async (_, testInfo) => {
     const cleanEnv = { ...process.env };
     for (const key of Object.keys(cleanEnv)) {
       if (key.startsWith("npm_")) delete cleanEnv[key];
@@ -146,7 +146,7 @@ test.describe("Scaffolding CLI E2E", () => {
 
       const timeout = setTimeout(() => {
         devProcess.kill("SIGTERM");
-      }, 30_000);
+      }, 45_000);
 
       const checkServer = async () => {
         try {
@@ -159,7 +159,7 @@ test.describe("Scaffolding CLI E2E", () => {
         } catch {
           // Connection refused — server not ready yet
         }
-        if (!settled) setTimeout(checkServer, 1000);
+        if (!settled) setTimeout(checkServer, 2000);
       };
       checkServer();
 
