@@ -19,7 +19,7 @@ npm run start -w example-basic-fns-ecma
 | `src/main.tsx` | App bootstrap |
 | `src/routes.tsx` | Routes + components |
 | `src/api/messages.server.ts` | Server functions |
-| `ev.config.ts` | Uses `@evjs/server/ecma` runtime |
+| `server.entry.mjs` | Custom ECMA server entry using `@evjs/server/ecma` runtime |
 
 ## What It Demonstrates
 

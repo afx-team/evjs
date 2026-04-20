@@ -117,8 +117,17 @@ export function resolveRoutes(
    * Walk up the parent chain to build the full path prefix for a route.
    * Returns the full resolved path of the given route variable.
    */
-  function resolveParentPath(route: ExtractedRoute): string {
+  function resolveParentPath(
+    route: ExtractedRoute,
+    visited = new Set<string>(),
+  ): string {
     if (!route.parentName) return route.path;
+
+    // Guard against circular parent references
+    if (route.varName) {
+      if (visited.has(route.varName)) return route.path;
+      visited.add(route.varName);
+    }
 
     const parent = byName.get(route.parentName);
     if (!parent) {
@@ -127,7 +136,7 @@ export function resolveRoutes(
       return route.path;
     }
 
-    const parentPath = resolveParentPath(parent);
+    const parentPath = resolveParentPath(parent, visited);
     return joinPaths(parentPath, route.path);
   }
 

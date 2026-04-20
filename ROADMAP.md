@@ -32,9 +32,9 @@ Call server-side logic from the browser as normal async functions.
   - [x] `server-fn-loader` — thin adapter delegating to `@evjs/build-tools`
   - [x] Dynamic server entry generation (no manual config)
 - [x] Query integration
-  - [x] `query(fn).useQuery()` / `mutation(fn).useMutation()` — zero-boilerplate wrappers
-  - [x] `createQueryProxy` / `createMutationProxy` — module-level typed proxies
-  - [x] `.queryOptions()`, `.queryKey()` for prefetching and cache invalidation
+  - [x] `useQuery(fn, ...args)` / `useMutation(fn)` — zero-boilerplate wrappers
+  - [x] `getFnQueryOptions()`, `getFnQueryKey()` — for prefetching and cache invalidation
+  - [x] `.queryOptions()`, `.queryKey()` on server function stubs
 - [x] Transport
   - [x] JSON-based server function wire format (`{ fnId, args }` → `{ result }`)
   - [x] Configurable endpoint: `initTransport({ baseUrl, endpoint })`
@@ -66,7 +66,7 @@ DX improvements: unified CLI and zero-config builds.
 Extensibility and richer build output.
 
 - [x] Plugin module rules system (`client.plugins` / `server.plugins`)
-  - [x] `EvPlugin` interface with `name` + `setup()` → lifecycle hooks (`buildStart`, `bundler`, `transformHtml`, `buildEnd`)
+  - [x] `EvPlugin` interface with `name` + `setup()` → lifecycle hooks (`buildStart`, `bundlerConfig`, `transformHtml`, `buildEnd`)
   - [x] `EvModuleRule` with `test`, `exclude`, `use` (string or `{ loader, options }`)
   - [x] Tailwind CSS example (`with-tailwind`) using `postcss-loader`
 - [x] Manifest client section

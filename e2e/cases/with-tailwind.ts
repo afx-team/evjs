@@ -74,7 +74,7 @@ test.describe("with-tailwind", () => {
     await expect(title).toBeVisible({ timeout: 10_000 });
     await expect(title).toHaveText("Tailwind Plugin Example");
 
-    // Verify Tailwind text-4xl (font-size: 2.25rem = 36px) is applied
+    // Verify Tailwind text-5xl (font-size: 3rem = 48px) is applied
     const fontSize = await title.evaluate(
       (el) => getComputedStyle(el).fontSize,
     );

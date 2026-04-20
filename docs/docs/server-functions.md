@@ -203,8 +203,8 @@ flowchart TD
 | Query | `useQuery(fn, ...args)` |
 | Suspense query | `useSuspenseQuery(fn, ...args)` |
 | Mutation | `useMutation(fn)` or `useMutation(fn, { onSuccess })` |
-| Cache invalidation | `getFnQueryKey(...args)` |
-| Loader / prefetch | `getFnQueryOptions(...args)` → `{ queryKey, queryFn }` |
+| Cache invalidation | `getFnQueryKey(fn, ...args)` |
+| Loader / prefetch | `getFnQueryOptions(fn, ...args)` → `{ queryKey, queryFn }` |
 | Function metadata | `fn.fnId`, `fn.fnName` |
 | Arguments | Spread: `useQuery(getUser, id)` not `useQuery(getUser, [id])` |
 | Server errors | `ServerError` on server → `ServerFunctionError` on client |

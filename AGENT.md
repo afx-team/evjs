@@ -49,7 +49,7 @@
 2. ❌ Using arrow functions: `export const fn = async () =>` → ✅ Use `export async function fn()`
 3. ❌ Wrapping args: `useQuery(fn, [id])` → ✅ Spread args: `useQuery(fn, id)`
 4. ❌ Calling `useQueryClient()` outside React → ✅ Pass `queryClient` instance to utility functions
-5. ❌ Using `invalidate()` method on proxy → ✅ Use `queryClient.invalidateQueries({ queryKey: fn.queryKey() })`
+5. ❌ Using `invalidate()` method on proxy → ✅ Use `queryClient.invalidateQueries({ queryKey: getFnQueryKey(fn) })`
 6. ❌ Forgetting `"use server";` directive → build-tools silently skips the file
 7. ❌ Using global `useParams()` → ✅ Use route-scoped `myRoute.useParams()` for type safety
 

@@ -56,7 +56,7 @@
 1. Create `src/api/[name].server.ts`
 2. Add `"use server";` at the top
 3. Export named async functions
-4. Import and use in client with `query()` or `mutation()`
+4. Import and use in client with `useQuery(fn)` or `useMutation(fn)`
 
 ### Add a new route
 1. Create a new file under `src/pages/` (e.g. `src/pages/about.tsx`)

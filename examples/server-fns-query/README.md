@@ -19,6 +19,6 @@ npm run dev -w example-server-fns-query
 ## What It Demonstrates
 
 - `useQuery(getUsers)` / `useMutation({ mutationFn })` with auto-generated query keys
-- `getUsers.queryKey()` for cache invalidation on mutation success
+- `getFnQueryKey(getUsers)` for cache invalidation on mutation success
 - Multi-arg server functions: `useQuery(searchUsers, name, email)`
 - Error handling with `ServerFunctionError`

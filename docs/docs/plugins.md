@@ -62,8 +62,8 @@ Hooks run at specific points in the build pipeline:
 
 ```mermaid
 flowchart LR
-    A[buildStart] --> B[bundler]
-    B --> C["webpack compile"]
+    A[buildStart] --> B[bundlerConfig]
+    B --> C["bundler compile"]
     C --> D["HTML generation"]
     D --> E[transformHtml]
     E --> F[buildEnd]
@@ -72,7 +72,7 @@ flowchart LR
 | Hook | Signature | When |
 |------|-----------|------|
 | `buildStart` | `() => void` | Before compilation begins |
-| `bundler` | `(config, ctx) => void` | During bundler config creation |
+| `bundlerConfig` | `(config, ctx) => void` | During bundler config creation |
 | `transformHtml` | `(doc, result) => void` | After asset injection, before HTML is emitted |
 | `buildEnd` | `(result) => void` | After compilation completes |
 
@@ -96,14 +96,14 @@ setup() {
 
 ---
 
-### `bundler`
+### `bundlerConfig`
 
 Mutate the underlying bundler configuration directly. The `config` type is `unknown` by default — use a typed helper for safety.
 
 ```ts
 setup() {
   return {
-    bundler(config, ctx) {
+    bundlerConfig(config, ctx) {
       // `config` is `unknown` — cast or use the typed helper below
     },
   };

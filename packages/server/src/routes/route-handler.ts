@@ -103,22 +103,23 @@ export function createRoute<const T extends string>(
   const definedMethods: HttpMethod[] = [];
   for (const key of Object.keys(methods)) {
     if (isHttpMethod(key)) {
-      definedMethods.push(key.toUpperCase() as HttpMethod);
+      definedMethods.push(key);
     }
   }
 
   // Auto-implement OPTIONS if not explicitly defined.
   if (!methods.OPTIONS && definedMethods.length > 0) {
-    const allowed = [...definedMethods, "OPTIONS"].join(", ");
+    definedMethods.push("OPTIONS");
     methods.OPTIONS = () =>
       new Response(null, {
         status: 204,
-        headers: { Allow: allowed },
+        headers: { Allow: definedMethods.join(", ") },
       });
   }
 
   // Auto-derive HEAD from GET if GET is defined but HEAD is not.
   if (methods.GET && !methods.HEAD) {
+    definedMethods.push("HEAD");
     const getHandler = methods.GET;
     methods.HEAD = async (req, ctx) => {
       const res = await getHandler(req, ctx);
@@ -133,7 +134,7 @@ export function createRoute<const T extends string>(
   for (const [method, handler] of Object.entries(methods)) {
     if (!handler || !isHttpMethod(method)) continue;
 
-    app.on(method.toUpperCase(), path, async (c: HonoContext) => {
+    app.on(method, path, async (c: HonoContext) => {
       // Build middleware chain.
       let idx = 0;
       const next = (): Promise<Response> => {

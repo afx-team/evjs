@@ -86,6 +86,8 @@ export async function dispatch(
       };
     }
     const message = err instanceof Error ? err.message : String(err);
-    return { error: message, fnId, status: DEFAULT_ERROR_STATUS };
+    const safeMessage =
+      process.env.NODE_ENV === "production" ? "Internal server error" : message;
+    return { error: safeMessage, fnId, status: DEFAULT_ERROR_STATUS };
   }
 }

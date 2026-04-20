@@ -8,9 +8,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": [
-    "e2e/**/*.ts",
-    "packages/*/tests/**/*.ts",
-    "packages/*/test/**/*.ts"
-  ]
+  "include": ["e2e/**/*.ts", "packages/*/tests/**/*.ts"]
 }

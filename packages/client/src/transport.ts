@@ -102,7 +102,9 @@ function createFetchTransport(
       });
 
       if (!res.ok) {
-        // Try to parse structured error body first
+        // Read body as text once, then try to parse as JSON.
+        // Response body is a one-shot stream — reading it twice would fail.
+        const rawText = await res.text().catch(() => res.statusText);
         let errorPayload: {
           error?: string;
           fnId?: string;
@@ -110,9 +112,9 @@ function createFetchTransport(
           data?: unknown;
         } | null = null;
         try {
-          errorPayload = await res.json();
+          errorPayload = JSON.parse(rawText);
         } catch {
-          // Not JSON — fall back to text
+          // Not JSON — use raw text for error message
         }
 
         if (errorPayload?.error) {
@@ -125,16 +127,30 @@ function createFetchTransport(
           );
         }
 
-        const text = await res.text().catch(() => res.statusText);
         const name = getFnName(fnId);
         throw new ServerFunctionError(
-          `Server function "${name}" failed (${res.status}): ${text}`,
+          `Server function "${name}" failed (${res.status}): ${rawText}`,
           fnId,
           res.status,
         );
       }
 
-      const payload = await res.json();
+      let payload: {
+        result?: unknown;
+        error?: string;
+        fnId?: string;
+        status?: number;
+        data?: unknown;
+      };
+      try {
+        payload = await res.json();
+      } catch {
+        throw new ServerFunctionError(
+          `Server function "${getFnName(fnId)}" returned invalid JSON`,
+          fnId,
+          res.status,
+        );
+      }
       if (payload.error) {
         const name = getFnName(fnId);
         throw new ServerFunctionError(
@@ -265,7 +281,6 @@ export function getFnName(fnId: string): string {
  * Follows the React Server Components convention.
  *
  * @param fnId - The unique function hash ID.
- * @param callServerFn - The transport function (typically `callServer`).
  * @param exportName - The human-readable export name.
  * @returns An augmented server function stub.
  */

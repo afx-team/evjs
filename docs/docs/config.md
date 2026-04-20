@@ -136,7 +136,7 @@ export default defineConfig({
       setup(ctx) {
         return {
           buildStart() { /* ... */ },
-          bundler(config) { /* ... */ },
+          bundlerConfig(config) { /* ... */ },
           transformHtml(doc) { /* ... */ },
           buildEnd(result) { /* ... */ },
         };

@@ -57,10 +57,10 @@ ev.config.ts ──► defineConfig({ entry, html, dev, server, plugins })
             plugin.setup(ctx) → collect hooks
                     │
                     ▼
-            hooks.buildStart() → hooks.bundler(config) → createWebpackConfig()
+            hooks.buildStart() → hooks.bundlerConfig(config) → BundlerAdapter.dev/build()
                     │
                     ▼
-              webpack Node API → generateHtml() → hooks.transformHtml(doc) → hooks.buildEnd(result)
+              bundler compile → generateHtml() → hooks.transformHtml(doc) → hooks.buildEnd(result)
 ```
 
 ## Server Function Pipeline
@@ -81,7 +81,7 @@ The `"use server"` directive triggers two separate transforms during build:
 ## Dev Server Architecture
 
 ```
-Browser ──(:3000)──► WebpackDevServer ──► HMR (static assets)
+Browser ──(:3000)──► Dev Server ──► HMR (static assets)
                           │
                           └── /api/* proxy ──► Node Server (:3001)
                                                     │

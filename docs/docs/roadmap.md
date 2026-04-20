@@ -28,9 +28,16 @@ Call server-side logic from the browser as normal async functions.
 
 ## ✅ Stage 4 — Plugin System & Build Metadata
 
-- `EvPlugin` interface with `name` + `setup()` → lifecycle hooks (`buildStart`, `bundler`, `transformHtml`, `buildEnd`)
+- `EvPlugin` interface with `name` + `setup()` → lifecycle hooks (`buildStart`, `bundlerConfig`, `transformHtml`, `buildEnd`)
 - Manifest client section (`client.assets`, `client.routes`)
 - Template symlinks for `npx @evjs/create-app`
+
+## ✅ Stage 5 — Bundler-Agnostic Architecture
+
+- `BundlerAdapter` interface for pluggable bundler backends
+- `@evjs/bundler-utoopack` — default adapter using `@utoo/pack`
+- `@evjs/bundler-webpack` — webpack adapter
+- `ev.config.ts` `bundler` field to switch adapters
 
 ## 🔲 Exploring
 

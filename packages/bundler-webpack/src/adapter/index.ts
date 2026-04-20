@@ -70,8 +70,9 @@ export const webpackAdapter: BundlerAdapter<import("webpack").Configuration> = {
     const server = new WebpackDevServer(devServerOptions, compiler);
     await server.start();
 
-    compiler.hooks.done.tap("EvDevServer", async () => {
-      if (!config.serverEnabled) return;
+    let ready = false;
+    compiler.hooks.done.tap("EvDevServer", () => {
+      if (!config.serverEnabled || ready) return;
       const manifestPath = path.resolve(cwd, "dist/server/manifest.json");
 
       if (fs.existsSync(manifestPath)) {
@@ -83,6 +84,7 @@ export const webpackAdapter: BundlerAdapter<import("webpack").Configuration> = {
         }
         if (manifest.version !== 1 || !manifest.entry) return;
 
+        ready = true;
         // Let the CLI framework know it's time to start the API runtime.
         callbacks.onServerBundleReady();
       }

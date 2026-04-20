@@ -16,9 +16,9 @@ export const HTTP_METHODS = [
 /** Union type of supported HTTP methods. */
 export type HttpMethod = (typeof HTTP_METHODS)[number];
 
-/** Type guard: returns true if value is a valid HTTP method (case-insensitive). */
+/** Type guard: returns true if value is a valid uppercase HTTP method. */
 export function isHttpMethod(value: string): value is HttpMethod {
-  return (HTTP_METHODS as readonly string[]).includes(value.toUpperCase());
+  return (HTTP_METHODS as readonly string[]).includes(value);
 }
 
 /**

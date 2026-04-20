@@ -54,9 +54,8 @@ Function IDs are stable SHA-256 hashes derived from `filePath + exportName`.
 ### Build Pipeline
 
 1. `loadConfig(cwd)` — loads `ev.config.ts` or convention-based defaults
-2. `createWebpackConfig(config, cwd)` — generates webpack config (no temp files)
-3. Calls `webpack()` Node API directly
-4. `@evjs/bundler-webpack` runs during compilation:
+2. `BundlerAdapter.build()` — generates bundler config and runs compilation
+3. The active bundler adapter runs during compilation:
    - Discovers `*.server.ts` files via glob
    - Applies SWC transforms (client + server variants)
    - Runs child compiler for server bundle

@@ -42,7 +42,7 @@ npx biome check --write    # Fix lint/format
 1. Create `src/api/[name].server.ts`
 2. Add `"use server";` at the top
 3. Export named async functions
-4. Import and use in client with `query()` or `mutation()`
+4. Import and use in client with `useQuery(fn)` or `useMutation(fn)`
 
 ### Add a new route
 1. Define route in `routes.tsx` with `createRoute()`
@@ -52,7 +52,7 @@ npx biome check --write    # Fix lint/format
 1. Create directory under `examples/`
 2. Add `package.json` with `"@evjs/cli": "*"` as devDep
 3. Add `src/main.tsx` + `index.html`
-4. Create symlink in `packages/cli/templates/`
+4. Create symlink in `packages/create-app/templates/`
 5. Add an e2e test in `e2e/cases/`
 
 ### Release a new version

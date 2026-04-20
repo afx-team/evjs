@@ -37,7 +37,7 @@ export function serve(app: Hono, options?: NodeRunnerOptions) {
       let cert: string;
 
       if (typeof options.https === "object") {
-        const isPem = (str: string) => str.includes("-----BEGIN");
+        const isPem = (str: string) => str.trimStart().startsWith("-----BEGIN");
         key = isPem(options.https.key)
           ? options.https.key
           : fs.readFileSync(options.https.key, "utf8");

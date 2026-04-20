@@ -36,6 +36,9 @@ export function applyServerCompiler(
         async (modules, finishCallback) => {
           const serverModulePaths: string[] = [];
 
+          // Clear stale routes from previous compilations (HMR rebuilds)
+          collector.routes = [];
+
           // Collect candidate file paths
           const candidates: string[] = [];
           for (const module of modules) {

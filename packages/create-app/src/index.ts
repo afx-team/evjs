@@ -71,7 +71,14 @@ program
       process.exit(1);
     }
 
-    const templateDir = path.resolve(__dirname, "../templates", template);
+    const templatesRoot = path.resolve(__dirname, "../templates");
+    const templateDir = path.resolve(templatesRoot, template);
+
+    // Prevent path traversal outside the templates directory
+    if (!templateDir.startsWith(templatesRoot + path.sep)) {
+      console.error(pc.red(`✖ Invalid template: ${template}`));
+      process.exit(1);
+    }
 
     if (!fs.existsSync(templateDir)) {
       console.error(pc.red(`✖ Template ${template} not found!`));

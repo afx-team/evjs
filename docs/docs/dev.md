@@ -14,14 +14,14 @@ No flags needed — configuration comes from `ev.config.ts` or convention-based 
 
 | Server | Default Port | Purpose |
 |--------|-------------|---------|
-| **Webpack Dev Server** | `3000` | Client bundle with Hot Module Replacement (HMR) |
+| **Dev Server** | `3000` | Client bundle with Hot Module Replacement (HMR) |
 | **API Server** | `3001` | Server functions + route handlers, auto-started after first build |
 
 The client dev server automatically proxies `/api/*` requests to the API server.
 
 ```mermaid
 flowchart LR
-    Browser -->|":3000"| WDS["Webpack Dev Server"]
+    Browser -->|":3000"| WDS["Dev Server"]
     WDS -->|"HMR"| Browser
     WDS -->|"/api/* proxy"| API["API Server :3001"]
     API --> Hono["Hono App"]
@@ -57,7 +57,7 @@ export default defineConfig({
 1. `loadConfig(cwd)` loads `ev.config.ts`.
 2. `resolveConfig()` applies defaults, then `plugin.setup()` collects lifecycle hooks.
 3. `hooks.buildStart()` runs before compilation.
-4. `BundlerAdapter.dev()` is invoked (applying plugin `bundler` hooks to the config).
+4. `BundlerAdapter.dev()` is invoked (applying plugin `bundlerConfig` hooks to the config).
 5. Starts `WebpackDevServer` for client HMR.
 6. The adapter signals `onServerBundleReady` after discovery.
 7. The CLI core auto-starts the API server via `@evjs/server/node`.

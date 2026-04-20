@@ -21,5 +21,5 @@ npm run dev -w example-configured-server-fns
 - `ev.config.ts` with `defineConfig` for custom ports
 - Plugin with `setup()` → `bundler: utoopack(...)` for type-safe bundler config
 - `useQuery(getUsers)` for fetching data with auto-generated keys
-- `useMutation({ mutationFn })` with `getUsers.queryKey()` for cache invalidation
+- `useMutation({ mutationFn })` with `getFnQueryKey(getUsers)` for cache invalidation
 - Direct mutation args: `mutate({ name, email })` (not array-wrapped)

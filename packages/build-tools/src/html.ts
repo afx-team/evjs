@@ -32,6 +32,15 @@ export interface GenerateHtmlOptions {
 
 const parser = new DOMParser();
 
+/** Escape a string for safe use in an HTML attribute value. */
+function escapeAttr(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 /** Serialize an attributes record into an HTML attribute string. */
 function renderAttrs(attrs: Record<string, string | boolean>): string {
   const parts: string[] = [];
@@ -39,7 +48,7 @@ function renderAttrs(attrs: Record<string, string | boolean>): string {
     if (value === true) {
       parts.push(key);
     } else if (value !== false) {
-      parts.push(`${key}="${value}"`);
+      parts.push(`${key}="${escapeAttr(value)}"`);
     }
   }
   return parts.length > 0 ? ` ${parts.join(" ")}` : "";
@@ -87,7 +96,9 @@ export function generateHtml(options: GenerateHtmlOptions): Document {
   // Inject CSS <link> tags into <head>
   for (const cssAsset of css) {
     const { url, attrs } = normalizeAsset(cssAsset);
-    const href = `${assetPrefix}${url}`;
+    const href = escapeAttr(
+      `${assetPrefix}${url.startsWith("/") ? url.slice(1) : url}`,
+    );
     head.insertAdjacentHTML(
       "beforeend",
       `<link rel="stylesheet" href="${href}"${renderAttrs(attrs)}>`,
@@ -97,7 +108,9 @@ export function generateHtml(options: GenerateHtmlOptions): Document {
   // Inject JS <script defer> tags into <body>
   for (const jsAsset of js) {
     const { url, attrs } = normalizeAsset(jsAsset);
-    const src = `${assetPrefix}${url}`;
+    const src = escapeAttr(
+      `${assetPrefix}${url.startsWith("/") ? url.slice(1) : url}`,
+    );
     // defer is default; user can override via attrs (e.g. { defer: false, async: true })
     const hasLoadStrategy = "async" in attrs || "defer" in attrs;
     const defaultAttrs = hasLoadStrategy ? "" : " defer";
