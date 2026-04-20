@@ -1,7 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { type ExtractedRoute, extractRoutes } from "@evjs/build-tools";
-import { ManifestCollector } from "@evjs/manifest";
+import {
+  type ClientManifest,
+  ManifestCollector,
+  type ServerFnEntry,
+  type ServerManifest,
+} from "@evjs/manifest";
 import { getLogger } from "@logtape/logtape";
 import chokidar from "chokidar";
 import fastGlob from "fast-glob";
@@ -13,7 +18,7 @@ const logger = getLogger(["evjs", "bundler-utoopack", "manifest"]);
  *
  * @returns lists of JS and CSS asset filenames from the main entrypoint.
  */
-function parseStatsAssets(stats: {
+function parseClientStats(stats: {
   entrypoints?: Record<string, { assets?: Array<{ name?: string }> }>;
 }): { js: string[]; css: string[] } {
   const jsFiles: string[] = [];
@@ -52,10 +57,10 @@ function parseStatsAssets(stats: {
  */
 function parseServerStats(stats: {
   entrypoints?: Record<string, { assets?: Array<{ name?: string }> }>;
-  serverFunctions?: Record<string, { moduleId: string; export: string }>;
+  serverFunctions?: Record<string, ServerFnEntry>;
 }): {
   entry: string | undefined;
-  fns: Record<string, { moduleId: string; export: string }>;
+  fns: Record<string, ServerFnEntry>;
 } {
   let entry: string | undefined;
   const mainEntry = stats.entrypoints?.main;
@@ -102,7 +107,7 @@ export class UtoopackManifestGenerator {
     try {
       const statsStr = await fs.promises.readFile(statsPath, "utf-8");
       const stats = JSON.parse(statsStr);
-      const { js, css } = parseStatsAssets(stats);
+      const { js, css } = parseClientStats(stats);
       this.collector.setAssets(js, css);
     } catch (err) {
       logger.warn`Failed to parse client stats.json: ${err}`;
@@ -174,8 +179,10 @@ export class UtoopackManifestGenerator {
   async emit() {
     this.rebuildRoutes();
 
-    // Client manifest
-    const clientManifest = this.collector.getClientManifest(this.assetPrefix);
+    // Client manifest — matches ClientManifest from @evjs/manifest
+    const clientManifest: ClientManifest = this.collector.getClientManifest(
+      this.assetPrefix,
+    );
     const clientOutPath = path.resolve(
       this.cwd,
       this.serverEnabled ? "dist/client/manifest.json" : "dist/manifest.json",
@@ -192,7 +199,8 @@ export class UtoopackManifestGenerator {
 
     // Server manifest
     if (this.serverEnabled) {
-      const serverManifest = this.collector.getServerManifest();
+      // Server manifest — matches ServerManifest from @evjs/manifest
+      const serverManifest: ServerManifest = this.collector.getServerManifest();
       const serverOutDir = path.resolve(this.cwd, "dist/server");
       if (!fs.existsSync(serverOutDir)) {
         await fs.promises.mkdir(serverOutDir, { recursive: true });
