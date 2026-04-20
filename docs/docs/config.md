@@ -60,7 +60,7 @@ export default defineConfig({
 
 URL prefix for all client assets. Use this when deploying static artifacts (JS/CSS/images) to a CDN on a different domain.
 
-In development mode, this field is ignored to preserve local HMR. In production, this prefix is automatically injected into Webpack chunk lookups, HTML script tags, and exported as a `window.assetPrefix` runtime variable.
+In development mode, this field is ignored to preserve local HMR. In production, this prefix is automatically injected into bundler chunk lookups, HTML script tags, and exported as a `window.assetPrefix` runtime variable.
 
 ### `entry`
 
@@ -74,7 +74,7 @@ Path to the HTML template. Must contain a mount element (e.g. `<div id="app">`).
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `port` | `number` | `3000` | Webpack Dev Server port |
+| `port` | `number` | `3000` | Dev Server port |
 | `https` | `boolean \| { key: string; cert: string }` | `false` | Enable HTTPS. Pass `true` for auto-certs or an object with explicit key/cert. |
 
 ## Server Options
@@ -150,14 +150,23 @@ See the **[Plugins guide](./plugins.md)** for the full API reference, `EvDocumen
 
 ## Bundler Options
 
-The `bundler` field selects the compilation engine.
+The `bundler` field selects the compilation engine. By default, evjs uses **utoopack** (`@utoo/pack`). You can switch to webpack by passing the webpack adapter.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `name` | `"webpack"` | `"webpack"` | The active bundler adapter. Future: `"utoopack"` (planned) |
+| `bundler` | `BundlerAdapter` | utoopack | The active bundler adapter. Import `webpackAdapter` from `@evjs/bundler-webpack` to use webpack instead. |
+
+```ts
+import { defineConfig } from "@evjs/ev";
+import { webpackAdapter } from "@evjs/bundler-webpack";
+
+export default defineConfig({
+  bundler: webpackAdapter,  // Use webpack instead of the default utoopack
+});
+```
 
 ### Built-in Support: CSS & Tailwind
-evjs includes **built-in PostCSS/Tailwind support**. If a `postcss.config.js` file is detected in the project root, the internal Webpack adapter automatically enables `postcss-loader`. No plugin or custom hook is required for standard Tailwind setups.
+evjs includes **built-in PostCSS/Tailwind support**. If a `postcss.config.js` file is detected in the project root, the bundler adapter automatically enables PostCSS processing. No plugin or custom hook is required for standard Tailwind setups.
 
 ### Complete Example
 
@@ -166,6 +175,7 @@ This example demonstrates a production-ready setup with custom loaders and build
 ```ts
 import { defineConfig } from "@evjs/ev";
 import { webpack } from "@evjs/bundler-webpack";
+import { utoopack } from "@evjs/bundler-utoopack";
 
 export default defineConfig({
   entry: "./src/entry-client.tsx",
@@ -182,12 +192,21 @@ export default defineConfig({
       name: "mdx-support",
       setup() {
         return {
-          bundler: webpack((config) => {
-            config.module?.rules?.push({
-              test: /\.mdx$/,
-              use: ["mdx-loader"],
-            });
-          }),
+          bundlerConfig(config, ctx) {
+            // Type-safe config mutation for each bundler
+            webpack((cfg) => {
+              cfg.module?.rules?.push({
+                test: /\.mdx$/,
+                use: ["mdx-loader"],
+              });
+            })(config, ctx);
+
+            utoopack((cfg) => {
+              cfg.module ??= {};
+              cfg.module.rules ??= {};
+              cfg.module.rules[".mdx"] = { type: "raw" };
+            })(config, ctx);
+          },
         };
       },
     },

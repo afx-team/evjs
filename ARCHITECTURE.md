@@ -7,9 +7,10 @@
 ```
 ┌─────────────────────────── Build Time ───────────────────────────┐
 │                                                                  │
-│  @evjs/cli ──► BundlerAdapter ──► @evjs/bundler-webpack        │
-│                      │           (adapter logic)             │
-│                      ▼                                       │
+│  @evjs/cli ──► BundlerAdapter ──┬── @evjs/bundler-utoopack     │
+│                                 │   (default)                  │
+│                                 └── @evjs/bundler-webpack       │
+│                      │                                          │
 │  @evjs/build-tools ──┴──► @evjs/manifest (manifests)          │
 │  (bundler-agnostic)                                              │
 │                                                                  │
@@ -34,8 +35,9 @@
 
 @evjs/shared (zero deps — runtime only: errors, HTTP, constants)
 
-@evjs/cli ──► @evjs/ev, @evjs/bundler-webpack
-@evjs/bundler-webpack ──► @evjs/ev, @evjs/build-tools, @evjs/manifest
+@evjs/cli ──► @evjs/ev, @evjs/bundler-utoopack (default), @evjs/bundler-webpack
+@evjs/bundler-utoopack ──► @evjs/ev, @evjs/build-tools, @evjs/manifest, @utoo/pack
+@evjs/bundler-webpack ──► @evjs/ev, @evjs/build-tools, @evjs/manifest, webpack
 @evjs/server ──► @evjs/shared, hono, @hono/node-server
 @evjs/client ──► @evjs/shared, @tanstack/react-router, @tanstack/react-query
 ```
@@ -43,11 +45,12 @@
 ## Configuration Flow
 
 ```
-ev.config.ts ──► defineConfig({ entry, html, dev, server, plugins })
+ev.config.ts ──► defineConfig({ entry, html, dev, server, bundler, plugins })
                     │
-                    ├── entry, html ──► webpack entry + HtmlPlugin
-                    ├── dev.port ──► WebpackDevServer port
-                    ├── server.endpoint ──► EvWebpackPlugin + proxy path
+                    ├── entry, html ──► bundler entry + HTML
+                    ├── bundler ──► BundlerAdapter (utoopack default, or webpack)
+                    ├── dev.port ──► dev server port
+                    ├── server.endpoint ──► server function + proxy path
                     └── plugins ──► EvPlugin[] (setup → buildStart/bundler/transformHtml/buildEnd)
                     │
                     ▼
@@ -57,7 +60,7 @@ ev.config.ts ──► defineConfig({ entry, html, dev, server, plugins })
             hooks.buildStart() → hooks.bundler(config) → BundlerAdapter.dev/build()
                     │
                     ▼
-              webpack Node API → generateHtml() → hooks.transformHtml(doc) → hooks.buildEnd(result)
+              bundler compile → generateHtml() → hooks.transformHtml(doc) → hooks.buildEnd(result)
 ```
 
 ## Server Function Pipeline
@@ -111,7 +114,7 @@ export const RUNTIME = {
 ## Dev Server Architecture
 
 ```
-Browser ──(:3000)──► WebpackDevServer ──► HMR (static assets)
+Browser ──(:3000)──► Dev Server ──► HMR (static assets)
                           │
                           └── /api/* proxy ──► Node Server (:3001)
                                                     │
@@ -122,9 +125,9 @@ Browser ──(:3000)──► WebpackDevServer ──► HMR (static assets)
                                               registry.get(fnId)(...args)
 ```
 
-`ev dev` uses the webpack Node API directly:
-1. Creates webpack compiler + WebpackDevServer in-process
-2. Polls for `dist/server/manifest.json`
+`ev dev` uses the bundler's Node API directly:
+1. Creates bundler compiler + dev server in-process (utoopack by default)
+2. Watches for `dist/server/manifest.json`
 3. Writes a CJS bootstrap and runs it with `node --watch`
 
 ## Deployment Adapters

@@ -22,13 +22,15 @@
 | `@evjs/server` | `packages/server` | Server (Hono) |
 | `@evjs/build-tools` | `packages/build-tools` | Bundler-agnostic server function transforms (SWC) |
 | `@evjs/manifest` | `packages/manifest` | Shared manifest schema types (`ManifestV1`) |
-| `@evjs/bundler-webpack` | `packages/bundler-webpack` | Webpack adapter wrapping build-tools |
+| `@evjs/bundler-utoopack` | `packages/bundler-utoopack` | Utoopack adapter (default) |
+| `@evjs/bundler-webpack` | `packages/bundler-webpack` | Webpack adapter |
 
 ### Dependency Graph
 
 ```
-@evjs/cli ──► @evjs/ev, @evjs/bundler-webpack
-@evjs/bundler-webpack ──► @evjs/ev, @evjs/build-tools, @evjs/manifest
+@evjs/cli ──► @evjs/ev, @evjs/bundler-utoopack (default), @evjs/bundler-webpack
+@evjs/bundler-utoopack ──► @evjs/ev, @evjs/build-tools, @evjs/manifest, @utoo/pack
+@evjs/bundler-webpack ──► @evjs/ev, @evjs/build-tools, @evjs/manifest, webpack
 @evjs/ev ──► @evjs/manifest, @evjs/shared
 
 @evjs/shared (zero deps — runtime only)
@@ -41,7 +43,7 @@
 1. **Imports**: All imports at top of file. Use `import type` for type-only imports.
 2. **Linting**: Biome — no `any`, no `import * as` unless necessary.
 3. **No manual server entries**: The framework generates server entry dynamically.
-4. **No manual webpack configs**: Use `ev.config.ts` or convention-based defaults.
+4. **No manual bundler configs**: Use `ev.config.ts` or convention-based defaults.
 5. **Server function files**: Must start with `"use server";`. We recommend the `.server.ts` suffix or placing them in `src/api/`.
 6. **Server function exports**: Must be named async function exports (no default exports).
 7. **Module type**: All packages are ESM (`"type": "module"`). Use `.js` extensions in relative imports within compiled output.
@@ -89,21 +91,21 @@ npx biome check --write    # Fix lint/format
 ### `ev build` Flow
 
 1. `loadConfig(cwd)` — loads `ev.config.ts` or returns undefined for convention-based defaults
-2. `createWebpackConfig(config, cwd)` — generates webpack config object (no temp files)
-3. Calls `webpack()` Node API directly
-4. `@evjs/bundler-webpack` runs as a webpack plugin:
-   - Discovers `*.server.ts` files via glob
+2. Resolves the `BundlerAdapter` — utoopack by default, or webpack if explicitly configured
+3. Calls `BundlerAdapter.build()` which drives the compilation
+4. The bundler adapter:
+   - Discovers `"use server"` files
    - Applies SWC transforms (client + server variants)
-   - Runs child compiler for server bundle
+   - Builds the server bundle
    - Emits `dist/server/manifest.json` and `dist/client/manifest.json`
 
 ### `ev dev` Flow
 
 1. Same config resolution as `ev build`
-2. Starts `WebpackDevServer` for client
-3. Uses `compiler.hooks.done` to detect server bundle
-4. Auto-starts Node API server via `@evjs/server/node`
-5. Sets up proxy: `devServer.proxy["/api"] → localhost:3001`
+2. Calls `BundlerAdapter.dev()` which starts the dev server with HMR
+3. The adapter signals `onServerBundleReady` after server bundle is built
+4. The CLI core auto-starts the API server via `@evjs/server/node`
+5. Sets up proxy: `/api/*` → `localhost:3001`
 
 ## Agent Skills
 

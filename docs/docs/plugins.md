@@ -112,28 +112,38 @@ setup() {
 
 #### Type-Safe Bundler Config
 
-Import the `webpack()` helper from `@evjs/bundler-webpack` for full TypeScript support:
+Import the `webpack()` or `utoopack()` helpers for full TypeScript support across different bundlers:
 
 ```ts
 import { webpack } from "@evjs/bundler-webpack";
+import { utoopack } from "@evjs/bundler-utoopack";
 
 {
   name: "yaml-support",
   setup() {
     return {
-      bundler: webpack((config) => {
-        // `config` is fully typed as webpack.Configuration
-        config.module?.rules?.push({
-          test: /\.yaml$/,
-          type: "json",
-        });
-      }),
+      bundlerConfig(config, ctx) {
+        // Safe mutation for webpack
+        webpack((cfg) => {
+          cfg.module?.rules?.push({
+            test: /\.yaml$/,
+            type: "json",
+          });
+        })(config, ctx);
+
+        // Safe mutation for utoopack
+        utoopack((cfg) => {
+          cfg.module ??= {};
+          cfg.module.rules ??= {};
+          cfg.module.rules[".yaml"] = { type: "json" };
+        })(config, ctx);
+      },
     };
   },
 }
 ```
 
-The `webpack()` helper wraps your callback and narrows the config type. This pattern scales to future bundler adapters (e.g. `utoopack()`).
+The helpers wrap your callback and only execute when the corresponding bundler is active.
 
 ---
 
@@ -227,21 +237,30 @@ setup() {
 
 ```ts
 import { webpack } from "@evjs/bundler-webpack";
+import { utoopack } from "@evjs/bundler-utoopack";
 
 {
   name: "env-inject",
   setup() {
     return {
-      bundler: webpack((config) => {
-        const { DefinePlugin } = require("webpack");
-        config.plugins ??= [];
-        config.plugins.push(
-          new DefinePlugin({
-            __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
-            __APP_VERSION__: JSON.stringify("1.0.0"),
-          }),
-        );
-      }),
+      bundlerConfig(config, ctx) {
+        webpack((cfg) => {
+          const { DefinePlugin } = require("webpack");
+          cfg.plugins ??= [];
+          cfg.plugins.push(
+            new DefinePlugin({
+              __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+              __APP_VERSION__: JSON.stringify("1.0.0"),
+            }),
+          );
+        })(config, ctx);
+
+        utoopack((cfg) => {
+          cfg.env ??= {};
+          cfg.env.__BUILD_TIME__ = JSON.stringify(new Date().toISOString());
+          cfg.env.__APP_VERSION__ = JSON.stringify("1.0.0");
+        })(config, ctx);
+      },
     };
   },
 }

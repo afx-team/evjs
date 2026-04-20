@@ -74,13 +74,29 @@ Extensibility and richer build output.
   - [x] `client.routes: RouteEntry[]` — discovered route paths
 - [x] Template symlinks for `npx @evjs/create-app` (no duplication between examples and templates)
 
+## ✅ Stage 5 — Bundler-Agnostic Architecture
+
+Swappable bundler adapters with utoopack as the new default.
+
+- [x] `BundlerAdapter` interface in `@evjs/ev`
+  - [x] `build(config, cwd, hooks)` and `dev(config, cwd, callbacks, hooks)` contract
+  - [x] Generic `TBundlerCfg` type parameter for type-safe plugin hooks
+- [x] `@evjs/bundler-utoopack` adapter (default)
+  - [x] Production builds via `@utoo/pack` programmatic API
+  - [x] Dev server with HMR
+  - [x] `UtoopackManifestGenerator` for client/server manifest emission
+  - [x] Native `"use server"` directive support (no custom loader needed)
+- [x] `@evjs/bundler-webpack` refactored as alternative adapter
+- [x] Type-safe bundler config helpers: `webpack()` and `utoopack()`
+- [x] E2E tests run against both bundlers in parallel
+
 ## 🔲 Exploring
 
 Future directions under consideration. Nothing committed yet.
 
 - [ ] **MPA (Multi-Page Application)**
   - [ ] `client.pages` field: `Record<string, { entry, html? }>`
-  - [ ] Multiple webpack entries + per-page `generateHtml()` calls
+  - [ ] Multiple bundler entries + per-page `generateHtml()` calls
   - [ ] Takes precedence over `client.entry` / `client.html` when set
 - [ ] **Server context** _(next up)_
   - [ ] Provide request context (headers, cookies, auth) to server functions
@@ -91,6 +107,4 @@ Future directions under consideration. Nothing committed yet.
   - [ ] HTML streaming and hydration
 - [ ] **RSC**
   - [ ] React Server Components via Flight protocol
-- [ ] **More bundlers**
-  - [ ] Utoo, Rspack, and Vite plugins, leveraging `@evjs/build-tools`
 
