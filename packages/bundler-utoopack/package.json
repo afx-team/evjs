@@ -34,7 +34,7 @@
     "@evjs/ev": "*",
     "@evjs/manifest": "*",
     "@logtape/logtape": "^2.0.4",
-    "@utoo/pack": "^1.4.0-alpha.6",
+    "@utoo/pack": "^1.4.0-alpha.7",
     "chokidar": "^3.6.0",
     "fast-glob": "^3.3.3"
   },
