@@ -63,7 +63,7 @@ export const utoopackAdapter: BundlerAdapter = {
     );
     await generator.watch();
 
-    // Watch for server manifest readiness (utoopack emits server output
+    // Watch for server bundle readiness (utoopack emits server output
     // to dist/server/ when "use server" modules are discovered)
     if (config.serverEnabled) {
       const outDir = path.resolve(cwd, "dist/server");
@@ -73,36 +73,30 @@ export const utoopackAdapter: BundlerAdapter = {
       }
 
       let ready = false;
-      const checkManifest = async (filename?: string) => {
+      const checkReady = async (filename?: string) => {
         if (ready) return;
-        // Utoopack emits JS files directly into dist/server without a manifest
-        const hasJs = filename
-          ? filename.endsWith(".js")
-          : (await fs.promises.readdir(outDir).catch(() => [])).some((f) =>
-              f.endsWith(".js"),
+        const hasBundle = filename
+          ? filename === "stats.json" || filename.endsWith(".js")
+          : (await fs.promises.readdir(outDir).catch(() => [])).some(
+              (f) => f === "stats.json" || f.endsWith(".js"),
             );
 
-        if (hasJs) {
+        if (hasBundle) {
           ready = true;
-          // Create synthetic manifest for the CLI
-          const manifestPath = path.resolve(outDir, "manifest.json");
-          if (!fs.existsSync(manifestPath)) {
-            fs.writeFileSync(
-              manifestPath,
-              JSON.stringify({ version: 1, entry: "index.js" }),
-            );
-          }
+          // Re-generate manifests now that server stats are available
+          await generator.loadServerStats();
+          await generator.emit();
           callbacks.onServerBundleReady();
           watcher?.close();
         }
       };
 
       const watcher = fs.watch(outDir, (_eventType, filename) => {
-        if (filename) checkManifest(filename);
+        if (filename) checkReady(filename);
       });
 
       // Initial check in case it was written before the watcher attached
-      checkManifest();
+      checkReady();
     }
   },
 };
