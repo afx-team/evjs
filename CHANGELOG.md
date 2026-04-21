@@ -8,6 +8,18 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.0.25] — 2026-04-21
+
+### ✨ Features
+
+- **Micro-frontend support** — Added `unmount` method to `createApp` for micro-frontend support.
+
+### ♻️ Refactoring
+
+- **Simplified QueryClient** — Simplified `QueryClient` default assignment.
+
+---
+
 ## [0.0.24] — 2026-04-21
 
 ### ✨ Features
