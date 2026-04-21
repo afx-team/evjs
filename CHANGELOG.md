@@ -8,6 +8,14 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.0.24] — 2026-04-21
+
+### ✨ Features
+
+- **Route basepath and QueryClient IoC** — Added `basepath` routing feature and refactored TanStack `QueryClient` as an injected dependency, dropping the `queryClientConfig` parameter.
+
+---
+
 ## [0.0.23] — 2026-04-21
 
 ### ✨ Features
