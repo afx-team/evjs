@@ -42,6 +42,11 @@
       "types": "./esm/environments/ecma.d.ts",
       "import": "./esm/environments/ecma.js",
       "default": "./esm/environments/ecma.js"
+    },
+    "./app": {
+      "types": "./esm/app.d.ts",
+      "import": "./esm/app.js",
+      "default": "./esm/app.js"
     }
   },
   "scripts": {

@@ -56,7 +56,7 @@ export function createUtoopackConfig(
     ...(serverEnabled
       ? {
           server: {
-            entry: config.server.entry ?? _require.resolve("@evjs/server"),
+            entry: config.server.entry ?? _require.resolve("@evjs/server/app"),
             output: {
               path: path.resolve(cwd, "dist/server"),
               filename: isProduction
