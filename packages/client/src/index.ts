@@ -5,7 +5,6 @@
 export { ServerFunctionError } from "@evjs/shared";
 // Cherry-picked re-exports from @tanstack/react-query
 export type {
-  QueryClientConfig,
   QueryKey,
   UseInfiniteQueryOptions,
   UseInfiniteQueryResult,

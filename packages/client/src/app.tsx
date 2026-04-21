@@ -1,8 +1,4 @@
-import {
-  QueryClient,
-  type QueryClientConfig,
-  QueryClientProvider,
-} from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AnyRoute } from "@tanstack/react-router";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { createRoot } from "react-dom/client";
@@ -16,9 +12,13 @@ export interface CreateAppOptions<TRouteTree extends AnyRoute> {
   /** The root route tree produced by createRootRoute and addChildren. */
   routeTree: TRouteTree;
   /**
-   * Optional configuration for the TanStack Query Client.
+   * The base path for the application (e.g., '/app').
    */
-  queryClientConfig?: QueryClientConfig;
+  basepath?: string;
+  /**
+   * Optional custom QueryClient instance.
+   */
+  queryClient?: QueryClient;
   /**
    * server function endpoint path. When provided, automatically configures the transport.
    * Defaults to `/api/fn` if not specified.
@@ -81,16 +81,22 @@ export interface App<TRouter> {
 export function createApp<TRouteTree extends AnyRoute>(
   options: CreateAppOptions<TRouteTree>,
 ) {
-  const { routeTree, queryClientConfig, endpoint } = options;
+  const {
+    routeTree,
+    queryClient: customQueryClient,
+    endpoint,
+    basepath,
+  } = options;
 
   if (endpoint) {
     initTransport({ endpoint });
   }
 
-  const queryClient = new QueryClient(queryClientConfig);
+  const queryClient = customQueryClient ?? new QueryClient();
 
   const router = createRouter({
     routeTree,
+    basepath,
     defaultPreload: "intent",
     context: { queryClient } as AppRouteContext,
   });

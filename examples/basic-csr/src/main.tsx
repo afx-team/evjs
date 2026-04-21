@@ -1,4 +1,4 @@
-import { createApp } from "@evjs/client";
+import { createApp, QueryClient } from "@evjs/client";
 import { rootRoute } from "./pages/__root";
 import { aboutRoute } from "./pages/about";
 import { homeRoute } from "./pages/home";
@@ -10,7 +10,9 @@ const routeTree = rootRoute.addChildren([
   postsRoute.addChildren([postsIndexRoute, postDetailRoute]),
 ]);
 
-const app = createApp({ routeTree });
+const queryClient = new QueryClient();
+
+const app = createApp({ routeTree, basepath: "/admin", queryClient });
 
 // Register router type for full IDE type-safety on useParams, useSearch, Link, etc.
 declare module "@tanstack/react-router" {

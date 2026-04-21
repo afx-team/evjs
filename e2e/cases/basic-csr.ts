@@ -4,7 +4,7 @@ const test = createCsrExampleTest("basic-csr");
 
 test.describe("basic-csr", () => {
   test("renders home page", async ({ page, baseURL }) => {
-    await page.goto(baseURL);
+    await page.goto(`${baseURL}/admin`);
 
     await expect(page.getByText("Welcome Home!")).toBeVisible({
       timeout: 10_000,
@@ -15,7 +15,7 @@ test.describe("basic-csr", () => {
   });
 
   test("navigates to About page", async ({ page, baseURL }) => {
-    await page.goto(baseURL);
+    await page.goto(`${baseURL}/admin`);
 
     await page.click("text=About");
     await expect(page.getByRole("heading", { name: "About" })).toBeVisible({
@@ -30,7 +30,7 @@ test.describe("basic-csr", () => {
     page,
     baseURL,
   }) => {
-    await page.goto(baseURL);
+    await page.goto(`${baseURL}/admin`);
 
     await page.click("text=Posts");
     await expect(page.getByText("First Post")).toBeVisible({ timeout: 5_000 });
@@ -42,7 +42,7 @@ test.describe("basic-csr", () => {
     page,
     baseURL,
   }) => {
-    await page.goto(baseURL);
+    await page.goto(`${baseURL}/admin`);
 
     await page.click("text=Posts");
     await expect(page.getByText("First Post")).toBeVisible({ timeout: 5_000 });
@@ -54,7 +54,7 @@ test.describe("basic-csr", () => {
   });
 
   test("displays navigation links", async ({ page, baseURL }) => {
-    await page.goto(baseURL);
+    await page.goto(`${baseURL}/admin`);
 
     await expect(page.getByRole("link", { name: "Home" })).toBeVisible({
       timeout: 10_000,
