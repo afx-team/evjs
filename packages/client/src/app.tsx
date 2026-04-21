@@ -87,7 +87,7 @@ export function createApp<TRouteTree extends AnyRoute>(
 ) {
   const {
     routeTree,
-    queryClient: customQueryClient,
+    queryClient = new QueryClient(),
     endpoint,
     basepath,
   } = options;
@@ -95,8 +95,6 @@ export function createApp<TRouteTree extends AnyRoute>(
   if (endpoint) {
     initTransport({ endpoint });
   }
-
-  const queryClient = customQueryClient ?? new QueryClient();
 
   const router = createRouter({
     routeTree,
