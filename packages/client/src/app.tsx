@@ -54,6 +54,10 @@ export interface App<TRouter> {
    * @param container - A CSS selector string or an HTMLElement.
    */
   render(container: string | HTMLElement): void;
+  /**
+   * Unmount the application from the DOM.
+   */
+  unmount(): void;
 }
 
 /**
@@ -101,6 +105,8 @@ export function createApp<TRouteTree extends AnyRoute>(
     context: { queryClient } as AppRouteContext,
   });
 
+  let root: ReturnType<typeof createRoot> | undefined;
+
   function render(container: string | HTMLElement): void {
     const el =
       typeof container === "string"
@@ -113,7 +119,7 @@ export function createApp<TRouteTree extends AnyRoute>(
       );
     }
 
-    const root = createRoot(el);
+    root = createRoot(el);
     root.render(
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
@@ -121,5 +127,10 @@ export function createApp<TRouteTree extends AnyRoute>(
     );
   }
 
-  return { router, queryClient, render };
+  function unmount(): void {
+    root?.unmount();
+    root = undefined;
+  }
+
+  return { router, queryClient, render, unmount };
 }
