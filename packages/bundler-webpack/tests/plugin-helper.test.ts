@@ -1,4 +1,6 @@
+import type { EvBundlerCtx } from "@evjs/ev";
 import { describe, expect, it } from "vitest";
+import type { Configuration } from "webpack";
 import { webpack } from "../src/plugin-helper.js";
 
 describe("webpack() typed helper", () => {
@@ -14,17 +16,21 @@ describe("webpack() typed helper", () => {
     });
 
     // Simulate what the bundler adapter does: pass an unknown config
-    const realConfig: Record<string, unknown> = {
-      module: { rules: [] as unknown[] },
+    const realConfig: Configuration = {
+      module: { rules: [] },
     };
-    bundlerHook(realConfig, {
+    const CTX: EvBundlerCtx<unknown> = {
       mode: "production",
-      config: { bundler: { name: "webpack" } } as never,
-    });
+      cwd: "",
+      config: {
+        bundler: { name: "webpack" },
+      } as EvBundlerCtx<unknown>["config"],
+    };
+    bundlerHook(realConfig, CTX);
 
-    const module = realConfig.module as { rules: unknown[] };
+    const module = realConfig.module!;
     expect(module.rules).toHaveLength(1);
-    expect(module.rules[0]).toEqual({
+    expect(module.rules![0]).toEqual({
       test: /\.scss$/,
       use: ["style-loader", "css-loader", "sass-loader"],
     });

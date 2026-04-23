@@ -153,7 +153,7 @@ export async function dev(
   process.env.NODE_ENV ??= "development";
 
   // Collect plugin hooks
-  const pluginCtx: EvPluginContext = { mode: "development", config };
+  const pluginCtx: EvPluginContext = { mode: "development", cwd, config };
   const hooks = await collectPluginHooks(config.plugins, pluginCtx);
 
   // Run buildStart hooks
@@ -279,7 +279,7 @@ export async function build(
   process.env.NODE_ENV ??= "production";
 
   // Collect plugin hooks
-  const pluginCtx: EvPluginContext = { mode: "production", config };
+  const pluginCtx: EvPluginContext = { mode: "production", cwd, config };
   const hooks = await collectPluginHooks(config.plugins, pluginCtx);
 
   // Run buildStart hooks

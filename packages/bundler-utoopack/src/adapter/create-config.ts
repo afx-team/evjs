@@ -95,6 +95,7 @@ export function createUtoopackConfig(
   // Run plugin bundler hooks
   const ctx: EvBundlerCtx<ConfigComplete> = {
     mode: isProduction ? "production" : "development",
+    cwd,
     config,
   };
 

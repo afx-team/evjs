@@ -45,7 +45,11 @@ async function runBuildEndHooks(
 }
 
 const TEST_CONFIG = resolveConfig({});
-const CTX: EvPluginContext = { mode: "production", config: TEST_CONFIG };
+const CTX: EvPluginContext = {
+  mode: "production",
+  cwd: process.cwd(),
+  config: TEST_CONFIG,
+};
 
 describe("resolveConfig", () => {
   it("resolved config uses undefined bundler by default (CLI falls back to utoopack)", () => {

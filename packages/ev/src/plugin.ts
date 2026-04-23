@@ -86,6 +86,8 @@ export interface EvDocument {
 export interface EvBundlerCtx<TBundlerCfg = unknown> {
   /** The current mode. */
   mode: "development" | "production";
+  /** The current working directory. */
+  cwd: string;
   /** The fully resolved framework config. */
   config: ResolvedEvConfig<TBundlerCfg>;
 }
@@ -117,6 +119,8 @@ export interface EvPlugin<TBundlerCfg = unknown> {
 export interface EvPluginContext<TBundlerCfg = unknown> {
   /** Current mode. */
   mode: "development" | "production";
+  /** The current working directory. */
+  cwd: string;
   /** The fully resolved framework config. */
   config: ResolvedEvConfig<TBundlerCfg>;
 }

@@ -112,32 +112,20 @@ setup() {
 
 #### 类型安全的构建器配置
 
-导入 `webpack()` 或 `utoopack()` 辅助函数以在不同的构建器中获得完整的 TypeScript 支持：
+通常情况下，插件只需支持项目实际使用的构建器即可。evjs 默认使用 `utoopack`。导入 `utoopack()` 辅助函数以获得完整的 TypeScript 支持（如果您的项目使用 Webpack，则导入 `webpack()`）：
 
 ```ts
-import { webpack } from "@evjs/bundler-webpack";
 import { utoopack } from "@evjs/bundler-utoopack";
 
 {
   name: "yaml-support",
   setup() {
     return {
-      bundlerConfig(config, ctx) {
-        // 使用 webpack 的安全修改
-        webpack((cfg) => {
-          cfg.module?.rules?.push({
-            test: /\.yaml$/,
-            type: "json",
-          });
-        })(config, ctx);
-
-        // 使用 utoopack 的安全修改
-        utoopack((cfg) => {
-          cfg.module ??= {};
-          cfg.module.rules ??= {};
-          cfg.module.rules[".yaml"] = { type: "json" };
-        })(config, ctx);
-      },
+      bundlerConfig: utoopack((cfg) => {
+        cfg.module ??= {};
+        cfg.module.rules ??= {};
+        cfg.module.rules[".yaml"] = { type: "json" };
+      }),
     };
   },
 }

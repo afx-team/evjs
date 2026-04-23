@@ -112,38 +112,26 @@ setup() {
 
 #### Type-Safe Bundler Config
 
-Import the `webpack()` or `utoopack()` helpers for full TypeScript support across different bundlers:
+Usually, plugins only need to support the bundler your project actually uses. evjs uses `utoopack` by default. Import the `utoopack()` helper for full TypeScript support (or `webpack()` if your project uses Webpack):
 
 ```ts
-import { webpack } from "@evjs/bundler-webpack";
 import { utoopack } from "@evjs/bundler-utoopack";
 
 {
   name: "yaml-support",
   setup() {
     return {
-      bundlerConfig(config, ctx) {
-        // Safe mutation for webpack
-        webpack((cfg) => {
-          cfg.module?.rules?.push({
-            test: /\.yaml$/,
-            type: "json",
-          });
-        })(config, ctx);
-
-        // Safe mutation for utoopack
-        utoopack((cfg) => {
-          cfg.module ??= {};
-          cfg.module.rules ??= {};
-          cfg.module.rules[".yaml"] = { type: "json" };
-        })(config, ctx);
-      },
+      bundlerConfig: utoopack((cfg) => {
+        cfg.module ??= {};
+        cfg.module.rules ??= {};
+        cfg.module.rules[".yaml"] = { type: "json" };
+      }),
     };
   },
 }
 ```
 
-The helpers wrap your callback and only execute when the corresponding bundler is active.
+The helper wraps your callback and only executes when the corresponding bundler is active.
 
 ---
 

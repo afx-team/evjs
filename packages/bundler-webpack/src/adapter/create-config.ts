@@ -201,6 +201,7 @@ export async function createWebpackConfig(
 
   const ctx: EvBundlerCtx<import("webpack").Configuration> = {
     mode: isProduction ? "production" : "development",
+    cwd,
     config,
   };
 
