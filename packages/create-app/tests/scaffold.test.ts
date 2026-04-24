@@ -14,6 +14,7 @@ describe("create-app scaffolding", () => {
   it("has all expected templates", () => {
     const expectedTemplates = [
       "basic-csr",
+      "basic-mpa",
       "basic-server-fns",
       "basic-server-routes",
       "configured-server-fns",
@@ -49,9 +50,16 @@ describe("create-app scaffolding", () => {
         `${template} should have index.html`,
       ).toBe(true);
 
+      const hasSpaEntry = fs.existsSync(
+        path.join(templateDir, "src", "main.tsx"),
+      );
+      const hasMpaEntries =
+        fs.existsSync(path.join(templateDir, "src", "home", "main.tsx")) &&
+        fs.existsSync(path.join(templateDir, "src", "about", "main.tsx"));
+
       expect(
-        fs.existsSync(path.join(templateDir, "src", "main.tsx")),
-        `${template} should have src/main.tsx`,
+        hasSpaEntry || hasMpaEntries,
+        `${template} should have either src/main.tsx or MPA page entries`,
       ).toBe(true);
     }
   });

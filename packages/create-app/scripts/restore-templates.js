@@ -11,6 +11,7 @@ const templatesDir = path.resolve(__dirname, "../templates");
 
 const symlinkTargets = {
   "basic-csr": "../../../examples/basic-csr",
+  "basic-mpa": "../../../examples/basic-mpa",
   "basic-fns-ecma": "../../../examples/basic-fns-ecma",
   "basic-plugins": "../../../examples/basic-plugins",
   "basic-server-fns": "../../../examples/basic-server-fns",

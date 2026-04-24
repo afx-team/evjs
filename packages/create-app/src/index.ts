@@ -34,6 +34,10 @@ program
           message: "Select a template:",
           choices: [
             { title: "Basic CSR (Client-Side Rendering)", value: "basic-csr" },
+            {
+              title: "Basic MPA (Multi-Page Application)",
+              value: "basic-mpa",
+            },
             { title: "Basic Server Functions", value: "basic-server-fns" },
             {
               title:

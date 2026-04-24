@@ -23,6 +23,7 @@ npx @evjs/create-app [name] [options]
 | Name | Description |
 |------|-------------|
 | **`basic-csr`** | Client-side only (React + TanStack Router). |
+| **`basic-mpa`** | Multi-page application with shared HTML template. |
 | **`basic-server-fns`** | Basic full-stack with server functions. |
 | **`configured-server-fns`** | Full-stack with `@evjs/create-app` + `ev.config.ts`. |
 | **`complex-routing`** | Nested layouts, loaders, and search params. |

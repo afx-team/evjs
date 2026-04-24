@@ -1,0 +1,21 @@
+{
+  "name": "example-basic-mpa",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npx ev dev",
+    "build": "npx ev build",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@evjs/ev": "*",
+    "@evjs/cli": "*",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.8",
+    "typescript": "^6.0.2"
+  }
+}
