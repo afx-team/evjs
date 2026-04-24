@@ -247,8 +247,7 @@ export class ManifestCollector {
   }
 
   getClientManifest(assetPrefix?: string): ClientManifest {
-    const prefix =
-      assetPrefix && assetPrefix !== "/" ? assetPrefix : undefined;
+    const prefix = assetPrefix && assetPrefix !== "/" ? assetPrefix : undefined;
     const routes = resolveRoutes(this.routes);
 
     // MPA mode: emit per-page assets

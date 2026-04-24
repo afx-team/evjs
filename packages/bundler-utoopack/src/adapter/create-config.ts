@@ -14,8 +14,8 @@ const _require = createRequire(import.meta.url);
 import {
   type EvBundlerCtx,
   type EvPluginHooks,
-  type ResolvedEvConfig,
   isMpa,
+  type ResolvedEvConfig,
 } from "@evjs/ev";
 import type { ConfigComplete } from "@utoo/pack";
 
@@ -39,7 +39,7 @@ export function createUtoopackConfig(
     mode: isProduction ? "production" : "development",
     // MPA mode: one entry per page; SPA mode: single entry
     entry: isMpa(config)
-      ? Object.entries(config.pages!).map(([name, page]) => ({
+      ? Object.entries(config.pages ?? {}).map(([name, page]) => ({
           import: page.entry,
           name,
         }))

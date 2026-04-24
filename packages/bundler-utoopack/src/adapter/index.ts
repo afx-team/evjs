@@ -12,8 +12,8 @@ import path from "node:path";
 import {
   type BundlerAdapter,
   type EvPluginHooks,
-  type ResolvedEvConfig,
   isMpa,
+  type ResolvedEvConfig,
 } from "@evjs/ev";
 import { getLogger } from "@logtape/logtape";
 import type { ConfigComplete } from "@utoo/pack";
@@ -58,7 +58,7 @@ async function generateAndEmitHtml(
         { assets: { js: string[]; css: string[] } }
       >,
     )) {
-      const pageConfig = config.pages![pageName];
+      const pageConfig = config.pages?.[pageName];
       if (!pageConfig) continue;
 
       const doc = generateHtml({

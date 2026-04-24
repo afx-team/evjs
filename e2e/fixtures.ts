@@ -141,7 +141,7 @@ async function loadExampleConfig(
  */
 async function buildExample(
   exampleDir: string,
-  bundlerName: string,
+  _bundlerName: string,
   serverEnabled: boolean,
 ) {
   const { build } = await import("@evjs/cli");
