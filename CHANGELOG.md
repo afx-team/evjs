@@ -8,6 +8,27 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.0.27] — 2026-04-24
+
+### ✨ Features
+
+- **Removed webpack backend support** — Removed webpack-specific bundler support and aligned the framework around `@evjs/bundler-utoopack`.
+- **MPA support** — Added Multi-Page Application support via `pages` config entries in `ev.config.ts`.
+
+### 🧪 Testing
+
+- **MPA end-to-end coverage** — Added Playwright e2e coverage for the new `basic-mpa` example.
+
+### 🧰 Scaffolding
+
+- **`create-app` template updates** — Added `basic-mpa` template support and updated template link mappings.
+
+### 📝 Documentation
+
+- **Bundler terminology cleanup** — Updated docs and package READMEs to reflect utoopack-oriented terminology.
+
+---
+
 ## [0.0.26] — 2026-04-24
 
 ### ✨ Features
