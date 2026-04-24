@@ -8,6 +8,22 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.0.26] — 2026-04-24
+
+### ✨ Features
+
+- **Added `cwd`** — Added `cwd` to the plugin helper.
+
+### 🐛 Bug Fixes
+
+- **Type strictness in plugin helpers** — Fixed `EvBundlerCtx<Configuration>` type mappings in `@evjs/bundler-webpack` to securely expose the full typed bundler configuration to plugins.
+
+### 📝 Documentation
+
+- **Plugin examples** — Updated bundler configuration examples for plugin developers.
+
+---
+
 ## [0.0.25] — 2026-04-21
 
 ### ✨ Features
