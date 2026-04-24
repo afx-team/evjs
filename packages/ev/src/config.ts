@@ -45,10 +45,17 @@ export interface ResolvedServerConfig {
 export interface ResolvedEvConfig<TBundlerCfg = unknown> {
   /** Resolved asset prefix for CDN deployment, always ends with "/". */
   assetPrefix: string;
-  /** Client entry point. */
+  /** Client entry point (SPA mode). */
   entry: string;
-  /** HTML template path. */
+  /** HTML template path (SPA mode). */
   html: string;
+  /**
+   * Resolved pages for MPA mode.
+   *
+   * When set, the build produces one HTML file per page, each with its own
+   * entry bundle. The single-entry `entry` and `html` fields are ignored.
+   */
+  pages?: Record<string, { entry: string; html: string }>;
   /** Client dev server options. */
   dev: ResolvedDevConfig;
   /** Whether the server is enabled (true unless `server: false`). */
@@ -124,6 +131,27 @@ export interface EvConfig<TBundlerCfg = unknown> {
    * Framework plugins to extend behavior or modify the bundler config.
    */
   plugins?: EvPlugin<TBundlerCfg>[];
+
+  /**
+   * MPA (Multi-Page Application) configuration.
+   *
+   * Define multiple independent page entries, each with its own JS entry
+   * point and optional HTML template. When set, the build produces one
+   * HTML file per page and the single-entry `entry` / `html` fields are
+   * ignored.
+   *
+   * @example
+   * ```ts
+   * pages: {
+   *   home: { entry: "./src/pages/home/main.tsx" },
+   *   about: {
+   *     entry: "./src/pages/about/main.tsx",
+   *     html: "./src/pages/about/index.html",
+   *   },
+   * }
+   * ```
+   */
+  pages?: Record<string, PageConfig>;
 }
 
 /**
@@ -151,10 +179,27 @@ export function resolveConfig<TBundlerCfg = unknown>(
   const rawPrefix = config.assetPrefix ?? CONFIG_DEFAULTS.assetPrefix;
   const assetPrefix = rawPrefix.endsWith("/") ? rawPrefix : `${rawPrefix}/`;
 
+  const defaultHtml = config.html ?? CONFIG_DEFAULTS.html;
+
+  // Resolve MPA pages — fill in default html per page
+  let resolvedPages:
+    | Record<string, { entry: string; html: string }>
+    | undefined;
+  if (config.pages && Object.keys(config.pages).length > 0) {
+    resolvedPages = {};
+    for (const [name, page] of Object.entries(config.pages)) {
+      resolvedPages[name] = {
+        entry: page.entry,
+        html: page.html ?? defaultHtml,
+      };
+    }
+  }
+
   return {
     assetPrefix,
     entry: config.entry ?? CONFIG_DEFAULTS.entry,
-    html: config.html ?? CONFIG_DEFAULTS.html,
+    html: defaultHtml,
+    pages: resolvedPages,
     dev: {
       port: config.dev?.port ?? CONFIG_DEFAULTS.port,
       https: config.dev?.https ?? false,
@@ -183,4 +228,21 @@ export function defineConfig<TBundlerCfg = unknown>(
   config: EvConfig<TBundlerCfg>,
 ): EvConfig<TBundlerCfg> {
   return config;
+}
+
+/**
+ * Configuration for a single page in MPA mode.
+ */
+export interface PageConfig {
+  /** Client entry point for this page. */
+  entry: string;
+  /** HTML template path. If omitted, uses the top-level `html` default. */
+  html?: string;
+}
+
+/**
+ * Whether the resolved config is in MPA (multi-page) mode.
+ */
+export function isMpa<T = unknown>(config: ResolvedEvConfig<T>): boolean {
+  return config.pages !== undefined && Object.keys(config.pages).length > 0;
 }

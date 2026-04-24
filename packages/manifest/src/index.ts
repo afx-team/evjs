@@ -60,7 +60,7 @@ export interface ClientManifest {
   version: 1;
   /** URL prefix for all assets when deployed to CDN. Default: "/". */
   assetPrefix?: string;
-  /** Bundle asset paths for HTML injection. */
+  /** Bundle asset paths for HTML injection (SPA mode). */
   assets: {
     /** JavaScript bundle paths. */
     js: string[];
@@ -68,6 +68,22 @@ export interface ClientManifest {
     css: string[];
   };
   /** Discovered client routes. */
+  routes?: RouteEntry[];
+  /**
+   * Per-page assets (MPA mode).
+   *
+   * When set, each key is a page name and its value contains the
+   * page-specific asset lists. The top-level `assets` will be empty
+   * in this case.
+   */
+  pages?: Record<string, PageManifestEntry>;
+}
+
+/** Per-page manifest entry for MPA mode. */
+export interface PageManifestEntry {
+  /** Bundle asset paths for this page. */
+  assets: { js: string[]; css: string[] };
+  /** Discovered routes for this page. */
   routes?: RouteEntry[];
 }
 
@@ -189,6 +205,7 @@ export class ManifestCollector {
   entry: string | undefined = undefined;
   private jsAssets: string[] = [];
   private cssAssets: string[] = [];
+  private pageAssets: Record<string, { js: string[]; css: string[] }> = {};
 
   addServerFn(id: string, meta: ServerFnEntry) {
     this.fns[id] = meta;
@@ -203,12 +220,22 @@ export class ManifestCollector {
     this.cssAssets = css;
   }
 
+  /** Set per-page assets for MPA mode. */
+  setPageAssets(pageName: string, js: string[], css: string[]) {
+    this.pageAssets[pageName] = { js, css };
+  }
+
   getJsAssets(): string[] {
     return this.jsAssets;
   }
 
   getCssAssets(): string[] {
     return this.cssAssets;
+  }
+
+  /** Whether page-level assets have been collected (MPA mode). */
+  hasMpaAssets(): boolean {
+    return Object.keys(this.pageAssets).length > 0;
   }
 
   getServerManifest(): ServerManifest {
@@ -220,11 +247,31 @@ export class ManifestCollector {
   }
 
   getClientManifest(assetPrefix?: string): ClientManifest {
+    const prefix =
+      assetPrefix && assetPrefix !== "/" ? assetPrefix : undefined;
+    const routes = resolveRoutes(this.routes);
+
+    // MPA mode: emit per-page assets
+    if (this.hasMpaAssets()) {
+      const pages: Record<string, PageManifestEntry> = {};
+      for (const [name, { js, css }] of Object.entries(this.pageAssets)) {
+        pages[name] = { assets: { js, css }, routes };
+      }
+      return {
+        version: 1,
+        assetPrefix: prefix,
+        assets: { js: [], css: [] },
+        routes,
+        pages,
+      };
+    }
+
+    // SPA mode
     return {
       version: 1,
-      assetPrefix: assetPrefix && assetPrefix !== "/" ? assetPrefix : undefined,
+      assetPrefix: prefix,
       assets: { js: this.jsAssets, css: this.cssAssets },
-      routes: resolveRoutes(this.routes),
+      routes,
     };
   }
 }

@@ -9,7 +9,12 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import type { BundlerAdapter, EvPluginHooks, ResolvedEvConfig } from "@evjs/ev";
+import {
+  type BundlerAdapter,
+  type EvPluginHooks,
+  type ResolvedEvConfig,
+  isMpa,
+} from "@evjs/ev";
 import { getLogger } from "@logtape/logtape";
 import type { ConfigComplete } from "@utoo/pack";
 import { UtoopackManifestGenerator } from "../manifest-generator.js";
@@ -43,6 +48,49 @@ async function generateAndEmitHtml(
   }
 
   const { generateHtml } = await import("@evjs/build-tools");
+  const { buildHtml } = await import("@evjs/ev");
+
+  // MPA mode: generate one HTML file per page
+  if (isMpa(config) && clientManifest.pages) {
+    for (const [pageName, pageManifest] of Object.entries(
+      clientManifest.pages as Record<
+        string,
+        { assets: { js: string[]; css: string[] } }
+      >,
+    )) {
+      const pageConfig = config.pages![pageName];
+      if (!pageConfig) continue;
+
+      const doc = generateHtml({
+        template: path.resolve(cwd, pageConfig.html),
+        js: pageManifest.assets.js,
+        css: pageManifest.assets.css,
+        assetPrefix: config.assetPrefix,
+      });
+
+      const finalHtml = await buildHtml({
+        // biome-ignore lint/suspicious/noExplicitAny: DOM interfaces
+        doc: doc as any,
+        assetPrefix: config.assetPrefix,
+        // biome-ignore lint/suspicious/noExplicitAny: Bundler-agnostic hook generic
+        hooks: hooks as any,
+        clientManifest,
+        serverManifest,
+      });
+
+      const outPath = path.resolve(
+        cwd,
+        isServerEnabled
+          ? `dist/client/${pageName}.html`
+          : `dist/${pageName}.html`,
+      );
+      await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
+      await fs.promises.writeFile(outPath, finalHtml, "utf-8");
+    }
+    return;
+  }
+
+  // SPA mode: single index.html
   const doc = generateHtml({
     template: path.resolve(cwd, config.html),
     js: clientManifest.assets.js,
@@ -50,7 +98,6 @@ async function generateAndEmitHtml(
     assetPrefix: config.assetPrefix,
   });
 
-  const { buildHtml } = await import("@evjs/ev");
   const finalHtml = await buildHtml({
     // biome-ignore lint/suspicious/noExplicitAny: DOM interfaces
     doc: doc as any,

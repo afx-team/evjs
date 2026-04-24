@@ -11,7 +11,12 @@ import path from "node:path";
 
 const _require = createRequire(import.meta.url);
 
-import type { EvBundlerCtx, EvPluginHooks, ResolvedEvConfig } from "@evjs/ev";
+import {
+  type EvBundlerCtx,
+  type EvPluginHooks,
+  type ResolvedEvConfig,
+  isMpa,
+} from "@evjs/ev";
 import type { ConfigComplete } from "@utoo/pack";
 
 /**
@@ -32,11 +37,17 @@ export function createUtoopackConfig(
 
   const utoopackConfig: ConfigComplete = {
     mode: isProduction ? "production" : "development",
-    entry: [
-      {
-        import: config.entry,
-      },
-    ],
+    // MPA mode: one entry per page; SPA mode: single entry
+    entry: isMpa(config)
+      ? Object.entries(config.pages!).map(([name, page]) => ({
+          import: page.entry,
+          name,
+        }))
+      : [
+          {
+            import: config.entry,
+          },
+        ],
     output: {
       path: path.resolve(cwd, serverEnabled ? "dist/client" : "dist"),
       filename: isProduction ? "[name].[contenthash:8].js" : "[name].js",

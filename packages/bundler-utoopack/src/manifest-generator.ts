@@ -16,7 +16,7 @@ const logger = getLogger(["evjs", "bundler-utoopack", "manifest"]);
 /**
  * Parse a Utoopack stats.json file and extract asset filenames.
  *
- * @returns lists of JS and CSS asset filenames from the main entrypoint.
+ * @returns lists of JS and CSS asset filenames from the main entrypoint (SPA mode).
  */
 function parseClientStats(stats: {
   entrypoints?: Record<string, { assets?: Array<{ name?: string }> }>;
@@ -39,6 +39,36 @@ function parseClientStats(stats: {
     }
   }
   return { js: jsFiles, css: cssFiles };
+}
+
+/**
+ * Parse a Utoopack stats.json file and extract per-entrypoint asset filenames.
+ *
+ * @returns a map of entrypoint name → { js, css } asset lists (MPA mode).
+ */
+function parseClientStatsPerEntrypoint(stats: {
+  entrypoints?: Record<string, { assets?: Array<{ name?: string }> }>;
+}): Record<string, { js: string[]; css: string[] }> {
+  const result: Record<string, { js: string[]; css: string[] }> = {};
+  const entrypoints = stats.entrypoints;
+  if (!entrypoints) return result;
+
+  for (const [name, entry] of Object.entries(entrypoints)) {
+    const js: string[] = [];
+    const css: string[] = [];
+    if (Array.isArray(entry.assets)) {
+      for (const asset of entry.assets) {
+        const assetName = asset.name?.replace(/^\.\//, "");
+        if (assetName?.endsWith(".js")) {
+          js.push(assetName);
+        } else if (assetName?.endsWith(".css")) {
+          css.push(assetName);
+        }
+      }
+    }
+    result[name] = { js, css };
+  }
+  return result;
 }
 
 /**
@@ -101,6 +131,9 @@ export class UtoopackManifestGenerator {
    * Load client assets from the client `stats.json` emitted by Utoopack.
    * In development, this file may not exist, which is expected since
    * Utoopack handles HTML client injection natively.
+   *
+   * In MPA mode (multiple entrypoints), assets are collected per-page
+   * via `setPageAssets()`. In SPA mode, a single `setAssets()` call is used.
    */
   async loadClientStats() {
     const statsPath = path.resolve(
@@ -114,8 +147,22 @@ export class UtoopackManifestGenerator {
     try {
       const statsStr = await fs.promises.readFile(statsPath, "utf-8");
       const stats = JSON.parse(statsStr);
-      const { js, css } = parseClientStats(stats);
-      this.collector.setAssets(js, css);
+
+      // Detect MPA: multiple entrypoints in stats.json
+      const entrypoints = stats.entrypoints;
+      const entrypointCount = entrypoints ? Object.keys(entrypoints).length : 0;
+
+      if (entrypointCount > 1) {
+        // MPA mode: per-page assets
+        const perPage = parseClientStatsPerEntrypoint(stats);
+        for (const [name, { js, css }] of Object.entries(perPage)) {
+          this.collector.setPageAssets(name, js, css);
+        }
+      } else {
+        // SPA mode: single entrypoint
+        const { js, css } = parseClientStats(stats);
+        this.collector.setAssets(js, css);
+      }
     } catch (err) {
       logger.warn`Failed to parse client stats.json: ${err}`;
       this.collector.setAssets([], []);
