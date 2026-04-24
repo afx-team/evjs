@@ -23,14 +23,12 @@
 | `@evjs/build-tools` | `packages/build-tools` | Bundler-agnostic server function transforms (SWC) |
 | `@evjs/manifest` | `packages/manifest` | Shared manifest schema types (`ManifestV1`) |
 | `@evjs/bundler-utoopack` | `packages/bundler-utoopack` | Utoopack adapter (default) |
-| `@evjs/bundler-webpack` | `packages/bundler-webpack` | Webpack adapter |
 
 ### Dependency Graph
 
 ```
-@evjs/cli ──► @evjs/ev, @evjs/bundler-utoopack (default), @evjs/bundler-webpack
+@evjs/cli ──► @evjs/ev, @evjs/bundler-utoopack (default)
 @evjs/bundler-utoopack ──► @evjs/ev, @evjs/build-tools, @evjs/manifest, @utoo/pack
-@evjs/bundler-webpack ──► @evjs/ev, @evjs/build-tools, @evjs/manifest, webpack
 @evjs/ev ──► @evjs/manifest, @evjs/shared
 
 @evjs/shared (zero deps — runtime only)
@@ -91,7 +89,7 @@ npx biome check --write    # Fix lint/format
 ### `ev build` Flow
 
 1. `loadConfig(cwd)` — loads `ev.config.ts` or returns undefined for convention-based defaults
-2. Resolves the `BundlerAdapter` — utoopack by default, or webpack if explicitly configured
+2. Resolves the `BundlerAdapter` — utoopack (the only bundler)
 3. Calls `BundlerAdapter.build()` which drives the compilation
 4. The bundler adapter:
    - Discovers `"use server"` files

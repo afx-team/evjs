@@ -4,7 +4,7 @@
 const posts = [
   {
     id: "101",
-    title: "Hello Webpack",
+    title: "Hello evjs",
     content: "Building a custom evjs plugin",
   },
   {

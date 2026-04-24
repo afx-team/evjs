@@ -2,7 +2,7 @@
  * Map ResolvedEvConfig to a utoopack configuration object.
  *
  * Utoopack uses a JSON-based config with `build()` / `dev()` programmatic API.
- * Unlike webpack, it handles "use server" directives natively via the
+ * It handles "use server" directives natively via the
  * `server.functions.callServerModule` config field.
  */
 

@@ -1,12 +1,11 @@
 import { utoopack } from "@evjs/bundler-utoopack";
-import { webpack } from "@evjs/bundler-webpack";
 import { defineConfig } from "@evjs/ev";
 
 /**
  * Example: evjs plugin system.
  *
  * Demonstrates all available plugin hooks:
- * - `bundlerConfig` — modify the underlying bundler config (type-safe via webpack() or utoopack() helpers)
+ * - `bundlerConfig` — modify the underlying bundler config (type-safe via utoopack() helper)
  * - `buildStart`    — run logic before compilation begins
  * - `buildEnd`      — run logic after compilation completes
  * - `transformHtml` — modify the output HTML document after asset injection
@@ -25,16 +24,9 @@ export default defineConfig({
             console.log("[example-txt-plugin] build starting...");
           },
 
-          // Type-safe bundler config mutation via helpers.
-          // These hooks only run when the corresponding bundler is active.
+          // Type-safe bundler config mutation via the utoopack helper.
+          // This hook only runs when utoopack is the active bundler.
           bundlerConfig(config, ctx) {
-            webpack((cfg) => {
-              cfg.module?.rules?.push({
-                test: /\.txt$/,
-                use: "raw-loader",
-              });
-            })(config, ctx);
-
             utoopack((cfg) => {
               // Add custom loaders or rules to utoopack
               cfg.module ??= {};

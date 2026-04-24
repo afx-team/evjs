@@ -86,9 +86,9 @@ Swappable bundler adapters with utoopack as the new default.
   - [x] Dev server with HMR
   - [x] `UtoopackManifestGenerator` for client/server manifest emission
   - [x] Native `"use server"` directive support (no custom loader needed)
-- [x] `@evjs/bundler-webpack` refactored as alternative adapter
-- [x] Type-safe bundler config helpers: `webpack()` and `utoopack()`
-- [x] E2E tests run against both bundlers in parallel
+- [x] `@evjs/bundler-webpack` removed (utoopack is the sole bundler)
+- [x] Type-safe bundler config helper: `utoopack()`
+- [x] E2E tests run against utoopack
 
 ## 🔲 Exploring
 

@@ -12,13 +12,6 @@ export default defineConfig<ExtTestOptions>({
   },
   projects: [
     {
-      name: "webpack",
-      use: {
-        browserName: "chromium",
-        bundlerName: "webpack",
-      },
-    },
-    {
       name: "utoopack",
       use: {
         browserName: "chromium",

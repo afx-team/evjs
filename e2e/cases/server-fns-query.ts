@@ -16,7 +16,7 @@ test.describe("server-fns-query", () => {
   test("loads posts via query proxy", async ({ page, baseURL }) => {
     await page.goto(baseURL);
 
-    await expect(page.getByText("Hello Webpack")).toBeVisible({
+    await expect(page.getByText("Hello evjs")).toBeVisible({
       timeout: 10_000,
     });
   });

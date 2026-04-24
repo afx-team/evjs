@@ -86,7 +86,6 @@ test.describe("Scaffolding CLI E2E", () => {
       }
     }
     // Force transitive @evjs/* deps to use local tarballs too
-    // (e.g. @evjs/cli depends on @evjs/bundler-webpack: "*")
     scaffoldPkg.overrides = {};
     for (const [name, ref] of Object.entries(packageTgzMap)) {
       scaffoldPkg.overrides[name] = ref;

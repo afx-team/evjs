@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { utoopackAdapter } from "@evjs/bundler-utoopack";
-import { webpack, webpackAdapter } from "@evjs/bundler-webpack";
 import { build } from "@evjs/cli";
 import type { BundlerAdapter, EvPlugin } from "@evjs/ev";
 import { configure, getConsoleSink } from "@logtape/logtape";
@@ -12,9 +11,6 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
  *
  * Each test simulates a realistic plugin that a user would write,
  * runs a real build, and verifies the plugin achieved its goal.
- *
- * Bundler-agnostic scenarios run against both webpack and utoopack.
- * Webpack-specific tests (e.g. DefinePlugin) run only with webpack.
  */
 
 const EXAMPLES = path.resolve(import.meta.dirname, "../examples");
@@ -22,7 +18,6 @@ const CSR_APP = path.resolve(EXAMPLES, "basic-csr");
 const FULLSTACK_APP = path.resolve(EXAMPLES, "basic-server-fns");
 
 const BUNDLERS: [string, BundlerAdapter<unknown>][] = [
-  ["webpack", webpackAdapter as unknown as BundlerAdapter<unknown>],
   ["utoopack", utoopackAdapter as unknown as BundlerAdapter<unknown>],
 ];
 
@@ -90,50 +85,7 @@ describe.each(BUNDLERS)("build notifier plugin [%s]", (_name, bundler) => {
   }, 60_000);
 });
 
-// ─── Scenario 2: Webpack Define Plugin ──────────────────────────────────
-// A plugin that injects build-time constants via webpack.DefinePlugin.
-// Uses the typed webpack() helper for type-safe config mutation.
-// This is webpack-specific and only runs with the webpack bundler.
-
-describe("webpack define plugin", () => {
-  it("injects build-time constants into webpack config", async () => {
-    process.chdir(CSR_APP);
-
-    let injectedPluginCount = 0;
-
-    // biome-ignore lint/suspicious/noExplicitAny: test mock generic bypass
-    const envPlugin: any = {
-      name: "env-inject",
-      setup() {
-        return {
-          bundlerConfig: webpack((config) => {
-            const { DefinePlugin } = require("webpack");
-            config.plugins ??= [];
-            config.plugins.push(
-              new DefinePlugin({
-                __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
-                __APP_VERSION__: JSON.stringify("1.0.0"),
-              }),
-            );
-            injectedPluginCount = config.plugins.length;
-          }),
-        };
-      },
-    };
-
-    await build({
-      server: false,
-      // biome-ignore lint/suspicious/noExplicitAny: TS contravariance mismatch in test wrapper
-      bundler: webpackAdapter as any,
-      plugins: [envPlugin],
-    });
-
-    // The plugin was added to an existing plugins array
-    expect(injectedPluginCount).toBeGreaterThan(1);
-  }, 60_000);
-});
-
-// ─── Scenario 3: Build Manifest Writer ──────────────────────────────────
+// ─── Scenario 2: Build Manifest Writer ──────────────────────────────────
 // A plugin that writes a custom deployment manifest after build.
 // Common for CI pipelines that need asset hashes or deploy metadata.
 
@@ -175,7 +127,7 @@ describe.each(BUNDLERS)("deployment manifest plugin [%s]", (_name, bundler) => {
   }, 60_000);
 });
 
-// ─── Scenario 4: Fullstack Server Function Discovery ────────────────────
+// ─── Scenario 3: Fullstack Server Function Discovery ────────────────────
 // A plugin that inspects server function metadata after a fullstack build.
 // Useful for documentation generators or API introspection tools.
 
@@ -215,62 +167,7 @@ describe.each(
   }, 60_000);
 });
 
-// ─── Scenario 5: Composing Multiple Plugins ─────────────────────────────
-// Real apps use multiple plugins. Each plugin should see the effects of
-// previous plugins (e.g., plugin B sees the webpack rule plugin A added).
-// This test is webpack-specific because it mutates webpack config.
-
-describe("plugin composition [webpack]", () => {
-  it("later plugins see config mutations from earlier plugins", async () => {
-    process.chdir(CSR_APP);
-
-    let ruleCountSeenBySecondPlugin = 0;
-
-    // biome-ignore lint/suspicious/noExplicitAny: test mock generic bypass
-    const addRule: any = {
-      name: "add-rule",
-      setup: () => ({
-        bundlerConfig: webpack((config) => {
-          config.module ??= {};
-          config.module.rules ??= [];
-          config.module.rules.push({
-            test: /\.yaml$/,
-            type: "json",
-          });
-        }),
-      }),
-    };
-
-    // biome-ignore lint/suspicious/noExplicitAny: test mock generic bypass
-    const inspector: any = {
-      name: "inspector",
-      setup: () => ({
-        bundlerConfig: webpack((config) => {
-          const yamlRule = config.module?.rules?.find(
-            (r) =>
-              r &&
-              typeof r === "object" &&
-              "test" in r &&
-              String(r.test) === String(/\.yaml$/),
-          );
-          ruleCountSeenBySecondPlugin = yamlRule ? 1 : 0;
-        }),
-      }),
-    };
-
-    await build({
-      server: false,
-      // biome-ignore lint/suspicious/noExplicitAny: TS contravariance mismatch in test wrapper
-      bundler: webpackAdapter as any,
-      plugins: [addRule, inspector],
-    });
-
-    // The inspector plugin should have found the rule added by addRule
-    expect(ruleCountSeenBySecondPlugin).toBe(1);
-  }, 60_000);
-});
-
-// ─── Scenario 6: Transform HTML via DOM Manipulation ────────────────────
+// ─── Scenario 4: Transform HTML via DOM Manipulation ────────────────────
 // A plugin that uses the EvDocument DOM API to inject a <meta> tag.
 // Verifies that transformHtml receives a live DOM document that plugins
 // can mutate with standard DOM methods.
@@ -339,7 +236,7 @@ describe.each(
   }, 60_000);
 });
 
-// ─── Scenario 7: Multiple transformHtml Plugins Compose ─────────────────
+// ─── Scenario 5: Multiple transformHtml Plugins Compose ─────────────────
 // Multiple plugins should all get the same document reference and their
 // mutations should accumulate in order.
 

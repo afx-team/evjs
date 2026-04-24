@@ -13,7 +13,7 @@
 
 /** A registered server function entry. */
 export interface ServerFnEntry {
-  /** Webpack module identifier (hash-based, no source paths exposed). */
+  /** Bundler module identifier (hash-based, no source paths exposed). */
   moduleId: string;
   /** Exported function name. */
   export: string;
@@ -21,7 +21,7 @@ export interface ServerFnEntry {
 
 /** A React Server Component entry (future — reserved). */
 export interface RscEntry {
-  /** Webpack module ID. */
+  /** Bundler module ID. */
   moduleId: string;
   /** Exported component name. */
   export: string;
@@ -181,7 +181,7 @@ function joinPaths(parent: string, child: string): string {
  * throughout the compilation lifecycle, then produces the final manifests.
  *
  * This class is bundler-agnostic — it is used by bundler adapters
- * (e.g. `@evjs/bundler-webpack`) to accumulate build metadata.
+ * (e.g. `@evjs/bundler-utoopack`) to accumulate build metadata.
  */
 export class ManifestCollector {
   fns: Record<string, ServerFnEntry> = {};

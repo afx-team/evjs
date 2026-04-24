@@ -2,7 +2,7 @@
  * E2E test fixtures for evjs framework.
  *
  * Provides a custom test fixture that:
- * 1. Builds the example app with the specified bundler (webpack or utoopack)
+ * 1. Builds the example app with the specified bundler (utoopack)
  * 2. Starts the API server by requiring the bundle and using @hono/node-server
  * 3. Starts a static file server for the client bundle
  * 4. Tears everything down after tests complete
@@ -145,13 +145,9 @@ async function buildExample(
   serverEnabled: boolean,
 ) {
   const { build } = await import("@evjs/cli");
-  let bundler: import("@evjs/ev").BundlerAdapter<unknown> | undefined;
-  if (bundlerName === "webpack") {
-    const { webpackAdapter } = await import("@evjs/bundler-webpack");
-    bundler =
-      webpackAdapter as unknown as import("@evjs/ev").BundlerAdapter<unknown>;
-  }
   // utoopack is the default — no bundler field needed
+  const bundler: import("@evjs/ev").BundlerAdapter<unknown> | undefined =
+    undefined;
 
   // Load the example's own ev.config.ts for per-example settings
   const exampleConfig = await loadExampleConfig(exampleDir);

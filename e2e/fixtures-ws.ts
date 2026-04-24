@@ -28,7 +28,7 @@ interface WorkerFixture {
 /**
  * E2E fixture for the websocket-fns example.
  *
- * Builds with webpack, starts a WebSocket server using ws-bootstrap.cjs,
+ * Builds with utoopack, starts a WebSocket server using ws-bootstrap.cjs,
  * and serves the client bundle via the same HTTP server.
  */
 export function createWebSocketExampleTest() {
@@ -46,7 +46,7 @@ export function createWebSocketExampleTest() {
         // Use dynamic port allocation to avoid conflicts
         const webPort = await getAvailablePort();
 
-        // 1. Build with webpack
+        // 1. Build with utoopack
         execSync("npx ev build", {
           cwd: exampleDir,
           stdio: "pipe",

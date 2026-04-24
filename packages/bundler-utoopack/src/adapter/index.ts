@@ -2,9 +2,9 @@
  * Utoopack bundler adapter.
  *
  * Implements the BundlerAdapter interface using @utoo/pack's
- * programmatic `build()` and `dev()` APIs. Unlike the webpack adapter,
- * utoopack handles "use server" directives natively — no custom loader
- * or child compiler is needed.
+ * programmatic `build()` and `dev()` APIs. Utoopack handles
+ * "use server" directives natively — no custom loader or child
+ * compiler is needed.
  */
 
 import fs from "node:fs";

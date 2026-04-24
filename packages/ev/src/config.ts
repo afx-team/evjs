@@ -70,7 +70,7 @@ export interface EvConfig<TBundlerCfg = unknown> {
    * Use this when deploying static assets to a CDN on a different domain.
    *
    * At build time, this prefix is applied to all `<script>` and `<link>` tags
-   * in the generated HTML. It is also used as Webpack's runtime `publicPath`,
+   * in the generated HTML. It is also used as the bundler's runtime `publicPath`,
    * so dynamically loaded chunks resolve against it. A
    * `<script>window.assetPrefix = "..."</script>` tag is injected so the value
    * is available at runtime and can be rewritten at deploy time.

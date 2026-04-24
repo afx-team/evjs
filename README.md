@@ -47,7 +47,6 @@ config needed.
 | [`@evjs/server`](./packages/server) | Server runtime (Hono) |
 | [`@evjs/build-tools`](./packages/build-tools) | Server function transforms |
 | [`@evjs/bundler-utoopack`](./packages/bundler-utoopack) | Utoopack adapter (default) |
-| [`@evjs/bundler-webpack`](./packages/bundler-webpack) | Webpack adapter |
 | [`@evjs/manifest`](./packages/manifest) | Shared manifest schema types |
 | [`examples/`](./examples) | Starter templates |
 

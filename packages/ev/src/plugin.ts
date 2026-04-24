@@ -136,8 +136,8 @@ export interface EvPluginHooks<TBundlerCfg = unknown> {
    * Modify the underlying bundler configuration directly.
    *
    * The config type is `unknown` by default. Use the typed helper exported
-   * by each bundler adapter for type safety (e.g., `webpack()` from
-   * `@evjs/bundler-webpack`).
+   * by each bundler adapter for type safety (e.g., `utoopack()` from
+   * `@evjs/bundler-utoopack`).
    */
   bundlerConfig?: (config: TBundlerCfg, ctx: EvBundlerCtx<TBundlerCfg>) => void;
 

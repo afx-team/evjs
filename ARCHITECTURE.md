@@ -7,9 +7,8 @@
 ```
 ┌─────────────────────────── Build Time ───────────────────────────┐
 │                                                                  │
-│  @evjs/cli ──► BundlerAdapter ──┬── @evjs/bundler-utoopack     │
-│                                 │   (default)                  │
-│                                 └── @evjs/bundler-webpack       │
+│  @evjs/cli ──► BundlerAdapter ──── @evjs/bundler-utoopack     │
+│                                   (default)                  │
 │                      │                                          │
 │  @evjs/build-tools ──┴──► @evjs/manifest (manifests)          │
 │  (bundler-agnostic)                                              │
@@ -31,13 +30,11 @@
 ## Package Dependency Graph
 
 ```
-@evjs/ev ──► @evjs/manifest, @evjs/shared
+@evjs/cli ──► @evjs/ev, @evjs/bundler-utoopack (default)
 
 @evjs/shared (zero deps — runtime only: errors, HTTP, constants)
 
-@evjs/cli ──► @evjs/ev, @evjs/bundler-utoopack (default), @evjs/bundler-webpack
 @evjs/bundler-utoopack ──► @evjs/ev, @evjs/build-tools, @evjs/manifest, @utoo/pack
-@evjs/bundler-webpack ──► @evjs/ev, @evjs/build-tools, @evjs/manifest, webpack
 @evjs/server ──► @evjs/shared, hono, @hono/node-server
 @evjs/client ──► @evjs/shared, @tanstack/react-router, @tanstack/react-query
 ```
@@ -126,7 +123,7 @@ Browser ──(:3000)──► Dev Server ──► HMR (static assets)
 ```
 
 `ev dev` uses the bundler's Node API directly:
-1. Creates bundler compiler + dev server in-process (utoopack by default)
+1. Creates bundler compiler + dev server in-process (utoopack)
 2. Watches for `dist/server/manifest.json`
 3. Writes a CJS bootstrap and runs it with `node --watch`
 
