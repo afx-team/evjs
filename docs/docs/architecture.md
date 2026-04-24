@@ -9,7 +9,7 @@ evjs is a React fullstack framework with type-safe routing (TanStack Router), da
 ```
 ┌─────────────────────────── Build Time ───────────────────────────┐
 │                                                                  │
-│  @evjs/cli ──► @evjs/bundler-webpack ──► @evjs/manifest           │
+│  @evjs/cli ──► @evjs/bundler-utoopack ──► @evjs/manifest           │
 │                      ▲                    (manifests)            │
 │  @evjs/build-tools ──┘                                           │
 │  (bundler-agnostic)                                              │
@@ -31,7 +31,7 @@ evjs is a React fullstack framework with type-safe routing (TanStack Router), da
 ## Package Dependency Graph
 
 ```
-@evjs/cli ──► @evjs/bundler-webpack ──► @evjs/build-tools ──► @swc/core
+@evjs/cli ──► @evjs/bundler-utoopack ──► @evjs/build-tools ──► @swc/core
     │
     └──► webpack (Node API)
 
@@ -48,8 +48,8 @@ ev.config.ts ──► defineConfig({ entry, html, dev, server, plugins })
                     │
                     ├── entry, html ──► webpack entry + HtmlPlugin
                     ├── plugins ──► EvPlugin[] (setup → buildStart/bundler/transformHtml/buildEnd)
-                    ├── dev.port ──► WebpackDevServer port
-                    ├── server.endpoint ──► EvWebpackPlugin + proxy path
+                    ├── dev.port ──► dev server port
+                    ├── server.endpoint ──► EvBundlerPlugin + proxy path
                     ├── server.dev.port ──► API server port
                     └── server.dev.https ──► HTTPS for API server
                     │
@@ -92,8 +92,8 @@ Browser ──(:3000)──► Dev Server ──► HMR (static assets)
                                               registry.get(fnId)(...args)
 ```
 
-`ev dev` uses the webpack Node API directly:
-1. Creates webpack compiler + WebpackDevServer in-process
+`ev dev` uses the bundler Node API directly:
+1. Creates webpack compiler + dev server in-process
 2. Polls for `dist/server/manifest.json`
 3. Writes a CJS bootstrap and runs it with `node --watch`
 
@@ -101,8 +101,8 @@ Browser ──(:3000)──► Dev Server ──► HMR (static assets)
 
 1. `loadConfig(cwd)` — loads `ev.config.ts` or returns defaults
 2. `createWebpackConfig(config, cwd)` — generates webpack config (no temp files)
-3. Calls `webpack()` Node API directly
-4. `@evjs/bundler-webpack` runs during compilation:
+3. Calls `utoopack()` Node API directly
+4. `@evjs/bundler-utoopack` runs during compilation:
    - Discovers `*.server.ts` via glob
    - Applies SWC transforms (client + server variants)
    - Runs child compiler for server bundle

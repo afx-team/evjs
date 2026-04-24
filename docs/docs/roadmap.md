@@ -22,9 +22,9 @@ Call server-side logic from the browser as normal async functions.
 
 ## ✅ Stage 3 — Zero-Config Fullstack Framework
 
-- Zero-config `ev build` / `ev dev` — no `webpack.config.cjs` needed
+- Zero-config `ev build` / `ev dev` — no `custom bundler config file` needed
 - `ev.config.ts` with `defineConfig()` for optional customization
-- webpack Node API — no temp config files, no subprocess spawning
+- bundler Node API — no temp config files, no subprocess spawning
 
 ## ✅ Stage 4 — Plugin System & Build Metadata
 
@@ -36,7 +36,7 @@ Call server-side logic from the browser as normal async functions.
 
 - `BundlerAdapter` interface for pluggable bundler backends
 - `@evjs/bundler-utoopack` — default adapter using `@utoo/pack`
-- `@evjs/bundler-webpack` — webpack adapter
+- `@evjs/bundler-utoopack` — utoopack adapter
 - `ev.config.ts` `bundler` field to switch adapters
 
 ## 🔲 Exploring

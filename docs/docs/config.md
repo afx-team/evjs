@@ -150,18 +150,18 @@ See the **[Plugins guide](./plugins.md)** for the full API reference, `EvDocumen
 
 ## Bundler Options
 
-The `bundler` field selects the compilation engine. By default, evjs uses **utoopack** (`@utoo/pack`). You can switch to webpack by passing the webpack adapter.
+The `bundler` field selects the compilation engine. By default, evjs uses **utoopack** (`@utoo/pack`). You can switch to webpack by passing the utoopack adapter.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `bundler` | `BundlerAdapter` | utoopack | The active bundler adapter. Import `webpackAdapter` from `@evjs/bundler-webpack` to use webpack instead. |
+| `bundler` | `BundlerAdapter` | utoopack | The active bundler adapter. Import `utoopackAdapter` from `@evjs/bundler-utoopack` to use webpack instead. |
 
 ```ts
 import { defineConfig } from "@evjs/ev";
-import { webpackAdapter } from "@evjs/bundler-webpack";
+import { utoopackAdapter } from "@evjs/bundler-utoopack";
 
 export default defineConfig({
-  bundler: webpackAdapter,  // Use webpack instead of the default utoopack
+  bundler: utoopackAdapter,  // Use webpack instead of the default utoopack
 });
 ```
 
@@ -174,7 +174,7 @@ This example demonstrates a production-ready setup with custom loaders and build
 
 ```ts
 import { defineConfig } from "@evjs/ev";
-import { webpack } from "@evjs/bundler-webpack";
+import { webpack } from "@evjs/bundler-utoopack";
 import { utoopack } from "@evjs/bundler-utoopack";
 
 export default defineConfig({

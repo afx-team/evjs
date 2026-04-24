@@ -45,7 +45,7 @@
 ev.config.ts ──► defineConfig({ entry, html, dev, server, bundler, plugins })
                     │
                     ├── entry, html ──► bundler entry + HTML
-                    ├── bundler ──► BundlerAdapter (utoopack default, or webpack)
+                    ├── bundler ──► BundlerAdapter (utoopack)
                     ├── dev.port ──► dev server port
                     ├── server.endpoint ──► server function + proxy path
                     └── plugins ──► EvPlugin[] (setup → buildStart/bundler/transformHtml/buildEnd)

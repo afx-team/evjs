@@ -112,7 +112,7 @@ setup() {
 
 #### Type-Safe Bundler Config
 
-Usually, plugins only need to support the bundler your project actually uses. evjs uses `utoopack` by default. Import the `utoopack()` helper for full TypeScript support (or `webpack()` if your project uses Webpack):
+Usually, plugins only need to support the bundler your project actually uses. evjs uses `utoopack` by default. Import the `utoopack()` helper for full TypeScript support (or `utoopack()` if your project uses Webpack):
 
 ```ts
 import { utoopack } from "@evjs/bundler-utoopack";
@@ -224,7 +224,7 @@ setup() {
 ### Inject Build-Time Constants
 
 ```ts
-import { webpack } from "@evjs/bundler-webpack";
+import { webpack } from "@evjs/bundler-utoopack";
 import { utoopack } from "@evjs/bundler-utoopack";
 
 {

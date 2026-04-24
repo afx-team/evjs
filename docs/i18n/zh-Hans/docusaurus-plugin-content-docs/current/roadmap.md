@@ -22,9 +22,9 @@
 
 ## ✅ 阶段 3 —— 零配置全栈框架
 
-- 零配置 `ev build` / `ev dev` —— 无需 `webpack.config.cjs`
+- 零配置 `ev build` / `ev dev` —— 无需 `custom bundler config file`
 - `ev.config.ts` + `defineConfig()` 可选自定义
-- webpack Node API —— 无临时配置文件，无子进程
+- bundler Node API —— 无临时配置文件，无子进程
 
 ## ✅ 阶段 4 —— 插件系统和构建元数据
 

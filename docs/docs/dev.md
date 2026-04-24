@@ -58,7 +58,7 @@ export default defineConfig({
 2. `resolveConfig()` applies defaults, then `plugin.setup()` collects lifecycle hooks.
 3. `hooks.buildStart()` runs before compilation.
 4. `BundlerAdapter.dev()` is invoked (applying plugin `bundlerConfig` hooks to the config).
-5. Starts `WebpackDevServer` for client HMR.
+5. Starts `dev server` for client HMR.
 6. The adapter signals `onServerBundleReady` after discovery.
 7. The CLI core auto-starts the API server via `@evjs/server/node`.
 8. Sets up reverse proxy: `devServer.proxy["/api"] → localhost:3001`.

@@ -10,7 +10,7 @@ npm install @evjs/manifest
 
 ## Purpose
 
-Defines the structure of the manifest files emitted by `@evjs/bundler-webpack` and consumed by `@evjs/client` and `@evjs/server`. Two separate manifests are emitted during the build:
+Defines the structure of the manifest files emitted by `@evjs/bundler-utoopack` and consumed by `@evjs/client` and `@evjs/server`. Two separate manifests are emitted during the build:
 
 ## Server Manifest (`dist/server/manifest.json`)
 

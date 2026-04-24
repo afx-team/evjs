@@ -86,14 +86,14 @@ export default defineConfig({
 
 | 选项 | 类型 | 默认值 | 描述 |
 |------|------|--------|------|
-| `bundler` | `BundlerAdapter` | utoopack | 激活的构建器适配器。从 `@evjs/bundler-webpack` 导入 `webpackAdapter` 以使用 webpack，而不是默认的 utoopack。 |
+| `bundler` | `BundlerAdapter` | utoopack | 激活的构建器适配器。从 `@evjs/bundler-utoopack` 导入 `utoopackAdapter` 以使用 webpack，而不是默认的 utoopack。 |
 
 ```ts
 import { defineConfig } from "@evjs/ev";
-import { webpackAdapter } from "@evjs/bundler-webpack";
+import { utoopackAdapter } from "@evjs/bundler-utoopack";
 
 export default defineConfig({
-  bundler: webpackAdapter,  // 使用 webpack 代替默认的 utoopack
+  bundler: utoopackAdapter,  // 使用 webpack 代替默认的 utoopack
 });
 ```
 
@@ -136,7 +136,7 @@ ECMA 适配器（`@evjs/server/ecma`）只导出一个 `{ fetch }` 处理器 —
 
 ```ts
 import { defineConfig } from "@evjs/ev";
-import { webpack } from "@evjs/bundler-webpack";
+import { webpack } from "@evjs/bundler-utoopack";
 
 export default defineConfig({
   entry: "./src/entry-client.tsx",

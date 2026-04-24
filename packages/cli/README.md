@@ -29,8 +29,8 @@ No configuration file is needed. `ev dev` and `ev build` work out of the box wit
 
 ### `ev dev`
 
-Uses webpack Node API directly (no temp config files):
-1. **WebpackDevServer** (port 3000) — client bundle with HMR.
+Uses bundler Node API directly (no temp config files):
+1. **dev server** (port 3000) — client bundle with HMR.
 2. **Node API Server** (port 3001) — auto-starts when server bundle is emitted, uses `node --watch`.
 
 ### `ev build`
@@ -79,7 +79,7 @@ my-app/
 
 ## Common Mistakes
 
-1. **Don't create `webpack.config.cjs`** — use `ev.config.ts` instead
+1. **Don't create `custom bundler config file`** — use `ev.config.ts` instead
 2. **Don't install webpack manually** — it's a dependency of `@evjs/cli`
 3. **Config file must be `ev.config.ts`** — not `evjs.config.ts`
 4. **Import `defineConfig` from `@evjs/ev`** — not from `@evjs/server`
@@ -89,4 +89,4 @@ my-app/
 Users do NOT need to install these — they're included in `@evjs/cli`:
 - `webpack`, `webpack-dev-server`
 - `html-webpack-plugin`, `swc-loader`, `@swc/core`
-- `@evjs/bundler-webpack`, `@evjs/build-tools`
+- `@evjs/bundler-utoopack`, `@evjs/build-tools`

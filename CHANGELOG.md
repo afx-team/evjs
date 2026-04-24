@@ -16,7 +16,7 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ### 🐛 Bug Fixes
 
-- **Type strictness in plugin helpers** — Fixed `EvBundlerCtx<Configuration>` type mappings in `@evjs/bundler-webpack` to securely expose the full typed bundler configuration to plugins.
+- **Type strictness in plugin helpers** — Fixed `EvBundlerCtx<Configuration>` type mappings in `@evjs/bundler-utoopack` to securely expose the full typed bundler configuration to plugins.
 
 ### 📝 Documentation
 
@@ -65,7 +65,7 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 ### ♻️ Refactoring
 
 - **Reorganized plugin architecture** — Split the monolithic `bundler-webpack/src/index.ts` (381 lines) into focused modules under `plugin/`:
-  - `plugin/index.ts` — `EvWebpackPlugin` orchestrator
+  - `plugin/index.ts` — `EvBundlerPlugin` orchestrator
   - `plugin/server-compiler.ts` — "use server" module scanning and child compiler
 - **Moved `ManifestCollector` to `@evjs/manifest`** — Manifest building logic (`ManifestCollector`, `resolveRoutes`, `ExtractedRoute`) now lives in the zero-dependency manifest package alongside the types it produces
 - **Moved `buildHtml()` to `@evjs/ev`** — Framework-level HTML transforms (assetPrefix injection, plugin `transformHtml` hooks) extracted to the core package; accepts a pre-parsed doc to avoid heavy build-tool dependencies
@@ -102,7 +102,7 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ### 🧹 Code Quality
 
-- Renamed internal `publicPath` to `assetPrefix` across `@evjs/build-tools`, `@evjs/bundler-webpack`, `@evjs/manifest`, and `@evjs/ev` for naming consistency with Next.js conventions
+- Renamed internal `publicPath` to `assetPrefix` across `@evjs/build-tools`, `@evjs/bundler-utoopack`, `@evjs/manifest`, and `@evjs/ev` for naming consistency with Next.js conventions
 - Added `Window.assetPrefix` global type augmentation in `@evjs/client` for type-safe access
 
 ---
@@ -160,7 +160,7 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 - **Plugin lifecycle API** — Refactored `EvPlugin` from top-level config/bundler hooks to a `name` + `setup(ctx)` pattern returning lifecycle hooks (`buildStart`, `bundler`, `buildEnd`)
 - New `EvPluginContext`, `EvPluginHooks`, and `EvBuildResult` types for full type-safe plugin authoring
-- Added typed `webpack()` helper in `@evjs/bundler-webpack` for type-safe bundler config manipulation inside plugins
+- Added typed `utoopack()` helper in `@evjs/bundler-utoopack` for type-safe bundler config manipulation inside plugins
 - Removed legacy `EvConfigCtx` and `bundler.config` escape hatch
 - CLI now orchestrates full `setup → buildStart → bundler → buildEnd` lifecycle
 
@@ -175,7 +175,7 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 - Added missing `@evjs/manifest` dependency to `@evjs/shared`
 - Removed unused `glob` and `picocolors` from `@evjs/cli`
-- Removed dead `import "node:module"` side-effect import in webpack adapter
+- Removed dead `import "node:module"` side-effect import in utoopack adapter
 - Removed redundant `HotModuleReplacementPlugin` (already provided by webpack-dev-server)
 - Added `toHttpMethod()` normalizer for safe, case-insensitive HTTP method handling
 - Resolved all Biome lint warnings across the monorepo
@@ -292,7 +292,7 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 ### ✨ Features
 
 - **Bundler adapter architecture** — Decoupled bundler logic with a new adapter layer, enabling future bundler backends (Rspack, Vite)
-- **Renamed** `@evjs/webpack-plugin` → `@evjs/bundler-webpack` with relocated adapter logic
+- **Renamed** `@evjs/webpack-plugin` → `@evjs/bundler-utoopack` with relocated adapter logic
 - **Docusaurus site** — Redesigned landing page, added config/dev/build/deploy guides, Mermaid diagrams, and Chinese (zh-Hans) i18n
 
 ### 🐛 Bug Fixes

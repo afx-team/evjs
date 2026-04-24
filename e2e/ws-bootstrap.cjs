@@ -7,8 +7,8 @@
  * - Dispatches RPC calls through the bundled Hono app
  *
  * Environment variables:
- *   SERVER_ENTRY - path to the webpack-built server entry
- *   CLIENT_DIR   - path to the webpack-built client directory
+ *   SERVER_ENTRY - path to the built server entry
+ *   CLIENT_DIR   - path to the built client directory
  *   PORT         - port to listen on
  */
 

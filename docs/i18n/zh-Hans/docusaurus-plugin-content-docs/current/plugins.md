@@ -112,7 +112,7 @@ setup() {
 
 #### 类型安全的构建器配置
 
-通常情况下，插件只需支持项目实际使用的构建器即可。evjs 默认使用 `utoopack`。导入 `utoopack()` 辅助函数以获得完整的 TypeScript 支持（如果您的项目使用 Webpack，则导入 `webpack()`）：
+通常情况下，插件只需支持项目实际使用的构建器即可。evjs 默认使用 `utoopack`。导入 `utoopack()` 辅助函数以获得完整的 TypeScript 支持（如果您的项目使用 Webpack，则导入 `utoopack()`）：
 
 ```ts
 import { utoopack } from "@evjs/bundler-utoopack";
@@ -224,7 +224,7 @@ setup() {
 ### 注入构建时常量
 
 ```ts
-import { webpack } from "@evjs/bundler-webpack";
+import { webpack } from "@evjs/bundler-utoopack";
 import { utoopack } from "@evjs/bundler-utoopack";
 
 {

@@ -58,7 +58,7 @@ export default defineConfig({
 2. `resolveConfig()` 应用默认值，然后 `plugin.setup()` 收集生命周期钩子。
 3. `hooks.buildStart()` 在编译之前运行。
 4. 调用 `BundlerAdapter.dev()`（将插件的 `bundlerConfig` 钩子应用到配置上）。
-5. 启动客户端 HMR 服务器（例如 `WebpackDevServer`）。
+5. 启动客户端 HMR 服务器（例如 `dev server`）。
 6. 在扫描到服务端后，适配器触发 `onServerBundleReady` 信号。
 7. CLI 核心通过 `@evjs/server/node` 自动启动 API 服务器。
 8. 设置反向代理：`devServer.proxy["/api"] → localhost:3001`。

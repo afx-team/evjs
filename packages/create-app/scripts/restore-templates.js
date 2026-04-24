@@ -17,7 +17,7 @@ const symlinkTargets = {
   "basic-server-fns": "../../../examples/basic-server-fns",
   "basic-server-routes": "../../../examples/basic-server-routes",
   "configured-server-fns": "../../../examples/configured-server-fns",
-  "complex-routing": "../../../examples/complex-routing",
+  "complex-routing": "../../../examples/basic-mpa",
   "server-fns-query": "../../../examples/server-fns-query",
   "sqlite-server-fns": "../../../examples/sqlite-server-fns",
   "trpc-server-fns": "../../../examples/trpc-server-fns",

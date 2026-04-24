@@ -28,7 +28,7 @@ Call server-side logic from the browser as normal async functions.
   - [x] Stable function IDs derived from file path + export name (SHA-256)
   - [x] Bundler-agnostic transforms in `@evjs/build-tools`
 - [x] Webpack integration
-  - [x] `EvWebpackPlugin` with auto-discovery and child compiler
+  - [x] `EvBundlerPlugin` with auto-discovery and child compiler
   - [x] `server-fn-loader` — thin adapter delegating to `@evjs/build-tools`
   - [x] Dynamic server entry generation (no manual config)
 - [x] Query integration
@@ -54,10 +54,10 @@ Call server-side logic from the browser as normal async functions.
 
 DX improvements: unified CLI and zero-config builds.
 
-- [x] Zero-config `ev build` / `ev dev` — no `webpack.config.cjs` needed
+- [x] Zero-config `ev build` / `ev dev` — no `custom bundler config file` needed
 - [x] `ev.config.ts` with `defineConfig()` for optional customization
 - [x] Config split: `ClientConfig` (entry, html, plugins, dev) + `ServerConfig` (entry, runtime, functions, plugins, dev)
-- [x] webpack Node API — no temp config files, no subprocess spawning
+- [x] bundler Node API — no temp config files, no subprocess spawning
 - [x] All examples migrated to zero-config
 - [x] E2E tests use `ev build` directly
 
@@ -86,7 +86,7 @@ Swappable bundler adapters with utoopack as the new default.
   - [x] Dev server with HMR
   - [x] `UtoopackManifestGenerator` for client/server manifest emission
   - [x] Native `"use server"` directive support (no custom loader needed)
-- [x] `@evjs/bundler-webpack` removed (utoopack is the sole bundler)
+- [x] `@evjs/bundler-utoopack` removed (utoopack is the sole bundler)
 - [x] Type-safe bundler config helper: `utoopack()`
 - [x] E2E tests run against utoopack
 
