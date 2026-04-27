@@ -1,14 +1,7 @@
 import { tryGetContext } from "hono/context-storage";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { Env } from "hono/types";
-import {
-  deleteCookie,
-  getCookie,
-  setCookie,
-} from "hono/cookie";
-import type {
-  CookieOptions,
-  Cookie as HonoCookie,
-} from "hono/utils/cookie";
+import type { CookieOptions, Cookie as HonoCookie } from "hono/utils/cookie";
 
 function requireContext<E extends Env = Env>() {
   const c = tryGetContext<E>();
@@ -31,7 +24,7 @@ function resolveWaitUntil(c: ReturnType<typeof requireContext>) {
   }
 
   if (executionCtx?.waitUntil) {
-    return (p: Promise<unknown>) => executionCtx.waitUntil!(p);
+    return (p: Promise<unknown>) => executionCtx.waitUntil?.(p);
   }
 
   return (p: Promise<unknown>) => {
