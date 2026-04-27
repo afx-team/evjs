@@ -12,6 +12,13 @@
 export { ServerError } from "@evjs/shared";
 export type { CreateAppOptions } from "./app.js";
 export { createApp } from "./app.js";
+export {
+  cookies,
+  getContext,
+  headers,
+  request,
+  waitUntil,
+} from "./context.js";
 export type {
   DispatchError,
   DispatchResult,

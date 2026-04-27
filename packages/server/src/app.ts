@@ -9,6 +9,7 @@ import { DEFAULT_ENDPOINT } from "@evjs/shared";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { contextStorage } from "hono/context-storage";
 import { dispatch } from "./functions/dispatch.js";
 import type { RouteHandler } from "./routes/index.js";
 
@@ -45,6 +46,9 @@ export function createApp(options?: CreateAppOptions): Hono {
   } = options ?? {};
 
   const app = new Hono();
+
+  // Initialize Hono's native context storage
+  app.use(contextStorage());
 
   // Mount route handlers (before server function endpoint for priority)
   for (const handler of routeHandlers) {
