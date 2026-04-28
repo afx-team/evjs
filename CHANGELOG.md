@@ -8,6 +8,15 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.0.28] — 2026-04-28
+
+### ✨ Features
+
+- **Server Context API** — Refactored server context API to align with Hono's `context-storage`, providing global hooks like `request()`, `headers()`, `cookies()`, and `waitUntil()`.
+- **Performance** — Optimized `waitUntil` execution to prevent unnecessary closure creation.
+
+---
+
 ## [0.0.27] — 2026-04-24
 
 ### ✨ Features
