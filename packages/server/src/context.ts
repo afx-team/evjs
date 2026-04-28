@@ -5,7 +5,11 @@ import {
   setCookie as honoSetCookie,
 } from "hono/cookie";
 import type { Env } from "hono/types";
-import type { CookieOptions, Cookie as HonoCookie } from "hono/utils/cookie";
+import type {
+  CookieOptions,
+  CookiePrefixOptions,
+  Cookie as HonoCookie,
+} from "hono/utils/cookie";
 
 function requireContext<E extends Env = Env>() {
   const c = tryGetContext<E>();
@@ -43,11 +47,20 @@ export function headers(): Headers {
  * Read a cookie from the incoming request.
  * If no name is provided, returns an object with all parsed cookies.
  */
-export function getCookie(name: string): string | undefined;
+export function getCookie(
+  name: string,
+  prefixOptions?: CookiePrefixOptions,
+): string | undefined;
 export function getCookie(): HonoCookie;
-export function getCookie(name?: string): string | HonoCookie | undefined {
+export function getCookie(
+  name?: string,
+  prefixOptions?: CookiePrefixOptions,
+): string | HonoCookie | undefined {
   const c = requireContext();
-  return name ? honoGetCookie(c, name) : honoGetCookie(c);
+  if (name !== undefined) {
+    return honoGetCookie(c, name, prefixOptions);
+  }
+  return honoGetCookie(c);
 }
 
 /**
@@ -66,9 +79,9 @@ export function setCookie(
  */
 export function deleteCookie(
   name: string,
-  options?: Omit<CookieOptions, "maxAge" | "expires">,
-): void {
-  honoDeleteCookie(requireContext(), name, options);
+  options?: CookieOptions,
+): string | undefined {
+  return honoDeleteCookie(requireContext(), name, options);
 }
 
 /**
