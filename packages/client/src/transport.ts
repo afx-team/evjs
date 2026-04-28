@@ -112,7 +112,9 @@ function createFetchTransport(
           data?: unknown;
         } | null = null;
         try {
-          errorPayload = JSON.parse(rawText);
+          if (res.headers.get("Content-Type")?.includes("application/json")) {
+            errorPayload = JSON.parse(rawText);
+          }
         } catch {
           // Not JSON — use raw text for error message
         }

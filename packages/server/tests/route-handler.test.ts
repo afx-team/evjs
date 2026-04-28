@@ -224,4 +224,21 @@ describe("createRoute", () => {
     await fetch(handler, "/api/items", { method: "POST" });
     expect(mwCount).toBe(2);
   });
+
+  it("infers route parameters correctly (type check)", async () => {
+    // This is purely a type-level test, but we run it to ensure the syntax is valid
+    const _route = createRoute("/api/users/:id/posts/:postId", {
+      GET: async (_req, ctx) => {
+        const params = ctx.req.param();
+
+        // params should be exactly { id: string, postId: string }
+        const _test: { id: string; postId: string } = params;
+
+        // @ts-expect-error - invalid params should fail typecheck
+        const _test2: { invalid: string } = params;
+
+        return new Response(`User`);
+      },
+    });
+  });
 });

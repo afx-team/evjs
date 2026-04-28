@@ -19,7 +19,7 @@
  */
 
 import { type HttpMethod, isHttpMethod } from "@evjs/shared";
-import type { Context as HonoContext } from "hono";
+import type { Context as HonoContext, Env as HonoEnv } from "hono";
 import { Hono } from "hono";
 
 /**
@@ -27,26 +27,26 @@ import { Hono } from "hono";
  * Receives a standard Web `Request` and the Hono `Context`.
  * Access route params via `ctx.req.param()`.
  */
-export type RouteHandlerFn = (
+export type RouteHandlerFn<TPath extends string = string> = (
   request: Request,
-  ctx: HonoContext,
+  ctx: HonoContext<HonoEnv, TPath>,
 ) => Response | Promise<Response>;
 
 /**
  * Per-handler middleware.
  * Call `next()` to proceed to the handler or next middleware.
  */
-export type RouteMiddleware = (
+export type RouteMiddleware<TPath extends string = string> = (
   request: Request,
   next: () => Promise<Response>,
-  ctx: HonoContext,
+  ctx: HonoContext<HonoEnv, TPath>,
 ) => Response | Promise<Response>;
 
 /**
  * Route handler definition — HTTP method handlers + optional middleware.
  */
-export type RouteHandlerDefinition = Partial<
-  Record<HttpMethod, RouteHandlerFn>
+export type RouteHandlerDefinition<TPath extends string = string> = Partial<
+  Record<HttpMethod, RouteHandlerFn<TPath>>
 > & {
   /**
    * Optional per-route middleware stack. Runs before any handler.
@@ -55,7 +55,7 @@ export type RouteHandlerDefinition = Partial<
    * If a route defines GET and POST with middleware, the middleware
    * chain runs separately for GET requests and POST requests.
    */
-  middleware?: RouteMiddleware[];
+  middleware?: RouteMiddleware<TPath>[];
 };
 
 /**
@@ -94,7 +94,7 @@ export interface RouteHandler {
  */
 export function createRoute<const T extends string>(
   path: T & (string extends T ? never : T),
-  definition: RouteHandlerDefinition,
+  definition: RouteHandlerDefinition<T>,
 ): RouteHandler {
   const app = new Hono();
   const { middleware = [], ...methods } = definition;

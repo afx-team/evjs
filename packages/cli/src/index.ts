@@ -161,11 +161,24 @@ export async function dev(
 
   const bundler = await getBundlerAdapter(config);
 
+  // Validate HTML files exist
+  if (config.pages) {
+    for (const [name, page] of Object.entries(config.pages)) {
+      if (!fs.existsSync(path.resolve(cwd, page.html))) {
+        throw new Error(
+          `[evjs] MPA page "${name}" html template not found: ${page.html}`,
+        );
+      }
+    }
+  } else if (!fs.existsSync(path.resolve(cwd, config.html))) {
+    throw new Error(`[evjs] HTML template not found: ${config.html}`);
+  }
+
   // Track the running API server process for lifecycle management.
   let apiProcess: ReturnType<typeof execa> | null = null;
   let isFirstBuild = true;
 
-  const handleServerBundleReady = () => {
+  const handleServerBundleReady = async () => {
     if (!config.serverEnabled) return;
 
     const manifestPath = path.resolve(cwd, "dist/server/manifest.json");
@@ -200,8 +213,15 @@ export async function dev(
     // Kill previous process before restarting (handles both first start and restarts)
     if (apiProcess) {
       logger.info`Restarting API server...`;
-      apiProcess.kill();
+      const oldProcess = apiProcess;
       apiProcess = null;
+      oldProcess.kill();
+      try {
+        await Promise.race([
+          oldProcess.catch(() => {}),
+          new Promise((resolve) => setTimeout(resolve, 3000)),
+        ]);
+      } catch (e) {}
     }
 
     const serverPort = config?.server?.dev?.port ?? CONFIG_DEFAULTS.serverPort;
@@ -286,6 +306,20 @@ export async function build(
   await runBuildStartHooks(hooks);
 
   const bundler = await getBundlerAdapter(config);
+
+  // Validate HTML files exist
+  if (config.pages) {
+    for (const [name, page] of Object.entries(config.pages)) {
+      if (!fs.existsSync(path.resolve(cwd, page.html))) {
+        throw new Error(
+          `[evjs] MPA page "${name}" html template not found: ${page.html}`,
+        );
+      }
+    }
+  } else if (!fs.existsSync(path.resolve(cwd, config.html))) {
+    throw new Error(`[evjs] HTML template not found: ${config.html}`);
+  }
+
   await bundler.build(config, cwd, hooks);
 
   // Run buildEnd hooks with manifests

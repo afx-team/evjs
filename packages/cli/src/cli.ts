@@ -2,14 +2,41 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { configure, getConsoleSink, getLogger } from "@logtape/logtape";
+import {
+  configure,
+  defaultTextFormatter,
+  getConsoleSink,
+  getLogger,
+} from "@logtape/logtape";
 import { Command } from "commander";
 import { build, dev } from "./index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 await configure({
-  sinks: { console: getConsoleSink() },
+  sinks: {
+    console: getConsoleSink({
+      formatter: (record) => {
+        const time = new Date(record.timestamp).toLocaleTimeString("en-US", {
+          hour12: false,
+        });
+        const levelColor =
+          record.level === "info"
+            ? "\x1b[36m"
+            : record.level === "warning"
+              ? "\x1b[33m"
+              : record.level === "error" || record.level === "fatal"
+                ? "\x1b[31m"
+                : "\x1b[32m";
+        const reset = "\x1b[0m";
+        const cat = record.category[1]
+          ? `\x1b[90m[${record.category[1]}]\x1b[0m `
+          : "";
+        const msg = record.message.map(String).join("");
+        return `${levelColor}${time}${reset} ${cat}${msg}\n`;
+      },
+    }),
+  },
   loggers: [
     { category: ["logtape", "meta"], lowestLevel: "warning" },
     { category: ["evjs"], sinks: ["console"], lowestLevel: "info" },
