@@ -20,7 +20,7 @@ React fullstack framework, built on TanStack + Hono.
 - **Plugin System** — extend builds with custom loaders (Tailwind, SVG, etc.).
 - **Programmatic Route Handlers** — Standard Request/Response REST API endpoints via `createRoute()`.
 - **Typed Errors** — `ServerError` flows structured data server → client.
-- **Multi-Runtime** — Hono-based server with Node, Deno, Bun, Edge adapters.
+- **Multi-Runtime** — [Hono](https://hono.dev/)-based server with Node, Deno, Bun, Edge adapters.
 - **CLI** — `ev dev` · `ev build`
 
 ## 🚀 Quick Start
