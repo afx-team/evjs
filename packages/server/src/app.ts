@@ -6,6 +6,7 @@
  */
 
 import { DEFAULT_ENDPOINT } from "@evjs/shared";
+import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { contextStorage } from "hono/context-storage";
@@ -13,20 +14,27 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { dispatch } from "./functions/dispatch.js";
 import type { RouteHandler } from "./routes/index.js";
 
-/** Options for createApp. */
 export interface CreateAppOptions {
-  /** Server function endpoint path. Defaults to "/api/fn". */
-  endpoint?: string;
-  /**
-   * Maximum request body size in bytes for server function calls.
-   * Defaults to 1MB (1048576 bytes).
-   */
-  bodyLimit?: number;
+  /** Server function configurations */
+  functions?: {
+    /** Server function endpoint path. Defaults to "/api/fn". */
+    endpoint?: string;
+    /**
+     * Maximum request body size in bytes for server function calls.
+     * Defaults to 1MB (1048576 bytes).
+     */
+    bodyLimit?: number;
+  };
   /**
    * Route handlers to mount on the app.
    * Created via `createRoute()`.
    */
-  routeHandlers?: RouteHandler[];
+  routes?: RouteHandler[];
+  /**
+   * Global Hono middlewares to mount before the server handles any request.
+   * Useful for CORS, rate limiting, logging, CSRF protection, etc.
+   */
+  middlewares?: MiddlewareHandler[];
 }
 
 /**
@@ -40,9 +48,12 @@ export interface CreateAppOptions {
  */
 export function createApp(options?: CreateAppOptions): Hono {
   const {
-    endpoint = DEFAULT_ENDPOINT,
-    bodyLimit: maxBodySize = 1024 * 1024,
-    routeHandlers = [],
+    functions: {
+      endpoint = DEFAULT_ENDPOINT,
+      bodyLimit: maxBodySize = 1024 * 1024,
+    } = {},
+    routes = [],
+    middlewares = [],
   } = options ?? {};
 
   const app = new Hono();
@@ -50,9 +61,28 @@ export function createApp(options?: CreateAppOptions): Hono {
   // Initialize Hono's native context storage
   app.use(contextStorage());
 
+  // Mount global middleware
+  for (const mw of middlewares) {
+    app.use(mw);
+  }
+
   // Mount route handlers (before server function endpoint for priority)
-  for (const handler of routeHandlers) {
-    app.route("/", handler.app);
+  for (const handler of routes) {
+    for (const [method, routeHandlerFn] of Object.entries(handler.methods)) {
+      app.on(
+        method as any,
+        handler.path as any,
+        ...(handler.middlewares as any[]),
+        (c) => (routeHandlerFn as any)(c.req.raw, c),
+      );
+    }
+    // 405 Method Not Allowed for any unregistered methods.
+    app.all(handler.path, () => {
+      return new Response("Method Not Allowed", {
+        status: 405,
+        headers: { Allow: handler.allowedMethods.join(", ") },
+      });
+    });
   }
 
   // Mount server function endpoint with configurable body size limit

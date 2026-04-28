@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createApp } from "../src/app.js";
 import { createRoute } from "../src/routes/route-handler.js";
 
 /**
@@ -11,7 +12,8 @@ async function fetch(
 ): Promise<Response> {
   const url = `http://localhost${path}`;
   const req = new Request(url, init);
-  return handler.app.fetch(req);
+  const app = createApp({ routes: [handler] });
+  return app.fetch(req);
 }
 
 describe("createRoute", () => {
@@ -101,12 +103,12 @@ describe("createRoute", () => {
     const order: string[] = [];
 
     const handler = createRoute("/api/items", {
-      middleware: [
-        async (_req, next) => {
+      middlewares: [
+        async (c, next) => {
           order.push("mw1");
           return next();
         },
-        async (_req, next) => {
+        async (c, next) => {
           order.push("mw2");
           return next();
         },
@@ -124,7 +126,7 @@ describe("createRoute", () => {
 
   it("middleware can short-circuit the request", async () => {
     const handler = createRoute("/api/items", {
-      middleware: [async () => new Response("Unauthorized", { status: 401 })],
+      middlewares: [async () => new Response("Unauthorized", { status: 401 })],
       GET: async () => Response.json({ ok: true }),
     });
 
@@ -152,7 +154,7 @@ describe("createRoute", () => {
     expect(delRes.status).toBe(204);
   });
 
-  it("mounts on createApp via routeHandlers option", async () => {
+  it("mounts on createApp via routes option", async () => {
     // This tests the integration path through createApp
     const { createApp } = await import("../src/app.js");
 
@@ -160,7 +162,7 @@ describe("createRoute", () => {
       GET: async () => Response.json(["a", "b"]),
     });
 
-    const app = createApp({ routeHandlers: [items] });
+    const app = createApp({ routes: [items] });
     const res = await app.fetch(new Request("http://localhost/items"));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual(["a", "b"]);
@@ -168,8 +170,8 @@ describe("createRoute", () => {
 
   it("middleware can perform async work before proceeding", async () => {
     const handler = createRoute("/api/items", {
-      middleware: [
-        async (_req, next) => {
+      middlewares: [
+        async (c, next) => {
           // Simulate async work (e.g. DB lookup, auth check)
           await new Promise((r) => setTimeout(r, 5));
           return next();
@@ -208,8 +210,8 @@ describe("createRoute", () => {
     let mwCount = 0;
 
     const handler = createRoute("/api/items", {
-      middleware: [
-        async (_req, next) => {
+      middlewares: [
+        async (c, next) => {
           mwCount++;
           return next();
         },

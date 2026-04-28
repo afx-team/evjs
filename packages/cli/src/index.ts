@@ -240,7 +240,7 @@ export async function dev(
         bootstrapPath,
         [
           `const bundle = require(${JSON.stringify(serverBundlePath)});`,
-          `const app = bundle.app || bundle.createApp({ endpoint: ${JSON.stringify(config.server.endpoint)} });`,
+          `const app = bundle.app || bundle.createApp({ functions: { endpoint: ${JSON.stringify(config.server.endpoint)} } });`,
           `const { serve } = require("@evjs/server/node");`,
           `serve(app, { port: ${serverPort}, https: ${JSON.stringify(config.server.dev.https)} });`,
         ].join("\n"),

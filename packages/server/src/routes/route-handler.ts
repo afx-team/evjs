@@ -19,8 +19,11 @@
  */
 
 import { type HttpMethod, isHttpMethod } from "@evjs/shared";
-import type { Context as HonoContext, Env as HonoEnv } from "hono";
-import { Hono } from "hono";
+import type {
+  Context as HonoContext,
+  Env as HonoEnv,
+  MiddlewareHandler,
+} from "hono";
 
 /**
  * A route handler function.
@@ -33,16 +36,6 @@ export type RouteHandlerFn<TPath extends string = string> = (
 ) => Response | Promise<Response>;
 
 /**
- * Per-handler middleware.
- * Call `next()` to proceed to the handler or next middleware.
- */
-export type RouteMiddleware<TPath extends string = string> = (
-  request: Request,
-  next: () => Promise<Response>,
-  ctx: HonoContext<HonoEnv, TPath>,
-) => Response | Promise<Response>;
-
-/**
  * Route handler definition — HTTP method handlers + optional middleware.
  */
 export type RouteHandlerDefinition<TPath extends string = string> = Partial<
@@ -50,12 +43,8 @@ export type RouteHandlerDefinition<TPath extends string = string> = Partial<
 > & {
   /**
    * Optional per-route middleware stack. Runs before any handler.
-   *
-   * **Note:** Middleware executes independently for each HTTP method.
-   * If a route defines GET and POST with middleware, the middleware
-   * chain runs separately for GET requests and POST requests.
    */
-  middleware?: RouteMiddleware<TPath>[];
+  middlewares?: MiddlewareHandler[];
 };
 
 /**
@@ -64,8 +53,12 @@ export type RouteHandlerDefinition<TPath extends string = string> = Partial<
 export interface RouteHandler {
   /** The path pattern for this handler (e.g. `/api/users/:id`). */
   path: string;
-  /** The Hono sub-app containing all mounted method handlers. */
-  app: Hono;
+  /** The normalized HTTP method handlers. */
+  methods: Partial<Record<HttpMethod, RouteHandlerFn<any>>>;
+  /** Route-level middleware. */
+  middlewares: MiddlewareHandler[];
+  /** Allowed HTTP methods for this route (used for 405 responses). */
+  allowedMethods: HttpMethod[];
 }
 
 /**
@@ -96,8 +89,7 @@ export function createRoute<const T extends string>(
   path: T & (string extends T ? never : T),
   definition: RouteHandlerDefinition<T>,
 ): RouteHandler {
-  const app = new Hono();
-  const { middleware = [], ...methods } = definition;
+  const { middlewares = [], ...methods } = definition;
 
   // Collect defined method names for auto-OPTIONS and HEAD derivation.
   const definedMethods: HttpMethod[] = [];
@@ -130,33 +122,10 @@ export function createRoute<const T extends string>(
     };
   }
 
-  // Mount each method handler with middleware chain.
-  for (const [method, handler] of Object.entries(methods)) {
-    if (!handler || !isHttpMethod(method)) continue;
-
-    app.on(method, path, async (c: HonoContext) => {
-      // Build middleware chain.
-      let idx = 0;
-      const next = (): Promise<Response> => {
-        if (idx < middleware.length) {
-          const mw = middleware[idx++];
-          return Promise.resolve(mw(c.req.raw, next, c));
-        }
-        return Promise.resolve(handler(c.req.raw, c));
-      };
-
-      return next();
-    });
-  }
-
-  // 405 Method Not Allowed for any unregistered methods.
-  app.all(path, () => {
-    const allowed = definedMethods.join(", ");
-    return new Response("Method Not Allowed", {
-      status: 405,
-      headers: { Allow: allowed },
-    });
-  });
-
-  return { path, app };
+  return {
+    path,
+    methods: methods as Partial<Record<HttpMethod, RouteHandlerFn<any>>>,
+    middlewares,
+    allowedMethods: definedMethods,
+  };
 }

@@ -7,5 +7,5 @@ import { healthHandler } from "./api/health.routes";
 import { postHandler, postsHandler } from "./api/posts.routes";
 
 export const app = createApp({
-  routeHandlers: [healthHandler, postsHandler, postHandler],
+  routes: [healthHandler, postsHandler, postHandler],
 });

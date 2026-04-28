@@ -55,9 +55,12 @@ export interface ServerTransport {
 export interface TransportOptions {
   /** Base URL for the server function endpoint. Defaults to the current origin. */
   baseUrl?: string;
-  /** Path prefix for the server function endpoint. Defaults to `/api/fn`. */
-  endpoint?: string;
-  /** Custom transport. When provided, `baseUrl`, `endpoint`, and `headers` are ignored. */
+  /** Server functions configuration */
+  functions?: {
+    /** Path prefix for the server function endpoint. Defaults to `/api/fn`. */
+    endpoint?: string;
+  };
+  /** Custom transport. When provided, `baseUrl`, `functions.endpoint`, and `headers` are ignored. */
   transport?: ServerTransport;
   /** Custom headers to send with requests, either static or a dynamic getter (e.g. for auth tokens). */
   headers?:
@@ -193,7 +196,7 @@ export function initTransport(options: TransportOptions): void {
   } else {
     _transport = createFetchTransport(
       options.baseUrl ?? "",
-      options.endpoint ?? DEFAULT_ENDPOINT,
+      options.functions?.endpoint ?? DEFAULT_ENDPOINT,
       options.headers,
     );
   }

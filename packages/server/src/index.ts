@@ -36,6 +36,5 @@ export type {
   RouteHandler,
   RouteHandlerDefinition,
   RouteHandlerFn,
-  RouteMiddleware,
 } from "./routes/index.js";
 export { createRoute } from "./routes/index.js";

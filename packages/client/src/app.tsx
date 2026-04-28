@@ -19,11 +19,14 @@ export interface CreateAppOptions<TRouteTree extends AnyRoute> {
    * Optional custom QueryClient instance.
    */
   queryClient?: QueryClient;
-  /**
-   * server function endpoint path. When provided, automatically configures the transport.
-   * Defaults to `/api/fn` if not specified.
-   */
-  endpoint?: string;
+  /** Server functions configuration */
+  functions?: {
+    /**
+     * server function endpoint path. When provided, automatically configures the transport.
+     * Defaults to `/api/fn` if not specified.
+     */
+    endpoint?: string;
+  };
 }
 
 /**
@@ -88,12 +91,12 @@ export function createApp<TRouteTree extends AnyRoute>(
   const {
     routeTree,
     queryClient = new QueryClient(),
-    endpoint,
+    functions,
     basepath,
   } = options;
 
-  if (endpoint) {
-    initTransport({ endpoint });
+  if (functions?.endpoint) {
+    initTransport({ functions });
   }
 
   const router = createRouter({
