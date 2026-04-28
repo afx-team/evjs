@@ -13,26 +13,6 @@ function requireContext<E extends Env = Env>() {
   return c;
 }
 
-function resolveWaitUntil(c: ReturnType<typeof requireContext>) {
-  let executionCtx:
-    | { waitUntil?: (promise: Promise<unknown>) => void }
-    | undefined;
-  try {
-    executionCtx = c.executionCtx as typeof executionCtx;
-  } catch {
-    // Hono's c.executionCtx throws an error when not running in Cloudflare/Fetch event.
-  }
-
-  if (executionCtx?.waitUntil) {
-    return (p: Promise<unknown>) => executionCtx.waitUntil?.(p);
-  }
-
-  return (p: Promise<unknown>) => {
-    // Node.js fallback: avoid unhandled rejections when no runtime waitUntil exists.
-    p.catch((err) => console.error("Unhandled waitUntil error:", err));
-  };
-}
-
 /**
  * Retrieve the current Hono context.
  * Throws an error if called outside of a request lifecycle.
@@ -93,5 +73,19 @@ export function cookies() {
  * (Compatible with Cloudflare 'waitUntil' / Node detached promises).
  */
 export function waitUntil(promise: Promise<unknown>): void {
-  resolveWaitUntil(getContext())(promise);
+  const c = getContext();
+
+  let executionCtx: { waitUntil?: (p: Promise<unknown>) => void } | undefined;
+  try {
+    executionCtx = c.executionCtx as typeof executionCtx;
+  } catch {
+    // Hono's c.executionCtx throws an error when not running in Cloudflare/Fetch event.
+  }
+
+  if (executionCtx?.waitUntil) {
+    executionCtx.waitUntil(promise);
+  } else {
+    // Node.js fallback: avoid unhandled rejections when no runtime waitUntil exists.
+    promise.catch((err) => console.error("Unhandled waitUntil error:", err));
+  }
 }
