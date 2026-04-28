@@ -14,11 +14,15 @@ export type { CreateAppOptions } from "./app.js";
 export { createApp } from "./app.js";
 export {
   deleteCookie,
+  generateCookie,
+  generateSignedCookie,
   getContext,
   getCookie,
+  getSignedCookie,
   headers,
   request,
   setCookie,
+  setSignedCookie,
   waitUntil,
 } from "./context.js";
 export type {

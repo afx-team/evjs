@@ -1,14 +1,19 @@
 import { tryGetContext } from "hono/context-storage";
 import {
+  generateCookie,
+  generateSignedCookie,
   deleteCookie as honoDeleteCookie,
   getCookie as honoGetCookie,
+  getSignedCookie as honoGetSignedCookie,
   setCookie as honoSetCookie,
+  setSignedCookie as honoSetSignedCookie,
 } from "hono/cookie";
 import type { Env } from "hono/types";
 import type {
+  Cookie,
   CookieOptions,
   CookiePrefixOptions,
-  Cookie as HonoCookie,
+  SignedCookie,
 } from "hono/utils/cookie";
 
 function requireContext<E extends Env = Env>() {
@@ -51,11 +56,11 @@ export function getCookie(
   name: string,
   prefixOptions?: CookiePrefixOptions,
 ): string | undefined;
-export function getCookie(): HonoCookie;
+export function getCookie(): Cookie;
 export function getCookie(
   name?: string,
   prefixOptions?: CookiePrefixOptions,
-): string | HonoCookie | undefined {
+): string | Cookie | undefined {
   const c = requireContext();
   if (name !== undefined) {
     return honoGetCookie(c, name, prefixOptions);
@@ -83,6 +88,43 @@ export function deleteCookie(
 ): string | undefined {
   return honoDeleteCookie(requireContext(), name, options);
 }
+
+/**
+ * Read a signed cookie from the incoming request.
+ */
+export function getSignedCookie(
+  secret: string | BufferSource,
+  key: string,
+  prefixOptions?: CookiePrefixOptions,
+): Promise<string | undefined | false>;
+export function getSignedCookie(
+  secret: string | BufferSource,
+): Promise<SignedCookie>;
+export function getSignedCookie(
+  secret: string | BufferSource,
+  key?: string,
+  prefixOptions?: CookiePrefixOptions,
+): Promise<string | undefined | false | SignedCookie> {
+  const c = requireContext();
+  if (key !== undefined) {
+    return honoGetSignedCookie(c, secret, key, prefixOptions);
+  }
+  return honoGetSignedCookie(c, secret);
+}
+
+/**
+ * Set a signed cookie in the outgoing response.
+ */
+export function setSignedCookie(
+  name: string,
+  value: string,
+  secret: string | BufferSource,
+  options?: CookieOptions,
+): Promise<void> {
+  return honoSetSignedCookie(requireContext(), name, value, secret, options);
+}
+
+export { generateCookie, generateSignedCookie };
 
 /**
  * Push a background task that shouldn't block the request response.
