@@ -13,10 +13,12 @@ export { ServerError } from "@evjs/shared";
 export type { CreateAppOptions } from "./app.js";
 export { createApp } from "./app.js";
 export {
-  cookies,
+  deleteCookie,
   getContext,
+  getCookie,
   headers,
   request,
+  setCookie,
   waitUntil,
 } from "./context.js";
 export type {

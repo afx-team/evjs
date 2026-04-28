@@ -1,6 +1,6 @@
 "use server";
 
-import { cookies, headers, waitUntil } from "@evjs/server";
+import { getCookie, headers, setCookie, waitUntil } from "@evjs/server";
 
 /** Simulated user database. */
 const users = [
@@ -12,12 +12,11 @@ const users = [
 /** Get all users. */
 export async function getUsers() {
   const reqHeaders = headers();
-  const reqCookies = cookies();
   const userAgent = reqHeaders.get("user-agent") || "unknown";
 
   // Track visits via cookies
-  const visits = Number.parseInt(reqCookies.get("visits") || "0", 10) + 1;
-  reqCookies.set("visits", String(visits), { maxAge: 60 * 60 * 24 });
+  const visits = Number.parseInt(getCookie("visits") || "0", 10) + 1;
+  setCookie("visits", String(visits), { maxAge: 60 * 60 * 24 });
 
   // Fire-and-forget background task
   waitUntil(

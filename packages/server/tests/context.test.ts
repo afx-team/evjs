@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import {
-  cookies,
+  deleteCookie,
   getContext,
+  getCookie,
   headers,
   request,
+  setCookie,
   waitUntil,
 } from "../src/context.js";
 import { registerServerReference } from "../src/functions/index.js";
@@ -14,7 +16,7 @@ describe("Server Request Context", () => {
     expect(() => getContext()).toThrow();
     expect(() => request()).toThrow();
     expect(() => headers()).toThrow();
-    expect(() => cookies()).toThrow();
+    expect(() => getCookie()).toThrow();
   });
 
   it("should provide context inside a server function", async () => {
@@ -23,18 +25,17 @@ describe("Server Request Context", () => {
       const req = request();
       const hdrs = headers();
       const ctx = getContext();
-      const cks = cookies();
 
       expect(req).toBe(ctx.req.raw);
 
       waitUntil(new Promise((resolve) => setTimeout(resolve, 0)));
-      cks.set("newcookie", "tasty", { maxAge: 1000 });
-      cks.delete("oldcookie");
+      setCookie("newcookie", "tasty", { maxAge: 1000 });
+      deleteCookie("oldcookie");
 
       // Return a value derived from headers and cookies to verify it works
       return {
         hdr: hdrs.get("x-custom-test"),
-        cookie: cks.get("testcookie"),
+        cookie: getCookie("testcookie"),
       };
     }
 

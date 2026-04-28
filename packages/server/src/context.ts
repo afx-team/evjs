@@ -1,5 +1,9 @@
 import { tryGetContext } from "hono/context-storage";
-import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import {
+  deleteCookie as honoDeleteCookie,
+  getCookie as honoGetCookie,
+  setCookie as honoSetCookie,
+} from "hono/cookie";
 import type { Env } from "hono/types";
 import type { CookieOptions, Cookie as HonoCookie } from "hono/utils/cookie";
 
@@ -36,36 +40,35 @@ export function headers(): Headers {
 }
 
 /**
- * Access the incoming Cookies of the current request globally.
+ * Read a cookie from the incoming request.
+ * If no name is provided, returns an object with all parsed cookies.
  */
-export function cookies() {
+export function getCookie(name: string): string | undefined;
+export function getCookie(): HonoCookie;
+export function getCookie(name?: string): string | HonoCookie | undefined {
   const c = requireContext();
+  return name ? honoGetCookie(c, name) : honoGetCookie(c);
+}
 
-  return {
-    /** Get a cookie by name */
-    get(name: string): string | undefined {
-      return getCookie(c, name);
-    },
-    /** Get all parsed cookies */
-    getAll(): HonoCookie {
-      return getCookie(c);
-    },
-    /** Check if a cookie exists */
-    has(name: string): boolean {
-      return getCookie(c, name) !== undefined;
-    },
-    /** Set a cookie in the HTTP response */
-    set(name: string, value: string, options?: CookieOptions): void {
-      setCookie(c, name, value, options);
-    },
-    /** Delete a cookie from the client */
-    delete(
-      name: string,
-      options?: Omit<CookieOptions, "maxAge" | "expires">,
-    ): void {
-      deleteCookie(c, name, options);
-    },
-  };
+/**
+ * Set a cookie in the outgoing response.
+ */
+export function setCookie(
+  name: string,
+  value: string,
+  options?: CookieOptions,
+): void {
+  honoSetCookie(requireContext(), name, value, options);
+}
+
+/**
+ * Delete a cookie from the outgoing response.
+ */
+export function deleteCookie(
+  name: string,
+  options?: Omit<CookieOptions, "maxAge" | "expires">,
+): void {
+  honoDeleteCookie(requireContext(), name, options);
 }
 
 /**
