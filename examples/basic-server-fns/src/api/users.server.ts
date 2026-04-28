@@ -1,5 +1,7 @@
 "use server";
 
+import { cookies, headers, waitUntil } from "@evjs/server";
+
 /** Simulated user database. */
 const users = [
   { id: "1", name: "Alice", email: "alice@example.com" },
@@ -9,6 +11,26 @@ const users = [
 
 /** Get all users. */
 export async function getUsers() {
+  const reqHeaders = headers();
+  const reqCookies = cookies();
+  const userAgent = reqHeaders.get("user-agent") || "unknown";
+
+  // Track visits via cookies
+  const visits = Number.parseInt(reqCookies.get("visits") || "0", 10) + 1;
+  reqCookies.set("visits", String(visits), { maxAge: 60 * 60 * 24 });
+
+  // Fire-and-forget background task
+  waitUntil(
+    new Promise((resolve) => {
+      setTimeout(() => {
+        console.log(
+          `[Analytics] users fetched by user-agent: ${userAgent}, visit count: ${visits}`,
+        );
+        resolve(undefined);
+      }, 100);
+    }),
+  );
+
   // Simulate server latency
   await new Promise((r) => setTimeout(r, 100));
   return users;
