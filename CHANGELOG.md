@@ -8,6 +8,22 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.0.29] — 2026-04-29
+
+### ✨ Features
+
+- **Cookie API Enhancements** — Split `cookies()` into `getCookie`, `setCookie`, and `deleteCookie` for better clarity. Added support for signed cookies via `getSignedCookie`, `setSignedCookie`, `generateCookie`, and `generateSignedCookie`, aligning signatures with Hono.
+- **Server Options Refactoring** — Redesigned `CreateAppOptions` and optimized `RouteHandler` to streamline server creation.
+- **Core Architecture** — Core architecture and stability improvements.
+
+### 📝 Documentation & Examples
+
+- **Server Context Examples** — Demonstrated server context hooks in the `basic-server-fns` example.
+- **Runtime Identifiers Cleanup** — Updated stale `__fn_call` and `registerServerFn` references across all documentation and comments to accurately reflect the `createServerReference` and `registerServerReference` implementations.
+- **README Updates** — Added the official Hono URL to the root README.
+
+---
+
 ## [0.0.28] — 2026-04-28
 
 ### ✨ Features
