@@ -221,8 +221,8 @@ type AnyFn = (...args: never[]) => unknown;
 /**
  * A server function stub augmented with query metadata.
  *
- * These properties are attached at runtime by the build system's
- * `__fn_register` call. TypeScript source types won't reflect them,
+ * These properties are attached at runtime by the
+ * `createServerReference` call. TypeScript source types won't reflect them,
  * so use this type when you need typed access to the metadata.
  *
  * @example

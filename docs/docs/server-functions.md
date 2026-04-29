@@ -187,13 +187,13 @@ flowchart TD
     DETECT -->|Yes| SERVER["Server Transform"]
     DETECT -->|No| SKIP["Skip (normal module)"]
 
-    CLIENT --> STUBS["__fn_call(fnId, args) stubs"]
-    SERVER --> REGISTER["registerServerFn(fnId, fn)"]
+    CLIENT --> STUBS["createServerReference() stubs"]
+    SERVER --> REGISTER["registerServerReference()"]
     SERVER --> MANIFEST["manifest.json entry"]
 ```
 
-- **Client build**: function bodies → `__fn_call(fnId, args)` stubs
-- **Server build**: original bodies preserved + `registerServerFn(fnId, fn)` injected
+- **Client build**: function bodies → `createServerReference()` stubs
+- **Server build**: original bodies preserved + `registerServerReference()` injected
 - Function IDs are stable SHA-256 hashes from `filePath + exportName`
 
 ## Key Points

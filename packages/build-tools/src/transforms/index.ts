@@ -14,8 +14,8 @@ export interface TransformResult {
  * Transform a "use server" file for either client or server builds.
  * This is a pure function with no bundler dependency.
  *
- * - **Server**: keeps original source + appends `registerServerFn()` calls
- * - **Client**: replaces function bodies with `__fn_call()` transport stubs
+ * - **Server**: keeps original source + appends `registerServerReference()` calls
+ * - **Client**: replaces function bodies with `createServerReference()` transport stubs
  */
 export async function transformServerFile(
   source: string,

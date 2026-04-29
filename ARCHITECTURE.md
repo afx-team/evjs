@@ -20,8 +20,8 @@
 ┌──────── Client (Browser) ────────┐ ┌──────── Server (Node/Edge) ──────┐
 │                                  │ │                                   │
 │  TanStack Router                 │ │  Hono App (createApp)             │
-│  TanStack Query                  │ │  registerServerFn() + createRoute()     │
-│  __fn_call() stubs               │ │  createFetchHandler()             │
+│  TanStack Query                  │ │  registerServerReference() + createRoute()     │
+│  createServerReference() stubs   │ │  createFetchHandler()             │
 │  ServerTransport ────────────────┼─┼──► POST /api/fn ──► registry     │
 │                                  │ │                                   │
 └──────────────────────────────────┘ └───────────────────────────────────┘
@@ -63,14 +63,14 @@ ev.config.ts ──► defineConfig({ entry, html, dev, server, bundler, plugins
 ## Server Function Pipeline
 
 ```
-               ┌── Client Build ──► import { __fn_call } from 'transport'
-               │                    export function getUsers(...args) {
-.server.ts ────┤                      return __fn_call(fnId, args)
-               │                    }
+               ┌── Client Build ──► import { createServerReference } from '@evjs/client/transport'
+               │                    export const getUsers = createServerReference(fnId, "getUsers")
+.server.ts ────┤
                │
-               └── Server Build ──► import { registerServerFn } from 'server'
+               │
+               └── Server Build ──► import { registerServerReference } from '@evjs/server/register'
                                     // original body preserved
-                                    registerServerFn(fnId, getUsers)
+                                    registerServerReference("getUsers", fnId, "getUsers")
 ```
 
 ## Build-Tools Structure
@@ -88,9 +88,9 @@ packages/build-tools/src/
     ├── index.ts      orchestrator: parse → extract → delegate
     ├── utils.ts      extractExportNames (AST traversal)
     ├── client/
-    │   └── index.ts  buildClientOutput (__fn_call stubs)
+    │   └── index.ts  buildClientOutput (createServerReference stubs)
     └── server/
-        └── index.ts  buildServerOutput (registerServerFn + manifest)
+        └── index.ts  buildServerOutput (registerServerReference + manifest)
 ```
 
 ### RUNTIME Constants
@@ -102,9 +102,9 @@ export const RUNTIME = {
   serverModule: "@evjs/server/register",
   appModule: "@evjs/server",
   clientTransportModule: "@evjs/client/transport",
-  registerServerFn: "registerServerFn",
-  clientCall: "__fn_call",
-  clientRegister: "__fn_register",
+  registerServerReference: "registerServerReference",
+  createServerReference: "createServerReference",
+  callServer: "callServer",
 } as const;
 ```
 

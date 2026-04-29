@@ -44,8 +44,8 @@ dist/
 
 | 端 | 处理方式 |
 |----|---------|
-| **客户端** | 函数体被替换为 `__fn_call(fnId, args)` RPC 桩代码 |
-| **服务端** | 原始函数体保留 + 注入 `registerServerFn(fnId, fn)` |
+| **客户端** | 函数体被替换为 `createServerReference()` RPC 桩代码 |
+| **服务端** | 原始函数体保留 + 注入 `registerServerReference()` |
 
 函数 ID 是基于 `文件路径 + 导出名称` 的稳定 SHA-256 哈希。
 

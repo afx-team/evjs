@@ -46,8 +46,8 @@ Files with `"use server"` are automatically processed with dual transforms:
 
 | Side | What happens |
 |------|-------------|
-| **Client** | Function bodies are replaced with `__fn_call(fnId, args)` RPC stubs |
-| **Server** | Original function bodies are preserved + `registerServerFn(fnId, fn)` injected |
+| **Client** | Function bodies are replaced with `createServerReference()` RPC stubs |
+| **Server** | Original function bodies are preserved + `registerServerReference()` injected |
 
 Function IDs are stable SHA-256 hashes derived from `filePath + exportName`.
 
