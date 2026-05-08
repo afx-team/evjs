@@ -16,6 +16,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "vitest run",
     "check-types": "tsc --noEmit"
   },
   "files": [

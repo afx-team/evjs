@@ -127,11 +127,6 @@ describe("transformServerFile", () => {
       expect(onServerFn).toHaveBeenCalledTimes(2);
       expect(onServerFn).toHaveBeenCalledWith(
         expect.stringMatching(/^[a-f0-9]{16}$/),
-        expect.objectContaining({ export: "getUsers" }),
-      );
-      expect(onServerFn).toHaveBeenCalledWith(
-        expect.stringMatching(/^[a-f0-9]{16}$/),
-        expect.objectContaining({ export: "createUser" }),
       );
     });
   });

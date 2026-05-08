@@ -1,17 +1,29 @@
 import fs from "node:fs";
 import path from "node:path";
-import { type ExtractedRoute, extractRoutes } from "@evjs/build-tools";
+import {
+  analyzeRoutes,
+  type ExtractedRoute,
+  type RouteAnalysis,
+  transformServerFile,
+} from "@evjs/build-tools";
 import {
   type ClientManifest,
+  type ManifestAssets,
   ManifestCollector,
-  type ServerFnEntry,
   type ServerManifest,
+  type ServerRouteEntry,
 } from "@evjs/manifest";
 import { getLogger } from "@logtape/logtape";
 import chokidar from "chokidar";
 import fastGlob from "fast-glob";
 
 const logger = getLogger(["evjs", "bundler-utoopack", "manifest"]);
+
+const EMPTY_ASSETS: ManifestAssets = { js: [], css: [] };
+
+function normalizeAssetName(name: string | undefined): string | undefined {
+  return name?.replace(/^\.\//, "");
+}
 
 /**
  * Parse a Utoopack stats.json file and extract asset filenames.
@@ -30,7 +42,7 @@ function parseClientStats(stats: {
 
   if (firstEntry && Array.isArray(firstEntry.assets)) {
     for (const asset of firstEntry.assets) {
-      const name = asset.name?.replace(/^\.\//, "");
+      const name = normalizeAssetName(asset.name);
       if (name?.endsWith(".js")) {
         jsFiles.push(name);
       } else if (name?.endsWith(".css")) {
@@ -58,7 +70,7 @@ function parseClientStatsPerEntrypoint(stats: {
     const css: string[] = [];
     if (Array.isArray(entry.assets)) {
       for (const asset of entry.assets) {
-        const assetName = asset.name?.replace(/^\.\//, "");
+        const assetName = normalizeAssetName(asset.name);
         if (assetName?.endsWith(".js")) {
           js.push(assetName);
         } else if (assetName?.endsWith(".css")) {
@@ -72,31 +84,23 @@ function parseClientStatsPerEntrypoint(stats: {
 }
 
 /**
- * Parse a Utoopack server stats.json and extract entry filename and
- * server function registrations.
- *
- * The server stats.json shape (emitted by @utoo/pack when server
- * references are enabled):
- *
- * ```json
- * {
- *   "entrypoints": {
- *     "main": { "assets": [{ "name": "index.js" }] }
- *   },
- *   "serverFunctions": {
- *     "<fnId>": { "moduleId": "<hash>", "export": "functionName" }
- *   }
- * }
- * ```
+ * Parse a Utoopack server stats.json and extract emitted assets.
  */
 function parseServerStats(stats: {
   entrypoints?: Record<string, { assets?: Array<{ name?: string }> }>;
-  serverFunctions?: Record<string, ServerFnEntry>;
+  modules?: Array<{
+    name?: string;
+    id?: string;
+    chunks?: string[];
+  }>;
 }): {
   entry: string | undefined;
-  fns: Record<string, ServerFnEntry>;
+  assets: ManifestAssets;
+  moduleAssets: Map<string, ManifestAssets>;
 } {
   let entry: string | undefined;
+  const assets: ManifestAssets = { js: [], css: [] };
+  const moduleAssets = new Map<string, ManifestAssets>();
 
   // Use first entrypoint — utoopack may name it by the output file rather than "main"
   const entrypoints = stats.entrypoints;
@@ -104,12 +108,45 @@ function parseServerStats(stats: {
 
   if (firstEntry && Array.isArray(firstEntry.assets)) {
     const jsAsset = firstEntry.assets.find((a) => a.name?.endsWith(".js"));
-    entry = jsAsset?.name?.replace(/^\.\//, "");
+    entry = normalizeAssetName(jsAsset?.name);
+    for (const asset of firstEntry.assets) {
+      const name = normalizeAssetName(asset.name);
+      if (name?.endsWith(".js")) {
+        assets.js.push(name);
+      } else if (name?.endsWith(".css")) {
+        assets.css.push(name);
+      }
+    }
+  }
+
+  for (const mod of stats.modules ?? []) {
+    const moduleName = mod.name ?? mod.id;
+    if (!moduleName) continue;
+
+    const moduleAssetList: ManifestAssets = { js: [], css: [] };
+    for (const chunk of mod.chunks ?? []) {
+      const name = normalizeAssetName(chunk);
+      if (name?.endsWith(".js")) {
+        moduleAssetList.js.push(name);
+      } else if (name?.endsWith(".css")) {
+        moduleAssetList.css.push(name);
+      }
+    }
+
+    moduleAssets.set(moduleName.replaceAll("\\", "/"), moduleAssetList);
   }
 
   return {
     entry,
-    fns: stats.serverFunctions ?? {},
+    assets,
+    moduleAssets,
+  };
+}
+
+function dedupeAssets(assets: ManifestAssets): ManifestAssets {
+  return {
+    js: [...new Set(assets.js)],
+    css: [...new Set(assets.css)],
   };
 }
 
@@ -119,6 +156,13 @@ export class UtoopackManifestGenerator {
   private serverEnabled: boolean;
   private watcher: chokidar.FSWatcher | null = null;
   private currentRoutes = new Map<string, ExtractedRoute[]>();
+  private serverAssets: ManifestAssets = EMPTY_ASSETS;
+  private serverModuleAssets = new Map<string, ManifestAssets>();
+  private currentServerFnIds = new Map<string, string[]>();
+  private currentServerRoutes = new Map<
+    string,
+    Array<Omit<ServerRouteEntry, "assets">>
+  >();
 
   constructor(cwd: string, serverEnabled: boolean) {
     this.cwd = cwd;
@@ -176,17 +220,18 @@ export class UtoopackManifestGenerator {
    */
   async loadServerStats() {
     if (!this.serverEnabled) return;
+    this.serverAssets = EMPTY_ASSETS;
+    this.serverModuleAssets = new Map();
 
     const statsPath = path.resolve(this.cwd, "dist/server/stats.json");
     if (fs.existsSync(statsPath)) {
       try {
         const statsStr = await fs.promises.readFile(statsPath, "utf-8");
         const stats = JSON.parse(statsStr);
-        const { entry, fns } = parseServerStats(stats);
+        const { entry, assets, moduleAssets } = parseServerStats(stats);
         this.collector.entry = entry;
-        for (const [id, meta] of Object.entries(fns)) {
-          this.collector.addServerFn(id, meta);
-        }
+        this.serverAssets = dedupeAssets(assets);
+        this.serverModuleAssets = moduleAssets;
         return;
       } catch (err) {
         logger.warn`Failed to parse server stats.json: ${err}`;
@@ -200,6 +245,7 @@ export class UtoopackManifestGenerator {
       const jsEntry = files.find((f) => f.endsWith(".js"));
       if (jsEntry) {
         this.collector.entry = jsEntry;
+        this.serverAssets = { js: [jsEntry], css: [] };
       }
     }
   }
@@ -207,14 +253,56 @@ export class UtoopackManifestGenerator {
   async processFile(filepath: string) {
     try {
       const content = await fs.promises.readFile(filepath, "utf-8");
-      const routes = extractRoutes(content);
+      const analysis = analyzeRoutes(content);
+      const routes = analysis.clientRoutes;
       if (routes.length > 0) {
         this.currentRoutes.set(filepath, routes);
       } else {
         this.currentRoutes.delete(filepath);
       }
+
+      if (this.serverEnabled) {
+        await this.processServerFile(filepath, content, analysis.serverRoutes);
+      }
     } catch (_err) {
       this.currentRoutes.delete(filepath);
+      this.currentServerFnIds.delete(filepath);
+      this.currentServerRoutes.delete(filepath);
+    }
+  }
+
+  private async processServerFile(
+    filepath: string,
+    content: string,
+    extractedServerRoutes: RouteAnalysis["serverRoutes"],
+  ) {
+    const fnIds: string[] = [];
+    await transformServerFile(content, {
+      resourcePath: filepath,
+      rootContext: this.cwd,
+      isServer: true,
+      onServerFn(id) {
+        fnIds.push(id);
+      },
+    });
+
+    if (fnIds.length > 0) {
+      this.currentServerFnIds.set(filepath, fnIds);
+    } else {
+      this.currentServerFnIds.delete(filepath);
+    }
+
+    const serverRoutes = extractedServerRoutes.map(
+      (route): Omit<ServerRouteEntry, "assets"> => ({
+        path: route.path,
+        methods: route.methods,
+      }),
+    );
+
+    if (serverRoutes.length > 0) {
+      this.currentServerRoutes.set(filepath, serverRoutes);
+    } else {
+      this.currentServerRoutes.delete(filepath);
     }
   }
 
@@ -225,11 +313,53 @@ export class UtoopackManifestGenerator {
     }
   }
 
+  private rebuildServerMetadata() {
+    this.collector.fns = {};
+    this.collector.setServerAssets(this.serverAssets.js, this.serverAssets.css);
+
+    for (const [filepath, fnIds] of this.currentServerFnIds.entries()) {
+      const assets = this.getServerAssetsForFile(filepath);
+      for (const id of fnIds) {
+        this.collector.addServerFn(id, { assets });
+      }
+    }
+
+    this.collector.serverRoutes = [];
+    for (const [filepath, routes] of this.currentServerRoutes.entries()) {
+      const assets = this.getServerAssetsForFile(filepath);
+      this.collector.addServerRoutes(
+        routes.map((route) => ({ ...route, assets })),
+      );
+    }
+  }
+
+  private getServerAssetsForFile(filepath: string): ManifestAssets {
+    const relativePath = path
+      .relative(this.cwd, filepath)
+      .replaceAll("\\", "/");
+    const exact = this.serverModuleAssets.get(relativePath);
+    if (exact) return dedupeAssets(exact);
+
+    for (const [moduleName, assets] of this.serverModuleAssets.entries()) {
+      if (
+        moduleName === relativePath ||
+        moduleName.endsWith(`/${relativePath}`)
+      ) {
+        return dedupeAssets(assets);
+      }
+    }
+
+    return this.serverAssets;
+  }
+
   /**
    * Emit the client manifest (and server manifest if server is enabled).
    */
   async emit() {
     this.rebuildRoutes();
+    if (this.serverEnabled) {
+      this.rebuildServerMetadata();
+    }
 
     // Client manifest — matches ClientManifest from @evjs/manifest
     const clientManifest: ClientManifest = this.collector.getClientManifest();
@@ -305,6 +435,8 @@ export class UtoopackManifestGenerator {
     const handleUnlink = async (filepath: string) => {
       const fullPath = path.resolve(this.cwd, filepath);
       this.currentRoutes.delete(fullPath);
+      this.currentServerFnIds.delete(fullPath);
+      this.currentServerRoutes.delete(fullPath);
       await this.emit();
       await onUpdate?.();
     };

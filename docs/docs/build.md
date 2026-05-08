@@ -20,7 +20,7 @@ dist/
 │   ├── main.[hash].js      # Client bundle
 │   └── [chunk].[hash].js   # Code-split chunks
 └── server/
-    ├── manifest.json       # Server function registry
+    ├── manifest.json       # Server function + route registry
     └── main.[hash].js      # Server function bundle (CJS)
 ```
 
@@ -59,19 +59,38 @@ Function IDs are stable SHA-256 hashes derived from `filePath + exportName`.
    - Discovers `*.server.ts` files via glob
    - Applies SWC transforms (client + server variants)
    - Runs child compiler for server bundle
-   - Emits `dist/server/manifest.json` (function registry) and `dist/client/manifest.json` (asset map + routes)
+   - Emits `dist/server/manifest.json` (function + route registry) and `dist/client/manifest.json` (asset map + client routes)
 
 ## Server Manifest (`dist/server/manifest.json`)
 
-Contains the server function registry:
+Contains the server function and route handler registry:
 
 ```json
 {
   "version": 1,
   "entry": "main.a1b2c3d4.js",
+  "assets": {
+    "js": ["main.a1b2c3d4.js"],
+    "css": []
+  },
   "fns": {
-    "a1b2c3d4": { "moduleId": "f9b6...", "export": "getUsers" }
-  }
+    "a1b2c3d4": {
+      "assets": {
+        "js": ["main.a1b2c3d4.js"],
+        "css": []
+      }
+    }
+  },
+  "routes": [
+    {
+      "path": "/api/users",
+      "methods": ["GET", "POST"],
+      "assets": {
+        "js": ["main.a1b2c3d4.js"],
+        "css": []
+      }
+    }
+  ]
 }
 ```
 

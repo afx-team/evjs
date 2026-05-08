@@ -31,10 +31,7 @@ export interface TransformOptions {
   /** Whether this is a server-side build. */
   isServer: boolean;
   /** Callback to register a server function in the manifest. */
-  onServerFn?: (
-    fnId: string,
-    meta: { moduleId: string; export: string },
-  ) => void;
+  onServerFn?: (fnId: string) => void;
 }
 
 /**

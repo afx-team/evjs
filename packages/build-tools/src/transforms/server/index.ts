@@ -1,6 +1,6 @@
 import { type Module, parseSync } from "@swc/core";
 import { RUNTIME, type TransformOptions } from "../../types.js";
-import { makeFnId, makeModuleId } from "../../utils.js";
+import { makeFnId } from "../../utils.js";
 
 /** Notify the manifest collector about each server function. */
 function reportToManifest(
@@ -8,10 +8,9 @@ function reportToManifest(
   options: TransformOptions,
 ): void {
   if (!options.onServerFn) return;
-  const moduleId = makeModuleId(options.rootContext, options.resourcePath);
   for (const name of exportNames) {
     const fnId = makeFnId(options.rootContext, options.resourcePath, name);
-    options.onServerFn(fnId, { moduleId, export: name });
+    options.onServerFn(fnId);
   }
 }
 

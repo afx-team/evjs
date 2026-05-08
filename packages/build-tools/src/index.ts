@@ -4,10 +4,16 @@
 
 export type { GenerateHtmlOptions, HtmlAsset } from "./html.js";
 export { generateHtml } from "./html.js";
-export type { ExtractedRoute } from "./routes.js";
+export type {
+  ExtractedRoute,
+  ExtractedServerRoute,
+  RouteAnalysis,
+} from "./routes.js";
 export {
+  analyzeRoutes,
   detectServerRouteExports,
   extractRoutes,
+  extractServerRoutes,
   resolveRoutes,
 } from "./routes.js";
 export type { TransformResult } from "./transforms/index.js";

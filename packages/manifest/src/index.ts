@@ -11,36 +11,46 @@
  * is emitted to `dist/manifest.json` (flat output).
  */
 
-/** A registered server function entry. */
-export interface ServerFnEntry {
-  /** Bundler module identifier (hash-based, no source paths exposed). */
-  moduleId: string;
-  /** Exported function name. */
-  export: string;
+/** JavaScript and CSS assets emitted for a manifest entry. */
+export interface ManifestAssets {
+  /** JavaScript bundle paths. */
+  js: string[];
+  /** CSS bundle paths. */
+  css: string[];
 }
 
-/** A React Server Component entry (future — reserved). */
-export interface RscEntry {
-  /** Bundler module ID. */
-  moduleId: string;
-  /** Exported component name. */
-  export: string;
+/** A registered server function entry. */
+export interface ServerFnEntry {
+  /** Emitted assets containing this function. */
+  assets: ManifestAssets;
+}
+
+/** A registered server route handler entry. */
+export interface ServerRouteEntry {
+  /** URL path pattern handled by this route (e.g. "/api/users/:id"). */
+  path: string;
+  /** HTTP methods explicitly handled by this route. */
+  methods: string[];
+  /** Emitted assets containing this route handler. */
+  assets: ManifestAssets;
 }
 
 /**
  * Server manifest — emitted to `dist/server/manifest.json`.
  *
- * Contains server bundle entry, registered server functions, and RSC metadata.
+ * Contains server bundle entry, emitted assets, server functions, and routes.
  */
 export interface ServerManifest {
   /** Schema version — bump on breaking changes. */
   version: 1;
   /** Server bundle entry filename (e.g. "main.js" or "main.a1b2c3d4.js"). Omitted when no server bundle exists. */
   entry?: string;
-  /** Registered server functions (fnId → module + export). */
+  /** Server bundle asset paths. */
+  assets: ManifestAssets;
+  /** Registered server functions (fnId → emitted assets). */
   fns: Record<string, ServerFnEntry>;
-  /** React Server Components (future — reserved). */
-  rsc?: Record<string, RscEntry>;
+  /** Registered server route handlers. */
+  routes?: ServerRouteEntry[];
 }
 
 /** A discovered client route. */
@@ -59,12 +69,7 @@ export interface ClientManifest {
   /** Schema version — bump on breaking changes. */
   version: 1;
   /** Bundle asset paths for HTML injection (SPA mode). */
-  assets: {
-    /** JavaScript bundle paths. */
-    js: string[];
-    /** CSS bundle paths. */
-    css: string[];
-  };
+  assets: ManifestAssets;
   /** Discovered client routes. */
   routes?: RouteEntry[];
   /**
@@ -80,7 +85,7 @@ export interface ClientManifest {
 /** Per-page manifest entry for MPA mode. */
 export interface PageManifestEntry {
   /** Bundle asset paths for this page. */
-  assets: { js: string[]; css: string[] };
+  assets: ManifestAssets;
   /** Discovered routes for this page. */
   routes?: RouteEntry[];
 }
@@ -95,6 +100,16 @@ export interface ExtractedRoute {
   parentName?: string;
   /** Variable name this route is assigned to (e.g. "homeRoute"). */
   varName?: string;
+}
+
+/** Server route metadata extracted from an @evjs/server createRoute() export. */
+export interface ExtractedServerRoute {
+  /** Route path pattern passed to createRoute(). */
+  path: string;
+  /** HTTP methods declared on the route definition object. */
+  methods: string[];
+  /** Exported route handler name. */
+  export: string;
 }
 
 /**
@@ -200,13 +215,19 @@ function joinPaths(parent: string, child: string): string {
 export class ManifestCollector {
   fns: Record<string, ServerFnEntry> = {};
   routes: ExtractedRoute[] = [];
+  serverRoutes: ServerRouteEntry[] = [];
   entry: string | undefined = undefined;
   private jsAssets: string[] = [];
   private cssAssets: string[] = [];
+  private serverAssets: ManifestAssets = { js: [], css: [] };
   private pageAssets: Record<string, { js: string[]; css: string[] }> = {};
 
   addServerFn(id: string, meta: ServerFnEntry) {
     this.fns[id] = meta;
+  }
+
+  addServerRoutes(entries: ServerRouteEntry[]) {
+    this.serverRoutes.push(...entries);
   }
 
   addRoutes(entries: ExtractedRoute[]) {
@@ -216,6 +237,10 @@ export class ManifestCollector {
   setAssets(js: string[], css: string[]) {
     this.jsAssets = js;
     this.cssAssets = css;
+  }
+
+  setServerAssets(js: string[], css: string[]) {
+    this.serverAssets = { js, css };
   }
 
   /** Set per-page assets for MPA mode. */
@@ -237,11 +262,16 @@ export class ManifestCollector {
   }
 
   getServerManifest(): ServerManifest {
-    return {
+    const manifest: ServerManifest = {
       version: 1,
       entry: this.entry,
+      assets: this.serverAssets,
       fns: this.fns,
     };
+    if (this.serverRoutes.length > 0) {
+      manifest.routes = this.serverRoutes;
+    }
+    return manifest;
   }
 
   getClientManifest(): ClientManifest {

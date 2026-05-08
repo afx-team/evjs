@@ -134,12 +134,7 @@ describe.each(BUNDLERS)("deployment manifest plugin [%s]", (_name, bundler) => {
 describe.each(
   BUNDLERS,
 )("server function discovery plugin [%s]", (_name, bundler) => {
-  it("discovers server functions from fullstack build manifest", async (ctx) => {
-    // TODO: remove this skip once @utoo/pack emits serverFunctions in stats.json
-    if (_name === "utoopack") {
-      ctx.skip();
-    }
-
+  it("discovers server functions from fullstack build manifest", async () => {
     process.chdir(FULLSTACK_APP);
 
     let serverFnCount = 0;

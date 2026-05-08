@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { extractRoutes, resolveRoutes } from "../src/routes.js";
+import {
+  analyzeRoutes,
+  detectServerRouteExports,
+  extractRoutes,
+  extractServerRoutes,
+  resolveRoutes,
+} from "../src/routes.js";
 
 describe("extractRoutes", () => {
   it("extracts path from a static route", () => {
@@ -30,6 +36,24 @@ describe("extractRoutes", () => {
         path: "/users/$username",
         parentName: "rootRoute",
         varName: "userRoute",
+      },
+    ]);
+  });
+
+  it("supports aliased client createRoute imports", () => {
+    const source = `
+      import { createRoute as route } from "@evjs/client";
+      export const settingsRoute = route({
+        getParentRoute: () => rootRoute,
+        path: "/settings",
+        component: Settings,
+      });
+    `;
+    expect(extractRoutes(source)).toEqual([
+      {
+        path: "/settings",
+        parentName: "rootRoute",
+        varName: "settingsRoute",
       },
     ]);
   });
@@ -84,6 +108,16 @@ describe("extractRoutes", () => {
   it("returns empty array for files without createRoute", () => {
     const source = `
       export function hello() { return "world"; }
+    `;
+    expect(extractRoutes(source)).toEqual([]);
+  });
+
+  it("ignores server createRoute imports during client route extraction", () => {
+    const source = `
+      import { createRoute } from "@evjs/server";
+      export const healthHandler = createRoute("/api/health", {
+        GET: async () => Response.json({ ok: true }),
+      });
     `;
     expect(extractRoutes(source)).toEqual([]);
   });
@@ -248,5 +282,97 @@ describe("resolveRoutes", () => {
       { path: "/a/b" },
       { path: "/a/b/c" },
     ]);
+  });
+});
+
+describe("extractServerRoutes", () => {
+  it("extracts exported server route handlers", () => {
+    const source = `
+      import { createRoute } from "@evjs/server";
+      export const postsHandler = createRoute("/api/posts", {
+        GET: async () => Response.json([]),
+        POST: async () => Response.json({}, { status: 201 }),
+        middlewares: [],
+      });
+    `;
+
+    expect(extractServerRoutes(source)).toEqual([
+      {
+        path: "/api/posts",
+        methods: ["GET", "POST"],
+        export: "postsHandler",
+      },
+    ]);
+    expect(detectServerRouteExports(source)).toEqual(["postsHandler"]);
+  });
+
+  it("supports aliased imports and named export aliases", () => {
+    const source = `
+      import { createRoute as route } from "@evjs/server";
+      const internal = route("/api/health", {
+        GET() {
+          return Response.json({ ok: true });
+        },
+        HEAD: async () => new Response(null),
+      });
+      export { internal as healthHandler };
+    `;
+
+    expect(extractServerRoutes(source)).toEqual([
+      {
+        path: "/api/health",
+        methods: ["GET", "HEAD"],
+        export: "healthHandler",
+      },
+    ]);
+  });
+
+  it("ignores client routes and dynamic server route paths", () => {
+    const source = `
+      import { createRoute } from "@evjs/client";
+      import { createRoute as serverRoute } from "@evjs/server";
+
+      export const homeRoute = createRoute({ path: "/" });
+
+      const path = "/api/dynamic";
+      export const dynamicHandler = serverRoute(path, {
+        GET: async () => Response.json({ ok: true }),
+      });
+    `;
+
+    expect(extractServerRoutes(source)).toEqual([]);
+    expect(detectServerRouteExports(source)).toBeNull();
+  });
+});
+
+describe("analyzeRoutes", () => {
+  it("collects client and server routes from one parsed module", () => {
+    const source = `
+      import { createRoute } from "@evjs/client";
+      import { createRoute as serverRoute } from "@evjs/server";
+
+      export const homeRoute = createRoute({
+        getParentRoute: () => rootRoute,
+        path: "/",
+        component: () => null,
+      });
+
+      export const healthHandler = serverRoute("/api/health", {
+        GET: async () => Response.json({ ok: true }),
+      });
+    `;
+
+    expect(analyzeRoutes(source)).toEqual({
+      clientRoutes: [
+        { path: "/", parentName: "rootRoute", varName: "homeRoute" },
+      ],
+      serverRoutes: [
+        {
+          path: "/api/health",
+          methods: ["GET"],
+          export: "healthHandler",
+        },
+      ],
+    });
   });
 });

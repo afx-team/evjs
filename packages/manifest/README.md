@@ -18,12 +18,28 @@ Defines the structure of the manifest files emitted by `@evjs/bundler-utoopack` 
 {
   "version": 1,
   "entry": "main.a1b2c3d4.js",
+  "assets": {
+    "js": ["main.a1b2c3d4.js"],
+    "css": []
+  },
   "fns": {
     "<fnId>": {
-      "moduleId": "f9b6...",
-      "export": "getUsers"
+      "assets": {
+        "js": ["main.a1b2c3d4.js"],
+        "css": []
+      }
     }
-  }
+  },
+  "routes": [
+    {
+      "path": "/api/users",
+      "methods": ["GET", "POST"],
+      "assets": {
+        "js": ["main.a1b2c3d4.js"],
+        "css": []
+      }
+    }
+  ]
 }
 ```
 
@@ -45,8 +61,9 @@ Defines the structure of the manifest files emitted by `@evjs/bundler-utoopack` 
 
 ## Exported Types
 
-- **`ServerManifest`** — server manifest (`dist/server/manifest.json`) with `entry`, `fns`, and optional `rsc`.
+- **`ManifestAssets`** — emitted asset lists (`{ js, css }`).
+- **`ServerManifest`** — server manifest (`dist/server/manifest.json`) with `entry`, `assets`, `fns`, and optional `routes`.
 - **`ClientManifest`** — client manifest (`dist/client/manifest.json`) with `assets` and optional `routes`.
-- **`ServerFnEntry`** — server function metadata (`{ moduleId, export }`).
+- **`ServerFnEntry`** — server function metadata (`{ assets }`), keyed by function ID.
+- **`ServerRouteEntry`** — server route handler metadata (`{ path, methods, assets }`).
 - **`RouteEntry`** — a discovered client route (`{ path }`).
-- **`RscEntry`** — React Server Components (reserved for future).
