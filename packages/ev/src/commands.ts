@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import type { ClientManifest, ServerManifest } from "@evjs/manifest";
 import { getLogger } from "@logtape/logtape";
 import { execa } from "execa";
@@ -18,6 +19,8 @@ import type {
 } from "./plugin.js";
 
 const logger = getLogger(["evjs", "ev"]);
+
+type ApiProcess = ReturnType<typeof execa>;
 
 export interface DevOptions<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
   cwd?: string;
@@ -151,6 +154,24 @@ function readBuildResult(
   return { clientManifest, serverManifest, isRebuild };
 }
 
+async function stopApiProcess(
+  processToStop: ApiProcess,
+  timeoutMs = 3000,
+): Promise<void> {
+  processToStop.kill();
+  const exited = await Promise.race([
+    processToStop.then(() => true).catch(() => true),
+    new Promise<boolean>((resolve) =>
+      setTimeout(() => resolve(false), timeoutMs),
+    ),
+  ]);
+
+  if (!exited) {
+    processToStop.kill("SIGKILL");
+    await processToStop.catch(() => {});
+  }
+}
+
 export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
   userConfig?: EvConfig<TBundlerCfg>,
   options?: DevOptions<TBundlerCfg>,
@@ -172,10 +193,11 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
   await runBuildStartHooks(hooks);
   validateHtmlTemplates(cwd, config);
 
-  let apiProcess: ReturnType<typeof execa> | null = null;
+  let apiProcess: ApiProcess | null = null;
   let isFirstBuild = true;
+  let restartQueue: Promise<void> = Promise.resolve();
 
-  const handleServerBundleReady = async () => {
+  const restartApiServer = async () => {
     if (!config.serverEnabled) return;
 
     const manifestPath = path.resolve(cwd, "dist/server/manifest.json");
@@ -209,17 +231,15 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
     if (apiProcess) {
       logger.info`Restarting API server...`;
       const oldProcess = apiProcess;
-      apiProcess = null;
-      oldProcess.kill();
       try {
-        await Promise.race([
-          oldProcess.catch(() => {}),
-          new Promise((resolve) => setTimeout(resolve, 3000)),
-        ]);
+        await stopApiProcess(oldProcess);
       } catch {}
+      if (apiProcess === oldProcess) {
+        apiProcess = null;
+      }
     }
 
-    const serverPort = config.server.dev.port ?? CONFIG_DEFAULTS.serverPort;
+    const serverPort = config.server?.dev?.port ?? CONFIG_DEFAULTS.serverPort;
     logger.info`Server bundle detected, starting API...`;
 
     const bootstrapPath = path.resolve(cwd, "dist/server/_dev_start.cjs");
@@ -232,9 +252,12 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
       fs.writeFileSync(
         bootstrapPath,
         [
-          `const handler = require(${JSON.stringify(serverBundlePath)}).default;`,
+          `(async () => {`,
+          `const serverModule = await import(${JSON.stringify(pathToFileURL(serverBundlePath).href)});`,
+          `const handler = serverModule.default?.default ?? serverModule.default ?? serverModule;`,
           `const { serve } = require("@evjs/server/node");`,
-          `serve({ fetch: handler.fetch }, { port: ${serverPort}, https: ${JSON.stringify(config.server.dev.https)} });`,
+          `serve({ fetch: handler.fetch }, { port: ${serverPort}, https: ${JSON.stringify(config.server?.dev?.https ?? false)} });`,
+          `})().catch((err) => { console.error(err); process.exit(1); });`,
         ].join("\n"),
       );
 
@@ -253,6 +276,11 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
       logger.error`Server runtime failed: ${err}`;
       apiProcess = null;
     }
+  };
+
+  const handleServerBundleReady = async () => {
+    restartQueue = restartQueue.catch(() => {}).then(restartApiServer);
+    await restartQueue;
   };
 
   await bundler.dev(
