@@ -155,6 +155,9 @@ export interface EvPluginContext<
 
 /**
  * Lifecycle hooks returned from plugin setup().
+ *
+ * TODO: Narrow each hook context and standardize signatures as subject-first,
+ * ctx-second before allowing hooks beyond `config` to mutate framework state.
  */
 export interface EvPluginHooks<
   TBundlerCfg = import("@utoo/pack").ConfigComplete,
