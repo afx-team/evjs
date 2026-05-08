@@ -20,7 +20,7 @@ dist/
 │   ├── main.[hash].js      # 客户端 bundle
 │   └── [chunk].[hash].js   # 代码分割的块
 └── server/
-    ├── manifest.json       # 服务端函数注册表
+    ├── manifest.json       # 服务端资源映射 + 函数和路由注册表
     └── main.[hash].js      # 服务端函数 bundle（CJS）
 ```
 
@@ -48,6 +48,61 @@ dist/
 | **服务端** | 原始函数体保留 + 注入 `registerServerReference()` |
 
 函数 ID 是基于 `文件路径 + 导出名称` 的稳定 SHA-256 哈希。
+
+## 构建流程
+
+1. `loadConfig(cwd)` —— 加载 `ev.config.ts` 或基于约定的默认配置
+2. `BundlerAdapter.build()` —— 生成 bundler 配置并执行编译
+3. 当前 bundler adapter 在编译期间执行：
+   - 发现 `*.server.ts` 文件
+   - 应用 SWC 转换（客户端 + 服务端两种变体）
+   - 运行服务端 bundle 编译
+   - 输出 `dist/server/manifest.json`（服务端资源映射、函数和路由注册表）以及 `dist/client/manifest.json`（客户端资源映射 + 客户端路由）
+
+## 服务端 Manifest（`dist/server/manifest.json`）
+
+包含服务端 bundle 资源、服务端函数 ID 以及服务端路由资源映射：
+
+```json
+{
+  "version": 1,
+  "entry": "main.a1b2c3d4.js",
+  "assets": {
+    "js": ["main.a1b2c3d4.js"],
+    "css": []
+  },
+  "fns": {
+    "a1b2c3d4": {
+      "assets": {
+        "js": ["main.a1b2c3d4.js"],
+        "css": []
+      }
+    }
+  },
+  "routes": [
+    {
+      "path": "/api/users",
+      "methods": ["GET", "POST"],
+      "assets": {
+        "js": ["main.a1b2c3d4.js"],
+        "css": []
+      }
+    }
+  ]
+}
+```
+
+## 客户端 Manifest（`dist/client/manifest.json`）
+
+包含客户端构建元数据：
+
+```json
+{
+  "version": 1,
+  "assets": { "js": ["main.abc123.js"], "css": ["styles.def456.css"] },
+  "routes": [{ "path": "/" }, { "path": "/users" }, { "path": "/posts/$postId" }]
+}
+```
 
 ## 要点
 
