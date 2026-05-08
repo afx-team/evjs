@@ -47,7 +47,7 @@ dist/
 | **客户端** | 函数体被替换为 `createServerReference()` RPC 桩代码 |
 | **服务端** | 原始函数体保留 + 注入 `registerServerReference()` |
 
-函数 ID 是基于 `文件路径 + 导出名称` 的稳定 SHA-256 哈希。
+函数 ID 由服务端函数转换生成，并同时写入客户端桩代码和服务端 `registerServerReference()` 调用。Utoopack 构建完成后，manifest 生成器会从已输出的服务端 bundle 中读取这些 ID，不会再次基于源码重新哈希。
 
 ## 构建流程
 
@@ -57,6 +57,8 @@ dist/
    - 发现 `*.server.ts` 文件
    - 应用 SWC 转换（客户端 + 服务端两种变体）
    - 运行服务端 bundle 编译
+   - 从服务端 bundle 的 `registerServerReference()` 调用收集函数 ID
+   - 通过源码 AST 收集服务端路由的 path 和 methods
    - 输出 `dist/server/manifest.json`（服务端资源映射、函数和路由注册表）以及 `dist/client/manifest.json`（客户端资源映射 + 客户端路由）
 
 ## 服务端 Manifest（`dist/server/manifest.json`）

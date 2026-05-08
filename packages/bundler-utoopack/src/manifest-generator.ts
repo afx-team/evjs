@@ -4,12 +4,12 @@ import {
   analyzeRoutes,
   type ExtractedRoute,
   type RouteAnalysis,
-  transformServerFile,
 } from "@evjs/build-tools";
 import {
   type ClientManifest,
   type ManifestAssets,
   ManifestCollector,
+  type ServerFnEntry,
   type ServerManifest,
   type ServerRouteEntry,
 } from "@evjs/manifest";
@@ -150,6 +150,23 @@ function dedupeAssets(assets: ManifestAssets): ManifestAssets {
   };
 }
 
+function mergeAssets(a: ManifestAssets, b: ManifestAssets): ManifestAssets {
+  return dedupeAssets({
+    js: [...a.js, ...b.js],
+    css: [...a.css, ...b.css],
+  });
+}
+
+function extractServerFnIdsFromBundle(code: string): string[] {
+  const ids = new Set<string>();
+  const registerCall =
+    /registerServerReference[^;]{0,300}?(?:\)\s*)?\(\s*[^,]+,\s*["']([a-f0-9]{16})["']/g;
+  for (const match of code.matchAll(registerCall)) {
+    ids.add(match[1]);
+  }
+  return [...ids];
+}
+
 export class UtoopackManifestGenerator {
   private collector = new ManifestCollector();
   private cwd: string;
@@ -158,7 +175,7 @@ export class UtoopackManifestGenerator {
   private currentRoutes = new Map<string, ExtractedRoute[]>();
   private serverAssets: ManifestAssets = EMPTY_ASSETS;
   private serverModuleAssets = new Map<string, ManifestAssets>();
-  private currentServerFnIds = new Map<string, string[]>();
+  private serverFns: Record<string, ServerFnEntry> = {};
   private currentServerRoutes = new Map<
     string,
     Array<Omit<ServerRouteEntry, "assets">>
@@ -222,6 +239,7 @@ export class UtoopackManifestGenerator {
     if (!this.serverEnabled) return;
     this.serverAssets = EMPTY_ASSETS;
     this.serverModuleAssets = new Map();
+    this.serverFns = {};
 
     const statsPath = path.resolve(this.cwd, "dist/server/stats.json");
     if (fs.existsSync(statsPath)) {
@@ -232,6 +250,7 @@ export class UtoopackManifestGenerator {
         this.collector.entry = entry;
         this.serverAssets = dedupeAssets(assets);
         this.serverModuleAssets = moduleAssets;
+        await this.loadServerFnAssets();
         return;
       } catch (err) {
         logger.warn`Failed to parse server stats.json: ${err}`;
@@ -246,8 +265,35 @@ export class UtoopackManifestGenerator {
       if (jsEntry) {
         this.collector.entry = jsEntry;
         this.serverAssets = { js: [jsEntry], css: [] };
+        await this.loadServerFnAssets();
       }
     }
+  }
+
+  private async loadServerFnAssets() {
+    const fns: Record<string, ServerFnEntry> = {};
+    const serverDir = path.resolve(this.cwd, "dist/server");
+    const jsAssets =
+      this.serverAssets.js.length > 0
+        ? this.serverAssets.js
+        : this.collector.entry
+          ? [this.collector.entry]
+          : [];
+
+    for (const js of jsAssets) {
+      const filepath = path.join(serverDir, js);
+      if (!fs.existsSync(filepath)) continue;
+
+      const code = await fs.promises.readFile(filepath, "utf-8");
+      for (const id of extractServerFnIdsFromBundle(code)) {
+        const assets = { js: [js], css: [] };
+        fns[id] = {
+          assets: fns[id] ? mergeAssets(fns[id].assets, assets) : assets,
+        };
+      }
+    }
+
+    this.serverFns = fns;
   }
 
   async processFile(filepath: string) {
@@ -262,36 +308,18 @@ export class UtoopackManifestGenerator {
       }
 
       if (this.serverEnabled) {
-        await this.processServerFile(filepath, content, analysis.serverRoutes);
+        await this.processServerFile(filepath, analysis.serverRoutes);
       }
     } catch (_err) {
       this.currentRoutes.delete(filepath);
-      this.currentServerFnIds.delete(filepath);
       this.currentServerRoutes.delete(filepath);
     }
   }
 
   private async processServerFile(
     filepath: string,
-    content: string,
     extractedServerRoutes: RouteAnalysis["serverRoutes"],
   ) {
-    const fnIds: string[] = [];
-    await transformServerFile(content, {
-      resourcePath: filepath,
-      rootContext: this.cwd,
-      isServer: true,
-      onServerFn(id) {
-        fnIds.push(id);
-      },
-    });
-
-    if (fnIds.length > 0) {
-      this.currentServerFnIds.set(filepath, fnIds);
-    } else {
-      this.currentServerFnIds.delete(filepath);
-    }
-
     const serverRoutes = extractedServerRoutes.map(
       (route): Omit<ServerRouteEntry, "assets"> => ({
         path: route.path,
@@ -317,11 +345,8 @@ export class UtoopackManifestGenerator {
     this.collector.fns = {};
     this.collector.setServerAssets(this.serverAssets.js, this.serverAssets.css);
 
-    for (const [filepath, fnIds] of this.currentServerFnIds.entries()) {
-      const assets = this.getServerAssetsForFile(filepath);
-      for (const id of fnIds) {
-        this.collector.addServerFn(id, { assets });
-      }
+    for (const [id, fn] of Object.entries(this.serverFns)) {
+      this.collector.addServerFn(id, fn);
     }
 
     this.collector.serverRoutes = [];
@@ -435,7 +460,6 @@ export class UtoopackManifestGenerator {
     const handleUnlink = async (filepath: string) => {
       const fullPath = path.resolve(this.cwd, filepath);
       this.currentRoutes.delete(fullPath);
-      this.currentServerFnIds.delete(fullPath);
       this.currentServerRoutes.delete(fullPath);
       await this.emit();
       await onUpdate?.();

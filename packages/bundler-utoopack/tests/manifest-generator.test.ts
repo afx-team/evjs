@@ -59,6 +59,13 @@ describe("UtoopackManifestGenerator", () => {
         ],
       }),
     );
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/server/server.js"),
+      `
+        registerServerReference(getUsers, "aaaaaaaaaaaaaaaa", "getUsers");
+        registerServerReference(createUser, "bbbbbbbbbbbbbbbb", "createUser");
+      `,
+    );
 
     await fs.promises.writeFile(
       path.join(cwd, "src/api/users.server.ts"),
@@ -115,11 +122,10 @@ describe("UtoopackManifestGenerator", () => {
       js: ["server.js"],
       css: ["server.css"],
     });
-    expect(Object.keys(serverManifest.fns)).toHaveLength(2);
-    expect(Object.values(serverManifest.fns)).toEqual([
-      { assets: { js: ["server.js"], css: [] } },
-      { assets: { js: ["server.js"], css: [] } },
-    ]);
+    expect(serverManifest.fns).toEqual({
+      aaaaaaaaaaaaaaaa: { assets: { js: ["server.js"], css: [] } },
+      bbbbbbbbbbbbbbbb: { assets: { js: ["server.js"], css: [] } },
+    });
     expect(serverManifest.routes).toEqual([
       {
         path: "/api/health",
