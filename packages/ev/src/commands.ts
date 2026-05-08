@@ -154,6 +154,40 @@ function readBuildResult(
   return { clientManifest, serverManifest, isRebuild };
 }
 
+function normalizeAssetName(name: string | undefined): string | undefined {
+  return name?.replace(/^\.\//, "");
+}
+
+function readServerEntryFromStats(cwd: string): string | undefined {
+  const statsPath = path.resolve(cwd, "dist/server/stats.json");
+  if (!fs.existsSync(statsPath)) return undefined;
+
+  try {
+    const stats = JSON.parse(fs.readFileSync(statsPath, "utf-8")) as {
+      entrypoints?: Record<string, { assets?: Array<{ name?: string }> }>;
+    };
+    const firstEntry = stats.entrypoints
+      ? Object.values(stats.entrypoints)[0]
+      : undefined;
+    const jsAsset = firstEntry?.assets?.find((asset) =>
+      asset.name?.endsWith(".js"),
+    );
+    return normalizeAssetName(jsAsset?.name);
+  } catch (err) {
+    logger.warn`Failed to parse server stats.json: ${err}`;
+    return undefined;
+  }
+}
+
+async function findDevServerEntry(cwd: string): Promise<string | undefined> {
+  const entryFromStats = readServerEntryFromStats(cwd);
+  if (entryFromStats) return entryFromStats;
+
+  const serverDir = path.resolve(cwd, "dist/server");
+  const files = await fs.promises.readdir(serverDir).catch(() => []);
+  return files.find((file) => file.endsWith(".js"));
+}
+
 async function stopApiProcess(
   processToStop: ApiProcess,
   timeoutMs = 3000,
@@ -194,39 +228,13 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
   validateHtmlTemplates(cwd, config);
 
   let apiProcess: ApiProcess | null = null;
-  let isFirstBuild = true;
   let restartQueue: Promise<void> = Promise.resolve();
 
   const restartApiServer = async () => {
     if (!config.serverEnabled) return;
 
-    const manifestPath = path.resolve(cwd, "dist/server/manifest.json");
-    if (!fs.existsSync(manifestPath)) return;
-
-    let manifest: ServerManifest;
-    try {
-      manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
-    } catch (err) {
-      logger.warn`Failed to parse server manifest: ${err}`;
-      return;
-    }
-    if (manifest.version !== 1) {
-      logger.warn`Unexpected server manifest version: ${manifest.version}. Expected 1.`;
-      return;
-    }
-    if (!manifest.entry) return;
-
-    const buildResult = readBuildResult(
-      cwd,
-      config.serverEnabled,
-      !isFirstBuild,
-    );
-    if (buildResult) {
-      runBuildEndHooks(hooks, buildResult).catch((err) => {
-        logger.error`Plugin buildEnd hook failed: ${err}`;
-      });
-    }
-    isFirstBuild = false;
+    const serverEntry = await findDevServerEntry(cwd);
+    if (!serverEntry) return;
 
     if (apiProcess) {
       logger.info`Restarting API server...`;
@@ -244,7 +252,7 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
 
     const bootstrapPath = path.resolve(cwd, "dist/server/_dev_start.cjs");
     try {
-      const serverBundlePath = path.resolve(cwd, "dist/server", manifest.entry);
+      const serverBundlePath = path.resolve(cwd, "dist/server", serverEntry);
 
       if (!fs.existsSync(path.dirname(bootstrapPath))) {
         fs.mkdirSync(path.dirname(bootstrapPath), { recursive: true });

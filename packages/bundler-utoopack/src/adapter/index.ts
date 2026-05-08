@@ -161,12 +161,6 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
     const { serve } = await import("@utoo/pack");
     await serve({ config: utoopackConfig });
 
-    logger.info`Starting route watcher for dev manifest...`;
-    const generator = new UtoopackManifestGenerator(cwd, config.serverEnabled);
-    await generator.watch(async () => {
-      await generateAndEmitHtml(config, cwd, hooks);
-    });
-
     // Watch for server bundle readiness (utoopack emits server output
     // to dist/server/ when "use server" modules are discovered)
     if (config.serverEnabled) {
@@ -187,11 +181,6 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
 
         if (hasBundle) {
           ready = true;
-          // Re-generate manifests now that server stats are available
-          await generator.loadServerStats();
-          await generator.loadSourceMetadata();
-          await generator.emit();
-          await generateAndEmitHtml(config, cwd, hooks);
           callbacks.onServerBundleReady();
           watcher?.close();
         }
