@@ -120,6 +120,13 @@ async function cleanServerOutput(cwd: string, serverEnabled: boolean) {
   });
 }
 
+async function cleanLegacyRouteMarkerOutput(cwd: string) {
+  await fs.promises.rm(path.resolve(cwd, ".evjs/utoopack"), {
+    recursive: true,
+    force: true,
+  });
+}
+
 export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
   name: "utoopack",
   async build(
@@ -128,6 +135,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
     hooks: EvPluginHooks<ConfigComplete>[],
   ): Promise<void> {
     const { createUtoopackConfig } = await import("./create-config.js");
+    await cleanLegacyRouteMarkerOutput(cwd);
     const utoopackConfig = await createUtoopackConfig(config, cwd, hooks);
 
     logger.info`Building for production with utoopack...`;
@@ -154,6 +162,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
     hooks: EvPluginHooks<ConfigComplete>[],
   ): Promise<void> {
     const { createUtoopackConfig } = await import("./create-config.js");
+    await cleanLegacyRouteMarkerOutput(cwd);
     const utoopackConfig = await createUtoopackConfig(config, cwd, hooks);
 
     logger.info`Starting development server with utoopack...`;
@@ -189,6 +198,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
           ready = true;
           // Re-generate manifests now that server stats are available
           await generator.loadServerStats();
+          await generator.loadSourceMetadata();
           await generator.emit();
           await generateAndEmitHtml(config, cwd, hooks);
           callbacks.onServerBundleReady();

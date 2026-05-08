@@ -47,19 +47,17 @@ dist/
 | **客户端** | 函数体被替换为 `createServerReference()` RPC 桩代码 |
 | **服务端** | 原始函数体保留 + 注入 `registerServerReference()` |
 
-函数 ID 由服务端函数转换生成，并同时写入客户端桩代码和服务端 `registerServerReference()` 调用。Utoopack 构建完成后，manifest 生成器会从已输出的服务端 bundle 中读取这些 ID，不会再次基于源码重新哈希。
+函数 ID 使用与 Utoopack 服务端引用相同的算法：`sha256(moduleId + "#" + exportName)`，并截断为 16 位十六进制字符串。manifest 生成器会分析源码导出，并优先使用 Utoopack `stats.json` 中的 module ID，因此生成的 ID 会与客户端桩代码和服务端注册代码中的 ID 保持一致。
 
 ## 构建流程
 
 1. `loadConfig(cwd)` —— 加载 `ev.config.ts` 或基于约定的默认配置
 2. `BundlerAdapter.build()` —— 生成 bundler 配置并执行编译
 3. 当前 bundler adapter 在编译期间执行：
-   - 发现 `*.server.ts` 文件
-   - 应用 SWC 转换（客户端 + 服务端两种变体）
-   - 生成路由 marker 模块，并通过生成的入口包装模块引入它们
-   - 运行服务端 bundle 编译
-   - 从服务端 bundle 的 `registerServerReference()` 调用收集函数 ID
-   - 从已输出的路由 marker 调用收集客户端路由和服务端路由元数据
+   - 运行客户端和服务端 bundle 编译
+   - 读取 Utoopack stats 中的产物资源名和 module ID
+   - 分析源码中的客户端路由、服务端路由和 `"use server"` 导出
+   - 使用与 Utoopack 兼容的 module ID 哈希算法计算函数 ID
    - 输出 `dist/server/manifest.json`（服务端资源映射、函数和路由注册表）以及 `dist/client/manifest.json`（客户端资源映射 + 客户端路由）
 
 ## 服务端 Manifest（`dist/server/manifest.json`）

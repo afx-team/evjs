@@ -1,14 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { makeFnIdFromModuleId } from "@evjs/build-tools";
 import { afterEach, describe, expect, it } from "vitest";
 import { UtoopackManifestGenerator } from "../src/manifest-generator.js";
 
 const tempDirs: string[] = [];
-
-function markerPayload(value: unknown): string {
-  return Buffer.from(JSON.stringify(value), "utf-8").toString("base64");
-}
 
 async function makeProject() {
   const cwd = await fs.promises.mkdtemp(
@@ -34,8 +31,10 @@ afterEach(async () => {
 });
 
 describe("UtoopackManifestGenerator", () => {
-  it("collects server functions and server routes when server stats omit them", async () => {
+  it("collects server functions and routes from source with Utoopack module IDs", async () => {
     const cwd = await makeProject();
+    const usersModuleId = "app/src/api/users.server.ts";
+    const routeModuleId = "app/src/api/health.routes.ts";
 
     await fs.promises.writeFile(
       path.join(cwd, "dist/client/stats.json"),
@@ -46,10 +45,6 @@ describe("UtoopackManifestGenerator", () => {
       }),
     );
     await fs.promises.writeFile(
-      path.join(cwd, "dist/client/main.js"),
-      `globalThis.__evRegisterClientRoute?.("${markerPayload({ path: "/" })}");`,
-    );
-    await fs.promises.writeFile(
       path.join(cwd, "dist/server/stats.json"),
       JSON.stringify({
         entrypoints: {
@@ -57,26 +52,15 @@ describe("UtoopackManifestGenerator", () => {
         },
         modules: [
           {
-            name: "src/api/users.server.ts",
+            name: usersModuleId,
             chunks: ["server.js"],
           },
           {
-            name: "src/api/health.routes.ts",
+            name: routeModuleId,
             chunks: ["server.js"],
           },
         ],
       }),
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "dist/server/server.js"),
-      `
-        registerServerReference(getUsers, "aaaaaaaaaaaaaaaa", "getUsers");
-        registerServerReference(createUser, "bbbbbbbbbbbbbbbb", "createUser");
-        globalThis.__evRegisterServerRoute?.("${markerPayload({
-          path: "/api/health",
-          methods: ["GET", "POST"],
-        })}");
-      `,
     );
 
     await fs.promises.writeFile(
@@ -115,6 +99,8 @@ describe("UtoopackManifestGenerator", () => {
 
     const generator = new UtoopackManifestGenerator(cwd, true);
     await generator.build();
+    const getUsersId = makeFnIdFromModuleId(usersModuleId, "getUsers");
+    const createUserId = makeFnIdFromModuleId(usersModuleId, "createUser");
 
     const serverManifest = JSON.parse(
       await fs.promises.readFile(
@@ -135,8 +121,8 @@ describe("UtoopackManifestGenerator", () => {
       css: ["server.css"],
     });
     expect(serverManifest.fns).toEqual({
-      aaaaaaaaaaaaaaaa: { assets: { js: ["server.js"], css: [] } },
-      bbbbbbbbbbbbbbbb: { assets: { js: ["server.js"], css: [] } },
+      [getUsersId]: { assets: { js: ["server.js"], css: [] } },
+      [createUserId]: { assets: { js: ["server.js"], css: [] } },
     });
     expect(serverManifest.routes).toEqual([
       {

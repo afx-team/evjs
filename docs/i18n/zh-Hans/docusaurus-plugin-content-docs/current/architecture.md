@@ -100,12 +100,12 @@ ev.config.ts ──► defineConfig({ entry, html, dev, server, plugins })
 ## 构建流程（`ev build`）
 
 1. `loadConfig(cwd)` —— 加载 `ev.config.ts` 或使用默认值
-2. `createWebpackConfig(config, cwd)` —— 生成 webpack 配置（无临时文件）
-3. 直接调用 `utoopack()` Node API
+2. `createUtoopackConfig(config, cwd)` —— 生成 Utoopack 配置
+3. 直接调用 Utoopack Node API
 4. `@evjs/bundler-utoopack` 在编译期间运行：
-   - 通过 glob 发现 `*.server.ts` 文件
-   - 应用 SWC 转换（客户端 + 服务端变体）
-   - 运行子编译器生成服务端 bundle
+   - 运行客户端和服务端 bundle 编译
+   - 读取 Utoopack stats 中的产物资源和 module ID
+   - 分析源码中的路由和 `"use server"` 导出
    - 输出 `dist/server/manifest.json` 和 `dist/client/manifest.json`
 
 ## 部署适配器

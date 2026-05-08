@@ -156,6 +156,10 @@ flowchart TD
     SERVER --> MANIFEST["manifest.json 条目"]
 ```
 
+- **客户端构建**：函数体会转换为 `createServerReference()` 桩代码
+- **服务端构建**：保留原始函数体并注入 `registerServerReference()`
+- 函数 ID 是 `moduleId + "#" + exportName` 的稳定 SHA-256 哈希，并截断为 16 位十六进制字符串，以匹配 Utoopack 服务端引用
+
 ## 要点总结
 
 | 模式 | 用法 |

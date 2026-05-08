@@ -30,13 +30,23 @@ export function makeModuleId(
 }
 
 /** Derive a stable function ID from the file path and export name. */
+export function makeFnIdFromModuleId(
+  moduleId: string,
+  exportName: string,
+): string {
+  return hashString(`${moduleId}#${exportName}`);
+}
+
+/** Derive a stable function ID from the file path and export name. */
 export function makeFnId(
   rootContext: string,
   resourcePath: string,
   exportName: string,
 ): string {
-  const relativePath = path.relative(rootContext, resourcePath);
-  return hashString(`${relativePath}:${exportName}`);
+  const moduleId = path
+    .relative(rootContext, resourcePath)
+    .replaceAll("\\", "/");
+  return makeFnIdFromModuleId(moduleId, exportName);
 }
 
 /** Check whether the source starts with the "use server" directive. */

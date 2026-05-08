@@ -13,8 +13,12 @@ const require = createRequire(import.meta.url);
 
 import type { EvBundlerCtx, EvPluginHooks, ResolvedEvConfig } from "@evjs/ev";
 import { isMpa } from "@evjs/ev";
-import type { ConfigComplete, DevServerProxy, ProxyRule } from "@utoo/pack";
-import { prepareRouteMarkers } from "../route-markers.js";
+import type {
+  ConfigComplete,
+  DevServerProxy,
+  EntryOptions,
+  ProxyRule,
+} from "@utoo/pack";
 
 function createSpaHistoryFallbackRule(
   config: ResolvedEvConfig<ConfigComplete>,
@@ -30,6 +34,24 @@ function createSpaHistoryFallbackRule(
       "^/.*$": "/",
     },
   };
+}
+
+function resolveEntry(cwd: string, entry: string): string {
+  return path.isAbsolute(entry) ? entry : path.resolve(cwd, entry);
+}
+
+function createClientEntries(
+  config: ResolvedEvConfig<ConfigComplete>,
+  cwd: string,
+): EntryOptions[] {
+  if (config.pages) {
+    return Object.entries(config.pages).map(([name, page]) => ({
+      import: resolveEntry(cwd, page.entry),
+      name,
+    }));
+  }
+
+  return [{ import: resolveEntry(cwd, config.entry) }];
 }
 
 /**
@@ -63,12 +85,10 @@ export async function createUtoopackConfig(
     throw new Error("Failed to resolve a server entry for the server bundle.");
   }
 
-  const routeMarkers = await prepareRouteMarkers(config, cwd, finalServerEntry);
-
   const utoopackConfig: ConfigComplete = {
     mode: isProduction ? "production" : "development",
     // MPA mode: one entry per page; SPA mode: single entry
-    entry: routeMarkers.entries,
+    entry: createClientEntries(config, cwd),
     output: {
       path: path.resolve(cwd, serverEnabled ? "dist/client" : "dist"),
       filename: isProduction ? "[name].[contenthash:8].js" : "[name].js",
@@ -88,7 +108,9 @@ export async function createUtoopackConfig(
     ...(serverEnabled
       ? {
           server: {
-            entry: routeMarkers.serverEntry,
+            entry: finalServerEntry
+              ? resolveEntry(cwd, finalServerEntry)
+              : undefined,
             output: {
               path: path.resolve(cwd, "dist/server"),
               filename: isProduction

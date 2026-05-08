@@ -16,6 +16,7 @@ export {
   extractServerRoutes,
   resolveRoutes,
 } from "./routes.js";
+export { extractServerFunctionExports } from "./server-fns.js";
 export type { TransformResult } from "./transforms/index.js";
 export { transformServerFile } from "./transforms/index.js";
 export type {
@@ -27,6 +28,7 @@ export {
   detectUseServer,
   hashString,
   makeFnId,
+  makeFnIdFromModuleId,
   makeModuleId,
   parseModuleRef,
 } from "./utils.js";
