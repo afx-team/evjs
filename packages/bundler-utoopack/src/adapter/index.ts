@@ -112,6 +112,14 @@ async function generateAndEmitHtml(
   await fs.promises.writeFile(outPath, finalHtml, "utf-8");
 }
 
+async function cleanServerOutput(cwd: string, serverEnabled: boolean) {
+  if (!serverEnabled) return;
+  await fs.promises.rm(path.resolve(cwd, "dist/server"), {
+    recursive: true,
+    force: true,
+  });
+}
+
 export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
   name: "utoopack",
   async build(
@@ -123,6 +131,8 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
     const utoopackConfig = await createUtoopackConfig(config, cwd, hooks);
 
     logger.info`Building for production with utoopack...`;
+
+    await cleanServerOutput(cwd, config.serverEnabled);
 
     const { build } = await import("@utoo/pack");
     await build({ config: utoopackConfig });
