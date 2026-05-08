@@ -6,8 +6,8 @@ export type {
 export {
   analyzeRoutes,
   detectServerRouteExports,
-  extractRoutes,
-  extractRoutesFromAst,
+  extractClientRoutes,
+  extractClientRoutesFromAst,
   extractServerRoutes,
   extractServerRoutesFromAst,
   resolveRoutes,

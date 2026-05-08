@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   analyzeRoutes,
   detectServerRouteExports,
-  extractRoutes,
+  extractClientRoutes,
   extractServerRoutes,
   resolveRoutes,
 } from "../src/routes.js";
 
-describe("extractRoutes", () => {
+describe("extractClientRoutes", () => {
   it("extracts path from a static route", () => {
     const source = `
       import { createRoute } from "@evjs/client";
@@ -17,7 +17,7 @@ describe("extractRoutes", () => {
         component: () => null,
       });
     `;
-    expect(extractRoutes(source)).toEqual([
+    expect(extractClientRoutes(source)).toEqual([
       { path: "/", parentName: "rootRoute", varName: "homeRoute" },
     ]);
   });
@@ -31,7 +31,7 @@ describe("extractRoutes", () => {
         component: UserProfile,
       });
     `;
-    expect(extractRoutes(source)).toEqual([
+    expect(extractClientRoutes(source)).toEqual([
       {
         path: "/users/$username",
         parentName: "rootRoute",
@@ -49,7 +49,7 @@ describe("extractRoutes", () => {
         component: Settings,
       });
     `;
-    expect(extractRoutes(source)).toEqual([
+    expect(extractClientRoutes(source)).toEqual([
       {
         path: "/settings",
         parentName: "rootRoute",
@@ -67,7 +67,7 @@ describe("extractRoutes", () => {
         component: () => null,
       });
     `;
-    expect(extractRoutes(source)).toEqual([]);
+    expect(extractClientRoutes(source)).toEqual([]);
   });
 
   it("extracts multiple routes from a single file", () => {
@@ -84,7 +84,7 @@ describe("extractRoutes", () => {
         component: PostDetail,
       });
     `;
-    const routes = extractRoutes(source);
+    const routes = extractClientRoutes(source);
     expect(routes).toEqual([
       { path: "/posts", parentName: "rootRoute", varName: "postsRoute" },
       { path: "$postId", parentName: "postsRoute", varName: "postDetailRoute" },
@@ -100,7 +100,7 @@ describe("extractRoutes", () => {
         component: () => null,
       });
     `;
-    expect(extractRoutes(source)).toEqual([
+    expect(extractClientRoutes(source)).toEqual([
       { path: "/internal", parentName: "rootRoute", varName: "internalRoute" },
     ]);
   });
@@ -109,7 +109,7 @@ describe("extractRoutes", () => {
     const source = `
       export function hello() { return "world"; }
     `;
-    expect(extractRoutes(source)).toEqual([]);
+    expect(extractClientRoutes(source)).toEqual([]);
   });
 
   it("ignores server createRoute imports during client route extraction", () => {
@@ -119,15 +119,15 @@ describe("extractRoutes", () => {
         GET: async () => Response.json({ ok: true }),
       });
     `;
-    expect(extractRoutes(source)).toEqual([]);
+    expect(extractClientRoutes(source)).toEqual([]);
   });
 
   it("returns empty array for empty source", () => {
-    expect(extractRoutes("")).toEqual([]);
+    expect(extractClientRoutes("")).toEqual([]);
   });
 
   it("returns empty array for invalid source", () => {
-    expect(extractRoutes("{{{{invalid")).toEqual([]);
+    expect(extractClientRoutes("{{{{invalid")).toEqual([]);
   });
 
   it("ignores createRoute calls without path", () => {
@@ -138,7 +138,7 @@ describe("extractRoutes", () => {
         component: () => null,
       });
     `;
-    expect(extractRoutes(source)).toEqual([]);
+    expect(extractClientRoutes(source)).toEqual([]);
   });
 
   it("handles catch-all routes", () => {
@@ -150,7 +150,7 @@ describe("extractRoutes", () => {
         component: () => null,
       });
     `;
-    expect(extractRoutes(source)).toEqual([
+    expect(extractClientRoutes(source)).toEqual([
       { path: "*", parentName: "rootRoute", varName: "notFoundRoute" },
     ]);
   });
@@ -164,7 +164,7 @@ describe("extractRoutes", () => {
         component: () => null,
       });
     `;
-    expect(extractRoutes(source)).toEqual([
+    expect(extractClientRoutes(source)).toEqual([
       { path: "/foo", parentName: "rootRoute", varName: "fooRoute" },
     ]);
   });
@@ -177,7 +177,7 @@ describe("extractRoutes", () => {
         component: () => null,
       });
     `;
-    const routes = extractRoutes(source);
+    const routes = extractClientRoutes(source);
     expect(routes).toEqual([{ path: "/simple", varName: "simpleRoute" }]);
     expect(routes[0].parentName).toBeUndefined();
   });

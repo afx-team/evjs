@@ -12,7 +12,8 @@ export type {
 export {
   analyzeRoutes,
   detectServerRouteExports,
-  extractRoutes,
+  extractClientRoutes,
+  extractClientRoutesFromAst,
   extractServerRoutes,
   resolveRoutes,
 } from "./routes.js";

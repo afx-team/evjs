@@ -1,11 +1,14 @@
 import type { ExtractedRoute, ExtractedServerRoute } from "@evjs/manifest";
-import { extractRoutesFromAst } from "./client.js";
+import { extractClientRoutesFromAst } from "./client.js";
 import { extractServerRoutesFromAst } from "./server.js";
 import { parseRouteModule } from "./shared.js";
 
 export type { ExtractedRoute, ExtractedServerRoute } from "@evjs/manifest";
 export { resolveRoutes } from "@evjs/manifest";
-export { extractRoutes, extractRoutesFromAst } from "./client.js";
+export {
+  extractClientRoutes,
+  extractClientRoutesFromAst,
+} from "./client.js";
 export {
   detectServerRouteExports,
   extractServerRoutes,
@@ -25,7 +28,7 @@ export function analyzeRoutes(source: string): RouteAnalysis {
   }
 
   return {
-    clientRoutes: extractRoutesFromAst(ast),
+    clientRoutes: extractClientRoutesFromAst(ast),
     serverRoutes: extractServerRoutesFromAst(ast),
   };
 }

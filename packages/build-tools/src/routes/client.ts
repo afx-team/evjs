@@ -19,13 +19,13 @@ import {
  * Only collects routes that have a `path` property. Pathless layouts using `id`
  * are skipped because they do not represent navigable URLs.
  */
-export function extractRoutes(source: string): ExtractedRoute[] {
+export function extractClientRoutes(source: string): ExtractedRoute[] {
   const ast = parseRouteModule(source);
   if (!ast) return [];
-  return extractRoutesFromAst(ast);
+  return extractClientRoutesFromAst(ast);
 }
 
-export function extractRoutesFromAst(ast: RouteAst): ExtractedRoute[] {
+export function extractClientRoutesFromAst(ast: RouteAst): ExtractedRoute[] {
   const createRouteNames = collectClientCreateRouteNames(ast);
   if (createRouteNames.size === 0) return [];
 
