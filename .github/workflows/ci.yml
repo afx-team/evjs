@@ -28,7 +28,7 @@ jobs:
         run: npx turbo build --filter="./packages/*"
       
       - name: Build Examples and Docs
-        run: npx turbo build --filter="./examples/*" --filter="evjs-docs"
+        run: npx turbo build --filter="./examples/*" --filter="evjs-docs" --concurrency=2
 
       - name: Lint & Type Check
         run: npm run lint && npm run check-types

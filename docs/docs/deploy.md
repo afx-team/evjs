@@ -6,7 +6,7 @@ Building and deploying an evjs application requires two parts: serving the stati
 
 ```bash
 npm run build
-# Under the hood: npx ev build
+# Under the hood: ev build
 ```
 
 This creates:

@@ -47,7 +47,7 @@ export function createWebSocketExampleTest() {
         const webPort = await getAvailablePort();
 
         // 1. Build with utoopack
-        execSync("npx ev build", {
+        execSync("ev build", {
           cwd: exampleDir,
           stdio: "pipe",
         });

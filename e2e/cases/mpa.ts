@@ -17,7 +17,7 @@ const test = base.extend<{ baseURL: string }, { _app: { port: number } }>({
     async ({}, use, workerInfo) => {
       const port = 31200 + workerInfo.workerIndex;
 
-      execSync("npx ev build", {
+      execSync("ev build", {
         cwd: exampleDir,
         stdio: "pipe",
       });
