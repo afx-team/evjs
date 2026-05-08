@@ -39,6 +39,7 @@ describe("CONFIG_DEFAULTS", () => {
     expect(CONFIG_DEFAULTS.html).toBe("./index.html");
     expect(CONFIG_DEFAULTS.port).toBe(3000);
     expect(CONFIG_DEFAULTS.serverPort).toBe(3001);
+    expect(CONFIG_DEFAULTS.endpoint).toBe("/api/fn");
     expect(CONFIG_DEFAULTS.clientProxy).toBe("@evjs/client/transport");
     expect(CONFIG_DEFAULTS.serverRegister).toBe("@evjs/server/register");
   });
@@ -51,6 +52,7 @@ describe("CONFIG_DEFAULTS", () => {
       html: "./index.html",
       port: 3000,
       serverPort: 3001,
+      endpoint: "/api/fn",
       clientProxy: "@evjs/client/transport",
       serverRegister: "@evjs/server/register",
     });
