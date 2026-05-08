@@ -22,11 +22,14 @@ import type { ConfigComplete, DevServerProxy, ProxyRule } from "@utoo/pack";
 function createSpaHistoryFallbackRule(
   config: ResolvedEvConfig<ConfigComplete>,
 ): ProxyRule {
-  const protocol = config.dev.https ? "https" : "http";
+  const target = new URL(
+    config.dev.https ? "https://localhost" : "http://localhost",
+  );
+  target.port = String(config.dev.port);
 
   return {
     context: ["^/(?!api(?:/|$))(?!turbopack-hmr$)(?!.*\\.[^/]+$).+"],
-    target: `${protocol}://localhost:${config.dev.port}`,
+    target: target.origin,
     changeOrigin: true,
     secure: false,
     pathRewrite: {

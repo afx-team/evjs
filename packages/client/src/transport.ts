@@ -53,7 +53,7 @@ export interface ServerTransport {
 }
 
 export interface TransportOptions {
-  /** Base URL for the server function endpoint. Defaults to the current origin. */
+  /** Base URL for the server function endpoint. Defaults to the current page URL. */
   baseUrl?: string;
   /** Server functions configuration */
   functions?: {
@@ -70,11 +70,47 @@ export interface TransportOptions {
   silent?: boolean;
 }
 
+const FALLBACK_BASE_URL = "http://localhost/";
+
+function getDefaultBaseUrl(): URL {
+  const base = new URL(globalThis.location?.href ?? FALLBACK_BASE_URL);
+  base.pathname = "/";
+  base.search = "";
+  base.hash = "";
+  return base;
+}
+
+function resolveBaseUrl(baseUrl?: string): URL {
+  if (baseUrl === undefined) {
+    return getDefaultBaseUrl();
+  }
+
+  return new URL(baseUrl, getDefaultBaseUrl());
+}
+
+function resolveEndpointUrl(
+  baseUrl: string | undefined,
+  endpoint: string,
+): URL {
+  try {
+    return new URL(endpoint);
+  } catch {
+    // Relative endpoint: resolve against the configured base URL below.
+  }
+
+  const base = resolveBaseUrl(baseUrl);
+  if (!base.pathname.endsWith("/")) {
+    base.pathname += "/";
+  }
+
+  return new URL(endpoint.replace(/^\/+/, ""), base);
+}
+
 /**
  * Default fetch-based transport.
  */
 function createFetchTransport(
-  baseUrl: string,
+  baseUrl: string | undefined,
   endpoint: string,
   headersFactory?:
     | Record<string, string>
@@ -86,7 +122,7 @@ function createFetchTransport(
       args: unknown[],
       context?: RequestContext,
     ): Promise<unknown> {
-      const url = `${baseUrl}${endpoint}`;
+      const url = resolveEndpointUrl(baseUrl, endpoint);
 
       const extraHeaders =
         typeof headersFactory === "function"
@@ -175,7 +211,7 @@ let _transport: ServerTransport | null = null;
 
 function getTransport(): ServerTransport {
   if (!_transport) {
-    _transport = createFetchTransport("", getFunctionEndpoint());
+    _transport = createFetchTransport(undefined, getFunctionEndpoint());
   }
   return _transport;
 }
@@ -195,7 +231,7 @@ export function initTransport(options: TransportOptions): void {
     _transport = options.transport;
   } else {
     _transport = createFetchTransport(
-      options.baseUrl ?? "",
+      options.baseUrl,
       options.functions?.endpoint ?? getFunctionEndpoint(),
       options.headers,
     );

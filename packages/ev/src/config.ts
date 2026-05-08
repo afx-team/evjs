@@ -217,6 +217,10 @@ export function resolveConfig<
 
   const serverPort = serverConfig.dev?.port ?? CONFIG_DEFAULTS.serverPort;
   const serverEndpoint = serverConfig.endpoint ?? CONFIG_DEFAULTS.endpoint;
+  const serverTarget = new URL(
+    serverConfig.dev?.https ? "https://localhost" : "http://localhost",
+  );
+  serverTarget.port = String(serverPort);
 
   return {
     entry: config.entry ?? CONFIG_DEFAULTS.entry,
@@ -231,7 +235,7 @@ export function resolveConfig<
         // Framework always proxies the server function endpoint to the local API dev server
         {
           context: [serverEndpoint],
-          target: `http${serverConfig.dev?.https ? "s" : ""}://localhost:${serverPort}`,
+          target: serverTarget.origin,
           changeOrigin: true,
           secure: false,
         },
