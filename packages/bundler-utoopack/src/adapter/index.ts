@@ -150,7 +150,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
   async dev(
     config: ResolvedEvConfig<ConfigComplete>,
     cwd: string,
-    callbacks: { onServerBundleReady: () => void },
+    callbacks: { onServerBundleReady: () => void | Promise<void> },
     hooks: EvPluginHooks<ConfigComplete>[],
   ): Promise<void> {
     const { createUtoopackConfig } = await import("./create-config.js");
@@ -181,17 +181,24 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
 
         if (hasBundle) {
           ready = true;
-          callbacks.onServerBundleReady();
-          watcher?.close();
+          try {
+            await callbacks.onServerBundleReady();
+          } catch (err) {
+            logger.error`Server bundle ready callback failed: ${err}`;
+            process.exitCode = 1;
+            setTimeout(() => process.exit(1), 0);
+          } finally {
+            watcher?.close();
+          }
         }
       };
 
       const watcher = fs.watch(outDir, (_eventType, filename) => {
-        if (filename) checkReady(filename);
+        if (filename) void checkReady(filename);
       });
 
       // Initial check in case it was written before the watcher attached
-      checkReady();
+      await checkReady();
     }
   },
 };

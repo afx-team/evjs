@@ -13,9 +13,9 @@ const serverFnLink = (): TRPCLink<AppRouter> => {
   return () => {
     return ({ op }) => {
       return observable((observer) => {
-        trpcHandler(op)
-          .then((res) => {
-            observer.next({ result: { data: res.result.data } });
+        trpcHandler({ path: op.path, input: op.input })
+          .then((data) => {
+            observer.next({ result: { data } });
             observer.complete();
           })
           .catch((err) => {

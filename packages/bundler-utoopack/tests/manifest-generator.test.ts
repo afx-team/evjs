@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { hashServerFunction } from "@evjs/build-tools";
+import { transformServerFile } from "@evjs/build-tools";
 import { afterEach, describe, expect, it } from "vitest";
 import { UtoopackManifestGenerator } from "../src/manifest-generator.js";
 
@@ -63,9 +63,7 @@ describe("UtoopackManifestGenerator", () => {
       }),
     );
 
-    await fs.promises.writeFile(
-      path.join(cwd, "src/api/users.server.ts"),
-      `
+    const usersSource = `
         "use server";
         export async function getUsers() {
           return [];
@@ -73,8 +71,9 @@ describe("UtoopackManifestGenerator", () => {
         export async function createUser() {
           return { id: "1" };
         }
-      `,
-    );
+      `;
+    const usersPath = path.join(cwd, "src/api/users.server.ts");
+    await fs.promises.writeFile(usersPath, usersSource);
     await fs.promises.writeFile(
       path.join(cwd, "src/api/health.routes.ts"),
       `
@@ -99,8 +98,17 @@ describe("UtoopackManifestGenerator", () => {
 
     const generator = new UtoopackManifestGenerator(cwd, true);
     await generator.build();
-    const getUsersId = hashServerFunction(usersModuleId, "getUsers");
-    const createUserId = hashServerFunction(usersModuleId, "createUser");
+    const clientTransform = await transformServerFile(usersSource, {
+      resourcePath: usersPath,
+      rootContext: cwd,
+      isServer: false,
+    });
+    const expectedFunctionIds = [
+      ...clientTransform.code.matchAll(
+        /createServerReference\("([a-f0-9]{16})"/g,
+      ),
+    ].map((match) => match[1]);
+    expect(expectedFunctionIds).toHaveLength(2);
 
     const serverManifest = JSON.parse(
       await fs.promises.readFile(
@@ -120,10 +128,14 @@ describe("UtoopackManifestGenerator", () => {
       js: ["server.js"],
       css: ["server.css"],
     });
-    expect(serverManifest.fns).toEqual({
-      [getUsersId]: { assets: { js: ["server.js"], css: [] } },
-      [createUserId]: { assets: { js: ["server.js"], css: [] } },
-    });
+    expect(Object.keys(serverManifest.fns).sort()).toEqual(
+      expectedFunctionIds.sort(),
+    );
+    for (const fnId of expectedFunctionIds) {
+      expect(serverManifest.fns[fnId]).toEqual({
+        assets: { js: ["server.js"], css: [] },
+      });
+    }
     expect(serverManifest.routes).toEqual([
       {
         path: "/api/health",

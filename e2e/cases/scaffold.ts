@@ -1,9 +1,20 @@
 import { execSync, spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
+
+async function getAvailablePort(): Promise<number> {
+  return new Promise((resolve) => {
+    const server = createServer();
+    server.listen(0, () => {
+      const { port } = server.address() as { port: number };
+      server.close(() => resolve(port));
+    });
+  });
+}
 
 test.describe("Scaffolding CLI E2E", () => {
   test.setTimeout(180_000);
@@ -26,7 +37,7 @@ test.describe("Scaffolding CLI E2E", () => {
 
   test("create-app should scaffold, build, and run dev server", async ({
     page: _page,
-  }, testInfo) => {
+  }) => {
     const cleanEnv = { ...process.env };
     for (const key of Object.keys(cleanEnv)) {
       if (key.startsWith("npm_")) delete cleanEnv[key];
@@ -101,9 +112,10 @@ test.describe("Scaffolding CLI E2E", () => {
       env: cleanEnv,
     });
 
-    // Force unique port to avoid EADDRINUSE
-    const devPort = 35123 + testInfo.workerIndex * 2;
-    const serverDevPort = devPort + 1;
+    // Allocate real free ports; deterministic offsets can collide with local
+    // processes or with stale servers from a previous failed run.
+    const devPort = await getAvailablePort();
+    const serverDevPort = await getAvailablePort();
     fs.writeFileSync(
       path.join(targetDir, "ev.config.ts"),
       `export default { dev: { port: ${devPort} }, server: { dev: { port: ${serverDevPort} } } };\n`,
@@ -134,38 +146,58 @@ test.describe("Scaffolding CLI E2E", () => {
         {
           cwd: targetDir,
           env: cleanEnv,
-          stdio: "inherit",
+          stdio: ["ignore", "pipe", "pipe"],
         },
       );
 
       let settled = false;
+      let closed = false;
+      let webReady = false;
+      let apiReady = false;
       const settle = (fn: () => void) => {
         if (!settled) {
           settled = true;
           fn();
         }
       };
+      const maybeResolveReady = () => {
+        if (!webReady || !apiReady) return;
+        clearTimeout(timeout);
+        devProcess.kill("SIGTERM");
+        forceKill();
+        settle(() => resolve());
+      };
 
       const timeout = setTimeout(() => {
         devProcess.kill("SIGTERM");
+        forceKill();
+        settle(() => reject(new Error("Dev server did not become ready")));
       }, 90_000);
-
-      const checkServer = async () => {
-        try {
-          const res = await fetch(`http://127.0.0.1:${devPort}/`);
-          if (res.ok) {
-            clearTimeout(timeout);
-            devProcess.kill("SIGTERM");
-            return;
+      const forceKill = () => {
+        setTimeout(() => {
+          if (!closed) {
+            devProcess.kill("SIGKILL");
           }
-        } catch {
-          // Connection refused — server not ready yet
-        }
-        if (!settled) setTimeout(checkServer, 2000);
+        }, 5_000).unref();
       };
-      checkServer();
+
+      devProcess.stdout?.on("data", (data) => {
+        const text = data.toString();
+        process.stdout.write(data);
+        if (text.includes(`http://localhost:${devPort}`)) {
+          webReady = true;
+        }
+        if (text.includes("API server ready")) {
+          apiReady = true;
+        }
+        maybeResolveReady();
+      });
+      devProcess.stderr?.on("data", (data) => {
+        process.stderr.write(data);
+      });
 
       devProcess.on("close", (code: number | null) => {
+        closed = true;
         clearTimeout(timeout);
         if (code !== 0 && code !== null && !settled) {
           settle(() =>

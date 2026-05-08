@@ -1,30 +1,19 @@
 "use server";
-import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "../trpc";
 
 /**
- * A Server Function that acts as a tRPC handler.
+ * A Server Function that dispatches into the tRPC router.
  * This demonstrates how to combine tRPC's type-safety with
  * @evjs's RPC infrastructure.
  */
-export async function trpcHandler(reqBody: unknown) {
-  // We simulate a fetch request for tRPC
-  const url = new URL("http://localhost/trpc");
+export async function trpcHandler(op: { path: string; input: unknown }) {
+  const caller = appRouter.createCaller({});
 
-  const response = await fetchRequestHandler({
-    endpoint: "/trpc",
-    req: new Request(url, {
-      method: "POST",
-      body: JSON.stringify(reqBody),
-      headers: {
-        "Content-Type": "application/json",
-      },
-    }),
-    router: appRouter,
-    createContext: () => ({}),
-  });
+  if (op.path === "hello") {
+    return caller.hello();
+  }
 
-  return await response.json();
+  throw new Error(`Unknown tRPC procedure: ${op.path}`);
 }
 
 // standard server function examples

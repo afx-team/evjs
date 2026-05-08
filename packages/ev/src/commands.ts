@@ -22,6 +22,7 @@ import type {
 const logger = getLogger(["evjs", "ev"]);
 
 type ApiProcess = ReturnType<typeof execa>;
+const API_READY_MARKER = "__EVJS_API_READY__";
 
 export interface DevOptions<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
   cwd?: string;
@@ -225,6 +226,67 @@ async function stopApiProcess(
   }
 }
 
+function forwardApiOutput(child: ApiProcess): void {
+  child.stdout?.on("data", (data) => {
+    const text = data.toString().replaceAll(API_READY_MARKER, "");
+    if (text.length > 0) {
+      process.stdout.write(text);
+    }
+  });
+  child.stderr?.on("data", (data) => {
+    process.stderr.write(data);
+  });
+}
+
+function waitForApiReady(child: ApiProcess, timeoutMs = 10_000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      child.stdout?.off("data", onStdout);
+      child.stderr?.off("data", onStderr);
+      child.off("exit", onExit);
+      fn();
+    };
+
+    const onStdout = (data: Buffer) => {
+      if (data.toString().includes(API_READY_MARKER)) {
+        settle(resolve);
+      }
+    };
+    const onStderr = (data: Buffer) => {
+      if (data.toString().includes("EADDRINUSE")) {
+        settle(() =>
+          reject(new Error("API server port is already in use (EADDRINUSE)")),
+        );
+      }
+    };
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+      settle(() =>
+        reject(
+          new Error(
+            `API server exited before it was ready (code ${code ?? "null"}, signal ${signal ?? "null"})`,
+          ),
+        ),
+      );
+    };
+    const timeout = setTimeout(() => {
+      settle(() =>
+        reject(
+          new Error(`API server did not report ready within ${timeoutMs}ms`),
+        ),
+      );
+    }, timeoutMs);
+
+    child.stdout?.on("data", onStdout);
+    child.stderr?.on("data", onStderr);
+    child.once("exit", onExit);
+  });
+}
+
 export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
   userConfig?: EvConfig<TBundlerCfg>,
   options?: DevOptions<TBundlerCfg>,
@@ -252,6 +314,17 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
 
   let apiProcess: ApiProcess | null = null;
   let restartQueue: Promise<void> = Promise.resolve();
+  const expectedApiExits = new WeakSet<ApiProcess>();
+
+  const stopApiOnParentShutdown = () => {
+    if (!apiProcess) return;
+    expectedApiExits.add(apiProcess);
+    apiProcess.kill();
+    apiProcess = null;
+  };
+
+  process.once("SIGINT", stopApiOnParentShutdown);
+  process.once("SIGTERM", stopApiOnParentShutdown);
 
   const restartApiServer = async () => {
     if (!config.serverEnabled) return;
@@ -262,6 +335,7 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
     if (apiProcess) {
       logger.info`Restarting API server...`;
       const oldProcess = apiProcess;
+      expectedApiExits.add(oldProcess);
       try {
         await stopApiProcess(oldProcess);
       } catch {}
@@ -287,25 +361,36 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
           `const serverModule = await import(${JSON.stringify(pathToFileURL(serverBundlePath).href)});`,
           `const handler = serverModule.default?.default ?? serverModule.default ?? serverModule;`,
           `const { serve } = require("@evjs/server/node");`,
-          `serve({ fetch: handler.fetch }, { port: ${serverPort}, https: ${JSON.stringify(config.server?.dev?.https ?? false)} });`,
+          `const server = serve({ fetch: handler.fetch }, { port: ${serverPort}, https: ${JSON.stringify(config.server?.dev?.https ?? false)} });`,
+          `const ready = () => console.log(${JSON.stringify(API_READY_MARKER)});`,
+          `if (server.listening) ready(); else server.once("listening", ready);`,
+          `server.once("error", (err) => { console.error(err); process.exit(1); });`,
           `})().catch((err) => { console.error(err); process.exit(1); });`,
         ].join("\n"),
       );
 
       const child = execa("node", [bootstrapPath], {
-        stdio: "inherit",
+        stdio: ["inherit", "pipe", "pipe"],
         env: { ...process.env, NODE_ENV: "development" },
       });
       apiProcess = child;
+      forwardApiOutput(child);
 
-      child.catch(() => {
+      child.catch((err) => {
+        if (expectedApiExits.has(child)) return;
         if (apiProcess === child) {
           apiProcess = null;
+          logger.error`API server process exited unexpectedly: ${err}`;
+          process.exitCode = 1;
+          setTimeout(() => process.exit(1), 0);
         }
       });
+      await waitForApiReady(child);
+      logger.info`API server ready`;
     } catch (err) {
       logger.error`Server runtime failed: ${err}`;
       apiProcess = null;
+      throw err;
     }
   };
 
@@ -314,12 +399,17 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
     await restartQueue;
   };
 
-  await bundler.dev(
-    config,
-    cwd,
-    { onServerBundleReady: handleServerBundleReady },
-    hooks,
-  );
+  try {
+    await bundler.dev(
+      config,
+      cwd,
+      { onServerBundleReady: handleServerBundleReady },
+      hooks,
+    );
+  } finally {
+    process.off("SIGINT", stopApiOnParentShutdown);
+    process.off("SIGTERM", stopApiOnParentShutdown);
+  }
 }
 
 export async function build<TBundlerCfg = import("@utoo/pack").ConfigComplete>(

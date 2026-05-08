@@ -130,6 +130,8 @@ export async function createUtoopackConfig(
     // Dev server configuration
     devServer: {
       hot: true,
+      port: config.dev.port,
+      https: config.dev.https !== false,
       proxy: devProxy,
     },
   };

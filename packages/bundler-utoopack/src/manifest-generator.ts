@@ -355,9 +355,8 @@ export class UtoopackManifestGenerator {
       const exportNames = extractServerFunctionExports(source);
       if (exportNames.length === 0) continue;
 
-      const moduleId = serverModule?.moduleId ?? sourceRel;
       for (const exportName of exportNames) {
-        const id = hashServerFunction(moduleId, exportName);
+        const id = hashServerFunction(sourceRel, exportName);
         fns[id] = {
           assets: fns[id]
             ? mergeAssets(fns[id].assets, sourceAssets)

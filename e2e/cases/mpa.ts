@@ -14,9 +14,7 @@ const exampleDir = path.resolve(
 const test = base.extend<{ baseURL: string }, { _app: { port: number } }>({
   _app: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture API requires object destructuring
-    async ({}, use, workerInfo) => {
-      const port = 31200 + workerInfo.workerIndex;
-
+    async ({}, use) => {
       execSync("ev build", {
         cwd: exampleDir,
         stdio: "pipe",
@@ -52,8 +50,9 @@ const test = base.extend<{ baseURL: string }, { _app: { port: number } }>({
       });
 
       await new Promise<void>((resolve) => {
-        server.listen(port, resolve);
+        server.listen(0, resolve);
       });
+      const { port } = server.address() as { port: number };
 
       await use({ port });
 
@@ -95,10 +94,21 @@ test.describe("mpa", () => {
       pages?: Record<string, unknown>;
     };
 
-    expect(manifest.pages).toBeTruthy();
-    expect(manifest.pages && Object.keys(manifest.pages).sort()).toEqual([
-      "about",
-      "home",
-    ]);
+    expect(manifest.pages).toEqual({
+      about: expect.objectContaining({
+        assets: expect.objectContaining({
+          js: expect.arrayContaining([expect.stringMatching(/about.*\.js$/)]),
+          css: expect.any(Array),
+        }),
+        routes: [],
+      }),
+      home: expect.objectContaining({
+        assets: expect.objectContaining({
+          js: expect.arrayContaining([expect.stringMatching(/home.*\.js$/)]),
+          css: expect.any(Array),
+        }),
+        routes: [],
+      }),
+    });
   });
 });

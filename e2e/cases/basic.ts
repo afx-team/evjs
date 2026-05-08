@@ -16,9 +16,15 @@ test.describe("basic", () => {
     const response = await responsePromise;
     expect(response.status()).toBe(200);
     const data = await response.json();
-    expect(data.result).toBeDefined();
     expect(Array.isArray(data.result)).toBe(true);
     expect(data.result.length).toBeGreaterThanOrEqual(3);
+    expect(data.result).toEqual(
+      expect.arrayContaining([
+        { id: "1", name: "Alice", email: "alice@example.com" },
+        { id: "2", name: "Bob", email: "bob@example.com" },
+        { id: "3", name: "Charlie", email: "charlie@example.com" },
+      ]),
+    );
 
     // Wait for loading to finish
     await expect(page.getByText("Loading users")).not.toBeVisible({
@@ -48,9 +54,13 @@ test.describe("basic", () => {
     const createResponse = await createResponsePromise;
     expect(createResponse.status()).toBe(200);
     const createData = await createResponse.json();
-    expect(createData.result).toBeDefined();
-    expect(createData.result.name).toBe("Dave");
-    expect(createData.result.email).toBe("dave@example.com");
+    expect(createData.result).toEqual(
+      expect.objectContaining({
+        id: expect.stringMatching(/^\d+$/),
+        name: "Dave",
+        email: "dave@example.com",
+      }),
+    );
 
     // Verify new user appears
     await expect(page.getByText("Dave")).toBeVisible({ timeout: 5_000 });

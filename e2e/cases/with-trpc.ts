@@ -23,8 +23,9 @@ test.describe("with-trpc", () => {
     await page.goto(baseURL);
     const trpcResponse = await trpcPromise;
     expect(trpcResponse.status()).toBe(200);
-    const trpcData = await trpcResponse.json();
-    expect(trpcData.result).toBeDefined();
+    expect(await trpcResponse.json()).toEqual(
+      expect.objectContaining({ result: expect.anything() }),
+    );
 
     // Wait for tRPC section heading
     await expect(page.getByText("1. tRPC Call")).toBeVisible({
@@ -35,6 +36,12 @@ test.describe("with-trpc", () => {
     // Use a longer timeout since tRPC bootstraps a full request pipeline.
     const preElement = page.locator("pre");
     await expect(preElement).toBeVisible({ timeout: 15_000 });
+    await expect(preElement).toContainText(
+      "Hello from tRPC! (called via Server Function proxy)",
+    );
+    expect(JSON.parse((await preElement.textContent()) ?? "{}")).toEqual({
+      message: "Hello from tRPC! (called via Server Function proxy)",
+    });
   });
 
   test("server time section renders", async ({ page, baseURL }) => {
@@ -43,12 +50,18 @@ test.describe("with-trpc", () => {
     await expect(page.getByText("2. Direct Server Function")).toBeVisible({
       timeout: 10_000,
     });
-    await expect(page.getByText("Server Time:")).toBeVisible();
+    await expect(page.locator("p", { hasText: "Server Time:" })).toContainText(
+      /\d{4}-\d{2}-\d{2}T/,
+    );
   });
 
-  test("refresh button is visible", async ({ page, baseURL }) => {
+  test("refresh button refetches server data", async ({ page, baseURL }) => {
     await page.goto(baseURL);
 
+    await expect(page.locator("pre")).toContainText(
+      "Hello from tRPC! (called via Server Function proxy)",
+      { timeout: 15_000 },
+    );
     const refreshPromise = page.waitForResponse(
       (res) =>
         res.url().includes("/api/fn") && res.request().method() === "POST",
@@ -57,6 +70,8 @@ test.describe("with-trpc", () => {
     await refreshButton.click();
     const refreshResponse = await refreshPromise;
     expect(refreshResponse.status()).toBe(200);
-    await expect(refreshButton).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("pre")).toContainText(
+      "Hello from tRPC! (called via Server Function proxy)",
+    );
   });
 });

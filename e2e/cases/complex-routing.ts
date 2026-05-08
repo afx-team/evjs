@@ -111,9 +111,13 @@ test.describe("complex-routing", () => {
     const dashboardResponse = await dashboardPromise;
     expect(dashboardResponse.status()).toBe(200);
     const dashboardData = await dashboardResponse.json();
-    expect(dashboardData.result).toBeDefined();
-    expect(dashboardData.result.totalPosts).toBeDefined();
-    expect(dashboardData.result.totalUsers).toBeDefined();
+    expect(dashboardData.result).toEqual(
+      expect.objectContaining({
+        totalPosts: 5,
+        totalUsers: 3,
+        tags: expect.arrayContaining(["tutorial", "advanced", "routing"]),
+      }),
+    );
 
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({
       timeout: 10_000,
@@ -122,9 +126,8 @@ test.describe("complex-routing", () => {
     // Stats section loaded via route loader (server function)
     await expect(page.getByRole("heading", { name: "All Tags" })).toBeVisible();
 
-    // Stat cards present (numbers rendered from server data)
-    const statCards = page.locator("div").filter({ hasText: /^\d+$/ });
-    await expect(statCards.first()).toBeVisible();
+    await expect(page.getByText("5")).toBeVisible();
+    await expect(page.getByText("3")).toBeVisible();
   });
 
   test("redirect — /old-blog redirects to /posts", async ({

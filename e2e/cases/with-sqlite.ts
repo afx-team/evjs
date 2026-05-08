@@ -13,9 +13,21 @@ test.describe("with-sqlite", () => {
     const response = await responsePromise;
     expect(response.status()).toBe(200);
     const data = await response.json();
-    expect(data.result).toBeDefined();
     expect(Array.isArray(data.result)).toBe(true);
     expect(data.result.length).toBeGreaterThanOrEqual(3);
+    expect(data.result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "Alice",
+          email: "alice@example.com",
+        }),
+        expect.objectContaining({ name: "Bob", email: "bob@example.com" }),
+        expect.objectContaining({
+          name: "Charlie",
+          email: "charlie@example.com",
+        }),
+      ]),
+    );
 
     await expect(page.getByText("SQLite Server Functions")).toBeVisible({
       timeout: 10_000,
@@ -73,8 +85,12 @@ test.describe("with-sqlite", () => {
     const createResponse = await createResponsePromise;
     expect(createResponse.status()).toBe(200);
     const createData = await createResponse.json();
-    expect(createData.result).toBeDefined();
-    expect(createData.result.name).toBe(uniqueName);
+    expect(createData.result).toEqual(
+      expect.objectContaining({
+        id: expect.any(Number),
+        name: uniqueName,
+      }),
+    );
 
     // Verify new user appears
     await expect(

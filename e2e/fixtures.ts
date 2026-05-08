@@ -195,15 +195,6 @@ export function createExampleTest(exampleName: string) {
         // Build with specified bundler (fullstack = server enabled)
         await buildExample(exampleDir, bundlerName, true);
 
-        // Base port depends on both worker index and a hash of the example name
-        // to avoid conflicts if multiple worker fixtures run sequentially.
-        const hash = Array.from(exampleName + bundlerName).reduce(
-          (sum, char) => sum + char.charCodeAt(0),
-          0,
-        );
-        const apiPort = 30000 + workerInfo.workerIndex * 100 + (hash % 100);
-        const webPort = apiPort + 1;
-
         // Read the server manifest to get the hashed entry filename
         const manifestPath = path.join(
           exampleDir,
@@ -226,7 +217,7 @@ export function createExampleTest(exampleName: string) {
           [
             `const handler = require(${JSON.stringify(serverEntryPath)}).default;`,
             `const { serve } = require("@hono/node-server");`,
-            `serve({ fetch: handler.fetch, port: ${apiPort} }, (info) => {`,
+            `serve({ fetch: handler.fetch, port: 0 }, (info) => {`,
             `  console.log("E2E_SERVER_READY:" + info.port);`,
             `});`,
           ].join("\n"),
@@ -238,15 +229,16 @@ export function createExampleTest(exampleName: string) {
           stdio: "pipe",
         });
 
-        await new Promise<void>((resolve, reject) => {
+        const apiPort = await new Promise<number>((resolve, reject) => {
           const timeout = setTimeout(() => {
             reject(new Error("Server did not start within 15s"));
           }, 15_000);
 
           serverProcess.stdout?.on("data", (data) => {
-            if (data.toString().includes("E2E_SERVER_READY")) {
+            const match = data.toString().match(/E2E_SERVER_READY:(\d+)/);
+            if (match) {
               clearTimeout(timeout);
-              resolve();
+              resolve(Number(match[1]));
             }
           });
 
@@ -263,8 +255,9 @@ export function createExampleTest(exampleName: string) {
         const staticServer = createStaticServer(distDir, { apiPort });
 
         await new Promise<void>((resolve) => {
-          staticServer.listen(webPort, resolve);
+          staticServer.listen(0, resolve);
         });
+        const { port: webPort } = staticServer.address() as { port: number };
 
         await use({ webPort, apiPort });
 
@@ -309,18 +302,13 @@ export function createCsrExampleTest(exampleName: string) {
         // Build with specified bundler (CSR = server disabled)
         await buildExample(exampleDir, bundlerName, false);
 
-        const hash = Array.from(exampleName + bundlerName).reduce(
-          (sum, char) => sum + char.charCodeAt(0),
-          0,
-        );
-        const webPort = 30000 + workerInfo.workerIndex * 100 + (hash % 100) + 1;
-
         const distDir = path.join(exampleDir, "dist");
         const staticServer = createStaticServer(distDir);
 
         await new Promise<void>((resolve) => {
-          staticServer.listen(webPort, resolve);
+          staticServer.listen(0, resolve);
         });
+        const { port: webPort } = staticServer.address() as { port: number };
 
         await use({ webPort, apiPort: 0 });
 

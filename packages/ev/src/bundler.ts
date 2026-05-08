@@ -27,7 +27,7 @@ export interface BundlerAdapter<
   dev(
     config: ResolvedEvConfig<TBundlerCfg>,
     cwd: string,
-    callbacks: { onServerBundleReady: () => void },
+    callbacks: { onServerBundleReady: () => void | Promise<void> },
     hooks: EvPluginHooks<TBundlerCfg>[],
   ): Promise<void>;
 }

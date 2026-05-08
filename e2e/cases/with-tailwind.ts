@@ -13,9 +13,7 @@ const exampleDir = path.resolve(
 const test = base.extend<{ baseURL: string }, { _app: { port: number } }>({
   _app: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture API requires object destructuring
-    async ({}, use, workerInfo) => {
-      const port = 31000 + workerInfo.workerIndex;
-
+    async ({}, use) => {
       // Expects the example to be pre-built (npm run build)
 
       // Serve the client bundle
@@ -50,8 +48,9 @@ const test = base.extend<{ baseURL: string }, { _app: { port: number } }>({
       });
 
       await new Promise<void>((resolve) => {
-        server.listen(port, resolve);
+        server.listen(0, resolve);
       });
+      const { port } = server.address() as { port: number };
       await use({ port });
       server.close();
     },

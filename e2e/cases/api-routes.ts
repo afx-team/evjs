@@ -110,13 +110,22 @@ test.describe("api-routes", () => {
     expect(healthResponse.status()).toBe(200);
     const healthData = await healthResponse.json();
     expect(healthData.status).toBe("ok");
-    expect(healthData.uptime).toBeDefined();
+    expect(healthData.uptime).toEqual(expect.any(Number));
+    expect(healthData.timestamp).toEqual(
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    );
 
     // Wait for the pre tag containing JSON to appear and verify its contents
     const pre = page.locator("pre").first();
     await expect(pre).toBeVisible({ timeout: 5_000 });
     const text = await pre.textContent();
-    expect(text).toContain('"status": "ok"');
+    expect(JSON.parse(text ?? "{}")).toEqual(
+      expect.objectContaining({
+        status: "ok",
+        uptime: expect.any(Number),
+        timestamp: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      }),
+    );
   });
 
   test("calls server function", async ({ page, baseURL }) => {
