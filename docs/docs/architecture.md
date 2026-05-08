@@ -100,12 +100,12 @@ Browser ──(:3000)──► Dev Server ──► HMR (static assets)
 ## Build Flow (`ev build`)
 
 1. `loadConfig(cwd)` — loads `ev.config.ts` or returns defaults
-2. `createUtoopackConfig(config, cwd)` — generates Utoopack config
-3. Calls the Utoopack Node API directly
+2. `createWebpackConfig(config, cwd)` — generates webpack config (no temp files)
+3. Calls `utoopack()` Node API directly
 4. `@evjs/bundler-utoopack` runs during compilation:
-   - Runs client and server bundle compilation
-   - Reads Utoopack stats for emitted assets and module IDs
-   - Analyzes source for routes and `"use server"` exports
+   - Discovers `*.server.ts` via glob
+   - Applies SWC transforms (client + server variants)
+   - Runs child compiler for server bundle
    - Emits `dist/server/manifest.json` and `dist/client/manifest.json`
 
 ## Deployment Adapters

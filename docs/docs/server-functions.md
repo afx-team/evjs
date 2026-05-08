@@ -194,7 +194,7 @@ flowchart TD
 
 - **Client build**: function bodies → `createServerReference()` stubs
 - **Server build**: original bodies preserved + `registerServerReference()` injected
-- Function IDs are stable SHA-256 hashes from `moduleId + "#" + exportName`, truncated to 16 hex characters to match Utoopack server references
+- Function IDs are stable SHA-256 hashes from `filePath + exportName`
 
 ## Key Points
 

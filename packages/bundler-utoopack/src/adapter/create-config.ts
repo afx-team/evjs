@@ -11,14 +11,13 @@ import path from "node:path";
 
 const require = createRequire(import.meta.url);
 
-import type { EvBundlerCtx, EvPluginHooks, ResolvedEvConfig } from "@evjs/ev";
-import { isMpa } from "@evjs/ev";
-import type {
-  ConfigComplete,
-  DevServerProxy,
-  EntryOptions,
-  ProxyRule,
-} from "@utoo/pack";
+import {
+  type EvBundlerCtx,
+  type EvPluginHooks,
+  isMpa,
+  type ResolvedEvConfig,
+} from "@evjs/ev";
+import type { ConfigComplete, DevServerProxy, ProxyRule } from "@utoo/pack";
 
 function createSpaHistoryFallbackRule(
   config: ResolvedEvConfig<ConfigComplete>,
@@ -34,24 +33,6 @@ function createSpaHistoryFallbackRule(
       "^/.*$": "/",
     },
   };
-}
-
-function resolveEntry(cwd: string, entry: string): string {
-  return path.isAbsolute(entry) ? entry : path.resolve(cwd, entry);
-}
-
-function createClientEntries(
-  config: ResolvedEvConfig<ConfigComplete>,
-  cwd: string,
-): EntryOptions[] {
-  if (config.pages) {
-    return Object.entries(config.pages).map(([name, page]) => ({
-      import: resolveEntry(cwd, page.entry),
-      name,
-    }));
-  }
-
-  return [{ import: resolveEntry(cwd, config.entry) }];
 }
 
 /**
@@ -88,7 +69,16 @@ export async function createUtoopackConfig(
   const utoopackConfig: ConfigComplete = {
     mode: isProduction ? "production" : "development",
     // MPA mode: one entry per page; SPA mode: single entry
-    entry: createClientEntries(config, cwd),
+    entry: isMpa(config)
+      ? Object.entries(config.pages ?? {}).map(([name, page]) => ({
+          import: page.entry,
+          name,
+        }))
+      : [
+          {
+            import: config.entry,
+          },
+        ],
     output: {
       path: path.resolve(cwd, serverEnabled ? "dist/client" : "dist"),
       filename: isProduction ? "[name].[contenthash:8].js" : "[name].js",
@@ -108,9 +98,7 @@ export async function createUtoopackConfig(
     ...(serverEnabled
       ? {
           server: {
-            entry: finalServerEntry
-              ? resolveEntry(cwd, finalServerEntry)
-              : undefined,
+            entry: finalServerEntry,
             output: {
               path: path.resolve(cwd, "dist/server"),
               filename: isProduction
