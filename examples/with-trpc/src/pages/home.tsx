@@ -13,7 +13,7 @@ const serverFnLink = (): TRPCLink<AppRouter> => {
   return () => {
     return ({ op }) => {
       return observable((observer) => {
-        trpcHandler({ path: op.path, input: op.input })
+        trpcHandler({ path: op.path, input: op.input, type: op.type })
           .then((data) => {
             observer.next({ result: { data } });
             observer.complete();

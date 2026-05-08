@@ -1,4 +1,5 @@
 "use server";
+import { callTRPCProcedure } from "@trpc/server";
 import { appRouter } from "../trpc";
 
 /**
@@ -6,14 +7,20 @@ import { appRouter } from "../trpc";
  * This demonstrates how to combine tRPC's type-safety with
  * @evjs's RPC infrastructure.
  */
-export async function trpcHandler(op: { path: string; input: unknown }) {
-  const caller = appRouter.createCaller({});
-
-  if (op.path === "hello") {
-    return caller.hello();
-  }
-
-  throw new Error(`Unknown tRPC procedure: ${op.path}`);
+export async function trpcHandler(op: {
+  path: string;
+  input: unknown;
+  type: "query" | "mutation" | "subscription";
+}) {
+  return callTRPCProcedure({
+    router: appRouter,
+    path: op.path,
+    type: op.type,
+    ctx: {},
+    getRawInput: async () => op.input,
+    signal: undefined,
+    batchIndex: 0,
+  });
 }
 
 // standard server function examples

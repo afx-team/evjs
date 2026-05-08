@@ -183,12 +183,10 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
           ready = true;
           try {
             await callbacks.onServerBundleReady();
+            watcher?.close();
           } catch (err) {
             logger.error`Server bundle ready callback failed: ${err}`;
-            process.exitCode = 1;
-            setTimeout(() => process.exit(1), 0);
-          } finally {
-            watcher?.close();
+            ready = false;
           }
         }
       };

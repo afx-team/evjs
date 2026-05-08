@@ -381,8 +381,6 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
         if (apiProcess === child) {
           apiProcess = null;
           logger.error`API server process exited unexpectedly: ${err}`;
-          process.exitCode = 1;
-          setTimeout(() => process.exit(1), 0);
         }
       });
       await waitForApiReady(child);
