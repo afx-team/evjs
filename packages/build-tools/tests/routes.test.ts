@@ -300,7 +300,6 @@ describe("extractServerRoutes", () => {
       {
         path: "/api/posts",
         methods: ["GET", "POST"],
-        export: "postsHandler",
       },
     ]);
     expect(detectServerRouteExports(source)).toEqual(["postsHandler"]);
@@ -322,7 +321,6 @@ describe("extractServerRoutes", () => {
       {
         path: "/api/health",
         methods: ["GET", "HEAD"],
-        export: "healthHandler",
       },
     ]);
   });
@@ -370,7 +368,6 @@ describe("analyzeRoutes", () => {
         {
           path: "/api/health",
           methods: ["GET"],
-          export: "healthHandler",
         },
       ],
     });

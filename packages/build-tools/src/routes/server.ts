@@ -23,9 +23,14 @@ const HTTP_METHODS = new Set([
  * Returns the exported variable names, or null if this is not a server route file.
  */
 export function detectServerRouteExports(source: string): string[] | null {
-  const routes = extractServerRoutes(source);
-  if (routes.length === 0) return null;
-  return routes.map((route) => route.export);
+  const ast = parseRouteModule(source);
+  if (!ast) return null;
+
+  const createRouteNames = collectServerCreateRouteNames(ast);
+  if (createRouteNames.size === 0) return null;
+
+  const exportNames = collectServerRouteExportNames(ast, createRouteNames);
+  return exportNames.length > 0 ? exportNames : null;
 }
 
 /**
@@ -47,10 +52,7 @@ export function extractServerRoutesFromAst(
   const createRouteNames = collectServerCreateRouteNames(ast);
   if (createRouteNames.size === 0) return [];
 
-  const routeDeclarations = new Map<
-    string,
-    Omit<ExtractedServerRoute, "export">
-  >();
+  const routeDeclarations = new Map<string, ExtractedServerRoute>();
   const routes: ExtractedServerRoute[] = [];
 
   for (const item of ast.body) {
@@ -61,7 +63,7 @@ export function extractServerRoutesFromAst(
           if (d.init && d.id.type === "Identifier") {
             const route = tryExtractServerRoute(d.init, createRouteNames);
             if (route) {
-              routes.push({ ...route, export: d.id.value });
+              routes.push(route);
             }
           }
         }
@@ -89,10 +91,7 @@ export function extractServerRoutesFromAst(
         const route = routeDeclarations.get(spec.orig.value);
         if (!route) continue;
 
-        const exported = spec.exported ?? spec.orig;
-        if (exported.type === "Identifier") {
-          routes.push({ ...route, export: exported.value });
-        }
+        routes.push(route);
       }
     }
   }
@@ -104,10 +103,64 @@ function collectServerCreateRouteNames(ast: RouteAst): Set<string> {
   return collectImportedNames(ast, "@evjs/server", "createRoute");
 }
 
+function collectServerRouteExportNames(
+  ast: RouteAst,
+  createRouteNames: Set<string>,
+): string[] {
+  const routeDeclarations = new Set<string>();
+  const exportNames: string[] = [];
+
+  for (const item of ast.body) {
+    if (item.type === "ExportDeclaration") {
+      const decl = item.declaration;
+      if (decl.type === "VariableDeclaration") {
+        for (const d of decl.declarations) {
+          if (
+            d.init &&
+            d.id.type === "Identifier" &&
+            tryExtractServerRoute(d.init, createRouteNames)
+          ) {
+            exportNames.push(d.id.value);
+          }
+        }
+      }
+      continue;
+    }
+
+    if (item.type === "VariableDeclaration") {
+      for (const d of item.declarations) {
+        if (
+          d.init &&
+          d.id.type === "Identifier" &&
+          tryExtractServerRoute(d.init, createRouteNames)
+        ) {
+          routeDeclarations.add(d.id.value);
+        }
+      }
+      continue;
+    }
+
+    if (item.type === "ExportNamedDeclaration") {
+      for (const spec of item.specifiers) {
+        if (spec.type !== "ExportSpecifier") continue;
+        if (spec.orig.type !== "Identifier") continue;
+        if (!routeDeclarations.has(spec.orig.value)) continue;
+
+        const exported = spec.exported ?? spec.orig;
+        if (exported.type === "Identifier") {
+          exportNames.push(exported.value);
+        }
+      }
+    }
+  }
+
+  return exportNames;
+}
+
 function tryExtractServerRoute(
   expr: Expression,
   createRouteNames: Set<string>,
-): Omit<ExtractedServerRoute, "export"> | undefined {
+): ExtractedServerRoute | undefined {
   if (!isNamedCall(expr, createRouteNames)) return undefined;
 
   const call = expr as CallExpression;

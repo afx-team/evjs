@@ -108,8 +108,6 @@ export interface ExtractedServerRoute {
   path: string;
   /** HTTP methods declared on the route definition object. */
   methods: string[];
-  /** Exported route handler name. */
-  export: string;
 }
 
 /**
