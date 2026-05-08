@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { makeFnIdFromModuleId } from "@evjs/build-tools";
+import { hashServerFunction } from "@evjs/build-tools";
 import { afterEach, describe, expect, it } from "vitest";
 import { UtoopackManifestGenerator } from "../src/manifest-generator.js";
 
@@ -99,8 +99,8 @@ describe("UtoopackManifestGenerator", () => {
 
     const generator = new UtoopackManifestGenerator(cwd, true);
     await generator.build();
-    const getUsersId = makeFnIdFromModuleId(usersModuleId, "getUsers");
-    const createUserId = makeFnIdFromModuleId(usersModuleId, "createUser");
+    const getUsersId = hashServerFunction(usersModuleId, "getUsers");
+    const createUserId = hashServerFunction(usersModuleId, "createUser");
 
     const serverManifest = JSON.parse(
       await fs.promises.readFile(

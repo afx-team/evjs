@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   detectUseServer,
+  hashServerFunction,
   makeFnId,
-  makeFnIdFromModuleId,
   parseModuleRef,
 } from "../src/utils.js";
 
@@ -88,10 +88,7 @@ describe("makeFnId", () => {
 
   it("matches Utoopack action IDs for module id plus export name", () => {
     expect(
-      makeFnIdFromModuleId(
-        "examples/basic/src/api/users.server.ts",
-        "getUsers",
-      ),
+      hashServerFunction("examples/basic/src/api/users.server.ts", "getUsers"),
     ).toBe("e13cfee54cd1fded");
     expect(
       makeFnId(

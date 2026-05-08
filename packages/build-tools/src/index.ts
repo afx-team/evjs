@@ -26,9 +26,8 @@ export type {
 } from "./types.js";
 export {
   detectUseServer,
-  hashString,
+  hashServerFunction,
   makeFnId,
-  makeFnIdFromModuleId,
   makeModuleId,
   parseModuleRef,
 } from "./utils.js";

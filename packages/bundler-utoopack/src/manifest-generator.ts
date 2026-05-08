@@ -3,7 +3,7 @@ import path from "node:path";
 import {
   analyzeRoutes,
   extractServerFunctionExports,
-  makeFnIdFromModuleId,
+  hashServerFunction,
   resolveRoutes,
 } from "@evjs/build-tools";
 import {
@@ -357,7 +357,7 @@ export class UtoopackManifestGenerator {
 
       const moduleId = serverModule?.moduleId ?? sourceRel;
       for (const exportName of exportNames) {
-        const id = makeFnIdFromModuleId(moduleId, exportName);
+        const id = hashServerFunction(moduleId, exportName);
         fns[id] = {
           assets: fns[id]
             ? mergeAssets(fns[id].assets, sourceAssets)

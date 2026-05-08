@@ -17,7 +17,7 @@ export function parseModuleRef(ref: string): {
 }
 
 /** Hash a string to a 16-character hex digest (SHA-256, truncated). */
-export function hashString(input: string): string {
+function hashString(input: string): string {
   return createHash("sha256").update(input).digest("hex").slice(0, 16);
 }
 
@@ -29,8 +29,13 @@ export function makeModuleId(
   return hashString(path.relative(rootContext, resourcePath));
 }
 
-/** Derive a stable function ID from the file path and export name. */
-export function makeFnIdFromModuleId(
+/**
+ * Hash a server function using Utoopack's server-reference action ID algorithm.
+ *
+ * Keep this aligned with:
+ * https://github.com/utooland/utoo/blob/cbb5e27ba92c593dc1d709ba74aa154227b03e57/crates/pack-core/src/server_reference/proxy.rs#L28-L36
+ */
+export function hashServerFunction(
   moduleId: string,
   exportName: string,
 ): string {
@@ -46,7 +51,7 @@ export function makeFnId(
   const moduleId = path
     .relative(rootContext, resourcePath)
     .replaceAll("\\", "/");
-  return makeFnIdFromModuleId(moduleId, exportName);
+  return hashServerFunction(moduleId, exportName);
 }
 
 /** Check whether the source starts with the "use server" directive. */
