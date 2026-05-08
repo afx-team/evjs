@@ -7,6 +7,7 @@ export type {
   EvBundlerCtx,
   EvDocument,
   EvPlugin,
+  EvPluginConfigContext,
   EvPluginContext,
   EvPluginHooks,
 } from "./plugin.js";

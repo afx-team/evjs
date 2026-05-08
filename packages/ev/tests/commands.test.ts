@@ -20,7 +20,7 @@ function createMockBundler(
 ): BundlerAdapter<Record<string, never>> {
   return {
     name: "mock",
-    async build(_config, cwd) {
+    async build(config, cwd) {
       events.push("bundler.build");
       const dist = path.join(cwd, "dist");
       await fs.promises.mkdir(dist, { recursive: true });
@@ -32,6 +32,9 @@ function createMockBundler(
         }),
         "utf-8",
       );
+      if (config.serverEnabled) {
+        events.push(`bundler.endpoint:${config.server.endpoint}`);
+      }
     },
     async dev() {
       events.push("bundler.dev");
@@ -81,6 +84,42 @@ describe("build", () => {
       "buildStart",
       "bundler.build",
       "buildEnd:main.js",
+    ]);
+  });
+
+  it("runs plugin config hooks before resolving config", async () => {
+    const cwd = await createProject();
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+
+    const plugin: EvPlugin<Record<string, never>> = {
+      name: "sets-endpoint",
+      config(config, ctx) {
+        events.push(`config:${ctx.mode}`);
+        config.server = {
+          ...(typeof config.server === "object" ? config.server : {}),
+          endpoint: "/api/rpc",
+        };
+        return config;
+      },
+      setup(ctx) {
+        events.push(`setup:${ctx.config.server.endpoint}`);
+      },
+    };
+
+    await build(
+      { plugins: [plugin] },
+      {
+        cwd,
+        bundler,
+      },
+    );
+
+    expect(events).toEqual([
+      "config:production",
+      "setup:/api/rpc",
+      "bundler.build",
+      "bundler.endpoint:/api/rpc",
     ]);
   });
 });

@@ -12,6 +12,7 @@ export {
   type EvConfig,
   type EvDocument,
   type EvPlugin,
+  type EvPluginConfigContext,
   type EvPluginContext,
   type EvPluginHooks,
   isMpa,

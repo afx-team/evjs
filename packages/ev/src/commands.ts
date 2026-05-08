@@ -14,6 +14,7 @@ import {
 import type {
   EvBuildResult,
   EvPlugin,
+  EvPluginConfigContext,
   EvPluginContext,
   EvPluginHooks,
 } from "./plugin.js";
@@ -75,6 +76,24 @@ async function collectPluginHooks<TBundlerCfg>(
     }
   }
   return allHooks;
+}
+
+async function runConfigHooks<TBundlerCfg>(
+  userConfig: EvConfig<TBundlerCfg> | undefined,
+  ctx: EvPluginConfigContext,
+): Promise<EvConfig<TBundlerCfg> | undefined> {
+  let config = userConfig;
+
+  for (const plugin of userConfig?.plugins ?? []) {
+    if (!plugin.config) continue;
+
+    const nextConfig = await plugin.config(config ?? {}, ctx);
+    if (nextConfig) {
+      config = nextConfig;
+    }
+  }
+
+  return config;
 }
 
 async function runBuildStartHooks<TBundlerCfg>(
@@ -176,9 +195,13 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
   userConfig?: EvConfig<TBundlerCfg>,
   options?: DevOptions<TBundlerCfg>,
 ): Promise<void> {
-  const resolvedConfig = resolveConfig(userConfig);
   const cwd = options?.cwd ?? process.cwd();
   process.env.NODE_ENV ??= "development";
+  const configuredConfig = await runConfigHooks(userConfig, {
+    mode: "development",
+    cwd,
+  });
+  const resolvedConfig = resolveConfig(configuredConfig);
 
   const bundler = resolveBundler(resolvedConfig.bundler, options?.bundler);
   const config = withActiveBundler(resolvedConfig, bundler);
@@ -295,9 +318,13 @@ export async function build<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
   userConfig?: EvConfig<TBundlerCfg>,
   options?: BuildOptions<TBundlerCfg>,
 ): Promise<void> {
-  const resolvedConfig = resolveConfig(userConfig);
   const cwd = options?.cwd ?? process.cwd();
   process.env.NODE_ENV ??= "production";
+  const configuredConfig = await runConfigHooks(userConfig, {
+    mode: "production",
+    cwd,
+  });
+  const resolvedConfig = resolveConfig(configuredConfig);
 
   const bundler = resolveBundler(resolvedConfig.bundler, options?.bundler);
   const config = withActiveBundler(resolvedConfig, bundler);

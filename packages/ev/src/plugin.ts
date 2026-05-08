@@ -1,5 +1,5 @@
 import type { ClientManifest, ServerManifest } from "@evjs/manifest";
-import type { ResolvedEvConfig } from "./config.js";
+import type { EvConfig, ResolvedEvConfig } from "./config.js";
 
 /**
  * Minimal DOM element / document interface for plugin HTML manipulation.
@@ -95,11 +95,35 @@ export interface EvBundlerCtx<
 }
 
 /**
+ * Context passed to plugin config hooks.
+ */
+export interface EvPluginConfigContext {
+  /** The current mode. */
+  mode: "development" | "production";
+  /** The current working directory. */
+  cwd: string;
+}
+
+/**
  * An evjs plugin.
  */
 export interface EvPlugin<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
   /** Plugin name for debugging and logging. */
   name: string;
+
+  /**
+   * Modify the raw user config before defaults are resolved.
+   *
+   * Use this for framework-level config such as `server.endpoint` that must be
+   * visible to dev proxy setup and build-time runtime defines.
+   */
+  config?: (
+    config: EvConfig<TBundlerCfg>,
+    ctx: EvPluginConfigContext,
+  ) =>
+    | EvConfig<TBundlerCfg>
+    | undefined
+    | Promise<EvConfig<TBundlerCfg> | undefined>;
 
   /**
    * Initialize the plugin and return lifecycle hooks.

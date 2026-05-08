@@ -96,6 +96,9 @@ export async function createUtoopackConfig(
       runtime: "automatic",
     },
     define: {
+      "process.env.EVJS_FUNCTION_ENDPOINT": JSON.stringify(
+        config.server.endpoint,
+      ),
       "process.env.NODE_ENV": JSON.stringify(mode),
       __EVJS_FUNCTION_ENDPOINT__: JSON.stringify(config.server.endpoint),
     },

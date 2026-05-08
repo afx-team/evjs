@@ -38,9 +38,38 @@ interface EvPlugin {
   /** Plugin name — used in logs and error messages. */
   name: string;
 
+  /** Modify raw user config before defaults are resolved. */
+  config?: (
+    config: EvConfig,
+    ctx: EvPluginConfigContext,
+  ) => EvConfig | undefined | Promise<EvConfig | undefined>;
+
   /** Initialize the plugin, return lifecycle hooks. */
   setup?: (ctx: EvPluginContext) => EvPluginHooks | undefined;
 }
+```
+
+### Config Hook
+
+The `config` hook runs before evjs resolves defaults. Use it for framework-level
+settings that must be visible to dev proxy setup and runtime defines, such as
+`server.endpoint`.
+
+```ts
+export default defineConfig({
+  plugins: [
+    {
+      name: "custom-function-endpoint",
+      config(config) {
+        config.server = {
+          ...(typeof config.server === "object" ? config.server : {}),
+          endpoint: "/api/rpc",
+        };
+        return config;
+      },
+    },
+  ],
+});
 ```
 
 ### Setup Context

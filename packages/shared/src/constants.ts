@@ -6,6 +6,11 @@
 export const DEFAULT_ENDPOINT = "/api/fn";
 
 declare const __EVJS_FUNCTION_ENDPOINT__: string | undefined;
+declare const process: {
+  env: {
+    EVJS_FUNCTION_ENDPOINT?: string;
+  };
+};
 
 /**
  * Server function endpoint configured by the application build.
@@ -14,6 +19,13 @@ declare const __EVJS_FUNCTION_ENDPOINT__: string | undefined;
  * package is used directly, the undeclared global falls back to the default.
  */
 export function getFunctionEndpoint(): string {
+  try {
+    const processEndpoint = process.env.EVJS_FUNCTION_ENDPOINT;
+    if (processEndpoint) return processEndpoint;
+  } catch {
+    // `process` is not available in some direct browser/edge runtime usage.
+  }
+
   return typeof __EVJS_FUNCTION_ENDPOINT__ === "string" &&
     __EVJS_FUNCTION_ENDPOINT__
     ? __EVJS_FUNCTION_ENDPOINT__

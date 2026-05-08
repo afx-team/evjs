@@ -5,17 +5,23 @@ import { defineConfig } from "@evjs/ev";
  * Example: evjs plugin system.
  *
  * Demonstrates all available plugin hooks:
+ * - `config`         — update framework config before defaults are resolved
  * - `bundlerConfig` — modify the underlying bundler config (type-safe via utoopack() helper)
  * - `buildStart`    — run logic before compilation begins
  * - `buildEnd`      — run logic after compilation completes
  * - `transformHtml` — modify the output HTML document after asset injection
  */
 export default defineConfig({
-  server: false,
-
   plugins: [
     {
       name: "example-txt-plugin",
+      config(config) {
+        config.server = {
+          ...(typeof config.server === "object" ? config.server : {}),
+          endpoint: "/api/rpc",
+        };
+        return config;
+      },
       setup(ctx) {
         console.log(`[example-txt-plugin] mode: ${ctx.mode}`);
 

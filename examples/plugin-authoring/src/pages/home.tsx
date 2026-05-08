@@ -1,7 +1,10 @@
-import { createRoute } from "@evjs/client";
+import { createRoute, useQuery } from "@evjs/client";
+import { getPluginMessage } from "../api/plugin.server";
 import { rootRoute } from "./__root";
 
 function Home() {
+  const { data, isLoading } = useQuery(getPluginMessage);
+
   return (
     <div>
       <h1>Plugin Example</h1>
@@ -13,6 +16,15 @@ function Home() {
         View the page source to see the HTML comment injected by{" "}
         <code>transformHtml</code>.
       </p>
+      {isLoading ? (
+        <p>Loading plugin message...</p>
+      ) : (
+        <div>
+          <p>Server function: {data?.message}</p>
+          <p>Client mode: {process.env.NODE_ENV}</p>
+          <p>Server mode: {data?.nodeEnv}</p>
+        </div>
+      )}
     </div>
   );
 }
