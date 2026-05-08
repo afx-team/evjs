@@ -82,14 +82,17 @@ ECMA 适配器（`@evjs/server/ecma`）只导出一个 `{ fetch }` 处理器 —
 `ev dev` 和 `ev build` 也可以在代码中编程式调用：
 
 ```ts
-import { dev, build } from "@evjs/cli";
+import { dev, build } from "@evjs/ev";
+import { utoopackAdapter } from "@evjs/bundler-utoopack";
 
-// 启动开发服务器（加载 ev.config.ts 并应用默认值）
-await dev({ dev: { port: 3000 } }, { cwd: "./my-app" });
+// 使用显式构建器适配器启动开发服务器
+await dev({ dev: { port: 3000 } }, { cwd: "./my-app", bundler: utoopackAdapter });
 
 // 运行生产构建
-await build({ entry: "./src/main.tsx" }, { cwd: "./my-app" });
+await build({ entry: "./src/main.tsx" }, { cwd: "./my-app", bundler: utoopackAdapter });
 ```
+
+`@evjs/cli` 也导出兼容包装函数，会自动注入默认的 utoopack 适配器，与 `ev dev` 和 `ev build` 命令保持一致。
 
 ## 传输层
 

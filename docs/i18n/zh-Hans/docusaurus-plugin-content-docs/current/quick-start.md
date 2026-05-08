@@ -84,8 +84,8 @@ declare module "@tanstack/react-router" {
 
 | 包 | 用途 |
 |---|------|
-| [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | CLI 命令行工具 (`ev dev`, `ev build`) |
-| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | 配置、插件和构建器类型 (`defineConfig`) |
+| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | 框架 API、配置、插件和构建编排 (`defineConfig`, `dev`, `build`) |
+| [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | 注入默认构建器的轻量 CLI 包装 (`ev dev`, `ev build`) |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | 项目脚手架 (`npx @evjs/create-app`) |
 | [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | 客户端运行时（React + TanStack） |
 | [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | 服务端运行时（Hono） |
@@ -104,6 +104,7 @@ declare module "@tanstack/react-router" {
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@evjs/ev": "*",
     "@evjs/cli": "*",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

@@ -1,8 +1,18 @@
-import fs from "node:fs";
-import path from "node:path";
+import { utoopackAdapter } from "@evjs/bundler-utoopack";
 import {
+  type BuildOptions,
+  type BundlerAdapter,
+  type DevOptions,
+  type EvConfig,
+  build as frameworkBuild,
+  dev as frameworkDev,
+} from "@evjs/ev";
+
+export {
+  type BuildOptions,
   type BundlerAdapter,
   CONFIG_DEFAULTS,
+  type DevOptions,
   defineConfig,
   type EvBuildResult,
   type EvBundlerCtx,
@@ -13,324 +23,26 @@ import {
   type ResolvedEvConfig,
   resolveConfig,
 } from "@evjs/ev";
-import type { ClientManifest, ServerManifest } from "@evjs/manifest";
-import { getLogger } from "@logtape/logtape";
-import { execa } from "execa";
+export { loadConfig } from "./load-config.js";
 
-export {
-  CONFIG_DEFAULTS,
-  type EvConfig,
-  type EvBuildResult,
-  type EvBundlerCtx,
-  type EvPlugin,
-  type EvPluginContext,
-  type EvPluginHooks,
-  type ResolvedEvConfig,
-  resolveConfig,
-  defineConfig,
-};
+const defaultBundler = utoopackAdapter as unknown as BundlerAdapter;
 
-const logger = getLogger(["evjs", "cli"]);
-
-export interface DevOptions {
-  cwd?: string;
-}
-
-export interface BuildOptions {
-  cwd?: string;
-}
-
-/**
- * Resolve the bundler adapter specified in the configuration.
- * Falls back to utoopack when no bundler is explicitly provided.
- */
-async function getBundlerAdapter<TBundlerCfg>(
-  config?: ResolvedEvConfig<TBundlerCfg>,
-): Promise<BundlerAdapter<TBundlerCfg>> {
-  if (config?.bundler) {
-    return config.bundler;
-  }
-  // Default: dynamically import utoopack so it's not a hard dependency
-  const { utoopackAdapter } = await import("@evjs/bundler-utoopack");
-  return utoopackAdapter as unknown as BundlerAdapter<TBundlerCfg>;
-}
-
-function withActiveBundler<TBundlerCfg>(
-  config: ResolvedEvConfig<TBundlerCfg>,
-  bundler: BundlerAdapter<TBundlerCfg>,
-): ResolvedEvConfig<TBundlerCfg> {
-  if (config.bundler === bundler) {
-    return config;
-  }
-
-  return {
-    ...config,
-    bundler,
-  };
-}
-
-/**
- * Run plugin setup() hooks and collect lifecycle hooks.
- */
-async function collectPluginHooks<TBundlerCfg>(
-  plugins: EvPlugin<TBundlerCfg>[],
-  ctx: EvPluginContext<TBundlerCfg>,
-): Promise<EvPluginHooks<TBundlerCfg>[]> {
-  const allHooks: EvPluginHooks<TBundlerCfg>[] = [];
-  for (const plugin of plugins) {
-    if (plugin.setup) {
-      const hooks = await plugin.setup(ctx);
-      if (hooks) {
-        allHooks.push(hooks);
-      }
-    }
-  }
-  return allHooks;
-}
-
-/**
- * Run all buildStart hooks sequentially.
- */
-async function runBuildStartHooks<TBundlerCfg>(
-  hooks: EvPluginHooks<TBundlerCfg>[],
-): Promise<void> {
-  for (const h of hooks) {
-    if (h.buildStart) {
-      await h.buildStart();
-    }
-  }
-}
-
-/**
- * Run all buildEnd hooks sequentially.
- */
-async function runBuildEndHooks<TBundlerCfg>(
-  hooks: EvPluginHooks<TBundlerCfg>[],
-  result: EvBuildResult,
-): Promise<void> {
-  for (const h of hooks) {
-    if (h.buildEnd) {
-      await h.buildEnd(result);
-    }
-  }
-}
-
-/**
- * Read build manifests from disk.
- */
-function readBuildResult(
-  cwd: string,
-  serverEnabled: boolean,
-  isRebuild: boolean,
-): EvBuildResult | null {
-  const clientManifestPath = serverEnabled
-    ? path.resolve(cwd, "dist/client/manifest.json")
-    : path.resolve(cwd, "dist/manifest.json");
-
-  if (!fs.existsSync(clientManifestPath)) return null;
-
-  let clientManifest: ClientManifest;
-  try {
-    clientManifest = JSON.parse(fs.readFileSync(clientManifestPath, "utf-8"));
-  } catch (err) {
-    logger.warn`Failed to parse client manifest: ${err}`;
-    return null;
-  }
-
-  let serverManifest: ServerManifest | undefined;
-  if (serverEnabled) {
-    const serverManifestPath = path.resolve(cwd, "dist/server/manifest.json");
-    if (fs.existsSync(serverManifestPath)) {
-      try {
-        serverManifest = JSON.parse(
-          fs.readFileSync(serverManifestPath, "utf-8"),
-        );
-      } catch (err) {
-        logger.warn`Failed to parse server manifest: ${err}`;
-      }
-    }
-  }
-
-  return { clientManifest, serverManifest, isRebuild };
-}
-
-/**
- * Start the development server programmatically.
- *
- * @param config - evjs configuration object (from `defineConfig`)
- * @param options - additional options like `cwd`
- */
 export async function dev(
   userConfig?: EvConfig,
   options?: DevOptions,
 ): Promise<void> {
-  const resolvedConfig = resolveConfig(userConfig);
-  const cwd = options?.cwd ?? process.cwd();
-  process.env.NODE_ENV ??= "development";
-
-  const bundler = await getBundlerAdapter(resolvedConfig);
-  const config = withActiveBundler(resolvedConfig, bundler);
-
-  // Collect plugin hooks
-  const pluginCtx: EvPluginContext = { mode: "development", cwd, config };
-  const hooks = await collectPluginHooks(config.plugins, pluginCtx);
-
-  // Run buildStart hooks
-  await runBuildStartHooks(hooks);
-
-  // Validate HTML files exist
-  if (config.pages) {
-    for (const [name, page] of Object.entries(config.pages)) {
-      if (!fs.existsSync(path.resolve(cwd, page.html))) {
-        throw new Error(
-          `[evjs] MPA page "${name}" html template not found: ${page.html}`,
-        );
-      }
-    }
-  } else if (!fs.existsSync(path.resolve(cwd, config.html))) {
-    throw new Error(`[evjs] HTML template not found: ${config.html}`);
-  }
-
-  // Track the running API server process for lifecycle management.
-  let apiProcess: ReturnType<typeof execa> | null = null;
-  let isFirstBuild = true;
-
-  const handleServerBundleReady = async () => {
-    if (!config.serverEnabled) return;
-
-    const manifestPath = path.resolve(cwd, "dist/server/manifest.json");
-    if (!fs.existsSync(manifestPath)) return;
-
-    let manifest: ServerManifest;
-    try {
-      manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
-    } catch (err) {
-      logger.warn`Failed to parse server manifest: ${err}`;
-      return;
-    }
-    if (manifest.version !== 1) {
-      logger.warn`Unexpected server manifest version: ${manifest.version}. Expected 1.`;
-      return;
-    }
-    if (!manifest.entry) return;
-
-    // Run buildEnd hooks with manifests
-    const buildResult = readBuildResult(
-      cwd,
-      config.serverEnabled,
-      !isFirstBuild,
-    );
-    if (buildResult) {
-      runBuildEndHooks(hooks, buildResult).catch((err) => {
-        logger.error`Plugin buildEnd hook failed: ${err}`;
-      });
-    }
-    isFirstBuild = false;
-
-    // Kill previous process before restarting (handles both first start and restarts)
-    if (apiProcess) {
-      logger.info`Restarting API server...`;
-      const oldProcess = apiProcess;
-      apiProcess = null;
-      oldProcess.kill();
-      try {
-        await Promise.race([
-          oldProcess.catch(() => {}),
-          new Promise((resolve) => setTimeout(resolve, 3000)),
-        ]);
-      } catch {}
-    }
-
-    const serverPort = config?.server?.dev?.port ?? CONFIG_DEFAULTS.serverPort;
-    logger.info`Server bundle detected, starting API...`;
-
-    const bootstrapPath = path.resolve(cwd, "dist/server/_dev_start.cjs");
-    try {
-      const serverBundlePath = path.resolve(cwd, "dist/server", manifest.entry);
-
-      if (!fs.existsSync(path.dirname(bootstrapPath))) {
-        fs.mkdirSync(path.dirname(bootstrapPath), { recursive: true });
-      }
-      fs.writeFileSync(
-        bootstrapPath,
-        [
-          `const handler = require(${JSON.stringify(serverBundlePath)}).default;`,
-          `const { serve } = require("@evjs/server/node");`,
-          `serve({ fetch: handler.fetch }, { port: ${serverPort}, https: ${JSON.stringify(config.server.dev.https)} });`,
-        ].join("\n"),
-      );
-
-      const runtimeArgs = [bootstrapPath];
-
-      // Don't await execa here since it's a long-running watch process
-      const child = execa("node", runtimeArgs, {
-        stdio: "inherit",
-        env: { ...process.env, NODE_ENV: "development" },
-      });
-      apiProcess = child;
-
-      child.catch(() => {
-        // Clear reference so the next compilation can restart
-        if (apiProcess === child) {
-          apiProcess = null;
-        }
-      });
-    } catch (err) {
-      logger.error`Server runtime failed: ${err}`;
-      apiProcess = null;
-    }
-  };
-
-  await bundler.dev(
-    config,
-    cwd,
-    { onServerBundleReady: handleServerBundleReady },
-    hooks,
-  );
+  await frameworkDev(userConfig, {
+    ...options,
+    bundler: options?.bundler ?? userConfig?.bundler ?? defaultBundler,
+  });
 }
 
-/**
- * Run a production build programmatically.
- *
- * @param config - evjs configuration object (from `defineConfig`)
- * @param options - additional options like `cwd`
- */
 export async function build(
   userConfig?: EvConfig,
   options?: BuildOptions,
 ): Promise<void> {
-  const resolvedConfig = resolveConfig(userConfig);
-  const cwd = options?.cwd ?? process.cwd();
-  process.env.NODE_ENV ??= "production";
-
-  const bundler = await getBundlerAdapter(resolvedConfig);
-  const config = withActiveBundler(resolvedConfig, bundler);
-
-  // Collect plugin hooks
-  const pluginCtx: EvPluginContext = { mode: "production", cwd, config };
-  const hooks = await collectPluginHooks(config.plugins, pluginCtx);
-
-  // Run buildStart hooks
-  await runBuildStartHooks(hooks);
-
-  // Validate HTML files exist
-  if (config.pages) {
-    for (const [name, page] of Object.entries(config.pages)) {
-      if (!fs.existsSync(path.resolve(cwd, page.html))) {
-        throw new Error(
-          `[evjs] MPA page "${name}" html template not found: ${page.html}`,
-        );
-      }
-    }
-  } else if (!fs.existsSync(path.resolve(cwd, config.html))) {
-    throw new Error(`[evjs] HTML template not found: ${config.html}`);
-  }
-
-  await bundler.build(config, cwd, hooks);
-
-  // Run buildEnd hooks with manifests
-  const buildResult = readBuildResult(cwd, config.serverEnabled, false);
-  if (buildResult) {
-    await runBuildEndHooks(hooks, buildResult);
-  }
+  await frameworkBuild(userConfig, {
+    ...options,
+    bundler: options?.bundler ?? userConfig?.bundler ?? defaultBundler,
+  });
 }

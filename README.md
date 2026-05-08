@@ -39,8 +39,8 @@ config needed.
 
 | Package | Purpose |
 |---------|---------|
-| [`@evjs/cli`](./packages/cli) | CLI binary (`ev dev`, `ev build`) |
-| [`@evjs/ev`](./packages/ev) | Config, plugin, and bundler types (`defineConfig`) |
+| [`@evjs/ev`](./packages/ev) | Framework API, config, plugins, and build orchestration (`defineConfig`, `dev`, `build`) |
+| [`@evjs/cli`](./packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`) with the default bundler |
 | [`@evjs/create-app`](./packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
 | [`@evjs/shared`](./packages/shared) | Runtime shared: errors, HTTP utils, constants |
 | [`@evjs/client`](./packages/client) | Client runtime (React + TanStack) |
@@ -64,4 +64,3 @@ npm run test:e2e     # playwright
 ## 📄 License
 
 MIT © [Ant UED](https://xtech.antfin.com/)
-

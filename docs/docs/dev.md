@@ -82,14 +82,17 @@ The ECMA environment adapter (`@evjs/server/ecma`) only exports a `{ fetch }` ha
 `ev dev` and `ev build` can also be used programmatically:
 
 ```ts
-import { dev, build } from "@evjs/cli";
+import { dev, build } from "@evjs/ev";
+import { utoopackAdapter } from "@evjs/bundler-utoopack";
 
-// Start dev server (loads ev.config.ts and uses defaults)
-await dev({ dev: { port: 3000 } }, { cwd: "./my-app" });
+// Start dev server with an explicit bundler adapter
+await dev({ dev: { port: 3000 } }, { cwd: "./my-app", bundler: utoopackAdapter });
 
 // Run production build
-await build({ entry: "./src/main.tsx" }, { cwd: "./my-app" });
+await build({ entry: "./src/main.tsx" }, { cwd: "./my-app", bundler: utoopackAdapter });
 ```
+
+`@evjs/cli` also exports compatibility wrappers that inject the default utoopack adapter, matching the `ev dev` and `ev build` commands.
 
 ## Transport
 

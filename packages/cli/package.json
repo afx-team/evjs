@@ -1,7 +1,7 @@
 {
   "name": "@evjs/cli",
   "version": "0.0.0",
-  "description": "CLI and configuration layer for the evjs framework",
+  "description": "Command-line wrapper for the evjs framework",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -31,8 +31,7 @@
     "@evjs/bundler-utoopack": "*",
     "@evjs/ev": "*",
     "@logtape/logtape": "^2.0.4",
-    "commander": "^12.1.0",
-    "execa": "^9.6.1"
+    "commander": "^12.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.19.15",

@@ -31,9 +31,9 @@ evjs is a React fullstack framework with type-safe routing (TanStack Router), da
 ## Package Dependency Graph
 
 ```
-@evjs/cli ──► @evjs/bundler-utoopack ──► @evjs/build-tools ──► @swc/core
+@evjs/cli ──► @evjs/ev ──► @evjs/manifest
     │
-    └──► webpack (Node API)
+    └──► @evjs/bundler-utoopack ──► @evjs/build-tools ──► @swc/core
 
 @evjs/shared ──► @evjs/manifest
 

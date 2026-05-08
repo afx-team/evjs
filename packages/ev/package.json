@@ -1,7 +1,7 @@
 {
   "name": "@evjs/ev",
   "version": "0.0.0",
-  "description": "Config, plugin, and bundler types for the evjs framework",
+  "description": "Framework API, configuration, and build orchestration for evjs",
   "type": "module",
   "publishConfig": {
     "access": "public"
@@ -33,9 +33,12 @@
   "author": "xusd320",
   "dependencies": {
     "@evjs/manifest": "*",
-    "@evjs/shared": "*"
+    "@evjs/shared": "*",
+    "@logtape/logtape": "^2.0.4",
+    "execa": "^9.6.1"
   },
   "devDependencies": {
+    "@types/node": "^22.19.15",
     "@utoo/pack": "^1.4.2",
     "typescript": "^6.0.2"
   },

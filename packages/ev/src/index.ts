@@ -3,6 +3,7 @@
  */
 
 export type { BundlerAdapter } from "./bundler.js";
+export { type BuildOptions, build, type DevOptions, dev } from "./commands.js";
 export {
   CONFIG_DEFAULTS,
   defineConfig,

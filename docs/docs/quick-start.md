@@ -84,8 +84,8 @@ declare module "@tanstack/react-router" {
 
 | Package | Purpose |
 |---------|---------|
-| [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | CLI binary (`ev dev`, `ev build`) |
-| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | Config, plugin, and bundler types (`defineConfig`) |
+| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | Framework API, config, plugins, and build orchestration (`defineConfig`, `dev`, `build`) |
+| [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`) with the default bundler |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
 | [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Client runtime (React + TanStack) |
 | [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Server runtime (Hono) |
@@ -104,6 +104,7 @@ declare module "@tanstack/react-router" {
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@evjs/ev": "*",
     "@evjs/cli": "*",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
