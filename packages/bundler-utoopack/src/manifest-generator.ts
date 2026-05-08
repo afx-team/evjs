@@ -1,21 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
-  analyzeRoutes,
-  type ExtractedRoute,
-  type RouteAnalysis,
-} from "@evjs/build-tools";
-import {
   type ClientManifest,
   type ManifestAssets,
   ManifestCollector,
+  type RouteEntry,
   type ServerFnEntry,
   type ServerManifest,
   type ServerRouteEntry,
 } from "@evjs/manifest";
 import { getLogger } from "@logtape/logtape";
 import chokidar from "chokidar";
-import fastGlob from "fast-glob";
+import { CLIENT_ROUTE_MARKER, SERVER_ROUTE_MARKER } from "./route-markers.js";
 
 const logger = getLogger(["evjs", "bundler-utoopack", "manifest"]);
 
@@ -88,19 +84,12 @@ function parseClientStatsPerEntrypoint(stats: {
  */
 function parseServerStats(stats: {
   entrypoints?: Record<string, { assets?: Array<{ name?: string }> }>;
-  modules?: Array<{
-    name?: string;
-    id?: string;
-    chunks?: string[];
-  }>;
 }): {
   entry: string | undefined;
   assets: ManifestAssets;
-  moduleAssets: Map<string, ManifestAssets>;
 } {
   let entry: string | undefined;
   const assets: ManifestAssets = { js: [], css: [] };
-  const moduleAssets = new Map<string, ManifestAssets>();
 
   // Use first entrypoint — utoopack may name it by the output file rather than "main"
   const entrypoints = stats.entrypoints;
@@ -119,27 +108,9 @@ function parseServerStats(stats: {
     }
   }
 
-  for (const mod of stats.modules ?? []) {
-    const moduleName = mod.name ?? mod.id;
-    if (!moduleName) continue;
-
-    const moduleAssetList: ManifestAssets = { js: [], css: [] };
-    for (const chunk of mod.chunks ?? []) {
-      const name = normalizeAssetName(chunk);
-      if (name?.endsWith(".js")) {
-        moduleAssetList.js.push(name);
-      } else if (name?.endsWith(".css")) {
-        moduleAssetList.css.push(name);
-      }
-    }
-
-    moduleAssets.set(moduleName.replaceAll("\\", "/"), moduleAssetList);
-  }
-
   return {
     entry,
     assets,
-    moduleAssets,
   };
 }
 
@@ -167,19 +138,37 @@ function extractServerFnIdsFromBundle(code: string): string[] {
   return [...ids];
 }
 
+function decodeMarkerPayload<T>(encoded: string): T | undefined {
+  try {
+    return JSON.parse(Buffer.from(encoded, "base64").toString("utf-8")) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+function extractMarkerPayloads<T>(code: string, markerName: string): T[] {
+  const payloads: T[] = [];
+  const markerCall = new RegExp(
+    `${markerName}(?:\\?\\.)?\\(\\s*["']([A-Za-z0-9+/=]+)["']`,
+    "g",
+  );
+  for (const match of code.matchAll(markerCall)) {
+    const payload = decodeMarkerPayload<T>(match[1]);
+    if (payload) payloads.push(payload);
+  }
+  return payloads;
+}
+
 export class UtoopackManifestGenerator {
   private collector = new ManifestCollector();
   private cwd: string;
   private serverEnabled: boolean;
   private watcher: chokidar.FSWatcher | null = null;
-  private currentRoutes = new Map<string, ExtractedRoute[]>();
+  private clientJsAssets: string[] = [];
+  private currentRoutes: RouteEntry[] = [];
   private serverAssets: ManifestAssets = EMPTY_ASSETS;
-  private serverModuleAssets = new Map<string, ManifestAssets>();
   private serverFns: Record<string, ServerFnEntry> = {};
-  private currentServerRoutes = new Map<
-    string,
-    Array<Omit<ServerRouteEntry, "assets">>
-  >();
+  private currentServerRoutes: ServerRouteEntry[] = [];
 
   constructor(cwd: string, serverEnabled: boolean) {
     this.cwd = cwd;
@@ -201,6 +190,7 @@ export class UtoopackManifestGenerator {
     );
     if (!fs.existsSync(statsPath)) {
       this.collector.setAssets([], []);
+      this.clientJsAssets = [];
       return;
     }
     try {
@@ -214,17 +204,22 @@ export class UtoopackManifestGenerator {
       if (entrypointCount > 1) {
         // MPA mode: per-page assets
         const perPage = parseClientStatsPerEntrypoint(stats);
+        this.clientJsAssets = [];
         for (const [name, { js, css }] of Object.entries(perPage)) {
+          this.clientJsAssets.push(...js);
           this.collector.setPageAssets(name, js, css);
         }
       } else {
         // SPA mode: single entrypoint
         const { js, css } = parseClientStats(stats);
+        this.clientJsAssets = js;
         this.collector.setAssets(js, css);
       }
+      await this.loadClientRoutesFromAssets();
     } catch (err) {
       logger.warn`Failed to parse client stats.json: ${err}`;
       this.collector.setAssets([], []);
+      this.clientJsAssets = [];
     }
   }
 
@@ -238,7 +233,6 @@ export class UtoopackManifestGenerator {
   async loadServerStats() {
     if (!this.serverEnabled) return;
     this.serverAssets = EMPTY_ASSETS;
-    this.serverModuleAssets = new Map();
     this.serverFns = {};
 
     const statsPath = path.resolve(this.cwd, "dist/server/stats.json");
@@ -246,10 +240,9 @@ export class UtoopackManifestGenerator {
       try {
         const statsStr = await fs.promises.readFile(statsPath, "utf-8");
         const stats = JSON.parse(statsStr);
-        const { entry, assets, moduleAssets } = parseServerStats(stats);
+        const { entry, assets } = parseServerStats(stats);
         this.collector.entry = entry;
         this.serverAssets = dedupeAssets(assets);
-        this.serverModuleAssets = moduleAssets;
         await this.loadServerFnAssets();
         return;
       } catch (err) {
@@ -296,49 +289,57 @@ export class UtoopackManifestGenerator {
     this.serverFns = fns;
   }
 
-  async processFile(filepath: string) {
-    try {
-      const content = await fs.promises.readFile(filepath, "utf-8");
-      const analysis = analyzeRoutes(content);
-      const routes = analysis.clientRoutes;
-      if (routes.length > 0) {
-        this.currentRoutes.set(filepath, routes);
-      } else {
-        this.currentRoutes.delete(filepath);
-      }
-
-      if (this.serverEnabled) {
-        await this.processServerFile(filepath, analysis.serverRoutes);
-      }
-    } catch (_err) {
-      this.currentRoutes.delete(filepath);
-      this.currentServerRoutes.delete(filepath);
-    }
-  }
-
-  private async processServerFile(
-    filepath: string,
-    extractedServerRoutes: RouteAnalysis["serverRoutes"],
-  ) {
-    const serverRoutes = extractedServerRoutes.map(
-      (route): Omit<ServerRouteEntry, "assets"> => ({
-        path: route.path,
-        methods: route.methods,
-      }),
+  private async loadClientRoutesFromAssets() {
+    const routeMap = new Map<string, RouteEntry>();
+    const clientDir = path.resolve(
+      this.cwd,
+      this.serverEnabled ? "dist/client" : "dist",
     );
 
-    if (serverRoutes.length > 0) {
-      this.currentServerRoutes.set(filepath, serverRoutes);
-    } else {
-      this.currentServerRoutes.delete(filepath);
+    for (const js of [...new Set(this.clientJsAssets)]) {
+      const filepath = path.join(clientDir, js);
+      if (!fs.existsSync(filepath)) continue;
+
+      const code = await fs.promises.readFile(filepath, "utf-8");
+      for (const route of extractMarkerPayloads<RouteEntry>(
+        code,
+        CLIENT_ROUTE_MARKER,
+      )) {
+        routeMap.set(route.path, route);
+      }
     }
+
+    this.currentRoutes = [...routeMap.values()];
+  }
+
+  private async loadServerRoutesFromAssets() {
+    const routeMap = new Map<string, ServerRouteEntry>();
+    const serverDir = path.resolve(this.cwd, "dist/server");
+
+    for (const js of this.serverAssets.js) {
+      const filepath = path.join(serverDir, js);
+      if (!fs.existsSync(filepath)) continue;
+
+      const code = await fs.promises.readFile(filepath, "utf-8");
+      for (const route of extractMarkerPayloads<
+        Omit<ServerRouteEntry, "assets">
+      >(code, SERVER_ROUTE_MARKER)) {
+        const assets = { js: [js], css: [] };
+        const key = `${route.path}\0${route.methods.join(",")}`;
+        const existing = routeMap.get(key);
+        routeMap.set(key, {
+          ...route,
+          assets: existing ? mergeAssets(existing.assets, assets) : assets,
+        });
+      }
+    }
+
+    this.currentServerRoutes = [...routeMap.values()];
   }
 
   private rebuildRoutes() {
     this.collector.routes = [];
-    for (const routes of this.currentRoutes.values()) {
-      this.collector.addRoutes(routes);
-    }
+    this.collector.addRoutes(this.currentRoutes);
   }
 
   private rebuildServerMetadata() {
@@ -350,31 +351,7 @@ export class UtoopackManifestGenerator {
     }
 
     this.collector.serverRoutes = [];
-    for (const [filepath, routes] of this.currentServerRoutes.entries()) {
-      const assets = this.getServerAssetsForFile(filepath);
-      this.collector.addServerRoutes(
-        routes.map((route) => ({ ...route, assets })),
-      );
-    }
-  }
-
-  private getServerAssetsForFile(filepath: string): ManifestAssets {
-    const relativePath = path
-      .relative(this.cwd, filepath)
-      .replaceAll("\\", "/");
-    const exact = this.serverModuleAssets.get(relativePath);
-    if (exact) return dedupeAssets(exact);
-
-    for (const [moduleName, assets] of this.serverModuleAssets.entries()) {
-      if (
-        moduleName === relativePath ||
-        moduleName.endsWith(`/${relativePath}`)
-      ) {
-        return dedupeAssets(assets);
-      }
-    }
-
-    return this.serverAssets;
+    this.collector.addServerRoutes(this.currentServerRoutes);
   }
 
   /**
@@ -423,11 +400,9 @@ export class UtoopackManifestGenerator {
   async build() {
     await this.loadClientStats();
     await this.loadServerStats();
-    const files = await fastGlob("src/**/*.{ts,tsx,js,jsx}", {
-      cwd: this.cwd,
-      absolute: true,
-    });
-    await Promise.all(files.map((f) => this.processFile(f)));
+    if (this.serverEnabled) {
+      await this.loadServerRoutesFromAssets();
+    }
     await this.emit();
   }
 
@@ -437,11 +412,9 @@ export class UtoopackManifestGenerator {
   async watch(onUpdate?: () => void | Promise<void>) {
     await this.loadClientStats();
     await this.loadServerStats();
-    const files = await fastGlob("src/**/*.{ts,tsx,js,jsx}", {
-      cwd: this.cwd,
-      absolute: true,
-    });
-    await Promise.all(files.map((f) => this.processFile(f)));
+    if (this.serverEnabled) {
+      await this.loadServerRoutesFromAssets();
+    }
     await this.emit();
     await onUpdate?.();
 
@@ -451,16 +424,13 @@ export class UtoopackManifestGenerator {
     });
 
     const handleChange = async (filepath: string) => {
-      const fullPath = path.resolve(this.cwd, filepath);
-      await this.processFile(fullPath);
+      logger.debug`Route source changed: ${filepath}`;
       await this.emit();
       await onUpdate?.();
     };
 
     const handleUnlink = async (filepath: string) => {
-      const fullPath = path.resolve(this.cwd, filepath);
-      this.currentRoutes.delete(fullPath);
-      this.currentServerRoutes.delete(fullPath);
+      logger.debug`Route source removed: ${filepath}`;
       await this.emit();
       await onUpdate?.();
     };

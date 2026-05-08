@@ -6,6 +6,10 @@ import { UtoopackManifestGenerator } from "../src/manifest-generator.js";
 
 const tempDirs: string[] = [];
 
+function markerPayload(value: unknown): string {
+  return Buffer.from(JSON.stringify(value), "utf-8").toString("base64");
+}
+
 async function makeProject() {
   const cwd = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), "evjs-manifest-"),
@@ -42,6 +46,10 @@ describe("UtoopackManifestGenerator", () => {
       }),
     );
     await fs.promises.writeFile(
+      path.join(cwd, "dist/client/main.js"),
+      `globalThis.__evRegisterClientRoute?.("${markerPayload({ path: "/" })}");`,
+    );
+    await fs.promises.writeFile(
       path.join(cwd, "dist/server/stats.json"),
       JSON.stringify({
         entrypoints: {
@@ -64,6 +72,10 @@ describe("UtoopackManifestGenerator", () => {
       `
         registerServerReference(getUsers, "aaaaaaaaaaaaaaaa", "getUsers");
         registerServerReference(createUser, "bbbbbbbbbbbbbbbb", "createUser");
+        globalThis.__evRegisterServerRoute?.("${markerPayload({
+          path: "/api/health",
+          methods: ["GET", "POST"],
+        })}");
       `,
     );
 

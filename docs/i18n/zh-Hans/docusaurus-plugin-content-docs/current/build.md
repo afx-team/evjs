@@ -56,9 +56,10 @@ dist/
 3. 当前 bundler adapter 在编译期间执行：
    - 发现 `*.server.ts` 文件
    - 应用 SWC 转换（客户端 + 服务端两种变体）
+   - 生成路由 marker 模块，并通过生成的入口包装模块引入它们
    - 运行服务端 bundle 编译
    - 从服务端 bundle 的 `registerServerReference()` 调用收集函数 ID
-   - 通过源码 AST 收集服务端路由的 path 和 methods
+   - 从已输出的路由 marker 调用收集客户端路由和服务端路由元数据
    - 输出 `dist/server/manifest.json`（服务端资源映射、函数和路由注册表）以及 `dist/client/manifest.json`（客户端资源映射 + 客户端路由）
 
 ## 服务端 Manifest（`dist/server/manifest.json`）

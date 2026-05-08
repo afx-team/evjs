@@ -11,13 +11,10 @@ import path from "node:path";
 
 const require = createRequire(import.meta.url);
 
-import {
-  type EvBundlerCtx,
-  type EvPluginHooks,
-  isMpa,
-  type ResolvedEvConfig,
-} from "@evjs/ev";
+import type { EvBundlerCtx, EvPluginHooks, ResolvedEvConfig } from "@evjs/ev";
+import { isMpa } from "@evjs/ev";
 import type { ConfigComplete, DevServerProxy, ProxyRule } from "@utoo/pack";
+import { prepareRouteMarkers } from "../route-markers.js";
 
 function createSpaHistoryFallbackRule(
   config: ResolvedEvConfig<ConfigComplete>,
@@ -66,19 +63,12 @@ export async function createUtoopackConfig(
     throw new Error("Failed to resolve a server entry for the server bundle.");
   }
 
+  const routeMarkers = await prepareRouteMarkers(config, cwd, finalServerEntry);
+
   const utoopackConfig: ConfigComplete = {
     mode: isProduction ? "production" : "development",
     // MPA mode: one entry per page; SPA mode: single entry
-    entry: isMpa(config)
-      ? Object.entries(config.pages ?? {}).map(([name, page]) => ({
-          import: page.entry,
-          name,
-        }))
-      : [
-          {
-            import: config.entry,
-          },
-        ],
+    entry: routeMarkers.entries,
     output: {
       path: path.resolve(cwd, serverEnabled ? "dist/client" : "dist"),
       filename: isProduction ? "[name].[contenthash:8].js" : "[name].js",
@@ -98,7 +88,7 @@ export async function createUtoopackConfig(
     ...(serverEnabled
       ? {
           server: {
-            entry: finalServerEntry,
+            entry: routeMarkers.serverEntry,
             output: {
               path: path.resolve(cwd, "dist/server"),
               filename: isProduction
