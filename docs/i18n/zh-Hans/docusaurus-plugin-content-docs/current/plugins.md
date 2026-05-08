@@ -31,17 +31,46 @@ export default defineConfig({
 
 ## 插件结构
 
-每个插件是一个包含 `name` 和可选 `setup()` 函数的对象：
+每个插件是一个包含 `name`，以及可选 `config()` / `setup()` 函数的对象：
 
 ```ts
 interface EvPlugin {
   /** 插件名称 —— 用于日志和错误信息。 */
   name: string;
 
+  /** 在默认值解析前修改用户原始配置。 */
+  config?: (
+    config: EvConfig,
+    ctx: EvPluginConfigContext,
+  ) => EvConfig | undefined | Promise<EvConfig | undefined>;
+
   /** 初始化插件，返回生命周期钩子。 */
   setup?: (ctx: EvPluginContext) => EvPluginHooks | undefined;
 }
 ```
+
+### Config Hook
+
+`config` hook 在 evjs 解析默认配置前执行。它适合修改框架级配置，尤其是那些会影响派生配置、开发代理或运行时代码注入的选项，例如 `server.endpoint`。
+
+```ts
+export default defineConfig({
+  plugins: [
+    {
+      name: "custom-function-endpoint",
+      config(config) {
+        config.server = {
+          ...(typeof config.server === "object" ? config.server : {}),
+          endpoint: "/api/rpc",
+        };
+        return config;
+      },
+    },
+  ],
+});
+```
+
+如果只是应用自己配置服务端函数端点，直接在 `defineConfig` 中设置 `server.endpoint` 即可。只有需要由插件统一注入或封装这类配置时，才使用 `config` hook。
 
 ### Setup 上下文
 
@@ -62,21 +91,27 @@ interface EvPluginContext {
 
 ```mermaid
 flowchart LR
-    A[buildStart] --> B[bundlerConfig]
-    B --> C["bundler 编译"]
-    C --> D["HTML 生成"]
-    D --> E[transformHtml]
-    E --> F[buildEnd]
+    A[config] --> B["resolveConfig"]
+    B --> C[setup]
+    C --> D[buildStart]
+    D --> E[bundlerConfig]
+    E --> F["bundler 编译"]
+    F --> G["HTML 生成"]
+    G --> H[transformHtml]
+    H --> I[buildEnd]
 ```
 
 | 钩子 | 签名 | 时机 |
 |------|------|------|
+| `config` | `(config, ctx) => EvConfig \| undefined` | 默认配置解析前 |
 | `buildStart` | `() => void` | 编译开始前 |
 | `bundlerConfig` | `(config, ctx) => void` | 构建器配置创建期间 |
 | `transformHtml` | `(doc, result) => void` | 资源注入后、HTML 输出前 |
 | `buildEnd` | `(result) => void` | 编译完成后 |
 
 所有钩子均可异步（返回 `Promise`）。
+
+`config` 用于修改 evjs 框架配置；`bundlerConfig` 只用于修改底层构建器配置。不要用 `bundlerConfig` 改服务端函数端点这类运行时协议配置，因为它无法同步影响开发代理等框架派生配置。
 
 ---
 
@@ -332,4 +367,4 @@ import crypto from "node:crypto";
 
 ## 示例项目
 
-查看 [`examples/basic-plugins`](https://github.com/evaijs/evjs/tree/main/examples/basic-plugins) 获取演示全部四个钩子的完整示例。
+查看 [`examples/plugin-authoring`](https://github.com/afx-team/evjs/tree/main/examples/plugin-authoring) 获取演示插件钩子的完整示例。
