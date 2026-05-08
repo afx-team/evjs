@@ -94,6 +94,9 @@ export async function createUtoopackConfig(
     react: {
       runtime: "automatic",
     },
+    define: {
+      __EVJS_FUNCTION_ENDPOINT__: JSON.stringify(config.server.endpoint),
+    },
     // Server functions config — utoopack handles "use server" natively
     ...(serverEnabled
       ? {

@@ -5,7 +5,7 @@
  * This app is runtime-agnostic and can be mounted in Node, Edge, or Bun.
  */
 
-import { DEFAULT_ENDPOINT } from "@evjs/shared";
+import { getFunctionEndpoint } from "@evjs/shared";
 import type {
   Context as HonoContext,
   Env as HonoEnv,
@@ -53,7 +53,7 @@ export interface CreateAppOptions {
 export function createApp(options?: CreateAppOptions): Hono {
   const {
     functions: {
-      endpoint = DEFAULT_ENDPOINT,
+      endpoint = getFunctionEndpoint(),
       bodyLimit: maxBodySize = 1024 * 1024,
     } = {},
     routes = [],

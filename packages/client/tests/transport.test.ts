@@ -152,6 +152,39 @@ describe("createFetchTransport (default)", () => {
     vi.unstubAllGlobals();
   });
 
+  it("uses the build-time endpoint define by default", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ result: "ok" }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
+
+    await callServer("myFn", []);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/rpc",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("uses the build-time endpoint define when initTransport omits endpoint", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ result: "ok" }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
+
+    initTransport({ headers: { Authorization: "Bearer xyz" } });
+    await callServer("myFn", []);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/rpc",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("adds static headers from config", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,

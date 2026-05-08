@@ -5,6 +5,7 @@
 export {
   DEFAULT_ENDPOINT,
   DEFAULT_ERROR_STATUS,
+  getFunctionEndpoint,
 } from "./constants.js";
 export { ServerError, ServerFunctionError } from "./errors.js";
 export type { HttpMethod } from "./http.js";

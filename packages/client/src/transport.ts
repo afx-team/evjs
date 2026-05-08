@@ -7,8 +7,8 @@
  */
 
 import {
-  DEFAULT_ENDPOINT,
   DEFAULT_ERROR_STATUS,
+  getFunctionEndpoint,
   ServerFunctionError,
 } from "@evjs/shared";
 
@@ -175,7 +175,7 @@ let _transport: ServerTransport | null = null;
 
 function getTransport(): ServerTransport {
   if (!_transport) {
-    _transport = createFetchTransport("", DEFAULT_ENDPOINT);
+    _transport = createFetchTransport("", getFunctionEndpoint());
   }
   return _transport;
 }
@@ -196,7 +196,7 @@ export function initTransport(options: TransportOptions): void {
   } else {
     _transport = createFetchTransport(
       options.baseUrl ?? "",
-      options.functions?.endpoint ?? DEFAULT_ENDPOINT,
+      options.functions?.endpoint ?? getFunctionEndpoint(),
       options.headers,
     );
   }

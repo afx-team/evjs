@@ -28,6 +28,7 @@ describe("resolveConfig", () => {
     expect(resolved.server.functions.serverRegister).toBe(
       "@evjs/server/register",
     );
+    expect(resolved.server.endpoint).toBe("/api/fn");
     expect(resolved.server.dev.port).toBe(CONFIG_DEFAULTS.serverPort);
     expect(resolved.server.dev.https).toBe(false);
     expect(resolved.bundler).toBeUndefined();
@@ -76,6 +77,7 @@ describe("resolveConfig", () => {
     const resolved = resolveConfig({
       server: {
         entry: "./server.ts",
+        endpoint: "/api/rpc",
         functions: {
           clientProxy: "custom/client",
           serverRegister: "custom/server",
@@ -85,8 +87,25 @@ describe("resolveConfig", () => {
     });
     expect(resolved.serverEnabled).toBe(true);
     expect(resolved.server.entry).toBe("./server.ts");
+    expect(resolved.server.endpoint).toBe("/api/rpc");
     expect(resolved.server.functions.clientProxy).toBe("custom/client");
     expect(resolved.server.dev.port).toBe(4000);
+  });
+
+  it("proxies the configured server function endpoint in dev", () => {
+    const resolved = resolveConfig({
+      server: {
+        endpoint: "/api/rpc",
+        dev: { port: 4001 },
+      },
+    });
+
+    expect(resolved.dev.proxy).toContainEqual({
+      context: ["/api/rpc"],
+      target: "http://localhost:4001",
+      changeOrigin: true,
+      secure: false,
+    });
   });
   it("respects server dev https override", () => {
     const resolved = resolveConfig({

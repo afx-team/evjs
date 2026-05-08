@@ -49,6 +49,8 @@ export interface ResolvedServerDevConfig {
 export interface ResolvedServerConfig {
   /** Explicit server entry file. Omitted when auto-generated. */
   entry?: string;
+  /** Server function endpoint path. */
+  endpoint: string;
   /** Server function build configuration. */
   functions: ResolvedServerFunctionsConfig;
   /** Server dev options. */
@@ -119,6 +121,8 @@ export interface EvConfig<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
     | {
         /** Explicit server entry file. If provided, overrides auto-generated entry. */
         entry?: string;
+        /** Server function RPC endpoint path. Default: "/api/fn". */
+        endpoint?: string;
         /** Server function build configuration. */
         functions?: {
           /**
@@ -179,6 +183,7 @@ export const CONFIG_DEFAULTS = {
   html: "./index.html",
   port: 3000,
   serverPort: 3001,
+  endpoint: DEFAULT_ENDPOINT,
   clientProxy: "@evjs/client/transport",
   serverRegister: "@evjs/server/register",
 } as const;
@@ -210,6 +215,7 @@ export function resolveConfig<
   }
 
   const serverPort = serverConfig.dev?.port ?? CONFIG_DEFAULTS.serverPort;
+  const serverEndpoint = serverConfig.endpoint ?? CONFIG_DEFAULTS.endpoint;
 
   return {
     entry: config.entry ?? CONFIG_DEFAULTS.entry,
@@ -223,7 +229,7 @@ export function resolveConfig<
         ...(config.dev?.proxy ?? []),
         // Framework always proxies the server function endpoint to the local API dev server
         {
-          context: [DEFAULT_ENDPOINT],
+          context: [serverEndpoint],
           target: `http${serverConfig.dev?.https ? "s" : ""}://localhost:${serverPort}`,
           changeOrigin: true,
           secure: false,
@@ -233,6 +239,7 @@ export function resolveConfig<
     serverEnabled,
     server: {
       entry: serverConfig.entry,
+      endpoint: serverEndpoint,
       functions: {
         clientProxy:
           serverConfig.functions?.clientProxy ?? CONFIG_DEFAULTS.clientProxy,
