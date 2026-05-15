@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { derivePackageName } from "../src/project-name.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const templatesDir = path.resolve(__dirname, "../templates");
@@ -94,6 +95,21 @@ describe("create-app scaffolding", () => {
         }
       }
     }
+  });
+
+  it("derives a valid package name from path-like project names", () => {
+    expect(derivePackageName("my-real-app", "/tmp/my-real-app")).toBe(
+      "my-real-app",
+    );
+    expect(derivePackageName("/tmp/my-real-app", "/tmp/my-real-app")).toBe(
+      "my-real-app",
+    );
+    expect(derivePackageName("apps/my-real-app", "/tmp/apps/my-real-app")).toBe(
+      "my-real-app",
+    );
+    expect(
+      derivePackageName("@scope/my-real-app", "/tmp/@scope/my-real-app"),
+    ).toBe("@scope/my-real-app");
   });
 
   it("copy filter excludes node_modules, dist, and .turbo", async () => {

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
+import { derivePackageName } from "./project-name.js";
 import pc from "picocolors";
 import prompts from "prompts";
 
@@ -67,6 +68,7 @@ program
     const projectName = response.projectName || name;
     const template = response.template || options.template;
     const targetDir = path.resolve(process.cwd(), projectName);
+    const packageName = derivePackageName(projectName, targetDir);
 
     if (fs.existsSync(targetDir)) {
       console.error(pc.red(`✖ Directory ${projectName} already exists!`));
@@ -101,7 +103,7 @@ program
     const pkgPath = path.join(targetDir, "package.json");
     if (fs.existsSync(pkgPath)) {
       const projPkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
-      projPkg.name = projectName;
+      projPkg.name = packageName;
       delete projPkg.private; // Templates shouldn't be private by default
 
       const updateDeps = (deps: Record<string, string> | undefined) => {
