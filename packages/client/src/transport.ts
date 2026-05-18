@@ -14,16 +14,22 @@ import {
 
 /**
  * Request context passed through server calls.
- * Used during SSR to forward headers/cookies, and in RSC for streaming.
+ * Used during SSR to forward headers/cookies.
  *
- * @experimental This interface is reserved for future SSR/RSC support.
+ * @experimental This interface is reserved for future SSR support.
  * Do not rely on it in production — the shape may change.
  */
 export interface RequestContext {
-  /** @experimental Request headers to forward (e.g. cookies during SSR). SSR is not yet supported. */
+  /** @experimental Request base URL used by SSR server calls. */
+  baseUrl?: string;
+  /** @experimental Request headers to forward, such as cookies during SSR. */
   headers?: Record<string, string>;
   /** Signal for aborting the request. */
   signal?: AbortSignal;
+}
+
+interface RequestContextStore {
+  getStore(): RequestContext | undefined;
 }
 
 /**
@@ -37,19 +43,6 @@ export interface ServerTransport {
     args: unknown[],
     context?: RequestContext,
   ): Promise<unknown>;
-
-  /**
-   * Streaming call for RSC Flight protocol.
-   * Returns a ReadableStream of serialized React elements.
-   *
-   * @experimental Not yet implemented. Reserved for future RSC support.
-   * Do not use — this method signature may change.
-   */
-  stream?(
-    fnId: string,
-    args: unknown[],
-    context?: RequestContext,
-  ): ReadableStream<Uint8Array>;
 }
 
 export interface TransportOptions {
@@ -100,6 +93,38 @@ function resolveEndpointUrl(
   return new URL(endpoint, base);
 }
 
+const REQUEST_CONTEXT_KEY = Symbol.for("evjs.transport.requestContext");
+
+function getRequestContextStore(): RequestContextStore | undefined {
+  const store = (globalThis as Record<symbol, unknown>)[REQUEST_CONTEXT_KEY];
+  if (typeof store !== "object" || store === null) return undefined;
+
+  const candidate = store as Partial<RequestContextStore>;
+  if (typeof candidate.getStore === "function")
+    return candidate as RequestContextStore;
+}
+
+function getStoredRequestContext(): RequestContext | undefined {
+  return getRequestContextStore()?.getStore();
+}
+
+function mergeRequestContext(
+  stored: RequestContext | undefined,
+  explicit: RequestContext | undefined,
+): RequestContext | undefined {
+  if (!stored) return explicit;
+  if (!explicit) return stored;
+
+  return {
+    baseUrl: explicit.baseUrl ?? stored.baseUrl,
+    headers: {
+      ...stored.headers,
+      ...explicit.headers,
+    },
+    signal: explicit.signal ?? stored.signal,
+  };
+}
+
 /**
  * Default fetch-based transport.
  */
@@ -116,7 +141,7 @@ function createFetchTransport(
       args: unknown[],
       context?: RequestContext,
     ): Promise<unknown> {
-      const url = resolveEndpointUrl(baseUrl, endpoint);
+      const url = resolveEndpointUrl(context?.baseUrl ?? baseUrl, endpoint);
 
       const extraHeaders =
         typeof headersFactory === "function"
@@ -242,7 +267,11 @@ export async function callServer(
   args: unknown[],
   context?: RequestContext,
 ): Promise<unknown> {
-  return getTransport().send(fnId, args, context);
+  return getTransport().send(
+    fnId,
+    args,
+    mergeRequestContext(getStoredRequestContext(), context),
+  );
 }
 
 /** Minimal callable shape for server function stubs. */
@@ -313,7 +342,7 @@ export function getFnName(fnId: string): string {
  * The returned function is augmented with `.queryKey()`, `.queryOptions()`,
  * `.fnId`, and `.fnName` metadata for use with TanStack Query.
  *
- * Follows the React Server Components convention.
+ * Follows the server reference argument order used by the compiler/runtime.
  *
  * @param fnId - The unique function hash ID.
  * @param exportName - The human-readable export name.

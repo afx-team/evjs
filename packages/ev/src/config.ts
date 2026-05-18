@@ -58,6 +58,14 @@ export interface ResolvedServerConfig {
   dev: ResolvedServerDevConfig;
 }
 
+/** Resolved SSR configuration. */
+export interface ResolvedSsrConfig {
+  /** Whether SSR document rendering is enabled. */
+  enabled: boolean;
+  /** SSR render mode. */
+  mode: "string" | "stream";
+}
+
 /**
  * A version of EvConfig where all fields with defaults are guaranteed.
  */
@@ -81,6 +89,8 @@ export interface ResolvedEvConfig<
   serverEnabled: boolean;
   /** Server configuration. */
   server: ResolvedServerConfig;
+  /** SSR document rendering configuration. */
+  ssr: ResolvedSsrConfig;
   /** Bundler adapter. When omitted, defaults to utoopack. */
   bundler?: BundlerAdapter<TBundlerCfg>;
   /** Active plugins. */
@@ -107,6 +117,14 @@ export interface EvConfig<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
    * and any `"use server"` module will cause a build error.
    */
   server?: false | ServerConfig;
+
+  /**
+   * Server-side rendering configuration.
+   *
+   * SSR requires the server runtime to be enabled. It expects the server entry
+   * to mount an SSR document handler from `@evjs/server/ssr`.
+   */
+  ssr?: boolean | SsrConfig;
 
   /** Bundler adapter. When omitted, defaults to utoopack. */
   bundler?: BundlerAdapter<TBundlerCfg>;
@@ -186,6 +204,15 @@ export interface ServerDevConfig {
   https?: { key: string; cert: string } | false;
 }
 
+/** SSR configuration. */
+export interface SsrConfig {
+  /**
+   * Render mode. `stream` is the intended production path; `string` remains
+   * useful for deterministic tests and runtimes without Web Streams.
+   */
+  mode?: "string" | "stream";
+}
+
 /**
  * Default configuration values.
  */
@@ -212,8 +239,16 @@ export function resolveConfig<
   const config = userConfig ?? {};
   const serverEnabled = config.server !== false;
   const serverConfig = config.server === false ? {} : (config.server ?? {});
+  const ssrEnabled = config.ssr === true || typeof config.ssr === "object";
+
+  if (!serverEnabled && ssrEnabled) {
+    throw new Error(
+      "[evjs] SSR requires the server runtime. Remove `server: false` or disable `ssr`.",
+    );
+  }
 
   const defaultHtml = config.html ?? CONFIG_DEFAULTS.html;
+  const ssrConfig = typeof config.ssr === "object" ? config.ssr : {};
 
   // Resolve MPA pages — fill in default html per page
   let resolvedPages:
@@ -272,6 +307,10 @@ export function resolveConfig<
         port: serverPort,
         https: serverConfig.dev?.https ?? false,
       },
+    },
+    ssr: {
+      enabled: ssrEnabled,
+      mode: ssrConfig.mode ?? "stream",
     },
     bundler: config.bundler,
     plugins: config.plugins ?? [],

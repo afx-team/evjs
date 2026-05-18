@@ -20,7 +20,8 @@
     "check-types": "tsc --noEmit"
   },
   "files": [
-    "esm"
+    "esm",
+    "runtime"
   ],
   "keywords": [
     "evjs",

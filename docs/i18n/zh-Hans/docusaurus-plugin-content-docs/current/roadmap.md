@@ -39,5 +39,4 @@
 正在考虑的未来方向：
 
 - **SSR** —— 带水合的服务端渲染
-- **RSC** —— 通过 Flight 协议实现 React Server Components
 - **更多打包器** —— 通过 `@evjs/build-tools` 实现 Rspack、Vite 插件

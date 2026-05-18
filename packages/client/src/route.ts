@@ -129,6 +129,8 @@ export {
   useRouterState,
   useSearch,
 } from "@tanstack/react-router";
+export type { AppRouteContext } from "./context";
+export { createAppRootRoute } from "./context";
 
 /**
  * Restricted version of createRoute that only accepts string literals for the 'path' property.

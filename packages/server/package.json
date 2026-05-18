@@ -5,8 +5,14 @@
   "dependencies": {
     "@evjs/shared": "*",
     "@hono/node-server": "^1.19.11",
+    "@tanstack/react-query": "^5.95.2",
+    "@tanstack/react-router": "^1.168.3",
     "@logtape/logtape": "^2.0.4",
     "hono": "^4.12.9"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
   },
   "homepage": "https://github.com/evaijs/evjs#readme",
   "bugs": {
@@ -47,6 +53,11 @@
       "types": "./esm/runtimes/fetch.d.ts",
       "import": "./esm/runtimes/fetch.js",
       "default": "./esm/runtimes/fetch.js"
+    },
+    "./ssr": {
+      "types": "./esm/ssr.d.ts",
+      "import": "./esm/ssr.js",
+      "default": "./esm/ssr.js"
     }
   },
   "scripts": {
@@ -59,6 +70,8 @@
   ],
   "devDependencies": {
     "@types/node": "^22.19.15",
+    "@types/react": ">=18.0.0",
+    "@types/react-dom": ">=18.0.0",
     "typescript": "^6.0.2"
   },
   "keywords": [

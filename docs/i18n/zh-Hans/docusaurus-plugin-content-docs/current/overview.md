@@ -29,7 +29,6 @@ flowchart LR
     subgraph ServerSide ["⚙️ 服务端"]
         subgraph RenderingLayer ["🖼️ 渲染层"]
             SSR["SSR"]
-            RSC["RSC"]
         end
 
         subgraph APILayer ["🔌 API 层"]
@@ -45,8 +44,6 @@ flowchart LR
 
     SSR -->|读取| DB
     SSR -->|读取| KV
-    RSC -->|读取| DB
-    RSC -->|读取| KV
     SF -->|读/写| DB
     SF -->|读/写| KV
     RH -->|读/写| DB
@@ -55,7 +52,6 @@ flowchart LR
     UI --> RPC
     UI --> FETCH
     UI -.->|初始请求| SSR
-    UI -.->|RSC 获取| RSC
     RPC -->|POST api/fn| SF
     FETCH -->|GET/POST /api| RH
 ```

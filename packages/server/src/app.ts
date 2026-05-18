@@ -18,6 +18,10 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { dispatch } from "./functions/dispatch.js";
 import type { RouteHandler } from "./routes/index.js";
 
+export type DocumentHandler = (
+  request: Request,
+) => Response | Promise<Response>;
+
 export interface CreateAppOptions {
   /** Server function configurations */
   functions?: {
@@ -39,6 +43,13 @@ export interface CreateAppOptions {
    * Useful for CORS, rate limiting, logging, CSRF protection, etc.
    */
   middlewares?: MiddlewareHandler[];
+  /**
+   * Optional SSR document fallback handler.
+   *
+   * Mounted after route handlers and server functions. It should usually only
+   * render document GET/HEAD requests.
+   */
+  document?: DocumentHandler;
 }
 
 /**
@@ -58,6 +69,7 @@ export function createApp(options?: CreateAppOptions): Hono {
     } = {},
     routes = [],
     middlewares = [],
+    document,
   } = options ?? {};
 
   const app = new Hono();
@@ -127,6 +139,10 @@ export function createApp(options?: CreateAppOptions): Hono {
 
     return c.json(payload, status as ContentfulStatusCode);
   });
+
+  if (document) {
+    app.on(["GET", "HEAD"], "*", (c) => document(c.req.raw));
+  }
 
   return app;
 }

@@ -7,6 +7,7 @@
  */
 
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 
@@ -19,6 +20,13 @@ import {
 import type { ConfigComplete, DevServerProxy, ProxyRule } from "@utoo/pack";
 import { getOutputPaths } from "./output-paths.js";
 
+const DOCUMENT_FALLBACK_CONTEXT =
+  "^/(?!api(?:/|$))(?!turbopack-hmr$)(?!.*\\.(?:avif|css|gif|ico|jpe?g|js|json|map|mjs|otf|png|svg|ttf|txt|wasm|webp|woff2?|xml)$).*";
+
+const TANSTACK_ROUTER_IS_SERVER_ALIAS = fileURLToPath(
+  new URL("../../runtime/tanstack-router-is-server.js", import.meta.url),
+);
+
 function createSpaHistoryFallbackRule(
   config: ResolvedEvConfig<ConfigComplete>,
 ): ProxyRule {
@@ -28,13 +36,29 @@ function createSpaHistoryFallbackRule(
   target.port = String(config.dev.port);
 
   return {
-    context: ["^/(?!api(?:/|$))(?!turbopack-hmr$)(?!.*\\.[^/]+$).+"],
+    context: [DOCUMENT_FALLBACK_CONTEXT],
     target: target.origin,
     changeOrigin: true,
     secure: false,
     pathRewrite: {
       "^/.*$": "/",
     },
+  };
+}
+
+function createSsrDocumentFallbackRule(
+  config: ResolvedEvConfig<ConfigComplete>,
+): ProxyRule {
+  const target = new URL(
+    config.server.dev.https ? "https://localhost" : "http://localhost",
+  );
+  target.port = String(config.server.dev.port);
+
+  return {
+    context: [DOCUMENT_FALLBACK_CONTEXT],
+    target: target.origin,
+    changeOrigin: true,
+    secure: false,
   };
 }
 
@@ -56,7 +80,13 @@ export async function createUtoopackConfig(
   const serverEnabled = config.serverEnabled;
   const devProxy: DevServerProxy = [
     ...config.dev.proxy,
-    ...(!isMpa(config) ? [createSpaHistoryFallbackRule(config)] : []),
+    ...(!isMpa(config)
+      ? [
+          config.ssr.enabled
+            ? createSsrDocumentFallbackRule(config)
+            : createSpaHistoryFallbackRule(config),
+        ]
+      : []),
   ];
 
   let finalServerEntry: string | undefined;
@@ -94,6 +124,9 @@ export async function createUtoopackConfig(
     },
     resolve: {
       extensions: [".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs"],
+      alias: {
+        "@tanstack/router-core/isServer": TANSTACK_ROUTER_IS_SERVER_ALIAS,
+      },
     },
     sourceMaps: !isProduction,
     stats: true,
@@ -105,9 +138,13 @@ export async function createUtoopackConfig(
         config.server.functions.endpoint,
       ),
       "process.env.NODE_ENV": JSON.stringify(mode),
+      "process.env.EVJS_SSR": JSON.stringify(String(config.ssr.enabled)),
+      "process.env.EVJS_SSR_MODE": JSON.stringify(config.ssr.mode),
       __EVJS_FUNCTION_ENDPOINT__: JSON.stringify(
         config.server.functions.endpoint,
       ),
+      __EVJS_SSR__: JSON.stringify(config.ssr.enabled),
+      __EVJS_SSR_MODE__: JSON.stringify(config.ssr.mode),
     },
     // Server functions config — utoopack handles "use server" natively
     ...(serverEnabled

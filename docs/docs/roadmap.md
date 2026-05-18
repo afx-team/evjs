@@ -46,5 +46,4 @@ Call server-side logic from the browser as normal async functions.
 Future directions under consideration:
 
 - **SSR** — server-side rendering with hydration
-- **RSC** — React Server Components via Flight protocol
 - **More bundlers** — Rspack, Vite plugins via `@evjs/build-tools`

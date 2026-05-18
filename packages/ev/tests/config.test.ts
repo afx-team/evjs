@@ -31,6 +31,7 @@ describe("resolveConfig", () => {
     expect(resolved.server.functions.endpoint).toBe("api/fn");
     expect(resolved.server.dev.port).toBe(CONFIG_DEFAULTS.serverPort);
     expect(resolved.server.dev.https).toBe(false);
+    expect(resolved.ssr).toEqual({ enabled: false, mode: "stream" });
     expect(resolved.bundler).toBeUndefined();
     expect(resolved.plugins).toEqual([]);
   });
@@ -130,6 +131,24 @@ describe("resolveConfig", () => {
       key: "server.key",
       cert: "server.cert",
     });
+  });
+
+  it("resolves SSR defaults when enabled", () => {
+    const resolved = resolveConfig({ ssr: true });
+
+    expect(resolved.ssr).toEqual({ enabled: true, mode: "stream" });
+  });
+
+  it("respects explicit SSR mode", () => {
+    const resolved = resolveConfig({ ssr: { mode: "string" } });
+
+    expect(resolved.ssr).toEqual({ enabled: true, mode: "string" });
+  });
+
+  it("rejects SSR without the server runtime", () => {
+    expect(() => resolveConfig({ server: false, ssr: true })).toThrow(
+      /SSR requires the server runtime/,
+    );
   });
 
   it("passes bundler adapter through", () => {

@@ -1,4 +1,9 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { EVJS_QUERY_DEHYDRATION_KEY } from "@evjs/shared";
+import {
+  hydrate as hydrateQueryClient,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import type {
   AnyRoute,
   RouterConstructorOptions,
@@ -6,7 +11,8 @@ import type {
   TrailingSlashOption,
 } from "@tanstack/react-router";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
-import { createRoot } from "react-dom/client";
+import { RouterClient } from "@tanstack/react-router/ssr/client";
+import { createRoot, hydrateRoot } from "react-dom/client";
 import type { AppRouteContext } from "./context";
 import { initTransport } from "./transport";
 
@@ -67,6 +73,29 @@ export interface CreateAppOptions<
      */
     endpoint?: string;
   };
+  /**
+   * Hydration strategy used by `app.render()`.
+   *
+   * `auto` hydrates when the target container already has server-rendered
+   * children and falls back to CSR otherwise.
+   */
+  hydrate?: boolean | "auto";
+}
+
+export interface RenderOptions {
+  /** Overrides the hydration strategy configured in `createApp()`. */
+  hydrate?: boolean | "auto";
+}
+
+function hydrateEvQueryState(queryClient: QueryClient, dehydrated: unknown) {
+  if (!dehydrated || typeof dehydrated !== "object") return;
+
+  const state = (dehydrated as Record<string, unknown>)[
+    EVJS_QUERY_DEHYDRATION_KEY
+  ];
+  if (state) {
+    hydrateQueryClient(queryClient, state);
+  }
 }
 
 /**
@@ -96,7 +125,7 @@ export interface App<TRouter> {
    * Mount the application into the DOM.
    * @param container - A CSS selector string or an HTMLElement.
    */
-  render(container: string | HTMLElement): void;
+  render(container: string | HTMLElement, options?: RenderOptions): void;
   /**
    * Unmount the application from the DOM.
    */
@@ -154,6 +183,7 @@ export function createApp<
     routeTree,
     queryClient = new QueryClient(),
     functions,
+    hydrate = "auto",
     basepath,
     history,
     router: routerOptions,
@@ -162,6 +192,8 @@ export function createApp<
   if (functions?.endpoint) {
     initTransport({ functions });
   }
+
+  const userHydrate = routerOptions?.hydrate;
 
   const router = createRouter<
     TRouteTree,
@@ -176,11 +208,27 @@ export function createApp<
     history: routerOptions?.history ?? history,
     defaultPreload: routerOptions?.defaultPreload ?? "intent",
     context: { queryClient } as AppRouteContext,
+    hydrate: async (dehydrated) => {
+      hydrateEvQueryState(queryClient, dehydrated);
+      await userHydrate?.(dehydrated);
+    },
   });
 
   let root: ReturnType<typeof createRoot> | undefined;
 
-  function render(container: string | HTMLElement): void {
+  function shouldHydrate(
+    el: HTMLElement,
+    option: boolean | "auto" | undefined,
+  ): boolean {
+    if (option === true) return true;
+    if (option === false) return false;
+    return el.hasChildNodes();
+  }
+
+  function render(
+    container: string | HTMLElement,
+    options?: RenderOptions,
+  ): void {
     const el =
       typeof container === "string"
         ? document.querySelector<HTMLElement>(container)
@@ -192,12 +240,28 @@ export function createApp<
       );
     }
 
-    root = createRoot(el);
-    root.render(
+    const shouldHydrateRoot = shouldHydrate(el, options?.hydrate ?? hydrate);
+    const hasRouterSsrPayload =
+      typeof window !== "undefined" &&
+      Boolean((window as unknown as { $_TSR?: unknown }).$_TSR);
+
+    const app = (
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>,
+        {shouldHydrateRoot && hasRouterSsrPayload ? (
+          <RouterClient router={router} />
+        ) : (
+          <RouterProvider router={router} />
+        )}
+      </QueryClientProvider>
     );
+
+    if (shouldHydrateRoot) {
+      root = hydrateRoot(el, app);
+      return;
+    }
+
+    root = createRoot(el);
+    root.render(app);
   }
 
   function unmount(): void {

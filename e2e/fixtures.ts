@@ -12,6 +12,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { isDocumentRequestLike, isKnownAssetPath } from "@evjs/shared";
 import { test as base, expect } from "@playwright/test";
 
 export { expect };
@@ -23,6 +24,15 @@ interface ExampleFixture {
 
 interface WorkerFixture {
   _exampleApp: { webPort: number; apiPort: number };
+}
+
+interface ExampleTestOptions {
+  serveMode?: "spa" | "ssr";
+}
+
+interface StaticServerOptions {
+  apiPort?: number;
+  documentProxy?: boolean;
 }
 
 /**
@@ -41,6 +51,48 @@ function getContentType(ext: string): string {
   }
 }
 
+function getHeaderValue(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value.join(",") : (value ?? "");
+}
+
+function isDocumentProxyRequest(
+  req: http.IncomingMessage,
+  pathname: string,
+): boolean {
+  return isDocumentRequestLike({
+    method: req.method ?? "GET",
+    accept: getHeaderValue(req.headers.accept),
+    pathname,
+  });
+}
+
+function proxyToApi(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  apiPort: number,
+  url: string,
+): void {
+  const proxyReq = http.request(
+    {
+      hostname: "localhost",
+      port: apiPort,
+      path: url,
+      method: req.method,
+      headers: req.headers,
+    },
+    (proxyRes) => {
+      res.writeHead(proxyRes.statusCode || 500, proxyRes.headers);
+      proxyRes.pipe(res);
+    },
+  );
+  proxyReq.on("error", (err) => {
+    console.error(`[E2E proxy] ${req.method} ${url} failed:`, err.message);
+    res.writeHead(502);
+    res.end("Bad Gateway");
+  });
+  req.pipe(proxyReq);
+}
+
 /**
  * Create a static file server with SPA fallback.
  *
@@ -48,50 +100,55 @@ function getContentType(ext: string): string {
  */
 function createStaticServer(
   distDir: string,
-  options?: { apiPort?: number },
+  options?: StaticServerOptions,
 ): http.Server {
   const indexHtml = fs.readFileSync(path.join(distDir, "index.html"), "utf-8");
 
   return http.createServer((req, res) => {
     const url = req.url || "/";
+    const parsedUrl = new URL(url, "http://localhost");
+    const pathname = decodeURIComponent(parsedUrl.pathname);
 
     // Proxy /api requests to the API server (fullstack only)
-    if (options?.apiPort && url.startsWith("/api/")) {
-      const proxyReq = http.request(
-        `http://localhost:${options.apiPort}${url}`,
-        { method: req.method, headers: req.headers },
-        (proxyRes) => {
-          res.writeHead(proxyRes.statusCode || 500, proxyRes.headers);
-          proxyRes.pipe(res);
-        },
-      );
-      proxyReq.on("error", (err) => {
-        console.error(`[E2E proxy] ${req.method} ${url} failed:`, err.message);
-        res.writeHead(502);
-        res.end("Bad Gateway");
-      });
-      req.pipe(proxyReq);
-      return;
-    }
-
-    // Serve index.html
-    if (url === "/" || url === "/index.html") {
-      res.writeHead(200, { "Content-Type": "text/html" });
-      res.end(indexHtml);
+    if (options?.apiPort && pathname.startsWith("/api/")) {
+      proxyToApi(req, res, options.apiPort, url);
       return;
     }
 
     // Serve static files
-    const filePath = path.join(distDir, url);
-    if (fs.existsSync(filePath)) {
+    const filePath = path.join(distDir, pathname);
+    const relativePath = path.relative(distDir, filePath);
+    if (relativePath.startsWith("..")) {
+      res.writeHead(403);
+      res.end("Forbidden");
+      return;
+    }
+
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
       const ext = path.extname(filePath);
       res.writeHead(200, { "Content-Type": getContentType(ext) });
       fs.createReadStream(filePath).pipe(res);
-    } else {
-      // SPA fallback
-      res.writeHead(200, { "Content-Type": "text/html" });
-      res.end(indexHtml);
+      return;
     }
+
+    if (
+      options?.apiPort &&
+      options.documentProxy &&
+      isDocumentProxyRequest(req, pathname)
+    ) {
+      proxyToApi(req, res, options.apiPort, url);
+      return;
+    }
+
+    if (isKnownAssetPath(pathname)) {
+      res.writeHead(404);
+      res.end("Not Found");
+      return;
+    }
+
+    // SPA fallback
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(indexHtml);
   });
 }
 
@@ -176,7 +233,10 @@ async function buildExample(
  * Builds with the bundler specified in the Playwright project config,
  * starts the server bundle via a CJS bootstrap, serves client on a random port.
  */
-export function createExampleTest(exampleName: string) {
+export function createExampleTest(
+  exampleName: string,
+  options?: ExampleTestOptions,
+) {
   const exampleDir = path.resolve(
     import.meta.dirname,
     "..",
@@ -252,7 +312,10 @@ export function createExampleTest(exampleName: string) {
 
         // Serve the client bundle with API proxy
         const distDir = path.join(exampleDir, "dist", "client");
-        const staticServer = createStaticServer(distDir, { apiPort });
+        const staticServer = createStaticServer(distDir, {
+          apiPort,
+          documentProxy: options?.serveMode === "ssr",
+        });
 
         await new Promise<void>((resolve) => {
           staticServer.listen(0, resolve);

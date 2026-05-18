@@ -23,10 +23,12 @@ export {
   type ResolvedEvConfig,
   type ResolvedServerConfig,
   type ResolvedServerDevConfig,
+  type ResolvedSsrConfig,
   resolveConfig,
   type ServerConfig,
   type ServerDevConfig,
   type ServerFunctionsConfig,
+  type SsrConfig,
 } from "./config.js";
 export { type BuildHtmlOptions, buildHtml } from "./html.js";
 export { type ConfigPatch, merge } from "./merge.js";

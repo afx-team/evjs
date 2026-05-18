@@ -34,3 +34,6 @@ export function getFunctionEndpoint(): string {
 
 /** Default HTTP status code for server function errors. */
 export const DEFAULT_ERROR_STATUS = 500;
+
+/** Key used inside TanStack Router's dehydrated payload for evjs Query state. */
+export const EVJS_QUERY_DEHYDRATION_KEY = "__evjsQueryClient";

@@ -9,6 +9,22 @@ import {
   type ServerFunction,
 } from "../src/transport.js";
 
+const REQUEST_CONTEXT_KEY = Symbol.for("evjs.transport.requestContext");
+
+function setStoredRequestContext(
+  context: Parameters<typeof callServer>[2],
+): void {
+  (globalThis as unknown as Record<symbol, unknown>)[REQUEST_CONTEXT_KEY] = {
+    getStore: () => context,
+  };
+}
+
+afterEach(() => {
+  delete (globalThis as unknown as Record<symbol, unknown>)[
+    REQUEST_CONTEXT_KEY
+  ];
+});
+
 describe("createServerReference / getFnId / getFnName", () => {
   beforeEach(() => {
     __resetForTesting();
@@ -121,6 +137,48 @@ describe("initTransport + callServer", () => {
     await callServer("fn2", [], { signal });
 
     expect(send).toHaveBeenCalledWith("fn2", [], { signal });
+  });
+
+  it("passes request-scoped context through to custom transports", async () => {
+    const send = vi.fn().mockResolvedValue("ok");
+    initTransport({ transport: { send } });
+    setStoredRequestContext({
+      baseUrl: "https://ssr.example.com/",
+      headers: { cookie: "sid=1" },
+    });
+
+    await callServer("fn2", []);
+
+    expect(send).toHaveBeenCalledWith("fn2", [], {
+      baseUrl: "https://ssr.example.com/",
+      headers: { cookie: "sid=1" },
+    });
+  });
+
+  it("lets explicit context override request-scoped transport context", async () => {
+    const send = vi.fn().mockResolvedValue("ok");
+    const signal = new AbortController().signal;
+    initTransport({ transport: { send } });
+    setStoredRequestContext({
+      baseUrl: "https://ssr.example.com/",
+      headers: { cookie: "sid=1", "x-request": "stored" },
+    });
+
+    await callServer("fn2", [], {
+      baseUrl: "https://api.example.com/",
+      headers: { authorization: "Bearer explicit", "x-request": "explicit" },
+      signal,
+    });
+
+    expect(send).toHaveBeenCalledWith("fn2", [], {
+      baseUrl: "https://api.example.com/",
+      headers: {
+        cookie: "sid=1",
+        "x-request": "explicit",
+        authorization: "Bearer explicit",
+      },
+      signal,
+    });
   });
 
   it("warns on double init in non-production", () => {
@@ -237,6 +295,31 @@ describe("createFetchTransport (default)", () => {
     expect(mockFetch).toHaveBeenCalledWith(
       new URL("https://api.example.com/backend/api/rpc"),
       expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("uses request-scoped baseUrl and headers for SSR calls", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ result: "ok" }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+    setStoredRequestContext({
+      baseUrl: "https://ssr.example.com/",
+      headers: { cookie: "sid=1" },
+    });
+
+    initTransport({ functions: { endpoint: "api/fn" } });
+    await callServer("myFn", []);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      new URL("https://ssr.example.com/api/fn"),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          cookie: "sid=1",
+        }),
+        method: "POST",
+      }),
     );
   });
 

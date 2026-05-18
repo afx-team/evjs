@@ -40,6 +40,11 @@
       "types": "./esm/transport.d.ts",
       "import": "./esm/transport.js",
       "default": "./esm/transport.js"
+    },
+    "./route": {
+      "types": "./esm/route.d.ts",
+      "import": "./esm/route.js",
+      "default": "./esm/route.js"
     }
   },
   "scripts": {
