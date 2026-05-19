@@ -1,4 +1,3 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import {
   EVJS_QUERY_DEHYDRATION_KEY,
   isDocumentRequestLike,
@@ -35,12 +34,29 @@ export type SsrRenderMode = "string" | "stream";
 export interface SsrAssets {
   js: string[];
   css: string[];
+  preload?: {
+    js?: string[];
+    css?: string[];
+  };
   publicPath?: string;
+  routes?: SsrRouteAssets[];
+}
+
+export interface SsrRouteAssets {
+  path: string;
+  assets?: {
+    js?: string[];
+    css?: string[];
+  };
 }
 
 export type SsrAssetsSource =
   | SsrAssets
   | (() => SsrAssets | Promise<SsrAssets>);
+
+export type SsrForwardHeaders =
+  | readonly string[]
+  | ((request: Request) => HeadersInit | undefined);
 
 export interface SsrAssetTagsProps {
   assets?: SsrAssets;
@@ -70,6 +86,11 @@ export type DocumentHandler = (
 export interface SsrRenderHandlerOptions {
   render: SsrRender;
   assets?: SsrAssetsSource;
+  /**
+   * Header allowlist for server function calls made during SSR.
+   * Defaults to forwarding only `cookie`.
+   */
+  forwardHeaders?: SsrForwardHeaders;
   shouldHandle?: (request: Request) => boolean;
 }
 
@@ -97,6 +118,11 @@ export interface SsrDocumentRenderContext<TRouter extends AnyRouter> {
 export interface SsrRouterHandlerOptions<TRouter extends AnyRouter> {
   createRouter: SsrRouterFactory<TRouter>;
   assets?: SsrAssetsSource;
+  /**
+   * Header allowlist for server function calls made during SSR.
+   * Defaults to forwarding only `cookie`.
+   */
+  forwardHeaders?: SsrForwardHeaders;
   mode?: SsrRenderMode;
   renderDocument: (ctx: SsrDocumentRenderContext<TRouter>) => ReactNode;
   shouldHandle?: (request: Request) => boolean;
@@ -154,6 +180,11 @@ export interface SsrRouteTreeHandlerOptions<
   createQueryClient?: () => QueryClient;
   getRouterContext?: (ctx: SsrRouteTreeContext) => Record<string, unknown>;
   assets?: SsrAssetsSource;
+  /**
+   * Header allowlist for server function calls made during SSR.
+   * Defaults to forwarding only `cookie`.
+   */
+  forwardHeaders?: SsrForwardHeaders;
   mode?: SsrRenderMode;
   renderDocument: (
     ctx: SsrDocumentRenderContext<
@@ -177,27 +208,102 @@ const DEFAULT_ASSETS: SsrAssets = { js: [], css: [], publicPath: "/" };
 const SsrRouterContext = createContext<AnyRouter | undefined>(undefined);
 
 const REQUEST_CONTEXT_KEY = Symbol.for("evjs.transport.requestContext");
-const transportRequestContext = new AsyncLocalStorage<{
+const REQUEST_CONTEXT_INIT_KEY = Symbol.for(
+  "evjs.transport.requestContext.init",
+);
+const DEFAULT_FORWARDED_HEADERS = ["cookie"] as const;
+
+interface TransportRequestContext {
   baseUrl?: string;
   headers?: Record<string, string>;
-}>();
+}
 
-(globalThis as Record<symbol, unknown>)[REQUEST_CONTEXT_KEY] =
-  transportRequestContext;
+interface TransportRequestContextStore {
+  getStore(): TransportRequestContext | undefined;
+  run<T>(store: TransportRequestContext, callback: () => T): T;
+}
 
-const FORWARDED_HEADER_DENYLIST = new Set([
-  "connection",
-  "content-length",
-  "content-type",
-  "host",
-  "keep-alive",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "te",
-  "trailer",
-  "transfer-encoding",
-  "upgrade",
-]);
+let transportRequestContextStore:
+  | Promise<TransportRequestContextStore>
+  | undefined;
+
+function getGlobalRecord(): Record<symbol, unknown> {
+  return globalThis as Record<symbol, unknown>;
+}
+
+function getGlobalTransportRequestContextStore():
+  | TransportRequestContextStore
+  | undefined {
+  const store = getGlobalRecord()[REQUEST_CONTEXT_KEY];
+  if (typeof store !== "object" || store === null) return undefined;
+
+  const candidate = store as Partial<TransportRequestContextStore>;
+  if (
+    typeof candidate.getStore === "function" &&
+    typeof candidate.run === "function"
+  ) {
+    return candidate as TransportRequestContextStore;
+  }
+}
+
+function createNoopTransportRequestContextStore(): TransportRequestContextStore {
+  return {
+    getStore: () => undefined,
+    run: (_store, callback) => callback(),
+  };
+}
+
+async function createTransportRequestContextStore(): Promise<TransportRequestContextStore> {
+  if (typeof process === "undefined" || !process.versions?.node) {
+    // Non-Node runtimes can still render SSR documents. They just do not get
+    // implicit request-scoped server-function forwarding until a runtime store
+    // is provided by an adapter.
+    return createNoopTransportRequestContextStore();
+  }
+
+  const asyncHooksModule = "node:async_hooks";
+  const { AsyncLocalStorage } = (await import(
+    asyncHooksModule
+  )) as typeof import("node:async_hooks");
+
+  return new AsyncLocalStorage<TransportRequestContext>();
+}
+
+function getGlobalTransportRequestContextInit():
+  | Promise<TransportRequestContextStore>
+  | undefined {
+  const pending = getGlobalRecord()[REQUEST_CONTEXT_INIT_KEY];
+  return pending instanceof Promise ? pending : undefined;
+}
+
+function setGlobalTransportRequestContextStore(
+  store: TransportRequestContextStore,
+): TransportRequestContextStore {
+  getGlobalRecord()[REQUEST_CONTEXT_KEY] = store;
+  return store;
+}
+
+async function getTransportRequestContextStore(): Promise<TransportRequestContextStore> {
+  const existing = getGlobalTransportRequestContextStore();
+  if (existing) return existing;
+
+  const pending = getGlobalTransportRequestContextInit();
+  if (pending) return pending;
+
+  transportRequestContextStore ??= createTransportRequestContextStore().then(
+    (store) => getGlobalTransportRequestContextStore() ?? store,
+  );
+
+  if (typeof process !== "undefined" && process.versions?.node) {
+    getGlobalRecord()[REQUEST_CONTEXT_INIT_KEY] =
+      transportRequestContextStore.then(setGlobalTransportRequestContextStore);
+    return getGlobalRecord()[
+      REQUEST_CONTEXT_INIT_KEY
+    ] as Promise<TransportRequestContextStore>;
+  }
+
+  return transportRequestContextStore;
+}
 
 export function isDocumentRequest(request: Request): boolean {
   const url = new URL(request.url);
@@ -232,9 +338,30 @@ export function AssetLinks({
   assets = DEFAULT_ASSETS,
   nonce,
 }: SsrAssetTagsProps): ReactNode {
+  const preloadJs = assets.preload?.js ?? [];
+  const preloadCss = assets.preload?.css ?? [];
+
   return createElement(
     Fragment,
     null,
+    ...preloadJs.map((href) =>
+      createElement("link", {
+        key: `preload:${href}`,
+        rel: "preload",
+        as: "script",
+        href: assetUrl(href, assets.publicPath),
+        nonce,
+      }),
+    ),
+    ...preloadCss.map((href) =>
+      createElement("link", {
+        key: `preload:${href}`,
+        rel: "preload",
+        as: "style",
+        href: assetUrl(href, assets.publicPath),
+        nonce,
+      }),
+    ),
     ...assets.css.map((href) =>
       createElement("link", {
         key: href,
@@ -301,8 +428,63 @@ function normalizeAssets(assets: Partial<SsrAssets> | undefined): SsrAssets {
   return {
     js: assets?.js ?? [],
     css: assets?.css ?? [],
+    ...(assets?.preload
+      ? {
+          preload: {
+            js: assets.preload.js ?? [],
+            css: assets.preload.css ?? [],
+          },
+        }
+      : {}),
     publicPath: assets?.publicPath ?? "/",
+    ...(assets?.routes ? { routes: assets.routes } : {}),
   };
+}
+
+function dedupe(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+function mergeSsrAssets(base: SsrAssets, routeAssets: SsrRouteAssets[]) {
+  const routeJs = routeAssets.flatMap((route) => route.assets?.js ?? []);
+  const routeCss = routeAssets.flatMap((route) => route.assets?.css ?? []);
+  const preload = {
+    js: dedupe([...(base.preload?.js ?? []), ...routeJs]),
+    css: dedupe(base.preload?.css ?? []),
+  };
+
+  return normalizeAssets({
+    ...base,
+    css: dedupe([...base.css, ...routeCss]),
+    preload,
+  });
+}
+
+function getRouterMatchedRouteIds(router: AnyRouter): Set<string> {
+  const matches = router.stores.matches.get() as Array<{
+    routeId?: unknown;
+  }>;
+  return new Set(
+    matches
+      .map((match) =>
+        typeof match.routeId === "string" ? match.routeId : undefined,
+      )
+      .filter((id): id is string => Boolean(id)),
+  );
+}
+
+function selectRouteAssets(assets: SsrAssets, router: AnyRouter): SsrAssets {
+  if (!assets.routes || assets.routes.length === 0) return assets;
+
+  const routeIds = getRouterMatchedRouteIds(router);
+  if (routeIds.size === 0) return assets;
+
+  const matchedRouteAssets = assets.routes.filter((route) =>
+    routeIds.has(route.path),
+  );
+  if (matchedRouteAssets.length === 0) return assets;
+
+  return mergeSsrAssets(assets, matchedRouteAssets);
 }
 
 async function readClientManifestAssets(): Promise<SsrAssets> {
@@ -321,8 +503,12 @@ async function readClientManifestAssets(): Promise<SsrAssets> {
       try {
         const manifest = JSON.parse(await readFile(manifestPath, "utf-8")) as {
           assets?: Partial<SsrAssets>;
+          routes?: SsrRouteAssets[];
         };
-        return normalizeAssets(manifest.assets);
+        return normalizeAssets({
+          ...manifest.assets,
+          routes: manifest.routes,
+        });
       } catch {
         // Try the next known output layout.
       }
@@ -412,24 +598,33 @@ export function createSsrHandler<TRouter extends AnyRouter>(
       : (options.shouldHandle ?? isDocumentRequest);
   const assetsSource =
     typeof options === "function" ? undefined : options.assets;
+  const forwardHeaders =
+    typeof options === "function" ? undefined : options.forwardHeaders;
 
-  return async (request) => {
-    if (shouldHandle && !shouldHandle(request)) {
-      return new Response("Not Found", { status: 404 });
-    }
+  return (request) =>
+    runWithTransportContext(
+      request,
+      async () => {
+        if (shouldHandle && !shouldHandle(request)) {
+          return new Response("Not Found", { status: 404 });
+        }
 
-    const assets = await resolveAssets(assetsSource);
+        const assets = await resolveAssets(assetsSource);
 
-    const response = toHtmlResponse(
-      await render({
-        request,
-        url: new URL(request.url),
-        assets,
-      }),
+        const response = toHtmlResponse(
+          await render({
+            request,
+            url: new URL(request.url),
+            assets,
+          }),
+        );
+
+        return request.method === "HEAD"
+          ? copyHeadResponse(response)
+          : response;
+      },
+      forwardHeaders,
     );
-
-    return request.method === "HEAD" ? copyHeadResponse(response) : response;
-  };
 }
 
 function isRouterFactoryResult<TRouter extends AnyRouter>(
@@ -465,22 +660,44 @@ function getRequestLocation(request: Request): {
   };
 }
 
-function headersToRecord(headers: Headers): Record<string, string> {
-  const result: Record<string, string> = {};
-  headers.forEach((value, key) => {
-    if (!FORWARDED_HEADER_DENYLIST.has(key.toLowerCase())) {
-      result[key] = value;
+function headersToRecord(
+  request: Request,
+  forwardHeaders: SsrForwardHeaders | undefined,
+): Record<string, string> {
+  if (typeof forwardHeaders === "function") {
+    const headers = new Headers(forwardHeaders(request));
+    const result: Record<string, string> = {};
+    for (const key of new Set(headers.keys())) {
+      const value = headers.get(key);
+      if (value !== null) {
+        result[key] = value;
+      }
     }
-  });
+    return result;
+  }
+
+  const forwardedHeaders = forwardHeaders ?? DEFAULT_FORWARDED_HEADERS;
+  const result: Record<string, string> = {};
+  for (const name of forwardedHeaders) {
+    const value = request.headers.get(name);
+    if (value !== null) {
+      result[name.toLowerCase()] = value;
+    }
+  }
   return result;
 }
 
-function runWithTransportContext<T>(request: Request, fn: () => T): T {
+async function runWithTransportContext<T>(
+  request: Request,
+  fn: () => T | Promise<T>,
+  forwardHeaders?: SsrForwardHeaders,
+): Promise<T> {
   const location = getRequestLocation(request);
-  return transportRequestContext.run(
+  const store = await getTransportRequestContextStore();
+  return store.run(
     {
       baseUrl: `${location.origin}/`,
-      headers: headersToRecord(request.headers),
+      headers: headersToRecord(request, forwardHeaders),
     },
     fn,
   );
@@ -555,6 +772,7 @@ function createSsrRouteTreeHandler<
   return createSsrRouterHandler({
     shouldHandle: options.shouldHandle,
     assets: options.assets,
+    forwardHeaders: options.forwardHeaders,
     mode: options.mode,
     createRouter: ({ request }) => {
       const queryClient = options.createQueryClient?.() ?? new QueryClient();
@@ -588,52 +806,61 @@ function createSsrRouterHandler<TRouter extends AnyRouter>(
   options: SsrRouterHandlerOptions<TRouter>,
 ): DocumentHandler {
   return (request) =>
-    runWithTransportContext(request, async () => {
-      const shouldHandle = options.shouldHandle ?? isDocumentRequest;
-      if (!shouldHandle(request)) {
-        return new Response("Not Found", { status: 404 });
-      }
+    runWithTransportContext(
+      request,
+      async () => {
+        const shouldHandle = options.shouldHandle ?? isDocumentRequest;
+        if (!shouldHandle(request)) {
+          return new Response("Not Found", { status: 404 });
+        }
 
-      const assets = await resolveAssets(options.assets);
-      const mode = options.mode ?? getDefaultRenderMode();
-      let queryClient: QueryClient | undefined;
+        const assets = await resolveAssets(options.assets);
+        const mode = options.mode ?? getDefaultRenderMode();
+        let queryClient: QueryClient | undefined;
 
-      const handler = createRequestHandler({
-        request,
-        createRouter: () => {
-          const result = options.createRouter({ request });
+        const handler = createRequestHandler({
+          request,
+          createRouter: () => {
+            const result = options.createRouter({ request });
 
-          if (isRouterFactoryResult(result)) {
-            queryClient = result.queryClient;
-            return result.router;
-          }
+            if (isRouterFactoryResult(result)) {
+              queryClient = result.queryClient;
+              return result.router;
+            }
 
-          queryClient = undefined;
-          return result;
-        },
-      });
+            queryClient = undefined;
+            return result;
+          },
+        });
 
-      const response = await handler(
-        ({ request: currentRequest, router, responseHeaders }) =>
-          renderRouterResponse({
-            mode,
-            request: currentRequest,
-            router,
-            responseHeaders,
-            children: createElement(
-              SsrRouterContext.Provider,
-              { value: router },
-              options.renderDocument({
-                request: currentRequest,
-                router,
-                responseHeaders,
-                assets,
-                children: renderRouterChildren(router, queryClient),
-              }),
-            ),
-          }),
-      );
+        const response = await handler(
+          ({ request: currentRequest, router, responseHeaders }) => {
+            const selectedAssets = selectRouteAssets(assets, router);
 
-      return request.method === "HEAD" ? copyHeadResponse(response) : response;
-    });
+            return renderRouterResponse({
+              mode,
+              request: currentRequest,
+              router,
+              responseHeaders,
+              children: createElement(
+                SsrRouterContext.Provider,
+                { value: router },
+                options.renderDocument({
+                  request: currentRequest,
+                  router,
+                  responseHeaders,
+                  assets: selectedAssets,
+                  children: renderRouterChildren(router, queryClient),
+                }),
+              ),
+            });
+          },
+        );
+
+        return request.method === "HEAD"
+          ? copyHeadResponse(response)
+          : response;
+      },
+      options.forwardHeaders,
+    );
 }

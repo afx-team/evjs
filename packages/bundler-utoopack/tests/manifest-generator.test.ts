@@ -145,4 +145,154 @@ describe("UtoopackManifestGenerator", () => {
     ]);
     expect(clientManifest.routes).toEqual([{ path: "/" }]);
   });
+
+  it("joins lazy route imports with client module chunk assets", async () => {
+    const cwd = await makeProject();
+
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/client/stats.json"),
+      JSON.stringify({
+        entrypoints: {
+          main: { assets: [{ name: "main.js" }] },
+        },
+        modules: [
+          {
+            name: "src/pages/home.lazy.tsx",
+            chunks: ["main.js"],
+          },
+          {
+            name: "src/pages/home.lazy.tsx",
+            chunks: ["home.lazy.js", "home.lazy.css"],
+          },
+        ],
+      }),
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/server/stats.json"),
+      JSON.stringify({
+        entrypoints: {
+          main: { assets: [{ name: "server.js" }] },
+        },
+      }),
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/home.tsx"),
+      `
+        import { createRoute } from "@evjs/client/route";
+        export const homeRoute = createRoute({
+          getParentRoute: () => rootRoute,
+          path: "/",
+        }).lazy(() => import("./home.lazy").then((d) => d.Route));
+      `,
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/home.lazy.tsx"),
+      `
+        import { createLazyRoute } from "@evjs/client/route";
+        export const Route = createLazyRoute("/")({
+          component: () => null,
+        });
+      `,
+    );
+
+    const generator = new UtoopackManifestGenerator(cwd, true);
+    await generator.build();
+
+    const clientManifest = JSON.parse(
+      await fs.promises.readFile(
+        path.join(cwd, "dist/client/manifest.json"),
+        "utf-8",
+      ),
+    );
+
+    expect(clientManifest.assets).toEqual({ js: ["main.js"], css: [] });
+    expect(clientManifest.routes).toEqual([
+      {
+        path: "/",
+        assets: {
+          js: ["home.lazy.js"],
+          css: ["home.lazy.css"],
+        },
+      },
+    ]);
+  });
+
+  it("includes shared chunks loaded with a lazy route chunk", async () => {
+    const cwd = await makeProject();
+
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/client/stats.json"),
+      JSON.stringify({
+        entrypoints: {
+          main: { assets: [{ name: "main.js" }] },
+        },
+        assets: [
+          { name: "main.js" },
+          { name: "home.lazy.js" },
+          { name: "shared.lazy.js" },
+        ],
+        modules: [
+          {
+            name: "src/pages/home.lazy.tsx",
+            chunks: ["main.js"],
+          },
+          {
+            name: "src/pages/home.lazy.tsx",
+            chunks: ["home.lazy.js"],
+          },
+        ],
+      }),
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/client/main.js"),
+      `route.lazy(() => Promise.all(["shared.lazy.js", "home.lazy.js"].map((chunk) => runtime.l(chunk))).then(() => runtime.import(123)))`,
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/server/stats.json"),
+      JSON.stringify({
+        entrypoints: {
+          main: { assets: [{ name: "server.js" }] },
+        },
+      }),
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/home.tsx"),
+      `
+        import { createRoute } from "@evjs/client/route";
+        export const homeRoute = createRoute({
+          getParentRoute: () => rootRoute,
+          path: "/",
+        }).lazy(() => import("./home.lazy").then((d) => d.Route));
+      `,
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/home.lazy.tsx"),
+      `
+        import { createLazyRoute } from "@evjs/client/route";
+        export const Route = createLazyRoute("/")({
+          component: () => null,
+        });
+      `,
+    );
+
+    const generator = new UtoopackManifestGenerator(cwd, true);
+    await generator.build();
+
+    const clientManifest = JSON.parse(
+      await fs.promises.readFile(
+        path.join(cwd, "dist/client/manifest.json"),
+        "utf-8",
+      ),
+    );
+
+    expect(clientManifest.routes).toEqual([
+      {
+        path: "/",
+        assets: {
+          js: ["home.lazy.js", "shared.lazy.js"],
+          css: [],
+        },
+      },
+    ]);
+  });
 });

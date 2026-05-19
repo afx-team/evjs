@@ -58,6 +58,63 @@ describe("extractClientRoutes", () => {
     ]);
   });
 
+  it("supports createRoute imports from @evjs/client/route", () => {
+    const source = `
+      import { createRoute } from "@evjs/client/route";
+      export const settingsRoute = createRoute({
+        getParentRoute: () => rootRoute,
+        path: "/settings",
+        component: Settings,
+      });
+    `;
+    expect(extractClientRoutes(source)).toEqual([
+      {
+        path: "/settings",
+        parentName: "rootRoute",
+        varName: "settingsRoute",
+      },
+    ]);
+  });
+
+  it("extracts lazy route import targets", () => {
+    const source = `
+      import { createRoute } from "@evjs/client/route";
+      export const postsRoute = createRoute({
+        getParentRoute: () => rootRoute,
+        path: "/posts",
+        loader: () => null,
+      }).lazy(() => import("./posts.lazy").then((d) => d.Route));
+    `;
+    expect(extractClientRoutes(source)).toEqual([
+      {
+        path: "/posts",
+        parentName: "rootRoute",
+        varName: "postsRoute",
+        lazyImports: ["./posts.lazy"],
+      },
+    ]);
+  });
+
+  it("extracts lazy route imports from block-body callbacks", () => {
+    const source = `
+      import { createRoute } from "@evjs/client";
+      export const postsRoute = createRoute({
+        getParentRoute: () => rootRoute,
+        path: "/posts",
+      }).lazy(() => {
+        return import("./posts.lazy").then((d) => d.Route);
+      });
+    `;
+    expect(extractClientRoutes(source)).toEqual([
+      {
+        path: "/posts",
+        parentName: "rootRoute",
+        varName: "postsRoute",
+        lazyImports: ["./posts.lazy"],
+      },
+    ]);
+  });
+
   it("skips pathless layouts (id-only routes)", () => {
     const source = `
       import { createRoute } from "@evjs/client";
@@ -235,6 +292,32 @@ describe("resolveRoutes", () => {
       { path: "/about", parentName: "rootRoute", varName: "aboutRoute2" },
     ]);
     expect(result).toEqual([{ path: "/about" }]);
+  });
+
+  it("merges assets for routes that resolve to the same path", () => {
+    const result = resolveRoutes([
+      {
+        path: "/posts",
+        parentName: "rootRoute",
+        varName: "postsRoute",
+        assets: { js: ["posts.js"], css: ["posts.css"] },
+      },
+      {
+        path: "/",
+        parentName: "postsRoute",
+        varName: "postsIndexRoute",
+        assets: { js: ["posts-index.js"], css: ["posts-index.css"] },
+      },
+    ]);
+    expect(result).toEqual([
+      {
+        path: "/posts",
+        assets: {
+          js: ["posts.js", "posts-index.js"],
+          css: ["posts.css", "posts-index.css"],
+        },
+      },
+    ]);
   });
 
   it("handles orphan routes (no parent found)", () => {

@@ -57,6 +57,8 @@ export interface ServerManifest {
 export interface RouteEntry {
   /** Route path (e.g. "/", "/posts/$postId", "*"). */
   path: string;
+  /** Route-specific async assets, usually emitted by lazy route modules. */
+  assets?: ManifestAssets;
 }
 
 /**
@@ -100,6 +102,10 @@ export interface ExtractedRoute {
   parentName?: string;
   /** Variable name this route is assigned to (e.g. "homeRoute"). */
   varName?: string;
+  /** Dynamic import targets attached through route.lazy(...). */
+  lazyImports?: string[];
+  /** Resolved lazy route assets. Filled by bundler adapters. */
+  assets?: ManifestAssets;
 }
 
 /** Server route metadata extracted from an @evjs/server createRoute() export. */
@@ -129,9 +135,7 @@ export interface ExtractedServerRoute {
  * // => [{ path: "/posts" }, { path: "/posts/$postId" }]
  * ```
  */
-export function resolveRoutes(
-  routes: ExtractedRoute[],
-): Array<{ path: string }> {
+export function resolveRoutes(routes: ExtractedRoute[]): RouteEntry[] {
   // Build a lookup: varName → ExtractedRoute
   const byName = new Map<string, ExtractedRoute>();
   for (const r of routes) {
@@ -167,29 +171,53 @@ export function resolveRoutes(
     return joinPaths(parentPath, route.path);
   }
 
-  const seen = new Set<string>();
-  const result: Array<{ path: string }> = [];
+  const byPath = new Map<string, RouteEntry>();
+
+  function mergeAssets(
+    a: ManifestAssets | undefined,
+    b: ManifestAssets | undefined,
+  ): ManifestAssets | undefined {
+    if (!a) return b;
+    if (!b) return a;
+    return {
+      js: [...new Set([...a.js, ...b.js])],
+      css: [...new Set([...a.css, ...b.css])],
+    };
+  }
+
+  function addRoute(path: string, assets: ManifestAssets | undefined) {
+    const existing = byPath.get(path);
+    if (existing) {
+      const mergedAssets = mergeAssets(existing.assets, assets);
+      if (mergedAssets) {
+        existing.assets = mergedAssets;
+      }
+      return;
+    }
+
+    byPath.set(path, assets ? { path, assets } : { path });
+  }
 
   for (const r of routes) {
     const fullPath = resolveParentPath(r);
 
     // Skip index routes that resolve to the same path as their parent.
-    // An index route has path "/" and a parent that is not the root.
+    // An index route has path "/" and a parent that is not the root. If it has
+    // lazy assets, merge them into the parent URL instead of dropping them.
     if (r.path === "/" && r.parentName) {
       const parent = byName.get(r.parentName);
       if (parent) {
-        // This is a non-root index route — it duplicates the parent path.
+        if (r.assets) {
+          addRoute(fullPath, r.assets);
+        }
         continue;
       }
     }
 
-    if (!seen.has(fullPath)) {
-      seen.add(fullPath);
-      result.push({ path: fullPath });
-    }
+    addRoute(fullPath, r.assets);
   }
 
-  return result;
+  return [...byPath.values()];
 }
 
 /** Join two path segments, normalizing double slashes. */

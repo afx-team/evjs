@@ -75,6 +75,7 @@ export {
   composeRewrites,
   createBrowserHistory,
   createHashHistory,
+  createLazyRoute,
   createLink,
   createMemoryHistory,
   createRootRoute,

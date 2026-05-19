@@ -8,13 +8,14 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "antd": "^6.4.3",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
-    "@evjs/ev": "*",
     "@evjs/cli": "*",
     "@evjs/client": "*",
+    "@evjs/ev": "*",
     "@evjs/server": "*",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.8",

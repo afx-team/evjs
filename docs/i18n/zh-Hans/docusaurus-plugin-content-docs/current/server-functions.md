@@ -98,6 +98,10 @@ initTransport({
 Fetch `mode` 不提供配置。服务端函数请求使用浏览器默认 CORS 行为；跨域
 cookie 应通过 `credentials` 和服务端 CORS 响应头配合控制。
 
+SSR 期间，服务端函数调用可以通过 `createSsrHandler({ forwardHeaders })`
+转发选定的 incoming request headers。默认 allowlist 只转发 `cookie`；
+loader 需要业务请求头时应显式加入。
+
 ### 自定义适配器（如 WebSocket）
 
 实现 `TransportAdapter` 以使用自定义协议：

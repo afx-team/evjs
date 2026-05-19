@@ -1,4 +1,3 @@
-import { useQuery } from "@evjs/client";
 import {
   createAppRootRoute,
   createRoute,
@@ -6,13 +5,7 @@ import {
   Outlet,
 } from "@evjs/client/route";
 import { useState } from "react";
-import { getGreeting } from "./data.server";
-
-const greetingQuery = {
-  queryKey: ["greeting"],
-  queryFn: getGreeting,
-  staleTime: 60_000,
-};
+import { greetingQuery } from "./routes/greeting";
 
 function HydrationCounter() {
   const [count, setCount] = useState(0);
@@ -60,35 +53,11 @@ function RootLayout() {
       >
         <Link to="/">Home</Link>
         <Link to="/about">About</Link>
+        <Link to="/antd">AntD</Link>
         <HydrationCounter />
       </nav>
       <Outlet />
     </main>
-  );
-}
-
-function HomePage() {
-  const { data } = useQuery(greetingQuery);
-
-  return (
-    <section>
-      <h2>Home rendered on the server</h2>
-      <p data-testid="home-copy">
-        This route is delivered as HTML before the client bundle hydrates.
-      </p>
-      <p data-testid="loader-data">{data?.message}</p>
-    </section>
-  );
-}
-
-function AboutPage() {
-  return (
-    <section>
-      <h2>About rendered on the server</h2>
-      <p data-testid="about-copy">
-        Direct document requests are routed through the Hono document handler.
-      </p>
-    </section>
   );
 }
 
@@ -98,13 +67,20 @@ export const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   loader: ({ context }) => context.queryClient.ensureQueryData(greetingQuery),
-  component: HomePage,
-});
+}).lazy(() => import("./routes/home.lazy").then((d) => d.Route));
 
 export const aboutRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/about",
-  component: AboutPage,
-});
+}).lazy(() => import("./routes/about.lazy").then((d) => d.Route));
 
-export const routeTree = rootRoute.addChildren([homeRoute, aboutRoute]);
+export const antdRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/antd",
+}).lazy(() => import("./routes/antd.lazy").then((d) => d.Route));
+
+export const routeTree = rootRoute.addChildren([
+  homeRoute,
+  aboutRoute,
+  antdRoute,
+]);

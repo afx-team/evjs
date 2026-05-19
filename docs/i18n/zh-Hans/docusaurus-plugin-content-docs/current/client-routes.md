@@ -195,6 +195,48 @@ export const searchRoute = createRoute({
 });
 ```
 
+## 路由级代码拆分
+
+代码式路由也可以通过 `.lazy()` 拆分非关键路由 UI。把路由匹配、
+loader 和父子关系保留在关键路由文件中，将 `component`、
+`pendingComponent`、`errorComponent` 以及较重的 UI 依赖移动到 lazy route
+模块。
+
+```tsx
+// src/routes/posts.tsx
+import { createRoute } from "@evjs/client/route";
+import { rootRoute } from "./__root";
+
+export const postsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/posts",
+  loader: ({ context }) => context.queryClient.ensureQueryData(postsQuery),
+}).lazy(() => import("./posts.lazy").then((m) => m.Route));
+```
+
+```tsx
+// src/routes/posts.lazy.tsx
+import { createLazyRoute, getRouteApi } from "@evjs/client/route";
+
+const route = getRouteApi("/posts");
+
+function PostsPage() {
+  const data = route.useLoaderData();
+  return <h2>{data.title}</h2>;
+}
+
+export const Route = createLazyRoute("/posts")({
+  component: PostsPage,
+});
+```
+
+开启 SSR 后，evjs 会基于 client manifest 只预加载当前命中路由的 lazy
+assets。根布局和 route shell 仍保留在入口包中，保证路由可以匹配并完成水合。
+
+水合阶段，evjs 会通过 `createApp({ onHydrationError })` 上报 React
+recoverable hydration error。如果 router 水合在接管文档前失败，evjs 会清理
+router SSR 状态并降级到普通客户端渲染路径。
+
 ## 路由加载器（预取）
 
 使用 `loader` 在路由渲染前预取数据 —— 消除加载转圈：
@@ -289,7 +331,7 @@ const app = createApp({
 
 | 类别 | API |
 |------|-----|
-| **路由创建** | `createAppRootRoute`, `createRoute`, `createRouter`, `createRootRouteWithContext`, `createRouteMask` |
+| **路由创建** | `createAppRootRoute`, `createRoute`, `createLazyRoute`, `createRouter`, `createRootRouteWithContext`, `createRouteMask` |
 | **组件** | `Link`, `Outlet`, `Navigate`, `RouterProvider`, `RouterContextProvider`, `ErrorComponent`, `CatchBoundary`, `CatchNotFound`, `Await`, `ClientOnly`, `Match`, `Matches`, `MatchRoute`, `ScrollRestoration`, `Block` |
 | **Hooks** | `useParams`, `useSearch`, `useNavigate`, `useLocation`, `useMatch`, `useMatchRoute`, `useMatches`, `useParentMatches`, `useChildMatches`, `useRouter`, `useRouterState`, `useLoaderData`, `useLoaderDeps`, `useRouteContext`, `useLinkProps`, `useBlocker`, `useCanGoBack`, `useAwaited`, `useHydrated`, `useElementScrollRestoration` |
 | **工具** | `redirect`, `notFound`, `isRedirect`, `isNotFound`, `getRouteApi`, `RouteApi`, `linkOptions`, `lazyRouteComponent`, `createLink`, `defer`, `retainSearchParams`, `stripSearchParams`, `composeRewrites`, `defaultParseSearch`, `defaultStringifySearch`, `parseSearchWith`, `stringifySearchWith` |

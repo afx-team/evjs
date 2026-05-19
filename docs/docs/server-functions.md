@@ -122,6 +122,10 @@ Fetch `mode` is not configurable. Server function requests rely on the browser's
 default CORS behavior; cross-origin cookies should be controlled with
 `credentials` and matching server CORS headers.
 
+During SSR, server function calls can forward selected incoming request headers
+through `createSsrHandler({ forwardHeaders })`. The default allowlist forwards
+only `cookie`; add application headers explicitly when loaders need them.
+
 ### Custom Adapter (e.g., WebSocket)
 
 Implement a `TransportAdapter` for custom protocols:

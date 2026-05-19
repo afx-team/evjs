@@ -12,6 +12,8 @@ import type {
 } from "@tanstack/react-router";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { RouterClient } from "@tanstack/react-router/ssr/client";
+import { Component, type ErrorInfo, type ReactNode, useRef } from "react";
+import type { ErrorInfo as HydrationRootErrorInfo } from "react-dom/client";
 import { createRoot, hydrateRoot } from "react-dom/client";
 import type { AppRouteContext } from "./context";
 
@@ -31,6 +33,20 @@ export type CreateAppRouterOptions<
   >,
   "context" | "routeTree"
 >;
+
+export interface HydrationErrorContext {
+  /**
+   * `recoverable` is reported by React when hydration can continue.
+   * `fallback` means ev switched from `RouterClient` hydration to CSR.
+   */
+  phase: "recoverable" | "fallback";
+  errorInfo?: ErrorInfo | HydrationRootErrorInfo;
+}
+
+export type HydrationErrorHandler = (
+  error: unknown,
+  context: HydrationErrorContext,
+) => void;
 
 /**
  * Options for creating an ev application.
@@ -71,6 +87,11 @@ export interface CreateAppOptions<
    * children and falls back to CSR otherwise.
    */
   hydrate?: boolean | "auto";
+  /**
+   * Called when React reports a recoverable hydration mismatch or when ev
+   * falls back from SSR hydration to client rendering.
+   */
+  onHydrationError?: HydrationErrorHandler;
 }
 
 export interface RenderOptions {
@@ -86,6 +107,35 @@ function hydrateEvQueryState(queryClient: QueryClient, dehydrated: unknown) {
   ];
   if (state) {
     hydrateQueryClient(queryClient, state);
+  }
+}
+
+interface HydrationErrorBoundaryProps {
+  children: ReactNode;
+  fallback: ReactNode;
+  onError: (error: unknown, errorInfo: ErrorInfo) => void;
+}
+
+interface HydrationErrorBoundaryState {
+  didFail: boolean;
+}
+
+class HydrationErrorBoundary extends Component<
+  HydrationErrorBoundaryProps,
+  HydrationErrorBoundaryState
+> {
+  state: HydrationErrorBoundaryState = { didFail: false };
+
+  static getDerivedStateFromError(): HydrationErrorBoundaryState {
+    return { didFail: true };
+  }
+
+  componentDidCatch(error: unknown, errorInfo: ErrorInfo) {
+    this.props.onError(error, errorInfo);
+  }
+
+  render() {
+    return this.state.didFail ? this.props.fallback : this.props.children;
   }
 }
 
@@ -177,6 +227,7 @@ export function createApp<
     basepath,
     history,
     router: routerOptions,
+    onHydrationError,
   } = options;
 
   const userHydrate = routerOptions?.hydrate;
@@ -202,13 +253,43 @@ export function createApp<
 
   let root: ReturnType<typeof createRoot> | undefined;
 
+  function reportHydrationError(
+    error: unknown,
+    context: HydrationErrorContext,
+  ) {
+    onHydrationError?.(error, context);
+  }
+
+  function prepareHydrationFallback() {
+    // TanStack Router sets these while hydrating. Clear them before falling
+    // back to CSR so RouterProvider can run the normal client load path.
+    const mutableRouter = router as typeof router & { ssr?: unknown };
+    mutableRouter.ssr = undefined;
+    (
+      mutableRouter.options as typeof mutableRouter.options & {
+        ssr?: unknown;
+      }
+    ).ssr = undefined;
+  }
+
+  function ClientRenderFallback() {
+    const prepared = useRef(false);
+    if (!prepared.current) {
+      prepared.current = true;
+      prepareHydrationFallback();
+    }
+
+    return <RouterProvider router={router} />;
+  }
+
   function shouldHydrate(
     el: HTMLElement,
     option: boolean | "auto" | undefined,
+    hasRouterSsrPayload: boolean,
   ): boolean {
     if (option === true) return true;
     if (option === false) return false;
-    return el.hasChildNodes();
+    return el.hasChildNodes() && hasRouterSsrPayload;
   }
 
   function render(
@@ -226,15 +307,29 @@ export function createApp<
       );
     }
 
-    const shouldHydrateRoot = shouldHydrate(el, options?.hydrate ?? hydrate);
     const hasRouterSsrPayload =
       typeof window !== "undefined" &&
       Boolean((window as unknown as { $_TSR?: unknown }).$_TSR);
+    const shouldHydrateRoot = shouldHydrate(
+      el,
+      options?.hydrate ?? hydrate,
+      hasRouterSsrPayload,
+    );
 
     const app = (
       <QueryClientProvider client={queryClient}>
         {shouldHydrateRoot && hasRouterSsrPayload ? (
-          <RouterClient router={router} />
+          <HydrationErrorBoundary
+            fallback={<ClientRenderFallback />}
+            onError={(error, errorInfo) =>
+              reportHydrationError(error, {
+                phase: "fallback",
+                errorInfo,
+              })
+            }
+          >
+            <RouterClient router={router} />
+          </HydrationErrorBoundary>
         ) : (
           <RouterProvider router={router} />
         )}
@@ -242,7 +337,24 @@ export function createApp<
     );
 
     if (shouldHydrateRoot) {
-      root = hydrateRoot(el, app);
+      try {
+        root = hydrateRoot(el, app, {
+          onRecoverableError: (error, errorInfo) => {
+            reportHydrationError(error, {
+              phase: "recoverable",
+              errorInfo,
+            });
+          },
+        });
+      } catch (error) {
+        reportHydrationError(error, { phase: "fallback" });
+        root = createRoot(el);
+        root.render(
+          <QueryClientProvider client={queryClient}>
+            <ClientRenderFallback />
+          </QueryClientProvider>,
+        );
+      }
       return;
     }
 

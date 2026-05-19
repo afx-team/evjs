@@ -13,6 +13,7 @@ const app = createServerApp({
   routes: [healthRoute],
   document: createSsrHandler({
     routeTree,
+    forwardHeaders: ["cookie", "x-evjs-e2e"],
     renderDocument: ({ assets, children }) => (
       <html lang="en">
         <head>

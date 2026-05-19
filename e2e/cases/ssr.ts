@@ -76,6 +76,25 @@ test.describe("ssr", () => {
     await expect(counter).toHaveText("Count 1");
   });
 
+  test("serves the AntD lazy route through the SSR document fallback", async ({
+    request,
+    page,
+    baseURL,
+  }) => {
+    const response = await request.get(`${baseURL}/antd`, {
+      headers: { Accept: "text/html" },
+    });
+    const html = await response.text();
+
+    expect(response.status()).toBe(200);
+    expect(html).toContain("AntD route chunk");
+    expect(html).toContain("SSR route asset validation");
+
+    await page.goto(`${baseURL}/antd`);
+    await expect(page.getByText("AntD route chunk")).toBeVisible();
+    await expect(page.getByText("SSR route asset validation")).toBeVisible();
+  });
+
   test("keeps API and asset requests out of the document fallback", async ({
     request,
     baseURL,

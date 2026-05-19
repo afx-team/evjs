@@ -273,6 +273,50 @@ export const searchRoute = createRoute({
 });
 ```
 
+## Route-Level Code Splitting
+
+Code-based routes can split non-critical route UI with `.lazy()`. Keep route
+matching, loaders, and parent wiring in the critical route file; move
+`component`, `pendingComponent`, `errorComponent`, and heavier UI dependencies
+into a lazy route module.
+
+```tsx
+// src/routes/posts.tsx
+import { createRoute } from "@evjs/client/route";
+import { rootRoute } from "./__root";
+
+export const postsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/posts",
+  loader: ({ context }) => context.queryClient.ensureQueryData(postsQuery),
+}).lazy(() => import("./posts.lazy").then((m) => m.Route));
+```
+
+```tsx
+// src/routes/posts.lazy.tsx
+import { createLazyRoute, getRouteApi } from "@evjs/client/route";
+
+const route = getRouteApi("/posts");
+
+function PostsPage() {
+  const data = route.useLoaderData();
+  return <h2>{data.title}</h2>;
+}
+
+export const Route = createLazyRoute("/posts")({
+  component: PostsPage,
+});
+```
+
+When SSR is enabled, evjs uses the client manifest to preload only the lazy
+assets for the matched routes. The root layout and route shell remain in the
+entry bundle so the router can match and hydrate the document.
+
+During hydration, evjs reports React recoverable hydration errors through
+`createApp({ onHydrationError })`. If router hydration fails before the
+document can be attached, evjs clears the router SSR state and falls back to the
+normal client render path.
+
 ## Route Loaders (Prefetching)
 
 Use `loader` to prefetch data before the route renders — eliminates loading spinners:
@@ -368,7 +412,7 @@ All imported from `@evjs/client`:
 
 | Category | APIs |
 |----------|------|
-| **Route creation** | `createAppRootRoute`, `createRoute`, `createRouter`, `createRootRouteWithContext`, `createRouteMask` |
+| **Route creation** | `createAppRootRoute`, `createRoute`, `createLazyRoute`, `createRouter`, `createRootRouteWithContext`, `createRouteMask` |
 | **Components** | `Link`, `Outlet`, `Navigate`, `RouterProvider`, `RouterContextProvider`, `ErrorComponent`, `CatchBoundary`, `CatchNotFound`, `Await`, `ClientOnly`, `Match`, `Matches`, `MatchRoute`, `ScrollRestoration`, `Block` |
 | **Hooks** | `useParams`, `useSearch`, `useNavigate`, `useLocation`, `useMatch`, `useMatchRoute`, `useMatches`, `useParentMatches`, `useChildMatches`, `useRouter`, `useRouterState`, `useLoaderData`, `useLoaderDeps`, `useRouteContext`, `useLinkProps`, `useBlocker`, `useCanGoBack`, `useAwaited`, `useHydrated`, `useElementScrollRestoration` |
 | **Utilities** | `redirect`, `notFound`, `isRedirect`, `isNotFound`, `getRouteApi`, `RouteApi`, `linkOptions`, `lazyRouteComponent`, `createLink`, `defer`, `retainSearchParams`, `stripSearchParams`, `composeRewrites`, `defaultParseSearch`, `defaultStringifySearch`, `parseSearchWith`, `stringifySearchWith` |

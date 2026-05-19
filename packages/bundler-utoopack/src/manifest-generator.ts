@@ -34,10 +34,16 @@ interface UtoopackStatsModule {
   chunks?: Array<string | number>;
 }
 
+interface UtoopackStatsAsset {
+  name?: string;
+}
+
 interface ServerModuleMetadata {
   moduleId: string;
   assets: ManifestAssets;
 }
+
+type ModuleMetadata = ServerModuleMetadata;
 
 function normalizeAssetName(name: string | undefined): string | undefined {
   return name?.replace(/^\.\//, "");
@@ -150,6 +156,26 @@ function mergeAssets(a: ManifestAssets, b: ManifestAssets): ManifestAssets {
   });
 }
 
+function excludeAssets(
+  assets: ManifestAssets,
+  excluded: ManifestAssets,
+): ManifestAssets {
+  const excludedJs = new Set(excluded.js);
+  const excludedCss = new Set(excluded.css);
+  return {
+    js: assets.js.filter((asset) => !excludedJs.has(asset)),
+    css: assets.css.filter((asset) => !excludedCss.has(asset)),
+  };
+}
+
+function addAsset(assets: ManifestAssets, assetName: string) {
+  if (assetName.endsWith(".js")) {
+    assets.js.push(assetName);
+  } else if (assetName.endsWith(".css")) {
+    assets.css.push(assetName);
+  }
+}
+
 function toPosixPath(value: string): string {
   return value.replaceAll(path.sep, "/").replaceAll("\\", "/");
 }
@@ -168,6 +194,44 @@ function moduleIdMatchesSource(moduleId: string, sourceRel: string): boolean {
   return moduleId === sourceRel || moduleId.endsWith(`/${sourceRel}`);
 }
 
+function resolveImportSourceCandidates(
+  sourceRel: string,
+  importSource: string,
+): string[] {
+  const rawTarget = importSource.startsWith(".")
+    ? path.posix.normalize(
+        path.posix.join(path.posix.dirname(sourceRel), importSource),
+      )
+    : importSource;
+  const target = toPosixPath(rawTarget);
+  const extension = path.posix.extname(target);
+  const hasKnownSourceExtension = [
+    ".tsx",
+    ".ts",
+    ".jsx",
+    ".js",
+    ".mjs",
+    ".cjs",
+  ].includes(extension);
+  const candidates = hasKnownSourceExtension
+    ? [target]
+    : [
+        target,
+        `${target}.tsx`,
+        `${target}.ts`,
+        `${target}.jsx`,
+        `${target}.js`,
+        `${target}.mjs`,
+        `${target}.cjs`,
+        `${target}/index.tsx`,
+        `${target}/index.ts`,
+        `${target}/index.jsx`,
+        `${target}/index.js`,
+      ];
+
+  return [...new Set(candidates)];
+}
+
 function assetsFromChunks(
   chunks: Array<string | number> | undefined,
   fallback: ManifestAssets,
@@ -177,11 +241,7 @@ function assetsFromChunks(
   for (const chunk of chunks ?? []) {
     if (typeof chunk !== "string") continue;
     const name = normalizeAssetName(chunk);
-    if (name?.endsWith(".js")) {
-      assets.js.push(name);
-    } else if (name?.endsWith(".css")) {
-      assets.css.push(name);
-    }
+    if (name) addAsset(assets, name);
   }
 
   const deduped = dedupeAssets(assets);
@@ -191,11 +251,82 @@ function assetsFromChunks(
   return fallback;
 }
 
+function extractStringLiterals(value: string): string[] {
+  const result: string[] = [];
+  const pattern = /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'/g;
+
+  for (const match of value.matchAll(pattern)) {
+    const raw = match[1] ?? match[2];
+    if (!raw) continue;
+    result.push(raw.replace(/\\(["'\\])/g, "$1"));
+  }
+
+  return result;
+}
+
+function extractChunkLoadGroups(source: string): ManifestAssets[] {
+  const groups: ManifestAssets[] = [];
+  const pattern =
+    /Promise\.all\(\s*\[([\s\S]*?)\]\s*\.map\([\s\S]*?\.l\([\s\S]*?\)\s*\)\s*\)/g;
+
+  for (const match of source.matchAll(pattern)) {
+    const assets: ManifestAssets = { js: [], css: [] };
+    for (const value of extractStringLiterals(match[1] ?? "")) {
+      const assetName = normalizeAssetName(value);
+      if (assetName) addAsset(assets, assetName);
+    }
+    const deduped = dedupeAssets(assets);
+    if (deduped.js.length > 0 || deduped.css.length > 0) {
+      groups.push(deduped);
+    }
+  }
+
+  return groups;
+}
+
+async function collectClientChunkLoadGroups(
+  clientDir: string,
+  assets: UtoopackStatsAsset[] | undefined,
+): Promise<Map<string, ManifestAssets>> {
+  const result = new Map<string, ManifestAssets>();
+  const jsAssets = [
+    ...new Set(
+      (assets ?? [])
+        .map((asset) => normalizeAssetName(asset.name))
+        .filter((assetName): assetName is string =>
+          Boolean(assetName?.endsWith(".js")),
+        ),
+    ),
+  ];
+
+  for (const assetName of jsAssets) {
+    let source: string;
+    try {
+      source = await fs.promises.readFile(path.join(clientDir, assetName), {
+        encoding: "utf-8",
+      });
+    } catch {
+      continue;
+    }
+
+    for (const group of extractChunkLoadGroups(source)) {
+      for (const groupAsset of [...group.js, ...group.css]) {
+        result.set(
+          groupAsset,
+          mergeAssets(result.get(groupAsset) ?? EMPTY_ASSETS, group),
+        );
+      }
+    }
+  }
+
+  return result;
+}
+
 function collectServerModules(
   modules: UtoopackStatsModule[] | undefined,
   fallbackAssets: ManifestAssets,
-): ServerModuleMetadata[] {
-  const result: ServerModuleMetadata[] = [];
+): ModuleMetadata[] {
+  const result: ModuleMetadata[] = [];
 
   for (const mod of modules ?? []) {
     const moduleId = normalizeModuleId(mod.id) ?? normalizeModuleId(mod.name);
@@ -216,12 +347,14 @@ export class UtoopackManifestGenerator {
   private serverEnabled: boolean;
   private outputPaths: UtoopackOutputPaths;
   private watcher: chokidar.FSWatcher | null = null;
-  private clientJsAssets: string[] = [];
+  private clientAssets: ManifestAssets = EMPTY_ASSETS;
+  private clientChunkLoadGroups = new Map<string, ManifestAssets>();
+  private clientModules: ModuleMetadata[] = [];
   private currentRoutes: RouteEntry[] = [];
   private serverAssets: ManifestAssets = EMPTY_ASSETS;
   private serverFns: Record<string, ServerFnEntry> = {};
   private currentServerRoutes: ServerRouteEntry[] = [];
-  private serverModules: ServerModuleMetadata[] = [];
+  private serverModules: ModuleMetadata[] = [];
 
   constructor(cwd: string, serverEnabled: boolean) {
     this.cwd = cwd;
@@ -241,12 +374,18 @@ export class UtoopackManifestGenerator {
     const statsPath = path.join(this.outputPaths.clientDir, "stats.json");
     if (!fs.existsSync(statsPath)) {
       this.collector.setAssets([], []);
-      this.clientJsAssets = [];
+      this.clientAssets = EMPTY_ASSETS;
+      this.clientChunkLoadGroups = new Map();
+      this.clientModules = [];
       return;
     }
     try {
       const statsStr = await fs.promises.readFile(statsPath, "utf-8");
       const stats = JSON.parse(statsStr);
+      this.clientChunkLoadGroups = await collectClientChunkLoadGroups(
+        this.outputPaths.clientDir,
+        stats.assets,
+      );
 
       // Detect MPA: multiple entrypoints in stats.json
       const entrypoints = stats.entrypoints;
@@ -255,21 +394,24 @@ export class UtoopackManifestGenerator {
       if (entrypointCount > 1) {
         // MPA mode: per-page assets
         const perPage = parseClientStatsPerEntrypoint(stats);
-        this.clientJsAssets = [];
+        this.clientAssets = EMPTY_ASSETS;
         for (const [name, { js, css }] of Object.entries(perPage)) {
-          this.clientJsAssets.push(...js);
           this.collector.setPageAssets(name, js, css);
+          this.clientAssets = mergeAssets(this.clientAssets, { js, css });
         }
       } else {
         // SPA mode: single entrypoint
         const { js, css } = parseClientStats(stats);
-        this.clientJsAssets = js;
+        this.clientAssets = { js, css };
         this.collector.setAssets(js, css);
       }
+      this.clientModules = collectServerModules(stats.modules, EMPTY_ASSETS);
     } catch (err) {
       logger.warn`Failed to parse client stats.json: ${err}`;
       this.collector.setAssets([], []);
-      this.clientJsAssets = [];
+      this.clientAssets = EMPTY_ASSETS;
+      this.clientChunkLoadGroups = new Map();
+      this.clientModules = [];
     }
   }
 
@@ -322,6 +464,71 @@ export class UtoopackManifestGenerator {
     );
   }
 
+  private findClientModulesForSource(sourceRel: string) {
+    return this.clientModules.filter((mod) =>
+      moduleIdMatchesSource(mod.moduleId, sourceRel),
+    );
+  }
+
+  private resolveClientImportAssets(
+    sourceRel: string,
+    importSource: string,
+  ): ManifestAssets {
+    const candidates = resolveImportSourceCandidates(sourceRel, importSource);
+    let assets = EMPTY_ASSETS;
+
+    for (const candidate of candidates) {
+      for (const clientModule of this.findClientModulesForSource(candidate)) {
+        assets = mergeAssets(assets, clientModule.assets);
+      }
+    }
+
+    return assets;
+  }
+
+  private expandClientChunkLoadAssets(assets: ManifestAssets): ManifestAssets {
+    let expanded = dedupeAssets(assets);
+    const visited = new Set<string>();
+    const pending = [...expanded.js, ...expanded.css];
+
+    for (let i = 0; i < pending.length; i++) {
+      const asset = pending[i];
+      if (visited.has(asset)) continue;
+      visited.add(asset);
+
+      const group = this.clientChunkLoadGroups.get(asset);
+      if (!group) continue;
+
+      const before = new Set([...expanded.js, ...expanded.css]);
+      expanded = mergeAssets(expanded, group);
+      for (const nextAsset of [...group.js, ...group.css]) {
+        if (!before.has(nextAsset)) pending.push(nextAsset);
+      }
+    }
+
+    return expanded;
+  }
+
+  private resolveRouteAssets(
+    route: ExtractedRoute,
+    sourceRel: string,
+  ): ManifestAssets | undefined {
+    if (!route.lazyImports || route.lazyImports.length === 0) return undefined;
+
+    let assets = EMPTY_ASSETS;
+    for (const importSource of route.lazyImports) {
+      assets = mergeAssets(
+        assets,
+        this.resolveClientImportAssets(sourceRel, importSource),
+      );
+    }
+
+    assets = this.expandClientChunkLoadAssets(assets);
+    assets = excludeAssets(assets, this.clientAssets);
+
+    return assets.js.length > 0 || assets.css.length > 0 ? assets : undefined;
+  }
+
   async loadSourceMetadata() {
     const files = await fastGlob("src/**/*.{ts,tsx,js,jsx}", {
       cwd: this.cwd,
@@ -336,7 +543,12 @@ export class UtoopackManifestGenerator {
       const source = await fs.promises.readFile(file, "utf-8");
       const sourceRel = toPosixPath(path.relative(this.cwd, file));
       const analysis = analyzeRoutes(source);
-      clientRoutes.push(...analysis.clientRoutes);
+      clientRoutes.push(
+        ...analysis.clientRoutes.map((route) => {
+          const assets = this.resolveRouteAssets(route, sourceRel);
+          return assets ? { ...route, assets } : route;
+        }),
+      );
 
       if (!this.serverEnabled) continue;
 
