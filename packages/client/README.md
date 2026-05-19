@@ -81,7 +81,9 @@ function Posts() {
 - `getFnQueryOptions(fn, args?)`: Generate options for manual `queryClient` usage.
 
 ### Transport
-- `initTransport({ baseUrl, endpoint })`: Configure the API endpoint for server functions.
+- `initTransport({ baseUrl, credentials, headers, functions })`: Configure the default HTTP adapter.
+- `credentials` / `headers`: Supported HTTP defaults; fetch `mode` is intentionally not configurable.
+- `initTransport({ adapter })`: Replace transport behavior with a custom adapter.
 
 ## License
 

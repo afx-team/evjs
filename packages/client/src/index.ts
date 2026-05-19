@@ -163,9 +163,10 @@ export {
   useSearch,
 } from "./route";
 export type {
+  HeaderFactory,
   RequestContext,
   ServerFunction,
-  ServerTransport,
+  TransportAdapter,
   TransportOptions,
 } from "./transport";
 export { getFnName, initTransport } from "./transport";

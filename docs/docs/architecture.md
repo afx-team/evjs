@@ -23,7 +23,7 @@ evjs is a React fullstack framework with type-safe routing (TanStack Router), da
 │  TanStack Router                 │ │  Hono App (createApp)             │
 │  TanStack Query                  │ │  registerServerReference() + createRoute()│
 │  createServerReference() stubs   │ │  fetch handler                    │
-│  ServerTransport ────────────────┼─┼──► POST api/fn ─► registry     │
+│  TransportAdapter ───────────────┼─┼──► POST api/fn ─► registry     │
 │                                  │ │                                   │
 └──────────────────────────────────┘ └───────────────────────────────────┘
 ```

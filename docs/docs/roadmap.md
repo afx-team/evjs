@@ -16,7 +16,7 @@ Call server-side logic from the browser as normal async functions.
 - `"use server"` directive detection via SWC AST parsing
 - Client/server transforms with stable SHA-256 function IDs
 - `query(fn).useQuery()` / `mutation(fn).useMutation()` — zero-boilerplate wrappers
-- Pluggable `ServerTransport` interface
+- Pluggable `TransportAdapter` interface
 - Hono-based server with multi-runtime adapters
 - Server context helpers for request access (`request`, `headers`, `cookies`, `waitUntil`)
 - Versioned manifest schema (`manifest.json` v1)

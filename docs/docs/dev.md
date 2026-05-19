@@ -87,8 +87,11 @@ await build({ entry: "./src/main.tsx" }, { cwd: "./my-app", bundler: utoopackAda
 
 ## Transport
 
-`initTransport` is called automatically by `createApp()` to configure how the client communicates with the server.
+The default HTTP transport works without app code. Call `initTransport()` at app
+startup only when you need to customize the built-in HTTP adapter or replace it
+with a custom adapter.
 
 - In **dev mode**: the client dev server proxies `/api/*` → `:3001`, so the default `api/fn` endpoint works automatically
 - In **production**: client and server are typically on the same origin
 - The transport is **runtime-agnostic** — the client always posts to the same endpoint regardless of server runtime
+- Use `credentials` and `headers` for the built-in HTTP adapter; fetch `mode` is not configurable

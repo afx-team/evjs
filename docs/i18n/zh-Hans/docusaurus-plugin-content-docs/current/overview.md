@@ -10,7 +10,7 @@ evjs 是一个零配置的 React 全栈框架，基于 [TanStack Router](https:/
 - **类型安全路由** —— TanStack Router，完整的类型推导
 - **数据获取** —— TanStack Query，内置代理
 - **服务端函数** —— `"use server"` 指令，构建时自动发现
-- **可插拔传输** —— HTTP、WebSocket 或通过 `ServerTransport` 自定义协议
+- **可插拔传输** —— HTTP、WebSocket 或通过 `TransportAdapter` 自定义协议
 - **插件系统** —— 通过自定义模块规则扩展构建（Tailwind、SVG 等）
 - **路由处理器** —— 通过 `createRoute()` 实现标准 Request/Response REST 端点
 - **类型化错误** —— `ServerError` 将结构化数据从服务端传递到客户端

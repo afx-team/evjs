@@ -71,8 +71,6 @@ app.render("#app");
 
 ```ts
 // src/global.ts
-import { initTransport } from "@evjs/client";
-
 declare module "@evjs/client" {
   interface Register {
     router: any;

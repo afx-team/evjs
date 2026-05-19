@@ -16,7 +16,7 @@
 - 通过 SWC AST 解析检测 `"use server"` 指令
 - 使用稳定 SHA-256 函数 ID 的客户端/服务端转换
 - `query(fn).useQuery()` / `mutation(fn).useMutation()` —— 零模板封装
-- 可插拔的 `ServerTransport` 接口
+- 可插拔的 `TransportAdapter` 接口
 - 基于 Hono 的多运行时适配器服务器
 - 服务端上下文辅助函数（`request`、`headers`、`cookies`、`waitUntil`）
 - 版本化的 manifest schema（`manifest.json` v1）

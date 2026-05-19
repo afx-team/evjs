@@ -7,13 +7,18 @@ import {
   getFnName,
   initTransport,
   type ServerFunction,
+  type TransportOptions,
 } from "../src/transport.js";
 
 const REQUEST_CONTEXT_KEY = Symbol.for("evjs.transport.requestContext");
 
-function setStoredRequestContext(
-  context: Parameters<typeof callServer>[2],
-): void {
+type StoredRequestContext = {
+  baseUrl?: string;
+  headers?: HeadersInit;
+  signal?: AbortSignal;
+};
+
+function setStoredRequestContext(context: StoredRequestContext): void {
   (globalThis as unknown as Record<symbol, unknown>)[REQUEST_CONTEXT_KEY] = {
     getStore: () => context,
   };
@@ -96,7 +101,7 @@ describe("ServerFunction metadata (.queryKey, .fnId, .fnName)", () => {
 
   it("attaches .queryOptions() that returns TanStack { queryKey, queryFn }", async () => {
     const send = vi.fn().mockResolvedValue("test result");
-    initTransport({ transport: { send } });
+    initTransport({ adapter: { send } });
 
     const fn = createServerReference(
       "mod:getUser",
@@ -109,7 +114,11 @@ describe("ServerFunction metadata (.queryKey, .fnId, .fnName)", () => {
     // Check queryFn uses callServer properly
     const signal = new AbortController().signal;
     const result = await opts.queryFn({ signal });
-    expect(send).toHaveBeenCalledWith("mod:getUser", ["abc"], { signal });
+    expect(send).toHaveBeenCalledWith(
+      "mod:getUser",
+      ["abc"],
+      expect.objectContaining({ signal }),
+    );
     expect(result).toBe("test result");
   });
 });
@@ -119,9 +128,9 @@ describe("initTransport + callServer", () => {
     __resetForTesting();
   });
 
-  it("calls custom transport.send with fnId and args", async () => {
+  it("calls custom adapter.send with fnId and args", async () => {
     const send = vi.fn().mockResolvedValue({ greeting: "hello" });
-    initTransport({ transport: { send } });
+    initTransport({ adapter: { send } });
 
     const result = await callServer("fn1", ["arg1", "arg2"]);
 
@@ -129,19 +138,48 @@ describe("initTransport + callServer", () => {
     expect(result).toEqual({ greeting: "hello" });
   });
 
-  it("passes context through to transport", async () => {
+  it("keeps HTTP request defaults out of custom adapter context", async () => {
     const send = vi.fn().mockResolvedValue("ok");
-    initTransport({ transport: { send } });
+    initTransport({
+      baseUrl: "https://api.example.com/backend",
+      credentials: "include",
+      headers: { Authorization: "Bearer xyz" },
+      functions: { endpoint: "api/rpc" },
+      adapter: { send },
+    });
+
+    const signal = new AbortController().signal;
+    await callServer("fn1", [], { signal });
+
+    const context = send.mock.calls[0]?.[2];
+    expect(send).toHaveBeenCalledWith(
+      "fn1",
+      [],
+      expect.objectContaining({
+        signal,
+      }),
+    );
+    expect(context).not.toHaveProperty("url");
+    expect(context).not.toHaveProperty("request");
+  });
+
+  it("passes context through to adapter", async () => {
+    const send = vi.fn().mockResolvedValue("ok");
+    initTransport({ adapter: { send } });
 
     const signal = new AbortController().signal;
     await callServer("fn2", [], { signal });
 
-    expect(send).toHaveBeenCalledWith("fn2", [], { signal });
+    expect(send).toHaveBeenCalledWith(
+      "fn2",
+      [],
+      expect.objectContaining({ signal }),
+    );
   });
 
-  it("passes request-scoped context through to custom transports", async () => {
+  it("keeps request-scoped SSR context out of custom adapters", async () => {
     const send = vi.fn().mockResolvedValue("ok");
-    initTransport({ transport: { send } });
+    initTransport({ adapter: { send } });
     setStoredRequestContext({
       baseUrl: "https://ssr.example.com/",
       headers: { cookie: "sid=1" },
@@ -149,44 +187,15 @@ describe("initTransport + callServer", () => {
 
     await callServer("fn2", []);
 
-    expect(send).toHaveBeenCalledWith("fn2", [], {
-      baseUrl: "https://ssr.example.com/",
-      headers: { cookie: "sid=1" },
-    });
-  });
-
-  it("lets explicit context override request-scoped transport context", async () => {
-    const send = vi.fn().mockResolvedValue("ok");
-    const signal = new AbortController().signal;
-    initTransport({ transport: { send } });
-    setStoredRequestContext({
-      baseUrl: "https://ssr.example.com/",
-      headers: { cookie: "sid=1", "x-request": "stored" },
-    });
-
-    await callServer("fn2", [], {
-      baseUrl: "https://api.example.com/",
-      headers: { authorization: "Bearer explicit", "x-request": "explicit" },
-      signal,
-    });
-
-    expect(send).toHaveBeenCalledWith("fn2", [], {
-      baseUrl: "https://api.example.com/",
-      headers: {
-        cookie: "sid=1",
-        "x-request": "explicit",
-        authorization: "Bearer explicit",
-      },
-      signal,
-    });
+    expect(send).toHaveBeenCalledWith("fn2", [], undefined);
   });
 
   it("warns on double init in non-production", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const send = vi.fn().mockResolvedValue(null);
 
-    initTransport({ transport: { send } });
-    initTransport({ transport: { send } });
+    initTransport({ adapter: { send } });
+    initTransport({ adapter: { send } });
 
     expect(warn).toHaveBeenCalledOnce();
     warn.mockRestore();
@@ -194,13 +203,46 @@ describe("initTransport + callServer", () => {
 
   it("propagates transport errors", async () => {
     const send = vi.fn().mockRejectedValue(new Error("network failure"));
-    initTransport({ transport: { send } });
+    initTransport({ adapter: { send } });
 
     await expect(callServer("fn3", [])).rejects.toThrow("network failure");
   });
 });
 
-describe("createFetchTransport (default)", () => {
+describe("transport types", () => {
+  it("only exposes supported HTTP defaults as top-level options", () => {
+    const options: TransportOptions = {
+      credentials: "include",
+      headers: { Authorization: "Bearer xyz" },
+    };
+    expect(options).toEqual({
+      credentials: "include",
+      headers: { Authorization: "Bearer xyz" },
+    });
+
+    const invalidMode: TransportOptions = {
+      // @ts-expect-error Fetch mode is intentionally omitted from transport config.
+      mode: "no-cors",
+    };
+    expect(invalidMode).toEqual({ mode: "no-cors" });
+
+    const invalidCache: TransportOptions = {
+      // @ts-expect-error Only explicit transport request defaults are exposed.
+      cache: "no-store",
+    };
+    expect(invalidCache).toEqual({ cache: "no-store" });
+
+    const invalidRequestInit: TransportOptions = {
+      // @ts-expect-error requestInit was removed in favor of top-level options.
+      requestInit: { credentials: "include" },
+    };
+    expect(invalidRequestInit).toEqual({
+      requestInit: { credentials: "include" },
+    });
+  });
+});
+
+describe("default fetch adapter", () => {
   beforeEach(() => {
     __resetForTesting();
     vi.stubGlobal("fetch", vi.fn());
@@ -234,7 +276,9 @@ describe("createFetchTransport (default)", () => {
     vi.stubGlobal("fetch", mockFetch);
     vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
 
-    initTransport({ headers: { Authorization: "Bearer xyz" } });
+    initTransport({
+      headers: { Authorization: "Bearer xyz" },
+    });
     await callServer("myFn", []);
 
     expect(mockFetch).toHaveBeenCalledWith(
@@ -315,12 +359,11 @@ describe("createFetchTransport (default)", () => {
     expect(mockFetch).toHaveBeenCalledWith(
       new URL("https://ssr.example.com/api/fn"),
       expect.objectContaining({
-        headers: expect.objectContaining({
-          cookie: "sid=1",
-        }),
         method: "POST",
       }),
     );
+    const headers = new Headers(mockFetch.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("cookie")).toBe("sid=1");
   });
 
   it("supports a complete URL as the endpoint", async () => {
@@ -349,17 +392,51 @@ describe("createFetchTransport (default)", () => {
     });
     vi.stubGlobal("fetch", mockFetch);
 
-    initTransport({ headers: { Authorization: "Bearer xyz" } });
+    initTransport({
+      headers: { Authorization: "Bearer xyz" },
+    });
+    await callServer("myFn", []);
+
+    const headers = new Headers(mockFetch.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer xyz");
+  });
+
+  it("passes fetch credentials from config", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ result: "ok" }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    initTransport({ credentials: "include" });
     await callServer("myFn", []);
 
     expect(mockFetch).toHaveBeenCalledWith(
       expect.any(URL),
       expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer xyz",
-        }),
+        credentials: "include",
       }),
     );
+  });
+
+  it("uses configured headers and request-scoped signal in fetch init", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ result: "ok" }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    initTransport({
+      headers: { Authorization: "Bearer config", "x-default": "yes" },
+    });
+    const signal = new AbortController().signal;
+    await callServer("myFn", [], { signal });
+
+    const init = mockFetch.mock.calls[0]?.[1];
+    const headers = new Headers(init?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer config");
+    expect(headers.get("x-default")).toBe("yes");
+    expect(init?.signal).toBe(signal);
   });
 
   it("adds dynamic headers via factory function", async () => {
@@ -375,13 +452,7 @@ describe("createFetchTransport (default)", () => {
     });
     await callServer("myFn", []);
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.any(URL),
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer dynamic-token",
-        }),
-      }),
-    );
+    const headers = new Headers(mockFetch.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer dynamic-token");
   });
 });

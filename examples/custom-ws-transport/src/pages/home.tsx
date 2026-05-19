@@ -3,13 +3,13 @@ import { useEffect, useState } from "react";
 import { createUser, getUsers } from "../api/users.server";
 import { rootRoute } from "./__root";
 
-// ── WebSocket Transport ──
+// ── WebSocket Adapter ──
 
 /**
- * Custom WebSocket transport that sends RPC calls over a persistent
+ * Custom WebSocket adapter that sends RPC calls over a persistent
  * WebSocket connection instead of HTTP POST.
  */
-function createWebSocketTransport(url: string) {
+function createWebSocketAdapter(url: string) {
   let ws: WebSocket | null = null;
   let requestId = 0;
   const pending = new Map<
@@ -65,10 +65,10 @@ function createWebSocketTransport(url: string) {
   };
 }
 
-// Configure the transport to use WebSocket
+// Configure the transport runtime to use WebSocket
 const wsUrl = `ws://${window.location.hostname}:${window.location.port}/ws`;
 initTransport({
-  transport: createWebSocketTransport(wsUrl),
+  adapter: createWebSocketAdapter(wsUrl),
 });
 
 // ── Users Page ──

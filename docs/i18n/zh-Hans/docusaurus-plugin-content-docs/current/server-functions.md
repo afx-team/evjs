@@ -81,25 +81,42 @@ getUsers.fnName             // → "getUsers"
 
 ```tsx
 import { initTransport } from "@evjs/client";
-initTransport({ functions: { endpoint: "api/fn" } });
+initTransport({
+  functions: { endpoint: "api/fn" },
+  // 跨域调用服务端函数时携带 cookie。
+  credentials: "include",
+  headers: { "x-app": "my-app" },
+});
 ```
 
-### 自定义传输（如 WebSocket）
+`baseUrl`、`functions`、`credentials` 和 `headers` 用于配置内置 HTTP
+适配器。evjs 只暴露当前明确支持的 HTTP 默认项：
 
-实现 `ServerTransport` 接口以使用自定义协议：
+- `credentials`：fetch credentials 策略，例如 `"include"`。
+- `headers`：静态请求头，或每次调用时求值的函数。
+
+Fetch `mode` 不提供配置。服务端函数请求使用浏览器默认 CORS 行为；跨域
+cookie 应通过 `credentials` 和服务端 CORS 响应头配合控制。
+
+### 自定义适配器（如 WebSocket）
+
+实现 `TransportAdapter` 以使用自定义协议：
 
 ```tsx
 import { initTransport } from "@evjs/client";
-import type { ServerTransport } from "@evjs/client";
+import type { TransportAdapter } from "@evjs/client";
 
-const wsTransport: ServerTransport = {
+const wsAdapter: TransportAdapter = {
   send: async (fnId, args) => {
     // 在这里实现你的 WebSocket 或自定义协议
   },
 };
 
-initTransport({ transport: wsTransport });
+initTransport({ adapter: wsAdapter });
 ```
+
+自定义适配器自行管理协议配置。传给 `send(fnId, args, context)` 的可选
+`context` 只包含单次调用级别的值，目前是 `signal`。
 
 ## 错误处理
 

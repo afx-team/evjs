@@ -12,14 +12,14 @@ npm run dev
 
 | File | Purpose |
 |------|---------|
-| `src/main.tsx` | `initTransport` with WebSocket transport |
+| `src/main.tsx` | `initTransport` with WebSocket adapter |
 | `src/routes.tsx` | UI with users CRUD |
 | `src/api/users.server.ts` | Server functions |
 
 
 ## What It Demonstrates
 
-- Custom `ServerTransport` over WebSocket
-- `initTransport({ transport: { send } })` configuration
+- Custom `TransportAdapter` over WebSocket
+- `initTransport({ adapter: { send } })` extension
 - `dispatch()` for protocol-agnostic server-side handling
 - Same server functions work over HTTP and WebSocket

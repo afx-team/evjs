@@ -104,25 +104,44 @@ const { data } = useQuery({
 ```tsx
 import { initTransport } from "@evjs/client";
 
-initTransport({ functions: { endpoint: "api/fn" } });
+initTransport({
+  functions: { endpoint: "api/fn" },
+  // Send cookies on cross-origin server function requests.
+  credentials: "include",
+  headers: { "x-app": "my-app" },
+});
 ```
 
-### Custom Transport (e.g., WebSocket)
+`baseUrl`, `functions`, `credentials`, and `headers` configure the built-in HTTP
+adapter. evjs intentionally exposes only the HTTP defaults it supports today:
 
-Implement the `ServerTransport` interface for custom protocols:
+- `credentials`: fetch credentials policy, for example `"include"`.
+- `headers`: static headers or a function evaluated for each call.
+
+Fetch `mode` is not configurable. Server function requests rely on the browser's
+default CORS behavior; cross-origin cookies should be controlled with
+`credentials` and matching server CORS headers.
+
+### Custom Adapter (e.g., WebSocket)
+
+Implement a `TransportAdapter` for custom protocols:
 
 ```tsx
 import { initTransport } from "@evjs/client";
-import type { ServerTransport } from "@evjs/client";
+import type { TransportAdapter } from "@evjs/client";
 
-const wsTransport: ServerTransport = {
+const wsAdapter: TransportAdapter = {
   send: async (fnId, args) => {
     // Implement your WebSocket or custom protocol here
   },
 };
 
-initTransport({ transport: wsTransport });
+initTransport({ adapter: wsAdapter });
 ```
+
+Custom adapters own their protocol configuration. The optional `context` passed
+to `send(fnId, args, context)` only contains per-call values, currently
+`signal`.
 
 ### Server Config
 
