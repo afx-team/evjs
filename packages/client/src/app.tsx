@@ -7,7 +7,7 @@ import type {
 } from "@tanstack/react-router";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { createRoot } from "react-dom/client";
-import type { AppRouteContext } from "./context";
+import type { AppRouteContext } from "./context.js";
 
 export type CreateAppRouterOptions<
   TRouteTree extends AnyRoute,

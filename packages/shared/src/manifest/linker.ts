@@ -1,0 +1,399 @@
+import type {
+  AppGraph,
+  AssetGroup,
+  BuildEntry,
+  BuildOutput,
+  BuildPlan,
+  RemoteManifest,
+  ServerFunctionOutput,
+  ServerRouteOutput,
+} from "./index.js";
+
+const EMPTY_ASSETS: AssetGroup = { js: [], css: [] };
+
+export interface BuildOutputServerModule {
+  moduleId: string;
+  assets: AssetGroup;
+}
+
+export interface BuildOutputLinkInput {
+  graph: AppGraph;
+  plan: BuildPlan;
+  serverEnabled?: boolean;
+  clientEntryAssets?: Record<string, AssetGroup>;
+  firstClientEntryAssets?: AssetGroup;
+  serverEntryAssets?: Record<string, AssetGroup>;
+  serverEntry?: string;
+  serverAssets?: AssetGroup;
+  serverModules?: BuildOutputServerModule[];
+  rscManifests?: {
+    clientReferenceManifest?: Record<string, unknown>;
+    serverConsumerManifest?: Record<string, unknown>;
+  };
+}
+
+export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
+  const serverEnabled = input.serverEnabled ?? input.plan.serverEnabled;
+  const clientEntryAssets = input.clientEntryAssets ?? {};
+  const firstClientEntryAssets = input.firstClientEntryAssets ?? EMPTY_ASSETS;
+  const serverEntryAssets = input.serverEntryAssets ?? {};
+  const serverAssets = input.serverAssets ?? EMPTY_ASSETS;
+  const serverModules = input.serverModules ?? [];
+  const clientEntries = input.plan.entries.filter(
+    (entry) => entry.environment === "client",
+  );
+  const shouldUseSingleClientFallback = clientEntries.length === 1;
+
+  const clientAssetsForEntry = (entry: BuildEntry) =>
+    clientEntryAssets[entry.name] ??
+    (shouldUseSingleClientFallback ? firstClientEntryAssets : EMPTY_ASSETS);
+  const serverAssetsForEntry = (entry: BuildEntry) =>
+    serverEntryAssets[entry.name] ?? serverAssets;
+
+  const findEntryByOwner = (
+    owner: BuildEntry["owner"],
+    environment?: BuildEntry["environment"],
+    kind?: BuildEntry["kind"],
+  ): BuildEntry | undefined =>
+    input.plan.entries.find((entry) => {
+      if (environment && entry.environment !== environment) return false;
+      if (kind && entry.kind !== kind) return false;
+      if (owner?.appId) return entry.owner?.appId === owner.appId;
+      if (owner?.pageId && entry.owner?.pageId !== owner.pageId) return false;
+      if (owner?.regionId && entry.owner?.regionId !== owner.regionId) {
+        return false;
+      }
+      if (owner?.pageId || owner?.regionId) return true;
+      return false;
+    });
+
+  const assetsForSource = (sourceRel: string) =>
+    serverModules.find((mod) => moduleIdMatchesSource(mod.moduleId, sourceRel))
+      ?.assets ?? serverAssets;
+
+  const entryAssets: Record<string, AssetGroup> = {};
+  for (const entry of input.plan.entries) {
+    entryAssets[entry.name] =
+      entry.environment === "client"
+        ? clientAssetsForEntry(entry)
+        : serverAssetsForEntry(entry);
+  }
+
+  const apps = Object.fromEntries(
+    Object.entries(input.graph.apps).map(([id, app]) => {
+      const entry = findEntryByOwner({ appId: id }, "client");
+      const assets = entry ? clientAssetsForEntry(entry) : EMPTY_ASSETS;
+      return [
+        id,
+        {
+          assets,
+          entry: app.entry,
+          routes: app.routes,
+          mount: app.mount,
+          module: entry
+            ? {
+                type: "entry" as const,
+                href: assets.js[0],
+                source: app.entry,
+              }
+            : undefined,
+        },
+      ];
+    }),
+  );
+
+  const pages = Object.fromEntries(
+    Object.entries(input.graph.pages).map(([id, page]) => {
+      const entry = findEntryByOwner({ pageId: id }, "client");
+      const shellEntry = findEntryByOwner(
+        { pageId: id },
+        "server",
+        "ppr-shell",
+      );
+      const assets = entry ? clientAssetsForEntry(entry) : EMPTY_ASSETS;
+      return [
+        id,
+        {
+          assets,
+          render: page.render,
+          path: page.path,
+          routeId: page.routeId,
+          entry: page.entry,
+          component: page.component,
+          app: page.app,
+          hydrate: page.hydrate,
+          mount: page.mount,
+          module: entry
+            ? {
+                type: page.component
+                  ? ("react-component" as const)
+                  : page.app
+                    ? ("lifecycle" as const)
+                    : ("entry" as const),
+                href: assets.js[0],
+                source: page.component ?? page.app ?? page.entry,
+              }
+            : undefined,
+          ppr:
+            page.render === "ppr"
+              ? {
+                  shell: shellEntry
+                    ? serverAssetsForEntry(shellEntry)
+                    : serverAssets,
+                  regions: Object.fromEntries(
+                    Object.entries(page.ppr?.regions ?? {}).map(
+                      ([regionId, region]) => {
+                        const regionEntry = findEntryByOwner(
+                          { pageId: id, regionId },
+                          "server",
+                          "ppr-region",
+                        );
+                        return [
+                          regionId,
+                          {
+                            id: regionId,
+                            assets: regionEntry
+                              ? serverAssetsForEntry(regionEntry)
+                              : serverAssets,
+                            component: region.component,
+                            fallback: region.fallback,
+                            cache: region.cache,
+                            hydrate: region.hydrate,
+                          },
+                        ];
+                      },
+                    ),
+                  ),
+                }
+              : undefined,
+        },
+      ];
+    }),
+  );
+
+  const serverFunctions: Record<string, ServerFunctionOutput> = {};
+  for (const fn of input.graph.serverFunctions) {
+    serverFunctions[fn.id] = {
+      assets: assetsForSource(fn.module),
+      module: fn.module,
+      exportName: fn.exportName,
+    };
+  }
+
+  const serverRoutes: ServerRouteOutput[] = input.graph.serverRoutes.map(
+    (route) => ({
+      path: route.path,
+      methods: route.methods,
+      assets: assetsForSource(route.module),
+    }),
+  );
+  const rsc = linkRscOutput(input, serverAssetsForEntry, serverAssets);
+
+  return {
+    version: 1,
+    buildId: input.plan.buildId,
+    distDir: input.plan.distDir,
+    publicPath: input.plan.runtime.publicPath,
+    runtime: {
+      server: input.plan.runtime.server,
+      transport: input.plan.runtime.transport,
+    },
+    assets: entryAssets,
+    apps,
+    pages,
+    routes: input.graph.routes.map((route) => ({
+      id: route.id,
+      path: route.path,
+      appId: route.appId,
+      pageId: route.pageId,
+      module: route.module,
+      render: route.render,
+      hydrate: route.hydrate,
+      runtime: route.runtime,
+    })),
+    server: serverEnabled
+      ? {
+          entry: input.serverEntry,
+          assets: serverAssets,
+          renderers: linkServerRenderers(
+            input.plan,
+            serverAssetsForEntry,
+            assetsForSource,
+          ),
+          functions: serverFunctions,
+          routes: serverRoutes,
+        }
+      : undefined,
+    remotes: Object.fromEntries(
+      Object.entries(input.graph.remotes).map(([id, remote]) => [
+        id,
+        {
+          manifest: remote.manifest,
+          activeWhen: remote.activeWhen,
+        },
+      ]),
+    ),
+    ...(rsc ? { rsc } : {}),
+  };
+}
+
+export interface RemoteManifestLinkInput {
+  plan: BuildPlan;
+  clientEntryAssets?: Record<string, AssetGroup>;
+  firstClientEntryAssets?: AssetGroup;
+}
+
+export function linkRemoteManifest(
+  input: RemoteManifestLinkInput,
+): RemoteManifest | undefined {
+  const remote = input.plan.remote;
+  if (!remote) return undefined;
+
+  const clientEntryAssets = input.clientEntryAssets ?? {};
+  const firstClientEntryAssets = input.firstClientEntryAssets ?? EMPTY_ASSETS;
+  const remoteEntries = input.plan.entries.filter(
+    (entry) => entry.environment === "client" && entry.kind === "remote-client",
+  );
+  const shouldUseSingleRemoteFallback = remoteEntries.length === 1;
+
+  return {
+    version: 1,
+    name: remote.name,
+    baseUrl: remote.baseUrl,
+    ...(remote.shared ? { shared: remote.shared } : {}),
+    entries: Object.fromEntries(
+      Object.values(remote.entries).map((entry) => {
+        const buildEntry = remoteEntries.find(
+          (candidate) =>
+            candidate.owner?.remoteId === remote.name &&
+            candidate.owner?.remoteEntryId === entry.id,
+        );
+        const assets = buildEntry
+          ? (clientEntryAssets[buildEntry.name] ??
+            (shouldUseSingleRemoteFallback
+              ? firstClientEntryAssets
+              : EMPTY_ASSETS))
+          : EMPTY_ASSETS;
+
+        return [
+          entry.id,
+          {
+            assets,
+            module: {
+              type: "lifecycle" as const,
+              href: assets.js[0],
+              source: entry.app,
+            },
+            activeWhen: entry.activeWhen,
+            mount: entry.mount,
+          },
+        ];
+      }),
+    ),
+  };
+}
+
+function linkRscOutput(
+  input: BuildOutputLinkInput,
+  serverAssetsForEntry: (entry: BuildEntry) => AssetGroup,
+  fallbackAssets: AssetGroup,
+): BuildOutput["rsc"] | undefined {
+  const endpoint = input.plan.runtime.server?.rsc;
+  const rscRenderers = input.plan.entries.filter(
+    (entry) => entry.environment === "server" && entry.kind === "rsc-page",
+  );
+  const rscPages = Object.values(input.graph.pages).filter(
+    (page) => page.render === "rsc",
+  );
+
+  if (
+    !endpoint &&
+    rscPages.length === 0 &&
+    !input.graph.clientReferences?.length &&
+    !input.graph.serverReferences?.length &&
+    !input.rscManifests?.clientReferenceManifest &&
+    !input.rscManifests?.serverConsumerManifest
+  ) {
+    return undefined;
+  }
+
+  return {
+    endpoint,
+    pages:
+      rscPages.length > 0
+        ? Object.fromEntries(
+            rscPages.map((page) => {
+              const renderer = rscRenderers.find(
+                (entry) => entry.owner?.pageId === page.id,
+              );
+              return [
+                page.id,
+                {
+                  renderer: renderer?.name,
+                  assets: renderer
+                    ? serverAssetsForEntry(renderer)
+                    : fallbackAssets,
+                  component: page.component,
+                  routeId: page.routeId,
+                },
+              ];
+            }),
+          )
+        : undefined,
+    clientReferences: referencesToRecord(input.graph.clientReferences),
+    serverReferences: referencesToRecord(input.graph.serverReferences),
+    clientReferenceManifest: input.rscManifests?.clientReferenceManifest,
+    serverConsumerManifest: input.rscManifests?.serverConsumerManifest,
+  };
+}
+
+function referencesToRecord(
+  references:
+    | Array<{ id: string; module: string; exportName?: string }>
+    | undefined,
+): Record<string, unknown> | undefined {
+  if (!references?.length) return undefined;
+  return Object.fromEntries(
+    references.map((reference) => [
+      reference.id,
+      {
+        module: reference.module,
+        exportName: reference.exportName,
+      },
+    ]),
+  );
+}
+
+function linkServerRenderers(
+  plan: BuildPlan,
+  serverAssetsForEntry: (entry: BuildEntry) => AssetGroup,
+  assetsForSource: (sourceRel: string) => AssetGroup,
+) {
+  const renderers = plan.server.renderers ?? [];
+  if (renderers.length === 0) return undefined;
+
+  return Object.fromEntries(
+    renderers.map((renderer) => {
+      const entry = plan.entries.find(
+        (candidate) =>
+          candidate.environment === "server" &&
+          candidate.name === renderer.name,
+      );
+      return [
+        renderer.name,
+        {
+          kind: renderer.kind,
+          owner: renderer.owner,
+          module: renderer.import,
+          assets: entry
+            ? serverAssetsForEntry(entry)
+            : assetsForSource(renderer.import),
+        },
+      ];
+    }),
+  );
+}
+
+function moduleIdMatchesSource(moduleId: string, sourceRel: string): boolean {
+  return moduleId === sourceRel || moduleId.endsWith(`/${sourceRel}`);
+}

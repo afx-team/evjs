@@ -1,140 +1,139 @@
 # Architecture
 
+This file summarizes the current implementation. The detailed design and status
+matrix live in [NEXT_GENERATION_ARCHITECTURE.md](./NEXT_GENERATION_ARCHITECTURE.md).
+
 ## Overview
 
-`evjs` is a React fullstack framework with type-safe routing (TanStack Router), data fetching (TanStack Query), and server functions (`"use server"`). It uses a Hono-based API server and is designed to be bundler-agnostic.
+evjs is a React framework with explicit app/page declarations, server functions,
+REST routes, SSR, PPR, RSC integration points, manifest-driven remotes, and
+bundler adapters.
 
-```
-┌─────────────────────────── Build Time ───────────────────────────┐
-│                                                                  │
-│  @evjs/cli ──► BundlerAdapter ──── @evjs/bundler-utoopack     │
-│                                   (default)                  │
-│                      │                                          │
-│  @evjs/build-tools ──┴──► @evjs/manifest (manifests)          │
-│  (bundler-agnostic)                                              │
-│                                                                  │
-└──────────────────────────────┬───────────────────────────────────┘
-                               │
-              ┌────────────────┴────────────────┐
-              ▼                                 ▼
-┌──────── Client (Browser) ────────┐ ┌──────── Server (Node/Edge) ──────┐
-│                                  │ │                                   │
-│  TanStack Router                 │ │  Hono App (createApp)             │
-│  TanStack Query                  │ │  registerServerReference() + createRoute()     │
-│  createServerReference() stubs   │ │  app.fetch()                      │
-│  ServerTransport ────────────────┼─┼──► POST api/fn ─► registry     │
-│                                  │ │                                   │
-└──────────────────────────────────┘ └───────────────────────────────────┘
+```txt
+ev.config.ts and static route/server declarations
+  -> AppGraph
+  -> BuildPlan
+  -> selected bundler adapter
+  -> BuildOutput / dist/manifest.json
+  -> client runtime, server runtime, deployment adapters
 ```
 
-## Package Dependency Graph
+Framework semantics are owned by `@evjs/ev` and `@evjs/shared/manifest`.
+Bundlers own module graphs, chunks, assets, dev HMR, and stats. Runtime packages
+consume `BuildOutput` rather than raw bundler stats.
 
-```
-@evjs/cli ──► @evjs/ev, @evjs/bundler-utoopack (default)
+## Package Shape
 
-@evjs/shared (zero deps — runtime only: errors, HTTP, constants)
+```txt
+@evjs/cli
+  CLI and programmatic command entrypoints
 
-@evjs/bundler-utoopack ──► @evjs/ev, @evjs/build-tools, @evjs/manifest, @utoo/pack
-@evjs/server ──► @evjs/shared, hono, @hono/node-server
-@evjs/client ──► @evjs/shared, @tanstack/react-router, @tanstack/react-query
-```
+@evjs/ev
+  config, plugins, graph analysis, build planning, HTML, deployment helpers,
+  and bundler adapter contracts
 
-## Configuration Flow
+@evjs/shared
+  runtime shared helpers and @evjs/shared/manifest schemas/linkers
 
-```
-ev.config.ts ──► defineConfig({ entry, html, dev, server, bundler, plugins })
-                    │
-                    ├── entry, html ──► bundler entry + HTML
-                    ├── bundler ──► BundlerAdapter (utoopack)
-                    ├── dev.port ──► dev server port
-                    ├── server.endpoint ──► server function + proxy path
-                    └── plugins ──► EvPlugin[] (setup → buildStart/bundler/transformHtml/buildEnd)
-                    │
-                    ▼
-            plugin.setup(ctx) → collect hooks
-                    │
-                    ▼
-            hooks.buildStart() → hooks.bundler(config) → BundlerAdapter.dev/build()
-                    │
-                    ▼
-              bundler compile → generateHtml() → hooks.transformHtml(doc) → hooks.buildEnd(result)
-```
+@evjs/client
+  SPA compatibility facade, transport, React page runtime, RSC client runtime,
+  route DSL, shell runtime, and TanStack compatibility
 
-## Server Function Pipeline
+@evjs/server
+  server functions, REST routes, SSR/PPR/RSC request coordination, and runtime
+  adapters such as @evjs/server/node
 
-```
-               ┌── Client Build ──► import { createServerReference } from '@evjs/client/transport'
-               │                    export const getUsers = createServerReference(fnId, "getUsers")
-.server.ts ────┤
-               │
-               │
-               └── Server Build ──► import { registerServerReference } from '@evjs/server/register'
-                                    // original body preserved
-                                    registerServerReference("getUsers", fnId, "getUsers")
+@evjs/bundler-utoopack
+  default Utoopack adapter
+
+@evjs/bundler-webpack
+  validation/fallback adapter for architecture features blocked on Utoopack APIs
 ```
 
-## Build-Tools Structure
+Deleted standalone packages:
 
-```
-packages/build-tools/src/
-├── index.ts          barrel exports
-├── codegen.ts        SWC parseSync → printSync code emitter
-├── entry.ts          server entry generation
-├── html.ts           HTML template parsing + asset injection (domparser-rs)
-├── routes.ts         route metadata extraction from createRoute() calls
-├── types.ts          shared types + RUNTIME identifier constants
-├── utils.ts          detectUseServer, makeFnId, parseModuleRef
-└── transforms/
-    ├── index.ts      orchestrator: parse → extract → delegate
-    ├── utils.ts      extractExportNames (AST traversal)
-    ├── client/
-    │   └── index.ts  buildClientOutput (createServerReference stubs)
-    └── server/
-        └── index.ts  buildServerOutput (registerServerReference + manifest)
+```txt
+@evjs/build-tools  -> packages/ev/src/build-tools
+@evjs/manifest     -> packages/shared/src/manifest
 ```
 
-### RUNTIME Constants
+## Build-Time Flow
 
-All runtime identifiers used in generated code are centralized in `types.ts`:
+```mermaid
+sequenceDiagram
+  participant CLI as "@evjs/cli"
+  participant EV as "@evjs/ev"
+  participant Tools as "ev build-tools"
+  participant Bundler as "BundlerAdapter"
+  participant Manifest as "@evjs/shared/manifest"
 
-```ts
-export const RUNTIME = {
-  serverModule: "@evjs/server/register",
-  appModule: "@evjs/server",
-  clientTransportModule: "@evjs/client/transport",
-  registerServerReference: "registerServerReference",
-  createServerReference: "createServerReference",
-  callServer: "callServer",
-} as const;
+  CLI->>EV: load and resolve config
+  EV->>EV: run config/setup/buildStart hooks
+  EV->>Tools: createAppGraph(config)
+  Tools-->>EV: AppGraph, diagnostics, fileDependencies
+  EV->>EV: run appGraph hooks
+  EV->>Tools: createBuildPlan(config, graph)
+  EV->>EV: run buildPlan hooks
+  EV->>Bundler: build(plan)
+  Bundler-->>EV: stats/assets/build facts
+  EV->>Manifest: linkBuildOutput(plan, bundlerResult)
+  Manifest-->>EV: BuildOutput
+  EV->>EV: run buildOutput hooks
+  EV->>EV: emit manifest and HTML documents
+  EV->>EV: run buildEnd({ output })
 ```
 
-## Dev Server Architecture
+## Dev-Time Rule
 
+Graph analysis may read static import closure for semantic discovery, but dev
+watching must remain narrower than that closure. `fileDependencies` should
+include explicit route/server roots and framework marker files such as
+`@evjs/client` route declarations, `@evjs/server createRoute()`, `"use server"`, and
+`"use client"`. Ordinary component and style edits stay in the bundler HMR path.
+
+Configured page additions in dev require `BundlerDevController.updatePlan()`.
+Webpack implements this validation path. Utoopack still needs the lower-layer
+API before it can support this without restarting the bundler dev instance.
+
+## Runtime Ownership
+
+```txt
+@evjs/client
+  mounts and hydrates framework-managed React pages
+
+@evjs/client
+  reads BuildOutput, activates app/page/remote modules, preloads modules,
+  disposes lifecycles, and negotiates host-provided shared dependencies
+
+@evjs/server
+  owns server functions, REST routes, SSR document rendering, PPR region
+  rendering, and RSC Flight endpoint routing
+
+deployment adapters
+  translate BuildOutput to platform artifacts and bootstraps
 ```
-Browser ──(:3000)──► Dev Server ──► HMR (static assets)
-                          │
-                          └── /api/* proxy ──► Node Server (:3001)
-                                                    │
-                                              Hono App
-                                                    │
-                                              POST api/fn
-                                                    │
-                                              registry.get(fnId)(...args)
+
+TanStack compatibility remains part of `@evjs/client`. The framework goal is
+that applications can choose not to use TanStack Router by using explicit pages,
+the static route DSL, or framework-managed page/runtime APIs. The optional
+boundary is the application's routing model, not the package dependency shape of
+`@evjs/client`.
+
+## Manifest
+
+The framework output contract is a single `BuildOutput` serialized to:
+
+```txt
+dist/manifest.json
 ```
 
-`ev dev` uses the bundler's Node API directly:
-1. Creates bundler compiler + dev server in-process (utoopack)
-2. Watches for `dist/server/manifest.json`
-3. Writes a CJS bootstrap and runs it with `node --watch`
+The old split client/server v1 manifests are not the future contract. Deployment
+plugins and platform adapters should consume `BuildOutput`.
 
-## Deployment Adapters
+## Deployment
 
-```
-Node.js          server.entry.mjs ──► @hono/node-server
-ECMA (Deno/Bun)  server.entry.mjs ──► export default app.fetch
-Service Worker   sw.entry.js ──► self.addEventListener('fetch', ...)
-```
-
-## Roadmap
-
-See [ROADMAP.md](./ROADMAP.md) for the full, detailed roadmap.
+`@evjs/ev` exposes platform-neutral deployment artifact helpers plus
+`nodeDeploymentAdapter()`. The Node adapter emits a production `dist/server.mjs`
+that imports only Node built-ins, `@evjs/server/node`, and the user server bundle.
+Platform-specific Tern/UBOA/edge adapters should be implemented as adapters that
+consume `BuildOutput` instead of reading bundler config or stats.

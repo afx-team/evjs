@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { BundlerAdapter } from "@evjs/ev";
+import type { BuildOutput, BundlerAdapter } from "@evjs/ev";
 import { describe, expect, it } from "vitest";
 import { build } from "../src/index.js";
 
@@ -21,16 +21,28 @@ describe("programmatic API", () => {
     const events: string[] = [];
     const bundler: BundlerAdapter = {
       name: "mock",
-      async build(_config, buildCwd) {
-        events.push(`build:${buildCwd}`);
+      async build({ callbacks, cwd: buildCwd, plan }) {
+        events.push(`build:${buildCwd}:${plan.entries[0]?.name}`);
+        const output: BuildOutput = {
+          version: 1,
+          buildId: plan.buildId,
+          distDir: plan.distDir,
+          publicPath: plan.runtime.publicPath,
+          runtime: {
+            server: plan.runtime.server,
+            transport: plan.runtime.transport,
+          },
+          assets: {},
+          apps: {},
+          pages: {},
+          routes: [],
+        };
+        await callbacks.onBuildOutput(output);
         const dist = path.join(buildCwd, "dist");
         await fs.promises.mkdir(dist, { recursive: true });
         await fs.promises.writeFile(
           path.join(dist, "manifest.json"),
-          JSON.stringify({
-            version: 1,
-            assets: { js: [], css: [] },
-          }),
+          JSON.stringify(output),
           "utf-8",
         );
       },
@@ -41,6 +53,6 @@ describe("programmatic API", () => {
 
     await build({ server: false }, { cwd, bundler });
 
-    expect(events).toEqual([`build:${cwd}`]);
+    expect(events).toEqual([`build:${cwd}:main`]);
   });
 });

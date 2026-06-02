@@ -17,13 +17,14 @@ No flags needed — configuration comes from `ev.config.ts` or convention-based 
 | **Dev Server** | `3000` | Client bundle with Hot Module Replacement (HMR) |
 | **API Server** | `3001` | Server functions + route handlers, auto-started after first build |
 
-The client dev server automatically proxies `/api/*` requests to the API server.
+The client dev server automatically proxies framework server runtime paths such
+as `/__evjs/fn` to the API server.
 
 ```mermaid
 flowchart LR
     Browser -->|":3000"| DEV["Dev Server"]
     DEV -->|"HMR"| Browser
-    DEV -->|"/api/* proxy"| API["API Server :3001"]
+    DEV -->|"/__evjs/* proxy"| API["API Server :3001"]
     API --> Hono["Hono App"]
     Hono --> Registry["Server Function Registry"]
 ```
@@ -42,9 +43,7 @@ export default defineConfig({
     https: false,                 // HTTPS mode
   },
   server: {
-    functions: {
-      endpoint: "api/fn",         // Default
-    },
+    basePath: "/__evjs",          // Server functions/PPR/RSC paths derive from this
     dev: {
       port: 3001,                 // API port
       https: false,               // HTTPS for API server
@@ -62,7 +61,8 @@ export default defineConfig({
 5. Starts `dev server` for client HMR.
 6. The adapter signals `onServerBundleReady` after discovery.
 7. The CLI core auto-starts the API server via `@evjs/server/node`.
-8. Sets up reverse proxy: `devServer.proxy["/api"] → localhost:3001`.
+8. Sets up reverse proxy for the derived framework runtime paths, for example
+   `/__evjs/fn → localhost:3001`.
 
 ## API Server Runtime
 
@@ -85,13 +85,18 @@ await build({ entry: "./src/main.tsx" }, { cwd: "./my-app", bundler: utoopackAda
 
 `@evjs/cli` also exports compatibility wrappers that inject the default utoopack adapter, matching the `ev dev` and `ev build` commands.
 
+`@evjs/bundler-webpack` can also run dev mode for architecture validation. It
+uses webpack-dev-server for client entries, webpack watch for server entries,
+and implements `updatePlan(update, graph)` so configured page additions can be
+applied in the running `ev dev` process. Utoopack remains the default adapter.
+
 ## Transport
 
 The default HTTP transport works without app code. Call `initTransport()` at app
 startup only when you need to customize the built-in HTTP adapter or replace it
 with a custom adapter.
 
-- In **dev mode**: the client dev server proxies `/api/*` → `:3001`, so the default `api/fn` endpoint works automatically
+- In **dev mode**: the client dev server proxies the derived server function path, for example `/__evjs/fn` → `:3001`
 - In **production**: client and server are typically on the same origin
 - The transport is **runtime-agnostic** — the client always posts to the same endpoint regardless of server runtime
 - Use `credentials` and `headers` for the built-in HTTP adapter; fetch `mode` is not configurable

@@ -6,110 +6,92 @@
 ev build
 ```
 
-Sets `NODE_ENV=production` and produces optimized bundles.
+`ev build` resolves config, creates an `AppGraph`, derives a `BuildPlan`, runs the selected bundler, links a single `BuildOutput`, and emits HTML.
 
-## Output Structure
+## Output
 
-### Fullstack (default)
+Fullstack output:
 
-```
+```txt
 dist/
 ├── client/
-│   ├── manifest.json       # Client asset map + route metadata
-│   ├── index.html          # Generated HTML
-│   ├── main.[hash].js      # Client bundle
-│   └── [chunk].[hash].js   # Code-split chunks
-└── server/
-    ├── manifest.json       # Server function + route registry
-    └── main.[hash].js      # Server function bundle (CJS)
+│   ├── index.html
+│   ├── main.[hash].js
+│   └── [chunk].[hash].js
+├── server/
+│   └── server.[hash].js
+└── manifest.json
 ```
 
-### CSR-only (`server: false`)
+CSR-only output (`server: false`) is flat:
 
-When `server: false` is set in `ev.config.ts`, the output is flat:
-
-```
+```txt
 dist/
-├── manifest.json         # Client asset map + route metadata
-├── index.html            # Generated HTML
-├── main.[hash].js        # Client bundle
-└── [chunk].[hash].js     # Code-split chunks
+├── index.html
+├── main.[hash].js
+├── [chunk].[hash].js
+└── manifest.json
 ```
 
-> **Note:** With `server: false`, any `"use server"` module will cause a build error.
+`dist/manifest.json` is the framework contract consumed by runtime, server, shell, and deployment adapters.
 
-## What Happens During Build
+## Build Pipeline
 
-### Server Function Transform
+1. Load and resolve `ev.config.ts`.
+2. Run config/setup plugin hooks.
+3. `createAppGraph()` analyzes explicit app/page/server roots.
+4. `createBuildPlan()` produces concrete client/server entries and HTML documents.
+5. The selected bundler compiles `BuildPlan.entries`.
+6. `linkBuildOutput()` combines `AppGraph`, `BuildPlan`, and bundler facts.
+7. evjs emits `dist/manifest.json`.
+8. evjs generates each planned HTML document and calls `transformHtml(doc, ctx)`.
+9. evjs calls `buildEnd({ output, isRebuild })`.
 
-Files with `"use server"` are automatically processed with dual transforms:
+Manifest linking does not rescan user source after bundling.
+
+## Server Functions
+
+Files with `"use server"` are transformed into browser-callable references and server registrations:
 
 | Side | What happens |
 |------|-------------|
-| **Client** | Function bodies are replaced with `createServerReference()` RPC stubs |
-| **Server** | Original function bodies are preserved + `registerServerReference()` injected |
+| Client | Function bodies are replaced with `createServerReference()` RPC stubs |
+| Server | Function implementations are registered for `@evjs/server` dispatch |
 
-Function IDs use the same algorithm as Utoopack server references: `sha256(moduleId + "#" + exportName)`, truncated to 16 hex characters. The manifest generator analyzes source exports and uses Utoopack `stats.json` module IDs when available, so the IDs match the values emitted in client stubs and server registration code.
+Function output is recorded in `BuildOutput.server.functions`. The public endpoint is derived from `server.basePath`:
 
-### Build Pipeline
-
-1. `loadConfig(cwd)` — loads `ev.config.ts` or convention-based defaults
-2. `BundlerAdapter.build()` — generates bundler config and runs compilation
-3. The active bundler adapter runs during compilation:
-   - Runs the client and server bundle compilation
-   - Reads Utoopack stats for emitted asset names and module IDs
-   - Analyzes source files for client routes, server routes, and `"use server"` exports
-   - Computes function IDs with Utoopack-compatible module ID hashing
-   - Emits `dist/server/manifest.json` (function + route registry) and `dist/client/manifest.json` (asset map + client routes)
-
-## Server Manifest (`dist/server/manifest.json`)
-
-Contains the server function and route handler registry:
-
-```json
-{
-  "version": 1,
-  "entry": "main.a1b2c3d4.js",
-  "assets": {
-    "js": ["main.a1b2c3d4.js"],
-    "css": []
-  },
-  "fns": {
-    "a1b2c3d4": {
-      "assets": {
-        "js": ["main.a1b2c3d4.js"],
-        "css": []
-      }
-    }
-  },
-  "routes": [
-    {
-      "path": "/api/users",
-      "methods": ["GET", "POST"],
-      "assets": {
-        "js": ["main.a1b2c3d4.js"],
-        "css": []
-      }
-    }
-  ]
-}
+```txt
+server.basePath = /__evjs
+runtime.server.fn = /__evjs/fn
 ```
 
-## Client Manifest (`dist/client/manifest.json`)
+## Framework Pages
 
-Contains client build metadata:
+String pages and `{ entry }` pages compile as user-owned client entries. Component pages add explicit metadata so a bundler adapter can wrap the real component import with the generic page runtime. The `BuildPlan.import` remains the user component path; evjs does not write hidden production source files.
+
+SSR/PPR pages add server render entries to the plan. PPR regions carry cache metadata in the manifest:
 
 ```json
 {
-  "version": 1,
-  "assets": { "js": ["main.abc123.js"], "css": ["styles.def456.css"] },
-  "routes": [{ "path": "/" }, { "path": "/users" }, { "path": "/posts/$postId" }]
+  "pages": {
+    "campaign": {
+      "render": "ppr",
+      "ppr": {
+        "regions": {
+          "inventory": {
+            "cache": { "revalidate": 60 }
+          }
+        }
+      }
+    }
+  }
 }
 ```
 
 ## Key Points
 
-- Works out of the box with convention-based defaults
-- Client bundles use content-hash filenames for cache busting
-- Server bundle externalizes `node_modules` (except `@evjs/*` packages)
-- No temp config files — Utoopack is driven through its Node API
+- One framework manifest: `dist/manifest.json`.
+- `BuildOutput` replaces legacy client/server manifests.
+- Source analysis happens before bundler config creation and is cached in dev.
+- Component/style edits stay in the bundler HMR path.
+- Adding configured pages in dev requires bundler `updatePlan()` support; the current Utoopack adapter fails clearly until the lower-layer API exists.

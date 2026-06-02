@@ -1,3 +1,5 @@
+import type { AppGraph, BuildPlan } from "@evjs/ev";
+import { createBuildPlan } from "@evjs/ev/build-tools";
 import { describe, expect, it } from "vitest";
 import { createUtoopackConfig } from "../src/adapter/create-config.js";
 
@@ -15,9 +17,14 @@ describe("createUtoopackConfig", () => {
       },
       serverEnabled: false,
       server: {
-        functions: {
-          endpoint: "api/fn",
-          clientProxy: "@evjs/client/transport",
+        basePath: "/__evjs",
+        runtime: {
+          basePath: "/__evjs",
+          fn: "/__evjs/fn",
+        },
+        functionRuntime: {
+          endpoint: "/__evjs/fn",
+          clientProxy: "@evjs/client",
           serverRegister: "@evjs/server/register",
         },
         dev: {
@@ -25,6 +32,8 @@ describe("createUtoopackConfig", () => {
           https: false,
         },
       },
+      transport: {},
+      remotes: {},
       plugins: [],
       ...overrides,
     };
@@ -32,13 +41,18 @@ describe("createUtoopackConfig", () => {
 
   it("passes resolved dev server options and SPA fallback to Utoopack", async () => {
     const config = createResolvedConfig();
+    const plan = createPlan(config);
 
     const utoopackConfig = await createUtoopackConfig(
       config,
+      plan,
       process.cwd(),
       [],
     );
 
+    expect(utoopackConfig.entry).toEqual([
+      { import: "./src/main.tsx", name: "main" },
+    ]);
     expect(utoopackConfig.devServer?.port).toBe(41234);
     expect(utoopackConfig.devServer?.https).toBe(true);
     expect(utoopackConfig.devServer?.proxy).toContainEqual(
@@ -52,13 +66,19 @@ describe("createUtoopackConfig", () => {
   it("does not add SPA history fallback for MPA builds", async () => {
     const config = createResolvedConfig({
       pages: {
-        home: { entry: "./src/home.tsx", html: "./home.html" },
-        about: { entry: "./src/about.tsx", html: "./about.html" },
+        home: { entry: "./src/home.tsx", html: "./home.html", render: "csr" },
+        about: {
+          entry: "./src/about.tsx",
+          html: "./about.html",
+          render: "csr",
+        },
       },
     });
+    const plan = createPlan(config);
 
     const utoopackConfig = await createUtoopackConfig(
       config,
+      plan,
       process.cwd(),
       [],
     );
@@ -70,19 +90,208 @@ describe("createUtoopackConfig", () => {
     expect(utoopackConfig.devServer?.proxy).toEqual([]);
   });
 
-  it("awaits async bundlerConfig hooks before returning config", async () => {
-    const config = createResolvedConfig();
-
-    const utoopackConfig = await createUtoopackConfig(config, process.cwd(), [
-      {
-        async bundlerConfig(cfg) {
-          await Promise.resolve();
-          cfg.output ??= {};
-          cfg.output.publicPath = "runtime";
+  it("fails clearly for framework-managed component page entries until Utoopack supports them", async () => {
+    const config = createResolvedConfig({
+      pages: {
+        home: {
+          component: "./src/pages/Home.tsx",
+          html: "./index.html",
+          render: "csr",
+          mount: "#app",
         },
       },
-    ]);
+    });
+    const plan = createPlan(config);
+
+    expect(plan.entries[0]?.import).toBe("./src/pages/Home.tsx");
+    expect(plan.entries[0]?.metadata).toMatchObject({
+      type: "react-component-page",
+      component: "./src/pages/Home.tsx",
+    });
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), []),
+    ).rejects.toThrow(
+      "Utoopack adapter cannot build framework-managed component page entries yet",
+    );
+  });
+
+  it("awaits async bundlerConfig hooks before returning config", async () => {
+    const config = createResolvedConfig();
+    const plan = createPlan(config);
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [
+        {
+          async bundlerConfig(cfg, ctx) {
+            await Promise.resolve();
+            cfg.output ??= {};
+            cfg.output.publicPath = "runtime";
+            expect(ctx.plan.entries.map((entry) => entry.name)).toEqual([
+              "main",
+            ]);
+          },
+        },
+      ],
+    );
 
     expect(utoopackConfig.output?.publicPath).toBe("runtime");
   });
+
+  it("fails clearly when the plan contains framework server renderer entries", async () => {
+    const config = createResolvedConfig({
+      serverEnabled: true,
+      server: {
+        basePath: "/__evjs",
+        runtime: {
+          basePath: "/__evjs",
+          fn: "/__evjs/fn",
+        },
+        functionRuntime: {
+          endpoint: "/__evjs/fn",
+          clientProxy: "@evjs/client",
+          serverRegister: "@evjs/server/register",
+        },
+        dev: {
+          port: 3001,
+          https: false,
+        },
+      },
+    });
+    const graph: AppGraph = {
+      version: 1,
+      rootDir: process.cwd(),
+      apps: {
+        default: {
+          id: "default",
+          entry: "./src/main.tsx",
+          html: "./index.html",
+        },
+      },
+      pages: {
+        dashboard: {
+          id: "dashboard",
+          routeId: "dashboard",
+          component: "./src/pages/Dashboard.tsx",
+          html: "./index.html",
+          render: "ssr",
+        },
+      },
+      routes: [
+        {
+          id: "dashboard",
+          path: "/dashboard",
+          appId: "default",
+          pageId: "dashboard",
+          module: "./src/pages/Dashboard.tsx",
+          render: "ssr",
+        },
+      ],
+      serverFunctions: [],
+      serverRoutes: [],
+      remotes: {},
+    };
+    const plan = createBuildPlan(config, graph, { mode: "development" });
+
+    expect(plan.entries.map((entry) => entry.name)).toEqual([
+      "main",
+      "dashboard-server",
+      "server",
+    ]);
+    expect(plan.server).toMatchObject({
+      entry: "@evjs/server/fetch",
+      renderers: [
+        {
+          name: "dashboard-server",
+          import: "./src/pages/Dashboard.tsx",
+          kind: "page-server",
+          owner: { pageId: "dashboard", routeId: "dashboard" },
+        },
+      ],
+    });
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), []),
+    ).rejects.toThrow(
+      "Utoopack adapter cannot build framework server page entries yet",
+    );
+  });
+
+  it("fails clearly for framework server page entries until Utoopack supports them", async () => {
+    const config = createResolvedConfig({
+      serverEnabled: true,
+      server: {
+        basePath: "/__evjs",
+        runtime: {
+          basePath: "/__evjs",
+          fn: "/__evjs/fn",
+        },
+        functionRuntime: {
+          endpoint: "/__evjs/fn",
+          clientProxy: "@evjs/client",
+          serverRegister: "@evjs/server/register",
+        },
+        dev: {
+          port: 3001,
+          https: false,
+        },
+      },
+    });
+    const plan = createPlan(config);
+    plan.entries.push({
+      name: "dashboard-server",
+      import: "./src/pages/Dashboard.tsx",
+      environment: "server",
+      runtime: "node",
+      kind: "page-server",
+      owner: { pageId: "dashboard" },
+    });
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), []),
+    ).rejects.toThrow(
+      "Utoopack adapter cannot build framework server page entries yet",
+    );
+  });
 });
+
+function createPlan(
+  config: Parameters<typeof createUtoopackConfig>[0],
+): BuildPlan {
+  const graph: AppGraph = {
+    version: 1,
+    rootDir: process.cwd(),
+    apps:
+      config.pages && Object.keys(config.pages).length > 0
+        ? {}
+        : {
+            default: {
+              id: "default",
+              entry: config.entry,
+              html: config.html,
+            },
+          },
+    pages: Object.fromEntries(
+      Object.entries(config.pages ?? {}).map(([id, page]) => [
+        id,
+        {
+          id,
+          entry: page.entry,
+          component: page.component,
+          app: page.app,
+          html: page.html,
+          render: page.render,
+          hydrate: page.hydrate,
+          mount: page.mount,
+        },
+      ]),
+    ),
+    routes: [],
+    serverFunctions: [],
+    serverRoutes: [],
+    remotes: {},
+  };
+
+  return createBuildPlan(config, graph, { mode: "development" });
+}

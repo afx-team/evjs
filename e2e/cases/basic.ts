@@ -10,7 +10,7 @@ test.describe("basic", () => {
   }) => {
     const responsePromise = page.waitForResponse(
       (res) =>
-        res.url().includes("api/fn") && res.request().method() === "POST",
+        res.url().includes("__evjs/fn") && res.request().method() === "POST",
     );
     await page.goto(baseURL);
     const response = await responsePromise;
@@ -48,7 +48,7 @@ test.describe("basic", () => {
     await page.fill('[placeholder="Email"]', "dave@example.com");
     const createResponsePromise = page.waitForResponse(
       (res) =>
-        res.url().includes("api/fn") && res.request().method() === "POST",
+        res.url().includes("__evjs/fn") && res.request().method() === "POST",
     );
     await page.click('button[type="submit"]');
     const createResponse = await createResponsePromise;

@@ -31,9 +31,7 @@
   "author": "xusd320",
   "license": "MIT",
   "dependencies": {
-    "@evjs/build-tools": "*",
     "@evjs/ev": "*",
-    "@evjs/manifest": "*",
     "@logtape/logtape": "^2.0.4",
     "@utoo/pack": "^1.4.9",
     "chokidar": "^3.6.0",

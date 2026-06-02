@@ -1,6 +1,6 @@
 # 客户端路由
 
-evjs 路由基于 [TanStack Router](https://tanstack.com/router) 构建。所有路由 API 从 `@evjs/client` 重新导出 —— 不要直接从 `@tanstack/react-router` 导入。
+evjs 路由基于 [TanStack Router](https://tanstack.com/router) 构建。路由 API 从顶层 `@evjs/client` 导出。不要直接从 `@tanstack/react-router` 导入。
 
 :::important
 **路由路径必须是字符串字面量。** `path` 属性只接受字符串字面量类型——传入 `string` 类型的变量或模板字符串会产生 TypeScript 编译错误。这是通过类型系统强制执行的，以确保路由可被静态分析。
@@ -285,7 +285,7 @@ const app = createApp({
 
 ## 可用的重新导出
 
-全部从 `@evjs/client` 导入：
+这些 API 从 `@evjs/client` 导出：
 
 | 类别 | API |
 |------|-----|

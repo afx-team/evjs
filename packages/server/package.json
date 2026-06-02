@@ -6,7 +6,20 @@
     "@evjs/shared": "*",
     "@hono/node-server": "^1.19.11",
     "@logtape/logtape": "^2.0.4",
-    "hono": "^4.12.9"
+    "hono": "^4.12.9",
+    "react-server-dom-webpack": "^19.2.5"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
   },
   "homepage": "https://github.com/evaijs/evjs#readme",
   "bugs": {
@@ -47,6 +60,16 @@
       "types": "./esm/runtimes/fetch.d.ts",
       "import": "./esm/runtimes/fetch.js",
       "default": "./esm/runtimes/fetch.js"
+    },
+    "./framework": {
+      "types": "./esm/framework.d.ts",
+      "import": "./esm/framework.js",
+      "default": "./esm/framework.js"
+    },
+    "./react": {
+      "types": "./esm/react.d.ts",
+      "import": "./esm/react.js",
+      "default": "./esm/react.js"
     }
   },
   "scripts": {
@@ -59,6 +82,8 @@
   ],
   "devDependencies": {
     "@types/node": "^22.19.15",
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0",
     "typescript": "^6.0.2"
   },
   "keywords": [

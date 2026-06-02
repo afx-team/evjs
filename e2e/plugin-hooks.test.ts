@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { utoopackAdapter } from "@evjs/bundler-utoopack";
 import { build } from "@evjs/cli";
-import type { BundlerAdapter, EvPlugin } from "@evjs/ev";
+import type { BundlerAdapter, Plugin } from "@evjs/ev";
 import { configure, getConsoleSink } from "@logtape/logtape";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -59,7 +59,7 @@ describe.each(BUNDLERS)("build notifier plugin [%s]", (_name, bundler) => {
       duration: 0,
     };
 
-    const buildNotifier: EvPlugin = {
+    const buildNotifier: Plugin = {
       name: "build-notifier",
       setup(_ctx) {
         let t0: number;
@@ -70,7 +70,9 @@ describe.each(BUNDLERS)("build notifier plugin [%s]", (_name, bundler) => {
           },
           buildEnd(result) {
             report.duration = Date.now() - t0;
-            report.assets = result.clientManifest.assets.js;
+            report.assets = Object.values(result.output.assets).flatMap(
+              (assets) => assets.js,
+            );
           },
         };
       },
@@ -95,7 +97,7 @@ describe.each(BUNDLERS)("deployment manifest plugin [%s]", (_name, bundler) => {
 
     const manifestPath = path.resolve(CSR_APP, "dist/deploy-manifest.json");
 
-    const deployPlugin: EvPlugin = {
+    const deployPlugin: Plugin = {
       name: "deploy-manifest",
       setup(ctx) {
         return {
@@ -103,9 +105,13 @@ describe.each(BUNDLERS)("deployment manifest plugin [%s]", (_name, bundler) => {
             const manifest = {
               builtAt: new Date().toISOString(),
               mode: ctx.mode,
-              js: result.clientManifest.assets.js,
-              css: result.clientManifest.assets.css,
-              hasServer: !!result.serverManifest,
+              js: Object.values(result.output.assets).flatMap(
+                (assets) => assets.js,
+              ),
+              css: Object.values(result.output.assets).flatMap(
+                (assets) => assets.css,
+              ),
+              hasServer: !!result.output.server,
             };
             fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
           },
@@ -140,14 +146,16 @@ describe.each(
     let serverFnCount = 0;
     let serverEntry: string | undefined;
 
-    const discoveryPlugin: EvPlugin = {
+    const discoveryPlugin: Plugin = {
       name: "fn-discovery",
       setup() {
         return {
           buildEnd(result) {
-            if (result.serverManifest) {
-              serverEntry = result.serverManifest.entry;
-              serverFnCount = Object.keys(result.serverManifest.fns).length;
+            if (result.output.server) {
+              serverEntry = result.output.server.entry;
+              serverFnCount = Object.keys(
+                result.output.server.functions,
+              ).length;
             }
           },
         };
@@ -163,7 +171,7 @@ describe.each(
 });
 
 // ─── Scenario 4: Transform HTML via DOM Manipulation ────────────────────
-// A plugin that uses the EvDocument DOM API to inject a <meta> tag.
+// A plugin that uses the HtmlDocument DOM API to inject a <meta> tag.
 // Verifies that transformHtml receives a live DOM document that plugins
 // can mutate with standard DOM methods.
 
@@ -173,7 +181,7 @@ describe.each(
   it("injects a meta tag into the document via DOM API", async () => {
     process.chdir(CSR_APP);
 
-    const htmlPlugin: EvPlugin = {
+    const htmlPlugin: Plugin = {
       name: "meta-injector",
       setup() {
         return {
@@ -204,12 +212,12 @@ describe.each(
   it("injects a comment node via DOM API", async () => {
     process.chdir(CSR_APP);
 
-    const commentPlugin: EvPlugin = {
+    const commentPlugin: Plugin = {
       name: "comment-injector",
       setup() {
         return {
-          transformHtml(doc, result) {
-            const count = result.clientManifest.assets.js.length;
+          transformHtml(doc, ctx) {
+            const count = ctx.assets.js.length;
             const comment = doc.createComment(` ${count} JS asset(s) `);
             doc.body?.insertBefore(comment, doc.body?.firstChild);
           },
@@ -239,7 +247,7 @@ describe.each(BUNDLERS)("transformHtml composition [%s]", (_name, bundler) => {
   it("multiple plugins accumulate DOM mutations", async () => {
     process.chdir(CSR_APP);
 
-    const plugin1: EvPlugin = {
+    const plugin1: Plugin = {
       name: "meta-1",
       setup: () => ({
         transformHtml(doc) {
@@ -251,7 +259,7 @@ describe.each(BUNDLERS)("transformHtml composition [%s]", (_name, bundler) => {
       }),
     };
 
-    const plugin2: EvPlugin = {
+    const plugin2: Plugin = {
       name: "meta-2",
       setup: () => ({
         transformHtml(doc) {

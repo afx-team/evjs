@@ -46,7 +46,7 @@ describe("Server Request Context", () => {
     const app = createApp();
 
     const reqbody = JSON.stringify({ fnId: "myServerFn", args: [] });
-    const response = await app.request("api/fn", {
+    const response = await app.request("/__evjs/fn", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

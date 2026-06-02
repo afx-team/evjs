@@ -9,11 +9,16 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import {
-  type BundlerAdapter,
-  type EvPluginHooks,
-  isMpa,
-  type ResolvedEvConfig,
+import type {
+  AppGraph,
+  BuildOutput,
+  BuildPlan,
+  BundlerAdapter,
+  BundlerBuildContext,
+  BundlerDevContext,
+  BundlerDevController,
+  PluginHooks,
+  ResolvedConfig,
 } from "@evjs/ev";
 import { getLogger } from "@logtape/logtape";
 import type { ConfigComplete } from "@utoo/pack";
@@ -23,87 +28,81 @@ import { getOutputPaths } from "./output-paths.js";
 const logger = getLogger(["evjs", "bundler-utoopack"]);
 
 async function generateAndEmitHtml(
-  config: ResolvedEvConfig<ConfigComplete>,
+  config: ResolvedConfig<ConfigComplete>,
   cwd: string,
-  hooks: EvPluginHooks<ConfigComplete>[],
+  hooks: PluginHooks<ConfigComplete>[],
+  output: BuildOutput,
+  plan: BuildPlan,
+  options: { isRebuild?: boolean } = {},
 ) {
   const isServerEnabled = config.serverEnabled;
   const outputPaths = getOutputPaths(cwd, isServerEnabled);
-  const clientManifestPath = path.join(outputPaths.clientDir, "manifest.json");
-  if (!fs.existsSync(clientManifestPath)) return;
-  const clientManifest = JSON.parse(
-    await fs.promises.readFile(clientManifestPath, "utf-8"),
-  );
-
-  // biome-ignore lint/suspicious/noExplicitAny: match @evjs/manifest type
-  let serverManifest: any;
-  if (isServerEnabled) {
-    const serverManifestPath = path.join(
-      outputPaths.serverDir,
-      "manifest.json",
-    );
-    if (fs.existsSync(serverManifestPath)) {
-      serverManifest = JSON.parse(
-        await fs.promises.readFile(serverManifestPath, "utf-8"),
-      );
-    }
-  }
-
-  const { generateHtml } = await import("@evjs/build-tools");
+  const { generateHtml } = await import("@evjs/ev/build-tools");
   const { buildHtml } = await import("@evjs/ev");
 
-  // MPA mode: generate one HTML file per page
-  if (isMpa(config) && clientManifest.pages) {
-    for (const [pageName, pageManifest] of Object.entries(
-      clientManifest.pages as Record<
-        string,
-        { assets: { js: string[]; css: string[] } }
-      >,
-    )) {
-      const pageConfig = config.pages?.[pageName];
-      if (!pageConfig) continue;
+  for (const html of plan.html) {
+    const pageId = html.owner.pageId;
+    const appId = html.owner.appId;
+    const assets = pageId
+      ? output.pages[pageId]?.assets
+      : appId
+        ? output.apps[appId]?.assets
+        : undefined;
+    if (!assets) continue;
 
-      const doc = generateHtml({
-        template: path.resolve(cwd, pageConfig.html),
-        js: pageManifest.assets.js,
-        css: pageManifest.assets.css,
-      });
-
-      const finalHtml = await buildHtml({
-        // biome-ignore lint/suspicious/noExplicitAny: DOM interfaces
-        doc: doc as any,
-        // biome-ignore lint/suspicious/noExplicitAny: Bundler-agnostic hook generic
-        hooks: hooks as any,
-        clientManifest,
-        serverManifest,
-      });
-
-      const outPath = path.join(outputPaths.clientDir, `${pageName}.html`);
-      await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
-      await fs.promises.writeFile(outPath, finalHtml, "utf-8");
+    const doc = generateHtml({
+      template: path.resolve(cwd, html.template),
+      js: assets.js,
+      css: assets.css,
+    });
+    doc.documentElement?.setAttribute("data-evjs-build", output.buildId);
+    if (pageId) {
+      doc.documentElement?.setAttribute("data-evjs-kind", "page");
+      doc.documentElement?.setAttribute("data-evjs-id", pageId);
+      doc.documentElement?.setAttribute("data-evjs-page", pageId);
+    } else if (appId) {
+      doc.documentElement?.setAttribute("data-evjs-kind", "app");
+      doc.documentElement?.setAttribute("data-evjs-id", appId);
+      doc.documentElement?.setAttribute("data-evjs-app", appId);
     }
-    return;
+
+    const finalHtml = await buildHtml({
+      // biome-ignore lint/suspicious/noExplicitAny: DOM interfaces
+      doc: doc as any,
+      hooks,
+      pluginContext: {
+        mode: plan.mode,
+        command: plan.mode === "production" ? "build" : "dev",
+        cwd,
+        config,
+        logger,
+        addWatchFile() {},
+      },
+      html: pageId
+        ? {
+            kind: "page",
+            htmlId: html.id,
+            pageId,
+            template: html.template,
+            fileName: html.fileName,
+            assets,
+          }
+        : {
+            kind: "app",
+            htmlId: html.id,
+            appId: appId ?? "default",
+            template: html.template,
+            fileName: html.fileName,
+            assets,
+          },
+      output,
+      isRebuild: options.isRebuild,
+    });
+
+    const outPath = path.join(outputPaths.clientDir, html.fileName);
+    await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
+    await fs.promises.writeFile(outPath, finalHtml, "utf-8");
   }
-
-  // SPA mode: single index.html
-  const doc = generateHtml({
-    template: path.resolve(cwd, config.html),
-    js: clientManifest.assets.js,
-    css: clientManifest.assets.css,
-  });
-
-  const finalHtml = await buildHtml({
-    // biome-ignore lint/suspicious/noExplicitAny: DOM interfaces
-    doc: doc as any,
-    // biome-ignore lint/suspicious/noExplicitAny: Bundler-agnostic hook generic
-    hooks: hooks as any,
-    clientManifest,
-    serverManifest,
-  });
-
-  const outPath = path.join(outputPaths.clientDir, "index.html");
-  await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
-  await fs.promises.writeFile(outPath, finalHtml, "utf-8");
 }
 
 async function cleanServerOutput(cwd: string, serverEnabled: boolean) {
@@ -116,29 +115,36 @@ async function cleanServerOutput(cwd: string, serverEnabled: boolean) {
 }
 
 async function generateDevArtifacts(
-  config: ResolvedEvConfig<ConfigComplete>,
+  config: ResolvedConfig<ConfigComplete>,
   cwd: string,
-  hooks: EvPluginHooks<ConfigComplete>[],
+  hooks: PluginHooks<ConfigComplete>[],
+  graph: AppGraph,
+  plan: BuildPlan,
+  onBuildOutput: (output: BuildOutput) => void | Promise<void>,
 ) {
   const outputPaths = getOutputPaths(cwd, config.serverEnabled);
   const clientStatsPath = path.join(outputPaths.clientDir, "stats.json");
   if (!fs.existsSync(clientStatsPath)) return;
 
   logger.info`Generating development manifest and HTML...`;
-  const generator = new UtoopackManifestGenerator(cwd, config.serverEnabled);
-  await generator.build();
-  await generateAndEmitHtml(config, cwd, hooks);
+  const generator = new UtoopackManifestGenerator(
+    cwd,
+    config.serverEnabled,
+    graph,
+    plan,
+  );
+  const output = await generator.link();
+  await onBuildOutput(output);
+  await generator.emit(output);
+  await generateAndEmitHtml(config, cwd, hooks, output, plan);
 }
 
 export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
   name: "utoopack",
-  async build(
-    config: ResolvedEvConfig<ConfigComplete>,
-    cwd: string,
-    hooks: EvPluginHooks<ConfigComplete>[],
-  ): Promise<void> {
+  async build(ctx: BundlerBuildContext<ConfigComplete>): Promise<void> {
+    const { callbacks, config, cwd, graph, hooks, plan } = ctx;
     const { createUtoopackConfig } = await import("./create-config.js");
-    const utoopackConfig = await createUtoopackConfig(config, cwd, hooks);
+    const utoopackConfig = await createUtoopackConfig(config, plan, cwd, hooks);
 
     logger.info`Building for production with utoopack...`;
 
@@ -147,35 +153,52 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
     const { build } = await import("@utoo/pack");
     await build({ config: utoopackConfig });
 
-    logger.info`Extracting routes and generating client manifest...`;
-    const generator = new UtoopackManifestGenerator(cwd, config.serverEnabled);
-    await generator.build();
+    logger.info`Linking framework manifest...`;
+    const generator = new UtoopackManifestGenerator(
+      cwd,
+      config.serverEnabled,
+      graph,
+      plan,
+    );
+    const output = await generator.link();
+    await callbacks.onBuildOutput(output);
+    await generator.emit(output);
 
     logger.info`Generating and emitting HTML...`;
-    await generateAndEmitHtml(config, cwd, hooks);
+    await generateAndEmitHtml(config, cwd, hooks, output, plan);
 
     logger.info`Build complete!`;
   },
 
   async dev(
-    config: ResolvedEvConfig<ConfigComplete>,
-    cwd: string,
-    callbacks: { onServerBundleReady: () => void | Promise<void> },
-    hooks: EvPluginHooks<ConfigComplete>[],
-  ): Promise<void> {
+    ctx: BundlerDevContext<ConfigComplete>,
+  ): Promise<BundlerDevController> {
+    const { config, cwd, callbacks, graph, hooks, plan } = ctx;
     const { createUtoopackConfig } = await import("./create-config.js");
-    const utoopackConfig = await createUtoopackConfig(config, cwd, hooks);
+    const utoopackConfig = await createUtoopackConfig(config, plan, cwd, hooks);
+    let serverReadyWatcher: fs.FSWatcher | undefined;
 
     logger.info`Starting development server with utoopack...`;
 
     const { serve } = await import("@utoo/pack");
     await serve({ config: utoopackConfig });
 
-    await generateDevArtifacts(config, cwd, hooks);
+    await generateDevArtifacts(
+      config,
+      cwd,
+      hooks,
+      graph,
+      plan,
+      callbacks.onBuildOutput,
+    );
 
     // Watch for server bundle readiness (utoopack emits server output
     // to dist/server/ when "use server" modules are discovered)
-    if (!config.serverEnabled) return;
+    if (!config.serverEnabled) {
+      return createUnsupportedDevController(() => {
+        serverReadyWatcher?.close();
+      });
+    }
 
     const outDir = getOutputPaths(cwd, config.serverEnabled).serverDir;
 
@@ -196,7 +219,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
         ready = true;
         try {
           await callbacks.onServerBundleReady();
-          watcher?.close();
+          serverReadyWatcher?.close();
         } catch (err) {
           logger.error`Server bundle ready callback failed: ${err}`;
           ready = false;
@@ -204,11 +227,29 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
       }
     };
 
-    const watcher = fs.watch(outDir, (_eventType, filename) => {
+    serverReadyWatcher = fs.watch(outDir, (_eventType, filename) => {
       if (filename) void checkReady(filename);
     });
 
     // Initial check in case it was written before the watcher attached
     await checkReady();
+    return createUnsupportedDevController(() => {
+      serverReadyWatcher?.close();
+    });
   },
 };
+
+function createUnsupportedDevController(
+  closeWatcher: () => void,
+): BundlerDevController {
+  return {
+    close() {
+      closeWatcher();
+    },
+    async updatePlan() {
+      throw new Error(
+        "[evjs] Utoopack dev plan updates are not supported yet. Dynamic MPA page entry updates require a lower-layer Utoopack update API.",
+      );
+    },
+  };
+}

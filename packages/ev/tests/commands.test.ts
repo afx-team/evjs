@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { BuildOutput } from "@evjs/shared/manifest";
 import { describe, expect, it } from "vitest";
 import type { BundlerAdapter } from "../src/bundler.js";
-import { build, type EvPlugin } from "../src/index.js";
+import { build, type Config, dev, type Plugin } from "../src/index.js";
 
 async function createProject() {
   const cwd = await fs.promises.mkdtemp(path.join(os.tmpdir(), "evjs-"));
@@ -20,20 +21,44 @@ function createMockBundler(
 ): BundlerAdapter<Record<string, never>> {
   return {
     name: "mock",
-    async build(config, cwd) {
+    async build({ callbacks, config, cwd, plan }) {
       events.push("bundler.build");
+      events.push(
+        `bundler.entries:${plan.entries.map((entry) => entry.name).join(",")}`,
+      );
+      const output: BuildOutput = {
+        version: 1,
+        buildId: plan.buildId,
+        distDir: plan.distDir,
+        publicPath: plan.runtime.publicPath,
+        runtime: {
+          server: plan.runtime.server,
+          transport: plan.runtime.transport,
+        },
+        assets: {
+          main: { js: ["main.js"], css: [] },
+        },
+        apps: {
+          default: {
+            assets: { js: ["main.js"], css: [] },
+            entry: "./src/main.tsx",
+          },
+        },
+        pages: {},
+        routes: [],
+      };
+      await callbacks.onBuildOutput(output);
       const dist = path.join(cwd, "dist");
       await fs.promises.mkdir(dist, { recursive: true });
       await fs.promises.writeFile(
         path.join(dist, "manifest.json"),
-        JSON.stringify({
-          version: 1,
-          assets: { js: ["main.js"], css: [] },
-        }),
+        JSON.stringify(output),
         "utf-8",
       );
       if (config.serverEnabled) {
-        events.push(`bundler.endpoint:${config.server.functions.endpoint}`);
+        events.push(
+          `bundler.endpoint:${config.server.functionRuntime.endpoint}`,
+        );
       }
     },
     async dev() {
@@ -55,17 +80,35 @@ describe("build", () => {
     const events: string[] = [];
     const bundler = createMockBundler(events);
 
-    const plugin: EvPlugin<Record<string, never>> = {
+    const plugin: Plugin<Record<string, never>> = {
       name: "records-lifecycle",
       setup(ctx) {
         expect(ctx.config.bundler?.name).toBe("mock");
         events.push(`setup:${ctx.mode}`);
         return {
+          commandStart(ctx) {
+            events.push(`commandStart:${ctx.command}`);
+          },
           buildStart() {
             events.push("buildStart");
           },
+          appGraph(graph) {
+            events.push(`appGraph:${Object.keys(graph.apps).join(",")}`);
+          },
+          buildPlan(plan) {
+            events.push(
+              `buildPlan:${plan.entries.map((entry) => entry.name).join(",")}`,
+            );
+          },
+          buildOutput(output) {
+            events.push(`buildOutput:${Object.keys(output.assets).join(",")}`);
+            output.apps.default.assets.js = ["main.patched.js"];
+          },
           buildEnd(result) {
-            events.push(`buildEnd:${result.clientManifest.assets.js[0]}`);
+            events.push(`buildEnd:${result.output.apps.default.assets.js[0]}`);
+          },
+          dispose(ctx) {
+            events.push(`dispose:${ctx.mode}`);
           },
         };
       },
@@ -81,10 +124,61 @@ describe("build", () => {
 
     expect(events).toEqual([
       "setup:production",
+      "commandStart:build",
       "buildStart",
+      "appGraph:default",
+      "buildPlan:main",
       "bundler.build",
-      "buildEnd:main.js",
+      "bundler.entries:main",
+      "buildOutput:main",
+      "buildEnd:main.patched.js",
+      "dispose:production",
     ]);
+  });
+
+  it("passes callback BuildOutput to buildEnd without requiring a disk manifest", async () => {
+    const cwd = await createProject();
+    const events: string[] = [];
+    const output: BuildOutput = {
+      version: 1,
+      buildId: "memory",
+      distDir: "dist",
+      publicPath: "/",
+      runtime: {},
+      assets: {},
+      apps: {},
+      pages: {},
+      routes: [],
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "memory-output",
+      async build({ callbacks }) {
+        await callbacks.onBuildOutput(output);
+      },
+      async dev() {},
+    };
+
+    await build(
+      {
+        server: false,
+        plugins: [
+          {
+            name: "reads-memory-output",
+            setup() {
+              return {
+                buildEnd(result) {
+                  events.push(result.output.buildId);
+                },
+              };
+            },
+          },
+        ],
+      },
+      { cwd, bundler },
+    );
+
+    expect(events).toEqual(["memory"]);
+    expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
   });
 
   it("runs plugin config hooks before resolving config", async () => {
@@ -92,23 +186,18 @@ describe("build", () => {
     const events: string[] = [];
     const bundler = createMockBundler(events);
 
-    const plugin: EvPlugin<Record<string, never>> = {
-      name: "sets-endpoint",
+    const plugin: Plugin<Record<string, never>> = {
+      name: "sets-server-base-path",
       config(config, ctx) {
         events.push(`config:${ctx.mode}`);
         config.server = {
           ...(typeof config.server === "object" ? config.server : {}),
-          functions: {
-            ...(typeof config.server === "object"
-              ? config.server.functions
-              : {}),
-            endpoint: "/api/rpc",
-          },
+          basePath: "/api",
         };
         return config;
       },
       setup(ctx) {
-        events.push(`setup:${ctx.config.server.functions.endpoint}`);
+        events.push(`setup:${ctx.config.server.functionRuntime.endpoint}`);
       },
     };
 
@@ -122,10 +211,70 @@ describe("build", () => {
 
     expect(events).toEqual([
       "config:production",
-      "setup:/api/rpc",
+      "setup:/api/fn",
       "bundler.build",
-      "bundler.endpoint:/api/rpc",
+      "bundler.entries:main,server",
+      "bundler.endpoint:/api/fn",
     ]);
+  });
+
+  it("fails on graph analysis errors before running the bundler", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/main.tsx"),
+      "console.log('main');",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/routes.tsx"),
+      [
+        'import { defineReactRoutes, page, route } from "@evjs/client";',
+        'const modulePath = "./pages/Home.tsx";',
+        "export default defineReactRoutes([",
+        '  route("/", {',
+        '    id: "home",',
+        "    page: page(modulePath),",
+        '    render: "ssr",',
+        "  }),",
+        "]);",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+    let error: unknown;
+
+    try {
+      await build(
+        {
+          apps: {
+            default: {
+              entry: "./src/main.tsx",
+              html: "./index.html",
+              routes: "./src/routes.tsx",
+            },
+          },
+        },
+        {
+          cwd,
+          bundler,
+        },
+      );
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain(
+      "[evjs] App graph analysis failed.",
+    );
+    expect((error as Error).message).toContain("src/routes.tsx");
+    expect((error as Error).message).toContain(
+      '@evjs/client route() with render: "ssr" must declare page(componentPath) with a string literal component module path.',
+    );
+    expect(events).not.toContain("bundler.build");
   });
 
   it("orders plugin config and lifecycle hooks by dependencies", async () => {
@@ -133,7 +282,7 @@ describe("build", () => {
     const events: string[] = [];
     const bundler = createMockBundler(events);
 
-    const pluginA: EvPlugin<Record<string, never>> = {
+    const pluginA: Plugin<Record<string, never>> = {
       name: "plugin-a",
       config(config) {
         events.push("config:a");
@@ -151,7 +300,7 @@ describe("build", () => {
         };
       },
     };
-    const pluginB: EvPlugin<Record<string, never>> = {
+    const pluginB: Plugin<Record<string, never>> = {
       name: "plugin-b",
       dependencies: ["plugin-a"],
       config(config) {
@@ -187,6 +336,7 @@ describe("build", () => {
       "buildStart:a",
       "buildStart:b",
       "bundler.build",
+      "bundler.entries:main",
       "buildEnd:a",
       "buildEnd:b",
     ]);
@@ -200,7 +350,7 @@ describe("build", () => {
     function plugin(
       name: string,
       dependencies?: string[],
-    ): EvPlugin<Record<string, never>> {
+    ): Plugin<Record<string, never>> {
       return {
         name,
         dependencies,
@@ -230,6 +380,53 @@ describe("build", () => {
       "setup:plugin-c",
       "setup:plugin-a",
       "bundler.build",
+      "bundler.entries:main",
+    ]);
+  });
+
+  it("orders unrelated plugins by enforce tier", async () => {
+    const cwd = await createProject();
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+
+    await build(
+      {
+        server: false,
+        plugins: [
+          {
+            name: "post",
+            enforce: "post",
+            setup() {
+              events.push("setup:post");
+            },
+          },
+          {
+            name: "normal",
+            setup() {
+              events.push("setup:normal");
+            },
+          },
+          {
+            name: "pre",
+            enforce: "pre",
+            setup() {
+              events.push("setup:pre");
+            },
+          },
+        ],
+      },
+      {
+        cwd,
+        bundler,
+      },
+    );
+
+    expect(events).toEqual([
+      "setup:pre",
+      "setup:normal",
+      "setup:post",
+      "bundler.build",
+      "bundler.entries:main",
     ]);
   });
 
@@ -241,10 +438,10 @@ describe("build", () => {
     function plugin(
       name: string,
       options: Pick<
-        EvPlugin<Record<string, never>>,
+        Plugin<Record<string, never>>,
         "dependencies" | "optionalDependencies"
       > = {},
-    ): EvPlugin<Record<string, never>> {
+    ): Plugin<Record<string, never>> {
       return {
         name,
         ...options,
@@ -277,6 +474,7 @@ describe("build", () => {
       "setup:plugin-a",
       "setup:plugin-b",
       "bundler.build",
+      "bundler.entries:main",
     ]);
   });
 
@@ -315,6 +513,7 @@ describe("build", () => {
       "setup:plugin-c",
       "setup:plugin-b",
       "bundler.build",
+      "bundler.entries:main",
     ]);
   });
 
@@ -390,5 +589,197 @@ describe("build", () => {
         { cwd, bundler },
       ),
     ).rejects.toThrow('Duplicate plugin name "plugin-a"');
+  });
+});
+
+describe("dev", () => {
+  it("runs dev plan update hooks when config changes add an MPA page", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages/home"), {
+      recursive: true,
+    });
+    await fs.promises.mkdir(path.join(cwd, "src/pages/orders"), {
+      recursive: true,
+    });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/home/main.tsx"),
+      "console.log('home');",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/orders/main.tsx"),
+      "console.log('orders');",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "ev.config.ts"),
+      "export default {};",
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    const plugin: Plugin<Record<string, never>> = {
+      name: "dev-plan-recorder",
+      setup() {
+        return {
+          devPlanUpdate(update) {
+            events.push(
+              `hook:${update.entries.added.map((entry) => entry.name).join(",")}`,
+            );
+          },
+        };
+      },
+    };
+    let currentConfig: Config<Record<string, never>> = {
+      server: false,
+      pages: {
+        home: "./src/pages/home/main.tsx",
+      },
+      plugins: [plugin],
+    };
+
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      async build() {},
+      async dev() {
+        events.push("bundler.dev");
+        return {
+          async updatePlan(update) {
+            events.push(
+              `update:${update.entries.added.map((entry) => entry.name).join(",")}`,
+            );
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev(currentConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    currentConfig = {
+      ...currentConfig,
+      pages: {
+        ...currentConfig.pages,
+        orders: "./src/pages/orders/main.tsx",
+      },
+    };
+    await fs.promises.writeFile(
+      path.join(cwd, "ev.config.ts"),
+      "export default { pages: { home: './src/pages/home/main.tsx', orders: './src/pages/orders/main.tsx' } };",
+      "utf-8",
+    );
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("dev update timed out")), 2000),
+      ),
+    ]);
+
+    expect(events).toEqual(["bundler.dev", "hook:orders", "update:orders"]);
+  });
+
+  it("recreates same-name plugin hooks when dev config changes", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages/home"), {
+      recursive: true,
+    });
+    await fs.promises.mkdir(path.join(cwd, "src/pages/orders"), {
+      recursive: true,
+    });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/home/main.tsx"),
+      "console.log('home');",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/orders/main.tsx"),
+      "console.log('orders');",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "ev.config.ts"),
+      "export default {};",
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    function createPlugin(label: string): Plugin<Record<string, never>> {
+      return {
+        name: "same-name-plugin",
+        setup() {
+          return {
+            devPlanUpdate(update) {
+              events.push(
+                `hook:${label}:${update.entries.added.map((entry) => entry.name).join(",")}`,
+              );
+            },
+          };
+        },
+      };
+    }
+
+    let currentConfig: Config<Record<string, never>> = {
+      server: false,
+      pages: {
+        home: "./src/pages/home/main.tsx",
+      },
+      plugins: [createPlugin("v1")],
+    };
+
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      async build() {},
+      async dev() {
+        events.push("bundler.dev");
+        return {
+          async updatePlan(update) {
+            events.push(
+              `update:${update.entries.added.map((entry) => entry.name).join(",")}`,
+            );
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev(currentConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    currentConfig = {
+      ...currentConfig,
+      pages: {
+        ...currentConfig.pages,
+        orders: "./src/pages/orders/main.tsx",
+      },
+      plugins: [createPlugin("v2")],
+    };
+    await fs.promises.writeFile(
+      path.join(cwd, "ev.config.ts"),
+      "export default { pages: { home: './src/pages/home/main.tsx', orders: './src/pages/orders/main.tsx' } };",
+      "utf-8",
+    );
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("dev update timed out")), 2000),
+      ),
+    ]);
+
+    expect(events).toEqual(["bundler.dev", "hook:v2:orders", "update:orders"]);
   });
 });

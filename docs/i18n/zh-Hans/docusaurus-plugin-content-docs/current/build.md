@@ -6,108 +6,92 @@
 ev build
 ```
 
-设置 `NODE_ENV=production` 并生成优化的 bundle。
+`ev build` 会解析配置、创建 `AppGraph`、派生 `BuildPlan`、运行当前 bundler、链接单一 `BuildOutput`，然后输出 HTML。
 
-## 输出结构
+## 输出
 
-### 全栈（默认）
+全栈输出：
 
-```
+```txt
 dist/
 ├── client/
-│   ├── manifest.json       # 客户端资源映射 + 路由元数据
-│   ├── index.html          # 生成的 HTML
-│   ├── main.[hash].js      # 客户端 bundle
-│   └── [chunk].[hash].js   # 代码分割的块
-└── server/
-    ├── manifest.json       # 服务端资源映射 + 函数和路由注册表
-    └── main.[hash].js      # 服务端函数 bundle（CJS）
+│   ├── index.html
+│   ├── main.[hash].js
+│   └── [chunk].[hash].js
+├── server/
+│   └── server.[hash].js
+└── manifest.json
 ```
 
-### 纯 CSR（`server: false`）
+纯 CSR 输出（`server: false`）是扁平结构：
 
-在 `ev.config.ts` 中设置 `server: false` 时，输出为扁平结构：
-
-```
+```txt
 dist/
-├── manifest.json         # 客户端资源映射 + 路由元数据
-├── index.html            # 生成的 HTML
-├── main.[hash].js        # 客户端 bundle
-└── [chunk].[hash].js     # 代码分割的块
+├── index.html
+├── main.[hash].js
+├── [chunk].[hash].js
+└── manifest.json
 ```
 
-> **注意：** 设置 `server: false` 后，任何 `"use server"` 模块都会导致构建错误。
+`dist/manifest.json` 是 runtime、server、shell 和 deployment adapter 共同消费的框架契约。
 
-## 服务端函数转换
+## 构建流水线
 
-带有 `"use server"` 的文件会通过双重转换自动处理：
+1. 加载并解析 `ev.config.ts`。
+2. 执行 config/setup 插件 hooks。
+3. `createAppGraph()` 分析显式 app/page/server roots。
+4. `createBuildPlan()` 生成具体 client/server entries 和 HTML documents。
+5. 当前 bundler 编译 `BuildPlan.entries`。
+6. `linkBuildOutput()` 合并 `AppGraph`、`BuildPlan` 和 bundler facts。
+7. evjs 输出 `dist/manifest.json`。
+8. evjs 生成每个计划内 HTML 文档，并调用 `transformHtml(doc, ctx)`。
+9. evjs 调用 `buildEnd({ output, isRebuild })`。
 
-| 端 | 处理方式 |
-|----|---------|
-| **客户端** | 函数体被替换为 `createServerReference()` RPC 桩代码 |
-| **服务端** | 原始函数体保留 + 注入 `registerServerReference()` |
+Manifest linking 不会在 bundling 后重新扫描用户源码。
 
-函数 ID 使用与 Utoopack 服务端引用相同的算法：`sha256(moduleId + "#" + exportName)`，并截断为 16 位十六进制字符串。manifest 生成器会分析源码导出，并优先使用 Utoopack `stats.json` 中的 module ID，因此生成的 ID 会与客户端桩代码和服务端注册代码中的 ID 保持一致。
+## 服务端函数
 
-## 构建流程
+带 `"use server"` 的文件会转换为浏览器可调用引用和服务端注册：
 
-1. `loadConfig(cwd)` —— 加载 `ev.config.ts` 或基于约定的默认配置
-2. `BundlerAdapter.build()` —— 生成 bundler 配置并执行编译
-3. 当前 bundler adapter 在编译期间执行：
-   - 运行客户端和服务端 bundle 编译
-   - 读取 Utoopack stats 中的产物资源名和 module ID
-   - 分析源码中的客户端路由、服务端路由和 `"use server"` 导出
-   - 使用与 Utoopack 兼容的 module ID 哈希算法计算函数 ID
-   - 输出 `dist/server/manifest.json`（服务端资源映射、函数和路由注册表）以及 `dist/client/manifest.json`（客户端资源映射 + 客户端路由）
+| 端 | 行为 |
+|----|------|
+| Client | 函数体替换为 `createServerReference()` RPC stub |
+| Server | 函数实现注册到 `@evjs/server` dispatch |
 
-## 服务端 Manifest（`dist/server/manifest.json`）
+函数输出记录在 `BuildOutput.server.functions`。公开 endpoint 从 `server.basePath` 派生：
 
-包含服务端 bundle 资源、服务端函数 ID 以及服务端路由资源映射：
+```txt
+server.basePath = /__evjs
+runtime.server.fn = /__evjs/fn
+```
+
+## 框架页面
+
+字符串页面和 `{ entry }` 页面是用户自控 client entry。组件页面携带显式 metadata，让 bundler adapter 可以用通用 page runtime 包装真实 component import。`BuildPlan.import` 仍然指向用户组件路径；evjs 不写隐式生产源码文件。
+
+SSR/PPR 页面会向 plan 添加 server render entries。PPR region 的 cache metadata 会进入 manifest：
 
 ```json
 {
-  "version": 1,
-  "entry": "main.a1b2c3d4.js",
-  "assets": {
-    "js": ["main.a1b2c3d4.js"],
-    "css": []
-  },
-  "fns": {
-    "a1b2c3d4": {
-      "assets": {
-        "js": ["main.a1b2c3d4.js"],
-        "css": []
+  "pages": {
+    "campaign": {
+      "render": "ppr",
+      "ppr": {
+        "regions": {
+          "inventory": {
+            "cache": { "revalidate": 60 }
+          }
+        }
       }
     }
-  },
-  "routes": [
-    {
-      "path": "/api/users",
-      "methods": ["GET", "POST"],
-      "assets": {
-        "js": ["main.a1b2c3d4.js"],
-        "css": []
-      }
-    }
-  ]
-}
-```
-
-## 客户端 Manifest（`dist/client/manifest.json`）
-
-包含客户端构建元数据：
-
-```json
-{
-  "version": 1,
-  "assets": { "js": ["main.abc123.js"], "css": ["styles.def456.css"] },
-  "routes": [{ "path": "/" }, { "path": "/users" }, { "path": "/posts/$postId" }]
+  }
 }
 ```
 
 ## 要点
 
-- 使用基于约定的默认值即可开箱即用
-- 客户端 bundle 使用内容哈希文件名实现缓存失效
-- 服务端 bundle 将 `node_modules` 外部化（`@evjs/*` 包除外）
-- 无临时配置文件 —— Utoopack 通过 Node API 驱动
+- 单一框架 manifest：`dist/manifest.json`。
+- `BuildOutput` 替代旧 client/server manifests。
+- 源码分析在 bundler config 创建前完成，并在 dev 中缓存。
+- 组件和样式修改继续走 bundler HMR。
+- dev 中新增配置页面需要 bundler `updatePlan()` 能力；当前 Utoopack adapter 会在下层 API 补齐前明确失败。

@@ -2,19 +2,20 @@
 
 > **ev** = **Ev**aluation · **Ev**olution — evaluate across runtimes, evolve with AI tooling.
 
-evjs is a zero-config React fullstack framework built on [TanStack Router](https://tanstack.com/router), [TanStack Query](https://tanstack.com/query), and [Hono](https://hono.dev). It provides a seamless development experience for building type-safe, full-stack web applications.
+evjs is a zero-config React fullstack framework with explicit app/page configuration, server functions, route handlers, SSR/RSC integration points, and deployment-oriented manifest output. TanStack Router and TanStack Query remain the compatibility path for type-safe SPA applications, while the framework core keeps routing, rendering, bundling, and deployment contracts separate.
 
 ## Features
 
 - **Convention over Configuration** — `ev dev` / `ev build`, no boilerplate needed
-- **Type-Safe Routing** — TanStack Router with full inference
-- **Data Fetching** — TanStack Query with built-in proxies
+- **Type-Safe SPA Routing** — TanStack Router compatibility through `@evjs/client`
+- **TanStack-Free Apps** — explicit pages, static route declarations, and framework-managed page/runtime APIs for apps that do not use TanStack Router
+- **Data Fetching** — TanStack Query helpers with built-in server-function proxies
 - **Server Functions** — `"use server"` directive, auto-discovered at build time
 - **Pluggable Transport** — HTTP, WebSocket, or custom via `TransportAdapter`
 - **Plugin System** — extend builds with custom module rules (Tailwind, SVG, etc.)
 - **Route Handlers** — Standard Request/Response REST endpoints via `createRoute()`
 - **Typed Errors** — `ServerError` flows structured data from server → client
-- **Multi-Runtime** — Hono-based server with Node, Deno, Bun, Edge adapters
+- **Deployment Output** — single framework manifest plus production adapter hooks
 
 ## Full-Stack Architecture
 

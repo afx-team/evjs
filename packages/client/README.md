@@ -5,9 +5,11 @@
 ## Features
 
 - **Type-Safe Routing** — Re-exports [TanStack Router](https://tanstack.com/router) with custom `createApp` integration.
+- **TanStack-Free App Option** — Applications can use explicit pages, the static route DSL, and framework-managed page/runtime APIs without using TanStack Router.
 - **Data Fetching** — Re-exports [TanStack Query](https://tanstack.com/query) with built-in server function proxies.
 - **Server Function Support** — `useQuery(fn)` and `useMutation(fn)` for zero-boilerplate RPC.
 - **Unified Bootstrap** — `createApp({ routeTree }).render("#app")`.
+- **Single Client Entry Point** — Shell, page runtime, React page runtime, static route DSL, transport, and TanStack compatibility helpers are all exported from `@evjs/client`.
 
 ## Install
 
@@ -21,7 +23,11 @@ npm install @evjs/client react react-dom
 
 ```tsx
 // src/routes.tsx
-import { createRoute, createAppRootRoute, Outlet } from "@evjs/client";
+import {
+  createAppRootRoute,
+  createRoute,
+  Outlet,
+} from "@evjs/client";
 
 export const rootRoute = createAppRootRoute({
   component: () => (
@@ -70,9 +76,8 @@ function Posts() {
 
 ### Routing
 - `createApp`: Create the main application instance.
-- `createRoute`: Define a route (enforces string literal paths).
-- `createAppRootRoute`: Define the root layout.
-- `Link`, `Outlet`, `useNavigate`, `useParams`, `useSearch`: Standard TanStack Router components/hooks.
+- `createRoute`, `createAppRootRoute`, `Link`, `Outlet`, `useNavigate`, `useParams`, and `useSearch`: TanStack Router compatibility exports kept at the top-level entry for existing applications.
+- TanStack compatibility exports and adapter helpers are available from the top-level `@evjs/client` entry.
 
 ### Query
 - `useQuery(fn, args?)`: Wrapper around `useSuspenseQuery`.
@@ -81,9 +86,18 @@ function Posts() {
 - `getFnQueryOptions(fn, args?)`: Generate options for manual `queryClient` usage.
 
 ### Transport
-- `initTransport({ baseUrl, credentials, headers, functions })`: Configure the default HTTP adapter.
+- `initTransport({ baseUrl, credentials, headers })`: Configure the default HTTP adapter. The server function path is derived from the framework server runtime.
 - `credentials` / `headers`: Supported HTTP defaults; fetch `mode` is intentionally not configurable.
 - `initTransport({ adapter })`: Replace transport behavior with a custom adapter.
+
+### Runtime
+- `createShell()`, `createPageDriver()`, and `createHistoryDriver()`: Manifest-driven shell APIs.
+- `startPageRuntime()`: Generic framework-managed page runtime.
+- `createReactPageModule()` and `mountReactPage()`: React page runtime adapter used by component pages.
+- `defineReactRoutes()`, `page()`, and `route()`: React static route declaration DSL.
+- `createTanStackDriver()`, `defineTanStackRoutes()`, and `withRouteMeta()`: TanStack compatibility helpers.
+
+All client runtime APIs are exported from `@evjs/client`.
 
 ## License
 

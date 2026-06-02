@@ -15,20 +15,16 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { contextStorage } from "hono/context-storage";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
+import {
+  type FrameworkServerOptions,
+  handleFrameworkRenderRequest,
+  handlePprRegionRequest,
+  handleRscFlightRequest,
+} from "./framework.js";
 import { dispatch } from "./functions/dispatch.js";
 import type { RouteHandler } from "./routes/index.js";
 
 export interface CreateAppOptions {
-  /** Server function configurations */
-  functions?: {
-    /** Server function endpoint path. Defaults to "api/fn". */
-    endpoint?: string;
-    /**
-     * Maximum request body size in bytes for server function calls.
-     * Defaults to 1MB (1048576 bytes).
-     */
-    bodyLimit?: number;
-  };
   /**
    * Route handlers to mount on the app.
    * Created via `createRoute()`.
@@ -39,26 +35,28 @@ export interface CreateAppOptions {
    * Useful for CORS, rate limiting, logging, CSRF protection, etc.
    */
   middlewares?: MiddlewareHandler[];
+  /**
+   * Framework-managed SSR/PPR/RSC request coordination.
+   *
+   * Server functions and programmatic routes stay in this app. Framework
+   * renderers attach here so deployment adapters do not own render semantics.
+   */
+  framework?: FrameworkServerOptions;
 }
 
 /**
  * Create an ev API server application.
  *
- * Mounts the server function handler at the configured endpoint,
+ * Mounts the server function handler at the framework runtime endpoint,
  * plus any programmatic route handlers.
  *
  * @param options - Application configuration.
  * @returns A runtime-agnostic Hono app instance.
  */
 export function createApp(options?: CreateAppOptions): Hono {
-  const {
-    functions: {
-      endpoint = getFunctionEndpoint(),
-      bodyLimit: maxBodySize = 1024 * 1024,
-    } = {},
-    routes = [],
-    middlewares = [],
-  } = options ?? {};
+  const { routes = [], middlewares = [], framework } = options ?? {};
+  const endpoint = getFunctionEndpoint();
+  const maxBodySize = 1024 * 1024;
 
   const app = new Hono();
 
@@ -88,7 +86,8 @@ export function createApp(options?: CreateAppOptions): Hono {
     });
   }
 
-  // Mount server function endpoint with configurable body size limit
+  // Mount server function endpoint. Request size policy can move to
+  // user/deployment middleware when an app needs a different limit.
   app.post(endpoint, bodyLimit({ maxSize: maxBodySize }), async (c) => {
     let body: { fnId: string; args: unknown[] };
 
@@ -128,5 +127,37 @@ export function createApp(options?: CreateAppOptions): Hono {
     return c.json(payload, status as ContentfulStatusCode);
   });
 
+  const rscPath = framework?.rsc
+    ? framework.manifest.runtime.server?.rsc
+    : undefined;
+  if (framework?.rsc && rscPath) {
+    app.all(rscPath, async (c, next) => {
+      const response = await handleRscFlightRequest(framework, c.req.raw);
+      if (!response) return next();
+      return response;
+    });
+  }
+
+  if (framework?.render) {
+    const pprPath =
+      framework.manifest.runtime.server?.ppr ??
+      joinPath(framework.manifest.runtime.server?.basePath ?? "/__evjs", "ppr");
+    app.get(`${pprPath}/*`, async (c, next) => {
+      const response = await handlePprRegionRequest(framework, c.req.raw);
+      if (!response) return next();
+      return response;
+    });
+
+    app.get("*", async (c, next) => {
+      const response = await handleFrameworkRenderRequest(framework, c.req.raw);
+      if (!response) return next();
+      return response;
+    });
+  }
+
   return app;
+}
+
+function joinPath(base: string, segment: string): string {
+  return `${base.replace(/\/+$/, "")}/${segment.replace(/^\/+/, "")}`;
 }

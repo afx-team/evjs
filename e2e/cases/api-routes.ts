@@ -133,7 +133,7 @@ test.describe("api-routes", () => {
 
     const fnResponsePromise = page.waitForResponse(
       (res) =>
-        res.url().includes("api/fn") && res.request().method() === "POST",
+        res.url().includes("__evjs/fn") && res.request().method() === "POST",
     );
     await page.click('button:has-text("Call sayHello(\\"World\\")")');
     const fnResponse = await fnResponsePromise;

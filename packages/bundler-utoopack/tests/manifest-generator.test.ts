@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { transformServerFile } from "@evjs/build-tools";
+import type { AppGraph, BuildPlan } from "@evjs/ev";
 import { afterEach, describe, expect, it } from "vitest";
 import { UtoopackManifestGenerator } from "../src/manifest-generator.js";
 
@@ -12,8 +12,6 @@ async function makeProject() {
     path.join(os.tmpdir(), "evjs-manifest-"),
   );
   tempDirs.push(cwd);
-  await fs.promises.mkdir(path.join(cwd, "src/api"), { recursive: true });
-  await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
   await fs.promises.mkdir(path.join(cwd, "dist/client"), { recursive: true });
   await fs.promises.mkdir(path.join(cwd, "dist/server"), { recursive: true });
   return cwd;
@@ -31,16 +29,15 @@ afterEach(async () => {
 });
 
 describe("UtoopackManifestGenerator", () => {
-  it("collects server functions and routes from source with Utoopack module IDs", async () => {
+  it("links BuildOutput from AppGraph, BuildPlan, and Utoopack stats", async () => {
     const cwd = await makeProject();
-    const usersModuleId = "app/src/api/users.server.ts";
-    const routeModuleId = "app/src/api/health.routes.ts";
-
     await fs.promises.writeFile(
       path.join(cwd, "dist/client/stats.json"),
       JSON.stringify({
         entrypoints: {
-          main: { assets: [{ name: "main.js" }] },
+          main: {
+            assets: [{ name: "main.js" }, { name: "main.css" }],
+          },
         },
       }),
     );
@@ -48,101 +45,372 @@ describe("UtoopackManifestGenerator", () => {
       path.join(cwd, "dist/server/stats.json"),
       JSON.stringify({
         entrypoints: {
-          main: { assets: [{ name: "server.js" }, { name: "server.css" }] },
+          server: { assets: [{ name: "server.js" }, { name: "server.css" }] },
         },
         modules: [
           {
-            name: usersModuleId,
+            name: "app/src/actions.ts",
             chunks: ["server.js"],
           },
           {
-            name: routeModuleId,
+            name: "app/src/routes.ts",
             chunks: ["server.js"],
           },
         ],
       }),
     );
 
-    const usersSource = `
-        "use server";
-        export async function getUsers() {
-          return [];
-        }
-        export async function createUser() {
-          return { id: "1" };
-        }
-      `;
-    const usersPath = path.join(cwd, "src/api/users.server.ts");
-    await fs.promises.writeFile(usersPath, usersSource);
-    await fs.promises.writeFile(
-      path.join(cwd, "src/api/health.routes.ts"),
-      `
-        import { createRoute } from "@evjs/server";
-        export const healthHandler = createRoute("/api/health", {
-          GET: async () => Response.json({ ok: true }),
-          POST: async () => Response.json({ ok: true }),
-        });
-      `,
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/home.tsx"),
-      `
-        import { createRoute } from "@evjs/client";
-        export const homeRoute = createRoute({
-          getParentRoute: () => rootRoute,
+    const graph: AppGraph = {
+      version: 1,
+      rootDir: cwd,
+      apps: {
+        default: {
+          id: "default",
+          entry: "./src/main.tsx",
+          html: "./index.html",
+        },
+      },
+      pages: {},
+      routes: [
+        {
+          id: "home",
           path: "/",
-          component: () => null,
-        });
-      `,
+          appId: "default",
+          module: "./pages/Home.tsx",
+          render: "ssr",
+        },
+      ],
+      serverFunctions: [
+        {
+          id: "function-id",
+          module: "src/actions.ts",
+          exportName: "save",
+        },
+      ],
+      serverRoutes: [
+        {
+          id: "health",
+          module: "src/routes.ts",
+          path: "/api/health",
+          methods: ["GET"],
+        },
+      ],
+      remotes: {
+        crm: {
+          id: "crm",
+          manifest: "https://assets.example.com/crm/manifest.json",
+          activeWhen: ["/crm/*"],
+        },
+      },
+    };
+    const plan = createPlan(graph, true);
+
+    const generator = new UtoopackManifestGenerator(cwd, true, graph, plan);
+    const output = await generator.build();
+    const manifest = JSON.parse(
+      await fs.promises.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
     );
 
-    const generator = new UtoopackManifestGenerator(cwd, true);
-    await generator.build();
-    const clientTransform = await transformServerFile(usersSource, {
-      resourcePath: usersPath,
-      rootContext: cwd,
-      isServer: false,
+    expect(output).toEqual(manifest);
+    expect(manifest.apps.default.assets).toEqual({
+      js: ["main.js"],
+      css: ["main.css"],
     });
-    const expectedFunctionIds = [
-      ...clientTransform.code.matchAll(
-        /createServerReference\("([a-f0-9]{16})"/g,
-      ),
-    ].map((match) => match[1]);
-    expect(expectedFunctionIds).toHaveLength(2);
-
-    const serverManifest = JSON.parse(
-      await fs.promises.readFile(
-        path.join(cwd, "dist/server/manifest.json"),
-        "utf-8",
-      ),
-    );
-    const clientManifest = JSON.parse(
-      await fs.promises.readFile(
-        path.join(cwd, "dist/client/manifest.json"),
-        "utf-8",
-      ),
-    );
-
-    expect(serverManifest.entry).toBe("server.js");
-    expect(serverManifest.assets).toEqual({
+    expect(manifest.apps.default.module).toEqual({
+      type: "entry",
+      href: "main.js",
+      source: "./src/main.tsx",
+    });
+    expect(manifest.routes).toEqual([
+      {
+        id: "home",
+        path: "/",
+        appId: "default",
+        module: "./pages/Home.tsx",
+        render: "ssr",
+      },
+    ]);
+    expect(manifest.remotes).toEqual({
+      crm: {
+        manifest: "https://assets.example.com/crm/manifest.json",
+        activeWhen: ["/crm/*"],
+      },
+    });
+    expect(manifest.server.entry).toBe("server.js");
+    expect(manifest.server.assets).toEqual({
       js: ["server.js"],
       css: ["server.css"],
     });
-    expect(Object.keys(serverManifest.fns).sort()).toEqual(
-      expectedFunctionIds.sort(),
-    );
-    for (const fnId of expectedFunctionIds) {
-      expect(serverManifest.fns[fnId]).toEqual({
+    expect(manifest.server.functions).toEqual({
+      "function-id": {
         assets: { js: ["server.js"], css: [] },
-      });
-    }
-    expect(serverManifest.routes).toEqual([
+        module: "src/actions.ts",
+        exportName: "save",
+      },
+    });
+    expect(manifest.server.routes).toEqual([
       {
         path: "/api/health",
-        methods: ["GET", "POST"],
+        methods: ["GET"],
         assets: { js: ["server.js"], css: [] },
       },
     ]);
-    expect(clientManifest.routes).toEqual([{ path: "/" }]);
+  });
+
+  it("links page assets for MPA output", async () => {
+    const cwd = await makeProject();
+    await fs.promises.rm(path.join(cwd, "dist/client"), {
+      recursive: true,
+      force: true,
+    });
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/stats.json"),
+      JSON.stringify({
+        entrypoints: {
+          home: { assets: [{ name: "home.js" }] },
+          about: { assets: [{ name: "about.js" }] },
+        },
+      }),
+    );
+
+    const graph: AppGraph = {
+      version: 1,
+      rootDir: cwd,
+      apps: {},
+      pages: {
+        home: {
+          id: "home",
+          entry: "./src/home.tsx",
+          html: "./index.html",
+          render: "csr",
+        },
+        about: {
+          id: "about",
+          entry: "./src/about.tsx",
+          html: "./index.html",
+          render: "csr",
+        },
+      },
+      routes: [],
+      serverFunctions: [],
+      serverRoutes: [],
+      remotes: {},
+    };
+    const plan = createPlan(graph, false);
+
+    const generator = new UtoopackManifestGenerator(cwd, false, graph, plan);
+    const manifest = await generator.build();
+
+    expect(manifest.apps).toEqual({});
+    expect(manifest.pages.home).toMatchObject({
+      assets: { js: ["home.js"], css: [] },
+      render: "csr",
+      entry: "./src/home.tsx",
+      module: {
+        type: "entry",
+        href: "home.js",
+        source: "./src/home.tsx",
+      },
+    });
+    expect(manifest.pages.about).toMatchObject({
+      assets: { js: ["about.js"], css: [] },
+      render: "csr",
+      entry: "./src/about.tsx",
+      module: {
+        type: "entry",
+        href: "about.js",
+        source: "./src/about.tsx",
+      },
+    });
+  });
+
+  it("links PPR shell and region metadata from server entries", async () => {
+    const cwd = await makeProject();
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/client/stats.json"),
+      JSON.stringify({
+        entrypoints: {
+          campaign: { assets: [{ name: "campaign.client.js" }] },
+        },
+      }),
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/server/stats.json"),
+      JSON.stringify({
+        entrypoints: {
+          server: { assets: [{ name: "server.js" }] },
+          "campaign-ppr-shell": {
+            assets: [{ name: "campaign.shell.js" }],
+          },
+          "campaign-offer-ppr-region": {
+            assets: [{ name: "campaign.offer.js" }],
+          },
+        },
+      }),
+    );
+
+    const graph: AppGraph = {
+      version: 1,
+      rootDir: cwd,
+      apps: {},
+      pages: {
+        campaign: {
+          id: "campaign",
+          routeId: "campaign-route",
+          component: "./src/campaign/Page.tsx",
+          html: "./index.html",
+          render: "ppr",
+          hydrate: "visible",
+          ppr: {
+            regions: {
+              offer: {
+                component: "./src/campaign/Offer.region.tsx",
+                fallback: "./src/campaign/OfferSkeleton.tsx",
+                cache: "no-store",
+                hydrate: "visible",
+              },
+            },
+          },
+        },
+      },
+      routes: [],
+      serverFunctions: [],
+      serverRoutes: [],
+      remotes: {},
+    };
+    const plan = createPlan(graph, true);
+
+    const generator = new UtoopackManifestGenerator(cwd, true, graph, plan);
+    const manifest = await generator.build();
+
+    expect(manifest.pages.campaign).toMatchObject({
+      assets: { js: ["campaign.client.js"], css: [] },
+      render: "ppr",
+      routeId: "campaign-route",
+      component: "./src/campaign/Page.tsx",
+      ppr: {
+        shell: { js: ["campaign.shell.js"], css: [] },
+        regions: {
+          offer: {
+            id: "offer",
+            assets: { js: ["campaign.offer.js"], css: [] },
+            component: "./src/campaign/Offer.region.tsx",
+            fallback: "./src/campaign/OfferSkeleton.tsx",
+            cache: "no-store",
+            hydrate: "visible",
+          },
+        },
+      },
+    });
   });
 });
+
+function createPlan(graph: AppGraph, serverEnabled: boolean): BuildPlan {
+  const pageEntries = Object.values(graph.pages).map((page) => ({
+    name: page.id,
+    import: page.entry ?? page.app ?? page.component ?? "",
+    environment: "client" as const,
+    runtime: "browser" as const,
+    kind: "page-client" as const,
+    owner: { pageId: page.id },
+    ...(page.component && !page.entry && !page.app
+      ? {
+          metadata: {
+            type: "react-component-page" as const,
+            component: page.component,
+            mount: page.mount ?? "#app",
+            hydrate: page.hydrate ?? "load",
+            render: page.render,
+          },
+        }
+      : {}),
+  }));
+  const pprEntries = Object.values(graph.pages).flatMap((page) => [
+    ...(page.render === "ppr" && page.component
+      ? [
+          {
+            name: `${page.id}-ppr-shell`,
+            import: page.component,
+            environment: "server" as const,
+            runtime: "node" as const,
+            kind: "ppr-shell" as const,
+            owner: { pageId: page.id },
+          },
+        ]
+      : []),
+    ...Object.entries(page.ppr?.regions ?? {}).map(([regionId, region]) => ({
+      name: `${page.id}-${regionId}-ppr-region`,
+      import: region.component,
+      environment: "server" as const,
+      runtime: "node" as const,
+      kind: "ppr-region" as const,
+      owner: { pageId: page.id, regionId },
+    })),
+  ]);
+  const appEntries = Object.values(graph.apps).map((app) => ({
+    name: app.id === "default" ? "main" : app.id,
+    import: app.entry,
+    environment: "client" as const,
+    runtime: "browser" as const,
+    kind: "app-client" as const,
+    owner: { appId: app.id },
+  }));
+
+  return {
+    version: 1,
+    buildId: "test",
+    mode: "production",
+    distDir: "dist",
+    serverEnabled,
+    entries: [
+      ...appEntries,
+      ...pageEntries,
+      ...pprEntries,
+      ...(serverEnabled
+        ? [
+            {
+              name: "server",
+              import: "./src/server.ts",
+              environment: "server" as const,
+              runtime: "node" as const,
+              kind: "server-runtime" as const,
+            },
+          ]
+        : []),
+    ],
+    html: [
+      ...Object.values(graph.apps).map((app) => ({
+        id: app.id === "default" ? "index" : app.id,
+        template: app.html,
+        fileName: app.id === "default" ? "index.html" : `${app.id}.html`,
+        owner: { appId: app.id },
+      })),
+      ...Object.values(graph.pages).map((page) => ({
+        id: page.id,
+        template: page.html,
+        fileName: `${page.id}.html`,
+        owner: { pageId: page.id },
+      })),
+    ],
+    server: serverEnabled
+      ? {
+          enabled: true,
+          entry: "./src/server.ts",
+          functionRuntime: {
+            endpoint: "/__evjs/fn",
+            clientProxy: "@evjs/client",
+            serverRegister: "@evjs/server/register",
+          },
+        }
+      : { enabled: false },
+    runtime: {
+      publicPath: "/",
+      server: serverEnabled
+        ? {
+            basePath: "/__evjs",
+            fn: "/__evjs/fn",
+          }
+        : undefined,
+    },
+  };
+}

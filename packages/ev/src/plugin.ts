@@ -1,5 +1,13 @@
-import type { ClientManifest, ServerManifest } from "@evjs/manifest";
-import type { EvConfig, ResolvedEvConfig } from "./config.js";
+import type {
+  AppGraph,
+  AssetGroup,
+  BuildEnvironment,
+  BuildOutput,
+  BuildPlan,
+  BuildPlanUpdate,
+} from "@evjs/shared/manifest";
+import type { Logger } from "@logtape/logtape";
+import type { Config, ResolvedConfig } from "./config.js";
 
 /**
  * Minimal DOM element / document interface for plugin HTML manipulation.
@@ -8,13 +16,13 @@ import type { EvConfig, ResolvedEvConfig } from "./config.js";
  * implementation is provided by the underlying parser (`domparser-rs`), but
  * plugins only depend on this interface.
  */
-export interface EvDocument {
+export interface HtmlDocument {
   // ── Querying ──────────────────────────────────────────────────────────
-  querySelector(selectors: string): EvDocument | null;
-  querySelectorAll(selectors: string): EvDocument[];
-  getElementById(id: string): EvDocument | null;
-  getElementsByTagName(tagName: string): EvDocument[];
-  getElementsByClassName(classNames: string): EvDocument[];
+  querySelector(selectors: string): HtmlDocument | null;
+  querySelectorAll(selectors: string): HtmlDocument[];
+  getElementById(id: string): HtmlDocument | null;
+  getElementsByTagName(tagName: string): HtmlDocument[];
+  getElementsByClassName(classNames: string): HtmlDocument[];
 
   // ── Attributes ────────────────────────────────────────────────────────
   getAttribute(name: string): string | null;
@@ -24,26 +32,29 @@ export interface EvDocument {
   hasAttribute(name: string): boolean;
 
   // ── Tree mutation ─────────────────────────────────────────────────────
-  appendChild(newChild: EvDocument): EvDocument;
-  removeChild(child: EvDocument): EvDocument;
-  insertBefore(newNode: EvDocument, refNode?: EvDocument | null): EvDocument;
-  replaceChild(newChild: EvDocument, oldChild: EvDocument): EvDocument;
-  append(newChild: EvDocument): void;
-  prepend(newChild: EvDocument): void;
-  before(newSibling: EvDocument): void;
-  after(newSibling: EvDocument): void;
+  appendChild(newChild: HtmlDocument): HtmlDocument;
+  removeChild(child: HtmlDocument): HtmlDocument;
+  insertBefore(
+    newNode: HtmlDocument,
+    refNode?: HtmlDocument | null,
+  ): HtmlDocument;
+  replaceChild(newChild: HtmlDocument, oldChild: HtmlDocument): HtmlDocument;
+  append(newChild: HtmlDocument): void;
+  prepend(newChild: HtmlDocument): void;
+  before(newSibling: HtmlDocument): void;
+  after(newSibling: HtmlDocument): void;
   remove(): void;
-  replaceWith(newNode: EvDocument): void;
+  replaceWith(newNode: HtmlDocument): void;
 
   // ── Content insertion ─────────────────────────────────────────────────
   insertAdjacentHTML(position: string, html: string): void;
   insertAdjacentText(position: string, text: string): void;
-  insertAdjacentElement(position: string, element: EvDocument): void;
+  insertAdjacentElement(position: string, element: HtmlDocument): void;
 
   // ── Creation (document-level) ─────────────────────────────────────────
-  createElement(tagName: string): EvDocument;
-  createTextNode(data: string): EvDocument;
-  createComment(data: string): EvDocument;
+  createElement(tagName: string): HtmlDocument;
+  createTextNode(data: string): HtmlDocument;
+  createComment(data: string): HtmlDocument;
 
   // ── Properties ────────────────────────────────────────────────────────
   readonly tagName: string | null;
@@ -54,52 +65,64 @@ export interface EvDocument {
   textContent: string;
 
   // ── Traversal ─────────────────────────────────────────────────────────
-  readonly parentNode: EvDocument | null;
-  readonly parentElement: EvDocument | null;
-  readonly firstChild: EvDocument | null;
-  readonly lastChild: EvDocument | null;
-  readonly firstElementChild: EvDocument | null;
-  readonly lastElementChild: EvDocument | null;
-  readonly previousSibling: EvDocument | null;
-  readonly nextSibling: EvDocument | null;
-  readonly previousElementSibling: EvDocument | null;
-  readonly nextElementSibling: EvDocument | null;
-  readonly children: EvDocument[];
-  readonly childNodes: EvDocument[];
+  readonly parentNode: HtmlDocument | null;
+  readonly parentElement: HtmlDocument | null;
+  readonly firstChild: HtmlDocument | null;
+  readonly lastChild: HtmlDocument | null;
+  readonly firstElementChild: HtmlDocument | null;
+  readonly lastElementChild: HtmlDocument | null;
+  readonly previousSibling: HtmlDocument | null;
+  readonly nextSibling: HtmlDocument | null;
+  readonly previousElementSibling: HtmlDocument | null;
+  readonly nextElementSibling: HtmlDocument | null;
+  readonly children: HtmlDocument[];
+  readonly childNodes: HtmlDocument[];
   readonly childElementCount: number;
   hasChildNodes(): boolean;
-  contains(otherNode: EvDocument): boolean;
+  contains(otherNode: HtmlDocument): boolean;
 
   // ── Document-level accessors ──────────────────────────────────────────
-  readonly head: EvDocument | null;
-  readonly body: EvDocument | null;
+  readonly head: HtmlDocument | null;
+  readonly body: HtmlDocument | null;
   readonly title: string;
-  readonly documentElement: EvDocument | null;
+  readonly documentElement: HtmlDocument | null;
 
   // ── Cloning ───────────────────────────────────────────────────────────
-  cloneNode(deep?: boolean): EvDocument;
+  cloneNode(deep?: boolean): HtmlDocument;
 }
 
 /**
  * Context passed to plugin bundler hooks.
  */
-export interface EvBundlerCtx<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> {
+export interface BundlerCtx<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
   /** The current mode. */
   mode: "development" | "production";
+  /** The current command. */
+  command: "dev" | "build";
   /** The current working directory. */
   cwd: string;
   /** The fully resolved framework config. */
-  config: ResolvedEvConfig<TBundlerCfg>;
+  config: ResolvedConfig<TBundlerCfg>;
+  /** The framework build plan passed to the selected bundler adapter. */
+  plan: BuildPlan;
+  /** Selected bundler adapter name. */
+  bundlerName: string;
+  /** Environment currently being configured when known. */
+  environment?: BuildEnvironment | "mixed";
+  /** Logger plugins can use for framework-scoped messages. */
+  logger: Logger;
+  /** Adds an extra framework-level watch file in dev mode. */
+  addWatchFile(file: string): void;
 }
 
 /**
  * Context passed to plugin config hooks.
  */
-export interface EvPluginConfigContext {
+export interface PluginConfigContext {
   /** The current mode. */
   mode: "development" | "production";
+  /** The current command. */
+  command: "dev" | "build";
   /** The current working directory. */
   cwd: string;
 }
@@ -107,7 +130,7 @@ export interface EvPluginConfigContext {
 /**
  * An evjs plugin.
  */
-export interface EvPlugin<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
+export interface Plugin<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
   /** Plugin name for debugging and logging. */
   name: string;
 
@@ -127,18 +150,25 @@ export interface EvPlugin<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
   optionalDependencies?: string[];
 
   /**
+   * Relative ordering tier for plugins without an explicit dependency edge.
+   *
+   * Dependencies still win over enforce ordering.
+   */
+  enforce?: "pre" | "normal" | "post";
+
+  /**
    * Modify the raw user config before defaults are resolved.
    *
-   * Use this for framework-level config such as `server.functions.endpoint`
-   * that must be visible to dev proxy setup and build-time runtime defines.
+   * Use this for framework-level config such as `server.basePath` that must
+   * be visible to dev proxy setup and build-time runtime defines.
    */
   config?: (
-    config: EvConfig<TBundlerCfg>,
-    ctx: EvPluginConfigContext,
+    config: Config<TBundlerCfg>,
+    ctx: PluginConfigContext,
   ) =>
-    | EvConfig<TBundlerCfg>
+    | Config<TBundlerCfg>
     | undefined
-    | Promise<EvConfig<TBundlerCfg> | undefined>;
+    | Promise<Config<TBundlerCfg> | undefined>;
 
   /**
    * Initialize the plugin and return lifecycle hooks.
@@ -147,38 +177,115 @@ export interface EvPlugin<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
    * hooks share state through closure.
    */
   setup?: (
-    ctx: EvPluginContext<TBundlerCfg>,
+    ctx: PluginContext<TBundlerCfg>,
   ) =>
-    | EvPluginHooks<TBundlerCfg>
+    | PluginHooks<TBundlerCfg>
     | undefined
-    | Promise<EvPluginHooks<TBundlerCfg> | undefined>;
+    | Promise<PluginHooks<TBundlerCfg> | undefined>;
 }
 
 /**
  * Context passed to plugin setup().
  */
-export interface EvPluginContext<
+export interface PluginContext<
   TBundlerCfg = import("@utoo/pack").ConfigComplete,
 > {
   /** Current mode. */
   mode: "development" | "production";
+  /** Current command. */
+  command: "dev" | "build";
   /** The current working directory. */
   cwd: string;
   /** The fully resolved framework config. */
-  config: ResolvedEvConfig<TBundlerCfg>;
+  config: ResolvedConfig<TBundlerCfg>;
+  /** Logger plugins can use for framework-scoped messages. */
+  logger: Logger;
+  /** Adds an extra framework-level watch file in dev mode. */
+  addWatchFile(file: string): void;
 }
+
+export interface CommandContext<
+  TBundlerCfg = import("@utoo/pack").ConfigComplete,
+> extends PluginContext<TBundlerCfg> {}
+
+export interface BuildStartContext<
+  TBundlerCfg = import("@utoo/pack").ConfigComplete,
+> extends PluginContext<TBundlerCfg> {}
+
+export interface AppGraphContext<
+  TBundlerCfg = import("@utoo/pack").ConfigComplete,
+> extends PluginContext<TBundlerCfg> {}
+
+export interface BuildPlanContext<
+  TBundlerCfg = import("@utoo/pack").ConfigComplete,
+> extends PluginContext<TBundlerCfg> {
+  graph: AppGraph;
+}
+
+export interface BuildOutputContext<
+  TBundlerCfg = import("@utoo/pack").ConfigComplete,
+> extends PluginContext<TBundlerCfg> {
+  graph: AppGraph;
+  plan: BuildPlan;
+}
+
+export interface DevPlanUpdateContext<
+  TBundlerCfg = import("@utoo/pack").ConfigComplete,
+> extends PluginContext<TBundlerCfg> {
+  graph: AppGraph;
+}
+
+export interface DisposeContext<
+  TBundlerCfg = import("@utoo/pack").ConfigComplete,
+> extends PluginContext<TBundlerCfg> {}
 
 /**
  * Lifecycle hooks returned from plugin setup().
- *
- * TODO: Narrow each hook context and standardize signatures as subject-first,
- * ctx-second before allowing hooks beyond `config` to mutate framework state.
  */
-export interface EvPluginHooks<
+export interface PluginHooks<
   TBundlerCfg = import("@utoo/pack").ConfigComplete,
 > {
+  /** Called after setup and before graph/build work starts. */
+  commandStart?: (ctx: CommandContext<TBundlerCfg>) => void | Promise<void>;
+
   /** Called before compilation begins. */
-  buildStart?: () => void | Promise<void>;
+  buildStart?: (ctx: BuildStartContext<TBundlerCfg>) => void | Promise<void>;
+
+  /**
+   * Inspect or mutate the framework semantic graph before entries are planned.
+   *
+   * Use this for framework metadata such as pages, routes, server routes,
+   * server functions, and remotes. This hook runs before bundler config
+   * creation and is independent of the selected bundler adapter.
+   */
+  appGraph?: (
+    graph: AppGraph,
+    ctx: AppGraphContext<TBundlerCfg>,
+  ) => void | Promise<void>;
+
+  /**
+   * Inspect or mutate the bundler-independent build plan.
+   *
+   * Use this for entry/html/runtime planning. Low-level bundler-specific
+   * changes should stay in `bundlerConfig`.
+   */
+  buildPlan?: (
+    plan: BuildPlan,
+    ctx: BuildPlanContext<TBundlerCfg>,
+  ) => void | Promise<void>;
+
+  /**
+   * Inspect or mutate the linked framework build output before it is emitted
+   * as `dist/manifest.json` and before HTML documents are transformed.
+   *
+   * Deployment adapters should use this hook to add deployment metadata to the
+   * single framework output instead of reading bundler stats or legacy v1
+   * manifests.
+   */
+  buildOutput?: (
+    output: BuildOutput,
+    ctx: BuildOutputContext<TBundlerCfg>,
+  ) => void | Promise<void>;
 
   /**
    * Modify the underlying bundler configuration directly.
@@ -189,34 +296,99 @@ export interface EvPluginHooks<
    */
   bundlerConfig?: (
     config: TBundlerCfg,
-    ctx: EvBundlerCtx<TBundlerCfg>,
+    ctx: BundlerCtx<TBundlerCfg>,
   ) => void | Promise<void>;
 
   /** Called after compilation completes. Receives build result with manifests. */
-  buildEnd?: (result: EvBuildResult) => void | Promise<void>;
+  buildEnd?: (result: BuildResult) => void | Promise<void>;
+
+  /**
+   * Called in dev when framework-level declarations change and the new build
+   * plan can be diffed against the previous plan.
+   *
+   * This hook is part of the breaking plugin contract even though the current
+   * Utoopack adapter cannot yet apply dynamic entry updates without lower-layer
+   * support.
+   */
+  devPlanUpdate?: (
+    update: BuildPlanUpdate,
+    ctx: DevPlanUpdateContext<TBundlerCfg>,
+  ) => void | Promise<void>;
+
+  /** Called when the command is shutting down or after a build finishes. */
+  dispose?: (ctx: DisposeContext<TBundlerCfg>) => void | Promise<void>;
 
   /**
    * Transform the output HTML document after asset injection.
    *
-   * Receives the parsed DOM document and the build result (with manifests).
+   * Receives the parsed DOM document and the current HTML document context.
    * Mutate the document in place (e.g. `doc.head.insertAdjacentHTML(...)`).
    * Runs after evjs injects `<script>` / `<link>` tags but before the
    * document is serialized and emitted. Multiple plugins are applied in order.
    */
   transformHtml?: (
-    doc: EvDocument,
-    result: EvBuildResult,
+    doc: HtmlDocument,
+    ctx: HtmlTransformContext<TBundlerCfg>,
   ) => void | Promise<void>;
 }
 
 /**
  * Build result passed to the buildEnd hook.
  */
-export interface EvBuildResult {
-  /** The client manifest (assets, routes). */
-  clientManifest: ClientManifest;
-  /** The server manifest (entry, fns). Undefined if server is disabled. */
-  serverManifest?: ServerManifest;
+export interface BuildResult {
+  /** Single framework build output. */
+  output: BuildOutput;
   /** True if this is a rebuild triggered by file change (dev watch mode only). */
   isRebuild: boolean;
 }
+
+export type HtmlDocumentInfo =
+  | {
+      /** Framework owner type for the HTML document. */
+      kind: "app";
+      /** Stable HTML document id. */
+      htmlId: string;
+      /** Owning app id. */
+      appId: string;
+      /** Source HTML template path from resolved config. */
+      template: string;
+      /** Output HTML filename. */
+      fileName: string;
+      /** Assets injected into this HTML document. */
+      assets: AssetGroup;
+    }
+  | {
+      /** Framework owner type for the HTML document. */
+      kind: "page";
+      /** Stable HTML document id. */
+      htmlId: string;
+      /** Owning page id. */
+      pageId: string;
+      /** Source HTML template path from resolved config. */
+      template: string;
+      /** Output HTML filename. */
+      fileName: string;
+      /** Assets injected into this HTML document. */
+      assets: AssetGroup;
+    };
+
+export type HtmlTransformContext<
+  TBundlerCfg = import("@utoo/pack").ConfigComplete,
+> = BuildResult &
+  HtmlDocumentInfo &
+  PluginContext<TBundlerCfg> & {
+    buildId: string;
+    publicPath: BuildOutput["publicPath"];
+  };
+export type AppGraphHookContext<
+  TBundlerCfg = import("@utoo/pack").ConfigComplete,
+> = AppGraphContext<TBundlerCfg>;
+export type BuildPlanHookContext<
+  TBundlerCfg = import("@utoo/pack").ConfigComplete,
+> = BuildPlanContext<TBundlerCfg>;
+export type BuildOutputHookContext<
+  TBundlerCfg = import("@utoo/pack").ConfigComplete,
+> = BuildOutputContext<TBundlerCfg>;
+export type CommandHookContext<
+  TBundlerCfg = import("@utoo/pack").ConfigComplete,
+> = CommandContext<TBundlerCfg>;

@@ -1,0 +1,739 @@
+import fs from "node:fs";
+import path from "node:path";
+import type {
+  AppGraph,
+  BuildOutput,
+  BuildPlan,
+  BuildPlanUpdate,
+  BundlerAdapter,
+  BundlerBuildContext,
+  BundlerDevContext,
+  BundlerDevController,
+  DevProxyRule,
+  PluginHooks,
+  ResolvedConfig,
+} from "@evjs/ev";
+import { getLogger } from "@logtape/logtape";
+import type {
+  Compiler,
+  Configuration,
+  MultiCompiler,
+  MultiStats,
+  Stats,
+} from "webpack";
+import webpack from "webpack";
+import WebpackDevServer from "webpack-dev-server";
+import {
+  WebpackManifestGenerator,
+  type WebpackStatsLike,
+} from "../manifest-generator.js";
+import { createWebpackConfigs, type WebpackConfig } from "./create-config.js";
+import { getOutputPaths } from "./output-paths.js";
+
+const logger = getLogger(["evjs", "bundler-webpack"]);
+
+interface WebpackDevServerInstance {
+  start(): Promise<void>;
+  stop(): Promise<void>;
+}
+
+interface WebpackWatching {
+  close(callback: (error: Error | null) => void): void;
+}
+
+export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
+  name: "webpack",
+
+  async build(ctx: BundlerBuildContext<WebpackConfig>): Promise<void> {
+    const { callbacks, config, cwd, graph, hooks, plan } = ctx;
+    const outputPaths = getOutputPaths(cwd, config.serverEnabled);
+
+    logger.info`Building for production with webpack...`;
+
+    await fs.promises.rm(outputPaths.rootDir, {
+      recursive: true,
+      force: true,
+    });
+
+    const configs = await createWebpackConfigs(config, plan, graph, cwd, hooks);
+    const stats = await runWebpack(configs);
+
+    await emitStats(outputPaths.clientDir, stats.clientStats);
+    if (config.serverEnabled) {
+      await emitStats(outputPaths.serverDir, stats.serverStats);
+    }
+
+    logger.info`Linking framework manifest...`;
+    const generator = new WebpackManifestGenerator(
+      cwd,
+      config.serverEnabled,
+      graph,
+      plan,
+      stats.clientStats,
+      stats.serverStats,
+    );
+    const output = generator.link();
+    await callbacks.onBuildOutput(output);
+    await generator.emit(output);
+
+    logger.info`Generating and emitting HTML...`;
+    await generateAndEmitHtml(config, cwd, hooks, output, plan);
+
+    logger.info`Build complete!`;
+  },
+
+  async dev(
+    ctx: BundlerDevContext<WebpackConfig>,
+  ): Promise<BundlerDevController> {
+    const session = new WebpackDevSession(ctx);
+    await session.start();
+    return session;
+  },
+};
+
+class WebpackDevSession implements BundlerDevController {
+  private config: ResolvedConfig<WebpackConfig>;
+  private graph: AppGraph;
+  private plan: BuildPlan;
+  private clientServer: WebpackDevServerInstance | undefined;
+  private serverWatching: WebpackWatching | undefined;
+  private latestClientStats: WebpackStatsLike | undefined;
+  private latestServerStats: WebpackStatsLike | undefined;
+  private serverReadyPending = false;
+  private startGeneration = 0;
+  private hasEmittedDevArtifacts = false;
+  private initialDone:
+    | {
+        required: Set<"client" | "server">;
+        resolve: () => void;
+        reject: (error: unknown) => void;
+        promise: Promise<void>;
+      }
+    | undefined;
+
+  constructor(private ctx: BundlerDevContext<WebpackConfig>) {
+    this.config = ctx.config;
+    this.graph = ctx.graph;
+    this.plan = ctx.plan;
+  }
+
+  async start(): Promise<void> {
+    const generation = ++this.startGeneration;
+    const outputPaths = getOutputPaths(this.ctx.cwd, this.config.serverEnabled);
+
+    logger.info`Starting development server with webpack...`;
+
+    await fs.promises.rm(outputPaths.rootDir, {
+      recursive: true,
+      force: true,
+    });
+
+    this.latestClientStats = undefined;
+    this.latestServerStats = undefined;
+    this.serverReadyPending = false;
+
+    const configs = await createWebpackConfigs(
+      this.config,
+      this.plan,
+      this.graph,
+      this.ctx.cwd,
+      this.ctx.hooks,
+    );
+    const clientConfigs = configs.filter((config) => config.name === "client");
+    const serverConfigs = configs.filter(
+      (config) => config.name === "server" || config.name === "server-rsc",
+    );
+    const needsClient = clientConfigs.length > 0;
+    const needsServer = this.config.serverEnabled && serverConfigs.length > 0;
+    this.initialDone = createInitialBuildBarrier({ needsClient, needsServer });
+
+    if (needsClient) {
+      const compiler = createWebpackCompiler(clientConfigs);
+      compiler.hooks.done.tap("EvjsWebpackDevClient", (stats) => {
+        void this.handleStats("client", generation, stats).catch((error) => {
+          this.failInitialBuild(error);
+        });
+      });
+      this.clientServer = new WebpackDevServer(
+        createDevServerOptions(this.config, this.plan, outputPaths.clientDir),
+        compiler,
+      );
+      await this.clientServer.start();
+    }
+
+    if (needsServer) {
+      const compiler = createWebpackCompiler(serverConfigs);
+      compiler.hooks.done.tap("EvjsWebpackDevServer", (stats) => {
+        void this.handleStats("server", generation, stats).catch((error) => {
+          this.failInitialBuild(error);
+        });
+      });
+      this.serverWatching = compiler.watch({}, (error) => {
+        if (error) this.failInitialBuild(error);
+      });
+    }
+
+    const initialDone = this.initialDone;
+    if (!needsClient && !needsServer) {
+      initialDone.resolve();
+    }
+
+    await initialDone.promise;
+  }
+
+  async close(): Promise<void> {
+    await this.stop();
+  }
+
+  async updatePlan(update: BuildPlanUpdate, graph?: AppGraph): Promise<void> {
+    if (!graph) {
+      throw new Error(
+        "[evjs] webpack dev updates require the next AppGraph to relink manifest and HTML output.",
+      );
+    }
+
+    const previousPlan = this.plan;
+    const previousGraph = this.graph;
+    const previousClientStats = this.latestClientStats;
+    const previousServerStats = this.latestServerStats;
+
+    this.plan = update.next;
+    this.graph = graph;
+
+    try {
+      const outputPaths = getOutputPaths(
+        this.ctx.cwd,
+        this.config.serverEnabled,
+      );
+      if (isHtmlOnlyUpdate(update)) {
+        await this.generateDevArtifacts();
+        return;
+      }
+
+      const incrementalClientEntries = getIncrementalClientEntries(update);
+      if (incrementalClientEntries && this.latestClientStats) {
+        const incrementalPlan = createIncrementalPlan(
+          this.plan,
+          incrementalClientEntries,
+        );
+        const configs = await createWebpackConfigs(
+          this.config,
+          incrementalPlan,
+          this.graph,
+          this.ctx.cwd,
+          this.ctx.hooks,
+          { clean: false },
+        );
+        const stats = await runWebpack(configs);
+        if (stats.clientStats) {
+          this.latestClientStats = mergeWebpackStats(
+            this.latestClientStats,
+            stats.clientStats,
+          );
+          await emitStats(outputPaths.clientDir, this.latestClientStats);
+        }
+        await this.generateDevArtifacts();
+        return;
+      }
+
+      const configs = await createWebpackConfigs(
+        this.config,
+        this.plan,
+        this.graph,
+        this.ctx.cwd,
+        this.ctx.hooks,
+        { clean: false },
+      );
+      const stats = await runWebpack(configs);
+
+      if (stats.clientStats) {
+        this.latestClientStats = stats.clientStats;
+        await emitStats(outputPaths.clientDir, this.latestClientStats);
+      }
+      if (stats.serverStats) {
+        this.latestServerStats = stats.serverStats;
+        await emitStats(outputPaths.serverDir, this.latestServerStats);
+      }
+
+      const emitted = await this.generateDevArtifacts();
+      if (emitted && (update.serverChanged || stats.serverStats)) {
+        await this.ctx.callbacks.onServerBundleReady();
+      }
+    } catch (error) {
+      this.plan = previousPlan;
+      this.graph = previousGraph;
+      this.latestClientStats = previousClientStats;
+      this.latestServerStats = previousServerStats;
+      throw error;
+    }
+  }
+
+  private async stop(): Promise<void> {
+    this.startGeneration++;
+    const errors: unknown[] = [];
+
+    if (this.serverWatching) {
+      const watching = this.serverWatching;
+      this.serverWatching = undefined;
+      await new Promise<void>((resolve) => {
+        watching.close((error) => {
+          if (error) errors.push(error);
+          resolve();
+        });
+      });
+    }
+
+    if (this.clientServer) {
+      const server = this.clientServer;
+      this.clientServer = undefined;
+      try {
+        await server.stop();
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+
+    if (errors.length > 0) {
+      throw errors[0];
+    }
+  }
+
+  private async handleStats(
+    kind: "client" | "server",
+    generation: number,
+    stats: Stats | MultiStats,
+  ): Promise<void> {
+    if (generation !== this.startGeneration) return;
+
+    if (stats.hasErrors()) {
+      const error = new Error(formatWebpackErrors(stats));
+      this.failInitialBuild(error);
+      logger.error`${error.message}`;
+      return;
+    }
+
+    const split = splitStatsByName(stats);
+    const outputPaths = getOutputPaths(this.ctx.cwd, this.config.serverEnabled);
+
+    if (kind === "client") {
+      this.latestClientStats = split.clientStats
+        ? mergeWebpackStats(this.latestClientStats, split.clientStats)
+        : this.latestClientStats;
+      await emitStats(outputPaths.clientDir, this.latestClientStats);
+    } else {
+      this.latestServerStats = split.serverStats;
+      await emitStats(outputPaths.serverDir, this.latestServerStats);
+      this.serverReadyPending = true;
+    }
+
+    const emitted = await this.generateDevArtifacts();
+    if (emitted) {
+      this.completeInitialBuild();
+    }
+    if (emitted && this.serverReadyPending) {
+      this.serverReadyPending = false;
+      await this.ctx.callbacks.onServerBundleReady();
+    }
+  }
+
+  private async generateDevArtifacts(): Promise<boolean> {
+    const hasClientEntries = this.plan.entries.some(
+      (entry) => entry.environment === "client",
+    );
+    const hasServerEntries =
+      this.config.serverEnabled &&
+      this.plan.entries.some((entry) => entry.environment === "server");
+
+    if (hasClientEntries && !this.latestClientStats) return false;
+    if (hasServerEntries && !this.latestServerStats) return false;
+
+    logger.info`Generating development manifest and HTML...`;
+    const generator = new WebpackManifestGenerator(
+      this.ctx.cwd,
+      this.config.serverEnabled,
+      this.graph,
+      this.plan,
+      this.latestClientStats,
+      this.latestServerStats,
+    );
+    const output = generator.link();
+    await this.ctx.callbacks.onBuildOutput(output);
+    await generator.emit(output);
+    const isRebuild = this.hasEmittedDevArtifacts;
+    await generateAndEmitHtml(
+      this.config,
+      this.ctx.cwd,
+      this.ctx.hooks,
+      output,
+      this.plan,
+      { isRebuild },
+    );
+    this.hasEmittedDevArtifacts = true;
+    return true;
+  }
+
+  private completeInitialBuild(): void {
+    if (!this.initialDone) return;
+    this.initialDone.required.clear();
+    this.initialDone.resolve();
+  }
+
+  private failInitialBuild(error: unknown): void {
+    this.initialDone?.reject(error);
+  }
+}
+
+function isHtmlOnlyUpdate(update: BuildPlanUpdate): boolean {
+  return (
+    !update.serverChanged &&
+    update.entries.added.length === 0 &&
+    update.entries.removed.length === 0 &&
+    update.entries.changed.length === 0 &&
+    (update.html.added.length > 0 ||
+      update.html.removed.length > 0 ||
+      update.html.changed.length > 0)
+  );
+}
+
+function getIncrementalClientEntries(
+  update: BuildPlanUpdate,
+): BuildPlan["entries"] | undefined {
+  if (update.serverChanged || update.entries.removed.length > 0) {
+    return undefined;
+  }
+
+  const entries = [...update.entries.added, ...update.entries.changed];
+  if (entries.length === 0) return undefined;
+  if (entries.some((entry) => entry.environment !== "client")) {
+    return undefined;
+  }
+
+  return entries;
+}
+
+function createIncrementalPlan(
+  plan: BuildPlan,
+  entries: BuildPlan["entries"],
+): BuildPlan {
+  return {
+    ...plan,
+    entries,
+    html: [],
+    server: {
+      ...plan.server,
+      renderers: [],
+    },
+  };
+}
+
+function createInitialBuildBarrier(options: {
+  needsClient: boolean;
+  needsServer: boolean;
+}): {
+  required: Set<"client" | "server">;
+  resolve: () => void;
+  reject: (error: unknown) => void;
+  promise: Promise<void>;
+} {
+  const required = new Set<"client" | "server">();
+  if (options.needsClient) required.add("client");
+  if (options.needsServer) required.add("server");
+
+  let resolve!: () => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<void>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+
+  return { required, resolve, reject, promise };
+}
+
+function createWebpackCompiler(
+  configs: Configuration[],
+): Compiler | MultiCompiler {
+  if (configs.length === 1) {
+    return webpack(configs[0]);
+  }
+  return webpack(configs);
+}
+
+function createDevServerOptions(
+  config: ResolvedConfig<WebpackConfig>,
+  plan: BuildPlan,
+  clientDir: string,
+): ConstructorParameters<typeof WebpackDevServer>[0] {
+  return {
+    host: "0.0.0.0",
+    port: config.dev.port,
+    hot: true,
+    liveReload: true,
+    allowedHosts: "all",
+    server: createDevServerTransport(config.dev.https),
+    static: {
+      directory: clientDir,
+      publicPath: "/",
+      watch: true,
+    },
+    devMiddleware: {
+      writeToDisk: true,
+      stats: "errors-warnings",
+    },
+    historyApiFallback: createHistoryFallback(plan),
+    proxy: config.dev.proxy.map(toWebpackDevProxy),
+    client: {
+      overlay: {
+        errors: true,
+        warnings: false,
+      },
+    },
+  };
+}
+
+function createDevServerTransport(
+  https: ResolvedConfig<WebpackConfig>["dev"]["https"],
+): ConstructorParameters<typeof WebpackDevServer>[0]["server"] {
+  if (!https) return "http";
+  if (https === true) return "https";
+
+  return {
+    type: "https",
+    options: {
+      key: readHttpsValue(https.key),
+      cert: readHttpsValue(https.cert),
+    },
+  };
+}
+
+function readHttpsValue(value: string): string | Buffer {
+  return fs.existsSync(value) ? fs.readFileSync(value) : value;
+}
+
+function createHistoryFallback(
+  plan: BuildPlan,
+): ConstructorParameters<typeof WebpackDevServer>[0]["historyApiFallback"] {
+  const appHtml = plan.html.find((html) => html.owner.appId)?.fileName;
+  if (!appHtml) return false;
+
+  return {
+    index: `/${appHtml}`,
+    disableDotRule: true,
+    rewrites: plan.html.map((html) => ({
+      from: new RegExp(`^/${escapeRegExp(html.fileName)}$`),
+      to: `/${html.fileName}`,
+    })),
+  };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function toWebpackDevProxy(rule: DevProxyRule) {
+  return {
+    context: rule.context,
+    target: rule.target,
+    changeOrigin: rule.changeOrigin,
+    secure: rule.secure,
+  };
+}
+
+async function runWebpack(configs: Configuration[]): Promise<{
+  clientStats?: WebpackStatsLike;
+  serverStats?: WebpackStatsLike;
+}> {
+  const compiler = webpack(configs);
+
+  const stats = await new Promise<Stats | MultiStats>((resolve, reject) => {
+    compiler.run((error, result) => {
+      compiler.close((closeError) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        if (closeError) {
+          reject(closeError);
+          return;
+        }
+        if (!result) {
+          reject(new Error("[evjs] Webpack did not return build stats."));
+          return;
+        }
+        resolve(result);
+      });
+    });
+  });
+
+  if (stats.hasErrors()) {
+    throw new Error(formatWebpackErrors(stats));
+  }
+
+  return splitStatsByName(stats);
+}
+
+function splitStatsByName(stats: Stats | MultiStats): {
+  clientStats?: WebpackStatsLike;
+  serverStats?: WebpackStatsLike;
+} {
+  const json = stats.toJson({
+    all: false,
+    assets: true,
+    chunks: true,
+    entrypoints: true,
+    errors: true,
+    modules: true,
+    warnings: true,
+  }) as WebpackMultiStatsJson | WebpackStatsJson;
+
+  const children = getStatsChildren(json);
+  let clientStats: WebpackStatsLike | undefined;
+  let serverStats: WebpackStatsLike | undefined;
+
+  for (const child of children) {
+    if (child.name === "server" || child.name === "server-rsc") {
+      serverStats = mergeWebpackStats(serverStats, child);
+    } else if (child.name === "client") {
+      clientStats = child;
+    }
+  }
+
+  return { clientStats, serverStats };
+}
+
+function mergeWebpackStats(
+  left: WebpackStatsLike | undefined,
+  right: WebpackStatsLike,
+): WebpackStatsLike {
+  if (!left) return right;
+  return {
+    entrypoints: {
+      ...(left.entrypoints ?? {}),
+      ...(right.entrypoints ?? {}),
+    },
+    chunks: [...(left.chunks ?? []), ...(right.chunks ?? [])],
+    modules: [...(left.modules ?? []), ...(right.modules ?? [])],
+  };
+}
+
+function formatWebpackErrors(stats: Stats | MultiStats): string {
+  const json = stats.toJson({ all: false, errors: true }) as
+    | WebpackMultiStatsJson
+    | WebpackStatsJson;
+  const children = getStatsChildren(json);
+  const errors = children.flatMap((child) => child.errors ?? []);
+  return [
+    "[evjs] Webpack build failed.",
+    ...errors.map((error) =>
+      typeof error === "string"
+        ? error
+        : (error.message ?? JSON.stringify(error)),
+    ),
+  ].join("\n");
+}
+
+function getStatsChildren(
+  json: WebpackMultiStatsJson | WebpackStatsJson,
+): WebpackStatsJson[] {
+  return "children" in json && Array.isArray(json.children)
+    ? json.children
+    : [json as WebpackStatsJson];
+}
+
+async function emitStats(
+  outDir: string,
+  stats: WebpackStatsLike | undefined,
+): Promise<void> {
+  if (!stats) return;
+  await fs.promises.mkdir(outDir, { recursive: true });
+  await fs.promises.writeFile(
+    path.join(outDir, "stats.json"),
+    JSON.stringify(stats, null, 2),
+    "utf-8",
+  );
+}
+
+async function generateAndEmitHtml(
+  config: ResolvedConfig<WebpackConfig>,
+  cwd: string,
+  hooks: PluginHooks<WebpackConfig>[],
+  output: BuildOutput,
+  plan: BuildPlan,
+  options: { isRebuild?: boolean } = {},
+): Promise<void> {
+  const outputPaths = getOutputPaths(cwd, config.serverEnabled);
+  const { generateHtml } = await import("@evjs/ev/build-tools");
+  const { buildHtml } = await import("@evjs/ev");
+
+  for (const html of plan.html) {
+    const pageId = html.owner.pageId;
+    const appId = html.owner.appId;
+    const assets = pageId
+      ? output.pages[pageId]?.assets
+      : appId
+        ? output.apps[appId]?.assets
+        : undefined;
+    if (!assets) continue;
+
+    const doc = generateHtml({
+      template: path.resolve(cwd, html.template),
+      js: assets.js,
+      css: assets.css,
+    });
+    doc.documentElement?.setAttribute("data-evjs-build", output.buildId);
+    if (pageId) {
+      doc.documentElement?.setAttribute("data-evjs-kind", "page");
+      doc.documentElement?.setAttribute("data-evjs-id", pageId);
+      doc.documentElement?.setAttribute("data-evjs-page", pageId);
+    } else if (appId) {
+      doc.documentElement?.setAttribute("data-evjs-kind", "app");
+      doc.documentElement?.setAttribute("data-evjs-id", appId);
+      doc.documentElement?.setAttribute("data-evjs-app", appId);
+    }
+
+    const finalHtml = await buildHtml({
+      // biome-ignore lint/suspicious/noExplicitAny: DOM interfaces are parser-backed.
+      doc: doc as any,
+      hooks,
+      pluginContext: {
+        mode: plan.mode,
+        command: plan.mode === "production" ? "build" : "dev",
+        cwd,
+        config,
+        logger,
+        addWatchFile() {},
+      },
+      html: pageId
+        ? {
+            kind: "page",
+            htmlId: html.id,
+            pageId,
+            template: html.template,
+            fileName: html.fileName,
+            assets,
+          }
+        : {
+            kind: "app",
+            htmlId: html.id,
+            appId: appId ?? "default",
+            template: html.template,
+            fileName: html.fileName,
+            assets,
+          },
+      output,
+      isRebuild: options.isRebuild,
+    });
+
+    const outPath = path.join(outputPaths.clientDir, html.fileName);
+    await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
+    await fs.promises.writeFile(outPath, finalHtml, "utf-8");
+  }
+}
+
+type WebpackStatsJson = WebpackStatsLike & {
+  name?: string;
+  errors?: Array<string | { message?: string }>;
+};
+
+interface WebpackMultiStatsJson {
+  children?: WebpackStatsJson[];
+}

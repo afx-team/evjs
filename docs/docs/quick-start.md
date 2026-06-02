@@ -85,11 +85,12 @@ declare module "@evjs/client" {
 | [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | Framework API, config, plugins, and build orchestration (`defineConfig`, `dev`, `build`) |
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`) with the default bundler |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
-| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Client runtime (React + TanStack) |
-| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Server runtime (Hono) |
-| [`@evjs/build-tools`](https://github.com/evaijs/evjs/tree/main/packages/build-tools) | Server function transforms |
-| [`@evjs/bundler-utoopack`](https://github.com/evaijs/evjs/tree/main/packages/bundler-utoopack) | Utoopack adapter |
-| [`@evjs/manifest`](https://github.com/evaijs/evjs/tree/main/packages/manifest) | Shared manifest schema |
+| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Browser runtime, transport, page runtime, shell exports, static route helpers, and TanStack compatibility |
+| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Hono/fetch server runtime, server functions, routes, and SSR/PPR/RSC request handling |
+
+Manifest schemas, build tools, page runtime, shell, and route DSL are internal
+modules under the public packages above. Application code should normally
+import through `@evjs/ev`, `@evjs/client`, and `@evjs/server`.
 
 ## Required Dependencies
 

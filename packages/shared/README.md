@@ -17,7 +17,7 @@ npm install @evjs/shared
 
 ## Structure
 
-- **Config**: `EvConfig`, `ResolvedEvConfig`, and `defineConfig()`.
+- **Config**: `Config`, `ResolvedConfig`, and `defineConfig()`.
 - **Errors**: `ServerError`, `ServerFunctionError`.
 - **Constants**: `CONFIG_DEFAULTS`.
 

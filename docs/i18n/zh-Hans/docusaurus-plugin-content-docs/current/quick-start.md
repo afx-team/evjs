@@ -85,11 +85,11 @@ declare module "@evjs/client" {
 | [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | 框架 API、配置、插件和构建编排 (`defineConfig`, `dev`, `build`) |
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | 注入默认构建器的轻量 CLI 包装 (`ev dev`, `ev build`) |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | 项目脚手架 (`npx @evjs/create-app`) |
-| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | 客户端运行时（React + TanStack） |
-| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | 服务端运行时（Hono） |
-| [`@evjs/build-tools`](https://github.com/evaijs/evjs/tree/main/packages/build-tools) | 服务端函数转换 |
-| [`@evjs/bundler-utoopack`](https://github.com/evaijs/evjs/tree/main/packages/bundler-utoopack) | Utoopack 适配器 |
-| [`@evjs/manifest`](https://github.com/evaijs/evjs/tree/main/packages/manifest) | 共享 Manifest Schema |
+| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | 浏览器运行时、transport、page runtime、shell 导出、静态 route helpers 和 TanStack 兼容能力 |
+| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Hono/fetch 服务端运行时、服务端函数、路由和 SSR/PPR/RSC 请求处理 |
+
+Manifest schema、build tools、page runtime、shell 和 route DSL 都是上述公开包内部的实现模块。
+应用代码通常应从 `@evjs/ev`、`@evjs/client` 和 `@evjs/server` 导入。
 
 ## 必需依赖
 

@@ -1,43 +1,28 @@
 # 路线图
 
-## ✅ 阶段 1 —— 客户端优先的 SPA
+## 已完成基础
 
-基础：零配置的 React SPA，具有类型安全的路由和数据获取。
+- 零配置 React 应用构建，支持 `ev dev` 和 `ev build`。
+- 通过 `entry` / `html` 和 `apps` 显式声明应用入口。
+- 通过 `pages` 支持多页面输出。
+- 从 `"use server"` 模块提取服务端函数。
+- Hono/fetch 服务端 runtime 和显式服务端路由。
+- 覆盖 config、graph、plan、bundler、output、HTML、build 阶段的插件系统。
+- 基于 `BuildPlan` 和 `BuildOutput` 的 bundler adapter contract。
+- 单一框架 manifest：`dist/manifest.json`。
+- 用于 app/page/remote activation 的 shell/runtime packages。
+- TanStack adapter 从 shell/runtime core 中拆出。
+- Webpack adapter 用于在 Utoopack 下层 API 补齐前验证框架能力。
 
-- `createApp({ routeTree })` —— 连接 Router + QueryClient + DOM 挂载
-- 基于代码的路由（TanStack Router，嵌套布局，类型化加载器）
-- 数据获取（TanStack Query，重新导出的 hooks）
-- CLI：`npx @evjs/create-app`、`ev dev`、`ev build`
+## 进行中
 
-## ✅ 阶段 2 —— 服务端函数
+- Utoopack dynamic dev plan update，用于不重启 `ev dev` 增删 entry。
+- Utoopack 对 framework-managed component entry 和多 server render entry 的 build facts 支持。
+- 生产部署插件迁移到消费 `BuildOutput`，不再读取 v1 client/server manifests。
+- 为 `apps`、组件页面、SSR/PPR、remote、per-document HTML transform 补充示例和 e2e。
 
-从浏览器调用服务端逻辑，就像调用普通异步函数一样。
+## 计划中
 
-- 通过 SWC AST 解析检测 `"use server"` 指令
-- 使用稳定 SHA-256 函数 ID 的客户端/服务端转换
-- `query(fn).useQuery()` / `mutation(fn).useMutation()` —— 零模板封装
-- 可插拔的 `TransportAdapter` 接口
-- 基于 Hono 的多运行时适配器服务器
-- 服务端上下文辅助函数（`request`、`headers`、`cookies`、`waitUntil`）
-- 版本化的 manifest schema（`manifest.json` v1）
-
-## ✅ 阶段 3 —— 零配置全栈框架
-
-- 零配置 `ev build` / `ev dev` —— 无需 `custom bundler config file`
-- `ev.config.ts` + `defineConfig()` 可选自定义
-- 通过 `pages` 支持 MPA 多入口构建
-- bundler Node API —— 无临时配置文件，无子进程
-
-## ✅ 阶段 4 —— 插件系统和构建元数据
-
-- 带 `name` + `setup()` → 生命周期钩子（`buildStart`、`bundlerConfig`、`transformHtml`、`buildEnd`）的 `EvPlugin` 接口
-- Manifest 客户端部分（`client.assets`、`client.routes`）
-- `npx @evjs/create-app` 的模板符号链接
-
-## 🔲 探索中
-
-正在考虑的未来方向：
-
-- **SSR** —— 带水合的服务端渲染
-- **RSC** —— 通过 Flight 协议实现 React Server Components
-- **更多打包器** —— 通过 `@evjs/build-tools` 实现 Rspack、Vite 插件
+- 完整 React Server Components transform/runtime adapter。
+- RSC client/server reference manifests 和 Flight runtime integration。
+- 更生产级的 PPR 行为，例如 streaming 和 stale revalidation strategy。

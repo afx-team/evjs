@@ -18,7 +18,7 @@ test.describe("with-trpc", () => {
   test("tRPC section loads data", async ({ page, baseURL }) => {
     const trpcPromise = page.waitForResponse(
       (res) =>
-        res.url().includes("api/fn") && res.request().method() === "POST",
+        res.url().includes("__evjs/fn") && res.request().method() === "POST",
     );
     await page.goto(baseURL);
     const trpcResponse = await trpcPromise;
@@ -64,7 +64,7 @@ test.describe("with-trpc", () => {
     );
     const refreshPromise = page.waitForResponse(
       (res) =>
-        res.url().includes("api/fn") && res.request().method() === "POST",
+        res.url().includes("__evjs/fn") && res.request().method() === "POST",
     );
     const refreshButton = page.getByText("Refresh All");
     await refreshButton.click();

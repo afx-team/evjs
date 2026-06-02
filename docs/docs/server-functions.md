@@ -105,16 +105,20 @@ const { data } = useQuery({
 import { initTransport } from "@evjs/client";
 
 initTransport({
-  functions: { endpoint: "api/fn" },
+  // Optional. Defaults to the current page origin.
+  baseUrl: "https://api.example.com",
   // Send cookies on cross-origin server function requests.
   credentials: "include",
   headers: { "x-app": "my-app" },
 });
 ```
 
-`baseUrl`, `functions`, `credentials`, and `headers` configure the built-in HTTP
-adapter. evjs intentionally exposes only the HTTP defaults it supports today:
+`baseUrl`, `credentials`, and `headers` configure the built-in HTTP adapter.
+The function path itself is framework runtime metadata derived from
+`server.basePath`, so application code normally only changes `baseUrl` when the
+server runtime is hosted on another origin:
 
+- `baseUrl`: origin or base URL for framework server calls.
 - `credentials`: fetch credentials policy, for example `"include"`.
 - `headers`: static headers or a function evaluated for each call.
 
@@ -151,9 +155,7 @@ import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
   server: {
-    functions: {
-      endpoint: "api/fn",  // default
-    },
+    basePath: "/__evjs", // derives /__evjs/fn for server functions
   },
 });
 ```

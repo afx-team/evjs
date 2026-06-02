@@ -1,0 +1,19 @@
+{
+  "name": "example-full-features-remote",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "ev dev",
+    "build": "ev build",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@evjs/bundler-webpack": "*",
+    "@evjs/client": "*",
+    "@evjs/ev": "*"
+  },
+  "devDependencies": {
+    "@evjs/cli": "*",
+    "typescript": "^6.0.2"
+  }
+}

@@ -4,11 +4,14 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
-      "@evjs/build-tools": path.resolve(
+      "@evjs/ev/build-tools": path.resolve(
         __dirname,
-        "../build-tools/src/index.ts",
+        "../ev/src/build-tools/index.ts",
       ),
-      "@evjs/manifest": path.resolve(__dirname, "../manifest/src/index.ts"),
+      "@evjs/shared/manifest": path.resolve(
+        __dirname,
+        "../shared/src/manifest/index.ts",
+      ),
     },
   },
 });

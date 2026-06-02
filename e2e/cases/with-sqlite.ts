@@ -7,7 +7,7 @@ test.describe("with-sqlite", () => {
   test("displays heading and seeded users", async ({ page, baseURL }) => {
     const responsePromise = page.waitForResponse(
       (res) =>
-        res.url().includes("api/fn") && res.request().method() === "POST",
+        res.url().includes("__evjs/fn") && res.request().method() === "POST",
     );
     await page.goto(baseURL);
     const response = await responsePromise;
@@ -79,7 +79,7 @@ test.describe("with-sqlite", () => {
     await page.fill('[placeholder="Email"]', `e2e-${Date.now()}@example.com`);
     const createResponsePromise = page.waitForResponse(
       (res) =>
-        res.url().includes("api/fn") && res.request().method() === "POST",
+        res.url().includes("__evjs/fn") && res.request().method() === "POST",
     );
     await page.click('button[type="submit"]');
     const createResponse = await createResponsePromise;

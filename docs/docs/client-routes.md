@@ -1,5 +1,5 @@
 # Client Routes
-evjs routing is built on [TanStack Router](https://tanstack.com/router). All routing APIs are re-exported from `@evjs/client` — never import from `@tanstack/react-router` directly.
+evjs routing is built on [TanStack Router](https://tanstack.com/router). Routing APIs are exported from the top-level `@evjs/client` entry. Never import from `@tanstack/react-router` directly.
 
 :::important
 **Route paths must be string literals.** The `path` property only accepts string literal types — passing a `string` variable or template string will produce a TypeScript compile error. This is enforced by the type system to ensure routes are statically analyzable.
@@ -147,7 +147,8 @@ export const homeRoute = createRoute({
 Use `$name` syntax for path parameters. Access them type-safely via `route.useParams()`:
 
 ```tsx
-import { createRoute, useQuery } from "@evjs/client";
+import { getFnQueryOptions, useQuery } from "@evjs/client";
+import { createRoute } from "@evjs/client";
 import { getUser } from "../api/data.server";
 import { rootRoute } from "./__root";
 
@@ -174,6 +175,7 @@ Parent routes render `<Outlet />` to display child routes. Wire children via `ad
 
 ```tsx
 // pages/posts/index.tsx
+import { getFnQueryOptions } from "@evjs/client";
 import { createRoute, Link, Outlet } from "@evjs/client";
 import { rootRoute } from "../__root";
 
@@ -364,7 +366,7 @@ const app = createApp({
 
 ## Available Re-exports
 
-All imported from `@evjs/client`:
+These APIs are available from `@evjs/client`:
 
 | Category | APIs |
 |----------|------|

@@ -11,6 +11,7 @@ import {
   getFunctionEndpoint,
   ServerFunctionError,
 } from "@evjs/shared";
+import type { BuildOutput } from "@evjs/shared/manifest";
 
 /**
  * Request context passed through server calls.
@@ -67,17 +68,12 @@ interface HttpRequestDefaults {
 }
 
 export interface TransportOptions {
-  /** Base URL for the server function endpoint. Defaults to the current page URL. */
+  /** Base URL for framework server calls. Defaults to the current page origin. */
   baseUrl?: string;
   /** Credentials policy for HTTP server function requests. */
   credentials?: RequestCredentials;
   /** Static headers or a factory evaluated for each transport call. */
   headers?: HeadersInit | HeaderFactory;
-  /** Server functions configuration */
-  functions?: {
-    /** Path prefix for the server function endpoint. Defaults to `api/fn`. */
-    endpoint?: string;
-  };
   /** Adapter capabilities for custom runtimes or protocols. */
   adapter?: TransportAdapter;
   /** Suppress warnings when re-initializing transport. Useful for HMR. */
@@ -241,29 +237,33 @@ function createFetchAdapter(
 }
 
 let _runtime: TransportRuntime | null = null;
+let _runtimeSource: "default" | "manifest" | "user" | null = null;
 
 function createTransportRuntime(options: TransportOptions): TransportRuntime {
-  const endpoint = options.functions?.endpoint ?? getFunctionEndpoint();
   return {
     adapter:
       options.adapter ??
-      createFetchAdapter(() => resolveEndpointUrl(options.baseUrl, endpoint), {
-        credentials: options.credentials,
-        headers: options.headers,
-      }),
+      createFetchAdapter(
+        () => resolveEndpointUrl(options.baseUrl, getFunctionEndpoint()),
+        {
+          credentials: options.credentials,
+          headers: options.headers,
+        },
+      ),
   };
 }
 
 function getRuntime(): TransportRuntime {
   if (!_runtime) {
     _runtime = createTransportRuntime({});
+    _runtimeSource = "default";
   }
   return _runtime;
 }
 
 /**
  * Configure the transport runtime. Call once at app startup if you need to
- * customize HTTP request defaults, endpoint URLs, or adapter capabilities.
+ * customize HTTP request defaults, server origin, or adapter capabilities.
  */
 export function initTransport(options: TransportOptions): void {
   if (_runtime !== null && !options.silent) {
@@ -273,6 +273,26 @@ export function initTransport(options: TransportOptions): void {
     );
   }
   _runtime = createTransportRuntime(options);
+  _runtimeSource = "user";
+}
+
+/**
+ * Initialize the default HTTP transport from the framework manifest.
+ *
+ * Framework-managed runtimes call this before loading user modules. Explicit
+ * initTransport() calls still win, so custom adapters are not overwritten.
+ */
+export function initTransportFromManifest(
+  manifest: Pick<BuildOutput, "runtime">,
+): void {
+  const transport = manifest.runtime.transport;
+  if (!transport?.baseUrl || _runtimeSource === "user") return;
+
+  _runtime = createTransportRuntime({
+    baseUrl: transport.baseUrl,
+    silent: true,
+  });
+  _runtimeSource = "manifest";
 }
 
 /**
@@ -409,5 +429,6 @@ export function getFnId(fn: AnyFn): string | undefined {
  */
 export function __resetForTesting(): void {
   _runtime = null;
+  _runtimeSource = null;
   fnNameRegistry.clear();
 }

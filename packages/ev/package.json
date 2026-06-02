@@ -11,6 +11,11 @@
       "types": "./esm/index.d.ts",
       "import": "./esm/index.js",
       "default": "./esm/index.js"
+    },
+    "./build-tools": {
+      "types": "./esm/build-tools/index.d.ts",
+      "import": "./esm/build-tools/index.js",
+      "default": "./esm/build-tools/index.js"
     }
   },
   "scripts": {
@@ -32,9 +37,10 @@
   "license": "MIT",
   "author": "xusd320",
   "dependencies": {
-    "@evjs/manifest": "*",
     "@evjs/shared": "*",
+    "@swc/core": "^1.15.21",
     "@logtape/logtape": "^2.0.4",
+    "domparser-rs": "^0.1.0",
     "execa": "^9.6.1"
   },
   "devDependencies": {

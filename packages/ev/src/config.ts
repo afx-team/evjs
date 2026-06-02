@@ -1,15 +1,23 @@
-import { DEFAULT_ENDPOINT } from "@evjs/shared";
+import { DEFAULT_SERVER_BASE_PATH } from "@evjs/shared";
+import type {
+  HydrationMode,
+  PprConfig,
+  RenderMode,
+  SharedDependencyMap,
+} from "@evjs/shared/manifest";
 import type { BundlerAdapter } from "./bundler.js";
-import type { EvPlugin } from "./plugin.js";
+import type { Plugin } from "./plugin.js";
 
 export type {
-  EvBuildResult,
-  EvBundlerCtx,
-  EvDocument,
-  EvPlugin,
-  EvPluginConfigContext,
-  EvPluginContext,
-  EvPluginHooks,
+  BuildResult,
+  BundlerCtx,
+  HtmlDocument,
+  HtmlDocumentInfo,
+  HtmlTransformContext,
+  Plugin,
+  PluginConfigContext,
+  PluginContext,
+  PluginHooks,
 } from "./plugin.js";
 
 /** Resolved dev server configuration (all defaults applied). */
@@ -22,8 +30,8 @@ export interface ResolvedDevConfig {
   proxy: DevProxyRule[];
 }
 
-/** Resolved server functions build configuration. */
-export interface ResolvedServerFunctionsConfig {
+/** Internal server-function transform/runtime wiring. */
+export interface ResolvedFunctionRuntimeConfig {
   /** Server function RPC endpoint path. */
   endpoint: string;
   /** Client-side transport module for server function stubs. */
@@ -52,16 +60,28 @@ export interface ResolvedServerDevConfig {
 export interface ResolvedServerConfig {
   /** Explicit server entry file. Omitted when auto-generated. */
   entry?: string;
-  /** Server function build configuration. */
-  functions: ResolvedServerFunctionsConfig;
+  /** Framework server runtime base path. */
+  basePath: string;
+  /** Derived framework server runtime paths. */
+  runtime: ResolvedServerRuntimeConfig;
+  /** Internal build-time modules used by server-function transforms. */
+  functionRuntime: ResolvedFunctionRuntimeConfig;
+  /** RSC Flight endpoint configuration when enabled. */
+  rsc?: ResolvedServerRscConfig;
   /** Server dev options. */
   dev: ResolvedServerDevConfig;
 }
 
+export interface ResolvedServerRuntimeConfig {
+  basePath: string;
+  fn: string;
+  rsc?: string;
+}
+
 /**
- * A version of EvConfig where all fields with defaults are guaranteed.
+ * A version of Config where all fields with defaults are guaranteed.
  */
-export interface ResolvedEvConfig<
+export interface ResolvedConfig<
   TBundlerCfg = import("@utoo/pack").ConfigComplete,
 > {
   /** Client entry point (SPA mode). */
@@ -74,23 +94,31 @@ export interface ResolvedEvConfig<
    * When set, the build produces one HTML file per page, each with its own
    * entry bundle. The single-entry `entry` and `html` fields are ignored.
    */
-  pages?: Record<string, { entry: string; html: string }>;
+  pages?: Record<string, ResolvedPageConfig>;
+  /** Explicit application declarations. */
+  apps?: Record<string, ResolvedAppConfig>;
+  /** Remote app manifests configured for shell/runtime loading. */
+  remotes: Record<string, ResolvedRemoteConfig>;
+  /** Remote app manifest emitted by this build, when this package is a remote. */
+  remote?: ResolvedRemoteBuildConfig;
   /** Client dev server options. */
   dev: ResolvedDevConfig;
   /** Whether the server is enabled (true unless `server: false`). */
   serverEnabled: boolean;
   /** Server configuration. */
   server: ResolvedServerConfig;
+  /** Browser-to-server transport configuration. */
+  transport: ResolvedTransportConfig;
   /** Bundler adapter. When omitted, defaults to utoopack. */
   bundler?: BundlerAdapter<TBundlerCfg>;
   /** Active plugins. */
-  plugins: EvPlugin<TBundlerCfg>[];
+  plugins: Plugin<TBundlerCfg>[];
 }
 
 /**
  * evjs framework configuration.
  */
-export interface EvConfig<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
+export interface Config<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
   /** Client entry point. Default: "./src/main.tsx". */
   entry?: string;
   /** HTML template path. Default: "./index.html". */
@@ -108,13 +136,43 @@ export interface EvConfig<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
    */
   server?: false | ServerConfig;
 
+  /**
+   * Browser-to-server transport options.
+   *
+   * Same-origin applications do not need this. Set `baseUrl` only when the
+   * browser runtime calls a framework server hosted on another origin.
+   */
+  transport?: TransportConfig;
+
+  /**
+   * Application-level declarations.
+   *
+   * `routes` points to the same module that application runtime imports for
+   * its real route tree. It is an explicit graph-analysis source, not a file
+   * convention.
+   */
+  apps?: Record<string, AppConfig>;
+
+  /** Remote applications loaded from framework manifests. */
+  remotes?: Record<string, RemoteConfig>;
+
+  /**
+   * Remote app emitted by this build.
+   *
+   * Use this when the current package is a manifest-driven remote that will be
+   * loaded by another evjs shell. Host applications consume remotes through
+   * `remotes`; remote packages declare themselves through this singular
+   * `remote` field.
+   */
+  remote?: RemoteBuildConfig;
+
   /** Bundler adapter. When omitted, defaults to utoopack. */
   bundler?: BundlerAdapter<TBundlerCfg>;
 
   /**
    * Framework plugins to extend behavior or modify the bundler config.
    */
-  plugins?: EvPlugin<TBundlerCfg>[];
+  plugins?: Plugin<TBundlerCfg>[];
 
   /**
    * MPA (Multi-Page Application) configuration.
@@ -147,7 +205,8 @@ export interface DevConfig {
   /**
    * Dev proxy configuration.
    * Configures the client dev server to proxy requests to backend services.
-   * Defaults to forwarding DEFAULT_ENDPOINT ("api/fn") to the local API dev server.
+   * Defaults to forwarding the derived framework server function endpoint to
+   * the local API dev server.
    */
   proxy?: DevProxyRule[];
 }
@@ -156,26 +215,86 @@ export interface DevConfig {
 export interface ServerConfig {
   /** Explicit server entry file. If provided, overrides auto-generated entry. */
   entry?: string;
-  /** Server function build configuration. */
-  functions?: ServerFunctionsConfig;
+  /**
+   * Framework server runtime base path. Defaults to "/__evjs".
+   *
+   * Server function, PPR, and RSC endpoints are derived from this path.
+   */
+  basePath?: string;
+  /** React Server Components Flight endpoint configuration. */
+  rsc?: boolean | ServerRscConfig;
   /** Server dev options. */
   dev?: ServerDevConfig;
 }
 
-/** Server function build configuration. */
-export interface ServerFunctionsConfig {
-  /** Server function RPC endpoint path. Default: "api/fn". */
+export interface ServerRscConfig {
+  /**
+   * RSC Flight endpoint path. Defaults to `${server.basePath}/rsc` when RSC is enabled.
+   */
   endpoint?: string;
-  /**
-   * Client-side transport module for server function stubs.
-   * Default: "@evjs/client/transport".
-   */
-  clientProxy?: string;
-  /**
-   * Server-side registration module for server functions.
-   * Default: "@evjs/server/register".
-   */
-  serverRegister?: string;
+}
+
+export interface ResolvedServerRscConfig {
+  endpoint: string;
+}
+
+export interface TransportConfig {
+  /** Absolute or relative server origin used by the browser runtime. */
+  baseUrl?: string;
+}
+
+export interface ResolvedTransportConfig {
+  baseUrl?: string;
+}
+
+export interface AppConfig {
+  entry: string;
+  html?: string;
+  routes?: string;
+  mount?: string;
+}
+
+export interface ResolvedAppConfig {
+  entry: string;
+  html: string;
+  routes?: string;
+  mount?: string;
+}
+
+export interface RemoteConfig {
+  manifest: string;
+  activeWhen?: string[];
+}
+
+export interface ResolvedRemoteConfig {
+  manifest: string;
+  activeWhen?: string[];
+}
+
+export interface RemoteBuildConfig {
+  name: string;
+  baseUrl?: string;
+  shared?: SharedDependencyMap;
+  entries: Record<string, RemoteBuildEntryConfig>;
+}
+
+export interface RemoteBuildEntryConfig {
+  app: string;
+  activeWhen?: string[];
+  mount?: string;
+}
+
+export interface ResolvedRemoteBuildConfig {
+  name: string;
+  baseUrl: string;
+  shared?: SharedDependencyMap;
+  entries: Record<string, ResolvedRemoteBuildEntryConfig>;
+}
+
+export interface ResolvedRemoteBuildEntryConfig {
+  app: string;
+  activeWhen?: string[];
+  mount?: string;
 }
 
 /** Server dev options. */
@@ -194,8 +313,8 @@ export const CONFIG_DEFAULTS = {
   html: "./index.html",
   port: 3000,
   serverPort: 3001,
-  endpoint: DEFAULT_ENDPOINT,
-  clientProxy: "@evjs/client/transport",
+  serverBasePath: DEFAULT_SERVER_BASE_PATH,
+  clientProxy: "@evjs/client",
   serverRegister: "@evjs/server/register",
 } as const;
 
@@ -203,12 +322,37 @@ function toProxyContext(endpoint: string): string {
   return endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
 }
 
+function normalizePath(value: string): string {
+  const withLeadingSlash = value.startsWith("/") ? value : `/${value}`;
+  return withLeadingSlash.length > 1
+    ? withLeadingSlash.replace(/\/+$/, "")
+    : withLeadingSlash;
+}
+
+function joinPath(basePath: string, segment: string): string {
+  return `${normalizePath(basePath)}/${segment.replace(/^\/+/, "")}`;
+}
+
+function resolveRscEndpoint(
+  serverConfig: ServerConfig,
+  requiredByPageConfig: boolean,
+): string | undefined {
+  if (!serverConfig.rsc && !requiredByPageConfig) return undefined;
+  const serverBasePath = normalizePath(
+    serverConfig.basePath ?? CONFIG_DEFAULTS.serverBasePath,
+  );
+  if (typeof serverConfig.rsc === "object" && serverConfig.rsc.endpoint) {
+    return normalizePath(serverConfig.rsc.endpoint);
+  }
+  return joinPath(serverBasePath, "rsc");
+}
+
 /**
  * Deeply merge user configuration with defaults.
  */
 export function resolveConfig<
   TBundlerCfg = import("@utoo/pack").ConfigComplete,
->(userConfig?: EvConfig<TBundlerCfg>): ResolvedEvConfig<TBundlerCfg> {
+>(userConfig?: Config<TBundlerCfg>): ResolvedConfig<TBundlerCfg> {
   const config = userConfig ?? {};
   const serverEnabled = config.server !== false;
   const serverConfig = config.server === false ? {} : (config.server ?? {});
@@ -216,23 +360,52 @@ export function resolveConfig<
   const defaultHtml = config.html ?? CONFIG_DEFAULTS.html;
 
   // Resolve MPA pages — fill in default html per page
-  let resolvedPages:
-    | Record<string, { entry: string; html: string }>
-    | undefined;
+  let resolvedPages: Record<string, ResolvedPageConfig> | undefined;
   if (config.pages && Object.keys(config.pages).length > 0) {
     resolvedPages = {};
     for (const [name, page] of Object.entries(config.pages)) {
       const pageConfig = typeof page === "string" ? { entry: page } : page;
+      validatePageConfig(name, pageConfig);
       resolvedPages[name] = {
-        entry: pageConfig.entry,
+        path: "path" in pageConfig ? pageConfig.path : undefined,
+        entry: "entry" in pageConfig ? pageConfig.entry : undefined,
+        component: "component" in pageConfig ? pageConfig.component : undefined,
+        app: "app" in pageConfig ? pageConfig.app : undefined,
         html: pageConfig.html ?? defaultHtml,
+        render: pageConfig.render ?? "csr",
+        hydrate: pageConfig.hydrate,
+        mount: pageConfig.mount,
+        ppr: "ppr" in pageConfig ? pageConfig.ppr : undefined,
       };
     }
   }
 
+  const requiresRscEndpoint =
+    resolvedPages &&
+    Object.values(resolvedPages).some((page) => page.render === "rsc");
+  const resolvedApps = config.apps
+    ? Object.fromEntries(
+        Object.entries(config.apps).map(([id, app]) => [
+          id,
+          {
+            entry: app.entry,
+            html: app.html ?? defaultHtml,
+            routes: app.routes,
+            mount: app.mount,
+          },
+        ]),
+      )
+    : undefined;
+
   const serverPort = serverConfig.dev?.port ?? CONFIG_DEFAULTS.serverPort;
-  const serverEndpoint =
-    serverConfig.functions?.endpoint ?? CONFIG_DEFAULTS.endpoint;
+  const serverBasePath = normalizePath(
+    serverConfig.basePath ?? CONFIG_DEFAULTS.serverBasePath,
+  );
+  const serverEndpoint = joinPath(serverBasePath, "fn");
+  const rscEndpoint = resolveRscEndpoint(
+    serverConfig,
+    Boolean(requiresRscEndpoint),
+  );
   const serverTarget = new URL(
     serverConfig.dev?.https ? "https://localhost" : "http://localhost",
   );
@@ -242,6 +415,37 @@ export function resolveConfig<
     entry: config.entry ?? CONFIG_DEFAULTS.entry,
     html: defaultHtml,
     pages: resolvedPages,
+    apps: resolvedApps,
+    remotes: Object.fromEntries(
+      Object.entries(config.remotes ?? {}).map(([name, remote]) => [
+        name,
+        {
+          manifest: remote.manifest,
+          activeWhen: remote.activeWhen ? [...remote.activeWhen] : undefined,
+        },
+      ]),
+    ),
+    remote: config.remote
+      ? {
+          name: config.remote.name,
+          baseUrl: config.remote.baseUrl ?? "/",
+          ...(config.remote.shared
+            ? { shared: cloneSharedDependencies(config.remote.shared) }
+            : {}),
+          entries: Object.fromEntries(
+            Object.entries(config.remote.entries).map(([entryId, entry]) => [
+              entryId,
+              {
+                app: entry.app,
+                activeWhen: entry.activeWhen
+                  ? [...entry.activeWhen]
+                  : undefined,
+                mount: entry.mount,
+              },
+            ]),
+          ),
+        }
+      : undefined,
     dev: {
       port: config.dev?.port ?? CONFIG_DEFAULTS.port,
       https: config.dev?.https ?? false,
@@ -250,7 +454,10 @@ export function resolveConfig<
         ...(config.dev?.proxy ?? []),
         // Framework always proxies the server function endpoint to the local API dev server
         {
-          context: [toProxyContext(serverEndpoint)],
+          context: [
+            toProxyContext(serverEndpoint),
+            ...(rscEndpoint ? [toProxyContext(rscEndpoint)] : []),
+          ],
           target: serverTarget.origin,
           changeOrigin: true,
           secure: false,
@@ -260,22 +467,52 @@ export function resolveConfig<
     serverEnabled,
     server: {
       entry: serverConfig.entry,
-      functions: {
+      basePath: serverBasePath,
+      runtime: {
+        basePath: serverBasePath,
+        fn: serverEndpoint,
+        ...(rscEndpoint ? { rsc: rscEndpoint } : {}),
+      },
+      rsc: rscEndpoint ? { endpoint: rscEndpoint } : undefined,
+      functionRuntime: {
         endpoint: serverEndpoint,
-        clientProxy:
-          serverConfig.functions?.clientProxy ?? CONFIG_DEFAULTS.clientProxy,
-        serverRegister:
-          serverConfig.functions?.serverRegister ??
-          CONFIG_DEFAULTS.serverRegister,
+        clientProxy: CONFIG_DEFAULTS.clientProxy,
+        serverRegister: CONFIG_DEFAULTS.serverRegister,
       },
       dev: {
         port: serverPort,
         https: serverConfig.dev?.https ?? false,
       },
     },
+    transport: {
+      baseUrl: config.transport?.baseUrl,
+    },
     bundler: config.bundler,
     plugins: config.plugins ?? [],
   };
+}
+
+function cloneSharedDependencies(
+  shared: SharedDependencyMap,
+): SharedDependencyMap {
+  return Object.fromEntries(
+    Object.entries(shared).map(([name, dependency]) => [
+      name,
+      {
+        ...(dependency.shareKey ? { shareKey: dependency.shareKey } : {}),
+        ...(dependency.requiredVersion
+          ? { requiredVersion: dependency.requiredVersion }
+          : {}),
+        ...(dependency.singleton !== undefined
+          ? { singleton: dependency.singleton }
+          : {}),
+        ...(dependency.strictVersion !== undefined
+          ? { strictVersion: dependency.strictVersion }
+          : {}),
+        ...(dependency.eager !== undefined ? { eager: dependency.eager } : {}),
+      },
+    ]),
+  );
 }
 /**
  * Define the evjs framework configuration with type inference.
@@ -284,8 +521,8 @@ export function resolveConfig<
  * @returns The exact same configuration object.
  */
 export function defineConfig<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
-  config: EvConfig<TBundlerCfg>,
-): EvConfig<TBundlerCfg> {
+  config: Config<TBundlerCfg>,
+): Config<TBundlerCfg> {
   return config;
 }
 
@@ -297,16 +534,77 @@ export type PageConfig = string | PageObjectConfig;
 /**
  * Object form for a single page in MPA mode.
  */
-export interface PageObjectConfig {
+export type PageObjectConfig =
+  | PageEntryConfig
+  | PageComponentConfig
+  | PageAppConfig;
+
+export interface PageEntryConfig {
+  /** Optional URL path served by the framework server for this page. */
+  path?: string;
   /** Client entry point for this page. */
   entry: string;
   /** HTML template path. If omitted, uses the top-level `html` default. */
   html?: string;
+  render?: Extract<RenderMode, "csr">;
+  hydrate?: HydrationMode;
+  mount?: string;
+}
+
+export interface PageComponentConfig {
+  /** Optional URL path served by the framework server for this page. */
+  path?: string;
+  /** React component module mounted by the evjs page runtime. */
+  component: string;
+  /** HTML template path. If omitted, uses the top-level `html` default. */
+  html?: string;
+  render?: RenderMode;
+  hydrate?: HydrationMode;
+  mount?: string;
+  ppr?: PprConfig;
+}
+
+export interface PageAppConfig {
+  /** Optional URL path served by the framework server for this page. */
+  path?: string;
+  /** Lifecycle module with mount/hydrate/unmount exports. */
+  app: string;
+  /** HTML template path. If omitted, uses the top-level `html` default. */
+  html?: string;
+  render?: Extract<RenderMode, "csr" | "ssr">;
+  hydrate?: HydrationMode;
+  mount?: string;
+}
+
+export interface ResolvedPageConfig {
+  path?: string;
+  entry?: string;
+  component?: string;
+  app?: string;
+  html: string;
+  render: RenderMode;
+  hydrate?: HydrationMode;
+  mount?: string;
+  ppr?: PprConfig;
 }
 
 /**
  * Whether the resolved config is in MPA (multi-page) mode.
  */
-export function isMpa<T = unknown>(config: ResolvedEvConfig<T>): boolean {
+export function isMpa<T = unknown>(config: ResolvedConfig<T>): boolean {
   return config.pages !== undefined && Object.keys(config.pages).length > 0;
+}
+
+function validatePageConfig(name: string, page: PageObjectConfig): void {
+  const entryLikeKeys = [
+    "entry" in page,
+    "component" in page,
+    "app" in page,
+  ].filter(Boolean);
+
+  if (entryLikeKeys.length !== 1) {
+    throw new Error(
+      `[evjs] Page "${name}" must specify exactly one of entry, component, or app.`,
+    );
+  }
 }

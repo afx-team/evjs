@@ -100,14 +100,16 @@ test.describe("mpa", () => {
           js: expect.arrayContaining([expect.stringMatching(/about.*\.js$/)]),
           css: expect.any(Array),
         }),
-        routes: [],
+        render: "csr",
+        entry: "./src/about/main.tsx",
       }),
       home: expect.objectContaining({
         assets: expect.objectContaining({
           js: expect.arrayContaining([expect.stringMatching(/home.*\.js$/)]),
           css: expect.any(Array),
         }),
-        routes: [],
+        render: "csr",
+        entry: "./src/home/main.tsx",
       }),
     });
   });

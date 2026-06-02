@@ -37,18 +37,20 @@ config needed.
 
 ## 🏗️ Packages
 
+### Public entry points
+
 | Package | Purpose |
 |---------|---------|
 | [`@evjs/ev`](./packages/ev) | Framework API, config, plugins, and build orchestration (`defineConfig`, `dev`, `build`) |
 | [`@evjs/cli`](./packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`) with the default bundler |
 | [`@evjs/create-app`](./packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
-| [`@evjs/shared`](./packages/shared) | Runtime shared: errors, HTTP utils, constants |
-| [`@evjs/client`](./packages/client) | Client runtime (React + TanStack) |
-| [`@evjs/server`](./packages/server) | Server runtime (Hono) |
-| [`@evjs/build-tools`](./packages/build-tools) | Server function transforms |
-| [`@evjs/bundler-utoopack`](./packages/bundler-utoopack) | Utoopack adapter (default) |
-| [`@evjs/manifest`](./packages/manifest) | Shared manifest schema types |
+| [`@evjs/client`](./packages/client) | Browser runtime, server-function transport, page runtime, shell exports, static route helpers, and TanStack compatibility |
+| [`@evjs/server`](./packages/server) | Hono/fetch server runtime, server functions, routes, SSR/PPR/RSC request boundary |
 | [`examples/`](./examples) | Starter templates |
+
+Internal modules such as manifest schemas, build tools, page runtime, shell,
+and route DSL live inside the public packages above instead of separate
+application-facing packages.
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) · [AGENT.md](./AGENT.md)
 

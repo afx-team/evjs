@@ -1,25 +1,6 @@
 # 配置
 
-evjs **默认零配置**。你可以选择在项目根目录创建 `ev.config.ts` 来覆盖默认值。`defineConfig` 辅助函数提供完整的类型安全。
-
-```ts
-import { defineConfig } from "@evjs/ev";
-export default defineConfig({ /* ... */ });
-```
-
-## 默认值
-
-所有字段都是可选的，以下是内置默认值：
-
-| 设置 | 默认值 |
-|------|--------|
-| `entry` | `./src/main.tsx` |
-| `html` | `./index.html` |
-| `dev.port` | `3000` |
-| `server.dev.port` | `3001` |
-| `server.functions.endpoint` | `api/fn` |
-
-## 完整参考
+evjs 默认零配置。应用需要显式入口、页面、框架服务端路径、远程应用、插件或非默认 bundler 时，可以创建 `ev.config.ts`。
 
 ```ts
 import { defineConfig } from "@evjs/ev";
@@ -27,19 +8,134 @@ import { defineConfig } from "@evjs/ev";
 export default defineConfig({
   entry: "./src/main.tsx",
   html: "./index.html",
-  dev: {
-    port: 3000,
-    https: false,
+});
+```
+
+## 默认值
+
+| 配置 | 默认值 |
+|------|--------|
+| `entry` | `./src/main.tsx` |
+| `html` | `./index.html` |
+| `dev.port` | `3000` |
+| `server.dev.port` | `3001` |
+| `server.basePath` | `/__evjs` |
+| 服务端函数端点 | `${server.basePath}/fn` |
+
+服务端函数端点从 `server.basePath` 派生，没有单独的公开函数端点配置。
+
+## 应用
+
+单应用可以直接使用顶层 `entry` / `html`：
+
+```ts
+export default defineConfig({
+  entry: "./src/main.tsx",
+  html: "./index.html",
+});
+```
+
+应用有自己的运行时入口、挂载点或真实 route source 时使用 `apps`：
+
+```ts
+export default defineConfig({
+  apps: {
+    console: {
+      entry: "./src/console/main.tsx",
+      html: "./src/console/index.html",
+      routes: "./src/console/routes.tsx",
+      mount: "#app",
+    },
   },
-  // 设置为 `false` 可禁用服务端（纯 CSR 模式，扁平 dist/ 输出）
-  // server: false,
+});
+```
+
+`apps.*.routes` 指向运行时代码也会 import 的同一个路由模块。TanStack 这类路由插件只负责 adapter 能力，不负责拥有应用路由路径。
+
+## 页面
+
+`pages` 声明独立页面输出。字符串页面和 `{ entry }` 页面由用户自己控制 bootstrap：
+
+```ts
+export default defineConfig({
+  pages: {
+    home: "./src/pages/home/main.tsx",
+    about: {
+      entry: "./src/pages/about/main.tsx",
+      html: "./src/pages/about/index.html",
+    },
+  },
+});
+```
+
+组件页面由 evjs 的通用 runtime 负责 mount/hydrate：
+
+```ts
+export default defineConfig({
+ pages: {
+   campaign: {
+      path: "/campaign",
+     component: "./src/pages/campaign/Page.tsx",
+     html: "./src/pages/public.html",
+      render: "ssr",
+      hydrate: "load",
+      mount: "#app",
+    },
+  },
+});
+```
+
+配置了 `path` 时，该页面也会贡献 framework route。SSR、SSG、PPR 等由框架服务端处理的页面应把 URL、component、render mode、hydration 放在同一条页面声明里。未配置 `path` 时，页面会输出为 `campaign.html` 这样的 HTML 文档。
+
+PPR 页面显式声明动态 region：
+
+```ts
+export default defineConfig({
+ pages: {
+   campaign: {
+      path: "/campaign",
+     component: "./src/pages/campaign/Page.tsx",
+      render: "ppr",
+      ppr: {
+        regions: {
+          offer: {
+            component: "./src/pages/campaign/Offer.region.tsx",
+            cache: "no-store",
+          },
+          inventory: {
+            component: "./src/pages/campaign/Inventory.region.tsx",
+            cache: { revalidate: 60 },
+          },
+        },
+      },
+    },
+  },
+});
+```
+
+`render: "rsc"` 已预留给后续专用 RSC transform/runtime adapter。
+
+## 服务端
+
+纯 CSR 可以禁用服务端：
+
+```ts
+export default defineConfig({ server: false });
+```
+
+`server: false` 时：
+
+- 构建输出为扁平 `dist/`；
+- `"use server"` 模块会成为构建错误；
+- dev 模式不会配置框架服务端代理。
+
+通过 `server.basePath` 配置框架服务端边界：
+
+```ts
+export default defineConfig({
   server: {
     entry: "./src/server.ts",
-    functions: {
-      endpoint: "api/fn",
-      clientProxy: "@evjs/client/transport",
-      serverRegister: "@evjs/server/register",
-    },
+    basePath: "/_framework",
     dev: {
       port: 3001,
       https: false,
@@ -48,126 +144,51 @@ export default defineConfig({
 });
 ```
 
-## 客户端选项
+派生路径：
+
+```txt
+/_framework/fn       服务端函数
+/_framework/ppr      存在 PPR 页面时的 region endpoint
+/_framework/rsc      启用 server.rsc 时的 Flight endpoint
+```
+
+只有当浏览器需要调用另一个 origin 上的框架服务端时，才配置 `transport.baseUrl`：
+
+```ts
+export default defineConfig({
+  transport: {
+    baseUrl: "https://api.example.com",
+  },
+});
+```
+
+## 远程应用
+
+远程应用通过 manifest 加载：
+
+```ts
+export default defineConfig({
+  remotes: {
+    crm: {
+      manifest: "https://assets.example.com/crm/manifest.json",
+      activeWhen: ["/app/crm/*"],
+    },
+  },
+});
+```
 
 ## 插件
 
-通过 `plugins` 数组注册插件。每个插件包含 `name` 和返回生命周期钩子的 `setup()` 函数：
-
 ```ts
 export default defineConfig({
   plugins: [
-    {
-      name: "my-plugin",
-      setup(ctx) {
-        return {
-          buildStart() { /* ... */ },
-          bundlerConfig(config, ctx) { /* ... */ },
-          transformHtml(doc) { /* ... */ },
-          buildEnd(result) { /* ... */ },
-        };
-      },
-    },
-  ],
-});
-```
-
-查看 **[插件指南](./plugins.md)** 获取完整 API 参考、`EvDocument` DOM 接口、类型安全构建器辅助函数和实用示例。
-
-## 构建器选项
-
-`bundler` 字段选择编译引擎。默认情况下，evjs 使用 `@evjs/bundler-utoopack` 提供的 **Utoopack 适配器**。
-
-| 选项 | 类型 | 默认值 | 描述 |
-|------|------|--------|------|
-| `bundler` | `BundlerAdapter` | utoopack | 激活的构建器适配器。从 `@evjs/bundler-utoopack` 导入 `utoopackAdapter` 可显式选择默认的 Utoopack 后端。 |
-
-```ts
-import { defineConfig } from "@evjs/ev";
-import { utoopackAdapter } from "@evjs/bundler-utoopack";
-
-export default defineConfig({
-  bundler: utoopackAdapter,
-});
-```
-
-### 内置支持：CSS 和 Tailwind
-evjs 包含**内置的 PostCSS/Tailwind 支持**。如果项目根目录检测到 `postcss.config.js` 文件，当前构建器适配器会自动启用 PostCSS 处理。标准 Tailwind 设置无需插件或自定义钩子。
-
-## 服务端选项
-
-`server` 字段接受一个对象用于全栈应用，或设置为 `false` 以完全禁用服务端（纯 CSR 模式）。
-
-```ts
-// 纯 CSR：扁平 dist/ 输出，无服务端 bundle
-export default defineConfig({ server: false });
-```
-
-设置 `server: false` 时：
-- 构建输出到 `dist/` 而不是 `dist/client/` + `dist/server/`
-- 任何 `"use server"` 模块都会导致**构建错误**
-- 开发模式下不配置 API 代理
-
-### `server.entry`
-
-显式服务端入口文件。提供后会覆盖自动生成的 `@evjs/server/fetch` 入口。自定义入口应默认导出带 `fetch` 的对象，通常写作 `export default { fetch: app.fetch };`。
-
-### `server.functions`
-
-| 选项 | 类型 | 默认值 | 描述 |
-|------|------|--------|------|
-| `endpoint` | `string` | `api/fn` | 服务端函数 RPC 调用路径 |
-| `clientProxy` | `string` | `@evjs/client/transport` | 客户端服务端函数桩代码使用的模块 |
-| `serverRegister` | `string` | `@evjs/server/register` | 服务端函数实现注册使用的模块 |
-
-## 示例
-
-### 完整示例
-
-此示例展示了一个具备自定义加载器和构建分析的生产就绪设置。
-
-```ts
-import { defineConfig } from "@evjs/ev";
-import { merge, utoopack } from "@evjs/bundler-utoopack";
-
-export default defineConfig({
-  entry: "./src/entry-client.tsx",
-  server: {
-    entry: "./src/entry-server.ts",
-    functions: {
-      endpoint: "/api/rpc",
-      clientProxy: "@evjs/client/transport",
-      serverRegister: "@evjs/server/register",
-    },
-    dev: { port: 4001 },
-  },
-
-  dev: { port: 4000 },
-
-  plugins: [
-    {
-      name: "mdx-support",
-      setup() {
-        return {
-          bundlerConfig: utoopack((cfg) => {
-            merge(cfg, {
-              module: { rules: { ".mdx": { type: "raw" } } },
-            });
-          }),
-        };
-      },
-    },
     {
       name: "build-timer",
-      setup(ctx) {
-        const t0 = Date.now();
+      setup() {
+        const start = Date.now();
         return {
-          buildStart() {
-            console.log(`构建中 (${ctx.mode})...`);
-          },
-          buildEnd(result) {
-            console.log(`完成，耗时 ${Date.now() - t0}ms`);
-            console.log(`资源: ${result.clientManifest.assets.js.length} 个 JS 文件`);
+          buildEnd({ output }) {
+            console.log("Build", output.buildId, Date.now() - start);
           },
         };
       },
@@ -175,3 +196,5 @@ export default defineConfig({
   ],
 });
 ```
+
+更多 hook 签名、单 HTML 文档上下文和 bundler 辅助函数见 [插件指南](./plugins.md)。

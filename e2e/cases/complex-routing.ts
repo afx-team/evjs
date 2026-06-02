@@ -105,7 +105,7 @@ test.describe("complex-routing", () => {
   }) => {
     const dashboardPromise = page.waitForResponse(
       (res) =>
-        res.url().includes("api/fn") && res.request().method() === "POST",
+        res.url().includes("__evjs/fn") && res.request().method() === "POST",
     );
     await page.goto(`${baseURL}/dashboard`);
     const dashboardResponse = await dashboardPromise;

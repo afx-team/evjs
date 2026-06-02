@@ -124,7 +124,6 @@ describe("initTransport + callServer", () => {
       baseUrl: "https://api.example.com/backend",
       credentials: "include",
       headers: { Authorization: "Bearer xyz" },
-      functions: { endpoint: "api/rpc" },
       adapter: { send },
     });
 
@@ -206,6 +205,14 @@ describe("transport types", () => {
     expect(invalidRequestInit).toEqual({
       requestInit: { credentials: "include" },
     });
+
+    const invalidFunctions: TransportOptions = {
+      // @ts-expect-error Server function endpoint is provided by framework runtime metadata.
+      functions: { endpoint: "/api/rpc" },
+    };
+    expect(invalidFunctions).toEqual({
+      functions: { endpoint: "/api/rpc" },
+    });
   });
 });
 
@@ -262,7 +269,8 @@ describe("default fetch adapter", () => {
     vi.stubGlobal("fetch", mockFetch);
     vi.stubGlobal("location", new URL("http://app.example.com/posts/1"));
 
-    initTransport({ functions: { endpoint: "/api/rpc" } });
+    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
+    initTransport({});
     await callServer("myFn", []);
 
     expect(mockFetch).toHaveBeenCalledWith(
@@ -277,10 +285,10 @@ describe("default fetch adapter", () => {
       json: async () => ({ result: "ok" }),
     });
     vi.stubGlobal("fetch", mockFetch);
+    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
 
     initTransport({
       baseUrl: "https://api.example.com/backend",
-      functions: { endpoint: "/api/rpc" },
     });
     await callServer("myFn", []);
 
@@ -296,10 +304,10 @@ describe("default fetch adapter", () => {
       json: async () => ({ result: "ok" }),
     });
     vi.stubGlobal("fetch", mockFetch);
+    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "api/rpc");
 
     initTransport({
       baseUrl: "https://api.example.com/backend",
-      functions: { endpoint: "api/rpc" },
     });
     await callServer("myFn", []);
 
@@ -315,15 +323,18 @@ describe("default fetch adapter", () => {
       json: async () => ({ result: "ok" }),
     });
     vi.stubGlobal("fetch", mockFetch);
+    vi.stubGlobal(
+      "__EVJS_FUNCTION_ENDPOINT__",
+      "https://rpc.example.com/api/fn",
+    );
 
     initTransport({
       baseUrl: "https://api.example.com/backend",
-      functions: { endpoint: "https://rpc.example.comapi/fn" },
     });
     await callServer("myFn", []);
 
     expect(mockFetch).toHaveBeenCalledWith(
-      new URL("https://rpc.example.comapi/fn"),
+      new URL("https://rpc.example.com/api/fn"),
       expect.objectContaining({ method: "POST" }),
     );
   });

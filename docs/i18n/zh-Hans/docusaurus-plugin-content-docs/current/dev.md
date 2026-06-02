@@ -17,13 +17,13 @@ ev dev
 | **开发服务器** | `3000` | 具有模块热替换（HMR）的客户端 bundle |
 | **API 服务器** | `3001` | 服务端函数 + 路由处理器，首次构建后自动启动 |
 
-客户端开发服务器会自动将 `/api/*` 请求代理到 API 服务器。
+客户端开发服务器会自动将 `/__evjs/fn` 等框架服务端运行时路径代理到 API 服务器。
 
 ```mermaid
 flowchart LR
     Browser["浏览器"] -->|":3000"| DEV["开发服务器"]
     DEV -->|"HMR"| Browser
-    DEV -->|"/api/* 代理"| API["API 服务器 :3001"]
+    DEV -->|"/__evjs/* 代理"| API["API 服务器 :3001"]
     API --> Hono["Hono 应用"]
     Hono --> Registry["服务端函数注册表"]
 ```
@@ -42,9 +42,7 @@ export default defineConfig({
     https: false,                 // HTTPS 模式
   },
   server: {
-    functions: {
-      endpoint: "api/fn",         // 默认值
-    },
+    basePath: "/__evjs",          // 服务端函数/PPR/RSC 路径从这里派生
     dev: {
       port: 3001,                 // API 端口
       https: false,               // API 服务器 HTTPS
@@ -62,7 +60,7 @@ export default defineConfig({
 5. 启动客户端 HMR 服务器（例如 `dev server`）。
 6. 在扫描到服务端后，适配器触发 `onServerBundleReady` 信号。
 7. CLI 核心通过 `@evjs/server/node` 自动启动 API 服务器。
-8. 设置反向代理：`devServer.proxy["/api"] → localhost:3001`。
+8. 为派生出的框架运行时路径设置反向代理，例如 `/__evjs/fn → localhost:3001`。
 
 ## API 服务器运行时
 
@@ -85,12 +83,17 @@ await build({ entry: "./src/main.tsx" }, { cwd: "./my-app", bundler: utoopackAda
 
 `@evjs/cli` 也导出兼容包装函数，会自动注入默认的 utoopack 适配器，与 `ev dev` 和 `ev build` 命令保持一致。
 
+`@evjs/bundler-webpack` 也可以运行开发模式，用于架构验证。它使用 webpack-dev-server
+处理客户端 entry，使用 webpack watch 处理服务端 entry，并实现
+`updatePlan(update, graph)`，因此配置化新增页面可以在运行中的 `ev dev` 进程内生效。
+Utoopack 仍然是默认适配器。
+
 ## 传输层
 
 默认 HTTP 传输不需要应用代码配置。只有在需要定制内置 HTTP 适配器，
 或替换为自定义适配器时，才需要在应用启动时调用 `initTransport()`。
 
-- 在**开发模式**中：客户端服务器代理 `/api/*` → `:3001`，所以默认的 `api/fn` 端点会自动生效
+- 在**开发模式**中：客户端服务器代理派生出的服务端函数路径，例如 `/__evjs/fn` → `:3001`
 - 在**生产模式**中：客户端和服务端通常在同一个源下
 - 通信层**与运行时无关** —— 无论后端使用何种运行时，客户端始终会将 POST 请求发送至正确的相同端点
 - 内置 HTTP 适配器通过 `credentials` 和 `headers` 配置；fetch `mode` 不提供配置

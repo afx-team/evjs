@@ -1,54 +1,175 @@
 # Deployment
 
-Building and deploying an evjs application requires two parts: serving the static client assets and running the API server for server functions.
+An evjs production build contains static assets, an optional server bundle, and a single framework manifest.
 
-## Build for Production
+```txt
+dist/
+├── client/
+├── server/
+└── manifest.json
+```
+
+Deployment adapters should consume `dist/manifest.json` / `BuildOutput` and derive platform-specific routing or asset manifests from it.
+
+## Production Build
 
 ```bash
 npm run build
-# Under the hood: ev build
+# usually runs: ev build
 ```
 
-This creates:
-- `dist/client/` — Static React SPA and assets
-- `dist/server/` — Backend server functions bundle
-- `dist/client/manifest.json` — Client asset map and route metadata
-- `dist/server/manifest.json` — Server function registry
+Important output:
 
-Client asset URLs are emitted as root-relative paths under `dist/client/`. If you need a CDN origin or non-root asset base, front it with your reverse proxy or add that behavior in a custom bundler adapter or HTML transform plugin.
+- `dist/manifest.json` — apps, pages, routes, assets, server functions, server routes, remotes, and runtime paths;
+- `dist/client/` — browser assets and HTML;
+- `dist/server/` — framework server bundle when `server` is enabled.
 
-## Option 1: Node.js (Default)
+## Runtime Paths
 
-The default and simplest deployment option:
+Framework server endpoints are derived from `server.basePath`:
 
-```javascript
-// server.mjs
+```txt
+/__evjs/fn       server functions
+/__evjs/ppr      PPR region endpoint when PPR pages exist
+/__evjs/rsc      RSC Flight endpoint when server.rsc is enabled
+```
+
+If browser and server run on different origins, configure `transport.baseUrl` at build time.
+
+## Built-In Adapters
+
+`@evjs/ev` ships three deployment adapters:
+
+- `nodeDeploymentAdapter()` emits a Node server entry plus deployment metadata.
+- `staticDeploymentAdapter()` emits deployment metadata plus `_redirects` for
+  static hosts that support SPA/MPA rewrites.
+- `edgeDeploymentAdapter()` emits deployment metadata plus an edge-worker module
+  that delegates framework requests to the server bundle and static assets to an
+  asset binding.
+
+All three adapters derive from `BuildOutput`; none of them read bundler stats or
+bundler config.
+
+## Node.js
+
+Use the built-in Node deployment adapter when the app should run on a plain Node server:
+
+```ts
+// ev.config.ts
+import { defineConfig, nodeDeploymentAdapter } from "@evjs/ev";
+
+export default defineConfig({
+  plugins: [nodeDeploymentAdapter()],
+});
+```
+
+After `ev build`, the adapter emits:
+
+```txt
+dist/
+├── deployment.node.json
+└── server.mjs
+```
+
+Run the generated server module:
+
+```bash
+node dist/server.mjs
+```
+
+The generated server mounts the framework server bundle at `server.basePath`,
+mounts SSR/PPR/RSC document routes and explicit server routes, serves
+`dist/client`, and falls back to the app HTML for client routes.
+
+If you need full control, the equivalent shape is:
+
+```js
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { serve } from "@evjs/server/node";
-import { serveStatic } from "@hono/node-server/serve-static";
-import { Hono } from "hono";
-import serverHandler from "./dist/server/main.js";
+import serverHandler from "./dist/server/server.js";
 
-const app = new Hono();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const clientRoot = path.join(__dirname, "dist/client");
 
-// 1. Mount evjs API routes and server functions before the SPA fallback
-app.all("/api/*", (c) => serverHandler.fetch(c.req.raw));
+const app = {
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (url.pathname.startsWith("/__evjs/") || url.pathname === "/dashboard") {
+      return serverHandler.fetch(request);
+    }
 
-// 2. Serve the static client bundle and SPA fallback
-app.use("/*", serveStatic({ root: "./dist/client" }));
-app.get("*", serveStatic({ path: "./dist/client/index.html" }));
+    const file = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
+    try {
+      return new Response(await readFile(path.join(clientRoot, file)));
+    } catch {
+      return new Response(await readFile(path.join(clientRoot, "index.html")));
+    }
+  },
+};
 
-// 3. Start the server
-serve(app, { port: process.env.PORT || 3000 });
+serve(app, { port: Number(process.env.PORT ?? 3000) });
 ```
 
-Run with: `node server.mjs`
+Adjust the mounted framework path if `server.basePath` is not `/__evjs`.
 
-## Option 2: Docker
+## Static Hosting
 
-Multi-stage Dockerfile for production deployment:
+Use the static adapter when the build output only needs static routing metadata:
+
+```ts
+import { defineConfig, staticDeploymentAdapter } from "@evjs/ev";
+
+export default defineConfig({
+  plugins: [staticDeploymentAdapter()],
+});
+```
+
+The adapter emits:
+
+```txt
+dist/
+├── deployment.static.json
+└── _redirects
+```
+
+The generated redirects map static/SSG pages to their HTML files and app routes
+to the app HTML fallback. SSR, PPR, RSC, server functions, and explicit server
+routes still require a server-capable adapter.
+
+## Edge Runtime
+
+Use the edge adapter when the platform provides a `fetch()` worker and static
+asset binding:
+
+```ts
+import { defineConfig, edgeDeploymentAdapter } from "@evjs/ev";
+
+export default defineConfig({
+  plugins: [
+    edgeDeploymentAdapter({
+      assetsBinding: "ASSETS",
+    }),
+  ],
+});
+```
+
+The adapter emits:
+
+```txt
+dist/
+├── deployment.edge.json
+└── worker.mjs
+```
+
+The generated worker imports the server bundle from `dist/server`, routes
+framework requests and SSR/PPR/RSC document requests to that bundle, and serves
+browser assets through the configured binding.
+
+## Docker
 
 ```dockerfile
-# Stage 1: Build
 FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
@@ -56,65 +177,44 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-# Stage 2: Production
 FROM node:22-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
-COPY server.mjs .
-
 EXPOSE 3000
-CMD ["node", "server.mjs"]
+CMD ["node", "dist/server.mjs"]
 ```
 
-## Option 3: Deno
+## Deployment Plugins
 
-Use the emitted `{ fetch }` handler from the server bundle:
+Deployment plugins should use `buildOutput()` or `buildEnd({ output })`.
+For platform-specific files, start from `createDeploymentArtifact()`:
 
 ```ts
-// server.ts
-import { serveStatic } from "hono/deno";
-import { Hono } from "hono";
-import serverHandler from "./dist/server/main.js";
+import { createDeploymentArtifact } from "@evjs/ev";
 
-const app = new Hono();
-
-app.all("/api/*", (c) => serverHandler.fetch(c.req.raw));
-app.use("/*", serveStatic({ root: "./dist/client" }));
-app.get("*", serveStatic({ path: "./dist/client/index.html" }));
-
-Deno.serve({ port: 3000 }, app.fetch);
+export function deployAdapter() {
+  return {
+    name: "deploy-adapter",
+    setup() {
+      return {
+        buildOutput(output) {
+          output.deployment = {
+            platform: "custom",
+            publicPath: output.publicPath,
+            server: output.runtime.server,
+          };
+        },
+        buildEnd({ output }) {
+          emitPlatformFiles(createDeploymentArtifact(output, {
+            platform: "custom",
+          }));
+        },
+      };
+    },
+  };
+}
 ```
 
-Run with: `deno run --allow-net --allow-read server.ts`
-
-## Option 4: Bun
-
-Similar to Deno, using Bun's native serve:
-
-```ts
-// server.ts
-import { Hono } from "hono";
-import serverHandler from "./dist/server/main.js";
-
-const app = new Hono();
-app.all("/api/*", (c) => serverHandler.fetch(c.req.raw));
-
-export default {
-  port: 3000,
-  fetch: app.fetch,
-};
-```
-
-Run with: `bun server.ts`
-
-## Environment Variables
-
-Server secrets (e.g., `DATABASE_URL`, `API_KEY`) are safe — they only evaluate at runtime on the server. Ensure they are injected into your Node/Docker/Edge environment before starting the app.
-
-:::tip
-
-All server function code runs exclusively on the server. Client bundles only contain RPC stubs — your secrets and business logic are never exposed to the browser.
-
-:::
+Do not read legacy client/server manifest files; they are not the new framework contract.

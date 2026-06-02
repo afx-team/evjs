@@ -36,8 +36,8 @@ import {
   useQuery as _useQuery,
   useSuspenseQuery as _useSuspenseQuery,
 } from "@tanstack/react-query";
-import type { ServerFunction } from "./transport";
-import { callServer, getFnId } from "./transport";
+import type { ServerFunction } from "./transport.js";
+import { callServer, getFnId } from "./transport.js";
 
 /**
  * Extracts the stable query key for a given server function and its arguments.

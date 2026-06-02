@@ -5,7 +5,8 @@
   "dependencies": {
     "@evjs/shared": "*",
     "@tanstack/react-query": "^5.95.2",
-    "@tanstack/react-router": "^1.168.3"
+    "@tanstack/react-router": "^1.168.3",
+    "react-server-dom-webpack": "^19.2.5"
   },
   "peerDependencies": {
     "react": ">=18.0.0",
@@ -35,11 +36,6 @@
       "types": "./esm/index.d.ts",
       "import": "./esm/index.js",
       "default": "./esm/index.js"
-    },
-    "./transport": {
-      "types": "./esm/transport.d.ts",
-      "import": "./esm/transport.js",
-      "default": "./esm/transport.js"
     }
   },
   "scripts": {

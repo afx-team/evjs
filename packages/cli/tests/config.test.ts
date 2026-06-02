@@ -1,10 +1,10 @@
-import type { EvConfig, ServerConfig } from "@evjs/ev";
+import type { Config, ServerConfig } from "@evjs/ev";
 import { CONFIG_DEFAULTS, defineConfig } from "@evjs/ev";
 import { describe, expect, it } from "vitest";
 
 describe("defineConfig", () => {
   it("returns the config object unchanged", () => {
-    const config: EvConfig = {
+    const config: Config = {
       server: { entry: "./src/server.ts" },
       entry: "./src/app.tsx",
     };
@@ -12,17 +12,17 @@ describe("defineConfig", () => {
   });
 
   it("handles empty config", () => {
-    const config: EvConfig = {};
+    const config: Config = {};
     expect(defineConfig(config)).toEqual({});
   });
 
   it("handles full config", () => {
     const server: ServerConfig = {
       entry: "./custom-server.ts",
-      functions: { endpoint: "/api/rpc" },
+      basePath: "/api",
       dev: { port: 4000 },
     };
-    const config: EvConfig = {
+    const config: Config = {
       entry: "./src/main.tsx",
       html: "./public/index.html",
       dev: {
@@ -41,8 +41,8 @@ describe("CONFIG_DEFAULTS", () => {
     expect(CONFIG_DEFAULTS.html).toBe("./index.html");
     expect(CONFIG_DEFAULTS.port).toBe(3000);
     expect(CONFIG_DEFAULTS.serverPort).toBe(3001);
-    expect(CONFIG_DEFAULTS.endpoint).toBe("api/fn");
-    expect(CONFIG_DEFAULTS.clientProxy).toBe("@evjs/client/transport");
+    expect(CONFIG_DEFAULTS.serverBasePath).toBe("/__evjs");
+    expect(CONFIG_DEFAULTS.clientProxy).toBe("@evjs/client");
     expect(CONFIG_DEFAULTS.serverRegister).toBe("@evjs/server/register");
   });
 
@@ -54,8 +54,8 @@ describe("CONFIG_DEFAULTS", () => {
       html: "./index.html",
       port: 3000,
       serverPort: 3001,
-      endpoint: "api/fn",
-      clientProxy: "@evjs/client/transport",
+      serverBasePath: "/__evjs",
+      clientProxy: "@evjs/client",
       serverRegister: "@evjs/server/register",
     });
   });

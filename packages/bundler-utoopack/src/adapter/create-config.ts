@@ -1,26 +1,30 @@
 /**
- * Map ResolvedEvConfig to a utoopack configuration object.
+ * Map ResolvedConfig to a utoopack configuration object.
  *
  * Utoopack uses a JSON-based config with `build()` / `dev()` programmatic API.
  * It handles "use server" directives natively via the
- * `server.functions.callServerModule` config field.
+ * server-function runtime module config fields.
  */
 
 import { createRequire } from "node:module";
+import path from "node:path";
 
 const require = createRequire(import.meta.url);
 
-import {
-  type EvBundlerCtx,
-  type EvPluginHooks,
-  isMpa,
-  type ResolvedEvConfig,
+import type {
+  BuildPlan,
+  BundlerCtx,
+  PluginHooks,
+  ResolvedConfig,
 } from "@evjs/ev";
+import { getLogger } from "@logtape/logtape";
 import type { ConfigComplete, DevServerProxy, ProxyRule } from "@utoo/pack";
 import { getOutputPaths } from "./output-paths.js";
 
+const logger = getLogger(["evjs", "bundler-utoopack", "config"]);
+
 function createSpaHistoryFallbackRule(
-  config: ResolvedEvConfig<ConfigComplete>,
+  config: ResolvedConfig<ConfigComplete>,
 ): ProxyRule {
   const target = new URL(
     config.dev.https ? "https://localhost" : "http://localhost",
@@ -39,7 +43,7 @@ function createSpaHistoryFallbackRule(
 }
 
 /**
- * Create a utoopack configuration object from EvConfig.
+ * Create a utoopack configuration object from Config.
  *
  * @param config - Resolved evjs config
  * @param cwd - Project root directory
@@ -47,23 +51,25 @@ function createSpaHistoryFallbackRule(
  * @returns A config object suitable for `@utoo/pack`'s `build()` / `dev()` API
  */
 export async function createUtoopackConfig(
-  config: ResolvedEvConfig<ConfigComplete>,
+  config: ResolvedConfig<ConfigComplete>,
+  plan: BuildPlan,
   cwd: string,
-  hooks: EvPluginHooks<ConfigComplete>[],
+  hooks: PluginHooks<ConfigComplete>[],
 ): Promise<ConfigComplete> {
+  validateUtoopackPlanSupport(plan);
+
   const isProduction = process.env.NODE_ENV === "production";
   const mode = isProduction ? "production" : "development";
   const serverEnabled = config.serverEnabled;
   const devProxy: DevServerProxy = [
     ...config.dev.proxy,
-    ...(!isMpa(config) ? [createSpaHistoryFallbackRule(config)] : []),
+    ...(hasAppClientEntry(plan) ? [createSpaHistoryFallbackRule(config)] : []),
   ];
 
   let finalServerEntry: string | undefined;
 
   if (serverEnabled) {
-    finalServerEntry =
-      config.server.entry || require.resolve("@evjs/server/fetch");
+    finalServerEntry = resolveServerEntry(plan.server.entry);
   }
 
   if (serverEnabled && !finalServerEntry) {
@@ -74,22 +80,17 @@ export async function createUtoopackConfig(
 
   const utoopackConfig: ConfigComplete = {
     mode,
-    // MPA mode: one entry per page; SPA mode: single entry
-    entry: isMpa(config)
-      ? Object.entries(config.pages ?? {}).map(([name, page]) => ({
-          import: page.entry,
-          name,
-        }))
-      : [
-          {
-            import: config.entry,
-          },
-        ],
+    entry: plan.entries
+      .filter((entry) => entry.environment === "client")
+      .map((entry) => ({
+        import: entry.import,
+        name: entry.name,
+      })),
     output: {
       path: outputPaths.clientDir,
       filename: isProduction ? "[name].[contenthash:8].js" : "[name].js",
       chunkFilename: isProduction ? "[name].[contenthash:8].js" : "[name].js",
-      publicPath: "auto",
+      publicPath: toUtoopackPublicPath(plan.runtime.publicPath),
       clean: true,
     },
     resolve: {
@@ -102,11 +103,11 @@ export async function createUtoopackConfig(
     },
     define: {
       "process.env.EVJS_FUNCTION_ENDPOINT": JSON.stringify(
-        config.server.functions.endpoint,
+        config.server.functionRuntime.endpoint,
       ),
       "process.env.NODE_ENV": JSON.stringify(mode),
       __EVJS_FUNCTION_ENDPOINT__: JSON.stringify(
-        config.server.functions.endpoint,
+        config.server.functionRuntime.endpoint,
       ),
     },
     // Server functions config — utoopack handles "use server" natively
@@ -124,8 +125,8 @@ export async function createUtoopackConfig(
                 : "[name].js",
             },
             function: {
-              clientProxy: config.server.functions.clientProxy,
-              serverRegister: config.server.functions.serverRegister,
+              clientProxy: config.server.functionRuntime.clientProxy,
+              serverRegister: config.server.functionRuntime.serverRegister,
             },
           },
         }
@@ -141,10 +142,16 @@ export async function createUtoopackConfig(
   };
 
   // Run plugin bundler hooks
-  const ctx: EvBundlerCtx<ConfigComplete> = {
+  const ctx: BundlerCtx<ConfigComplete> = {
     mode: isProduction ? "production" : "development",
+    command: isProduction ? "build" : "dev",
     cwd,
     config,
+    plan,
+    bundlerName: "utoopack",
+    environment: "mixed",
+    logger,
+    addWatchFile() {},
   };
 
   for (const h of hooks) {
@@ -154,4 +161,58 @@ export async function createUtoopackConfig(
   }
 
   return utoopackConfig;
+}
+
+function hasAppClientEntry(plan: BuildPlan): boolean {
+  return plan.entries.some((entry) => entry.kind === "app-client");
+}
+
+function validateUtoopackPlanSupport(plan: BuildPlan): void {
+  const frameworkManagedComponentEntries = plan.entries.filter(
+    (entry) => entry.metadata?.type === "react-component-page",
+  );
+  if (frameworkManagedComponentEntries.length > 0) {
+    const names = frameworkManagedComponentEntries
+      .map((entry) => entry.name)
+      .join(", ");
+    throw new Error(
+      `[evjs] The current Utoopack adapter cannot build framework-managed component page entries yet: ${names}. Utoopack needs entry wrapping support or use another bundler adapter for framework-managed component pages.`,
+    );
+  }
+
+  const remoteClientEntries = plan.entries.filter(
+    (entry) => entry.metadata?.type === "remote-client",
+  );
+  if (remoteClientEntries.length > 0) {
+    const names = remoteClientEntries.map((entry) => entry.name).join(", ");
+    throw new Error(
+      `[evjs] The current Utoopack adapter cannot build framework remote client entries yet: ${names}. Utoopack needs lifecycle entry wrapping support or use another bundler adapter for manifest-driven remote validation.`,
+    );
+  }
+
+  const unsupportedServerEntries = plan.entries.filter(
+    (entry) =>
+      entry.kind === "page-server" ||
+      entry.kind === "rsc-page" ||
+      entry.kind === "ppr-shell" ||
+      entry.kind === "ppr-region",
+  );
+  if (unsupportedServerEntries.length === 0) return;
+
+  const names = unsupportedServerEntries.map((entry) => entry.name).join(", ");
+  throw new Error(
+    `[evjs] The current Utoopack adapter cannot build framework server page entries yet: ${names}. Utoopack needs multi server entry support or use another bundler adapter for SSR/PPR validation.`,
+  );
+}
+
+function resolveServerEntry(entry: string | undefined): string | undefined {
+  if (!entry) return undefined;
+  if (entry.startsWith(".") || path.isAbsolute(entry)) return entry;
+  return require.resolve(entry);
+}
+
+function toUtoopackPublicPath(
+  publicPath: BuildPlan["runtime"]["publicPath"],
+): string {
+  return typeof publicPath === "string" ? publicPath : "auto";
 }

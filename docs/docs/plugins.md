@@ -1,6 +1,6 @@
 # Plugins
 
-evjs plugins extend the build pipeline with custom behavior — from injecting bundler rules and modifying output HTML, to collecting build metadata for CI/CD. Plugins are declared in `ev.config.ts` and run in dependency-resolved order.
+evjs plugins extend framework stages and, when needed, mutate the selected bundler config. The plugin API is built around the new graph -> build plan -> build output pipeline.
 
 ## Quick Example
 
@@ -11,16 +11,12 @@ export default defineConfig({
   plugins: [
     {
       name: "build-timer",
-      setup(ctx) {
-        let t0: number;
+      setup() {
+        const start = Date.now();
         return {
-          buildStart() {
-            t0 = Date.now();
-            console.log(`Building (${ctx.mode})...`);
-          },
-          buildEnd(result) {
-            console.log(`Done in ${Date.now() - t0}ms`);
-            console.log(`${result.clientManifest.assets.js.length} JS assets`);
+          buildEnd({ output }) {
+            console.log(`Build ${output.buildId} finished in ${Date.now() - start}ms`);
+            console.log(Object.keys(output.assets).length, "entry asset groups");
           },
         };
       },
@@ -29,84 +25,34 @@ export default defineConfig({
 });
 ```
 
-## Plugin Structure
-
-Every plugin is an object with a `name` and an optional `setup()` function:
+## Plugin Shape
 
 ```ts
-interface EvPlugin {
-  /** Plugin name — used in logs and error messages. */
+import type { Config, Plugin, PluginHooks, ResolvedConfig } from "@evjs/ev";
+
+interface Plugin<TBundlerConfig = unknown> {
   name: string;
-
-  /** Required plugins that must be enabled and run before this plugin. */
   dependencies?: string[];
-
-  /** Optional plugins that run before this plugin when enabled. */
   optionalDependencies?: string[];
+  enforce?: "pre" | "normal" | "post";
 
-  /** Modify raw user config before defaults are resolved. */
-  config?: (
-    config: EvConfig,
-    ctx: EvPluginConfigContext,
-  ) => EvConfig | undefined | Promise<EvConfig | undefined>;
+  config?(config: Config<TBundlerConfig>, ctx: PluginConfigContext):
+    | Config<TBundlerConfig>
+    | undefined
+    | Promise<Config<TBundlerConfig> | undefined>;
 
-  /** Initialize the plugin, return lifecycle hooks. */
-  setup?: (
-    ctx: EvPluginContext,
-  ) => EvPluginHooks | undefined | Promise<EvPluginHooks | undefined>;
+  setup?(ctx: PluginContext<TBundlerConfig>):
+    | PluginHooks<TBundlerConfig>
+    | undefined
+    | Promise<PluginHooks<TBundlerConfig> | undefined>;
 }
 ```
 
-### Plugin Ordering
+Plugin names must be unique. `dependencies` and `optionalDependencies` control ordering and are applied to both `config()` and `setup()` hooks.
 
-Plugins run in the order they appear in `plugins` unless a plugin declares
-`dependencies` or `optionalDependencies`. Dependency ordering applies to both
-`config` and `setup`, so all returned lifecycle hooks follow the same resolved
-plugin order.
+## Config Hook
 
-This lets plugin packages maintain their own internal ordering constraints. App
-users only enable the plugins they need; they do not need to understand or
-manually arrange those plugin internals.
-
-`dependencies` are required: evjs reports an error when one is missing.
-`optionalDependencies` are ignored when missing, but if they are present they
-must still run before the plugin that declares them.
-
-```ts
-plugins: [
-  {
-    name: "plugin-b",
-    dependencies: ["plugin-c"],
-    optionalDependencies: ["plugin-a"],
-    setup() {
-      // Runs after plugin-c.
-      // Also runs after plugin-a when plugin-a is enabled.
-    },
-  },
-  {
-    name: "plugin-a",
-    setup() {
-      // Runs before plugin-b when enabled.
-    },
-  },
-  {
-    name: "plugin-c",
-    setup() {
-      // Required by plugin-b.
-    },
-  },
-]
-```
-
-Plugin names must be unique. evjs reports missing dependencies and circular
-dependencies, including cycles created through optional dependencies, as
-configuration errors.
-
-### Config Hook
-
-The `config` hook runs before evjs resolves defaults. Use it for framework-level
-settings that must be visible to dev proxy setup and runtime defines, such as
-`server.functions.endpoint`.
+Use `config()` for framework configuration that must be visible before defaults, graph analysis, dev proxy setup, or runtime path derivation.
 
 ```ts
 import { defineConfig, merge } from "@evjs/ev";
@@ -114,10 +60,12 @@ import { defineConfig, merge } from "@evjs/ev";
 export default defineConfig({
   plugins: [
     {
-      name: "custom-function-endpoint",
+      name: "server-base-path",
       config(config) {
         merge(config, {
-          server: { functions: { endpoint: "/api/rpc" } },
+          server: {
+            basePath: "/_framework",
+          },
         });
         return config;
       },
@@ -126,192 +74,130 @@ export default defineConfig({
 });
 ```
 
-`merge()` is type-safe for evjs framework config here, so nested patch objects
-are checked against `EvConfig`.
+Do not use `bundlerConfig()` for framework protocol paths. Server functions, PPR, and RSC endpoints are derived from `server.basePath`.
 
-### Setup Context
-
-The `setup` function receives a context with the current mode and the fully resolved config:
+## Setup Context
 
 ```ts
-interface EvPluginContext {
+interface PluginContext<TBundlerConfig = unknown> {
   mode: "development" | "production";
+  command: "dev" | "build";
   cwd: string;
-  config: ResolvedEvConfig;
+  config: ResolvedConfig<TBundlerConfig>;
+  logger: Logger;
+  addWatchFile(file: string): void;
 }
 ```
 
-All returned hooks share state through closure — use `setup()` to initialize shared variables and return hooks that reference them.
+Use `setup()` to allocate shared state and return lifecycle hooks.
 
-## Lifecycle Hooks
-
-Hooks run at specific points in the build pipeline:
+## Lifecycle
 
 ```mermaid
 flowchart LR
-    A[config] --> B["resolveConfig"]
-    B --> C[setup]
-    C --> D[buildStart]
-    D --> E[bundlerConfig]
-    E --> F["bundler compile"]
-    F --> G["HTML generation"]
-    G --> H[transformHtml]
-    H --> I[buildEnd]
+  A["config hooks"] --> B["resolve config"]
+  B --> C["setup hooks"]
+  C --> D["commandStart"]
+  D --> E["buildStart"]
+  E --> F["create AppGraph"]
+  F --> G["appGraph hooks"]
+  G --> H["create BuildPlan"]
+  H --> I["buildPlan hooks"]
+  I --> J["bundlerConfig hooks"]
+  J --> K["bundler build"]
+  K --> L["link BuildOutput"]
+  L --> M["buildOutput hooks"]
+  M --> N["transformHtml per document"]
+  N --> O["buildEnd"]
+  O --> P["dispose"]
 ```
 
-| Hook | Signature | When |
-|------|-----------|------|
-| `config` | `(config, ctx) => EvConfig \| undefined \| Promise<...>` | Before defaults are resolved |
-| `buildStart` | `() => void \| Promise<void>` | Before compilation begins |
-| `bundlerConfig` | `(config, ctx) => void` | During bundler config creation |
-| `transformHtml` | `(doc, result) => void \| Promise<void>` | After asset injection, before HTML is emitted |
-| `buildEnd` | `(result) => void \| Promise<void>` | After production compilation completes |
+| Hook | Purpose |
+|------|---------|
+| `commandStart(ctx)` | Command-level setup after plugin initialization |
+| `buildStart(ctx)` | Build setup before graph work |
+| `appGraph(graph, ctx)` | Add or adjust framework graph metadata |
+| `buildPlan(plan, ctx)` | Adjust bundler-independent entries/html/runtime plan |
+| `bundlerConfig(config, ctx)` | Mutate selected bundler config |
+| `buildOutput(output, ctx)` | Add deployment/runtime metadata to the single framework output |
+| `transformHtml(doc, ctx)` | Mutate one HTML document at a time |
+| `buildEnd({ output, isRebuild })` | Emit final artifacts after build |
+| `devPlanUpdate(update, ctx)` | Observe framework plan changes during dev |
+| `dispose(ctx)` | Cleanup |
 
-All hooks can be `async` (return a `Promise`).
+## HTML Transform Context
 
-Use `config` to change evjs framework options. Use `bundlerConfig` only for
-the underlying bundler config; do not use it for runtime protocol settings like
-`server.functions.endpoint`, because those must also affect dev proxy setup and
-generated runtime defines.
+`transformHtml()` receives one parsed document per output HTML file. Branch on `ctx.kind` instead of guessing from filenames.
 
----
+```ts
+transformHtml(doc, ctx) {
+  doc.head?.appendChild(doc.createComment(` build ${ctx.buildId} `));
 
-### `buildStart`
+  if (ctx.kind === "app") {
+    doc.documentElement?.setAttribute("data-app", ctx.appId);
+  }
 
-Runs once before compilation begins. Use for logging, initializing timers, or setting up external services.
+  if (ctx.kind === "page") {
+    doc.documentElement?.setAttribute("data-page", ctx.pageId);
+  }
+}
+```
+
+Context fields include:
+
+- `ctx.kind`: `"app"` or `"page"`;
+- `ctx.appId` or `ctx.pageId`;
+- `ctx.fileName` and `ctx.template`;
+- `ctx.assets`;
+- `ctx.output`: the full `BuildOutput`;
+- `ctx.buildId` and `ctx.publicPath`.
+
+The document type is `HtmlDocument`, a bundler-agnostic subset of standard DOM APIs:
+
+```ts
+import type { HtmlDocument } from "@evjs/ev";
+```
+
+## Build Output
+
+`buildEnd()` receives the single framework output, not v1 client/server manifests:
 
 ```ts
 setup() {
   return {
-    buildStart() {
-      console.log("Compilation starting...");
+    buildEnd({ output }) {
+      console.log("Apps:", Object.keys(output.apps));
+      console.log("Pages:", Object.keys(output.pages));
+      console.log("Functions:", Object.keys(output.server?.functions ?? {}));
     },
   };
 }
 ```
 
----
+Deployment plugins should read routes, functions, assets, remotes, and runtime paths from `BuildOutput`.
 
-### `bundlerConfig`
+## Bundler Config
 
-Mutate the underlying bundler configuration directly. Use a typed helper for
-the active bundler to avoid depending on casts or the wrong config shape.
-
-```ts
-setup() {
-  return {
-    bundlerConfig(config, ctx) {
-      // Prefer the typed helper below for bundler-specific config changes.
-    },
-  };
-}
-```
-
-#### Type-Safe Bundler Config
-
-Usually, plugins only need to support the bundler your project actually uses. evjs uses `utoopack` by default. Import the `utoopack()` helper for full TypeScript support:
+Use adapter helpers for type-safe low-level changes. For Utoopack:
 
 ```ts
 import { merge, utoopack } from "@evjs/bundler-utoopack";
 
-{
-  name: "yaml-support",
-  setup() {
-    return {
-      bundlerConfig: utoopack((cfg) => {
-        merge(cfg, {
-          module: { rules: { ".yaml": { type: "json" } } },
-        });
-      }),
-    };
-  },
-}
-```
-
-The helper wraps your callback and only executes when the corresponding bundler is active.
-
----
-
-### `transformHtml`
-
-Mutate the output HTML **document** after evjs injects `<script>` and `<link>` tags, but before the file is written to disk.
-
-The hook receives a parsed DOM document (`EvDocument`) — use standard DOM methods to manipulate it. No fragile string replacement needed.
-
-```ts
-setup() {
+export function yamlPlugin() {
   return {
-    transformHtml(doc, result) {
-      // Inject a <meta> tag
-      const meta = doc.createElement("meta");
-      meta.setAttribute("name", "generator");
-      meta.setAttribute("content", "evjs");
-      doc.head?.appendChild(meta);
-
-      // Inject a comment with build info
-      const count = result.clientManifest.assets.js.length;
-      const comment = doc.createComment(` ${count} JS assets `);
-      doc.head?.appendChild(comment);
-    },
-  };
-}
-```
-
-#### Multiple Plugins
-
-When multiple plugins define `transformHtml`, they all receive the **same document** and their mutations accumulate in order:
-
-```ts
-plugins: [
-  pluginA,  // adds <meta name="a">
-  pluginB,  // adds <meta name="b"> — sees pluginA's <meta> already in the DOM
-]
-```
-
-#### `EvDocument` API
-
-The `EvDocument` interface is a bundler-agnostic subset of the standard DOM API. Key methods:
-
-| Category | Methods |
-|----------|---------|
-| **Querying** | `querySelector()`, `querySelectorAll()`, `getElementById()` |
-| **Attributes** | `getAttribute()`, `setAttribute()`, `removeAttribute()`, `hasAttribute()` |
-| **Tree mutation** | `appendChild()`, `removeChild()`, `insertBefore()`, `append()`, `prepend()`, `remove()` |
-| **Content** | `insertAdjacentHTML()`, `innerHTML` (get/set), `outerHTML` (read-only), `textContent` |
-| **Creation** | `createElement()`, `createTextNode()`, `createComment()` |
-| **Traversal** | `head`, `body`, `parentNode`, `firstChild`, `children`, `childNodes` |
-
-Import the type for explicit annotations:
-
-```ts
-import type { EvDocument } from "@evjs/ev";
-```
-
----
-
-### `buildEnd`
-
-Runs after production compilation completes. Receives the `EvBuildResult`
-containing both manifests:
-
-```ts
-interface EvBuildResult {
-  clientManifest: ClientManifest;      // assets, routes
-  serverManifest?: ServerManifest;     // entry, fns (undefined if server: false)
-  isRebuild: boolean;                 // false for a normal production build
-}
-```
-
-```ts
-setup() {
-  return {
-    buildEnd(result) {
-      console.log("JS:", result.clientManifest.assets.js);
-      console.log("CSS:", result.clientManifest.assets.css);
-
-      if (result.serverManifest) {
-        console.log("Server fns:", Object.keys(result.serverManifest.fns));
-      }
+    name: "yaml-support",
+    setup() {
+      return {
+        bundlerConfig: utoopack((cfg) => {
+          merge(cfg, {
+            module: {
+              rules: {
+                ".yaml": { type: "json" },
+              },
+            },
+          });
+        }),
+      };
     },
   };
 }
@@ -319,104 +205,65 @@ setup() {
 
 ## Recipes
 
-### Inject Build-Time Constants
+### Deployment Metadata
 
 ```ts
-import { merge, utoopack } from "@evjs/bundler-utoopack";
-
-{
-  name: "env-inject",
-  setup() {
-    return {
-      bundlerConfig: utoopack((cfg) => {
-        merge(cfg, {
-          define: {
-            __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
-            __APP_VERSION__: JSON.stringify("1.0.0"),
-          },
-        });
-      }),
-    };
-  },
-}
-```
-
-### Write a Deploy Manifest
-
-```ts
-import fs from "node:fs";
-
-{
-  name: "deploy-manifest",
-  setup(ctx) {
-    return {
-      buildEnd(result) {
-        fs.writeFileSync(
-          "dist/deploy.json",
-          JSON.stringify({
+export function deployMetadata() {
+  return {
+    name: "deploy-metadata",
+    setup() {
+      return {
+        buildOutput(output) {
+          output.deployment = {
+            platform: "custom",
             builtAt: new Date().toISOString(),
-            mode: ctx.mode,
-            js: result.clientManifest.assets.js,
-            css: result.clientManifest.assets.css,
-            hasServer: !!result.serverManifest,
-          }, null, 2),
-        );
-      },
-    };
-  },
+          };
+        },
+      };
+    },
+  };
 }
 ```
 
-### Add a CSP Nonce to Scripts
+### Per-Page Metadata
+
+```ts
+export function pageMetadata() {
+  return {
+    name: "page-metadata",
+    setup() {
+      return {
+        transformHtml(doc, ctx) {
+          if (ctx.kind !== "page") return;
+          const meta = doc.createElement("meta");
+          meta.setAttribute("name", "evjs-page");
+          meta.setAttribute("content", ctx.pageId);
+          doc.head?.appendChild(meta);
+        },
+      };
+    },
+  };
+}
+```
+
+### CSP Nonce
 
 ```ts
 import crypto from "node:crypto";
 
-{
-  name: "csp-nonce",
-  setup() {
-    return {
-      transformHtml(doc) {
-        const nonce = crypto.randomBytes(16).toString("base64");
-
-        // Add nonce to all injected scripts
-        for (const script of doc.querySelectorAll("script")) {
-          script.setAttribute("nonce", nonce);
-        }
-
-        // Inject CSP meta tag
-        const meta = doc.createElement("meta");
-        meta.setAttribute("http-equiv", "Content-Security-Policy");
-        meta.setAttribute(
-          "content",
-          `script-src 'nonce-${nonce}' 'strict-dynamic'`,
-        );
-        doc.head?.appendChild(meta);
-      },
-    };
-  },
+export function cspNonce() {
+  return {
+    name: "csp-nonce",
+    setup() {
+      return {
+        transformHtml(doc) {
+          const nonce = crypto.randomBytes(16).toString("base64");
+          for (const script of doc.querySelectorAll("script")) {
+            script.setAttribute("nonce", nonce);
+          }
+        },
+      };
+    },
+  };
 }
 ```
-
-### Inject Analytics Snippet
-
-```ts
-{
-  name: "analytics",
-  setup() {
-    return {
-      transformHtml(doc) {
-        doc.body?.insertAdjacentHTML(
-          "beforeend",
-          `<script defer src="https://analytics.example.com/script.js"
-                  data-website-id="abc-123"></script>`,
-        );
-      },
-    };
-  },
-}
-```
-
-## Example Project
-
-See [`examples/basic-plugins`](https://github.com/evaijs/evjs/tree/main/examples/basic-plugins) for a working example that demonstrates all four hooks.

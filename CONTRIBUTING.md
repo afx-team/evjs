@@ -4,109 +4,143 @@
 
 ## Project Identity
 
-- **Name**: evjs (fullstack framework), `@evjs/*` (package scope)
+- **Name**: evjs, `@evjs/*` package scope
 - **Repository**: evaijs/evjs
-- **CLI command**: `ev` (binary from `@evjs/cli`)
-- **Linter**: Biome (`npx biome check --write`)
-- **Node**: ESM-only (`"type": "module"` in all packages)
+- **CLI command**: `ev` from `@evjs/cli`
+- **Linter**: Biome via `npm run lint` or `npx biome check --write`
+- **Node packages**: ESM-only package output
 
 ## Package Map
 
 | Package | Path | Purpose |
-|---------|------|---------|
-| `@evjs/cli` | `packages/cli` | CLI binary (`ev dev`, `ev build`) |
-| `@evjs/ev` | `packages/ev` | Config, plugin, and bundler types (`defineConfig`) |
-| `@evjs/create-app` | `packages/create-app` | Project scaffolding (`npx @evjs/create-app`) |
-| `@evjs/shared` | `packages/shared` | Runtime shared: errors, HTTP utils, constants |
-| `@evjs/client` | `packages/client` | Client (React + TanStack) |
-| `@evjs/server` | `packages/server` | Server (Hono) |
-| `@evjs/build-tools` | `packages/build-tools` | Bundler-agnostic server function transforms (SWC) |
-| `@evjs/manifest` | `packages/manifest` | Shared manifest schema types (`ManifestV1`) |
-| `@evjs/bundler-utoopack` | `packages/bundler-utoopack` | Utoopack adapter (default) |
+| --- | --- | --- |
+| `@evjs/cli` | `packages/cli` | CLI binary and programmatic command entrypoints |
+| `@evjs/ev` | `packages/ev` | Config, plugin lifecycle, graph analysis, build planning, HTML, deployment helpers, and bundler adapter contracts |
+| `@evjs/create-app` | `packages/create-app` | Project scaffolding from examples/templates |
+| `@evjs/shared` | `packages/shared` | Runtime shared helpers plus `@evjs/shared/manifest` graph/plan/output schemas |
+| `@evjs/client` | `packages/client` | Browser runtime, transport, React page runtime, shell, route DSL, RSC client, and TanStack compatibility subpath |
+| `@evjs/server` | `packages/server` | Server functions, REST routes, SSR/PPR/RSC request coordination, and Node/fetch runtimes |
+| `@evjs/bundler-utoopack` | `packages/bundler-utoopack` | Default Utoopack adapter; consumes `BuildPlan` and links `BuildOutput` where supported |
+| `@evjs/bundler-webpack` | `packages/bundler-webpack` | Validation/fallback adapter for new architecture features that Utoopack cannot build yet |
 
-### Dependency Graph
+`packages/build-tools` and `packages/manifest` no longer exist as public workspace packages. Build-tool helpers live under `packages/ev/src/build-tools`, and manifest schemas/linkers live under `packages/shared/src/manifest`.
 
-```
-@evjs/cli ──► @evjs/ev, @evjs/bundler-utoopack (default)
-@evjs/bundler-utoopack ──► @evjs/ev, @evjs/build-tools, @evjs/manifest, @utoo/pack
-@evjs/ev ──► @evjs/manifest, @evjs/shared
+## Dependency Graph
 
-@evjs/shared (zero deps — runtime only)
-@evjs/client ──► @evjs/shared, @tanstack/react-router, @tanstack/react-query
-@evjs/server ──► @evjs/shared, hono, @hono/node-server
+```txt
+@evjs/cli
+  -> @evjs/ev
+  -> @evjs/bundler-utoopack
+
+@evjs/ev
+  -> @evjs/shared
+  -> selected BundlerAdapter
+
+@evjs/bundler-utoopack
+  -> @evjs/ev
+  -> @evjs/shared
+  -> @utoo/pack
+
+@evjs/bundler-webpack
+  -> @evjs/ev
+  -> @evjs/shared
+  -> webpack
+
+@evjs/client
+  -> @evjs/shared
+  -> @tanstack/react-router
+  -> @tanstack/react-query
+
+@evjs/server
+  -> @evjs/shared
+  -> hono
+  -> @hono/node-server
 ```
 
 ## Coding Rules
 
-1. **Imports**: All imports at top of file. Use `import type` for type-only imports.
-2. **Linting**: Biome — no `any`, no `import * as` unless necessary.
-3. **No manual server entries**: The framework generates server entry dynamically.
-4. **No manual bundler configs**: Use `ev.config.ts` or convention-based defaults.
-5. **Server function files**: Must start with `"use server";`. We recommend the `.server.ts` suffix or placing them in `src/api/`.
-6. **Server function exports**: Must be named async function exports (no default exports).
-7. **Module type**: All packages are ESM (`"type": "module"`). Use `.js` extensions in relative imports within compiled output.
-8. **Config file**: Named `ev.config.ts` (not `evjs.config.ts`).
-9. **Dependency resolution**: CLI uses `createRequire(import.meta.url)` for reliable loader resolution.
+1. Keep imports at the top of files and use `import type` for type-only imports.
+2. Use Biome formatting and linting. Avoid `any` and broad namespace imports unless there is a concrete reason.
+3. Do not add hidden production source files such as `.evjs/server/entry.ts`; framework-owned entries should be library/runtime entries or bundler adapter mechanics.
+4. Keep framework semantics out of bundler adapters. Adapters consume `BuildPlan` and return build facts.
+5. Server function files must start with `"use server";` and export named functions or supported named async values.
+6. Use `ev.config.ts`; new docs should import `defineConfig` from `@evjs/ev`.
+7. Keep TanStack-specific imports in `@evjs/client/tanstack` for new code. The top-level `@evjs/client` re-export remains for compatibility.
+8. Use `server.basePath` for framework server runtime paths. Do not reintroduce public `server.functions.endpoint` config.
 
 ## Common Tasks
 
-### Add a new server function
-1. Create `src/api/[name].server.ts`
-2. Add `"use server";` at the top
-3. Export named async functions
-4. Import and use in client with `useQuery(fn)` or `useMutation(fn)`
+### Add a server function
 
-### Add a new route
-1. Create a new file under `src/pages/` (e.g. `src/pages/about.tsx`)
-2. Define route with `createRoute({ getParentRoute, path, component })` and export it
-3. Import in `src/main.tsx` and add to route tree via `parentRoute.addChildren([newRoute])`
+1. Create `src/api/[name].server.ts`.
+2. Add `"use server";` at the top.
+3. Export named async functions.
+4. Import and use them in client code with `useQuery(fn, ...args)`, `useMutation(fn)`, or `getFnQueryOptions(fn, ...args)`.
 
-### Add a new example
-1. Create directory under `examples/`
-2. Add `package.json` with `"@evjs/ev": "*"` and `"@evjs/cli": "*"` as devDeps, `"private": true`
-3. Add `src/main.tsx` + `index.html`
-4. Create symlink in `packages/create-app/templates/` → `../../../examples/[name]`
-5. Add to `packages/create-app/scripts/restore-templates.js` symlink map
-6. Add an e2e test in `e2e/cases/[name].ts`
+### Add a TanStack route
 
-### Release a new version
-1. Create a GitHub Release with a tag like `v0.1.0`
-2. The release workflow automatically syncs the version to all packages and publishes to npm
-3. **Do NOT bump versions locally** — the codebase keeps `"*"` for internal `@evjs/*` deps.
+1. Create a route module under the app source tree.
+2. Import TanStack helpers from `@evjs/client/tanstack`.
+3. Add the route to the application's real `routeTree`.
+4. If the framework must analyze the route graph, point `apps.*.routes` to the same route source file in `ev.config.ts`.
+
+### Add a configured page
+
+1. Add `pages.[id]` in `ev.config.ts`.
+2. Use `{ entry }` for user-owned bootstrap pages or `{ component, render, hydrate }` for framework-managed pages.
+3. Use `path` only when the framework server should route a URL to that page.
+4. In dev, page additions should flow through `BuildPlanUpdate`; do not require restarting the ev dev server.
+
+### Add an example
+
+1. Create a directory under `examples/`.
+2. Add a private `package.json` with workspace `@evjs/*` dependencies.
+3. Add `ev.config.ts`, source files, and `index.html` as needed.
+4. Add or update the create-app template mapping when the example is user-facing.
+5. Add an e2e case under `e2e/cases/`.
+
+## Build System Internals
+
+### `ev build`
+
+```txt
+load ev.config.ts
+run config/setup hooks
+createAppGraph()
+run appGraph hooks
+createBuildPlan()
+run buildPlan hooks
+selected bundler builds the BuildPlan
+linkBuildOutput()
+run buildOutput hooks
+emit dist/manifest.json and HTML documents
+run buildEnd({ output })
+```
+
+### `ev dev`
+
+```txt
+start from the same graph and BuildPlan pipeline
+start selected bundler dev controller
+serve HTML and manifest from framework state
+component/style edits stay in bundler HMR
+config/route/server declaration edits rebuild graph and diff BuildPlan
+call bundlerDevController.updatePlan(update, graph) when the adapter supports it
+```
+
+Utoopack is still the default adapter. Some new architecture features are currently validated through the webpack adapter until Utoopack exposes the required lower-layer APIs.
 
 ## Monorepo Commands
 
 ```bash
-npm run build              # Build all packages + examples
-npm run test               # Unit tests (vitest)
-npm run test:e2e           # E2E tests (playwright)
-npm run dev                # Dev mode (turborepo)
-npx biome check --write    # Fix lint/format
+npm run build
+npm run test
+npm run test:e2e
+npm run check-types
+npm run lint
+npx biome check --write
 ```
-
-## Build System Internals
-
-### `ev build` Flow
-
-1. `loadConfig(cwd)` — loads `ev.config.ts` or returns undefined for convention-based defaults
-2. Resolves the `BundlerAdapter` — utoopack (the only bundler)
-3. Calls `BundlerAdapter.build()` which drives the compilation
-4. The bundler adapter:
-   - Discovers `"use server"` files
-   - Applies SWC transforms (client + server variants)
-   - Builds the server bundle
-   - Emits `dist/server/manifest.json` and `dist/client/manifest.json`
-
-### `ev dev` Flow
-
-1. Same config resolution as `ev build`
-2. Calls `BundlerAdapter.dev()` which starts the dev server with HMR
-3. The adapter signals `onServerBundleReady` after server bundle is built
-4. The CLI core auto-starts the API server via `@evjs/server/node`
-5. Sets up proxy: `/api/*` → `localhost:3001`
 
 ## Agent Skills
 
-The `skills/` directory contains user-facing guides for building apps with evjs. If you change CLI commands, config options, or runtime APIs, please update the relevant skills.
-
-Available skill references: `init`, `dev`, `build`, `routing`, `server-fns`, `server-routes`, `config`
+The local evjs skill and docs should be updated whenever CLI commands, config options, plugin hooks, runtime APIs, examples, or templates change.

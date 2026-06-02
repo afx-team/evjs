@@ -5,6 +5,7 @@
 export {
   DEFAULT_ENDPOINT,
   DEFAULT_ERROR_STATUS,
+  DEFAULT_SERVER_BASE_PATH,
   getFunctionEndpoint,
 } from "./constants.js";
 export { ServerError, ServerFunctionError } from "./errors.js";

@@ -11,6 +11,11 @@
       "types": "./esm/index.d.ts",
       "import": "./esm/index.js",
       "default": "./esm/index.js"
+    },
+    "./manifest": {
+      "types": "./esm/manifest/index.d.ts",
+      "import": "./esm/manifest/index.js",
+      "default": "./esm/manifest/index.js"
     }
   },
   "scripts": {

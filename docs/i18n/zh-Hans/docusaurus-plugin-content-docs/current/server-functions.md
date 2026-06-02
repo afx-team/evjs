@@ -82,16 +82,19 @@ getUsers.fnName             // → "getUsers"
 ```tsx
 import { initTransport } from "@evjs/client";
 initTransport({
-  functions: { endpoint: "api/fn" },
+  // 可选，默认使用当前页面 origin。
+  baseUrl: "https://api.example.com",
   // 跨域调用服务端函数时携带 cookie。
   credentials: "include",
   headers: { "x-app": "my-app" },
 });
 ```
 
-`baseUrl`、`functions`、`credentials` 和 `headers` 用于配置内置 HTTP
-适配器。evjs 只暴露当前明确支持的 HTTP 默认项：
+`baseUrl`、`credentials` 和 `headers` 用于配置内置 HTTP 适配器。函数路径本身
+是由 `server.basePath` 派生的框架运行时元数据，所以应用代码通常只在服务端运行时
+部署到另一个 origin 时配置 `baseUrl`：
 
+- `baseUrl`：框架服务端调用的 origin 或 base URL。
 - `credentials`：fetch credentials 策略，例如 `"include"`。
 - `headers`：静态请求头，或每次调用时求值的函数。
 

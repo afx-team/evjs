@@ -3,48 +3,17 @@
  */
 
 export { ServerFunctionError } from "@evjs/shared";
-// Cherry-picked re-exports from @tanstack/react-query
-export type {
-  QueryKey,
-  UseInfiniteQueryOptions,
-  UseInfiniteQueryResult,
-  UseMutationOptions,
-  UseMutationResult,
-  UseQueryOptions,
-  UseQueryResult,
-  UseSuspenseQueryOptions,
-  UseSuspenseQueryResult,
-} from "@tanstack/react-query";
-export {
-  keepPreviousData,
-  QueryClient,
-  QueryClientProvider,
-  useInfiniteQuery,
-  useIsFetching,
-  usePrefetchQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-export type { App, CreateAppOptions, CreateAppRouterOptions } from "./app";
-export { createApp } from "./app";
-export type { AppRouteContext } from "./context";
-export { createAppRootRoute } from "./context";
+export type { App, CreateAppOptions, CreateAppRouterOptions } from "./app.js";
+export { createApp } from "./app.js";
+export type { AppRouteContext } from "./context.js";
+export { createAppRootRoute } from "./context.js";
 export {
   getFnQueryKey,
   getFnQueryOptions,
   useMutation,
   useQuery,
   useSuspenseQuery,
-} from "./query";
-// biome-ignore lint/suspicious/noEmptyInterface: Users augment this interface with their app router type.
-export interface Register {}
-
-type EvRegister = Register;
-
-// Bridge evjs' public Register interface into TanStack Router's global types.
-declare module "@tanstack/react-router" {
-  interface Register extends EvRegister {}
-}
-
+} from "./query.js";
 export type {
   ActiveLinkOptions,
   AnyRootRoute,
@@ -68,6 +37,7 @@ export type {
   NotFoundRouteProps,
   ParsedLocation,
   ParsedPath,
+  QueryKey,
   RegisteredRouter,
   RouteComponent,
   RouteMask,
@@ -90,9 +60,17 @@ export type {
   ToMaskOptions,
   ToOptions,
   UseBlockerOpts,
+  UseInfiniteQueryOptions,
+  UseInfiniteQueryResult,
   UseLinkPropsOptions,
   UseMatchRouteOptions,
-} from "./route";
+  UseMutationOptions,
+  UseMutationResult,
+  UseQueryOptions,
+  UseQueryResult,
+  UseSuspenseQueryOptions,
+  UseSuspenseQueryResult,
+} from "./tanstack.js";
 export {
   Await,
   Block,
@@ -117,6 +95,7 @@ export {
   getRouteApi,
   isNotFound,
   isRedirect,
+  keepPreviousData,
   Link,
   lazyRouteComponent,
   linkOptions,
@@ -127,6 +106,8 @@ export {
   notFound,
   Outlet,
   parseSearchWith,
+  QueryClient,
+  QueryClientProvider,
   RouteApi,
   RouterContextProvider,
   RouterProvider,
@@ -142,6 +123,8 @@ export {
   useChildMatches,
   useElementScrollRestoration,
   useHydrated,
+  useInfiniteQuery,
+  useIsFetching,
   useLinkProps,
   useLoaderData,
   useLoaderDeps,
@@ -152,16 +135,94 @@ export {
   useNavigate,
   useParams,
   useParentMatches,
+  usePrefetchQuery,
+  useQueryClient,
   useRouteContext,
   useRouter,
   useRouterState,
   useSearch,
-} from "./route";
+} from "./tanstack.js";
+// biome-ignore lint/suspicious/noEmptyInterface: Users augment this interface with their app router type.
+export interface Register {}
+
+type ClientRegister = Register;
+
+// Bridge evjs' public Register interface into TanStack Router's global types.
+declare module "@tanstack/react-router" {
+  interface Register extends ClientRegister {}
+}
+
+export type { PageRuntimeOptions } from "./page.js";
+export { startPageRuntime } from "./page.js";
+export type {
+  ReactPageMountOptions,
+  ReactPageRuntimeOptions,
+  RscFlightFetchOptions,
+  RscPayload,
+  RscPayloadMountOptions,
+} from "./react.js";
+export {
+  createReactPageModule,
+  fetchRscFlight,
+  fetchRscPayload,
+  loadRscPage,
+  mountReactPage,
+  mountRscPayload,
+} from "./react.js";
+export type {
+  PageReference,
+  ReactRouteDeclaration,
+  ReactRouteOptions,
+  ReactRoutes,
+} from "./routes.js";
+export { defineReactRoutes, page, route } from "./routes.js";
+export type { ReactRscModelOptions, ReactRscMountOptions } from "./rsc.js";
+export {
+  createReactRscModel,
+  mountReactRscPage,
+  unmountReactRscPage,
+} from "./rsc.js";
+export type {
+  ActivationRequest,
+  AppContext,
+  AppModule,
+  HistoryDriver,
+  HistoryDriverOptions,
+  PageDriver,
+  PageDriverOptions,
+  RemoteManifestLoadContext,
+  RemoteSharedDependenciesWarning,
+  RemoteSharedResolution,
+  SharedScope,
+  SharedScopeEntry,
+  Shell,
+  ShellDriver,
+  ShellErrorContext,
+  ShellModuleRegistration,
+  ShellOptions,
+  ShellWarningContext,
+} from "./shell.js";
+export {
+  createActivationRequestFromUrl,
+  createHistoryDriver,
+  createPageDriver,
+  createShell,
+  loadSharedDependency,
+  registerSharedDependency,
+  registerShellModule,
+} from "./shell.js";
 export type {
   HeaderFactory,
   RequestContext,
   ServerFunction,
   TransportAdapter,
   TransportOptions,
-} from "./transport";
-export { getFnName, initTransport } from "./transport";
+} from "./transport.js";
+export {
+  callServer,
+  createServerReference,
+  getFnId,
+  getFnName,
+  initTransport,
+  initTransportFromManifest,
+} from "./transport.js";
