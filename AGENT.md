@@ -25,7 +25,10 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 4. Do not add generated `.evjs` production source files. Prefer runtime/library entries or bundler adapter mechanics.
 5. Keep `@evjs/bundler-*` adapters semantic-free: they consume `BuildPlan` and return build facts.
 6. `server.functions.endpoint` is not a public config option. Use `server.basePath`; runtime paths are derived into `BuildOutput.runtime.server`.
-7. New TanStack code should import route helpers from `@evjs/client/tanstack`. Top-level `@evjs/client` remains compatible.
+7. New client code should import TanStack helpers, page runtime, shell runtime,
+   RSC helpers, and static route helpers from the top-level `@evjs/client`
+   entry. Subpath exports are intentionally not part of the public package
+   surface.
 8. Utoopack remains the default. Do not present webpack as the normal user path; it is the validation/fallback backend for features blocked on Utoopack APIs.
 
 ## Key APIs
@@ -34,10 +37,10 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 | --- | --- | --- |
 | `defineConfig(config)` | `@evjs/ev` | Type-safe `ev.config.ts` helper |
 | `createApp({ routeTree })` | `@evjs/client` | Compatibility SPA facade around TanStack Router and Query |
-| TanStack route helpers | `@evjs/client/tanstack` | Recommended import surface for TanStack APIs |
-| React page runtime | `@evjs/client/react` | Framework-managed component page mount/hydration |
-| Shell runtime | `@evjs/client/shell` | Manifest-driven app/page/remote activation and shared scope negotiation |
-| RSC client runtime | `@evjs/client/rsc` | React Flight client integration |
+| TanStack route helpers | `@evjs/client` | Compatibility TanStack APIs |
+| React page runtime | `@evjs/client` | Framework-managed component page mount/hydration |
+| Shell runtime | `@evjs/client` | Manifest-driven app/page/remote activation and shared scope negotiation |
+| RSC client runtime | `@evjs/client` | React Flight client integration |
 | `createApp({ routes, middlewares })` | `@evjs/server` | Server functions, REST routes, SSR/PPR/RSC framework requests |
 | `createReactFrameworkServer()` | `@evjs/server/react` | React SSR/RSC framework server integration |
 | `nodeDeploymentAdapter()` | `@evjs/ev` | Production Node deployment artifact and server module emission |
@@ -72,5 +75,7 @@ npm test --workspace @evjs/bundler-webpack -- --run tests/adapter.test.ts
 
 - Add framework semantics in `packages/ev/src/build-tools` and `@evjs/shared/manifest` first.
 - Add bundler support by mapping `BuildPlan` to the selected adapter.
-- Add runtime behavior under `@evjs/client/*` or `@evjs/server/*` according to ownership.
+- Add runtime behavior under `packages/client/src/*` or `packages/server/src/*`
+  according to ownership, and export public client APIs from the top-level
+  `@evjs/client` entry.
 - Cover the feature in `examples/full-features` when it crosses graph, bundler, manifest, runtime, and server boundaries.

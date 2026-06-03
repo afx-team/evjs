@@ -615,6 +615,163 @@ describe("createShell", () => {
     ).rejects.toThrow("mount failed");
     expect(events).toEqual(["same-error:mount:page:home"]);
   });
+
+  it("reports missing mount points as resolve errors", async () => {
+    const events: string[] = [];
+    const shell = createShell({
+      manifest,
+      async loadModule() {
+        return {
+          mount() {},
+        };
+      },
+      onError(error, ctx) {
+        events.push(
+          `${error instanceof Error ? error.message : "unknown"}:${ctx.phase}:${ctx.app.kind}:${ctx.app.id}`,
+        );
+      },
+    });
+
+    await expect(
+      shell.activate({ pageId: "home", hydrate: false }),
+    ).rejects.toThrow('Unable to resolve mount point for page "home"');
+    expect(events).toEqual([
+      '[evjs] Unable to resolve mount point for page "home".:resolve:page:home',
+    ]);
+  });
+
+  it("does not cache failed module loads", async () => {
+    const events: string[] = [];
+    const loadError = new Error("load failed");
+    let loadCount = 0;
+    const shell = createShell({
+      manifest,
+      resolveMountPoint: () => ({}) as Element,
+      async loadModule() {
+        loadCount++;
+        events.push(`load:${loadCount}`);
+        if (loadCount === 1) throw loadError;
+        return {
+          mount() {
+            events.push("mount");
+          },
+        };
+      },
+      onError(error, ctx) {
+        events.push(
+          `${error === loadError ? "same-error" : "other-error"}:${ctx.phase}:${ctx.app.kind}:${ctx.app.id}`,
+        );
+      },
+    });
+
+    await expect(
+      shell.activate({ pageId: "home", hydrate: false }),
+    ).rejects.toThrow("load failed");
+    await shell.activate({ pageId: "home", hydrate: false });
+
+    expect(events).toEqual([
+      "load:1",
+      "same-error:load:page:home",
+      "load:2",
+      "mount",
+    ]);
+  });
+
+  it("does not cache failed module initialization", async () => {
+    const events: string[] = [];
+    const initError = new Error("init failed");
+    let initCount = 0;
+    const shell = createShell({
+      manifest,
+      resolveMountPoint: () => ({}) as Element,
+      async loadModule() {
+        events.push("load");
+        return {
+          init() {
+            initCount++;
+            events.push(`init:${initCount}`);
+            if (initCount === 1) throw initError;
+          },
+          mount() {
+            events.push("mount");
+          },
+        };
+      },
+      onError(error, ctx) {
+        events.push(
+          `${error === initError ? "same-error" : "other-error"}:${ctx.phase}:${ctx.app.kind}:${ctx.app.id}`,
+        );
+      },
+    });
+
+    await expect(
+      shell.activate({ pageId: "home", hydrate: false }),
+    ).rejects.toThrow("init failed");
+    await shell.activate({ pageId: "home", hydrate: false });
+
+    expect(events).toEqual([
+      "load",
+      "init:1",
+      "same-error:init:page:home",
+      "init:2",
+      "mount",
+    ]);
+  });
+
+  it("does not cache failed remote manifest loads", async () => {
+    const events: string[] = [];
+    let loadCount = 0;
+    const shell = createShell({
+      manifest,
+      resolveMountPoint: () => ({}) as Element,
+      async loadRemoteManifest() {
+        loadCount++;
+        events.push(`remote-manifest:${loadCount}`);
+        if (loadCount === 1) throw new Error("remote manifest failed");
+        return {
+          version: 1,
+          name: "crm",
+          baseUrl: "https://assets.example.com/crm",
+          entries: {
+            list: {
+              module: {
+                type: "lifecycle",
+                href: "./list.js",
+              },
+            },
+          },
+        };
+      },
+      async loadModule() {
+        events.push("load");
+        return {
+          mount() {
+            events.push("mount");
+          },
+        };
+      },
+    });
+
+    await expect(
+      shell.activate({
+        remoteId: "crm",
+        remoteEntryId: "list",
+        hydrate: false,
+      }),
+    ).rejects.toThrow("remote manifest failed");
+    await shell.activate({
+      remoteId: "crm",
+      remoteEntryId: "list",
+      hydrate: false,
+    });
+
+    expect(events).toEqual([
+      "remote-manifest:1",
+      "remote-manifest:2",
+      "load",
+      "mount",
+    ]);
+  });
 });
 
 describe("createPageDriver", () => {

@@ -7,22 +7,30 @@ import type {
   BuildPlan,
   BuildPlanUpdate,
 } from "@evjs/shared/manifest";
+import { linkBuildOutput, linkRemoteManifest } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import { execa } from "execa";
 import {
   createAppGraph,
   createBuildPlan,
   diffBuildPlan,
+  generateHtml,
 } from "./build-tools/index.js";
-import type { BundlerAdapter, BundlerDevController } from "./bundler.js";
+import type {
+  BundlerAdapter,
+  BundlerBuildFacts,
+  BundlerDevController,
+} from "./bundler.js";
 import {
   CONFIG_DEFAULTS,
   type Config,
   type ResolvedConfig,
   resolveConfig,
 } from "./config.js";
+import { buildHtml } from "./html.js";
 import type {
   BuildResult,
+  HtmlDocumentInfo,
   Plugin,
   PluginConfigContext,
   PluginContext,
@@ -481,6 +489,184 @@ function readBuildResult(cwd: string, isRebuild: boolean): BuildResult | null {
   return { output, isRebuild };
 }
 
+function getFrameworkOutputPaths(
+  cwd: string,
+  output: BuildOutput,
+  serverEnabled: boolean,
+): { rootDir: string; clientDir: string } {
+  const rootDir = path.resolve(cwd, output.distDir);
+  return {
+    rootDir,
+    clientDir: serverEnabled ? path.join(rootDir, "client") : rootDir,
+  };
+}
+
+async function emitFrameworkManifest(
+  cwd: string,
+  output: BuildOutput,
+  bundlerFacts: BundlerBuildFacts,
+  plan: BuildPlan,
+  serverEnabled: boolean,
+): Promise<void> {
+  const { rootDir } = getFrameworkOutputPaths(cwd, output, serverEnabled);
+  await fs.promises.mkdir(rootDir, { recursive: true });
+  await fs.promises.writeFile(
+    path.join(rootDir, "manifest.json"),
+    JSON.stringify(output, null, 2),
+    "utf-8",
+  );
+
+  const remoteManifest = linkRemoteManifest({
+    plan,
+    clientEntryAssets: bundlerFacts.clientEntryAssets,
+    firstClientEntryAssets: bundlerFacts.firstClientEntryAssets,
+  });
+  if (remoteManifest) {
+    await fs.promises.writeFile(
+      path.join(rootDir, "evjs-remote.json"),
+      JSON.stringify(remoteManifest, null, 2),
+      "utf-8",
+    );
+  }
+}
+
+function getHtmlAssets(html: BuildPlan["html"][number], output: BuildOutput) {
+  const pageId = html.owner.pageId;
+  const appId = html.owner.appId;
+  return pageId
+    ? output.pages[pageId]?.assets
+    : appId
+      ? output.apps[appId]?.assets
+      : undefined;
+}
+
+function createHtmlDocumentInfo(
+  html: BuildPlan["html"][number],
+  output: BuildOutput,
+): HtmlDocumentInfo | undefined {
+  const assets = getHtmlAssets(html, output);
+  if (!assets) return undefined;
+
+  if (html.owner.pageId) {
+    return {
+      kind: "page",
+      htmlId: html.id,
+      pageId: html.owner.pageId,
+      template: html.template,
+      fileName: html.fileName,
+      assets,
+    };
+  }
+
+  return {
+    kind: "app",
+    htmlId: html.id,
+    appId: html.owner.appId ?? "default",
+    template: html.template,
+    fileName: html.fileName,
+    assets,
+  };
+}
+
+async function emitFrameworkHtml<TBundlerCfg>(
+  cwd: string,
+  config: ResolvedConfig<TBundlerCfg>,
+  hooks: PluginHooks<TBundlerCfg>[],
+  pluginCtx: PluginContext<TBundlerCfg>,
+  output: BuildOutput,
+  plan: BuildPlan,
+  isRebuild: boolean,
+): Promise<void> {
+  const { clientDir } = getFrameworkOutputPaths(
+    cwd,
+    output,
+    config.serverEnabled,
+  );
+
+  for (const html of plan.html) {
+    const htmlInfo = createHtmlDocumentInfo(html, output);
+    if (!htmlInfo) continue;
+
+    const doc = generateHtml({
+      template: path.resolve(cwd, html.template),
+      js: htmlInfo.assets.js,
+      css: htmlInfo.assets.css,
+    });
+    doc.documentElement?.setAttribute("data-evjs-build", output.buildId);
+    if (htmlInfo.kind === "page") {
+      doc.documentElement?.setAttribute("data-evjs-kind", "page");
+      doc.documentElement?.setAttribute("data-evjs-id", htmlInfo.pageId);
+      doc.documentElement?.setAttribute("data-evjs-page", htmlInfo.pageId);
+    } else {
+      doc.documentElement?.setAttribute("data-evjs-kind", "app");
+      doc.documentElement?.setAttribute("data-evjs-id", htmlInfo.appId);
+      doc.documentElement?.setAttribute("data-evjs-app", htmlInfo.appId);
+    }
+
+    const finalHtml = await buildHtml({
+      // biome-ignore lint/suspicious/noExplicitAny: DOM interfaces are parser-backed.
+      doc: doc as any,
+      hooks,
+      pluginContext: pluginCtx,
+      html: htmlInfo,
+      output,
+      isRebuild,
+    });
+
+    const outPath = path.join(clientDir, html.fileName);
+    await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
+    await fs.promises.writeFile(outPath, finalHtml, "utf-8");
+  }
+}
+
+async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
+  bundlerFacts: BundlerBuildFacts;
+  graph: AppGraph;
+  plan: BuildPlan;
+  config: ResolvedConfig<TBundlerCfg>;
+  cwd: string;
+  hooks: PluginHooks<TBundlerCfg>[];
+  pluginCtx: PluginContext<TBundlerCfg>;
+  isRebuild: boolean;
+}): Promise<BuildOutput> {
+  const output = linkBuildOutput({
+    graph: options.graph,
+    plan: options.plan,
+    serverEnabled: options.config.serverEnabled,
+    clientEntryAssets: options.bundlerFacts.clientEntryAssets,
+    firstClientEntryAssets: options.bundlerFacts.firstClientEntryAssets,
+    serverEntryAssets: options.bundlerFacts.serverEntryAssets,
+    serverEntry: options.bundlerFacts.serverEntry,
+    serverAssets: options.bundlerFacts.serverAssets,
+    serverModules: options.bundlerFacts.serverModules,
+    rscManifests: options.bundlerFacts.rscManifests,
+  });
+
+  await runBuildOutputHooks(options.hooks, output, {
+    ...options.pluginCtx,
+    graph: options.graph,
+    plan: options.plan,
+  });
+  await emitFrameworkManifest(
+    options.cwd,
+    output,
+    options.bundlerFacts,
+    options.plan,
+    options.config.serverEnabled,
+  );
+  await emitFrameworkHtml(
+    options.cwd,
+    options.config,
+    options.hooks,
+    options.pluginCtx,
+    output,
+    options.plan,
+    options.isRebuild,
+  );
+
+  return output;
+}
+
 function normalizeAssetName(name: string | undefined): string | undefined {
   return name?.replace(/^\.\//, "");
 }
@@ -912,12 +1098,18 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
         graph: activeAnalysis.graph,
         plan: activePlan,
         callbacks: {
-          onBuildOutput: (output) =>
-            runBuildOutputHooks(hooks, output, {
-              ...pluginCtx,
+          async onBuildFacts(bundlerFacts, options) {
+            await linkAndEmitBuildOutput({
+              bundlerFacts,
               graph: activeAnalysis.graph,
               plan: activePlan,
-            }),
+              config: activeConfig,
+              cwd,
+              hooks,
+              pluginCtx,
+              isRebuild: options?.isRebuild ?? false,
+            });
+          },
           onServerBundleReady: handleServerBundleReady,
         },
       })) ?? undefined;
@@ -978,22 +1170,22 @@ export async function build<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
   await runBuildPlanHooks(hooks, plan, analysis.graph, pluginCtx);
   let buildOutput: BuildOutput | undefined;
   try {
-    await bundler.build({
+    const bundlerFacts = await bundler.build({
       config,
       cwd,
       hooks,
       graph: analysis.graph,
       plan,
-      callbacks: {
-        async onBuildOutput(output) {
-          await runBuildOutputHooks(hooks, output, {
-            ...pluginCtx,
-            graph: analysis.graph,
-            plan,
-          });
-          buildOutput = output;
-        },
-      },
+    });
+    buildOutput = await linkAndEmitBuildOutput({
+      bundlerFacts,
+      graph: analysis.graph,
+      plan,
+      config,
+      cwd,
+      hooks,
+      pluginCtx,
+      isRebuild: false,
     });
 
     const buildResult = buildOutput

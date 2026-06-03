@@ -65,7 +65,9 @@
 4. Keep framework semantics out of bundler adapters. Adapters consume `BuildPlan` and return build facts.
 5. Server function files must start with `"use server";` and export named functions or supported named async values.
 6. Use `ev.config.ts`; new docs should import `defineConfig` from `@evjs/ev`.
-7. Keep TanStack-specific imports in `@evjs/client/tanstack` for new code. The top-level `@evjs/client` re-export remains for compatibility.
+7. Keep client imports on the top-level `@evjs/client` entry. It intentionally
+   exposes TanStack compatibility plus framework-managed page, shell, RSC, and
+   static route APIs without public subpaths.
 8. Use `server.basePath` for framework server runtime paths. Do not reintroduce public `server.functions.endpoint` config.
 
 ## Common Tasks
@@ -80,7 +82,7 @@
 ### Add a TanStack route
 
 1. Create a route module under the app source tree.
-2. Import TanStack helpers from `@evjs/client/tanstack`.
+2. Import TanStack helpers from `@evjs/client`.
 3. Add the route to the application's real `routeTree`.
 4. If the framework must analyze the route graph, point `apps.*.routes` to the same route source file in `ev.config.ts`.
 

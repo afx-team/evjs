@@ -157,16 +157,21 @@ export { startPageRuntime } from "./page.js";
 export type {
   ReactPageMountOptions,
   ReactPageRuntimeOptions,
+  RscDebugPayload,
+  RscDebugPayloadMountOptions,
   RscFlightFetchOptions,
   RscPayload,
   RscPayloadMountOptions,
 } from "./react.js";
 export {
   createReactPageModule,
+  fetchRscDebugPayload,
   fetchRscFlight,
   fetchRscPayload,
+  loadRscDebugPage,
   loadRscPage,
   mountReactPage,
+  mountRscDebugPayload,
   mountRscPayload,
 } from "./react.js";
 export type {

@@ -1,12 +1,24 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { BuildOutput } from "@evjs/ev";
-import { type ResolvedConfig, resolveConfig } from "@evjs/ev";
+import type {
+  AppGraph,
+  BuildOutput,
+  BuildPlan,
+  BundlerBuildFacts,
+  PluginHooks,
+} from "@evjs/ev";
+import {
+  buildHtml,
+  linkBuildOutput,
+  type ResolvedConfig,
+  resolveConfig,
+} from "@evjs/ev";
 import {
   createAppGraph,
   createBuildPlan,
   diffBuildPlan,
+  generateHtml,
 } from "@evjs/ev/build-tools";
 import type { ConfigComplete } from "@utoo/pack";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -81,6 +93,108 @@ afterEach(async () => {
   );
 });
 
+function createFrameworkCallbacks(options: {
+  config: ResolvedConfig<ConfigComplete>;
+  cwd: string;
+  graph: AppGraph;
+  plan: BuildPlan;
+  hooks?: PluginHooks<ConfigComplete>[];
+  onBuildOutput?: (output: BuildOutput) => void | Promise<void>;
+  onServerBundleReady?: () => void | Promise<void>;
+}) {
+  const hooks = options.hooks ?? [];
+  return {
+    async onBuildFacts(facts: BundlerBuildFacts) {
+      const output = linkBuildOutput({
+        graph: options.graph,
+        plan: options.plan,
+        serverEnabled: options.config.serverEnabled,
+        clientEntryAssets: facts.clientEntryAssets,
+        firstClientEntryAssets: facts.firstClientEntryAssets,
+        serverEntryAssets: facts.serverEntryAssets,
+        serverEntry: facts.serverEntry,
+        serverAssets: facts.serverAssets,
+        serverModules: facts.serverModules,
+      });
+      await options.onBuildOutput?.(output);
+
+      const rootDir = path.join(options.cwd, "dist");
+      const clientDir = options.config.serverEnabled
+        ? path.join(rootDir, "client")
+        : rootDir;
+      await fs.promises.mkdir(rootDir, { recursive: true });
+      await fs.promises.writeFile(
+        path.join(rootDir, "manifest.json"),
+        JSON.stringify(output, null, 2),
+        "utf-8",
+      );
+
+      for (const html of options.plan.html) {
+        const pageId = html.owner.pageId;
+        const appId = html.owner.appId;
+        const assets = pageId
+          ? output.pages[pageId]?.assets
+          : appId
+            ? output.apps[appId]?.assets
+            : undefined;
+        if (!assets) continue;
+
+        const doc = generateHtml({
+          template: path.resolve(options.cwd, html.template),
+          js: assets.js,
+          css: assets.css,
+        });
+        doc.documentElement?.setAttribute("data-evjs-build", output.buildId);
+        if (pageId) {
+          doc.documentElement?.setAttribute("data-evjs-kind", "page");
+          doc.documentElement?.setAttribute("data-evjs-id", pageId);
+          doc.documentElement?.setAttribute("data-evjs-page", pageId);
+        } else if (appId) {
+          doc.documentElement?.setAttribute("data-evjs-kind", "app");
+          doc.documentElement?.setAttribute("data-evjs-id", appId);
+          doc.documentElement?.setAttribute("data-evjs-app", appId);
+        }
+
+        const finalHtml = await buildHtml({
+          // biome-ignore lint/suspicious/noExplicitAny: DOM interfaces are parser-backed.
+          doc: doc as any,
+          hooks,
+          pluginContext: {
+            mode: options.plan.mode,
+            command: "dev",
+            cwd: options.cwd,
+            config: options.config,
+            logger: console as never,
+            addWatchFile() {},
+          },
+          html: pageId
+            ? {
+                kind: "page",
+                htmlId: html.id,
+                pageId,
+                template: html.template,
+                fileName: html.fileName,
+                assets,
+              }
+            : {
+                kind: "app",
+                htmlId: html.id,
+                appId: appId ?? "default",
+                template: html.template,
+                fileName: html.fileName,
+                assets,
+              },
+          output,
+        });
+        const outPath = path.join(clientDir, html.fileName);
+        await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
+        await fs.promises.writeFile(outPath, finalHtml, "utf-8");
+      }
+    },
+    onServerBundleReady: options.onServerBundleReady ?? vi.fn(),
+  };
+}
+
 describe("utoopackAdapter dev", () => {
   it("emits flat CSR manifest and index.html in server:false mode", async () => {
     const cwd = await makeProject();
@@ -94,22 +208,29 @@ describe("utoopackAdapter dev", () => {
       output.assets.devHook = { js: ["dev-hook.js"], css: [] };
     });
     const buildContext = await createBuildContext(config, cwd);
+    const hooks: PluginHooks<ConfigComplete>[] = [
+      {
+        transformHtml(doc) {
+          const meta = doc.createElement("meta");
+          meta.setAttribute("name", "mode");
+          meta.setAttribute("content", "dev");
+          doc.head?.appendChild(meta);
+        },
+      },
+    ];
 
     const controller = await utoopackAdapter.dev({
       config,
       cwd,
       ...buildContext,
-      callbacks: { onBuildOutput, onServerBundleReady: vi.fn() },
-      hooks: [
-        {
-          transformHtml(doc) {
-            const meta = doc.createElement("meta");
-            meta.setAttribute("name", "mode");
-            meta.setAttribute("content", "dev");
-            doc.head?.appendChild(meta);
-          },
-        },
-      ],
+      callbacks: createFrameworkCallbacks({
+        config,
+        cwd,
+        ...buildContext,
+        hooks,
+        onBuildOutput,
+      }),
+      hooks,
     });
 
     const manifest = JSON.parse(
@@ -166,30 +287,38 @@ describe("utoopackAdapter dev", () => {
       entry: "./src/main.tsx",
       html: "./index.html",
     });
+    const buildContext = await createBuildContext(config, cwd);
+    const hooks: PluginHooks<ConfigComplete>[] = [
+      {
+        transformHtml(doc, ctx) {
+          const meta = doc.createElement("meta");
+          expect(ctx.kind).toBe("app");
+          expect(ctx.htmlId).toBe("index");
+          expect(ctx.fileName).toBe("index.html");
+          expect(ctx.mode).toBe("development");
+          expect(ctx.buildId).toBe(ctx.output.buildId);
+          expect(ctx.publicPath).toBe(ctx.output.publicPath);
+          meta.setAttribute(
+            "name",
+            ctx.output.server ? "server-enabled" : "client-only",
+          );
+          doc.head?.appendChild(meta);
+        },
+      },
+    ];
 
     await utoopackAdapter.dev({
       config,
       cwd,
-      ...(await createBuildContext(config, cwd)),
-      callbacks: { onBuildOutput: vi.fn(), onServerBundleReady },
-      hooks: [
-        {
-          transformHtml(doc, ctx) {
-            const meta = doc.createElement("meta");
-            expect(ctx.kind).toBe("app");
-            expect(ctx.htmlId).toBe("index");
-            expect(ctx.fileName).toBe("index.html");
-            expect(ctx.mode).toBe("development");
-            expect(ctx.buildId).toBe(ctx.output.buildId);
-            expect(ctx.publicPath).toBe(ctx.output.publicPath);
-            meta.setAttribute(
-              "name",
-              ctx.output.server ? "server-enabled" : "client-only",
-            );
-            doc.head?.appendChild(meta);
-          },
-        },
-      ],
+      ...buildContext,
+      callbacks: createFrameworkCallbacks({
+        config,
+        cwd,
+        ...buildContext,
+        hooks,
+        onServerBundleReady,
+      }),
+      hooks,
     });
 
     const manifest = JSON.parse(

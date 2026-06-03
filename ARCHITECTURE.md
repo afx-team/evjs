@@ -1,7 +1,8 @@
 # Architecture
 
-This file summarizes the current implementation. The detailed design and status
-matrix live in [NEXT_GENERATION_ARCHITECTURE.md](./NEXT_GENERATION_ARCHITECTURE.md).
+This file summarizes the current implementation. User-facing architecture
+documentation lives in [docs/docs/architecture.md](./docs/docs/architecture.md)
+and the current status matrix lives in [ROADMAP.md](./ROADMAP.md).
 
 ## Overview
 
@@ -76,7 +77,7 @@ sequenceDiagram
   EV->>EV: run buildPlan hooks
   EV->>Bundler: build(plan)
   Bundler-->>EV: stats/assets/build facts
-  EV->>Manifest: linkBuildOutput(plan, bundlerResult)
+  EV->>Manifest: linkBuildOutput(plan, bundlerFacts)
   Manifest-->>EV: BuildOutput
   EV->>EV: run buildOutput hooks
   EV->>EV: emit manifest and HTML documents

@@ -2,15 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import type {
   AppGraph,
-  BuildOutput,
   BuildPlan,
   BuildPlanUpdate,
   BundlerAdapter,
   BundlerBuildContext,
+  BundlerBuildFacts,
   BundlerDevContext,
   BundlerDevController,
   DevProxyRule,
-  PluginHooks,
   ResolvedConfig,
 } from "@evjs/ev";
 import { getLogger } from "@logtape/logtape";
@@ -44,8 +43,10 @@ interface WebpackWatching {
 export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
   name: "webpack",
 
-  async build(ctx: BundlerBuildContext<WebpackConfig>): Promise<void> {
-    const { callbacks, config, cwd, graph, hooks, plan } = ctx;
+  async build(
+    ctx: BundlerBuildContext<WebpackConfig>,
+  ): Promise<BundlerBuildFacts> {
+    const { config, cwd, graph, hooks, plan } = ctx;
     const outputPaths = getOutputPaths(cwd, config.serverEnabled);
 
     logger.info`Building for production with webpack...`;
@@ -63,23 +64,17 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
       await emitStats(outputPaths.serverDir, stats.serverStats);
     }
 
-    logger.info`Linking framework manifest...`;
+    logger.info`Collecting webpack build facts...`;
     const generator = new WebpackManifestGenerator(
       cwd,
       config.serverEnabled,
-      graph,
       plan,
       stats.clientStats,
       stats.serverStats,
     );
-    const output = generator.link();
-    await callbacks.onBuildOutput(output);
-    await generator.emit(output);
-
-    logger.info`Generating and emitting HTML...`;
-    await generateAndEmitHtml(config, cwd, hooks, output, plan);
 
     logger.info`Build complete!`;
+    return generator.collectBuildFacts();
   },
 
   async dev(
@@ -351,23 +346,14 @@ class WebpackDevSession implements BundlerDevController {
     const generator = new WebpackManifestGenerator(
       this.ctx.cwd,
       this.config.serverEnabled,
-      this.graph,
       this.plan,
       this.latestClientStats,
       this.latestServerStats,
     );
-    const output = generator.link();
-    await this.ctx.callbacks.onBuildOutput(output);
-    await generator.emit(output);
     const isRebuild = this.hasEmittedDevArtifacts;
-    await generateAndEmitHtml(
-      this.config,
-      this.ctx.cwd,
-      this.ctx.hooks,
-      output,
-      this.plan,
-      { isRebuild },
-    );
+    await this.ctx.callbacks.onBuildFacts(generator.collectBuildFacts(), {
+      isRebuild,
+    });
     this.hasEmittedDevArtifacts = true;
     return true;
   }
@@ -650,83 +636,6 @@ async function emitStats(
     JSON.stringify(stats, null, 2),
     "utf-8",
   );
-}
-
-async function generateAndEmitHtml(
-  config: ResolvedConfig<WebpackConfig>,
-  cwd: string,
-  hooks: PluginHooks<WebpackConfig>[],
-  output: BuildOutput,
-  plan: BuildPlan,
-  options: { isRebuild?: boolean } = {},
-): Promise<void> {
-  const outputPaths = getOutputPaths(cwd, config.serverEnabled);
-  const { generateHtml } = await import("@evjs/ev/build-tools");
-  const { buildHtml } = await import("@evjs/ev");
-
-  for (const html of plan.html) {
-    const pageId = html.owner.pageId;
-    const appId = html.owner.appId;
-    const assets = pageId
-      ? output.pages[pageId]?.assets
-      : appId
-        ? output.apps[appId]?.assets
-        : undefined;
-    if (!assets) continue;
-
-    const doc = generateHtml({
-      template: path.resolve(cwd, html.template),
-      js: assets.js,
-      css: assets.css,
-    });
-    doc.documentElement?.setAttribute("data-evjs-build", output.buildId);
-    if (pageId) {
-      doc.documentElement?.setAttribute("data-evjs-kind", "page");
-      doc.documentElement?.setAttribute("data-evjs-id", pageId);
-      doc.documentElement?.setAttribute("data-evjs-page", pageId);
-    } else if (appId) {
-      doc.documentElement?.setAttribute("data-evjs-kind", "app");
-      doc.documentElement?.setAttribute("data-evjs-id", appId);
-      doc.documentElement?.setAttribute("data-evjs-app", appId);
-    }
-
-    const finalHtml = await buildHtml({
-      // biome-ignore lint/suspicious/noExplicitAny: DOM interfaces are parser-backed.
-      doc: doc as any,
-      hooks,
-      pluginContext: {
-        mode: plan.mode,
-        command: plan.mode === "production" ? "build" : "dev",
-        cwd,
-        config,
-        logger,
-        addWatchFile() {},
-      },
-      html: pageId
-        ? {
-            kind: "page",
-            htmlId: html.id,
-            pageId,
-            template: html.template,
-            fileName: html.fileName,
-            assets,
-          }
-        : {
-            kind: "app",
-            htmlId: html.id,
-            appId: appId ?? "default",
-            template: html.template,
-            fileName: html.fileName,
-            assets,
-          },
-      output,
-      isRebuild: options.isRebuild,
-    });
-
-    const outPath = path.join(outputPaths.clientDir, html.fileName);
-    await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
-    await fs.promises.writeFile(outPath, finalHtml, "utf-8");
-  }
 }
 
 type WebpackStatsJson = WebpackStatsLike & {

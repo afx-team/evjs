@@ -87,7 +87,7 @@ describe("resolveConfig", () => {
   it("plugin contexts can carry the active default bundler", async () => {
     const bundler = {
       name: "utoopack",
-      build: async () => {},
+      build: async () => ({}),
       dev: async () => {},
     } as BundlerAdapter;
 

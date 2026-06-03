@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { BuildOutput } from "@evjs/shared/manifest";
 import { describe, expect, it } from "vitest";
 import type { BundlerAdapter } from "../src/bundler.js";
 import { build, type Config, dev, type Plugin } from "../src/index.js";
@@ -21,45 +20,29 @@ function createMockBundler(
 ): BundlerAdapter<Record<string, never>> {
   return {
     name: "mock",
-    async build({ callbacks, config, cwd, plan }) {
+    async build({ config, plan }) {
       events.push("bundler.build");
       events.push(
         `bundler.entries:${plan.entries.map((entry) => entry.name).join(",")}`,
-      );
-      const output: BuildOutput = {
-        version: 1,
-        buildId: plan.buildId,
-        distDir: plan.distDir,
-        publicPath: plan.runtime.publicPath,
-        runtime: {
-          server: plan.runtime.server,
-          transport: plan.runtime.transport,
-        },
-        assets: {
-          main: { js: ["main.js"], css: [] },
-        },
-        apps: {
-          default: {
-            assets: { js: ["main.js"], css: [] },
-            entry: "./src/main.tsx",
-          },
-        },
-        pages: {},
-        routes: [],
-      };
-      await callbacks.onBuildOutput(output);
-      const dist = path.join(cwd, "dist");
-      await fs.promises.mkdir(dist, { recursive: true });
-      await fs.promises.writeFile(
-        path.join(dist, "manifest.json"),
-        JSON.stringify(output),
-        "utf-8",
       );
       if (config.serverEnabled) {
         events.push(
           `bundler.endpoint:${config.server.functionRuntime.endpoint}`,
         );
       }
+      return {
+        clientEntryAssets: {
+          main: { js: ["main.js"], css: [] },
+        },
+        firstClientEntryAssets: { js: ["main.js"], css: [] },
+        serverEntryAssets: {
+          server: { js: ["server.js"], css: [] },
+        },
+        serverEntry: config.serverEnabled ? "server.js" : undefined,
+        serverAssets: config.serverEnabled
+          ? { js: ["server.js"], css: [] }
+          : undefined,
+      };
     },
     async dev() {
       events.push("bundler.dev");
@@ -136,24 +119,18 @@ describe("build", () => {
     ]);
   });
 
-  it("passes callback BuildOutput to buildEnd without requiring a disk manifest", async () => {
+  it("passes linked BuildOutput to buildEnd and emits the framework manifest", async () => {
     const cwd = await createProject();
     const events: string[] = [];
-    const output: BuildOutput = {
-      version: 1,
-      buildId: "memory",
-      distDir: "dist",
-      publicPath: "/",
-      runtime: {},
-      assets: {},
-      apps: {},
-      pages: {},
-      routes: [],
-    };
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "memory-output",
-      async build({ callbacks }) {
-        await callbacks.onBuildOutput(output);
+      async build() {
+        return {
+          clientEntryAssets: {
+            main: { js: ["memory.js"], css: [] },
+          },
+          firstClientEntryAssets: { js: ["memory.js"], css: [] },
+        };
       },
       async dev() {},
     };
@@ -167,7 +144,7 @@ describe("build", () => {
             setup() {
               return {
                 buildEnd(result) {
-                  events.push(result.output.buildId);
+                  events.push(result.output.apps.default.assets.js[0] ?? "");
                 },
               };
             },
@@ -177,8 +154,8 @@ describe("build", () => {
       { cwd, bundler },
     );
 
-    expect(events).toEqual(["memory"]);
-    expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
+    expect(events).toEqual(["memory.js"]);
+    expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(true);
   });
 
   it("runs plugin config hooks before resolving config", async () => {
@@ -640,7 +617,9 @@ describe("dev", () => {
 
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock",
-      async build() {},
+      async build() {
+        return {};
+      },
       async dev() {
         events.push("bundler.dev");
         return {
@@ -736,7 +715,9 @@ describe("dev", () => {
 
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock",
-      async build() {},
+      async build() {
+        return {};
+      },
       async dev() {
         events.push("bundler.dev");
         return {

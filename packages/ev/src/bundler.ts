@@ -1,10 +1,24 @@
 import type {
   AppGraph,
-  BuildOutput,
+  AssetGroup,
+  BuildOutputServerModule,
   BuildPlan,
   BuildPlanUpdate,
 } from "@evjs/shared/manifest";
 import type { PluginHooks, ResolvedConfig } from "./config.js";
+
+export interface BundlerBuildFacts {
+  clientEntryAssets?: Record<string, AssetGroup>;
+  firstClientEntryAssets?: AssetGroup;
+  serverEntryAssets?: Record<string, AssetGroup>;
+  serverEntry?: string;
+  serverAssets?: AssetGroup;
+  serverModules?: BuildOutputServerModule[];
+  rscManifests?: {
+    clientReferenceManifest?: Record<string, unknown>;
+    serverConsumerManifest?: Record<string, unknown>;
+  };
+}
 
 export interface BundlerBuildContext<
   TBundlerCfg = import("@utoo/pack").ConfigComplete,
@@ -14,14 +28,6 @@ export interface BundlerBuildContext<
   graph: AppGraph;
   plan: BuildPlan;
   hooks: PluginHooks<TBundlerCfg>[];
-  callbacks: {
-    /**
-     * Called by the bundler adapter after framework output is linked and
-     * before manifest/HTML emission. The output object may be mutated by
-     * plugin hooks.
-     */
-    onBuildOutput: (output: BuildOutput) => void | Promise<void>;
-  };
 }
 
 export interface BundlerDevContext<
@@ -29,11 +35,14 @@ export interface BundlerDevContext<
 > extends BundlerBuildContext<TBundlerCfg> {
   callbacks: {
     /**
-     * Called by the bundler adapter after framework output is linked and
-     * before manifest/HTML emission. The output object may be mutated by
-     * plugin hooks.
+     * Called by the bundler adapter after a dev compile has fresh build facts.
+     * The ev orchestrator owns framework output linking, plugin output hooks,
+     * manifest emission, and HTML emission.
      */
-    onBuildOutput: (output: BuildOutput) => void | Promise<void>;
+    onBuildFacts: (
+      facts: BundlerBuildFacts,
+      options?: { isRebuild?: boolean },
+    ) => void | Promise<void>;
     onServerBundleReady: () => void | Promise<void>;
   };
 }
@@ -55,7 +64,7 @@ export interface BundlerAdapter<
   /**
    * Run a production build.
    */
-  build(ctx: BundlerBuildContext<TBundlerCfg>): Promise<void>;
+  build(ctx: BundlerBuildContext<TBundlerCfg>): Promise<BundlerBuildFacts>;
 
   /**
    * Start a development server.

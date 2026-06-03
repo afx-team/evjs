@@ -1,13 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import type {
-  AppGraph,
   AssetGroup,
-  BuildOutput,
   BuildOutputServerModule,
   BuildPlan,
+  BundlerBuildFacts,
 } from "@evjs/ev";
-import { linkBuildOutput } from "@evjs/ev";
 import { getLogger } from "@logtape/logtape";
 import {
   getOutputPaths,
@@ -123,7 +121,6 @@ function collectServerModules(
 export class UtoopackManifestGenerator {
   private serverEnabled: boolean;
   private outputPaths: UtoopackOutputPaths;
-  private graph: AppGraph;
   private plan: BuildPlan;
   private clientEntryAssets: Record<string, AssetGroup> = {};
   private serverEntryAssets: Record<string, AssetGroup> = {};
@@ -132,15 +129,9 @@ export class UtoopackManifestGenerator {
   private serverAssets: AssetGroup = EMPTY_ASSETS;
   private serverModules: BuildOutputServerModule[] = [];
 
-  constructor(
-    cwd: string,
-    serverEnabled: boolean,
-    graph: AppGraph,
-    plan: BuildPlan,
-  ) {
+  constructor(cwd: string, serverEnabled: boolean, plan: BuildPlan) {
     this.serverEnabled = serverEnabled;
     this.outputPaths = getOutputPaths(cwd, serverEnabled);
-    this.graph = graph;
     this.plan = plan;
   }
 
@@ -206,35 +197,25 @@ export class UtoopackManifestGenerator {
     }
   }
 
-  async emit(output: BuildOutput) {
-    const outPath = path.join(this.outputPaths.rootDir, "manifest.json");
-    await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
-    await fs.promises.writeFile(outPath, JSON.stringify(output, null, 2));
-  }
-
-  async link(): Promise<BuildOutput> {
+  async collectBuildFacts(): Promise<BundlerBuildFacts> {
     await this.loadClientStats();
     await this.loadServerStats();
-    return linkBuildOutput({
-      graph: this.graph,
-      plan: this.plan,
-      serverEnabled: this.serverEnabled,
+
+    return {
       clientEntryAssets: this.clientEntryAssets,
       firstClientEntryAssets: this.firstClientEntryAssets,
       serverEntryAssets: this.serverEntryAssets,
       serverEntry: this.serverEntry,
       serverAssets: this.serverAssets,
       serverModules: this.serverModules,
-    });
+    };
   }
 
-  async build(): Promise<BuildOutput> {
-    const output = await this.link();
-    await this.emit(output);
-    return output;
+  async build(): Promise<BundlerBuildFacts> {
+    return this.collectBuildFacts();
   }
 
-  async watch(onUpdate?: (output: BuildOutput) => void | Promise<void>) {
+  async watch(onUpdate?: (result: BundlerBuildFacts) => void | Promise<void>) {
     const output = await this.build();
     await onUpdate?.(output);
   }

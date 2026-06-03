@@ -51,7 +51,7 @@ export interface ReactRscFlightAdapterOptions {
   validateContentType?: boolean;
 }
 
-export interface ReactRscPayload {
+export interface ReactRscDebugPayload {
   version: 1;
   type: "evjs.rsc";
   buildId: string;
@@ -64,6 +64,12 @@ export interface ReactRscPayload {
   serverReferences?: Record<string, unknown>;
   pages?: NonNullable<BuildOutput["rsc"]>["pages"];
 }
+
+/**
+ * @deprecated Use `ReactRscDebugPayload`. Successful RSC responses must be
+ * React Flight `Response` objects with `text/x-component` content type.
+ */
+export type ReactRscPayload = ReactRscDebugPayload;
 
 export function createReactServerRenderAdapter(
   options: ReactServerRenderAdapterOptions = {},
@@ -112,7 +118,7 @@ export function createReactRscFlightAdapter(
           );
         }
 
-        const rendered = await renderDefaultRscPayload(ctx, options);
+        const rendered = await renderDefaultRscDebugPayload(ctx, options);
         if (rendered instanceof Response) {
           return validateFlightResponse(rendered, options);
         }
@@ -164,10 +170,10 @@ function validateFlightResponse(
   );
 }
 
-async function renderDefaultRscPayload(
+async function renderDefaultRscDebugPayload(
   ctx: RscFlightContext,
   options: ReactRscFlightAdapterOptions,
-): Promise<ReactRscPayload | Response> {
+): Promise<ReactRscDebugPayload | Response> {
   const rendererName = ctx.rscPage?.renderer;
   const renderer = rendererName ? ctx.renderer : undefined;
   const html = renderer

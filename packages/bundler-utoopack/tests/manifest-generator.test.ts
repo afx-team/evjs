@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { AppGraph, BuildPlan } from "@evjs/ev";
+import type { AppGraph, BuildPlan, BundlerBuildFacts } from "@evjs/ev";
+import { linkBuildOutput } from "@evjs/ev";
 import { afterEach, describe, expect, it } from "vitest";
 import { UtoopackManifestGenerator } from "../src/manifest-generator.js";
 
@@ -28,8 +29,27 @@ afterEach(async () => {
   );
 });
 
+function linkTestManifest(
+  graph: AppGraph,
+  plan: BuildPlan,
+  serverEnabled: boolean,
+  facts: BundlerBuildFacts,
+) {
+  return linkBuildOutput({
+    graph,
+    plan,
+    serverEnabled,
+    clientEntryAssets: facts.clientEntryAssets,
+    firstClientEntryAssets: facts.firstClientEntryAssets,
+    serverEntryAssets: facts.serverEntryAssets,
+    serverEntry: facts.serverEntry,
+    serverAssets: facts.serverAssets,
+    serverModules: facts.serverModules,
+  });
+}
+
 describe("UtoopackManifestGenerator", () => {
-  it("links BuildOutput from AppGraph, BuildPlan, and Utoopack stats", async () => {
+  it("collects build facts that can be linked into BuildOutput", async () => {
     const cwd = await makeProject();
     await fs.promises.writeFile(
       path.join(cwd, "dist/client/stats.json"),
@@ -105,13 +125,14 @@ describe("UtoopackManifestGenerator", () => {
     };
     const plan = createPlan(graph, true);
 
-    const generator = new UtoopackManifestGenerator(cwd, true, graph, plan);
+    const generator = new UtoopackManifestGenerator(cwd, true, plan);
     const output = await generator.build();
-    const manifest = JSON.parse(
-      await fs.promises.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
-    );
+    const manifest = linkTestManifest(graph, plan, true, output);
 
-    expect(output).toEqual(manifest);
+    expect(output.clientEntryAssets?.main).toEqual({
+      js: ["main.js"],
+      css: ["main.css"],
+    });
     expect(manifest.apps.default.assets).toEqual({
       js: ["main.js"],
       css: ["main.css"],
@@ -136,19 +157,19 @@ describe("UtoopackManifestGenerator", () => {
         activeWhen: ["/crm/*"],
       },
     });
-    expect(manifest.server.entry).toBe("server.js");
-    expect(manifest.server.assets).toEqual({
+    expect(manifest.server?.entry).toBe("server.js");
+    expect(manifest.server?.assets).toEqual({
       js: ["server.js"],
       css: ["server.css"],
     });
-    expect(manifest.server.functions).toEqual({
+    expect(manifest.server?.functions).toEqual({
       "function-id": {
         assets: { js: ["server.js"], css: [] },
         module: "src/actions.ts",
         exportName: "save",
       },
     });
-    expect(manifest.server.routes).toEqual([
+    expect(manifest.server?.routes).toEqual([
       {
         path: "/api/health",
         methods: ["GET"],
@@ -198,8 +219,9 @@ describe("UtoopackManifestGenerator", () => {
     };
     const plan = createPlan(graph, false);
 
-    const generator = new UtoopackManifestGenerator(cwd, false, graph, plan);
-    const manifest = await generator.build();
+    const generator = new UtoopackManifestGenerator(cwd, false, plan);
+    const output = await generator.build();
+    const manifest = linkTestManifest(graph, plan, false, output);
 
     expect(manifest.apps).toEqual({});
     expect(manifest.pages.home).toMatchObject({
@@ -280,8 +302,9 @@ describe("UtoopackManifestGenerator", () => {
     };
     const plan = createPlan(graph, true);
 
-    const generator = new UtoopackManifestGenerator(cwd, true, graph, plan);
-    const manifest = await generator.build();
+    const generator = new UtoopackManifestGenerator(cwd, true, plan);
+    const output = await generator.build();
+    const manifest = linkTestManifest(graph, plan, true, output);
 
     expect(manifest.pages.campaign).toMatchObject({
       assets: { js: ["campaign.client.js"], css: [] },

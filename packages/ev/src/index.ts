@@ -11,6 +11,7 @@ export {
 export type {
   BundlerAdapter,
   BundlerBuildContext,
+  BundlerBuildFacts,
   BundlerDevContext,
   BundlerDevController,
 } from "./bundler.js";

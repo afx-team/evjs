@@ -73,7 +73,7 @@ export interface RemoteManifestLoadContext {
 }
 
 export interface ShellErrorContext {
-  phase: "mount" | "hydrate" | "unmount";
+  phase: "resolve" | "load" | "init" | "mount" | "hydrate" | "unmount";
   app: AppContext;
 }
 
@@ -211,9 +211,14 @@ export function createShell(options: ShellOptions): Shell {
     const mountPoint =
       request.mountPoint ?? options.resolveMountPoint?.(target.ctx);
     if (!mountPoint) {
-      throw new Error(
+      const error = new Error(
         `[evjs] Unable to resolve mount point for ${target.ctx.kind} "${target.id}".`,
       );
+      await options.onError?.(error, {
+        phase: "resolve",
+        app: target.ctx,
+      });
+      throw error;
     }
     return {
       ...target,
@@ -224,11 +229,19 @@ export function createShell(options: ShellOptions): Shell {
   async function getModule(href: string, ctx: AppContext) {
     let promise = moduleCache.get(href);
     if (!promise) {
-      promise = loadModule(href, ctx);
+      promise = callShellPhase(
+        "load",
+        ctx,
+        () => loadModule(href, ctx),
+        options.onError,
+      ).catch((error) => {
+        moduleCache.delete(href);
+        throw error;
+      });
       moduleCache.set(href, promise);
     }
     const module = await promise;
-    await initializeModule(href, module, ctx, moduleInitCache);
+    await initializeModule(href, module, ctx, moduleInitCache, options.onError);
     return module;
   }
 
@@ -255,7 +268,7 @@ export function createShell(options: ShellOptions): Shell {
 
       const previous = active;
       if (previous?.module.unmount) {
-        await callLifecycle(
+        await callShellPhase(
           "unmount",
           previous.ctx,
           () => previous.module.unmount?.(previous.mountPoint, previous.ctx),
@@ -266,14 +279,14 @@ export function createShell(options: ShellOptions): Shell {
       const module = await getModule(target.href, target.ctx);
       const shouldHydrate = request.hydrate ?? target.ctx.kind === "page";
       if (shouldHydrate && module.hydrate) {
-        await callLifecycle(
+        await callShellPhase(
           "hydrate",
           target.ctx,
           () => module.hydrate?.(target.mountPoint, target.ctx),
           options.onError,
         );
       } else if (module.mount) {
-        await callLifecycle(
+        await callShellPhase(
           "mount",
           target.ctx,
           () => module.mount?.(target.mountPoint, target.ctx),
@@ -298,7 +311,7 @@ export function createShell(options: ShellOptions): Shell {
       }
       const current = active;
       if (current?.module.unmount) {
-        await callLifecycle(
+        await callShellPhase(
           "unmount",
           current.ctx,
           () => current.module.unmount?.(current.mountPoint, current.ctx),
@@ -318,26 +331,37 @@ async function initializeModule(
   module: AppModule,
   ctx: AppContext,
   moduleInitCache: Map<string, Promise<void>>,
+  onError: ShellOptions["onError"],
 ): Promise<void> {
   if (!module.init) return;
 
   let initialized = moduleInitCache.get(href);
   if (!initialized) {
-    initialized = Promise.resolve(module.init(getSharedScope(), ctx));
+    initialized = callShellPhase(
+      "init",
+      ctx,
+      async () => {
+        await module.init?.(getSharedScope(), ctx);
+      },
+      onError,
+    ).catch((error) => {
+      moduleInitCache.delete(href);
+      throw error;
+    });
     moduleInitCache.set(href, initialized);
   }
 
   await initialized;
 }
 
-async function callLifecycle(
+async function callShellPhase<T>(
   phase: ShellErrorContext["phase"],
   app: AppContext,
-  run: () => void | Promise<void>,
+  run: () => T | Promise<T>,
   onError: ShellOptions["onError"],
-) {
+): Promise<T> {
   try {
-    await run();
+    return await run();
   } catch (error) {
     await onError?.(error, { phase, app });
     throw error;
@@ -491,6 +515,9 @@ async function resolveRemoteTarget(
       id: remoteId,
       request,
       manifest,
+    }).catch((error) => {
+      remoteManifestCache.delete(remoteId);
+      throw error;
     });
     remoteManifestCache.set(remoteId, remoteManifestPromise);
   }

@@ -4,12 +4,25 @@ import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { BuildOutput } from "@evjs/ev";
-import { resolveConfig } from "@evjs/ev";
+import type {
+  AppGraph,
+  BuildOutput,
+  BuildPlan,
+  BundlerBuildFacts,
+  PluginHooks,
+  ResolvedConfig,
+} from "@evjs/ev";
+import {
+  buildHtml,
+  linkBuildOutput,
+  linkRemoteManifest,
+  resolveConfig,
+} from "@evjs/ev";
 import {
   createAppGraph,
   createBuildPlan,
   diffBuildPlan,
+  generateHtml,
 } from "@evjs/ev/build-tools";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WebpackConfig } from "../src/adapter/create-config.js";
@@ -37,6 +50,187 @@ afterEach(async () => {
     ),
   );
 });
+
+async function buildWithFrameworkArtifacts(options: {
+  config: ResolvedConfig<WebpackConfig>;
+  cwd: string;
+  graph: AppGraph;
+  plan: BuildPlan;
+  hooks?: PluginHooks<WebpackConfig>[];
+  onBuildOutput?: (output: BuildOutput) => void | Promise<void>;
+}) {
+  const hooks = options.hooks ?? [];
+  const buildFacts = await webpackAdapter.build({
+    config: options.config,
+    cwd: options.cwd,
+    graph: options.graph,
+    plan: options.plan,
+    hooks,
+  });
+  return emitFrameworkArtifacts({
+    ...options,
+    hooks,
+    facts: buildFacts,
+  });
+}
+
+function createFrameworkCallbacks(options: {
+  config: ResolvedConfig<WebpackConfig>;
+  cwd: string;
+  graph: AppGraph;
+  plan: BuildPlan;
+  hooks?: PluginHooks<WebpackConfig>[];
+  onBuildOutput?: (output: BuildOutput) => void | Promise<void>;
+  onServerBundleReady?: () => void | Promise<void>;
+}) {
+  let graph = options.graph;
+  let plan = options.plan;
+  const hooks = options.hooks ?? [];
+
+  return {
+    update(nextGraph: AppGraph, nextPlan: BuildPlan) {
+      graph = nextGraph;
+      plan = nextPlan;
+    },
+    callbacks: {
+      async onBuildFacts(
+        facts: BundlerBuildFacts,
+        callbackOptions?: { isRebuild?: boolean },
+      ) {
+        await emitFrameworkArtifacts({
+          config: options.config,
+          cwd: options.cwd,
+          graph,
+          plan,
+          hooks,
+          facts,
+          onBuildOutput: options.onBuildOutput,
+          isRebuild: callbackOptions?.isRebuild,
+        });
+      },
+      onServerBundleReady:
+        options.onServerBundleReady ??
+        (() => {
+          // no-op
+        }),
+    },
+  };
+}
+
+async function emitFrameworkArtifacts(options: {
+  config: ResolvedConfig<WebpackConfig>;
+  cwd: string;
+  graph: AppGraph;
+  plan: BuildPlan;
+  hooks: PluginHooks<WebpackConfig>[];
+  facts: BundlerBuildFacts;
+  onBuildOutput?: (output: BuildOutput) => void | Promise<void>;
+  isRebuild?: boolean;
+}): Promise<BuildOutput> {
+  const output = linkBuildOutput({
+    graph: options.graph,
+    plan: options.plan,
+    serverEnabled: options.config.serverEnabled,
+    clientEntryAssets: options.facts.clientEntryAssets,
+    firstClientEntryAssets: options.facts.firstClientEntryAssets,
+    serverEntryAssets: options.facts.serverEntryAssets,
+    serverEntry: options.facts.serverEntry,
+    serverAssets: options.facts.serverAssets,
+    serverModules: options.facts.serverModules,
+    rscManifests: options.facts.rscManifests,
+  });
+  await options.onBuildOutput?.(output);
+
+  const rootDir = path.join(options.cwd, "dist");
+  const clientDir = options.config.serverEnabled
+    ? path.join(rootDir, "client")
+    : rootDir;
+  await fs.mkdir(rootDir, { recursive: true });
+  await fs.writeFile(
+    path.join(rootDir, "manifest.json"),
+    JSON.stringify(output, null, 2),
+    "utf-8",
+  );
+
+  const remoteManifest = linkRemoteManifest({
+    plan: options.plan,
+    clientEntryAssets: options.facts.clientEntryAssets,
+    firstClientEntryAssets: options.facts.firstClientEntryAssets,
+  });
+  if (remoteManifest) {
+    await fs.writeFile(
+      path.join(rootDir, "evjs-remote.json"),
+      JSON.stringify(remoteManifest, null, 2),
+      "utf-8",
+    );
+  }
+
+  for (const html of options.plan.html) {
+    const pageId = html.owner.pageId;
+    const appId = html.owner.appId;
+    const assets = pageId
+      ? output.pages[pageId]?.assets
+      : appId
+        ? output.apps[appId]?.assets
+        : undefined;
+    if (!assets) continue;
+
+    const doc = generateHtml({
+      template: path.resolve(options.cwd, html.template),
+      js: assets.js,
+      css: assets.css,
+    });
+    doc.documentElement?.setAttribute("data-evjs-build", output.buildId);
+    if (pageId) {
+      doc.documentElement?.setAttribute("data-evjs-kind", "page");
+      doc.documentElement?.setAttribute("data-evjs-id", pageId);
+      doc.documentElement?.setAttribute("data-evjs-page", pageId);
+    } else if (appId) {
+      doc.documentElement?.setAttribute("data-evjs-kind", "app");
+      doc.documentElement?.setAttribute("data-evjs-id", appId);
+      doc.documentElement?.setAttribute("data-evjs-app", appId);
+    }
+
+    const finalHtml = await buildHtml({
+      // biome-ignore lint/suspicious/noExplicitAny: DOM interfaces are parser-backed.
+      doc: doc as any,
+      hooks: options.hooks,
+      pluginContext: {
+        mode: options.plan.mode,
+        command: options.plan.mode === "production" ? "build" : "dev",
+        cwd: options.cwd,
+        config: options.config,
+        logger: console as never,
+        addWatchFile() {},
+      },
+      html: pageId
+        ? {
+            kind: "page",
+            htmlId: html.id,
+            pageId,
+            template: html.template,
+            fileName: html.fileName,
+            assets,
+          }
+        : {
+            kind: "app",
+            htmlId: html.id,
+            appId: appId ?? "default",
+            template: html.template,
+            fileName: html.fileName,
+            assets,
+          },
+      output,
+      isRebuild: options.isRebuild,
+    });
+
+    const outPath = path.join(clientDir, html.fileName);
+    await fs.mkdir(path.dirname(outPath), { recursive: true });
+    await fs.writeFile(outPath, finalHtml, "utf-8");
+  }
+
+  return output;
+}
 
 describe("webpackAdapter build", () => {
   it("builds framework-managed component pages without materializing .evjs files", async () => {
@@ -67,15 +261,12 @@ describe("webpackAdapter build", () => {
       mode: "development",
     });
 
-    await webpackAdapter.build({
+    await buildWithFrameworkArtifacts({
       config,
       cwd,
       graph: analysis.graph,
       plan,
       hooks: [],
-      callbacks: {
-        onBuildOutput() {},
-      },
     });
 
     const manifest = JSON.parse(
@@ -150,15 +341,12 @@ describe("webpackAdapter build", () => {
       mode: "development",
     });
 
-    await webpackAdapter.build({
+    await buildWithFrameworkArtifacts({
       config,
       cwd,
       graph: analysis.graph,
       plan,
       hooks: [],
-      callbacks: {
-        onBuildOutput() {},
-      },
     });
 
     const manifest = JSON.parse(
@@ -264,7 +452,7 @@ describe("webpackAdapter build", () => {
       output.assets.plugin = { js: ["plugin.js"], css: [] };
     });
 
-    await webpackAdapter.build({
+    await buildWithFrameworkArtifacts({
       config,
       cwd,
       graph: analysis.graph,
@@ -279,9 +467,7 @@ describe("webpackAdapter build", () => {
           },
         },
       ],
-      callbacks: {
-        onBuildOutput,
-      },
+      onBuildOutput,
     });
 
     const manifest = JSON.parse(
@@ -388,15 +574,12 @@ describe("webpackAdapter build", () => {
       mode: "development",
     });
 
-    await webpackAdapter.build({
+    await buildWithFrameworkArtifacts({
       config,
       cwd,
       graph: analysis.graph,
       plan,
       hooks: [],
-      callbacks: {
-        onBuildOutput() {},
-      },
     });
 
     const manifest = JSON.parse(
@@ -451,15 +634,12 @@ describe("webpackAdapter build", () => {
       mode: "development",
     });
 
-    await webpackAdapter.build({
+    await buildWithFrameworkArtifacts({
       config,
       cwd,
       graph: analysis.graph,
       plan,
       hooks: [],
-      callbacks: {
-        onBuildOutput() {},
-      },
     });
 
     const manifest = JSON.parse(
@@ -571,15 +751,12 @@ describe("webpackAdapter build", () => {
       mode: "development",
     });
 
-    await webpackAdapter.build({
+    await buildWithFrameworkArtifacts({
       config,
       cwd,
       graph: analysis.graph,
       plan,
       hooks: [],
-      callbacks: {
-        onBuildOutput() {},
-      },
     });
 
     const manifest = JSON.parse(
@@ -661,6 +838,13 @@ describe("webpackAdapter dev", () => {
       mode: "development",
     });
     const onBuildOutput = vi.fn();
+    const framework = createFrameworkCallbacks({
+      config,
+      cwd,
+      graph: analysis.graph,
+      plan,
+      onBuildOutput,
+    });
 
     const controller = await webpackAdapter.dev({
       config,
@@ -668,10 +852,7 @@ describe("webpackAdapter dev", () => {
       graph: analysis.graph,
       plan,
       hooks: [],
-      callbacks: {
-        onBuildOutput,
-        onServerBundleReady() {},
-      },
+      callbacks: framework.callbacks,
     });
     try {
       const manifest = JSON.parse(
@@ -722,25 +903,30 @@ describe("webpackAdapter dev", () => {
       mode: "development",
     });
     let failBundlerConfig = false;
+    const hooks: PluginHooks<WebpackConfig>[] = [
+      {
+        bundlerConfig() {
+          if (failBundlerConfig) {
+            throw new Error("html-only update should not rebuild webpack");
+          }
+        },
+      },
+    ];
+    const framework = createFrameworkCallbacks({
+      config,
+      cwd,
+      graph: analysis.graph,
+      plan,
+      hooks,
+    });
 
     const controller = await webpackAdapter.dev({
       config,
       cwd,
       graph: analysis.graph,
       plan,
-      hooks: [
-        {
-          bundlerConfig() {
-            if (failBundlerConfig) {
-              throw new Error("html-only update should not rebuild webpack");
-            }
-          },
-        },
-      ],
-      callbacks: {
-        onBuildOutput() {},
-        onServerBundleReady() {},
-      },
+      hooks,
+      callbacks: framework.callbacks,
     });
     try {
       const nextConfig = resolveConfig<WebpackConfig>({
@@ -762,6 +948,7 @@ describe("webpackAdapter dev", () => {
       const update = diffBuildPlan(plan, nextPlan, "config");
 
       failBundlerConfig = true;
+      framework.update(nextAnalysis.graph, nextPlan);
       await controller?.updatePlan(update, nextAnalysis.graph);
 
       const html = await fetch(`http://127.0.0.1:${port}/home.html`).then(
@@ -815,25 +1002,30 @@ describe("webpackAdapter dev", () => {
       mode: "development",
     });
     let failBundlerConfig = false;
+    const hooks: PluginHooks<WebpackConfig>[] = [
+      {
+        bundlerConfig() {
+          if (failBundlerConfig) {
+            throw new Error("forced update failure");
+          }
+        },
+      },
+    ];
+    const framework = createFrameworkCallbacks({
+      config,
+      cwd,
+      graph: analysis.graph,
+      plan,
+      hooks,
+    });
 
     const controller = await webpackAdapter.dev({
       config,
       cwd,
       graph: analysis.graph,
       plan,
-      hooks: [
-        {
-          bundlerConfig() {
-            if (failBundlerConfig) {
-              throw new Error("forced update failure");
-            }
-          },
-        },
-      ],
-      callbacks: {
-        onBuildOutput() {},
-        onServerBundleReady() {},
-      },
+      hooks,
+      callbacks: framework.callbacks,
     });
     try {
       const nextConfig = resolveConfig<WebpackConfig>({
@@ -904,6 +1096,13 @@ describe("webpackAdapter dev", () => {
       mode: "development",
     });
     const onBuildOutput = vi.fn();
+    const framework = createFrameworkCallbacks({
+      config,
+      cwd,
+      graph: analysis.graph,
+      plan,
+      onBuildOutput,
+    });
 
     const controller = await webpackAdapter.dev({
       config,
@@ -911,10 +1110,7 @@ describe("webpackAdapter dev", () => {
       graph: analysis.graph,
       plan,
       hooks: [],
-      callbacks: {
-        onBuildOutput,
-        onServerBundleReady() {},
-      },
+      callbacks: framework.callbacks,
     });
     const stopSpy = vi.spyOn(
       controller as unknown as { stop(): Promise<void> },
@@ -959,6 +1155,7 @@ describe("webpackAdapter dev", () => {
       const update = diffBuildPlan(plan, nextPlan, "config");
       const buildOutputCallsBeforeUpdate = onBuildOutput.mock.calls.length;
 
+      framework.update(nextAnalysis.graph, nextPlan);
       await controller?.updatePlan(update, nextAnalysis.graph);
 
       const manifest = JSON.parse(

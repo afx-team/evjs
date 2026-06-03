@@ -76,7 +76,7 @@ sequenceDiagram
   EV->>Plugins: buildPlan(plan)
   EV->>Bundler: build(plan)
   Bundler-->>EV: bundler stats/assets
-  EV->>Manifest: linkBuildOutput(graph, plan, bundlerResult)
+  EV->>Manifest: linkBuildOutput(graph, plan, bundlerFacts)
   Manifest-->>EV: BuildOutput
   EV->>Plugins: buildOutput(output)
   EV->>EV: emit dist/manifest.json

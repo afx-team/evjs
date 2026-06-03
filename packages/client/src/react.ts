@@ -27,7 +27,7 @@ export interface RscFlightFetchOptions {
   fetch?: typeof fetch;
 }
 
-export interface RscPayload {
+export interface RscDebugPayload {
   version: 1;
   type: "evjs.rsc";
   buildId: string;
@@ -44,10 +44,21 @@ export interface RscPayload {
   pages?: NonNullable<BuildOutput["rsc"]>["pages"];
 }
 
-export interface RscPayloadMountOptions {
-  payload: RscPayload;
+export interface RscDebugPayloadMountOptions {
+  payload: RscDebugPayload;
   mount: string | Element;
 }
+
+/**
+ * @deprecated Use `RscDebugPayload`. Real React Flight rendering uses
+ * `createReactRscModel()` and `mountReactRscPage()`.
+ */
+export type RscPayload = RscDebugPayload;
+
+/**
+ * @deprecated Use `RscDebugPayloadMountOptions`.
+ */
+export type RscPayloadMountOptions = RscDebugPayloadMountOptions;
 
 const rootByMountPoint = new WeakMap<Element, Root>();
 
@@ -114,35 +125,54 @@ export async function fetchRscFlight(
   return fetchImpl(resolveRscFlightUrl(endpoint, options));
 }
 
-export async function fetchRscPayload(
+export async function fetchRscDebugPayload(
   options: RscFlightFetchOptions,
-): Promise<RscPayload> {
+): Promise<RscDebugPayload> {
   const response = await fetchRscFlight(options);
   if (!response.ok) {
     throw new Error(
-      `[evjs] RSC Flight request failed: ${response.status} ${response.statusText}`,
+      `[evjs] RSC debug payload request failed: ${response.status} ${response.statusText}`,
     );
   }
 
   const payload = (await response.json()) as unknown;
-  if (!isRscPayload(payload)) {
-    throw new Error("[evjs] RSC Flight response is not an evjs RSC payload.");
+  if (!isRscDebugPayload(payload)) {
+    throw new Error(
+      "[evjs] RSC debug payload response is not an evjs RSC debug payload.",
+    );
   }
   return payload;
 }
 
-export function mountRscPayload(options: RscPayloadMountOptions): void {
+export function mountRscDebugPayload(
+  options: RscDebugPayloadMountOptions,
+): void {
   const mountPoint = resolveMountPoint(options.mount);
   mountPoint.innerHTML = options.payload.html ?? "";
 }
 
-export async function loadRscPage(
+export async function loadRscDebugPage(
   options: RscFlightFetchOptions & { mount: string | Element },
-): Promise<RscPayload> {
-  const payload = await fetchRscPayload(options);
-  mountRscPayload({ payload, mount: options.mount });
+): Promise<RscDebugPayload> {
+  const payload = await fetchRscDebugPayload(options);
+  mountRscDebugPayload({ payload, mount: options.mount });
   return payload;
 }
+
+/**
+ * @deprecated Use `fetchRscDebugPayload`.
+ */
+export const fetchRscPayload = fetchRscDebugPayload;
+
+/**
+ * @deprecated Use `mountRscDebugPayload`.
+ */
+export const mountRscPayload = mountRscDebugPayload;
+
+/**
+ * @deprecated Use `loadRscDebugPage`.
+ */
+export const loadRscPage = loadRscDebugPage;
 
 function resolveRscFlightUrl(
   endpoint: string,
@@ -156,7 +186,7 @@ function resolveRscFlightUrl(
   return url.toString();
 }
 
-function isRscPayload(value: unknown): value is RscPayload {
+function isRscDebugPayload(value: unknown): value is RscDebugPayload {
   return Boolean(
     value &&
       typeof value === "object" &&

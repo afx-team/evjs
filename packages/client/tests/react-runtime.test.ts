@@ -2,10 +2,10 @@ import type { BuildOutput } from "@evjs/shared/manifest";
 import { describe, expect, it, vi } from "vitest";
 import {
   createReactPageModule,
+  fetchRscDebugPayload,
   fetchRscFlight,
-  fetchRscPayload,
-  loadRscPage,
-  mountRscPayload,
+  loadRscDebugPage,
+  mountRscDebugPayload,
 } from "../src/react.js";
 
 const calls: string[] = [];
@@ -114,7 +114,7 @@ describe("fetchRscFlight", () => {
     );
   });
 
-  it("parses an evjs RSC payload", async () => {
+  it("parses an evjs RSC debug payload", async () => {
     const fetchMock = vi.fn(
       async () =>
         new Response(
@@ -129,7 +129,7 @@ describe("fetchRscFlight", () => {
     );
 
     await expect(
-      fetchRscPayload({
+      fetchRscDebugPayload({
         manifest: createRscManifest(),
         pageId: "dashboard",
         url: "https://example.com/dashboard",
@@ -147,7 +147,7 @@ describe("fetchRscFlight", () => {
   it("mounts RSC payload HTML", async () => {
     const mountPoint = { innerHTML: "" } as Element & { innerHTML: string };
 
-    mountRscPayload({
+    mountRscDebugPayload({
       payload: {
         version: 1,
         type: "evjs.rsc",
@@ -162,7 +162,7 @@ describe("fetchRscFlight", () => {
 
   it("loads and mounts an RSC page", async () => {
     const mountPoint = { innerHTML: "" } as Element & { innerHTML: string };
-    const payload = await loadRscPage({
+    const payload = await loadRscDebugPage({
       manifest: createRscManifest(),
       pageId: "dashboard",
       url: "https://example.com/dashboard",

@@ -1,13 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import type {
-  AppGraph,
   AssetGroup,
-  BuildOutput,
   BuildOutputServerModule,
   BuildPlan,
+  BundlerBuildFacts,
 } from "@evjs/ev";
-import { linkBuildOutput, linkRemoteManifest } from "@evjs/ev";
 import { getOutputPaths } from "./adapter/output-paths.js";
 
 const EMPTY_ASSETS: AssetGroup = { js: [], css: [] };
@@ -50,13 +48,12 @@ export class WebpackManifestGenerator {
   constructor(
     private cwd: string,
     private serverEnabled: boolean,
-    private graph: AppGraph,
     private plan: BuildPlan,
     private clientStats?: WebpackStatsLike,
     private serverStats?: WebpackStatsLike,
   ) {}
 
-  link(): BuildOutput {
+  collectBuildFacts(): BundlerBuildFacts {
     const outputPaths = getOutputPaths(this.cwd, this.serverEnabled);
     const clientEntrypoints = readEntrypointAssets(this.clientStats);
     this.clientEntryAssets = clientEntrypoints.byName;
@@ -77,10 +74,7 @@ export class WebpackManifestGenerator {
       );
     }
 
-    return linkBuildOutput({
-      graph: this.graph,
-      plan: this.plan,
-      serverEnabled: this.serverEnabled,
+    return {
       clientEntryAssets: this.clientEntryAssets,
       firstClientEntryAssets: this.firstClientEntryAssets,
       serverEntryAssets: this.serverEntryAssets,
@@ -88,26 +82,7 @@ export class WebpackManifestGenerator {
       serverAssets: this.serverAssets,
       serverModules: this.serverModules,
       rscManifests: readRscManifests(outputPaths.clientDir),
-    });
-  }
-
-  async emit(output: BuildOutput) {
-    const rootDir = getOutputPaths(this.cwd, this.serverEnabled).rootDir;
-    const outPath = path.join(rootDir, "manifest.json");
-    await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
-    await fs.promises.writeFile(outPath, JSON.stringify(output, null, 2));
-
-    const remoteManifest = linkRemoteManifest({
-      plan: this.plan,
-      clientEntryAssets: this.clientEntryAssets,
-      firstClientEntryAssets: this.firstClientEntryAssets,
-    });
-    if (remoteManifest) {
-      await fs.promises.writeFile(
-        path.join(rootDir, "evjs-remote.json"),
-        JSON.stringify(remoteManifest, null, 2),
-      );
-    }
+    };
   }
 }
 
