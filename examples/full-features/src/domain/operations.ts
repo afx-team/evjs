@@ -53,6 +53,26 @@ export interface PolicyLane {
   owner: string;
 }
 
+export interface DecisionQueueItem {
+  id: string;
+  merchant: string;
+  exposure: string;
+  trigger: string;
+  recommendedAction: string;
+  owner: string;
+  sla: string;
+  status: "ready" | "needs-evidence" | "blocked";
+}
+
+export interface SettlementBatch {
+  id: string;
+  label: string;
+  amount: string;
+  releaseWindow: string;
+  heldMerchants: number;
+  decision: "release" | "partial hold" | "manual review";
+}
+
 export interface InsightRecommendation {
   id: string;
   merchant: string;
@@ -88,6 +108,8 @@ export interface OperationsSnapshot {
   incidents: Incident[];
   regions: RegionPerformance[];
   policyLanes: PolicyLane[];
+  decisionQueue: DecisionQueueItem[];
+  settlementBatches: SettlementBatch[];
   recommendations: InsightRecommendation[];
 }
 
@@ -242,6 +264,66 @@ export const policyLanes: PolicyLane[] = [
   },
 ];
 
+export const decisionQueue: DecisionQueueItem[] = [
+  {
+    id: "dq-901",
+    merchant: "Atlas Foods",
+    exposure: "$91.2k",
+    trigger: "Payout velocity 3.4x above weekday baseline",
+    recommendedAction: "Hold payout and request invoice evidence",
+    owner: "Katherine Johnson",
+    sla: "12m",
+    status: "needs-evidence",
+  },
+  {
+    id: "dq-902",
+    merchant: "Blue Harbor Studio",
+    exposure: "$42.9k",
+    trigger: "New card mix with stale settlement account",
+    recommendedAction: "Route merchant confirmation to success team",
+    owner: "Grace Hopper",
+    sla: "26m",
+    status: "ready",
+  },
+  {
+    id: "dq-903",
+    merchant: "Northstar Outdoor",
+    exposure: "$128.4k",
+    trigger: "Clean risk score but chargeback evidence due",
+    recommendedAction: "Release payment after evidence bundle is attached",
+    owner: "Ada Lovelace",
+    sla: "42m",
+    status: "blocked",
+  },
+];
+
+export const settlementBatches: SettlementBatch[] = [
+  {
+    id: "batch-apac-10",
+    label: "APAC priority release",
+    amount: "$118.2k",
+    releaseWindow: "10:15-10:30",
+    heldMerchants: 1,
+    decision: "partial hold",
+  },
+  {
+    id: "batch-emea-11",
+    label: "EMEA marketplace sweep",
+    amount: "$76.8k",
+    releaseWindow: "11:00-11:20",
+    heldMerchants: 2,
+    decision: "manual review",
+  },
+  {
+    id: "batch-na-12",
+    label: "North America express",
+    amount: "$67.5k",
+    releaseWindow: "12:00-12:15",
+    heldMerchants: 0,
+    decision: "release",
+  },
+];
+
 export const insightRecommendations: InsightRecommendation[] = [
   {
     id: "atlas",
@@ -319,6 +401,8 @@ export function getOperationsSnapshot(): OperationsSnapshot {
     incidents,
     regions: regionPerformance,
     policyLanes,
+    decisionQueue,
+    settlementBatches,
     recommendations: insightRecommendations,
   };
 }

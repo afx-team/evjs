@@ -91,16 +91,21 @@ test.describe("full-features", () => {
     await expectBackLink(page);
 
     await expect(
-      page.getByRole("heading", { name: "Operations Dashboard" }),
+      page.getByRole("heading", { name: "Revenue Risk Dashboard" }),
     ).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("dashboard-page")).toHaveText("dashboard");
     await expect(page.getByTestId("dashboard-route")).toHaveText("/dashboard");
     await expect(page.getByTestId("dashboard-gmv")).toHaveText("$262.5k");
+    await expect(
+      page.getByText("Payments requiring operator judgment"),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Hold payout and request invoice evidence"),
+    ).toBeVisible();
+    await expect(page.getByText("APAC priority release")).toBeVisible();
+    await expect(page.getByText("Who owns the open work")).toBeVisible();
     await expect(page.getByText("Regional payment health")).toBeVisible();
     await expect(page.getByText("Payment review board")).toBeVisible();
-    await expect(
-      page.getByText("Blue Harbor velocity spike exceeded rule baseline"),
-    ).toBeVisible();
     await page.getByTestId("page-back-link").click();
     await expect(page).toHaveURL(`${baseURL}/`);
     await expect(
@@ -225,15 +230,16 @@ test.describe("full-features", () => {
     await expect(
       page.getByRole("heading", { name: "Northstar Outdoor" }),
     ).toBeVisible();
+    const remoteCard = page.getByTestId("crm-remote-card");
+    await expect(remoteCard).toBeVisible();
+    await expect(remoteCard).toHaveCSS("background-image", /linear-gradient/);
     await expect(page.getByTestId("remote-health")).toHaveText(
-      "Health score: 92 / expansion-ready",
+      "92 / expansion-ready",
     );
     await expect(page.getByTestId("remote-next-action")).toHaveText(
-      "Next action: schedule retention offer review",
+      "Schedule retention offer review",
     );
-    await expect(page.getByTestId("remote-owner")).toHaveText(
-      "Success owner: Grace Hopper",
-    );
+    await expect(page.getByTestId("remote-owner")).toHaveText("Grace Hopper");
     await expect(page.getByTestId("remote-entry")).toHaveText(
       "Entry: customers",
     );

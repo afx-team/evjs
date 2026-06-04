@@ -146,6 +146,86 @@ describe("createShell", () => {
     expect(events).toEqual(["mount"]);
   });
 
+  it("loads remote stylesheets before remote module scripts", async () => {
+    const events: string[] = [];
+    const createdLinks: HTMLLinkElement[] = [];
+    const createdScripts: HTMLScriptElement[] = [];
+    vi.stubGlobal("location", { href: "https://host.example.com/start" });
+    const document = {
+      head: {
+        appendChild(element: HTMLLinkElement | HTMLScriptElement) {
+          if ("rel" in element && element.rel === "stylesheet") {
+            createdLinks.push(element);
+            events.push(`style:${element.href}`);
+            element.onload?.call(element, new Event("load"));
+          } else {
+            const script = element as HTMLScriptElement;
+            createdScripts.push(script);
+            events.push(`script:${script.src}`);
+            registerShellModule(script.src, {
+              mount() {
+                events.push("mount");
+              },
+            });
+            script.onload?.call(script, new Event("load"));
+          }
+          return element;
+        },
+      },
+      createElement(tag: string) {
+        if (tag === "link") {
+          return {
+            setAttribute() {},
+          } as unknown as HTMLLinkElement;
+        }
+        expect(tag).toBe("script");
+        return {
+          setAttribute() {},
+        } as unknown as HTMLScriptElement;
+      },
+    } as unknown as Document;
+    vi.stubGlobal("document", document);
+
+    const shell = createShell({
+      manifest,
+      resolveMountPoint: () => ({}) as Element,
+      async loadRemoteManifest() {
+        return {
+          version: 1,
+          name: "crm",
+          baseUrl: "https://assets.example.com/crm/",
+          entries: {
+            customers: {
+              assets: {
+                css: ["customers.css"],
+                js: ["customers.js"],
+              },
+              module: {
+                type: "lifecycle",
+                href: "customers.js",
+              },
+              activeWhen: ["/crm/*"],
+            },
+          },
+        };
+      },
+    });
+
+    await shell.activate({ url: "/crm/customers", hydrate: false });
+
+    expect(createdLinks.map((link) => link.href)).toEqual([
+      "https://assets.example.com/crm/customers.css",
+    ]);
+    expect(createdScripts.map((script) => script.src)).toEqual([
+      "https://assets.example.com/crm/customers.js",
+    ]);
+    expect(events).toEqual([
+      "style:https://assets.example.com/crm/customers.css",
+      "script:https://assets.example.com/crm/customers.js",
+      "mount",
+    ]);
+  });
+
   it("preloads without mounting", async () => {
     const events: string[] = [];
     const shell = createShell({

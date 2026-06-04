@@ -1,0 +1,88 @@
+.crm-remote {
+  display: grid;
+  gap: 18px;
+  overflow: hidden;
+  border: 1px solid #7dd3fc;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ecfeff 0%, #eff6ff 44%, #f5f3ff 100%);
+  padding: 18px;
+  box-shadow: 0 14px 30px rgb(14 116 144 / 14%);
+}
+
+.crm-remote__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.crm-remote__badge {
+  display: inline-flex;
+  border: 1px solid #67e8f9;
+  border-radius: 999px;
+  background: #cffafe;
+  padding: 4px 10px;
+  color: #155e75;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.crm-remote h2 {
+  margin: 8px 0 0;
+  color: #172033;
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.crm-remote__source {
+  border-radius: 8px;
+  background: #172033;
+  padding: 10px 12px;
+  color: #e0f2fe;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.crm-remote__metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.crm-remote__metric {
+  border: 1px solid rgb(14 116 144 / 16%);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 78%);
+  padding: 12px;
+}
+
+.crm-remote__metric span {
+  display: block;
+  margin-bottom: 4px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.crm-remote__metric strong {
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.crm-remote__details {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid rgb(14 116 144 / 18%);
+  padding-top: 14px;
+}
+
+.crm-remote__details p {
+  margin: 0;
+  color: #334155;
+  font-size: 13px;
+}

@@ -150,6 +150,7 @@ interface ActiveModule {
 }
 
 const loadingScripts = new Map<string, Promise<void>>();
+const loadingStylesheets = new Map<string, Promise<void>>();
 
 type BrowserWindowLike = Pick<
   Window,
@@ -232,7 +233,10 @@ export function createShell(options: ShellOptions): Shell {
       promise = callShellPhase(
         "load",
         ctx,
-        () => loadModule(href, ctx),
+        async () => {
+          await loadRemoteStylesheets(ctx);
+          return loadModule(href, ctx);
+        },
         options.onError,
       ).catch((error) => {
         moduleCache.delete(href);
@@ -989,6 +993,53 @@ async function loadScriptAsset(href: string): Promise<void> {
       throw error;
     });
     loadingScripts.set(href, promise);
+  }
+
+  await promise;
+}
+
+async function loadRemoteStylesheets(ctx: AppContext): Promise<void> {
+  if (ctx.kind !== "remote" || !ctx.remote) return;
+
+  const remote = ctx.remote;
+  const cssAssets = remote.entry.assets?.css ?? [];
+  if (cssAssets.length === 0) return;
+
+  await Promise.all(
+    cssAssets.map((asset) =>
+      loadStylesheetAsset(resolveRemoteHref(remote.manifest.baseUrl, asset)),
+    ),
+  );
+}
+
+async function loadStylesheetAsset(href: string): Promise<void> {
+  const doc = globalThis.document;
+  if (!doc) {
+    throw new Error(
+      `[evjs] Shell cannot load stylesheet "${href}" outside a browser document.`,
+    );
+  }
+
+  if (doc.querySelector?.(`link[data-evjs-shell-style][href="${href}"]`)) {
+    return;
+  }
+
+  let promise = loadingStylesheets.get(href);
+  if (!promise) {
+    promise = new Promise<void>((resolve, reject) => {
+      const link = doc.createElement("link");
+      link.rel = "stylesheet";
+      link.href = href;
+      link.setAttribute?.("data-evjs-shell-style", "true");
+      link.onload = () => resolve();
+      link.onerror = () =>
+        reject(new Error(`[evjs] Failed to load shell stylesheet "${href}".`));
+      doc.head.appendChild(link);
+    }).catch((error) => {
+      loadingStylesheets.delete(href);
+      throw error;
+    });
+    loadingStylesheets.set(href, promise);
   }
 
   await promise;

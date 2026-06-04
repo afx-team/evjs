@@ -478,6 +478,11 @@ function createDevServerOptions(
     hot: true,
     liveReload: true,
     allowedHosts: "all",
+    headers: {
+      "Access-Control-Allow-Headers": "*",
+      "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+      "Access-Control-Allow-Origin": "*",
+    },
     server: createDevServerTransport(config.dev.https),
     static: {
       directory: clientDir,
