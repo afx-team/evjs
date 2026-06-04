@@ -360,6 +360,67 @@ describe("createReactRscFlightAdapter", () => {
     expect(caught).toEqual([error]);
     await expect(response.text()).resolves.toContain("flight failed");
   });
+
+  it("redacts local paths from RSC error payloads", async () => {
+    const manifest = createManifest();
+    const adapter = createReactRscFlightAdapter({
+      renderFlight() {
+        throw new Error(
+          "failed at file:///Users/example/repo/src/pages/Insights.tsx and /Users/example/repo/dist/server/insights-rsc.js",
+        );
+      },
+    });
+
+    const response = await adapter.renderFlight({
+      request: new Request("https://example.com/__evjs/rsc?page=dashboard"),
+      manifest,
+      pageId: "dashboard",
+    });
+    const text = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(text).toContain("[redacted-file-url]");
+    expect(text).toContain("[redacted-path]");
+    expect(text).not.toContain("file://");
+    expect(text).not.toContain("/Users/");
+    expect(text).not.toContain("Insights.tsx");
+  });
+
+  it("redacts local paths from successful Flight streams", async () => {
+    const manifest = createManifest();
+    const adapter = createReactRscFlightAdapter({
+      renderFlight() {
+        return new Response(
+          [
+            'I["./src/pages/InsightsBadge.tsx",["insights-rsc.js"],"default"]\n',
+            "E/file:///Users/example/repo/src/pages/Insights.tsx\n",
+            "E/Users/example/repo/dist/server/insights-rsc.js\n",
+          ].join(""),
+          {
+            headers: {
+              "Content-Type": "text/x-component; charset=utf-8",
+              "Content-Length": "200",
+            },
+          },
+        );
+      },
+    });
+
+    const response = await adapter.renderFlight({
+      request: new Request("https://example.com/__evjs/rsc?page=dashboard"),
+      manifest,
+      pageId: "dashboard",
+    });
+    const text = await response.text();
+
+    expect(response.headers.get("Content-Type")).toContain("text/x-component");
+    expect(response.headers.has("Content-Length")).toBe(false);
+    expect(text).toContain("./src/pages/InsightsBadge.tsx");
+    expect(text).toContain("[redacted-file-url]");
+    expect(text).toContain("[redacted-path]");
+    expect(text).not.toContain("file://");
+    expect(text).not.toContain("/Users/");
+  });
 });
 
 function createManifest(): BuildOutput {

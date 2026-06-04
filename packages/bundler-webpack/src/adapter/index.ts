@@ -46,6 +46,16 @@ type WebpackDevProxyRule = DevProxyRule & {
   frameworkPageRender?: boolean;
 };
 
+interface DevFallbackRequest {
+  url?: string;
+}
+
+interface DevFallbackResponse {
+  statusCode: number;
+  setHeader(name: string, value: string): void;
+  end(body?: string): void;
+}
+
 export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
   name: "webpack",
 
@@ -68,6 +78,11 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
     await emitStats(outputPaths.clientDir, stats.clientStats);
     if (config.serverEnabled) {
       await emitStats(outputPaths.serverDir, stats.serverStats);
+      await copyServerCssAssetsToClient(
+        outputPaths.serverDir,
+        outputPaths.clientDir,
+        stats.serverStats,
+      );
     }
 
     logger.info`Collecting webpack build facts...`;
@@ -265,6 +280,11 @@ class WebpackDevSession implements BundlerDevController {
       if (stats.serverStats) {
         this.latestServerStats = stats.serverStats;
         await emitStats(outputPaths.serverDir, this.latestServerStats);
+        await copyServerCssAssetsToClient(
+          outputPaths.serverDir,
+          outputPaths.clientDir,
+          this.latestServerStats,
+        );
       }
 
       const emitted = await this.generateDevArtifacts();
@@ -339,6 +359,11 @@ class WebpackDevSession implements BundlerDevController {
     } else {
       this.latestServerStats = split.serverStats;
       await emitStats(outputPaths.serverDir, this.latestServerStats);
+      await copyServerCssAssetsToClient(
+        outputPaths.serverDir,
+        outputPaths.clientDir,
+        this.latestServerStats,
+      );
       this.serverReadyPending = true;
     }
 
@@ -362,6 +387,19 @@ class WebpackDevSession implements BundlerDevController {
 
     if (hasClientEntries && !this.latestClientStats) return false;
     if (hasServerEntries && !this.latestServerStats) return false;
+
+    if (this.config.serverEnabled && this.latestServerStats) {
+      const outputPaths = getOutputPaths(
+        this.ctx.cwd,
+        this.config.serverEnabled,
+        this.plan.distDir,
+      );
+      await copyServerCssAssetsToClient(
+        outputPaths.serverDir,
+        outputPaths.clientDir,
+        this.latestServerStats,
+      );
+    }
 
     logger.info`Generating development manifest and HTML...`;
     const generator = new WebpackManifestGenerator(
@@ -511,9 +549,43 @@ function createDevServerOptions(
         response.setHeader("Content-Type", "application/json; charset=utf-8");
         response.end(fs.readFileSync(manifestPath));
       });
+      middlewares.push({
+        name: "evjs-api-fallback",
+        middleware(
+          request: DevFallbackRequest,
+          response: DevFallbackResponse,
+          next: () => void,
+        ) {
+          const pathname = getRequestPathname(request.url);
+          if (!pathname || !isApiLikeRequestPath(pathname, config)) {
+            next();
+            return;
+          }
+
+          response.statusCode = 404;
+          if (pathname === "/api" || pathname.startsWith("/api/")) {
+            response.setHeader(
+              "Content-Type",
+              "application/json; charset=utf-8",
+            );
+            response.end(
+              JSON.stringify({
+                error: {
+                  code: "EVJS_API_NOT_FOUND",
+                  message: `No API route matched ${pathname}.`,
+                },
+              }),
+            );
+            return;
+          }
+
+          response.setHeader("Content-Type", "text/plain; charset=utf-8");
+          response.end(`[evjs] No framework route matched ${pathname}.`);
+        },
+      });
       return middlewares;
     },
-    historyApiFallback: createHistoryFallback(plan, graph),
+    historyApiFallback: createHistoryFallback(config, plan, graph),
     proxy: createDevProxyRules(config, graph).map(toWebpackDevProxy),
     client: {
       overlay: {
@@ -637,6 +709,7 @@ function readHttpsValue(value: string): string | Buffer {
 }
 
 function createHistoryFallback(
+  config: ResolvedConfig<WebpackConfig>,
   plan: BuildPlan,
   graph: AppGraph,
 ): ConstructorParameters<typeof WebpackDevServer>[0]["historyApiFallback"] {
@@ -667,6 +740,7 @@ function createHistoryFallback(
     // Keep the default dot rule so stale HMR chunks and asset URLs 404
     // instead of being rewritten to application HTML.
     rewrites: [
+      ...createHtmlFallbackBypassRewrites(config),
       ...plan.html.map((html) => ({
         from: new RegExp(`^/${escapeRegExp(html.fileName)}$`),
         to: `/${html.fileName}`,
@@ -674,6 +748,49 @@ function createHistoryFallback(
       ...pagePathRewrites,
     ],
   };
+}
+
+function createHtmlFallbackBypassRewrites(
+  config: ResolvedConfig<WebpackConfig>,
+): Array<{
+  from: RegExp;
+  to: (ctx: { parsedUrl: { pathname?: string | null } }) => string;
+}> {
+  const runtimeBasePath = normalizeRoutePath(
+    config.server.basePath || "/__evjs",
+  );
+  return [
+    /^\/api(?:\/|$)/,
+    new RegExp(`^${escapeRegExp(runtimeBasePath)}(?:/|$)`),
+  ].map((from) => ({
+    from,
+    to(ctx) {
+      return ctx.parsedUrl.pathname || "/";
+    },
+  }));
+}
+
+function isApiLikeRequestPath(
+  pathname: string,
+  config: ResolvedConfig<WebpackConfig>,
+): boolean {
+  if (pathname === "/api" || pathname.startsWith("/api/")) return true;
+
+  const runtimeBasePath = normalizeRoutePath(
+    config.server.basePath || "/__evjs",
+  );
+  return (
+    pathname === runtimeBasePath || pathname.startsWith(`${runtimeBasePath}/`)
+  );
+}
+
+function getRequestPathname(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    return new URL(url, "http://evjs.local").pathname;
+  } catch {
+    return url.split("?")[0] || undefined;
+  }
 }
 
 function routePathToRegExp(routePath: string): RegExp {
@@ -837,6 +954,36 @@ async function emitStats(
     JSON.stringify(stats, null, 2),
     "utf-8",
   );
+}
+
+async function copyServerCssAssetsToClient(
+  serverDir: string,
+  clientDir: string,
+  stats: WebpackStatsLike | undefined,
+): Promise<void> {
+  const cssAssets = new Set<string>();
+  for (const entry of Object.values(stats?.entrypoints ?? {})) {
+    for (const asset of entry.assets ?? []) {
+      const name = typeof asset === "string" ? asset : asset.name;
+      if (name?.endsWith(".css")) cssAssets.add(name.replace(/^\.\//, ""));
+    }
+  }
+
+  for (const asset of cssAssets) {
+    const source = path.join(serverDir, asset);
+    if (!(await waitForFile(source))) continue;
+    const target = path.join(clientDir, asset);
+    await fs.promises.mkdir(path.dirname(target), { recursive: true });
+    await fs.promises.copyFile(source, target);
+  }
+}
+
+async function waitForFile(file: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    if (fs.existsSync(file)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return fs.existsSync(file);
 }
 
 type WebpackStatsJson = WebpackStatsLike & {

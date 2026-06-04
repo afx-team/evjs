@@ -4,6 +4,7 @@
 
 export type * from "@evjs/shared/manifest";
 export {
+  createPublicManifest,
   linkBuildOutput,
   linkRemoteManifest,
   resolveRoutes,

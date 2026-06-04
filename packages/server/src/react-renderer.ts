@@ -112,7 +112,7 @@ export function createReactRscFlightAdapter(
     async renderFlight(ctx) {
       try {
         if (options.renderFlight) {
-          return validateFlightResponse(
+          return await validateFlightResponse(
             await options.renderFlight(ctx),
             options,
           );
@@ -120,7 +120,7 @@ export function createReactRscFlightAdapter(
 
         const rendered = await renderDefaultRscDebugPayload(ctx, options);
         if (rendered instanceof Response) {
-          return validateFlightResponse(rendered, options);
+          return await validateFlightResponse(rendered, options);
         }
 
         return new Response(
@@ -148,16 +148,18 @@ export function createReactRscFlightAdapter(
   };
 }
 
-function validateFlightResponse(
+async function validateFlightResponse(
   response: Response,
   options: ReactRscFlightAdapterOptions,
-): Response {
+): Promise<Response> {
+  const contentType = response.headers.get("Content-Type") ?? "";
+  if (contentType.includes("text/x-component")) {
+    return sanitizeFlightResponse(response);
+  }
+
   if (options.validateContentType === false || response.status >= 400) {
     return response;
   }
-
-  const contentType = response.headers.get("Content-Type") ?? "";
-  if (contentType.includes("text/x-component")) return response;
 
   return new Response(
     `[evjs] RSC Flight renderer returned invalid Content-Type "${contentType || "missing"}".`,
@@ -168,6 +170,52 @@ function validateFlightResponse(
       },
     },
   );
+}
+
+async function sanitizeFlightResponse(response: Response): Promise<Response> {
+  if (!response.body) return response;
+
+  const headers = new Headers(response.headers);
+  headers.delete("Content-Length");
+
+  if (typeof TransformStream === "undefined") {
+    return new Response(sanitizeDiagnosticText(await response.text()), {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
+
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let carry = "";
+  const tailLength = 64 * 1024;
+  const transform = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      const text = carry + decoder.decode(chunk, { stream: true });
+      const emitUntil = Math.max(0, text.length - tailLength);
+      if (emitUntil > 0) {
+        controller.enqueue(
+          encoder.encode(sanitizeDiagnosticText(text.slice(0, emitUntil))),
+        );
+        carry = text.slice(emitUntil);
+      } else {
+        carry = text;
+      }
+    },
+    flush(controller) {
+      const text = carry + decoder.decode();
+      if (text) {
+        controller.enqueue(encoder.encode(sanitizeDiagnosticText(text)));
+      }
+    },
+  });
+
+  return new Response(response.body.pipeThrough(transform), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 async function renderDefaultRscDebugPayload(
@@ -341,6 +389,10 @@ function createRscBootstrap(
       basePath?: string;
       publicPath: BuildOutput["publicPath"];
       mount: string;
+      page: {
+        assets: AssetGroup;
+        routeId?: string;
+      };
     }
   | undefined {
   if (ctx.page?.render !== "rsc" || !ctx.pageId) return undefined;
@@ -360,6 +412,10 @@ function createRscBootstrap(
       mount.attribute === "id"
         ? `#${mount.value}`
         : `[${mount.attribute}="${mount.value}"]`,
+    page: {
+      assets: ctx.page.assets,
+      routeId: ctx.page.routeId,
+    },
   };
 }
 
@@ -406,7 +462,19 @@ function assetHref(manifest: BuildOutput, asset: string): string {
 }
 
 function formatUnknownError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return sanitizeDiagnosticText(
+    error instanceof Error ? error.message : String(error),
+  );
+}
+
+function sanitizeDiagnosticText(value: string): string {
+  return value
+    .replace(/file:\/\/\/[^\s"'<>)]*/g, "[redacted-file-url]")
+    .replace(
+      /(?:\/(?:Users|home|private|tmp)\/[^\s"'<>)]*)/g,
+      "[redacted-path]",
+    )
+    .replace(/[A-Za-z]:\\[^\s"'<>)]*/g, "[redacted-path]");
 }
 
 function emptyAssets(): AssetGroup {

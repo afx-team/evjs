@@ -280,6 +280,7 @@ function createWebpackConfig(options: {
       modules: true,
     },
     optimization: {
+      moduleIds: "deterministic",
       runtimeChunk: false,
     },
   };

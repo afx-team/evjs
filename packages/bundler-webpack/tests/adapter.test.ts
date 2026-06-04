@@ -384,7 +384,6 @@ describe("webpackAdapter build", () => {
           module: {
             type: "lifecycle",
             href: "crm-customers.js",
-            source: "./src/remote.ts",
           },
           activeWhen: ["/crm/*"],
           mount: "#remote-root",
@@ -600,6 +599,7 @@ describe("webpackAdapter build", () => {
         '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
       "src/pages/Insights.tsx": `
         import { createElement } from "react";
+        import "./insights.css";
         import Badge from "./InsightsBadge";
 
         export default function Insights({ pageId }: { pageId?: string }) {
@@ -607,6 +607,11 @@ describe("webpackAdapter build", () => {
             createElement("h1", null, "RSC ", pageId),
             createElement(Badge, null),
           );
+        }
+      `,
+      "src/pages/insights.css": `
+        .insights-page {
+          color: #123456;
         }
       `,
       "src/pages/InsightsBadge.tsx": `
@@ -685,18 +690,25 @@ describe("webpackAdapter build", () => {
     );
     expect(manifest.server?.renderers?.["insights-server"]).toMatchObject({
       kind: "page-server",
-      assets: { js: ["insights-server.js"], css: [] },
+      assets: { js: ["insights-server.js"], css: ["insights-server.css"] },
     });
     expect(manifest.server?.renderers?.["insights-rsc"]).toMatchObject({
       kind: "rsc-page",
-      assets: { js: ["insights-rsc.js"], css: [] },
+      assets: { js: ["insights-rsc.js"], css: ["insights-rsc.css"] },
     });
+    expect(manifest.pages.insights.assets).toEqual({
+      js: ["evjs-rsc-client.js"],
+      css: expect.arrayContaining(["insights-server.css", "insights-rsc.css"]),
+    });
+    await expect(
+      fs.readFile(path.join(cwd, "dist/client/insights-rsc.css"), "utf-8"),
+    ).resolves.toContain(".insights-page");
 
     const htmlResponse = await requestServerEntry(cwd, manifest, "/insights");
     expect(htmlResponse.status).toBe(200);
-    expect(await htmlResponse.text()).toContain(
-      "<h1>RSC <!-- -->insights</h1>",
-    );
+    const html = await htmlResponse.text();
+    expect(html).toContain("<h1>RSC <!-- -->insights</h1>");
+    expect(html).toContain('<link rel="stylesheet" href="/insights-rsc.css">');
 
     const flightResponse = await requestServerEntry(
       cwd,
@@ -867,6 +879,70 @@ describe("webpackAdapter dev", () => {
       expect(manifest.pages.home.assets.js).toEqual(["home.js"]);
       expect(html).toContain('data-evjs-page="home"');
       expect(html).toContain('src="/home.js"');
+    } finally {
+      await controller?.close?.();
+    }
+  });
+
+  it("does not rewrite API-like requests to application HTML", async () => {
+    const port = await getAvailablePort();
+    const cwd = await createFixture({
+      "index.html":
+        '<!doctype html><html><head></head><body><div id="app">app shell</div></body></html>',
+      "src/main.tsx": `console.log("spa");`,
+    });
+    const config = resolveConfig<WebpackConfig>({
+      server: false,
+      dev: { port },
+      entry: "./src/main.tsx",
+      html: "./index.html",
+    });
+    const analysis = await createAppGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "development",
+    });
+    const framework = createFrameworkCallbacks({
+      config,
+      cwd,
+      graph: analysis.graph,
+      plan,
+    });
+
+    const controller = await webpackAdapter.dev({
+      config,
+      cwd,
+      graph: analysis.graph,
+      plan,
+      hooks: [],
+      callbacks: framework.callbacks,
+    });
+    try {
+      const page = await fetch(`http://127.0.0.1:${port}/dashboard`);
+      const api = await fetch(`http://127.0.0.1:${port}/api/unknown`, {
+        headers: { Accept: "text/html" },
+      });
+      const frameworkApi = await fetch(
+        `http://127.0.0.1:${port}/__evjs/unknown`,
+        {
+          headers: { Accept: "text/html" },
+        },
+      );
+
+      expect(page.status).toBe(200);
+      await expect(page.text()).resolves.toContain("app shell");
+      expect(api.status).toBe(404);
+      expect(api.headers.get("Content-Type")).toContain("application/json");
+      await expect(api.json()).resolves.toEqual({
+        error: {
+          code: "EVJS_API_NOT_FOUND",
+          message: "No API route matched /api/unknown.",
+        },
+      });
+      expect(frameworkApi.status).toBe(404);
+      expect(frameworkApi.headers.get("Content-Type")).toContain("text/plain");
+      await expect(frameworkApi.text()).resolves.toContain(
+        "No framework route matched /__evjs/unknown.",
+      );
     } finally {
       await controller?.close?.();
     }

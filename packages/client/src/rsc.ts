@@ -1,4 +1,8 @@
-import type { BuildOutput, PublicPathOutput } from "@evjs/shared/manifest";
+import type {
+  AssetGroup,
+  BuildOutput,
+  PublicPathOutput,
+} from "@evjs/shared/manifest";
 import { createElement, type ReactNode, Suspense } from "react";
 import { createRoot, hydrateRoot, type Root } from "react-dom/client";
 import { fetchRscFlight, type RscFlightFetchOptions } from "./react.js";
@@ -21,6 +25,10 @@ export interface ReactRscRuntimeBootstrap {
   basePath?: string;
   publicPath?: PublicPathOutput;
   mount: string;
+  page?: {
+    assets?: AssetGroup;
+    routeId?: string;
+  };
 }
 
 const rootByMountPoint = new WeakMap<Element, Root>();
@@ -136,10 +144,29 @@ function createBootstrapManifest(
     },
     assets: {},
     apps: {},
-    pages: {},
+    pages: {
+      [bootstrap.pageId]: {
+        assets: bootstrap.page?.assets ?? { js: [], css: [] },
+        render: "rsc",
+        rendering: {
+          mode: "rsc",
+          component: "rsc",
+          html: "server",
+          streaming: true,
+          hydrate: "load",
+        },
+        routeId: bootstrap.page?.routeId,
+      },
+    },
     routes: [],
     rsc: {
       endpoint: bootstrap.endpoint,
+      pages: {
+        [bootstrap.pageId]: {
+          assets: bootstrap.page?.assets ?? { js: [], css: [] },
+          routeId: bootstrap.page?.routeId,
+        },
+      },
     },
   };
 }

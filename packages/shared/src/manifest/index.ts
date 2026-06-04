@@ -586,6 +586,7 @@ function joinPaths(parent: string, child: string): string {
 export {
   type BuildOutputLinkInput,
   type BuildOutputServerModule,
+  createPublicManifest,
   linkBuildOutput,
   linkRemoteManifest,
   type RemoteManifestLinkInput,

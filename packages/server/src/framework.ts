@@ -262,12 +262,12 @@ export async function handlePprRegionRequest(
   const renderMatch = coordinator.match ? await coordinator.match(ctx) : ctx;
   if (!renderMatch) return undefined;
 
-  return applyPprRegionCache(
-    options,
-    cacheKey,
-    cachePolicy,
+  const response = await normalizePprRegionResponse(
+    match,
     toResponse(await coordinator.render(renderMatch)),
   );
+
+  return applyPprRegionCache(options, cacheKey, cachePolicy, response);
 }
 
 export async function handleRscFlightRequest(
@@ -411,7 +411,19 @@ function frameworkTextResponse(
 }
 
 function formatUnknownError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return sanitizeDiagnosticText(
+    error instanceof Error ? error.message : String(error),
+  );
+}
+
+function sanitizeDiagnosticText(value: string): string {
+  return value
+    .replace(/file:\/\/\/[^\s"'<>)]*/g, "[redacted-file-url]")
+    .replace(
+      /(?:\/(?:Users|home|private|tmp)\/[^\s"'<>)]*)/g,
+      "[redacted-path]",
+    )
+    .replace(/[A-Za-z]:\\[^\s"'<>)]*/g, "[redacted-path]");
 }
 
 function createRendererRegistryFromManifest(
@@ -711,6 +723,48 @@ async function applyPprRegionCache(
     statusText: response.statusText,
     headers,
   });
+}
+
+async function normalizePprRegionResponse(
+  match: { pageId: string; regionId: string },
+  response: Response,
+): Promise<Response> {
+  const headers = new Headers(response.headers);
+  headers.set("x-evjs-page", match.pageId);
+  headers.set("x-evjs-ppr-region", match.regionId);
+
+  const contentType = headers.get("Content-Type") ?? "";
+  if (!contentType.includes("text/html")) {
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
+
+  const html = await response.text();
+  headers.set("Content-Type", "text/html; charset=utf-8");
+  return new Response(extractPprRegionFragment(html), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function extractPprRegionFragment(html: string): string {
+  if (!/<!doctype|<html[\s>]/i.test(html)) return html;
+
+  const mountMatch = html.match(
+    /<div\s+[^>]*(?:id=["']app["']|data-evjs-mount=["'][^"']+["'])[^>]*>([\s\S]*?)<\/div>/i,
+  );
+  if (mountMatch?.[1]) return mountMatch[1].trim();
+
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  if (bodyMatch?.[1]) {
+    return bodyMatch[1].replace(/<script\b[\s\S]*?<\/script>/gi, "").trim();
+  }
+
+  return html;
 }
 
 function joinPath(base: string, segment: string): string {

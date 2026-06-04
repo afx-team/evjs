@@ -158,6 +158,78 @@ describe("build", () => {
     expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(true);
   });
 
+  it("emits a public-safe manifest and keeps internal build output server-side", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/Dashboard.tsx"),
+      "export default function Dashboard() { return null; }",
+      "utf-8",
+    );
+
+    const rawOutputComponents: Array<string | undefined> = [];
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "memory-output",
+      async build() {
+        return {
+          clientEntryAssets: {
+            dashboard: { js: ["dashboard.js"], css: [] },
+          },
+          firstClientEntryAssets: { js: ["dashboard.js"], css: [] },
+          serverEntryAssets: {
+            server: { js: ["server.js"], css: [] },
+            "dashboard-server": { js: ["dashboard-server.js"], css: [] },
+          },
+          serverEntry: "server.js",
+          serverAssets: { js: ["server.js"], css: [] },
+        };
+      },
+      async dev() {},
+    };
+
+    await build(
+      {
+        pages: {
+          dashboard: {
+            component: "./src/pages/Dashboard.tsx",
+            html: "./index.html",
+            render: "ssr",
+          },
+        },
+        plugins: [
+          {
+            name: "records-raw-output",
+            setup() {
+              return {
+                buildEnd(result) {
+                  rawOutputComponents.push(
+                    result.output.pages.dashboard.component,
+                  );
+                },
+              };
+            },
+          },
+        ],
+      },
+      { cwd, bundler },
+    );
+
+    const publicManifest = fs.readFileSync(
+      path.join(cwd, "dist/manifest.json"),
+      "utf-8",
+    );
+    const internalOutput = fs.readFileSync(
+      path.join(cwd, "dist/server/build-output.json"),
+      "utf-8",
+    );
+
+    expect(rawOutputComponents).toEqual(["./src/pages/Dashboard.tsx"]);
+    expect(publicManifest).not.toContain(".tsx");
+    expect(publicManifest).not.toContain("server.js");
+    expect(internalOutput).toContain("./src/pages/Dashboard.tsx");
+    expect(internalOutput).toContain("server.js");
+  });
+
   it("runs plugin config hooks before resolving config", async () => {
     const cwd = await createProject();
     const events: string[] = [];

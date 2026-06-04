@@ -1,13 +1,17 @@
 import type {
   AppGraph,
+  AppOutput,
   AssetGroup,
   BuildEntry,
   BuildOutput,
   BuildPlan,
   HydrationMode,
   PageNode,
+  PageOutput,
   PageRenderingOutput,
+  PprRegionOutput,
   RemoteManifest,
+  RuntimeModuleOutput,
   ServerFunctionOutput,
   ServerRouteOutput,
 } from "./index.js";
@@ -76,6 +80,10 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
       entry.kind === "runtime" &&
       entry.name === "evjs-rsc-client",
   );
+  const serverCssForPage = (pageId: string, kind?: BuildEntry["kind"]) => {
+    const entry = findEntryByOwner({ pageId }, "server", kind);
+    return entry ? serverAssetsForEntry(entry).css : [];
+  };
 
   const assetsForSource = (sourceRel: string) =>
     serverModules.find((mod) => moduleIdMatchesSource(mod.moduleId, sourceRel))
@@ -120,11 +128,26 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
         "server",
         "ppr-shell",
       );
-      const assets = entry
+      const baseAssets = entry
         ? clientAssetsForEntry(entry)
         : page.render === "rsc" && rscClientRuntimeEntry
           ? clientAssetsForEntry(rscClientRuntimeEntry)
           : EMPTY_ASSETS;
+      const serverCss =
+        page.render === "rsc"
+          ? [
+              ...serverCssForPage(id, "page-server"),
+              ...serverCssForPage(id, "rsc-page"),
+            ]
+          : page.render === "ssr" || page.render === "ssg"
+            ? serverCssForPage(id, "page-server")
+            : page.render === "ppr"
+              ? serverCssForPage(id, "ppr-shell")
+              : [];
+      const assets = mergeAssetGroups(baseAssets, {
+        js: [],
+        css: serverCss,
+      });
       return [
         id,
         {
@@ -252,6 +275,104 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   };
 }
 
+/**
+ * Project the internal build output into the public runtime manifest that is
+ * safe to serve to browsers and deployment adapters.
+ *
+ * The internal `BuildOutput` intentionally keeps source modules, server
+ * renderer modules, and raw React Flight manifests because the server runtime
+ * needs those facts. The public manifest must not expose that implementation
+ * metadata.
+ */
+export function createPublicManifest(output: BuildOutput): BuildOutput {
+  const publicAssetFiles = collectPublicAssetFiles(output);
+  return pruneUndefined({
+    version: output.version,
+    buildId: output.buildId,
+    distDir: output.distDir,
+    publicPath: output.publicPath,
+    runtime: output.runtime,
+    assets: clonePublicAssetRecord(output.assets, publicAssetFiles),
+    apps: Object.fromEntries(
+      Object.entries(output.apps).map(([id, app]) => [
+        id,
+        sanitizeAppOutput(app),
+      ]),
+    ),
+    pages: Object.fromEntries(
+      Object.entries(output.pages).map(([id, page]) => [
+        id,
+        sanitizePageOutput(page, publicAssetFiles),
+      ]),
+    ),
+    routes: output.routes.map((route) =>
+      pruneUndefined({
+        id: route.id,
+        path: route.path,
+        appId: route.appId,
+        pageId: route.pageId,
+        render: route.render,
+        hydrate: route.hydrate,
+        runtime: route.runtime,
+      }),
+    ),
+    server: output.server
+      ? pruneUndefined({
+          assets: clonePublicAssets(output.server.assets, publicAssetFiles),
+          functions: Object.fromEntries(
+            Object.entries(output.server.functions).map(([id, fn]) => [
+              id,
+              pruneUndefined({
+                assets: clonePublicAssets(fn.assets, publicAssetFiles),
+                exportName: fn.exportName,
+              }),
+            ]),
+          ),
+          routes: output.server.routes.map((route) =>
+            pruneUndefined({
+              path: route.path,
+              methods: [...route.methods],
+              assets: clonePublicAssets(route.assets, publicAssetFiles),
+            }),
+          ),
+        })
+      : undefined,
+    remotes: output.remotes
+      ? Object.fromEntries(
+          Object.entries(output.remotes).map(([id, remote]) => [
+            id,
+            pruneUndefined({
+              manifest: remote.manifest,
+              activeWhen: remote.activeWhen
+                ? [...remote.activeWhen]
+                : undefined,
+            }),
+          ]),
+        )
+      : undefined,
+    rsc: output.rsc
+      ? pruneUndefined({
+          endpoint: output.rsc.endpoint,
+          pages: output.rsc.pages
+            ? Object.fromEntries(
+                Object.entries(output.rsc.pages).map(([id, page]) => [
+                  id,
+                  pruneUndefined({
+                    renderer: page.renderer,
+                    assets: clonePublicAssets(page.assets, publicAssetFiles),
+                    routeId: page.routeId,
+                  }),
+                ]),
+              )
+            : undefined,
+        })
+      : undefined,
+    deployment: output.deployment
+      ? sanitizePublicMetadata(output.deployment)
+      : undefined,
+  }) as BuildOutput;
+}
+
 export interface RemoteManifestLinkInput {
   plan: BuildPlan;
   clientEntryAssets?: Record<string, AssetGroup>;
@@ -297,7 +418,6 @@ export function linkRemoteManifest(
             module: {
               type: "lifecycle" as const,
               href: assets.js[0],
-              source: entry.app,
             },
             activeWhen: entry.activeWhen,
             mount: entry.mount,
@@ -306,6 +426,165 @@ export function linkRemoteManifest(
       }),
     ),
   };
+}
+
+function sanitizeAppOutput(app: AppOutput): AppOutput {
+  return pruneUndefined({
+    assets: cloneAssets(app.assets),
+    mount: app.mount,
+    module: sanitizeRuntimeModule(app.module),
+  }) as AppOutput;
+}
+
+function sanitizePageOutput(
+  page: PageOutput,
+  publicAssetFiles: Set<string>,
+): PageOutput {
+  return pruneUndefined({
+    assets: clonePublicAssets(page.assets, publicAssetFiles),
+    render: page.render,
+    rendering: page.rendering,
+    path: page.path,
+    routeId: page.routeId,
+    hydrate: page.hydrate,
+    mount: page.mount,
+    module: sanitizeRuntimeModule(page.module),
+    ppr: page.ppr
+      ? {
+          shell: clonePublicAssets(page.ppr.shell, publicAssetFiles),
+          regions: Object.fromEntries(
+            Object.entries(page.ppr.regions).map(([id, region]) => [
+              id,
+              sanitizePprRegion(region, publicAssetFiles),
+            ]),
+          ),
+        }
+      : undefined,
+  }) as PageOutput;
+}
+
+function sanitizePprRegion(
+  region: PprRegionOutput,
+  publicAssetFiles: Set<string>,
+): PprRegionOutput {
+  return pruneUndefined({
+    id: region.id,
+    assets: clonePublicAssets(region.assets, publicAssetFiles),
+    cache: region.cache,
+    hydrate: region.hydrate,
+  }) as PprRegionOutput;
+}
+
+function sanitizeRuntimeModule(
+  module: RuntimeModuleOutput | undefined,
+): RuntimeModuleOutput | undefined {
+  if (!module) return undefined;
+  return pruneUndefined({
+    type: module.type,
+    href: module.href,
+  }) as RuntimeModuleOutput;
+}
+
+function clonePublicAssetRecord(
+  assets: Record<string, AssetGroup>,
+  publicAssetFiles: Set<string>,
+): Record<string, AssetGroup> {
+  return Object.fromEntries(
+    Object.entries(assets)
+      .map(([id, group]) => [id, clonePublicAssets(group, publicAssetFiles)])
+      .filter(
+        ([, group]) =>
+          (group as AssetGroup).js.length > 0 ||
+          (group as AssetGroup).css.length > 0,
+      ),
+  ) as Record<string, AssetGroup>;
+}
+
+function collectPublicAssetFiles(output: BuildOutput): Set<string> {
+  const files = new Set<string>();
+  const collect = (assets: AssetGroup | undefined) => {
+    for (const asset of assets?.js ?? []) files.add(asset);
+    for (const asset of assets?.css ?? []) files.add(asset);
+  };
+
+  for (const app of Object.values(output.apps)) collect(app.assets);
+  for (const page of Object.values(output.pages)) collect(page.assets);
+
+  return files;
+}
+
+function cloneAssets(assets: AssetGroup): AssetGroup {
+  return {
+    js: [...assets.js],
+    css: [...assets.css],
+  };
+}
+
+function clonePublicAssets(
+  assets: AssetGroup,
+  publicAssetFiles: Set<string>,
+): AssetGroup {
+  return {
+    js: assets.js.filter((asset) => publicAssetFiles.has(asset)),
+    css: assets.css.filter((asset) => publicAssetFiles.has(asset)),
+  };
+}
+
+function mergeAssetGroups(...groups: AssetGroup[]): AssetGroup {
+  return {
+    js: [...new Set(groups.flatMap((group) => group.js))],
+    css: [...new Set(groups.flatMap((group) => group.css))],
+  };
+}
+
+function sanitizePublicMetadata(
+  value: unknown,
+  key = "",
+): Record<string, unknown> | undefined {
+  const sanitized = sanitizeMetadataValue(value, key);
+  return sanitized && typeof sanitized === "object" && !Array.isArray(sanitized)
+    ? (sanitized as Record<string, unknown>)
+    : undefined;
+}
+
+function sanitizeMetadataValue(value: unknown, key: string): unknown {
+  if (value === undefined || typeof value === "function") return undefined;
+  if (value === null) return null;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => sanitizeMetadataValue(item, key))
+      .filter((item) => item !== undefined);
+  }
+  if (typeof value === "object") {
+    return pruneUndefined(
+      Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .map(([childKey, childValue]) => [
+            childKey,
+            sanitizeMetadataValue(childValue, childKey),
+          ])
+          .filter(([, childValue]) => childValue !== undefined),
+      ),
+    );
+  }
+  if (typeof value === "string" && isSourceLikeString(value, key)) {
+    return undefined;
+  }
+  return value;
+}
+
+function isSourceLikeString(value: string, key: string): boolean {
+  if (key === "href" || key === "manifest") return false;
+  if (/^file:\/\//.test(value)) return true;
+  if (/\.[cm]?tsx?(?:[?#]|$)/.test(value)) return true;
+  return /(?:^|\/)(?:Users|home|private|tmp)\//.test(value);
+}
+
+function pruneUndefined<T extends Record<string, unknown>>(value: T): T {
+  for (const key of Object.keys(value)) {
+    if (value[key] === undefined) delete value[key];
+  }
+  return value;
 }
 
 function linkRscOutput(

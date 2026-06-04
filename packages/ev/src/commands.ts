@@ -7,7 +7,11 @@ import type {
   BuildPlan,
   BuildPlanUpdate,
 } from "@evjs/shared/manifest";
-import { linkBuildOutput, linkRemoteManifest } from "@evjs/shared/manifest";
+import {
+  createPublicManifest,
+  linkBuildOutput,
+  linkRemoteManifest,
+} from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import { execa } from "execa";
 import {
@@ -44,6 +48,7 @@ const API_READY_MARKER = "__EVJS_API_READY__";
 const DEV_PAGE_RENDER_PROXY_HEADER = "x-evjs-dev-page-render";
 const DEV_DIST_DIR = "dist";
 const DEV_DIST_LOCK_FILE = ".evjs-dev.lock";
+const INTERNAL_BUILD_OUTPUT_FILE = "build-output.json";
 
 interface DevDistLock {
   command: "dev";
@@ -484,13 +489,21 @@ function validateHtmlTemplates<TBundlerCfg>(
 }
 
 function readBuildResult(cwd: string, isRebuild: boolean): BuildResult | null {
-  const manifestPath = path.resolve(cwd, "dist/manifest.json");
+  const manifestPath = path.resolve(
+    cwd,
+    "dist/server",
+    INTERNAL_BUILD_OUTPUT_FILE,
+  );
+  const fallbackManifestPath = path.resolve(cwd, "dist/manifest.json");
+  const outputPath = fs.existsSync(manifestPath)
+    ? manifestPath
+    : fallbackManifestPath;
 
-  if (!fs.existsSync(manifestPath)) return null;
+  if (!fs.existsSync(outputPath)) return null;
 
   let output: BuildOutput;
   try {
-    output = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    output = JSON.parse(fs.readFileSync(outputPath, "utf-8"));
   } catch (err) {
     logger.warn`Failed to parse build manifest: ${err}`;
     return null;
@@ -520,9 +533,20 @@ async function emitFrameworkManifest(
 ): Promise<void> {
   const { rootDir } = getFrameworkOutputPaths(cwd, output, serverEnabled);
   await fs.promises.mkdir(rootDir, { recursive: true });
+  if (serverEnabled) {
+    const serverDir = path.join(rootDir, "server");
+    await fs.promises.mkdir(serverDir, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(serverDir, INTERNAL_BUILD_OUTPUT_FILE),
+      JSON.stringify(output, null, 2),
+      "utf-8",
+    );
+  }
+
+  const publicManifest = createPublicManifest(output);
   await fs.promises.writeFile(
     path.join(rootDir, "manifest.json"),
-    JSON.stringify(output, null, 2),
+    JSON.stringify(publicManifest, null, 2),
     "utf-8",
   );
 
@@ -760,7 +784,14 @@ function readServerEntryFromManifest(
   cwd: string,
   distDir: string,
 ): string | undefined {
-  const manifestPath = path.resolve(cwd, distDir, "manifest.json");
+  const internalPath = path.resolve(
+    cwd,
+    distDir,
+    "server",
+    INTERNAL_BUILD_OUTPUT_FILE,
+  );
+  const publicPath = path.resolve(cwd, distDir, "manifest.json");
+  const manifestPath = fs.existsSync(internalPath) ? internalPath : publicPath;
   if (!fs.existsSync(manifestPath)) return undefined;
 
   try {
@@ -769,7 +800,7 @@ function readServerEntryFromManifest(
     ) as BuildOutput;
     return normalizeAssetName(manifest.server?.entry);
   } catch (err) {
-    logger.warn`Failed to parse manifest.json for server entry: ${err}`;
+    logger.warn`Failed to parse build manifest for server entry: ${err}`;
     return undefined;
   }
 }
@@ -1023,8 +1054,10 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
           `const fs = require("node:fs");`,
           `const path = require("node:path");`,
           `const { pathToFileURL } = require("node:url");`,
-          `const manifestPath = ${JSON.stringify(path.join(devRootDir, "manifest.json"))};`,
-          `const manifest = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, "utf-8")) : undefined;`,
+          `const manifestPath = ${JSON.stringify(path.join(devRootDir, "server", INTERNAL_BUILD_OUTPUT_FILE))};`,
+          `const publicManifestPath = ${JSON.stringify(path.join(devRootDir, "manifest.json"))};`,
+          `const selectedManifestPath = fs.existsSync(manifestPath) ? manifestPath : publicManifestPath;`,
+          `const manifest = fs.existsSync(selectedManifestPath) ? JSON.parse(fs.readFileSync(selectedManifestPath, "utf-8")) : undefined;`,
           `if (manifest) globalThis.__EVJS_MANIFEST__ = manifest;`,
           `globalThis.__EVJS_DEV_PAGE_RENDER_PROXY_HEADER__ = ${JSON.stringify(DEV_PAGE_RENDER_PROXY_HEADER)};`,
           `const serverDir = path.dirname(${JSON.stringify(serverBundlePath)});`,

@@ -224,6 +224,53 @@ describe("createApp", () => {
     expect(await region.text()).toBe("<p>dashboard:hero</p>");
   });
 
+  it("normalizes PPR region document responses into fragments", async () => {
+    const manifest = createManifest();
+    manifest.pages.dashboard.render = "ppr";
+    manifest.pages.dashboard.ppr = {
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        hero: {
+          id: "hero",
+          assets: { js: ["dashboard-hero-ppr-region.js"], css: [] },
+          component: "./src/pages/Hero.region.tsx",
+          cache: "no-store",
+        },
+      },
+    };
+    const app = createApp({
+      framework: {
+        manifest,
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-hero-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "hero" },
+              load: async () => ({
+                default: () => ({
+                  html: [
+                    "<!doctype html>",
+                    "<html><body>",
+                    '<div id="app"><section>Hero fragment</section></div>',
+                    '<script src="/region.js"></script>',
+                    "</body></html>",
+                  ].join(""),
+                }),
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const region = await app.request("/__evjs/ppr/dashboard/hero");
+
+    expect(region.status).toBe(200);
+    expect(region.headers.get("x-evjs-page")).toBe("dashboard");
+    expect(region.headers.get("x-evjs-ppr-region")).toBe("hero");
+    expect(await region.text()).toBe("<section>Hero fragment</section>");
+  });
+
   it("caches PPR regions with revalidate policy", async () => {
     const manifest = createManifest();
     manifest.pages.dashboard.render = "ppr";
