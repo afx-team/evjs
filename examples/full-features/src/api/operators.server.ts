@@ -1,16 +1,7 @@
 "use server";
 
-export interface MerchantOperator {
-  id: string;
-  name: string;
-}
+import { getOperationsSnapshot } from "../domain/operations";
 
-const operators: MerchantOperator[] = [
-  { id: "1", name: "Ada Lovelace" },
-  { id: "2", name: "Grace Hopper" },
-  { id: "3", name: "Katherine Johnson" },
-];
-
-export async function getMerchantOperators() {
-  return operators;
+export async function getMerchantOperationsSnapshot() {
+  return getOperationsSnapshot();
 }

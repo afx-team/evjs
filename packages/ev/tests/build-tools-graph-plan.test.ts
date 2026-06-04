@@ -598,6 +598,9 @@ describe("createAppGraph and createBuildPlan", () => {
     const output = linkBuildOutput({
       graph: analysis.graph,
       plan,
+      clientEntryAssets: {
+        "evjs-rsc-client": { js: ["evjs-rsc-client.js"], css: [] },
+      },
       serverEntryAssets: {
         "rsc-rsc": { js: ["rsc-rsc.js"], css: [] },
       },
@@ -637,6 +640,120 @@ describe("createAppGraph and createBuildPlan", () => {
         module: "src/actions.ts",
         exportName: "saveInsight",
       },
+    });
+    expect(output.pages.rsc.assets).toEqual({
+      js: ["evjs-rsc-client.js"],
+      css: [],
+    });
+    expect(output.pages.rsc.rendering).toEqual({
+      mode: "rsc",
+      component: "rsc",
+      html: "server",
+      streaming: true,
+      hydrate: "load",
+    });
+  });
+
+  it("derives orthogonal page rendering metadata for manifest consumers", async () => {
+    const cwd = await createFixture({
+      "src/pages/csr.tsx": "export default function Csr() { return null; }",
+      "src/pages/ssr.tsx": "export default function Ssr() { return null; }",
+      "src/pages/ssg.tsx": "export default function Ssg() { return null; }",
+      "src/pages/ppr.tsx": "export default function Ppr() { return null; }",
+      "src/pages/region.tsx":
+        "export default function Region() { return null; }",
+      "src/pages/rsc.tsx": "export default function Rsc() { return null; }",
+      "index.html": '<div id="app"></div>',
+    });
+    const config = createConfig({
+      pages: {
+        csr: {
+          component: "./src/pages/csr.tsx",
+          html: "./index.html",
+          render: "csr",
+        },
+        ssr: {
+          component: "./src/pages/ssr.tsx",
+          html: "./index.html",
+          render: "ssr",
+          hydrate: "visible",
+        },
+        ssg: {
+          component: "./src/pages/ssg.tsx",
+          html: "./index.html",
+          render: "ssg",
+        },
+        ppr: {
+          component: "./src/pages/ppr.tsx",
+          html: "./index.html",
+          render: "ppr",
+          ppr: {
+            regions: {
+              offer: {
+                component: "./src/pages/region.tsx",
+              },
+            },
+          },
+        },
+        rsc: {
+          component: "./src/pages/rsc.tsx",
+          html: "./index.html",
+          render: "rsc",
+        },
+      },
+    });
+
+    const analysis = await createAppGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "production",
+    });
+    const output = linkBuildOutput({
+      graph: analysis.graph,
+      plan,
+      clientEntryAssets: {
+        csr: { js: ["csr.js"], css: [] },
+        ssr: { js: ["ssr.js"], css: [] },
+        ppr: { js: ["ppr.js"], css: [] },
+        "evjs-rsc-client": { js: ["evjs-rsc-client.js"], css: [] },
+      },
+    });
+
+    expect(output.pages.csr.rendering).toEqual({
+      mode: "csr",
+      component: "client",
+      html: "client",
+      streaming: false,
+      hydrate: "load",
+    });
+    expect(output.pages.ssr.rendering).toEqual({
+      mode: "ssr",
+      component: "server",
+      html: "server",
+      streaming: false,
+      hydrate: "visible",
+    });
+    expect(output.pages.ssg.rendering).toEqual({
+      mode: "ssg",
+      component: "server",
+      html: "static",
+      prerender: "full",
+      streaming: false,
+      hydrate: "none",
+    });
+    expect(output.pages.ppr.rendering).toEqual({
+      mode: "ppr",
+      component: "server",
+      html: "partial",
+      prerender: "partial",
+      streaming: true,
+      hydrate: "load",
+    });
+    expect(output.pages.rsc.rendering).toEqual({
+      mode: "rsc",
+      component: "rsc",
+      html: "server",
+      streaming: true,
+      hydrate: "load",
     });
   });
 

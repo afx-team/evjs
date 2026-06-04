@@ -141,7 +141,7 @@ async function emitFrameworkArtifacts(options: {
   });
   await options.onBuildOutput?.(output);
 
-  const rootDir = path.join(options.cwd, "dist");
+  const rootDir = path.join(options.cwd, options.plan.distDir);
   const clientDir = options.config.serverEnabled
     ? path.join(rootDir, "client")
     : rootDir;
@@ -863,6 +863,7 @@ describe("webpackAdapter dev", () => {
       );
 
       expect(onBuildOutput).toHaveBeenCalledTimes(1);
+      expect(manifest.distDir).toBe("dist");
       expect(manifest.pages.home.assets.js).toEqual(["home.js"]);
       expect(html).toContain('data-evjs-page="home"');
       expect(html).toContain('src="/home.js"');

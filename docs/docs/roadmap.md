@@ -13,13 +13,14 @@
 - Shell/runtime packages for manifest-driven app/page/remote activation.
 - Optional TanStack adapter split from shell/runtime core.
 - Webpack adapter for framework validation while Utoopack lower-layer APIs catch up.
+- Full-feature host/remote example plus end-to-end coverage for apps,
+  component pages, SSR/PPR/RSC, remotes, and per-document HTML transforms.
 
 ## In Progress
 
 - Utoopack dynamic dev plan updates for adding/removing entries without restarting `ev dev`.
 - Utoopack build facts for framework-managed component entries and multiple server render entries.
 - Production deployment plugin migrations to consume `BuildOutput` instead of v1 client/server manifests.
-- More examples and end-to-end coverage for `apps`, component pages, SSR/PPR, remotes, and per-document HTML transforms.
 
 ## Planned
 

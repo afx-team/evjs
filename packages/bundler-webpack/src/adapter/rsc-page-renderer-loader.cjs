@@ -13,13 +13,24 @@ import { createElement } from "react";
 import { renderToReadableStream } from "react-server-dom-webpack/server.node";
 import Component from ${JSON.stringify(componentRequest)};
 
+function findRouteForPage(manifest, pageId) {
+  if (!pageId) return undefined;
+  const route = manifest.routes?.find((candidate) => candidate.pageId === pageId);
+  return route
+    ? {
+        id: route.id,
+        path: route.path,
+      }
+    : undefined;
+}
+
 function createProps(ctx) {
   return {
-    request: ctx.request,
-    manifest: ctx.manifest,
-    page: ctx.page,
+    manifest: {
+      buildId: ctx.manifest.buildId,
+    },
     pageId: ctx.pageId,
-    rscPage: ctx.rscPage,
+    route: findRouteForPage(ctx.manifest, ctx.pageId),
   };
 }
 

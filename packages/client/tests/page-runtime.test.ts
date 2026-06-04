@@ -163,6 +163,13 @@ function createManifest(): BuildOutput {
       home: {
         assets: { js: ["home.js"], css: [] },
         render: "ssr",
+        rendering: {
+          mode: "ssr",
+          component: "server",
+          html: "server",
+          streaming: false,
+          hydrate: "load",
+        },
         mount: "#root",
         module: {
           type: "lifecycle",

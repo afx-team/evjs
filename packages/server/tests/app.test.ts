@@ -87,6 +87,13 @@ describe("createApp", () => {
     manifest.pages.orderDetail = {
       assets: { js: [], css: [] },
       render: "ssr",
+      rendering: {
+        mode: "ssr",
+        component: "server",
+        html: "server",
+        streaming: false,
+        hydrate: "load",
+      },
     };
     manifest.routes.push({
       id: "order.detail",
@@ -401,6 +408,49 @@ describe("createApp", () => {
     expect(await res.text()).toContain('<div id="app">Page dashboard</div>');
   });
 
+  it("can restrict React framework page rendering to dev proxy requests", async () => {
+    const manifest = createManifest();
+    manifest.server = {
+      entry: "server.js",
+      assets: { js: ["server.js"], css: [] },
+      renderers: {
+        "dashboard-server": {
+          kind: "page-server",
+          owner: { pageId: "dashboard" },
+          module: "./src/pages/Dashboard.tsx",
+          assets: { js: ["dashboard-server.js"], css: [] },
+        },
+      },
+      functions: {},
+      routes: [],
+    };
+    vi.stubGlobal("__EVJS_MANIFEST__", manifest);
+    vi.stubGlobal(
+      "__EVJS_DEV_PAGE_RENDER_PROXY_HEADER__",
+      "x-evjs-dev-page-render",
+    );
+    vi.stubGlobal("__EVJS_SERVER_MODULE_LOADER__", async () => ({
+      default({ pageId }: { pageId?: string }) {
+        return `Page ${pageId}`;
+      },
+    }));
+
+    const framework = createReactFrameworkServer();
+    if (!framework) throw new Error("Expected framework options");
+    const app = createApp({ framework });
+
+    const direct = await app.request("/dashboard");
+    const proxied = await app.request("/dashboard", {
+      headers: { "x-evjs-dev-page-render": "1" },
+    });
+
+    expect(direct.status).toBe(404);
+    expect(proxied.status).toBe(200);
+    expect(await proxied.text()).toContain(
+      '<div id="app">Page dashboard</div>',
+    );
+  });
+
   it("mounts RSC flight handling on the framework server path", async () => {
     const manifest = createManifest();
     configureRscManifest(manifest);
@@ -550,6 +600,13 @@ function createManifest(): BuildOutput {
       dashboard: {
         assets: { js: [], css: [] },
         render: "ssr",
+        rendering: {
+          mode: "ssr",
+          component: "server",
+          html: "server",
+          streaming: false,
+          hydrate: "load",
+        },
       },
     },
     routes: [
@@ -564,6 +621,13 @@ function createManifest(): BuildOutput {
 
 function configureRscManifest(manifest: BuildOutput): void {
   manifest.pages.dashboard.render = "rsc";
+  manifest.pages.dashboard.rendering = {
+    mode: "rsc",
+    component: "rsc",
+    html: "server",
+    streaming: true,
+    hydrate: "load",
+  };
   manifest.rsc = {
     endpoint: "/__evjs/rsc",
     pages: {

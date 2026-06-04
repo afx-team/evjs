@@ -22,6 +22,13 @@ describe("createReactServerRenderAdapter", () => {
         page: {
           assets: { js: ["dashboard.js"], css: ["dashboard.css"] },
           render: "ssr",
+          rendering: {
+            mode: "ssr",
+            component: "server",
+            html: "server",
+            streaming: false,
+            hydrate: "load",
+          },
           mount: "#root",
         },
       },
@@ -36,11 +43,130 @@ describe("createReactServerRenderAdapter", () => {
         "</head>",
         "<body>",
         '<div id="root"><h1>Page <!-- -->dashboard</h1></div>',
-        '<script type="module" src="/assets/dashboard.js"></script>',
+        '<script id="__EVJS_PAGE_PROPS__" type="application/json">',
+        '{"manifest":{"buildId":"test"},"pageId":"dashboard"}',
+        "</script>",
+        '<script defer src="/assets/dashboard.js"></script>',
         "</body>",
         "</html>",
       ].join(""),
     });
+  });
+
+  it("does not embed framework manifest internals in default hydration props", async () => {
+    const adapter = createReactServerRenderAdapter();
+    const manifest = createManifest();
+    manifest.pages.dashboard = {
+      assets: { js: ["dashboard.js"], css: [] },
+      render: "ssr",
+      rendering: {
+        mode: "ssr",
+        component: "server",
+        html: "server",
+        streaming: false,
+        hydrate: "load",
+      },
+      component: "./src/pages/Dashboard.tsx",
+    };
+    manifest.routes.push({
+      id: "dashboard",
+      path: "/dashboard",
+      pageId: "dashboard",
+      module: "./src/pages/Dashboard.tsx",
+    });
+
+    const result = await adapter(
+      {
+        default() {
+          return createElement("h1", null, "Dashboard");
+        },
+      },
+      {
+        request: new Request("https://example.com/dashboard"),
+        manifest,
+        pageId: "dashboard",
+        page: manifest.pages.dashboard,
+        route: manifest.routes[0],
+      },
+    );
+
+    if (!result || result instanceof Response || typeof result === "string") {
+      throw new Error("Expected HTML result.");
+    }
+
+    expect(result.html).toContain(
+      '<script id="__EVJS_PAGE_PROPS__" type="application/json">{"manifest":{"buildId":"test"},"route":{"id":"dashboard","path":"/dashboard"},"pageId":"dashboard"}</script>',
+    );
+    expect(result.html).not.toContain("Dashboard.tsx");
+    expect(result.html).not.toContain('"assets"');
+    expect(result.html).not.toContain('"pages"');
+    expect(result.html).not.toContain('"routes"');
+  });
+
+  it("injects RSC client runtime assets and a public bootstrap payload", async () => {
+    const adapter = createReactServerRenderAdapter();
+    const manifest = createManifest();
+    manifest.runtime.server = {
+      basePath: "/__evjs",
+      fn: "/__evjs/fn",
+      rsc: "/__evjs/rsc",
+    };
+    manifest.rsc = {
+      endpoint: "/__evjs/rsc",
+      pages: {
+        insights: {
+          renderer: "insights-rsc",
+          assets: { js: ["insights-rsc.js"], css: [] },
+          component: "./src/pages/Insights.tsx",
+        },
+      },
+    };
+    manifest.pages.insights = {
+      assets: { js: ["evjs-rsc-client.js"], css: ["insights.css"] },
+      render: "rsc",
+      rendering: {
+        mode: "rsc",
+        component: "rsc",
+        html: "server",
+        streaming: true,
+        hydrate: "load",
+      },
+      component: "./src/pages/Insights.tsx",
+      mount: "#app",
+    };
+
+    const result = await adapter(
+      {
+        default() {
+          return createElement("h1", null, "Insights");
+        },
+      },
+      {
+        request: new Request("https://example.com/insights"),
+        manifest,
+        pageId: "insights",
+        page: manifest.pages.insights,
+      },
+    );
+
+    if (!result || result instanceof Response || typeof result === "string") {
+      throw new Error("Expected HTML result.");
+    }
+
+    expect(result.html).toContain(
+      '<link rel="stylesheet" href="/assets/insights.css">',
+    );
+    expect(result.html).toContain(
+      '<script id="__EVJS_RSC_BOOTSTRAP__" type="application/json">',
+    );
+    expect(result.html).toContain('"pageId":"insights"');
+    expect(result.html).toContain('"endpoint":"/__evjs/rsc"');
+    expect(result.html).toContain('"mount":"#app"');
+    expect(result.html).toContain(
+      '<script defer src="/assets/evjs-rsc-client.js"></script>',
+    );
+    expect(result.html).not.toContain("Insights.tsx");
+    expect(result.html).not.toContain("insights-rsc.js");
   });
 
   it("returns undefined for non-component modules", async () => {
@@ -101,6 +227,13 @@ describe("createReactRscFlightAdapter", () => {
     manifest.pages.dashboard = {
       assets: { js: [], css: [] },
       render: "rsc",
+      rendering: {
+        mode: "rsc",
+        component: "rsc",
+        html: "server",
+        streaming: true,
+        hydrate: "load",
+      },
     };
     manifest.server = {
       assets: { js: ["server.js"], css: [] },

@@ -12,12 +12,14 @@ export interface ReactPageRuntimeOptions {
   mount: string | Element;
   hydrate?: HydrationMode;
   render?: RenderMode;
+  props?: Record<string, unknown>;
 }
 
 export interface ReactPageMountOptions {
   component: ComponentType;
   hydrate?: HydrationMode;
   render?: RenderMode;
+  props?: Record<string, unknown>;
 }
 
 export interface RscFlightFetchOptions {
@@ -66,19 +68,27 @@ export function createReactPageModule(
   options: ReactPageMountOptions,
 ): AppModule {
   return {
-    mount(mountPoint) {
+    mount(mountPoint, ctx) {
       if (options.hydrate === "none") return;
-      mountReactRoot(mountPoint, options.component);
+      mountReactRoot(
+        mountPoint,
+        options.component,
+        resolvePageProps(options, ctx),
+      );
     },
-    hydrate(mountPoint) {
+    hydrate(mountPoint, ctx) {
       if (options.hydrate === "none") return;
+      const props = resolvePageProps(options, ctx);
       if (shouldHydrate(options)) {
-        const root = hydrateRoot(mountPoint, createElement(options.component));
+        const root = hydrateRoot(
+          mountPoint,
+          createElement(options.component, props),
+        );
         rootByMountPoint.set(mountPoint, root);
         return;
       }
 
-      mountReactRoot(mountPoint, options.component);
+      mountReactRoot(mountPoint, options.component, props);
     },
     unmount(mountPoint) {
       rootByMountPoint.get(mountPoint)?.unmount();
@@ -87,9 +97,13 @@ export function createReactPageModule(
   };
 }
 
-function mountReactRoot(mountPoint: Element, component: ComponentType) {
+function mountReactRoot(
+  mountPoint: Element,
+  component: ComponentType,
+  props: Record<string, unknown>,
+) {
   const root = createRoot(mountPoint);
-  root.render(createElement(component));
+  root.render(createElement(component, props));
   rootByMountPoint.set(mountPoint, root);
 }
 
@@ -184,6 +198,53 @@ function resolveRscFlightUrl(
     url.searchParams.set("page", options.pageId);
   }
   return url.toString();
+}
+
+function resolvePageProps(
+  options: ReactPageMountOptions,
+  ctx?: AppContext,
+): Record<string, unknown> {
+  return (
+    options.props ??
+    readEmbeddedPageProps() ??
+    (ctx ? pagePropsFromContext(ctx) : undefined) ??
+    {}
+  );
+}
+
+function readEmbeddedPageProps(): Record<string, unknown> | undefined {
+  const doc = globalThis.document;
+  if (!doc) return undefined;
+
+  const script = doc.getElementById("__EVJS_PAGE_PROPS__");
+  const text = script?.textContent?.trim();
+  if (!text) return undefined;
+
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+}
+
+function pagePropsFromContext(ctx: AppContext): Record<string, unknown> {
+  if (ctx.kind !== "page") return {};
+  const route = ctx.manifest.routes.find(
+    (candidate) => candidate.pageId === ctx.id,
+  );
+
+  return {
+    manifest: {
+      buildId: ctx.manifest.buildId,
+    },
+    pageId: ctx.id,
+    route: route
+      ? {
+          id: route.id,
+          path: route.path,
+        }
+      : undefined,
+  };
 }
 
 function isRscDebugPayload(value: unknown): value is RscDebugPayload {

@@ -1,6 +1,18 @@
 # ev Full Features Example
 
-This example exercises the new framework contracts with the webpack adapter:
+This example models a merchant operations product rather than a minimal feature
+fixture. The app simulates a payment operations console with:
+
+- a merchant KPI dashboard loaded through a server function;
+- a REST health route for operations service status;
+- a CSR support queue page for agent workflows;
+- an SSR operations dashboard for document rendering;
+- a PPR campaign monitor with a dynamic offer region;
+- an RSC insights page with a client reference;
+- a manifest-driven CRM remote workspace with shared React negotiation;
+- deployment artifacts derived from `BuildOutput`.
+
+It still exercises the new framework contracts with the webpack adapter:
 
 - explicit app declaration;
 - `pages` declarations that own URL path, component, render, and hydration metadata;

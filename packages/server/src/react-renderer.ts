@@ -91,7 +91,7 @@ export function createReactServerRenderAdapter(
     }
 
     return {
-      html: renderDefaultDocument(appHtml, ctx),
+      html: renderDefaultDocument(appHtml, ctx, props),
     };
   };
 }
@@ -251,30 +251,54 @@ function isHtmlResult(value: unknown): value is { html: string } {
 
 function defaultRscProps(ctx: RscFlightContext): Record<string, unknown> {
   return {
-    request: ctx.request,
-    manifest: ctx.manifest,
-    page: ctx.page,
+    manifest: {
+      buildId: ctx.manifest.buildId,
+    },
     pageId: ctx.pageId,
-    rscPage: ctx.rscPage,
+    route: findRouteForPage(ctx.manifest, ctx.pageId),
   };
 }
 
 function defaultProps(ctx: ReactServerRenderContext): Record<string, unknown> {
   return {
-    request: ctx.request,
-    manifest: ctx.manifest,
-    route: ctx.route,
-    page: ctx.page,
+    manifest: {
+      buildId: ctx.manifest.buildId,
+    },
+    route: ctx.route
+      ? {
+          id: ctx.route.id,
+          path: ctx.route.path,
+        }
+      : undefined,
     pageId: ctx.pageId,
   };
+}
+
+function findRouteForPage(
+  manifest: BuildOutput,
+  pageId: string | undefined,
+): { id: string; path: string } | undefined {
+  if (!pageId) return undefined;
+
+  const route = manifest.routes.find(
+    (candidate) => candidate.pageId === pageId,
+  );
+  return route
+    ? {
+        id: route.id,
+        path: route.path,
+      }
+    : undefined;
 }
 
 function renderDefaultDocument(
   appHtml: string,
   ctx: ReactServerRenderContext,
+  props: Record<string, unknown>,
 ): string {
   const mount = resolveMount(ctx.page?.mount);
   const assets = ctx.page?.assets ?? emptyAssets();
+  const rscBootstrap = createRscBootstrap(ctx, mount);
 
   return [
     "<!doctype html>",
@@ -287,13 +311,56 @@ function renderDefaultDocument(
     "</head>",
     "<body>",
     `<div ${mount.attribute}="${escapeHtmlAttr(mount.value)}">${appHtml}</div>`,
+    `<script id="__EVJS_PAGE_PROPS__" type="application/json">${serializePageProps(props)}</script>`,
+    ...(rscBootstrap
+      ? [
+          `<script id="__EVJS_RSC_BOOTSTRAP__" type="application/json">${serializePageProps(rscBootstrap)}</script>`,
+        ]
+      : []),
     ...assets.js.map(
       (asset) =>
-        `<script type="module" src="${escapeHtmlAttr(assetHref(ctx.manifest, asset))}"></script>`,
+        `<script defer src="${escapeHtmlAttr(assetHref(ctx.manifest, asset))}"></script>`,
     ),
     "</body>",
     "</html>",
   ].join("");
+}
+
+function createRscBootstrap(
+  ctx: ReactServerRenderContext,
+  mount: {
+    attribute: "id" | "data-evjs-mount";
+    value: string;
+  },
+):
+  | {
+      version: 1;
+      buildId: string;
+      pageId: string;
+      endpoint: string;
+      basePath?: string;
+      publicPath: BuildOutput["publicPath"];
+      mount: string;
+    }
+  | undefined {
+  if (ctx.page?.render !== "rsc" || !ctx.pageId) return undefined;
+
+  const endpoint =
+    ctx.manifest.rsc?.endpoint ?? ctx.manifest.runtime.server?.rsc;
+  if (!endpoint) return undefined;
+
+  return {
+    version: 1,
+    buildId: ctx.manifest.buildId,
+    pageId: ctx.pageId,
+    endpoint,
+    basePath: ctx.manifest.runtime.server?.basePath,
+    publicPath: ctx.manifest.publicPath,
+    mount:
+      mount.attribute === "id"
+        ? `#${mount.value}`
+        : `[${mount.attribute}="${mount.value}"]`,
+  };
 }
 
 function resolveMount(mount: string | undefined): {
@@ -305,6 +372,29 @@ function resolveMount(mount: string | undefined): {
     return { attribute: "id", value: mount.slice(1) };
   }
   return { attribute: "data-evjs-mount", value: mount };
+}
+
+function serializePageProps(props: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(props, (_key, value: unknown) => {
+      if (
+        value instanceof Request ||
+        value instanceof Response ||
+        value instanceof Headers ||
+        typeof value === "function" ||
+        typeof value === "symbol" ||
+        typeof value === "bigint"
+      ) {
+        return undefined;
+      }
+      return value;
+    })
+      .replaceAll("<", "\\u003c")
+      .replaceAll("\u2028", "\\u2028")
+      .replaceAll("\u2029", "\\u2029");
+  } catch {
+    return "{}";
+  }
 }
 
 function assetHref(manifest: BuildOutput, asset: string): string {

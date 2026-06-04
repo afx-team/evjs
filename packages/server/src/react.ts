@@ -28,6 +28,7 @@ export {
 
 declare global {
   var __EVJS_MANIFEST__: BuildOutput | undefined;
+  var __EVJS_DEV_PAGE_RENDER_PROXY_HEADER__: string | undefined;
   var __EVJS_SERVER_MODULE_LOADER__:
     | ((
         asset: string,
@@ -95,8 +96,18 @@ export function createReactFrameworkServer(
           fallback: options.fallback,
         })
       : undefined,
+    allowPageRenderRequest: createDevPageRenderGuard(),
     rsc,
   };
+}
+
+function createDevPageRenderGuard():
+  | FrameworkServerOptions["allowPageRenderRequest"]
+  | undefined {
+  const headerName = globalThis.__EVJS_DEV_PAGE_RENDER_PROXY_HEADER__;
+  if (!headerName) return undefined;
+
+  return (request) => request.headers.get(headerName) === "1";
 }
 
 function createDefaultRscCoordinator(

@@ -303,6 +303,7 @@ export interface AppOutput {
 export interface PageOutput {
   assets: AssetGroup;
   render: RenderMode;
+  rendering: PageRenderingOutput;
   path?: string;
   routeId?: string;
   entry?: string;
@@ -312,6 +313,24 @@ export interface PageOutput {
   mount?: string;
   module?: RuntimeModuleOutput;
   ppr?: PprPageOutput;
+}
+
+export interface PageRenderingOutput {
+  /**
+   * Original user-facing render shorthand. Kept for compatibility and
+   * diagnostics; runtime decisions should prefer the orthogonal fields below.
+   */
+  mode: RenderMode;
+  /** React execution model used by the page module. */
+  component: "client" | "server" | "rsc";
+  /** HTML delivery strategy for the initial document. */
+  html: "client" | "server" | "static" | "partial";
+  /** Static generation shape, when any part of the page is precomputed. */
+  prerender?: "full" | "partial";
+  /** Whether the page can stream server-rendered content after shell start. */
+  streaming: boolean;
+  /** Browser hydration behavior for client-capable parts of the page. */
+  hydrate: HydrationMode;
 }
 
 export interface PprPageOutput {

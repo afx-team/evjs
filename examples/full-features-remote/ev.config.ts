@@ -6,7 +6,9 @@ export default defineConfig({
   server: false,
   remote: {
     name: "crm",
-    baseUrl: "https://assets.example.com/crm/",
+    baseUrl:
+      process.env.FULL_FEATURES_REMOTE_BASE_URL ??
+      "https://assets.example.com/crm/",
     shared: {
       "remote-react": {
         shareKey: "react",

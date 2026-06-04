@@ -4,6 +4,9 @@ import type {
   BuildEntry,
   BuildOutput,
   BuildPlan,
+  HydrationMode,
+  PageNode,
+  PageRenderingOutput,
   RemoteManifest,
   ServerFunctionOutput,
   ServerRouteOutput,
@@ -67,6 +70,13 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
       return false;
     });
 
+  const rscClientRuntimeEntry = input.plan.entries.find(
+    (entry) =>
+      entry.environment === "client" &&
+      entry.kind === "runtime" &&
+      entry.name === "evjs-rsc-client",
+  );
+
   const assetsForSource = (sourceRel: string) =>
     serverModules.find((mod) => moduleIdMatchesSource(mod.moduleId, sourceRel))
       ?.assets ?? serverAssets;
@@ -110,12 +120,17 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
         "server",
         "ppr-shell",
       );
-      const assets = entry ? clientAssetsForEntry(entry) : EMPTY_ASSETS;
+      const assets = entry
+        ? clientAssetsForEntry(entry)
+        : page.render === "rsc" && rscClientRuntimeEntry
+          ? clientAssetsForEntry(rscClientRuntimeEntry)
+          : EMPTY_ASSETS;
       return [
         id,
         {
           assets,
           render: page.render,
+          rendering: derivePageRendering(page),
           path: page.path,
           routeId: page.routeId,
           entry: page.entry,
@@ -392,6 +407,59 @@ function linkServerRenderers(
       ];
     }),
   );
+}
+
+function derivePageRendering(page: PageNode): PageRenderingOutput {
+  const hydrate = page.hydrate ?? defaultHydrate(page.render);
+
+  switch (page.render) {
+    case "csr":
+      return {
+        mode: page.render,
+        component: "client",
+        html: "client",
+        streaming: false,
+        hydrate,
+      };
+    case "ssg":
+      return {
+        mode: page.render,
+        component: "server",
+        html: "static",
+        prerender: "full",
+        streaming: false,
+        hydrate,
+      };
+    case "ppr":
+      return {
+        mode: page.render,
+        component: "server",
+        html: "partial",
+        prerender: "partial",
+        streaming: true,
+        hydrate,
+      };
+    case "rsc":
+      return {
+        mode: page.render,
+        component: "rsc",
+        html: "server",
+        streaming: true,
+        hydrate: "load",
+      };
+    default:
+      return {
+        mode: page.render,
+        component: "server",
+        html: "server",
+        streaming: false,
+        hydrate,
+      };
+  }
+}
+
+function defaultHydrate(render: PageNode["render"]): HydrationMode {
+  return render === "ssg" ? "none" : "load";
 }
 
 function moduleIdMatchesSource(moduleId: string, sourceRel: string): boolean {

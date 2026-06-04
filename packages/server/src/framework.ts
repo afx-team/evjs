@@ -13,6 +13,7 @@ export interface FrameworkServerOptions {
   manifest: BuildOutput;
   render?: ServerRenderHandler | ServerRenderCoordinator;
   rsc?: RscFlightHandler | RscCoordinator;
+  allowPageRenderRequest?: (request: Request) => boolean;
 }
 
 export interface ServerRenderContext {
@@ -202,6 +203,12 @@ export async function handleFrameworkRenderRequest(
 ): Promise<Response | undefined> {
   if (!options.render) return undefined;
   if (request.method !== "GET" && request.method !== "HEAD") return undefined;
+  if (
+    options.allowPageRenderRequest &&
+    !options.allowPageRenderRequest(request)
+  ) {
+    return undefined;
+  }
 
   const url = new URL(request.url);
   const route = matchRoute(options.manifest.routes, url.pathname);

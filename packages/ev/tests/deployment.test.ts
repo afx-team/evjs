@@ -36,6 +36,13 @@ describe("createDeploymentArtifact", () => {
         insights: {
           assets: { js: [], css: [] },
           render: "rsc",
+          rendering: {
+            mode: "rsc",
+            component: "rsc",
+            html: "server",
+            streaming: true,
+            hydrate: "load",
+          },
           path: "/insights",
           routeId: "insights",
           component: "./src/pages/Insights.tsx",
@@ -198,6 +205,13 @@ describe("createDeploymentArtifact", () => {
         insights: {
           assets: { js: [], css: [] },
           render: "rsc",
+          rendering: {
+            mode: "rsc",
+            component: "rsc",
+            html: "server",
+            streaming: true,
+            hydrate: "load",
+          },
           path: "/insights/$id",
           routeId: "insights",
         },
@@ -268,6 +282,14 @@ describe("createDeploymentArtifact", () => {
         pricing: {
           assets: { js: [], css: [] },
           render: "ssg",
+          rendering: {
+            mode: "ssg",
+            component: "server",
+            html: "static",
+            prerender: "full",
+            streaming: false,
+            hydrate: "none",
+          },
           path: "/pricing",
           routeId: "pricing",
         },
@@ -329,6 +351,13 @@ describe("createDeploymentArtifact", () => {
         insights: {
           assets: { js: [], css: [] },
           render: "rsc",
+          rendering: {
+            mode: "rsc",
+            component: "rsc",
+            html: "server",
+            streaming: true,
+            hydrate: "load",
+          },
           path: "/insights/$id",
           routeId: "insights",
         },

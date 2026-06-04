@@ -1,5 +1,9 @@
 "use client";
 
 export default function InsightsBadge() {
-  return <span data-testid="insights-badge">Client reference badge</span>;
+  return (
+    <span className="badge" data-testid="insights-badge">
+      Client risk model hydrated
+    </span>
+  );
 }

@@ -181,10 +181,15 @@ export type {
   ReactRoutes,
 } from "./routes.js";
 export { defineReactRoutes, page, route } from "./routes.js";
-export type { ReactRscModelOptions, ReactRscMountOptions } from "./rsc.js";
+export type {
+  ReactRscModelOptions,
+  ReactRscMountOptions,
+  ReactRscRuntimeBootstrap,
+} from "./rsc.js";
 export {
   createReactRscModel,
   mountReactRscPage,
+  startReactRscPageRuntime,
   unmountReactRscPage,
 } from "./rsc.js";
 export type {

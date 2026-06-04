@@ -54,7 +54,11 @@ export class WebpackManifestGenerator {
   ) {}
 
   collectBuildFacts(): BundlerBuildFacts {
-    const outputPaths = getOutputPaths(this.cwd, this.serverEnabled);
+    const outputPaths = getOutputPaths(
+      this.cwd,
+      this.serverEnabled,
+      this.plan.distDir,
+    );
     const clientEntrypoints = readEntrypointAssets(this.clientStats);
     this.clientEntryAssets = clientEntrypoints.byName;
     this.firstClientEntryAssets = clientEntrypoints.first;

@@ -13,13 +13,14 @@
 - 用于 app/page/remote activation 的 shell/runtime packages。
 - TanStack adapter 从 shell/runtime core 中拆出。
 - Webpack adapter 用于在 Utoopack 下层 API 补齐前验证框架能力。
+- 完整 host/remote 示例，并通过 e2e 覆盖 apps、组件页面、SSR/PPR/RSC、
+  remotes 和 per-document HTML transform。
 
 ## 进行中
 
 - Utoopack dynamic dev plan update，用于不重启 `ev dev` 增删 entry。
 - Utoopack 对 framework-managed component entry 和多 server render entry 的 build facts 支持。
 - 生产部署插件迁移到消费 `BuildOutput`，不再读取 v1 client/server manifests。
-- 为 `apps`、组件页面、SSR/PPR、remote、per-document HTML transform 补充示例和 e2e。
 
 ## 计划中
 

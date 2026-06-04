@@ -129,13 +129,13 @@ export default defineConfig({ server: false });
 - `"use server"` 模块会成为构建错误；
 - dev 模式不会配置框架服务端代理。
 
-通过 `server.basePath` 配置框架服务端边界：
+框架服务端边界默认是 `/__evjs`。只有部署平台要求固定路径时，才需要配置
+`server.basePath`：
 
 ```ts
 export default defineConfig({
   server: {
     entry: "./src/server.ts",
-    basePath: "/_framework",
     dev: {
       port: 3001,
       https: false,
@@ -147,9 +147,9 @@ export default defineConfig({
 派生路径：
 
 ```txt
-/_framework/fn       服务端函数
-/_framework/ppr      存在 PPR 页面时的 region endpoint
-/_framework/rsc      启用 server.rsc 时的 Flight endpoint
+/__evjs/fn       服务端函数
+/__evjs/ppr      存在 PPR 页面时的 region endpoint
+/__evjs/rsc      启用 server.rsc 时的 Flight endpoint
 ```
 
 只有当浏览器需要调用另一个 origin 上的框架服务端时，才配置 `transport.baseUrl`：

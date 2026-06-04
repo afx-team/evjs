@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { expect, type Page } from "@playwright/test";
+import { expect, type Page, type Route } from "@playwright/test";
 import { buildExample, createExampleTest } from "../fixtures";
 
 const exampleDir = path.resolve(
@@ -24,15 +24,14 @@ test.describe("full-features", () => {
     await buildExample(remoteExampleDir, "webpack", false);
   });
 
-  test("runs explicit app entry with server function and REST route", async ({
+  test("runs the merchant operations console with server function and REST route", async ({
     page,
     baseURL,
   }) => {
     const rpcResponsePromise = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return (
-        url.pathname === "/framework/fn" &&
-        response.request().method() === "POST"
+        url.pathname === "/__evjs/fn" && response.request().method() === "POST"
       );
     });
 
@@ -40,16 +39,23 @@ test.describe("full-features", () => {
 
     const rpcResponse = await rpcResponsePromise;
     expect(rpcResponse.status()).toBe(200);
+    await expectRenderMode(page, "csr", "CSR App");
 
     await expect(
-      page.getByRole("heading", { name: "ev Full Features Example" }),
+      page.getByRole("heading", { name: "Acme Pay Control Center" }),
     ).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByTestId("operators-count")).toHaveText(
-      "Operators: 3",
-    );
+    await expect(page.getByTestId("gmv")).toHaveText("$262.5k");
+    await expect(page.getByTestId("approval-rate")).toHaveText("97.8%");
+    await expect(page.getByTestId("risk-queue")).toHaveText("2 active");
     await expect(page.getByText("Ada Lovelace")).toBeVisible();
+    await expect(
+      page.getByText("Atlas Foods payout requires manual review"),
+    ).toBeVisible();
     await expect(page.getByTestId("health-route")).toHaveText(
-      "full-features-health",
+      "merchant-ops-health",
+    );
+    await expect(page.getByTestId("risk-service")).toHaveText(
+      "Risk service: watch",
     );
   });
 
@@ -57,11 +63,19 @@ test.describe("full-features", () => {
     page,
     baseURL,
   }) => {
-    await page.goto(`${baseURL}/support.html`);
+    await page.goto(`${baseURL}/support`);
+    await expectRenderMode(page, "csr", "CSR");
+    await expectBackLink(page);
 
     await expect(
-      page.getByRole("heading", { name: "Support Component Page" }),
+      page.getByRole("heading", { name: "Support Queue" }),
     ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("Chargeback evidence requested")).toBeVisible();
+    await expect(page.getByText("Northstar Outdoor")).toBeVisible();
+    await expect(page.getByRole("cell", { name: "urgent" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Local triage workspace" }),
+    ).toBeVisible();
     await expect(page.locator("html")).toHaveAttribute(
       "data-full-features-html",
       "support",
@@ -70,74 +84,127 @@ test.describe("full-features", () => {
 
   test("renders configured SSR page path through the framework server", async ({
     page,
-    apiURL,
+    baseURL,
   }) => {
-    await page.goto(`${apiURL}/dashboard`);
+    await page.goto(`${baseURL}/dashboard`);
+    await expectRenderMode(page, "ssr", "SSR");
+    await expectBackLink(page);
 
     await expect(
-      page.getByRole("heading", { name: "SSR Dashboard" }),
+      page.getByRole("heading", { name: "Operations Dashboard" }),
     ).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByTestId("dashboard-page")).toHaveText(
-      "Page: dashboard",
-    );
-    await expect(page.getByTestId("dashboard-route")).toHaveText(
-      "Route: /dashboard",
-    );
+    await expect(page.getByTestId("dashboard-page")).toHaveText("dashboard");
+    await expect(page.getByTestId("dashboard-route")).toHaveText("/dashboard");
+    await expect(page.getByTestId("dashboard-gmv")).toHaveText("$262.5k");
+    await expect(page.getByText("Regional payment health")).toBeVisible();
+    await expect(page.getByText("Payment review board")).toBeVisible();
+    await expect(
+      page.getByText("Blue Harbor velocity spike exceeded rule baseline"),
+    ).toBeVisible();
+    await page.getByTestId("page-back-link").click();
+    await expect(page).toHaveURL(`${baseURL}/`);
+    await expect(
+      page.getByRole("heading", { name: "Acme Pay Control Center" }),
+    ).toBeVisible();
   });
 
   test("serves PPR shell and dynamic region through the framework server", async ({
     page,
     request,
+    baseURL,
     apiURL,
   }) => {
-    await page.goto(`${apiURL}/campaign`);
+    await page.goto(`${baseURL}/campaign`);
+    await expectRenderMode(page, "ppr", "PPR");
+    await expectBackLink(page);
 
     await expect(
-      page.getByRole("heading", { name: "PPR Campaign" }),
+      page.getByRole("heading", { name: "Spring Launch Campaign" }),
     ).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByTestId("campaign-page")).toHaveText(
-      "Page: campaign",
+    await expect(page.getByTestId("campaign-page")).toHaveText("campaign");
+    await expect(page.getByText("Static campaign shell")).toBeVisible();
+    await expect(page.getByText("Checkout conversion")).toBeVisible();
+    await expect(page.getByText("18.4%")).toBeVisible();
+    await expect(page.getByTestId("offer-placeholder")).toContainText(
+      "Offer region placeholder",
     );
 
     const regionResponse = await request.get(
-      `${apiURL}/framework/ppr/campaign/offer`,
+      `${apiURL}/__evjs/ppr/campaign/offer`,
     );
     expect(regionResponse.status()).toBe(200);
     expect(regionResponse.headers()["cache-control"]).toBe("s-maxage=30");
     expect(regionResponse.headers()["x-evjs-cache"]).toBe("MISS");
-    await expect(regionResponse.text()).resolves.toContain("Offer Region");
+    const regionHtml = await regionResponse.text();
+    expect(regionHtml).toContain("Offer Region");
+    expect(regionHtml).toContain("Dynamic allocation");
+    expect(regionHtml).toContain("Spring launch checkout credit");
+    expect(regionHtml).toContain("Conversion:");
+    expect(regionHtml).toContain("18.4%");
   });
 
   test("serves an RSC page and framework RSC endpoint through the server runtime", async ({
     page,
     request,
+    baseURL,
     apiURL,
   }) => {
-    await page.goto(`${apiURL}/insights`);
+    const htmlResponse = await request.get(`${apiURL}/insights`);
+    expect(htmlResponse.status()).toBe(200);
+    const html = await htmlResponse.text();
+    expect(html).toContain("__EVJS_RSC_BOOTSTRAP__");
+    expect(html).toContain('<script defer src="/evjs-rsc-client');
+    expect(html).not.toContain('<script type="module"');
+    expect(html).not.toContain("src/pages/Insights.tsx");
+    expect(html).not.toContain("insights-rsc.js");
+
+    const runtimeFlightResponsePromise = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === "/__evjs/rsc" &&
+        url.searchParams.get("page") === "insights"
+      );
+    });
+
+    await page.goto(`${baseURL}/insights`);
+    const runtimeFlightResponse = await runtimeFlightResponsePromise;
+    expect(runtimeFlightResponse.status()).toBe(200);
+    expect(runtimeFlightResponse.headers()["content-type"]).toContain(
+      "text/x-component",
+    );
+    await expectRenderMode(page, "rsc", "RSC");
+    await expectBackLink(page);
 
     await expect(
-      page.getByRole("heading", { name: "RSC Insights" }),
+      page.getByRole("heading", { name: "Profitability Insights" }),
     ).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByTestId("insights-page")).toHaveText(
-      "Page: insights",
-    );
     await expect(page.getByTestId("insights-route")).toHaveText(
       "Route: /insights",
     );
     await expect(page.getByTestId("insights-badge")).toHaveText(
-      "Client reference badge",
+      "Client risk model hydrated",
     );
+    await expect(page.getByTestId("insights-recommendation")).toContainText(
+      "Atlas Foods",
+    );
+    await expect(
+      page.getByRole("heading", { name: "Server-generated recommendations" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Policy lanes evaluated on the server"),
+    ).toBeVisible();
 
     const flightResponse = await request.get(
-      `${apiURL}/framework/rsc?page=insights`,
+      `${apiURL}/__evjs/rsc?page=insights`,
     );
     expect(flightResponse.status()).toBe(200);
     expect(flightResponse.headers()["content-type"]).toContain(
       "text/x-component",
     );
     const flightText = await flightResponse.text();
-    expect(flightText).toContain("RSC Insights");
+    expect(flightText).toContain("Profitability Insights");
     expect(flightText).toContain("insights");
+    expect(flightText).toContain("Atlas Foods");
   });
 
   test("mounts a manifest-driven remote app from the shell runtime", async ({
@@ -146,16 +213,27 @@ test.describe("full-features", () => {
   }) => {
     await routeRemoteAssets(page, remoteExampleDir);
     await page.goto(`${baseURL}/remote.html`);
+    await expectRenderMode(page, "csr", "CSR + Remote");
+    await expectBackLink(page);
 
     await expect(
-      page.getByRole("heading", { name: "Remote Host" }),
+      page.getByRole("heading", { name: "CRM Workspace Host" }),
     ).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("remote-status")).toHaveText(
       "Remote: mounted",
     );
     await expect(
-      page.getByRole("heading", { name: "CRM Remote" }),
+      page.getByRole("heading", { name: "Northstar Outdoor" }),
     ).toBeVisible();
+    await expect(page.getByTestId("remote-health")).toHaveText(
+      "Health score: 92 / expansion-ready",
+    );
+    await expect(page.getByTestId("remote-next-action")).toHaveText(
+      "Next action: schedule retention offer review",
+    );
+    await expect(page.getByTestId("remote-owner")).toHaveText(
+      "Success owner: Grace Hopper",
+    );
     await expect(page.getByTestId("remote-entry")).toHaveText(
       "Entry: customers",
     );
@@ -197,6 +275,13 @@ test.describe("full-features", () => {
     expect(manifest.pages.support).toEqual(
       expect.objectContaining({
         render: "csr",
+        rendering: {
+          mode: "csr",
+          component: "client",
+          html: "client",
+          streaming: false,
+          hydrate: "load",
+        },
         component: "./src/pages/Support.tsx",
         module: expect.objectContaining({ type: "react-component" }),
       }),
@@ -206,6 +291,13 @@ test.describe("full-features", () => {
         path: "/dashboard",
         component: "./src/pages/Dashboard.tsx",
         render: "ssr",
+        rendering: {
+          mode: "ssr",
+          component: "server",
+          html: "server",
+          streaming: false,
+          hydrate: "load",
+        },
         routeId: "dashboard",
       }),
     );
@@ -214,6 +306,13 @@ test.describe("full-features", () => {
         path: "/insights",
         component: "./src/pages/Insights.tsx",
         render: "rsc",
+        rendering: {
+          mode: "rsc",
+          component: "rsc",
+          html: "server",
+          streaming: true,
+          hydrate: "load",
+        },
         routeId: "insights",
       }),
     );
@@ -221,12 +320,25 @@ test.describe("full-features", () => {
       expect.objectContaining({
         component: "./src/pages/RemoteHost.tsx",
         render: "csr",
+        rendering: expect.objectContaining({
+          mode: "csr",
+          component: "client",
+          html: "client",
+        }),
       }),
     );
     expect(manifest.pages.campaign).toEqual(
       expect.objectContaining({
         path: "/campaign",
         render: "ppr",
+        rendering: {
+          mode: "ppr",
+          component: "server",
+          html: "partial",
+          prerender: "partial",
+          streaming: true,
+          hydrate: "visible",
+        },
       }),
     );
     expect(manifest.pages.campaign.ppr.regions.offer).toEqual(
@@ -261,7 +373,7 @@ test.describe("full-features", () => {
       expect.arrayContaining([
         expect.objectContaining({
           module: "src/api/operators.server.ts",
-          exportName: "getMerchantOperators",
+          exportName: "getMerchantOperationsSnapshot",
         }),
       ]),
     );
@@ -275,10 +387,10 @@ test.describe("full-features", () => {
     );
     expect(manifest.runtime.server).toEqual(
       expect.objectContaining({
-        basePath: "/framework",
-        fn: "/framework/fn",
-        ppr: "/framework/ppr",
-        rsc: "/framework/rsc",
+        basePath: "/__evjs",
+        fn: "/__evjs/fn",
+        ppr: "/__evjs/ppr",
+        rsc: "/__evjs/rsc",
       }),
     );
     expect(manifest.rsc.pages.insights).toEqual(
@@ -317,7 +429,7 @@ test.describe("full-features", () => {
       pages: ["support", "campaign", "dashboard", "insights", "remote"],
       rscPages: ["insights"],
       remotes: ["crm"],
-      serverBasePath: "/framework",
+      serverBasePath: "/__evjs",
     });
 
     const deployArtifactPath = path.join(
@@ -332,11 +444,11 @@ test.describe("full-features", () => {
       expect.objectContaining({
         platform: "full-features-example",
         server: expect.objectContaining({
-          basePath: "/framework",
-          rsc: "/framework/rsc",
+          basePath: "/__evjs",
+          rsc: "/__evjs/rsc",
         }),
         rsc: expect.objectContaining({
-          endpoint: "/framework/rsc",
+          endpoint: "/__evjs/rsc",
           pages: ["insights"],
         }),
         remotes: expect.objectContaining({
@@ -358,8 +470,8 @@ test.describe("full-features", () => {
       expect.objectContaining({
         platform: "node",
         server: expect.objectContaining({
-          basePath: "/framework",
-          rsc: "/framework/rsc",
+          basePath: "/__evjs",
+          rsc: "/__evjs/rsc",
         }),
       }),
     );
@@ -392,16 +504,36 @@ test.describe("full-features", () => {
       path.join(exampleDir, "dist", "worker.mjs"),
       "utf-8",
     );
-    expect(edgeWorker).toContain('const frameworkBasePath = "/framework";');
+    expect(edgeWorker).toContain('const frameworkBasePath = "/__evjs";');
     expect(edgeWorker).toContain('const assetsBinding = "ASSETS";');
   });
 });
 
+async function expectRenderMode(
+  page: Page,
+  mode: "csr" | "ssr" | "ppr" | "rsc",
+  label: string,
+): Promise<void> {
+  const renderModePage = page.getByTestId("render-mode-page");
+  await expect(renderModePage).toHaveAttribute("data-render-mode", mode);
+  await expect(page.getByTestId("render-mode-chip")).toHaveText(label);
+  await expect(renderModePage).toHaveCSS("background-image", /linear-gradient/);
+}
+
+async function expectBackLink(page: Page): Promise<void> {
+  const backLink = page.getByTestId("page-back-link");
+  await expect(backLink).toBeVisible();
+  await expect(backLink).toHaveText("Back to control center");
+  await expect(backLink).toHaveAttribute("href", "/");
+}
+
 async function routeRemoteAssets(page: Page, remoteDir: string): Promise<void> {
   const distDir = path.join(remoteDir, "dist");
-  await page.route("https://assets.example.com/crm/**", async (route) => {
+  const fulfillRemoteAsset = async (route: Route) => {
     const requestUrl = new URL(route.request().url());
-    const assetName = requestUrl.pathname.replace(/^\/crm\/?/, "");
+    const assetName = requestUrl.pathname
+      .replace(/^\/crm\/?/, "")
+      .replace(/^\/+/, "");
     const filePath = path.join(distDir, assetName || "evjs-remote.json");
 
     if (!fs.existsSync(filePath)) {
@@ -417,7 +549,10 @@ async function routeRemoteAssets(page: Page, remoteDir: string): Promise<void> {
       path: filePath,
       contentType: getRemoteContentType(filePath),
     });
-  });
+  };
+
+  await page.route("https://assets.example.com/crm/**", fulfillRemoteAsset);
+  await page.route("http://localhost:3002/**", fulfillRemoteAsset);
 }
 
 function getRemoteContentType(filePath: string): string {

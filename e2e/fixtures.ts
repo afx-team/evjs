@@ -52,10 +52,15 @@ function getContentType(ext: string): string {
  */
 function createStaticServer(
   distDir: string,
-  options?: { apiPort?: number; proxyPrefixes?: string[] },
+  options?: {
+    apiPort?: number;
+    proxyPrefixes?: string[];
+    pathRewrites?: Record<string, string>;
+  },
 ): http.Server {
   const indexHtml = fs.readFileSync(path.join(distDir, "index.html"), "utf-8");
   const proxyPrefixes = options?.proxyPrefixes ?? [];
+  const pathRewrites = options?.pathRewrites ?? {};
 
   return http.createServer((req, res) => {
     const url = req.url || "/";
@@ -90,6 +95,17 @@ function createStaticServer(
       return;
     }
 
+    const rewrite = pathRewrites[pathname];
+    if (rewrite) {
+      const rewrittenPath = path.join(distDir, rewrite);
+      if (fs.existsSync(rewrittenPath)) {
+        const ext = path.extname(rewrittenPath);
+        res.writeHead(200, { "Content-Type": getContentType(ext) });
+        fs.createReadStream(rewrittenPath).pipe(res);
+        return;
+      }
+    }
+
     // Serve static files
     const filePath = path.join(distDir, url);
     if (fs.existsSync(filePath)) {
@@ -122,6 +138,7 @@ function pathMatchesPrefix(pathname: string, prefix: string): boolean {
 
 function getServerProxyPrefixes(manifest: {
   runtime?: { server?: { basePath?: string; fn?: string; rsc?: string } };
+  pages?: Record<string, { path?: string; render?: string }>;
 }): string[] {
   return [
     "/api",
@@ -129,7 +146,20 @@ function getServerProxyPrefixes(manifest: {
     manifest.runtime?.server?.basePath,
     manifest.runtime?.server?.fn,
     manifest.runtime?.server?.rsc,
+    ...Object.values(manifest.pages ?? {})
+      .filter((page) => page.path && page.render !== "csr")
+      .map((page) => page.path),
   ].filter((value): value is string => Boolean(value));
+}
+
+function getClientPathRewrites(manifest: {
+  pages?: Record<string, { path?: string; render?: string }>;
+}): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(manifest.pages ?? {}).flatMap(([pageId, page]) =>
+      page.path && page.render === "csr" ? [[page.path, `${pageId}.html`]] : [],
+    ),
+  );
 }
 
 /**
@@ -315,6 +345,7 @@ export function createExampleTest(exampleName: string) {
         const staticServer = createStaticServer(distDir, {
           apiPort,
           proxyPrefixes: getServerProxyPrefixes(manifest),
+          pathRewrites: getClientPathRewrites(manifest),
         });
 
         await new Promise<void>((resolve) => {

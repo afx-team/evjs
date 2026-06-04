@@ -22,6 +22,13 @@ const manifest: BuildOutput = {
     home: {
       assets: { js: ["home.js"], css: [] },
       render: "csr",
+      rendering: {
+        mode: "csr",
+        component: "client",
+        html: "client",
+        streaming: false,
+        hydrate: "load",
+      },
       module: {
         type: "lifecycle",
         href: "/home.js",

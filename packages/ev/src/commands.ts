@@ -41,6 +41,16 @@ const logger = getLogger(["evjs", "ev"]);
 
 type ApiProcess = ReturnType<typeof execa>;
 const API_READY_MARKER = "__EVJS_API_READY__";
+const DEV_PAGE_RENDER_PROXY_HEADER = "x-evjs-dev-page-render";
+const DEV_DIST_DIR = "dist";
+const DEV_DIST_LOCK_FILE = ".evjs-dev.lock";
+
+interface DevDistLock {
+  command: "dev";
+  distDir: string;
+  pid: number;
+  startedAt: string;
+}
 
 export interface DevOptions<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
   cwd?: string;
@@ -671,17 +681,115 @@ function normalizeAssetName(name: string | undefined): string | undefined {
   return name?.replace(/^\.\//, "");
 }
 
-function readServerEntryFromStats(cwd: string): string | undefined {
-  const statsPath = path.resolve(cwd, "dist/server/stats.json");
+function getDevDistLockPath(cwd: string, distDir: string): string {
+  return path.resolve(cwd, distDir, DEV_DIST_LOCK_FILE);
+}
+
+function isProcessAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+async function readDevDistLock(
+  cwd: string,
+  distDir: string,
+): Promise<DevDistLock | undefined> {
+  const lockPath = getDevDistLockPath(cwd, distDir);
+  try {
+    return JSON.parse(
+      await fs.promises.readFile(lockPath, "utf-8"),
+    ) as DevDistLock;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    logger.warn`Failed to read dev dist lock: ${err}`;
+    return undefined;
+  }
+}
+
+async function assertNoActiveDevDistLock(
+  cwd: string,
+  distDir: string,
+): Promise<void> {
+  const lock = await readDevDistLock(cwd, distDir);
+  if (!lock) return;
+
+  if (isProcessAlive(lock.pid)) {
+    throw new Error(
+      `[evjs] Cannot write to "${distDir}" because ev dev is using it in process ${lock.pid}. Stop ev dev first or run build in a separate workspace.`,
+    );
+  }
+
+  await fs.promises.rm(getDevDistLockPath(cwd, distDir), { force: true });
+}
+
+async function writeDevDistLock(
+  cwd: string,
+  distDir: string,
+): Promise<() => Promise<void>> {
+  const lockPath = getDevDistLockPath(cwd, distDir);
+  await fs.promises.mkdir(path.dirname(lockPath), { recursive: true });
+  await fs.promises.writeFile(
+    lockPath,
+    JSON.stringify(
+      {
+        command: "dev",
+        distDir,
+        pid: process.pid,
+        startedAt: new Date().toISOString(),
+      } satisfies DevDistLock,
+      null,
+      2,
+    ),
+  );
+
+  return async () => {
+    const lock = await readDevDistLock(cwd, distDir);
+    if (lock?.pid === process.pid) {
+      await fs.promises.rm(lockPath, { force: true });
+    }
+  };
+}
+
+function readServerEntryFromManifest(
+  cwd: string,
+  distDir: string,
+): string | undefined {
+  const manifestPath = path.resolve(cwd, distDir, "manifest.json");
+  if (!fs.existsSync(manifestPath)) return undefined;
+
+  try {
+    const manifest = JSON.parse(
+      fs.readFileSync(manifestPath, "utf-8"),
+    ) as BuildOutput;
+    return normalizeAssetName(manifest.server?.entry);
+  } catch (err) {
+    logger.warn`Failed to parse manifest.json for server entry: ${err}`;
+    return undefined;
+  }
+}
+
+function readServerEntryFromStats(
+  cwd: string,
+  distDir: string,
+): string | undefined {
+  const statsPath = path.resolve(cwd, distDir, "server/stats.json");
   if (!fs.existsSync(statsPath)) return undefined;
 
   try {
     const stats = JSON.parse(fs.readFileSync(statsPath, "utf-8")) as {
       entrypoints?: Record<string, { assets?: Array<{ name?: string }> }>;
     };
-    const firstEntry = stats.entrypoints
-      ? Object.values(stats.entrypoints)[0]
-      : undefined;
+    const entrypoints = stats.entrypoints ?? {};
+    const entrypointValues = Object.values(entrypoints);
+    const firstEntry =
+      entrypoints.server ??
+      (entrypointValues.length === 1 ? entrypointValues[0] : undefined);
     const jsAsset = firstEntry?.assets?.find((asset) =>
       asset.name?.endsWith(".js"),
     );
@@ -692,13 +800,39 @@ function readServerEntryFromStats(cwd: string): string | undefined {
   }
 }
 
-async function findDevServerEntry(cwd: string): Promise<string | undefined> {
-  const entryFromStats = readServerEntryFromStats(cwd);
-  if (entryFromStats) return entryFromStats;
+function isExistingDevServerEntry(
+  cwd: string,
+  distDir: string,
+  entry: string,
+): boolean {
+  return fs.existsSync(path.resolve(cwd, distDir, "server", entry));
+}
 
-  const serverDir = path.resolve(cwd, "dist/server");
-  const files = await fs.promises.readdir(serverDir).catch(() => []);
-  return files.find((file) => file.endsWith(".js"));
+async function findDevServerEntry(
+  cwd: string,
+  distDir: string,
+): Promise<string | undefined> {
+  const entryFromManifest = readServerEntryFromManifest(cwd, distDir);
+  if (entryFromManifest) {
+    return isExistingDevServerEntry(cwd, distDir, entryFromManifest)
+      ? entryFromManifest
+      : undefined;
+  }
+
+  const entryFromStats = readServerEntryFromStats(cwd, distDir);
+  if (
+    entryFromStats &&
+    isExistingDevServerEntry(cwd, distDir, entryFromStats)
+  ) {
+    return entryFromStats;
+  }
+
+  const serverDir = path.resolve(cwd, distDir, "server");
+  const files: string[] = await fs.promises.readdir(serverDir).catch(() => []);
+  if (files.includes("server.js")) return "server.js";
+
+  const jsFiles = files.filter((file) => file.endsWith(".js"));
+  return jsFiles.length === 1 ? jsFiles[0] : undefined;
 }
 
 async function stopApiProcess(
@@ -822,12 +956,14 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
   await runAppGraphHooks(hooks, activeAnalysis.graph, pluginCtx);
   let activePlan = createBuildPlan(activeConfig, activeAnalysis.graph, {
     mode: "development",
+    distDir: DEV_DIST_DIR,
   });
   await runBuildPlanHooks(hooks, activePlan, activeAnalysis.graph, pluginCtx);
   let apiProcess: ApiProcess | null = null;
   let restartQueue: Promise<void> = Promise.resolve();
   let devPlanUpdateQueue: Promise<void> = Promise.resolve();
   let devController: BundlerDevController | undefined;
+  let releaseDevDistLock: (() => Promise<void>) | undefined;
   let stopWatchingDevDependencies = () => {};
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   const expectedApiExits = new WeakSet<ApiProcess>();
@@ -845,13 +981,15 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
     resolveShutdown?.();
   };
 
+  await assertNoActiveDevDistLock(cwd, activePlan.distDir);
+
   process.once("SIGINT", stopApiOnParentShutdown);
   process.once("SIGTERM", stopApiOnParentShutdown);
 
   const restartApiServer = async () => {
     if (!activeConfig.serverEnabled) return;
 
-    const serverEntry = await findDevServerEntry(cwd);
+    const serverEntry = await findDevServerEntry(cwd, activePlan.distDir);
     if (!serverEntry) return;
 
     if (apiProcess) {
@@ -870,9 +1008,10 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
       activeConfig.server?.dev?.port ?? CONFIG_DEFAULTS.serverPort;
     logger.info`Server bundle detected, starting API...`;
 
-    const bootstrapPath = path.resolve(cwd, "dist/server/_dev_start.cjs");
+    const devRootDir = path.resolve(cwd, activePlan.distDir);
+    const bootstrapPath = path.join(devRootDir, "_dev_start.cjs");
     try {
-      const serverBundlePath = path.resolve(cwd, "dist/server", serverEntry);
+      const serverBundlePath = path.join(devRootDir, "server", serverEntry);
 
       if (!fs.existsSync(path.dirname(bootstrapPath))) {
         fs.mkdirSync(path.dirname(bootstrapPath), { recursive: true });
@@ -884,9 +1023,10 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
           `const fs = require("node:fs");`,
           `const path = require("node:path");`,
           `const { pathToFileURL } = require("node:url");`,
-          `const manifestPath = ${JSON.stringify(path.resolve(cwd, "dist/manifest.json"))};`,
+          `const manifestPath = ${JSON.stringify(path.join(devRootDir, "manifest.json"))};`,
           `const manifest = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, "utf-8")) : undefined;`,
           `if (manifest) globalThis.__EVJS_MANIFEST__ = manifest;`,
+          `globalThis.__EVJS_DEV_PAGE_RENDER_PROXY_HEADER__ = ${JSON.stringify(DEV_PAGE_RENDER_PROXY_HEADER)};`,
           `const serverDir = path.dirname(${JSON.stringify(serverBundlePath)});`,
           `globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => { const mod = await import(pathToFileURL(path.resolve(serverDir, asset)).href); const nested = mod && typeof mod.default === "object" ? mod.default : undefined; return nested && ("default" in nested || "render" in nested) ? nested : mod; };`,
           `const serverModule = await import(${JSON.stringify(pathToFileURL(serverBundlePath).href)});`,
@@ -1032,6 +1172,7 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
       await runAppGraphHooks(hooks, nextAnalysis.graph, pluginCtx);
       const nextPlan = createBuildPlan(nextConfig, nextAnalysis.graph, {
         mode: "development",
+        distDir: DEV_DIST_DIR,
       });
       await runBuildPlanHooks(hooks, nextPlan, nextAnalysis.graph, pluginCtx);
       const update = diffBuildPlan(activePlan, nextPlan, reason);
@@ -1113,12 +1254,14 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
           onServerBundleReady: handleServerBundleReady,
         },
       })) ?? undefined;
+    releaseDevDistLock = await writeDevDistLock(cwd, activePlan.distDir);
     refreshDevDependencyWatchers();
     await waitForShutdown;
   } finally {
     if (debounceTimer) clearTimeout(debounceTimer);
     stopWatchingDevDependencies();
     await devController?.close?.();
+    await releaseDevDistLock?.();
     process.off("SIGINT", stopApiOnParentShutdown);
     process.off("SIGTERM", stopApiOnParentShutdown);
     await runDisposeHooks(hooks, pluginCtx);
@@ -1168,6 +1311,7 @@ export async function build<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
     mode: "production",
   });
   await runBuildPlanHooks(hooks, plan, analysis.graph, pluginCtx);
+  await assertNoActiveDevDistLock(cwd, plan.distDir);
   let buildOutput: BuildOutput | undefined;
   try {
     const bundlerFacts = await bundler.build({

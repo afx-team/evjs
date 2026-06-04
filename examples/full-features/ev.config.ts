@@ -70,12 +70,13 @@ export default defineConfig({
 
   server: {
     entry: "./src/server.ts",
-    basePath: "/framework",
   },
 
   remotes: {
     crm: {
-      manifest: "https://assets.example.com/crm/evjs-remote.json",
+      manifest:
+        process.env.FULL_FEATURES_REMOTE_MANIFEST ??
+        "https://assets.example.com/crm/evjs-remote.json",
       activeWhen: ["/crm/*"],
     },
   },

@@ -4,6 +4,12 @@ export const healthRoute = createRoute("/api/full-features/health", {
   GET: async () =>
     Response.json({
       ok: true,
-      route: "full-features-health",
+      route: "merchant-ops-health",
+      services: {
+        payments: "green",
+        risk: "watch",
+        settlements: "green",
+      },
+      checkedAt: "2026-06-03T09:31:00.000Z",
     }),
 });

@@ -129,13 +129,13 @@ When `server: false`:
 - `"use server"` modules are build errors;
 - no framework server proxy is configured in dev.
 
-Configure the framework server boundary with `server.basePath`:
+The framework server boundary defaults to `/__evjs`. Configure
+`server.basePath` only when a deployment platform requires a different path:
 
 ```ts
 export default defineConfig({
   server: {
     entry: "./src/server.ts",
-    basePath: "/_framework",
     dev: {
       port: 3001,
       https: false,
@@ -147,9 +147,9 @@ export default defineConfig({
 Derived runtime paths:
 
 ```txt
-/_framework/fn       server functions
-/_framework/ppr      PPR region endpoint when PPR pages exist
-/_framework/rsc      RSC Flight endpoint when server.rsc is enabled
+/__evjs/fn       server functions
+/__evjs/ppr      PPR region endpoint when PPR pages exist
+/__evjs/rsc      RSC Flight endpoint when server.rsc is enabled
 ```
 
 Use `transport.baseUrl` only when the browser calls a framework server on another origin:

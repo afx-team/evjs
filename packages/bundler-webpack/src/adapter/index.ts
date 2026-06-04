@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import type { ClientRequest } from "node:http";
 import path from "node:path";
 import type {
   AppGraph,
@@ -30,6 +31,7 @@ import { createWebpackConfigs, type WebpackConfig } from "./create-config.js";
 import { getOutputPaths } from "./output-paths.js";
 
 const logger = getLogger(["evjs", "bundler-webpack"]);
+const DEV_PAGE_RENDER_PROXY_HEADER = "x-evjs-dev-page-render";
 
 interface WebpackDevServerInstance {
   start(): Promise<void>;
@@ -40,6 +42,10 @@ interface WebpackWatching {
   close(callback: (error: Error | null) => void): void;
 }
 
+type WebpackDevProxyRule = DevProxyRule & {
+  frameworkPageRender?: boolean;
+};
+
 export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
   name: "webpack",
 
@@ -47,7 +53,7 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
     ctx: BundlerBuildContext<WebpackConfig>,
   ): Promise<BundlerBuildFacts> {
     const { config, cwd, graph, hooks, plan } = ctx;
-    const outputPaths = getOutputPaths(cwd, config.serverEnabled);
+    const outputPaths = getOutputPaths(cwd, config.serverEnabled, plan.distDir);
 
     logger.info`Building for production with webpack...`;
 
@@ -114,7 +120,11 @@ class WebpackDevSession implements BundlerDevController {
 
   async start(): Promise<void> {
     const generation = ++this.startGeneration;
-    const outputPaths = getOutputPaths(this.ctx.cwd, this.config.serverEnabled);
+    const outputPaths = getOutputPaths(
+      this.ctx.cwd,
+      this.config.serverEnabled,
+      this.plan.distDir,
+    );
 
     logger.info`Starting development server with webpack...`;
 
@@ -150,7 +160,13 @@ class WebpackDevSession implements BundlerDevController {
         });
       });
       this.clientServer = new WebpackDevServer(
-        createDevServerOptions(this.config, this.plan, outputPaths.clientDir),
+        createDevServerOptions(
+          this.config,
+          this.plan,
+          this.graph,
+          outputPaths.rootDir,
+          outputPaths.clientDir,
+        ),
         compiler,
       );
       await this.clientServer.start();
@@ -199,6 +215,7 @@ class WebpackDevSession implements BundlerDevController {
       const outputPaths = getOutputPaths(
         this.ctx.cwd,
         this.config.serverEnabled,
+        this.plan.distDir,
       );
       if (isHtmlOnlyUpdate(update)) {
         await this.generateDevArtifacts();
@@ -308,7 +325,11 @@ class WebpackDevSession implements BundlerDevController {
     }
 
     const split = splitStatsByName(stats);
-    const outputPaths = getOutputPaths(this.ctx.cwd, this.config.serverEnabled);
+    const outputPaths = getOutputPaths(
+      this.ctx.cwd,
+      this.config.serverEnabled,
+      this.plan.distDir,
+    );
 
     if (kind === "client") {
       this.latestClientStats = split.clientStats
@@ -447,6 +468,8 @@ function createWebpackCompiler(
 function createDevServerOptions(
   config: ResolvedConfig<WebpackConfig>,
   plan: BuildPlan,
+  graph: AppGraph,
+  rootDir: string,
   clientDir: string,
 ): ConstructorParameters<typeof WebpackDevServer>[0] {
   return {
@@ -465,8 +488,28 @@ function createDevServerOptions(
       writeToDisk: true,
       stats: "errors-warnings",
     },
-    historyApiFallback: createHistoryFallback(plan),
-    proxy: config.dev.proxy.map(toWebpackDevProxy),
+    setupMiddlewares(middlewares, devServer) {
+      devServer.app?.use((request, response, next) => {
+        if (request.url?.split("?")[0] !== "/manifest.json") {
+          next();
+          return;
+        }
+
+        const manifestPath = path.join(rootDir, "manifest.json");
+        if (!fs.existsSync(manifestPath)) {
+          response.statusCode = 404;
+          response.setHeader("Content-Type", "text/plain; charset=utf-8");
+          response.end("manifest not ready");
+          return;
+        }
+        response.statusCode = 200;
+        response.setHeader("Content-Type", "application/json; charset=utf-8");
+        response.end(fs.readFileSync(manifestPath));
+      });
+      return middlewares;
+    },
+    historyApiFallback: createHistoryFallback(plan, graph),
+    proxy: createDevProxyRules(config, graph).map(toWebpackDevProxy),
     client: {
       overlay: {
         errors: true,
@@ -474,6 +517,99 @@ function createDevServerOptions(
       },
     },
   };
+}
+
+function createDevProxyRules(
+  config: ResolvedConfig<WebpackConfig>,
+  graph: AppGraph,
+): WebpackDevProxyRule[] {
+  if (!config.serverEnabled) return config.dev.proxy;
+
+  const serverTarget = `${config.server.dev.https ? "https" : "http"}://localhost:${config.server.dev.port}`;
+  const rules = [...config.dev.proxy];
+  const configuredContexts = new Set(rules.flatMap((rule) => rule.context));
+
+  const runtimeContexts = createFrameworkRuntimeProxyContexts(
+    config,
+    graph,
+  ).filter((context) => !configuredContexts.has(context));
+  if (runtimeContexts.length > 0) {
+    rules.push({
+      context: runtimeContexts,
+      target: serverTarget,
+      changeOrigin: true,
+      secure: false,
+    });
+    for (const context of runtimeContexts) {
+      configuredContexts.add(context);
+    }
+  }
+
+  const explicitServerRouteContexts = [
+    ...graph.serverRoutes.map((route) => route.path),
+    ...Object.values(graph.pages)
+      .filter((page) => page.path && page.render !== "csr")
+      .map((page) => page.path as string),
+  ]
+    .map(toDevProxyContext)
+    .filter((route): route is string => Boolean(route));
+  const contexts = explicitServerRouteContexts.filter(
+    (context) => !configuredContexts.has(context),
+  );
+  if (contexts.length === 0) return rules;
+
+  return [
+    ...rules,
+    {
+      context: contexts,
+      target: serverTarget,
+      changeOrigin: true,
+      secure: false,
+      frameworkPageRender: true,
+    },
+  ];
+}
+
+function createFrameworkRuntimeProxyContexts(
+  config: ResolvedConfig<WebpackConfig>,
+  graph: AppGraph,
+): string[] {
+  const contexts: string[] = [];
+
+  if (Object.values(graph.pages).some((page) => page.render === "ppr")) {
+    contexts.push(joinUrlPath(config.server.basePath, "ppr"));
+  }
+
+  return contexts
+    .map(toDevProxyContext)
+    .filter((context): context is string => Boolean(context));
+}
+
+function joinUrlPath(...parts: string[]): string {
+  return `/${parts
+    .flatMap((part) => part.split("/"))
+    .filter(Boolean)
+    .join("/")}`;
+}
+
+function toDevProxyContext(routePath: string): string | undefined {
+  const segments = routePath.split("/").filter(Boolean);
+  const staticSegments: string[] = [];
+
+  for (const segment of segments) {
+    if (
+      segment === "*" ||
+      segment.startsWith(":") ||
+      segment.startsWith("$") ||
+      segment.includes("*")
+    ) {
+      break;
+    }
+    staticSegments.push(segment);
+  }
+
+  if (staticSegments.length === 0) return undefined;
+  return `/${staticSegments.join("/")}`;
 }
 
 function createDevServerTransport(
@@ -497,30 +633,89 @@ function readHttpsValue(value: string): string | Buffer {
 
 function createHistoryFallback(
   plan: BuildPlan,
+  graph: AppGraph,
 ): ConstructorParameters<typeof WebpackDevServer>[0]["historyApiFallback"] {
   const appHtml = plan.html.find((html) => html.owner.appId)?.fileName;
   if (!appHtml) return false;
 
+  const htmlByPageId = new Map(
+    plan.html
+      .filter((html) => html.owner.pageId)
+      .map((html) => [html.owner.pageId as string, html.fileName]),
+  );
+  const pagePathRewrites = Object.values(graph.pages)
+    .filter((page) => page.render === "csr" && page.path)
+    .flatMap((page) => {
+      const fileName = htmlByPageId.get(page.id);
+      return fileName
+        ? [
+            {
+              from: routePathToRegExp(page.path as string),
+              to: `/${fileName}`,
+            },
+          ]
+        : [];
+    });
+
   return {
     index: `/${appHtml}`,
     disableDotRule: true,
-    rewrites: plan.html.map((html) => ({
-      from: new RegExp(`^/${escapeRegExp(html.fileName)}$`),
-      to: `/${html.fileName}`,
-    })),
+    rewrites: [
+      ...plan.html.map((html) => ({
+        from: new RegExp(`^/${escapeRegExp(html.fileName)}$`),
+        to: `/${html.fileName}`,
+      })),
+      ...pagePathRewrites,
+    ],
   };
+}
+
+function routePathToRegExp(routePath: string): RegExp {
+  const normalized = normalizeRoutePath(routePath);
+  if (normalized === "/") return /^\/?$/;
+
+  const expression = normalized
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => {
+      if (
+        segment === "*" ||
+        segment.startsWith(":") ||
+        segment.startsWith("$")
+      ) {
+        return "[^/]+";
+      }
+      if (segment.endsWith("*")) {
+        return `${escapeRegExp(segment.slice(0, -1))}.*`;
+      }
+      return escapeRegExp(segment);
+    })
+    .join("/");
+
+  return new RegExp(`^/${expression}/?$`);
+}
+
+function normalizeRoutePath(routePath: string): string {
+  if (!routePath.startsWith("/")) return normalizeRoutePath(`/${routePath}`);
+  if (routePath.length === 1) return routePath;
+  return routePath.replace(/\/+$/, "");
 }
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function toWebpackDevProxy(rule: DevProxyRule) {
+function toWebpackDevProxy(rule: WebpackDevProxyRule) {
   return {
     context: rule.context,
     target: rule.target,
     changeOrigin: rule.changeOrigin,
     secure: rule.secure,
+    onProxyReq(proxyReq: ClientRequest) {
+      if (rule.frameworkPageRender) {
+        proxyReq.setHeader(DEV_PAGE_RENDER_PROXY_HEADER, "1");
+      }
+    },
   };
 }
 
