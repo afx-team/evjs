@@ -664,7 +664,8 @@ function createHistoryFallback(
 
   return {
     index: `/${appHtml}`,
-    disableDotRule: true,
+    // Keep the default dot rule so stale HMR chunks and asset URLs 404
+    // instead of being rewritten to application HTML.
     rewrites: [
       ...plan.html.map((html) => ({
         from: new RegExp(`^/${escapeRegExp(html.fileName)}$`),

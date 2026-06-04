@@ -203,6 +203,7 @@ function createWebpackConfig(options: {
     devtool: isProduction ? false : "source-map",
     experiments: {
       futureDefaults: true,
+      css: false,
     },
     resolve: {
       extensions: [".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs", ".json"],

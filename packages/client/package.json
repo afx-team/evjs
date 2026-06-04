@@ -36,6 +36,11 @@
       "types": "./esm/index.d.ts",
       "import": "./esm/index.js",
       "default": "./esm/index.js"
+    },
+    "./transport": {
+      "types": "./esm/transport.d.ts",
+      "import": "./esm/transport.js",
+      "default": "./esm/transport.js"
     }
   },
   "scripts": {
