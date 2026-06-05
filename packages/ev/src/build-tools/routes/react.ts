@@ -453,7 +453,9 @@ function lineColumnForSpan(
   if (!span?.start) return {};
 
   const offset = Math.max(0, span.start - 1);
-  const prefix = source.slice(0, offset);
+  const prefix = Buffer.from(source, "utf-8")
+    .subarray(0, offset)
+    .toString("utf-8");
   const lines = prefix.split(/\r\n|\r|\n/);
   return {
     line: lines.length,

@@ -44,7 +44,7 @@ async function loadManifest(
 
   const manifestUrl =
     options.manifestUrl ??
-    document.documentElement.getAttribute("data-evjs-manifest") ??
+    document.documentElement?.getAttribute("data-evjs-manifest") ??
     "/manifest.json";
   const response = await fetch(manifestUrl);
   if (!response.ok) {

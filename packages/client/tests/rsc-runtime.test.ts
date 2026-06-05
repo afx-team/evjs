@@ -130,7 +130,7 @@ describe("React RSC runtime", () => {
           pageId: "insights",
           endpoint: "/__evjs/rsc",
           basePath: "/__evjs",
-          publicPath: "/",
+          publicPath: "/assets/",
           mount: "#app",
         },
       }),
@@ -142,6 +142,11 @@ describe("React RSC runtime", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "https://example.com/__evjs/rsc?page=insights",
     );
+    expect(rootElements[0]).toMatchObject({
+      options: {
+        moduleBaseURL: "https://example.com/assets/",
+      },
+    });
   });
 });
 

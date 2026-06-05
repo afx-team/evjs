@@ -35,12 +35,32 @@ const manifest: BuildOutput = {
         href: "/home.js",
       },
     },
+    about: {
+      assets: { js: ["about.js"], css: [] },
+      render: "csr",
+      rendering: {
+        mode: "csr",
+        component: "client",
+        html: "client",
+        streaming: false,
+        hydrate: "load",
+      },
+      module: {
+        type: "lifecycle",
+        href: "/about.js",
+      },
+    },
   },
   routes: [
     {
       id: "home",
       path: "/home",
       pageId: "home",
+    },
+    {
+      id: "about",
+      path: "/about",
+      pageId: "about",
     },
     {
       id: "app.order",
@@ -271,6 +291,70 @@ describe("createShell", () => {
     expect(events).toEqual(["load:/home.js", "mount"]);
   });
 
+  it("serializes overlapping activations", async () => {
+    const events: string[] = [];
+    const shell = createShell({
+      manifest,
+      resolveMountPoint: () => ({}) as Element,
+      async loadModule(href, ctx) {
+        events.push(`load:${ctx.id}:${href}`);
+        return {
+          mount() {
+            events.push(`mount:${ctx.id}`);
+          },
+          unmount() {
+            events.push(`unmount:${ctx.id}`);
+          },
+        };
+      },
+    });
+
+    const first = shell.activate({ pageId: "home", hydrate: false });
+    const second = shell.activate({ pageId: "about", hydrate: false });
+    await Promise.all([first, second]);
+
+    expect(events).toEqual([
+      "load:home:/home.js",
+      "mount:home",
+      "load:about:/about.js",
+      "unmount:home",
+      "mount:about",
+    ]);
+  });
+
+  it("keeps the current activation mounted when the next module load fails", async () => {
+    const events: string[] = [];
+    const shell = createShell({
+      manifest,
+      resolveMountPoint: () => ({}) as Element,
+      async loadModule(href, ctx) {
+        events.push(`load:${ctx.id}:${href}`);
+        if (ctx.id === "about") throw new Error("about failed");
+        return {
+          mount() {
+            events.push(`mount:${ctx.id}`);
+          },
+          unmount() {
+            events.push(`unmount:${ctx.id}`);
+          },
+        };
+      },
+    });
+
+    await shell.activate({ pageId: "home", hydrate: false });
+    await expect(
+      shell.activate({ pageId: "about", hydrate: false }),
+    ).rejects.toThrow("about failed");
+    await shell.dispose();
+
+    expect(events).toEqual([
+      "load:home:/home.js",
+      "mount:home",
+      "load:about:/about.js",
+      "unmount:home",
+    ]);
+  });
+
   it("activates remotes by activeWhen URL", async () => {
     const events: string[] = [];
     const shell = createShell({
@@ -303,7 +387,10 @@ describe("createShell", () => {
       },
     });
 
-    await shell.activate({ url: "/crm/customers", hydrate: false });
+    await shell.activate({
+      url: "/crm/customers?id=123#notes",
+      hydrate: false,
+    });
 
     expect(events).toEqual([
       "remote-manifest:crm:https://assets.example.com/crm/manifest.json",
@@ -578,6 +665,86 @@ describe("createShell", () => {
     });
 
     expect(events).toEqual(["shared:true:0"]);
+  });
+
+  it("uses semver caret rules for pre-1.0 shared dependencies", async () => {
+    const events: string[] = [];
+    const shell = createShell({
+      manifest,
+      sharedPolicy: "warn",
+      shared: {
+        ok: {
+          version: "0.2.4",
+          singleton: true,
+          value: {},
+        },
+        nextMinor: {
+          version: "0.3.0",
+          singleton: true,
+          value: {},
+        },
+        invalid: {
+          version: "not-a-version",
+          singleton: true,
+          value: {},
+        },
+      },
+      resolveMountPoint: () => ({}) as Element,
+      async loadRemoteManifest() {
+        return {
+          version: 1,
+          name: "crm",
+          baseUrl: "https://assets.example.com/crm",
+          shared: {
+            ok: {
+              requiredVersion: "^0.2.3",
+              singleton: true,
+            },
+            nextMinor: {
+              requiredVersion: "^0.2.3",
+              singleton: true,
+            },
+            invalid: {
+              requiredVersion: "^1.0.0",
+              singleton: true,
+            },
+          },
+          entries: {
+            list: {
+              module: {
+                type: "lifecycle",
+                href: "./list.js",
+              },
+            },
+          },
+        };
+      },
+      async loadModule(_href, ctx) {
+        events.push(
+          `provided:${Object.keys(ctx.remote?.shared.provided ?? {}).join(",")}`,
+        );
+        events.push(
+          `incompatible:${ctx.remote?.shared.incompatible
+            .map((item) => `${item.name}:${item.providedVersion}`)
+            .join(",")}`,
+        );
+        return {
+          mount() {},
+        };
+      },
+      onWarning() {},
+    });
+
+    await shell.activate({
+      remoteId: "crm",
+      remoteEntryId: "list",
+      hydrate: false,
+    });
+
+    expect(events).toEqual([
+      "provided:ok",
+      "incompatible:nextMinor:0.3.0,invalid:not-a-version",
+    ]);
   });
 
   it("uses explicitly registered global shared dependencies as shell defaults", async () => {
@@ -1030,6 +1197,22 @@ describe("createPageDriver", () => {
       appId: undefined,
       pageId: "home",
       buildId: "test",
+      url: "https://example.com/home",
+    });
+  });
+
+  it("handles documents without an available documentElement", () => {
+    const document = {
+      documentElement: null,
+      location: {
+        href: "https://example.com/home",
+      },
+    } as unknown as Document;
+
+    expect(createPageDriver({ document }).current()).toEqual({
+      appId: undefined,
+      pageId: undefined,
+      buildId: undefined,
       url: "https://example.com/home",
     });
   });

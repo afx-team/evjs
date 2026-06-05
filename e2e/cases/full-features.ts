@@ -464,13 +464,13 @@ test.describe("full-features", () => {
 
     const staticArtifact = JSON.parse(
       fs.readFileSync(
-        path.join(exampleDir, "dist", "deployment.static.json"),
+        path.join(exampleDir, "dist", "client", "deployment.static.json"),
         "utf-8",
       ),
     );
     expect(staticArtifact.platform).toBe("static");
     const redirects = fs.readFileSync(
-      path.join(exampleDir, "dist", "_redirects"),
+      path.join(exampleDir, "dist", "client", "_redirects"),
       "utf-8",
     );
     expect(redirects).toContain("/support /support.html 200");

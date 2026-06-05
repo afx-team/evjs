@@ -86,9 +86,25 @@ export async function startReactRscPageRuntime(
   return mountReactRscPage({
     manifest: createBootstrapManifest(bootstrap),
     pageId: bootstrap.pageId,
+    moduleBaseURL: publicPathModuleBaseURL(bootstrap.publicPath, doc),
     mount: bootstrap.mount,
     url: doc.location?.href,
   });
+}
+
+function publicPathModuleBaseURL(
+  publicPath: PublicPathOutput | undefined,
+  document: Document,
+): string | undefined {
+  if (typeof publicPath !== "string") return undefined;
+  try {
+    return new URL(
+      publicPath,
+      document.baseURI || document.location?.href,
+    ).toString();
+  } catch {
+    return publicPath;
+  }
 }
 
 function resolveMountPoint(mount: string | Element): Element {

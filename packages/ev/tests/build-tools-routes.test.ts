@@ -480,4 +480,22 @@ describe("analyzeRoutes", () => {
       }),
     ]);
   });
+
+  it("reports diagnostics with byte-offset-safe line and column positions", () => {
+    const source = [
+      "// emoji 😊 before the route declaration",
+      'import { defineReactRoutes, route } from "@evjs/client";',
+      "",
+      "export default defineReactRoutes([",
+      '  route(dynamicPath, { render: "ssr" }),',
+      "]);",
+    ].join("\n");
+
+    expect(analyzeRoutes(source).diagnostics[0]).toMatchObject({
+      level: "error",
+      message: "@evjs/client route() path must be a string literal.",
+      line: 6,
+      column: 4,
+    });
+  });
 });

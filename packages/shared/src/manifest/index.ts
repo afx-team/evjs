@@ -264,6 +264,7 @@ export interface BuildOutput {
   version: 1;
   buildId: string;
   distDir: string;
+  paths?: BuildOutputPaths;
   publicPath: PublicPathOutput;
   runtime: RuntimeOutput;
   assets: Record<string, AssetGroup>;
@@ -274,6 +275,12 @@ export interface BuildOutput {
   remotes?: Record<string, RemoteOutput>;
   rsc?: RscOutput;
   deployment?: Record<string, unknown>;
+}
+
+export interface BuildOutputPaths {
+  rootDir: string;
+  publicDir: string;
+  serverDir?: string;
 }
 
 export interface RuntimeOutput {

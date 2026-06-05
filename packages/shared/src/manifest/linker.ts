@@ -231,6 +231,7 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
     version: 1,
     buildId: input.plan.buildId,
     distDir: input.plan.distDir,
+    paths: createBuildOutputPaths(input.plan.distDir, serverEnabled),
     publicPath: input.plan.runtime.publicPath,
     runtime: {
       server: input.plan.runtime.server,
@@ -290,6 +291,7 @@ export function createPublicManifest(output: BuildOutput): BuildOutput {
     version: output.version,
     buildId: output.buildId,
     distDir: output.distDir,
+    paths: output.paths,
     publicPath: output.publicPath,
     runtime: output.runtime,
     assets: clonePublicAssetRecord(output.assets, publicAssetFiles),
@@ -371,6 +373,30 @@ export function createPublicManifest(output: BuildOutput): BuildOutput {
       ? sanitizePublicMetadata(output.deployment)
       : undefined,
   }) as BuildOutput;
+}
+
+function createBuildOutputPaths(
+  distDir: string,
+  serverEnabled: boolean,
+): NonNullable<BuildOutput["paths"]> {
+  return {
+    rootDir: distDir,
+    publicDir: serverEnabled ? joinManifestPath(distDir, "client") : distDir,
+    ...(serverEnabled
+      ? {
+          serverDir: joinManifestPath(distDir, "server"),
+        }
+      : {}),
+  };
+}
+
+function joinManifestPath(...parts: string[]): string {
+  return parts
+    .map((part, index) =>
+      index === 0 ? part.replace(/\/+$/, "") : part.replace(/^\/+|\/+$/g, ""),
+    )
+    .filter(Boolean)
+    .join("/");
 }
 
 export interface RemoteManifestLinkInput {

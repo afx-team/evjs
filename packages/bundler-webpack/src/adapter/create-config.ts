@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type {
   AppGraph,
   BuildEntry,
@@ -25,20 +25,11 @@ const cssLoader = require.resolve("css-loader");
 const miniCssExtractLoader = require.resolve(
   "mini-css-extract-plugin/dist/loader.js",
 );
-const componentPageLoader = fileURLToPath(
-  new URL("./component-page-loader.cjs", import.meta.url),
-);
-const remoteClientLoader = fileURLToPath(
-  new URL("./remote-client-loader.cjs", import.meta.url),
-);
 const serverFunctionLoader = fileURLToPath(
   new URL("./server-function-loader.cjs", import.meta.url),
 );
 const rscClientReferenceLoader = fileURLToPath(
   new URL("./rsc-client-reference-loader.cjs", import.meta.url),
-);
-const rscPageRendererLoader = fileURLToPath(
-  new URL("./rsc-page-renderer-loader.cjs", import.meta.url),
 );
 const ReactFlightWebpackPlugin = require("react-server-dom-webpack/plugin");
 const clientRootEntry = require.resolve("@evjs/client");
@@ -323,14 +314,26 @@ function createEntryImport(cwd: string, entry: BuildEntry): string {
     const component = path.isAbsolute(entry.import)
       ? entry.import
       : path.resolve(cwd, entry.import);
-    return `${rscPageRendererLoader}!${component}`;
+    return createDataUrlEntry(createRscPageRendererSource(component));
+  }
+
+  if (
+    entry.environment === "server" &&
+    (entry.kind === "page-server" ||
+      entry.kind === "ppr-shell" ||
+      entry.kind === "ppr-region")
+  ) {
+    const component = path.isAbsolute(entry.import)
+      ? entry.import
+      : path.resolve(cwd, entry.import);
+    return createDataUrlEntry(createServerRendererSource(component));
   }
 
   if (entry.metadata?.type === "remote-client") {
     const app = path.isAbsolute(entry.metadata.app)
       ? entry.metadata.app
       : path.resolve(cwd, entry.metadata.app);
-    return `${remoteClientLoader}!${app}`;
+    return createDataUrlEntry(createRemoteClientSource(app));
   }
 
   if (entry.metadata?.type !== "react-component-page") return entry.import;
@@ -344,7 +347,125 @@ function createEntryImport(cwd: string, entry: BuildEntry): string {
     render: entry.metadata.render,
   });
 
-  return `${componentPageLoader}?${params.toString()}!${component}`;
+  return createDataUrlEntry(
+    createComponentPageSource(component, Object.fromEntries(params)),
+  );
+}
+
+function createDataUrlEntry(source: string): string {
+  return `data:text/javascript;charset=utf-8,${encodeURIComponent(source)}`;
+}
+
+function moduleSpecifier(file: string): string {
+  return pathToFileURL(file).href.replace(/!/g, "%21");
+}
+
+function createRscPageRendererSource(component: string): string {
+  const componentRequest = moduleSpecifier(component);
+  return `
+import { createElement } from "react";
+import { renderToReadableStream } from "react-server-dom-webpack/server.node";
+import Component from ${JSON.stringify(componentRequest)};
+
+function findRouteForPage(manifest, pageId) {
+  if (!pageId) return undefined;
+  const route = manifest.routes?.find((candidate) => candidate.pageId === pageId);
+  return route
+    ? {
+        id: route.id,
+        path: route.path,
+      }
+    : undefined;
+}
+
+function createProps(ctx) {
+  return {
+    manifest: {
+      buildId: ctx.manifest.buildId,
+    },
+    pageId: ctx.pageId,
+    route: findRouteForPage(ctx.manifest, ctx.pageId),
+  };
+}
+
+export async function renderFlight(ctx) {
+  const clientReferenceManifest = ctx.manifest.rsc?.clientReferenceManifest;
+  if (!clientReferenceManifest) {
+    return new Response("[evjs] RSC client reference manifest is not available.", {
+      status: 501,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+      },
+    });
+  }
+
+  const stream = await renderToReadableStream(
+    createElement(Component, createProps(ctx)),
+    clientReferenceManifest,
+  );
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/x-component; charset=utf-8",
+    },
+  });
+}
+
+export default Component;
+`;
+}
+
+function createRemoteClientSource(app: string): string {
+  const appRequest = moduleSpecifier(app);
+  return [
+    `import * as mod from ${JSON.stringify(appRequest)};`,
+    `import { createRemoteReactModule, registerShellModule } from "@evjs/client";`,
+    ``,
+    `const currentScript = document.currentScript;`,
+    `const href = currentScript && "src" in currentScript ? currentScript.src : undefined;`,
+    `if (href) registerShellModule(href, () => createRemoteReactModule(mod));`,
+    `export * from ${JSON.stringify(appRequest)};`,
+    `export { default } from ${JSON.stringify(appRequest)};`,
+  ].join("\n");
+}
+
+function createServerRendererSource(component: string): string {
+  const componentRequest = moduleSpecifier(component);
+  return [
+    `export { default } from ${JSON.stringify(componentRequest)};`,
+    `export * from ${JSON.stringify(componentRequest)};`,
+    ``,
+  ].join("\n");
+}
+
+function createComponentPageSource(
+  component: string,
+  options: Record<string, string>,
+): string {
+  const componentRequest = moduleSpecifier(component);
+  return [
+    `import Component from ${JSON.stringify(componentRequest)};`,
+    `import { createReactPageModule, mountReactPage, registerShellModule } from "@evjs/client";`,
+    ``,
+    `const currentScript = document.currentScript;`,
+    `const href = currentScript && "src" in currentScript ? currentScript.src : undefined;`,
+    `const loadedByShell = currentScript?.getAttribute?.("data-evjs-shell-load") === "true";`,
+    `const mod = createReactPageModule({`,
+    `  component: Component,`,
+    `  hydrate: ${JSON.stringify(options.hydrate ?? "load")},`,
+    `  render: ${JSON.stringify(options.render ?? "csr")},`,
+    `});`,
+    `if (href) registerShellModule(href, mod);`,
+    `if (!loadedByShell) {`,
+    `  mountReactPage({`,
+    `    component: Component,`,
+    `    mount: ${JSON.stringify(options.mount ?? "#app")},`,
+    `    hydrate: ${JSON.stringify(options.hydrate ?? "load")},`,
+    `    render: ${JSON.stringify(options.render ?? "csr")},`,
+    `  });`,
+    `}`,
+    `export default mod;`,
+    ``,
+  ].join("\n");
 }
 
 function webpackPublicPath(publicPath: PublicPathOutput): string {

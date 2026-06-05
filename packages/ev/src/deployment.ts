@@ -62,6 +62,7 @@ export interface DeploymentArtifact {
   platform?: string;
   buildId: string;
   distDir: string;
+  paths?: BuildOutput["paths"];
   publicPath: PublicPathOutput;
   runtime: RuntimeOutput;
   assets?: Record<string, AssetGroup>;
@@ -131,6 +132,7 @@ export function createDeploymentArtifact(
     ...(options.platform ? { platform: options.platform } : {}),
     buildId: output.buildId,
     distDir: output.distDir,
+    paths: getDeploymentOutputPaths(output),
     publicPath: output.publicPath,
     runtime: output.runtime,
     ...(includeAssets ? { assets: output.assets } : {}),
@@ -234,16 +236,16 @@ export function nodeDeploymentAdapter(
       return {
         async buildEnd({ output }) {
           const files = createNodeDeploymentFiles(output, options);
-          const distDir = path.resolve(output.distDir);
-          await fs.mkdir(distDir, { recursive: true });
+          const rootDir = resolveOutputDir(output, "rootDir");
+          await fs.mkdir(rootDir, { recursive: true });
           await fs.writeFile(
-            path.join(distDir, files.artifactFileName),
+            path.join(rootDir, files.artifactFileName),
             JSON.stringify(files.artifact, null, 2),
             "utf-8",
           );
           if (files.serverFileName && files.serverModule) {
             await fs.writeFile(
-              path.join(distDir, files.serverFileName),
+              path.join(rootDir, files.serverFileName),
               files.serverModule,
               "utf-8",
             );
@@ -281,15 +283,15 @@ export function staticDeploymentAdapter(
       return {
         async buildEnd({ output }) {
           const files = createStaticDeploymentFiles(output, options);
-          const distDir = path.resolve(output.distDir);
-          await fs.mkdir(distDir, { recursive: true });
+          const publicDir = resolveOutputDir(output, "publicDir");
+          await fs.mkdir(publicDir, { recursive: true });
           await fs.writeFile(
-            path.join(distDir, files.artifactFileName),
+            path.join(publicDir, files.artifactFileName),
             JSON.stringify(files.artifact, null, 2),
             "utf-8",
           );
           await fs.writeFile(
-            path.join(distDir, files.redirectsFileName),
+            path.join(publicDir, files.redirectsFileName),
             files.redirects,
             "utf-8",
           );
@@ -332,16 +334,16 @@ export function edgeDeploymentAdapter(
       return {
         async buildEnd({ output }) {
           const files = createEdgeDeploymentFiles(output, options);
-          const distDir = path.resolve(output.distDir);
-          await fs.mkdir(distDir, { recursive: true });
+          const rootDir = resolveOutputDir(output, "rootDir");
+          await fs.mkdir(rootDir, { recursive: true });
           await fs.writeFile(
-            path.join(distDir, files.artifactFileName),
+            path.join(rootDir, files.artifactFileName),
             JSON.stringify(files.artifact, null, 2),
             "utf-8",
           );
           if (files.workerFileName && files.workerModule) {
             await fs.writeFile(
-              path.join(distDir, files.workerFileName),
+              path.join(rootDir, files.workerFileName),
               files.workerModule,
               "utf-8",
             );
@@ -352,6 +354,48 @@ export function edgeDeploymentAdapter(
   };
 }
 
+function getDeploymentOutputPaths(
+  output: BuildOutput,
+): NonNullable<BuildOutput["paths"]> {
+  if (output.paths) return output.paths;
+
+  const serverEnabled = Boolean(output.server);
+  return {
+    rootDir: output.distDir,
+    publicDir: serverEnabled
+      ? joinManifestPath(output.distDir, "client")
+      : output.distDir,
+    ...(serverEnabled
+      ? {
+          serverDir: joinManifestPath(output.distDir, "server"),
+        }
+      : {}),
+  };
+}
+
+function resolveOutputDir(
+  output: BuildOutput,
+  key: keyof NonNullable<BuildOutput["paths"]>,
+): string {
+  const paths = getDeploymentOutputPaths(output);
+  return path.resolve(paths[key] ?? paths.rootDir);
+}
+
+function getPublicDirRelativeToRoot(output: BuildOutput): string {
+  const paths = getDeploymentOutputPaths(output);
+  const relative = path.relative(paths.rootDir, paths.publicDir);
+  return relative || ".";
+}
+
+function joinManifestPath(...parts: string[]): string {
+  return parts
+    .map((part, index) =>
+      index === 0 ? part.replace(/\/+$/, "") : part.replace(/^\/+|\/+$/g, ""),
+    )
+    .filter(Boolean)
+    .join("/");
+}
+
 function createNodeServerModule(
   output: BuildOutput,
   options: NodeDeploymentAdapterOptions,
@@ -360,6 +404,7 @@ function createNodeServerModule(
   const staticFallback = getStaticFallbackHtml(output);
   const frameworkBasePath = output.runtime.server?.basePath ?? "/__evjs";
   const frameworkRoutes = getFrameworkServerRoutes(output).map(toNodeRoutePath);
+  const clientRoot = getPublicDirRelativeToRoot(output);
   const portEnv = options.portEnv ?? "PORT";
   const defaultPort = options.defaultPort ?? 3000;
 
@@ -370,7 +415,7 @@ import { serve } from "@evjs/server/node";
 ${serverEntry ? `import serverHandler from ${JSON.stringify(`./server/${serverEntry}`)};` : ""}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const clientRoot = path.join(__dirname, "client");
+const clientRoot = path.join(__dirname, ${JSON.stringify(clientRoot)});
 const frameworkBasePath = ${JSON.stringify(frameworkBasePath)};
 const frameworkRoutes = ${JSON.stringify(frameworkRoutes, null, 2)};
 const staticFallback = ${JSON.stringify(staticFallback ?? "")};

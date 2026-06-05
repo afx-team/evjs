@@ -26,7 +26,9 @@ import {
 } from "@evjs/ev/build-tools";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WebpackConfig } from "../src/adapter/create-config.js";
+import { __testing as webpackAdapterTesting } from "../src/adapter/index.js";
 import { webpackAdapter } from "../src/index.js";
+import type { WebpackStatsLike } from "../src/manifest-generator.js";
 
 const tempDirs: string[] = [];
 const require = createRequire(import.meta.url);
@@ -232,12 +234,90 @@ async function emitFrameworkArtifacts(options: {
   return output;
 }
 
+describe("webpack stats ownership", () => {
+  it("namespaces server-rsc chunks and de-dupes modules while merging server stats", () => {
+    const serverStats: WebpackStatsLike = {
+      entrypoints: {
+        server: {
+          assets: ["server.js"],
+        },
+      },
+      chunks: [
+        {
+          id: 1,
+          names: ["server"],
+          files: ["server.js"],
+        },
+      ],
+      modules: [
+        {
+          identifier: "/project/src/shared.ts",
+          chunks: [1],
+        },
+      ],
+    };
+    const rscStats: WebpackStatsLike = {
+      entrypoints: {
+        "insights-rsc": {
+          assets: ["insights-rsc.js"],
+        },
+      },
+      chunks: [
+        {
+          id: 1,
+          names: ["insights-rsc"],
+          files: ["insights-rsc.js"],
+        },
+      ],
+      modules: [
+        {
+          identifier: "/project/src/shared.ts",
+          chunks: [1],
+        },
+        {
+          identifier: "/project/src/Insights.tsx",
+          chunks: [1],
+        },
+      ],
+    };
+
+    const merged = webpackAdapterTesting.mergeWebpackStats(
+      serverStats,
+      rscStats,
+      "server-rsc",
+    );
+
+    expect(merged.chunks).toEqual([
+      {
+        id: 1,
+        names: ["server"],
+        files: ["server.js"],
+      },
+      {
+        id: "server-rsc:1",
+        names: ["server-rsc:insights-rsc"],
+        files: ["insights-rsc.js"],
+      },
+    ]);
+    expect(merged.modules).toEqual([
+      {
+        identifier: "/project/src/shared.ts",
+        chunks: [1],
+      },
+      {
+        identifier: "/project/src/Insights.tsx",
+        chunks: ["server-rsc:1"],
+      },
+    ]);
+  });
+});
+
 describe("webpackAdapter build", () => {
   it("builds framework-managed component pages without materializing .evjs files", async () => {
     const cwd = await createFixture({
       "index.html":
         '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
-      "src/pages/Home.tsx": `
+      "src/pages/Home ! page 中文.tsx": `
         import { createElement } from "react";
 
         export default function Home() {
@@ -249,7 +329,7 @@ describe("webpackAdapter build", () => {
       server: false,
       pages: {
         home: {
-          component: "./src/pages/Home.tsx",
+          component: "./src/pages/Home ! page 中文.tsx",
           html: "./index.html",
           render: "csr",
           mount: "#root",
@@ -275,21 +355,21 @@ describe("webpackAdapter build", () => {
     const html = await fs.readFile(path.join(cwd, "dist/home.html"), "utf-8");
     const bundle = await fs.readFile(path.join(cwd, "dist/home.js"), "utf-8");
 
-    expect(plan.entries[0]?.import).toBe("./src/pages/Home.tsx");
+    expect(plan.entries[0]?.import).toBe("./src/pages/Home ! page 中文.tsx");
     expect(plan.entries[0]?.metadata).toMatchObject({
       type: "react-component-page",
-      component: "./src/pages/Home.tsx",
+      component: "./src/pages/Home ! page 中文.tsx",
       mount: "#root",
     });
     expect(manifest.pages.home).toMatchObject({
       assets: { js: ["home.js"], css: [] },
-      component: "./src/pages/Home.tsx",
+      component: "./src/pages/Home ! page 中文.tsx",
       mount: "#root",
       render: "csr",
       module: {
         type: "react-component",
         href: "home.js",
-        source: "./src/pages/Home.tsx",
+        source: "./src/pages/Home ! page 中文.tsx",
       },
     });
     expect(html).toContain('data-evjs-kind="page"');
@@ -303,7 +383,7 @@ describe("webpackAdapter build", () => {
 
   it("builds remote client entries and emits a remote manifest", async () => {
     const cwd = await createFixture({
-      "src/remote.tsx": `
+      "src/remote !client.tsx": `
         import { useRemoteContext } from "@evjs/client";
 
         export default function Remote() {
@@ -328,7 +408,7 @@ describe("webpackAdapter build", () => {
         },
         entries: {
           customers: {
-            app: "./src/remote.tsx",
+            app: "./src/remote !client.tsx",
             activeWhen: ["/crm/*"],
             mount: "#remote-root",
           },
@@ -599,7 +679,7 @@ describe("webpackAdapter build", () => {
     const cwd = await createFixture({
       "index.html":
         '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
-      "src/pages/Insights.tsx": `
+      "src/pages/Insights !page.tsx": `
         import { createElement } from "react";
         import "./insights.css";
         import Badge from "./InsightsBadge";
@@ -630,7 +710,7 @@ describe("webpackAdapter build", () => {
       pages: {
         insights: {
           path: "/insights",
-          component: "./src/pages/Insights.tsx",
+          component: "./src/pages/Insights !page.tsx",
           html: "./index.html",
           render: "rsc",
         },
@@ -687,7 +767,7 @@ describe("webpackAdapter build", () => {
     expect(manifest.rsc?.pages?.insights).toEqual(
       expect.objectContaining({
         renderer: "insights-rsc",
-        component: "./src/pages/Insights.tsx",
+        component: "./src/pages/Insights !page.tsx",
       }),
     );
     expect(manifest.server?.renderers?.["insights-server"]).toMatchObject({

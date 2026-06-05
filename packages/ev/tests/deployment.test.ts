@@ -1,11 +1,32 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import type { BuildOutput } from "@evjs/shared/manifest";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   createDeploymentArtifact,
   createEdgeDeploymentFiles,
   createNodeDeploymentFiles,
   createStaticDeploymentFiles,
+  edgeDeploymentAdapter,
+  nodeDeploymentAdapter,
+  staticDeploymentAdapter,
 } from "../src/deployment.js";
+
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    tempDirs.splice(0).map((dir) =>
+      fs.rm(dir, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 50,
+      }),
+    ),
+  );
+});
 
 describe("createDeploymentArtifact", () => {
   it("creates a platform-neutral deployment artifact from BuildOutput", () => {
@@ -125,6 +146,11 @@ describe("createDeploymentArtifact", () => {
       platform: "node-example",
       buildId: "build-1",
       distDir: "dist",
+      paths: {
+        rootDir: "dist",
+        publicDir: "dist/client",
+        serverDir: "dist/server",
+      },
       publicPath: { mode: "runtime" },
       runtime: output.runtime,
       apps: {
@@ -409,4 +435,110 @@ describe("createDeploymentArtifact", () => {
       "serverHandler.fetch(request, env, ctx)",
     );
   });
+
+  it("writes deployment adapter artifacts to explicit root and public output dirs", async () => {
+    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "evjs-deploy-"));
+    tempDirs.push(rootDir);
+    const publicDir = path.join(rootDir, "client");
+    const serverDir = path.join(rootDir, "server");
+    const output = createServerDeploymentOutput({
+      rootDir,
+      publicDir,
+      serverDir,
+    });
+
+    await runDeploymentBuildEnd(
+      nodeDeploymentAdapter({ includeAssets: false }),
+      output,
+    );
+    await runDeploymentBuildEnd(
+      staticDeploymentAdapter({ includeAssets: false }),
+      output,
+    );
+    await runDeploymentBuildEnd(
+      edgeDeploymentAdapter({ includeAssets: false }),
+      output,
+    );
+
+    await expect(
+      fs.access(path.join(rootDir, "deployment.node.json")),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(rootDir, "server.mjs")),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(rootDir, "deployment.edge.json")),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(rootDir, "worker.mjs")),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(publicDir, "deployment.static.json")),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(publicDir, "_redirects")),
+    ).resolves.toBeUndefined();
+    await expect(fs.access(path.join(rootDir, "_redirects"))).rejects.toThrow();
+
+    await expect(
+      fs.readFile(path.join(rootDir, "server.mjs"), "utf-8"),
+    ).resolves.toContain('const clientRoot = path.join(__dirname, "client");');
+  });
 });
+
+async function runDeploymentBuildEnd(
+  plugin: ReturnType<typeof nodeDeploymentAdapter>,
+  output: BuildOutput,
+) {
+  const hooks = await plugin.setup?.({} as never);
+  await hooks?.buildEnd?.({ output, isRebuild: false });
+}
+
+function createServerDeploymentOutput(paths: {
+  rootDir: string;
+  publicDir: string;
+  serverDir: string;
+}): BuildOutput {
+  return {
+    version: 1,
+    buildId: "build-1",
+    distDir: paths.rootDir,
+    paths,
+    publicPath: "/",
+    runtime: {
+      server: {
+        basePath: "/__evjs",
+        fn: "/__evjs/fn",
+      },
+    },
+    assets: {},
+    apps: {
+      default: {
+        assets: { js: ["main.js"], css: [] },
+        entry: "./src/main.tsx",
+      },
+    },
+    pages: {},
+    routes: [
+      {
+        id: "app",
+        path: "/app",
+        appId: "default",
+        render: "csr",
+      },
+    ],
+    server: {
+      entry: "server.js",
+      assets: { js: ["server.js"], css: [] },
+      renderers: {},
+      functions: {},
+      routes: [
+        {
+          path: "/api/health",
+          methods: ["GET"],
+          assets: { js: ["server.js"], css: [] },
+        },
+      ],
+    },
+  };
+}

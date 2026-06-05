@@ -895,7 +895,7 @@ function splitStatsByName(stats: Stats | MultiStats): {
 
   for (const child of children) {
     if (child.name === "server" || child.name === "server-rsc") {
-      serverStats = mergeWebpackStats(serverStats, child);
+      serverStats = mergeWebpackStats(serverStats, child, child.name);
     } else if (child.name === "client") {
       clientStats = child;
     }
@@ -907,17 +907,61 @@ function splitStatsByName(stats: Stats | MultiStats): {
 function mergeWebpackStats(
   left: WebpackStatsLike | undefined,
   right: WebpackStatsLike,
+  childName?: string,
 ): WebpackStatsLike {
-  if (!left) return right;
+  const namespacedRight = namespaceWebpackStats(right, childName);
+  if (!left) return namespacedRight;
+
+  const modules = [...(left.modules ?? [])];
+  const seenModules = new Set(modules.map(moduleIdentity).filter(Boolean));
+  for (const mod of namespacedRight.modules ?? []) {
+    const identity = moduleIdentity(mod);
+    if (identity && seenModules.has(identity)) continue;
+    if (identity) seenModules.add(identity);
+    modules.push(mod);
+  }
+
   return {
     entrypoints: {
       ...(left.entrypoints ?? {}),
-      ...(right.entrypoints ?? {}),
+      ...(namespacedRight.entrypoints ?? {}),
     },
-    chunks: [...(left.chunks ?? []), ...(right.chunks ?? [])],
-    modules: [...(left.modules ?? []), ...(right.modules ?? [])],
+    chunks: [...(left.chunks ?? []), ...(namespacedRight.chunks ?? [])],
+    modules,
   };
 }
+
+function namespaceWebpackStats(
+  stats: WebpackStatsLike,
+  childName?: string,
+): WebpackStatsLike {
+  if (childName !== "server-rsc") return stats;
+  const prefixChunk = (value: string | number) => `${childName}:${value}`;
+
+  return {
+    ...stats,
+    chunks: stats.chunks?.map((chunk) => ({
+      ...chunk,
+      id: chunk.id === undefined ? undefined : prefixChunk(chunk.id),
+      names: chunk.names?.map(prefixChunk),
+    })),
+    modules: stats.modules?.map((mod) => ({
+      ...mod,
+      chunks: mod.chunks?.map(prefixChunk),
+    })),
+  };
+}
+
+function moduleIdentity(mod: NonNullable<WebpackStatsLike["modules"]>[number]) {
+  if (mod.identifier !== undefined) return `identifier:${mod.identifier}`;
+  if (mod.name !== undefined) return `name:${mod.name}`;
+  if (mod.id !== undefined) return `id:${mod.id}`;
+  return undefined;
+}
+
+export const __testing = {
+  mergeWebpackStats,
+};
 
 function formatWebpackErrors(stats: Stats | MultiStats): string {
   const json = stats.toJson({ all: false, errors: true }) as
