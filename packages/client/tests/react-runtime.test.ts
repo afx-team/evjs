@@ -9,12 +9,14 @@ import {
 } from "../src/react.js";
 
 const calls: string[] = [];
+const renderedElements: unknown[] = [];
 
 vi.mock("react-dom/client", () => ({
   createRoot() {
     calls.push("createRoot");
     return {
-      render() {
+      render(element: unknown) {
+        renderedElements.push(element);
         calls.push("render");
       },
       unmount() {
@@ -22,7 +24,8 @@ vi.mock("react-dom/client", () => ({
       },
     };
   },
-  hydrateRoot() {
+  hydrateRoot(_mountPoint: Element, element: unknown) {
+    renderedElements.push(element);
     calls.push("hydrateRoot");
     return {
       unmount() {
@@ -39,6 +42,7 @@ function Component() {
 describe("createReactPageModule", () => {
   it("mounts CSR pages with createRoot", async () => {
     calls.length = 0;
+    renderedElements.length = 0;
     const mod = createReactPageModule({
       component: Component,
       render: "csr",
@@ -53,6 +57,7 @@ describe("createReactPageModule", () => {
 
   it("hydrates non-CSR pages with hydrateRoot", async () => {
     calls.length = 0;
+    renderedElements.length = 0;
     const mountPoint = {} as Element;
     const mod = createReactPageModule({
       component: Component,
@@ -68,6 +73,7 @@ describe("createReactPageModule", () => {
 
   it("does not mount pages with hydrate none", async () => {
     calls.length = 0;
+    renderedElements.length = 0;
     const mod = createReactPageModule({
       component: Component,
       render: "ssg",
@@ -79,6 +85,36 @@ describe("createReactPageModule", () => {
     await mod.unmount?.({} as Element, {} as never);
 
     expect(calls).toEqual([]);
+  });
+
+  it("passes context-derived props to mounted React modules", async () => {
+    calls.length = 0;
+    renderedElements.length = 0;
+    const mod = createReactPageModule({
+      component: Component,
+      render: "csr",
+      hydrate: "load",
+      props(ctx) {
+        return {
+          kind: ctx?.kind,
+          id: ctx?.id,
+        };
+      },
+    });
+
+    await mod.mount?.(
+      {} as Element,
+      {
+        id: "crm",
+        kind: "remote",
+      } as never,
+    );
+
+    expect(calls).toEqual(["createRoot", "render"]);
+    expect((renderedElements[0] as { props?: unknown }).props).toEqual({
+      kind: "remote",
+      id: "crm",
+    });
   });
 });
 

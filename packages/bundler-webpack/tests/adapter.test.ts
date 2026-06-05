@@ -303,13 +303,19 @@ describe("webpackAdapter build", () => {
 
   it("builds remote client entries and emits a remote manifest", async () => {
     const cwd = await createFixture({
-      "src/remote.ts": `
-        export function mount(mountPoint: Element) {
-          mountPoint.innerHTML = "<h2>Remote</h2>";
+      "src/remote.tsx": `
+        import type { AppContext, SharedScope } from "@evjs/client";
+
+        export function init(scope: SharedScope, ctx: AppContext) {
+          window.__remoteInit = [scope.react?.version, ctx.remote?.entryId].join(":");
         }
 
-        export function unmount(mountPoint: Element) {
-          mountPoint.innerHTML = "";
+        export default function Remote({
+          remote,
+        }: {
+          remote?: AppContext["remote"];
+        }) {
+          return <h2>Remote {remote?.entryId}</h2>;
         }
       `,
     });
@@ -329,7 +335,7 @@ describe("webpackAdapter build", () => {
         },
         entries: {
           customers: {
-            app: "./src/remote.ts",
+            app: "./src/remote.tsx",
             activeWhen: ["/crm/*"],
             mount: "#remote-root",
           },
@@ -391,6 +397,9 @@ describe("webpackAdapter build", () => {
       },
     });
     expect(remoteBundle).toContain("registerShellModule");
+    expect(remoteBundle).toContain("createReactPageModule");
+    expect(remoteBundle).toContain("createRemoteShellModule");
+    expect(remoteBundle).toContain("ctx && ctx.remote");
     await expect(
       fs.access(path.join(cwd, "dist/index.html")),
     ).rejects.toThrow();

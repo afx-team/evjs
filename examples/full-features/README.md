@@ -22,7 +22,7 @@ It still exercises the new framework contracts with the webpack adapter:
 - RSC page renderer plus framework Flight endpoint;
 - manifest-driven shell remote activation;
 - paired remote build in `examples/full-features-remote` that emits
-  `dist/evjs-remote.json`;
+  `dist/evjs-remote.json` from a default-exported React component;
 - server function transform and REST route;
 - single `dist/manifest.json`;
 - `buildOutput()`, per-document `transformHtml()`, and `buildEnd({ output })`

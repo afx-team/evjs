@@ -19,7 +19,9 @@ export interface ReactPageMountOptions {
   component: ComponentType;
   hydrate?: HydrationMode;
   render?: RenderMode;
-  props?: Record<string, unknown>;
+  props?:
+    | Record<string, unknown>
+    | ((ctx?: AppContext) => Record<string, unknown>);
 }
 
 export interface RscFlightFetchOptions {
@@ -204,8 +206,11 @@ function resolvePageProps(
   options: ReactPageMountOptions,
   ctx?: AppContext,
 ): Record<string, unknown> {
+  const explicitProps =
+    typeof options.props === "function" ? options.props(ctx) : options.props;
+
   return (
-    options.props ??
+    explicitProps ??
     readEmbeddedPageProps() ??
     (ctx ? pagePropsFromContext(ctx) : undefined) ??
     {}

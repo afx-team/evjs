@@ -110,6 +110,24 @@ describe("createShell", () => {
     expect(events).toEqual(["mount:page:home"]);
   });
 
+  it("passes app context to registered module factories", async () => {
+    const events: string[] = [];
+    registerShellModule("/home.js", (ctx) => ({
+      mount() {
+        events.push(`factory:${ctx.kind}:${ctx.id}`);
+      },
+    }));
+
+    const shell = createShell({
+      manifest,
+      resolveMountPoint: () => ({}) as Element,
+    });
+
+    await shell.activate({ pageId: "home", hydrate: false });
+
+    expect(events).toEqual(["factory:page:home"]);
+  });
+
   it("loads script assets before reading registered modules", async () => {
     const events: string[] = [];
     const createdScripts: HTMLScriptElement[] = [];

@@ -101,7 +101,10 @@ test.describe("mpa", () => {
           css: expect.any(Array),
         }),
         render: "csr",
-        entry: "./src/about/main.tsx",
+        module: expect.objectContaining({
+          type: "entry",
+          href: expect.stringMatching(/\.js$/),
+        }),
       }),
       home: expect.objectContaining({
         assets: expect.objectContaining({
@@ -109,8 +112,13 @@ test.describe("mpa", () => {
           css: expect.any(Array),
         }),
         render: "csr",
-        entry: "./src/home/main.tsx",
+        module: expect.objectContaining({
+          type: "entry",
+          href: expect.stringMatching(/\.js$/),
+        }),
       }),
     });
+    const publicManifestText = fs.readFileSync(manifestPath, "utf-8");
+    expect(publicManifestText).not.toContain(".tsx");
   });
 });

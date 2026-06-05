@@ -3,6 +3,9 @@ import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
   bundler: webpackAdapter,
+  dev: {
+    port: 3002,
+  },
   server: false,
   remote: {
     name: "crm",
@@ -19,7 +22,7 @@ export default defineConfig({
     },
     entries: {
       customers: {
-        app: "./src/remote.ts",
+        app: "./src/remote.tsx",
         activeWhen: ["/crm/*"],
         mount: "#remote-root",
       },

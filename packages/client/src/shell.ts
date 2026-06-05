@@ -16,7 +16,7 @@ export interface AppModule {
 
 export type ShellModuleRegistration =
   | AppModule
-  | (() => AppModule | Promise<AppModule>);
+  | ((ctx: AppContext) => AppModule | Promise<AppModule>);
 
 declare global {
   var __EVJS_SHELL_MODULES__:
@@ -914,13 +914,16 @@ function ensureTrailingSlash(value: string): string {
   return value.endsWith("/") ? value : `${value}/`;
 }
 
-async function defaultLoadModule(href: string): Promise<AppModule> {
-  const registered = await readRegisteredModule(href);
+async function defaultLoadModule(
+  href: string,
+  ctx: AppContext,
+): Promise<AppModule> {
+  const registered = await readRegisteredModule(href, ctx);
   if (registered) return registered;
 
   await loadScriptAsset(href);
 
-  const loaded = await readRegisteredModule(href);
+  const loaded = await readRegisteredModule(href, ctx);
   if (loaded) return loaded;
 
   throw new Error(
@@ -940,6 +943,7 @@ function getShellModuleRegistry(): Record<string, ShellModuleRegistration> {
 
 async function readRegisteredModule(
   href: string,
+  ctx: AppContext,
 ): Promise<AppModule | undefined> {
   const registry = globalThis.__EVJS_SHELL_MODULES__;
   const registered = getRegistryKeys(href)
@@ -947,7 +951,7 @@ async function readRegisteredModule(
     .find((entry) => Boolean(entry));
   if (!registered) return undefined;
 
-  return typeof registered === "function" ? registered() : registered;
+  return typeof registered === "function" ? registered(ctx) : registered;
 }
 
 function getRegistryKeys(href: string): string[] {

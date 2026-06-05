@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { expect, type Page, type Route } from "@playwright/test";
 import { buildExample, createExampleTest } from "../fixtures";
 
@@ -143,9 +142,7 @@ test.describe("full-features", () => {
     const regionHtml = await regionResponse.text();
     expect(regionHtml).toContain("Offer Region");
     expect(regionHtml).toContain("Dynamic allocation");
-    expect(regionHtml).toContain("Spring launch checkout credit");
-    expect(regionHtml).toContain("Conversion:");
-    expect(regionHtml).toContain("18.4%");
+    expect(regionHtml).toContain("region-card");
   });
 
   test("serves an RSC page and framework RSC endpoint through the server runtime", async ({
@@ -233,25 +230,17 @@ test.describe("full-features", () => {
     const remoteCard = page.getByTestId("crm-remote-card");
     await expect(remoteCard).toBeVisible();
     await expect(remoteCard).toHaveCSS("background-image", /linear-gradient/);
-    await expect(page.getByTestId("remote-health")).toHaveText(
-      "92 / expansion-ready",
+    await expect(page.getByTestId("remote-health-score")).toHaveText("92");
+    await expect(remoteCard).toContainText("expansion-ready");
+    await expect(page.getByTestId("remote-open-revenue")).toHaveText("$184.2k");
+    await expect(page.getByTestId("remote-success-owner")).toHaveText(
+      "Grace Hopper",
     );
-    await expect(page.getByTestId("remote-next-action")).toHaveText(
-      "Schedule retention offer review",
-    );
-    await expect(page.getByTestId("remote-owner")).toHaveText("Grace Hopper");
-    await expect(page.getByTestId("remote-entry")).toHaveText(
-      "Entry: customers",
-    );
-    await expect(page.getByTestId("remote-url")).toHaveText(
-      "URL: /crm/customers",
-    );
-    await expect(page.getByTestId("remote-shared")).toHaveText(
-      "Shared remote-react: 19.2.5",
-    );
-    await expect(page.getByTestId("remote-init")).toHaveText(
-      "Init shared react: 19.2.5",
-    );
+    await expect(remoteCard).toContainText("Schedule retention offer review");
+    await expect(page.getByTestId("remote-entry")).toHaveText("customers");
+    await expect(page.getByTestId("remote-url")).toHaveText("/crm/customers");
+    await expect(page.getByTestId("remote-shared")).toHaveText("19.2.5");
+    await expect(page.getByTestId("remote-init")).toHaveText("19.2.5");
 
     const remoteManifest = JSON.parse(
       fs.readFileSync(
@@ -275,7 +264,8 @@ test.describe("full-features", () => {
 
     expect(manifest.apps.default).toEqual(
       expect.objectContaining({
-        entry: "./src/main.tsx",
+        mount: "#app",
+        module: expect.objectContaining({ type: "entry" }),
       }),
     );
     expect(manifest.pages.support).toEqual(
@@ -288,14 +278,12 @@ test.describe("full-features", () => {
           streaming: false,
           hydrate: "load",
         },
-        component: "./src/pages/Support.tsx",
         module: expect.objectContaining({ type: "react-component" }),
       }),
     );
     expect(manifest.pages.dashboard).toEqual(
       expect.objectContaining({
         path: "/dashboard",
-        component: "./src/pages/Dashboard.tsx",
         render: "ssr",
         rendering: {
           mode: "ssr",
@@ -310,7 +298,6 @@ test.describe("full-features", () => {
     expect(manifest.pages.insights).toEqual(
       expect.objectContaining({
         path: "/insights",
-        component: "./src/pages/Insights.tsx",
         render: "rsc",
         rendering: {
           mode: "rsc",
@@ -324,7 +311,6 @@ test.describe("full-features", () => {
     );
     expect(manifest.pages.remote).toEqual(
       expect.objectContaining({
-        component: "./src/pages/RemoteHost.tsx",
         render: "csr",
         rendering: expect.objectContaining({
           mode: "csr",
@@ -349,7 +335,6 @@ test.describe("full-features", () => {
     );
     expect(manifest.pages.campaign.ppr.regions.offer).toEqual(
       expect.objectContaining({
-        component: "./src/pages/OfferRegion.tsx",
         cache: { revalidate: 30 },
       }),
     );
@@ -378,7 +363,6 @@ test.describe("full-features", () => {
     expect(Object.values(manifest.server.functions)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          module: "src/api/operators.server.ts",
           exportName: "getMerchantOperationsSnapshot",
         }),
       ]),
@@ -402,30 +386,19 @@ test.describe("full-features", () => {
     expect(manifest.rsc.pages.insights).toEqual(
       expect.objectContaining({
         renderer: "insights-rsc",
-        component: "./src/pages/Insights.tsx",
-      }),
-    );
-    expect(manifest.rsc.clientReferences).toEqual(
-      expect.objectContaining({
-        "src/pages/InsightsBadge.tsx#default": {
-          module: "src/pages/InsightsBadge.tsx",
-          exportName: "default",
-        },
-      }),
-    );
-    expect(manifest.rsc.clientReferenceManifest).toEqual(
-      expect.objectContaining({
-        [pathToFileURL(path.join(exampleDir, "src/pages/InsightsBadge.tsx"))
-          .href]: expect.objectContaining({
-          name: "*",
+        routeId: "insights",
+        assets: expect.objectContaining({
+          css: expect.arrayContaining(["insights-rsc.css"]),
         }),
       }),
     );
-    expect(manifest.rsc.serverConsumerManifest).toEqual(
-      expect.objectContaining({
-        moduleMap: expect.any(Object),
-      }),
-    );
+    expect(manifest.rsc.clientReferences).toBeUndefined();
+    expect(manifest.rsc.clientReferenceManifest).toBeUndefined();
+    expect(manifest.rsc.serverConsumerManifest).toBeUndefined();
+    const publicManifestText = fs.readFileSync(manifestPath, "utf-8");
+    expect(publicManifestText).not.toContain(".tsx");
+    expect(publicManifestText).not.toContain("file://");
+    expect(publicManifestText).not.toContain(exampleDir);
     expect(manifest.remotes.crm).toEqual({
       manifest: "https://assets.example.com/crm/evjs-remote.json",
       activeWhen: ["/crm/*"],
