@@ -62,6 +62,9 @@ export interface ShellOptions {
   resolveMountPoint?: (ctx: AppContext) => Element | null;
   shared?: SharedScope;
   sharedPolicy?: "warn" | "error";
+  onRemoteSharedNegotiated?: (
+    event: RemoteSharedNegotiationContext,
+  ) => void | Promise<void>;
   onError?: (error: unknown, ctx: ShellErrorContext) => void | Promise<void>;
   onWarning?: (warning: ShellWarningContext) => void | Promise<void>;
 }
@@ -115,6 +118,14 @@ export interface RemoteSharedDependenciesWarning {
   request: ActivationRequest;
 }
 
+export interface RemoteSharedNegotiationContext {
+  remoteId: string;
+  dependencies: string[];
+  resolution: RemoteSharedResolution;
+  manifest: RemoteManifest;
+  request: ActivationRequest;
+}
+
 export interface Shell {
   start(request?: ActivationRequest): Promise<void>;
   activate(request: ActivationRequest): Promise<void>;
@@ -147,10 +158,15 @@ interface ActiveModule {
   module: AppModule;
   mountPoint: Element;
   ctx: AppContext;
+  stylesheets: string[];
 }
 
 const loadingScripts = new Map<string, Promise<void>>();
 const loadingStylesheets = new Map<string, Promise<void>>();
+const stylesheetReferences = new Map<
+  string,
+  { count: number; element?: HTMLLinkElement }
+>();
 
 type BrowserWindowLike = Pick<
   Window,
@@ -188,11 +204,8 @@ export function createShell(options: ShellOptions): Shell {
   const remoteManifestCache = new Map<string, Promise<RemoteManifest>>();
   const warnedSharedRemotes = new Set<string>();
   const driverDisposers: Array<() => void> = [];
+  const sharedScope = createShellSharedScope(options.shared);
   let active: ActiveModule | undefined;
-
-  for (const [name, entry] of Object.entries(options.shared ?? {})) {
-    registerSharedDependency(name, entry);
-  }
 
   async function resolve(request: ActivationRequest): Promise<{
     id: string;
@@ -208,6 +221,8 @@ export function createShell(options: ShellOptions): Shell {
       warnedSharedRemotes,
       options.onWarning,
       options.sharedPolicy ?? "warn",
+      options.onRemoteSharedNegotiated,
+      sharedScope,
     );
     const mountPoint =
       request.mountPoint ?? options.resolveMountPoint?.(target.ctx);
@@ -233,10 +248,7 @@ export function createShell(options: ShellOptions): Shell {
       promise = callShellPhase(
         "load",
         ctx,
-        async () => {
-          await loadRemoteStylesheets(ctx);
-          return loadModule(href, ctx);
-        },
+        () => loadModule(href, ctx),
         options.onError,
       ).catch((error) => {
         moduleCache.delete(href);
@@ -245,7 +257,14 @@ export function createShell(options: ShellOptions): Shell {
       moduleCache.set(href, promise);
     }
     const module = await promise;
-    await initializeModule(href, module, ctx, moduleInitCache, options.onError);
+    await initializeModule(
+      href,
+      module,
+      ctx,
+      moduleInitCache,
+      options.onError,
+      sharedScope,
+    );
     return module;
   }
 
@@ -271,31 +290,45 @@ export function createShell(options: ShellOptions): Shell {
       }
 
       const previous = active;
-      if (previous?.module.unmount) {
-        await callShellPhase(
-          "unmount",
-          previous.ctx,
-          () => previous.module.unmount?.(previous.mountPoint, previous.ctx),
-          options.onError,
-        );
+      if (previous) {
+        try {
+          if (previous.module.unmount) {
+            await callShellPhase(
+              "unmount",
+              previous.ctx,
+              () =>
+                previous.module.unmount?.(previous.mountPoint, previous.ctx),
+              options.onError,
+            );
+          }
+        } finally {
+          releaseStylesheets(previous.stylesheets);
+          if (active === previous) active = undefined;
+        }
       }
 
+      const stylesheets = await loadRemoteStylesheets(target.ctx);
       const module = await getModule(target.href, target.ctx);
       const shouldHydrate = request.hydrate ?? target.ctx.kind === "page";
-      if (shouldHydrate && module.hydrate) {
-        await callShellPhase(
-          "hydrate",
-          target.ctx,
-          () => module.hydrate?.(target.mountPoint, target.ctx),
-          options.onError,
-        );
-      } else if (module.mount) {
-        await callShellPhase(
-          "mount",
-          target.ctx,
-          () => module.mount?.(target.mountPoint, target.ctx),
-          options.onError,
-        );
+      try {
+        if (shouldHydrate && module.hydrate) {
+          await callShellPhase(
+            "hydrate",
+            target.ctx,
+            () => module.hydrate?.(target.mountPoint, target.ctx),
+            options.onError,
+          );
+        } else if (module.mount) {
+          await callShellPhase(
+            "mount",
+            target.ctx,
+            () => module.mount?.(target.mountPoint, target.ctx),
+            options.onError,
+          );
+        }
+      } catch (error) {
+        releaseStylesheets(stylesheets);
+        throw error;
       }
 
       active = {
@@ -303,6 +336,7 @@ export function createShell(options: ShellOptions): Shell {
         module,
         mountPoint: target.mountPoint,
         ctx: target.ctx,
+        stylesheets,
       };
     },
     async preload(request) {
@@ -314,13 +348,19 @@ export function createShell(options: ShellOptions): Shell {
         dispose();
       }
       const current = active;
-      if (current?.module.unmount) {
-        await callShellPhase(
-          "unmount",
-          current.ctx,
-          () => current.module.unmount?.(current.mountPoint, current.ctx),
-          options.onError,
-        );
+      if (current) {
+        try {
+          if (current.module.unmount) {
+            await callShellPhase(
+              "unmount",
+              current.ctx,
+              () => current.module.unmount?.(current.mountPoint, current.ctx),
+              options.onError,
+            );
+          }
+        } finally {
+          releaseStylesheets(current.stylesheets);
+        }
       }
       active = undefined;
       moduleCache.clear();
@@ -336,6 +376,7 @@ async function initializeModule(
   ctx: AppContext,
   moduleInitCache: Map<string, Promise<void>>,
   onError: ShellOptions["onError"],
+  sharedScope: SharedScope,
 ): Promise<void> {
   if (!module.init) return;
 
@@ -345,7 +386,7 @@ async function initializeModule(
       "init",
       ctx,
       async () => {
-        await module.init?.(getSharedScope(), ctx);
+        await module.init?.(sharedScope, ctx);
       },
       onError,
     ).catch((error) => {
@@ -429,6 +470,8 @@ async function resolveTarget(
   warnedSharedRemotes: Set<string>,
   onWarning: ShellOptions["onWarning"],
   sharedPolicy: NonNullable<ShellOptions["sharedPolicy"]>,
+  onRemoteSharedNegotiated: ShellOptions["onRemoteSharedNegotiated"],
+  sharedScope: SharedScope,
 ) {
   if (request.pageId) {
     const page = manifest.pages[request.pageId];
@@ -464,6 +507,8 @@ async function resolveTarget(
     warnedSharedRemotes,
     onWarning,
     sharedPolicy,
+    onRemoteSharedNegotiated,
+    sharedScope,
   );
   if (remoteTarget) return remoteTarget;
 
@@ -499,6 +544,8 @@ async function resolveRemoteTarget(
   warnedSharedRemotes: Set<string>,
   onWarning: ShellOptions["onWarning"],
   sharedPolicy: NonNullable<ShellOptions["sharedPolicy"]>,
+  onRemoteSharedNegotiated: ShellOptions["onRemoteSharedNegotiated"],
+  sharedScope: SharedScope,
 ) {
   const pathname = getRequestPathname(request);
   const remoteId =
@@ -534,6 +581,8 @@ async function resolveRemoteTarget(
     warnedSharedRemotes,
     onWarning,
     sharedPolicy,
+    onRemoteSharedNegotiated,
+    sharedScope,
   );
   const entryId = resolveRemoteEntryId(remoteManifest, request, pathname);
   const entry = remoteManifest.entries[entryId];
@@ -571,6 +620,8 @@ async function negotiateRemoteSharedDependencies(
   warnedSharedRemotes: Set<string>,
   onWarning: ShellOptions["onWarning"],
   sharedPolicy: NonNullable<ShellOptions["sharedPolicy"]>,
+  onRemoteSharedNegotiated: ShellOptions["onRemoteSharedNegotiated"],
+  sharedScope: SharedScope,
 ): Promise<RemoteSharedResolution> {
   const dependencies = Object.keys(manifest.shared ?? {});
   const resolution: RemoteSharedResolution = {
@@ -580,10 +631,9 @@ async function negotiateRemoteSharedDependencies(
   };
   if (dependencies.length === 0) return resolution;
 
-  const scope = getSharedScope();
   for (const [name, requirement] of Object.entries(manifest.shared ?? {})) {
     const shareKey = requirement.shareKey ?? name;
-    const provided = scope[shareKey];
+    const provided = sharedScope[shareKey];
     if (!provided) {
       resolution.missing.push(name);
       continue;
@@ -622,10 +672,20 @@ async function negotiateRemoteSharedDependencies(
   }
 
   if (resolution.missing.length === 0 && resolution.incompatible.length === 0) {
+    await onRemoteSharedNegotiated?.({
+      remoteId,
+      dependencies,
+      resolution,
+      manifest,
+      request,
+    });
     return resolution;
   }
 
-  if (sharedPolicy === "error") {
+  if (
+    sharedPolicy === "error" ||
+    hasStrictSharedFailure(manifest, resolution)
+  ) {
     throw new Error(
       formatSharedDependencyMessage(remoteId, dependencies, resolution),
     );
@@ -648,10 +708,17 @@ async function negotiateRemoteSharedDependencies(
 
   if (onWarning) {
     await onWarning(warning);
-    return resolution;
+  } else {
+    console.warn(warning.message);
   }
 
-  console.warn(warning.message);
+  await onRemoteSharedNegotiated?.({
+    remoteId,
+    dependencies,
+    resolution,
+    manifest,
+    request,
+  });
 
   return resolution;
 }
@@ -663,6 +730,27 @@ function getSharedScope(): SharedScope {
     globalThis.__EVJS_SHARED_SCOPE__ = scope;
   }
   return scope;
+}
+
+function createShellSharedScope(shared: SharedScope | undefined): SharedScope {
+  return {
+    ...getSharedScope(),
+    ...(shared ?? {}),
+  };
+}
+
+function hasStrictSharedFailure(
+  manifest: RemoteManifest,
+  resolution: RemoteSharedResolution,
+): boolean {
+  const failed = new Set([
+    ...resolution.missing,
+    ...resolution.incompatible.map((item) => item.name),
+  ]);
+
+  return Object.entries(manifest.shared ?? {}).some(
+    ([name, requirement]) => requirement.strictVersion && failed.has(name),
+  );
 }
 
 function formatSharedDependencyMessage(
@@ -1002,21 +1090,24 @@ async function loadScriptAsset(href: string): Promise<void> {
   await promise;
 }
 
-async function loadRemoteStylesheets(ctx: AppContext): Promise<void> {
-  if (ctx.kind !== "remote" || !ctx.remote) return;
+async function loadRemoteStylesheets(ctx: AppContext): Promise<string[]> {
+  if (ctx.kind !== "remote" || !ctx.remote) return [];
 
   const remote = ctx.remote;
   const cssAssets = remote.entry.assets?.css ?? [];
-  if (cssAssets.length === 0) return;
+  if (cssAssets.length === 0) return [];
 
-  await Promise.all(
-    cssAssets.map((asset) =>
-      loadStylesheetAsset(resolveRemoteHref(remote.manifest.baseUrl, asset)),
+  const hrefs = [
+    ...new Set(
+      cssAssets.map((asset) =>
+        resolveRemoteHref(remote.manifest.baseUrl, asset),
+      ),
     ),
-  );
+  ];
+  return Promise.all(hrefs.map((href) => acquireStylesheetAsset(href)));
 }
 
-async function loadStylesheetAsset(href: string): Promise<void> {
+async function acquireStylesheetAsset(href: string): Promise<string> {
   const doc = globalThis.document;
   if (!doc) {
     throw new Error(
@@ -1024,14 +1115,28 @@ async function loadStylesheetAsset(href: string): Promise<void> {
     );
   }
 
-  if (doc.querySelector?.(`link[data-evjs-shell-style][href="${href}"]`)) {
-    return;
+  const current = stylesheetReferences.get(href);
+  if (current) {
+    current.count += 1;
+    await loadingStylesheets.get(href);
+    return href;
   }
 
+  const existing = findManagedStylesheet(doc, href);
+  if (existing) {
+    stylesheetReferences.set(href, {
+      count: 1,
+      element: existing,
+    });
+    return href;
+  }
+
+  let element: HTMLLinkElement | undefined;
   let promise = loadingStylesheets.get(href);
   if (!promise) {
     promise = new Promise<void>((resolve, reject) => {
       const link = doc.createElement("link");
+      element = link;
       link.rel = "stylesheet";
       link.href = href;
       link.setAttribute?.("data-evjs-shell-style", "true");
@@ -1041,12 +1146,47 @@ async function loadStylesheetAsset(href: string): Promise<void> {
       doc.head.appendChild(link);
     }).catch((error) => {
       loadingStylesheets.delete(href);
+      stylesheetReferences.delete(href);
       throw error;
     });
     loadingStylesheets.set(href, promise);
+    stylesheetReferences.set(href, {
+      count: 1,
+      element,
+    });
   }
 
   await promise;
+  return href;
+}
+
+function releaseStylesheets(hrefs: string[]): void {
+  for (const href of hrefs) {
+    const reference = stylesheetReferences.get(href);
+    if (!reference) continue;
+
+    reference.count -= 1;
+    if (reference.count > 0) continue;
+
+    reference.element?.remove?.();
+    stylesheetReferences.delete(href);
+    loadingStylesheets.delete(href);
+  }
+}
+
+function findManagedStylesheet(
+  doc: Document,
+  href: string,
+): HTMLLinkElement | undefined {
+  if (!doc.querySelectorAll) return undefined;
+  const links = doc.querySelectorAll<HTMLLinkElement>(
+    "link[data-evjs-shell-style]",
+  );
+
+  return Array.from(links).find((link) => {
+    const rawHref = link.getAttribute("href");
+    return rawHref === href || link.href === resolveBrowserHref(href);
+  });
 }
 
 async function defaultLoadRemoteManifest(
@@ -1058,5 +1198,21 @@ async function defaultLoadRemoteManifest(
       `[evjs] Failed to load remote manifest "${remote.manifest}": ${response.status} ${response.statusText}`,
     );
   }
-  return response.json() as Promise<RemoteManifest>;
+  const manifest = (await response.json()) as RemoteManifest;
+  if (isLocalRemoteManifestUrl(remote.manifest)) {
+    return {
+      ...manifest,
+      baseUrl: new URL(".", remote.manifest).toString(),
+    };
+  }
+  return manifest;
+}
+
+function isLocalRemoteManifestUrl(manifestUrl: string): boolean {
+  try {
+    const url = new URL(manifestUrl, globalThis.location?.href);
+    return url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
 }

@@ -7,21 +7,23 @@ shell activates for `/crm/*`.
 The remote simulates a customer-success panel for `Northstar Outdoor` and
 declares React as a shared dependency through `remote.shared`.
 
-Local development runs this remote on port `3002`; the full-features host points
-to `http://localhost:3002/evjs-remote.json`.
+Local development can serve this remote on port `3002`. The host component keeps
+only the production manifest URL. If an app wants query-string manifest
+switching for debugging, it must opt in with `manifestQueryParam`; the default
+host behavior always uses the configured manifest URL.
 
 The recommended remote authoring model is:
 
 - export a normal React component as `default`;
-- optionally export `init(sharedScope, ctx)` for shared dependency or startup
-  preparation;
+- read remote metadata with `useRemoteContext()` only when the component needs
+  entry, request, or source diagnostics;
 - avoid touching the host DOM directly;
-- reserve explicit `mount()` / `unmount()` exports for non-React or advanced
-  lifecycle modules.
+- reserve explicit `init()`, `mount()`, `hydrate()`, and `unmount()` exports for
+  non-React or advanced lifecycle modules.
 
 The host e2e test routes remote assets to this build output and verifies:
 
 - remote manifest loading;
-- shared scope negotiation;
-- one-time remote `init(sharedScope, ctx)`;
-- automatic React lifecycle wrapping for the default component.
+- host-side shared scope negotiation diagnostics;
+- automatic React lifecycle wrapping for the default component;
+- stylesheet loading from the remote manifest.

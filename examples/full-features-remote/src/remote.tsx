@@ -1,20 +1,5 @@
-import type { AppContext, SharedScope } from "@evjs/client";
+import { useRemoteContext } from "@evjs/client";
 import "./remote.css";
-
-let initializedSharedReactVersion = "not-initialized";
-
-export function init(sharedScope: SharedScope, ctx: AppContext): void {
-  initializedSharedReactVersion =
-    sharedScope.react?.version ??
-    ctx.remote?.shared.provided.react?.version ??
-    "missing";
-}
-
-export interface CrmRemoteWorkspaceProps {
-  ctx?: AppContext;
-  remote?: AppContext["remote"];
-  request?: AppContext["request"];
-}
 
 const customerHealthSignals = [
   {
@@ -50,18 +35,9 @@ const playbookSteps = [
   },
 ];
 
-export default function CrmRemoteWorkspace({
-  ctx,
-  remote,
-  request,
-}: CrmRemoteWorkspaceProps) {
-  const sharedReactVersion =
-    remote?.shared.provided["remote-react"]?.version ??
-    remote?.shared.provided.react?.version ??
-    "missing";
-  const sourceLabel = getRemoteSourceLabel(ctx);
-  const entryId = remote?.entryId ?? "unknown";
-  const requestUrl = request?.url?.toString() ?? "unknown";
+export default function CrmRemoteWorkspace() {
+  const remote = useRemoteContext();
+  const requestUrl = remote.requestUrl ?? "unknown";
 
   return (
     <section className="crm-remote" data-testid="crm-remote-card">
@@ -75,7 +51,9 @@ export default function CrmRemoteWorkspace({
             dependency negotiation.
           </p>
         </div>
-        <div className="crm-remote__source">{sourceLabel}</div>
+        <div className="crm-remote__source" data-testid="remote-source">
+          {remote.source}
+        </div>
       </div>
 
       <div className="crm-remote__metrics">
@@ -110,33 +88,13 @@ export default function CrmRemoteWorkspace({
       <dl className="crm-remote__runtime">
         <div>
           <dt>Entry</dt>
-          <dd data-testid="remote-entry">{entryId}</dd>
+          <dd data-testid="remote-entry">{remote.entryId}</dd>
         </div>
         <div>
           <dt>Request</dt>
           <dd data-testid="remote-url">{requestUrl}</dd>
         </div>
-        <div>
-          <dt>Shared remote-react</dt>
-          <dd data-testid="remote-shared">{sharedReactVersion}</dd>
-        </div>
-        <div>
-          <dt>Init shared react</dt>
-          <dd data-testid="remote-init">{initializedSharedReactVersion}</dd>
-        </div>
       </dl>
     </section>
   );
-}
-
-function getRemoteSourceLabel(ctx: AppContext | undefined): string {
-  const baseUrl = ctx?.remote?.manifest.baseUrl;
-  if (!baseUrl) return "served from remote manifest";
-
-  try {
-    const url = new URL(baseUrl);
-    return `served from ${url.host}`;
-  } catch {
-    return `served from ${baseUrl}`;
-  }
 }

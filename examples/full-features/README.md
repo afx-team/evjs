@@ -23,6 +23,8 @@ It still exercises the new framework contracts with the webpack adapter:
 - manifest-driven shell remote activation;
 - paired remote build in `examples/full-features-remote` that emits
   `dist/evjs-remote.json` from a default-exported React component;
+- `useRemoteHost()` for host-side remote activation, explicit remote manifest
+  configuration, shared dependency diagnostics, and shell lifecycle ownership;
 - server function transform and REST route;
 - single `dist/manifest.json`;
 - `buildOutput()`, per-document `transformHtml()`, and `buildEnd({ output })`

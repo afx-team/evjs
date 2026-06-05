@@ -129,8 +129,15 @@ Utoopack 仍需要等价的下层 metadata 才能跑通同一路径。
 
 Remote shared dependencies 使用 host 显式提供的 share scope。Shell 会在加载 remote
 entry 前检查 remote `shared` 需求，支持 `shareKey`、singleton 检查、eager metadata，
-以及包含复合比较符和 `||` 的 semver 风格范围；已满足的依赖会暴露给 remote context，
-并在 mount 前对 remote 调用一次 `init(sharedScope, ctx)`。自动包加载和版本选择不属于这版实现。
+以及包含复合比较符和 `||` 的 semver 风格范围；已满足的依赖会通过
+shell context 暴露。Host 应用可以通过 `onRemoteSharedNegotiated()` 观察协商结果，
+用于诊断、埋点或策略 UI；普通 remote 组件不应该渲染框架依赖版本。默认导出的 React
+host 页面应该使用 `useRemoteHost()` / `RemoteApp`，而不是手写 shell manifest；
+helper 负责 remote app manifest 构造、用于调试的 query-string manifest override、
+默认 React share scope 注册、remote manifest 加载、shell activation 和 dispose。
+默认导出的 React remote module 会由 shell 自动适配成 lifecycle module。显式
+`init()`、`mount()`、`hydrate()`、`unmount()` 只作为高级生命周期逃生口保留。
+自动包加载和版本选择不属于这版实现。
 
 ## 配置归属
 

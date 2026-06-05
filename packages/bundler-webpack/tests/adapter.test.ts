@@ -304,18 +304,11 @@ describe("webpackAdapter build", () => {
   it("builds remote client entries and emits a remote manifest", async () => {
     const cwd = await createFixture({
       "src/remote.tsx": `
-        import type { AppContext, SharedScope } from "@evjs/client";
+        import { useRemoteContext } from "@evjs/client";
 
-        export function init(scope: SharedScope, ctx: AppContext) {
-          window.__remoteInit = [scope.react?.version, ctx.remote?.entryId].join(":");
-        }
-
-        export default function Remote({
-          remote,
-        }: {
-          remote?: AppContext["remote"];
-        }) {
-          return <h2>Remote {remote?.entryId}</h2>;
+        export default function Remote() {
+          const remote = useRemoteContext();
+          return <h2>Remote {remote.entryId}</h2>;
         }
       `,
     });
@@ -397,9 +390,9 @@ describe("webpackAdapter build", () => {
       },
     });
     expect(remoteBundle).toContain("registerShellModule");
-    expect(remoteBundle).toContain("createReactPageModule");
-    expect(remoteBundle).toContain("createRemoteShellModule");
-    expect(remoteBundle).toContain("ctx && ctx.remote");
+    expect(remoteBundle).toContain("createRemoteReactModule");
+    expect(remoteBundle).not.toContain("createRemoteShellModule");
+    expect(remoteBundle).not.toContain("ctx && ctx.remote");
     await expect(
       fs.access(path.join(cwd, "dist/index.html")),
     ).rejects.toThrow();

@@ -3,9 +3,19 @@ import type {
   HydrationMode,
   RenderMode,
 } from "@evjs/shared/manifest";
-import { type ComponentType, createElement } from "react";
+import {
+  type ComponentType,
+  createContext,
+  createElement,
+  useContext,
+} from "react";
 import { createRoot, hydrateRoot, type Root } from "react-dom/client";
-import type { AppContext, AppModule } from "./shell.js";
+import type {
+  ActivationRequest,
+  AppContext,
+  AppModule,
+  RemoteSharedResolution,
+} from "./shell.js";
 
 export interface ReactPageRuntimeOptions {
   component: ComponentType;
@@ -22,6 +32,44 @@ export interface ReactPageMountOptions {
   props?:
     | Record<string, unknown>
     | ((ctx?: AppContext) => Record<string, unknown>);
+}
+
+export interface RemoteRuntimeContext {
+  id: string;
+  name: string;
+  entryId: string;
+  baseUrl?: string;
+  source: string;
+  requestUrl?: string;
+  shared: RemoteRuntimeSharedContext;
+}
+
+export interface RemoteRuntimeSharedContext {
+  provided: Record<string, RemoteRuntimeSharedEntry>;
+  missing: string[];
+  incompatible: RemoteSharedResolution["incompatible"];
+  version(...names: string[]): string | undefined;
+}
+
+export interface RemoteRuntimeSharedEntry {
+  version?: string;
+  singleton?: boolean;
+  eager?: boolean;
+  loaded?: boolean;
+  from?: string;
+}
+
+export interface RemoteReactProps {
+  remote: RemoteRuntimeContext;
+  request: ActivationRequest;
+}
+
+export interface RemoteReactModuleExports {
+  default?: ComponentType<RemoteReactProps>;
+  init?: AppModule["init"];
+  mount?: AppModule["mount"];
+  hydrate?: AppModule["hydrate"];
+  unmount?: AppModule["unmount"];
 }
 
 export interface RscFlightFetchOptions {
@@ -65,6 +113,9 @@ export type RscPayload = RscDebugPayload;
 export type RscPayloadMountOptions = RscDebugPayloadMountOptions;
 
 const rootByMountPoint = new WeakMap<Element, Root>();
+const RemoteContext = createContext<RemoteRuntimeContext | undefined>(
+  undefined,
+);
 
 export function createReactPageModule(
   options: ReactPageMountOptions,
@@ -97,6 +148,111 @@ export function createReactPageModule(
       rootByMountPoint.delete(mountPoint);
     },
   };
+}
+
+export function createRemoteReactModule(
+  exports: RemoteReactModuleExports,
+): AppModule {
+  if (isLifecycleModule(exports)) return exports as AppModule;
+
+  if (!exports.default) {
+    throw new Error(
+      "[evjs] Remote modules must export a default React component or lifecycle functions.",
+    );
+  }
+
+  return {
+    ...createReactPageModule({
+      component: RemoteReactRoot as ComponentType,
+      hydrate: "load",
+      render: "csr",
+      props(ctx) {
+        return {
+          component: exports.default,
+          remote: createRemoteRuntimeContext(ctx),
+          request: ctx?.request ?? {},
+        };
+      },
+    }),
+    init: exports.init,
+  };
+}
+
+export function useRemoteContext(): RemoteRuntimeContext {
+  const ctx = useContext(RemoteContext);
+  if (!ctx) {
+    throw new Error(
+      "[evjs] useRemoteContext() must be used inside an evjs remote React module.",
+    );
+  }
+  return ctx;
+}
+
+export function createRemoteRuntimeContext(
+  ctx: AppContext | undefined,
+): RemoteRuntimeContext {
+  const remote = ctx?.remote;
+  const provided = sanitizeRemoteSharedEntries(remote?.shared.provided ?? {});
+
+  return {
+    id: remote?.id ?? ctx?.id ?? "unknown",
+    name: remote?.manifest.name ?? remote?.id ?? ctx?.id ?? "unknown",
+    entryId: remote?.entryId ?? "unknown",
+    baseUrl: remote?.manifest.baseUrl,
+    source: getRemoteSourceLabel(remote?.manifest.baseUrl),
+    requestUrl: ctx?.request.url?.toString(),
+    shared: {
+      provided,
+      missing: remote?.shared.missing ?? [],
+      incompatible: remote?.shared.incompatible ?? [],
+      version(...names) {
+        for (const name of names) {
+          const version = provided[name]?.version;
+          if (version) return version;
+        }
+        return undefined;
+      },
+    },
+  };
+}
+
+function sanitizeRemoteSharedEntries(
+  provided: RemoteSharedResolution["provided"],
+): Record<string, RemoteRuntimeSharedEntry> {
+  return Object.fromEntries(
+    Object.entries(provided).map(([name, entry]) => [
+      name,
+      {
+        version: entry.version,
+        singleton: entry.singleton,
+        eager: entry.eager,
+        loaded: entry.loaded,
+        from: entry.from,
+      },
+    ]),
+  );
+}
+
+interface RemoteReactRootProps {
+  component: ComponentType<RemoteReactProps>;
+  remote: RemoteRuntimeContext;
+  request: ActivationRequest;
+}
+
+function RemoteReactRoot({ component, remote, request }: RemoteReactRootProps) {
+  return createElement(
+    RemoteContext.Provider,
+    { value: remote },
+    createElement(component, { remote, request }),
+  );
+}
+
+function isLifecycleModule(exports: RemoteReactModuleExports): boolean {
+  return (
+    typeof exports.mount === "function" ||
+    typeof exports.hydrate === "function" ||
+    typeof exports.unmount === "function"
+  );
 }
 
 function mountReactRoot(
@@ -250,6 +406,17 @@ function pagePropsFromContext(ctx: AppContext): Record<string, unknown> {
         }
       : undefined,
   };
+}
+
+function getRemoteSourceLabel(baseUrl: string | undefined): string {
+  if (!baseUrl) return "served from remote manifest";
+
+  try {
+    const url = new URL(baseUrl);
+    return `served from ${url.host}`;
+  } catch {
+    return `served from ${baseUrl}`;
+  }
 }
 
 function isRscDebugPayload(value: unknown): value is RscDebugPayload {

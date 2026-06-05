@@ -7,6 +7,7 @@ import {
   createShell,
   type HistoryDriverOptions,
   loadSharedDependency,
+  registerSharedDependency,
   registerShellModule,
 } from "../src/shell.js";
 
@@ -193,6 +194,9 @@ describe("createShell", () => {
       createElement(tag: string) {
         if (tag === "link") {
           return {
+            remove() {
+              events.push("remove-style");
+            },
             setAttribute() {},
           } as unknown as HTMLLinkElement;
         }
@@ -230,6 +234,7 @@ describe("createShell", () => {
     });
 
     await shell.activate({ url: "/crm/customers", hydrate: false });
+    await shell.dispose();
 
     expect(createdLinks.map((link) => link.href)).toEqual([
       "https://assets.example.com/crm/customers.css",
@@ -241,6 +246,7 @@ describe("createShell", () => {
       "style:https://assets.example.com/crm/customers.css",
       "script:https://assets.example.com/crm/customers.js",
       "mount",
+      "remove-style",
     ]);
   });
 
@@ -441,6 +447,11 @@ describe("createShell", () => {
           mount() {},
         };
       },
+      onRemoteSharedNegotiated(event) {
+        events.push(
+          `negotiated:${event.remoteId}:${event.dependencies.join(",")}:${event.resolution.provided.react?.version}`,
+        );
+      },
       onWarning(warning) {
         events.push(`warning:${warning.code}`);
       },
@@ -452,8 +463,10 @@ describe("createShell", () => {
       hydrate: false,
     });
 
-    expect(events).toEqual(["shared:react"]);
-    expect(await loadSharedDependency("react")).toBe(reactValue);
+    expect(events).toEqual(["negotiated:crm:react:19.2.5", "shared:react"]);
+    await expect(loadSharedDependency("react")).rejects.toThrow(
+      'Shared dependency "react" is not registered',
+    );
   });
 
   it("initializes remote modules once with the negotiated host share scope", async () => {
@@ -516,7 +529,7 @@ describe("createShell", () => {
 
   it("supports shareKey aliases and OR version ranges for remote shared dependencies", async () => {
     const events: string[] = [];
-    createShell({
+    const shell = createShell({
       manifest,
       shared: {
         "react-dom": {
@@ -525,10 +538,6 @@ describe("createShell", () => {
           value: { hydrateRoot: true },
         },
       },
-    });
-
-    const shell = createShell({
-      manifest,
       resolveMountPoint: () => ({}) as Element,
       async loadRemoteManifest() {
         return {
@@ -569,6 +578,54 @@ describe("createShell", () => {
     });
 
     expect(events).toEqual(["shared:true:0"]);
+  });
+
+  it("uses explicitly registered global shared dependencies as shell defaults", async () => {
+    const events: string[] = [];
+    registerSharedDependency("react", {
+      version: "19.2.5",
+      singleton: true,
+      value: { createElement: true },
+    });
+    const shell = createShell({
+      manifest,
+      resolveMountPoint: () => ({}) as Element,
+      async loadRemoteManifest() {
+        return {
+          version: 1,
+          name: "crm",
+          baseUrl: "https://assets.example.com/crm",
+          shared: {
+            react: {
+              requiredVersion: "^19.0.0",
+              singleton: true,
+            },
+          },
+          entries: {
+            list: {
+              module: {
+                type: "lifecycle",
+                href: "./list.js",
+              },
+            },
+          },
+        };
+      },
+      async loadModule(_href, ctx) {
+        events.push(ctx.remote?.shared.provided.react?.version ?? "missing");
+        return {
+          mount() {},
+        };
+      },
+    });
+
+    await shell.activate({
+      remoteId: "crm",
+      remoteEntryId: "list",
+      hydrate: false,
+    });
+
+    expect(events).toEqual(["19.2.5"]);
   });
 
   it("can fail remote activation on singleton shared dependency conflicts", async () => {
@@ -650,6 +707,51 @@ describe("createShell", () => {
         hydrate: false,
       }),
     ).rejects.toThrow('Remote "crm" declares shared dependencies');
+  });
+
+  it("treats strict remote shared dependency failures as errors", async () => {
+    const shell = createShell({
+      manifest,
+      sharedPolicy: "warn",
+      shared: {
+        react: {
+          version: "18.3.1",
+          singleton: true,
+          value: {},
+        },
+      },
+      resolveMountPoint: () => ({}) as Element,
+      async loadRemoteManifest() {
+        return {
+          version: 1,
+          name: "crm",
+          baseUrl: "https://assets.example.com/crm",
+          shared: {
+            react: {
+              requiredVersion: "^19.0.0",
+              singleton: true,
+              strictVersion: true,
+            },
+          },
+          entries: {
+            list: {
+              module: {
+                type: "lifecycle",
+                href: "./list.js",
+              },
+            },
+          },
+        };
+      },
+    });
+
+    await expect(
+      shell.activate({
+        remoteId: "crm",
+        remoteEntryId: "list",
+        hydrate: false,
+      }),
+    ).rejects.toThrow("does not satisfy ^19.0.0");
   });
 
   it("starts from drivers and unsubscribes on dispose", async () => {

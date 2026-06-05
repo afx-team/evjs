@@ -61,7 +61,7 @@ export default defineConfig({
       mount: "#app",
     },
     remote: {
-      component: "./src/pages/RemoteHost.tsx",
+      component: "./src/pages/RemoteApp.tsx",
       html: "./index.html",
       render: "csr",
       mount: "#app",

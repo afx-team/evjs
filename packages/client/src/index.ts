@@ -157,6 +157,10 @@ export { startPageRuntime } from "./page.js";
 export type {
   ReactPageMountOptions,
   ReactPageRuntimeOptions,
+  RemoteReactModuleExports,
+  RemoteReactProps,
+  RemoteRuntimeContext,
+  RemoteRuntimeSharedContext,
   RscDebugPayload,
   RscDebugPayloadMountOptions,
   RscFlightFetchOptions,
@@ -165,6 +169,8 @@ export type {
 } from "./react.js";
 export {
   createReactPageModule,
+  createRemoteReactModule,
+  createRemoteRuntimeContext,
   fetchRscDebugPayload,
   fetchRscFlight,
   fetchRscPayload,
@@ -173,7 +179,28 @@ export {
   mountReactPage,
   mountRscDebugPayload,
   mountRscPayload,
+  useRemoteContext,
 } from "./react.js";
+export type {
+  RemoteAppHookOptions,
+  RemoteAppHookResult,
+  RemoteAppProps,
+  RemoteAppRuntimeController,
+  RemoteAppRuntimeOptions,
+  RemoteAppShellOptions,
+  RemoteAppState,
+  RemoteAppStatus,
+  RemoteAppTargetOptions,
+} from "./remote-app.js";
+export {
+  createRemoteAppManifest,
+  formatRemoteSharedNegotiation,
+  getRemoteSharedVersion,
+  RemoteApp,
+  resolveRemoteAppManifestUrl,
+  startRemoteAppRuntime,
+  useRemoteHost,
+} from "./remote-app.js";
 export type {
   PageReference,
   ReactRouteDeclaration,
@@ -202,6 +229,7 @@ export type {
   PageDriverOptions,
   RemoteManifestLoadContext,
   RemoteSharedDependenciesWarning,
+  RemoteSharedNegotiationContext,
   RemoteSharedResolution,
   SharedScope,
   SharedScopeEntry,

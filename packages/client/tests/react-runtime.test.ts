@@ -2,6 +2,8 @@ import type { BuildOutput } from "@evjs/shared/manifest";
 import { describe, expect, it, vi } from "vitest";
 import {
   createReactPageModule,
+  createRemoteReactModule,
+  createRemoteRuntimeContext,
   fetchRscDebugPayload,
   fetchRscFlight,
   loadRscDebugPage,
@@ -114,6 +116,108 @@ describe("createReactPageModule", () => {
     expect((renderedElements[0] as { props?: unknown }).props).toEqual({
       kind: "remote",
       id: "crm",
+    });
+  });
+});
+
+describe("createRemoteReactModule", () => {
+  it("adapts default React exports to shell lifecycle modules", async () => {
+    calls.length = 0;
+    renderedElements.length = 0;
+    const mod = createRemoteReactModule({
+      default: Component,
+    });
+
+    await mod.mount?.(
+      {} as Element,
+      {
+        id: "crm",
+        kind: "remote",
+        request: { url: "/crm/customers" },
+        remote: {
+          id: "crm",
+          entryId: "customers",
+          manifest: {
+            version: 1,
+            name: "crm",
+            baseUrl: "https://assets.example.com/crm/",
+            entries: {},
+          },
+          entry: {
+            module: { type: "lifecycle", href: "remote.js" },
+          },
+          shared: {
+            provided: {
+              react: {
+                version: "19.2.5",
+              },
+            },
+            missing: [],
+            incompatible: [],
+          },
+        },
+      } as never,
+    );
+
+    expect(calls).toEqual(["createRoot", "render"]);
+  });
+
+  it("keeps explicit lifecycle remote modules as-is", async () => {
+    const lifecycle = {
+      mount: vi.fn(),
+    };
+
+    expect(createRemoteReactModule(lifecycle)).toBe(lifecycle);
+  });
+
+  it("creates public-safe remote runtime context", () => {
+    const runtime = createRemoteRuntimeContext({
+      id: "crm",
+      kind: "remote",
+      request: { url: "/crm/customers" },
+      remote: {
+        id: "crm",
+        entryId: "customers",
+        manifest: {
+          version: 1,
+          name: "crm",
+          baseUrl: "https://assets.example.com/crm/",
+          entries: {},
+        },
+        entry: {
+          module: { type: "lifecycle", href: "remote.js" },
+        },
+        shared: {
+          provided: {
+            react: {
+              version: "19.2.5",
+              singleton: true,
+              value: { createElement: true },
+              get() {
+                return { createElement: true };
+              },
+            },
+          },
+          missing: [],
+          incompatible: [],
+        },
+      },
+    } as never);
+
+    expect(runtime).toMatchObject({
+      id: "crm",
+      name: "crm",
+      entryId: "customers",
+      requestUrl: "/crm/customers",
+      source: "served from assets.example.com",
+    });
+    expect(runtime.shared.version("remote-react", "react")).toBe("19.2.5");
+    expect(runtime.shared.provided.react).toEqual({
+      version: "19.2.5",
+      singleton: true,
+      eager: undefined,
+      loaded: undefined,
+      from: undefined,
     });
   });
 });

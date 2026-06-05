@@ -131,9 +131,18 @@ it can run the same path.
 Remote shared dependencies use an explicit host-provided share scope. The shell
 checks remote `shared` requirements before loading the remote entry, supports
 `shareKey`, singleton checks, eager metadata, and semver-style ranges including
-compound comparators and `||`, exposes provided entries to the remote context,
-and calls remote `init(sharedScope, ctx)` once before mount. Automatic package
-loading/version selection remains outside this implementation.
+compound comparators and `||`, and exposes provided entries to remote React
+components through the shell context. Host applications can observe negotiation
+results with `onRemoteSharedNegotiated()` for diagnostics, telemetry, or policy
+UI; ordinary remote components should not render framework dependency versions.
+React host pages should use `useRemoteHost()` / `RemoteApp` instead of
+constructing shell manifests manually; the helper owns remote app manifest
+creation, query-string manifest override for debugging, default React share
+scope registration, remote manifest loading, shell activation, and disposal.
+Default-exported React remote modules are automatically adapted to shell
+lifecycle modules. Explicit `init()`, `mount()`, `hydrate()`, and `unmount()`
+exports remain available only as an advanced lifecycle escape hatch. Automatic
+package loading/version selection remains outside this implementation.
 
 ## Configuration Ownership
 

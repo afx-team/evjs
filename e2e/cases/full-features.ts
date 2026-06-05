@@ -239,8 +239,12 @@ test.describe("full-features", () => {
     await expect(remoteCard).toContainText("Schedule retention offer review");
     await expect(page.getByTestId("remote-entry")).toHaveText("customers");
     await expect(page.getByTestId("remote-url")).toHaveText("/crm/customers");
-    await expect(page.getByTestId("remote-shared")).toHaveText("19.2.5");
-    await expect(page.getByTestId("remote-init")).toHaveText("19.2.5");
+    await expect(page.getByTestId("remote-shared")).toHaveText(
+      "Shared: crm: remote-react -> 19.2.5",
+    );
+    await expect(page.getByTestId("remote-source")).toContainText(
+      "served from",
+    );
 
     const remoteManifest = JSON.parse(
       fs.readFileSync(
@@ -511,7 +515,7 @@ async function routeRemoteAssets(page: Page, remoteDir: string): Promise<void> {
   const fulfillRemoteAsset = async (route: Route) => {
     const requestUrl = new URL(route.request().url());
     const assetName = requestUrl.pathname
-      .replace(/^\/crm\/?/, "")
+      .replace(/^\/crm\//, "")
       .replace(/^\/+/, "");
     const filePath = path.join(distDir, assetName || "evjs-remote.json");
 
