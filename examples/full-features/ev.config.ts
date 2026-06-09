@@ -32,7 +32,7 @@ export default defineConfig({
       component: "./src/pages/Campaign.tsx",
       html: "./index.html",
       render: "ppr",
-      hydrate: "visible",
+      hydrate: "none",
       mount: "#app",
       ppr: {
         regions: {

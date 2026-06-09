@@ -113,6 +113,10 @@ export default defineConfig({
 });
 ```
 
+PPR 页面由服务端合成，不会生成整页客户端 hydration entry。需要交互能力的
+PPR 页面应显式建模为 client islands 或 region-level hydration，而不是 hydrate
+整个 page shell。
+
 `render: "rsc"` 已预留给后续专用 RSC transform/runtime adapter。
 
 ## 服务端
@@ -148,9 +152,12 @@ export default defineConfig({
 
 ```txt
 /__evjs/fn       服务端函数
-/__evjs/ppr      存在 PPR 页面时的 region endpoint
+/__evjs/ppr      存在 PPR 页面时的 region direct/debug endpoint
 /__evjs/rsc      启用 server.rsc 时的 Flight endpoint
 ```
+
+PPR 页面首屏不会要求浏览器调用 `/__evjs/ppr`；框架服务端在服务 page route 时解析
+declared regions。
 
 只有当浏览器需要调用另一个 origin 上的框架服务端时，才配置 `transport.baseUrl`：
 

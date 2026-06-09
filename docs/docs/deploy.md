@@ -30,9 +30,13 @@ Framework server endpoints are derived from `server.basePath`:
 
 ```txt
 /__evjs/fn       server functions
-/__evjs/ppr      PPR region endpoint when PPR pages exist
+/__evjs/ppr      PPR region direct/debug endpoint when PPR pages exist
 /__evjs/rsc      RSC Flight endpoint when server.rsc is enabled
 ```
+
+PPR document requests are served through their page route. The PPR endpoint is
+kept for direct/debug access and fallback adapters, not as the default browser
+initial-load protocol.
 
 If browser and server run on different origins, configure `transport.baseUrl` at build time.
 

@@ -163,6 +163,11 @@ function createEntries(
         `[evjs] Page "${page.id}" uses render: "${page.render}" but server is disabled.`,
       );
     }
+    if (page.render === "ppr" && !page.component) {
+      throw new Error(
+        `[evjs] Page "${page.id}" uses render: "ppr" but does not declare a component page module.`,
+      );
+    }
 
     if (!isRouteOwnedPage(page)) {
       const pageEntry = getPageClientEntry(page);
@@ -349,6 +354,7 @@ function getPageClientEntry(page: {
 }):
   | { import: string; metadata?: NonNullable<BuildEntry["metadata"]> }
   | undefined {
+  if (page.render === "ppr") return undefined;
   if (page.entry) return { import: page.entry };
   if (page.app) return { import: page.app };
   if (page.render === "rsc") return undefined;

@@ -15,6 +15,7 @@ export interface ReactServerRenderContext {
   route?: RouteOutput;
   page?: PageOutput;
   pageId?: string;
+  regionId?: string;
 }
 
 export type ReactServerRendererModule = Record<string, unknown>;
@@ -85,6 +86,12 @@ export function createReactServerRenderAdapter(
       ? await options.createProps(ctx)
       : defaultProps(ctx);
     const appHtml = renderToString(createElement(Component, props));
+
+    if (ctx.regionId) {
+      return {
+        html: appHtml,
+      };
+    }
 
     if (options.renderDocument) {
       return options.renderDocument(appHtml, ctx);

@@ -196,7 +196,7 @@ describe("createApp", () => {
               owner: { pageId: "dashboard" },
               load: async () => ({
                 default(ctx: ServerRenderContext) {
-                  return `<h1>${ctx.page?.render}:${ctx.pageId}</h1>`;
+                  return `<main><h1>${ctx.page?.render}:${ctx.pageId}</h1><div data-evjs-ppr-region="hero">fallback</div></main>`;
                 },
               }),
             },
@@ -216,7 +216,10 @@ describe("createApp", () => {
     const res = await app.request("/dashboard");
 
     expect(res.status).toBe(200);
-    expect(await res.text()).toBe("<h1>ppr:dashboard</h1>");
+    expect(res.headers.get("x-evjs-ppr")).toBe("merged");
+    expect(await res.text()).toBe(
+      "<main><h1>ppr:dashboard</h1><p>dashboard:hero</p></main>",
+    );
 
     const region = await app.request("/__evjs/ppr/dashboard/hero");
 
@@ -251,7 +254,7 @@ describe("createApp", () => {
                   html: [
                     "<!doctype html>",
                     "<html><body>",
-                    '<div id="app"><section>Hero fragment</section></div>',
+                    '<div id="app"><section><div>Hero fragment</div></section></div>',
                     '<script src="/region.js"></script>',
                     "</body></html>",
                   ].join(""),
@@ -268,7 +271,9 @@ describe("createApp", () => {
     expect(region.status).toBe(200);
     expect(region.headers.get("x-evjs-page")).toBe("dashboard");
     expect(region.headers.get("x-evjs-ppr-region")).toBe("hero");
-    expect(await region.text()).toBe("<section>Hero fragment</section>");
+    expect(await region.text()).toBe(
+      "<section><div>Hero fragment</div></section>",
+    );
   });
 
   it("caches PPR regions with revalidate policy", async () => {

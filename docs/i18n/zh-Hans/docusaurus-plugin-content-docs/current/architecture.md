@@ -112,16 +112,26 @@ sequenceDiagram
 
   Browser->>Server: GET page route
   Server->>Manifest: match route/page/renderer
-  Server-->>Browser: SSR/PPR HTML
+  Server-->>Browser: SSR HTML
 
-  Browser->>Server: GET runtime.server.ppr/page/region
-  Server->>Manifest: read region cache policy/assets
-  Server-->>Browser: PPR region HTML
+  Browser->>Server: GET PPR page route
+  Server->>Manifest: match shell and region renderers
+  Server->>Server: render/cache declared regions
+  Server-->>Browser: PPR HTML in the same route response
 
   Browser->>Server: GET runtime.server.rsc?page=id
   Server->>Manifest: read RSC renderer and reference manifests
   Server-->>Browser: React Flight stream
 ```
+
+PPR 首屏不会要求浏览器再请求 region endpoint。默认运行时在框架服务端匹配
+shell renderer 和 region renderer，渲染 declared dynamic regions，并把结果放在同一个
+page route 响应里返回。派生的 `runtime.server.ppr` endpoint 仍保留给 direct/debug
+访问、非 streaming fallback 和 cache 验证使用。
+
+PPR 页面在 public manifest 中的 page-level hydration 是 `none`。需要客户端交互时，
+应通过显式 client islands 或 region-level hydration metadata 引入，而不是 hydrate 整个
+PPR shell。
 
 RSC Flight 请求也通过同一个 `@evjs/server` 边界进入。Webpack 验证路径已经使用
 React Flight client consumption 和 React client/server reference manifests；

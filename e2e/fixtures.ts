@@ -38,6 +38,7 @@ function getContentType(ext: string): string {
       return "application/javascript";
     case ".css":
       return "text/css";
+    case ".json":
     case ".map":
       return "application/json";
     default:
@@ -61,6 +62,7 @@ function createStaticServer(
   const indexHtml = fs.readFileSync(path.join(distDir, "index.html"), "utf-8");
   const proxyPrefixes = options?.proxyPrefixes ?? [];
   const pathRewrites = options?.pathRewrites ?? {};
+  const publicManifestPath = resolvePublicManifestPath(distDir);
 
   return http.createServer((req, res) => {
     const url = req.url || "/";
@@ -95,6 +97,12 @@ function createStaticServer(
       return;
     }
 
+    if (pathname === "/manifest.json" && publicManifestPath) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      fs.createReadStream(publicManifestPath).pipe(res);
+      return;
+    }
+
     const rewrite = pathRewrites[pathname];
     if (rewrite) {
       const rewrittenPath = path.join(distDir, rewrite);
@@ -107,8 +115,8 @@ function createStaticServer(
     }
 
     // Serve static files
-    const filePath = path.join(distDir, url);
-    if (fs.existsSync(filePath)) {
+    const filePath = resolveStaticFilePath(distDir, pathname);
+    if (filePath && fs.existsSync(filePath)) {
       const ext = path.extname(filePath);
       res.writeHead(200, { "Content-Type": getContentType(ext) });
       fs.createReadStream(filePath).pipe(res);
@@ -118,6 +126,32 @@ function createStaticServer(
       res.end(indexHtml);
     }
   });
+}
+
+function resolveStaticFilePath(
+  distDir: string,
+  pathname: string,
+): string | undefined {
+  let decodedPathname: string;
+  try {
+    decodedPathname = decodeURIComponent(pathname);
+  } catch {
+    return undefined;
+  }
+
+  const root = path.resolve(distDir);
+  const filePath = path.resolve(root, decodedPathname.replace(/^\/+/, ""));
+  return filePath === root || filePath.startsWith(`${root}${path.sep}`)
+    ? filePath
+    : undefined;
+}
+
+function resolvePublicManifestPath(distDir: string): string | undefined {
+  const candidates = [
+    path.join(distDir, "manifest.json"),
+    path.join(path.dirname(distDir), "manifest.json"),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate));
 }
 
 function getRequestPathname(url: string): string {
@@ -137,7 +171,9 @@ function pathMatchesPrefix(pathname: string, prefix: string): boolean {
 }
 
 function getServerProxyPrefixes(manifest: {
-  runtime?: { server?: { basePath?: string; fn?: string; rsc?: string } };
+  runtime?: {
+    server?: { basePath?: string; fn?: string; ppr?: string; rsc?: string };
+  };
   pages?: Record<string, { path?: string; render?: string }>;
 }): string[] {
   return [
@@ -145,6 +181,7 @@ function getServerProxyPrefixes(manifest: {
     "/__evjs",
     manifest.runtime?.server?.basePath,
     manifest.runtime?.server?.fn,
+    manifest.runtime?.server?.ppr,
     manifest.runtime?.server?.rsc,
     ...Object.values(manifest.pages ?? {})
       .filter((page) => page.path && page.render !== "csr")

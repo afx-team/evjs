@@ -159,7 +159,7 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
           entry: page.entry,
           component: page.component,
           app: page.app,
-          hydrate: page.hydrate,
+          hydrate: effectivePageHydrate(page),
           mount: page.mount,
           module: entry
             ? {
@@ -715,7 +715,7 @@ function linkServerRenderers(
 }
 
 function derivePageRendering(page: PageNode): PageRenderingOutput {
-  const hydrate = page.hydrate ?? defaultHydrate(page.render);
+  const hydrate = effectivePageHydrate(page);
 
   switch (page.render) {
     case "csr":
@@ -761,6 +761,12 @@ function derivePageRendering(page: PageNode): PageRenderingOutput {
         hydrate,
       };
   }
+}
+
+function effectivePageHydrate(page: PageNode): HydrationMode {
+  return page.render === "ppr"
+    ? "none"
+    : (page.hydrate ?? defaultHydrate(page.render));
 }
 
 function defaultHydrate(render: PageNode["render"]): HydrationMode {

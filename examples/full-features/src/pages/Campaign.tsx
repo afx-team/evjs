@@ -72,8 +72,9 @@ export default function Campaign(props: CampaignProps) {
           <h2>Live offer inventory</h2>
           <p>
             This placeholder is intentionally present in the shell. The
-            framework server can render the region separately at
-            <code> /__evjs/ppr/campaign/offer</code> with its own cache policy.
+            framework server resolves the declared region while producing the
+            same route response, so the browser does not need an extra region
+            round trip.
           </p>
         </div>
         <div

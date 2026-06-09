@@ -55,7 +55,7 @@ describe("createPublicManifest", () => {
           },
         },
         campaign: {
-          assets: { js: ["campaign.js"], css: [] },
+          assets: { js: [], css: [] },
           render: "ppr",
           rendering: {
             mode: "ppr",
@@ -63,8 +63,9 @@ describe("createPublicManifest", () => {
             html: "partial",
             prerender: "partial",
             streaming: true,
-            hydrate: "load",
+            hydrate: "none",
           },
+          hydrate: "none",
           component: "./src/pages/Campaign.tsx",
           ppr: {
             shell: { js: ["campaign-ppr-shell.js"], css: [] },
@@ -159,6 +160,9 @@ describe("createPublicManifest", () => {
       type: "react-component",
       href: "evjs-rsc-client.js",
     });
+    expect(manifest.pages.campaign.assets).toEqual({ js: [], css: [] });
+    expect(manifest.pages.campaign.hydrate).toBe("none");
+    expect(manifest.pages.campaign.rendering.hydrate).toBe("none");
     expect(manifest.pages.campaign.ppr?.regions.offer).toEqual({
       id: "offer",
       assets: { js: [], css: [] },

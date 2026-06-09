@@ -112,16 +112,27 @@ sequenceDiagram
 
   Browser->>Server: GET page route
   Server->>Manifest: match route/page/renderer
-  Server-->>Browser: SSR/PPR HTML
+  Server-->>Browser: SSR HTML
 
-  Browser->>Server: GET runtime.server.ppr/page/region
-  Server->>Manifest: read region cache policy/assets
-  Server-->>Browser: PPR region HTML
+  Browser->>Server: GET PPR page route
+  Server->>Manifest: match shell and region renderers
+  Server->>Server: render/cache declared regions
+  Server-->>Browser: PPR HTML in the same route response
 
   Browser->>Server: GET runtime.server.rsc?page=id
   Server->>Manifest: read RSC renderer and reference manifests
   Server-->>Browser: React Flight stream
 ```
+
+PPR does not require the browser to fetch region endpoints during initial page
+load. The default runtime path renders the shell and declared dynamic regions on
+the framework server and returns them as one page response. The derived
+`runtime.server.ppr` endpoint remains available for direct/debug access,
+non-streaming fallbacks, and cache validation.
+
+PPR page hydration is page-level `none` in the public manifest. Client
+interactivity should be introduced through explicit client islands or
+region-level hydration metadata, not by hydrating the whole PPR shell.
 
 RSC uses the same `@evjs/server` boundary for Flight requests. The Webpack
 validation path uses React Flight client consumption and React client/server

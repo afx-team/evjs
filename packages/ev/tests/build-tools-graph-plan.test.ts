@@ -323,6 +323,12 @@ describe("createAppGraph and createBuildPlan", () => {
       kind: "server-runtime",
     });
     expect(plan.runtime.server?.ppr).toBe("/__evjs/ppr");
+    expect(plan.entries).not.toContainEqual(
+      expect.objectContaining({
+        name: "campaign",
+        kind: "page-client",
+      }),
+    );
     expect(plan.entries).toEqual(
       expect.arrayContaining([
         {
@@ -486,6 +492,32 @@ describe("createAppGraph and createBuildPlan", () => {
     expect(() =>
       createBuildPlan(config, analysis.graph, { mode: "production" }),
     ).toThrow('Page "campaign" uses render: "ppr" but server is disabled');
+  });
+
+  it("rejects PPR pages without a component page module", async () => {
+    const cwd = await createFixture({
+      "src/campaign/main.tsx": "console.log('campaign');",
+      "index.html": '<div id="app"></div>',
+    });
+    const config = createConfig({
+      pages: {
+        campaign: {
+          entry: "./src/campaign/main.tsx",
+          html: "./index.html",
+          render: "ppr",
+          ppr: {
+            regions: {},
+          },
+        },
+      },
+    });
+    const analysis = await createAppGraph(config, cwd);
+
+    expect(() =>
+      createBuildPlan(config, analysis.graph, { mode: "production" }),
+    ).toThrow(
+      'Page "campaign" uses render: "ppr" but does not declare a component page module',
+    );
   });
 
   it("plans RSC pages as server renderers without a client page entry", async () => {
@@ -713,7 +745,6 @@ describe("createAppGraph and createBuildPlan", () => {
       clientEntryAssets: {
         csr: { js: ["csr.js"], css: [] },
         ssr: { js: ["ssr.js"], css: [] },
-        ppr: { js: ["ppr.js"], css: [] },
         "evjs-rsc-client": { js: ["evjs-rsc-client.js"], css: [] },
       },
     });
@@ -746,8 +777,9 @@ describe("createAppGraph and createBuildPlan", () => {
       html: "partial",
       prerender: "partial",
       streaming: true,
-      hydrate: "load",
+      hydrate: "none",
     });
+    expect(output.pages.ppr.assets).toEqual({ js: [], css: [] });
     expect(output.pages.rsc.rendering).toEqual({
       mode: "rsc",
       component: "rsc",

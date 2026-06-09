@@ -69,7 +69,15 @@ runtime.server.fn = /__evjs/fn
 
 String pages and `{ entry }` pages compile as user-owned client entries. Component pages add explicit metadata so a bundler adapter can wrap the real component import with the generic page runtime. The `BuildPlan.import` remains the user component path; evjs does not write hidden production source files.
 
-SSR/PPR pages add server render entries to the plan. PPR regions carry cache metadata in the manifest:
+SSR/PPR pages add server render entries to the plan. PPR pages produce a shell
+renderer and one renderer per declared dynamic region. At runtime the framework
+server resolves those regions while serving the page route, so the initial
+browser navigation stays one document request. PPR regions carry cache metadata
+in the manifest:
+
+PPR component pages do not create a page-level browser entry. Their public
+manifest hydration mode is `none` until explicit client islands or region-level
+hydration are modeled.
 
 ```json
 {

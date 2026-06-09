@@ -118,6 +118,14 @@ test.describe("full-features", () => {
     baseURL,
     apiURL,
   }) => {
+    const browserRegionRequests: string[] = [];
+    page.on("request", (browserRequest) => {
+      const url = new URL(browserRequest.url());
+      if (url.pathname === "/__evjs/ppr/campaign/offer") {
+        browserRegionRequests.push(browserRequest.url());
+      }
+    });
+
     await page.goto(`${baseURL}/campaign`);
     await expectRenderMode(page, "ppr", "PPR");
     await expectBackLink(page);
@@ -128,10 +136,18 @@ test.describe("full-features", () => {
     await expect(page.getByTestId("campaign-page")).toHaveText("campaign");
     await expect(page.getByText("Static campaign shell")).toBeVisible();
     await expect(page.getByText("Checkout conversion")).toBeVisible();
-    await expect(page.getByText("18.4%")).toBeVisible();
-    await expect(page.getByTestId("offer-placeholder")).toContainText(
-      "Offer region placeholder",
+    await expect(
+      page
+        .locator('[aria-label="Campaign metrics"]')
+        .getByText("18.4%", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByTestId("offer-region")).toContainText(
+      "Dynamic PPR region rendered on demand",
     );
+    await expect(
+      page.getByRole("heading", { name: "Offer Region" }),
+    ).toBeVisible();
+    expect(browserRegionRequests).toEqual([]);
 
     const regionResponse = await request.get(
       `${apiURL}/__evjs/ppr/campaign/offer`,
@@ -333,7 +349,7 @@ test.describe("full-features", () => {
           html: "partial",
           prerender: "partial",
           streaming: true,
-          hydrate: "visible",
+          hydrate: "none",
         },
       }),
     );

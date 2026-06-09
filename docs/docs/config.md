@@ -113,6 +113,10 @@ export default defineConfig({
 });
 ```
 
+PPR pages are server-composed and do not create a full-page client hydration
+entry. Interactive PPR work should be modeled as explicit client islands or
+region-level hydration instead of hydrating the whole page shell.
+
 `render: "rsc"` is reserved until the dedicated RSC transform/runtime adapter lands.
 
 ## Server
@@ -148,9 +152,12 @@ Derived runtime paths:
 
 ```txt
 /__evjs/fn       server functions
-/__evjs/ppr      PPR region endpoint when PPR pages exist
+/__evjs/ppr      PPR region direct/debug endpoint when PPR pages exist
 /__evjs/rsc      RSC Flight endpoint when server.rsc is enabled
 ```
+
+PPR page loads do not require the browser to call `/__evjs/ppr`; the framework
+server resolves declared regions while serving the page route.
 
 Use `transport.baseUrl` only when the browser calls a framework server on another origin:
 

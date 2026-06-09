@@ -228,7 +228,8 @@ export async function handleFrameworkRenderRequest(
   const match = coordinator.match ? await coordinator.match(ctx) : ctx;
   if (!match) return undefined;
 
-  return toResponse(await coordinator.render(match));
+  const response = toResponse(await coordinator.render(match));
+  return renderPprPageResponse(options, request, match, response, coordinator);
 }
 
 export async function handlePprRegionRequest(
@@ -246,6 +247,76 @@ export async function handlePprRegionRequest(
   if (!page || page.render !== "ppr") return undefined;
   const region = page.ppr?.regions[match.regionId];
   if (!region) return undefined;
+  const coordinator = normalizeRenderCoordinator(options.render);
+  return renderPprRegionResponse(options, request, match, coordinator);
+}
+
+async function renderPprPageResponse(
+  options: FrameworkServerOptions,
+  request: Request,
+  ctx: ServerRenderContext,
+  response: Response,
+  coordinator: ServerRenderCoordinator,
+): Promise<Response> {
+  if (request.method === "HEAD") return response;
+  const pageId = ctx.pageId;
+  const page = pageId ? options.manifest.pages[pageId] : undefined;
+  if (!pageId || page?.render !== "ppr" || !page.ppr) return response;
+
+  const contentType = response.headers.get("Content-Type") ?? "";
+  if (!contentType.includes("text/html")) return response;
+
+  let html = await response.text();
+  let changed = false;
+
+  for (const regionId of Object.keys(page.ppr.regions)) {
+    const regionResponse = await renderPprRegionResponse(
+      options,
+      request,
+      { pageId, regionId },
+      coordinator,
+    );
+    if (!regionResponse?.ok) continue;
+
+    const nextHtml = replacePprRegionPlaceholder(
+      html,
+      regionId,
+      await regionResponse.text(),
+    );
+    if (nextHtml !== html) {
+      html = nextHtml;
+      changed = true;
+    }
+  }
+
+  const headers = new Headers(response.headers);
+  headers.set("Content-Type", "text/html; charset=utf-8");
+  if (!changed) {
+    return new Response(html, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
+
+  headers.set("x-evjs-ppr", "merged");
+  return new Response(html, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+async function renderPprRegionResponse(
+  options: FrameworkServerOptions,
+  request: Request,
+  match: { pageId: string; regionId: string },
+  coordinator: ServerRenderCoordinator,
+): Promise<Response | undefined> {
+  const page = options.manifest.pages[match.pageId];
+  if (!page || page.render !== "ppr") return undefined;
+  const region = page.ppr?.regions[match.regionId];
+  if (!region) return undefined;
   const cachePolicy = region.cache ?? "no-store";
   const cacheKey = createPprRegionCacheKey(request, match);
   const cached = readPprRegionCache(options, cacheKey, cachePolicy);
@@ -258,7 +329,6 @@ export async function handlePprRegionRequest(
     pageId: match.pageId,
     regionId: match.regionId,
   };
-  const coordinator = normalizeRenderCoordinator(options.render);
   const renderMatch = coordinator.match ? await coordinator.match(ctx) : ctx;
   if (!renderMatch) return undefined;
 
@@ -755,9 +825,16 @@ function extractPprRegionFragment(html: string): string {
   if (!/<!doctype|<html[\s>]/i.test(html)) return html;
 
   const mountMatch = html.match(
-    /<div\s+[^>]*(?:id=["']app["']|data-evjs-mount=["'][^"']+["'])[^>]*>([\s\S]*?)<\/div>/i,
+    /<div\s+[^>]*(?:id=["']app["']|data-evjs-mount=["'][^"']+["'])[^>]*>/i,
   );
-  if (mountMatch?.[1]) return mountMatch[1].trim();
+  if (mountMatch?.[0] && mountMatch.index !== undefined) {
+    const fragment = extractBalancedDivContent(
+      html,
+      mountMatch.index,
+      mountMatch[0].length,
+    );
+    if (fragment) return fragment;
+  }
 
   const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
   if (bodyMatch?.[1]) {
@@ -765,6 +842,106 @@ function extractPprRegionFragment(html: string): string {
   }
 
   return html;
+}
+
+function replacePprRegionPlaceholder(
+  html: string,
+  regionId: string,
+  fragment: string,
+): string {
+  const range = findPprRegionPlaceholderRange(html, regionId);
+  if (!range) return html;
+  return `${html.slice(0, range.start)}${fragment}${html.slice(range.end)}`;
+}
+
+function findPprRegionPlaceholderRange(
+  html: string,
+  regionId: string,
+): { start: number; end: number } | undefined {
+  const openPattern = new RegExp(
+    `<([A-Za-z][\\w:-]*)\\b[^>]*\\sdata-evjs-ppr-region=(["'])${escapeRegExp(regionId)}\\2[^>]*>`,
+    "i",
+  );
+  const match = openPattern.exec(html);
+  if (!match?.[0] || match.index === undefined) return undefined;
+
+  const tagName = match[1];
+  const start = match.index;
+  const openTag = match[0];
+  if (openTag.endsWith("/>")) {
+    return {
+      start,
+      end: start + openTag.length,
+    };
+  }
+
+  const end = findBalancedElementEnd(html, tagName, start, openTag.length);
+  return end === undefined ? undefined : { start, end };
+}
+
+function findBalancedElementEnd(
+  html: string,
+  tagName: string,
+  openIndex: number,
+  openLength: number,
+): number | undefined {
+  const tagPattern = new RegExp(`</?${escapeRegExp(tagName)}\\b[^>]*>`, "gi");
+  tagPattern.lastIndex = openIndex + openLength;
+  let depth = 1;
+
+  for (
+    let match = tagPattern.exec(html);
+    match;
+    match = tagPattern.exec(html)
+  ) {
+    const tag = match[0];
+    if (tag.startsWith("</")) {
+      depth -= 1;
+      if (depth === 0) return match.index + tag.length;
+      continue;
+    }
+
+    if (!tag.endsWith("/>")) {
+      depth += 1;
+    }
+  }
+
+  return undefined;
+}
+
+function extractBalancedDivContent(
+  html: string,
+  openIndex: number,
+  openLength: number,
+): string | undefined {
+  const tagPattern = /<\/?div\b[^>]*>/gi;
+  tagPattern.lastIndex = openIndex + openLength;
+  let depth = 1;
+
+  for (
+    let match = tagPattern.exec(html);
+    match;
+    match = tagPattern.exec(html)
+  ) {
+    const tag = match[0];
+    if (tag.startsWith("</")) {
+      depth -= 1;
+      if (depth === 0) {
+        return html.slice(openIndex + openLength, match.index).trim();
+      }
+      continue;
+    }
+
+    if (!tag.endsWith("/>")) {
+      depth += 1;
+    }
+  }
+
+  return undefined;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function joinPath(base: string, segment: string): string {

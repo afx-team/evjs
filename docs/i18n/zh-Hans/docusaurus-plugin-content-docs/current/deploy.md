@@ -30,9 +30,12 @@ npm run build
 
 ```txt
 /__evjs/fn       服务端函数
-/__evjs/ppr      存在 PPR 页面时的 region endpoint
+/__evjs/ppr      存在 PPR 页面时的 region direct/debug endpoint
 /__evjs/rsc      启用 server.rsc 时的 Flight endpoint
 ```
+
+PPR 文档请求通过页面 route 服务；PPR endpoint 主要用于 direct/debug 访问和 fallback
+adapter，不是默认浏览器首屏协议。
 
 如果浏览器和服务端在不同 origin，构建时配置 `transport.baseUrl`。
 
