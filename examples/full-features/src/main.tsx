@@ -42,6 +42,7 @@ function App() {
           <a href="/campaign">PPR campaign monitor</a>
           <a href="/insights">RSC insights</a>
           <a href="/remote.html">CRM remote workspace</a>
+          <a href="/render-lab.html">App render lab</a>
         </nav>
       </section>
 
@@ -136,7 +137,8 @@ function App() {
         <p>
           Explicit app entry, server function RPC, REST route proxy,
           framework-managed pages, SSR/PPR/RSC renderers, manifest-driven remote
-          shell activation, and deployment artifact generation.
+          shell activation, app-owned render mode routes, and deployment
+          artifact generation.
         </p>
       </section>
     </RenderModePage>

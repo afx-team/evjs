@@ -12,6 +12,7 @@ import type {
   ServerRenderPlan,
   SharedDependencyMap,
 } from "@evjs/shared/manifest";
+import { isRouteDerivedPage } from "@evjs/shared/manifest";
 
 export interface BuildPlanConfig {
   entry: string;
@@ -169,7 +170,7 @@ function createEntries(
       );
     }
 
-    if (!isRouteOwnedPage(page)) {
+    if (!isRouteDerivedPage(page)) {
       const pageEntry = getPageClientEntry(page);
       if (pageEntry) {
         entries.push({
@@ -320,10 +321,6 @@ function createServerRenderers(
   return renderers;
 }
 
-function isRouteOwnedPage(page: { path?: string; routeId?: string }): boolean {
-  return Boolean(page.routeId && !page.path);
-}
-
 function pageOwner(
   page: { id: string; routeId?: string },
   extra: { regionId?: string } = {},
@@ -386,7 +383,7 @@ function createHtmlPlans(graph: AppGraph): HtmlPlan[] {
       fileName: app.id === "default" ? "index.html" : `${app.id}.html`,
       owner: { appId: app.id },
     })),
-    ...pages.filter(shouldEmitHtmlPlanForPage).map((page) => ({
+    ...pages.filter(shouldEmitDocumentForPage).map((page) => ({
       id: page.id,
       template: page.html,
       fileName: `${page.id}.html`,
@@ -395,12 +392,12 @@ function createHtmlPlans(graph: AppGraph): HtmlPlan[] {
   ];
 }
 
-function shouldEmitHtmlPlanForPage(page: {
+function shouldEmitDocumentForPage(page: {
   path?: string;
   routeId?: string;
   render: RenderMode;
 }): boolean {
-  if (isRouteOwnedPage(page)) return false;
+  if (isRouteDerivedPage(page)) return false;
   if (page.path && page.render !== "csr") return false;
   return true;
 }

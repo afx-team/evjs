@@ -17,6 +17,12 @@ export default defineConfig({
       html: "./index.html",
       mount: "#app",
     },
+    "render-lab": {
+      entry: "./src/apps/render-lab/main.tsx",
+      html: "./index.html",
+      mount: "#app",
+      routes: "./src/apps/render-lab/routes.tsx",
+    },
   },
 
   pages: {

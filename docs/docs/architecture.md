@@ -132,6 +132,36 @@ first, then sends region patches in the same document response. The derived
 `runtime.server.ppr` endpoint remains available for direct/debug access and
 cache validation.
 
+In a single server process, region resolution is an internal framework call. In
+an edge deployment, the same contract can split across layers: the edge can
+serve a cached shell and resolve dynamic regions by server-to-server calls to an
+internal origin/FaaS endpoint. The browser still sees only the page route:
+
+```mermaid
+sequenceDiagram
+  participant Browser
+  participant Edge as Edge/CDN
+  participant Origin as Internal FaaS / Origin
+
+  Browser->>Edge: GET /campaign
+  Edge->>Edge: load cached PPR shell
+  Edge->>Edge: read manifest page.ppr.regions.offer
+  Edge->>Origin: GET /__evjs/ppr/campaign/offer
+  Origin->>Origin: render/cache offer region
+  Origin-->>Edge: region HTML fragment + cache headers
+  Edge->>Edge: apply region cache policy
+  alt delivery = merge
+    Edge-->>Browser: complete composed HTML
+  else delivery = stream
+    Edge-->>Browser: shell HTML, then region patch in same response
+  end
+```
+
+That split means `GET /__evjs/ppr/...` may appear in edge-to-origin logs but not
+in browser network logs. The long-term runtime boundary is a replaceable region
+resolver: local Node/dev can call the renderer in-process, while edge adapters
+can fetch an internal FaaS endpoint without changing the public page protocol.
+
 The preferred PPR authoring model is React `Suspense` with a
 `lazy(() => import(...))` child. `ev.config.ts` only needs `render: "ppr"` for
 the page; explicit `ppr.regions` config is kept as a low-level fallback.
@@ -171,7 +201,8 @@ apps.*
   explicit app entry, html, runtime route source, mount point
 
 pages.*
-  independent page path, entry/component/app, render mode, hydration, PPR regions
+  standalone page shorthand: path, entry/component/app, render mode,
+  hydration, PPR regions
 
 server.basePath
   derives framework server runtime paths: fn, ppr, rsc
@@ -183,7 +214,21 @@ plugins
   framework and bundler extension points
 ```
 
-Framework-managed page paths belong in `pages.*.path` so URL, component, render mode, hydration, and PPR regions stay in one declaration. TanStack route paths are app-owned too: runtime apps own their route source through `apps.*.routes`; `@evjs/client` only provides route helpers and shell driver integration.
+`apps.*` owns the application document, client entry, navigation source, and
+mount point. It should not carry one render mode, because one app can contain
+CSR, SSR, PPR, RSC, and remote routes at the same time.
+
+Route declarations own route-level rendering strategy. When a route declaration
+contains a module and non-CSR render mode, graph creation derives an internal
+page from that route. That page provides a stable `pageId`, render metadata,
+server renderers, PPR regions, assets, and manifest output, but it does not emit
+an independent HTML document. The app document remains the HTML owner.
+
+`pages.*` remains the standalone page shorthand. It is useful when a page is not
+inside an app route source, or when a simple MPA-style page should own its own
+HTML document. Internally it is normalized into the same route/page/rendering
+graph, so PPR is still a page/route rendering strategy rather than an app
+capability.
 
 ## Server Function Pipeline
 
@@ -212,6 +257,27 @@ Deployment adapters consume `BuildOutput`. `@evjs/ev` provides:
 Platform-specific adapters should derive their routing, framework endpoint, SSR,
 PPR, RSC, remote, shared dependency, and asset metadata from `BuildOutput`
 instead of reading bundler stats.
+
+The deployment model is capability-driven:
+
+```txt
+static-only
+  CSR / MPA client entries / SSG / remote manifests / assets
+
+unified node
+  static assets + framework endpoints + SSR/PPR/RSC + server functions/routes
+
+unified edge worker
+  asset binding + edge-compatible framework server bundle
+
+edge + origin/FaaS split
+  edge caches assets/shells
+  origin/FaaS resolves functions, routes, SSR/RSC, and PPR regions
+```
+
+Adapters should classify `BuildOutput` first, then emit platform routes. Static
+hosting must not claim support for SSR, PPR, RSC, server functions, or server
+routes unless a server-capable runtime is attached.
 
 ## Dev Updates
 

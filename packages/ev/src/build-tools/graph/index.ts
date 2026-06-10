@@ -202,7 +202,8 @@ export async function createAppGraph(
       graph.pages[configuredPageId].routeId ??= routeId;
     }
     const pageId =
-      configuredPageId ?? createRoutePageNode(config, graph, route, routeId);
+      configuredPageId ??
+      createRouteDerivedPageNode(config, graph, route, routeId);
     const appId = route.appId ?? defaultAppId;
     return {
       id: routeId,
@@ -409,13 +410,13 @@ function normalizeRouteModule(
   };
 }
 
-function createRoutePageNode(
+function createRouteDerivedPageNode(
   config: GraphConfig,
   graph: AppGraph,
   route: ReturnType<typeof resolveRoutes>[number],
   routeId: string,
 ): string | undefined {
-  if (!shouldCreateRoutePage(config, route)) return undefined;
+  if (!shouldCreateRouteDerivedPage(config, route)) return undefined;
 
   const pageId = sanitizeRoutePageId(route.id ?? route.path);
   graph.pages[pageId] ??= {
@@ -454,7 +455,7 @@ function normalizePublicRoutePath(routePath: string): string {
   return routePath.startsWith("/") ? routePath : `/${routePath}`;
 }
 
-function shouldCreateRoutePage(
+function shouldCreateRouteDerivedPage(
   config: GraphConfig,
   route: ReturnType<typeof resolveRoutes>[number],
 ): route is ReturnType<typeof resolveRoutes>[number] & {

@@ -56,6 +56,11 @@ export type {
 } from "./functions/index.js";
 export { dispatch, registerServerReference } from "./functions/index.js";
 export type {
+  RequestLogEntry,
+  RequestLoggerOptions,
+} from "./middleware/request-logger.js";
+export { requestLogger } from "./middleware/request-logger.js";
+export type {
   RouteHandler,
   RouteHandlerDefinition,
   RouteHandlerFn,

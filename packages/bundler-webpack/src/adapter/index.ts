@@ -10,9 +10,11 @@ import type {
   BundlerBuildFacts,
   BundlerDevContext,
   BundlerDevController,
+  ClientRouteTarget,
   DevProxyRule,
   ResolvedConfig,
 } from "@evjs/ev";
+import { getClientRouteMatches, getServerRenderedPaths } from "@evjs/ev";
 import { getLogger } from "@logtape/logtape";
 import type {
   Compiler,
@@ -622,14 +624,10 @@ function createDevProxyRules(
     }
   }
 
-  const explicitServerRouteContexts = [
+  const explicitServerRouteContexts = toUniqueDevProxyContexts([
     ...graph.serverRoutes.map((route) => route.path),
-    ...Object.values(graph.pages)
-      .filter((page) => page.path && page.render !== "csr")
-      .map((page) => page.path as string),
-  ]
-    .map(toDevProxyContext)
-    .filter((route): route is string => Boolean(route));
+    ...getServerRenderedPaths(graph),
+  ]);
   const contexts = explicitServerRouteContexts.filter(
     (context) => !configuredContexts.has(context),
   );
@@ -657,9 +655,7 @@ function createFrameworkRuntimeProxyContexts(
     contexts.push(joinUrlPath(config.server.basePath, "ppr"));
   }
 
-  return contexts
-    .map(toDevProxyContext)
-    .filter((context): context is string => Boolean(context));
+  return toUniqueDevProxyContexts(contexts);
 }
 
 function joinUrlPath(...parts: string[]): string {
@@ -689,6 +685,15 @@ function toDevProxyContext(routePath: string): string | undefined {
   return `/${staticSegments.join("/")}`;
 }
 
+function toUniqueDevProxyContexts(routePaths: string[]): string[] {
+  const contexts = new Set<string>();
+  for (const routePath of routePaths) {
+    const context = toDevProxyContext(routePath);
+    if (context) contexts.add(context);
+  }
+  return [...contexts];
+}
+
 function createDevServerTransport(
   https: ResolvedConfig<WebpackConfig>["dev"]["https"],
 ): ConstructorParameters<typeof WebpackDevServer>[0]["server"] {
@@ -713,27 +718,13 @@ function createHistoryFallback(
   plan: BuildPlan,
   graph: AppGraph,
 ): ConstructorParameters<typeof WebpackDevServer>[0]["historyApiFallback"] {
-  const appHtml = plan.html.find((html) => html.owner.appId)?.fileName;
-  if (!appHtml) return false;
-
-  const htmlByPageId = new Map(
+  const appHtmlByAppId = new Map(
     plan.html
-      .filter((html) => html.owner.pageId)
-      .map((html) => [html.owner.pageId as string, html.fileName]),
+      .filter((html) => html.owner.appId)
+      .map((html) => [html.owner.appId as string, html.fileName]),
   );
-  const pagePathRewrites = Object.values(graph.pages)
-    .filter((page) => page.render === "csr" && page.path)
-    .flatMap((page) => {
-      const fileName = htmlByPageId.get(page.id);
-      return fileName
-        ? [
-            {
-              from: routePathToRegExp(page.path as string),
-              to: `/${fileName}`,
-            },
-          ]
-        : [];
-    });
+  const appHtml = appHtmlByAppId.values().next().value;
+  if (!appHtml) return false;
 
   return {
     index: `/${appHtml}`,
@@ -745,9 +736,44 @@ function createHistoryFallback(
         from: new RegExp(`^/${escapeRegExp(html.fileName)}$`),
         to: `/${html.fileName}`,
       })),
-      ...pagePathRewrites,
+      ...createClientRouteRewrites(plan, graph, appHtmlByAppId),
     ],
   };
+}
+
+function createClientRouteRewrites(
+  plan: BuildPlan,
+  graph: AppGraph,
+  appHtmlByAppId: Map<string, string>,
+): Array<{ from: RegExp; to: string }> {
+  const htmlByPageId = new Map(
+    plan.html
+      .filter((html) => html.owner.pageId)
+      .map((html) => [html.owner.pageId as string, html.fileName]),
+  );
+
+  return getClientRouteMatches(graph).flatMap(({ path, target }) => {
+    const fileName = getClientRouteHtmlFileName(
+      target,
+      htmlByPageId,
+      appHtmlByAppId,
+    );
+    return fileName
+      ? [{ from: routePathToRegExp(path), to: `/${fileName}` }]
+      : [];
+  });
+}
+
+function getClientRouteHtmlFileName(
+  target: ClientRouteTarget,
+  htmlByPageId: Map<string, string>,
+  appHtmlByAppId: Map<string, string>,
+): string | undefined {
+  if (target.kind === "page") {
+    return htmlByPageId.get(target.pageId);
+  }
+
+  return appHtmlByAppId.get(target.appId);
 }
 
 function createHtmlFallbackBypassRewrites(

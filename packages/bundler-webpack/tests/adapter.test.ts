@@ -478,7 +478,7 @@ describe("webpackAdapter build", () => {
     ).rejects.toThrow();
   });
 
-  it("builds app client, server runtime, and route-owned SSR page entries", async () => {
+  it("builds app client, server runtime, and route-derived SSR page entries", async () => {
     const cwd = await createFixture({
       "index.html":
         '<!doctype html><html><head></head><body><div id="app"></div></body></html>',

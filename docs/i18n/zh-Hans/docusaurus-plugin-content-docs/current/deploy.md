@@ -24,6 +24,50 @@ npm run build
 - `dist/client/`：浏览器资源和 HTML；
 - `dist/server/`：启用 `server` 时的框架服务端 bundle。
 
+## 能力模型
+
+部署应由框架能力决定，而不是由产物来自哪个 bundler 决定。Deployment adapter 应从
+manifest 中识别这些 runtime requirements：
+
+| 能力 | 公开入口 | 所需 runtime | 说明 |
+| --- | --- | --- | --- |
+| 静态资源 | `dist/client/*` | CDN/静态文件服务 | 按文件名缓存即可。 |
+| CSR app routes | app HTML fallback | 静态或服务端 | 不使用服务端能力时，静态 rewrite 足够。 |
+| MPA entry pages | page HTML file | 静态或服务端 | 用户自控 client entry 或完全预渲染时可静态托管。 |
+| SSG pages | page HTML file | 静态或服务端 | 若不依赖动态服务端 API，可静态托管。 |
+| SSR pages | page route | 需要服务端能力 | route 必须到达 framework server bundle。 |
+| PPR pages | page route | 服务端能力或 edge+origin | 浏览器请求 page route；region resolution 可本进程或 server-to-server。 |
+| RSC pages | page route + `runtime.server.rsc` | 需要服务端能力 | document route 与 Flight endpoint 必须共享兼容 manifest/assets。 |
+| Server functions | `runtime.server.fn` | 需要服务端能力 | 通常与 SSR/RSC/PPR 共用同一个 origin/base path，除非用 `transport.baseUrl` 拆分。 |
+| Server routes | 声明的 route path | 需要服务端能力 | methods 与 405 行为属于 `@evjs/server`。 |
+| Remote host | remote manifest URL | 静态或服务端 | Host 可以静态；remote manifest/assets 运行时加载。 |
+| Remote app build | `evjs-remote.json` + assets | CDN/静态文件服务 | Remote lifecycle/shared metadata 由 manifest 驱动。 |
+
+由此得到四类实际部署拓扑：
+
+1. **Static-only**：CSR、MPA client entries、SSG、remote manifests 和静态资源。
+   不包含 server functions、SSR、PPR、RSC 或 server routes。
+2. **Unified Node**：一个 Node 进程提供 `dist/client`、framework endpoints、
+   SSR/PPR/RSC document routes、server functions 和 server routes。
+3. **Unified Edge Worker**：一个 edge worker 从 binding 提供资源，并把 framework
+   请求交给 edge-compatible server bundle。
+4. **Edge + Origin/FaaS split**：CDN/edge 负责资源和缓存 shell；内源 origin/FaaS
+   负责 server functions、SSR/RSC rendering 和 PPR dynamic regions。
+
+长期 adapter contract 是：
+
+```txt
+BuildOutput
+  -> classify required capabilities
+  -> map public asset root
+  -> map framework endpoints
+  -> map document routes
+  -> map server routes
+  -> emit platform routing/artifacts
+```
+
+Adapter 不应从文件名或 bundler stats 反推这些能力。
+
 ## Runtime 路径
 
 框架服务端 endpoint 从 `server.basePath` 派生：
@@ -37,7 +81,44 @@ npm run build
 PPR 文档请求通过页面 route 服务；PPR endpoint 主要用于 direct/debug 访问和 fallback
 adapter，不是默认浏览器首屏协议。
 
+如果生产部署把 PPR shell 缓存在 edge，而 dynamic regions 部署在内源 FaaS/origin，
+浏览器侧协议仍然应该保持为页面 route：
+
+```txt
+Browser
+  GET /campaign
+    -> Edge/CDN
+       load cached shell
+       read manifest page.ppr.regions
+       server-to-server GET /__evjs/ppr/campaign/offer
+         -> Internal FaaS/origin renders region fragment
+       merge 或 stream region 到同一个 /campaign response
+    <- Browser receives one document response
+```
+
+在这个拓扑下，`/__evjs/ppr/<page>/<region>` 不是浏览器首屏请求，而是 edge/runtime
+层使用的内部 region resolver endpoint。`ppr.delivery = "merge"` 会等待必要
+regions 后再返回 document；`ppr.delivery = "stream"` 会先 flush 缓存 shell，并在
+内部 region 请求完成后把 patches 继续写入同一个 HTML response。
+
 如果浏览器和服务端在不同 origin，构建时配置 `transport.baseUrl`。
+
+## 路由优先级
+
+具备服务端能力的 adapter 应按这个顺序处理路由：
+
+```txt
+1. dist/client 中的 immutable/static assets
+2. framework endpoints: runtime.server.fn, runtime.server.ppr, runtime.server.rsc
+3. BuildOutput.server.routes 中的显式 server routes
+4. framework document routes: SSR, PPR, RSC，以及 server-rendered SSG fallback
+5. CSR navigation 的 app/page HTML fallback
+6. 404
+```
+
+Static-only adapter 只应为无需服务端即可运行的能力生成 redirects。如果 `BuildOutput`
+包含 SSR、PPR、RSC、server functions 或 server routes，static adapter 仍可以输出
+静态资源和 metadata，但不能声明整个应用仅靠静态托管即可完整运行。
 
 ## 内置 Adapter
 

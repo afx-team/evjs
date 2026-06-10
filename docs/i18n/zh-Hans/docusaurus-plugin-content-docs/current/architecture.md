@@ -130,6 +130,34 @@ PPR 首屏不会要求浏览器再请求 region endpoint。框架服务端可以
 response 中发送 region patches。派生的 `runtime.server.ppr` endpoint 仍保留给
 direct/debug 访问和 cache 验证使用。
 
+在单个服务端进程里，region resolution 是框架内部调用。在 edge 部署里，同一份
+契约可以拆到多层：edge 服务缓存的 shell，再通过 server-to-server 请求访问内源
+origin/FaaS 的 dynamic region endpoint。浏览器仍然只看到页面 route：
+
+```mermaid
+sequenceDiagram
+  participant Browser
+  participant Edge as Edge/CDN
+  participant Origin as Internal FaaS / Origin
+
+  Browser->>Edge: GET /campaign
+  Edge->>Edge: load cached PPR shell
+  Edge->>Edge: read manifest page.ppr.regions.offer
+  Edge->>Origin: GET /__evjs/ppr/campaign/offer
+  Origin->>Origin: render/cache offer region
+  Origin-->>Edge: region HTML fragment + cache headers
+  Edge->>Edge: apply region cache policy
+  alt delivery = merge
+    Edge-->>Browser: complete composed HTML
+  else delivery = stream
+    Edge-->>Browser: shell HTML, then region patch in same response
+  end
+```
+
+因此 `GET /__evjs/ppr/...` 可能出现在 edge 到 origin 的服务端日志里，但不会出现在
+浏览器网络日志里。长期运行时边界应是可替换的 region resolver：Node/dev 可以在
+本进程调用 renderer，edge adapter 可以 fetch 内源 FaaS endpoint，而不改变公开页面协议。
+
 推荐的 PPR 编写模型是 React `Suspense` 包裹 `lazy(() => import(...))` 子组件。
 `ev.config.ts` 只需要在页面上配置 `render: "ppr"`；显式 `ppr.regions` 配置保留为
 底层 fallback。
@@ -164,7 +192,8 @@ apps.*
   显式应用 entry、html、运行时 route source、mount point
 
 pages.*
-  独立页面 path、entry/component/app、render mode、hydration、PPR regions
+  standalone page shorthand：path、entry/component/app、render mode、
+  hydration、PPR regions
 
 server.basePath
   派生 fn、ppr、rsc 等框架服务端路径
@@ -176,7 +205,20 @@ plugins
   框架和 bundler 扩展点
 ```
 
-Framework-managed page path 放在 `pages.*.path`，这样 URL、component、render mode、hydration 和 PPR region 归同一条页面声明所有。TanStack route path 也归应用所有：运行时应用通过 `apps.*.routes` 拥有 route source；`@evjs/client` 只提供 route helpers 和 shell driver integration。
+`apps.*` 拥有应用 document、client entry、navigation source 和 mount point。
+它不应该携带一个统一 render mode，因为一个 app 内可以同时存在 CSR、SSR、PPR、
+RSC 和 remote routes。
+
+Route declarations 拥有 route-level rendering strategy。当 route declaration
+同时声明 module 和非 CSR render mode 时，graph creation 会从该 route 派生一个内部
+page。这个 page 提供稳定的 `pageId`、render metadata、server renderers、PPR
+regions、assets 和 manifest output，但不会输出独立 HTML document。app document
+仍然是 HTML owner。
+
+`pages.*` 保留为 standalone page shorthand。它适合页面不在 app route source 内，
+或简单 MPA-style 页面需要拥有独立 HTML document 的场景。内部仍会归一到同一条
+route/page/rendering graph，因此 PPR 依旧是 page/route rendering strategy，而不是
+app capability。
 
 ## 服务端函数管线
 
@@ -204,6 +246,26 @@ Deployment adapter 消费 `BuildOutput`。`@evjs/ev` 提供：
 
 平台专属 adapter 应从 `BuildOutput` 派生 routing、framework endpoint、SSR、PPR、RSC、
 remote、shared dependency 和 asset metadata，而不是读取 bundler stats。
+
+部署模型由能力分类驱动：
+
+```txt
+static-only
+  CSR / MPA client entries / SSG / remote manifests / assets
+
+unified node
+  static assets + framework endpoints + SSR/PPR/RSC + server functions/routes
+
+unified edge worker
+  asset binding + edge-compatible framework server bundle
+
+edge + origin/FaaS split
+  edge caches assets/shells
+  origin/FaaS resolves functions, routes, SSR/RSC, and PPR regions
+```
+
+Adapter 应先分类 `BuildOutput`，再输出平台路由。Static hosting 不应声明支持 SSR、
+PPR、RSC、server functions 或 server routes，除非同时接入具备服务端能力的 runtime。
 
 ## Dev 更新
 

@@ -1383,7 +1383,7 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
   });
 
-  it("keeps route ownership with the app that declares the route source", async () => {
+  it("keeps route app ownership with the app that declares the route source", async () => {
     const cwd = await createFixture({
       "src/console/main.tsx": "console.log('console');",
       "src/admin/main.tsx": "console.log('admin');",
@@ -1424,7 +1424,7 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
   });
 
-  it("creates stable route-owned page ids from paths when no route id is declared", async () => {
+  it("creates stable route-derived page ids from paths when no route id is declared", async () => {
     const cwd = await createFixture({
       "src/main.tsx": "console.log('app');",
       "src/routes.tsx": `

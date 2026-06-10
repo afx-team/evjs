@@ -24,6 +24,51 @@ Important output:
 - `dist/client/` — browser assets and HTML;
 - `dist/server/` — framework server bundle when `server` is enabled.
 
+## Capability Model
+
+Deployment is driven by framework capabilities, not by the bundler that produced
+the files. A deployment adapter should classify the manifest into these runtime
+requirements:
+
+| Capability | Public entry | Required runtime | Notes |
+| --- | --- | --- | --- |
+| Static assets | `dist/client/*` | CDN/static file server | Always safe to cache by filename. |
+| CSR app routes | app HTML fallback | static or server | Static rewrite is enough when no server capability is used. |
+| MPA entry pages | page HTML file | static or server | Static when the page is user-owned client entry or fully prerendered. |
+| SSG pages | page HTML file | static or server | Can be hosted statically unless paired with dynamic server APIs. |
+| SSR pages | page route | server-capable | Route must reach the framework server bundle. |
+| PPR pages | page route | server-capable or edge+origin | Browser requests the page route; region resolution may be in-process or server-to-server. |
+| RSC pages | page route + `runtime.server.rsc` | server-capable | The document route and Flight endpoint must share compatible manifests/assets. |
+| Server functions | `runtime.server.fn` | server-capable | Usually same origin/base path as SSR/RSC/PPR unless `transport.baseUrl` splits it. |
+| Server routes | declared route path | server-capable | Route methods and 405 behavior belong to `@evjs/server`. |
+| Remote host | remote manifest URL | static or server | Host can be static; remote manifest/assets are fetched at runtime. |
+| Remote app build | `evjs-remote.json` + assets | CDN/static file server | Remote lifecycle/shared metadata is manifest-driven. |
+
+This gives four practical deployment topologies:
+
+1. **Static-only**: CSR, MPA client entries, SSG, remote manifests, and static
+   assets. No server functions, SSR, PPR, RSC, or server routes.
+2. **Unified Node**: one Node process serves `dist/client`, framework endpoints,
+   SSR/PPR/RSC document routes, server functions, and server routes.
+3. **Unified Edge Worker**: one edge worker serves assets from a binding and
+   delegates framework requests to the edge-compatible server bundle.
+4. **Edge + Origin/FaaS split**: CDN/edge owns assets and cached shells; internal
+   origin/FaaS owns server functions, SSR/RSC rendering, and PPR dynamic regions.
+
+The long-term adapter contract is:
+
+```txt
+BuildOutput
+  -> classify required capabilities
+  -> map public asset root
+  -> map framework endpoints
+  -> map document routes
+  -> map server routes
+  -> emit platform routing/artifacts
+```
+
+Adapters should never infer these capabilities from filenames or bundler stats.
+
 ## Runtime Paths
 
 Framework server endpoints are derived from `server.basePath`:
@@ -38,7 +83,47 @@ PPR document requests are served through their page route. The PPR endpoint is
 kept for direct/debug access and fallback adapters, not as the default browser
 initial-load protocol.
 
+For production deployments that cache the PPR shell at the edge while rendering
+dynamic regions in an internal FaaS/origin, keep the browser-facing protocol as
+the page route:
+
+```txt
+Browser
+  GET /campaign
+    -> Edge/CDN
+       load cached shell
+       read manifest page.ppr.regions
+       server-to-server GET /__evjs/ppr/campaign/offer
+         -> Internal FaaS/origin renders region fragment
+       merge or stream the region into the same /campaign response
+    <- Browser receives one document response
+```
+
+In this topology `/__evjs/ppr/<page>/<region>` is not a browser initial-load
+request. It is an internal region resolver endpoint used by the edge/runtime
+layer. `ppr.delivery = "merge"` waits for required regions before returning the
+document; `ppr.delivery = "stream"` flushes the cached shell first and appends
+region patches to the same HTML response as internal region requests complete.
+
 If browser and server run on different origins, configure `transport.baseUrl` at build time.
+
+## Routing Priority
+
+Server-capable adapters should apply routing in this order:
+
+```txt
+1. immutable/static assets from dist/client
+2. framework endpoints: runtime.server.fn, runtime.server.ppr, runtime.server.rsc
+3. explicit server routes from BuildOutput.server.routes
+4. framework document routes: SSR, PPR, RSC, and server-rendered SSG fallback
+5. app/page HTML fallback for CSR navigation
+6. 404
+```
+
+Static-only adapters should emit redirects only for capabilities that can run
+without a server. If `BuildOutput` contains SSR, PPR, RSC, server functions, or
+server routes, the static adapter can still emit static assets and metadata, but
+it must not claim the full app is deployable on static hosting alone.
 
 ## Built-In Adapters
 

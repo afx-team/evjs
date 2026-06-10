@@ -12,6 +12,12 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import {
+  type BuildOutput,
+  type ClientRouteTarget,
+  getClientRouteMatches,
+  getServerRenderedPaths,
+} from "@evjs/shared/manifest";
 import { test as base, expect } from "@playwright/test";
 
 export { expect };
@@ -26,6 +32,11 @@ interface ExampleFixture {
 interface WorkerFixture {
   _exampleApp: { webPort: number; apiPort: number };
 }
+
+type RuntimeManifestFixture = Pick<
+  BuildOutput,
+  "apps" | "pages" | "routes" | "runtime"
+>;
 
 /**
  * Content-type mapping for static file serving.
@@ -170,33 +181,43 @@ function pathMatchesPrefix(pathname: string, prefix: string): boolean {
   );
 }
 
-function getServerProxyPrefixes(manifest: {
-  runtime?: {
-    server?: { basePath?: string; fn?: string; ppr?: string; rsc?: string };
-  };
-  pages?: Record<string, { path?: string; render?: string }>;
-}): string[] {
-  return [
+function getServerProxyPrefixes(manifest: RuntimeManifestFixture): string[] {
+  return compactUnique([
     "/api",
     "/__evjs",
     manifest.runtime?.server?.basePath,
     manifest.runtime?.server?.fn,
     manifest.runtime?.server?.ppr,
     manifest.runtime?.server?.rsc,
-    ...Object.values(manifest.pages ?? {})
-      .filter((page) => page.path && page.render !== "csr")
-      .map((page) => page.path),
-  ].filter((value): value is string => Boolean(value));
+    ...getServerRenderedPaths(manifest),
+  ]);
 }
 
-function getClientPathRewrites(manifest: {
-  pages?: Record<string, { path?: string; render?: string }>;
-}): Record<string, string> {
-  return Object.fromEntries(
+function getClientPathRewrites(
+  manifest: RuntimeManifestFixture,
+): Record<string, string> {
+  const rewrites = Object.fromEntries(
     Object.entries(manifest.pages ?? {}).flatMap(([pageId, page]) =>
       page.path && page.render === "csr" ? [[page.path, `${pageId}.html`]] : [],
     ),
   );
+
+  for (const { path, target } of getClientRouteMatches(manifest)) {
+    rewrites[path] ??= getClientRouteHtmlFileName(target);
+  }
+
+  return rewrites;
+}
+
+function getClientRouteHtmlFileName(target: ClientRouteTarget): string {
+  if (target.kind === "page") return `${target.pageId}.html`;
+  return target.appId === "default" ? "index.html" : `${target.appId}.html`;
+}
+
+function compactUnique(values: Array<string | undefined>): string[] {
+  return [
+    ...new Set(values.filter((value): value is string => Boolean(value))),
+  ];
 }
 
 /**

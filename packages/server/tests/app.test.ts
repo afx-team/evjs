@@ -10,6 +10,7 @@ import {
   registerServerReference,
   registry,
 } from "../src/functions/register.js";
+import { requestLogger } from "../src/index.js";
 import { createReactFrameworkServer } from "../src/react.js";
 
 describe("createApp", () => {
@@ -34,6 +35,44 @@ describe("createApp", () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ result: "ok" });
+  });
+
+  it("logs server requests through the request logger middleware", async () => {
+    const manifest = createManifest();
+    const clockValues = [10, 22.345];
+    const logs: Array<{ message: string; status: number; path: string }> = [];
+    const app = createApp({
+      middlewares: [
+        requestLogger({
+          includeSearch: true,
+          clock: () => clockValues.shift() ?? 22.345,
+          logger(message, entry) {
+            logs.push({
+              message,
+              status: entry.status,
+              path: entry.path,
+            });
+          },
+        }),
+      ],
+      framework: {
+        manifest,
+        render(ctx) {
+          return `<h1>${ctx.pageId}</h1>`;
+        },
+      },
+    });
+
+    const res = await app.request("/dashboard?trace=1");
+
+    expect(res.status).toBe(200);
+    expect(logs).toEqual([
+      {
+        message: "[evjs:server] GET /dashboard?trace=1 200 12.35ms",
+        status: 200,
+        path: "/dashboard?trace=1",
+      },
+    ]);
   });
 
   it("routes framework page requests through the server render coordinator", async () => {

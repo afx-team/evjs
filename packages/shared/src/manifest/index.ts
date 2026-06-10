@@ -602,3 +602,18 @@ export {
   linkRemoteManifest,
   type RemoteManifestLinkInput,
 } from "./linker.js";
+export {
+  type ClientRouteMatch,
+  type ClientRouteTarget,
+  getClientRouteMatches,
+  getClientRouteTarget,
+  getServerRenderedPagePaths,
+  getServerRenderedPaths,
+  getServerRenderedRoutePaths,
+  isRouteDerivedPage,
+  isServerRenderedPage,
+  type RouteDerivedPage,
+  type RouteRenderingPage,
+  type RouteRenderingRoute,
+  type RouteRenderingSource,
+} from "./routes.js";
