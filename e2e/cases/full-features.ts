@@ -149,6 +149,13 @@ test.describe("full-features", () => {
     ).toBeVisible();
     expect(browserRegionRequests).toEqual([]);
 
+    const pageResponse = await request.get(`${apiURL}/campaign`);
+    expect(pageResponse.status()).toBe(200);
+    expect(pageResponse.headers()["x-evjs-ppr"]).toBe("stream");
+    const pageHtml = await pageResponse.text();
+    expect(pageHtml).toContain('data-evjs-ppr-stream-region="offer"');
+    expect(pageHtml).toContain("Dynamic PPR region rendered on demand");
+
     const regionResponse = await request.get(
       `${apiURL}/__evjs/ppr/campaign/offer`,
     );
@@ -358,6 +365,7 @@ test.describe("full-features", () => {
         cache: { revalidate: 30 },
       }),
     );
+    expect(manifest.pages.campaign.ppr.delivery).toBe("stream");
     expect(manifest.routes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

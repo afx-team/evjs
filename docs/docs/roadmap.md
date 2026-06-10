@@ -26,4 +26,5 @@
 
 - Full React Server Components transform/runtime adapter.
 - RSC client/server reference manifests and Flight runtime integration.
-- More production-grade PPR behavior such as streaming and stale revalidation strategies.
+- More production-grade PPR behavior such as stale revalidation strategies and
+  deeper React streaming renderer integration.

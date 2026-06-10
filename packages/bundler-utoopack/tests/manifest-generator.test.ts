@@ -312,6 +312,7 @@ describe("UtoopackManifestGenerator", () => {
       routeId: "campaign-route",
       component: "./src/campaign/Page.tsx",
       ppr: {
+        delivery: "merge",
         shell: { js: ["campaign.shell.js"], css: [] },
         regions: {
           offer: {

@@ -1,5 +1,8 @@
+import { lazy, Suspense } from "react";
 import { campaignMetrics, campaignSegments } from "../domain/operations";
 import RenderModePage from "./RenderModePage";
+
+const OfferRegion = lazy(() => import("./OfferRegion"));
 
 interface CampaignProps {
   pageId?: string;
@@ -71,21 +74,23 @@ export default function Campaign(props: CampaignProps) {
           <p className="eyebrow">Dynamic PPR region</p>
           <h2>Live offer inventory</h2>
           <p>
-            This placeholder is intentionally present in the shell. The
-            framework server resolves the declared region while producing the
+            This boundary is a normal React Suspense boundary. The framework
+            server extracts the lazy child as a PPR region while producing the
             same route response, so the browser does not need an extra region
             round trip.
           </p>
         </div>
-        <div
-          className="region-placeholder"
-          data-evjs-ppr-region="offer"
-          data-testid="offer-placeholder"
+        <Suspense
+          fallback={
+            <div className="region-placeholder" data-testid="offer-placeholder">
+              <span />
+              <strong>Offer region placeholder</strong>
+              <em>waiting for live allocation</em>
+            </div>
+          }
         >
-          <span />
-          <strong>Offer region placeholder</strong>
-          <em>waiting for live allocation</em>
-        </div>
+          <OfferRegion />
+        </Suspense>
       </section>
     </RenderModePage>
   );

@@ -14,6 +14,10 @@ import type {
   ServerRouteNode,
   SharedDependencyMap,
 } from "@evjs/shared/manifest";
+import {
+  extractPprRegionModuleConfig,
+  extractPprRegions,
+} from "../ppr-regions.js";
 import { analyzeRoutes, resolveRoutes } from "../routes/index.js";
 import { extractRscReferences } from "../rsc-refs.js";
 import { extractServerFunctionExports } from "../server-fns.js";
@@ -91,6 +95,8 @@ interface FrameworkSourceFiles {
   analysisFiles: string[];
   explicitDependencyFiles: Set<string>;
 }
+
+type PprRegionConfigMap = NonNullable<PprConfig["regions"]>;
 
 export async function createAppGraph(
   config: GraphConfig,
@@ -209,6 +215,13 @@ export async function createAppGraph(
       ...(route.runtime ? { runtime: route.runtime } : {}),
     };
   });
+  await mergePprRegionsFromPageModules(
+    graph,
+    cwd,
+    sourceCache,
+    diagnostics,
+    fileDependencies,
+  );
   graph.serverRoutes = [...serverRoutes.values()];
   graph.serverFunctions = serverFunctions;
   graph.clientReferences = [...clientReferences.values()];
@@ -219,6 +232,170 @@ export async function createAppGraph(
     diagnostics,
     fileDependencies: [...fileDependencies].sort(),
   };
+}
+
+async function mergePprRegionsFromPageModules(
+  graph: AppGraph,
+  cwd: string,
+  sourceCache: Map<string, string>,
+  diagnostics: Diagnostic[],
+  fileDependencies: Set<string>,
+) {
+  for (const page of Object.values(graph.pages)) {
+    if (page.render !== "ppr" || !page.component) continue;
+
+    const root = await resolveProjectSourceAbsolute(cwd, page.component);
+    if (!root) continue;
+
+    const analysis = await collectPprRegionsFromPageClosure(
+      cwd,
+      root,
+      sourceCache,
+      fileDependencies,
+    );
+    diagnostics.push(...analysis.diagnostics);
+
+    if (Object.keys(analysis.regions).length === 0) continue;
+    const regions = await resolvePprRegionComponents(
+      cwd,
+      analysis.regions,
+      sourceCache,
+    );
+    page.ppr = {
+      ...(page.ppr ?? {}),
+      regions: {
+        ...(page.ppr?.regions ?? {}),
+        ...regions,
+      },
+    };
+  }
+}
+
+async function collectPprRegionsFromPageClosure(
+  cwd: string,
+  root: string,
+  sourceCache: Map<string, string>,
+  fileDependencies: Set<string>,
+): Promise<{
+  regions: PprRegionConfigMap;
+  diagnostics: Diagnostic[];
+}> {
+  const visited = new Set<string>();
+  const regions: PprRegionConfigMap = {};
+  const diagnostics: Diagnostic[] = [];
+
+  async function visit(file: string) {
+    if (visited.has(file)) return;
+    visited.add(file);
+    fileDependencies.add(file);
+
+    let source: string;
+    try {
+      source = sourceCache.get(file) ?? (await fs.readFile(file, "utf-8"));
+      sourceCache.set(file, source);
+    } catch {
+      return;
+    }
+
+    const sourceRel = toPosixPath(path.relative(cwd, file));
+    const analysis = extractPprRegions(source, sourceRel);
+    for (const diagnostic of analysis.diagnostics) {
+      diagnostics.push({
+        ...diagnostic,
+        file: sourceRel,
+      });
+    }
+
+    for (const [id, region] of Object.entries(analysis.regions)) {
+      if (regions[id]) {
+        diagnostics.push({
+          level: "error",
+          file: sourceRel,
+          message: `Duplicate PPR region id "${id}" in the same PPR page component tree.`,
+        });
+        continue;
+      }
+      regions[id] = region;
+    }
+
+    for (const specifier of extractStaticImportSpecifiers(source)) {
+      const dependency = await resolveSourceImport(cwd, file, specifier);
+      if (dependency) {
+        await visit(dependency);
+      }
+    }
+  }
+
+  await visit(root);
+
+  return {
+    regions,
+    diagnostics,
+  };
+}
+
+async function resolvePprRegionComponents(
+  cwd: string,
+  regions: PprRegionConfigMap,
+  sourceCache: Map<string, string>,
+): Promise<PprRegionConfigMap> {
+  const resolved: PprRegionConfigMap = {};
+
+  for (const [id, region] of Object.entries(regions)) {
+    const component = await resolveProjectSourcePath(cwd, region.component);
+    const moduleConfig = await readPprRegionModuleConfig(
+      cwd,
+      component,
+      sourceCache,
+    );
+    resolved[id] = {
+      ...moduleConfig,
+      ...region,
+      component,
+    };
+  }
+
+  return resolved;
+}
+
+async function readPprRegionModuleConfig(
+  cwd: string,
+  component: string,
+  sourceCache: Map<string, string>,
+): Promise<Partial<Omit<PprRegionConfigMap[string], "component">>> {
+  if (!component.startsWith(".")) return {};
+  const absolute = await resolveProjectSourceAbsolute(cwd, component);
+  if (!absolute) return {};
+
+  let source: string;
+  try {
+    source =
+      sourceCache.get(absolute) ?? (await fs.readFile(absolute, "utf-8"));
+    sourceCache.set(absolute, source);
+  } catch {
+    return {};
+  }
+
+  return extractPprRegionModuleConfig(source);
+}
+
+async function resolveProjectSourceAbsolute(
+  cwd: string,
+  sourcePath: string,
+): Promise<string | undefined> {
+  if (!sourcePath.startsWith(".")) return undefined;
+  return resolveSourcePath(cwd, path.resolve(cwd, sourcePath));
+}
+
+async function resolveProjectSourcePath(
+  cwd: string,
+  sourcePath: string,
+): Promise<string> {
+  if (!sourcePath.startsWith(".")) return sourcePath;
+  const resolved = await resolveSourcePath(cwd, path.resolve(cwd, sourcePath));
+  return resolved
+    ? `./${toPosixPath(path.relative(cwd, resolved))}`
+    : sourcePath;
 }
 
 function normalizeRouteModule(
@@ -539,7 +716,16 @@ async function resolveSourceImport(
   fromFile: string,
   specifier: string,
 ): Promise<string | undefined> {
-  const base = path.resolve(path.dirname(fromFile), specifier);
+  return resolveSourcePath(
+    cwd,
+    path.resolve(path.dirname(fromFile), specifier),
+  );
+}
+
+async function resolveSourcePath(
+  cwd: string,
+  base: string,
+): Promise<string | undefined> {
   const candidates = [base];
   if (!SOURCE_EXTENSIONS.has(path.extname(base))) {
     for (const extension of SOURCE_EXTENSIONS) {

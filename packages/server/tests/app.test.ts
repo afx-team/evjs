@@ -177,6 +177,7 @@ describe("createApp", () => {
     const manifest = createManifest();
     manifest.pages.dashboard.render = "ppr";
     manifest.pages.dashboard.ppr = {
+      delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
         hero: {
@@ -227,10 +228,125 @@ describe("createApp", () => {
     expect(await region.text()).toBe("<p>dashboard:hero</p>");
   });
 
+  it("merges PPR regions into React Suspense fallback boundaries", async () => {
+    const manifest = createManifest();
+    manifest.pages.dashboard.render = "ppr";
+    manifest.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        hero: {
+          id: "hero",
+          assets: { js: ["dashboard-hero-ppr-region.js"], css: [] },
+          component: "./src/pages/Hero.region.tsx",
+        },
+      },
+    };
+    const app = createApp({
+      framework: {
+        manifest,
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-ppr-shell": {
+              kind: "ppr-shell",
+              owner: { pageId: "dashboard" },
+              load: async () => ({
+                default() {
+                  return [
+                    "<main>",
+                    "<h1>dashboard</h1>",
+                    '<!--$!--><template data-msg="lazy"></template>',
+                    "<div>fallback</div><!--/$-->",
+                    "</main>",
+                  ].join("");
+                },
+              }),
+            },
+            "dashboard-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "hero" },
+              load: async () => ({
+                default: (ctx: ServerRenderContext) =>
+                  `<p>${ctx.pageId}:${ctx.regionId}</p>`,
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const res = await app.request("/dashboard");
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-evjs-ppr")).toBe("merged");
+    expect(await res.text()).toBe(
+      "<main><h1>dashboard</h1><p>dashboard:hero</p></main>",
+    );
+  });
+
+  it("streams PPR page shells and patches Suspense fallback boundaries", async () => {
+    const manifest = createManifest();
+    manifest.pages.dashboard.render = "ppr";
+    manifest.pages.dashboard.ppr = {
+      delivery: "stream",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        hero: {
+          id: "hero",
+          assets: { js: ["dashboard-hero-ppr-region.js"], css: [] },
+          component: "./src/pages/Hero.region.tsx",
+        },
+      },
+    };
+    const app = createApp({
+      framework: {
+        manifest,
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-ppr-shell": {
+              kind: "ppr-shell",
+              owner: { pageId: "dashboard" },
+              load: async () => ({
+                default() {
+                  return [
+                    "<!doctype html><html><body><main>",
+                    "<h1>dashboard</h1>",
+                    '<!--$!--><template data-msg="lazy"></template>',
+                    "<div>fallback</div><!--/$-->",
+                    "</main></body></html>",
+                  ].join("");
+                },
+              }),
+            },
+            "dashboard-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "hero" },
+              load: async () => ({
+                default: (ctx: ServerRenderContext) =>
+                  `<p>${ctx.pageId}:${ctx.regionId}</p>`,
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const res = await app.request("/dashboard");
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-evjs-ppr")).toBe("stream");
+    const html = await res.text();
+    expect(html).toContain("<div>fallback</div>");
+    expect(html).toContain('data-evjs-ppr-stream-region="hero"');
+    expect(html).toContain("dashboard:hero");
+    expect(html).toContain("</body></html>");
+  });
+
   it("normalizes PPR region document responses into fragments", async () => {
     const manifest = createManifest();
     manifest.pages.dashboard.render = "ppr";
     manifest.pages.dashboard.ppr = {
+      delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
         hero: {
@@ -280,6 +396,7 @@ describe("createApp", () => {
     const manifest = createManifest();
     manifest.pages.dashboard.render = "ppr";
     manifest.pages.dashboard.ppr = {
+      delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
         inventory: {
@@ -323,6 +440,7 @@ describe("createApp", () => {
     const manifest = createManifest();
     manifest.pages.dashboard.render = "ppr";
     manifest.pages.dashboard.ppr = {
+      delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
         hero: {

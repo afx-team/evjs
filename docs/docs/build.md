@@ -70,10 +70,17 @@ runtime.server.fn = /__evjs/fn
 String pages and `{ entry }` pages compile as user-owned client entries. Component pages add explicit metadata so a bundler adapter can wrap the real component import with the generic page runtime. The `BuildPlan.import` remains the user component path; evjs does not write hidden production source files.
 
 SSR/PPR pages add server render entries to the plan. PPR pages produce a shell
-renderer and one renderer per declared dynamic region. At runtime the framework
-server resolves those regions while serving the page route, so the initial
-browser navigation stays one document request. PPR regions carry cache metadata
-in the manifest:
+renderer and one renderer per React `Suspense` boundary whose direct child is
+`lazy(() => import(...))`. At runtime the framework server resolves those
+regions while serving the page route, so the initial browser navigation stays
+one document request. PPR supports two document delivery modes:
+
+- `merge` is the default non-streaming mode. The server waits for resolved
+  regions and returns a complete HTML response.
+- `stream` sends the shell first, then sends region patches in the same HTML
+  response as each region resolves.
+
+PPR regions carry cache metadata in the manifest:
 
 PPR component pages do not create a page-level browser entry. Their public
 manifest hydration mode is `none` until explicit client islands or region-level
@@ -85,6 +92,7 @@ hydration are modeled.
     "campaign": {
       "render": "ppr",
       "ppr": {
+        "delivery": "stream",
         "regions": {
           "inventory": {
             "cache": { "revalidate": 60 }

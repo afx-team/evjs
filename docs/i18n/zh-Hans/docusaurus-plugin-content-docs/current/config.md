@@ -87,31 +87,56 @@ export default defineConfig({
 
 配置了 `path` 时，该页面也会贡献 framework route。SSR、SSG、PPR 等由框架服务端处理的页面应把 URL、component、render mode、hydration 放在同一条页面声明里。未配置 `path` 时，页面会输出为 `campaign.html` 这样的 HTML 文档。
 
-PPR 页面显式声明动态 region：
+PPR 页面推荐在页面组件树中声明动态 region：
 
 ```ts
 export default defineConfig({
- pages: {
-   campaign: {
+  pages: {
+    campaign: {
       path: "/campaign",
-     component: "./src/pages/campaign/Page.tsx",
+      component: "./src/pages/campaign/Page.tsx",
       render: "ppr",
       ppr: {
-        regions: {
-          offer: {
-            component: "./src/pages/campaign/Offer.region.tsx",
-            cache: "no-store",
-          },
-          inventory: {
-            component: "./src/pages/campaign/Inventory.region.tsx",
-            cache: { revalidate: 60 },
-          },
-        },
+        delivery: "stream",
       },
     },
   },
 });
 ```
+
+```tsx
+import { lazy, Suspense } from "react";
+
+const OfferRegion = lazy(() => import("./Offer.region"));
+
+export default function CampaignPage() {
+  return (
+    <Suspense fallback={<p>Loading</p>}>
+      <OfferRegion />
+    </Suspense>
+  );
+}
+```
+
+```tsx
+// ./Offer.region.tsx
+export const PPR = {
+  cache: { revalidate: 60 },
+} as const;
+
+export default function OfferRegion() {
+  return <section>Live offer inventory</section>;
+}
+```
+
+框架会分析 page module，并把 Suspense lazy boundary 转成内部 region renderer。
+Region id 会从 lazy 组件名派生，因此 `OfferRegion` 会变成 `offer`。
+`pages.*.ppr.regions` 仍保留为底层 escape hatch，但 Suspense 声明是推荐 API。
+
+`pages.*.ppr.delivery` 控制初始 document response。`"merge"` 是默认非流式模式：
+框架服务端先渲染 shell 和 regions，再返回完整 HTML。`"stream"` 会先发送 shell，
+再在同一个 HTML response 中把已完成的 regions patch 到页面里。两种模式的首屏
+导航都不要求浏览器主动请求 `/__evjs/ppr`。
 
 PPR 页面由服务端合成，不会生成整页客户端 hydration entry。需要交互能力的
 PPR 页面应显式建模为 client islands 或 region-level hydration，而不是 hydrate

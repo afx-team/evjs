@@ -26,4 +26,5 @@
 
 - 完整 React Server Components transform/runtime adapter。
 - RSC client/server reference manifests 和 Flight runtime integration。
-- 更生产级的 PPR 行为，例如 streaming 和 stale revalidation strategy。
+- 更生产级的 PPR 行为，例如 stale revalidation strategy 和更深入的 React
+  streaming renderer 集成。

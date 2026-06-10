@@ -68,6 +68,7 @@ describe("createPublicManifest", () => {
           hydrate: "none",
           component: "./src/pages/Campaign.tsx",
           ppr: {
+            delivery: "stream",
             shell: { js: ["campaign-ppr-shell.js"], css: [] },
             regions: {
               offer: {
@@ -163,6 +164,7 @@ describe("createPublicManifest", () => {
     expect(manifest.pages.campaign.assets).toEqual({ js: [], css: [] });
     expect(manifest.pages.campaign.hydrate).toBe("none");
     expect(manifest.pages.campaign.rendering.hydrate).toBe("none");
+    expect(manifest.pages.campaign.ppr?.delivery).toBe("stream");
     expect(manifest.pages.campaign.ppr?.regions.offer).toEqual({
       id: "offer",
       assets: { js: [], css: [] },

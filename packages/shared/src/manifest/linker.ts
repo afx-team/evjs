@@ -175,6 +175,7 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
           ppr:
             page.render === "ppr"
               ? {
+                  delivery: page.ppr?.delivery ?? "merge",
                   shell: shellEntry
                     ? serverAssetsForEntry(shellEntry)
                     : serverAssets,
@@ -477,6 +478,7 @@ function sanitizePageOutput(
     module: sanitizeRuntimeModule(page.module),
     ppr: page.ppr
       ? {
+          delivery: page.ppr.delivery ?? "merge",
           shell: clonePublicAssets(page.ppr.shell, publicAssetFiles),
           regions: Object.fromEntries(
             Object.entries(page.ppr.regions).map(([id, region]) => [
@@ -741,7 +743,7 @@ function derivePageRendering(page: PageNode): PageRenderingOutput {
         component: "server",
         html: "partial",
         prerender: "partial",
-        streaming: true,
+        streaming: page.ppr?.delivery === "stream",
         hydrate,
       };
     case "rsc":

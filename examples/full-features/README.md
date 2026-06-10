@@ -18,7 +18,8 @@ It still exercises the new framework contracts with the webpack adapter:
 - `pages` declarations that own URL path, component, render, and hydration metadata;
 - framework-managed SSR React page;
 - framework-managed CSR component page;
-- PPR page shell plus dynamic region renderer;
+- PPR page shell plus Suspense-driven dynamic region renderer, delivered with
+  streamed shell/region patches in one document response;
 - RSC page renderer plus framework Flight endpoint;
 - manifest-driven shell remote activation;
 - paired remote build in `examples/full-features-remote` that emits

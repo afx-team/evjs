@@ -125,10 +125,16 @@ sequenceDiagram
 ```
 
 PPR does not require the browser to fetch region endpoints during initial page
-load. The default runtime path renders the shell and declared dynamic regions on
-the framework server and returns them as one page response. The derived
-`runtime.server.ppr` endpoint remains available for direct/debug access,
-non-streaming fallbacks, and cache validation.
+load. The framework server can use either `merge` or `stream` delivery for the
+page route. `merge` is the default non-streaming mode and returns the final
+server-composed HTML after shell and regions resolve. `stream` sends shell HTML
+first, then sends region patches in the same document response. The derived
+`runtime.server.ppr` endpoint remains available for direct/debug access and
+cache validation.
+
+The preferred PPR authoring model is React `Suspense` with a
+`lazy(() => import(...))` child. `ev.config.ts` only needs `render: "ppr"` for
+the page; explicit `ppr.regions` config is kept as a low-level fallback.
 
 PPR page hydration is page-level `none` in the public manifest. Client
 interactivity should be introduced through explicit client islands or

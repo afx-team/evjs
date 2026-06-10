@@ -858,6 +858,7 @@ describe("webpackAdapter build", () => {
     ) as BuildOutput;
 
     expect(manifest.pages.campaign.ppr).toMatchObject({
+      delivery: "merge",
       shell: { js: ["campaign-ppr-shell.js"], css: [] },
       regions: {
         offer: {

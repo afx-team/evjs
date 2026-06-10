@@ -35,13 +35,7 @@ export default defineConfig({
       hydrate: "none",
       mount: "#app",
       ppr: {
-        regions: {
-          offer: {
-            component: "./src/pages/OfferRegion.tsx",
-            cache: { revalidate: 30 },
-            hydrate: "none",
-          },
-        },
+        delivery: "stream",
       },
     },
     dashboard: {

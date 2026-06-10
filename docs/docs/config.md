@@ -87,7 +87,7 @@ export default defineConfig({
 
 When `path` is present, the page also contributes a framework route. Use this for SSR, SSG, PPR, and other framework-served pages so URL, component, render mode, and hydration stay in one declaration. If `path` is omitted, the page is emitted as an HTML document such as `campaign.html`.
 
-PPR pages declare dynamic regions explicitly:
+PPR pages should declare dynamic regions in the page component tree:
 
 ```ts
 export default defineConfig({
@@ -97,21 +97,48 @@ export default defineConfig({
       component: "./src/pages/campaign/Page.tsx",
       render: "ppr",
       ppr: {
-        regions: {
-          offer: {
-            component: "./src/pages/campaign/Offer.region.tsx",
-            cache: "no-store",
-          },
-          inventory: {
-            component: "./src/pages/campaign/Inventory.region.tsx",
-            cache: { revalidate: 60 },
-          },
-        },
+        delivery: "stream",
       },
     },
   },
 });
 ```
+
+```tsx
+import { lazy, Suspense } from "react";
+
+const OfferRegion = lazy(() => import("./Offer.region"));
+
+export default function CampaignPage() {
+  return (
+    <Suspense fallback={<p>Loading</p>}>
+      <OfferRegion />
+    </Suspense>
+  );
+}
+```
+
+```tsx
+// ./Offer.region.tsx
+export const PPR = {
+  cache: { revalidate: 60 },
+} as const;
+
+export default function OfferRegion() {
+  return <section>Live offer inventory</section>;
+}
+```
+
+The framework analyzes the page module and turns Suspense lazy boundaries into
+internal region renderers. Region ids are derived from the lazy component name,
+so `OfferRegion` becomes `offer`. `pages.*.ppr.regions` remains available as a
+low-level escape hatch, but Suspense declarations are the preferred API.
+
+`pages.*.ppr.delivery` controls the initial document response. `"merge"` is the
+default non-streaming mode: the framework server renders the shell and regions,
+then returns one complete HTML response. `"stream"` sends the shell first and
+then patches resolved regions into the same document response. Neither mode
+requires the browser to fetch `/__evjs/ppr` during initial navigation.
 
 PPR pages are server-composed and do not create a full-page client hydration
 entry. Interactive PPR work should be modeled as explicit client islands or

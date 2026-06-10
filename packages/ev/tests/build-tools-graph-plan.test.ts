@@ -365,7 +365,85 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
     expect(
       analysis.fileDependencies.map((file) => path.relative(cwd, file)),
-    ).toEqual([]);
+    ).toEqual(["src/campaign/Page.tsx"]);
+  });
+
+  it("plans PPR regions from Suspense lazy boundaries in the page component tree", async () => {
+    const cwd = await createFixture({
+      "src/campaign/Page.tsx": `
+        import CampaignSections from "./CampaignSections";
+
+        export default function Page() {
+          return <CampaignSections />;
+        }
+      `,
+      "src/campaign/CampaignSections.tsx": `
+        import * as React from "react";
+
+        const OfferRegion = React.lazy(() => import("./Offer.region"));
+
+        export default function CampaignSections() {
+          return (
+            <React.Suspense fallback={<p>Loading offer</p>}>
+              <OfferRegion />
+            </React.Suspense>
+          );
+        }
+      `,
+      "src/campaign/Offer.region.tsx": `
+        export const PPR = {
+          cache: { revalidate: 30 },
+          hydrate: "none",
+        } as const;
+
+        export default function Offer() { return null; }
+      `,
+      "index.html": '<div id="app"></div>',
+    });
+    const config = createConfig({
+      pages: {
+        campaign: {
+          component: "./src/campaign/Page.tsx",
+          html: "./index.html",
+          render: "ppr",
+        },
+      },
+    });
+    const analysis = await createAppGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "production",
+    });
+
+    expect(analysis.diagnostics).toEqual([]);
+    expect(analysis.graph.pages.campaign.ppr).toEqual({
+      regions: {
+        offer: {
+          component: "./src/campaign/Offer.region.tsx",
+          cache: { revalidate: 30 },
+          hydrate: "none",
+        },
+      },
+    });
+    expect(plan.entries).toEqual(
+      expect.arrayContaining([
+        {
+          name: "campaign-ppr-shell",
+          import: "./src/campaign/Page.tsx",
+          environment: "server",
+          runtime: "node",
+          kind: "ppr-shell",
+          owner: { pageId: "campaign" },
+        },
+        {
+          name: "campaign-offer-ppr-region",
+          import: "./src/campaign/Offer.region.tsx",
+          environment: "server",
+          runtime: "node",
+          kind: "ppr-region",
+          owner: { pageId: "campaign", regionId: "offer" },
+        },
+      ]),
+    );
   });
 
   it("derives framework routes from configured page paths", async () => {
@@ -776,9 +854,10 @@ describe("createAppGraph and createBuildPlan", () => {
       component: "server",
       html: "partial",
       prerender: "partial",
-      streaming: true,
+      streaming: false,
       hydrate: "none",
     });
+    expect(output.pages.ppr.ppr?.delivery).toBe("merge");
     expect(output.pages.ppr.assets).toEqual({ js: [], css: [] });
     expect(output.pages.rsc.rendering).toEqual({
       mode: "rsc",

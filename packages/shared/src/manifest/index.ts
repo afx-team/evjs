@@ -54,7 +54,8 @@ export interface PageNode {
 }
 
 export interface PprConfig {
-  regions: Record<string, PprRegionConfig>;
+  delivery?: PprDeliveryMode;
+  regions?: Record<string, PprRegionConfig>;
 }
 
 export interface PprRegionConfig {
@@ -65,6 +66,8 @@ export interface PprRegionConfig {
 }
 
 export type PprCachePolicy = "no-store" | { revalidate: number };
+
+export type PprDeliveryMode = "merge" | "stream";
 
 export interface RouteNode {
   id: string;
@@ -341,6 +344,7 @@ export interface PageRenderingOutput {
 }
 
 export interface PprPageOutput {
+  delivery: PprDeliveryMode;
   shell: AssetGroup;
   regions: Record<string, PprRegionOutput>;
 }

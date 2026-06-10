@@ -266,6 +266,33 @@ async function renderPprPageResponse(
   const contentType = response.headers.get("Content-Type") ?? "";
   if (!contentType.includes("text/html")) return response;
 
+  return page.ppr.delivery === "stream"
+    ? renderPprStreamingPageResponse(
+        options,
+        request,
+        pageId,
+        response,
+        coordinator,
+      )
+    : renderPprMergedPageResponse(
+        options,
+        request,
+        pageId,
+        response,
+        coordinator,
+      );
+}
+
+async function renderPprMergedPageResponse(
+  options: FrameworkServerOptions,
+  request: Request,
+  pageId: string,
+  response: Response,
+  coordinator: ServerRenderCoordinator,
+): Promise<Response> {
+  const page = options.manifest.pages[pageId];
+  if (!page?.ppr) return response;
+
   let html = await response.text();
   let changed = false;
 
@@ -301,6 +328,64 @@ async function renderPprPageResponse(
 
   headers.set("x-evjs-ppr", "merged");
   return new Response(html, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+async function renderPprStreamingPageResponse(
+  options: FrameworkServerOptions,
+  request: Request,
+  pageId: string,
+  response: Response,
+  coordinator: ServerRenderCoordinator,
+): Promise<Response> {
+  const page = options.manifest.pages[pageId];
+  if (!page?.ppr) return response;
+
+  const html = await response.text();
+  const { head, tail } = splitHtmlForPprStream(html);
+  const headers = new Headers(response.headers);
+  headers.set("Content-Type", "text/html; charset=utf-8");
+  headers.set("x-evjs-ppr", "stream");
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      controller.enqueue(encoder.encode(head));
+
+      for (const regionId of Object.keys(page.ppr?.regions ?? {})) {
+        try {
+          const regionResponse = await renderPprRegionResponse(
+            options,
+            request,
+            { pageId, regionId },
+            coordinator,
+          );
+          if (!regionResponse?.ok) continue;
+
+          const fragment = await regionResponse.text();
+          controller.enqueue(
+            encoder.encode(createPprStreamPatch(regionId, fragment)),
+          );
+        } catch (error) {
+          controller.enqueue(
+            encoder.encode(
+              `<!-- evjs ppr region ${escapeHtmlCommentText(
+                regionId,
+              )} failed: ${escapeHtmlCommentText(formatUnknownError(error))} -->`,
+            ),
+          );
+        }
+      }
+
+      controller.enqueue(encoder.encode(tail));
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
     status: response.status,
     statusText: response.statusText,
     headers,
@@ -850,8 +935,75 @@ function replacePprRegionPlaceholder(
   fragment: string,
 ): string {
   const range = findPprRegionPlaceholderRange(html, regionId);
-  if (!range) return html;
+  if (!range) return replaceFirstSuspenseFallback(html, fragment);
   return `${html.slice(0, range.start)}${fragment}${html.slice(range.end)}`;
+}
+
+function splitHtmlForPprStream(html: string): { head: string; tail: string } {
+  const closeBody = html.match(/<\/body\s*>/i);
+  if (!closeBody || closeBody.index === undefined) {
+    return { head: html, tail: "" };
+  }
+
+  return {
+    head: html.slice(0, closeBody.index),
+    tail: html.slice(closeBody.index),
+  };
+}
+
+function createPprStreamPatch(regionId: string, fragment: string): string {
+  return [
+    `<script data-evjs-ppr-stream-region="${escapeHtmlAttribute(regionId)}">`,
+    "(function(){",
+    `var regionId=${jsonForInlineScript(regionId)};`,
+    `var html=${jsonForInlineScript(fragment)};`,
+    "var currentScript=document.currentScript;",
+    "var template=document.createElement('template');",
+    "template.innerHTML=html;",
+    "var root=document.body||document.documentElement;",
+    "var explicit=document.querySelectorAll('[data-evjs-ppr-region]');",
+    "for(var i=0;i<explicit.length;i++){",
+    "var target=explicit[i];",
+    "if(target.getAttribute('data-evjs-ppr-region')===regionId){",
+    "target.replaceWith(template.content.cloneNode(true));",
+    "if(currentScript)currentScript.remove();return;",
+    "}",
+    "}",
+    "var walker=document.createTreeWalker(root,128);",
+    "var start=null,node;",
+    "while((node=walker.nextNode())){",
+    "var value=node.nodeValue||'';",
+    "if(!start&&(value==='$!'||value==='$?')){start=node;continue;}",
+    "if(start&&value==='/$'){",
+    "var range=document.createRange();",
+    "range.setStartBefore(start);range.setEndAfter(node);",
+    "range.deleteContents();",
+    "range.insertNode(template.content.cloneNode(true));",
+    "if(currentScript)currentScript.remove();return;",
+    "}",
+    "}",
+    "})();",
+    "</script>",
+  ].join("");
+}
+
+function jsonForInlineScript(value: string): string {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function escapeHtmlCommentText(value: string): string {
+  return value.replace(/--/g, "- -").replace(/>/g, "&gt;");
 }
 
 function findPprRegionPlaceholderRange(
@@ -877,6 +1029,34 @@ function findPprRegionPlaceholderRange(
 
   const end = findBalancedElementEnd(html, tagName, start, openTag.length);
   return end === undefined ? undefined : { start, end };
+}
+
+function replaceFirstSuspenseFallback(html: string, fragment: string): string {
+  const range = findFirstSuspenseFallbackRange(html);
+  if (!range) return html;
+  return `${html.slice(0, range.start)}${fragment}${html.slice(range.end)}`;
+}
+
+function findFirstSuspenseFallbackRange(
+  html: string,
+): { start: number; end: number } | undefined {
+  const startPattern = /<!--\$(?:[!?])?-->/g;
+  let startMatch = startPattern.exec(html);
+
+  while (startMatch) {
+    const end = html.indexOf("<!--/$-->", startPattern.lastIndex);
+    if (end === -1) return undefined;
+    const marker = startMatch[0];
+    if (marker !== "<!--$-->") {
+      return {
+        start: startMatch.index,
+        end: end + "<!--/$-->".length,
+      };
+    }
+    startMatch = startPattern.exec(html);
+  }
+
+  return undefined;
 }
 
 function findBalancedElementEnd(

@@ -124,10 +124,15 @@ sequenceDiagram
   Server-->>Browser: React Flight stream
 ```
 
-PPR 首屏不会要求浏览器再请求 region endpoint。默认运行时在框架服务端匹配
-shell renderer 和 region renderer，渲染 declared dynamic regions，并把结果放在同一个
-page route 响应里返回。派生的 `runtime.server.ppr` endpoint 仍保留给 direct/debug
-访问、非 streaming fallback 和 cache 验证使用。
+PPR 首屏不会要求浏览器再请求 region endpoint。框架服务端可以对 page route 使用
+`merge` 或 `stream` delivery。`merge` 是默认非流式模式，会在 shell 和 regions
+都完成后返回最终合成 HTML。`stream` 会先发送 shell HTML，再在同一个 document
+response 中发送 region patches。派生的 `runtime.server.ppr` endpoint 仍保留给
+direct/debug 访问和 cache 验证使用。
+
+推荐的 PPR 编写模型是 React `Suspense` 包裹 `lazy(() => import(...))` 子组件。
+`ev.config.ts` 只需要在页面上配置 `render: "ppr"`；显式 `ppr.regions` 配置保留为
+底层 fallback。
 
 PPR 页面在 public manifest 中的 page-level hydration 是 `none`。需要客户端交互时，
 应通过显式 client islands 或 region-level hydration metadata 引入，而不是 hydrate 整个

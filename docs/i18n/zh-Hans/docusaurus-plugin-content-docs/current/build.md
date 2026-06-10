@@ -69,10 +69,16 @@ runtime.server.fn = /__evjs/fn
 
 字符串页面和 `{ entry }` 页面是用户自控 client entry。组件页面携带显式 metadata，让 bundler adapter 可以用通用 page runtime 包装真实 component import。`BuildPlan.import` 仍然指向用户组件路径；evjs 不写隐式生产源码文件。
 
-SSR/PPR 页面会向 plan 添加 server render entries。PPR 页面会生成 shell renderer 和每个
-declared dynamic region 对应的 renderer。运行时框架服务端会在服务 page route 时解析这些
-regions，因此浏览器首屏仍然只有一次 document 请求。PPR region 的 cache metadata 会进入
-manifest：
+SSR/PPR 页面会向 plan 添加 server render entries。PPR 页面会生成 shell renderer，并为
+page component tree 中每个直接包裹 `lazy(() => import(...))` 子组件的 React
+`Suspense` boundary 生成 region renderer。运行时框架服务端会在服务 page route 时解析
+这些 regions，因此浏览器首屏仍然只有一次 document 请求。PPR 支持两种 document
+delivery mode：
+
+- `merge` 是默认非流式模式。服务端等待 regions 完成后返回完整 HTML。
+- `stream` 会先发送 shell，再在同一个 HTML response 中发送 region patches。
+
+PPR region 的 cache metadata 会进入 manifest：
 
 PPR component page 不会创建 page-level browser entry。除非后续显式建模 client
 islands 或 region-level hydration，否则 public manifest 中的 hydrate mode 是 `none`。
@@ -83,6 +89,7 @@ islands 或 region-level hydration，否则 public manifest 中的 hydrate mode 
     "campaign": {
       "render": "ppr",
       "ppr": {
+        "delivery": "stream",
         "regions": {
           "inventory": {
             "cache": { "revalidate": 60 }
