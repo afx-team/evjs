@@ -111,7 +111,7 @@ export function createReactRscFlightAdapter(
       return Boolean(
         ctx.manifest.runtime.server?.rsc &&
           ctx.pageId &&
-          ctx.page?.render === "rsc" &&
+          ctx.page?.componentModel === "rsc" &&
           ctx.rscPage &&
           ctx.renderer,
       );
@@ -402,7 +402,7 @@ function createRscBootstrap(
       };
     }
   | undefined {
-  if (ctx.page?.render !== "rsc" || !ctx.pageId) return undefined;
+  if (ctx.page?.componentModel !== "rsc" || !ctx.pageId) return undefined;
 
   const endpoint =
     ctx.manifest.rsc?.endpoint ?? ctx.manifest.runtime.server?.rsc;

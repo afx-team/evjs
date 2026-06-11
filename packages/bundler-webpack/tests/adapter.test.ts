@@ -712,7 +712,8 @@ describe("webpackAdapter build", () => {
           path: "/insights",
           component: "./src/pages/Insights !page.tsx",
           html: "./index.html",
-          render: "rsc",
+          render: "ssr",
+          componentModel: "rsc",
         },
       },
     });
@@ -828,7 +829,8 @@ describe("webpackAdapter build", () => {
         campaign: {
           component: "./src/pages/Campaign.ts",
           html: "./index.html",
-          render: "ppr",
+          render: "ssr",
+          prerender: { partial: true },
           ppr: {
             regions: {
               offer: {

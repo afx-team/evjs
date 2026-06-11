@@ -56,9 +56,10 @@ describe("createDeploymentArtifact", () => {
       pages: {
         insights: {
           assets: { js: [], css: [] },
-          render: "rsc",
+          render: "ssr",
+          componentModel: "rsc",
           rendering: {
-            mode: "rsc",
+            mode: "ssr",
             component: "rsc",
             html: "server",
             streaming: true,
@@ -76,7 +77,7 @@ describe("createDeploymentArtifact", () => {
           id: "insights",
           path: "/insights",
           pageId: "insights",
-          render: "rsc",
+          render: "ssr",
         },
       ],
       server: {
@@ -164,7 +165,8 @@ describe("createDeploymentArtifact", () => {
         insights: {
           path: "/insights",
           routeId: "insights",
-          render: "rsc",
+          render: "ssr",
+          componentModel: "rsc",
           hydrate: "none",
           mount: "#app",
         },
@@ -175,7 +177,7 @@ describe("createDeploymentArtifact", () => {
           path: "/insights",
           appId: undefined,
           pageId: "insights",
-          render: "rsc",
+          render: "ssr",
           runtime: undefined,
         },
       ],
@@ -230,9 +232,10 @@ describe("createDeploymentArtifact", () => {
       pages: {
         insights: {
           assets: { js: [], css: [] },
-          render: "rsc",
+          render: "ssr",
+          componentModel: "rsc",
           rendering: {
-            mode: "rsc",
+            mode: "ssr",
             component: "rsc",
             html: "server",
             streaming: true,
@@ -247,7 +250,7 @@ describe("createDeploymentArtifact", () => {
           id: "insights",
           path: "/insights/$id",
           pageId: "insights",
-          render: "rsc",
+          render: "ssr",
         },
       ],
       server: {
@@ -376,9 +379,10 @@ describe("createDeploymentArtifact", () => {
       pages: {
         insights: {
           assets: { js: [], css: [] },
-          render: "rsc",
+          render: "ssr",
+          componentModel: "rsc",
           rendering: {
-            mode: "rsc",
+            mode: "ssr",
             component: "rsc",
             html: "server",
             streaming: true,
@@ -393,7 +397,7 @@ describe("createDeploymentArtifact", () => {
           id: "insights",
           path: "/insights/$id",
           pageId: "insights",
-          render: "rsc",
+          render: "ssr",
         },
       ],
       server: {

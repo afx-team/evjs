@@ -1,7 +1,9 @@
 import { DEFAULT_SERVER_BASE_PATH } from "@evjs/shared";
 import type {
+  ComponentModel,
   HydrationMode,
   PprConfig,
+  PrerenderConfig,
   RenderMode,
   SharedDependencyMap,
 } from "@evjs/shared/manifest";
@@ -95,7 +97,9 @@ export interface ResolvedConfig<
    * entry bundle. The single-entry `entry` and `html` fields are ignored.
    */
   pages?: Record<string, ResolvedPageConfig>;
-  /** Explicit application declarations. */
+  /** Resolved single SPA application declaration. */
+  app?: ResolvedAppConfig;
+  /** Internal application declarations. */
   apps?: Record<string, ResolvedAppConfig>;
   /** Remote app manifests configured for shell/runtime loading. */
   remotes: Record<string, ResolvedRemoteConfig>;
@@ -145,11 +149,17 @@ export interface Config<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
   transport?: TransportConfig;
 
   /**
-   * Application-level declarations.
+   * Single SPA application declaration.
    *
-   * `routes` points to the same module that application runtime imports for
-   * its real route tree. It is an explicit graph-analysis source, not a file
-   * convention.
+   * The SPA owns its client route tree. Framework render metadata is declared
+   * by page modules imported by that route tree, not by a second route config
+   * field in `ev.config.ts`.
+   */
+  app?: AppConfig;
+
+  /**
+   * @deprecated Multiple SPA apps are no longer the public application model.
+   * Use `app` for the single SPA and `pages` for independent MPA pages.
    */
   apps?: Record<string, AppConfig>;
 
@@ -247,7 +257,13 @@ export interface ResolvedTransportConfig {
   baseUrl?: string;
 }
 
-export interface AppConfig {
+export type AppConfig = string | AppSourceConfig | AppEntryConfig;
+
+export interface AppSourceConfig {
+  source: string;
+}
+
+export interface AppEntryConfig {
   entry: string;
   html?: string;
   routes?: string;
@@ -255,8 +271,9 @@ export interface AppConfig {
 }
 
 export interface ResolvedAppConfig {
-  entry: string;
-  html: string;
+  source?: string;
+  entry?: string;
+  html?: string;
   routes?: string;
   mount?: string;
 }
@@ -364,7 +381,7 @@ export function resolveConfig<
   if (config.pages && Object.keys(config.pages).length > 0) {
     resolvedPages = {};
     for (const [name, page] of Object.entries(config.pages)) {
-      const pageConfig = typeof page === "string" ? { entry: page } : page;
+      const pageConfig = typeof page === "string" ? { component: page } : page;
       validatePageConfig(name, pageConfig);
       resolvedPages[name] = {
         path: "path" in pageConfig ? pageConfig.path : undefined,
@@ -372,40 +389,31 @@ export function resolveConfig<
         component: "component" in pageConfig ? pageConfig.component : undefined,
         app: "app" in pageConfig ? pageConfig.app : undefined,
         html: pageConfig.html ?? defaultHtml,
-        render: pageConfig.render ?? "csr",
-        hydrate: pageConfig.hydrate,
         mount: pageConfig.mount,
-        ppr: "ppr" in pageConfig ? pageConfig.ppr : undefined,
       };
     }
   }
 
-  const requiresRscEndpoint =
-    resolvedPages &&
-    Object.values(resolvedPages).some((page) => page.render === "rsc");
-  const resolvedApps = config.apps
-    ? Object.fromEntries(
-        Object.entries(config.apps).map(([id, app]) => [
-          id,
-          {
-            entry: app.entry,
-            html: app.html ?? defaultHtml,
-            routes: app.routes,
-            mount: app.mount,
-          },
-        ]),
-      )
+  const resolvedApp = config.app
+    ? resolveAppConfig(config.app, defaultHtml)
     : undefined;
+  const resolvedApps = resolvedApp
+    ? { default: resolvedApp }
+    : config.apps
+      ? Object.fromEntries(
+          Object.entries(config.apps).map(([id, app]) => [
+            id,
+            resolveAppConfig(app, defaultHtml),
+          ]),
+        )
+      : undefined;
 
   const serverPort = serverConfig.dev?.port ?? CONFIG_DEFAULTS.serverPort;
   const serverBasePath = normalizePath(
     serverConfig.basePath ?? CONFIG_DEFAULTS.serverBasePath,
   );
   const serverEndpoint = joinPath(serverBasePath, "fn");
-  const rscEndpoint = resolveRscEndpoint(
-    serverConfig,
-    Boolean(requiresRscEndpoint),
-  );
+  const rscEndpoint = resolveRscEndpoint(serverConfig, serverEnabled);
   const serverTarget = new URL(
     serverConfig.dev?.https ? "https://localhost" : "http://localhost",
   );
@@ -415,6 +423,7 @@ export function resolveConfig<
     entry: config.entry ?? CONFIG_DEFAULTS.entry,
     html: defaultHtml,
     pages: resolvedPages,
+    app: resolvedApp,
     apps: resolvedApps,
     remotes: Object.fromEntries(
       Object.entries(config.remotes ?? {}).map(([name, remote]) => [
@@ -492,6 +501,24 @@ export function resolveConfig<
   };
 }
 
+function resolveAppConfig(
+  app: AppConfig,
+  defaultHtml: string,
+): ResolvedAppConfig {
+  if (typeof app === "string") {
+    return { source: app };
+  }
+  if ("source" in app) {
+    return { source: app.source };
+  }
+  return {
+    entry: app.entry,
+    html: app.html ?? defaultHtml,
+    routes: app.routes,
+    mount: app.mount,
+  };
+}
+
 function cloneSharedDependencies(
   shared: SharedDependencyMap,
 ): SharedDependencyMap {
@@ -546,7 +573,9 @@ export interface PageEntryConfig {
   entry: string;
   /** HTML template path. If omitted, uses the top-level `html` default. */
   html?: string;
-  render?: Extract<RenderMode, "csr">;
+  /** @deprecated Declare render in the page module instead. */
+  render?: RenderMode;
+  /** @deprecated Declare hydrate in the page module instead. */
   hydrate?: HydrationMode;
   mount?: string;
 }
@@ -558,9 +587,16 @@ export interface PageComponentConfig {
   component: string;
   /** HTML template path. If omitted, uses the top-level `html` default. */
   html?: string;
+  /** @deprecated Declare render in the page module instead. */
   render?: RenderMode;
+  /** @deprecated Declare componentModel in the page module instead. */
+  componentModel?: ComponentModel;
+  /** @deprecated Declare hydrate in the page module instead. */
   hydrate?: HydrationMode;
+  /** @deprecated Declare prerender in the page module instead. */
+  prerender?: PrerenderConfig;
   mount?: string;
+  /** @deprecated PPR is derived from page module `prerender.partial`. */
   ppr?: PprConfig;
 }
 
@@ -571,7 +607,9 @@ export interface PageAppConfig {
   app: string;
   /** HTML template path. If omitted, uses the top-level `html` default. */
   html?: string;
-  render?: Extract<RenderMode, "csr" | "ssr">;
+  /** @deprecated Declare render in the app/page module instead. */
+  render?: RenderMode;
+  /** @deprecated Declare hydrate in the app/page module instead. */
   hydrate?: HydrationMode;
   mount?: string;
 }
@@ -582,9 +620,12 @@ export interface ResolvedPageConfig {
   component?: string;
   app?: string;
   html: string;
-  render: RenderMode;
+  /** @deprecated Render is analyzed from the page module. */
+  render?: RenderMode;
+  /** @deprecated Hydrate is analyzed from the page module. */
   hydrate?: HydrationMode;
   mount?: string;
+  /** @deprecated PPR is analyzed from the page module. */
   ppr?: PprConfig;
 }
 

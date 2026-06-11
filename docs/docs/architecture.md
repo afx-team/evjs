@@ -145,7 +145,7 @@ sequenceDiagram
 
   Browser->>Edge: GET /campaign
   Edge->>Edge: load cached PPR shell
-  Edge->>Edge: read manifest page.ppr.regions.offer
+  Edge->>Edge: read public manifest PPR region metadata
   Edge->>Origin: GET /__evjs/ppr/campaign/offer
   Origin->>Origin: render/cache offer region
   Origin-->>Edge: region HTML fragment + cache headers
@@ -163,8 +163,12 @@ resolver: local Node/dev can call the renderer in-process, while edge adapters
 can fetch an internal FaaS endpoint without changing the public page protocol.
 
 The preferred PPR authoring model is React `Suspense` with a
-`lazy(() => import(...))` child. `ev.config.ts` only needs `render: "ppr"` for
-the page; explicit `ppr.regions` config is kept as a low-level fallback.
+`lazy(() => import(...))` child. The page component declares
+`export const render = "ssr"` plus
+`export const prerender = { partial: true, delivery }`. Dynamic regions can
+declare `export const cache` and `export const hydrate` in their own modules.
+PPR is a prerendering strategy on top of SSR, not a separate document render
+mode.
 
 PPR page hydration is page-level `none` in the public manifest. Client
 interactivity should be introduced through explicit client islands or
@@ -197,12 +201,11 @@ package loading/version selection remains outside this implementation.
 entry/html
   single app shorthand
 
-apps.*
-  explicit app entry, html, runtime route source, mount point
+app
+  app declaration source that owns entry, html, route groups, mount point
 
 pages.*
-  standalone page shorthand: path, entry/component/app, render mode,
-  hydration, PPR regions
+  standalone page shorthand: path, entry/component/app, mount point
 
 server.basePath
   derives framework server runtime paths: fn, ppr, rsc
@@ -214,21 +217,23 @@ plugins
   framework and bundler extension points
 ```
 
-`apps.*` owns the application document, client entry, navigation source, and
-mount point. It should not carry one render mode, because one app can contain
-CSR, SSR, PPR, RSC, and remote routes at the same time.
+`app` points to one app declaration source. That source owns the application
+document, client entry, route groups, and mount point. It should not carry one
+rendering strategy, because one app can contain CSR, SSR, PPR, RSC, and remote
+routes at the same time.
 
-Route declarations own route-level rendering strategy. When a route declaration
-contains a module and non-CSR render mode, graph creation derives an internal
-page from that route. That page provides a stable `pageId`, render metadata,
-server renderers, PPR regions, assets, and manifest output, but it does not emit
-an independent HTML document. The app document remains the HTML owner.
+Route declarations own path-to-component wiring. Page modules own rendering
+metadata through static exports such as `render`, `hydrate`, `componentModel`,
+and `prerender`. When graph creation sees a route component with SSR, RSC, or
+partial prerender metadata, it derives an internal page from that route. That
+page provides a stable `pageId`, render metadata, server renderers, PPR regions,
+assets, and manifest output, but it does not emit an independent HTML document.
+The app document remains the HTML owner.
 
 `pages.*` remains the standalone page shorthand. It is useful when a page is not
-inside an app route source, or when a simple MPA-style page should own its own
-HTML document. Internally it is normalized into the same route/page/rendering
-graph, so PPR is still a page/route rendering strategy rather than an app
-capability.
+inside an app declaration source, or when a simple MPA-style page should own its
+own HTML document. Rendering metadata still belongs in the referenced page
+module, not in `ev.config.ts`.
 
 ## Server Function Pipeline
 

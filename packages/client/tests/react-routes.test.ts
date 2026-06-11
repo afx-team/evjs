@@ -7,9 +7,6 @@ describe("defineReactRoutes", () => {
       route("/", {
         id: "home",
         page: page("./pages/Home.tsx"),
-        render: "ssr",
-        hydrate: "load",
-        runtime: "node",
       }),
     ]);
 
@@ -18,10 +15,25 @@ describe("defineReactRoutes", () => {
         id: "home",
         path: "/",
         module: "./pages/Home.tsx",
-        render: "ssr",
-        hydrate: "load",
-        runtime: "node",
       },
     ]);
+  });
+
+  it("accepts ordinary React components as route targets", () => {
+    function Home() {
+      return null;
+    }
+
+    const routes = defineReactRoutes([
+      route("/", Home, {
+        id: "home",
+      }),
+    ]);
+
+    expect(routes.routes[0]).toMatchObject({
+      path: "/",
+      id: "home",
+      component: Home,
+    });
   });
 });

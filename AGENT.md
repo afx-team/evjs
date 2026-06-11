@@ -48,7 +48,8 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 ## Common Mistakes
 
 1. Using old `@evjs/build-tools` or `@evjs/manifest` imports. Use internal `@evjs/ev` helpers or `@evjs/shared/manifest`.
-2. Putting route ownership in plugin options. Use `apps.*.routes` or `pages.*.path`.
+2. Putting route ownership in plugin options. Use the single `app` declaration
+   source for SPA routes and `pages.*.path` only for standalone page outputs.
 3. Reintroducing file-convention routing. The architecture is explicit config/static declaration based.
 4. Watching every source file for graph invalidation. `fileDependencies` should stay narrower than the analysis closure.
 5. Using `await import(href)` as the default browser shell loader. Shell modules are registered by scripts so lower browser targets and non-Vite bundlers are not tied to dynamic import comments.

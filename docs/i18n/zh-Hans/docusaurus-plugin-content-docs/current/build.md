@@ -78,10 +78,10 @@ delivery mode：
 - `merge` 是默认非流式模式。服务端等待 regions 完成后返回完整 HTML。
 - `stream` 会先发送 shell，再在同一个 HTML response 中发送 region patches。
 
-PPR region 的 cache metadata 会进入 manifest：
-
 PPR component page 不会创建 page-level browser entry。除非后续显式建模 client
 islands 或 region-level hydration，否则 public manifest 中的 hydrate mode 是 `none`。
+
+PPR region 的 cache metadata 会进入 manifest：
 
 ```json
 {
@@ -105,6 +105,7 @@ islands 或 region-level hydration，否则 public manifest 中的 hydrate mode 
 
 - 单一框架 manifest：`dist/manifest.json`。
 - `BuildOutput` 替代旧 client/server manifests。
+- 公开 manifest 会做脱敏：浏览器可见输出不应暴露本地源码路径或私有构建 metadata。
 - 源码分析在 bundler config 创建前完成，并在 dev 中缓存。
 - 组件和样式修改继续走 bundler HMR。
 - dev 中新增配置页面需要 bundler `updatePlan()` 能力；当前 Utoopack adapter 会在下层 API 补齐前明确失败。

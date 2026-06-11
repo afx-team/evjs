@@ -17,7 +17,7 @@ Both arguments are optional — if omitted, the CLI prompts interactively.
 | `mpa` | Multi-page application setup |
 | `api-routes` | Programmatic REST API routes via `createRoute()` |
 | `complex-routing` | Params, search, layouts, loaders, nested routes |
-| `with-tailwind` | Tailwind CSS via plugin loaders |
+| `with-tailwind` | Tailwind CSS via PostCSS |
 | `with-trpc` | tRPC interop example |
 | `with-sqlite` | Full-stack CRUD with SQLite |
 | `custom-ws-transport` | Custom WebSocket transport |
@@ -29,7 +29,9 @@ Both arguments are optional — if omitted, the CLI prompts interactively.
 ev dev
 ```
 
-Your browser opens to `http://localhost:3000` with Hot Module Replacement. Server functions in `*.server.ts` files are auto-discovered — no config needed.
+Your browser opens to `http://localhost:3000` with Hot Module Replacement.
+Server functions in `"use server"` modules are auto-discovered from explicit
+app/page/server roots.
 
 ## Production Build
 
@@ -45,17 +47,17 @@ my-app/
 ├── ev.config.ts            # Optional config
 ├── src/
 │   ├── main.tsx            # App bootstrap
-│   ├── global.ts           # Global typings & transport init
-│   ├── pages/              # Route modules (code-defined TanStack Router tree)
+│   ├── pages/              # TanStack route modules or app pages
 │   │   ├── __root.tsx      # Root layout
-│   │   └── home.tsx        # Home page (index route)
-│   └── api/                # Server function files
-│       └── *.server.ts
+│   │   └── home.tsx        # Home route
+│   └── api/                # Server-only modules
+│       ├── users.server.ts # "use server" functions
+│       └── health.routes.ts
 ├── package.json
 └── tsconfig.json
 ```
 
-## App Bootstrap
+## App Bootstrap With TanStack Router
 
 ```tsx
 // src/main.tsx
@@ -66,17 +68,96 @@ import "./global";
 
 const routeTree = rootRoute.addChildren([homeRoute]);
 const app = createApp({ routeTree });
+
+declare module "@evjs/client" {
+  interface Register {
+    router: typeof app.router;
+  }
+}
+
 app.render("#app");
 ```
 
+TanStack Router is the default template path because it gives strong route
+typing and loader integration. New architecture features can also be expressed
+through framework route declarations or standalone `pages`.
+
+## TanStack-Free Route Declaration
+
+For an app that should not use TanStack Router, declare the app boundary and
+framework routes in one app declaration source:
+
 ```ts
-// src/global.ts
-declare module "@evjs/client" {
-  interface Register {
-    router: any;
-  }
+// src/app.tsx
+import { defineReactApp, route } from "@evjs/client";
+import Campaign from "./pages/Campaign";
+import Dashboard from "./pages/Dashboard";
+
+function App() {
+  return <main>Operations console</main>;
+}
+
+export default defineReactApp({
+  html: "../index.html",
+  mount: "#app",
+  component: App,
+  routes: [
+    route("/dashboard", Dashboard, {
+      id: "dashboard",
+    }),
+    route("/campaign", Campaign, {
+      id: "campaign",
+    }),
+  ],
+});
+```
+
+```tsx
+// src/pages/Dashboard.tsx
+export const render = "ssr";
+export const hydrate = "load";
+
+export default function Dashboard() {
+  return <main>Server-rendered dashboard</main>;
 }
 ```
+
+```tsx
+// src/pages/Campaign.tsx
+import { Suspense } from "react";
+import { OfferRegion } from "./OfferRegion";
+import { OfferSkeleton } from "./OfferSkeleton";
+
+export const render = "ssr";
+export const hydrate = "none";
+export const prerender = {
+  partial: true,
+  delivery: "stream",
+} as const;
+
+export default function Campaign() {
+  return (
+    <main>
+      <Suspense fallback={<OfferSkeleton />}>
+        <OfferRegion />
+      </Suspense>
+    </main>
+  );
+}
+```
+
+```ts
+// ev.config.ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  app: "./src/app.tsx",
+});
+```
+
+The app declaration source is the graph source for build-time analysis. Route
+groups can still be split into imported files, but `ev.config.ts` only points at
+the app boundary.
 
 ## Packages
 
@@ -97,14 +178,14 @@ import through `@evjs/ev`, `@evjs/client`, and `@evjs/server`.
 ```json
 {
   "dependencies": {
-    "@evjs/client": "^0.1.10",
-    "@evjs/server": "^0.1.10",
+    "@evjs/client": "<same version>",
+    "@evjs/server": "<same version>",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@evjs/ev": "^0.1.10",
-    "@evjs/cli": "^0.1.10",
+    "@evjs/ev": "<same version>",
+    "@evjs/cli": "<same version>",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "typescript": "^6.0.2"
@@ -124,4 +205,7 @@ Keep all `@evjs/*` packages in your app on the same version. When upgrading evjs
 - Import `defineConfig` from `@evjs/ev`, not from `@evjs/server`
 - HTML must have `<div id="app">` for the render target
 - Do NOT add `"type": "module"` to your **project's** `package.json` — the server bundle uses CJS format
-- `src/main.tsx` should be minimal — define routes in `pages/`
+- `src/main.tsx` should be minimal. Put app graph declarations in `src/app.tsx`
+  or route/page modules imported by it.
+- Use `pages` for standalone page outputs. Use `app` for the SPA declaration
+  boundary.

@@ -281,7 +281,7 @@ function createPlan(
           component: page.component,
           app: page.app,
           html: page.html,
-          render: page.render,
+          render: page.render ?? "csr",
           hydrate: page.hydrate,
           mount: page.mount,
         },

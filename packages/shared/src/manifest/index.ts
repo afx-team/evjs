@@ -48,13 +48,16 @@ export interface PageNode {
   app?: string;
   html: string;
   render: RenderMode;
+  componentModel?: ComponentModel;
   hydrate?: HydrationMode;
   mount?: string;
+  prerender?: PrerenderConfig;
   ppr?: PprConfig;
 }
 
 export interface PprConfig {
   delivery?: PprDeliveryMode;
+  revalidate?: number | false;
   regions?: Record<string, PprRegionConfig>;
 }
 
@@ -126,7 +129,15 @@ export interface ServerReferenceNode {
   exportName?: string;
 }
 
-export type RenderMode = "csr" | "ssr" | "ssg" | "ppr" | "rsc";
+export type RenderMode = "csr" | "ssr" | "ssg";
+export type ComponentModel = "client" | "rsc";
+export type PrerenderConfig =
+  | true
+  | {
+      partial?: boolean;
+      delivery?: PprDeliveryMode;
+      revalidate?: number | false;
+    };
 export type HydrationMode = "none" | "load" | "visible" | "idle";
 export type BuildEnvironment = "client" | "server";
 export type ServerRuntime = "node" | "edge";
@@ -318,9 +329,11 @@ export interface PageOutput {
   routeId?: string;
   entry?: string;
   component?: string;
+  componentModel?: ComponentModel;
   app?: string;
   hydrate?: HydrationMode;
   mount?: string;
+  prerender?: PrerenderConfig;
   module?: RuntimeModuleOutput;
   ppr?: PprPageOutput;
 }
@@ -458,10 +471,16 @@ export interface ExtractedRoute {
   id?: string;
   /** Static page/component module declared for this route. */
   module?: string;
-  /** Route render mode declared in route metadata. */
+  /** Render mode declared by the route target module. */
   render?: RenderMode;
-  /** Route hydration mode declared in route metadata. */
+  /** Hydration mode declared by the route target module. */
   hydrate?: HydrationMode;
+  /** Component execution model declared by the route target module. */
+  componentModel?: ComponentModel;
+  /** Prerender behavior declared by the route target module. */
+  prerender?: PrerenderConfig;
+  /** PPR config derived from the route target module. */
+  ppr?: PprConfig;
   /** Server runtime declared in route metadata. */
   runtime?: ServerRuntime;
   /** Owning app id for routes extracted from an app-specific route source. */
@@ -505,6 +524,9 @@ export function resolveRoutes(routes: ExtractedRoute[]): Array<{
   module?: string;
   render?: RenderMode;
   hydrate?: HydrationMode;
+  componentModel?: ComponentModel;
+  prerender?: PrerenderConfig;
+  ppr?: PprConfig;
   runtime?: ServerRuntime;
   appId?: string;
 }> {
@@ -550,6 +572,9 @@ export function resolveRoutes(routes: ExtractedRoute[]): Array<{
     module?: string;
     render?: RenderMode;
     hydrate?: HydrationMode;
+    componentModel?: ComponentModel;
+    prerender?: PrerenderConfig;
+    ppr?: PprConfig;
     runtime?: ServerRuntime;
     appId?: string;
   }> = [];
@@ -576,6 +601,9 @@ export function resolveRoutes(routes: ExtractedRoute[]): Array<{
         module: r.module,
         render: r.render,
         hydrate: r.hydrate,
+        componentModel: r.componentModel,
+        prerender: r.prerender,
+        ppr: r.ppr,
         runtime: r.runtime,
         appId: r.appId,
       });

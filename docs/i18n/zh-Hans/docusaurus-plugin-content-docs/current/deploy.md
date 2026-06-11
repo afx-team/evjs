@@ -89,7 +89,7 @@ Browser
   GET /campaign
     -> Edge/CDN
        load cached shell
-       read manifest page.ppr.regions
+       read public manifest PPR region metadata
        server-to-server GET /__evjs/ppr/campaign/offer
          -> Internal FaaS/origin renders region fragment
        merge 或 stream region 到同一个 /campaign response
@@ -97,9 +97,10 @@ Browser
 ```
 
 在这个拓扑下，`/__evjs/ppr/<page>/<region>` 不是浏览器首屏请求，而是 edge/runtime
-层使用的内部 region resolver endpoint。`ppr.delivery = "merge"` 会等待必要
-regions 后再返回 document；`ppr.delivery = "stream"` 会先 flush 缓存 shell，并在
-内部 region 请求完成后把 patches 继续写入同一个 HTML response。
+层使用的内部 region resolver endpoint。源模块通过 `prerender.delivery = "merge"`
+声明等待必要 regions 后再返回 document；通过 `prerender.delivery = "stream"` 声明
+先 flush 缓存 shell，并在内部 region 请求完成后把 patches 继续写入同一个 HTML
+response。
 
 如果浏览器和服务端在不同 origin，构建时配置 `transport.baseUrl`。
 

@@ -74,7 +74,8 @@ export const postDetailsRoute = createRoute("/api/posts/:id", {
 
 ## Middleware
 
-Use the `middleware` option to run logic before handlers. Call `next()` to proceed or return a `Response` to short-circuit:
+Use the `middlewares` option to run logic before handlers. Call `next()` to
+proceed or return a `Response` to short-circuit:
 
 ```ts
 import { createRoute } from "@evjs/server";
@@ -86,8 +87,20 @@ const requireAuth = async (req, next) => {
 };
 
 export const protectedRoute = createRoute("/api/protected", {
-  middleware: [requireAuth],
+  middlewares: [requireAuth],
   GET: async () => Response.json({ secret: "data" }),
+});
+```
+
+Use `createApp({ middlewares })` for global middleware that should run before
+server routes, server functions, SSR, PPR, and RSC framework handling:
+
+```ts
+import { createApp, requestLogger } from "@evjs/server";
+
+const app = createApp({
+  middlewares: [requestLogger()],
+  routes: [protectedRoute],
 });
 ```
 
@@ -128,6 +141,9 @@ export default defineConfig({
 
 :::tip
 
-If you combine `routes` with `"use server"` Server Functions, `createApp()` handles **both**. Route handlers are mounted first; the RPC fallback handles requests at `api/fn`.
+If you combine `routes` with `"use server"` server functions, `createApp()`
+handles both. Route handlers are mounted first; the RPC dispatcher handles
+requests at the runtime path derived from `server.basePath`, for example
+`/__evjs/fn`.
 
 :::

@@ -10,15 +10,15 @@ fixture. The app simulates a payment operations console with:
 - a PPR campaign monitor with a dynamic offer region;
 - an RSC insights page with a client reference;
 - a manifest-driven CRM remote workspace with shared React negotiation;
-- a render-lab app whose route source declares SSR, PPR, RSC, and remote routes;
 - deployment artifacts derived from `BuildOutput`.
 
 It still exercises the new framework contracts with the webpack adapter:
 
 - explicit app declaration;
-- app-owned route declarations that create route-derived SSR/PPR/RSC pages
-  under the app document;
-- `pages` declarations that own URL path, component, render, and hydration metadata;
+- app-owned route declarations that create route-derived SSR/PPR/RSC pages under
+  the app document;
+- `pages` declarations for standalone page outputs, with render metadata kept in
+  the referenced page modules;
 - framework-managed SSR React page;
 - framework-managed CSR component page;
 - PPR page shell plus Suspense-driven dynamic region renderer, delivered with

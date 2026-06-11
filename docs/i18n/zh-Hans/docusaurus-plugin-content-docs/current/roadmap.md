@@ -10,21 +10,24 @@
 - 覆盖 config、graph、plan、bundler、output、HTML、build 阶段的插件系统。
 - 基于 `BuildPlan` 和 `BuildOutput` 的 bundler adapter contract。
 - 单一框架 manifest：`dist/manifest.json`。
-- 用于 app/page/remote activation 的 shell/runtime packages。
-- TanStack adapter 从 shell/runtime core 中拆出。
+- 通过公开 `@evjs/client` 包提供 manifest-driven app/page/remote activation。
+- 通过 `@evjs/client` 提供 TanStack 兼容和不依赖 TanStack 的 React route declaration。
 - Webpack adapter 用于在 Utoopack 下层 API 补齐前验证框架能力。
 - 完整 host/remote 示例，并通过 e2e 覆盖 apps、组件页面、SSR/PPR/RSC、
   remotes 和 per-document HTML transform。
+- Public manifest redaction，确保浏览器可见输出不暴露本地源码路径。
+- 内置 Node、static、edge deployment adapter artifacts。
 
 ## 进行中
 
 - Utoopack dynamic dev plan update，用于不重启 `ev dev` 增删 entry。
 - Utoopack 对 framework-managed component entry 和多 server render entry 的 build facts 支持。
-- 生产部署插件迁移到消费 `BuildOutput`，不再读取 v1 client/server manifests。
+- Utoopack 运行 RSC 和 framework-managed render entry 所需的 reference metadata。
+- 非根 public path、CDN/edge+origin 部署下的 RSC/PPR cache 行为生产级 hardening。
 
 ## 计划中
 
-- 完整 React Server Components transform/runtime adapter。
-- RSC client/server reference manifests 和 Flight runtime integration。
-- 更生产级的 PPR 行为，例如 stale revalidation strategy 和更深入的 React
-  streaming renderer 集成。
+- Route-first 用户模型收敛：高级渲染能力主要落在 route declaration，`pages` 保持 standalone page shorthand。
+- 统一 server request context 和 middleware 语义，覆盖 server functions、server routes、SSR、PPR、RSC。
+- 更生产级的 PPR 行为，例如 stale revalidation strategy、pluggable region cache、显式 client islands 和更深入的 React streaming renderer 集成。
+- Utoopack 下层能力补齐：dynamic entries、structured build result、多 server entry class、RSC/client reference metadata。

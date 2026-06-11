@@ -244,7 +244,7 @@ export async function handlePprRegionRequest(
   if (!match) return undefined;
 
   const page = options.manifest.pages[match.pageId];
-  if (!page || page.render !== "ppr") return undefined;
+  if (!page?.ppr) return undefined;
   const region = page.ppr?.regions[match.regionId];
   if (!region) return undefined;
   const coordinator = normalizeRenderCoordinator(options.render);
@@ -261,7 +261,7 @@ async function renderPprPageResponse(
   if (request.method === "HEAD") return response;
   const pageId = ctx.pageId;
   const page = pageId ? options.manifest.pages[pageId] : undefined;
-  if (!pageId || page?.render !== "ppr" || !page.ppr) return response;
+  if (!pageId || !page?.ppr) return response;
 
   const contentType = response.headers.get("Content-Type") ?? "";
   if (!contentType.includes("text/html")) return response;
@@ -399,7 +399,7 @@ async function renderPprRegionResponse(
   coordinator: ServerRenderCoordinator,
 ): Promise<Response | undefined> {
   const page = options.manifest.pages[match.pageId];
-  if (!page || page.render !== "ppr") return undefined;
+  if (!page?.ppr) return undefined;
   const region = page.ppr?.regions[match.regionId];
   if (!region) return undefined;
   const cachePolicy = region.cache ?? "no-store";
@@ -506,9 +506,9 @@ function validateRscFlightContext(ctx: RscFlightContext): Response | undefined {
     );
   }
 
-  if (ctx.page.render !== "rsc") {
+  if (ctx.page.componentModel !== "rsc") {
     return frameworkTextResponse(
-      `[evjs] Page "${ctx.pageId}" is not configured with render: "rsc".`,
+      `[evjs] Page "${ctx.pageId}" is not configured with componentModel: "rsc".`,
       404,
     );
   }
@@ -616,12 +616,11 @@ function findRenderer(
   }));
   const pageId = ctx.pageId;
   const routeId = ctx.route?.id;
-  const preferredKind =
-    ctx.page?.render === "ppr"
-      ? "ppr-shell"
-      : ctx.page?.render === "rsc"
-        ? "page-server"
-        : undefined;
+  const preferredKind = isPartialPrerenderPageOutput(ctx.page)
+    ? "ppr-shell"
+    : ctx.page?.componentModel === "rsc"
+      ? "page-server"
+      : undefined;
 
   if (pageId && ctx.regionId) {
     const regionRenderer = candidates.find(
@@ -659,6 +658,12 @@ function findRenderer(
   }
 
   return undefined;
+}
+
+function isPartialPrerenderPageOutput(
+  page: ServerRenderContext["page"],
+): boolean {
+  return Boolean(page?.ppr || page?.rendering.prerender === "partial");
 }
 
 function loadRendererModule(

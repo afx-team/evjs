@@ -123,9 +123,10 @@ describe("createReactServerRenderAdapter", () => {
     };
     manifest.pages.insights = {
       assets: { js: ["evjs-rsc-client.js"], css: ["insights.css"] },
-      render: "rsc",
+      render: "ssr",
+      componentModel: "rsc",
       rendering: {
-        mode: "rsc",
+        mode: "ssr",
         component: "rsc",
         html: "server",
         streaming: true,
@@ -226,9 +227,10 @@ describe("createReactRscFlightAdapter", () => {
     };
     manifest.pages.dashboard = {
       assets: { js: [], css: [] },
-      render: "rsc",
+      render: "ssr",
+      componentModel: "rsc",
       rendering: {
-        mode: "rsc",
+        mode: "ssr",
         component: "rsc",
         html: "server",
         streaming: true,

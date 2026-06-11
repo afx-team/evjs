@@ -130,20 +130,19 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
       );
       const baseAssets = entry
         ? clientAssetsForEntry(entry)
-        : page.render === "rsc" && rscClientRuntimeEntry
+        : isRscPage(page) && rscClientRuntimeEntry
           ? clientAssetsForEntry(rscClientRuntimeEntry)
           : EMPTY_ASSETS;
-      const serverCss =
-        page.render === "rsc"
-          ? [
-              ...serverCssForPage(id, "page-server"),
-              ...serverCssForPage(id, "rsc-page"),
-            ]
-          : page.render === "ssr" || page.render === "ssg"
-            ? serverCssForPage(id, "page-server")
-            : page.render === "ppr"
-              ? serverCssForPage(id, "ppr-shell")
-              : [];
+      const serverCss = isRscPage(page)
+        ? [
+            ...serverCssForPage(id, "page-server"),
+            ...serverCssForPage(id, "rsc-page"),
+          ]
+        : page.render === "ssr" || page.render === "ssg"
+          ? serverCssForPage(id, "page-server")
+          : isPartialPrerenderPage(page)
+            ? serverCssForPage(id, "ppr-shell")
+            : [];
       const assets = mergeAssetGroups(baseAssets, {
         js: [],
         css: serverCss,
@@ -158,9 +157,11 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
           routeId: page.routeId,
           entry: page.entry,
           component: page.component,
+          componentModel: page.componentModel,
           app: page.app,
           hydrate: effectivePageHydrate(page),
           mount: page.mount,
+          prerender: page.prerender,
           module: entry
             ? {
                 type: page.component
@@ -172,39 +173,38 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
                 source: page.component ?? page.app ?? page.entry,
               }
             : undefined,
-          ppr:
-            page.render === "ppr"
-              ? {
-                  delivery: page.ppr?.delivery ?? "merge",
-                  shell: shellEntry
-                    ? serverAssetsForEntry(shellEntry)
-                    : serverAssets,
-                  regions: Object.fromEntries(
-                    Object.entries(page.ppr?.regions ?? {}).map(
-                      ([regionId, region]) => {
-                        const regionEntry = findEntryByOwner(
-                          { pageId: id, regionId },
-                          "server",
-                          "ppr-region",
-                        );
-                        return [
-                          regionId,
-                          {
-                            id: regionId,
-                            assets: regionEntry
-                              ? serverAssetsForEntry(regionEntry)
-                              : serverAssets,
-                            component: region.component,
-                            fallback: region.fallback,
-                            cache: region.cache,
-                            hydrate: region.hydrate,
-                          },
-                        ];
-                      },
-                    ),
+          ppr: isPartialPrerenderPage(page)
+            ? {
+                delivery: page.ppr?.delivery ?? "merge",
+                shell: shellEntry
+                  ? serverAssetsForEntry(shellEntry)
+                  : serverAssets,
+                regions: Object.fromEntries(
+                  Object.entries(page.ppr?.regions ?? {}).map(
+                    ([regionId, region]) => {
+                      const regionEntry = findEntryByOwner(
+                        { pageId: id, regionId },
+                        "server",
+                        "ppr-region",
+                      );
+                      return [
+                        regionId,
+                        {
+                          id: regionId,
+                          assets: regionEntry
+                            ? serverAssetsForEntry(regionEntry)
+                            : serverAssets,
+                          component: region.component,
+                          fallback: region.fallback,
+                          cache: region.cache,
+                          hydrate: region.hydrate,
+                        },
+                      ];
+                    },
                   ),
-                }
-              : undefined,
+                ),
+              }
+            : undefined,
         },
       ];
     }),
@@ -473,8 +473,10 @@ function sanitizePageOutput(
     rendering: page.rendering,
     path: page.path,
     routeId: page.routeId,
+    componentModel: page.componentModel,
     hydrate: page.hydrate,
     mount: page.mount,
+    prerender: page.prerender,
     module: sanitizeRuntimeModule(page.module),
     ppr: page.ppr
       ? {
@@ -624,9 +626,7 @@ function linkRscOutput(
   const rscRenderers = input.plan.entries.filter(
     (entry) => entry.environment === "server" && entry.kind === "rsc-page",
   );
-  const rscPages = Object.values(input.graph.pages).filter(
-    (page) => page.render === "rsc",
-  );
+  const rscPages = Object.values(input.graph.pages).filter(isRscPage);
 
   if (
     !endpoint &&
@@ -718,12 +718,39 @@ function linkServerRenderers(
 
 function derivePageRendering(page: PageNode): PageRenderingOutput {
   const hydrate = effectivePageHydrate(page);
+  const component = isRscPage(page)
+    ? "rsc"
+    : page.render === "csr"
+      ? "client"
+      : "server";
+  const partial = isPartialPrerenderPage(page);
+
+  if (partial) {
+    return {
+      mode: page.render,
+      component,
+      html: "partial",
+      prerender: "partial",
+      streaming: page.ppr?.delivery === "stream",
+      hydrate,
+    };
+  }
+
+  if (isRscPage(page)) {
+    return {
+      mode: page.render,
+      component: "rsc",
+      html: "server",
+      streaming: true,
+      hydrate,
+    };
+  }
 
   switch (page.render) {
     case "csr":
       return {
         mode: page.render,
-        component: "client",
+        component,
         html: "client",
         streaming: false,
         hydrate,
@@ -731,33 +758,16 @@ function derivePageRendering(page: PageNode): PageRenderingOutput {
     case "ssg":
       return {
         mode: page.render,
-        component: "server",
+        component,
         html: "static",
         prerender: "full",
         streaming: false,
         hydrate,
       };
-    case "ppr":
-      return {
-        mode: page.render,
-        component: "server",
-        html: "partial",
-        prerender: "partial",
-        streaming: page.ppr?.delivery === "stream",
-        hydrate,
-      };
-    case "rsc":
-      return {
-        mode: page.render,
-        component: "rsc",
-        html: "server",
-        streaming: true,
-        hydrate: "load",
-      };
     default:
       return {
         mode: page.render,
-        component: "server",
+        component,
         html: "server",
         streaming: false,
         hydrate,
@@ -766,13 +776,26 @@ function derivePageRendering(page: PageNode): PageRenderingOutput {
 }
 
 function effectivePageHydrate(page: PageNode): HydrationMode {
-  return page.render === "ppr"
+  return isPartialPrerenderPage(page)
     ? "none"
     : (page.hydrate ?? defaultHydrate(page.render));
 }
 
 function defaultHydrate(render: PageNode["render"]): HydrationMode {
   return render === "ssg" ? "none" : "load";
+}
+
+function isRscPage(page: Pick<PageNode, "componentModel">): boolean {
+  return page.componentModel === "rsc";
+}
+
+function isPartialPrerenderPage(
+  page: Pick<PageNode, "prerender" | "ppr">,
+): boolean {
+  return (
+    (typeof page.prerender === "object" && page.prerender.partial === true) ||
+    Boolean(page.ppr)
+  );
 }
 
 function moduleIdMatchesSource(moduleId: string, sourceRel: string): boolean {

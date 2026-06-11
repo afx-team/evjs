@@ -1,9 +1,4 @@
-import type {
-  ExtractedRoute,
-  HydrationMode,
-  RenderMode,
-  ServerRuntime,
-} from "@evjs/shared/manifest";
+import type { ExtractedRoute } from "@evjs/shared/manifest";
 import type {
   CallExpression,
   Declaration,
@@ -20,7 +15,7 @@ import {
   type RouteAst,
 } from "./shared.js";
 
-const REACT_ROUTE_MODULES = ["@evjs/client"];
+const REACT_ROUTE_MODULES = ["@evjs/client", "@evjs/client/routes"];
 
 export interface ReactRouteDiagnostic {
   level: "warning" | "error";
@@ -40,10 +35,17 @@ export function extractReactRoutesFromAst(ast: RouteAst): ExtractedRoute[] {
   if (routeNames.size === 0) return [];
 
   const pageNames = collectReactRouteImports(ast, "page");
+  const componentModules = collectImportedComponentModules(ast);
   const routes: ExtractedRoute[] = [];
 
   for (const item of ast.body) {
-    collectReactRoutesFromItem(item, routeNames, pageNames, routes);
+    collectReactRoutesFromItem(
+      item,
+      routeNames,
+      pageNames,
+      componentModules,
+      routes,
+    );
   }
 
   return routes;
@@ -57,6 +59,7 @@ export function extractReactRouteDiagnosticsFromAst(
   if (routeNames.size === 0) return [];
 
   const pageNames = collectReactRouteImports(ast, "page");
+  const componentModules = collectImportedComponentModules(ast);
   const diagnostics: ReactRouteDiagnostic[] = [];
 
   for (const item of ast.body) {
@@ -65,6 +68,7 @@ export function extractReactRouteDiagnosticsFromAst(
       source,
       routeNames,
       pageNames,
+      componentModules,
       diagnostics,
     );
   }
@@ -86,10 +90,28 @@ function collectReactRouteImports(ast: RouteAst, importedName: string) {
   return names;
 }
 
+function collectImportedComponentModules(ast: RouteAst) {
+  const modules = new Map<string, string>();
+
+  for (const item of ast.body) {
+    if (item.type !== "ImportDeclaration") continue;
+    const source = item.source.value;
+
+    for (const spec of item.specifiers) {
+      if (spec.type === "ImportDefaultSpecifier") {
+        modules.set(spec.local.value, source);
+      }
+    }
+  }
+
+  return modules;
+}
+
 function collectReactRoutesFromItem(
   item: ModuleItem,
   routeNames: Set<string>,
   pageNames: Set<string>,
+  componentModules: Map<string, string>,
   routes: ExtractedRoute[],
 ): void {
   if (item.type === "ExpressionStatement") {
@@ -97,6 +119,7 @@ function collectReactRoutesFromItem(
       item.expression,
       routeNames,
       pageNames,
+      componentModules,
       routes,
     );
     return;
@@ -107,6 +130,7 @@ function collectReactRoutesFromItem(
       item.expression,
       routeNames,
       pageNames,
+      componentModules,
       routes,
     );
     return;
@@ -117,13 +141,20 @@ function collectReactRoutesFromItem(
       item.declaration,
       routeNames,
       pageNames,
+      componentModules,
       routes,
     );
     return;
   }
 
   if (item.type === "VariableDeclaration") {
-    collectReactRoutesFromDeclaration(item, routeNames, pageNames, routes);
+    collectReactRoutesFromDeclaration(
+      item,
+      routeNames,
+      pageNames,
+      componentModules,
+      routes,
+    );
   }
 }
 
@@ -132,6 +163,7 @@ function diagnoseReactRoutesFromItem(
   source: string,
   routeNames: Set<string>,
   pageNames: Set<string>,
+  componentModules: Map<string, string>,
   diagnostics: ReactRouteDiagnostic[],
 ): void {
   if (item.type === "ExpressionStatement") {
@@ -140,6 +172,7 @@ function diagnoseReactRoutesFromItem(
       source,
       routeNames,
       pageNames,
+      componentModules,
       diagnostics,
     );
     return;
@@ -151,6 +184,7 @@ function diagnoseReactRoutesFromItem(
       source,
       routeNames,
       pageNames,
+      componentModules,
       diagnostics,
     );
     return;
@@ -162,6 +196,7 @@ function diagnoseReactRoutesFromItem(
       source,
       routeNames,
       pageNames,
+      componentModules,
       diagnostics,
     );
     return;
@@ -173,6 +208,7 @@ function diagnoseReactRoutesFromItem(
       source,
       routeNames,
       pageNames,
+      componentModules,
       diagnostics,
     );
   }
@@ -182,6 +218,7 @@ function collectReactRoutesFromDeclaration(
   declaration: Declaration,
   routeNames: Set<string>,
   pageNames: Set<string>,
+  componentModules: Map<string, string>,
   routes: ExtractedRoute[],
 ): void {
   if (declaration.type !== "VariableDeclaration") return;
@@ -192,6 +229,7 @@ function collectReactRoutesFromDeclaration(
       declarator.init,
       routeNames,
       pageNames,
+      componentModules,
       routes,
     );
   }
@@ -202,6 +240,7 @@ function diagnoseReactRoutesFromDeclaration(
   source: string,
   routeNames: Set<string>,
   pageNames: Set<string>,
+  componentModules: Map<string, string>,
   diagnostics: ReactRouteDiagnostic[],
 ): void {
   if (declaration.type !== "VariableDeclaration") return;
@@ -213,6 +252,7 @@ function diagnoseReactRoutesFromDeclaration(
       source,
       routeNames,
       pageNames,
+      componentModules,
       diagnostics,
     );
   }
@@ -222,9 +262,15 @@ function collectReactRoutesFromExpression(
   expression: Expression,
   routeNames: Set<string>,
   pageNames: Set<string>,
+  componentModules: Map<string, string>,
   routes: ExtractedRoute[],
 ): void {
-  const route = tryExtractReactRoute(expression, routeNames, pageNames);
+  const route = tryExtractReactRoute(
+    expression,
+    routeNames,
+    pageNames,
+    componentModules,
+  );
   if (route) {
     routes.push(route);
     return;
@@ -236,6 +282,7 @@ function collectReactRoutesFromExpression(
         arg.expression,
         routeNames,
         pageNames,
+        componentModules,
         routes,
       );
     }
@@ -249,6 +296,7 @@ function collectReactRoutesFromExpression(
         element.expression,
         routeNames,
         pageNames,
+        componentModules,
         routes,
       );
     }
@@ -262,6 +310,7 @@ function collectReactRoutesFromExpression(
         prop.value,
         routeNames,
         pageNames,
+        componentModules,
         routes,
       );
     }
@@ -273,6 +322,7 @@ function diagnoseReactRoutesFromExpression(
   source: string,
   routeNames: Set<string>,
   pageNames: Set<string>,
+  componentModules: Map<string, string>,
   diagnostics: ReactRouteDiagnostic[],
 ): void {
   diagnoseReactRouteExpression(
@@ -280,6 +330,7 @@ function diagnoseReactRoutesFromExpression(
     source,
     routeNames,
     pageNames,
+    componentModules,
     diagnostics,
   );
 
@@ -290,6 +341,7 @@ function diagnoseReactRoutesFromExpression(
         source,
         routeNames,
         pageNames,
+        componentModules,
         diagnostics,
       );
     }
@@ -304,6 +356,7 @@ function diagnoseReactRoutesFromExpression(
         source,
         routeNames,
         pageNames,
+        componentModules,
         diagnostics,
       );
     }
@@ -318,6 +371,7 @@ function diagnoseReactRoutesFromExpression(
         source,
         routeNames,
         pageNames,
+        componentModules,
         diagnostics,
       );
     }
@@ -329,6 +383,7 @@ function diagnoseReactRouteExpression(
   source: string,
   routeNames: Set<string>,
   pageNames: Set<string>,
+  componentModules: Map<string, string>,
   diagnostics: ReactRouteDiagnostic[],
 ): void {
   if (!isNamedCall(expression, routeNames)) return;
@@ -345,29 +400,24 @@ function diagnoseReactRouteExpression(
     );
   }
 
-  const optionsArg = call.arguments[1]?.expression;
-  if (optionsArg?.type !== "ObjectExpression") return;
+  const targetArg = getReactRouteTargetExpression(call);
+  const optionsArg = getReactRouteOptionsExpression(call);
+  const pageExpression = getRoutePageExpression(optionsArg);
 
-  let render: RenderMode | undefined;
-  let pageExpression: Expression | undefined;
-  for (const prop of optionsArg.properties) {
-    if (prop.type !== "KeyValueProperty") continue;
-    const key = getPropertyName(prop);
-    if (key === "render" && prop.value.type === "StringLiteral") {
-      render = prop.value.value as RenderMode;
-    }
-    if (key === "page") {
-      pageExpression = prop.value;
-    }
-  }
-
-  if (!render || render === "csr") return;
-  if (!extractPageModule(pageExpression, pageNames)) {
+  if (
+    (targetArg || pageExpression) &&
+    !extractRouteModule({
+      targetExpression: targetArg,
+      pageExpression,
+      pageNames,
+      componentModules,
+    })
+  ) {
     diagnostics.push(
       createDiagnostic(
         source,
-        getExpressionSpan(pageExpression) ?? optionsArg.span,
-        `@evjs/client route() with render: "${render}" must declare page(componentPath) with a string literal component module path.`,
+        getExpressionSpan(pageExpression ?? targetArg) ?? call.span,
+        "@evjs/client route() component targets must be default imports or page(componentPath) references.",
       ),
     );
   }
@@ -377,6 +427,7 @@ function tryExtractReactRoute(
   expression: Expression,
   routeNames: Set<string>,
   pageNames: Set<string>,
+  componentModules: Map<string, string>,
 ): ExtractedRoute | undefined {
   if (!isNamedCall(expression, routeNames)) return undefined;
 
@@ -384,12 +435,21 @@ function tryExtractReactRoute(
   const pathArg = call.arguments[0]?.expression;
   if (pathArg?.type !== "StringLiteral") return undefined;
 
-  const optionsArg = call.arguments[1]?.expression;
+  const targetArg = getReactRouteTargetExpression(call);
+  const optionsArg = getReactRouteOptionsExpression(call);
   if (optionsArg?.type !== "ObjectExpression") {
-    return { path: pathArg.value };
+    return {
+      path: pathArg.value,
+      module: extractRouteModule({
+        targetExpression: targetArg,
+        pageNames,
+        componentModules,
+      }),
+    };
   }
 
   const route: ExtractedRoute = { path: pathArg.value };
+  const pageExpression = getRoutePageExpression(optionsArg);
 
   for (const prop of optionsArg.properties) {
     if (prop.type !== "KeyValueProperty") continue;
@@ -398,21 +458,59 @@ function tryExtractReactRoute(
     if (key === "id" && prop.value.type === "StringLiteral") {
       route.id = prop.value.value;
     }
-    if (key === "page") {
-      route.module = extractPageModule(prop.value, pageNames);
-    }
-    if (key === "render" && prop.value.type === "StringLiteral") {
-      route.render = prop.value.value as RenderMode;
-    }
-    if (key === "hydrate" && prop.value.type === "StringLiteral") {
-      route.hydrate = prop.value.value as HydrationMode;
-    }
-    if (key === "runtime" && prop.value.type === "StringLiteral") {
-      route.runtime = prop.value.value as ServerRuntime;
-    }
   }
 
+  route.module = extractRouteModule({
+    targetExpression: targetArg,
+    pageExpression,
+    pageNames,
+    componentModules,
+  });
+
   return route;
+}
+
+function getRoutePageExpression(
+  optionsArg: Expression | undefined,
+): Expression | undefined {
+  if (optionsArg?.type !== "ObjectExpression") return undefined;
+
+  for (const prop of optionsArg.properties) {
+    if (prop.type !== "KeyValueProperty") continue;
+    if (getPropertyName(prop) === "page") return prop.value;
+  }
+  return undefined;
+}
+
+function getReactRouteOptionsExpression(
+  call: CallExpression,
+): Expression | undefined {
+  const secondArg = call.arguments[1]?.expression;
+  if (secondArg?.type === "ObjectExpression") return secondArg;
+  return call.arguments[2]?.expression;
+}
+
+function getReactRouteTargetExpression(
+  call: CallExpression,
+): Expression | undefined {
+  const secondArg = call.arguments[1]?.expression;
+  return secondArg?.type === "ObjectExpression" ? undefined : secondArg;
+}
+
+function extractRouteModule(options: {
+  targetExpression?: Expression;
+  pageExpression?: Expression;
+  pageNames: Set<string>;
+  componentModules: Map<string, string>;
+}): string | undefined {
+  return (
+    extractPageModule(options.pageExpression, options.pageNames) ??
+    extractPageModule(options.targetExpression, options.pageNames) ??
+    extractImportedComponentModule(
+      options.targetExpression,
+      options.componentModules,
+    )
+  );
 }
 
 function extractPageModule(
@@ -426,6 +524,26 @@ function extractPageModule(
   const componentArg = call.arguments[0]?.expression;
   if (componentArg?.type !== "StringLiteral") return undefined;
   return (componentArg as StringLiteral).value;
+}
+
+function extractImportedComponentModule(
+  expression: Expression | undefined,
+  componentModules: Map<string, string>,
+): string | undefined {
+  if (!expression) return undefined;
+
+  if (expression.type === "Identifier") {
+    return componentModules.get(expression.value);
+  }
+
+  if (
+    expression.type === "MemberExpression" &&
+    expression.object.type === "Identifier"
+  ) {
+    return componentModules.get(expression.object.value);
+  }
+
+  return undefined;
 }
 
 function createDiagnostic(

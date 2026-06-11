@@ -321,7 +321,7 @@ describe("build", () => {
     );
     expect((error as Error).message).toContain("src/routes.tsx");
     expect((error as Error).message).toContain(
-      '@evjs/client route() with render: "ssr" must declare page(componentPath) with a string literal component module path.',
+      '@evjs/client route() with render: "ssr" must declare a statically imported component or page(componentPath).',
     );
     expect(events).not.toContain("bundler.build");
   });

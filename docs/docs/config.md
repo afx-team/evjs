@@ -35,22 +35,50 @@ export default defineConfig({
 });
 ```
 
-Use `apps` when the app boundary has its own runtime entry, mount point, or real route source:
+Use `app` when the SPA has its own declaration source, mount point, or
+framework-managed route/page modules:
 
 ```ts
 export default defineConfig({
-  apps: {
-    console: {
-      entry: "./src/console/main.tsx",
-      html: "./src/console/index.html",
-      routes: "./src/console/routes.tsx",
-      mount: "#app",
-    },
+  app: "./src/console/app.tsx",
+});
+```
+
+```ts
+// src/console/app.tsx
+import { defineReactApp } from "@evjs/client";
+import { operationsRoutes } from "./routes/operations";
+
+function ConsoleApp() {
+  return <main>Console</main>;
+}
+
+export default defineReactApp({
+  html: "./index.html",
+  mount: "#app",
+  component: ConsoleApp,
+  routes: [...operationsRoutes],
+});
+```
+
+The app declaration source owns the app entry, `html`, `mount`, and route
+groups, so app configuration does not split across `ev.config.ts` and route
+files. Add `entry: "./main.tsx"` only when you intentionally want a separate
+runtime entry. The lower-level object form remains available when a tool wants
+to generate config directly:
+
+```ts
+export default defineConfig({
+  app: {
+    entry: "./src/console/main.tsx",
+    html: "./src/console/index.html",
+    mount: "#app",
   },
 });
 ```
 
-`apps.*.routes` points to the same route module your runtime imports. Router plugins, such as the TanStack adapter, should register adapter behavior and should not own app route paths.
+Router plugins, such as the TanStack adapter, should register adapter behavior
+and should not own app route paths.
 
 ## Pages
 
@@ -73,19 +101,27 @@ Framework-managed component pages let evjs own mount/hydrate through the page ru
 ```ts
 export default defineConfig({
   pages: {
-    campaign: {
-      path: "/campaign",
-      component: "./src/pages/campaign/Page.tsx",
+    dashboard: {
+      path: "/dashboard",
+      component: "./src/pages/dashboard/Page.tsx",
       html: "./src/pages/public.html",
-      render: "ssr",
-      hydrate: "load",
       mount: "#app",
     },
   },
 });
 ```
 
-When `path` is present, the page also contributes a framework route. Use this for SSR, SSG, PPR, and other framework-served pages so URL, component, render mode, and hydration stay in one declaration. If `path` is omitted, the page is emitted as an HTML document such as `campaign.html`.
+```tsx
+// src/pages/dashboard/Page.tsx
+export const render = "ssr";
+export const hydrate = "load";
+
+export default function DashboardPage() {
+  return <main>Dashboard</main>;
+}
+```
+
+When `path` is present, the page also contributes a framework route. Use this for SSR, SSG, PPR, and other framework-served pages so URL and component stay in config while rendering metadata stays with the component module. If `path` is omitted, the page is emitted as an HTML document such as `campaign.html`.
 
 PPR pages should declare dynamic regions in the page component tree:
 
@@ -95,10 +131,6 @@ export default defineConfig({
     campaign: {
       path: "/campaign",
       component: "./src/pages/campaign/Page.tsx",
-      render: "ppr",
-      ppr: {
-        delivery: "stream",
-      },
     },
   },
 });
@@ -108,6 +140,13 @@ export default defineConfig({
 import { lazy, Suspense } from "react";
 
 const OfferRegion = lazy(() => import("./Offer.region"));
+
+export const render = "ssr";
+export const hydrate = "none";
+export const prerender = {
+  partial: true,
+  delivery: "stream",
+} as const;
 
 export default function CampaignPage() {
   return (
@@ -120,9 +159,7 @@ export default function CampaignPage() {
 
 ```tsx
 // ./Offer.region.tsx
-export const PPR = {
-  cache: { revalidate: 60 },
-} as const;
+export const cache = { revalidate: 60 } as const;
 
 export default function OfferRegion() {
   return <section>Live offer inventory</section>;
@@ -131,10 +168,9 @@ export default function OfferRegion() {
 
 The framework analyzes the page module and turns Suspense lazy boundaries into
 internal region renderers. Region ids are derived from the lazy component name,
-so `OfferRegion` becomes `offer`. `pages.*.ppr.regions` remains available as a
-low-level escape hatch, but Suspense declarations are the preferred API.
+so `OfferRegion` becomes `offer`.
 
-`pages.*.ppr.delivery` controls the initial document response. `"merge"` is the
+`prerender.delivery` controls the initial document response. `"merge"` is the
 default non-streaming mode: the framework server renders the shell and regions,
 then returns one complete HTML response. `"stream"` sends the shell first and
 then patches resolved regions into the same document response. Neither mode
@@ -144,7 +180,36 @@ PPR pages are server-composed and do not create a full-page client hydration
 entry. Interactive PPR work should be modeled as explicit client islands or
 region-level hydration instead of hydrating the whole page shell.
 
-`render: "rsc"` is reserved until the dedicated RSC transform/runtime adapter lands.
+RSC pages use SSR document rendering with the RSC component model:
+
+```ts
+export default defineConfig({
+  pages: {
+    insights: {
+      path: "/insights",
+      component: "./src/pages/Insights.tsx",
+    },
+  },
+  server: {
+    rsc: true,
+  },
+});
+```
+
+```tsx
+// src/pages/Insights.tsx
+export const render = "ssr";
+export const componentModel = "rsc";
+export const hydrate = "none";
+
+export default function InsightsPage() {
+  return <main>Insights</main>;
+}
+```
+
+The current webpack validation adapter exercises the full RSC request path. The
+default Utoopack adapter still needs equivalent client/server reference metadata
+before it can run the same path.
 
 ## Server
 

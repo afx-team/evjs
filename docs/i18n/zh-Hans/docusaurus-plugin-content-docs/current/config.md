@@ -35,22 +35,34 @@ export default defineConfig({
 });
 ```
 
-应用有自己的运行时入口、挂载点或真实 route source 时使用 `apps`：
+应用有自己的运行时入口、挂载点或 framework-managed routes 时使用 `app`。推荐只把 SPA 指向一个 app declaration source：
 
 ```ts
 export default defineConfig({
-  apps: {
-    console: {
-      entry: "./src/console/main.tsx",
-      html: "./src/console/index.html",
-      routes: "./src/console/routes.tsx",
-      mount: "#app",
-    },
-  },
+  app: "./src/console/app.tsx",
 });
 ```
 
-`apps.*.routes` 指向运行时代码也会 import 的同一个路由模块。TanStack 这类路由插件只负责 adapter 能力，不负责拥有应用路由路径。
+```ts
+// src/console/app.tsx
+import { defineReactApp } from "@evjs/client";
+import { operationsRoutes } from "./routes/operations";
+
+function ConsoleApp() {
+  return <main>Console</main>;
+}
+
+export default defineReactApp({
+  html: "./index.html",
+  mount: "#app",
+  component: ConsoleApp,
+  routes: [...operationsRoutes],
+});
+```
+
+app declaration source 拥有 app entry、`html`、`mount` 和 route groups，避免 app 配置分散在 `ev.config.ts` 和 route files 之间。只有确实想分离 runtime entry 时才在 declaration 里显式写 `entry: "./main.tsx"`。
+
+TanStack 这类路由插件只负责 adapter 能力，不负责拥有应用路由路径。
 
 ## 页面
 
@@ -73,19 +85,27 @@ export default defineConfig({
 ```ts
 export default defineConfig({
  pages: {
-   campaign: {
-      path: "/campaign",
-     component: "./src/pages/campaign/Page.tsx",
-     html: "./src/pages/public.html",
-      render: "ssr",
-      hydrate: "load",
+    dashboard: {
+      path: "/dashboard",
+      component: "./src/pages/dashboard/Page.tsx",
+      html: "./src/pages/public.html",
       mount: "#app",
     },
   },
 });
 ```
 
-配置了 `path` 时，该页面也会贡献 framework route。SSR、SSG、PPR 等由框架服务端处理的页面应把 URL、component、render mode、hydration 放在同一条页面声明里。未配置 `path` 时，页面会输出为 `campaign.html` 这样的 HTML 文档。
+```tsx
+// src/pages/dashboard/Page.tsx
+export const render = "ssr";
+export const hydrate = "load";
+
+export default function DashboardPage() {
+  return <main>Dashboard</main>;
+}
+```
+
+配置了 `path` 时，该页面也会贡献 framework route。SSR、SSG、PPR 等由框架服务端处理的页面应把 URL 和 component 放在配置里，把 rendering metadata 放在组件模块旁边。未配置 `path` 时，页面会输出为 `campaign.html` 这样的 HTML 文档。
 
 PPR 页面推荐在页面组件树中声明动态 region：
 
@@ -95,10 +115,6 @@ export default defineConfig({
     campaign: {
       path: "/campaign",
       component: "./src/pages/campaign/Page.tsx",
-      render: "ppr",
-      ppr: {
-        delivery: "stream",
-      },
     },
   },
 });
@@ -106,6 +122,13 @@ export default defineConfig({
 
 ```tsx
 import { lazy, Suspense } from "react";
+
+export const render = "ssr";
+export const hydrate = "none";
+export const prerender = {
+  partial: true,
+  delivery: "stream",
+} as const;
 
 const OfferRegion = lazy(() => import("./Offer.region"));
 
@@ -120,9 +143,8 @@ export default function CampaignPage() {
 
 ```tsx
 // ./Offer.region.tsx
-export const PPR = {
-  cache: { revalidate: 60 },
-} as const;
+export const cache = { revalidate: 60 } as const;
+export const hydrate = "none";
 
 export default function OfferRegion() {
   return <section>Live offer inventory</section>;
@@ -131,9 +153,7 @@ export default function OfferRegion() {
 
 框架会分析 page module，并把 Suspense lazy boundary 转成内部 region renderer。
 Region id 会从 lazy 组件名派生，因此 `OfferRegion` 会变成 `offer`。
-`pages.*.ppr.regions` 仍保留为底层 escape hatch，但 Suspense 声明是推荐 API。
-
-`pages.*.ppr.delivery` 控制初始 document response。`"merge"` 是默认非流式模式：
+`prerender.delivery` 控制初始 document response。`"merge"` 是默认非流式模式：
 框架服务端先渲染 shell 和 regions，再返回完整 HTML。`"stream"` 会先发送 shell，
 再在同一个 HTML response 中把已完成的 regions patch 到页面里。两种模式的首屏
 导航都不要求浏览器主动请求 `/__evjs/ppr`。
@@ -142,7 +162,35 @@ PPR 页面由服务端合成，不会生成整页客户端 hydration entry。需
 PPR 页面应显式建模为 client islands 或 region-level hydration，而不是 hydrate
 整个 page shell。
 
-`render: "rsc"` 已预留给后续专用 RSC transform/runtime adapter。
+RSC 页面使用 SSR document render mode，并通过 `componentModel = "rsc"` 声明组件模型：
+
+```ts
+export default defineConfig({
+  pages: {
+    insights: {
+      path: "/insights",
+      component: "./src/pages/Insights.tsx",
+    },
+  },
+  server: {
+    rsc: true,
+  },
+});
+```
+
+```tsx
+// src/pages/Insights.tsx
+export const render = "ssr";
+export const componentModel = "rsc";
+export const hydrate = "none";
+
+export default function InsightsPage() {
+  return <main>Insights</main>;
+}
+```
+
+当前 webpack validation adapter 已经覆盖完整 RSC 请求链路。默认 Utoopack adapter
+仍需要补齐等价的 client/server reference metadata 后，才能运行同样路径。
 
 ## 服务端
 

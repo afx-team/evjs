@@ -1,6 +1,11 @@
 # 客户端路由
 
-evjs 路由基于 [TanStack Router](https://tanstack.com/router) 构建。路由 API 从顶层 `@evjs/client` 导出。不要直接从 `@tanstack/react-router` 导入。
+evjs 支持两种路由编写模型：
+
+- **TanStack Router 兼容模式**：用于类型安全 SPA 路由、loader、搜索参数和导航。相关 API 从 `@evjs/client` 重导出。
+- **React route declaration**：用于不依赖 TanStack Router、但仍需要构建期 route metadata、SSR、PPR、RSC、remote 和部署路由的应用。
+
+优先从 `@evjs/client` 导入路由 API，这样 evjs 可以把框架 metadata 和路由兼容能力收敛在一个公开包里。
 
 :::important
 **路由路径必须是字符串字面量。** `path` 属性只接受字符串字面量类型——传入 `string` 类型的变量或模板字符串会产生 TypeScript 编译错误。这是通过类型系统强制执行的，以确保路由可被静态分析。
@@ -18,7 +23,7 @@ createRoute({ path: `/users/${segment}`, ... });
 ```
 :::
 
-## 入口配置
+## TanStack 入口配置
 
 ```tsx
 // src/main.tsx
@@ -84,7 +89,67 @@ const unsubscribe = app.router.subscribe("onResolved", (event) => {
 
 evjs 会设置 `routeTree`，注入 router `context.queryClient`，并在你未配置时把 `defaultPreload` 默认为 `"intent"`。其他 TanStack Router options 保持在 `router` 下透明透传。
 
-## 根布局
+## React Route Declaration
+
+不想使用 TanStack Router 时，可以用 `defineReactApp()` 声明 framework-managed routes，并保持单一 app declaration source：
+
+```ts
+// src/app.tsx
+import { defineReactApp, route } from "@evjs/client";
+import Campaign from "./pages/Campaign";
+import Dashboard from "./pages/Dashboard";
+import Insights from "./pages/Insights";
+
+function App() {
+  return <main>Dashboard shell</main>;
+}
+
+export default defineReactApp({
+  html: "../index.html",
+  mount: "#app",
+  component: App,
+  routes: [
+    route("/dashboard", Dashboard, {
+      id: "dashboard",
+    }),
+    route("/campaign", Campaign, {
+      id: "campaign",
+    }),
+    route("/insights", Insights, {
+      id: "insights",
+    }),
+  ],
+});
+```
+
+然后在配置里指向这份 app declaration source：
+
+```ts
+// ev.config.ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  app: "./src/app.tsx",
+});
+```
+
+route target 推荐使用静态 import 的 React 组件。组件模块自己声明渲染元信息：
+
+```tsx
+// src/pages/Dashboard.tsx
+export const render = "ssr";
+export const hydrate = "load";
+
+export default function Dashboard() {
+  return <main>Dashboard</main>;
+}
+```
+
+graph analyzer 会读取 import declaration 和静态 named exports，并转换成 route/page/rendering metadata。这样既不依赖隐藏文件约定，也保持 route graph 可构建期分析。`page("./pages/Dashboard.tsx")` 仍保留为底层 escape hatch，用于组件 import 不适合的少数场景。渲染元信息应保留在 page module 内，让每个 route 对 render、hydrate、component model 和 prerender 行为只有一个来源。
+
+需要 TanStack 的类型系统和导航 API 时使用 TanStack Router；需要框架托管 route rendering 时使用这个模型。
+
+## TanStack 根布局
 
 每个应用都需要一个带 `<Outlet />` 的根路由来渲染子路由：
 

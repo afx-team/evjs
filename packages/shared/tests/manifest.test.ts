@@ -37,9 +37,10 @@ describe("createPublicManifest", () => {
       pages: {
         insights: {
           assets: { js: ["evjs-rsc-client.js"], css: ["insights.css"] },
-          render: "rsc",
+          render: "ssr",
+          componentModel: "rsc",
           rendering: {
-            mode: "rsc",
+            mode: "ssr",
             component: "rsc",
             html: "server",
             streaming: true,
@@ -56,9 +57,10 @@ describe("createPublicManifest", () => {
         },
         campaign: {
           assets: { js: [], css: [] },
-          render: "ppr",
+          render: "ssr",
+          prerender: { partial: true },
           rendering: {
-            mode: "ppr",
+            mode: "ssr",
             component: "server",
             html: "partial",
             prerender: "partial",
@@ -88,7 +90,7 @@ describe("createPublicManifest", () => {
           path: "/insights",
           pageId: "insights",
           module: "./src/pages/Insights.tsx",
-          render: "rsc",
+          render: "ssr",
         },
       ],
       server: {

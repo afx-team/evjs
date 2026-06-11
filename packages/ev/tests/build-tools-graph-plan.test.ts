@@ -197,7 +197,6 @@ describe("createAppGraph and createBuildPlan", () => {
         home: {
           component: "./src/pages/home.tsx",
           html: "./index.html",
-          render: "csr",
           mount: "#root",
         },
       },
@@ -228,10 +227,49 @@ describe("createAppGraph and createBuildPlan", () => {
     await expect(fs.access(path.join(cwd, ".evjs"))).rejects.toThrow();
   });
 
+  it("reads render metadata from configured component page modules", async () => {
+    const cwd = await createFixture({
+      "src/pages/dashboard.tsx": `
+        export const render = "ssr";
+        export const hydrate = "load";
+        export default function Dashboard() { return null; }
+      `,
+      "index.html": '<div id="app"></div>',
+    });
+    const config = createConfig({
+      pages: {
+        dashboard: {
+          path: "/dashboard",
+          component: "./src/pages/dashboard.tsx",
+          html: "./index.html",
+        },
+      },
+    });
+
+    const analysis = await createAppGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "development",
+    });
+
+    expect(analysis.graph.pages.dashboard).toMatchObject({
+      render: "ssr",
+      hydrate: "load",
+    });
+    expect(plan.server.renderers).toContainEqual({
+      name: "dashboard-server",
+      import: "./src/pages/dashboard.tsx",
+      kind: "page-server",
+      owner: { pageId: "dashboard", routeId: "dashboard" },
+    });
+  });
+
   it("does not create a client runtime entry for static non-hydrated component pages", async () => {
     const cwd = await createFixture({
-      "src/pages/pricing.tsx":
-        "export default function Pricing() { return null; }",
+      "src/pages/pricing.tsx": `
+        export const render = "ssg";
+        export const hydrate = "none";
+        export default function Pricing() { return null; }
+      `,
       "index.html": '<div id="app"></div>',
     });
     const config = createConfig({
@@ -239,8 +277,6 @@ describe("createAppGraph and createBuildPlan", () => {
         pricing: {
           component: "./src/pages/pricing.tsx",
           html: "./index.html",
-          render: "ssg",
-          hydrate: "none",
         },
       },
     });
@@ -271,14 +307,27 @@ describe("createAppGraph and createBuildPlan", () => {
     await expect(fs.access(path.join(cwd, ".evjs"))).rejects.toThrow();
   });
 
-  it("plans PPR shell and region entries from explicit page regions", async () => {
+  it("plans PPR shell and region entries from Suspense page regions", async () => {
     const cwd = await createFixture({
-      "src/campaign/Page.tsx":
-        "export default function Page() { return null; }",
-      "src/campaign/Offer.region.tsx":
-        "export default function Offer() { return null; }",
-      "src/campaign/OfferSkeleton.tsx":
-        "export default function OfferSkeleton() { return null; }",
+      "src/campaign/Page.tsx": `
+        import * as React from "react";
+        const OfferRegion = React.lazy(() => import("./Offer.region"));
+        export const render = "ssr";
+        export const hydrate = "none";
+        export const prerender = { partial: true } as const;
+        export default function Page() {
+          return (
+            <React.Suspense fallback={<p>Loading offer</p>}>
+              <OfferRegion />
+            </React.Suspense>
+          );
+        }
+      `,
+      "src/campaign/Offer.region.tsx": `
+        export const cache = "no-store";
+        export const hydrate = "visible";
+        export default function Offer() { return null; }
+      `,
       "index.html": '<div id="app"></div>',
     });
     const config = createConfig({
@@ -286,17 +335,6 @@ describe("createAppGraph and createBuildPlan", () => {
         campaign: {
           component: "./src/campaign/Page.tsx",
           html: "./index.html",
-          render: "ppr",
-          ppr: {
-            regions: {
-              offer: {
-                component: "./src/campaign/Offer.region.tsx",
-                fallback: "./src/campaign/OfferSkeleton.tsx",
-                cache: "no-store",
-                hydrate: "visible",
-              },
-            },
-          },
         },
       },
     });
@@ -306,10 +344,10 @@ describe("createAppGraph and createBuildPlan", () => {
     });
 
     expect(analysis.graph.pages.campaign.ppr).toEqual({
+      delivery: "merge",
       regions: {
         offer: {
           component: "./src/campaign/Offer.region.tsx",
-          fallback: "./src/campaign/OfferSkeleton.tsx",
           cache: "no-store",
           hydrate: "visible",
         },
@@ -365,7 +403,7 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
     expect(
       analysis.fileDependencies.map((file) => path.relative(cwd, file)),
-    ).toEqual(["src/campaign/Page.tsx"]);
+    ).toEqual(["src/campaign/Offer.region.tsx", "src/campaign/Page.tsx"]);
   });
 
   it("plans PPR regions from Suspense lazy boundaries in the page component tree", async () => {
@@ -373,6 +411,9 @@ describe("createAppGraph and createBuildPlan", () => {
       "src/campaign/Page.tsx": `
         import CampaignSections from "./CampaignSections";
 
+        export const render = "ssr";
+        export const hydrate = "none";
+        export const prerender = { partial: true } as const;
         export default function Page() {
           return <CampaignSections />;
         }
@@ -391,11 +432,8 @@ describe("createAppGraph and createBuildPlan", () => {
         }
       `,
       "src/campaign/Offer.region.tsx": `
-        export const PPR = {
-          cache: { revalidate: 30 },
-          hydrate: "none",
-        } as const;
-
+        export const cache = { revalidate: 30 } as const;
+        export const hydrate = "none";
         export default function Offer() { return null; }
       `,
       "index.html": '<div id="app"></div>',
@@ -405,7 +443,6 @@ describe("createAppGraph and createBuildPlan", () => {
         campaign: {
           component: "./src/campaign/Page.tsx",
           html: "./index.html",
-          render: "ppr",
         },
       },
     });
@@ -416,6 +453,7 @@ describe("createAppGraph and createBuildPlan", () => {
 
     expect(analysis.diagnostics).toEqual([]);
     expect(analysis.graph.pages.campaign.ppr).toEqual({
+      delivery: "merge",
       regions: {
         offer: {
           component: "./src/campaign/Offer.region.tsx",
@@ -449,10 +487,25 @@ describe("createAppGraph and createBuildPlan", () => {
   it("derives framework routes from configured page paths", async () => {
     const cwd = await createFixture({
       "src/main.tsx": "console.log('app');",
-      "src/pages/Dashboard.tsx":
-        "export default function Dashboard() { return null; }",
-      "src/pages/Campaign.tsx":
-        "export default function Campaign() { return null; }",
+      "src/pages/Dashboard.tsx": `
+        export const render = "ssr";
+        export const hydrate = "load";
+        export default function Dashboard() { return null; }
+      `,
+      "src/pages/Campaign.tsx": `
+        import * as React from "react";
+        const OfferRegion = React.lazy(() => import("./OfferRegion"));
+        export const render = "ssr";
+        export const hydrate = "none";
+        export const prerender = { partial: true } as const;
+        export default function Campaign() {
+          return (
+            <React.Suspense fallback={null}>
+              <OfferRegion />
+            </React.Suspense>
+          );
+        }
+      `,
       "src/pages/OfferRegion.tsx":
         "export default function OfferRegion() { return null; }",
       "index.html": '<div id="app"></div>',
@@ -469,21 +522,11 @@ describe("createAppGraph and createBuildPlan", () => {
           path: "/dashboard",
           component: "./src/pages/Dashboard.tsx",
           html: "./index.html",
-          render: "ssr",
-          hydrate: "load",
         },
         campaign: {
           path: "/campaign",
           component: "./src/pages/Campaign.tsx",
           html: "./index.html",
-          render: "ppr",
-          ppr: {
-            regions: {
-              offer: {
-                component: "./src/pages/OfferRegion.tsx",
-              },
-            },
-          },
         },
       },
     });
@@ -509,7 +552,8 @@ describe("createAppGraph and createBuildPlan", () => {
         appId: "default",
         pageId: "campaign",
         module: "./src/pages/Campaign.tsx",
-        render: "ppr",
+        render: "ssr",
+        hydrate: "none",
       },
     ]);
     expect(analysis.graph.pages.dashboard).toEqual(
@@ -549,8 +593,11 @@ describe("createAppGraph and createBuildPlan", () => {
 
   it("rejects PPR pages when server output is disabled", async () => {
     const cwd = await createFixture({
-      "src/campaign/Page.tsx":
-        "export default function Page() { return null; }",
+      "src/campaign/Page.tsx": `
+        export const render = "ssr";
+        export const prerender = { partial: true } as const;
+        export default function Page() { return null; }
+      `,
     });
     const config = createConfig({
       serverEnabled: false,
@@ -558,10 +605,6 @@ describe("createAppGraph and createBuildPlan", () => {
         campaign: {
           component: "./src/campaign/Page.tsx",
           html: "./index.html",
-          render: "ppr",
-          ppr: {
-            regions: {},
-          },
         },
       },
     });
@@ -569,7 +612,9 @@ describe("createAppGraph and createBuildPlan", () => {
 
     expect(() =>
       createBuildPlan(config, analysis.graph, { mode: "production" }),
-    ).toThrow('Page "campaign" uses render: "ppr" but server is disabled');
+    ).toThrow(
+      'Page "campaign" uses partial prerendering but server is disabled',
+    );
   });
 
   it("rejects PPR pages without a component page module", async () => {
@@ -582,32 +627,33 @@ describe("createAppGraph and createBuildPlan", () => {
         campaign: {
           entry: "./src/campaign/main.tsx",
           html: "./index.html",
-          render: "ppr",
-          ppr: {
-            regions: {},
-          },
         },
       },
     });
     const analysis = await createAppGraph(config, cwd);
+    analysis.graph.pages.campaign.prerender = { partial: true };
+    analysis.graph.pages.campaign.ppr = { regions: {} };
 
     expect(() =>
       createBuildPlan(config, analysis.graph, { mode: "production" }),
     ).toThrow(
-      'Page "campaign" uses render: "ppr" but does not declare a component page module',
+      'Page "campaign" uses partial prerendering but does not declare a component page module',
     );
   });
 
   it("plans RSC pages as server renderers without a client page entry", async () => {
     const cwd = await createFixture({
-      "src/pages/rsc.tsx": "export default function RscPage() { return null; }",
+      "src/pages/rsc.tsx": `
+        export const render = "ssr";
+        export const componentModel = "rsc";
+        export default function RscPage() { return null; }
+      `,
     });
     const config = createConfig({
       pages: {
         rsc: {
           component: "./src/pages/rsc.tsx",
           html: "./index.html",
-          render: "rsc",
         },
       },
     });
@@ -665,6 +711,8 @@ describe("createAppGraph and createBuildPlan", () => {
         import ClientCard, { ClientWidget } from "./ClientCard";
         import { saveInsight } from "../actions";
 
+        export const render = "ssr";
+        export const componentModel = "rsc";
         export default function RscPage() {
           void ClientCard;
           void ClientWidget;
@@ -696,7 +744,6 @@ describe("createAppGraph and createBuildPlan", () => {
         rsc: {
           component: "./src/pages/rsc.tsx",
           html: "./index.html",
-          render: "rsc",
         },
       },
     });
@@ -756,7 +803,7 @@ describe("createAppGraph and createBuildPlan", () => {
       css: [],
     });
     expect(output.pages.rsc.rendering).toEqual({
-      mode: "rsc",
+      mode: "ssr",
       component: "rsc",
       html: "server",
       streaming: true,
@@ -766,13 +813,40 @@ describe("createAppGraph and createBuildPlan", () => {
 
   it("derives orthogonal page rendering metadata for manifest consumers", async () => {
     const cwd = await createFixture({
-      "src/pages/csr.tsx": "export default function Csr() { return null; }",
-      "src/pages/ssr.tsx": "export default function Ssr() { return null; }",
-      "src/pages/ssg.tsx": "export default function Ssg() { return null; }",
-      "src/pages/ppr.tsx": "export default function Ppr() { return null; }",
+      "src/pages/csr.tsx": `
+        export const render = "csr";
+        export default function Csr() { return null; }
+      `,
+      "src/pages/ssr.tsx": `
+        export const render = "ssr";
+        export const hydrate = "visible";
+        export default function Ssr() { return null; }
+      `,
+      "src/pages/ssg.tsx": `
+        export const render = "ssg";
+        export default function Ssg() { return null; }
+      `,
+      "src/pages/ppr.tsx": `
+        import * as React from "react";
+        const OfferRegion = React.lazy(() => import("./region"));
+        export const render = "ssr";
+        export const hydrate = "none";
+        export const prerender = { partial: true } as const;
+        export default function Ppr() {
+          return (
+            <React.Suspense fallback={null}>
+              <OfferRegion />
+            </React.Suspense>
+          );
+        }
+      `,
       "src/pages/region.tsx":
         "export default function Region() { return null; }",
-      "src/pages/rsc.tsx": "export default function Rsc() { return null; }",
+      "src/pages/rsc.tsx": `
+        export const render = "ssr";
+        export const componentModel = "rsc";
+        export default function Rsc() { return null; }
+      `,
       "index.html": '<div id="app"></div>',
     });
     const config = createConfig({
@@ -780,35 +854,22 @@ describe("createAppGraph and createBuildPlan", () => {
         csr: {
           component: "./src/pages/csr.tsx",
           html: "./index.html",
-          render: "csr",
         },
         ssr: {
           component: "./src/pages/ssr.tsx",
           html: "./index.html",
-          render: "ssr",
-          hydrate: "visible",
         },
         ssg: {
           component: "./src/pages/ssg.tsx",
           html: "./index.html",
-          render: "ssg",
         },
         ppr: {
           component: "./src/pages/ppr.tsx",
           html: "./index.html",
-          render: "ppr",
-          ppr: {
-            regions: {
-              offer: {
-                component: "./src/pages/region.tsx",
-              },
-            },
-          },
         },
         rsc: {
           component: "./src/pages/rsc.tsx",
           html: "./index.html",
-          render: "rsc",
         },
       },
     });
@@ -850,7 +911,7 @@ describe("createAppGraph and createBuildPlan", () => {
       hydrate: "none",
     });
     expect(output.pages.ppr.rendering).toEqual({
-      mode: "ppr",
+      mode: "ssr",
       component: "server",
       html: "partial",
       prerender: "partial",
@@ -860,7 +921,7 @@ describe("createAppGraph and createBuildPlan", () => {
     expect(output.pages.ppr.ppr?.delivery).toBe("merge");
     expect(output.pages.ppr.assets).toEqual({ js: [], css: [] });
     expect(output.pages.rsc.rendering).toEqual({
-      mode: "rsc",
+      mode: "ssr",
       component: "rsc",
       html: "server",
       streaming: true,
@@ -1019,8 +1080,11 @@ describe("createAppGraph and createBuildPlan", () => {
   it("collects explicit app route and remote declarations", async () => {
     const cwd = await createFixture({
       "src/main.tsx": "console.log('app');",
-      "src/pages/Dashboard.tsx":
-        "export default function Dashboard() { return null; }",
+      "src/pages/Dashboard.tsx": `
+        export const render = "ssr";
+        export const hydrate = "load";
+        export default function Dashboard() { return null; }
+      `,
       "src/routes.tsx": `
         import Dashboard from "./pages/Dashboard";
         import { defineReactRoutes, page, route } from "@evjs/client";
@@ -1029,8 +1093,6 @@ describe("createAppGraph and createBuildPlan", () => {
           route("/dashboard", {
             id: "dashboard",
             page: page("./pages/Dashboard.tsx"),
-            render: "ssr",
-            hydrate: "load",
           }),
         ]);
       `,
@@ -1276,7 +1338,6 @@ describe("createAppGraph and createBuildPlan", () => {
         campaign: {
           component: "./src/pages/campaign.tsx",
           html: "./index.html",
-          render: "csr",
         },
       },
     });
@@ -1340,7 +1401,6 @@ describe("createAppGraph and createBuildPlan", () => {
           route("/about", {
             id: "about",
             page: page("./pages/About.tsx"),
-            render: "csr",
           }),
         ]);
       `,
@@ -1367,7 +1427,6 @@ describe("createAppGraph and createBuildPlan", () => {
         path: "/about",
         appId: "default",
         module: "./src/pages/About.tsx",
-        render: "csr",
       },
     ]);
     expect(
@@ -1424,6 +1483,165 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
   });
 
+  it("creates app graph nodes from a single app declaration source", async () => {
+    const cwd = await createFixture({
+      "src/apps/render-lab/app.tsx": `
+        import { defineReactApp } from "@evjs/client";
+        import { operationsRoutes } from "./routes/operations";
+
+        function RenderLabApp() {
+          return null;
+        }
+
+        export default defineReactApp({
+          html: "../../../index.html",
+          mount: "#app",
+          component: RenderLabApp,
+          routes: [...operationsRoutes],
+        });
+      `,
+      "src/apps/render-lab/routes/operations.tsx": `
+        import { route } from "@evjs/client";
+        import Dashboard from "../../../pages/Dashboard";
+        export const operationsRoutes = [
+          route("/app/dashboard", Dashboard, {
+            id: "render-lab.dashboard",
+          }),
+        ];
+      `,
+      "src/pages/Dashboard.tsx": `
+        export const render = "ssr";
+        export const hydrate = "load";
+        export default function Dashboard() { return null; }
+      `,
+      "index.html": '<div id="app"></div>',
+    });
+    const config = createConfig({
+      apps: {
+        "render-lab": "./src/apps/render-lab/app.tsx",
+      },
+    });
+
+    const analysis = await createAppGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "development",
+    });
+
+    expect(analysis.graph.apps).toEqual({
+      "render-lab": {
+        id: "render-lab",
+        entry: "./src/apps/render-lab/app.tsx",
+        html: "./index.html",
+        mount: "#app",
+        routes: "./src/apps/render-lab/app.tsx",
+      },
+    });
+    expect(analysis.graph.routes).toEqual([
+      {
+        id: "render-lab.dashboard",
+        path: "/app/dashboard",
+        appId: "render-lab",
+        pageId: "render-lab_dashboard",
+        module: "./src/pages/Dashboard.tsx",
+        render: "ssr",
+        hydrate: "load",
+      },
+    ]);
+    expect(plan.entries).toContainEqual({
+      name: "render-lab",
+      import: "./src/apps/render-lab/app.tsx",
+      environment: "client",
+      runtime: "browser",
+      kind: "app-client",
+      owner: { appId: "render-lab" },
+    });
+    expect(plan.html).toContainEqual({
+      id: "render-lab",
+      template: "./index.html",
+      fileName: "render-lab.html",
+      owner: { appId: "render-lab" },
+    });
+  });
+
+  it("keeps route app ownership for routes split into imported modules", async () => {
+    const cwd = await createFixture({
+      "src/console/main.tsx": "console.log('console');",
+      "src/admin/main.tsx": "console.log('admin');",
+      "src/console/routes/index.tsx": `
+        import { defineReactRoutes } from "@evjs/client";
+        import { operationsRoutes } from "./operations";
+        export default defineReactRoutes([...operationsRoutes]);
+      `,
+      "src/console/routes/operations.tsx": `
+        import { page, route } from "@evjs/client";
+        export const operationsRoutes = [
+          route("/orders", {
+            id: "console.orders",
+            page: page("../../pages/Orders.tsx"),
+          }),
+        ];
+      `,
+      "src/admin/routes/index.tsx": `
+        import { defineReactRoutes } from "@evjs/client";
+        import { operationsRoutes } from "./operations";
+        export default defineReactRoutes([...operationsRoutes]);
+      `,
+      "src/admin/routes/operations.tsx": `
+        import { page, route } from "@evjs/client";
+        export const operationsRoutes = [
+          route("/orders", {
+            id: "admin.orders",
+            page: page("../../pages/AdminOrders.tsx"),
+          }),
+        ];
+      `,
+      "src/pages/Orders.tsx": `
+        export const render = "ssr";
+        export default function Orders() { return null; }
+      `,
+      "src/pages/AdminOrders.tsx": `
+        export const render = "ssr";
+        export default function AdminOrders() { return null; }
+      `,
+      "index.html": '<div id="app"></div>',
+    });
+    const config = createConfig({
+      apps: {
+        console: {
+          entry: "./src/console/main.tsx",
+          html: "./index.html",
+          routes: "./src/console/routes/index.tsx",
+        },
+        admin: {
+          entry: "./src/admin/main.tsx",
+          html: "./index.html",
+          routes: "./src/admin/routes/index.tsx",
+        },
+      },
+    });
+
+    const analysis = await createAppGraph(config, cwd);
+
+    expect(analysis.graph.routes).toEqual([
+      {
+        id: "admin.orders",
+        path: "/orders",
+        appId: "admin",
+        pageId: "admin_orders",
+        module: "./src/pages/AdminOrders.tsx",
+        render: "ssr",
+      },
+      {
+        id: "console.orders",
+        path: "/orders",
+        appId: "console",
+        pageId: "console_orders",
+        module: "./src/pages/Orders.tsx",
+        render: "ssr",
+      },
+    ]);
+  });
+
   it("creates stable route-derived page ids from paths when no route id is declared", async () => {
     const cwd = await createFixture({
       "src/main.tsx": "console.log('app');",
@@ -1432,13 +1650,19 @@ describe("createAppGraph and createBuildPlan", () => {
         export default defineReactRoutes([
           route("/", {
             page: page("./pages/Home.tsx"),
-            render: "ssg",
           }),
           route("/orders/$orderId", {
             page: page("./pages/Order.tsx"),
-            render: "ssr",
           }),
         ]);
+      `,
+      "src/pages/Home.tsx": `
+        export const render = "ssg";
+        export default function Home() { return null; }
+      `,
+      "src/pages/Order.tsx": `
+        export const render = "ssr";
+        export default function Order() { return null; }
       `,
       "index.html": '<div id="app"></div>',
     });
@@ -1488,7 +1712,6 @@ describe("createAppGraph and createBuildPlan", () => {
           route("/dynamic", {
             id: "dynamic",
             page: page(modulePath),
-            render: "ssr",
           }),
         ]);
       `,
@@ -1511,7 +1734,7 @@ describe("createAppGraph and createBuildPlan", () => {
         level: "error",
         file: "src/routes.tsx",
         message:
-          '@evjs/client route() with render: "ssr" must declare page(componentPath) with a string literal component module path.',
+          "@evjs/client route() component targets must be default imports or page(componentPath) references.",
       }),
     ]);
   });

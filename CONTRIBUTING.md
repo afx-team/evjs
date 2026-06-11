@@ -84,14 +84,18 @@
 1. Create a route module under the app source tree.
 2. Import TanStack helpers from `@evjs/client`.
 3. Add the route to the application's real `routeTree`.
-4. If the framework must analyze the route graph, point `apps.*.routes` to the same route source file in `ev.config.ts`.
+4. If the framework must analyze render metadata, keep that metadata as static
+   exports on the page module imported by the route.
 
 ### Add a configured page
 
 1. Add `pages.[id]` in `ev.config.ts`.
-2. Use `{ entry }` for user-owned bootstrap pages or `{ component, render, hydrate }` for framework-managed pages.
-3. Use `path` only when the framework server should route a URL to that page.
-4. In dev, page additions should flow through `BuildPlanUpdate`; do not require restarting the ev dev server.
+2. Use `{ entry }` for user-owned bootstrap pages or `{ component }` for
+   framework-managed standalone pages.
+3. Put `render`, `hydrate`, `componentModel`, and `prerender` static exports in
+   the referenced page module.
+4. Use `path` only when the framework server should route a URL to that page.
+5. In dev, page additions should flow through `BuildPlanUpdate`; do not require restarting the ev dev server.
 
 ### Add an example
 

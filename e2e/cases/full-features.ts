@@ -285,89 +285,11 @@ test.describe("full-features", () => {
     });
   });
 
-  test("runs an app route source with SSR, PPR, RSC, and remote routes", async ({
-    page,
-    request,
-    baseURL,
-    apiURL,
-  }) => {
-    await page.goto(`${baseURL}/render-lab.html`);
-    await expectRenderMode(page, "csr", "App Routes");
-    await expect(
-      page.getByRole("heading", { name: "Render Lab App" }),
-    ).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText("/app/dashboard")).toBeVisible();
-    await expect(page.getByText("/app/campaign")).toBeVisible();
-    await expect(page.getByText("/app/insights")).toBeVisible();
-    await expect(page.getByText("/app/remote")).toBeVisible();
-
-    await page.goto(`${baseURL}/app/dashboard`);
-    await expectRenderMode(page, "ssr", "SSR");
-    await expect(page.getByTestId("dashboard-page")).toHaveText(
-      "render-lab_dashboard",
-    );
-    await expect(page.getByTestId("dashboard-route")).toHaveText(
-      "/app/dashboard",
-    );
-    await expect(
-      page.getByRole("heading", { name: "Revenue Risk Dashboard" }),
-    ).toBeVisible();
-
-    await page.goto(`${baseURL}/app/campaign`);
-    await expectRenderMode(page, "ppr", "PPR");
-    await expect(page.getByTestId("campaign-page")).toHaveText(
-      "render-lab_campaign",
-    );
-    await expect(page.getByTestId("offer-region")).toContainText(
-      "Dynamic PPR region rendered on demand",
-    );
-    const appPprResponse = await request.get(`${apiURL}/app/campaign`);
-    expect(appPprResponse.status()).toBe(200);
-    expect(await appPprResponse.text()).toContain("Offer Region");
-    const appRegionResponse = await request.get(
-      `${apiURL}/__evjs/ppr/render-lab_campaign/offer`,
-    );
-    expect(appRegionResponse.status()).toBe(200);
-    expect(await appRegionResponse.text()).toContain("Offer Region");
-
-    const appRscFlightResponsePromise = page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return (
-        url.pathname === "/__evjs/rsc" &&
-        url.searchParams.get("page") === "render-lab_insights"
-      );
-    });
-    await page.goto(`${baseURL}/app/insights`);
-    const appRscFlightResponse = await appRscFlightResponsePromise;
-    expect(appRscFlightResponse.status()).toBe(200);
-    await expectRenderMode(page, "rsc", "RSC");
-    await expect(page.getByTestId("insights-route")).toHaveText(
-      "Route: /app/insights",
-    );
-    await expect(
-      page.getByRole("heading", { name: "Profitability Insights" }),
-    ).toBeVisible();
-
-    await routeRemoteAssets(page, remoteExampleDir);
-    await page.goto(`${baseURL}/app/remote`);
-    await expectRenderMode(page, "csr", "CSR + Remote");
-    await expect(page.getByTestId("remote-status")).toHaveText(
-      "Remote: mounted",
-    );
-    await expect(page.getByTestId("remote-entry")).toHaveText("customers");
-  });
-
   test("emits a single manifest with app, page, route, server, and plugin data", async () => {
     const manifestPath = path.join(exampleDir, "dist", "manifest.json");
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
 
     expect(manifest.apps.default).toEqual(
-      expect.objectContaining({
-        mount: "#app",
-        module: expect.objectContaining({ type: "entry" }),
-      }),
-    );
-    expect(manifest.apps["render-lab"]).toEqual(
       expect.objectContaining({
         mount: "#app",
         module: expect.objectContaining({ type: "entry" }),
@@ -403,13 +325,14 @@ test.describe("full-features", () => {
     expect(manifest.pages.insights).toEqual(
       expect.objectContaining({
         path: "/insights",
-        render: "rsc",
+        render: "ssr",
+        componentModel: "rsc",
         rendering: {
-          mode: "rsc",
+          mode: "ssr",
           component: "rsc",
           html: "server",
           streaming: true,
-          hydrate: "load",
+          hydrate: "none",
         },
         routeId: "insights",
       }),
@@ -427,9 +350,13 @@ test.describe("full-features", () => {
     expect(manifest.pages.campaign).toEqual(
       expect.objectContaining({
         path: "/campaign",
-        render: "ppr",
+        render: "ssr",
+        prerender: expect.objectContaining({
+          partial: true,
+          delivery: "stream",
+        }),
         rendering: {
-          mode: "ppr",
+          mode: "ssr",
           component: "server",
           html: "partial",
           prerender: "partial",
@@ -444,24 +371,6 @@ test.describe("full-features", () => {
       }),
     );
     expect(manifest.pages.campaign.ppr.delivery).toBe("stream");
-    expect(manifest.pages["render-lab_dashboard"]).toEqual(
-      expect.objectContaining({
-        render: "ssr",
-        routeId: "render-lab.dashboard",
-      }),
-    );
-    expect(manifest.pages["render-lab_campaign"]).toEqual(
-      expect.objectContaining({
-        render: "ppr",
-        routeId: "render-lab.campaign",
-      }),
-    );
-    expect(manifest.pages["render-lab_insights"]).toEqual(
-      expect.objectContaining({
-        render: "rsc",
-        routeId: "render-lab.insights",
-      }),
-    );
     expect(manifest.routes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -481,29 +390,6 @@ test.describe("full-features", () => {
           path: "/insights",
           appId: "default",
           pageId: "insights",
-        }),
-        expect.objectContaining({
-          id: "render-lab.dashboard",
-          path: "/app/dashboard",
-          appId: "render-lab",
-          pageId: "render-lab_dashboard",
-        }),
-        expect.objectContaining({
-          id: "render-lab.campaign",
-          path: "/app/campaign",
-          appId: "render-lab",
-          pageId: "render-lab_campaign",
-        }),
-        expect.objectContaining({
-          id: "render-lab.insights",
-          path: "/app/insights",
-          appId: "render-lab",
-          pageId: "render-lab_insights",
-        }),
-        expect.objectContaining({
-          id: "render-lab.remote",
-          path: "/app/remote",
-          appId: "render-lab",
         }),
       ]),
     );
@@ -539,12 +425,6 @@ test.describe("full-features", () => {
         }),
       }),
     );
-    expect(manifest.rsc.pages["render-lab_insights"]).toEqual(
-      expect.objectContaining({
-        renderer: "render-lab_insights-rsc",
-        routeId: "render-lab.insights",
-      }),
-    );
     expect(manifest.rsc.clientReferences).toBeUndefined();
     expect(manifest.rsc.clientReferenceManifest).toBeUndefined();
     expect(manifest.rsc.serverConsumerManifest).toBeUndefined();
@@ -557,18 +437,9 @@ test.describe("full-features", () => {
       activeWhen: ["/crm/*"],
     });
     expect(manifest.deployment.fullFeaturesExample).toEqual({
-      apps: ["default", "render-lab"],
-      pages: [
-        "support",
-        "campaign",
-        "dashboard",
-        "insights",
-        "remote",
-        "render-lab_dashboard",
-        "render-lab_campaign",
-        "render-lab_insights",
-      ],
-      rscPages: ["insights", "render-lab_insights"],
+      apps: ["default"],
+      pages: ["support", "campaign", "dashboard", "insights", "remote"],
+      rscPages: ["insights"],
       remotes: ["crm"],
       serverBasePath: "/__evjs",
     });
@@ -590,7 +461,7 @@ test.describe("full-features", () => {
         }),
         rsc: expect.objectContaining({
           endpoint: "/__evjs/rsc",
-          pages: expect.arrayContaining(["insights", "render-lab_insights"]),
+          pages: expect.arrayContaining(["insights"]),
         }),
         remotes: expect.objectContaining({
           crm: manifest.remotes.crm,
@@ -601,13 +472,10 @@ test.describe("full-features", () => {
       deployArtifact.routes.map((route: { path: string }) => route.path),
     ).toEqual(
       expect.arrayContaining([
+        "/support",
         "/campaign",
         "/dashboard",
         "/insights",
-        "/app/campaign",
-        "/app/dashboard",
-        "/app/insights",
-        "/app/remote",
       ]),
     );
 

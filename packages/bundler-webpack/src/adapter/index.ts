@@ -651,7 +651,14 @@ function createFrameworkRuntimeProxyContexts(
 ): string[] {
   const contexts: string[] = [];
 
-  if (Object.values(graph.pages).some((page) => page.render === "ppr")) {
+  if (
+    Object.values(graph.pages).some(
+      (page) =>
+        (typeof page.prerender === "object" &&
+          page.prerender.partial === true) ||
+        page.ppr,
+    )
+  ) {
     contexts.push(joinUrlPath(config.server.basePath, "ppr"));
   }
 

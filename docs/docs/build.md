@@ -80,11 +80,11 @@ one document request. PPR supports two document delivery modes:
 - `stream` sends the shell first, then sends region patches in the same HTML
   response as each region resolves.
 
-PPR regions carry cache metadata in the manifest:
-
 PPR component pages do not create a page-level browser entry. Their public
 manifest hydration mode is `none` until explicit client islands or region-level
 hydration are modeled.
+
+PPR regions carry cache metadata in the manifest:
 
 ```json
 {
@@ -108,6 +108,8 @@ hydration are modeled.
 
 - One framework manifest: `dist/manifest.json`.
 - `BuildOutput` replaces legacy client/server manifests.
+- The public manifest is redacted: browser-visible output must not expose local
+  source paths or private build metadata.
 - Source analysis happens before bundler config creation and is cached in dev.
 - Component/style edits stay in the bundler HMR path.
 - Adding configured pages in dev requires bundler `updatePlan()` support; the current Utoopack adapter fails clearly until the lower-layer API exists.

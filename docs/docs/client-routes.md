@@ -1,5 +1,14 @@
 # Client Routes
-evjs routing is built on [TanStack Router](https://tanstack.com/router). Routing APIs are exported from the top-level `@evjs/client` entry. Never import from `@tanstack/react-router` directly.
+
+evjs supports two route authoring models:
+
+- **TanStack Router compatibility** for type-safe SPA routing, loaders, search
+  params, and navigation. These APIs are re-exported from `@evjs/client`.
+- **React route declarations** for TanStack-free apps that still need
+  build-time route metadata, SSR, PPR, RSC, remotes, and deployment routing.
+
+Prefer importing routing APIs from `@evjs/client` so evjs can keep framework
+metadata and router compatibility in one public package.
 
 :::important
 **Route paths must be string literals.** The `path` property only accepts string literal types — passing a `string` variable or template string will produce a TypeScript compile error. This is enforced by the type system to ensure routes are statically analyzable.
@@ -22,6 +31,7 @@ createRoute({ path: `/users/${segment}`, ... });
 ```
 src/
 ├── main.tsx              ← Entry: build route tree, createApp, register types
+├── routes.ts             ← Optional TanStack-free route declarations
 ├── api/*.server.ts       ← Server functions
 └── pages/
     ├── __root.tsx         ← Root layout (nav + <Outlet />)
@@ -33,7 +43,7 @@ src/
     └── catch.tsx          ← Redirects & 404 catch-all
 ```
 
-## Entry Point Setup
+## TanStack Entry Point Setup
 
 ```tsx
 // src/main.tsx
@@ -107,7 +117,76 @@ evjs sets `routeTree`, injects the router `context.queryClient`, and defaults
 `defaultPreload` to `"intent"` when you do not provide one. Other TanStack
 Router options stay transparent under `router`.
 
-## Root Layout
+## React Route Declarations
+
+Use `defineReactApp()` when you do not want TanStack Router but still want
+framework-managed route rendering and a single app declaration source:
+
+```ts
+// src/app.tsx
+import { defineReactApp, route } from "@evjs/client";
+import Campaign from "./pages/Campaign";
+import Dashboard from "./pages/Dashboard";
+import Insights from "./pages/Insights";
+
+function App() {
+  return <main>Dashboard shell</main>;
+}
+
+export default defineReactApp({
+  html: "../index.html",
+  mount: "#app",
+  component: App,
+  routes: [
+    route("/dashboard", Dashboard, {
+      id: "dashboard",
+    }),
+    route("/campaign", Campaign, {
+      id: "campaign",
+    }),
+    route("/insights", Insights, {
+      id: "insights",
+    }),
+  ],
+});
+```
+
+Then point config at the app declaration source:
+
+```ts
+// ev.config.ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  app: "./src/app.tsx",
+});
+```
+
+The route target should be a statically imported React component. The component
+module owns its rendering metadata:
+
+```tsx
+// src/pages/Dashboard.tsx
+export const render = "ssr";
+export const hydrate = "load";
+
+export default function Dashboard() {
+  return <main>Dashboard</main>;
+}
+```
+
+The graph analyzer reads the import declaration and the static named exports,
+then turns them into route/page/rendering metadata. This avoids hidden file
+conventions while keeping the route graph build-time analyzable.
+`page("./pages/Dashboard.tsx")` remains available as a low-level escape hatch
+when a component import is not practical. Keep rendering metadata in the page
+module itself so each route has a single source of truth for render, hydrate,
+component model, and prerender behavior.
+
+Use this model for framework-managed route rendering. Use TanStack Router when
+your app needs TanStack's route type system and navigation APIs.
+
+## TanStack Root Layout
 
 Every app needs a root route with `<Outlet />` to render child routes:
 

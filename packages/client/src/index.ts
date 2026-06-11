@@ -203,11 +203,13 @@ export {
 } from "./remote-app.js";
 export type {
   PageReference,
+  ReactAppDeclaration,
+  ReactAppOptions,
   ReactRouteDeclaration,
   ReactRouteOptions,
   ReactRoutes,
 } from "./routes.js";
-export { defineReactRoutes, page, route } from "./routes.js";
+export { defineReactApp, defineReactRoutes, page, route } from "./routes.js";
 export type {
   ReactRscModelOptions,
   ReactRscMountOptions,

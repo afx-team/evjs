@@ -3,9 +3,11 @@ import type {
   BuildEntry,
   BuildPlan,
   BuildPlanUpdate,
+  ComponentModel,
   HtmlPlan,
   HydrationMode,
   PprConfig,
+  PrerenderConfig,
   RenderMode,
   RuntimePlan,
   ServerBuildPlan,
@@ -26,19 +28,23 @@ export interface BuildPlanConfig {
       app?: string;
       html: string;
       render?: RenderMode;
+      componentModel?: ComponentModel;
       hydrate?: HydrationMode;
+      prerender?: PrerenderConfig;
       mount?: string;
       ppr?: PprConfig;
     }
   >;
   apps?: Record<
     string,
-    {
-      entry: string;
-      html: string;
-      routes?: string;
-      mount?: string;
-    }
+    | string
+    | {
+        source?: string;
+        entry?: string;
+        html?: string;
+        routes?: string;
+        mount?: string;
+      }
   >;
   transport?: {
     baseUrl?: string;
@@ -159,14 +165,19 @@ function createEntries(
   }
 
   for (const page of pages) {
+    if (isPartialPrerenderPage(page) && !config.serverEnabled) {
+      throw new Error(
+        `[evjs] Page "${page.id}" uses partial prerendering but server is disabled.`,
+      );
+    }
     if (page.render !== "csr" && !config.serverEnabled) {
       throw new Error(
         `[evjs] Page "${page.id}" uses render: "${page.render}" but server is disabled.`,
       );
     }
-    if (page.render === "ppr" && !page.component) {
+    if (isPartialPrerenderPage(page) && !page.component) {
       throw new Error(
-        `[evjs] Page "${page.id}" uses render: "ppr" but does not declare a component page module.`,
+        `[evjs] Page "${page.id}" uses partial prerendering but does not declare a component page module.`,
       );
     }
 
@@ -273,7 +284,7 @@ function createServerRenderers(
   for (const page of Object.values(graph.pages)) {
     if (page.render === "csr") continue;
 
-    if (page.render === "rsc") {
+    if (isRscPage(page)) {
       const pageServerEntry = getPageServerEntry(page);
       if (pageServerEntry) {
         renderers.push({
@@ -289,7 +300,7 @@ function createServerRenderers(
           owner: pageOwner(page),
         });
       }
-    } else if (page.render === "ppr" && page.component) {
+    } else if (isPartialPrerenderPage(page) && page.component) {
       renderers.push({
         name: `${page.id}-ppr-shell`,
         import: page.component,
@@ -346,15 +357,18 @@ function getPageClientEntry(page: {
   component?: string;
   app?: string;
   render?: RenderMode;
+  componentModel?: ComponentModel;
+  prerender?: PrerenderConfig;
+  ppr?: PprConfig;
   hydrate?: HydrationMode;
   mount?: string;
 }):
   | { import: string; metadata?: NonNullable<BuildEntry["metadata"]> }
   | undefined {
-  if (page.render === "ppr") return undefined;
+  if (isPartialPrerenderPage(page)) return undefined;
   if (page.entry) return { import: page.entry };
   if (page.app) return { import: page.app };
-  if (page.render === "rsc") return undefined;
+  if (isRscPage(page)) return undefined;
   if (page.component && page.hydrate === "none" && page.render !== "csr") {
     return undefined;
   }
@@ -440,11 +454,25 @@ function defaultHydrate(render: RenderMode): HydrationMode {
 }
 
 function hasPprPages(graph: AppGraph): boolean {
-  return Object.values(graph.pages).some((page) => page.render === "ppr");
+  return Object.values(graph.pages).some(isPartialPrerenderPage);
 }
 
 function hasRscPages(graph: AppGraph): boolean {
-  return Object.values(graph.pages).some((page) => page.render === "rsc");
+  return Object.values(graph.pages).some(isRscPage);
+}
+
+function isRscPage(page: { componentModel?: ComponentModel }): boolean {
+  return page.componentModel === "rsc";
+}
+
+function isPartialPrerenderPage(page: {
+  prerender?: PrerenderConfig;
+  ppr?: PprConfig;
+}): boolean {
+  return (
+    (typeof page.prerender === "object" && page.prerender.partial === true) ||
+    Boolean(page.ppr)
+  );
 }
 
 function joinPath(base: string, segment: string): string {

@@ -122,7 +122,6 @@ export function createReactPageModule(
 ): AppModule {
   return {
     mount(mountPoint, ctx) {
-      if (options.render === "ppr") return;
       if (options.hydrate === "none") return;
       mountReactRoot(
         mountPoint,
@@ -131,7 +130,6 @@ export function createReactPageModule(
       );
     },
     hydrate(mountPoint, ctx) {
-      if (options.render === "ppr") return;
       if (options.hydrate === "none") return;
       const props = resolvePageProps(options, ctx);
       if (shouldHydrate(options)) {
@@ -268,7 +266,6 @@ function mountReactRoot(
 }
 
 export function mountReactPage(options: ReactPageRuntimeOptions): void {
-  if (options.render === "ppr") return;
   if (options.hydrate === "none") return;
 
   const mountPoint = resolveMountPoint(options.mount);

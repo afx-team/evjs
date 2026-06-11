@@ -26,13 +26,12 @@ describe("defineConfig", () => {
     });
   });
 
-  it("keeps route source paths under apps instead of a top-level app field", () => {
+  it("accepts a single app declaration", () => {
     const config = defineConfig({
-      // @ts-expect-error app routes belong in apps.*.routes.
-      app: { routes: "./src/routes.tsx" },
+      app: { entry: "./src/main.tsx" },
     });
 
-    expect(config).toEqual({ app: { routes: "./src/routes.tsx" } });
+    expect(config).toEqual({ app: { entry: "./src/main.tsx" } });
   });
 });
 
@@ -48,6 +47,7 @@ describe("resolveConfig", () => {
     expect(resolved.server.runtime).toEqual({
       basePath: "/__evjs",
       fn: "/__evjs/fn",
+      rsc: "/__evjs/rsc",
     });
     expect(resolved.server.functionRuntime.endpoint).toBe("/__evjs/fn");
     expect(resolved.transport).toEqual({ baseUrl: undefined });
@@ -120,7 +120,7 @@ describe("resolveConfig", () => {
     });
 
     expect(resolved.dev.proxy).toContainEqual({
-      context: ["/api/fn"],
+      context: ["/api/fn", "/api/rsc"],
       target: "http://localhost:4001",
       changeOrigin: true,
       secure: false,
@@ -132,7 +132,7 @@ describe("resolveConfig", () => {
 
     expect(resolved.server.functionRuntime.endpoint).toBe("/__evjs/fn");
     expect(resolved.dev.proxy).toContainEqual({
-      context: ["/__evjs/fn"],
+      context: ["/__evjs/fn", "/__evjs/rsc"],
       target: "http://localhost:3001",
       changeOrigin: true,
       secure: false,
@@ -152,6 +152,7 @@ describe("resolveConfig", () => {
     expect(resolved.server.runtime).toEqual({
       basePath: "/_ev",
       fn: "/_ev/fn",
+      rsc: "/_ev/rsc",
     });
     expect(resolved.transport.baseUrl).toBe("https://api.example.com");
   });
@@ -193,16 +194,10 @@ describe("resolveConfig", () => {
     expect(resolved.server.rsc?.endpoint).toBe("/flight");
   });
 
-  it("enables the RSC endpoint when a configured page uses RSC rendering", () => {
+  it("enables the RSC endpoint with the framework server runtime", () => {
     const resolved = resolveConfig({
       server: {
         basePath: "/_ev",
-      },
-      pages: {
-        product: {
-          component: "./src/pages/Product.tsx",
-          render: "rsc",
-        },
       },
     });
 
@@ -216,13 +211,14 @@ describe("resolveConfig", () => {
     });
   });
 
-  it("resolves explicit app route and remote declarations", () => {
+  it("resolves app declaration sources, explicit app entries, and remotes", () => {
     const resolved = resolveConfig({
       apps: {
-        console: {
-          entry: "./src/console/main.tsx",
-          html: "./src/console/index.html",
-          routes: "./src/routes.tsx",
+        console: "./src/console/app.tsx",
+        admin: {
+          entry: "./src/admin/main.tsx",
+          html: "./src/admin/index.html",
+          routes: "./src/admin/routes.tsx",
         },
       },
       remotes: {
@@ -235,9 +231,12 @@ describe("resolveConfig", () => {
 
     expect(resolved.apps).toEqual({
       console: {
-        entry: "./src/console/main.tsx",
-        html: "./src/console/index.html",
-        routes: "./src/routes.tsx",
+        source: "./src/console/app.tsx",
+      },
+      admin: {
+        entry: "./src/admin/main.tsx",
+        html: "./src/admin/index.html",
+        routes: "./src/admin/routes.tsx",
         mount: undefined,
       },
     });
@@ -334,7 +333,7 @@ describe("resolveConfig", () => {
     expect(b.entry).toBe("./b.tsx");
   });
 
-  it("resolves MPA pages from entry strings", () => {
+  it("resolves MPA pages from component strings", () => {
     const resolved = resolveConfig({
       pages: {
         home: "./src/home/main.tsx",
@@ -344,21 +343,19 @@ describe("resolveConfig", () => {
 
     expect(resolved.pages).toEqual({
       home: {
-        entry: "./src/home/main.tsx",
-        component: undefined,
+        entry: undefined,
+        path: undefined,
+        component: "./src/home/main.tsx",
         app: undefined,
         html: "./index.html",
-        render: "csr",
-        hydrate: undefined,
         mount: undefined,
       },
       campaign: {
-        entry: "./src/campaign/main.tsx",
-        component: undefined,
+        entry: undefined,
+        path: undefined,
+        component: "./src/campaign/main.tsx",
         app: undefined,
         html: "./index.html",
-        render: "csr",
-        hydrate: undefined,
         mount: undefined,
       },
     });
@@ -379,20 +376,18 @@ describe("resolveConfig", () => {
     expect(resolved.pages).toEqual({
       home: {
         entry: "./src/home/main.tsx",
+        path: undefined,
         component: undefined,
         app: undefined,
         html: "./app.html",
-        render: "csr",
-        hydrate: undefined,
         mount: undefined,
       },
       campaign: {
         entry: "./src/campaign/main.tsx",
+        path: undefined,
         component: undefined,
         app: undefined,
         html: "./campaign.html",
-        render: "csr",
-        hydrate: undefined,
         mount: undefined,
       },
     });
@@ -404,8 +399,6 @@ describe("resolveConfig", () => {
         home: {
           path: "/home",
           component: "./src/home/Page.tsx",
-          render: "ssg",
-          hydrate: "none",
           mount: "#root",
         },
       },
@@ -418,49 +411,7 @@ describe("resolveConfig", () => {
         component: "./src/home/Page.tsx",
         app: undefined,
         html: "./index.html",
-        render: "ssg",
-        hydrate: "none",
         mount: "#root",
-      },
-    });
-  });
-
-  it("resolves PPR region configuration on component pages", () => {
-    const resolved = resolveConfig({
-      pages: {
-        campaign: {
-          component: "./src/campaign/Page.tsx",
-          render: "ppr",
-          ppr: {
-            regions: {
-              offer: {
-                component: "./src/campaign/Offer.region.tsx",
-                fallback: "./src/campaign/OfferSkeleton.tsx",
-                cache: "no-store",
-                hydrate: "visible",
-              },
-              inventory: {
-                component: "./src/campaign/Inventory.region.tsx",
-                cache: { revalidate: 60 },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    expect(resolved.pages?.campaign.ppr).toEqual({
-      regions: {
-        offer: {
-          component: "./src/campaign/Offer.region.tsx",
-          fallback: "./src/campaign/OfferSkeleton.tsx",
-          cache: "no-store",
-          hydrate: "visible",
-        },
-        inventory: {
-          component: "./src/campaign/Inventory.region.tsx",
-          cache: { revalidate: 60 },
-        },
       },
     });
   });

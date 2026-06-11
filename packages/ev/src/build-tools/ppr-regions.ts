@@ -71,16 +71,23 @@ export function extractPprRegionModuleConfig(
   const ast = parseRouteModule(source);
   if (!ast) return {};
 
+  const config: Partial<Omit<PprRegionConfig, "component">> = {};
   for (const item of ast.body) {
-    const declaration = unwrapTypeScriptExpression(
+    const cache = getExportedCachePolicy(item);
+    if (cache !== undefined) config.cache = cache;
+
+    const hydrate = getExportedHydrationMode(item);
+    if (hydrate !== undefined) config.hydrate = hydrate;
+
+    const legacy = unwrapTypeScriptExpression(
       getExportedVariableDeclaration(item, "PPR"),
     );
-    if (declaration?.type === "ObjectExpression") {
-      return getPprConfigObject(declaration);
+    if (legacy?.type === "ObjectExpression") {
+      Object.assign(config, getPprConfigObject(legacy));
     }
   }
 
-  return {};
+  return config;
 }
 
 function collectReactImports(ast: RouteAst): {
@@ -301,6 +308,21 @@ function unwrapTypeScriptExpression(
     current = current.expression;
   }
   return current;
+}
+
+function getExportedCachePolicy(item: ModuleItem): PprCachePolicy | undefined {
+  const expression = unwrapTypeScriptExpression(
+    getExportedVariableDeclaration(item, "cache"),
+  );
+  return expression ? getCacheValue(expression) : undefined;
+}
+
+function getExportedHydrationMode(item: ModuleItem): HydrationMode | undefined {
+  const expression = unwrapTypeScriptExpression(
+    getExportedVariableDeclaration(item, "hydrate"),
+  );
+  if (expression?.type !== "StringLiteral") return undefined;
+  return isHydrationMode(expression.value) ? expression.value : undefined;
 }
 
 function getPprConfigObject(

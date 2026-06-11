@@ -163,9 +163,10 @@ function createBootstrapManifest(
     pages: {
       [bootstrap.pageId]: {
         assets: bootstrap.page?.assets ?? { js: [], css: [] },
-        render: "rsc",
+        render: "ssr",
+        componentModel: "rsc",
         rendering: {
-          mode: "rsc",
+          mode: "ssr",
           component: "rsc",
           html: "server",
           streaming: true,

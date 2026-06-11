@@ -1,8 +1,6 @@
 import { campaignMetrics, inventoryReservations } from "../domain/operations";
 
-export const PPR = {
-  cache: { revalidate: 30 },
-} as const;
+export const cache = { revalidate: 30 } as const;
 
 export default function OfferRegion() {
   const conversion = campaignMetrics.find(

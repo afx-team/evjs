@@ -95,7 +95,7 @@ describe("createApp", () => {
 
   it("matches page renderers for RSC page document requests", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.render = "rsc";
+    configureRscPage(manifest);
     const app = createApp({
       framework: {
         manifest,
@@ -106,7 +106,7 @@ describe("createApp", () => {
               owner: { pageId: "dashboard" },
               load: async () => ({
                 render(ctx: ServerRenderContext) {
-                  return `<h1>${ctx.pageId}:${ctx.page?.render}</h1>`;
+                  return `<h1>${ctx.pageId}:${ctx.page?.render}:${ctx.page?.componentModel}</h1>`;
                 },
               }),
             },
@@ -118,7 +118,7 @@ describe("createApp", () => {
     const res = await app.request("/dashboard");
 
     expect(res.status).toBe(200);
-    expect(await res.text()).toBe("<h1>dashboard:rsc</h1>");
+    expect(await res.text()).toBe("<h1>dashboard:ssr:rsc</h1>");
   });
 
   it("matches dynamic manifest routes for framework rendering", async () => {
@@ -214,7 +214,7 @@ describe("createApp", () => {
 
   it("uses the PPR shell renderer for PPR pages", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.render = "ppr";
+    manifest.pages.dashboard.prerender = { partial: true, delivery: "merge" };
     manifest.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
@@ -258,7 +258,7 @@ describe("createApp", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("x-evjs-ppr")).toBe("merged");
     expect(await res.text()).toBe(
-      "<main><h1>ppr:dashboard</h1><p>dashboard:hero</p></main>",
+      "<main><h1>ssr:dashboard</h1><p>dashboard:hero</p></main>",
     );
 
     const region = await app.request("/__evjs/ppr/dashboard/hero");
@@ -269,7 +269,7 @@ describe("createApp", () => {
 
   it("merges PPR regions into React Suspense fallback boundaries", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.render = "ppr";
+    manifest.pages.dashboard.prerender = { partial: true, delivery: "merge" };
     manifest.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
@@ -325,7 +325,7 @@ describe("createApp", () => {
 
   it("streams PPR page shells and patches Suspense fallback boundaries", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.render = "ppr";
+    manifest.pages.dashboard.prerender = { partial: true, delivery: "stream" };
     manifest.pages.dashboard.ppr = {
       delivery: "stream",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
@@ -383,7 +383,7 @@ describe("createApp", () => {
 
   it("normalizes PPR region document responses into fragments", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.render = "ppr";
+    manifest.pages.dashboard.prerender = { partial: true, delivery: "merge" };
     manifest.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
@@ -433,7 +433,7 @@ describe("createApp", () => {
 
   it("caches PPR regions with revalidate policy", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.render = "ppr";
+    manifest.pages.dashboard.prerender = { partial: true, delivery: "merge" };
     manifest.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
@@ -477,7 +477,7 @@ describe("createApp", () => {
 
   it("does not cache no-store PPR regions", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.render = "ppr";
+    manifest.pages.dashboard.prerender = { partial: true, delivery: "merge" };
     manifest.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
@@ -735,16 +735,17 @@ describe("createApp", () => {
     );
 
     manifest.pages.dashboard.render = "ssr";
+    manifest.pages.dashboard.componentModel = "client";
     const nonRscPage = await app.request("/__evjs/rsc?page=dashboard");
     expect(nonRscPage.status).toBe(404);
     await expect(nonRscPage.text()).resolves.toContain(
-      'not configured with render: "rsc"',
+      'not configured with componentModel: "rsc"',
     );
   });
 
   it("creates a default RSC coordinator from a React framework manifest", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.render = "rsc";
+    configureRscPage(manifest);
     manifest.rsc = {
       endpoint: "/__evjs/rsc",
       pages: {
@@ -829,14 +830,7 @@ function createManifest(): BuildOutput {
 }
 
 function configureRscManifest(manifest: BuildOutput): void {
-  manifest.pages.dashboard.render = "rsc";
-  manifest.pages.dashboard.rendering = {
-    mode: "rsc",
-    component: "rsc",
-    html: "server",
-    streaming: true,
-    hydrate: "load",
-  };
+  configureRscPage(manifest);
   manifest.rsc = {
     endpoint: "/__evjs/rsc",
     pages: {
@@ -857,5 +851,17 @@ function configureRscManifest(manifest: BuildOutput): void {
         assets: { js: ["dashboard-rsc.js"], css: [] },
       },
     },
+  };
+}
+
+function configureRscPage(manifest: BuildOutput): void {
+  manifest.pages.dashboard.render = "ssr";
+  manifest.pages.dashboard.componentModel = "rsc";
+  manifest.pages.dashboard.rendering = {
+    mode: "ssr",
+    component: "rsc",
+    html: "server",
+    streaming: true,
+    hydrate: "load",
   };
 }

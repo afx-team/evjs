@@ -4,6 +4,13 @@ import RenderModePage from "./RenderModePage";
 
 const OfferRegion = lazy(() => import("./OfferRegion"));
 
+export const render = "ssr";
+export const hydrate = "none";
+export const prerender = {
+  partial: true,
+  delivery: "stream",
+};
+
 interface CampaignProps {
   pageId?: string;
 }

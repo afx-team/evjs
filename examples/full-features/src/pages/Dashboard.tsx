@@ -1,6 +1,9 @@
 import { getOperationsSnapshot } from "../domain/operations";
 import RenderModePage from "./RenderModePage";
 
+export const render = "ssr";
+export const hydrate = "load";
+
 interface DashboardProps {
   manifest?: {
     buildId?: string;

@@ -281,7 +281,8 @@ describe("UtoopackManifestGenerator", () => {
           routeId: "campaign-route",
           component: "./src/campaign/Page.tsx",
           html: "./index.html",
-          render: "ppr",
+          render: "ssr",
+          prerender: { partial: true },
           hydrate: "visible",
           ppr: {
             regions: {
@@ -308,7 +309,8 @@ describe("UtoopackManifestGenerator", () => {
 
     expect(manifest.pages.campaign).toMatchObject({
       assets: { js: ["campaign.client.js"], css: [] },
-      render: "ppr",
+      render: "ssr",
+      prerender: { partial: true },
       routeId: "campaign-route",
       component: "./src/campaign/Page.tsx",
       ppr: {
@@ -350,7 +352,10 @@ function createPlan(graph: AppGraph, serverEnabled: boolean): BuildPlan {
       : {}),
   }));
   const pprEntries = Object.values(graph.pages).flatMap((page) => [
-    ...(page.render === "ppr" && page.component
+    ...(page.prerender &&
+    typeof page.prerender === "object" &&
+    page.prerender.partial &&
+    page.component
       ? [
           {
             name: `${page.id}-ppr-shell`,

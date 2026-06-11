@@ -92,7 +92,7 @@ Browser
   GET /campaign
     -> Edge/CDN
        load cached shell
-       read manifest page.ppr.regions
+       read public manifest PPR region metadata
        server-to-server GET /__evjs/ppr/campaign/offer
          -> Internal FaaS/origin renders region fragment
        merge or stream the region into the same /campaign response
@@ -101,8 +101,9 @@ Browser
 
 In this topology `/__evjs/ppr/<page>/<region>` is not a browser initial-load
 request. It is an internal region resolver endpoint used by the edge/runtime
-layer. `ppr.delivery = "merge"` waits for required regions before returning the
-document; `ppr.delivery = "stream"` flushes the cached shell first and appends
+layer. Source modules declare `prerender.delivery = "merge"` to wait for
+required regions before returning the document, or
+`prerender.delivery = "stream"` to flush the cached shell first and append
 region patches to the same HTML response as internal region requests complete.
 
 If browser and server run on different origins, configure `transport.baseUrl` at build time.

@@ -17,7 +17,7 @@ cd my-app && npm install
 | `mpa` | 多页面应用模板 |
 | `api-routes` | 通过 `createRoute()` 构建程序化 REST API |
 | `complex-routing` | 参数、搜索、布局、加载器、嵌套路由 |
-| `with-tailwind` | 通过插件加载器使用 Tailwind CSS |
+| `with-tailwind` | 通过 PostCSS 使用 Tailwind CSS |
 | `with-trpc` | tRPC 互操作示例 |
 | `with-sqlite` | 基于 SQLite 的全栈 CRUD |
 | `custom-ws-transport` | 自定义 WebSocket 传输层 |
@@ -29,7 +29,7 @@ cd my-app && npm install
 ev dev
 ```
 
-浏览器将自动打开 `http://localhost:3000`，支持热模块替换。`*.server.ts` 文件中的服务端函数会被自动发现 —— 无需配置。
+浏览器将自动打开 `http://localhost:3000`，支持热模块替换。显式 app/page/server 根下的 `"use server"` 模块会被自动发现。
 
 ## 生产构建
 
@@ -45,38 +45,108 @@ my-app/
 ├── ev.config.ts            # 可选配置
 ├── src/
 │   ├── main.tsx            # 应用启动
-│   ├── global.ts           # 全局类型声明和传输初始化
-│   ├── pages/              # 路由模块（以代码定义 TanStack Router 路由树）
+│   ├── pages/              # TanStack route modules 或页面组件
 │   │   ├── __root.tsx      # 根布局
-│   │   └── home.tsx        # 首页（索引路由）
-│   └── api/                # 服务端函数文件
-│       └── *.server.ts
+│   │   └── home.tsx        # 首页路由
+│   └── api/                # 服务端模块
+│       ├── users.server.ts # "use server" 函数
+│       └── health.routes.ts
 ├── package.json
 └── tsconfig.json
 ```
 
-## 应用启动代码
+## 使用 TanStack Router 的启动代码
 
 ```tsx
 // src/main.tsx
 import { createApp } from "@evjs/client";
 import { rootRoute } from "./pages/__root";
 import { homeRoute } from "./pages/home";
-import "./global";
-
 const routeTree = rootRoute.addChildren([homeRoute]);
 const app = createApp({ routeTree });
+
+declare module "@evjs/client" {
+  interface Register {
+    router: typeof app.router;
+  }
+}
+
 app.render("#app");
 ```
 
+TanStack Router 是默认模板路径，因为它提供强类型路由和 loader 集成。新架构能力也可以通过 framework route declaration 或 standalone `pages` 表达。
+
+## 不使用 TanStack 的路由声明
+
 ```ts
-// src/global.ts
-declare module "@evjs/client" {
-  interface Register {
-    router: any;
-  }
+// src/app.tsx
+import { defineReactApp, route } from "@evjs/client";
+import Campaign from "./pages/Campaign";
+import Dashboard from "./pages/Dashboard";
+
+function App() {
+  return <main>Operations console</main>;
+}
+
+export default defineReactApp({
+  html: "../index.html",
+  mount: "#app",
+  component: App,
+  routes: [
+    route("/dashboard", Dashboard, {
+      id: "dashboard",
+    }),
+    route("/campaign", Campaign, {
+      id: "campaign",
+    }),
+  ],
+});
+```
+
+```tsx
+// src/pages/Dashboard.tsx
+export const render = "ssr";
+export const hydrate = "load";
+
+export default function Dashboard() {
+  return <main>Server-rendered dashboard</main>;
 }
 ```
+
+```tsx
+// src/pages/Campaign.tsx
+import { Suspense } from "react";
+import { OfferRegion } from "./OfferRegion";
+import { OfferSkeleton } from "./OfferSkeleton";
+
+export const render = "ssr";
+export const hydrate = "none";
+export const prerender = {
+  partial: true,
+  delivery: "stream",
+} as const;
+
+export default function Campaign() {
+  return (
+    <main>
+      <Suspense fallback={<OfferSkeleton />}>
+        <OfferRegion />
+      </Suspense>
+    </main>
+  );
+}
+```
+
+```ts
+// ev.config.ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  app: "./src/app.tsx",
+});
+```
+
+这个 app declaration source 是构建时 graph source。route groups 仍然可以拆到被它 import 的文件里，但 `ev.config.ts` 只指向 app 边界。
 
 ## 包列表
 
@@ -96,14 +166,14 @@ Manifest schema、build tools、page runtime、shell 和 route DSL 都是上述�
 ```json
 {
   "dependencies": {
-    "@evjs/client": "^0.1.10",
-    "@evjs/server": "^0.1.10",
+    "@evjs/client": "<same version>",
+    "@evjs/server": "<same version>",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@evjs/ev": "^0.1.10",
-    "@evjs/cli": "^0.1.10",
+    "@evjs/ev": "<same version>",
+    "@evjs/cli": "<same version>",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "typescript": "^6.0.2"
@@ -123,4 +193,5 @@ Manifest schema、build tools、page runtime、shell 和 route DSL 都是上述�
 - 从 `@evjs/ev` 导入 `defineConfig`，不是从 `@evjs/server`
 - HTML 必须包含 `<div id="app">` 作为渲染目标
 - 不要在你的**项目** `package.json` 中添加 `"type": "module"` —— 服务端 bundle 使用 CJS 格式
-- `src/main.tsx` 应保持精简 —— 在 `pages/` 中定义路由
+- `src/main.tsx` 应保持精简；将 app graph 声明放在 `src/app.tsx` 或它导入的 route/page modules 中
+- `pages` 用于 standalone page outputs，`app` 用于 SPA declaration boundary

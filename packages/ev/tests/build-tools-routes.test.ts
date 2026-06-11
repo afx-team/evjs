@@ -353,9 +353,6 @@ describe("extractReactRoutes", () => {
         route("/", {
           id: "home",
           page: page("./pages/Home.tsx"),
-          render: "ssr",
-          hydrate: "load",
-          runtime: "node",
         }),
       ]);
     `;
@@ -365,9 +362,6 @@ describe("extractReactRoutes", () => {
         path: "/",
         id: "home",
         module: "./pages/Home.tsx",
-        render: "ssr",
-        hydrate: "load",
-        runtime: "node",
       },
     ]);
   });
@@ -389,6 +383,36 @@ describe("extractReactRoutes", () => {
         path: "/about",
         id: "about",
         module: "./pages/About.tsx",
+      },
+    ]);
+  });
+
+  it("extracts statically imported component route targets", () => {
+    const source = `
+      import { defineReactRoutes, route } from "@evjs/client";
+      import Dashboard from "./pages/Dashboard";
+      import InsightsPage from "./pages/Insights";
+
+      export default defineReactRoutes([
+        route("/dashboard", Dashboard, {
+          id: "dashboard",
+        }),
+        route("/insights", InsightsPage, {
+          id: "insights",
+        }),
+      ]);
+    `;
+
+    expect(extractReactRoutes(source)).toEqual([
+      {
+        path: "/dashboard",
+        id: "dashboard",
+        module: "./pages/Dashboard",
+      },
+      {
+        path: "/insights",
+        id: "insights",
+        module: "./pages/Insights",
       },
     ]);
   });
@@ -433,7 +457,6 @@ describe("analyzeRoutes", () => {
         route("/pricing", {
           id: "pricing",
           page: page("./pages/Pricing.tsx"),
-          render: "ssg",
         }),
       ]);
     `;
@@ -444,7 +467,31 @@ describe("analyzeRoutes", () => {
           path: "/pricing",
           id: "pricing",
           module: "./pages/Pricing.tsx",
-          render: "ssg",
+        },
+      ],
+      serverRoutes: [],
+      diagnostics: [],
+    });
+  });
+
+  it("collects component target routes from the shared parse pass", () => {
+    const source = `
+      import { defineReactRoutes, route } from "@evjs/client";
+      import Campaign from "./pages/Campaign";
+
+      export default defineReactRoutes([
+        route("/campaign", Campaign, {
+          id: "campaign",
+        }),
+      ]);
+    `;
+
+    expect(analyzeRoutes(source)).toEqual({
+      clientRoutes: [
+        {
+          path: "/campaign",
+          id: "campaign",
+          module: "./pages/Campaign",
         },
       ],
       serverRoutes: [],
@@ -463,7 +510,6 @@ describe("analyzeRoutes", () => {
         route(path, {
           id: "dynamic",
           page: page(modulePath),
-          render: "ssr",
         }),
       ]);
     `;
@@ -476,7 +522,7 @@ describe("analyzeRoutes", () => {
       expect.objectContaining({
         level: "error",
         message:
-          '@evjs/client route() with render: "ssr" must declare page(componentPath) with a string literal component module path.',
+          "@evjs/client route() component targets must be default imports or page(componentPath) references.",
       }),
     ]);
   });

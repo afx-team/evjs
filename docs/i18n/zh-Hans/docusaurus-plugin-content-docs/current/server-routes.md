@@ -72,7 +72,7 @@ export const postDetailsRoute = createRoute("/api/posts/:id", {
 
 ## 中间件
 
-使用 `middleware` 选项在处理器之前运行逻辑。调用 `next()` 继续或返回 `Response` 短路：
+使用 `middlewares` 选项在处理器之前运行逻辑。调用 `next()` 继续或返回 `Response` 短路：
 
 ```ts
 import { createRoute } from "@evjs/server";
@@ -84,8 +84,19 @@ const requireAuth = async (req, next) => {
 };
 
 export const protectedRoute = createRoute("/api/protected", {
-  middleware: [requireAuth],
+  middlewares: [requireAuth],
   GET: async () => Response.json({ secret: "data" }),
+});
+```
+
+使用 `createApp({ middlewares })` 可以声明全局中间件，覆盖 server routes、server functions、SSR、PPR、RSC framework handling：
+
+```ts
+import { createApp, requestLogger } from "@evjs/server";
+
+const app = createApp({
+  middlewares: [requestLogger()],
+  routes: [protectedRoute],
 });
 ```
 
@@ -126,6 +137,6 @@ export default defineConfig({
 
 :::tip
 
-如果你同时使用 `routes` 和 `"use server"` 服务端函数，`createApp()` 会同时处理**两者**。路由处理器优先挂载；RPC 回退处理 `api/fn` 的请求。
+如果你同时使用 `routes` 和 `"use server"` 服务端函数，`createApp()` 会同时处理两者。路由处理器优先挂载；RPC dispatcher 处理从 `server.basePath` 派生出来的 runtime path，例如 `/__evjs/fn`。
 
 :::

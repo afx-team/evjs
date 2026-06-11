@@ -2,50 +2,75 @@
 
 > **ev** = **Ev**aluation · **Ev**olution — evaluate across runtimes, evolve with AI tooling.
 
-evjs is a zero-config React fullstack framework with explicit app/page configuration, server functions, route handlers, SSR/RSC integration points, and deployment-oriented manifest output. TanStack Router and TanStack Query remain the compatibility path for type-safe SPA applications, while the framework core keeps routing, rendering, bundling, and deployment contracts separate.
+evjs is a zero-config React fullstack framework with explicit app/page configuration, server functions, route handlers, SSR, PPR, RSC integration points, manifest-driven remotes, and deployment-oriented output.
+
+The framework keeps a clear split between:
+
+- **application code**: React apps, route declarations, server functions, and server routes;
+- **framework semantics**: `AppGraph`, `BuildPlan`, and `BuildOutput`;
+- **bundlers**: Utoopack by default, webpack as the validation adapter for newer framework capabilities;
+- **runtime/server/deploy adapters**: consume the framework manifest instead of reading bundler stats.
+
+TanStack Router and TanStack Query remain supported through `@evjs/client`, but evjs applications are not required to use TanStack Router. Apps can also use explicit React route declarations and standalone pages.
 
 ## Features
 
-- **Convention over Configuration** — `ev dev` / `ev build`, no boilerplate needed
-- **Type-Safe SPA Routing** — TanStack Router compatibility through `@evjs/client`
-- **TanStack-Free Apps** — explicit pages, static route declarations, and framework-managed page/runtime APIs for apps that do not use TanStack Router
-- **Data Fetching** — TanStack Query helpers with built-in server-function proxies
-- **Server Functions** — `"use server"` directive, auto-discovered at build time
-- **Pluggable Transport** — HTTP, WebSocket, or custom via `TransportAdapter`
-- **Plugin System** — extend builds with custom module rules (Tailwind, SVG, etc.)
-- **Route Handlers** — Standard Request/Response REST endpoints via `createRoute()`
-- **Typed Errors** — `ServerError` flows structured data from server → client
-- **Deployment Output** — single framework manifest plus production adapter hooks
+- **Zero-config app start** — `ev dev` / `ev build` work from `src/main.tsx` and `index.html`.
+- **Two routing models** — TanStack Router compatibility and TanStack-free React route declarations.
+- **Framework pages** — standalone CSR/SSR/SSG/PPR/RSC page declarations for MPA and marketing/product pages.
+- **Server functions** — `"use server"` modules become browser-callable RPC stubs.
+- **Server routes** — standard Web `Request`/`Response` route handlers via `createRoute()`.
+- **Unified server boundary** — `@evjs/server` handles server functions, server routes, SSR, PPR, and RSC requests.
+- **Manifest-driven remotes** — host apps load remote apps through remote manifests and shared dependency negotiation.
+- **Plugin system** — graph, plan, bundler, output, HTML, and build lifecycle hooks.
+- **Deployment output** — one public-safe framework manifest plus adapter-generated platform artifacts.
 
 ## Full-Stack Architecture
 
 ```mermaid
 flowchart LR
-    subgraph ClientSide ["💻 Client Side"]
-        UI["React App"]
-        RPC["RPC Client"]
-        FETCH["HTTP Client"]
+    subgraph Browser ["Browser"]
+        UI["React app/page runtime"]
+        RPC["Server function transport"]
+        REMOTE["Remote app shell"]
+        RSCClient["RSC client runtime"]
     end
 
-    subgraph ServerSide ["⚙️ Server Side"]
-        subgraph RenderingLayer ["🖼️ Rendering"]
+    subgraph Server ["@evjs/server"]
+        subgraph Rendering ["Rendering"]
             SSR["SSR"]
+            PPR["PPR shell/regions"]
             RSC["RSC"]
         end
 
-        subgraph APILayer ["🔌 APIs"]
-            SF["⚡ Server Functions"]
-            RH["🌐 Route Handlers"]
+        subgraph APIs ["APIs"]
+            SF["Server functions"]
+            RH["Server routes"]
         end
 
-        subgraph DataLayer ["🗄️ Data"]
+        subgraph Data ["Data/services"]
             DB[("Database")]
             KV[("KV Store")]
         end
     end
 
+    subgraph Build ["Build output"]
+        MANIFEST["dist/manifest.json"]
+        ASSETS["dist/client assets"]
+        SERVERBUNDLE["dist/server bundle"]
+    end
+
+    UI --> MANIFEST
+    UI --> RPC
+    UI -.->|"document request"| SSR
+    UI -.->|"document request"| PPR
+    RSCClient -.->|"runtime.server.rsc"| RSC
+    REMOTE -.->|"remote manifest + assets"| UI
+
     SSR -->|Read| DB
     SSR -->|Read| KV
+    PPR -->|Read| DB
+    PPR -->|Read| KV
     RSC -->|Read| DB
     RSC -->|Read| KV
     SF -->|Read/Write| DB
@@ -53,10 +78,14 @@ flowchart LR
     RH -->|Read/Write| DB
     RH -->|Read/Write| KV
 
-    UI --> RPC
-    UI --> FETCH
-    UI -.->|Initial Request| SSR
-    UI -.->|RSC Fetch| RSC
-    RPC -->|POST api/fn| SF
-    FETCH -->|GET/POST /api| RH
+    RPC -->|"POST runtime.server.fn"| SF
+    UI -->|"GET/POST /api/*"| RH
+    MANIFEST --> UI
+    MANIFEST --> Server
+    ASSETS --> UI
+    SERVERBUNDLE --> Server
 ```
+
+## Current Architecture In One Sentence
+
+evjs analyzes explicit declarations into an `AppGraph`, derives a bundler-independent `BuildPlan`, links bundler facts into a single `BuildOutput`, and lets runtime, server, remote, plugin, and deployment adapters consume that output.
