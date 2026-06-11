@@ -107,6 +107,28 @@ export default function DashboardPage() {
 
 配置了 `path` 时，该页面也会贡献 framework route。SSR、SSG、PPR 等由框架服务端处理的页面应把 URL 和 component 放在配置里，把 rendering metadata 放在组件模块旁边。未配置 `path` 时，页面会输出为 `campaign.html` 这样的 HTML 文档。
 
+### Page Module 静态导出
+
+evjs 会从 framework-managed page module 中读取以下 named static exports。请使用
+字面量值，这样 graph analysis 不需要执行用户代码也能解析。
+
+| 导出 | 可选值 | 含义 |
+| --- | --- | --- |
+| `render` | `"csr"` | 客户端渲染页面。页面在浏览器中 mount，不生成 server document renderer。省略 `render` 时默认是该模式。 |
+| `render` | `"ssr"` | 服务端渲染 document。框架服务端为请求生成 HTML，然后浏览器按 `hydrate` 策略 hydration。需要启用 `server`。 |
+| `render` | `"ssg"` | 静态 document 意图。manifest 会把页面标记为 fully prerendered/static，默认 hydration mode 是 `none`。不需要动态服务端能力时，deployment adapter 可以把它作为静态 HTML 服务。 |
+| `hydrate` | `"none"` | 不对整页做浏览器 hydration。适合静态页面、RSC document，或通过显式 islands/regions 建模交互的 PPR shell。 |
+| `hydrate` | `"load"` | 页面 runtime 加载后 hydration。非 SSG 的 server-rendered 页面默认是该模式。 |
+| `hydrate` | `"visible"` | 声明 mount point 可见后再 hydration。不支持 visibility scheduling 的 runtime/adapter 可以回退到 `load`。 |
+| `hydrate` | `"idle"` | 声明浏览器空闲时再 hydration。不支持 idle scheduling 的 runtime/adapter 可以回退到 `load`。 |
+| `prerender` | `true` | 标记页面可 prerender，但不启用 partial prerendering。 |
+| `prerender` | `{ partial: true }` | 启用 PPR。框架会从页面树中的 `Suspense` + `lazy(() => import(...))` boundary 推导动态 region。 |
+| `prerender.delivery` | `"merge"` | 非流式 PPR delivery。服务端解析 shell 和 regions 后，返回一个完整 HTML response。partial prerendering 默认使用该模式。 |
+| `prerender.delivery` | `"stream"` | 流式 PPR delivery。服务端可以先 flush shell，再把已完成的 regions patch 到同一个 response 中。 |
+| `prerender.revalidate` | `number` | 声明 prerendered output 的 revalidation 间隔，单位是秒。 |
+| `prerender.revalidate` | `false` | 声明 prerendered output 不自动 revalidate。 |
+| `rsc` | `true` | 启用 RSC 页面路径。通常和 `render = "ssr"`、`hydrate = "none"` 一起使用。需要当前 bundler/server adapter 支持 `server.rsc`。 |
+
 PPR 页面推荐在页面组件树中声明动态 region：
 
 ```ts
@@ -153,6 +175,18 @@ export default function OfferRegion() {
 
 框架会分析 page module，并把 Suspense lazy boundary 转成内部 region renderer。
 Region id 会从 lazy 组件名派生，因此 `OfferRegion` 会变成 `offer`。
+
+Region module 可以声明以下静态导出：
+
+| 导出 | 可选值 | 含义 |
+| --- | --- | --- |
+| `cache` | `"no-store"` | 每次都动态渲染 region。适合请求相关或用户相关数据。 |
+| `cache` | `{ revalidate: number }` | 缓存 region output，并在给定秒数后 revalidate。 |
+| `hydrate` | `"none"` | 不在浏览器中 hydrate region。server-only region 默认使用该模式。 |
+| `hydrate` | `"load"` | region client runtime 加载后 hydration。 |
+| `hydrate` | `"visible"` | 声明 region 可见后 hydration。不支持 visibility scheduling 的 runtime 可以回退到 `load`。 |
+| `hydrate` | `"idle"` | 声明 region 在浏览器空闲时 hydration。不支持 idle scheduling 的 runtime 可以回退到 `load`。 |
+
 `prerender.delivery` 控制初始 document response。`"merge"` 是默认非流式模式：
 框架服务端先渲染 shell 和 regions，再返回完整 HTML。`"stream"` 会先发送 shell，
 再在同一个 HTML response 中把已完成的 regions patch 到页面里。两种模式的首屏
@@ -162,7 +196,7 @@ PPR 页面由服务端合成，不会生成整页客户端 hydration entry。需
 PPR 页面应显式建模为 client islands 或 region-level hydration，而不是 hydrate
 整个 page shell。
 
-RSC 页面使用 SSR document render mode，并通过 `componentModel = "rsc"` 声明组件模型：
+RSC 页面使用 SSR document render mode，并通过 `rsc = true` 显式开启 RSC：
 
 ```ts
 export default defineConfig({
@@ -181,7 +215,7 @@ export default defineConfig({
 ```tsx
 // src/pages/Insights.tsx
 export const render = "ssr";
-export const componentModel = "rsc";
+export const rsc = true;
 export const hydrate = "none";
 
 export default function InsightsPage() {

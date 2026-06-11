@@ -3,7 +3,7 @@
 ## 已完成基础
 
 - 零配置 React 应用构建，支持 `ev dev` 和 `ev build`。
-- 通过 `entry` / `html` 和 `apps` 显式声明应用入口。
+- 通过 `app` 声明单个应用，并保留简单 `entry` / `html` shorthand。
 - 通过 `pages` 支持多页面输出。
 - 从 `"use server"` 模块提取服务端函数。
 - Hono/fetch 服务端 runtime 和显式服务端路由。

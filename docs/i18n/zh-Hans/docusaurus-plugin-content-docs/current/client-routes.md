@@ -145,7 +145,7 @@ export default function Dashboard() {
 }
 ```
 
-graph analyzer 会读取 import declaration 和静态 named exports，并转换成 route/page/rendering metadata。这样既不依赖隐藏文件约定，也保持 route graph 可构建期分析。`page("./pages/Dashboard.tsx")` 仍保留为底层 escape hatch，用于组件 import 不适合的少数场景。渲染元信息应保留在 page module 内，让每个 route 对 render、hydrate、component model 和 prerender 行为只有一个来源。
+graph analyzer 会读取 import declaration 和静态 named exports，并转换成 route/page/rendering metadata。这样既不依赖隐藏文件约定，也保持 route graph 可构建期分析。`page("./pages/Dashboard.tsx")` 仍保留为底层 escape hatch，用于组件 import 不适合的少数场景。渲染元信息应保留在 page module 内，让每个 route 对 render、hydrate、rsc 和 prerender 行为只有一个来源。
 
 需要 TanStack 的类型系统和导航 API 时使用 TanStack Router；需要框架托管 route rendering 时使用这个模型。
 

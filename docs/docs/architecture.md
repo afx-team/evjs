@@ -166,7 +166,8 @@ The preferred PPR authoring model is React `Suspense` with a
 `lazy(() => import(...))` child. The page component declares
 `export const render = "ssr"` plus
 `export const prerender = { partial: true, delivery }`. Dynamic regions can
-declare `export const cache` and `export const hydrate` in their own modules.
+declare `export const cache` and `export const hydrate` in their
+own modules.
 PPR is a prerendering strategy on top of SSR, not a separate document render
 mode.
 
@@ -223,8 +224,9 @@ rendering strategy, because one app can contain CSR, SSR, PPR, RSC, and remote
 routes at the same time.
 
 Route declarations own path-to-component wiring. Page modules own rendering
-metadata through static exports such as `render`, `hydrate`, `componentModel`,
-and `prerender`. When graph creation sees a route component with SSR, RSC, or
+metadata through static exports such as `render`, `hydrate`,
+`rsc`, and `prerender`. When graph creation sees a route component
+with SSR, RSC, or
 partial prerender metadata, it derives an internal page from that route. That
 page provides a stable `pageId`, render metadata, server renderers, PPR regions,
 assets, and manifest output, but it does not emit an independent HTML document.

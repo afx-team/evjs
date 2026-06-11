@@ -123,6 +123,28 @@ export default function DashboardPage() {
 
 When `path` is present, the page also contributes a framework route. Use this for SSR, SSG, PPR, and other framework-served pages so URL and component stay in config while rendering metadata stays with the component module. If `path` is omitted, the page is emitted as an HTML document such as `campaign.html`.
 
+### Page Module Static Exports
+
+evjs reads these named static exports from framework-managed page modules. Use
+literal values so graph analysis can resolve them without executing user code.
+
+| Export | Values | Meaning |
+| --- | --- | --- |
+| `render` | `"csr"` | Client-rendered page. The page is mounted in the browser and does not create a server document renderer. This is the default when `render` is omitted. |
+| `render` | `"ssr"` | Server-rendered document. The framework server renders HTML for the request, then the browser hydrates according to `hydrate`. Requires `server` to be enabled. |
+| `render` | `"ssg"` | Static document intent. The manifest marks the page as fully prerendered/static, and the default hydration mode is `none`. Deployment adapters can serve it as static HTML when no dynamic server capability is required. |
+| `hydrate` | `"none"` | Do not hydrate the whole page in the browser. Use this for static pages, RSC documents, or PPR shells where interactivity is modeled by explicit islands/regions. |
+| `hydrate` | `"load"` | Hydrate after the page runtime loads. This is the default for non-SSG server-rendered pages. |
+| `hydrate` | `"visible"` | Declare that hydration may wait until the mount point is visible. Runtimes/adapters that do not implement visibility scheduling may fall back to `load`. |
+| `hydrate` | `"idle"` | Declare that hydration may wait for an idle browser period. Runtimes/adapters that do not implement idle scheduling may fall back to `load`. |
+| `prerender` | `true` | Mark the page as prerenderable without enabling partial prerendering. |
+| `prerender` | `{ partial: true }` | Enable PPR. The framework derives dynamic regions from `Suspense` + `lazy(() => import(...))` boundaries in the page tree. |
+| `prerender.delivery` | `"merge"` | Non-streaming PPR delivery. The server resolves shell and regions, then returns one complete HTML response. This is the default for partial prerendering. |
+| `prerender.delivery` | `"stream"` | Streaming PPR delivery. The server can flush the shell before all regions finish, then patch resolved regions into the same response. |
+| `prerender.revalidate` | `number` | Declare a revalidation interval, in seconds, for prerendered output. |
+| `prerender.revalidate` | `false` | Declare that the prerendered output should not revalidate automatically. |
+| `rsc` | `true` | Enable the RSC page path. Use with `render = "ssr"` and `hydrate = "none"`. Requires `server.rsc` support from the active bundler/server adapter. |
+
 PPR pages should declare dynamic regions in the page component tree:
 
 ```ts
@@ -170,6 +192,17 @@ The framework analyzes the page module and turns Suspense lazy boundaries into
 internal region renderers. Region ids are derived from the lazy component name,
 so `OfferRegion` becomes `offer`.
 
+Region modules can declare these static exports:
+
+| Export | Values | Meaning |
+| --- | --- | --- |
+| `cache` | `"no-store"` | Always render the region dynamically. Use this for request-specific or user-specific data. |
+| `cache` | `{ revalidate: number }` | Cache the region output and revalidate after the given number of seconds. |
+| `hydrate` | `"none"` | Do not hydrate the region in the browser. This is the default when the region is server-only. |
+| `hydrate` | `"load"` | Hydrate the region once its client runtime loads. |
+| `hydrate` | `"visible"` | Declare visibility-based region hydration. Unsupported runtimes may fall back to `load`. |
+| `hydrate` | `"idle"` | Declare idle-time region hydration. Unsupported runtimes may fall back to `load`. |
+
 `prerender.delivery` controls the initial document response. `"merge"` is the
 default non-streaming mode: the framework server renders the shell and regions,
 then returns one complete HTML response. `"stream"` sends the shell first and
@@ -180,7 +213,7 @@ PPR pages are server-composed and do not create a full-page client hydration
 entry. Interactive PPR work should be modeled as explicit client islands or
 region-level hydration instead of hydrating the whole page shell.
 
-RSC pages use SSR document rendering with the RSC component model:
+RSC pages use SSR document rendering with an explicit RSC flag:
 
 ```ts
 export default defineConfig({
@@ -199,7 +232,7 @@ export default defineConfig({
 ```tsx
 // src/pages/Insights.tsx
 export const render = "ssr";
-export const componentModel = "rsc";
+export const rsc = true;
 export const hydrate = "none";
 
 export default function InsightsPage() {

@@ -250,7 +250,7 @@ Remote modules can default-export React components. Explicit `mount`,
 
 ## Naming Guidance
 
-- `apps/` is for additional application entries, not for every page.
+- `apps/` is an optional source folder for the single app declaration, not a config-level multi-app model.
 - `pages/` is for route/page components, including SSR/PPR/RSC components.
 - `api/` is the server boundary.
 - `features/` owns business domains.

@@ -66,11 +66,10 @@ describe("createUtoopackConfig", () => {
   it("does not add SPA history fallback for MPA builds", async () => {
     const config = createResolvedConfig({
       pages: {
-        home: { entry: "./src/home.tsx", html: "./home.html", render: "csr" },
+        home: { entry: "./src/home.tsx", html: "./home.html" },
         about: {
           entry: "./src/about.tsx",
           html: "./about.html",
-          render: "csr",
         },
       },
     });
@@ -96,7 +95,6 @@ describe("createUtoopackConfig", () => {
         home: {
           component: "./src/pages/Home.tsx",
           html: "./index.html",
-          render: "csr",
           mount: "#app",
         },
       },
@@ -281,8 +279,7 @@ function createPlan(
           component: page.component,
           app: page.app,
           html: page.html,
-          render: page.render ?? "csr",
-          hydrate: page.hydrate,
+          render: "csr",
           mount: page.mount,
         },
       ]),

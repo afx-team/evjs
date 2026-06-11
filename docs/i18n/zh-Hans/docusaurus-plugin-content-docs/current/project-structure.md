@@ -229,7 +229,7 @@ Remote module 可以默认导出 React component。只有高级场景才需要�
 
 ## 命名建议
 
-- `apps/` 放额外 app entry，不是每个页面都放进去。
+- `apps/` 可作为单个 app declaration 的源码目录，不代表配置层多 app 模型。
 - `pages/` 放 route/page components，包括 SSR/PPR/RSC components。
 - `api/` 是服务端边界。
 - `features/` 放业务领域模块。

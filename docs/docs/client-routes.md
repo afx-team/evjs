@@ -180,8 +180,8 @@ then turns them into route/page/rendering metadata. This avoids hidden file
 conventions while keeping the route graph build-time analyzable.
 `page("./pages/Dashboard.tsx")` remains available as a low-level escape hatch
 when a component import is not practical. Keep rendering metadata in the page
-module itself so each route has a single source of truth for render, hydrate,
-component model, and prerender behavior.
+module itself so each route has a single source of truth for `render`,
+`hydrate`, `rsc`, and `prerender` behavior.
 
 Use this model for framework-managed route rendering. Use TanStack Router when
 your app needs TanStack's route type system and navigation APIs.

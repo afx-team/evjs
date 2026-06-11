@@ -3,7 +3,7 @@ import InsightsBadge from "./InsightsBadge";
 import RenderModePage from "./RenderModePage";
 
 export const render = "ssr";
-export const componentModel = "rsc";
+export const rsc = true;
 export const hydrate = "none";
 
 interface InsightsProps {

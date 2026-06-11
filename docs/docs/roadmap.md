@@ -3,7 +3,7 @@
 ## Completed Foundation
 
 - Zero-config React app build with `ev dev` and `ev build`.
-- Explicit app entries through `entry` / `html` and `apps`.
+- Single app declaration through `app`, plus simple `entry` / `html` shorthand.
 - Multi-page output through `pages`.
 - Server functions from `"use server"` modules.
 - Hono/fetch server runtime with explicit server routes.

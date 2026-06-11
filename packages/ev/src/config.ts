@@ -1,12 +1,5 @@
 import { DEFAULT_SERVER_BASE_PATH } from "@evjs/shared";
-import type {
-  ComponentModel,
-  HydrationMode,
-  PprConfig,
-  PrerenderConfig,
-  RenderMode,
-  SharedDependencyMap,
-} from "@evjs/shared/manifest";
+import type { SharedDependencyMap } from "@evjs/shared/manifest";
 import type { BundlerAdapter } from "./bundler.js";
 import type { Plugin } from "./plugin.js";
 
@@ -156,12 +149,6 @@ export interface Config<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
    * field in `ev.config.ts`.
    */
   app?: AppConfig;
-
-  /**
-   * @deprecated Multiple SPA apps are no longer the public application model.
-   * Use `app` for the single SPA and `pages` for independent MPA pages.
-   */
-  apps?: Record<string, AppConfig>;
 
   /** Remote applications loaded from framework manifests. */
   remotes?: Record<string, RemoteConfig>;
@@ -397,16 +384,7 @@ export function resolveConfig<
   const resolvedApp = config.app
     ? resolveAppConfig(config.app, defaultHtml)
     : undefined;
-  const resolvedApps = resolvedApp
-    ? { default: resolvedApp }
-    : config.apps
-      ? Object.fromEntries(
-          Object.entries(config.apps).map(([id, app]) => [
-            id,
-            resolveAppConfig(app, defaultHtml),
-          ]),
-        )
-      : undefined;
+  const resolvedApps = resolvedApp ? { default: resolvedApp } : undefined;
 
   const serverPort = serverConfig.dev?.port ?? CONFIG_DEFAULTS.serverPort;
   const serverBasePath = normalizePath(
@@ -573,10 +551,6 @@ export interface PageEntryConfig {
   entry: string;
   /** HTML template path. If omitted, uses the top-level `html` default. */
   html?: string;
-  /** @deprecated Declare render in the page module instead. */
-  render?: RenderMode;
-  /** @deprecated Declare hydrate in the page module instead. */
-  hydrate?: HydrationMode;
   mount?: string;
 }
 
@@ -587,17 +561,7 @@ export interface PageComponentConfig {
   component: string;
   /** HTML template path. If omitted, uses the top-level `html` default. */
   html?: string;
-  /** @deprecated Declare render in the page module instead. */
-  render?: RenderMode;
-  /** @deprecated Declare componentModel in the page module instead. */
-  componentModel?: ComponentModel;
-  /** @deprecated Declare hydrate in the page module instead. */
-  hydrate?: HydrationMode;
-  /** @deprecated Declare prerender in the page module instead. */
-  prerender?: PrerenderConfig;
   mount?: string;
-  /** @deprecated PPR is derived from page module `prerender.partial`. */
-  ppr?: PprConfig;
 }
 
 export interface PageAppConfig {
@@ -607,10 +571,6 @@ export interface PageAppConfig {
   app: string;
   /** HTML template path. If omitted, uses the top-level `html` default. */
   html?: string;
-  /** @deprecated Declare render in the app/page module instead. */
-  render?: RenderMode;
-  /** @deprecated Declare hydrate in the app/page module instead. */
-  hydrate?: HydrationMode;
   mount?: string;
 }
 
@@ -620,13 +580,7 @@ export interface ResolvedPageConfig {
   component?: string;
   app?: string;
   html: string;
-  /** @deprecated Render is analyzed from the page module. */
-  render?: RenderMode;
-  /** @deprecated Hydrate is analyzed from the page module. */
-  hydrate?: HydrationMode;
   mount?: string;
-  /** @deprecated PPR is analyzed from the page module. */
-  ppr?: PprConfig;
 }
 
 /**

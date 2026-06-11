@@ -645,7 +645,7 @@ describe("createAppGraph and createBuildPlan", () => {
     const cwd = await createFixture({
       "src/pages/rsc.tsx": `
         export const render = "ssr";
-        export const componentModel = "rsc";
+        export const rsc = true;
         export default function RscPage() { return null; }
       `,
     });
@@ -712,7 +712,7 @@ describe("createAppGraph and createBuildPlan", () => {
         import { saveInsight } from "../actions";
 
         export const render = "ssr";
-        export const componentModel = "rsc";
+        export const rsc = true;
         export default function RscPage() {
           void ClientCard;
           void ClientWidget;
@@ -844,7 +844,7 @@ describe("createAppGraph and createBuildPlan", () => {
         "export default function Region() { return null; }",
       "src/pages/rsc.tsx": `
         export const render = "ssr";
-        export const componentModel = "rsc";
+        export const rsc = true;
         export default function Rsc() { return null; }
       `,
       "index.html": '<div id="app"></div>',

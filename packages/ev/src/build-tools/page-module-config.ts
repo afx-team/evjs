@@ -24,9 +24,9 @@ export function extractPageModuleConfig(source: string): PageModuleConfig {
     const render = getExportedStringLiteral(item, "render");
     if (isRenderMode(render)) config.render = render;
 
-    const componentModel = getExportedStringLiteral(item, "componentModel");
-    if (isComponentModel(componentModel)) {
-      config.componentModel = componentModel;
+    const rsc = getExportedBooleanLiteral(item, "rsc");
+    if (rsc === true) {
+      config.componentModel = "rsc";
     }
 
     const hydrate = getExportedStringLiteral(item, "hydrate");
@@ -53,6 +53,16 @@ function getExportedStringLiteral(
     getExportedVariableDeclaration(item, name),
   );
   return expression?.type === "StringLiteral" ? expression.value : undefined;
+}
+
+function getExportedBooleanLiteral(
+  item: ModuleItem,
+  name: string,
+): boolean | undefined {
+  const expression = unwrapTypeScriptExpression(
+    getExportedVariableDeclaration(item, name),
+  );
+  return expression?.type === "BooleanLiteral" ? expression.value : undefined;
 }
 
 function getExportedVariableDeclaration(
@@ -144,10 +154,6 @@ function getRevalidateObjectProperty(
 
 function isRenderMode(value: string | undefined): value is RenderMode {
   return value === "csr" || value === "ssr" || value === "ssg";
-}
-
-function isComponentModel(value: string | undefined): value is ComponentModel {
-  return value === "client" || value === "rsc";
 }
 
 function isHydrationMode(value: string | undefined): value is HydrationMode {

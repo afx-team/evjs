@@ -211,15 +211,12 @@ describe("resolveConfig", () => {
     });
   });
 
-  it("resolves app declaration sources, explicit app entries, and remotes", () => {
+  it("resolves app declaration sources and remotes", () => {
     const resolved = resolveConfig({
-      apps: {
-        console: "./src/console/app.tsx",
-        admin: {
-          entry: "./src/admin/main.tsx",
-          html: "./src/admin/index.html",
-          routes: "./src/admin/routes.tsx",
-        },
+      app: {
+        entry: "./src/admin/main.tsx",
+        html: "./src/admin/index.html",
+        routes: "./src/admin/routes.tsx",
       },
       remotes: {
         crm: {
@@ -230,10 +227,7 @@ describe("resolveConfig", () => {
     });
 
     expect(resolved.apps).toEqual({
-      console: {
-        source: "./src/console/app.tsx",
-      },
-      admin: {
+      default: {
         entry: "./src/admin/main.tsx",
         html: "./src/admin/index.html",
         routes: "./src/admin/routes.tsx",

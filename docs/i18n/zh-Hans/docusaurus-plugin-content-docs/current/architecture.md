@@ -162,8 +162,8 @@ sequenceDiagram
 页面组件声明 `export const render = "ssr"`，并通过
 `export const prerender = { partial: true, delivery }` 开启 partial
 prerendering。动态 region 模块可以声明 `export const cache` 和
-`export const hydrate`。PPR 是建立在 SSR 之上的 prerendering 策略，不是独立的
-document render mode。
+`export const hydrate`。PPR 是建立在 SSR 之上的 prerendering 策略，不是
+独立的 document render mode。
 
 PPR 页面在 public manifest 中的 page-level hydration 是 `none`。需要客户端交互时，
 应通过显式 client islands 或 region-level hydration metadata 引入，而不是 hydrate 整个
@@ -212,7 +212,7 @@ entry、route groups 和 mount point。它不应该携带一个统一 render mod
 app 内可以同时存在 CSR、SSR、PPR、RSC 和 remote routes。
 
 Route declarations 负责 path-to-component wiring。Page modules 通过 `render`、
-`hydrate`、`componentModel`、`prerender` 等静态导出拥有渲染元信息。当 graph
+`hydrate`、`rsc`、`prerender` 等静态导出拥有渲染元信息。当 graph
 creation 发现 route component 带有 SSR、RSC 或 partial prerender metadata 时，会从
 该 route 派生一个内部 page。这个 page 提供稳定的 `pageId`、render metadata、
 server renderers、PPR regions、assets 和 manifest output，但不会输出独立 HTML

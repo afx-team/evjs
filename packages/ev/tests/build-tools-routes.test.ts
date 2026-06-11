@@ -530,10 +530,10 @@ describe("analyzeRoutes", () => {
   it("reports diagnostics with byte-offset-safe line and column positions", () => {
     const source = [
       "// emoji 😊 before the route declaration",
-      'import { defineReactRoutes, route } from "@evjs/client";',
+      'import { defineReactRoutes, page, route } from "@evjs/client";',
       "",
       "export default defineReactRoutes([",
-      '  route(dynamicPath, { render: "ssr" }),',
+      '  route(dynamicPath, page("./pages/Home.tsx")),',
       "]);",
     ].join("\n");
 

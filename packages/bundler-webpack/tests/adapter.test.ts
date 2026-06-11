@@ -331,7 +331,6 @@ describe("webpackAdapter build", () => {
         home: {
           component: "./src/pages/Home ! page 中文.tsx",
           html: "./index.html",
-          render: "csr",
           mount: "#root",
         },
       },
@@ -500,26 +499,23 @@ describe("webpackAdapter build", () => {
           route("/dashboard", {
             id: "dashboard",
             page: page("./pages/Dashboard.ts"),
-            render: "ssr",
-            hydrate: "load",
           }),
         ]);
       `,
       "src/pages/Dashboard.ts": `
+        export const render = "ssr";
+        export const hydrate = "load";
+
         export default function Dashboard() {
           return "dashboard";
         }
       `,
     });
     const config = resolveConfig<WebpackConfig>({
-      entry: "./src/main.ts",
-      html: "./index.html",
-      apps: {
-        default: {
-          entry: "./src/main.ts",
-          html: "./index.html",
-          routes: "./src/routes.tsx",
-        },
+      app: {
+        entry: "./src/main.ts",
+        html: "./index.html",
+        routes: "./src/routes.tsx",
       },
       server: {
         entry: "./src/server.ts",
@@ -626,13 +622,14 @@ describe("webpackAdapter build", () => {
           route("/dashboard", {
             id: "dashboard",
             page: page("./pages/Dashboard.ts"),
-            render: "ssr",
-            hydrate: "load",
           }),
         ]);
       `,
       "src/pages/Dashboard.ts": `
         import { createElement } from "react";
+
+        export const render = "ssr";
+        export const hydrate = "load";
 
         export default function Dashboard({ pageId }: { pageId?: string }) {
           return createElement("h1", null, "SSR ", pageId);
@@ -640,14 +637,10 @@ describe("webpackAdapter build", () => {
       `,
     });
     const config = resolveConfig<WebpackConfig>({
-      entry: "./src/main.ts",
-      html: "./index.html",
-      apps: {
-        default: {
-          entry: "./src/main.ts",
-          html: "./index.html",
-          routes: "./src/routes.tsx",
-        },
+      app: {
+        entry: "./src/main.ts",
+        html: "./index.html",
+        routes: "./src/routes.tsx",
       },
     });
     const analysis = await createAppGraph(config, cwd);
@@ -684,6 +677,9 @@ describe("webpackAdapter build", () => {
         import "./insights.css";
         import Badge from "./InsightsBadge";
 
+        export const render = "ssr";
+        export const rsc = true;
+
         export default function Insights({ pageId }: { pageId?: string }) {
           return createElement("main", null,
             createElement("h1", null, "RSC ", pageId),
@@ -712,8 +708,6 @@ describe("webpackAdapter build", () => {
           path: "/insights",
           component: "./src/pages/Insights !page.tsx",
           html: "./index.html",
-          render: "ssr",
-          componentModel: "rsc",
         },
       },
     });
@@ -809,15 +803,29 @@ describe("webpackAdapter build", () => {
     const cwd = await createFixture({
       "index.html":
         '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
-      "src/pages/Campaign.ts": `
-        import { createElement } from "react";
+      "src/pages/Campaign.tsx": `
+        import { lazy, Suspense } from "react";
+
+        const OfferRegion = lazy(() => import("./Offer.tsx"));
+
+        export const render = "ssr";
+        export const prerender = { partial: true };
 
         export default function Campaign({ pageId }: { pageId?: string }) {
-          return createElement("main", null, "Campaign ", pageId);
+          return (
+            <main>
+              Campaign {pageId}
+              <Suspense fallback={<p>Loading offer</p>}>
+                <OfferRegion />
+              </Suspense>
+            </main>
+          );
         }
       `,
-      "src/pages/Offer.ts": `
+      "src/pages/Offer.tsx": `
         import { createElement } from "react";
+
+        export const cache = "no-store";
 
         export default function Offer() {
           return createElement("section", null, "Offer region");
@@ -827,18 +835,8 @@ describe("webpackAdapter build", () => {
     const config = resolveConfig<WebpackConfig>({
       pages: {
         campaign: {
-          component: "./src/pages/Campaign.ts",
+          component: "./src/pages/Campaign.tsx",
           html: "./index.html",
-          render: "ssr",
-          prerender: { partial: true },
-          ppr: {
-            regions: {
-              offer: {
-                component: "./src/pages/Offer.ts",
-                cache: "no-store",
-              },
-            },
-          },
         },
       },
     });
@@ -866,7 +864,7 @@ describe("webpackAdapter build", () => {
         offer: {
           id: "offer",
           assets: { js: ["campaign-offer-ppr-region.js"], css: [] },
-          component: "./src/pages/Offer.ts",
+          component: "./src/pages/Offer.tsx",
           cache: "no-store",
         },
       },
@@ -874,7 +872,7 @@ describe("webpackAdapter build", () => {
     expect(manifest.server?.renderers?.["campaign-ppr-shell"]).toMatchObject({
       kind: "ppr-shell",
       owner: { pageId: "campaign" },
-      module: "./src/pages/Campaign.ts",
+      module: "./src/pages/Campaign.tsx",
       assets: { js: ["campaign-ppr-shell.js"], css: [] },
     });
     expect(
@@ -882,14 +880,14 @@ describe("webpackAdapter build", () => {
     ).toMatchObject({
       kind: "ppr-region",
       owner: { pageId: "campaign", regionId: "offer" },
-      module: "./src/pages/Offer.ts",
+      module: "./src/pages/Offer.tsx",
       assets: { js: ["campaign-offer-ppr-region.js"], css: [] },
     });
 
     const shellResponse = await requestServerEntry(cwd, manifest, "/campaign");
     expect(shellResponse.status).toBe(200);
     expect(await shellResponse.text()).toContain(
-      "<main>Campaign <!-- -->campaign</main>",
+      "<main>Campaign <!-- -->campaign<section>Offer region</section></main>",
     );
 
     const regionResponse = await requestServerEntry(
@@ -925,7 +923,6 @@ describe("webpackAdapter dev", () => {
         home: {
           component: "./src/pages/Home.tsx",
           html: "./index.html",
-          render: "csr",
           mount: "#root",
         },
       },
@@ -1055,7 +1052,6 @@ describe("webpackAdapter dev", () => {
         home: {
           component: "./src/pages/Home.tsx",
           html: "./index.html",
-          render: "csr",
           mount: "#root",
         },
       },
@@ -1098,7 +1094,6 @@ describe("webpackAdapter dev", () => {
           home: {
             component: "./src/pages/Home.tsx",
             html: "./next.html",
-            render: "csr",
             mount: "#root",
           },
         },
@@ -1154,7 +1149,6 @@ describe("webpackAdapter dev", () => {
         home: {
           component: "./src/pages/Home.tsx",
           html: "./index.html",
-          render: "csr",
           mount: "#root",
         },
       },
@@ -1197,13 +1191,11 @@ describe("webpackAdapter dev", () => {
           home: {
             component: "./src/pages/Home.tsx",
             html: "./index.html",
-            render: "csr",
             mount: "#root",
           },
           about: {
             component: "./src/pages/About.tsx",
             html: "./index.html",
-            render: "csr",
             mount: "#root",
           },
         },
@@ -1248,7 +1240,6 @@ describe("webpackAdapter dev", () => {
         home: {
           component: "./src/pages/Home.tsx",
           html: "./index.html",
-          render: "csr",
           mount: "#root",
         },
       },
@@ -1299,13 +1290,11 @@ describe("webpackAdapter dev", () => {
           home: {
             component: "./src/pages/Home.tsx",
             html: "./index.html",
-            render: "csr",
             mount: "#root",
           },
           about: {
             component: "./src/pages/About.tsx",
             html: "./index.html",
-            render: "csr",
             mount: "#root",
           },
         },

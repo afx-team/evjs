@@ -163,7 +163,10 @@ describe("build", () => {
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await fs.promises.writeFile(
       path.join(cwd, "src/pages/Dashboard.tsx"),
-      "export default function Dashboard() { return null; }",
+      [
+        'export const render = "ssr";',
+        "export default function Dashboard() { return null; }",
+      ].join("\n"),
       "utf-8",
     );
 
@@ -193,7 +196,6 @@ describe("build", () => {
           dashboard: {
             component: "./src/pages/Dashboard.tsx",
             html: "./index.html",
-            render: "ssr",
           },
         },
         plugins: [
@@ -284,7 +286,6 @@ describe("build", () => {
         '  route("/", {',
         '    id: "home",',
         "    page: page(modulePath),",
-        '    render: "ssr",',
         "  }),",
         "]);",
       ].join("\n"),
@@ -298,12 +299,10 @@ describe("build", () => {
     try {
       await build(
         {
-          apps: {
-            default: {
-              entry: "./src/main.tsx",
-              html: "./index.html",
-              routes: "./src/routes.tsx",
-            },
+          app: {
+            entry: "./src/main.tsx",
+            html: "./index.html",
+            routes: "./src/routes.tsx",
           },
         },
         {
@@ -321,7 +320,7 @@ describe("build", () => {
     );
     expect((error as Error).message).toContain("src/routes.tsx");
     expect((error as Error).message).toContain(
-      '@evjs/client route() with render: "ssr" must declare a statically imported component or page(componentPath).',
+      "@evjs/client route() component targets must be default imports or page(componentPath) references.",
     );
     expect(events).not.toContain("bundler.build");
   });
