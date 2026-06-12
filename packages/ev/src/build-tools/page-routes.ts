@@ -183,11 +183,15 @@ function toRouteFile(routeRel: string):
   const withoutExt = routeRel.slice(0, -extension.length);
   const segments = withoutExt.split("/").filter(Boolean);
   if (segments.length === 0) return undefined;
+  if (segments.some(isPrivateRouteSegment)) return undefined;
   const name = segments[segments.length - 1] ?? "";
-  if (name.startsWith("_")) return undefined;
   if (name === "index") segments.pop();
 
   return { name, segments };
+}
+
+function isPrivateRouteSegment(segment: string): boolean {
+  return segment.startsWith("_");
 }
 
 function findBracketRouteSegment(segments: string[]): string | undefined {

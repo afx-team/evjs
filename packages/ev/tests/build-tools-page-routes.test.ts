@@ -26,6 +26,12 @@ describe("discoverPageRoutes", () => {
         "export default function Post() { return null; }",
       "src/pages/_private.tsx":
         "export default function Private() { return null; }",
+      "src/pages/_internal/index.tsx":
+        "export default function Internal() { return null; }",
+      "src/pages/posts/_draft.tsx":
+        "export default function DraftPost() { return null; }",
+      "src/pages/posts/_components/Card.tsx":
+        "export default function PostCard() { return null; }",
       "src/pages/about.test.tsx":
         "export default function Test() { return null; }",
     });

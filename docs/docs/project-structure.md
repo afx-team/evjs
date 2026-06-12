@@ -87,8 +87,9 @@ for page outputs that do not map cleanly to `src/pages`.
 
 Each file under `src/pages` default-exports a React component. Dynamic segments
 use `$param`, and `index.tsx` maps to the directory root. Bracket route
-segments such as `[id].tsx` are rejected. Rendering metadata belongs with the
-page component:
+segments such as `[id].tsx` are rejected. Files and folders whose route segment
+starts with `_` are private page-local modules and are ignored by route
+discovery. Rendering metadata belongs with the page component:
 
 ```tsx
 // src/pages/campaign.tsx

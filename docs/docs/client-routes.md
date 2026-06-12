@@ -22,6 +22,10 @@ Dynamic route segments use `$param` filenames. Bracket segments such as
 `[id].tsx` or `[...slug].tsx` are rejected so the file convention stays
 unambiguous.
 
+Files or folders whose route segment starts with `_` are private to `src/pages`
+and are ignored by route discovery. Use them for page-local components, helpers,
+or drafts that should not become URLs.
+
 SPA routing is enabled automatically when `src/pages` exists and the project
 does not declare explicit `app`, `pages`, or `remote` config. To opt in
 explicitly or customize discovery:
