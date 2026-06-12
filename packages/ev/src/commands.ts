@@ -128,7 +128,10 @@ async function withPageRoutingDefaults<TBundlerCfg>(
     mount: CONFIG_DEFAULTS.mount,
     routes: [],
   };
-  const discovery = await discoverPageRoutes(cwd, { dir: base.dir });
+  const discovery = await discoverPageRoutes(cwd, {
+    dir: base.dir,
+    rootLayout: base.mode === "spa",
+  });
   reportPageRouteDiagnostics(discovery.diagnostics);
 
   if (discovery.routes.length === 0) {

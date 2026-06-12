@@ -188,6 +188,65 @@ describe("discoverPageRoutes", () => {
     ]);
   });
 
+  it("rejects route files without default exports", async () => {
+    const cwd = await createFixture({
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+      "src/pages/about.tsx":
+        "export function About() { return null; }\nexport const loader = () => null;",
+      "src/pages/posts.tsx": "export const title = 'Posts';",
+      "src/pages/_helpers/format.ts": "export const format = () => null;",
+    });
+
+    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
+
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/pages/index.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/pages/about.tsx",
+        message:
+          "Page route modules must default-export a React component. Move non-route helpers under an underscore-prefixed file or folder.",
+      },
+      {
+        level: "error",
+        file: "src/pages/posts.tsx",
+        message:
+          "Page route modules must default-export a React component. Move non-route helpers under an underscore-prefixed file or folder.",
+      },
+    ]);
+  });
+
+  it("rejects root layout files without default exports", async () => {
+    const cwd = await createFixture({
+      "src/layout.tsx": "export function Layout() { return null; }",
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+    });
+
+    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
+
+    expect(discovery.rootModule).toBeUndefined();
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/pages/index.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/layout.tsx",
+        message: "Root layout must default-export a React component.",
+      },
+    ]);
+  });
+
   it("reports duplicate route paths", async () => {
     const cwd = await createFixture({
       "src/pages/users/$id.tsx": "export default function A() { return null; }",

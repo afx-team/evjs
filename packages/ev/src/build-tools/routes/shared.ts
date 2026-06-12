@@ -9,15 +9,41 @@ import type {
 export type RouteAst = ReturnType<typeof parseSync>;
 
 export function parseRouteModule(source: string): RouteAst | null {
+  return parseRouteModuleWithError(source).ast;
+}
+
+export function parseRouteModuleWithError(source: string): {
+  ast: RouteAst | null;
+  error?: unknown;
+} {
   try {
-    return parseSync(source, {
-      syntax: "typescript",
-      tsx: true,
-      target: "esnext",
-    });
-  } catch {
-    return null;
+    return {
+      ast: parseRouteModuleOrThrow(source),
+    };
+  } catch (error) {
+    return { ast: null, error };
   }
+}
+
+export function getParseErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  return "Unknown parse error.";
+}
+
+export function hasDefaultExport(ast: RouteAst): boolean {
+  return ast.body.some(
+    (item) =>
+      item.type === "ExportDefaultDeclaration" ||
+      item.type === "ExportDefaultExpression",
+  );
+}
+
+export function parseRouteModuleOrThrow(source: string): RouteAst {
+  return parseSync(source, {
+    syntax: "typescript",
+    tsx: true,
+    target: "esnext",
+  });
 }
 
 export function getPropertyName(

@@ -48,7 +48,9 @@ components.
 
 `src/pages` is reserved for page route modules, so any `layout` source file
 inside `src/pages` is reported as a convention error. Dynamic route filenames
-use `$param`; bracket segments such as `[id].tsx` are rejected.
+use `$param`; bracket segments such as `[id].tsx` are rejected. Every discovered
+route file must default-export a React component; put non-route helpers in
+underscore-prefixed files or folders.
 
 For MPA output:
 

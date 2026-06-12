@@ -214,6 +214,11 @@ describe("build", () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await fs.promises.writeFile(
+      path.join(cwd, "src/layout.tsx"),
+      "export function Layout() { return null; }",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
       path.join(cwd, "src/pages/index.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
@@ -477,6 +482,35 @@ describe("build", () => {
       ),
     ).rejects.toThrow(
       'Page render mode "ppr" is not supported. PPR is declared with render = "ssr" and prerender = { partial: true }.',
+    );
+    expect(events).not.toContain("bundler.build");
+  });
+
+  it("fails when a page route has no default export", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/index.tsx"),
+      "export const title = 'Home';",
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+
+    await expect(
+      build(
+        {
+          server: false,
+          routing: true,
+        },
+        {
+          cwd,
+          bundler,
+        },
+      ),
+    ).rejects.toThrow(
+      "Page route modules must default-export a React component. Move non-route helpers under an underscore-prefixed file or folder.",
     );
     expect(events).not.toContain("bundler.build");
   });

@@ -1,9 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { PageRouteNode } from "@evjs/shared/manifest";
+import {
+  getParseErrorMessage,
+  hasDefaultExport,
+  parseRouteModuleWithError,
+} from "./routes/shared.js";
 
 export interface DiscoverPageRoutesOptions {
   dir: string;
+  rootLayout?: boolean;
 }
 
 export interface PageRouteDiscoveryDiagnostic {
@@ -31,7 +37,10 @@ export async function discoverPageRoutes(
   const files = await collectSourceFiles(cwd, absoluteDir);
   const routes: PageRouteNode[] = [];
   const diagnostics: PageRouteDiscoveryDiagnostic[] = [];
-  const rootModule = await discoverRootLayout(cwd, absoluteDir, diagnostics);
+  const rootModule =
+    options.rootLayout === false
+      ? undefined
+      : await discoverRootLayout(cwd, absoluteDir, diagnostics);
   const routeByPath = new Map<string, string>();
 
   for (const file of files) {
@@ -60,6 +69,13 @@ export async function discoverPageRoutes(
     }
 
     const routePath = routePathFromSegments(routeFile.segments);
+    const validRouteModule = await validateDefaultExport(file, diagnostics, {
+      file: sourceRel,
+      parseError: "Page route module could not be parsed",
+      missingDefaultExport: createPageRouteDefaultExportDiagnostic(),
+    });
+    if (!validRouteModule) continue;
+
     const previous = routeByPath.get(routePath);
     if (previous) {
       diagnostics.push({
@@ -101,6 +117,14 @@ function createBracketRouteSegmentDiagnostic(segment: string): string {
   return `Dynamic page route segments must use $param filenames. Bracket segment "${segment}" is not supported.`;
 }
 
+function createPageRouteDefaultExportDiagnostic(): string {
+  return "Page route modules must default-export a React component. Move non-route helpers under an underscore-prefixed file or folder.";
+}
+
+function createRootLayoutDefaultExportDiagnostic(): string {
+  return "Root layout must default-export a React component.";
+}
+
 async function discoverRootLayout(
   cwd: string,
   absoluteRouteDir: string,
@@ -127,12 +151,56 @@ async function discoverRootLayout(
 
   try {
     await fs.access(absolute);
+    const validRootLayout = await validateDefaultExport(absolute, diagnostics, {
+      file: expected,
+      parseError: "Root layout module could not be parsed",
+      missingDefaultExport: createRootLayoutDefaultExportDiagnostic(),
+    });
+    if (!validRootLayout) return undefined;
     return toProjectPath(cwd, absolute);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
   }
 
   return undefined;
+}
+
+async function validateDefaultExport(
+  absolute: string,
+  diagnostics: PageRouteDiscoveryDiagnostic[],
+  messages: {
+    file: string;
+    parseError: string;
+    missingDefaultExport: string;
+  },
+): Promise<boolean> {
+  const source = await fs.readFile(absolute, "utf-8");
+  const { ast, error } = parseRouteModuleWithError(source);
+  const file = messages.file.replace(/^\.\//, "");
+
+  if (!ast) {
+    diagnostics.push({
+      level: "error",
+      file,
+      message: `${messages.parseError}: ${formatParseError(error)}`,
+    });
+    return false;
+  }
+
+  if (!hasDefaultExport(ast)) {
+    diagnostics.push({
+      level: "error",
+      file,
+      message: messages.missingDefaultExport,
+    });
+    return false;
+  }
+
+  return true;
+}
+
+function formatParseError(error: unknown): string {
+  return getParseErrorMessage(error).split("\n").find(Boolean)?.trim() ?? "";
 }
 
 async function collectSourceFiles(cwd: string, dir: string): Promise<string[]> {
