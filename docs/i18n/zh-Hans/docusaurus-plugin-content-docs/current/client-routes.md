@@ -70,6 +70,9 @@ export default function UserPage() {
 }
 ```
 
+SPA 和 MPA 模式都会把同一份 `params`、`search` 和 `loaderData` 作为 props
+传给页面组件。页面代码推荐使用 hooks，这样通常不需要额外写 props 类型。
+
 SPA 模式下，页面模块可以导出与页面逻辑相关的页面生命周期，例如
 `loader`、`beforeLoad`、`validateSearch`、`pendingComponent`、`errorComponent`
 和 `notFoundComponent`。evjs 会把这些导出挂到框架托管的 route 上。MPA 模式不处理

@@ -402,10 +402,19 @@ function createReactPageElement(
   }
 
   const pageProps = resolvePageRouteProps(props, route);
+  const componentProps = {
+    ...props,
+    params: pageProps.params,
+    search: pageProps.search,
+    loaderData: pageProps.loaderData,
+  };
   return createElement(
     PageProvider,
     { value: pageProps },
-    createElement(component, props),
+    createElement(
+      component as ComponentType<Record<string, unknown>>,
+      componentProps,
+    ),
   );
 }
 

@@ -1,5 +1,5 @@
 import type { BuildOutput } from "@evjs/shared/manifest";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createReactPageModule,
   createRemoteReactModule,
@@ -38,6 +38,10 @@ vi.mock("react-dom/client", () => ({
     };
   },
 }));
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function Component() {
   return null;
@@ -119,6 +123,44 @@ describe("createReactPageModule", () => {
       kind: "remote",
       id: "crm",
     });
+  });
+
+  it("passes route-derived params and search to MPA page components", async () => {
+    calls.length = 0;
+    renderedElements.length = 0;
+    vi.stubGlobal("location", {
+      pathname: "/posts/42",
+      search: "?tab=comments",
+    });
+    const mod = createReactPageModule({
+      component: Component,
+      render: "csr",
+      hydrate: "load",
+      route: {
+        id: "post",
+        path: "/posts/$postId",
+      },
+    });
+
+    await mod.mount?.({} as Element, {} as never);
+
+    const element = renderedElements[0] as {
+      props?: {
+        value?: unknown;
+        children?: {
+          props?: unknown;
+        };
+      };
+    };
+    const pageProps = {
+      params: { postId: "42" },
+      search: { tab: "comments" },
+      loaderData: undefined,
+    };
+
+    expect(calls).toEqual(["createRoot", "render"]);
+    expect(element.props?.value).toEqual(pageProps);
+    expect(element.props?.children?.props).toEqual(pageProps);
   });
 });
 

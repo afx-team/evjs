@@ -31,6 +31,10 @@ export default function UserPage() {
 }
 ```
 
+The same `params`, `search`, and `loaderData` values are also passed as page
+component props in both SPA and MPA output. Hooks are the recommended
+zero-annotation path.
+
 ### 2. Let evjs Build the Route Entry
 
 When `src/pages` exists and the project does not declare explicit `app`,

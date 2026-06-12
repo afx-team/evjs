@@ -73,6 +73,10 @@ export default function UserPage() {
 }
 ```
 
+evjs also passes the same `params`, `search`, and `loaderData` values to the
+page component as props in both SPA and MPA mode. Hooks are the recommended
+zero-annotation path for page code.
+
 In SPA mode, page modules may export page lifecycle hooks that are useful for
 page logic, such as `loader`, `beforeLoad`, `validateSearch`,
 `pendingComponent`, `errorComponent`, and `notFoundComponent`. evjs attaches
