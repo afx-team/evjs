@@ -1,4 +1,4 @@
-import { definePage, Link, useQuery } from "@evjs/client";
+import { Link, useFileRouteSearch, useQuery } from "@evjs/client";
 import { getPosts } from "../api/data.server";
 
 const styles = {
@@ -16,7 +16,8 @@ export function validateSearch(search: Record<string, unknown>) {
   };
 }
 
-export default definePage(function SearchPage({ search }) {
+export default function SearchPage() {
+  const search = useFileRouteSearch();
   const q = typeof search.q === "string" ? search.q : "";
   const { data: results } = useQuery(getPosts, q || undefined);
 
@@ -64,4 +65,4 @@ export default definePage(function SearchPage({ search }) {
       </div>
     </div>
   );
-});
+}

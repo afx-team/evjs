@@ -390,6 +390,10 @@ function createEntryImport(cwd: string, entry: BuildEntry): string {
     hydrate: entry.metadata.hydrate,
     render: entry.metadata.render,
   });
+  if (entry.metadata.route) {
+    params.set("routeId", entry.metadata.route.id);
+    params.set("routePath", entry.metadata.route.path);
+  }
 
   return createDataUrlEntry(
     createComponentPageSource(component, Object.fromEntries(params)),
@@ -486,6 +490,12 @@ function createComponentPageSource(
   options: Record<string, string>,
 ): string {
   const componentRequest = moduleSpecifier(component);
+  const route = options.routePath
+    ? {
+        id: options.routeId ?? options.routePath,
+        path: options.routePath,
+      }
+    : undefined;
   return [
     `import Component from ${JSON.stringify(componentRequest)};`,
     `import { createReactPageModule, mountReactPage, registerShellModule } from "@evjs/client";`,
@@ -497,6 +507,7 @@ function createComponentPageSource(
     `  component: Component,`,
     `  hydrate: ${JSON.stringify(options.hydrate ?? "load")},`,
     `  render: ${JSON.stringify(options.render ?? "csr")},`,
+    `  route: ${JSON.stringify(route)},`,
     `});`,
     `if (href) registerShellModule(href, mod);`,
     `if (!loadedByShell) {`,
@@ -505,6 +516,7 @@ function createComponentPageSource(
     `    mount: ${JSON.stringify(options.mount ?? "#app")},`,
     `    hydrate: ${JSON.stringify(options.hydrate ?? "load")},`,
     `    render: ${JSON.stringify(options.render ?? "csr")},`,
+    `    route: ${JSON.stringify(route)},`,
     `  });`,
     `}`,
     `export default mod;`,

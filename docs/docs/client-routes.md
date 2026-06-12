@@ -53,19 +53,20 @@ and client entry. No TanStack Router code is added.
 
 ## Pages
 
-Each page module exports a default React component. `definePage()` gives the
-component the file-route prop shape without a route-local type declaration:
+Each page module exports a default React component. Use the file-route hooks
+when page logic needs the current route params, search params, or loader data:
 
 ```tsx
 // src/pages/users/$userId.tsx
-import { definePage, useQuery } from "@evjs/client";
+import { useFileRouteParams, useQuery } from "@evjs/client";
 import { getUser } from "../../api/users.server";
 
-export default definePage(function UserPage({ params }) {
-  const { data: user } = useQuery(getUser, params.userId);
+export default function UserPage() {
+  const { userId } = useFileRouteParams();
+  const { data: user } = useQuery(getUser, userId);
   if (!user) return null;
   return <h1>{user.name}</h1>;
-});
+}
 ```
 
 In SPA mode, page modules may export TanStack route options that are useful for
@@ -76,16 +77,17 @@ are ignored; use normal component/data logic in the page.
 
 ```tsx
 // src/pages/search.tsx
-import { definePage } from "@evjs/client";
+import { useFileRouteSearch } from "@evjs/client";
 
 export const validateSearch = (search: Record<string, unknown>) => ({
   q: typeof search.q === "string" ? search.q : "",
 });
 
-export default definePage(function SearchPage({ search }) {
+export default function SearchPage() {
+  const search = useFileRouteSearch();
   const q = typeof search.q === "string" ? search.q : "";
   return <h1>Search: {q}</h1>;
-});
+}
 ```
 
 ## Layout

@@ -1,4 +1,4 @@
-import { definePage, Link, useQuery } from "@evjs/client";
+import { Link, useFileRouteParams, useQuery } from "@evjs/client";
 import { getUser } from "../../api/users.server";
 
 const cardStyle = {
@@ -9,8 +9,8 @@ const cardStyle = {
 
 const linkStyle = { color: "#2563eb", textDecoration: "none" };
 
-export default definePage(function UserDetailPage({ params }) {
-  const { userId } = params;
+export default function UserDetailPage() {
+  const { userId } = useFileRouteParams();
   const { data: user, isLoading } = useQuery(getUser, userId);
 
   if (isLoading) return <p>Loading user...</p>;
@@ -28,4 +28,4 @@ export default definePage(function UserDetailPage({ params }) {
       </Link>
     </div>
   );
-});
+}

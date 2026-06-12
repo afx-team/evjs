@@ -191,12 +191,10 @@ describe("analyzeRoutes", () => {
 
   it("does not analyze framework-managed client routes from JavaScript", () => {
     const source = `
-      import { definePage } from "@evjs/client";
-
       export const loader = () => "hello";
-      export default definePage(function Home() {
+      export default function Home() {
         return null;
-      });
+      }
     `;
 
     expect(analyzeRoutes(source)).toEqual({

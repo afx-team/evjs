@@ -10,6 +10,7 @@ import {
   useContext,
 } from "react";
 import { createRoot, hydrateRoot, type Root } from "react-dom/client";
+import { type FileRoutePageProps, FileRouteProvider } from "./file-route.js";
 import type {
   ActivationRequest,
   AppContext,
@@ -22,6 +23,7 @@ export interface ReactPageRuntimeOptions {
   mount: string | Element;
   hydrate?: HydrationMode;
   render?: RenderMode;
+  route?: ReactPageRouteContext;
   props?: Record<string, unknown>;
 }
 
@@ -29,9 +31,15 @@ export interface ReactPageMountOptions {
   component: ComponentType;
   hydrate?: HydrationMode;
   render?: RenderMode;
+  route?: ReactPageRouteContext;
   props?:
     | Record<string, unknown>
     | ((ctx?: AppContext) => Record<string, unknown>);
+}
+
+export interface ReactPageRouteContext {
+  id: string;
+  path: string;
 }
 
 export interface RemoteRuntimeContext {
@@ -127,6 +135,7 @@ export function createReactPageModule(
         mountPoint,
         options.component,
         resolvePageProps(options, ctx),
+        options.route,
       );
     },
     hydrate(mountPoint, ctx) {
@@ -135,13 +144,13 @@ export function createReactPageModule(
       if (shouldHydrate(options)) {
         const root = hydrateRoot(
           mountPoint,
-          createElement(options.component, props),
+          createReactPageElement(options.component, props, options.route),
         );
         rootByMountPoint.set(mountPoint, root);
         return;
       }
 
-      mountReactRoot(mountPoint, options.component, props);
+      mountReactRoot(mountPoint, options.component, props, options.route);
     },
     unmount(mountPoint) {
       rootByMountPoint.get(mountPoint)?.unmount();
@@ -259,9 +268,10 @@ function mountReactRoot(
   mountPoint: Element,
   component: ComponentType,
   props: Record<string, unknown>,
+  route?: ReactPageRouteContext,
 ) {
   const root = createRoot(mountPoint);
-  root.render(createElement(component, props));
+  root.render(createReactPageElement(component, props, route));
   rootByMountPoint.set(mountPoint, root);
 }
 
@@ -406,6 +416,106 @@ function pagePropsFromContext(ctx: AppContext): Record<string, unknown> {
         }
       : undefined,
   };
+}
+
+function createReactPageElement(
+  component: ComponentType,
+  props: Record<string, unknown>,
+  route?: ReactPageRouteContext,
+) {
+  if (!shouldProvideFileRouteProps(props, route)) {
+    return createElement(component, props);
+  }
+
+  const fileRouteProps = resolveFileRoutePageProps(props, route);
+  return createElement(
+    FileRouteProvider,
+    { value: fileRouteProps },
+    createElement(component, props),
+  );
+}
+
+function shouldProvideFileRouteProps(
+  props: Record<string, unknown>,
+  route?: ReactPageRouteContext,
+): boolean {
+  return (
+    Boolean(route) ||
+    isRecord(props.params) ||
+    isRecord(props.search) ||
+    "loaderData" in props
+  );
+}
+
+function resolveFileRoutePageProps(
+  props: Record<string, unknown>,
+  explicitRoute?: ReactPageRouteContext,
+): FileRoutePageProps {
+  const route = explicitRoute ?? readRouteContext(props.route);
+  return {
+    params: isStringRecord(props.params)
+      ? props.params
+      : route
+        ? matchRouteParams(route.path, readLocationPathname())
+        : {},
+    search: isRecord(props.search) ? props.search : readLocationSearch(),
+    loaderData: props.loaderData,
+  };
+}
+
+function readRouteContext(value: unknown): ReactPageRouteContext | undefined {
+  if (!isRecord(value)) return undefined;
+  return typeof value.id === "string" && typeof value.path === "string"
+    ? { id: value.id, path: value.path }
+    : undefined;
+}
+
+function readLocationPathname(): string {
+  return globalThis.location?.pathname ?? "/";
+}
+
+function readLocationSearch(): Record<string, string> {
+  const search = globalThis.location?.search;
+  if (!search) return {};
+
+  const result: Record<string, string> = {};
+  for (const [key, value] of new URLSearchParams(search)) {
+    result[key] = value;
+  }
+  return result;
+}
+
+function matchRouteParams(
+  routePath: string,
+  pathname: string,
+): Record<string, string> {
+  const routeSegments = splitPath(routePath);
+  const pathSegments = splitPath(pathname);
+  const params: Record<string, string> = {};
+
+  routeSegments.forEach((segment, index) => {
+    if (!segment.startsWith("$")) return;
+    const name = segment.slice(1) || "_splat";
+    params[name] = decodeURIComponent(pathSegments[index] ?? "");
+  });
+
+  return params;
+}
+
+function splitPath(value: string): string[] {
+  return value
+    .replace(/^\/+|\/+$/g, "")
+    .split("/")
+    .filter(Boolean);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  if (!isRecord(value)) return false;
+  return Object.values(value).every((entry) => typeof entry === "string");
 }
 
 function getRemoteSourceLabel(baseUrl: string | undefined): string {

@@ -1,12 +1,13 @@
-import { definePage, Link, useQuery } from "@evjs/client";
+import { Link, useFileRouteParams, useQuery } from "@evjs/client";
 import { getUser } from "../../api/data.server";
 
 const styles = {
   card: { border: "1px solid #e5e7eb", borderRadius: 8, padding: "1rem" },
 };
 
-export default definePage(function UserProfile({ params }) {
-  const { data: user } = useQuery(getUser, params.username);
+export default function UserProfile() {
+  const { username } = useFileRouteParams();
+  const { data: user } = useQuery(getUser, username);
 
   if (!user) return <p>Loading...</p>;
   return (
@@ -17,4 +18,4 @@ export default definePage(function UserProfile({ params }) {
       <Link to="/posts">Back to posts</Link>
     </div>
   );
-});
+}

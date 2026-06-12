@@ -1,4 +1,4 @@
-import { definePage, Link, useQuery } from "@evjs/client";
+import { Link, useFileRouteParams, useQuery } from "@evjs/client";
 import { getPost } from "../../api/data.server";
 
 const styles = {
@@ -12,8 +12,9 @@ const styles = {
   },
 };
 
-export default definePage(function PostDetail({ params }) {
-  const { data: post } = useQuery(getPost, params.postId);
+export default function PostDetail() {
+  const { postId } = useFileRouteParams();
+  const { data: post } = useQuery(getPost, postId);
 
   if (!post) return <p>Loading...</p>;
   return (
@@ -35,4 +36,4 @@ export default definePage(function PostDetail({ params }) {
       </div>
     </div>
   );
-});
+}

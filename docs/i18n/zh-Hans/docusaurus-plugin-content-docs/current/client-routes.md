@@ -51,20 +51,21 @@ TanStack Router。
 
 ## 页面
 
-每个页面模块默认导出 React 组件。`definePage()` 会为组件提供 file-route props
-的上下文类型，用户代码不需要声明 route 参数类型，也不需要创建 route object、
-route tree 或 router 注册。
+每个页面模块默认导出 React 组件。页面逻辑需要当前 route 参数、search 参数或
+loader data 时，使用 file-route hooks；用户代码不需要创建 route object、route tree
+或 router 注册。
 
 ```tsx
 // src/pages/users/$userId.tsx
-import { definePage, useQuery } from "@evjs/client";
+import { useFileRouteParams, useQuery } from "@evjs/client";
 import { getUser } from "../../api/users.server";
 
-export default definePage(function UserPage({ params }) {
-  const { data: user } = useQuery(getUser, params.userId);
+export default function UserPage() {
+  const { userId } = useFileRouteParams();
+  const { data: user } = useQuery(getUser, userId);
   if (!user) return null;
   return <h1>{user.name}</h1>;
-});
+}
 ```
 
 SPA 模式下，页面模块可以导出与页面逻辑相关的 TanStack route options，例如
@@ -74,16 +75,17 @@ SPA 模式下，页面模块可以导出与页面逻辑相关的 TanStack route 
 
 ```tsx
 // src/pages/search.tsx
-import { definePage } from "@evjs/client";
+import { useFileRouteSearch } from "@evjs/client";
 
 export const validateSearch = (search: Record<string, unknown>) => ({
   q: typeof search.q === "string" ? search.q : "",
 });
 
-export default definePage(function SearchPage({ search }) {
+export default function SearchPage() {
+  const search = useFileRouteSearch();
   const q = typeof search.q === "string" ? search.q : "";
   return <h1>Search: {q}</h1>;
-});
+}
 ```
 
 ## 布局

@@ -14,9 +14,17 @@ export type {
   FileRouteModule,
   FileRoutePageComponent,
   FileRoutePageProps,
+  FileRouteProviderProps,
   FileRouteRootModule,
 } from "./file-route.js";
-export { createFileRouteApp, definePage } from "./file-route.js";
+export {
+  createFileRouteApp,
+  FileRouteProvider,
+  useFileRouteContext,
+  useFileRouteLoaderData,
+  useFileRouteParams,
+  useFileRouteSearch,
+} from "./file-route.js";
 export {
   getFnQueryKey,
   getFnQueryOptions,
@@ -166,6 +174,7 @@ export type { PageRuntimeOptions } from "./page.js";
 export { startPageRuntime } from "./page.js";
 export type {
   ReactPageMountOptions,
+  ReactPageRouteContext,
   ReactPageRuntimeOptions,
   RemoteReactModuleExports,
   RemoteReactProps,

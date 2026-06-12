@@ -378,6 +378,8 @@ function getPageClientEntry(page: {
   entry?: string;
   component?: string;
   app?: string;
+  path?: string;
+  routeId?: string;
   render?: RenderMode;
   componentModel?: ComponentModel;
   prerender?: PrerenderConfig;
@@ -403,6 +405,9 @@ function getPageClientEntry(page: {
         mount: page.mount ?? "#app",
         hydrate: page.hydrate ?? defaultHydrate(page.render ?? "csr"),
         render: page.render ?? "csr",
+        ...(page.path
+          ? { route: { id: page.routeId ?? page.id, path: page.path } }
+          : {}),
       },
     };
   return undefined;

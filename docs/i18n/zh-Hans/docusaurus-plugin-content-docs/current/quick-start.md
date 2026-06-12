@@ -59,13 +59,14 @@ my-app/
 
 ```tsx
 // src/pages/users/$id.tsx
-import { definePage, useQuery } from "@evjs/client";
+import { useFileRouteParams, useQuery } from "@evjs/client";
 import { getUser } from "../../api/users.server";
 
-export default definePage(function UserPage({ params }) {
-  const { data } = useQuery(getUser, params.id);
+export default function UserPage() {
+  const { id } = useFileRouteParams();
+  const { data } = useQuery(getUser, id);
   return <main>{data?.name}</main>;
-});
+}
 ```
 
 当项目存在 `src/pages` 且没有 `src/main.tsx` 时，evjs 会自动基于文件树构建一个

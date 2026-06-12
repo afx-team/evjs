@@ -4,6 +4,7 @@ module.exports = function componentPageLoader() {
   this.cacheable?.();
 
   const options = this.getOptions ? this.getOptions() : {};
+  const route = options.route;
 
   return [
     `import Component from ${JSON.stringify(`./${path.basename(this.resourcePath)}?evjs-component-page-source`)};`,
@@ -16,6 +17,7 @@ module.exports = function componentPageLoader() {
     `  component: Component,`,
     `  hydrate: ${JSON.stringify(options.hydrate ?? "load")},`,
     `  render: ${JSON.stringify(options.render ?? "csr")},`,
+    `  route: ${JSON.stringify(route)},`,
     `});`,
     `if (href) registerShellModule(href, mod);`,
     `if (!loadedByShell) {`,
@@ -24,6 +26,7 @@ module.exports = function componentPageLoader() {
     `    mount: ${JSON.stringify(options.mount ?? "#app")},`,
     `    hydrate: ${JSON.stringify(options.hydrate ?? "load")},`,
     `    render: ${JSON.stringify(options.render ?? "csr")},`,
+    `    route: ${JSON.stringify(route)},`,
     `  });`,
     `}`,
     `export default mod;`,

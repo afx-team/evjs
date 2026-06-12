@@ -201,6 +201,10 @@ export interface ReactComponentPageEntryMetadata {
   mount: string;
   hydrate: HydrationMode;
   render: RenderMode;
+  route?: {
+    id: string;
+    path: string;
+  };
 }
 
 export interface RemoteClientEntryMetadata {

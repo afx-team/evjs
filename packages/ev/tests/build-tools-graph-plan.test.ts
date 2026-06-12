@@ -214,6 +214,7 @@ describe("createAppGraph and createBuildPlan", () => {
           metadata: expect.objectContaining({
             type: "react-component-page",
             component: "./src/pages/index.tsx",
+            route: { id: "index", path: "/" },
           }),
         }),
         expect.objectContaining({
@@ -224,6 +225,7 @@ describe("createAppGraph and createBuildPlan", () => {
           metadata: expect.objectContaining({
             type: "react-component-page",
             component: "./src/pages/about.tsx",
+            route: { id: "about", path: "/about" },
           }),
         }),
       ]),

@@ -1,4 +1,4 @@
-import { definePage, Link, useQuery } from "@evjs/client";
+import { Link, useFileRouteSearch, useQuery } from "@evjs/client";
 import { getUsers } from "../api/users.server";
 
 const cardStyle = {
@@ -18,7 +18,8 @@ export function validateSearch(search: Record<string, unknown>) {
   };
 }
 
-export default definePage(function SearchPage({ search }) {
+export default function SearchPage() {
+  const search = useFileRouteSearch();
   const tab =
     search.tab === "favorites" || search.tab === "recent" ? search.tab : "all";
   const { data: users = [] } = useQuery(getUsers);
@@ -54,4 +55,4 @@ export default definePage(function SearchPage({ search }) {
       </ul>
     </div>
   );
-});
+}

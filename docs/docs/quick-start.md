@@ -61,13 +61,14 @@ my-app/
 
 ```tsx
 // src/pages/users/$id.tsx
-import { definePage, useQuery } from "@evjs/client";
+import { useFileRouteParams, useQuery } from "@evjs/client";
 import { getUser } from "../../api/users.server";
 
-export default definePage(function UserPage({ params }) {
-  const { data } = useQuery(getUser, params.id);
+export default function UserPage() {
+  const { id } = useFileRouteParams();
+  const { data } = useQuery(getUser, id);
   return <main>{data?.name}</main>;
-});
+}
 ```
 
 When `src/pages` exists and `src/main.tsx` does not, evjs automatically builds a

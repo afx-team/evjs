@@ -312,6 +312,7 @@ function createComponentPageLoaderOptions(
     mount: metadata.mount,
     hydrate: metadata.hydrate,
     render: metadata.render,
+    ...(metadata.route ? { route: metadata.route } : {}),
   };
 }
 

@@ -1,19 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   createFileRouteApp,
-  definePage,
-  type FileRoutePageProps,
+  useFileRouteContext,
+  useFileRouteLoaderData,
+  useFileRouteParams,
+  useFileRouteSearch,
 } from "../src/index";
 
-describe("definePage", () => {
-  it("returns the page component unchanged", () => {
-    function Page(
-      _props: FileRoutePageProps<{ userId: string }, { tab: string }, string>,
-    ) {
-      return null;
-    }
-
-    expect(definePage(Page)).toBe(Page);
+describe("file route hooks", () => {
+  it("exports framework-managed route data hooks", () => {
+    expect(useFileRouteContext).toBeTypeOf("function");
+    expect(useFileRouteParams).toBeTypeOf("function");
+    expect(useFileRouteSearch).toBeTypeOf("function");
+    expect(useFileRouteLoaderData).toBeTypeOf("function");
   });
 });
 
