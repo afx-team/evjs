@@ -299,7 +299,6 @@ test.describe("full-features", () => {
       expect.objectContaining({
         render: "csr",
         rendering: {
-          mode: "csr",
           component: "client",
           html: "client",
           streaming: false,
@@ -313,7 +312,6 @@ test.describe("full-features", () => {
         path: "/dashboard",
         render: "ssr",
         rendering: {
-          mode: "ssr",
           component: "server",
           html: "server",
           streaming: false,
@@ -328,7 +326,6 @@ test.describe("full-features", () => {
         render: "ssr",
         componentModel: "rsc",
         rendering: {
-          mode: "ssr",
           component: "rsc",
           html: "server",
           streaming: true,
@@ -341,7 +338,6 @@ test.describe("full-features", () => {
       expect.objectContaining({
         render: "csr",
         rendering: expect.objectContaining({
-          mode: "csr",
           component: "client",
           html: "client",
         }),
@@ -356,7 +352,6 @@ test.describe("full-features", () => {
           delivery: "stream",
         }),
         rendering: {
-          mode: "ssr",
           component: "server",
           html: "partial",
           prerender: "partial",
