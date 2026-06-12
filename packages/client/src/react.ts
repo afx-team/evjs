@@ -10,7 +10,7 @@ import {
   useContext,
 } from "react";
 import { createRoot, hydrateRoot, type Root } from "react-dom/client";
-import { type FileRoutePageProps, FileRouteProvider } from "./file-route.js";
+import { type PageProps, PageProvider } from "./file-route.js";
 import type {
   ActivationRequest,
   AppContext,
@@ -401,10 +401,10 @@ function createReactPageElement(
     return createElement(component, props);
   }
 
-  const fileRouteProps = resolveFileRoutePageProps(props, route);
+  const pageProps = resolvePageRouteProps(props, route);
   return createElement(
-    FileRouteProvider,
-    { value: fileRouteProps },
+    PageProvider,
+    { value: pageProps },
     createElement(component, props),
   );
 }
@@ -421,10 +421,10 @@ function shouldProvideFileRouteProps(
   );
 }
 
-function resolveFileRoutePageProps(
+function resolvePageRouteProps(
   props: Record<string, unknown>,
   explicitRoute?: ReactPageRouteContext,
-): FileRoutePageProps {
+): PageProps {
   const route = explicitRoute ?? readRouteContext(props.route);
   return {
     params: isStringRecord(props.params)

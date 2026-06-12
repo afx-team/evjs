@@ -4,26 +4,18 @@
 
 export { ServerFunctionError } from "@evjs/shared";
 export type {
-  CreateFileRouteAppOptions,
-  FileRouteApp,
-  FileRouteDefinition,
-  FileRouteModule,
-  FileRoutePageComponent,
-  FileRoutePageProps,
-  FileRouteProviderProps,
-  FileRouteRootModule,
+  CreatePagesAppOptions,
   PageComponent,
+  PageDefinition,
+  PageModule,
   PageProps,
   PageProviderProps,
+  PagesApp,
+  RootLayoutModule,
 } from "./file-route.js";
 export {
-  createFileRouteApp,
-  FileRouteProvider,
+  createPagesApp,
   PageProvider,
-  useFileRouteContext,
-  useFileRouteLoaderData,
-  useFileRouteParams,
-  useFileRouteSearch,
   usePageContext,
   usePageLoaderData,
   usePageParams,

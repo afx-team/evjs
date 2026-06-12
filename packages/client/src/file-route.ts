@@ -12,7 +12,7 @@ import {
 import { type App, createApp } from "./app.js";
 import { createAppRootRoute } from "./context.js";
 
-export interface FileRoutePageProps<
+export interface PageProps<
   TParams extends Record<string, string> = Record<string, string>,
   TSearch extends Record<string, unknown> = Record<string, unknown>,
   TLoaderData = unknown,
@@ -22,61 +22,25 @@ export interface FileRoutePageProps<
   loaderData: TLoaderData;
 }
 
-export type PageProps<
-  TParams extends Record<string, string> = Record<string, string>,
-  TSearch extends Record<string, unknown> = Record<string, unknown>,
-  TLoaderData = unknown,
-> = FileRoutePageProps<TParams, TSearch, TLoaderData>;
-
-export type FileRoutePageComponent<
-  TParams extends Record<string, string> = Record<string, string>,
-  TSearch extends Record<string, unknown> = Record<string, unknown>,
-  TLoaderData = unknown,
-> = ComponentType<FileRoutePageProps<TParams, TSearch, TLoaderData>>;
-
 export type PageComponent<
   TParams extends Record<string, string> = Record<string, string>,
   TSearch extends Record<string, unknown> = Record<string, unknown>,
   TLoaderData = unknown,
-> = FileRoutePageComponent<TParams, TSearch, TLoaderData>;
+> = ComponentType<PageProps<TParams, TSearch, TLoaderData>>;
 
-export interface FileRouteProviderProps<
+export interface PageProviderProps<
   TParams extends Record<string, string> = Record<string, string>,
   TSearch extends Record<string, unknown> = Record<string, unknown>,
   TLoaderData = unknown,
 > {
-  value: FileRoutePageProps<TParams, TSearch, TLoaderData>;
+  value: PageProps<TParams, TSearch, TLoaderData>;
   children?: ReactNode;
 }
 
-export type PageProviderProps<
-  TParams extends Record<string, string> = Record<string, string>,
-  TSearch extends Record<string, unknown> = Record<string, unknown>,
-  TLoaderData = unknown,
-> = FileRouteProviderProps<TParams, TSearch, TLoaderData>;
+const PageContext = createContext<PageProps | undefined>(undefined);
 
-const FileRouteContext = createContext<FileRoutePageProps | undefined>(
-  undefined,
-);
-
-export function FileRouteProvider({ value, children }: FileRouteProviderProps) {
-  return createElement(FileRouteContext.Provider, { value }, children);
-}
-
-export const PageProvider = FileRouteProvider;
-
-export function useFileRouteContext<
-  TParams extends Record<string, string> = Record<string, string>,
-  TSearch extends Record<string, unknown> = Record<string, unknown>,
-  TLoaderData = unknown,
->(): FileRoutePageProps<TParams, TSearch, TLoaderData> {
-  const ctx = useContext(FileRouteContext);
-  if (!ctx) {
-    throw new Error(
-      "[evjs] Page route data hooks must be used inside an evjs page.",
-    );
-  }
-  return ctx as FileRoutePageProps<TParams, TSearch, TLoaderData>;
+export function PageProvider({ value, children }: PageProviderProps) {
+  return createElement(PageContext.Provider, { value }, children);
 }
 
 export function usePageContext<
@@ -84,13 +48,13 @@ export function usePageContext<
   TSearch extends Record<string, unknown> = Record<string, unknown>,
   TLoaderData = unknown,
 >(): PageProps<TParams, TSearch, TLoaderData> {
-  return useFileRouteContext<TParams, TSearch, TLoaderData>();
-}
-
-export function useFileRouteParams<
-  TParams extends Record<string, string> = Record<string, string>,
->(): TParams {
-  return useFileRouteContext<TParams>().params;
+  const ctx = useContext(PageContext);
+  if (!ctx) {
+    throw new Error(
+      "[evjs] Page route data hooks must be used inside an evjs page.",
+    );
+  }
+  return ctx as PageProps<TParams, TSearch, TLoaderData>;
 }
 
 export function usePageParams<
@@ -99,24 +63,10 @@ export function usePageParams<
   return usePageContext<TParams>().params;
 }
 
-export function useFileRouteSearch<
-  TSearch extends Record<string, unknown> = Record<string, unknown>,
->(): TSearch {
-  return useFileRouteContext<Record<string, string>, TSearch>().search;
-}
-
 export function usePageSearch<
   TSearch extends Record<string, unknown> = Record<string, unknown>,
 >(): TSearch {
   return usePageContext<Record<string, string>, TSearch>().search;
-}
-
-export function useFileRouteLoaderData<TLoaderData = unknown>(): TLoaderData {
-  return useFileRouteContext<
-    Record<string, string>,
-    Record<string, unknown>,
-    TLoaderData
-  >().loaderData;
 }
 
 export function usePageLoaderData<TLoaderData = unknown>(): TLoaderData {
@@ -127,8 +77,9 @@ export function usePageLoaderData<TLoaderData = unknown>(): TLoaderData {
   >().loaderData;
 }
 
-export interface FileRouteModule {
-  default?: FileRoutePageComponent;
+/** @internal Framework-generated SPA bootstrap contract. */
+export interface PageModule {
+  default?: PageComponent;
   beforeLoad?: (...args: never[]) => unknown;
   loader?: (...args: never[]) => unknown;
   validateSearch?: (...args: never[]) => unknown;
@@ -137,28 +88,31 @@ export interface FileRouteModule {
   notFoundComponent?: ComponentType;
 }
 
-export interface FileRouteRootModule {
+/** @internal Framework-generated SPA bootstrap contract. */
+export interface RootLayoutModule {
   default?: ComponentType<{ children?: ReactNode }>;
 }
 
-export interface FileRouteDefinition {
+/** @internal Framework-generated SPA bootstrap contract. */
+export interface PageDefinition {
   path: string;
-  module: FileRouteModule;
+  module: PageModule;
 }
 
-export interface CreateFileRouteAppOptions {
-  routes: FileRouteDefinition[];
-  rootModule?: FileRouteRootModule;
+/** @internal Framework-generated SPA bootstrap contract. */
+export interface CreatePagesAppOptions {
+  routes: PageDefinition[];
+  rootModule?: RootLayoutModule;
 }
 
-export interface FileRouteApp {
+/** @internal Framework-generated SPA bootstrap contract. */
+export interface PagesApp {
   app: App<unknown>;
   routeTree: unknown;
 }
 
-export function createFileRouteApp(
-  options: CreateFileRouteAppOptions,
-): FileRouteApp {
+/** @internal Framework-generated SPA bootstrap. */
+export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
   function RootRoute() {
     const outlet = createElement(Outlet);
     const RootComponent = options.rootModule?.default;
@@ -174,7 +128,7 @@ export function createFileRouteApp(
       getParentRoute: () => rootRoute,
       path: definition.path,
       ...pickRouteOptions(definition.module),
-      component: function EvFileRoute() {
+      component: function EvPageRoute() {
         const Component = definition.module.default;
         if (!Component) {
           throw new Error(
@@ -193,7 +147,7 @@ export function createFileRouteApp(
         };
 
         return createElement(
-          FileRouteProvider,
+          PageProvider,
           { value: pageProps },
           createElement(Component, pageProps),
         );
@@ -207,7 +161,7 @@ export function createFileRouteApp(
   return { app, routeTree };
 }
 
-function pickRouteOptions(mod: FileRouteModule) {
+function pickRouteOptions(mod: PageModule) {
   return {
     ...(typeof mod.beforeLoad === "function"
       ? { beforeLoad: mod.beforeLoad }

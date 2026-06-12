@@ -14,7 +14,7 @@ function createFileRouteEntrySource(options, loaderContext) {
   const mount = options.mount || "#app";
   const rootModule = options.rootModule;
   const imports = [
-    `import { createFileRouteApp } from "@evjs/client";`,
+    `import { createPagesApp } from "@evjs/client";`,
     rootModule
       ? `import * as rootModule from ${JSON.stringify(withPageQuery(toLoaderRelativeRequest(rootModule, loaderContext)))};`
       : "",
@@ -32,7 +32,7 @@ function createFileRouteEntrySource(options, loaderContext) {
   return [
     ...imports,
     ``,
-    `const { app } = createFileRouteApp({`,
+    `const { app } = createPagesApp({`,
     rootModule ? `  rootModule,` : "",
     `  routes: [${routeDefinitions.join(", ")}],`,
     `});`,

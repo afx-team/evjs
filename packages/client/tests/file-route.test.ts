@@ -1,22 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  createFileRouteApp,
-  useFileRouteContext,
-  useFileRouteLoaderData,
-  useFileRouteParams,
-  useFileRouteSearch,
+  createPagesApp,
   usePageContext,
   usePageLoaderData,
   usePageParams,
   usePageSearch,
 } from "../src/index";
 
-describe("file route hooks", () => {
+describe("page route hooks", () => {
   it("exports framework-managed route data hooks", () => {
-    expect(useFileRouteContext).toBeTypeOf("function");
-    expect(useFileRouteParams).toBeTypeOf("function");
-    expect(useFileRouteSearch).toBeTypeOf("function");
-    expect(useFileRouteLoaderData).toBeTypeOf("function");
     expect(usePageContext).toBeTypeOf("function");
     expect(usePageParams).toBeTypeOf("function");
     expect(usePageSearch).toBeTypeOf("function");
@@ -24,13 +16,13 @@ describe("file route hooks", () => {
   });
 });
 
-describe("createFileRouteApp", () => {
+describe("createPagesApp", () => {
   it("creates an app from page modules without exposing route tree setup", () => {
     function Home() {
       return null;
     }
 
-    const { app, routeTree } = createFileRouteApp({
+    const { app, routeTree } = createPagesApp({
       routes: [{ path: "/", module: { default: Home } }],
     });
 

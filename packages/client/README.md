@@ -70,7 +70,6 @@ function Posts() {
 
 ### Routing
 - `usePageParams`, `usePageSearch`, and `usePageLoaderData`: Read framework-managed route data from page components.
-- `createFileRouteApp`: Internal SPA bootstrap used by generated route entries.
 - `Link`, `Navigate`, `useNavigate`, and `redirect`: Navigation helpers for page components and route lifecycle exports.
 
 ### Query
