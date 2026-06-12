@@ -17,7 +17,7 @@ afterEach(async () => {
 describe("discoverFileRoutes", () => {
   it("discovers SPA file routes from src/pages", async () => {
     const cwd = await createFixture({
-      "src/pages/__root.tsx": "export default function Root() { return null; }",
+      "src/pages/layout.tsx": "export default function Root() { return null; }",
       "src/pages/index.tsx": "export default function Home() { return null; }",
       "src/pages/about.tsx": "export default function About() { return null; }",
       "src/pages/users/$userId.tsx":
@@ -32,7 +32,7 @@ describe("discoverFileRoutes", () => {
 
     const discovery = await discoverFileRoutes(cwd, { dir: "./src/pages" });
 
-    expect(discovery.rootModule).toBe("./src/pages/__root.tsx");
+    expect(discovery.rootModule).toBe("./src/pages/layout.tsx");
     expect(discovery.routes).toEqual([
       {
         id: "index",
@@ -53,6 +53,48 @@ describe("discoverFileRoutes", () => {
         id: "users_userId",
         path: "/users/$userId",
         module: "./src/pages/users/$userId.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([]);
+  });
+
+  it("keeps __root.tsx as a legacy root layout fallback", async () => {
+    const cwd = await createFixture({
+      "src/pages/__root.tsx": "export default function Root() { return null; }",
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+    });
+
+    const discovery = await discoverFileRoutes(cwd, { dir: "./src/pages" });
+
+    expect(discovery.rootModule).toBe("./src/pages/__root.tsx");
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/pages/index.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([]);
+  });
+
+  it("prefers layout.tsx over the legacy __root.tsx file", async () => {
+    const cwd = await createFixture({
+      "src/pages/layout.tsx":
+        "export default function Layout() { return null; }",
+      "src/pages/__root.tsx": "export default function Root() { return null; }",
+      "src/pages/posts/layout.tsx":
+        "export default function PostsLayout() { return null; }",
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+    });
+
+    const discovery = await discoverFileRoutes(cwd, { dir: "./src/pages" });
+
+    expect(discovery.rootModule).toBe("./src/pages/layout.tsx");
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/pages/index.tsx",
       },
     ]);
     expect(discovery.diagnostics).toEqual([]);

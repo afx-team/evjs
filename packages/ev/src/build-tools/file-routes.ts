@@ -20,7 +20,10 @@ export interface FileRouteDiscovery {
 }
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
-const ROUTELESS_FILES = new Set(["__root"]);
+const ROOT_LAYOUT_FILE_PRIORITIES = new Map([
+  ["layout", 0],
+  ["__root", 1],
+]);
 
 export async function discoverFileRoutes(
   cwd: string,
@@ -31,6 +34,7 @@ export async function discoverFileRoutes(
   const routes: FileRouteNode[] = [];
   const diagnostics: FileRouteDiscoveryDiagnostic[] = [];
   let rootModule: string | undefined;
+  let rootModulePriority = Number.POSITIVE_INFINITY;
   const routeByPath = new Map<string, string>();
 
   for (const file of files) {
@@ -39,8 +43,16 @@ export async function discoverFileRoutes(
     const routeFile = toRouteFile(routeRel);
     if (!routeFile) continue;
 
-    if (ROUTELESS_FILES.has(routeFile.name)) {
-      rootModule ??= sourceRel;
+    const rootLayoutPriority = getRootLayoutPriority(routeFile);
+    if (rootLayoutPriority !== undefined) {
+      if (rootLayoutPriority < rootModulePriority) {
+        rootModule = sourceRel;
+        rootModulePriority = rootLayoutPriority;
+      }
+      continue;
+    }
+
+    if (isRoutelessFileName(routeFile.name)) {
       continue;
     }
 
@@ -120,10 +132,22 @@ function toRouteFile(routeRel: string):
   const segments = withoutExt.split("/").filter(Boolean);
   if (segments.length === 0) return undefined;
   const name = segments[segments.length - 1] ?? "";
-  if (name.startsWith("_") && !ROUTELESS_FILES.has(name)) return undefined;
+  if (name.startsWith("_") && !isRoutelessFileName(name)) return undefined;
   if (name === "index") segments.pop();
 
   return { name, segments };
+}
+
+function getRootLayoutPriority(routeFile: {
+  name: string;
+  segments: string[];
+}): number | undefined {
+  if (routeFile.segments.length !== 1) return undefined;
+  return ROOT_LAYOUT_FILE_PRIORITIES.get(routeFile.name);
+}
+
+function isRoutelessFileName(name: string): boolean {
+  return ROOT_LAYOUT_FILE_PRIORITIES.has(name);
 }
 
 function routePathFromSegments(segments: string[]): string {

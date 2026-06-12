@@ -47,7 +47,7 @@ my-app/
 ├── ev.config.ts            # Optional config
 ├── src/
 │   ├── pages/              # Page routes
-│   │   ├── __root.tsx      # Root layout
+│   │   ├── layout.tsx      # Optional SPA root layout
 │   │   ├── index.tsx       # /
 │   │   └── users/$id.tsx   # /users/$id
 │   └── api/                # Server-only modules

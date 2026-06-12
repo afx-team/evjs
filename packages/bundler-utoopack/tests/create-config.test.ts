@@ -72,7 +72,7 @@ describe("createUtoopackConfig", () => {
         entry: "./src/pages/index.tsx",
         html: "./index.html",
         mount: "#app",
-        rootModule: "./src/pages/__root.tsx",
+        rootModule: "./src/pages/layout.tsx",
         routes: [
           {
             id: "index",
@@ -110,7 +110,7 @@ describe("createUtoopackConfig", () => {
               options: {
                 type: "file-route-app",
                 mount: "#app",
-                rootModule: "./src/pages/__root.tsx",
+                rootModule: "./src/pages/layout.tsx",
                 routes: [
                   {
                     id: "index",

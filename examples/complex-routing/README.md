@@ -12,16 +12,15 @@ npm run dev
 
 | File | Purpose |
 |------|---------|
-| `src/main.tsx` | Route tree assembly |
-| `src/pages/__root.tsx` | Root layout with navigation |
-| `src/pages/home.tsx` | Index route |
+| `src/pages/layout.tsx` | SPA root layout with navigation |
+| `src/pages/index.tsx` | Index route |
 | `src/pages/posts/` | Nested routes with loader |
 
 ## What It Demonstrates
 
 - Dynamic route params (`$postId`)
-- Pathless layout routes
+- SPA root layout
 - Route loaders with `queryClient.ensureQueryData`
 - Search params with `validateSearch`
 - Catch-all 404 route
-- Type-safe `route.useParams()`
+- Page hooks such as `usePageParams()` and `usePageSearch()`

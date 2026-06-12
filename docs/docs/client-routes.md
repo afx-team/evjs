@@ -11,7 +11,7 @@ write `.evjs` temp route files.
 src/
 ├── api/*.server.ts        # Optional server functions
 └── pages/
-    ├── __root.tsx         # Optional root layout
+    ├── layout.tsx         # Optional SPA root layout
     ├── index.tsx          # /
     ├── about.tsx          # /about
     ├── users/$userId.tsx  # /users/$userId
@@ -91,12 +91,12 @@ export default function SearchPage() {
 
 ## Layout
 
-For SPA mode, `src/pages/__root.tsx` is optional. When present, its default
+For SPA mode, `src/pages/layout.tsx` is optional. When present, its default
 export wraps the current page as `children`, so user code does not need TanStack
 Router's `<Outlet />`.
 
 ```tsx
-// src/pages/__root.tsx
+// src/pages/layout.tsx
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <main>

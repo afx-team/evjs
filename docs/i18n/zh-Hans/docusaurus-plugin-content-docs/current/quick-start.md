@@ -45,7 +45,7 @@ my-app/
 ├── ev.config.ts            # 可选配置
 ├── src/
 │   ├── pages/              # 文件路由
-│   │   ├── __root.tsx      # 根布局
+│   │   ├── layout.tsx      # 可选 SPA 根布局
 │   │   ├── index.tsx       # /
 │   │   └── users/$id.tsx   # /users/$id
 │   └── api/                # 服务端模块
