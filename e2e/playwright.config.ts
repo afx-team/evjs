@@ -5,6 +5,9 @@ type ExtTestOptions = PlaywrightTestOptions & { bundlerName?: string };
 export default defineConfig<ExtTestOptions>({
   testDir: ".",
   testMatch: "cases/*.ts",
+  reporter: process.env.CI
+    ? [["list"], ["html", { outputFolder: "playwright-report", open: "never" }]]
+    : "list",
   timeout: 60_000,
   retries: 0,
   use: {

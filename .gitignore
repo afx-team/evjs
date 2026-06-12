@@ -9,6 +9,7 @@ packages/server/esm
 esm
 .evjs
 test-results
+playwright-report
 evjs-dev
 
 # Docusaurus
