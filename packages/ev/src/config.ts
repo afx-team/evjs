@@ -359,7 +359,7 @@ export const CONFIG_DEFAULTS = {
   port: 3000,
   serverPort: 3001,
   serverBasePath: DEFAULT_SERVER_BASE_PATH,
-  clientProxy: "@evjs/client",
+  clientProxy: "@evjs/client/internal",
   serverRegister: "@evjs/server/register",
   routingDir: "./src/pages",
   routingMode: "spa",

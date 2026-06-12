@@ -24,7 +24,7 @@ describe("createUtoopackConfig", () => {
         },
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client",
+          clientProxy: "@evjs/client/internal",
           serverRegister: "@evjs/server/register",
         },
         dev: {
@@ -236,7 +236,7 @@ describe("createUtoopackConfig", () => {
         },
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client",
+          clientProxy: "@evjs/client/internal",
           serverRegister: "@evjs/server/register",
         },
         dev: {
@@ -314,7 +314,7 @@ describe("createUtoopackConfig", () => {
         },
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client",
+          clientProxy: "@evjs/client/internal",
           serverRegister: "@evjs/server/register",
         },
         dev: {

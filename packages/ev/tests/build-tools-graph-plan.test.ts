@@ -361,7 +361,7 @@ describe("createAppGraph and createBuildPlan", () => {
         },
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client",
+          clientProxy: "@evjs/client/internal",
           serverRegister: "@evjs/server/register",
         },
       },
@@ -1286,7 +1286,7 @@ describe("createAppGraph and createBuildPlan", () => {
         basePath: "/__evjs",
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client",
+          clientProxy: "@evjs/client/internal",
           serverRegister: "@evjs/server/register",
         },
       },
@@ -1499,7 +1499,7 @@ describe("createAppGraph and createBuildPlan", () => {
         basePath: "/__evjs",
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client",
+          clientProxy: "@evjs/client/internal",
           serverRegister: "@evjs/server/register",
         },
       },
@@ -1923,7 +1923,7 @@ function createConfig(overrides: Partial<TestConfig> = {}): TestConfig {
       basePath: "/__evjs",
       functionRuntime: {
         endpoint: "/__evjs/fn",
-        clientProxy: "@evjs/client",
+        clientProxy: "@evjs/client/internal",
         serverRegister: "@evjs/server/register",
       },
     },
