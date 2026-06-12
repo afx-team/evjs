@@ -5,6 +5,8 @@
  * helpers from `@evjs/client` instead.
  */
 
+export type { PageRuntimeOptions } from "./page.js";
+export { startPageRuntime } from "./page.js";
 export type {
   CreatePagesAppOptions,
   PageDefinition,

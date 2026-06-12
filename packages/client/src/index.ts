@@ -65,8 +65,6 @@ declare module "@tanstack/react-router" {
   interface Register extends ClientRegister {}
 }
 
-export type { PageRuntimeOptions } from "./page.js";
-export { startPageRuntime } from "./page.js";
 export type {
   RemoteRuntimeContext,
   RscDebugPayload,
@@ -81,12 +79,21 @@ export {
   useRemoteContext,
 } from "./react.js";
 export type {
+  RemoteAppActivationRequest,
+  RemoteAppContext,
   RemoteAppHookOptions,
   RemoteAppHookResult,
+  RemoteAppManifestLoadContext,
+  RemoteAppModule,
   RemoteAppProps,
   RemoteAppRuntimeController,
+  RemoteAppRuntimeErrorContext,
+  RemoteAppRuntimeHooks,
   RemoteAppRuntimeOptions,
-  RemoteAppShellOptions,
+  RemoteAppSharedNegotiation,
+  RemoteAppSharedResolution,
+  RemoteAppSharedScope,
+  RemoteAppSharedScopeEntry,
   RemoteAppState,
   RemoteAppStatus,
   RemoteAppTargetOptions,

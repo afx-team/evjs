@@ -1,6 +1,6 @@
 import type { BuildOutput } from "@evjs/shared/manifest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { startPageRuntime } from "../src/page.js";
+import { startPageRuntime } from "../src/internal";
 import {
   __resetForTesting,
   callServer,

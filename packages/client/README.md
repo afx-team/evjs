@@ -84,8 +84,12 @@ function Posts() {
 - `credentials` / `headers`: Supported HTTP defaults; fetch `mode` is intentionally not configurable.
 - `initTransport({ adapter })`: Replace transport behavior with a custom adapter.
 
+### Remote
+- `useRemoteHost()` and `RemoteApp`: Mount a remote app from a remote manifest.
+- `startRemoteAppRuntime({ runtime })`: Advanced host runtime hooks for shared scope, manifest loading, module loading, and error handling.
+
 ### Runtime
-- `startPageRuntime()`: Generic framework-managed page runtime.
+- Page runtime bootstrap is framework-owned and imported through `@evjs/client/internal`.
 - Manifest shell primitives such as `createShell()`, `createPageDriver()`, and `createHistoryDriver()` are framework-owned and imported through `@evjs/client/internal`.
 - Generated component-page and remote bootstrap APIs are also framework-owned and imported through `@evjs/client/internal`.
 

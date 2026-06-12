@@ -1,50 +1,143 @@
-import type { BuildOutput } from "@evjs/shared/manifest";
-import * as React from "react";
 import type {
-  ActivationRequest,
-  AppContext,
-  AppModule,
-  RemoteSharedNegotiationContext,
-  SharedScope,
-  Shell,
-  ShellOptions,
-} from "./shell.js";
+  AppOutput,
+  BuildOutput,
+  PageOutput,
+  RemoteEntry,
+  RemoteManifest,
+  RemoteOutput,
+} from "@evjs/shared/manifest";
+import * as React from "react";
 import { createShell } from "./shell.js";
 
 export type RemoteAppStatus = "idle" | "loading" | "mounted" | "error";
+
+export interface RemoteAppActivationRequest {
+  appId?: string;
+  pageId?: string;
+  remoteId?: string;
+  remoteEntryId?: string;
+  buildId?: string;
+  url?: string | URL;
+  mountPoint?: Element;
+  hydrate?: boolean;
+}
+
+export interface RemoteAppModule {
+  init?: (
+    sharedScope: RemoteAppSharedScope,
+    ctx: RemoteAppContext,
+  ) => void | Promise<void>;
+  mount?: (mountPoint: Element, ctx: RemoteAppContext) => void | Promise<void>;
+  hydrate?: (
+    mountPoint: Element,
+    ctx: RemoteAppContext,
+  ) => void | Promise<void>;
+  unmount?: (
+    mountPoint: Element,
+    ctx: RemoteAppContext,
+  ) => void | Promise<void>;
+}
+
+export interface RemoteAppContext {
+  id: string;
+  kind: "app" | "page" | "remote";
+  manifest: BuildOutput;
+  output: AppOutput | PageOutput | RemoteOutput;
+  request: RemoteAppActivationRequest;
+  remote?: {
+    id: string;
+    entryId: string;
+    manifest: RemoteManifest;
+    entry: RemoteEntry;
+    shared: RemoteAppSharedResolution;
+  };
+}
+
+export interface RemoteAppManifestLoadContext {
+  id: string;
+  request: RemoteAppActivationRequest;
+  manifest: BuildOutput;
+}
+
+export type RemoteAppSharedScope = Record<string, RemoteAppSharedScopeEntry>;
+
+export interface RemoteAppSharedScopeEntry {
+  version?: string;
+  singleton?: boolean;
+  eager?: boolean;
+  loaded?: boolean;
+  from?: string;
+  value?: unknown;
+  get?: () => unknown | Promise<unknown>;
+}
+
+export interface RemoteAppSharedResolution {
+  provided: Record<string, RemoteAppSharedScopeEntry>;
+  missing: string[];
+  incompatible: Array<{
+    name: string;
+    shareKey?: string;
+    requiredVersion: string;
+    providedVersion?: string;
+    reason: "version" | "singleton";
+  }>;
+}
+
+export interface RemoteAppSharedNegotiation {
+  remoteId: string;
+  dependencies: string[];
+  resolution: RemoteAppSharedResolution;
+  manifest: RemoteManifest;
+  request: RemoteAppActivationRequest;
+}
+
+export interface RemoteAppRuntimeErrorContext {
+  phase: "resolve" | "load" | "init" | "mount" | "hydrate" | "unmount";
+  app: RemoteAppContext;
+}
 
 export interface RemoteAppTargetOptions {
   remote: string;
   manifest: string;
   manifestQueryParam?: string | false;
   activeWhen?: string | string[];
-  request?: string | URL | ActivationRequest;
+  request?: string | URL | RemoteAppActivationRequest;
 }
 
-export interface RemoteAppShellOptions {
-  shared?: SharedScope;
-  sharedPolicy?: ShellOptions["sharedPolicy"];
-  loadModule?: (href: string, ctx: AppContext) => Promise<AppModule>;
-  loadRemoteManifest?: ShellOptions["loadRemoteManifest"];
-  onRemoteSharedNegotiated?: ShellOptions["onRemoteSharedNegotiated"];
-  onError?: ShellOptions["onError"];
+export interface RemoteAppRuntimeHooks {
+  shared?: RemoteAppSharedScope;
+  sharedPolicy?: "warn" | "error";
+  loadModule?: (
+    href: string,
+    ctx: RemoteAppContext,
+  ) => Promise<RemoteAppModule>;
+  loadRemoteManifest?: (
+    remote: RemoteOutput,
+    ctx: RemoteAppManifestLoadContext,
+  ) => Promise<RemoteManifest>;
+  onRemoteSharedNegotiated?: (
+    event: RemoteAppSharedNegotiation,
+  ) => void | Promise<void>;
+  onError?: (
+    error: unknown,
+    ctx: RemoteAppRuntimeErrorContext,
+  ) => void | Promise<void>;
 }
 
 export interface RemoteAppRuntimeOptions extends RemoteAppTargetOptions {
   mount: string | Element | (() => Element | null);
-  shell?: RemoteAppShellOptions;
+  runtime?: RemoteAppRuntimeHooks;
 }
 
 export interface RemoteAppRuntimeController {
-  shell: Shell;
   dispose(): Promise<void>;
 }
 
 export interface RemoteAppState {
   status: RemoteAppStatus;
   error?: unknown;
-  sharedNegotiations: RemoteSharedNegotiationContext[];
-  latestSharedNegotiation?: RemoteSharedNegotiationContext;
+  sharedNegotiations: RemoteAppSharedNegotiation[];
+  latestSharedNegotiation?: RemoteAppSharedNegotiation;
   sharedSummary?: string;
 }
 
@@ -84,22 +177,21 @@ export function createRemoteAppManifest(
 export async function startRemoteAppRuntime(
   options: RemoteAppRuntimeOptions,
 ): Promise<RemoteAppRuntimeController> {
-  const shellOptions = options.shell ?? {};
+  const runtime = options.runtime ?? {};
   const shell = createShell({
     manifest: createRemoteAppManifest(options),
-    shared: withDefaultReactSharedScope(shellOptions.shared),
-    sharedPolicy: shellOptions.sharedPolicy,
-    loadModule: shellOptions.loadModule,
-    loadRemoteManifest: shellOptions.loadRemoteManifest,
+    shared: withDefaultReactSharedScope(runtime.shared),
+    sharedPolicy: runtime.sharedPolicy,
+    loadModule: runtime.loadModule,
+    loadRemoteManifest: runtime.loadRemoteManifest,
     resolveMountPoint: () => resolveRemoteAppMountPoint(options.mount),
-    onRemoteSharedNegotiated: shellOptions.onRemoteSharedNegotiated,
-    onError: shellOptions.onError,
+    onRemoteSharedNegotiated: runtime.onRemoteSharedNegotiated,
+    onError: runtime.onError,
   });
 
   await shell.activate(resolveRemoteAppRequest(options));
 
   return {
-    shell,
     dispose() {
       return shell.dispose();
     },
@@ -135,7 +227,7 @@ export function useRemoteHost(
       activeWhen: activeWhenKey ? activeWhenKey.split("\u0000") : undefined,
       request: parseRequestKey(requestKey),
       mount: () => mountRef.current,
-      shell: {
+      runtime: {
         onRemoteSharedNegotiated(event) {
           if (!disposed) {
             setState((current) => ({
@@ -213,7 +305,7 @@ export function resolveRemoteAppManifestUrl(
 }
 
 export function formatRemoteSharedNegotiation(
-  event: RemoteSharedNegotiationContext,
+  event: RemoteAppSharedNegotiation,
 ): string {
   return `${event.remoteId}: ${event.dependencies.join(", ")} -> ${
     getRemoteSharedVersion(event) ?? "missing"
@@ -221,7 +313,7 @@ export function formatRemoteSharedNegotiation(
 }
 
 export function getRemoteSharedVersion(
-  event: RemoteSharedNegotiationContext,
+  event: RemoteAppSharedNegotiation,
   ...names: string[]
 ): string | undefined {
   const candidates =
@@ -237,7 +329,7 @@ export function getRemoteSharedVersion(
 
 function resolveRemoteAppRequest(
   options: RemoteAppRuntimeOptions,
-): ActivationRequest {
+): RemoteAppActivationRequest {
   const remoteId = options.remote;
   const request = options.request ?? { remoteId };
 
@@ -306,7 +398,7 @@ function parseRequestKey(
     const value = JSON.parse(key) as {
       type?: "url" | "activation";
       url?: string;
-    } & ActivationRequest;
+    } & RemoteAppActivationRequest;
     if (value.type === "url") return value.url;
     return {
       appId: value.appId,
@@ -322,7 +414,9 @@ function parseRequestKey(
   }
 }
 
-function withDefaultReactSharedScope(shared: SharedScope | undefined) {
+function withDefaultReactSharedScope(
+  shared: RemoteAppSharedScope | undefined,
+): RemoteAppSharedScope {
   return {
     react: {
       version: React.version,

@@ -110,7 +110,7 @@ describe("remote app runtime", () => {
       activeWhen: "/crm/*",
       request: "/crm/customers",
       mount: {} as Element,
-      shell: {
+      runtime: {
         shared: {
           react: {
             version: "19.2.5",

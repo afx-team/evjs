@@ -19,6 +19,7 @@ describe("page route hooks", () => {
   it("does not expose generated SPA bootstrap APIs from the public client entry", () => {
     expect("createPagesApp" in client).toBe(false);
     expect("PageProvider" in client).toBe(false);
+    expect("startPageRuntime" in client).toBe(false);
     expect("createReactPageModule" in client).toBe(false);
     expect("mountReactPage" in client).toBe(false);
     expect("createRemoteReactModule" in client).toBe(false);
