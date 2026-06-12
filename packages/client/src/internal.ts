@@ -14,3 +14,19 @@ export type {
   RootLayoutModule,
 } from "./page-route.js";
 export { createPagesApp, PageProvider } from "./page-route.js";
+export type {
+  ReactPageMountOptions,
+  ReactPageRouteContext,
+  ReactPageRuntimeOptions,
+  RemoteReactModuleExports,
+  RemoteReactProps,
+  RemoteRuntimeSharedContext,
+} from "./react.js";
+export {
+  createReactPageModule,
+  createRemoteReactModule,
+  createRemoteRuntimeContext,
+  mountReactPage,
+} from "./react.js";
+export type { ShellModuleRegistration } from "./shell.js";
+export { registerShellModule } from "./shell.js";

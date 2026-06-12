@@ -1,5 +1,6 @@
 import type { BuildOutput } from "@evjs/shared/manifest";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { registerShellModule } from "../src/internal";
 import {
   type AppModule,
   createHistoryDriver,
@@ -8,7 +9,6 @@ import {
   type HistoryDriverOptions,
   loadSharedDependency,
   registerSharedDependency,
-  registerShellModule,
 } from "../src/shell.js";
 
 const manifest: BuildOutput = {

@@ -6,8 +6,7 @@ module.exports = function componentPageLoader() {
 
   return [
     `import Component from ${JSON.stringify(this.resourcePath)};`,
-    `import { createReactPageModule, mountReactPage } from "@evjs/client";`,
-    `import { registerShellModule } from "@evjs/client";`,
+    `import { createReactPageModule, mountReactPage, registerShellModule } from "@evjs/client/internal";`,
     ``,
     `const currentScript = document.currentScript;`,
     `const href = currentScript && "src" in currentScript ? currentScript.src : undefined;`,

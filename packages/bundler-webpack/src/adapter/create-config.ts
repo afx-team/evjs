@@ -466,7 +466,7 @@ function createRemoteClientSource(app: string): string {
   const appRequest = moduleSpecifier(app);
   return [
     `import * as mod from ${JSON.stringify(appRequest)};`,
-    `import { createRemoteReactModule, registerShellModule } from "@evjs/client";`,
+    `import { createRemoteReactModule, registerShellModule } from "@evjs/client/internal";`,
     ``,
     `const currentScript = document.currentScript;`,
     `const href = currentScript && "src" in currentScript ? currentScript.src : undefined;`,
@@ -498,7 +498,7 @@ function createComponentPageSource(
     : undefined;
   return [
     `import Component from ${JSON.stringify(componentRequest)};`,
-    `import { createReactPageModule, mountReactPage, registerShellModule } from "@evjs/client";`,
+    `import { createReactPageModule, mountReactPage, registerShellModule } from "@evjs/client/internal";`,
     ``,
     `const currentScript = document.currentScript;`,
     `const href = currentScript && "src" in currentScript ? currentScript.src : undefined;`,

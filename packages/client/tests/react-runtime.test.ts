@@ -4,6 +4,8 @@ import {
   createReactPageModule,
   createRemoteReactModule,
   createRemoteRuntimeContext,
+} from "../src/internal";
+import {
   fetchRscDebugPayload,
   fetchRscFlight,
   loadRscDebugPage,

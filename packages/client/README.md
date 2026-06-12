@@ -87,9 +87,9 @@ function Posts() {
 ### Runtime
 - `createShell()`, `createPageDriver()`, and `createHistoryDriver()`: Manifest-driven shell APIs.
 - `startPageRuntime()`: Generic framework-managed page runtime.
-- `createReactPageModule()` and `mountReactPage()`: React page runtime adapter used by component pages.
+- Generated component-page and remote bootstrap APIs are framework-owned and imported through `@evjs/client/internal`.
 
-All client runtime APIs are exported from `@evjs/client`.
+Application-facing client runtime APIs are exported from `@evjs/client`.
 
 ## License
 

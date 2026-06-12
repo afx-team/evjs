@@ -68,25 +68,15 @@ declare module "@tanstack/react-router" {
 export type { PageRuntimeOptions } from "./page.js";
 export { startPageRuntime } from "./page.js";
 export type {
-  ReactPageMountOptions,
-  ReactPageRouteContext,
-  ReactPageRuntimeOptions,
-  RemoteReactModuleExports,
-  RemoteReactProps,
   RemoteRuntimeContext,
-  RemoteRuntimeSharedContext,
   RscDebugPayload,
   RscDebugPayloadMountOptions,
   RscFlightFetchOptions,
 } from "./react.js";
 export {
-  createReactPageModule,
-  createRemoteReactModule,
-  createRemoteRuntimeContext,
   fetchRscDebugPayload,
   fetchRscFlight,
   loadRscDebugPage,
-  mountReactPage,
   mountRscDebugPayload,
   useRemoteContext,
 } from "./react.js";
@@ -149,7 +139,6 @@ export {
   createShell,
   loadSharedDependency,
   registerSharedDependency,
-  registerShellModule,
 } from "./shell.js";
 export type {
   HeaderFactory,

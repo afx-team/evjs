@@ -4,7 +4,7 @@ module.exports = function remoteClientLoader() {
 
   return [
     `import * as mod from ${JSON.stringify(app)};`,
-    `import { createRemoteReactModule, registerShellModule } from "@evjs/client";`,
+    `import { createRemoteReactModule, registerShellModule } from "@evjs/client/internal";`,
     ``,
     `const currentScript = document.currentScript;`,
     `const href = currentScript && "src" in currentScript ? currentScript.src : undefined;`,
