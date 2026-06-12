@@ -29,7 +29,7 @@ export default defineConfig({
 ## 路由
 
 `src/pages` 是主要客户端路由模型。SPA 模式会从页面文件构建一个
-TanStack Router 驱动的应用：
+框架托管的应用：
 
 ```ts
 export default defineConfig({

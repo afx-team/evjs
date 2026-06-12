@@ -1,8 +1,8 @@
 # 客户端路由
 
 evjs 以 `src/pages` 作为客户端路由的唯一事实来源。应用页面写在
-页面文件中；框架会发现这些文件，并按配置生成一个 TanStack Router 驱动的
-SPA，或生成多个不带路由器的 MPA 页面。evjs 不会写入 `.evjs` 临时路由文件。
+页面文件中；框架会发现这些文件，并按配置生成一个框架托管的 SPA，
+或生成多个不带路由器的 MPA 页面。evjs 不会写入 `.evjs` 临时路由文件。
 
 ## 目录结构
 
@@ -50,13 +50,12 @@ export default defineConfig({
 ```
 
 MPA 模式下，每个发现到的页面都会生成独立 HTML 文档和客户端 entry，不会引入
-TanStack Router。
+客户端路由器配置。
 
 ## 页面
 
 每个页面模块默认导出 React 组件。页面逻辑需要当前 route 参数、search 参数或
-loader data 时，使用 page hooks；用户代码不需要创建 route object、route tree
-或 router 注册。
+loader data 时，使用 page hooks；生成的路由胶水由框架托管。
 
 ```tsx
 // src/pages/users/$userId.tsx
@@ -71,10 +70,10 @@ export default function UserPage() {
 }
 ```
 
-SPA 模式下，页面模块可以导出与页面逻辑相关的 TanStack route options，例如
+SPA 模式下，页面模块可以导出与页面逻辑相关的页面生命周期，例如
 `loader`、`beforeLoad`、`validateSearch`、`pendingComponent`、`errorComponent`
-和 `notFoundComponent`。evjs 会把这些导出挂到内部生成的 route 上。MPA 模式不处理
-这些 router options，页面按普通 React 组件和数据逻辑编写。
+和 `notFoundComponent`。evjs 会把这些导出挂到框架托管的 route 上。MPA 模式不处理
+这些生命周期，页面按普通 React 组件和数据逻辑编写。
 
 ```tsx
 // src/pages/search.tsx
@@ -94,7 +93,7 @@ export default function SearchPage() {
 ## 布局
 
 SPA 模式下，`src/layout.tsx` 是可选根布局。默认导出会以 `children`
-包裹当前页面，因此用户代码不需要引入 TanStack Router 的 `<Outlet />`。
+包裹当前页面，因此用户代码不需要引入路由 outlet 组件。
 
 布局约定只用于 SPA，且只有一个根文件：`src/layout.tsx`。`src/layout/index.tsx`
 不是别名。MPA 模式不消费框架 layout 文件；需要公共视觉包裹时，在各页面里导入普通组件即可。
@@ -119,7 +118,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 ## 导航
 
-页面内可以使用普通 `<a>`，也可以使用 `@evjs/client` 的 `Link`。
+页面内可以使用普通 `<a>`，也可以使用 `@evjs/client` 的 `Link`。导航 helper
+使用同一套文件路径约定来描述 path 和 params。
 
 ```tsx
 import { Link } from "@evjs/client";

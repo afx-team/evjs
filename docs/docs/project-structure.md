@@ -41,8 +41,8 @@ This shape covers the complete framework surface:
 
 - `ev.config.ts` customizes routing mode, server paths, remotes, plugins, or
   explicit page outputs only when defaults are not enough.
-- `pages/` is the client route source of truth. SPA mode maps it to an internal
-  TanStack Router tree; MPA mode maps it to independent page entries.
+- `pages/` is the client route source of truth. SPA mode maps it to a
+  framework-owned app entry; MPA mode maps it to independent page entries.
 - `layout.tsx` is only the optional SPA root layout. MPA pages should import
   shared components directly when they need common chrome.
 - Rendering metadata lives with page modules.
@@ -80,7 +80,7 @@ export default defineConfig({
 ```
 
 Use `routing: { mode: "mpa" }` when every route should be emitted as its own
-HTML document without TanStack Router. Use the lower-level `pages` config only
+HTML document without SPA router setup. Use the lower-level `pages` config only
 for page outputs that do not map cleanly to `src/pages`.
 
 ## Page Modules

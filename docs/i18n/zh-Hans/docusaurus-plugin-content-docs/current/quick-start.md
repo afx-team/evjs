@@ -70,8 +70,8 @@ export default function UserPage() {
 ```
 
 当项目存在 `src/pages`，且项目没有声明显式的 `app`、`pages` 或 `remote`
-配置时，evjs 会自动基于文件树构建一个 TanStack Router 驱动的 SPA。用户不需要创建
-route object、route tree 或全局 router 注册。
+配置时，evjs 会自动基于文件树构建一个 SPA。用户不需要创建
+路由胶水；这些内容由框架生成和托管。
 
 ## MPA 模式
 
@@ -88,7 +88,7 @@ export default defineConfig({
 });
 ```
 
-每个页面都会生成独立 HTML 文档和客户端 entry，不引入 TanStack Router。
+每个页面都会生成独立 HTML 文档和客户端 entry，不引入客户端路由器配置。
 `src/layout.tsx` 约定只用于 SPA；MPA 页面需要公共外框时，应像普通 React 代码一样组合共享组件。
 
 ## 包列表

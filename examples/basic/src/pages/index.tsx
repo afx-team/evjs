@@ -44,8 +44,8 @@ export default function UsersPage() {
       <div style={cardStyle}>
         <h2>Routing Patterns</h2>
         <p style={{ color: "#475569" }}>
-          Page files cover static, dynamic-param, and search-param pages without
-          a user-authored route tree.
+          Page files cover static, dynamic-param, and search-param pages with
+          framework-managed routing glue.
         </p>
         <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
           <Link to="/about" style={linkStyle}>

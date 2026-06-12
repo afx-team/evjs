@@ -38,7 +38,7 @@ my-evjs-app/
 这棵目录覆盖完整框架能力：
 
 - `ev.config.ts` 只在默认值不够时自定义 routing 模式、服务端路径、远程应用、插件或显式页面输出。
-- `pages/` 是客户端路由事实来源。SPA 模式会映射到内部 TanStack Router tree；MPA 模式会映射到独立页面 entry。
+- `pages/` 是客户端路由事实来源。SPA 模式会映射到框架托管的 app entry；MPA 模式会映射到独立页面 entry。
 - `layout.tsx` 只作为可选 SPA 根布局。MPA 页面需要公共外框时，应直接导入普通共享组件。
 - 渲染元信息放在页面模块旁边。
 - `api/*.server.ts` 放 server functions。
@@ -74,7 +74,7 @@ export default defineConfig({
 });
 ```
 
-当每个路由都应该输出独立 HTML 文档且不需要 TanStack Router 时，使用
+当每个路由都应该输出独立 HTML 文档且不需要客户端路由器配置时，使用
 `routing: { mode: "mpa" }`。只有页面输出无法自然映射到 `src/pages` 时，才使用更底层的
 `pages` 配置。
 

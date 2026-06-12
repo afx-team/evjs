@@ -11,12 +11,12 @@ evjs 是一个零配置的 React 全栈框架，提供基于页面的客户端�
 - **构建器**：默认 Utoopack，webpack 作为新架构能力验证 adapter；
 - **运行时/服务端/部署 adapter**：消费框架 manifest，不读取 bundler stats。
 
-SPA 页面路由在框架内部使用 TanStack Router，以保留 loader、search 和 params 语义。MPA 页面路由使用 page runtime，不引入客户端路由器。
+SPA 页面路由把导航、loader、search 和 params 语义保留在框架内部。MPA 页面路由使用 page runtime，不引入客户端路由器。
 
 ## 特性
 
 - **零配置页面路由** —— 项目没有声明显式 `app`、`pages` 或 `remote` 配置时，`ev dev` / `ev build` 会发现 `src/pages`。
-- **SPA 与 MPA 模式** —— `routing.mode: "spa"` 生成一个 TanStack Router 驱动的 app；`"mpa"` 生成多个无路由器页面。
+- **SPA 与 MPA 模式** —— `routing.mode: "spa"` 生成一个框架托管的 app；`"mpa"` 生成多个无路由器页面。
 - **框架托管页面** —— 页面模块可以把 CSR/SSR/SSG/PPR/RSC 渲染元信息写在组件旁边。
 - **服务端函数** —— `"use server"` 模块变成浏览器可调用的 RPC stub。
 - **服务端路由** —— 通过 `createRoute()` 编写标准 Web `Request`/`Response` route handler。

@@ -20,7 +20,7 @@ const posts = [
   {
     id: "3",
     title: "Routing Patterns",
-    body: "evjs uses TanStack Router for type-safe routing...",
+    body: "evjs keeps route params and navigation type-safe while pages stay simple...",
     author: "alice",
     tags: ["routing", "tutorial"],
   },

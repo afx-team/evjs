@@ -30,8 +30,8 @@ The server function endpoint is derived from `server.basePath`; there is no sepa
 
 ## Routing
 
-`src/pages` is the primary client-routing model. SPA mode builds one TanStack
-Router-backed app from those page files:
+`src/pages` is the primary client-routing model. SPA mode builds one
+framework-owned app from those page files:
 
 ```ts
 export default defineConfig({

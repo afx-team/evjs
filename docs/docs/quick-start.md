@@ -72,9 +72,8 @@ export default function UserPage() {
 ```
 
 When `src/pages` exists and the project does not declare explicit `app`,
-`pages`, or `remote` config, evjs automatically builds a TanStack Router-backed
-SPA from the file tree. Router objects, route trees, and global router
-registrations stay inside the framework.
+`pages`, or `remote` config, evjs automatically builds an SPA from the file
+tree. The generated routing glue stays inside the framework.
 
 ## MPA Mode
 
@@ -92,7 +91,7 @@ export default defineConfig({
 ```
 
 Each page is emitted as its own HTML document and client entry without
-TanStack Router. The `src/layout.tsx` convention is SPA-only; MPA pages compose
+SPA router setup. The `src/layout.tsx` convention is SPA-only; MPA pages compose
 shared wrappers as normal components.
 
 ## Packages

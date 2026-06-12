@@ -13,13 +13,13 @@ The framework keeps a clear split between:
 - **bundlers**: Utoopack by default, webpack as the validation adapter for newer framework capabilities;
 - **runtime/server/deploy adapters**: consume the framework manifest instead of reading bundler stats.
 
-SPA page routes use TanStack Router internally for loader/search/params
-semantics. MPA page routes use the page runtime without adding a router.
+SPA page routes keep navigation, loader, search, and params semantics inside
+the framework. MPA page routes use the page runtime without adding a router.
 
 ## Features
 
 - **Zero-config page routes** — `ev dev` / `ev build` discover `src/pages` unless the project declares explicit `app`, `pages`, or `remote` config.
-- **SPA and MPA modes** — `routing.mode: "spa"` builds one TanStack Router-backed app; `"mpa"` builds independent router-free pages.
+- **SPA and MPA modes** — `routing.mode: "spa"` builds one framework-owned app; `"mpa"` builds independent router-free pages.
 - **Framework pages** — page modules can declare CSR/SSR/SSG/PPR/RSC rendering metadata next to the component.
 - **Server functions** — `"use server"` modules become browser-callable RPC stubs.
 - **Server routes** — standard Web `Request`/`Response` route handlers via `createRoute()`.

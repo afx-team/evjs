@@ -2,8 +2,8 @@
 
 evjs uses `src/pages` as the client-routing source of truth. Application code
 lives in page files; the framework discovers those files and either builds one
-TanStack Router-backed SPA or one router-free MPA page per file. evjs does not
-write `.evjs` temp route files.
+framework-owned SPA or one router-free MPA page per file. evjs does not write
+`.evjs` temp route files.
 
 ## Project Structure
 
@@ -53,7 +53,7 @@ export default defineConfig({
 ```
 
 In MPA mode every discovered page is emitted as an independent HTML document
-and client entry. No TanStack Router code is added.
+and client entry. No client router setup is added.
 
 ## Pages
 
@@ -73,10 +73,10 @@ export default function UserPage() {
 }
 ```
 
-In SPA mode, page modules may export TanStack route options that are useful for
+In SPA mode, page modules may export page lifecycle hooks that are useful for
 page logic, such as `loader`, `beforeLoad`, `validateSearch`,
 `pendingComponent`, `errorComponent`, and `notFoundComponent`. evjs attaches
-those exports to the generated internal route. In MPA mode these router options
+those exports to the framework-managed route. In MPA mode these lifecycle hooks
 are ignored; use normal component/data logic in the page.
 
 ```tsx
@@ -97,8 +97,8 @@ export default function SearchPage() {
 ## Layout
 
 For SPA mode, `src/layout.tsx` is optional. When present, its default
-export wraps the current page as `children`, so user code does not need TanStack
-Router's `<Outlet />`.
+export wraps the current page as `children`, so user code does not need a router
+outlet component.
 
 The layout convention is SPA-only and has exactly one root file:
 `src/layout.tsx`. `src/layout/index.tsx` is not an alias. MPA mode does not
@@ -128,8 +128,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 ## Navigation
 
 Navigation can use ordinary anchors or `Link` from `@evjs/client`. Route files
-remain the source of truth; users do not create route objects, route trees, or
-global router registrations.
+remain the source of truth, and navigation helpers use the same file-path
+convention for paths and params.
 
 ```tsx
 import { Link } from "@evjs/client";
