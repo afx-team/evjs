@@ -101,8 +101,15 @@ test.describe("mpa", () => {
           css: expect.any(Array),
         }),
         render: "csr",
+        hydrate: "load",
+        rendering: expect.objectContaining({
+          mode: "csr",
+          component: "client",
+          html: "client",
+          hydrate: "load",
+        }),
         module: expect.objectContaining({
-          type: "entry",
+          type: "react-component",
           href: expect.stringMatching(/\.js$/),
         }),
       }),
@@ -112,8 +119,15 @@ test.describe("mpa", () => {
           css: expect.any(Array),
         }),
         render: "csr",
+        hydrate: "load",
+        rendering: expect.objectContaining({
+          mode: "csr",
+          component: "client",
+          html: "client",
+          hydrate: "load",
+        }),
         module: expect.objectContaining({
-          type: "entry",
+          type: "react-component",
           href: expect.stringMatching(/\.js$/),
         }),
       }),

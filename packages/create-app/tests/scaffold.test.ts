@@ -52,16 +52,21 @@ describe("create-app scaffolding", () => {
         `${template} should have index.html`,
       ).toBe(true);
 
-      const hasSpaEntry = fs.existsSync(
-        path.join(templateDir, "src", "main.tsx"),
-      );
-      const hasMpaEntries =
-        fs.existsSync(path.join(templateDir, "src", "home", "main.tsx")) &&
-        fs.existsSync(path.join(templateDir, "src", "about", "main.tsx"));
+      const pagesDir = path.join(templateDir, "src", "pages");
+      const hasFileRoutes =
+        fs.existsSync(pagesDir) &&
+        fs
+          .readdirSync(pagesDir, { recursive: true })
+          .some(
+            (file) =>
+              typeof file === "string" &&
+              /\.(?:tsx|ts|jsx|js)$/.test(file) &&
+              !file.endsWith(".d.ts"),
+          );
 
       expect(
-        hasSpaEntry || hasMpaEntries,
-        `${template} should have either src/main.tsx or MPA page entries`,
+        hasFileRoutes,
+        `${template} should have at least one source file route`,
       ).toBe(true);
     }
   });

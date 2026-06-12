@@ -70,8 +70,8 @@ test.describe("basic", () => {
   test("displays correct heading", async ({ page, baseURL }) => {
     await page.goto(baseURL);
 
-    await expect(
-      page.getByText("Users (fetched via direct server function call)"),
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("heading", { name: "Users" })).toBeVisible({
+      timeout: 10_000,
+    });
   });
 });

@@ -18,14 +18,14 @@ npm run build
 
 | File | Purpose |
 |------|---------|
-| `ev.config.ts` | Enables MPA mode and defines page entries |
+| `ev.config.ts` | Enables file-route MPA mode |
 | `index.html` | Shared HTML template for all pages |
-| `src/home/main.tsx` | Home page React entry |
-| `src/about/main.tsx` | About page React entry |
+| `src/pages/home.tsx` | Home page component |
+| `src/pages/about.tsx` | About page component |
 
 ## What It Demonstrates
 
-- Multi-page build via `pages`
-- Independent React entry for each page
+- Multi-page build via `fileRoutes.mode: "mpa"`
+- Independent router-free React page for each file route
 - Shared HTML template reused by all pages
 - Static links between pages
