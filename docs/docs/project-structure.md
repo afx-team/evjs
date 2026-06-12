@@ -43,6 +43,8 @@ This shape covers the complete framework surface:
   explicit page outputs only when defaults are not enough.
 - `pages/` is the client route source of truth. SPA mode maps it to an internal
   TanStack Router tree; MPA mode maps it to independent page entries.
+- `layout.tsx` is only the optional SPA root layout. MPA pages should import
+  shared components directly when they need common chrome.
 - Rendering metadata lives with page modules.
 - `api/*.server.ts` contains server functions.
 - `api/*.routes.ts` contains standard HTTP route handlers.

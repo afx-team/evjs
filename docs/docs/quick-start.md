@@ -16,7 +16,7 @@ Both arguments are optional — if omitted, the CLI prompts interactively.
 | `basic` | Routing + server functions |
 | `mpa` | Multi-page application setup |
 | `api-routes` | Programmatic REST API routes via `createRoute()` |
-| `complex-routing` | Params, search, layouts, loaders, nested routes |
+| `complex-routing` | Params, search, root layout, loaders, nested paths |
 | `with-tailwind` | Tailwind CSS via PostCSS |
 | `with-trpc` | tRPC interop example |
 | `with-sqlite` | Full-stack CRUD with SQLite |
@@ -92,7 +92,8 @@ export default defineConfig({
 ```
 
 Each page is emitted as its own HTML document and client entry without
-TanStack Router.
+TanStack Router. The `src/layout.tsx` convention is SPA-only; MPA pages compose
+shared wrappers as normal components.
 
 ## Packages
 

@@ -16,7 +16,7 @@ cd my-app && npm install
 | `basic` | 路由 + 服务端函数 |
 | `mpa` | 多页面应用模板 |
 | `api-routes` | 通过 `createRoute()` 构建程序化 REST API |
-| `complex-routing` | 参数、搜索、布局、加载器、嵌套路由 |
+| `complex-routing` | 参数、搜索、根布局、加载器、嵌套路径 |
 | `with-tailwind` | 通过 PostCSS 使用 Tailwind CSS |
 | `with-trpc` | tRPC 互操作示例 |
 | `with-sqlite` | 基于 SQLite 的全栈 CRUD |
@@ -89,6 +89,7 @@ export default defineConfig({
 ```
 
 每个页面都会生成独立 HTML 文档和客户端 entry，不引入 TanStack Router。
+`src/layout.tsx` 约定只用于 SPA；MPA 页面需要公共外框时，应像普通 React 代码一样组合共享组件。
 
 ## 包列表
 

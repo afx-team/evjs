@@ -100,8 +100,10 @@ For SPA mode, `src/layout.tsx` is optional. When present, its default
 export wraps the current page as `children`, so user code does not need TanStack
 Router's `<Outlet />`.
 
-The layout convention is a single root file. `src/layout/index.tsx` is not an
-alias.
+The layout convention is SPA-only and has exactly one root file:
+`src/layout.tsx`. `src/layout/index.tsx` is not an alias. MPA mode does not
+consume a framework layout file; share visual wrappers by importing ordinary
+components from each page.
 
 `src/pages` is only for route pages. Do not put `layout.tsx` anywhere under
 `src/pages`; evjs reports that as a convention error instead of turning it into

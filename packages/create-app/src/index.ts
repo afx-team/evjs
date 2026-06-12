@@ -40,7 +40,7 @@ program
               value: "api-routes",
             },
             {
-              title: "Complex Routing (params, search, layouts, loaders)",
+              title: "Complex Routing (params, search, root layout, loaders)",
               value: "complex-routing",
             },
             {

@@ -35,12 +35,18 @@ export default function UserPage() {
 
 When `src/pages` exists and the project does not declare explicit `app`,
 `pages`, or `remote` config, evjs discovers the page files and builds the SPA
-entry internally. For MPA output:
+entry internally.
 
-Use `src/layout.tsx` for the optional SPA root layout. `src/pages` is reserved
-for page route modules, so any `layout` source file inside `src/pages` is
-reported as a convention error. Dynamic route filenames use `$param`; bracket
-segments such as `[id].tsx` are rejected.
+Use `src/layout.tsx` only for the optional SPA root layout. It is a single file
+convention; `src/layout/index.tsx` is not an alias. MPA output does not consume
+a framework layout file, so MPA pages compose shared wrappers as ordinary
+components.
+
+`src/pages` is reserved for page route modules, so any `layout` source file
+inside `src/pages` is reported as a convention error. Dynamic route filenames
+use `$param`; bracket segments such as `[id].tsx` are rejected.
+
+For MPA output:
 
 ```ts
 // ev.config.ts

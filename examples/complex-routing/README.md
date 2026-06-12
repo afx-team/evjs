@@ -14,7 +14,7 @@ npm run dev
 |------|---------|
 | `src/layout.tsx` | SPA root layout with navigation |
 | `src/pages/index.tsx` | Index route |
-| `src/pages/posts/` | Nested routes with loader |
+| `src/pages/posts/` | Nested paths with loaders |
 
 ## What It Demonstrates
 

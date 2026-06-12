@@ -96,7 +96,8 @@ export default function SearchPage() {
 SPA 模式下，`src/layout.tsx` 是可选根布局。默认导出会以 `children`
 包裹当前页面，因此用户代码不需要引入 TanStack Router 的 `<Outlet />`。
 
-布局约定只有一个根文件。`src/layout/index.tsx` 不是别名。
+布局约定只用于 SPA，且只有一个根文件：`src/layout.tsx`。`src/layout/index.tsx`
+不是别名。MPA 模式不消费框架 layout 文件；需要公共视觉包裹时，在各页面里导入普通组件即可。
 
 `src/pages` 只放页面路由。不要在 `src/pages` 的任何位置放 `layout.tsx`；evjs 会把它
 报告为目录约定错误，而不是把它转换成一个页面路由。嵌套视觉包裹应作为普通组件由需要的页面导入。
