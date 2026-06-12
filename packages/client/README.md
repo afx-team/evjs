@@ -39,7 +39,8 @@ entry internally. For MPA output:
 
 Use `src/layout.tsx` for the optional SPA root layout. `src/pages` is reserved
 for page route modules, so any `layout` source file inside `src/pages` is
-reported as a convention error.
+reported as a convention error. Dynamic route filenames use `$param`; bracket
+segments such as `[id].tsx` are rejected.
 
 ```ts
 // ev.config.ts

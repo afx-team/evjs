@@ -18,6 +18,10 @@ src/
     └── posts/index.tsx    # /posts
 ```
 
+Dynamic route segments use `$param` filenames. Bracket segments such as
+`[id].tsx` or `[...slug].tsx` are rejected so the file convention stays
+unambiguous.
+
 SPA routing is enabled automatically when `src/pages` exists and the project
 does not declare explicit `app`, `pages`, or `remote` config. To opt in
 explicitly or customize discovery:
@@ -95,6 +99,9 @@ export default function SearchPage() {
 For SPA mode, `src/layout.tsx` is optional. When present, its default
 export wraps the current page as `children`, so user code does not need TanStack
 Router's `<Outlet />`.
+
+The layout convention is a single root file. `src/layout/index.tsx` is not an
+alias.
 
 `src/pages` is only for route pages. Do not put `layout.tsx` anywhere under
 `src/pages`; evjs reports that as a convention error instead of turning it into

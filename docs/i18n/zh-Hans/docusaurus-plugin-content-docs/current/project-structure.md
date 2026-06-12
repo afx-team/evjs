@@ -80,7 +80,8 @@ export default defineConfig({
 ## 页面模块
 
 `src/pages` 下每个文件默认导出一个 React 组件。动态段使用 `$param`，
-`index.tsx` 映射到当前目录根路径。渲染元信息放在页面组件旁边：
+`index.tsx` 映射到当前目录根路径。`[id].tsx` 这类 bracket 路由段会被拒绝。
+渲染元信息放在页面组件旁边：
 
 ```tsx
 // src/pages/campaign.tsx

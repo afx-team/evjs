@@ -408,16 +408,11 @@ describe("build", () => {
     ]);
   });
 
-  it("fails on page route discovery errors before running the bundler", async () => {
+  it("fails on page route convention errors before running the bundler", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages/users"), {
       recursive: true,
     });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/users/$id.tsx"),
-      "export default function UserByDollarParam() { return null; }",
-      "utf-8",
-    );
     await fs.promises.writeFile(
       path.join(cwd, "src/pages/users/[id].tsx"),
       "export default function UserByBracketParam() { return null; }",
@@ -449,7 +444,7 @@ describe("build", () => {
     );
     expect((error as Error).message).toContain("src/pages/users/[id].tsx");
     expect((error as Error).message).toContain(
-      'Duplicate page route path "/users/$id"',
+      'Dynamic page route segments must use $param filenames. Bracket segment "[id]" is not supported.',
     );
     expect(events).not.toContain("bundler.build");
   });

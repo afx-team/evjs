@@ -49,6 +49,16 @@ export async function discoverPageRoutes(
 
     if (!routeFile) continue;
 
+    const bracketSegment = findBracketRouteSegment(routeFile.segments);
+    if (bracketSegment) {
+      diagnostics.push({
+        level: "error",
+        file: sourceRel.replace(/^\.\//, ""),
+        message: createBracketRouteSegmentDiagnostic(bracketSegment),
+      });
+      continue;
+    }
+
     const routePath = routePathFromSegments(routeFile.segments);
     const previous = routeByPath.get(routePath);
     if (previous) {
@@ -85,6 +95,10 @@ function createPageLayoutDiagnostic(
     path.join(path.dirname(absoluteRouteDir), ROOT_LAYOUT_FILE),
   );
   return `Layout files must live at ${expected}. Files named layout inside the page route directory are not route pages.`;
+}
+
+function createBracketRouteSegmentDiagnostic(segment: string): string {
+  return `Dynamic page route segments must use $param filenames. Bracket segment "${segment}" is not supported.`;
 }
 
 async function discoverRootLayout(
@@ -176,17 +190,15 @@ function toRouteFile(routeRel: string):
   return { name, segments };
 }
 
-function routePathFromSegments(segments: string[]): string {
-  if (segments.length === 0) return "/";
-  return `/${segments.map(routeSegment).filter(Boolean).join("/")}`;
+function findBracketRouteSegment(segments: string[]): string | undefined {
+  return segments.find(
+    (segment) => segment.startsWith("[") && segment.endsWith("]"),
+  );
 }
 
-function routeSegment(segment: string): string {
-  if (segment.startsWith("[...") && segment.endsWith("]")) return "$";
-  if (segment.startsWith("[") && segment.endsWith("]")) {
-    return `$${segment.slice(1, -1)}`;
-  }
-  return segment;
+function routePathFromSegments(segments: string[]): string {
+  if (segments.length === 0) return "/";
+  return `/${segments.join("/")}`;
 }
 
 function routeIdFromPath(routePath: string): string {

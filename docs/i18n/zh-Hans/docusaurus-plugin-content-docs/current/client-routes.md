@@ -17,6 +17,9 @@ src/
     └── posts/index.tsx    # /posts
 ```
 
+动态路由段使用 `$param` 文件名。`[id].tsx` 或 `[...slug].tsx` 这类
+bracket 段会被拒绝，避免目录约定出现多套写法。
+
 当项目存在 `src/pages`，且项目没有声明显式的 `app`、`pages` 或 `remote`
 配置时，SPA 路由会自动启用。也可以显式配置：
 
@@ -92,6 +95,8 @@ export default function SearchPage() {
 
 SPA 模式下，`src/layout.tsx` 是可选根布局。默认导出会以 `children`
 包裹当前页面，因此用户代码不需要引入 TanStack Router 的 `<Outlet />`。
+
+布局约定只有一个根文件。`src/layout/index.tsx` 不是别名。
 
 `src/pages` 只放页面路由。不要在 `src/pages` 的任何位置放 `layout.tsx`；evjs 会把它
 报告为目录约定错误，而不是把它转换成一个页面路由。嵌套视觉包裹应作为普通组件由需要的页面导入。

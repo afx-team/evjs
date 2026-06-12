@@ -22,7 +22,7 @@ describe("discoverPageRoutes", () => {
       "src/pages/about.tsx": "export default function About() { return null; }",
       "src/pages/users/$userId.tsx":
         "export default function User() { return null; }",
-      "src/pages/posts/[postId].tsx":
+      "src/pages/posts/$postId.tsx":
         "export default function Post() { return null; }",
       "src/pages/_private.tsx":
         "export default function Private() { return null; }",
@@ -47,7 +47,7 @@ describe("discoverPageRoutes", () => {
       {
         id: "posts_postId",
         path: "/posts/$postId",
-        module: "./src/pages/posts/[postId].tsx",
+        module: "./src/pages/posts/$postId.tsx",
       },
       {
         id: "users_userId",
@@ -56,6 +56,40 @@ describe("discoverPageRoutes", () => {
       },
     ]);
     expect(discovery.diagnostics).toEqual([]);
+  });
+
+  it("rejects bracket dynamic route segments", async () => {
+    const cwd = await createFixture({
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+      "src/pages/posts/[postId].tsx":
+        "export default function Post() { return null; }",
+      "src/pages/files/[...path].tsx":
+        "export default function FilePath() { return null; }",
+    });
+
+    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
+
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/pages/index.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/pages/files/[...path].tsx",
+        message:
+          'Dynamic page route segments must use $param filenames. Bracket segment "[...path]" is not supported.',
+      },
+      {
+        level: "error",
+        file: "src/pages/posts/[postId].tsx",
+        message:
+          'Dynamic page route segments must use $param filenames. Bracket segment "[postId]" is not supported.',
+      },
+    ]);
   });
 
   it("rejects layout files inside the page route directory", async () => {
@@ -151,7 +185,7 @@ describe("discoverPageRoutes", () => {
   it("reports duplicate route paths", async () => {
     const cwd = await createFixture({
       "src/pages/users/$id.tsx": "export default function A() { return null; }",
-      "src/pages/users/[id].tsx":
+      "src/pages/users/$id/index.tsx":
         "export default function B() { return null; }",
     });
 
@@ -161,7 +195,7 @@ describe("discoverPageRoutes", () => {
     expect(discovery.diagnostics).toEqual([
       expect.objectContaining({
         level: "error",
-        file: "src/pages/users/[id].tsx",
+        file: "src/pages/users/$id/index.tsx",
         message: expect.stringContaining(
           'Duplicate page route path "/users/$id"',
         ),
