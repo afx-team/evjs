@@ -6,12 +6,12 @@ and the current status matrix lives in [ROADMAP.md](./ROADMAP.md).
 
 ## Overview
 
-evjs is a React framework with explicit app/page declarations, server functions,
-REST routes, SSR, PPR, RSC integration points, manifest-driven remotes, and
-bundler adapters.
+evjs is a React framework with file-based page routes, explicit lower-level
+app/page declarations, server functions, REST routes, SSR, PPR, RSC integration
+points, manifest-driven remotes, and bundler adapters.
 
 ```txt
-ev.config.ts and static route/server declarations
+src/pages + ev.config.ts + static server declarations
   -> AppGraph
   -> BuildPlan
   -> selected bundler adapter

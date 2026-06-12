@@ -1,9 +1,11 @@
 # Architecture
 
-evjs is a React framework built around explicit source declarations, a framework graph, a bundler-independent build plan, and one runtime manifest.
+evjs is a React framework built around file-based page routes, explicit source
+declarations, a framework graph, a bundler-independent build plan, and one
+runtime manifest.
 
 ```txt
-source declarations
+src/pages + ev.config.ts + server declarations
   -> AppGraph
   -> BuildPlan
   -> bundler build

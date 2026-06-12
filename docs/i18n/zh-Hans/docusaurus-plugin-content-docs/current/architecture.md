@@ -1,9 +1,9 @@
 # 架构
 
-evjs 是围绕显式 source declaration、框架 graph、bundler 无关 build plan，以及单一 runtime manifest 构建的 React 框架。
+evjs 是围绕文件式页面路由、显式 source declaration、框架 graph、bundler 无关 build plan，以及单一 runtime manifest 构建的 React 框架。
 
 ```txt
-source declarations
+src/pages + ev.config.ts + server declarations
   -> AppGraph
   -> BuildPlan
   -> bundler build
@@ -48,8 +48,10 @@ source declarations
 
 `@evjs/ev/build-tools` 不 import bundler adapter。Bundler adapter 消费 `BuildPlan`，不会在 bundling 之后重新扫描源码来发现框架语义。
 
-TanStack 兼容能力会继续保留在 `@evjs/client` 中。SPA 文件路由在框架内部使用
-TanStack Router；MPA 文件路由和显式 pages 使用 page runtime，不引入客户端路由器。
+SPA 文件路由在框架内部使用 TanStack Router；应用页面只写 `src/pages`、
+page hooks 和导航 helper，不需要创建 route tree。MPA 文件路由和显式 pages 使用
+page runtime，不引入客户端路由器。高级 TanStack helper 仍从顶层 `@evjs/client`
+导出，用于手动路由场景。
 
 ## 构建流程
 
