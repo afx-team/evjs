@@ -17,7 +17,10 @@ import type {
   ServerRouteNode,
   SharedDependencyMap,
 } from "@evjs/shared/manifest";
-import { extractPageModuleConfig } from "../page-module-config.js";
+import {
+  analyzePageModuleConfig,
+  type PageModuleConfig,
+} from "../page-module-config.js";
 import {
   extractPprRegionModuleConfig,
   extractPprRegions,
@@ -130,6 +133,7 @@ export async function createAppGraph(
     remote: createRemoteBuildNode(config),
   };
 
+  const diagnostics: Diagnostic[] = [];
   const sourceCache = new Map<string, string>();
   const sourceFiles = await collectFrameworkSourceFiles(
     config,
@@ -137,7 +141,7 @@ export async function createAppGraph(
     sourceCache,
   );
   graph.apps = createAppNodes(config);
-  await mergeConfiguredPageModuleConfigs(graph, cwd, sourceCache);
+  await mergeConfiguredPageModuleConfigs(graph, cwd, sourceCache, diagnostics);
   // Watch explicit graph roots and files that already declare framework
   // semantics. Ordinary component edits should stay on the bundler HMR path.
   // If a plain component starts declaring routes/server functions later, a
@@ -158,8 +162,6 @@ export async function createAppGraph(
     string,
     NonNullable<AppGraph["serverReferences"]>[number]
   >();
-  const diagnostics: Diagnostic[] = [];
-
   for (const file of sourceFiles.analysisFiles) {
     const source = sourceCache.get(file) ?? (await fs.readFile(file, "utf-8"));
     if (
@@ -219,6 +221,7 @@ export async function createAppGraph(
             ...(defaultAppId ? { appId: defaultAppId } : {}),
           },
           sourceCache,
+          diagnostics,
         ),
       );
     }
@@ -269,19 +272,21 @@ async function mergeConfiguredPageModuleConfigs(
   graph: AppGraph,
   cwd: string,
   sourceCache: Map<string, string>,
+  diagnostics: Diagnostic[],
 ) {
   for (const [pageId] of Object.entries(graph.pages)) {
     const page = graph.pages[pageId];
     if (!page?.component) continue;
 
-    const moduleConfig = await readPageModuleConfig(
+    const analysis = await readPageModuleConfig(
       cwd,
       page.component,
       sourceCache,
     );
-    if (!moduleConfig) continue;
+    if (!analysis) continue;
 
-    applyPageModuleConfig(page, moduleConfig);
+    diagnostics.push(...analysis.diagnostics);
+    applyPageModuleConfig(page, analysis.config);
   }
 }
 
@@ -289,16 +294,15 @@ async function mergeRouteModuleConfig(
   cwd: string,
   route: ExtractedRoute,
   sourceCache: Map<string, string>,
+  diagnostics: Diagnostic[],
 ): Promise<ExtractedRoute> {
   if (!route.module) return route;
 
-  const moduleConfig = await readPageModuleConfig(
-    cwd,
-    route.module,
-    sourceCache,
-  );
-  if (!moduleConfig) return route;
+  const analysis = await readPageModuleConfig(cwd, route.module, sourceCache);
+  if (!analysis) return route;
 
+  diagnostics.push(...analysis.diagnostics);
+  const moduleConfig = analysis.config;
   return {
     ...route,
     ...(route.render === undefined && moduleConfig.render
@@ -321,7 +325,13 @@ async function readPageModuleConfig(
   cwd: string,
   component: string,
   sourceCache: Map<string, string>,
-) {
+): Promise<
+  | {
+      config: PageModuleConfig;
+      diagnostics: Diagnostic[];
+    }
+  | undefined
+> {
   const absolute = await resolveProjectSourceAbsolute(cwd, component);
   if (!absolute) return undefined;
 
@@ -334,7 +344,15 @@ async function readPageModuleConfig(
     return undefined;
   }
 
-  return extractPageModuleConfig(source);
+  const analysis = analyzePageModuleConfig(source);
+  const file = toPosixPath(path.relative(cwd, absolute));
+  return {
+    config: analysis.config,
+    diagnostics: analysis.diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      file,
+    })),
+  };
 }
 
 function applyPageModuleConfig(

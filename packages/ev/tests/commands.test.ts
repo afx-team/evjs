@@ -454,6 +454,38 @@ describe("build", () => {
     expect(events).not.toContain("bundler.build");
   });
 
+  it("fails on unsupported page render metadata before running the bundler", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/campaign.tsx"),
+      [
+        'export const render = "ppr";',
+        "export const prerender = { partial: true } as const;",
+        "export default function Campaign() { return null; }",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+
+    await expect(
+      build(
+        {
+          routing: true,
+        },
+        {
+          cwd,
+          bundler,
+        },
+      ),
+    ).rejects.toThrow(
+      'Page render mode "ppr" is not supported. PPR is declared with render = "ssr" and prerender = { partial: true }.',
+    );
+    expect(events).not.toContain("bundler.build");
+  });
+
   it("fails when the root layout is placed in the page route directory", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });

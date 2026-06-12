@@ -87,7 +87,14 @@ PPR region 的 cache metadata 会进入 manifest：
 {
   "pages": {
     "campaign": {
-      "render": "ppr",
+      "render": "ssr",
+      "rendering": {
+        "component": "server",
+        "html": "partial",
+        "prerender": "partial",
+        "streaming": false,
+        "hydrate": "none"
+      },
       "ppr": {
         "delivery": "stream",
         "regions": {

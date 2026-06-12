@@ -14,15 +14,35 @@ export interface PageModuleConfig {
   prerender?: PrerenderConfig;
 }
 
-export function extractPageModuleConfig(source: string): PageModuleConfig {
+export interface PageModuleConfigDiagnostic {
+  level: "warning" | "error";
+  message: string;
+}
+
+export interface PageModuleConfigAnalysis {
+  config: PageModuleConfig;
+  diagnostics: PageModuleConfigDiagnostic[];
+}
+
+export function analyzePageModuleConfig(
+  source: string,
+): PageModuleConfigAnalysis {
   const ast = parseRouteModule(source);
-  if (!ast) return {};
+  if (!ast) return { config: {}, diagnostics: [] };
 
   const config: PageModuleConfig = {};
+  const diagnostics: PageModuleConfigDiagnostic[] = [];
 
   for (const item of ast.body) {
     const render = getExportedStringLiteral(item, "render");
-    if (isRenderMode(render)) config.render = render;
+    if (isRenderMode(render)) {
+      config.render = render;
+    } else if (render !== undefined) {
+      diagnostics.push({
+        level: "error",
+        message: createInvalidRenderDiagnostic(render),
+      });
+    }
 
     const rsc = getExportedBooleanLiteral(item, "rsc");
     if (rsc === true) {
@@ -42,7 +62,18 @@ export function extractPageModuleConfig(source: string): PageModuleConfig {
     }
   }
 
-  return config;
+  return { config, diagnostics };
+}
+
+export function extractPageModuleConfig(source: string): PageModuleConfig {
+  return analyzePageModuleConfig(source).config;
+}
+
+function createInvalidRenderDiagnostic(value: string): string {
+  if (value === "ppr") {
+    return 'Page render mode "ppr" is not supported. PPR is declared with render = "ssr" and prerender = { partial: true }.';
+  }
+  return `Unsupported page render mode "${value}". Expected "csr", "ssr", or "ssg".`;
 }
 
 function getExportedStringLiteral(

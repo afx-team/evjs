@@ -453,6 +453,37 @@ describe("createAppGraph and createBuildPlan", () => {
     });
   });
 
+  it("reports unsupported page render metadata", async () => {
+    const cwd = await createFixture({
+      "src/pages/campaign.tsx": `
+        export const render = "ppr";
+        export const prerender = { partial: true } as const;
+        export default function Campaign() { return null; }
+      `,
+      "index.html": '<div id="app"></div>',
+    });
+    const config = createConfig({
+      pages: {
+        campaign: {
+          path: "/campaign",
+          component: "./src/pages/campaign.tsx",
+          html: "./index.html",
+        },
+      },
+    });
+
+    const analysis = await createAppGraph(config, cwd);
+
+    expect(analysis.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/pages/campaign.tsx",
+        message:
+          'Page render mode "ppr" is not supported. PPR is declared with render = "ssr" and prerender = { partial: true }.',
+      },
+    ]);
+  });
+
   it("does not create a client runtime entry for static non-hydrated component pages", async () => {
     const cwd = await createFixture({
       "src/pages/pricing.tsx": `
@@ -1103,6 +1134,7 @@ describe("createAppGraph and createBuildPlan", () => {
       streaming: false,
       hydrate: "none",
     });
+    expect(output.pages.ppr.render).toBe("ssr");
     expect(output.pages.ppr.ppr?.delivery).toBe("merge");
     expect(output.pages.ppr.assets).toEqual({ js: [], css: [] });
     expect(output.pages.rsc.rendering).toEqual({

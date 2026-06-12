@@ -90,7 +90,14 @@ PPR regions carry cache metadata in the manifest:
 {
   "pages": {
     "campaign": {
-      "render": "ppr",
+      "render": "ssr",
+      "rendering": {
+        "component": "server",
+        "html": "partial",
+        "prerender": "partial",
+        "streaming": false,
+        "hydrate": "none"
+      },
       "ppr": {
         "delivery": "stream",
         "regions": {

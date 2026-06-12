@@ -115,6 +115,8 @@ When `path` is present, the page also contributes a framework route. Use this fo
 
 evjs reads these named static exports from framework-managed page modules. Use
 literal values so graph analysis can resolve them without executing user code.
+PPR is not a separate `render` value; use `render = "ssr"` with
+`prerender = { partial: true }`.
 
 | Export | Values | Meaning |
 | --- | --- | --- |

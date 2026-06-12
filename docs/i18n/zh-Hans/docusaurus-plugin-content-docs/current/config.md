@@ -111,6 +111,8 @@ export default function DashboardPage() {
 
 evjs 会从 framework-managed page module 中读取以下 named static exports。请使用
 字面量值，这样 graph analysis 不需要执行用户代码也能解析。
+PPR 不是独立的 `render` 值；请使用 `render = "ssr"` 搭配
+`prerender = { partial: true }`。
 
 | 导出 | 可选值 | 含义 |
 | --- | --- | --- |
