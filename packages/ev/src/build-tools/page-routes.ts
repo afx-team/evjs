@@ -37,20 +37,16 @@ export async function discoverPageRoutes(
   for (const file of files) {
     const sourceRel = toProjectPath(cwd, file);
     const routeRel = toPosixPath(path.relative(absoluteDir, file));
-    if (routeRel === ROOT_LAYOUT_FILE) {
-      const expected = toProjectPath(
-        cwd,
-        path.join(path.dirname(absoluteDir), ROOT_LAYOUT_FILE),
-      );
+    const routeFile = toRouteFile(routeRel);
+    if (routeFile?.name === "layout") {
       diagnostics.push({
         level: "error",
         file: sourceRel.replace(/^\.\//, ""),
-        message: `Root layout files must live at ${expected}, not inside the page route directory.`,
+        message: createPageLayoutDiagnostic(cwd, absoluteDir),
       });
       continue;
     }
 
-    const routeFile = toRouteFile(routeRel);
     if (!routeFile) continue;
 
     const routePath = routePathFromSegments(routeFile.segments);
@@ -78,6 +74,17 @@ export async function discoverPageRoutes(
     files,
     diagnostics,
   };
+}
+
+function createPageLayoutDiagnostic(
+  cwd: string,
+  absoluteRouteDir: string,
+): string {
+  const expected = toProjectPath(
+    cwd,
+    path.join(path.dirname(absoluteRouteDir), ROOT_LAYOUT_FILE),
+  );
+  return `Layout files must live at ${expected}. Files named layout inside the page route directory are not route pages.`;
 }
 
 async function discoverRootLayout(

@@ -13,12 +13,12 @@ npm run dev
 | File | Purpose |
 |------|---------|
 | `src/layout.tsx` | SPA root layout |
-| `src/pages/` | File-based page routes |
+| `src/pages/` | Page route files |
 | `src/api/users.server.ts` | `"use server"` CRUD functions |
 
 ## What It Demonstrates
 
-- File-based SPA routing from `src/pages`
+- SPA page routing from `src/pages`
 - `"use server"` directive for auto-discovered server functions
 - `useQuery(getUsers)` for type-safe data fetching
 - `useMutation({ mutationFn: createUser })` for server-side mutations

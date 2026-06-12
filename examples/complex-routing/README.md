@@ -1,6 +1,6 @@
 # complex-routing
 
-Advanced file-based SPA routing patterns.
+Advanced SPA page routing patterns.
 
 ## Run
 

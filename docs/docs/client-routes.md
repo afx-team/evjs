@@ -96,9 +96,10 @@ For SPA mode, `src/layout.tsx` is optional. When present, its default
 export wraps the current page as `children`, so user code does not need TanStack
 Router's `<Outlet />`.
 
-`src/pages` is only for route pages. Do not put the root layout at
-`src/pages/layout.tsx`; evjs reports that as a convention error instead of
-turning it into a route.
+`src/pages` is only for route pages. Do not put `layout.tsx` anywhere under
+`src/pages`; evjs reports that as a convention error instead of turning it into
+a route. Nested visual wrappers should be normal components imported by the
+page that needs them.
 
 ```tsx
 // src/layout.tsx

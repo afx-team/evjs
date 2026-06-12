@@ -58,11 +58,13 @@ describe("discoverPageRoutes", () => {
     expect(discovery.diagnostics).toEqual([]);
   });
 
-  it("keeps nested layout.tsx files out of the root layout slot", async () => {
+  it("rejects layout files inside the page route directory", async () => {
     const cwd = await createFixture({
       "src/layout.tsx": "export default function Layout() { return null; }",
       "src/pages/posts/layout.tsx":
         "export default function PostsLayout() { return null; }",
+      "src/pages/admin/layout.jsx":
+        "export default function AdminLayout() { return null; }",
       "src/pages/index.tsx": "export default function Home() { return null; }",
     });
 
@@ -75,13 +77,21 @@ describe("discoverPageRoutes", () => {
         path: "/",
         module: "./src/pages/index.tsx",
       },
+    ]);
+    expect(discovery.diagnostics).toEqual([
       {
-        id: "posts_layout",
-        path: "/posts/layout",
-        module: "./src/pages/posts/layout.tsx",
+        level: "error",
+        file: "src/pages/admin/layout.jsx",
+        message:
+          "Layout files must live at ./src/layout.tsx. Files named layout inside the page route directory are not route pages.",
+      },
+      {
+        level: "error",
+        file: "src/pages/posts/layout.tsx",
+        message:
+          "Layout files must live at ./src/layout.tsx. Files named layout inside the page route directory are not route pages.",
       },
     ]);
-    expect(discovery.diagnostics).toEqual([]);
   });
 
   it("rejects root layout files inside the page route directory", async () => {
@@ -106,7 +116,7 @@ describe("discoverPageRoutes", () => {
         level: "error",
         file: "src/pages/layout.tsx",
         message:
-          "Root layout files must live at ./src/layout.tsx, not inside the page route directory.",
+          "Layout files must live at ./src/layout.tsx. Files named layout inside the page route directory are not route pages.",
       },
     ]);
   });

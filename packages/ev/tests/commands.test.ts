@@ -483,7 +483,43 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      "Root layout files must live at ./src/layout.tsx, not inside the page route directory.",
+      "Layout files must live at ./src/layout.tsx. Files named layout inside the page route directory are not route pages.",
+    );
+    expect(events).not.toContain("bundler.build");
+  });
+
+  it("fails when a nested layout is placed in the page route directory", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages/posts"), {
+      recursive: true,
+    });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/posts/layout.tsx"),
+      "export default function PostsLayout() { return null; }",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/index.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+
+    await expect(
+      build(
+        {
+          server: false,
+          routing: true,
+        },
+        {
+          cwd,
+          bundler,
+        },
+      ),
+    ).rejects.toThrow(
+      "Layout files must live at ./src/layout.tsx. Files named layout inside the page route directory are not route pages.",
     );
     expect(events).not.toContain("bundler.build");
   });

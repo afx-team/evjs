@@ -1,8 +1,8 @@
 /**
  * Routing utilities re-exported from @tanstack/react-router.
  *
- * This module provides the core primitives for building file-based
- * or code-based routing in the ev framework.
+ * This module provides the core primitives for page routing and code-based
+ * routing in the ev framework.
  */
 
 // Types
