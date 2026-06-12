@@ -12,7 +12,7 @@ npm run dev
 
 | File | Purpose |
 |------|---------|
-| `src/pages/layout.tsx` | SPA root layout with navigation |
+| `src/layout.tsx` | SPA root layout with navigation |
 | `src/pages/index.tsx` | Index route |
 | `src/pages/posts/` | Nested routes with loader |
 

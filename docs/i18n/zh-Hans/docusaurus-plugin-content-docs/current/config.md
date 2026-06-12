@@ -51,7 +51,8 @@ export default defineConfig({
 });
 ```
 
-当项目存在 `src/pages` 且没有默认的 `src/main.tsx` 时，SPA 路由会自动启用。
+当项目存在 `src/pages`，且项目没有声明显式的 `app`、`pages` 或 `remote`
+配置时，SPA 路由会自动启用。
 
 只有手动 bootstrap 单应用时，才使用顶层 `entry` / `html`：
 

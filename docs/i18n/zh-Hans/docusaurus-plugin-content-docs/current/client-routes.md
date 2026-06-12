@@ -9,16 +9,16 @@ SPA，或生成多个不带路由器的 MPA 页面。evjs 不会写入 `.evjs` �
 ```
 src/
 ├── api/*.server.ts        # 可选 server functions
+├── layout.tsx             # 可选 SPA 根布局
 └── pages/
-    ├── layout.tsx         # 可选 SPA 根布局
     ├── index.tsx          # /
     ├── about.tsx          # /about
     ├── users/$userId.tsx  # /users/$userId
     └── posts/index.tsx    # /posts
 ```
 
-当项目存在 `src/pages` 且没有默认的 `src/main.tsx` 入口时，SPA 路由会自动启用。
-也可以显式配置：
+当项目存在 `src/pages`，且项目没有声明显式的 `app`、`pages` 或 `remote`
+配置时，SPA 路由会自动启用。也可以显式配置：
 
 ```ts
 // ev.config.ts
@@ -90,11 +90,11 @@ export default function SearchPage() {
 
 ## 布局
 
-SPA 模式下，`src/pages/layout.tsx` 是可选根布局。默认导出会以 `children`
+SPA 模式下，`src/layout.tsx` 是可选根布局。默认导出会以 `children`
 包裹当前页面，因此用户代码不需要引入 TanStack Router 的 `<Outlet />`。
 
 ```tsx
-// src/pages/layout.tsx
+// src/layout.tsx
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <main>

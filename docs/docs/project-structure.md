@@ -16,8 +16,8 @@ my-evjs-app/
 └── src/
     ├── server.ts                # framework/server entry
     ├── styles.css               # global CSS / Tailwind entry
+    ├── layout.tsx               # optional SPA root layout
     ├── pages/                   # page routes
-    │   ├── layout.tsx           # optional SPA root layout
     │   ├── index.tsx            # /
     │   ├── dashboard.tsx        # /dashboard
     │   ├── campaign.tsx         # /campaign

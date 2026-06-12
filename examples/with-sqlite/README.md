@@ -12,7 +12,7 @@ npm run dev
 
 | File | Purpose |
 |------|---------|
-| `src/pages/layout.tsx` | SPA root layout |
+| `src/layout.tsx` | SPA root layout |
 | `src/pages/index.tsx` | Users list + todo management UI |
 | `src/api/db.server.ts` | SQLite database setup |
 | `src/api/users.server.ts` | User CRUD (create, delete, getUsers, getUser) |

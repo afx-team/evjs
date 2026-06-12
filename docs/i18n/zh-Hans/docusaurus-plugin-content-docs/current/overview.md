@@ -15,7 +15,7 @@ SPA 页面路由在框架内部使用 TanStack Router，以保留 loader、searc
 
 ## 特性
 
-- **零配置页面路由** —— 没有 `src/main.tsx` 时，`ev dev` / `ev build` 会发现 `src/pages`。
+- **零配置页面路由** —— 项目没有声明显式 `app`、`pages` 或 `remote` 配置时，`ev dev` / `ev build` 会发现 `src/pages`。
 - **SPA 与 MPA 模式** —— `routing.mode: "spa"` 生成一个 TanStack Router 驱动的 app；`"mpa"` 生成多个无路由器页面。
 - **框架托管页面** —— 页面模块可以把 CSR/SSR/SSG/PPR/RSC 渲染元信息写在组件旁边。
 - **服务端函数** —— `"use server"` 模块变成浏览器可调用的 RPC stub。

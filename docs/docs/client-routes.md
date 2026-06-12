@@ -10,16 +10,17 @@ write `.evjs` temp route files.
 ```
 src/
 ├── api/*.server.ts        # Optional server functions
+├── layout.tsx             # Optional SPA root layout
 └── pages/
-    ├── layout.tsx         # Optional SPA root layout
     ├── index.tsx          # /
     ├── about.tsx          # /about
     ├── users/$userId.tsx  # /users/$userId
     └── posts/index.tsx    # /posts
 ```
 
-SPA routing is enabled automatically when `src/pages` exists and the default
-`src/main.tsx` entry does not. To opt in explicitly or customize discovery:
+SPA routing is enabled automatically when `src/pages` exists and the project
+does not declare explicit `app`, `pages`, or `remote` config. To opt in
+explicitly or customize discovery:
 
 ```ts
 // ev.config.ts
@@ -91,12 +92,12 @@ export default function SearchPage() {
 
 ## Layout
 
-For SPA mode, `src/pages/layout.tsx` is optional. When present, its default
+For SPA mode, `src/layout.tsx` is optional. When present, its default
 export wraps the current page as `children`, so user code does not need TanStack
 Router's `<Outlet />`.
 
 ```tsx
-// src/pages/layout.tsx
+// src/layout.tsx
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <main>

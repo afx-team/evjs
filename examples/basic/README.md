@@ -12,7 +12,7 @@ npm run dev
 
 | File | Purpose |
 |------|---------|
-| `src/pages/layout.tsx` | SPA root layout |
+| `src/layout.tsx` | SPA root layout |
 | `src/pages/` | File-based page routes |
 | `src/api/users.server.ts` | `"use server"` CRUD functions |
 

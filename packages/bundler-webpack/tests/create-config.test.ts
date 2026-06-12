@@ -31,7 +31,7 @@ describe("createWebpackConfigs", () => {
             options: {
               type: "file-route-app",
               mount: "#app",
-              rootModule: "./src/pages/layout.tsx",
+              rootModule: "./src/layout.tsx",
               routes: [
                 {
                   id: "index",
@@ -57,7 +57,7 @@ function createResolvedConfig(): ResolvedConfig<WebpackConfig> {
       entry: "./src/pages/index.tsx",
       html: "./index.html",
       mount: "#app",
-      rootModule: "./src/pages/layout.tsx",
+      rootModule: "./src/layout.tsx",
       routes: [
         {
           id: "index",

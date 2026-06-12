@@ -17,7 +17,7 @@ afterEach(async () => {
 describe("discoverFileRoutes", () => {
   it("discovers SPA file routes from src/pages", async () => {
     const cwd = await createFixture({
-      "src/pages/layout.tsx": "export default function Root() { return null; }",
+      "src/layout.tsx": "export default function Root() { return null; }",
       "src/pages/index.tsx": "export default function Home() { return null; }",
       "src/pages/about.tsx": "export default function About() { return null; }",
       "src/pages/users/$userId.tsx":
@@ -32,7 +32,7 @@ describe("discoverFileRoutes", () => {
 
     const discovery = await discoverFileRoutes(cwd, { dir: "./src/pages" });
 
-    expect(discovery.rootModule).toBe("./src/pages/layout.tsx");
+    expect(discovery.rootModule).toBe("./src/layout.tsx");
     expect(discovery.routes).toEqual([
       {
         id: "index",
@@ -60,8 +60,7 @@ describe("discoverFileRoutes", () => {
 
   it("keeps nested layout.tsx files out of the root layout slot", async () => {
     const cwd = await createFixture({
-      "src/pages/layout.tsx":
-        "export default function Layout() { return null; }",
+      "src/layout.tsx": "export default function Layout() { return null; }",
       "src/pages/posts/layout.tsx":
         "export default function PostsLayout() { return null; }",
       "src/pages/index.tsx": "export default function Home() { return null; }",
@@ -69,7 +68,7 @@ describe("discoverFileRoutes", () => {
 
     const discovery = await discoverFileRoutes(cwd, { dir: "./src/pages" });
 
-    expect(discovery.rootModule).toBe("./src/pages/layout.tsx");
+    expect(discovery.rootModule).toBe("./src/layout.tsx");
     expect(discovery.routes).toEqual([
       {
         id: "index",

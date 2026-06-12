@@ -44,8 +44,8 @@ my-app/
 ├── index.html              # HTML 模板（必须包含 <div id="app">）
 ├── ev.config.ts            # 可选配置
 ├── src/
+│   ├── layout.tsx          # 可选 SPA 根布局
 │   ├── pages/              # 文件路由
-│   │   ├── layout.tsx      # 可选 SPA 根布局
 │   │   ├── index.tsx       # /
 │   │   └── users/$id.tsx   # /users/$id
 │   └── api/                # 服务端模块
@@ -69,8 +69,9 @@ export default function UserPage() {
 }
 ```
 
-当项目存在 `src/pages` 且没有 `src/main.tsx` 时，evjs 会自动基于文件树构建一个
-TanStack Router 驱动的 SPA。用户不需要创建 route object、route tree 或全局 router 注册。
+当项目存在 `src/pages`，且项目没有声明显式的 `app`、`pages` 或 `remote`
+配置时，evjs 会自动基于文件树构建一个 TanStack Router 驱动的 SPA。用户不需要创建
+route object、route tree 或全局 router 注册。
 
 ## MPA 模式
 

@@ -12,7 +12,7 @@ npm run dev
 
 | File | Purpose |
 |------|---------|
-| `src/pages/layout.tsx` | SPA root layout |
+| `src/layout.tsx` | SPA root layout |
 | `src/pages/index.tsx` | UI consuming both tRPC and evjs APIs |
 | `src/api/trpc.server.ts` | tRPC router exposed as server function |
 | `src/api/users.server.ts` | Standard evjs server functions |

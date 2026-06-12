@@ -54,8 +54,8 @@ export default defineConfig({
 });
 ```
 
-When `src/pages` exists and the default `src/main.tsx` does not, SPA routing is
-enabled automatically.
+When `src/pages` exists and the project does not declare explicit `app`,
+`pages`, or `remote` config, SPA routing is enabled automatically.
 
 Use top-level `entry` / `html` only for a manually bootstrapped single app:
 

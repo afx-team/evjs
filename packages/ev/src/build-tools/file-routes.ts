@@ -20,7 +20,7 @@ export interface FileRouteDiscovery {
 }
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
-const ROOT_LAYOUT_FILE = "layout";
+const ROOT_LAYOUT_FILE = "layout.tsx";
 
 export async function discoverFileRoutes(
   cwd: string,
@@ -30,7 +30,7 @@ export async function discoverFileRoutes(
   const files = await collectSourceFiles(cwd, absoluteDir);
   const routes: FileRouteNode[] = [];
   const diagnostics: FileRouteDiscoveryDiagnostic[] = [];
-  let rootModule: string | undefined;
+  const rootModule = await discoverRootLayout(cwd, absoluteDir);
   const routeByPath = new Map<string, string>();
 
   for (const file of files) {
@@ -38,11 +38,6 @@ export async function discoverFileRoutes(
     const routeRel = toPosixPath(path.relative(absoluteDir, file));
     const routeFile = toRouteFile(routeRel);
     if (!routeFile) continue;
-
-    if (isRootLayoutFile(routeFile)) {
-      rootModule = sourceRel;
-      continue;
-    }
 
     const routePath = routePathFromSegments(routeFile.segments);
     const previous = routeByPath.get(routePath);
@@ -69,6 +64,24 @@ export async function discoverFileRoutes(
     files,
     diagnostics,
   };
+}
+
+async function discoverRootLayout(
+  cwd: string,
+  absoluteRouteDir: string,
+): Promise<string | undefined> {
+  const appDir = path.dirname(absoluteRouteDir);
+  if (!isInsideCwd(cwd, appDir)) return undefined;
+
+  const absolute = path.join(appDir, ROOT_LAYOUT_FILE);
+  try {
+    await fs.access(absolute);
+    return toProjectPath(cwd, absolute);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+
+  return undefined;
 }
 
 async function collectSourceFiles(cwd: string, dir: string): Promise<string[]> {
@@ -124,13 +137,6 @@ function toRouteFile(routeRel: string):
   if (name === "index") segments.pop();
 
   return { name, segments };
-}
-
-function isRootLayoutFile(routeFile: {
-  name: string;
-  segments: string[];
-}): boolean {
-  return routeFile.segments.length === 1 && routeFile.name === ROOT_LAYOUT_FILE;
 }
 
 function routePathFromSegments(segments: string[]): string {

@@ -14,8 +14,8 @@ my-evjs-app/
 └── src/
     ├── server.ts                # framework/server entry
     ├── styles.css               # 全局 CSS / Tailwind 入口
+    ├── layout.tsx               # 可选 SPA 根布局
     ├── pages/                   # 页面路由
-    │   ├── layout.tsx           # 可选 SPA 根布局
     │   ├── index.tsx            # /
     │   ├── dashboard.tsx        # /dashboard
     │   ├── campaign.tsx         # /campaign

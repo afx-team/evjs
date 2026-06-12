@@ -33,8 +33,9 @@ export default function UserPage() {
 
 ### 2. Let evjs Build the Route Entry
 
-When `src/pages` exists and `src/main.tsx` does not, evjs discovers the page
-files and builds the SPA entry internally. For MPA output:
+When `src/pages` exists and the project does not declare explicit `app`,
+`pages`, or `remote` config, evjs discovers the page files and builds the SPA
+entry internally. For MPA output:
 
 ```ts
 // ev.config.ts

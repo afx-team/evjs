@@ -46,8 +46,8 @@ my-app/
 ├── index.html              # HTML template (must have <div id="app">)
 ├── ev.config.ts            # Optional config
 ├── src/
+│   ├── layout.tsx          # Optional SPA root layout
 │   ├── pages/              # Page routes
-│   │   ├── layout.tsx      # Optional SPA root layout
 │   │   ├── index.tsx       # /
 │   │   └── users/$id.tsx   # /users/$id
 │   └── api/                # Server-only modules
@@ -71,9 +71,10 @@ export default function UserPage() {
 }
 ```
 
-When `src/pages` exists and `src/main.tsx` does not, evjs automatically builds a
-TanStack Router-backed SPA from the file tree. Router objects, route trees, and
-global router registrations stay inside the framework.
+When `src/pages` exists and the project does not declare explicit `app`,
+`pages`, or `remote` config, evjs automatically builds a TanStack Router-backed
+SPA from the file tree. Router objects, route trees, and global router
+registrations stay inside the framework.
 
 ## MPA Mode
 

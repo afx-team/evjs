@@ -18,7 +18,7 @@ semantics. MPA page routes use the page runtime without adding a router.
 
 ## Features
 
-- **Zero-config page routes** — `ev dev` / `ev build` discover `src/pages` when no `src/main.tsx` entry exists.
+- **Zero-config page routes** — `ev dev` / `ev build` discover `src/pages` unless the project declares explicit `app`, `pages`, or `remote` config.
 - **SPA and MPA modes** — `routing.mode: "spa"` builds one TanStack Router-backed app; `"mpa"` builds independent router-free pages.
 - **Framework pages** — page modules can declare CSR/SSR/SSG/PPR/RSC rendering metadata next to the component.
 - **Server functions** — `"use server"` modules become browser-callable RPC stubs.

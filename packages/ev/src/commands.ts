@@ -149,7 +149,9 @@ async function withFileRouteDefaults<TBundlerCfg>(
       ...base,
       ...(entry ? { entry } : {}),
       routes: discovery.routes,
-      ...(discovery.rootModule ? { rootModule: discovery.rootModule } : {}),
+      ...(base.mode === "spa" && discovery.rootModule
+        ? { rootModule: discovery.rootModule }
+        : {}),
     },
   };
 }
