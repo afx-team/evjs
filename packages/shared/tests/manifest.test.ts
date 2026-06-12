@@ -26,7 +26,6 @@ describe("createPublicManifest", () => {
         admin: {
           assets: { js: ["admin.js"], css: [] },
           entry: "./src/main.tsx",
-          routes: "./src/routes.tsx",
           module: {
             type: "entry",
             href: "admin.js",

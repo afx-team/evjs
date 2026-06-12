@@ -1,4 +1,5 @@
-import { createAppRootRoute, Link, Outlet } from "@evjs/client";
+import { Link } from "@evjs/client";
+import type { ReactNode } from "react";
 
 const styles = {
   app: {
@@ -18,7 +19,7 @@ const styles = {
   activeLink: { color: "#111", fontWeight: 600 as const },
 };
 
-function RootLayout() {
+export default function RootLayout({ children }: { children?: ReactNode }) {
   return (
     <div style={styles.app}>
       <nav style={styles.nav}>
@@ -52,9 +53,7 @@ function RootLayout() {
           Search
         </Link>
       </nav>
-      <Outlet />
+      {children}
     </div>
   );
 }
-
-export const rootRoute = createAppRootRoute({ component: RootLayout });

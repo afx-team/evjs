@@ -1,7 +1,8 @@
-import { createRootRoute, Link, Outlet } from "@evjs/client";
+import { Link } from "@evjs/client";
+import type { ReactNode } from "react";
 import "../styles.css";
 
-function Root() {
+export default function Root({ children }: { children?: ReactNode }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
       <nav className="border-b border-white/10 backdrop-blur-sm bg-white/5">
@@ -20,11 +21,7 @@ function Root() {
           </Link>
         </div>
       </nav>
-      <Outlet />
+      {children}
     </div>
   );
 }
-
-export const rootRoute = createRootRoute({
-  component: Root,
-});

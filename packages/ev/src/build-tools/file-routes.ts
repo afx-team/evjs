@@ -1,0 +1,172 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import type { FileRouteNode } from "@evjs/shared/manifest";
+
+export interface DiscoverFileRoutesOptions {
+  dir: string;
+}
+
+export interface FileRouteDiscoveryDiagnostic {
+  level: "warning" | "error";
+  message: string;
+  file?: string;
+}
+
+export interface FileRouteDiscovery {
+  routes: FileRouteNode[];
+  rootModule?: string;
+  files: string[];
+  diagnostics: FileRouteDiscoveryDiagnostic[];
+}
+
+const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
+const ROUTELESS_FILES = new Set(["__root"]);
+
+export async function discoverFileRoutes(
+  cwd: string,
+  options: DiscoverFileRoutesOptions,
+): Promise<FileRouteDiscovery> {
+  const absoluteDir = path.resolve(cwd, options.dir);
+  const files = await collectSourceFiles(cwd, absoluteDir);
+  const routes: FileRouteNode[] = [];
+  const diagnostics: FileRouteDiscoveryDiagnostic[] = [];
+  let rootModule: string | undefined;
+  const routeByPath = new Map<string, string>();
+
+  for (const file of files) {
+    const sourceRel = toProjectPath(cwd, file);
+    const routeRel = toPosixPath(path.relative(absoluteDir, file));
+    const routeFile = toRouteFile(routeRel);
+    if (!routeFile) continue;
+
+    if (ROUTELESS_FILES.has(routeFile.name)) {
+      rootModule ??= sourceRel;
+      continue;
+    }
+
+    const routePath = routePathFromSegments(routeFile.segments);
+    const previous = routeByPath.get(routePath);
+    if (previous) {
+      diagnostics.push({
+        level: "error",
+        file: sourceRel.replace(/^\.\//, ""),
+        message: `Duplicate file route path "${routePath}" also declared by ${previous}.`,
+      });
+      continue;
+    }
+
+    routeByPath.set(routePath, sourceRel);
+    routes.push({
+      id: routeIdFromPath(routePath),
+      path: routePath,
+      module: sourceRel,
+    });
+  }
+
+  return {
+    routes: routes.sort(compareRoutes),
+    rootModule,
+    files,
+    diagnostics,
+  };
+}
+
+async function collectSourceFiles(cwd: string, dir: string): Promise<string[]> {
+  const files: string[] = [];
+
+  async function visit(current: string) {
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw err;
+    }
+
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue;
+      const absolute = path.join(current, entry.name);
+      if (!isInsideCwd(cwd, absolute)) continue;
+      if (entry.isDirectory()) {
+        await visit(absolute);
+        continue;
+      }
+      if (entry.isFile() && isRouteSourceFile(entry.name)) {
+        files.push(absolute);
+      }
+    }
+  }
+
+  await visit(dir);
+  return files.sort();
+}
+
+function isRouteSourceFile(file: string): boolean {
+  if (file.endsWith(".d.ts")) return false;
+  if (/\.(test|spec)\.[cm]?[jt]sx?$/.test(file)) return false;
+  return SOURCE_EXTENSIONS.has(path.extname(file));
+}
+
+function toRouteFile(routeRel: string):
+  | {
+      name: string;
+      segments: string[];
+    }
+  | undefined {
+  const extension = path.extname(routeRel);
+  if (!SOURCE_EXTENSIONS.has(extension)) return undefined;
+
+  const withoutExt = routeRel.slice(0, -extension.length);
+  const segments = withoutExt.split("/").filter(Boolean);
+  if (segments.length === 0) return undefined;
+  const name = segments[segments.length - 1] ?? "";
+  if (name.startsWith("_") && !ROUTELESS_FILES.has(name)) return undefined;
+  if (name === "index") segments.pop();
+
+  return { name, segments };
+}
+
+function routePathFromSegments(segments: string[]): string {
+  if (segments.length === 0) return "/";
+  return `/${segments.map(routeSegment).filter(Boolean).join("/")}`;
+}
+
+function routeSegment(segment: string): string {
+  if (segment.startsWith("[...") && segment.endsWith("]")) return "$";
+  if (segment.startsWith("[") && segment.endsWith("]")) {
+    return `$${segment.slice(1, -1)}`;
+  }
+  return segment;
+}
+
+function routeIdFromPath(routePath: string): string {
+  const id = routePath
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/\$/g, "")
+    .replace(/[^a-zA-Z0-9_-]+/g, "_");
+  return id || "index";
+}
+
+function compareRoutes(left: FileRouteNode, right: FileRouteNode): number {
+  if (left.path === "/") return -1;
+  if (right.path === "/") return 1;
+  const leftDepth = left.path.split("/").length;
+  const rightDepth = right.path.split("/").length;
+  return leftDepth - rightDepth || left.path.localeCompare(right.path);
+}
+
+function toProjectPath(cwd: string, file: string): string {
+  return `./${toPosixPath(path.relative(cwd, file))}`;
+}
+
+function toPosixPath(value: string): string {
+  return value.replaceAll(path.sep, "/").replaceAll("\\", "/");
+}
+
+function isInsideCwd(cwd: string, candidate: string): boolean {
+  const relative = path.relative(cwd, candidate);
+  return (
+    relative === "" ||
+    (!relative.startsWith("..") && !path.isAbsolute(relative))
+  );
+}

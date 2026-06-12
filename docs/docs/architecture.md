@@ -36,7 +36,7 @@ source declarations
   AppGraph, BuildPlan, BuildOutput, and manifest schemas
 
 @evjs/client internal modules
-  framework-managed runtime, shell, route DSL, transport, RSC client runtime,
+  framework-managed runtime, shell, page runtime, transport, RSC client runtime,
   and TanStack compatibility behind the single public client entry
 
 @evjs/bundler-utoopack
@@ -199,14 +199,14 @@ package loading/version selection remains outside this implementation.
 ## Configuration Ownership
 
 ```txt
-entry/html
-  single app shorthand
+fileRoutes
+  file-route source of truth: spa or mpa mode, dir, html, mount point
 
-app
-  app declaration source that owns entry, html, route groups, mount point
+entry/html
+  manual single app shorthand
 
 pages.*
-  standalone page shorthand: path, entry/component/app, mount point
+  explicit independent page output: path, entry/component/app, mount point
 
 server.basePath
   derives framework server runtime paths: fn, ppr, rsc
@@ -218,24 +218,19 @@ plugins
   framework and bundler extension points
 ```
 
-`app` points to one app declaration source. That source owns the application
-document, client entry, route groups, and mount point. It should not carry one
-rendering strategy, because one app can contain CSR, SSR, PPR, RSC, and remote
-routes at the same time.
+`fileRoutes` points to `src/pages` by default. In SPA mode, graph creation turns
+the discovered files into one internal TanStack Router app entry. In MPA mode,
+the same files become independent page outputs without a client router.
 
-Route declarations own path-to-component wiring. Page modules own rendering
-metadata through static exports such as `render`, `hydrate`,
-`rsc`, and `prerender`. When graph creation sees a route component
-with SSR, RSC, or
-partial prerender metadata, it derives an internal page from that route. That
-page provides a stable `pageId`, render metadata, server renderers, PPR regions,
-assets, and manifest output, but it does not emit an independent HTML document.
-The app document remains the HTML owner.
+Page modules own path-to-component wiring by filename and rendering metadata
+through static exports such as `render`, `hydrate`, `rsc`, and `prerender`.
+When graph creation sees SSR, RSC, or partial prerender metadata, it derives the
+required server renderers, PPR regions, assets, and manifest output from that
+page module.
 
-`pages.*` remains the standalone page shorthand. It is useful when a page is not
-inside an app declaration source, or when a simple MPA-style page should own its
-own HTML document. Rendering metadata still belongs in the referenced page
-module, not in `ev.config.ts`.
+`pages.*` remains the explicit lower-level page API. It is useful when a page
+does not map cleanly to the `src/pages` file tree. Rendering metadata still
+belongs in the referenced page module, not in `ev.config.ts`.
 
 ## Server Function Pipeline
 
@@ -291,7 +286,7 @@ routes unless a server-capable runtime is attached.
 Framework-level declaration changes are handled separately from normal HMR:
 
 ```txt
-config / route declaration / server declaration change
+config / file route / server declaration change
   -> recreate AppGraph
   -> recreate BuildPlan
   -> diff BuildPlan
@@ -304,9 +299,8 @@ updates until Utoopack exposes the lower-layer API. The webpack adapter can appl
 the update in-process for architecture validation. Style and asset edits remain
 on the bundler HMR path.
 
-Graph analysis reads a static import closure to discover server functions,
-server routes, route declarations, and RSC references. Dev only watches explicit
-graph roots and files that already contain framework markers; ordinary component
-and style edits stay on the bundler HMR path. If a plain component starts
-declaring framework semantics, a configured route/server root or config change
-should introduce it into the watched framework graph set.
+Graph analysis reads file-route modules plus static import closures to discover
+server functions, server routes, page metadata, and RSC references. Dev watches
+the file-route directory, explicit graph roots, and files that already contain
+framework markers; ordinary component and style edits stay on the bundler HMR
+path.

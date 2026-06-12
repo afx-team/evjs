@@ -1,6 +1,6 @@
 # 项目目录结构
 
-evjs 不要求文件路由，也不需要很重的脚手架。文档和新应用统一使用一份完整推荐结构；实际项目不需要的目录可以直接删除。
+evjs 应用默认以文件路由作为客户端边界。文档和新应用统一使用一份完整推荐结构；实际项目不需要的目录可以直接删除。
 
 ## 推荐结构
 
@@ -12,19 +12,15 @@ my-evjs-app/
 ├── public/                      # 原样复制的静态文件
 ├── tsconfig.json
 └── src/
-    ├── app.tsx                  # 主应用声明和客户端入口
-    ├── routes/
-    │   ├── operations.ts        # operations route group
-    │   └── engagement.ts        # engagement route group
     ├── server.ts                # framework/server entry
     ├── styles.css               # 全局 CSS / Tailwind 入口
-    ├── pages/                   # route/page components
-    │   ├── Dashboard.tsx        # SSR route/page component
-    │   ├── Campaign.tsx         # PPR route/page shell
-    │   ├── OfferRegion.tsx      # Suspense-driven PPR region
-    │   ├── Insights.tsx         # RSC route/page component
-    │   ├── Support.tsx          # CSR standalone page
-    │   └── RemoteApp.tsx        # remote host page
+    ├── pages/                   # 文件路由
+    │   ├── __root.tsx           # 可选 SPA 根布局
+    │   ├── index.tsx            # /
+    │   ├── dashboard.tsx        # /dashboard
+    │   ├── campaign.tsx         # /campaign
+    │   ├── insights.tsx         # /insights
+    │   └── users/$userId.tsx    # /users/$userId
     ├── api/
     │   ├── operators.server.ts  # "use server" functions
     │   └── health.routes.ts     # Request/Response route handlers
@@ -41,10 +37,9 @@ my-evjs-app/
 
 这棵目录覆盖完整框架能力：
 
-- `ev.config.ts` 只把 SPA app 指向一个 app declaration source。
-- `app.tsx` 拥有 app document、client entry、mount point 和 route groups。
-- `routes/operations.ts` 这类 route group 负责 path-to-component wiring，并由 `app.tsx` 导入，不在配置里分别声明。
-- `pages/` 放 app routes 或 standalone pages 使用的 React components，渲染元信息放在这些 page modules 旁边。
+- `ev.config.ts` 只在默认值不够时自定义文件路由模式、服务端路径、远程应用、插件或显式页面输出。
+- `pages/` 是客户端路由事实来源。SPA 模式会映射到内部 TanStack Router tree；MPA 模式会映射到独立页面 entry。
+- 渲染元信息放在页面模块旁边。
 - `api/*.server.ts` 放 server functions。
 - `api/*.routes.ts` 放标准 HTTP route handlers。
 - `server.ts` 组合 `@evjs/server` routes、middleware 和 framework rendering。
@@ -52,21 +47,16 @@ my-evjs-app/
 
 ## 对应配置
 
-对应的 `ev.config.ts` 保持应用边界显式：
+对应的 `ev.config.ts` 可以保持很小：
 
 ```ts
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  html: "./index.html",
-  app: "./src/app.tsx",
-
-  pages: {
-    support: {
-      path: "/support",
-      component: "./src/pages/Support.tsx",
-      mount: "#app",
-    },
+  fileRoutes: {
+    mode: "spa",
+    dir: "./src/pages",
+    mount: "#app",
   },
 
   server: {
@@ -83,63 +73,17 @@ export default defineConfig({
 });
 ```
 
-`entry` / `html` 仍可作为单个简单应用的 shorthand。新应用一旦有 route declarations、framework-managed rendering 或非默认 mount point，就优先使用 `app`。`pages` 用于 standalone page outputs，不用于 `/dashboard`、`/campaign`、`/insights` 这类 app-owned routes。
+当每个路由都应该输出独立 HTML 文档且不需要 TanStack Router 时，使用
+`fileRoutes: { mode: "mpa" }`。只有页面输出无法自然映射到 `src/pages` 时，才使用更底层的
+`pages` 配置。
 
-## App Declaration
+## 页面模块
 
-App declaration 可以基于 TanStack Router，也可以不依赖 TanStack。需要 framework-managed rendering 但不想使用 TanStack Router 时，使用 `defineReactApp()`：
-
-```ts
-// src/app.tsx
-import { defineReactApp } from "@evjs/client";
-import { engagementRoutes } from "./routes/engagement";
-import { operationsRoutes } from "./routes/operations";
-import "./styles.css";
-
-function App() {
-  return <main>Operations console</main>;
-}
-
-export default defineReactApp({
-  html: "../index.html",
-  mount: "#app",
-  component: App,
-  routes: [...operationsRoutes, ...engagementRoutes],
-});
-```
-
-```ts
-// src/routes/operations.ts
-import { route } from "@evjs/client";
-import Dashboard from "../pages/Dashboard";
-import Insights from "../pages/Insights";
-
-export const operationsRoutes = [
-  route("/dashboard", Dashboard, {
-    id: "dashboard",
-  }),
-  route("/insights", Insights, {
-    id: "insights",
-  }),
-];
-```
-
-```ts
-// src/routes/engagement.ts
-import { route } from "@evjs/client";
-import Campaign from "../pages/Campaign";
-
-export const engagementRoutes = [
-  route("/campaign", Campaign, {
-    id: "campaign",
-  }),
-];
-```
-
-`defineReactApp()` 是 app 边界；提供 `component` 或 `render` 时，它同时也是浏览器入口。真正的 `route()` 调用放在按领域拆分的模块里，大应用可以按业务域拆 route group，但不需要把 app 配置拆散在 `ev.config.ts` 和 route files 之间。route target 是普通的静态 React import，因此 graph 仍可分析，也不需要用户写组件模块路径字符串。渲染元信息放在 page component 旁边：
+`src/pages` 下每个文件默认导出一个 React 组件。动态段使用 `$param`，
+`index.tsx` 映射到当前目录根路径。渲染元信息放在页面组件旁边：
 
 ```tsx
-// src/pages/Campaign.tsx
+// src/pages/campaign.tsx
 import { Suspense } from "react";
 import { OfferRegion } from "./OfferRegion";
 import { OfferSkeleton } from "./OfferSkeleton";
@@ -162,9 +106,8 @@ export default function Campaign() {
 }
 ```
 
-如果应用确实需要生成的或独立的 runtime entry，可以在 declaration 里显式写 `entry: "./main.tsx"`。这是逃生口，不是默认 app model。
-
-Route files 应保持轻量：读取 params/search、把路径连接到组件，并从 `features/` 或 `components/` 组合组件。渲染元信息放在 page component 旁边，业务逻辑放到领域模块中。
+页面文件应保持轻量：读取 params/search，导出页面级 loader 或渲染元信息，并从
+`features/` 或 `components/` 组合组件。业务逻辑放到领域模块中。
 
 ## 服务端边界
 
@@ -229,8 +172,7 @@ Remote module 可以默认导出 React component。只有高级场景才需要�
 
 ## 命名建议
 
-- `apps/` 可作为单个 app declaration 的源码目录，不代表配置层多 app 模型。
-- `pages/` 放 route/page components，包括 SSR/PPR/RSC components。
+- `pages/` 是文件路由目录，也可以包含 SSR/PPR/RSC components。
 - `api/` 是服务端边界。
 - `features/` 放业务领域模块。
 - `components/` 放通用 UI。

@@ -2,11 +2,6 @@ import type {
   ExtractedRoute,
   ExtractedServerRoute,
 } from "@evjs/shared/manifest";
-import { extractClientRoutesFromAst } from "./client.js";
-import {
-  extractReactRouteDiagnosticsFromAst,
-  extractReactRoutesFromAst,
-} from "./react.js";
 import { extractServerRoutesFromAst } from "./server.js";
 import { parseRouteModule } from "./shared.js";
 
@@ -15,11 +10,6 @@ export type {
   ExtractedServerRoute,
 } from "@evjs/shared/manifest";
 export { resolveRoutes } from "@evjs/shared/manifest";
-export {
-  extractClientRoutes,
-  extractClientRoutesFromAst,
-} from "./client.js";
-export { extractReactRoutes, extractReactRoutesFromAst } from "./react.js";
 export {
   detectServerRouteExports,
   extractServerRoutes,
@@ -39,7 +29,7 @@ export interface RouteAnalysisDiagnostic {
   column?: number;
 }
 
-/** Parse once and run both client and server route collectors. */
+/** Parse once and run server route collectors. Client routes come from file routes. */
 export function analyzeRoutes(source: string): RouteAnalysis {
   const ast = parseRouteModule(source);
   if (!ast) {
@@ -47,11 +37,8 @@ export function analyzeRoutes(source: string): RouteAnalysis {
   }
 
   return {
-    clientRoutes: [
-      ...extractClientRoutesFromAst(ast),
-      ...extractReactRoutesFromAst(ast),
-    ],
+    clientRoutes: [],
     serverRoutes: extractServerRoutesFromAst(ast),
-    diagnostics: extractReactRouteDiagnosticsFromAst(ast, source),
+    diagnostics: [],
   };
 }

@@ -5,6 +5,7 @@ import type {
   AppNode,
   ComponentModel,
   ExtractedRoute,
+  FileRouteNode,
   HydrationMode,
   PageNode,
   PprConfig,
@@ -16,25 +17,12 @@ import type {
   ServerRouteNode,
   SharedDependencyMap,
 } from "@evjs/shared/manifest";
-import type {
-  CallExpression,
-  Declaration,
-  Expression,
-  ModuleItem,
-  ObjectExpression,
-} from "@swc/types";
 import { extractPageModuleConfig } from "../page-module-config.js";
 import {
   extractPprRegionModuleConfig,
   extractPprRegions,
 } from "../ppr-regions.js";
 import { analyzeRoutes, resolveRoutes } from "../routes/index.js";
-import {
-  collectImportedNames,
-  getPropertyName,
-  isNamedCall,
-  parseRouteModule,
-} from "../routes/shared.js";
 import { extractRscReferences } from "../rsc-refs.js";
 import { extractServerFunctionExports } from "../server-fns.js";
 import { hashServerFunction } from "../utils.js";
@@ -79,10 +67,18 @@ export interface GraphConfig {
         source?: string;
         entry?: string;
         html?: string;
-        routes?: string;
         mount?: string;
       }
   >;
+  fileRoutes?: {
+    mode: "spa" | "mpa";
+    dir: string;
+    entry?: string;
+    html: string;
+    mount: string;
+    routes: FileRouteNode[];
+    rootModule?: string;
+  };
   remotes?: Record<
     string,
     {
@@ -114,24 +110,9 @@ const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
 interface FrameworkSourceFiles {
   analysisFiles: string[];
   explicitDependencyFiles: Set<string>;
-  appRouteFiles: Map<string, Set<string>>;
-  appDeclarations: Map<string, ReactAppSourceDeclaration>;
 }
 
 type PprRegionConfigMap = NonNullable<PprConfig["regions"]>;
-
-interface ReactAppSourceDeclaration {
-  source: string;
-  entry: string;
-  html?: string;
-  mount?: string;
-}
-
-interface ExtractedReactAppDeclaration {
-  entry?: string;
-  html?: string;
-  mount?: string;
-}
 
 export async function createAppGraph(
   config: GraphConfig,
@@ -155,7 +136,7 @@ export async function createAppGraph(
     cwd,
     sourceCache,
   );
-  graph.apps = createAppNodes(config, sourceFiles.appDeclarations);
+  graph.apps = createAppNodes(config);
   await mergeConfiguredPageModuleConfigs(graph, cwd, sourceCache);
   // Watch explicit graph roots and files that already declare framework
   // semantics. Ordinary component edits should stay on the bundler HMR path.
@@ -163,6 +144,9 @@ export async function createAppGraph(
   // configured route/server root or config change should introduce it into the
   // watched framework graph set.
   const fileDependencies = new Set(sourceFiles.explicitDependencyFiles);
+  if (config.fileRoutes) {
+    fileDependencies.add(path.resolve(cwd, config.fileRoutes.dir));
+  }
   const clientRoutes: ExtractedRoute[] = [];
   const serverRoutes = new Map<string, ServerRouteNode>();
   const serverFunctions: ServerFunctionNode[] = [];
@@ -201,35 +185,6 @@ export async function createAppGraph(
       })),
     );
 
-    const appIds = sourceFiles.appRouteFiles.get(file);
-    if (appIds?.size) {
-      for (const appId of appIds) {
-        for (const route of routeAnalysis.clientRoutes) {
-          const normalized = await normalizeRouteModule(
-            cwd,
-            { ...route, appId },
-            file,
-            sourceRel,
-          );
-          clientRoutes.push(
-            await mergeRouteModuleConfig(cwd, normalized, sourceCache),
-          );
-        }
-      }
-    } else {
-      for (const route of routeAnalysis.clientRoutes) {
-        const normalized = await normalizeRouteModule(
-          cwd,
-          route,
-          file,
-          sourceRel,
-        );
-        clientRoutes.push(
-          await mergeRouteModuleConfig(cwd, normalized, sourceCache),
-        );
-      }
-    }
-
     if (!config.serverEnabled) continue;
 
     for (const route of routeAnalysis.serverRoutes) {
@@ -252,6 +207,22 @@ export async function createAppGraph(
   }
 
   const defaultAppId = getDefaultAppId(graph);
+  if (config.fileRoutes?.mode === "spa") {
+    for (const route of config.fileRoutes.routes) {
+      clientRoutes.push(
+        await mergeRouteModuleConfig(
+          cwd,
+          {
+            id: route.id,
+            path: route.path,
+            module: route.module,
+            ...(defaultAppId ? { appId: defaultAppId } : {}),
+          },
+          sourceCache,
+        ),
+      );
+    }
+  }
   clientRoutes.push(...createConfiguredPageRoutes(graph));
 
   graph.routes = resolveRoutes(clientRoutes).map<RouteNode>((route) => {
@@ -570,27 +541,6 @@ async function resolveProjectSourcePath(
     : sourcePath;
 }
 
-async function normalizeRouteModule(
-  cwd: string,
-  route: ExtractedRoute,
-  sourceFile: string,
-  sourceRel: string,
-): Promise<ExtractedRoute> {
-  if (!route.module?.startsWith(".")) return route;
-  const resolved = await resolveSourceImport(cwd, sourceFile, route.module);
-  if (resolved) {
-    return {
-      ...route,
-      module: `./${toPosixPath(path.relative(cwd, resolved))}`,
-    };
-  }
-
-  return {
-    ...route,
-    module: `./${toPosixPath(path.normalize(path.join(path.dirname(sourceRel), route.module)))}`,
-  };
-}
-
 function createRouteDerivedPageNode(
   config: GraphConfig,
   graph: AppGraph,
@@ -662,7 +612,7 @@ function hasRouteGraphSource(config: GraphConfig): boolean {
     Object.keys(config.apps ?? {}).length > 0 ||
       (!config.pages && !config.remote) ||
       Object.values(config.apps ?? {}).some((app) =>
-        typeof app === "string" ? app : app.routes || app.source,
+        typeof app === "string" ? app : app.source,
       ),
   );
 }
@@ -674,25 +624,20 @@ function sanitizeRoutePageId(value: string): string {
   return sanitized.length > 0 ? sanitized : "index";
 }
 
-function createAppNodes(
-  config: GraphConfig,
-  appDeclarations: Map<string, ReactAppSourceDeclaration>,
-): Record<string, AppNode> {
+function createAppNodes(config: GraphConfig): Record<string, AppNode> {
   if (config.apps && Object.keys(config.apps).length > 0) {
     return Object.fromEntries(
       Object.entries(config.apps).flatMap(([id, app]) => {
         if (isAppSourceConfig(app)) {
-          const declaration = appDeclarations.get(id);
-          if (!declaration) return [];
+          const source = getAppSourcePath(app);
+          if (!source) return [];
           return [
             [
               id,
               {
                 id,
-                entry: declaration.entry,
-                html: declaration.html ?? config.html,
-                routes: declaration.source,
-                ...(declaration.mount ? { mount: declaration.mount } : {}),
+                entry: source,
+                html: config.html,
               } satisfies AppNode,
             ],
           ];
@@ -706,7 +651,6 @@ function createAppNodes(
               id,
               entry: app.entry,
               html: app.html ?? config.html,
-              ...(app.routes ? { routes: app.routes } : {}),
               ...(app.mount ? { mount: app.mount } : {}),
             } satisfies AppNode,
           ],
@@ -715,14 +659,19 @@ function createAppNodes(
     );
   }
 
-  if ((config.pages && Object.keys(config.pages).length > 0) || config.remote) {
+  if (
+    (config.pages && Object.keys(config.pages).length > 0) ||
+    config.fileRoutes?.mode === "mpa" ||
+    config.remote
+  ) {
     return {};
   }
 
   const app: AppNode = {
     id: "default",
-    entry: config.entry,
-    html: config.html,
+    entry: config.fileRoutes?.entry ?? config.entry,
+    html: config.fileRoutes?.html ?? config.html,
+    ...(config.fileRoutes?.mount ? { mount: config.fileRoutes.mount } : {}),
   };
   return {
     default: app,
@@ -744,175 +693,25 @@ function getAppSourcePath(
 
 function isAppEntryConfig(
   app: NonNullable<GraphConfig["apps"]>[string],
-): app is { entry: string; html?: string; routes?: string; mount?: string } {
+): app is { entry: string; html?: string; mount?: string } {
   return typeof app !== "string" && "entry" in app && Boolean(app.entry);
-}
-
-async function readReactAppSourceDeclaration(
-  cwd: string,
-  file: string,
-  sourceCache: Map<string, string>,
-): Promise<ReactAppSourceDeclaration | undefined> {
-  let source: string;
-  try {
-    source = sourceCache.get(file) ?? (await fs.readFile(file, "utf-8"));
-    sourceCache.set(file, source);
-  } catch {
-    return undefined;
-  }
-
-  const declaration = extractReactAppDeclaration(source);
-  if (!declaration) return undefined;
-
-  const sourceRel = toPosixPath(path.relative(cwd, file));
-  return {
-    source: `./${sourceRel}`,
-    entry: declaration.entry
-      ? normalizeDeclarationPath(sourceRel, declaration.entry)
-      : `./${sourceRel}`,
-    ...(declaration.html
-      ? { html: normalizeDeclarationPath(sourceRel, declaration.html) }
-      : {}),
-    ...(declaration.mount ? { mount: declaration.mount } : {}),
-  };
-}
-
-function extractReactAppDeclaration(
-  source: string,
-): ExtractedReactAppDeclaration | undefined {
-  const ast = parseRouteModule(source);
-  if (!ast) return undefined;
-
-  const appNames = collectReactAppImports(ast);
-  if (appNames.size === 0) return undefined;
-
-  for (const item of ast.body) {
-    const declaration = extractReactAppDeclarationFromItem(item, appNames);
-    if (declaration) return declaration;
-  }
-
-  return undefined;
-}
-
-function collectReactAppImports(
-  ast: NonNullable<ReturnType<typeof parseRouteModule>>,
-) {
-  const names = new Set<string>();
-  for (const moduleName of ["@evjs/client", "@evjs/client/routes"]) {
-    for (const localName of collectImportedNames(
-      ast,
-      moduleName,
-      "defineReactApp",
-    )) {
-      names.add(localName);
-    }
-  }
-  return names;
-}
-
-function extractReactAppDeclarationFromItem(
-  item: ModuleItem,
-  appNames: Set<string>,
-): ExtractedReactAppDeclaration | undefined {
-  if (item.type === "ExpressionStatement") {
-    return extractReactAppDeclarationFromExpression(item.expression, appNames);
-  }
-
-  if (item.type === "ExportDefaultExpression") {
-    return extractReactAppDeclarationFromExpression(item.expression, appNames);
-  }
-
-  if (item.type === "ExportDeclaration") {
-    return extractReactAppDeclarationFromDeclaration(
-      item.declaration,
-      appNames,
-    );
-  }
-
-  if (item.type === "VariableDeclaration") {
-    return extractReactAppDeclarationFromDeclaration(item, appNames);
-  }
-
-  return undefined;
-}
-
-function extractReactAppDeclarationFromDeclaration(
-  declaration: Declaration,
-  appNames: Set<string>,
-): ExtractedReactAppDeclaration | undefined {
-  if (declaration.type !== "VariableDeclaration") return undefined;
-
-  for (const declarator of declaration.declarations) {
-    if (!declarator.init) continue;
-    const app = extractReactAppDeclarationFromExpression(
-      declarator.init,
-      appNames,
-    );
-    if (app) return app;
-  }
-
-  return undefined;
-}
-
-function extractReactAppDeclarationFromExpression(
-  expression: Expression,
-  appNames: Set<string>,
-): ExtractedReactAppDeclaration | undefined {
-  const unwrapped = unwrapExpression(expression);
-  if (!isNamedCall(unwrapped, appNames)) return undefined;
-
-  const call = unwrapped as CallExpression;
-  const options = call.arguments[0]?.expression;
-  const object = options ? unwrapExpression(options) : undefined;
-  if (!object || object.type !== "ObjectExpression") return undefined;
-
-  return {
-    ...(getStringObjectProperty(object, "entry")
-      ? { entry: getStringObjectProperty(object, "entry") }
-      : {}),
-    ...(getStringObjectProperty(object, "html")
-      ? { html: getStringObjectProperty(object, "html") }
-      : {}),
-    ...(getStringObjectProperty(object, "mount")
-      ? { mount: getStringObjectProperty(object, "mount") }
-      : {}),
-  };
-}
-
-function getStringObjectProperty(
-  object: ObjectExpression,
-  name: string,
-): string | undefined {
-  for (const property of object.properties) {
-    if (property.type !== "KeyValueProperty") continue;
-    if (getPropertyName(property) !== name) continue;
-    const value = unwrapExpression(property.value);
-    if (value.type === "StringLiteral") return value.value;
-  }
-  return undefined;
-}
-
-function unwrapExpression(expression: Expression): Expression {
-  let current = expression;
-  while (
-    current.type === "ParenthesisExpression" ||
-    current.type === "TsAsExpression" ||
-    current.type === "TsNonNullExpression" ||
-    current.type === "TsSatisfiesExpression" ||
-    current.type === "TsTypeAssertion"
-  ) {
-    current = current.expression;
-  }
-  return current;
-}
-
-function normalizeDeclarationPath(sourceRel: string, value: string): string {
-  if (!value.startsWith(".")) return value;
-  return `./${toPosixPath(path.normalize(path.join(path.dirname(sourceRel), value)))}`;
 }
 
 function createPageNodes(config: GraphConfig): Record<string, PageNode> {
   const pages: Record<string, PageNode> = {};
+
+  if (config.fileRoutes?.mode === "mpa") {
+    for (const route of config.fileRoutes.routes) {
+      pages[route.id] = {
+        id: route.id,
+        path: route.path,
+        component: route.module,
+        html: config.fileRoutes.html,
+        render: "csr",
+        mount: config.fileRoutes.mount,
+      };
+    }
+  }
 
   for (const [id, page] of Object.entries(config.pages ?? {})) {
     pages[id] = {
@@ -979,67 +778,31 @@ async function collectFrameworkSourceFiles(
   const files = new Set<string>();
   const roots = new Set<string>();
   const explicitDependencyRoots = new Set<string>();
-  const appRouteFiles = new Map<string, Set<string>>();
-  const appRouteVisited = new Set<string>();
-  const appDeclarations = new Map<string, ReactAppSourceDeclaration>();
 
   if (config.apps && Object.keys(config.apps).length > 0) {
-    for (const [appId, app] of Object.entries(config.apps)) {
+    for (const app of Object.values(config.apps)) {
       const appSource = getAppSourcePath(app);
       if (appSource) {
-        const appRoot = await addExistingSource(
-          roots,
-          cwd,
-          appSource,
-          explicitDependencyRoots,
-        );
-        if (appRoot) {
-          await collectStaticImportClosure(
-            files,
-            cwd,
-            appRoot,
-            sourceCache,
-            appRouteFiles,
-            appId,
-            appRouteVisited,
-          );
-          const declaration = await readReactAppSourceDeclaration(
-            cwd,
-            appRoot,
-            sourceCache,
-          );
-          if (declaration) {
-            appDeclarations.set(appId, declaration);
-            await addExistingSource(roots, cwd, declaration.entry);
-          }
-        }
+        await addExistingSource(roots, cwd, appSource, explicitDependencyRoots);
         continue;
       }
 
       if (!isAppEntryConfig(app)) continue;
 
       await addExistingSource(roots, cwd, app.entry);
-      const routeRoot = await addExistingSource(
-        roots,
-        cwd,
-        app.routes,
-        explicitDependencyRoots,
-      );
-      if (routeRoot) {
-        await collectStaticImportClosure(
-          files,
-          cwd,
-          routeRoot,
-          sourceCache,
-          appRouteFiles,
-          appId,
-          appRouteVisited,
-        );
-      }
     }
   } else if (!config.remote) {
     await addExistingSource(roots, cwd, config.entry);
   }
+  for (const route of config.fileRoutes?.routes ?? []) {
+    await addExistingSource(roots, cwd, route.module, explicitDependencyRoots);
+  }
+  await addExistingSource(
+    roots,
+    cwd,
+    config.fileRoutes?.rootModule,
+    explicitDependencyRoots,
+  );
   for (const entry of Object.values(config.remote?.entries ?? {})) {
     await addExistingSource(roots, cwd, entry.app);
   }
@@ -1064,8 +827,6 @@ async function collectFrameworkSourceFiles(
   return {
     analysisFiles: [...files].sort(),
     explicitDependencyFiles: explicitDependencyRoots,
-    appRouteFiles,
-    appDeclarations,
   };
 }
 
@@ -1096,23 +857,8 @@ async function collectStaticImportClosure(
   cwd: string,
   file: string,
   sourceCache: Map<string, string>,
-  appRouteFiles?: Map<string, Set<string>>,
-  appRouteOwner?: string,
-  appRouteVisited?: Set<string>,
 ) {
-  if (appRouteOwner) {
-    let owners = appRouteFiles?.get(file);
-    if (!owners) {
-      owners = new Set<string>();
-      appRouteFiles?.set(file, owners);
-    }
-    owners.add(appRouteOwner);
-    const ownerVisitKey = `${appRouteOwner}\0${file}`;
-    if (appRouteVisited?.has(ownerVisitKey)) return;
-    appRouteVisited?.add(ownerVisitKey);
-  } else if (files.has(file)) {
-    return;
-  }
+  if (files.has(file)) return;
   files.add(file);
 
   let source: string;
@@ -1126,15 +872,7 @@ async function collectStaticImportClosure(
   for (const specifier of extractStaticImportSpecifiers(source)) {
     const dependency = await resolveSourceImport(cwd, file, specifier);
     if (dependency) {
-      await collectStaticImportClosure(
-        files,
-        cwd,
-        dependency,
-        sourceCache,
-        appRouteFiles,
-        appRouteOwner,
-        appRouteVisited,
-      );
+      await collectStaticImportClosure(files, cwd, dependency, sourceCache);
     }
   }
 }
@@ -1157,12 +895,6 @@ function extractStaticImportSpecifiers(source: string): string[] {
 function isFrameworkDependencySource(source: string): boolean {
   return (
     /^\s*["']use (client|server)["']/m.test(source.slice(0, 200)) ||
-    (source.includes("@evjs/client") &&
-      (source.includes("createRoute") ||
-        source.includes("defineReactApp") ||
-        source.includes("defineReactRoutes") ||
-        /\broute\s*\(/.test(source) ||
-        /\bpage\s*\(/.test(source))) ||
     (source.includes("@evjs/server") && source.includes("createRoute"))
   );
 }

@@ -2,22 +2,25 @@
 
 > **ev** = **Ev**aluation · **Ev**olution — evaluate across runtimes, evolve with AI tooling.
 
-evjs is a zero-config React fullstack framework with explicit app/page configuration, server functions, route handlers, SSR, PPR, RSC integration points, manifest-driven remotes, and deployment-oriented output.
+evjs is a zero-config React fullstack framework with file-based client routes,
+server functions, route handlers, SSR, PPR, RSC integration points,
+manifest-driven remotes, and deployment-oriented output.
 
 The framework keeps a clear split between:
 
-- **application code**: React apps, route declarations, server functions, and server routes;
+- **application code**: React pages, server functions, and server routes;
 - **framework semantics**: `AppGraph`, `BuildPlan`, and `BuildOutput`;
 - **bundlers**: Utoopack by default, webpack as the validation adapter for newer framework capabilities;
 - **runtime/server/deploy adapters**: consume the framework manifest instead of reading bundler stats.
 
-TanStack Router and TanStack Query remain supported through `@evjs/client`, but evjs applications are not required to use TanStack Router. Apps can also use explicit React route declarations and standalone pages.
+SPA file routes use TanStack Router internally for loader/search/params
+semantics. MPA file routes use the page runtime without adding a router.
 
 ## Features
 
-- **Zero-config app start** — `ev dev` / `ev build` work from `src/main.tsx` and `index.html`.
-- **Two routing models** — TanStack Router compatibility and TanStack-free React route declarations.
-- **Framework pages** — standalone CSR/SSR/SSG/PPR/RSC page declarations for MPA and marketing/product pages.
+- **Zero-config file routes** — `ev dev` / `ev build` discover `src/pages` when no `src/main.tsx` entry exists.
+- **SPA and MPA modes** — `fileRoutes.mode: "spa"` builds one TanStack Router-backed app; `"mpa"` builds independent router-free pages.
+- **Framework pages** — page modules can declare CSR/SSR/SSG/PPR/RSC rendering metadata next to the component.
 - **Server functions** — `"use server"` modules become browser-callable RPC stubs.
 - **Server routes** — standard Web `Request`/`Response` route handlers via `createRoute()`.
 - **Unified server boundary** — `@evjs/server` handles server functions, server routes, SSR, PPR, and RSC requests.
@@ -88,4 +91,7 @@ flowchart LR
 
 ## Current Architecture In One Sentence
 
-evjs analyzes explicit declarations into an `AppGraph`, derives a bundler-independent `BuildPlan`, links bundler facts into a single `BuildOutput`, and lets runtime, server, remote, plugin, and deployment adapters consume that output.
+evjs discovers file routes and explicit server/page metadata into an `AppGraph`,
+derives a bundler-independent `BuildPlan`, links bundler facts into a single
+`BuildOutput`, and lets runtime, server, remote, plugin, and deployment adapters
+consume that output.

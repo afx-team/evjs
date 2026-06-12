@@ -1,5 +1,5 @@
 import { DEFAULT_SERVER_BASE_PATH } from "@evjs/shared";
-import type { SharedDependencyMap } from "@evjs/shared/manifest";
+import type { FileRouteNode, SharedDependencyMap } from "@evjs/shared/manifest";
 import type { BundlerAdapter } from "./bundler.js";
 import type { Plugin } from "./plugin.js";
 
@@ -92,6 +92,8 @@ export interface ResolvedConfig<
   pages?: Record<string, ResolvedPageConfig>;
   /** Resolved single SPA application declaration. */
   app?: ResolvedAppConfig;
+  /** Framework-managed file-route SPA declaration, when enabled. */
+  fileRoutes?: ResolvedFileRoutesConfig;
   /** Internal application declarations. */
   apps?: Record<string, ResolvedAppConfig>;
   /** Remote app manifests configured for shell/runtime loading. */
@@ -149,6 +151,16 @@ export interface Config<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
    * field in `ev.config.ts`.
    */
   app?: AppConfig;
+
+  /**
+   * Framework-managed file-based SPA routes.
+   *
+   * When enabled, evjs discovers React page modules from `src/pages`, builds a
+   * TanStack Router route tree internally, and mounts one SPA entry. Existing
+   * manual `entry`, `app`, and `pages` configurations remain valid escape
+   * hatches.
+   */
+  fileRoutes?: boolean | FileRoutesConfig;
 
   /** Remote applications loaded from framework manifests. */
   remotes?: Record<string, RemoteConfig>;
@@ -253,7 +265,6 @@ export interface AppSourceConfig {
 export interface AppEntryConfig {
   entry: string;
   html?: string;
-  routes?: string;
   mount?: string;
 }
 
@@ -261,8 +272,36 @@ export interface ResolvedAppConfig {
   source?: string;
   entry?: string;
   html?: string;
-  routes?: string;
   mount?: string;
+}
+
+export interface FileRoutesConfig {
+  /**
+   * File-route output mode.
+   *
+   * `spa` builds one TanStack Router-backed application from the page tree.
+   * `mpa` builds one independent page output per file without a client router.
+   * Default: "spa".
+   */
+  mode?: FileRoutesMode;
+  /** Directory containing page modules. Default: "./src/pages". */
+  dir?: string;
+  /** HTML template for generated routes. Defaults to top-level `html`. */
+  html?: string;
+  /** Mount selector for generated routes. Default: "#app". */
+  mount?: string;
+}
+
+export type FileRoutesMode = "spa" | "mpa";
+
+export interface ResolvedFileRoutesConfig {
+  mode: FileRoutesMode;
+  dir: string;
+  html: string;
+  mount: string;
+  entry?: string;
+  routes: FileRouteNode[];
+  rootModule?: string;
 }
 
 export interface RemoteConfig {
@@ -320,6 +359,9 @@ export const CONFIG_DEFAULTS = {
   serverBasePath: DEFAULT_SERVER_BASE_PATH,
   clientProxy: "@evjs/client",
   serverRegister: "@evjs/server/register",
+  fileRoutesDir: "./src/pages",
+  fileRoutesMode: "spa",
+  mount: "#app",
 } as const;
 
 function toProxyContext(endpoint: string): string {
@@ -384,6 +426,10 @@ export function resolveConfig<
   const resolvedApp = config.app
     ? resolveAppConfig(config.app, defaultHtml)
     : undefined;
+  const resolvedFileRoutes = resolveFileRoutesConfig(
+    config.fileRoutes,
+    defaultHtml,
+  );
   const resolvedApps = resolvedApp ? { default: resolvedApp } : undefined;
 
   const serverPort = serverConfig.dev?.port ?? CONFIG_DEFAULTS.serverPort;
@@ -402,6 +448,7 @@ export function resolveConfig<
     html: defaultHtml,
     pages: resolvedPages,
     app: resolvedApp,
+    fileRoutes: resolvedFileRoutes,
     apps: resolvedApps,
     remotes: Object.fromEntries(
       Object.entries(config.remotes ?? {}).map(([name, remote]) => [
@@ -479,6 +526,21 @@ export function resolveConfig<
   };
 }
 
+function resolveFileRoutesConfig(
+  fileRoutes: Config["fileRoutes"],
+  defaultHtml: string,
+): ResolvedFileRoutesConfig | undefined {
+  if (!fileRoutes) return undefined;
+  const options = fileRoutes === true ? {} : fileRoutes;
+  return {
+    mode: options.mode ?? CONFIG_DEFAULTS.fileRoutesMode,
+    dir: options.dir ?? CONFIG_DEFAULTS.fileRoutesDir,
+    html: options.html ?? defaultHtml,
+    mount: options.mount ?? CONFIG_DEFAULTS.mount,
+    routes: [],
+  };
+}
+
 function resolveAppConfig(
   app: AppConfig,
   defaultHtml: string,
@@ -492,7 +554,6 @@ function resolveAppConfig(
   return {
     entry: app.entry,
     html: app.html ?? defaultHtml,
-    routes: app.routes,
     mount: app.mount,
   };
 }
@@ -587,7 +648,10 @@ export interface ResolvedPageConfig {
  * Whether the resolved config is in MPA (multi-page) mode.
  */
 export function isMpa<T = unknown>(config: ResolvedConfig<T>): boolean {
-  return config.pages !== undefined && Object.keys(config.pages).length > 0;
+  return (
+    (config.pages !== undefined && Object.keys(config.pages).length > 0) ||
+    config.fileRoutes?.mode === "mpa"
+  );
 }
 
 function validatePageConfig(name: string, page: PageObjectConfig): void {

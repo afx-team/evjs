@@ -7,6 +7,16 @@ export type { App, CreateAppOptions, CreateAppRouterOptions } from "./app.js";
 export { createApp } from "./app.js";
 export type { AppRouteContext } from "./context.js";
 export { createAppRootRoute } from "./context.js";
+export type {
+  CreateFileRouteAppOptions,
+  FileRouteApp,
+  FileRouteDefinition,
+  FileRouteModule,
+  FileRoutePageComponent,
+  FileRoutePageProps,
+  FileRouteRootModule,
+} from "./file-route.js";
+export { createFileRouteApp, definePage } from "./file-route.js";
 export {
   getFnQueryKey,
   getFnQueryOptions,
@@ -201,15 +211,6 @@ export {
   startRemoteAppRuntime,
   useRemoteHost,
 } from "./remote-app.js";
-export type {
-  PageReference,
-  ReactAppDeclaration,
-  ReactAppOptions,
-  ReactRouteDeclaration,
-  ReactRouteOptions,
-  ReactRoutes,
-} from "./routes.js";
-export { defineReactApp, defineReactRoutes, page, route } from "./routes.js";
 export type {
   ReactRscModelOptions,
   ReactRscMountOptions,

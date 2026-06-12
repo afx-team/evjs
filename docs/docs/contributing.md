@@ -45,13 +45,14 @@ npx biome check --write    # Fix lint/format
 4. Import and use in client with `useQuery(fn)` or `useMutation(fn)`
 
 ### Add a new route
-1. Define route in `routes.tsx` with `createRoute()`
-2. Add to route tree via `parentRoute.addChildren([newRoute])`
+1. Add a page file under `src/pages`
+2. Use `$param` for dynamic segments and `index.tsx` for directory roots
+3. Put page-local loader/search/render metadata next to the default component export
 
 ### Add a new example
 1. Create directory under `examples/`
 2. Add `package.json` with `"@evjs/cli": "*"` as devDep
-3. Add `src/main.tsx` + `index.html`
+3. Add `src/pages/index.tsx` + `index.html`
 4. Create symlink in `packages/create-app/templates/`
 5. Add an e2e test in `e2e/cases/`
 

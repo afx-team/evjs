@@ -35,7 +35,6 @@ export interface AppNode {
   id: string;
   entry: string;
   html: string;
-  routes?: string;
   mount?: string;
 }
 
@@ -193,7 +192,8 @@ export interface BuildEntryOwner {
 
 export type BuildEntryMetadata =
   | ReactComponentPageEntryMetadata
-  | RemoteClientEntryMetadata;
+  | RemoteClientEntryMetadata
+  | FileRouteAppEntryMetadata;
 
 export interface ReactComponentPageEntryMetadata {
   type: "react-component-page";
@@ -206,6 +206,19 @@ export interface ReactComponentPageEntryMetadata {
 export interface RemoteClientEntryMetadata {
   type: "remote-client";
   app: string;
+}
+
+export interface FileRouteAppEntryMetadata {
+  type: "file-route-app";
+  routes: FileRouteNode[];
+  mount: string;
+  rootModule?: string;
+}
+
+export interface FileRouteNode {
+  id: string;
+  path: string;
+  module: string;
 }
 
 export interface RemoteBuildPlan {
@@ -316,7 +329,6 @@ export interface TransportOutput {
 export interface AppOutput {
   assets: AssetGroup;
   entry?: string;
-  routes?: string;
   mount?: string;
   module?: RuntimeModuleOutput;
 }
@@ -463,11 +475,11 @@ export interface RscPageOutput {
 
 // ── Route resolution ────────────────────────────────────────────────────
 
-/** Route metadata extracted from a createRoute() call. */
+/** Route metadata discovered from file routes or configured pages. */
 export interface ExtractedRoute {
   /** Route path (e.g. "/", "/posts/$postId"). */
   path: string;
-  /** Stable route id when a static route DSL provides one. */
+  /** Stable route id derived from the file path or page id. */
   id?: string;
   /** Static page/component module declared for this route. */
   module?: string;
@@ -483,7 +495,7 @@ export interface ExtractedRoute {
   ppr?: PprConfig;
   /** Server runtime declared in route metadata. */
   runtime?: ServerRuntime;
-  /** Owning app id for routes extracted from an app-specific route source. */
+  /** Owning app id for framework-managed SPA routes. */
   appId?: string;
   /** Variable name of the parent route (e.g. "rootRoute", "postsRoute"). */
   parentName?: string;

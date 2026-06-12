@@ -1,6 +1,6 @@
-import { createRootRoute, Outlet } from "@evjs/client";
+import type { ReactNode } from "react";
 
-function Root() {
+export default function Root({ children }: { children?: ReactNode }) {
   return (
     <div
       style={{
@@ -22,11 +22,7 @@ function Root() {
           Combining Zero-Config Server Functions with tRPC Type-Safety
         </p>
       </header>
-      <main>
-        <Outlet />
-      </main>
+      <main>{children}</main>
     </div>
   );
 }
-
-export const rootRoute = createRootRoute({ component: Root });

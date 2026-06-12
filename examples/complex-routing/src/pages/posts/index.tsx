@@ -1,100 +1,33 @@
-import { createRoute, Link, Outlet, useQuery } from "@evjs/client";
-import { getPost, getPosts } from "../../api/data.server";
-import { rootRoute } from "../__root";
+import { Link, useQuery } from "@evjs/client";
+import { getPosts } from "../../api/data.server";
 
 const styles = {
-  sidebar: { display: "flex", gap: "1.5rem" },
-  nav: {
-    minWidth: 180,
-    borderRight: "1px solid #e5e7eb",
-    paddingRight: "1rem",
-  },
-  tag: {
-    display: "inline-block",
-    background: "#f3f4f6",
-    borderRadius: 4,
-    padding: "2px 8px",
-    fontSize: 12,
-    marginRight: 4,
+  card: {
+    border: "1px solid #e5e7eb",
+    borderRadius: 8,
+    padding: "1rem",
+    marginBottom: "0.75rem",
   },
 };
 
-// ── Posts layout (/posts) ──
-
-function PostsLayout() {
+export default function PostsPage() {
   const { data: posts } = useQuery(getPosts);
-  return (
-    <div style={styles.sidebar}>
-      <div style={styles.nav}>
-        <h3 style={{ marginTop: 0 }}>Posts</h3>
-        <ul style={{ listStyle: "none", padding: 0 }}>
-          {posts?.map((p) => (
-            <li key={p.id} style={{ marginBottom: "0.25rem" }}>
-              <Link
-                to="/posts/$postId"
-                params={{ postId: p.id }}
-                style={{ textDecoration: "none", color: "#374151" }}
-                activeProps={{ style: { fontWeight: "bold", color: "#111" } }}
-              >
-                {p.title}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </div>
-      <div style={{ flex: 1 }}>
-        <Outlet />
-      </div>
-    </div>
-  );
-}
 
-export const postsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/posts",
-  component: PostsLayout,
-});
-
-// ── Posts index (/posts/) ──
-
-export const postsIndexRoute = createRoute({
-  getParentRoute: () => postsRoute,
-  path: "/",
-  component: () => (
-    <p style={{ color: "#6b7280" }}>← Select a post from the sidebar</p>
-  ),
-});
-
-// ── Post detail (/posts/$postId) ──
-
-function PostDetail() {
-  const { postId } = postDetailRoute.useParams();
-  const { data: post } = useQuery(getPost, postId);
-
-  if (!post) return <p>Loading...</p>;
   return (
     <div>
-      <h2>{post.title}</h2>
-      <p style={{ color: "#6b7280" }}>
-        by{" "}
-        <Link to="/users/$username" params={{ username: post.author }}>
-          {post.author}
-        </Link>
-      </p>
-      <p>{post.body}</p>
-      <div>
-        {post.tags.map((tag) => (
-          <span key={tag} style={styles.tag}>
-            {tag}
-          </span>
-        ))}
-      </div>
+      <h2>Posts</h2>
+      {posts?.map((post) => (
+        <div key={post.id} style={styles.card}>
+          <Link
+            to="/posts/$postId"
+            params={{ postId: post.id }}
+            style={{ textDecoration: "none", color: "#111" }}
+          >
+            <strong>{post.title}</strong>
+          </Link>
+          <p style={{ color: "#6b7280" }}>{post.body}</p>
+        </div>
+      ))}
     </div>
   );
 }
-
-export const postDetailRoute = createRoute({
-  getParentRoute: () => postsRoute,
-  path: "$postId",
-  component: PostDetail,
-});

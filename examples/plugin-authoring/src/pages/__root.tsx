@@ -1,13 +1,9 @@
-import { createRootRoute, Outlet } from "@evjs/client";
+import type { ReactNode } from "react";
 
-function Root() {
+export default function Root({ children }: { children?: ReactNode }) {
   return (
     <div style={{ fontFamily: "system-ui, sans-serif", padding: "1rem" }}>
-      <Outlet />
+      {children}
     </div>
   );
 }
-
-export const rootRoute = createRootRoute({
-  component: Root,
-});

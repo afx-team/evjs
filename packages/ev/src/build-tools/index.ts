@@ -3,6 +3,12 @@
  */
 
 export type {
+  DiscoverFileRoutesOptions,
+  FileRouteDiscovery,
+  FileRouteDiscoveryDiagnostic,
+} from "./file-routes.js";
+export { discoverFileRoutes } from "./file-routes.js";
+export type {
   Diagnostic,
   GraphAnalysisResult,
   GraphConfig,
@@ -23,10 +29,6 @@ export type {
 export {
   analyzeRoutes,
   detectServerRouteExports,
-  extractClientRoutes,
-  extractClientRoutesFromAst,
-  extractReactRoutes,
-  extractReactRoutesFromAst,
   extractServerRoutes,
   resolveRoutes,
 } from "./routes.js";

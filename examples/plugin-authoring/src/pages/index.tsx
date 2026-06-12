@@ -1,8 +1,7 @@
-import { createRoute, useQuery } from "@evjs/client";
+import { useQuery } from "@evjs/client";
 import { getPluginMessage } from "../api/plugin.server";
-import { rootRoute } from "./__root";
 
-function Home() {
+export default function Home() {
   const { data, isLoading } = useQuery(getPluginMessage);
 
   return (
@@ -28,9 +27,3 @@ function Home() {
     </div>
   );
 }
-
-export const homeRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/",
-  component: Home,
-});

@@ -15,7 +15,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp src/adapter/component-page-loader.cjs src/adapter/file-route-entry-loader.cjs esm/adapter/",
     "test": "vitest run",
     "check-types": "tsc --noEmit"
   },

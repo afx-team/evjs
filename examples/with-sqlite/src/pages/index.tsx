@@ -1,5 +1,4 @@
 import {
-  createRoute,
   getFnQueryKey,
   useMutation,
   useQuery,
@@ -16,11 +15,10 @@ import {
   getUsers,
   toggleTodo,
 } from "../api/db.server";
-import { rootRoute } from "./__root";
 
 // ── Users Page ──
 
-function UsersPage() {
+export default function UsersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
@@ -263,9 +261,3 @@ function TodosSection({ userId }: { userId: number }) {
     </div>
   );
 }
-
-export const usersRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/",
-  component: UsersPage,
-});

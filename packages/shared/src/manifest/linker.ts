@@ -106,7 +106,6 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
         {
           assets,
           entry: app.entry,
-          routes: app.routes,
           mount: app.mount,
           module: entry
             ? {

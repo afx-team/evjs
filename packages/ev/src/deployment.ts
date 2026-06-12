@@ -3,6 +3,7 @@ import path from "node:path";
 import type {
   AssetGroup,
   BuildOutput,
+  ComponentModel,
   PublicPathOutput,
   RenderMode,
   RuntimeOutput,
@@ -78,7 +79,6 @@ export interface DeploymentArtifact {
 export interface DeploymentApp {
   assets?: AssetGroup;
   entry?: string;
-  routes?: string;
   mount?: string;
 }
 
@@ -87,6 +87,7 @@ export interface DeploymentPage {
   path?: string;
   routeId?: string;
   render: RenderMode;
+  componentModel?: ComponentModel;
   hydrate?: string;
   mount?: string;
 }
@@ -142,7 +143,6 @@ export function createDeploymentArtifact(
         {
           ...(includeAssets ? { assets: app.assets } : {}),
           entry: app.entry,
-          routes: app.routes,
           mount: app.mount,
         },
       ]),
@@ -155,6 +155,7 @@ export function createDeploymentArtifact(
           path: page.path,
           routeId: page.routeId,
           render: page.render,
+          componentModel: page.componentModel,
           hydrate: page.hydrate,
           mount: page.mount,
         },

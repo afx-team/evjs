@@ -59,6 +59,194 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
   });
 
+  it("creates a framework-managed SPA entry from file routes", async () => {
+    const cwd = await createFixture({
+      "src/pages/__root.tsx": "export default function Root() { return null; }",
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+      "src/pages/users/$userId.tsx": `
+        export function validateSearch(search: Record<string, unknown>) {
+          return { tab: String(search.tab ?? "all") };
+        }
+        export default function User() { return null; }
+      `,
+      "index.html": '<div id="app"></div>',
+    });
+    const config = createConfig({
+      entry: "./src/pages/index.tsx",
+      fileRoutes: {
+        mode: "spa",
+        dir: "./src/pages",
+        entry: "./src/pages/index.tsx",
+        html: "./index.html",
+        mount: "#app",
+        rootModule: "./src/pages/__root.tsx",
+        routes: [
+          {
+            id: "index",
+            path: "/",
+            module: "./src/pages/index.tsx",
+          },
+          {
+            id: "users_userId",
+            path: "/users/$userId",
+            module: "./src/pages/users/$userId.tsx",
+          },
+        ],
+      },
+    });
+    const analysis = await createAppGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "development",
+    });
+
+    expect(analysis.graph.apps.default).toEqual({
+      id: "default",
+      entry: "./src/pages/index.tsx",
+      html: "./index.html",
+      mount: "#app",
+    });
+    expect(analysis.graph.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        appId: "default",
+        module: "./src/pages/index.tsx",
+      },
+      {
+        id: "users_userId",
+        path: "/users/$userId",
+        appId: "default",
+        module: "./src/pages/users/$userId.tsx",
+      },
+    ]);
+    expect(plan.entries).toContainEqual({
+      name: "main",
+      import: "./src/pages/index.tsx",
+      environment: "client",
+      runtime: "browser",
+      kind: "app-client",
+      owner: { appId: "default" },
+      metadata: {
+        type: "file-route-app",
+        mount: "#app",
+        rootModule: "./src/pages/__root.tsx",
+        routes: [
+          {
+            id: "index",
+            path: "/",
+            module: "./src/pages/index.tsx",
+          },
+          {
+            id: "users_userId",
+            path: "/users/$userId",
+            module: "./src/pages/users/$userId.tsx",
+          },
+        ],
+      },
+    });
+    expect(
+      analysis.fileDependencies.map((file) => path.relative(cwd, file)),
+    ).toEqual([
+      "src/pages",
+      "src/pages/__root.tsx",
+      "src/pages/index.tsx",
+      "src/pages/users/$userId.tsx",
+    ]);
+  });
+
+  it("creates router-free MPA page entries from file routes", async () => {
+    const cwd = await createFixture({
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+      "src/pages/about.tsx": "export default function About() { return null; }",
+      "index.html": '<div id="app"></div>',
+    });
+    const config = createConfig({
+      fileRoutes: {
+        mode: "mpa",
+        dir: "./src/pages",
+        html: "./index.html",
+        mount: "#app",
+        routes: [
+          {
+            id: "index",
+            path: "/",
+            module: "./src/pages/index.tsx",
+          },
+          {
+            id: "about",
+            path: "/about",
+            module: "./src/pages/about.tsx",
+          },
+        ],
+      },
+    });
+    const analysis = await createAppGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "development",
+    });
+
+    expect(analysis.graph.apps).toEqual({});
+    expect(analysis.graph.pages).toMatchObject({
+      index: {
+        id: "index",
+        path: "/",
+        component: "./src/pages/index.tsx",
+        html: "./index.html",
+        render: "csr",
+        mount: "#app",
+      },
+      about: {
+        id: "about",
+        path: "/about",
+        component: "./src/pages/about.tsx",
+        html: "./index.html",
+        render: "csr",
+        mount: "#app",
+      },
+    });
+    expect(plan.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "index",
+          import: "./src/pages/index.tsx",
+          kind: "page-client",
+          owner: { pageId: "index" },
+          metadata: expect.objectContaining({
+            type: "react-component-page",
+            component: "./src/pages/index.tsx",
+          }),
+        }),
+        expect.objectContaining({
+          name: "about",
+          import: "./src/pages/about.tsx",
+          kind: "page-client",
+          owner: { pageId: "about" },
+          metadata: expect.objectContaining({
+            type: "react-component-page",
+            component: "./src/pages/about.tsx",
+          }),
+        }),
+      ]),
+    );
+    expect(plan.entries.some((entry) => entry.kind === "app-client")).toBe(
+      false,
+    );
+    expect(plan.html).toEqual([
+      {
+        id: "index",
+        template: "./index.html",
+        fileName: "index.html",
+        owner: { pageId: "index" },
+      },
+      {
+        id: "about",
+        template: "./index.html",
+        fileName: "about.html",
+        owner: { pageId: "about" },
+      },
+    ]);
+  });
+
   it("creates one page client entry per configured page", async () => {
     const cwd = await createFixture({
       "src/pages/home/main.tsx": "console.log('home');",
@@ -991,7 +1179,7 @@ describe("createAppGraph and createBuildPlan", () => {
     expect(update.serverChanged).toBe(false);
   });
 
-  it("extracts current route, server route, and server function metadata", async () => {
+  it("extracts server route and server function metadata", async () => {
     const cwd = await createFixture({
       "src/main.tsx": `
         import { createRoute } from "@evjs/client";
@@ -1030,9 +1218,7 @@ describe("createAppGraph and createBuildPlan", () => {
     });
     const analysis = await createAppGraph(config, cwd);
 
-    expect(analysis.graph.routes).toEqual([
-      { id: "/", path: "/", appId: "default" },
-    ]);
+    expect(analysis.graph.routes).toEqual([]);
     expect(analysis.graph.serverRoutes).toEqual([
       {
         id: "src/api.ts:/api/health:GET",
@@ -1050,12 +1236,7 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
     expect(
       analysis.fileDependencies.map((file) => path.relative(cwd, file)),
-    ).toEqual([
-      "src/actions.ts",
-      "src/api.ts",
-      "src/main.tsx",
-      "src/server.ts",
-    ]);
+    ).toEqual(["src/actions.ts", "src/api.ts", "src/server.ts"]);
   });
 
   it("does not scan unrelated source files outside explicit roots and imports", async () => {
@@ -1077,7 +1258,7 @@ describe("createAppGraph and createBuildPlan", () => {
     ).toEqual([]);
   });
 
-  it("collects explicit app route and remote declarations", async () => {
+  it("collects file route and remote declarations", async () => {
     const cwd = await createFixture({
       "src/main.tsx": "console.log('app');",
       "src/pages/Dashboard.tsx": `
@@ -1085,26 +1266,23 @@ describe("createAppGraph and createBuildPlan", () => {
         export const hydrate = "load";
         export default function Dashboard() { return null; }
       `,
-      "src/routes.tsx": `
-        import Dashboard from "./pages/Dashboard";
-        import { defineReactRoutes, page, route } from "@evjs/client";
-        void Dashboard;
-        export default defineReactRoutes([
-          route("/dashboard", {
-            id: "dashboard",
-            page: page("./pages/Dashboard.tsx"),
-          }),
-        ]);
-      `,
       "index.html": '<div id="app"></div>',
     });
     const config = createConfig({
-      apps: {
-        default: {
-          entry: "./src/main.tsx",
-          html: "./index.html",
-          routes: "./src/routes.tsx",
-        },
+      entry: "./src/main.tsx",
+      fileRoutes: {
+        mode: "spa",
+        dir: "./src/pages",
+        entry: "./src/main.tsx",
+        html: "./index.html",
+        mount: "#app",
+        routes: [
+          {
+            id: "dashboard",
+            path: "/dashboard",
+            module: "./src/pages/Dashboard.tsx",
+          },
+        ],
       },
       remotes: {
         crm: {
@@ -1122,7 +1300,7 @@ describe("createAppGraph and createBuildPlan", () => {
       id: "default",
       entry: "./src/main.tsx",
       html: "./index.html",
-      routes: "./src/routes.tsx",
+      mount: "#app",
     });
     expect(analysis.graph.routes).toEqual([
       {
@@ -1154,6 +1332,17 @@ describe("createAppGraph and createBuildPlan", () => {
           runtime: "browser",
           kind: "app-client",
           owner: { appId: "default" },
+          metadata: {
+            type: "file-route-app",
+            routes: [
+              {
+                id: "dashboard",
+                path: "/dashboard",
+                module: "./src/pages/Dashboard.tsx",
+              },
+            ],
+            mount: "#app",
+          },
         },
         {
           name: "server",
@@ -1197,7 +1386,7 @@ describe("createAppGraph and createBuildPlan", () => {
     });
     expect(
       analysis.fileDependencies.map((file) => path.relative(cwd, file)),
-    ).toEqual(["src/routes.tsx"]);
+    ).toEqual(["src/pages", "src/pages/Dashboard.tsx"]);
   });
 
   it("creates remote-client entries for remote-only builds without app html", async () => {
@@ -1318,12 +1507,6 @@ describe("createAppGraph and createBuildPlan", () => {
       "src/console/main.tsx": "console.log('console');",
       "src/pages/campaign.tsx":
         "export default function Campaign() { return null; }",
-      "src/routes.tsx": `
-        import { defineReactRoutes, route } from "@evjs/client";
-        export default defineReactRoutes([
-          route("/orders", { id: "orders" }),
-        ]);
-      `,
       "index.html": '<div id="app"></div>',
     });
     const config = createConfig({
@@ -1331,7 +1514,6 @@ describe("createAppGraph and createBuildPlan", () => {
         console: {
           entry: "./src/console/main.tsx",
           html: "./index.html",
-          routes: "./src/routes.tsx",
         },
       },
       pages: {
@@ -1392,27 +1574,26 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
   });
 
-  it("keeps CSR route modules as route metadata without page build units", async () => {
+  it("keeps CSR file route modules as route metadata without page build units", async () => {
     const cwd = await createFixture({
-      "src/main.tsx": "console.log('app');",
-      "src/routes.tsx": `
-        import { defineReactRoutes, page, route } from "@evjs/client";
-        export default defineReactRoutes([
-          route("/about", {
-            id: "about",
-            page: page("./pages/About.tsx"),
-          }),
-        ]);
-      `,
+      "src/pages/About.tsx": "export default function About() { return null; }",
       "index.html": '<div id="app"></div>',
     });
     const config = createConfig({
-      apps: {
-        default: {
-          entry: "./src/main.tsx",
-          html: "./index.html",
-          routes: "./src/routes.tsx",
-        },
+      entry: "./src/pages/About.tsx",
+      fileRoutes: {
+        mode: "spa",
+        dir: "./src/pages",
+        entry: "./src/pages/About.tsx",
+        html: "./index.html",
+        mount: "#app",
+        routes: [
+          {
+            id: "about",
+            path: "/about",
+            module: "./src/pages/About.tsx",
+          },
+        ],
       },
     });
     const analysis = await createAppGraph(config, cwd);
@@ -1442,21 +1623,13 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
   });
 
-  it("keeps route app ownership with the app that declares the route source", async () => {
+  it("assigns file routes to the explicit SPA app entry", async () => {
     const cwd = await createFixture({
       "src/console/main.tsx": "console.log('console');",
       "src/admin/main.tsx": "console.log('admin');",
-      "src/console/routes.tsx": `
-        import { defineReactRoutes, route } from "@evjs/client";
-        export default defineReactRoutes([
-          route("/orders", { id: "orders" }),
-        ]);
-      `,
-      "src/admin/routes.tsx": `
-        import { defineReactRoutes, route } from "@evjs/client";
-        export default defineReactRoutes([
-          route("/orders", { id: "admin.orders" }),
-        ]);
+      "src/pages/orders.tsx": `
+        export const render = "ssr";
+        export default function Orders() { return null; }
       `,
       "index.html": '<div id="app"></div>',
     });
@@ -1465,54 +1638,90 @@ describe("createAppGraph and createBuildPlan", () => {
         console: {
           entry: "./src/console/main.tsx",
           html: "./index.html",
-          routes: "./src/console/routes.tsx",
         },
         admin: {
           entry: "./src/admin/main.tsx",
           html: "./index.html",
-          routes: "./src/admin/routes.tsx",
         },
+      },
+      fileRoutes: {
+        mode: "spa",
+        dir: "./src/pages",
+        entry: "./src/console/main.tsx",
+        html: "./index.html",
+        mount: "#app",
+        routes: [
+          {
+            id: "orders",
+            path: "/orders",
+            module: "./src/pages/orders.tsx",
+          },
+        ],
       },
     });
 
     const analysis = await createAppGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "development",
+    });
 
+    expect(analysis.graph.apps).toEqual({
+      console: {
+        id: "console",
+        entry: "./src/console/main.tsx",
+        html: "./index.html",
+      },
+      admin: {
+        id: "admin",
+        entry: "./src/admin/main.tsx",
+        html: "./index.html",
+      },
+    });
     expect(analysis.graph.routes).toEqual([
-      { id: "admin.orders", path: "/orders", appId: "admin" },
-      { id: "orders", path: "/orders", appId: "console" },
+      {
+        id: "orders",
+        path: "/orders",
+        appId: "console",
+        pageId: "orders",
+        module: "./src/pages/orders.tsx",
+        render: "ssr",
+      },
     ]);
+    expect(plan.entries).toContainEqual({
+      name: "console",
+      import: "./src/console/main.tsx",
+      environment: "client",
+      runtime: "browser",
+      kind: "app-client",
+      owner: { appId: "console" },
+      metadata: {
+        type: "file-route-app",
+        routes: [
+          {
+            id: "orders",
+            path: "/orders",
+            module: "./src/pages/orders.tsx",
+          },
+        ],
+        mount: "#app",
+      },
+    });
+    expect(plan.entries).toContainEqual({
+      name: "orders-server",
+      import: "./src/pages/orders.tsx",
+      environment: "server",
+      runtime: "node",
+      kind: "page-server",
+      owner: { pageId: "orders", routeId: "orders" },
+    });
   });
 
-  it("creates app graph nodes from a single app declaration source", async () => {
+  it("treats app source files as plain app entries", async () => {
     const cwd = await createFixture({
       "src/apps/render-lab/app.tsx": `
-        import { defineReactApp } from "@evjs/client";
-        import { operationsRoutes } from "./routes/operations";
-
-        function RenderLabApp() {
+        export default function RenderLabApp() {
           return null;
         }
-
-        export default defineReactApp({
-          html: "../../../index.html",
-          mount: "#app",
-          component: RenderLabApp,
-          routes: [...operationsRoutes],
-        });
-      `,
-      "src/apps/render-lab/routes/operations.tsx": `
-        import { route } from "@evjs/client";
-        import Dashboard from "../../../pages/Dashboard";
-        export const operationsRoutes = [
-          route("/app/dashboard", Dashboard, {
-            id: "render-lab.dashboard",
-          }),
-        ];
-      `,
-      "src/pages/Dashboard.tsx": `
-        export const render = "ssr";
-        export const hydrate = "load";
-        export default function Dashboard() { return null; }
       `,
       "index.html": '<div id="app"></div>',
     });
@@ -1532,21 +1741,9 @@ describe("createAppGraph and createBuildPlan", () => {
         id: "render-lab",
         entry: "./src/apps/render-lab/app.tsx",
         html: "./index.html",
-        mount: "#app",
-        routes: "./src/apps/render-lab/app.tsx",
       },
     });
-    expect(analysis.graph.routes).toEqual([
-      {
-        id: "render-lab.dashboard",
-        path: "/app/dashboard",
-        appId: "render-lab",
-        pageId: "render-lab_dashboard",
-        module: "./src/pages/Dashboard.tsx",
-        render: "ssr",
-        hydrate: "load",
-      },
-    ]);
+    expect(analysis.graph.routes).toEqual([]);
     expect(plan.entries).toContainEqual({
       name: "render-lab",
       import: "./src/apps/render-lab/app.tsx",
@@ -1563,116 +1760,38 @@ describe("createAppGraph and createBuildPlan", () => {
     });
   });
 
-  it("keeps route app ownership for routes split into imported modules", async () => {
+  it("creates stable route-derived page ids from file route paths", async () => {
     const cwd = await createFixture({
-      "src/console/main.tsx": "console.log('console');",
-      "src/admin/main.tsx": "console.log('admin');",
-      "src/console/routes/index.tsx": `
-        import { defineReactRoutes } from "@evjs/client";
-        import { operationsRoutes } from "./operations";
-        export default defineReactRoutes([...operationsRoutes]);
-      `,
-      "src/console/routes/operations.tsx": `
-        import { page, route } from "@evjs/client";
-        export const operationsRoutes = [
-          route("/orders", {
-            id: "console.orders",
-            page: page("../../pages/Orders.tsx"),
-          }),
-        ];
-      `,
-      "src/admin/routes/index.tsx": `
-        import { defineReactRoutes } from "@evjs/client";
-        import { operationsRoutes } from "./operations";
-        export default defineReactRoutes([...operationsRoutes]);
-      `,
-      "src/admin/routes/operations.tsx": `
-        import { page, route } from "@evjs/client";
-        export const operationsRoutes = [
-          route("/orders", {
-            id: "admin.orders",
-            page: page("../../pages/AdminOrders.tsx"),
-          }),
-        ];
-      `,
-      "src/pages/Orders.tsx": `
-        export const render = "ssr";
-        export default function Orders() { return null; }
-      `,
-      "src/pages/AdminOrders.tsx": `
-        export const render = "ssr";
-        export default function AdminOrders() { return null; }
-      `,
-      "index.html": '<div id="app"></div>',
-    });
-    const config = createConfig({
-      apps: {
-        console: {
-          entry: "./src/console/main.tsx",
-          html: "./index.html",
-          routes: "./src/console/routes/index.tsx",
-        },
-        admin: {
-          entry: "./src/admin/main.tsx",
-          html: "./index.html",
-          routes: "./src/admin/routes/index.tsx",
-        },
-      },
-    });
-
-    const analysis = await createAppGraph(config, cwd);
-
-    expect(analysis.graph.routes).toEqual([
-      {
-        id: "admin.orders",
-        path: "/orders",
-        appId: "admin",
-        pageId: "admin_orders",
-        module: "./src/pages/AdminOrders.tsx",
-        render: "ssr",
-      },
-      {
-        id: "console.orders",
-        path: "/orders",
-        appId: "console",
-        pageId: "console_orders",
-        module: "./src/pages/Orders.tsx",
-        render: "ssr",
-      },
-    ]);
-  });
-
-  it("creates stable route-derived page ids from paths when no route id is declared", async () => {
-    const cwd = await createFixture({
-      "src/main.tsx": "console.log('app');",
-      "src/routes.tsx": `
-        import { defineReactRoutes, page, route } from "@evjs/client";
-        export default defineReactRoutes([
-          route("/", {
-            page: page("./pages/Home.tsx"),
-          }),
-          route("/orders/$orderId", {
-            page: page("./pages/Order.tsx"),
-          }),
-        ]);
-      `,
-      "src/pages/Home.tsx": `
+      "src/pages/index.tsx": `
         export const render = "ssg";
         export default function Home() { return null; }
       `,
-      "src/pages/Order.tsx": `
+      "src/pages/orders/$orderId.tsx": `
         export const render = "ssr";
         export default function Order() { return null; }
       `,
       "index.html": '<div id="app"></div>',
     });
     const config = createConfig({
-      apps: {
-        default: {
-          entry: "./src/main.tsx",
-          html: "./index.html",
-          routes: "./src/routes.tsx",
-        },
+      entry: "./src/pages/index.tsx",
+      fileRoutes: {
+        mode: "spa",
+        dir: "./src/pages",
+        entry: "./src/pages/index.tsx",
+        html: "./index.html",
+        mount: "#app",
+        routes: [
+          {
+            id: "index",
+            path: "/",
+            module: "./src/pages/index.tsx",
+          },
+          {
+            id: "orders_orderId",
+            path: "/orders/$orderId",
+            module: "./src/pages/orders/$orderId.tsx",
+          },
+        ],
       },
     });
 
@@ -1684,58 +1803,21 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
     expect(analysis.graph.routes).toEqual([
       {
-        id: "/",
+        id: "index",
         path: "/",
         appId: "default",
         pageId: "index",
-        module: "./src/pages/Home.tsx",
+        module: "./src/pages/index.tsx",
         render: "ssg",
       },
       {
-        id: "/orders/$orderId",
+        id: "orders_orderId",
         path: "/orders/$orderId",
         appId: "default",
         pageId: "orders_orderId",
-        module: "./src/pages/Order.tsx",
+        module: "./src/pages/orders/$orderId.tsx",
         render: "ssr",
       },
-    ]);
-  });
-
-  it("returns diagnostics for non-static framework-managed route modules", async () => {
-    const cwd = await createFixture({
-      "src/main.tsx": "console.log('app');",
-      "src/routes.tsx": `
-        import { defineReactRoutes, page, route } from "@evjs/client";
-        const modulePath = "./pages/Dynamic.tsx";
-        export default defineReactRoutes([
-          route("/dynamic", {
-            id: "dynamic",
-            page: page(modulePath),
-          }),
-        ]);
-      `,
-      "index.html": '<div id="app"></div>',
-    });
-    const config = createConfig({
-      apps: {
-        default: {
-          entry: "./src/main.tsx",
-          html: "./index.html",
-          routes: "./src/routes.tsx",
-        },
-      },
-    });
-
-    const analysis = await createAppGraph(config, cwd);
-
-    expect(analysis.diagnostics).toEqual([
-      expect.objectContaining({
-        level: "error",
-        file: "src/routes.tsx",
-        message:
-          "@evjs/client route() component targets must be default imports or page(componentPath) references.",
-      }),
     ]);
   });
 });

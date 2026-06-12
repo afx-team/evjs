@@ -1,13 +1,14 @@
 # 配置
 
-evjs 默认零配置。应用需要显式入口、页面、框架服务端路径、远程应用、插件或非默认 bundler 时，可以创建 `ev.config.ts`。
+evjs 默认零配置。应用需要自定义文件路由、页面输出、框架服务端路径、远程应用、插件或非默认 bundler 时，可以创建 `ev.config.ts`。
 
 ```ts
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  entry: "./src/main.tsx",
-  html: "./index.html",
+  fileRoutes: {
+    mode: "spa",
+  },
 });
 ```
 
@@ -17,6 +18,7 @@ export default defineConfig({
 |------|--------|
 | `entry` | `./src/main.tsx` |
 | `html` | `./index.html` |
+| `fileRoutes.mode` | `spa` |
 | `dev.port` | `3000` |
 | `server.dev.port` | `3001` |
 | `server.basePath` | `/__evjs` |
@@ -24,9 +26,34 @@ export default defineConfig({
 
 服务端函数端点从 `server.basePath` 派生，没有单独的公开函数端点配置。
 
-## 应用
+## 文件路由
 
-单应用可以直接使用顶层 `entry` / `html`：
+文件路由是主要客户端路由模型。SPA 模式会从 `src/pages` 构建一个
+TanStack Router 驱动的应用：
+
+```ts
+export default defineConfig({
+  fileRoutes: {
+    mode: "spa",
+    dir: "./src/pages",
+    mount: "#app",
+  },
+});
+```
+
+MPA 模式使用同一套文件，但每个路由输出独立页面，不引入客户端路由器：
+
+```ts
+export default defineConfig({
+  fileRoutes: {
+    mode: "mpa",
+  },
+});
+```
+
+当项目存在 `src/pages` 且没有默认的 `src/main.tsx` 时，SPA 文件路由会自动启用。
+
+只有手动 bootstrap 单应用时，才使用顶层 `entry` / `html`：
 
 ```ts
 export default defineConfig({
@@ -35,38 +62,10 @@ export default defineConfig({
 });
 ```
 
-应用有自己的运行时入口、挂载点或 framework-managed routes 时使用 `app`。推荐只把 SPA 指向一个 app declaration source：
-
-```ts
-export default defineConfig({
-  app: "./src/console/app.tsx",
-});
-```
-
-```ts
-// src/console/app.tsx
-import { defineReactApp } from "@evjs/client";
-import { operationsRoutes } from "./routes/operations";
-
-function ConsoleApp() {
-  return <main>Console</main>;
-}
-
-export default defineReactApp({
-  html: "./index.html",
-  mount: "#app",
-  component: ConsoleApp,
-  routes: [...operationsRoutes],
-});
-```
-
-app declaration source 拥有 app entry、`html`、`mount` 和 route groups，避免 app 配置分散在 `ev.config.ts` 和 route files 之间。只有确实想分离 runtime entry 时才在 declaration 里显式写 `entry: "./main.tsx"`。
-
-TanStack 这类路由插件只负责 adapter 能力，不负责拥有应用路由路径。
-
 ## 页面
 
-`pages` 声明独立页面输出。字符串页面和 `{ entry }` 页面由用户自己控制 bootstrap：
+`pages` 是独立页面输出的显式底层 API。当页面集合直接来自 `src/pages` 时，
+优先使用 `fileRoutes: { mode: "mpa" }`。字符串页面和 `{ entry }` 页面由用户自己控制 bootstrap：
 
 ```ts
 export default defineConfig({

@@ -2,187 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   analyzeRoutes,
   detectServerRouteExports,
-  extractClientRoutes,
-  extractReactRoutes,
   extractServerRoutes,
   resolveRoutes,
 } from "../src/build-tools/routes.js";
-
-describe("extractClientRoutes", () => {
-  it("extracts path from a static route", () => {
-    const source = `
-      import { createRoute } from "@evjs/client";
-      export const homeRoute = createRoute({
-        getParentRoute: () => rootRoute,
-        path: "/",
-        component: () => null,
-      });
-    `;
-    expect(extractClientRoutes(source)).toEqual([
-      { path: "/", parentName: "rootRoute", varName: "homeRoute" },
-    ]);
-  });
-
-  it("extracts path with dynamic params", () => {
-    const source = `
-      import { createRoute } from "@evjs/client";
-      export const userRoute = createRoute({
-        getParentRoute: () => rootRoute,
-        path: "/users/$username",
-        component: UserProfile,
-      });
-    `;
-    expect(extractClientRoutes(source)).toEqual([
-      {
-        path: "/users/$username",
-        parentName: "rootRoute",
-        varName: "userRoute",
-      },
-    ]);
-  });
-
-  it("supports aliased client createRoute imports", () => {
-    const source = `
-      import { createRoute as route } from "@evjs/client";
-      export const settingsRoute = route({
-        getParentRoute: () => rootRoute,
-        path: "/settings",
-        component: Settings,
-      });
-    `;
-    expect(extractClientRoutes(source)).toEqual([
-      {
-        path: "/settings",
-        parentName: "rootRoute",
-        varName: "settingsRoute",
-      },
-    ]);
-  });
-
-  it("skips pathless layouts (id-only routes)", () => {
-    const source = `
-      import { createRoute } from "@evjs/client";
-      export const dashboardLayout = createRoute({
-        getParentRoute: () => rootRoute,
-        id: "dashboard-layout",
-        component: () => null,
-      });
-    `;
-    expect(extractClientRoutes(source)).toEqual([]);
-  });
-
-  it("extracts multiple routes from a single file", () => {
-    const source = `
-      import { createRoute } from "@evjs/client";
-      export const postsRoute = createRoute({
-        getParentRoute: () => rootRoute,
-        path: "/posts",
-        component: PostsList,
-      });
-      export const postDetailRoute = createRoute({
-        getParentRoute: () => postsRoute,
-        path: "$postId",
-        component: PostDetail,
-      });
-    `;
-    const routes = extractClientRoutes(source);
-    expect(routes).toEqual([
-      { path: "/posts", parentName: "rootRoute", varName: "postsRoute" },
-      { path: "$postId", parentName: "postsRoute", varName: "postDetailRoute" },
-    ]);
-  });
-
-  it("handles non-exported route declarations", () => {
-    const source = `
-      import { createRoute } from "@evjs/client";
-      const internalRoute = createRoute({
-        getParentRoute: () => rootRoute,
-        path: "/internal",
-        component: () => null,
-      });
-    `;
-    expect(extractClientRoutes(source)).toEqual([
-      { path: "/internal", parentName: "rootRoute", varName: "internalRoute" },
-    ]);
-  });
-
-  it("returns empty array for files without createRoute", () => {
-    const source = `
-      export function hello() { return "world"; }
-    `;
-    expect(extractClientRoutes(source)).toEqual([]);
-  });
-
-  it("ignores server createRoute imports during client route extraction", () => {
-    const source = `
-      import { createRoute } from "@evjs/server";
-      export const healthHandler = createRoute("/api/health", {
-        GET: async () => Response.json({ ok: true }),
-      });
-    `;
-    expect(extractClientRoutes(source)).toEqual([]);
-  });
-
-  it("returns empty array for empty source", () => {
-    expect(extractClientRoutes("")).toEqual([]);
-  });
-
-  it("returns empty array for invalid source", () => {
-    expect(extractClientRoutes("{{{{invalid")).toEqual([]);
-  });
-
-  it("ignores createRoute calls without path", () => {
-    const source = `
-      import { createRoute } from "@evjs/client";
-      const route = createRoute({
-        getParentRoute: () => rootRoute,
-        component: () => null,
-      });
-    `;
-    expect(extractClientRoutes(source)).toEqual([]);
-  });
-
-  it("handles catch-all routes", () => {
-    const source = `
-      import { createRoute } from "@evjs/client";
-      export const notFoundRoute = createRoute({
-        getParentRoute: () => rootRoute,
-        path: "*",
-        component: () => null,
-      });
-    `;
-    expect(extractClientRoutes(source)).toEqual([
-      { path: "*", parentName: "rootRoute", varName: "notFoundRoute" },
-    ]);
-  });
-
-  it("extracts parentName from block-body arrow functions", () => {
-    const source = `
-      import { createRoute } from "@evjs/client";
-      export const fooRoute = createRoute({
-        getParentRoute: () => { return rootRoute; },
-        path: "/foo",
-        component: () => null,
-      });
-    `;
-    expect(extractClientRoutes(source)).toEqual([
-      { path: "/foo", parentName: "rootRoute", varName: "fooRoute" },
-    ]);
-  });
-
-  it("sets parentName and varName to undefined when absent", () => {
-    const source = `
-      import { createRoute } from "@evjs/client";
-      export const simpleRoute = createRoute({
-        path: "/simple",
-        component: () => null,
-      });
-    `;
-    const routes = extractClientRoutes(source);
-    expect(routes).toEqual([{ path: "/simple", varName: "simpleRoute" }]);
-    expect(routes[0].parentName).toBeUndefined();
-  });
-});
 
 describe("resolveRoutes", () => {
   it("resolves simple child paths to full paths", () => {
@@ -219,7 +41,6 @@ describe("resolveRoutes", () => {
         varName: "postDetailRoute",
       },
     ]);
-    // postsIndexRoute is excluded — it duplicates "/posts"
     expect(result).toEqual([{ path: "/posts" }, { path: "/posts/$postId" }]);
   });
 
@@ -238,33 +59,29 @@ describe("resolveRoutes", () => {
     expect(result).toEqual([{ path: "/about" }]);
   });
 
-  it("handles orphan routes (no parent found)", () => {
+  it("handles orphan routes", () => {
     const result = resolveRoutes([{ path: "/orphan", varName: "orphanRoute" }]);
     expect(result).toEqual([{ path: "/orphan" }]);
   });
 
-  it("matches basic-csr example route tree", () => {
-    // Simulates the full route extraction from basic-csr example
+  it("resolves nested file route paths", () => {
     const result = resolveRoutes([
-      { path: "/about", parentName: "rootRoute", varName: "aboutRoute" },
-      { path: "/", parentName: "rootRoute", varName: "homeRoute" },
-      { path: "/posts", parentName: "rootRoute", varName: "postsRoute" },
+      { path: "/", id: "index", module: "./src/pages/index.tsx" },
+      { path: "/posts", id: "posts", module: "./src/pages/posts/index.tsx" },
       {
-        path: "/",
-        parentName: "postsRoute",
-        varName: "postsIndexRoute",
-      },
-      {
-        path: "$postId",
-        parentName: "postsRoute",
-        varName: "postDetailRoute",
+        path: "/posts/$postId",
+        id: "posts_postId",
+        module: "./src/pages/posts/$postId.tsx",
       },
     ]);
     expect(result).toEqual([
-      { path: "/about" },
-      { path: "/" },
-      { path: "/posts" },
-      { path: "/posts/$postId" },
+      { path: "/", id: "index", module: "./src/pages/index.tsx" },
+      { path: "/posts", id: "posts", module: "./src/pages/posts/index.tsx" },
+      {
+        path: "/posts/$postId",
+        id: "posts_postId",
+        module: "./src/pages/posts/$postId.tsx",
+      },
     ]);
   });
 
@@ -326,15 +143,15 @@ describe("extractServerRoutes", () => {
     ]);
   });
 
-  it("ignores client routes and dynamic server route paths", () => {
+  it("ignores client route helpers and dynamic server route paths", () => {
     const source = `
       import { createRoute } from "@evjs/client";
       import { createRoute as serverRoute } from "@evjs/server";
 
       export const homeRoute = createRoute({ path: "/" });
 
-      const path = "/api/dynamic";
-      export const dynamicHandler = serverRoute(path, {
+      const routePath = "/api/dynamic";
+      export const dynamicHandler = serverRoute(routePath, {
         GET: async () => Response.json({ ok: true }),
       });
     `;
@@ -344,88 +161,13 @@ describe("extractServerRoutes", () => {
   });
 });
 
-describe("extractReactRoutes", () => {
-  it("extracts static @evjs/client route declarations", () => {
-    const source = `
-      import { defineReactRoutes, page, route } from "@evjs/client";
-
-      export default defineReactRoutes([
-        route("/", {
-          id: "home",
-          page: page("./pages/Home.tsx"),
-        }),
-      ]);
-    `;
-
-    expect(extractReactRoutes(source)).toEqual([
-      {
-        path: "/",
-        id: "home",
-        module: "./pages/Home.tsx",
-      },
-    ]);
-  });
-
-  it("supports aliased route and page imports", () => {
-    const source = `
-      import { defineReactRoutes, page as component, route as r } from "@evjs/client";
-
-      export const routes = defineReactRoutes([
-        r("/about", {
-          id: "about",
-          page: component("./pages/About.tsx"),
-        }),
-      ]);
-    `;
-
-    expect(extractReactRoutes(source)).toEqual([
-      {
-        path: "/about",
-        id: "about",
-        module: "./pages/About.tsx",
-      },
-    ]);
-  });
-
-  it("extracts statically imported component route targets", () => {
-    const source = `
-      import { defineReactRoutes, route } from "@evjs/client";
-      import Dashboard from "./pages/Dashboard";
-      import InsightsPage from "./pages/Insights";
-
-      export default defineReactRoutes([
-        route("/dashboard", Dashboard, {
-          id: "dashboard",
-        }),
-        route("/insights", InsightsPage, {
-          id: "insights",
-        }),
-      ]);
-    `;
-
-    expect(extractReactRoutes(source)).toEqual([
-      {
-        path: "/dashboard",
-        id: "dashboard",
-        module: "./pages/Dashboard",
-      },
-      {
-        path: "/insights",
-        id: "insights",
-        module: "./pages/Insights",
-      },
-    ]);
-  });
-});
-
 describe("analyzeRoutes", () => {
-  it("collects client and server routes from one parsed module", () => {
+  it("collects server routes from one parsed module", () => {
     const source = `
       import { createRoute } from "@evjs/client";
       import { createRoute as serverRoute } from "@evjs/server";
 
       export const homeRoute = createRoute({
-        getParentRoute: () => rootRoute,
         path: "/",
         component: () => null,
       });
@@ -436,9 +178,7 @@ describe("analyzeRoutes", () => {
     `;
 
     expect(analyzeRoutes(source)).toEqual({
-      clientRoutes: [
-        { path: "/", parentName: "rootRoute", varName: "homeRoute" },
-      ],
+      clientRoutes: [],
       serverRoutes: [
         {
           path: "/api/health",
@@ -449,99 +189,28 @@ describe("analyzeRoutes", () => {
     });
   });
 
-  it("collects @evjs/client routes from the shared parse pass", () => {
+  it("does not analyze framework-managed client routes from JavaScript", () => {
     const source = `
-      import { defineReactRoutes, page, route } from "@evjs/client";
+      import { definePage } from "@evjs/client";
 
-      export default defineReactRoutes([
-        route("/pricing", {
-          id: "pricing",
-          page: page("./pages/Pricing.tsx"),
-        }),
-      ]);
+      export const loader = () => "hello";
+      export default definePage(function Home() {
+        return null;
+      });
     `;
 
     expect(analyzeRoutes(source)).toEqual({
-      clientRoutes: [
-        {
-          path: "/pricing",
-          id: "pricing",
-          module: "./pages/Pricing.tsx",
-        },
-      ],
+      clientRoutes: [],
       serverRoutes: [],
       diagnostics: [],
     });
   });
 
-  it("collects component target routes from the shared parse pass", () => {
-    const source = `
-      import { defineReactRoutes, route } from "@evjs/client";
-      import Campaign from "./pages/Campaign";
-
-      export default defineReactRoutes([
-        route("/campaign", Campaign, {
-          id: "campaign",
-        }),
-      ]);
-    `;
-
-    expect(analyzeRoutes(source)).toEqual({
-      clientRoutes: [
-        {
-          path: "/campaign",
-          id: "campaign",
-          module: "./pages/Campaign",
-        },
-      ],
+  it("returns an empty analysis for invalid source", () => {
+    expect(analyzeRoutes("{{{{invalid")).toEqual({
+      clientRoutes: [],
       serverRoutes: [],
       diagnostics: [],
-    });
-  });
-
-  it("reports non-analyzable framework-managed react routes", () => {
-    const source = `
-      import { defineReactRoutes, page, route } from "@evjs/client";
-
-      const path = "/dynamic";
-      const modulePath = "./pages/Dynamic.tsx";
-
-      export default defineReactRoutes([
-        route(path, {
-          id: "dynamic",
-          page: page(modulePath),
-        }),
-      ]);
-    `;
-
-    expect(analyzeRoutes(source).diagnostics).toEqual([
-      expect.objectContaining({
-        level: "error",
-        message: "@evjs/client route() path must be a string literal.",
-      }),
-      expect.objectContaining({
-        level: "error",
-        message:
-          "@evjs/client route() component targets must be default imports or page(componentPath) references.",
-      }),
-    ]);
-  });
-
-  it("reports diagnostics with byte-offset-safe line and column positions", () => {
-    const source = [
-      "// emoji 😊 before the route declaration",
-      'import { defineReactRoutes, page, route } from "@evjs/client";',
-      "",
-      "export default defineReactRoutes([",
-      '  route(dynamicPath, page("./pages/Home.tsx")),',
-      "]);",
-    ].join("\n");
-
-    expect(analyzeRoutes(source).diagnostics[0]).toMatchObject({
-      level: "error",
-      message: "@evjs/client route() path must be a string literal.",
-      line: 6,
-      column: 4,
     });
   });
 });

@@ -18,6 +18,7 @@ import {
   createAppGraph,
   createBuildPlan,
   diffBuildPlan,
+  discoverFileRoutes,
   generateHtml,
 } from "./build-tools/index.js";
 import type {
@@ -100,6 +101,114 @@ function withActiveBundler<TBundlerCfg>(
     ...config,
     bundler,
   };
+}
+
+async function withFileRouteDefaults<TBundlerCfg>(
+  config: ResolvedConfig<TBundlerCfg>,
+  userConfig: Config<TBundlerCfg> | undefined,
+  cwd: string,
+): Promise<ResolvedConfig<TBundlerCfg>> {
+  const fileRoutesOption = userConfig?.fileRoutes;
+  if (fileRoutesOption === false) {
+    return { ...config, fileRoutes: undefined };
+  }
+
+  const requested = fileRoutesOption !== undefined;
+  if ((config.pages || config.app || config.remote) && requested) {
+    throw new Error(
+      "[evjs] fileRoutes cannot be combined with app, pages, or remote configuration.",
+    );
+  }
+  if (config.pages || config.app || config.remote) return config;
+
+  const hasExplicitEntry = hasOwnConfigField(userConfig, "entry");
+  const defaultEntryExists = await pathExists(path.resolve(cwd, config.entry));
+  const shouldUseFileRoutes =
+    requested || (!hasExplicitEntry && !defaultEntryExists);
+  if (!shouldUseFileRoutes) return config;
+
+  const base = config.fileRoutes ?? {
+    mode: CONFIG_DEFAULTS.fileRoutesMode,
+    dir: CONFIG_DEFAULTS.fileRoutesDir,
+    html: config.html,
+    mount: CONFIG_DEFAULTS.mount,
+    routes: [],
+  };
+  const discovery = await discoverFileRoutes(cwd, { dir: base.dir });
+  reportFileRouteDiagnostics(discovery.diagnostics);
+
+  if (discovery.routes.length === 0) {
+    if (!requested) return config;
+    throw new Error(`[evjs] No file routes found in ${base.dir}.`);
+  }
+
+  const entry =
+    base.mode === "spa"
+      ? createFileRouteEntryImport(discovery.routes)
+      : undefined;
+
+  return {
+    ...config,
+    ...(entry ? { entry } : {}),
+    html: base.html,
+    fileRoutes: {
+      ...base,
+      ...(entry ? { entry } : {}),
+      routes: discovery.routes,
+      ...(discovery.rootModule ? { rootModule: discovery.rootModule } : {}),
+    },
+  };
+}
+
+function createFileRouteEntryImport(
+  routes: NonNullable<ResolvedConfig["fileRoutes"]>["routes"],
+): string {
+  const entry = routes[0]?.module;
+  if (!entry) {
+    throw new Error("[evjs] File routes need at least one page module.");
+  }
+  return entry;
+}
+
+function hasOwnConfigField<TBundlerCfg>(
+  config: Config<TBundlerCfg> | undefined,
+  field: keyof Config<TBundlerCfg>,
+): boolean {
+  return Boolean(config && Object.hasOwn(config, field));
+}
+
+async function pathExists(file: string): Promise<boolean> {
+  try {
+    await fs.promises.access(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function reportFileRouteDiagnostics(
+  diagnostics: Array<{
+    level: "warning" | "error";
+    message: string;
+    file?: string;
+  }>,
+): void {
+  const errors: string[] = [];
+  for (const diagnostic of diagnostics) {
+    const message = diagnostic.file
+      ? `${diagnostic.file} - ${diagnostic.message}`
+      : diagnostic.message;
+    if (diagnostic.level === "error") {
+      errors.push(message);
+    } else {
+      logger.warn`${message}`;
+    }
+  }
+  if (errors.length > 0) {
+    throw new Error(
+      ["[evjs] File route discovery failed.", ...errors].join("\n"),
+    );
+  }
 }
 
 function orderPluginsByDependencies<TBundlerCfg>(
@@ -956,7 +1065,11 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
     command: "dev",
     cwd,
   });
-  const rawResolvedConfig = resolveConfig(configuredConfig);
+  const rawResolvedConfig = await withFileRouteDefaults(
+    resolveConfig(configuredConfig),
+    configuredConfig,
+    cwd,
+  );
   const resolvedConfig = {
     ...rawResolvedConfig,
     plugins: orderPluginsByDependencies(rawResolvedConfig.plugins),
@@ -1110,7 +1223,11 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
       command: "dev",
       cwd,
     });
-    const nextRawResolvedConfig = resolveConfig(nextConfiguredConfig);
+    const nextRawResolvedConfig = await withFileRouteDefaults(
+      resolveConfig(nextConfiguredConfig),
+      nextConfiguredConfig,
+      cwd,
+    );
     const nextResolvedConfig = {
       ...nextRawResolvedConfig,
       plugins: orderPluginsByDependencies(nextRawResolvedConfig.plugins),
@@ -1312,7 +1429,11 @@ export async function build<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
     command: "build",
     cwd,
   });
-  const rawResolvedConfig = resolveConfig(configuredConfig);
+  const rawResolvedConfig = await withFileRouteDefaults(
+    resolveConfig(configuredConfig),
+    configuredConfig,
+    cwd,
+  );
   const resolvedConfig = {
     ...rawResolvedConfig,
     plugins: orderPluginsByDependencies(rawResolvedConfig.plugins),

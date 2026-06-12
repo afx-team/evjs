@@ -1,6 +1,7 @@
-import { createAppRootRoute, Link, Outlet } from "@evjs/client";
+import { Link } from "@evjs/client";
+import type { ReactNode } from "react";
 
-function Root() {
+export default function Root({ children }: { children?: ReactNode }) {
   return (
     <div
       style={{
@@ -27,9 +28,7 @@ function Root() {
           Users
         </Link>
       </nav>
-      <Outlet />
+      {children}
     </div>
   );
 }
-
-export const rootRoute = createAppRootRoute({ component: Root });

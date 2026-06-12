@@ -40,6 +40,15 @@ type ServerRuntimeGlobals = typeof globalThis & {
   ) => Promise<Record<string, unknown>>;
 };
 
+function requireFileRoutes(
+  fileRoutes: ResolvedConfig<WebpackConfig>["fileRoutes"],
+): NonNullable<ResolvedConfig<WebpackConfig>["fileRoutes"]> {
+  if (!fileRoutes) {
+    throw new Error("Expected fileRoutes to be resolved for this test.");
+  }
+  return fileRoutes;
+}
+
 afterEach(async () => {
   await Promise.all(
     tempDirs.splice(0).map((dir) =>
@@ -492,16 +501,6 @@ describe("webpackAdapter build", () => {
 
         export default { fetch: app.fetch };
       `,
-      "src/routes.tsx": `
-        import { defineReactRoutes, page, route } from "@evjs/client";
-
-        export default defineReactRoutes([
-          route("/dashboard", {
-            id: "dashboard",
-            page: page("./pages/Dashboard.ts"),
-          }),
-        ]);
-      `,
       "src/pages/Dashboard.ts": `
         export const render = "ssr";
         export const hydrate = "load";
@@ -511,16 +510,28 @@ describe("webpackAdapter build", () => {
         }
       `,
     });
-    const config = resolveConfig<WebpackConfig>({
-      app: {
-        entry: "./src/main.ts",
-        html: "./index.html",
-        routes: "./src/routes.tsx",
-      },
+    const baseConfig = resolveConfig<WebpackConfig>({
+      entry: "./src/main.ts",
+      fileRoutes: true,
       server: {
         entry: "./src/server.ts",
       },
     });
+    const fileRoutes = requireFileRoutes(baseConfig.fileRoutes);
+    const config = {
+      ...baseConfig,
+      fileRoutes: {
+        ...fileRoutes,
+        entry: "./src/main.ts",
+        routes: [
+          {
+            id: "dashboard",
+            path: "/dashboard",
+            module: "./src/pages/Dashboard.ts",
+          },
+        ],
+      },
+    };
     const analysis = await createAppGraph(config, cwd);
     const plan = createBuildPlan(config, analysis.graph, {
       mode: "development",
@@ -562,7 +573,7 @@ describe("webpackAdapter build", () => {
         css: [],
       },
       entry: "./src/main.ts",
-      routes: "./src/routes.tsx",
+      mount: "#app",
       module: {
         type: "entry",
         href: "main.js",
@@ -615,16 +626,6 @@ describe("webpackAdapter build", () => {
       "index.html":
         '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
       "src/main.ts": "console.log('client app');",
-      "src/routes.tsx": `
-        import { defineReactRoutes, page, route } from "@evjs/client";
-
-        export default defineReactRoutes([
-          route("/dashboard", {
-            id: "dashboard",
-            page: page("./pages/Dashboard.ts"),
-          }),
-        ]);
-      `,
       "src/pages/Dashboard.ts": `
         import { createElement } from "react";
 
@@ -636,13 +637,25 @@ describe("webpackAdapter build", () => {
         }
       `,
     });
-    const config = resolveConfig<WebpackConfig>({
-      app: {
-        entry: "./src/main.ts",
-        html: "./index.html",
-        routes: "./src/routes.tsx",
-      },
+    const baseConfig = resolveConfig<WebpackConfig>({
+      entry: "./src/main.ts",
+      fileRoutes: true,
     });
+    const fileRoutes = requireFileRoutes(baseConfig.fileRoutes);
+    const config = {
+      ...baseConfig,
+      fileRoutes: {
+        ...fileRoutes,
+        entry: "./src/main.ts",
+        routes: [
+          {
+            id: "dashboard",
+            path: "/dashboard",
+            module: "./src/pages/Dashboard.ts",
+          },
+        ],
+      },
+    };
     const analysis = await createAppGraph(config, cwd);
     const plan = createBuildPlan(config, analysis.graph, {
       mode: "development",

@@ -1,6 +1,10 @@
-import { createRoute, Link, useQuery } from "@evjs/client";
+import {
+  definePage,
+  type FileRoutePageProps,
+  Link,
+  useQuery,
+} from "@evjs/client";
 import { getPosts } from "../api/data.server";
-import { rootRoute } from "./__root";
 
 const styles = {
   card: {
@@ -11,8 +15,20 @@ const styles = {
   },
 };
 
-function SearchPage() {
-  const { q } = searchRoute.useSearch();
+type SearchState = {
+  q: string;
+};
+
+export function validateSearch(search: Record<string, unknown>): SearchState {
+  return {
+    q: (search.q as string) || "",
+  };
+}
+
+export default definePage(function SearchPage({
+  search,
+}: FileRoutePageProps<Record<string, string>, SearchState>) {
+  const { q } = search;
   const { data: results } = useQuery(getPosts, q || undefined);
 
   return (
@@ -59,13 +75,4 @@ function SearchPage() {
       </div>
     </div>
   );
-}
-
-export const searchRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/search",
-  validateSearch: (search: Record<string, unknown>) => ({
-    q: (search.q as string) || "",
-  }),
-  component: SearchPage,
 });

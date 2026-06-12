@@ -1,4 +1,4 @@
-import type { BuildOutput, RouteNode } from "@evjs/shared/manifest";
+import type { BuildOutput } from "@evjs/shared/manifest";
 
 export type {
   QueryKey,
@@ -142,8 +142,6 @@ export {
   useSearch,
 } from "./route.js";
 
-const routeMetaSymbol = Symbol.for("evjs.routeMeta");
-
 // biome-ignore lint/suspicious/noEmptyInterface: Users augment this interface with their app router type.
 export interface Register {}
 
@@ -151,25 +149,6 @@ type TanStackRegister = Register;
 
 declare module "@tanstack/react-router" {
   interface Register extends TanStackRegister {}
-}
-
-export interface RouteMeta {
-  id?: string;
-  module?: string;
-  render?: RouteNode["render"];
-  hydrate?: RouteNode["hydrate"];
-  runtime?: RouteNode["runtime"];
-}
-
-export interface TanStackRoutes<TRouteTree> {
-  kind: "evjs.tanstack.routes";
-  routeTree: TRouteTree;
-  toRouteGraph(): RouteNode[];
-}
-
-export interface DefineTanStackRoutesOptions<TRouteTree> {
-  routeTree: TRouteTree;
-  routes?: RouteNode[];
 }
 
 export interface TanStackRouterLike {
@@ -187,42 +166,6 @@ export interface TanStackDriverOptions<TRouter extends TanStackRouterLike> {
   manifest: BuildOutput;
   event?: string;
   resolve?: (router: TRouter) => ActivationRequest;
-}
-
-export function tanstackRoutes(source: string): string {
-  return source;
-}
-
-export function defineTanStackRoutes<TRouteTree>(
-  options: DefineTanStackRoutesOptions<TRouteTree>,
-): TanStackRoutes<TRouteTree> {
-  const routes = options.routes ? [...options.routes] : [];
-
-  return {
-    kind: "evjs.tanstack.routes",
-    routeTree: options.routeTree,
-    toRouteGraph() {
-      return routes.map((route) => ({ ...route }));
-    },
-  };
-}
-
-export function withRouteMeta<TRoute extends object>(
-  route: TRoute,
-  meta: RouteMeta,
-): TRoute {
-  Object.defineProperty(route, routeMetaSymbol, {
-    configurable: true,
-    enumerable: false,
-    value: meta,
-    writable: true,
-  });
-
-  return route;
-}
-
-export function getRouteMeta(route: object): RouteMeta | undefined {
-  return (route as { [routeMetaSymbol]?: RouteMeta })[routeMetaSymbol];
 }
 
 export function createTanStackDriver<TRouter extends TanStackRouterLike>(

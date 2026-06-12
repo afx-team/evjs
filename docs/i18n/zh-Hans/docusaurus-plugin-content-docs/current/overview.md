@@ -2,22 +2,22 @@
 
 > **ev** = **Ev**aluation（执行）· **Ev**olution（演进）—— 跨运行时执行，借助 AI 工具演进。
 
-evjs 是一个零配置的 React 全栈框架，提供显式 app/page 配置、服务端函数、路由处理器、SSR、PPR、RSC 集成点、manifest 驱动的远程应用，以及面向部署的输出。
+evjs 是一个零配置的 React 全栈框架，提供文件式客户端路由、服务端函数、路由处理器、SSR、PPR、RSC 集成点、manifest 驱动的远程应用，以及面向部署的输出。
 
 框架会明确区分：
 
-- **应用代码**：React app、路由声明、服务端函数、服务端路由；
+- **应用代码**：React pages、服务端函数、服务端路由；
 - **框架语义**：`AppGraph`、`BuildPlan`、`BuildOutput`；
 - **构建器**：默认 Utoopack，webpack 作为新架构能力验证 adapter；
 - **运行时/服务端/部署 adapter**：消费框架 manifest，不读取 bundler stats。
 
-TanStack Router 和 TanStack Query 继续通过 `@evjs/client` 支持，但 evjs 应用不强制依赖 TanStack Router。应用也可以使用显式 React route declaration 和 standalone pages。
+SPA 文件路由在框架内部使用 TanStack Router，以保留 loader、search 和 params 语义。MPA 文件路由使用 page runtime，不引入客户端路由器。
 
 ## 特性
 
-- **零配置启动** —— `ev dev` / `ev build` 默认使用 `src/main.tsx` 和 `index.html`。
-- **两种路由模型** —— TanStack Router 兼容，以及不依赖 TanStack 的 React route declaration。
-- **框架托管页面** —— standalone CSR/SSR/SSG/PPR/RSC page declaration，适合 MPA 和业务/营销页面。
+- **零配置文件路由** —— 没有 `src/main.tsx` 时，`ev dev` / `ev build` 会发现 `src/pages`。
+- **SPA 与 MPA 模式** —— `fileRoutes.mode: "spa"` 生成一个 TanStack Router 驱动的 app；`"mpa"` 生成多个无路由器页面。
+- **框架托管页面** —— 页面模块可以把 CSR/SSR/SSG/PPR/RSC 渲染元信息写在组件旁边。
 - **服务端函数** —— `"use server"` 模块变成浏览器可调用的 RPC stub。
 - **服务端路由** —— 通过 `createRoute()` 编写标准 Web `Request`/`Response` route handler。
 - **统一服务端边界** —— `@evjs/server` 处理 server functions、server routes、SSR、PPR、RSC。
@@ -88,4 +88,4 @@ flowchart LR
 
 ## 当前架构一句话
 
-evjs 将显式声明分析成 `AppGraph`，派生 bundler-independent `BuildPlan`，再把 bundler facts 链接成单一 `BuildOutput`，运行时、服务端、远程应用、插件和部署 adapter 都消费这个输出。
+evjs 将文件路由和显式 server/page 元信息分析成 `AppGraph`，派生 bundler-independent `BuildPlan`，再把 bundler facts 链接成单一 `BuildOutput`，运行时、服务端、远程应用、插件和部署 adapter 都消费这个输出。

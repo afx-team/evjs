@@ -31,6 +31,9 @@ const serverFunctionLoader = fileURLToPath(
 const rscClientReferenceLoader = fileURLToPath(
   new URL("./rsc-client-reference-loader.cjs", import.meta.url),
 );
+const fileRouteEntryLoader = fileURLToPath(
+  new URL("./file-route-entry-loader.cjs", import.meta.url),
+);
 const ReactFlightWebpackPlugin = require("react-server-dom-webpack/plugin");
 const clientRootEntry = require.resolve("@evjs/client");
 const clientRscEntry = path.join(path.dirname(clientRootEntry), "rsc.js");
@@ -248,6 +251,7 @@ function createWebpackConfig(options: {
               : []),
           ],
         },
+        ...createFileRouteEntryRules(options.entries),
         {
           test: /\.css$/,
           use: [miniCssExtractLoader, cssLoader],
@@ -292,6 +296,46 @@ function createRscPlugins(options: {
       serverConsumerManifestFilename: "react-ssr-manifest.json",
     }),
   ];
+}
+
+function createFileRouteEntryRules(entries: BuildEntry[]) {
+  const metadata = getFileRouteAppMetadata(entries);
+  if (!metadata) return [];
+
+  return [
+    {
+      test: createFileRouteEntryPathPattern(metadata),
+      resourceQuery: /^$/,
+      use: [
+        {
+          loader: fileRouteEntryLoader,
+          options: metadata,
+        },
+      ],
+    },
+  ];
+}
+
+function createFileRouteEntryPathPattern(
+  metadata: NonNullable<BuildEntry["metadata"]>,
+): RegExp {
+  if (metadata.type !== "file-route-app") return /$^/;
+  return new RegExp(
+    `${escapeRegExp(normalizeRulePath(metadata.routes[0]?.module ?? ""))}$`,
+  );
+}
+
+function normalizeRulePath(value: string): string {
+  return value.replace(/^\.\//, "").replaceAll("\\", "/");
+}
+
+function getFileRouteAppMetadata(
+  entries: BuildEntry[],
+): NonNullable<BuildEntry["metadata"]> | undefined {
+  const metadata = entries.find(
+    (entry) => entry.metadata?.type === "file-route-app",
+  )?.metadata;
+  return metadata?.type === "file-route-app" ? metadata : undefined;
 }
 
 function createEntryObject(cwd: string, entries: BuildEntry[]): EntryObject {

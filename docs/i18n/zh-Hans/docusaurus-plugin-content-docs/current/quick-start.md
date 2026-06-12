@@ -44,10 +44,10 @@ my-app/
 ├── index.html              # HTML 模板（必须包含 <div id="app">）
 ├── ev.config.ts            # 可选配置
 ├── src/
-│   ├── main.tsx            # 应用启动
-│   ├── pages/              # TanStack route modules 或页面组件
+│   ├── pages/              # 文件路由
 │   │   ├── __root.tsx      # 根布局
-│   │   └── home.tsx        # 首页路由
+│   │   ├── index.tsx       # /
+│   │   └── users/$id.tsx   # /users/$id
 │   └── api/                # 服务端模块
 │       ├── users.server.ts # "use server" 函数
 │       └── health.routes.ts
@@ -55,98 +55,41 @@ my-app/
 └── tsconfig.json
 ```
 
-## 使用 TanStack Router 的启动代码
+## 文件路由
 
 ```tsx
-// src/main.tsx
-import { createApp } from "@evjs/client";
-import { rootRoute } from "./pages/__root";
-import { homeRoute } from "./pages/home";
-const routeTree = rootRoute.addChildren([homeRoute]);
-const app = createApp({ routeTree });
+// src/pages/users/$id.tsx
+import { definePage, getFnQueryOptions, useQuery } from "@evjs/client";
+import { getUser } from "../../api/users.server";
 
-declare module "@evjs/client" {
-  interface Register {
-    router: typeof app.router;
-  }
-}
+export const loader = ({ params, context }) =>
+  context.queryClient.ensureQueryData(getFnQueryOptions(getUser, params.id));
 
-app.render("#app");
-```
-
-TanStack Router 是默认模板路径，因为它提供强类型路由和 loader 集成。新架构能力也可以通过 framework route declaration 或 standalone `pages` 表达。
-
-## 不使用 TanStack 的路由声明
-
-```ts
-// src/app.tsx
-import { defineReactApp, route } from "@evjs/client";
-import Campaign from "./pages/Campaign";
-import Dashboard from "./pages/Dashboard";
-
-function App() {
-  return <main>Operations console</main>;
-}
-
-export default defineReactApp({
-  html: "../index.html",
-  mount: "#app",
-  component: App,
-  routes: [
-    route("/dashboard", Dashboard, {
-      id: "dashboard",
-    }),
-    route("/campaign", Campaign, {
-      id: "campaign",
-    }),
-  ],
+export default definePage<{ id: string }>(function UserPage({ params }) {
+  const { data } = useQuery(getUser, params.id);
+  return <main>{data?.name}</main>;
 });
 ```
 
-```tsx
-// src/pages/Dashboard.tsx
-export const render = "ssr";
-export const hydrate = "load";
+当项目存在 `src/pages` 且没有 `src/main.tsx` 时，evjs 会自动基于文件树构建一个
+TanStack Router 驱动的 SPA。用户不需要创建 route object、route tree 或全局 router 注册。
 
-export default function Dashboard() {
-  return <main>Server-rendered dashboard</main>;
-}
-```
+## MPA 模式
 
-```tsx
-// src/pages/Campaign.tsx
-import { Suspense } from "react";
-import { OfferRegion } from "./OfferRegion";
-import { OfferSkeleton } from "./OfferSkeleton";
-
-export const render = "ssr";
-export const hydrate = "none";
-export const prerender = {
-  partial: true,
-  delivery: "stream",
-} as const;
-
-export default function Campaign() {
-  return (
-    <main>
-      <Suspense fallback={<OfferSkeleton />}>
-        <OfferRegion />
-      </Suspense>
-    </main>
-  );
-}
-```
+MPA 使用同一套 `src/pages` 文件，只需要切换文件路由模式：
 
 ```ts
 // ev.config.ts
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  app: "./src/app.tsx",
+  fileRoutes: {
+    mode: "mpa",
+  },
 });
 ```
 
-这个 app declaration source 是构建时 graph source。route groups 仍然可以拆到被它 import 的文件里，但 `ev.config.ts` 只指向 app 边界。
+每个页面都会生成独立 HTML 文档和客户端 entry，不引入 TanStack Router。
 
 ## 包列表
 
@@ -155,10 +98,10 @@ export default defineConfig({
 | [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | 框架 API、配置、插件和构建编排 (`defineConfig`, `dev`, `build`) |
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | 注入默认构建器的轻量 CLI 包装 (`ev dev`, `ev build`) |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | 项目脚手架 (`npx @evjs/create-app`) |
-| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | 浏览器运行时、transport、page runtime、shell 导出、静态 route helpers 和 TanStack 兼容能力 |
+| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | 浏览器运行时、transport、page runtime、shell 导出和页面工具 |
 | [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Hono/fetch 服务端运行时、服务端函数、路由和 SSR/PPR/RSC 请求处理 |
 
-Manifest schema、build tools、page runtime、shell 和 route DSL 都是上述公开包内部的实现模块。
+Manifest schema、build tools、page runtime 和 shell 内部实现都位于上述公开包中。
 应用代码通常应从 `@evjs/ev`、`@evjs/client` 和 `@evjs/server` 导入。
 
 ## 必需依赖
@@ -193,5 +136,5 @@ Manifest schema、build tools、page runtime、shell 和 route DSL 都是上述�
 - 从 `@evjs/ev` 导入 `defineConfig`，不是从 `@evjs/server`
 - HTML 必须包含 `<div id="app">` 作为渲染目标
 - 不要在你的**项目** `package.json` 中添加 `"type": "module"` —— 服务端 bundle 使用 CJS 格式
-- `src/main.tsx` 应保持精简；将 app graph 声明放在 `src/app.tsx` 或它导入的 route/page modules 中
-- `pages` 用于 standalone page outputs，`app` 用于 SPA declaration boundary
+- 优先使用 `src/pages` 作为路由事实来源
+- 独立页面且不需要客户端路由器时，使用 `fileRoutes.mode: "mpa"`

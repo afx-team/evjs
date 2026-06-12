@@ -5,7 +5,7 @@
 [![DeepWiki](https://img.shields.io/badge/DeepWiki-evaijs%2Fevjs-blue?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTQgMTkuNXYtMTVBMi41IDIuNSAwIDAgMSA2LjUgMkgxOXYyMEg2LjVhMi41IDIuNSAwIDAgMS0yLjUtMi41eiIvPjxwYXRoIGQ9Ik04IDdoOCIvPjxwYXRoIGQ9Ik04IDExaDgiLz48cGF0aCBkPSJNOCAxNWg1Ii8+PC9zdmc+)](https://deepwiki.com/evaijs/evjs)
 [![Vibe Coding](https://img.shields.io/badge/vibe-coding-ff69b4?style=flat-square)](https://en.wikipedia.org/wiki/Vibe_coding)
 
-React fullstack framework, built on TanStack + Hono.
+React fullstack framework with file routes, TanStack-powered SPA mode, router-free MPA mode, and a Hono server runtime.
 
 > **ev** = **Ev**aluation · **Ev**olution — evaluate across runtimes, evolve with AI tooling.
 
@@ -13,7 +13,8 @@ React fullstack framework, built on TanStack + Hono.
 ## ⚡ Features
 
 - **Convention over Configuration** — `ev dev` / `ev build`, no boilerplate needed.
-- **Type-Safe Routing** — [TanStack Router](https://tanstack.com/router).
+- **File Routes** — `src/pages` is the client route source of truth.
+- **SPA and MPA Modes** — SPA uses [TanStack Router](https://tanstack.com/router) internally; MPA emits independent router-free pages.
 - **Data Fetching** — [TanStack Query](https://tanstack.com/query) with built-in proxies.
 - **Server Functions** — `"use server"` directive, auto-discovered at build time.
 - **Pluggable Transport** — HTTP, WebSocket, or custom via `ServerTransport`.
@@ -44,13 +45,13 @@ config needed.
 | [`@evjs/ev`](./packages/ev) | Framework API, config, plugins, and build orchestration (`defineConfig`, `dev`, `build`) |
 | [`@evjs/cli`](./packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`) with the default bundler |
 | [`@evjs/create-app`](./packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
-| [`@evjs/client`](./packages/client) | Browser runtime, server-function transport, page runtime, shell exports, static route helpers, and TanStack compatibility |
+| [`@evjs/client`](./packages/client) | Browser runtime, server-function transport, page runtime, shell exports, file-route page helpers, and TanStack compatibility |
 | [`@evjs/server`](./packages/server) | Hono/fetch server runtime, server functions, routes, SSR/PPR/RSC request boundary |
 | [`examples/`](./examples) | Starter templates |
 
-Internal modules such as manifest schemas, build tools, page runtime, shell,
-and route DSL live inside the public packages above instead of separate
-application-facing packages.
+Internal modules such as manifest schemas, build tools, page runtime, and shell
+live inside the public packages above instead of separate application-facing
+packages.
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) · [AGENT.md](./AGENT.md)
 

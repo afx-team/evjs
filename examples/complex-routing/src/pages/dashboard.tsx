@@ -1,6 +1,5 @@
-import { createRoute, Outlet, useQuery } from "@evjs/client";
+import { useQuery } from "@evjs/client";
 import { getStats } from "../api/data.server";
-import { rootRoute } from "./__root";
 
 const styles = {
   card: {
@@ -20,21 +19,7 @@ const styles = {
   },
 };
 
-// ── Pathless layout (no URL segment, just shared UI) ──
-
-export const dashboardLayout = createRoute({
-  getParentRoute: () => rootRoute,
-  id: "dashboard-layout",
-  component: () => (
-    <div>
-      <Outlet />
-    </div>
-  ),
-});
-
-// ── Dashboard page (/dashboard) ──
-
-function Dashboard() {
+export default function Dashboard() {
   const { data: stats } = useQuery(getStats);
   if (!stats) return <p>Loading...</p>;
   return (
@@ -71,9 +56,3 @@ function Dashboard() {
     </div>
   );
 }
-
-export const dashboardRoute = createRoute({
-  getParentRoute: () => dashboardLayout,
-  path: "/dashboard",
-  component: Dashboard,
-});

@@ -4,12 +4,12 @@
 
 ## Features
 
-- **Type-Safe Routing** — Re-exports [TanStack Router](https://tanstack.com/router) with custom `createApp` integration.
-- **TanStack-Free App Option** — Applications can use explicit pages, the static route DSL, and framework-managed page/runtime APIs without using TanStack Router.
+- **File Route Page Helpers** — `definePage()` types page props while evjs owns route discovery.
+- **TanStack Compatibility** — SPA file routes use [TanStack Router](https://tanstack.com/router) internally, with compatibility exports kept for existing apps.
+- **Router-Free Pages** — MPA file routes and framework-managed pages use the page runtime without adding TanStack Router.
 - **Data Fetching** — Re-exports [TanStack Query](https://tanstack.com/query) with built-in server function proxies.
 - **Server Function Support** — `useQuery(fn)` and `useMutation(fn)` for zero-boilerplate RPC.
-- **Unified Bootstrap** — `createApp({ routeTree }).render("#app")`.
-- **Single Client Entry Point** — Shell, page runtime, React page runtime, static route DSL, transport, and TanStack compatibility helpers are all exported from `@evjs/client`.
+- **Single Client Entry Point** — Shell, page runtime, React page runtime, transport, page helpers, and compatibility hooks are exported from `@evjs/client`.
 
 ## Install
 
@@ -19,43 +19,31 @@ npm install @evjs/client react react-dom
 
 ## Quick Start
 
-### 1. Define Routes
+### 1. Write Page Files
 
 ```tsx
-// src/routes.tsx
-import {
-  createAppRootRoute,
-  createRoute,
-  Outlet,
-} from "@evjs/client";
+// src/pages/users/$userId.tsx
+import { definePage } from "@evjs/client";
 
-export const rootRoute = createAppRootRoute({
-  component: () => (
-    <div>
-      <h1>My App</h1>
-      <Outlet />
-    </div>
-  ),
+export default definePage<{ userId: string }>(function UserPage({ params }) {
+  return <h1>User {params.userId}</h1>;
 });
-
-export const indexRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/", // Must be a string literal!
-  component: () => <div>Hello World</div>,
-});
-
-export const routeTree = rootRoute.addChildren([indexRoute]);
 ```
 
-### 2. Bootstrap App
+### 2. Let evjs Build the Route Entry
 
-```tsx
-// src/main.tsx
-import { createApp } from "@evjs/client";
-import { routeTree } from "./routes";
+When `src/pages` exists and `src/main.tsx` does not, evjs discovers the page
+files and builds the SPA entry internally. For MPA output:
 
-const app = createApp({ routeTree });
-app.render("#app");
+```ts
+// ev.config.ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  fileRoutes: {
+    mode: "mpa",
+  },
+});
 ```
 
 ## Server Functions
@@ -75,9 +63,10 @@ function Posts() {
 ## API
 
 ### Routing
-- `createApp`: Create the main application instance.
-- `createRoute`, `createAppRootRoute`, `Link`, `Outlet`, `useNavigate`, `useParams`, and `useSearch`: TanStack Router compatibility exports kept at the top-level entry for existing applications.
-- TanStack compatibility exports and adapter helpers are available from the top-level `@evjs/client` entry.
+- `definePage`: Type the props passed into file-route page components.
+- `createFileRouteApp`: Internal SPA bootstrap used by bundler-generated file-route entries.
+- `Link`, `useNavigate`, `useParams`, and `useSearch`: Router-aware helpers for page components.
+- `createApp`, `createRoute`, and root-route helpers remain available as low-level compatibility exports for existing manual apps.
 
 ### Query
 - `useQuery(fn, args?)`: Wrapper around `useSuspenseQuery`.
@@ -94,8 +83,6 @@ function Posts() {
 - `createShell()`, `createPageDriver()`, and `createHistoryDriver()`: Manifest-driven shell APIs.
 - `startPageRuntime()`: Generic framework-managed page runtime.
 - `createReactPageModule()` and `mountReactPage()`: React page runtime adapter used by component pages.
-- `defineReactRoutes()`, `page()`, and `route()`: React static route declaration DSL.
-- `createTanStackDriver()`, `defineTanStackRoutes()`, and `withRouteMeta()`: TanStack compatibility helpers.
 
 All client runtime APIs are exported from `@evjs/client`.
 

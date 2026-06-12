@@ -1,10 +1,9 @@
-import { createRoute, useQuery } from "@evjs/client";
+import { useQuery } from "@evjs/client";
 import { createTRPCClient, type TRPCLink } from "@trpc/client";
 import { observable } from "@trpc/server/observable";
 import { useCallback, useEffect, useState } from "react";
 import { getServerTime, trpcHandler } from "../api/trpc.server";
 import type { AppRouter } from "../trpc";
-import { rootRoute } from "./__root";
 
 // ── tRPC Glue ──
 
@@ -32,7 +31,7 @@ const trpc = createTRPCClient<AppRouter>({
 
 // ── Home Page ──
 
-function HomePage() {
+export default function HomePage() {
   const [trpcData, setTrpcData] = useState<unknown>(null);
   const { data: serverTime, refetch: refetchTime } = useQuery(getServerTime);
 
@@ -102,9 +101,3 @@ function HomePage() {
     </div>
   );
 }
-
-export const homeRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/",
-  component: HomePage,
-});

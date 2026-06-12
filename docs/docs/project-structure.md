@@ -1,8 +1,8 @@
 # Project Structure
 
-evjs does not require file-based routing or a large scaffold. For documentation
-and new applications, use one complete structure and delete folders that the app
-does not need yet.
+evjs applications should use file routes as the default client boundary. For
+documentation and new applications, use one complete structure and delete
+folders that the app does not need yet.
 
 ## Recommended Structure
 
@@ -14,19 +14,15 @@ my-evjs-app/
 ├── public/                      # copied static files
 ├── tsconfig.json
 └── src/
-    ├── app.tsx                  # primary app declaration and client entry
-    ├── routes/
-    │   ├── operations.ts        # operations route group
-    │   └── engagement.ts        # engagement route group
     ├── server.ts                # framework/server entry
     ├── styles.css               # global CSS / Tailwind entry
-    ├── pages/                   # route/page components
-    │   ├── Dashboard.tsx        # SSR route/page component
-    │   ├── Campaign.tsx         # PPR route/page shell
-    │   ├── OfferRegion.tsx      # Suspense-driven PPR region
-    │   ├── Insights.tsx         # RSC route/page component
-    │   ├── Support.tsx          # CSR standalone page
-    │   └── RemoteApp.tsx        # remote host page
+    ├── pages/                   # file routes
+    │   ├── __root.tsx           # optional SPA root layout
+    │   ├── index.tsx            # /
+    │   ├── dashboard.tsx        # /dashboard
+    │   ├── campaign.tsx         # /campaign
+    │   ├── insights.tsx         # /insights
+    │   └── users/$userId.tsx    # /users/$userId
     ├── api/
     │   ├── operators.server.ts  # "use server" functions
     │   └── health.routes.ts     # Request/Response route handlers
@@ -43,12 +39,11 @@ my-evjs-app/
 
 This shape covers the complete framework surface:
 
-- `ev.config.ts` points the SPA app at one app declaration source.
-- `app.tsx` owns the app document, client entry, mount point, and route groups.
-- Route groups such as `routes/operations.ts` own path-to-component wiring and
-  are imported by `app.tsx`, not configured separately.
-- `pages/` contains React components used by app routes or standalone pages.
-  Rendering metadata lives with those page modules.
+- `ev.config.ts` customizes file-route mode, server paths, remotes, plugins, or
+  explicit page outputs only when defaults are not enough.
+- `pages/` is the client route source of truth. SPA mode maps it to an internal
+  TanStack Router tree; MPA mode maps it to independent page entries.
+- Rendering metadata lives with page modules.
 - `api/*.server.ts` contains server functions.
 - `api/*.routes.ts` contains standard HTTP route handlers.
 - `server.ts` composes `@evjs/server` routes, middleware, and framework rendering.
@@ -56,21 +51,16 @@ This shape covers the complete framework surface:
 
 ## Matching Config
 
-The matching `ev.config.ts` keeps application boundaries explicit:
+The matching `ev.config.ts` can stay small:
 
 ```ts
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  html: "./index.html",
-  app: "./src/app.tsx",
-
-  pages: {
-    support: {
-      path: "/support",
-      component: "./src/pages/Support.tsx",
-      mount: "#app",
-    },
+  fileRoutes: {
+    mode: "spa",
+    dir: "./src/pages",
+    mount: "#app",
   },
 
   server: {
@@ -87,73 +77,18 @@ export default defineConfig({
 });
 ```
 
-`entry` / `html` can still be used as a shorthand for a single simple app, but
-new applications should prefer `app` once the app has route declarations,
-framework-managed rendering, or a non-default mount point. `pages` is for
-standalone page outputs, not app-owned routes such as `/dashboard`,
-`/campaign`, or `/insights`.
+Use `fileRoutes: { mode: "mpa" }` when every route should be emitted as its own
+HTML document without TanStack Router. Use the lower-level `pages` config only
+for page outputs that do not map cleanly to `src/pages`.
 
-## App Declaration
+## Page Modules
 
-An app declaration can be TanStack Router based or TanStack-free. For
-framework-managed rendering without TanStack Router, use `defineReactApp()`:
-
-```ts
-// src/app.tsx
-import { defineReactApp } from "@evjs/client";
-import { engagementRoutes } from "./routes/engagement";
-import { operationsRoutes } from "./routes/operations";
-import "./styles.css";
-
-function App() {
-  return <main>Operations console</main>;
-}
-
-export default defineReactApp({
-  html: "../index.html",
-  mount: "#app",
-  component: App,
-  routes: [...operationsRoutes, ...engagementRoutes],
-});
-```
-
-```ts
-// src/routes/operations.ts
-import { route } from "@evjs/client";
-import Dashboard from "../pages/Dashboard";
-import Insights from "../pages/Insights";
-
-export const operationsRoutes = [
-  route("/dashboard", Dashboard, {
-    id: "dashboard",
-  }),
-  route("/insights", Insights, {
-    id: "insights",
-  }),
-];
-```
-
-```ts
-// src/routes/engagement.ts
-import { route } from "@evjs/client";
-import Campaign from "../pages/Campaign";
-
-export const engagementRoutes = [
-  route("/campaign", Campaign, {
-    id: "campaign",
-  }),
-];
-```
-
-`defineReactApp()` is the app boundary and, when `component` or `render` is
-provided, the browser entry. Feature modules own the actual `route()` calls, so
-large apps can split route groups by domain without splitting app configuration
-across `ev.config.ts` and route files. Route targets are ordinary static React
-imports, so the graph stays analyzable without making users write component
-module path strings. Rendering metadata belongs with the page component:
+Each file under `src/pages` default-exports a React component. Dynamic segments
+use `$param`, and `index.tsx` maps to the directory root. Rendering metadata
+belongs with the page component:
 
 ```tsx
-// src/pages/Campaign.tsx
+// src/pages/campaign.tsx
 import { Suspense } from "react";
 import { OfferRegion } from "./OfferRegion";
 import { OfferSkeleton } from "./OfferSkeleton";
@@ -176,13 +111,9 @@ export default function Campaign() {
 }
 ```
 
-If an app intentionally needs a generated or separate runtime entry, add
-`entry: "./main.tsx"` to the declaration. That is an escape hatch, not the
-default app model.
-
-Route files should stay thin. Read params/search, wire paths to components, and
-compose components from `features/` or `components/`. Put render metadata next
-to the page component and business logic in domain modules.
+Page files should stay thin. Read params/search, export page-local loader or
+rendering metadata, and compose components from `features/` or `components/`.
+Business logic belongs in domain modules.
 
 ## Server Boundary
 
@@ -250,8 +181,7 @@ Remote modules can default-export React components. Explicit `mount`,
 
 ## Naming Guidance
 
-- `apps/` is an optional source folder for the single app declaration, not a config-level multi-app model.
-- `pages/` is for route/page components, including SSR/PPR/RSC components.
+- `pages/` is the file-route source folder and can include SSR/PPR/RSC components.
 - `api/` is the server boundary.
 - `features/` owns business domains.
 - `components/` owns generic UI.

@@ -4,6 +4,7 @@ import type {
   BuildPlan,
   BuildPlanUpdate,
   ComponentModel,
+  FileRouteNode,
   HtmlPlan,
   HydrationMode,
   PprConfig,
@@ -42,10 +43,18 @@ export interface BuildPlanConfig {
         source?: string;
         entry?: string;
         html?: string;
-        routes?: string;
         mount?: string;
       }
   >;
+  fileRoutes?: {
+    mode: "spa" | "mpa";
+    dir: string;
+    entry?: string;
+    html: string;
+    mount: string;
+    routes: FileRouteNode[];
+    rootModule?: string;
+  };
   transport?: {
     baseUrl?: string;
   };
@@ -161,6 +170,19 @@ function createEntries(
       runtime: "browser",
       kind: "app-client",
       owner: { appId: app.id },
+      ...(config.fileRoutes?.mode === "spa" &&
+      config.fileRoutes.entry === app.entry
+        ? {
+            metadata: {
+              type: "file-route-app",
+              routes: config.fileRoutes.routes.map((route) => ({ ...route })),
+              mount: config.fileRoutes.mount,
+              ...(config.fileRoutes.rootModule
+                ? { rootModule: config.fileRoutes.rootModule }
+                : {}),
+            },
+          }
+        : {}),
     });
   }
 

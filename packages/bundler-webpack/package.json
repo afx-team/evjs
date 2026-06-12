@@ -15,7 +15,7 @@
     }
   },
   "scripts": {
-    "build": "tsc && cp src/adapter/component-page-loader.cjs src/adapter/server-function-loader.cjs src/adapter/remote-client-loader.cjs src/adapter/rsc-client-reference-loader.cjs src/adapter/rsc-page-renderer-loader.cjs esm/adapter/",
+    "build": "tsc && cp src/adapter/component-page-loader.cjs src/adapter/file-route-entry-loader.cjs src/adapter/server-function-loader.cjs src/adapter/remote-client-loader.cjs src/adapter/rsc-client-reference-loader.cjs src/adapter/rsc-page-renderer-loader.cjs esm/adapter/",
     "test": "vitest run",
     "check-types": "tsc --noEmit"
   },

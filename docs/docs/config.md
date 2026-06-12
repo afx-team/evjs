@@ -1,13 +1,16 @@
 # Configuration
 
-evjs is zero-config by default. Create `ev.config.ts` when an app needs explicit entries, pages, framework server paths, remotes, plugins, or a non-default bundler.
+evjs is zero-config by default. Create `ev.config.ts` when an app needs to
+customize file routes, page outputs, framework server paths, remotes, plugins,
+or a non-default bundler.
 
 ```ts
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  entry: "./src/main.tsx",
-  html: "./index.html",
+  fileRoutes: {
+    mode: "spa",
+  },
 });
 ```
 
@@ -17,6 +20,7 @@ export default defineConfig({
 |---------|---------|
 | `entry` | `./src/main.tsx` |
 | `html` | `./index.html` |
+| `fileRoutes.mode` | `spa` |
 | `dev.port` | `3000` |
 | `server.dev.port` | `3001` |
 | `server.basePath` | `/__evjs` |
@@ -24,9 +28,36 @@ export default defineConfig({
 
 The server function endpoint is derived from `server.basePath`; there is no separate public function-endpoint config.
 
-## Applications
+## File Routes
 
-Use top-level `entry` / `html` for a single app:
+File routes are the primary client-routing model. SPA mode builds one
+TanStack Router-backed app from `src/pages`:
+
+```ts
+export default defineConfig({
+  fileRoutes: {
+    mode: "spa",
+    dir: "./src/pages",
+    mount: "#app",
+  },
+});
+```
+
+MPA mode uses the same files but emits one independent page per route without a
+client router:
+
+```ts
+export default defineConfig({
+  fileRoutes: {
+    mode: "mpa",
+  },
+});
+```
+
+When `src/pages` exists and the default `src/main.tsx` does not, SPA file
+routes are enabled automatically.
+
+Use top-level `entry` / `html` only for a manually bootstrapped single app:
 
 ```ts
 export default defineConfig({
@@ -35,54 +66,11 @@ export default defineConfig({
 });
 ```
 
-Use `app` when the SPA has its own declaration source, mount point, or
-framework-managed route/page modules:
-
-```ts
-export default defineConfig({
-  app: "./src/console/app.tsx",
-});
-```
-
-```ts
-// src/console/app.tsx
-import { defineReactApp } from "@evjs/client";
-import { operationsRoutes } from "./routes/operations";
-
-function ConsoleApp() {
-  return <main>Console</main>;
-}
-
-export default defineReactApp({
-  html: "./index.html",
-  mount: "#app",
-  component: ConsoleApp,
-  routes: [...operationsRoutes],
-});
-```
-
-The app declaration source owns the app entry, `html`, `mount`, and route
-groups, so app configuration does not split across `ev.config.ts` and route
-files. Add `entry: "./main.tsx"` only when you intentionally want a separate
-runtime entry. The lower-level object form remains available when a tool wants
-to generate config directly:
-
-```ts
-export default defineConfig({
-  app: {
-    entry: "./src/console/main.tsx",
-    html: "./src/console/index.html",
-    mount: "#app",
-  },
-});
-```
-
-Router plugins, such as the TanStack adapter, should register adapter behavior
-and should not own app route paths.
-
 ## Pages
 
-`pages` declares independent page outputs. String pages and `{ entry }` pages are user-owned bootstraps:
+`pages` is the explicit lower-level API for independent page outputs. Prefer
+`fileRoutes: { mode: "mpa" }` when the page set maps directly to `src/pages`.
+String pages and `{ entry }` pages are user-owned bootstraps:
 
 ```ts
 export default defineConfig({

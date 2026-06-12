@@ -63,6 +63,69 @@ describe("createUtoopackConfig", () => {
     );
   });
 
+  it("installs the file-route entry loader for framework-managed file routes", async () => {
+    const config = createResolvedConfig({
+      entry: "./src/pages/index.tsx",
+      fileRoutes: {
+        mode: "spa",
+        dir: "./src/pages",
+        entry: "./src/pages/index.tsx",
+        html: "./index.html",
+        mount: "#app",
+        rootModule: "./src/pages/__root.tsx",
+        routes: [
+          {
+            id: "index",
+            path: "/",
+            module: "./src/pages/index.tsx",
+          },
+        ],
+      },
+    });
+    const plan = createPlan(config);
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.entry).toEqual([
+      {
+        import: "./src/pages/index.tsx",
+        name: "main",
+      },
+    ]);
+    expect(utoopackConfig.module?.rules).toMatchObject({
+      "**/*": [
+        {
+          condition: {
+            path: expect.any(RegExp),
+            query: "",
+          },
+          loaders: [
+            {
+              loader: expect.stringContaining("file-route-entry-loader.cjs"),
+              options: {
+                type: "file-route-app",
+                mount: "#app",
+                rootModule: "./src/pages/__root.tsx",
+                routes: [
+                  {
+                    id: "index",
+                    path: "/",
+                    module: "./src/pages/index.tsx",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+  });
+
   it("does not add SPA history fallback for MPA builds", async () => {
     const config = createResolvedConfig({
       pages: {
@@ -89,7 +152,7 @@ describe("createUtoopackConfig", () => {
     expect(utoopackConfig.devServer?.proxy).toEqual([]);
   });
 
-  it("fails clearly for framework-managed component page entries until Utoopack supports them", async () => {
+  it("installs component page loaders for framework-managed page entries", async () => {
     const config = createResolvedConfig({
       pages: {
         home: {
@@ -106,11 +169,35 @@ describe("createUtoopackConfig", () => {
       type: "react-component-page",
       component: "./src/pages/Home.tsx",
     });
-    await expect(
-      createUtoopackConfig(config, plan, process.cwd(), []),
-    ).rejects.toThrow(
-      "Utoopack adapter cannot build framework-managed component page entries yet",
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
     );
+
+    expect(utoopackConfig.module?.rules).toMatchObject({
+      "**/*": [
+        {
+          condition: {
+            path: expect.any(RegExp),
+            query: "",
+          },
+          loaders: [
+            {
+              loader: expect.stringContaining("component-page-loader.cjs"),
+              options: {
+                type: "react-component-page",
+                mount: "#app",
+                hydrate: "load",
+                render: "csr",
+              },
+            },
+          ],
+          type: "ecmascript",
+        },
+      ],
+    });
   });
 
   it("awaits async bundlerConfig hooks before returning config", async () => {

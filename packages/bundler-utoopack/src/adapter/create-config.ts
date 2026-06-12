@@ -8,17 +8,32 @@
 
 import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
+const componentPageLoader = fileURLToPath(
+  new URL("./component-page-loader.cjs", import.meta.url),
+);
+const fileRouteEntryLoader = fileURLToPath(
+  new URL("./file-route-entry-loader.cjs", import.meta.url),
+);
 
 import type {
   BuildPlan,
   BundlerCtx,
+  FileRouteAppEntryMetadata,
   PluginHooks,
+  ReactComponentPageEntryMetadata,
   ResolvedConfig,
 } from "@evjs/ev";
 import { getLogger } from "@logtape/logtape";
-import type { ConfigComplete, DevServerProxy, ProxyRule } from "@utoo/pack";
+import type {
+  ConfigComplete,
+  DevServerProxy,
+  ProxyRule,
+  TurbopackLoaderOptions,
+  TurbopackRuleConfigItem,
+} from "@utoo/pack";
 import { getOutputPaths } from "./output-paths.js";
 
 const logger = getLogger(["evjs", "bundler-utoopack", "config"]);
@@ -61,6 +76,7 @@ export async function createUtoopackConfig(
   const isProduction = process.env.NODE_ENV === "production";
   const mode = isProduction ? "production" : "development";
   const serverEnabled = config.serverEnabled;
+  const frameworkRules = createFrameworkModuleRules(plan);
   const devProxy: DevServerProxy = [
     ...config.dev.proxy,
     ...(hasAppClientEntry(plan) ? [createSpaHistoryFallbackRule(config)] : []),
@@ -83,7 +99,7 @@ export async function createUtoopackConfig(
     entry: plan.entries
       .filter((entry) => entry.environment === "client")
       .map((entry) => ({
-        import: entry.import,
+        import: resolveClientEntry(cwd, entry),
         name: entry.name,
       })),
     output: {
@@ -96,6 +112,15 @@ export async function createUtoopackConfig(
     resolve: {
       extensions: [".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs"],
     },
+    ...(frameworkRules.length > 0
+      ? {
+          module: {
+            rules: {
+              "**/*": frameworkRules,
+            },
+          },
+        }
+      : {}),
     sourceMaps: !isProduction,
     stats: true,
     react: {
@@ -163,23 +188,138 @@ export async function createUtoopackConfig(
   return utoopackConfig;
 }
 
+function createFileRouteEntryRule(
+  metadata: FileRouteAppEntryMetadata,
+): TurbopackRuleConfigItem {
+  return {
+    condition: createFileRouteEntryCondition(metadata),
+    loaders: [
+      {
+        loader: fileRouteEntryLoader,
+        options: createFileRouteLoaderOptions(metadata),
+      },
+    ],
+    type: "ecmascript",
+  };
+}
+
+function createFileRouteEntryCondition(metadata: FileRouteAppEntryMetadata): {
+  path: RegExp;
+  query: string;
+} {
+  return {
+    path: new RegExp(
+      `${escapeRegExp(normalizeRulePath(metadata.routes[0]?.module ?? ""))}$`,
+    ),
+    query: "",
+  };
+}
+
+function createComponentPageRule(
+  metadata: ReactComponentPageEntryMetadata,
+): TurbopackRuleConfigItem {
+  return {
+    condition: {
+      path: new RegExp(
+        `${escapeRegExp(normalizeRulePath(metadata.component))}$`,
+      ),
+      query: "",
+    },
+    loaders: [
+      {
+        loader: componentPageLoader,
+        options: createComponentPageLoaderOptions(metadata),
+      },
+    ],
+    type: "ecmascript",
+  };
+}
+
+function normalizeRulePath(value: string): string {
+  return value.replace(/^\.\//, "").replaceAll("\\", "/");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function resolveClientEntry(
+  cwd: string,
+  entry: BuildPlan["entries"][number],
+): string {
+  if (entry.metadata?.type !== "file-route-app") return entry.import;
+  if (entry.import.startsWith(".") || path.isAbsolute(entry.import)) {
+    return entry.import;
+  }
+
+  try {
+    return createRequire(path.join(cwd, "package.json")).resolve(entry.import);
+  } catch {
+    return require.resolve(entry.import);
+  }
+}
+
+function getFileRouteAppMetadata(
+  plan: BuildPlan,
+): FileRouteAppEntryMetadata | undefined {
+  const metadata = plan.entries.find(
+    (entry) => entry.metadata?.type === "file-route-app",
+  )?.metadata;
+  return metadata?.type === "file-route-app" ? metadata : undefined;
+}
+
+function getComponentPageMetadata(
+  plan: BuildPlan,
+): ReactComponentPageEntryMetadata[] {
+  return plan.entries
+    .map((entry) => entry.metadata)
+    .filter(
+      (metadata): metadata is ReactComponentPageEntryMetadata =>
+        metadata?.type === "react-component-page",
+    );
+}
+
+function createFrameworkModuleRules(
+  plan: BuildPlan,
+): TurbopackRuleConfigItem[] {
+  const fileRouteApp = getFileRouteAppMetadata(plan);
+  return [
+    ...(fileRouteApp ? [createFileRouteEntryRule(fileRouteApp)] : []),
+    ...getComponentPageMetadata(plan).map(createComponentPageRule),
+  ];
+}
+
+function createFileRouteLoaderOptions(
+  metadata: FileRouteAppEntryMetadata,
+): TurbopackLoaderOptions {
+  return {
+    type: "file-route-app",
+    mount: metadata.mount,
+    routes: metadata.routes.map((route) => ({
+      id: route.id,
+      path: route.path,
+      module: route.module,
+    })),
+    ...(metadata.rootModule ? { rootModule: metadata.rootModule } : {}),
+  };
+}
+
+function createComponentPageLoaderOptions(
+  metadata: ReactComponentPageEntryMetadata,
+): TurbopackLoaderOptions {
+  return {
+    type: "react-component-page",
+    mount: metadata.mount,
+    hydrate: metadata.hydrate,
+    render: metadata.render,
+  };
+}
+
 function hasAppClientEntry(plan: BuildPlan): boolean {
   return plan.entries.some((entry) => entry.kind === "app-client");
 }
 
 function validateUtoopackPlanSupport(plan: BuildPlan): void {
-  const frameworkManagedComponentEntries = plan.entries.filter(
-    (entry) => entry.metadata?.type === "react-component-page",
-  );
-  if (frameworkManagedComponentEntries.length > 0) {
-    const names = frameworkManagedComponentEntries
-      .map((entry) => entry.name)
-      .join(", ");
-    throw new Error(
-      `[evjs] The current Utoopack adapter cannot build framework-managed component page entries yet: ${names}. Utoopack needs entry wrapping support or use another bundler adapter for framework-managed component pages.`,
-    );
-  }
-
   const remoteClientEntries = plan.entries.filter(
     (entry) => entry.metadata?.type === "remote-client",
   );

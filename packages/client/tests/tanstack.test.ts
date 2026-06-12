@@ -1,35 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  createTanStackDriver,
-  defineTanStackRoutes,
-  getRouteMeta,
-  tanstackRoutes,
-  withRouteMeta,
-} from "../src/tanstack.js";
-
-describe("defineTanStackRoutes", () => {
-  it("keeps the route source path as app-owned config input", () => {
-    expect(tanstackRoutes("./src/routes.tsx")).toBe("./src/routes.tsx");
-  });
-
-  it("preserves the original route tree generic and returns graph metadata", () => {
-    const routeTree = { id: "root" };
-    const routes = defineTanStackRoutes({
-      routeTree,
-      routes: [{ id: "home", path: "/" }],
-    });
-
-    expect(routes.routeTree).toBe(routeTree);
-    expect(routes.toRouteGraph()).toEqual([{ id: "home", path: "/" }]);
-  });
-
-  it("attaches route metadata without changing the route object", () => {
-    const route = { id: "user" };
-
-    expect(withRouteMeta(route, { module: "./pages/User.tsx" })).toBe(route);
-    expect(getRouteMeta(route)).toEqual({ module: "./pages/User.tsx" });
-  });
-});
+import { createTanStackDriver } from "../src/tanstack.js";
 
 describe("createTanStackDriver", () => {
   it("creates shell activation requests from TanStack router state", () => {

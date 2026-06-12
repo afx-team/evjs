@@ -1,7 +1,6 @@
-import { createRoute, initTransport } from "@evjs/client";
+import { initTransport } from "@evjs/client";
 import { useEffect, useState } from "react";
 import { createUser, getUsers } from "../api/users.server";
-import { rootRoute } from "./__root";
 
 // ── WebSocket Adapter ──
 
@@ -73,7 +72,7 @@ initTransport({
 
 // ── Users Page ──
 
-function UsersPage() {
+export default function UsersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
 
@@ -144,9 +143,3 @@ function UsersPage() {
     </div>
   );
 }
-
-export const usersRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/",
-  component: UsersPage,
-});

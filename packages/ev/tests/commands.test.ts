@@ -119,6 +119,98 @@ describe("build", () => {
     ]);
   });
 
+  it("builds a file-route SPA without a user entry file", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/index.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+
+    await build(
+      {
+        server: false,
+        plugins: [
+          {
+            name: "records-file-route-plan",
+            setup() {
+              return {
+                buildPlan(plan) {
+                  const entry = plan.entries[0];
+                  events.push(`entry:${entry?.import}`);
+                  events.push(`metadata:${entry?.metadata?.type}`);
+                },
+              };
+            },
+          },
+        ],
+      },
+      {
+        cwd,
+        bundler,
+      },
+    );
+
+    expect(events).toEqual([
+      "entry:./src/pages/index.tsx",
+      "metadata:file-route-app",
+      "bundler.build",
+      "bundler.entries:main",
+    ]);
+    expect(fs.existsSync(path.join(cwd, ".evjs"))).toBe(false);
+  });
+
+  it("builds file-route MPA pages without a router or generated route files", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/index.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/about.tsx"),
+      "export default function About() { return null; }",
+      "utf-8",
+    );
+    const events: string[] = [];
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock-mpa",
+      async build({ plan }) {
+        events.push(
+          `entries:${plan.entries.map((entry) => `${entry.name}:${entry.kind}`).join(",")}`,
+        );
+        return {
+          clientEntryAssets: {
+            index: { js: ["index.js"], css: [] },
+            about: { js: ["about.js"], css: [] },
+          },
+          firstClientEntryAssets: { js: ["index.js"], css: [] },
+        };
+      },
+      async dev() {},
+    };
+
+    await build(
+      {
+        server: false,
+        fileRoutes: {
+          mode: "mpa",
+        },
+      },
+      {
+        cwd,
+        bundler,
+      },
+    );
+
+    expect(events).toEqual(["entries:index:page-client,about:page-client"]);
+    expect(fs.existsSync(path.join(cwd, ".evjs"))).toBe(false);
+  });
+
   it("passes linked BuildOutput to buildEnd and emits the framework manifest", async () => {
     const cwd = await createProject();
     const events: string[] = [];
@@ -269,26 +361,19 @@ describe("build", () => {
     ]);
   });
 
-  it("fails on graph analysis errors before running the bundler", async () => {
+  it("fails on file route discovery errors before running the bundler", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
+    await fs.promises.mkdir(path.join(cwd, "src/pages/users"), {
+      recursive: true,
+    });
     await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
-      "console.log('main');",
+      path.join(cwd, "src/pages/users/$id.tsx"),
+      "export default function UserByDollarParam() { return null; }",
       "utf-8",
     );
     await fs.promises.writeFile(
-      path.join(cwd, "src/routes.tsx"),
-      [
-        'import { defineReactRoutes, page, route } from "@evjs/client";',
-        'const modulePath = "./pages/Home.tsx";',
-        "export default defineReactRoutes([",
-        '  route("/", {',
-        '    id: "home",',
-        "    page: page(modulePath),",
-        "  }),",
-        "]);",
-      ].join("\n"),
+      path.join(cwd, "src/pages/users/[id].tsx"),
+      "export default function UserByBracketParam() { return null; }",
       "utf-8",
     );
 
@@ -299,11 +384,8 @@ describe("build", () => {
     try {
       await build(
         {
-          app: {
-            entry: "./src/main.tsx",
-            html: "./index.html",
-            routes: "./src/routes.tsx",
-          },
+          server: false,
+          fileRoutes: true,
         },
         {
           cwd,
@@ -316,11 +398,11 @@ describe("build", () => {
 
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain(
-      "[evjs] App graph analysis failed.",
+      "[evjs] File route discovery failed.",
     );
-    expect((error as Error).message).toContain("src/routes.tsx");
+    expect((error as Error).message).toContain("src/pages/users/[id].tsx");
     expect((error as Error).message).toContain(
-      "@evjs/client route() component targets must be default imports or page(componentPath) references.",
+      'Duplicate file route path "/users/$id"',
     );
     expect(events).not.toContain("bundler.build");
   });

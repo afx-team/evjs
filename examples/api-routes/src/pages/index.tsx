@@ -1,6 +1,4 @@
-import { createRoute } from "@evjs/client";
 import { useState } from "react";
-import { rootRoute } from "./__root";
 
 // ── Types ──
 
@@ -13,7 +11,7 @@ interface Post {
 
 // ── Posts Page ──
 
-function PostsPage() {
+export default function PostsPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -234,9 +232,3 @@ function HealthCheck() {
     </div>
   );
 }
-
-export const postsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/",
-  component: PostsPage,
-});

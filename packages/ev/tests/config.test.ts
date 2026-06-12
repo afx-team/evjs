@@ -33,6 +33,22 @@ describe("defineConfig", () => {
 
     expect(config).toEqual({ app: { entry: "./src/main.tsx" } });
   });
+
+  it("accepts file route configuration", () => {
+    const config = defineConfig({
+      fileRoutes: {
+        dir: "./src/pages",
+        mount: "#root",
+      },
+    });
+
+    expect(config).toEqual({
+      fileRoutes: {
+        dir: "./src/pages",
+        mount: "#root",
+      },
+    });
+  });
 });
 
 describe("resolveConfig", () => {
@@ -52,11 +68,45 @@ describe("resolveConfig", () => {
     expect(resolved.server.functionRuntime.endpoint).toBe("/__evjs/fn");
     expect(resolved.transport).toEqual({ baseUrl: undefined });
     expect(resolved.apps).toBeUndefined();
+    expect(resolved.fileRoutes).toBeUndefined();
     expect(resolved.remotes).toEqual({});
     expect(resolved.server.dev.port).toBe(CONFIG_DEFAULTS.serverPort);
     expect(resolved.server.dev.https).toBe(false);
     expect(resolved.bundler).toBeUndefined();
     expect(resolved.plugins).toEqual([]);
+  });
+
+  it("resolves file route defaults when enabled", () => {
+    const resolved = resolveConfig({
+      fileRoutes: true,
+    });
+
+    expect(resolved.fileRoutes).toEqual({
+      mode: "spa",
+      dir: "./src/pages",
+      html: "./index.html",
+      mount: "#app",
+      routes: [],
+    });
+  });
+
+  it("respects file route overrides", () => {
+    const resolved = resolveConfig({
+      html: "./app.html",
+      fileRoutes: {
+        dir: "./app/pages",
+        html: "./shell.html",
+        mount: "#root",
+      },
+    });
+
+    expect(resolved.fileRoutes).toEqual({
+      mode: "spa",
+      dir: "./app/pages",
+      html: "./shell.html",
+      mount: "#root",
+      routes: [],
+    });
   });
 
   it("applies all defaults when called with empty config", () => {
@@ -216,7 +266,6 @@ describe("resolveConfig", () => {
       app: {
         entry: "./src/admin/main.tsx",
         html: "./src/admin/index.html",
-        routes: "./src/admin/routes.tsx",
       },
       remotes: {
         crm: {
@@ -230,7 +279,6 @@ describe("resolveConfig", () => {
       default: {
         entry: "./src/admin/main.tsx",
         html: "./src/admin/index.html",
-        routes: "./src/admin/routes.tsx",
         mount: undefined,
       },
     });

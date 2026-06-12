@@ -35,7 +35,7 @@ source declarations
   AppGraph、BuildPlan、BuildOutput 和 manifest schema
 
 @evjs/client 内部模块
-  framework-managed runtime、shell、route DSL、transport、RSC client runtime
+  framework-managed runtime、shell、page runtime、transport、RSC client runtime
   和 TanStack 兼容能力，统一通过顶层 client 入口导出
 
 @evjs/bundler-utoopack
@@ -48,10 +48,8 @@ source declarations
 
 `@evjs/ev/build-tools` 不 import bundler adapter。Bundler adapter 消费 `BuildPlan`，不会在 bundling 之后重新扫描源码来发现框架语义。
 
-TanStack 兼容能力会继续保留在 `@evjs/client` 中。新架构不是要求
-`@evjs/client` 自身不依赖 TanStack，而是要求框架支持不使用 TanStack
-Router 的应用，例如显式 pages、静态 route DSL 和 framework-managed
-page/runtime API。
+TanStack 兼容能力会继续保留在 `@evjs/client` 中。SPA 文件路由在框架内部使用
+TanStack Router；MPA 文件路由和显式 pages 使用 page runtime，不引入客户端路由器。
 
 ## 构建流程
 
@@ -188,14 +186,14 @@ helper 负责 remote app manifest 构造、用于调试的 query-string manifest
 ## 配置归属
 
 ```txt
-entry/html
-  单应用快捷配置
+fileRoutes
+  文件路由事实来源：spa/mpa mode、dir、html、mount point
 
-app
-  指向拥有 entry、html、route groups、mount point 的 app declaration source
+entry/html
+  手动单应用快捷配置
 
 pages.*
-  standalone page shorthand：path、entry/component/app、mount point
+  显式独立页面输出：path、entry/component/app、mount point
 
 server.basePath
   派生 fn、ppr、rsc 等框架服务端路径
@@ -207,20 +205,16 @@ plugins
   框架和 bundler 扩展点
 ```
 
-`app` 指向一个 app declaration source。这个 source 拥有应用 document、client
-entry、route groups 和 mount point。它不应该携带一个统一 render mode，因为一个
-app 内可以同时存在 CSR、SSR、PPR、RSC 和 remote routes。
+`fileRoutes` 默认指向 `src/pages`。SPA 模式会把发现到的文件转成内部 TanStack
+Router app entry；MPA 模式会把同一批文件转成不带客户端路由器的独立页面输出。
 
-Route declarations 负责 path-to-component wiring。Page modules 通过 `render`、
-`hydrate`、`rsc`、`prerender` 等静态导出拥有渲染元信息。当 graph
-creation 发现 route component 带有 SSR、RSC 或 partial prerender metadata 时，会从
-该 route 派生一个内部 page。这个 page 提供稳定的 `pageId`、render metadata、
-server renderers、PPR regions、assets 和 manifest output，但不会输出独立 HTML
-document。app document 仍然是 HTML owner。
+Page modules 通过文件名拥有 path-to-component wiring，并通过 `render`、`hydrate`、
+`rsc`、`prerender` 等静态导出拥有渲染元信息。当 graph creation 发现 SSR、RSC
+或 partial prerender metadata 时，会从该页面模块派生所需的 server renderers、
+PPR regions、assets 和 manifest output。
 
-`pages.*` 保留为 standalone page shorthand。它适合页面不在 app declaration source
-内，或简单 MPA-style 页面需要拥有独立 HTML document 的场景。渲染元信息仍属于被引用的
-page module，而不是 `ev.config.ts`。
+`pages.*` 保留为显式底层页面 API。它适合页面无法自然映射到 `src/pages` 文件树的场景。
+渲染元信息仍属于被引用的 page module，而不是 `ev.config.ts`。
 
 ## 服务端函数管线
 
@@ -274,7 +268,7 @@ PPR、RSC、server functions 或 server routes，除非同时接入具备服务�
 框架级声明变化和普通 HMR 分开处理：
 
 ```txt
-config / route declaration / server declaration change
+config / file route / server declaration change
   -> recreate AppGraph
   -> recreate BuildPlan
   -> diff BuildPlan
@@ -286,7 +280,6 @@ config / route declaration / server declaration change
 暴露下层 API。webpack adapter 可在进程内应用 update，用于架构验证。样式和资源编辑仍走
 bundler HMR 路径。
 
-Graph analysis 会读取静态 import closure 来发现 server functions、server routes、
-route declarations 和 RSC references。dev 只 watch 显式 graph roots，以及已经包含
-framework marker 的文件；普通组件和样式编辑继续走 bundler HMR。如果普通组件后续开始声明
-框架语义，应通过配置的 route/server root 或 config 变更把它引入受 watch 的 framework graph 集合。
+Graph analysis 会读取文件路由模块和静态 import closure 来发现 server functions、
+server routes、page metadata 和 RSC references。dev 会 watch 文件路由目录、显式 graph
+roots，以及已经包含 framework marker 的文件；普通组件和样式编辑继续走 bundler HMR。
