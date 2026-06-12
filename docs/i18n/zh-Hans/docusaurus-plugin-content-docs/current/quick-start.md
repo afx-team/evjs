@@ -59,13 +59,10 @@ my-app/
 
 ```tsx
 // src/pages/users/$id.tsx
-import { definePage, getFnQueryOptions, useQuery } from "@evjs/client";
+import { definePage, useQuery } from "@evjs/client";
 import { getUser } from "../../api/users.server";
 
-export const loader = ({ params, context }) =>
-  context.queryClient.ensureQueryData(getFnQueryOptions(getUser, params.id));
-
-export default definePage<{ id: string }>(function UserPage({ params }) {
+export default definePage(function UserPage({ params }) {
   const { data } = useQuery(getUser, params.id);
   return <main>{data?.name}</main>;
 });

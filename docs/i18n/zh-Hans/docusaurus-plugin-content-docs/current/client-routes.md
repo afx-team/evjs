@@ -51,20 +51,16 @@ TanStack Router。
 
 ## 页面
 
-每个页面模块默认导出 React 组件。需要类型化页面 props 时使用 `definePage()`，
-用户代码不需要创建 route object、route tree 或 router 注册。
+每个页面模块默认导出 React 组件。`definePage()` 会为组件提供 file-route props
+的上下文类型，用户代码不需要声明 route 参数类型，也不需要创建 route object、
+route tree 或 router 注册。
 
 ```tsx
 // src/pages/users/$userId.tsx
-import { definePage, getFnQueryOptions, useQuery } from "@evjs/client";
+import { definePage, useQuery } from "@evjs/client";
 import { getUser } from "../../api/users.server";
 
-export const loader = ({ params, context }) =>
-  context.queryClient.ensureQueryData(
-    getFnQueryOptions(getUser, params.userId),
-  );
-
-export default definePage<{ userId: string }>(function UserPage({ params }) {
+export default definePage(function UserPage({ params }) {
   const { data: user } = useQuery(getUser, params.userId);
   if (!user) return null;
   return <h1>{user.name}</h1>;
@@ -84,11 +80,10 @@ export const validateSearch = (search: Record<string, unknown>) => ({
   q: typeof search.q === "string" ? search.q : "",
 });
 
-export default definePage<Record<string, string>, { q: string }>(
-  function SearchPage({ search }) {
-    return <h1>Search: {search.q}</h1>;
-  },
-);
+export default definePage(function SearchPage({ search }) {
+  const q = typeof search.q === "string" ? search.q : "";
+  return <h1>Search: {q}</h1>;
+});
 ```
 
 ## 布局

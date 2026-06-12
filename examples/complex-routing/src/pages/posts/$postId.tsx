@@ -1,9 +1,4 @@
-import {
-  definePage,
-  type FileRoutePageProps,
-  Link,
-  useQuery,
-} from "@evjs/client";
+import { definePage, Link, useQuery } from "@evjs/client";
 import { getPost } from "../../api/data.server";
 
 const styles = {
@@ -17,9 +12,7 @@ const styles = {
   },
 };
 
-export default definePage(function PostDetail({
-  params,
-}: FileRoutePageProps<{ postId: string }>) {
+export default definePage(function PostDetail({ params }) {
   const { data: post } = useQuery(getPost, params.postId);
 
   if (!post) return <p>Loading...</p>;

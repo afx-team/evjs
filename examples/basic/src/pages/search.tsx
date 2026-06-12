@@ -1,9 +1,4 @@
-import {
-  definePage,
-  type FileRoutePageProps,
-  Link,
-  useQuery,
-} from "@evjs/client";
+import { definePage, Link, useQuery } from "@evjs/client";
 import { getUsers } from "../api/users.server";
 
 const cardStyle = {
@@ -14,11 +9,7 @@ const cardStyle = {
 
 const linkStyle = { color: "#2563eb", textDecoration: "none" };
 
-type SearchState = {
-  tab: "all" | "favorites" | "recent";
-};
-
-export function validateSearch(search: Record<string, unknown>): SearchState {
+export function validateSearch(search: Record<string, unknown>) {
   return {
     tab:
       search.tab === "favorites" || search.tab === "recent"
@@ -27,10 +18,9 @@ export function validateSearch(search: Record<string, unknown>): SearchState {
   };
 }
 
-export default definePage(function SearchPage({
-  search,
-}: FileRoutePageProps<Record<string, string>, SearchState>) {
-  const { tab } = search;
+export default definePage(function SearchPage({ search }) {
+  const tab =
+    search.tab === "favorites" || search.tab === "recent" ? search.tab : "all";
   const { data: users = [] } = useQuery(getUsers);
 
   const visibleUsers =

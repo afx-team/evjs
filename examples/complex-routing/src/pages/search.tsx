@@ -1,9 +1,4 @@
-import {
-  definePage,
-  type FileRoutePageProps,
-  Link,
-  useQuery,
-} from "@evjs/client";
+import { definePage, Link, useQuery } from "@evjs/client";
 import { getPosts } from "../api/data.server";
 
 const styles = {
@@ -15,20 +10,14 @@ const styles = {
   },
 };
 
-type SearchState = {
-  q: string;
-};
-
-export function validateSearch(search: Record<string, unknown>): SearchState {
+export function validateSearch(search: Record<string, unknown>) {
   return {
     q: (search.q as string) || "",
   };
 }
 
-export default definePage(function SearchPage({
-  search,
-}: FileRoutePageProps<Record<string, string>, SearchState>) {
-  const { q } = search;
+export default definePage(function SearchPage({ search }) {
+  const q = typeof search.q === "string" ? search.q : "";
   const { data: results } = useQuery(getPosts, q || undefined);
 
   return (

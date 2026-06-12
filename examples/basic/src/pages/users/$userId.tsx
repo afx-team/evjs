@@ -1,9 +1,4 @@
-import {
-  definePage,
-  type FileRoutePageProps,
-  Link,
-  useQuery,
-} from "@evjs/client";
+import { definePage, Link, useQuery } from "@evjs/client";
 import { getUser } from "../../api/users.server";
 
 const cardStyle = {
@@ -14,9 +9,7 @@ const cardStyle = {
 
 const linkStyle = { color: "#2563eb", textDecoration: "none" };
 
-export default definePage(function UserDetailPage({
-  params,
-}: FileRoutePageProps<{ userId: string }>) {
+export default definePage(function UserDetailPage({ params }) {
   const { userId } = params;
   const { data: user, isLoading } = useQuery(getUser, userId);
 

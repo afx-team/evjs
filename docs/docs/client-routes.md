@@ -53,20 +53,15 @@ and client entry. No TanStack Router code is added.
 
 ## Pages
 
-Each page module exports a default React component. Use `definePage()` when you
-want typed route props without importing router objects:
+Each page module exports a default React component. `definePage()` gives the
+component the file-route prop shape without a route-local type declaration:
 
 ```tsx
 // src/pages/users/$userId.tsx
-import { definePage, getFnQueryOptions, useQuery } from "@evjs/client";
+import { definePage, useQuery } from "@evjs/client";
 import { getUser } from "../../api/users.server";
 
-export const loader = ({ params, context }) =>
-  context.queryClient.ensureQueryData(
-    getFnQueryOptions(getUser, params.userId),
-  );
-
-export default definePage<{ userId: string }>(function UserPage({ params }) {
+export default definePage(function UserPage({ params }) {
   const { data: user } = useQuery(getUser, params.userId);
   if (!user) return null;
   return <h1>{user.name}</h1>;
@@ -87,11 +82,10 @@ export const validateSearch = (search: Record<string, unknown>) => ({
   q: typeof search.q === "string" ? search.q : "",
 });
 
-export default definePage<Record<string, string>, { q: string }>(
-  function SearchPage({ search }) {
-    return <h1>Search: {search.q}</h1>;
-  },
-);
+export default definePage(function SearchPage({ search }) {
+  const q = typeof search.q === "string" ? search.q : "";
+  return <h1>Search: {q}</h1>;
+});
 ```
 
 ## Layout

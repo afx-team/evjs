@@ -4,7 +4,7 @@
 
 ## Features
 
-- **File Route Page Helpers** — `definePage()` types page props while evjs owns route discovery.
+- **File Route Page Helpers** — `definePage()` gives page components contextual props while evjs owns route discovery.
 - **TanStack Compatibility** — SPA file routes use [TanStack Router](https://tanstack.com/router) internally, with compatibility exports kept for existing apps.
 - **Router-Free Pages** — MPA file routes and framework-managed pages use the page runtime without adding TanStack Router.
 - **Data Fetching** — Re-exports [TanStack Query](https://tanstack.com/query) with built-in server function proxies.
@@ -25,7 +25,7 @@ npm install @evjs/client react react-dom
 // src/pages/users/$userId.tsx
 import { definePage } from "@evjs/client";
 
-export default definePage<{ userId: string }>(function UserPage({ params }) {
+export default definePage(function UserPage({ params }) {
   return <h1>User {params.userId}</h1>;
 });
 ```
