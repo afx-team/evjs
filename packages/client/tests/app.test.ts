@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createApp, createAppRootRoute } from "../src/index";
+import { createApp } from "../src/app";
+import { createAppRootRoute } from "../src/context";
 
 function createRouteTree() {
   return createAppRootRoute({

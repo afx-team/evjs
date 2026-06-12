@@ -160,7 +160,7 @@ import type { HtmlDocument } from "@evjs/ev";
 
 ## Build Output
 
-`buildEnd()` 接收单一框架输出，不再接收 v1 client/server manifests：
+`buildEnd()` 接收单一框架输出：
 
 ```ts
 setup() {

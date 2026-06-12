@@ -16,10 +16,8 @@ export function createPageDriver(options: PageDriverOptions = {}): PageDriver {
       const id = getOptionalAttribute(root, "data-evjs-id");
 
       return {
-        appId:
-          kind === "app" ? id : getOptionalAttribute(root, "data-evjs-app"),
-        pageId:
-          kind === "page" ? id : getOptionalAttribute(root, "data-evjs-page"),
+        appId: kind === "app" ? id : undefined,
+        pageId: kind === "page" ? id : undefined,
         buildId: getOptionalAttribute(root, "data-evjs-build"),
         url: doc.location?.href,
       };

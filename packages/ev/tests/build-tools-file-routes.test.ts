@@ -58,30 +58,10 @@ describe("discoverFileRoutes", () => {
     expect(discovery.diagnostics).toEqual([]);
   });
 
-  it("keeps __root.tsx as a legacy root layout fallback", async () => {
-    const cwd = await createFixture({
-      "src/pages/__root.tsx": "export default function Root() { return null; }",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverFileRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.rootModule).toBe("./src/pages/__root.tsx");
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("prefers layout.tsx over the legacy __root.tsx file", async () => {
+  it("keeps nested layout.tsx files out of the root layout slot", async () => {
     const cwd = await createFixture({
       "src/pages/layout.tsx":
         "export default function Layout() { return null; }",
-      "src/pages/__root.tsx": "export default function Root() { return null; }",
       "src/pages/posts/layout.tsx":
         "export default function PostsLayout() { return null; }",
       "src/pages/index.tsx": "export default function Home() { return null; }",
@@ -95,6 +75,11 @@ describe("discoverFileRoutes", () => {
         id: "index",
         path: "/",
         module: "./src/pages/index.tsx",
+      },
+      {
+        id: "posts_layout",
+        path: "/posts/layout",
+        module: "./src/pages/posts/layout.tsx",
       },
     ]);
     expect(discovery.diagnostics).toEqual([]);

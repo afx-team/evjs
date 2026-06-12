@@ -59,7 +59,6 @@ describe("createDeploymentArtifact", () => {
           render: "ssr",
           componentModel: "rsc",
           rendering: {
-            mode: "ssr",
             component: "rsc",
             html: "server",
             streaming: true,
@@ -235,7 +234,6 @@ describe("createDeploymentArtifact", () => {
           render: "ssr",
           componentModel: "rsc",
           rendering: {
-            mode: "ssr",
             component: "rsc",
             html: "server",
             streaming: true,
@@ -312,7 +310,6 @@ describe("createDeploymentArtifact", () => {
           assets: { js: [], css: [] },
           render: "ssg",
           rendering: {
-            mode: "ssg",
             component: "server",
             html: "static",
             prerender: "full",
@@ -382,7 +379,6 @@ describe("createDeploymentArtifact", () => {
           render: "ssr",
           componentModel: "rsc",
           rendering: {
-            mode: "ssr",
             component: "rsc",
             html: "server",
             streaming: true,

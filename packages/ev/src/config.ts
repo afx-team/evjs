@@ -156,18 +156,9 @@ export interface Config<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
    * Framework-managed file-based SPA routes.
    *
    * When enabled, evjs discovers React page modules from `src/pages`, builds a
-   * TanStack Router route tree internally, and mounts one SPA entry. Existing
-   * manual `entry`, `app`, and `pages` configurations remain valid escape
-   * hatches.
+   * TanStack Router route tree internally, and mounts one SPA entry.
    */
   routing?: boolean | RoutingConfig;
-
-  /**
-   * @deprecated Use `routing` for user-facing configuration. `fileRoutes`
-   * remains supported for compatibility and maps to the same internal route
-   * discovery pipeline.
-   */
-  fileRoutes?: boolean | FileRoutesConfig;
 
   /** Remote applications loaded from framework manifests. */
   remotes?: Record<string, RemoteConfig>;
@@ -537,7 +528,7 @@ export function resolveConfig<
 }
 
 function resolveFileRoutesConfig(
-  fileRoutes: Config["routing"] | Config["fileRoutes"],
+  fileRoutes: Config["routing"],
   defaultHtml: string,
 ): ResolvedFileRoutesConfig | undefined {
   if (!fileRoutes) return undefined;
@@ -553,11 +544,8 @@ function resolveFileRoutesConfig(
 
 function resolveRoutingConfig<TBundlerCfg>(
   config: Config<TBundlerCfg>,
-): Config<TBundlerCfg>["routing"] | Config<TBundlerCfg>["fileRoutes"] {
-  if (config.routing !== undefined && config.fileRoutes !== undefined) {
-    throw new Error("[evjs] Configure either routing or fileRoutes, not both.");
-  }
-  return config.routing ?? config.fileRoutes;
+): Config<TBundlerCfg>["routing"] {
+  return config.routing;
 }
 
 function resolveAppConfig(

@@ -16,9 +16,8 @@ are preserved in `CHANGELOG.md`; this file should reflect active reality.
       `devPlanUpdate`, and `dispose`.
 - [x] Consolidated package shape around `@evjs/ev`, `@evjs/client`,
       `@evjs/server`, `@evjs/shared`, `@evjs/cli`, and `@evjs/create-app`.
-- [x] Single top-level `@evjs/client` entry with TanStack compatibility and
-      framework-managed page/static route APIs for apps that do not use
-      TanStack Router.
+- [x] Single top-level `@evjs/client` entry with framework-managed page,
+      navigation, shell, RSC, and static route APIs.
 - [x] RSC client runtime exports remain available from `@evjs/client`, while
       `react-server-dom-webpack/client` is loaded only when RSC APIs are used.
 - [x] React page runtime, shell runtime, remote loading, and host-provided shared
@@ -48,5 +47,5 @@ are preserved in `CHANGELOG.md`; this file should reflect active reality.
       need them.
 - [ ] Further graph dependency narrowing once bundlers expose module/reference
       facts that can replace framework-side static import closure analysis.
-- [ ] Migration guides for external deployment plugins that still consume legacy
+- [ ] Migration guides for external deployment plugins that still consume older
       split manifests.

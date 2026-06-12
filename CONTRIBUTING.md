@@ -18,7 +18,7 @@
 | `@evjs/ev` | `packages/ev` | Config, plugin lifecycle, graph analysis, build planning, HTML, deployment helpers, and bundler adapter contracts |
 | `@evjs/create-app` | `packages/create-app` | Project scaffolding from examples/templates |
 | `@evjs/shared` | `packages/shared` | Runtime shared helpers plus `@evjs/shared/manifest` graph/plan/output schemas |
-| `@evjs/client` | `packages/client` | Browser runtime, transport, React page runtime, shell, route DSL, RSC client, and TanStack compatibility subpath |
+| `@evjs/client` | `packages/client` | Browser runtime, transport, React page runtime, shell, page hooks, navigation helpers, and RSC client |
 | `@evjs/server` | `packages/server` | Server functions, REST routes, SSR/PPR/RSC request coordination, and Node/fetch runtimes |
 | `@evjs/bundler-utoopack` | `packages/bundler-utoopack` | Default Utoopack adapter; consumes `BuildPlan` and links `BuildOutput` where supported |
 | `@evjs/bundler-webpack` | `packages/bundler-webpack` | Validation/fallback adapter for new architecture features that Utoopack cannot build yet |
@@ -65,9 +65,9 @@
 4. Keep framework semantics out of bundler adapters. Adapters consume `BuildPlan` and return build facts.
 5. Server function files must start with `"use server";` and export named functions or supported named async values.
 6. Use `ev.config.ts`; new docs should import `defineConfig` from `@evjs/ev`.
-7. Keep client imports on the top-level `@evjs/client` entry. It intentionally
-   exposes TanStack compatibility plus framework-managed page, shell, RSC, and
-   static route APIs without public subpaths.
+7. Keep client imports on the top-level `@evjs/client` entry. It exposes
+   framework-managed page, navigation, shell, RSC, and static route APIs without
+   public subpaths.
 8. Use `server.basePath` for framework server runtime paths. Do not reintroduce public `server.functions.endpoint` config.
 
 ## Common Tasks
@@ -79,13 +79,11 @@
 3. Export named async functions.
 4. Import and use them in client code with `useQuery(fn, ...args)`, `useMutation(fn)`, or `getFnQueryOptions(fn, ...args)`.
 
-### Add a TanStack route
+### Add a page route
 
-1. Create a route module under the app source tree.
-2. Import TanStack helpers from `@evjs/client`.
-3. Add the route to the application's real `routeTree`.
-4. If the framework must analyze render metadata, keep that metadata as static
-   exports on the page module imported by the route.
+1. Create a page module under `src/pages`.
+2. Export a default React component.
+3. Add static page metadata exports next to the component when needed.
 
 ### Add a configured page
 

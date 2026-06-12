@@ -23,7 +23,6 @@ describe("createReactServerRenderAdapter", () => {
           assets: { js: ["dashboard.js"], css: ["dashboard.css"] },
           render: "ssr",
           rendering: {
-            mode: "ssr",
             component: "server",
             html: "server",
             streaming: false,
@@ -37,7 +36,7 @@ describe("createReactServerRenderAdapter", () => {
     expect(result).toEqual({
       html: [
         "<!doctype html>",
-        '<html data-evjs-kind="page" data-evjs-id="dashboard" data-evjs-page="dashboard" data-evjs-build="test">',
+        '<html data-evjs-kind="page" data-evjs-id="dashboard" data-evjs-build="test">',
         "<head>",
         '<link rel="stylesheet" href="/assets/dashboard.css">',
         "</head>",
@@ -60,7 +59,6 @@ describe("createReactServerRenderAdapter", () => {
       assets: { js: ["dashboard.js"], css: [] },
       render: "ssr",
       rendering: {
-        mode: "ssr",
         component: "server",
         html: "server",
         streaming: false,
@@ -126,7 +124,6 @@ describe("createReactServerRenderAdapter", () => {
       render: "ssr",
       componentModel: "rsc",
       rendering: {
-        mode: "ssr",
         component: "rsc",
         html: "server",
         streaming: true,
@@ -230,7 +227,6 @@ describe("createReactRscFlightAdapter", () => {
       render: "ssr",
       componentModel: "rsc",
       rendering: {
-        mode: "ssr",
         component: "rsc",
         html: "server",
         streaming: true,

@@ -195,11 +195,9 @@ async function emitFrameworkArtifacts(options: {
     if (pageId) {
       doc.documentElement?.setAttribute("data-evjs-kind", "page");
       doc.documentElement?.setAttribute("data-evjs-id", pageId);
-      doc.documentElement?.setAttribute("data-evjs-page", pageId);
     } else if (appId) {
       doc.documentElement?.setAttribute("data-evjs-kind", "app");
       doc.documentElement?.setAttribute("data-evjs-id", appId);
-      doc.documentElement?.setAttribute("data-evjs-app", appId);
     }
 
     const finalHtml = await buildHtml({
@@ -382,7 +380,6 @@ describe("webpackAdapter build", () => {
     });
     expect(html).toContain('data-evjs-kind="page"');
     expect(html).toContain('data-evjs-id="home"');
-    expect(html).toContain('data-evjs-page="home"');
     expect(html).toContain('src="/home.js"');
     expect(bundle).toContain("registerShellModule");
     expect(bundle).toContain("data-evjs-shell-load");
@@ -512,7 +509,7 @@ describe("webpackAdapter build", () => {
     });
     const baseConfig = resolveConfig<WebpackConfig>({
       entry: "./src/main.ts",
-      fileRoutes: true,
+      routing: true,
       server: {
         entry: "./src/server.ts",
       },
@@ -608,7 +605,6 @@ describe("webpackAdapter build", () => {
     expect(html).toContain('src="/main.js"');
     expect(html).toContain('data-evjs-kind="app"');
     expect(html).toContain('data-evjs-id="default"');
-    expect(html).toContain('data-evjs-app="default"');
     expect(html).toContain('<meta name="html-kind" content="app">');
     const response = await requestServerEntry(cwd, manifest, "/dashboard");
     expect(response.status).toBe(200);
@@ -639,7 +635,7 @@ describe("webpackAdapter build", () => {
     });
     const baseConfig = resolveConfig<WebpackConfig>({
       entry: "./src/main.ts",
-      fileRoutes: true,
+      routing: true,
     });
     const fileRoutes = requireFileRoutes(baseConfig.fileRoutes);
     const config = {
@@ -972,7 +968,8 @@ describe("webpackAdapter dev", () => {
       expect(onBuildOutput).toHaveBeenCalledTimes(1);
       expect(manifest.distDir).toBe("dist");
       expect(manifest.pages.home.assets.js).toEqual(["home.js"]);
-      expect(html).toContain('data-evjs-page="home"');
+      expect(html).toContain('data-evjs-kind="page"');
+      expect(html).toContain('data-evjs-id="home"');
       expect(html).toContain('src="/home.js"');
     } finally {
       await controller?.close?.();
@@ -1333,7 +1330,8 @@ describe("webpackAdapter dev", () => {
         "about",
       ]);
       expect(manifest.pages.about.assets.js).toEqual(["about.js"]);
-      expect(html).toContain('data-evjs-page="about"');
+      expect(html).toContain('data-evjs-kind="page"');
+      expect(html).toContain('data-evjs-id="about"');
       expect(html).toContain('src="/about.js"');
       expect(onBuildOutput.mock.calls.length).toBeGreaterThan(
         buildOutputCallsBeforeUpdate,

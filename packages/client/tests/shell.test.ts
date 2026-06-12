@@ -24,7 +24,6 @@ const manifest: BuildOutput = {
       assets: { js: ["home.js"], css: [] },
       render: "csr",
       rendering: {
-        mode: "csr",
         component: "client",
         html: "client",
         streaming: false,
@@ -39,7 +38,6 @@ const manifest: BuildOutput = {
       assets: { js: ["about.js"], css: [] },
       render: "csr",
       rendering: {
-        mode: "csr",
         component: "client",
         html: "client",
         streaming: false,
@@ -1157,32 +1155,6 @@ describe("createPageDriver", () => {
             {
               "data-evjs-kind": "page",
               "data-evjs-id": "home",
-              "data-evjs-page": "home",
-              "data-evjs-build": "test",
-            }[name] ?? null
-          );
-        },
-      },
-      location: {
-        href: "https://example.com/home",
-      },
-    } as Document;
-
-    expect(createPageDriver({ document }).current()).toEqual({
-      appId: undefined,
-      pageId: "home",
-      buildId: "test",
-      url: "https://example.com/home",
-    });
-  });
-
-  it("falls back to legacy page/app attributes", () => {
-    const document = {
-      documentElement: {
-        getAttribute(name: string) {
-          return (
-            {
-              "data-evjs-page": "home",
               "data-evjs-build": "test",
             }[name] ?? null
           );

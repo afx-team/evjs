@@ -66,12 +66,6 @@ export interface ReactRscDebugPayload {
   pages?: NonNullable<BuildOutput["rsc"]>["pages"];
 }
 
-/**
- * @deprecated Use `ReactRscDebugPayload`. Successful RSC responses must be
- * React Flight `Response` objects with `text/x-component` content type.
- */
-export type ReactRscPayload = ReactRscDebugPayload;
-
 export function createReactServerRenderAdapter(
   options: ReactServerRenderAdapterOptions = {},
 ) {
@@ -357,7 +351,7 @@ function renderDefaultDocument(
 
   return [
     "<!doctype html>",
-    `<html data-evjs-kind="page" data-evjs-id="${escapeHtmlAttr(ctx.pageId ?? "")}" data-evjs-page="${escapeHtmlAttr(ctx.pageId ?? "")}" data-evjs-build="${escapeHtmlAttr(ctx.manifest.buildId)}">`,
+    `<html data-evjs-kind="page" data-evjs-id="${escapeHtmlAttr(ctx.pageId ?? "")}" data-evjs-build="${escapeHtmlAttr(ctx.manifest.buildId)}">`,
     "<head>",
     ...assets.css.map(
       (asset) =>

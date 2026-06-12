@@ -145,10 +145,7 @@ describe("extractServerRoutes", () => {
 
   it("ignores client route helpers and dynamic server route paths", () => {
     const source = `
-      import { createRoute } from "@evjs/client";
       import { createRoute as serverRoute } from "@evjs/server";
-
-      export const homeRoute = createRoute({ path: "/" });
 
       const routePath = "/api/dynamic";
       export const dynamicHandler = serverRoute(routePath, {
@@ -164,13 +161,7 @@ describe("extractServerRoutes", () => {
 describe("analyzeRoutes", () => {
   it("collects server routes from one parsed module", () => {
     const source = `
-      import { createRoute } from "@evjs/client";
       import { createRoute as serverRoute } from "@evjs/server";
-
-      export const homeRoute = createRoute({
-        path: "/",
-        component: () => null,
-      });
 
       export const healthHandler = serverRoute("/api/health", {
         GET: async () => Response.json({ ok: true }),

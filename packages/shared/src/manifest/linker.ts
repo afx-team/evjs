@@ -726,7 +726,6 @@ function derivePageRendering(page: PageNode): PageRenderingOutput {
 
   if (partial) {
     return {
-      mode: page.render,
       component,
       html: "partial",
       prerender: "partial",
@@ -737,7 +736,6 @@ function derivePageRendering(page: PageNode): PageRenderingOutput {
 
   if (isRscPage(page)) {
     return {
-      mode: page.render,
       component: "rsc",
       html: "server",
       streaming: true,
@@ -748,7 +746,6 @@ function derivePageRendering(page: PageNode): PageRenderingOutput {
   switch (page.render) {
     case "csr":
       return {
-        mode: page.render,
         component,
         html: "client",
         streaming: false,
@@ -756,7 +753,6 @@ function derivePageRendering(page: PageNode): PageRenderingOutput {
       };
     case "ssg":
       return {
-        mode: page.render,
         component,
         html: "static",
         prerender: "full",
@@ -765,7 +761,6 @@ function derivePageRendering(page: PageNode): PageRenderingOutput {
       };
     default:
       return {
-        mode: page.render,
         component,
         html: "server",
         streaming: false,

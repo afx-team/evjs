@@ -355,11 +355,6 @@ export interface PageOutput {
 }
 
 export interface PageRenderingOutput {
-  /**
-   * Original user-facing render shorthand. Kept for compatibility and
-   * diagnostics; runtime decisions should prefer the orthogonal fields below.
-   */
-  mode: RenderMode;
   /** React execution model used by the page module. */
   component: "client" | "server" | "rsc";
   /** HTML delivery strategy for the initial document. */

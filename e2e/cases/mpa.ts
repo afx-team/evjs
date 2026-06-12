@@ -103,7 +103,6 @@ test.describe("mpa", () => {
         render: "csr",
         hydrate: "load",
         rendering: expect.objectContaining({
-          mode: "csr",
           component: "client",
           html: "client",
           hydrate: "load",
@@ -121,7 +120,6 @@ test.describe("mpa", () => {
         render: "csr",
         hydrate: "load",
         rendering: expect.objectContaining({
-          mode: "csr",
           component: "client",
           html: "client",
           hydrate: "load",

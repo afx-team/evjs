@@ -109,17 +109,6 @@ export interface RscDebugPayloadMountOptions {
   mount: string | Element;
 }
 
-/**
- * @deprecated Use `RscDebugPayload`. Real React Flight rendering uses
- * `createReactRscModel()` and `mountReactRscPage()`.
- */
-export type RscPayload = RscDebugPayload;
-
-/**
- * @deprecated Use `RscDebugPayloadMountOptions`.
- */
-export type RscPayloadMountOptions = RscDebugPayloadMountOptions;
-
 const rootByMountPoint = new WeakMap<Element, Root>();
 const RemoteContext = createContext<RemoteRuntimeContext | undefined>(
   undefined,
@@ -340,21 +329,6 @@ export async function loadRscDebugPage(
   mountRscDebugPayload({ payload, mount: options.mount });
   return payload;
 }
-
-/**
- * @deprecated Use `fetchRscDebugPayload`.
- */
-export const fetchRscPayload = fetchRscDebugPayload;
-
-/**
- * @deprecated Use `mountRscDebugPayload`.
- */
-export const mountRscPayload = mountRscDebugPayload;
-
-/**
- * @deprecated Use `loadRscDebugPage`.
- */
-export const loadRscPage = loadRscDebugPage;
 
 function resolveRscFlightUrl(
   endpoint: string,

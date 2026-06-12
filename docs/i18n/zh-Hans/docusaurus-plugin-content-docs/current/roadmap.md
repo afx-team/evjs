@@ -12,7 +12,7 @@
 - 基于 `BuildPlan` 和 `BuildOutput` 的 bundler adapter contract。
 - 单一框架 manifest：`dist/manifest.json`。
 - 通过公开 `@evjs/client` 包提供 manifest-driven app/page/remote activation。
-- 为 SPA 页面路由提供 TanStack 兼容，为 MPA 提供无路由器 page runtime。
+- 框架托管 SPA 页面路由，并为 MPA 提供无路由器 page runtime。
 - Webpack adapter 用于在 Utoopack 下层 API 补齐前验证框架能力。
 - 完整 host/remote 示例，并通过 e2e 覆盖 apps、组件页面、SSR/PPR/RSC、
   remotes 和 per-document HTML transform。

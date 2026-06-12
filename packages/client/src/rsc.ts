@@ -166,7 +166,6 @@ function createBootstrapManifest(
         render: "ssr",
         componentModel: "rsc",
         rendering: {
-          mode: "ssr",
           component: "rsc",
           html: "server",
           streaming: true,

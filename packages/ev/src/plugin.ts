@@ -279,8 +279,7 @@ export interface PluginHooks<
    * as `dist/manifest.json` and before HTML documents are transformed.
    *
    * Deployment adapters should use this hook to add deployment metadata to the
-   * single framework output instead of reading bundler stats or legacy v1
-   * manifests.
+   * single framework output emitted as `dist/manifest.json`.
    */
   buildOutput?: (
     output: BuildOutput,

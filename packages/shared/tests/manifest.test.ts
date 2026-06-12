@@ -39,7 +39,6 @@ describe("createPublicManifest", () => {
           render: "ssr",
           componentModel: "rsc",
           rendering: {
-            mode: "ssr",
             component: "rsc",
             html: "server",
             streaming: true,
@@ -59,7 +58,6 @@ describe("createPublicManifest", () => {
           render: "ssr",
           prerender: { partial: true },
           rendering: {
-            mode: "ssr",
             component: "server",
             html: "partial",
             prerender: "partial",

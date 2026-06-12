@@ -127,7 +127,6 @@ describe("createApp", () => {
       assets: { js: [], css: [] },
       render: "ssr",
       rendering: {
-        mode: "ssr",
         component: "server",
         html: "server",
         streaming: false,
@@ -811,7 +810,6 @@ function createManifest(): BuildOutput {
         assets: { js: [], css: [] },
         render: "ssr",
         rendering: {
-          mode: "ssr",
           component: "server",
           html: "server",
           streaming: false,
@@ -858,7 +856,6 @@ function configureRscPage(manifest: BuildOutput): void {
   manifest.pages.dashboard.render = "ssr";
   manifest.pages.dashboard.componentModel = "rsc";
   manifest.pages.dashboard.rendering = {
-    mode: "ssr",
     component: "rsc",
     html: "server",
     streaming: true,

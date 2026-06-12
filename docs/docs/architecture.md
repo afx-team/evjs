@@ -19,7 +19,7 @@ source declarations
 
 @evjs/client
   browser runtime, server-function transport, page runtime, shell exports,
-  route helpers, and TanStack compatibility
+  page hooks, and navigation helpers
 
 @evjs/server
   Hono/fetch app, server functions, server routes, SSR/PPR/RSC request boundary
@@ -37,7 +37,7 @@ source declarations
 
 @evjs/client internal modules
   framework-managed runtime, shell, page runtime, transport, RSC client runtime,
-  and TanStack compatibility behind the single public client entry
+  and TanStack Router integration behind the single public client entry
 
 @evjs/bundler-utoopack
   default bundler adapter used by @evjs/cli
@@ -84,9 +84,9 @@ sequenceDiagram
 
 The manifest is `dist/manifest.json`. Legacy `dist/client/manifest.json` and `dist/server/manifest.json` are not the new framework contract.
 
-TanStack compatibility is intentionally kept in `@evjs/client`. The architecture
-does not require `@evjs/client` itself to avoid TanStack; it requires the
-framework to support applications that do not use TanStack Router.
+TanStack Router is an SPA implementation detail owned by the framework. Page
+code uses `src/pages`, page hooks, and navigation helpers instead of constructing
+route trees directly.
 
 ## Runtime Flow
 
@@ -199,7 +199,7 @@ package loading/version selection remains outside this implementation.
 ## Configuration Ownership
 
 ```txt
-fileRoutes
+routing
   file-route source of truth: spa or mpa mode, dir, html, mount point
 
 entry/html
@@ -218,7 +218,7 @@ plugins
   framework and bundler extension points
 ```
 
-`fileRoutes` points to `src/pages` by default. In SPA mode, graph creation turns
+`routing` points to `src/pages` by default. In SPA mode, graph creation turns
 the discovered files into one internal TanStack Router app entry. In MPA mode,
 the same files become independent page outputs without a client router.
 

@@ -107,7 +107,7 @@ PPR regions carry cache metadata in the manifest:
 ## Key Points
 
 - One framework manifest: `dist/manifest.json`.
-- `BuildOutput` replaces legacy client/server manifests.
+- `BuildOutput` is the framework manifest contract.
 - The public manifest is redacted: browser-visible output must not expose local
   source paths or private build metadata.
 - Source analysis happens before bundler config creation and is cached in dev.

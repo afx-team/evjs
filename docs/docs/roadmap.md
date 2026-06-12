@@ -13,7 +13,7 @@
 - Single framework manifest at `dist/manifest.json`.
 - Manifest-driven app/page/remote activation from the public `@evjs/client`
   package.
-- TanStack compatibility for SPA page routes and router-free page runtime for MPA.
+- Framework-owned SPA page routes and router-free page runtime for MPA.
 - Webpack adapter for framework validation while Utoopack lower-layer APIs catch up.
 - Full-feature host/remote example plus end-to-end coverage for apps,
   component pages, SSR/PPR/RSC, remotes, and per-document HTML transforms.

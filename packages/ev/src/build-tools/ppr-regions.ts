@@ -78,13 +78,6 @@ export function extractPprRegionModuleConfig(
 
     const hydrate = getExportedHydrationMode(item);
     if (hydrate !== undefined) config.hydrate = hydrate;
-
-    const legacy = unwrapTypeScriptExpression(
-      getExportedVariableDeclaration(item, "PPR"),
-    );
-    if (legacy?.type === "ObjectExpression") {
-      Object.assign(config, getPprConfigObject(legacy));
-    }
   }
 
   return config;
@@ -323,47 +316,6 @@ function getExportedHydrationMode(item: ModuleItem): HydrationMode | undefined {
   );
   if (expression?.type !== "StringLiteral") return undefined;
   return isHydrationMode(expression.value) ? expression.value : undefined;
-}
-
-function getPprConfigObject(
-  expression: ObjectExpression,
-): Partial<Omit<PprRegionConfig, "component">> {
-  return {
-    ...(getCacheObjectProperty(expression) !== undefined
-      ? { cache: getCacheObjectProperty(expression) }
-      : {}),
-    ...(getHydrateObjectProperty(expression) !== undefined
-      ? { hydrate: getHydrateObjectProperty(expression) }
-      : {}),
-  };
-}
-
-function getCacheObjectProperty(
-  expression: ObjectExpression,
-): PprCachePolicy | undefined {
-  const value = getObjectPropertyExpression(expression, "cache");
-  if (!value) return undefined;
-  return getCacheValue(value);
-}
-
-function getHydrateObjectProperty(
-  expression: ObjectExpression,
-): HydrationMode | undefined {
-  const value = getObjectPropertyExpression(expression, "hydrate");
-  if (!value || value.type !== "StringLiteral") return undefined;
-  return isHydrationMode(value.value) ? value.value : undefined;
-}
-
-function getObjectPropertyExpression(
-  expression: ObjectExpression,
-  name: string,
-): Expression | undefined {
-  for (const prop of expression.properties) {
-    if (prop.type !== "KeyValueProperty") continue;
-    if (getPropertyName(prop) !== name) continue;
-    return prop.value;
-  }
-  return undefined;
 }
 
 function getCacheValue(expression: Expression): PprCachePolicy | undefined {

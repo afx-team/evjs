@@ -80,8 +80,8 @@ Framework server endpoints are derived from `server.basePath`:
 ```
 
 PPR document requests are served through their page route. The PPR endpoint is
-kept for direct/debug access and fallback adapters, not as the default browser
-initial-load protocol.
+available for direct/debug access, not as the default browser initial-load
+protocol.
 
 For production deployments that cache the PPR shell at the edge while rendering
 dynamic regions in an internal FaaS/origin, keep the browser-facing protocol as
@@ -307,4 +307,5 @@ export function deployAdapter() {
 }
 ```
 
-Do not read legacy client/server manifest files; they are not the new framework contract.
+Read `dist/manifest.json`; split client/server manifest files are not part of
+the framework contract.

@@ -37,8 +37,8 @@ consume `BuildOutput` rather than raw bundler stats.
   runtime shared helpers and @evjs/shared/manifest schemas/linkers
 
 @evjs/client
-  SPA compatibility facade, transport, React page runtime, RSC client runtime,
-  route DSL, shell runtime, and TanStack compatibility
+  SPA page runtime, transport, React page runtime, RSC client runtime,
+  page hooks, navigation helpers, and shell runtime
 
 @evjs/server
   server functions, REST routes, SSR/PPR/RSC request coordination, and runtime
@@ -89,7 +89,7 @@ sequenceDiagram
 Graph analysis may read static import closure for semantic discovery, but dev
 watching must remain narrower than that closure. `fileDependencies` should
 include explicit route/server roots and framework marker files such as
-`@evjs/client` route declarations, `@evjs/server createRoute()`, `"use server"`, and
+`src/pages`, `@evjs/server createRoute()`, `"use server"`, and
 `"use client"`. Ordinary component and style edits stay in the bundler HMR path.
 
 Configured page additions in dev require `BundlerDevController.updatePlan()`.
@@ -114,11 +114,9 @@ deployment adapters
   translate BuildOutput to platform artifacts and bootstraps
 ```
 
-TanStack compatibility remains part of `@evjs/client`. The framework goal is
-that applications can choose not to use TanStack Router by using explicit pages,
-the static route DSL, or framework-managed page/runtime APIs. The optional
-boundary is the application's routing model, not the package dependency shape of
-`@evjs/client`.
+TanStack Router is an SPA implementation detail owned by the framework. Page
+code uses `src/pages`, page hooks, and navigation helpers instead of constructing
+route trees directly.
 
 ## Manifest
 
@@ -128,8 +126,8 @@ The framework output contract is a single `BuildOutput` serialized to:
 dist/manifest.json
 ```
 
-The old split client/server v1 manifests are not the future contract. Deployment
-plugins and platform adapters should consume `BuildOutput`.
+Split client/server manifest files are outside the framework contract.
+Deployment plugins and platform adapters should consume `BuildOutput`.
 
 ## Deployment
 

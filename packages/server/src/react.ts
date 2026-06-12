@@ -18,7 +18,6 @@ import {
 export type {
   ReactRscDebugPayload,
   ReactRscFlightAdapterOptions,
-  ReactRscPayload,
   ReactServerRenderAdapterOptions,
 } from "./react-renderer.js";
 export {

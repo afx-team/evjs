@@ -160,7 +160,7 @@ import type { HtmlDocument } from "@evjs/ev";
 
 ## Build Output
 
-`buildEnd()` receives the single framework output, not v1 client/server manifests:
+`buildEnd()` receives the single framework output:
 
 ```ts
 setup() {

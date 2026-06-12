@@ -121,12 +121,6 @@ async function withFileRouteDefaults<TBundlerCfg>(
   }
   if (config.pages || config.app || config.remote) return config;
 
-  const hasExplicitEntry = hasOwnConfigField(userConfig, "entry");
-  const defaultEntryExists = await pathExists(path.resolve(cwd, config.entry));
-  const shouldUseFileRoutes =
-    requested || (!hasExplicitEntry && !defaultEntryExists);
-  if (!shouldUseFileRoutes) return config;
-
   const base = config.fileRoutes ?? {
     mode: CONFIG_DEFAULTS.fileRoutesMode,
     dir: CONFIG_DEFAULTS.fileRoutesDir,
@@ -162,12 +156,8 @@ async function withFileRouteDefaults<TBundlerCfg>(
 
 function readRoutingConfig<TBundlerCfg>(
   config: Config<TBundlerCfg> | undefined,
-): Config<TBundlerCfg>["routing"] | Config<TBundlerCfg>["fileRoutes"] {
-  if (!config) return undefined;
-  if (config.routing !== undefined && config.fileRoutes !== undefined) {
-    throw new Error("[evjs] Configure either routing or fileRoutes, not both.");
-  }
-  return config.routing ?? config.fileRoutes;
+): Config<TBundlerCfg>["routing"] {
+  return config?.routing;
 }
 
 function createFileRouteEntryImport(
@@ -178,22 +168,6 @@ function createFileRouteEntryImport(
     throw new Error("[evjs] Page routes need at least one page module.");
   }
   return entry;
-}
-
-function hasOwnConfigField<TBundlerCfg>(
-  config: Config<TBundlerCfg> | undefined,
-  field: keyof Config<TBundlerCfg>,
-): boolean {
-  return Boolean(config && Object.hasOwn(config, field));
-}
-
-async function pathExists(file: string): Promise<boolean> {
-  try {
-    await fs.promises.access(file);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function reportFileRouteDiagnostics(
@@ -749,11 +723,9 @@ async function emitFrameworkHtml<TBundlerCfg>(
     if (htmlInfo.kind === "page") {
       doc.documentElement?.setAttribute("data-evjs-kind", "page");
       doc.documentElement?.setAttribute("data-evjs-id", htmlInfo.pageId);
-      doc.documentElement?.setAttribute("data-evjs-page", htmlInfo.pageId);
     } else {
       doc.documentElement?.setAttribute("data-evjs-kind", "app");
       doc.documentElement?.setAttribute("data-evjs-id", htmlInfo.appId);
-      doc.documentElement?.setAttribute("data-evjs-app", htmlInfo.appId);
     }
 
     const finalHtml = await buildHtml({

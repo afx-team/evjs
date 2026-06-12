@@ -1,6 +1,6 @@
 # complex-routing
 
-Advanced routing patterns with TanStack Router.
+Advanced file-based SPA routing patterns.
 
 ## Run
 

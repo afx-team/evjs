@@ -1,47 +1,14 @@
 /**
- * Type-safety tests for @evjs/client routing.
+ * Type-safety tests for public @evjs/client navigation helpers.
  *
- * These tests are validated at compile time — `tsc --noEmit` on this file
- * verifies that the type system correctly enforces:
- * - Route params are typed (`$postId` → `{ postId: string }`)
- * - Search params are typed with validateSearch
- * - Link `to` prop only accepts registered route paths
- * - `useParams()` / `useSearch()` return correct types
- *
- * Lines with `@ts-expect-error` MUST fail type-checking.
- * If any `@ts-expect-error` becomes unused, tsc will report it as an error,
- * meaning the type guard is broken.
+ * The route tree is assembled with internal test helpers so the public client
+ * entry can stay focused on page logic instead of exposing route constructors.
  */
 
-import {
-  Await,
-  Block,
-  ClientOnly,
-  composeRewrites,
-  createApp,
-  createAppRootRoute,
-  createBrowserHistory,
-  createRoute,
-  createRouteMask,
-  defaultParseSearch,
-  defaultStringifySearch,
-  Link,
-  type LocationRewrite,
-  linkOptions,
-  MatchRoute,
-  type RouteMask,
-  type RouterEvents,
-  retainSearchParams,
-  ScrollRestoration,
-  stripSearchParams,
-  type ToOptions,
-  useChildMatches,
-  useLinkProps,
-  useMatches,
-  useParentMatches,
-} from "@evjs/client";
-
-// ── Setup route tree ──
+import { Link, type ToOptions, useLinkProps } from "@evjs/client";
+import { createApp } from "../src/app";
+import { createAppRootRoute } from "../src/context";
+import { createRoute } from "../src/route";
 
 const rootRoute = createAppRootRoute({
   component: () => null,
@@ -59,12 +26,6 @@ const postRoute = createRoute({
   component: () => null,
 });
 
-const userRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/users/$username",
-  component: () => null,
-});
-
 const searchRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/search",
@@ -75,13 +36,7 @@ const searchRoute = createRoute({
   component: () => null,
 });
 
-const routeTree = rootRoute.addChildren([
-  homeRoute,
-  postRoute,
-  userRoute,
-  searchRoute,
-]);
-
+const routeTree = rootRoute.addChildren([homeRoute, postRoute, searchRoute]);
 const app = createApp({ routeTree });
 
 declare module "@evjs/client" {
@@ -89,50 +44,6 @@ declare module "@evjs/client" {
     router: typeof app.router;
   }
 }
-
-// ── Type assertions: transparent TanStack Router exports ──
-
-export const componentRefs = {
-  Await,
-  Block,
-  ClientOnly,
-  MatchRoute,
-  ScrollRestoration,
-};
-
-const localeRewrite: LocationRewrite = {
-  input: ({ url }) => {
-    url.pathname = url.pathname.replace(/^\/en(?=\/|$)/, "") || "/";
-    return url;
-  },
-};
-
-export const utilityRefs = {
-  composeRewrites,
-  createBrowserHistory,
-  createRouteMask,
-  defaultParseSearch,
-  defaultStringifySearch,
-  retainSearchParams,
-  stripSearchParams,
-};
-
-export const composedRewrite = composeRewrites([localeRewrite]);
-
-export const retainedSearch = retainSearchParams(["q"]);
-export const strippedSearch = stripSearchParams(["debug"]);
-
-export const postLinkOptions = linkOptions({
-  to: "/posts/$postId",
-  params: { postId: "123" },
-});
-
-export const postRouteMask: RouteMask<typeof routeTree> = createRouteMask({
-  routeTree,
-  from: "/",
-  to: "/posts/$postId",
-  params: { postId: "123" },
-});
 
 export const postToOptions: ToOptions<
   typeof app.router,
@@ -143,62 +54,18 @@ export const postToOptions: ToOptions<
   params: { postId: "123" },
 };
 
-export const routerEventName: keyof RouterEvents = "onResolved";
-
-// ── Type assertions: useParams ──
-
-export function PostComponent() {
-  // ✅ Correct: postId is typed as string
-  const { postId } = postRoute.useParams();
-  const _check: string = postId;
-
-  // @ts-expect-error — postId does not exist on home route params
-  homeRoute.useParams().postId;
-
-  // @ts-expect-error — username does not exist on post route params
-  postRoute.useParams().username;
-}
-
-export function UserComponent() {
-  // ✅ Correct: username is typed as string
-  const { username } = userRoute.useParams();
-  const _check: string = username;
-
-  // @ts-expect-error — postId does not exist on user route params
-  userRoute.useParams().postId;
-}
-
-// ── Type assertions: useSearch ──
-
-export function SearchComponent() {
-  // ✅ Correct: q and page are typed
-  const { q, page } = searchRoute.useSearch();
-  const _q: string = q;
-  const _page: number = page;
-
-  // @ts-expect-error — nonExistent does not exist on search params
-  searchRoute.useSearch().nonExistent;
-}
-
-// ── Type assertions: Link params ──
-
 export function LinkTests() {
-  // ✅ Correct: Link with required params
   <Link to="/posts/$postId" params={{ postId: "123" }} />;
-
-  // ✅ Correct: Link to home (no params needed)
   <Link to="/" />;
-
-  // ✅ Correct: Link with search params
   <Link to="/search" search={{ q: "test", page: 1 }} />;
 
-  // @ts-expect-error — missing required postId param
+  // @ts-expect-error - missing required postId param
   <Link to="/posts/$postId" />;
 
-  // @ts-expect-error — wrong param name
+  // @ts-expect-error - wrong param name
   <Link to="/posts/$postId" params={{ wrongParam: "123" }} />;
 
-  // @ts-expect-error — invalid route path
+  // @ts-expect-error - invalid route path
   <Link to="/not-a-real-route" />;
 }
 
@@ -207,13 +74,6 @@ export function HookExportTests() {
     to: "/posts/$postId",
     params: { postId: "123" },
   });
-  const matches = useMatches();
-  const parentMatches = useParentMatches();
-  const childMatches = useChildMatches();
 
-  return (
-    <a {...props}>
-      {matches.length + parentMatches.length + childMatches.length}
-    </a>
-  );
+  return <a {...props}>Open post</a>;
 }

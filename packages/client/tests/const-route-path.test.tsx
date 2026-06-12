@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
-import { createAppRootRoute, createRoute } from "../src/index";
+import { createAppRootRoute } from "../src/context";
+import { createRoute } from "../src/route";
 
 test("createRoute() rejects broad string type at compile time", () => {
   // Real enforcement is via @ts-expect-error below — tsc --noEmit validates it.

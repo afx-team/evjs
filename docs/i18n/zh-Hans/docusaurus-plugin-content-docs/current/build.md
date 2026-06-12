@@ -104,7 +104,7 @@ PPR region 的 cache metadata 会进入 manifest：
 ## 要点
 
 - 单一框架 manifest：`dist/manifest.json`。
-- `BuildOutput` 替代旧 client/server manifests。
+- `BuildOutput` 是框架 manifest 契约。
 - 公开 manifest 会做脱敏：浏览器可见输出不应暴露本地源码路径或私有构建 metadata。
 - 源码分析在 bundler config 创建前完成，并在 dev 中缓存。
 - 组件和样式修改继续走 bundler HMR。

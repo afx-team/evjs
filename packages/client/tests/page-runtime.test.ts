@@ -23,7 +23,6 @@ describe("startPageRuntime", () => {
       attributes: {
         "data-evjs-kind": "page",
         "data-evjs-id": "home",
-        "data-evjs-page": "home",
         "data-evjs-build": "test",
       },
     });
@@ -55,7 +54,6 @@ describe("startPageRuntime", () => {
       attributes: {
         "data-evjs-kind": "page",
         "data-evjs-id": "home",
-        "data-evjs-page": "home",
         "data-evjs-manifest": "/assets/manifest.json",
       },
     });
@@ -92,7 +90,6 @@ describe("startPageRuntime", () => {
       attributes: {
         "data-evjs-kind": "page",
         "data-evjs-id": "home",
-        "data-evjs-page": "home",
       },
     });
     const fetchMock = vi.fn().mockResolvedValue({
@@ -132,7 +129,6 @@ describe("startPageRuntime", () => {
       attributes: {
         "data-evjs-kind": "page",
         "data-evjs-id": "home",
-        "data-evjs-page": "home",
       },
     });
 
@@ -164,7 +160,6 @@ function createManifest(): BuildOutput {
         assets: { js: ["home.js"], css: [] },
         render: "ssr",
         rendering: {
-          mode: "ssr",
           component: "server",
           html: "server",
           streaming: false,

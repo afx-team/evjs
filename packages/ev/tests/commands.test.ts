@@ -163,6 +163,53 @@ describe("build", () => {
     expect(fs.existsSync(path.join(cwd, ".evjs"))).toBe(false);
   });
 
+  it("prefers discovered page routes over the default app entry", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/main.tsx"),
+      "console.log('old app entry');",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/index.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+
+    await build(
+      {
+        server: false,
+        plugins: [
+          {
+            name: "records-file-route-entry",
+            setup() {
+              return {
+                buildPlan(plan) {
+                  events.push(`entry:${plan.entries[0]?.import}`);
+                  events.push(`metadata:${plan.entries[0]?.metadata?.type}`);
+                },
+              };
+            },
+          },
+        ],
+      },
+      {
+        cwd,
+        bundler,
+      },
+    );
+
+    expect(events).toEqual([
+      "entry:./src/pages/index.tsx",
+      "metadata:file-route-app",
+      "bundler.build",
+      "bundler.entries:main",
+    ]);
+  });
+
   it("builds file-route MPA pages without a router or generated route files", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
@@ -385,7 +432,7 @@ describe("build", () => {
       await build(
         {
           server: false,
-          fileRoutes: true,
+          routing: true,
         },
         {
           cwd,

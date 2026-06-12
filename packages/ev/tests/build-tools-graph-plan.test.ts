@@ -993,7 +993,6 @@ describe("createAppGraph and createBuildPlan", () => {
       css: [],
     });
     expect(output.pages.rsc.rendering).toEqual({
-      mode: "ssr",
       component: "rsc",
       html: "server",
       streaming: true,
@@ -1079,21 +1078,18 @@ describe("createAppGraph and createBuildPlan", () => {
     });
 
     expect(output.pages.csr.rendering).toEqual({
-      mode: "csr",
       component: "client",
       html: "client",
       streaming: false,
       hydrate: "load",
     });
     expect(output.pages.ssr.rendering).toEqual({
-      mode: "ssr",
       component: "server",
       html: "server",
       streaming: false,
       hydrate: "visible",
     });
     expect(output.pages.ssg.rendering).toEqual({
-      mode: "ssg",
       component: "server",
       html: "static",
       prerender: "full",
@@ -1101,7 +1097,6 @@ describe("createAppGraph and createBuildPlan", () => {
       hydrate: "none",
     });
     expect(output.pages.ppr.rendering).toEqual({
-      mode: "ssr",
       component: "server",
       html: "partial",
       prerender: "partial",
@@ -1111,7 +1106,6 @@ describe("createAppGraph and createBuildPlan", () => {
     expect(output.pages.ppr.ppr?.delivery).toBe("merge");
     expect(output.pages.ppr.assets).toEqual({ js: [], css: [] });
     expect(output.pages.rsc.rendering).toEqual({
-      mode: "ssr",
       component: "rsc",
       html: "server",
       streaming: true,
@@ -1184,11 +1178,7 @@ describe("createAppGraph and createBuildPlan", () => {
   it("extracts server route and server function metadata", async () => {
     const cwd = await createFixture({
       "src/main.tsx": `
-        import { createRoute } from "@evjs/client";
-        export const rootRoute = createRoute({
-          path: "/",
-          component: () => null,
-        });
+        export const clientEntry = true;
       `,
       "src/server.ts": `
         import "./api";

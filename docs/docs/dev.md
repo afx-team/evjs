@@ -83,7 +83,7 @@ await dev({ dev: { port: 3000 } }, { cwd: "./my-app", bundler: utoopackAdapter }
 await build({ entry: "./src/main.tsx" }, { cwd: "./my-app", bundler: utoopackAdapter });
 ```
 
-`@evjs/cli` also exports compatibility wrappers that inject the default utoopack adapter, matching the `ev dev` and `ev build` commands.
+`@evjs/cli` also exports programmatic helpers that inject the default utoopack adapter, matching the `ev dev` and `ev build` commands.
 
 `@evjs/bundler-webpack` can also run dev mode for architecture validation. It
 uses webpack-dev-server for client entries, webpack watch for server entries,

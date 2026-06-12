@@ -18,8 +18,8 @@ source declarations
   配置、插件生命周期、dev/build 编排、框架构建类型
 
 @evjs/client
-  浏览器 runtime、服务端函数 transport、page runtime、shell 导出、route helpers
-  和 TanStack 兼容能力
+  浏览器 runtime、服务端函数 transport、page runtime、shell 导出、page hooks
+  和导航 helpers
 
 @evjs/server
   Hono/fetch app、服务端函数、服务端路由、SSR/PPR/RSC 请求边界
@@ -36,7 +36,7 @@ source declarations
 
 @evjs/client 内部模块
   framework-managed runtime、shell、page runtime、transport、RSC client runtime
-  和 TanStack 兼容能力，统一通过顶层 client 入口导出
+  和 TanStack Router 集成，统一通过顶层 client 入口导出
 
 @evjs/bundler-utoopack
   @evjs/cli 使用的默认 bundler adapter
@@ -186,7 +186,7 @@ helper 负责 remote app manifest 构造、用于调试的 query-string manifest
 ## 配置归属
 
 ```txt
-fileRoutes
+routing
   文件路由事实来源：spa/mpa mode、dir、html、mount point
 
 entry/html
@@ -205,7 +205,7 @@ plugins
   框架和 bundler 扩展点
 ```
 
-`fileRoutes` 默认指向 `src/pages`。SPA 模式会把发现到的文件转成内部 TanStack
+`routing` 默认指向 `src/pages`。SPA 模式会把发现到的文件转成内部 TanStack
 Router app entry；MPA 模式会把同一批文件转成不带客户端路由器的独立页面输出。
 
 Page modules 通过文件名拥有 path-to-component wiring，并通过 `render`、`hydrate`、

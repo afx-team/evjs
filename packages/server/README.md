@@ -30,7 +30,7 @@ export const GET = createRoute("/api/users", {
 });
 ```
 
-The `path` must be a **string literal** string for compatibility with the framework's build system.
+The `path` must be a **string literal** string so framework build analysis can statically discover it.
 
 ### 2. Server Functions
 

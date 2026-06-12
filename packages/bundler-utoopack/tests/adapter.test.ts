@@ -148,11 +148,9 @@ function createFrameworkCallbacks(options: {
         if (pageId) {
           doc.documentElement?.setAttribute("data-evjs-kind", "page");
           doc.documentElement?.setAttribute("data-evjs-id", pageId);
-          doc.documentElement?.setAttribute("data-evjs-page", pageId);
         } else if (appId) {
           doc.documentElement?.setAttribute("data-evjs-kind", "app");
           doc.documentElement?.setAttribute("data-evjs-id", appId);
-          doc.documentElement?.setAttribute("data-evjs-app", appId);
         }
 
         const finalHtml = await buildHtml({
