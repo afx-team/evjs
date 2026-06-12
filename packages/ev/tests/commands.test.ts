@@ -454,6 +454,40 @@ describe("build", () => {
     expect(events).not.toContain("bundler.build");
   });
 
+  it("fails when the root layout is placed in the page route directory", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/layout.tsx"),
+      "export default function Layout() { return null; }",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/index.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+
+    await expect(
+      build(
+        {
+          server: false,
+          routing: true,
+        },
+        {
+          cwd,
+          bundler,
+        },
+      ),
+    ).rejects.toThrow(
+      "Root layout files must live at ./src/layout.tsx, not inside the page route directory.",
+    );
+    expect(events).not.toContain("bundler.build");
+  });
+
   it("orders plugin config and lifecycle hooks by dependencies", async () => {
     const cwd = await createProject();
     const events: string[] = [];

@@ -37,6 +37,10 @@ When `src/pages` exists and the project does not declare explicit `app`,
 `pages`, or `remote` config, evjs discovers the page files and builds the SPA
 entry internally. For MPA output:
 
+Use `src/layout.tsx` for the optional SPA root layout. `src/pages` is reserved
+for page route modules, so `src/pages/layout.tsx` is reported as a convention
+error.
+
 ```ts
 // ev.config.ts
 import { defineConfig } from "@evjs/ev";

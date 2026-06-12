@@ -36,6 +36,19 @@ export async function discoverFileRoutes(
   for (const file of files) {
     const sourceRel = toProjectPath(cwd, file);
     const routeRel = toPosixPath(path.relative(absoluteDir, file));
+    if (routeRel === ROOT_LAYOUT_FILE) {
+      const expected = toProjectPath(
+        cwd,
+        path.join(path.dirname(absoluteDir), ROOT_LAYOUT_FILE),
+      );
+      diagnostics.push({
+        level: "error",
+        file: sourceRel.replace(/^\.\//, ""),
+        message: `Root layout files must live at ${expected}, not inside the page route directory.`,
+      });
+      continue;
+    }
+
     const routeFile = toRouteFile(routeRel);
     if (!routeFile) continue;
 

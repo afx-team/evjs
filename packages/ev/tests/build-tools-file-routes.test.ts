@@ -84,6 +84,33 @@ describe("discoverFileRoutes", () => {
     expect(discovery.diagnostics).toEqual([]);
   });
 
+  it("rejects root layout files inside the page route directory", async () => {
+    const cwd = await createFixture({
+      "src/pages/layout.tsx":
+        "export default function Layout() { return null; }",
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+    });
+
+    const discovery = await discoverFileRoutes(cwd, { dir: "./src/pages" });
+
+    expect(discovery.rootModule).toBeUndefined();
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/pages/index.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/pages/layout.tsx",
+        message:
+          "Root layout files must live at ./src/layout.tsx, not inside the page route directory.",
+      },
+    ]);
+  });
+
   it("reports duplicate route paths", async () => {
     const cwd = await createFixture({
       "src/pages/users/$id.tsx": "export default function A() { return null; }",

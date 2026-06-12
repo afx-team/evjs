@@ -93,6 +93,9 @@ export default function SearchPage() {
 SPA 模式下，`src/layout.tsx` 是可选根布局。默认导出会以 `children`
 包裹当前页面，因此用户代码不需要引入 TanStack Router 的 `<Outlet />`。
 
+`src/pages` 只放页面路由。不要把根布局放在 `src/pages/layout.tsx`；evjs 会把它
+报告为目录约定错误，而不是把它转换成一个页面路由。
+
 ```tsx
 // src/layout.tsx
 export default function RootLayout({ children }: { children: React.ReactNode }) {

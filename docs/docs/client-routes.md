@@ -96,6 +96,10 @@ For SPA mode, `src/layout.tsx` is optional. When present, its default
 export wraps the current page as `children`, so user code does not need TanStack
 Router's `<Outlet />`.
 
+`src/pages` is only for route pages. Do not put the root layout at
+`src/pages/layout.tsx`; evjs reports that as a convention error instead of
+turning it into a route.
+
 ```tsx
 // src/layout.tsx
 export default function RootLayout({ children }: { children: React.ReactNode }) {
