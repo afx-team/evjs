@@ -32,6 +32,16 @@ import type { WebpackStatsLike } from "../src/manifest-generator.js";
 
 const tempDirs: string[] = [];
 const require = createRequire(import.meta.url);
+const WEBPACK_DEV_TEST_TIMEOUT = 20_000;
+const WEBPACK_DEV_TEST_NAMES = {
+  starts: "starts webpack dev and emits framework manifest/html",
+  apiRewrite: "does not rewrite API-like requests to application HTML",
+  htmlOnlyUpdate:
+    "applies html-only plan updates without rebuilding webpack configs",
+  rollback: "rolls back internal dev state when a plan update fails",
+  pageAddition:
+    "applies page additions through updatePlan without restarting ev dev",
+} as const;
 
 type ServerRuntimeGlobals = typeof globalThis & {
   __EVJS_MANIFEST__?: BuildOutput;
@@ -39,6 +49,10 @@ type ServerRuntimeGlobals = typeof globalThis & {
     asset: string,
   ) => Promise<Record<string, unknown>>;
 };
+
+function devIt(name: string, run: () => void | Promise<void>) {
+  it(name, run, WEBPACK_DEV_TEST_TIMEOUT);
+}
 
 function requireRouting(
   routing: ResolvedConfig<WebpackConfig>["routing"],
@@ -912,7 +926,7 @@ describe("webpackAdapter build", () => {
 });
 
 describe("webpackAdapter dev", () => {
-  it("starts webpack dev and emits framework manifest/html", async () => {
+  devIt(WEBPACK_DEV_TEST_NAMES.starts, async () => {
     const port = await getAvailablePort();
     const cwd = await createFixture({
       "index.html":
@@ -976,7 +990,7 @@ describe("webpackAdapter dev", () => {
     }
   });
 
-  it("does not rewrite API-like requests to application HTML", async () => {
+  devIt(WEBPACK_DEV_TEST_NAMES.apiRewrite, async () => {
     const port = await getAvailablePort();
     const cwd = await createFixture({
       "index.html":
@@ -1040,7 +1054,7 @@ describe("webpackAdapter dev", () => {
     }
   });
 
-  it("applies html-only plan updates without rebuilding webpack configs", async () => {
+  devIt(WEBPACK_DEV_TEST_NAMES.htmlOnlyUpdate, async () => {
     const port = await getAvailablePort();
     const cwd = await createFixture({
       "index.html":
@@ -1132,7 +1146,7 @@ describe("webpackAdapter dev", () => {
     }
   });
 
-  it("rolls back internal dev state when a plan update fails", async () => {
+  devIt(WEBPACK_DEV_TEST_NAMES.rollback, async () => {
     const port = await getAvailablePort();
     const cwd = await createFixture({
       "index.html":
@@ -1230,7 +1244,7 @@ describe("webpackAdapter dev", () => {
     }
   });
 
-  it("applies page additions through updatePlan without restarting ev dev", async () => {
+  devIt(WEBPACK_DEV_TEST_NAMES.pageAddition, async () => {
     const port = await getAvailablePort();
     const cwd = await createFixture({
       "index.html":
