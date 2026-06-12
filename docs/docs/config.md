@@ -235,6 +235,10 @@ The current webpack validation adapter exercises the full RSC request path. The
 default Utoopack adapter still needs equivalent client/server reference metadata
 before it can run the same path.
 
+`react-server-dom-webpack` is an optional peer dependency of the evjs client and
+server runtimes. Install it in applications that use RSC directly, or use a
+bundler/server adapter that provides the RSC runtime path.
+
 ## Server
 
 Set `server: false` for CSR-only output:

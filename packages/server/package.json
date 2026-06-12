@@ -6,18 +6,21 @@
     "@evjs/shared": "*",
     "@hono/node-server": "^1.19.11",
     "@logtape/logtape": "^2.0.4",
-    "hono": "^4.12.9",
-    "react-server-dom-webpack": "^19.2.5"
+    "hono": "^4.12.9"
   },
   "peerDependencies": {
     "react": ">=18.0.0",
-    "react-dom": ">=18.0.0"
+    "react-dom": ">=18.0.0",
+    "react-server-dom-webpack": "^19.2.5"
   },
   "peerDependenciesMeta": {
     "react": {
       "optional": true
     },
     "react-dom": {
+      "optional": true
+    },
+    "react-server-dom-webpack": {
       "optional": true
     }
   },

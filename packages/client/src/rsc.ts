@@ -37,10 +37,22 @@ let runtimeStarted = false;
 export async function createReactRscModel(
   options: ReactRscModelOptions,
 ): Promise<ReactNode> {
-  const { createFromFetch } = await import("react-server-dom-webpack/client");
+  const { createFromFetch } = await loadReactServerDomClient();
   return createFromFetch(fetchRscFlight(options), {
     moduleBaseURL: options.moduleBaseURL,
   }) as ReactNode;
+}
+
+async function loadReactServerDomClient(): Promise<
+  typeof import("react-server-dom-webpack/client")
+> {
+  try {
+    return await import("react-server-dom-webpack/client");
+  } catch {
+    throw new Error(
+      "[evjs] RSC client runtime requires react-server-dom-webpack. Install it in the application or use an adapter that provides RSC support.",
+    );
+  }
 }
 
 export async function mountReactRscPage(

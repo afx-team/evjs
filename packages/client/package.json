@@ -5,16 +5,22 @@
   "dependencies": {
     "@evjs/shared": "*",
     "@tanstack/react-query": "^5.95.2",
-    "@tanstack/react-router": "^1.168.3",
-    "react-server-dom-webpack": "^19.2.5"
+    "@tanstack/react-router": "^1.168.3"
   },
   "peerDependencies": {
     "react": ">=18.0.0",
-    "react-dom": ">=18.0.0"
+    "react-dom": ">=18.0.0",
+    "react-server-dom-webpack": "^19.2.5"
+  },
+  "peerDependenciesMeta": {
+    "react-server-dom-webpack": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/react": ">=18.0.0",
     "@types/react-dom": ">=18.0.0",
+    "react-server-dom-webpack": "^19.2.5",
     "typescript": "^6.0.2"
   },
   "homepage": "https://github.com/evaijs/evjs#readme",

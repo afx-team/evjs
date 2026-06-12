@@ -229,6 +229,10 @@ export default function InsightsPage() {
 当前 webpack validation adapter 已经覆盖完整 RSC 请求链路。默认 Utoopack adapter
 仍需要补齐等价的 client/server reference metadata 后，才能运行同样路径。
 
+`react-server-dom-webpack` 是 evjs client 和 server runtime 的可选 peer
+dependency。直接使用 RSC 的应用需要安装它，或者使用提供 RSC runtime path 的
+bundler/server adapter。
+
 ## 服务端
 
 纯 CSR 可以禁用服务端：
