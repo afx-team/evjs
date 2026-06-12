@@ -975,9 +975,7 @@ describe("webpackAdapter dev", () => {
       const manifest = JSON.parse(
         await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
       ) as BuildOutput;
-      const html = await fetch(`http://127.0.0.1:${port}/home.html`).then(
-        (res) => res.text(),
-      );
+      const html = await fetchDevText(`http://127.0.0.1:${port}/home.html`);
 
       expect(onBuildOutput).toHaveBeenCalledTimes(1);
       expect(manifest.distDir).toBe("dist");
@@ -1132,9 +1130,7 @@ describe("webpackAdapter dev", () => {
       framework.update(nextAnalysis.graph, nextPlan);
       await controller?.updatePlan(update, nextAnalysis.graph);
 
-      const html = await fetch(`http://127.0.0.1:${port}/home.html`).then(
-        (res) => res.text(),
-      );
+      const html = await fetchDevText(`http://127.0.0.1:${port}/home.html`);
 
       expect(update.entries.added).toHaveLength(0);
       expect(update.entries.changed).toHaveLength(0);
@@ -1336,9 +1332,7 @@ describe("webpackAdapter dev", () => {
       const manifest = JSON.parse(
         await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
       ) as BuildOutput;
-      const html = await fetch(`http://127.0.0.1:${port}/about.html`).then(
-        (res) => res.text(),
-      );
+      const html = await fetchDevText(`http://127.0.0.1:${port}/about.html`);
 
       expect(update.entries.added.map((entry) => entry.name)).toEqual([
         "about",
@@ -1389,6 +1383,22 @@ async function getAvailablePort(): Promise<number> {
       server.close(() => resolve(address.port));
     });
   });
+}
+
+async function fetchDevText(url: string): Promise<string> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const response = await fetch(url);
+      return await response.text();
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
+  throw lastError;
 }
 
 async function requestServerEntry(
