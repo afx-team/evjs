@@ -1,15 +1,15 @@
 const path = require("node:path");
 
-module.exports = function fileRouteEntryLoader() {
+module.exports = function pagesEntryLoader() {
   this.cacheable?.();
   const options = this.getOptions ? this.getOptions() : {};
-  return createFileRouteEntrySource(options, {
+  return createPagesEntrySource(options, {
     resourcePath: this.resourcePath,
     rootContext: this.rootContext,
   });
 };
 
-function createFileRouteEntrySource(options, loaderContext) {
+function createPagesEntrySource(options, loaderContext) {
   const routes = Array.isArray(options.routes) ? options.routes : [];
   const mount = options.mount || "#app";
   const rootModule = options.rootModule;
@@ -44,7 +44,7 @@ function createFileRouteEntrySource(options, loaderContext) {
 }
 
 function withPageQuery(specifier) {
-  return `${specifier}?evjs-file-route-page`;
+  return `${specifier}?evjs-page-route`;
 }
 
 function toLoaderRelativeRequest(specifier, loaderContext) {

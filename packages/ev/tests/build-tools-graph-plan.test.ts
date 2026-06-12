@@ -127,7 +127,7 @@ describe("createAppGraph and createBuildPlan", () => {
       kind: "app-client",
       owner: { appId: "default" },
       metadata: {
-        type: "file-route-app",
+        type: "pages-app",
         mount: "#app",
         rootModule: "./src/layout.tsx",
         routes: [
@@ -1325,7 +1325,7 @@ describe("createAppGraph and createBuildPlan", () => {
           kind: "app-client",
           owner: { appId: "default" },
           metadata: {
-            type: "file-route-app",
+            type: "pages-app",
             routes: [
               {
                 id: "dashboard",
@@ -1687,7 +1687,7 @@ describe("createAppGraph and createBuildPlan", () => {
       kind: "app-client",
       owner: { appId: "console" },
       metadata: {
-        type: "file-route-app",
+        type: "pages-app",
         routes: [
           {
             id: "orders",

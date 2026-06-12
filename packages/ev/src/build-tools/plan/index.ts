@@ -174,7 +174,7 @@ function createEntries(
       config.fileRoutes.entry === app.entry
         ? {
             metadata: {
-              type: "file-route-app",
+              type: "pages-app",
               routes: config.fileRoutes.routes.map((route) => ({ ...route })),
               mount: config.fileRoutes.mount,
               ...(config.fileRoutes.rootModule

@@ -10,7 +10,7 @@ import {
   useContext,
 } from "react";
 import { createRoot, hydrateRoot, type Root } from "react-dom/client";
-import { type PageProps, PageProvider } from "./file-route.js";
+import { type PageProps, PageProvider } from "./page-route.js";
 import type {
   ActivationRequest,
   AppContext,
@@ -397,7 +397,7 @@ function createReactPageElement(
   props: Record<string, unknown>,
   route?: ReactPageRouteContext,
 ) {
-  if (!shouldProvideFileRouteProps(props, route)) {
+  if (!shouldProvidePageRouteProps(props, route)) {
     return createElement(component, props);
   }
 
@@ -409,7 +409,7 @@ function createReactPageElement(
   );
 }
 
-function shouldProvideFileRouteProps(
+function shouldProvidePageRouteProps(
   props: Record<string, unknown>,
   route?: ReactPageRouteContext,
 ): boolean {

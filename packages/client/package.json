@@ -44,7 +44,7 @@
     }
   },
   "scripts": {
-    "build": "tsc && rm -f esm/file-router-entry.*",
+    "build": "tsc && rm -f esm/file-route.*",
     "test": "vitest run",
     "check-types": "tsc --noEmit"
   },

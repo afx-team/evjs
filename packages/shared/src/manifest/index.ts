@@ -193,7 +193,7 @@ export interface BuildEntryOwner {
 export type BuildEntryMetadata =
   | ReactComponentPageEntryMetadata
   | RemoteClientEntryMetadata
-  | FileRouteAppEntryMetadata;
+  | PagesAppEntryMetadata;
 
 export interface ReactComponentPageEntryMetadata {
   type: "react-component-page";
@@ -212,8 +212,8 @@ export interface RemoteClientEntryMetadata {
   app: string;
 }
 
-export interface FileRouteAppEntryMetadata {
-  type: "file-route-app";
+export interface PagesAppEntryMetadata {
+  type: "pages-app";
   routes: FileRouteNode[];
   mount: string;
   rootModule?: string;
@@ -474,7 +474,7 @@ export interface RscPageOutput {
 
 // ── Route resolution ────────────────────────────────────────────────────
 
-/** Route metadata discovered from file routes or configured pages. */
+/** Route metadata discovered from page files or configured pages. */
 export interface ExtractedRoute {
   /** Route path (e.g. "/", "/posts/$postId"). */
   path: string;

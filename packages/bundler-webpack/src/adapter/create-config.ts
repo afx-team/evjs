@@ -31,8 +31,8 @@ const serverFunctionLoader = fileURLToPath(
 const rscClientReferenceLoader = fileURLToPath(
   new URL("./rsc-client-reference-loader.cjs", import.meta.url),
 );
-const fileRouteEntryLoader = fileURLToPath(
-  new URL("./file-route-entry-loader.cjs", import.meta.url),
+const pagesEntryLoader = fileURLToPath(
+  new URL("./pages-entry-loader.cjs", import.meta.url),
 );
 const ReactFlightWebpackPlugin = require("react-server-dom-webpack/plugin");
 const clientRootEntry = require.resolve("@evjs/client");
@@ -251,7 +251,7 @@ function createWebpackConfig(options: {
               : []),
           ],
         },
-        ...createFileRouteEntryRules(options.entries),
+        ...createPagesEntryRules(options.entries),
         {
           test: /\.css$/,
           use: [miniCssExtractLoader, cssLoader],
@@ -298,17 +298,17 @@ function createRscPlugins(options: {
   ];
 }
 
-function createFileRouteEntryRules(entries: BuildEntry[]) {
-  const metadata = getFileRouteAppMetadata(entries);
+function createPagesEntryRules(entries: BuildEntry[]) {
+  const metadata = getPagesAppMetadata(entries);
   if (!metadata) return [];
 
   return [
     {
-      test: createFileRouteEntryPathPattern(metadata),
+      test: createPagesEntryPathPattern(metadata),
       resourceQuery: /^$/,
       use: [
         {
-          loader: fileRouteEntryLoader,
+          loader: pagesEntryLoader,
           options: metadata,
         },
       ],
@@ -316,10 +316,10 @@ function createFileRouteEntryRules(entries: BuildEntry[]) {
   ];
 }
 
-function createFileRouteEntryPathPattern(
+function createPagesEntryPathPattern(
   metadata: NonNullable<BuildEntry["metadata"]>,
 ): RegExp {
-  if (metadata.type !== "file-route-app") return /$^/;
+  if (metadata.type !== "pages-app") return /$^/;
   return new RegExp(
     `${escapeRegExp(normalizeRulePath(metadata.routes[0]?.module ?? ""))}$`,
   );
@@ -329,13 +329,13 @@ function normalizeRulePath(value: string): string {
   return value.replace(/^\.\//, "").replaceAll("\\", "/");
 }
 
-function getFileRouteAppMetadata(
+function getPagesAppMetadata(
   entries: BuildEntry[],
 ): NonNullable<BuildEntry["metadata"]> | undefined {
   const metadata = entries.find(
-    (entry) => entry.metadata?.type === "file-route-app",
+    (entry) => entry.metadata?.type === "pages-app",
   )?.metadata;
-  return metadata?.type === "file-route-app" ? metadata : undefined;
+  return metadata?.type === "pages-app" ? metadata : undefined;
 }
 
 function createEntryObject(cwd: string, entries: BuildEntry[]): EntryObject {

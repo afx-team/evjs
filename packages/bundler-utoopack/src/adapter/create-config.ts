@@ -14,14 +14,14 @@ const require = createRequire(import.meta.url);
 const componentPageLoader = fileURLToPath(
   new URL("./component-page-loader.cjs", import.meta.url),
 );
-const fileRouteEntryLoader = fileURLToPath(
-  new URL("./file-route-entry-loader.cjs", import.meta.url),
+const pagesEntryLoader = fileURLToPath(
+  new URL("./pages-entry-loader.cjs", import.meta.url),
 );
 
 import type {
   BuildPlan,
   BundlerCtx,
-  FileRouteAppEntryMetadata,
+  PagesAppEntryMetadata,
   PluginHooks,
   ReactComponentPageEntryMetadata,
   ResolvedConfig,
@@ -188,22 +188,22 @@ export async function createUtoopackConfig(
   return utoopackConfig;
 }
 
-function createFileRouteEntryRule(
-  metadata: FileRouteAppEntryMetadata,
+function createPagesEntryRule(
+  metadata: PagesAppEntryMetadata,
 ): TurbopackRuleConfigItem {
   return {
-    condition: createFileRouteEntryCondition(metadata),
+    condition: createPagesEntryCondition(metadata),
     loaders: [
       {
-        loader: fileRouteEntryLoader,
-        options: createFileRouteLoaderOptions(metadata),
+        loader: pagesEntryLoader,
+        options: createPagesLoaderOptions(metadata),
       },
     ],
     type: "ecmascript",
   };
 }
 
-function createFileRouteEntryCondition(metadata: FileRouteAppEntryMetadata): {
+function createPagesEntryCondition(metadata: PagesAppEntryMetadata): {
   path: RegExp;
   query: string;
 } {
@@ -247,7 +247,7 @@ function resolveClientEntry(
   cwd: string,
   entry: BuildPlan["entries"][number],
 ): string {
-  if (entry.metadata?.type !== "file-route-app") return entry.import;
+  if (entry.metadata?.type !== "pages-app") return entry.import;
   if (entry.import.startsWith(".") || path.isAbsolute(entry.import)) {
     return entry.import;
   }
@@ -259,13 +259,13 @@ function resolveClientEntry(
   }
 }
 
-function getFileRouteAppMetadata(
+function getPagesAppMetadata(
   plan: BuildPlan,
-): FileRouteAppEntryMetadata | undefined {
+): PagesAppEntryMetadata | undefined {
   const metadata = plan.entries.find(
-    (entry) => entry.metadata?.type === "file-route-app",
+    (entry) => entry.metadata?.type === "pages-app",
   )?.metadata;
-  return metadata?.type === "file-route-app" ? metadata : undefined;
+  return metadata?.type === "pages-app" ? metadata : undefined;
 }
 
 function getComponentPageMetadata(
@@ -282,18 +282,18 @@ function getComponentPageMetadata(
 function createFrameworkModuleRules(
   plan: BuildPlan,
 ): TurbopackRuleConfigItem[] {
-  const fileRouteApp = getFileRouteAppMetadata(plan);
+  const pagesApp = getPagesAppMetadata(plan);
   return [
-    ...(fileRouteApp ? [createFileRouteEntryRule(fileRouteApp)] : []),
+    ...(pagesApp ? [createPagesEntryRule(pagesApp)] : []),
     ...getComponentPageMetadata(plan).map(createComponentPageRule),
   ];
 }
 
-function createFileRouteLoaderOptions(
-  metadata: FileRouteAppEntryMetadata,
+function createPagesLoaderOptions(
+  metadata: PagesAppEntryMetadata,
 ): TurbopackLoaderOptions {
   return {
-    type: "file-route-app",
+    type: "pages-app",
     mount: metadata.mount,
     routes: metadata.routes.map((route) => ({
       id: route.id,

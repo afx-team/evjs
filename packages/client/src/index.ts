@@ -12,7 +12,7 @@ export type {
   PageProviderProps,
   PagesApp,
   RootLayoutModule,
-} from "./file-route.js";
+} from "./page-route.js";
 export {
   createPagesApp,
   PageProvider,
@@ -20,7 +20,7 @@ export {
   usePageLoaderData,
   usePageParams,
   usePageSearch,
-} from "./file-route.js";
+} from "./page-route.js";
 export {
   getFnQueryKey,
   getFnQueryOptions,

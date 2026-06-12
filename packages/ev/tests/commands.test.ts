@@ -119,7 +119,7 @@ describe("build", () => {
     ]);
   });
 
-  it("builds a file-route SPA without a user entry file", async () => {
+  it("builds a pages SPA without a user entry file", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await fs.promises.writeFile(
@@ -135,7 +135,7 @@ describe("build", () => {
         server: false,
         plugins: [
           {
-            name: "records-file-route-plan",
+            name: "records-pages-plan",
             setup() {
               return {
                 buildPlan(plan) {
@@ -156,7 +156,7 @@ describe("build", () => {
 
     expect(events).toEqual([
       "entry:./src/pages/index.tsx",
-      "metadata:file-route-app",
+      "metadata:pages-app",
       "bundler.build",
       "bundler.entries:main",
     ]);
@@ -184,7 +184,7 @@ describe("build", () => {
         server: false,
         plugins: [
           {
-            name: "records-file-route-entry",
+            name: "records-pages-entry",
             setup() {
               return {
                 buildPlan(plan) {
@@ -204,13 +204,13 @@ describe("build", () => {
 
     expect(events).toEqual([
       "entry:./src/pages/index.tsx",
-      "metadata:file-route-app",
+      "metadata:pages-app",
       "bundler.build",
       "bundler.entries:main",
     ]);
   });
 
-  it("builds file-route MPA pages without a router or generated route files", async () => {
+  it("builds MPA pages without a router or generated route files", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await fs.promises.writeFile(

@@ -137,9 +137,7 @@ async function withFileRouteDefaults<TBundlerCfg>(
   }
 
   const entry =
-    base.mode === "spa"
-      ? createFileRouteEntryImport(discovery.routes)
-      : undefined;
+    base.mode === "spa" ? createPagesEntryImport(discovery.routes) : undefined;
 
   return {
     ...config,
@@ -162,7 +160,7 @@ function readRoutingConfig<TBundlerCfg>(
   return config?.routing;
 }
 
-function createFileRouteEntryImport(
+function createPagesEntryImport(
   routes: NonNullable<ResolvedConfig["fileRoutes"]>["routes"],
 ): string {
   const entry = routes[0]?.module;

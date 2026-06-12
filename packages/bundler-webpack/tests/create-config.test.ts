@@ -7,7 +7,7 @@ import {
 } from "../src/adapter/create-config.js";
 
 describe("createWebpackConfigs", () => {
-  it("installs the file-route entry loader for framework-managed file routes", async () => {
+  it("installs the pages entry loader for framework-managed pages", async () => {
     const config = createResolvedConfig();
     const graph = createGraph(config);
     const plan = createBuildPlan(config, graph, { mode: "development" });
@@ -27,9 +27,9 @@ describe("createWebpackConfigs", () => {
         resourceQuery: /^$/,
         use: [
           {
-            loader: expect.stringContaining("file-route-entry-loader.cjs"),
+            loader: expect.stringContaining("pages-entry-loader.cjs"),
             options: {
-              type: "file-route-app",
+              type: "pages-app",
               mount: "#app",
               rootModule: "./src/layout.tsx",
               routes: [
