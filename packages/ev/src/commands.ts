@@ -108,7 +108,7 @@ async function withFileRouteDefaults<TBundlerCfg>(
   userConfig: Config<TBundlerCfg> | undefined,
   cwd: string,
 ): Promise<ResolvedConfig<TBundlerCfg>> {
-  const fileRoutesOption = userConfig?.fileRoutes;
+  const fileRoutesOption = readRoutingConfig(userConfig);
   if (fileRoutesOption === false) {
     return { ...config, fileRoutes: undefined };
   }
@@ -116,7 +116,7 @@ async function withFileRouteDefaults<TBundlerCfg>(
   const requested = fileRoutesOption !== undefined;
   if ((config.pages || config.app || config.remote) && requested) {
     throw new Error(
-      "[evjs] fileRoutes cannot be combined with app, pages, or remote configuration.",
+      "[evjs] routing cannot be combined with app, pages, or remote configuration.",
     );
   }
   if (config.pages || config.app || config.remote) return config;
@@ -139,7 +139,7 @@ async function withFileRouteDefaults<TBundlerCfg>(
 
   if (discovery.routes.length === 0) {
     if (!requested) return config;
-    throw new Error(`[evjs] No file routes found in ${base.dir}.`);
+    throw new Error(`[evjs] No page routes found in ${base.dir}.`);
   }
 
   const entry =
@@ -160,12 +160,22 @@ async function withFileRouteDefaults<TBundlerCfg>(
   };
 }
 
+function readRoutingConfig<TBundlerCfg>(
+  config: Config<TBundlerCfg> | undefined,
+): Config<TBundlerCfg>["routing"] | Config<TBundlerCfg>["fileRoutes"] {
+  if (!config) return undefined;
+  if (config.routing !== undefined && config.fileRoutes !== undefined) {
+    throw new Error("[evjs] Configure either routing or fileRoutes, not both.");
+  }
+  return config.routing ?? config.fileRoutes;
+}
+
 function createFileRouteEntryImport(
   routes: NonNullable<ResolvedConfig["fileRoutes"]>["routes"],
 ): string {
   const entry = routes[0]?.module;
   if (!entry) {
-    throw new Error("[evjs] File routes need at least one page module.");
+    throw new Error("[evjs] Page routes need at least one page module.");
   }
   return entry;
 }
@@ -206,7 +216,7 @@ function reportFileRouteDiagnostics(
   }
   if (errors.length > 0) {
     throw new Error(
-      ["[evjs] File route discovery failed.", ...errors].join("\n"),
+      ["[evjs] Page route discovery failed.", ...errors].join("\n"),
     );
   }
 }

@@ -50,7 +50,7 @@ export async function discoverFileRoutes(
       diagnostics.push({
         level: "error",
         file: sourceRel.replace(/^\.\//, ""),
-        message: `Duplicate file route path "${routePath}" also declared by ${previous}.`,
+        message: `Duplicate page route path "${routePath}" also declared by ${previous}.`,
       });
       continue;
     }

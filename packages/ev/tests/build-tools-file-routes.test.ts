@@ -73,7 +73,7 @@ describe("discoverFileRoutes", () => {
         level: "error",
         file: "src/pages/users/[id].tsx",
         message: expect.stringContaining(
-          'Duplicate file route path "/users/$id"',
+          'Duplicate page route path "/users/$id"',
         ),
       }),
     ]);

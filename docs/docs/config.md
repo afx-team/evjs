@@ -1,14 +1,14 @@
 # Configuration
 
 evjs is zero-config by default. Create `ev.config.ts` when an app needs to
-customize file routes, page outputs, framework server paths, remotes, plugins,
-or a non-default bundler.
+customize routing, page outputs, framework server paths, remotes, plugins, or a
+non-default bundler.
 
 ```ts
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  fileRoutes: {
+  routing: {
     mode: "spa",
   },
 });
@@ -20,7 +20,7 @@ export default defineConfig({
 |---------|---------|
 | `entry` | `./src/main.tsx` |
 | `html` | `./index.html` |
-| `fileRoutes.mode` | `spa` |
+| `routing.mode` | `spa` |
 | `dev.port` | `3000` |
 | `server.dev.port` | `3001` |
 | `server.basePath` | `/__evjs` |
@@ -28,14 +28,14 @@ export default defineConfig({
 
 The server function endpoint is derived from `server.basePath`; there is no separate public function-endpoint config.
 
-## File Routes
+## Routing
 
-File routes are the primary client-routing model. SPA mode builds one
-TanStack Router-backed app from `src/pages`:
+`src/pages` is the primary client-routing model. SPA mode builds one TanStack
+Router-backed app from those page files:
 
 ```ts
 export default defineConfig({
-  fileRoutes: {
+  routing: {
     mode: "spa",
     dir: "./src/pages",
     mount: "#app",
@@ -48,14 +48,14 @@ client router:
 
 ```ts
 export default defineConfig({
-  fileRoutes: {
+  routing: {
     mode: "mpa",
   },
 });
 ```
 
-When `src/pages` exists and the default `src/main.tsx` does not, SPA file
-routes are enabled automatically.
+When `src/pages` exists and the default `src/main.tsx` does not, SPA routing is
+enabled automatically.
 
 Use top-level `entry` / `html` only for a manually bootstrapped single app:
 
@@ -69,7 +69,7 @@ export default defineConfig({
 ## Pages
 
 `pages` is the explicit lower-level API for independent page outputs. Prefer
-`fileRoutes: { mode: "mpa" }` when the page set maps directly to `src/pages`.
+`routing: { mode: "mpa" }` when the page set maps directly to `src/pages`.
 String pages and `{ entry }` pages are user-owned bootstraps:
 
 ```ts

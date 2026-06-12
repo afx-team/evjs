@@ -5,6 +5,10 @@ import {
   useFileRouteLoaderData,
   useFileRouteParams,
   useFileRouteSearch,
+  usePageContext,
+  usePageLoaderData,
+  usePageParams,
+  usePageSearch,
 } from "../src/index";
 
 describe("file route hooks", () => {
@@ -13,6 +17,10 @@ describe("file route hooks", () => {
     expect(useFileRouteParams).toBeTypeOf("function");
     expect(useFileRouteSearch).toBeTypeOf("function");
     expect(useFileRouteLoaderData).toBeTypeOf("function");
+    expect(usePageContext).toBeTypeOf("function");
+    expect(usePageParams).toBeTypeOf("function");
+    expect(usePageSearch).toBeTypeOf("function");
+    expect(usePageLoaderData).toBeTypeOf("function");
   });
 });
 

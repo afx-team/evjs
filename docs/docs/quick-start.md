@@ -46,7 +46,7 @@ my-app/
 ├── index.html              # HTML template (must have <div id="app">)
 ├── ev.config.ts            # Optional config
 ├── src/
-│   ├── pages/              # File routes
+│   ├── pages/              # Page routes
 │   │   ├── __root.tsx      # Root layout
 │   │   ├── index.tsx       # /
 │   │   └── users/$id.tsx   # /users/$id
@@ -57,15 +57,15 @@ my-app/
 └── tsconfig.json
 ```
 
-## File Routes
+## Pages
 
 ```tsx
 // src/pages/users/$id.tsx
-import { useFileRouteParams, useQuery } from "@evjs/client";
+import { usePageParams, useQuery } from "@evjs/client";
 import { getUser } from "../../api/users.server";
 
 export default function UserPage() {
-  const { id } = useFileRouteParams();
+  const { id } = usePageParams();
   const { data } = useQuery(getUser, id);
   return <main>{data?.name}</main>;
 }
@@ -77,14 +77,14 @@ global router registrations stay inside the framework.
 
 ## MPA Mode
 
-Use the same `src/pages` files for an MPA and switch the file-route mode:
+Use the same `src/pages` files for an MPA and switch the routing mode:
 
 ```ts
 // ev.config.ts
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  fileRoutes: {
+  routing: {
     mode: "mpa",
   },
 });
@@ -140,4 +140,4 @@ Keep all `@evjs/*` packages in your app on the same version. When upgrading evjs
 - HTML must have `<div id="app">` for the render target
 - Do NOT add `"type": "module"` to your **project's** `package.json` — the server bundle uses CJS format
 - Prefer `src/pages` as the route source of truth.
-- Use `fileRoutes.mode: "mpa"` for independent pages without a client router.
+- Use `routing.mode: "mpa"` for independent pages without a client router.

@@ -49,6 +49,22 @@ describe("defineConfig", () => {
       },
     });
   });
+
+  it("accepts routing configuration", () => {
+    const config = defineConfig({
+      routing: {
+        dir: "./src/pages",
+        mount: "#root",
+      },
+    });
+
+    expect(config).toEqual({
+      routing: {
+        dir: "./src/pages",
+        mount: "#root",
+      },
+    });
+  });
 });
 
 describe("resolveConfig", () => {
@@ -90,6 +106,20 @@ describe("resolveConfig", () => {
     });
   });
 
+  it("resolves routing defaults when enabled", () => {
+    const resolved = resolveConfig({
+      routing: true,
+    });
+
+    expect(resolved.fileRoutes).toEqual({
+      mode: "spa",
+      dir: "./src/pages",
+      html: "./index.html",
+      mount: "#app",
+      routes: [],
+    });
+  });
+
   it("respects file route overrides", () => {
     const resolved = resolveConfig({
       html: "./app.html",
@@ -107,6 +137,34 @@ describe("resolveConfig", () => {
       mount: "#root",
       routes: [],
     });
+  });
+
+  it("respects routing overrides", () => {
+    const resolved = resolveConfig({
+      html: "./app.html",
+      routing: {
+        dir: "./app/pages",
+        html: "./shell.html",
+        mount: "#root",
+      },
+    });
+
+    expect(resolved.fileRoutes).toEqual({
+      mode: "spa",
+      dir: "./app/pages",
+      html: "./shell.html",
+      mount: "#root",
+      routes: [],
+    });
+  });
+
+  it("rejects duplicate routing declarations", () => {
+    expect(() =>
+      resolveConfig({
+        routing: true,
+        fileRoutes: true,
+      }),
+    ).toThrow("[evjs] Configure either routing or fileRoutes, not both.");
   });
 
   it("applies all defaults when called with empty config", () => {

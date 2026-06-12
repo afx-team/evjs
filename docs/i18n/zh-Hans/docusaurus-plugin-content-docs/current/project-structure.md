@@ -1,6 +1,6 @@
 # 项目目录结构
 
-evjs 应用默认以文件路由作为客户端边界。文档和新应用统一使用一份完整推荐结构；实际项目不需要的目录可以直接删除。
+evjs 应用默认以页面路由作为客户端边界。文档和新应用统一使用一份完整推荐结构；实际项目不需要的目录可以直接删除。
 
 ## 推荐结构
 
@@ -14,7 +14,7 @@ my-evjs-app/
 └── src/
     ├── server.ts                # framework/server entry
     ├── styles.css               # 全局 CSS / Tailwind 入口
-    ├── pages/                   # 文件路由
+    ├── pages/                   # 页面路由
     │   ├── __root.tsx           # 可选 SPA 根布局
     │   ├── index.tsx            # /
     │   ├── dashboard.tsx        # /dashboard
@@ -37,7 +37,7 @@ my-evjs-app/
 
 这棵目录覆盖完整框架能力：
 
-- `ev.config.ts` 只在默认值不够时自定义文件路由模式、服务端路径、远程应用、插件或显式页面输出。
+- `ev.config.ts` 只在默认值不够时自定义 routing 模式、服务端路径、远程应用、插件或显式页面输出。
 - `pages/` 是客户端路由事实来源。SPA 模式会映射到内部 TanStack Router tree；MPA 模式会映射到独立页面 entry。
 - 渲染元信息放在页面模块旁边。
 - `api/*.server.ts` 放 server functions。
@@ -53,7 +53,7 @@ my-evjs-app/
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  fileRoutes: {
+  routing: {
     mode: "spa",
     dir: "./src/pages",
     mount: "#app",
@@ -74,7 +74,7 @@ export default defineConfig({
 ```
 
 当每个路由都应该输出独立 HTML 文档且不需要 TanStack Router 时，使用
-`fileRoutes: { mode: "mpa" }`。只有页面输出无法自然映射到 `src/pages` 时，才使用更底层的
+`routing: { mode: "mpa" }`。只有页面输出无法自然映射到 `src/pages` 时，才使用更底层的
 `pages` 配置。
 
 ## 页面模块

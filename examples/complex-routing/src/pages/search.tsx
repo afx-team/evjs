@@ -1,4 +1,4 @@
-import { Link, useFileRouteSearch, useQuery } from "@evjs/client";
+import { Link, usePageSearch, useQuery } from "@evjs/client";
 import { getPosts } from "../api/data.server";
 
 const styles = {
@@ -17,7 +17,7 @@ export function validateSearch(search: Record<string, unknown>) {
 }
 
 export default function SearchPage() {
-  const search = useFileRouteSearch();
+  const search = usePageSearch();
   const q = typeof search.q === "string" ? search.q : "";
   const { data: results } = useQuery(getPosts, q || undefined);
 

@@ -66,7 +66,7 @@ describe("create-app scaffolding", () => {
 
       expect(
         hasFileRoutes,
-        `${template} should have at least one source file route`,
+        `${template} should have at least one source page route`,
       ).toBe(true);
     }
   });

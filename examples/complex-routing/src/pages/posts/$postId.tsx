@@ -1,4 +1,4 @@
-import { Link, useFileRouteParams, useQuery } from "@evjs/client";
+import { Link, usePageParams, useQuery } from "@evjs/client";
 import { getPost } from "../../api/data.server";
 
 const styles = {
@@ -13,7 +13,7 @@ const styles = {
 };
 
 export default function PostDetail() {
-  const { postId } = useFileRouteParams();
+  const { postId } = usePageParams();
   const { data: post } = useQuery(getPost, postId);
 
   if (!post) return <p>Loading...</p>;

@@ -197,7 +197,7 @@ describe("build", () => {
     await build(
       {
         server: false,
-        fileRoutes: {
+        routing: {
           mode: "mpa",
         },
       },
@@ -398,11 +398,11 @@ describe("build", () => {
 
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain(
-      "[evjs] File route discovery failed.",
+      "[evjs] Page route discovery failed.",
     );
     expect((error as Error).message).toContain("src/pages/users/[id].tsx");
     expect((error as Error).message).toContain(
-      'Duplicate file route path "/users/$id"',
+      'Duplicate page route path "/users/$id"',
     );
     expect(events).not.toContain("bundler.build");
   });

@@ -1,7 +1,7 @@
 # 客户端路由
 
-evjs 以文件路由作为客户端路由的唯一事实来源。应用页面写在
-`src/pages` 中；框架会发现这些文件，并按配置生成一个 TanStack Router 驱动的
+evjs 以 `src/pages` 作为客户端路由的唯一事实来源。应用页面写在
+页面文件中；框架会发现这些文件，并按配置生成一个 TanStack Router 驱动的
 SPA，或生成多个不带路由器的 MPA 页面。evjs 不会写入 `.evjs` 临时路由文件。
 
 ## 目录结构
@@ -17,7 +17,7 @@ src/
     └── posts/index.tsx    # /posts
 ```
 
-当项目存在 `src/pages` 且没有默认的 `src/main.tsx` 入口时，SPA 文件路由会自动启用。
+当项目存在 `src/pages` 且没有默认的 `src/main.tsx` 入口时，SPA 路由会自动启用。
 也可以显式配置：
 
 ```ts
@@ -25,7 +25,7 @@ src/
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  fileRoutes: {
+  routing: {
     mode: "spa",
     dir: "./src/pages",
     mount: "#app",
@@ -40,7 +40,7 @@ MPA 使用相同的页面文件，只需要切换输出模式：
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  fileRoutes: {
+  routing: {
     mode: "mpa",
   },
 });
@@ -52,16 +52,16 @@ TanStack Router。
 ## 页面
 
 每个页面模块默认导出 React 组件。页面逻辑需要当前 route 参数、search 参数或
-loader data 时，使用 file-route hooks；用户代码不需要创建 route object、route tree
+loader data 时，使用 page hooks；用户代码不需要创建 route object、route tree
 或 router 注册。
 
 ```tsx
 // src/pages/users/$userId.tsx
-import { useFileRouteParams, useQuery } from "@evjs/client";
+import { usePageParams, useQuery } from "@evjs/client";
 import { getUser } from "../../api/users.server";
 
 export default function UserPage() {
-  const { userId } = useFileRouteParams();
+  const { userId } = usePageParams();
   const { data: user } = useQuery(getUser, userId);
   if (!user) return null;
   return <h1>{user.name}</h1>;
@@ -75,14 +75,14 @@ SPA 模式下，页面模块可以导出与页面逻辑相关的 TanStack route 
 
 ```tsx
 // src/pages/search.tsx
-import { useFileRouteSearch } from "@evjs/client";
+import { usePageSearch } from "@evjs/client";
 
 export const validateSearch = (search: Record<string, unknown>) => ({
   q: typeof search.q === "string" ? search.q : "",
 });
 
 export default function SearchPage() {
-  const search = useFileRouteSearch();
+  const search = usePageSearch();
   const q = typeof search.q === "string" ? search.q : "";
   return <h1>Search: {q}</h1>;
 }

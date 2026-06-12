@@ -12,7 +12,7 @@ export default function HomePage() {
           className="mt-4 text-lg text-slate-400 max-w-xl mx-auto"
           data-testid="subtitle"
         >
-          Styled with Tailwind CSS v4 via evjs file routes, no webpack config
+          Styled with Tailwind CSS v4 via evjs page routes, no webpack config
           needed.
         </p>
       </div>
@@ -36,7 +36,7 @@ export default function HomePage() {
 
         <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm p-6 hover:bg-white/10 transition-colors">
           <div className="text-3xl mb-3">Zero</div>
-          <h3 className="font-semibold text-white mb-1">File Routes</h3>
+          <h3 className="font-semibold text-white mb-1">Page Routes</h3>
           <p className="text-sm text-slate-400">
             The route path is derived from <code>src/pages/index.tsx</code>.
           </p>

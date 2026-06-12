@@ -55,15 +55,15 @@ my-app/
 └── tsconfig.json
 ```
 
-## 文件路由
+## 页面
 
 ```tsx
 // src/pages/users/$id.tsx
-import { useFileRouteParams, useQuery } from "@evjs/client";
+import { usePageParams, useQuery } from "@evjs/client";
 import { getUser } from "../../api/users.server";
 
 export default function UserPage() {
-  const { id } = useFileRouteParams();
+  const { id } = usePageParams();
   const { data } = useQuery(getUser, id);
   return <main>{data?.name}</main>;
 }
@@ -74,14 +74,14 @@ TanStack Router 驱动的 SPA。用户不需要创建 route object、route tree 
 
 ## MPA 模式
 
-MPA 使用同一套 `src/pages` 文件，只需要切换文件路由模式：
+MPA 使用同一套 `src/pages` 文件，只需要切换 routing 模式：
 
 ```ts
 // ev.config.ts
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  fileRoutes: {
+  routing: {
     mode: "mpa",
   },
 });
@@ -135,4 +135,4 @@ Manifest schema、build tools、page runtime 和 shell 内部实现都位于上�
 - HTML 必须包含 `<div id="app">` 作为渲染目标
 - 不要在你的**项目** `package.json` 中添加 `"type": "module"` —— 服务端 bundle 使用 CJS 格式
 - 优先使用 `src/pages` 作为路由事实来源
-- 独立页面且不需要客户端路由器时，使用 `fileRoutes.mode: "mpa"`
+- 独立页面且不需要客户端路由器时，使用 `routing.mode: "mpa"`

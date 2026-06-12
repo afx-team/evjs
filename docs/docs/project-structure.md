@@ -1,6 +1,6 @@
 # Project Structure
 
-evjs applications should use file routes as the default client boundary. For
+evjs applications should use page routes as the default client boundary. For
 documentation and new applications, use one complete structure and delete
 folders that the app does not need yet.
 
@@ -16,7 +16,7 @@ my-evjs-app/
 └── src/
     ├── server.ts                # framework/server entry
     ├── styles.css               # global CSS / Tailwind entry
-    ├── pages/                   # file routes
+    ├── pages/                   # page routes
     │   ├── __root.tsx           # optional SPA root layout
     │   ├── index.tsx            # /
     │   ├── dashboard.tsx        # /dashboard
@@ -39,7 +39,7 @@ my-evjs-app/
 
 This shape covers the complete framework surface:
 
-- `ev.config.ts` customizes file-route mode, server paths, remotes, plugins, or
+- `ev.config.ts` customizes routing mode, server paths, remotes, plugins, or
   explicit page outputs only when defaults are not enough.
 - `pages/` is the client route source of truth. SPA mode maps it to an internal
   TanStack Router tree; MPA mode maps it to independent page entries.
@@ -57,7 +57,7 @@ The matching `ev.config.ts` can stay small:
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  fileRoutes: {
+  routing: {
     mode: "spa",
     dir: "./src/pages",
     mount: "#app",
@@ -77,7 +77,7 @@ export default defineConfig({
 });
 ```
 
-Use `fileRoutes: { mode: "mpa" }` when every route should be emitted as its own
+Use `routing: { mode: "mpa" }` when every route should be emitted as its own
 HTML document without TanStack Router. Use the lower-level `pages` config only
 for page outputs that do not map cleanly to `src/pages`.
 

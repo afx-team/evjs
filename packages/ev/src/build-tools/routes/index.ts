@@ -29,7 +29,7 @@ export interface RouteAnalysisDiagnostic {
   column?: number;
 }
 
-/** Parse once and run server route collectors. Client routes come from file routes. */
+/** Parse once and run server route collectors. Client routes come from page files. */
 export function analyzeRoutes(source: string): RouteAnalysis {
   const ast = parseRouteModule(source);
   if (!ast) {

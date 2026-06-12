@@ -1,7 +1,7 @@
 # Client Routes
 
-evjs uses file routes as the client-routing source of truth. Application code
-lives in `src/pages`; the framework discovers those files and either builds one
+evjs uses `src/pages` as the client-routing source of truth. Application code
+lives in page files; the framework discovers those files and either builds one
 TanStack Router-backed SPA or one router-free MPA page per file. evjs does not
 write `.evjs` temp route files.
 
@@ -18,16 +18,15 @@ src/
     └── posts/index.tsx    # /posts
 ```
 
-SPA file routes are enabled automatically when `src/pages` exists and the
-default `src/main.tsx` entry does not. To opt in explicitly or customize
-discovery:
+SPA routing is enabled automatically when `src/pages` exists and the default
+`src/main.tsx` entry does not. To opt in explicitly or customize discovery:
 
 ```ts
 // ev.config.ts
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  fileRoutes: {
+  routing: {
     mode: "spa",
     dir: "./src/pages",
     mount: "#app",
@@ -42,7 +41,7 @@ For an MPA, use the same page files and switch the output mode:
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  fileRoutes: {
+  routing: {
     mode: "mpa",
   },
 });
@@ -53,16 +52,16 @@ and client entry. No TanStack Router code is added.
 
 ## Pages
 
-Each page module exports a default React component. Use the file-route hooks
-when page logic needs the current route params, search params, or loader data:
+Each page module exports a default React component. Use the page hooks when
+page logic needs the current route params, search params, or loader data:
 
 ```tsx
 // src/pages/users/$userId.tsx
-import { useFileRouteParams, useQuery } from "@evjs/client";
+import { usePageParams, useQuery } from "@evjs/client";
 import { getUser } from "../../api/users.server";
 
 export default function UserPage() {
-  const { userId } = useFileRouteParams();
+  const { userId } = usePageParams();
   const { data: user } = useQuery(getUser, userId);
   if (!user) return null;
   return <h1>{user.name}</h1>;
@@ -77,14 +76,14 @@ are ignored; use normal component/data logic in the page.
 
 ```tsx
 // src/pages/search.tsx
-import { useFileRouteSearch } from "@evjs/client";
+import { usePageSearch } from "@evjs/client";
 
 export const validateSearch = (search: Record<string, unknown>) => ({
   q: typeof search.q === "string" ? search.q : "",
 });
 
 export default function SearchPage() {
-  const search = useFileRouteSearch();
+  const search = usePageSearch();
   const q = typeof search.q === "string" ? search.q : "";
   return <h1>Search: {q}</h1>;
 }
@@ -144,4 +143,4 @@ export default function CampaignPage() {
 ```
 
 The build graph reads that metadata from the page module and links it to the
-discovered file route.
+discovered route.

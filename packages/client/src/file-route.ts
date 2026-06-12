@@ -22,11 +22,23 @@ export interface FileRoutePageProps<
   loaderData: TLoaderData;
 }
 
+export type PageProps<
+  TParams extends Record<string, string> = Record<string, string>,
+  TSearch extends Record<string, unknown> = Record<string, unknown>,
+  TLoaderData = unknown,
+> = FileRoutePageProps<TParams, TSearch, TLoaderData>;
+
 export type FileRoutePageComponent<
   TParams extends Record<string, string> = Record<string, string>,
   TSearch extends Record<string, unknown> = Record<string, unknown>,
   TLoaderData = unknown,
 > = ComponentType<FileRoutePageProps<TParams, TSearch, TLoaderData>>;
+
+export type PageComponent<
+  TParams extends Record<string, string> = Record<string, string>,
+  TSearch extends Record<string, unknown> = Record<string, unknown>,
+  TLoaderData = unknown,
+> = FileRoutePageComponent<TParams, TSearch, TLoaderData>;
 
 export interface FileRouteProviderProps<
   TParams extends Record<string, string> = Record<string, string>,
@@ -37,6 +49,12 @@ export interface FileRouteProviderProps<
   children?: ReactNode;
 }
 
+export type PageProviderProps<
+  TParams extends Record<string, string> = Record<string, string>,
+  TSearch extends Record<string, unknown> = Record<string, unknown>,
+  TLoaderData = unknown,
+> = FileRouteProviderProps<TParams, TSearch, TLoaderData>;
+
 const FileRouteContext = createContext<FileRoutePageProps | undefined>(
   undefined,
 );
@@ -44,6 +62,8 @@ const FileRouteContext = createContext<FileRoutePageProps | undefined>(
 export function FileRouteProvider({ value, children }: FileRouteProviderProps) {
   return createElement(FileRouteContext.Provider, { value }, children);
 }
+
+export const PageProvider = FileRouteProvider;
 
 export function useFileRouteContext<
   TParams extends Record<string, string> = Record<string, string>,
@@ -53,10 +73,18 @@ export function useFileRouteContext<
   const ctx = useContext(FileRouteContext);
   if (!ctx) {
     throw new Error(
-      "[evjs] useFileRouteContext() must be used inside an evjs file route page.",
+      "[evjs] Page route data hooks must be used inside an evjs page.",
     );
   }
   return ctx as FileRoutePageProps<TParams, TSearch, TLoaderData>;
+}
+
+export function usePageContext<
+  TParams extends Record<string, string> = Record<string, string>,
+  TSearch extends Record<string, unknown> = Record<string, unknown>,
+  TLoaderData = unknown,
+>(): PageProps<TParams, TSearch, TLoaderData> {
+  return useFileRouteContext<TParams, TSearch, TLoaderData>();
 }
 
 export function useFileRouteParams<
@@ -65,14 +93,34 @@ export function useFileRouteParams<
   return useFileRouteContext<TParams>().params;
 }
 
+export function usePageParams<
+  TParams extends Record<string, string> = Record<string, string>,
+>(): TParams {
+  return usePageContext<TParams>().params;
+}
+
 export function useFileRouteSearch<
   TSearch extends Record<string, unknown> = Record<string, unknown>,
 >(): TSearch {
   return useFileRouteContext<Record<string, string>, TSearch>().search;
 }
 
+export function usePageSearch<
+  TSearch extends Record<string, unknown> = Record<string, unknown>,
+>(): TSearch {
+  return usePageContext<Record<string, string>, TSearch>().search;
+}
+
 export function useFileRouteLoaderData<TLoaderData = unknown>(): TLoaderData {
   return useFileRouteContext<
+    Record<string, string>,
+    Record<string, unknown>,
+    TLoaderData
+  >().loaderData;
+}
+
+export function usePageLoaderData<TLoaderData = unknown>(): TLoaderData {
+  return usePageContext<
     Record<string, string>,
     Record<string, unknown>,
     TLoaderData
@@ -130,7 +178,7 @@ export function createFileRouteApp(
         const Component = definition.module.default;
         if (!Component) {
           throw new Error(
-            `[evjs] File route ${definition.path || index} must export a default React component.`,
+            `[evjs] Page route ${definition.path || index} must export a default React component.`,
           );
         }
         const routeApi = route as {

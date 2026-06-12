@@ -5,7 +5,7 @@ export default function HomePage() {
     <div>
       <h1>evjs Complex Routing Example</h1>
       <p>
-        Demonstrates file routes, dynamic params, search params, redirects, and
+        Demonstrates page routing, dynamic params, search params, redirects, and
         server function data.
       </p>
       <ul>

@@ -92,7 +92,7 @@ export interface ResolvedConfig<
   pages?: Record<string, ResolvedPageConfig>;
   /** Resolved single SPA application declaration. */
   app?: ResolvedAppConfig;
-  /** Framework-managed file-route SPA declaration, when enabled. */
+  /** Framework-managed page-route declaration, when enabled. */
   fileRoutes?: ResolvedFileRoutesConfig;
   /** Internal application declarations. */
   apps?: Record<string, ResolvedAppConfig>;
@@ -159,6 +159,13 @@ export interface Config<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
    * TanStack Router route tree internally, and mounts one SPA entry. Existing
    * manual `entry`, `app`, and `pages` configurations remain valid escape
    * hatches.
+   */
+  routing?: boolean | RoutingConfig;
+
+  /**
+   * @deprecated Use `routing` for user-facing configuration. `fileRoutes`
+   * remains supported for compatibility and maps to the same internal route
+   * discovery pipeline.
    */
   fileRoutes?: boolean | FileRoutesConfig;
 
@@ -294,6 +301,9 @@ export interface FileRoutesConfig {
 
 export type FileRoutesMode = "spa" | "mpa";
 
+export type RoutingConfig = FileRoutesConfig;
+export type RoutingMode = FileRoutesMode;
+
 export interface ResolvedFileRoutesConfig {
   mode: FileRoutesMode;
   dir: string;
@@ -427,7 +437,7 @@ export function resolveConfig<
     ? resolveAppConfig(config.app, defaultHtml)
     : undefined;
   const resolvedFileRoutes = resolveFileRoutesConfig(
-    config.fileRoutes,
+    resolveRoutingConfig(config),
     defaultHtml,
   );
   const resolvedApps = resolvedApp ? { default: resolvedApp } : undefined;
@@ -527,7 +537,7 @@ export function resolveConfig<
 }
 
 function resolveFileRoutesConfig(
-  fileRoutes: Config["fileRoutes"],
+  fileRoutes: Config["routing"] | Config["fileRoutes"],
   defaultHtml: string,
 ): ResolvedFileRoutesConfig | undefined {
   if (!fileRoutes) return undefined;
@@ -539,6 +549,15 @@ function resolveFileRoutesConfig(
     mount: options.mount ?? CONFIG_DEFAULTS.mount,
     routes: [],
   };
+}
+
+function resolveRoutingConfig<TBundlerCfg>(
+  config: Config<TBundlerCfg>,
+): Config<TBundlerCfg>["routing"] | Config<TBundlerCfg>["fileRoutes"] {
+  if (config.routing !== undefined && config.fileRoutes !== undefined) {
+    throw new Error("[evjs] Configure either routing or fileRoutes, not both.");
+  }
+  return config.routing ?? config.fileRoutes;
 }
 
 function resolveAppConfig(

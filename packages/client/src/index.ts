@@ -16,14 +16,22 @@ export type {
   FileRoutePageProps,
   FileRouteProviderProps,
   FileRouteRootModule,
+  PageComponent,
+  PageProps,
+  PageProviderProps,
 } from "./file-route.js";
 export {
   createFileRouteApp,
   FileRouteProvider,
+  PageProvider,
   useFileRouteContext,
   useFileRouteLoaderData,
   useFileRouteParams,
   useFileRouteSearch,
+  usePageContext,
+  usePageLoaderData,
+  usePageParams,
+  usePageSearch,
 } from "./file-route.js";
 export {
   getFnQueryKey,

@@ -59,6 +59,8 @@ export {
   type ResolvedServerDevConfig,
   type ResolvedServerRscConfig,
   type ResolvedTransportConfig,
+  type RoutingConfig,
+  type RoutingMode,
   resolveConfig,
   type ServerConfig,
   type ServerDevConfig,

@@ -1,4 +1,4 @@
-import { Link, useFileRouteParams, useQuery } from "@evjs/client";
+import { Link, usePageParams, useQuery } from "@evjs/client";
 import { getUser } from "../../api/data.server";
 
 const styles = {
@@ -6,7 +6,7 @@ const styles = {
 };
 
 export default function UserProfile() {
-  const { username } = useFileRouteParams();
+  const { username } = usePageParams();
   const { data: user } = useQuery(getUser, username);
 
   if (!user) return <p>Loading...</p>;

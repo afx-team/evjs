@@ -2,7 +2,7 @@
 
 > **ev** = **Ev**aluation · **Ev**olution — evaluate across runtimes, evolve with AI tooling.
 
-evjs is a zero-config React fullstack framework with file-based client routes,
+evjs is a zero-config React fullstack framework with page-based client routes,
 server functions, route handlers, SSR, PPR, RSC integration points,
 manifest-driven remotes, and deployment-oriented output.
 
@@ -13,13 +13,13 @@ The framework keeps a clear split between:
 - **bundlers**: Utoopack by default, webpack as the validation adapter for newer framework capabilities;
 - **runtime/server/deploy adapters**: consume the framework manifest instead of reading bundler stats.
 
-SPA file routes use TanStack Router internally for loader/search/params
-semantics. MPA file routes use the page runtime without adding a router.
+SPA page routes use TanStack Router internally for loader/search/params
+semantics. MPA page routes use the page runtime without adding a router.
 
 ## Features
 
-- **Zero-config file routes** — `ev dev` / `ev build` discover `src/pages` when no `src/main.tsx` entry exists.
-- **SPA and MPA modes** — `fileRoutes.mode: "spa"` builds one TanStack Router-backed app; `"mpa"` builds independent router-free pages.
+- **Zero-config page routes** — `ev dev` / `ev build` discover `src/pages` when no `src/main.tsx` entry exists.
+- **SPA and MPA modes** — `routing.mode: "spa"` builds one TanStack Router-backed app; `"mpa"` builds independent router-free pages.
 - **Framework pages** — page modules can declare CSR/SSR/SSG/PPR/RSC rendering metadata next to the component.
 - **Server functions** — `"use server"` modules become browser-callable RPC stubs.
 - **Server routes** — standard Web `Request`/`Response` route handlers via `createRoute()`.
@@ -91,7 +91,7 @@ flowchart LR
 
 ## Current Architecture In One Sentence
 
-evjs discovers file routes and explicit server/page metadata into an `AppGraph`,
+evjs discovers page routes and explicit server/page metadata into an `AppGraph`,
 derives a bundler-independent `BuildPlan`, links bundler facts into a single
 `BuildOutput`, and lets runtime, server, remote, plugin, and deployment adapters
 consume that output.
