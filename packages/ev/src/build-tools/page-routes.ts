@@ -200,7 +200,10 @@ async function validateDefaultExport(
 }
 
 function formatParseError(error: unknown): string {
-  return getParseErrorMessage(error).split("\n").find(Boolean)?.trim() ?? "";
+  return (
+    getParseErrorMessage(error).split("\n").find(Boolean)?.trim() ??
+    "Unknown parse error."
+  );
 }
 
 async function collectSourceFiles(cwd: string, dir: string): Promise<string[]> {

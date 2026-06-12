@@ -90,7 +90,8 @@ Dynamic segments use `$param`, and `index.tsx` maps to the directory root.
 Bracket route segments such as `[id].tsx` are rejected. Files and folders whose
 route segment starts with `_` are private page-local modules and are ignored by
 route discovery; put non-route helpers there or outside `src/pages`. Rendering
-metadata belongs with the page component:
+metadata belongs with the page component. Syntax and default-export errors are
+reported during route discovery before the bundler runs:
 
 ```tsx
 // src/pages/campaign.tsx

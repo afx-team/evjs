@@ -83,7 +83,8 @@ export default defineConfig({
 `src/pages` 下每个被发现的文件都默认导出一个 React 组件。动态段使用 `$param`，
 `index.tsx` 映射到当前目录根路径。`[id].tsx` 这类 bracket 路由段会被拒绝。
 路由段以 `_` 开头的文件和目录是页面局部私有模块，不会被发现为路由；非路由 helper
-应放在这里或移到 `src/pages` 外部。渲染元信息放在页面组件旁边：
+应放在这里或移到 `src/pages` 外部。语法错误和默认导出错误会在路由发现阶段、
+bundler 运行前报告。渲染元信息放在页面组件旁边：
 
 ```tsx
 // src/pages/campaign.tsx

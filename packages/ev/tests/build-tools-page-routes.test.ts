@@ -247,6 +247,83 @@ describe("discoverPageRoutes", () => {
     ]);
   });
 
+  it("rejects route files with syntax errors", async () => {
+    const cwd = await createFixture({
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+      "src/pages/broken.tsx": "export default function Broken( {",
+    });
+
+    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
+
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/pages/index.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([
+      expect.objectContaining({
+        level: "error",
+        file: "src/pages/broken.tsx",
+        message: expect.stringContaining(
+          "Page route module could not be parsed:",
+        ),
+      }),
+    ]);
+  });
+
+  it("rejects root layout files with syntax errors", async () => {
+    const cwd = await createFixture({
+      "src/layout.tsx": "export default function Layout( {",
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+    });
+
+    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
+
+    expect(discovery.rootModule).toBeUndefined();
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/pages/index.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([
+      expect.objectContaining({
+        level: "error",
+        file: "src/layout.tsx",
+        message: expect.stringContaining(
+          "Root layout module could not be parsed:",
+        ),
+      }),
+    ]);
+  });
+
+  it("does not consume root layout files when root layout discovery is disabled", async () => {
+    const cwd = await createFixture({
+      "src/layout.tsx": "export function Layout() { return null; }",
+      "src/layout/index.tsx":
+        "export default function Layout() { return null; }",
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+    });
+
+    const discovery = await discoverPageRoutes(cwd, {
+      dir: "./src/pages",
+      rootLayout: false,
+    });
+
+    expect(discovery.rootModule).toBeUndefined();
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/pages/index.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([]);
+  });
+
   it("reports duplicate route paths", async () => {
     const cwd = await createFixture({
       "src/pages/users/$id.tsx": "export default function A() { return null; }",

@@ -50,7 +50,8 @@ components.
 inside `src/pages` is reported as a convention error. Dynamic route filenames
 use `$param`; bracket segments such as `[id].tsx` are rejected. Every discovered
 route file must default-export a React component; put non-route helpers in
-underscore-prefixed files or folders.
+underscore-prefixed files or folders. Syntax and default-export errors are
+reported during route discovery before the bundler runs.
 
 For MPA output:
 

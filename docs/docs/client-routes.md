@@ -28,7 +28,8 @@ or drafts that should not become URLs.
 
 Every discovered route file must default-export a React component. If a module
 under `src/pages` is not a route page, put it in an underscore-prefixed file or
-folder, or move it outside `src/pages`.
+folder, or move it outside `src/pages`. Syntax and default-export errors are
+reported during route discovery before the bundler runs.
 
 SPA routing is enabled automatically when `src/pages` exists and the project
 does not declare explicit `app`, `pages`, or `remote` config. To opt in
