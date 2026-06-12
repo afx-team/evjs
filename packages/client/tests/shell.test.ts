@@ -353,6 +353,99 @@ describe("createShell", () => {
     ]);
   });
 
+  it("restores the current hydrated page when the next hydration fails", async () => {
+    const events: string[] = [];
+    const shell = createShell({
+      manifest,
+      resolveMountPoint: () => ({}) as Element,
+      async loadModule(href, ctx) {
+        events.push(`load:${ctx.id}:${href}`);
+        return {
+          hydrate() {
+            events.push(`hydrate:${ctx.id}`);
+            if (ctx.id === "about") throw new Error("about hydrate failed");
+          },
+          unmount() {
+            events.push(`unmount:${ctx.id}`);
+          },
+        };
+      },
+    });
+
+    await shell.activate({ pageId: "home" });
+    await expect(shell.activate({ pageId: "about" })).rejects.toThrow(
+      "about hydrate failed",
+    );
+    await shell.dispose();
+
+    expect(events).toEqual([
+      "load:home:/home.js",
+      "hydrate:home",
+      "load:about:/about.js",
+      "unmount:home",
+      "hydrate:about",
+      "hydrate:home",
+      "unmount:home",
+    ]);
+  });
+
+  it("restores the current page when the next remote mount fails", async () => {
+    const events: string[] = [];
+    const shell = createShell({
+      manifest,
+      resolveMountPoint: () => ({}) as Element,
+      async loadRemoteManifest(_remote, ctx) {
+        events.push(`remote-manifest:${ctx.id}`);
+        return {
+          version: 1,
+          name: "crm",
+          baseUrl: "https://assets.example.com/crm",
+          entries: {
+            list: {
+              module: {
+                type: "lifecycle",
+                href: "./list.js",
+              },
+            },
+          },
+        };
+      },
+      async loadModule(href, ctx) {
+        events.push(`load:${ctx.kind}:${ctx.id}:${href}`);
+        return {
+          mount() {
+            events.push(`mount:${ctx.kind}:${ctx.id}`);
+            if (ctx.kind === "remote") throw new Error("remote mount failed");
+          },
+          unmount() {
+            events.push(`unmount:${ctx.kind}:${ctx.id}`);
+          },
+        };
+      },
+    });
+
+    await shell.activate({ pageId: "home", hydrate: false });
+    await expect(
+      shell.activate({
+        remoteId: "crm",
+        remoteEntryId: "list",
+        hydrate: false,
+      }),
+    ).rejects.toThrow("remote mount failed");
+    await shell.dispose();
+
+    expect(events).toEqual([
+      "load:page:home:/home.js",
+      "mount:page:home",
+      "remote-manifest:crm",
+      "load:remote:crm:https://assets.example.com/crm/list.js",
+      "unmount:page:home",
+      "mount:remote:crm",
+      "mount:page:home",
+      "unmount:page:home",
+    ]);
+  });
+
   it("activates remotes by activeWhen URL", async () => {
     const events: string[] = [];
     const shell = createShell({

@@ -24,11 +24,14 @@ interface ActiveModule {
   mountPoint: Element;
   ctx: AppContext;
   stylesheets: string[];
+  phase: ActivationPhase;
 }
 
 interface ResolvedActivation extends ResolvedShellTarget {
   mountPoint: Element;
 }
+
+type ActivationPhase = "hydrate" | "mount" | "none";
 
 export function createShell(options: ShellOptions): Shell {
   const loadModule = options.loadModule ?? defaultLoadModule;
@@ -193,25 +196,16 @@ export function createShell(options: ShellOptions): Shell {
       }
     }
 
-    const shouldHydrate = request.hydrate ?? target.ctx.kind === "page";
+    let phase: ActivationPhase;
     try {
-      if (shouldHydrate && module.hydrate) {
-        await callShellPhase(
-          "hydrate",
-          target.ctx,
-          () => module.hydrate?.(target.mountPoint, target.ctx),
-          options.onError,
-        );
-      } else if (module.mount) {
-        await callShellPhase(
-          "mount",
-          target.ctx,
-          () => module.mount?.(target.mountPoint, target.ctx),
-          options.onError,
-        );
-      }
+      phase = await activateModule(target, module, request);
     } catch (error) {
       releaseStylesheets(stylesheets);
+      if (previous) {
+        await restorePreviousActivation(previous).catch(() => {
+          // Keep the activation failure as the primary error.
+        });
+      }
       throw error;
     }
 
@@ -221,7 +215,68 @@ export function createShell(options: ShellOptions): Shell {
       mountPoint: target.mountPoint,
       ctx: target.ctx,
       stylesheets,
+      phase,
     };
+  }
+
+  async function activateModule(
+    target: ResolvedActivation,
+    module: AppModule,
+    request: ActivationRequest,
+  ): Promise<ActivationPhase> {
+    const shouldHydrate = request.hydrate ?? target.ctx.kind === "page";
+    if (shouldHydrate && module.hydrate) {
+      await callShellPhase(
+        "hydrate",
+        target.ctx,
+        () => module.hydrate?.(target.mountPoint, target.ctx),
+        options.onError,
+      );
+      return "hydrate";
+    }
+
+    if (module.mount) {
+      await callShellPhase(
+        "mount",
+        target.ctx,
+        () => module.mount?.(target.mountPoint, target.ctx),
+        options.onError,
+      );
+      return "mount";
+    }
+
+    return "none";
+  }
+
+  async function restorePreviousActivation(previous: ActiveModule) {
+    const stylesheets = await loadRemoteStylesheets(previous.ctx);
+    try {
+      await replayActivationPhase(previous);
+      active = {
+        ...previous,
+        stylesheets,
+      };
+    } catch {
+      releaseStylesheets(stylesheets);
+    }
+  }
+
+  async function replayActivationPhase(previous: ActiveModule) {
+    if (previous.phase === "hydrate" && previous.module.hydrate) {
+      await callShellPhase(
+        "hydrate",
+        previous.ctx,
+        () => previous.module.hydrate?.(previous.mountPoint, previous.ctx),
+        options.onError,
+      );
+    } else if (previous.phase === "mount" && previous.module.mount) {
+      await callShellPhase(
+        "mount",
+        previous.ctx,
+        () => previous.module.mount?.(previous.mountPoint, previous.ctx),
+        options.onError,
+      );
+    }
   }
 }
 
