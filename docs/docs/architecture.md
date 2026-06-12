@@ -27,6 +27,15 @@ src/pages + ev.config.ts + server declarations
   Hono/fetch app, server functions, server routes, SSR/PPR/RSC request boundary
 ```
 
+`@evjs/cli` and `@evjs/create-app` are distribution tooling. Bundler adapters
+stay in `@evjs/bundler-utoopack` and `@evjs/bundler-webpack`, and shared
+runtime/manifest contracts stay in `@evjs/shared`.
+
+Do not reintroduce legacy split packages such as `@evjs/build-tools`,
+`@evjs/manifest`, or `@evjs/router-*`. Build helpers are exported from
+`@evjs/ev/build-tools`, and manifest contracts are exported from
+`@evjs/shared/manifest`.
+
 ## Internal Modules
 
 ```txt

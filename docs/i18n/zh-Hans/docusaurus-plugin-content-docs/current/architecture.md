@@ -25,6 +25,14 @@ src/pages + ev.config.ts + server declarations
   Hono/fetch app、服务端函数、服务端路由、SSR/PPR/RSC 请求边界
 ```
 
+`@evjs/cli` 和 `@evjs/create-app` 是分发工具包。Bundler adapter 保留在
+`@evjs/bundler-utoopack` 和 `@evjs/bundler-webpack`，共享 runtime/manifest
+契约保留在 `@evjs/shared`。
+
+不要重新引入 `@evjs/build-tools`、`@evjs/manifest` 或 `@evjs/router-*`
+这类历史拆分包。构建 helper 从 `@evjs/ev/build-tools` 导出，manifest
+契约从 `@evjs/shared/manifest` 导出。
+
 ## 内部模块
 
 ```txt
