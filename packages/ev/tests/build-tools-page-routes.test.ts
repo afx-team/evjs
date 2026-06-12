@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { discoverFileRoutes } from "../src/build-tools/index.js";
+import { discoverPageRoutes } from "../src/build-tools/index.js";
 
 const tempDirs: string[] = [];
 
@@ -14,8 +14,8 @@ afterEach(async () => {
   );
 });
 
-describe("discoverFileRoutes", () => {
-  it("discovers SPA file routes from src/pages", async () => {
+describe("discoverPageRoutes", () => {
+  it("discovers SPA page routes from src/pages", async () => {
     const cwd = await createFixture({
       "src/layout.tsx": "export default function Root() { return null; }",
       "src/pages/index.tsx": "export default function Home() { return null; }",
@@ -30,7 +30,7 @@ describe("discoverFileRoutes", () => {
         "export default function Test() { return null; }",
     });
 
-    const discovery = await discoverFileRoutes(cwd, { dir: "./src/pages" });
+    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
 
     expect(discovery.rootModule).toBe("./src/layout.tsx");
     expect(discovery.routes).toEqual([
@@ -66,7 +66,7 @@ describe("discoverFileRoutes", () => {
       "src/pages/index.tsx": "export default function Home() { return null; }",
     });
 
-    const discovery = await discoverFileRoutes(cwd, { dir: "./src/pages" });
+    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
 
     expect(discovery.rootModule).toBe("./src/layout.tsx");
     expect(discovery.routes).toEqual([
@@ -91,7 +91,7 @@ describe("discoverFileRoutes", () => {
       "src/pages/index.tsx": "export default function Home() { return null; }",
     });
 
-    const discovery = await discoverFileRoutes(cwd, { dir: "./src/pages" });
+    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
 
     expect(discovery.rootModule).toBeUndefined();
     expect(discovery.routes).toEqual([
@@ -111,6 +111,33 @@ describe("discoverFileRoutes", () => {
     ]);
   });
 
+  it("rejects root layout directory aliases", async () => {
+    const cwd = await createFixture({
+      "src/layout/index.tsx":
+        "export default function Layout() { return null; }",
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+    });
+
+    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
+
+    expect(discovery.rootModule).toBeUndefined();
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/pages/index.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/layout/index.tsx",
+        message:
+          "Root layout must be a single file at ./src/layout.tsx. ./src/layout/index.tsx is not supported.",
+      },
+    ]);
+  });
+
   it("reports duplicate route paths", async () => {
     const cwd = await createFixture({
       "src/pages/users/$id.tsx": "export default function A() { return null; }",
@@ -118,7 +145,7 @@ describe("discoverFileRoutes", () => {
         "export default function B() { return null; }",
     });
 
-    const discovery = await discoverFileRoutes(cwd, { dir: "./src/pages" });
+    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
 
     expect(discovery.routes).toHaveLength(1);
     expect(discovery.diagnostics).toEqual([
@@ -134,7 +161,7 @@ describe("discoverFileRoutes", () => {
 });
 
 async function createFixture(files: Record<string, string>) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "evjs-file-routes-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "evjs-page-routes-"));
   tempDirs.push(dir);
 
   for (const [file, content] of Object.entries(files)) {

@@ -66,7 +66,7 @@ describe("createUtoopackConfig", () => {
   it("installs the pages entry loader for framework-managed pages", async () => {
     const config = createResolvedConfig({
       entry: "./src/pages/index.tsx",
-      fileRoutes: {
+      routing: {
         mode: "spa",
         dir: "./src/pages",
         entry: "./src/pages/index.tsx",

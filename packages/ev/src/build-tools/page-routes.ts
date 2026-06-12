@@ -1,36 +1,37 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { FileRouteNode } from "@evjs/shared/manifest";
+import type { PageRouteNode } from "@evjs/shared/manifest";
 
-export interface DiscoverFileRoutesOptions {
+export interface DiscoverPageRoutesOptions {
   dir: string;
 }
 
-export interface FileRouteDiscoveryDiagnostic {
+export interface PageRouteDiscoveryDiagnostic {
   level: "warning" | "error";
   message: string;
   file?: string;
 }
 
-export interface FileRouteDiscovery {
-  routes: FileRouteNode[];
+export interface PageRouteDiscovery {
+  routes: PageRouteNode[];
   rootModule?: string;
   files: string[];
-  diagnostics: FileRouteDiscoveryDiagnostic[];
+  diagnostics: PageRouteDiscoveryDiagnostic[];
 }
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
 const ROOT_LAYOUT_FILE = "layout.tsx";
+const ROOT_LAYOUT_INDEX_FILE = "layout/index.tsx";
 
-export async function discoverFileRoutes(
+export async function discoverPageRoutes(
   cwd: string,
-  options: DiscoverFileRoutesOptions,
-): Promise<FileRouteDiscovery> {
+  options: DiscoverPageRoutesOptions,
+): Promise<PageRouteDiscovery> {
   const absoluteDir = path.resolve(cwd, options.dir);
   const files = await collectSourceFiles(cwd, absoluteDir);
-  const routes: FileRouteNode[] = [];
-  const diagnostics: FileRouteDiscoveryDiagnostic[] = [];
-  const rootModule = await discoverRootLayout(cwd, absoluteDir);
+  const routes: PageRouteNode[] = [];
+  const diagnostics: PageRouteDiscoveryDiagnostic[] = [];
+  const rootModule = await discoverRootLayout(cwd, absoluteDir, diagnostics);
   const routeByPath = new Map<string, string>();
 
   for (const file of files) {
@@ -82,11 +83,27 @@ export async function discoverFileRoutes(
 async function discoverRootLayout(
   cwd: string,
   absoluteRouteDir: string,
+  diagnostics: PageRouteDiscoveryDiagnostic[],
 ): Promise<string | undefined> {
   const appDir = path.dirname(absoluteRouteDir);
   if (!isInsideCwd(cwd, appDir)) return undefined;
 
   const absolute = path.join(appDir, ROOT_LAYOUT_FILE);
+  const indexed = path.join(appDir, ROOT_LAYOUT_INDEX_FILE);
+  const expected = toProjectPath(cwd, absolute);
+  const actual = toProjectPath(cwd, indexed);
+
+  try {
+    await fs.access(indexed);
+    diagnostics.push({
+      level: "error",
+      file: actual.replace(/^\.\//, ""),
+      message: `Root layout must be a single file at ${expected}. ${actual} is not supported.`,
+    });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+
   try {
     await fs.access(absolute);
     return toProjectPath(cwd, absolute);
@@ -173,7 +190,7 @@ function routeIdFromPath(routePath: string): string {
   return id || "index";
 }
 
-function compareRoutes(left: FileRouteNode, right: FileRouteNode): number {
+function compareRoutes(left: PageRouteNode, right: PageRouteNode): number {
   if (left.path === "/") return -1;
   if (right.path === "/") return 1;
   const leftDepth = left.path.split("/").length;

@@ -5,9 +5,9 @@ import type {
   AppNode,
   ComponentModel,
   ExtractedRoute,
-  FileRouteNode,
   HydrationMode,
   PageNode,
+  PageRouteNode,
   PprConfig,
   PrerenderConfig,
   RemoteBuildNode,
@@ -70,13 +70,13 @@ export interface GraphConfig {
         mount?: string;
       }
   >;
-  fileRoutes?: {
+  routing?: {
     mode: "spa" | "mpa";
     dir: string;
     entry?: string;
     html: string;
     mount: string;
-    routes: FileRouteNode[];
+    routes: PageRouteNode[];
     rootModule?: string;
   };
   remotes?: Record<
@@ -144,8 +144,8 @@ export async function createAppGraph(
   // configured route/server root or config change should introduce it into the
   // watched framework graph set.
   const fileDependencies = new Set(sourceFiles.explicitDependencyFiles);
-  if (config.fileRoutes) {
-    fileDependencies.add(path.resolve(cwd, config.fileRoutes.dir));
+  if (config.routing) {
+    fileDependencies.add(path.resolve(cwd, config.routing.dir));
   }
   const clientRoutes: ExtractedRoute[] = [];
   const serverRoutes = new Map<string, ServerRouteNode>();
@@ -207,8 +207,8 @@ export async function createAppGraph(
   }
 
   const defaultAppId = getDefaultAppId(graph);
-  if (config.fileRoutes?.mode === "spa") {
-    for (const route of config.fileRoutes.routes) {
+  if (config.routing?.mode === "spa") {
+    for (const route of config.routing.routes) {
       clientRoutes.push(
         await mergeRouteModuleConfig(
           cwd,
@@ -661,7 +661,7 @@ function createAppNodes(config: GraphConfig): Record<string, AppNode> {
 
   if (
     (config.pages && Object.keys(config.pages).length > 0) ||
-    config.fileRoutes?.mode === "mpa" ||
+    config.routing?.mode === "mpa" ||
     config.remote
   ) {
     return {};
@@ -669,9 +669,9 @@ function createAppNodes(config: GraphConfig): Record<string, AppNode> {
 
   const app: AppNode = {
     id: "default",
-    entry: config.fileRoutes?.entry ?? config.entry,
-    html: config.fileRoutes?.html ?? config.html,
-    ...(config.fileRoutes?.mount ? { mount: config.fileRoutes.mount } : {}),
+    entry: config.routing?.entry ?? config.entry,
+    html: config.routing?.html ?? config.html,
+    ...(config.routing?.mount ? { mount: config.routing.mount } : {}),
   };
   return {
     default: app,
@@ -700,15 +700,15 @@ function isAppEntryConfig(
 function createPageNodes(config: GraphConfig): Record<string, PageNode> {
   const pages: Record<string, PageNode> = {};
 
-  if (config.fileRoutes?.mode === "mpa") {
-    for (const route of config.fileRoutes.routes) {
+  if (config.routing?.mode === "mpa") {
+    for (const route of config.routing.routes) {
       pages[route.id] = {
         id: route.id,
         path: route.path,
         component: route.module,
-        html: config.fileRoutes.html,
+        html: config.routing.html,
         render: "csr",
-        mount: config.fileRoutes.mount,
+        mount: config.routing.mount,
       };
     }
   }
@@ -794,13 +794,13 @@ async function collectFrameworkSourceFiles(
   } else if (!config.remote) {
     await addExistingSource(roots, cwd, config.entry);
   }
-  for (const route of config.fileRoutes?.routes ?? []) {
+  for (const route of config.routing?.routes ?? []) {
     await addExistingSource(roots, cwd, route.module, explicitDependencyRoots);
   }
   await addExistingSource(
     roots,
     cwd,
-    config.fileRoutes?.rootModule,
+    config.routing?.rootModule,
     explicitDependencyRoots,
   );
   for (const entry of Object.values(config.remote?.entries ?? {})) {

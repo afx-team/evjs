@@ -68,7 +68,7 @@ describe("resolveConfig", () => {
     expect(resolved.server.functionRuntime.endpoint).toBe("/__evjs/fn");
     expect(resolved.transport).toEqual({ baseUrl: undefined });
     expect(resolved.apps).toBeUndefined();
-    expect(resolved.fileRoutes).toBeUndefined();
+    expect(resolved.routing).toBeUndefined();
     expect(resolved.remotes).toEqual({});
     expect(resolved.server.dev.port).toBe(CONFIG_DEFAULTS.serverPort);
     expect(resolved.server.dev.https).toBe(false);
@@ -81,7 +81,7 @@ describe("resolveConfig", () => {
       routing: true,
     });
 
-    expect(resolved.fileRoutes).toEqual({
+    expect(resolved.routing).toEqual({
       mode: "spa",
       dir: "./src/pages",
       html: "./index.html",
@@ -100,7 +100,7 @@ describe("resolveConfig", () => {
       },
     });
 
-    expect(resolved.fileRoutes).toEqual({
+    expect(resolved.routing).toEqual({
       mode: "spa",
       dir: "./app/pages",
       html: "./shell.html",

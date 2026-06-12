@@ -200,7 +200,7 @@ package loading/version selection remains outside this implementation.
 
 ```txt
 routing
-  file-route source of truth: spa or mpa mode, dir, html, mount point
+  page route source of truth: spa or mpa mode, dir, html, mount point
 
 entry/html
   manual single app shorthand
@@ -286,7 +286,7 @@ routes unless a server-capable runtime is attached.
 Framework-level declaration changes are handled separately from normal HMR:
 
 ```txt
-config / file route / server declaration change
+config / page route / server declaration change
   -> recreate AppGraph
   -> recreate BuildPlan
   -> diff BuildPlan
@@ -299,8 +299,8 @@ updates until Utoopack exposes the lower-layer API. The webpack adapter can appl
 the update in-process for architecture validation. Style and asset edits remain
 on the bundler HMR path.
 
-Graph analysis reads file-route modules plus static import closures to discover
+Graph analysis reads page route modules plus static import closures to discover
 server functions, server routes, page metadata, and RSC references. Dev watches
-the file-route directory, explicit graph roots, and files that already contain
+the page route directory, explicit graph roots, and files that already contain
 framework markers; ordinary component and style edits stay on the bundler HMR
 path.

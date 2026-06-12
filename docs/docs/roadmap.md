@@ -3,8 +3,8 @@
 ## Completed Foundation
 
 - Zero-config React app build with `ev dev` and `ev build`.
-- Page-route SPA discovery through `src/pages`.
-- Page-route MPA output through `routing.mode: "mpa"`.
+- Page route SPA discovery through `src/pages`.
+- Page route MPA output through `routing.mode: "mpa"`.
 - Explicit multi-page output through `pages`.
 - Server functions from `"use server"` modules.
 - Hono/fetch server runtime with explicit server routes.
@@ -31,7 +31,7 @@
 
 ## Planned
 
-- Page-route type refinement so generated SPA routes preserve richer typed
+- Page route type refinement so generated SPA routes preserve richer typed
   params/search/loader data without exposing router internals.
 - Unified server request context and middleware semantics across server
   functions, server routes, SSR, PPR, and RSC.

@@ -59,7 +59,7 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
   });
 
-  it("creates a framework-managed SPA entry from file routes", async () => {
+  it("creates a framework-managed SPA entry from page routes", async () => {
     const cwd = await createFixture({
       "src/layout.tsx": "export default function Root() { return null; }",
       "src/pages/index.tsx": "export default function Home() { return null; }",
@@ -73,7 +73,7 @@ describe("createAppGraph and createBuildPlan", () => {
     });
     const config = createConfig({
       entry: "./src/pages/index.tsx",
-      fileRoutes: {
+      routing: {
         mode: "spa",
         dir: "./src/pages",
         entry: "./src/pages/index.tsx",
@@ -154,14 +154,14 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
   });
 
-  it("creates router-free MPA page entries from file routes", async () => {
+  it("creates router-free MPA page entries from page routes", async () => {
     const cwd = await createFixture({
       "src/pages/index.tsx": "export default function Home() { return null; }",
       "src/pages/about.tsx": "export default function About() { return null; }",
       "index.html": '<div id="app"></div>',
     });
     const config = createConfig({
-      fileRoutes: {
+      routing: {
         mode: "mpa",
         dir: "./src/pages",
         html: "./index.html",
@@ -1250,7 +1250,7 @@ describe("createAppGraph and createBuildPlan", () => {
     ).toEqual([]);
   });
 
-  it("collects file route and remote declarations", async () => {
+  it("collects page route and remote declarations", async () => {
     const cwd = await createFixture({
       "src/main.tsx": "console.log('app');",
       "src/pages/Dashboard.tsx": `
@@ -1262,7 +1262,7 @@ describe("createAppGraph and createBuildPlan", () => {
     });
     const config = createConfig({
       entry: "./src/main.tsx",
-      fileRoutes: {
+      routing: {
         mode: "spa",
         dir: "./src/pages",
         entry: "./src/main.tsx",
@@ -1566,14 +1566,14 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
   });
 
-  it("keeps CSR file route modules as route metadata without page build units", async () => {
+  it("keeps CSR page route modules as route metadata without page build units", async () => {
     const cwd = await createFixture({
       "src/pages/About.tsx": "export default function About() { return null; }",
       "index.html": '<div id="app"></div>',
     });
     const config = createConfig({
       entry: "./src/pages/About.tsx",
-      fileRoutes: {
+      routing: {
         mode: "spa",
         dir: "./src/pages",
         entry: "./src/pages/About.tsx",
@@ -1615,7 +1615,7 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
   });
 
-  it("assigns file routes to the explicit SPA app entry", async () => {
+  it("assigns page routes to the explicit SPA app entry", async () => {
     const cwd = await createFixture({
       "src/console/main.tsx": "console.log('console');",
       "src/admin/main.tsx": "console.log('admin');",
@@ -1636,7 +1636,7 @@ describe("createAppGraph and createBuildPlan", () => {
           html: "./index.html",
         },
       },
-      fileRoutes: {
+      routing: {
         mode: "spa",
         dir: "./src/pages",
         entry: "./src/console/main.tsx",
@@ -1752,7 +1752,7 @@ describe("createAppGraph and createBuildPlan", () => {
     });
   });
 
-  it("creates stable route-derived page ids from file route paths", async () => {
+  it("creates stable route-derived page ids from page route paths", async () => {
     const cwd = await createFixture({
       "src/pages/index.tsx": `
         export const render = "ssg";
@@ -1766,7 +1766,7 @@ describe("createAppGraph and createBuildPlan", () => {
     });
     const config = createConfig({
       entry: "./src/pages/index.tsx",
-      fileRoutes: {
+      routing: {
         mode: "spa",
         dir: "./src/pages",
         entry: "./src/pages/index.tsx",

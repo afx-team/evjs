@@ -1,5 +1,5 @@
 import { DEFAULT_SERVER_BASE_PATH } from "@evjs/shared";
-import type { FileRouteNode, SharedDependencyMap } from "@evjs/shared/manifest";
+import type { PageRouteNode, SharedDependencyMap } from "@evjs/shared/manifest";
 import type { BundlerAdapter } from "./bundler.js";
 import type { Plugin } from "./plugin.js";
 
@@ -92,8 +92,8 @@ export interface ResolvedConfig<
   pages?: Record<string, ResolvedPageConfig>;
   /** Resolved single SPA application declaration. */
   app?: ResolvedAppConfig;
-  /** Framework-managed page-route declaration, when enabled. */
-  fileRoutes?: ResolvedFileRoutesConfig;
+  /** Framework-managed page routing declaration, when enabled. */
+  routing?: ResolvedPageRoutingConfig;
   /** Internal application declarations. */
   apps?: Record<string, ResolvedAppConfig>;
   /** Remote app manifests configured for shell/runtime loading. */
@@ -153,10 +153,11 @@ export interface Config<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
   app?: AppConfig;
 
   /**
-   * Framework-managed file-based SPA routes.
+   * Framework-managed page routing.
    *
-   * When enabled, evjs discovers React page modules from `src/pages`, builds a
-   * TanStack Router route tree internally, and mounts one SPA entry.
+   * When enabled, evjs discovers React page modules from `src/pages`. SPA mode
+   * builds one TanStack Router app internally; MPA mode emits independent
+   * router-free pages.
    */
   routing?: boolean | RoutingConfig;
 
@@ -273,35 +274,35 @@ export interface ResolvedAppConfig {
   mount?: string;
 }
 
-export interface FileRoutesConfig {
+export interface PageRoutingConfig {
   /**
-   * File-route output mode.
+   * Page routing output mode.
    *
    * `spa` builds one TanStack Router-backed application from the page tree.
    * `mpa` builds one independent page output per file without a client router.
    * Default: "spa".
    */
-  mode?: FileRoutesMode;
+  mode?: PageRoutingMode;
   /** Directory containing page modules. Default: "./src/pages". */
   dir?: string;
-  /** HTML template for generated routes. Defaults to top-level `html`. */
+  /** HTML template for generated page routes. Defaults to top-level `html`. */
   html?: string;
-  /** Mount selector for generated routes. Default: "#app". */
+  /** Mount selector for generated page routes. Default: "#app". */
   mount?: string;
 }
 
-export type FileRoutesMode = "spa" | "mpa";
+export type PageRoutingMode = "spa" | "mpa";
 
-export type RoutingConfig = FileRoutesConfig;
-export type RoutingMode = FileRoutesMode;
+export type RoutingConfig = PageRoutingConfig;
+export type RoutingMode = PageRoutingMode;
 
-export interface ResolvedFileRoutesConfig {
-  mode: FileRoutesMode;
+export interface ResolvedPageRoutingConfig {
+  mode: PageRoutingMode;
   dir: string;
   html: string;
   mount: string;
   entry?: string;
-  routes: FileRouteNode[];
+  routes: PageRouteNode[];
   rootModule?: string;
 }
 
@@ -360,8 +361,8 @@ export const CONFIG_DEFAULTS = {
   serverBasePath: DEFAULT_SERVER_BASE_PATH,
   clientProxy: "@evjs/client",
   serverRegister: "@evjs/server/register",
-  fileRoutesDir: "./src/pages",
-  fileRoutesMode: "spa",
+  routingDir: "./src/pages",
+  routingMode: "spa",
   mount: "#app",
 } as const;
 
@@ -427,7 +428,7 @@ export function resolveConfig<
   const resolvedApp = config.app
     ? resolveAppConfig(config.app, defaultHtml)
     : undefined;
-  const resolvedFileRoutes = resolveFileRoutesConfig(
+  const resolvedPageRouting = resolvePageRoutingConfig(
     resolveRoutingConfig(config),
     defaultHtml,
   );
@@ -449,7 +450,7 @@ export function resolveConfig<
     html: defaultHtml,
     pages: resolvedPages,
     app: resolvedApp,
-    fileRoutes: resolvedFileRoutes,
+    routing: resolvedPageRouting,
     apps: resolvedApps,
     remotes: Object.fromEntries(
       Object.entries(config.remotes ?? {}).map(([name, remote]) => [
@@ -527,15 +528,15 @@ export function resolveConfig<
   };
 }
 
-function resolveFileRoutesConfig(
-  fileRoutes: Config["routing"],
+function resolvePageRoutingConfig(
+  routing: Config["routing"],
   defaultHtml: string,
-): ResolvedFileRoutesConfig | undefined {
-  if (!fileRoutes) return undefined;
-  const options = fileRoutes === true ? {} : fileRoutes;
+): ResolvedPageRoutingConfig | undefined {
+  if (!routing) return undefined;
+  const options = routing === true ? {} : routing;
   return {
-    mode: options.mode ?? CONFIG_DEFAULTS.fileRoutesMode,
-    dir: options.dir ?? CONFIG_DEFAULTS.fileRoutesDir,
+    mode: options.mode ?? CONFIG_DEFAULTS.routingMode,
+    dir: options.dir ?? CONFIG_DEFAULTS.routingDir,
     html: options.html ?? defaultHtml,
     mount: options.mount ?? CONFIG_DEFAULTS.mount,
     routes: [],
@@ -657,7 +658,7 @@ export interface ResolvedPageConfig {
 export function isMpa<T = unknown>(config: ResolvedConfig<T>): boolean {
   return (
     (config.pages !== undefined && Object.keys(config.pages).length > 0) ||
-    config.fileRoutes?.mode === "mpa"
+    config.routing?.mode === "mpa"
   );
 }
 

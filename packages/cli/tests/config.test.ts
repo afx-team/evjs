@@ -57,8 +57,8 @@ describe("CONFIG_DEFAULTS", () => {
       serverBasePath: "/__evjs",
       clientProxy: "@evjs/client",
       serverRegister: "@evjs/server/register",
-      fileRoutesDir: "./src/pages",
-      fileRoutesMode: "spa",
+      routingDir: "./src/pages",
+      routingMode: "spa",
       mount: "#app",
     });
   });

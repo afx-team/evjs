@@ -40,13 +40,13 @@ type ServerRuntimeGlobals = typeof globalThis & {
   ) => Promise<Record<string, unknown>>;
 };
 
-function requireFileRoutes(
-  fileRoutes: ResolvedConfig<WebpackConfig>["fileRoutes"],
-): NonNullable<ResolvedConfig<WebpackConfig>["fileRoutes"]> {
-  if (!fileRoutes) {
-    throw new Error("Expected fileRoutes to be resolved for this test.");
+function requireRouting(
+  routing: ResolvedConfig<WebpackConfig>["routing"],
+): NonNullable<ResolvedConfig<WebpackConfig>["routing"]> {
+  if (!routing) {
+    throw new Error("Expected routing to be resolved for this test.");
   }
-  return fileRoutes;
+  return routing;
 }
 
 afterEach(async () => {
@@ -514,11 +514,11 @@ describe("webpackAdapter build", () => {
         entry: "./src/server.ts",
       },
     });
-    const fileRoutes = requireFileRoutes(baseConfig.fileRoutes);
+    const routing = requireRouting(baseConfig.routing);
     const config = {
       ...baseConfig,
-      fileRoutes: {
-        ...fileRoutes,
+      routing: {
+        ...routing,
         entry: "./src/main.ts",
         routes: [
           {
@@ -637,11 +637,11 @@ describe("webpackAdapter build", () => {
       entry: "./src/main.ts",
       routing: true,
     });
-    const fileRoutes = requireFileRoutes(baseConfig.fileRoutes);
+    const routing = requireRouting(baseConfig.routing);
     const config = {
       ...baseConfig,
-      fileRoutes: {
-        ...fileRoutes,
+      routing: {
+        ...routing,
         entry: "./src/main.ts",
         routes: [
           {

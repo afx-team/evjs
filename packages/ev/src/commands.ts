@@ -18,7 +18,7 @@ import {
   createAppGraph,
   createBuildPlan,
   diffBuildPlan,
-  discoverFileRoutes,
+  discoverPageRoutes,
   generateHtml,
 } from "./build-tools/index.js";
 import type {
@@ -103,17 +103,17 @@ function withActiveBundler<TBundlerCfg>(
   };
 }
 
-async function withFileRouteDefaults<TBundlerCfg>(
+async function withPageRoutingDefaults<TBundlerCfg>(
   config: ResolvedConfig<TBundlerCfg>,
   userConfig: Config<TBundlerCfg> | undefined,
   cwd: string,
 ): Promise<ResolvedConfig<TBundlerCfg>> {
-  const fileRoutesOption = readRoutingConfig(userConfig);
-  if (fileRoutesOption === false) {
-    return { ...config, fileRoutes: undefined };
+  const routingOption = readRoutingConfig(userConfig);
+  if (routingOption === false) {
+    return { ...config, routing: undefined };
   }
 
-  const requested = fileRoutesOption !== undefined;
+  const requested = routingOption !== undefined;
   if ((config.pages || config.app || config.remote) && requested) {
     throw new Error(
       "[evjs] routing cannot be combined with app, pages, or remote configuration.",
@@ -121,15 +121,15 @@ async function withFileRouteDefaults<TBundlerCfg>(
   }
   if (config.pages || config.app || config.remote) return config;
 
-  const base = config.fileRoutes ?? {
-    mode: CONFIG_DEFAULTS.fileRoutesMode,
-    dir: CONFIG_DEFAULTS.fileRoutesDir,
+  const base = config.routing ?? {
+    mode: CONFIG_DEFAULTS.routingMode,
+    dir: CONFIG_DEFAULTS.routingDir,
     html: config.html,
     mount: CONFIG_DEFAULTS.mount,
     routes: [],
   };
-  const discovery = await discoverFileRoutes(cwd, { dir: base.dir });
-  reportFileRouteDiagnostics(discovery.diagnostics);
+  const discovery = await discoverPageRoutes(cwd, { dir: base.dir });
+  reportPageRouteDiagnostics(discovery.diagnostics);
 
   if (discovery.routes.length === 0) {
     if (!requested) return config;
@@ -143,7 +143,7 @@ async function withFileRouteDefaults<TBundlerCfg>(
     ...config,
     ...(entry ? { entry } : {}),
     html: base.html,
-    fileRoutes: {
+    routing: {
       ...base,
       ...(entry ? { entry } : {}),
       routes: discovery.routes,
@@ -161,7 +161,7 @@ function readRoutingConfig<TBundlerCfg>(
 }
 
 function createPagesEntryImport(
-  routes: NonNullable<ResolvedConfig["fileRoutes"]>["routes"],
+  routes: NonNullable<ResolvedConfig["routing"]>["routes"],
 ): string {
   const entry = routes[0]?.module;
   if (!entry) {
@@ -170,7 +170,7 @@ function createPagesEntryImport(
   return entry;
 }
 
-function reportFileRouteDiagnostics(
+function reportPageRouteDiagnostics(
   diagnostics: Array<{
     level: "warning" | "error";
     message: string;
@@ -1047,7 +1047,7 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
     command: "dev",
     cwd,
   });
-  const rawResolvedConfig = await withFileRouteDefaults(
+  const rawResolvedConfig = await withPageRoutingDefaults(
     resolveConfig(configuredConfig),
     configuredConfig,
     cwd,
@@ -1205,7 +1205,7 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
       command: "dev",
       cwd,
     });
-    const nextRawResolvedConfig = await withFileRouteDefaults(
+    const nextRawResolvedConfig = await withPageRoutingDefaults(
       resolveConfig(nextConfiguredConfig),
       nextConfiguredConfig,
       cwd,
@@ -1411,7 +1411,7 @@ export async function build<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
     command: "build",
     cwd,
   });
-  const rawResolvedConfig = await withFileRouteDefaults(
+  const rawResolvedConfig = await withPageRoutingDefaults(
     resolveConfig(configuredConfig),
     configuredConfig,
     cwd,

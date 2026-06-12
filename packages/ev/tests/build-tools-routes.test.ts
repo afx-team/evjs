@@ -64,7 +64,7 @@ describe("resolveRoutes", () => {
     expect(result).toEqual([{ path: "/orphan" }]);
   });
 
-  it("resolves nested file route paths", () => {
+  it("resolves nested page route paths", () => {
     const result = resolveRoutes([
       { path: "/", id: "index", module: "./src/pages/index.tsx" },
       { path: "/posts", id: "posts", module: "./src/pages/posts/index.tsx" },

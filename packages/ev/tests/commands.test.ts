@@ -408,7 +408,7 @@ describe("build", () => {
     ]);
   });
 
-  it("fails on file route discovery errors before running the bundler", async () => {
+  it("fails on page route discovery errors before running the bundler", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages/users"), {
       recursive: true,
@@ -484,6 +484,41 @@ describe("build", () => {
       ),
     ).rejects.toThrow(
       "Root layout files must live at ./src/layout.tsx, not inside the page route directory.",
+    );
+    expect(events).not.toContain("bundler.build");
+  });
+
+  it("fails when the root layout uses a directory alias", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/layout"), { recursive: true });
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/layout/index.tsx"),
+      "export default function Layout() { return null; }",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/index.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+
+    await expect(
+      build(
+        {
+          server: false,
+          routing: true,
+        },
+        {
+          cwd,
+          bundler,
+        },
+      ),
+    ).rejects.toThrow(
+      "Root layout must be a single file at ./src/layout.tsx. ./src/layout/index.tsx is not supported.",
     );
     expect(events).not.toContain("bundler.build");
   });

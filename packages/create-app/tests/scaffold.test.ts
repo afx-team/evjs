@@ -53,7 +53,7 @@ describe("create-app scaffolding", () => {
       ).toBe(true);
 
       const pagesDir = path.join(templateDir, "src", "pages");
-      const hasFileRoutes =
+      const hasPageRoutes =
         fs.existsSync(pagesDir) &&
         fs
           .readdirSync(pagesDir, { recursive: true })
@@ -65,7 +65,7 @@ describe("create-app scaffolding", () => {
           );
 
       expect(
-        hasFileRoutes,
+        hasPageRoutes,
         `${template} should have at least one source page route`,
       ).toBe(true);
     }

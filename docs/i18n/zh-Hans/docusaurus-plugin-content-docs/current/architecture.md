@@ -268,7 +268,7 @@ PPR、RSC、server functions 或 server routes，除非同时接入具备服务�
 框架级声明变化和普通 HMR 分开处理：
 
 ```txt
-config / file route / server declaration change
+config / page route / server declaration change
   -> recreate AppGraph
   -> recreate BuildPlan
   -> diff BuildPlan

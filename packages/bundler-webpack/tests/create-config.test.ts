@@ -51,7 +51,7 @@ function createResolvedConfig(): ResolvedConfig<WebpackConfig> {
   return {
     entry: "./src/pages/index.tsx",
     html: "./index.html",
-    fileRoutes: {
+    routing: {
       mode: "spa",
       dir: "./src/pages",
       entry: "./src/pages/index.tsx",

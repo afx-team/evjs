@@ -4,9 +4,9 @@ import type {
   BuildPlan,
   BuildPlanUpdate,
   ComponentModel,
-  FileRouteNode,
   HtmlPlan,
   HydrationMode,
+  PageRouteNode,
   PprConfig,
   PrerenderConfig,
   RenderMode,
@@ -46,13 +46,13 @@ export interface BuildPlanConfig {
         mount?: string;
       }
   >;
-  fileRoutes?: {
+  routing?: {
     mode: "spa" | "mpa";
     dir: string;
     entry?: string;
     html: string;
     mount: string;
-    routes: FileRouteNode[];
+    routes: PageRouteNode[];
     rootModule?: string;
   };
   transport?: {
@@ -170,15 +170,14 @@ function createEntries(
       runtime: "browser",
       kind: "app-client",
       owner: { appId: app.id },
-      ...(config.fileRoutes?.mode === "spa" &&
-      config.fileRoutes.entry === app.entry
+      ...(config.routing?.mode === "spa" && config.routing.entry === app.entry
         ? {
             metadata: {
               type: "pages-app",
-              routes: config.fileRoutes.routes.map((route) => ({ ...route })),
-              mount: config.fileRoutes.mount,
-              ...(config.fileRoutes.rootModule
-                ? { rootModule: config.fileRoutes.rootModule }
+              routes: config.routing.routes.map((route) => ({ ...route })),
+              mount: config.routing.mount,
+              ...(config.routing.rootModule
+                ? { rootModule: config.routing.rootModule }
                 : {}),
             },
           }

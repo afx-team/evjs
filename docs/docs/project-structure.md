@@ -181,7 +181,7 @@ Remote modules can default-export React components. Explicit `mount`,
 
 ## Naming Guidance
 
-- `pages/` is the file-route source folder and can include SSR/PPR/RSC components.
+- `pages/` is the page route source folder and can include SSR/PPR/RSC components.
 - `api/` is the server boundary.
 - `features/` owns business domains.
 - `components/` owns generic UI.

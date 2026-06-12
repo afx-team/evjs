@@ -3,12 +3,6 @@
  */
 
 export type {
-  DiscoverFileRoutesOptions,
-  FileRouteDiscovery,
-  FileRouteDiscoveryDiagnostic,
-} from "./file-routes.js";
-export { discoverFileRoutes } from "./file-routes.js";
-export type {
   Diagnostic,
   GraphAnalysisResult,
   GraphConfig,
@@ -16,6 +10,12 @@ export type {
 export { createAppGraph } from "./graph/index.js";
 export type { GenerateHtmlOptions, HtmlAsset } from "./html.js";
 export { generateHtml } from "./html.js";
+export type {
+  DiscoverPageRoutesOptions,
+  PageRouteDiscovery,
+  PageRouteDiscoveryDiagnostic,
+} from "./page-routes.js";
+export { discoverPageRoutes } from "./page-routes.js";
 export type {
   BuildPlanConfig,
   CreateBuildPlanOptions,

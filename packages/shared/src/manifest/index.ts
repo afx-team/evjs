@@ -214,12 +214,12 @@ export interface RemoteClientEntryMetadata {
 
 export interface PagesAppEntryMetadata {
   type: "pages-app";
-  routes: FileRouteNode[];
+  routes: PageRouteNode[];
   mount: string;
   rootModule?: string;
 }
 
-export interface FileRouteNode {
+export interface PageRouteNode {
   id: string;
   path: string;
   module: string;
