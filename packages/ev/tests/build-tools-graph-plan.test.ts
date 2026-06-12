@@ -484,6 +484,57 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
   });
 
+  it("reports unsupported page hydration and prerender metadata", async () => {
+    const cwd = await createFixture({
+      "src/pages/campaign.tsx": `
+        export const render = "ssr";
+        export const hydrate = "hover";
+        export const prerender = {
+          partial: "yes",
+          delivery: "flush",
+          revalidate: "60",
+        } as const;
+        export default function Campaign() { return null; }
+      `,
+      "index.html": '<div id="app"></div>',
+    });
+    const config = createConfig({
+      pages: {
+        campaign: {
+          path: "/campaign",
+          component: "./src/pages/campaign.tsx",
+          html: "./index.html",
+        },
+      },
+    });
+
+    const analysis = await createAppGraph(config, cwd);
+
+    expect(analysis.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/pages/campaign.tsx",
+        message:
+          'Page hydrate must be one of "none", "load", "visible", or "idle".',
+      },
+      {
+        level: "error",
+        file: "src/pages/campaign.tsx",
+        message: "Page prerender.partial must be a boolean literal.",
+      },
+      {
+        level: "error",
+        file: "src/pages/campaign.tsx",
+        message: 'Page prerender.delivery must be "merge" or "stream".',
+      },
+      {
+        level: "error",
+        file: "src/pages/campaign.tsx",
+        message: "Page prerender.revalidate must be a number or false.",
+      },
+    ]);
+  });
+
   it("does not create a client runtime entry for static non-hydrated component pages", async () => {
     const cwd = await createFixture({
       "src/pages/pricing.tsx": `

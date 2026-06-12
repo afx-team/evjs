@@ -34,13 +34,19 @@ export function analyzePageModuleConfig(
   const diagnostics: PageModuleConfigDiagnostic[] = [];
 
   for (const item of ast.body) {
-    const render = getExportedStringLiteral(item, "render");
-    if (isRenderMode(render)) {
-      config.render = render;
+    const render = getExportedValue(item, "render");
+    if (render?.type === "StringLiteral" && isRenderMode(render.value)) {
+      config.render = render.value;
+    } else if (render?.type === "StringLiteral") {
+      diagnostics.push({
+        level: "error",
+        message: createInvalidRenderDiagnostic(render.value),
+      });
     } else if (render !== undefined) {
       diagnostics.push({
         level: "error",
-        message: createInvalidRenderDiagnostic(render),
+        message:
+          'Page render must be a string literal: "csr", "ssr", or "ssg".',
       });
     }
 
@@ -49,16 +55,30 @@ export function analyzePageModuleConfig(
       config.componentModel = "rsc";
     }
 
-    const hydrate = getExportedStringLiteral(item, "hydrate");
-    if (isHydrationMode(hydrate)) config.hydrate = hydrate;
+    const hydrate = getExportedValue(item, "hydrate");
+    if (hydrate?.type === "StringLiteral" && isHydrationMode(hydrate.value)) {
+      config.hydrate = hydrate.value;
+    } else if (hydrate !== undefined) {
+      diagnostics.push({
+        level: "error",
+        message:
+          'Page hydrate must be one of "none", "load", "visible", or "idle".',
+      });
+    }
 
-    const prerender = unwrapTypeScriptExpression(
-      getExportedVariableDeclaration(item, "prerender"),
-    );
+    const prerender = getExportedValue(item, "prerender");
     if (prerender?.type === "BooleanLiteral" && prerender.value === true) {
       config.prerender = true;
     } else if (prerender?.type === "ObjectExpression") {
-      config.prerender = getPagePrerenderConfig(prerender);
+      config.prerender = getPagePrerenderConfig(prerender, diagnostics);
+    } else if (
+      prerender !== undefined &&
+      !(prerender.type === "BooleanLiteral" && prerender.value === false)
+    ) {
+      diagnostics.push({
+        level: "error",
+        message: "Page prerender must be true or an object literal.",
+      });
     }
   }
 
@@ -76,16 +96,6 @@ function createInvalidRenderDiagnostic(value: string): string {
   return `Unsupported page render mode "${value}". Expected "csr", "ssr", or "ssg".`;
 }
 
-function getExportedStringLiteral(
-  item: ModuleItem,
-  name: string,
-): string | undefined {
-  const expression = unwrapTypeScriptExpression(
-    getExportedVariableDeclaration(item, name),
-  );
-  return expression?.type === "StringLiteral" ? expression.value : undefined;
-}
-
 function getExportedBooleanLiteral(
   item: ModuleItem,
   name: string,
@@ -94,6 +104,13 @@ function getExportedBooleanLiteral(
     getExportedVariableDeclaration(item, name),
   );
   return expression?.type === "BooleanLiteral" ? expression.value : undefined;
+}
+
+function getExportedValue(
+  item: ModuleItem,
+  name: string,
+): Expression | undefined {
+  return unwrapTypeScriptExpression(getExportedVariableDeclaration(item, name));
 }
 
 function getExportedVariableDeclaration(
@@ -129,56 +146,56 @@ function unwrapTypeScriptExpression(
 
 function getPagePrerenderConfig(
   expression: ObjectExpression,
+  diagnostics: PageModuleConfigDiagnostic[],
 ): PrerenderConfig | undefined {
-  const partial = getBooleanObjectProperty(expression, "partial");
-  const delivery = getStringObjectProperty(expression, "delivery");
-  const revalidate = getRevalidateObjectProperty(expression);
-
   const config: Exclude<PrerenderConfig, true> = {};
-  if (partial !== undefined) config.partial = partial;
-  if (delivery === "merge" || delivery === "stream") {
-    config.delivery = delivery;
+
+  const partial = getObjectPropertyValue(expression, "partial");
+  if (partial?.type === "BooleanLiteral") {
+    config.partial = partial.value;
+  } else if (partial !== undefined) {
+    diagnostics.push({
+      level: "error",
+      message: "Page prerender.partial must be a boolean literal.",
+    });
   }
-  if (revalidate !== undefined) {
-    config.revalidate = revalidate;
+
+  const delivery = getObjectPropertyValue(expression, "delivery");
+  if (
+    delivery?.type === "StringLiteral" &&
+    (delivery.value === "merge" || delivery.value === "stream")
+  ) {
+    config.delivery = delivery.value;
+  } else if (delivery !== undefined) {
+    diagnostics.push({
+      level: "error",
+      message: 'Page prerender.delivery must be "merge" or "stream".',
+    });
   }
+
+  const revalidate = getObjectPropertyValue(expression, "revalidate");
+  if (revalidate?.type === "BooleanLiteral" && revalidate.value === false) {
+    config.revalidate = false;
+  } else if (revalidate?.type === "NumericLiteral") {
+    config.revalidate = revalidate.value;
+  } else if (revalidate !== undefined) {
+    diagnostics.push({
+      level: "error",
+      message: "Page prerender.revalidate must be a number or false.",
+    });
+  }
+
   return Object.keys(config).length > 0 ? config : undefined;
 }
 
-function getStringObjectProperty(
+function getObjectPropertyValue(
   expression: ObjectExpression,
   name: string,
-): string | undefined {
+): Expression | undefined {
   for (const prop of expression.properties) {
     if (prop.type !== "KeyValueProperty") continue;
     if (getPropertyName(prop) !== name) continue;
-    return prop.value.type === "StringLiteral" ? prop.value.value : undefined;
-  }
-  return undefined;
-}
-
-function getBooleanObjectProperty(
-  expression: ObjectExpression,
-  name: string,
-): boolean | undefined {
-  for (const prop of expression.properties) {
-    if (prop.type !== "KeyValueProperty") continue;
-    if (getPropertyName(prop) !== name) continue;
-    return prop.value.type === "BooleanLiteral" ? prop.value.value : undefined;
-  }
-  return undefined;
-}
-
-function getRevalidateObjectProperty(
-  expression: ObjectExpression,
-): number | false | undefined {
-  for (const prop of expression.properties) {
-    if (prop.type !== "KeyValueProperty") continue;
-    if (getPropertyName(prop) !== "revalidate") continue;
-    if (prop.value.type === "BooleanLiteral" && prop.value.value === false) {
-      return false;
-    }
-    return prop.value.type === "NumericLiteral" ? prop.value.value : undefined;
+    return unwrapTypeScriptExpression(prop.value);
   }
   return undefined;
 }
