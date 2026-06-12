@@ -22,6 +22,11 @@ describe("page route hooks", () => {
     expect("createReactPageModule" in client).toBe(false);
     expect("mountReactPage" in client).toBe(false);
     expect("createRemoteReactModule" in client).toBe(false);
+    expect("createShell" in client).toBe(false);
+    expect("createPageDriver" in client).toBe(false);
+    expect("createHistoryDriver" in client).toBe(false);
+    expect("registerSharedDependency" in client).toBe(false);
+    expect("loadSharedDependency" in client).toBe(false);
     expect("registerShellModule" in client).toBe(false);
   });
 });

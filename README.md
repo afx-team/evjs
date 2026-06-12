@@ -45,7 +45,7 @@ config needed.
 | [`@evjs/ev`](./packages/ev) | Framework API, config, plugins, and build orchestration (`defineConfig`, `dev`, `build`) |
 | [`@evjs/cli`](./packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`) with the default bundler |
 | [`@evjs/create-app`](./packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
-| [`@evjs/client`](./packages/client) | Browser runtime, server-function transport, page runtime, shell exports, page hooks, and navigation helpers |
+| [`@evjs/client`](./packages/client) | Browser runtime, server-function transport, page hooks, navigation helpers, and remote host helpers |
 | [`@evjs/server`](./packages/server) | Hono/fetch server runtime, server functions, routes, SSR/PPR/RSC request boundary |
 | [`examples/`](./examples) | Starter templates |
 

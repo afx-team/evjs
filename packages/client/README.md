@@ -85,9 +85,9 @@ function Posts() {
 - `initTransport({ adapter })`: Replace transport behavior with a custom adapter.
 
 ### Runtime
-- `createShell()`, `createPageDriver()`, and `createHistoryDriver()`: Manifest-driven shell APIs.
 - `startPageRuntime()`: Generic framework-managed page runtime.
-- Generated component-page and remote bootstrap APIs are framework-owned and imported through `@evjs/client/internal`.
+- Manifest shell primitives such as `createShell()`, `createPageDriver()`, and `createHistoryDriver()` are framework-owned and imported through `@evjs/client/internal`.
+- Generated component-page and remote bootstrap APIs are also framework-owned and imported through `@evjs/client/internal`.
 
 Application-facing client runtime APIs are exported from `@evjs/client`.
 

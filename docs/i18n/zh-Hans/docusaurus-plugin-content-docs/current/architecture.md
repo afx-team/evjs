@@ -18,8 +18,8 @@ src/pages + ev.config.ts + server declarations
   配置、插件生命周期、dev/build 编排、框架构建类型
 
 @evjs/client
-  浏览器 runtime、服务端函数 transport、page runtime、shell 导出、page hooks
-  和导航 helpers
+  浏览器 runtime、服务端函数 transport、page hooks、导航 helpers
+  和 remote host helpers
 
 @evjs/server
   Hono/fetch app、服务端函数、服务端路由、SSR/PPR/RSC 请求边界
@@ -93,14 +93,14 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant Browser
-  participant Shell as "@evjs/client"
+  participant Shell as "@evjs/client/internal"
   participant Runtime as "@evjs/client"
   participant Server as "@evjs/server"
   participant Manifest as "BuildOutput"
 
   Browser->>Runtime: page/app boot
   Runtime->>Manifest: load embedded or /manifest.json
-  Runtime->>Shell: createShell({ manifest, drivers })
+  Runtime->>Shell: create internal shell
   Shell->>Manifest: resolve app/page/remote target
   Shell->>Shell: negotiate remote shared scope
   Shell->>Browser: import JS/CSS module assets

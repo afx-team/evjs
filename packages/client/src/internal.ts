@@ -28,5 +28,33 @@ export {
   createRemoteRuntimeContext,
   mountReactPage,
 } from "./react.js";
-export type { ShellModuleRegistration } from "./shell.js";
-export { registerShellModule } from "./shell.js";
+export type {
+  ActivationRequest,
+  AppContext,
+  AppModule,
+  HistoryDriver,
+  HistoryDriverOptions,
+  PageDriver,
+  PageDriverOptions,
+  RemoteManifestLoadContext,
+  RemoteSharedDependenciesWarning,
+  RemoteSharedNegotiationContext,
+  RemoteSharedResolution,
+  SharedScope,
+  SharedScopeEntry,
+  Shell,
+  ShellDriver,
+  ShellErrorContext,
+  ShellModuleRegistration,
+  ShellOptions,
+  ShellWarningContext,
+} from "./shell.js";
+export {
+  createActivationRequestFromUrl,
+  createHistoryDriver,
+  createPageDriver,
+  createShell,
+  loadSharedDependency,
+  registerSharedDependency,
+  registerShellModule,
+} from "./shell.js";

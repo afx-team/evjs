@@ -20,8 +20,8 @@ src/pages + ev.config.ts + server declarations
   config, plugin lifecycle, dev/build orchestration, framework build types
 
 @evjs/client
-  browser runtime, server-function transport, page runtime, shell exports,
-  page hooks, and navigation helpers
+  browser runtime, server-function transport, page hooks, navigation helpers,
+  and remote host helpers
 
 @evjs/server
   Hono/fetch app, server functions, server routes, SSR/PPR/RSC request boundary
@@ -95,14 +95,14 @@ route trees directly.
 ```mermaid
 sequenceDiagram
   participant Browser
-  participant Shell as "@evjs/client"
+  participant Shell as "@evjs/client/internal"
   participant Runtime as "@evjs/client"
   participant Server as "@evjs/server"
   participant Manifest as "BuildOutput"
 
   Browser->>Runtime: page/app boot
   Runtime->>Manifest: load embedded or /manifest.json
-  Runtime->>Shell: createShell({ manifest, drivers })
+  Runtime->>Shell: create internal shell
   Shell->>Manifest: resolve app/page/remote target
   Shell->>Shell: negotiate remote shared scope
   Shell->>Browser: import JS/CSS module assets

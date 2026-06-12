@@ -112,35 +112,6 @@ export {
   unmountReactRscPage,
 } from "./rsc.js";
 export type {
-  ActivationRequest,
-  AppContext,
-  AppModule,
-  HistoryDriver,
-  HistoryDriverOptions,
-  PageDriver,
-  PageDriverOptions,
-  RemoteManifestLoadContext,
-  RemoteSharedDependenciesWarning,
-  RemoteSharedNegotiationContext,
-  RemoteSharedResolution,
-  SharedScope,
-  SharedScopeEntry,
-  Shell,
-  ShellDriver,
-  ShellErrorContext,
-  ShellModuleRegistration,
-  ShellOptions,
-  ShellWarningContext,
-} from "./shell.js";
-export {
-  createActivationRequestFromUrl,
-  createHistoryDriver,
-  createPageDriver,
-  createShell,
-  loadSharedDependency,
-  registerSharedDependency,
-} from "./shell.js";
-export type {
   HeaderFactory,
   RequestContext,
   ServerFunction,

@@ -97,7 +97,7 @@ export default defineConfig({
 | [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | 框架 API、配置、插件和构建编排 (`defineConfig`, `dev`, `build`) |
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | 注入默认构建器的轻量 CLI 包装 (`ev dev`, `ev build`) |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | 项目脚手架 (`npx @evjs/create-app`) |
-| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | 浏览器运行时、transport、page runtime、shell 导出和页面工具 |
+| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | 浏览器运行时、transport、page hooks、导航 helpers 和 remote host helpers |
 | [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Hono/fetch 服务端运行时、服务端函数、路由和 SSR/PPR/RSC 请求处理 |
 
 Manifest schema、build tools、page runtime 和 shell 内部实现都位于上述公开包中。
