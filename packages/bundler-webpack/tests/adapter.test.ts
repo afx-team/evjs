@@ -498,7 +498,7 @@ describe("webpackAdapter build", () => {
 
         export default { fetch: app.fetch };
       `,
-      "src/pages/Dashboard.ts": `
+      "src/pages/Dashboard !page 中文.ts": `
         export const render = "ssr";
         export const hydrate = "load";
 
@@ -524,7 +524,7 @@ describe("webpackAdapter build", () => {
           {
             id: "dashboard",
             path: "/dashboard",
-            module: "./src/pages/Dashboard.ts",
+            module: "./src/pages/Dashboard !page 中文.ts",
           },
         ],
       },
@@ -582,7 +582,7 @@ describe("webpackAdapter build", () => {
         js: [],
         css: [],
       },
-      component: "./src/pages/Dashboard.ts",
+      component: "./src/pages/Dashboard !page 中文.ts",
       hydrate: "load",
       render: "ssr",
       routeId: "dashboard",
@@ -592,7 +592,7 @@ describe("webpackAdapter build", () => {
       path: "/dashboard",
       appId: "default",
       pageId: "dashboard",
-      module: "./src/pages/Dashboard.ts",
+      module: "./src/pages/Dashboard !page 中文.ts",
       render: "ssr",
       hydrate: "load",
     });

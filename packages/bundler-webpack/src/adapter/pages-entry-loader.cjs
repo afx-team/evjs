@@ -1,4 +1,5 @@
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 
 module.exports = function pagesEntryLoader() {
   this.cacheable?.();
@@ -16,11 +17,11 @@ function createPagesEntrySource(options, loaderContext) {
   const imports = [
     `import { createPagesApp } from "@evjs/client/internal";`,
     rootModule
-      ? `import * as rootModule from ${JSON.stringify(withPageQuery(toLoaderRelativeRequest(rootModule, loaderContext)))};`
+      ? `import * as rootModule from ${JSON.stringify(withPageQuery(toLoaderModuleRequest(rootModule, loaderContext)))};`
       : "",
     ...routes.map(
       (route, index) =>
-        `import * as routeModule${index} from ${JSON.stringify(withPageQuery(toLoaderRelativeRequest(route.module, loaderContext)))};`,
+        `import * as routeModule${index} from ${JSON.stringify(withPageQuery(toLoaderModuleRequest(route.module, loaderContext)))};`,
     ),
   ].filter(Boolean);
 
@@ -44,15 +45,17 @@ function createPagesEntrySource(options, loaderContext) {
 }
 
 function withPageQuery(specifier) {
-  return `${specifier}?evjs-page-route`;
+  return `${specifier}${specifier.includes("?") ? "&" : "?"}evjs-page-route`;
 }
 
-function toLoaderRelativeRequest(specifier, loaderContext) {
-  if (!specifier.startsWith(".")) return specifier;
+function toLoaderModuleRequest(specifier, loaderContext) {
+  if (!specifier.startsWith(".") && !path.isAbsolute(specifier)) {
+    return specifier;
+  }
+
   const rootContext = loaderContext.rootContext || process.cwd();
-  const fromDir = path.dirname(loaderContext.resourcePath);
-  const absolute = path.resolve(rootContext, specifier);
-  let relative = path.relative(fromDir, absolute).replaceAll("\\", "/");
-  if (!relative.startsWith(".")) relative = `./${relative}`;
-  return relative;
+  const absolute = path.isAbsolute(specifier)
+    ? specifier
+    : path.resolve(rootContext, specifier);
+  return pathToFileURL(absolute).href.replace(/!/g, "%21");
 }
