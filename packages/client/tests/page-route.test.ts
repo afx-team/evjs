@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
+import * as client from "../src/index";
 import {
-  createPagesApp,
   usePageContext,
   usePageLoaderData,
   usePageParams,
   usePageSearch,
 } from "../src/index";
+import { createPagesApp } from "../src/internal";
 
 describe("page route hooks", () => {
   it("exports framework-managed route data hooks", () => {
@@ -13,6 +14,11 @@ describe("page route hooks", () => {
     expect(usePageParams).toBeTypeOf("function");
     expect(usePageSearch).toBeTypeOf("function");
     expect(usePageLoaderData).toBeTypeOf("function");
+  });
+
+  it("does not expose generated SPA bootstrap APIs from the public client entry", () => {
+    expect("createPagesApp" in client).toBe(false);
+    expect("PageProvider" in client).toBe(false);
   });
 });
 

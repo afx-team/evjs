@@ -5,11 +5,11 @@
 ## Features
 
 - **Page Hooks** — `usePageParams()`, `usePageSearch()`, and `usePageLoaderData()` expose framework-managed route data while evjs owns route discovery.
-- **SPA Navigation** — SPA pages use [TanStack Router](https://tanstack.com/router) internally while page code uses evjs page hooks and navigation helpers.
-- **Router-Free Pages** — MPA and framework-managed pages use the page runtime without adding TanStack Router.
+- **SPA Navigation** — SPA pages use evjs page hooks and navigation helpers while the framework owns route discovery and app bootstrap.
+- **Router-Free Pages** — MPA and framework-managed pages use the page runtime without adding a client router.
 - **Data Fetching** — Re-exports [TanStack Query](https://tanstack.com/query) with built-in server function proxies.
 - **Server Function Support** — `useQuery(fn)` and `useMutation(fn)` for zero-boilerplate RPC.
-- **Single Client Entry Point** — Shell, page runtime, React page runtime, transport, page hooks, and navigation helpers are exported from `@evjs/client`.
+- **Focused Client Entry Point** — Application code imports transport, page hooks, navigation helpers, and remote helpers from `@evjs/client`; generated framework bootstrap uses `@evjs/client/internal`.
 
 ## Install
 

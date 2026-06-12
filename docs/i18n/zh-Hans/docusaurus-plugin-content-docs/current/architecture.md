@@ -36,7 +36,7 @@ src/pages + ev.config.ts + server declarations
 
 @evjs/client 内部模块
   framework-managed runtime、shell、page runtime、transport、RSC client runtime
-  和 TanStack Router 集成，统一通过顶层 client 入口导出
+  TanStack Router 集成和 generated bootstrap，通过 @evjs/client/internal 承载
 
 @evjs/bundler-utoopack
   @evjs/cli 使用的默认 bundler adapter
@@ -49,9 +49,9 @@ src/pages + ev.config.ts + server declarations
 `@evjs/ev/build-tools` 不 import bundler adapter。Bundler adapter 消费 `BuildPlan`，不会在 bundling 之后重新扫描源码来发现框架语义。
 
 SPA 文件路由在框架内部使用 TanStack Router；应用页面只写 `src/pages`、
-page hooks 和导航 helper，不需要创建 route tree。MPA 文件路由和显式 pages 使用
-page runtime，不引入客户端路由器。高级 TanStack helper 仍从顶层 `@evjs/client`
-导出，用于手动路由场景。
+page hooks 和导航 helper，不需要创建 route tree。Generated bootstrap 通过
+`@evjs/client/internal` 承载。MPA 文件路由和显式 pages 使用 page runtime，
+不引入客户端路由器。高级 TanStack helper 仍从顶层 `@evjs/client` 导出，用于手动路由场景。
 
 ## 构建流程
 

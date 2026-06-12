@@ -77,7 +77,7 @@ export function usePageLoaderData<TLoaderData = unknown>(): TLoaderData {
   >().loaderData;
 }
 
-/** @internal Framework-generated SPA bootstrap contract. */
+/** Framework-generated SPA bootstrap contract. */
 export interface PageModule {
   default?: PageComponent;
   beforeLoad?: (...args: never[]) => unknown;
@@ -88,30 +88,30 @@ export interface PageModule {
   notFoundComponent?: ComponentType;
 }
 
-/** @internal Framework-generated SPA bootstrap contract. */
+/** Framework-generated SPA bootstrap contract. */
 export interface RootLayoutModule {
   default?: ComponentType<{ children?: ReactNode }>;
 }
 
-/** @internal Framework-generated SPA bootstrap contract. */
+/** Framework-generated SPA bootstrap contract. */
 export interface PageDefinition {
   path: string;
   module: PageModule;
 }
 
-/** @internal Framework-generated SPA bootstrap contract. */
+/** Framework-generated SPA bootstrap contract. */
 export interface CreatePagesAppOptions {
   routes: PageDefinition[];
   rootModule?: RootLayoutModule;
 }
 
-/** @internal Framework-generated SPA bootstrap contract. */
+/** Framework-generated SPA bootstrap contract. */
 export interface PagesApp {
   app: App<unknown>;
   routeTree: unknown;
 }
 
-/** @internal Framework-generated SPA bootstrap. */
+/** Framework-generated SPA bootstrap. */
 export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
   function RootRoute() {
     const outlet = createElement(Outlet);

@@ -5,7 +5,7 @@
 [![DeepWiki](https://img.shields.io/badge/DeepWiki-evaijs%2Fevjs-blue?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTQgMTkuNXYtMTVBMi41IDIuNSAwIDAgMSA2LjUgMkgxOXYyMEg2LjVhMi41IDIuNSAwIDAgMS0yLjUtMi41eiIvPjxwYXRoIGQ9Ik04IDdoOCIvPjxwYXRoIGQ9Ik04IDExaDgiLz48cGF0aCBkPSJNOCAxNWg1Ii8+PC9zdmc+)](https://deepwiki.com/evaijs/evjs)
 [![Vibe Coding](https://img.shields.io/badge/vibe-coding-ff69b4?style=flat-square)](https://en.wikipedia.org/wiki/Vibe_coding)
 
-React fullstack framework with page-based routing, TanStack-powered SPA mode, router-free MPA mode, and a Hono server runtime.
+React fullstack framework with file-based SPA routes, router-free MPA pages, server functions, and a Hono server runtime.
 
 > **ev** = **Ev**aluation · **Ev**olution — evaluate across runtimes, evolve with AI tooling.
 
@@ -14,7 +14,7 @@ React fullstack framework with page-based routing, TanStack-powered SPA mode, ro
 
 - **Convention over Configuration** — `ev dev` / `ev build`, no boilerplate needed.
 - **Page Routes** — `src/pages` is the client route source of truth.
-- **SPA and MPA Modes** — SPA uses [TanStack Router](https://tanstack.com/router) internally; MPA emits independent router-free pages.
+- **SPA and MPA Modes** — SPA is generated from `src/pages` with typed page hooks; MPA emits independent router-free pages.
 - **Data Fetching** — [TanStack Query](https://tanstack.com/query) with built-in proxies.
 - **Server Functions** — `"use server"` directive, auto-discovered at build time.
 - **Pluggable Transport** — HTTP, WebSocket, or custom via `ServerTransport`.

@@ -39,7 +39,7 @@ src/pages + ev.config.ts + server declarations
 
 @evjs/client internal modules
   framework-managed runtime, shell, page runtime, transport, RSC client runtime,
-  and TanStack Router integration behind the single public client entry
+  TanStack Router integration, and generated bootstrap behind @evjs/client/internal
 
 @evjs/bundler-utoopack
   default bundler adapter used by @evjs/cli
