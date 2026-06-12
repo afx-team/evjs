@@ -168,6 +168,21 @@ describe("createRoute", () => {
     expect(await res.json()).toEqual(["a", "b"]);
   });
 
+  it("rejects legacy route option names (type check)", async () => {
+    const items = createRoute("/items", {
+      GET: async () => Response.json(["a", "b"]),
+    });
+
+    // @ts-expect-error - route handlers mount via routes, not routeHandlers
+    createApp({ routeHandlers: [items] });
+
+    createRoute("/api/private", {
+      // @ts-expect-error - per-route middleware uses middlewares, not middleware
+      middleware: [],
+      GET: async () => Response.json({ ok: true }),
+    });
+  });
+
   it("middleware can perform async work before proceeding", async () => {
     const handler = createRoute("/api/items", {
       middlewares: [

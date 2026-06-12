@@ -66,12 +66,12 @@ export interface RouteHandler {
  *
  * @param path - URL path pattern (uses Hono's path syntax, e.g. `/api/users/:id`).
  * @param definition - HTTP method handlers and optional middleware.
- * @returns A `RouteHandler` that can be mounted via `createApp({ routeHandlers })`.
+ * @returns A `RouteHandler` that can be mounted via `createApp({ routes })`.
  *
  * @example
  * ```ts
  * const handler = createRoute("/api/users/:id", {
- *   middleware: [authMiddleware],
+ *   middlewares: [authMiddleware],
  *   GET: async (req, ctx) => {
  *     const { id } = ctx.req.param();
  *     const user = await db.getUser(id);
