@@ -125,11 +125,4 @@ export type {
   TransportAdapter,
   TransportOptions,
 } from "./transport.js";
-export {
-  callServer,
-  createServerReference,
-  getFnId,
-  getFnName,
-  initTransport,
-  initTransportFromManifest,
-} from "./transport.js";
+export { initTransport } from "./transport.js";

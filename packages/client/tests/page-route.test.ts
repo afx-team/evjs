@@ -29,6 +29,11 @@ describe("page route hooks", () => {
     expect("registerSharedDependency" in client).toBe(false);
     expect("loadSharedDependency" in client).toBe(false);
     expect("registerShellModule" in client).toBe(false);
+    expect("createServerReference" in client).toBe(false);
+    expect("callServer" in client).toBe(false);
+    expect("getFnId" in client).toBe(false);
+    expect("getFnName" in client).toBe(false);
+    expect("initTransportFromManifest" in client).toBe(false);
   });
 });
 

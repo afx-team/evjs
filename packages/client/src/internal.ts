@@ -60,3 +60,10 @@ export {
   registerSharedDependency,
   registerShellModule,
 } from "./shell.js";
+export {
+  callServer,
+  createServerReference,
+  getFnId,
+  getFnName,
+  initTransportFromManifest,
+} from "./transport.js";

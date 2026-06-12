@@ -210,12 +210,12 @@ flowchart TD
     DETECT -->|Yes| SERVER["Server Transform"]
     DETECT -->|No| SKIP["Skip (normal module)"]
 
-    CLIENT --> STUBS["createServerReference() stubs"]
+    CLIENT --> STUBS["internal client reference stubs"]
     SERVER --> REGISTER["registerServerReference()"]
     SERVER --> MANIFEST["manifest.json entry"]
 ```
 
-- **Client build**: function bodies → `createServerReference()` stubs
+- **Client build**: function bodies → internal client reference stubs
 - **Server build**: original bodies preserved + `registerServerReference()` injected
 - Function IDs are stable SHA-256 hashes from `filePath + exportName`
 

@@ -55,7 +55,7 @@ Manifest linking 不会在 bundling 后重新扫描用户源码。
 
 | 端 | 行为 |
 |----|------|
-| Client | 函数体替换为 `createServerReference()` RPC stub |
+| Client | 函数体替换为内部 RPC stub |
 | Server | 函数实现注册到 `@evjs/server` dispatch |
 
 函数输出记录在 `BuildOutput.server.functions`。公开 endpoint 从 `server.basePath` 派生：

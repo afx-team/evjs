@@ -15,7 +15,7 @@ export interface TransformResult {
  * This is a pure function with no bundler dependency.
  *
  * - **Server**: keeps original source + appends `registerServerReference()` calls
- * - **Client**: replaces function bodies with `createServerReference()` transport stubs
+ * - **Client**: replaces function bodies with generated client reference stubs
  */
 export async function transformServerFile(
   source: string,

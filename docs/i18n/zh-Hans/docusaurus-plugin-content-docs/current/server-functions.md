@@ -171,7 +171,7 @@ flowchart TD
     DETECT -->|是| SERVER["服务端转换"]
     DETECT -->|否| SKIP["跳过（普通模块）"]
 
-    CLIENT --> STUBS["createServerReference() 桩代码"]
+    CLIENT --> STUBS["内部 client reference 桩代码"]
     SERVER --> REGISTER["registerServerReference()"]
     SERVER --> MANIFEST["manifest.json 条目"]
 ```

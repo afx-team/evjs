@@ -50,7 +50,7 @@ describe("transformServerFile", () => {
       expect(refCount).toBe(3); // import + getUsers + createUser
     });
 
-    it("imports createServerReference from transport module", async () => {
+    it("imports createServerReference from the internal client module", async () => {
       const result = await transformServerFile(SERVER_FILE, {
         resourcePath: FILE,
         rootContext: ROOT,

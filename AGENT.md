@@ -31,8 +31,8 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 8. Application-facing client code should import page hooks, navigation,
    transport, remote host helpers, RSC helpers, and advanced TanStack/static
    route helpers from the top-level `@evjs/client` entry. Generated page
-   bootstrap, React page mounting, and shell runtime code belong behind
-   `@evjs/client/internal`.
+   bootstrap, React page mounting, server-function stubs, and shell runtime
+   code belong behind `@evjs/client/internal`.
 9. Utoopack remains the default. Do not present webpack as the normal user path; it is the validation/fallback backend for features blocked on Utoopack APIs.
 
 ## Key APIs
@@ -45,6 +45,7 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 | `Link`, page hooks, page metadata exports | `@evjs/client` / page modules | Public page authoring API for params, search, loader data, navigation, and render metadata |
 | TanStack route helpers | `@evjs/client` | Advanced/manual routing escape hatch; not required for `src/pages` routes |
 | React page runtime | `@evjs/client/internal` | Framework-managed component page mount/hydration |
+| Server-function stubs | `@evjs/client/internal` | Generated client references and internal transport dispatch |
 | Shell runtime | `@evjs/client/internal` | Manifest-driven app/page/remote activation and shared scope negotiation |
 | RSC client runtime | `@evjs/client` | React Flight client integration |
 | `createApp({ routes, middlewares })` | `@evjs/server` | Server functions, REST routes, SSR/PPR/RSC framework requests |

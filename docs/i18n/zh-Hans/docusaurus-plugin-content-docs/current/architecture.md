@@ -222,7 +222,7 @@ PPR regions、assets 和 manifest output。
 ```txt
 "use server" module
   -> build-tools extraction
-  -> client transform creates createServerReference(fnId)
+  -> client transform creates internal client references
   -> server transform/register path
   -> BuildOutput.server.functions
   -> @evjs/server dispatches POST runtime.server.fn

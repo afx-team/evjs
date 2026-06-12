@@ -55,7 +55,7 @@ Files with `"use server"` are transformed into browser-callable references and s
 
 | Side | What happens |
 |------|-------------|
-| Client | Function bodies are replaced with `createServerReference()` RPC stubs |
+| Client | Function bodies are replaced with internal RPC stubs |
 | Server | Function implementations are registered for `@evjs/server` dispatch |
 
 Function output is recorded in `BuildOutput.server.functions`. The public endpoint is derived from `server.basePath`:

@@ -33,12 +33,10 @@ export const RUNTIME = {
   serverModule: "@evjs/server/register",
   /** Module path for the server app factory (Hono app + server function handler). */
   appModule: "@evjs/server",
-  /** Module path for client-side transport stubs. */
-  clientTransportModule: "@evjs/client/transport",
+  /** Module path for generated client-side server reference stubs. */
+  clientTransportModule: "@evjs/client/internal",
   /** Server-side function registration (RSC convention). */
   registerServerReference: "registerServerReference",
   /** Client-side server reference factory (RSC convention). */
   createServerReference: "createServerReference",
-  /** Client-side transport function for server calls. */
-  callServer: "callServer",
 } as const;

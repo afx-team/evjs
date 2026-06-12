@@ -239,7 +239,7 @@ belongs in the referenced page module, not in `ev.config.ts`.
 ```txt
 "use server" module
   -> build-tools extraction
-  -> client transform creates createServerReference(fnId)
+  -> client transform creates internal client references
   -> server transform/register path
   -> BuildOutput.server.functions
   -> @evjs/server dispatches POST runtime.server.fn

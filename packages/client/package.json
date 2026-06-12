@@ -47,11 +47,6 @@
       "types": "./esm/internal.d.ts",
       "import": "./esm/internal.js",
       "default": "./esm/internal.js"
-    },
-    "./transport": {
-      "types": "./esm/transport.d.ts",
-      "import": "./esm/transport.js",
-      "default": "./esm/transport.js"
     }
   },
   "scripts": {

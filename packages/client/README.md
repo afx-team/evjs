@@ -83,6 +83,7 @@ function Posts() {
 - `initTransport({ baseUrl, credentials, headers })`: Configure the default HTTP adapter. The server function path is derived from the framework server runtime.
 - `credentials` / `headers`: Supported HTTP defaults; fetch `mode` is intentionally not configurable.
 - `initTransport({ adapter })`: Replace transport behavior with a custom adapter.
+- Generated server-function stubs use internal transport helpers from `@evjs/client/internal`.
 
 ### Remote
 - `useRemoteHost()` and `RemoteApp`: Mount a remote app from a remote manifest.
