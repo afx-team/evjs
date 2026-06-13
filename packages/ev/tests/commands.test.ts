@@ -709,8 +709,9 @@ describe("build", () => {
       generatedRouteTypesSource,
       "utf-8",
     );
+    await fs.promises.mkdir(path.join(cwd, "src/layout"), { recursive: true });
     await fs.promises.writeFile(
-      path.join(cwd, "src/layout.tsx"),
+      path.join(cwd, "src/layout/index.tsx"),
       "export function Layout() { return null; }",
       "utf-8",
     );
@@ -1155,7 +1156,7 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      "Layout files must live at ./src/layout.tsx. Files or folders named layout inside the page route directory are not route pages.",
+      "Layout files must live at ./src/layout/index.tsx. Files or folders named layout inside the page route directory are not route pages.",
     );
     expect(events).not.toContain("bundler.build");
   });
@@ -1191,17 +1192,16 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      "Layout files must live at ./src/layout.tsx. Files or folders named layout inside the page route directory are not route pages.",
+      "Layout files must live at ./src/layout/index.tsx. Files or folders named layout inside the page route directory are not route pages.",
     );
     expect(events).not.toContain("bundler.build");
   });
 
-  it("fails when the root layout uses a directory alias", async () => {
+  it("fails when the root layout uses a file alias", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/layout"), { recursive: true });
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await fs.promises.writeFile(
-      path.join(cwd, "src/layout/index.tsx"),
+      path.join(cwd, "src/layout.tsx"),
       "export default function Layout() { return null; }",
       "utf-8",
     );
@@ -1226,7 +1226,7 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      "Root layout must be a single file at ./src/layout.tsx. ./src/layout/index.tsx is not supported.",
+      "Root layout must live at ./src/layout/index.tsx. ./src/layout.tsx is not supported.",
     );
     expect(events).not.toContain("bundler.build");
   });

@@ -61,7 +61,7 @@ describe("createAppGraph and createBuildPlan", () => {
 
   it("creates a framework-managed SPA entry from page routes", async () => {
     const cwd = await createFixture({
-      "src/layout.tsx": "export default function Root() { return null; }",
+      "src/layout/index.tsx": "export default function Root() { return null; }",
       "src/pages/index.tsx": "export default function Home() { return null; }",
       "src/pages/users/$userId.tsx": `
         export function validateSearch(search: Record<string, unknown>) {
@@ -79,7 +79,7 @@ describe("createAppGraph and createBuildPlan", () => {
         entry: "./src/pages/index.tsx",
         html: "./index.html",
         mount: "#app",
-        rootModule: "./src/layout.tsx",
+        rootModule: "./src/layout/index.tsx",
         routes: [
           {
             id: "index",
@@ -129,7 +129,7 @@ describe("createAppGraph and createBuildPlan", () => {
       metadata: {
         type: "pages-app",
         mount: "#app",
-        rootModule: "./src/layout.tsx",
+        rootModule: "./src/layout/index.tsx",
         routes: [
           {
             id: "index",
@@ -147,7 +147,7 @@ describe("createAppGraph and createBuildPlan", () => {
     expect(
       analysis.fileDependencies.map((file) => path.relative(cwd, file)),
     ).toEqual([
-      "src/layout.tsx",
+      "src/layout/index.tsx",
       "src/pages",
       "src/pages/index.tsx",
       "src/pages/users",

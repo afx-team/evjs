@@ -59,7 +59,7 @@ For detailed guides on specific topics, see the `references/` directory:
 
 **Page Routing:**
 - SPA page routes live in `src/pages` and use an optional root layout at
-  `src/layout.tsx`; do not create `__root.tsx`, `layout/index.tsx`, or layout
+  `src/layout/index.tsx`; do not create `__root.tsx`, `src/layout.tsx`, or layout
   files inside `src/pages`.
 - MPA page routing uses `routing: { mode: "mpa" }`; pages are independent
   router-free React entries and should use normal `<a href>` links.

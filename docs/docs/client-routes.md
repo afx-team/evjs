@@ -12,7 +12,8 @@ page tree.
 ```
 src/
 ├── api/*.server.ts        # Optional server functions
-├── layout.tsx             # Optional SPA root layout
+├── layout/
+│   └── index.tsx          # Optional SPA root layout
 └── pages/
     ├── index.tsx          # /
     ├── about.tsx          # /about
@@ -112,15 +113,16 @@ export default function SearchPage() {
 ## Layout
 
 For SPA mode, the root layout is optional. It lives beside the route directory:
-the default `src/pages` uses `src/layout.tsx`, and a custom `routing.dir` such
-as `src/app/pages` uses `src/app/layout.tsx`. When present, the default export
+the default `src/pages` uses `src/layout/index.tsx`, and a custom `routing.dir` such
+as `src/app/pages` uses `src/app/layout/index.tsx`. When present, the default export
 wraps the current page as `children`, so user code does not need a router outlet
 component.
 
-The layout convention is SPA-only and has exactly one root file beside the route
-directory: use the exact filename `layout.tsx`. `layout.jsx`, `layout.ts`, and
-`layout/index.*` are not aliases. MPA mode does not consume a framework layout
-file; share visual wrappers by importing ordinary components from each page.
+The layout convention is SPA-only and has exactly one root directory entry beside
+the route directory: use the exact path `layout/index.tsx`. `layout.tsx`,
+`layout.jsx`, `layout.ts`, and non-TSX `layout/index.*` files are not aliases.
+MPA mode does not consume a framework layout file; share visual wrappers by
+importing ordinary components from each page.
 
 The route directory is only for route pages. Do not put files or folders named
 `layout` under it; evjs reports that as a convention error instead of turning
@@ -128,7 +130,7 @@ them into routes. Nested visual wrappers should be normal components imported by
 the page that needs them.
 
 ```tsx
-// src/layout.tsx
+// src/layout/index.tsx
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <main>

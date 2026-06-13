@@ -45,11 +45,12 @@ SPA mode writes `src/evjs-route-types.d.ts` for type-safe `Link`,
 `useLinkProps`, and `redirect` calls. Treat it as generated output: keep it
 ignored and do not import it from application code.
 
-Use `layout.tsx` beside the page route directory only for the optional SPA root
-layout. The default `src/pages` route directory uses `src/layout.tsx`; a custom
-directory such as `src/app/pages` uses `src/app/layout.tsx`. It is an exact
-single-file convention: `layout.jsx`, `layout.ts`, and `layout/index.*` are not
-aliases. MPA output does not consume a framework layout file, so MPA pages
+Use `layout/index.tsx` beside the page route directory only for the optional SPA
+root layout. The default `src/pages` route directory uses
+`src/layout/index.tsx`; a custom directory such as `src/app/pages` uses
+`src/app/layout/index.tsx`. It is an exact directory-entry convention:
+`layout.tsx`, `layout.jsx`, `layout.ts`, and non-TSX `layout/index.*` files are
+not aliases. MPA output does not consume a framework layout file, so MPA pages
 compose shared wrappers as ordinary components.
 
 The route directory is reserved for page route modules, so files or folders

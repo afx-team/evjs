@@ -26,13 +26,13 @@ export interface PageRouteDiscovery {
 }
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
-const ROOT_LAYOUT_FILE = "layout.tsx";
+const ROOT_LAYOUT_FILE = path.join("layout", "index.tsx");
 const ROOT_LAYOUT_ALIAS_FILES = [
   "layout.ts",
+  "layout.tsx",
   "layout.js",
   "layout.jsx",
   "layout/index.ts",
-  "layout/index.tsx",
   "layout/index.js",
   "layout/index.jsx",
 ] as const;
@@ -152,7 +152,7 @@ async function discoverRootLayout(
       diagnostics.push({
         level: "error",
         file: actual.replace(/^\.\//, ""),
-        message: `Root layout must be a single file at ${expected}. ${actual} is not supported.`,
+        message: `Root layout must live at ${expected}. ${actual} is not supported.`,
       });
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;

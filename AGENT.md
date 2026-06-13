@@ -60,7 +60,7 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 3. Exposing generated TanStack route trees, `__root.tsx`, or `.evjs` route
    files to application authors. The framework owns those details.
 4. Adding extra page filename dialects. Dynamic segments use `$param`, root
-   layout is `src/layout.tsx`, and `src/pages` only contains page modules.
+   layout is `src/layout/index.tsx`, and `src/pages` only contains page modules.
 5. Watching every source file for graph invalidation. `fileDependencies` should stay narrower than the analysis closure.
 6. Using `await import(href)` as the default browser shell loader. Shell modules are registered by scripts so lower browser targets and non-Vite bundlers are not tied to dynamic import comments.
 7. Treating `server.functions` manifest output as user config.

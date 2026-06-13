@@ -17,7 +17,8 @@ my-evjs-app/
 └── src/
     ├── server.ts                # framework/server entry
     ├── styles.css               # global CSS / Tailwind entry
-    ├── layout.tsx               # optional SPA root layout
+    ├── layout/
+    │   └── index.tsx            # optional SPA root layout
     ├── pages/                   # page routes
     │   ├── index.tsx            # /
     │   ├── dashboard.tsx        # /dashboard
@@ -44,11 +45,11 @@ This shape covers the complete framework surface:
   explicit page outputs only when defaults are not enough.
 - `pages/` is the client route source of truth. SPA mode maps it to a
   framework-owned app entry; MPA mode maps it to independent page entries.
-- `layout.tsx` is only the optional SPA root layout beside the route directory.
-  The default `src/pages` uses `src/layout.tsx`; custom `routing.dir` values use
-  the parent of that route directory. This convention requires the exact
-  `layout.tsx` filename; MPA pages should import shared components directly when
-  they need common chrome.
+- `layout/index.tsx` is only the optional SPA root layout beside the route
+  directory. The default `src/pages` uses `src/layout/index.tsx`; custom
+  `routing.dir` values use the parent of that route directory. This convention
+  requires the exact `layout/index.tsx` path; MPA pages should import shared
+  components directly when they need common chrome.
 - `src/evjs-route-types.d.ts` is generated in SPA mode for type-safe
   navigation. Keep it ignored and do not import it from application code.
 - Rendering metadata lives with page modules.

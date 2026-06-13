@@ -45,7 +45,8 @@ my-app/
 ├── index.html              # HTML 模板（必须包含 <div id="app">）
 ├── ev.config.ts            # 可选配置
 ├── src/
-│   ├── layout.tsx          # 可选 SPA 根布局
+│   ├── layout/
+│   │   └── index.tsx       # 可选 SPA 根布局
 │   ├── pages/              # 文件路由
 │   │   ├── index.tsx       # /
 │   │   └── users/$id.tsx   # /users/$id
@@ -91,7 +92,7 @@ export default defineConfig({
 ```
 
 每个页面都会生成独立 HTML 文档和客户端 entry，不引入客户端路由器配置。
-`layout.tsx` 约定只用于 SPA，并且以精确文件名放在页面路由目录旁边；MPA 页面需要公共外框时，
+`layout/index.tsx` 约定只用于 SPA，并且以精确路径放在页面路由目录旁边；MPA 页面需要公共外框时，
 应像普通 React 代码一样组合共享组件。
 
 ## 包列表

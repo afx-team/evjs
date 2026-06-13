@@ -10,7 +10,8 @@ evjs 以 `src/pages` 作为客户端路由的唯一事实来源。应用页面�
 ```
 src/
 ├── api/*.server.ts        # 可选 server functions
-├── layout.tsx             # 可选 SPA 根布局
+├── layout/
+│   └── index.tsx          # 可选 SPA 根布局
 └── pages/
     ├── index.tsx          # /
     ├── about.tsx          # /about
@@ -105,19 +106,19 @@ export default function SearchPage() {
 ## 布局
 
 SPA 模式下，根布局是可选文件。它放在路由目录旁边：默认 `src/pages`
-使用 `src/layout.tsx`，自定义 `routing.dir` 为 `src/app/pages` 时使用
-`src/app/layout.tsx`。默认导出会以 `children` 包裹当前页面，因此用户代码不需要引入
+使用 `src/layout/index.tsx`，自定义 `routing.dir` 为 `src/app/pages` 时使用
+`src/app/layout/index.tsx`。默认导出会以 `children` 包裹当前页面，因此用户代码不需要引入
 路由 outlet 组件。
 
-布局约定只用于 SPA，且路由目录旁边只有一个根文件：必须使用精确文件名 `layout.tsx`。
-`layout.jsx`、`layout.ts` 和 `layout/index.*` 都不是别名。MPA 模式不消费框架 layout
-文件；需要公共视觉包裹时，在各页面里导入普通组件即可。
+布局约定只用于 SPA，且路由目录旁边只有一个根目录入口：必须使用精确路径
+`layout/index.tsx`。`layout.tsx`、`layout.jsx`、`layout.ts` 和非 TSX 的
+`layout/index.*` 都不是别名。MPA 模式不消费框架 layout 文件；需要公共视觉包裹时，在各页面里导入普通组件即可。
 
 路由目录只放页面路由。不要在其中任何位置放名为 `layout` 的文件或目录；evjs 会把它报告为目录约定错误，
 而不是把它转换成页面路由。嵌套视觉包裹应作为普通组件由需要的页面导入。
 
 ```tsx
-// src/layout.tsx
+// src/layout/index.tsx
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <main>

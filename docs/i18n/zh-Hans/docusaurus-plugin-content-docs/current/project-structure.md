@@ -15,7 +15,8 @@ my-evjs-app/
 └── src/
     ├── server.ts                # framework/server entry
     ├── styles.css               # 全局 CSS / Tailwind 入口
-    ├── layout.tsx               # 可选 SPA 根布局
+    ├── layout/
+    │   └── index.tsx            # 可选 SPA 根布局
     ├── pages/                   # 页面路由
     │   ├── index.tsx            # /
     │   ├── dashboard.tsx        # /dashboard
@@ -40,9 +41,9 @@ my-evjs-app/
 
 - `ev.config.ts` 只在默认值不够时自定义 routing 模式、服务端路径、远程应用、插件或显式页面输出。
 - `pages/` 是客户端路由事实来源。SPA 模式会映射到框架托管的 app entry；MPA 模式会映射到独立页面 entry。
-- `layout.tsx` 只作为路由目录旁边的可选 SPA 根布局。默认 `src/pages`
-  使用 `src/layout.tsx`；自定义 `routing.dir` 时使用该路由目录的父级。这个约定要求精确文件名
-  `layout.tsx`；MPA 页面需要公共外框时，应直接导入普通共享组件。
+- `layout/index.tsx` 只作为路由目录旁边的可选 SPA 根布局。默认 `src/pages`
+  使用 `src/layout/index.tsx`；自定义 `routing.dir` 时使用该路由目录的父级。这个约定要求精确路径
+  `layout/index.tsx`；MPA 页面需要公共外框时，应直接导入普通共享组件。
 - `src/evjs-route-types.d.ts` 是 SPA 模式生成的类型安全导航声明。保持忽略它，不要在应用代码里导入它。
 - 渲染元信息放在页面模块旁边。
 - `api/*.server.ts` 放 server functions。

@@ -47,7 +47,8 @@ my-app/
 ├── index.html              # HTML template (must have <div id="app">)
 ├── ev.config.ts            # Optional config
 ├── src/
-│   ├── layout.tsx          # Optional SPA root layout
+│   ├── layout/
+│   │   └── index.tsx       # Optional SPA root layout
 │   ├── pages/              # Page routes
 │   │   ├── index.tsx       # /
 │   │   └── users/$id.tsx   # /users/$id
@@ -94,9 +95,9 @@ export default defineConfig({
 ```
 
 Each page is emitted as its own HTML document and client entry without
-SPA router setup. The `layout.tsx` convention is SPA-only and lives beside the
-page route directory using that exact filename; MPA pages compose shared
-wrappers as normal components.
+SPA router setup. The `layout/index.tsx` convention is SPA-only and lives beside
+the page route directory using that exact path; MPA pages compose shared wrappers
+as normal components.
 
 ## Packages
 
