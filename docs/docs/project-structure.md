@@ -48,8 +48,10 @@ This shape covers the complete framework surface:
 - `layout/index.tsx` is only the optional SPA root layout beside the route
   directory. The default `src/pages` uses `src/layout/index.tsx`; custom
   `routing.dir` values use the parent of that route directory. This convention
-  requires the exact `layout/index.tsx` path; MPA pages should import shared
-  components directly when they need common chrome.
+  requires the exact `layout/index.tsx` path unless `routing.layout` points to
+  another SPA layout module. Set `routing.layout: false` to disable SPA root
+  layout discovery. MPA pages should import shared components directly or share
+  HTML templates when they need common chrome.
 - `src/evjs-route-types.d.ts` is generated in SPA mode for type-safe
   navigation. Keep it ignored and do not import it from application code.
 - Rendering metadata lives with page modules.
@@ -87,8 +89,8 @@ export default defineConfig({
 ```
 
 Use `routing: { mode: "mpa" }` when every route should be emitted as its own
-HTML document without SPA router setup. Use the lower-level `pages` config only
-for page outputs that do not map cleanly to `src/pages`.
+HTML document without SPA router setup or framework layouts. Use the lower-level
+`pages` config only for page outputs that do not map cleanly to `src/pages`.
 
 ## Page Modules
 

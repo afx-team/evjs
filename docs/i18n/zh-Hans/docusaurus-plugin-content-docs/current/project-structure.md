@@ -43,7 +43,9 @@ my-evjs-app/
 - `pages/` 是客户端路由事实来源。SPA 模式会映射到框架托管的 app entry；MPA 模式会映射到独立页面 entry。
 - `layout/index.tsx` 只作为路由目录旁边的可选 SPA 根布局。默认 `src/pages`
   使用 `src/layout/index.tsx`；自定义 `routing.dir` 时使用该路由目录的父级。这个约定要求精确路径
-  `layout/index.tsx`；MPA 页面需要公共外框时，应直接导入普通共享组件。
+  `layout/index.tsx`，除非 `routing.layout` 显式指向另一个 SPA 布局模块。设置
+  `routing.layout: false` 可以关闭 SPA 根布局发现。MPA 页面需要公共外框时，应直接导入普通共享组件，
+  或复用 HTML 模板。
 - `src/evjs-route-types.d.ts` 是 SPA 模式生成的类型安全导航声明。保持忽略它，不要在应用代码里导入它。
 - 渲染元信息放在页面模块旁边。
 - `api/*.server.ts` 放 server functions。
@@ -80,8 +82,8 @@ export default defineConfig({
 ```
 
 当每个路由都应该输出独立 HTML 文档且不需要客户端路由器配置时，使用
-`routing: { mode: "mpa" }`。只有页面输出无法自然映射到 `src/pages` 时，才使用更底层的
-`pages` 配置。
+`routing: { mode: "mpa" }`；这种模式不使用框架 layout。只有页面输出无法自然映射到
+`src/pages` 时，才使用更底层的 `pages` 配置。
 
 ## 页面模块
 

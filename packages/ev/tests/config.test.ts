@@ -38,6 +38,7 @@ describe("defineConfig", () => {
     const config = defineConfig({
       routing: {
         dir: "./src/pages",
+        layout: "./src/shell/AppLayout.tsx",
         mount: "#root",
       },
     });
@@ -45,6 +46,7 @@ describe("defineConfig", () => {
     expect(config).toEqual({
       routing: {
         dir: "./src/pages",
+        layout: "./src/shell/AppLayout.tsx",
         mount: "#root",
       },
     });
@@ -96,6 +98,7 @@ describe("resolveConfig", () => {
       routing: {
         dir: "./app/pages",
         html: "./shell.html",
+        layout: "./app/ShellLayout.tsx",
         mount: "#root",
       },
     });
@@ -104,9 +107,39 @@ describe("resolveConfig", () => {
       mode: "spa",
       dir: "./app/pages",
       html: "./shell.html",
+      layout: "./app/ShellLayout.tsx",
       mount: "#root",
       routes: [],
     });
+  });
+
+  it("supports disabling the SPA root layout", () => {
+    const resolved = resolveConfig({
+      routing: {
+        mode: "spa",
+        layout: false,
+      },
+    });
+
+    expect(resolved.routing).toEqual({
+      mode: "spa",
+      dir: "./src/pages",
+      html: "./index.html",
+      mount: "#app",
+      layout: false,
+      routes: [],
+    });
+  });
+
+  it("rejects routing layout configuration in MPA mode", () => {
+    expect(() =>
+      resolveConfig({
+        routing: {
+          mode: "mpa",
+          layout: "./src/shell/AppLayout.tsx",
+        },
+      }),
+    ).toThrow("[evjs] routing.layout is only supported in SPA mode.");
   });
 
   it("applies all defaults when called with empty config", () => {

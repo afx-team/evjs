@@ -58,6 +58,25 @@ export default defineConfig({
 When `src/pages` exists and the project does not declare explicit `app`,
 `pages`, or `remote` config, SPA routing is enabled automatically.
 
+SPA mode can use a root layout module. By default evjs looks for
+`layout/index.tsx` beside the route directory, such as `src/layout/index.tsx`
+for `src/pages`. Set `routing.layout` to a module path when a migrated app has
+its shell in another location, or set it to `false` to disable framework layout
+discovery:
+
+```ts
+export default defineConfig({
+  routing: {
+    mode: "spa",
+    layout: "./src/shell/AppLayout.tsx",
+  },
+});
+```
+
+`routing.layout` is not supported in MPA mode. MPA pages should compose shared
+shells as normal React components, or use page-specific/shared HTML templates
+when the document wrapper needs to differ.
+
 Use top-level `entry` / `html` only for a manually bootstrapped single app.
 Applications that use `src/pages` should not create a client route tree
 manually:

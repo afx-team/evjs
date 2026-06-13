@@ -110,9 +110,14 @@ SPA 模式下，根布局是可选文件。它放在路由目录旁边：默认 
 `src/app/layout/index.tsx`。默认导出会以 `children` 包裹当前页面，因此用户代码不需要引入
 路由 outlet 组件。
 
+如果迁移应用的共享外框在其他位置，可以通过
+`routing.layout: "./src/shell/AppLayout.tsx"` 显式指定。设置
+`routing.layout: false` 可以让 SPA 不消费任何框架根布局。
+
 布局约定只用于 SPA，且路由目录旁边只有一个根目录入口：必须使用精确路径
 `layout/index.tsx`。`layout.tsx`、`layout.jsx`、`layout.ts` 和非 TSX 的
-`layout/index.*` 都不是别名。MPA 模式不消费框架 layout 文件；需要公共视觉包裹时，在各页面里导入普通组件即可。
+`layout/index.*` 都不是别名。MPA 模式不接受也不消费框架 layout 文件；需要公共视觉包裹时，
+在各页面里导入普通组件即可。如果只是文档外壳相同，可以复用 HTML 模板。
 
 路由目录只放页面路由。不要在其中任何位置放名为 `layout` 的文件或目录；evjs 会把它报告为目录约定错误，
 而不是把它转换成页面路由。嵌套视觉包裹应作为普通组件由需要的页面导入。

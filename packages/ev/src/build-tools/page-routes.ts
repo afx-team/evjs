@@ -9,7 +9,7 @@ import {
 
 export interface DiscoverPageRoutesOptions {
   dir: string;
-  rootLayout?: boolean;
+  rootLayout?: boolean | string;
 }
 
 export interface PageRouteDiscoveryDiagnostic {
@@ -48,7 +48,9 @@ export async function discoverPageRoutes(
   const rootModule =
     options.rootLayout === false
       ? undefined
-      : await discoverRootLayout(cwd, absoluteDir, diagnostics);
+      : typeof options.rootLayout === "string"
+        ? await discoverExplicitRootLayout(cwd, options.rootLayout, diagnostics)
+        : await discoverRootLayout(cwd, absoluteDir, diagnostics);
   const routeByPath = new Map<string, string>();
 
   for (const file of files) {
@@ -131,6 +133,51 @@ function createPageRouteDefaultExportDiagnostic(): string {
 
 function createRootLayoutDefaultExportDiagnostic(): string {
   return "Root layout must default-export a React component.";
+}
+
+async function discoverExplicitRootLayout(
+  cwd: string,
+  layout: string,
+  diagnostics: PageRouteDiscoveryDiagnostic[],
+): Promise<string | undefined> {
+  const absolute = path.resolve(cwd, layout);
+  const expected = toProjectPath(cwd, absolute);
+  if (!isInsideCwd(cwd, absolute)) {
+    diagnostics.push({
+      level: "error",
+      file: layout,
+      message: `Root layout must be inside the project root. ${layout} is not supported.`,
+    });
+    return undefined;
+  }
+
+  let stat: import("node:fs").Stats;
+  try {
+    stat = await fs.stat(absolute);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    diagnostics.push({
+      level: "error",
+      file: expected.replace(/^\.\//, ""),
+      message: `Root layout module not found: ${expected}.`,
+    });
+    return undefined;
+  }
+  if (!stat.isFile()) {
+    diagnostics.push({
+      level: "error",
+      file: expected.replace(/^\.\//, ""),
+      message: `Root layout module must be a file: ${expected}.`,
+    });
+    return undefined;
+  }
+
+  const validRootLayout = await validateDefaultExport(absolute, diagnostics, {
+    file: expected,
+    parseError: "Root layout module could not be parsed",
+    missingDefaultExport: createRootLayoutDefaultExportDiagnostic(),
+  });
+  return validRootLayout ? expected : undefined;
 }
 
 async function discoverRootLayout(

@@ -173,7 +173,7 @@ async function withPageRoutingDefaults<TBundlerCfg>(
   };
   const discovery = await discoverPageRoutes(cwd, {
     dir: base.dir,
-    rootLayout: base.mode === "spa",
+    rootLayout: base.mode === "spa" ? (base.layout ?? true) : false,
   });
   reportPageRouteDiagnostics(discovery.diagnostics);
 

@@ -118,11 +118,17 @@ as `src/app/pages` uses `src/app/layout/index.tsx`. When present, the default ex
 wraps the current page as `children`, so user code does not need a router outlet
 component.
 
+If a migration has a shared application shell somewhere else, configure it
+explicitly with `routing.layout: "./src/shell/AppLayout.tsx"`. Set
+`routing.layout: false` when the SPA should not consume any framework root
+layout.
+
 The layout convention is SPA-only and has exactly one root directory entry beside
 the route directory: use the exact path `layout/index.tsx`. `layout.tsx`,
 `layout.jsx`, `layout.ts`, and non-TSX `layout/index.*` files are not aliases.
-MPA mode does not consume a framework layout file; share visual wrappers by
-importing ordinary components from each page.
+MPA mode does not accept or consume a framework layout file; share visual
+wrappers by importing ordinary components from each page, or share the HTML
+template when only document chrome is common.
 
 The route directory is only for route pages. Do not put files or folders named
 `layout` under it; evjs reports that as a convention error instead of turning

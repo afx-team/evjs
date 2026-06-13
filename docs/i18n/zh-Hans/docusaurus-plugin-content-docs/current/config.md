@@ -56,6 +56,23 @@ export default defineConfig({
 当项目存在 `src/pages`，且项目没有声明显式的 `app`、`pages` 或 `remote`
 配置时，SPA 路由会自动启用。
 
+SPA 模式可以使用根布局模块。默认情况下，evjs 会在路由目录旁边查找
+`layout/index.tsx`，例如 `src/pages` 对应 `src/layout/index.tsx`。如果迁移应用的
+外框在其他位置，可以通过 `routing.layout` 显式指定模块路径；如果 SPA 不需要框架根布局，
+可以设置为 `false`：
+
+```ts
+export default defineConfig({
+  routing: {
+    mode: "spa",
+    layout: "./src/shell/AppLayout.tsx",
+  },
+});
+```
+
+MPA 模式不支持 `routing.layout`。MPA 页面需要共享外框时，应像普通 React 代码一样组合共享组件；
+如果只是文档外壳相同，可以复用页面 HTML 模板。
+
 只有手动 bootstrap 单应用时，才使用顶层 `entry` / `html`。使用
 `src/pages` 的应用不应该手写客户端 route tree：
 

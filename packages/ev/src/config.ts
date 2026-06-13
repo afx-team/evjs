@@ -290,9 +290,18 @@ export interface PageRoutingConfig {
   html?: string;
   /** Mount selector for generated page routes. Default: "#app". */
   mount?: string;
+  /**
+   * SPA root layout module.
+   *
+   * Defaults to the `layout/index.tsx` convention beside the page route
+   * directory in SPA mode. Set to `false` to disable the framework root layout.
+   * MPA mode does not use framework layouts.
+   */
+  layout?: PageRoutingLayoutConfig;
 }
 
 export type PageRoutingMode = "spa" | "mpa";
+export type PageRoutingLayoutConfig = string | false;
 
 export type RoutingConfig = PageRoutingConfig;
 export type RoutingMode = PageRoutingMode;
@@ -302,6 +311,7 @@ export interface ResolvedPageRoutingConfig {
   dir: string;
   html: string;
   mount: string;
+  layout?: PageRoutingLayoutConfig;
   entry?: string;
   routes: PageRouteNode[];
   rootModule?: string;
@@ -535,11 +545,16 @@ function resolvePageRoutingConfig(
 ): ResolvedPageRoutingConfig | undefined {
   if (!routing) return undefined;
   const options = routing === true ? {} : routing;
+  const mode = options.mode ?? CONFIG_DEFAULTS.routingMode;
+  if (mode === "mpa" && options.layout !== undefined) {
+    throw new Error("[evjs] routing.layout is only supported in SPA mode.");
+  }
   return {
-    mode: options.mode ?? CONFIG_DEFAULTS.routingMode,
+    mode,
     dir: options.dir ?? CONFIG_DEFAULTS.routingDir,
     html: options.html ?? defaultHtml,
     mount: options.mount ?? CONFIG_DEFAULTS.mount,
+    ...(options.layout !== undefined ? { layout: options.layout } : {}),
     routes: [],
   };
 }

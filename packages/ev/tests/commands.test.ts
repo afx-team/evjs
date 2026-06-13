@@ -164,6 +164,20 @@ function recordPagesAppRoutes(
   );
 }
 
+function recordPagesAppRootModule(
+  label: string,
+  metadata:
+    | NonNullable<import("@evjs/shared/manifest").BuildEntry["metadata"]>
+    | undefined,
+  events: string[],
+): void {
+  if (metadata?.type !== "pages-app") {
+    events.push(`${label}:missing`);
+    return;
+  }
+  events.push(`${label}:${metadata.rootModule ?? "none"}`);
+}
+
 describe("prepareFrameworkBuild", () => {
   it("rejects mismatched command and mode options", async () => {
     const cwd = await createProject();
@@ -845,6 +859,107 @@ describe("build", () => {
       "bundler.build",
       "bundler.entries:main",
     ]);
+  });
+
+  it("uses routing.layout as the SPA root layout module", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await fs.promises.mkdir(path.join(cwd, "src/shell"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/layout.tsx"),
+      "export function LayoutAlias() { return null; }",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/shell/AppLayout.tsx"),
+      "export default function AppLayout() { return null; }",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/index.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+
+    await build(
+      {
+        server: false,
+        routing: {
+          layout: "./src/shell/AppLayout.tsx",
+        },
+        plugins: [
+          {
+            name: "records-pages-root-layout",
+            setup() {
+              return {
+                buildPlan(plan) {
+                  const metadata = plan.entries.find(
+                    (entry) => entry.metadata?.type === "pages-app",
+                  )?.metadata;
+                  recordPagesAppRootModule("root", metadata, events);
+                },
+              };
+            },
+          },
+        ],
+      },
+      {
+        cwd,
+        bundler,
+      },
+    );
+
+    expect(events).toContain("root:./src/shell/AppLayout.tsx");
+  });
+
+  it("disables SPA root layout discovery with routing.layout false", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/layout"), { recursive: true });
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/layout/index.tsx"),
+      "export default function Layout() { return null; }",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/index.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+
+    await build(
+      {
+        server: false,
+        routing: {
+          layout: false,
+        },
+        plugins: [
+          {
+            name: "records-pages-root-layout",
+            setup() {
+              return {
+                buildPlan(plan) {
+                  const metadata = plan.entries.find(
+                    (entry) => entry.metadata?.type === "pages-app",
+                  )?.metadata;
+                  recordPagesAppRootModule("root", metadata, events);
+                },
+              };
+            },
+          },
+        ],
+      },
+      {
+        cwd,
+        bundler,
+      },
+    );
+
+    expect(events).toContain("root:none");
   });
 
   it("builds MPA pages without a router or generated route files", async () => {

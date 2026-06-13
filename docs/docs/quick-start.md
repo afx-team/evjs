@@ -79,6 +79,10 @@ tree. The generated routing glue stays inside the framework; SPA mode only
 writes `src/evjs-route-types.d.ts` for TypeScript and scaffolded apps ignore it
 by default.
 
+SPA root layout discovery is optional. Use `src/layout/index.tsx` beside the
+route directory, set `routing.layout` to another module path, or set
+`routing.layout: false` when the app should not have a framework root layout.
+
 ## MPA Mode
 
 Use the same `src/pages` files for an MPA and switch the routing mode:
@@ -97,7 +101,7 @@ export default defineConfig({
 Each page is emitted as its own HTML document and client entry without
 SPA router setup. The `layout/index.tsx` convention is SPA-only and lives beside
 the page route directory using that exact path; MPA pages compose shared wrappers
-as normal components.
+as normal components and do not accept `routing.layout`.
 
 ## Packages
 

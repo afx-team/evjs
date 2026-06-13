@@ -88,6 +88,86 @@ describe("discoverPageRoutes", () => {
     expect(discovery.diagnostics).toEqual([]);
   });
 
+  it("uses an explicit root layout module without checking convention aliases", async () => {
+    const cwd = await createFixture({
+      "src/layout.tsx": "export function LayoutAlias() { return null; }",
+      "src/shell/AppLayout.tsx":
+        "export default function AppLayout() { return null; }",
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+    });
+
+    const discovery = await discoverPageRoutes(cwd, {
+      dir: "./src/pages",
+      rootLayout: "./src/shell/AppLayout.tsx",
+    });
+
+    expect(discovery.rootModule).toBe("./src/shell/AppLayout.tsx");
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/pages/index.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([]);
+  });
+
+  it("reports missing explicit root layout modules", async () => {
+    const cwd = await createFixture({
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+    });
+
+    const discovery = await discoverPageRoutes(cwd, {
+      dir: "./src/pages",
+      rootLayout: "./src/shell/AppLayout.tsx",
+    });
+
+    expect(discovery.rootModule).toBeUndefined();
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/pages/index.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/shell/AppLayout.tsx",
+        message: "Root layout module not found: ./src/shell/AppLayout.tsx.",
+      },
+    ]);
+  });
+
+  it("reports explicit root layout directories", async () => {
+    const cwd = await createFixture({
+      "src/shell/index.tsx":
+        "export default function ShellIndex() { return null; }",
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+    });
+
+    const discovery = await discoverPageRoutes(cwd, {
+      dir: "./src/pages",
+      rootLayout: "./src/shell",
+    });
+
+    expect(discovery.rootModule).toBeUndefined();
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/pages/index.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/shell",
+        message: "Root layout module must be a file: ./src/shell.",
+      },
+    ]);
+  });
+
   it("rejects bracket dynamic route segments", async () => {
     const cwd = await createFixture({
       "src/pages/index.tsx": "export default function Home() { return null; }",
