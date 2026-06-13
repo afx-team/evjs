@@ -15,6 +15,7 @@ import {
 import { getLogger } from "@logtape/logtape";
 import { execa } from "execa";
 import {
+  type CreateBuildPlanOptions,
   createAppGraph,
   createBuildPlan,
   diffBuildPlan,
@@ -84,6 +85,34 @@ export interface BuildOptions<
 > {
   cwd?: string;
   bundler?: BundlerAdapter<TBundlerCfg>;
+}
+
+export interface PrepareFrameworkBuildOptions<
+  TBundlerCfg = import("@utoo/pack").ConfigComplete,
+> {
+  cwd?: string;
+  mode?: "development" | "production";
+  command?: "dev" | "build";
+  bundler?: BundlerAdapter<TBundlerCfg>;
+  requireBundler?: boolean;
+  runLifecycleHooks?: boolean;
+  plan?: CreateBuildPlanOptions;
+}
+
+export interface PreparedFrameworkBuild<
+  TBundlerCfg = import("@utoo/pack").ConfigComplete,
+> {
+  cwd: string;
+  mode: "development" | "production";
+  command: "dev" | "build";
+  config: ResolvedConfig<TBundlerCfg>;
+  graph: AppGraph;
+  plan: BuildPlan;
+  hooks: PluginHooks<TBundlerCfg>[];
+  pluginContext: PluginContext<TBundlerCfg>;
+  fileDependencies: string[];
+  pluginWatchFiles: string[];
+  dispose(): Promise<void>;
 }
 
 function resolveBundler<TBundlerCfg>(
@@ -1175,6 +1204,100 @@ function waitForApiReady(child: ApiProcess, timeoutMs = 10_000): Promise<void> {
   });
 }
 
+export async function prepareFrameworkBuild<
+  TBundlerCfg = import("@utoo/pack").ConfigComplete,
+>(
+  userConfig?: Config<TBundlerCfg>,
+  options: PrepareFrameworkBuildOptions<TBundlerCfg> = {},
+): Promise<PreparedFrameworkBuild<TBundlerCfg>> {
+  const cwd = options.cwd ?? process.cwd();
+  const command =
+    options.command ??
+    (options.mode === "development" ? "dev" : ("build" as const));
+  const expectedMode = command === "dev" ? "development" : "production";
+  if (options.mode && options.mode !== expectedMode) {
+    throw new Error(
+      `[evjs] prepareFrameworkBuild command "${command}" must use mode "${expectedMode}".`,
+    );
+  }
+  const mode = options.mode ?? expectedMode;
+  const configuredConfig = await runConfigHooks(userConfig, {
+    mode,
+    command,
+    cwd,
+  });
+  const rawResolvedConfig = await withPageRoutingDefaults(
+    resolveConfig(configuredConfig),
+    configuredConfig,
+    cwd,
+  );
+  const resolvedConfig = {
+    ...rawResolvedConfig,
+    plugins: orderPluginsByDependencies(rawResolvedConfig.plugins),
+  };
+
+  const bundler = options.bundler ?? resolvedConfig.bundler ?? undefined;
+  if (options.requireBundler && !bundler) {
+    throw new Error(
+      "[evjs] No bundler configured. Pass a bundler adapter in ev.config.ts or through dev/build options.",
+    );
+  }
+  const config = bundler
+    ? withActiveBundler(resolvedConfig, bundler)
+    : resolvedConfig;
+  const pluginWatchFiles = new Set<string>();
+  const pluginContext: PluginContext<TBundlerCfg> = {
+    mode,
+    command,
+    cwd,
+    config,
+    logger,
+    addWatchFile(file) {
+      pluginWatchFiles.add(path.resolve(cwd, file));
+    },
+  };
+  const hooks = await collectPluginHooks(config.plugins, pluginContext);
+  let disposed = false;
+  const dispose = async () => {
+    if (disposed) return;
+    disposed = true;
+    await runDisposeHooks(hooks, pluginContext);
+  };
+
+  try {
+    if (options.runLifecycleHooks ?? true) {
+      await runCommandStartHooks(hooks, pluginContext);
+      await runBuildStartHooks(hooks, pluginContext);
+    }
+    validateHtmlTemplates(cwd, config);
+    const analysis = await createAppGraph(config, cwd);
+    reportGraphDiagnostics(analysis);
+    await runAppGraphHooks(hooks, analysis.graph, pluginContext);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode,
+      ...options.plan,
+    });
+    await runBuildPlanHooks(hooks, plan, analysis.graph, pluginContext);
+
+    return {
+      cwd,
+      mode,
+      command,
+      config,
+      graph: analysis.graph,
+      plan,
+      hooks,
+      pluginContext,
+      fileDependencies: analysis.fileDependencies,
+      pluginWatchFiles: [...pluginWatchFiles].sort(),
+      dispose,
+    };
+  } catch (err) {
+    await dispose();
+    throw err;
+  }
+}
+
 export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
   userConfig?: Config<TBundlerCfg>,
   options?: DevOptions<TBundlerCfg>,
@@ -1545,65 +1668,38 @@ export async function build<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
 ): Promise<void> {
   const cwd = options?.cwd ?? process.cwd();
   process.env.NODE_ENV ??= "production";
-  const configuredConfig = await runConfigHooks(userConfig, {
+  const prepared = await prepareFrameworkBuild(userConfig, {
+    cwd,
     mode: "production",
     command: "build",
-    cwd,
+    bundler: options?.bundler,
+    requireBundler: true,
   });
-  const rawResolvedConfig = await withPageRoutingDefaults(
-    resolveConfig(configuredConfig),
-    configuredConfig,
-    cwd,
-  );
-  const resolvedConfig = {
-    ...rawResolvedConfig,
-    plugins: orderPluginsByDependencies(rawResolvedConfig.plugins),
-  };
-
-  const bundler = resolveBundler(resolvedConfig.bundler, options?.bundler);
-  const config = withActiveBundler(resolvedConfig, bundler);
-
-  const pluginWatchFiles = new Set<string>();
-  const pluginCtx: PluginContext<TBundlerCfg> = {
-    mode: "production",
-    command: "build",
-    cwd,
-    config,
-    logger,
-    addWatchFile(file) {
-      pluginWatchFiles.add(path.resolve(cwd, file));
-    },
-  };
-  const hooks = await collectPluginHooks(config.plugins, pluginCtx);
-
-  await runCommandStartHooks(hooks, pluginCtx);
-  await runBuildStartHooks(hooks, pluginCtx);
-  validateHtmlTemplates(cwd, config);
-  const analysis = await createAppGraph(config, cwd);
-  reportGraphDiagnostics(analysis);
-  await runAppGraphHooks(hooks, analysis.graph, pluginCtx);
-  const plan = createBuildPlan(config, analysis.graph, {
-    mode: "production",
-  });
-  await runBuildPlanHooks(hooks, plan, analysis.graph, pluginCtx);
-  await assertNoActiveDevDistLock(cwd, plan.distDir);
+  const bundler = prepared.config.bundler;
+  if (!bundler) {
+    await prepared.dispose();
+    throw new Error(
+      "[evjs] No bundler configured. Pass a bundler adapter in ev.config.ts or through dev/build options.",
+    );
+  }
   let buildOutput: BuildOutput | undefined;
   try {
+    await assertNoActiveDevDistLock(cwd, prepared.plan.distDir);
     const bundlerFacts = await bundler.build({
-      config,
+      config: prepared.config,
       cwd,
-      hooks,
-      graph: analysis.graph,
-      plan,
+      hooks: prepared.hooks,
+      graph: prepared.graph,
+      plan: prepared.plan,
     });
     buildOutput = await linkAndEmitBuildOutput({
       bundlerFacts,
-      graph: analysis.graph,
-      plan,
-      config,
+      graph: prepared.graph,
+      plan: prepared.plan,
+      config: prepared.config,
       cwd,
-      hooks,
-      pluginCtx,
+      hooks: prepared.hooks,
+      pluginCtx: prepared.pluginContext,
       isRebuild: false,
     });
 
@@ -1611,9 +1707,9 @@ export async function build<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
       ? { output: buildOutput, isRebuild: false }
       : readBuildResult(cwd, false);
     if (buildResult) {
-      await runBuildEndHooks(hooks, buildResult);
+      await runBuildEndHooks(prepared.hooks, buildResult);
     }
   } finally {
-    await runDisposeHooks(hooks, pluginCtx);
+    await prepared.dispose();
   }
 }

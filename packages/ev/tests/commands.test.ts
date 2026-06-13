@@ -4,7 +4,13 @@ import path from "node:path";
 import { execa } from "execa";
 import { describe, expect, it } from "vitest";
 import type { BundlerAdapter } from "../src/bundler.js";
-import { build, type Config, dev, type Plugin } from "../src/index.js";
+import {
+  build,
+  type Config,
+  dev,
+  type Plugin,
+  prepareFrameworkBuild,
+} from "../src/index.js";
 
 const repoRoot = path.resolve(process.cwd(), "../..");
 const generatedRouteTypesSource = [
@@ -158,12 +164,152 @@ function recordPagesAppRoutes(
   );
 }
 
+describe("prepareFrameworkBuild", () => {
+  it("rejects mismatched command and mode options", async () => {
+    const cwd = await createProject();
+
+    await expect(
+      prepareFrameworkBuild(
+        { server: false },
+        { cwd, command: "build", mode: "development" },
+      ),
+    ).rejects.toThrow(
+      'prepareFrameworkBuild command "build" must use mode "production"',
+    );
+  });
+
+  it("prepares a framework graph and build plan without a bundler adapter", async () => {
+    const cwd = await createProject();
+    const events: string[] = [];
+    const plugin: Plugin<Record<string, never>> = {
+      name: "prepare-core",
+      config(config, ctx) {
+        events.push(`config:${ctx.command}`);
+        return config;
+      },
+      setup(ctx) {
+        expect(ctx.config.bundler).toBeUndefined();
+        ctx.addWatchFile("./framework-extra.json");
+        events.push(`setup:${ctx.command}`);
+        return {
+          commandStart() {
+            events.push("commandStart");
+          },
+          buildStart() {
+            events.push("buildStart");
+          },
+          appGraph(graph) {
+            events.push(`appGraph:${Object.keys(graph.apps).join(",")}`);
+          },
+          buildPlan(plan) {
+            events.push(
+              `buildPlan:${plan.entries.map((entry) => entry.name).join(",")}`,
+            );
+          },
+          dispose() {
+            events.push("dispose");
+          },
+        };
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        server: false,
+        plugins: [plugin],
+      },
+      { cwd },
+    );
+
+    expect(prepared.config.serverEnabled).toBe(false);
+    expect(prepared.graph.apps.default).toEqual({
+      id: "default",
+      entry: "./src/main.tsx",
+      html: "./index.html",
+    });
+    expect(prepared.plan.entries).toEqual([
+      {
+        name: "main",
+        import: "./src/main.tsx",
+        environment: "client",
+        runtime: "browser",
+        kind: "app-client",
+        owner: { appId: "default" },
+      },
+    ]);
+    expect(prepared.pluginWatchFiles).toEqual([
+      path.join(cwd, "framework-extra.json"),
+    ]);
+    expect(events).toEqual([
+      "config:build",
+      "setup:build",
+      "commandStart",
+      "buildStart",
+      "appGraph:default",
+      "buildPlan:main",
+    ]);
+
+    await prepared.dispose();
+    await prepared.dispose();
+
+    expect(events).toEqual([
+      "config:build",
+      "setup:build",
+      "commandStart",
+      "buildStart",
+      "appGraph:default",
+      "buildPlan:main",
+      "dispose",
+    ]);
+  });
+});
+
 describe("build", () => {
   it("requires a bundler from config or options", async () => {
     const cwd = await createProject();
     await expect(build({ server: false }, { cwd })).rejects.toThrow(
       "No bundler configured",
     );
+  });
+
+  it("disposes prepared plugin hooks when build stops before bundler execution", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "dist"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/.evjs-dev.lock"),
+      JSON.stringify({
+        command: "dev",
+        distDir: "dist",
+        pid: process.pid,
+        startedAt: new Date().toISOString(),
+      }),
+      "utf-8",
+    );
+    const events: string[] = [];
+
+    await expect(
+      build(
+        {
+          server: false,
+          plugins: [
+            {
+              name: "cleanup",
+              setup() {
+                events.push("setup");
+                return {
+                  dispose() {
+                    events.push("dispose");
+                  },
+                };
+              },
+            },
+          ],
+        },
+        { cwd, bundler: createMockBundler(events) },
+      ),
+    ).rejects.toThrow('Cannot write to "dist"');
+
+    expect(events).toEqual(["setup", "dispose"]);
   });
 
   it("runs framework orchestration around the injected bundler", async () => {

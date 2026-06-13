@@ -10,6 +10,8 @@
 - Hono/fetch 服务端 runtime 和显式服务端路由。
 - 覆盖 config、graph、plan、bundler、output、HTML、build 阶段的插件系统。
 - 基于 `BuildPlan` 和 `BuildOutput` 的 bundler adapter contract。
+- 程序化 `prepareFrameworkBuild()` API，可在不启动 bundler 或平台 adapter
+  的情况下准备框架 graph/plan。
 - 单一框架 manifest：`dist/manifest.json`。
 - 通过公开 `@evjs/client` 包提供 manifest-driven app/page/remote activation。
 - 框架托管 SPA 页面路由，并为 MPA 提供无路由器 page runtime。

@@ -10,6 +10,8 @@
 - Hono/fetch server runtime with explicit server routes.
 - Plugin system with config, graph, plan, bundler, output, HTML, and build hooks.
 - Bundler adapter contract based on `BuildPlan` and `BuildOutput`.
+- Programmatic `prepareFrameworkBuild()` API for framework graph/plan
+  preparation without invoking a bundler or platform adapter.
 - Single framework manifest at `dist/manifest.json`.
 - Manifest-driven app/page/remote activation from the public `@evjs/client`
   package.

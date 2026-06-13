@@ -23,7 +23,15 @@ export type {
   BundlerDevContext,
   BundlerDevController,
 } from "./bundler.js";
-export { type BuildOptions, build, type DevOptions, dev } from "./commands.js";
+export {
+  type BuildOptions,
+  build,
+  type DevOptions,
+  dev,
+  type PreparedFrameworkBuild,
+  type PrepareFrameworkBuildOptions,
+  prepareFrameworkBuild,
+} from "./commands.js";
 export {
   type AppConfig,
   type BuildResult,

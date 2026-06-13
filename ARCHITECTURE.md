@@ -134,5 +134,17 @@ Deployment plugins and platform adapters should consume `BuildOutput`.
 `@evjs/ev` exposes platform-neutral deployment artifact helpers plus
 `nodeDeploymentAdapter()`. The Node adapter emits a production `dist/server.mjs`
 that imports only Node built-ins, `@evjs/server/node`, and the user server bundle.
-Platform-specific Tern/UBOA/edge adapters should be implemented as adapters that
-consume `BuildOutput` instead of reading bundler config or stats.
+Platform-specific adapters should consume `BuildOutput` instead of reading
+bundler config or stats.
+
+## Programmatic Preparation
+
+`prepareFrameworkBuild()` is the supported core API for tools that need
+framework semantics without running a bundler or emitting platform files. It
+resolves config, applies page-routing defaults, initializes plugins, runs
+`commandStart`, `buildStart`, `appGraph`, and `buildPlan` hooks, and returns the
+resolved config, `AppGraph`, `BuildPlan`, graph file dependencies, plugin watch
+files, and an explicit `dispose()` function.
+
+This API intentionally stops before bundler execution, manifest emission, and
+deployment adapter output.

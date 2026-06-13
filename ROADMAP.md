@@ -14,6 +14,9 @@ are preserved in `CHANGELOG.md`; this file should reflect active reality.
 - [x] Stage-based plugin hooks: `appGraph`, `buildPlan`, `bundlerConfig`,
       `buildOutput`, per-document `transformHtml`, `buildEnd({ output })`,
       `devPlanUpdate`, and `dispose`.
+- [x] Programmatic `prepareFrameworkBuild()` API for resolving config,
+      running graph/plan plugin hooks, and returning `AppGraph` + `BuildPlan`
+      without invoking a bundler or platform adapter.
 - [x] Consolidated package shape around `@evjs/ev`, `@evjs/client`,
       `@evjs/server`, `@evjs/shared`, `@evjs/cli`, and `@evjs/create-app`.
 - [x] Single top-level `@evjs/client` entry with framework-managed page,
