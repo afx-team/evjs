@@ -375,11 +375,11 @@ describe("resolveConfig", () => {
     expect(b.entry).toBe("./b.tsx");
   });
 
-  it("resolves MPA pages from component strings", () => {
+  it("resolves MPA page string shorthand as component modules", () => {
     const resolved = resolveConfig({
       pages: {
-        home: "./src/home/main.tsx",
-        campaign: "./src/campaign/main.tsx",
+        home: "./src/Home.tsx",
+        campaign: "./src/Campaign.tsx",
       },
     });
 
@@ -387,7 +387,7 @@ describe("resolveConfig", () => {
       home: {
         entry: undefined,
         path: undefined,
-        component: "./src/home/main.tsx",
+        component: "./src/Home.tsx",
         app: undefined,
         html: "./index.html",
         mount: undefined,
@@ -395,7 +395,7 @@ describe("resolveConfig", () => {
       campaign: {
         entry: undefined,
         path: undefined,
-        component: "./src/campaign/main.tsx",
+        component: "./src/Campaign.tsx",
         app: undefined,
         html: "./index.html",
         mount: undefined,

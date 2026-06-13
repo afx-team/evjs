@@ -1,8 +1,9 @@
 # Configuration
 
-evjs is zero-config by default. Create `ev.config.ts` when an app needs to
-customize routing, page outputs, framework server paths, remotes, plugins, or a
-non-default bundler.
+evjs is zero-config by default. Most apps only add `ev.config.ts` to choose SPA
+or MPA file routing and to configure server/runtime features. Use lower-level
+app and page output config only when the file convention cannot describe the
+target.
 
 ```ts
 import { defineConfig } from "@evjs/ev";
@@ -57,7 +58,9 @@ export default defineConfig({
 When `src/pages` exists and the project does not declare explicit `app`,
 `pages`, or `remote` config, SPA routing is enabled automatically.
 
-Use top-level `entry` / `html` only for a manually bootstrapped single app:
+Use top-level `entry` / `html` only for a manually bootstrapped single app.
+Applications that use `src/pages` should not create a client route tree
+manually:
 
 ```ts
 export default defineConfig({
@@ -68,14 +71,16 @@ export default defineConfig({
 
 ## Pages
 
-`pages` is the explicit lower-level API for independent page outputs. Prefer
-`routing: { mode: "mpa" }` when the page set maps directly to `src/pages`.
-String pages and `{ entry }` pages are user-owned bootstraps:
+`pages` is the explicit lower-level API for independent page outputs and
+non-conventional routes. Prefer `routing: { mode: "mpa" }` when the page set
+maps directly to `src/pages`. String pages are shorthand for framework-managed
+React component modules. Use `{ entry }` only when a page owns its own
+bootstrap:
 
 ```ts
 export default defineConfig({
   pages: {
-    home: "./src/pages/home/main.tsx",
+    home: "./src/pages/Home.tsx",
     about: {
       entry: "./src/pages/about/main.tsx",
       html: "./src/pages/about/index.html",
@@ -84,7 +89,8 @@ export default defineConfig({
 });
 ```
 
-Framework-managed component pages let evjs own mount/hydrate through the page runtime:
+The object `{ component }` form is equivalent to the string shorthand, and is
+the form to use when the page needs `path`, `html`, or `mount`:
 
 ```ts
 export default defineConfig({

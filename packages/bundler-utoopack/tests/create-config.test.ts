@@ -1,7 +1,11 @@
+import { createRequire } from "node:module";
 import type { AppGraph, BuildPlan } from "@evjs/ev";
 import { createBuildPlan } from "@evjs/ev/build-tools";
 import { describe, expect, it } from "vitest";
 import { createUtoopackConfig } from "../src/adapter/create-config.js";
+
+const require = createRequire(import.meta.url);
+const componentPageLoader = require("../src/adapter/component-page-loader.cjs");
 
 describe("createUtoopackConfig", () => {
   function createResolvedConfig(
@@ -198,6 +202,91 @@ describe("createUtoopackConfig", () => {
         },
       ],
     });
+  });
+
+  it("uses component page loaders instead of the SPA router loader for MPA page routes", async () => {
+    const config = createResolvedConfig({
+      routing: {
+        mode: "mpa",
+        dir: "./src/pages",
+        html: "./index.html",
+        mount: "#app",
+        routes: [
+          {
+            id: "index",
+            path: "/",
+            module: "./src/pages/index.tsx",
+          },
+          {
+            id: "about",
+            path: "/about",
+            module: "./src/pages/about.tsx",
+          },
+        ],
+      },
+    });
+    const graph: AppGraph = {
+      version: 1,
+      rootDir: process.cwd(),
+      apps: {},
+      pages: {
+        index: {
+          id: "index",
+          path: "/",
+          component: "./src/pages/index.tsx",
+          html: "./index.html",
+          render: "csr",
+          mount: "#app",
+        },
+        about: {
+          id: "about",
+          path: "/about",
+          component: "./src/pages/about.tsx",
+          html: "./index.html",
+          render: "csr",
+          mount: "#app",
+        },
+      },
+      routes: [],
+      serverFunctions: [],
+      serverRoutes: [],
+      remotes: {},
+    };
+    const plan = createBuildPlan(config, graph, { mode: "development" });
+
+    expect(plan.entries.map((entry) => entry.metadata?.type)).toEqual([
+      "react-component-page",
+      "react-component-page",
+    ]);
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+    const serializedRules = JSON.stringify(utoopackConfig.module?.rules);
+
+    expect(serializedRules).toContain("component-page-loader.cjs");
+    expect(serializedRules).not.toContain("pages-entry-loader.cjs");
+  });
+
+  it("generates router-free component page entry imports", () => {
+    const source = componentPageLoader.call({
+      cacheable() {},
+      getOptions() {
+        return {
+          hydrate: "load",
+          mount: "#app",
+          render: "csr",
+          route: { id: "about", path: "/about" },
+        };
+      },
+      resourcePath: "/workspace/src/pages/about.tsx",
+    });
+
+    expect(source).toContain("@evjs/client/internal/react-page");
+    expect(source).not.toContain('from "@evjs/client/internal";');
+    expect(source).toContain("createReactPageModule");
   });
 
   it("awaits async bundlerConfig hooks before returning config", async () => {

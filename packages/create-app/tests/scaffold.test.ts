@@ -71,6 +71,22 @@ describe("create-app scaffolding", () => {
     }
   });
 
+  it("each template ignores generated SPA route types", () => {
+    const templates = fs
+      .readdirSync(templatesDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+
+    for (const template of templates) {
+      const gitignore = fs.readFileSync(
+        path.join(templatesDir, template, ".gitignore"),
+        "utf-8",
+      );
+
+      expect(gitignore.split(/\r?\n/)).toContain("evjs-route-types.d.ts");
+    }
+  });
+
   it("template package.json uses workspace references for @evjs deps", () => {
     const templates = fs
       .readdirSync(templatesDir, { withFileTypes: true })

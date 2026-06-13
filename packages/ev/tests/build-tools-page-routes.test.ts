@@ -64,6 +64,30 @@ describe("discoverPageRoutes", () => {
     expect(discovery.diagnostics).toEqual([]);
   });
 
+  it("discovers the root layout beside a custom page route directory", async () => {
+    const cwd = await createFixture({
+      "src/layout.tsx": "export const NotTheAppLayout = true;",
+      "src/app/layout.tsx":
+        "export default function AppLayout() { return null; }",
+      "src/app/pages/index.tsx":
+        "export default function Home() { return null; }",
+    });
+
+    const discovery = await discoverPageRoutes(cwd, {
+      dir: "./src/app/pages",
+    });
+
+    expect(discovery.rootModule).toBe("./src/app/layout.tsx");
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/app/pages/index.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([]);
+  });
+
   it("rejects bracket dynamic route segments", async () => {
     const cwd = await createFixture({
       "src/pages/index.tsx": "export default function Home() { return null; }",
@@ -105,7 +129,11 @@ describe("discoverPageRoutes", () => {
         "export default function PostsLayout() { return null; }",
       "src/pages/admin/layout.jsx":
         "export default function AdminLayout() { return null; }",
+      "src/pages/layout/index.tsx":
+        "export default function LayoutIndex() { return null; }",
       "src/pages/index.tsx": "export default function Home() { return null; }",
+      "src/pages/posts/layout/index.jsx":
+        "export default function PostLayoutIndex() { return null; }",
     });
 
     const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
@@ -123,13 +151,63 @@ describe("discoverPageRoutes", () => {
         level: "error",
         file: "src/pages/admin/layout.jsx",
         message:
-          "Layout files must live at ./src/layout.tsx. Files named layout inside the page route directory are not route pages.",
+          "Layout files must live at ./src/layout.tsx. Files or folders named layout inside the page route directory are not route pages.",
+      },
+      {
+        level: "error",
+        file: "src/pages/layout/index.tsx",
+        message:
+          "Layout files must live at ./src/layout.tsx. Files or folders named layout inside the page route directory are not route pages.",
       },
       {
         level: "error",
         file: "src/pages/posts/layout.tsx",
         message:
-          "Layout files must live at ./src/layout.tsx. Files named layout inside the page route directory are not route pages.",
+          "Layout files must live at ./src/layout.tsx. Files or folders named layout inside the page route directory are not route pages.",
+      },
+      {
+        level: "error",
+        file: "src/pages/posts/layout/index.jsx",
+        message:
+          "Layout files must live at ./src/layout.tsx. Files or folders named layout inside the page route directory are not route pages.",
+      },
+    ]);
+  });
+
+  it("reports the custom root layout path for layout files inside a custom route directory", async () => {
+    const cwd = await createFixture({
+      "src/app/pages/layout.tsx":
+        "export default function Layout() { return null; }",
+      "src/app/pages/posts/layout/index.tsx":
+        "export default function PostLayoutIndex() { return null; }",
+      "src/app/pages/index.tsx":
+        "export default function Home() { return null; }",
+    });
+
+    const discovery = await discoverPageRoutes(cwd, {
+      dir: "./src/app/pages",
+    });
+
+    expect(discovery.rootModule).toBeUndefined();
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/app/pages/index.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/app/pages/layout.tsx",
+        message:
+          "Layout files must live at ./src/app/layout.tsx. Files or folders named layout inside the page route directory are not route pages.",
+      },
+      {
+        level: "error",
+        file: "src/app/pages/posts/layout/index.tsx",
+        message:
+          "Layout files must live at ./src/app/layout.tsx. Files or folders named layout inside the page route directory are not route pages.",
       },
     ]);
   });
@@ -156,13 +234,16 @@ describe("discoverPageRoutes", () => {
         level: "error",
         file: "src/pages/layout.tsx",
         message:
-          "Layout files must live at ./src/layout.tsx. Files named layout inside the page route directory are not route pages.",
+          "Layout files must live at ./src/layout.tsx. Files or folders named layout inside the page route directory are not route pages.",
       },
     ]);
   });
 
   it("rejects root layout directory aliases", async () => {
     const cwd = await createFixture({
+      "src/layout.jsx": "export default function LayoutJsx() { return null; }",
+      "src/layout/index.js":
+        "export default function LayoutIndexJs() { return null; }",
       "src/layout/index.tsx":
         "export default function Layout() { return null; }",
       "src/pages/index.tsx": "export default function Home() { return null; }",
@@ -181,9 +262,51 @@ describe("discoverPageRoutes", () => {
     expect(discovery.diagnostics).toEqual([
       {
         level: "error",
+        file: "src/layout.jsx",
+        message:
+          "Root layout must be a single file at ./src/layout.tsx. ./src/layout.jsx is not supported.",
+      },
+      {
+        level: "error",
         file: "src/layout/index.tsx",
         message:
           "Root layout must be a single file at ./src/layout.tsx. ./src/layout/index.tsx is not supported.",
+      },
+      {
+        level: "error",
+        file: "src/layout/index.js",
+        message:
+          "Root layout must be a single file at ./src/layout.tsx. ./src/layout/index.js is not supported.",
+      },
+    ]);
+  });
+
+  it("rejects root layout directory aliases beside a custom page route directory", async () => {
+    const cwd = await createFixture({
+      "src/app/layout/index.jsx":
+        "export default function Layout() { return null; }",
+      "src/app/pages/index.tsx":
+        "export default function Home() { return null; }",
+    });
+
+    const discovery = await discoverPageRoutes(cwd, {
+      dir: "./src/app/pages",
+    });
+
+    expect(discovery.rootModule).toBeUndefined();
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/app/pages/index.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/app/layout/index.jsx",
+        message:
+          "Root layout must be a single file at ./src/app/layout.tsx. ./src/app/layout/index.jsx is not supported.",
       },
     ]);
   });

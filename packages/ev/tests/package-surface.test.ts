@@ -64,6 +64,42 @@ describe("workspace package surface", () => {
       expect.arrayContaining(forbiddenPackageNames),
     );
   });
+
+  it("keeps @evjs/client router internals out of published subpath exports", async () => {
+    const clientPackageJson = JSON.parse(
+      await fs.readFile(
+        path.join(repoRoot, "packages/client/package.json"),
+        "utf-8",
+      ),
+    ) as {
+      exports?: Record<string, unknown>;
+    };
+
+    const exportedSubpaths = Object.keys(
+      clientPackageJson.exports ?? {},
+    ).sort();
+    expect(exportedSubpaths).toEqual([
+      ".",
+      "./internal",
+      "./internal/page-context",
+      "./internal/react-page",
+      "./internal/route-types",
+      "./internal/rsc-page-context",
+    ]);
+    expect(exportedSubpaths).not.toEqual(
+      expect.arrayContaining([
+        "./app",
+        "./internal/app",
+        "./internal/page-route",
+        "./internal/react",
+        "./internal/shell",
+        "./navigation",
+        "./page-route",
+        "./route",
+        "./tanstack",
+      ]),
+    );
+  });
 });
 
 async function listPackageDirs(): Promise<string[]> {

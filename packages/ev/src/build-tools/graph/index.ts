@@ -149,7 +149,10 @@ export async function createAppGraph(
   // watched framework graph set.
   const fileDependencies = new Set(sourceFiles.explicitDependencyFiles);
   if (config.routing) {
-    fileDependencies.add(path.resolve(cwd, config.routing.dir));
+    const routingDir = path.resolve(cwd, config.routing.dir);
+    for (const dir of await collectRouteDirectories(routingDir)) {
+      fileDependencies.add(dir);
+    }
   }
   const clientRoutes: ExtractedRoute[] = [];
   const serverRoutes = new Map<string, ServerRouteNode>();
@@ -781,6 +784,30 @@ function createRemoteBuildNode(
       ]),
     ),
   };
+}
+
+async function collectRouteDirectories(root: string): Promise<string[]> {
+  const dirs = new Set([root]);
+
+  async function visit(current: string) {
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw err;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+      const absolute = path.join(current, entry.name);
+      dirs.add(absolute);
+      await visit(absolute);
+    }
+  }
+
+  await visit(root);
+  return [...dirs].sort();
 }
 
 function getDefaultAppId(graph: AppGraph): string | undefined {

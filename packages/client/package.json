@@ -47,12 +47,33 @@
       "types": "./esm/internal.d.ts",
       "import": "./esm/internal.js",
       "default": "./esm/internal.js"
+    },
+    "./internal/page-context": {
+      "types": "./esm/page-context.d.ts",
+      "import": "./esm/page-context.js",
+      "default": "./esm/page-context.js"
+    },
+    "./internal/react-page": {
+      "types": "./esm/react-page.d.ts",
+      "import": "./esm/react-page.js",
+      "default": "./esm/react-page.js"
+    },
+    "./internal/rsc-page-context": {
+      "types": "./esm/rsc-page-context.d.ts",
+      "import": "./esm/rsc-page-context.js",
+      "default": "./esm/rsc-page-context.js"
+    },
+    "./internal/route-types": {
+      "types": "./esm/route-types.d.ts",
+      "import": "./esm/route-types.js",
+      "default": "./esm/route-types.js"
     }
   },
   "scripts": {
-    "build": "rm -rf esm && tsc",
-    "test": "vitest run",
-    "check-types": "tsc --noEmit"
+    "prepare-shared-runtime": "test -f ../shared/esm/index.js || npm --workspace @evjs/shared run build",
+    "build": "npm run prepare-shared-runtime && rm -rf esm && tsc",
+    "test": "npm run prepare-shared-runtime && vitest run",
+    "check-types": "npm run prepare-shared-runtime && tsc --noEmit"
   },
   "files": [
     "esm"

@@ -27,7 +27,15 @@ export interface PageRouteDiscovery {
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
 const ROOT_LAYOUT_FILE = "layout.tsx";
-const ROOT_LAYOUT_INDEX_FILE = "layout/index.tsx";
+const ROOT_LAYOUT_ALIAS_FILES = [
+  "layout.ts",
+  "layout.js",
+  "layout.jsx",
+  "layout/index.ts",
+  "layout/index.tsx",
+  "layout/index.js",
+  "layout/index.jsx",
+] as const;
 
 export async function discoverPageRoutes(
   cwd: string,
@@ -47,7 +55,7 @@ export async function discoverPageRoutes(
     const sourceRel = toProjectPath(cwd, file);
     const routeRel = toPosixPath(path.relative(absoluteDir, file));
     const routeFile = toRouteFile(routeRel);
-    if (routeFile?.name === "layout") {
+    if (routeFile?.segments.includes("layout")) {
       diagnostics.push({
         level: "error",
         file: sourceRel.replace(/^\.\//, ""),
@@ -110,7 +118,7 @@ function createPageLayoutDiagnostic(
     cwd,
     path.join(path.dirname(absoluteRouteDir), ROOT_LAYOUT_FILE),
   );
-  return `Layout files must live at ${expected}. Files named layout inside the page route directory are not route pages.`;
+  return `Layout files must live at ${expected}. Files or folders named layout inside the page route directory are not route pages.`;
 }
 
 function createBracketRouteSegmentDiagnostic(segment: string): string {
@@ -134,19 +142,21 @@ async function discoverRootLayout(
   if (!isInsideCwd(cwd, appDir)) return undefined;
 
   const absolute = path.join(appDir, ROOT_LAYOUT_FILE);
-  const indexed = path.join(appDir, ROOT_LAYOUT_INDEX_FILE);
   const expected = toProjectPath(cwd, absolute);
-  const actual = toProjectPath(cwd, indexed);
 
-  try {
-    await fs.access(indexed);
-    diagnostics.push({
-      level: "error",
-      file: actual.replace(/^\.\//, ""),
-      message: `Root layout must be a single file at ${expected}. ${actual} is not supported.`,
-    });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  for (const alias of ROOT_LAYOUT_ALIAS_FILES) {
+    const aliased = path.join(appDir, alias);
+    const actual = toProjectPath(cwd, aliased);
+    try {
+      await fs.access(aliased);
+      diagnostics.push({
+        level: "error",
+        file: actual.replace(/^\.\//, ""),
+        message: `Root layout must be a single file at ${expected}. ${actual} is not supported.`,
+      });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
   }
 
   try {

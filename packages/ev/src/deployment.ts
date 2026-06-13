@@ -411,15 +411,32 @@ function createNodeServerModule(
 
   return `import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { serve } from "@evjs/server/node";
-${serverEntry ? `import serverHandler from ${JSON.stringify(`./server/${serverEntry}`)};` : ""}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientRoot = path.join(__dirname, ${JSON.stringify(clientRoot)});
+const serverDir = path.join(__dirname, "server");
+const serverEntry = ${JSON.stringify(serverEntry ?? "")};
 const frameworkBasePath = ${JSON.stringify(frameworkBasePath)};
 const frameworkRoutes = ${JSON.stringify(frameworkRoutes, null, 2)};
 const staticFallback = ${JSON.stringify(staticFallback ?? "")};
+const manifest =
+  (await readJsonIfExists(path.join(serverDir, "build-output.json"))) ??
+  (await readJsonIfExists(path.join(__dirname, "manifest.json")));
+if (manifest) globalThis.__EVJS_MANIFEST__ = manifest;
+globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => {
+  const mod = await import(pathToFileURL(path.resolve(serverDir, asset)).href);
+  return normalizeServerModule(mod);
+};
+const serverHandler = serverEntry
+  ? unwrapServerHandler(
+      await import(pathToFileURL(path.join(serverDir, serverEntry)).href),
+    )
+  : undefined;
+if (serverEntry && typeof serverHandler?.fetch !== "function") {
+  throw new Error("[evjs] Server entry must export a fetch handler.");
+}
 
 const app = {
   async fetch(request) {
@@ -506,6 +523,32 @@ async function serveFile(filePath) {
   }
 }
 
+async function readJsonIfExists(filePath) {
+  try {
+    return JSON.parse(await readFile(filePath, "utf-8"));
+  } catch (error) {
+    if (error && typeof error === "object" && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+function normalizeServerModule(mod) {
+  const nested = mod && typeof mod.default === "object" ? mod.default : undefined;
+  return nested && ("default" in nested || "render" in nested || "fetch" in nested)
+    ? nested
+    : mod;
+}
+
+function unwrapServerHandler(mod) {
+  const first = normalizeServerModule(mod);
+  if (first && typeof first === "object" && "default" in first) {
+    return first.default;
+  }
+  return first;
+}
+
 function contentTypeFor(filePath) {
   switch (path.extname(filePath).toLowerCase()) {
     case ".html":
@@ -545,15 +588,22 @@ function createEdgeWorkerModule(
   const frameworkRoutes = getFrameworkServerRoutes(output).map(toNodeRoutePath);
   const assetsBinding = options.assetsBinding ?? "ASSETS";
   const serverImportPath = serverEntry ? `./server/${serverEntry}` : undefined;
-  const importLine = serverImportPath
-    ? `import serverHandler from ${JSON.stringify(serverImportPath)};\n`
-    : "";
   const frameworkRequestCondition = serverEntry
     ? "isFrameworkRequest(url.pathname)"
     : "false";
 
   return [
-    importLine.trimEnd(),
+    `const manifest = ${JSON.stringify(output, null, 2)};`,
+    "globalThis.__EVJS_MANIFEST__ = manifest;",
+    "globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => {",
+    '  return normalizeServerModule(await import("./server/" + asset));',
+    "};",
+    serverImportPath
+      ? `const serverHandler = unwrapServerHandler(await import(${JSON.stringify(serverImportPath)}));`
+      : "const serverHandler = undefined;",
+    'if (serverHandler && typeof serverHandler.fetch !== "function") {',
+    '  throw new Error("[evjs] Server entry must export a fetch handler.");',
+    "}",
     `const frameworkBasePath = ${JSON.stringify(frameworkBasePath)};`,
     `const frameworkRoutes = ${JSON.stringify(frameworkRoutes, null, 2)};`,
     `const staticFallback = ${JSON.stringify(staticFallback ?? "")};`,
@@ -614,6 +664,21 @@ function createEdgeWorkerModule(
     '  return pathname.replace(/\\/+$/, "");',
     "}",
     "",
+    "function normalizeServerModule(mod) {",
+    '  const nested = mod && typeof mod.default === "object" ? mod.default : undefined;',
+    '  return nested && ("default" in nested || "render" in nested || "fetch" in nested)',
+    "    ? nested",
+    "    : mod;",
+    "}",
+    "",
+    "function unwrapServerHandler(mod) {",
+    "  const first = normalizeServerModule(mod);",
+    '  if (first && typeof first === "object" && "default" in first) {',
+    "    return first.default;",
+    "  }",
+    "  return first;",
+    "}",
+    "",
     "async function serveStaticAsset(request, env) {",
     "  const url = new URL(request.url);",
     '  if (url.pathname === "/") return undefined;',
@@ -626,9 +691,7 @@ function createEdgeWorkerModule(
     "  return undefined;",
     "}",
     "",
-  ]
-    .filter((line, index) => index !== 0 || line)
-    .join("\n");
+  ].join("\n");
 }
 
 function createStaticRedirects(output: BuildOutput): string {

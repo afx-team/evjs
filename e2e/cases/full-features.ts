@@ -491,7 +491,9 @@ test.describe("full-features", () => {
     );
     expect(
       fs.readFileSync(path.join(exampleDir, "dist", "server.mjs"), "utf-8"),
-    ).toMatch(/import serverHandler from "\.\/server\/server\.[^"]+\.js";/);
+    ).toMatch(
+      /await import\(pathToFileURL\(path\.join\(serverDir, serverEntry\)\)\.href\)/,
+    );
 
     const staticArtifact = JSON.parse(
       fs.readFileSync(

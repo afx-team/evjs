@@ -1,4 +1,6 @@
 
+evjs-route-types.d.ts
+
 # SQLite databases
 *.db
 *.db-shm

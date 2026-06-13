@@ -1,85 +1,22 @@
+import type { QueryClient } from "@tanstack/react-query";
 import {
+  createRootRouteWithContext,
   createRoute as createTanStackRoute,
   Outlet,
 } from "@tanstack/react-router";
-import {
-  type ComponentType,
-  createContext,
-  createElement,
-  type ReactNode,
-  useContext,
-} from "react";
+import { type ComponentType, createElement, type ReactNode } from "react";
 import { type App, createApp } from "./app.js";
-import { createAppRootRoute } from "./context.js";
+import { PageProvider } from "./page-context.js";
 
-export interface PageProps<
-  TParams extends Record<string, string> = Record<string, string>,
-  TSearch extends Record<string, unknown> = Record<string, unknown>,
-  TLoaderData = unknown,
-> {
-  params: TParams;
-  search: TSearch;
-  loaderData: TLoaderData;
+interface PageRouteContext {
+  queryClient: QueryClient;
 }
 
-export type PageComponent<
-  TParams extends Record<string, string> = Record<string, string>,
-  TSearch extends Record<string, unknown> = Record<string, unknown>,
-  TLoaderData = unknown,
-> = ComponentType<PageProps<TParams, TSearch, TLoaderData>>;
-
-export interface PageProviderProps<
-  TParams extends Record<string, string> = Record<string, string>,
-  TSearch extends Record<string, unknown> = Record<string, unknown>,
-  TLoaderData = unknown,
-> {
-  value: PageProps<TParams, TSearch, TLoaderData>;
-  children?: ReactNode;
-}
-
-const PageContext = createContext<PageProps | undefined>(undefined);
-
-export function PageProvider({ value, children }: PageProviderProps) {
-  return createElement(PageContext.Provider, { value }, children);
-}
-
-export function usePageContext<
-  TParams extends Record<string, string> = Record<string, string>,
-  TSearch extends Record<string, unknown> = Record<string, unknown>,
-  TLoaderData = unknown,
->(): PageProps<TParams, TSearch, TLoaderData> {
-  const ctx = useContext(PageContext);
-  if (!ctx) {
-    throw new Error(
-      "[evjs] Page route data hooks must be used inside an evjs page.",
-    );
-  }
-  return ctx as PageProps<TParams, TSearch, TLoaderData>;
-}
-
-export function usePageParams<
-  TParams extends Record<string, string> = Record<string, string>,
->(): TParams {
-  return usePageContext<TParams>().params;
-}
-
-export function usePageSearch<
-  TSearch extends Record<string, unknown> = Record<string, unknown>,
->(): TSearch {
-  return usePageContext<Record<string, string>, TSearch>().search;
-}
-
-export function usePageLoaderData<TLoaderData = unknown>(): TLoaderData {
-  return usePageContext<
-    Record<string, string>,
-    Record<string, unknown>,
-    TLoaderData
-  >().loaderData;
-}
+const createPageRootRoute = createRootRouteWithContext<PageRouteContext>();
 
 /** Framework-generated SPA bootstrap contract. */
 export interface PageModule {
-  default?: PageComponent;
+  default?: ComponentType;
   beforeLoad?: (...args: never[]) => unknown;
   loader?: (...args: never[]) => unknown;
   validateSearch?: (...args: never[]) => unknown;
@@ -107,8 +44,7 @@ export interface CreatePagesAppOptions {
 
 /** Framework-generated SPA bootstrap contract. */
 export interface PagesApp {
-  app: App<unknown>;
-  routeTree: unknown;
+  app: App;
 }
 
 /** Framework-generated SPA bootstrap. */
@@ -121,7 +57,7 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
       : outlet;
   }
 
-  const rootRoute = createAppRootRoute({ component: RootRoute });
+  const rootRoute = createPageRootRoute({ component: RootRoute });
   const routes = options.routes.map((definition, index) => {
     let route: unknown;
     route = createTanStackRoute({
@@ -149,16 +85,17 @@ export function createPagesApp(options: CreatePagesAppOptions): PagesApp {
         return createElement(
           PageProvider,
           { value: pageProps },
-          createElement(Component, pageProps),
+          createElement(Component),
         );
       },
     } as never);
     return route;
   });
-  const routeTree = rootRoute.addChildren(routes as never);
-  const app = createApp({ routeTree } as never) as App<unknown>;
+  const app = createApp({
+    routeTree: rootRoute.addChildren(routes as never),
+  } as never);
 
-  return { app, routeTree };
+  return { app };
 }
 
 function pickRouteOptions(mod: PageModule) {

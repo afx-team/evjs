@@ -3,7 +3,9 @@
 evjs uses `src/pages` as the client-routing source of truth. Application code
 lives in page files; the framework discovers those files and either builds one
 framework-owned SPA or one router-free MPA page per file. evjs does not write
-`.evjs` temp route files.
+temporary runtime route files; SPA mode only emits a type declaration such as
+`src/evjs-route-types.d.ts` so TypeScript can infer navigation paths from the
+page tree.
 
 ## Project Structure
 
@@ -82,9 +84,9 @@ export default function UserPage() {
 }
 ```
 
-evjs also passes the same `params`, `search`, and `loaderData` values to the
-page component as props in both SPA and MPA mode. Hooks are the recommended
-zero-annotation path for page code.
+Use page hooks for route data in both SPA and MPA mode. They keep page modules
+free of framework wrapper types and avoid prop annotations. evjs does not pass
+`params`, `search`, or `loaderData` as page component props.
 
 In SPA mode, page modules may export page lifecycle hooks that are useful for
 page logic, such as `loader`, `beforeLoad`, `validateSearch`,
@@ -109,19 +111,21 @@ export default function SearchPage() {
 
 ## Layout
 
-For SPA mode, `src/layout.tsx` is optional. When present, its default
-export wraps the current page as `children`, so user code does not need a router
-outlet component.
+For SPA mode, the root layout is optional. It lives beside the route directory:
+the default `src/pages` uses `src/layout.tsx`, and a custom `routing.dir` such
+as `src/app/pages` uses `src/app/layout.tsx`. When present, the default export
+wraps the current page as `children`, so user code does not need a router outlet
+component.
 
-The layout convention is SPA-only and has exactly one root file:
-`src/layout.tsx`. `src/layout/index.tsx` is not an alias. MPA mode does not
-consume a framework layout file; share visual wrappers by importing ordinary
-components from each page.
+The layout convention is SPA-only and has exactly one root file beside the route
+directory: use the exact filename `layout.tsx`. `layout.jsx`, `layout.ts`, and
+`layout/index.*` are not aliases. MPA mode does not consume a framework layout
+file; share visual wrappers by importing ordinary components from each page.
 
-`src/pages` is only for route pages. Do not put `layout.tsx` anywhere under
-`src/pages`; evjs reports that as a convention error instead of turning it into
-a route. Nested visual wrappers should be normal components imported by the
-page that needs them.
+The route directory is only for route pages. Do not put files or folders named
+`layout` under it; evjs reports that as a convention error instead of turning
+them into routes. Nested visual wrappers should be normal components imported by
+the page that needs them.
 
 ```tsx
 // src/layout.tsx
@@ -143,6 +147,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 Navigation can use ordinary anchors or `Link` from `@evjs/client`. Route files
 remain the source of truth, and navigation helpers use the same file-path
 convention for paths and params.
+
+During `ev dev` and `ev build`, SPA routing writes the generated declaration
+`src/evjs-route-types.d.ts` for the default `src/pages` route directory. A
+custom `routing.dir` writes the same file name beside that route directory's
+parent. That file augments `@evjs/client` types for `Link`, `useLinkProps`,
+`redirect`, and related helpers. It is type-only; application code should not
+import it or write TanStack route trees manually.
+
+Make sure the generated declaration is inside your `tsconfig.json` `include`.
+The default `include: ["src"]` works for `src/pages` and custom directories
+under `src`, such as `src/app/pages`. If you place routes outside `src`, include
+that route directory's parent as well.
 
 ```tsx
 import { Link } from "@evjs/client";

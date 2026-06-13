@@ -12,6 +12,8 @@ export type {
 export { createAppGraph } from "./graph/index.js";
 export type { GenerateHtmlOptions, HtmlAsset } from "./html.js";
 export { generateHtml } from "./html.js";
+export type { GeneratePageRouteTypesOptions } from "./page-route-types.js";
+export { generatePageRouteTypes } from "./page-route-types.js";
 export type {
   DiscoverPageRoutesOptions,
   PageRouteDiscovery,

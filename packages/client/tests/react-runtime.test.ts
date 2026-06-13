@@ -125,12 +125,12 @@ describe("createReactPageModule", () => {
     });
   });
 
-  it("passes route-derived params and search to MPA page components", async () => {
+  it("provides route-derived params and search through page context", async () => {
     calls.length = 0;
     renderedElements.length = 0;
     vi.stubGlobal("location", {
       pathname: "/posts/42",
-      search: "?tab=comments",
+      search: "?tab=comments&tag=a&tag=b",
     });
     const mod = createReactPageModule({
       component: Component,
@@ -154,13 +154,48 @@ describe("createReactPageModule", () => {
     };
     const pageProps = {
       params: { postId: "42" },
-      search: { tab: "comments" },
+      search: { tab: "comments", tag: ["a", "b"] },
       loaderData: undefined,
     };
 
     expect(calls).toEqual(["createRoot", "render"]);
     expect(element.props?.value).toEqual(pageProps);
-    expect(element.props?.children?.props).toEqual(pageProps);
+    expect(element.props?.children?.props).toEqual({});
+  });
+
+  it("keeps explicit props but hides route data props from MPA page components", async () => {
+    calls.length = 0;
+    renderedElements.length = 0;
+    const mod = createReactPageModule({
+      component: Component,
+      render: "csr",
+      hydrate: "load",
+      props: {
+        title: "Post",
+        params: { postId: "42" },
+        search: { tab: "comments" },
+        loaderData: { title: "Hello" },
+      },
+    });
+
+    await mod.mount?.({} as Element, {} as never);
+
+    const element = renderedElements[0] as {
+      props?: {
+        value?: unknown;
+        children?: {
+          props?: unknown;
+        };
+      };
+    };
+
+    expect(calls).toEqual(["createRoot", "render"]);
+    expect(element.props?.value).toEqual({
+      params: { postId: "42" },
+      search: { tab: "comments" },
+      loaderData: { title: "Hello" },
+    });
+    expect(element.props?.children?.props).toEqual({ title: "Post" });
   });
 });
 
@@ -289,12 +324,12 @@ describe("fetchRscFlight", () => {
         routes: [],
       },
       pageId: "dashboard",
-      url: "https://example.com/dashboard",
+      url: "https://example.com/dashboard?tab=comments&tag=a&tag=b",
       fetch: fetchMock,
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://example.com/__evjs/rsc?page=dashboard",
+      "https://example.com/__evjs/rsc?page=dashboard&url=%2Fdashboard%3Ftab%3Dcomments%26tag%3Da%26tag%3Db",
     );
   });
 

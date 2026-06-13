@@ -41,10 +41,13 @@ export async function defaultLoadRemoteManifest(
   if (isLocalRemoteManifestUrl(remote.manifest)) {
     return {
       ...manifest,
-      baseUrl: new URL(".", remote.manifest).toString(),
+      baseUrl: resolveRemoteManifestBaseUrl(remote.manifest),
     };
   }
-  return manifest;
+  return {
+    ...manifest,
+    baseUrl: manifest.baseUrl || resolveRemoteManifestBaseUrl(remote.manifest),
+  };
 }
 
 export async function loadRemoteStylesheets(
@@ -185,5 +188,16 @@ function isLocalRemoteManifestUrl(manifestUrl: string): boolean {
     return url.hostname === "localhost" || url.hostname === "127.0.0.1";
   } catch {
     return false;
+  }
+}
+
+function resolveRemoteManifestBaseUrl(manifestUrl: string): string {
+  try {
+    return new URL(
+      ".",
+      new URL(manifestUrl, globalThis.location?.href),
+    ).toString();
+  } catch {
+    return "/";
   }
 }

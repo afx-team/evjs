@@ -2,7 +2,8 @@
 
 evjs 以 `src/pages` 作为客户端路由的唯一事实来源。应用页面写在
 页面文件中；框架会发现这些文件，并按配置生成一个框架托管的 SPA，
-或生成多个不带路由器的 MPA 页面。evjs 不会写入 `.evjs` 临时路由文件。
+或生成多个不带路由器的 MPA 页面。evjs 不会写入临时 runtime 路由文件；SPA
+模式只会生成类似 `src/evjs-route-types.d.ts` 的类型声明，让 TypeScript 从页面树推导导航 path。
 
 ## 目录结构
 
@@ -77,8 +78,9 @@ export default function UserPage() {
 }
 ```
 
-SPA 和 MPA 模式都会把同一份 `params`、`search` 和 `loaderData` 作为 props
-传给页面组件。页面代码推荐使用 hooks，这样通常不需要额外写 props 类型。
+SPA 和 MPA 模式都使用 page hooks 读取路由数据。这样页面模块不需要引入框架
+wrapper 类型，也不需要额外写 props 注解。evjs 不会把 `params`、`search`
+或 `loaderData` 作为页面组件 props 传入。
 
 SPA 模式下，页面模块可以导出与页面逻辑相关的页面生命周期，例如
 `loader`、`beforeLoad`、`validateSearch`、`pendingComponent`、`errorComponent`
@@ -102,14 +104,17 @@ export default function SearchPage() {
 
 ## 布局
 
-SPA 模式下，`src/layout.tsx` 是可选根布局。默认导出会以 `children`
-包裹当前页面，因此用户代码不需要引入路由 outlet 组件。
+SPA 模式下，根布局是可选文件。它放在路由目录旁边：默认 `src/pages`
+使用 `src/layout.tsx`，自定义 `routing.dir` 为 `src/app/pages` 时使用
+`src/app/layout.tsx`。默认导出会以 `children` 包裹当前页面，因此用户代码不需要引入
+路由 outlet 组件。
 
-布局约定只用于 SPA，且只有一个根文件：`src/layout.tsx`。`src/layout/index.tsx`
-不是别名。MPA 模式不消费框架 layout 文件；需要公共视觉包裹时，在各页面里导入普通组件即可。
+布局约定只用于 SPA，且路由目录旁边只有一个根文件：必须使用精确文件名 `layout.tsx`。
+`layout.jsx`、`layout.ts` 和 `layout/index.*` 都不是别名。MPA 模式不消费框架 layout
+文件；需要公共视觉包裹时，在各页面里导入普通组件即可。
 
-`src/pages` 只放页面路由。不要在 `src/pages` 的任何位置放 `layout.tsx`；evjs 会把它
-报告为目录约定错误，而不是把它转换成一个页面路由。嵌套视觉包裹应作为普通组件由需要的页面导入。
+路由目录只放页面路由。不要在其中任何位置放名为 `layout` 的文件或目录；evjs 会把它报告为目录约定错误，
+而不是把它转换成页面路由。嵌套视觉包裹应作为普通组件由需要的页面导入。
 
 ```tsx
 // src/layout.tsx
@@ -130,6 +135,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 页面内可以使用普通 `<a>`，也可以使用 `@evjs/client` 的 `Link`。导航 helper
 使用同一套文件路径约定来描述 path 和 params。
+
+默认 `src/pages` 路由目录下，`ev dev` 和 `ev build` 会在 SPA 模式下写入
+`src/evjs-route-types.d.ts`。自定义 `routing.dir` 时，会在该路由目录的父级写入同名文件。
+这个文件只用于增强 `@evjs/client` 的 `Link`、`useLinkProps`、`redirect`
+等类型；应用代码不需要导入它，也不需要手写 TanStack route tree。
+
+确保生成的声明文件在 `tsconfig.json` 的 `include` 范围内。默认
+`include: ["src"]` 适用于 `src/pages`，也适用于 `src/app/pages` 这类
+`src` 下的自定义目录。如果页面路由放在 `src` 外部，需要把该路由目录的父级也加入
+`include`。
 
 ```tsx
 import { Link } from "@evjs/client";

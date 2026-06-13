@@ -1,3 +1,8 @@
+import {
+  PageProvider,
+  type PageProviderProps,
+} from "@evjs/client/internal/page-context";
+import { matchPageRouteParams, parsePageSearch } from "@evjs/shared";
 import type {
   AssetGroup,
   BuildOutput,
@@ -79,7 +84,9 @@ export function createReactServerRenderAdapter(
     const props = options.createProps
       ? await options.createProps(ctx)
       : defaultProps(ctx);
-    const appHtml = renderToString(createElement(Component, props));
+    const appHtml = renderToString(
+      createPageElement(Component, props, ctx, resolvePageProvider(module)),
+    );
 
     if (ctx.regionId) {
       return {
@@ -278,7 +285,7 @@ async function renderRscRendererModule(
   const props = options.createProps
     ? await options.createProps(ctx)
     : defaultRscProps(ctx);
-  return renderToString(createElement(Component, props));
+  return renderToString(createPageElement(Component, props, ctx));
 }
 
 function getModuleFunction(
@@ -338,6 +345,112 @@ function findRouteForPage(
         path: route.path,
       }
     : undefined;
+}
+
+interface PageElementContext {
+  request: Request;
+  manifest: BuildOutput;
+  pageUrl?: string;
+  route?: RouteOutput;
+  pageId?: string;
+}
+
+function createPageElement(
+  component: ComponentType<Record<string, unknown>>,
+  props: Record<string, unknown>,
+  ctx: PageElementContext,
+  Provider: ComponentType<PageProviderProps> = PageProvider,
+) {
+  if (!shouldProvidePageRouteProps(props, ctx)) {
+    return createElement(component, props);
+  }
+
+  return createElement(
+    Provider,
+    { value: resolvePageRouteProps(props, ctx) },
+    createElement(component, stripPageRouteProps(props)),
+  );
+}
+
+function resolvePageProvider(
+  module: ReactServerRendererModule,
+): ComponentType<PageProviderProps> {
+  return typeof module.PageProvider === "function"
+    ? (module.PageProvider as ComponentType<PageProviderProps>)
+    : PageProvider;
+}
+
+function shouldProvidePageRouteProps(
+  props: Record<string, unknown>,
+  ctx: PageElementContext,
+): boolean {
+  return (
+    Boolean(resolveRouteContext(props, ctx)) ||
+    isRecord(props.params) ||
+    isRecord(props.search) ||
+    "loaderData" in props
+  );
+}
+
+function resolvePageRouteProps(
+  props: Record<string, unknown>,
+  ctx: PageElementContext,
+) {
+  const route = resolveRouteContext(props, ctx);
+  const url = new URL(ctx.pageUrl ?? ctx.request.url, ctx.request.url);
+
+  return {
+    params: isStringRecord(props.params)
+      ? props.params
+      : route
+        ? matchPageRouteParams(route.path, url.pathname)
+        : {},
+    search: isRecord(props.search) ? props.search : parsePageSearch(url.search),
+    loaderData: props.loaderData,
+  };
+}
+
+function resolveRouteContext(
+  props: Record<string, unknown>,
+  ctx: PageElementContext,
+): { id: string; path: string } | undefined {
+  return (
+    ctx.route ??
+    readRouteContext(props.route) ??
+    findRouteForPage(ctx.manifest, ctx.pageId)
+  );
+}
+
+function readRouteContext(
+  value: unknown,
+): { id: string; path: string } | undefined {
+  if (!isRecord(value)) return undefined;
+  return typeof value.id === "string" && typeof value.path === "string"
+    ? { id: value.id, path: value.path }
+    : undefined;
+}
+
+function stripPageRouteProps(
+  props: Record<string, unknown>,
+): Record<string, unknown> {
+  const {
+    params: _params,
+    search: _search,
+    loaderData: _loaderData,
+    ...rest
+  } = props;
+  return rest;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return (
+    isRecord(value) &&
+    Object.values(value).every((item) => typeof item === "string")
+  );
 }
 
 function renderDefaultDocument(

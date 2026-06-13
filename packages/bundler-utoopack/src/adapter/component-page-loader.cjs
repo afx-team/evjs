@@ -8,7 +8,7 @@ module.exports = function componentPageLoader() {
 
   return [
     `import Component from ${JSON.stringify(`./${path.basename(this.resourcePath)}?evjs-component-page-source`)};`,
-    `import { createReactPageModule, mountReactPage, registerShellModule } from "@evjs/client/internal";`,
+    `import { createReactPageModule, mountReactPage, registerShellModule } from "@evjs/client/internal/react-page";`,
     ``,
     `const currentScript = document.currentScript;`,
     `const href = currentScript && "src" in currentScript ? currentScript.src : undefined;`,

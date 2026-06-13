@@ -142,13 +142,13 @@ export function createApp(options?: CreateAppOptions): Hono {
     const pprPath =
       framework.manifest.runtime.server?.ppr ??
       joinPath(framework.manifest.runtime.server?.basePath ?? "/__evjs", "ppr");
-    app.get(`${pprPath}/*`, async (c, next) => {
+    app.on(["GET", "HEAD"], [`${pprPath}/*`], async (c, next) => {
       const response = await handlePprRegionRequest(framework, c.req.raw);
       if (!response) return next();
       return response;
     });
 
-    app.get("*", async (c, next) => {
+    app.on(["GET", "HEAD"], ["*"], async (c, next) => {
       const response = await handleFrameworkRenderRequest(framework, c.req.raw);
       if (!response) return next();
       return response;

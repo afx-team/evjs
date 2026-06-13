@@ -150,8 +150,39 @@ describe("createAppGraph and createBuildPlan", () => {
       "src/layout.tsx",
       "src/pages",
       "src/pages/index.tsx",
+      "src/pages/users",
       "src/pages/users/$userId.tsx",
     ]);
+  });
+
+  it("watches existing nested route directories even before they contain routes", async () => {
+    const cwd = await createFixture({
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+      "src/pages/admin/.keep": "",
+      "index.html": '<div id="app"></div>',
+    });
+    const config = createConfig({
+      entry: "./src/pages/index.tsx",
+      routing: {
+        mode: "spa",
+        dir: "./src/pages",
+        entry: "./src/pages/index.tsx",
+        html: "./index.html",
+        mount: "#app",
+        routes: [
+          {
+            id: "index",
+            path: "/",
+            module: "./src/pages/index.tsx",
+          },
+        ],
+      },
+    });
+    const analysis = await createAppGraph(config, cwd);
+
+    expect(
+      analysis.fileDependencies.map((file) => path.relative(cwd, file)),
+    ).toEqual(["src/pages", "src/pages/admin", "src/pages/index.tsx"]);
   });
 
   it("creates router-free MPA page entries from page routes", async () => {

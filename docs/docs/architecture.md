@@ -47,8 +47,9 @@ Do not reintroduce legacy split packages such as `@evjs/build-tools`,
   AppGraph, BuildPlan, BuildOutput, and manifest schemas
 
 @evjs/client internal modules
-  framework-managed runtime, shell, page runtime, transport, RSC client runtime,
-  TanStack Router integration, and generated bootstrap behind @evjs/client/internal
+  framework-managed runtime, shell, router-free react-page runtime, transport,
+  RSC client runtime, SPA router integration, and generated bootstrap behind
+  @evjs/client/internal subpaths
 
 @evjs/bundler-utoopack
   default bundler adapter used by @evjs/cli

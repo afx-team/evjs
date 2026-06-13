@@ -142,4 +142,57 @@ describe("remote app runtime", () => {
       "mount",
     ]);
   });
+
+  it("derives remote asset baseUrl from a CDN manifest URL when omitted", async () => {
+    vi.stubGlobal("location", {
+      href: "https://host.example.com/remote.html",
+      hostname: "host.example.com",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          version: 1,
+          name: "crm",
+          entries: {
+            customers: {
+              module: {
+                type: "lifecycle",
+                href: "crm-customers.js",
+              },
+              activeWhen: ["/crm/*"],
+            },
+          },
+        }),
+      ),
+    );
+    const events: string[] = [];
+
+    const controller = await startRemoteAppRuntime({
+      remote: "crm",
+      manifest: "https://cdn.example.com/remotes/crm/evjs-remote.json",
+      activeWhen: "/crm/*",
+      request: "/crm/customers",
+      mount: {} as Element,
+      runtime: {
+        async loadModule(href, ctx) {
+          events.push(`load:${href}`);
+          events.push(`base:${ctx.remote?.manifest.baseUrl}`);
+          return {
+            mount() {
+              events.push("mount");
+            },
+          };
+        },
+      },
+    });
+
+    await controller.dispose();
+
+    expect(events).toEqual([
+      "load:https://cdn.example.com/remotes/crm/crm-customers.js",
+      "base:https://cdn.example.com/remotes/crm/",
+      "mount",
+    ]);
+  });
 });

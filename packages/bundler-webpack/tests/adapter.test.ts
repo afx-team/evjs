@@ -697,15 +697,18 @@ describe("webpackAdapter build", () => {
         '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
       "src/pages/Insights !page.tsx": `
         import { createElement } from "react";
+        import { usePageParams, usePageSearch } from "@evjs/client";
         import "./insights.css";
         import Badge from "./InsightsBadge";
 
         export const render = "ssr";
         export const rsc = true;
 
-        export default function Insights({ pageId }: { pageId?: string }) {
+        export default function Insights() {
+          const params = usePageParams<{ section: string }>();
+          const search = usePageSearch<{ tab?: string }>();
           return createElement("main", null,
-            createElement("h1", null, "RSC ", pageId),
+            createElement("h1", null, "RSC ", params.section, " ", search.tab),
             createElement(Badge, null),
           );
         }
@@ -728,7 +731,7 @@ describe("webpackAdapter build", () => {
     const config = resolveConfig<WebpackConfig>({
       pages: {
         insights: {
-          path: "/insights",
+          path: "/insights/$section",
           component: "./src/pages/Insights !page.tsx",
           html: "./index.html",
         },
@@ -804,22 +807,31 @@ describe("webpackAdapter build", () => {
       fs.readFile(path.join(cwd, "dist/client/insights-rsc.css"), "utf-8"),
     ).resolves.toContain(".insights-page");
 
-    const htmlResponse = await requestServerEntry(cwd, manifest, "/insights");
+    const htmlResponse = await requestServerEntry(
+      cwd,
+      manifest,
+      "/insights/weekly?tab=overview&tag=a&tag=b",
+    );
     expect(htmlResponse.status).toBe(200);
     const html = await htmlResponse.text();
-    expect(html).toContain("<h1>RSC <!-- -->insights</h1>");
+    expect(html).toContain("RSC");
+    expect(html).toContain("weekly");
+    expect(html).toContain("overview");
     expect(html).toContain('<link rel="stylesheet" href="/insights-rsc.css">');
 
     const flightResponse = await requestServerEntry(
       cwd,
       manifest,
-      "/__evjs/rsc?page=insights",
+      "/__evjs/rsc?page=insights&url=%2Finsights%2Fweekly%3Ftab%3Doverview%26tag%3Da%26tag%3Db",
     );
     expect(flightResponse.status).toBe(200);
     expect(flightResponse.headers.get("content-type")).toContain(
       "text/x-component",
     );
-    await expect(flightResponse.text()).resolves.toContain("RSC");
+    const flight = await flightResponse.text();
+    expect(flight).toContain("RSC");
+    expect(flight).toContain("weekly");
+    expect(flight).toContain("overview");
   });
 
   it("builds and serves PPR shell and region renderers through the default server runtime", async () => {

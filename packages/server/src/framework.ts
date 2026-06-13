@@ -90,6 +90,7 @@ export interface ManifestRenderCoordinatorOptions {
 export interface RscFlightContext {
   request: Request;
   manifest: BuildOutput;
+  pageUrl?: string;
   pageId?: string;
   page?: PageOutput;
   rscPage?: RscPageOutput;
@@ -248,7 +249,15 @@ export async function handlePprRegionRequest(
   const region = page.ppr?.regions[match.regionId];
   if (!region) return undefined;
   const coordinator = normalizeRenderCoordinator(options.render);
-  return renderPprRegionResponse(options, request, match, coordinator);
+  const response = await renderPprRegionResponse(
+    options,
+    request,
+    match,
+    coordinator,
+  );
+  return request.method === "HEAD" && response
+    ? withoutResponseBody(response)
+    : response;
 }
 
 async function renderPprPageResponse(
@@ -258,7 +267,7 @@ async function renderPprPageResponse(
   response: Response,
   coordinator: ServerRenderCoordinator,
 ): Promise<Response> {
-  if (request.method === "HEAD") return response;
+  if (request.method === "HEAD") return withoutResponseBody(response);
   const pageId = ctx.pageId;
   const page = pageId ? options.manifest.pages[pageId] : undefined;
   if (!pageId || !page?.ppr) return response;
@@ -452,30 +461,40 @@ export async function handleRscFlightRequest(
   };
 
   const validationError = validateRscFlightContext(ctx);
-  if (validationError) return validationError;
+  if (validationError) {
+    return request.method === "HEAD"
+      ? withoutResponseBody(validationError)
+      : validationError;
+  }
 
   const coordinator = normalizeRscCoordinator(options.rsc);
   if (coordinator.match && !(await coordinator.match(ctx))) {
-    return frameworkTextResponse(
+    const response = frameworkTextResponse(
       `[evjs] No RSC Flight coordinator matched page "${ctx.pageId}".`,
       404,
     );
+    return request.method === "HEAD" ? withoutResponseBody(response) : response;
   }
 
   try {
-    return await coordinator.renderFlight(ctx);
+    const response = await coordinator.renderFlight(ctx);
+    return request.method === "HEAD" ? withoutResponseBody(response) : response;
   } catch (error) {
-    return frameworkTextResponse(
+    const response = frameworkTextResponse(
       `[evjs] RSC Flight render failed: ${formatUnknownError(error)}`,
       500,
     );
+    return request.method === "HEAD" ? withoutResponseBody(response) : response;
   }
 }
 
 function createRscFlightPageContext(
   manifest: BuildOutput,
   url: URL,
-): Pick<RscFlightContext, "pageId" | "page" | "rscPage" | "renderer"> {
+): Pick<
+  RscFlightContext,
+  "pageUrl" | "pageId" | "page" | "rscPage" | "renderer"
+> {
   const pageId = url.searchParams.get("page") ?? undefined;
   const page = pageId ? manifest.pages[pageId] : undefined;
   const rscPage = pageId ? manifest.rsc?.pages?.[pageId] : undefined;
@@ -484,11 +503,23 @@ function createRscFlightPageContext(
     : undefined;
 
   return {
+    pageUrl: resolveRscFlightPageUrl(url),
     pageId,
     page,
     rscPage,
     renderer,
   };
+}
+
+function resolveRscFlightPageUrl(url: URL): string | undefined {
+  const raw = url.searchParams.get("url");
+  if (!raw) return undefined;
+
+  try {
+    return new URL(raw, url).toString();
+  } catch {
+    return undefined;
+  }
 }
 
 function validateRscFlightContext(ctx: RscFlightContext): Response | undefined {
@@ -562,6 +593,14 @@ function frameworkTextResponse(
   return new Response(body, {
     status,
     headers: responseHeaders,
+  });
+}
+
+function withoutResponseBody(response: Response): Response {
+  return new Response(null, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
   });
 }
 

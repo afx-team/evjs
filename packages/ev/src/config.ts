@@ -146,8 +146,8 @@ export interface Config<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
   /**
    * Single SPA application declaration.
    *
-   * The SPA owns its client route tree. Framework render metadata is declared
-   * by page modules imported by that route tree, not by a second route config
+   * Use this for an explicitly bootstrapped SPA entry. Framework render
+   * metadata is declared by imported page modules, not by a second route config
    * field in `ev.config.ts`.
    */
   app?: AppConfig;
@@ -156,7 +156,7 @@ export interface Config<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
    * Framework-managed page routing.
    *
    * When enabled, evjs discovers React page modules from `src/pages`. SPA mode
-   * builds one TanStack Router app internally; MPA mode emits independent
+   * builds one framework-managed app internally; MPA mode emits independent
    * router-free pages.
    */
   routing?: boolean | RoutingConfig;
@@ -185,15 +185,16 @@ export interface Config<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
   /**
    * MPA (Multi-Page Application) configuration.
    *
-   * Define multiple independent page entries. A page can be a string entry
-   * path or an object with its own JS entry point and optional HTML template.
+   * Define multiple independent page outputs. A string page is shorthand for a
+   * React component module managed by the evjs page runtime. Use `{ entry }`
+   * only when the page owns its own bootstrap.
    * When set, the build produces one HTML file per page and the single-entry
    * `entry` / `html` fields are ignored.
    *
    * @example
    * ```ts
    * pages: {
-   *   home: "./src/pages/home/main.tsx",
+   *   home: "./src/pages/Home.tsx",
    *   about: {
    *     entry: "./src/pages/about/main.tsx",
    *     html: "./src/pages/about/index.html",

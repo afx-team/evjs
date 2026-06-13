@@ -7,15 +7,16 @@
 
 export type { PageRuntimeOptions } from "./page.js";
 export { startPageRuntime } from "./page.js";
+export type { PageProviderProps } from "./page-context.js";
+export { PageProvider } from "./page-context.js";
 export type {
   CreatePagesAppOptions,
   PageDefinition,
   PageModule,
-  PageProviderProps,
   PagesApp,
   RootLayoutModule,
 } from "./page-route.js";
-export { createPagesApp, PageProvider } from "./page-route.js";
+export { createPagesApp } from "./page-route.js";
 export type {
   ReactPageMountOptions,
   ReactPageRouteContext,

@@ -43,6 +43,7 @@ ev build
 
 ```
 my-app/
+├── .gitignore              # Ignores generated evjs type files
 ├── index.html              # HTML template (must have <div id="app">)
 ├── ev.config.ts            # Optional config
 ├── src/
@@ -73,7 +74,9 @@ export default function UserPage() {
 
 When `src/pages` exists and the project does not declare explicit `app`,
 `pages`, or `remote` config, evjs automatically builds an SPA from the file
-tree. The generated routing glue stays inside the framework.
+tree. The generated routing glue stays inside the framework; SPA mode only
+writes `src/evjs-route-types.d.ts` for TypeScript and scaffolded apps ignore it
+by default.
 
 ## MPA Mode
 
@@ -91,8 +94,9 @@ export default defineConfig({
 ```
 
 Each page is emitted as its own HTML document and client entry without
-SPA router setup. The `src/layout.tsx` convention is SPA-only; MPA pages compose
-shared wrappers as normal components.
+SPA router setup. The `layout.tsx` convention is SPA-only and lives beside the
+page route directory using that exact filename; MPA pages compose shared
+wrappers as normal components.
 
 ## Packages
 
@@ -141,4 +145,5 @@ Keep all `@evjs/*` packages in your app on the same version. When upgrading evjs
 - HTML must have `<div id="app">` for the render target
 - Do NOT add `"type": "module"` to your **project's** `package.json` — the server bundle uses CJS format
 - Prefer `src/pages` as the route source of truth.
+- Keep `src/evjs-route-types.d.ts` generated and ignored; do not import it.
 - Use `routing.mode: "mpa"` for independent pages without a client router.

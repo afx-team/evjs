@@ -1,3 +1,8 @@
+import {
+  matchPageRouteParams,
+  type PageSearchParams,
+  parsePageSearch,
+} from "@evjs/shared";
 import type {
   BuildOutput,
   HydrationMode,
@@ -10,7 +15,7 @@ import {
   useContext,
 } from "react";
 import { createRoot, hydrateRoot, type Root } from "react-dom/client";
-import { type PageProps, PageProvider } from "./page-route.js";
+import { type PageProps, PageProvider } from "./page-context.js";
 import type {
   ActivationRequest,
   AppContext,
@@ -334,12 +339,26 @@ function resolveRscFlightUrl(
   endpoint: string,
   options: RscFlightFetchOptions,
 ): string {
-  const base = options.url?.toString() ?? globalThis.location?.href ?? endpoint;
+  const currentUrl = options.url?.toString() ?? globalThis.location?.href;
+  const base = currentUrl ?? endpoint;
   const url = new URL(endpoint, base);
   if (options.pageId) {
     url.searchParams.set("page", options.pageId);
   }
+  const pageUrl = currentUrl ? toPageUrlParam(currentUrl) : undefined;
+  if (pageUrl) {
+    url.searchParams.set("url", pageUrl);
+  }
   return url.toString();
+}
+
+function toPageUrlParam(value: string): string | undefined {
+  try {
+    const url = new URL(value, "https://evjs.local");
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return undefined;
+  }
 }
 
 function resolvePageProps(
@@ -402,12 +421,7 @@ function createReactPageElement(
   }
 
   const pageProps = resolvePageRouteProps(props, route);
-  const componentProps = {
-    ...props,
-    params: pageProps.params,
-    search: pageProps.search,
-    loaderData: pageProps.loaderData,
-  };
+  const componentProps = stripPageRouteProps(props);
   return createElement(
     PageProvider,
     { value: pageProps },
@@ -416,6 +430,18 @@ function createReactPageElement(
       componentProps,
     ),
   );
+}
+
+function stripPageRouteProps(
+  props: Record<string, unknown>,
+): Record<string, unknown> {
+  const {
+    params: _params,
+    search: _search,
+    loaderData: _loaderData,
+    ...rest
+  } = props;
+  return rest;
 }
 
 function shouldProvidePageRouteProps(
@@ -439,7 +465,7 @@ function resolvePageRouteProps(
     params: isStringRecord(props.params)
       ? props.params
       : route
-        ? matchRouteParams(route.path, readLocationPathname())
+        ? matchPageRouteParams(route.path, readLocationPathname())
         : {},
     search: isRecord(props.search) ? props.search : readLocationSearch(),
     loaderData: props.loaderData,
@@ -457,39 +483,9 @@ function readLocationPathname(): string {
   return globalThis.location?.pathname ?? "/";
 }
 
-function readLocationSearch(): Record<string, string> {
+function readLocationSearch(): PageSearchParams {
   const search = globalThis.location?.search;
-  if (!search) return {};
-
-  const result: Record<string, string> = {};
-  for (const [key, value] of new URLSearchParams(search)) {
-    result[key] = value;
-  }
-  return result;
-}
-
-function matchRouteParams(
-  routePath: string,
-  pathname: string,
-): Record<string, string> {
-  const routeSegments = splitPath(routePath);
-  const pathSegments = splitPath(pathname);
-  const params: Record<string, string> = {};
-
-  routeSegments.forEach((segment, index) => {
-    if (!segment.startsWith("$")) return;
-    const name = segment.slice(1) || "_splat";
-    params[name] = decodeURIComponent(pathSegments[index] ?? "");
-  });
-
-  return params;
-}
-
-function splitPath(value: string): string[] {
-  return value
-    .replace(/^\/+|\/+$/g, "")
-    .split("/")
-    .filter(Boolean);
+  return search ? parsePageSearch(search) : {};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

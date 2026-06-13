@@ -1,6 +1,8 @@
 # 配置
 
-evjs 默认零配置。应用需要自定义路由、页面输出、框架服务端路径、远程应用、插件或非默认 bundler 时，可以创建 `ev.config.ts`。
+evjs 默认零配置。多数应用只需要在 `ev.config.ts` 中选择 SPA 或 MPA
+文件路由，并配置服务端/runtime 能力。只有页面文件约定无法描述目标输出时，才使用更底层的
+app 和 page 输出配置。
 
 ```ts
 import { defineConfig } from "@evjs/ev";
@@ -54,7 +56,8 @@ export default defineConfig({
 当项目存在 `src/pages`，且项目没有声明显式的 `app`、`pages` 或 `remote`
 配置时，SPA 路由会自动启用。
 
-只有手动 bootstrap 单应用时，才使用顶层 `entry` / `html`：
+只有手动 bootstrap 单应用时，才使用顶层 `entry` / `html`。使用
+`src/pages` 的应用不应该手写客户端 route tree：
 
 ```ts
 export default defineConfig({
@@ -65,13 +68,15 @@ export default defineConfig({
 
 ## 页面
 
-`pages` 是独立页面输出的显式底层 API。当页面集合直接来自 `src/pages` 时，
-优先使用 `routing: { mode: "mpa" }`。字符串页面和 `{ entry }` 页面由用户自己控制 bootstrap：
+`pages` 是独立页面输出和非约定式路由的显式底层 API。当页面集合直接来自
+`src/pages` 时，优先使用 `routing: { mode: "mpa" }`。字符串页面是
+framework-managed React 组件模块的简写；只有页面需要自己控制 bootstrap 时才使用
+`{ entry }`：
 
 ```ts
 export default defineConfig({
   pages: {
-    home: "./src/pages/home/main.tsx",
+    home: "./src/pages/Home.tsx",
     about: {
       entry: "./src/pages/about/main.tsx",
       html: "./src/pages/about/index.html",
@@ -80,7 +85,8 @@ export default defineConfig({
 });
 ```
 
-组件页面由 evjs 的通用 runtime 负责 mount/hydrate：
+`{ component }` 对象写法等价于字符串简写；当页面需要 `path`、`html` 或
+`mount` 时使用对象写法：
 
 ```ts
 export default defineConfig({

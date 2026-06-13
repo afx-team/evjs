@@ -39,7 +39,7 @@ dist/
 
 1. Load and resolve `ev.config.ts`.
 2. Run config/setup plugin hooks.
-3. `createAppGraph()` analyzes explicit app/page/server roots.
+3. `createAppGraph()` analyzes the file-based page route tree, lower-level app/page outputs, server entry, and remotes.
 4. `createBuildPlan()` produces concrete client/server entries and HTML documents.
 5. The selected bundler compiles `BuildPlan.entries`.
 6. `linkBuildOutput()` combines `AppGraph`, `BuildPlan`, and bundler facts.
@@ -67,7 +67,13 @@ runtime.server.fn = /__evjs/fn
 
 ## Framework Pages
 
-String pages and `{ entry }` pages compile as user-owned client entries. Component pages add explicit metadata so a bundler adapter can wrap the real component import with the generic page runtime. The `BuildPlan.import` remains the user component path; evjs does not write hidden production source files.
+File-based routes and configured component pages both become framework-managed
+component pages. The lower-level `pages` string shorthand means "component
+page"; `{ entry }` pages compile as user-owned client entries for cases that
+cannot use the page-file convention. Component pages add explicit metadata so a
+bundler adapter can wrap the real component import with the generic page
+runtime. The `BuildPlan.import` remains the user component path; evjs does not
+write hidden production source files.
 
 SSR/PPR pages add server render entries to the plan. PPR pages produce a shell
 renderer and one renderer per React `Suspense` boundary whose direct child is

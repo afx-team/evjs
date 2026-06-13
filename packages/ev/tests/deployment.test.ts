@@ -275,8 +275,21 @@ describe("createDeploymentArtifact", () => {
     expect(files.serverFileName).toBe("server.mjs");
     expect(files.artifact.platform).toBe("node");
     expect(files.serverModule).toContain(
-      'import serverHandler from "./server/server.js";',
+      'import { fileURLToPath, pathToFileURL } from "node:url";',
     );
+    expect(files.serverModule).toContain(
+      'await readJsonIfExists(path.join(serverDir, "build-output.json"))',
+    );
+    expect(files.serverModule).toContain(
+      "globalThis.__EVJS_MANIFEST__ = manifest",
+    );
+    expect(files.serverModule).toContain(
+      "globalThis.__EVJS_SERVER_MODULE_LOADER__",
+    );
+    expect(files.serverModule).toContain(
+      "await import(pathToFileURL(path.join(serverDir, serverEntry)).href)",
+    );
+    expect(files.serverModule).toContain("unwrapServerHandler");
     expect(files.serverModule).toContain(
       'const frameworkBasePath = "/framework";',
     );
@@ -419,8 +432,12 @@ describe("createDeploymentArtifact", () => {
     expect(files.artifactFileName).toBe("deployment.edge.json");
     expect(files.workerFileName).toBe("worker.mjs");
     expect(files.artifact.platform).toBe("edge");
+    expect(files.workerModule).toContain("globalThis.__EVJS_MANIFEST__");
     expect(files.workerModule).toContain(
-      'import serverHandler from "./server/server.js";',
+      "globalThis.__EVJS_SERVER_MODULE_LOADER__",
+    );
+    expect(files.workerModule).toContain(
+      'const serverHandler = unwrapServerHandler(await import("./server/server.js"));',
     );
     expect(files.workerModule).toContain("export default");
     expect(files.workerModule).toContain(

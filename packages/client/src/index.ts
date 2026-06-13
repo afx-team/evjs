@@ -4,15 +4,52 @@
 
 export { ServerFunctionError } from "@evjs/shared";
 export type {
-  PageComponent,
-  PageProps,
-} from "./page-route.js";
+  QueryKey,
+  UseInfiniteQueryOptions,
+  UseInfiniteQueryResult,
+  UseMutationOptions,
+  UseMutationResult,
+  UseQueryOptions,
+  UseQueryResult,
+  UseSuspenseQueryOptions,
+  UseSuspenseQueryResult,
+} from "@tanstack/react-query";
+export {
+  keepPreviousData,
+  QueryClient,
+  QueryClientProvider,
+  useInfiniteQuery,
+  useIsFetching,
+  usePrefetchQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+export type {
+  ActiveLinkOptions,
+  LinkOptions,
+  LinkProps,
+  NavigateOptions,
+  Redirect,
+  RedirectOptions,
+  ToOptions,
+  UseLinkPropsOptions,
+} from "./navigation.js";
+export {
+  isNotFound,
+  isRedirect,
+  Link,
+  Navigate,
+  notFound,
+  redirect,
+  useLinkProps,
+  useLocation,
+  useNavigate,
+} from "./navigation.js";
 export {
   usePageContext,
   usePageLoaderData,
   usePageParams,
   usePageSearch,
-} from "./page-route.js";
+} from "./page-context.js";
 export {
   getFnQueryKey,
   getFnQueryOptions,
@@ -20,50 +57,8 @@ export {
   useQuery,
   useSuspenseQuery,
 } from "./query.js";
-export type {
-  ActiveLinkOptions,
-  LinkOptions,
-  LinkProps,
-  NavigateOptions,
-  QueryKey,
-  ToOptions,
-  UseInfiniteQueryOptions,
-  UseInfiniteQueryResult,
-  UseLinkPropsOptions,
-  UseMutationOptions,
-  UseMutationResult,
-  UseQueryOptions,
-  UseQueryResult,
-  UseSuspenseQueryOptions,
-  UseSuspenseQueryResult,
-} from "./tanstack.js";
-export {
-  isNotFound,
-  isRedirect,
-  keepPreviousData,
-  Link,
-  Navigate,
-  notFound,
-  QueryClient,
-  QueryClientProvider,
-  redirect,
-  useInfiniteQuery,
-  useIsFetching,
-  useLinkProps,
-  useLocation,
-  useNavigate,
-  usePrefetchQuery,
-  useQueryClient,
-} from "./tanstack.js";
-// biome-ignore lint/suspicious/noEmptyInterface: Users augment this interface with their app router type.
+// biome-ignore lint/suspicious/noEmptyInterface: Generated SPA route types augment this interface.
 export interface Register {}
-
-type ClientRegister = Register;
-
-// Bridge evjs' public Register interface into TanStack Router's global types.
-declare module "@tanstack/react-router" {
-  interface Register extends ClientRegister {}
-}
 
 export type {
   RemoteRuntimeContext,

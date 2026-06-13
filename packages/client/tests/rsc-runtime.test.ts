@@ -72,7 +72,7 @@ describe("React RSC runtime", () => {
       moduleBaseURL: "https://assets.example.com/",
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://example.com/__evjs/rsc?page=insights",
+      "https://example.com/__evjs/rsc?page=insights&url=%2Finsights",
     );
   });
 
@@ -140,7 +140,7 @@ describe("React RSC runtime", () => {
 
     expect(calls).toEqual(["createFromFetch", "hydrateRoot"]);
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://example.com/__evjs/rsc?page=insights",
+      "https://example.com/__evjs/rsc?page=insights&url=%2Finsights",
     );
     expect(rootElements[0]).toMatchObject({
       options: {

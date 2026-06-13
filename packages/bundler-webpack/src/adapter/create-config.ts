@@ -37,6 +37,10 @@ const pagesEntryLoader = fileURLToPath(
 const ReactFlightWebpackPlugin = require("react-server-dom-webpack/plugin");
 const clientRootEntry = require.resolve("@evjs/client");
 const clientRscEntry = path.join(path.dirname(clientRootEntry), "rsc.js");
+const clientRscPageContextEntry = path.join(
+  path.dirname(clientRootEntry),
+  "rsc-page-context.js",
+);
 
 type RscClientReferenceConfig =
   | string
@@ -194,6 +198,18 @@ function createWebpackConfig(options: {
             }
           : undefined,
     },
+    externals:
+      options.target === "node" && !options.reactServerConditions
+        ? {
+            react: "commonjs react",
+            "react-dom": "commonjs react-dom",
+            "react-dom/client": "commonjs react-dom/client",
+            "react-dom/server": "commonjs react-dom/server",
+            "react-dom/server.node": "commonjs react-dom/server.node",
+            "react/jsx-dev-runtime": "commonjs react/jsx-dev-runtime",
+            "react/jsx-runtime": "commonjs react/jsx-runtime",
+          }
+        : undefined,
     devtool: isProduction ? false : "source-map",
     experiments: {
       futureDefaults: true,
@@ -201,6 +217,13 @@ function createWebpackConfig(options: {
     },
     resolve: {
       extensions: [".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs", ".json"],
+      ...(options.reactServerConditions
+        ? {
+            alias: {
+              "@evjs/client$": clientRscPageContextEntry,
+            },
+          }
+        : {}),
       ...(options.reactServerConditions
         ? {
             conditionNames: [
@@ -411,6 +434,8 @@ function moduleSpecifier(file: string): string {
 function createRscPageRendererSource(component: string): string {
   const componentRequest = moduleSpecifier(component);
   return `
+import { runPageContext } from "@evjs/client/internal/rsc-page-context";
+import { matchPageRouteParams, parsePageSearch } from "@evjs/shared";
 import { createElement } from "react";
 import { renderToReadableStream } from "react-server-dom-webpack/server.node";
 import Component from ${JSON.stringify(componentRequest)};
@@ -436,6 +461,25 @@ function createProps(ctx) {
   };
 }
 
+function resolveRenderUrl(ctx) {
+  return new URL(ctx.pageUrl || ctx.request.url, ctx.request.url);
+}
+
+function createPageContext(ctx, props) {
+  const route = props.route;
+  const url = resolveRenderUrl(ctx);
+  return {
+    params: route ? matchPageRouteParams(route.path, url.pathname) : {},
+    search: parsePageSearch(url.search),
+    loaderData: props.loaderData,
+  };
+}
+
+function stripPageRouteProps(props) {
+  const { params, search, loaderData, ...rest } = props;
+  return rest;
+}
+
 export async function renderFlight(ctx) {
   const clientReferenceManifest = ctx.manifest.rsc?.clientReferenceManifest;
   if (!clientReferenceManifest) {
@@ -447,9 +491,13 @@ export async function renderFlight(ctx) {
     });
   }
 
-  const stream = await renderToReadableStream(
-    createElement(Component, createProps(ctx)),
-    clientReferenceManifest,
+  const props = createProps(ctx);
+  const stream = await runPageContext(
+    createPageContext(ctx, props),
+    () => renderToReadableStream(
+      createElement(Component, stripPageRouteProps(props)),
+      clientReferenceManifest,
+    ),
   );
   return new Response(stream, {
     headers: {
@@ -466,7 +514,7 @@ function createRemoteClientSource(app: string): string {
   const appRequest = moduleSpecifier(app);
   return [
     `import * as mod from ${JSON.stringify(appRequest)};`,
-    `import { createRemoteReactModule, registerShellModule } from "@evjs/client/internal";`,
+    `import { createRemoteReactModule, registerShellModule } from "@evjs/client/internal/react-page";`,
     ``,
     `const currentScript = document.currentScript;`,
     `const href = currentScript && "src" in currentScript ? currentScript.src : undefined;`,
@@ -479,6 +527,7 @@ function createRemoteClientSource(app: string): string {
 function createServerRendererSource(component: string): string {
   const componentRequest = moduleSpecifier(component);
   return [
+    `export { PageProvider } from "@evjs/client/internal/page-context";`,
     `export { default } from ${JSON.stringify(componentRequest)};`,
     `export * from ${JSON.stringify(componentRequest)};`,
     ``,
@@ -498,7 +547,7 @@ function createComponentPageSource(
     : undefined;
   return [
     `import Component from ${JSON.stringify(componentRequest)};`,
-    `import { createReactPageModule, mountReactPage, registerShellModule } from "@evjs/client/internal";`,
+    `import { createReactPageModule, mountReactPage, registerShellModule } from "@evjs/client/internal/react-page";`,
     ``,
     `const currentScript = document.currentScript;`,
     `const href = currentScript && "src" in currentScript ? currentScript.src : undefined;`,

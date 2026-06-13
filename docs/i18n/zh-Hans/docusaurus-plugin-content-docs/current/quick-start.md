@@ -41,6 +41,7 @@ ev build
 
 ```
 my-app/
+├── .gitignore              # 忽略 evjs 生成类型文件
 ├── index.html              # HTML 模板（必须包含 <div id="app">）
 ├── ev.config.ts            # 可选配置
 ├── src/
@@ -71,7 +72,8 @@ export default function UserPage() {
 
 当项目存在 `src/pages`，且项目没有声明显式的 `app`、`pages` 或 `remote`
 配置时，evjs 会自动基于文件树构建一个 SPA。用户不需要创建
-路由胶水；这些内容由框架生成和托管。
+路由胶水；这些内容由框架生成和托管。SPA 模式只会为 TypeScript 写入
+`src/evjs-route-types.d.ts`，脚手架应用默认忽略它。
 
 ## MPA 模式
 
@@ -89,7 +91,8 @@ export default defineConfig({
 ```
 
 每个页面都会生成独立 HTML 文档和客户端 entry，不引入客户端路由器配置。
-`src/layout.tsx` 约定只用于 SPA；MPA 页面需要公共外框时，应像普通 React 代码一样组合共享组件。
+`layout.tsx` 约定只用于 SPA，并且以精确文件名放在页面路由目录旁边；MPA 页面需要公共外框时，
+应像普通 React 代码一样组合共享组件。
 
 ## 包列表
 
@@ -137,4 +140,5 @@ Manifest schema、build tools、page runtime 和 shell 内部实现都位于上�
 - HTML 必须包含 `<div id="app">` 作为渲染目标
 - 不要在你的**项目** `package.json` 中添加 `"type": "module"` —— 服务端 bundle 使用 CJS 格式
 - 优先使用 `src/pages` 作为路由事实来源
+- 保持 `src/evjs-route-types.d.ts` 为生成且被忽略的文件；不要在应用代码里导入它
 - 独立页面且不需要客户端路由器时，使用 `routing.mode: "mpa"`

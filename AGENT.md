@@ -10,7 +10,7 @@
 | `@evjs/ev` | `packages/ev` | `src/config.ts`, `src/plugin.ts`, `src/bundler.ts`, `src/commands.ts`, `src/deployment.ts`, `src/build-tools/*` |
 | `@evjs/create-app` | `packages/create-app` | `src/index.ts`, template restore scripts |
 | `@evjs/shared` | `packages/shared` | `src/constants.ts`, `src/errors.ts`, `src/http.ts`, `src/manifest/*` |
-| `@evjs/client` | `packages/client` | `src/app.tsx`, `src/transport.ts`, `src/page-route.ts`, `src/page.ts`, `src/react.ts`, `src/route.ts`, `src/rsc.ts`, `src/shell.ts`, `src/tanstack.ts` |
+| `@evjs/client` | `packages/client` | `src/app.tsx`, `src/navigation.ts`, `src/transport.ts`, `src/page-route.ts`, `src/page.ts`, `src/react.ts`, `src/rsc.ts`, `src/shell.ts` |
 | `@evjs/server` | `packages/server` | `src/app.ts`, `src/framework.ts`, `src/react.ts`, `src/react-renderer.ts`, runtime adapters |
 | `@evjs/bundler-utoopack` | `packages/bundler-utoopack` | `src/adapter/index.ts`, `src/adapter/create-config.ts`, `src/manifest-generator.ts` |
 | `@evjs/bundler-webpack` | `packages/bundler-webpack` | `src/adapter.ts`, webpack validation path and tests |
@@ -29,10 +29,10 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
    exports. TanStack route trees are a framework implementation detail for
    file-based SPA routing.
 8. Application-facing client code should import page hooks, navigation,
-   transport, remote host helpers, RSC helpers, and advanced TanStack/static
-   route helpers from the top-level `@evjs/client` entry. Generated page
-   bootstrap, React page mounting, server-function stubs, and shell runtime
-   code belong behind `@evjs/client/internal`.
+   transport, remote host helpers, and RSC helpers from the top-level
+   `@evjs/client` entry. Generated page bootstrap, React page mounting,
+   server-function stubs, route-tree construction, and shell runtime code
+   belong behind `@evjs/client/internal`.
 9. Utoopack remains the default. Do not present webpack as the normal user path; it is the validation/fallback backend for features blocked on Utoopack APIs.
 
 ## Key APIs
@@ -41,9 +41,8 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 | --- | --- | --- |
 | `defineConfig(config)` | `@evjs/ev` | Type-safe `ev.config.ts` helper |
 | `src/pages` + `routing` | `@evjs/ev` | File-based SPA/MPA route source; users write page modules, not route trees |
-| `createPagesApp()` | `@evjs/client/internal` | Internal/framework-managed page route runtime used by generated SPA/MPA entries |
+| `createPagesApp()` | `@evjs/client/internal` | Internal/framework-managed page route runtime used by generated SPA entries |
 | `Link`, page hooks, page metadata exports | `@evjs/client` / page modules | Public page authoring API for params, search, loader data, navigation, and render metadata |
-| TanStack route helpers | `@evjs/client` | Advanced/manual routing escape hatch; not required for `src/pages` routes |
 | React page runtime | `@evjs/client/internal` | Framework-managed component page mount/hydration |
 | Server-function stubs | `@evjs/client/internal` | Generated client references and internal transport dispatch |
 | Shell runtime | `@evjs/client/internal` | Manifest-driven app/page/remote activation and shared scope negotiation |

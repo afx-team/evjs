@@ -71,7 +71,7 @@ describe("merge", () => {
 
     merge(config, {
       pages: {
-        home: "./src/home/main.tsx",
+        home: "./src/Home.tsx",
         about: { entry: "./src/about/main.tsx" },
       },
     });

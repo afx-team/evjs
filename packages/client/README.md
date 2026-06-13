@@ -31,9 +31,9 @@ export default function UserPage() {
 }
 ```
 
-The same `params`, `search`, and `loaderData` values are also passed as page
-component props in both SPA and MPA output. Hooks are the recommended
-zero-annotation path.
+Use the page hooks for route data in both SPA and MPA output. They are the
+zero-annotation path for page code; `params`, `search`, and `loaderData` are
+not passed as page component props.
 
 ### 2. Let evjs Build the Route Entry
 
@@ -41,17 +41,23 @@ When `src/pages` exists and the project does not declare explicit `app`,
 `pages`, or `remote` config, evjs discovers the page files and builds the SPA
 entry internally.
 
-Use `src/layout.tsx` only for the optional SPA root layout. It is a single file
-convention; `src/layout/index.tsx` is not an alias. MPA output does not consume
-a framework layout file, so MPA pages compose shared wrappers as ordinary
-components.
+SPA mode writes `src/evjs-route-types.d.ts` for type-safe `Link`,
+`useLinkProps`, and `redirect` calls. Treat it as generated output: keep it
+ignored and do not import it from application code.
 
-`src/pages` is reserved for page route modules, so any `layout` source file
-inside `src/pages` is reported as a convention error. Dynamic route filenames
-use `$param`; bracket segments such as `[id].tsx` are rejected. Every discovered
-route file must default-export a React component; put non-route helpers in
-underscore-prefixed files or folders. Syntax and default-export errors are
-reported during route discovery before the bundler runs.
+Use `layout.tsx` beside the page route directory only for the optional SPA root
+layout. The default `src/pages` route directory uses `src/layout.tsx`; a custom
+directory such as `src/app/pages` uses `src/app/layout.tsx`. It is an exact
+single-file convention: `layout.jsx`, `layout.ts`, and `layout/index.*` are not
+aliases. MPA output does not consume a framework layout file, so MPA pages
+compose shared wrappers as ordinary components.
+
+The route directory is reserved for page route modules, so files or folders
+named `layout` inside it are reported as convention errors. Dynamic route
+filenames use `$param`; bracket segments such as `[id].tsx` are rejected. Every
+discovered route file must default-export a React component; put non-route
+helpers in underscore-prefixed files or folders. Syntax and default-export
+errors are reported during route discovery before the bundler runs.
 
 For MPA output:
 

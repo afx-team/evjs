@@ -39,7 +39,7 @@ dist/
 
 1. 加载并解析 `ev.config.ts`。
 2. 执行 config/setup 插件 hooks。
-3. `createAppGraph()` 分析显式 app/page/server roots。
+3. `createAppGraph()` 分析文件化页面路由树、底层 app/page 输出、server entry 和 remotes。
 4. `createBuildPlan()` 生成具体 client/server entries 和 HTML documents。
 5. 当前 bundler 编译 `BuildPlan.entries`。
 6. `linkBuildOutput()` 合并 `AppGraph`、`BuildPlan` 和 bundler facts。
@@ -67,7 +67,11 @@ runtime.server.fn = /__evjs/fn
 
 ## 框架页面
 
-字符串页面和 `{ entry }` 页面是用户自控 client entry。组件页面携带显式 metadata，让 bundler adapter 可以用通用 page runtime 包装真实 component import。`BuildPlan.import` 仍然指向用户组件路径；evjs 不写隐式生产源码文件。
+文件化路由和配置式 component page 都会变成 framework-managed component page。
+底层 `pages` 字符串简写表示 "component page"；`{ entry }` 页面是用户自控
+client entry，仅用于无法套用页面文件约定的场景。组件页面携带显式 metadata，让
+bundler adapter 可以用通用 page runtime 包装真实 component import。
+`BuildPlan.import` 仍然指向用户组件路径；evjs 不写隐式生产源码文件。
 
 SSR/PPR 页面会向 plan 添加 server render entries。PPR 页面会生成 shell renderer，并为
 page component tree 中每个直接包裹 `lazy(() => import(...))` 子组件的 React

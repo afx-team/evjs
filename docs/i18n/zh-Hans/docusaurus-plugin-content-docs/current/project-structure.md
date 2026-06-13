@@ -9,6 +9,7 @@ my-evjs-app/
 ├── ev.config.ts                 # 框架配置
 ├── index.html                   # 共享 HTML 模板，包含 <div id="app">
 ├── package.json
+├── .gitignore                   # 包含 evjs 生成类型文件
 ├── public/                      # 原样复制的静态文件
 ├── tsconfig.json
 └── src/
@@ -39,7 +40,10 @@ my-evjs-app/
 
 - `ev.config.ts` 只在默认值不够时自定义 routing 模式、服务端路径、远程应用、插件或显式页面输出。
 - `pages/` 是客户端路由事实来源。SPA 模式会映射到框架托管的 app entry；MPA 模式会映射到独立页面 entry。
-- `layout.tsx` 只作为可选 SPA 根布局。MPA 页面需要公共外框时，应直接导入普通共享组件。
+- `layout.tsx` 只作为路由目录旁边的可选 SPA 根布局。默认 `src/pages`
+  使用 `src/layout.tsx`；自定义 `routing.dir` 时使用该路由目录的父级。这个约定要求精确文件名
+  `layout.tsx`；MPA 页面需要公共外框时，应直接导入普通共享组件。
+- `src/evjs-route-types.d.ts` 是 SPA 模式生成的类型安全导航声明。保持忽略它，不要在应用代码里导入它。
 - 渲染元信息放在页面模块旁边。
 - `api/*.server.ts` 放 server functions。
 - `api/*.routes.ts` 放标准 HTTP route handlers。

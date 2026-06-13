@@ -17,6 +17,7 @@ describe("page route hooks", () => {
   });
 
   it("does not expose generated SPA bootstrap APIs from the public client entry", () => {
+    expect("createApp" in client).toBe(false);
     expect("createPagesApp" in client).toBe(false);
     expect("PageProvider" in client).toBe(false);
     expect("startPageRuntime" in client).toBe(false);
@@ -35,6 +36,19 @@ describe("page route hooks", () => {
     expect("getFnName" in client).toBe(false);
     expect("initTransportFromManifest" in client).toBe(false);
   });
+
+  it("does not expose router construction APIs from the public client entry", () => {
+    expect("createRoute" in client).toBe(false);
+    expect("createRouter" in client).toBe(false);
+    expect("createRootRoute" in client).toBe(false);
+    expect("createRootRouteWithContext" in client).toBe(false);
+    expect("createAppRootRoute" in client).toBe(false);
+    expect("Outlet" in client).toBe(false);
+    expect("RouterProvider" in client).toBe(false);
+    expect("useParams" in client).toBe(false);
+    expect("useSearch" in client).toBe(false);
+    expect("useRouter" in client).toBe(false);
+  });
 });
 
 describe("createPagesApp", () => {
@@ -43,12 +57,12 @@ describe("createPagesApp", () => {
       return null;
     }
 
-    const { app, routeTree } = createPagesApp({
+    const { app } = createPagesApp({
       routes: [{ path: "/", module: { default: Home } }],
     });
 
-    expect(
-      (app.router as { options: { routeTree: unknown } }).options.routeTree,
-    ).toBe(routeTree);
+    expect(app.render).toBeTypeOf("function");
+    expect(app.unmount).toBeTypeOf("function");
+    expect(app.queryClient).toBeDefined();
   });
 });

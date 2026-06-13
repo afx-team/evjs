@@ -1,3 +1,4 @@
+import { usePageParams, usePageSearch } from "@evjs/client";
 import type { BuildOutput } from "@evjs/shared/manifest";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -99,6 +100,106 @@ describe("createReactServerRenderAdapter", () => {
     expect(result.html).not.toContain('"assets"');
     expect(result.html).not.toContain('"pages"');
     expect(result.html).not.toContain('"routes"');
+  });
+
+  it("provides route params and search to page hooks during server render", async () => {
+    const adapter = createReactServerRenderAdapter();
+    const manifest = createManifest();
+    manifest.pages.post = {
+      assets: { js: ["post.js"], css: [] },
+      render: "ssr",
+      rendering: {
+        component: "server",
+        html: "server",
+        streaming: false,
+        hydrate: "load",
+      },
+      component: "./src/pages/posts/$postId.tsx",
+    };
+    manifest.routes.push({
+      id: "post",
+      path: "/posts/$postId",
+      pageId: "post",
+      module: "./src/pages/posts/$postId.tsx",
+    });
+    let renderedProps: Record<string, unknown> | undefined;
+    function PostPage(props: Record<string, unknown>) {
+      renderedProps = props;
+      const { postId } = usePageParams<{ postId: string }>();
+      const search = usePageSearch<{ tab?: string; tag?: string[] }>();
+      return createElement(
+        "h1",
+        null,
+        `${postId}:${search.tab}:${search.tag?.join(",")}`,
+      );
+    }
+
+    const result = await adapter(
+      {
+        default: PostPage,
+      },
+      {
+        request: new Request(
+          "https://example.com/posts/42?tab=comments&tag=a&tag=b",
+        ),
+        manifest,
+        pageId: "post",
+        page: manifest.pages.post,
+        route: manifest.routes[0],
+      },
+    );
+
+    if (!result || result instanceof Response || typeof result === "string") {
+      throw new Error("Expected HTML result.");
+    }
+
+    expect(result.html).toContain("<h1>42:comments:a,b</h1>");
+    expect(renderedProps).toEqual({
+      manifest: { buildId: "test" },
+      route: { id: "post", path: "/posts/$postId" },
+      pageId: "post",
+    });
+  });
+
+  it("keeps custom props but hides route data props during server render", async () => {
+    const adapter = createReactServerRenderAdapter({
+      createProps() {
+        return {
+          title: "Post",
+          params: { postId: "42" },
+          search: { tab: "comments" },
+          loaderData: { title: "Hello" },
+        };
+      },
+      renderDocument(appHtml) {
+        return { html: appHtml };
+      },
+    });
+    let renderedProps: Record<string, unknown> | undefined;
+    function CustomPostPage(props: Record<string, unknown>) {
+      renderedProps = props;
+      const { postId } = usePageParams<{ postId: string }>();
+      const search = usePageSearch<{ tab?: string }>();
+      return createElement(
+        "h1",
+        null,
+        `${props.title}:${postId}:${search.tab}`,
+      );
+    }
+
+    const result = await adapter(
+      {
+        default: CustomPostPage,
+      },
+      {
+        request: new Request("https://example.com/posts/42?tab=ignored"),
+        manifest: createManifest(),
+        pageId: "post",
+      },
+    );
+
+    expect(result).toEqual({ html: "<h1>Post:42:comments</h1>" });
+    expect(renderedProps).toEqual({ title: "Post" });
   });
 
   it("injects RSC client runtime assets and a public bootstrap payload", async () => {

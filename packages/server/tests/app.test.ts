@@ -93,6 +93,28 @@ describe("createApp", () => {
     expect(await res.text()).toBe("<h1>dashboard:ssr</h1>");
   });
 
+  it("serves framework page HEAD requests without a response body", async () => {
+    const manifest = createManifest();
+    const app = createApp({
+      framework: {
+        manifest,
+        render(ctx) {
+          return {
+            html: `<h1>${ctx.pageId}:${ctx.page?.render}</h1>`,
+            headers: { "x-render": "framework" },
+          };
+        },
+      },
+    });
+
+    const res = await app.request("/dashboard", { method: "HEAD" });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/html");
+    expect(res.headers.get("x-render")).toBe("framework");
+    expect(await res.text()).toBe("");
+  });
+
   it("matches page renderers for RSC page document requests", async () => {
     const manifest = createManifest();
     configureRscPage(manifest);
@@ -264,6 +286,15 @@ describe("createApp", () => {
 
     expect(region.status).toBe(200);
     expect(await region.text()).toBe("<p>dashboard:hero</p>");
+
+    const regionHead = await app.request("/__evjs/ppr/dashboard/hero", {
+      method: "HEAD",
+    });
+
+    expect(regionHead.status).toBe(200);
+    expect(regionHead.headers.get("x-evjs-page")).toBe("dashboard");
+    expect(regionHead.headers.get("x-evjs-ppr-region")).toBe("hero");
+    expect(await regionHead.text()).toBe("");
   });
 
   it("merges PPR regions into React Suspense fallback boundaries", async () => {
@@ -665,19 +696,52 @@ describe("createApp", () => {
     const app = createApp({
       framework: {
         manifest,
+        rsc(ctx) {
+          const pageUrl = ctx.pageUrl ? new URL(ctx.pageUrl) : undefined;
+          return new Response(
+            pageUrl ? `${pageUrl.pathname}${pageUrl.search}` : "missing-url",
+            {
+              headers: { "Content-Type": "text/x-component" },
+            },
+          );
+        },
+      },
+    });
+
+    const res = await app.request(
+      "/__evjs/rsc?page=dashboard&url=%2Fdashboard%3Ftab%3Dstats",
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("text/x-component");
+    expect(await res.text()).toBe("/dashboard?tab=stats");
+  });
+
+  it("serves RSC flight HEAD requests without a response body", async () => {
+    const manifest = createManifest();
+    configureRscManifest(manifest);
+    const app = createApp({
+      framework: {
+        manifest,
         rsc() {
           return new Response("flight", {
-            headers: { "Content-Type": "text/x-component" },
+            headers: {
+              "Content-Type": "text/x-component",
+              "x-flight": "ok",
+            },
           });
         },
       },
     });
 
-    const res = await app.request("/__evjs/rsc?page=dashboard");
+    const res = await app.request("/__evjs/rsc?page=dashboard", {
+      method: "HEAD",
+    });
 
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("text/x-component");
-    expect(await res.text()).toBe("flight");
+    expect(res.headers.get("x-flight")).toBe("ok");
+    expect(await res.text()).toBe("");
   });
 
   it("accepts an RSC coordinator", async () => {

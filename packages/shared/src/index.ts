@@ -11,3 +11,8 @@ export {
 export { ServerError, ServerFunctionError } from "./errors.js";
 export type { HttpMethod } from "./http.js";
 export { HTTP_METHODS, isHttpMethod, toHttpMethod } from "./http.js";
+export type { PageSearchParams } from "./page-route-data.js";
+export {
+  matchPageRouteParams,
+  parsePageSearch,
+} from "./page-route-data.js";
