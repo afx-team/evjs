@@ -32,8 +32,25 @@ npx biome check --write    # 修复 lint/格式
 
 1. **导入** —— 所有导入放在文件顶部。类型导入使用 `import type`
 2. **Lint** —— Biome 强制执行；禁止 `any`，禁止 `import * as`（除非必要）
-3. **服务端函数** —— 必须以 `"use server";` 开头，使用 `.server.ts` 或 `src/api/`
-4. **配置文件** —— 命名为 `ev.config.ts`（不是 `evjs.config.ts`）
+3. **页面路由** —— 默认以 `src/pages` 为事实来源。路由文件使用 `.tsx`、`.jsx`、`.ts`
+   或 `.js`；动态段使用 `$param`；`index` 映射到目录根路径；`_` 前缀文件/目录是私有模块；
+   bracket、catch-all、空动态段和可选段暂不支持
+4. **布局** —— SPA 根布局约定在默认路由下必须是 `src/layout/index.tsx`，自定义路由目录时
+   使用旁边的 `layout/index.tsx`。MPA 路由不消费框架 layout
+5. **服务端函数** —— 必须以 `"use server";` 开头，使用 `.server.ts` 或 `src/api/`
+6. **服务端函数导出** —— 只使用命名可调用导出：function declaration 或
+   `const` arrow/function expression。不使用默认导出、跨模块 re-export 或导出非函数值
+7. **配置文件** —— 命名为 `ev.config.ts`（不是 `evjs.config.ts`）
+8. **包边界** —— 应用侧导入保留在 `@evjs/ev`，包括 `@evjs/ev/client`
+   和 `@evjs/ev/server` 等 runtime facade subpath。新增分发包前先优先使用现有包的
+   subpath export。Subpath export 应保持显式且有文档说明，不要为了方便导入增加别名。
+   `@evjs/cli` 持有默认 Utoopack adapter；
+   `@evjs/shared` 是共享契约包，不是应用 API
+9. **渲染契约** —— 非 CSR 渲染模式需要 `server` 输出。PPR 和 RSC 必须使用
+   component page module，并声明 `render: "ssr"`；同一页面同时启用 PPR + RSC
+   在 runtime 支持前暂不支持
+10. **Remote 契约** —— Host app 使用 `remotes`；remote package 使用单数
+    `remote`。Remote build 必须有非空 name，并至少有一个带非空 `app` 模块路径的 entry
 
 ## 发布新版本
 

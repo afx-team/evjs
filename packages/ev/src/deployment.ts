@@ -49,6 +49,7 @@ export interface StaticDeploymentFiles {
   artifact: DeploymentArtifact;
   redirectsFileName: string;
   redirects: string;
+  compatibility: StaticDeploymentCompatibility;
 }
 
 export interface EdgeDeploymentFiles {
@@ -78,12 +79,18 @@ export interface DeploymentArtifact {
 
 export interface DeploymentApp {
   assets?: AssetGroup;
+  document?: {
+    fileName: string;
+  };
   entry?: string;
   mount?: string;
 }
 
 export interface DeploymentPage {
   assets?: AssetGroup;
+  document?: {
+    fileName: string;
+  };
   path?: string;
   routeId?: string;
   render: RenderMode;
@@ -123,6 +130,23 @@ export interface DeploymentRsc {
   serverReferences: string[];
 }
 
+interface StaticDocumentRoute {
+  path: string;
+  fileName: string;
+}
+
+export type StaticDeploymentUnsupportedCapability =
+  | "server-functions"
+  | "server-routes"
+  | "ssr-pages"
+  | "ppr-pages"
+  | "rsc-pages";
+
+export interface StaticDeploymentCompatibility {
+  complete: boolean;
+  unsupportedCapabilities: StaticDeploymentUnsupportedCapability[];
+}
+
 export function createDeploymentArtifact(
   output: BuildOutput,
   options: DeploymentArtifactOptions = {},
@@ -142,6 +166,7 @@ export function createDeploymentArtifact(
         id,
         {
           ...(includeAssets ? { assets: app.assets } : {}),
+          document: app.document,
           entry: app.entry,
           mount: app.mount,
         },
@@ -152,6 +177,7 @@ export function createDeploymentArtifact(
         id,
         {
           ...(includeAssets ? { assets: page.assets } : {}),
+          document: page.document,
           path: page.path,
           routeId: page.routeId,
           render: page.render,
@@ -263,15 +289,22 @@ export function createStaticDeploymentFiles(
 ): StaticDeploymentFiles {
   const artifactFileName = options.artifactFileName ?? "deployment.static.json";
   const redirectsFileName = options.redirectsFileName ?? "_redirects";
+  const compatibility = analyzeStaticDeploymentCompatibility(output);
+  const artifact = createDeploymentArtifact(output, {
+    ...options,
+    platform: options.platform ?? "static",
+  });
+  artifact.metadata = {
+    ...(artifact.metadata ?? {}),
+    static: compatibility,
+  };
 
   return {
     artifactFileName,
-    artifact: createDeploymentArtifact(output, {
-      ...options,
-      platform: options.platform ?? "static",
-    }),
+    artifact,
     redirectsFileName,
-    redirects: createStaticRedirects(output),
+    redirects: createStaticRedirects(output, compatibility),
+    compatibility,
   };
 }
 
@@ -403,8 +436,15 @@ function createNodeServerModule(
 ): string {
   const serverEntry = output.server?.entry;
   const staticFallback = getStaticFallbackHtml(output);
+  const staticRoutes = getStaticDocumentRoutes(output).map((route) => ({
+    path: toNodeRoutePath(route.path),
+    file: route.fileName,
+  }));
   const frameworkBasePath = output.runtime.server?.basePath ?? "/__evjs";
+  const frameworkEndpointPaths =
+    getFrameworkEndpointPaths(output).map(toNodeRoutePath);
   const frameworkRoutes = getFrameworkServerRoutes(output).map(toNodeRoutePath);
+  const staticAssetPrefix = getStaticAssetPrefix(output.publicPath);
   const clientRoot = getPublicDirRelativeToRoot(output);
   const portEnv = options.portEnv ?? "PORT";
   const defaultPort = options.defaultPort ?? 3000;
@@ -412,15 +452,18 @@ function createNodeServerModule(
   return `import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { serve } from "@evjs/server/node";
+import { serve } from "@evjs/ev/server/node";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientRoot = path.join(__dirname, ${JSON.stringify(clientRoot)});
 const serverDir = path.join(__dirname, "server");
 const serverEntry = ${JSON.stringify(serverEntry ?? "")};
 const frameworkBasePath = ${JSON.stringify(frameworkBasePath)};
+const frameworkEndpointPaths = ${JSON.stringify(frameworkEndpointPaths, null, 2)};
 const frameworkRoutes = ${JSON.stringify(frameworkRoutes, null, 2)};
+const staticRoutes = ${JSON.stringify(staticRoutes, null, 2)};
 const staticFallback = ${JSON.stringify(staticFallback ?? "")};
+const staticAssetPrefix = ${JSON.stringify(staticAssetPrefix ?? "")};
 const manifest =
   (await readJsonIfExists(path.join(serverDir, "build-output.json"))) ??
   (await readJsonIfExists(path.join(__dirname, "manifest.json")));
@@ -448,6 +491,12 @@ const app = {
     const staticResponse = await serveStaticAsset(url.pathname);
     if (staticResponse) return staticResponse;
 
+    const staticRoute = findStaticRoute(url.pathname);
+    if (staticRoute) {
+      const staticRouteResponse = await serveFile(path.join(clientRoot, staticRoute.file));
+      if (staticRouteResponse) return staticRouteResponse;
+    }
+
     if (staticFallback) {
       const fallbackResponse = await serveFile(path.join(clientRoot, staticFallback));
       if (fallbackResponse) return fallbackResponse;
@@ -461,45 +510,27 @@ serve(app, { port: Number(process.env[${JSON.stringify(portEnv)}] ?? ${defaultPo
 
 function isFrameworkRequest(pathname) {
   return (
-    pathname === frameworkBasePath ||
-    pathname.startsWith(\`\${frameworkBasePath}/\`) ||
+    pathIsAtOrBelow(pathname, frameworkBasePath) ||
+    frameworkEndpointPaths.some((endpointPath) =>
+      pathIsAtOrBelow(pathname, endpointPath)
+    ) ||
     frameworkRoutes.some((routePath) => routePathMatches(routePath, pathname))
   );
 }
 
-function routePathMatches(routePath, pathname) {
-  const routeSegments = splitPath(routePath);
-  const pathSegments = splitPath(pathname);
-  if (routeSegments.length !== pathSegments.length) {
-    if (routePath.endsWith("/*")) {
-      const prefix = routePath.slice(0, -2);
-      return pathname === prefix || pathname.startsWith(\`\${prefix}/\`);
-    }
-    return false;
-  }
-
-  return routeSegments.every((segment, index) => {
-    const value = pathSegments[index];
-    return segment === value || segment.startsWith(":") || segment === "*";
-  });
+function findStaticRoute(pathname) {
+  return staticRoutes.find((route) => routePathMatches(route.path, pathname));
 }
 
-function splitPath(pathname) {
-  return normalizePathname(pathname).split("/").filter(Boolean);
-}
-
-function normalizePathname(pathname) {
-  if (!pathname.startsWith("/")) return normalizePathname(\`/\${pathname}\`);
-  if (pathname.length === 1) return pathname;
-  return pathname.replace(/\\/+$/, "");
-}
+${createGeneratedRouteMatcherModule()}
 
 async function serveStaticAsset(pathname) {
-  if (pathname === "/") return undefined;
+  const assetPathname = stripStaticAssetPrefix(pathname);
+  if (assetPathname === "/") return undefined;
 
   let relativePath;
   try {
-    relativePath = decodeURIComponent(pathname.replace(/^\\/+/, ""));
+    relativePath = decodeURIComponent(assetPathname.replace(/^\\/+/, ""));
   } catch {
     return undefined;
   }
@@ -508,6 +539,16 @@ async function serveStaticAsset(pathname) {
   const assetPath = path.normalize(path.join(clientRoot, relativePath));
   if (!assetPath.startsWith(\`\${clientRoot}\${path.sep}\`)) return undefined;
   return serveFile(assetPath);
+}
+
+function stripStaticAssetPrefix(pathname) {
+  if (!staticAssetPrefix || !pathIsAtOrBelow(pathname, staticAssetPrefix)) {
+    return pathname;
+  }
+  const normalizedPathname = normalizePathname(pathname);
+  const normalizedPrefix = normalizePathname(staticAssetPrefix);
+  const suffix = normalizedPathname.slice(normalizedPrefix.length);
+  return suffix ? suffix : "/";
 }
 
 async function serveFile(filePath) {
@@ -584,8 +625,15 @@ function createEdgeWorkerModule(
 ): string {
   const serverEntry = output.server?.entry;
   const staticFallback = getStaticFallbackHtml(output);
+  const staticRoutes = getStaticDocumentRoutes(output).map((route) => ({
+    path: toNodeRoutePath(route.path),
+    file: route.fileName,
+  }));
   const frameworkBasePath = output.runtime.server?.basePath ?? "/__evjs";
+  const frameworkEndpointPaths =
+    getFrameworkEndpointPaths(output).map(toNodeRoutePath);
   const frameworkRoutes = getFrameworkServerRoutes(output).map(toNodeRoutePath);
+  const staticAssetPrefix = getStaticAssetPrefix(output.publicPath);
   const assetsBinding = options.assetsBinding ?? "ASSETS";
   const serverImportPath = serverEntry ? `./server/${serverEntry}` : undefined;
   const frameworkRequestCondition = serverEntry
@@ -605,8 +653,11 @@ function createEdgeWorkerModule(
     '  throw new Error("[evjs] Server entry must export a fetch handler.");',
     "}",
     `const frameworkBasePath = ${JSON.stringify(frameworkBasePath)};`,
+    `const frameworkEndpointPaths = ${JSON.stringify(frameworkEndpointPaths, null, 2)};`,
     `const frameworkRoutes = ${JSON.stringify(frameworkRoutes, null, 2)};`,
+    `const staticRoutes = ${JSON.stringify(staticRoutes, null, 2)};`,
     `const staticFallback = ${JSON.stringify(staticFallback ?? "")};`,
+    `const staticAssetPrefix = ${JSON.stringify(staticAssetPrefix ?? "")};`,
     `const assetsBinding = ${JSON.stringify(assetsBinding)};`,
     "",
     "export default {",
@@ -618,6 +669,13 @@ function createEdgeWorkerModule(
     "",
     "    const staticResponse = await serveStaticAsset(request, env);",
     "    if (staticResponse && staticResponse.status !== 404) return staticResponse;",
+    "",
+    "    const staticRoute = findStaticRoute(url.pathname);",
+    "    if (staticRoute) {",
+    '      const staticRouteUrl = new URL("/" + staticRoute.file, request.url);',
+    "      const staticRouteResponse = await fetchAsset(new Request(staticRouteUrl, request), env);",
+    "      if (staticRouteResponse && staticRouteResponse.status !== 404) return staticRouteResponse;",
+    "    }",
     "",
     "    if (staticFallback) {",
     '      const fallbackUrl = new URL("/" + staticFallback, request.url);',
@@ -631,38 +689,19 @@ function createEdgeWorkerModule(
     "",
     "function isFrameworkRequest(pathname) {",
     "  return (",
-    "    pathname === frameworkBasePath ||",
-    '    pathname.startsWith(frameworkBasePath + "/") ||',
+    "    pathIsAtOrBelow(pathname, frameworkBasePath) ||",
+    "    frameworkEndpointPaths.some((endpointPath) =>",
+    "      pathIsAtOrBelow(pathname, endpointPath)",
+    "    ) ||",
     "    frameworkRoutes.some((routePath) => routePathMatches(routePath, pathname))",
     "  );",
     "}",
     "",
-    "function routePathMatches(routePath, pathname) {",
-    "  const routeSegments = splitPath(routePath);",
-    "  const pathSegments = splitPath(pathname);",
-    "  if (routeSegments.length !== pathSegments.length) {",
-    '    if (routePath.endsWith("/*")) {',
-    "      const prefix = routePath.slice(0, -2);",
-    '      return pathname === prefix || pathname.startsWith(prefix + "/");',
-    "    }",
-    "    return false;",
-    "  }",
-    "",
-    "  return routeSegments.every((segment, index) => {",
-    "    const value = pathSegments[index];",
-    '    return segment === value || segment.startsWith(":") || segment === "*";',
-    "  });",
+    "function findStaticRoute(pathname) {",
+    "  return staticRoutes.find((route) => routePathMatches(route.path, pathname));",
     "}",
     "",
-    "function splitPath(pathname) {",
-    '  return normalizePathname(pathname).split("/").filter(Boolean);',
-    "}",
-    "",
-    "function normalizePathname(pathname) {",
-    '  if (!pathname.startsWith("/")) return normalizePathname("/" + pathname);',
-    "  if (pathname.length === 1) return pathname;",
-    '  return pathname.replace(/\\/+$/, "");',
-    "}",
+    createGeneratedRouteMatcherModule(),
     "",
     "function normalizeServerModule(mod) {",
     '  const nested = mod && typeof mod.default === "object" ? mod.default : undefined;',
@@ -680,9 +719,28 @@ function createEdgeWorkerModule(
     "}",
     "",
     "async function serveStaticAsset(request, env) {",
+    "  const assetRequest = createStaticAssetRequest(request);",
+    "  if (!assetRequest) return undefined;",
+    "  return fetchAsset(assetRequest, env);",
+    "}",
+    "",
+    "function createStaticAssetRequest(request) {",
     "  const url = new URL(request.url);",
-    '  if (url.pathname === "/") return undefined;',
-    "  return fetchAsset(request, env);",
+    "  const assetPathname = stripStaticAssetPrefix(url.pathname);",
+    '  if (assetPathname === "/") return undefined;',
+    "  if (assetPathname === url.pathname) return request;",
+    "  url.pathname = assetPathname;",
+    "  return new Request(url, request);",
+    "}",
+    "",
+    "function stripStaticAssetPrefix(pathname) {",
+    "  if (!staticAssetPrefix || !pathIsAtOrBelow(pathname, staticAssetPrefix)) {",
+    "    return pathname;",
+    "  }",
+    "  const normalizedPathname = normalizePathname(pathname);",
+    "  const normalizedPrefix = normalizePathname(staticAssetPrefix);",
+    "  const suffix = normalizedPathname.slice(normalizedPrefix.length);",
+    '  return suffix ? suffix : "/";',
     "}",
     "",
     "async function fetchAsset(request, env) {",
@@ -694,46 +752,160 @@ function createEdgeWorkerModule(
   ].join("\n");
 }
 
-function createStaticRedirects(output: BuildOutput): string {
+function createGeneratedRouteMatcherModule(): string {
+  return [
+    "function routePathMatches(routePath, pathname) {",
+    "  const routeSegments = splitPath(routePath);",
+    "  const pathSegments = splitPath(pathname);",
+    "  if (routeSegments.length !== pathSegments.length) {",
+    '    if (routePath.endsWith("/*")) {',
+    "      const prefix = routePath.slice(0, -2);",
+    '      return pathname === prefix || pathname.startsWith(prefix + "/");',
+    "    }",
+    "    return false;",
+    "  }",
+    "",
+    "  return routeSegments.every((segment, index) => {",
+    "    const value = pathSegments[index];",
+    '    return segment === value || isDynamicRouteSegment(segment) || segment === "*";',
+    "  });",
+    "}",
+    "",
+    "function pathIsAtOrBelow(pathname, basePath) {",
+    "  const normalizedPathname = normalizePathname(pathname);",
+    "  const normalizedBasePath = normalizePathname(basePath);",
+    '  return normalizedPathname === normalizedBasePath || normalizedPathname.startsWith(normalizedBasePath + "/");',
+    "}",
+    "",
+    "function isDynamicRouteSegment(segment) {",
+    '  return segment.startsWith(":") || segment.startsWith("$");',
+    "}",
+    "",
+    "function splitPath(pathname) {",
+    '  return normalizePathname(pathname).split("/").filter(Boolean);',
+    "}",
+    "",
+    "function normalizePathname(pathname) {",
+    '  if (!pathname.startsWith("/")) return normalizePathname("/" + pathname);',
+    "  if (pathname.length === 1) return pathname;",
+    '  return pathname.replace(/\\/+$/, "");',
+    "}",
+  ].join("\n");
+}
+
+function analyzeStaticDeploymentCompatibility(
+  output: BuildOutput,
+): StaticDeploymentCompatibility {
+  const unsupported = new Set<StaticDeploymentUnsupportedCapability>();
+
+  if (Object.keys(output.server?.functions ?? {}).length > 0) {
+    unsupported.add("server-functions");
+  }
+  if ((output.server?.routes ?? []).length > 0) {
+    unsupported.add("server-routes");
+  }
+
+  for (const page of Object.values(output.pages)) {
+    if (page.ppr || page.rendering.html === "partial") {
+      unsupported.add("ppr-pages");
+      continue;
+    }
+    if (page.componentModel === "rsc" || page.rendering.component === "rsc") {
+      unsupported.add("rsc-pages");
+      continue;
+    }
+    if (page.render === "ssr") {
+      unsupported.add("ssr-pages");
+    }
+  }
+
+  if (Object.keys(output.rsc?.pages ?? {}).length > 0) {
+    unsupported.add("rsc-pages");
+  }
+
+  const unsupportedCapabilities = [...unsupported].sort();
+  return {
+    complete: unsupportedCapabilities.length === 0,
+    unsupportedCapabilities,
+  };
+}
+
+function createStaticRedirects(
+  output: BuildOutput,
+  compatibility: StaticDeploymentCompatibility = analyzeStaticDeploymentCompatibility(
+    output,
+  ),
+): string {
   const lines = new Set<string>();
 
   for (const route of output.routes) {
-    if (route.pageId) {
-      const page = output.pages[route.pageId];
-      if (page && (page.render === "csr" || page.render === "ssg")) {
-        lines.add(`${toStaticRoutePath(route.path)} /${route.pageId}.html 200`);
-      }
-      continue;
-    }
-
-    if (route.appId) {
+    const staticRoute = getStaticDocumentRoute(output, route);
+    if (staticRoute) {
       lines.add(
-        toStaticRoutePath(route.path) +
-          " /" +
-          getAppHtmlFileName(route.appId) +
-          " 200",
+        `${toStaticRoutePath(staticRoute.path)} /${staticRoute.fileName} 200`,
       );
     }
   }
 
   const fallback = getStaticFallbackHtml(output);
-  if (fallback) {
+  if (fallback && compatibility.complete) {
     lines.add(`/* /${fallback} 200`);
   }
 
   return `${[...lines].join("\n")}\n`;
 }
 
-function getAppHtmlFileName(appId: string): string {
-  return appId === "default" ? "index.html" : `${appId}.html`;
+function getStaticDocumentRoutes(output: BuildOutput): StaticDocumentRoute[] {
+  return output.routes.flatMap((route) => {
+    const staticRoute = getStaticDocumentRoute(output, route);
+    return staticRoute ? [staticRoute] : [];
+  });
+}
+
+function getStaticDocumentRoute(
+  output: BuildOutput,
+  route: BuildOutput["routes"][number],
+): StaticDocumentRoute | undefined {
+  if (route.pageId) {
+    const page = output.pages[route.pageId];
+    if (
+      page &&
+      (page.render === "csr" || page.render === "ssg") &&
+      page.document?.fileName
+    ) {
+      return { path: route.path, fileName: page.document.fileName };
+    }
+    return undefined;
+  }
+
+  if (route.appId) {
+    const app = output.apps[route.appId];
+    if (app?.document?.fileName) {
+      return { path: route.path, fileName: app.document.fileName };
+    }
+    return undefined;
+  }
+
+  return undefined;
 }
 
 function getStaticFallbackHtml(output: BuildOutput): string | undefined {
-  if (output.apps.default) return "index.html";
+  if (output.apps.default?.document?.fileName) {
+    return output.apps.default.document.fileName;
+  }
   const firstAppId = Object.keys(output.apps)[0];
-  if (firstAppId) return `${firstAppId}.html`;
-  const firstPageId = Object.keys(output.pages)[0];
-  return firstPageId ? `${firstPageId}.html` : undefined;
+  if (firstAppId) return output.apps[firstAppId]?.document?.fileName;
+  return undefined;
+}
+
+function getFrameworkEndpointPaths(output: BuildOutput): string[] {
+  const runtime = output.runtime.server;
+  if (!runtime) return [];
+
+  return [runtime.fn, runtime.ppr, runtime.rsc].filter(
+    (routePath): routePath is string =>
+      typeof routePath === "string" && routePath.length > 0,
+  );
 }
 
 function getFrameworkServerRoutes(output: BuildOutput): string[] {
@@ -751,6 +923,20 @@ function getFrameworkServerRoutes(output: BuildOutput): string[] {
   }
 
   return [...routes].sort();
+}
+
+function getStaticAssetPrefix(
+  publicPath: PublicPathOutput,
+): string | undefined {
+  if (typeof publicPath !== "string") return undefined;
+  if (!publicPath.startsWith("/") || publicPath.startsWith("//")) {
+    return undefined;
+  }
+
+  const pathname = publicPath.split(/[?#]/)[0] ?? "";
+  const normalized = pathname.replace(/\/+$/, "");
+  if (!normalized || normalized === "/") return undefined;
+  return normalized;
 }
 
 function toNodeRoutePath(routePath: string): string {

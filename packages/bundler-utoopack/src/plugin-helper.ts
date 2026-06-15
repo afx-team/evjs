@@ -1,7 +1,11 @@
-import { type BundlerCtx, merge } from "@evjs/ev";
+import { type BundlerCtx, merge, type PluginHooks } from "@evjs/ev";
 import type { ConfigComplete } from "@utoo/pack";
 
 export type { ConfigPatch } from "@evjs/ev";
+
+type UtoopackBundlerConfigHook = NonNullable<
+  PluginHooks<ConfigComplete>["bundlerConfig"]
+>;
 
 /**
  * Typed wrapper for utoopack configuration in plugin bundler hooks.
@@ -25,18 +29,15 @@ export type { ConfigPatch } from "@evjs/ev";
  * };
  * ```
  */
-export function utoopack<T = unknown>(
+export function utoopack(
   fn: (
     config: ConfigComplete,
     ctx: BundlerCtx<ConfigComplete>,
   ) => void | Promise<void>,
-): (config: T, ctx: BundlerCtx<T>) => void | Promise<void> {
+): UtoopackBundlerConfigHook {
   return async (config, ctx) => {
-    if (ctx.config.bundler?.name === "utoopack") {
-      await fn(
-        config as unknown as ConfigComplete,
-        ctx as unknown as BundlerCtx<ConfigComplete>,
-      );
+    if (ctx.bundlerName === "utoopack") {
+      await fn(config, ctx);
     }
   };
 }

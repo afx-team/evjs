@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import {
   deleteCookie,
@@ -9,14 +9,27 @@ import {
   setCookie,
   waitUntil,
 } from "../src/context.js";
-import { registerServerReference } from "../src/functions/index.js";
+import {
+  registerServerReference,
+  registry,
+} from "../src/functions/register.js";
 
 describe("Server Request Context", () => {
+  beforeEach(() => {
+    registry.clear();
+  });
+
   it("should throw when used outside a request lifecycle", () => {
-    expect(() => getContext()).toThrow();
-    expect(() => request()).toThrow();
-    expect(() => headers()).toThrow();
-    expect(() => getCookie()).toThrow();
+    const message = [
+      "[evjs] Server context helpers (request(), headers(), cookie helpers, waitUntil()) must be called during a request lifecycle.",
+      "Call them inside a server function, route handler, middleware, or framework render.",
+    ].join(" ");
+
+    expect(() => getContext()).toThrow(message);
+    expect(() => request()).toThrow(message);
+    expect(() => headers()).toThrow(message);
+    expect(() => getCookie()).toThrow(message);
+    expect(() => waitUntil(Promise.resolve())).toThrow(message);
   });
 
   it("should provide context inside a server function", async () => {
@@ -72,5 +85,25 @@ describe("Server Request Context", () => {
     };
     expect(json.result.hdr).toBe("it-works");
     expect(json.result.cookie).toBe("yummy");
+  });
+
+  it("reports invalid waitUntil tasks with a framework error", async () => {
+    registerServerReference(() => {
+      waitUntil("not-a-promise" as never);
+    }, "invalidWaitUntil");
+    const app = createApp();
+
+    const response = await app.request("/__evjs/fn", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fnId: "invalidWaitUntil", args: [] }),
+    });
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      error: "[evjs] waitUntil() requires a Promise.",
+      fnId: "invalidWaitUntil",
+      status: 500,
+    });
   });
 });

@@ -1,4 +1,5 @@
 import type { BuildOutput, RemoteManifest } from "@evjs/shared/manifest";
+import { normalizeAndValidateRemoteManifest } from "./assets.js";
 import {
   findRemoteIdForPath,
   getRequestPathname,
@@ -32,7 +33,7 @@ export async function resolveTarget(
         `[evjs] Page "${request.pageId}" is not in the manifest.`,
       );
     }
-    const href = page.module?.href;
+    const href = readRuntimeModuleHref(page.module, `Page "${request.pageId}"`);
     if (!href) {
       throw new Error(
         `[evjs] Page "${request.pageId}" does not expose an importable runtime module.`,
@@ -69,7 +70,7 @@ export async function resolveTarget(
   if (!appId || !app) {
     throw new Error("[evjs] No app target is available in the manifest.");
   }
-  const href = app.module?.href;
+  const href = readRuntimeModuleHref(app.module, `App "${appId}"`);
   if (!href) {
     throw new Error(
       `[evjs] App "${appId}" does not expose an importable runtime module.`,
@@ -86,6 +87,34 @@ export async function resolveTarget(
       request,
     },
   };
+}
+
+function readRuntimeModuleHref(
+  module: unknown,
+  label: string,
+): string | undefined {
+  if (module === undefined) return undefined;
+  if (!isRecord(module)) {
+    throw new Error(`[evjs] ${label} runtime module must be an object.`);
+  }
+
+  const href = module.href;
+  if (href === undefined) return undefined;
+  if (typeof href !== "string" || !href.trim()) {
+    throw new Error(
+      `[evjs] ${label} runtime module href must be a non-empty string.`,
+    );
+  }
+  if (href.trim() !== href) {
+    throw new Error(
+      `[evjs] ${label} runtime module href must not contain leading or trailing whitespace.`,
+    );
+  }
+  return href;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 async function resolveRemoteTarget(
@@ -118,10 +147,18 @@ async function resolveRemoteTarget(
       id: remoteId,
       request,
       manifest,
-    }).catch((error) => {
-      remoteManifestCache.delete(remoteId);
-      throw error;
-    });
+    })
+      .then((remoteManifest) =>
+        normalizeAndValidateHostRemoteManifest(
+          remoteId,
+          remote.manifest,
+          remoteManifest,
+        ),
+      )
+      .catch((error) => {
+        remoteManifestCache.delete(remoteId);
+        throw error;
+      });
     remoteManifestCache.set(remoteId, remoteManifestPromise);
   }
 
@@ -144,6 +181,23 @@ async function resolveRemoteTarget(
     shared,
     pathname,
   });
+}
+
+function normalizeAndValidateHostRemoteManifest(
+  remoteId: string,
+  manifestUrl: string,
+  remoteManifest: unknown,
+): RemoteManifest {
+  const manifest = normalizeAndValidateRemoteManifest(
+    manifestUrl,
+    remoteManifest,
+  );
+  if (manifest.name !== remoteId) {
+    throw new Error(
+      `[evjs] Remote "${remoteId}" loaded manifest "${manifestUrl}" with name "${manifest.name}". Remote manifest name must match the host manifest remote id.`,
+    );
+  }
+  return manifest;
 }
 
 function resolveRemoteEntryTarget(options: {

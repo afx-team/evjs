@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { utoopackAdapter } from "@evjs/bundler-utoopack";
+import type { DefaultBundlerConfig } from "@evjs/cli";
 import { build } from "@evjs/cli";
 import type { BundlerAdapter, Plugin } from "@evjs/ev";
 import { configure, getConsoleSink } from "@logtape/logtape";
@@ -17,8 +18,10 @@ const EXAMPLES = path.resolve(__dirname, "../examples");
 const CSR_APP = path.resolve(EXAMPLES, "plugin-authoring");
 const FULLSTACK_APP = path.resolve(EXAMPLES, "basic");
 
-const BUNDLERS: [string, BundlerAdapter][] = [
-  ["utoopack", utoopackAdapter as unknown as BundlerAdapter],
+type DefaultPlugin = Plugin<DefaultBundlerConfig>;
+
+const BUNDLERS: [string, BundlerAdapter<DefaultBundlerConfig>][] = [
+  ["utoopack", utoopackAdapter],
 ];
 
 let savedCwd: string;
@@ -59,7 +62,7 @@ describe.each(BUNDLERS)("build notifier plugin [%s]", (_name, bundler) => {
       duration: 0,
     };
 
-    const buildNotifier: Plugin = {
+    const buildNotifier: DefaultPlugin = {
       name: "build-notifier",
       setup(_ctx) {
         let t0: number;
@@ -97,7 +100,7 @@ describe.each(BUNDLERS)("deployment manifest plugin [%s]", (_name, bundler) => {
 
     const manifestPath = path.resolve(CSR_APP, "dist/deploy-manifest.json");
 
-    const deployPlugin: Plugin = {
+    const deployPlugin: DefaultPlugin = {
       name: "deploy-manifest",
       setup(ctx) {
         return {
@@ -146,7 +149,7 @@ describe.each(
     let serverFnCount = 0;
     let serverEntry: string | undefined;
 
-    const discoveryPlugin: Plugin = {
+    const discoveryPlugin: DefaultPlugin = {
       name: "fn-discovery",
       setup() {
         return {
@@ -181,7 +184,7 @@ describe.each(
   it("injects a meta tag into the document via DOM API", async () => {
     process.chdir(CSR_APP);
 
-    const htmlPlugin: Plugin = {
+    const htmlPlugin: DefaultPlugin = {
       name: "meta-injector",
       setup() {
         return {
@@ -212,7 +215,7 @@ describe.each(
   it("injects a comment node via DOM API", async () => {
     process.chdir(CSR_APP);
 
-    const commentPlugin: Plugin = {
+    const commentPlugin: DefaultPlugin = {
       name: "comment-injector",
       setup() {
         return {
@@ -247,7 +250,7 @@ describe.each(BUNDLERS)("transformHtml composition [%s]", (_name, bundler) => {
   it("multiple plugins accumulate DOM mutations", async () => {
     process.chdir(CSR_APP);
 
-    const plugin1: Plugin = {
+    const plugin1: DefaultPlugin = {
       name: "meta-1",
       setup: () => ({
         transformHtml(doc) {
@@ -259,7 +262,7 @@ describe.each(BUNDLERS)("transformHtml composition [%s]", (_name, bundler) => {
       }),
     };
 
-    const plugin2: Plugin = {
+    const plugin2: DefaultPlugin = {
       name: "meta-2",
       setup: () => ({
         transformHtml(doc) {

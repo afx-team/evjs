@@ -12,13 +12,11 @@
     "@trpc/react-query": "^11.0.0-rc.825",
     "@trpc/server": "^11.0.0-rc.825",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "@evjs/ev": "*"
   },
   "devDependencies": {
-    "@evjs/ev": "*",
     "@evjs/cli": "*",
-    "@evjs/client": "*",
-    "@evjs/server": "*",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.8",
     "typescript": "^6.0.2"

@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type {
   BuildPlan,
+  BuildPlanUpdate,
   BundlerAdapter,
   BundlerBuildContext,
   BundlerBuildFacts,
@@ -43,10 +44,10 @@ async function generateDevArtifacts(
     options?: { isRebuild?: boolean },
   ) => void | Promise<void>,
   options: { isRebuild?: boolean } = {},
-) {
+): Promise<boolean> {
   const outputPaths = getOutputPaths(cwd, config.serverEnabled);
   const clientStatsPath = path.join(outputPaths.clientDir, "stats.json");
-  if (!fs.existsSync(clientStatsPath)) return;
+  if (!fs.existsSync(clientStatsPath)) return false;
 
   logger.info`Generating development manifest and HTML...`;
   const generator = new UtoopackManifestGenerator(
@@ -56,6 +57,7 @@ async function generateDevArtifacts(
   );
   const facts = await generator.collectBuildFacts();
   await onBuildFacts(facts, options);
+  return true;
 }
 
 export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
@@ -105,8 +107,13 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
     // Watch for server bundle readiness (utoopack emits server output
     // to dist/server/ when "use server" modules are discovered)
     if (!config.serverEnabled) {
-      return createUnsupportedDevController(() => {
-        serverReadyWatcher?.close();
+      return new UtoopackDevController({
+        config,
+        cwd,
+        onBuildFacts: callbacks.onBuildFacts,
+        closeWatcher() {
+          serverReadyWatcher?.close();
+        },
       });
     }
 
@@ -143,23 +150,75 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
 
     // Initial check in case it was written before the watcher attached
     await checkReady();
-    return createUnsupportedDevController(() => {
-      serverReadyWatcher?.close();
+    return new UtoopackDevController({
+      config,
+      cwd,
+      onBuildFacts: callbacks.onBuildFacts,
+      closeWatcher() {
+        serverReadyWatcher?.close();
+      },
     });
   },
 };
 
-function createUnsupportedDevController(
-  closeWatcher: () => void,
-): BundlerDevController {
-  return {
-    close() {
-      closeWatcher();
+class UtoopackDevController implements BundlerDevController {
+  constructor(
+    private options: {
+      config: ResolvedConfig<ConfigComplete>;
+      cwd: string;
+      onBuildFacts: BundlerDevContext<ConfigComplete>["callbacks"]["onBuildFacts"];
+      closeWatcher: () => void;
     },
-    async updatePlan() {
+  ) {}
+
+  close(): void {
+    this.options.closeWatcher();
+  }
+
+  async updatePlan(update: BuildPlanUpdate): Promise<void> {
+    if (isEmptyPlanUpdate(update)) return;
+
+    if (!isHtmlOnlyUpdate(update)) {
       throw new Error(
-        "[evjs] Utoopack dev plan updates are not supported yet. Dynamic MPA page entry updates require a lower-layer Utoopack update API.",
+        "[evjs] Utoopack dev cannot apply framework entry changes without restarting ev dev. HTML-only framework plan updates are supported; entry additions, removals, server changes, and route metadata changes still require a lower-layer Utoopack update API.",
       );
-    },
-  };
+    }
+
+    const emitted = await generateDevArtifacts(
+      this.options.config,
+      this.options.cwd,
+      update.next,
+      this.options.onBuildFacts,
+      { isRebuild: true },
+    );
+    if (!emitted) {
+      throw new Error(
+        "[evjs] Utoopack dev cannot regenerate framework artifacts before client build stats are available.",
+      );
+    }
+  }
+}
+
+function isEmptyPlanUpdate(update: BuildPlanUpdate): boolean {
+  return (
+    !update.serverChanged &&
+    update.entries.added.length === 0 &&
+    update.entries.removed.length === 0 &&
+    update.entries.changed.length === 0 &&
+    update.html.added.length === 0 &&
+    update.html.removed.length === 0 &&
+    update.html.changed.length === 0
+  );
+}
+
+function isHtmlOnlyUpdate(update: BuildPlanUpdate): boolean {
+  return (
+    !update.serverChanged &&
+    update.entries.added.length === 0 &&
+    update.entries.removed.length === 0 &&
+    update.entries.changed.length === 0 &&
+    (update.html.added.length > 0 ||
+      update.html.removed.length > 0 ||
+      update.html.changed.length > 0)
+  );
 }

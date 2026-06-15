@@ -7,6 +7,7 @@
     "access": "public"
   },
   "main": "./esm/index.js",
+  "types": "./esm/index.d.ts",
   "exports": {
     ".": {
       "types": "./esm/index.d.ts",
@@ -40,8 +41,6 @@
     "webpack-dev-server": "^5.2.4"
   },
   "devDependencies": {
-    "@evjs/client": "*",
-    "@evjs/server": "*",
     "@types/node": "^22.19.15",
     "react": ">=18.0.0",
     "react-dom": ">=18.0.0",

@@ -1,32 +1,38 @@
 import { type Module, parseSync } from "@swc/core";
+import type { ModuleItem } from "@swc/types";
+import type { ServerFunctionExport } from "../../server-fns.js";
 import { RUNTIME, type TransformOptions } from "../../types.js";
 import { makeFnId } from "../../utils.js";
 
 /** Notify the manifest collector about each server function. */
 function reportToManifest(
-  exportNames: string[],
+  serverFunctions: ServerFunctionExport[],
   options: TransformOptions,
 ): void {
   if (!options.onServerFn) return;
-  for (const name of exportNames) {
-    const fnId = makeFnId(options.rootContext, options.resourcePath, name);
+  for (const { exportName } of serverFunctions) {
+    const fnId = makeFnId(
+      options.rootContext,
+      options.resourcePath,
+      exportName,
+    );
     options.onServerFn(fnId);
   }
 }
 
-/** Server build: inject import and appends registrations as AST nodes. */
+/** Server build: injects import and appends registrations as AST nodes. */
 export function buildServerOutput(
   program: Module,
-  exportNames: string[],
+  serverFunctions: ServerFunctionExport[],
   options: TransformOptions,
 ): Module {
-  reportToManifest(exportNames, options);
+  reportToManifest(serverFunctions, options);
 
-  const registrations = exportNames.map((name) => {
+  const registrations = serverFunctions.map(({ exportName, localName }) => {
     const fnId = JSON.stringify(
-      makeFnId(options.rootContext, options.resourcePath, name),
+      makeFnId(options.rootContext, options.resourcePath, exportName),
     );
-    return `${RUNTIME.registerServerReference}(${name}, ${fnId}, ${JSON.stringify(name)});`;
+    return `${RUNTIME.registerServerReference}(${localName}, ${fnId}, ${JSON.stringify(exportName)});`;
   });
 
   const injectCode = [
@@ -38,7 +44,11 @@ export function buildServerOutput(
 
   // Prepend import
   if (injectAst.body.length > 0) {
-    program.body.unshift(injectAst.body[0]);
+    program.body.splice(
+      directivePrologueLength(program.body),
+      0,
+      injectAst.body[0],
+    );
   }
 
   // Append registrations
@@ -47,4 +57,20 @@ export function buildServerOutput(
   }
 
   return program;
+}
+
+function directivePrologueLength(body: ModuleItem[]): number {
+  let index = 0;
+  for (const item of body) {
+    if (!isDirectiveStatement(item)) break;
+    index += 1;
+  }
+  return index;
+}
+
+function isDirectiveStatement(item: ModuleItem): boolean {
+  return (
+    item.type === "ExpressionStatement" &&
+    item.expression.type === "StringLiteral"
+  );
 }

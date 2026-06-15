@@ -1,3 +1,19 @@
+import {
+  BUILD_IDENTIFIER_DESCRIPTION,
+  findBestPageRoute,
+  formatContentTypeHeaderValue,
+  isBuildIdentifier,
+  isHeadersInit,
+  isHttpBodyStatus,
+  isRscFlightContentType,
+  isTextHtmlContentType,
+  normalizeRoutePathname,
+  pageRoutePathMatches,
+  RSC_FLIGHT_CONTENT_TYPE,
+  type RscFlightRequestPageUrlError,
+  resolveRscFlightRequestPageUrl,
+  TEXT_HTML_UTF8_CONTENT_TYPE,
+} from "@evjs/shared";
 import type {
   BuildEntryOwner,
   BuildOutput,
@@ -8,12 +24,16 @@ import type {
   ServerRendererOutput,
   ServerRenderPlan,
 } from "@evjs/shared/manifest";
+import { assertFrameworkManifestShape } from "@evjs/shared/manifest";
+import { textResponse } from "./responses.js";
 
 export interface FrameworkServerOptions {
   manifest: BuildOutput;
   render?: ServerRenderHandler | ServerRenderCoordinator;
   rsc?: RscFlightHandler | RscCoordinator;
-  allowPageRenderRequest?: (request: Request) => boolean;
+  allowPageRenderRequest?: (
+    request: Request,
+  ) => boolean | Response | Promise<boolean | Response>;
 }
 
 export interface ServerRenderContext {
@@ -114,14 +134,28 @@ interface PprCachedResponse {
   body: ArrayBuffer;
 }
 
+interface PprRegionMatch {
+  pageId: string;
+  regionId: string;
+}
+
 const pprRegionCaches = new WeakMap<
   FrameworkServerOptions,
   Map<string, PprCachedResponse>
 >();
 
+interface PprRegionCacheWriteOptions {
+  store: boolean;
+}
+
+interface PprRegionNormalizeOptions {
+  readBody: boolean;
+}
 export function createModuleRenderCoordinator(
   options: ModuleRenderCoordinatorOptions,
 ): ServerRenderCoordinator {
+  assertModuleRenderCoordinatorOptions(options);
+
   const moduleCache = new Map<string, Promise<ServerRendererModule>>();
   const fallback = options.fallback
     ? normalizeRenderCoordinator(options.fallback)
@@ -138,9 +172,10 @@ export function createModuleRenderCoordinator(
       const renderer = findRenderer(ctx, options.renderers);
       if (!renderer) {
         if (fallback) return fallback.render(ctx);
-        return new Response("No framework server renderer matched request", {
-          status: 404,
-        });
+        return textResponse(
+          "No framework server renderer matched request",
+          404,
+        );
       }
 
       const module = await loadRendererModule(
@@ -148,11 +183,12 @@ export function createModuleRenderCoordinator(
         renderer.entry,
         moduleCache,
       );
+      const rendererSource = `Server renderer "${renderer.name}"`;
       const namedRender = getNamedModuleRenderFunction(module);
       if (namedRender) {
         const result = await namedRender(ctx);
         if (!isServerRenderResult(result)) {
-          return invalidRendererResult(renderer.name);
+          return invalidServerRenderResult(rendererSource);
         }
         return result;
       }
@@ -162,22 +198,22 @@ export function createModuleRenderCoordinator(
         : undefined;
       if (adapterResult !== undefined) {
         if (!isServerRenderResult(adapterResult)) {
-          return invalidRendererResult(renderer.name);
+          return invalidServerRenderResult(rendererSource);
         }
         return adapterResult;
       }
 
       const render = getDefaultModuleRenderFunction(module);
       if (!render) {
-        return new Response(
+        return textResponse(
           `[evjs] Server renderer "${renderer.name}" must export render(ctx) or default(ctx). React component SSR requires a React server render adapter.`,
-          { status: 501 },
+          501,
         );
       }
 
       const result = await render(ctx);
       if (!isServerRenderResult(result)) {
-        return invalidRendererResult(renderer.name);
+        return invalidServerRenderResult(rendererSource);
       }
 
       return result;
@@ -188,6 +224,8 @@ export function createModuleRenderCoordinator(
 export function createManifestRenderCoordinator(
   options: ManifestRenderCoordinatorOptions,
 ): ServerRenderCoordinator {
+  assertManifestRenderCoordinatorOptions(options);
+
   return createModuleRenderCoordinator({
     renderers: createRendererRegistryFromManifest(
       options.manifest,
@@ -198,16 +236,114 @@ export function createManifestRenderCoordinator(
   });
 }
 
+function assertModuleRenderCoordinatorOptions(
+  value: unknown,
+): asserts value is ModuleRenderCoordinatorOptions {
+  if (!isRecord(value)) {
+    throw new Error(
+      "[evjs] createModuleRenderCoordinator() options must be an object.",
+    );
+  }
+
+  assertRendererRegistry(
+    value.renderers,
+    "createModuleRenderCoordinator() renderers",
+  );
+  assertOptionalFunction(
+    value.renderModule,
+    "createModuleRenderCoordinator() renderModule",
+  );
+  assertOptionalRenderCoordinator(
+    value.fallback,
+    "createModuleRenderCoordinator() fallback",
+  );
+}
+
+function assertManifestRenderCoordinatorOptions(
+  value: unknown,
+): asserts value is ManifestRenderCoordinatorOptions {
+  if (!isRecord(value)) {
+    throw new Error(
+      "[evjs] createManifestRenderCoordinator() options must be an object.",
+    );
+  }
+
+  assertFrameworkManifestShape(
+    value.manifest,
+    "createManifestRenderCoordinator() manifest",
+  );
+  assertFunction(
+    value.loadModule,
+    "createManifestRenderCoordinator() loadModule",
+  );
+  assertOptionalFunction(
+    value.renderModule,
+    "createManifestRenderCoordinator() renderModule",
+  );
+  assertOptionalRenderCoordinator(
+    value.fallback,
+    "createManifestRenderCoordinator() fallback",
+  );
+}
+
+function assertRendererRegistry(value: unknown, source: string): void {
+  assertObject(value, source);
+
+  for (const [name, entry] of Object.entries(value)) {
+    if (!isRecord(entry)) {
+      throw new Error(`[evjs] ${source}.${name} must be a renderer entry.`);
+    }
+    assertFunction(entry.load, `${source}.${name}.load`);
+  }
+}
+
+function assertOptionalRenderCoordinator(value: unknown, source: string): void {
+  if (value === undefined || typeof value === "function") return;
+  if (isRecord(value) && typeof value.render === "function") return;
+  throw new Error(
+    `[evjs] ${source} must be a render function or coordinator object.`,
+  );
+}
+
+function assertOptionalFunction(value: unknown, source: string): void {
+  if (value !== undefined) {
+    assertFunction(value, source);
+  }
+}
+
+function assertFunction(
+  value: unknown,
+  source: string,
+): asserts value is (...args: never[]) => unknown {
+  if (typeof value !== "function") {
+    throw new Error(`[evjs] ${source} must be a function.`);
+  }
+}
+
+function assertObject(
+  value: unknown,
+  source: string,
+): asserts value is Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new Error(`[evjs] ${source} must be an object.`);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
 export async function handleFrameworkRenderRequest(
   options: FrameworkServerOptions,
   request: Request,
 ): Promise<Response | undefined> {
   if (!options.render) return undefined;
   if (request.method !== "GET" && request.method !== "HEAD") return undefined;
-  if (
-    options.allowPageRenderRequest &&
-    !options.allowPageRenderRequest(request)
-  ) {
+  const allowed = await runPageRenderRequestGuard(options, request);
+  if (allowed instanceof Response) {
+    return request.method === "HEAD" ? withoutResponseBody(allowed) : allowed;
+  }
+  if (!allowed) {
     return undefined;
   }
 
@@ -226,11 +362,77 @@ export async function handleFrameworkRenderRequest(
     pageId,
   };
   const coordinator = normalizeRenderCoordinator(options.render);
-  const match = coordinator.match ? await coordinator.match(ctx) : ctx;
+  const match = await runServerRenderMatch(
+    coordinator,
+    ctx,
+    "Framework render coordinator",
+  );
+  if (match instanceof Response) {
+    return request.method === "HEAD" ? withoutResponseBody(match) : match;
+  }
   if (!match) return undefined;
 
-  const response = toResponse(await coordinator.render(match));
+  const response = await runServerRender(
+    coordinator,
+    match,
+    "Framework render coordinator",
+  );
   return renderPprPageResponse(options, request, match, response, coordinator);
+}
+
+async function runPageRenderRequestGuard(
+  options: FrameworkServerOptions,
+  request: Request,
+): Promise<boolean | Response> {
+  if (!options.allowPageRenderRequest) return true;
+  try {
+    const allowed = await options.allowPageRenderRequest(request);
+    if (typeof allowed === "boolean" || allowed instanceof Response) {
+      return allowed;
+    }
+    return textResponse(
+      "[evjs] framework.allowPageRenderRequest must return a boolean or Response.",
+      500,
+    );
+  } catch (error) {
+    return textResponse(
+      `[evjs] framework.allowPageRenderRequest failed: ${formatUnknownError(error)}`,
+      500,
+    );
+  }
+}
+
+async function runServerRenderMatch(
+  coordinator: ServerRenderCoordinator,
+  ctx: ServerRenderContext,
+  source: string,
+): Promise<ServerRenderContext | undefined | Response> {
+  try {
+    return toServerRenderMatch(
+      coordinator.match ? await coordinator.match(ctx) : ctx,
+      source,
+    );
+  } catch (error) {
+    return textResponse(
+      `[evjs] ${source} match failed: ${formatUnknownError(error)}`,
+      500,
+    );
+  }
+}
+
+async function runServerRender(
+  coordinator: ServerRenderCoordinator,
+  ctx: ServerRenderContext,
+  source: string,
+): Promise<Response> {
+  try {
+    return toResponse(await coordinator.render(ctx), source);
+  } catch (error) {
+    return textResponse(
+      `[evjs] ${source} render failed: ${formatUnknownError(error)}`,
+      500,
+    );
+  }
 }
 
 export async function handlePprRegionRequest(
@@ -241,7 +443,18 @@ export async function handlePprRegionRequest(
   if (request.method !== "GET" && request.method !== "HEAD") return undefined;
 
   const url = new URL(request.url);
-  const match = matchPprRegion(options.manifest, url.pathname);
+  let match: PprRegionMatch | undefined;
+  try {
+    match = matchPprRegion(options.manifest, url.pathname);
+  } catch (error) {
+    if (error instanceof PprRegionRequestError) {
+      const response = textResponse(error.message, 400);
+      return request.method === "HEAD"
+        ? withoutResponseBody(response)
+        : response;
+    }
+    throw error;
+  }
   if (!match) return undefined;
 
   const page = options.manifest.pages[match.pageId];
@@ -273,7 +486,7 @@ async function renderPprPageResponse(
   if (!pageId || !page?.ppr) return response;
 
   const contentType = response.headers.get("Content-Type") ?? "";
-  if (!contentType.includes("text/html")) return response;
+  if (!isTextHtmlContentType(contentType)) return response;
 
   return page.ppr.delivery === "stream"
     ? renderPprStreamingPageResponse(
@@ -312,7 +525,7 @@ async function renderPprMergedPageResponse(
       { pageId, regionId },
       coordinator,
     );
-    if (!regionResponse?.ok) continue;
+    if (!isPatchablePprRegionResponse(regionResponse)) continue;
 
     const nextHtml = replacePprRegionPlaceholder(
       html,
@@ -326,7 +539,7 @@ async function renderPprMergedPageResponse(
   }
 
   const headers = new Headers(response.headers);
-  headers.set("Content-Type", "text/html; charset=utf-8");
+  headers.set("Content-Type", TEXT_HTML_UTF8_CONTENT_TYPE);
   if (!changed) {
     return new Response(html, {
       status: response.status,
@@ -356,7 +569,7 @@ async function renderPprStreamingPageResponse(
   const html = await response.text();
   const { head, tail } = splitHtmlForPprStream(html);
   const headers = new Headers(response.headers);
-  headers.set("Content-Type", "text/html; charset=utf-8");
+  headers.set("Content-Type", TEXT_HTML_UTF8_CONTENT_TYPE);
   headers.set("x-evjs-ppr", "stream");
 
   const encoder = new TextEncoder();
@@ -372,7 +585,7 @@ async function renderPprStreamingPageResponse(
             { pageId, regionId },
             coordinator,
           );
-          if (!regionResponse?.ok) continue;
+          if (!isPatchablePprRegionResponse(regionResponse)) continue;
 
           const fragment = await regionResponse.text();
           controller.enqueue(
@@ -404,7 +617,7 @@ async function renderPprStreamingPageResponse(
 async function renderPprRegionResponse(
   options: FrameworkServerOptions,
   request: Request,
-  match: { pageId: string; regionId: string },
+  match: PprRegionMatch,
   coordinator: ServerRenderCoordinator,
 ): Promise<Response | undefined> {
   const page = options.manifest.pages[match.pageId];
@@ -423,15 +636,33 @@ async function renderPprRegionResponse(
     pageId: match.pageId,
     regionId: match.regionId,
   };
-  const renderMatch = coordinator.match ? await coordinator.match(ctx) : ctx;
+  const renderMatch = await runServerRenderMatch(
+    coordinator,
+    ctx,
+    "PPR region render coordinator",
+  );
+  if (renderMatch instanceof Response) {
+    return request.method === "HEAD"
+      ? withoutResponseBody(renderMatch)
+      : renderMatch;
+  }
   if (!renderMatch) return undefined;
 
   const response = await normalizePprRegionResponse(
     match,
-    toResponse(await coordinator.render(renderMatch)),
+    await runServerRender(
+      coordinator,
+      renderMatch,
+      "PPR region render coordinator",
+    ),
+    {
+      readBody: request.method !== "HEAD",
+    },
   );
 
-  return applyPprRegionCache(options, cacheKey, cachePolicy, response);
+  return applyPprRegionCache(options, cacheKey, cachePolicy, response, {
+    store: request.method !== "HEAD",
+  });
 }
 
 export async function handleRscFlightRequest(
@@ -440,25 +671,39 @@ export async function handleRscFlightRequest(
 ): Promise<Response | undefined> {
   if (!options.rsc) return undefined;
 
-  const rscPath = options.manifest.runtime.server?.rsc;
+  const rscPath =
+    options.manifest.rsc?.endpoint ?? options.manifest.runtime.server?.rsc;
   if (!rscPath) return undefined;
 
   const url = new URL(request.url);
-  if (normalizePathname(url.pathname) !== normalizePathname(rscPath)) {
+  if (
+    normalizeRoutePathname(url.pathname) !== normalizeRoutePathname(rscPath)
+  ) {
     return undefined;
   }
 
   if (request.method !== "GET" && request.method !== "HEAD") {
-    return frameworkTextResponse("Method Not Allowed", 405, {
+    return textResponse("Method Not Allowed", 405, {
       Allow: "GET, HEAD",
     });
   }
 
-  const ctx: RscFlightContext = {
-    request,
-    manifest: options.manifest,
-    ...createRscFlightPageContext(options.manifest, url),
-  };
+  let ctx: RscFlightContext;
+  try {
+    ctx = {
+      request,
+      manifest: options.manifest,
+      ...createRscFlightPageContext(options.manifest, url),
+    };
+  } catch (error) {
+    if (error instanceof RscFlightRequestError) {
+      const response = textResponse(error.message, 400);
+      return request.method === "HEAD"
+        ? withoutResponseBody(response)
+        : response;
+    }
+    throw error;
+  }
 
   const validationError = validateRscFlightContext(ctx);
   if (validationError) {
@@ -468,19 +713,39 @@ export async function handleRscFlightRequest(
   }
 
   const coordinator = normalizeRscCoordinator(options.rsc);
-  if (coordinator.match && !(await coordinator.match(ctx))) {
-    const response = frameworkTextResponse(
-      `[evjs] No RSC Flight coordinator matched page "${ctx.pageId}".`,
-      404,
-    );
-    return request.method === "HEAD" ? withoutResponseBody(response) : response;
+  if (coordinator.match) {
+    let match: boolean;
+    try {
+      match = toRscCoordinatorMatch(
+        await coordinator.match(ctx),
+        "RSC Flight coordinator",
+      );
+    } catch (error) {
+      const response = textResponse(
+        `[evjs] RSC Flight match failed: ${formatUnknownError(error)}`,
+        500,
+      );
+      return request.method === "HEAD"
+        ? withoutResponseBody(response)
+        : response;
+    }
+    if (!match) {
+      const response = textResponse(
+        `[evjs] No RSC Flight coordinator matched page "${ctx.pageId}".`,
+        404,
+      );
+      return request.method === "HEAD"
+        ? withoutResponseBody(response)
+        : response;
+    }
   }
 
   try {
     const response = await coordinator.renderFlight(ctx);
+    assertRscFlightResponse(response, "RSC Flight coordinator renderFlight()");
     return request.method === "HEAD" ? withoutResponseBody(response) : response;
   } catch (error) {
-    const response = frameworkTextResponse(
+    const response = textResponse(
       `[evjs] RSC Flight render failed: ${formatUnknownError(error)}`,
       500,
     );
@@ -501,9 +766,10 @@ function createRscFlightPageContext(
   const renderer = rscPage?.renderer
     ? manifest.server?.renderers?.[rscPage.renderer]
     : undefined;
+  const pageUrl = resolveRscFlightPageUrl(url);
 
   return {
-    pageUrl: resolveRscFlightPageUrl(url),
+    pageUrl,
     pageId,
     page,
     rscPage,
@@ -512,53 +778,96 @@ function createRscFlightPageContext(
 }
 
 function resolveRscFlightPageUrl(url: URL): string | undefined {
-  const raw = url.searchParams.get("url");
-  if (!raw) return undefined;
+  const result = resolveRscFlightRequestPageUrl(url);
+  if (result.error) {
+    throw new RscFlightRequestError(
+      formatRscFlightRequestPageUrlError(result.error),
+    );
+  }
+  return result.value;
+}
 
-  try {
-    return new URL(raw, url).toString();
-  } catch {
-    return undefined;
+class RscFlightRequestError extends Error {}
+
+function formatRscFlightRequestPageUrlError(
+  error: RscFlightRequestPageUrlError,
+): string {
+  switch (error) {
+    case "not-absolute-path":
+      return '[evjs] RSC Flight request url must be an absolute path starting with "/".';
+    case "invalid-path":
+      return "[evjs] RSC Flight request url is not a valid URL path.";
+    case "cross-origin-or-hash":
+      return "[evjs] RSC Flight request url must stay on the same origin and must not include a hash.";
   }
 }
 
 function validateRscFlightContext(ctx: RscFlightContext): Response | undefined {
   if (!ctx.pageId) {
-    return frameworkTextResponse(
+    return textResponse(
       "[evjs] RSC Flight request is missing the page query parameter.",
+      400,
+    );
+  }
+  if (!isBuildIdentifier(ctx.pageId)) {
+    return textResponse(
+      `[evjs] RSC Flight request page query parameter must contain only ${BUILD_IDENTIFIER_DESCRIPTION}.`,
       400,
     );
   }
 
   if (!ctx.page) {
-    return frameworkTextResponse(
+    return textResponse(
       `[evjs] RSC page "${ctx.pageId}" is not in the manifest.`,
       404,
     );
   }
 
+  if (ctx.pageUrl && !rscFlightPageUrlMatchesPage(ctx)) {
+    return textResponse(
+      `[evjs] RSC Flight request url does not match page "${ctx.pageId}".`,
+      400,
+    );
+  }
+
   if (ctx.page.componentModel !== "rsc") {
-    return frameworkTextResponse(
+    return textResponse(
       `[evjs] Page "${ctx.pageId}" is not configured with componentModel: "rsc".`,
       404,
     );
   }
 
   if (!ctx.rscPage) {
-    return frameworkTextResponse(
+    return textResponse(
       `[evjs] RSC page "${ctx.pageId}" has no RSC manifest metadata.`,
       501,
     );
   }
 
   if (!ctx.renderer) {
-    return frameworkTextResponse(
+    return textResponse(
       `[evjs] RSC page "${ctx.pageId}" has no loadable RSC renderer.`,
       501,
     );
   }
 
   return undefined;
+}
+
+function rscFlightPageUrlMatchesPage(ctx: RscFlightContext): boolean {
+  if (!ctx.pageUrl || !ctx.pageId) return true;
+  const pathname = normalizeRoutePathname(new URL(ctx.pageUrl).pathname);
+  const pageRoutes = ctx.manifest.routes.filter(
+    (route) => route.pageId === ctx.pageId,
+  );
+
+  if (pageRoutes.length > 0) {
+    return pageRoutes.some((route) =>
+      pageRoutePathMatches(route.path, pathname),
+    );
+  }
+
+  return ctx.page?.path ? pageRoutePathMatches(ctx.page.path, pathname) : true;
 }
 
 function normalizeRenderCoordinator(
@@ -583,17 +892,28 @@ function normalizeRscCoordinator(
   return rsc;
 }
 
-function frameworkTextResponse(
-  body: string,
-  status: number,
-  headers?: HeadersInit,
-): Response {
-  const responseHeaders = new Headers(headers);
-  responseHeaders.set("Content-Type", "text/plain; charset=utf-8");
-  return new Response(body, {
-    status,
-    headers: responseHeaders,
-  });
+function assertRscFlightResponse(
+  value: unknown,
+  source: string,
+): asserts value is Response {
+  if (!(value instanceof Response)) {
+    throw new Error(`[evjs] ${source} must return a Response.`);
+  }
+  if (!value.ok) return;
+
+  const contentType = value.headers.get("Content-Type");
+  if (!isRscFlightContentType(contentType)) {
+    throw new Error(
+      `[evjs] ${source} must return Content-Type "${RSC_FLIGHT_CONTENT_TYPE}"; received ${formatContentTypeHeaderValue(
+        contentType,
+      )}.`,
+    );
+  }
+}
+
+function toRscCoordinatorMatch(value: unknown, source: string): boolean {
+  if (typeof value === "boolean") return value;
+  throw new Error(`[evjs] ${source} match() must return a boolean.`);
 }
 
 function withoutResponseBody(response: Response): Response {
@@ -715,6 +1035,11 @@ function loadRendererModule(
 
   const loaded = entry.load();
   cache.set(name, loaded);
+  loaded.catch(() => {
+    if (cache.get(name) === loaded) {
+      cache.delete(name);
+    }
+  });
   return loaded;
 }
 
@@ -750,58 +1075,82 @@ function getDefaultModuleRenderFunction(
   return undefined;
 }
 
-function invalidRendererResult(rendererName: string): Response {
-  return new Response(
-    `[evjs] Server renderer "${rendererName}" returned an invalid result. Expected Response, string, or { html, status?, headers? }.`,
-    { status: 501 },
+function invalidServerRenderResult(source: string): Response {
+  return textResponse(
+    `[evjs] ${source} returned an invalid result. Expected Response, string, or { html, status?, headers? }.`,
+    501,
   );
 }
 
 function isServerRenderResult(result: unknown): result is ServerRenderResult {
   if (result instanceof Response) return true;
   if (typeof result === "string") return true;
-  if (!result || typeof result !== "object") return false;
-  return typeof (result as { html?: unknown }).html === "string";
+  return isHtmlResult(result);
+}
+
+function isHtmlResult(
+  result: unknown,
+): result is { html: string; status?: unknown; headers?: unknown } {
+  return Boolean(
+    result &&
+      typeof result === "object" &&
+      typeof (result as { html?: unknown }).html === "string",
+  );
+}
+
+function validateHtmlResult(
+  result: { status?: unknown; headers?: unknown },
+  source: string,
+): Response | undefined {
+  if (result.status !== undefined && !isHttpBodyStatus(result.status)) {
+    return textResponse(
+      `[evjs] ${source} status must be an integer HTTP status between 200 and 599 that can include an HTML body.`,
+      501,
+    );
+  }
+
+  if (result.headers !== undefined && !isHeadersInit(result.headers)) {
+    return textResponse(
+      `[evjs] ${source} headers must be valid HeadersInit.`,
+      501,
+    );
+  }
+
+  return undefined;
+}
+
+function toServerRenderMatch(
+  value: unknown,
+  source: string,
+): ServerRenderContext | undefined | Response {
+  if (!value) return undefined;
+  if (isServerRenderContext(value)) return value;
+  return textResponse(
+    `[evjs] ${source} match() must return a render context or undefined.`,
+    501,
+  );
+}
+
+function isServerRenderContext(value: unknown): value is ServerRenderContext {
+  return (
+    isRecord(value) &&
+    value.request instanceof Request &&
+    isRecord(value.manifest)
+  );
 }
 
 function matchRoute(
   routes: RouteOutput[],
   pathname: string,
 ): RouteOutput | undefined {
-  const normalized = normalizePathname(pathname);
-  return routes.find((route) =>
-    routePathMatches(normalizePathname(route.path), normalized),
-  );
-}
-
-function routePathMatches(routePath: string, pathname: string): boolean {
-  if (routePath === pathname) return true;
-
-  if (routePath.endsWith("/*")) {
-    const base = routePath.slice(0, -2);
-    return pathname === base || pathname.startsWith(`${base}/`);
-  }
-
-  const routeSegments = splitPath(routePath);
-  const pathSegments = splitPath(pathname);
-  if (routeSegments.length !== pathSegments.length) return false;
-
-  return routeSegments.every((segment, index) => {
-    const value = pathSegments[index];
-    return (
-      segment === value ||
-      segment.startsWith("$") ||
-      segment.startsWith(":") ||
-      segment === "*"
-    );
-  });
+  return findBestPageRoute(routes, pathname);
 }
 
 function inferPageId(
   manifest: BuildOutput,
   pathname: string,
 ): string | undefined {
-  const normalized = normalizePathname(pathname);
+  const normalized = normalizeRoutePathname(pathname);
   const directId = normalized === "/" ? "index" : normalized.slice(1);
   const withoutHtml = directId.replace(/\.html$/, "");
 
@@ -815,30 +1164,60 @@ function inferPageId(
 function matchPprRegion(
   manifest: BuildOutput,
   pathname: string,
-): { pageId: string; regionId: string } | undefined {
-  const endpoint = normalizePathname(
+): PprRegionMatch | undefined {
+  const endpoint = normalizeRoutePathname(
     manifest.runtime.server?.ppr ??
       joinPath(manifest.runtime.server?.basePath ?? "/__evjs", "ppr"),
   );
-  const normalized = normalizePathname(pathname);
+  const normalized = normalizeRoutePathname(pathname);
   if (normalized === endpoint || !normalized.startsWith(`${endpoint}/`)) {
     return undefined;
   }
 
-  const [pageId, regionId] = normalized
-    .slice(endpoint.length + 1)
-    .split("/")
-    .map((segment) => decodeURIComponent(segment));
+  const segments = normalized.slice(endpoint.length + 1).split("/");
+  if (segments.length !== 2) return undefined;
+
+  const pageId = decodePprRegionPathSegment(segments[0], "page");
+  const regionId = decodePprRegionPathSegment(segments[1], "region");
   if (!pageId || !regionId) return undefined;
   return { pageId, regionId };
 }
 
+function decodePprRegionPathSegment(
+  segment: string | undefined,
+  name: "page" | "region",
+): string {
+  if (segment === undefined) return "";
+  let value: string;
+  try {
+    value = decodeURIComponent(segment);
+  } catch {
+    throw new PprRegionRequestError(
+      "[evjs] PPR region request path contains invalid URL encoding.",
+    );
+  }
+
+  if (/[/?#\s]/.test(value)) {
+    throw new PprRegionRequestError(
+      `[evjs] PPR region request ${name} path segment must not contain separators, whitespace, query strings, or hashes.`,
+    );
+  }
+  if (!isBuildIdentifier(value)) {
+    throw new PprRegionRequestError(
+      `[evjs] PPR region request ${name} path segment must contain only ${BUILD_IDENTIFIER_DESCRIPTION}.`,
+    );
+  }
+  return value;
+}
+
+class PprRegionRequestError extends Error {}
+
 function createPprRegionCacheKey(
   request: Request,
-  match: { pageId: string; regionId: string },
+  match: PprRegionMatch,
 ): string {
   const url = new URL(request.url);
-  return `${match.pageId}:${match.regionId}:${normalizePathname(url.pathname)}${url.search}`;
+  return `${match.pageId}:${match.regionId}:${normalizeRoutePathname(url.pathname)}${url.search}`;
 }
 
 function readPprRegionCache(
@@ -846,7 +1225,9 @@ function readPprRegionCache(
   key: string,
   policy: PprCachePolicy,
 ): Response | undefined {
-  if (policy === "no-store") return undefined;
+  const revalidate = getPprRegionRevalidate(policy);
+  if (revalidate === undefined) return undefined;
+
   const cached = pprRegionCaches.get(options)?.get(key);
   if (!cached) return undefined;
   if (cached.expiresAt <= Date.now()) {
@@ -868,22 +1249,11 @@ async function applyPprRegionCache(
   key: string,
   policy: PprCachePolicy,
   response: Response,
+  writeOptions: PprRegionCacheWriteOptions,
 ): Promise<Response> {
   const headers = new Headers(response.headers);
-
-  if (policy === "no-store" || !Number.isFinite(policy.revalidate)) {
-    if (!headers.has("Cache-Control")) {
-      headers.set("Cache-Control", "no-store");
-    }
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
-  }
-
-  const revalidate = Math.max(0, policy.revalidate);
-  if (revalidate <= 0) {
+  const revalidate = getPprRegionRevalidate(policy);
+  if (revalidate === undefined) {
     if (!headers.has("Cache-Control")) {
       headers.set("Cache-Control", "no-store");
     }
@@ -898,6 +1268,14 @@ async function applyPprRegionCache(
     headers.set("Cache-Control", `s-maxage=${revalidate}`);
   }
   headers.set("x-evjs-cache", "MISS");
+
+  if (!writeOptions.store) {
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
 
   const body = await response.arrayBuffer();
   if (response.ok) {
@@ -924,16 +1302,43 @@ async function applyPprRegionCache(
   });
 }
 
+function getPprRegionRevalidate(policy: PprCachePolicy): number | undefined {
+  if (policy === "no-store") return undefined;
+  if (!Number.isInteger(policy.revalidate) || policy.revalidate <= 0) {
+    return undefined;
+  }
+  return policy.revalidate;
+}
+
+function isPatchablePprRegionResponse(
+  response: Response | undefined,
+): response is Response {
+  return (
+    response?.ok === true &&
+    isTextHtmlContentType(response.headers.get("Content-Type") ?? "")
+  );
+}
+
 async function normalizePprRegionResponse(
-  match: { pageId: string; regionId: string },
+  match: PprRegionMatch,
   response: Response,
+  options: PprRegionNormalizeOptions = { readBody: true },
 ): Promise<Response> {
   const headers = new Headers(response.headers);
   headers.set("x-evjs-page", match.pageId);
   headers.set("x-evjs-ppr-region", match.regionId);
 
   const contentType = headers.get("Content-Type") ?? "";
-  if (!contentType.includes("text/html")) {
+  if (!isTextHtmlContentType(contentType)) {
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
+
+  headers.set("Content-Type", TEXT_HTML_UTF8_CONTENT_TYPE);
+  if (!options.readBody) {
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
@@ -942,7 +1347,6 @@ async function normalizePprRegionResponse(
   }
 
   const html = await response.text();
-  headers.set("Content-Type", "text/html; charset=utf-8");
   return new Response(extractPprRegionFragment(html), {
     status: response.status,
     statusText: response.statusText,
@@ -1172,28 +1576,25 @@ function joinPath(base: string, segment: string): string {
   return `${base.replace(/\/+$/, "")}/${segment.replace(/^\/+/, "")}`;
 }
 
-function normalizePathname(pathname: string): string {
-  if (!pathname.startsWith("/")) return normalizePathname(`/${pathname}`);
-  if (pathname.length === 1) return pathname;
-  return pathname.replace(/\/+$/, "");
-}
+function toResponse(result: unknown, source: string): Response {
+  if (!isServerRenderResult(result)) {
+    return invalidServerRenderResult(source);
+  }
 
-function splitPath(pathname: string): string[] {
-  return normalizePathname(pathname).split("/").filter(Boolean);
-}
-
-function toResponse(result: ServerRenderResult): Response {
   if (result instanceof Response) return result;
   if (typeof result === "string") {
     return new Response(result, {
-      headers: { "Content-Type": "text/html; charset=utf-8" },
+      headers: { "Content-Type": TEXT_HTML_UTF8_CONTENT_TYPE },
     });
   }
+
+  const validationError = validateHtmlResult(result, source);
+  if (validationError) return validationError;
 
   return new Response(result.html, {
     status: result.status,
     headers: {
-      "Content-Type": "text/html; charset=utf-8",
+      "Content-Type": TEXT_HTML_UTF8_CONTENT_TYPE,
       ...Object.fromEntries(new Headers(result.headers)),
     },
   });

@@ -25,7 +25,8 @@
 
 ## In Progress
 
-- Utoopack dynamic dev plan updates for adding/removing entries without restarting `ev dev`.
+- Utoopack dynamic entry/server dev plan updates for adding/removing entries
+  without restarting `ev dev`.
 - Utoopack build facts for multiple server render entries.
 - Utoopack reference metadata needed for RSC and framework-managed render entries.
 - Production hardening for RSC/PPR cache behavior across non-root public paths

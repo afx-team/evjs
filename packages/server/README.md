@@ -7,7 +7,7 @@
 - **Hono-based** — Build RESTful APIs alongside your React application.
 - **Server Function Support** — Seamlessly handle `"use server"` function calls with type safety.
 - **Standard Request/Response** — `createRoute()` factory for simplified API endpoint creation.
-- **Multi-Runtime** — First-class support for **Node.js** and ECMA runtimes (**Deno**, **Bun**, **Cloudflare Workers**).
+- **Multi-Runtime** — First-class support for **Node.js** and standard Fetch runtimes (**Deno**, **Bun**, **Cloudflare Workers**).
 
 ## Install
 
@@ -57,13 +57,18 @@ import { app } from "./app";
 serve(app, { port: 3001 });
 ```
 
-### ECMA (Deno/Bun/Edge)
+### Fetch (Deno/Bun/Edge)
 
 ```ts
-import { createFetchHandler } from "@evjs/server/ecma";
-import { app } from "./app";
+import app from "@evjs/server/fetch";
 
-Deno.serve({ port: 3001 }, createFetchHandler(app).fetch);
+Deno.serve({ port: 3001 }, app.fetch);
+```
+
+Worker-style hosts that discover named module exports can use the same handler:
+
+```ts
+export { fetch } from "@evjs/server/fetch";
 ```
 
 ## Core APIs

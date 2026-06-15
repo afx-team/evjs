@@ -1,3 +1,9 @@
+import {
+  comparePathPatternMatches,
+  findBestPageRoute,
+  findBestPathPatternMatch,
+  type PathPatternMatch,
+} from "@evjs/shared";
 import type { BuildOutput, RemoteManifest } from "@evjs/shared/manifest";
 import type { ActivationRequest } from "./types.js";
 
@@ -7,13 +13,15 @@ export function findRemoteIdForPath(
 ): string | undefined {
   if (!pathname) return undefined;
 
+  let best: { id: string; match: PathPatternMatch } | undefined;
   for (const [id, remote] of Object.entries(remotes ?? {})) {
-    if (matchesAnyPattern(pathname, remote.activeWhen)) {
-      return id;
+    const match = findBestPathPatternMatch(pathname, remote.activeWhen);
+    if (match && isBetterIdMatch(id, match, best)) {
+      best = { id, match };
     }
   }
 
-  return undefined;
+  return best?.id;
 }
 
 export function createActivationRequestFromUrl(
@@ -22,9 +30,15 @@ export function createActivationRequestFromUrl(
 ): ActivationRequest {
   const href = url.toString();
   const pathname = getPathname(href);
-  const route = manifest.routes.find((candidate) =>
-    routePathMatches(candidate.path, pathname),
-  );
+  const remoteId = findRemoteIdForPath(manifest.remotes, pathname);
+  if (remoteId) {
+    return {
+      url: href,
+      remoteId,
+    };
+  }
+
+  const route = findBestPageRoute(manifest.routes, pathname);
 
   return {
     url: href,
@@ -46,9 +60,14 @@ export function resolveRemoteEntryId(
   }
 
   if (pathname) {
+    let best: { id: string; match: PathPatternMatch } | undefined;
     for (const [id, entry] of Object.entries(manifest.entries)) {
-      if (matchesAnyPattern(pathname, entry.activeWhen)) return id;
+      const match = findBestPathPatternMatch(pathname, entry.activeWhen);
+      if (match && isBetterIdMatch(id, match, best)) {
+        best = { id, match };
+      }
     }
+    if (best) return best.id;
   }
 
   if (manifest.entries.default) return "default";
@@ -78,45 +97,11 @@ export function matchesAnyPattern(
   pathname: string,
   patterns: string[] | undefined,
 ): boolean {
-  return (
-    patterns?.some((pattern) => matchesPattern(pathname, pattern)) ?? false
-  );
+  return Boolean(findBestPathPatternMatch(pathname, patterns));
 }
 
 export function resolveRemoteHref(baseUrl: string, href: string): string {
   return new URL(href, ensureTrailingSlash(baseUrl)).toString();
-}
-
-function routePathMatches(routePath: string, pathname: string): boolean {
-  const routeSegments = splitPath(routePath);
-  const pathSegments = splitPath(pathname);
-  if (routeSegments.length !== pathSegments.length) {
-    if (routePath.endsWith("/*")) {
-      const prefix = routePath.slice(0, -2);
-      return pathname === prefix || pathname.startsWith(`${prefix}/`);
-    }
-    return false;
-  }
-
-  return routeSegments.every((segment, index) => {
-    const value = pathSegments[index];
-    return (
-      segment === value ||
-      segment.startsWith("$") ||
-      segment.startsWith(":") ||
-      segment === "*"
-    );
-  });
-}
-
-function splitPath(pathname: string): string[] {
-  return normalizePathname(pathname).split("/").filter(Boolean);
-}
-
-function normalizePathname(pathname: string): string {
-  if (!pathname.startsWith("/")) return normalizePathname(`/${pathname}`);
-  if (pathname.length === 1) return pathname;
-  return pathname.replace(/\/+$/, "");
 }
 
 function getPathname(url: string): string {
@@ -127,20 +112,15 @@ function getPathname(url: string): string {
   }
 }
 
-function matchesPattern(pathname: string, pattern: string): boolean {
-  if (pattern.endsWith("/*")) {
-    const prefix = pattern.slice(0, -2);
-    return pathname === prefix || pathname.startsWith(`${prefix}/`);
-  }
-
-  if (!pattern.includes("*")) return pathname === pattern;
-
-  const expression = pattern.split("*").map(escapeRegExp).join(".*");
-  return new RegExp(`^${expression}$`).test(pathname);
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function isBetterIdMatch(
+  id: string,
+  match: PathPatternMatch,
+  current: { id: string; match: PathPatternMatch } | undefined,
+): boolean {
+  if (!current) return true;
+  const comparison = comparePathPatternMatches(match, current.match);
+  if (comparison !== 0) return comparison > 0;
+  return id < current.id;
 }
 
 function ensureTrailingSlash(value: string): string {

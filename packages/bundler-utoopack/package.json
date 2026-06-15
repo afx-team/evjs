@@ -7,6 +7,7 @@
     "access": "public"
   },
   "main": "./esm/index.js",
+  "types": "./esm/index.d.ts",
   "exports": {
     ".": {
       "types": "./esm/index.d.ts",
@@ -15,7 +16,7 @@
     }
   },
   "scripts": {
-    "build": "rm -rf esm && tsc && cp src/adapter/component-page-loader.cjs src/adapter/pages-entry-loader.cjs esm/adapter/",
+    "build": "rm -rf esm && tsc && cp src/adapter/component-page-loader.cjs src/adapter/pages-entry-loader.cjs src/adapter/remote-client-loader.cjs esm/adapter/",
     "test": "vitest run",
     "check-types": "tsc --noEmit"
   },

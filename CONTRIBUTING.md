@@ -15,10 +15,10 @@
 | Package | Path | Purpose |
 | --- | --- | --- |
 | `@evjs/cli` | `packages/cli` | CLI binary and programmatic command entrypoints |
-| `@evjs/ev` | `packages/ev` | Config, plugin lifecycle, graph analysis, build planning, HTML, deployment helpers, and bundler adapter contracts |
+| `@evjs/ev` | `packages/ev` | Config, plugin lifecycle, graph analysis, build planning, HTML, deployment helpers, bundler adapter contracts, and runtime facade subpaths |
 | `@evjs/create-app` | `packages/create-app` | Project scaffolding from examples/templates |
 | `@evjs/shared` | `packages/shared` | Runtime shared helpers plus `@evjs/shared/manifest` graph/plan/output schemas |
-| `@evjs/client` | `packages/client` | Browser runtime, transport, React page runtime, shell, page hooks, navigation helpers, and RSC client |
+| `@evjs/client` | `packages/client` | Browser runtime, transport, page hooks, navigation helpers, remote host helpers, and RSC client |
 | `@evjs/server` | `packages/server` | Server functions, REST routes, SSR/PPR/RSC request coordination, and Node/fetch runtimes |
 | `@evjs/bundler-utoopack` | `packages/bundler-utoopack` | Default Utoopack adapter; consumes `BuildPlan` and links `BuildOutput` where supported |
 | `@evjs/bundler-webpack` | `packages/bundler-webpack` | Validation/fallback adapter for new architecture features that Utoopack cannot build yet |
@@ -33,17 +33,16 @@
   -> @evjs/bundler-utoopack
 
 @evjs/ev
+  -> @evjs/client
+  -> @evjs/server
   -> @evjs/shared
-  -> selected BundlerAdapter
 
 @evjs/bundler-utoopack
   -> @evjs/ev
-  -> @evjs/shared
   -> @utoo/pack
 
 @evjs/bundler-webpack
   -> @evjs/ev
-  -> @evjs/shared
   -> webpack
 
 @evjs/client
@@ -52,10 +51,16 @@
   -> @tanstack/react-query
 
 @evjs/server
+  -> @evjs/client
   -> @evjs/shared
   -> hono
   -> @hono/node-server
 ```
+
+Internal `@evjs/*` runtime dependency versions stay `"*"`. Release automation
+treats the distributed packages as one framework version, so app-facing packages
+should move together and adapters should depend on `@evjs/ev` instead of on each
+other.
 
 ## Coding Rules
 
@@ -65,10 +70,16 @@
 4. Keep framework semantics out of bundler adapters. Adapters consume `BuildPlan` and return build facts.
 5. Server function files must start with `"use server";` and export named functions or supported named async values.
 6. Use `ev.config.ts`; new docs should import `defineConfig` from `@evjs/ev`.
-7. Keep client imports on the top-level `@evjs/client` entry. It exposes
-   framework-managed page, navigation, shell, RSC, and static route APIs without
-   public subpaths.
-8. Use `server.basePath` for framework server runtime paths. Do not reintroduce public `server.functions.endpoint` config.
+7. App-facing imports stay in `@evjs/ev`, its runtime facade subpaths
+   (`@evjs/ev/client`, `@evjs/ev/server`), or direct runtime packages
+   (`@evjs/client`, `@evjs/server`). Prefer a subpath export on an existing
+   package before adding another distributed package. Subpath exports stay
+   intentional and documented; do not add convenience aliases.
+8. Keep client imports on the top-level `@evjs/client` entry for page hooks,
+   navigation, transport, remote host helpers, and RSC helpers. Generated page
+   bootstrap, server-function stubs, and shell runtime primitives stay behind
+   generated-only `@evjs/ev/client/internal/*` facade subpaths.
+9. Use `server.basePath` for framework server runtime paths. Do not reintroduce public `server.functions.endpoint` config.
 
 ## Common Tasks
 
@@ -132,7 +143,9 @@ config/route/server declaration edits rebuild graph and diff BuildPlan
 call bundlerDevController.updatePlan(update, graph) when the adapter supports it
 ```
 
-Utoopack is still the default adapter. Some new architecture features are currently validated through the webpack adapter until Utoopack exposes the required lower-layer APIs.
+Utoopack is still the default adapter. It supports HTML-only dev plan relinking;
+some broader architecture features are currently validated through the webpack
+adapter until Utoopack exposes the required lower-layer APIs.
 
 ## Monorepo Commands
 

@@ -112,6 +112,35 @@ test.describe("full-features", () => {
     ).toBeVisible();
   });
 
+  test("serves a configured SSG page path through the framework server", async ({
+    page,
+    request,
+    baseURL,
+    apiURL,
+  }) => {
+    const htmlResponse = await request.get(`${apiURL}/settlement-report`);
+    expect(htmlResponse.status()).toBe(200);
+    const html = await htmlResponse.text();
+    expect(html).toContain("Settlement Readiness Report");
+    expect(html).toContain('data-render-mode="ssg"');
+    expect(html).not.toContain("settlement.js");
+
+    await page.goto(`${baseURL}/settlement-report`);
+    await expectRenderMode(page, "ssg", "SSG");
+    await expectBackLink(page);
+
+    await expect(
+      page.getByRole("heading", { name: "Settlement Readiness Report" }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("settlement-render-mode")).toHaveText(
+      "static",
+    );
+    await expect(page.getByTestId("settlement-hydration")).toHaveText("none");
+    await expect(page.getByTestId("settlement-ready-count")).toHaveText("2");
+    await expect(page.getByText("North America express")).toBeVisible();
+    await expect(page.locator('script[src*="settlement"]')).toHaveCount(0);
+  });
+
   test("serves PPR shell and dynamic region through the framework server", async ({
     page,
     request,
@@ -320,6 +349,22 @@ test.describe("full-features", () => {
         routeId: "dashboard",
       }),
     );
+    expect(manifest.pages.settlement).toEqual(
+      expect.objectContaining({
+        path: "/settlement-report",
+        render: "ssg",
+        rendering: {
+          component: "server",
+          html: "static",
+          prerender: "full",
+          streaming: false,
+          hydrate: "none",
+        },
+        routeId: "settlement",
+      }),
+    );
+    expect(manifest.pages.settlement.document).toBeUndefined();
+    expect(manifest.pages.settlement.module).toBeUndefined();
     expect(manifest.pages.insights).toEqual(
       expect.objectContaining({
         path: "/insights",
@@ -381,6 +426,12 @@ test.describe("full-features", () => {
           pageId: "campaign",
         }),
         expect.objectContaining({
+          id: "settlement",
+          path: "/settlement-report",
+          appId: "default",
+          pageId: "settlement",
+        }),
+        expect.objectContaining({
           id: "insights",
           path: "/insights",
           appId: "default",
@@ -433,7 +484,14 @@ test.describe("full-features", () => {
     });
     expect(manifest.deployment.fullFeaturesExample).toEqual({
       apps: ["default"],
-      pages: ["support", "campaign", "dashboard", "insights", "remote"],
+      pages: [
+        "support",
+        "campaign",
+        "dashboard",
+        "settlement",
+        "insights",
+        "remote",
+      ],
       rscPages: ["insights"],
       remotes: ["crm"],
       serverBasePath: "/__evjs",
@@ -470,6 +528,7 @@ test.describe("full-features", () => {
         "/support",
         "/campaign",
         "/dashboard",
+        "/settlement-report",
         "/insights",
       ]),
     );
@@ -502,12 +561,23 @@ test.describe("full-features", () => {
       ),
     );
     expect(staticArtifact.platform).toBe("static");
+    expect(staticArtifact.metadata.static).toEqual({
+      complete: false,
+      unsupportedCapabilities: [
+        "ppr-pages",
+        "rsc-pages",
+        "server-functions",
+        "server-routes",
+        "ssr-pages",
+      ],
+    });
     const redirects = fs.readFileSync(
       path.join(exampleDir, "dist", "client", "_redirects"),
       "utf-8",
     );
     expect(redirects).toContain("/support /support.html 200");
-    expect(redirects).toContain("/* /index.html 200");
+    expect(redirects).not.toContain("/settlement-report /settlement.html 200");
+    expect(redirects).not.toContain("/* /index.html 200");
 
     const edgeArtifact = JSON.parse(
       fs.readFileSync(
@@ -527,7 +597,7 @@ test.describe("full-features", () => {
 
 async function expectRenderMode(
   page: Page,
-  mode: "csr" | "ssr" | "ppr" | "rsc",
+  mode: "csr" | "ssr" | "ssg" | "ppr" | "rsc",
   label: string,
 ): Promise<void> {
   const renderModePage = page.getByTestId("render-mode-page");

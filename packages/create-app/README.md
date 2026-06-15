@@ -40,6 +40,10 @@ npx @evjs/create-app my-new-app
 
 Follow the interactive prompts to select your features and get started in seconds.
 
+Generated framework artifacts such as `.evjs/` and
+`src/evjs-route-types.d.ts` are not copied from templates; `ev dev` and
+`ev build` recreate them for the new project.
+
 ## License
 
 MIT

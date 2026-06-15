@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { shouldCopyTemplatePath } from "../src/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const templatesDir = path.resolve(__dirname, "../templates");
@@ -34,10 +35,7 @@ describe("create-app scaffolding", () => {
   });
 
   it("each template has required files", () => {
-    const templates = fs
-      .readdirSync(templatesDir, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => d.name);
+    const templates = listTemplateNames();
 
     for (const template of templates) {
       const templateDir = path.join(templatesDir, template);
@@ -71,11 +69,8 @@ describe("create-app scaffolding", () => {
     }
   });
 
-  it("each template ignores generated SPA route types", () => {
-    const templates = fs
-      .readdirSync(templatesDir, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => d.name);
+  it("each template ignores generated framework artifacts", () => {
+    const templates = listTemplateNames();
 
     for (const template of templates) {
       const gitignore = fs.readFileSync(
@@ -83,15 +78,14 @@ describe("create-app scaffolding", () => {
         "utf-8",
       );
 
-      expect(gitignore.split(/\r?\n/)).toContain("evjs-route-types.d.ts");
+      const ignoredPaths = gitignore.split(/\r?\n/);
+      expect(ignoredPaths).toContain(".evjs");
+      expect(ignoredPaths).toContain("evjs-route-types.d.ts");
     }
   });
 
   it("template package.json uses workspace references for @evjs deps", () => {
-    const templates = fs
-      .readdirSync(templatesDir, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => d.name);
+    const templates = listTemplateNames();
 
     for (const template of templates) {
       const pkg = JSON.parse(
@@ -117,18 +111,34 @@ describe("create-app scaffolding", () => {
     }
   });
 
-  it("copy filter excludes node_modules, dist, and .turbo", async () => {
-    // Test the filter function logic used in create-app
-    const filter = (src: string) => {
-      const basename = path.basename(src);
-      return !["node_modules", "dist", ".turbo"].includes(basename);
-    };
-
-    expect(filter("/some/path/node_modules")).toBe(false);
-    expect(filter("/some/path/dist")).toBe(false);
-    expect(filter("/some/path/.turbo")).toBe(false);
-    expect(filter("/some/path/src")).toBe(true);
-    expect(filter("/some/path/package.json")).toBe(true);
-    expect(filter("/some/path/index.html")).toBe(true);
+  it("copy filter excludes build and generated framework artifacts", async () => {
+    expect(shouldCopyTemplatePath("/some/path/node_modules")).toBe(false);
+    expect(shouldCopyTemplatePath("/some/path/dist")).toBe(false);
+    expect(shouldCopyTemplatePath("/some/path/dist/client/main.js")).toBe(
+      false,
+    );
+    expect(shouldCopyTemplatePath("/some/path/.turbo")).toBe(false);
+    expect(shouldCopyTemplatePath("/some/path/.evjs")).toBe(false);
+    expect(shouldCopyTemplatePath("/some/path/.evjs/dev/manifest.json")).toBe(
+      false,
+    );
+    expect(shouldCopyTemplatePath("/some/path/src/evjs-route-types.d.ts")).toBe(
+      false,
+    );
+    expect(shouldCopyTemplatePath("/some/path/src")).toBe(true);
+    expect(shouldCopyTemplatePath("/some/path/package.json")).toBe(true);
+    expect(shouldCopyTemplatePath("/some/path/index.html")).toBe(true);
   });
 });
+
+function listTemplateNames(): string[] {
+  return fs
+    .readdirSync(templatesDir, { withFileTypes: true })
+    .filter((entry) => {
+      if (entry.isDirectory()) return true;
+      if (!entry.isSymbolicLink()) return false;
+      return fs.statSync(path.join(templatesDir, entry.name)).isDirectory();
+    })
+    .map((entry) => entry.name)
+    .sort();
+}

@@ -23,7 +23,7 @@
 
 ## 进行中
 
-- Utoopack dynamic dev plan update，用于不重启 `ev dev` 增删 entry。
+- Utoopack dynamic entry/server dev plan update，用于不重启 `ev dev` 增删 entry。
 - Utoopack 对多 server render entry 的 build facts 支持。
 - Utoopack 运行 RSC 和 framework-managed render entry 所需的 reference metadata。
 - 非根 public path、CDN/edge+origin 部署下的 RSC/PPR cache 行为生产级 hardening。

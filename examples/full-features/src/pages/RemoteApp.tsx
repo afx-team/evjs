@@ -1,4 +1,4 @@
-import { useRemoteHost } from "@evjs/client";
+import { useRemoteHost } from "@evjs/ev/client";
 import RenderModePage from "./RenderModePage";
 
 const productionRemoteManifest =

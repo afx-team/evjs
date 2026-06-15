@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { configure, getConsoleSink, getLogger } from "@logtape/logtape";
 import { Command } from "commander";
+import type { DefaultBundlerConfig } from "./index.js";
 import { build, dev } from "./index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -56,7 +57,7 @@ program
   .action(async () => {
     const cwd = process.cwd();
     const { loadConfig } = await import("./load-config.js");
-    const config = await loadConfig(cwd);
+    const config = await loadConfig<DefaultBundlerConfig>(cwd);
     try {
       await dev(config ?? undefined, { cwd });
     } catch (err) {
@@ -71,7 +72,7 @@ program
   .action(async () => {
     const cwd = process.cwd();
     const { loadConfig } = await import("./load-config.js");
-    const config = await loadConfig(cwd);
+    const config = await loadConfig<DefaultBundlerConfig>(cwd);
     try {
       await build(config ?? undefined, { cwd });
     } catch (err) {

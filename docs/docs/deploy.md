@@ -24,6 +24,11 @@ Important output:
 - `dist/client/` — browser assets and HTML;
 - `dist/server/` — framework server bundle when `server` is enabled.
 
+If page HTML does not embed `__EVJS_MANIFEST__`, the browser runtime fetches the
+framework manifest from `manifestUrl`, `data-evjs-manifest`, or `/manifest.json`.
+Serve that response as successful JSON with `Content-Type: application/json`,
+allowing optional content-type parameters.
+
 ## Capability Model
 
 Deployment is driven by framework capabilities, not by the bundler that produced
@@ -34,7 +39,7 @@ requirements:
 | --- | --- | --- | --- |
 | Static assets | `dist/client/*` | CDN/static file server | Always safe to cache by filename. |
 | CSR app routes | app HTML fallback | static or server | Static rewrite is enough when no server capability is used. |
-| MPA entry pages | page HTML file | static or server | Static when the page is user-owned client entry or fully prerendered. |
+| MPA entry pages | page HTML file | static or server | Static when the page is a user-owned client entry or SSG/static HTML page. |
 | SSG pages | page HTML file | static or server | Can be hosted statically unless paired with dynamic server APIs. |
 | SSR pages | page route | server-capable | Route must reach the framework server bundle. |
 | PPR pages | page route | server-capable or edge+origin | Browser requests the page route; region resolution may be in-process or server-to-server. |
@@ -46,8 +51,9 @@ requirements:
 
 This gives four practical deployment topologies:
 
-1. **Static-only**: CSR, MPA client entries, SSG, remote manifests, and static
-   assets. No server functions, SSR, PPR, RSC, or server routes.
+1. **Static-only**: CSR, MPA client entries, SSG/static HTML pages, remote
+   manifests, and static assets. No server functions, SSR, PPR, RSC, or server
+   routes.
 2. **Unified Node**: one Node process serves `dist/client`, framework endpoints,
    SSR/PPR/RSC document routes, server functions, and server routes.
 3. **Unified Edge Worker**: one edge worker serves assets from a binding and
@@ -101,10 +107,14 @@ Browser
 
 In this topology `/__evjs/ppr/<page>/<region>` is not a browser initial-load
 request. It is an internal region resolver endpoint used by the edge/runtime
-layer. Source modules declare `prerender.delivery = "merge"` to wait for
-required regions before returning the document, or
+layer. The direct endpoint matches exactly two encoded path segments after the
+PPR base path: `<pageId>/<regionId>`. Source modules declare
+`prerender.delivery = "merge"` to wait for required regions before returning the
+document, or
 `prerender.delivery = "stream"` to flush the cached shell first and append
 region patches to the same HTML response as internal region requests complete.
+Direct PPR `HEAD` requests can report cache headers but do not seed the region
+body cache; use `GET` when a deployment intentionally warms PPR regions.
 
 If browser and server run on different origins, configure `transport.baseUrl` at build time.
 
@@ -124,7 +134,13 @@ Server-capable adapters should apply routing in this order:
 Static-only adapters should emit redirects only for capabilities that can run
 without a server. If `BuildOutput` contains SSR, PPR, RSC, server functions, or
 server routes, the static adapter can still emit static assets and metadata, but
-it must not claim the full app is deployable on static hosting alone.
+it must not claim the full app is deployable on static hosting alone. In that
+case `deployment.static.json` records `metadata.static.complete = false` with
+the unsupported capabilities, and `_redirects` omits the global catch-all
+fallback so server-required routes are not masked by `index.html`.
+`rendering.prerender = "full"` is build metadata, not by itself a static
+delivery guarantee; static-only routing uses pages whose manifest reports
+`rendering.html = "static"` such as `render = "ssg"` pages.
 
 ## Built-In Adapters
 
@@ -139,6 +155,10 @@ it must not claim the full app is deployable on static hosting alone.
 
 All three adapters derive from `BuildOutput`; none of them read bundler stats or
 bundler config.
+For root-relative non-root `publicPath` values such as `/assets/`, generated
+Node and edge modules strip that URL prefix before resolving files from
+`dist/client` or the asset binding. Absolute CDN public paths are left
+unchanged because those asset requests should terminate at the CDN.
 
 ## Node.js
 
@@ -177,7 +197,7 @@ If you need full control, the equivalent shape is:
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { serve } from "@evjs/server/node";
+import { serve } from "@evjs/ev/server/node";
 import serverHandler from "./dist/server/server.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -225,8 +245,12 @@ dist/
 ```
 
 The generated redirects map static/SSG pages to their HTML files and app routes
-to the app HTML fallback. SSR, PPR, RSC, server functions, and explicit server
-routes still require a server-capable adapter.
+to the app HTML fallback. Router-free MPA pages are exact route rewrites; they
+do not create a global catch-all. The global `/*` fallback is emitted only when
+the build is fully static-compatible and has an app-owned HTML fallback. SSR,
+PPR, RSC, server functions, and explicit server routes still require a
+server-capable adapter, and are listed under
+`metadata.static.unsupportedCapabilities` in `deployment.static.json`.
 
 ## Edge Runtime
 

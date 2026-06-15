@@ -1,5 +1,6 @@
 import type { RemoteManifest } from "@evjs/shared/manifest";
 import { getSharedScope } from "./registry.js";
+import { assertSharedScope } from "./shared-scope.js";
 import type {
   ActivationRequest,
   RemoteSharedDependenciesWarning,
@@ -11,11 +12,17 @@ import type {
 export function createShellSharedScope(
   shared: SharedScope | undefined,
 ): SharedScope {
+  const globalShared = getSharedScope();
+  assertSharedScope(globalShared, "[evjs] global shared scope");
+  assertSharedScope(shared, "[evjs] createShell() shared");
+
   return {
-    ...getSharedScope(),
+    ...globalShared,
     ...(shared ?? {}),
   };
 }
+
+export { assertSharedScope } from "./shared-scope.js";
 
 export async function negotiateRemoteSharedDependencies(
   remoteId: string,

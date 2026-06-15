@@ -2,7 +2,15 @@ import {
   PageProvider,
   type PageProviderProps,
 } from "@evjs/client/internal/page-context";
-import { matchPageRouteParams, parsePageSearch } from "@evjs/shared";
+import {
+  findBestPageRoute,
+  formatContentTypeHeaderValue,
+  isHeadersInit,
+  isHttpBodyStatus,
+  isRscFlightContentType,
+  matchPageRouteParams,
+  parsePageSearch,
+} from "@evjs/shared";
 import type {
   AssetGroup,
   BuildOutput,
@@ -13,6 +21,7 @@ import type {
 import { type ComponentType, createElement } from "react";
 import { renderToString } from "react-dom/server";
 import type { RscCoordinator, RscFlightContext } from "./framework.js";
+import { textResponse } from "./responses.js";
 
 export interface ReactServerRenderContext {
   request: Request;
@@ -74,16 +83,20 @@ export interface ReactRscDebugPayload {
 export function createReactServerRenderAdapter(
   options: ReactServerRenderAdapterOptions = {},
 ) {
+  assertReactServerRenderAdapterOptions(options);
+
   return async (
     module: ReactServerRendererModule,
     ctx: ReactServerRenderContext,
   ): Promise<ReactServerRenderResult | undefined> => {
+    assertReactServerRendererModule(
+      module,
+      "createReactServerRenderAdapter() module",
+    );
     if (typeof module.default !== "function") return undefined;
 
     const Component = module.default as ComponentType<Record<string, unknown>>;
-    const props = options.createProps
-      ? await options.createProps(ctx)
-      : defaultProps(ctx);
+    const props = await resolveServerRenderProps(options, ctx);
     const appHtml = renderToString(
       createPageElement(Component, props, ctx, resolvePageProvider(module)),
     );
@@ -95,7 +108,12 @@ export function createReactServerRenderAdapter(
     }
 
     if (options.renderDocument) {
-      return options.renderDocument(appHtml, ctx);
+      const result = await options.renderDocument(appHtml, ctx);
+      assertServerRenderResult(
+        result,
+        "createReactServerRenderAdapter() renderDocument()",
+      );
+      return result;
     }
 
     return {
@@ -107,10 +125,12 @@ export function createReactServerRenderAdapter(
 export function createReactRscFlightAdapter(
   options: ReactRscFlightAdapterOptions = {},
 ): RscCoordinator {
+  assertReactRscFlightAdapterOptions(options);
+
   return {
     match(ctx) {
       return Boolean(
-        ctx.manifest.runtime.server?.rsc &&
+        getRscEndpoint(ctx.manifest) &&
           ctx.pageId &&
           ctx.page?.componentModel === "rsc" &&
           ctx.rscPage &&
@@ -120,10 +140,12 @@ export function createReactRscFlightAdapter(
     async renderFlight(ctx) {
       try {
         if (options.renderFlight) {
-          return await validateFlightResponse(
-            await options.renderFlight(ctx),
-            options,
+          const response = await options.renderFlight(ctx);
+          assertRscFlightResponse(
+            response,
+            "createReactRscFlightAdapter() renderFlight()",
           );
+          return await validateFlightResponse(response, options);
         }
 
         const rendered = await renderDefaultRscDebugPayload(ctx, options);
@@ -131,25 +153,15 @@ export function createReactRscFlightAdapter(
           return await validateFlightResponse(rendered, options);
         }
 
-        return new Response(
+        return textResponse(
           "[evjs] RSC Flight renderer is not configured for this page.",
-          {
-            status: 501,
-            headers: {
-              "Content-Type": "text/plain; charset=utf-8",
-            },
-          },
+          501,
         );
       } catch (error) {
         await options.onError?.(error, ctx);
-        return new Response(
+        return textResponse(
           `[evjs] RSC Flight render failed: ${formatUnknownError(error)}`,
-          {
-            status: 500,
-            headers: {
-              "Content-Type": "text/plain; charset=utf-8",
-            },
-          },
+          500,
         );
       }
     },
@@ -160,8 +172,8 @@ async function validateFlightResponse(
   response: Response,
   options: ReactRscFlightAdapterOptions,
 ): Promise<Response> {
-  const contentType = response.headers.get("Content-Type") ?? "";
-  if (contentType.includes("text/x-component")) {
+  const contentType = response.headers.get("Content-Type");
+  if (isRscFlightContentType(contentType)) {
     return sanitizeFlightResponse(response);
   }
 
@@ -169,15 +181,92 @@ async function validateFlightResponse(
     return response;
   }
 
-  return new Response(
-    `[evjs] RSC Flight renderer returned invalid Content-Type "${contentType || "missing"}".`,
-    {
-      status: 500,
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-      },
-    },
+  return textResponse(
+    `[evjs] RSC Flight renderer returned invalid Content-Type ${formatContentTypeHeaderValue(
+      contentType,
+    )}.`,
+    500,
   );
+}
+
+function assertRscFlightResponse(
+  value: unknown,
+  source: string,
+): asserts value is Response {
+  if (!(value instanceof Response)) {
+    throw new Error(`[evjs] ${source} must return a Response.`);
+  }
+}
+
+function assertReactServerRendererModule(
+  value: unknown,
+  source: string,
+): asserts value is ReactServerRendererModule {
+  if (!isRecord(value)) {
+    throw new Error(`[evjs] ${source} must be a renderer module object.`);
+  }
+}
+
+function assertReactServerRenderAdapterOptions(
+  value: unknown,
+): asserts value is ReactServerRenderAdapterOptions {
+  if (!isRecord(value)) {
+    throw new Error(
+      "[evjs] createReactServerRenderAdapter() options must be an object.",
+    );
+  }
+
+  assertOptionalFunction(
+    value.createProps,
+    "createReactServerRenderAdapter() createProps",
+  );
+  assertOptionalFunction(
+    value.renderDocument,
+    "createReactServerRenderAdapter() renderDocument",
+  );
+}
+
+function assertReactRscFlightAdapterOptions(
+  value: unknown,
+): asserts value is ReactRscFlightAdapterOptions {
+  if (!isRecord(value)) {
+    throw new Error(
+      "[evjs] createReactRscFlightAdapter() options must be an object.",
+    );
+  }
+
+  assertOptionalFunction(
+    value.loadModule,
+    "createReactRscFlightAdapter() loadModule",
+  );
+  assertOptionalFunction(
+    value.createProps,
+    "createReactRscFlightAdapter() createProps",
+  );
+  assertOptionalFunction(
+    value.renderFlight,
+    "createReactRscFlightAdapter() renderFlight",
+  );
+  assertOptionalFunction(
+    value.onError,
+    "createReactRscFlightAdapter() onError",
+  );
+  assertOptionalBoolean(
+    value.validateContentType,
+    "createReactRscFlightAdapter() validateContentType",
+  );
+}
+
+function assertOptionalFunction(value: unknown, source: string): void {
+  if (value !== undefined && typeof value !== "function") {
+    throw new Error(`[evjs] ${source} must be a function.`);
+  }
+}
+
+function assertOptionalBoolean(value: unknown, source: string): void {
+  if (value !== undefined && typeof value !== "boolean") {
+    throw new Error(`[evjs] ${source} must be a boolean.`);
+  }
 }
 
 async function sanitizeFlightResponse(response: Response): Promise<Response> {
@@ -241,7 +330,7 @@ async function renderDefaultRscDebugPayload(
     version: 1,
     type: "evjs.rsc",
     buildId: ctx.manifest.buildId,
-    endpoint: ctx.manifest.rsc?.endpoint ?? ctx.manifest.runtime.server?.rsc,
+    endpoint: getRscEndpoint(ctx.manifest),
     pageId: ctx.pageId,
     renderer: rendererName,
     html,
@@ -261,6 +350,10 @@ async function renderRscRendererModule(
   if (!asset || !options.loadModule) return undefined;
 
   const module = await options.loadModule(asset, renderer);
+  assertReactServerRendererModule(
+    module,
+    "createReactRscFlightAdapter() loadModule()",
+  );
   const customFlight = getModuleFunction(module, "renderFlight");
   if (customFlight) {
     const result = await customFlight(ctx);
@@ -282,9 +375,7 @@ async function renderRscRendererModule(
   if (typeof module.default !== "function") return undefined;
 
   const Component = module.default as ComponentType<Record<string, unknown>>;
-  const props = options.createProps
-    ? await options.createProps(ctx)
-    : defaultRscProps(ctx);
+  const props = await resolveRscRenderProps(options, ctx);
   return renderToString(createPageElement(Component, props, ctx));
 }
 
@@ -305,14 +396,43 @@ function isHtmlResult(value: unknown): value is { html: string } {
   );
 }
 
+function isReactServerRenderResult(
+  value: unknown,
+): value is ReactServerRenderResult {
+  return (
+    value instanceof Response ||
+    typeof value === "string" ||
+    isHtmlResult(value)
+  );
+}
+
 function defaultRscProps(ctx: RscFlightContext): Record<string, unknown> {
   return {
     manifest: {
       buildId: ctx.manifest.buildId,
     },
     pageId: ctx.pageId,
-    route: findRouteForPage(ctx.manifest, ctx.pageId),
+    route: findRouteForPage(
+      ctx.manifest,
+      ctx.pageId,
+      readUrlPathname(ctx.pageUrl),
+    ),
   };
+}
+
+function getRscEndpoint(manifest: BuildOutput): string | undefined {
+  return manifest.rsc?.endpoint ?? manifest.runtime.server?.rsc;
+}
+
+async function resolveRscRenderProps(
+  options: ReactRscFlightAdapterOptions,
+  ctx: RscFlightContext,
+): Promise<Record<string, unknown>> {
+  const props = options.createProps
+    ? await options.createProps(ctx)
+    : defaultRscProps(ctx);
+  assertRenderProps(props, "createReactRscFlightAdapter() createProps()");
+  return props;
 }
 
 function defaultProps(ctx: ReactServerRenderContext): Record<string, unknown> {
@@ -330,15 +450,69 @@ function defaultProps(ctx: ReactServerRenderContext): Record<string, unknown> {
   };
 }
 
+async function resolveServerRenderProps(
+  options: ReactServerRenderAdapterOptions,
+  ctx: ReactServerRenderContext,
+): Promise<Record<string, unknown>> {
+  const props = options.createProps
+    ? await options.createProps(ctx)
+    : defaultProps(ctx);
+  assertRenderProps(props, "createReactServerRenderAdapter() createProps()");
+  return props;
+}
+
+function assertRenderProps(
+  value: unknown,
+  source: string,
+): asserts value is Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new Error(`[evjs] ${source} must return an object.`);
+  }
+}
+
+function assertServerRenderResult(
+  value: unknown,
+  source: string,
+): asserts value is ReactServerRenderResult {
+  if (!isReactServerRenderResult(value)) {
+    throw new Error(
+      `[evjs] ${source} must return a Response, string, or { html, status?, headers? }.`,
+    );
+  }
+
+  if (!isHtmlResult(value)) return;
+  if (value.status !== undefined && !isHttpBodyStatus(value.status)) {
+    throw new Error(
+      `[evjs] ${source} status must be an integer HTTP status between 200 and 599 that can include an HTML body.`,
+    );
+  }
+  if (value.headers !== undefined) {
+    assertHeadersInit(value.headers, source);
+  }
+}
+
+function assertHeadersInit(
+  value: unknown,
+  source: string,
+): asserts value is HeadersInit {
+  if (!isHeadersInit(value)) {
+    throw new Error(`[evjs] ${source} headers must be valid HeadersInit.`);
+  }
+}
+
 function findRouteForPage(
   manifest: BuildOutput,
   pageId: string | undefined,
+  pathname?: string,
 ): { id: string; path: string } | undefined {
   if (!pageId) return undefined;
 
-  const route = manifest.routes.find(
+  const pageRoutes = manifest.routes.filter(
     (candidate) => candidate.pageId === pageId,
   );
+  const route = pathname
+    ? findBestPageRoute(pageRoutes, pathname)
+    : pageRoutes[0];
   return route
     ? {
         id: route.id,
@@ -417,8 +591,21 @@ function resolveRouteContext(
   return (
     ctx.route ??
     readRouteContext(props.route) ??
-    findRouteForPage(ctx.manifest, ctx.pageId)
+    findRouteForPage(ctx.manifest, ctx.pageId, readPageElementPathname(ctx))
   );
+}
+
+function readPageElementPathname(ctx: PageElementContext): string | undefined {
+  return readUrlPathname(ctx.pageUrl ?? ctx.request.url);
+}
+
+function readUrlPathname(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    return new URL(value, "http://evjs.local").pathname;
+  } catch {
+    return undefined;
+  }
 }
 
 function readRouteContext(
@@ -511,8 +698,7 @@ function createRscBootstrap(
   | undefined {
   if (ctx.page?.componentModel !== "rsc" || !ctx.pageId) return undefined;
 
-  const endpoint =
-    ctx.manifest.rsc?.endpoint ?? ctx.manifest.runtime.server?.rsc;
+  const endpoint = getRscEndpoint(ctx.manifest);
   if (!endpoint) return undefined;
 
   return {

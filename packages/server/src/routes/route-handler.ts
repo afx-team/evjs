@@ -18,7 +18,15 @@
  * ```
  */
 
-import { type HttpMethod, isHttpMethod } from "@evjs/shared";
+import {
+  getPathPatternValidationError,
+  getServerRouteParamSegmentValidationError,
+  HTTP_METHOD_LIST_DESCRIPTION,
+  type HttpMethod,
+  isHttpMethod,
+  type PathPatternValidationError,
+  type ServerRouteParamSegmentValidationError,
+} from "@evjs/shared";
 import type {
   Context as HonoContext,
   Env as HonoEnv,
@@ -61,6 +69,8 @@ export interface RouteHandler {
   allowedMethods: HttpMethod[];
 }
 
+const SUPPORTED_DEFINITION_KEYS = `${HTTP_METHOD_LIST_DESCRIPTION} or "middlewares"`;
+
 /**
  * Create a programmatic route handler.
  *
@@ -89,7 +99,14 @@ export function createRoute<const T extends string>(
   path: T & (string extends T ? never : T),
   definition: RouteHandlerDefinition<T>,
 ): RouteHandler {
-  const { middlewares = [], ...methods } = definition;
+  const pathError = getCreateRoutePathError(path);
+  if (pathError) {
+    throw new Error(`[evjs] createRoute() ${pathError}`);
+  }
+
+  assertRouteDefinition(definition);
+  const routeDefinition = definition as RouteHandlerDefinition<T>;
+  const { middlewares = [], ...methods } = routeDefinition;
 
   // Collect defined method names for auto-OPTIONS and HEAD derivation.
   const definedMethods: HttpMethod[] = [];
@@ -97,6 +114,11 @@ export function createRoute<const T extends string>(
     if (isHttpMethod(key)) {
       definedMethods.push(key);
     }
+  }
+  if (definedMethods.length === 0) {
+    throw new Error(
+      "[evjs] createRoute() must declare at least one HTTP method handler.",
+    );
   }
 
   // Auto-implement OPTIONS if not explicitly defined.
@@ -128,4 +150,86 @@ export function createRoute<const T extends string>(
     middlewares,
     allowedMethods: definedMethods,
   };
+}
+
+function getCreateRoutePathError(path: unknown): string | undefined {
+  const error = getPathPatternValidationError(path);
+  if (error) return formatCreateRoutePathValidationError(error);
+
+  const paramError = getServerRouteParamSegmentValidationError(path as string);
+  if (paramError) return formatServerRouteParamValidationError(paramError);
+
+  return undefined;
+}
+
+function formatCreateRoutePathValidationError(
+  error: PathPatternValidationError,
+): string {
+  switch (error) {
+    case "empty":
+      return "path must be a non-empty string.";
+    case "missing-leading-slash":
+      return 'path must start with "/".';
+    case "whitespace":
+      return "path must not contain whitespace.";
+    case "query-or-hash":
+      return "path must not include a query string or hash.";
+  }
+}
+
+function formatServerRouteParamValidationError(
+  error: ServerRouteParamSegmentValidationError,
+): string {
+  switch (error.error) {
+    case "empty":
+      return `path contains dynamic segment "${error.segment}" without a param name.`;
+    case "reserved":
+      return `path uses reserved dynamic param name "${error.name}" in segment "${error.segment}". Use a safe application-specific name.`;
+    case "duplicate":
+      return `path uses duplicate dynamic param name "${error.name}" in segment "${error.segment}". Use unique param names within one route path.`;
+  }
+}
+
+function assertRouteDefinition(
+  definition: unknown,
+): asserts definition is Record<string, unknown> {
+  if (
+    !definition ||
+    typeof definition !== "object" ||
+    Array.isArray(definition)
+  ) {
+    throw new Error("[evjs] createRoute() definition must be an object.");
+  }
+
+  for (const [key, value] of Object.entries(definition)) {
+    if (key === "middleware") {
+      throw new Error(
+        '[evjs] createRoute() definition uses "middleware"; use "middlewares" for per-route middleware.',
+      );
+    }
+
+    if (key === "middlewares") {
+      if (
+        !Array.isArray(value) ||
+        value.some((middleware) => typeof middleware !== "function")
+      ) {
+        throw new Error(
+          "[evjs] createRoute() middlewares must be an array of functions.",
+        );
+      }
+      continue;
+    }
+
+    if (!isHttpMethod(key)) {
+      throw new Error(
+        `[evjs] createRoute() definition key "${key}" is not supported. Use ${SUPPORTED_DEFINITION_KEYS}.`,
+      );
+    }
+
+    if (typeof value !== "function") {
+      throw new Error(
+        `[evjs] createRoute() ${key} handler must be a function.`,
+      );
+    }
+  }
 }

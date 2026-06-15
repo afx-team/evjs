@@ -53,7 +53,7 @@ Internal modules such as manifest schemas, build tools, page runtime, and shell
 live inside the public packages above instead of separate application-facing
 packages.
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) · [AGENT.md](./AGENT.md)
+See [ARCHITECTURE.md](./ARCHITECTURE.md) · [AGENTS.md](./AGENTS.md) · [AGENT.md](./AGENT.md)
 
 ## 🛠️ Development
 

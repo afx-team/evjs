@@ -33,7 +33,12 @@ dist/
 └── manifest.json
 ```
 
-`dist/manifest.json` is the framework contract consumed by runtime, server, shell, and deployment adapters.
+`dist/manifest.json` is the framework contract consumed by runtime, server,
+shell, and deployment adapters. HTML may embed this manifest as
+`__EVJS_MANIFEST__`; when the browser runtime fetches it through `manifestUrl`,
+`data-evjs-manifest`, or `/manifest.json`, the response must be successful JSON
+with `Content-Type: application/json`, allowing optional content-type
+parameters.
 
 ## Build Pipeline
 
@@ -69,7 +74,10 @@ Files with `"use server"` are transformed into browser-callable references and s
 | Client | Function bodies are replaced with internal RPC stubs |
 | Server | Function implementations are registered for `@evjs/server` dispatch |
 
-Function output is recorded in `BuildOutput.server.functions`. The public endpoint is derived from `server.basePath`:
+Function output is recorded in `BuildOutput.server.functions`. Its object keys
+are server function ids: non-empty strings without leading or trailing
+whitespace. They are not build identifiers, so generated ids can use separators
+such as `fn:refund`. The public endpoint is derived from `server.basePath`:
 
 ```txt
 server.basePath = /__evjs
@@ -100,6 +108,21 @@ one document request. PPR supports two document delivery modes:
 PPR component pages do not create a page-level browser entry. Their public
 manifest hydration mode is `none` until explicit client islands or region-level
 hydration are modeled.
+
+File-route pages that export `render = "ssg"` keep the same route-owned document
+contract in SPA mode: the app HTML fallback is still the only planned SPA
+document, while the page records `rendering.html = "static"` and gets a server
+renderer for static generation/deployment adapters. Use a configured component
+page without `path` when you need a standalone static HTML file such as
+`pricing.html`.
+
+In MPA mode, a file-route page that exports `render = "ssg"` keeps the MPA
+document contract: it emits its own static HTML document, such as
+`pricing.html`, and a server renderer for static generation. It does not create
+a browser page entry unless the page opts into hydration.
+MPA file-route pages that export `render = "ssr"` are route-owned server
+documents instead: they get a `page-server` renderer and, when hydrated, a
+page-level browser entry, but no static HTML file is emitted.
 
 PPR regions carry cache metadata in the manifest:
 
@@ -132,8 +155,46 @@ PPR regions carry cache metadata in the manifest:
 
 - One framework manifest: `dist/manifest.json`.
 - `BuildOutput` is the framework manifest contract.
+- Manifest object keys that become runtime ids, including app ids, page ids,
+  and PPR region ids, must be build identifiers: letters, numbers, underscores,
+  or hyphens.
+- App and page runtime modules must link to a JavaScript asset; manifest
+  emission fails if a client entry only produced CSS or no assets.
+- Server-enabled builds must link the server runtime entry to a JavaScript
+  asset; deployment adapters rely on `server.entry` to import the framework
+  handler.
+- Build entry names are manifest asset keys. They must be build identifiers and
+  must be globally unique across app, page, remote, runtime, and server entries.
+- `manifest.server.renderers` keys are renderer build entry names and must use
+  the same build-identifier rule.
+- In full server manifests, each SSR, SSG, or RSC document page with server
+  HTML must have a `page-server` renderer owned by that page id, or by a route
+  id whose `manifest.routes` entry points to that page. PPR pages use their
+  `ppr-shell` and `ppr-region` renderer references instead.
+- `manifest.routes` ids must be unique non-empty strings without leading or
+  trailing whitespace. Page route paths must keep one entry per normalized URL
+  path and dynamic URL shape; `pageId` and `appId` must point to existing
+  manifest pages or apps.
+- RSC reference maps are not build-identifier keyed: reference ids may contain
+  file paths, URLs, hashes, or server-function punctuation. They still must use
+  non-empty trimmed string keys, and each value must be an object with a
+  non-empty trimmed `module` and optional non-empty trimmed `exportName`.
+- `BuildOutput.rsc.endpoint` may be omitted when the RSC section only carries
+  reference metadata. It is required as soon as `BuildOutput.rsc.pages` contains
+  Flight-rendered pages; manifest emission fails before writing an RSC page
+  output that has no `runtime.server.rsc` endpoint.
+- In full server manifests, each `BuildOutput.rsc.pages[id].renderer` must point
+  to an `rsc-page` server renderer owned by the same page id. Public manifests
+  may omit server renderer metadata because it is redacted.
+- `BuildOutput.server.routes` must keep one entry per URL path and dynamic URL
+  shape. Dynamic params must be named safely and uniquely inside one route path.
 - The public manifest is redacted: browser-visible output must not expose local
   source paths or private build metadata.
+- Public manifest validation uses the same structural contract, but treats
+  server-only metadata such as source modules and server renderer references as
+  optional because those fields are intentionally redacted.
 - Source analysis happens before bundler config creation and is cached in dev.
 - Component/style edits stay in the bundler HMR path.
-- Adding configured pages in dev requires bundler `updatePlan()` support; the current Utoopack adapter fails clearly until the lower-layer API exists.
+- The default Utoopack adapter can relink HTML-only dev plan updates from
+  existing build stats. Adding or removing configured page entries in dev still
+  requires a restart until Utoopack exposes a lower-layer entry update API.

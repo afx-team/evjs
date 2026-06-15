@@ -50,5 +50,5 @@ export async function buildHtml<TBundlerCfg = unknown>(
     }
   }
 
-  return (doc as unknown as { toString(): string }).toString();
+  return doc.toString();
 }

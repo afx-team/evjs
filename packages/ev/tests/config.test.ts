@@ -65,6 +65,7 @@ describe("resolveConfig", () => {
     expect(resolved.server.runtime).toEqual({
       basePath: "/__evjs",
       fn: "/__evjs/fn",
+      ppr: "/__evjs/ppr",
       rsc: "/__evjs/rsc",
     });
     expect(resolved.server.functionRuntime.endpoint).toBe("/__evjs/fn");
@@ -76,6 +77,52 @@ describe("resolveConfig", () => {
     expect(resolved.server.dev.https).toBe(false);
     expect(resolved.bundler).toBeUndefined();
     expect(resolved.plugins).toEqual([]);
+  });
+
+  it("rejects invalid root config declarations", () => {
+    expect(() => resolveConfig(null as never)).toThrow(
+      "[evjs] config must be a config object.",
+    );
+
+    expect(() => resolveConfig([] as never)).toThrow(
+      "[evjs] config must be a config object.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        // @ts-expect-error runtime config loading can still produce unknown keys.
+        routes: [],
+      }),
+    ).toThrow(
+      "[evjs] config.routes is not a public config field. Use routing for file routes or pages for explicit page outputs.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        // @ts-expect-error runtime config loading can still produce resolved metadata.
+        apps: {},
+      }),
+    ).toThrow(
+      "[evjs] config.apps is resolved framework metadata and cannot be configured. Use app for one explicit SPA, routing for file routes, or pages for explicit page outputs.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        // @ts-expect-error runtime config loading can still produce unknown keys.
+        serverFunctions: {},
+      }),
+    ).toThrow(
+      '[evjs] config.serverFunctions is not a public config field. Server functions are discovered from "use server" modules and endpoints are derived from server.basePath.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        // @ts-expect-error runtime config loading can still produce unknown keys.
+        vite: {},
+      }),
+    ).toThrow(
+      "[evjs] config.vite is not supported. Use entry, html, dev, server, transport, app, routing, remotes, remote, bundler, plugins, or pages.",
+    );
   });
 
   it("resolves routing defaults when enabled", () => {
@@ -139,7 +186,98 @@ describe("resolveConfig", () => {
           layout: "./src/shell/AppLayout.tsx",
         },
       }),
-    ).toThrow("[evjs] routing.layout is only supported in SPA mode.");
+    ).toThrow(
+      "[evjs] routing.layout is only supported in SPA mode. MPA pages should import shared shell components directly or use shared HTML templates.",
+    );
+  });
+
+  it("rejects invalid routing declarations", () => {
+    expect(() =>
+      resolveConfig({
+        // @ts-expect-error runtime config loading can still produce null.
+        routing: null,
+      }),
+    ).toThrow("[evjs] routing must be true, false, or a routing object.");
+
+    expect(() =>
+      resolveConfig({
+        routing: [] as never,
+      }),
+    ).toThrow("[evjs] routing must be true, false, or a routing object.");
+
+    expect(() =>
+      resolveConfig({
+        routing: {
+          // @ts-expect-error runtime config loading can still produce invalid strings.
+          mode: "nested",
+        },
+      }),
+    ).toThrow('[evjs] routing.mode must be "spa" or "mpa".');
+
+    expect(() =>
+      resolveConfig({
+        routing: {
+          dir: "",
+        },
+      }),
+    ).toThrow("[evjs] routing.dir must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        routing: {
+          html: "",
+        },
+      }),
+    ).toThrow("[evjs] routing.html must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        routing: {
+          mount: "",
+        },
+      }),
+    ).toThrow("[evjs] routing.mount must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        routing: {
+          layout: "",
+        },
+      }),
+    ).toThrow("[evjs] routing.layout must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        routing: {
+          // @ts-expect-error runtime config loading can still produce internal fields.
+          entry: "./src/main.tsx",
+        },
+      }),
+    ).toThrow(
+      "[evjs] routing.entry is not a public config field. Use top-level entry or app entries for SPA applications; MPA routing creates one page entry per route file.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        routing: {
+          // @ts-expect-error runtime config loading can still produce internal fields.
+          routes: [],
+        },
+      }),
+    ).toThrow(
+      "[evjs] routing.routes is not a public config field. evjs discovers page routes from routing.dir; use pages for explicit non-conventional page declarations.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        routing: {
+          // @ts-expect-error runtime config loading can still produce unknown keys.
+          fallback: "index.html",
+        },
+      }),
+    ).toThrow(
+      "[evjs] routing.fallback is not supported. Use mode, dir, html, mount, or layout.",
+    );
   });
 
   it("applies all defaults when called with empty config", () => {
@@ -173,10 +311,350 @@ describe("resolveConfig", () => {
     expect(resolved.dev.https).toEqual({ key: "key.pem", cert: "cert.pem" });
   });
 
+  it("keeps user dev proxy rules before framework proxy rules", () => {
+    const resolved = resolveConfig({
+      dev: {
+        proxy: [
+          {
+            context: ["/api"],
+            target: "http://localhost:4000",
+            changeOrigin: true,
+            secure: false,
+          },
+        ],
+      },
+    });
+
+    expect(resolved.dev.proxy[0]).toEqual({
+      context: ["/api"],
+      target: "http://localhost:4000",
+      changeOrigin: true,
+      secure: false,
+    });
+    expect(resolved.dev.proxy[1]).toEqual({
+      context: ["/__evjs/fn", "/__evjs/ppr", "/__evjs/rsc"],
+      target: "http://localhost:3001",
+      changeOrigin: true,
+      secure: false,
+    });
+  });
+
+  it("rejects invalid dev declarations", () => {
+    expect(() =>
+      resolveConfig({
+        dev: null as never,
+      }),
+    ).toThrow("[evjs] dev must be a config object.");
+
+    expect(() =>
+      resolveConfig({
+        dev: [] as never,
+      }),
+    ).toThrow("[evjs] dev must be a config object.");
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          // @ts-expect-error runtime config loading can still produce unknown keys.
+          host: "0.0.0.0",
+        },
+      }),
+    ).toThrow("[evjs] dev.host is not supported. Use port, https, or proxy.");
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          port: 0,
+        },
+      }),
+    ).toThrow("[evjs] dev.port must be an integer TCP port from 1 to 65535.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          dev: {
+            port: 65536,
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] server.dev.port must be an integer TCP port from 1 to 65535.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          https: null as never,
+        },
+      }),
+    ).toThrow("[evjs] dev.https must be an HTTPS config object.");
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          https: {
+            key: "key.pem",
+            cert: "cert.pem",
+            // @ts-expect-error runtime config loading can still produce unknown keys.
+            ca: "ca.pem",
+          },
+        },
+      }),
+    ).toThrow("[evjs] dev.https.ca is not supported. Use key and cert.");
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          // @ts-expect-error runtime config loading can still produce strings.
+          port: "3000",
+        },
+      }),
+    ).toThrow("[evjs] dev.port must be an integer TCP port from 1 to 65535.");
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          // @ts-expect-error runtime config loading can still produce objects.
+          proxy: {},
+        },
+      }),
+    ).toThrow("[evjs] dev.proxy must be an array of proxy rules.");
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          proxy: [null as never],
+        },
+      }),
+    ).toThrow("[evjs] dev.proxy[0] must be a proxy rule object.");
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          proxy: [[] as never],
+        },
+      }),
+    ).toThrow("[evjs] dev.proxy[0] must be a proxy rule object.");
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          proxy: [
+            {
+              context: ["/api"],
+              target: "http://localhost:4000",
+              // @ts-expect-error runtime config loading can still produce unknown keys.
+              rewrite: "^/api",
+            },
+          ],
+        },
+      }),
+    ).toThrow(
+      "[evjs] dev.proxy[0].rewrite is not supported. Use context, target, changeOrigin, or secure.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          proxy: [
+            {
+              context: [],
+              target: "http://localhost:4000",
+            },
+          ],
+        },
+      }),
+    ).toThrow("[evjs] dev.proxy[0].context must contain at least one path.");
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          proxy: [
+            {
+              // @ts-expect-error runtime config loading can still produce strings.
+              context: "/api",
+              target: "http://localhost:4000",
+            },
+          ],
+        },
+      }),
+    ).toThrow("[evjs] dev.proxy[0].context must be an array of path patterns.");
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          proxy: [
+            {
+              context: ["api"],
+              target: "http://localhost:4000",
+            },
+          ],
+        },
+      }),
+    ).toThrow('[evjs] dev.proxy[0].context pattern "api" must start with "/".');
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          proxy: [
+            {
+              context: ["/api path"],
+              target: "http://localhost:4000",
+            },
+          ],
+        },
+      }),
+    ).toThrow(
+      '[evjs] dev.proxy[0].context pattern "/api path" must not contain whitespace.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          proxy: [
+            {
+              context: ["/api?debug=1"],
+              target: "http://localhost:4000",
+            },
+          ],
+        },
+      }),
+    ).toThrow(
+      '[evjs] dev.proxy[0].context pattern "/api?debug=1" must not include a query string or hash.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          proxy: [
+            {
+              context: ["/api#debug"],
+              target: "http://localhost:4000",
+            },
+          ],
+        },
+      }),
+    ).toThrow(
+      '[evjs] dev.proxy[0].context pattern "/api#debug" must not include a query string or hash.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          proxy: [
+            {
+              context: ["/api", "/api"],
+              target: "http://localhost:4000",
+            },
+          ],
+        },
+      }),
+    ).toThrow(
+      '[evjs] dev.proxy[0].context must not contain duplicate pattern "/api".',
+    );
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          proxy: [
+            {
+              context: ["/api"],
+              target: "",
+            },
+          ],
+        },
+      }),
+    ).toThrow("[evjs] dev.proxy[0].target must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          proxy: [
+            {
+              context: ["/api"],
+              target: "localhost:4000",
+            },
+          ],
+        },
+      }),
+    ).toThrow("[evjs] dev.proxy[0].target must be an absolute http(s) URL.");
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          proxy: [
+            {
+              context: ["/api"],
+              target: "ws://localhost:4000",
+            },
+          ],
+        },
+      }),
+    ).toThrow("[evjs] dev.proxy[0].target must be an absolute http(s) URL.");
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          proxy: [
+            {
+              context: ["/api"],
+              target: " http://localhost:4000 ",
+            },
+          ],
+        },
+      }),
+    ).toThrow(
+      "[evjs] dev.proxy[0].target must not contain leading or trailing whitespace.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          proxy: [
+            {
+              context: ["/api"],
+              target: "http://localhost:4000",
+              // @ts-expect-error runtime config loading can still produce strings.
+              secure: "false",
+            },
+          ],
+        },
+      }),
+    ).toThrow("[evjs] dev.proxy[0].secure must be a boolean when provided.");
+  });
+
   it("sets serverEnabled=false when server is false", () => {
     const resolved = resolveConfig({ server: false });
     expect(resolved.serverEnabled).toBe(false);
     expect(resolved.server.runtime.fn).toBe("/__evjs/fn");
+    expect(resolved.server.runtime.ppr).toBe("/__evjs/ppr");
+    expect(resolved.dev.proxy).toEqual([]);
+  });
+
+  it("keeps user dev proxy rules without framework proxy rules when server is false", () => {
+    const resolved = resolveConfig({
+      server: false,
+      dev: {
+        proxy: [
+          {
+            context: ["/api"],
+            target: "http://localhost:4000",
+            changeOrigin: true,
+            secure: false,
+          },
+        ],
+      },
+    });
+
+    expect(resolved.serverEnabled).toBe(false);
+    expect(resolved.dev.proxy).toEqual([
+      {
+        context: ["/api"],
+        target: "http://localhost:4000",
+        changeOrigin: true,
+        secure: false,
+      },
+    ]);
   });
 
   it("respects server overrides", () => {
@@ -190,11 +668,12 @@ describe("resolveConfig", () => {
     expect(resolved.serverEnabled).toBe(true);
     expect(resolved.server.entry).toBe("./server.ts");
     expect(resolved.server.runtime.fn).toBe("/api/fn");
+    expect(resolved.server.runtime.ppr).toBe("/api/ppr");
     expect(resolved.server.functionRuntime.endpoint).toBe("/api/fn");
     expect(resolved.server.dev.port).toBe(4000);
   });
 
-  it("proxies the server function path derived from basePath in dev", () => {
+  it("proxies framework paths derived from basePath in dev", () => {
     const resolved = resolveConfig({
       server: {
         basePath: "/api",
@@ -203,7 +682,7 @@ describe("resolveConfig", () => {
     });
 
     expect(resolved.dev.proxy).toContainEqual({
-      context: ["/api/fn", "/api/rsc"],
+      context: ["/api/fn", "/api/ppr", "/api/rsc"],
       target: "http://localhost:4001",
       changeOrigin: true,
       secure: false,
@@ -215,7 +694,7 @@ describe("resolveConfig", () => {
 
     expect(resolved.server.functionRuntime.endpoint).toBe("/__evjs/fn");
     expect(resolved.dev.proxy).toContainEqual({
-      context: ["/__evjs/fn", "/__evjs/rsc"],
+      context: ["/__evjs/fn", "/__evjs/ppr", "/__evjs/rsc"],
       target: "http://localhost:3001",
       changeOrigin: true,
       secure: false,
@@ -235,6 +714,7 @@ describe("resolveConfig", () => {
     expect(resolved.server.runtime).toEqual({
       basePath: "/_ev",
       fn: "/_ev/fn",
+      ppr: "/_ev/ppr",
       rsc: "/_ev/rsc",
     });
     expect(resolved.transport.baseUrl).toBe("https://api.example.com");
@@ -251,13 +731,14 @@ describe("resolveConfig", () => {
     expect(resolved.server.runtime).toEqual({
       basePath: "/_ev",
       fn: "/_ev/fn",
+      ppr: "/_ev/ppr",
       rsc: "/_ev/rsc",
     });
     expect(resolved.server.rsc).toEqual({
       endpoint: "/_ev/rsc",
     });
     expect(resolved.dev.proxy).toContainEqual({
-      context: ["/_ev/fn", "/_ev/rsc"],
+      context: ["/_ev/fn", "/_ev/ppr", "/_ev/rsc"],
       target: "http://localhost:3001",
       changeOrigin: true,
       secure: false,
@@ -287,11 +768,319 @@ describe("resolveConfig", () => {
     expect(resolved.server.runtime.rsc).toBe("/_ev/rsc");
     expect(resolved.server.rsc?.endpoint).toBe("/_ev/rsc");
     expect(resolved.dev.proxy).toContainEqual({
-      context: ["/_ev/fn", "/_ev/rsc"],
+      context: ["/_ev/fn", "/_ev/ppr", "/_ev/rsc"],
       target: "http://localhost:3001",
       changeOrigin: true,
       secure: false,
     });
+  });
+
+  it("rejects invalid server and transport declarations", () => {
+    expect(() =>
+      resolveConfig({
+        server: null as never,
+      }),
+    ).toThrow("[evjs] server must be a config object.");
+
+    expect(() =>
+      resolveConfig({
+        server: [] as never,
+      }),
+    ).toThrow("[evjs] server must be a config object.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          // @ts-expect-error runtime config loading can still produce internal fields.
+          functions: { endpoint: "/api/rpc" },
+        },
+      }),
+    ).toThrow(
+      "[evjs] server.functions is not a public config field. Server function, PPR, and RSC endpoints are derived from server.basePath.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          // @ts-expect-error runtime config loading can still produce resolved metadata.
+          runtime: { fn: "/api/fn" },
+        },
+      }),
+    ).toThrow(
+      "[evjs] server.runtime is resolved framework metadata and cannot be configured. Use server.basePath to change framework endpoint paths.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          // @ts-expect-error runtime config loading can still produce resolved metadata.
+          functionRuntime: { endpoint: "/api/fn" },
+        },
+      }),
+    ).toThrow(
+      "[evjs] server.functionRuntime is resolved framework metadata and cannot be configured. Use server.basePath to change framework endpoint paths.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          // @ts-expect-error runtime config loading can still produce unknown keys.
+          endpoint: "/api/fn",
+        },
+      }),
+    ).toThrow(
+      "[evjs] server.endpoint is not supported. Use entry, basePath, rsc, or dev.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          entry: "",
+        },
+      }),
+    ).toThrow("[evjs] server.entry must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          basePath: "",
+        },
+      }),
+    ).toThrow("[evjs] server.basePath must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          basePath: "api",
+        },
+      }),
+    ).toThrow('[evjs] server.basePath must start with "/".');
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          basePath: "/api path",
+        },
+      }),
+    ).toThrow("[evjs] server.basePath must not contain whitespace.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          basePath: "/api?debug=1",
+        },
+      }),
+    ).toThrow(
+      "[evjs] server.basePath must not include a query string or hash.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          basePath: "/api#debug",
+        },
+      }),
+    ).toThrow(
+      "[evjs] server.basePath must not include a query string or hash.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          rsc: null as never,
+        },
+      }),
+    ).toThrow("[evjs] server.rsc must be a server RSC object.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          rsc: [] as never,
+        },
+      }),
+    ).toThrow("[evjs] server.rsc must be a server RSC object.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          rsc: {
+            // @ts-expect-error runtime config loading can still produce unknown keys.
+            path: "/flight",
+          },
+        },
+      }),
+    ).toThrow("[evjs] server.rsc.path is not supported. Use endpoint.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          rsc: {
+            endpoint: "",
+          },
+        },
+      }),
+    ).toThrow("[evjs] server.rsc.endpoint must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          rsc: {
+            endpoint: "flight",
+          },
+        },
+      }),
+    ).toThrow('[evjs] server.rsc.endpoint must start with "/".');
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          rsc: {
+            endpoint: "/flight debug",
+          },
+        },
+      }),
+    ).toThrow("[evjs] server.rsc.endpoint must not contain whitespace.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          rsc: {
+            endpoint: "/flight?debug=1",
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] server.rsc.endpoint must not include a query string or hash.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          rsc: {
+            endpoint: "/flight#debug",
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] server.rsc.endpoint must not include a query string or hash.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          https: { key: "", cert: "cert.pem" },
+        },
+      }),
+    ).toThrow("[evjs] dev.https.key must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          dev: null as never,
+        },
+      }),
+    ).toThrow("[evjs] server.dev must be a config object.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          dev: {
+            // @ts-expect-error runtime config loading can still produce unknown keys.
+            host: "127.0.0.1",
+          },
+        },
+      }),
+    ).toThrow("[evjs] server.dev.host is not supported. Use port or https.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          dev: {
+            https: [] as never,
+          },
+        },
+      }),
+    ).toThrow("[evjs] server.dev.https must be an HTTPS config object.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          dev: {
+            https: {
+              key: "key.pem",
+              cert: "cert.pem",
+              // @ts-expect-error runtime config loading can still produce unknown keys.
+              ca: "ca.pem",
+            },
+          },
+        },
+      }),
+    ).toThrow("[evjs] server.dev.https.ca is not supported. Use key and cert.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          dev: {
+            https: { key: "key.pem", cert: "" },
+          },
+        },
+      }),
+    ).toThrow("[evjs] server.dev.https.cert must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        transport: null as never,
+      }),
+    ).toThrow("[evjs] transport must be a config object.");
+
+    expect(() =>
+      resolveConfig({
+        transport: [] as never,
+      }),
+    ).toThrow("[evjs] transport must be a config object.");
+
+    expect(() =>
+      resolveConfig({
+        transport: {
+          // @ts-expect-error runtime config loading can still produce unknown keys.
+          origin: "https://api.example.com",
+        },
+      }),
+    ).toThrow("[evjs] transport.origin is not supported. Use baseUrl.");
+
+    expect(() =>
+      resolveConfig({
+        transport: {
+          baseUrl: "",
+        },
+      }),
+    ).toThrow("[evjs] transport.baseUrl must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        transport: {
+          baseUrl: "/api",
+        },
+      }),
+    ).toThrow("[evjs] transport.baseUrl must be an absolute http(s) URL.");
+
+    expect(() =>
+      resolveConfig({
+        transport: {
+          baseUrl: "ws://api.example.com",
+        },
+      }),
+    ).toThrow("[evjs] transport.baseUrl must be an absolute http(s) URL.");
+
+    expect(() =>
+      resolveConfig({
+        transport: {
+          baseUrl: " https://api.example.com ",
+        },
+      }),
+    ).toThrow(
+      "[evjs] transport.baseUrl must not contain leading or trailing whitespace.",
+    );
   });
 
   it("resolves app declaration sources and remotes", () => {
@@ -302,8 +1091,11 @@ describe("resolveConfig", () => {
       },
       remotes: {
         crm: {
-          manifest: "https://assets.example.com/crm/manifest.json",
+          manifest: "https://assets.example.com/crm/evjs-remote.json",
           activeWhen: ["/crm/*"],
+        },
+        analytics: {
+          manifest: "/remotes/analytics/evjs-remote.json",
         },
       },
     });
@@ -317,10 +1109,102 @@ describe("resolveConfig", () => {
     });
     expect(resolved.remotes).toEqual({
       crm: {
-        manifest: "https://assets.example.com/crm/manifest.json",
+        manifest: "https://assets.example.com/crm/evjs-remote.json",
         activeWhen: ["/crm/*"],
       },
+      analytics: {
+        manifest: "/remotes/analytics/evjs-remote.json",
+        activeWhen: undefined,
+      },
     });
+  });
+
+  it("rejects invalid single app declarations", () => {
+    expect(() =>
+      resolveConfig({
+        entry: "",
+      }),
+    ).toThrow("[evjs] entry must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        html: "",
+      }),
+    ).toThrow("[evjs] html must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        app: "",
+      }),
+    ).toThrow("[evjs] app must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        // @ts-expect-error runtime config loading can still produce null.
+        app: null,
+      }),
+    ).toThrow("[evjs] app must be a string module path or an app object.");
+
+    expect(() =>
+      resolveConfig({
+        app: [] as never,
+      }),
+    ).toThrow("[evjs] app must be a string module path or an app object.");
+
+    expect(() =>
+      resolveConfig({
+        app: {
+          entry: "./src/main.tsx",
+          // @ts-expect-error runtime config loading can still produce unknown keys.
+          route: "/admin",
+        },
+      }),
+    ).toThrow(
+      "[evjs] app.route is not supported. Use source, entry, html, or mount.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        app: {
+          source: "",
+        },
+      }),
+    ).toThrow("[evjs] app.source must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        app: {
+          entry: "",
+        },
+      }),
+    ).toThrow("[evjs] app.entry must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        app: {
+          source: "./src/app.tsx",
+          entry: "./src/main.tsx",
+        },
+      }),
+    ).toThrow("[evjs] app must specify exactly one of source or entry.");
+
+    expect(() =>
+      resolveConfig({
+        app: {
+          entry: "./src/main.tsx",
+          html: "",
+        },
+      }),
+    ).toThrow("[evjs] app.html must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        app: {
+          entry: "./src/main.tsx",
+          mount: "",
+        },
+      }),
+    ).toThrow("[evjs] app.mount must be a non-empty string.");
   });
 
   it("resolves remote build declarations separately from host remotes", () => {
@@ -371,6 +1255,713 @@ describe("resolveConfig", () => {
     });
   });
 
+  it("accepts relative remote build base URLs", () => {
+    expect(
+      resolveConfig({
+        remote: {
+          name: "crm",
+          baseUrl: "/assets/crm/",
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }).remote?.baseUrl,
+    ).toBe("/assets/crm/");
+
+    expect(
+      resolveConfig({
+        remote: {
+          name: "crm",
+          baseUrl: "assets/crm/",
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }).remote?.baseUrl,
+    ).toBe("assets/crm/");
+  });
+
+  it("rejects invalid host remote declarations", () => {
+    expect(() =>
+      resolveConfig({
+        remotes: [] as never,
+      }),
+    ).toThrow("[evjs] remotes must be an object map.");
+
+    expect(() =>
+      resolveConfig({
+        remotes: {
+          "": {
+            manifest: "https://assets.example.com/crm/evjs-remote.json",
+          },
+        },
+      }),
+    ).toThrow("[evjs] remotes must not contain empty keys.");
+
+    expect(() =>
+      resolveConfig({
+        remotes: {
+          "crm/main": {
+            manifest: "https://assets.example.com/crm/evjs-remote.json",
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] remotes key "crm/main" must contain only letters, numbers, underscores, or hyphens.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        remotes: {
+          crm: null as never,
+        },
+      }),
+    ).toThrow("[evjs] remotes.crm must be a remote declaration object.");
+
+    expect(() =>
+      resolveConfig({
+        remotes: {
+          crm: {
+            // @ts-expect-error runtime config loading can still produce unknown keys.
+            url: "https://assets.example.com/crm/evjs-remote.json",
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] remotes.crm.url is not supported. Use manifest or activeWhen.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        remotes: {
+          crm: {
+            manifest: "",
+          },
+        },
+      }),
+    ).toThrow("[evjs] remotes.crm.manifest must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        remotes: {
+          crm: {
+            manifest: " https://assets.example.com/crm/evjs-remote.json ",
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] remotes.crm.manifest must not contain leading or trailing whitespace.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        remotes: {
+          crm: {
+            manifest: "http://[",
+          },
+        },
+      }),
+    ).toThrow("[evjs] remotes.crm.manifest must be an http(s) URL or path.");
+
+    expect(() =>
+      resolveConfig({
+        remotes: {
+          crm: {
+            manifest: "javascript:alert(1)",
+          },
+        },
+      }),
+    ).toThrow("[evjs] remotes.crm.manifest must be an http(s) URL or path.");
+
+    expect(() =>
+      resolveConfig({
+        remotes: {
+          crm: {
+            manifest: "https://assets.example.com/crm/evjs-remote.json",
+            activeWhen: ["/crm/*", ""],
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] remotes.crm.activeWhen must contain only non-empty strings.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        remotes: {
+          crm: {
+            manifest: "https://assets.example.com/crm/evjs-remote.json",
+            activeWhen: ["crm/*"],
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] remotes.crm.activeWhen pattern "crm/*" must start with "/".',
+    );
+
+    expect(() =>
+      resolveConfig({
+        remotes: {
+          crm: {
+            manifest: "https://assets.example.com/crm/evjs-remote.json",
+            activeWhen: ["/crm page/*"],
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] remotes.crm.activeWhen pattern "/crm page/*" must not contain whitespace.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        remotes: {
+          crm: {
+            manifest: "https://assets.example.com/crm/evjs-remote.json",
+            activeWhen: ["/crm/*?preview=1"],
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] remotes.crm.activeWhen pattern "/crm/*?preview=1" must not include a query string or hash.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        remotes: {
+          crm: {
+            manifest: "https://assets.example.com/crm/evjs-remote.json",
+            activeWhen: ["/crm/*#main"],
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] remotes.crm.activeWhen pattern "/crm/*#main" must not include a query string or hash.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        remotes: {
+          crm: {
+            manifest: "https://assets.example.com/crm/evjs-remote.json",
+            activeWhen: ["/crm/*", "/crm/*"],
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] remotes.crm.activeWhen must not contain duplicate pattern "/crm/*".',
+    );
+
+    expect(() =>
+      resolveConfig({
+        remotes: {
+          crm: {
+            manifest: "https://assets.example.com/crm/evjs-remote.json",
+            activeWhen: ["/crm/*"],
+          },
+          analytics: {
+            manifest: "https://assets.example.com/analytics/evjs-remote.json",
+            activeWhen: ["/crm/*"],
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] remotes.analytics.activeWhen duplicates remotes.crm.activeWhen pattern "/crm/*". Remote activeWhen patterns must be unique.',
+    );
+  });
+
+  it("rejects invalid remote build declarations", () => {
+    expect(() =>
+      resolveConfig({
+        remote: null as never,
+      }),
+    ).toThrow("[evjs] remote must be a remote build object.");
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          // @ts-expect-error runtime config loading can still produce unknown keys.
+          scope: "crm",
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] remote.scope is not supported. Use name, baseUrl, shared, or entries.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "",
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow("[evjs] remote.name must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm/main",
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] remote.name must contain only letters, numbers, underscores, or hyphens.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          baseUrl: "",
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow("[evjs] remote.baseUrl must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          baseUrl: " https://assets.example.com/crm/ ",
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] remote.baseUrl must not contain leading or trailing whitespace.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          baseUrl: "http://[",
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow("[evjs] remote.baseUrl must be an http(s) URL or path.");
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          baseUrl: "javascript:alert(1)",
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow("[evjs] remote.baseUrl must be an http(s) URL or path.");
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          entries: [] as never,
+        },
+      }),
+    ).toThrow("[evjs] remote.entries must be an object map.");
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          entries: {},
+        },
+      }),
+    ).toThrow("[evjs] remote.entries must declare at least one remote entry.");
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          entries: {
+            "": { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow("[evjs] remote.entries must not contain empty keys.");
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          entries: {
+            "customers/list": { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] remote.entries key "customers/list" must contain only letters, numbers, underscores, or hyphens.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          entries: {
+            customers: null as never,
+          },
+        },
+      }),
+    ).toThrow("[evjs] remote.entries.customers must be a remote entry object.");
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          entries: {
+            customers: {
+              // @ts-expect-error runtime config loading can still produce unknown keys.
+              component: "./src/remote.tsx",
+            },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] remote.entries.customers.component is not supported. Use app, activeWhen, or mount.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          entries: {
+            customers: { app: "" },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] remote.entries.customers.app must be a non-empty string.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          entries: {
+            customers: {
+              app: "./src/remote.tsx",
+              activeWhen: ["/crm/*", ""],
+            },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] remote.entries.customers.activeWhen must contain only non-empty strings.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          entries: {
+            customers: {
+              app: "./src/remote.tsx",
+              activeWhen: ["crm/*"],
+            },
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] remote.entries.customers.activeWhen pattern "crm/*" must start with "/".',
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          entries: {
+            customers: {
+              app: "./src/remote.tsx",
+              activeWhen: ["/crm page/*"],
+            },
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] remote.entries.customers.activeWhen pattern "/crm page/*" must not contain whitespace.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          entries: {
+            customers: {
+              app: "./src/remote.tsx",
+              activeWhen: ["/crm/*?preview=1"],
+            },
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] remote.entries.customers.activeWhen pattern "/crm/*?preview=1" must not include a query string or hash.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          entries: {
+            customers: {
+              app: "./src/remote.tsx",
+              activeWhen: ["/crm/*#main"],
+            },
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] remote.entries.customers.activeWhen pattern "/crm/*#main" must not include a query string or hash.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          entries: {
+            customers: {
+              app: "./src/customers.tsx",
+              activeWhen: ["/crm/*"],
+            },
+            orders: {
+              app: "./src/orders.tsx",
+              activeWhen: ["/crm/*"],
+            },
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] remote.entries.orders.activeWhen duplicates remote.entries.customers.activeWhen pattern "/crm/*". Remote entry activeWhen patterns must be unique.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          entries: {
+            customers: {
+              app: "./src/remote.tsx",
+              mount: "",
+            },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] remote.entries.customers.mount must be a non-empty string.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          entries: {
+            customers: {
+              app: "./src/remote.tsx",
+              mount: " #remote-root ",
+            },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] remote.entries.customers.mount must not contain leading or trailing whitespace.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          // @ts-expect-error runtime config loading can still produce arrays.
+          shared: [],
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow("[evjs] remote.shared must be a shared dependency map.");
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          shared: null as never,
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow("[evjs] remote.shared must be a shared dependency map.");
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          shared: {
+            "": {},
+          },
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow("[evjs] remote.shared must not contain empty keys.");
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          shared: {
+            // @ts-expect-error runtime config loading can still produce arrays.
+            react: [],
+          },
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow("[evjs] remote.shared.react must be a shared dependency object.");
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          shared: {
+            react: {
+              // @ts-expect-error runtime config loading can still produce unknown keys.
+              import: false,
+            },
+          },
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] remote.shared.react.import is not supported. Use shareKey, requiredVersion, singleton, strictVersion, or eager.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          shared: {
+            react: {
+              shareKey: "",
+            },
+          },
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] remote.shared.react.shareKey must be a non-empty string.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          shared: {
+            react: {
+              shareKey: " react ",
+            },
+          },
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] remote.shared.react.shareKey must not contain leading or trailing whitespace.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          shared: {
+            react: {
+              requiredVersion: "",
+            },
+          },
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] remote.shared.react.requiredVersion must be a non-empty string.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          shared: {
+            react: {
+              requiredVersion: " >=19 <20 ",
+            },
+          },
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] remote.shared.react.requiredVersion must not contain leading or trailing whitespace.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          shared: {
+            react: {
+              requiredVersion: ">=19 <",
+            },
+          },
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] remote.shared.react.requiredVersion must use supported version range syntax (examples: "19", "^19.0.0", ">=18 <20", or "^18 || ^19").',
+    );
+
+    expect(() =>
+      resolveConfig({
+        remote: {
+          name: "crm",
+          shared: {
+            react: {
+              // @ts-expect-error runtime config loading can still produce strings.
+              singleton: "true",
+            },
+          },
+          entries: {
+            customers: { app: "./src/remote.tsx" },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] remote.shared.react.singleton must be a boolean when provided.",
+    );
+  });
+
   it("respects server dev https override", () => {
     const resolved = resolveConfig({
       server: {
@@ -395,10 +1986,201 @@ describe("resolveConfig", () => {
     expect(resolved.bundler).toBe(mockAdapter);
   });
 
+  it("rejects invalid bundler adapter declarations", () => {
+    expect(() =>
+      resolveConfig({
+        bundler: null as never,
+      }),
+    ).toThrow("[evjs] bundler must be a bundler adapter object.");
+
+    expect(() =>
+      resolveConfig({
+        bundler: [] as never,
+      }),
+    ).toThrow("[evjs] bundler must be a bundler adapter object.");
+
+    expect(() =>
+      resolveConfig({
+        bundler: {
+          name: "",
+          build: async () => {},
+          dev: async () => {},
+        } as never,
+      }),
+    ).toThrow("[evjs] bundler.name must be a non-empty string.");
+
+    const bundlerWithUnknownKey = {
+      name: "custom",
+      build: async () => ({}),
+      dev: async () => undefined,
+      serve: async () => {},
+    } satisfies BundlerAdapter & { serve(): Promise<void> };
+
+    expect(() =>
+      resolveConfig({
+        bundler: bundlerWithUnknownKey,
+      }),
+    ).toThrow(
+      "[evjs] bundler.serve is not supported. Use name, build, or dev.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        bundler: {
+          name: " custom ",
+          build: async () => {},
+          dev: async () => {},
+        } as never,
+      }),
+    ).toThrow(
+      "[evjs] bundler.name must not contain leading or trailing whitespace.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        bundler: {
+          name: "custom",
+          dev: async () => {},
+        } as never,
+      }),
+    ).toThrow("[evjs] bundler.build must be a function.");
+
+    expect(() =>
+      resolveConfig({
+        bundler: {
+          name: "custom",
+          build: async () => {},
+          dev: "run" as never,
+        } as never,
+      }),
+    ).toThrow("[evjs] bundler.dev must be a function.");
+  });
+
   it("passes plugins through", () => {
     const plugin = { name: "test-plugin" };
     const resolved = resolveConfig({ plugins: [plugin] });
     expect(resolved.plugins).toEqual([plugin]);
+  });
+
+  it("rejects invalid plugin declarations", () => {
+    expect(() =>
+      resolveConfig({
+        plugins: {} as never,
+      }),
+    ).toThrow("[evjs] plugins must be an array of plugin objects.");
+
+    expect(() =>
+      resolveConfig({
+        plugins: [null as never],
+      }),
+    ).toThrow("[evjs] plugins[0] must be a plugin object.");
+
+    expect(() =>
+      resolveConfig({
+        plugins: [{ name: "" }],
+      }),
+    ).toThrow("[evjs] plugins[0].name must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        plugins: [{ name: " build-timer " }],
+      }),
+    ).toThrow(
+      "[evjs] plugins[0].name must not contain leading or trailing whitespace.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        plugins: [
+          {
+            name: "build-timer",
+            // @ts-expect-error runtime config loading can still produce unknown keys.
+            configure: () => {},
+          },
+        ],
+      }),
+    ).toThrow(
+      "[evjs] plugins[0].configure is not supported. Use name, dependencies, optionalDependencies, enforce, config, or setup.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        plugins: [{ name: "build-timer", dependencies: "logger" as never }],
+      }),
+    ).toThrow(
+      "[evjs] plugins[0].dependencies must be an array of plugin names.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        plugins: [
+          {
+            name: "build-timer",
+            dependencies: ["logger", "logger"],
+          },
+        ],
+      }),
+    ).toThrow(
+      '[evjs] plugins[0].dependencies must not contain duplicate plugin name "logger".',
+    );
+
+    expect(() =>
+      resolveConfig({
+        plugins: [
+          {
+            name: "build-timer",
+            optionalDependencies: [" logger "],
+          },
+        ],
+      }),
+    ).toThrow(
+      "[evjs] plugins[0].optionalDependencies[0] must not contain leading or trailing whitespace.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        plugins: [
+          {
+            name: "build-timer",
+            optionalDependencies: ["logger", "logger"],
+          },
+        ],
+      }),
+    ).toThrow(
+      '[evjs] plugins[0].optionalDependencies must not contain duplicate plugin name "logger".',
+    );
+
+    expect(() =>
+      resolveConfig({
+        plugins: [
+          {
+            name: "build-timer",
+            dependencies: ["logger"],
+            optionalDependencies: ["logger"],
+          },
+        ],
+      }),
+    ).toThrow(
+      '[evjs] plugins[0].optionalDependencies must not repeat required dependency "logger".',
+    );
+
+    expect(() =>
+      resolveConfig({
+        plugins: [{ name: "build-timer", enforce: "early" as never }],
+      }),
+    ).toThrow('[evjs] plugins[0].enforce must be "pre", "normal", or "post".');
+
+    expect(() =>
+      resolveConfig({
+        plugins: [{ name: "build-timer", config: "configure" as never }],
+      }),
+    ).toThrow("[evjs] plugins[0].config must be a function.");
+
+    expect(() =>
+      resolveConfig({
+        plugins: [{ name: "build-timer", setup: "setup" as never }],
+      }),
+    ).toThrow("[evjs] plugins[0].setup must be a function.");
   });
 
   it("does not share state between calls", () => {
@@ -491,6 +2273,185 @@ describe("resolveConfig", () => {
     });
   });
 
+  it("resolves explicit component page rendering metadata", () => {
+    const resolved = resolveConfig({
+      pages: {
+        campaign: {
+          path: "/campaign",
+          component: "./src/campaign/Page.tsx",
+          render: "ssr",
+          hydrate: "none",
+          prerender: {
+            partial: true,
+            delivery: "stream",
+            revalidate: 60,
+          },
+        },
+        insights: {
+          path: "/insights",
+          component: "./src/insights/Page.tsx",
+          render: "ssr",
+          hydrate: "none",
+          rsc: true,
+        },
+      },
+    });
+
+    expect(resolved.pages?.campaign).toMatchObject({
+      path: "/campaign",
+      component: "./src/campaign/Page.tsx",
+      render: "ssr",
+      hydrate: "none",
+      prerender: {
+        partial: true,
+        delivery: "stream",
+        revalidate: 60,
+      },
+      ppr: {
+        delivery: "stream",
+        revalidate: 60,
+      },
+    });
+    expect(resolved.pages?.insights).toMatchObject({
+      path: "/insights",
+      component: "./src/insights/Page.tsx",
+      render: "ssr",
+      hydrate: "none",
+      componentModel: "rsc",
+    });
+  });
+
+  it("rejects duplicate explicit page paths", () => {
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            path: "/dashboard",
+            component: "./src/home/Page.tsx",
+          },
+          dashboard: {
+            path: "/dashboard",
+            component: "./src/dashboard/Page.tsx",
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] pages.dashboard.path duplicates pages.home.path "/dashboard". Page paths must be unique.',
+    );
+  });
+
+  it("rejects duplicate explicit page path shapes", () => {
+    expect(() =>
+      resolveConfig({
+        pages: {
+          userById: {
+            path: "/users/:id",
+            component: "./src/users/ById.tsx",
+          },
+          userByUserId: {
+            path: "/users/:userId",
+            component: "./src/users/ByUserId.tsx",
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] pages.userByUserId.path "/users/:userId" has the same route shape as pages.userById.path "/users/:id". Use one dynamic param name for each URL shape.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          orderById: {
+            path: "/orders/$id",
+            component: "./src/orders/ById.tsx",
+          },
+          orderByOrderId: {
+            path: "/orders/$orderId",
+            component: "./src/orders/ByOrderId.tsx",
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] pages.orderByOrderId.path "/orders/$orderId" has the same route shape as pages.orderById.path "/orders/$id". Use one dynamic param name for each URL shape.',
+    );
+  });
+
+  it("rejects invalid explicit page rendering combinations", () => {
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            prerender: {
+              revalidate: 60,
+            },
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] pages.home uses full prerendering and must declare render: "ssg" or "ssr".',
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          rsc: {
+            component: "./src/Rsc.tsx",
+            rsc: true,
+          },
+        },
+      }),
+    ).toThrow('[evjs] pages.rsc uses RSC and must declare render: "ssr".');
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          rsc: {
+            component: "./src/Rsc.tsx",
+            render: "ssr",
+            hydrate: "load",
+            rsc: true,
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] pages.rsc uses RSC and must omit hydrate or declare hydrate: "none".',
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          campaign: {
+            component: "./src/Campaign.tsx",
+            render: "ssg",
+            prerender: {
+              partial: true,
+            },
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] pages.campaign uses partial prerendering and must declare render: "ssr".',
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          campaign: {
+            component: "./src/Campaign.tsx",
+            render: "ssr",
+            rsc: true,
+            prerender: {
+              partial: true,
+            },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] pages.campaign combines RSC and partial prerendering, which is not supported yet. Choose either rsc: true or prerender: { partial: true }, or split them into separate page routes.",
+    );
+  });
+
   it("rejects pages with more than one module contract", () => {
     expect(() =>
       resolveConfig({
@@ -504,5 +2465,300 @@ describe("resolveConfig", () => {
     ).toThrow(
       'Page "home" must specify exactly one of entry, component, or app',
     );
+  });
+
+  it("rejects invalid explicit page declarations", () => {
+    expect(() =>
+      resolveConfig({
+        pages: [] as never,
+      }),
+    ).toThrow("[evjs] pages must be an object map.");
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          "": "./src/Home.tsx",
+        },
+      }),
+    ).toThrow("[evjs] pages must not contain empty keys.");
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          "admin/settings": "./src/AdminSettings.tsx",
+        },
+      }),
+    ).toThrow(
+      '[evjs] pages key "admin/settings" must contain only letters, numbers, underscores, or hyphens.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          // @ts-expect-error runtime config loading can still produce null.
+          home: null,
+        },
+      }),
+    ).toThrow(
+      "[evjs] pages.home must be a string module path or a page object.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: "",
+        },
+      }),
+    ).toThrow("[evjs] pages.home.component must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            // @ts-expect-error runtime config loading can still produce unknown keys.
+            loader: "./src/home.loader.ts",
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] pages.home.loader is not supported. Use path, entry, component, app, html, mount, render, hydrate, prerender, or rsc.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            entry: "",
+          },
+        },
+      }),
+    ).toThrow("[evjs] pages.home.entry must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            path: "home",
+          },
+        },
+      }),
+    ).toThrow('[evjs] pages.home.path must start with "/".');
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            path: "/home page",
+          },
+        },
+      }),
+    ).toThrow("[evjs] pages.home.path must not contain whitespace.");
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            path: "/home?tab=latest",
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] pages.home.path must not include a query string or hash.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            path: "/home#main",
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] pages.home.path must not include a query string or hash.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            path: "/session/:__proto__",
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] pages.home.path uses reserved dynamic param name "__proto__" in segment ":__proto__". Use a safe application-specific name.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            path: "/docs/:_splat",
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] pages.home.path uses reserved dynamic param name "_splat" in segment ":_splat". Use a safe application-specific name.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            path: "/docs/*/edit/*",
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] pages.home.path contains more than one wildcard segment "*". Use at most one wildcard segment in a route path.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            path: "/session/:",
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] pages.home.path contains dynamic segment ":" without a param name.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            path: "/teams/:teamId/users/:teamId",
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] pages.home.path uses duplicate dynamic param name "teamId" in segment ":teamId". Use unique param names within one route path.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            app: "./src/HomeApp.ts",
+            html: "",
+          },
+        },
+      }),
+    ).toThrow("[evjs] pages.home.html must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            mount: "",
+          },
+        },
+      }),
+    ).toThrow("[evjs] pages.home.mount must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            entry: "./src/home.tsx",
+            render: "ssr" as never,
+          },
+        },
+      }),
+    ).toThrow("[evjs] pages.home.render is only supported on component pages.");
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            render: "ppr" as never,
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] pages.home.render mode "ppr" is not supported. Use render: "ssr" with prerender: { partial: true }.',
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            hydrate: "soon" as never,
+          },
+        },
+      }),
+    ).toThrow(
+      '[evjs] pages.home.hydrate must be "none", "load", "visible", or "idle".',
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            prerender: {} as never,
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] pages.home.prerender object must declare partial, delivery, or revalidate.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            prerender: {
+              revalidate: 0,
+            },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] pages.home.prerender.revalidate must be a positive integer number of seconds or false.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            prerender: {
+              revalidate: 1.5,
+            },
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] pages.home.prerender.revalidate must be a positive integer number of seconds or false.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        pages: {
+          home: {
+            component: "./src/Home.tsx",
+            rsc: "yes" as never,
+          },
+        },
+      }),
+    ).toThrow("[evjs] pages.home.rsc must be a boolean when provided.");
   });
 });

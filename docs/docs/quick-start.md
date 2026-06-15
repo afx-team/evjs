@@ -63,7 +63,7 @@ my-app/
 
 ```tsx
 // src/pages/users/$id.tsx
-import { usePageParams, useQuery } from "@evjs/client";
+import { usePageParams, useQuery } from "@evjs/ev/client";
 import { getUser } from "../../api/users.server";
 
 export default function UserPage() {
@@ -107,7 +107,7 @@ as normal components and do not accept `routing.layout`.
 
 | Package | Purpose |
 |---------|---------|
-| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | Framework API, config, plugins, and build orchestration (`defineConfig`, `dev`, `build`) |
+| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | Framework API, config, plugins, build orchestration, and runtime facade subpaths (`@evjs/ev/client`, `@evjs/ev/server`) |
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`) with the default bundler |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
 | [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Browser runtime, transport, page hooks, navigation helpers, and remote host helpers |
@@ -115,20 +115,26 @@ as normal components and do not accept `routing.layout`.
 
 Manifest schemas, build tools, page runtime, and shell internals are internal
 modules under the public packages above. Application code should normally
-import through `@evjs/ev`, `@evjs/client`, and `@evjs/server`.
+import through `@evjs/ev` and its runtime facade subpaths
+(`@evjs/ev/client`, `@evjs/ev/server`, `@evjs/ev/server/react`).
+Use `@evjs/cli` and `@evjs/create-app` as tools, not application imports.
+Bundler adapters such as `@evjs/bundler-utoopack` and shared contract modules
+such as `@evjs/shared` are only for custom framework tooling or adapter work.
+
+Direct `@evjs/client` and `@evjs/server` imports remain supported runtime
+package boundaries for projects that choose to depend on those packages
+explicitly.
 
 ## Required Dependencies
 
 ```json
 {
   "dependencies": {
-    "@evjs/client": "<same version>",
-    "@evjs/server": "<same version>",
+    "@evjs/ev": "<same version>",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@evjs/ev": "<same version>",
     "@evjs/cli": "<same version>",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
@@ -139,7 +145,9 @@ import through `@evjs/ev`, `@evjs/client`, and `@evjs/server`.
 
 :::important
 
-Keep all `@evjs/*` packages in your app on the same version. When upgrading evjs, upgrade `@evjs/client`, `@evjs/server`, `@evjs/ev`, `@evjs/cli`, and any other `@evjs/*` packages together.
+Keep all `@evjs/*` packages in your app on the same version. Most applications
+only need `@evjs/ev` plus `@evjs/cli`; if you add direct runtime or adapter
+packages, upgrade them together.
 
 :::
 

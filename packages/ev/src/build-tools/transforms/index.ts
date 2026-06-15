@@ -1,9 +1,17 @@
-import { parse, printSync } from "@swc/core";
+import { printSync } from "@swc/core";
+import {
+  analyzeServerFunctionExportsFromAst,
+  formatServerFunctionParseDiagnostic,
+  parseServerFunctionModule,
+} from "../server-fns.js";
 import type { TransformOptions } from "../types.js";
-import { detectUseServer } from "../utils.js";
+import {
+  CONFLICTING_FRAMEWORK_DIRECTIVES_MESSAGE,
+  detectConflictingFrameworkDirectives,
+  detectUseServer,
+} from "../utils.js";
 import { buildClientOutput } from "./client/index.js";
 import { buildServerOutput } from "./server/index.js";
-import { extractExportNames } from "./utils.js";
 
 export interface TransformResult {
   code: string;
@@ -24,23 +32,41 @@ export async function transformServerFile(
   if (!detectUseServer(source)) {
     return { code: source };
   }
+  if (detectConflictingFrameworkDirectives(source)) {
+    throw new Error(
+      [
+        '[evjs] Invalid "use server" module.',
+        CONFLICTING_FRAMEWORK_DIRECTIVES_MESSAGE,
+      ].join("\n"),
+    );
+  }
 
-  const program = await parse(source, {
-    syntax: "typescript",
-    tsx: true,
-    comments: false,
-    script: false,
-    target: "esnext",
-  });
+  const { ast: program, error } = parseServerFunctionModule(source);
+  if (!program) {
+    throw new Error(
+      [
+        '[evjs] Invalid "use server" module.',
+        formatServerFunctionParseDiagnostic(error),
+      ].join("\n"),
+    );
+  }
 
-  const exportNames = extractExportNames(program.body);
-  if (exportNames.length === 0) {
+  const serverFunctions = analyzeServerFunctionExportsFromAst(program.body);
+  if (serverFunctions.diagnostics.length > 0) {
+    throw new Error(
+      [
+        '[evjs] Invalid "use server" module.',
+        ...serverFunctions.diagnostics.map((diagnostic) => diagnostic.message),
+      ].join("\n"),
+    );
+  }
+  if (serverFunctions.exports.length === 0) {
     return { code: source };
   }
 
   const modifiedAst = options.isServer
-    ? buildServerOutput(program, exportNames, options)
-    : buildClientOutput(program, exportNames, options);
+    ? buildServerOutput(program, serverFunctions.exports, options)
+    : buildClientOutput(program, serverFunctions.exports, options);
 
   const { code, map } = printSync(modifiedAst, {
     sourceMaps: true,

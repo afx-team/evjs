@@ -1,3 +1,17 @@
+import {
+  BUILD_IDENTIFIER_DESCRIPTION,
+  isBuildIdentifier,
+} from "../build-identifier.js";
+import {
+  getPathPatternListValidationError,
+  type PathPatternListValidationError,
+  type PathPatternValidationError,
+} from "../path-pattern.js";
+import {
+  getSharedVersionRangeValidationError,
+  SHARED_VERSION_RANGE_DESCRIPTION,
+} from "../shared-version-range.js";
+import { getHttpUrlOrPathValidationError } from "../url-validation.js";
 import type {
   AppGraph,
   AppOutput,
@@ -5,18 +19,28 @@ import type {
   BuildEntry,
   BuildOutput,
   BuildPlan,
+  HtmlDocumentOutput,
   HydrationMode,
   PageNode,
   PageOutput,
   PageRenderingOutput,
   PprRegionOutput,
+  RemoteEntry,
   RemoteManifest,
+  RscReferenceOutput,
   RuntimeModuleOutput,
   ServerFunctionOutput,
   ServerRouteOutput,
+  SharedDependencyMap,
 } from "./index.js";
 
 const EMPTY_ASSETS: AssetGroup = { js: [], css: [] };
+declare const URL: {
+  new (
+    value: string,
+    base?: string | { toString(): string },
+  ): { protocol: string };
+};
 
 export interface BuildOutputServerModule {
   moduleId: string;
@@ -44,7 +68,7 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   const clientEntryAssets = input.clientEntryAssets ?? {};
   const firstClientEntryAssets = input.firstClientEntryAssets ?? EMPTY_ASSETS;
   const serverEntryAssets = input.serverEntryAssets ?? {};
-  const serverAssets = input.serverAssets ?? EMPTY_ASSETS;
+  const fallbackServerAssets = input.serverAssets ?? EMPTY_ASSETS;
   const serverModules = input.serverModules ?? [];
   const clientEntries = input.plan.entries.filter(
     (entry) => entry.environment === "client",
@@ -55,7 +79,25 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
     clientEntryAssets[entry.name] ??
     (shouldUseSingleClientFallback ? firstClientEntryAssets : EMPTY_ASSETS);
   const serverAssetsForEntry = (entry: BuildEntry) =>
-    serverEntryAssets[entry.name] ?? serverAssets;
+    serverEntryAssets[entry.name] ?? fallbackServerAssets;
+  const serverRuntimeEntry = input.plan.entries.find(
+    (entry) =>
+      entry.environment === "server" && entry.kind === "server-runtime",
+  );
+  const htmlDocuments = createHtmlDocumentLookup(input.plan.html);
+  const serverRuntimeAssets = serverRuntimeEntry
+    ? serverAssetsForEntry(serverRuntimeEntry)
+    : fallbackServerAssets;
+  const serverEntry = serverEnabled
+    ? assertServerRuntimeEntry(
+        input.serverEntry ?? serverRuntimeAssets.js[0],
+        serverRuntimeAssets,
+        serverRuntimeEntry,
+      )
+    : undefined;
+  const serverAssets = serverEnabled
+    ? serverRuntimeAssets
+    : fallbackServerAssets;
 
   const findEntryByOwner = (
     owner: BuildEntry["owner"],
@@ -101,16 +143,20 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
     Object.entries(input.graph.apps).map(([id, app]) => {
       const entry = findEntryByOwner({ appId: id }, "client");
       const assets = entry ? clientAssetsForEntry(entry) : EMPTY_ASSETS;
+      const href = entry
+        ? assertClientRuntimeHref(entry, assets, `App "${id}"`)
+        : undefined;
       return [
         id,
         {
           assets,
+          document: cloneHtmlDocument(htmlDocuments.apps.get(id)),
           entry: app.entry,
           mount: app.mount,
           module: entry
             ? {
                 type: "entry" as const,
-                href: assets.js[0],
+                href,
                 source: app.entry,
               }
             : undefined,
@@ -132,15 +178,18 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
         : isRscPage(page) && rscClientRuntimeEntry
           ? clientAssetsForEntry(rscClientRuntimeEntry)
           : EMPTY_ASSETS;
+      const href = entry
+        ? assertClientRuntimeHref(entry, baseAssets, `Page "${id}"`)
+        : undefined;
       const serverCss = isRscPage(page)
         ? [
             ...serverCssForPage(id, "page-server"),
             ...serverCssForPage(id, "rsc-page"),
           ]
-        : page.render === "ssr" || page.render === "ssg"
-          ? serverCssForPage(id, "page-server")
-          : isPartialPrerenderPage(page)
-            ? serverCssForPage(id, "ppr-shell")
+        : isPartialPrerenderPage(page)
+          ? serverCssForPage(id, "ppr-shell")
+          : page.render === "ssr" || page.render === "ssg"
+            ? serverCssForPage(id, "page-server")
             : [];
       const assets = mergeAssetGroups(baseAssets, {
         js: [],
@@ -150,6 +199,7 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
         id,
         {
           assets,
+          document: cloneHtmlDocument(htmlDocuments.pages.get(id)),
           render: page.render,
           rendering: derivePageRendering(page),
           path: page.path,
@@ -168,31 +218,33 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
                   : page.app
                     ? ("lifecycle" as const)
                     : ("entry" as const),
-                href: assets.js[0],
+                href,
                 source: page.component ?? page.app ?? page.entry,
               }
             : undefined,
           ppr: isPartialPrerenderPage(page)
             ? {
                 delivery: page.ppr?.delivery ?? "merge",
-                shell: shellEntry
-                  ? serverAssetsForEntry(shellEntry)
-                  : serverAssets,
+                shell: serverAssetsForEntry(
+                  assertPprShellEntry(id, shellEntry),
+                ),
                 regions: Object.fromEntries(
                   Object.entries(page.ppr?.regions ?? {}).map(
                     ([regionId, region]) => {
-                      const regionEntry = findEntryByOwner(
-                        { pageId: id, regionId },
-                        "server",
-                        "ppr-region",
+                      const regionEntry = assertPprRegionEntry(
+                        id,
+                        regionId,
+                        findEntryByOwner(
+                          { pageId: id, regionId },
+                          "server",
+                          "ppr-region",
+                        ),
                       );
                       return [
                         regionId,
                         {
                           id: regionId,
-                          assets: regionEntry
-                            ? serverAssetsForEntry(regionEntry)
-                            : serverAssets,
+                          assets: serverAssetsForEntry(regionEntry),
                           component: region.component,
                           fallback: region.fallback,
                           cache: region.cache,
@@ -225,7 +277,7 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
       assets: assetsForSource(route.module),
     }),
   );
-  const rsc = linkRscOutput(input, serverAssetsForEntry, serverAssets);
+  const rsc = linkRscOutput(input, serverAssetsForEntry);
 
   return {
     version: 1,
@@ -252,7 +304,7 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
     })),
     server: serverEnabled
       ? {
-          entry: input.serverEntry,
+          entry: serverEntry,
           assets: serverAssets,
           renderers: linkServerRenderers(
             input.plan,
@@ -274,6 +326,70 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
     ),
     ...(rsc ? { rsc } : {}),
   };
+}
+
+function assertPprShellEntry(
+  pageId: string,
+  entry: BuildEntry | undefined,
+): BuildEntry {
+  if (entry) return entry;
+  throw new Error(
+    `[evjs] PPR page "${pageId}" did not declare a matching ppr-shell server renderer.`,
+  );
+}
+
+function assertPprRegionEntry(
+  pageId: string,
+  regionId: string,
+  entry: BuildEntry | undefined,
+): BuildEntry {
+  if (entry) return entry;
+  throw new Error(
+    `[evjs] PPR page "${pageId}" region "${regionId}" did not declare a matching ppr-region server renderer.`,
+  );
+}
+
+function assertClientRuntimeHref(
+  entry: BuildEntry,
+  assets: AssetGroup,
+  label: string,
+): string {
+  const href = getClientRuntimeHref(entry, assets);
+  if (href) return href;
+  throw new Error(
+    `[evjs] ${label} did not produce a client JavaScript asset for build entry "${entry.name}".`,
+  );
+}
+
+function getClientRuntimeHref(
+  entry: BuildEntry,
+  assets: AssetGroup,
+): string | undefined {
+  return (
+    assets.js.find((asset) => isNamedEntryAsset(entry.name, asset)) ??
+    assets.js[0]
+  );
+}
+
+function isNamedEntryAsset(entryName: string, asset: string): boolean {
+  const fileName = asset.split("/").pop() ?? asset;
+  return fileName === `${entryName}.js` || fileName.startsWith(`${entryName}.`);
+}
+
+function assertServerRuntimeEntry(
+  serverEntry: string | undefined,
+  assets: AssetGroup,
+  runtimeEntry: BuildEntry | undefined,
+): string {
+  if (!runtimeEntry) {
+    throw new Error(
+      "[evjs] Server-enabled build did not declare a server runtime entry.",
+    );
+  }
+  if (serverEntry && assets.js.length > 0) return serverEntry;
+  throw new Error(
+    `[evjs] Server runtime entry "${runtimeEntry.name}" did not produce a server JavaScript asset.`,
+  );
 }
 
 /**
@@ -411,52 +527,364 @@ export function linkRemoteManifest(
   const remote = input.plan.remote;
   if (!remote) return undefined;
 
+  const name = assertRemoteManifestBuildIdentifier(remote.name, "remote.name");
+  const baseUrl = assertRemoteManifestBaseUrl(remote.baseUrl, "remote.baseUrl");
+  const shared =
+    remote.shared === undefined
+      ? undefined
+      : assertRemoteManifestShared(remote.shared);
+  const entries = Object.entries(remote.entries);
+  if (entries.length === 0) {
+    throw new Error(
+      "[evjs] remote.entries must declare at least one remote entry before remote manifest emission.",
+    );
+  }
   const clientEntryAssets = input.clientEntryAssets ?? {};
-  const firstClientEntryAssets = input.firstClientEntryAssets ?? EMPTY_ASSETS;
   const remoteEntries = input.plan.entries.filter(
     (entry) => entry.environment === "client" && entry.kind === "remote-client",
   );
-  const shouldUseSingleRemoteFallback = remoteEntries.length === 1;
+  const activeWhenOwners = new Map<string, string>();
 
   return {
     version: 1,
-    name: remote.name,
-    baseUrl: remote.baseUrl,
-    ...(remote.shared ? { shared: remote.shared } : {}),
+    name,
+    baseUrl,
+    ...(shared !== undefined ? { shared } : {}),
     entries: Object.fromEntries(
-      Object.values(remote.entries).map((entry) => {
-        const buildEntry = remoteEntries.find(
-          (candidate) =>
-            candidate.owner?.remoteId === remote.name &&
-            candidate.owner?.remoteEntryId === entry.id,
-        );
-        const assets = buildEntry
-          ? (clientEntryAssets[buildEntry.name] ??
-            (shouldUseSingleRemoteFallback
-              ? firstClientEntryAssets
-              : EMPTY_ASSETS))
-          : EMPTY_ASSETS;
-
-        return [
+      entries.map(([entryId, entry]) => {
+        assertRemoteManifestBuildIdentifierKey(entryId, "remote.entries");
+        const id = assertRemoteManifestBuildIdentifier(
           entry.id,
-          {
-            assets,
-            module: {
-              type: "lifecycle" as const,
-              href: assets.js[0],
-            },
-            activeWhen: entry.activeWhen,
-            mount: entry.mount,
+          `remote.entries.${entryId}.id`,
+        );
+        if (id !== entryId) {
+          throw new Error(
+            `[evjs] remote.entries.${entryId}.id "${id}" must match remote.entries key "${entryId}" before remote manifest emission.`,
+          );
+        }
+        const activeWhen =
+          entry.activeWhen === undefined
+            ? undefined
+            : assertRemoteManifestActiveWhenPatterns(
+                entry.activeWhen,
+                `remote.entries.${entryId}.activeWhen`,
+              );
+        registerRemoteManifestActiveWhenPatterns(
+          activeWhen,
+          `remote.entries.${entryId}.activeWhen`,
+          activeWhenOwners,
+        );
+        const mount =
+          entry.mount === undefined
+            ? undefined
+            : assertRemoteManifestString(
+                entry.mount,
+                `remote.entries.${entryId}.mount`,
+              );
+        const buildEntry = assertRemoteClientBuildEntry(
+          name,
+          entryId,
+          remoteEntries,
+        );
+        const assets = clientEntryAssets[buildEntry.name] ?? EMPTY_ASSETS;
+        assertRemoteManifestAssetGroup(
+          assets,
+          `remote.entries.${entryId}.assets`,
+        );
+        const href = getClientRuntimeHref(buildEntry, assets);
+        if (!href) {
+          throw new Error(
+            `[evjs] Remote entry "${entryId}" for remote "${remote.name}" did not produce a client JavaScript asset.`,
+          );
+        }
+
+        const remoteEntry: RemoteEntry = {
+          assets,
+          module: {
+            type: "lifecycle",
+            href,
           },
-        ];
+          ...(activeWhen !== undefined ? { activeWhen } : {}),
+          ...(mount !== undefined ? { mount } : {}),
+        };
+        return [entryId, remoteEntry];
       }),
     ),
   };
 }
 
+function assertRemoteClientBuildEntry(
+  remoteName: string,
+  entryId: string,
+  remoteEntries: BuildEntry[],
+): BuildEntry {
+  const buildEntry = remoteEntries.find(
+    (candidate) =>
+      candidate.owner?.remoteId === remoteName &&
+      candidate.owner?.remoteEntryId === entryId,
+  );
+  if (buildEntry) return buildEntry;
+
+  throw new Error(
+    `[evjs] Remote entry "${entryId}" for remote "${remoteName}" did not declare a matching remote-client build entry.`,
+  );
+}
+
+function assertRemoteManifestBuildIdentifierKey(
+  key: string,
+  path: string,
+): void {
+  if (!key.trim()) {
+    throw new Error(
+      `[evjs] ${path} must not contain empty keys before remote manifest emission.`,
+    );
+  }
+  if (isBuildIdentifier(key)) return;
+  throw new Error(
+    `[evjs] ${path} key "${key}" must contain only ${BUILD_IDENTIFIER_DESCRIPTION} before remote manifest emission.`,
+  );
+}
+
+function assertRemoteManifestBuildIdentifier(
+  value: unknown,
+  path: string,
+): string {
+  const identifier = assertRemoteManifestString(value, path);
+  if (isBuildIdentifier(identifier)) return identifier;
+  throw new Error(
+    `[evjs] ${path} must contain only ${BUILD_IDENTIFIER_DESCRIPTION} before remote manifest emission.`,
+  );
+}
+
+function assertRemoteManifestBaseUrl(value: unknown, path: string): string {
+  const error = getHttpUrlOrPathValidationError(value);
+  if (!error) return value as string;
+
+  switch (error) {
+    case "empty":
+      throw new Error(
+        `[evjs] ${path} must be a non-empty string before remote manifest emission.`,
+      );
+    case "whitespace":
+      throw new Error(
+        `[evjs] ${path} must not contain leading or trailing whitespace before remote manifest emission.`,
+      );
+    case "not-http-url-or-path":
+      throw new Error(
+        `[evjs] ${path} must be an http(s) URL or path before remote manifest emission.`,
+      );
+  }
+}
+
+function assertRemoteManifestString(value: unknown, path: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(
+      `[evjs] ${path} must be a non-empty string before remote manifest emission.`,
+    );
+  }
+  if (value.trim() !== value) {
+    throw new Error(
+      `[evjs] ${path} must not contain leading or trailing whitespace before remote manifest emission.`,
+    );
+  }
+  return value;
+}
+
+function assertRemoteManifestAssetGroup(
+  assets: AssetGroup,
+  path: string,
+): void {
+  assertRemoteManifestStringArray(assets.js, `${path}.js`);
+  assertRemoteManifestStringArray(assets.css, `${path}.css`);
+}
+
+function assertRemoteManifestStringArray(value: unknown, path: string): void {
+  if (!Array.isArray(value)) {
+    throw new Error(
+      `[evjs] ${path} must be an array before remote manifest emission.`,
+    );
+  }
+  for (const item of value) {
+    assertRemoteManifestString(item, path);
+  }
+}
+
+function assertRemoteManifestActiveWhenPatterns(
+  value: unknown,
+  path: string,
+): string[] {
+  const error = getPathPatternListValidationError(value);
+  if (error) throwRemoteManifestPathPatternListError(error, path);
+  return [...(value as string[])];
+}
+
+function throwRemoteManifestPathPatternListError(
+  error: PathPatternListValidationError,
+  path: string,
+): never {
+  switch (error.kind) {
+    case "not-array":
+      throw new Error(
+        `[evjs] ${path} must be an array of path patterns before remote manifest emission.`,
+      );
+    case "empty-array":
+      throw new Error(
+        `[evjs] ${path} must contain at least one path before remote manifest emission.`,
+      );
+    case "duplicate-pattern":
+      throw new Error(
+        `[evjs] ${path} must not contain duplicate pattern "${error.pattern}" before remote manifest emission.`,
+      );
+    case "invalid-pattern":
+      throwRemoteManifestPathPatternError(error.value, error.error, path);
+  }
+}
+
+function throwRemoteManifestPathPatternError(
+  value: unknown,
+  error: PathPatternValidationError,
+  path: string,
+): never {
+  if (error === "empty" || typeof value !== "string") {
+    throw new Error(
+      `[evjs] ${path} must contain only non-empty strings before remote manifest emission.`,
+    );
+  }
+  if (error === "whitespace") {
+    throw new Error(
+      `[evjs] ${path} pattern "${value}" must not contain whitespace before remote manifest emission.`,
+    );
+  }
+  if (error === "missing-leading-slash") {
+    throw new Error(
+      `[evjs] ${path} pattern "${value}" must start with "/" before remote manifest emission.`,
+    );
+  }
+  throw new Error(
+    `[evjs] ${path} pattern "${value}" must not include a query string or hash before remote manifest emission.`,
+  );
+}
+
+function registerRemoteManifestActiveWhenPatterns(
+  patterns: string[] | undefined,
+  path: string,
+  owners: Map<string, string>,
+): void {
+  for (const pattern of patterns ?? []) {
+    const existing = owners.get(pattern);
+    if (existing) {
+      throw new Error(
+        `[evjs] ${path} duplicates ${existing} pattern "${pattern}". Remote entry activeWhen patterns must be unique before remote manifest emission.`,
+      );
+    }
+    owners.set(pattern, path);
+  }
+}
+
+function assertRemoteManifestShared(shared: unknown): SharedDependencyMap {
+  assertRemoteManifestRecord(shared, "remote.shared");
+  const dependencies: SharedDependencyMap = {};
+
+  for (const [name, dependency] of Object.entries(shared)) {
+    if (!name.trim()) {
+      throw new Error(
+        "[evjs] remote.shared must not contain empty keys before remote manifest emission.",
+      );
+    }
+    const path = `remote.shared.${name}`;
+    assertRemoteManifestRecord(dependency, path);
+    dependencies[name] = {
+      ...(dependency.shareKey !== undefined
+        ? {
+            shareKey: assertRemoteManifestString(
+              dependency.shareKey,
+              `${path}.shareKey`,
+            ),
+          }
+        : {}),
+      ...(dependency.requiredVersion !== undefined
+        ? {
+            requiredVersion: assertRemoteManifestSharedVersionRange(
+              dependency.requiredVersion,
+              `${path}.requiredVersion`,
+            ),
+          }
+        : {}),
+      ...(dependency.singleton !== undefined
+        ? {
+            singleton: assertRemoteManifestOptionalBoolean(
+              dependency.singleton,
+              `${path}.singleton`,
+            ),
+          }
+        : {}),
+      ...(dependency.strictVersion !== undefined
+        ? {
+            strictVersion: assertRemoteManifestOptionalBoolean(
+              dependency.strictVersion,
+              `${path}.strictVersion`,
+            ),
+          }
+        : {}),
+      ...(dependency.eager !== undefined
+        ? {
+            eager: assertRemoteManifestOptionalBoolean(
+              dependency.eager,
+              `${path}.eager`,
+            ),
+          }
+        : {}),
+    };
+  }
+
+  return dependencies;
+}
+
+function assertRemoteManifestRecord(
+  value: unknown,
+  path: string,
+): asserts value is Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) return;
+  throw new Error(
+    `[evjs] ${path} must be an object before remote manifest emission.`,
+  );
+}
+
+function assertRemoteManifestSharedVersionRange(
+  value: unknown,
+  path: string,
+): string {
+  const error = getSharedVersionRangeValidationError(value);
+  if (!error) return value as string;
+  if (error === "empty") {
+    throw new Error(
+      `[evjs] ${path} must be a non-empty string before remote manifest emission.`,
+    );
+  }
+  if (error === "whitespace") {
+    throw new Error(
+      `[evjs] ${path} must not contain leading or trailing whitespace before remote manifest emission.`,
+    );
+  }
+  throw new Error(
+    `[evjs] ${path} must use ${SHARED_VERSION_RANGE_DESCRIPTION} before remote manifest emission.`,
+  );
+}
+
+function assertRemoteManifestOptionalBoolean(
+  value: unknown,
+  path: string,
+): boolean {
+  if (typeof value === "boolean") return value;
+  throw new Error(
+    `[evjs] ${path} must be a boolean when provided before remote manifest emission.`,
+  );
+}
+
 function sanitizeAppOutput(app: AppOutput): AppOutput {
   return pruneUndefined({
     assets: cloneAssets(app.assets),
+    document: cloneHtmlDocument(app.document),
     mount: app.mount,
     module: sanitizeRuntimeModule(app.module),
   }) as AppOutput;
@@ -468,6 +896,7 @@ function sanitizePageOutput(
 ): PageOutput {
   return pruneUndefined({
     assets: clonePublicAssets(page.assets, publicAssetFiles),
+    document: cloneHtmlDocument(page.document),
     render: page.render,
     rendering: page.rendering,
     path: page.path,
@@ -490,6 +919,31 @@ function sanitizePageOutput(
         }
       : undefined,
   }) as PageOutput;
+}
+
+function createHtmlDocumentLookup(html: BuildPlan["html"]): {
+  apps: Map<string, HtmlDocumentOutput>;
+  pages: Map<string, HtmlDocumentOutput>;
+} {
+  const apps = new Map<string, HtmlDocumentOutput>();
+  const pages = new Map<string, HtmlDocumentOutput>();
+
+  for (const document of html) {
+    if (document.owner.appId) {
+      apps.set(document.owner.appId, { fileName: document.fileName });
+    }
+    if (document.owner.pageId) {
+      pages.set(document.owner.pageId, { fileName: document.fileName });
+    }
+  }
+
+  return { apps, pages };
+}
+
+function cloneHtmlDocument(
+  document: HtmlDocumentOutput | undefined,
+): HtmlDocumentOutput | undefined {
+  return document ? { fileName: document.fileName } : undefined;
 }
 
 function sanitizePprRegion(
@@ -619,7 +1073,6 @@ function pruneUndefined<T extends Record<string, unknown>>(value: T): T {
 function linkRscOutput(
   input: BuildOutputLinkInput,
   serverAssetsForEntry: (entry: BuildEntry) => AssetGroup,
-  fallbackAssets: AssetGroup,
 ): BuildOutput["rsc"] | undefined {
   const endpoint = input.plan.runtime.server?.rsc;
   const rscRenderers = input.plan.entries.filter(
@@ -637,6 +1090,11 @@ function linkRscOutput(
   ) {
     return undefined;
   }
+  if (!endpoint && rscPages.length > 0) {
+    throw new Error(
+      `[evjs] RSC page "${rscPages[0].id}" requires runtime.server.rsc before RSC manifest emission.`,
+    );
+  }
 
   return {
     endpoint,
@@ -644,16 +1102,12 @@ function linkRscOutput(
       rscPages.length > 0
         ? Object.fromEntries(
             rscPages.map((page) => {
-              const renderer = rscRenderers.find(
-                (entry) => entry.owner?.pageId === page.id,
-              );
+              const renderer = findRscRendererForPage(page.id, rscRenderers);
               return [
                 page.id,
                 {
-                  renderer: renderer?.name,
-                  assets: renderer
-                    ? serverAssetsForEntry(renderer)
-                    : fallbackAssets,
+                  renderer: renderer.name,
+                  assets: serverAssetsForEntry(renderer),
                   component: page.component,
                   routeId: page.routeId,
                 },
@@ -668,11 +1122,23 @@ function linkRscOutput(
   };
 }
 
+function findRscRendererForPage(
+  pageId: string,
+  rscRenderers: BuildEntry[],
+): BuildEntry {
+  const renderer = rscRenderers.find((entry) => entry.owner?.pageId === pageId);
+  if (renderer) return renderer;
+
+  throw new Error(
+    `[evjs] RSC page "${pageId}" did not declare a matching rsc-page server renderer.`,
+  );
+}
+
 function referencesToRecord(
   references:
     | Array<{ id: string; module: string; exportName?: string }>
     | undefined,
-): Record<string, unknown> | undefined {
+): Record<string, RscReferenceOutput> | undefined {
   if (!references?.length) return undefined;
   return Object.fromEntries(
     references.map((reference) => [
@@ -723,6 +1189,7 @@ function derivePageRendering(page: PageNode): PageRenderingOutput {
       ? "client"
       : "server";
   const partial = isPartialPrerenderPage(page);
+  const full = isFullPrerenderPage(page);
 
   if (partial) {
     return {
@@ -763,6 +1230,7 @@ function derivePageRendering(page: PageNode): PageRenderingOutput {
       return {
         component,
         html: "server",
+        ...(full ? { prerender: "full" as const } : {}),
         streaming: false,
         hydrate,
       };
@@ -770,7 +1238,7 @@ function derivePageRendering(page: PageNode): PageRenderingOutput {
 }
 
 function effectivePageHydrate(page: PageNode): HydrationMode {
-  return isPartialPrerenderPage(page)
+  return isPartialPrerenderPage(page) || isRscPage(page)
     ? "none"
     : (page.hydrate ?? defaultHydrate(page.render));
 }
@@ -790,6 +1258,14 @@ function isPartialPrerenderPage(
     (typeof page.prerender === "object" && page.prerender.partial === true) ||
     Boolean(page.ppr)
   );
+}
+
+function isFullPrerenderPage(
+  page: Pick<PageNode, "render" | "prerender" | "ppr">,
+): boolean {
+  if (page.render === "ssg") return true;
+  if (!page.prerender || isPartialPrerenderPage(page)) return false;
+  return true;
 }
 
 function moduleIdMatchesSource(moduleId: string, sourceRel: string): boolean {

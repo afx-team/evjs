@@ -1,10 +1,5 @@
 import { parseSync } from "@swc/core";
-import type {
-  CallExpression,
-  Expression,
-  KeyValueProperty,
-  MethodProperty,
-} from "@swc/types";
+import type { Expression, KeyValueProperty, MethodProperty } from "@swc/types";
 
 export type RouteAst = ReturnType<typeof parseSync>;
 
@@ -80,6 +75,5 @@ export function collectImportedNames(
 
 export function isNamedCall(expr: Expression, names: Set<string>): boolean {
   if (expr.type !== "CallExpression") return false;
-  const callee = (expr as CallExpression).callee;
-  return callee.type === "Identifier" && names.has(callee.value);
+  return expr.callee.type === "Identifier" && names.has(expr.callee.value);
 }

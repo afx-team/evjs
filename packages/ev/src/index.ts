@@ -38,6 +38,7 @@ export {
   type BundlerCtx,
   CONFIG_DEFAULTS,
   type Config,
+  type DefaultBundlerConfig,
   type DevConfig,
   type DevProxyRule,
   defineConfig,
@@ -95,7 +96,9 @@ export {
   type NodeDeploymentFiles,
   nodeDeploymentAdapter,
   type StaticDeploymentAdapterOptions,
+  type StaticDeploymentCompatibility,
   type StaticDeploymentFiles,
+  type StaticDeploymentUnsupportedCapability,
   staticDeploymentAdapter,
 } from "./deployment.js";
 export { type BuildHtmlOptions, buildHtml } from "./html.js";

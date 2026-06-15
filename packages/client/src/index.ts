@@ -81,6 +81,7 @@ export type {
   RemoteAppManifestLoadContext,
   RemoteAppModule,
   RemoteAppProps,
+  RemoteAppReactProps,
   RemoteAppRuntimeController,
   RemoteAppRuntimeErrorContext,
   RemoteAppRuntimeHooks,

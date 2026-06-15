@@ -48,11 +48,19 @@ interface Plugin<TBundlerConfig = unknown> {
 }
 ```
 
-插件名必须唯一。`dependencies` 和 `optionalDependencies` 控制排序，并同时作用于 `config()` 和 `setup()`。
+插件名必须唯一。提供 `config` 和 `setup` 时，它们必须是函数。`dependencies` 和
+`optionalDependencies` 控制排序，并同时作用于 `config()` 和 `setup()`。依赖列表中
+的 plugin name 必须非空且不能重复；同一个 plugin name 不能同时出现在
+`dependencies` 和 `optionalDependencies` 中。Plugin object 只接受 `name`、
+`dependencies`、`optionalDependencies`、`enforce`、`config` 和 `setup`，因此生命周期入口拼写错误会在
+config resolution 阶段失败。
 
 ## Config Hook
 
 `config()` 用于修改必须早于默认值解析、graph 分析、dev proxy 或运行时路径派生的框架配置。
+它可以返回 config object，也可以在原对象上就地修改后返回 `undefined`。`null`、
+array 和其他返回值会被拒绝。最终配置会经过和用户配置相同的 resolver 校验，然后才会
+运行 `setup()` hooks 或开始 bundling。
 
 ```ts
 import { defineConfig, merge } from "@evjs/ev";
@@ -89,7 +97,9 @@ interface PluginContext<TBundlerConfig = unknown> {
 }
 ```
 
-在 `setup()` 中初始化共享状态并返回生命周期 hooks。
+在 `setup()` 中初始化共享状态并返回生命周期 hooks。返回值必须是 hooks object 或
+`undefined`；`null`、array 和非函数 hook 字段会在命令生命周期 hooks 运行前被拒绝。
+未知 hook 名也会被拒绝，因此 `buildstart` 这类拼写错误不会被静默忽略。
 
 ## 生命周期
 

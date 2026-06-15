@@ -1,4 +1,5 @@
 import { DEFAULT_ERROR_STATUS } from "./constants.js";
+import { isHttpErrorStatus } from "./http.js";
 
 /**
  * Error thrown when a server function call fails.
@@ -46,7 +47,15 @@ export class ServerError extends Error {
   constructor(message: string, options?: { status?: number; data?: unknown }) {
     super(message);
     this.name = "ServerError";
-    this.status = options?.status ?? DEFAULT_ERROR_STATUS;
+    this.status = normalizeServerErrorStatus(options?.status);
     this.data = options?.data;
   }
+}
+
+function normalizeServerErrorStatus(status: number | undefined): number {
+  if (status === undefined) return DEFAULT_ERROR_STATUS;
+  if (isHttpErrorStatus(status)) return status;
+  throw new Error(
+    "[evjs] ServerError status must be an integer HTTP error status between 400 and 599.",
+  );
 }

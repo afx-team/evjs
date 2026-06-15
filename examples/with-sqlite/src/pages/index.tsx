@@ -3,7 +3,7 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
-} from "@evjs/client";
+} from "@evjs/ev/client";
 import { useState } from "react";
 import type { Todo, User } from "../api/db.server";
 import {

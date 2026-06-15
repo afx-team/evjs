@@ -11,7 +11,7 @@ my-evjs-app/
 ├── ev.config.ts                 # framework config
 ├── index.html                   # shared HTML template with <div id="app">
 ├── package.json
-├── .gitignore                   # includes evjs generated type files
+├── .gitignore                   # ignores evjs generated artifacts
 ├── public/                      # copied static files
 ├── tsconfig.json
 └── src/
@@ -49,16 +49,78 @@ This shape covers the complete framework surface:
   directory. The default `src/pages` uses `src/layout/index.tsx`; custom
   `routing.dir` values use the parent of that route directory. This convention
   requires the exact `layout/index.tsx` path unless `routing.layout` points to
-  another SPA layout module. Set `routing.layout: false` to disable SPA root
-  layout discovery. MPA pages should import shared components directly or share
-  HTML templates when they need common chrome.
-- `src/evjs-route-types.d.ts` is generated in SPA mode for type-safe
-  navigation. Keep it ignored and do not import it from application code.
+  another SPA layout source module. Use `routing.layout` for custom locations
+  or non-TSX layout modules such as `layout/index.jsx`. Explicit layout modules
+  must use `.ts`, `.tsx`, `.js`, or `.jsx`; declaration, test, spec, story,
+  client-only, and server-only files are not accepted. Set
+  `routing.layout: false` to disable SPA root layout discovery. MPA pages
+  should import shared components directly or share HTML templates when they
+  need common chrome.
+- `<routing-dir-parent>/evjs-route-types.d.ts` is generated in SPA mode for
+  type-safe navigation. The default `src/pages` writes
+  `src/evjs-route-types.d.ts`; `routing.dir: "./src/app/pages"` writes
+  `src/app/evjs-route-types.d.ts`. MPA mode removes stale generated route type
+  files. The generated declaration uses the generated-only
+  `@evjs/ev/client/internal/route-types` helper and augments the client runtime
+  navigation types. Keep generated route types ignored and do not import them
+  from application code.
+- `.evjs/` is the generated framework working directory for dev/build metadata.
+  Keep it ignored and out of templates, scaffolds, and application imports.
 - Rendering metadata lives with page modules.
 - `api/*.server.ts` contains server functions.
 - `api/*.routes.ts` contains standard HTTP route handlers.
-- `server.ts` composes `@evjs/server` routes, middleware, and framework rendering.
+- `server.ts` composes `@evjs/ev/server` routes, middleware, and framework rendering.
 - `features/` keeps domain logic out of route/page files.
+
+## Convention Matrix
+
+Use this table as the source of truth when creating files. Only a few paths are
+framework conventions; the rest are ordinary project organization.
+
+Quick rules:
+
+- Route files live under the configured `routing.dir` and use `.ts`, `.tsx`,
+  `.js`, or `.jsx`.
+- Directory roots use `index.*`; dynamic segments use `$param`; static
+  segments stay lowercase and URL-safe.
+- Route groups such as `(marketing)` are not supported. Dynamic param names
+  must be safe identifiers; reserved object-property names and `$_splat` are
+  rejected.
+- `_`-prefixed files and folders are private helpers, not URL routes.
+- Dot-prefixed files/folders, `.d.ts`, test/spec, Storybook,
+  `*.client.*`, and `*.server.*` files under the route directory are ignored so
+  colocated support files do not become routes.
+- SPA root layout auto-discovery uses the exact `layout/index.tsx` path beside
+  the route directory. Use `routing.layout` for custom SPA layout modules. MPA
+  routes do not consume framework layouts.
+- If an output cannot follow the directory shape, use explicit `pages` config
+  instead of hand-writing `routing.routes`.
+
+| File or folder | Framework meaning | Use it for | Do not use it for |
+| --- | --- | --- | --- |
+| `src/pages/**/*.{tsx,jsx,ts,js}` | SPA/MPA page route discovery | Thin page components with optional literal rendering metadata | Shared helpers, tests, route groups, bracket routes, catch-all routes, or hand-written TanStack route trees |
+| Route paths, dynamic URL shapes, and generated route IDs under `src/pages` | Route collision checks before graph/build-plan generation | One page module per URL path, one parameter naming choice per dynamic URL shape, and unique generated route IDs | Parallel `users.tsx`/`users/index.tsx`, `users/$id.tsx`/`users/$userId.tsx`, or `admin/panel.tsx`/`admin_panel.tsx` routes |
+| `src/pages/_*` and `src/pages/**/_*` | Ignored private route modules | Colocated helper components, utilities, fixtures, and page-local implementation details | URL routes, SPA root layouts, or generated files |
+| `src/pages/.*` and `src/pages/**/.*` | Ignored hidden route modules | Local scratch files or tool metadata that should stay invisible to route discovery | URL routes, generated route types, or source modules that should be imported by pages |
+| `src/pages/**/*.d.ts`, `src/pages/**/*.{test,spec,story,stories}.*`, `src/pages/**/*.{client,server}.*` | Ignored route support modules | Type declarations, tests, Storybook stories, client-only modules, and server-only modules colocated with pages | Route pages or files that should become URLs |
+| `src/layout/index.tsx` or `<routing-dir-parent>/layout/index.tsx` | Optional SPA root layout | One SPA shell around discovered page routes | MPA shared chrome or arbitrary nested layouts |
+| `<routing-dir-parent>/evjs-route-types.d.ts` | Generated SPA navigation types | Editor and type-checker support | Manual edits, imports from app code, template/scaffold source, or MPA mode |
+| `.evjs/` | Generated framework working directory | Local dev/build metadata | Committed source, template/scaffold source, or application imports |
+| `src/api/*.server.ts` | Recommended server-function boundary | Files that start with `"use server";` and export named callable server functions | Client imports that should run with `server: false`, default exports, or runtime re-exports |
+| `src/api/*.routes.ts` | Recommended server-route boundary | `createRoute()` handlers using Web `Request`/`Response` | Server functions or multiple files for the same URL shape |
+| `src/server.ts` | Framework server entry | `createApp({ routes, middlewares, framework })` and deployment runtime glue | Browser code or per-page client bootstrap |
+| Remote entry modules referenced by `remote.entries.*.app` | Remote build public entries | Default React components or explicit `init`/`mount`/`hydrate`/`unmount` lifecycles | Host `remotes` config or server-only implementation details |
+| `src/features`, `src/components`, `src/lib`, `src/hooks` | No direct framework convention | Domain code, reusable UI, browser-safe helpers, and React hooks | Files that depend on route discovery by filename |
+
+Do not mix ownership models in one app unless you need the lower-level API:
+
+- Use `src/pages` plus `routing` for normal SPA/MPA page routes.
+- Use explicit `pages` config only when the output cannot be expressed by
+  `src/pages`.
+- Use top-level `entry`/`html` only for a manually bootstrapped single browser
+  app.
+- Use `remotes` in host apps and `remote` only in a package that emits
+  `evjs-remote.json`.
 
 ## Matching Config
 
@@ -96,11 +158,66 @@ HTML document without SPA router setup or framework layouts. Use the lower-level
 
 Each discovered file under `src/pages` default-exports a React component.
 Dynamic segments use `$param`, and `index.tsx` maps to the directory root.
-Bracket route segments such as `[id].tsx` are rejected. Files and folders whose
-route segment starts with `_` are private page-local modules and are ignored by
-route discovery; put non-route helpers there or outside `src/pages`. Rendering
-metadata belongs with the page component. Syntax and default-export errors are
-reported during route discovery before the bundler runs:
+Bracket route segments such as `[id].tsx` are rejected; catch-all and optional
+segments such as `$...slug.tsx` or `$slug?.tsx` are not part of the convention
+yet. Dynamic param names must be JavaScript identifiers after `$`, and static
+route segments must use lowercase URL-safe letters, numbers, `.`, `_`, `-`, or
+`~`. Reserved object-property names such as `$__proto__.tsx`,
+`$constructor.tsx`, and `$prototype.tsx` are rejected as dynamic params.
+`$_splat.tsx` is also reserved because wildcard routes expose `*` as `_splat`.
+Dynamic siblings cannot differ only by parameter name, so choose one of `$id.tsx`
+or `$userId.tsx` for the same URL shape. A single route path also cannot repeat
+the same dynamic param name, so `teams/$teamId/users/$teamId.tsx` is rejected.
+Flat route files and directory index route files cannot claim the same URL path,
+so choose either `users.tsx` or `users/index.tsx` for `/users`.
+Route group segments such as
+`(marketing)` are not supported. Route discovery considers `.tsx`, `.jsx`, `.ts`,
+and `.js` files, but ignores declarations, test/spec files, hidden dot paths,
+Storybook `*.story.*` / `*.stories.*` files, `*.client.*` client-only modules,
+`*.server.*` server-only modules, non-source files, and `_`-prefixed private
+route segments. Put non-route helpers in `_`-prefixed files/folders or outside
+`src/pages`. SPA and MPA share one
+deterministic route order: `/` first, parent routes before children, and static
+siblings before dynamic siblings. For example, `users/settings.tsx` ranks before
+`users/$id.tsx`. Static siblings use locale-independent code-point ordering, so
+`a-b.tsx`, `a.b.tsx`, `a0.tsx`, `a_c.tsx`, `aa.tsx`, and `a~d.tsx` keep that
+same order on every machine. Route examples and config should use `/`
+separators; filesystem `\` separators are normalized before route parsing so
+paths and generated route IDs stay the same across operating systems. The
+resolved route list used by graph and build-plan generation follows the same
+rules, so duplicate paths, dynamic URL shapes, route IDs, empty dynamic params,
+reserved dynamic params, duplicate dynamic params, explicit `:_splat` params,
+whitespace, query strings, or hashes are rejected there too. Explicit wildcard
+routes can contain at most one `*` segment because page hooks expose one
+`_splat` value.
+Generated route IDs also come from URL paths and normalize separators and
+punctuation to underscores, so `admin/panel.tsx` and `admin_panel.tsx` both
+produce `admin_panel` and cannot exist together.
+Rendering metadata belongs with the page component. Syntax and default-export
+errors are reported during route discovery before the bundler runs:
+
+### Route Filename Examples
+
+| File | Result | Notes |
+| --- | --- | --- |
+| `src/pages/index.tsx` | `/` | Directory root route. |
+| `src/pages/docs/index.tsx` | `/docs` | Nested directory root route. |
+| `src/pages/users/$userId.tsx` | `/users/$userId` | Dynamic segment; the param name must be a JavaScript identifier. |
+| `src/pages/users/settings.tsx` | `/users/settings` | Static sibling; it ranks before `users/$userId.tsx`. |
+| `src/pages/_helpers/format.ts` | Ignored | `_`-prefixed files and folders are private to `src/pages`. |
+| `src/pages/.draft.tsx` | Ignored | Dot-prefixed files and folders are hidden from route discovery. |
+| `src/pages/profile.test.tsx` | Ignored | Test/spec files can be colocated with a page without becoming routes. |
+| `src/pages/profile.stories.tsx` | Ignored | Storybook files are never route pages. |
+| `src/pages/ClientCard.client.tsx` | Ignored | Client-only modules can be colocated for RSC/client references without becoming URL routes. |
+| `src/pages/users.server.ts` | Ignored | Server-only modules are not page routes; imported server functions are still handled by the server-function transform. |
+| `src/pages/users/[id].tsx` | Rejected | Bracket route syntax is not supported; use `$id.tsx`. |
+| `src/pages/files/$...path.tsx` | Rejected | Catch-all segments are not part of the convention. |
+| `src/pages/users/$__proto__.tsx` | Rejected | Reserved object-property names are not safe route param names. |
+| `src/pages/docs/$_splat.tsx` | Rejected | `_splat` is reserved for wildcard route params. |
+| `src/pages/teams/$teamId/users/$teamId.tsx` | Rejected | Dynamic param names must be unique within one route path. |
+| `src/pages/users.tsx` beside `src/pages/users/index.tsx` | Rejected | Both map to `/users`; keep one page module per URL path. |
+| `src/pages/layout.tsx` | Rejected | SPA root layout lives at `src/layout/index.tsx`, outside `src/pages`. |
+| `src/pages/admin_panel.tsx` beside `src/pages/admin/panel.tsx` | Rejected | Both generate the same route id `admin_panel`. |
 
 ```tsx
 // src/pages/campaign.tsx
@@ -128,7 +245,13 @@ export default function Campaign() {
 
 Page files should stay thin. Read params/search, export page-local loader or
 rendering metadata, and compose components from `features/` or `components/`.
-Business logic belongs in domain modules.
+Business logic belongs in domain modules. Rendering metadata is literal-only:
+`render` and `hydrate` are string literals, `prerender` is `true` or an object
+literal with `partial`, `delivery`, or `revalidate`, `prerender.revalidate` is
+`false` or a positive integer number of seconds, and `rsc` is a boolean literal
+for RSC pages. Malformed page modules are reported during graph analysis with
+the file path and parser message before the bundler runs; malformed PPR region
+modules are reported the same way when region metadata is read.
 
 ## Server Boundary
 
@@ -145,7 +268,7 @@ export async function listOperators() {
 
 ```ts
 // src/api/health.routes.ts
-import { createRoute } from "@evjs/server";
+import { createRoute } from "@evjs/ev/server";
 
 export const healthRoute = createRoute("/api/health", {
   GET: async () => Response.json({ ok: true }),
@@ -155,8 +278,8 @@ export const healthRoute = createRoute("/api/health", {
 Mount routes and framework rendering in `src/server.ts`:
 
 ```ts
-import { createApp, requestLogger } from "@evjs/server";
-import { createReactFrameworkServer } from "@evjs/server/react";
+import { createApp, requestLogger } from "@evjs/ev/server";
+import { createReactFrameworkServer } from "@evjs/ev/server/react";
 import { healthRoute } from "./api/health.routes";
 
 const framework = createReactFrameworkServer();
@@ -191,8 +314,17 @@ export default defineConfig({
 });
 ```
 
-Remote modules can default-export React components. Explicit `mount`,
-`hydrate`, and `unmount` lifecycle exports are only needed for advanced cases.
+Remote modules can default-export React components. Do not mix a default React
+component with explicit `mount`, `hydrate`, or `unmount` exports; use `init`
+with a default component for setup, or export lifecycle functions without
+`default` for advanced cases. Lifecycle remote modules must export `mount()` or
+`hydrate()` because `init()` / `unmount()` alone cannot render a remote entry.
+Remote builds require a build-identifier `remote.name` and at least one
+build-identifier entry with a non-empty `app` module path. Keep host `remotes`
+and build-time `remote` separate: host apps consume remote manifests, while
+remote packages emit `evjs-remote.json`.
+When hosting that manifest, serve it with `Content-Type: application/json`
+optionally followed by content-type parameters.
 
 ## Naming Guidance
 

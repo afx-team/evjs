@@ -1,5 +1,5 @@
-import { createApp, requestLogger } from "@evjs/server";
-import { createReactFrameworkServer } from "@evjs/server/react";
+import { createApp, requestLogger } from "@evjs/ev/server";
+import { createReactFrameworkServer } from "@evjs/ev/server/react";
 import "./api/operators.server";
 import { healthRoute } from "./api/health.routes";
 

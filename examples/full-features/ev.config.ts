@@ -36,6 +36,12 @@ export default defineConfig({
       html: "./index.html",
       mount: "#app",
     },
+    settlement: {
+      path: "/settlement-report",
+      component: "./src/pages/SettlementReport.tsx",
+      html: "./index.html",
+      mount: "#app",
+    },
     insights: {
       path: "/insights",
       component: "./src/pages/Insights.tsx",

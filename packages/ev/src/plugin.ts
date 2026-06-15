@@ -7,7 +7,7 @@ import type {
   BuildPlanUpdate,
 } from "@evjs/shared/manifest";
 import type { Logger } from "@logtape/logtape";
-import type { Config, ResolvedConfig } from "./config.js";
+import type { Config, DefaultBundlerConfig, ResolvedConfig } from "./config.js";
 
 /**
  * Minimal DOM element / document interface for plugin HTML manipulation.
@@ -89,12 +89,15 @@ export interface HtmlDocument {
 
   // ── Cloning ───────────────────────────────────────────────────────────
   cloneNode(deep?: boolean): HtmlDocument;
+
+  // ── Serialization ─────────────────────────────────────────────────────
+  toString(): string;
 }
 
 /**
  * Context passed to plugin bundler hooks.
  */
-export interface BundlerCtx<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
+export interface BundlerCtx<TBundlerCfg = DefaultBundlerConfig> {
   /** The current mode. */
   mode: "development" | "production";
   /** The current command. */
@@ -130,7 +133,7 @@ export interface PluginConfigContext {
 /**
  * An evjs plugin.
  */
-export interface Plugin<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
+export interface Plugin<TBundlerCfg = DefaultBundlerConfig> {
   /** Plugin name for debugging and logging. */
   name: string;
 
@@ -187,9 +190,7 @@ export interface Plugin<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
 /**
  * Context passed to plugin setup().
  */
-export interface PluginContext<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> {
+export interface PluginContext<TBundlerCfg = DefaultBundlerConfig> {
   /** Current mode. */
   mode: "development" | "production";
   /** Current command. */
@@ -204,47 +205,38 @@ export interface PluginContext<
   addWatchFile(file: string): void;
 }
 
-export interface CommandContext<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> extends PluginContext<TBundlerCfg> {}
+export interface CommandContext<TBundlerCfg = DefaultBundlerConfig>
+  extends PluginContext<TBundlerCfg> {}
 
-export interface BuildStartContext<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> extends PluginContext<TBundlerCfg> {}
+export interface BuildStartContext<TBundlerCfg = DefaultBundlerConfig>
+  extends PluginContext<TBundlerCfg> {}
 
-export interface AppGraphContext<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> extends PluginContext<TBundlerCfg> {}
+export interface AppGraphContext<TBundlerCfg = DefaultBundlerConfig>
+  extends PluginContext<TBundlerCfg> {}
 
-export interface BuildPlanContext<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> extends PluginContext<TBundlerCfg> {
+export interface BuildPlanContext<TBundlerCfg = DefaultBundlerConfig>
+  extends PluginContext<TBundlerCfg> {
   graph: AppGraph;
 }
 
-export interface BuildOutputContext<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> extends PluginContext<TBundlerCfg> {
+export interface BuildOutputContext<TBundlerCfg = DefaultBundlerConfig>
+  extends PluginContext<TBundlerCfg> {
   graph: AppGraph;
   plan: BuildPlan;
 }
 
-export interface DevPlanUpdateContext<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> extends PluginContext<TBundlerCfg> {
+export interface DevPlanUpdateContext<TBundlerCfg = DefaultBundlerConfig>
+  extends PluginContext<TBundlerCfg> {
   graph: AppGraph;
 }
 
-export interface DisposeContext<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> extends PluginContext<TBundlerCfg> {}
+export interface DisposeContext<TBundlerCfg = DefaultBundlerConfig>
+  extends PluginContext<TBundlerCfg> {}
 
 /**
  * Lifecycle hooks returned from plugin setup().
  */
-export interface PluginHooks<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> {
+export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig> {
   /** Called after setup and before graph/build work starts. */
   commandStart?: (ctx: CommandContext<TBundlerCfg>) => void | Promise<void>;
 
@@ -289,8 +281,9 @@ export interface PluginHooks<
   /**
    * Modify the underlying bundler configuration directly.
    *
-   * The config type is `unknown` by default. Use the typed helper exported
-   * by each bundler adapter for type safety (e.g., `utoopack()` from
+   * The config type defaults to the framework-agnostic
+   * `DefaultBundlerConfig`. Use the typed helper exported by each bundler
+   * adapter for type safety (e.g., `utoopack()` from
    * `@evjs/bundler-utoopack`).
    */
   bundlerConfig?: (
@@ -371,23 +364,18 @@ export type HtmlDocumentInfo =
       assets: AssetGroup;
     };
 
-export type HtmlTransformContext<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> = BuildResult &
-  HtmlDocumentInfo &
-  PluginContext<TBundlerCfg> & {
-    buildId: string;
-    publicPath: BuildOutput["publicPath"];
-  };
-export type AppGraphHookContext<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> = AppGraphContext<TBundlerCfg>;
-export type BuildPlanHookContext<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> = BuildPlanContext<TBundlerCfg>;
-export type BuildOutputHookContext<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> = BuildOutputContext<TBundlerCfg>;
-export type CommandHookContext<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> = CommandContext<TBundlerCfg>;
+export type HtmlTransformContext<TBundlerCfg = DefaultBundlerConfig> =
+  BuildResult &
+    HtmlDocumentInfo &
+    PluginContext<TBundlerCfg> & {
+      buildId: string;
+      publicPath: BuildOutput["publicPath"];
+    };
+export type AppGraphHookContext<TBundlerCfg = DefaultBundlerConfig> =
+  AppGraphContext<TBundlerCfg>;
+export type BuildPlanHookContext<TBundlerCfg = DefaultBundlerConfig> =
+  BuildPlanContext<TBundlerCfg>;
+export type BuildOutputHookContext<TBundlerCfg = DefaultBundlerConfig> =
+  BuildOutputContext<TBundlerCfg>;
+export type CommandHookContext<TBundlerCfg = DefaultBundlerConfig> =
+  CommandContext<TBundlerCfg>;

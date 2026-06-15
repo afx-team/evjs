@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { BundlerAdapter } from "@evjs/ev";
 import { describe, expect, it } from "vitest";
+import type { DefaultBundlerConfig } from "../src/index.js";
 import { build } from "../src/index.js";
 
 async function createProject() {
@@ -19,7 +20,7 @@ describe("programmatic API", () => {
   it("forwards build calls through the framework API", async () => {
     const cwd = await createProject();
     const events: string[] = [];
-    const bundler: BundlerAdapter = {
+    const bundler: BundlerAdapter<DefaultBundlerConfig> = {
       name: "mock",
       async build({ cwd: buildCwd, plan }) {
         events.push(`build:${buildCwd}:${plan.entries[0]?.name}`);

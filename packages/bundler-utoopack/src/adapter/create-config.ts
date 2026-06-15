@@ -17,6 +17,9 @@ const componentPageLoader = fileURLToPath(
 const pagesEntryLoader = fileURLToPath(
   new URL("./pages-entry-loader.cjs", import.meta.url),
 );
+const remoteClientLoader = fileURLToPath(
+  new URL("./remote-client-loader.cjs", import.meta.url),
+);
 
 import type {
   BuildPlan,
@@ -24,6 +27,7 @@ import type {
   PagesAppEntryMetadata,
   PluginHooks,
   ReactComponentPageEntryMetadata,
+  RemoteClientEntryMetadata,
   ResolvedConfig,
 } from "@evjs/ev";
 import { getLogger } from "@logtape/logtape";
@@ -47,7 +51,7 @@ function createSpaHistoryFallbackRule(
   target.port = String(config.dev.port);
 
   return {
-    context: ["^/(?!api(?:/|$))(?!turbopack-hmr$)(?!.*\\.[^/]+$).+"],
+    context: [createSpaHistoryFallbackContext(config)],
     target: target.origin,
     changeOrigin: true,
     secure: false,
@@ -55,6 +59,42 @@ function createSpaHistoryFallbackRule(
       "^/.*$": "/",
     },
   };
+}
+
+function createSpaHistoryFallbackContext(
+  config: ResolvedConfig<ConfigComplete>,
+): string {
+  const exclusions = createSpaHistoryFallbackExclusions(config)
+    .map(normalizeRoutePrefix)
+    .filter((prefix) => prefix !== "/")
+    .map((prefix) => `(?!${escapeRegExp(prefix.slice(1))}(?:/|$))`)
+    .join("");
+
+  return `^/${exclusions}(?!turbopack-hmr$)(?!.*\\.[^/]+$).+`;
+}
+
+function createSpaHistoryFallbackExclusions(
+  config: ResolvedConfig<ConfigComplete>,
+): string[] {
+  const exclusions = new Set(["/api"]);
+
+  if (config.serverEnabled) {
+    exclusions.add(config.server.runtime.basePath);
+    exclusions.add(config.server.runtime.fn);
+    exclusions.add(config.server.runtime.ppr);
+    if (config.server.runtime.rsc) {
+      exclusions.add(config.server.runtime.rsc);
+    }
+  }
+
+  return [...exclusions];
+}
+
+function normalizeRoutePrefix(prefix: string): string {
+  const withLeadingSlash = prefix.startsWith("/") ? prefix : `/${prefix}`;
+  return withLeadingSlash.length > 1
+    ? withLeadingSlash.replace(/\/+$/, "")
+    : withLeadingSlash;
 }
 
 /**
@@ -235,6 +275,27 @@ function createComponentPageRule(
   };
 }
 
+function createRemoteClientRule(
+  metadata: RemoteClientEntryMetadata,
+): TurbopackRuleConfigItem {
+  return {
+    condition: {
+      path: new RegExp(`${escapeRegExp(normalizeRulePath(metadata.app))}$`),
+      query: "",
+    },
+    loaders: [
+      {
+        loader: remoteClientLoader,
+        options: {
+          type: "remote-client",
+          app: metadata.app,
+        },
+      },
+    ],
+    type: "ecmascript",
+  };
+}
+
 function normalizeRulePath(value: string): string {
   return value.replace(/^\.\//, "").replaceAll("\\", "/");
 }
@@ -279,6 +340,15 @@ function getComponentPageMetadata(
     );
 }
 
+function getRemoteClientMetadata(plan: BuildPlan): RemoteClientEntryMetadata[] {
+  return plan.entries
+    .map((entry) => entry.metadata)
+    .filter(
+      (metadata): metadata is RemoteClientEntryMetadata =>
+        metadata?.type === "remote-client",
+    );
+}
+
 function createFrameworkModuleRules(
   plan: BuildPlan,
 ): TurbopackRuleConfigItem[] {
@@ -286,6 +356,7 @@ function createFrameworkModuleRules(
   return [
     ...(pagesApp ? [createPagesEntryRule(pagesApp)] : []),
     ...getComponentPageMetadata(plan).map(createComponentPageRule),
+    ...getRemoteClientMetadata(plan).map(createRemoteClientRule),
   ];
 }
 
@@ -321,16 +392,6 @@ function hasAppClientEntry(plan: BuildPlan): boolean {
 }
 
 function validateUtoopackPlanSupport(plan: BuildPlan): void {
-  const remoteClientEntries = plan.entries.filter(
-    (entry) => entry.metadata?.type === "remote-client",
-  );
-  if (remoteClientEntries.length > 0) {
-    const names = remoteClientEntries.map((entry) => entry.name).join(", ");
-    throw new Error(
-      `[evjs] The current Utoopack adapter cannot build framework remote client entries yet: ${names}. Utoopack needs lifecycle entry wrapping support or use another bundler adapter for manifest-driven remote validation.`,
-    );
-  }
-
   const unsupportedServerEntries = plan.entries.filter(
     (entry) =>
       entry.kind === "page-server" ||

@@ -3,7 +3,7 @@
  *
  * For environment-specific adapters, use:
  * - @evjs/server/node
- * - @evjs/server/ecma
+ * - @evjs/server/fetch
  *
  * For minimal function registration (no Hono), use:
  * - @evjs/server/register

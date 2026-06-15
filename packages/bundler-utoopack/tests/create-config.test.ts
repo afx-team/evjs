@@ -6,6 +6,7 @@ import { createUtoopackConfig } from "../src/adapter/create-config.js";
 
 const require = createRequire(import.meta.url);
 const componentPageLoader = require("../src/adapter/component-page-loader.cjs");
+const remoteClientLoader = require("../src/adapter/remote-client-loader.cjs");
 
 describe("createUtoopackConfig", () => {
   function createResolvedConfig(
@@ -25,11 +26,12 @@ describe("createUtoopackConfig", () => {
         runtime: {
           basePath: "/__evjs",
           fn: "/__evjs/fn",
+          ppr: "/__evjs/ppr",
         },
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client/internal",
-          serverRegister: "@evjs/server/register",
+          clientProxy: "@evjs/ev/client/internal",
+          serverRegister: "@evjs/ev/server/register",
         },
         dev: {
           port: 3001,
@@ -65,6 +67,61 @@ describe("createUtoopackConfig", () => {
         target: "https://localhost:41234",
       }),
     );
+  });
+
+  it("keeps SPA history fallback away from custom framework runtime paths", async () => {
+    const config = createResolvedConfig({
+      serverEnabled: true,
+      server: {
+        entry: "@evjs/ev/server/fetch",
+        basePath: "/rpc",
+        runtime: {
+          basePath: "/rpc",
+          fn: "/rpc/fn",
+          ppr: "/rpc/ppr",
+          rsc: "/rpc/rsc",
+        },
+        rsc: { endpoint: "/rpc/rsc" },
+        functionRuntime: {
+          endpoint: "/rpc/fn",
+          clientProxy: "@evjs/ev/client/internal",
+          serverRegister: "@evjs/ev/server/register",
+        },
+        dev: {
+          port: 3001,
+          https: false,
+        },
+      },
+    });
+    const plan = createPlan(config);
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+    const fallbackRule = utoopackConfig.devServer?.proxy?.find((rule) =>
+      getProxyRuleContexts(rule).some((context) =>
+        context.includes("turbopack-hmr"),
+      ),
+    );
+    const fallbackContexts = fallbackRule
+      ? getProxyRuleContexts(fallbackRule)
+      : [];
+    const fallbackPattern = new RegExp(fallbackContexts[0] ?? "");
+
+    expect(fallbackContexts).toEqual([
+      "^/(?!api(?:/|$))(?!rpc(?:/|$))(?!rpc/fn(?:/|$))(?!rpc/ppr(?:/|$))(?!rpc/rsc(?:/|$))(?!turbopack-hmr$)(?!.*\\.[^/]+$).+",
+    ]);
+    expect(fallbackPattern.test("/dashboard")).toBe(true);
+    expect(fallbackPattern.test("/users/123")).toBe(true);
+    expect(fallbackPattern.test("/api/users")).toBe(false);
+    expect(fallbackPattern.test("/rpc/fn")).toBe(false);
+    expect(fallbackPattern.test("/rpc/ppr/campaign/offer")).toBe(false);
+    expect(fallbackPattern.test("/rpc/rsc?page=dashboard")).toBe(false);
+    expect(fallbackPattern.test("/main.js")).toBe(false);
+    expect(fallbackPattern.test("/turbopack-hmr")).toBe(false);
   });
 
   it("installs the pages entry loader for framework-managed pages", async () => {
@@ -284,9 +341,104 @@ describe("createUtoopackConfig", () => {
       resourcePath: "/workspace/src/pages/about.tsx",
     });
 
-    expect(source).toContain("@evjs/client/internal/react-page");
-    expect(source).not.toContain('from "@evjs/client/internal";');
+    expect(source).toContain("@evjs/ev/client/internal/react-page");
+    expect(source).not.toContain('from "@evjs/ev/client/internal";');
     expect(source).toContain("createReactPageModule");
+  });
+
+  it("installs remote client loaders for framework-managed remote entries", async () => {
+    const config = createResolvedConfig({
+      remote: {
+        name: "crm",
+        baseUrl: "https://assets.example.com/crm/",
+        entries: {
+          customers: {
+            app: "./src/remote.tsx",
+            activeWhen: ["/customers/*"],
+            mount: "#remote-root",
+          },
+        },
+      },
+    });
+    const graph: AppGraph = {
+      version: 1,
+      rootDir: process.cwd(),
+      apps: {},
+      pages: {},
+      routes: [],
+      serverFunctions: [],
+      serverRoutes: [],
+      remotes: {},
+      remote: {
+        name: "crm",
+        baseUrl: "https://assets.example.com/crm/",
+        entries: {
+          customers: {
+            id: "customers",
+            app: "./src/remote.tsx",
+            activeWhen: ["/customers/*"],
+            mount: "#remote-root",
+          },
+        },
+      },
+    };
+    const plan = createBuildPlan(config, graph, { mode: "development" });
+
+    expect(plan.entries).toContainEqual(
+      expect.objectContaining({
+        name: "crm-customers",
+        import: "./src/remote.tsx",
+        kind: "remote-client",
+        metadata: {
+          type: "remote-client",
+          app: "./src/remote.tsx",
+        },
+      }),
+    );
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.entry).toEqual([
+      { import: "./src/remote.tsx", name: "crm-customers" },
+    ]);
+    expect(utoopackConfig.module?.rules).toMatchObject({
+      "**/*": [
+        {
+          condition: {
+            path: expect.any(RegExp),
+            query: "",
+          },
+          loaders: [
+            {
+              loader: expect.stringContaining("remote-client-loader.cjs"),
+              options: {
+                type: "remote-client",
+                app: "./src/remote.tsx",
+              },
+            },
+          ],
+          type: "ecmascript",
+        },
+      ],
+    });
+  });
+
+  it("generates remote lifecycle entry imports", () => {
+    const source = remoteClientLoader.call({
+      cacheable() {},
+      resourcePath: "/workspace/src/remote.tsx",
+    });
+
+    expect(source).toContain("@evjs/ev/client/internal/react-page");
+    expect(source).toContain("createRemoteReactModule");
+    expect(source).toContain("registerShellModule");
+    expect(source).toContain("?evjs-remote-client-source");
+    expect(source).not.toContain('from "@evjs/ev/client/internal";');
   });
 
   it("awaits async bundlerConfig hooks before returning config", async () => {
@@ -322,11 +474,12 @@ describe("createUtoopackConfig", () => {
         runtime: {
           basePath: "/__evjs",
           fn: "/__evjs/fn",
+          ppr: "/__evjs/ppr",
         },
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client/internal",
-          serverRegister: "@evjs/server/register",
+          clientProxy: "@evjs/ev/client/internal",
+          serverRegister: "@evjs/ev/server/register",
         },
         dev: {
           port: 3001,
@@ -375,7 +528,7 @@ describe("createUtoopackConfig", () => {
       "server",
     ]);
     expect(plan.server).toMatchObject({
-      entry: "@evjs/server/fetch",
+      entry: "@evjs/ev/server/fetch",
       renderers: [
         {
           name: "dashboard-server",
@@ -400,11 +553,12 @@ describe("createUtoopackConfig", () => {
         runtime: {
           basePath: "/__evjs",
           fn: "/__evjs/fn",
+          ppr: "/__evjs/ppr",
         },
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client/internal",
-          serverRegister: "@evjs/server/register",
+          clientProxy: "@evjs/ev/client/internal",
+          serverRegister: "@evjs/ev/server/register",
         },
         dev: {
           port: 3001,
@@ -460,11 +614,19 @@ function createPlan(
         },
       ]),
     ),
-    routes: [],
+    routes:
+      config.routing?.routes.map((route) => ({
+        ...route,
+        appId: "default",
+      })) ?? [],
     serverFunctions: [],
     serverRoutes: [],
     remotes: {},
   };
 
   return createBuildPlan(config, graph, { mode: "development" });
+}
+
+function getProxyRuleContexts(rule: { context: string | string[] }): string[] {
+  return Array.isArray(rule.context) ? rule.context : [rule.context];
 }

@@ -659,17 +659,10 @@ function createFrameworkRuntimeProxyContexts(
         page.ppr,
     )
   ) {
-    contexts.push(joinUrlPath(config.server.basePath, "ppr"));
+    contexts.push(config.server.runtime.ppr);
   }
 
   return toUniqueDevProxyContexts(contexts);
-}
-
-function joinUrlPath(...parts: string[]): string {
-  return `/${parts
-    .flatMap((part) => part.split("/"))
-    .filter(Boolean)
-    .join("/")}`;
 }
 
 function toDevProxyContext(routePath: string): string | undefined {
@@ -789,12 +782,11 @@ function createHtmlFallbackBypassRewrites(
   from: RegExp;
   to: (ctx: { parsedUrl: { pathname?: string | null } }) => string;
 }> {
-  const runtimeBasePath = normalizeRoutePath(
-    config.server.basePath || "/__evjs",
-  );
   return [
     /^\/api(?:\/|$)/,
-    new RegExp(`^${escapeRegExp(runtimeBasePath)}(?:/|$)`),
+    ...getFrameworkRuntimePaths(config).map(
+      (runtimePath) => new RegExp(`^${escapeRegExp(runtimePath)}(?:/|$)`),
+    ),
   ].map((from) => ({
     from,
     to(ctx) {
@@ -809,12 +801,23 @@ function isApiLikeRequestPath(
 ): boolean {
   if (pathname === "/api" || pathname.startsWith("/api/")) return true;
 
-  const runtimeBasePath = normalizeRoutePath(
-    config.server.basePath || "/__evjs",
+  return getFrameworkRuntimePaths(config).some(
+    (runtimePath) =>
+      pathname === runtimePath || pathname.startsWith(`${runtimePath}/`),
   );
-  return (
-    pathname === runtimeBasePath || pathname.startsWith(`${runtimeBasePath}/`)
-  );
+}
+
+function getFrameworkRuntimePaths(
+  config: ResolvedConfig<WebpackConfig>,
+): string[] {
+  const runtime = config.server.runtime;
+  const paths = [
+    runtime.basePath,
+    runtime.fn,
+    runtime.ppr,
+    ...(runtime.rsc ? [runtime.rsc] : []),
+  ];
+  return [...new Set(paths.map(normalizeRoutePath))];
 }
 
 function getRequestPathname(url: string | undefined): string | undefined {
@@ -993,6 +996,8 @@ function moduleIdentity(mod: NonNullable<WebpackStatsLike["modules"]>[number]) {
 }
 
 export const __testing = {
+  createHtmlFallbackBypassRewrites,
+  isApiLikeRequestPath,
   mergeWebpackStats,
 };
 

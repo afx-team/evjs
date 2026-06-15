@@ -1,3 +1,13 @@
+import {
+  assertAppModule,
+  assertShellModuleHref,
+  assertShellModuleRegistration,
+} from "./module-registration.js";
+import {
+  assertSharedDependencyName,
+  assertSharedScope,
+  assertSharedScopeEntry,
+} from "./shared-scope.js";
 import type {
   AppContext,
   AppModule,
@@ -17,6 +27,8 @@ export function registerShellModule(
   href: string,
   module: ShellModuleRegistration,
 ): void {
+  assertShellModuleHref(href, "[evjs] registerShellModule() href");
+  assertShellModuleRegistration(module, "[evjs] registerShellModule() module");
   getShellModuleRegistry()[href] = module;
 }
 
@@ -24,11 +36,18 @@ export function registerSharedDependency(
   name: string,
   entry: SharedScopeEntry,
 ): void {
-  getSharedScope()[name] = entry;
+  assertSharedDependencyName(name, "[evjs] registerSharedDependency() name");
+  assertSharedScopeEntry(entry, "[evjs] registerSharedDependency() entry");
+  const scope = getSharedScope();
+  assertSharedScope(scope, "[evjs] global shared scope");
+  scope[name] = entry;
 }
 
 export async function loadSharedDependency(name: string): Promise<unknown> {
-  const entry = getSharedScope()[name];
+  assertSharedDependencyName(name, "[evjs] loadSharedDependency() name");
+  const scope = getSharedScope();
+  assertSharedScope(scope, "[evjs] global shared scope");
+  const entry = scope[name];
   if (!entry) {
     throw new Error(`[evjs] Shared dependency "${name}" is not registered.`);
   }
@@ -39,7 +58,7 @@ export function getShellModuleRegistry(): Record<
   string,
   ShellModuleRegistration
 > {
-  let registry = globalThis.__EVJS_SHELL_MODULES__;
+  let registry = readShellModuleRegistry();
   if (!registry) {
     registry = {};
     globalThis.__EVJS_SHELL_MODULES__ = registry;
@@ -60,13 +79,37 @@ export async function readRegisteredModule(
   href: string,
   ctx: AppContext,
 ): Promise<AppModule | undefined> {
-  const registry = globalThis.__EVJS_SHELL_MODULES__;
-  const registered = getRegistryKeys(href)
-    .map((key) => registry?.[key])
-    .find((entry) => Boolean(entry));
-  if (!registered) return undefined;
+  assertShellModuleHref(href, "[evjs] readRegisteredModule() href");
+  const registry = readShellModuleRegistry();
+  if (!registry) return undefined;
 
-  return typeof registered === "function" ? registered(ctx) : registered;
+  const match = getRegistryKeys(href)
+    .map((key) => ({
+      key,
+      hasEntry: Object.hasOwn(registry, key),
+      registered: registry[key],
+    }))
+    .find(({ hasEntry }) => hasEntry);
+  if (!match) return undefined;
+
+  const prefix = `[evjs] shell module registry["${match.key}"]`;
+  assertShellModuleRegistration(match.registered, prefix);
+  if (typeof match.registered !== "function") return match.registered;
+
+  const module = await match.registered(ctx);
+  assertAppModule(module, `${prefix} factory result`);
+  return module;
+}
+
+function readShellModuleRegistry():
+  | Record<string, ShellModuleRegistration>
+  | undefined {
+  const registry = globalThis.__EVJS_SHELL_MODULES__;
+  if (registry === undefined) return undefined;
+  if (!isRecord(registry)) {
+    throw new Error("[evjs] shell module registry must be an object.");
+  }
+  return registry;
 }
 
 function getRegistryKeys(href: string): string[] {
@@ -76,6 +119,10 @@ function getRegistryKeys(href: string): string[] {
     keys.push(absoluteHref);
   }
   return keys;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 export function resolveBrowserHref(href: string): string | undefined {

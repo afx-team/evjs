@@ -39,6 +39,7 @@ function App() {
         <nav className="nav" aria-label="Full features navigation">
           <a href="/support.html">Support queue</a>
           <a href="/dashboard">SSR operations dashboard</a>
+          <a href="/settlement-report">SSG settlement report</a>
           <a href="/campaign">PPR campaign monitor</a>
           <a href="/insights">RSC insights</a>
           <a href="/remote.html">CRM remote workspace</a>

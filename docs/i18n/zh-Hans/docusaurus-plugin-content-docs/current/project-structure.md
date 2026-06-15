@@ -9,7 +9,7 @@ my-evjs-app/
 ├── ev.config.ts                 # 框架配置
 ├── index.html                   # 共享 HTML 模板，包含 <div id="app">
 ├── package.json
-├── .gitignore                   # 包含 evjs 生成类型文件
+├── .gitignore                   # 忽略 evjs 生成产物
 ├── public/                      # 原样复制的静态文件
 ├── tsconfig.json
 └── src/
@@ -43,15 +43,65 @@ my-evjs-app/
 - `pages/` 是客户端路由事实来源。SPA 模式会映射到框架托管的 app entry；MPA 模式会映射到独立页面 entry。
 - `layout/index.tsx` 只作为路由目录旁边的可选 SPA 根布局。默认 `src/pages`
   使用 `src/layout/index.tsx`；自定义 `routing.dir` 时使用该路由目录的父级。这个约定要求精确路径
-  `layout/index.tsx`，除非 `routing.layout` 显式指向另一个 SPA 布局模块。设置
-  `routing.layout: false` 可以关闭 SPA 根布局发现。MPA 页面需要公共外框时，应直接导入普通共享组件，
-  或复用 HTML 模板。
-- `src/evjs-route-types.d.ts` 是 SPA 模式生成的类型安全导航声明。保持忽略它，不要在应用代码里导入它。
+  `layout/index.tsx`，除非 `routing.layout` 显式指向另一个 SPA 布局源码模块。自定义位置或
+  `layout/index.jsx` 这类非 TSX 布局模块应使用 `routing.layout`。显式布局模块必须使用
+  `.ts`、`.tsx`、`.js` 或 `.jsx`；声明文件、测试/spec、Storybook、client-only 和
+  server-only 文件都不被接受。设置 `routing.layout: false` 可以关闭 SPA 根布局发现。
+  MPA 页面需要公共外框时，应直接导入普通共享组件，或复用 HTML 模板。
+- `<routing-dir-parent>/evjs-route-types.d.ts` 是 SPA 模式生成的类型安全导航声明。
+  默认 `src/pages` 会写入 `src/evjs-route-types.d.ts`；`routing.dir:
+  "./src/app/pages"` 会写入 `src/app/evjs-route-types.d.ts`。MPA 模式会移除旧的生成路由类型文件。
+  生成声明使用生成专用的 `@evjs/ev/client/internal/route-types` helper，
+  并增强 client runtime 导航类型。保持忽略生成的 route types，不要在应用代码里导入它们。
+- `.evjs/` 是 dev/build 元信息使用的框架生成工作目录。保持忽略它，不要放入模板、
+  脚手架源码，也不要从应用代码导入。
 - 渲染元信息放在页面模块旁边。
 - `api/*.server.ts` 放 server functions。
 - `api/*.routes.ts` 放标准 HTTP route handlers。
-- `server.ts` 组合 `@evjs/server` routes、middleware 和 framework rendering。
+- `server.ts` 组合 `@evjs/ev/server` routes、middleware 和 framework rendering。
 - `features/` 把业务逻辑从 route/page files 中移走。
+
+## 约定矩阵
+
+创建文件时优先看这张表。只有少数路径是框架约定，其余只是普通项目组织方式。
+
+快速规则：
+
+- 路由文件放在配置的 `routing.dir` 下，并使用 `.ts`、`.tsx`、`.js` 或
+  `.jsx`。
+- 目录根路由使用 `index.*`；动态段使用 `$param`；静态段保持小写且
+  URL-safe。
+- 不支持 `(marketing)` 这类 route group。动态参数名必须是安全标识符；
+  保留对象属性名和 `$_splat` 都会被拒绝。
+- `_` 前缀文件和目录是私有 helper，不会成为 URL 路由。
+- dot 前缀文件/目录、`.d.ts`、test/spec、Storybook、`*.client.*` 和
+  `*.server.*` 文件都会被路由目录忽略，因此就近放置的支撑文件不会变成路由。
+- SPA 根布局自动发现只认路由目录旁边精确的 `layout/index.tsx`。自定义 SPA 布局模块使用
+  `routing.layout`。MPA 路由不消费框架 layout。
+- 输出无法遵循目录形状时，使用显式 `pages` 配置，而不是手写 `routing.routes`。
+
+| 文件或目录 | 框架含义 | 用于 | 不用于 |
+| --- | --- | --- | --- |
+| `src/pages/**/*.{tsx,jsx,ts,js}` | SPA/MPA 页面路由发现 | 轻量页面组件和可选的字面量渲染元信息 | 共享 helper、测试、route group、bracket route、catch-all route 或手写 TanStack route tree |
+| `src/pages` 下的 route paths、dynamic URL shapes 和生成的 route ID | graph/build plan 生成前的路由冲突检查 | 每个 URL path 只保留一个页面模块，每个 dynamic URL shape 只保留一种参数命名，并且生成的 route ID 必须唯一 | 并存的 `users.tsx`/`users/index.tsx`、`users/$id.tsx`/`users/$userId.tsx` 或 `admin/panel.tsx`/`admin_panel.tsx` 路由 |
+| `src/pages/_*` 和 `src/pages/**/_*` | 忽略的私有路由模块 | 就近放置 helper component、utility、fixture 和页面局部实现细节 | URL 路由、SPA 根布局或生成文件 |
+| `src/pages/.*` 和 `src/pages/**/.*` | 忽略的隐藏路由模块 | 本地临时文件或不应参与路由发现的工具元信息 | URL 路由、生成的 route types，或应被页面导入的源码模块 |
+| `src/pages/**/*.d.ts`、`src/pages/**/*.{test,spec,story,stories}.*`、`src/pages/**/*.{client,server}.*` | 忽略的路由支撑模块 | 与页面就近放置类型声明、测试、Storybook story、client-only 模块和 server-only 模块 | 路由页面或应该变成 URL 的文件 |
+| `src/layout/index.tsx` 或 `<routing-dir-parent>/layout/index.tsx` | 可选 SPA 根布局 | 包裹已发现页面路由的一层 SPA shell | MPA 公共外框或任意嵌套布局 |
+| `<routing-dir-parent>/evjs-route-types.d.ts` | SPA 导航类型生成物 | 编辑器和类型检查支持 | 手工修改、从应用代码导入、放入模板或脚手架源码，或用于 MPA 模式 |
+| `.evjs/` | 框架生成工作目录 | 本地 dev/build 元信息 | 提交到源码、放入模板/脚手架源码，或从应用代码导入 |
+| `src/api/*.server.ts` | 推荐的 server function 边界 | 以 `"use server";` 开头并导出命名 callable server functions 的文件 | 需要在 `server: false` 下运行的客户端导入、默认导出或 runtime re-export |
+| `src/api/*.routes.ts` | 推荐的 server route 边界 | 使用 Web `Request`/`Response` 的 `createRoute()` handlers | Server functions，或把同一个 URL shape 拆到多个文件 |
+| `src/server.ts` | Framework server entry | `createApp({ routes, middlewares, framework })` 和部署运行时 glue | 浏览器代码或按页面拆分的 client bootstrap |
+| `remote.entries.*.app` 指向的 remote entry 模块 | Remote build 公共 entry | 默认 React component，或显式 `init`/`mount`/`hydrate`/`unmount` 生命周期 | Host `remotes` 配置或 server-only 实现细节 |
+| `src/features`、`src/components`、`src/lib`、`src/hooks` | 没有直接框架约定 | 业务代码、可复用 UI、浏览器安全 helper 和 React hooks | 依赖文件名被路由发现的文件 |
+
+除非确实需要更底层 API，否则不要在一个应用中混用多套路由所有权模型：
+
+- 普通 SPA/MPA 页面路由使用 `src/pages` 加 `routing`。
+- 只有输出无法用 `src/pages` 表达时，才使用显式 `pages` 配置。
+- 只有手工启动的单浏览器应用才使用 top-level `entry`/`html`。
+- Host 应用使用 `remotes`；只有会输出 `evjs-remote.json` 的包才使用 `remote`。
 
 ## 对应配置
 
@@ -89,9 +139,56 @@ export default defineConfig({
 
 `src/pages` 下每个被发现的文件都默认导出一个 React 组件。动态段使用 `$param`，
 `index.tsx` 映射到当前目录根路径。`[id].tsx` 这类 bracket 路由段会被拒绝。
-路由段以 `_` 开头的文件和目录是页面局部私有模块，不会被发现为路由；非路由 helper
-应放在这里或移到 `src/pages` 外部。语法错误和默认导出错误会在路由发现阶段、
-bundler 运行前报告。渲染元信息放在页面组件旁边：
+`$...slug.tsx` 或 `$slug?.tsx` 这类 catch-all 和可选段暂不属于约定。
+动态参数名必须是 `$` 后面的 JavaScript 标识符；静态路由段必须小写，并且只能使用
+URL-safe 小写字母、数字、`.`、`_`、`-` 或 `~`。`$__proto__.tsx`、
+`$constructor.tsx`、`$prototype.tsx` 这类保留对象属性名也会被拒绝。`$_splat.tsx`
+也会被拒绝，因为 wildcard 路由会把 `*` 暴露为 `_splat`。只有参数名不同的同级动态路由也不允许共存；
+同一个 URL shape 应在 `$id.tsx` 和 `$userId.tsx` 中选择一个。同一个 route path
+也不能重复动态参数名，所以 `teams/$teamId/users/$teamId.tsx` 会被拒绝。
+扁平路由文件和目录 `index` 路由文件不能声明同一个 URL path，因此 `/users`
+应在 `users.tsx` 和 `users/index.tsx` 中选择一种。`(marketing)`
+这类 route group 段也不受支持。路由发现会考虑 `.tsx`、`.jsx`、`.ts` 和 `.js`
+文件，但会忽略声明文件、测试/spec 文件、隐藏 dot 路径、`*.client.*` 客户端专用模块、
+`*.server.*` 服务端专用模块、非源码文件，以及 `_` 前缀的私有路由段；Storybook 的
+`*.story.*` / `*.stories.*` 文件也不会成为路由。非路由 helper 应放在 `_` 前缀文件/目录中，或移到 `src/pages`
+外部。SPA 和 MPA 使用同一套确定性顺序：`/` 最先，父路由排在子路由之前，
+同级静态路由排在动态路由之前，因此 `users/settings.tsx` 会排在
+`users/$id.tsx` 之前。同级静态路由使用与 locale 无关的 code-point 顺序，因此
+`a-b.tsx`、`a.b.tsx`、`a0.tsx`、`a_c.tsx`、`aa.tsx`、`a~d.tsx`
+在任何机器上都保持这个顺序。路由示例和配置应使用 `/` 分隔符；文件系统里的 `\`
+分隔符会在路由解析前归一化，因此不同操作系统上的路径和生成 route id 保持一致。
+graph 和 build plan 使用的 resolved route list 也遵循同样规则；重复的 path、
+动态 URL shape 或 route id，以及空动态参数、保留动态参数、重复动态参数、显式
+`:_splat` 参数、包含空白、query string 或 hash 的路径也会在这里被拒绝。
+显式 wildcard 路由最多只能包含一个 `*` 段，因为页面 hooks 只会暴露一个
+`_splat` 值。生成的 route id 也来自 URL path，并把分隔符和标点归一化为下划线，
+因此 `admin/panel.tsx` 和 `admin_panel.tsx` 都会生成 `admin_panel`，不能同时存在。
+语法错误和默认导出错误会在路由发现阶段、bundler 运行前报告。
+渲染元信息放在页面组件旁边：
+
+### 路由文件名示例
+
+| 文件 | 结果 | 说明 |
+| --- | --- | --- |
+| `src/pages/index.tsx` | `/` | 目录根路由。 |
+| `src/pages/docs/index.tsx` | `/docs` | 嵌套目录根路由。 |
+| `src/pages/users/$userId.tsx` | `/users/$userId` | 动态段；参数名必须是 JavaScript 标识符。 |
+| `src/pages/users/settings.tsx` | `/users/settings` | 静态同级路由；排序早于 `users/$userId.tsx`。 |
+| `src/pages/_helpers/format.ts` | 忽略 | `_` 前缀文件和目录在 `src/pages` 内是私有模块。 |
+| `src/pages/.draft.tsx` | 忽略 | dot 前缀文件和目录不会参与路由发现。 |
+| `src/pages/profile.test.tsx` | 忽略 | test/spec 文件可以和页面就近放置，不会成为路由。 |
+| `src/pages/profile.stories.tsx` | 忽略 | Storybook 文件不会成为路由页面。 |
+| `src/pages/ClientCard.client.tsx` | 忽略 | 客户端专用模块可以为 RSC/client references 就近放置，不会成为 URL 路由。 |
+| `src/pages/users.server.ts` | 忽略 | 服务端专用模块不是页面路由；被页面导入的 server functions 仍由 server-function transform 处理。 |
+| `src/pages/users/[id].tsx` | 拒绝 | 不支持 bracket 路由语法；使用 `$id.tsx`。 |
+| `src/pages/files/$...path.tsx` | 拒绝 | catch-all 段暂不属于约定。 |
+| `src/pages/users/$__proto__.tsx` | 拒绝 | 保留对象属性名不是安全的路由参数名。 |
+| `src/pages/docs/$_splat.tsx` | 拒绝 | `_splat` 是 wildcard route params 的保留名称。 |
+| `src/pages/teams/$teamId/users/$teamId.tsx` | 拒绝 | 同一个 route path 内的动态参数名必须唯一。 |
+| `src/pages/users.tsx` 和 `src/pages/users/index.tsx` 并存 | 拒绝 | 两者都映射到 `/users`；一个 URL path 只保留一个页面模块。 |
+| `src/pages/layout.tsx` | 拒绝 | SPA 根布局在 `src/layout/index.tsx`，位于 `src/pages` 外部。 |
+| `src/pages/admin_panel.tsx` 和 `src/pages/admin/panel.tsx` 并存 | 拒绝 | 两者都会生成同一个 route id `admin_panel`。 |
 
 ```tsx
 // src/pages/campaign.tsx
@@ -118,7 +215,12 @@ export default function Campaign() {
 ```
 
 页面文件应保持轻量：读取 params/search，导出页面级 loader 或渲染元信息，并从
-`features/` 或 `components/` 组合组件。业务逻辑放到领域模块中。
+`features/` 或 `components/` 组合组件。业务逻辑放到领域模块中。渲染元信息只接受
+字面量：`render` 和 `hydrate` 是字符串字面量，`prerender` 是 `true` 或包含
+`partial`、`delivery`、`revalidate` 的对象字面量；`prerender.revalidate` 是
+`false` 或表示秒数的正整数；`rsc` 是 RSC 页面使用的布尔字面量。格式错误的
+页面模块会在 graph analysis 阶段报告文件路径和 parser message，再进入 bundler 前即可定位问题；
+读取 region metadata 时，格式错误的 PPR region 模块也会以同样方式报告。
 
 ## 服务端边界
 
@@ -135,7 +237,7 @@ export async function listOperators() {
 
 ```ts
 // src/api/health.routes.ts
-import { createRoute } from "@evjs/server";
+import { createRoute } from "@evjs/ev/server";
 
 export const healthRoute = createRoute("/api/health", {
   GET: async () => Response.json({ ok: true }),
@@ -145,8 +247,8 @@ export const healthRoute = createRoute("/api/health", {
 在 `src/server.ts` 中挂载 routes 和 framework rendering：
 
 ```ts
-import { createApp, requestLogger } from "@evjs/server";
-import { createReactFrameworkServer } from "@evjs/server/react";
+import { createApp, requestLogger } from "@evjs/ev/server";
+import { createReactFrameworkServer } from "@evjs/ev/server/react";
 import { healthRoute } from "./api/health.routes";
 
 const framework = createReactFrameworkServer();
@@ -179,7 +281,17 @@ export default defineConfig({
 });
 ```
 
-Remote module 可以默认导出 React component。只有高级场景才需要显式导出 `mount`、`hydrate`、`unmount` 生命周期。
+Remote module 可以默认导出 React component。不要把默认 React component 和显式
+`mount`、`hydrate` 或 `unmount` 导出混用；需要 setup 时可以在默认 component
+旁边导出 `init`，高级生命周期场景则导出生命周期函数且不要导出 `default`。
+Lifecycle remote module 必须导出 `mount()` 或 `hydrate()`，因为只有 `init()` /
+`unmount()` 不能渲染 remote entry。
+Remote build 必须有符合 build identifier 规则的 `remote.name`，并至少包含一个符合
+build identifier 规则且带非空 `app` 模块路径的 entry。
+保持 host `remotes` 和 build-time `remote` 分离：host app 消费 remote manifest，
+remote package 输出 `evjs-remote.json`。
+托管该 manifest 时，需要返回 `Content-Type: application/json`，可以附带
+content-type 参数。
 
 ## 命名建议
 

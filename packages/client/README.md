@@ -96,24 +96,58 @@ function Posts() {
 - `Link`, `Navigate`, `useNavigate`, and `redirect`: Navigation helpers for page components and route lifecycle exports.
 
 ### Query
-- `useQuery(fn, args?)`: Wrapper around `useSuspenseQuery`.
-- `useMutation(fn)`: Wrapper around `useMutation`.
-- `getFnQueryKey(fn, args?)`: Generate stable query keys for server functions.
-- `getFnQueryOptions(fn, args?)`: Generate options for manual `queryClient` usage.
+- `useQuery(fn, ...args)` and `useSuspenseQuery(fn, ...args)`: Call compiler-generated server function stubs with inferred argument and result types.
+- `useMutation(fn, options?)`: Mutate through a compiler-generated server function stub; pass `mutationFn` only when using the standard TanStack object form.
+- `getFnQueryKey(fn, ...args)`: Generate stable query keys for server functions.
+- `getFnQueryOptions(fn, ...args)`: Generate options for manual `queryClient` usage.
+- Plain async functions are not server function stubs. Use `useQuery({ queryKey, queryFn })` or `useMutation({ mutationFn })` for non-server functions.
 
 ### Transport
 - `initTransport({ baseUrl, credentials, headers })`: Configure the default HTTP adapter. The server function path is derived from the framework server runtime.
 - `credentials` / `headers`: Supported HTTP defaults; fetch `mode` is intentionally not configurable.
+- The default HTTP adapter expects successful server-function responses to use
+  `Content-Type: application/json`. Non-JSON error responses use their trimmed
+  body text for `ServerFunctionError`, falling back to `statusText` when the
+  body is empty or only whitespace.
 - `initTransport({ adapter })`: Replace transport behavior with a custom adapter.
 - Generated server-function stubs use internal transport helpers from `@evjs/client/internal`.
 
 ### Remote
 - `useRemoteHost()` and `RemoteApp`: Mount a remote app from a remote manifest.
+- `createRemoteAppManifest()` and `resolveRemoteAppManifestUrl()`: Build the
+  host-side manifest and resolve opt-in manifest overrides.
+- `formatRemoteSharedNegotiation()` and `getRemoteSharedVersion()`: Format and
+  inspect shared dependency negotiation events for diagnostics.
+- Remote manifest values and query-param overrides must be HTTP(S) URLs or paths.
+- The default remote manifest loader requires `Content-Type: application/json`
+  with optional parameters.
+- RemoteApp request objects use `remoteEntryId` for explicit entry selection or
+  `url` for `activeWhen` routing; do not pass both together.
+- Remote modules either default-export a React component or export explicit
+  `mount` / `hydrate` lifecycle functions, with optional `init` / `unmount`.
+  Do not mix the two modes; `init` may accompany a default component for setup.
+- React-component remote entries are mounted on the client path; use lifecycle
+  exports when a remote needs a custom hydrate phase.
 - `startRemoteAppRuntime({ runtime })`: Advanced host runtime hooks for shared scope, manifest loading, module loading, and error handling.
 
 ### Runtime
 - Page runtime bootstrap is framework-owned and imported through `@evjs/client/internal`.
+- Page runtime loads the embedded `__EVJS_MANIFEST__` first. When it falls back
+  to `manifestUrl`, `data-evjs-manifest`, or `/manifest.json`, the response
+  must be successful JSON with `Content-Type: application/json`, allowing
+  optional content-type parameters.
+- `fetchRscFlight()`, `createReactRscModel()`, `mountReactRscPage()`,
+  `unmountReactRscPage()`, and `startReactRscPageRuntime()`: RSC page runtime
+  helpers for framework-owned Flight and mount flows.
+- RSC page models require successful Flight responses to use
+  `Content-Type: text/x-component` with optional parameters.
+- `fetchRscDebugPayload()`, `loadRscDebugPage()`, and `mountRscDebugPayload()`:
+  RSC diagnostics helpers. Debug payload responses require
+  `Content-Type: application/json` with optional parameters, `version: 1`,
+  `type: "evjs.rsc"`, a build-identifier `buildId`, and well-formed asset
+  lists before any diagnostic HTML is mounted.
 - Manifest shell primitives such as `createShell()`, `createPageDriver()`, and `createHistoryDriver()` are framework-owned and imported through `@evjs/client/internal`.
+- Shell activation request URLs must be HTTP(S) URLs or pathnames starting with `/`.
 - Generated component-page and remote bootstrap APIs are also framework-owned and imported through `@evjs/client/internal`.
 
 Application-facing client runtime APIs are exported from `@evjs/client`.

@@ -42,8 +42,8 @@ describe("CONFIG_DEFAULTS", () => {
     expect(CONFIG_DEFAULTS.port).toBe(3000);
     expect(CONFIG_DEFAULTS.serverPort).toBe(3001);
     expect(CONFIG_DEFAULTS.serverBasePath).toBe("/__evjs");
-    expect(CONFIG_DEFAULTS.clientProxy).toBe("@evjs/client/internal");
-    expect(CONFIG_DEFAULTS.serverRegister).toBe("@evjs/server/register");
+    expect(CONFIG_DEFAULTS.clientProxy).toBe("@evjs/ev/client/internal");
+    expect(CONFIG_DEFAULTS.serverRegister).toBe("@evjs/ev/server/register");
   });
 
   it("is readonly", () => {
@@ -55,8 +55,8 @@ describe("CONFIG_DEFAULTS", () => {
       port: 3000,
       serverPort: 3001,
       serverBasePath: "/__evjs",
-      clientProxy: "@evjs/client/internal",
-      serverRegister: "@evjs/server/register",
+      clientProxy: "@evjs/ev/client/internal",
+      serverRegister: "@evjs/ev/server/register",
       routingDir: "./src/pages",
       routingMode: "spa",
       mount: "#app",

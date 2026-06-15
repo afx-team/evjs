@@ -114,8 +114,8 @@ describe("createWebpackConfigs", () => {
 
     expect(serializedRules).not.toContain("pages-entry-loader.cjs");
     expect(serializedEntries).toContain("createReactPageModule");
-    expect(decodedEntries).toContain("@evjs/client/internal/react-page");
-    expect(decodedEntries).not.toContain('from "@evjs/client/internal";');
+    expect(decodedEntries).toContain("@evjs/ev/client/internal/react-page");
+    expect(decodedEntries).not.toContain('from "@evjs/ev/client/internal";');
   });
 
   it("keeps React and ReactDOM external in regular Node server bundles", async () => {
@@ -196,11 +196,12 @@ function createResolvedConfig(): ResolvedConfig<WebpackConfig> {
       runtime: {
         basePath: "/__evjs",
         fn: "/__evjs/fn",
+        ppr: "/__evjs/ppr",
       },
       functionRuntime: {
         endpoint: "/__evjs/fn",
-        clientProxy: "@evjs/client/internal",
-        serverRegister: "@evjs/server/register",
+        clientProxy: "@evjs/ev/client/internal",
+        serverRegister: "@evjs/ev/server/register",
       },
       dev: {
         port: 3001,
@@ -225,7 +226,11 @@ function createGraph(config: ResolvedConfig<WebpackConfig>): AppGraph {
       },
     },
     pages: {},
-    routes: [],
+    routes:
+      config.routing?.routes.map((route) => ({
+        ...route,
+        appId: "default",
+      })) ?? [],
     serverFunctions: [],
     serverRoutes: [],
     remotes: {},

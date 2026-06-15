@@ -1,8 +1,8 @@
 "use server";
 
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import { ServerError } from "@evjs/server";
+import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
+import { ServerError } from "@evjs/ev/server";
 
 /**
  * SQLite database connection using Node.js built-in sqlite module.
@@ -34,10 +34,12 @@ db.exec(`
 `);
 
 // Seed with sample data if empty
-const countRow = db.prepare("SELECT COUNT(*) as count FROM users").get() as {
-  count: number;
-};
-if (countRow.count === 0) {
+const userCount = readNumber(
+  db.prepare("SELECT COUNT(*) as count FROM users").get(),
+  "count",
+  "users count",
+);
+if (userCount === 0) {
   const insertUser = db.prepare(
     "INSERT INTO users (name, email) VALUES (?, ?)",
   );
@@ -69,14 +71,15 @@ export interface User {
 export async function getUsers(): Promise<User[]> {
   return db
     .prepare("SELECT * FROM users ORDER BY id")
-    .all() as unknown as User[];
+    .all()
+    .map((row) => readUser(row));
 }
 
 /** Get a single user by ID. */
 export async function getUser(id: number): Promise<User> {
-  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(id) as
-    | User
-    | undefined;
+  const user = readOptionalUser(
+    db.prepare("SELECT * FROM users WHERE id = ?").get(id),
+  );
   if (!user) {
     throw new ServerError("User not found", { status: 404, data: { id } });
   }
@@ -93,10 +96,12 @@ export async function createUser(data: {
       data.name,
       data.email,
     );
-    const lastId = (
-      db.prepare("SELECT last_insert_rowid() as id").get() as { id: number }
-    ).id;
-    return (await getUser(lastId)) as User;
+    const lastId = readNumber(
+      db.prepare("SELECT last_insert_rowid() as id").get(),
+      "id",
+      "last inserted user id",
+    );
+    return await getUser(lastId);
   } catch (e: unknown) {
     if (e instanceof Error && e.message.includes("UNIQUE")) {
       throw new ServerError("Email already exists", {
@@ -130,7 +135,8 @@ export interface Todo {
 export async function getTodos(userId: number): Promise<Todo[]> {
   return db
     .prepare("SELECT * FROM todos WHERE user_id = ? ORDER BY id")
-    .all(userId) as unknown as Todo[];
+    .all(userId)
+    .map((row) => readTodo(row));
 }
 
 /** Create a todo for a user. */
@@ -144,21 +150,24 @@ export async function createTodo(data: {
     data.userId,
     data.title,
   );
-  const lastId = (
-    db.prepare("SELECT last_insert_rowid() as id").get() as { id: number }
-  ).id;
+  const lastId = readNumber(
+    db.prepare("SELECT last_insert_rowid() as id").get(),
+    "id",
+    "last inserted todo id",
+  );
 
-  return db
-    .prepare("SELECT * FROM todos WHERE id = ?")
-    .get(lastId) as unknown as Todo;
+  return readTodo(
+    db.prepare("SELECT * FROM todos WHERE id = ?").get(lastId),
+    "created todo",
+  );
 }
 
 /** Toggle a todo's completed status. */
 export async function toggleTodo(id: number): Promise<Todo> {
   db.prepare("UPDATE todos SET completed = NOT completed WHERE id = ?").run(id);
-  const todo = db.prepare("SELECT * FROM todos WHERE id = ?").get(id) as
-    | Todo
-    | undefined;
+  const todo = readOptionalTodo(
+    db.prepare("SELECT * FROM todos WHERE id = ?").get(id),
+  );
   if (!todo) {
     throw new ServerError("Todo not found", { status: 404, data: { id } });
   }
@@ -171,4 +180,75 @@ export async function deleteTodo(id: number): Promise<void> {
   if (result.changes === 0) {
     throw new ServerError("Todo not found", { status: 404, data: { id } });
   }
+}
+
+type SqlRow = Record<string, SQLOutputValue>;
+
+function readUser(row: SqlRow | undefined, source = "user row"): User {
+  if (!row) throw new Error(`[with-sqlite] Missing ${source}.`);
+  return {
+    id: readNumber(row, "id", source),
+    name: readString(row, "name", source),
+    email: readString(row, "email", source),
+    created_at: readString(row, "created_at", source),
+  };
+}
+
+function readOptionalUser(row: SqlRow | undefined): User | undefined {
+  return row ? readUser(row) : undefined;
+}
+
+function readTodo(row: SqlRow | undefined, source = "todo row"): Todo {
+  if (!row) throw new Error(`[with-sqlite] Missing ${source}.`);
+  return {
+    id: readNumber(row, "id", source),
+    user_id: readNumber(row, "user_id", source),
+    title: readString(row, "title", source),
+    completed: readNumber(row, "completed", source),
+    created_at: readString(row, "created_at", source),
+  };
+}
+
+function readOptionalTodo(row: SqlRow | undefined): Todo | undefined {
+  return row ? readTodo(row) : undefined;
+}
+
+function readNumber(
+  row: SqlRow | undefined,
+  key: string,
+  source: string,
+): number {
+  const value = readValue(row, key, source);
+  if (typeof value === "number") return value;
+  throw createColumnError(source, key, "number", value);
+}
+
+function readString(
+  row: SqlRow | undefined,
+  key: string,
+  source: string,
+): string {
+  const value = readValue(row, key, source);
+  if (typeof value === "string") return value;
+  throw createColumnError(source, key, "string", value);
+}
+
+function readValue(
+  row: SqlRow | undefined,
+  key: string,
+  source: string,
+): SQLOutputValue | undefined {
+  if (!row) throw new Error(`[with-sqlite] Missing ${source}.`);
+  return row[key];
+}
+
+function createColumnError(
+  source: string,
+  key: string,
+  expected: string,
+  value: SQLOutputValue | undefined,
+): Error {
+  return new Error(
+    `[with-sqlite] Expected ${source}.${key} to be a ${expected}, got ${typeof value}.`,
+  );
 }

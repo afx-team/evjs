@@ -1,4 +1,4 @@
-import { initTransport } from "@evjs/client";
+import { initTransport } from "@evjs/ev/client";
 import { useEffect, useState } from "react";
 import { createUser, getUsers } from "../api/users.server";
 

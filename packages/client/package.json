@@ -34,6 +34,7 @@
   "license": "MIT",
   "author": "xusd320",
   "type": "module",
+  "types": "./esm/index.d.ts",
   "publishConfig": {
     "access": "public"
   },
@@ -62,6 +63,11 @@
       "types": "./esm/rsc-page-context.d.ts",
       "import": "./esm/rsc-page-context.js",
       "default": "./esm/rsc-page-context.js"
+    },
+    "./internal/rsc-runtime": {
+      "types": "./esm/rsc-runtime.d.ts",
+      "import": "./esm/rsc-runtime.js",
+      "default": "./esm/rsc-runtime.js"
     },
     "./internal/route-types": {
       "types": "./esm/route-types.d.ts",

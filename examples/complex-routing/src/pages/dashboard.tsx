@@ -1,4 +1,4 @@
-import { useQuery } from "@evjs/client";
+import { useQuery } from "@evjs/ev/client";
 import { getStats } from "../api/data.server";
 
 const styles = {

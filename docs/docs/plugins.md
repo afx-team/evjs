@@ -48,11 +48,21 @@ interface Plugin<TBundlerConfig = unknown> {
 }
 ```
 
-Plugin names must be unique. `dependencies` and `optionalDependencies` control ordering and are applied to both `config()` and `setup()` hooks.
+Plugin names must be unique. `config` and `setup` must be functions when
+provided. `dependencies` and `optionalDependencies` control ordering and are
+applied to both `config()` and `setup()` hooks. Dependency lists must contain
+unique, non-empty plugin names; the same plugin name cannot appear in both
+`dependencies` and `optionalDependencies`. Plugin objects accept only `name`,
+`dependencies`, `optionalDependencies`, `enforce`, `config`, and `setup`, so
+misspelled lifecycle entrypoints fail during config resolution.
 
 ## Config Hook
 
 Use `config()` for framework configuration that must be visible before defaults, graph analysis, dev proxy setup, or runtime path derivation.
+Return a config object, or return `undefined` after mutating the received
+object in place. `null`, arrays, and other return values are rejected. The
+resulting config is validated by the same resolver as user config before
+`setup()` hooks or bundling run.
 
 ```ts
 import { defineConfig, merge } from "@evjs/ev";
@@ -89,7 +99,10 @@ interface PluginContext<TBundlerConfig = unknown> {
 }
 ```
 
-Use `setup()` to allocate shared state and return lifecycle hooks.
+Use `setup()` to allocate shared state and return lifecycle hooks. Return a
+hooks object or `undefined`; `null`, arrays, and non-function hook fields are
+rejected before command lifecycle hooks run. Unknown hook names are rejected so
+typos such as `buildstart` fail before they can be silently ignored.
 
 ## Lifecycle
 

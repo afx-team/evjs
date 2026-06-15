@@ -5,7 +5,11 @@ import type {
   BuildPlan,
   BuildPlanUpdate,
 } from "@evjs/shared/manifest";
-import type { PluginHooks, ResolvedConfig } from "./config.js";
+import type {
+  DefaultBundlerConfig,
+  PluginHooks,
+  ResolvedConfig,
+} from "./config.js";
 
 export interface BundlerBuildFacts {
   clientEntryAssets?: Record<string, AssetGroup>;
@@ -20,9 +24,7 @@ export interface BundlerBuildFacts {
   };
 }
 
-export interface BundlerBuildContext<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> {
+export interface BundlerBuildContext<TBundlerCfg = DefaultBundlerConfig> {
   cwd: string;
   config: ResolvedConfig<TBundlerCfg>;
   graph: AppGraph;
@@ -30,9 +32,8 @@ export interface BundlerBuildContext<
   hooks: PluginHooks<TBundlerCfg>[];
 }
 
-export interface BundlerDevContext<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> extends BundlerBuildContext<TBundlerCfg> {
+export interface BundlerDevContext<TBundlerCfg = DefaultBundlerConfig>
+  extends BundlerBuildContext<TBundlerCfg> {
   callbacks: {
     /**
      * Called by the bundler adapter after a dev compile has fresh build facts.
@@ -55,9 +56,7 @@ export interface BundlerDevController {
 /**
  * Interface that all bundler adapters must implement.
  */
-export interface BundlerAdapter<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
-> {
+export interface BundlerAdapter<TBundlerCfg = DefaultBundlerConfig> {
   /** Human-readable bundler name (used by plugin helpers for type-narrowing). */
   readonly name: string;
 

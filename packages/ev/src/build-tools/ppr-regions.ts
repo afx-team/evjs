@@ -5,6 +5,7 @@ import type {
   PprRegionConfig,
 } from "@evjs/shared/manifest";
 import type {
+  CallExpression,
   Expression,
   JSXElement,
   JSXElementName,
@@ -12,9 +13,15 @@ import type {
   ObjectExpression,
 } from "@swc/types";
 import {
+  collectExportedVariableValueAnalysis,
+  collectModuleExportNames,
+} from "./module-exports.js";
+import {
   collectImportedNames,
+  getParseErrorMessage,
   getPropertyName,
   parseRouteModule,
+  parseRouteModuleWithError,
   type RouteAst,
 } from "./routes/shared.js";
 
@@ -29,6 +36,15 @@ export interface PprRegionDiagnostic {
   line?: number;
   column?: number;
 }
+
+export interface PprRegionModuleConfigAnalysis {
+  config: Partial<Omit<PprRegionConfig, "component">>;
+  diagnostics: PprRegionDiagnostic[];
+}
+
+const PPR_REGION_METADATA_EXPORTS = ["cache", "hydrate"] as const;
+const PPR_REGION_METADATA_PARSE_DIAGNOSTIC_PREFIX =
+  "PPR region metadata could not be parsed:";
 
 interface LazyComponentReference {
   module: string;
@@ -67,20 +83,74 @@ export function extractPprRegions(
 
 export function extractPprRegionModuleConfig(
   source: string,
-): Partial<Omit<PprRegionConfig, "component">> {
-  const ast = parseRouteModule(source);
-  if (!ast) return {};
-
-  const config: Partial<Omit<PprRegionConfig, "component">> = {};
-  for (const item of ast.body) {
-    const cache = getExportedCachePolicy(item);
-    if (cache !== undefined) config.cache = cache;
-
-    const hydrate = getExportedHydrationMode(item);
-    if (hydrate !== undefined) config.hydrate = hydrate;
+): PprRegionModuleConfigAnalysis {
+  const { ast, error } = parseRouteModuleWithError(source);
+  if (!ast) {
+    return {
+      config: {},
+      diagnostics: [
+        {
+          level: "error",
+          message: `${PPR_REGION_METADATA_PARSE_DIAGNOSTIC_PREFIX} ${formatParseError(error)}`,
+        },
+      ],
+    };
   }
 
-  return config;
+  const config: Partial<Omit<PprRegionConfig, "component">> = {};
+  const diagnostics: PprRegionDiagnostic[] = [];
+
+  const exportAnalysis = collectExportedVariableValueAnalysis(ast.body);
+  const exportedValues = new Map(exportAnalysis.values);
+  const runtimeExportNames = new Set(collectModuleExportNames(ast.body));
+
+  for (const name of PPR_REGION_METADATA_EXPORTS) {
+    if (!exportAnalysis.duplicateNames.has(name)) continue;
+    exportedValues.delete(name);
+    diagnostics.push({
+      level: "error",
+      message: `PPR region metadata export "${name}" is declared more than once. Keep one static export for each region metadata field.`,
+    });
+  }
+  for (const name of PPR_REGION_METADATA_EXPORTS) {
+    if (
+      exportedValues.has(name) ||
+      exportAnalysis.duplicateNames.has(name) ||
+      !runtimeExportNames.has(name)
+    ) {
+      continue;
+    }
+    diagnostics.push({
+      level: "error",
+      message: `PPR region metadata export "${name}" must be declared as a local variable with a static initializer. Re-exported, function, and class exports are not supported for PPR region metadata.`,
+    });
+  }
+
+  const cache = getExportedValue(exportedValues, "cache");
+  if (exportedValues.has("cache")) {
+    const cacheAnalysis = analyzeCacheValue(cache);
+    if (cacheAnalysis.value !== undefined) {
+      config.cache = cacheAnalysis.value;
+    } else {
+      diagnostics.push({
+        level: "error",
+        message: cacheAnalysis.message,
+      });
+    }
+  }
+
+  const hydrate = getExportedValue(exportedValues, "hydrate");
+  if (hydrate?.type === "StringLiteral" && isHydrationMode(hydrate.value)) {
+    config.hydrate = hydrate.value;
+  } else if (exportedValues.has("hydrate")) {
+    diagnostics.push({
+      level: "error",
+      message:
+        'PPR region hydrate must be one of "none", "load", "visible", or "idle".',
+    });
+  }
+
+  return { config, diagnostics };
 }
 
 function collectReactImports(ast: RouteAst): {
@@ -211,22 +281,19 @@ function getDynamicImportSpecifier(expression: Expression): string | undefined {
 }
 
 function isLazyCallee(
-  callee: Expression["type"] extends never ? never : unknown,
+  callee: CallExpression["callee"],
   reactImports: ReturnType<typeof collectReactImports>,
 ): boolean {
-  const record = callee as Record<string, unknown>;
-  if (record.type === "Identifier") {
-    return reactImports.lazyNames.has(String(record.value));
+  if (callee.type === "Identifier") {
+    return reactImports.lazyNames.has(callee.value);
   }
 
-  if (record.type !== "MemberExpression") return false;
-  const object = record.object as Record<string, unknown> | undefined;
-  const property = record.property as Record<string, unknown> | undefined;
+  if (callee.type !== "MemberExpression") return false;
   return (
-    object?.type === "Identifier" &&
-    reactImports.namespaceNames.has(String(object.value)) &&
-    property?.type === "Identifier" &&
-    property.value === "lazy"
+    callee.object.type === "Identifier" &&
+    reactImports.namespaceNames.has(callee.object.value) &&
+    callee.property.type === "Identifier" &&
+    callee.property.value === "lazy"
   );
 }
 
@@ -254,14 +321,13 @@ function walkModuleItems(
 }
 
 function walkUnknown(value: unknown, visit: (element: JSXElement) => void) {
-  if (!value || typeof value !== "object") return;
+  if (!isRecord(value)) return;
 
-  const record = value as Record<string, unknown>;
-  if (record.type === "JSXElement") {
-    visit(record as unknown as JSXElement);
+  if (isJsxElement(value)) {
+    visit(value);
   }
 
-  for (const child of Object.values(record)) {
+  for (const child of Object.values(value)) {
     if (Array.isArray(child)) {
       for (const item of child) {
         walkUnknown(item, visit);
@@ -272,20 +338,17 @@ function walkUnknown(value: unknown, visit: (element: JSXElement) => void) {
   }
 }
 
-function getExportedVariableDeclaration(
-  item: ModuleItem,
-  name: string,
-): Expression | undefined {
-  if (item.type !== "ExportDeclaration") return undefined;
-  const declaration = item.declaration;
-  if (declaration.type !== "VariableDeclaration") return undefined;
+function isJsxElement(value: unknown): value is JSXElement {
+  return (
+    isRecord(value) &&
+    value.type === "JSXElement" &&
+    isRecord(value.opening) &&
+    Array.isArray(value.children)
+  );
+}
 
-  for (const declarator of declaration.declarations) {
-    if (declarator.id.type !== "Identifier") continue;
-    if (declarator.id.value === name) return declarator.init ?? undefined;
-  }
-
-  return undefined;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function unwrapTypeScriptExpression(
@@ -303,29 +366,72 @@ function unwrapTypeScriptExpression(
   return current;
 }
 
-function getExportedCachePolicy(item: ModuleItem): PprCachePolicy | undefined {
-  const expression = unwrapTypeScriptExpression(
-    getExportedVariableDeclaration(item, "cache"),
-  );
-  return expression ? getCacheValue(expression) : undefined;
+function getExportedValue(
+  exportedValues: Map<string, Expression | undefined>,
+  name: string,
+): Expression | undefined {
+  return unwrapTypeScriptExpression(exportedValues.get(name));
 }
 
-function getExportedHydrationMode(item: ModuleItem): HydrationMode | undefined {
-  const expression = unwrapTypeScriptExpression(
-    getExportedVariableDeclaration(item, "hydrate"),
-  );
-  if (expression?.type !== "StringLiteral") return undefined;
-  return isHydrationMode(expression.value) ? expression.value : undefined;
-}
-
-function getCacheValue(expression: Expression): PprCachePolicy | undefined {
+function analyzeCacheValue(expression: Expression | undefined): {
+  value?: PprCachePolicy;
+  message: string;
+} {
+  const genericMessage =
+    'PPR region cache must be "no-store" or an object literal with a positive integer revalidate.';
+  if (!expression) return { message: genericMessage };
   if (expression.type === "StringLiteral") {
-    return expression.value === "no-store" ? "no-store" : undefined;
+    return expression.value === "no-store"
+      ? { value: "no-store", message: "" }
+      : { message: genericMessage };
   }
-  if (expression.type !== "ObjectExpression") return undefined;
+  if (expression.type !== "ObjectExpression") {
+    return { message: genericMessage };
+  }
+
+  const propertyValidation = validateCacheObjectProperties(expression);
+  if (propertyValidation.duplicateRevalidate) {
+    return {
+      message:
+        'PPR region cache property "revalidate" is declared more than once.',
+    };
+  }
+  if (propertyValidation.hasUnsupportedProperty) {
+    return {
+      message:
+        "PPR region cache object can only contain a revalidate property.",
+    };
+  }
 
   const revalidate = getNumericObjectProperty(expression, "revalidate");
-  return revalidate === undefined ? undefined : { revalidate };
+  return revalidate === undefined || !isPositiveInteger(revalidate)
+    ? { message: genericMessage }
+    : { value: { revalidate }, message: "" };
+}
+
+function validateCacheObjectProperties(expression: ObjectExpression): {
+  duplicateRevalidate: boolean;
+  hasUnsupportedProperty: boolean;
+} {
+  let hasRevalidate = false;
+  let duplicateRevalidate = false;
+  let hasUnsupportedProperty = false;
+
+  for (const prop of expression.properties) {
+    if (prop.type !== "KeyValueProperty") {
+      hasUnsupportedProperty = true;
+      continue;
+    }
+    const name = getPropertyName(prop);
+    if (name === "revalidate") {
+      duplicateRevalidate = hasRevalidate || duplicateRevalidate;
+      hasRevalidate = true;
+      continue;
+    }
+    hasUnsupportedProperty = true;
+  }
+
+  return { duplicateRevalidate, hasUnsupportedProperty };
 }
 
 function getFirstComponentChildName(element: JSXElement): string | undefined {
@@ -355,7 +461,8 @@ function getNumericObjectProperty(
   for (const prop of expression.properties) {
     if (prop.type !== "KeyValueProperty") continue;
     if (getPropertyName(prop) !== name) continue;
-    return prop.value.type === "NumericLiteral" ? prop.value.value : undefined;
+    const value = unwrapTypeScriptExpression(prop.value);
+    return value?.type === "NumericLiteral" ? value.value : undefined;
   }
   return undefined;
 }
@@ -367,6 +474,10 @@ function isHydrationMode(value: string | undefined): value is HydrationMode {
     value === "visible" ||
     value === "idle"
   );
+}
+
+function isPositiveInteger(value: number): boolean {
+  return Number.isInteger(value) && value > 0;
 }
 
 function derivePprRegionId(componentName: string): string {
@@ -382,6 +493,13 @@ function derivePprRegionId(componentName: string): string {
 
 function normalizeRelativeModule(sourceRel: string, specifier: string): string {
   return `./${toPosixPath(path.normalize(path.join(path.dirname(sourceRel), specifier)))}`;
+}
+
+function formatParseError(error: unknown): string {
+  return (
+    getParseErrorMessage(error).split("\n").find(Boolean)?.trim() ??
+    "Unknown parse error."
+  );
 }
 
 function toPosixPath(value: string): string {

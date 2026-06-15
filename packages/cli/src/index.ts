@@ -25,23 +25,29 @@ export {
 } from "@evjs/ev";
 export { loadConfig } from "./load-config.js";
 
-const defaultBundler = utoopackAdapter as unknown as BundlerAdapter;
+export type DefaultBundlerConfig =
+  typeof utoopackAdapter extends BundlerAdapter<infer TBundlerCfg>
+    ? TBundlerCfg
+    : never;
+
+const defaultBundler: BundlerAdapter<DefaultBundlerConfig> = utoopackAdapter;
 
 export async function dev(
-  userConfig?: Config,
-  options?: DevOptions,
+  userConfig?: Config<DefaultBundlerConfig>,
+  options?: DevOptions<DefaultBundlerConfig>,
 ): Promise<void> {
   const { loadConfig } = await import("./load-config.js");
+  const defaultLoadConfig = loadConfig<DefaultBundlerConfig>;
   await frameworkDev(userConfig, {
     ...options,
     bundler: options?.bundler ?? userConfig?.bundler ?? defaultBundler,
-    loadConfig: options?.loadConfig ?? loadConfig,
+    loadConfig: options?.loadConfig ?? defaultLoadConfig,
   });
 }
 
 export async function build(
-  userConfig?: Config,
-  options?: BuildOptions,
+  userConfig?: Config<DefaultBundlerConfig>,
+  options?: BuildOptions<DefaultBundlerConfig>,
 ): Promise<void> {
   await frameworkBuild(userConfig, {
     ...options,

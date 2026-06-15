@@ -24,6 +24,11 @@ npm run build
 - `dist/client/`：浏览器资源和 HTML；
 - `dist/server/`：启用 `server` 时的框架服务端 bundle。
 
+如果页面 HTML 没有内嵌 `__EVJS_MANIFEST__`，浏览器 runtime 会从
+`manifestUrl`、`data-evjs-manifest` 或 `/manifest.json` 获取框架 manifest。
+部署时应把该响应作为成功的 JSON 返回，并使用
+`Content-Type: application/json`，允许附带可选 content-type 参数。
+
 ## 能力模型
 
 部署应由框架能力决定，而不是由产物来自哪个 bundler 决定。Deployment adapter 应从
@@ -33,7 +38,7 @@ manifest 中识别这些 runtime requirements：
 | --- | --- | --- | --- |
 | 静态资源 | `dist/client/*` | CDN/静态文件服务 | 按文件名缓存即可。 |
 | CSR app routes | app HTML fallback | 静态或服务端 | 不使用服务端能力时，静态 rewrite 足够。 |
-| MPA entry pages | page HTML file | 静态或服务端 | 用户自控 client entry 或完全预渲染时可静态托管。 |
+| MPA entry pages | page HTML file | 静态或服务端 | 用户自控 client entry 或 SSG/static HTML 页面可静态托管。 |
 | SSG pages | page HTML file | 静态或服务端 | 若不依赖动态服务端 API，可静态托管。 |
 | SSR pages | page route | 需要服务端能力 | route 必须到达 framework server bundle。 |
 | PPR pages | page route | 服务端能力或 edge+origin | 浏览器请求 page route；region resolution 可本进程或 server-to-server。 |
@@ -45,8 +50,8 @@ manifest 中识别这些 runtime requirements：
 
 由此得到四类实际部署拓扑：
 
-1. **Static-only**：CSR、MPA client entries、SSG、remote manifests 和静态资源。
-   不包含 server functions、SSR、PPR、RSC 或 server routes。
+1. **Static-only**：CSR、MPA client entries、SSG/static HTML 页面、remote
+   manifests 和静态资源。不包含 server functions、SSR、PPR、RSC 或 server routes。
 2. **Unified Node**：一个 Node 进程提供 `dist/client`、framework endpoints、
    SSR/PPR/RSC document routes、server functions 和 server routes。
 3. **Unified Edge Worker**：一个 edge worker 从 binding 提供资源，并把 framework
@@ -97,10 +102,13 @@ Browser
 ```
 
 在这个拓扑下，`/__evjs/ppr/<page>/<region>` 不是浏览器首屏请求，而是 edge/runtime
-层使用的内部 region resolver endpoint。源模块通过 `prerender.delivery = "merge"`
-声明等待必要 regions 后再返回 document；通过 `prerender.delivery = "stream"` 声明
-先 flush 缓存 shell，并在内部 region 请求完成后把 patches 继续写入同一个 HTML
-response。
+层使用的内部 region resolver endpoint。direct endpoint 在 PPR base path 后只精确匹配
+两个编码后的 path segment：`<pageId>/<regionId>`。源模块通过
+`prerender.delivery = "merge"` 声明等待必要 regions 后再返回 document；通过
+`prerender.delivery = "stream"` 声明先 flush 缓存 shell，并在内部 region 请求完成后把
+patches 继续写入同一个 HTML response。
+PPR direct `HEAD` 请求可以返回 cache headers，但不会写入 region body cache；
+部署侧需要预热 PPR region 时应使用 `GET`。
 
 如果浏览器和服务端在不同 origin，构建时配置 `transport.baseUrl`。
 
@@ -119,7 +127,13 @@ response。
 
 Static-only adapter 只应为无需服务端即可运行的能力生成 redirects。如果 `BuildOutput`
 包含 SSR、PPR、RSC、server functions 或 server routes，static adapter 仍可以输出
-静态资源和 metadata，但不能声明整个应用仅靠静态托管即可完整运行。
+静态资源和 metadata，但不能声明整个应用仅靠静态托管即可完整运行。此时
+`deployment.static.json` 会记录 `metadata.static.complete = false` 以及不支持的能力，
+`_redirects` 也不会输出全局 catch-all fallback，避免把需要服务端的路由误导到
+`index.html`。
+`rendering.prerender = "full"` 是构建 metadata，本身不等于静态交付保证；
+static-only routing 只使用 manifest 中 `rendering.html = "static"` 的页面，例如
+`render = "ssg"` 页面。
 
 ## 内置 Adapter
 
@@ -131,6 +145,9 @@ Static-only adapter 只应为无需服务端即可运行的能力生成 redirect
   将框架请求转发给服务端 bundle，将静态资源交给 asset binding。
 
 三类 adapter 都从 `BuildOutput` 派生，不读取 bundler stats 或 bundler config。
+对于 `/assets/` 这类 root-relative 且非根的 `publicPath`，生成的 Node 和 edge
+module 会在从 `dist/client` 或 asset binding 解析文件前剥离该 URL 前缀。绝对
+CDN public path 不会被改写，因为这类资源请求应在 CDN 终止。
 
 ## Node.js
 
@@ -169,7 +186,7 @@ SSR/PPR/RSC 文档路由和显式 server routes，提供 `dist/client` 静态资
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { serve } from "@evjs/server/node";
+import { serve } from "@evjs/ev/server/node";
 import serverHandler from "./dist/server/server.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -217,7 +234,11 @@ dist/
 ```
 
 生成的 redirects 会把静态/SSG 页面映射到对应 HTML，把 app route 映射到 app HTML
-fallback。SSR、PPR、RSC、server functions 和显式 server routes 仍然需要具备服务端能力的 adapter。
+fallback。Router-free MPA pages 只生成精确 route rewrite，不会创建全局 catch-all。
+只有构建产物完全兼容静态托管且存在 app-owned HTML fallback 时，才会输出全局 `/*`
+fallback。SSR、PPR、RSC、server functions 和显式 server routes 仍然需要具备服务端能力的
+adapter，并会列在 `deployment.static.json` 的
+`metadata.static.unsupportedCapabilities` 中。
 
 ## Edge Runtime
 

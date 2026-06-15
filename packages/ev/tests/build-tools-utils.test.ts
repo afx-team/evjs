@@ -1,10 +1,37 @@
 import { describe, expect, it } from "vitest";
 import {
+  deriveRouteIdFromPath,
   detectUseServer,
   hashServerFunction,
   makeFnId,
   parseModuleRef,
+  sanitizePageId,
 } from "../src/build-tools/utils.js";
+
+describe("deriveRouteIdFromPath", () => {
+  it("uses index for the root route", () => {
+    expect(deriveRouteIdFromPath("/")).toBe("index");
+  });
+
+  it("normalizes nested and dynamic route paths", () => {
+    expect(deriveRouteIdFromPath("/orders/$orderId")).toBe("orders_orderId");
+    expect(deriveRouteIdFromPath("/$slug")).toBe("slug");
+  });
+
+  it("normalizes punctuation and separators to underscores", () => {
+    expect(deriveRouteIdFromPath("/admin/panel")).toBe("admin_panel");
+    expect(deriveRouteIdFromPath("/admin_panel")).toBe("admin_panel");
+    expect(deriveRouteIdFromPath("/docs/v1.0")).toBe("docs_v1_0");
+  });
+});
+
+describe("sanitizePageId", () => {
+  it("normalizes existing page ids for build artifact names", () => {
+    expect(sanitizePageId("campaign:offer")).toBe("campaign_offer");
+    expect(sanitizePageId("campaign/offer")).toBe("campaign_offer");
+    expect(sanitizePageId("campaign-offer")).toBe("campaign-offer");
+  });
+});
 
 describe("detectUseServer", () => {
   it("detects 'use server' directive with double quotes", () => {
@@ -34,9 +61,31 @@ describe("detectUseServer", () => {
     ).toBe(true);
   });
 
+  it("detects directive after long leading comments", () => {
+    const header = `/* ${"license ".repeat(80)} */`;
+    expect(
+      detectUseServer(`${header}\n"use server";\nexport function foo() {}`),
+    ).toBe(true);
+  });
+
+  it("detects directive after earlier directive prologue entries", () => {
+    expect(
+      detectUseServer('"use strict";\n"use server";\nexport function foo() {}'),
+    ).toBe(true);
+  });
+
+  it("detects malformed server files so real parse errors can surface later", () => {
+    expect(detectUseServer('"use server";\nexport function broken( {')).toBe(
+      true,
+    );
+  });
+
   it("returns false for non-use-server files", () => {
     expect(detectUseServer("export function foo() {}")).toBe(false);
     expect(detectUseServer('const x = "use server";')).toBe(false);
+    expect(detectUseServer('"use server" + suffix;\nexport const x = 1;')).toBe(
+      false,
+    );
   });
 
   it("returns false for empty source", () => {

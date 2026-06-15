@@ -16,6 +16,13 @@ import type {
   SharedDependencyMap,
 } from "@evjs/shared/manifest";
 import { isRouteDerivedPage } from "@evjs/shared/manifest";
+import {
+  isPartialPrerenderPage,
+  isRscPage,
+  validatePageBuildContract,
+} from "../page-rendering-contract.js";
+import { sortPageRoutes } from "../page-route-order.js";
+import { sanitizePageId } from "../utils.js";
 
 export interface BuildPlanConfig {
   entry: string;
@@ -99,9 +106,11 @@ export function createBuildPlan(
   options: CreateBuildPlanOptions = {},
 ): BuildPlan {
   const mode = options.mode ?? readBuildMode();
+  validatePageBuildContracts(config, graph);
   const serverRenderers = createServerRenderers(config, graph);
   const entries = createEntries(config, graph, serverRenderers);
-  const html = createHtmlPlans(graph);
+  const html = createHtmlPlans(config, graph);
+  validateBuildOutputNames(entries, html);
   const server = createServerPlan(config, serverRenderers);
   const remote = createRemotePlan(graph);
 
@@ -161,6 +170,7 @@ function createEntries(
   const pages = Object.values(graph.pages);
   const apps = Object.values(graph.apps);
   const remoteEntries = Object.values(graph.remote?.entries ?? {});
+  const spaRoutingEntry = getSpaRoutingEntry(config);
 
   for (const app of apps) {
     entries.push({
@@ -170,11 +180,11 @@ function createEntries(
       runtime: "browser",
       kind: "app-client",
       owner: { appId: app.id },
-      ...(config.routing?.mode === "spa" && config.routing.entry === app.entry
+      ...(config.routing?.mode === "spa" && spaRoutingEntry === app.entry
         ? {
             metadata: {
               type: "pages-app",
-              routes: config.routing.routes.map((route) => ({ ...route })),
+              routes: createPagesAppRoutes(graph, app.id),
               mount: config.routing.mount,
               ...(config.routing.rootModule
                 ? { rootModule: config.routing.rootModule }
@@ -186,22 +196,6 @@ function createEntries(
   }
 
   for (const page of pages) {
-    if (isPartialPrerenderPage(page) && !config.serverEnabled) {
-      throw new Error(
-        `[evjs] Page "${page.id}" uses partial prerendering but server is disabled.`,
-      );
-    }
-    if (page.render !== "csr" && !config.serverEnabled) {
-      throw new Error(
-        `[evjs] Page "${page.id}" uses render: "${page.render}" but server is disabled.`,
-      );
-    }
-    if (isPartialPrerenderPage(page) && !page.component) {
-      throw new Error(
-        `[evjs] Page "${page.id}" uses partial prerendering but does not declare a component page module.`,
-      );
-    }
-
     if (!isRouteDerivedPage(page)) {
       const pageEntry = getPageClientEntry(page);
       if (pageEntry) {
@@ -253,7 +247,7 @@ function createEntries(
   if (hasRscPages(graph)) {
     entries.push({
       name: "evjs-rsc-client",
-      import: "@evjs/client",
+      import: "@evjs/ev/client/internal/rsc-runtime",
       environment: "client",
       runtime: "browser",
       kind: "runtime",
@@ -271,6 +265,32 @@ function createEntries(
   }
 
   return entries;
+}
+
+function createPagesAppRoutes(graph: AppGraph, appId: string): PageRouteNode[] {
+  return sortPageRoutes(
+    graph.routes.flatMap((route) => {
+      if (route.appId !== appId || !route.module) return [];
+      return [
+        {
+          id: route.id,
+          path: route.path,
+          module: route.module,
+        },
+      ];
+    }),
+  );
+}
+
+function validatePageBuildContracts(
+  config: BuildPlanConfig,
+  graph: AppGraph,
+): void {
+  for (const page of Object.values(graph.pages)) {
+    validatePageBuildContract(`Page "${page.id}"`, page, {
+      serverEnabled: config.serverEnabled,
+    });
+  }
 }
 
 function createRemotePlan(graph: AppGraph): BuildPlan["remote"] {
@@ -293,6 +313,55 @@ function createRemotePlan(graph: AppGraph): BuildPlan["remote"] {
       ]),
     ),
   };
+}
+
+function validateBuildOutputNames(
+  entries: BuildEntry[],
+  html: HtmlPlan[],
+): void {
+  const entriesByName = new Map<string, BuildEntry>();
+  for (const entry of entries) {
+    const existing = entriesByName.get(entry.name);
+    if (existing) {
+      throw new Error(
+        `[evjs] Duplicate build entry name "${entry.name}" from ${describeBuildEntryOwner(
+          existing,
+        )} and ${describeBuildEntryOwner(entry)}. Build entry names are manifest asset keys and must be globally unique.`,
+      );
+    }
+    entriesByName.set(entry.name, entry);
+  }
+
+  const htmlByFileName = new Map<string, HtmlPlan>();
+  for (const document of html) {
+    const existing = htmlByFileName.get(document.fileName);
+    if (existing) {
+      throw new Error(
+        `[evjs] Duplicate HTML output file "${document.fileName}" from ${describeHtmlOwner(
+          existing,
+        )} and ${describeHtmlOwner(document)}. HTML output filenames must be unique.`,
+      );
+    }
+    htmlByFileName.set(document.fileName, document);
+  }
+}
+
+function describeBuildEntryOwner(entry: BuildEntry): string {
+  if (entry.owner?.appId) return `app "${entry.owner.appId}"`;
+  if (entry.owner?.pageId && entry.owner.regionId) {
+    return `page "${entry.owner.pageId}" PPR region "${entry.owner.regionId}"`;
+  }
+  if (entry.owner?.pageId) return `page "${entry.owner.pageId}"`;
+  if (entry.owner?.remoteId && entry.owner.remoteEntryId) {
+    return `remote "${entry.owner.remoteId}" entry "${entry.owner.remoteEntryId}"`;
+  }
+  if (entry.owner?.remoteId) return `remote "${entry.owner.remoteId}"`;
+  return `${entry.kind} entry`;
+}
+
+function describeHtmlOwner(document: HtmlPlan): string {
+  if (document.owner.appId) return `app "${document.owner.appId}"`;
+  return `page "${document.owner.pageId}"`;
 }
 
 function createServerRenderers(
@@ -392,7 +461,8 @@ function getPageClientEntry(page: {
   if (page.entry) return { import: page.entry };
   if (page.app) return { import: page.app };
   if (isRscPage(page)) return undefined;
-  if (page.component && page.hydrate === "none" && page.render !== "csr") {
+  const hydrate = page.hydrate ?? defaultHydrate(page.render ?? "csr");
+  if (page.component && hydrate === "none" && page.render !== "csr") {
     return undefined;
   }
   if (page.component)
@@ -402,7 +472,7 @@ function getPageClientEntry(page: {
         type: "react-component-page",
         component: page.component,
         mount: page.mount ?? "#app",
-        hydrate: page.hydrate ?? defaultHydrate(page.render ?? "csr"),
+        hydrate,
         render: page.render ?? "csr",
         ...(page.path
           ? { route: { id: page.routeId ?? page.id, path: page.path } }
@@ -412,7 +482,14 @@ function getPageClientEntry(page: {
   return undefined;
 }
 
-function createHtmlPlans(graph: AppGraph): HtmlPlan[] {
+function getSpaRoutingEntry(
+  config: Pick<BuildPlanConfig, "entry" | "routing">,
+): string | undefined {
+  if (config.routing?.mode !== "spa") return undefined;
+  return config.routing.entry ?? config.entry;
+}
+
+function createHtmlPlans(config: BuildPlanConfig, graph: AppGraph): HtmlPlan[] {
   const apps = Object.values(graph.apps);
   const pages = Object.values(graph.pages);
 
@@ -423,23 +500,52 @@ function createHtmlPlans(graph: AppGraph): HtmlPlan[] {
       fileName: app.id === "default" ? "index.html" : `${app.id}.html`,
       owner: { appId: app.id },
     })),
-    ...pages.filter(shouldEmitDocumentForPage).map((page) => ({
-      id: page.id,
-      template: page.html,
-      fileName: `${page.id}.html`,
-      owner: { pageId: page.id },
-    })),
+    ...pages
+      .filter((page) => shouldEmitDocumentForPage(config, page))
+      .map((page) => ({
+        id: page.id,
+        template: page.html,
+        fileName: `${page.id}.html`,
+        owner: { pageId: page.id },
+      })),
   ];
 }
 
-function shouldEmitDocumentForPage(page: {
-  path?: string;
-  routeId?: string;
-  render: RenderMode;
-}): boolean {
+function shouldEmitDocumentForPage(
+  config: BuildPlanConfig,
+  page: {
+    id: string;
+    component?: string;
+    path?: string;
+    routeId?: string;
+    render: RenderMode;
+  },
+): boolean {
+  if (isMpaFileRoutePage(config, page) && page.render === "ssg") return true;
+
+  // Route-derived pages are served through the owning app/framework route.
+  // In SPA mode this avoids colliding with the app HTML fallback.
   if (isRouteDerivedPage(page)) return false;
   if (page.path && page.render !== "csr") return false;
   return true;
+}
+
+function isMpaFileRoutePage(
+  config: BuildPlanConfig,
+  page: {
+    id: string;
+    component?: string;
+    path?: string;
+    routeId?: string;
+  },
+): boolean {
+  if (config.routing?.mode !== "mpa") return false;
+  return config.routing.routes.some(
+    (route) =>
+      route.id === page.routeId &&
+      route.path === page.path &&
+      route.module === page.component,
+  );
 }
 
 function createServerPlan(
@@ -467,7 +573,7 @@ function resolveServerEntry(
   _renderers: ServerRenderPlan[],
 ): string {
   if (config.server.entry) return config.server.entry;
-  return "@evjs/server/fetch";
+  return "@evjs/ev/server/fetch";
 }
 
 function readBuildMode(): "development" | "production" {
@@ -487,30 +593,12 @@ function hasRscPages(graph: AppGraph): boolean {
   return Object.values(graph.pages).some(isRscPage);
 }
 
-function isRscPage(page: { componentModel?: ComponentModel }): boolean {
-  return page.componentModel === "rsc";
-}
-
-function isPartialPrerenderPage(page: {
-  prerender?: PrerenderConfig;
-  ppr?: PprConfig;
-}): boolean {
-  return (
-    (typeof page.prerender === "object" && page.prerender.partial === true) ||
-    Boolean(page.ppr)
-  );
-}
-
 function joinPath(base: string, segment: string): string {
   return `${base.replace(/\/+$/, "")}/${segment.replace(/^\/+/, "")}`;
 }
 
 function buildEntryKey(entry: BuildEntry): string {
   return `${entry.environment}:${entry.name}`;
-}
-
-function sanitizePageId(pageId: string): string {
-  return pageId.replace(/[^a-zA-Z0-9_-]+/g, "_");
 }
 
 function diffByKey<T>(

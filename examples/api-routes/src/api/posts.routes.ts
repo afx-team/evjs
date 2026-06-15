@@ -8,7 +8,7 @@
  * - Custom status codes
  */
 
-import { createRoute } from "@evjs/server";
+import { createRoute } from "@evjs/ev/server";
 
 /** Simulated post database. */
 interface Post {

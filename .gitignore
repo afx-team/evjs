@@ -1,6 +1,7 @@
 .DS_Store
 node_modules
 .turbo
+.turbopack
 dist
 .next
 packages/shared/esm

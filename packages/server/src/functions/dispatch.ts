@@ -7,7 +7,13 @@
  * to build custom transport adapters (WebSocket, IPC, etc.).
  */
 
-import { DEFAULT_ERROR_STATUS, ServerError } from "@evjs/shared";
+import {
+  DEFAULT_ERROR_STATUS,
+  getRequestFnId,
+  isHttpErrorStatus,
+  isServerFunctionId,
+  ServerError,
+} from "@evjs/shared";
 import { registry } from "./register.js";
 
 /** Successful dispatch result. */
@@ -30,8 +36,8 @@ export type DispatchResult = DispatchSuccess | DispatchError;
 /**
  * Dispatch a server function call to a registered server function.
  *
- * @param fnId - The unique function ID.
- * @param args - The arguments to pass to the function.
+ * @param fnId - The raw function ID from the transport payload.
+ * @param args - The raw argument list from the transport payload.
  * @returns A structured result: `{ result }` on success, `{ error, fnId, status }` on failure.
  *
  * @example
@@ -45,13 +51,13 @@ export type DispatchResult = DispatchSuccess | DispatchError;
  * ```
  */
 export async function dispatch(
-  fnId: string,
-  args: unknown[],
+  fnId: unknown,
+  args: unknown,
 ): Promise<DispatchResult> {
-  if (!fnId || typeof fnId !== "string") {
+  if (!isServerFunctionId(fnId)) {
     return {
       error: "Missing or invalid 'fnId' in request body",
-      fnId: fnId ?? "",
+      fnId: getRequestFnId(fnId),
       status: 400,
     };
   }
@@ -64,8 +70,7 @@ export async function dispatch(
     };
   }
 
-  const fn = registry.get(fnId);
-  if (!fn) {
+  if (!registry.has(fnId)) {
     return {
       error: `Server function "${fnId}" not found`,
       fnId,
@@ -73,21 +78,75 @@ export async function dispatch(
     };
   }
 
+  const fn = registry.get(fnId);
+  if (typeof fn !== "function") {
+    return {
+      error: `[evjs] Server function "${fnId}" registry entry must be a function.`,
+      fnId,
+      status: DEFAULT_ERROR_STATUS,
+    };
+  }
+
   try {
     const result = await fn(...args);
     return { result };
   } catch (err) {
-    if (err instanceof ServerError) {
+    const serverError = getStructuredServerError(err);
+    if (serverError) {
       return {
-        error: err.message,
+        error: serverError.message,
         fnId,
-        status: err.status,
-        data: err.data,
+        status: serverError.status,
+        data: serverError.data,
       };
     }
-    const message = err instanceof Error ? err.message : String(err);
-    const safeMessage =
-      process.env.NODE_ENV === "production" ? "Internal server error" : message;
+    const safeMessage = isProductionRuntime()
+      ? "Internal server error"
+      : formatThrownValue(err);
     return { error: safeMessage, fnId, status: DEFAULT_ERROR_STATUS };
   }
+}
+
+interface StructuredServerError {
+  message: string;
+  status: number;
+  data: unknown;
+}
+
+function getStructuredServerError(
+  value: unknown,
+): StructuredServerError | undefined {
+  if (value instanceof ServerError) {
+    return {
+      message: value.message,
+      status: value.status,
+      data: value.data,
+    };
+  }
+
+  if (!isRecord(value) || value.name !== "ServerError") return undefined;
+  if (typeof value.message !== "string") return undefined;
+  if (!isHttpErrorStatus(value.status)) return undefined;
+  return {
+    message: value.message,
+    status: value.status,
+    data: value.data,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function formatThrownValue(value: unknown): string {
+  if (value instanceof Error) return value.message;
+  try {
+    return String(value);
+  } catch {
+    return "Unknown server function error";
+  }
+}
+
+function isProductionRuntime(): boolean {
+  return globalThis.process?.env?.NODE_ENV === "production";
 }

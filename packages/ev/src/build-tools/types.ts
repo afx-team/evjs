@@ -22,19 +22,19 @@ export interface TransformOptions {
  * Runtime identifiers used in generated code.
  *
  * These are build-time constants — the actual module paths and function names
- * that appear in codegen output. They must stay in sync with the `@evjs/client`
- * and `@evjs/server` package exports.
+ * that appear in codegen output. They must stay in sync with the `@evjs/ev`
+ * facade exports.
  *
  * Note: `DEFAULT_ENDPOINT` (the default HTTP path for server functions) is a runtime
  * concern and lives in `@evjs/shared/src/constants.ts`, not here.
  */
 export const RUNTIME = {
   /** Module path for server-side function registration (no Hono dependency). */
-  serverModule: "@evjs/server/register",
+  serverModule: "@evjs/ev/server/register",
   /** Module path for the server app factory (Hono app + server function handler). */
-  appModule: "@evjs/server",
+  appModule: "@evjs/ev/server",
   /** Module path for generated client-side server reference stubs. */
-  clientTransportModule: "@evjs/client/internal",
+  clientTransportModule: "@evjs/ev/client/internal",
   /** Server-side function registration (RSC convention). */
   registerServerReference: "registerServerReference",
   /** Client-side server reference factory (RSC convention). */

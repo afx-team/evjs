@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "description": "Framework API, configuration, and build orchestration for evjs",
   "type": "module",
+  "types": "./esm/index.d.ts",
   "publishConfig": {
     "access": "public"
   },
@@ -16,6 +17,66 @@
       "types": "./esm/build-tools/index.d.ts",
       "import": "./esm/build-tools/index.js",
       "default": "./esm/build-tools/index.js"
+    },
+    "./client": {
+      "types": "./esm/client.d.ts",
+      "import": "./esm/client.js",
+      "default": "./esm/client.js"
+    },
+    "./client/internal": {
+      "types": "./esm/client-internal.d.ts",
+      "import": "./esm/client-internal.js",
+      "default": "./esm/client-internal.js"
+    },
+    "./client/internal/page-context": {
+      "types": "./esm/client-internal-page-context.d.ts",
+      "import": "./esm/client-internal-page-context.js",
+      "default": "./esm/client-internal-page-context.js"
+    },
+    "./client/internal/react-page": {
+      "types": "./esm/client-internal-react-page.d.ts",
+      "import": "./esm/client-internal-react-page.js",
+      "default": "./esm/client-internal-react-page.js"
+    },
+    "./client/internal/route-types": {
+      "types": "./esm/client-internal-route-types.d.ts",
+      "import": "./esm/client-internal-route-types.js",
+      "default": "./esm/client-internal-route-types.js"
+    },
+    "./client/internal/rsc-page-context": {
+      "types": "./esm/client-internal-rsc-page-context.d.ts",
+      "import": "./esm/client-internal-rsc-page-context.js",
+      "default": "./esm/client-internal-rsc-page-context.js"
+    },
+    "./client/internal/rsc-runtime": {
+      "types": "./esm/client-internal-rsc-runtime.d.ts",
+      "import": "./esm/client-internal-rsc-runtime.js",
+      "default": "./esm/client-internal-rsc-runtime.js"
+    },
+    "./server": {
+      "types": "./esm/server.d.ts",
+      "import": "./esm/server.js",
+      "default": "./esm/server.js"
+    },
+    "./server/fetch": {
+      "types": "./esm/server-fetch.d.ts",
+      "import": "./esm/server-fetch.js",
+      "default": "./esm/server-fetch.js"
+    },
+    "./server/node": {
+      "types": "./esm/server-node.d.ts",
+      "import": "./esm/server-node.js",
+      "default": "./esm/server-node.js"
+    },
+    "./server/react": {
+      "types": "./esm/server-react.d.ts",
+      "import": "./esm/server-react.js",
+      "default": "./esm/server-react.js"
+    },
+    "./server/register": {
+      "types": "./esm/server-register.d.ts",
+      "import": "./esm/server-register.js",
+      "default": "./esm/server-register.js"
     }
   },
   "scripts": {
@@ -37,15 +98,16 @@
   "license": "MIT",
   "author": "xusd320",
   "dependencies": {
+    "@evjs/client": "*",
+    "@evjs/server": "*",
     "@evjs/shared": "*",
-    "@swc/core": "^1.15.21",
     "@logtape/logtape": "^2.0.4",
+    "@swc/core": "^1.15.21",
     "domparser-rs": "^0.1.0",
     "execa": "^9.6.1"
   },
   "devDependencies": {
     "@types/node": "^22.19.15",
-    "@utoo/pack": "^1.4.2",
     "typescript": "^6.0.2"
   },
   "keywords": [

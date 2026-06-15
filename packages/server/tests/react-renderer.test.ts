@@ -1,5 +1,8 @@
 import { usePageParams, usePageSearch } from "@evjs/client";
-import type { BuildOutput } from "@evjs/shared/manifest";
+import {
+  assertFrameworkManifestShape,
+  type BuildOutput,
+} from "@evjs/shared/manifest";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import {
@@ -8,6 +11,24 @@ import {
 } from "../src/react-renderer.js";
 
 describe("createReactServerRenderAdapter", () => {
+  it("rejects invalid server render adapter options", () => {
+    expect(() => createReactServerRenderAdapter(null as never)).toThrow(
+      "[evjs] createReactServerRenderAdapter() options must be an object.",
+    );
+    expect(() =>
+      createReactServerRenderAdapter({ createProps: "props" } as never),
+    ).toThrow(
+      "[evjs] createReactServerRenderAdapter() createProps must be a function.",
+    );
+    expect(() =>
+      createReactServerRenderAdapter({
+        renderDocument: "render",
+      } as never),
+    ).toThrow(
+      "[evjs] createReactServerRenderAdapter() renderDocument must be a function.",
+    );
+  });
+
   it("renders a default React component module into an HTML document", async () => {
     const adapter = createReactServerRenderAdapter();
     const result = await adapter(
@@ -102,6 +123,31 @@ describe("createReactServerRenderAdapter", () => {
     expect(result.html).not.toContain('"routes"');
   });
 
+  it("rejects non-object custom server render props", async () => {
+    const adapter = createReactServerRenderAdapter({
+      createProps() {
+        return [] as never;
+      },
+    });
+
+    await expect(
+      adapter(
+        {
+          default() {
+            return createElement("h1", null, "Dashboard");
+          },
+        },
+        {
+          request: new Request("https://example.com/dashboard"),
+          manifest: createManifest(),
+          pageId: "dashboard",
+        },
+      ),
+    ).rejects.toThrow(
+      "[evjs] createReactServerRenderAdapter() createProps() must return an object.",
+    );
+  });
+
   it("provides route params and search to page hooks during server render", async () => {
     const adapter = createReactServerRenderAdapter();
     const manifest = createManifest();
@@ -159,6 +205,153 @@ describe("createReactServerRenderAdapter", () => {
       route: { id: "post", path: "/posts/$postId" },
       pageId: "post",
     });
+  });
+
+  it("uses the most specific manifest route for server page hooks", async () => {
+    const adapter = createReactServerRenderAdapter();
+    const manifest = createManifest();
+    manifest.pages.profile = {
+      assets: { js: ["profile.js"], css: [] },
+      render: "ssr",
+      rendering: {
+        component: "server",
+        html: "server",
+        streaming: false,
+        hydrate: "load",
+      },
+      component: "./src/pages/Profile.tsx",
+    };
+    manifest.routes.push(
+      {
+        id: "user",
+        path: "/users/$userId",
+        pageId: "profile",
+        module: "./src/pages/Profile.tsx",
+      },
+      {
+        id: "settings",
+        path: "/users/settings",
+        pageId: "profile",
+        module: "./src/pages/Profile.tsx",
+      },
+    );
+    function ProfilePage() {
+      const params = usePageParams<{ userId?: string }>();
+      const search = usePageSearch<{ tab?: string }>();
+      return createElement(
+        "h1",
+        null,
+        `${params.userId ?? "static"}:${search.tab}`,
+      );
+    }
+
+    const result = await adapter(
+      {
+        default: ProfilePage,
+      },
+      {
+        request: new Request("https://example.com/users/settings?tab=account"),
+        manifest,
+        pageId: "profile",
+        page: manifest.pages.profile,
+      },
+    );
+
+    if (!result || result instanceof Response || typeof result === "string") {
+      throw new Error("Expected HTML result.");
+    }
+
+    expect(result.html).toContain("<h1>static:account</h1>");
+  });
+
+  it("provides colon-style route params during server render", async () => {
+    const adapter = createReactServerRenderAdapter();
+    const manifest = createManifest();
+    manifest.pages.post = {
+      assets: { js: ["post.js"], css: [] },
+      render: "ssr",
+      rendering: {
+        component: "server",
+        html: "server",
+        streaming: false,
+        hydrate: "load",
+      },
+      component: "./src/pages/posts/[postId].tsx",
+    };
+    manifest.routes.push({
+      id: "post",
+      path: "/posts/:postId",
+      pageId: "post",
+      module: "./src/pages/posts/[postId].tsx",
+    });
+    function PostPage() {
+      const { postId } = usePageParams<{ postId: string }>();
+      return createElement("h1", null, postId);
+    }
+
+    const result = await adapter(
+      {
+        default: PostPage,
+      },
+      {
+        request: new Request("https://example.com/posts/42"),
+        manifest,
+        pageId: "post",
+        page: manifest.pages.post,
+        route: manifest.routes[0],
+      },
+    );
+
+    if (!result || result instanceof Response || typeof result === "string") {
+      throw new Error("Expected HTML result.");
+    }
+
+    expect(result.html).toContain("<h1>42</h1>");
+  });
+
+  it("provides wildcard route params during server render", async () => {
+    const adapter = createReactServerRenderAdapter();
+    const manifest = createManifest();
+    manifest.pages.docs = {
+      assets: { js: ["docs.js"], css: [] },
+      render: "ssr",
+      rendering: {
+        component: "server",
+        html: "server",
+        streaming: false,
+        hydrate: "load",
+      },
+      component: "./src/pages/docs.tsx",
+    };
+    manifest.routes.push({
+      id: "docs-fallback",
+      path: "/docs/*",
+      pageId: "docs",
+      module: "./src/pages/docs.tsx",
+    });
+    function DocsPage() {
+      const { _splat } = usePageParams<{ _splat: string }>();
+      return createElement("h1", null, _splat);
+    }
+
+    const result = await adapter(
+      {
+        default: DocsPage,
+      },
+      {
+        request: new Request("https://example.com/docs/guides/install"),
+        manifest,
+        pageId: "docs",
+        page: manifest.pages.docs,
+        route: manifest.routes[0],
+      },
+    );
+
+    if (!result || result instanceof Response || typeof result === "string") {
+      throw new Error("Expected HTML result.");
+    }
+
+    expect(result.html).toContain("<h1>guides/install</h1>");
   });
 
   it("keeps custom props but hides route data props during server render", async () => {
@@ -228,11 +421,12 @@ describe("createReactServerRenderAdapter", () => {
         component: "rsc",
         html: "server",
         streaming: true,
-        hydrate: "load",
+        hydrate: "none",
       },
       component: "./src/pages/Insights.tsx",
       mount: "#app",
     };
+    assertRendererTestManifestShape(manifest);
 
     const result = await adapter(
       {
@@ -282,6 +476,19 @@ describe("createReactServerRenderAdapter", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("rejects invalid server renderer modules", async () => {
+    const adapter = createReactServerRenderAdapter();
+
+    await expect(
+      adapter(null as never, {
+        request: new Request("https://example.com/dashboard"),
+        manifest: createManifest(),
+      }),
+    ).rejects.toThrow(
+      "[evjs] createReactServerRenderAdapter() module must be a renderer module object.",
+    );
+  });
+
   it("supports custom props and document rendering", async () => {
     const adapter = createReactServerRenderAdapter({
       createProps(ctx) {
@@ -313,9 +520,115 @@ describe("createReactServerRenderAdapter", () => {
       headers: { "x-render": "custom" },
     });
   });
+
+  it("rejects invalid custom document rendering results", async () => {
+    const adapter = createReactServerRenderAdapter({
+      renderDocument() {
+        return { body: "<main />" } as never;
+      },
+    });
+
+    await expect(
+      adapter(
+        {
+          default() {
+            return createElement("h1", null, "Dashboard");
+          },
+        },
+        {
+          request: new Request("https://example.com/dashboard"),
+          manifest: createManifest(),
+          pageId: "dashboard",
+        },
+      ),
+    ).rejects.toThrow(
+      "[evjs] createReactServerRenderAdapter() renderDocument() must return a Response, string, or { html, status?, headers? }.",
+    );
+  });
+
+  it("rejects invalid custom document status metadata", async () => {
+    const adapter = createReactServerRenderAdapter({
+      renderDocument() {
+        return { html: "<main />", status: 99 } as never;
+      },
+    });
+
+    await expect(
+      adapter(
+        {
+          default() {
+            return createElement("h1", null, "Dashboard");
+          },
+        },
+        {
+          request: new Request("https://example.com/dashboard"),
+          manifest: createManifest(),
+          pageId: "dashboard",
+        },
+      ),
+    ).rejects.toThrow(
+      "[evjs] createReactServerRenderAdapter() renderDocument() status must be an integer HTTP status between 200 and 599 that can include an HTML body.",
+    );
+  });
+
+  it("rejects invalid custom document headers metadata", async () => {
+    const adapter = createReactServerRenderAdapter({
+      renderDocument() {
+        return { html: "<main />", headers: [["x-render"]] } as never;
+      },
+    });
+
+    await expect(
+      adapter(
+        {
+          default() {
+            return createElement("h1", null, "Dashboard");
+          },
+        },
+        {
+          request: new Request("https://example.com/dashboard"),
+          manifest: createManifest(),
+          pageId: "dashboard",
+        },
+      ),
+    ).rejects.toThrow(
+      "[evjs] createReactServerRenderAdapter() renderDocument() headers must be valid HeadersInit.",
+    );
+  });
 });
 
 describe("createReactRscFlightAdapter", () => {
+  it("rejects invalid RSC Flight adapter options", () => {
+    expect(() => createReactRscFlightAdapter(null as never)).toThrow(
+      "[evjs] createReactRscFlightAdapter() options must be an object.",
+    );
+    expect(() =>
+      createReactRscFlightAdapter({ loadModule: "load" } as never),
+    ).toThrow(
+      "[evjs] createReactRscFlightAdapter() loadModule must be a function.",
+    );
+    expect(() =>
+      createReactRscFlightAdapter({ createProps: "props" } as never),
+    ).toThrow(
+      "[evjs] createReactRscFlightAdapter() createProps must be a function.",
+    );
+    expect(() =>
+      createReactRscFlightAdapter({ renderFlight: "render" } as never),
+    ).toThrow(
+      "[evjs] createReactRscFlightAdapter() renderFlight must be a function.",
+    );
+    expect(() =>
+      createReactRscFlightAdapter({ onError: "handle" } as never),
+    ).toThrow(
+      "[evjs] createReactRscFlightAdapter() onError must be a function.",
+    );
+    expect(() =>
+      createReactRscFlightAdapter({ validateContentType: "yes" } as never),
+    ).toThrow(
+      "[evjs] createReactRscFlightAdapter() validateContentType must be a boolean.",
+    );
+  });
+
   it("returns the matched RSC page renderer Flight response", async () => {
     const manifest = createManifest();
     manifest.runtime.server = {
@@ -331,7 +644,7 @@ describe("createReactRscFlightAdapter", () => {
         component: "rsc",
         html: "server",
         streaming: true,
-        hydrate: "load",
+        hydrate: "none",
       },
     };
     manifest.server = {
@@ -341,6 +654,7 @@ describe("createReactRscFlightAdapter", () => {
       renderers: {
         "dashboard-rsc": {
           kind: "rsc-page",
+          owner: { pageId: "dashboard" },
           module: "./src/pages/Dashboard.tsx",
           assets: { js: ["dashboard-rsc.js"], css: [] },
         },
@@ -361,6 +675,7 @@ describe("createReactRscFlightAdapter", () => {
         },
       },
     };
+    assertRendererTestManifestShape(manifest);
 
     const adapter = createReactRscFlightAdapter({
       async loadModule(asset) {
@@ -436,6 +751,89 @@ describe("createReactRscFlightAdapter", () => {
     await expect(response.text()).resolves.toContain("invalid Content-Type");
   });
 
+  it("reports missing RSC Flight content type from custom renderers", async () => {
+    const manifest = createManifest();
+    const adapter = createReactRscFlightAdapter({
+      renderFlight() {
+        return new Response(null);
+      },
+    });
+
+    const response = await adapter.renderFlight({
+      request: new Request("https://example.com/__evjs/rsc?page=dashboard"),
+      manifest,
+      pageId: "dashboard",
+    });
+
+    expect(response.status).toBe(500);
+    await expect(response.text()).resolves.toContain(
+      "invalid Content-Type missing Content-Type",
+    );
+  });
+
+  it("validates RSC Flight content types as exact media types", async () => {
+    const manifest = createManifest();
+    const adapter = createReactRscFlightAdapter({
+      renderFlight() {
+        return new Response("flight", {
+          headers: {
+            "Content-Type": "Text/X-Component; charset=utf-8",
+          },
+        });
+      },
+    });
+
+    const response = await adapter.renderFlight({
+      request: new Request("https://example.com/__evjs/rsc?page=dashboard"),
+      manifest,
+      pageId: "dashboard",
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("flight");
+
+    const lookalikeAdapter = createReactRscFlightAdapter({
+      renderFlight() {
+        return new Response("not flight", {
+          headers: {
+            "Content-Type": "application/text/x-component",
+          },
+        });
+      },
+    });
+
+    const lookalikeResponse = await lookalikeAdapter.renderFlight({
+      request: new Request("https://example.com/__evjs/rsc?page=dashboard"),
+      manifest,
+      pageId: "dashboard",
+    });
+
+    expect(lookalikeResponse.status).toBe(500);
+    await expect(lookalikeResponse.text()).resolves.toContain(
+      'invalid Content-Type "application/text/x-component"',
+    );
+  });
+
+  it("reports non-Response custom Flight renderer results", async () => {
+    const manifest = createManifest();
+    const adapter = createReactRscFlightAdapter({
+      renderFlight() {
+        return null as never;
+      },
+    });
+
+    const response = await adapter.renderFlight({
+      request: new Request("https://example.com/__evjs/rsc?page=dashboard"),
+      manifest,
+      pageId: "dashboard",
+    });
+
+    expect(response.status).toBe(500);
+    await expect(response.text()).resolves.toContain(
+      "[evjs] createReactRscFlightAdapter() renderFlight() must return a Response.",
+    );
+  });
+
   it("reports renderer exceptions through onError", async () => {
     const manifest = createManifest();
     const error = new Error("flight failed");
@@ -458,6 +856,75 @@ describe("createReactRscFlightAdapter", () => {
     expect(response.status).toBe(500);
     expect(caught).toEqual([error]);
     await expect(response.text()).resolves.toContain("flight failed");
+  });
+
+  it("reports non-object custom RSC render props", async () => {
+    const manifest = createManifest();
+    const renderer = {
+      kind: "rsc-page" as const,
+      owner: { pageId: "dashboard" },
+      module: "./src/pages/Dashboard.tsx",
+      assets: { js: ["dashboard-rsc.js"], css: [] },
+    };
+    const adapter = createReactRscFlightAdapter({
+      createProps() {
+        return null as never;
+      },
+      async loadModule() {
+        return {
+          default() {
+            return createElement("h1", null, "Dashboard");
+          },
+        };
+      },
+    });
+
+    const response = await adapter.renderFlight({
+      request: new Request("https://example.com/__evjs/rsc?page=dashboard"),
+      manifest,
+      pageId: "dashboard",
+      rscPage: {
+        renderer: "dashboard-rsc",
+        assets: { js: ["dashboard-rsc.js"], css: [] },
+      },
+      renderer,
+    });
+
+    expect(response.status).toBe(500);
+    await expect(response.text()).resolves.toContain(
+      "[evjs] createReactRscFlightAdapter() createProps() must return an object.",
+    );
+  });
+
+  it("reports invalid loaded RSC renderer modules", async () => {
+    const manifest = createManifest();
+    const renderer = {
+      kind: "rsc-page" as const,
+      owner: { pageId: "dashboard" },
+      module: "./src/pages/Dashboard.tsx",
+      assets: { js: ["dashboard-rsc.js"], css: [] },
+    };
+    const adapter = createReactRscFlightAdapter({
+      async loadModule() {
+        return null as never;
+      },
+    });
+
+    const response = await adapter.renderFlight({
+      request: new Request("https://example.com/__evjs/rsc?page=dashboard"),
+      manifest,
+      pageId: "dashboard",
+      rscPage: {
+        renderer: "dashboard-rsc",
+        assets: { js: ["dashboard-rsc.js"], css: [] },
+      },
+      renderer,
+    });
+
+    expect(response.status).toBe(500);
+    await expect(response.text()).resolves.toContain(
+      "[evjs] createReactRscFlightAdapter() loadModule() must be a renderer module object.",
+    );
   });
 
   it("redacts local paths from RSC error payloads", async () => {
@@ -534,4 +1001,13 @@ function createManifest(): BuildOutput {
     pages: {},
     routes: [],
   };
+}
+
+function assertRendererTestManifestShape(manifest: BuildOutput): void {
+  assertFrameworkManifestShape(manifest, "react renderer test manifest", {
+    serverFunctionModules: "optional",
+    pageRendererReferences: "optional",
+    pprRendererReferences: "optional",
+    rscRendererReferences: "optional",
+  });
 }

@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import "../styles.css";
 
-type RenderMode = "csr" | "ssr" | "ppr" | "rsc";
+type RenderMode = "csr" | "ssr" | "ssg" | "ppr" | "rsc";
 
 interface RenderModePageProps {
   backHref?: string;
@@ -35,6 +35,13 @@ const modeStyles: Record<
     chipBackground: "#d1fae5",
     chipColor: "#065f46",
   },
+  ssg: {
+    background:
+      "linear-gradient(135deg, #f0fdfa 0%, #f8fafc 48%, #fefce8 100%)",
+    border: "#14b8a6",
+    chipBackground: "#ccfbf1",
+    chipColor: "#115e59",
+  },
   ppr: {
     background:
       "linear-gradient(135deg, #fff7ed 0%, #f8fafc 48%, #fef3c7 100%)",
@@ -63,7 +70,7 @@ body{margin:0;color:#172033;background:#f5f7fb;font-family:Inter,ui-sans-serif,s
 .hero-panel,.split-panel,.ppr-region-panel{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,320px);gap:20px;align-items:stretch}
 .hero-panel h1{margin:0 0 10px;font-size:34px;line-height:1.08}
 .hero-panel p{max-width:720px;color:#475569}
-.hero-panel--csr{border-left:6px solid #38bdf8}.hero-panel--ssr{border-left:6px solid #10b981}.hero-panel--ppr{border-left:6px solid #f59e0b}.hero-panel--rsc{border-left:6px solid #8b5cf6}
+.hero-panel--csr{border-left:6px solid #38bdf8}.hero-panel--ssr{border-left:6px solid #10b981}.hero-panel--ssg{border-left:6px solid #14b8a6}.hero-panel--ppr{border-left:6px solid #f59e0b}.hero-panel--rsc{border-left:6px solid #8b5cf6}
 .meta-list{display:grid;gap:10px;margin:0}.meta-list div{display:grid;grid-template-columns:82px minmax(0,1fr);gap:12px;align-items:baseline;border:1px solid #e4e9f2;border-radius:8px;padding:10px 12px;background:#f8fafc}.meta-list dt{color:#64748b;font-size:12px;font-weight:700;text-transform:uppercase}.meta-list dd{min-width:0;margin:0;overflow-wrap:anywhere;font-weight:700}
 .status-grid,.card-grid,.campaign-segments,.recommendation-grid,.inventory-grid,.triage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
 .status,.mini-card,.segment-card,.recommendation-card,.inventory-card,.triage-grid article{border:1px solid #e4e9f2;border-radius:8px;background:#fff;padding:12px}

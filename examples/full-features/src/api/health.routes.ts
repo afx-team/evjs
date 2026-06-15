@@ -1,4 +1,4 @@
-import { createRoute } from "@evjs/server";
+import { createRoute } from "@evjs/ev/server";
 
 export const healthRoute = createRoute("/api/full-features/health", {
   GET: async () =>

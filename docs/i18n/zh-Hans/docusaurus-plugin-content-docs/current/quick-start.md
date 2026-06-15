@@ -61,7 +61,7 @@ my-app/
 
 ```tsx
 // src/pages/users/$id.tsx
-import { usePageParams, useQuery } from "@evjs/client";
+import { usePageParams, useQuery } from "@evjs/ev/client";
 import { getUser } from "../../api/users.server";
 
 export default function UserPage() {
@@ -103,27 +103,32 @@ export default defineConfig({
 
 | 包 | 用途 |
 |---|------|
-| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | 框架 API、配置、插件和构建编排 (`defineConfig`, `dev`, `build`) |
+| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | 框架 API、配置、插件、构建编排，以及运行时 facade subpath（`@evjs/ev/client`、`@evjs/ev/server`） |
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | 注入默认构建器的轻量 CLI 包装 (`ev dev`, `ev build`) |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | 项目脚手架 (`npx @evjs/create-app`) |
 | [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | 浏览器运行时、transport、page hooks、导航 helpers 和 remote host helpers |
 | [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Hono/fetch 服务端运行时、服务端函数、路由和 SSR/PPR/RSC 请求处理 |
 
 Manifest schema、build tools、page runtime 和 shell 内部实现都位于上述公开包中。
-应用代码通常应从 `@evjs/ev`、`@evjs/client` 和 `@evjs/server` 导入。
+应用代码通常应从 `@evjs/ev` 及其 runtime facade subpath
+（`@evjs/ev/client`、`@evjs/ev/server`、`@evjs/ev/server/react`）导入。
+`@evjs/cli` 和 `@evjs/create-app` 应作为工具使用，不应被应用模块 import。
+`@evjs/bundler-utoopack` 这类 bundler adapter 以及 `@evjs/shared` 这类共享契约模块，
+只面向自定义框架工具或 adapter 开发。
+
+直接从 `@evjs/client` 和 `@evjs/server` 导入仍然是受支持的 runtime 包边界，
+适用于明确选择直接依赖这些 runtime 包的项目。
 
 ## 必需依赖
 
 ```json
 {
   "dependencies": {
-    "@evjs/client": "<same version>",
-    "@evjs/server": "<same version>",
+    "@evjs/ev": "<same version>",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@evjs/ev": "<same version>",
     "@evjs/cli": "<same version>",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
@@ -134,7 +139,8 @@ Manifest schema、build tools、page runtime 和 shell 内部实现都位于上�
 
 :::important
 
-应用中的所有 `@evjs/*` 包必须保持相同版本。升级 evjs 时，请同时升级 `@evjs/client`、`@evjs/server`、`@evjs/ev`、`@evjs/cli` 以及其他 `@evjs/*` 包。
+应用中的所有 `@evjs/*` 包必须保持相同版本。多数应用只需要 `@evjs/ev`
+和 `@evjs/cli`；如果额外添加直接 runtime 包或 adapter 包，升级时也要一起升级。
 
 :::
 

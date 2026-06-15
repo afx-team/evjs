@@ -32,7 +32,9 @@ import type { WebpackStatsLike } from "../src/manifest-generator.js";
 
 const tempDirs: string[] = [];
 const require = createRequire(import.meta.url);
+const WEBPACK_BUILD_TEST_TIMEOUT = 20_000;
 const WEBPACK_DEV_TEST_TIMEOUT = 20_000;
+const WEBPACK_DEV_PORT_BASE = 31_000 + (process.pid % 1_000) * 10;
 const WEBPACK_DEV_TEST_NAMES = {
   starts: "starts webpack dev and emits framework manifest/html",
   apiRewrite: "does not rewrite API-like requests to application HTML",
@@ -42,6 +44,7 @@ const WEBPACK_DEV_TEST_NAMES = {
   pageAddition:
     "applies page additions through updatePlan without restarting ev dev",
 } as const;
+const allocatedDevPorts = new Set<number>();
 
 type ServerRuntimeGlobals = typeof globalThis & {
   __EVJS_MANIFEST__?: BuildOutput;
@@ -52,6 +55,10 @@ type ServerRuntimeGlobals = typeof globalThis & {
 
 function devIt(name: string, run: () => void | Promise<void>) {
   it(name, run, WEBPACK_DEV_TEST_TIMEOUT);
+}
+
+function buildIt(name: string, run: () => void | Promise<void>) {
+  it(name, run, WEBPACK_BUILD_TEST_TIMEOUT);
 }
 
 function requireRouting(
@@ -215,8 +222,7 @@ async function emitFrameworkArtifacts(options: {
     }
 
     const finalHtml = await buildHtml({
-      // biome-ignore lint/suspicious/noExplicitAny: DOM interfaces are parser-backed.
-      doc: doc as any,
+      doc,
       hooks: options.hooks,
       pluginContext: {
         mode: options.plan.mode,
@@ -256,6 +262,38 @@ async function emitFrameworkArtifacts(options: {
 }
 
 describe("webpack stats ownership", () => {
+  it("bypasses resolved framework runtime paths from SPA dev fallback", () => {
+    const config = resolveConfig<WebpackConfig>({
+      server: {
+        basePath: "/_ev",
+        rsc: {
+          endpoint: "/flight",
+        },
+      },
+    });
+    const rewrites =
+      webpackAdapterTesting.createHtmlFallbackBypassRewrites(config);
+    const findBypass = (pathname: string) =>
+      rewrites
+        .find((rewrite) => rewrite.from.test(pathname))
+        ?.to({ parsedUrl: { pathname } });
+
+    expect(findBypass("/api/users")).toBe("/api/users");
+    expect(findBypass("/_ev/fn")).toBe("/_ev/fn");
+    expect(findBypass("/_ev/ppr/campaign/offer")).toBe(
+      "/_ev/ppr/campaign/offer",
+    );
+    expect(findBypass("/flight")).toBe("/flight");
+    expect(findBypass("/flight/page")).toBe("/flight/page");
+    expect(findBypass("/dashboard")).toBeUndefined();
+    expect(webpackAdapterTesting.isApiLikeRequestPath("/flight", config)).toBe(
+      true,
+    );
+    expect(
+      webpackAdapterTesting.isApiLikeRequestPath("/dashboard", config),
+    ).toBe(false);
+  });
+
   it("namespaces server-rsc chunks and de-dupes modules while merging server stats", () => {
     const serverStats: WebpackStatsLike = {
       entrypoints: {
@@ -334,86 +372,139 @@ describe("webpack stats ownership", () => {
 });
 
 describe("webpackAdapter build", () => {
-  it("builds framework-managed component pages without materializing .evjs files", async () => {
-    const cwd = await createFixture({
-      "index.html":
-        '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
-      "src/pages/Home ! page 中文.tsx": `
+  buildIt(
+    "builds framework-managed component pages without materializing .evjs files",
+    async () => {
+      const cwd = await createFixture({
+        "index.html":
+          '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
+        "src/pages/Home ! page 中文.tsx": `
         import { createElement } from "react";
 
         export default function Home() {
           return createElement("h1", null, "Home");
         }
       `,
-    });
-    const config = resolveConfig<WebpackConfig>({
-      server: false,
-      pages: {
-        home: {
-          component: "./src/pages/Home ! page 中文.tsx",
-          html: "./index.html",
-          mount: "#root",
+      });
+      const config = resolveConfig<WebpackConfig>({
+        server: false,
+        pages: {
+          home: {
+            component: "./src/pages/Home ! page 中文.tsx",
+            html: "./index.html",
+            mount: "#root",
+          },
         },
-      },
-    });
-    const analysis = await createAppGraph(config, cwd);
-    const plan = createBuildPlan(config, analysis.graph, {
-      mode: "development",
-    });
+      });
+      const analysis = await createAppGraph(config, cwd);
+      const plan = createBuildPlan(config, analysis.graph, {
+        mode: "development",
+      });
 
-    await buildWithFrameworkArtifacts({
-      config,
-      cwd,
-      graph: analysis.graph,
-      plan,
-      hooks: [],
-    });
+      await buildWithFrameworkArtifacts({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan,
+        hooks: [],
+      });
 
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
-    ) as BuildOutput;
-    const html = await fs.readFile(path.join(cwd, "dist/home.html"), "utf-8");
-    const bundle = await fs.readFile(path.join(cwd, "dist/home.js"), "utf-8");
+      const manifest = JSON.parse(
+        await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
+      ) as BuildOutput;
+      const html = await fs.readFile(path.join(cwd, "dist/home.html"), "utf-8");
+      const bundle = await fs.readFile(path.join(cwd, "dist/home.js"), "utf-8");
 
-    expect(plan.entries[0]?.import).toBe("./src/pages/Home ! page 中文.tsx");
-    expect(plan.entries[0]?.metadata).toMatchObject({
-      type: "react-component-page",
-      component: "./src/pages/Home ! page 中文.tsx",
-      mount: "#root",
-    });
-    expect(manifest.pages.home).toMatchObject({
-      assets: { js: ["home.js"], css: [] },
-      component: "./src/pages/Home ! page 中文.tsx",
-      mount: "#root",
-      render: "csr",
-      module: {
-        type: "react-component",
-        href: "home.js",
-        source: "./src/pages/Home ! page 中文.tsx",
-      },
-    });
-    expect(html).toContain('data-evjs-kind="page"');
-    expect(html).toContain('data-evjs-id="home"');
-    expect(html).toContain('src="/home.js"');
-    expect(bundle).toContain("registerShellModule");
-    expect(bundle).toContain("data-evjs-shell-load");
-    await expect(fs.access(path.join(cwd, ".evjs"))).rejects.toThrow();
-  });
+      expect(plan.entries[0]?.import).toBe("./src/pages/Home ! page 中文.tsx");
+      expect(plan.entries[0]?.metadata).toMatchObject({
+        type: "react-component-page",
+        component: "./src/pages/Home ! page 中文.tsx",
+        mount: "#root",
+      });
+      expect(manifest.pages.home).toMatchObject({
+        assets: { js: ["home.js"], css: [] },
+        component: "./src/pages/Home ! page 中文.tsx",
+        mount: "#root",
+        render: "csr",
+        module: {
+          type: "react-component",
+          href: "home.js",
+          source: "./src/pages/Home ! page 中文.tsx",
+        },
+      });
+      expect(html).toContain('data-evjs-kind="page"');
+      expect(html).toContain('data-evjs-id="home"');
+      expect(html).toContain('src="/home.js"');
+      expect(bundle).toContain("registerShellModule");
+      expect(bundle).toContain("data-evjs-shell-load");
+      await expect(fs.access(path.join(cwd, ".evjs"))).rejects.toThrow();
+    },
+  );
 
-  it("builds remote client entries and emits a remote manifest", async () => {
-    const cwd = await createFixture({
-      "src/remote !client.tsx": `
-        import { useRemoteContext } from "@evjs/client";
+  buildIt(
+    "builds remote client entries and emits a remote manifest",
+    async () => {
+      const cwd = await createFixture({
+        "src/remote !client.tsx": `
+        import { useRemoteContext } from "@evjs/ev/client";
 
         export default function Remote() {
           const remote = useRemoteContext();
           return <h2>Remote {remote.entryId}</h2>;
         }
       `,
-    });
-    const config = resolveConfig<WebpackConfig>({
-      server: false,
-      remote: {
+      });
+      const config = resolveConfig<WebpackConfig>({
+        server: false,
+        remote: {
+          name: "crm",
+          baseUrl: "https://assets.example.com/crm/",
+          shared: {
+            "remote-react": {
+              shareKey: "react",
+              requiredVersion: ">=19 <20",
+              singleton: true,
+              strictVersion: true,
+              eager: true,
+            },
+          },
+          entries: {
+            customers: {
+              app: "./src/remote !client.tsx",
+              activeWhen: ["/crm/*"],
+              mount: "#remote-root",
+            },
+          },
+        },
+      });
+      const analysis = await createAppGraph(config, cwd);
+      const plan = createBuildPlan(config, analysis.graph, {
+        mode: "development",
+      });
+
+      await buildWithFrameworkArtifacts({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan,
+        hooks: [],
+      });
+
+      const manifest = JSON.parse(
+        await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
+      ) as BuildOutput;
+      const remoteManifest = JSON.parse(
+        await fs.readFile(path.join(cwd, "dist/evjs-remote.json"), "utf-8"),
+      );
+      const remoteBundle = await fs.readFile(
+        path.join(cwd, "dist/crm-customers.js"),
+        "utf-8",
+      );
+
+      expect(plan.html).toEqual([]);
+      expect(manifest.apps).toEqual({});
+      expect(remoteManifest).toEqual({
+        version: 1,
         name: "crm",
         baseUrl: "https://assets.example.com/crm/",
         shared: {
@@ -427,84 +518,39 @@ describe("webpackAdapter build", () => {
         },
         entries: {
           customers: {
-            app: "./src/remote !client.tsx",
+            assets: {
+              js: ["crm-customers.js"],
+              css: [],
+            },
+            module: {
+              type: "lifecycle",
+              href: "crm-customers.js",
+            },
             activeWhen: ["/crm/*"],
             mount: "#remote-root",
           },
         },
-      },
-    });
-    const analysis = await createAppGraph(config, cwd);
-    const plan = createBuildPlan(config, analysis.graph, {
-      mode: "development",
-    });
+      });
+      expect(remoteBundle).toContain("registerShellModule");
+      expect(remoteBundle).toContain("createRemoteReactModule");
+      expect(remoteBundle).not.toContain("createRemoteShellModule");
+      expect(remoteBundle).not.toContain("ctx && ctx.remote");
+      await expect(
+        fs.access(path.join(cwd, "dist/index.html")),
+      ).rejects.toThrow();
+    },
+  );
 
-    await buildWithFrameworkArtifacts({
-      config,
-      cwd,
-      graph: analysis.graph,
-      plan,
-      hooks: [],
-    });
-
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
-    ) as BuildOutput;
-    const remoteManifest = JSON.parse(
-      await fs.readFile(path.join(cwd, "dist/evjs-remote.json"), "utf-8"),
-    );
-    const remoteBundle = await fs.readFile(
-      path.join(cwd, "dist/crm-customers.js"),
-      "utf-8",
-    );
-
-    expect(plan.html).toEqual([]);
-    expect(manifest.apps).toEqual({});
-    expect(remoteManifest).toEqual({
-      version: 1,
-      name: "crm",
-      baseUrl: "https://assets.example.com/crm/",
-      shared: {
-        "remote-react": {
-          shareKey: "react",
-          requiredVersion: ">=19 <20",
-          singleton: true,
-          strictVersion: true,
-          eager: true,
-        },
-      },
-      entries: {
-        customers: {
-          assets: {
-            js: ["crm-customers.js"],
-            css: [],
-          },
-          module: {
-            type: "lifecycle",
-            href: "crm-customers.js",
-          },
-          activeWhen: ["/crm/*"],
-          mount: "#remote-root",
-        },
-      },
-    });
-    expect(remoteBundle).toContain("registerShellModule");
-    expect(remoteBundle).toContain("createRemoteReactModule");
-    expect(remoteBundle).not.toContain("createRemoteShellModule");
-    expect(remoteBundle).not.toContain("ctx && ctx.remote");
-    await expect(
-      fs.access(path.join(cwd, "dist/index.html")),
-    ).rejects.toThrow();
-  });
-
-  it("builds app client, server runtime, and route-derived SSR page entries", async () => {
-    const cwd = await createFixture({
-      "index.html":
-        '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
-      "src/main.ts": "console.log('client app');",
-      "src/server.ts": `
-        import { createApp } from "@evjs/server";
-        import { createReactFrameworkServer } from "@evjs/server/react";
+  buildIt(
+    "builds app client, server runtime, and route-derived SSR page entries",
+    async () => {
+      const cwd = await createFixture({
+        "index.html":
+          '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
+        "src/main.ts": "console.log('client app');",
+        "src/server.ts": `
+        import { createApp } from "@evjs/ev/server";
+        import { createReactFrameworkServer } from "@evjs/ev/server/react";
 
         const app = createApp({
           framework: createReactFrameworkServer(),
@@ -512,7 +558,7 @@ describe("webpackAdapter build", () => {
 
         export default { fetch: app.fetch };
       `,
-      "src/pages/Dashboard !page 中文.ts": `
+        "src/pages/Dashboard !page 中文.ts": `
         export const render = "ssr";
         export const hydrate = "load";
 
@@ -520,123 +566,129 @@ describe("webpackAdapter build", () => {
           return "dashboard";
         }
       `,
-    });
-    const baseConfig = resolveConfig<WebpackConfig>({
-      entry: "./src/main.ts",
-      routing: true,
-      server: {
-        entry: "./src/server.ts",
-      },
-    });
-    const routing = requireRouting(baseConfig.routing);
-    const config = {
-      ...baseConfig,
-      routing: {
-        ...routing,
+      });
+      const baseConfig = resolveConfig<WebpackConfig>({
         entry: "./src/main.ts",
-        routes: [
+        routing: true,
+        server: {
+          entry: "./src/server.ts",
+        },
+      });
+      const routing = requireRouting(baseConfig.routing);
+      const config = {
+        ...baseConfig,
+        routing: {
+          ...routing,
+          entry: "./src/main.ts",
+          routes: [
+            {
+              id: "dashboard",
+              path: "/dashboard",
+              module: "./src/pages/Dashboard !page 中文.ts",
+            },
+          ],
+        },
+      };
+      const analysis = await createAppGraph(config, cwd);
+      const plan = createBuildPlan(config, analysis.graph, {
+        mode: "development",
+      });
+      const onBuildOutput = vi.fn((output: BuildOutput) => {
+        output.assets.plugin = { js: ["plugin.js"], css: [] };
+      });
+
+      await buildWithFrameworkArtifacts({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan,
+        hooks: [
           {
-            id: "dashboard",
-            path: "/dashboard",
-            module: "./src/pages/Dashboard !page 中文.ts",
+            transformHtml(doc, ctx) {
+              const meta = doc.createElement("meta");
+              meta.setAttribute("name", "html-kind");
+              meta.setAttribute("content", ctx.kind);
+              doc.head?.appendChild(meta);
+            },
           },
         ],
-      },
-    };
-    const analysis = await createAppGraph(config, cwd);
-    const plan = createBuildPlan(config, analysis.graph, {
-      mode: "development",
-    });
-    const onBuildOutput = vi.fn((output: BuildOutput) => {
-      output.assets.plugin = { js: ["plugin.js"], css: [] };
-    });
+        onBuildOutput,
+      });
 
-    await buildWithFrameworkArtifacts({
-      config,
-      cwd,
-      graph: analysis.graph,
-      plan,
-      hooks: [
-        {
-          transformHtml(doc, ctx) {
-            const meta = doc.createElement("meta");
-            meta.setAttribute("name", "html-kind");
-            meta.setAttribute("content", ctx.kind);
-            doc.head?.appendChild(meta);
-          },
+      const manifest = JSON.parse(
+        await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
+      ) as BuildOutput;
+      const html = await fs.readFile(
+        path.join(cwd, "dist/client/index.html"),
+        "utf-8",
+      );
+
+      expect(onBuildOutput).toHaveBeenCalledTimes(1);
+      expect(manifest.apps.default).toEqual({
+        assets: {
+          js: ["main.js"],
+          css: [],
         },
-      ],
-      onBuildOutput,
-    });
-
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
-    ) as BuildOutput;
-    const html = await fs.readFile(
-      path.join(cwd, "dist/client/index.html"),
-      "utf-8",
-    );
-
-    expect(onBuildOutput).toHaveBeenCalledTimes(1);
-    expect(manifest.apps.default).toEqual({
-      assets: {
-        js: ["main.js"],
+        entry: "./src/main.ts",
+        mount: "#app",
+        document: {
+          fileName: "index.html",
+        },
+        module: {
+          type: "entry",
+          href: "main.js",
+          source: "./src/main.ts",
+        },
+      });
+      expect(manifest.pages.dashboard).toMatchObject({
+        assets: {
+          js: [],
+          css: [],
+        },
+        component: "./src/pages/Dashboard !page 中文.ts",
+        hydrate: "load",
+        render: "ssr",
+        routeId: "dashboard",
+      });
+      expect(manifest.routes).toContainEqual({
+        id: "dashboard",
+        path: "/dashboard",
+        appId: "default",
+        pageId: "dashboard",
+        module: "./src/pages/Dashboard !page 中文.ts",
+        render: "ssr",
+        hydrate: "load",
+      });
+      expect(manifest.assets["dashboard-server"]).toEqual({
+        js: ["dashboard-server.js"],
         css: [],
-      },
-      entry: "./src/main.ts",
-      mount: "#app",
-      module: {
-        type: "entry",
-        href: "main.js",
-        source: "./src/main.ts",
-      },
-    });
-    expect(manifest.pages.dashboard).toMatchObject({
-      assets: {
-        js: [],
-        css: [],
-      },
-      component: "./src/pages/Dashboard !page 中文.ts",
-      hydrate: "load",
-      render: "ssr",
-      routeId: "dashboard",
-    });
-    expect(manifest.routes).toContainEqual({
-      id: "dashboard",
-      path: "/dashboard",
-      appId: "default",
-      pageId: "dashboard",
-      module: "./src/pages/Dashboard !page 中文.ts",
-      render: "ssr",
-      hydrate: "load",
-    });
-    expect(manifest.assets["dashboard-server"]).toEqual({
-      js: ["dashboard-server.js"],
-      css: [],
-    });
-    expect(manifest.server?.entry).toBe("server.js");
-    expect(manifest.assets.plugin).toEqual({ js: ["plugin.js"], css: [] });
-    expect(html).toContain('src="/main.js"');
-    expect(html).toContain('data-evjs-kind="app"');
-    expect(html).toContain('data-evjs-id="default"');
-    expect(html).toContain('<meta name="html-kind" content="app">');
-    const response = await requestServerEntry(cwd, manifest, "/dashboard");
-    expect(response.status).toBe(200);
-    expect(await response.text()).toContain('<div id="app">dashboard</div>');
-    await expect(
-      fs.access(path.join(cwd, "dist/client/stats.json")),
-    ).resolves.toBeUndefined();
-    await expect(
-      fs.access(path.join(cwd, "dist/server/stats.json")),
-    ).resolves.toBeUndefined();
-  });
+      });
+      expect(manifest.server?.entry).toBe("server.js");
+      expect(manifest.assets.plugin).toEqual({ js: ["plugin.js"], css: [] });
+      expect(html).toContain('src="/main.js"');
+      expect(html).toContain('data-evjs-kind="app"');
+      expect(html).toContain('data-evjs-id="default"');
+      expect(html).toContain('<meta name="html-kind" content="app">');
+      const response = await requestServerEntry(cwd, manifest, "/dashboard");
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain('<div id="app">dashboard</div>');
+      await expect(
+        fs.access(path.join(cwd, "dist/client/stats.json")),
+      ).resolves.toBeUndefined();
+      await expect(
+        fs.access(path.join(cwd, "dist/server/stats.json")),
+      ).resolves.toBeUndefined();
+    },
+  );
 
-  it("serves SSR React component pages through the default server runtime", async () => {
-    const cwd = await createFixture({
-      "index.html":
-        '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
-      "src/main.ts": "console.log('client app');",
-      "src/pages/Dashboard.ts": `
+  buildIt(
+    "serves SSR React component pages through the default server runtime",
+    async () => {
+      const cwd = await createFixture({
+        "index.html":
+          '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
+        "src/main.ts": "console.log('client app');",
+        "src/pages/Dashboard.ts": `
         import { createElement } from "react";
 
         export const render = "ssr";
@@ -646,58 +698,61 @@ describe("webpackAdapter build", () => {
           return createElement("h1", null, "SSR ", pageId);
         }
       `,
-    });
-    const baseConfig = resolveConfig<WebpackConfig>({
-      entry: "./src/main.ts",
-      routing: true,
-    });
-    const routing = requireRouting(baseConfig.routing);
-    const config = {
-      ...baseConfig,
-      routing: {
-        ...routing,
+      });
+      const baseConfig = resolveConfig<WebpackConfig>({
         entry: "./src/main.ts",
-        routes: [
-          {
-            id: "dashboard",
-            path: "/dashboard",
-            module: "./src/pages/Dashboard.ts",
-          },
-        ],
-      },
-    };
-    const analysis = await createAppGraph(config, cwd);
-    const plan = createBuildPlan(config, analysis.graph, {
-      mode: "development",
-    });
+        routing: true,
+      });
+      const routing = requireRouting(baseConfig.routing);
+      const config = {
+        ...baseConfig,
+        routing: {
+          ...routing,
+          entry: "./src/main.ts",
+          routes: [
+            {
+              id: "dashboard",
+              path: "/dashboard",
+              module: "./src/pages/Dashboard.ts",
+            },
+          ],
+        },
+      };
+      const analysis = await createAppGraph(config, cwd);
+      const plan = createBuildPlan(config, analysis.graph, {
+        mode: "development",
+      });
 
-    await buildWithFrameworkArtifacts({
-      config,
-      cwd,
-      graph: analysis.graph,
-      plan,
-      hooks: [],
-    });
+      await buildWithFrameworkArtifacts({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan,
+        hooks: [],
+      });
 
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
-    ) as BuildOutput;
-    const response = await requestServerEntry(cwd, manifest, "/dashboard");
+      const manifest = JSON.parse(
+        await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
+      ) as BuildOutput;
+      const response = await requestServerEntry(cwd, manifest, "/dashboard");
 
-    expect(response.status).toBe(200);
-    const text = await response.text();
-    expect(text).toContain(
-      '<div id="app"><h1>SSR <!-- -->dashboard</h1></div>',
-    );
-  });
+      expect(response.status).toBe(200);
+      const text = await response.text();
+      expect(text).toContain(
+        '<div id="app"><h1>SSR <!-- -->dashboard</h1></div>',
+      );
+    },
+  );
 
-  it("builds RSC pages with React Flight manifests and endpoint renderer", async () => {
-    const cwd = await createFixture({
-      "index.html":
-        '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
-      "src/pages/Insights !page.tsx": `
+  buildIt(
+    "builds RSC pages with React Flight manifests and endpoint renderer",
+    async () => {
+      const cwd = await createFixture({
+        "index.html":
+          '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
+        "src/pages/Insights !page.tsx": `
         import { createElement } from "react";
-        import { usePageParams, usePageSearch } from "@evjs/client";
+        import { usePageParams, usePageSearch } from "@evjs/ev/client";
         import "./insights.css";
         import Badge from "./InsightsBadge";
 
@@ -713,12 +768,12 @@ describe("webpackAdapter build", () => {
           );
         }
       `,
-      "src/pages/insights.css": `
+        "src/pages/insights.css": `
         .insights-page {
           color: #123456;
         }
       `,
-      "src/pages/InsightsBadge.tsx": `
+        "src/pages/InsightsBadge.tsx": `
         "use client";
 
         import { createElement } from "react";
@@ -727,118 +782,126 @@ describe("webpackAdapter build", () => {
           return createElement("span", null, "Client Badge");
         }
       `,
-    });
-    const config = resolveConfig<WebpackConfig>({
-      pages: {
-        insights: {
-          path: "/insights/$section",
-          component: "./src/pages/Insights !page.tsx",
-          html: "./index.html",
+      });
+      const config = resolveConfig<WebpackConfig>({
+        pages: {
+          insights: {
+            path: "/insights/$section",
+            component: "./src/pages/Insights !page.tsx",
+            html: "./index.html",
+          },
         },
-      },
-    });
-    const analysis = await createAppGraph(config, cwd);
-    const plan = createBuildPlan(config, analysis.graph, {
-      mode: "development",
-    });
+      });
+      const analysis = await createAppGraph(config, cwd);
+      const plan = createBuildPlan(config, analysis.graph, {
+        mode: "development",
+      });
 
-    await buildWithFrameworkArtifacts({
-      config,
-      cwd,
-      graph: analysis.graph,
-      plan,
-      hooks: [],
-    });
+      await buildWithFrameworkArtifacts({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan,
+        hooks: [],
+      });
 
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
-    ) as BuildOutput;
-    const clientReferenceManifest = JSON.parse(
-      await fs.readFile(
-        path.join(cwd, "dist/client/react-client-manifest.json"),
-        "utf-8",
-      ),
-    );
-    const serverConsumerManifest = JSON.parse(
-      await fs.readFile(
-        path.join(cwd, "dist/client/react-ssr-manifest.json"),
-        "utf-8",
-      ),
-    );
-    const badgeFileUrl = pathToFileURL(
-      await fs.realpath(path.join(cwd, "src/pages/InsightsBadge.tsx")),
-    ).href;
+      const manifest = JSON.parse(
+        await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
+      ) as BuildOutput;
+      const clientReferenceManifest = JSON.parse(
+        await fs.readFile(
+          path.join(cwd, "dist/client/react-client-manifest.json"),
+          "utf-8",
+        ),
+      );
+      const serverConsumerManifest = JSON.parse(
+        await fs.readFile(
+          path.join(cwd, "dist/client/react-ssr-manifest.json"),
+          "utf-8",
+        ),
+      );
+      const badgeFileUrl = pathToFileURL(
+        await fs.realpath(path.join(cwd, "src/pages/InsightsBadge.tsx")),
+      ).href;
 
-    expect(plan.entries.map((entry) => entry.name)).toEqual(
-      expect.arrayContaining([
-        "evjs-rsc-client",
-        "insights-server",
-        "insights-rsc",
-      ]),
-    );
-    expect(manifest.rsc?.clientReferenceManifest).toEqual(
-      clientReferenceManifest,
-    );
-    expect(manifest.rsc?.serverConsumerManifest).toEqual(
-      serverConsumerManifest,
-    );
-    expect(Object.keys(clientReferenceManifest)).toEqual(
-      expect.arrayContaining([badgeFileUrl]),
-    );
-    expect(manifest.rsc?.pages?.insights).toEqual(
-      expect.objectContaining({
-        renderer: "insights-rsc",
-        component: "./src/pages/Insights !page.tsx",
-      }),
-    );
-    expect(manifest.server?.renderers?.["insights-server"]).toMatchObject({
-      kind: "page-server",
-      assets: { js: ["insights-server.js"], css: ["insights-server.css"] },
-    });
-    expect(manifest.server?.renderers?.["insights-rsc"]).toMatchObject({
-      kind: "rsc-page",
-      assets: { js: ["insights-rsc.js"], css: ["insights-rsc.css"] },
-    });
-    expect(manifest.pages.insights.assets).toEqual({
-      js: ["evjs-rsc-client.js"],
-      css: expect.arrayContaining(["insights-server.css", "insights-rsc.css"]),
-    });
-    await expect(
-      fs.readFile(path.join(cwd, "dist/client/insights-rsc.css"), "utf-8"),
-    ).resolves.toContain(".insights-page");
+      expect(plan.entries.map((entry) => entry.name)).toEqual(
+        expect.arrayContaining([
+          "evjs-rsc-client",
+          "insights-server",
+          "insights-rsc",
+        ]),
+      );
+      expect(manifest.rsc?.clientReferenceManifest).toEqual(
+        clientReferenceManifest,
+      );
+      expect(manifest.rsc?.serverConsumerManifest).toEqual(
+        serverConsumerManifest,
+      );
+      expect(Object.keys(clientReferenceManifest)).toEqual(
+        expect.arrayContaining([badgeFileUrl]),
+      );
+      expect(manifest.rsc?.pages?.insights).toEqual(
+        expect.objectContaining({
+          renderer: "insights-rsc",
+          component: "./src/pages/Insights !page.tsx",
+        }),
+      );
+      expect(manifest.server?.renderers?.["insights-server"]).toMatchObject({
+        kind: "page-server",
+        assets: { js: ["insights-server.js"], css: ["insights-server.css"] },
+      });
+      expect(manifest.server?.renderers?.["insights-rsc"]).toMatchObject({
+        kind: "rsc-page",
+        assets: { js: ["insights-rsc.js"], css: ["insights-rsc.css"] },
+      });
+      expect(manifest.pages.insights.assets).toEqual({
+        js: ["evjs-rsc-client.js"],
+        css: expect.arrayContaining([
+          "insights-server.css",
+          "insights-rsc.css",
+        ]),
+      });
+      await expect(
+        fs.readFile(path.join(cwd, "dist/client/insights-rsc.css"), "utf-8"),
+      ).resolves.toContain(".insights-page");
 
-    const htmlResponse = await requestServerEntry(
-      cwd,
-      manifest,
-      "/insights/weekly?tab=overview&tag=a&tag=b",
-    );
-    expect(htmlResponse.status).toBe(200);
-    const html = await htmlResponse.text();
-    expect(html).toContain("RSC");
-    expect(html).toContain("weekly");
-    expect(html).toContain("overview");
-    expect(html).toContain('<link rel="stylesheet" href="/insights-rsc.css">');
+      const htmlResponse = await requestServerEntry(
+        cwd,
+        manifest,
+        "/insights/weekly?tab=overview&tag=a&tag=b",
+      );
+      expect(htmlResponse.status).toBe(200);
+      const html = await htmlResponse.text();
+      expect(html).toContain("RSC");
+      expect(html).toContain("weekly");
+      expect(html).toContain("overview");
+      expect(html).toContain(
+        '<link rel="stylesheet" href="/insights-rsc.css">',
+      );
 
-    const flightResponse = await requestServerEntry(
-      cwd,
-      manifest,
-      "/__evjs/rsc?page=insights&url=%2Finsights%2Fweekly%3Ftab%3Doverview%26tag%3Da%26tag%3Db",
-    );
-    expect(flightResponse.status).toBe(200);
-    expect(flightResponse.headers.get("content-type")).toContain(
-      "text/x-component",
-    );
-    const flight = await flightResponse.text();
-    expect(flight).toContain("RSC");
-    expect(flight).toContain("weekly");
-    expect(flight).toContain("overview");
-  });
+      const flightResponse = await requestServerEntry(
+        cwd,
+        manifest,
+        "/__evjs/rsc?page=insights&url=%2Finsights%2Fweekly%3Ftab%3Doverview%26tag%3Da%26tag%3Db",
+      );
+      expect(flightResponse.status).toBe(200);
+      expect(flightResponse.headers.get("content-type")).toContain(
+        "text/x-component",
+      );
+      const flight = await flightResponse.text();
+      expect(flight).toContain("RSC");
+      expect(flight).toContain("weekly");
+      expect(flight).toContain("overview");
+    },
+  );
 
-  it("builds and serves PPR shell and region renderers through the default server runtime", async () => {
-    const cwd = await createFixture({
-      "index.html":
-        '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
-      "src/pages/Campaign.tsx": `
+  buildIt(
+    "builds and serves PPR shell and region renderers through the default server runtime",
+    async () => {
+      const cwd = await createFixture({
+        "index.html":
+          '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
+        "src/pages/Campaign.tsx": `
         import { lazy, Suspense } from "react";
 
         const OfferRegion = lazy(() => import("./Offer.tsx"));
@@ -857,7 +920,7 @@ describe("webpackAdapter build", () => {
           );
         }
       `,
-      "src/pages/Offer.tsx": `
+        "src/pages/Offer.tsx": `
         import { createElement } from "react";
 
         export const cache = "no-store";
@@ -866,75 +929,80 @@ describe("webpackAdapter build", () => {
           return createElement("section", null, "Offer region");
         }
       `,
-    });
-    const config = resolveConfig<WebpackConfig>({
-      pages: {
-        campaign: {
-          component: "./src/pages/Campaign.tsx",
-          html: "./index.html",
+      });
+      const config = resolveConfig<WebpackConfig>({
+        pages: {
+          campaign: {
+            component: "./src/pages/Campaign.tsx",
+            html: "./index.html",
+          },
         },
-      },
-    });
-    const analysis = await createAppGraph(config, cwd);
-    const plan = createBuildPlan(config, analysis.graph, {
-      mode: "development",
-    });
+      });
+      const analysis = await createAppGraph(config, cwd);
+      const plan = createBuildPlan(config, analysis.graph, {
+        mode: "development",
+      });
 
-    await buildWithFrameworkArtifacts({
-      config,
-      cwd,
-      graph: analysis.graph,
-      plan,
-      hooks: [],
-    });
+      await buildWithFrameworkArtifacts({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan,
+        hooks: [],
+      });
 
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
-    ) as BuildOutput;
+      const manifest = JSON.parse(
+        await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
+      ) as BuildOutput;
 
-    expect(manifest.pages.campaign.ppr).toMatchObject({
-      delivery: "merge",
-      shell: { js: ["campaign-ppr-shell.js"], css: [] },
-      regions: {
-        offer: {
-          id: "offer",
-          assets: { js: ["campaign-offer-ppr-region.js"], css: [] },
-          component: "./src/pages/Offer.tsx",
-          cache: "no-store",
+      expect(manifest.pages.campaign.ppr).toMatchObject({
+        delivery: "merge",
+        shell: { js: ["campaign-ppr-shell.js"], css: [] },
+        regions: {
+          offer: {
+            id: "offer",
+            assets: { js: ["campaign-offer-ppr-region.js"], css: [] },
+            component: "./src/pages/Offer.tsx",
+            cache: "no-store",
+          },
         },
-      },
-    });
-    expect(manifest.server?.renderers?.["campaign-ppr-shell"]).toMatchObject({
-      kind: "ppr-shell",
-      owner: { pageId: "campaign" },
-      module: "./src/pages/Campaign.tsx",
-      assets: { js: ["campaign-ppr-shell.js"], css: [] },
-    });
-    expect(
-      manifest.server?.renderers?.["campaign-offer-ppr-region"],
-    ).toMatchObject({
-      kind: "ppr-region",
-      owner: { pageId: "campaign", regionId: "offer" },
-      module: "./src/pages/Offer.tsx",
-      assets: { js: ["campaign-offer-ppr-region.js"], css: [] },
-    });
+      });
+      expect(manifest.server?.renderers?.["campaign-ppr-shell"]).toMatchObject({
+        kind: "ppr-shell",
+        owner: { pageId: "campaign" },
+        module: "./src/pages/Campaign.tsx",
+        assets: { js: ["campaign-ppr-shell.js"], css: [] },
+      });
+      expect(
+        manifest.server?.renderers?.["campaign-offer-ppr-region"],
+      ).toMatchObject({
+        kind: "ppr-region",
+        owner: { pageId: "campaign", regionId: "offer" },
+        module: "./src/pages/Offer.tsx",
+        assets: { js: ["campaign-offer-ppr-region.js"], css: [] },
+      });
 
-    const shellResponse = await requestServerEntry(cwd, manifest, "/campaign");
-    expect(shellResponse.status).toBe(200);
-    expect(await shellResponse.text()).toContain(
-      "<main>Campaign <!-- -->campaign<section>Offer region</section></main>",
-    );
+      const shellResponse = await requestServerEntry(
+        cwd,
+        manifest,
+        "/campaign",
+      );
+      expect(shellResponse.status).toBe(200);
+      expect(await shellResponse.text()).toContain(
+        "<main>Campaign <!-- -->campaign<section>Offer region</section></main>",
+      );
 
-    const regionResponse = await requestServerEntry(
-      cwd,
-      manifest,
-      "/__evjs/ppr/campaign/offer",
-    );
-    expect(regionResponse.status).toBe(200);
-    expect(await regionResponse.text()).toContain(
-      "<section>Offer region</section>",
-    );
-  });
+      const regionResponse = await requestServerEntry(
+        cwd,
+        manifest,
+        "/__evjs/ppr/campaign/offer",
+      );
+      expect(regionResponse.status).toBe(200);
+      expect(await regionResponse.text()).toContain(
+        "<section>Offer region</section>",
+      );
+    },
+  );
 });
 
 describe("webpackAdapter dev", () => {
@@ -1033,11 +1101,14 @@ describe("webpackAdapter dev", () => {
       callbacks: framework.callbacks,
     });
     try {
-      const page = await fetch(`http://127.0.0.1:${port}/dashboard`);
-      const api = await fetch(`http://127.0.0.1:${port}/api/unknown`, {
-        headers: { Accept: "text/html" },
-      });
-      const frameworkApi = await fetch(
+      const page = await fetchDevResponse(`http://127.0.0.1:${port}/dashboard`);
+      const api = await fetchDevResponse(
+        `http://127.0.0.1:${port}/api/unknown`,
+        {
+          headers: { Accept: "text/html" },
+        },
+      );
+      const frameworkApi = await fetchDevResponse(
         `http://127.0.0.1:${port}/__evjs/unknown`,
         {
           headers: { Accept: "text/html" },
@@ -1045,10 +1116,10 @@ describe("webpackAdapter dev", () => {
       );
 
       expect(page.status).toBe(200);
-      await expect(page.text()).resolves.toContain("app shell");
+      expect(page.text).toContain("app shell");
       expect(api.status).toBe(404);
       expect(api.headers.get("Content-Type")).toContain("application/json");
-      await expect(api.json()).resolves.toEqual({
+      expect(JSON.parse(api.text)).toEqual({
         error: {
           code: "EVJS_API_NOT_FOUND",
           message: "No API route matched /api/unknown.",
@@ -1056,7 +1127,7 @@ describe("webpackAdapter dev", () => {
       });
       expect(frameworkApi.status).toBe(404);
       expect(frameworkApi.headers.get("Content-Type")).toContain("text/plain");
-      await expect(frameworkApi.text()).resolves.toContain(
+      expect(frameworkApi.text).toContain(
         "No framework route matched /__evjs/unknown.",
       );
     } finally {
@@ -1383,27 +1454,62 @@ async function createFixture(files: Record<string, string>) {
 }
 
 async function getAvailablePort(): Promise<number> {
+  for (let offset = 0; offset < 1_000; offset++) {
+    const port = WEBPACK_DEV_PORT_BASE + offset;
+    if (allocatedDevPorts.has(port)) continue;
+    if (await canListenOnPort(port)) {
+      allocatedDevPorts.add(port);
+      return port;
+    }
+  }
+
+  throw new Error("Failed to allocate a webpack dev test port.");
+}
+
+async function canListenOnPort(port: number): Promise<boolean> {
   return new Promise((resolve, reject) => {
     const server = createServer();
-    server.once("error", reject);
-    server.listen(0, () => {
-      const address = server.address();
-      if (!address || typeof address === "string") {
-        server.close(() => reject(new Error("Failed to allocate a port.")));
+    server.once("error", (error) => {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EADDRINUSE" || code === "EACCES") {
+        resolve(false);
         return;
       }
-      server.close(() => resolve(address.port));
+      reject(error);
+    });
+    server.listen(port, "0.0.0.0", () => {
+      server.close(() => resolve(true));
     });
   });
 }
 
-async function fetchDevText(url: string): Promise<string> {
+interface DevResponse {
+  status: number;
+  headers: Headers;
+  text: string;
+}
+
+async function fetchDevResponse(
+  url: string,
+  init?: RequestInit,
+): Promise<DevResponse> {
   let lastError: unknown;
 
-  for (let attempt = 0; attempt < 5; attempt++) {
+  const maxAttempts = 20;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const response = await fetch(url);
-      return await response.text();
+      const response = await fetch(url, init);
+      const text = await response.text();
+      if (!text) {
+        throw new Error(
+          `Empty webpack dev response from ${url} after attempt ${attempt}.`,
+        );
+      }
+      return {
+        status: response.status,
+        headers: response.headers,
+        text,
+      };
     } catch (error) {
       lastError = error;
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -1411,6 +1517,11 @@ async function fetchDevText(url: string): Promise<string> {
   }
 
   throw lastError;
+}
+
+async function fetchDevText(url: string): Promise<string> {
+  const response = await fetchDevResponse(url);
+  return response.text;
 }
 
 async function requestServerEntry(

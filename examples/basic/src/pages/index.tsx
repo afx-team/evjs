@@ -4,7 +4,7 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
-} from "@evjs/client";
+} from "@evjs/ev/client";
 import { useState } from "react";
 import { createUser, getUsers } from "../api/users.server";
 

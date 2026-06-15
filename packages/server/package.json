@@ -36,6 +36,7 @@
   "license": "MIT",
   "author": "xusd320",
   "type": "module",
+  "types": "./esm/index.d.ts",
   "publishConfig": {
     "access": "public"
   },

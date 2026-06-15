@@ -1,11 +1,28 @@
-import type { RemoteManifest } from "@evjs/shared/manifest";
+import {
+  BUILD_IDENTIFIER_DESCRIPTION,
+  getHttpUrlOrAbsolutePathnameValidationError,
+  isBuildIdentifier,
+} from "@evjs/shared";
+import {
+  assertFrameworkManifestShape,
+  type RemoteEntry,
+  type RemoteManifest,
+} from "@evjs/shared/manifest";
+import {
+  createRemoteReactModule,
+  type RemoteReactModuleExports,
+} from "../react.js";
 import {
   defaultLoadModule,
   defaultLoadRemoteManifest,
   loadRemoteStylesheets,
   releaseStylesheets,
 } from "./assets.js";
-import { createShellSharedScope } from "./shared.js";
+import {
+  assertAppModule,
+  assertRenderableAppModule,
+} from "./module-registration.js";
+import { assertSharedScope, createShellSharedScope } from "./shared.js";
 import { resolveTarget } from "./targets.js";
 import type {
   ActivationRequest,
@@ -20,6 +37,7 @@ import type {
 
 interface ActiveModule {
   id: string;
+  activationKey: string;
   module: AppModule;
   mountPoint: Element;
   ctx: AppContext;
@@ -34,6 +52,7 @@ interface ResolvedActivation extends ResolvedShellTarget {
 type ActivationPhase = "hydrate" | "mount" | "none";
 
 export function createShell(options: ShellOptions): Shell {
+  assertShellOptions(options);
   const loadModule = options.loadModule ?? defaultLoadModule;
   const loadRemoteManifest =
     options.loadRemoteManifest ?? defaultLoadRemoteManifest;
@@ -45,9 +64,11 @@ export function createShell(options: ShellOptions): Shell {
   const sharedScope = createShellSharedScope(options.shared);
   let active: ActiveModule | undefined;
   let activationQueue: Promise<void> = Promise.resolve();
+  let disposed = false;
 
   const shell: Shell = {
     async start(request) {
+      assertNotDisposed("start()");
       if (driverDisposers.length === 0) {
         for (const driver of options.drivers ?? []) {
           const dispose = driver.subscribe?.((next) => {
@@ -61,20 +82,29 @@ export function createShell(options: ShellOptions): Shell {
         request ?? options.drivers?.[0]?.current() ?? ({} as ActivationRequest);
       await shell.activate(initialRequest);
     },
-    activate(request) {
+    async activate(request) {
+      assertNotDisposed("activate()");
       const run = activationQueue
         .catch(() => {
           // Keep later transitions alive even if an earlier activation failed.
         })
-        .then(() => activateNow(request));
+        .then(() => {
+          assertActivationRequest(request, "activate()", options.manifest);
+          return activateNow(request);
+        });
       activationQueue = run;
       return run;
     },
     async preload(request) {
+      assertNotDisposed("preload()");
+      assertActivationRequest(request, "preload()", options.manifest);
       const target = await resolve(request);
+      if (disposed) return;
       await getModule(target.href, target.ctx);
     },
     async dispose() {
+      if (disposed) return;
+      disposed = true;
       for (const dispose of driverDisposers.splice(0)) {
         dispose();
       }
@@ -85,7 +115,7 @@ export function createShell(options: ShellOptions): Shell {
       const current = active;
       if (current) {
         try {
-          if (current.module.unmount) {
+          if (current.module.unmount && current.phase !== "none") {
             await callShellPhase(
               "unmount",
               current.ctx,
@@ -122,9 +152,19 @@ export function createShell(options: ShellOptions): Shell {
     );
     const mountPoint =
       request.mountPoint ?? options.resolveMountPoint?.(target.ctx);
-    if (!mountPoint) {
+    if (mountPoint === undefined || mountPoint === null) {
       const error = new Error(
         `[evjs] Unable to resolve mount point for ${target.ctx.kind} "${target.id}".`,
+      );
+      await options.onError?.(error, {
+        phase: "resolve",
+        app: target.ctx,
+      });
+      throw error;
+    }
+    if (!isRecord(mountPoint)) {
+      const error = new Error(
+        `[evjs] Shell resolveMountPoint() for ${target.ctx.kind} "${target.id}" must return an Element or null.`,
       );
       await options.onError?.(error, {
         phase: "resolve",
@@ -144,7 +184,13 @@ export function createShell(options: ShellOptions): Shell {
       promise = callShellPhase(
         "load",
         ctx,
-        () => loadModule(href, ctx),
+        async () => {
+          const loadedModule = await loadModule(href, ctx);
+          const module = normalizeLoadedModule(loadedModule, ctx);
+          assertAppModule(module, `[evjs] Shell module "${href}"`);
+          assertRemoteRenderableModule(module, href, ctx);
+          return module;
+        },
         options.onError,
       ).catch((error) => {
         moduleCache.delete(href);
@@ -166,11 +212,21 @@ export function createShell(options: ShellOptions): Shell {
 
   async function activateNow(request: ActivationRequest) {
     const target = await resolve(request);
-    if (active?.id === target.id && active.mountPoint === target.mountPoint) {
+    if (disposed) return;
+    const activationKey = createActivationKey(target.ctx.request);
+    if (
+      active?.id === target.id &&
+      active.mountPoint === target.mountPoint &&
+      active.activationKey === activationKey
+    ) {
       return;
     }
 
     const stylesheets = await loadRemoteStylesheets(target.ctx);
+    if (disposed) {
+      releaseStylesheets(stylesheets);
+      return;
+    }
     let module: AppModule;
     try {
       module = await getModule(target.href, target.ctx);
@@ -178,11 +234,15 @@ export function createShell(options: ShellOptions): Shell {
       releaseStylesheets(stylesheets);
       throw error;
     }
+    if (disposed) {
+      releaseStylesheets(stylesheets);
+      return;
+    }
 
     const previous = active;
     if (previous) {
       try {
-        if (previous.module.unmount) {
+        if (previous.module.unmount && previous.phase !== "none") {
           await callShellPhase(
             "unmount",
             previous.ctx,
@@ -190,10 +250,17 @@ export function createShell(options: ShellOptions): Shell {
             options.onError,
           );
         }
+      } catch (error) {
+        releaseStylesheets(stylesheets);
+        throw error;
       } finally {
         releaseStylesheets(previous.stylesheets);
         if (active === previous) active = undefined;
       }
+    }
+    if (disposed) {
+      releaseStylesheets(stylesheets);
+      return;
     }
 
     let phase: ActivationPhase;
@@ -201,7 +268,7 @@ export function createShell(options: ShellOptions): Shell {
       phase = await activateModule(target, module, request);
     } catch (error) {
       releaseStylesheets(stylesheets);
-      if (previous) {
+      if (previous && !disposed) {
         await restorePreviousActivation(previous).catch(() => {
           // Keep the activation failure as the primary error.
         });
@@ -209,8 +276,25 @@ export function createShell(options: ShellOptions): Shell {
       throw error;
     }
 
+    if (disposed) {
+      try {
+        if (module.unmount && phase !== "none") {
+          await callShellPhase(
+            "unmount",
+            target.ctx,
+            () => module.unmount?.(target.mountPoint, target.ctx),
+            options.onError,
+          );
+        }
+      } finally {
+        releaseStylesheets(stylesheets);
+      }
+      return;
+    }
+
     active = {
       id: target.id,
+      activationKey,
       module,
       mountPoint: target.mountPoint,
       ctx: target.ctx,
@@ -249,9 +333,30 @@ export function createShell(options: ShellOptions): Shell {
   }
 
   async function restorePreviousActivation(previous: ActiveModule) {
+    if (disposed) return;
     const stylesheets = await loadRemoteStylesheets(previous.ctx);
+    if (disposed) {
+      releaseStylesheets(stylesheets);
+      return;
+    }
     try {
       await replayActivationPhase(previous);
+      if (disposed) {
+        try {
+          if (previous.module.unmount && previous.phase !== "none") {
+            await callShellPhase(
+              "unmount",
+              previous.ctx,
+              () =>
+                previous.module.unmount?.(previous.mountPoint, previous.ctx),
+              options.onError,
+            );
+          }
+        } finally {
+          releaseStylesheets(stylesheets);
+        }
+        return;
+      }
       active = {
         ...previous,
         stylesheets,
@@ -278,6 +383,280 @@ export function createShell(options: ShellOptions): Shell {
       );
     }
   }
+
+  function assertNotDisposed(method: string): void {
+    if (!disposed) return;
+    throw new Error(`[evjs] Shell ${method} cannot run after dispose().`);
+  }
+}
+
+function createActivationKey(request: ActivationRequest): string {
+  return JSON.stringify({
+    appId: request.appId,
+    pageId: request.pageId,
+    remoteId: request.remoteId,
+    remoteEntryId: request.remoteEntryId,
+    buildId: request.buildId,
+    url: request.url?.toString(),
+    hydrate: request.hydrate,
+  });
+}
+
+function normalizeLoadedModule(module: unknown, ctx: AppContext): AppModule {
+  if (
+    ctx.kind === "remote" &&
+    ctx.remote?.entry.module.type === "react-component"
+  ) {
+    return createRemoteReactModule(module as RemoteReactModuleExports);
+  }
+  return module as AppModule;
+}
+
+function assertRemoteRenderableModule(
+  module: AppModule,
+  href: string,
+  ctx: AppContext,
+): void {
+  if (ctx.kind !== "remote" || !isLifecycleRemoteEntry(ctx.remote?.entry)) {
+    return;
+  }
+  assertRenderableAppModule(module, `[evjs] Shell remote module "${href}"`);
+}
+
+function isLifecycleRemoteEntry(entry: RemoteEntry | undefined): boolean {
+  return entry?.module.type === "lifecycle";
+}
+
+function assertShellOptions(options: unknown): asserts options is ShellOptions {
+  if (!isRecord(options)) {
+    throw new Error("[evjs] createShell() options must be an object.");
+  }
+  assertShellManifest(options.manifest);
+
+  if (options.drivers !== undefined) {
+    if (!Array.isArray(options.drivers)) {
+      throw new Error("[evjs] createShell() drivers must be an array.");
+    }
+    options.drivers.forEach(assertShellDriver);
+  }
+
+  assertOptionalFunction(options.loadModule, "loadModule");
+  assertOptionalFunction(options.loadRemoteManifest, "loadRemoteManifest");
+  assertOptionalFunction(options.resolveMountPoint, "resolveMountPoint");
+  assertOptionalFunction(
+    options.onRemoteSharedNegotiated,
+    "onRemoteSharedNegotiated",
+  );
+  assertOptionalFunction(options.onError, "onError");
+  assertOptionalFunction(options.onWarning, "onWarning");
+
+  assertSharedScope(options.shared, "[evjs] createShell() shared");
+  if (
+    options.sharedPolicy !== undefined &&
+    options.sharedPolicy !== "warn" &&
+    options.sharedPolicy !== "error"
+  ) {
+    throw new Error(
+      '[evjs] createShell() sharedPolicy must be "warn" or "error".',
+    );
+  }
+}
+
+function assertActivationRequest(
+  request: unknown,
+  method: "activate()" | "preload()",
+  manifest: ShellOptions["manifest"],
+): asserts request is ActivationRequest {
+  const prefix = `[evjs] Shell ${method} request`;
+  if (!isRecord(request)) {
+    throw new Error(`${prefix} must be an object.`);
+  }
+
+  assertOptionalRequestString(request.appId, `${prefix}.appId`);
+  assertOptionalRequestString(request.pageId, `${prefix}.pageId`);
+  assertOptionalRequestString(request.remoteId, `${prefix}.remoteId`);
+  assertOptionalRequestString(request.remoteEntryId, `${prefix}.remoteEntryId`);
+  assertOptionalRequestBuildId(request.buildId, `${prefix}.buildId`);
+  assertRequestBuildId(request, prefix, manifest);
+  assertActivationTargetRequest(request, prefix);
+
+  if (
+    request.url !== undefined &&
+    typeof request.url !== "string" &&
+    !(request.url instanceof URL)
+  ) {
+    throw new Error(`${prefix}.url must be a string or URL when provided.`);
+  }
+  if (typeof request.url === "string") {
+    if (!request.url.trim()) {
+      throw new Error(
+        `${prefix}.url must be a non-empty string or URL when provided.`,
+      );
+    }
+    assertTrimmedRequestString(request.url, `${prefix}.url`);
+  }
+  if (request.url !== undefined) {
+    assertRequestUrl(request.url, `${prefix}.url`);
+  }
+  if (request.mountPoint !== undefined && !isRecord(request.mountPoint)) {
+    throw new Error(`${prefix}.mountPoint must be an Element when provided.`);
+  }
+  if (request.hydrate !== undefined && typeof request.hydrate !== "boolean") {
+    throw new Error(`${prefix}.hydrate must be a boolean when provided.`);
+  }
+}
+
+function assertOptionalRequestString(value: unknown, path: string): void {
+  if (value === undefined) return;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${path} must be a non-empty string when provided.`);
+  }
+  assertTrimmedRequestString(value, path);
+}
+
+function assertOptionalRequestBuildId(value: unknown, path: string): void {
+  if (value === undefined) return;
+  assertOptionalRequestString(value, path);
+  if (typeof value === "string" && !isBuildIdentifier(value)) {
+    throw new Error(
+      `${path} must contain only ${BUILD_IDENTIFIER_DESCRIPTION}.`,
+    );
+  }
+}
+
+function assertRequestUrl(value: string | URL, path: string): void {
+  const error = getHttpUrlOrAbsolutePathnameValidationError(value);
+  if (!error) return;
+
+  switch (error) {
+    case "empty":
+      throw new Error(
+        `${path} must be a non-empty string or URL when provided.`,
+      );
+    case "whitespace":
+      throw new Error(
+        `${path} must not contain leading or trailing whitespace.`,
+      );
+    case "not-http-url-or-absolute-pathname":
+      throwRequestUrlError(path);
+  }
+}
+
+function throwRequestUrlError(path: string): never {
+  throw new Error(
+    `${path} must be an http(s) URL or pathname starting with "/".`,
+  );
+}
+
+function assertTrimmedRequestString(value: string, path: string): void {
+  if (value.trim() !== value) {
+    throw new Error(`${path} must not contain leading or trailing whitespace.`);
+  }
+}
+
+function assertRequestBuildId(
+  request: ActivationRequest,
+  prefix: string,
+  manifest: ShellOptions["manifest"],
+): void {
+  if (request.buildId === undefined) return;
+  if (request.buildId !== manifest.buildId) {
+    throw new Error(
+      `${prefix}.buildId "${request.buildId}" does not match manifest.buildId "${manifest.buildId}".`,
+    );
+  }
+}
+
+function assertActivationTargetRequest(
+  request: ActivationRequest,
+  prefix: string,
+): void {
+  const targets = [
+    request.appId && "appId",
+    request.pageId && "pageId",
+    request.remoteId && "remoteId",
+  ].filter(Boolean);
+  if (targets.length > 1) {
+    throw new Error(
+      `${prefix} must specify at most one of appId, pageId, or remoteId.`,
+    );
+  }
+  if (request.remoteEntryId !== undefined && request.remoteId === undefined) {
+    throw new Error(`${prefix}.remoteEntryId requires remoteId when provided.`);
+  }
+}
+
+function assertShellManifest(manifest: unknown): void {
+  if (!isRecord(manifest)) {
+    throw new Error("[evjs] createShell() manifest must be an object.");
+  }
+  if (manifest.version !== 1) {
+    throw new Error("[evjs] createShell() manifest.version must be 1.");
+  }
+  if (typeof manifest.buildId !== "string" || !manifest.buildId.trim()) {
+    throw new Error(
+      "[evjs] createShell() manifest.buildId must be a non-empty string.",
+    );
+  }
+  if (!isBuildIdentifier(manifest.buildId)) {
+    throw new Error(
+      `[evjs] createShell() manifest.buildId must contain only ${BUILD_IDENTIFIER_DESCRIPTION}.`,
+    );
+  }
+  if (!isRecord(manifest.runtime)) {
+    throw new Error("[evjs] createShell() manifest.runtime must be an object.");
+  }
+  if (!isRecord(manifest.pages)) {
+    throw new Error("[evjs] createShell() manifest.pages must be an object.");
+  }
+  if (!isRecord(manifest.apps)) {
+    throw new Error("[evjs] createShell() manifest.apps must be an object.");
+  }
+  if (!Array.isArray(manifest.routes)) {
+    throw new Error("[evjs] createShell() manifest.routes must be an array.");
+  }
+  if (manifest.remotes !== undefined && !isRecord(manifest.remotes)) {
+    throw new Error("[evjs] createShell() manifest.remotes must be an object.");
+  }
+  assertFrameworkManifestShape(manifest, "createShell() manifest", {
+    serverFunctionModules: "optional",
+    pageRendererReferences: "optional",
+    pprRendererReferences: "optional",
+    rscRendererReferences: "optional",
+  });
+}
+
+function assertShellDriver(driver: unknown, index: number): void {
+  if (!isRecord(driver)) {
+    throw new Error(
+      `[evjs] createShell() drivers[${index}] must be a shell driver object.`,
+    );
+  }
+  if (typeof driver.current !== "function") {
+    throw new Error(
+      `[evjs] createShell() drivers[${index}].current must be a function.`,
+    );
+  }
+  if (
+    driver.subscribe !== undefined &&
+    typeof driver.subscribe !== "function"
+  ) {
+    throw new Error(
+      `[evjs] createShell() drivers[${index}].subscribe must be a function when provided.`,
+    );
+  }
+}
+
+function assertOptionalFunction(value: unknown, name: string): void {
+  if (value !== undefined && typeof value !== "function") {
+    throw new Error(
+      `[evjs] createShell() ${name} must be a function when provided.`,
+    );
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 async function initializeModule(

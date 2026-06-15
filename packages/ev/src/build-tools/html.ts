@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { DOMParser } from "domparser-rs";
+import type { HtmlDocument } from "../plugin.js";
 
 /**
  * A single asset descriptor — either a plain filename string or an object
@@ -29,6 +30,19 @@ export interface GenerateHtmlOptions {
 }
 
 const parser = new DOMParser();
+
+export interface ValidateHtmlTemplateOptions {
+  /** Absolute or relative path to the user's HTML template file. */
+  template: string;
+  /** Optional path displayed in diagnostics. Defaults to `template`. */
+  displayName?: string;
+}
+
+interface ParsedHtmlTemplate {
+  doc: HtmlDocument;
+  head: HtmlDocument;
+  body: HtmlDocument;
+}
 
 /** Escape a string for safe use in an HTML attribute value. */
 function escapeAttr(s: string): string {
@@ -71,25 +85,10 @@ function normalizeAsset(asset: HtmlAsset): {
  *
  * Returns the parsed DOM document. Call `doc.toString()` to serialize.
  */
-export function generateHtml(options: GenerateHtmlOptions) {
+export function generateHtml(options: GenerateHtmlOptions): HtmlDocument {
   const { template, js, css } = options;
 
-  const templateContent = fs.readFileSync(template, "utf-8");
-  const doc = parser.parseFromString(templateContent, "text/html");
-
-  const head = doc.querySelector("head");
-  const body = doc.querySelector("body");
-
-  if (!head) {
-    throw new Error(
-      `[evjs] HTML template "${template}" is missing a <head> element.`,
-    );
-  }
-  if (!body) {
-    throw new Error(
-      `[evjs] HTML template "${template}" is missing a <body> element.`,
-    );
-  }
+  const { body, doc, head } = parseHtmlTemplate({ template });
 
   // Inject CSS <link> tags into <head>
   for (const cssAsset of css) {
@@ -115,4 +114,36 @@ export function generateHtml(options: GenerateHtmlOptions) {
   }
 
   return doc;
+}
+
+export function validateHtmlTemplate(
+  options: ValidateHtmlTemplateOptions,
+): HtmlDocument {
+  return parseHtmlTemplate(options).doc;
+}
+
+function parseHtmlTemplate({
+  template,
+  displayName = template,
+}: ValidateHtmlTemplateOptions): ParsedHtmlTemplate {
+  const templateContent = fs.readFileSync(template, "utf-8");
+  const doc = parser.parseFromString(
+    templateContent,
+    "text/html",
+  ) as unknown as HtmlDocument;
+  const head = doc.querySelector("head");
+  const body = doc.querySelector("body");
+
+  if (!head) {
+    throw new Error(
+      `[evjs] HTML template "${displayName}" is missing a <head> element.`,
+    );
+  }
+  if (!body) {
+    throw new Error(
+      `[evjs] HTML template "${displayName}" is missing a <body> element.`,
+    );
+  }
+
+  return { body, doc, head };
 }

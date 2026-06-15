@@ -1,21 +1,41 @@
 import {
+  BUILD_IDENTIFIER_DESCRIPTION,
+  findBestPageRoute,
+  getRscFlightClientPageUrlParam,
+  isBuildIdentifier,
   matchPageRouteParams,
   type PageSearchParams,
   parsePageSearch,
+  type RscFlightClientPageUrlParamError,
 } from "@evjs/shared";
-import type {
-  BuildOutput,
-  HydrationMode,
-  RenderMode,
+import {
+  assertFrameworkManifestShape,
+  type BuildOutput,
+  type HydrationMode,
+  type RenderMode,
 } from "@evjs/shared/manifest";
 import {
   type ComponentType,
   createContext,
   createElement,
+  type ElementType,
   useContext,
 } from "react";
 import { createRoot, hydrateRoot, type Root } from "react-dom/client";
+import {
+  assertFetchErrorResponseStatus,
+  assertFetchResponseJson,
+  assertFetchResponseJsonContentType,
+  assertFetchResponseObject,
+  formatFetchErrorResponseDetail,
+  getFetchResponseContentType,
+  readFetchErrorResponseBody,
+} from "./fetch-response.js";
 import { type PageProps, PageProvider } from "./page-context.js";
+import {
+  isReactComponentExport,
+  type ReactComponentExport,
+} from "./react-component.js";
 import type {
   ActivationRequest,
   AppContext,
@@ -24,7 +44,7 @@ import type {
 } from "./shell.js";
 
 export interface ReactPageRuntimeOptions {
-  component: ComponentType;
+  component: ReactComponentExport;
   mount: string | Element;
   hydrate?: HydrationMode;
   render?: RenderMode;
@@ -33,7 +53,7 @@ export interface ReactPageRuntimeOptions {
 }
 
 export interface ReactPageMountOptions {
-  component: ComponentType;
+  component: ReactComponentExport;
   hydrate?: HydrationMode;
   render?: RenderMode;
   route?: ReactPageRouteContext;
@@ -78,7 +98,7 @@ export interface RemoteReactProps {
 }
 
 export interface RemoteReactModuleExports {
-  default?: ComponentType<RemoteReactProps>;
+  default?: ElementType<RemoteReactProps>;
   init?: AppModule["init"];
   mount?: AppModule["mount"];
   hydrate?: AppModule["hydrate"];
@@ -122,6 +142,8 @@ const RemoteContext = createContext<RemoteRuntimeContext | undefined>(
 export function createReactPageModule(
   options: ReactPageMountOptions,
 ): AppModule {
+  assertReactPageMountOptions(options, "createReactPageModule()");
+
   return {
     mount(mountPoint, ctx) {
       if (options.hydrate === "none") return;
@@ -136,10 +158,18 @@ export function createReactPageModule(
       if (options.hydrate === "none") return;
       const props = resolvePageProps(options, ctx);
       if (shouldHydrate(options)) {
-        const root = hydrateRoot(
-          mountPoint,
-          createReactPageElement(options.component, props, options.route),
-        );
+        unmountMountedReactRoot(mountPoint);
+        let root: Root;
+        try {
+          root = hydrateRoot(
+            mountPoint,
+            createReactPageElement(options.component, props, options.route),
+          );
+        } catch (error) {
+          throw new Error(
+            `[evjs] React page hydrateRoot failed${formatErrorDetail(error)}`,
+          );
+        }
         rootByMountPoint.set(mountPoint, root);
         return;
       }
@@ -147,8 +177,7 @@ export function createReactPageModule(
       mountReactRoot(mountPoint, options.component, props, options.route);
     },
     unmount(mountPoint) {
-      rootByMountPoint.get(mountPoint)?.unmount();
-      rootByMountPoint.delete(mountPoint);
+      unmountMountedReactRoot(mountPoint);
     },
   };
 }
@@ -156,6 +185,8 @@ export function createReactPageModule(
 export function createRemoteReactModule(
   exports: RemoteReactModuleExports,
 ): AppModule {
+  assertRemoteReactModuleExports(exports);
+  assertRemoteReactModuleMode(exports);
   if (isLifecycleModule(exports)) return exports as AppModule;
 
   if (!exports.default) {
@@ -163,6 +194,13 @@ export function createRemoteReactModule(
       "[evjs] Remote modules must export a default React component or lifecycle functions.",
     );
   }
+  if (!isRemoteReactComponentExport(exports.default)) {
+    throw new Error(
+      "[evjs] Remote module default export must be a React component.",
+    );
+  }
+
+  const component = exports.default;
 
   return {
     ...createReactPageModule({
@@ -171,7 +209,7 @@ export function createRemoteReactModule(
       render: "csr",
       props(ctx) {
         return {
-          component: exports.default,
+          component,
           remote: createRemoteRuntimeContext(ctx),
           request: ctx?.request ?? {},
         };
@@ -237,7 +275,7 @@ function sanitizeRemoteSharedEntries(
 }
 
 interface RemoteReactRootProps {
-  component: ComponentType<RemoteReactProps>;
+  component: ElementType<RemoteReactProps>;
   remote: RemoteRuntimeContext;
   request: ActivationRequest;
 }
@@ -258,18 +296,93 @@ function isLifecycleModule(exports: RemoteReactModuleExports): boolean {
   );
 }
 
+function assertRemoteReactModuleExports(
+  exports: unknown,
+): asserts exports is RemoteReactModuleExports {
+  if (!isRecord(exports)) {
+    throw new Error(
+      "[evjs] Remote modules must export a module object with a default React component or lifecycle functions.",
+    );
+  }
+  assertOptionalRemoteLifecycleHook(exports.init, "init");
+  assertOptionalRemoteLifecycleHook(exports.mount, "mount");
+  assertOptionalRemoteLifecycleHook(exports.hydrate, "hydrate");
+  assertOptionalRemoteLifecycleHook(exports.unmount, "unmount");
+}
+
+function assertRemoteReactModuleMode(exports: RemoteReactModuleExports): void {
+  if (exports.default === undefined || !isLifecycleModule(exports)) return;
+  throw new Error(
+    "[evjs] Remote modules must not mix a default React component with mount, hydrate, or unmount lifecycle exports. Use init with a default component, or export lifecycle functions without default.",
+  );
+}
+
+function assertOptionalRemoteLifecycleHook(
+  value: unknown,
+  name: keyof Pick<AppModule, "init" | "mount" | "hydrate" | "unmount">,
+): void {
+  if (value !== undefined && typeof value !== "function") {
+    throw new Error(
+      `[evjs] Remote module ${name} export must be a function when provided.`,
+    );
+  }
+}
+
+function isRemoteReactComponentExport(
+  value: unknown,
+): value is ElementType<RemoteReactProps> {
+  return isReactComponentExport(value);
+}
+
 function mountReactRoot(
   mountPoint: Element,
-  component: ComponentType,
+  component: ReactComponentExport,
   props: Record<string, unknown>,
   route?: ReactPageRouteContext,
 ) {
-  const root = createRoot(mountPoint);
-  root.render(createReactPageElement(component, props, route));
+  unmountMountedReactRoot(mountPoint);
+  let root: Root;
+  try {
+    root = createRoot(mountPoint);
+  } catch (error) {
+    throw new Error(
+      `[evjs] React page createRoot failed${formatErrorDetail(error)}`,
+    );
+  }
+  try {
+    root.render(createReactPageElement(component, props, route));
+  } catch (error) {
+    tryUnmountReactRoot(root);
+    throw new Error(
+      `[evjs] React page root.render failed${formatErrorDetail(error)}`,
+    );
+  }
   rootByMountPoint.set(mountPoint, root);
 }
 
+function unmountMountedReactRoot(mountPoint: Element): void {
+  const root = rootByMountPoint.get(mountPoint);
+  if (!root) return;
+  rootByMountPoint.delete(mountPoint);
+  try {
+    root.unmount();
+  } catch (error) {
+    throw new Error(
+      `[evjs] React page root.unmount failed${formatErrorDetail(error)}`,
+    );
+  }
+}
+
+function tryUnmountReactRoot(root: Root): void {
+  try {
+    root.unmount();
+  } catch {
+    // Preserve the render failure as the primary error.
+  }
+}
+
 export function mountReactPage(options: ReactPageRuntimeOptions): void {
+  assertReactPageRuntimeOptions(options);
   if (options.hydrate === "none") return;
 
   const mountPoint = resolveMountPoint(options.mount);
@@ -282,9 +395,112 @@ export function mountReactPage(options: ReactPageRuntimeOptions): void {
   void mod.mount?.(mountPoint, {} as AppContext);
 }
 
+function assertReactPageRuntimeOptions(
+  options: unknown,
+): asserts options is ReactPageRuntimeOptions {
+  assertReactPageMountOptions(options, "mountReactPage()");
+  assertReactPageMountOption(
+    (options as { mount?: unknown }).mount,
+    "mountReactPage() mount",
+  );
+}
+
+function assertReactPageMountOptions(
+  options: unknown,
+  source: string,
+): asserts options is ReactPageMountOptions {
+  if (!isRecord(options)) {
+    throw new Error(`[evjs] ${source} options must be an object.`);
+  }
+  if (!isReactComponentExport(options.component)) {
+    throw new Error(`[evjs] ${source} component must be a React component.`);
+  }
+  assertReactPageRenderMode(options.render, source);
+  assertReactPageHydrationMode(options.hydrate, source);
+  assertOptionalReactPageProps(options.props, source);
+  assertOptionalReactPageRoute(options.route, source);
+}
+
+function assertReactPageRenderMode(value: unknown, source: string): void {
+  if (
+    value !== undefined &&
+    value !== "csr" &&
+    value !== "ssr" &&
+    value !== "ssg"
+  ) {
+    throw new Error(`[evjs] ${source} render must be "csr", "ssr", or "ssg".`);
+  }
+}
+
+function assertReactPageHydrationMode(value: unknown, source: string): void {
+  if (
+    value !== undefined &&
+    value !== "none" &&
+    value !== "load" &&
+    value !== "visible" &&
+    value !== "idle"
+  ) {
+    throw new Error(
+      `[evjs] ${source} hydrate must be "none", "load", "visible", or "idle".`,
+    );
+  }
+}
+
+function assertOptionalReactPageProps(value: unknown, source: string): void {
+  if (value !== undefined && typeof value !== "function" && !isRecord(value)) {
+    throw new Error(`[evjs] ${source} props must be an object or function.`);
+  }
+}
+
+function assertReactPageProps(
+  value: unknown,
+): asserts value is Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new Error("[evjs] React page props must resolve to an object.");
+  }
+}
+
+function assertOptionalReactPageRoute(value: unknown, source: string): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    throw new Error(`[evjs] ${source} route must be an object.`);
+  }
+  assertReactPageString(value.id, `${source} route.id`);
+  assertReactPageString(value.path, `${source} route.path`);
+}
+
+function assertReactPageMountOption(value: unknown, path: string): void {
+  if (typeof value === "string") {
+    if (!value.trim()) {
+      throw new Error(`[evjs] ${path} must be a non-empty selector string.`);
+    }
+    if (value.trim() !== value) {
+      throw new Error(
+        `[evjs] ${path} must not include leading or trailing whitespace.`,
+      );
+    }
+    return;
+  }
+  if (!isRecord(value)) {
+    throw new Error(`[evjs] ${path} must be a selector string or Element.`);
+  }
+}
+
+function assertReactPageString(value: unknown, path: string): void {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`[evjs] ${path} must be a non-empty string.`);
+  }
+  if (value.trim() !== value) {
+    throw new Error(
+      `[evjs] ${path} must not include leading or trailing whitespace.`,
+    );
+  }
+}
+
 export async function fetchRscFlight(
   options: RscFlightFetchOptions,
 ): Promise<Response> {
+  assertRscFlightFetchOptions(options);
   const endpoint =
     options.manifest.rsc?.endpoint ?? options.manifest.runtime.server?.rsc;
   if (!endpoint) {
@@ -294,35 +510,107 @@ export async function fetchRscFlight(
   }
 
   const fetchImpl = options.fetch ?? globalThis.fetch;
-  if (!fetchImpl) {
+  if (typeof fetchImpl !== "function") {
     throw new Error("[evjs] RSC Flight fetch requires a fetch implementation.");
   }
 
-  return fetchImpl(resolveRscFlightUrl(endpoint, options));
+  const requestUrl = resolveRscFlightUrl(endpoint, options);
+  let response: unknown;
+  try {
+    response = await fetchImpl(requestUrl);
+  } catch (error) {
+    throw new Error(
+      `[evjs] RSC Flight request failed${formatErrorDetail(error)}`,
+    );
+  }
+  assertRscFetchResponseObject(response);
+  return response;
 }
+
+export function assertRscFlightFetchOptions(
+  options: unknown,
+): asserts options is RscFlightFetchOptions {
+  if (!isRecord(options)) {
+    throw new Error("[evjs] fetchRscFlight() options must be an object.");
+  }
+  assertFrameworkManifestShape(options.manifest, "fetchRscFlight() manifest", {
+    serverFunctionModules: "optional",
+    pageRendererReferences: "optional",
+    pprRendererReferences: "optional",
+    rscRendererReferences: "optional",
+  });
+  assertOptionalRscFlightString(options.pageId, "fetchRscFlight() pageId");
+  assertOptionalRscFlightUrl(options.url, "fetchRscFlight() url");
+}
+
+function assertOptionalRscFlightString(value: unknown, path: string): void {
+  if (value === undefined) return;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`[evjs] ${path} must be a non-empty string.`);
+  }
+  if (value.trim() !== value) {
+    throw new Error(
+      `[evjs] ${path} must not include leading or trailing whitespace.`,
+    );
+  }
+}
+
+function assertOptionalRscFlightUrl(value: unknown, path: string): void {
+  if (value === undefined) return;
+  if (typeof value === "string" || value instanceof URL) return;
+  throw new Error(`[evjs] ${path} must be a string or URL when provided.`);
+}
+
+const RSC_FLIGHT_FETCH_ERROR_PREFIX = "[evjs] RSC Flight";
+const RSC_DEBUG_RESPONSE_ERROR_PREFIX = "[evjs] RSC debug payload response";
 
 export async function fetchRscDebugPayload(
   options: RscFlightFetchOptions,
 ): Promise<RscDebugPayload> {
   const response = await fetchRscFlight(options);
   if (!response.ok) {
+    assertFetchErrorResponseStatus(response, RSC_FLIGHT_FETCH_ERROR_PREFIX);
+    const responseBody = await readFetchErrorResponseBody(response);
     throw new Error(
-      `[evjs] RSC debug payload request failed: ${response.status} ${response.statusText}`,
+      `[evjs] RSC debug payload request failed: ${formatFetchErrorResponseDetail(
+        response,
+        responseBody,
+      )}`,
     );
   }
 
-  const payload = (await response.json()) as unknown;
-  if (!isRscDebugPayload(payload)) {
-    throw new Error(
-      "[evjs] RSC debug payload response is not an evjs RSC debug payload.",
-    );
+  let payload: unknown;
+  assertFetchResponseJson(response, RSC_DEBUG_RESPONSE_ERROR_PREFIX);
+  assertFetchResponseJsonContentType(response, RSC_DEBUG_RESPONSE_ERROR_PREFIX);
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("[evjs] RSC debug payload response is not valid JSON.");
   }
+  assertRscDebugPayload(payload, "RSC debug payload response");
   return payload;
+}
+
+function assertRscFetchResponseObject(
+  value: unknown,
+): asserts value is Response {
+  assertFetchResponseObject(value, RSC_FLIGHT_FETCH_ERROR_PREFIX);
+}
+
+export function getRscFetchResponseContentType(
+  response: Response,
+): string | null {
+  return getFetchResponseContentType(response);
+}
+
+function formatErrorDetail(error: unknown): string {
+  return error instanceof Error && error.message ? `: ${error.message}` : ".";
 }
 
 export function mountRscDebugPayload(
   options: RscDebugPayloadMountOptions,
 ): void {
+  assertRscDebugPayloadMountOptions(options);
   const mountPoint = resolveMountPoint(options.mount);
   mountPoint.innerHTML = options.payload.html ?? "";
 }
@@ -339,25 +627,57 @@ function resolveRscFlightUrl(
   endpoint: string,
   options: RscFlightFetchOptions,
 ): string {
-  const currentUrl = options.url?.toString() ?? globalThis.location?.href;
-  const base = currentUrl ?? endpoint;
+  const explicitUrl = options.url?.toString();
+  const locationHref = globalThis.location?.href;
+  const currentUrl = explicitUrl ?? locationHref;
+  const base = locationHref ?? explicitUrl ?? endpoint;
   const url = new URL(endpoint, base);
   if (options.pageId) {
     url.searchParams.set("page", options.pageId);
   }
-  const pageUrl = currentUrl ? toPageUrlParam(currentUrl) : undefined;
+  const pageUrl =
+    currentUrl !== undefined
+      ? toPageUrlParam(currentUrl, {
+          explicit: explicitUrl !== undefined,
+          locationHref,
+          requestUrl: url,
+        })
+      : undefined;
   if (pageUrl) {
     url.searchParams.set("url", pageUrl);
   }
   return url.toString();
 }
 
-function toPageUrlParam(value: string): string | undefined {
-  try {
-    const url = new URL(value, "https://evjs.local");
-    return `${url.pathname}${url.search}`;
-  } catch {
-    return undefined;
+function toPageUrlParam(
+  value: string,
+  options: {
+    explicit: boolean;
+    locationHref?: string;
+    requestUrl: URL;
+  },
+): string | undefined {
+  const result = getRscFlightClientPageUrlParam(value, options);
+  if (result.error) {
+    throw new Error(formatRscFlightPageUrlError(result.error));
+  }
+  return result.value;
+}
+
+function formatRscFlightPageUrlError(
+  error: RscFlightClientPageUrlParamError,
+): string {
+  switch (error) {
+    case "empty-or-whitespace":
+      return "[evjs] RSC Flight page url must be a non-empty string without leading or trailing whitespace.";
+    case "not-absolute-path-or-url":
+      return '[evjs] RSC Flight page url must be an absolute path starting with "/" or an absolute same-origin HTTP(S) URL.';
+    case "invalid-url":
+      return "[evjs] RSC Flight page url is not a valid URL.";
+    case "hash":
+      return "[evjs] RSC Flight page url must not include a hash.";
+    case "cross-origin":
+      return "[evjs] RSC Flight page url must stay on the same origin.";
   }
 }
 
@@ -367,9 +687,12 @@ function resolvePageProps(
 ): Record<string, unknown> {
   const explicitProps =
     typeof options.props === "function" ? options.props(ctx) : options.props;
+  if (explicitProps !== undefined) {
+    assertReactPageProps(explicitProps);
+    return explicitProps;
+  }
 
   return (
-    explicitProps ??
     readEmbeddedPageProps() ??
     (ctx ? pagePropsFromContext(ctx) : undefined) ??
     {}
@@ -385,7 +708,8 @@ function readEmbeddedPageProps(): Record<string, unknown> | undefined {
   if (!text) return undefined;
 
   try {
-    return JSON.parse(text) as Record<string, unknown>;
+    const props = JSON.parse(text) as unknown;
+    return isRecord(props) ? props : undefined;
   } catch {
     return undefined;
   }
@@ -393,8 +717,10 @@ function readEmbeddedPageProps(): Record<string, unknown> | undefined {
 
 function pagePropsFromContext(ctx: AppContext): Record<string, unknown> {
   if (ctx.kind !== "page") return {};
-  const route = ctx.manifest.routes.find(
-    (candidate) => candidate.pageId === ctx.id,
+  const route = findRouteForPage(
+    ctx.manifest,
+    ctx.id,
+    readRequestPathname(ctx),
   );
 
   return {
@@ -402,17 +728,45 @@ function pagePropsFromContext(ctx: AppContext): Record<string, unknown> {
       buildId: ctx.manifest.buildId,
     },
     pageId: ctx.id,
-    route: route
-      ? {
-          id: route.id,
-          path: route.path,
-        }
-      : undefined,
+    route,
   };
 }
 
+function findRouteForPage(
+  manifest: BuildOutput,
+  pageId: string,
+  pathname: string | undefined,
+): ReactPageRouteContext | undefined {
+  const pageRoutes = manifest.routes.filter(
+    (candidate) => candidate.pageId === pageId,
+  );
+  const route = pathname
+    ? findBestPageRoute(pageRoutes, pathname)
+    : pageRoutes[0];
+  return route
+    ? {
+        id: route.id,
+        path: route.path,
+      }
+    : undefined;
+}
+
+function readRequestPathname(ctx: AppContext): string | undefined {
+  return parseUrlPathname(ctx.request?.url) ?? globalThis.location?.pathname;
+}
+
+function parseUrlPathname(value: string | URL | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    return new URL(value, globalThis.location?.href ?? "http://evjs.local")
+      .pathname;
+  } catch {
+    return undefined;
+  }
+}
+
 function createReactPageElement(
-  component: ComponentType,
+  component: ReactComponentExport,
   props: Record<string, unknown>,
   route?: ReactPageRouteContext,
 ) {
@@ -449,7 +803,7 @@ function shouldProvidePageRouteProps(
   route?: ReactPageRouteContext,
 ): boolean {
   return (
-    Boolean(route) ||
+    Boolean(route ?? readRouteContext(props.route)) ||
     isRecord(props.params) ||
     isRecord(props.search) ||
     "loaderData" in props
@@ -508,13 +862,118 @@ function getRemoteSourceLabel(baseUrl: string | undefined): string {
   }
 }
 
-function isRscDebugPayload(value: unknown): value is RscDebugPayload {
-  return Boolean(
-    value &&
-      typeof value === "object" &&
-      (value as { version?: unknown }).version === 1 &&
-      (value as { type?: unknown }).type === "evjs.rsc",
+function assertRscDebugPayloadMountOptions(
+  options: unknown,
+): asserts options is RscDebugPayloadMountOptions {
+  if (!isRecord(options)) {
+    throw new Error("[evjs] mountRscDebugPayload() options must be an object.");
+  }
+  assertRscDebugPayload(options.payload, "mountRscDebugPayload() payload");
+  assertReactPageMountOption(options.mount, "mountRscDebugPayload() mount");
+}
+
+function assertRscDebugPayload(
+  value: unknown,
+  source: string,
+): asserts value is RscDebugPayload {
+  if (!isRecord(value) || value.version !== 1 || value.type !== "evjs.rsc") {
+    throw new Error(`[evjs] ${source} is not an evjs RSC debug payload.`);
+  }
+
+  assertRscDebugBuildIdentifier(value.buildId, `${source}.buildId`);
+  assertOptionalRscDebugString(value.endpoint, `${source}.endpoint`);
+  assertOptionalRscDebugBuildIdentifier(value.pageId, `${source}.pageId`);
+  assertOptionalRscDebugBuildIdentifier(value.renderer, `${source}.renderer`);
+  assertOptionalRscDebugHtml(value.html, `${source}.html`);
+  if (value.assets !== undefined) {
+    assertRscDebugAssets(value.assets, `${source}.assets`);
+  }
+  assertOptionalRscDebugRecord(
+    value.clientReferences,
+    `${source}.clientReferences`,
   );
+  assertOptionalRscDebugRecord(
+    value.serverReferences,
+    `${source}.serverReferences`,
+  );
+  assertOptionalRscDebugRecord(value.pages, `${source}.pages`);
+}
+
+function assertRscDebugBuildIdentifier(value: unknown, path: string): void {
+  if (typeof value !== "string" || !value) {
+    throw new Error(`[evjs] ${path} must be a non-empty string.`);
+  }
+  if (value.trim() !== value) {
+    throw new Error(
+      `[evjs] ${path} must not include leading or trailing whitespace.`,
+    );
+  }
+  if (!isBuildIdentifier(value)) {
+    throw new Error(
+      `[evjs] ${path} must contain only ${BUILD_IDENTIFIER_DESCRIPTION}.`,
+    );
+  }
+}
+
+function assertOptionalRscDebugBuildIdentifier(
+  value: unknown,
+  path: string,
+): void {
+  if (value === undefined) return;
+  assertRscDebugBuildIdentifier(value, path);
+}
+
+function assertOptionalRscDebugString(value: unknown, path: string): void {
+  if (value === undefined) return;
+  if (typeof value !== "string") {
+    throw new Error(`[evjs] ${path} must be a string when provided.`);
+  }
+  if (!value) {
+    throw new Error(`[evjs] ${path} must be a non-empty string.`);
+  }
+  if (value.trim() !== value) {
+    throw new Error(
+      `[evjs] ${path} must not include leading or trailing whitespace.`,
+    );
+  }
+}
+
+function assertOptionalRscDebugHtml(value: unknown, path: string): void {
+  if (value === undefined) return;
+  if (typeof value !== "string") {
+    throw new Error(`[evjs] ${path} must be a string when provided.`);
+  }
+}
+
+function assertRscDebugAssets(value: unknown, path: string): void {
+  if (!isRecord(value)) {
+    throw new Error(`[evjs] ${path} must be an object.`);
+  }
+  assertRscDebugStringArray(value.js, `${path}.js`);
+  assertRscDebugStringArray(value.css, `${path}.css`);
+}
+
+function assertRscDebugStringArray(value: unknown, path: string): void {
+  if (!Array.isArray(value)) {
+    throw new Error(`[evjs] ${path} must contain only non-empty strings.`);
+  }
+  for (const item of value) {
+    if (typeof item !== "string" || !item) {
+      throw new Error(`[evjs] ${path} must contain only non-empty strings.`);
+    }
+    if (item.trim() !== item) {
+      throw new Error(
+        `[evjs] ${path} item "${item}" must not contain leading or trailing whitespace.`,
+      );
+    }
+  }
+}
+
+function assertOptionalRscDebugRecord(value: unknown, path: string): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    throw new Error(`[evjs] ${path} must be an object when provided.`);
+  }
 }
 
 function shouldHydrate(options: {
@@ -526,7 +985,20 @@ function shouldHydrate(options: {
 
 function resolveMountPoint(mount: string | Element): Element {
   if (typeof mount !== "string") return mount;
-  const mountPoint = document.querySelector(mount);
+  const doc = globalThis.document;
+  if (!doc) {
+    throw new Error(
+      `[evjs] Document is not available to resolve mount selector "${mount}".`,
+    );
+  }
+  let mountPoint: Element | null;
+  try {
+    mountPoint = doc.querySelector(mount);
+  } catch (error) {
+    throw new Error(
+      `[evjs] Mount selector "${mount}" is invalid${formatErrorDetail(error)}`,
+    );
+  }
   if (!mountPoint) {
     throw new Error(`[evjs] Mount point "${mount}" was not found.`);
   }

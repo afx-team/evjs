@@ -102,12 +102,18 @@ function createFrameworkCallbacks(options: {
   onBuildOutput?: (output: BuildOutput) => void | Promise<void>;
   onServerBundleReady?: () => void | Promise<void>;
 }) {
+  let graph = options.graph;
+  let plan = options.plan;
   const hooks = options.hooks ?? [];
   return {
+    update(nextGraph: AppGraph, nextPlan: BuildPlan) {
+      graph = nextGraph;
+      plan = nextPlan;
+    },
     async onBuildFacts(facts: BundlerBuildFacts) {
       const output = linkBuildOutput({
-        graph: options.graph,
-        plan: options.plan,
+        graph,
+        plan,
         serverEnabled: options.config.serverEnabled,
         clientEntryAssets: facts.clientEntryAssets,
         firstClientEntryAssets: facts.firstClientEntryAssets,
@@ -129,7 +135,7 @@ function createFrameworkCallbacks(options: {
         "utf-8",
       );
 
-      for (const html of options.plan.html) {
+      for (const html of plan.html) {
         const pageId = html.owner.pageId;
         const appId = html.owner.appId;
         const assets = pageId
@@ -154,11 +160,10 @@ function createFrameworkCallbacks(options: {
         }
 
         const finalHtml = await buildHtml({
-          // biome-ignore lint/suspicious/noExplicitAny: DOM interfaces are parser-backed.
-          doc: doc as any,
+          doc,
           hooks,
           pluginContext: {
-            mode: options.plan.mode,
+            mode: plan.mode,
             command: "dev",
             cwd: options.cwd,
             config: options.config,
@@ -255,6 +260,7 @@ describe("utoopackAdapter dev", () => {
         js: ["main.js"],
         css: ["main.css"],
       },
+      document: { fileName: "index.html" },
       entry: "./src/main.tsx",
       module: {
         type: "entry",
@@ -274,8 +280,143 @@ describe("utoopackAdapter dev", () => {
       controller.updatePlan(
         diffBuildPlan(buildContext.plan, buildContext.plan, "config"),
       ),
-    ).rejects.toThrow("Utoopack dev plan updates are not supported yet");
+    ).resolves.toBeUndefined();
     await controller.close?.();
+  });
+
+  it("applies html-only plan updates without restarting Utoopack dev", async () => {
+    const cwd = await makeProject();
+    await fs.promises.writeFile(
+      path.join(cwd, "next.html"),
+      '<!doctype html><html><head></head><body><main id="app">next-shell</main></body></html>',
+      "utf-8",
+    );
+    const config = resolveConfig<ConfigComplete>({
+      server: false,
+      pages: {
+        home: {
+          component: "./src/main.tsx",
+          html: "./index.html",
+          mount: "#app",
+        },
+      },
+    });
+    const buildContext = await createBuildContext(config, cwd);
+    const onBuildOutput = vi.fn();
+    const framework = createFrameworkCallbacks({
+      config,
+      cwd,
+      ...buildContext,
+      onBuildOutput,
+    });
+
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      ...buildContext,
+      callbacks: framework,
+      hooks: [],
+    });
+    if (!controller) throw new Error("Expected Utoopack dev controller");
+
+    try {
+      const nextConfig = resolveConfig<ConfigComplete>({
+        server: false,
+        pages: {
+          home: {
+            component: "./src/main.tsx",
+            html: "./next.html",
+            mount: "#app",
+          },
+        },
+      });
+      const nextAnalysis = await createAppGraph(nextConfig, cwd);
+      const nextPlan = createBuildPlan(nextConfig, nextAnalysis.graph, {
+        mode: "development",
+      });
+      const update = diffBuildPlan(buildContext.plan, nextPlan, "config");
+
+      framework.update(nextAnalysis.graph, nextPlan);
+      await controller.updatePlan(update, nextAnalysis.graph);
+
+      const html = await fs.promises.readFile(
+        path.join(cwd, "dist/home.html"),
+        "utf-8",
+      );
+      const manifest = JSON.parse(
+        await fs.promises.readFile(
+          path.join(cwd, "dist/manifest.json"),
+          "utf-8",
+        ),
+      ) as BuildOutput;
+
+      expect(update.entries.added).toHaveLength(0);
+      expect(update.entries.changed).toHaveLength(0);
+      expect(update.html.changed.map((item) => item.id)).toEqual(["home"]);
+      expect(html).toContain("next-shell");
+      expect(html).toContain('data-evjs-kind="page"');
+      expect(html).toContain('data-evjs-id="home"');
+      expect(manifest.pages.home.document).toEqual({ fileName: "home.html" });
+      expect(onBuildOutput).toHaveBeenCalledTimes(2);
+    } finally {
+      await controller.close?.();
+    }
+  });
+
+  it("fails clearly for entry-changing dev plan updates", async () => {
+    const cwd = await makeProject();
+    const config = resolveConfig<ConfigComplete>({
+      server: false,
+      pages: {
+        home: {
+          component: "./src/main.tsx",
+          html: "./index.html",
+          mount: "#app",
+        },
+      },
+    });
+    const buildContext = await createBuildContext(config, cwd);
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      ...buildContext,
+      callbacks: createFrameworkCallbacks({
+        config,
+        cwd,
+        ...buildContext,
+      }),
+      hooks: [],
+    });
+    if (!controller) throw new Error("Expected Utoopack dev controller");
+
+    try {
+      const nextConfig = resolveConfig<ConfigComplete>({
+        server: false,
+        pages: {
+          home: {
+            component: "./src/main.tsx",
+            html: "./index.html",
+            mount: "#app",
+          },
+          about: {
+            component: "./src/main.tsx",
+            html: "./index.html",
+            mount: "#app",
+          },
+        },
+      });
+      const nextAnalysis = await createAppGraph(nextConfig, cwd);
+      const nextPlan = createBuildPlan(nextConfig, nextAnalysis.graph, {
+        mode: "development",
+      });
+      const update = diffBuildPlan(buildContext.plan, nextPlan, "config");
+
+      await expect(
+        controller.updatePlan(update, nextAnalysis.graph),
+      ).rejects.toThrow("Utoopack dev cannot apply framework entry changes");
+    } finally {
+      await controller.close?.();
+    }
   });
 
   it("emits a single build manifest plus index.html in fullstack mode", async () => {
@@ -332,6 +473,7 @@ describe("utoopackAdapter dev", () => {
         js: ["main.js"],
         css: ["main.css"],
       },
+      document: { fileName: "index.html" },
       entry: "./src/main.tsx",
       module: {
         type: "entry",

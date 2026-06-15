@@ -1,10 +1,18 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import {
+  getPageRouteParamSegmentValidationError,
+  getPathPatternValidationError,
+  type PageRouteParamSegmentValidationError,
+  type PathPatternValidationError,
+  serverRoutePathShapeFromPath,
+} from "@evjs/shared";
 import type {
   AppGraph,
   AppNode,
   ComponentModel,
   ExtractedRoute,
+  ExtractedServerRoute,
   HydrationMode,
   PageNode,
   PageRouteNode,
@@ -17,18 +25,33 @@ import type {
   ServerRouteNode,
   SharedDependencyMap,
 } from "@evjs/shared/manifest";
+import { parseSync } from "@swc/core";
+import type { ModuleItem } from "@swc/types";
 import {
   analyzePageModuleConfig,
   type PageModuleConfig,
 } from "../page-module-config.js";
+import { getPageBuildContractViolation } from "../page-rendering-contract.js";
+import { routePathShapeFromPath } from "../page-route-conventions.js";
+import { sortPageRoutes } from "../page-route-order.js";
 import {
   extractPprRegionModuleConfig,
   extractPprRegions,
 } from "../ppr-regions.js";
 import { analyzeRoutes, resolveRoutes } from "../routes/index.js";
-import { extractRscReferences } from "../rsc-refs.js";
-import { extractServerFunctionExports } from "../server-fns.js";
-import { hashServerFunction } from "../utils.js";
+import {
+  extractRscReferences,
+  hasBlockingReferenceParseDiagnostic,
+} from "../rsc-refs.js";
+import {
+  analyzeServerFunctionExports,
+  type ServerFunctionExportAnalysis,
+} from "../server-fns.js";
+import {
+  deriveRouteIdFromPath,
+  detectUseServer,
+  hashServerFunction,
+} from "../utils.js";
 
 export interface GraphAnalysisResult {
   graph: AppGraph;
@@ -109,10 +132,12 @@ export interface GraphConfig {
 }
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
+const DEFAULT_TOP_LEVEL_ENTRY = "./src/main.tsx";
 
 interface FrameworkSourceFiles {
   analysisFiles: string[];
   explicitDependencyFiles: Set<string>;
+  diagnostics: Diagnostic[];
 }
 
 type PprRegionConfigMap = NonNullable<PprConfig["regions"]>;
@@ -121,11 +146,21 @@ export async function createAppGraph(
   config: GraphConfig,
   cwd: string,
 ): Promise<GraphAnalysisResult> {
+  const diagnostics: Diagnostic[] = [];
+  const configuredPageRoutes = validateConfiguredPageRoutes(
+    config,
+    diagnostics,
+  );
+  const configuredPagePathIds = validateConfiguredPagePaths(
+    config,
+    diagnostics,
+  );
+
   const graph: AppGraph = {
     version: 1,
     rootDir: cwd,
     apps: {},
-    pages: createPageNodes(config),
+    pages: createPageNodes(config, configuredPageRoutes, configuredPagePathIds),
     routes: [],
     serverFunctions: [],
     serverRoutes: [],
@@ -133,15 +168,21 @@ export async function createAppGraph(
     remote: createRemoteBuildNode(config),
   };
 
-  const diagnostics: Diagnostic[] = [];
   const sourceCache = new Map<string, string>();
   const sourceFiles = await collectFrameworkSourceFiles(
     config,
     cwd,
     sourceCache,
   );
+  diagnostics.push(...sourceFiles.diagnostics);
   graph.apps = createAppNodes(config);
-  await mergeConfiguredPageModuleConfigs(graph, cwd, sourceCache, diagnostics);
+  await mergeConfiguredPageModuleConfigs(
+    config,
+    graph,
+    cwd,
+    sourceCache,
+    diagnostics,
+  );
   // Watch explicit graph roots and files that already declare framework
   // semantics. Ordinary component edits should stay on the bundler HMR path.
   // If a plain component starts declaring routes/server functions later, a
@@ -156,6 +197,8 @@ export async function createAppGraph(
   }
   const clientRoutes: ExtractedRoute[] = [];
   const serverRoutes = new Map<string, ServerRouteNode>();
+  const serverRoutePathOwners = new Map<string, ServerRouteNode>();
+  const serverRouteShapeOwners = new Map<string, ServerRouteNode>();
   const serverFunctions: ServerFunctionNode[] = [];
   const clientReferences = new Map<
     string,
@@ -174,15 +217,21 @@ export async function createAppGraph(
       fileDependencies.add(file);
     }
     const sourceRel = toPosixPath(path.relative(cwd, file));
+    const usesServerDirective = detectUseServer(source);
     const rscReferenceAnalysis = extractRscReferences(source, sourceRel);
-    for (const reference of rscReferenceAnalysis.clientReferences) {
-      clientReferences.set(reference.id, reference);
-    }
-    for (const reference of rscReferenceAnalysis.serverReferences) {
-      serverReferences.set(reference.id, reference);
-    }
+    const hasRscReferenceDiagnostics =
+      rscReferenceAnalysis.diagnostics.length > 0;
+    diagnostics.push(
+      ...rscReferenceAnalysis.diagnostics.map((diagnostic) => ({
+        ...diagnostic,
+        file: sourceRel,
+      })),
+    );
 
     const routeAnalysis = analyzeRoutes(source);
+    const hasRouteDiagnostics = routeAnalysis.diagnostics.some(
+      (diagnostic) => diagnostic.level === "error",
+    );
     diagnostics.push(
       ...routeAnalysis.diagnostics.map((diagnostic) => ({
         ...diagnostic,
@@ -190,19 +239,69 @@ export async function createAppGraph(
       })),
     );
 
-    if (!config.serverEnabled) continue;
-
-    for (const route of routeAnalysis.serverRoutes) {
-      const id = `${sourceRel}:${route.path}:${route.methods.join(",")}`;
-      serverRoutes.set(id, {
-        id,
-        module: sourceRel,
-        path: route.path,
-        methods: route.methods,
-      });
+    if (!config.serverEnabled) {
+      if (usesServerDirective) {
+        diagnostics.push({
+          level: "error",
+          file: sourceRel,
+          message:
+            'This "use server" module is reachable from the app graph, but server is disabled. Remove the import or enable server in ev.config.ts.',
+        });
+      }
+      continue;
     }
 
-    for (const exportName of extractServerFunctionExports(source)) {
+    if (hasBlockingReferenceParseDiagnostic(rscReferenceAnalysis)) {
+      continue;
+    }
+
+    let serverFunctionAnalysis: ServerFunctionExportAnalysis = {
+      exports: [],
+      diagnostics: [],
+    };
+    if (!(usesServerDirective && hasRscReferenceDiagnostics)) {
+      serverFunctionAnalysis = analyzeServerFunctionExports(source);
+    }
+    const hasServerFunctionDiagnostics =
+      serverFunctionAnalysis.diagnostics.length > 0;
+    diagnostics.push(
+      ...serverFunctionAnalysis.diagnostics.map((diagnostic) => ({
+        ...diagnostic,
+        file: sourceRel,
+      })),
+    );
+
+    if (
+      hasRscReferenceDiagnostics ||
+      hasRouteDiagnostics ||
+      hasServerFunctionDiagnostics
+    ) {
+      continue;
+    }
+
+    const routePublication = validateServerRoutePublication(
+      sourceRel,
+      routeAnalysis.serverRoutes,
+      serverRoutePathOwners,
+      serverRouteShapeOwners,
+    );
+    diagnostics.push(...routePublication.diagnostics);
+    if (routePublication.diagnostics.length > 0) {
+      continue;
+    }
+
+    for (const reference of rscReferenceAnalysis.clientReferences) {
+      clientReferences.set(reference.id, reference);
+    }
+    for (const node of routePublication.nodes) {
+      serverRoutePathOwners.set(node.path, node);
+      serverRouteShapeOwners.set(serverRoutePathShapeFromPath(node.path), node);
+      serverRoutes.set(node.id, node);
+    }
+    for (const reference of rscReferenceAnalysis.serverReferences) {
+      serverReferences.set(reference.id, reference);
+    }
+    for (const { exportName } of serverFunctionAnalysis.exports) {
       serverFunctions.push({
         id: hashServerFunction(sourceRel, exportName),
         module: sourceRel,
@@ -211,9 +310,9 @@ export async function createAppGraph(
     }
   }
 
-  const defaultAppId = getDefaultAppId(graph);
+  const defaultAppId = getDefaultAppId(graph, getSpaRoutingEntry(config));
   if (config.routing?.mode === "spa") {
-    for (const route of config.routing.routes) {
+    for (const route of sortPageRoutes(configuredPageRoutes)) {
       clientRoutes.push(
         await mergeRouteModuleConfig(
           cwd,
@@ -239,7 +338,7 @@ export async function createAppGraph(
     }
     const pageId =
       configuredPageId ??
-      createRouteDerivedPageNode(config, graph, route, routeId);
+      createRouteDerivedPageNode(config, graph, route, routeId, diagnostics);
     const appId = route.appId ?? defaultAppId;
     return {
       id: routeId,
@@ -259,6 +358,7 @@ export async function createAppGraph(
     diagnostics,
     fileDependencies,
   );
+  validateGraphPageContracts(config, graph, diagnostics);
   graph.serverRoutes = [...serverRoutes.values()];
   graph.serverFunctions = serverFunctions;
   graph.clientReferences = [...clientReferences.values()];
@@ -271,7 +371,58 @@ export async function createAppGraph(
   };
 }
 
+function validateServerRoutePublication(
+  sourceRel: string,
+  routes: ExtractedServerRoute[],
+  serverRoutePathOwners: Map<string, ServerRouteNode>,
+  serverRouteShapeOwners: Map<string, ServerRouteNode>,
+): { nodes: ServerRouteNode[]; diagnostics: Diagnostic[] } {
+  const nodes: ServerRouteNode[] = [];
+  const diagnostics: Diagnostic[] = [];
+  const pendingPathOwners = new Map(serverRoutePathOwners);
+  const pendingShapeOwners = new Map(serverRouteShapeOwners);
+
+  for (const route of routes) {
+    const id = `${sourceRel}:${route.path}:${route.methods.join(",")}`;
+    const node: ServerRouteNode = {
+      id,
+      module: sourceRel,
+      path: route.path,
+      methods: route.methods,
+    };
+    const existing = pendingPathOwners.get(route.path);
+    if (existing) {
+      diagnostics.push({
+        level: "error",
+        file: sourceRel,
+        message:
+          `Server route path "${route.path}" is already declared by ${existing.module}. ` +
+          "Declare all HTTP methods for a path in one createRoute() call.",
+      });
+      continue;
+    }
+    const routeShape = serverRoutePathShapeFromPath(route.path);
+    const existingShapeOwner = pendingShapeOwners.get(routeShape);
+    if (existingShapeOwner) {
+      diagnostics.push({
+        level: "error",
+        file: sourceRel,
+        message:
+          `Server route path "${route.path}" has the same route shape as ${existingShapeOwner.module} (${existingShapeOwner.path}). ` +
+          "Use one route handler per URL shape.",
+      });
+      continue;
+    }
+    pendingPathOwners.set(route.path, node);
+    pendingShapeOwners.set(routeShape, node);
+    nodes.push(node);
+  }
+
+  return { nodes, diagnostics };
+}
+
 async function mergeConfiguredPageModuleConfigs(
+  config: GraphConfig,
   graph: AppGraph,
   cwd: string,
   sourceCache: Map<string, string>,
@@ -289,8 +440,24 @@ async function mergeConfiguredPageModuleConfigs(
     if (!analysis) continue;
 
     diagnostics.push(...analysis.diagnostics);
-    applyPageModuleConfig(page, analysis.config);
+    applyPageModuleConfig(
+      page,
+      analysis.config,
+      getConfiguredPageModuleConfig(config.pages?.[pageId]),
+    );
   }
+}
+
+function getConfiguredPageModuleConfig(
+  page: NonNullable<GraphConfig["pages"]>[string] | undefined,
+): PageModuleConfig {
+  if (!page) return {};
+  return {
+    ...(page.render ? { render: page.render } : {}),
+    ...(page.componentModel ? { componentModel: page.componentModel } : {}),
+    ...(page.hydrate ? { hydrate: page.hydrate } : {}),
+    ...(page.prerender ? { prerender: page.prerender } : {}),
+  };
 }
 
 async function mergeRouteModuleConfig(
@@ -306,6 +473,7 @@ async function mergeRouteModuleConfig(
 
   diagnostics.push(...analysis.diagnostics);
   const moduleConfig = analysis.config;
+  const ppr = derivePprConfig(moduleConfig.prerender);
   return {
     ...route,
     ...(route.render === undefined && moduleConfig.render
@@ -318,9 +486,7 @@ async function mergeRouteModuleConfig(
       ? { componentModel: moduleConfig.componentModel }
       : {}),
     ...(moduleConfig.prerender ? { prerender: moduleConfig.prerender } : {}),
-    ...(derivePprConfig(moduleConfig.prerender)
-      ? { ppr: derivePprConfig(moduleConfig.prerender) }
-      : {}),
+    ...(ppr ? { ppr } : {}),
   };
 }
 
@@ -366,13 +532,23 @@ function applyPageModuleConfig(
     hydrate?: HydrationMode;
     prerender?: PrerenderConfig;
   },
+  configured: {
+    render?: RenderMode;
+    componentModel?: ComponentModel;
+    hydrate?: HydrationMode;
+    prerender?: PrerenderConfig;
+  } = {},
 ) {
-  if (moduleConfig.render) page.render = moduleConfig.render;
-  if (moduleConfig.componentModel) {
+  if (!configured.render && moduleConfig.render) {
+    page.render = moduleConfig.render;
+  }
+  if (!configured.componentModel && moduleConfig.componentModel) {
     page.componentModel = moduleConfig.componentModel;
   }
-  if (moduleConfig.hydrate) page.hydrate = moduleConfig.hydrate;
-  if (moduleConfig.prerender) {
+  if (!configured.hydrate && moduleConfig.hydrate) {
+    page.hydrate = moduleConfig.hydrate;
+  }
+  if (!configured.prerender && moduleConfig.prerender) {
     page.prerender = moduleConfig.prerender;
     const ppr = derivePprConfig(moduleConfig.prerender);
     if (ppr) {
@@ -420,16 +596,17 @@ async function mergePprRegionsFromPageModules(
     diagnostics.push(...analysis.diagnostics);
 
     if (Object.keys(analysis.regions).length === 0) continue;
-    const regions = await resolvePprRegionComponents(
+    const resolved = await resolvePprRegionComponents(
       cwd,
       analysis.regions,
       sourceCache,
     );
+    diagnostics.push(...resolved.diagnostics);
     page.ppr = {
       ...(page.ppr ?? {}),
       regions: {
         ...(page.ppr?.regions ?? {}),
-        ...regions,
+        ...resolved.regions,
       },
     };
   }
@@ -502,8 +679,12 @@ async function resolvePprRegionComponents(
   cwd: string,
   regions: PprRegionConfigMap,
   sourceCache: Map<string, string>,
-): Promise<PprRegionConfigMap> {
+): Promise<{
+  regions: PprRegionConfigMap;
+  diagnostics: Diagnostic[];
+}> {
   const resolved: PprRegionConfigMap = {};
+  const diagnostics: Diagnostic[] = [];
 
   for (const [id, region] of Object.entries(regions)) {
     const component = await resolveProjectSourcePath(cwd, region.component);
@@ -512,24 +693,29 @@ async function resolvePprRegionComponents(
       component,
       sourceCache,
     );
+    diagnostics.push(...moduleConfig.diagnostics);
     resolved[id] = {
-      ...moduleConfig,
+      ...moduleConfig.config,
       ...region,
       component,
     };
   }
 
-  return resolved;
+  return { regions: resolved, diagnostics };
 }
 
 async function readPprRegionModuleConfig(
   cwd: string,
   component: string,
   sourceCache: Map<string, string>,
-): Promise<Partial<Omit<PprRegionConfigMap[string], "component">>> {
-  if (!component.startsWith(".")) return {};
+): Promise<{
+  config: Partial<Omit<PprRegionConfigMap[string], "component">>;
+  diagnostics: Diagnostic[];
+}> {
+  const empty = { config: {}, diagnostics: [] };
+  if (!component.startsWith(".")) return empty;
   const absolute = await resolveProjectSourceAbsolute(cwd, component);
-  if (!absolute) return {};
+  if (!absolute) return empty;
 
   let source: string;
   try {
@@ -537,10 +723,18 @@ async function readPprRegionModuleConfig(
       sourceCache.get(absolute) ?? (await fs.readFile(absolute, "utf-8"));
     sourceCache.set(absolute, source);
   } catch {
-    return {};
+    return empty;
   }
 
-  return extractPprRegionModuleConfig(source);
+  const analysis = extractPprRegionModuleConfig(source);
+  const file = toPosixPath(path.relative(cwd, absolute));
+  return {
+    config: analysis.config,
+    diagnostics: analysis.diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      file,
+    })),
+  };
 }
 
 async function resolveProjectSourceAbsolute(
@@ -567,11 +761,21 @@ function createRouteDerivedPageNode(
   graph: AppGraph,
   route: ReturnType<typeof resolveRoutes>[number],
   routeId: string,
+  diagnostics: Diagnostic[],
 ): string | undefined {
   if (!shouldCreateRouteDerivedPage(config, route)) return undefined;
 
-  const pageId = sanitizeRoutePageId(route.id ?? route.path);
-  graph.pages[pageId] ??= {
+  const pageId = deriveRouteIdFromPath(route.id ?? route.path);
+  const existing = graph.pages[pageId];
+  if (existing) {
+    diagnostics.push({
+      level: "error",
+      message: `Route-derived page id "${pageId}" for route path "${route.path}" conflicts with existing page "${existing.id}". Add an explicit route id or rename one route so generated page ids are unique.`,
+    });
+    return undefined;
+  }
+
+  graph.pages[pageId] = {
     id: pageId,
     routeId,
     component: route.module,
@@ -638,11 +842,42 @@ function hasRouteGraphSource(config: GraphConfig): boolean {
   );
 }
 
-function sanitizeRoutePageId(value: string): string {
-  const sanitized = value
-    .replace(/^\/+|\/+$/g, "")
-    .replace(/[^a-zA-Z0-9_-]+/g, "_");
-  return sanitized.length > 0 ? sanitized : "index";
+function validateGraphPageContracts(
+  config: GraphConfig,
+  graph: AppGraph,
+  diagnostics: Diagnostic[],
+): void {
+  for (const page of Object.values(graph.pages)) {
+    const file = getPageContractDiagnosticFile(page);
+    if (file && hasErrorDiagnosticForFile(diagnostics, file)) continue;
+
+    const renderingError = getPageBuildContractViolation(
+      `Page "${page.id}"`,
+      page,
+      { serverEnabled: config.serverEnabled },
+    );
+    if (renderingError) {
+      diagnostics.push({
+        level: "error",
+        file,
+        message: renderingError,
+      });
+    }
+  }
+}
+
+function hasErrorDiagnosticForFile(
+  diagnostics: Diagnostic[],
+  file: string,
+): boolean {
+  return diagnostics.some(
+    (diagnostic) => diagnostic.level === "error" && diagnostic.file === file,
+  );
+}
+
+function getPageContractDiagnosticFile(page: PageNode): string | undefined {
+  if (!page.component?.startsWith("./")) return undefined;
+  return page.component.slice(2);
 }
 
 function createAppNodes(config: GraphConfig): Record<string, AppNode> {
@@ -680,17 +915,13 @@ function createAppNodes(config: GraphConfig): Record<string, AppNode> {
     );
   }
 
-  if (
-    (config.pages && Object.keys(config.pages).length > 0) ||
-    config.routing?.mode === "mpa" ||
-    config.remote
-  ) {
+  if (!hasDefaultAppNode(config)) {
     return {};
   }
 
   const app: AppNode = {
     id: "default",
-    entry: config.routing?.entry ?? config.entry,
+    entry: getDefaultAppEntry(config),
     html: config.routing?.html ?? config.html,
     ...(config.routing?.mount ? { mount: config.routing.mount } : {}),
   };
@@ -718,11 +949,35 @@ function isAppEntryConfig(
   return typeof app !== "string" && "entry" in app && Boolean(app.entry);
 }
 
-function createPageNodes(config: GraphConfig): Record<string, PageNode> {
+function hasDefaultAppNode(config: GraphConfig): boolean {
+  return Boolean(
+    (!config.apps || Object.keys(config.apps).length === 0) &&
+      (!config.pages || Object.keys(config.pages).length === 0) &&
+      config.routing?.mode !== "mpa" &&
+      !config.remote,
+  );
+}
+
+function getDefaultAppEntry(config: GraphConfig): string {
+  return config.routing?.entry ?? config.entry;
+}
+
+function isRequiredDefaultAppEntry(
+  config: GraphConfig,
+  entry: string,
+): boolean {
+  return Boolean(config.routing?.entry || entry !== DEFAULT_TOP_LEVEL_ENTRY);
+}
+
+function createPageNodes(
+  config: GraphConfig,
+  configuredPageRoutes: PageRouteNode[] = config.routing?.routes ?? [],
+  configuredPagePathIds: Set<string> = new Set(),
+): Record<string, PageNode> {
   const pages: Record<string, PageNode> = {};
 
   if (config.routing?.mode === "mpa") {
-    for (const route of config.routing.routes) {
+    for (const route of sortPageRoutes(configuredPageRoutes)) {
       pages[route.id] = {
         id: route.id,
         path: route.path,
@@ -735,19 +990,238 @@ function createPageNodes(config: GraphConfig): Record<string, PageNode> {
   }
 
   for (const [id, page] of Object.entries(config.pages ?? {})) {
+    const pagePath =
+      page.path && configuredPagePathIds.has(id) ? page.path : undefined;
     pages[id] = {
       id,
-      path: page.path,
+      path: pagePath,
       entry: page.entry,
       component: page.component,
       app: page.app,
       html: page.html,
-      render: "csr",
+      render: page.render ?? "csr",
       mount: page.mount,
+      ...(page.componentModel ? { componentModel: page.componentModel } : {}),
+      ...(page.hydrate ? { hydrate: page.hydrate } : {}),
+      ...(page.prerender ? { prerender: page.prerender } : {}),
+      ...(page.ppr ? { ppr: page.ppr } : {}),
     };
   }
 
   return pages;
+}
+
+function validateConfiguredPagePaths(
+  config: Pick<GraphConfig, "pages">,
+  diagnostics: Diagnostic[],
+): Set<string> {
+  const routeByPath = new Map<string, { id: string; path: string }>();
+  const routeByShape = new Map<string, { id: string; path: string }>();
+  const validPagePathIds = new Set<string>();
+
+  for (const [id, page] of Object.entries(config.pages ?? {})) {
+    if (!page.path) continue;
+    const pathError = getPathPatternValidationError(page.path);
+    const file = getConfiguredPageDiagnosticFile(page);
+    if (pathError) {
+      diagnostics.push({
+        level: "error",
+        ...(file ? { file } : {}),
+        message: `Configured page "${id}" path ${formatConfiguredPageRoutePathValue(page.path)} ${formatConfiguredPageRoutePathValidationError(pathError)}`,
+      });
+      continue;
+    }
+    const paramError = getConfiguredPageRouteParamValidationError(page.path);
+    if (paramError) {
+      diagnostics.push({
+        level: "error",
+        ...(file ? { file } : {}),
+        message: `Configured page "${id}" path "${page.path}" ${formatConfiguredPageRouteParamValidationError(paramError)}`,
+      });
+      continue;
+    }
+
+    const previousPathOwner = routeByPath.get(page.path);
+    if (previousPathOwner) {
+      diagnostics.push({
+        level: "error",
+        ...(file ? { file } : {}),
+        message:
+          `Configured page "${id}" path "${page.path}" is already declared by ` +
+          `page "${previousPathOwner.id}". Keep one page route per URL path.`,
+      });
+      continue;
+    }
+    routeByPath.set(page.path, { id, path: page.path });
+
+    const routeShape = routePathShapeFromPath(page.path).key;
+    const previousShapeOwner = routeByShape.get(routeShape);
+    if (previousShapeOwner) {
+      diagnostics.push({
+        level: "error",
+        ...(file ? { file } : {}),
+        message:
+          `Configured page "${id}" path "${page.path}" has the same route shape as ` +
+          `page "${previousShapeOwner.id}" (${previousShapeOwner.path}). ` +
+          "Use one dynamic param name for each URL shape.",
+      });
+      continue;
+    }
+    routeByShape.set(routeShape, { id, path: page.path });
+    validPagePathIds.add(id);
+  }
+
+  return validPagePathIds;
+}
+
+function validateConfiguredPageRoutes(
+  config: Pick<GraphConfig, "routing">,
+  diagnostics: Diagnostic[],
+): PageRouteNode[] {
+  if (!config.routing) return [];
+
+  const routeByPath = new Map<string, PageRouteNode>();
+  const routeByShape = new Map<string, PageRouteNode>();
+  const routeById = new Map<string, PageRouteNode>();
+  const validRoutes: PageRouteNode[] = [];
+
+  for (const route of config.routing.routes) {
+    const routePathError = getConfiguredPageRoutePathValidationError(
+      route.path,
+    );
+    if (routePathError) {
+      diagnostics.push({
+        level: "error",
+        file: toDiagnosticModulePath(route.module),
+        message: `Configured page route path ${formatConfiguredPageRoutePathValue(route.path)} ${formatConfiguredPageRoutePathValidationError(routePathError)}`,
+      });
+      continue;
+    }
+
+    const normalizedPath = normalizePublicRoutePath(route.path);
+    const paramError =
+      getConfiguredPageRouteParamValidationError(normalizedPath);
+    if (paramError) {
+      diagnostics.push({
+        level: "error",
+        file: toDiagnosticModulePath(route.module),
+        message: `Configured page route path "${normalizedPath}" ${formatConfiguredPageRouteParamValidationError(paramError)}`,
+      });
+      continue;
+    }
+    const normalizedRoute: PageRouteNode = {
+      ...route,
+      path: normalizedPath,
+    };
+
+    const previousPathOwner = routeByPath.get(normalizedPath);
+    if (previousPathOwner) {
+      diagnostics.push({
+        level: "error",
+        file: toDiagnosticModulePath(route.module),
+        message:
+          `Configured page route path "${normalizedPath}" is already declared by ${previousPathOwner.module}. ` +
+          "Keep one page route per URL path.",
+      });
+      continue;
+    }
+    routeByPath.set(normalizedPath, normalizedRoute);
+
+    const routeShape = routePathShapeFromPath(normalizedPath).key;
+    const previousShapeOwner = routeByShape.get(routeShape);
+    if (previousShapeOwner) {
+      diagnostics.push({
+        level: "error",
+        file: toDiagnosticModulePath(route.module),
+        message:
+          `Configured page route path "${normalizedPath}" has the same route shape as ` +
+          `${previousShapeOwner.module} (${normalizePublicRoutePath(previousShapeOwner.path)}). ` +
+          "Use one dynamic param name for each URL shape.",
+      });
+      continue;
+    }
+    routeByShape.set(routeShape, normalizedRoute);
+
+    const previousIdOwner = routeById.get(route.id);
+    if (previousIdOwner) {
+      diagnostics.push({
+        level: "error",
+        file: toDiagnosticModulePath(route.module),
+        message:
+          `Configured page route id "${route.id}" for path "${normalizedPath}" is already used by ` +
+          `${previousIdOwner.module} (${normalizePublicRoutePath(previousIdOwner.path)}). ` +
+          "Route ids must be unique because they drive page ids and build entries.",
+      });
+      continue;
+    }
+    routeById.set(route.id, normalizedRoute);
+    validRoutes.push(normalizedRoute);
+  }
+
+  return validRoutes;
+}
+
+function getConfiguredPageRoutePathValidationError(
+  routePath: string,
+): PathPatternValidationError | undefined {
+  const initialError = getPathPatternValidationError(routePath);
+  if (!initialError) return undefined;
+  if (initialError !== "missing-leading-slash") return initialError;
+
+  return getPathPatternValidationError(normalizePublicRoutePath(routePath));
+}
+
+function getConfiguredPageRouteParamValidationError(
+  routePath: string,
+): PageRouteParamSegmentValidationError | undefined {
+  return getPageRouteParamSegmentValidationError(
+    normalizePublicRoutePath(routePath),
+  );
+}
+
+function formatConfiguredPageRoutePathValue(value: unknown): string {
+  return typeof value === "string" ? `"${value}"` : String(value);
+}
+
+function formatConfiguredPageRoutePathValidationError(
+  error: PathPatternValidationError,
+): string {
+  switch (error) {
+    case "empty":
+      return "must be a non-empty string.";
+    case "missing-leading-slash":
+      return 'must start with "/".';
+    case "whitespace":
+      return "must not contain whitespace.";
+    case "query-or-hash":
+      return "must not include a query string or hash.";
+  }
+}
+
+function formatConfiguredPageRouteParamValidationError(
+  error: PageRouteParamSegmentValidationError,
+): string {
+  switch (error.error) {
+    case "empty":
+      return `contains dynamic segment "${error.segment}" without a param name.`;
+    case "reserved":
+      return `uses reserved dynamic param name "${error.name}" in segment "${error.segment}". Use a safe application-specific name.`;
+    case "duplicate":
+      return `uses duplicate dynamic param name "${error.name}" in segment "${error.segment}". Use unique param names within one route path.`;
+    case "duplicate-wildcard":
+      return `contains more than one wildcard segment "${error.segment}". Use at most one wildcard segment in a route path.`;
+  }
+}
+
+function toDiagnosticModulePath(module: string): string {
+  return module.replace(/^\.\//, "");
+}
+
+function getConfiguredPageDiagnosticFile(
+  page: NonNullable<GraphConfig["pages"]>[string],
+): string | undefined {
+  const source = page.component ?? page.app ?? page.entry;
+  return source ? toDiagnosticModulePath(source) : undefined;
 }
 
 function createRemoteNodes(config: GraphConfig): AppGraph["remotes"] {
@@ -810,9 +1284,26 @@ async function collectRouteDirectories(root: string): Promise<string[]> {
   return [...dirs].sort();
 }
 
-function getDefaultAppId(graph: AppGraph): string | undefined {
+function getDefaultAppId(
+  graph: AppGraph,
+  preferredEntry?: string,
+): string | undefined {
+  if (preferredEntry) {
+    const app = Object.values(graph.apps).find(
+      (candidate) => candidate.entry === preferredEntry,
+    );
+    if (app) return app.id;
+  }
+
   const appIds = Object.keys(graph.apps);
   return appIds.length > 0 ? appIds[0] : undefined;
+}
+
+function getSpaRoutingEntry(
+  config: Pick<GraphConfig, "entry" | "routing">,
+): string | undefined {
+  if (config.routing?.mode !== "spa") return undefined;
+  return config.routing.entry ?? config.entry;
 }
 
 async function collectFrameworkSourceFiles(
@@ -823,44 +1314,105 @@ async function collectFrameworkSourceFiles(
   const files = new Set<string>();
   const roots = new Set<string>();
   const explicitDependencyRoots = new Set<string>();
+  const diagnostics: Diagnostic[] = [];
 
   if (config.apps && Object.keys(config.apps).length > 0) {
-    for (const app of Object.values(config.apps)) {
+    for (const [appId, app] of Object.entries(config.apps)) {
       const appSource = getAppSourcePath(app);
       if (appSource) {
-        await addExistingSource(roots, cwd, appSource, explicitDependencyRoots);
+        await addConfiguredSource(
+          roots,
+          cwd,
+          appSource,
+          `App "${appId}" source`,
+          diagnostics,
+          explicitDependencyRoots,
+        );
         continue;
       }
 
       if (!isAppEntryConfig(app)) continue;
 
-      await addExistingSource(roots, cwd, app.entry);
+      await addConfiguredSource(
+        roots,
+        cwd,
+        app.entry,
+        `App "${appId}" entry`,
+        diagnostics,
+      );
     }
-  } else if (!config.remote) {
-    await addExistingSource(roots, cwd, config.entry);
+  } else if (hasDefaultAppNode(config)) {
+    const entry = getDefaultAppEntry(config);
+    if (isRequiredDefaultAppEntry(config, entry)) {
+      await addConfiguredSource(
+        roots,
+        cwd,
+        entry,
+        'App "default" entry',
+        diagnostics,
+      );
+    } else {
+      await addExistingSource(roots, cwd, entry);
+    }
   }
   for (const route of config.routing?.routes ?? []) {
-    await addExistingSource(roots, cwd, route.module, explicitDependencyRoots);
+    await addConfiguredSource(
+      roots,
+      cwd,
+      route.module,
+      `Page route "${route.id}" module`,
+      diagnostics,
+      explicitDependencyRoots,
+    );
   }
-  await addExistingSource(
+  await addConfiguredSource(
     roots,
     cwd,
     config.routing?.rootModule,
+    "SPA root layout module",
+    diagnostics,
     explicitDependencyRoots,
   );
-  for (const entry of Object.values(config.remote?.entries ?? {})) {
-    await addExistingSource(roots, cwd, entry.app);
+  for (const [entryId, entry] of Object.entries(config.remote?.entries ?? {})) {
+    await addConfiguredSource(
+      roots,
+      cwd,
+      entry.app,
+      `Remote entry "${entryId}" app`,
+      diagnostics,
+    );
   }
-  for (const page of Object.values(config.pages ?? {})) {
-    await addExistingSource(roots, cwd, page.entry);
-    await addExistingSource(roots, cwd, page.component);
-    await addExistingSource(roots, cwd, page.app);
+  for (const [pageId, page] of Object.entries(config.pages ?? {})) {
+    await addConfiguredSource(
+      roots,
+      cwd,
+      page.entry,
+      `Page "${pageId}" entry`,
+      diagnostics,
+    );
+    await addConfiguredSource(
+      roots,
+      cwd,
+      page.component,
+      `Page "${pageId}" component`,
+      diagnostics,
+      explicitDependencyRoots,
+    );
+    await addConfiguredSource(
+      roots,
+      cwd,
+      page.app,
+      `Page "${pageId}" app`,
+      diagnostics,
+    );
   }
   if (config.server.entry) {
-    await addExistingSource(
+    await addConfiguredSource(
       roots,
       cwd,
       config.server.entry,
+      "Server entry",
+      diagnostics,
       explicitDependencyRoots,
     );
   }
@@ -872,7 +1424,66 @@ async function collectFrameworkSourceFiles(
   return {
     analysisFiles: [...files].sort(),
     explicitDependencyFiles: explicitDependencyRoots,
+    diagnostics,
   };
+}
+
+async function addConfiguredSource(
+  files: Set<string>,
+  cwd: string,
+  filePath: string | undefined,
+  label: string,
+  diagnostics: Diagnostic[],
+  explicitDependencyFiles?: Set<string>,
+): Promise<string | undefined> {
+  if (!filePath) return;
+  const absolute = path.resolve(cwd, filePath);
+  const file = getConfiguredSourceDiagnosticFile(cwd, filePath, absolute);
+
+  let stat: Awaited<ReturnType<typeof fs.stat>>;
+  try {
+    stat = await fs.stat(absolute);
+  } catch {
+    diagnostics.push({
+      level: "error",
+      file,
+      message: `${label} source file not found.`,
+    });
+    return undefined;
+  }
+
+  if (!stat.isFile()) {
+    diagnostics.push({
+      level: "error",
+      file,
+      message: `${label} source path must be a file.`,
+    });
+    return undefined;
+  }
+
+  if (!SOURCE_EXTENSIONS.has(path.extname(absolute))) {
+    diagnostics.push({
+      level: "error",
+      file,
+      message: `${label} source file must use .ts, .tsx, .js, or .jsx.`,
+    });
+    return undefined;
+  }
+
+  files.add(absolute);
+  explicitDependencyFiles?.add(absolute);
+  return absolute;
+}
+
+function getConfiguredSourceDiagnosticFile(
+  cwd: string,
+  filePath: string,
+  absolute: string,
+): string {
+  if (filePath.startsWith(".")) {
+    return toPosixPath(path.relative(cwd, absolute));
+  }
+  return toPosixPath(filePath);
 }
 
 async function addExistingSource(
@@ -924,23 +1535,68 @@ async function collectStaticImportClosure(
 
 function extractStaticImportSpecifiers(source: string): string[] {
   const specifiers = new Set<string>();
-  const importPattern =
-    /\bimport\s+(?:[^'"]*?\s+from\s+)?["']([^"']+)["']|\bexport\s+[^'"]*?\s+from\s+["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
-
-  for (const match of source.matchAll(importPattern)) {
-    const specifier = match[1] ?? match[2] ?? match[3];
-    if (specifier?.startsWith(".")) {
-      specifiers.add(specifier);
-    }
+  for (const specifier of extractParsedStaticImportSpecifiers(source)) {
+    specifiers.add(specifier);
+  }
+  for (const specifier of extractDynamicImportSpecifiers(source)) {
+    specifiers.add(specifier);
   }
 
-  return [...specifiers];
+  return [...specifiers].filter((specifier) => specifier.startsWith("."));
+}
+
+function extractParsedStaticImportSpecifiers(source: string): string[] {
+  try {
+    const ast = parseSync(source, {
+      syntax: "typescript",
+      tsx: true,
+      target: "esnext",
+    });
+    return ast.body.flatMap(getStaticModuleSpecifier);
+  } catch {
+    return extractStaticImportSpecifiersWithRegex(source);
+  }
+}
+
+function getStaticModuleSpecifier(item: ModuleItem): string[] {
+  if (item.type === "ImportDeclaration") return [item.source.value];
+  if (item.type === "ExportNamedDeclaration" && item.source) {
+    return [item.source.value];
+  }
+  if (item.type === "ExportAllDeclaration") return [item.source.value];
+  return [];
+}
+
+function extractDynamicImportSpecifiers(source: string): string[] {
+  const specifiers: string[] = [];
+  const importPattern = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
+
+  for (const match of source.matchAll(importPattern)) {
+    const specifier = match[1];
+    if (specifier) specifiers.push(specifier);
+  }
+
+  return specifiers;
+}
+
+function extractStaticImportSpecifiersWithRegex(source: string): string[] {
+  const specifiers: string[] = [];
+  const importPattern =
+    /\bimport\s+(?:[^'"]*?\s+from\s+)?["']([^"']+)["']|\bexport\s+[^'"]*?\s+from\s+["']([^"']+)["']/g;
+
+  for (const match of source.matchAll(importPattern)) {
+    const specifier = match[1] ?? match[2];
+    if (specifier) specifiers.push(specifier);
+  }
+
+  return specifiers;
 }
 
 function isFrameworkDependencySource(source: string): boolean {
   return (
     /^\s*["']use (client|server)["']/m.test(source.slice(0, 200)) ||
-    (source.includes("@evjs/server") && source.includes("createRoute"))
+    ((source.includes("@evjs/server") || source.includes("@evjs/ev/server")) &&
+      source.includes("createRoute"))
   );
 }
 

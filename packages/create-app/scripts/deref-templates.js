@@ -9,6 +9,12 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const templatesDir = path.resolve(__dirname, "../templates");
+const templateCopyExcludedBasenames = new Set([
+  "node_modules",
+  "dist",
+  ".turbo",
+  "evjs-route-types.d.ts",
+]);
 
 for (const entry of fs.readdirSync(templatesDir)) {
   const entryPath = path.join(templatesDir, entry);
@@ -22,7 +28,7 @@ for (const entry of fs.readdirSync(templatesDir)) {
       recursive: true,
       filter: (src) => {
         const basename = path.basename(src);
-        return !["node_modules", "dist", ".turbo"].includes(basename);
+        return !templateCopyExcludedBasenames.has(basename);
       },
     });
   }

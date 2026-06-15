@@ -1,6 +1,6 @@
-import { Link } from "@evjs/client";
+import { Link } from "@evjs/ev/client";
 import type { ReactNode } from "react";
-import "./styles.css";
+import "../styles.css";
 
 export default function Root({ children }: { children?: ReactNode }) {
   return (

@@ -98,6 +98,10 @@ a:hover {
   border-left: 6px solid #10b981;
 }
 
+.hero-panel--ssg {
+  border-left: 6px solid #14b8a6;
+}
+
 .hero-panel--ppr {
   border-left: 6px solid #f59e0b;
 }

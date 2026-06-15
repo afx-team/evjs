@@ -49,16 +49,7 @@ export function createApp<TRouteTree extends AnyRoute>(
   let root: ReturnType<typeof createRoot> | undefined;
 
   function render(container: string | HTMLElement): void {
-    const el =
-      typeof container === "string"
-        ? document.querySelector<HTMLElement>(container)
-        : container;
-
-    if (!el) {
-      throw new Error(
-        `[ev] Could not find container element: ${String(container)}`,
-      );
-    }
+    const el = resolveAppContainer(container);
 
     root = createRoot(el);
     root.render(
@@ -74,4 +65,65 @@ export function createApp<TRouteTree extends AnyRoute>(
   }
 
   return { queryClient, render, unmount };
+}
+
+function resolveAppContainer(container: string | HTMLElement): HTMLElement {
+  if (typeof container === "string") {
+    const selector = assertAppContainerSelector(container);
+    const doc = resolveAppDocument(selector);
+    let element: HTMLElement | null;
+    try {
+      element = doc.querySelector<HTMLElement>(selector);
+    } catch (error) {
+      throw new Error(
+        `[evjs] App container selector "${selector}" is invalid${formatErrorDetail(error)}`,
+      );
+    }
+    if (!element) {
+      throw new Error(
+        `[evjs] Could not find app container element: ${selector}`,
+      );
+    }
+    return element;
+  }
+
+  if (!container || typeof container !== "object") {
+    throw new Error(
+      "[evjs] App container must be a selector string or HTMLElement.",
+    );
+  }
+  return container;
+}
+
+function assertAppContainerSelector(selector: string): string {
+  if (!selector.trim()) {
+    throw new Error(
+      "[evjs] App container selector must be a non-empty string.",
+    );
+  }
+  if (selector.trim() !== selector) {
+    throw new Error(
+      "[evjs] App container selector must not include leading or trailing whitespace.",
+    );
+  }
+  return selector;
+}
+
+function resolveAppDocument(selector: string): Document {
+  const doc = globalThis.document;
+  if (!doc) {
+    throw new Error(
+      `[evjs] Document is not available to resolve app container selector "${selector}".`,
+    );
+  }
+  if (typeof doc.querySelector !== "function") {
+    throw new Error(
+      "[evjs] App container selector document.querySelector must be a function.",
+    );
+  }
+  return doc;
+}
+
+function formatErrorDetail(error: unknown): string {
+  return error instanceof Error && error.message ? `: ${error.message}` : ".";
 }

@@ -1,4 +1,8 @@
-import type { BuildOutput, ServerRendererOutput } from "@evjs/shared/manifest";
+import {
+  assertFrameworkManifestShape,
+  type BuildOutput,
+  type ServerRendererOutput,
+} from "@evjs/shared/manifest";
 import {
   createManifestRenderCoordinator,
   type FrameworkServerOptions,
@@ -14,6 +18,7 @@ import {
   type ReactRscFlightAdapterOptions,
   type ReactServerRenderAdapterOptions,
 } from "./react-renderer.js";
+import { textResponse } from "./responses.js";
 
 export type {
   ReactRscDebugPayload,
@@ -75,8 +80,11 @@ export interface ReactFrameworkServerOptions {
 export function createReactFrameworkServer(
   options: ReactFrameworkServerOptions = {},
 ): FrameworkServerOptions | undefined {
+  assertReactFrameworkServerOptions(options);
+
   const manifest = options.manifest ?? globalThis.__EVJS_MANIFEST__;
   if (!manifest) return undefined;
+  assertReactFrameworkManifest(manifest);
 
   const hasRenderers = Boolean(manifest.server?.renderers);
   const rsc =
@@ -98,6 +106,74 @@ export function createReactFrameworkServer(
     allowPageRenderRequest: createDevPageRenderGuard(),
     rsc,
   };
+}
+
+function assertReactFrameworkServerOptions(
+  value: unknown,
+): asserts value is ReactFrameworkServerOptions {
+  if (!isRecord(value)) {
+    throw new Error(
+      "[evjs] createReactFrameworkServer() options must be an object.",
+    );
+  }
+
+  assertOptionalObject(value.manifest, "createReactFrameworkServer() manifest");
+  assertOptionalFunction(
+    value.loadModule,
+    "createReactFrameworkServer() loadModule",
+  );
+  assertOptionalFunction(
+    value.renderModule,
+    "createReactFrameworkServer() renderModule",
+  );
+  assertOptionalObject(value.react, "createReactFrameworkServer() react");
+  assertOptionalObject(value.rsc, "createReactFrameworkServer() rsc");
+  assertOptionalRenderCoordinator(
+    value.fallback,
+    "createReactFrameworkServer() fallback",
+  );
+  assertOptionalRscCoordinator(
+    value.rscCoordinator,
+    "createReactFrameworkServer() rscCoordinator",
+  );
+}
+
+function assertOptionalObject(value: unknown, source: string): void {
+  if (value !== undefined && !isRecord(value)) {
+    throw new Error(`[evjs] ${source} must be an object.`);
+  }
+}
+
+function assertReactFrameworkManifest(
+  value: unknown,
+): asserts value is BuildOutput {
+  assertFrameworkManifestShape(value, "createReactFrameworkServer() manifest");
+}
+
+function assertOptionalFunction(value: unknown, source: string): void {
+  if (value !== undefined && typeof value !== "function") {
+    throw new Error(`[evjs] ${source} must be a function.`);
+  }
+}
+
+function assertOptionalRenderCoordinator(value: unknown, source: string): void {
+  if (value === undefined || typeof value === "function") return;
+  if (isRecord(value) && typeof value.render === "function") return;
+  throw new Error(
+    `[evjs] ${source} must be a render function or coordinator object.`,
+  );
+}
+
+function assertOptionalRscCoordinator(value: unknown, source: string): void {
+  if (value === undefined || typeof value === "function") return;
+  if (isRecord(value) && typeof value.renderFlight === "function") return;
+  throw new Error(
+    `[evjs] ${source} must be an RSC Flight function or coordinator object.`,
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function createDevPageRenderGuard():
@@ -130,9 +206,9 @@ async function loadModuleFromRuntimeGlobal(
 
   return {
     render() {
-      return new Response(
+      return textResponse(
         "[evjs] Server renderer module loader is not configured.",
-        { status: 501 },
+        501,
       );
     },
   };

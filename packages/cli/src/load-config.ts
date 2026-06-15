@@ -13,24 +13,30 @@ const CONFIG_FILES = ["ev.config.ts", "ev.config.js", "ev.config.mjs"];
  * Looks for `ev.config.ts`, `.js`, or `.mjs` in the given directory.
  * Returns undefined if no config file is found.
  */
-export async function loadConfig(cwd: string): Promise<Config | undefined> {
+export async function loadConfig<TBundlerCfg = unknown>(
+  cwd: string,
+): Promise<Config<TBundlerCfg> | undefined> {
   for (const filename of CONFIG_FILES) {
     const configPath = path.resolve(cwd, filename);
     if (fs.existsSync(configPath)) {
-      return importConfigFile(configPath);
+      return importConfigFile<TBundlerCfg>(configPath);
     }
   }
   return undefined;
 }
 
-async function importConfigFile(configPath: string): Promise<Config> {
+async function importConfigFile<TBundlerCfg>(
+  configPath: string,
+): Promise<Config<TBundlerCfg>> {
   if (path.extname(configPath) === ".ts") {
-    return importTypeScriptConfig(configPath);
+    return importTypeScriptConfig<TBundlerCfg>(configPath);
   }
-  return importConfigModule(configPath);
+  return importConfigModule<TBundlerCfg>(configPath);
 }
 
-async function importTypeScriptConfig(configPath: string): Promise<Config> {
+async function importTypeScriptConfig<TBundlerCfg>(
+  configPath: string,
+): Promise<Config<TBundlerCfg>> {
   const { transpileTypeScriptConfig } = await import("@evjs/ev/build-tools");
   const source = await fsp.readFile(configPath, "utf-8");
   const code = await transpileTypeScriptConfig(source, {
@@ -40,13 +46,15 @@ async function importTypeScriptConfig(configPath: string): Promise<Config> {
 
   try {
     await fsp.writeFile(tempPath, code, { mode: 0o600 });
-    return await importConfigModule(tempPath);
+    return await importConfigModule<TBundlerCfg>(tempPath);
   } finally {
     await removeTempModule(tempPath);
   }
 }
 
-async function importConfigModule(configPath: string): Promise<Config> {
+async function importConfigModule<TBundlerCfg>(
+  configPath: string,
+): Promise<Config<TBundlerCfg>> {
   const configUrl = pathToFileURL(configPath);
   configUrl.searchParams.set(
     "t",

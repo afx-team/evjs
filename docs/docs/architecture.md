@@ -15,9 +15,18 @@ src/pages + ev.config.ts + server declarations
 
 ## Public Packages
 
+Application code can import framework runtime APIs through `@evjs/ev/client`
+and `@evjs/ev/server` when it wants one direct framework package. Direct
+`@evjs/client` and `@evjs/server` imports remain supported runtime package
+boundaries. Other packages are tooling, bundler adapters, or shared contracts
+for framework packages. When a new capability needs a boundary, prefer adding a
+subpath export to an existing package before creating another distributed
+package.
+
 ```txt
 @evjs/ev
-  config, plugin lifecycle, dev/build orchestration, framework build types
+  config, plugin lifecycle, dev/build orchestration, framework build types,
+  and app-facing runtime facades under @evjs/ev/client and @evjs/ev/server
 
 @evjs/client
   browser runtime, server-function transport, page hooks, navigation helpers,
@@ -31,10 +40,49 @@ src/pages + ev.config.ts + server declarations
 stay in `@evjs/bundler-utoopack` and `@evjs/bundler-webpack`, and shared
 runtime/manifest contracts stay in `@evjs/shared`.
 
+| Role | Packages | Import guidance |
+|------|----------|-----------------|
+| Application framework surface | `@evjs/ev`, `@evjs/client`, `@evjs/server` | Use `@evjs/ev` for config/build APIs and optionally `@evjs/ev/client` / `@evjs/ev/server` for runtime facades; direct runtime package imports remain supported. |
+| Tooling | `@evjs/cli`, `@evjs/create-app` | Install or execute them; application modules should not import them. |
+| Bundler adapters | `@evjs/bundler-utoopack`, `@evjs/bundler-webpack` | `@evjs/cli` owns the default Utoopack adapter. Import an adapter directly only when authoring custom tooling. |
+| Shared contracts | `@evjs/shared` | Published so framework packages share manifest/runtime types; app code should not import it directly. |
+
+Published package manifests stay ESM-only and intentionally narrow. Every
+distributed package sets `"type": "module"`, publishes with public access and
+the MIT license, and whitelists generated output only: `esm` for framework,
+runtime, adapter, and contract packages; `dist`/`bin` for `@evjs/cli`; and
+`dist`/`templates` for `@evjs/create-app`.
+
+Subpath exports stay explicit and documented; adding a new package export is a
+public API decision, not a convenience alias.
+
+Internal `@evjs/*` runtime dependencies are kept explicit. `@evjs/ev` consumes
+`@evjs/client`, `@evjs/server`, and shared contracts so the facade subpaths are
+real package boundaries, not undocumented aliases. `@evjs/server` also consumes
+`@evjs/client` for shared runtime types. `@evjs/cli` owns the default Utoopack
+adapter dependency, and bundler adapters depend on `@evjs/ev` instead of
+depending on each other. Internal runtime dependency versions stay
+`"*"` so release automation treats the distributed packages as one framework
+version.
+
+Generated-only `@evjs/ev/client/internal/*` subpaths let framework-emitted
+route declarations, page bootstraps, server-function stubs, and RSC runtime
+entries type-check in applications that only declare `@evjs/ev`. Application
+code should keep importing navigation/runtime APIs from `@evjs/ev/client` and
+should not import generated-only internal helpers.
+Examples include `@evjs/ev/client/internal/route-types` for generated SPA
+route declarations and `@evjs/ev/client/internal/rsc-runtime` for RSC page
+bootstraps.
+
 Do not reintroduce legacy split packages such as `@evjs/build-tools`,
 `@evjs/manifest`, or `@evjs/router-*`. Build helpers are exported from
 `@evjs/ev/build-tools`, and manifest contracts are exported from
 `@evjs/shared/manifest`.
+
+Documentation code examples follow the same package boundary: application
+examples import from `@evjs/ev`, `@evjs/ev/client`, `@evjs/ev/server`, or the
+direct runtime packages; adapter examples may import `@evjs/bundler-utoopack`
+when demonstrating custom tooling.
 
 ## Internal Modules
 
@@ -46,20 +94,23 @@ Do not reintroduce legacy split packages such as `@evjs/build-tools`,
 @evjs/shared/manifest
   AppGraph, BuildPlan, BuildOutput, and manifest schemas
 
-@evjs/client internal modules
+@evjs/ev generated-only client internal facades
   framework-managed runtime, shell, router-free react-page runtime, transport,
   RSC client runtime, SPA router integration, and generated bootstrap behind
-  @evjs/client/internal subpaths
+  @evjs/ev/client/internal/* subpaths backed by @evjs/client internals
 
 @evjs/bundler-utoopack
   default bundler adapter used by @evjs/cli
 
 @evjs/bundler-webpack
-  validation/fallback adapter for component pages, SSR/PPR/RSC, remotes,
-  and dev plan updates while Utoopack lower-layer APIs catch up
+  validation/fallback adapter for SSR/PPR/RSC and dynamic entry/server
+  dev plan updates while Utoopack lower-layer APIs catch up
 ```
 
 `@evjs/ev/build-tools` does not import bundler adapters. Bundler adapters consume `BuildPlan`; they do not rediscover framework semantics from source files after bundling.
+The `@evjs/ev/build-tools` subpath is intentionally limited to CLI and bundler
+adapter tooling APIs. Low-level module export parsing, server-function ID
+hashing, and module-ref helpers stay private to `@evjs/ev`.
 
 ## Build Flow
 
@@ -105,8 +156,8 @@ route trees directly.
 ```mermaid
 sequenceDiagram
   participant Browser
-  participant Shell as "@evjs/client/internal"
-  participant Runtime as "@evjs/client"
+  participant Shell as "@evjs/ev/client/internal"
+  participant Runtime as "@evjs/ev/client"
   participant Server as "@evjs/server"
   participant Manifest as "BuildOutput"
 
@@ -187,10 +238,14 @@ PPR page hydration is page-level `none` in the public manifest. Client
 interactivity should be introduced through explicit client islands or
 region-level hydration metadata, not by hydrating the whole PPR shell.
 
-RSC uses the same `@evjs/server` boundary for Flight requests. The Webpack
-validation path uses React Flight client consumption and React client/server
-reference manifests; Utoopack still needs equivalent lower-layer metadata before
-it can run the same path.
+RSC uses the same `@evjs/server` boundary for Flight requests. The Flight
+endpoint accepts `page=<id>` and an optional `url=<pathname+search>` value; that
+`page` id must be a manifest page id using the build-identifier rule. The URL
+context must be an absolute same-origin path or HTTP(S) URL and must not include
+a hash.
+The Webpack validation path uses React Flight client consumption and React
+client/server reference manifests; Utoopack still needs equivalent lower-layer
+metadata before it can run the same path.
 
 Remote shared dependencies use an explicit host-provided share scope. The
 internal remote runtime checks remote `shared` requirements before loading the
@@ -202,11 +257,35 @@ for diagnostics, telemetry, or policy UI; ordinary remote components should not
 render framework dependency versions. React host pages should use
 `useRemoteHost()` / `RemoteApp`; lower-level `startRemoteAppRuntime()` accepts
 advanced `runtime` hooks for custom shared scope, manifest loading, module
-loading, and error handling. Default-exported React remote modules are
-automatically adapted to internal lifecycle modules. Explicit `init()`,
-`mount()`, `hydrate()`, and `unmount()` exports remain available only as an
-advanced lifecycle escape hatch. Automatic package loading/version selection
-remains outside this implementation.
+loading, and error handling. Remote host `activeWhen` options use the same
+pathname-pattern validation as `remotes` config. `RemoteApp` target `remote`
+uses the same build-identifier rule as `remotes` config, and object-shaped
+activation requests inherit that target unless they explicitly set `remoteId`.
+Use `request.remoteEntryId` to select a specific remote entry without repeating
+the host remote id, or use `request.url` to pick an entry through `activeWhen`;
+do not provide both in one request. Object-shaped activation requests validate
+`remoteId`, `remoteEntryId`, `pageId`, and `buildId` as build identifiers;
+`appId` and `url` must be non-empty strings without leading or trailing
+whitespace, with `url` limited to HTTP(S) URLs or pathnames that start with `/`.
+`mountPoint` must be an Element object when provided. `hydrate` must be boolean
+when provided. `manifest` and manifest values read through optional
+`manifestQueryParam` must be non-empty HTTP(S) URLs or paths without leading or
+trailing whitespace. Fetched remote manifest names and entry ids are validated
+as build identifiers before activation. A fetched remote manifest `name` must
+match the host `remotes.<id>` that loaded it. Manifest string fields such as
+module and asset hrefs are
+rejected when they contain leading or trailing whitespace or do not resolve to
+`http:` or `https:` URLs from the remote manifest base URL.
+Default-exported React remote modules are automatically adapted to internal
+lifecycle modules. A remote module must not mix a default React component with
+explicit `mount()`, `hydrate()`, or `unmount()` exports; `init()` may accompany a
+default component for setup. Explicit lifecycle modules remain available only as
+an advanced escape hatch; they must export `mount()` or `hydrate()` because
+`init()` / `unmount()` alone cannot render a remote entry. Custom
+`runtime.loadModule()` hooks use the same module shape, so they may return either
+lifecycle functions or `{ default: RemoteComponent }` for a `react-component`
+remote entry. Automatic package loading/version selection remains outside this
+implementation.
 
 ## Configuration Ownership
 
@@ -239,6 +318,10 @@ through static exports such as `render`, `hydrate`, `rsc`, and `prerender`.
 When graph creation sees SSR, RSC, or partial prerender metadata, it derives the
 required server renderers, PPR regions, assets, and manifest output from that
 page module.
+Full server manifests keep those renderer relationships explicit: SSR, SSG, and
+RSC document pages resolve through a `page-server` renderer owned by the page id
+or by one of that page's route ids. PPR pages resolve through `ppr-shell` and
+`ppr-region` entries instead.
 
 `pages.*` remains the explicit lower-level page API. It is useful when a page
 does not map cleanly to the `src/pages` file tree. Rendering metadata still
@@ -257,6 +340,30 @@ belongs in the referenced page module, not in `ev.config.ts`.
 
 The public config exposes `server.basePath`; the function endpoint is derived from that base path.
 
+RSC `use client` reference extraction preserves default exports, identifier
+exports, class exports, same-module aliases, namespace re-export names such as
+`export * as Widgets from "./widgets"`, and re-exported names including
+string-literal aliases in `BuildOutput.rsc`. Type-only exports are ignored. The
+client reference transform emits internal bindings with export specifiers so
+reserved words and string-literal aliases stay valid JavaScript.
+`BuildOutput.rsc.clientReferences` and `BuildOutput.rsc.serverReferences` use
+the extracted reference id as a trimmed string key. Those ids may contain file
+paths, URL syntax, `#`, or `:`; the value object carries the trimmed `module`
+and optional trimmed `exportName`.
+Reference-only RSC output can omit `BuildOutput.rsc.endpoint`; RSC page output
+cannot, because Flight requests need a concrete endpoint. The manifest linker
+rejects RSC page output when `runtime.server.rsc` is missing.
+For full server manifests, each RSC page renderer reference must resolve to an
+`rsc-page` renderer whose `owner.pageId` matches the RSC page id; public
+manifests may omit that server-only renderer metadata.
+After ignoring type-only and ambient declarations, a `"use client"` module must
+still expose at least one runtime client reference.
+Bare runtime `export * from "./widgets"` is rejected because the framework
+manifest must know every client reference export name; use explicit named
+re-exports or a namespace re-export instead.
+Malformed `"use client"` modules are reported during graph analysis with the
+file path and parser message before the bundler transform runs.
+
 ## Deployment
 
 Deployment adapters consume `BuildOutput`. `@evjs/ev` provides:
@@ -271,6 +378,9 @@ Deployment adapters consume `BuildOutput`. `@evjs/ev` provides:
 Platform-specific adapters should derive their routing, framework endpoint, SSR,
 PPR, RSC, remote, shared dependency, and asset metadata from `BuildOutput`
 instead of reading bundler stats.
+Full server manifests retain source modules and server renderer references;
+public/browser manifests keep the same routing and asset shape but redact those
+server-only fields, so client-side validation treats them as optional.
 
 The deployment model is capability-driven:
 
@@ -302,17 +412,29 @@ config / page route / server declaration change
   -> recreate AppGraph
   -> recreate BuildPlan
   -> diff BuildPlan
-  -> devPlanUpdate hooks
-  -> bundlerDevController.updatePlan(update, nextGraph)
+  -> if BuildPlan changes:
+       devPlanUpdate hooks
+       bundlerDevController.updatePlan(update, nextGraph)
+  -> if graph-only:
+       refresh active graph + dependency watchers
 ```
 
-The current Utoopack adapter reports a clear unsupported error for dynamic entry
-updates until Utoopack exposes the lower-layer API. The webpack adapter can apply
-the update in-process for architecture validation. Style and asset edits remain
-on the bundler HMR path.
+The default Utoopack adapter applies HTML-only plan updates by relinking
+framework output from existing build stats. It still reports a clear unsupported
+error for dynamic entry and server renderer updates until Utoopack exposes the
+lower-layer API. The webpack adapter can apply those broader updates in-process
+for architecture validation. Style and asset edits remain on the bundler HMR
+path. Server-function and server-route implementation edits usually keep the
+same `BuildPlan`; in that case the framework refreshes graph metadata and watch
+inputs, while the bundler's normal server watch emits the updated code.
 
 Graph analysis reads page route modules plus static import closures to discover
-server functions, server routes, page metadata, and RSC references. Dev watches
-the page route directory, explicit graph roots, and files that already contain
-framework markers; ordinary component and style edits stay on the bundler HMR
-path.
+server functions, server routes, page metadata, and RSC references. Static import
+closure discovery parses modules, so it follows ordinary imports, re-exports,
+and valid string-literal import aliases. Literal dynamic imports are also tracked
+when they point at project-relative modules. Dev watches the page route
+directory, explicit graph roots, and files that already contain framework
+markers. Configured page components are explicit graph roots because their
+static `render`, `hydrate`, `rsc`, and `prerender` exports affect framework
+planning. Ordinary component, app entry, and style edits stay on the bundler
+HMR path unless those modules declare framework markers.

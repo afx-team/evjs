@@ -14,7 +14,7 @@ function createPagesEntrySource(options, loaderContext) {
   const mount = options.mount || "#app";
   const rootModule = options.rootModule;
   const imports = [
-    `import { createPagesApp } from "@evjs/client/internal";`,
+    `import { createPagesApp } from "@evjs/ev/client/internal";`,
     rootModule
       ? `import * as rootModule from ${JSON.stringify(withPageQuery(toLoaderRelativeRequest(rootModule, loaderContext)))};`
       : "",
