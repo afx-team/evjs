@@ -8,10 +8,11 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@evjs/client": "*",
+    "@evjs/ev": "*",
     "@tailwindcss/typography": "^0.5.19",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "@evjs/ev": "*"
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
     "@evjs/cli": "*",

@@ -74,9 +74,8 @@ async function writeRouteTypeCheckTsConfig(cwd: string) {
           noEmit: true,
           types: ["node"],
           paths: {
-            "@evjs/ev/client": ["../../packages/ev/src/client.ts"],
-            "@evjs/ev/client/internal/route-types": [
-              "../../packages/ev/src/client-internal-route-types.ts",
+            "@evjs/client/internal/route-types": [
+              "../../packages/client/src/route-types.ts",
             ],
             "@evjs/client": ["../../packages/client/src/index.ts"],
             "@evjs/shared": ["../../packages/shared/src/index.ts"],
@@ -756,7 +755,7 @@ describe("build", () => {
       await fs.promises.writeFile(
         path.join(cwd, "src/check-links.tsx"),
         [
-          'import { Link, useLinkProps, usePageLoaderData, usePageParams, usePageSearch } from "@evjs/ev/client";',
+          'import { Link, useLinkProps, usePageLoaderData, usePageParams, usePageSearch } from "@evjs/client";',
           "",
           "export function CheckLinks() {",
           '  <Link to="/posts/$postId" params={{ postId: "p1" }} />;',
@@ -824,7 +823,7 @@ describe("build", () => {
       await fs.promises.writeFile(
         path.join(cwd, "src/check-custom-dir-links.tsx"),
         [
-          'import { useLinkProps } from "@evjs/ev/client";',
+          'import { useLinkProps } from "@evjs/client";',
           "",
           "export function CheckCustomDirLinks() {",
           '  useLinkProps({ to: "/admin/$section", params: { section: "users" } });',
@@ -2408,7 +2407,7 @@ describe("build", () => {
     await fs.promises.writeFile(
       path.join(cwd, "src/api.ts"),
       [
-        'import { createRoute } from "@evjs/ev/server";',
+        'import { createRoute } from "@evjs/server";',
         'const routePath = "/api/dynamic";',
         "export const dynamic = createRoute(routePath, {",
         "  GET: async () => Response.json({ ok: true }),",
@@ -2453,7 +2452,7 @@ describe("build", () => {
     await fs.promises.writeFile(
       path.join(cwd, "src/api.ts"),
       [
-        'import { createRoute } from "@evjs/ev/server";',
+        'import { createRoute } from "@evjs/server";',
         'export const users = createRoute("/api/users", {',
         "  GET: async () => Response.json([])",
       ].join("\n"),
@@ -2494,7 +2493,7 @@ describe("build", () => {
     await fs.promises.writeFile(
       path.join(cwd, "src/api.ts"),
       [
-        'import { createRoute } from "@evjs/ev/server";',
+        'import { createRoute } from "@evjs/server";',
         'export const users = createRoute("/api/users", {',
         "  get: async () => Response.json([]),",
         "});",
@@ -2538,7 +2537,7 @@ describe("build", () => {
     await fs.promises.writeFile(
       path.join(cwd, "src/api.ts"),
       [
-        'import { createRoute } from "@evjs/ev/server";',
+        'import { createRoute } from "@evjs/server";',
         'export const users = createRoute("/api/users", {',
         '  GET: "not a function",',
         "});",
@@ -2582,7 +2581,7 @@ describe("build", () => {
     await fs.promises.writeFile(
       path.join(cwd, "src/api.ts"),
       [
-        'import { createRoute } from "@evjs/ev/server";',
+        'import { createRoute } from "@evjs/server";',
         'export const users = createRoute("/api/users?filter=all", {',
         "  GET: async () => Response.json([]),",
         "});",
@@ -2626,7 +2625,7 @@ describe("build", () => {
     await fs.promises.writeFile(
       path.join(cwd, "src/api/a-customers.ts"),
       [
-        'import { createRoute } from "@evjs/ev/server";',
+        'import { createRoute } from "@evjs/server";',
         'export const customersGet = createRoute("/api/customers", {',
         "  GET: async () => Response.json([]),",
         "});",
@@ -2636,7 +2635,7 @@ describe("build", () => {
     await fs.promises.writeFile(
       path.join(cwd, "src/api/b-customers.ts"),
       [
-        'import { createRoute } from "@evjs/ev/server";',
+        'import { createRoute } from "@evjs/server";',
         'export const customersPost = createRoute("/api/customers", {',
         "  POST: async () => Response.json({ ok: true }),",
         "});",

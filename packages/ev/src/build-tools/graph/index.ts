@@ -1595,8 +1595,7 @@ function extractStaticImportSpecifiersWithRegex(source: string): string[] {
 function isFrameworkDependencySource(source: string): boolean {
   return (
     /^\s*["']use (client|server)["']/m.test(source.slice(0, 200)) ||
-    ((source.includes("@evjs/server") || source.includes("@evjs/ev/server")) &&
-      source.includes("createRoute"))
+    (source.includes("@evjs/server") && source.includes("createRoute"))
   );
 }
 

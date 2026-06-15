@@ -4,7 +4,7 @@ Server routes give you full control over HTTP methods, headers, and standard Web
 
 ## Basic Usage
 
-Define routes using `createRoute(path, definition)` from `@evjs/ev/server`:
+Define routes using `createRoute(path, definition)` from `@evjs/server`:
 
 :::important
 **Route paths must be string literals.** The `path` argument only accepts
@@ -62,7 +62,7 @@ createRoute("/api/users", { GET: handler });
 
 ```ts
 // src/api/posts.routes.ts
-import { createRoute } from "@evjs/ev/server";
+import { createRoute } from "@evjs/server";
 
 export const postsRoute = createRoute("/api/posts", {
   GET: async (req) => {
@@ -147,7 +147,7 @@ Use the `middlewares` option to run logic before handlers. Call `next()` to
 proceed or return a `Response` to short-circuit:
 
 ```ts
-import { createRoute } from "@evjs/ev/server";
+import { createRoute } from "@evjs/server";
 
 const requireAuth = async (req, next) => {
   const auth = req.headers.get("Authorization");
@@ -165,7 +165,7 @@ Use `createApp({ middlewares })` for global middleware that should run before
 server routes, server functions, SSR, PPR, and RSC framework handling:
 
 ```ts
-import { createApp, requestLogger } from "@evjs/ev/server";
+import { createApp, requestLogger } from "@evjs/server";
 
 const app = createApp({
   middlewares: [requestLogger()],
@@ -183,7 +183,7 @@ PPR runtime cache options also live under `framework.ppr`; use them from
 generated or custom server adapters rather than application page config:
 
 ```ts
-import type { PprRegionCache } from "@evjs/ev/server";
+import type { PprRegionCache } from "@evjs/server";
 
 const regionCache: PprRegionCache = platformRegionCache();
 
@@ -205,7 +205,7 @@ Provide route handlers to `createApp()` in your server entry:
 
 ```ts
 // src/server.ts
-import { createApp } from "@evjs/ev/server";
+import { createApp } from "@evjs/server";
 import { postsRoute, postDetailsRoute } from "./api/posts.routes";
 
 const app = createApp({

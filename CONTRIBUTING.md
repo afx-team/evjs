@@ -15,7 +15,7 @@
 | Package | Path | Purpose |
 | --- | --- | --- |
 | `@evjs/cli` | `packages/cli` | CLI binary and programmatic command entrypoints |
-| `@evjs/ev` | `packages/ev` | Config, plugin lifecycle, graph analysis, build planning, HTML, deployment helpers, bundler adapter contracts, and runtime facade subpaths |
+| `@evjs/ev` | `packages/ev` | Config, plugin lifecycle, graph analysis, build planning, HTML, deployment helpers, and bundler adapter contracts |
 | `@evjs/create-app` | `packages/create-app` | Project scaffolding from examples/templates |
 | `@evjs/shared` | `packages/shared` | Runtime shared helpers plus `@evjs/shared/manifest` graph/plan/output schemas |
 | `@evjs/client` | `packages/client` | Browser runtime, transport, page hooks, navigation helpers, remote host helpers, and RSC client |
@@ -33,8 +33,6 @@
   -> @evjs/bundler-utoopack
 
 @evjs/ev
-  -> @evjs/client
-  -> @evjs/server
   -> @evjs/shared
 
 @evjs/bundler-utoopack
@@ -70,16 +68,14 @@ other.
 4. Keep framework semantics out of bundler adapters. Adapters consume `BuildPlan` and return build facts.
 5. Server function files must start with `"use server";` and export named functions or supported named async values.
 6. Use `ev.config.ts`; new docs should import `defineConfig` from `@evjs/ev`.
-7. App-facing imports stay in `@evjs/ev` or its runtime facade subpaths
-   (`@evjs/ev/client`, `@evjs/ev/server`). Direct `@evjs/client` and
-   `@evjs/server` imports are implementation-package references for this
-   monorepo, not the documented application path. Prefer a subpath export on an
-   existing package before adding another distributed package. Subpath exports
-   stay intentional and documented; do not add convenience aliases.
-8. Keep client imports on the `@evjs/ev/client` facade for page hooks,
-   navigation, transport, remote host helpers, and RSC helpers. Generated page
+7. Config/build imports stay on `@evjs/ev`; runtime imports use `@evjs/client`
+   and `@evjs/server`. Prefer a subpath export on the package that owns the
+   behavior before adding another distributed package. Subpath exports stay
+   intentional and documented; do not add convenience aliases.
+8. Keep client imports on `@evjs/client` for page hooks, navigation,
+   transport, remote host helpers, and RSC helpers. Generated page
    bootstrap, server-function stubs, and shell runtime primitives stay behind
-   generated-only `@evjs/ev/client/internal/*` facade subpaths.
+   generated-only `@evjs/client/internal/*` subpaths.
 9. Use `server.basePath` for framework server runtime paths. Do not reintroduce public `server.functions.endpoint` config.
 
 ## Common Tasks

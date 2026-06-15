@@ -1227,8 +1227,8 @@ describe("createAppGraph and createBuildPlan", () => {
         },
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/ev/client/internal",
-          serverRegister: "@evjs/ev/server/register",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
         },
       },
     });
@@ -1935,7 +1935,7 @@ describe("createAppGraph and createBuildPlan", () => {
     const plan = createBuildPlan(config, analysis.graph, {
       mode: "production",
     });
-    expect(plan.server.entry).toBe("@evjs/ev/server/fetch");
+    expect(plan.server.entry).toBe("@evjs/server/fetch");
     expect(plan.server.renderers).toEqual([
       {
         name: "pricing-server",
@@ -2014,7 +2014,7 @@ describe("createAppGraph and createBuildPlan", () => {
     });
     expect(plan.entries).toContainEqual({
       name: "server",
-      import: "@evjs/ev/server/fetch",
+      import: "@evjs/server/fetch",
       environment: "server",
       runtime: "node",
       kind: "server-runtime",
@@ -3178,7 +3178,7 @@ describe("createAppGraph and createBuildPlan", () => {
     expect(plan.entries).toContainEqual(
       expect.objectContaining({
         name: "evjs-rsc-client",
-        import: "@evjs/ev/client/internal/rsc-runtime",
+        import: "@evjs/client/internal/rsc-runtime",
         environment: "client",
         kind: "runtime",
       }),
@@ -3471,7 +3471,7 @@ describe("createAppGraph and createBuildPlan", () => {
         import "./actions";
       `,
       "src/api.ts": `
-        import { createRoute } from "@evjs/ev/server";
+        import { createRoute } from "@evjs/server";
         export const health = createRoute("/api/health", {
           GET: async () => Response.json({ ok: true }),
         });
@@ -3489,8 +3489,8 @@ describe("createAppGraph and createBuildPlan", () => {
         basePath: "/__evjs",
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/ev/client/internal",
-          serverRegister: "@evjs/ev/server/register",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
         },
       },
     });
@@ -3531,8 +3531,8 @@ describe("createAppGraph and createBuildPlan", () => {
         basePath: "/__evjs",
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/ev/client/internal",
-          serverRegister: "@evjs/ev/server/register",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
         },
       },
     });
@@ -3567,8 +3567,8 @@ describe("createAppGraph and createBuildPlan", () => {
         basePath: "/__evjs",
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/ev/client/internal",
-          serverRegister: "@evjs/ev/server/register",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
         },
       },
     });
@@ -3657,8 +3657,8 @@ describe("createAppGraph and createBuildPlan", () => {
         basePath: "/__evjs",
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/ev/client/internal",
-          serverRegister: "@evjs/ev/server/register",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
         },
       },
     });
@@ -3779,8 +3779,8 @@ describe("createAppGraph and createBuildPlan", () => {
         basePath: "/__evjs",
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/ev/client/internal",
-          serverRegister: "@evjs/ev/server/register",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
         },
       },
     });
@@ -3830,8 +3830,8 @@ describe("createAppGraph and createBuildPlan", () => {
         basePath: "/__evjs",
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/ev/client/internal",
-          serverRegister: "@evjs/ev/server/register",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
         },
       },
     });
@@ -3892,8 +3892,8 @@ describe("createAppGraph and createBuildPlan", () => {
         basePath: "/__evjs",
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/ev/client/internal",
-          serverRegister: "@evjs/ev/server/register",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
         },
       },
     });
@@ -4193,7 +4193,7 @@ describe("createAppGraph and createBuildPlan", () => {
         },
         {
           name: "server",
-          import: "@evjs/ev/server/fetch",
+          import: "@evjs/server/fetch",
           environment: "server",
           runtime: "node",
           kind: "server-runtime",
@@ -4272,8 +4272,8 @@ describe("createAppGraph and createBuildPlan", () => {
         basePath: "/__evjs",
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/ev/client/internal",
-          serverRegister: "@evjs/ev/server/register",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
         },
       },
     });
@@ -4944,8 +4944,8 @@ function createConfig(overrides: Partial<TestConfig> = {}): TestConfig {
       basePath: "/__evjs",
       functionRuntime: {
         endpoint: "/__evjs/fn",
-        clientProxy: "@evjs/ev/client/internal",
-        serverRegister: "@evjs/ev/server/register",
+        clientProxy: "@evjs/client/internal",
+        serverRegister: "@evjs/server/register",
       },
     },
     ...overrides,

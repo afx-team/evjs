@@ -34,8 +34,7 @@ consume `BuildOutput` rather than raw bundler stats.
 
 @evjs/ev
   config, plugins, graph analysis, build planning, HTML, deployment helpers,
-  bundler adapter contracts, and runtime facades under @evjs/ev/client and
-  @evjs/ev/server
+  and bundler adapter contracts
 
 @evjs/shared
   runtime shared helpers and @evjs/shared/manifest schemas/linkers
@@ -46,7 +45,7 @@ consume `BuildOutput` rather than raw bundler stats.
 
 @evjs/server
   server functions, REST routes, SSR/PPR/RSC request coordination, and runtime
-  adapters surfaced through facades such as @evjs/ev/server/node
+  adapters such as @evjs/server/node
 
 @evjs/bundler-utoopack
   default Utoopack adapter
@@ -55,25 +54,24 @@ consume `BuildOutput` rather than raw bundler stats.
   validation/fallback adapter for architecture features blocked on Utoopack APIs
 ```
 
-Application code imports runtime APIs through `@evjs/ev/client` and
-`@evjs/ev/server` so apps can depend on one direct framework package. Direct
-`@evjs/client` and `@evjs/server` imports are implementation-package
-boundaries used inside the monorepo. Other packages are tooling, bundler
+`@evjs/ev` owns config, plugin, build, and deployment APIs. Runtime APIs live in
+`@evjs/client` and `@evjs/server`, and applications that use those capabilities
+declare those runtime packages directly. Other packages are tooling, bundler
 adapters, or shared contracts for framework packages. When a new capability
-needs a boundary, prefer adding a subpath export to an existing package before
-creating another distributed package.
+needs a boundary, prefer adding a subpath export to the package that owns the
+behavior before creating another distributed package.
 
 Subpath exports stay explicit and documented; adding a new package export is a
 public API decision, not a convenience alias.
 
 Internal `@evjs/*` runtime dependencies are kept explicit and workspace-local.
-`@evjs/ev` consumes `@evjs/client`, `@evjs/server`, and shared contracts so
-facade subpaths are curated application API boundaries rather than runtime
-package mirrors. `@evjs/server` also consumes `@evjs/client` for shared runtime
-types. `@evjs/cli` owns the default Utoopack adapter dependency, and bundler
-adapters depend on `@evjs/ev` instead of depending on each other. Internal
-runtime dependency versions stay `"*"` so release automation treats the
-distributed packages as one framework version.
+`@evjs/ev` consumes shared contracts but does not publish runtime
+subpaths. `@evjs/server` consumes `@evjs/client` for shared runtime types.
+`@evjs/cli` owns the default Utoopack adapter dependency, and bundler adapters
+depend on `@evjs/ev` instead of depending on each other. Internal runtime
+dependency versions stay `"*"` so release automation treats the distributed
+packages as one framework version. `@evjs/ev` exports stay limited to framework
+and build tooling entries.
 
 Do not reintroduce legacy split packages:
 
@@ -84,8 +82,7 @@ Do not reintroduce legacy split packages:
 
 Build helpers are exported from `@evjs/ev/build-tools`, manifest contracts are
 exported from `@evjs/shared/manifest`, and generated page/shell runtime
-primitives stay behind generated-only `@evjs/ev/client/internal/*` facade
-subpaths.
+primitives stay behind generated-only `@evjs/client/internal/*` subpaths.
 
 ## Build-Time Flow
 
@@ -118,7 +115,7 @@ sequenceDiagram
 Graph analysis may read static import closure for semantic discovery, but dev
 watching must remain narrower than that closure. `fileDependencies` should
 include explicit route/server roots and framework marker files such as
-`src/pages`, `@evjs/ev/server createRoute()`, `"use server"`, and
+`src/pages`, `@evjs/server createRoute()`, `"use server"`, and
 `"use client"`. Ordinary component and style edits stay in the bundler HMR path.
 
 HTML-only dev plan updates can be relinked from existing bundler stats. Dynamic
@@ -130,14 +127,14 @@ the bundler dev instance.
 ## Runtime Ownership
 
 ```txt
-@evjs/ev/client
+@evjs/client
   mounts and hydrates framework-managed React pages
 
-@evjs/ev/client/internal
+@evjs/client/internal
   reads BuildOutput, activates app/page/remote modules, preloads modules,
   disposes lifecycles, and negotiates host-provided shared dependencies
 
-@evjs/ev/server
+@evjs/server
   owns server functions, REST routes, SSR document rendering, PPR region
   rendering, and RSC Flight endpoint routing
 
@@ -164,7 +161,7 @@ Deployment plugins and platform adapters should consume `BuildOutput`.
 
 `@evjs/ev` exposes platform-neutral deployment artifact helpers plus
 `nodeDeploymentAdapter()`. The Node adapter emits a production `dist/server.mjs`
-that imports only Node built-ins, `@evjs/ev/server/node`, and the user server
+that imports only Node built-ins, `@evjs/server/node`, and the user server
 bundle. Platform-specific adapters should consume `BuildOutput` instead of
 reading bundler config or stats.
 

@@ -32,7 +32,7 @@ export interface RouteAnalysisDiagnostic {
 
 const SERVER_ROUTE_PARSE_DIAGNOSTIC_PREFIX =
   "Server route module could not be parsed:";
-const SERVER_ROUTE_IMPORT_MARKERS = ["@evjs/server", "@evjs/ev/server"];
+const SERVER_ROUTE_IMPORT_MARKERS = ["@evjs/server"];
 
 /** Parse once and run server route collectors. Client routes come from page files. */
 export function analyzeRoutes(source: string): RouteAnalysis {

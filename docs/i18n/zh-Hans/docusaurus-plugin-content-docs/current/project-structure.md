@@ -51,14 +51,14 @@ my-evjs-app/
 - `<routing-dir-parent>/evjs-route-types.d.ts` 是 SPA 模式生成的类型安全导航声明。
   默认 `src/pages` 会写入 `src/evjs-route-types.d.ts`；`routing.dir:
   "./src/app/pages"` 会写入 `src/app/evjs-route-types.d.ts`。MPA 模式会移除旧的生成路由类型文件。
-  生成声明使用生成专用的 `@evjs/ev/client/internal/route-types` helper，
+  生成声明使用生成专用的 `@evjs/client/internal/route-types` helper，
   并增强 client runtime 导航类型。保持忽略生成的 route types，不要在应用代码里导入它们。
 - `.evjs/` 是 dev/build 元信息使用的框架生成工作目录。保持忽略它，不要放入模板、
   脚手架源码，也不要从应用代码导入。
 - 渲染元信息放在页面模块旁边。
 - `api/*.server.ts` 放 server functions。
 - `api/*.routes.ts` 放标准 HTTP route handlers。
-- `server.ts` 组合 `@evjs/ev/server` routes、middleware 和 framework rendering。
+- `server.ts` 组合 `@evjs/server` routes、middleware 和 framework rendering。
 - `features/` 把业务逻辑从 route/page files 中移走。
 
 ## 约定矩阵
@@ -237,7 +237,7 @@ export async function listOperators() {
 
 ```ts
 // src/api/health.routes.ts
-import { createRoute } from "@evjs/ev/server";
+import { createRoute } from "@evjs/server";
 
 export const healthRoute = createRoute("/api/health", {
   GET: async () => Response.json({ ok: true }),
@@ -247,8 +247,8 @@ export const healthRoute = createRoute("/api/health", {
 在 `src/server.ts` 中挂载 routes 和 framework rendering：
 
 ```ts
-import { createApp, requestLogger } from "@evjs/ev/server";
-import { createReactFrameworkServer } from "@evjs/ev/server/react";
+import { createApp, requestLogger } from "@evjs/server";
+import { createReactFrameworkServer } from "@evjs/server/react";
 import { healthRoute } from "./api/health.routes";
 
 const framework = createReactFrameworkServer();

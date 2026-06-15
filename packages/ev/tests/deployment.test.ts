@@ -296,7 +296,7 @@ describe("createDeploymentArtifact", () => {
     );
     expect(files.serverModule).toContain('"/api/health"');
     expect(files.serverModule).toContain('"/insights/:id"');
-    expect(files.serverModule).toContain('from "@evjs/ev/server/node"');
+    expect(files.serverModule).toContain('from "@evjs/server/node"');
     expect(files.serverModule).not.toContain('from "hono"');
     expect(files.serverModule).not.toContain(
       'from "@hono/node-server/serve-static"',

@@ -1,7 +1,6 @@
 import fs from "node:fs";
-import http from "node:http";
 import path from "node:path";
-import { test as base, expect } from "@playwright/test";
+import { createCsrExampleTest, expect } from "../fixtures";
 
 const exampleDir = path.resolve(
   import.meta.dirname,
@@ -10,59 +9,7 @@ const exampleDir = path.resolve(
   "with-tailwind",
 );
 
-const test = base.extend<{ baseURL: string }, { _app: { port: number } }>({
-  _app: [
-    // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture API requires object destructuring
-    async ({}, use) => {
-      // Expects the example to be pre-built (npm run build)
-
-      // Serve the client bundle
-      const distRoot = path.join(exampleDir, "dist");
-      const distDir = fs.existsSync(path.join(distRoot, "client", "index.html"))
-        ? path.join(distRoot, "client")
-        : distRoot;
-      const indexHtml = fs.readFileSync(
-        path.join(distDir, "index.html"),
-        "utf-8",
-      );
-
-      const server = http.createServer((req, res) => {
-        const url = req.url || "/";
-        if (url === "/" || url === "/index.html") {
-          res.writeHead(200, { "Content-Type": "text/html" });
-          res.end(indexHtml);
-          return;
-        }
-        const filePath = path.join(distDir, url);
-        if (fs.existsSync(filePath)) {
-          const ext = path.extname(filePath);
-          const ct =
-            ext === ".js"
-              ? "application/javascript"
-              : ext === ".css"
-                ? "text/css"
-                : "text/plain";
-          res.writeHead(200, { "Content-Type": ct });
-          fs.createReadStream(filePath).pipe(res);
-        } else {
-          res.writeHead(200, { "Content-Type": "text/html" });
-          res.end(indexHtml);
-        }
-      });
-
-      await new Promise<void>((resolve) => {
-        server.listen(0, resolve);
-      });
-      const { port } = server.address() as { port: number };
-      await use({ port });
-      server.close();
-    },
-    { scope: "worker" },
-  ],
-  baseURL: async ({ _app }, use) => {
-    await use(`http://localhost:${_app.port}`);
-  },
-});
+const test = createCsrExampleTest("with-tailwind");
 
 test.describe("with-tailwind", () => {
   test("Tailwind CSS loaded via plugin is applied", async ({
@@ -83,7 +30,9 @@ test.describe("with-tailwind", () => {
     expect(fontSize).toBe("48px");
   });
 
-  test("manifest contains routes and assets", async () => {
+  test("manifest contains routes and assets", async ({ baseURL }) => {
+    expect(baseURL).toMatch(/^http:\/\/localhost:\d+$/);
+
     const manifestPath = path.join(exampleDir, "dist", "manifest.json");
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
 

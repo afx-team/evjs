@@ -493,7 +493,7 @@ type AnyFn = (...args: unknown[]) => unknown;
  * so use this type when you need typed access to the metadata.
  *
  * @example
- * import type { ServerFunction } from "@evjs/ev/client";
+ * import type { ServerFunction } from "@evjs/client";
  * import { getUsers } from "./api/users.server";
  *
  * // Runtime properties (added by build system):

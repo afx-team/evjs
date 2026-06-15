@@ -61,7 +61,7 @@ This shape covers the complete framework surface:
   `src/evjs-route-types.d.ts`; `routing.dir: "./src/app/pages"` writes
   `src/app/evjs-route-types.d.ts`. MPA mode removes stale generated route type
   files. The generated declaration uses the generated-only
-  `@evjs/ev/client/internal/route-types` helper and augments the client runtime
+  `@evjs/client/internal/route-types` helper and augments the client runtime
   navigation types. Keep generated route types ignored and do not import them
   from application code.
 - `.evjs/` is the generated framework working directory for dev/build metadata.
@@ -69,7 +69,7 @@ This shape covers the complete framework surface:
 - Rendering metadata lives with page modules.
 - `api/*.server.ts` contains server functions.
 - `api/*.routes.ts` contains standard HTTP route handlers.
-- `server.ts` composes `@evjs/ev/server` routes, middleware, and framework rendering.
+- `server.ts` composes `@evjs/server` routes, middleware, and framework rendering.
 - `features/` keeps domain logic out of route/page files.
 
 ## Convention Matrix
@@ -268,7 +268,7 @@ export async function listOperators() {
 
 ```ts
 // src/api/health.routes.ts
-import { createRoute } from "@evjs/ev/server";
+import { createRoute } from "@evjs/server";
 
 export const healthRoute = createRoute("/api/health", {
   GET: async () => Response.json({ ok: true }),
@@ -278,8 +278,8 @@ export const healthRoute = createRoute("/api/health", {
 Mount routes and framework rendering in `src/server.ts`:
 
 ```ts
-import { createApp, requestLogger } from "@evjs/ev/server";
-import { createReactFrameworkServer } from "@evjs/ev/server/react";
+import { createApp, requestLogger } from "@evjs/server";
+import { createReactFrameworkServer } from "@evjs/server/react";
 import { healthRoute } from "./api/health.routes";
 
 const framework = createReactFrameworkServer();

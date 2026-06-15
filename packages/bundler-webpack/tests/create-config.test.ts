@@ -114,8 +114,8 @@ describe("createWebpackConfigs", () => {
 
     expect(serializedRules).not.toContain("pages-entry-loader.cjs");
     expect(serializedEntries).toContain("createReactPageModule");
-    expect(decodedEntries).toContain("@evjs/ev/client/internal/react-page");
-    expect(decodedEntries).not.toContain('from "@evjs/ev/client/internal";');
+    expect(decodedEntries).toContain("@evjs/client/internal/react-page");
+    expect(decodedEntries).not.toContain('from "@evjs/client/internal";');
   });
 
   it("keeps React and ReactDOM external in regular Node server bundles", async () => {
@@ -200,8 +200,8 @@ function createResolvedConfig(): ResolvedConfig<WebpackConfig> {
       },
       functionRuntime: {
         endpoint: "/__evjs/fn",
-        clientProxy: "@evjs/ev/client/internal",
-        serverRegister: "@evjs/ev/server/register",
+        clientProxy: "@evjs/client/internal",
+        serverRegister: "@evjs/server/register",
       },
       dev: {
         port: 3001,

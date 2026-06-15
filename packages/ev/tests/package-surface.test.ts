@@ -3,8 +3,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import * as buildTools from "../src/build-tools/index.js";
-import { collectModuleExportNames } from "../src/build-tools/module-exports.js";
-import { parseRouteModuleOrThrow } from "../src/build-tools/routes/shared.js";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -30,7 +28,7 @@ const expectedPackageNames = Object.keys(
   packageDistribution,
 ).sort() as PackageName[];
 
-const applicationImportPackages = ["@evjs/ev"] as const;
+const frameworkEntryPackages = ["@evjs/ev"] as const;
 
 const runtimeImplementationPackages = [
   "@evjs/client",
@@ -38,7 +36,7 @@ const runtimeImplementationPackages = [
 ] as const satisfies readonly PackageName[];
 
 const publicRuntimePackages = [
-  ...applicationImportPackages,
+  ...frameworkEntryPackages,
   ...runtimeImplementationPackages,
   "@evjs/shared",
 ] as const satisfies readonly PackageName[];
@@ -102,7 +100,7 @@ const expectedPrimaryPackageExports = {
 } as const satisfies Record<PackageName, Record<string, string>>;
 
 const expectedInternalRuntimeDependencies = {
-  "@evjs/ev": ["@evjs/client", "@evjs/server", "@evjs/shared"],
+  "@evjs/ev": ["@evjs/shared"],
   "@evjs/client": ["@evjs/shared"],
   "@evjs/server": ["@evjs/client", "@evjs/shared"],
   "@evjs/cli": ["@evjs/bundler-utoopack", "@evjs/ev"],
@@ -113,14 +111,18 @@ const expectedInternalRuntimeDependencies = {
 } as const satisfies Record<PackageName, readonly string[]>;
 
 const allowedExamplePackageDependencies = new Set([
+  "@evjs/client",
   "@evjs/ev",
+  "@evjs/server",
   "@evjs/cli",
   "@evjs/bundler-utoopack",
   "@evjs/bundler-webpack",
 ]);
 
 const allowedDocumentationImportPackages = new Set([
+  "@evjs/client",
   "@evjs/ev",
+  "@evjs/server",
   "@evjs/bundler-utoopack",
 ]);
 
@@ -166,65 +168,6 @@ const expectedBuildToolsRuntimeExports = [
   "transpileTypeScriptConfig",
 ] as const;
 
-const expectedClientFacadeRuntimeExports = [
-  "Link",
-  "Navigate",
-  "RemoteApp",
-  "ServerFunctionError",
-  "createReactRscModel",
-  "createRemoteAppManifest",
-  "fetchRscDebugPayload",
-  "fetchRscFlight",
-  "formatRemoteSharedNegotiation",
-  "getFnQueryKey",
-  "getFnQueryOptions",
-  "getRemoteSharedVersion",
-  "initTransport",
-  "isNotFound",
-  "isRedirect",
-  "loadRscDebugPage",
-  "mountReactRscPage",
-  "mountRscDebugPayload",
-  "notFound",
-  "redirect",
-  "resolveRemoteAppManifestUrl",
-  "startReactRscPageRuntime",
-  "startRemoteAppRuntime",
-  "unmountReactRscPage",
-  "useLinkProps",
-  "useLocation",
-  "useMutation",
-  "useNavigate",
-  "usePageContext",
-  "usePageLoaderData",
-  "usePageParams",
-  "usePageSearch",
-  "useQuery",
-  "useQueryClient",
-  "useRemoteContext",
-  "useRemoteHost",
-  "useSuspenseQuery",
-] as const;
-
-const expectedServerFacadeRuntimeExports = [
-  "ServerError",
-  "createApp",
-  "createRoute",
-  "deleteCookie",
-  "dispatch",
-  "generateCookie",
-  "generateSignedCookie",
-  "getContext",
-  "getCookie",
-  "getSignedCookie",
-  "headers",
-  "request",
-  "requestLogger",
-  "setCookie",
-  "setSignedCookie",
-  "waitUntil",
-] as const;
-
 const privateBuildToolsRuntimeExports = [
   "detectUseServer",
   "formatModuleExportName",
@@ -253,22 +196,7 @@ const forbiddenServerSubpathExports = [
 ] as const;
 
 const expectedPackageExportSubpaths = {
-  "@evjs/ev": [
-    ".",
-    "./build-tools",
-    "./client",
-    "./client/internal",
-    "./client/internal/page-context",
-    "./client/internal/react-page",
-    "./client/internal/route-types",
-    "./client/internal/rsc-page-context",
-    "./client/internal/rsc-runtime",
-    "./server",
-    "./server/fetch",
-    "./server/node",
-    "./server/react",
-    "./server/register",
-  ],
+  "@evjs/ev": [".", "./build-tools"],
   "@evjs/client": [
     ".",
     "./internal",
@@ -335,9 +263,12 @@ describe("workspace package surface", () => {
     }
   });
 
-  it("keeps application imports on the framework facade and runtime packages free of tooling deps", async () => {
-    for (const packageName of applicationImportPackages) {
+  it("keeps application-facing packages free of tooling dependencies", async () => {
+    for (const packageName of frameworkEntryPackages) {
       expect(packageDistribution[packageName].role).toBe("framework");
+    }
+    for (const packageName of runtimeImplementationPackages) {
+      expect(packageDistribution[packageName].role).toBe("runtime");
     }
 
     for (const packageName of publicRuntimePackages) {
@@ -353,12 +284,12 @@ describe("workspace package surface", () => {
     }
   });
 
-  it("keeps @evjs/ev runtime facades intentional", async () => {
+  it("keeps @evjs/ev focused on framework config and build tooling", async () => {
     const evPackageJson = await readPackageJson("ev");
     const exportedSubpaths = Object.keys(evPackageJson.exports ?? {}).sort();
 
     expect(exportedSubpaths).toEqual(expectedPackageExportSubpaths["@evjs/ev"]);
-    expect(exportedSubpaths).toEqual(
+    expect(exportedSubpaths).not.toEqual(
       expect.arrayContaining([
         "./client",
         "./client/internal",
@@ -374,11 +305,7 @@ describe("workspace package surface", () => {
         "./server/register",
       ]),
     );
-    expect(evjsRuntimeDependencyNames(evPackageJson)).toEqual([
-      "@evjs/client",
-      "@evjs/server",
-      "@evjs/shared",
-    ]);
+    expect(evjsRuntimeDependencyNames(evPackageJson)).toEqual(["@evjs/shared"]);
   });
 
   it("keeps default bundler ownership in the CLI package", async () => {
@@ -393,7 +320,7 @@ describe("workspace package surface", () => {
     expect(webpackConsumers).toEqual([]);
   });
 
-  it("keeps bundler adapters on the framework facade package", async () => {
+  it("keeps bundler adapters on the framework package", async () => {
     for (const packageName of bundlerAdapterPackages) {
       const packageJson = await readPackageJsonByName(packageName);
       const declaredEvjsPackages = [...allDependencyNames(packageJson)]
@@ -443,40 +370,25 @@ describe("workspace package surface", () => {
     );
   });
 
-  it("keeps @evjs/ev runtime facades curated instead of package mirrors", async () => {
-    const clientRuntimeExports = await readRuntimeExportNames(
+  it("does not keep @evjs/ev source shims for runtime packages", async () => {
+    const removedFacadeFiles = [
       "packages/ev/src/client.ts",
-    );
-    const serverRuntimeExports = await readRuntimeExportNames(
+      "packages/ev/src/client-internal.ts",
+      "packages/ev/src/client-internal-page-context.ts",
+      "packages/ev/src/client-internal-react-page.ts",
+      "packages/ev/src/client-internal-route-types.ts",
+      "packages/ev/src/client-internal-rsc-page-context.ts",
+      "packages/ev/src/client-internal-rsc-runtime.ts",
       "packages/ev/src/server.ts",
-    );
+      "packages/ev/src/server-fetch.ts",
+      "packages/ev/src/server-node.ts",
+      "packages/ev/src/server-react.ts",
+      "packages/ev/src/server-register.ts",
+    ];
 
-    expect(clientRuntimeExports).toEqual([
-      ...expectedClientFacadeRuntimeExports,
-    ]);
-    expect(serverRuntimeExports).toEqual([
-      ...expectedServerFacadeRuntimeExports,
-    ]);
-    expect(clientRuntimeExports).not.toEqual(
-      expect.arrayContaining([
-        "QueryClient",
-        "QueryClientProvider",
-        "keepPreviousData",
-        "useInfiniteQuery",
-        "useIsFetching",
-        "usePrefetchQuery",
-      ]),
-    );
-    expect(serverRuntimeExports).not.toEqual(
-      expect.arrayContaining([
-        "createManifestRenderCoordinator",
-        "createModuleRenderCoordinator",
-        "handleFrameworkRenderRequest",
-        "handlePprRegionRequest",
-        "handleRscFlightRequest",
-        "registerServerReference",
-      ]),
-    );
+    for (const removedFile of removedFacadeFiles) {
+      expect(await fileExists(path.join(repoRoot, removedFile))).toBe(false);
+    }
   });
 
   it("keeps shared as a contract package instead of a feature package", async () => {
@@ -491,8 +403,8 @@ describe("workspace package surface", () => {
       "Application code should not import this package directly",
     );
     expect(readme).toContain("@evjs/shared/manifest");
-    expect(readme).toContain("@evjs/ev/client");
-    expect(readme).toContain("@evjs/ev/server");
+    expect(readme).toContain("@evjs/client");
+    expect(readme).toContain("@evjs/server");
     expect(readme).toContain("build identifier validation");
     expect(readme).toContain("path pattern validation");
     expect(readme).toContain("server-function ID validation");
@@ -510,14 +422,15 @@ describe("workspace package surface", () => {
       expect(architectureDoc).toContain(packageName);
     }
     expect(architectureDoc).toContain(
-      "Application code imports framework runtime APIs through `@evjs/ev/client`",
+      "Application code imports config, plugin, build, and deployment APIs through",
     );
     expect(architectureDoc).toContain(
-      "Direct `@evjs/client` and `@evjs/server` imports are implementation-package",
+      "`@evjs/ev`. Runtime APIs come from `@evjs/client` and `@evjs/server`",
     );
-    expect(architectureDoc).toContain("not runtime package mirrors");
-    expect(architectureDoc).toContain("@evjs/ev/client/internal/*");
-    expect(architectureDoc).toContain("@evjs/ev/client/internal/route-types");
+    expect(architectureDoc).toContain("`@evjs/ev` consumes");
+    expect(architectureDoc).toContain("does not publish runtime subpaths");
+    expect(architectureDoc).toContain("@evjs/client/internal/*");
+    expect(architectureDoc).toContain("@evjs/client/internal/route-types");
     expect(architectureDoc).toContain("generated-only internal helpers");
     expect(architectureDoc).toContain(
       "Published package manifests stay ESM-only and intentionally narrow",
@@ -545,9 +458,9 @@ describe("workspace package surface", () => {
     expect(agentGuide).toContain("[ARCHITECTURE.md](./ARCHITECTURE.md)");
     expect(agentGuide).toContain("[CONTRIBUTING.md](./CONTRIBUTING.md)");
     expect(agentGuide).toContain(
-      "Keep app-facing imports on `@evjs/ev`, its runtime facade subpaths",
+      "Keep config/build/plugin imports on `@evjs/ev`",
     );
-    expect(agentGuide).toContain("`@evjs/ev/client`, `@evjs/ev/server`");
+    expect(agentGuide).toContain("`@evjs/client` and `@evjs/server`");
     expect(agentGuide).toContain(
       "packages/ev/src/build-tools/page-route-conventions.ts",
     );
@@ -561,7 +474,7 @@ describe("workspace package surface", () => {
     expect(agentGuide).toContain("Scaffolded apps and template packs");
   });
 
-  it("keeps public package guidance facade-first", async () => {
+  it("keeps public package guidance on direct runtime packages", async () => {
     const packageTableDocs = [
       "README.md",
       "docs/docs/quick-start.md",
@@ -575,15 +488,16 @@ describe("workspace package surface", () => {
 
     for (const doc of packageTableDocs) {
       const source = await fs.readFile(path.join(repoRoot, doc), "utf-8");
-      expect(source).toContain("@evjs/ev/client");
-      expect(source).toContain("@evjs/ev/server");
+      expect(source).toContain("@evjs/ev");
       expect(source).toContain("@evjs/client");
       expect(source).toContain("@evjs/server");
+      expect(source).not.toContain("@evjs/ev/client");
+      expect(source).not.toContain("@evjs/ev/server");
     }
 
     for (const doc of facadeGuidanceDocs) {
       const source = await fs.readFile(path.join(repoRoot, doc), "utf-8");
-      expect(source).toContain("@evjs/ev/client");
+      expect(source).toContain("@evjs/client");
       expect(source).not.toContain(
         "Direct `@evjs/client` and `@evjs/server` imports remain supported runtime",
       );
@@ -609,10 +523,14 @@ describe("workspace package surface", () => {
       expect(rootArchitecture).toContain(packageName);
       expect(rootContributing).toContain(packageName);
     }
-    expect(rootArchitecture).toContain("`@evjs/ev/client`");
     expect(rootArchitecture).toContain(
-      "facade subpaths are curated application API boundaries",
+      "`@evjs/ev` owns config, plugin, build, and deployment APIs",
     );
+    expect(rootArchitecture).toContain("`@evjs/client`");
+    expect(rootArchitecture).toContain(
+      "`@evjs/ev` exports stay limited to framework",
+    );
+    expect(rootArchitecture).toContain("and build tooling entries");
     expect(rootArchitecture).toContain(
       "Internal `@evjs/*` runtime dependencies are kept explicit",
     );
@@ -626,9 +544,9 @@ describe("workspace package surface", () => {
       "Internal `@evjs/*` runtime dependency versions stay",
     );
     expect(rootContributing).toContain(
-      "App-facing imports stay in `@evjs/ev` or its runtime facade subpaths",
+      "Config/build imports stay on `@evjs/ev`; runtime imports use `@evjs/client`",
     );
-    expect(rootContributing).toContain("`@evjs/ev/client`, `@evjs/ev/server`");
+    expect(rootContributing).toContain("and `@evjs/server`");
     expect(rootContributing).toContain("intentional and documented");
     expect(rootContributing).toContain("Generated page");
     expect(rootContributing).toContain("shell runtime primitives stay behind");
@@ -692,8 +610,7 @@ describe("workspace package surface", () => {
             );
           }
           if (
-            (importSpecifier.startsWith("@evjs/client/internal") ||
-              importSpecifier.startsWith("@evjs/ev/client/internal")) &&
+            importSpecifier.startsWith("@evjs/client/internal") &&
             !relativeFile.endsWith("src/evjs-route-types.d.ts")
           ) {
             violations.push(
@@ -846,18 +763,18 @@ describe("workspace package surface", () => {
     expect(
       parseEvjsImportSpecifiers(`
         import { defineConfig } from "@evjs/ev";
-        import { createRoute } from "@evjs/ev/server";
+        import { createRoute } from "@evjs/server";
         import "@evjs/server/register";
         export { createApp } from "@evjs/server";
-        export * from "@evjs/ev/client/internal";
+        export * from "@evjs/client/internal";
         const runtime = import("@evjs/shared/manifest");
       `),
     ).toEqual([
       "@evjs/ev",
-      "@evjs/ev/server",
+      "@evjs/server",
       "@evjs/server/register",
       "@evjs/server",
-      "@evjs/ev/client/internal",
+      "@evjs/client/internal",
       "@evjs/shared/manifest",
     ]);
   });
@@ -881,7 +798,6 @@ describe("workspace package surface", () => {
 
         if (
           importSpecifier.startsWith("@evjs/client/internal") ||
-          importSpecifier.startsWith("@evjs/ev/client/internal") ||
           importSpecifier.startsWith("@evjs/ev/build-tools") ||
           importSpecifier.startsWith("@evjs/shared") ||
           forbiddenPackageNames.some(
@@ -981,9 +897,9 @@ describe("workspace package surface", () => {
       path.join(repoRoot, "packages/server/README.md"),
       "utf-8",
     );
-    expect(readme).toContain("@evjs/ev/server/node");
-    expect(readme).toContain("@evjs/ev/server/fetch");
-    expect(readme).toContain(`export { fetch } from "@evjs/ev/server/fetch"`);
+    expect(readme).toContain("@evjs/server/node");
+    expect(readme).toContain("@evjs/server/fetch");
+    expect(readme).toContain(`export { fetch } from "@evjs/server/fetch"`);
     expect(readme).not.toContain("@evjs/server/ecma");
   });
 });
@@ -1029,12 +945,6 @@ async function readPackageJson(packageDir: string): Promise<PackageJson> {
       "utf-8",
     ),
   ) as PackageJson;
-}
-
-async function readRuntimeExportNames(relativeFile: string): Promise<string[]> {
-  const source = await fs.readFile(path.join(repoRoot, relativeFile), "utf-8");
-  const ast = parseRouteModuleOrThrow(source);
-  return collectModuleExportNames(ast.body).sort();
 }
 
 async function readPackageJsonByName(

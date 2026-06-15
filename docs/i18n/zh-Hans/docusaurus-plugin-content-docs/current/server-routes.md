@@ -4,7 +4,7 @@
 
 ## 基本用法
 
-使用 `@evjs/ev/server` 的 `createRoute(path, definition)` 定义路由：
+使用 `@evjs/server` 的 `createRoute(path, definition)` 定义路由：
 
 :::important
 **路由路径必须是字符串字面量。** `path` 参数只接受字符串字面量类型。
@@ -57,7 +57,7 @@ createRoute("/api/users", { GET: handler });
 
 ```ts
 // src/api/posts.routes.ts
-import { createRoute } from "@evjs/ev/server";
+import { createRoute } from "@evjs/server";
 
 export const postsRoute = createRoute("/api/posts", {
   GET: async (req) => {
@@ -137,7 +137,7 @@ export const postDetailsRoute = createRoute("/api/posts/:id", {
 使用 `middlewares` 选项在处理器之前运行逻辑。调用 `next()` 继续或返回 `Response` 短路：
 
 ```ts
-import { createRoute } from "@evjs/ev/server";
+import { createRoute } from "@evjs/server";
 
 const requireAuth = async (req, next) => {
   const auth = req.headers.get("Authorization");
@@ -154,7 +154,7 @@ export const protectedRoute = createRoute("/api/protected", {
 使用 `createApp({ middlewares })` 可以声明全局中间件，覆盖 server routes、server functions、SSR、PPR、RSC framework handling：
 
 ```ts
-import { createApp, requestLogger } from "@evjs/ev/server";
+import { createApp, requestLogger } from "@evjs/server";
 
 const app = createApp({
   middlewares: [requestLogger()],
@@ -172,7 +172,7 @@ PPR runtime cache 选项也放在 `framework.ppr` 下；它们面向生成的或
 server adapter，不是应用 page config：
 
 ```ts
-import type { PprRegionCache } from "@evjs/ev/server";
+import type { PprRegionCache } from "@evjs/server";
 
 const regionCache: PprRegionCache = platformRegionCache();
 
@@ -194,7 +194,7 @@ createApp({
 
 ```ts
 // src/server.ts
-import { createApp } from "@evjs/ev/server";
+import { createApp } from "@evjs/server";
 import { postsRoute, postDetailsRoute } from "./api/posts.routes";
 
 const app = createApp({

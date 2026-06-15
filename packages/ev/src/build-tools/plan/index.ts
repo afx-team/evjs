@@ -247,7 +247,7 @@ function createEntries(
   if (hasRscPages(graph)) {
     entries.push({
       name: "evjs-rsc-client",
-      import: "@evjs/ev/client/internal/rsc-runtime",
+      import: "@evjs/client/internal/rsc-runtime",
       environment: "client",
       runtime: "browser",
       kind: "runtime",
@@ -573,7 +573,7 @@ function resolveServerEntry(
   _renderers: ServerRenderPlan[],
 ): string {
   if (config.server.entry) return config.server.entry;
-  return "@evjs/ev/server/fetch";
+  return "@evjs/server/fetch";
 }
 
 function readBuildMode(): "development" | "production" {

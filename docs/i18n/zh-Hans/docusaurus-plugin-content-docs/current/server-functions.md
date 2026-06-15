@@ -53,14 +53,14 @@ export const deleteUser = async (id: string) => {
 
 ## 请求上下文 helper
 
-Server function 运行在框架请求生命周期内，因此可以使用 `@evjs/ev/server`
+Server function 运行在框架请求生命周期内，因此可以使用 `@evjs/server`
 导出的请求 helper：
 
 ```ts
 // src/api/session.server.ts
 "use server";
 
-import { getCookie, headers, request, waitUntil } from "@evjs/ev/server";
+import { getCookie, headers, request, waitUntil } from "@evjs/server";
 
 export async function currentSession() {
   const req = request();
@@ -94,7 +94,7 @@ import {
   useQueryClient,
   getFnQueryKey,
   getFnQueryOptions,
-} from "@evjs/ev/client";
+} from "@evjs/client";
 import { getUsers, getUser, createUser } from "../api/users.server";
 
 // 查询 —— 直接传入服务端函数，类型自动推导
@@ -181,7 +181,7 @@ export const saveTags = async (...tags: string[]) => {};
 ### HTTP（默认）
 
 ```tsx
-import { initTransport } from "@evjs/ev/client";
+import { initTransport } from "@evjs/client";
 initTransport({
   // 可选，默认使用当前页面 origin。
   baseUrl: "https://api.example.com",
@@ -229,8 +229,8 @@ boolean `ok`、`headers.get("Content-Type")` 和 `json()`；错误响应还需�
 实现 `TransportAdapter` 以使用自定义协议：
 
 ```tsx
-import { initTransport } from "@evjs/ev/client";
-import type { TransportAdapter } from "@evjs/ev/client";
+import { initTransport } from "@evjs/client";
+import type { TransportAdapter } from "@evjs/client";
 
 const wsAdapter: TransportAdapter = {
   send: async (fnId, args) => {
@@ -251,7 +251,7 @@ initTransport({ adapter: wsAdapter });
 抛出带状态码和数据的结构化错误：
 
 ```ts
-import { ServerError } from "@evjs/ev/server";
+import { ServerError } from "@evjs/server";
 
 export async function getUser(id: string) {
   const user = await db.users.findById(id);
@@ -270,7 +270,7 @@ export async function getUser(id: string) {
 捕获类型化错误：
 
 ```tsx
-import { ServerFunctionError } from "@evjs/ev/client";
+import { ServerFunctionError } from "@evjs/client";
 
 try {
   const user = await getUser("123");

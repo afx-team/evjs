@@ -45,14 +45,14 @@ config needed.
 | [`@evjs/ev`](./packages/ev) | Framework API, config, plugins, and build orchestration (`defineConfig`, `dev`, `build`) |
 | [`@evjs/cli`](./packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`) with the default bundler |
 | [`@evjs/create-app`](./packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
-| [`@evjs/client`](./packages/client) | Browser runtime implementation behind `@evjs/ev/client` |
-| [`@evjs/server`](./packages/server) | Hono/fetch server runtime implementation behind `@evjs/ev/server` |
+| [`@evjs/client`](./packages/client) | Browser runtime APIs for page hooks, navigation, transport, remotes, and RSC |
+| [`@evjs/server`](./packages/server) | Hono/fetch server runtime APIs for server functions, routes, rendering, and deployment |
 | [`examples/`](./examples) | Starter templates |
 
 Internal modules such as manifest schemas, build tools, page runtime, and shell
 live inside the public packages above instead of separate application-facing
 packages. Application code imports framework APIs from `@evjs/ev` and runtime
-APIs from `@evjs/ev/client` or `@evjs/ev/server`.
+APIs from `@evjs/client` or `@evjs/server`.
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) · [AGENTS.md](./AGENTS.md) · [AGENT.md](./AGENT.md)
 

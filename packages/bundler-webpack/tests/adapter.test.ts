@@ -446,7 +446,7 @@ describe("webpackAdapter build", () => {
     async () => {
       const cwd = await createFixture({
         "src/remote !client.tsx": `
-        import { useRemoteContext } from "@evjs/ev/client";
+        import { useRemoteContext } from "@evjs/client";
 
         export default function Remote() {
           const remote = useRemoteContext();
@@ -549,8 +549,8 @@ describe("webpackAdapter build", () => {
           '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
         "src/main.ts": "console.log('client app');",
         "src/server.ts": `
-        import { createApp } from "@evjs/ev/server";
-        import { createReactFrameworkServer } from "@evjs/ev/server/react";
+        import { createApp } from "@evjs/server";
+        import { createReactFrameworkServer } from "@evjs/server/react";
 
         const app = createApp({
           framework: createReactFrameworkServer(),
@@ -752,7 +752,7 @@ describe("webpackAdapter build", () => {
           '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
         "src/pages/Insights !page.tsx": `
         import { createElement } from "react";
-        import { usePageParams, usePageSearch } from "@evjs/ev/client";
+        import { usePageParams, usePageSearch } from "@evjs/client";
         import "./insights.css";
         import Badge from "./InsightsBadge";
 

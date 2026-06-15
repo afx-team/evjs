@@ -30,8 +30,8 @@ describe("createUtoopackConfig", () => {
         },
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/ev/client/internal",
-          serverRegister: "@evjs/ev/server/register",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
         },
         dev: {
           port: 3001,
@@ -73,7 +73,7 @@ describe("createUtoopackConfig", () => {
     const config = createResolvedConfig({
       serverEnabled: true,
       server: {
-        entry: "@evjs/ev/server/fetch",
+        entry: "@evjs/server/fetch",
         basePath: "/rpc",
         runtime: {
           basePath: "/rpc",
@@ -84,8 +84,8 @@ describe("createUtoopackConfig", () => {
         rsc: { endpoint: "/rpc/rsc" },
         functionRuntime: {
           endpoint: "/rpc/fn",
-          clientProxy: "@evjs/ev/client/internal",
-          serverRegister: "@evjs/ev/server/register",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
         },
         dev: {
           port: 3001,
@@ -341,8 +341,8 @@ describe("createUtoopackConfig", () => {
       resourcePath: "/workspace/src/pages/about.tsx",
     });
 
-    expect(source).toContain("@evjs/ev/client/internal/react-page");
-    expect(source).not.toContain('from "@evjs/ev/client/internal";');
+    expect(source).toContain("@evjs/client/internal/react-page");
+    expect(source).not.toContain('from "@evjs/client/internal";');
     expect(source).toContain("createReactPageModule");
   });
 
@@ -434,11 +434,11 @@ describe("createUtoopackConfig", () => {
       resourcePath: "/workspace/src/remote.tsx",
     });
 
-    expect(source).toContain("@evjs/ev/client/internal/react-page");
+    expect(source).toContain("@evjs/client/internal/react-page");
     expect(source).toContain("createRemoteReactModule");
     expect(source).toContain("registerShellModule");
     expect(source).toContain("?evjs-remote-client-source");
-    expect(source).not.toContain('from "@evjs/ev/client/internal";');
+    expect(source).not.toContain('from "@evjs/client/internal";');
   });
 
   it("awaits async bundlerConfig hooks before returning config", async () => {
@@ -478,8 +478,8 @@ describe("createUtoopackConfig", () => {
         },
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/ev/client/internal",
-          serverRegister: "@evjs/ev/server/register",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
         },
         dev: {
           port: 3001,
@@ -528,7 +528,7 @@ describe("createUtoopackConfig", () => {
       "server",
     ]);
     expect(plan.server).toMatchObject({
-      entry: "@evjs/ev/server/fetch",
+      entry: "@evjs/server/fetch",
       renderers: [
         {
           name: "dashboard-server",
@@ -563,8 +563,8 @@ describe("createUtoopackConfig", () => {
         },
         functionRuntime: {
           endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/ev/client/internal",
-          serverRegister: "@evjs/ev/server/register",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
         },
         dev: {
           port: 3001,

@@ -30,11 +30,11 @@ export interface TransformOptions {
  */
 export const RUNTIME = {
   /** Module path for server-side function registration (no Hono dependency). */
-  serverModule: "@evjs/ev/server/register",
+  serverModule: "@evjs/server/register",
   /** Module path for the server app factory (Hono app + server function handler). */
-  appModule: "@evjs/ev/server",
+  appModule: "@evjs/server",
   /** Module path for generated client-side server reference stubs. */
-  clientTransportModule: "@evjs/ev/client/internal",
+  clientTransportModule: "@evjs/client/internal",
   /** Server-side function registration (RSC convention). */
   registerServerReference: "registerServerReference",
   /** Client-side server reference factory (RSC convention). */

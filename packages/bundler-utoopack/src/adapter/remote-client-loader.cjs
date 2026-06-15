@@ -1,6 +1,6 @@
 const path = require("node:path");
 
-const reactPageRuntime = "@evjs/ev/client/internal/react-page";
+const reactPageRuntime = "@evjs/client/internal/react-page";
 
 module.exports = function remoteClientLoader() {
   this.cacheable?.();

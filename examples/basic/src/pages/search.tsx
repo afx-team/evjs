@@ -1,4 +1,4 @@
-import { Link, usePageSearch, useQuery } from "@evjs/ev/client";
+import { Link, usePageSearch, useQuery } from "@evjs/client";
 import { getUsers } from "../api/users.server";
 
 const cardStyle = {

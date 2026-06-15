@@ -1,4 +1,4 @@
-import { useRemoteContext } from "@evjs/ev/client";
+import { useRemoteContext } from "@evjs/client";
 import "./remote.css";
 
 const customerHealthSignals = [

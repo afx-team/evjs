@@ -1,6 +1,6 @@
 "use server";
 
-import { getCookie, headers, setCookie, waitUntil } from "@evjs/ev/server";
+import { getCookie, headers, setCookie, waitUntil } from "@evjs/server";
 
 /** Simulated user database. */
 const users = [

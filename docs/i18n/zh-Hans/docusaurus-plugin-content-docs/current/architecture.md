@@ -13,18 +13,17 @@ src/pages + ev.config.ts + server declarations
 
 ## 公共包
 
-应用代码通过 `@evjs/ev/client` 和 `@evjs/ev/server` 导入运行时 API，
-这样应用只需要声明一个直接框架包。直接从 `@evjs/client` 和 `@evjs/server`
-导入属于 monorepo 内部实现包边界。其他包是工具包、bundler adapter
-或框架包之间共享的契约包。需要新的能力边界时，先优先考虑在现有包中增加
-subpath export，再考虑新增分发包。
+应用代码通过 `@evjs/ev` 导入 config、plugin、build 和 deployment API。
+运行时 API 来自 `@evjs/client` 和 `@evjs/server`，使用这些能力的应用应直接
+声明对应 runtime 包。其他包是工具包、bundler adapter 或框架包之间共享的
+契约包。需要新的能力边界时，先优先考虑在拥有该行为的包中增加 subpath
+export，再考虑新增分发包。
 Subpath export 必须保持显式且有文档说明；新增 package export 是公开 API 决策，
 不是为了方便导入而增加的别名。
 
 ```txt
 @evjs/ev
-  配置、插件生命周期、dev/build 编排、框架构建类型，
-  以及 @evjs/ev/client 和 @evjs/ev/server 下的应用运行时 facade
+  配置、插件生命周期、dev/build 编排、框架构建类型和 deployment helpers
 
 @evjs/client
   浏览器 runtime、服务端函数 transport、page hooks、导航 helpers
@@ -40,7 +39,8 @@ Subpath export 必须保持显式且有文档说明；新增 package export 是�
 
 | 角色 | 包 | 导入建议 |
 |------|----|----------|
-| 应用框架面 | `@evjs/ev` | config/build API 使用 `@evjs/ev`；运行时 API 使用 `@evjs/ev/client` / `@evjs/ev/server` facade。 |
+| 框架面 | `@evjs/ev` | config/build/plugin/deployment API 使用 `@evjs/ev`。 |
+| 运行时 API | `@evjs/client`, `@evjs/server` | page hooks、导航、server functions、server routes、渲染和部署运行时使用这些包。 |
 | 工具包 | `@evjs/cli`, `@evjs/create-app` | 用于安装或执行；应用模块不应 import 它们。 |
 | Bundler adapter | `@evjs/bundler-utoopack`, `@evjs/bundler-webpack` | `@evjs/cli` 持有默认 Utoopack adapter；只有自定义工具时才直接 import adapter。 |
 | 共享契约 | `@evjs/shared` | 发布出来是为了让框架包共享 manifest/runtime 类型；应用代码不应直接 import。 |
@@ -50,26 +50,25 @@ Subpath export 必须保持显式且有文档说明；新增 package export 是�
 框架、runtime、adapter 和契约包发布 `esm`；`@evjs/cli` 发布 `dist`/`bin`；
 `@evjs/create-app` 发布 `dist`/`templates`。
 
-内部 `@evjs/*` runtime 依赖也保持显式。`@evjs/ev` 消费 `@evjs/client`、
-`@evjs/server` 和共享契约，因此 facade subpath 是收窄后的应用 API 边界，
-不是 runtime 包镜像；`@evjs/server` 还会消费 `@evjs/client` 中的共享
-runtime 类型。`@evjs/cli` 持有默认 Utoopack adapter 依赖，bundler adapter
-依赖 `@evjs/ev`，而不是彼此依赖。内部 runtime 依赖版本保持为
-`"*"`，让发布自动化把所有分发包作为同一个框架版本处理。
+内部 `@evjs/*` runtime 依赖也保持显式。`@evjs/ev` 消费共享契约，但不发布
+runtime subpath；`@evjs/server` 会消费 `@evjs/client` 中的共享 runtime
+类型。`@evjs/cli` 持有默认 Utoopack adapter 依赖，bundler adapter 依赖
+`@evjs/ev`，而不是彼此依赖。内部 runtime 依赖版本保持为 `"*"`，让发布自动化
+把所有分发包作为同一个框架版本处理。
 
-生成专用的 `@evjs/ev/client/internal/*` subpath 用于让框架生成的路由声明、
-page bootstrap、server-function stub 和 RSC runtime entry 在只声明
-`@evjs/ev` 的应用中完成类型检查。应用代码仍应从 `@evjs/ev/client`
-导入导航和运行时 API，不要导入这些生成专用的 internal helper。
-例如，`@evjs/ev/client/internal/route-types` 用于生成的 SPA 路由声明，
-`@evjs/ev/client/internal/rsc-runtime` 用于 RSC page bootstrap。
+生成专用的 `@evjs/client/internal/*` subpath 用于让框架生成的路由声明、
+page bootstrap、server-function stub 和 RSC runtime entry 完成类型检查。
+应用代码仍应从 `@evjs/client` 导入导航和运行时 API，不要导入这些生成专用的
+internal helper。
+例如，`@evjs/client/internal/route-types` 用于生成的 SPA 路由声明，
+`@evjs/client/internal/rsc-runtime` 用于 RSC page bootstrap。
 
 不要重新引入 `@evjs/build-tools`、`@evjs/manifest` 或 `@evjs/router-*`
 这类历史拆分包。构建 helper 从 `@evjs/ev/build-tools` 导出，manifest
 契约从 `@evjs/shared/manifest` 导出。
 
 文档中的代码示例也遵循同一包边界：应用示例从 `@evjs/ev`、
-`@evjs/ev/client` 或 `@evjs/ev/server` 导入；只有展示自定义工具时，
+`@evjs/client` 或 `@evjs/server` 导入；只有展示自定义工具时，
 adapter 示例才直接导入 `@evjs/bundler-utoopack`。
 
 ## 内部模块
@@ -81,10 +80,10 @@ adapter 示例才直接导入 `@evjs/bundler-utoopack`。
 @evjs/shared/manifest
   AppGraph、BuildPlan、BuildOutput 和 manifest schema
 
-@evjs/ev generated-only client internal facade
+@evjs/client generated-only internals
   framework-managed runtime、shell、router-free react-page runtime、transport、
   RSC client runtime、SPA router 集成和 generated bootstrap，通过
-  @evjs/ev/client/internal/* 子路径承载，并由 @evjs/client internals 支撑
+  @evjs/client/internal/* 子路径承载，并由 @evjs/client internals 支撑
 
 @evjs/bundler-utoopack
   @evjs/cli 使用的默认 bundler adapter
@@ -101,8 +100,8 @@ adapter 示例才直接导入 `@evjs/bundler-utoopack`。
 
 SPA 文件路由在框架内部使用 TanStack Router；应用页面只写 `src/pages`、
 page hooks 和导航 helper，不需要创建 route tree。Generated bootstrap 通过
-`@evjs/ev/client/internal/*` 承载。MPA 文件路由和显式 pages 使用 page runtime，
-不引入客户端路由器。`@evjs/ev/client` facade 暴露页面代码需要的 hooks、
+`@evjs/client/internal/*` 承载。MPA 文件路由和显式 pages 使用 page runtime，
+不引入客户端路由器。`@evjs/client` facade 暴露页面代码需要的 hooks、
 导航、server function、RSC 和 remote runtime API。
 
 ## 构建流程
@@ -145,9 +144,9 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant Browser
-  participant Shell as "@evjs/ev/client/internal"
-  participant Runtime as "@evjs/ev/client"
-  participant Server as "@evjs/ev/server"
+  participant Shell as "@evjs/client/internal"
+  participant Runtime as "@evjs/client"
+  participant Server as "@evjs/server"
   participant Manifest as "BuildOutput"
 
   Browser->>Runtime: page/app boot
@@ -221,7 +220,7 @@ PPR 页面在 public manifest 中的 page-level hydration 是 `none`。需要客
 应通过显式 client islands 或 region-level hydration metadata 引入，而不是 hydrate 整个
 PPR shell。
 
-RSC Flight 请求也通过同一个 `@evjs/ev/server` 边界进入。Flight endpoint 接受
+RSC Flight 请求也通过同一个 `@evjs/server` 边界进入。Flight endpoint 接受
 `page=<id>` 和可选的 `url=<pathname+search>`；`page` id 必须是 manifest page id，
 并遵循 build identifier 规则。URL context 必须是同源绝对 path 或 HTTP(S) URL，
 且不能包含 hash。Webpack 验证路径已经使用 React Flight client consumption 和 React

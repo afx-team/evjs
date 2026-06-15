@@ -106,7 +106,7 @@ describe("resolveRoutes", () => {
 describe("extractServerRoutes", () => {
   it("extracts exported server route handlers", () => {
     const source = `
-      import { createRoute } from "@evjs/ev/server";
+      import { createRoute } from "@evjs/server";
       export const postsHandler = createRoute("/api/posts", {
         GET: async () => Response.json([]),
         POST: async () => Response.json({}, { status: 201 }),

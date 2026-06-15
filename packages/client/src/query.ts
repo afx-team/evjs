@@ -5,7 +5,7 @@
  * server functions directly, with full TArgs + TData inference.
  *
  * @example
- * import { useQuery, useSuspenseQuery } from "@evjs/ev/client";
+ * import { useQuery, useSuspenseQuery } from "@evjs/client";
  *
  * // Server function — args & data fully typed
  * const { data: users } = useQuery(getUsers);            // data: User[]

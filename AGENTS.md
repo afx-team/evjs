@@ -20,9 +20,9 @@ coverage in `packages/ev/tests/build-tools-page-routes.test.ts`.
 
 ## Working Rules
 
-1. Keep app-facing imports on `@evjs/ev`, its runtime facade subpaths
-   (`@evjs/ev/client`, `@evjs/ev/server`). Treat direct runtime package imports
-   (`@evjs/client`, `@evjs/server`) as monorepo implementation references.
+1. Keep config/build/plugin imports on `@evjs/ev`; runtime imports use
+   `@evjs/client` and `@evjs/server`. `@evjs/ev` does not re-export client or
+   server runtime packages.
 2. Do not add new distributed `@evjs/*` packages without first trying a subpath
    export on an existing package.
 3. Keep framework semantics in `packages/ev/src/build-tools` and manifest

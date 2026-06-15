@@ -427,8 +427,8 @@ function createPlan(graph: AppGraph, serverEnabled: boolean): BuildPlan {
           entry: "./src/server.ts",
           functionRuntime: {
             endpoint: "/__evjs/fn",
-            clientProxy: "@evjs/ev/client/internal",
-            serverRegister: "@evjs/ev/server/register",
+            clientProxy: "@evjs/client/internal",
+            serverRegister: "@evjs/server/register",
           },
         }
       : { enabled: false },

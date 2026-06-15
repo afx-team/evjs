@@ -13,7 +13,7 @@
 - 程序化 `prepareFrameworkBuild()` API，可在不启动 bundler 或平台 adapter
   的情况下准备框架 graph/plan。
 - 单一框架 manifest：`dist/manifest.json`。
-- 通过公开 `@evjs/ev/client` facade 提供 manifest-driven app/page/remote activation。
+- 通过公开 `@evjs/client` runtime 包提供 manifest-driven app/page/remote activation。
 - 框架托管 SPA 页面路由，并为 MPA 提供无路由器 page runtime。
 - Webpack adapter 用于在 Utoopack 下层 API 补齐前验证框架能力。
 - 完整 host/remote 示例，并通过 e2e 覆盖 apps、组件页面、SSR/PPR/RSC、

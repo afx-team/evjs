@@ -9,12 +9,12 @@
 - **Router-Free Pages** — MPA and framework-managed pages use the page runtime without adding a client router.
 - **Data Fetching** — Wraps [TanStack Query](https://tanstack.com/query) with built-in server function proxies.
 - **Server Function Support** — `useQuery(fn)` and `useMutation(fn)` for zero-boilerplate RPC.
-- **Focused Client Facade** — Application code imports transport, page hooks, navigation helpers, and remote helpers from `@evjs/ev/client`; generated framework bootstrap uses `@evjs/ev/client/internal`.
+- **Focused Client API** — Application code imports transport, page hooks, navigation helpers, and remote helpers from `@evjs/client`; generated framework bootstrap uses `@evjs/client/internal`.
 
 ## Install
 
 ```bash
-npm install @evjs/ev react react-dom
+npm install @evjs/client @evjs/ev react react-dom
 ```
 
 ## Quick Start
@@ -23,7 +23,7 @@ npm install @evjs/ev react react-dom
 
 ```tsx
 // src/pages/users/$userId.tsx
-import { usePageParams } from "@evjs/ev/client";
+import { usePageParams } from "@evjs/client";
 
 export default function UserPage() {
   const { userId } = usePageParams();
@@ -77,10 +77,10 @@ export default defineConfig({
 
 ## Server Functions
 
-Use the `"use server"` directive in `*.server.ts` files. `@evjs/ev/client` provides hooks to call them:
+Use the `"use server"` directive in `*.server.ts` files. `@evjs/client` provides hooks to call them:
 
 ```tsx
-import { useQuery } from "@evjs/ev/client";
+import { useQuery } from "@evjs/client";
 import { getPosts } from "./api/posts.server";
 
 function Posts() {
@@ -110,7 +110,7 @@ function Posts() {
   body text for `ServerFunctionError`, falling back to `statusText` when the
   body is empty or only whitespace.
 - `initTransport({ adapter })`: Replace transport behavior with a custom adapter.
-- Generated server-function stubs use internal transport helpers from `@evjs/ev/client/internal`.
+- Generated server-function stubs use internal transport helpers from `@evjs/client/internal`.
 
 ### Remote
 - `useRemoteHost()` and `RemoteApp`: Mount a remote app from a remote manifest.
@@ -131,7 +131,7 @@ function Posts() {
 - `startRemoteAppRuntime({ runtime })`: Advanced host runtime hooks for shared scope, manifest loading, module loading, and error handling.
 
 ### Runtime
-- Page runtime bootstrap is framework-owned and imported through `@evjs/ev/client/internal`.
+- Page runtime bootstrap is framework-owned and imported through `@evjs/client/internal`.
 - Page runtime loads the embedded `__EVJS_MANIFEST__` first. When it falls back
   to `manifestUrl`, `data-evjs-manifest`, or `/manifest.json`, the response
   must be successful JSON with `Content-Type: application/json`, allowing
@@ -146,16 +146,14 @@ function Posts() {
   `Content-Type: application/json` with optional parameters, `version: 1`,
   `type: "evjs.rsc"`, a build-identifier `buildId`, and well-formed asset
   lists before any diagnostic HTML is mounted.
-- Manifest shell primitives such as `createShell()`, `createPageDriver()`, and `createHistoryDriver()` are framework-owned and imported through `@evjs/ev/client/internal`.
+- Manifest shell primitives such as `createShell()`, `createPageDriver()`, and `createHistoryDriver()` are framework-owned and imported through `@evjs/client/internal`.
 - Shell activation request URLs must be HTTP(S) URLs or pathnames starting with `/`.
-- Generated component-page and remote bootstrap APIs are also framework-owned and imported through `@evjs/ev/client/internal`.
+- Generated component-page and remote bootstrap APIs are also framework-owned and imported through `@evjs/client/internal`.
 
-Application-facing client runtime APIs are exported from `@evjs/ev/client`.
-That facade is intentionally narrower than this package: generic TanStack
-Query APIs that are not paired with evjs server functions should come from
-`@tanstack/react-query`, while evjs page, navigation, server-function, remote,
-and RSC APIs come from `@evjs/ev/client`. This package backs that facade and
-remains an implementation package for the monorepo runtime.
+Application-facing client runtime APIs are exported from `@evjs/client`.
+Generic TanStack Query APIs that are not paired with evjs server functions
+should come from `@tanstack/react-query`, while evjs page, navigation,
+server-function, remote, and RSC APIs come from `@evjs/client`.
 
 ## License
 

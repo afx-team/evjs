@@ -105,7 +105,7 @@ loader data 时，使用 page hooks；生成的路由胶水由框架托管。
 
 ```tsx
 // src/pages/users/$userId.tsx
-import { usePageParams, useQuery } from "@evjs/ev/client";
+import { usePageParams, useQuery } from "@evjs/client";
 import { getUser } from "../../api/users.server";
 
 export default function UserPage() {
@@ -131,7 +131,7 @@ SPA 模式下，页面模块可以导出与页面逻辑相关的页面生命周�
 
 ```tsx
 // src/pages/search.tsx
-import { usePageSearch } from "@evjs/ev/client";
+import { usePageSearch } from "@evjs/client";
 
 export const validateSearch = (search: Record<string, unknown>) => ({
   q: typeof search.q === "string" ? search.q : "",
@@ -184,18 +184,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 ## 导航
 
-页面内可以使用普通 `<a>`，也可以使用 `@evjs/ev/client` 的 `Link`。导航 helper
+页面内可以使用普通 `<a>`，也可以使用 `@evjs/client` 的 `Link`。导航 helper
 使用同一套文件路径约定来描述 path 和 params。
 
 默认 `src/pages` 路由目录下，`ev dev` 和 `ev build` 会在 SPA 模式下写入
 `src/evjs-route-types.d.ts`。自定义 `routing.dir` 时，会在该路由目录的父级写入同名文件。
-这个文件只用于增强 `@evjs/ev/client` 中 `Link`、`useLinkProps`、`redirect`
+这个文件只用于增强 `@evjs/client` 中 `Link`、`useLinkProps`、`redirect`
 等 helper 使用的底层 `@evjs/client` route register；应用代码不需要导入它，
 也不需要手写 TanStack route tree。
 
-生成文件会从 `@evjs/ev/client/internal/route-types` 导入类型 helper。
-这是生成专用的 facade subpath，用来让脚手架应用只直接依赖一个 framework 包；
-不要在应用源码中导入这个 internal helper。
+生成文件会从 `@evjs/client/internal/route-types` 导入类型 helper。
+这是生成专用的 internal subpath；不要在应用源码中导入这个 internal helper。
 
 该声明文件会保留每个路由的字面量 ID 和 path，用于导航类型推导。内部生成的
 TypeScript 标识符会自动去重，因此 `admin-panel` 和 `admin_panel` 这类合法
@@ -207,7 +206,7 @@ route id 不会生成非法或重复的声明。
 `include`。
 
 ```tsx
-import { Link } from "@evjs/ev/client";
+import { Link } from "@evjs/client";
 
 export default function HomePage() {
   return (

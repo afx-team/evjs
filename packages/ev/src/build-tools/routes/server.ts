@@ -32,10 +32,7 @@ export interface ServerRouteDiagnostic {
 }
 
 type LocalRouteValueKind = "function" | "middlewareArray" | "nonFunction";
-const SERVER_ROUTE_CREATE_ROUTE_MODULES = [
-  "@evjs/server",
-  "@evjs/ev/server",
-] as const;
+const SERVER_ROUTE_CREATE_ROUTE_MODULES = ["@evjs/server"] as const;
 
 /**
  * Detect server route handlers exported from this file.

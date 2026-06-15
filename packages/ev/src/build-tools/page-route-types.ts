@@ -16,7 +16,7 @@ export const PAGE_ROUTE_TYPES_USAGE_HINT =
 export const PAGE_ROUTE_TYPES_CONVENTION_HINT = `// Page route file convention: ${PAGE_ROUTE_CONVENTION_SUMMARY}. See ${PAGE_ROUTE_CONVENTION_DOCS_URL}`;
 export const PAGE_ROUTE_TYPES_REGISTER_MODULE = "@evjs/client";
 export const PAGE_ROUTE_TYPES_HELPER_MODULE =
-  "@evjs/ev/client/internal/route-types";
+  "@evjs/client/internal/route-types";
 const PAGE_ROUTE_TYPES_CLEANUP_SKIP_DIRS = new Set([
   ".git",
   ".turbo",

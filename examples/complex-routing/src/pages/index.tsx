@@ -1,4 +1,4 @@
-import { Link } from "@evjs/ev/client";
+import { Link } from "@evjs/client";
 
 export default function HomePage() {
   return (

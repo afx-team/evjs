@@ -41,8 +41,8 @@ npx biome check --write    # 修复 lint/格式
 6. **服务端函数导出** —— 只使用命名可调用导出：function declaration 或
    `const` arrow/function expression。不使用默认导出、跨模块 re-export 或导出非函数值
 7. **配置文件** —— 命名为 `ev.config.ts`（不是 `evjs.config.ts`）
-8. **包边界** —— 应用侧导入保留在 `@evjs/ev`，包括 `@evjs/ev/client`
-   和 `@evjs/ev/server` 等 runtime facade subpath。新增分发包前先优先使用现有包的
+8. **包边界** —— config/build 导入保留在 `@evjs/ev`；runtime 导入使用
+   `@evjs/client` 和 `@evjs/server`。新增分发包前先优先在拥有该行为的包中使用
    subpath export。Subpath export 应保持显式且有文档说明，不要为了方便导入增加别名。
    `@evjs/cli` 持有默认 Utoopack adapter；
    `@evjs/shared` 是共享契约包，不是应用 API

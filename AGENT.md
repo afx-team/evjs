@@ -28,11 +28,12 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 7. Page route code should use `src/pages`, page hooks, `Link`, and static page
    exports. TanStack route trees are a framework implementation detail for
    file-based SPA routing.
-8. Application-facing client code should import page hooks, navigation,
-   transport, remote host helpers, and RSC helpers from `@evjs/ev/client`.
+8. Application-facing runtime code should import page hooks, navigation,
+   transport, remote host helpers, and RSC helpers from `@evjs/client`, and
+   server functions/routes/rendering APIs from `@evjs/server`.
    Generated page bootstrap, React page mounting, server-function stubs,
    route-tree construction, and shell runtime code belong behind generated-only
-   `@evjs/ev/client/internal/*` facade subpaths.
+   `@evjs/client/internal/*` subpaths.
 9. Utoopack remains the default. Do not present webpack as the normal user path; it is the validation/fallback backend for features blocked on Utoopack APIs.
 10. Route/path/build-ID/server-function-ID conventions should use the shared
     helpers in `@evjs/shared` first. Keep caller-specific error text local, but
@@ -45,14 +46,14 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 | --- | --- | --- |
 | `defineConfig(config)` | `@evjs/ev` | Type-safe `ev.config.ts` helper |
 | `src/pages` + `routing` | `@evjs/ev` | File-based SPA/MPA route source; users write page modules, not route trees |
-| `createPagesApp()` | `@evjs/ev/client/internal` | Internal/framework-managed page route runtime used by generated SPA entries |
-| `Link`, page hooks, page metadata exports | `@evjs/ev/client` / page modules | Public page authoring API for params, search, loader data, navigation, and render metadata |
-| React page runtime | `@evjs/ev/client/internal/react-page` | Framework-managed component page mount/hydration |
-| Server-function stubs | `@evjs/ev/client/internal` | Generated client references and internal transport dispatch |
-| Shell runtime | `@evjs/ev/client/internal` | Manifest-driven app/page/remote activation and shared scope negotiation |
-| RSC client runtime | `@evjs/ev/client` | React Flight client integration |
-| `createApp({ routes, middlewares })` | `@evjs/ev/server` | Server functions, REST routes, SSR/PPR/RSC framework requests |
-| `createReactFrameworkServer()` | `@evjs/ev/server/react` | React SSR/RSC framework server integration |
+| `createPagesApp()` | `@evjs/client/internal` | Internal/framework-managed page route runtime used by generated SPA entries |
+| `Link`, page hooks, page metadata exports | `@evjs/client` / page modules | Public page authoring API for params, search, loader data, navigation, and render metadata |
+| React page runtime | `@evjs/client/internal/react-page` | Framework-managed component page mount/hydration |
+| Server-function stubs | `@evjs/client/internal` | Generated client references and internal transport dispatch |
+| Shell runtime | `@evjs/client/internal` | Manifest-driven app/page/remote activation and shared scope negotiation |
+| RSC client runtime | `@evjs/client` | React Flight client integration |
+| `createApp({ routes, middlewares })` | `@evjs/server` | Server functions, REST routes, SSR/PPR/RSC framework requests |
+| `createReactFrameworkServer()` | `@evjs/server/react` | React SSR/RSC framework server integration |
 | `nodeDeploymentAdapter()` | `@evjs/ev` | Production Node deployment artifact and server module emission |
 
 ## Common Mistakes
@@ -113,7 +114,7 @@ npm --workspace @evjs/bundler-webpack test -- tests/adapter.test.ts
 - Add framework semantics in `packages/ev/src/build-tools` and `@evjs/shared/manifest` first.
 - Add bundler support by mapping `BuildPlan` to the selected adapter.
 - Add runtime behavior under `packages/client/src/*` or `packages/server/src/*`
-  according to ownership. Export application-facing client APIs from the
-  `@evjs/ev/client` facade, and keep generated bootstrap or shell primitives
-  behind generated-only `@evjs/ev/client/internal/*` facade subpaths.
+  according to ownership. Export application-facing client APIs from
+  `@evjs/client`, server APIs from `@evjs/server`, and keep generated bootstrap
+  or shell primitives behind generated-only `@evjs/client/internal/*` subpaths.
 - Cover the feature in `examples/full-features` when it crosses graph, bundler, manifest, runtime, and server boundaries.

@@ -1,4 +1,4 @@
-import { Link, usePageParams, useQuery } from "@evjs/ev/client";
+import { Link, usePageParams, useQuery } from "@evjs/client";
 import { getUser } from "../../api/data.server";
 
 const styles = {

@@ -45,7 +45,7 @@ requirements:
 | PPR pages | page route | server-capable or edge+origin | Browser requests the page route; region resolution may be in-process or server-to-server. |
 | RSC pages | page route + `runtime.server.rsc` | server-capable | The document route and Flight endpoint must share compatible manifests/assets. |
 | Server functions | `runtime.server.fn` | server-capable | Usually same origin/base path as SSR/RSC/PPR unless `transport.baseUrl` splits it. |
-| Server routes | declared route path | server-capable | Route methods and 405 behavior belong to `@evjs/ev/server`. |
+| Server routes | declared route path | server-capable | Route methods and 405 behavior belong to `@evjs/server`. |
 | Remote host | remote manifest URL | static or server | Host can be static; remote manifest/assets are fetched at runtime. |
 | Remote app build | `evjs-remote.json` + assets | CDN/static file server | Remote lifecycle/shared metadata is manifest-driven. |
 
@@ -210,7 +210,7 @@ If you need full control, the equivalent shape is:
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { serve } from "@evjs/ev/server/node";
+import { serve } from "@evjs/server/node";
 import serverHandler from "./dist/server/server.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

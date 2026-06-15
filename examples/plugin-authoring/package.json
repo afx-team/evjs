@@ -8,9 +8,11 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@evjs/client": "*",
+    "@evjs/ev": "*",
+    "@evjs/server": "*",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "@evjs/ev": "*"
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
     "@evjs/bundler-utoopack": "*",

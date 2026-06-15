@@ -63,7 +63,7 @@ my-app/
 
 ```tsx
 // src/pages/users/$id.tsx
-import { usePageParams, useQuery } from "@evjs/ev/client";
+import { usePageParams, useQuery } from "@evjs/client";
 import { getUser } from "../../api/users.server";
 
 export default function UserPage() {
@@ -107,30 +107,32 @@ as normal components and do not accept `routing.layout`.
 
 | Package | Purpose |
 |---------|---------|
-| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | Framework API, config, plugins, build orchestration, and runtime facade subpaths (`@evjs/ev/client`, `@evjs/ev/server`) |
+| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | Framework API, config, plugins, build orchestration, and deployment helpers |
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`) with the default bundler |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
-| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Browser runtime implementation behind `@evjs/ev/client` |
-| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Hono/fetch server runtime implementation behind `@evjs/ev/server` |
+| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Browser runtime APIs for page hooks, navigation, transport, remotes, and RSC |
+| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Hono/fetch server runtime APIs for server functions, routes, rendering, and deployment |
 
 Manifest schemas, build tools, page runtime, and shell internals are internal
-modules under the public packages above. Application code should normally
-import through `@evjs/ev` and its runtime facade subpaths
-(`@evjs/ev/client`, `@evjs/ev/server`, `@evjs/ev/server/react`).
+modules under the public packages above. Application config/build code imports
+from `@evjs/ev`; runtime code imports from `@evjs/client`, `@evjs/server`, or
+`@evjs/server/react`.
 Use `@evjs/cli` and `@evjs/create-app` as tools, not application imports.
 Bundler adapters such as `@evjs/bundler-utoopack` and shared contract modules
 such as `@evjs/shared` are only for custom framework tooling or adapter work.
 
-Treat `@evjs/client` and `@evjs/server` as runtime implementation packages.
-Application source should only import them directly when it intentionally owns
-that lower-level runtime contract.
+Declare `@evjs/client` when application source or generated SPA entries need the
+browser runtime. Declare `@evjs/server` when the app uses server functions,
+server routes, framework rendering, or deployment runtime wrappers.
 
 ## Required Dependencies
 
 ```json
 {
   "dependencies": {
+    "@evjs/client": "<same version>",
     "@evjs/ev": "<same version>",
+    "@evjs/server": "<same version>",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

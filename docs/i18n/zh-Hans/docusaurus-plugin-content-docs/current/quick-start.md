@@ -61,7 +61,7 @@ my-app/
 
 ```tsx
 // src/pages/users/$id.tsx
-import { usePageParams, useQuery } from "@evjs/ev/client";
+import { usePageParams, useQuery } from "@evjs/client";
 import { getUser } from "../../api/users.server";
 
 export default function UserPage() {
@@ -103,28 +103,30 @@ export default defineConfig({
 
 | 包 | 用途 |
 |---|------|
-| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | 框架 API、配置、插件、构建编排，以及运行时 facade subpath（`@evjs/ev/client`、`@evjs/ev/server`） |
+| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | 框架 API、配置、插件、构建编排和 deployment helpers |
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | 注入默认构建器的轻量 CLI 包装 (`ev dev`, `ev build`) |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | 项目脚手架 (`npx @evjs/create-app`) |
-| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | `@evjs/ev/client` 背后的浏览器运行时实现包 |
-| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | `@evjs/ev/server` 背后的 Hono/fetch 服务端运行时实现包 |
+| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | page hooks、导航、transport、remotes 和 RSC 浏览器运行时 API |
+| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | server functions、routes、渲染和部署相关的 Hono/fetch 服务端运行时 API |
 
 Manifest schema、build tools、page runtime 和 shell 内部实现都位于上述公开包中。
-应用代码通常应从 `@evjs/ev` 及其 runtime facade subpath
-（`@evjs/ev/client`、`@evjs/ev/server`、`@evjs/ev/server/react`）导入。
+应用的 config/build 代码从 `@evjs/ev` 导入；运行时代码从 `@evjs/client`、
+`@evjs/server` 或 `@evjs/server/react` 导入。
 `@evjs/cli` 和 `@evjs/create-app` 应作为工具使用，不应被应用模块 import。
 `@evjs/bundler-utoopack` 这类 bundler adapter 以及 `@evjs/shared` 这类共享契约模块，
 只面向自定义框架工具或 adapter 开发。
 
-将 `@evjs/client` 和 `@evjs/server` 视为 runtime 实现包。只有应用源码明确
-要拥有更底层 runtime 契约时，才应直接从这些包导入。
+应用源码或生成的 SPA entry 需要浏览器运行时时声明 `@evjs/client`。应用使用
+server functions、server routes、框架渲染或部署运行时包装时声明 `@evjs/server`。
 
 ## 必需依赖
 
 ```json
 {
   "dependencies": {
+    "@evjs/client": "<same version>",
     "@evjs/ev": "<same version>",
+    "@evjs/server": "<same version>",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

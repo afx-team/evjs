@@ -76,7 +76,7 @@ describe("generatePageRouteTypes", () => {
     );
   });
 
-  it("keeps the generated helper import on the @evjs/ev facade", () => {
+  it("keeps the generated helper import on the client runtime package", () => {
     const source = generatePageRouteTypes({
       routes: [
         {
@@ -89,7 +89,8 @@ describe("generatePageRouteTypes", () => {
 
     expect(source).toContain(PAGE_ROUTE_TYPES_HELPER_MODULE);
     expect(source).toContain(PAGE_ROUTE_TYPES_REGISTER_MODULE);
-    expect(source).not.toContain("@evjs/client/internal");
+    expect(source).toContain("@evjs/client/internal/route-types");
+    expect(source).not.toContain("@evjs/ev/client/internal");
   });
 
   it("rewrites page module imports relative to the generated declaration", () => {

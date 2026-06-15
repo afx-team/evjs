@@ -44,7 +44,7 @@ manifest 中识别这些 runtime requirements：
 | PPR pages | page route | 服务端能力或 edge+origin | 浏览器请求 page route；region resolution 可本进程或 server-to-server。 |
 | RSC pages | page route + `runtime.server.rsc` | 需要服务端能力 | document route 与 Flight endpoint 必须共享兼容 manifest/assets。 |
 | Server functions | `runtime.server.fn` | 需要服务端能力 | 通常与 SSR/RSC/PPR 共用同一个 origin/base path，除非用 `transport.baseUrl` 拆分。 |
-| Server routes | 声明的 route path | 需要服务端能力 | methods 与 405 行为属于 `@evjs/ev/server`。 |
+| Server routes | 声明的 route path | 需要服务端能力 | methods 与 405 行为属于 `@evjs/server`。 |
 | Remote host | remote manifest URL | 静态或服务端 | Host 可以静态；remote manifest/assets 运行时加载。 |
 | Remote app build | `evjs-remote.json` + assets | CDN/静态文件服务 | Remote lifecycle/shared metadata 由 manifest 驱动。 |
 
@@ -197,7 +197,7 @@ SSR/PPR/RSC 文档路由和显式 server routes，提供 `dist/client` 静态资
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { serve } from "@evjs/ev/server/node";
+import { serve } from "@evjs/server/node";
 import serverHandler from "./dist/server/server.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

@@ -69,13 +69,13 @@ query string 或 hash，并且同一条规则内不能重复。Target 不能包�
 4. 调用 `BundlerAdapter.dev()`（将插件的 `bundlerConfig` 钩子应用到配置上）。
 5. 启动客户端 HMR 服务器（例如 `dev server`）。
 6. 在扫描到服务端后，适配器触发 `onServerBundleReady` 信号。
-7. CLI 核心通过 `@evjs/ev/server/node` 自动启动 API 服务器。
+7. CLI 核心通过 `@evjs/server/node` 自动启动 API 服务器。
 8. 为派生出的框架运行时路径设置反向代理，例如 `/__evjs/fn`、`/__evjs/ppr`
    和 `/__evjs/rsc` → `localhost:3001`。
 
 ## API 服务器运行时
 
-开发模式下，evjs 会通过一个小型 Node bootstrap 运行已构建的服务端 bundle，并调用 `@evjs/ev/server/node`。生产环境中，应根据目标宿主环境选择合适的运行时包装来部署产出的 `{ fetch }` handler。
+开发模式下，evjs 会通过一个小型 Node bootstrap 运行已构建的服务端 bundle，并调用 `@evjs/server/node`。生产环境中，应根据目标宿主环境选择合适的运行时包装来部署产出的 `{ fetch }` handler。
 
 ## 编程式 API
 
