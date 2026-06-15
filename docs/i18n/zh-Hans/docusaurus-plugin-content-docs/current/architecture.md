@@ -51,10 +51,10 @@ Subpath export 必须保持显式且有文档说明；新增 package export 是�
 `@evjs/create-app` 发布 `dist`/`templates`。
 
 内部 `@evjs/*` runtime 依赖也保持显式。`@evjs/ev` 消费 `@evjs/client`、
-`@evjs/server` 和共享契约，因此 facade subpath 是真实包边界，不是未记录的别名；
-`@evjs/server` 还会消费 `@evjs/client` 中的共享 runtime 类型。`@evjs/cli`
-持有默认 Utoopack adapter 依赖，bundler adapter 依赖 `@evjs/ev`，
-而不是彼此依赖。内部 runtime 依赖版本保持为
+`@evjs/server` 和共享契约，因此 facade subpath 是收窄后的应用 API 边界，
+不是 runtime 包镜像；`@evjs/server` 还会消费 `@evjs/client` 中的共享
+runtime 类型。`@evjs/cli` 持有默认 Utoopack adapter 依赖，bundler adapter
+依赖 `@evjs/ev`，而不是彼此依赖。内部 runtime 依赖版本保持为
 `"*"`，让发布自动化把所有分发包作为同一个框架版本处理。
 
 生成专用的 `@evjs/ev/client/internal/*` subpath 用于让框架生成的路由声明、
