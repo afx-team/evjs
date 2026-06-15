@@ -22,20 +22,21 @@
 - Public manifest redaction so browser-visible output does not expose local
   source paths.
 - Built-in Node, static, and edge deployment adapter artifacts.
+- Route-specific page data hook types from generated SPA routes, covering
+  params, search, and loader data without exposing router internals.
 
 ## In Progress
 
 - Utoopack dynamic entry/server dev plan updates for adding/removing entries
   without restarting `ev dev`.
-- Utoopack build facts for multiple server render entries.
+- Utoopack lower-layer support for framework server render entries, including
+  build facts for multiple SSR/PPR/RSC renderers.
 - Utoopack reference metadata needed for RSC and framework-managed render entries.
 - Production hardening for RSC/PPR cache behavior across non-root public paths
   and split edge/origin deployments.
 
 ## Planned
 
-- Page route type refinement so generated SPA routes preserve richer typed
-  params/search/loader data without exposing router internals.
 - Unified server request context and middleware semantics across server
   functions, server routes, SSR, PPR, and RSC.
 - More production-grade PPR behavior such as stale revalidation strategies,
