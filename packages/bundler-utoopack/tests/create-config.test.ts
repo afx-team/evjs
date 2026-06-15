@@ -538,11 +538,17 @@ describe("createUtoopackConfig", () => {
         },
       ],
     });
-    await expect(
+    const message = await expectRejectedMessage(() =>
       createUtoopackConfig(config, plan, process.cwd(), []),
-    ).rejects.toThrow(
+    );
+
+    expect(message).toContain(
       "Utoopack adapter cannot build framework server page entries yet",
     );
+    expect(message).toContain(
+      'dashboard-server (page-server, page "dashboard", route "dashboard")',
+    );
+    expect(message).toContain("Unsupported entry kinds: page-server");
   });
 
   it("fails clearly for framework server page entries until Utoopack supports them", async () => {
@@ -575,12 +581,49 @@ describe("createUtoopackConfig", () => {
       kind: "page-server",
       owner: { pageId: "dashboard" },
     });
+    plan.entries.push({
+      name: "insights-rsc",
+      import: "./src/pages/Insights.tsx",
+      environment: "server",
+      runtime: "node",
+      kind: "rsc-page",
+      owner: { pageId: "insights" },
+    });
+    plan.entries.push({
+      name: "campaign-ppr-shell",
+      import: "./src/pages/Campaign.tsx",
+      environment: "server",
+      runtime: "node",
+      kind: "ppr-shell",
+      owner: { pageId: "campaign" },
+    });
+    plan.entries.push({
+      name: "campaign-offer-ppr-region",
+      import: "./src/pages/CampaignOffer.tsx",
+      environment: "server",
+      runtime: "node",
+      kind: "ppr-region",
+      owner: { pageId: "campaign", regionId: "offer" },
+    });
 
-    await expect(
+    const message = await expectRejectedMessage(() =>
       createUtoopackConfig(config, plan, process.cwd(), []),
-    ).rejects.toThrow(
-      "Utoopack adapter cannot build framework server page entries yet",
     );
+
+    expect(message).toContain(
+      'dashboard-server (page-server, page "dashboard")',
+    );
+    expect(message).toContain('insights-rsc (rsc-page, page "insights")');
+    expect(message).toContain(
+      'campaign-ppr-shell (ppr-shell, page "campaign")',
+    );
+    expect(message).toContain(
+      'campaign-offer-ppr-region (ppr-region, page "campaign", region "offer")',
+    );
+    expect(message).toContain(
+      "Unsupported entry kinds: page-server, rsc-page, ppr-shell, ppr-region",
+    );
+    expect(message).toContain("SSR/PPR/RSC validation");
   });
 });
 
@@ -629,4 +672,16 @@ function createPlan(
 
 function getProxyRuleContexts(rule: { context: string | string[] }): string[] {
   return Array.isArray(rule.context) ? rule.context : [rule.context];
+}
+
+async function expectRejectedMessage(action: () => Promise<unknown>) {
+  let thrown: unknown;
+  try {
+    await action();
+  } catch (error) {
+    thrown = error;
+  }
+
+  expect(thrown).toBeInstanceOf(Error);
+  return (thrown as Error).message;
 }

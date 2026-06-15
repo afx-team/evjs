@@ -401,10 +401,38 @@ function validateUtoopackPlanSupport(plan: BuildPlan): void {
   );
   if (unsupportedServerEntries.length === 0) return;
 
-  const names = unsupportedServerEntries.map((entry) => entry.name).join(", ");
+  const details = unsupportedServerEntries
+    .map(formatUnsupportedServerEntry)
+    .join("; ");
+  const kinds = [
+    ...new Set(unsupportedServerEntries.map((entry) => entry.kind)),
+  ].join(", ");
   throw new Error(
-    `[evjs] The current Utoopack adapter cannot build framework server page entries yet: ${names}. Utoopack needs multi server entry support or use another bundler adapter for SSR/PPR validation.`,
+    `[evjs] The current Utoopack adapter cannot build framework server page entries yet (${details}). Unsupported entry kinds: ${kinds}. Utoopack needs multi server entry support; use another bundler adapter for SSR/PPR/RSC validation until that lower-layer API is available.`,
   );
+}
+
+function formatUnsupportedServerEntry(
+  entry: BuildPlan["entries"][number],
+): string {
+  const owner = formatBuildEntryOwner(entry.owner);
+  return `${entry.name} (${entry.kind}${owner ? `, ${owner}` : ""})`;
+}
+
+function formatBuildEntryOwner(
+  owner: BuildPlan["entries"][number]["owner"],
+): string | undefined {
+  if (!owner) return undefined;
+
+  const parts: string[] = [];
+  if (owner.pageId) parts.push(`page "${owner.pageId}"`);
+  if (owner.routeId) parts.push(`route "${owner.routeId}"`);
+  if (owner.regionId) parts.push(`region "${owner.regionId}"`);
+  if (owner.appId) parts.push(`app "${owner.appId}"`);
+  if (owner.remoteId) parts.push(`remote "${owner.remoteId}"`);
+  if (owner.remoteEntryId) parts.push(`remote entry "${owner.remoteEntryId}"`);
+
+  return parts.join(", ") || undefined;
 }
 
 function resolveServerEntry(entry: string | undefined): string | undefined {
