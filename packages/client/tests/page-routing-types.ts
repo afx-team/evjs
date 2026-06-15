@@ -1,11 +1,22 @@
-import { Link, Navigate, redirect, useLinkProps } from "@evjs/client";
+import {
+  Link,
+  Navigate,
+  redirect,
+  useLinkProps,
+  usePageContext,
+  usePageLoaderData,
+  usePageParams,
+  usePageSearch,
+} from "@evjs/client";
 import { useLinkProps as useTanStackLinkProps } from "@tanstack/react-router";
 import type { CreatePageRouteRegister } from "../src/route-types";
 
 type Empty = Record<PropertyKey, never>;
 
 type EvPageIndexModule = Empty;
-type EvPagePostModule = Empty;
+interface EvPagePostModule {
+  loader(): Promise<{ title: string }>;
+}
 
 interface EvPageSearchModule {
   validateSearch(search: Record<string, unknown>): {
@@ -36,8 +47,30 @@ export function PageRouteLinkTypeTests() {
   Navigate({ to: "/search", search: { q: "router", page: 1 } });
   redirect({ to: "/posts/$postId", params: { postId: "p1" } });
 
+  const postParams = usePageParams("/posts/$postId");
+  postParams.postId.toUpperCase();
+
+  const search = usePageSearch("/search");
+  search.page.toFixed();
+
+  const postData = usePageLoaderData("/posts/$postId");
+  postData.title.toUpperCase();
+
+  const postContext = usePageContext("/posts/$postId");
+  postContext.params.postId.toUpperCase();
+  postContext.loaderData.title.toUpperCase();
+
   // @ts-expect-error unknown page route paths are rejected.
   useLinkProps({ to: "/missing" });
+
+  // @ts-expect-error page data hooks use the generated route path list.
+  usePageParams("/missing");
+
+  // @ts-expect-error route params follow dynamic segment names.
+  postParams.id;
+
+  // @ts-expect-error search objects follow validateSearch output.
+  search.page.toUpperCase();
 
   // @ts-expect-error dynamic page routes require their params.
   useLinkProps({ to: "/posts/$postId" });

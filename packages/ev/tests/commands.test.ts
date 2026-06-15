@@ -735,7 +735,12 @@ describe("build", () => {
       );
       await fs.promises.writeFile(
         path.join(cwd, "src/pages/posts/$postId.tsx"),
-        "export default function Post() { return null; }",
+        [
+          "export async function loader() {",
+          "  return { title: 'Post' };",
+          "}",
+          "export default function Post() { return null; }",
+        ].join("\n"),
         "utf-8",
       );
       await fs.promises.writeFile(
@@ -751,14 +756,20 @@ describe("build", () => {
       await fs.promises.writeFile(
         path.join(cwd, "src/check-links.tsx"),
         [
-          'import { Link, useLinkProps } from "@evjs/ev/client";',
+          'import { Link, useLinkProps, usePageLoaderData, usePageParams, usePageSearch } from "@evjs/ev/client";',
           "",
           "export function CheckLinks() {",
           '  <Link to="/posts/$postId" params={{ postId: "p1" }} />;',
           '  useLinkProps({ to: "/search", search: { q: "router", page: 1 } });',
+          '  usePageParams("/posts/$postId").postId.toUpperCase();',
+          '  usePageSearch("/search").page.toFixed();',
+          '  usePageLoaderData("/posts/$postId").title.toUpperCase();',
           "",
           "  // @ts-expect-error unknown page route paths are rejected.",
           '  useLinkProps({ to: "/missing" });',
+          "",
+          "  // @ts-expect-error page data hooks use the generated route path list.",
+          '  usePageParams("/missing");',
           "",
           "  // @ts-expect-error dynamic page routes require their params.",
           '  useLinkProps({ to: "/posts/$postId" });',

@@ -139,6 +139,28 @@ duplicate param names are rejected there too. A route path can contain at most
 one wildcard segment because there is only one `_splat` value. The same hooks
 expose those names.
 
+In SPA projects with generated route types, page hooks can take a literal route
+path for route-specific inference without importing the generated declaration:
+
+```tsx
+import { usePageLoaderData, usePageParams, usePageSearch } from "@evjs/ev/client";
+
+export const validateSearch = (search: Record<string, unknown>) => ({
+  tab: typeof search.tab === "string" ? search.tab : "overview",
+});
+
+export async function loader() {
+  return { title: "Post" };
+}
+
+export default function PostPage() {
+  const params = usePageParams("/posts/$postId");
+  const search = usePageSearch("/posts/$postId");
+  const post = usePageLoaderData("/posts/$postId");
+  return <h1>{post.title}: {params.postId} ({search.tab})</h1>;
+}
+```
+
 In SPA mode, page modules may export page lifecycle hooks that are useful for
 page logic, such as `loader`, `beforeLoad`, `validateSearch`,
 `pendingComponent`, `errorComponent`, and `notFoundComponent`. evjs attaches

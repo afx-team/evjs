@@ -4,6 +4,7 @@ import type {
   RootRoute,
   Route,
 } from "@tanstack/react-router";
+import type { Register } from "./index.js";
 
 type EvEmpty = Record<PropertyKey, never>;
 
@@ -20,8 +21,54 @@ export type PageRouteTypeDefinitions<TRoutes> = {
 export type CreatePageRouteRegister<
   TRoutes extends PageRouteTypeDefinitions<TRoutes>,
 > = {
+  pageRoutes: TRoutes;
   router: ReturnType<typeof createRouter<EvPageRouteTree<TRoutes>>>;
 };
+
+type RegisteredPageRouteDefinitions = Register extends {
+  pageRoutes: infer TRoutes;
+}
+  ? TRoutes extends PageRouteTypeDefinitions<TRoutes>
+    ? TRoutes
+    : never
+  : never;
+
+type RegisteredPageRoute =
+  RegisteredPageRouteDefinitions[keyof RegisteredPageRouteDefinitions];
+
+export type PageRoutePath = [RegisteredPageRoute] extends [never]
+  ? string
+  : RegisteredPageRoute["path"];
+
+type PageRouteDefinitionByPath<TPath extends string> = Extract<
+  RegisteredPageRoute,
+  { path: TPath }
+>;
+
+type PageRouteModuleByPath<TPath extends string> =
+  PageRouteDefinitionByPath<TPath> extends {
+    module: infer TModule;
+  }
+    ? TModule
+    : unknown;
+
+export type PageRouteParams<TPath extends string> = ResolveParams<TPath>;
+
+export type PageRouteSearch<TPath extends string> =
+  PageRouteModuleByPath<TPath> extends {
+    validateSearch: (...args: never[]) => infer TSearch;
+  }
+    ? TSearch extends Record<string, unknown>
+      ? TSearch
+      : Record<string, unknown>
+    : Record<string, unknown>;
+
+export type PageRouteLoaderData<TPath extends string> =
+  PageRouteModuleByPath<TPath> extends {
+    loader: (...args: never[]) => infer TLoaderData;
+  }
+    ? Awaited<TLoaderData>
+    : unknown;
 
 type EvModuleSearchValidator<TModule> = TModule extends {
   validateSearch: infer TValidator;

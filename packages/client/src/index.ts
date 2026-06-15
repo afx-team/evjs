@@ -104,6 +104,12 @@ export {
   useRemoteHost,
 } from "./remote-app.js";
 export type {
+  PageRouteLoaderData,
+  PageRouteParams,
+  PageRoutePath,
+  PageRouteSearch,
+} from "./route-types.js";
+export type {
   ReactRscModelOptions,
   ReactRscMountOptions,
   ReactRscRuntimeBootstrap,
