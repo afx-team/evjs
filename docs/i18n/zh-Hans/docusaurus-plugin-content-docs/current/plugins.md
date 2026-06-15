@@ -98,7 +98,7 @@ interface PluginContext<TBundlerConfig = unknown> {
 ```
 
 在 `setup()` 中初始化共享状态并返回生命周期 hooks。返回值必须是 hooks object 或
-`undefined`；`null`、array 和非函数 hook 字段会在命令生命周期 hooks 运行前被拒绝。
+`undefined`；`null`、array 和非函数 hook 字段会在生命周期 hooks 运行前被拒绝。
 未知 hook 名也会被拒绝，因此 `buildstart` 这类拼写错误不会被静默忽略。
 
 ## 生命周期
@@ -107,8 +107,7 @@ interface PluginContext<TBundlerConfig = unknown> {
 flowchart LR
   A["config hooks"] --> B["resolve config"]
   B --> C["setup hooks"]
-  C --> D["commandStart"]
-  D --> E["buildStart"]
+  C --> E["buildStart"]
   E --> F["create AppGraph"]
   F --> H["create BuildPlan"]
   H --> J["bundlerConfig hooks"]
@@ -122,7 +121,6 @@ flowchart LR
 
 | Hook | 用途 |
 |------|------|
-| `commandStart(ctx)` | 插件初始化后的命令级准备 |
 | `buildStart(ctx)` | graph 工作前的构建准备 |
 | `bundlerConfig(config, ctx)` | 修改当前 bundler 配置 |
 | `buildOutput(output, ctx)` | 向单一框架输出添加部署/runtime metadata |
@@ -163,40 +161,30 @@ transformHtml(doc, ctx) {
 import type { HtmlDocument } from "@evjs/ev";
 ```
 
-## Build Output
+## Build Result
 
-`buildEnd()` 接收单一框架输出：
+`buildEnd()` 接收构建结果，其中包含已链接的框架输出和更聚焦的
+manifest 视图：
 
 ```ts
 setup() {
   return {
-    buildEnd({ output }) {
+    buildEnd({ output, clientManifest, serverManifest, isRebuild }) {
       console.log("Apps:", Object.keys(output.apps));
       console.log("Pages:", Object.keys(output.pages));
       console.log("Functions:", Object.keys(output.server?.functions ?? {}));
+      console.log("Client JS:", clientManifest.assets.js);
+      console.log("Server entry:", serverManifest?.entry);
+      console.log("Rebuild:", isRebuild);
     },
   };
 }
 ```
 
-部署插件应该从 `BuildOutput` 读取 routes、functions、assets、remotes 和 runtime paths。
-
-## 0.1.x 兼容性
-
-基于 0.1.x 生命周期类型编写的插件可以继续导入旧类型别名：
-`EvPlugin`、`EvPluginHooks`、`EvPluginContext`、`EvBuildResult`、
-`EvDocument`、`EvConfig` 和 `ResolvedEvConfig`。它们都是当前 plugin 和
-config 类型的别名。
-
-`buildEnd(result)` 和 `transformHtml(doc, result)` 也保留 0.1.x 的结果字段：
-
-- `result.clientManifest`；
-- `result.serverManifest`；
-- `result.isRebuild`。
-
-这些字段是从当前 `BuildOutput` 投影出来的兼容形态。新插件仍建议读取
-`result.output`，并在 HTML 场景中使用 `ctx.kind`、`ctx.fileName` 和
-`ctx.assets` 等字段。
+部署插件应该从 `output` 读取 routes、functions、assets、remotes 和
+runtime paths。只需要客户端或服务端 bundle 摘要的插件可以使用
+`clientManifest` 和 `serverManifest`。HTML hook 会收到同一组结果字段，
+并额外包含 `ctx.kind`、`ctx.fileName`、`ctx.assets` 等文档字段。
 
 ## Bundler Config
 

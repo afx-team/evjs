@@ -101,8 +101,8 @@ interface PluginContext<TBundlerConfig = unknown> {
 
 Use `setup()` to allocate shared state and return lifecycle hooks. Return a
 hooks object or `undefined`; `null`, arrays, and non-function hook fields are
-rejected before command lifecycle hooks run. Unknown hook names are rejected so
-typos such as `buildstart` fail before they can be silently ignored.
+rejected before lifecycle hooks run. Unknown hook names are rejected so typos
+such as `buildstart` fail before they can be silently ignored.
 
 ## Lifecycle
 
@@ -110,8 +110,7 @@ typos such as `buildstart` fail before they can be silently ignored.
 flowchart LR
   A["config hooks"] --> B["resolve config"]
   B --> C["setup hooks"]
-  C --> D["commandStart"]
-  D --> E["buildStart"]
+  C --> E["buildStart"]
   E --> F["create AppGraph"]
   F --> H["create BuildPlan"]
   H --> J["bundlerConfig hooks"]
@@ -125,7 +124,6 @@ flowchart LR
 
 | Hook | Purpose |
 |------|---------|
-| `commandStart(ctx)` | Command-level setup after plugin initialization |
 | `buildStart(ctx)` | Build setup before graph work |
 | `bundlerConfig(config, ctx)` | Mutate selected bundler config |
 | `buildOutput(output, ctx)` | Add deployment/runtime metadata to the single framework output |
@@ -166,41 +164,31 @@ The document type is `HtmlDocument`, a bundler-agnostic subset of standard DOM A
 import type { HtmlDocument } from "@evjs/ev";
 ```
 
-## Build Output
+## Build Result
 
-`buildEnd()` receives the single framework output:
+`buildEnd()` receives a build result with the linked framework output and
+narrower manifest views:
 
 ```ts
 setup() {
   return {
-    buildEnd({ output }) {
+    buildEnd({ output, clientManifest, serverManifest, isRebuild }) {
       console.log("Apps:", Object.keys(output.apps));
       console.log("Pages:", Object.keys(output.pages));
       console.log("Functions:", Object.keys(output.server?.functions ?? {}));
+      console.log("Client JS:", clientManifest.assets.js);
+      console.log("Server entry:", serverManifest?.entry);
+      console.log("Rebuild:", isRebuild);
     },
   };
 }
 ```
 
-Deployment plugins should read routes, functions, assets, remotes, and runtime paths from `BuildOutput`.
-
-## 0.1.x Compatibility
-
-Plugins written against the 0.1.x lifecycle names can keep importing the old
-type aliases: `EvPlugin`, `EvPluginHooks`, `EvPluginContext`, `EvBuildResult`,
-`EvDocument`, `EvConfig`, and `ResolvedEvConfig`. They are aliases for the
-current plugin and config types.
-
-`buildEnd(result)` and `transformHtml(doc, result)` also keep the 0.1.x result
-fields:
-
-- `result.clientManifest`;
-- `result.serverManifest`;
-- `result.isRebuild`.
-
-These fields are compatibility projections from the current `BuildOutput`.
-New plugins should read `result.output` and the HTML-specific `ctx.kind`,
-`ctx.fileName`, and `ctx.assets` fields when possible.
+Deployment plugins should read routes, functions, assets, remotes, and runtime
+paths from `output`. Plugins that only need client or server bundle summaries can
+use `clientManifest` and `serverManifest`. HTML hooks receive the same result
+fields plus document-specific fields such as `ctx.kind`, `ctx.fileName`, and
+`ctx.assets`.
 
 ## Bundler Config
 

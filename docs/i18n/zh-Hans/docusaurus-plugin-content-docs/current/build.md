@@ -57,9 +57,8 @@ Manifest linking 不会在 bundling 后重新扫描用户源码。
 
 只需要框架语义、但不想启动 bundler 的工具，可以从 `@evjs/ev` 调用
 `prepareFrameworkBuild()`。它会解析配置、应用页面路由默认值、初始化插件，执行
-`commandStart` 和 `buildStart` hooks，并返回 resolved config、`AppGraph`、
-`BuildPlan`、graph file dependencies、plugin watch files
-和 `dispose()`。
+`buildStart` hooks，并返回 resolved config、`AppGraph`、`BuildPlan`、graph
+file dependencies、plugin watch files 和 `dispose()`。
 
 该准备 API 会在 bundler 执行、manifest 输出、HTML 输出和 deployment adapter 输出之前停止。
 

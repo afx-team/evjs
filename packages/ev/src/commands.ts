@@ -68,7 +68,6 @@ const DEV_DIST_DIR = "dist";
 const DEV_DIST_LOCK_FILE = ".evjs-dev.lock";
 const INTERNAL_BUILD_OUTPUT_FILE = "build-output.json";
 const PLUGIN_HOOK_NAMES = [
-  "commandStart",
   "buildStart",
   "buildOutput",
   "bundlerConfig",
@@ -536,17 +535,6 @@ async function runBuildStartHooks<TBundlerCfg>(
   for (const h of hooks) {
     if (h.buildStart) {
       await h.buildStart(ctx);
-    }
-  }
-}
-
-async function runCommandStartHooks<TBundlerCfg>(
-  hooks: PluginHooks<TBundlerCfg>[],
-  ctx: PluginContext<TBundlerCfg>,
-): Promise<void> {
-  for (const h of hooks) {
-    if (h.commandStart) {
-      await h.commandStart(ctx);
     }
   }
 }
@@ -1322,7 +1310,6 @@ export async function prepareFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
 
   try {
     if (options.runLifecycleHooks ?? true) {
-      await runCommandStartHooks(hooks, pluginContext);
       await runBuildStartHooks(hooks, pluginContext);
     }
     validateHtmlTemplates(cwd, config);
@@ -1390,7 +1377,6 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
   };
   const hooks = await collectPluginHooks(activeConfig.plugins, pluginCtx);
 
-  await runCommandStartHooks(hooks, pluginCtx);
   await runBuildStartHooks(hooks, pluginCtx);
   validateHtmlTemplates(cwd, activeConfig);
   let activeAnalysis = await createAppGraph(activeConfig, cwd);

@@ -91,7 +91,7 @@ export interface HtmlDocument {
   toString(): string;
 }
 
-/** JavaScript and CSS assets in the 0.1.x plugin manifest shape. */
+/** JavaScript and CSS assets exposed to plugin manifest views. */
 export interface ManifestAssets {
   /** JavaScript bundle paths. */
   js: string[];
@@ -99,13 +99,13 @@ export interface ManifestAssets {
   css: string[];
 }
 
-/** A discovered client route in the 0.1.x plugin manifest shape. */
+/** A discovered client route exposed to plugin manifest views. */
 export interface RouteEntry {
   /** Route path, e.g. "/", "/posts/$postId", or "*". */
   path: string;
 }
 
-/** Per-page client manifest entry in the 0.1.x plugin manifest shape. */
+/** Per-page client manifest entry exposed to plugin hooks. */
 export interface PageManifestEntry {
   /** Bundle asset paths for this page. */
   assets: ManifestAssets;
@@ -113,9 +113,9 @@ export interface PageManifestEntry {
   routes?: RouteEntry[];
 }
 
-/** Client manifest compatibility projection for 0.1.x plugins. */
+/** Client-focused manifest view derived from the linked framework output. */
 export interface ClientManifest {
-  /** Schema version used by the 0.1.x manifest contract. */
+  /** Schema version for this manifest view. */
   version: 1;
   /** Bundle asset paths for SPA HTML injection. */
   assets: ManifestAssets;
@@ -125,13 +125,13 @@ export interface ClientManifest {
   pages?: Record<string, PageManifestEntry>;
 }
 
-/** Server function entry in the 0.1.x plugin manifest shape. */
+/** Server function entry exposed to plugin manifest views. */
 export interface ServerFnEntry {
   /** Emitted assets containing this function. */
   assets: ManifestAssets;
 }
 
-/** Server route entry in the 0.1.x plugin manifest shape. */
+/** Server route entry exposed to plugin manifest views. */
 export interface ServerRouteEntry {
   /** URL path pattern handled by this route. */
   path: string;
@@ -141,9 +141,9 @@ export interface ServerRouteEntry {
   assets: ManifestAssets;
 }
 
-/** Server manifest compatibility projection for 0.1.x plugins. */
+/** Server-focused manifest view derived from the linked framework output. */
 export interface ServerManifest {
-  /** Schema version used by the 0.1.x manifest contract. */
+  /** Schema version for this manifest view. */
   version: 1;
   /** Server bundle entry filename. */
   entry?: string;
@@ -264,9 +264,6 @@ export interface PluginContext<TBundlerCfg = DefaultBundlerConfig> {
   addWatchFile(file: string): void;
 }
 
-export interface CommandContext<TBundlerCfg = DefaultBundlerConfig>
-  extends PluginContext<TBundlerCfg> {}
-
 export interface BuildStartContext<TBundlerCfg = DefaultBundlerConfig>
   extends PluginContext<TBundlerCfg> {}
 
@@ -280,9 +277,6 @@ export interface DisposeContext<TBundlerCfg = DefaultBundlerConfig>
  * Lifecycle hooks returned from plugin setup().
  */
 export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig> {
-  /** Called after setup and before graph/build work starts. */
-  commandStart?: (ctx: CommandContext<TBundlerCfg>) => void | Promise<void>;
-
   /** Called before compilation begins. */
   buildStart?: (ctx: BuildStartContext<TBundlerCfg>) => void | Promise<void>;
 
@@ -337,18 +331,9 @@ export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig> {
 export interface BuildResult {
   /** Single framework build output. */
   output: BuildOutput;
-  /**
-   * Compatibility client manifest for 0.1.x plugins.
-   *
-   * New plugins should prefer `output`, but this projection keeps older
-   * lifecycle implementations working while evjs emits one framework manifest.
-   */
+  /** Client-focused manifest view derived from `output`. */
   clientManifest: ClientManifest;
-  /**
-   * Compatibility server manifest for 0.1.x plugins.
-   *
-   * Undefined when the build has no server output.
-   */
+  /** Server-focused manifest view derived from `output`, when server output exists. */
   serverManifest?: ServerManifest;
   /** True if this is a rebuild triggered by file change (dev watch mode only). */
   isRebuild: boolean;
@@ -393,8 +378,6 @@ export type HtmlTransformContext<TBundlerCfg = DefaultBundlerConfig> =
     };
 export type BuildOutputHookContext<TBundlerCfg = DefaultBundlerConfig> =
   BuildOutputContext<TBundlerCfg>;
-export type CommandHookContext<TBundlerCfg = DefaultBundlerConfig> =
-  CommandContext<TBundlerCfg>;
 
 export type EvBuildResult = BuildResult;
 export type EvBundlerCtx<TBundlerCfg = DefaultBundlerConfig> =

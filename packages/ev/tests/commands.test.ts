@@ -7,12 +7,11 @@ import { describe, expect, it } from "vitest";
 import { PAGE_ROUTE_CONVENTION_SUMMARY } from "../src/build-tools/page-route-conventions.js";
 import type { BundlerAdapter } from "../src/bundler.js";
 import {
+  type BuildResult,
   build,
   type Config,
   dev,
-  type EvBuildResult,
-  type EvDocument,
-  type EvPlugin,
+  type HtmlDocument,
   type Plugin,
   prepareFrameworkBuild,
 } from "../src/index.js";
@@ -249,9 +248,6 @@ describe("prepareFrameworkBuild", () => {
         ctx.addWatchFile("./framework-extra.json");
         events.push(`setup:${ctx.command}`);
         return {
-          commandStart() {
-            events.push("commandStart");
-          },
           buildStart() {
             events.push("buildStart");
           },
@@ -289,12 +285,7 @@ describe("prepareFrameworkBuild", () => {
     expect(prepared.pluginWatchFiles).toEqual([
       path.join(cwd, "framework-extra.json"),
     ]);
-    expect(events).toEqual([
-      "config:build",
-      "setup:build",
-      "commandStart",
-      "buildStart",
-    ]);
+    expect(events).toEqual(["config:build", "setup:build", "buildStart"]);
 
     await prepared.dispose();
     await prepared.dispose();
@@ -302,7 +293,6 @@ describe("prepareFrameworkBuild", () => {
     expect(events).toEqual([
       "config:build",
       "setup:build",
-      "commandStart",
       "buildStart",
       "dispose",
     ]);
@@ -368,9 +358,6 @@ describe("build", () => {
         expect(ctx.config.bundler?.name).toBe("mock");
         events.push(`setup:${ctx.mode}`);
         return {
-          commandStart(ctx) {
-            events.push(`commandStart:${ctx.command}`);
-          },
           buildStart() {
             events.push("buildStart");
           },
@@ -398,7 +385,6 @@ describe("build", () => {
 
     expect(events).toEqual([
       "setup:production",
-      "commandStart:build",
       "buildStart",
       "bundler.build",
       "bundler.entries:main",
@@ -408,24 +394,24 @@ describe("build", () => {
     ]);
   });
 
-  it("keeps 0.1.x plugin lifecycle result fields available", async () => {
+  it("passes manifest result fields to plugin lifecycle hooks", async () => {
     const cwd = await createProject();
     const events: string[] = [];
     const bundler = createMockBundler(events);
-    const plugin: EvPlugin<Record<string, never>> = {
-      name: "legacy-lifecycle",
+    const plugin: Plugin<Record<string, never>> = {
+      name: "manifest-result",
       setup() {
         return {
           buildStart() {
-            events.push("legacy:buildStart");
+            events.push("manifest:buildStart");
           },
-          transformHtml(doc: EvDocument, result: EvBuildResult) {
-            events.push(`legacy:html:${result.clientManifest.assets.js[0]}`);
-            doc.head?.appendChild(doc.createComment(" legacy html "));
+          transformHtml(doc: HtmlDocument, result: BuildResult) {
+            events.push(`manifest:html:${result.clientManifest.assets.js[0]}`);
+            doc.head?.appendChild(doc.createComment(" manifest html "));
           },
-          buildEnd(result: EvBuildResult) {
+          buildEnd(result: BuildResult) {
             events.push(
-              `legacy:buildEnd:${result.clientManifest.assets.js[0]}:${result.serverManifest?.entry ?? "none"}`,
+              `manifest:buildEnd:${result.clientManifest.assets.js[0]}:${result.serverManifest?.entry ?? "none"}`,
             );
           },
         };
@@ -442,13 +428,13 @@ describe("build", () => {
 
     await expect(
       fs.promises.readFile(path.join(cwd, "dist/index.html"), "utf-8"),
-    ).resolves.toContain("legacy html");
+    ).resolves.toContain("manifest html");
     expect(events).toEqual([
-      "legacy:buildStart",
+      "manifest:buildStart",
       "bundler.build",
       "bundler.entries:main",
-      "legacy:html:main.js",
-      "legacy:buildEnd:main.js:none",
+      "manifest:html:main.js",
+      "manifest:buildEnd:main.js:none",
     ]);
   });
 
@@ -1455,7 +1441,7 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      '[evjs] Plugin "typo-lifecycle-hook" setup hook returned unknown hook "buildstart". Supported hooks: commandStart, buildStart, buildOutput, bundlerConfig, buildEnd, dispose, transformHtml.',
+      '[evjs] Plugin "typo-lifecycle-hook" setup hook returned unknown hook "buildstart". Supported hooks: buildStart, buildOutput, bundlerConfig, buildEnd, dispose, transformHtml.',
     );
     expect(events).toEqual(["setup"]);
   });
