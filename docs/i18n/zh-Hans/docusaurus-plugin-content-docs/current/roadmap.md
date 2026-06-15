@@ -20,17 +20,20 @@
   remotes 和 per-document HTML transform。
 - Public manifest redaction，确保浏览器可见输出不暴露本地源码路径。
 - 内置 Node、static、edge deployment adapter artifacts。
+- 统一 server request context 和 middleware 语义，覆盖 server functions、
+  server routes、SSR、PPR、RSC。
+- PPR page response 会根据 region 策略为 merged、streamed 和 HEAD response
+  派生 cache headers。
 
 ## 进行中
 
 - Utoopack dynamic entry/server dev plan update，用于不重启 `ev dev` 增删 entry。
 - Utoopack 对多 server render entry 的 build facts 支持。
 - Utoopack 运行 RSC 和 framework-managed render entry 所需的 reference metadata。
-- 非根 public path、CDN/edge+origin 部署下的 RSC/PPR cache 行为生产级 hardening。
+- 非根 public path、CDN/edge+origin 部署下剩余的 RSC/PPR cache 行为 hardening。
 
 ## 计划中
 
 - 页面路由类型能力继续收敛：在不暴露 router internals 的前提下保留更完整的 params/search/loader data 类型。
-- 统一 server request context 和 middleware 语义，覆盖 server functions、server routes、SSR、PPR、RSC。
 - 更生产级的 PPR 行为，例如 stale revalidation strategy、pluggable region cache、显式 client islands 和更深入的 React streaming renderer 集成。
 - Utoopack 下层能力补齐：dynamic entries、structured build result、多 server entry class、RSC/client reference metadata。

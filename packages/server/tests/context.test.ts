@@ -1,3 +1,4 @@
+import type { BuildOutput } from "@evjs/shared/manifest";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import {
@@ -13,6 +14,7 @@ import {
   registerServerReference,
   registry,
 } from "../src/functions/register.js";
+import { createRoute } from "../src/routes/index.js";
 
 describe("Server Request Context", () => {
   beforeEach(() => {
@@ -106,4 +108,223 @@ describe("Server Request Context", () => {
       status: 500,
     });
   });
+
+  it("should provide context inside middleware, route handlers, and framework render", async () => {
+    const observed: string[] = [];
+    const route = createRoute("/api/context", {
+      GET() {
+        observed.push(`route:${headers().get("x-context-test")}`);
+        return Response.json({
+          header: headers().get("x-context-test"),
+          path: new URL(request().url).pathname,
+        });
+      },
+    });
+    const app = createApp({
+      middlewares: [
+        async (_c, next) => {
+          observed.push(`middleware-before:${headers().get("x-context-test")}`);
+          await next();
+          observed.push(`middleware-after:${headers().get("x-context-test")}`);
+        },
+      ],
+      routes: [route],
+      framework: {
+        manifest: createFrameworkManifest(),
+        render(ctx) {
+          observed.push(
+            `framework-render:${headers().get("x-context-test")}:${ctx.pageId}`,
+          );
+          return Response.json({
+            header: headers().get("x-context-test"),
+            path: new URL(request().url).pathname,
+          });
+        },
+      },
+    });
+
+    const routeResponse = await app.request("/api/context", {
+      headers: { "x-context-test": "route" },
+    });
+    const renderResponse = await app.request("/dashboard", {
+      headers: { "x-context-test": "render" },
+    });
+
+    expect(routeResponse.status).toBe(200);
+    expect(await routeResponse.json()).toEqual({
+      header: "route",
+      path: "/api/context",
+    });
+    expect(renderResponse.status).toBe(200);
+    expect(await renderResponse.json()).toEqual({
+      header: "render",
+      path: "/dashboard",
+    });
+    expect(observed).toEqual([
+      "middleware-before:route",
+      "route:route",
+      "middleware-after:route",
+      "middleware-before:render",
+      "framework-render:render:dashboard",
+      "middleware-after:render",
+    ]);
+  });
+
+  it("should provide context inside PPR and RSC framework handlers", async () => {
+    const observed: string[] = [];
+    const pprManifest = createFrameworkManifest();
+    configurePprManifest(pprManifest);
+    const pprApp = createApp({
+      framework: {
+        manifest: pprManifest,
+        render(ctx) {
+          if (ctx.regionId) {
+            observed.push(`ppr-region:${headers().get("x-context-test")}`);
+            return `<p>${headers().get("x-context-test")}</p>`;
+          }
+          observed.push(`ppr-shell:${headers().get("x-context-test")}`);
+          return '<main><div data-evjs-ppr-region="hero">fallback</div></main>';
+        },
+      },
+    });
+
+    const pprResponse = await pprApp.request("/dashboard", {
+      headers: { "x-context-test": "ppr" },
+    });
+
+    const rscManifest = createFrameworkManifest();
+    configureRscManifest(rscManifest);
+    const rscApp = createApp({
+      framework: {
+        manifest: rscManifest,
+        rsc(ctx) {
+          observed.push(
+            `rsc-flight:${headers().get("x-context-test")}:${ctx.pageId}`,
+          );
+          return new Response(headers().get("x-context-test"), {
+            headers: { "Content-Type": "text/x-component" },
+          });
+        },
+      },
+    });
+
+    const rscResponse = await rscApp.request("/__evjs/rsc?page=dashboard", {
+      headers: { "x-context-test": "rsc" },
+    });
+
+    expect(pprResponse.status).toBe(200);
+    expect(await pprResponse.text()).toBe("<main><p>ppr</p></main>");
+    expect(rscResponse.status).toBe(200);
+    expect(rscResponse.headers.get("Content-Type")).toBe("text/x-component");
+    expect(await rscResponse.text()).toBe("rsc");
+    expect(observed).toEqual([
+      "ppr-shell:ppr",
+      "ppr-region:ppr",
+      "rsc-flight:rsc:dashboard",
+    ]);
+  });
 });
+
+function createFrameworkManifest(): BuildOutput {
+  return {
+    version: 1,
+    buildId: "test",
+    distDir: "dist",
+    publicPath: "/",
+    runtime: {
+      server: {
+        basePath: "/__evjs",
+        fn: "/__evjs/fn",
+        rsc: "/__evjs/rsc",
+      },
+    },
+    assets: {},
+    apps: {},
+    pages: {
+      dashboard: {
+        assets: { js: [], css: [] },
+        render: "ssr",
+        rendering: {
+          component: "server",
+          html: "server",
+          streaming: false,
+          hydrate: "load",
+        },
+      },
+    },
+    routes: [
+      {
+        id: "dashboard",
+        path: "/dashboard",
+        pageId: "dashboard",
+      },
+    ],
+    server: {
+      assets: { js: ["server.js"], css: [] },
+      functions: {},
+      routes: [],
+      renderers: {
+        "dashboard-server": {
+          kind: "page-server",
+          owner: { pageId: "dashboard" },
+          module: "./src/pages/Dashboard.tsx",
+          assets: { js: ["dashboard-server.js"], css: [] },
+        },
+      },
+    },
+  };
+}
+
+function configurePprManifest(manifest: BuildOutput): void {
+  manifest.pages.dashboard.prerender = { partial: true, delivery: "merge" };
+  manifest.pages.dashboard.ppr = {
+    delivery: "merge",
+    shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+    regions: {
+      hero: {
+        id: "hero",
+        assets: { js: ["dashboard-hero-ppr-region.js"], css: [] },
+        component: "./src/pages/Hero.region.tsx",
+      },
+    },
+  };
+  manifest.pages.dashboard.rendering = {
+    component: "server",
+    html: "partial",
+    prerender: "partial",
+    streaming: false,
+    hydrate: "none",
+  };
+}
+
+function configureRscManifest(manifest: BuildOutput): void {
+  manifest.pages.dashboard.componentModel = "rsc";
+  manifest.pages.dashboard.rendering = {
+    component: "rsc",
+    html: "server",
+    streaming: true,
+    hydrate: "none",
+  };
+  manifest.rsc = {
+    endpoint: "/__evjs/rsc",
+    pages: {
+      dashboard: {
+        renderer: "dashboard-rsc",
+        assets: { js: ["dashboard-rsc.js"], css: [] },
+      },
+    },
+  };
+  if (!manifest.server) {
+    throw new Error("Expected server manifest");
+  }
+  const renderers = manifest.server.renderers;
+  if (!renderers) {
+    throw new Error("Expected server renderers manifest");
+  }
+  renderers["dashboard-rsc"] = {
+    kind: "rsc-page",
+    owner: { pageId: "dashboard" },
+    module: "./src/pages/Dashboard.tsx",
+    assets: { js: ["dashboard-rsc.js"], css: [] },
+  };
+}

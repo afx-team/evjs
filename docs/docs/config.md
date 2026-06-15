@@ -345,6 +345,13 @@ function, and class metadata exports are invalid, while type-only exports and
 ambient `declare` declarations are ignored. Export each region metadata name
 only once; duplicate `cache` or `hydrate` exports are graph-analysis errors.
 
+When the framework composes a PPR page response, it derives a default
+`Cache-Control` from the declared region cache policies. If any region is
+`"no-store"` or omits `cache`, the page response defaults to `no-store`. If all
+regions declare `{ revalidate }`, the page response defaults to the smallest
+region `s-maxage`. A `Cache-Control` header returned by the shell renderer is
+preserved.
+
 `prerender.delivery` controls the initial document response. `"merge"` is the
 default non-streaming mode: the framework server renders the shell and regions,
 then returns one complete HTML response. `"stream"` sends the shell first and

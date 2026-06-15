@@ -107,6 +107,9 @@ Browser
 `prerender.delivery = "merge"` 声明等待必要 regions 后再返回 document；通过
 `prerender.delivery = "stream"` 声明先 flush 缓存 shell，并在内部 region 请求完成后把
 patches 继续写入同一个 HTML response。
+合成后的 PPR page response 会根据 region 策略得到保守的默认 `Cache-Control`：
+任意 region 动态时使用 `no-store`；所有 regions 都声明 `{ revalidate }` 时使用最小的
+region `s-maxage`。shell 显式返回的 `Cache-Control` 会被保留。
 PPR direct `HEAD` 请求可以返回 cache headers，但不会写入 region body cache；
 部署侧需要预热 PPR region 时应使用 `GET`。
 

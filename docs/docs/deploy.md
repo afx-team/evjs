@@ -113,6 +113,10 @@ PPR base path: `<pageId>/<regionId>`. Source modules declare
 document, or
 `prerender.delivery = "stream"` to flush the cached shell first and append
 region patches to the same HTML response as internal region requests complete.
+Composed PPR page responses receive a conservative default `Cache-Control` from
+their region policies: `no-store` when any region is dynamic, or the smallest
+region `s-maxage` when every region declares `{ revalidate }`. Explicit shell
+`Cache-Control` headers are preserved.
 Direct PPR `HEAD` requests can report cache headers but do not seed the region
 body cache; use `GET` when a deployment intentionally warms PPR regions.
 

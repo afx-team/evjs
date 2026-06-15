@@ -326,6 +326,11 @@ function export 和 class export 都是无效的；type-only export 和 ambient
 `declare` 声明会被忽略。每个 region metadata 名称只能导出一次；重复的 `cache`
 或 `hydrate` 导出是 graph-analysis 错误。
 
+框架合成 PPR page response 时，会根据 region cache 策略派生默认
+`Cache-Control`。只要任意 region 是 `"no-store"` 或省略 `cache`，page response
+默认使用 `no-store`；如果所有 regions 都声明 `{ revalidate }`，page response 默认使用
+最小 region `s-maxage`。如果 shell renderer 自己返回了 `Cache-Control`，框架会保留它。
+
 `prerender.delivery` 控制初始 document response。`"merge"` 是默认非流式模式：
 框架服务端先渲染 shell 和 regions，再返回完整 HTML。`"stream"` 会先发送 shell，
 再在同一个 HTML response 中把已完成的 regions patch 到页面里。两种模式的首屏

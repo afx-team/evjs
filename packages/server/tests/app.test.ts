@@ -1684,13 +1684,20 @@ describe("createApp", () => {
     });
 
     const res = await app.request("/dashboard");
+    const head = await app.request("/dashboard", { method: "HEAD" });
 
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("application/text/html");
+    expect(res.headers.get("Cache-Control")).toBeNull();
     expect(res.headers.get("x-evjs-ppr")).toBeNull();
     expect(await res.text()).toBe(
       '<main><div data-evjs-ppr-region="hero">fallback</div></main>',
     );
+    expect(head.status).toBe(200);
+    expect(head.headers.get("Content-Type")).toBe("application/text/html");
+    expect(head.headers.get("Cache-Control")).toBeNull();
+    expect(head.headers.get("x-evjs-ppr")).toBeNull();
+    expect(await head.text()).toBe("");
     expect(regionRenderCount).toBe(0);
   });
 
@@ -1808,6 +1815,242 @@ describe("createApp", () => {
     expect(html).toContain('data-evjs-ppr-stream-region="hero"');
     expect(html).toContain("dashboard:hero");
     expect(html).toContain("</body></html>");
+  });
+
+  it("derives merged PPR page cache headers from region revalidate policies", async () => {
+    const manifest = createManifest();
+    manifest.pages.dashboard.prerender = { partial: true, delivery: "merge" };
+    manifest.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        hero: {
+          id: "hero",
+          assets: { js: ["dashboard-hero-ppr-region.js"], css: [] },
+          component: "./src/pages/Hero.region.tsx",
+          cache: { revalidate: 60 },
+        },
+        inventory: {
+          id: "inventory",
+          assets: { js: ["dashboard-inventory-ppr-region.js"], css: [] },
+          component: "./src/pages/Inventory.region.tsx",
+          cache: { revalidate: 15 },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    const app = createApp({
+      framework: {
+        manifest,
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-ppr-shell": {
+              kind: "ppr-shell",
+              owner: { pageId: "dashboard" },
+              load: async () => ({
+                default() {
+                  return [
+                    "<main>",
+                    '<div data-evjs-ppr-region="hero">hero fallback</div>',
+                    '<div data-evjs-ppr-region="inventory">inventory fallback</div>',
+                    "</main>",
+                  ].join("");
+                },
+              }),
+            },
+            "dashboard-hero-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "hero" },
+              load: async () => ({
+                default: () => "<p>hero</p>",
+              }),
+            },
+            "dashboard-inventory-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "inventory" },
+              load: async () => ({
+                default: () => "<p>inventory</p>",
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const res = await app.request("/dashboard");
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("s-maxage=15");
+    expect(res.headers.get("x-evjs-ppr")).toBe("merged");
+    expect(await res.text()).toBe("<main><p>hero</p><p>inventory</p></main>");
+  });
+
+  it("sets no-store cache headers on PPR pages with dynamic regions", async () => {
+    const manifest = createManifest();
+    manifest.pages.dashboard.prerender = { partial: true, delivery: "merge" };
+    manifest.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        hero: {
+          id: "hero",
+          assets: { js: ["dashboard-hero-ppr-region.js"], css: [] },
+          component: "./src/pages/Hero.region.tsx",
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    let regionRenderCount = 0;
+    const app = createApp({
+      framework: {
+        manifest,
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-ppr-shell": {
+              kind: "ppr-shell",
+              owner: { pageId: "dashboard" },
+              load: async () => ({
+                default() {
+                  return '<main><div data-evjs-ppr-region="hero">fallback</div></main>';
+                },
+              }),
+            },
+            "dashboard-hero-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "hero" },
+              load: async () => ({
+                default: () => `<p>${++regionRenderCount}</p>`,
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const page = await app.request("/dashboard");
+    const head = await app.request("/dashboard", { method: "HEAD" });
+
+    expect(page.status).toBe(200);
+    expect(page.headers.get("Cache-Control")).toBe("no-store");
+    expect(page.headers.get("x-evjs-ppr")).toBe("merged");
+    expect(await page.text()).toBe("<main><p>1</p></main>");
+    expect(head.status).toBe(200);
+    expect(head.headers.get("Cache-Control")).toBe("no-store");
+    expect(await head.text()).toBe("");
+    expect(regionRenderCount).toBe(1);
+  });
+
+  it("preserves explicit PPR shell cache headers", async () => {
+    const manifest = createManifest();
+    manifest.pages.dashboard.prerender = { partial: true, delivery: "merge" };
+    manifest.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        hero: {
+          id: "hero",
+          assets: { js: ["dashboard-hero-ppr-region.js"], css: [] },
+          component: "./src/pages/Hero.region.tsx",
+          cache: { revalidate: 60 },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    const app = createApp({
+      framework: {
+        manifest,
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-ppr-shell": {
+              kind: "ppr-shell",
+              owner: { pageId: "dashboard" },
+              load: async () => ({
+                default() {
+                  return new Response(
+                    '<main><div data-evjs-ppr-region="hero">fallback</div></main>',
+                    {
+                      headers: {
+                        "Cache-Control": "private, max-age=5",
+                        "Content-Type": "text/html; charset=utf-8",
+                      },
+                    },
+                  );
+                },
+              }),
+            },
+            "dashboard-hero-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "hero" },
+              load: async () => ({
+                default: () => "<p>hero</p>",
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const res = await app.request("/dashboard");
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("private, max-age=5");
+    expect(await res.text()).toBe("<main><p>hero</p></main>");
+  });
+
+  it("derives streamed PPR page cache headers from region revalidate policies", async () => {
+    const manifest = createManifest();
+    manifest.pages.dashboard.prerender = { partial: true, delivery: "stream" };
+    manifest.pages.dashboard.ppr = {
+      delivery: "stream",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        hero: {
+          id: "hero",
+          assets: { js: ["dashboard-hero-ppr-region.js"], css: [] },
+          component: "./src/pages/Hero.region.tsx",
+          cache: { revalidate: 30 },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    const app = createApp({
+      framework: {
+        manifest,
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-ppr-shell": {
+              kind: "ppr-shell",
+              owner: { pageId: "dashboard" },
+              load: async () => ({
+                default() {
+                  return [
+                    "<!doctype html><html><body><main>",
+                    '<div data-evjs-ppr-region="hero">fallback</div>',
+                    "</main></body></html>",
+                  ].join("");
+                },
+              }),
+            },
+            "dashboard-hero-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "hero" },
+              load: async () => ({
+                default: () => "hero patch",
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const res = await app.request("/dashboard");
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("s-maxage=30");
+    expect(res.headers.get("x-evjs-ppr")).toBe("stream");
+    const html = await res.text();
+    expect(html).toContain('data-evjs-ppr-stream-region="hero"');
+    expect(html).toContain("hero patch");
   });
 
   it("normalizes PPR region document responses into fragments", async () => {

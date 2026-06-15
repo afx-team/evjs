@@ -480,13 +480,26 @@ async function renderPprPageResponse(
   response: Response,
   coordinator: ServerRenderCoordinator,
 ): Promise<Response> {
-  if (request.method === "HEAD") return withoutResponseBody(response);
   const pageId = ctx.pageId;
   const page = pageId ? options.manifest.pages[pageId] : undefined;
-  if (!pageId || !page?.ppr) return response;
+  if (!pageId || !page?.ppr) {
+    return request.method === "HEAD" ? withoutResponseBody(response) : response;
+  }
 
   const contentType = response.headers.get("Content-Type") ?? "";
-  if (!isTextHtmlContentType(contentType)) return response;
+  if (!isTextHtmlContentType(contentType)) {
+    return request.method === "HEAD" ? withoutResponseBody(response) : response;
+  }
+
+  if (request.method === "HEAD") {
+    const headers = new Headers(response.headers);
+    applyDefaultPprPageCacheHeaders(headers, page);
+    return new Response(null, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
 
   return page.ppr.delivery === "stream"
     ? renderPprStreamingPageResponse(
@@ -540,6 +553,7 @@ async function renderPprMergedPageResponse(
 
   const headers = new Headers(response.headers);
   headers.set("Content-Type", TEXT_HTML_UTF8_CONTENT_TYPE);
+  applyDefaultPprPageCacheHeaders(headers, page);
   if (!changed) {
     return new Response(html, {
       status: response.status,
@@ -570,6 +584,7 @@ async function renderPprStreamingPageResponse(
   const { head, tail } = splitHtmlForPprStream(html);
   const headers = new Headers(response.headers);
   headers.set("Content-Type", TEXT_HTML_UTF8_CONTENT_TYPE);
+  applyDefaultPprPageCacheHeaders(headers, page);
   headers.set("x-evjs-ppr", "stream");
 
   const encoder = new TextEncoder();
@@ -1308,6 +1323,34 @@ function getPprRegionRevalidate(policy: PprCachePolicy): number | undefined {
     return undefined;
   }
   return policy.revalidate;
+}
+
+function applyDefaultPprPageCacheHeaders(
+  headers: Headers,
+  page: PageOutput,
+): void {
+  if (headers.has("Cache-Control")) return;
+
+  const cacheControl = getPprPageCacheControl(page);
+  if (cacheControl) {
+    headers.set("Cache-Control", cacheControl);
+  }
+}
+
+function getPprPageCacheControl(page: PageOutput): string | undefined {
+  if (!page.ppr) return undefined;
+
+  const regions = Object.values(page.ppr.regions);
+  if (regions.length === 0) return "no-store";
+
+  let minRevalidate = Number.POSITIVE_INFINITY;
+  for (const region of regions) {
+    const revalidate = getPprRegionRevalidate(region.cache ?? "no-store");
+    if (revalidate === undefined) return "no-store";
+    minRevalidate = Math.min(minRevalidate, revalidate);
+  }
+
+  return `s-maxage=${minRevalidate}`;
 }
 
 function isPatchablePprRegionResponse(
