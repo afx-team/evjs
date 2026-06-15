@@ -17,7 +17,10 @@ const test = base.extend<{ baseURL: string }, { _app: { port: number } }>({
       // Expects the example to be pre-built (npm run build)
 
       // Serve the client bundle
-      const distDir = path.join(exampleDir, "dist", "client");
+      const distRoot = path.join(exampleDir, "dist");
+      const distDir = fs.existsSync(path.join(distRoot, "client", "index.html"))
+        ? path.join(distRoot, "client")
+        : distRoot;
       const indexHtml = fs.readFileSync(
         path.join(distDir, "index.html"),
         "utf-8",
@@ -81,15 +84,15 @@ test.describe("with-tailwind", () => {
   });
 
   test("manifest contains routes and assets", async () => {
-    const manifestPath = path.join(
-      exampleDir,
-      "dist",
-      "client",
-      "manifest.json",
-    );
+    const manifestPath = path.join(exampleDir, "dist", "manifest.json");
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
 
-    expect(manifest.assets.js.length).toBeGreaterThan(0);
-    expect(manifest.routes).toEqual([{ path: "/" }]);
+    expect(manifest.assets.main.js.length).toBeGreaterThan(0);
+    expect(manifest.routes).toEqual([
+      expect.objectContaining({
+        id: expect.any(String),
+        path: "/",
+      }),
+    ]);
   });
 });

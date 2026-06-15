@@ -12,7 +12,7 @@ npm run dev
 
 | File | Purpose |
 |------|---------| 
-| `src/server.ts` | Mounts route handlers via `createApp({ routeHandlers })` |
+| `src/server.ts` | Mounts routes via `createApp({ routes })` |
 | `src/api/posts.routes.ts` | CRUD route handlers for `/api/posts` |
 | `src/api/health.routes.ts` | Health check endpoint |
 
@@ -23,7 +23,7 @@ npm run dev
 - Query string parsing (`?limit=N`)
 - Custom status codes (201, 204, 404)
 - Auto `OPTIONS` and `405 Method Not Allowed`
-- Mounting handlers via `createApp({ routeHandlers: [...] })`
+- Mounting route handlers via `createApp({ routes: [...] })`
 
 ## Try It
 

@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "description": "Shared types and utilities for the evjs framework",
   "type": "module",
+  "types": "./esm/index.d.ts",
   "publishConfig": {
     "access": "public"
   },
@@ -11,6 +12,11 @@
       "types": "./esm/index.d.ts",
       "import": "./esm/index.js",
       "default": "./esm/index.js"
+    },
+    "./manifest": {
+      "types": "./esm/manifest/index.d.ts",
+      "import": "./esm/manifest/index.js",
+      "default": "./esm/manifest/index.js"
     }
   },
   "scripts": {

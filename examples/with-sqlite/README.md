@@ -12,7 +12,8 @@ npm run dev
 
 | File | Purpose |
 |------|---------|
-| `src/routes.tsx` | Users list + todo management UI |
+| `src/layout/index.tsx` | SPA root layout |
+| `src/pages/index.tsx` | Users list + todo management UI |
 | `src/api/db.server.ts` | SQLite database setup |
 | `src/api/users.server.ts` | User CRUD (create, delete, getUsers, getUser) |
 | `src/api/todos.server.ts` | Todo CRUD (create, toggle, delete) |

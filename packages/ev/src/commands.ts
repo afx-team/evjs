@@ -1,46 +1,142 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { ClientManifest, ServerManifest } from "@evjs/manifest";
+import type {
+  AppGraph,
+  BuildOutput,
+  BuildPlan,
+  BuildPlanUpdate,
+} from "@evjs/shared/manifest";
+import {
+  createPublicManifest,
+  linkBuildOutput,
+  linkRemoteManifest,
+} from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import { execa } from "execa";
-import type { BundlerAdapter } from "./bundler.js";
+import { validateHtmlTemplate } from "./build-tools/html.js";
+import {
+  type CreateBuildPlanOptions,
+  createAppGraph,
+  createBuildPlan,
+  diffBuildPlan,
+  discoverPageRoutes,
+  generateHtml,
+} from "./build-tools/index.js";
+import {
+  PAGE_ROUTE_CONVENTION_DOCS_URL,
+  PAGE_ROUTE_CONVENTION_SUMMARY,
+} from "./build-tools/page-route-conventions.js";
+import {
+  collectGeneratedPageRouteTypeFiles,
+  generatePageRouteTypes,
+  getPageRouteTypesPath,
+  writePageRouteTypesIfChanged,
+} from "./build-tools/page-route-types.js";
+import type {
+  BundlerAdapter,
+  BundlerBuildFacts,
+  BundlerDevController,
+} from "./bundler.js";
 import {
   CONFIG_DEFAULTS,
-  type EvConfig,
-  type ResolvedEvConfig,
+  type Config,
+  type DefaultBundlerConfig,
+  type ResolvedConfig,
+  resolveBundlerConfig,
   resolveConfig,
+  resolvePluginsConfig,
 } from "./config.js";
+import { buildHtml } from "./html.js";
 import type {
-  EvBuildResult,
-  EvPlugin,
-  EvPluginConfigContext,
-  EvPluginContext,
-  EvPluginHooks,
+  BuildResult,
+  HtmlDocumentInfo,
+  Plugin,
+  PluginConfigContext,
+  PluginContext,
+  PluginHooks,
 } from "./plugin.js";
 
 const logger = getLogger(["evjs", "ev"]);
 
 type ApiProcess = ReturnType<typeof execa>;
 const API_READY_MARKER = "__EVJS_API_READY__";
+const DEV_PAGE_RENDER_PROXY_HEADER = "x-evjs-dev-page-render";
+const DEV_DIST_DIR = "dist";
+const DEV_DIST_LOCK_FILE = ".evjs-dev.lock";
+const INTERNAL_BUILD_OUTPUT_FILE = "build-output.json";
+const PLUGIN_HOOK_NAMES = [
+  "commandStart",
+  "buildStart",
+  "appGraph",
+  "buildPlan",
+  "buildOutput",
+  "bundlerConfig",
+  "buildEnd",
+  "devPlanUpdate",
+  "dispose",
+  "transformHtml",
+] as const satisfies readonly (keyof PluginHooks)[];
+const PLUGIN_HOOK_NAME_SET: ReadonlySet<string> = new Set(PLUGIN_HOOK_NAMES);
+const PAGE_ROUTE_CONVENTION_DOCS_HINT = `${PAGE_ROUTE_CONVENTION_SUMMARY}. See ${PAGE_ROUTE_CONVENTION_DOCS_URL} for the page route file convention.`;
 
-export interface DevOptions<TBundlerCfg = import("@utoo/pack").ConfigComplete> {
+interface DevDistLock {
+  command: "dev";
+  distDir: string;
+  pid: number;
+  startedAt: string;
+}
+
+export interface DevOptions<TBundlerCfg = DefaultBundlerConfig> {
+  cwd?: string;
+  bundler?: BundlerAdapter<TBundlerCfg>;
+  loadConfig?: (
+    cwd: string,
+  ) =>
+    | Config<TBundlerCfg>
+    | undefined
+    | Promise<Config<TBundlerCfg> | undefined>;
+}
+
+export interface BuildOptions<TBundlerCfg = DefaultBundlerConfig> {
   cwd?: string;
   bundler?: BundlerAdapter<TBundlerCfg>;
 }
 
-export interface BuildOptions<
-  TBundlerCfg = import("@utoo/pack").ConfigComplete,
+export interface PrepareFrameworkBuildOptions<
+  TBundlerCfg = DefaultBundlerConfig,
 > {
   cwd?: string;
+  mode?: "development" | "production";
+  command?: "dev" | "build";
   bundler?: BundlerAdapter<TBundlerCfg>;
+  requireBundler?: boolean;
+  runLifecycleHooks?: boolean;
+  plan?: CreateBuildPlanOptions;
+}
+
+export interface PreparedFrameworkBuild<TBundlerCfg = DefaultBundlerConfig> {
+  cwd: string;
+  mode: "development" | "production";
+  command: "dev" | "build";
+  config: ResolvedConfig<TBundlerCfg>;
+  graph: AppGraph;
+  plan: BuildPlan;
+  hooks: PluginHooks<TBundlerCfg>[];
+  pluginContext: PluginContext<TBundlerCfg>;
+  fileDependencies: string[];
+  pluginWatchFiles: string[];
+  dispose(): Promise<void>;
 }
 
 function resolveBundler<TBundlerCfg>(
   configBundler: BundlerAdapter<TBundlerCfg> | undefined,
   optionBundler: BundlerAdapter<TBundlerCfg> | undefined,
 ): BundlerAdapter<TBundlerCfg> {
-  const bundler = optionBundler ?? configBundler;
+  const bundler =
+    optionBundler === undefined
+      ? configBundler
+      : resolveBundlerConfig<TBundlerCfg>(optionBundler, "options.bundler");
   if (!bundler) {
     throw new Error(
       "[evjs] No bundler configured. Pass a bundler adapter in ev.config.ts or through dev/build options.",
@@ -50,9 +146,9 @@ function resolveBundler<TBundlerCfg>(
 }
 
 function withActiveBundler<TBundlerCfg>(
-  config: ResolvedEvConfig<TBundlerCfg>,
+  config: ResolvedConfig<TBundlerCfg>,
   bundler: BundlerAdapter<TBundlerCfg>,
-): ResolvedEvConfig<TBundlerCfg> {
+): ResolvedConfig<TBundlerCfg> {
   if (config.bundler === bundler) {
     return config;
   }
@@ -63,10 +159,165 @@ function withActiveBundler<TBundlerCfg>(
   };
 }
 
+async function withPageRoutingDefaults<TBundlerCfg>(
+  config: ResolvedConfig<TBundlerCfg>,
+  userConfig: Config<TBundlerCfg> | undefined,
+  cwd: string,
+): Promise<ResolvedConfig<TBundlerCfg>> {
+  const routingOption = readRoutingConfig(userConfig);
+  if (routingOption === false) {
+    await removeAllPageRouteTypes(cwd);
+    return { ...config, routing: undefined };
+  }
+
+  const requested = routingOption !== undefined;
+  if ((config.pages || config.app || config.remote) && requested) {
+    throw new Error(
+      "[evjs] routing cannot be combined with app, pages, or remote configuration.",
+    );
+  }
+  if (config.pages || config.app || config.remote) {
+    await removeAllPageRouteTypes(cwd);
+    return config;
+  }
+
+  const base = config.routing ?? {
+    mode: CONFIG_DEFAULTS.routingMode,
+    dir: CONFIG_DEFAULTS.routingDir,
+    html: config.html,
+    mount: CONFIG_DEFAULTS.mount,
+    routes: [],
+  };
+  const discovery = await discoverPageRoutes(cwd, {
+    dir: base.dir,
+    rootLayout: base.mode === "spa" ? (base.layout ?? true) : false,
+    required: requested,
+  });
+  reportPageRouteDiagnostics(discovery.diagnostics);
+
+  if (discovery.routes.length === 0) {
+    if (!requested) {
+      await removeAllPageRouteTypes(cwd);
+      return config;
+    }
+    throw new Error(
+      `[evjs] No page routes found in ${base.dir}. Add a default-exporting route module such as ${base.dir.replace(/\/+$/, "")}/index.tsx or set routing: false. ${PAGE_ROUTE_CONVENTION_DOCS_HINT}`,
+    );
+  }
+
+  await syncPageRouteTypes(cwd, base.dir, base.mode, discovery.routes);
+
+  const entry =
+    base.mode === "spa" ? createPagesEntryImport(discovery.routes) : undefined;
+
+  return {
+    ...config,
+    ...(entry ? { entry } : {}),
+    html: base.html,
+    routing: {
+      ...base,
+      ...(entry ? { entry } : {}),
+      routes: discovery.routes,
+      ...(base.mode === "spa" && discovery.rootModule
+        ? { rootModule: discovery.rootModule }
+        : {}),
+    },
+  };
+}
+
+function readRoutingConfig<TBundlerCfg>(
+  config: Config<TBundlerCfg> | undefined,
+): Config<TBundlerCfg>["routing"] {
+  return config?.routing;
+}
+
+function createPagesEntryImport(
+  routes: NonNullable<ResolvedConfig["routing"]>["routes"],
+): string {
+  const entry = routes[0]?.module;
+  if (!entry) {
+    throw new Error("[evjs] Page routes need at least one page module.");
+  }
+  return entry;
+}
+
+async function syncPageRouteTypes(
+  cwd: string,
+  routingDir: string,
+  mode: NonNullable<ResolvedConfig["routing"]>["mode"],
+  routes: NonNullable<ResolvedConfig["routing"]>["routes"],
+): Promise<void> {
+  const { dir, file, importBaseDir } = getPageRouteTypesPath(cwd, routingDir);
+
+  if (mode !== "spa") {
+    await removeAllPageRouteTypes(cwd);
+    return;
+  }
+
+  const source = generatePageRouteTypes({
+    routes,
+    importBaseDir,
+  });
+
+  await fs.promises.mkdir(dir, { recursive: true });
+  await writePageRouteTypesIfChanged(file, source);
+  await removeStalePageRouteTypes(cwd, file);
+}
+
+async function removeStalePageRouteTypes(
+  cwd: string,
+  activeFile: string,
+): Promise<void> {
+  const active = path.resolve(activeFile);
+  const staleFiles = await collectGeneratedPageRouteTypeFiles(cwd);
+  await Promise.all(
+    staleFiles
+      .filter((file) => path.resolve(file) !== active)
+      .map((file) => fs.promises.rm(file, { force: true })),
+  );
+}
+
+async function removeAllPageRouteTypes(cwd: string): Promise<void> {
+  await Promise.all(
+    (await collectGeneratedPageRouteTypeFiles(cwd)).map((file) =>
+      fs.promises.rm(file, { force: true }),
+    ),
+  );
+}
+
+function reportPageRouteDiagnostics(
+  diagnostics: Array<{
+    level: "warning" | "error";
+    message: string;
+    file?: string;
+  }>,
+): void {
+  const errors: string[] = [];
+  for (const diagnostic of diagnostics) {
+    const message = diagnostic.file
+      ? `${diagnostic.file} - ${diagnostic.message}`
+      : diagnostic.message;
+    if (diagnostic.level === "error") {
+      errors.push(message);
+    } else {
+      logger.warn`${message}`;
+    }
+  }
+  if (errors.length > 0) {
+    throw new Error(
+      [
+        "[evjs] Page route discovery failed.",
+        ...errors,
+        PAGE_ROUTE_CONVENTION_DOCS_HINT,
+      ].join("\n"),
+    );
+  }
+}
+
 function orderPluginsByDependencies<TBundlerCfg>(
-  plugins: EvPlugin<TBundlerCfg>[],
-): EvPlugin<TBundlerCfg>[] {
-  const pluginByName = new Map<string, EvPlugin<TBundlerCfg>>();
+  plugins: Plugin<TBundlerCfg>[],
+): Plugin<TBundlerCfg>[] {
+  const pluginByName = new Map<string, Plugin<TBundlerCfg>>();
   const dependentsByName = new Map<string, string[]>();
   const dependencyCountByName = new Map<string, number>();
 
@@ -83,7 +334,7 @@ function orderPluginsByDependencies<TBundlerCfg>(
   }
 
   const addDependency = (
-    plugin: EvPlugin<TBundlerCfg>,
+    plugin: Plugin<TBundlerCfg>,
     dependencyName: string,
     options: { optional: boolean },
   ) => {
@@ -109,13 +360,14 @@ function orderPluginsByDependencies<TBundlerCfg>(
     }
   }
 
-  const ready = plugins.filter(
-    (plugin) => dependencyCountByName.get(plugin.name) === 0,
-  );
-  const ordered: EvPlugin<TBundlerCfg>[] = [];
+  const ready = plugins
+    .filter((plugin) => dependencyCountByName.get(plugin.name) === 0)
+    .sort(comparePluginEnforce);
+  const ordered: Plugin<TBundlerCfg>[] = [];
 
-  for (let index = 0; index < ready.length; index++) {
-    const plugin = ready[index];
+  while (ready.length > 0) {
+    const plugin = ready.shift();
+    if (!plugin) break;
     ordered.push(plugin);
 
     for (const dependentName of dependentsByName.get(plugin.name) ?? []) {
@@ -126,6 +378,7 @@ function orderPluginsByDependencies<TBundlerCfg>(
         const dependent = pluginByName.get(dependentName);
         if (dependent) {
           ready.push(dependent);
+          ready.sort(comparePluginEnforce);
         }
       }
     }
@@ -176,14 +429,30 @@ function orderPluginsByDependencies<TBundlerCfg>(
   return ordered;
 }
 
+function comparePluginEnforce<TBundlerCfg>(
+  a: Plugin<TBundlerCfg>,
+  b: Plugin<TBundlerCfg>,
+): number {
+  return pluginEnforceRank(a) - pluginEnforceRank(b);
+}
+
+function pluginEnforceRank<TBundlerCfg>(plugin: Plugin<TBundlerCfg>): number {
+  if (plugin.enforce === "pre") return 0;
+  if (plugin.enforce === "post") return 2;
+  return 1;
+}
+
 async function collectPluginHooks<TBundlerCfg>(
-  plugins: EvPlugin<TBundlerCfg>[],
-  ctx: EvPluginContext<TBundlerCfg>,
-): Promise<EvPluginHooks<TBundlerCfg>[]> {
-  const allHooks: EvPluginHooks<TBundlerCfg>[] = [];
+  plugins: Plugin<TBundlerCfg>[],
+  ctx: PluginContext<TBundlerCfg>,
+): Promise<PluginHooks<TBundlerCfg>[]> {
+  const allHooks: PluginHooks<TBundlerCfg>[] = [];
   for (const plugin of plugins) {
     if (plugin.setup) {
-      const hooks = await plugin.setup(ctx);
+      const hooks = resolvePluginSetupHooks<TBundlerCfg>(
+        plugin.name,
+        await plugin.setup(ctx),
+      );
       if (hooks) {
         allHooks.push(hooks);
       }
@@ -192,38 +461,252 @@ async function collectPluginHooks<TBundlerCfg>(
   return allHooks;
 }
 
+function resolvePluginSetupHooks<TBundlerCfg>(
+  pluginName: string,
+  hooks: unknown,
+): PluginHooks<TBundlerCfg> | undefined {
+  if (hooks === undefined) return undefined;
+  if (!hooks || typeof hooks !== "object" || Array.isArray(hooks)) {
+    throw new Error(
+      `[evjs] Plugin "${pluginName}" setup hook must return a plugin hooks object or undefined.`,
+    );
+  }
+
+  const hookConfig = hooks as Record<string, unknown>;
+  const unknownHookName = Object.keys(hookConfig).find(
+    (hookName) => !PLUGIN_HOOK_NAME_SET.has(hookName),
+  );
+  if (unknownHookName) {
+    throw new Error(
+      `[evjs] Plugin "${pluginName}" setup hook returned unknown hook "${unknownHookName}". Supported hooks: ${PLUGIN_HOOK_NAMES.join(", ")}.`,
+    );
+  }
+
+  for (const hookName of PLUGIN_HOOK_NAMES) {
+    if (
+      hookConfig[hookName] !== undefined &&
+      typeof hookConfig[hookName] !== "function"
+    ) {
+      throw new Error(
+        `[evjs] Plugin "${pluginName}" setup hook returned ${hookName} must be a function.`,
+      );
+    }
+  }
+  return hookConfig as PluginHooks<TBundlerCfg>;
+}
+
 async function runConfigHooks<TBundlerCfg>(
-  userConfig: EvConfig<TBundlerCfg> | undefined,
-  ctx: EvPluginConfigContext,
-): Promise<EvConfig<TBundlerCfg> | undefined> {
+  userConfig: Config<TBundlerCfg> | undefined,
+  ctx: PluginConfigContext,
+): Promise<Config<TBundlerCfg> | undefined> {
   let config = userConfig;
-  const plugins = orderPluginsByDependencies(userConfig?.plugins ?? []);
+  const plugins = orderPluginsByDependencies(
+    resolvePluginsConfig<TBundlerCfg>(userConfig?.plugins),
+  );
 
   for (const plugin of plugins) {
     if (!plugin.config) continue;
 
     const nextConfig = await plugin.config(config ?? {}, ctx);
-    if (nextConfig) {
-      config = nextConfig;
+    if (nextConfig !== undefined) {
+      config = resolvePluginConfigHookResult<TBundlerCfg>(
+        plugin.name,
+        nextConfig,
+      );
     }
   }
 
   return config;
 }
 
+function resolvePluginConfigHookResult<TBundlerCfg>(
+  pluginName: string,
+  config: unknown,
+): Config<TBundlerCfg> {
+  if (config && typeof config === "object" && !Array.isArray(config)) {
+    return config as Config<TBundlerCfg>;
+  }
+  throw new Error(
+    `[evjs] Plugin "${pluginName}" config hook must return a config object or undefined.`,
+  );
+}
+
 async function runBuildStartHooks<TBundlerCfg>(
-  hooks: EvPluginHooks<TBundlerCfg>[],
+  hooks: PluginHooks<TBundlerCfg>[],
+  ctx: PluginContext<TBundlerCfg>,
 ): Promise<void> {
   for (const h of hooks) {
     if (h.buildStart) {
-      await h.buildStart();
+      await h.buildStart(ctx);
     }
   }
 }
 
+async function runCommandStartHooks<TBundlerCfg>(
+  hooks: PluginHooks<TBundlerCfg>[],
+  ctx: PluginContext<TBundlerCfg>,
+): Promise<void> {
+  for (const h of hooks) {
+    if (h.commandStart) {
+      await h.commandStart(ctx);
+    }
+  }
+}
+
+async function runAppGraphHooks<TBundlerCfg>(
+  hooks: PluginHooks<TBundlerCfg>[],
+  graph: AppGraph,
+  ctx: PluginContext<TBundlerCfg>,
+): Promise<void> {
+  for (const h of hooks) {
+    if (h.appGraph) {
+      await h.appGraph(graph, ctx);
+    }
+  }
+}
+
+async function runBuildPlanHooks<TBundlerCfg>(
+  hooks: PluginHooks<TBundlerCfg>[],
+  plan: BuildPlan,
+  graph: AppGraph,
+  ctx: PluginContext<TBundlerCfg>,
+): Promise<void> {
+  for (const h of hooks) {
+    if (h.buildPlan) {
+      await h.buildPlan(plan, { ...ctx, graph });
+    }
+  }
+}
+
+async function runDevPlanUpdateHooks<TBundlerCfg>(
+  hooks: PluginHooks<TBundlerCfg>[],
+  update: BuildPlanUpdate,
+  graph: AppGraph,
+  ctx: PluginContext<TBundlerCfg>,
+): Promise<void> {
+  for (const h of hooks) {
+    if (h.devPlanUpdate) {
+      await h.devPlanUpdate(update, { ...ctx, graph });
+    }
+  }
+}
+
+async function runBuildOutputHooks<TBundlerCfg>(
+  hooks: PluginHooks<TBundlerCfg>[],
+  output: BuildOutput,
+  ctx: PluginContext<TBundlerCfg> & { graph: AppGraph; plan: BuildPlan },
+): Promise<void> {
+  for (const h of hooks) {
+    if (h.buildOutput) {
+      await h.buildOutput(output, ctx);
+    }
+  }
+}
+
+function isEmptyPlanUpdate(update: BuildPlanUpdate): boolean {
+  return (
+    update.entries.added.length === 0 &&
+    update.entries.removed.length === 0 &&
+    update.entries.changed.length === 0 &&
+    update.html.added.length === 0 &&
+    update.html.removed.length === 0 &&
+    update.html.changed.length === 0 &&
+    !update.serverChanged
+  );
+}
+
+function reportGraphDiagnostics(analysis: {
+  diagnostics: Array<{
+    level: "warning" | "error";
+    message: string;
+    file?: string;
+    line?: number;
+    column?: number;
+  }>;
+}): void {
+  const errors: string[] = [];
+
+  for (const diagnostic of analysis.diagnostics) {
+    const message = formatGraphDiagnostic(diagnostic);
+    if (diagnostic.level === "error") {
+      errors.push(message);
+    } else {
+      logger.warn`${message}`;
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new Error(
+      ["[evjs] App graph analysis failed.", ...errors].join("\n"),
+    );
+  }
+}
+
+function formatGraphDiagnostic(diagnostic: {
+  message: string;
+  file?: string;
+  line?: number;
+  column?: number;
+}): string {
+  const location = [
+    diagnostic.file,
+    diagnostic.line === undefined
+      ? undefined
+      : diagnostic.column === undefined
+        ? String(diagnostic.line)
+        : `${diagnostic.line}:${diagnostic.column}`,
+  ]
+    .filter(Boolean)
+    .join(":");
+
+  return location ? `${location} - ${diagnostic.message}` : diagnostic.message;
+}
+
+function hasSamePluginIdentity<TBundlerCfg>(
+  previous: Plugin<TBundlerCfg>[],
+  next: Plugin<TBundlerCfg>[],
+): boolean {
+  return (
+    previous.length === next.length &&
+    previous.every((plugin, index) => plugin.name === next[index]?.name)
+  );
+}
+
+function listConfigDependencyFiles(cwd: string): string[] {
+  return ["ev.config.ts", "ev.config.js", "ev.config.mjs"]
+    .map((file) => path.resolve(cwd, file))
+    .filter((file) => fs.existsSync(file));
+}
+
+function watchFiles(
+  files: string[],
+  onChange: (file: string) => void,
+): () => void {
+  const watchers: fs.FSWatcher[] = [];
+
+  for (const file of [...new Set(files)]) {
+    try {
+      watchers.push(
+        fs.watch(file, () => {
+          onChange(file);
+        }),
+      );
+    } catch {
+      // The file may have been removed between graph analysis and watcher
+      // setup. The next config or graph change will rebuild the watch list.
+    }
+  }
+
+  return () => {
+    for (const watcher of watchers) {
+      watcher.close();
+    }
+  };
+}
+
 async function runBuildEndHooks<TBundlerCfg>(
-  hooks: EvPluginHooks<TBundlerCfg>[],
-  result: EvBuildResult,
+  hooks: PluginHooks<TBundlerCfg>[],
+  result: BuildResult,
 ): Promise<void> {
   for (const h of hooks) {
     if (h.buildEnd) {
@@ -232,77 +715,469 @@ async function runBuildEndHooks<TBundlerCfg>(
   }
 }
 
-function validateHtmlTemplates<TBundlerCfg>(
-  cwd: string,
-  config: ResolvedEvConfig<TBundlerCfg>,
-): void {
-  if (config.pages) {
-    for (const [name, page] of Object.entries(config.pages)) {
-      if (!fs.existsSync(path.resolve(cwd, page.html))) {
-        throw new Error(
-          `[evjs] MPA page "${name}" html template not found: ${page.html}`,
-        );
-      }
+async function runDisposeHooks<TBundlerCfg>(
+  hooks: PluginHooks<TBundlerCfg>[],
+  ctx: PluginContext<TBundlerCfg>,
+): Promise<void> {
+  for (const h of hooks) {
+    if (h.dispose) {
+      await h.dispose(ctx);
     }
-    return;
-  }
-
-  if (!fs.existsSync(path.resolve(cwd, config.html))) {
-    throw new Error(`[evjs] HTML template not found: ${config.html}`);
   }
 }
 
-function readBuildResult(
+function validateHtmlTemplates<TBundlerCfg>(
   cwd: string,
-  serverEnabled: boolean,
-  isRebuild: boolean,
-): EvBuildResult | null {
-  const clientManifestPath = serverEnabled
-    ? path.resolve(cwd, "dist/client/manifest.json")
-    : path.resolve(cwd, "dist/manifest.json");
+  config: ResolvedConfig<TBundlerCfg>,
+): void {
+  const templates = collectHtmlTemplates(config);
+  const documents = new Map<string, HtmlTemplateDocument>();
 
-  if (!fs.existsSync(clientManifestPath)) return null;
+  for (const template of templates) {
+    const templatePath = path.resolve(cwd, template.path);
+    let doc = documents.get(templatePath);
+    if (!doc) {
+      doc = readHtmlTemplateDocument(templatePath, template);
+      documents.set(templatePath, doc);
+    }
+    validateHtmlMountTarget(template, doc);
+  }
+}
 
-  let clientManifest: ClientManifest;
+type HtmlTemplateDocument = ReturnType<typeof validateHtmlTemplate>;
+
+interface HtmlTemplateValidation {
+  path: string;
+  notFoundMessage: string;
+  notFileMessage: string;
+  mount?: string;
+  mountNotFoundMessage?: string;
+  mountInvalidMessage?: string;
+}
+
+function readHtmlTemplateDocument(
+  templatePath: string,
+  template: HtmlTemplateValidation,
+): HtmlTemplateDocument {
+  let stat: ReturnType<typeof fs.statSync>;
   try {
-    clientManifest = JSON.parse(fs.readFileSync(clientManifestPath, "utf-8"));
+    stat = fs.statSync(templatePath);
+  } catch {
+    throw new Error(`${template.notFoundMessage}: ${template.path}`);
+  }
+
+  if (!stat.isFile()) {
+    throw new Error(`${template.notFileMessage}: ${template.path}`);
+  }
+  return validateHtmlTemplate({
+    template: templatePath,
+    displayName: template.path,
+  });
+}
+
+function validateHtmlMountTarget(
+  template: HtmlTemplateValidation,
+  doc: HtmlTemplateDocument,
+): void {
+  if (!template.mount) return;
+  const mountInvalidMessage =
+    template.mountInvalidMessage ?? "[evjs] HTML mount selector is invalid";
+  const mountNotFoundMessage =
+    template.mountNotFoundMessage ?? "[evjs] HTML mount target was not found";
+
+  let target: unknown;
+  try {
+    target = doc.querySelector(template.mount);
+  } catch {
+    throw new Error(`${mountInvalidMessage}: ${template.mount}`);
+  }
+
+  if (!target) {
+    throw new Error(
+      `${mountNotFoundMessage} "${template.mount}" in html template: ${template.path}`,
+    );
+  }
+}
+
+function collectHtmlTemplates<TBundlerCfg>(
+  config: ResolvedConfig<TBundlerCfg>,
+): HtmlTemplateValidation[] {
+  const templates: HtmlTemplateValidation[] = [];
+
+  for (const [appId, app] of Object.entries(config.apps ?? {})) {
+    templates.push({
+      path: app.html ?? config.html,
+      notFoundMessage: `[evjs] App "${appId}" html template not found`,
+      notFileMessage: `[evjs] App "${appId}" html template must be a file`,
+      mount: app.mount,
+      mountNotFoundMessage: `[evjs] App "${appId}" mount target was not found`,
+      mountInvalidMessage: `[evjs] App "${appId}" mount selector is invalid`,
+    });
+  }
+
+  for (const [pageId, page] of Object.entries(config.pages ?? {})) {
+    templates.push({
+      path: page.html,
+      notFoundMessage: `[evjs] MPA page "${pageId}" html template not found`,
+      notFileMessage: `[evjs] MPA page "${pageId}" html template must be a file`,
+      mount: page.mount,
+      mountNotFoundMessage: `[evjs] MPA page "${pageId}" mount target was not found`,
+      mountInvalidMessage: `[evjs] MPA page "${pageId}" mount selector is invalid`,
+    });
+  }
+
+  if (config.routing) {
+    templates.push({
+      path: config.routing.html,
+      notFoundMessage: "[evjs] Page routing html template not found",
+      notFileMessage: "[evjs] Page routing html template must be a file",
+      mount: config.routing.mount,
+      mountNotFoundMessage: "[evjs] Page routing mount target was not found",
+      mountInvalidMessage: "[evjs] Page routing mount selector is invalid",
+    });
+  }
+
+  if (templates.length === 0 && !config.remote) {
+    templates.push({
+      path: config.html,
+      notFoundMessage: "[evjs] HTML template not found",
+      notFileMessage: "[evjs] HTML template must be a file",
+    });
+  }
+
+  return templates;
+}
+
+function readBuildResult(cwd: string, isRebuild: boolean): BuildResult | null {
+  const manifestPath = path.resolve(
+    cwd,
+    "dist/server",
+    INTERNAL_BUILD_OUTPUT_FILE,
+  );
+  const fallbackManifestPath = path.resolve(cwd, "dist/manifest.json");
+  const outputPath = fs.existsSync(manifestPath)
+    ? manifestPath
+    : fallbackManifestPath;
+
+  if (!fs.existsSync(outputPath)) return null;
+
+  let output: BuildOutput;
+  try {
+    output = JSON.parse(fs.readFileSync(outputPath, "utf-8"));
   } catch (err) {
-    logger.warn`Failed to parse client manifest: ${err}`;
+    logger.warn`Failed to parse build manifest: ${err}`;
     return null;
   }
 
-  let serverManifest: ServerManifest | undefined;
+  return { output, isRebuild };
+}
+
+function getFrameworkOutputPaths(
+  cwd: string,
+  output: BuildOutput,
+  serverEnabled: boolean,
+): { rootDir: string; clientDir: string } {
+  const rootDir = path.resolve(cwd, output.distDir);
+  return {
+    rootDir,
+    clientDir: serverEnabled ? path.join(rootDir, "client") : rootDir,
+  };
+}
+
+async function emitFrameworkManifest(
+  cwd: string,
+  output: BuildOutput,
+  bundlerFacts: BundlerBuildFacts,
+  plan: BuildPlan,
+  serverEnabled: boolean,
+): Promise<void> {
+  const { rootDir } = getFrameworkOutputPaths(cwd, output, serverEnabled);
+  await fs.promises.mkdir(rootDir, { recursive: true });
   if (serverEnabled) {
-    const serverManifestPath = path.resolve(cwd, "dist/server/manifest.json");
-    if (fs.existsSync(serverManifestPath)) {
-      try {
-        serverManifest = JSON.parse(
-          fs.readFileSync(serverManifestPath, "utf-8"),
-        );
-      } catch (err) {
-        logger.warn`Failed to parse server manifest: ${err}`;
-      }
-    }
+    const serverDir = path.join(rootDir, "server");
+    await fs.promises.mkdir(serverDir, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(serverDir, INTERNAL_BUILD_OUTPUT_FILE),
+      JSON.stringify(output, null, 2),
+      "utf-8",
+    );
   }
 
-  return { clientManifest, serverManifest, isRebuild };
+  const publicManifest = createPublicManifest(output);
+  await fs.promises.writeFile(
+    path.join(rootDir, "manifest.json"),
+    JSON.stringify(publicManifest, null, 2),
+    "utf-8",
+  );
+
+  const remoteManifest = linkRemoteManifest({
+    plan,
+    clientEntryAssets: bundlerFacts.clientEntryAssets,
+    firstClientEntryAssets: bundlerFacts.firstClientEntryAssets,
+  });
+  if (remoteManifest) {
+    await fs.promises.writeFile(
+      path.join(rootDir, "evjs-remote.json"),
+      JSON.stringify(remoteManifest, null, 2),
+      "utf-8",
+    );
+  }
+}
+
+function getHtmlAssets(html: BuildPlan["html"][number], output: BuildOutput) {
+  const pageId = html.owner.pageId;
+  const appId = html.owner.appId;
+  return pageId
+    ? output.pages[pageId]?.assets
+    : appId
+      ? output.apps[appId]?.assets
+      : undefined;
+}
+
+function createHtmlDocumentInfo(
+  html: BuildPlan["html"][number],
+  output: BuildOutput,
+): HtmlDocumentInfo | undefined {
+  const assets = getHtmlAssets(html, output);
+  if (!assets) return undefined;
+
+  if (html.owner.pageId) {
+    return {
+      kind: "page",
+      htmlId: html.id,
+      pageId: html.owner.pageId,
+      template: html.template,
+      fileName: html.fileName,
+      assets,
+    };
+  }
+
+  return {
+    kind: "app",
+    htmlId: html.id,
+    appId: html.owner.appId ?? "default",
+    template: html.template,
+    fileName: html.fileName,
+    assets,
+  };
+}
+
+async function emitFrameworkHtml<TBundlerCfg>(
+  cwd: string,
+  config: ResolvedConfig<TBundlerCfg>,
+  hooks: PluginHooks<TBundlerCfg>[],
+  pluginCtx: PluginContext<TBundlerCfg>,
+  output: BuildOutput,
+  plan: BuildPlan,
+  isRebuild: boolean,
+): Promise<void> {
+  const { clientDir } = getFrameworkOutputPaths(
+    cwd,
+    output,
+    config.serverEnabled,
+  );
+
+  for (const html of plan.html) {
+    const htmlInfo = createHtmlDocumentInfo(html, output);
+    if (!htmlInfo) continue;
+
+    const doc = generateHtml({
+      template: path.resolve(cwd, html.template),
+      js: htmlInfo.assets.js,
+      css: htmlInfo.assets.css,
+    });
+    doc.documentElement?.setAttribute("data-evjs-build", output.buildId);
+    if (htmlInfo.kind === "page") {
+      doc.documentElement?.setAttribute("data-evjs-kind", "page");
+      doc.documentElement?.setAttribute("data-evjs-id", htmlInfo.pageId);
+    } else {
+      doc.documentElement?.setAttribute("data-evjs-kind", "app");
+      doc.documentElement?.setAttribute("data-evjs-id", htmlInfo.appId);
+    }
+
+    const finalHtml = await buildHtml({
+      doc,
+      hooks,
+      pluginContext: pluginCtx,
+      html: htmlInfo,
+      output,
+      isRebuild,
+    });
+
+    const outPath = path.join(clientDir, html.fileName);
+    await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
+    await fs.promises.writeFile(outPath, finalHtml, "utf-8");
+  }
+}
+
+async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
+  bundlerFacts: BundlerBuildFacts;
+  graph: AppGraph;
+  plan: BuildPlan;
+  config: ResolvedConfig<TBundlerCfg>;
+  cwd: string;
+  hooks: PluginHooks<TBundlerCfg>[];
+  pluginCtx: PluginContext<TBundlerCfg>;
+  isRebuild: boolean;
+}): Promise<BuildOutput> {
+  const output = linkBuildOutput({
+    graph: options.graph,
+    plan: options.plan,
+    serverEnabled: options.config.serverEnabled,
+    clientEntryAssets: options.bundlerFacts.clientEntryAssets,
+    firstClientEntryAssets: options.bundlerFacts.firstClientEntryAssets,
+    serverEntryAssets: options.bundlerFacts.serverEntryAssets,
+    serverEntry: options.bundlerFacts.serverEntry,
+    serverAssets: options.bundlerFacts.serverAssets,
+    serverModules: options.bundlerFacts.serverModules,
+    rscManifests: options.bundlerFacts.rscManifests,
+  });
+
+  await runBuildOutputHooks(options.hooks, output, {
+    ...options.pluginCtx,
+    graph: options.graph,
+    plan: options.plan,
+  });
+  await emitFrameworkManifest(
+    options.cwd,
+    output,
+    options.bundlerFacts,
+    options.plan,
+    options.config.serverEnabled,
+  );
+  await emitFrameworkHtml(
+    options.cwd,
+    options.config,
+    options.hooks,
+    options.pluginCtx,
+    output,
+    options.plan,
+    options.isRebuild,
+  );
+
+  return output;
 }
 
 function normalizeAssetName(name: string | undefined): string | undefined {
   return name?.replace(/^\.\//, "");
 }
 
-function readServerEntryFromStats(cwd: string): string | undefined {
-  const statsPath = path.resolve(cwd, "dist/server/stats.json");
+function getDevDistLockPath(cwd: string, distDir: string): string {
+  return path.resolve(cwd, distDir, DEV_DIST_LOCK_FILE);
+}
+
+function isProcessAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+async function readDevDistLock(
+  cwd: string,
+  distDir: string,
+): Promise<DevDistLock | undefined> {
+  const lockPath = getDevDistLockPath(cwd, distDir);
+  try {
+    return JSON.parse(
+      await fs.promises.readFile(lockPath, "utf-8"),
+    ) as DevDistLock;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    logger.warn`Failed to read dev dist lock: ${err}`;
+    return undefined;
+  }
+}
+
+async function assertNoActiveDevDistLock(
+  cwd: string,
+  distDir: string,
+): Promise<void> {
+  const lock = await readDevDistLock(cwd, distDir);
+  if (!lock) return;
+
+  if (isProcessAlive(lock.pid)) {
+    throw new Error(
+      `[evjs] Cannot write to "${distDir}" because ev dev is using it in process ${lock.pid}. Stop ev dev first or run build in a separate workspace.`,
+    );
+  }
+
+  await fs.promises.rm(getDevDistLockPath(cwd, distDir), { force: true });
+}
+
+async function writeDevDistLock(
+  cwd: string,
+  distDir: string,
+): Promise<() => Promise<void>> {
+  const lockPath = getDevDistLockPath(cwd, distDir);
+  await fs.promises.mkdir(path.dirname(lockPath), { recursive: true });
+  await fs.promises.writeFile(
+    lockPath,
+    JSON.stringify(
+      {
+        command: "dev",
+        distDir,
+        pid: process.pid,
+        startedAt: new Date().toISOString(),
+      } satisfies DevDistLock,
+      null,
+      2,
+    ),
+  );
+
+  return async () => {
+    const lock = await readDevDistLock(cwd, distDir);
+    if (lock?.pid === process.pid) {
+      await fs.promises.rm(lockPath, { force: true });
+    }
+  };
+}
+
+function readServerEntryFromManifest(
+  cwd: string,
+  distDir: string,
+): string | undefined {
+  const internalPath = path.resolve(
+    cwd,
+    distDir,
+    "server",
+    INTERNAL_BUILD_OUTPUT_FILE,
+  );
+  const publicPath = path.resolve(cwd, distDir, "manifest.json");
+  const manifestPath = fs.existsSync(internalPath) ? internalPath : publicPath;
+  if (!fs.existsSync(manifestPath)) return undefined;
+
+  try {
+    const manifest = JSON.parse(
+      fs.readFileSync(manifestPath, "utf-8"),
+    ) as BuildOutput;
+    return normalizeAssetName(manifest.server?.entry);
+  } catch (err) {
+    logger.warn`Failed to parse build manifest for server entry: ${err}`;
+    return undefined;
+  }
+}
+
+function readServerEntryFromStats(
+  cwd: string,
+  distDir: string,
+): string | undefined {
+  const statsPath = path.resolve(cwd, distDir, "server/stats.json");
   if (!fs.existsSync(statsPath)) return undefined;
 
   try {
     const stats = JSON.parse(fs.readFileSync(statsPath, "utf-8")) as {
       entrypoints?: Record<string, { assets?: Array<{ name?: string }> }>;
     };
-    const firstEntry = stats.entrypoints
-      ? Object.values(stats.entrypoints)[0]
-      : undefined;
+    const entrypoints = stats.entrypoints ?? {};
+    const entrypointValues = Object.values(entrypoints);
+    const firstEntry =
+      entrypoints.server ??
+      (entrypointValues.length === 1 ? entrypointValues[0] : undefined);
     const jsAsset = firstEntry?.assets?.find((asset) =>
       asset.name?.endsWith(".js"),
     );
@@ -313,13 +1188,39 @@ function readServerEntryFromStats(cwd: string): string | undefined {
   }
 }
 
-async function findDevServerEntry(cwd: string): Promise<string | undefined> {
-  const entryFromStats = readServerEntryFromStats(cwd);
-  if (entryFromStats) return entryFromStats;
+function isExistingDevServerEntry(
+  cwd: string,
+  distDir: string,
+  entry: string,
+): boolean {
+  return fs.existsSync(path.resolve(cwd, distDir, "server", entry));
+}
 
-  const serverDir = path.resolve(cwd, "dist/server");
-  const files = await fs.promises.readdir(serverDir).catch(() => []);
-  return files.find((file) => file.endsWith(".js"));
+async function findDevServerEntry(
+  cwd: string,
+  distDir: string,
+): Promise<string | undefined> {
+  const entryFromManifest = readServerEntryFromManifest(cwd, distDir);
+  if (entryFromManifest) {
+    return isExistingDevServerEntry(cwd, distDir, entryFromManifest)
+      ? entryFromManifest
+      : undefined;
+  }
+
+  const entryFromStats = readServerEntryFromStats(cwd, distDir);
+  if (
+    entryFromStats &&
+    isExistingDevServerEntry(cwd, distDir, entryFromStats)
+  ) {
+    return entryFromStats;
+  }
+
+  const serverDir = path.resolve(cwd, distDir, "server");
+  const files: string[] = await fs.promises.readdir(serverDir).catch(() => []);
+  if (files.includes("server.js")) return "server.js";
+
+  const jsFiles = files.filter((file) => file.endsWith(".js"));
+  return jsFiles.length === 1 ? jsFiles[0] : undefined;
 }
 
 async function stopApiProcess(
@@ -401,53 +1302,182 @@ function waitForApiReady(child: ApiProcess, timeoutMs = 10_000): Promise<void> {
   });
 }
 
-export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
-  userConfig?: EvConfig<TBundlerCfg>,
+export async function prepareFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
+  userConfig?: Config<TBundlerCfg>,
+  options: PrepareFrameworkBuildOptions<TBundlerCfg> = {},
+): Promise<PreparedFrameworkBuild<TBundlerCfg>> {
+  const cwd = options.cwd ?? process.cwd();
+  const command =
+    options.command ??
+    (options.mode === "development" ? "dev" : ("build" as const));
+  const expectedMode = command === "dev" ? "development" : "production";
+  if (options.mode && options.mode !== expectedMode) {
+    throw new Error(
+      `[evjs] prepareFrameworkBuild command "${command}" must use mode "${expectedMode}".`,
+    );
+  }
+  const mode = options.mode ?? expectedMode;
+  const configuredConfig = await runConfigHooks(userConfig, {
+    mode,
+    command,
+    cwd,
+  });
+  const rawResolvedConfig = await withPageRoutingDefaults(
+    resolveConfig(configuredConfig),
+    configuredConfig,
+    cwd,
+  );
+  const resolvedConfig = {
+    ...rawResolvedConfig,
+    plugins: orderPluginsByDependencies(rawResolvedConfig.plugins),
+  };
+
+  const optionBundler = resolveBundlerConfig<TBundlerCfg>(
+    options.bundler,
+    "options.bundler",
+  );
+  const bundler = optionBundler ?? resolvedConfig.bundler ?? undefined;
+  if (options.requireBundler && !bundler) {
+    throw new Error(
+      "[evjs] No bundler configured. Pass a bundler adapter in ev.config.ts or through dev/build options.",
+    );
+  }
+  const config = bundler
+    ? withActiveBundler(resolvedConfig, bundler)
+    : resolvedConfig;
+  const pluginWatchFiles = new Set<string>();
+  const pluginContext: PluginContext<TBundlerCfg> = {
+    mode,
+    command,
+    cwd,
+    config,
+    logger,
+    addWatchFile(file) {
+      pluginWatchFiles.add(path.resolve(cwd, file));
+    },
+  };
+  const hooks = await collectPluginHooks(config.plugins, pluginContext);
+  let disposed = false;
+  const dispose = async () => {
+    if (disposed) return;
+    disposed = true;
+    await runDisposeHooks(hooks, pluginContext);
+  };
+
+  try {
+    if (options.runLifecycleHooks ?? true) {
+      await runCommandStartHooks(hooks, pluginContext);
+      await runBuildStartHooks(hooks, pluginContext);
+    }
+    validateHtmlTemplates(cwd, config);
+    const analysis = await createAppGraph(config, cwd);
+    reportGraphDiagnostics(analysis);
+    await runAppGraphHooks(hooks, analysis.graph, pluginContext);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode,
+      ...options.plan,
+    });
+    await runBuildPlanHooks(hooks, plan, analysis.graph, pluginContext);
+
+    return {
+      cwd,
+      mode,
+      command,
+      config,
+      graph: analysis.graph,
+      plan,
+      hooks,
+      pluginContext,
+      fileDependencies: analysis.fileDependencies,
+      pluginWatchFiles: [...pluginWatchFiles].sort(),
+      dispose,
+    };
+  } catch (err) {
+    await dispose();
+    throw err;
+  }
+}
+
+export async function dev<TBundlerCfg = DefaultBundlerConfig>(
+  userConfig?: Config<TBundlerCfg>,
   options?: DevOptions<TBundlerCfg>,
 ): Promise<void> {
   const cwd = options?.cwd ?? process.cwd();
   process.env.NODE_ENV ??= "development";
   const configuredConfig = await runConfigHooks(userConfig, {
     mode: "development",
+    command: "dev",
     cwd,
   });
-  const rawResolvedConfig = resolveConfig(configuredConfig);
+  const rawResolvedConfig = await withPageRoutingDefaults(
+    resolveConfig(configuredConfig),
+    configuredConfig,
+    cwd,
+  );
   const resolvedConfig = {
     ...rawResolvedConfig,
     plugins: orderPluginsByDependencies(rawResolvedConfig.plugins),
   };
 
   const bundler = resolveBundler(resolvedConfig.bundler, options?.bundler);
-  const config = withActiveBundler(resolvedConfig, bundler);
+  let activeConfig = withActiveBundler(resolvedConfig, bundler);
 
-  const pluginCtx: EvPluginContext<TBundlerCfg> = {
-    mode: "development",
-    cwd,
-    config,
+  const pluginWatchFiles = new Set<string>();
+  const addWatchFile = (file: string) => {
+    pluginWatchFiles.add(path.resolve(cwd, file));
   };
-  const hooks = await collectPluginHooks(config.plugins, pluginCtx);
+  const pluginCtx: PluginContext<TBundlerCfg> = {
+    mode: "development",
+    command: "dev",
+    cwd,
+    config: activeConfig,
+    logger,
+    addWatchFile,
+  };
+  const hooks = await collectPluginHooks(activeConfig.plugins, pluginCtx);
 
-  await runBuildStartHooks(hooks);
-  validateHtmlTemplates(cwd, config);
-
+  await runCommandStartHooks(hooks, pluginCtx);
+  await runBuildStartHooks(hooks, pluginCtx);
+  validateHtmlTemplates(cwd, activeConfig);
+  let activeAnalysis = await createAppGraph(activeConfig, cwd);
+  reportGraphDiagnostics(activeAnalysis);
+  await runAppGraphHooks(hooks, activeAnalysis.graph, pluginCtx);
+  let activePlan = createBuildPlan(activeConfig, activeAnalysis.graph, {
+    mode: "development",
+    distDir: DEV_DIST_DIR,
+  });
+  await runBuildPlanHooks(hooks, activePlan, activeAnalysis.graph, pluginCtx);
   let apiProcess: ApiProcess | null = null;
   let restartQueue: Promise<void> = Promise.resolve();
+  let devPlanUpdateQueue: Promise<void> = Promise.resolve();
+  let devController: BundlerDevController | undefined;
+  let releaseDevDistLock: (() => Promise<void>) | undefined;
+  let stopWatchingDevDependencies = () => {};
+  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   const expectedApiExits = new WeakSet<ApiProcess>();
+  let resolveShutdown: (() => void) | undefined;
+  const waitForShutdown = new Promise<void>((resolve) => {
+    resolveShutdown = resolve;
+  });
 
   const stopApiOnParentShutdown = () => {
-    if (!apiProcess) return;
-    expectedApiExits.add(apiProcess);
-    apiProcess.kill();
-    apiProcess = null;
+    if (apiProcess) {
+      expectedApiExits.add(apiProcess);
+      apiProcess.kill();
+      apiProcess = null;
+    }
+    resolveShutdown?.();
   };
+
+  await assertNoActiveDevDistLock(cwd, activePlan.distDir);
 
   process.once("SIGINT", stopApiOnParentShutdown);
   process.once("SIGTERM", stopApiOnParentShutdown);
 
   const restartApiServer = async () => {
-    if (!config.serverEnabled) return;
+    if (!activeConfig.serverEnabled) return;
 
-    const serverEntry = await findDevServerEntry(cwd);
+    const serverEntry = await findDevServerEntry(cwd, activePlan.distDir);
     if (!serverEntry) return;
 
     if (apiProcess) {
@@ -462,12 +1492,14 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
       }
     }
 
-    const serverPort = config.server?.dev?.port ?? CONFIG_DEFAULTS.serverPort;
+    const serverPort =
+      activeConfig.server?.dev?.port ?? CONFIG_DEFAULTS.serverPort;
     logger.info`Server bundle detected, starting API...`;
 
-    const bootstrapPath = path.resolve(cwd, "dist/server/_dev_start.cjs");
+    const devRootDir = path.resolve(cwd, activePlan.distDir);
+    const bootstrapPath = path.join(devRootDir, "_dev_start.cjs");
     try {
-      const serverBundlePath = path.resolve(cwd, "dist/server", serverEntry);
+      const serverBundlePath = path.join(devRootDir, "server", serverEntry);
 
       if (!fs.existsSync(path.dirname(bootstrapPath))) {
         fs.mkdirSync(path.dirname(bootstrapPath), { recursive: true });
@@ -476,10 +1508,21 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
         bootstrapPath,
         [
           `(async () => {`,
+          `const fs = require("node:fs");`,
+          `const path = require("node:path");`,
+          `const { pathToFileURL } = require("node:url");`,
+          `const manifestPath = ${JSON.stringify(path.join(devRootDir, "server", INTERNAL_BUILD_OUTPUT_FILE))};`,
+          `const publicManifestPath = ${JSON.stringify(path.join(devRootDir, "manifest.json"))};`,
+          `const selectedManifestPath = fs.existsSync(manifestPath) ? manifestPath : publicManifestPath;`,
+          `const manifest = fs.existsSync(selectedManifestPath) ? JSON.parse(fs.readFileSync(selectedManifestPath, "utf-8")) : undefined;`,
+          `if (manifest) globalThis.__EVJS_MANIFEST__ = manifest;`,
+          `globalThis.__EVJS_DEV_PAGE_RENDER_PROXY_HEADER__ = ${JSON.stringify(DEV_PAGE_RENDER_PROXY_HEADER)};`,
+          `const serverDir = path.dirname(${JSON.stringify(serverBundlePath)});`,
+          `globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => { const mod = await import(pathToFileURL(path.resolve(serverDir, asset)).href); const nested = mod && typeof mod.default === "object" ? mod.default : undefined; return nested && ("default" in nested || "render" in nested) ? nested : mod; };`,
           `const serverModule = await import(${JSON.stringify(pathToFileURL(serverBundlePath).href)});`,
           `const handler = serverModule.default?.default ?? serverModule.default ?? serverModule;`,
-          `const { serve } = require("@evjs/server/node");`,
-          `const server = serve({ fetch: handler.fetch }, { port: ${serverPort}, https: ${JSON.stringify(config.server?.dev?.https ?? false)} });`,
+          `const { serve } = require("@evjs/ev/server/node");`,
+          `const server = serve({ fetch: handler.fetch }, { port: ${serverPort}, https: ${JSON.stringify(activeConfig.server?.dev?.https ?? false)} });`,
           `const ready = () => console.log(${JSON.stringify(API_READY_MARKER)});`,
           `if (server.listening) ready(); else server.once("listening", ready);`,
           `server.once("error", (err) => { console.error(err); process.exit(1); });`,
@@ -515,52 +1558,258 @@ export async function dev<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
     await restartQueue;
   };
 
-  try {
-    await bundler.dev(
-      config,
+  const loadCurrentConfig = async () => {
+    const nextUserConfig = options?.loadConfig
+      ? await options.loadConfig(cwd)
+      : userConfig;
+    const nextConfiguredConfig = await runConfigHooks(nextUserConfig, {
+      mode: "development",
+      command: "dev",
       cwd,
-      { onServerBundleReady: handleServerBundleReady },
-      hooks,
+    });
+    const nextRawResolvedConfig = await withPageRoutingDefaults(
+      resolveConfig(nextConfiguredConfig),
+      nextConfiguredConfig,
+      cwd,
     );
+    const nextResolvedConfig = {
+      ...nextRawResolvedConfig,
+      plugins: orderPluginsByDependencies(nextRawResolvedConfig.plugins),
+    };
+
+    return withActiveBundler(nextResolvedConfig, bundler);
+  };
+
+  const stagePluginHooks = async (nextConfig: typeof activeConfig) => {
+    const previousConfig = activeConfig;
+    const previousHooks = [...hooks];
+    const previousPluginWatchFiles = [...pluginWatchFiles];
+    const nextPluginWatchFiles = new Set<string>();
+    const nextPluginCtx: PluginContext<TBundlerCfg> = {
+      ...pluginCtx,
+      config: nextConfig,
+      addWatchFile(file) {
+        nextPluginWatchFiles.add(path.resolve(cwd, file));
+      },
+    };
+    const nextHooks = await collectPluginHooks(
+      nextConfig.plugins,
+      nextPluginCtx,
+    );
+
+    hooks.splice(0, hooks.length, ...nextHooks);
+    pluginWatchFiles.clear();
+    for (const file of nextPluginWatchFiles) {
+      pluginWatchFiles.add(file);
+    }
+    pluginCtx.config = nextConfig;
+
+    return {
+      async commit() {
+        await runDisposeHooks(previousHooks, {
+          ...pluginCtx,
+          config: previousConfig,
+        });
+      },
+      async rollback() {
+        await runDisposeHooks(nextHooks, {
+          ...pluginCtx,
+          config: nextConfig,
+        });
+        hooks.splice(0, hooks.length, ...previousHooks);
+        pluginWatchFiles.clear();
+        for (const file of previousPluginWatchFiles) {
+          pluginWatchFiles.add(file);
+        }
+        pluginCtx.config = previousConfig;
+      },
+    };
+  };
+
+  const refreshDevDependencyWatchers = () => {
+    stopWatchingDevDependencies();
+    stopWatchingDevDependencies = watchFiles(
+      [
+        ...listConfigDependencyFiles(cwd),
+        ...activeAnalysis.fileDependencies,
+        ...pluginWatchFiles,
+      ],
+      scheduleDevPlanUpdate,
+    );
+  };
+
+  const handleDevDependencyChange = async (changedFile: string) => {
+    const isConfigChange = listConfigDependencyFiles(cwd).includes(changedFile);
+    const reason: BuildPlanUpdate["reason"] = isConfigChange
+      ? "config"
+      : "route-declaration";
+
+    const nextConfig = await loadCurrentConfig();
+    if (!hasSamePluginIdentity(activeConfig.plugins, nextConfig.plugins)) {
+      logger.warn`Plugin configuration changed. Please restart ev dev to apply plugin additions, removals, or reordering.`;
+      return;
+    }
+
+    validateHtmlTemplates(cwd, nextConfig);
+    let stagedPluginHooks:
+      | Awaited<ReturnType<typeof stagePluginHooks>>
+      | undefined;
+    if (isConfigChange) {
+      stagedPluginHooks = await stagePluginHooks(nextConfig);
+    } else {
+      pluginCtx.config = nextConfig;
+    }
+
+    try {
+      const nextAnalysis = await createAppGraph(nextConfig, cwd);
+      reportGraphDiagnostics(nextAnalysis);
+      await runAppGraphHooks(hooks, nextAnalysis.graph, pluginCtx);
+      const nextPlan = createBuildPlan(nextConfig, nextAnalysis.graph, {
+        mode: "development",
+        distDir: DEV_DIST_DIR,
+      });
+      await runBuildPlanHooks(hooks, nextPlan, nextAnalysis.graph, pluginCtx);
+      const update = diffBuildPlan(activePlan, nextPlan, reason);
+      if (isEmptyPlanUpdate(update)) {
+        activeConfig = nextConfig;
+        activeAnalysis = nextAnalysis;
+        activePlan = nextPlan;
+        await stagedPluginHooks?.commit();
+        refreshDevDependencyWatchers();
+        return;
+      }
+
+      await runDevPlanUpdateHooks(hooks, update, nextAnalysis.graph, pluginCtx);
+      if (!devController) {
+        await stagedPluginHooks?.rollback();
+        logger.warn`The selected bundler does not expose a dev controller. Please restart ev dev to apply framework plan changes.`;
+        return;
+      }
+
+      const previousConfig = activeConfig;
+      const previousAnalysis = activeAnalysis;
+      const previousPlan = activePlan;
+
+      activeConfig = nextConfig;
+      activeAnalysis = nextAnalysis;
+      activePlan = nextPlan;
+
+      try {
+        await devController.updatePlan(update, nextAnalysis.graph);
+      } catch (err) {
+        activeConfig = previousConfig;
+        activeAnalysis = previousAnalysis;
+        activePlan = previousPlan;
+        await stagedPluginHooks?.rollback();
+        logger.warn`Unable to apply framework plan update without restart: ${err}`;
+        return;
+      }
+      await stagedPluginHooks?.commit();
+      refreshDevDependencyWatchers();
+    } catch (err) {
+      await stagedPluginHooks?.rollback();
+      throw err;
+    }
+  };
+
+  function scheduleDevPlanUpdate(changedFile: string) {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      devPlanUpdateQueue = devPlanUpdateQueue
+        .catch(() => {})
+        .then(() => handleDevDependencyChange(changedFile))
+        .catch((err) => {
+          logger.warn`Failed to update framework dev plan: ${err}`;
+        });
+    }, 50);
+  }
+
+  try {
+    devController =
+      (await bundler.dev({
+        config: activeConfig,
+        cwd,
+        hooks,
+        graph: activeAnalysis.graph,
+        plan: activePlan,
+        callbacks: {
+          async onBuildFacts(bundlerFacts, options) {
+            await linkAndEmitBuildOutput({
+              bundlerFacts,
+              graph: activeAnalysis.graph,
+              plan: activePlan,
+              config: activeConfig,
+              cwd,
+              hooks,
+              pluginCtx,
+              isRebuild: options?.isRebuild ?? false,
+            });
+          },
+          onServerBundleReady: handleServerBundleReady,
+        },
+      })) ?? undefined;
+    releaseDevDistLock = await writeDevDistLock(cwd, activePlan.distDir);
+    refreshDevDependencyWatchers();
+    await waitForShutdown;
   } finally {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    stopWatchingDevDependencies();
+    await devController?.close?.();
+    await releaseDevDistLock?.();
     process.off("SIGINT", stopApiOnParentShutdown);
     process.off("SIGTERM", stopApiOnParentShutdown);
+    await runDisposeHooks(hooks, pluginCtx);
   }
 }
 
-export async function build<TBundlerCfg = import("@utoo/pack").ConfigComplete>(
-  userConfig?: EvConfig<TBundlerCfg>,
+export async function build<TBundlerCfg = DefaultBundlerConfig>(
+  userConfig?: Config<TBundlerCfg>,
   options?: BuildOptions<TBundlerCfg>,
 ): Promise<void> {
   const cwd = options?.cwd ?? process.cwd();
   process.env.NODE_ENV ??= "production";
-  const configuredConfig = await runConfigHooks(userConfig, {
-    mode: "production",
+  const prepared = await prepareFrameworkBuild(userConfig, {
     cwd,
+    mode: "production",
+    command: "build",
+    bundler: options?.bundler,
+    requireBundler: true,
   });
-  const rawResolvedConfig = resolveConfig(configuredConfig);
-  const resolvedConfig = {
-    ...rawResolvedConfig,
-    plugins: orderPluginsByDependencies(rawResolvedConfig.plugins),
-  };
+  const bundler = prepared.config.bundler;
+  if (!bundler) {
+    await prepared.dispose();
+    throw new Error(
+      "[evjs] No bundler configured. Pass a bundler adapter in ev.config.ts or through dev/build options.",
+    );
+  }
+  let buildOutput: BuildOutput | undefined;
+  try {
+    await assertNoActiveDevDistLock(cwd, prepared.plan.distDir);
+    const bundlerFacts = await bundler.build({
+      config: prepared.config,
+      cwd,
+      hooks: prepared.hooks,
+      graph: prepared.graph,
+      plan: prepared.plan,
+    });
+    buildOutput = await linkAndEmitBuildOutput({
+      bundlerFacts,
+      graph: prepared.graph,
+      plan: prepared.plan,
+      config: prepared.config,
+      cwd,
+      hooks: prepared.hooks,
+      pluginCtx: prepared.pluginContext,
+      isRebuild: false,
+    });
 
-  const bundler = resolveBundler(resolvedConfig.bundler, options?.bundler);
-  const config = withActiveBundler(resolvedConfig, bundler);
-
-  const pluginCtx: EvPluginContext<TBundlerCfg> = {
-    mode: "production",
-    cwd,
-    config,
-  };
-  const hooks = await collectPluginHooks(config.plugins, pluginCtx);
-
-  await runBuildStartHooks(hooks);
-  validateHtmlTemplates(cwd, config);
-
-  await bundler.build(config, cwd, hooks);
-
-  const buildResult = readBuildResult(cwd, config.serverEnabled, false);
-  if (buildResult) {
-    await runBuildEndHooks(hooks, buildResult);
+    const buildResult = buildOutput
+      ? { output: buildOutput, isRebuild: false }
+      : readBuildResult(cwd, false);
+    if (buildResult) {
+      await runBuildEndHooks(prepared.hooks, buildResult);
+    }
+  } finally {
+    await prepared.dispose();
   }
 }

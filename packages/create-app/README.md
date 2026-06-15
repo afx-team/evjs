@@ -25,7 +25,7 @@ npx @evjs/create-app [name] [options]
 | **`basic`** | Basic full-stack example with routing and server functions. |
 | **`mpa`** | Multi-page application with separate page entries. |
 | **`api-routes`** | Programmatic REST API routes via `createRoute()`. |
-| **`complex-routing`** | Nested layouts, loaders, and search params. |
+| **`complex-routing`** | Root layout, loaders, search params, and nested paths. |
 | **`custom-ws-transport`** | Custom transport example using WebSockets. |
 | **`plugin-authoring`** | Starter focused on plugin authoring and bundler hooks. |
 | **`with-sqlite`** | Full-stack CRUD example backed by SQLite. |
@@ -39,6 +39,10 @@ npx @evjs/create-app my-new-app
 ```
 
 Follow the interactive prompts to select your features and get started in seconds.
+
+Generated framework artifacts such as `.evjs/` and
+`src/evjs-route-types.d.ts` are not copied from templates; `ev dev` and
+`ev build` recreate them for the new project.
 
 ## License
 

@@ -4,109 +4,161 @@
 
 ## Project Identity
 
-- **Name**: evjs (fullstack framework), `@evjs/*` (package scope)
+- **Name**: evjs, `@evjs/*` package scope
 - **Repository**: evaijs/evjs
-- **CLI command**: `ev` (binary from `@evjs/cli`)
-- **Linter**: Biome (`npx biome check --write`)
-- **Node**: ESM-only (`"type": "module"` in all packages)
+- **CLI command**: `ev` from `@evjs/cli`
+- **Linter**: Biome via `npm run lint` or `npx biome check --write`
+- **Node packages**: ESM-only package output
 
 ## Package Map
 
 | Package | Path | Purpose |
-|---------|------|---------|
-| `@evjs/cli` | `packages/cli` | CLI binary (`ev dev`, `ev build`) |
-| `@evjs/ev` | `packages/ev` | Config, plugin, and bundler types (`defineConfig`) |
-| `@evjs/create-app` | `packages/create-app` | Project scaffolding (`npx @evjs/create-app`) |
-| `@evjs/shared` | `packages/shared` | Runtime shared: errors, HTTP utils, constants |
-| `@evjs/client` | `packages/client` | Client (React + TanStack) |
-| `@evjs/server` | `packages/server` | Server (Hono) |
-| `@evjs/build-tools` | `packages/build-tools` | Bundler-agnostic server function transforms (SWC) |
-| `@evjs/manifest` | `packages/manifest` | Shared manifest schema types (`ManifestV1`) |
-| `@evjs/bundler-utoopack` | `packages/bundler-utoopack` | Utoopack adapter (default) |
+| --- | --- | --- |
+| `@evjs/cli` | `packages/cli` | CLI binary and programmatic command entrypoints |
+| `@evjs/ev` | `packages/ev` | Config, plugin lifecycle, graph analysis, build planning, HTML, deployment helpers, bundler adapter contracts, and runtime facade subpaths |
+| `@evjs/create-app` | `packages/create-app` | Project scaffolding from examples/templates |
+| `@evjs/shared` | `packages/shared` | Runtime shared helpers plus `@evjs/shared/manifest` graph/plan/output schemas |
+| `@evjs/client` | `packages/client` | Browser runtime, transport, page hooks, navigation helpers, remote host helpers, and RSC client |
+| `@evjs/server` | `packages/server` | Server functions, REST routes, SSR/PPR/RSC request coordination, and Node/fetch runtimes |
+| `@evjs/bundler-utoopack` | `packages/bundler-utoopack` | Default Utoopack adapter; consumes `BuildPlan` and links `BuildOutput` where supported |
+| `@evjs/bundler-webpack` | `packages/bundler-webpack` | Validation/fallback adapter for new architecture features that Utoopack cannot build yet |
 
-### Dependency Graph
+`packages/build-tools` and `packages/manifest` no longer exist as public workspace packages. Build-tool helpers live under `packages/ev/src/build-tools`, and manifest schemas/linkers live under `packages/shared/src/manifest`.
 
+## Dependency Graph
+
+```txt
+@evjs/cli
+  -> @evjs/ev
+  -> @evjs/bundler-utoopack
+
+@evjs/ev
+  -> @evjs/client
+  -> @evjs/server
+  -> @evjs/shared
+
+@evjs/bundler-utoopack
+  -> @evjs/ev
+  -> @utoo/pack
+
+@evjs/bundler-webpack
+  -> @evjs/ev
+  -> webpack
+
+@evjs/client
+  -> @evjs/shared
+  -> @tanstack/react-router
+  -> @tanstack/react-query
+
+@evjs/server
+  -> @evjs/client
+  -> @evjs/shared
+  -> hono
+  -> @hono/node-server
 ```
-@evjs/cli ──► @evjs/ev, @evjs/bundler-utoopack (default)
-@evjs/bundler-utoopack ──► @evjs/ev, @evjs/build-tools, @evjs/manifest, @utoo/pack
-@evjs/ev ──► @evjs/manifest, @evjs/shared
 
-@evjs/shared (zero deps — runtime only)
-@evjs/client ──► @evjs/shared, @tanstack/react-router, @tanstack/react-query
-@evjs/server ──► @evjs/shared, hono, @hono/node-server
-```
+Internal `@evjs/*` runtime dependency versions stay `"*"`. Release automation
+treats the distributed packages as one framework version, so app-facing packages
+should move together and adapters should depend on `@evjs/ev` instead of on each
+other.
 
 ## Coding Rules
 
-1. **Imports**: All imports at top of file. Use `import type` for type-only imports.
-2. **Linting**: Biome — no `any`, no `import * as` unless necessary.
-3. **No manual server entries**: The framework generates server entry dynamically.
-4. **No manual bundler configs**: Use `ev.config.ts` or convention-based defaults.
-5. **Server function files**: Must start with `"use server";`. We recommend the `.server.ts` suffix or placing them in `src/api/`.
-6. **Server function exports**: Must be named async function exports (no default exports).
-7. **Module type**: All packages are ESM (`"type": "module"`). Use `.js` extensions in relative imports within compiled output.
-8. **Config file**: Named `ev.config.ts` (not `evjs.config.ts`).
-9. **Dependency resolution**: CLI uses `createRequire(import.meta.url)` for reliable loader resolution.
+1. Keep imports at the top of files and use `import type` for type-only imports.
+2. Use Biome formatting and linting. Avoid `any` and broad namespace imports unless there is a concrete reason.
+3. Do not add hidden production source files such as `.evjs/server/entry.ts`; framework-owned entries should be library/runtime entries or bundler adapter mechanics.
+4. Keep framework semantics out of bundler adapters. Adapters consume `BuildPlan` and return build facts.
+5. Server function files must start with `"use server";` and export named functions or supported named async values.
+6. Use `ev.config.ts`; new docs should import `defineConfig` from `@evjs/ev`.
+7. App-facing imports stay in `@evjs/ev` or its runtime facade subpaths
+   (`@evjs/ev/client`, `@evjs/ev/server`). Direct `@evjs/client` and
+   `@evjs/server` imports are implementation-package references for this
+   monorepo, not the documented application path. Prefer a subpath export on an
+   existing package before adding another distributed package. Subpath exports
+   stay intentional and documented; do not add convenience aliases.
+8. Keep client imports on the `@evjs/ev/client` facade for page hooks,
+   navigation, transport, remote host helpers, and RSC helpers. Generated page
+   bootstrap, server-function stubs, and shell runtime primitives stay behind
+   generated-only `@evjs/ev/client/internal/*` facade subpaths.
+9. Use `server.basePath` for framework server runtime paths. Do not reintroduce public `server.functions.endpoint` config.
 
 ## Common Tasks
 
-### Add a new server function
-1. Create `src/api/[name].server.ts`
-2. Add `"use server";` at the top
-3. Export named async functions
-4. Import and use in client with `useQuery(fn)` or `useMutation(fn)`
+### Add a server function
 
-### Add a new route
-1. Create a new file under `src/pages/` (e.g. `src/pages/about.tsx`)
-2. Define route with `createRoute({ getParentRoute, path, component })` and export it
-3. Import in `src/main.tsx` and add to route tree via `parentRoute.addChildren([newRoute])`
+1. Create `src/api/[name].server.ts`.
+2. Add `"use server";` at the top.
+3. Export named async functions.
+4. Import and use them in client code with `useQuery(fn, ...args)`, `useMutation(fn)`, or `getFnQueryOptions(fn, ...args)`.
 
-### Add a new example
-1. Create directory under `examples/`
-2. Add `package.json` with `"@evjs/ev": "*"` and `"@evjs/cli": "*"` as devDeps, `"private": true`
-3. Add `src/main.tsx` + `index.html`
-4. Create symlink in `packages/create-app/templates/` → `../../../examples/[name]`
-5. Add to `packages/create-app/scripts/restore-templates.js` symlink map
-6. Add an e2e test in `e2e/cases/[name].ts`
+### Add a page route
 
-### Release a new version
-1. Create a GitHub Release with a tag like `v0.1.0`
-2. The release workflow automatically syncs the version to all packages and publishes to npm
-3. **Do NOT bump versions locally** — the codebase keeps `"*"` for internal `@evjs/*` deps.
+1. Create a page module under `src/pages`.
+2. Export a default React component.
+3. Add static page metadata exports next to the component when needed.
+
+### Add a configured page
+
+1. Add `pages.[id]` in `ev.config.ts`.
+2. Use `{ entry }` for user-owned bootstrap pages or `{ component }` for
+   framework-managed standalone pages.
+3. Put `render`, `hydrate`, `rsc`, and `prerender` static
+   exports in the referenced page module.
+4. Use `path` only when the framework server should route a URL to that page.
+5. In dev, page additions should flow through `BuildPlanUpdate`; do not require restarting the ev dev server.
+
+### Add an example
+
+1. Create a directory under `examples/`.
+2. Add a private `package.json` with workspace `@evjs/*` dependencies.
+3. Add `ev.config.ts`, source files, and `index.html` as needed.
+4. Add or update the create-app template mapping when the example is user-facing.
+5. Add an e2e case under `e2e/cases/`.
+
+## Build System Internals
+
+### `ev build`
+
+```txt
+load ev.config.ts
+run config/setup hooks
+createAppGraph()
+run appGraph hooks
+createBuildPlan()
+run buildPlan hooks
+selected bundler builds the BuildPlan
+linkBuildOutput()
+run buildOutput hooks
+emit dist/manifest.json and HTML documents
+run buildEnd({ output })
+```
+
+### `ev dev`
+
+```txt
+start from the same graph and BuildPlan pipeline
+start selected bundler dev controller
+serve HTML and manifest from framework state
+component/style edits stay in bundler HMR
+config/route/server declaration edits rebuild graph and diff BuildPlan
+call bundlerDevController.updatePlan(update, graph) when the adapter supports it
+```
+
+Utoopack is still the default adapter. It supports HTML-only dev plan relinking;
+some broader architecture features are currently validated through the webpack
+adapter until Utoopack exposes the required lower-layer APIs.
 
 ## Monorepo Commands
 
 ```bash
-npm run build              # Build all packages + examples
-npm run test               # Unit tests (vitest)
-npm run test:e2e           # E2E tests (playwright)
-npm run dev                # Dev mode (turborepo)
-npx biome check --write    # Fix lint/format
+npm run build
+npm run test
+npm run test:e2e
+npm run check-types
+npm run lint
+npx biome check --write
 ```
-
-## Build System Internals
-
-### `ev build` Flow
-
-1. `loadConfig(cwd)` — loads `ev.config.ts` or returns undefined for convention-based defaults
-2. Resolves the `BundlerAdapter` — utoopack (the only bundler)
-3. Calls `BundlerAdapter.build()` which drives the compilation
-4. The bundler adapter:
-   - Discovers `"use server"` files
-   - Applies SWC transforms (client + server variants)
-   - Builds the server bundle
-   - Emits `dist/server/manifest.json` and `dist/client/manifest.json`
-
-### `ev dev` Flow
-
-1. Same config resolution as `ev build`
-2. Calls `BundlerAdapter.dev()` which starts the dev server with HMR
-3. The adapter signals `onServerBundleReady` after server bundle is built
-4. The CLI core auto-starts the API server via `@evjs/server/node`
-5. Sets up proxy: `/api/*` → `localhost:3001`
 
 ## Agent Skills
 
-The `skills/` directory contains user-facing guides for building apps with evjs. If you change CLI commands, config options, or runtime APIs, please update the relevant skills.
-
-Available skill references: `init`, `dev`, `build`, `routing`, `server-fns`, `server-routes`, `config`
+The local evjs skill and docs should be updated whenever CLI commands, config options, plugin hooks, runtime APIs, examples, or templates change.

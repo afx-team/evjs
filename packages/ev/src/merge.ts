@@ -10,30 +10,32 @@ export type ConfigPatch<T> = T extends Builtin
       : T;
 
 export function merge<T extends object>(target: T, patch: ConfigPatch<T>): T {
-  mergeObject(
-    target as unknown as Record<string, unknown>,
-    patch as Record<string, unknown>,
-  );
+  if (isObject(patch)) {
+    mergeObject(target, patch);
+  }
   return target;
 }
 
-function mergeObject(
-  target: Record<string, unknown>,
-  patch: Record<string, unknown>,
-): void {
+function mergeObject(target: object, patch: object): void {
   for (const [key, value] of Object.entries(patch)) {
-    const current = target[key];
+    const current = Reflect.get(target, key);
 
     if (isPlainObject(current) && isPlainObject(value)) {
       mergeObject(current, value);
       continue;
     }
 
-    target[key] = value;
+    Reflect.set(target, key, value);
   }
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
+function isObject(value: unknown): value is object {
+  return (
+    (typeof value === "object" && value !== null) || typeof value === "function"
+  );
+}
+
+function isPlainObject(value: unknown): value is object {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
   }

@@ -8,8 +8,13 @@
  * The framework runtime imports FROM this module to read the registry.
  */
 
+import {
+  assertServerFunctionExportName,
+  assertServerFunctionId,
+} from "@evjs/shared";
+
 /** A registered server function. */
-export type ServerFn = (...args: unknown[]) => Promise<unknown>;
+export type ServerFn = (...args: unknown[]) => unknown | Promise<unknown>;
 
 /** Internal registry mapping function IDs to implementations. */
 export const registry = new Map<string, ServerFn>();
@@ -27,8 +32,21 @@ export const registry = new Map<string, ServerFn>();
 export function registerServerReference(
   fn: ServerFn,
   fnId: string,
-  _exportName?: string,
+  exportName?: string,
 ): void {
+  if (typeof fn !== "function") {
+    throw new Error("[evjs] registerServerReference() fn must be a function.");
+  }
+  assertServerFunctionId(fnId, "registerServerReference()");
+  if (exportName !== undefined) {
+    assertServerFunctionExportName(exportName, "registerServerReference()");
+  }
+  if (registry.has(fnId)) {
+    throw new Error(
+      `[evjs] registerServerReference() duplicate fnId "${fnId}". Server function IDs must be unique.`,
+    );
+  }
+
   registry.set(fnId, fn);
 }
 

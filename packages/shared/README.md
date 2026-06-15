@@ -1,42 +1,43 @@
 # @evjs/shared
 
-> Shared utility types, errors, and constants for the **evjs** fullstack framework.
+`@evjs/shared` is the framework contract package used by evjs packages,
+bundler adapters, deployment adapters, and custom framework tooling.
 
-## Features
+Application code should not import this package directly. Use the app-facing
+packages instead:
 
-- **Protocol Schemas** — Shared types for the server function wire format.
-- **Unified Error Handling** — `ServerError` and `ServerFunctionError` types for consistent error propagation.
-- **Config Definitions** — Types and default values for `ev.config.ts`.
-- **Framework Discovery** — Utils for resolving project root and discovered manifests.
+- `@evjs/ev` for config, plugin types, and framework build APIs.
+- `@evjs/ev/client` for browser/page APIs and client-side server-function errors.
+- `@evjs/ev/server` for server functions, server routes, and structured server
+  errors.
 
-## Install
+## Contract Surface
 
-```bash
-npm install @evjs/shared
-```
+The package intentionally exposes only two subpaths:
 
-## Structure
+- `@evjs/shared` for runtime constants, page/server route helpers, HTTP method
+  helpers, build identifier validation, path pattern validation and matching,
+  URL string validation, server-function ID validation, and RSC Flight page URL
+  normalization. It also exposes shared error classes used internally by `@evjs/client` and
+  `@evjs/server`.
+- `@evjs/shared/manifest` for `AppGraph`, `BuildPlan`, `BuildOutput`, and
+  manifest types consumed by framework tooling and deployment adapters.
 
-- **Config**: `EvConfig`, `ResolvedEvConfig`, and `defineConfig()`.
-- **Errors**: `ServerError`, `ServerFunctionError`.
-- **Constants**: `CONFIG_DEFAULTS`.
+When adding new framework contracts, prefer extending one of these subpaths
+instead of creating another distributed package.
 
-## Core Logic
+## Tooling Usage
 
-This package contains shared logic and types used by both the client-side (`@evjs/client`) and server-side (`@evjs/server`) runtimes.
+Custom adapters can consume manifest contracts directly:
 
 ```ts
-import { ServerError } from "@evjs/shared";
+import type { BuildOutput } from "@evjs/shared/manifest";
 
-// Throwing structured errors
-throw new ServerError("The requested user does not exist", {
-  status: 404,
-  data: { userId: "123" },
-});
+export function deploy(output: BuildOutput) {
+  return output;
+}
 ```
 
-The error then flows seamlessly through the transport layer to the client.
-
-## License
-
-MIT
+App code should import equivalent runtime APIs from `@evjs/ev/client` or
+`@evjs/ev/server`; the direct runtime packages are implementation packages
+behind those facades.

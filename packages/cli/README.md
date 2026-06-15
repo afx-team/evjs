@@ -37,7 +37,8 @@ Uses the default bundler adapter directly (no temp config files):
 
 Runs the production build through `@evjs/ev` with `NODE_ENV=production`:
 - `dist/client/` — optimized client assets with content hashes.
-- `dist/server/main.[hash].js` — server bundle (entry discovered via `dist/server/manifest.json`).
+- `dist/server/main.[hash].js` — server bundle.
+- `dist/manifest.json` — single framework manifest with client, server, route, and function metadata.
 
 ## Configuration
 
@@ -87,5 +88,5 @@ my-app/
 
 Users do NOT need to install these — they're included through `@evjs/cli`:
 - `@evjs/bundler-utoopack`
-- `@evjs/build-tools`
+- build tools under `@evjs/ev`
 - the bundler's underlying compiler dependencies

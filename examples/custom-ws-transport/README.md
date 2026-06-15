@@ -12,8 +12,8 @@ npm run dev
 
 | File | Purpose |
 |------|---------|
-| `src/main.tsx` | `initTransport` with WebSocket adapter |
-| `src/routes.tsx` | UI with users CRUD |
+| `src/layout/index.tsx` | SPA root layout |
+| `src/pages/index.tsx` | `initTransport` with WebSocket adapter and users CRUD UI |
 | `src/api/users.server.ts` | Server functions |
 
 

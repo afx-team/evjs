@@ -29,7 +29,7 @@ function useFeatures() {
       description: translate({
         id: "homepage.feature.clientRoutes.description",
         message:
-          "Full end-to-end type safety from server to browser URL bar, powered by TanStack Router.",
+          "Type-safe page params, search, loaders, and navigation from src/pages without route-tree boilerplate.",
       }),
     },
     {
@@ -97,7 +97,7 @@ function HeroSection() {
         <h1 className={styles.heroTitle}>evjs</h1>
         <p className={styles.heroSubtitle}>
           <Translate id="homepage.tagline">
-            React fullstack framework built on TanStack + Hono
+            React fullstack framework for file-based pages and Hono servers
           </Translate>
         </p>
         <div className={styles.heroButtons}>

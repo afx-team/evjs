@@ -24,6 +24,14 @@ describe("ServerError", () => {
     expect(err.data).toEqual({ field: "email", reason: "invalid" });
   });
 
+  it("rejects non-error HTTP statuses", () => {
+    for (const status of [200, 302, 399, 600, 1.5, Number.NaN]) {
+      expect(() => new ServerError("Invalid status", { status })).toThrow(
+        "[evjs] ServerError status must be an integer HTTP error status between 400 and 599.",
+      );
+    }
+  });
+
   it("is an instance of Error", () => {
     const err = new ServerError("test");
     expect(err).toBeInstanceOf(Error);

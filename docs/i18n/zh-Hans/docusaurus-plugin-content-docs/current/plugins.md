@@ -1,6 +1,6 @@
 # 插件
 
-evjs 插件扩展构建流水线的自定义行为 —— 从注入构建器规则、修改输出 HTML，到收集构建元数据用于 CI/CD。插件在 `ev.config.ts` 中声明，并按依赖解析后的顺序执行。
+evjs 插件扩展框架阶段，也可以在需要时修改当前 bundler 配置。插件 API 围绕 graph -> build plan -> build output 构建流水线设计。
 
 ## 快速示例
 
@@ -11,16 +11,12 @@ export default defineConfig({
   plugins: [
     {
       name: "build-timer",
-      setup(ctx) {
-        let t0: number;
+      setup() {
+        const start = Date.now();
         return {
-          buildStart() {
-            t0 = Date.now();
-            console.log(`构建中 (${ctx.mode})...`);
-          },
-          buildEnd(result) {
-            console.log(`完成，耗时 ${Date.now() - t0}ms`);
-            console.log(`${result.clientManifest.assets.js.length} 个 JS 资源`);
+          buildEnd({ output }) {
+            console.log(`Build ${output.buildId} finished in ${Date.now() - start}ms`);
+            console.log(Object.keys(output.assets).length, "entry asset groups");
           },
         };
       },
@@ -31,77 +27,40 @@ export default defineConfig({
 
 ## 插件结构
 
-每个插件是一个包含 `name`，以及可选 `config()` / `setup()` 函数的对象：
-
 ```ts
-interface EvPlugin {
-  /** 插件名称 —— 用于日志和错误信息。 */
+import type { Config, Plugin, PluginHooks, ResolvedConfig } from "@evjs/ev";
+
+interface Plugin<TBundlerConfig = unknown> {
   name: string;
-
-  /** 必须启用并先于当前插件执行的插件名称。 */
   dependencies?: string[];
-
-  /** 启用时先于当前插件执行的可选插件名称。 */
   optionalDependencies?: string[];
+  enforce?: "pre" | "normal" | "post";
 
-  /** 在默认值解析前修改用户原始配置。 */
-  config?: (
-    config: EvConfig,
-    ctx: EvPluginConfigContext,
-  ) => EvConfig | undefined | Promise<EvConfig | undefined>;
+  config?(config: Config<TBundlerConfig>, ctx: PluginConfigContext):
+    | Config<TBundlerConfig>
+    | undefined
+    | Promise<Config<TBundlerConfig> | undefined>;
 
-  /** 初始化插件，返回生命周期钩子。 */
-  setup?: (
-    ctx: EvPluginContext,
-  ) => EvPluginHooks | undefined | Promise<EvPluginHooks | undefined>;
+  setup?(ctx: PluginContext<TBundlerConfig>):
+    | PluginHooks<TBundlerConfig>
+    | undefined
+    | Promise<PluginHooks<TBundlerConfig> | undefined>;
 }
 ```
 
-### 插件顺序
+插件名必须唯一。提供 `config` 和 `setup` 时，它们必须是函数。`dependencies` 和
+`optionalDependencies` 控制排序，并同时作用于 `config()` 和 `setup()`。依赖列表中
+的 plugin name 必须非空且不能重复；同一个 plugin name 不能同时出现在
+`dependencies` 和 `optionalDependencies` 中。Plugin object 只接受 `name`、
+`dependencies`、`optionalDependencies`、`enforce`、`config` 和 `setup`，因此生命周期入口拼写错误会在
+config resolution 阶段失败。
 
-默认情况下，插件按照 `plugins` 数组中的顺序执行。插件可以通过
-`dependencies` 或 `optionalDependencies` 声明依赖关系。依赖顺序同时
-作用于 `config` 和 `setup`，因此所有返回的生命周期钩子都会使用同一份
-解析后的插件顺序。
+## Config Hook
 
-这让插件包可以在内部维护自己的顺序约束。应用用户只需要启用所需插件，
-不需要理解或手动排列这些插件内部依赖。
-
-`dependencies` 是硬依赖：缺失时 evjs 会报错。`optionalDependencies`
-缺失时会被忽略；如果对应插件已启用，则它仍然必须先于当前插件执行。
-
-```ts
-plugins: [
-  {
-    name: "plugin-b",
-    dependencies: ["plugin-c"],
-    optionalDependencies: ["plugin-a"],
-    setup() {
-      // 会在 plugin-c 之后执行。
-      // 如果启用了 plugin-a，也会在 plugin-a 之后执行。
-    },
-  },
-  {
-    name: "plugin-a",
-    setup() {
-      // 启用时会在 plugin-b 之前执行。
-    },
-  },
-  {
-    name: "plugin-c",
-    setup() {
-      // plugin-b 的硬依赖。
-    },
-  },
-]
-```
-
-插件名称必须唯一。硬依赖缺失或形成循环依赖时，evjs 会把它们作为配置
-错误报告；由可选依赖参与形成的循环也会被报告。
-
-### Config Hook
-
-`config` hook 在 evjs 解析默认配置前执行。它适合修改框架级配置，尤其是那些会影响派生配置、开发代理或运行时代码注入的选项，例如 `server.functions.endpoint`。
+`config()` 用于修改必须早于默认值解析、graph 分析、dev proxy 或运行时路径派生的框架配置。
+它可以返回 config object，也可以在原对象上就地修改后返回 `undefined`。`null`、
+array 和其他返回值会被拒绝。最终配置会经过和用户配置相同的 resolver 校验，然后才会
+运行 `setup()` hooks 或开始 bundling。
 
 ```ts
 import { defineConfig, merge } from "@evjs/ev";
@@ -109,10 +68,12 @@ import { defineConfig, merge } from "@evjs/ev";
 export default defineConfig({
   plugins: [
     {
-      name: "custom-function-endpoint",
+      name: "server-base-path",
       config(config) {
         merge(config, {
-          server: { functions: { endpoint: "/api/rpc" } },
+          server: {
+            basePath: "/_framework",
+          },
         });
         return config;
       },
@@ -121,293 +82,176 @@ export default defineConfig({
 });
 ```
 
-这里的 `merge()` 会按 `EvConfig` 对嵌套 patch 做类型检查。
+不要用 `bundlerConfig()` 修改框架协议路径。服务端函数、PPR、RSC endpoint 都从 `server.basePath` 派生。
 
-如果只是应用自己配置服务端函数端点，直接在 `defineConfig` 中设置 `server.functions.endpoint` 即可。只有需要由插件统一注入或封装这类配置时，才使用 `config` hook。
-
-### Setup 上下文
-
-`setup` 函数接收一个包含当前模式和完整解析配置的上下文：
+## Setup 上下文
 
 ```ts
-interface EvPluginContext {
+interface PluginContext<TBundlerConfig = unknown> {
   mode: "development" | "production";
+  command: "dev" | "build";
   cwd: string;
-  config: ResolvedEvConfig;
+  config: ResolvedConfig<TBundlerConfig>;
+  logger: Logger;
+  addWatchFile(file: string): void;
 }
 ```
 
-所有返回的钩子通过闭包共享状态 —— 在 `setup()` 中初始化共享变量，返回引用它们的钩子。
+在 `setup()` 中初始化共享状态并返回生命周期 hooks。返回值必须是 hooks object 或
+`undefined`；`null`、array 和非函数 hook 字段会在命令生命周期 hooks 运行前被拒绝。
+未知 hook 名也会被拒绝，因此 `buildstart` 这类拼写错误不会被静默忽略。
 
-## 生命周期钩子
-
-钩子在构建流水线的特定节点运行：
+## 生命周期
 
 ```mermaid
 flowchart LR
-    A[config] --> B["resolveConfig"]
-    B --> C[setup]
-    C --> D[buildStart]
-    D --> E[bundlerConfig]
-    E --> F["bundler 编译"]
-    F --> G["HTML 生成"]
-    G --> H[transformHtml]
-    H --> I[buildEnd]
+  A["config hooks"] --> B["resolve config"]
+  B --> C["setup hooks"]
+  C --> D["commandStart"]
+  D --> E["buildStart"]
+  E --> F["create AppGraph"]
+  F --> G["appGraph hooks"]
+  G --> H["create BuildPlan"]
+  H --> I["buildPlan hooks"]
+  I --> J["bundlerConfig hooks"]
+  J --> K["bundler build"]
+  K --> L["link BuildOutput"]
+  L --> M["buildOutput hooks"]
+  M --> N["transformHtml per document"]
+  N --> O["buildEnd"]
+  O --> P["dispose"]
 ```
 
-| 钩子 | 签名 | 时机 |
-|------|------|------|
-| `config` | `(config, ctx) => EvConfig \| undefined \| Promise<...>` | 默认配置解析前 |
-| `buildStart` | `() => void \| Promise<void>` | 编译开始前 |
-| `bundlerConfig` | `(config, ctx) => void` | 构建器配置创建期间 |
-| `transformHtml` | `(doc, result) => void \| Promise<void>` | 资源注入后、HTML 输出前 |
-| `buildEnd` | `(result) => void \| Promise<void>` | 生产构建编译完成后 |
-
-所有钩子均可异步（返回 `Promise`）。
-
-`config` 用于修改 evjs 框架配置；`bundlerConfig` 只用于修改底层构建器配置。不要用 `bundlerConfig` 改服务端函数端点这类运行时协议配置，因为它无法同步影响开发代理等框架派生配置。
-
----
-
-### `buildStart`
-
-编译开始前运行一次。用于日志记录、初始化计时器或设置外部服务。
-
-```ts
-setup() {
-  return {
-    buildStart() {
-      console.log("编译开始...");
-    },
-  };
-}
-```
-
----
-
-### `bundlerConfig`
-
-直接修改底层构建器配置。应使用当前构建器对应的类型辅助函数，避免依赖类型断言或错误的配置结构。
-
-```ts
-setup() {
-  return {
-    bundlerConfig(config, ctx) {
-      // 优先使用下方的类型辅助函数修改特定构建器配置。
-    },
-  };
-}
-```
-
-#### 类型安全的构建器配置
-
-通常情况下，插件只需支持项目实际使用的构建器即可。evjs 默认使用 `utoopack`。导入 `utoopack()` 辅助函数即可获得完整的 TypeScript 支持：
-
-```ts
-import { merge, utoopack } from "@evjs/bundler-utoopack";
-
-{
-  name: "yaml-support",
-  setup() {
-    return {
-      bundlerConfig: utoopack((cfg) => {
-        merge(cfg, {
-          module: { rules: { ".yaml": { type: "json" } } },
-        });
-      }),
-    };
-  },
-}
-```
-
-这些辅助函数会包装你的回调，并仅在对应的构建器处于激活状态时执行。
-
----
-
-### `transformHtml`
-
-在 evjs 注入 `<script>` 和 `<link>` 标签之后、文件写入磁盘之前，修改输出 HTML **文档**。
-
-钩子接收一个已解析的 DOM 文档（`EvDocument`）—— 使用标准 DOM 方法操作它。无需脆弱的字符串替换。
-
-```ts
-setup() {
-  return {
-    transformHtml(doc, result) {
-      // 注入 <meta> 标签
-      const meta = doc.createElement("meta");
-      meta.setAttribute("name", "generator");
-      meta.setAttribute("content", "evjs");
-      doc.head?.appendChild(meta);
-
-      // 注入包含构建信息的注释
-      const count = result.clientManifest.assets.js.length;
-      const comment = doc.createComment(` ${count} 个 JS 资源 `);
-      doc.head?.appendChild(comment);
-    },
-  };
-}
-```
-
-#### 多插件协作
-
-当多个插件定义 `transformHtml` 时，它们都接收**相同的文档**，变更按顺序累积：
-
-```ts
-plugins: [
-  pluginA,  // 添加 <meta name="a">
-  pluginB,  // 添加 <meta name="b"> —— 可以看到 pluginA 的 <meta> 已在 DOM 中
-]
-```
-
-#### `EvDocument` API
-
-`EvDocument` 接口是标准 DOM API 的构建器无关子集。主要方法：
-
-| 类别 | 方法 |
+| Hook | 用途 |
 |------|------|
-| **查询** | `querySelector()`, `querySelectorAll()`, `getElementById()` |
-| **属性** | `getAttribute()`, `setAttribute()`, `removeAttribute()`, `hasAttribute()` |
-| **树操作** | `appendChild()`, `removeChild()`, `insertBefore()`, `append()`, `prepend()`, `remove()` |
-| **内容** | `insertAdjacentHTML()`, `innerHTML`（读写）, `outerHTML`（只读）, `textContent` |
-| **创建** | `createElement()`, `createTextNode()`, `createComment()` |
-| **遍历** | `head`, `body`, `parentNode`, `firstChild`, `children`, `childNodes` |
+| `commandStart(ctx)` | 插件初始化后的命令级准备 |
+| `buildStart(ctx)` | graph 工作前的构建准备 |
+| `appGraph(graph, ctx)` | 添加或调整框架 graph metadata |
+| `buildPlan(plan, ctx)` | 调整 bundler 无关的 entry/html/runtime plan |
+| `bundlerConfig(config, ctx)` | 修改当前 bundler 配置 |
+| `buildOutput(output, ctx)` | 向单一框架输出添加部署/runtime metadata |
+| `transformHtml(doc, ctx)` | 逐个 HTML 文档修改输出 |
+| `buildEnd({ output, isRebuild })` | 构建后输出最终产物 |
+| `devPlanUpdate(update, ctx)` | dev 中观察框架 plan 变化 |
+| `dispose(ctx)` | 清理资源 |
 
-导入类型用于显式标注：
+## HTML Transform 上下文
 
-```ts
-import type { EvDocument } from "@evjs/ev";
-```
-
----
-
-### `buildEnd`
-
-生产构建编译完成后运行。接收包含两个 manifest 的 `EvBuildResult`：
+`transformHtml()` 每次接收一个已解析 HTML 文档。应通过 `ctx.kind` 判断当前文档归属，不要从文件名猜。
 
 ```ts
-interface EvBuildResult {
-  clientManifest: ClientManifest;      // 资源、路由
-  serverManifest?: ServerManifest;     // entry、fns（server: false 时为 undefined）
-  isRebuild: boolean;                 // 常规生产构建为 false
+transformHtml(doc, ctx) {
+  doc.head?.appendChild(doc.createComment(` build ${ctx.buildId} `));
+
+  if (ctx.kind === "app") {
+    doc.documentElement?.setAttribute("data-app", ctx.appId);
+  }
+
+  if (ctx.kind === "page") {
+    doc.documentElement?.setAttribute("data-page", ctx.pageId);
+  }
 }
 ```
+
+常用字段：
+
+- `ctx.kind`: `"app"` 或 `"page"`；
+- `ctx.appId` 或 `ctx.pageId`；
+- `ctx.fileName` 和 `ctx.template`；
+- `ctx.assets`；
+- `ctx.output`: 完整 `BuildOutput`；
+- `ctx.buildId` 和 `ctx.publicPath`。
+
+文档类型是 `HtmlDocument`，它是标准 DOM API 的 bundler 无关子集：
+
+```ts
+import type { HtmlDocument } from "@evjs/ev";
+```
+
+## Build Output
+
+`buildEnd()` 接收单一框架输出：
 
 ```ts
 setup() {
   return {
-    buildEnd(result) {
-      console.log("JS:", result.clientManifest.assets.js);
-      console.log("CSS:", result.clientManifest.assets.css);
-
-      if (result.serverManifest) {
-        console.log("服务端函数:", Object.keys(result.serverManifest.fns));
-      }
+    buildEnd({ output }) {
+      console.log("Apps:", Object.keys(output.apps));
+      console.log("Pages:", Object.keys(output.pages));
+      console.log("Functions:", Object.keys(output.server?.functions ?? {}));
     },
   };
 }
 ```
 
-## 实用示例
+部署插件应该从 `BuildOutput` 读取 routes、functions、assets、remotes 和 runtime paths。
 
-### 注入构建时常量
+## Bundler Config
+
+底层 bundler 修改应使用 adapter helper。Utoopack 示例：
 
 ```ts
 import { merge, utoopack } from "@evjs/bundler-utoopack";
 
-{
-  name: "env-inject",
-  setup() {
-    return {
-      bundlerConfig: utoopack((cfg) => {
-        merge(cfg, {
-          define: {
-            __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
-            __APP_VERSION__: JSON.stringify("1.0.0"),
-          },
-        });
-      }),
-    };
-  },
+export function yamlPlugin() {
+  return {
+    name: "yaml-support",
+    setup() {
+      return {
+        bundlerConfig: utoopack((cfg) => {
+          merge(cfg, {
+            module: {
+              rules: {
+                ".yaml": { type: "json" },
+              },
+            },
+          });
+        }),
+      };
+    },
+  };
 }
 ```
 
-### 生成部署 Manifest
+## 示例
+
+### 部署 Metadata
 
 ```ts
-import fs from "node:fs";
-
-{
-  name: "deploy-manifest",
-  setup(ctx) {
-    return {
-      buildEnd(result) {
-        fs.writeFileSync(
-          "dist/deploy.json",
-          JSON.stringify({
+export function deployMetadata() {
+  return {
+    name: "deploy-metadata",
+    setup() {
+      return {
+        buildOutput(output) {
+          output.deployment = {
+            platform: "custom",
             builtAt: new Date().toISOString(),
-            mode: ctx.mode,
-            js: result.clientManifest.assets.js,
-            css: result.clientManifest.assets.css,
-            hasServer: !!result.serverManifest,
-          }, null, 2),
-        );
-      },
-    };
-  },
+          };
+        },
+      };
+    },
+  };
 }
 ```
 
-### 为脚本添加 CSP Nonce
+### 页面 Metadata
 
 ```ts
-import crypto from "node:crypto";
-
-{
-  name: "csp-nonce",
-  setup() {
-    return {
-      transformHtml(doc) {
-        const nonce = crypto.randomBytes(16).toString("base64");
-
-        // 为所有注入的脚本添加 nonce
-        for (const script of doc.querySelectorAll("script")) {
-          script.setAttribute("nonce", nonce);
-        }
-
-        // 注入 CSP meta 标签
-        const meta = doc.createElement("meta");
-        meta.setAttribute("http-equiv", "Content-Security-Policy");
-        meta.setAttribute(
-          "content",
-          `script-src 'nonce-${nonce}' 'strict-dynamic'`,
-        );
-        doc.head?.appendChild(meta);
-      },
-    };
-  },
+export function pageMetadata() {
+  return {
+    name: "page-metadata",
+    setup() {
+      return {
+        transformHtml(doc, ctx) {
+          if (ctx.kind !== "page") return;
+          const meta = doc.createElement("meta");
+          meta.setAttribute("name", "evjs-page");
+          meta.setAttribute("content", ctx.pageId);
+          doc.head?.appendChild(meta);
+        },
+      };
+    },
+  };
 }
 ```
-
-### 注入统计分析代码
-
-```ts
-{
-  name: "analytics",
-  setup() {
-    return {
-      transformHtml(doc) {
-        doc.body?.insertAdjacentHTML(
-          "beforeend",
-          `<script defer src="https://analytics.example.com/script.js"
-                  data-website-id="abc-123"></script>`,
-        );
-      },
-    };
-  },
-}
-```
-
-## 示例项目
-
-查看 [`examples/plugin-authoring`](https://github.com/afx-team/evjs/tree/main/examples/plugin-authoring) 获取演示插件钩子的完整示例。

@@ -1,107 +1,54 @@
-# ev Framework — Roadmap
+# ev Framework Roadmap
 
-## ✅ Stage 1 — Client-First SPA
+This roadmap tracks the current architecture direction. Historical milestones
+are preserved in `CHANGELOG.md`; this file should reflect active reality.
 
-Foundation: a zero-config React SPA with type-safe routing and data fetching.
+## Completed Core Architecture
 
-- [x] `createApp({ routeTree })` — wires Router + QueryClient + DOM mount
-- [x] Code-based routing via TanStack Router
-  - [x] `createRoute`, `createRootRoute`, `createAppRootRoute`
-  - [x] `Link`, `Outlet`, nested layouts
-  - [x] Typed loader context with `queryClient`
-- [x] Data fetching via TanStack Query
-  - [x] Re-exported hooks: `useQuery`, `useMutation`, `useSuspenseQuery`, etc.
-  - [x] `QueryClientProvider` wired automatically
-- [x] CLI
-  - [x] `npx @evjs/create-app` — scaffold from example templates
-  - [x] `ev dev` — unified dev server (client HMR + server watch)
-  - [x] `ev build` — single-command production build
+- [x] Explicit config and static declaration model for apps, pages, remotes,
+      server functions, server routes, SSR/PPR/RSC render metadata.
+- [x] `AppGraph`, `BuildPlan`, and `BuildOutput` schemas under
+      `@evjs/shared/manifest`.
+- [x] Graph analysis and build planning under `@evjs/ev/src/build-tools`.
+- [x] Single framework manifest output at `dist/manifest.json`.
+- [x] Stage-based plugin hooks: `appGraph`, `buildPlan`, `bundlerConfig`,
+      `buildOutput`, per-document `transformHtml`, `buildEnd({ output })`,
+      `devPlanUpdate`, and `dispose`.
+- [x] Programmatic `prepareFrameworkBuild()` API for resolving config,
+      running graph/plan plugin hooks, and returning `AppGraph` + `BuildPlan`
+      without invoking a bundler or platform adapter.
+- [x] Consolidated package shape around `@evjs/ev`, `@evjs/client`,
+      `@evjs/server`, `@evjs/shared`, `@evjs/cli`, and `@evjs/create-app`.
+- [x] Single top-level `@evjs/client` entry with framework-managed page,
+      navigation, shell, RSC, and static route APIs.
+- [x] RSC client runtime exports remain available from `@evjs/client`, while
+      `react-server-dom-webpack/client` is loaded only when RSC APIs are used.
+- [x] React page runtime, shell runtime, remote loading, and host-provided shared
+      scope negotiation.
+- [x] `@evjs/server` framework rendering boundary for SSR, PPR, and RSC Flight.
+- [x] Production Node deployment adapter driven by `BuildOutput`.
+- [x] Full-feature host/remote example plus e2e coverage on the webpack
+      validation path.
 
-## ✅ Stage 2 — Server Functions
+## Adapter Status
 
-Call server-side logic from the browser as normal async functions.
+- [x] `@evjs/bundler-utoopack` remains the default adapter and consumes
+      `BuildPlan` where its lower-layer APIs are sufficient.
+- [x] `@evjs/bundler-webpack` validates the complete new architecture path.
+- [ ] Utoopack dynamic dev entry update API for configured MPA page additions.
+- [ ] Utoopack generic entry wrapping/loadable entry facts for component pages.
+- [ ] Utoopack multi server-entry support for SSR/PPR/RSC renderers.
+- [ ] Utoopack structured dev build callbacks and stats delivery.
+- [ ] Utoopack RSC client/server reference to chunk metadata.
 
-- [x] Build pipeline
-  - [x] `"use server"` directive detection via SWC AST parsing
-  - [x] Client transform: function bodies → `createServerReference` server function stubs
-  - [x] Server transform: original bodies kept + `registerServerReference` injected
-  - [x] Stable function IDs derived from file path + export name (SHA-256)
-  - [x] Bundler-agnostic transforms in `@evjs/build-tools`
-- [x] Webpack integration
-  - [x] `EvBundlerPlugin` with auto-discovery and child compiler
-  - [x] `server-fn-loader` — thin adapter delegating to `@evjs/build-tools`
-  - [x] Dynamic server entry generation (no manual config)
-- [x] Query integration
-  - [x] `useQuery(fn, ...args)` / `useMutation(fn)` — zero-boilerplate wrappers
-  - [x] `getFnQueryOptions()`, `getFnQueryKey()` — for prefetching and cache invalidation
-  - [x] `.queryOptions()`, `.queryKey()` on server function stubs
-- [x] Transport
-  - [x] JSON-based server function wire format (`{ fnId, args }` → `{ result }`)
-  - [x] Configurable endpoint: `initTransport({ baseUrl, endpoint })`
-  - [x] Pluggable `ServerTransport` interface for custom protocols
-- [x] Server runtime
-  - [x] Hono-based server function handler with request validation
-  - [x] `createApp()` — configurable API path via `server.functions.endpoint`
-  - [x] Multi-runtime: Node.js, ECMA (Deno/Bun/edge) adapters
-  - [x] Server context helpers for request access (`request`, `headers`, `cookies`, `waitUntil`)
-  - [x] Request context is available to server functions without manual parameter passing
-- [x] Manifest
-  - [x] Versioned schema (`manifest.json` v1)
-  - [x] Maps function IDs → module + export name
-- [x] Dev experience
-  - [x] Reverse proxy in dev server (`/api/*` → API server)
-  - [x] E2E tests with parallel execution and dynamic ports
+## Remaining Product Work
 
-## ✅ Stage 3 — Zero-Config Fullstack Framework
-
-DX improvements: unified CLI and zero-config builds.
-
-- [x] Zero-config `ev build` / `ev dev` — no `custom bundler config file` needed
-- [x] `ev.config.ts` with `defineConfig()` for optional customization
-- [x] Config split: `ClientConfig` (entry, html, plugins, dev) + `ServerConfig` (entry, runtime, functions, plugins, dev)
-- [x] MPA (Multi-Page Application)
-  - [x] `pages` field: `Record<string, { entry, html? }>`
-  - [x] Multiple bundler entries + per-page `generateHtml()` calls
-  - [x] Takes precedence over `entry` / `html` when set
-- [x] bundler Node API — no temp config files, no subprocess spawning
-- [x] All examples migrated to zero-config
-- [x] E2E tests use `ev build` directly
-
-## ✅ Stage 4 — Plugin System & Build Metadata
-
-Extensibility and richer build output.
-
-- [x] Plugin module rules system (`client.plugins` / `server.plugins`)
-  - [x] `EvPlugin` interface with `name` + `setup()` → lifecycle hooks (`buildStart`, `bundlerConfig`, `transformHtml`, `buildEnd`)
-  - [x] `EvModuleRule` with `test`, `exclude`, `use` (string or `{ loader, options }`)
-  - [x] Tailwind CSS example (`with-tailwind`) using `postcss-loader`
-- [x] Manifest client section
-  - [x] `client.assets: { js, css }` — bundle asset paths
-  - [x] `client.routes: RouteEntry[]` — discovered route paths
-- [x] Template symlinks for `npx @evjs/create-app` (no duplication between examples and templates)
-
-## ✅ Stage 5 — Bundler-Agnostic Architecture
-
-Swappable bundler adapters with utoopack as the new default.
-
-- [x] `BundlerAdapter` interface in `@evjs/ev`
-  - [x] `build(config, cwd, hooks)` and `dev(config, cwd, callbacks, hooks)` contract
-  - [x] Generic `TBundlerCfg` type parameter for type-safe plugin hooks
-- [x] `@evjs/bundler-utoopack` adapter (default)
-  - [x] Production builds via `@utoo/pack` programmatic API
-  - [x] Dev server with HMR
-  - [x] `UtoopackManifestGenerator` for client/server manifest emission
-  - [x] Native `"use server"` directive support (no custom loader needed)
-- [x] `@evjs/bundler-utoopack` removed (utoopack is the sole bundler)
-- [x] Type-safe bundler config helper: `utoopack()`
-- [x] E2E tests run against utoopack
-
-## 🔲 Exploring
-
-Future directions under consideration. Nothing committed yet.
-
-- [ ] **SSR**
-  - [ ] Server-side rendering with fallback to CSR
-  - [ ] HTML streaming and hydration
-- [ ] **RSC**
-  - [ ] React Server Components via Flight protocol
+- [ ] Platform-specific deployment adapters after runtime contracts are concrete
+      for each platform.
+- [ ] RSC server actions beyond the current `"use server"` RPC/action transport.
+- [ ] More granular `BuildPlanUpdate` reasons for plugin authors if real plugins
+      need them.
+- [ ] Further graph dependency narrowing once bundlers expose module/reference
+      facts that can replace framework-side static import closure analysis.
+- [ ] Migration guides for external deployment plugins that still consume older
+      split manifests.

@@ -15,14 +15,18 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 const { WebSocketServer } = require("ws");
 
 const serverEntryPath = process.env.SERVER_ENTRY;
 const distDir = process.env.CLIENT_DIR;
 const port = Number(process.env.PORT);
+const manifestPath = process.env.MANIFEST_PATH;
 
-if (!serverEntryPath || !distDir || !port) {
-  console.error("Missing required env: SERVER_ENTRY, CLIENT_DIR, PORT");
+if (!serverEntryPath || !distDir || !port || !manifestPath) {
+  console.error(
+    "Missing required env: SERVER_ENTRY, CLIENT_DIR, PORT, MANIFEST_PATH",
+  );
   process.exit(1);
 }
 
@@ -30,7 +34,18 @@ if (!serverEntryPath || !distDir || !port) {
 // and exports the fetch handler (app.fetch) as `default`.
 // We use the bundle's own fetch handler to ensure it shares the same
 // server function registry that registerServerReference populated.
-const handler = require(serverEntryPath);
+const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+globalThis.__EVJS_MANIFEST__ = manifest;
+const serverDir = path.dirname(serverEntryPath);
+globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => {
+  const mod = await import(pathToFileURL(path.resolve(serverDir, asset)).href);
+  const nested =
+    mod && typeof mod.default === "object" ? mod.default : undefined;
+  return nested && ("default" in nested || "render" in nested) ? nested : mod;
+};
+const serverModule = require(serverEntryPath);
+const handler =
+  serverModule.default?.default ?? serverModule.default ?? serverModule;
 
 const indexHtml = fs.readFileSync(path.join(distDir, "index.html"), "utf-8");
 
@@ -64,12 +79,12 @@ const wss = new WebSocketServer({ server, path: "/ws" });
 wss.on("connection", (ws) => {
   ws.on("message", async (raw) => {
     const { id, fnId, args } = JSON.parse(raw.toString());
-    const request = new Request(new URL("api/fn", "http://localhost/"), {
+    const request = new Request(new URL("__evjs/fn", "http://localhost/"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fnId, args: args ?? [] }),
     });
-    const response = await handler.default.fetch(request);
+    const response = await handler.fetch(request);
     const result = await response.json();
     ws.send(JSON.stringify({ id, ...result }));
   });

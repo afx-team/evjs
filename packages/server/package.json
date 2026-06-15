@@ -3,10 +3,27 @@
   "version": "0.0.0",
   "description": "Server-side runtime for the evjs framework",
   "dependencies": {
+    "@evjs/client": "*",
     "@evjs/shared": "*",
     "@hono/node-server": "^1.19.11",
     "@logtape/logtape": "^2.0.4",
     "hono": "^4.12.9"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0",
+    "react-server-dom-webpack": "^19.2.5"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "react-server-dom-webpack": {
+      "optional": true
+    }
   },
   "homepage": "https://github.com/evaijs/evjs#readme",
   "bugs": {
@@ -19,6 +36,7 @@
   "license": "MIT",
   "author": "xusd320",
   "type": "module",
+  "types": "./esm/index.d.ts",
   "publishConfig": {
     "access": "public"
   },
@@ -47,18 +65,31 @@
       "types": "./esm/runtimes/fetch.d.ts",
       "import": "./esm/runtimes/fetch.js",
       "default": "./esm/runtimes/fetch.js"
+    },
+    "./framework": {
+      "types": "./esm/framework.d.ts",
+      "import": "./esm/framework.js",
+      "default": "./esm/framework.js"
+    },
+    "./react": {
+      "types": "./esm/react.d.ts",
+      "import": "./esm/react.js",
+      "default": "./esm/react.js"
     }
   },
   "scripts": {
-    "build": "tsc",
-    "test": "vitest run",
-    "check-types": "tsc --noEmit"
+    "prepare-client-runtime": "npm --workspace @evjs/client run prepare-shared-runtime && (test -f ../client/esm/page-context.js || npm --workspace @evjs/client run build)",
+    "build": "npm run prepare-client-runtime && tsc",
+    "test": "npm run prepare-client-runtime && vitest run",
+    "check-types": "npm run prepare-client-runtime && tsc --noEmit"
   },
   "files": [
     "esm"
   ],
   "devDependencies": {
     "@types/node": "^22.19.15",
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0",
     "typescript": "^6.0.2"
   },
   "keywords": [

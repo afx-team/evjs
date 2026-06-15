@@ -8,4 +8,6 @@ import { defineConfig } from "@evjs/ev";
  * `evjs` automatically applies `postcss-loader` alongside `css-loader`.
  * No custom loaders or `bundler` hooks are needed!
  */
-export default defineConfig({});
+export default defineConfig({
+  server: false,
+});

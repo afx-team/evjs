@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { EvConfig } from "../src/config.js";
+import type { Config } from "../src/config.js";
 import { merge } from "../src/merge.js";
 
 describe("merge", () => {
   it("merges nested config sections", () => {
-    const config: EvConfig = {
+    const config: Config = {
       server: {
-        functions: { endpoint: "api/fn" },
+        basePath: "/api",
         dev: { port: 3001 },
       },
     };
@@ -19,14 +19,14 @@ describe("merge", () => {
 
     expect(config).toEqual({
       server: {
-        functions: { endpoint: "api/fn" },
+        basePath: "/api",
         dev: { port: 3001, https: false },
       },
     });
   });
 
   it("replaces arrays instead of merging them by index", () => {
-    const config: EvConfig = {
+    const config: Config = {
       dev: {
         proxy: [{ context: ["/api"], target: "http://localhost:3001" }],
       },
@@ -44,7 +44,7 @@ describe("merge", () => {
   });
 
   it("returns the target object", () => {
-    const config: EvConfig = {};
+    const config: Config = {};
 
     const result = merge(config, {
       entry: "./src/main.tsx",
@@ -54,12 +54,12 @@ describe("merge", () => {
     expect(config.entry).toBe("./src/main.tsx");
   });
 
-  it("type-checks EvConfig patches", () => {
-    const config: EvConfig = {};
+  it("type-checks Config patches", () => {
+    const config: Config = {};
 
     merge(config, {
       server: {
-        functions: { endpoint: "/api/rpc" },
+        basePath: "/api",
       },
     });
 
@@ -71,7 +71,7 @@ describe("merge", () => {
 
     merge(config, {
       pages: {
-        home: "./src/home/main.tsx",
+        home: "./src/Home.tsx",
         about: { entry: "./src/about/main.tsx" },
       },
     });

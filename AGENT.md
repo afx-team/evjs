@@ -5,64 +5,115 @@
 ## Package Map
 
 | Package | Path | Key Files |
-|---------|------|-----------|
-| `@evjs/cli` | `packages/cli` | `src/cli.ts` (CLI entry), `src/index.ts` (programmatic API: `dev`, `build`), `src/load-config.ts` |
-| `@evjs/ev` | `packages/ev` | `src/config.ts` (EvConfig types, defineConfig, resolveConfig), `src/plugin.ts` (EvPlugin, hooks), `src/bundler.ts` (BundlerAdapter) |
-| `@evjs/create-app` | `packages/create-app` | `src/index.ts` (scaffolding logic) |
-| `@evjs/shared` | `packages/shared` | `src/errors.ts` (ServerError, ServerFunctionError), `src/constants.ts`, `src/http.ts` |
-| `@evjs/client` | `packages/client` | `src/query.ts` (useQuery, getFnQueryOptions), `src/transport.ts` (createServerReference, initTransport), `src/route.ts`, `src/context.ts` |
-| `@evjs/server` | `packages/server` | `src/app.ts` (createApp), `src/functions/dispatch.ts`, `src/functions/register.ts`, `src/routes/route-handler.ts` |
-| `@evjs/build-tools` | `packages/build-tools` | `src/transforms/index.ts`, `src/entry.ts`, `src/codegen.ts`, `src/types.ts` (RUNTIME constants), `src/utils.ts` |
-| `@evjs/bundler-utoopack` | `packages/bundler-utoopack` | `src/adapter/index.ts` (BundlerAdapter), `src/manifest-generator.ts` |
-| `@evjs/manifest` | `packages/manifest` | `src/index.ts` (ManifestV1 types, ManifestCollector) |
+| --- | --- | --- |
+| `@evjs/cli` | `packages/cli` | `src/index.ts`, `src/load-config.ts` |
+| `@evjs/ev` | `packages/ev` | `src/config.ts`, `src/plugin.ts`, `src/bundler.ts`, `src/commands.ts`, `src/deployment.ts`, `src/build-tools/*` |
+| `@evjs/create-app` | `packages/create-app` | `src/index.ts`, template restore scripts |
+| `@evjs/shared` | `packages/shared` | `src/build-identifier.ts`, `src/constants.ts`, `src/errors.ts`, `src/http.ts`, `src/page-route-data.ts`, `src/path-pattern.ts`, `src/server-function-id.ts`, `src/server-route-data.ts`, `src/manifest/*` |
+| `@evjs/client` | `packages/client` | `src/app.tsx`, `src/navigation.ts`, `src/transport.ts`, `src/page-route.ts`, `src/page.ts`, `src/react.ts`, `src/rsc.ts`, `src/remote-app.tsx`, `src/shell/*` |
+| `@evjs/server` | `packages/server` | `src/app.ts`, `src/framework.ts`, `src/react.ts`, `src/react-renderer.ts`, `src/functions/*`, `src/routes/*`, `src/runtimes/*` |
+| `@evjs/bundler-utoopack` | `packages/bundler-utoopack` | `src/adapter/index.ts`, `src/adapter/create-config.ts`, `src/manifest-generator.ts` |
+| `@evjs/bundler-webpack` | `packages/bundler-webpack` | `src/adapter/index.ts`, `src/adapter/create-config.ts`, `src/manifest-generator.ts`, webpack validation tests |
+
+There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace package. The implementation moved into `@evjs/ev` internals and `@evjs/shared/manifest`.
 
 ## Coding Rules
 
-1. **ESM only** — all packages use `"type": "module"`. Use `.js` extensions in relative imports within compiled output.
-2. **Imports** — all imports at top, use `import type` for type-only imports.
-3. **Linter** — Biome. No `any`, no `import * as`. Run `npx biome check --write` before committing.
-4. **Server functions** — files must start with `"use server";`. We recommend the `.server.ts` suffix or `src/api/` convention.
-5. **Server function exports** — named async functions only. No default exports, no arrow function exports.
-6. **Config file** — named `ev.config.ts` (not `evjs.config.ts`).
-7. **Dependency resolution** — CLI uses `createRequire(import.meta.url)` for loader path resolution.
-8. **No manual server entries** — framework generates server entry dynamically via data URIs.
-9. **No manual bundler configs** — `BundlerAdapter.build/dev()` generates config in-memory.
-10. **No cloud provider names** — use generic terms ("edge runtimes", "serverless platform").
+1. All packages are ESM. Use `.js` extensions in relative imports that survive compilation.
+2. Keep imports at the top and use `import type` for type-only imports.
+3. Run Biome before finalizing changes.
+4. Do not add generated `.evjs` production source files. Prefer runtime/library entries or bundler adapter mechanics.
+5. Keep `@evjs/bundler-*` adapters semantic-free: they consume `BuildPlan` and return build facts.
+6. `server.functions.endpoint` is not a public config option. Use `server.basePath`; runtime paths are derived into `BuildOutput.runtime.server`.
+7. Page route code should use `src/pages`, page hooks, `Link`, and static page
+   exports. TanStack route trees are a framework implementation detail for
+   file-based SPA routing.
+8. Application-facing client code should import page hooks, navigation,
+   transport, remote host helpers, and RSC helpers from `@evjs/ev/client`.
+   Generated page bootstrap, React page mounting, server-function stubs,
+   route-tree construction, and shell runtime code belong behind generated-only
+   `@evjs/ev/client/internal/*` facade subpaths.
+9. Utoopack remains the default. Do not present webpack as the normal user path; it is the validation/fallback backend for features blocked on Utoopack APIs.
+10. Route/path/build-ID/server-function-ID conventions should use the shared
+    helpers in `@evjs/shared` first. Keep caller-specific error text local, but
+    avoid re-copying validation rules into config, build analysis, client
+    runtime, or server runtime code.
 
 ## Key APIs
 
 | API | Package | Purpose |
-|-----|---------|---------|
-| `createApp({ routeTree })` | `@evjs/client` | Client-side app factory (Router + QueryClient + DOM mount) |
-| `createApp({ routeHandlers })` | `@evjs/server` | Server app factory (Hono + server function handler) |
-| `useQuery(fn, ...args)` | `@evjs/client` | Type-safe query hook accepting server functions directly |
-| `getFnQueryOptions(fn, ...args)` | `@evjs/client` | Convert server function to `{ queryKey, queryFn }` for loaders/prefetch |
-| `createRoute(path, definition)` | `@evjs/server` | Programmatic REST route handler |
+| --- | --- | --- |
 | `defineConfig(config)` | `@evjs/ev` | Type-safe `ev.config.ts` helper |
-| `transformServerFile(source, options)` | `@evjs/build-tools` | SWC-based "use server" file transform |
-| `ServerError(message, { status, data })` | `@evjs/shared` | Structured error for server functions |
+| `src/pages` + `routing` | `@evjs/ev` | File-based SPA/MPA route source; users write page modules, not route trees |
+| `createPagesApp()` | `@evjs/ev/client/internal` | Internal/framework-managed page route runtime used by generated SPA entries |
+| `Link`, page hooks, page metadata exports | `@evjs/ev/client` / page modules | Public page authoring API for params, search, loader data, navigation, and render metadata |
+| React page runtime | `@evjs/ev/client/internal/react-page` | Framework-managed component page mount/hydration |
+| Server-function stubs | `@evjs/ev/client/internal` | Generated client references and internal transport dispatch |
+| Shell runtime | `@evjs/ev/client/internal` | Manifest-driven app/page/remote activation and shared scope negotiation |
+| RSC client runtime | `@evjs/ev/client` | React Flight client integration |
+| `createApp({ routes, middlewares })` | `@evjs/ev/server` | Server functions, REST routes, SSR/PPR/RSC framework requests |
+| `createReactFrameworkServer()` | `@evjs/ev/server/react` | React SSR/RSC framework server integration |
+| `nodeDeploymentAdapter()` | `@evjs/ev` | Production Node deployment artifact and server module emission |
 
 ## Common Mistakes
 
-1. ❌ Using `export default` for server functions → ✅ Use named exports only
-2. ❌ Using arrow functions: `export const fn = async () =>` → ✅ Use `export async function fn()`
-3. ❌ Wrapping args: `useQuery(fn, [id])` → ✅ Spread args: `useQuery(fn, id)`
-4. ❌ Calling `useQueryClient()` outside React → ✅ Pass `queryClient` instance to utility functions
-5. ❌ Using `invalidate()` method on proxy → ✅ Use `queryClient.invalidateQueries({ queryKey: getFnQueryKey(fn) })`
-6. ❌ Forgetting `"use server";` directive → build-tools silently skips the file
-7. ❌ Using global `useParams()` → ✅ Use route-scoped `myRoute.useParams()` for type safety
+1. Using old `@evjs/build-tools` or `@evjs/manifest` imports. Use internal `@evjs/ev` helpers or `@evjs/shared/manifest`.
+2. Putting route ownership in plugin options. Use `src/pages` for
+   framework-managed SPA/MPA routes and `pages.*.path` only for lower-level
+   standalone page outputs.
+3. Exposing generated TanStack route trees, `__root.tsx`, or `.evjs` route
+   files to application authors. The framework owns those details.
+4. Adding extra page filename dialects. Dynamic segments use `$param`, root
+   layout is `layout/index.tsx` beside the route directory, and `src/pages`
+   only contains page modules.
+5. Watching every source file for graph invalidation. `fileDependencies` should stay narrower than the analysis closure.
+6. Using `await import(href)` as the default browser shell loader. Shell modules are registered by scripts so lower browser targets and non-Vite bundlers are not tied to dynamic import comments.
+7. Treating `server.functions` manifest output as user config.
+8. Passing loose objects to `createApp({ framework })`. Framework server
+   manifests must be generated `BuildOutput` shapes, and shared manifest shape
+   validation belongs in `@evjs/shared/manifest`; use
+   `createReactFrameworkServer()` unless an adapter intentionally owns that
+   contract.
+9. Reintroducing public packages for build tools, manifest helpers, router
+   glue, or runtime internals. Prefer top-level public APIs or subpath exports
+   on the existing package that owns the behavior.
 
 ## Testing
 
 ```bash
-npm run test         # Vitest unit tests across all packages
-npm run test:e2e     # Playwright E2E tests
-npx biome check .    # Lint + format check
+npm run lint
+npm run check-types
+npm run test
+npm run test:e2e
 ```
+
+Use focused package checks while editing, then run the repo gates before
+finishing. Prefer the current npm workspace form so arguments are passed to the
+workspace script predictably:
+
+```bash
+npm --workspace @evjs/ev test -- tests/build-tools-graph-plan.test.ts tests/deployment.test.ts tests/config.test.ts
+npm --workspace @evjs/client test -- tests/shell.test.ts tests/remote-app.test.ts
+npm --workspace @evjs/server test -- tests/app.test.ts tests/react-renderer.test.ts
+npm --workspace @evjs/bundler-webpack test -- tests/adapter.test.ts
+```
+
+| Surface | Primary files | Focused validation |
+| --- | --- | --- |
+| File route convention and SPA/MPA graph | `packages/ev/src/build-tools/page-route-conventions.ts`, `page-routes.ts`, `graph/index.ts`, `plan/index.ts` | `npm --workspace @evjs/ev test -- tests/build-tools-page-routes.test.ts tests/build-tools-graph-plan.test.ts tests/commands.test.ts` |
+| Config and package surface | `packages/ev/src/config.ts`, package manifests | `npm --workspace @evjs/ev test -- tests/config.test.ts tests/package-surface.test.ts` |
+| Server functions and route handlers | `packages/server/src/app.ts`, `functions/*`, `routes/*`, `packages/client/src/transport.ts`, `packages/ev/src/build-tools/server-fns.ts` | `npm --workspace @evjs/server test -- tests/app.test.ts tests/dispatch.test.ts tests/register.test.ts tests/route-handler.test.ts` and `npm --workspace @evjs/client test -- tests/transport.test.ts` |
+| SSR, SSG, PPR, and RSC | `packages/ev/src/build-tools/graph/index.ts`, `plan/index.ts`, `packages/server/src/framework.ts`, `react-renderer.ts`, `packages/client/src/rsc.ts` | `npm --workspace @evjs/ev test -- tests/build-tools-graph-plan.test.ts` and `npm --workspace @evjs/server test -- tests/react-renderer.test.ts tests/app.test.ts` |
+| Remote host/runtime | `packages/client/src/remote-app.tsx`, `src/shell/*`, `packages/ev/src/build-tools/graph/index.ts` | `npm --workspace @evjs/client test -- tests/remote-app.test.ts tests/shell.test.ts` |
+| Bundler adapters | `packages/bundler-utoopack/src/adapter/*`, `packages/bundler-webpack/src/adapter/*` | `npm --workspace @evjs/bundler-utoopack test` and `npm --workspace @evjs/bundler-webpack test -- tests/adapter.test.ts` |
+| Documentation-only behavior changes | `docs/docs/*`, `docs/i18n/*`, `README.md`, `AGENTS.md`, `AGENT.md` | `npm run lint`, `git diff --check`, plus the focused behavior test when prose encodes a runtime contract |
 
 ## Adding New Features
 
-- **New server function**: Create `src/api/[name].server.ts` (recommended) with `"use server";`, export named async functions
-- **New route**: Define with `createRoute({ getParentRoute, path, component })`, add to route tree
-- **New example**: Create `examples/[name]/`, add symlink in `packages/create-app/templates/`, add E2E test in `e2e/cases/`
-- **New route handler**: Use `createRoute("/api/path", { GET, POST, ... })` and pass to `createApp({ routeHandlers })`
+- Add framework semantics in `packages/ev/src/build-tools` and `@evjs/shared/manifest` first.
+- Add bundler support by mapping `BuildPlan` to the selected adapter.
+- Add runtime behavior under `packages/client/src/*` or `packages/server/src/*`
+  according to ownership. Export application-facing client APIs from the
+  `@evjs/ev/client` facade, and keep generated bootstrap or shell primitives
+  behind generated-only `@evjs/ev/client/internal/*` facade subpaths.
+- Cover the feature in `examples/full-features` when it crosses graph, bundler, manifest, runtime, and server boundaries.

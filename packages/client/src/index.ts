@@ -3,7 +3,6 @@
  */
 
 export { ServerFunctionError } from "@evjs/shared";
-// Cherry-picked re-exports from @tanstack/react-query
 export type {
   QueryKey,
   UseInfiniteQueryOptions,
@@ -24,144 +23,108 @@ export {
   usePrefetchQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-export type { App, CreateAppOptions, CreateAppRouterOptions } from "./app";
-export { createApp } from "./app";
-export type { AppRouteContext } from "./context";
-export { createAppRootRoute } from "./context";
+export type {
+  ActiveLinkOptions,
+  LinkOptions,
+  LinkProps,
+  NavigateOptions,
+  Redirect,
+  RedirectOptions,
+  ToOptions,
+  UseLinkPropsOptions,
+} from "./navigation.js";
+export {
+  isNotFound,
+  isRedirect,
+  Link,
+  Navigate,
+  notFound,
+  redirect,
+  useLinkProps,
+  useLocation,
+  useNavigate,
+} from "./navigation.js";
+export {
+  usePageContext,
+  usePageLoaderData,
+  usePageParams,
+  usePageSearch,
+} from "./page-context.js";
 export {
   getFnQueryKey,
   getFnQueryOptions,
   useMutation,
   useQuery,
   useSuspenseQuery,
-} from "./query";
-// biome-ignore lint/suspicious/noEmptyInterface: Users augment this interface with their app router type.
+} from "./query.js";
+// biome-ignore lint/suspicious/noEmptyInterface: Generated SPA route types augment this interface.
 export interface Register {}
 
-type EvRegister = Register;
-
-// Bridge evjs' public Register interface into TanStack Router's global types.
-declare module "@tanstack/react-router" {
-  interface Register extends EvRegister {}
-}
-
 export type {
-  ActiveLinkOptions,
-  AnyRootRoute,
-  AnyRoute,
-  AnyRouteMatch,
-  AnyRouter,
-  AwaitOptions,
-  BlockerFn,
-  ErrorComponentProps,
-  ErrorRouteComponent,
-  HistoryLocation,
-  HistoryState,
-  LinkOptions,
-  LinkProps,
-  LocationRewrite,
-  LocationRewriteFunction,
-  MatchRouteOptions,
-  NavigateOptions,
-  NotFoundError,
-  NotFoundRouteComponent,
-  NotFoundRouteProps,
-  ParsedLocation,
-  ParsedPath,
-  RegisteredRouter,
-  RouteComponent,
-  RouteMask,
-  RouteMatch,
-  RouteOptions,
-  RouterConstructorOptions,
-  RouterEvent,
-  RouterEvents,
-  RouterHistory,
-  RouterListener,
-  RouterOptions,
-  RouterProps,
-  RouterState,
-  SearchFilter,
-  SearchMiddleware,
-  SearchParser,
-  SearchSchemaInput,
-  SearchSerializer,
-  ShouldBlockFn,
-  ToMaskOptions,
-  ToOptions,
-  UseBlockerOpts,
-  UseLinkPropsOptions,
-  UseMatchRouteOptions,
-} from "./route";
+  RemoteRuntimeContext,
+  RscDebugPayload,
+  RscDebugPayloadMountOptions,
+  RscFlightFetchOptions,
+} from "./react.js";
 export {
-  Await,
-  Block,
-  CatchBoundary,
-  CatchNotFound,
-  ClientOnly,
-  composeRewrites,
-  createBrowserHistory,
-  createHashHistory,
-  createLink,
-  createMemoryHistory,
-  createRootRoute,
-  createRootRouteWithContext,
-  createRoute,
-  createRouteMask,
-  createRouter,
-  DefaultGlobalNotFound,
-  defaultParseSearch,
-  defaultStringifySearch,
-  defer,
-  ErrorComponent,
-  getRouteApi,
-  isNotFound,
-  isRedirect,
-  Link,
-  lazyRouteComponent,
-  linkOptions,
-  Match,
-  Matches,
-  MatchRoute,
-  Navigate,
-  notFound,
-  Outlet,
-  parseSearchWith,
-  RouteApi,
-  RouterContextProvider,
-  RouterProvider,
-  redirect,
-  retainSearchParams,
-  rootRouteWithContext,
-  ScrollRestoration,
-  stringifySearchWith,
-  stripSearchParams,
-  useAwaited,
-  useBlocker,
-  useCanGoBack,
-  useChildMatches,
-  useElementScrollRestoration,
-  useHydrated,
-  useLinkProps,
-  useLoaderData,
-  useLoaderDeps,
-  useLocation,
-  useMatch,
-  useMatches,
-  useMatchRoute,
-  useNavigate,
-  useParams,
-  useParentMatches,
-  useRouteContext,
-  useRouter,
-  useRouterState,
-  useSearch,
-} from "./route";
+  fetchRscDebugPayload,
+  fetchRscFlight,
+  loadRscDebugPage,
+  mountRscDebugPayload,
+  useRemoteContext,
+} from "./react.js";
+export type {
+  RemoteAppActivationRequest,
+  RemoteAppContext,
+  RemoteAppHookOptions,
+  RemoteAppHookResult,
+  RemoteAppManifestLoadContext,
+  RemoteAppModule,
+  RemoteAppProps,
+  RemoteAppReactProps,
+  RemoteAppRuntimeController,
+  RemoteAppRuntimeErrorContext,
+  RemoteAppRuntimeHooks,
+  RemoteAppRuntimeOptions,
+  RemoteAppSharedNegotiation,
+  RemoteAppSharedResolution,
+  RemoteAppSharedScope,
+  RemoteAppSharedScopeEntry,
+  RemoteAppState,
+  RemoteAppStatus,
+  RemoteAppTargetOptions,
+} from "./remote-app.js";
+export {
+  createRemoteAppManifest,
+  formatRemoteSharedNegotiation,
+  getRemoteSharedVersion,
+  RemoteApp,
+  resolveRemoteAppManifestUrl,
+  startRemoteAppRuntime,
+  useRemoteHost,
+} from "./remote-app.js";
+export type {
+  PageRouteLoaderData,
+  PageRouteParams,
+  PageRoutePath,
+  PageRouteSearch,
+} from "./route-types.js";
+export type {
+  ReactRscModelOptions,
+  ReactRscMountOptions,
+  ReactRscRuntimeBootstrap,
+} from "./rsc.js";
+export {
+  createReactRscModel,
+  mountReactRscPage,
+  startReactRscPageRuntime,
+  unmountReactRscPage,
+} from "./rsc.js";
 export type {
   HeaderFactory,
   RequestContext,
   ServerFunction,
   TransportAdapter,
   TransportOptions,
-} from "./transport";
-export { getFnName, initTransport } from "./transport";
+} from "./transport.js";
+export { initTransport } from "./transport.js";

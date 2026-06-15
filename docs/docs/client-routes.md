@@ -1,375 +1,301 @@
 # Client Routes
-evjs routing is built on [TanStack Router](https://tanstack.com/router). All routing APIs are re-exported from `@evjs/client` — never import from `@tanstack/react-router` directly.
 
-:::important
-**Route paths must be string literals.** The `path` property only accepts string literal types — passing a `string` variable or template string will produce a TypeScript compile error. This is enforced by the type system to ensure routes are statically analyzable.
-
-```ts
-// ✅ Good — string literal
-createRoute({ path: "/users/$id", ... });
-
-// ❌ Compile error — broad `string` type
-const p: string = "/users";
-createRoute({ path: p, ... });
-
-// ❌ Compile error — template string
-createRoute({ path: `/users/${segment}`, ... });
-```
-:::
+evjs uses `src/pages` as the client-routing source of truth. Application code
+lives in page files; the framework discovers those files and either builds one
+framework-owned SPA or one router-free MPA page per file. evjs does not write
+temporary runtime route files; SPA mode only emits a type declaration such as
+`src/evjs-route-types.d.ts` so TypeScript can infer navigation paths from the
+page tree.
 
 ## Project Structure
 
 ```
 src/
-├── main.tsx              ← Entry: build route tree, createApp, register types
-├── api/*.server.ts       ← Server functions
+├── api/*.server.ts        # Optional server functions
+├── layout/
+│   └── index.tsx          # Optional SPA root layout
 └── pages/
-    ├── __root.tsx         ← Root layout (nav + <Outlet />)
-    ├── home.tsx           ← Static route
-    ├── user.tsx           ← Dynamic route (/users/$username)
-    ├── posts/index.tsx    ← Nested routes with layout
-    ├── dashboard.tsx      ← Pathless layout
-    ├── search.tsx         ← Search param validation
-    └── catch.tsx          ← Redirects & 404 catch-all
+    ├── index.tsx          # /
+    ├── about.tsx          # /about
+    ├── users/$userId.tsx  # /users/$userId
+    └── posts/index.tsx    # /posts
 ```
 
-## Entry Point Setup
+Dynamic route segments use `$param` filenames. Bracket segments such as
+`[id].tsx` or `[...slug].tsx` are rejected so the file convention stays
+unambiguous. Catch-all and optional segments are not part of the page route
+convention yet, so `$...slug.tsx`, `$slug?.tsx`, and `$.tsx` are also rejected.
+Dynamic param names must be JavaScript identifiers after `$`, such as
+`$userId.tsx` or `$team_id.tsx`, but reserved object-property names such as
+`$__proto__.tsx`, `$constructor.tsx`, and `$prototype.tsx` are rejected.
+`$_splat.tsx` is also reserved because wildcard routes expose `*` as `_splat`.
+Static route segments must be lowercase and URL-safe: lowercase letters,
+numbers, `.`, `_`, `-`, or `~`; use explicit `pages` config when a file needs
+to map to a custom or case-sensitive path. A route path must not repeat a
+dynamic param name, so `teams/$teamId/users/$teamId.tsx` is rejected.
+Dynamic sibling routes that only differ by parameter name are also rejected:
+`users/$id.tsx` and `users/$userId.tsx` both match `/users/:param`, so keep one
+canonical name or use explicit `pages` config.
+
+Route group segments such as `(marketing)/about.tsx` are not supported; use a
+real URL segment such as `marketing/about.tsx`, or use explicit `pages` config
+when a file should map to a URL that does not follow the directory shape.
+
+Route discovery treats `.tsx`, `.jsx`, `.ts`, and `.js` files as possible page
+modules. Declaration files (`.d.ts`), test files (`*.test.*` and `*.spec.*`),
+Storybook files (`*.story.*` and `*.stories.*`), `*.client.*` client-only
+modules, `*.server.*` server-only modules, hidden dot files/folders, and files
+without those source extensions are ignored.
+
+Files or folders whose route segment starts with `_` are private to `src/pages`.
+They can use source extensions, but they are ignored as URL routes. Use them for
+page-local components, helpers, or drafts that should not become URLs.
+
+Route order is deterministic in both SPA and MPA mode: `/` comes first, parent
+routes come before child routes, and static siblings rank before dynamic
+siblings. For example, `src/pages/users/settings.tsx` is ordered before
+`src/pages/users/$id.tsx`. The resolved route list used by graph and build-plan
+generation is normalized with the same rule, and duplicate paths, dynamic URL
+shapes, or route IDs are rejected there too. `routing.routes` is not a public
+`defineConfig()` field; applications should use `src/pages` discovery or
+explicit `pages` config. Runtime route matching also uses specificity, so
+exact/static routes win over dynamic or wildcard routes even if an external
+manifest is not already sorted.
+
+Generated route IDs must be unique. evjs derives IDs from URL paths by
+normalizing separators and punctuation to underscores, so routes such as
+`src/pages/admin/panel.tsx` and `src/pages/admin_panel.tsx` are rejected
+together because both produce `admin_panel`. Server-rendered route-derived page
+IDs use the same rule. When generated IDs collide, rename one route file or move
+the page to explicit `pages` config with a unique page id.
+
+Every discovered route file must default-export a React component. If a module
+under `src/pages` is not a route page, put it in an underscore-prefixed file or
+folder, name it `*.client.*` for client-only code, name it `*.server.*` for
+server-only code, or move it outside `src/pages`. Syntax and default-export
+errors are reported during route discovery before the bundler runs.
+
+SPA routing is enabled automatically when `src/pages` exists and the project
+does not declare explicit `app`, `pages`, or `remote` config. To opt in
+explicitly or customize discovery:
+
+```ts
+// ev.config.ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  routing: {
+    mode: "spa",
+    dir: "./src/pages",
+    mount: "#app",
+  },
+});
+```
+
+For an MPA, use the same page files and switch the output mode:
+
+```ts
+// ev.config.ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  routing: {
+    mode: "mpa",
+  },
+});
+```
+
+In MPA mode every discovered CSR page is emitted as an independent HTML document
+and client entry. File-route pages that export `render = "ssg"` emit an
+independent static HTML document and a server renderer for static generation; by
+default they do not create a browser page entry. No client router setup is
+added.
+
+## Pages
+
+Each page module exports a default React component. Use the page hooks when
+page logic needs the current route params, search params, or loader data:
 
 ```tsx
-// src/main.tsx
-import { createApp } from "@evjs/client";
-import { rootRoute } from "./pages/__root";
-import { homeRoute } from "./pages/home";
-import { postsRoute, postsIndexRoute, postDetailRoute } from "./pages/posts";
+// src/pages/users/$userId.tsx
+import { usePageParams, useQuery } from "@evjs/ev/client";
+import { getUser } from "../../api/users.server";
 
-const routeTree = rootRoute.addChildren([
-  homeRoute,
-  postsRoute.addChildren([postsIndexRoute, postDetailRoute]),
-]);
+export default function UserPage() {
+  const { userId } = usePageParams();
+  const { data: user } = useQuery(getUser, userId);
+  if (!user) return null;
+  return <h1>{user.name}</h1>;
+}
+```
 
-const app = createApp({ routeTree });
+Use page hooks for route data in both SPA and MPA mode. They keep page modules
+free of framework wrapper types and avoid prop annotations. evjs does not pass
+`params`, `search`, or `loaderData` as page component props. File routes derive
+params from `$param` segments; lower-level explicit manifest routes can also use
+`:param` segments, and wildcard `*` segments are exposed as `_splat`. Empty
+param names, reserved object-property names, explicit `:_splat` params, and
+duplicate param names are rejected there too. A route path can contain at most
+one wildcard segment because there is only one `_splat` value. The same hooks
+expose those names.
 
-// Required for full type-safety on useParams, useSearch, Link, etc.
-declare module "@evjs/client" {
-  interface Register {
-    router: typeof app.router;
-  }
+In SPA projects with generated route types, page hooks can take a literal route
+path for route-specific inference without importing the generated declaration:
+
+```tsx
+import { usePageLoaderData, usePageParams, usePageSearch } from "@evjs/ev/client";
+
+export const validateSearch = (search: Record<string, unknown>) => ({
+  tab: typeof search.tab === "string" ? search.tab : "overview",
+});
+
+export async function loader() {
+  return { title: "Post" };
 }
 
-app.render("#app");
+export default function PostPage() {
+  const params = usePageParams("/posts/$postId");
+  const search = usePageSearch("/posts/$postId");
+  const post = usePageLoaderData("/posts/$postId");
+  return <h1>{post.title}: {params.postId} ({search.tab})</h1>;
+}
 ```
 
-### Runtime Router Options
-
-Pass router runtime options to `createApp()` when bootstrapping the client.
-The `router` field accepts TanStack Router options, except for `routeTree` and
-`context`, which evjs owns. For example, pass through TanStack Router's native
-global catch boundary opt-out, preload policy, route masks, URL rewrites,
-search serialization, and navigation lifecycle subscriptions:
+In SPA mode, page modules may export page lifecycle hooks that are useful for
+page logic, such as `loader`, `beforeLoad`, `validateSearch`,
+`pendingComponent`, `errorComponent`, and `notFoundComponent`. evjs attaches
+those exports to the framework-managed route. In MPA mode these lifecycle hooks
+are ignored; use normal component/data logic in the page.
 
 ```tsx
-import { composeRewrites } from "@evjs/client";
+// src/pages/search.tsx
+import { usePageSearch } from "@evjs/ev/client";
 
-const localeRewrite = {
-  input: ({ url }: { url: URL }) => {
-    url.pathname = url.pathname.replace(/^\/en(?=\/|$)/, "") || "/";
-    return url;
-  },
-  output: ({ url }: { url: URL }) => {
-    url.pathname = `/en${url.pathname === "/" ? "" : url.pathname}`;
-    return url;
-  },
-};
-
-const app = createApp({
-  routeTree,
-  router: {
-    disableGlobalCatchBoundary: true,
-    defaultPreload: "intent",
-    defaultPendingMs: 300,
-    rewrite: composeRewrites([localeRewrite]),
-  },
-});
-```
-
-Subscribe to router events when you need analytics, tracing, or route-level
-performance marks:
-
-```tsx
-const unsubscribe = app.router.subscribe("onResolved", (event) => {
-  console.info("navigated", event.toLocation.href);
+export const validateSearch = (search: Record<string, unknown>) => ({
+  q: typeof search.q === "string" ? search.q : "",
 });
 
-// call unsubscribe() during teardown if you register listeners manually
+export default function SearchPage() {
+  const search = usePageSearch();
+  const q = typeof search.q === "string" ? search.q : "";
+  return <h1>Search: {q}</h1>;
+}
 ```
 
-evjs sets `routeTree`, injects the router `context.queryClient`, and defaults
-`defaultPreload` to `"intent"` when you do not provide one. Other TanStack
-Router options stay transparent under `router`.
+## Layout
 
-## Root Layout
+For SPA mode, the root layout is optional. It lives beside the route directory:
+the default `src/pages` uses `src/layout/index.tsx`, and a custom `routing.dir` such
+as `src/app/pages` uses `src/app/layout/index.tsx`. When present, the default export
+wraps the current page as `children`, so user code does not need a router outlet
+component.
 
-Every app needs a root route with `<Outlet />` to render child routes:
+If a migration has a shared application shell somewhere else, configure it
+explicitly with `routing.layout: "./src/shell/AppLayout.tsx"`. Do the same for
+non-TSX layout modules such as `layout/index.jsx` or `layout/index.js`; the
+auto-discovered convention remains only `layout/index.tsx`. Set
+`routing.layout: false` when the SPA should not consume any framework root
+layout.
+
+The layout convention is SPA-only and has exactly one root directory entry beside
+the route directory: use the exact path `layout/index.tsx`. `layout.tsx`,
+`layout.jsx`, `layout.ts`, and non-TSX `layout/index.*` files are not aliases.
+MPA mode does not accept or consume a framework layout file; share visual
+wrappers by importing ordinary components from each page, or share the HTML
+template when only document chrome is common.
+
+The route directory is only for route pages. Do not put files or folders named
+`layout` under it; evjs reports that as a convention error instead of turning
+them into routes. This reserved segment is exact and case-sensitive, but
+uppercase filenames such as `Layout.tsx` still fail the lowercase static segment
+rule in discovered routes. Nested visual wrappers should be normal components
+imported by the page that needs them.
+This remains true when `routing.layout` points at an explicit module or when
+layout discovery is disabled with `routing.layout: false` or MPA mode.
 
 ```tsx
-import { createAppRootRoute, Link, Outlet } from "@evjs/client";
-
-function RootLayout() {
+// src/layout/index.tsx
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div>
+    <main>
       <nav>
-        <Link to="/" activeProps={{ style: { fontWeight: 600 } }}>Home</Link>
-        <Link to="/posts" activeProps={{ style: { fontWeight: 600 } }}>Posts</Link>
+        <a href="/">Home</a>
+        <a href="/about">About</a>
       </nav>
-      <Outlet />
-    </div>
+      {children}
+    </main>
   );
 }
-
-export const rootRoute = createAppRootRoute({ component: RootLayout });
-```
-
-## Static Routes
-
-```tsx
-import { createRoute } from "@evjs/client";
-import { rootRoute } from "./__root";
-
-export const homeRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/",
-  component: () => <h1>Home</h1>,
-});
-```
-
-## Dynamic Routes (`$param`)
-
-Use `$name` syntax for path parameters. Access them type-safely via `route.useParams()`:
-
-```tsx
-import { createRoute, useQuery } from "@evjs/client";
-import { getUser } from "../api/data.server";
-import { rootRoute } from "./__root";
-
-function UserProfile() {
-  const { username } = userRoute.useParams(); // { username: string }
-  const { data } = useQuery(getUser, username);
-  return <h2>{data?.name}</h2>;
-}
-
-export const userRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/users/$username",
-  loader: ({ params, context }) =>
-    context.queryClient.ensureQueryData(
-      getFnQueryOptions(getUser, params.username),
-    ),
-  component: UserProfile,
-});
-```
-
-## Nested Routes (Layout + Children)
-
-Parent routes render `<Outlet />` to display child routes. Wire children via `addChildren()` in `main.tsx`:
-
-```tsx
-// pages/posts/index.tsx
-import { createRoute, Link, Outlet } from "@evjs/client";
-import { rootRoute } from "../__root";
-
-// Layout route: /posts
-export const postsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/posts",
-  component: () => (
-    <div style={{ display: "flex" }}>
-      <nav>{ /* sidebar */ }</nav>
-      <Outlet />
-    </div>
-  ),
-});
-
-// Index route: /posts/ (shown when no child matches)
-export const postsIndexRoute = createRoute({
-  getParentRoute: () => postsRoute,
-  path: "/",
-  component: () => <p>Select a post</p>,
-});
-
-// Detail route: /posts/$postId
-export const postDetailRoute = createRoute({
-  getParentRoute: () => postsRoute,
-  path: "$postId",
-  loader: ({ params, context }) =>
-    context.queryClient.ensureQueryData(
-      getFnQueryOptions(getPost, params.postId),
-    ),
-  component: PostDetail,
-});
-```
-
-## Pathless Layouts
-
-Use `id` instead of `path` for shared UI that doesn't add a URL segment:
-
-```tsx
-export const dashboardLayout = createRoute({
-  getParentRoute: () => rootRoute,
-  id: "dashboard-layout",
-  component: () => <div className="layout"><Outlet /></div>,
-});
-
-export const dashboardRoute = createRoute({
-  getParentRoute: () => dashboardLayout,
-  path: "/dashboard",
-  component: Dashboard,
-});
-
-// main.tsx: dashboardLayout.addChildren([dashboardRoute])
-```
-
-## Search Parameters
-
-Use `validateSearch` to define typed query string parameters:
-
-```tsx
-export const searchRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/search",
-  validateSearch: (search: Record<string, unknown>) => ({
-    q: (search.q as string) || "",
-    page: Number(search.page) || 1,
-  }),
-  component: SearchPage,
-});
-
-function SearchPage() {
-  const { q, page } = searchRoute.useSearch(); // { q: string, page: number }
-}
-```
-
-Navigate with search params:
-
-```tsx
-<Link to="/search" search={{ q: "hello" }}>Search</Link>
-```
-
-Use search middlewares for shared query string behavior such as retaining or
-stripping keys across navigation:
-
-```tsx
-import { retainSearchParams, stripSearchParams } from "@evjs/client";
-
-export const searchRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/search",
-  validateSearch: (search: Record<string, unknown>) => ({
-    q: (search.q as string) || "",
-    debug: search.debug === "true",
-  }),
-  search: {
-    middlewares: [retainSearchParams(["q"]), stripSearchParams(["debug"])],
-  },
-});
-```
-
-## Route Loaders (Prefetching)
-
-Use `loader` to prefetch data before the route renders — eliminates loading spinners:
-
-```tsx
-export const usersRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/users",
-  staleTime: 30_000,
-  preloadStaleTime: 10_000,
-  loader: ({ context }) =>
-    context.queryClient.ensureQueryData(getFnQueryOptions(getUsers)),
-  component: UsersPage,
-});
-```
-
-## Redirects
-
-Throw `redirect()` in `beforeLoad` to redirect before rendering:
-
-```tsx
-import { createRoute, redirect } from "@evjs/client";
-
-export const redirectRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/old-blog",
-  beforeLoad: () => {
-    throw redirect({ to: "/posts" });
-  },
-});
-```
-
-## 404 Catch-All
-
-Use `path: "*"` to catch all unmatched URLs:
-
-```tsx
-export const notFoundRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "*",
-  component: () => <h1>404 — Page not found</h1>,
-});
 ```
 
 ## Navigation
 
+Navigation can use ordinary anchors or `Link` from `@evjs/ev/client`. Route files
+remain the source of truth, and navigation helpers use the same file-path
+convention for paths and params.
+
+During `ev dev` and `ev build`, SPA routing writes the generated declaration
+`src/evjs-route-types.d.ts` for the default `src/pages` route directory. A
+custom `routing.dir` writes the same file name beside that route directory's
+parent. That file augments the underlying `@evjs/client` route register used by
+the `@evjs/ev/client` `Link`, `useLinkProps`, `redirect`, and related helpers.
+It is type-only; application code should not import it or write TanStack route
+trees manually.
+
+The generated file imports its type helper from
+`@evjs/ev/client/internal/route-types`, a generated-only facade subpath that
+keeps scaffolded apps on a single direct framework package. Do not import that
+internal helper from application source.
+
+The declaration preserves each route's literal ID and path for navigation
+types. Its internal TypeScript identifiers are de-duplicated automatically, so
+valid route IDs such as `admin-panel` and `admin_panel` cannot generate invalid
+or duplicate declarations.
+
+Make sure the generated declaration is inside your `tsconfig.json` `include`.
+The default `include: ["src"]` works for `src/pages` and custom directories
+under `src`, such as `src/app/pages`. If you place routes outside `src`, include
+that route directory's parent as well.
+
 ```tsx
-import { Link, useNavigate, Navigate } from "@evjs/client";
+import { Link } from "@evjs/ev/client";
 
-// Declarative
-<Link to="/posts/$postId" params={{ postId: "1" }}>View</Link>
-
-// Imperative
-const navigate = useNavigate();
-navigate({ to: "/posts" });
-
-// Redirect component
-<Navigate to="/login" />
+export default function HomePage() {
+  return (
+    <Link to="/users/$userId" params={{ userId: "1" }}>
+      Open user
+    </Link>
+  );
+}
 ```
 
-## Route Masks
+## Rendering Metadata
 
-Route masks let one internal route render while the browser shows another URL.
-They are useful for modal routes and detail overlays:
+Page modules can continue to own rendering metadata:
 
 ```tsx
-import { Link, createRouteMask } from "@evjs/client";
+export const render = "ssr";
+export const hydrate = "load";
+export const prerender = { partial: true } as const;
 
-const postModalMask = createRouteMask({
-  routeTree,
-  from: "/posts",
-  to: "/posts/$postId",
-  params: { postId: "123" },
-});
-
-const app = createApp({
-  routeTree,
-  router: { routeMasks: [postModalMask] },
-});
-
-<Link
-  to="/posts/$postId"
-  params={{ postId: "123" }}
-  mask={{ to: "/posts" }}
->
-  Open modal
-</Link>;
+export default function CampaignPage() {
+  return <main>Campaign</main>;
+}
 ```
 
-## Available Re-exports
+The build graph reads that metadata from the page module and links it to the
+discovered route. `render` and `hydrate` must be string literals, `prerender`
+must be `true` or an object literal with `partial`, `delivery`, or
+`revalidate`, `prerender.revalidate` must be `false` or a positive integer
+number of seconds, and `rsc` must be a boolean literal. Full prerendering
+(`prerender = true` or non-partial prerender objects) must declare
+`render = "ssg"` or `render = "ssr"`. Partial prerendering must declare
+`render = "ssr"`.
 
-All imported from `@evjs/client`:
-
-| Category | APIs |
-|----------|------|
-| **Route creation** | `createAppRootRoute`, `createRoute`, `createRouter`, `createRootRouteWithContext`, `createRouteMask` |
-| **Components** | `Link`, `Outlet`, `Navigate`, `RouterProvider`, `RouterContextProvider`, `ErrorComponent`, `CatchBoundary`, `CatchNotFound`, `Await`, `ClientOnly`, `Match`, `Matches`, `MatchRoute`, `ScrollRestoration`, `Block` |
-| **Hooks** | `useParams`, `useSearch`, `useNavigate`, `useLocation`, `useMatch`, `useMatchRoute`, `useMatches`, `useParentMatches`, `useChildMatches`, `useRouter`, `useRouterState`, `useLoaderData`, `useLoaderDeps`, `useRouteContext`, `useLinkProps`, `useBlocker`, `useCanGoBack`, `useAwaited`, `useHydrated`, `useElementScrollRestoration` |
-| **Utilities** | `redirect`, `notFound`, `isRedirect`, `isNotFound`, `getRouteApi`, `RouteApi`, `linkOptions`, `lazyRouteComponent`, `createLink`, `defer`, `retainSearchParams`, `stripSearchParams`, `composeRewrites`, `defaultParseSearch`, `defaultStringifySearch`, `parseSearchWith`, `stringifySearchWith` |
-| **History** | `createBrowserHistory`, `createHashHistory`, `createMemoryHistory` |
+Use `export const rsc = true` only for RSC pages that also declare
+`render = "ssr"` and omit `hydrate` or declare `hydrate = "none"`. RSC pages
+cannot also use partial prerendering yet; choose one rendering model per route
+or split them into separate routes. `rsc = false` has no effect and produces a
+warning; remove it unless you are enabling RSC with `true`. Export each metadata
+name only once; duplicate `render`, `hydrate`, `prerender`, or `rsc` exports are
+rejected instead of using source order.

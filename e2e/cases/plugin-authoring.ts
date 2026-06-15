@@ -19,7 +19,7 @@ test.describe("plugin-authoring", () => {
   }) => {
     const rpcResponsePromise = page.waitForResponse((res) => {
       const url = new URL(res.url());
-      return url.pathname === "/api/rpc" && res.request().method() === "POST";
+      return url.pathname === "/api/fn" && res.request().method() === "POST";
     });
 
     await page.goto(baseURL);
@@ -41,7 +41,7 @@ test.describe("plugin-authoring", () => {
     await expect(page.getByText("Server mode: production")).toBeVisible();
 
     const defaultEndpointResponse = await page.request.post(
-      new URL("api/fn", baseURL).toString(),
+      new URL("__evjs/fn", baseURL).toString(),
       {
         data: { fnId: "missing", args: [] },
       },
@@ -64,7 +64,7 @@ test.describe("plugin-authoring", () => {
     // Verify it by reading the raw HTML source
     const html = await page.content();
     expect(html).toContain("Built with evjs");
-    expect(html).toMatch(/Built with evjs \| \d+ asset\(s\)/);
+    expect(html).toMatch(/Built with evjs \| index\.html \| \d+ asset\(s\)/);
   });
 
   test("page has correct title from template", async ({ page, baseURL }) => {

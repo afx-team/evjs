@@ -5,7 +5,7 @@
  * server functions directly, with full TArgs + TData inference.
  *
  * @example
- * import { useQuery, useSuspenseQuery } from "@evjs/client";
+ * import { useQuery, useSuspenseQuery } from "@evjs/ev/client";
  *
  * // Server function — args & data fully typed
  * const { data: users } = useQuery(getUsers);            // data: User[]
@@ -36,8 +36,23 @@ import {
   useQuery as _useQuery,
   useSuspenseQuery as _useSuspenseQuery,
 } from "@tanstack/react-query";
-import type { ServerFunction } from "./transport";
-import { callServer, getFnId } from "./transport";
+import type { ServerFunction } from "./transport.js";
+import { callServer, getServerFunction } from "./transport.js";
+
+// biome-ignore lint/suspicious/noConfusingVoidType: TanStack uses void variables to allow mutate() without an argument.
+type NoMutationVariables = void;
+type ServerMutationVariables<TArgs extends unknown[]> = TArgs extends []
+  ? NoMutationVariables
+  : TArgs extends [infer Arg]
+    ? Arg
+    : TArgs;
+type AsyncServerFunction<TArgs extends unknown[], TData> = (
+  ...args: TArgs
+) => Promise<TData>;
+type ServerMutationOptions = Omit<
+  UseMutationOptions<unknown, unknown, unknown, unknown>,
+  "mutationFn"
+>;
 
 /**
  * Extracts the stable query key for a given server function and its arguments.
@@ -49,18 +64,14 @@ import { callServer, getFnId } from "./transport";
  * This helper bridges the type gap, providing a completely type-safe way to extract the
  * underlying TanStack Query key from the server function stub without triggering static TS errors.
  */
-// biome-ignore lint/suspicious/noExplicitAny: Required for broad generic inference
-export function getFnQueryKey<T extends (...args: any[]) => Promise<any>>(
-  fn: T,
-  ...args: Parameters<T>
+export function getFnQueryKey<TArgs extends unknown[], TData>(
+  fn: AsyncServerFunction<TArgs, TData>,
+  ...args: TArgs
 ): unknown[] {
-  const fnId = getFnId(fn);
-  if (!fnId) {
-    throw new Error(
-      `getFnQueryKey() only accepts server functions. Got: ${fn.name || "anonymous"}`,
-    );
-  }
-  return (fn as unknown as ServerFunction).queryKey(...args);
+  return requireServerFunction(
+    fn,
+    "[evjs] getFnQueryKey() only accepts server functions.",
+  ).queryKey(...args);
 }
 
 /**
@@ -73,22 +84,17 @@ export function getFnQueryKey<T extends (...args: any[]) => Promise<any>>(
  * This helper bridges the type gap, providing a completely type-safe way to extract the
  * underlying TanStack Query Options from the server function stub without triggering static TS errors.
  */
-// biome-ignore lint/suspicious/noExplicitAny: Required for broad generic inference
-export function getFnQueryOptions<T extends (...args: any[]) => Promise<any>>(
-  fn: T,
-  ...args: Parameters<T>
+export function getFnQueryOptions<TArgs extends unknown[], TData>(
+  fn: AsyncServerFunction<TArgs, TData>,
+  ...args: TArgs
 ): {
   queryKey: unknown[];
-  queryFn: (ctx: { signal: AbortSignal }) => ReturnType<T>;
+  queryFn: (ctx?: { signal?: AbortSignal }) => Promise<TData>;
 } {
-  const fnId = getFnId(fn);
-  if (!fnId) {
-    throw new Error(
-      `getFnQueryOptions() only accepts server functions. Got: ${fn.name || "anonymous"}`,
-    );
-  }
-  // biome-ignore lint/suspicious/noExplicitAny: Bypass strict internal typing for user return
-  return (fn as unknown as ServerFunction).queryOptions(...args) as any;
+  return requireServerFunction(
+    fn,
+    "[evjs] getFnQueryOptions() only accepts server functions.",
+  ).queryOptions(...args);
 }
 
 // ── useQuery — server function overload + TanStack pass-through ──
@@ -117,15 +123,11 @@ export function useQuery(
   ...args: unknown[]
 ): UseQueryResult {
   if (typeof fnOrOptions === "function") {
-    const fnId = getFnId(fnOrOptions);
-    if (!fnId) {
-      throw new Error(
-        `useQuery() only accepts server functions (with "use server" directive). Got: ${fnOrOptions.name || "anonymous"}`,
-      );
-    }
-    return _useQuery(
-      (fnOrOptions as unknown as ServerFunction).queryOptions(...args),
+    const serverFunction = requireServerFunction(
+      fnOrOptions,
+      '[evjs] useQuery() only accepts server functions generated from "use server" modules.',
     );
+    return _useQuery(serverFunction.queryOptions(...args));
   }
   return _useQuery(fnOrOptions);
 }
@@ -154,15 +156,11 @@ export function useSuspenseQuery(
   ...args: unknown[]
 ): UseSuspenseQueryResult {
   if (typeof fnOrOptions === "function") {
-    const fnId = getFnId(fnOrOptions);
-    if (!fnId) {
-      throw new Error(
-        `useSuspenseQuery() only accepts server functions (with "use server" directive). Got: ${fnOrOptions.name || "anonymous"}`,
-      );
-    }
-    return _useSuspenseQuery(
-      (fnOrOptions as unknown as ServerFunction).queryOptions(...args),
+    const serverFunction = requireServerFunction(
+      fnOrOptions,
+      '[evjs] useSuspenseQuery() only accepts server functions generated from "use server" modules.',
     );
+    return _useSuspenseQuery(serverFunction.queryOptions(...args));
   }
   return _useSuspenseQuery(fnOrOptions);
 }
@@ -187,10 +185,10 @@ export function useSuspenseQuery(
 export function useMutation<TArgs extends unknown[], TData>(
   fn: (...args: TArgs) => Promise<TData>,
   options?: Omit<
-    UseMutationOptions<TData, Error, TArgs extends [infer A] ? A : TArgs>,
+    UseMutationOptions<TData, Error, ServerMutationVariables<TArgs>>,
     "mutationFn"
   >,
-): UseMutationResult<TData, Error, TArgs extends [infer A] ? A : TArgs>;
+): UseMutationResult<TData, Error, ServerMutationVariables<TArgs>>;
 export function useMutation<
   TData = unknown,
   TError = Error,
@@ -200,27 +198,81 @@ export function useMutation<
   options: UseMutationOptions<TData, TError, TVariables, TContext>,
 ): UseMutationResult<TData, TError, TVariables, TContext>;
 export function useMutation(
-  fnOrOptions:
-    | ((...args: unknown[]) => Promise<unknown>)
-    // biome-ignore lint/suspicious/noExplicitAny: Implementation signature must be wide enough for both overloads
-    | UseMutationOptions<any, any, any, any>,
-  // biome-ignore lint/suspicious/noExplicitAny: Implementation signature must be wide enough for both overloads
-  extraOptions?: Omit<UseMutationOptions<any, any, any, any>, "mutationFn">,
-  // biome-ignore lint/suspicious/noExplicitAny: Implementation signature must be wide enough for both overloads
-): UseMutationResult<any, any, any, any> {
+  fnOrOptions: unknown,
+  extraOptions?: unknown,
+): UseMutationResult<unknown, unknown, unknown, unknown> {
   if (typeof fnOrOptions === "function") {
-    const fnId = getFnId(fnOrOptions);
-    if (!fnId) {
-      throw new Error(
-        `useMutation() only accepts server functions (with "use server" directive). Got: ${fnOrOptions.name || "anonymous"}`,
-      );
-    }
-    // biome-ignore lint/suspicious/noExplicitAny: Wrap server fn for single-arg call convention
-    const mutationFn = (vars: any) => {
-      const args = Array.isArray(vars) ? vars : [vars];
-      return callServer(fnId, args);
+    const fn = fnOrOptions as (...args: unknown[]) => Promise<unknown>;
+    const serverFunction = requireServerFunction(
+      fn,
+      '[evjs] useMutation() only accepts server functions generated from "use server" modules.',
+    );
+    const mutationFn = (variables: unknown) => {
+      const args = serializeMutationArgs(serverFunction, variables);
+      return callServer(serverFunction.fnId, args);
     };
+    assertServerMutationOptions(extraOptions);
     return _useMutation({ ...extraOptions, mutationFn });
   }
-  return _useMutation(fnOrOptions);
+  return _useMutation(
+    fnOrOptions as UseMutationOptions<unknown, unknown, unknown, unknown>,
+  );
+}
+
+function serializeMutationArgs(
+  fn: ServerFunction,
+  variables: unknown,
+): unknown[] {
+  if (fn.fnArity === 0) return [];
+  if (fn.fnArity === 1) return [variables];
+  if (typeof fn.fnArity === "number" && fn.fnArity > 1) {
+    if (!Array.isArray(variables)) {
+      throw new Error(
+        `[evjs] useMutation() server function "${fn.fnName}" expects ${fn.fnArity} arguments. Pass mutation variables as a tuple array.`,
+      );
+    }
+    if (variables.length !== fn.fnArity) {
+      throw new Error(
+        `[evjs] useMutation() server function "${fn.fnName}" expects ${fn.fnArity} arguments but received ${variables.length}.`,
+      );
+    }
+    return variables;
+  }
+
+  if (variables === undefined) return [];
+  return Array.isArray(variables) ? variables : [variables];
+}
+
+function requireServerFunction<TArgs extends unknown[], TData>(
+  fn: AsyncServerFunction<TArgs, TData>,
+  message: string,
+): ServerFunction<TArgs, TData> {
+  const serverFunction = getServerFunction(fn);
+  if (serverFunction) return serverFunction;
+  throw new Error(`${message} Received ${formatFunctionCandidate(fn)}.`);
+}
+
+function formatFunctionCandidate(value: unknown): string {
+  const name = typeof value === "function" ? value.name : undefined;
+  return name ? `function "${name}"` : "an anonymous function";
+}
+
+function assertServerMutationOptions(
+  options: unknown,
+): asserts options is ServerMutationOptions | undefined {
+  if (options === undefined) return;
+  if (!isRecord(options)) {
+    throw new Error(
+      "[evjs] useMutation() server function options must be an object when provided.",
+    );
+  }
+  if ("mutationFn" in options) {
+    throw new Error(
+      "[evjs] useMutation() server function options must not include mutationFn. Pass the server function as the first argument instead.",
+    );
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

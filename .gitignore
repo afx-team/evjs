@@ -1,6 +1,7 @@
 .DS_Store
 node_modules
 .turbo
+.turbopack
 dist
 .next
 packages/shared/esm
@@ -8,7 +9,9 @@ packages/client/esm
 packages/server/esm
 esm
 .evjs
+evjs-route-types.d.ts
 test-results
+playwright-report
 evjs-dev
 
 # Docusaurus

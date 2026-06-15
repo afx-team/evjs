@@ -16,12 +16,15 @@ import type {
   SignedCookie,
 } from "hono/utils/cookie";
 
+const REQUEST_CONTEXT_ERROR_MESSAGE = [
+  "[evjs] Server context helpers (request(), headers(), cookie helpers, waitUntil()) must be called during a request lifecycle.",
+  "Call them inside a server function, route handler, middleware, or framework render.",
+].join(" ");
+
 function requireContext<E extends Env = Env>() {
   const c = tryGetContext<E>();
   if (!c) {
-    throw new Error(
-      "Server context hooks (like headers(), request()) must be called within a request lifecycle. E.g. inside a Server Function or Route.",
-    );
+    throw new Error(REQUEST_CONTEXT_ERROR_MESSAGE);
   }
   return c;
 }
@@ -131,6 +134,7 @@ export { generateCookie, generateSignedCookie };
  * (Compatible with Cloudflare 'waitUntil' / Node detached promises).
  */
 export function waitUntil(promise: Promise<unknown>): void {
+  assertWaitUntilPromise(promise);
   const c = getContext();
 
   let executionCtx: { waitUntil?: (p: Promise<unknown>) => void } | undefined;
@@ -145,5 +149,17 @@ export function waitUntil(promise: Promise<unknown>): void {
   } else {
     // Node.js fallback: avoid unhandled rejections when no runtime waitUntil exists.
     promise.catch((err) => console.error("Unhandled waitUntil error:", err));
+  }
+}
+
+function assertWaitUntilPromise(
+  value: unknown,
+): asserts value is Promise<unknown> {
+  if (
+    value === null ||
+    (typeof value !== "object" && typeof value !== "function") ||
+    typeof (value as { catch?: unknown }).catch !== "function"
+  ) {
+    throw new Error("[evjs] waitUntil() requires a Promise.");
   }
 }

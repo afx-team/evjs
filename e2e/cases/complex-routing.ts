@@ -18,17 +18,19 @@ test.describe("complex-routing", () => {
     await expect(nav.getByText("Search")).toBeVisible();
   });
 
-  test("navigates to posts and displays sidebar", async ({ page, baseURL }) => {
+  test("navigates to posts and displays post cards", async ({
+    page,
+    baseURL,
+  }) => {
     await page.goto(baseURL);
 
     await page.locator("nav").getByText("Posts").click();
 
-    // Posts layout with sidebar
     await expect(page.getByRole("heading", { name: "Posts" })).toBeVisible({
       timeout: 10_000,
     });
     await expect(
-      page.getByText("Select a post from the sidebar"),
+      page.getByRole("link", { name: "Getting Started with evjs" }),
     ).toBeVisible();
   });
 
@@ -41,15 +43,12 @@ test.describe("complex-routing", () => {
       timeout: 10_000,
     });
 
-    // Click first post in sidebar — uses typed $postId param
-    const postLink = page.locator("ul li a").first();
-    const postTitle = await postLink.textContent();
+    const postTitle = "Getting Started with evjs";
+    const postLink = page.getByRole("link", { name: postTitle });
     await postLink.click();
 
     // Post detail renders with resolved params
-    await expect(
-      page.getByRole("heading", { name: postTitle as string }),
-    ).toBeVisible({
+    await expect(page.getByRole("heading", { name: postTitle })).toBeVisible({
       timeout: 5_000,
     });
 
@@ -63,18 +62,15 @@ test.describe("complex-routing", () => {
   }) => {
     await page.goto(`${baseURL}/posts`);
 
-    // Click first post
     await expect(page.getByRole("heading", { name: "Posts" })).toBeVisible({
       timeout: 10_000,
     });
-    const postLink = page.locator("ul li a").first();
-    await postLink.click();
+    await page.getByRole("link", { name: "Getting Started with evjs" }).click();
 
     // Wait for post detail
     await expect(page.getByText("by")).toBeVisible({ timeout: 5_000 });
 
     // Click author link — navigates to /users/$username
-    await page.getByText("Back to posts", { exact: false });
     const authorLink = page.locator("p").filter({ hasText: "by" }).locator("a");
     await authorLink.click();
 
@@ -105,7 +101,7 @@ test.describe("complex-routing", () => {
   }) => {
     const dashboardPromise = page.waitForResponse(
       (res) =>
-        res.url().includes("api/fn") && res.request().method() === "POST",
+        res.url().includes("__evjs/fn") && res.request().method() === "POST",
     );
     await page.goto(`${baseURL}/dashboard`);
     const dashboardResponse = await dashboardPromise;

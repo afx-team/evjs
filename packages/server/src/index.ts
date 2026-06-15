@@ -3,7 +3,7 @@
  *
  * For environment-specific adapters, use:
  * - @evjs/server/node
- * - @evjs/server/ecma
+ * - @evjs/server/fetch
  *
  * For minimal function registration (no Hono), use:
  * - @evjs/server/register
@@ -26,12 +26,43 @@ export {
   waitUntil,
 } from "./context.js";
 export type {
+  FrameworkServerOptions,
+  ManifestRenderCoordinatorOptions,
+  ManifestServerModuleLoader,
+  ModuleRenderCoordinatorOptions,
+  PprRegionCache,
+  PprRegionCacheEntry,
+  PprRuntimeOptions,
+  RscCoordinator,
+  RscFlightContext,
+  RscFlightHandler,
+  ServerRenderContext,
+  ServerRenderCoordinator,
+  ServerRendererModule,
+  ServerRendererRegistry,
+  ServerRendererRegistryEntry,
+  ServerRenderHandler,
+  ServerRenderResult,
+} from "./framework.js";
+export {
+  createManifestRenderCoordinator,
+  createModuleRenderCoordinator,
+  handleFrameworkRenderRequest,
+  handlePprRegionRequest,
+  handleRscFlightRequest,
+} from "./framework.js";
+export type {
   DispatchError,
   DispatchResult,
   DispatchSuccess,
   ServerFn,
 } from "./functions/index.js";
 export { dispatch, registerServerReference } from "./functions/index.js";
+export type {
+  RequestLogEntry,
+  RequestLoggerOptions,
+} from "./middleware/request-logger.js";
+export { requestLogger } from "./middleware/request-logger.js";
 export type {
   RouteHandler,
   RouteHandlerDefinition,

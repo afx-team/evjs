@@ -32,26 +32,49 @@ npx biome check --write    # Fix lint/format
 
 1. **Imports** — All imports at top of file. Use `import type` for type-only imports
 2. **Linting** — Biome enforced; no `any`, no `import * as` unless necessary
-3. **Server functions** — Must start with `"use server";`, use `.server.ts` or `src/api/`
-4. **Server function exports** — Named async function exports only (no default exports)
-5. **Config file** — Named `ev.config.ts` (not `evjs.config.ts`)
+3. **Page routes** — Source of truth is `src/pages` by default. Route files use
+   `.tsx`, `.jsx`, `.ts`, or `.js`; dynamic segments use `$param`; `index` maps
+   to the directory root; `_`-prefixed files/folders are private; bracket,
+   catch-all, empty, and optional segments are unsupported
+4. **Layouts** — The SPA root layout convention is exactly
+   `src/layout/index.tsx` for default routes or the sibling `layout/index.tsx`
+   beside a custom route directory. MPA routing does not consume framework
+   layouts
+5. **Server functions** — Must start with `"use server";`, use `.server.ts` or `src/api/`
+6. **Server function exports** — Named callable exports only: function
+   declarations or `const` arrow/function expressions. No default exports,
+   cross-module re-exports, or exported non-function values
+7. **Config file** — Named `ev.config.ts` (not `evjs.config.ts`)
+8. **Package boundaries** — App-facing imports stay in `@evjs/ev`,
+   including its runtime facade subpaths such as `@evjs/ev/client` and
+   `@evjs/ev/server`. Use subpath exports on existing packages before adding
+   another distributed package. Subpath exports stay intentional and
+   documented; do not add convenience aliases. `@evjs/cli` owns the default
+   Utoopack adapter; `@evjs/shared` is a shared contract package, not an app API
+9. **Rendering contracts** — Non-CSR render modes require `server` output. PPR
+   and RSC require component page modules with `render: "ssr"`, and PPR + RSC on
+   the same page is unsupported until the runtime supports that combination
+10. **Remote contracts** — Host apps use `remotes`; remote packages use
+    singular `remote`. Remote builds need a non-empty name and at least one entry
+    with a non-empty `app` module path
 
 ## Common Tasks
 
 ### Add a new server function
 1. Create `src/api/[name].server.ts`
 2. Add `"use server";` at the top
-3. Export named async functions
+3. Export named function declarations or `const` async function expressions
 4. Import and use in client with `useQuery(fn)` or `useMutation(fn)`
 
 ### Add a new route
-1. Define route in `routes.tsx` with `createRoute()`
-2. Add to route tree via `parentRoute.addChildren([newRoute])`
+1. Add a page file under `src/pages`
+2. Use `$param` for dynamic segments and `index.tsx` for directory roots
+3. Put page-local loader/search/render metadata next to the default component export
 
 ### Add a new example
 1. Create directory under `examples/`
 2. Add `package.json` with `"@evjs/cli": "*"` as devDep
-3. Add `src/main.tsx` + `index.html`
+3. Add `src/pages/index.tsx` + `index.html`
 4. Create symlink in `packages/create-app/templates/`
 5. Add an e2e test in `e2e/cases/`
 

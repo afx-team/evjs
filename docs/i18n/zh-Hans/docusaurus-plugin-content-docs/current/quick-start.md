@@ -16,8 +16,8 @@ cd my-app && npm install
 | `basic` | 路由 + 服务端函数 |
 | `mpa` | 多页面应用模板 |
 | `api-routes` | 通过 `createRoute()` 构建程序化 REST API |
-| `complex-routing` | 参数、搜索、布局、加载器、嵌套路由 |
-| `with-tailwind` | 通过插件加载器使用 Tailwind CSS |
+| `complex-routing` | 参数、搜索、根布局、加载器、嵌套路径 |
+| `with-tailwind` | 通过 PostCSS 使用 Tailwind CSS |
 | `with-trpc` | tRPC 互操作示例 |
 | `with-sqlite` | 基于 SQLite 的全栈 CRUD |
 | `custom-ws-transport` | 自定义 WebSocket 传输层 |
@@ -29,7 +29,7 @@ cd my-app && npm install
 ev dev
 ```
 
-浏览器将自动打开 `http://localhost:3000`，支持热模块替换。`*.server.ts` 文件中的服务端函数会被自动发现 —— 无需配置。
+浏览器将自动打开 `http://localhost:3000`，支持热模块替换。显式 app/page/server 根下的 `"use server"` 模块会被自动发现。
 
 ## 生产构建
 
@@ -41,69 +41,95 @@ ev build
 
 ```
 my-app/
+├── .gitignore              # 忽略 evjs 生成类型文件
 ├── index.html              # HTML 模板（必须包含 <div id="app">）
 ├── ev.config.ts            # 可选配置
 ├── src/
-│   ├── main.tsx            # 应用启动
-│   ├── global.ts           # 全局类型声明和传输初始化
-│   ├── pages/              # 路由模块（以代码定义 TanStack Router 路由树）
-│   │   ├── __root.tsx      # 根布局
-│   │   └── home.tsx        # 首页（索引路由）
-│   └── api/                # 服务端函数文件
-│       └── *.server.ts
+│   ├── layout/
+│   │   └── index.tsx       # 可选 SPA 根布局
+│   ├── pages/              # 文件路由
+│   │   ├── index.tsx       # /
+│   │   └── users/$id.tsx   # /users/$id
+│   └── api/                # 服务端模块
+│       ├── users.server.ts # "use server" 函数
+│       └── health.routes.ts
 ├── package.json
 └── tsconfig.json
 ```
 
-## 应用启动代码
+## 页面
 
 ```tsx
-// src/main.tsx
-import { createApp } from "@evjs/client";
-import { rootRoute } from "./pages/__root";
-import { homeRoute } from "./pages/home";
-import "./global";
+// src/pages/users/$id.tsx
+import { usePageParams, useQuery } from "@evjs/ev/client";
+import { getUser } from "../../api/users.server";
 
-const routeTree = rootRoute.addChildren([homeRoute]);
-const app = createApp({ routeTree });
-app.render("#app");
-```
-
-```ts
-// src/global.ts
-declare module "@evjs/client" {
-  interface Register {
-    router: any;
-  }
+export default function UserPage() {
+  const { id } = usePageParams();
+  const { data } = useQuery(getUser, id);
+  return <main>{data?.name}</main>;
 }
 ```
+
+当项目存在 `src/pages`，且项目没有声明显式的 `app`、`pages` 或 `remote`
+配置时，evjs 会自动基于文件树构建一个 SPA。用户不需要创建
+路由胶水；这些内容由框架生成和托管。SPA 模式只会为 TypeScript 写入
+`src/evjs-route-types.d.ts`，脚手架应用默认忽略它。
+
+SPA 根布局发现是可选的。可以在路由目录旁边使用 `src/layout/index.tsx`，
+也可以通过 `routing.layout` 指向其他模块；如果应用不需要框架根布局，设置
+`routing.layout: false`。
+
+## MPA 模式
+
+MPA 使用同一套 `src/pages` 文件，只需要切换 routing 模式：
+
+```ts
+// ev.config.ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  routing: {
+    mode: "mpa",
+  },
+});
+```
+
+每个页面都会生成独立 HTML 文档和客户端 entry，不引入客户端路由器配置。
+`layout/index.tsx` 约定只用于 SPA，并且以精确路径放在页面路由目录旁边；MPA 页面需要公共外框时，
+应像普通 React 代码一样组合共享组件，且不支持 `routing.layout`。
 
 ## 包列表
 
 | 包 | 用途 |
 |---|------|
-| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | 框架 API、配置、插件和构建编排 (`defineConfig`, `dev`, `build`) |
+| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | 框架 API、配置、插件、构建编排，以及运行时 facade subpath（`@evjs/ev/client`、`@evjs/ev/server`） |
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | 注入默认构建器的轻量 CLI 包装 (`ev dev`, `ev build`) |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | 项目脚手架 (`npx @evjs/create-app`) |
-| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | 客户端运行时（React + TanStack） |
-| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | 服务端运行时（Hono） |
-| [`@evjs/build-tools`](https://github.com/evaijs/evjs/tree/main/packages/build-tools) | 服务端函数转换 |
-| [`@evjs/bundler-utoopack`](https://github.com/evaijs/evjs/tree/main/packages/bundler-utoopack) | Utoopack 适配器 |
-| [`@evjs/manifest`](https://github.com/evaijs/evjs/tree/main/packages/manifest) | 共享 Manifest Schema |
+| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | `@evjs/ev/client` 背后的浏览器运行时实现包 |
+| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | `@evjs/ev/server` 背后的 Hono/fetch 服务端运行时实现包 |
+
+Manifest schema、build tools、page runtime 和 shell 内部实现都位于上述公开包中。
+应用代码通常应从 `@evjs/ev` 及其 runtime facade subpath
+（`@evjs/ev/client`、`@evjs/ev/server`、`@evjs/ev/server/react`）导入。
+`@evjs/cli` 和 `@evjs/create-app` 应作为工具使用，不应被应用模块 import。
+`@evjs/bundler-utoopack` 这类 bundler adapter 以及 `@evjs/shared` 这类共享契约模块，
+只面向自定义框架工具或 adapter 开发。
+
+将 `@evjs/client` 和 `@evjs/server` 视为 runtime 实现包。只有应用源码明确
+要拥有更底层 runtime 契约时，才应直接从这些包导入。
 
 ## 必需依赖
 
 ```json
 {
   "dependencies": {
-    "@evjs/client": "^0.1.10",
-    "@evjs/server": "^0.1.10",
+    "@evjs/ev": "<same version>",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@evjs/ev": "^0.1.10",
-    "@evjs/cli": "^0.1.10",
+    "@evjs/cli": "<same version>",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "typescript": "^6.0.2"
@@ -113,7 +139,8 @@ declare module "@evjs/client" {
 
 :::important
 
-应用中的所有 `@evjs/*` 包必须保持相同版本。升级 evjs 时，请同时升级 `@evjs/client`、`@evjs/server`、`@evjs/ev`、`@evjs/cli` 以及其他 `@evjs/*` 包。
+应用中的所有 `@evjs/*` 包必须保持相同版本。多数应用只需要 `@evjs/ev`
+和 `@evjs/cli`；如果额外添加直接 runtime 包或 adapter 包，升级时也要一起升级。
 
 :::
 
@@ -123,4 +150,6 @@ declare module "@evjs/client" {
 - 从 `@evjs/ev` 导入 `defineConfig`，不是从 `@evjs/server`
 - HTML 必须包含 `<div id="app">` 作为渲染目标
 - 不要在你的**项目** `package.json` 中添加 `"type": "module"` —— 服务端 bundle 使用 CJS 格式
-- `src/main.tsx` 应保持精简 —— 在 `pages/` 中定义路由
+- 优先使用 `src/pages` 作为路由事实来源
+- 保持 `src/evjs-route-types.d.ts` 为生成且被忽略的文件；不要在应用代码里导入它
+- 独立页面且不需要客户端路由器时，使用 `routing.mode: "mpa"`

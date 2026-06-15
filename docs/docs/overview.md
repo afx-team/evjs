@@ -2,49 +2,78 @@
 
 > **ev** = **Ev**aluation · **Ev**olution — evaluate across runtimes, evolve with AI tooling.
 
-evjs is a zero-config React fullstack framework built on [TanStack Router](https://tanstack.com/router), [TanStack Query](https://tanstack.com/query), and [Hono](https://hono.dev). It provides a seamless development experience for building type-safe, full-stack web applications.
+evjs is a zero-config React fullstack framework with page-based client routes,
+server functions, route handlers, SSR, PPR, RSC integration points,
+manifest-driven remotes, and deployment-oriented output.
+
+The framework keeps a clear split between:
+
+- **application code**: React pages, server functions, and server routes;
+- **framework semantics**: `AppGraph`, `BuildPlan`, and `BuildOutput`;
+- **bundlers**: Utoopack by default, webpack as the validation adapter for newer framework capabilities;
+- **runtime/server/deploy adapters**: consume the framework manifest instead of reading bundler stats.
+
+SPA page routes keep navigation, loader, search, and params semantics inside
+the framework. MPA page routes use the page runtime without adding a router.
 
 ## Features
 
-- **Convention over Configuration** — `ev dev` / `ev build`, no boilerplate needed
-- **Type-Safe Routing** — TanStack Router with full inference
-- **Data Fetching** — TanStack Query with built-in proxies
-- **Server Functions** — `"use server"` directive, auto-discovered at build time
-- **Pluggable Transport** — HTTP, WebSocket, or custom via `TransportAdapter`
-- **Plugin System** — extend builds with custom module rules (Tailwind, SVG, etc.)
-- **Route Handlers** — Standard Request/Response REST endpoints via `createRoute()`
-- **Typed Errors** — `ServerError` flows structured data from server → client
-- **Multi-Runtime** — Hono-based server with Node, Deno, Bun, Edge adapters
+- **Zero-config page routes** — `ev dev` / `ev build` discover `src/pages` unless the project declares explicit `app`, `pages`, or `remote` config.
+- **SPA and MPA modes** — `routing.mode: "spa"` builds one framework-owned app; `"mpa"` builds independent router-free pages.
+- **Framework pages** — page modules can declare CSR/SSR/SSG/PPR/RSC rendering metadata next to the component.
+- **Server functions** — `"use server"` modules become browser-callable RPC stubs.
+- **Server routes** — standard Web `Request`/`Response` route handlers via `createRoute()`.
+- **Unified server boundary** — `@evjs/ev/server` handles server functions, server routes, SSR, PPR, and RSC requests.
+- **Manifest-driven remotes** — host apps load remote apps through remote manifests and shared dependency negotiation.
+- **Plugin system** — graph, plan, bundler, output, HTML, and build lifecycle hooks.
+- **Deployment output** — one public-safe framework manifest plus adapter-generated platform artifacts.
 
 ## Full-Stack Architecture
 
 ```mermaid
 flowchart LR
-    subgraph ClientSide ["💻 Client Side"]
-        UI["React App"]
-        RPC["RPC Client"]
-        FETCH["HTTP Client"]
+    subgraph Browser ["Browser"]
+        UI["React app/page runtime"]
+        RPC["Server function transport"]
+        REMOTE["Remote app shell"]
+        RSCClient["RSC client runtime"]
     end
 
-    subgraph ServerSide ["⚙️ Server Side"]
-        subgraph RenderingLayer ["🖼️ Rendering"]
+    subgraph Server ["@evjs/ev/server"]
+        subgraph Rendering ["Rendering"]
             SSR["SSR"]
+            PPR["PPR shell/regions"]
             RSC["RSC"]
         end
 
-        subgraph APILayer ["🔌 APIs"]
-            SF["⚡ Server Functions"]
-            RH["🌐 Route Handlers"]
+        subgraph APIs ["APIs"]
+            SF["Server functions"]
+            RH["Server routes"]
         end
 
-        subgraph DataLayer ["🗄️ Data"]
+        subgraph Data ["Data/services"]
             DB[("Database")]
             KV[("KV Store")]
         end
     end
 
+    subgraph Build ["Build output"]
+        MANIFEST["dist/manifest.json"]
+        ASSETS["dist/client assets"]
+        SERVERBUNDLE["dist/server bundle"]
+    end
+
+    UI --> MANIFEST
+    UI --> RPC
+    UI -.->|"document request"| SSR
+    UI -.->|"document request"| PPR
+    RSCClient -.->|"runtime.server.rsc"| RSC
+    REMOTE -.->|"remote manifest + assets"| UI
+
     SSR -->|Read| DB
     SSR -->|Read| KV
+    PPR -->|Read| DB
+    PPR -->|Read| KV
     RSC -->|Read| DB
     RSC -->|Read| KV
     SF -->|Read/Write| DB
@@ -52,10 +81,17 @@ flowchart LR
     RH -->|Read/Write| DB
     RH -->|Read/Write| KV
 
-    UI --> RPC
-    UI --> FETCH
-    UI -.->|Initial Request| SSR
-    UI -.->|RSC Fetch| RSC
-    RPC -->|POST api/fn| SF
-    FETCH -->|GET/POST /api| RH
+    RPC -->|"POST runtime.server.fn"| SF
+    UI -->|"GET/POST /api/*"| RH
+    MANIFEST --> UI
+    MANIFEST --> Server
+    ASSETS --> UI
+    SERVERBUNDLE --> Server
 ```
+
+## Current Architecture In One Sentence
+
+evjs discovers page routes and explicit server/page metadata into an `AppGraph`,
+derives a bundler-independent `BuildPlan`, links bundler facts into a single
+`BuildOutput`, and lets runtime, server, remote, plugin, and deployment adapters
+consume that output.

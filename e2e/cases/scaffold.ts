@@ -55,7 +55,9 @@ test.describe("Scaffolding CLI E2E", () => {
     });
 
     expect(fs.existsSync(path.join(targetDir, "package.json"))).toBe(true);
-    expect(fs.existsSync(path.join(targetDir, "src", "main.tsx"))).toBe(true);
+    expect(
+      fs.existsSync(path.join(targetDir, "src", "pages", "index.tsx")),
+    ).toBe(true);
     expect(fs.existsSync(path.join(targetDir, "index.html"))).toBe(true);
 
     // 2. Pack monorepo packages into tarballs for clean isolation

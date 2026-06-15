@@ -2,8 +2,11 @@
  * Shared constants for the ev runtime.
  */
 
+/** Default framework server base path. */
+export const DEFAULT_SERVER_BASE_PATH = "/__evjs";
+
 /** Default server function endpoint path, shared between client and server. */
-export const DEFAULT_ENDPOINT = "api/fn";
+export const DEFAULT_ENDPOINT = `${DEFAULT_SERVER_BASE_PATH}/fn`;
 
 declare const __EVJS_FUNCTION_ENDPOINT__: string | undefined;
 declare const process: {

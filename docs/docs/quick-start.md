@@ -16,8 +16,8 @@ Both arguments are optional — if omitted, the CLI prompts interactively.
 | `basic` | Routing + server functions |
 | `mpa` | Multi-page application setup |
 | `api-routes` | Programmatic REST API routes via `createRoute()` |
-| `complex-routing` | Params, search, layouts, loaders, nested routes |
-| `with-tailwind` | Tailwind CSS via plugin loaders |
+| `complex-routing` | Params, search, root layout, loaders, nested paths |
+| `with-tailwind` | Tailwind CSS via PostCSS |
 | `with-trpc` | tRPC interop example |
 | `with-sqlite` | Full-stack CRUD with SQLite |
 | `custom-ws-transport` | Custom WebSocket transport |
@@ -29,7 +29,9 @@ Both arguments are optional — if omitted, the CLI prompts interactively.
 ev dev
 ```
 
-Your browser opens to `http://localhost:3000` with Hot Module Replacement. Server functions in `*.server.ts` files are auto-discovered — no config needed.
+Your browser opens to `http://localhost:3000` with Hot Module Replacement.
+Server functions in `"use server"` modules are auto-discovered from explicit
+app/page/server roots.
 
 ## Production Build
 
@@ -41,69 +43,99 @@ ev build
 
 ```
 my-app/
+├── .gitignore              # Ignores generated evjs type files
 ├── index.html              # HTML template (must have <div id="app">)
 ├── ev.config.ts            # Optional config
 ├── src/
-│   ├── main.tsx            # App bootstrap
-│   ├── global.ts           # Global typings & transport init
-│   ├── pages/              # Route modules (code-defined TanStack Router tree)
-│   │   ├── __root.tsx      # Root layout
-│   │   └── home.tsx        # Home page (index route)
-│   └── api/                # Server function files
-│       └── *.server.ts
+│   ├── layout/
+│   │   └── index.tsx       # Optional SPA root layout
+│   ├── pages/              # Page routes
+│   │   ├── index.tsx       # /
+│   │   └── users/$id.tsx   # /users/$id
+│   └── api/                # Server-only modules
+│       ├── users.server.ts # "use server" functions
+│       └── health.routes.ts
 ├── package.json
 └── tsconfig.json
 ```
 
-## App Bootstrap
+## Pages
 
 ```tsx
-// src/main.tsx
-import { createApp } from "@evjs/client";
-import { rootRoute } from "./pages/__root";
-import { homeRoute } from "./pages/home";
-import "./global";
+// src/pages/users/$id.tsx
+import { usePageParams, useQuery } from "@evjs/ev/client";
+import { getUser } from "../../api/users.server";
 
-const routeTree = rootRoute.addChildren([homeRoute]);
-const app = createApp({ routeTree });
-app.render("#app");
-```
-
-```ts
-// src/global.ts
-declare module "@evjs/client" {
-  interface Register {
-    router: any;
-  }
+export default function UserPage() {
+  const { id } = usePageParams();
+  const { data } = useQuery(getUser, id);
+  return <main>{data?.name}</main>;
 }
 ```
+
+When `src/pages` exists and the project does not declare explicit `app`,
+`pages`, or `remote` config, evjs automatically builds an SPA from the file
+tree. The generated routing glue stays inside the framework; SPA mode only
+writes `src/evjs-route-types.d.ts` for TypeScript and scaffolded apps ignore it
+by default.
+
+SPA root layout discovery is optional. Use `src/layout/index.tsx` beside the
+route directory, set `routing.layout` to another module path, or set
+`routing.layout: false` when the app should not have a framework root layout.
+
+## MPA Mode
+
+Use the same `src/pages` files for an MPA and switch the routing mode:
+
+```ts
+// ev.config.ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  routing: {
+    mode: "mpa",
+  },
+});
+```
+
+Each page is emitted as its own HTML document and client entry without
+SPA router setup. The `layout/index.tsx` convention is SPA-only and lives beside
+the page route directory using that exact path; MPA pages compose shared wrappers
+as normal components and do not accept `routing.layout`.
 
 ## Packages
 
 | Package | Purpose |
 |---------|---------|
-| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | Framework API, config, plugins, and build orchestration (`defineConfig`, `dev`, `build`) |
+| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | Framework API, config, plugins, build orchestration, and runtime facade subpaths (`@evjs/ev/client`, `@evjs/ev/server`) |
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`) with the default bundler |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
-| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Client runtime (React + TanStack) |
-| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Server runtime (Hono) |
-| [`@evjs/build-tools`](https://github.com/evaijs/evjs/tree/main/packages/build-tools) | Server function transforms |
-| [`@evjs/bundler-utoopack`](https://github.com/evaijs/evjs/tree/main/packages/bundler-utoopack) | Utoopack adapter |
-| [`@evjs/manifest`](https://github.com/evaijs/evjs/tree/main/packages/manifest) | Shared manifest schema |
+| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Browser runtime implementation behind `@evjs/ev/client` |
+| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Hono/fetch server runtime implementation behind `@evjs/ev/server` |
+
+Manifest schemas, build tools, page runtime, and shell internals are internal
+modules under the public packages above. Application code should normally
+import through `@evjs/ev` and its runtime facade subpaths
+(`@evjs/ev/client`, `@evjs/ev/server`, `@evjs/ev/server/react`).
+Use `@evjs/cli` and `@evjs/create-app` as tools, not application imports.
+Bundler adapters such as `@evjs/bundler-utoopack` and shared contract modules
+such as `@evjs/shared` are only for custom framework tooling or adapter work.
+
+Treat `@evjs/client` and `@evjs/server` as runtime implementation packages.
+Application source should only import them directly when it intentionally owns
+that lower-level runtime contract.
 
 ## Required Dependencies
 
 ```json
 {
   "dependencies": {
-    "@evjs/client": "^0.1.10",
-    "@evjs/server": "^0.1.10",
+    "@evjs/ev": "<same version>",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@evjs/ev": "^0.1.10",
-    "@evjs/cli": "^0.1.10",
+    "@evjs/cli": "<same version>",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "typescript": "^6.0.2"
@@ -113,7 +145,9 @@ declare module "@evjs/client" {
 
 :::important
 
-Keep all `@evjs/*` packages in your app on the same version. When upgrading evjs, upgrade `@evjs/client`, `@evjs/server`, `@evjs/ev`, `@evjs/cli`, and any other `@evjs/*` packages together.
+Keep all `@evjs/*` packages in your app on the same version. Most applications
+only need `@evjs/ev` plus `@evjs/cli`; if you add direct runtime or adapter
+packages, upgrade them together.
 
 :::
 
@@ -123,4 +157,6 @@ Keep all `@evjs/*` packages in your app on the same version. When upgrading evjs
 - Import `defineConfig` from `@evjs/ev`, not from `@evjs/server`
 - HTML must have `<div id="app">` for the render target
 - Do NOT add `"type": "module"` to your **project's** `package.json` — the server bundle uses CJS format
-- `src/main.tsx` should be minimal — define routes in `pages/`
+- Prefer `src/pages` as the route source of truth.
+- Keep `src/evjs-route-types.d.ts` generated and ignored; do not import it.
+- Use `routing.mode: "mpa"` for independent pages without a client router.

@@ -18,12 +18,7 @@ export default defineConfig({
       config(config) {
         config.server = {
           ...(typeof config.server === "object" ? config.server : {}),
-          functions: {
-            ...(typeof config.server === "object"
-              ? config.server.functions
-              : {}),
-            endpoint: "/api/rpc",
-          },
+          basePath: "/api",
         };
         return config;
       },
@@ -45,19 +40,23 @@ export default defineConfig({
           }),
 
           buildEnd(result) {
+            const appAssets = Object.values(result.output.apps);
+            const pageAssets = Object.values(result.output.pages);
+            const jsCount = [...appAssets, ...pageAssets].reduce(
+              (count, entry) => count + entry.assets.js.length,
+              0,
+            );
             console.log(
-              `[example-txt-plugin] build complete — ${result.clientManifest.assets.js.length} JS asset(s)`,
+              `[example-txt-plugin] build complete — ${jsCount} JS asset(s)`,
             );
           },
 
           // Modify the parsed HTML document after evjs injects script/link tags
-          transformHtml(doc, result) {
-            const assetCount =
-              result.clientManifest.assets.js.length +
-              result.clientManifest.assets.css.length;
+          transformHtml(doc, ctx) {
+            const assetCount = ctx.assets.js.length + ctx.assets.css.length;
 
             const comment = doc.createComment(
-              ` Built with evjs | ${assetCount} asset(s) `,
+              ` Built with evjs | ${ctx.fileName} | ${assetCount} asset(s) `,
             );
             doc.head?.appendChild(comment);
           },

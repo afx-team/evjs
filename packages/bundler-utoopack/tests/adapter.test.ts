@@ -1,7 +1,25 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { resolveConfig } from "@evjs/ev";
+import type {
+  AppGraph,
+  BuildOutput,
+  BuildPlan,
+  BundlerBuildFacts,
+  PluginHooks,
+} from "@evjs/ev";
+import {
+  buildHtml,
+  linkBuildOutput,
+  type ResolvedConfig,
+  resolveConfig,
+} from "@evjs/ev";
+import {
+  createAppGraph,
+  createBuildPlan,
+  diffBuildPlan,
+  generateHtml,
+} from "@evjs/ev/build-tools";
 import type { ConfigComplete } from "@utoo/pack";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { utoopackAdapter } from "../src/adapter/index.js";
@@ -75,6 +93,123 @@ afterEach(async () => {
   );
 });
 
+function createFrameworkCallbacks(options: {
+  config: ResolvedConfig<ConfigComplete>;
+  cwd: string;
+  graph: AppGraph;
+  plan: BuildPlan;
+  hooks?: PluginHooks<ConfigComplete>[];
+  onBuildOutput?: (output: BuildOutput) => void | Promise<void>;
+  onServerBundleReady?: () => void | Promise<void>;
+}) {
+  let graph = options.graph;
+  let plan = options.plan;
+  const hooks = options.hooks ?? [];
+  return {
+    update(nextGraph: AppGraph, nextPlan: BuildPlan) {
+      graph = nextGraph;
+      plan = nextPlan;
+    },
+    async onBuildFacts(facts: BundlerBuildFacts) {
+      const output = linkBuildOutput({
+        graph,
+        plan,
+        serverEnabled: options.config.serverEnabled,
+        clientEntryAssets: facts.clientEntryAssets,
+        firstClientEntryAssets: facts.firstClientEntryAssets,
+        serverEntryAssets: facts.serverEntryAssets,
+        serverEntry: facts.serverEntry,
+        serverAssets: facts.serverAssets,
+        serverModules: facts.serverModules,
+      });
+      await options.onBuildOutput?.(output);
+
+      const rootDir = path.join(options.cwd, "dist");
+      const clientDir = options.config.serverEnabled
+        ? path.join(rootDir, "client")
+        : rootDir;
+      await fs.promises.mkdir(rootDir, { recursive: true });
+      await fs.promises.writeFile(
+        path.join(rootDir, "manifest.json"),
+        JSON.stringify(output, null, 2),
+        "utf-8",
+      );
+
+      for (const html of plan.html) {
+        const pageId = html.owner.pageId;
+        const appId = html.owner.appId;
+        const assets = pageId
+          ? output.pages[pageId]?.assets
+          : appId
+            ? output.apps[appId]?.assets
+            : undefined;
+        if (!assets) continue;
+
+        const doc = generateHtml({
+          template: path.resolve(options.cwd, html.template),
+          js: assets.js,
+          css: assets.css,
+        });
+        doc.documentElement?.setAttribute("data-evjs-build", output.buildId);
+        if (pageId) {
+          doc.documentElement?.setAttribute("data-evjs-kind", "page");
+          doc.documentElement?.setAttribute("data-evjs-id", pageId);
+        } else if (appId) {
+          doc.documentElement?.setAttribute("data-evjs-kind", "app");
+          doc.documentElement?.setAttribute("data-evjs-id", appId);
+        }
+
+        const finalHtml = await buildHtml({
+          doc,
+          hooks,
+          pluginContext: {
+            mode: plan.mode,
+            command: "dev",
+            cwd: options.cwd,
+            config: options.config,
+            logger: console as never,
+            addWatchFile() {},
+          },
+          html: pageId
+            ? {
+                kind: "page",
+                htmlId: html.id,
+                pageId,
+                template: html.template,
+                fileName: html.fileName,
+                assets,
+              }
+            : {
+                kind: "app",
+                htmlId: html.id,
+                appId: appId ?? "default",
+                template: html.template,
+                fileName: html.fileName,
+                assets,
+              },
+          output,
+        });
+        const outPath = path.join(clientDir, html.fileName);
+        await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
+        await fs.promises.writeFile(outPath, finalHtml, "utf-8");
+      }
+    },
+    onServerBundleReady: options.onServerBundleReady ?? vi.fn(),
+  };
+}
+
+async function expectRejectedMessage(action: () => void | Promise<void>) {
+  let thrown: unknown;
+  try {
+    await action();
+  } catch (error) {
+    thrown = error;
+  }
+
+  expect(thrown).toBeInstanceOf(Error);
+  return (thrown as Error).message;
+}
+
 describe("utoopackAdapter dev", () => {
   it("emits flat CSR manifest and index.html in server:false mode", async () => {
     const cwd = await makeProject();
@@ -84,7 +219,11 @@ describe("utoopackAdapter dev", () => {
       html: "./index.html",
     });
 
-    await utoopackAdapter.dev(config, cwd, { onServerBundleReady: vi.fn() }, [
+    const onBuildOutput = vi.fn((output: BuildOutput) => {
+      output.assets.devHook = { js: ["dev-hook.js"], css: [] };
+    });
+    const buildContext = await createBuildContext(config, cwd);
+    const hooks: PluginHooks<ConfigComplete>[] = [
       {
         transformHtml(doc) {
           const meta = doc.createElement("meta");
@@ -93,7 +232,21 @@ describe("utoopackAdapter dev", () => {
           doc.head?.appendChild(meta);
         },
       },
-    ]);
+    ];
+
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      ...buildContext,
+      callbacks: createFrameworkCallbacks({
+        config,
+        cwd,
+        ...buildContext,
+        hooks,
+        onBuildOutput,
+      }),
+      hooks,
+    });
 
     const manifest = JSON.parse(
       await fs.promises.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
@@ -104,61 +257,309 @@ describe("utoopackAdapter dev", () => {
     );
 
     expect(manifest.assets).toEqual({
-      js: ["main.js"],
-      css: ["main.css"],
+      main: {
+        js: ["main.js"],
+        css: ["main.css"],
+      },
+      devHook: {
+        js: ["dev-hook.js"],
+        css: [],
+      },
+    });
+    expect(onBuildOutput).toHaveBeenCalledTimes(1);
+    expect(manifest.apps.default).toEqual({
+      assets: {
+        js: ["main.js"],
+        css: ["main.css"],
+      },
+      document: { fileName: "index.html" },
+      entry: "./src/main.tsx",
+      module: {
+        type: "entry",
+        href: "main.js",
+        source: "./src/main.tsx",
+      },
     });
     expect(html).toContain('<link rel="stylesheet" href="/main.css">');
     expect(html).toContain('src="/main.js"');
+    expect(html).toContain('data-evjs-kind="app"');
+    expect(html).toContain('data-evjs-id="default"');
     expect(html).toContain('<meta name="mode" content="dev">');
     expect(fs.existsSync(path.join(cwd, "dist/client"))).toBe(false);
+    expect(controller).toBeDefined();
+    if (!controller) throw new Error("Expected Utoopack dev controller");
+    await expect(
+      controller.updatePlan(
+        diffBuildPlan(buildContext.plan, buildContext.plan, "config"),
+      ),
+    ).resolves.toBeUndefined();
+    await controller.close?.();
   });
 
-  it("emits nested client and server manifests plus index.html in fullstack mode", async () => {
+  it("applies html-only plan updates without restarting Utoopack dev", async () => {
+    const cwd = await makeProject();
+    await fs.promises.writeFile(
+      path.join(cwd, "next.html"),
+      '<!doctype html><html><head></head><body><main id="app">next-shell</main></body></html>',
+      "utf-8",
+    );
+    const config = resolveConfig<ConfigComplete>({
+      server: false,
+      pages: {
+        home: {
+          component: "./src/main.tsx",
+          html: "./index.html",
+          mount: "#app",
+        },
+      },
+    });
+    const buildContext = await createBuildContext(config, cwd);
+    const onBuildOutput = vi.fn();
+    const framework = createFrameworkCallbacks({
+      config,
+      cwd,
+      ...buildContext,
+      onBuildOutput,
+    });
+
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      ...buildContext,
+      callbacks: framework,
+      hooks: [],
+    });
+    if (!controller) throw new Error("Expected Utoopack dev controller");
+
+    try {
+      const nextConfig = resolveConfig<ConfigComplete>({
+        server: false,
+        pages: {
+          home: {
+            component: "./src/main.tsx",
+            html: "./next.html",
+            mount: "#app",
+          },
+        },
+      });
+      const nextAnalysis = await createAppGraph(nextConfig, cwd);
+      const nextPlan = createBuildPlan(nextConfig, nextAnalysis.graph, {
+        mode: "development",
+      });
+      const update = diffBuildPlan(buildContext.plan, nextPlan, "config");
+
+      framework.update(nextAnalysis.graph, nextPlan);
+      await controller.updatePlan(update, nextAnalysis.graph);
+
+      const html = await fs.promises.readFile(
+        path.join(cwd, "dist/home.html"),
+        "utf-8",
+      );
+      const manifest = JSON.parse(
+        await fs.promises.readFile(
+          path.join(cwd, "dist/manifest.json"),
+          "utf-8",
+        ),
+      ) as BuildOutput;
+
+      expect(update.entries.added).toHaveLength(0);
+      expect(update.entries.changed).toHaveLength(0);
+      expect(update.html.changed.map((item) => item.id)).toEqual(["home"]);
+      expect(html).toContain("next-shell");
+      expect(html).toContain('data-evjs-kind="page"');
+      expect(html).toContain('data-evjs-id="home"');
+      expect(manifest.pages.home.document).toEqual({ fileName: "home.html" });
+      expect(onBuildOutput).toHaveBeenCalledTimes(2);
+    } finally {
+      await controller.close?.();
+    }
+  });
+
+  it("fails clearly for entry-changing dev plan updates", async () => {
+    const cwd = await makeProject();
+    const config = resolveConfig<ConfigComplete>({
+      server: false,
+      pages: {
+        home: {
+          component: "./src/main.tsx",
+          html: "./index.html",
+          mount: "#app",
+        },
+      },
+    });
+    const buildContext = await createBuildContext(config, cwd);
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      ...buildContext,
+      callbacks: createFrameworkCallbacks({
+        config,
+        cwd,
+        ...buildContext,
+      }),
+      hooks: [],
+    });
+    if (!controller) throw new Error("Expected Utoopack dev controller");
+
+    try {
+      const nextConfig = resolveConfig<ConfigComplete>({
+        server: false,
+        pages: {
+          home: {
+            component: "./src/main.tsx",
+            html: "./index.html",
+            mount: "#app",
+          },
+          about: {
+            component: "./src/main.tsx",
+            html: "./index.html",
+            mount: "#app",
+          },
+        },
+      });
+      const nextAnalysis = await createAppGraph(nextConfig, cwd);
+      const nextPlan = createBuildPlan(nextConfig, nextAnalysis.graph, {
+        mode: "development",
+      });
+      const update = diffBuildPlan(buildContext.plan, nextPlan, "config");
+
+      const message = await expectRejectedMessage(() =>
+        controller.updatePlan(update, nextAnalysis.graph),
+      );
+      expect(message).toContain(
+        "Utoopack dev cannot apply framework plan changes",
+      );
+      expect(message).toContain("entry additions: about (page-client)");
+      expect(message).toContain("HTML additions: about -> about.html");
+    } finally {
+      await controller.close?.();
+    }
+  });
+
+  it("reports server-changing dev plan updates", async () => {
+    const cwd = await makeProject();
+    const config = resolveConfig<ConfigComplete>({
+      server: false,
+      entry: "./src/main.tsx",
+      html: "./index.html",
+    });
+    const buildContext = await createBuildContext(config, cwd);
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      ...buildContext,
+      callbacks: createFrameworkCallbacks({
+        config,
+        cwd,
+        ...buildContext,
+      }),
+      hooks: [],
+    });
+    if (!controller) throw new Error("Expected Utoopack dev controller");
+
+    try {
+      const nextConfig = resolveConfig<ConfigComplete>({
+        entry: "./src/main.tsx",
+        html: "./index.html",
+      });
+      const nextAnalysis = await createAppGraph(nextConfig, cwd);
+      const nextPlan = createBuildPlan(nextConfig, nextAnalysis.graph, {
+        mode: "development",
+      });
+      const update = diffBuildPlan(buildContext.plan, nextPlan, "config");
+
+      const message = await expectRejectedMessage(() =>
+        controller.updatePlan(update, nextAnalysis.graph),
+      );
+      expect(message).toContain(
+        "Utoopack dev cannot apply framework plan changes",
+      );
+      expect(message).toContain("entry additions: server (server-runtime)");
+      expect(message).toContain("server output changed");
+    } finally {
+      await controller.close?.();
+    }
+  });
+
+  it("emits a single build manifest plus index.html in fullstack mode", async () => {
     const cwd = await makeProject();
     const onServerBundleReady = vi.fn();
     const config = resolveConfig<ConfigComplete>({
       entry: "./src/main.tsx",
       html: "./index.html",
     });
-
-    await utoopackAdapter.dev(config, cwd, { onServerBundleReady }, [
+    const buildContext = await createBuildContext(config, cwd);
+    const hooks: PluginHooks<ConfigComplete>[] = [
       {
-        transformHtml(doc, result) {
+        transformHtml(doc, ctx) {
           const meta = doc.createElement("meta");
+          expect(ctx.kind).toBe("app");
+          expect(ctx.htmlId).toBe("index");
+          expect(ctx.fileName).toBe("index.html");
+          expect(ctx.mode).toBe("development");
+          expect(ctx.buildId).toBe(ctx.output.buildId);
+          expect(ctx.publicPath).toBe(ctx.output.publicPath);
           meta.setAttribute(
             "name",
-            result.serverManifest ? "server-enabled" : "client-only",
+            ctx.output.server ? "server-enabled" : "client-only",
           );
           doc.head?.appendChild(meta);
         },
       },
-    ]);
+    ];
 
-    const clientManifest = JSON.parse(
-      await fs.promises.readFile(
-        path.join(cwd, "dist/client/manifest.json"),
-        "utf-8",
-      ),
-    );
-    const serverManifest = JSON.parse(
-      await fs.promises.readFile(
-        path.join(cwd, "dist/server/manifest.json"),
-        "utf-8",
-      ),
+    await utoopackAdapter.dev({
+      config,
+      cwd,
+      ...buildContext,
+      callbacks: createFrameworkCallbacks({
+        config,
+        cwd,
+        ...buildContext,
+        hooks,
+        onServerBundleReady,
+      }),
+      hooks,
+    });
+
+    const manifest = JSON.parse(
+      await fs.promises.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
     );
     const html = await fs.promises.readFile(
       path.join(cwd, "dist/client/index.html"),
       "utf-8",
     );
 
-    expect(clientManifest.assets).toEqual({
-      js: ["main.js"],
-      css: ["main.css"],
+    expect(manifest.apps.default).toEqual({
+      assets: {
+        js: ["main.js"],
+        css: ["main.css"],
+      },
+      document: { fileName: "index.html" },
+      entry: "./src/main.tsx",
+      module: {
+        type: "entry",
+        href: "main.js",
+        source: "./src/main.tsx",
+      },
     });
-    expect(serverManifest.entry).toBe("index.js");
+    expect(manifest.server.entry).toBe("index.js");
     expect(html).toContain('<link rel="stylesheet" href="/main.css">');
     expect(html).toContain('src="/main.js"');
+    expect(html).toContain('data-evjs-kind="app"');
+    expect(html).toContain('data-evjs-id="default"');
     expect(html).toContain('<meta name="server-enabled">');
     expect(onServerBundleReady).toHaveBeenCalledTimes(1);
   });
 });
+
+async function createBuildContext(
+  config: ResolvedConfig<ConfigComplete>,
+  cwd: string,
+) {
+  const analysis = await createAppGraph(config, cwd);
+  return {
+    graph: analysis.graph,
+    plan: createBuildPlan(config, analysis.graph, { mode: "development" }),
+  };
+}

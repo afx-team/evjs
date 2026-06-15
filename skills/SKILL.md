@@ -9,12 +9,14 @@ Use this skill when developing applications with the evjs framework.
 
 ## Overview
 
-evjs is a React fullstack framework built on TanStack Router, TanStack Query, and Hono. It provides:
+evjs is a React fullstack framework built on TanStack Query, Hono, Utoopack,
+and a framework-owned SPA router runtime. It provides:
 
 - **Server Functions** — write backend logic in files (we recommend using the `.server.ts` suffix), call from React as if local
 - **Server Routes** — build programmatic REST endpoints and APIs using the `createRoute()` handler
 - **Query Integration** — type-safe `useQuery(getUsers)` with auto query keys and transport
-- **Type-safe Routing** — TanStack Router with code-defined route modules and route trees
+- **File-based Page Routing** — write default-exported React pages under
+  `src/pages`; evjs generates type-safe navigation and owns the router details
 - **Plugin System** — extend builds with `buildStart`, `bundlerConfig`, `transformHtml`, and `buildEnd` hooks
 - **Convention over Configuration** — works out of the box, optionally configure via `ev.config.ts`
 
@@ -55,8 +57,22 @@ For detailed guides on specific topics, see the `references/` directory:
 - If mixing `createRoute()` endpoints, you must explicitly configure `server.entry` in `ev.config.ts`
 - **Route Paths:** Always use string literals for `path` values (e.g., `path: "/posts"`). The type system **rejects** broad `string` variables and template strings at compile time.
 
+**Page Routing:**
+- SPA page routes live in `src/pages` and use an optional root layout at
+  `src/layout/index.tsx`; do not create `__root.tsx`, `src/layout.tsx`, or layout
+  files inside `src/pages`.
+- MPA page routing uses `routing: { mode: "mpa" }`; pages are independent
+  router-free React entries and should use normal `<a href>` links.
+- Page components are plain default exports. Do not wrap them in `definePage`
+  and do not type props as framework route props.
+- Read route data with `usePageParams()`, `usePageSearch()`, and
+  `usePageLoaderData()` from `@evjs/client`.
+- Use `Link`, `Navigate`, `useLinkProps`, and `redirect` from `@evjs/client`
+  for SPA navigation. Generated `evjs-route-types.d.ts` augments
+  `@evjs/client`; app code should not import TanStack Router directly.
+
 **React Data Loading:**
-- Route loaders should fetch using: `context.queryClient.ensureQueryData(getFnQueryOptions(myFn))`
+- Page loaders should fetch using: `context.queryClient.ensureQueryData(getFnQueryOptions(myFn))`
 - Invalidate cache after mutations: `queryClient.invalidateQueries({ queryKey: getFnQueryKey(myFn) })`
 - Access server function metadata: `myFn.fnId`, `myFn.fnName`, `getFnQueryKey(myFn, ...args)`
 

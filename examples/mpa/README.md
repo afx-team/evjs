@@ -1,6 +1,6 @@
 # mpa
 
-Minimal multi-page application example using evjs `pages` config.
+Minimal multi-page application example using evjs page routing.
 
 ## Run
 
@@ -18,14 +18,16 @@ npm run build
 
 | File | Purpose |
 |------|---------|
-| `ev.config.ts` | Enables MPA mode and defines page entries |
+| `ev.config.ts` | Enables page MPA mode |
 | `index.html` | Shared HTML template for all pages |
-| `src/home/main.tsx` | Home page React entry |
-| `src/about/main.tsx` | About page React entry |
+| `src/pages/home.tsx` | Home page component |
+| `src/pages/about.tsx` | About page component |
 
 ## What It Demonstrates
 
-- Multi-page build via `pages`
-- Independent React entry for each page
+- Multi-page build via `routing.mode: "mpa"`
+- Independent router-free React page for each page file
 - Shared HTML template reused by all pages
 - Static links between pages
+- No `@evjs/ev/client`, `@evjs/ev/server`, or generated `evjs-route-types.d.ts`
+  dependency is needed for this router-free client output

@@ -12,6 +12,12 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import {
+  type BuildOutput,
+  type ClientRouteTarget,
+  getClientRouteMatches,
+  getServerRenderedPaths,
+} from "@evjs/shared/manifest";
 import { test as base, expect } from "@playwright/test";
 
 export { expect };
@@ -19,21 +25,31 @@ export { expect };
 interface ExampleFixture {
   /** Base URL where the app is served. */
   baseURL: string;
+  /** Base URL where the framework/API server is served. */
+  apiURL: string;
 }
 
 interface WorkerFixture {
   _exampleApp: { webPort: number; apiPort: number };
 }
 
+type RuntimeManifestFixture = Pick<
+  BuildOutput,
+  "apps" | "pages" | "routes" | "runtime"
+>;
+
 /**
  * Content-type mapping for static file serving.
  */
 function getContentType(ext: string): string {
   switch (ext) {
+    case ".html":
+      return "text/html";
     case ".js":
       return "application/javascript";
     case ".css":
       return "text/css";
+    case ".json":
     case ".map":
       return "application/json";
     default:
@@ -48,15 +64,26 @@ function getContentType(ext: string): string {
  */
 function createStaticServer(
   distDir: string,
-  options?: { apiPort?: number },
+  options?: {
+    apiPort?: number;
+    proxyPrefixes?: string[];
+    pathRewrites?: Record<string, string>;
+  },
 ): http.Server {
   const indexHtml = fs.readFileSync(path.join(distDir, "index.html"), "utf-8");
+  const proxyPrefixes = options?.proxyPrefixes ?? [];
+  const pathRewrites = options?.pathRewrites ?? {};
+  const publicManifestPath = resolvePublicManifestPath(distDir);
 
   return http.createServer((req, res) => {
     const url = req.url || "/";
+    const pathname = getRequestPathname(url);
 
-    // Proxy /api requests to the API server (fullstack only)
-    if (options?.apiPort && url.startsWith("/api/")) {
+    // Proxy framework server paths and example API routes to the API server.
+    if (
+      options?.apiPort &&
+      proxyPrefixes.some((prefix) => pathMatchesPrefix(pathname, prefix))
+    ) {
       const proxyReq = http.request(
         `http://localhost:${options.apiPort}${url}`,
         { method: req.method, headers: req.headers },
@@ -81,9 +108,26 @@ function createStaticServer(
       return;
     }
 
+    if (pathname === "/manifest.json" && publicManifestPath) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      fs.createReadStream(publicManifestPath).pipe(res);
+      return;
+    }
+
+    const rewrite = pathRewrites[pathname];
+    if (rewrite) {
+      const rewrittenPath = path.join(distDir, rewrite);
+      if (fs.existsSync(rewrittenPath)) {
+        const ext = path.extname(rewrittenPath);
+        res.writeHead(200, { "Content-Type": getContentType(ext) });
+        fs.createReadStream(rewrittenPath).pipe(res);
+        return;
+      }
+    }
+
     // Serve static files
-    const filePath = path.join(distDir, url);
-    if (fs.existsSync(filePath)) {
+    const filePath = resolveStaticFilePath(distDir, pathname);
+    if (filePath && fs.existsSync(filePath)) {
       const ext = path.extname(filePath);
       res.writeHead(200, { "Content-Type": getContentType(ext) });
       fs.createReadStream(filePath).pipe(res);
@@ -95,6 +139,87 @@ function createStaticServer(
   });
 }
 
+function resolveStaticFilePath(
+  distDir: string,
+  pathname: string,
+): string | undefined {
+  let decodedPathname: string;
+  try {
+    decodedPathname = decodeURIComponent(pathname);
+  } catch {
+    return undefined;
+  }
+
+  const root = path.resolve(distDir);
+  const filePath = path.resolve(root, decodedPathname.replace(/^\/+/, ""));
+  return filePath === root || filePath.startsWith(`${root}${path.sep}`)
+    ? filePath
+    : undefined;
+}
+
+function resolvePublicManifestPath(distDir: string): string | undefined {
+  const candidates = [
+    path.join(distDir, "manifest.json"),
+    path.join(path.dirname(distDir), "manifest.json"),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate));
+}
+
+function getRequestPathname(url: string): string {
+  try {
+    return new URL(url, "http://localhost").pathname;
+  } catch {
+    return url.split("?")[0] || "/";
+  }
+}
+
+function pathMatchesPrefix(pathname: string, prefix: string): boolean {
+  const normalizedPrefix = prefix.startsWith("/") ? prefix : `/${prefix}`;
+  return (
+    pathname === normalizedPrefix ||
+    pathname.startsWith(`${normalizedPrefix.replace(/\/+$/, "")}/`)
+  );
+}
+
+function getServerProxyPrefixes(manifest: RuntimeManifestFixture): string[] {
+  return compactUnique([
+    "/api",
+    "/__evjs",
+    manifest.runtime?.server?.basePath,
+    manifest.runtime?.server?.fn,
+    manifest.runtime?.server?.ppr,
+    manifest.runtime?.server?.rsc,
+    ...getServerRenderedPaths(manifest),
+  ]);
+}
+
+function getClientPathRewrites(
+  manifest: RuntimeManifestFixture,
+): Record<string, string> {
+  const rewrites = Object.fromEntries(
+    Object.entries(manifest.pages ?? {}).flatMap(([pageId, page]) =>
+      page.path && page.render === "csr" ? [[page.path, `${pageId}.html`]] : [],
+    ),
+  );
+
+  for (const { path, target } of getClientRouteMatches(manifest)) {
+    rewrites[path] ??= getClientRouteHtmlFileName(target);
+  }
+
+  return rewrites;
+}
+
+function getClientRouteHtmlFileName(target: ClientRouteTarget): string {
+  if (target.kind === "page") return `${target.pageId}.html`;
+  return target.appId === "default" ? "index.html" : `${target.appId}.html`;
+}
+
+function compactUnique(values: Array<string | undefined>): string[] {
+  return [
+    ...new Set(values.filter((value): value is string => Boolean(value))),
+  ];
+}
+
 /**
  * Load evjs config from an example directory's ev.config.ts.
  *
@@ -103,7 +228,7 @@ function createStaticServer(
  */
 async function loadExampleConfig(
   exampleDir: string,
-): Promise<import("@evjs/ev").EvConfig | undefined> {
+): Promise<import("@evjs/ev").Config<unknown> | undefined> {
   const configPath = path.join(exampleDir, "ev.config.ts");
   if (!fs.existsSync(configPath)) return undefined;
 
@@ -139,15 +264,17 @@ async function loadExampleConfig(
  * (server.entry, plugins, etc.) are picked up during the build.
  * Only the bundler adapter is overridden by the test configuration.
  */
-async function buildExample(
+export async function buildExample(
   exampleDir: string,
-  _bundlerName: string,
+  bundlerName: string,
   serverEnabled: boolean,
 ) {
   const { build } = await import("@evjs/cli");
-  // utoopack is the default — no bundler field needed
-  const bundler: import("@evjs/ev").BundlerAdapter<unknown> | undefined =
-    undefined;
+  const bundler = await resolveBundler(bundlerName);
+  const runBuild = build as (
+    config: import("@evjs/ev").Config<unknown>,
+    options: { cwd: string },
+  ) => Promise<void>;
 
   // Load the example's own ev.config.ts for per-example settings
   const exampleConfig = await loadExampleConfig(exampleDir);
@@ -158,10 +285,10 @@ async function buildExample(
   process.env.NODE_ENV = "production";
 
   try {
-    await build(
+    await runBuild(
       {
         ...exampleConfig,
-        bundler,
+        ...(bundler ? { bundler } : {}),
         server: serverEnabled ? (exampleConfig?.server ?? undefined) : false,
       },
       { cwd: exampleDir },
@@ -174,6 +301,18 @@ async function buildExample(
       process.env.NODE_ENV = savedNodeEnv;
     }
   }
+}
+
+async function resolveBundler(
+  bundlerName: string,
+): Promise<import("@evjs/ev").BundlerAdapter<unknown> | undefined> {
+  if (bundlerName === "utoopack") return undefined;
+  if (bundlerName === "webpack") {
+    const { webpackAdapter } = await import("@evjs/bundler-webpack");
+    return webpackAdapter as import("@evjs/ev").BundlerAdapter<unknown>;
+  }
+
+  throw new Error(`Unsupported e2e bundler: ${bundlerName}`);
 }
 
 /**
@@ -201,19 +340,29 @@ export function createExampleTest(exampleName: string) {
         // Build with specified bundler (fullstack = server enabled)
         await buildExample(exampleDir, bundlerName, true);
 
-        // Read the server manifest to get the hashed entry filename
-        const manifestPath = path.join(
+        // Read the public manifest for client routing and the internal build
+        // output for server bootstrap metadata. The public manifest is
+        // browser-safe and intentionally does not expose server entry files.
+        const manifestPath = path.join(exampleDir, "dist", "manifest.json");
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+        const buildOutputPath = path.join(
           exampleDir,
           "dist",
           "server",
-          "manifest.json",
+          "build-output.json",
         );
-        const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+        const buildOutput = JSON.parse(
+          fs.readFileSync(buildOutputPath, "utf-8"),
+        );
+        const serverEntry = buildOutput.server?.entry;
+        if (!serverEntry) {
+          throw new Error("Built example did not emit a server entry.");
+        }
         const serverEntryPath = path.join(
           exampleDir,
           "dist",
           "server",
-          manifest.entry,
+          serverEntry,
         );
 
         // Write a CJS bootstrap that requires the hashed server bundle
@@ -221,7 +370,15 @@ export function createExampleTest(exampleName: string) {
         fs.writeFileSync(
           bootstrapPath,
           [
-            `const handler = require(${JSON.stringify(serverEntryPath)}).default;`,
+            `const fs = require("node:fs");`,
+            `const path = require("node:path");`,
+            `const { pathToFileURL } = require("node:url");`,
+            `const manifest = JSON.parse(fs.readFileSync(${JSON.stringify(buildOutputPath)}, "utf-8"));`,
+            `globalThis.__EVJS_MANIFEST__ = manifest;`,
+            `const serverDir = path.dirname(${JSON.stringify(serverEntryPath)});`,
+            `globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => { const mod = await import(pathToFileURL(path.resolve(serverDir, asset)).href); const nested = mod && typeof mod.default === "object" ? mod.default : undefined; return nested && ("default" in nested || "render" in nested) ? nested : mod; };`,
+            `const serverModule = require(${JSON.stringify(serverEntryPath)});`,
+            `const handler = serverModule.default?.default ?? serverModule.default ?? serverModule;`,
             `const { serve } = require("@hono/node-server");`,
             `serve({ fetch: handler.fetch, port: 0 }, (info) => {`,
             `  console.log("E2E_SERVER_READY:" + info.port);`,
@@ -258,7 +415,11 @@ export function createExampleTest(exampleName: string) {
 
         // Serve the client bundle with API proxy
         const distDir = path.join(exampleDir, "dist", "client");
-        const staticServer = createStaticServer(distDir, { apiPort });
+        const staticServer = createStaticServer(distDir, {
+          apiPort,
+          proxyPrefixes: getServerProxyPrefixes(manifest),
+          pathRewrites: getClientPathRewrites(manifest),
+        });
 
         await new Promise<void>((resolve) => {
           staticServer.listen(0, resolve);
@@ -280,6 +441,9 @@ export function createExampleTest(exampleName: string) {
     ],
     baseURL: async ({ _exampleApp }, use) => {
       await use(`http://localhost:${_exampleApp.webPort}`);
+    },
+    apiURL: async ({ _exampleApp }, use) => {
+      await use(`http://localhost:${_exampleApp.apiPort}`);
     },
   });
 }
@@ -324,6 +488,9 @@ export function createCsrExampleTest(exampleName: string) {
     ],
     baseURL: async ({ _exampleApp }, use) => {
       await use(`http://localhost:${_exampleApp.webPort}`);
+    },
+    apiURL: async ({ _exampleApp }, use) => {
+      await use(`http://localhost:${_exampleApp.apiPort}`);
     },
   });
 }

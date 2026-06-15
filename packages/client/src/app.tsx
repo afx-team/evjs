@@ -1,59 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type {
-  AnyRoute,
-  RouterConstructorOptions,
-  RouterHistory,
-  TrailingSlashOption,
-} from "@tanstack/react-router";
+import type { AnyRoute } from "@tanstack/react-router";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { createRoot } from "react-dom/client";
-import type { AppRouteContext } from "./context";
-
-export type CreateAppRouterOptions<
-  TRouteTree extends AnyRoute,
-  TTrailingSlashOption extends TrailingSlashOption = "never",
-  TDefaultStructuralSharingOption extends boolean = false,
-  TRouterHistory extends RouterHistory = RouterHistory,
-  TDehydrated extends Record<string, unknown> = Record<string, unknown>,
-> = Omit<
-  RouterConstructorOptions<
-    TRouteTree,
-    TTrailingSlashOption,
-    TDefaultStructuralSharingOption,
-    TRouterHistory,
-    TDehydrated
-  >,
-  "context" | "routeTree"
->;
 
 /**
- * Options for creating an ev application.
+ * Options for creating a framework-owned SPA runtime.
  */
-export interface CreateAppOptions<
-  TRouteTree extends AnyRoute,
-  TTrailingSlashOption extends TrailingSlashOption = "never",
-  TDefaultStructuralSharingOption extends boolean = false,
-  TRouterHistory extends RouterHistory = RouterHistory,
-  TDehydrated extends Record<string, unknown> = Record<string, unknown>,
-> {
-  /** The root route tree produced by createRootRoute and addChildren. */
+export interface CreateAppOptions<TRouteTree extends AnyRoute> {
+  /** The root route tree assembled by the generated page-route bootstrap. */
   routeTree: TRouteTree;
-  /**
-   * The base path for the application (e.g., '/app').
-   */
-  basepath?: string;
-  /**
-   * Optional custom history for the router (e.g., memory or hash history).
-   */
-  history?: TRouterHistory;
-  /** TanStack Router options passed through to `createRouter()`. */
-  router?: CreateAppRouterOptions<
-    TRouteTree,
-    TTrailingSlashOption,
-    TDefaultStructuralSharingOption,
-    TRouterHistory,
-    TDehydrated
-  >;
   /**
    * Optional custom QueryClient instance.
    */
@@ -61,26 +16,9 @@ export interface CreateAppOptions<
 }
 
 /**
- * An initialized ev application instance.
- *
- * Register the router type for full IDE type safety on `useParams`,
- * `useSearch`, `Link`, etc:
- *
- * ```tsx
- * const app = createApp({ routeTree });
- *
- * declare module "@evjs/client" {
- *   interface Register {
- *     router: typeof app.router;
- *   }
- * }
- *
- * app.render("#app");
- * ```
+ * An initialized framework-owned SPA runtime.
  */
-export interface App<TRouter> {
-  /** The TanStack Router instance (use `typeof app.router` for type registration). */
-  router: TRouter;
+export interface App {
   /** The TanStack Query Client instance. */
   queryClient: QueryClient;
   /**
@@ -95,88 +33,23 @@ export interface App<TRouter> {
 }
 
 /**
- * Create a new ev application instance.
- *
- * This function initializes the router and query client and returns
- * an app object that can be mounted into the DOM.
- *
- * Register the router type globally for full IDE type-safety on
- * `useParams`, `useSearch`, `Link`, etc:
- *
- * @example
- * ```tsx
- * const app = createApp({ routeTree });
- *
- * declare module "@evjs/client" {
- *   interface Register {
- *     router: typeof app.router;
- *   }
- * }
- *
- * app.render("#app");
- * ```
+ * Create a framework-owned SPA runtime from the generated page route tree.
  */
-export function createApp<
-  TRouteTree extends AnyRoute,
-  TTrailingSlashOption extends TrailingSlashOption = "never",
-  TDefaultStructuralSharingOption extends boolean = false,
-  TRouterHistory extends RouterHistory = RouterHistory,
-  TDehydrated extends Record<string, unknown> = Record<string, unknown>,
->(
-  options: CreateAppOptions<
-    TRouteTree,
-    TTrailingSlashOption,
-    TDefaultStructuralSharingOption,
-    TRouterHistory,
-    TDehydrated
-  >,
-): App<
-  ReturnType<
-    typeof createRouter<
-      TRouteTree,
-      TTrailingSlashOption,
-      TDefaultStructuralSharingOption,
-      TRouterHistory,
-      TDehydrated
-    >
-  >
-> {
-  const {
-    routeTree,
-    queryClient = new QueryClient(),
-    basepath,
-    history,
-    router: routerOptions,
-  } = options;
+export function createApp<TRouteTree extends AnyRoute>(
+  options: CreateAppOptions<TRouteTree>,
+): App {
+  const { routeTree, queryClient = new QueryClient() } = options;
 
-  const router = createRouter<
-    TRouteTree,
-    TTrailingSlashOption,
-    TDefaultStructuralSharingOption,
-    TRouterHistory,
-    TDehydrated
-  >({
-    ...routerOptions,
+  const router = createRouter({
     routeTree,
-    basepath: routerOptions?.basepath ?? basepath,
-    history: routerOptions?.history ?? history,
-    defaultPreload: routerOptions?.defaultPreload ?? "intent",
-    context: { queryClient } as AppRouteContext,
+    defaultPreload: "intent",
+    context: { queryClient },
   });
 
   let root: ReturnType<typeof createRoot> | undefined;
 
   function render(container: string | HTMLElement): void {
-    const el =
-      typeof container === "string"
-        ? document.querySelector<HTMLElement>(container)
-        : container;
-
-    if (!el) {
-      throw new Error(
-        `[ev] Could not find container element: ${String(container)}`,
-      );
-    }
+    const el = resolveAppContainer(container);
 
     root = createRoot(el);
     root.render(
@@ -191,5 +64,66 @@ export function createApp<
     root = undefined;
   }
 
-  return { router, queryClient, render, unmount };
+  return { queryClient, render, unmount };
+}
+
+function resolveAppContainer(container: string | HTMLElement): HTMLElement {
+  if (typeof container === "string") {
+    const selector = assertAppContainerSelector(container);
+    const doc = resolveAppDocument(selector);
+    let element: HTMLElement | null;
+    try {
+      element = doc.querySelector<HTMLElement>(selector);
+    } catch (error) {
+      throw new Error(
+        `[evjs] App container selector "${selector}" is invalid${formatErrorDetail(error)}`,
+      );
+    }
+    if (!element) {
+      throw new Error(
+        `[evjs] Could not find app container element: ${selector}`,
+      );
+    }
+    return element;
+  }
+
+  if (!container || typeof container !== "object") {
+    throw new Error(
+      "[evjs] App container must be a selector string or HTMLElement.",
+    );
+  }
+  return container;
+}
+
+function assertAppContainerSelector(selector: string): string {
+  if (!selector.trim()) {
+    throw new Error(
+      "[evjs] App container selector must be a non-empty string.",
+    );
+  }
+  if (selector.trim() !== selector) {
+    throw new Error(
+      "[evjs] App container selector must not include leading or trailing whitespace.",
+    );
+  }
+  return selector;
+}
+
+function resolveAppDocument(selector: string): Document {
+  const doc = globalThis.document;
+  if (!doc) {
+    throw new Error(
+      `[evjs] Document is not available to resolve app container selector "${selector}".`,
+    );
+  }
+  if (typeof doc.querySelector !== "function") {
+    throw new Error(
+      "[evjs] App container selector document.querySelector must be a function.",
+    );
+  }
+  return doc;
+}
+
+function formatErrorDetail(error: unknown): string {
+  return error instanceof Error && error.message ? `: ${error.message}` : ".";
 }

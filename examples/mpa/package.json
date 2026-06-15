@@ -9,10 +9,10 @@
   },
   "dependencies": {
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "@evjs/ev": "*"
   },
   "devDependencies": {
-    "@evjs/ev": "*",
     "@evjs/cli": "*",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.8",

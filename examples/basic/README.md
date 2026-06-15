@@ -12,15 +12,13 @@ npm run dev
 
 | File | Purpose |
 |------|---------|
-| `ev.config.ts` | The central configuration file for evjs |
-| `src/main.tsx` | App bootstrap |
-| `src/pages/` | Client routes using TanStack Router |
+| `src/layout/index.tsx` | SPA root layout |
+| `src/pages/` | Page route files |
 | `src/api/users.server.ts` | `"use server"` CRUD functions |
 
 ## What It Demonstrates
 
-- `ev.config.ts` setup
-- Client-side routing with `createApp` and `createRoute`
+- SPA page routing from `src/pages`
 - `"use server"` directive for auto-discovered server functions
 - `useQuery(getUsers)` for type-safe data fetching
 - `useMutation({ mutationFn: createUser })` for server-side mutations

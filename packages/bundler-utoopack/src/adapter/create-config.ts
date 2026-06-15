@@ -1,26 +1,49 @@
 /**
- * Map ResolvedEvConfig to a utoopack configuration object.
+ * Map ResolvedConfig to a utoopack configuration object.
  *
  * Utoopack uses a JSON-based config with `build()` / `dev()` programmatic API.
  * It handles "use server" directives natively via the
- * `server.functions.callServerModule` config field.
+ * server-function runtime module config fields.
  */
 
 import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
+const componentPageLoader = fileURLToPath(
+  new URL("./component-page-loader.cjs", import.meta.url),
+);
+const pagesEntryLoader = fileURLToPath(
+  new URL("./pages-entry-loader.cjs", import.meta.url),
+);
+const remoteClientLoader = fileURLToPath(
+  new URL("./remote-client-loader.cjs", import.meta.url),
+);
 
-import {
-  type EvBundlerCtx,
-  type EvPluginHooks,
-  isMpa,
-  type ResolvedEvConfig,
+import type {
+  BuildPlan,
+  BundlerCtx,
+  PagesAppEntryMetadata,
+  PluginHooks,
+  ReactComponentPageEntryMetadata,
+  RemoteClientEntryMetadata,
+  ResolvedConfig,
 } from "@evjs/ev";
-import type { ConfigComplete, DevServerProxy, ProxyRule } from "@utoo/pack";
+import { getLogger } from "@logtape/logtape";
+import type {
+  ConfigComplete,
+  DevServerProxy,
+  ProxyRule,
+  TurbopackLoaderOptions,
+  TurbopackRuleConfigItem,
+} from "@utoo/pack";
 import { getOutputPaths } from "./output-paths.js";
 
+const logger = getLogger(["evjs", "bundler-utoopack", "config"]);
+
 function createSpaHistoryFallbackRule(
-  config: ResolvedEvConfig<ConfigComplete>,
+  config: ResolvedConfig<ConfigComplete>,
 ): ProxyRule {
   const target = new URL(
     config.dev.https ? "https://localhost" : "http://localhost",
@@ -28,7 +51,7 @@ function createSpaHistoryFallbackRule(
   target.port = String(config.dev.port);
 
   return {
-    context: ["^/(?!api(?:/|$))(?!turbopack-hmr$)(?!.*\\.[^/]+$).+"],
+    context: [createSpaHistoryFallbackContext(config)],
     target: target.origin,
     changeOrigin: true,
     secure: false,
@@ -38,8 +61,44 @@ function createSpaHistoryFallbackRule(
   };
 }
 
+function createSpaHistoryFallbackContext(
+  config: ResolvedConfig<ConfigComplete>,
+): string {
+  const exclusions = createSpaHistoryFallbackExclusions(config)
+    .map(normalizeRoutePrefix)
+    .filter((prefix) => prefix !== "/")
+    .map((prefix) => `(?!${escapeRegExp(prefix.slice(1))}(?:/|$))`)
+    .join("");
+
+  return `^/${exclusions}(?!turbopack-hmr$)(?!.*\\.[^/]+$).+`;
+}
+
+function createSpaHistoryFallbackExclusions(
+  config: ResolvedConfig<ConfigComplete>,
+): string[] {
+  const exclusions = new Set(["/api"]);
+
+  if (config.serverEnabled) {
+    exclusions.add(config.server.runtime.basePath);
+    exclusions.add(config.server.runtime.fn);
+    exclusions.add(config.server.runtime.ppr);
+    if (config.server.runtime.rsc) {
+      exclusions.add(config.server.runtime.rsc);
+    }
+  }
+
+  return [...exclusions];
+}
+
+function normalizeRoutePrefix(prefix: string): string {
+  const withLeadingSlash = prefix.startsWith("/") ? prefix : `/${prefix}`;
+  return withLeadingSlash.length > 1
+    ? withLeadingSlash.replace(/\/+$/, "")
+    : withLeadingSlash;
+}
+
 /**
- * Create a utoopack configuration object from EvConfig.
+ * Create a utoopack configuration object from Config.
  *
  * @param config - Resolved evjs config
  * @param cwd - Project root directory
@@ -47,23 +106,26 @@ function createSpaHistoryFallbackRule(
  * @returns A config object suitable for `@utoo/pack`'s `build()` / `dev()` API
  */
 export async function createUtoopackConfig(
-  config: ResolvedEvConfig<ConfigComplete>,
+  config: ResolvedConfig<ConfigComplete>,
+  plan: BuildPlan,
   cwd: string,
-  hooks: EvPluginHooks<ConfigComplete>[],
+  hooks: PluginHooks<ConfigComplete>[],
 ): Promise<ConfigComplete> {
+  validateUtoopackPlanSupport(plan);
+
   const isProduction = process.env.NODE_ENV === "production";
   const mode = isProduction ? "production" : "development";
   const serverEnabled = config.serverEnabled;
+  const frameworkRules = createFrameworkModuleRules(plan);
   const devProxy: DevServerProxy = [
     ...config.dev.proxy,
-    ...(!isMpa(config) ? [createSpaHistoryFallbackRule(config)] : []),
+    ...(hasAppClientEntry(plan) ? [createSpaHistoryFallbackRule(config)] : []),
   ];
 
   let finalServerEntry: string | undefined;
 
   if (serverEnabled) {
-    finalServerEntry =
-      config.server.entry || require.resolve("@evjs/server/fetch");
+    finalServerEntry = resolveServerEntry(plan.server.entry);
   }
 
   if (serverEnabled && !finalServerEntry) {
@@ -74,27 +136,31 @@ export async function createUtoopackConfig(
 
   const utoopackConfig: ConfigComplete = {
     mode,
-    // MPA mode: one entry per page; SPA mode: single entry
-    entry: isMpa(config)
-      ? Object.entries(config.pages ?? {}).map(([name, page]) => ({
-          import: page.entry,
-          name,
-        }))
-      : [
-          {
-            import: config.entry,
-          },
-        ],
+    entry: plan.entries
+      .filter((entry) => entry.environment === "client")
+      .map((entry) => ({
+        import: resolveClientEntry(cwd, entry),
+        name: entry.name,
+      })),
     output: {
       path: outputPaths.clientDir,
       filename: isProduction ? "[name].[contenthash:8].js" : "[name].js",
       chunkFilename: isProduction ? "[name].[contenthash:8].js" : "[name].js",
-      publicPath: "auto",
+      publicPath: toUtoopackPublicPath(plan.runtime.publicPath),
       clean: true,
     },
     resolve: {
       extensions: [".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs"],
     },
+    ...(frameworkRules.length > 0
+      ? {
+          module: {
+            rules: {
+              "**/*": frameworkRules,
+            },
+          },
+        }
+      : {}),
     sourceMaps: !isProduction,
     stats: true,
     react: {
@@ -102,11 +168,11 @@ export async function createUtoopackConfig(
     },
     define: {
       "process.env.EVJS_FUNCTION_ENDPOINT": JSON.stringify(
-        config.server.functions.endpoint,
+        config.server.functionRuntime.endpoint,
       ),
       "process.env.NODE_ENV": JSON.stringify(mode),
       __EVJS_FUNCTION_ENDPOINT__: JSON.stringify(
-        config.server.functions.endpoint,
+        config.server.functionRuntime.endpoint,
       ),
     },
     // Server functions config — utoopack handles "use server" natively
@@ -124,8 +190,8 @@ export async function createUtoopackConfig(
                 : "[name].js",
             },
             function: {
-              clientProxy: config.server.functions.clientProxy,
-              serverRegister: config.server.functions.serverRegister,
+              clientProxy: config.server.functionRuntime.clientProxy,
+              serverRegister: config.server.functionRuntime.serverRegister,
             },
           },
         }
@@ -141,10 +207,16 @@ export async function createUtoopackConfig(
   };
 
   // Run plugin bundler hooks
-  const ctx: EvBundlerCtx<ConfigComplete> = {
+  const ctx: BundlerCtx<ConfigComplete> = {
     mode: isProduction ? "production" : "development",
+    command: isProduction ? "build" : "dev",
     cwd,
     config,
+    plan,
+    bundlerName: "utoopack",
+    environment: "mixed",
+    logger,
+    addWatchFile() {},
   };
 
   for (const h of hooks) {
@@ -154,4 +226,223 @@ export async function createUtoopackConfig(
   }
 
   return utoopackConfig;
+}
+
+function createPagesEntryRule(
+  metadata: PagesAppEntryMetadata,
+): TurbopackRuleConfigItem {
+  return {
+    condition: createPagesEntryCondition(metadata),
+    loaders: [
+      {
+        loader: pagesEntryLoader,
+        options: createPagesLoaderOptions(metadata),
+      },
+    ],
+    type: "ecmascript",
+  };
+}
+
+function createPagesEntryCondition(metadata: PagesAppEntryMetadata): {
+  path: RegExp;
+  query: string;
+} {
+  return {
+    path: new RegExp(
+      `${escapeRegExp(normalizeRulePath(metadata.routes[0]?.module ?? ""))}$`,
+    ),
+    query: "",
+  };
+}
+
+function createComponentPageRule(
+  metadata: ReactComponentPageEntryMetadata,
+): TurbopackRuleConfigItem {
+  return {
+    condition: {
+      path: new RegExp(
+        `${escapeRegExp(normalizeRulePath(metadata.component))}$`,
+      ),
+      query: "",
+    },
+    loaders: [
+      {
+        loader: componentPageLoader,
+        options: createComponentPageLoaderOptions(metadata),
+      },
+    ],
+    type: "ecmascript",
+  };
+}
+
+function createRemoteClientRule(
+  metadata: RemoteClientEntryMetadata,
+): TurbopackRuleConfigItem {
+  return {
+    condition: {
+      path: new RegExp(`${escapeRegExp(normalizeRulePath(metadata.app))}$`),
+      query: "",
+    },
+    loaders: [
+      {
+        loader: remoteClientLoader,
+        options: {
+          type: "remote-client",
+          app: metadata.app,
+        },
+      },
+    ],
+    type: "ecmascript",
+  };
+}
+
+function normalizeRulePath(value: string): string {
+  return value.replace(/^\.\//, "").replaceAll("\\", "/");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function resolveClientEntry(
+  cwd: string,
+  entry: BuildPlan["entries"][number],
+): string {
+  if (entry.metadata?.type !== "pages-app") return entry.import;
+  if (entry.import.startsWith(".") || path.isAbsolute(entry.import)) {
+    return entry.import;
+  }
+
+  try {
+    return createRequire(path.join(cwd, "package.json")).resolve(entry.import);
+  } catch {
+    return require.resolve(entry.import);
+  }
+}
+
+function getPagesAppMetadata(
+  plan: BuildPlan,
+): PagesAppEntryMetadata | undefined {
+  const metadata = plan.entries.find(
+    (entry) => entry.metadata?.type === "pages-app",
+  )?.metadata;
+  return metadata?.type === "pages-app" ? metadata : undefined;
+}
+
+function getComponentPageMetadata(
+  plan: BuildPlan,
+): ReactComponentPageEntryMetadata[] {
+  return plan.entries
+    .map((entry) => entry.metadata)
+    .filter(
+      (metadata): metadata is ReactComponentPageEntryMetadata =>
+        metadata?.type === "react-component-page",
+    );
+}
+
+function getRemoteClientMetadata(plan: BuildPlan): RemoteClientEntryMetadata[] {
+  return plan.entries
+    .map((entry) => entry.metadata)
+    .filter(
+      (metadata): metadata is RemoteClientEntryMetadata =>
+        metadata?.type === "remote-client",
+    );
+}
+
+function createFrameworkModuleRules(
+  plan: BuildPlan,
+): TurbopackRuleConfigItem[] {
+  const pagesApp = getPagesAppMetadata(plan);
+  return [
+    ...(pagesApp ? [createPagesEntryRule(pagesApp)] : []),
+    ...getComponentPageMetadata(plan).map(createComponentPageRule),
+    ...getRemoteClientMetadata(plan).map(createRemoteClientRule),
+  ];
+}
+
+function createPagesLoaderOptions(
+  metadata: PagesAppEntryMetadata,
+): TurbopackLoaderOptions {
+  return {
+    type: "pages-app",
+    mount: metadata.mount,
+    routes: metadata.routes.map((route) => ({
+      id: route.id,
+      path: route.path,
+      module: route.module,
+    })),
+    ...(metadata.rootModule ? { rootModule: metadata.rootModule } : {}),
+  };
+}
+
+function createComponentPageLoaderOptions(
+  metadata: ReactComponentPageEntryMetadata,
+): TurbopackLoaderOptions {
+  return {
+    type: "react-component-page",
+    mount: metadata.mount,
+    hydrate: metadata.hydrate,
+    render: metadata.render,
+    ...(metadata.route ? { route: metadata.route } : {}),
+  };
+}
+
+function hasAppClientEntry(plan: BuildPlan): boolean {
+  return plan.entries.some((entry) => entry.kind === "app-client");
+}
+
+function validateUtoopackPlanSupport(plan: BuildPlan): void {
+  const unsupportedServerEntries = plan.entries.filter(
+    (entry) =>
+      entry.kind === "page-server" ||
+      entry.kind === "rsc-page" ||
+      entry.kind === "ppr-shell" ||
+      entry.kind === "ppr-region",
+  );
+  if (unsupportedServerEntries.length === 0) return;
+
+  const details = unsupportedServerEntries
+    .map(formatUnsupportedServerEntry)
+    .join("; ");
+  const kinds = [
+    ...new Set(unsupportedServerEntries.map((entry) => entry.kind)),
+  ].join(", ");
+  throw new Error(
+    `[evjs] The current Utoopack adapter cannot build framework server page entries yet (${details}). Unsupported entry kinds: ${kinds}. Utoopack needs multi server entry support; use another bundler adapter for SSR/PPR/RSC validation until that lower-layer API is available.`,
+  );
+}
+
+function formatUnsupportedServerEntry(
+  entry: BuildPlan["entries"][number],
+): string {
+  const owner = formatBuildEntryOwner(entry.owner);
+  return `${entry.name} (${entry.kind}${owner ? `, ${owner}` : ""})`;
+}
+
+function formatBuildEntryOwner(
+  owner: BuildPlan["entries"][number]["owner"],
+): string | undefined {
+  if (!owner) return undefined;
+
+  const parts: string[] = [];
+  if (owner.pageId) parts.push(`page "${owner.pageId}"`);
+  if (owner.routeId) parts.push(`route "${owner.routeId}"`);
+  if (owner.regionId) parts.push(`region "${owner.regionId}"`);
+  if (owner.appId) parts.push(`app "${owner.appId}"`);
+  if (owner.remoteId) parts.push(`remote "${owner.remoteId}"`);
+  if (owner.remoteEntryId) parts.push(`remote entry "${owner.remoteEntryId}"`);
+
+  return parts.join(", ") || undefined;
+}
+
+function resolveServerEntry(entry: string | undefined): string | undefined {
+  if (!entry) return undefined;
+  if (entry.startsWith(".") || path.isAbsolute(entry)) return entry;
+  return require.resolve(entry);
+}
+
+function toUtoopackPublicPath(
+  publicPath: BuildPlan["runtime"]["publicPath"],
+): string {
+  return typeof publicPath === "string" ? publicPath : "auto";
 }

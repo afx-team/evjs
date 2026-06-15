@@ -1,140 +1,180 @@
 # Architecture
 
+This file summarizes the current implementation. User-facing architecture
+documentation lives in [docs/docs/architecture.md](./docs/docs/architecture.md)
+and the current status matrix lives in [ROADMAP.md](./ROADMAP.md).
+
 ## Overview
 
-`evjs` is a React fullstack framework with type-safe routing (TanStack Router), data fetching (TanStack Query), and server functions (`"use server"`). It uses a Hono-based API server and is designed to be bundler-agnostic.
+evjs is a React framework with file-based page routes, explicit lower-level
+app/page declarations, server functions, REST routes, SSR, PPR, RSC integration
+points, manifest-driven remotes, and bundler adapters.
 
-```
-┌─────────────────────────── Build Time ───────────────────────────┐
-│                                                                  │
-│  @evjs/cli ──► BundlerAdapter ──── @evjs/bundler-utoopack     │
-│                                   (default)                  │
-│                      │                                          │
-│  @evjs/build-tools ──┴──► @evjs/manifest (manifests)          │
-│  (bundler-agnostic)                                              │
-│                                                                  │
-└──────────────────────────────┬───────────────────────────────────┘
-                               │
-              ┌────────────────┴────────────────┐
-              ▼                                 ▼
-┌──────── Client (Browser) ────────┐ ┌──────── Server (Node/Edge) ──────┐
-│                                  │ │                                   │
-│  TanStack Router                 │ │  Hono App (createApp)             │
-│  TanStack Query                  │ │  registerServerReference() + createRoute()     │
-│  createServerReference() stubs   │ │  app.fetch()                      │
-│  ServerTransport ────────────────┼─┼──► POST api/fn ─► registry     │
-│                                  │ │                                   │
-└──────────────────────────────────┘ └───────────────────────────────────┘
+```txt
+src/pages + ev.config.ts + static server declarations
+  -> AppGraph
+  -> BuildPlan
+  -> selected bundler adapter
+  -> BuildOutput / dist/manifest.json
+  -> client runtime, server runtime, deployment adapters
 ```
 
-## Package Dependency Graph
+Framework semantics are owned by `@evjs/ev` and `@evjs/shared/manifest`.
+Bundlers own module graphs, chunks, assets, dev HMR, and stats. Runtime packages
+consume `BuildOutput` rather than raw bundler stats.
 
-```
-@evjs/cli ──► @evjs/ev, @evjs/bundler-utoopack (default)
+## Package Shape
 
-@evjs/shared (zero deps — runtime only: errors, HTTP, constants)
+```txt
+@evjs/cli
+  CLI and programmatic command entrypoints
 
-@evjs/bundler-utoopack ──► @evjs/ev, @evjs/build-tools, @evjs/manifest, @utoo/pack
-@evjs/server ──► @evjs/shared, hono, @hono/node-server
-@evjs/client ──► @evjs/shared, @tanstack/react-router, @tanstack/react-query
-```
+@evjs/create-app
+  project scaffolding and template restoration
 
-## Configuration Flow
+@evjs/ev
+  config, plugins, graph analysis, build planning, HTML, deployment helpers,
+  bundler adapter contracts, and runtime facades under @evjs/ev/client and
+  @evjs/ev/server
 
-```
-ev.config.ts ──► defineConfig({ entry, html, dev, server, bundler, plugins })
-                    │
-                    ├── entry, html ──► bundler entry + HTML
-                    ├── bundler ──► BundlerAdapter (utoopack)
-                    ├── dev.port ──► dev server port
-                    ├── server.endpoint ──► server function + proxy path
-                    └── plugins ──► EvPlugin[] (setup → buildStart/bundler/transformHtml/buildEnd)
-                    │
-                    ▼
-            plugin.setup(ctx) → collect hooks
-                    │
-                    ▼
-            hooks.buildStart() → hooks.bundler(config) → BundlerAdapter.dev/build()
-                    │
-                    ▼
-              bundler compile → generateHtml() → hooks.transformHtml(doc) → hooks.buildEnd(result)
-```
+@evjs/shared
+  runtime shared helpers and @evjs/shared/manifest schemas/linkers
 
-## Server Function Pipeline
+@evjs/client
+  browser runtime, server-function transport, page hooks, navigation helpers,
+  RSC client runtime, and remote host helpers
 
-```
-               ┌── Client Build ──► import { createServerReference } from '@evjs/client/transport'
-               │                    export const getUsers = createServerReference(fnId, "getUsers")
-.server.ts ────┤
-               │
-               │
-               └── Server Build ──► import { registerServerReference } from '@evjs/server/register'
-                                    // original body preserved
-                                    registerServerReference("getUsers", fnId, "getUsers")
+@evjs/server
+  server functions, REST routes, SSR/PPR/RSC request coordination, and runtime
+  adapters surfaced through facades such as @evjs/ev/server/node
+
+@evjs/bundler-utoopack
+  default Utoopack adapter
+
+@evjs/bundler-webpack
+  validation/fallback adapter for architecture features blocked on Utoopack APIs
 ```
 
-## Build-Tools Structure
+Application code imports runtime APIs through `@evjs/ev/client` and
+`@evjs/ev/server` so apps can depend on one direct framework package. Direct
+`@evjs/client` and `@evjs/server` imports are implementation-package
+boundaries used inside the monorepo. Other packages are tooling, bundler
+adapters, or shared contracts for framework packages. When a new capability
+needs a boundary, prefer adding a subpath export to an existing package before
+creating another distributed package.
 
-```
-packages/build-tools/src/
-├── index.ts          barrel exports
-├── codegen.ts        SWC parseSync → printSync code emitter
-├── entry.ts          server entry generation
-├── html.ts           HTML template parsing + asset injection (domparser-rs)
-├── routes.ts         route metadata extraction from createRoute() calls
-├── types.ts          shared types + RUNTIME identifier constants
-├── utils.ts          detectUseServer, makeFnId, parseModuleRef
-└── transforms/
-    ├── index.ts      orchestrator: parse → extract → delegate
-    ├── utils.ts      extractExportNames (AST traversal)
-    ├── client/
-    │   └── index.ts  buildClientOutput (createServerReference stubs)
-    └── server/
-        └── index.ts  buildServerOutput (registerServerReference + manifest)
-```
+Subpath exports stay explicit and documented; adding a new package export is a
+public API decision, not a convenience alias.
 
-### RUNTIME Constants
+Internal `@evjs/*` runtime dependencies are kept explicit and workspace-local.
+`@evjs/ev` consumes `@evjs/client`, `@evjs/server`, and shared contracts so
+facade subpaths are real package boundaries. `@evjs/server` also consumes
+`@evjs/client` for shared runtime types. `@evjs/cli` owns the default Utoopack
+adapter dependency, and bundler adapters depend on `@evjs/ev` instead of
+depending on each other. Internal runtime dependency versions stay `"*"` so
+release automation treats the distributed packages as one framework version.
 
-All runtime identifiers used in generated code are centralized in `types.ts`:
+Do not reintroduce legacy split packages:
 
-```ts
-export const RUNTIME = {
-  serverModule: "@evjs/server/register",
-  appModule: "@evjs/server",
-  clientTransportModule: "@evjs/client/transport",
-  registerServerReference: "registerServerReference",
-  createServerReference: "createServerReference",
-  callServer: "callServer",
-} as const;
+```txt
+@evjs/build-tools  -> packages/ev/src/build-tools
+@evjs/manifest     -> packages/shared/src/manifest
 ```
 
-## Dev Server Architecture
+Build helpers are exported from `@evjs/ev/build-tools`, manifest contracts are
+exported from `@evjs/shared/manifest`, and generated page/shell runtime
+primitives stay behind generated-only `@evjs/ev/client/internal/*` facade
+subpaths.
 
+## Build-Time Flow
+
+```mermaid
+sequenceDiagram
+  participant CLI as "@evjs/cli"
+  participant EV as "@evjs/ev"
+  participant Tools as "ev build-tools"
+  participant Bundler as "BundlerAdapter"
+  participant Manifest as "@evjs/shared/manifest"
+
+  CLI->>EV: load and resolve config
+  EV->>EV: run config/setup/buildStart hooks
+  EV->>Tools: createAppGraph(config)
+  Tools-->>EV: AppGraph, diagnostics, fileDependencies
+  EV->>EV: run appGraph hooks
+  EV->>Tools: createBuildPlan(config, graph)
+  EV->>EV: run buildPlan hooks
+  EV->>Bundler: build(plan)
+  Bundler-->>EV: stats/assets/build facts
+  EV->>Manifest: linkBuildOutput(plan, bundlerFacts)
+  Manifest-->>EV: BuildOutput
+  EV->>EV: run buildOutput hooks
+  EV->>EV: emit manifest and HTML documents
+  EV->>EV: run buildEnd({ output })
 ```
-Browser ──(:3000)──► Dev Server ──► HMR (static assets)
-                          │
-                          └── /api/* proxy ──► Node Server (:3001)
-                                                    │
-                                              Hono App
-                                                    │
-                                              POST api/fn
-                                                    │
-                                              registry.get(fnId)(...args)
+
+## Dev-Time Rule
+
+Graph analysis may read static import closure for semantic discovery, but dev
+watching must remain narrower than that closure. `fileDependencies` should
+include explicit route/server roots and framework marker files such as
+`src/pages`, `@evjs/ev/server createRoute()`, `"use server"`, and
+`"use client"`. Ordinary component and style edits stay in the bundler HMR path.
+
+HTML-only dev plan updates can be relinked from existing bundler stats. Dynamic
+entry or server renderer changes require `BundlerDevController.updatePlan()`.
+Webpack implements this validation path. Utoopack still needs the lower-layer
+entry/server update API before it can support those changes without restarting
+the bundler dev instance.
+
+## Runtime Ownership
+
+```txt
+@evjs/ev/client
+  mounts and hydrates framework-managed React pages
+
+@evjs/ev/client/internal
+  reads BuildOutput, activates app/page/remote modules, preloads modules,
+  disposes lifecycles, and negotiates host-provided shared dependencies
+
+@evjs/ev/server
+  owns server functions, REST routes, SSR document rendering, PPR region
+  rendering, and RSC Flight endpoint routing
+
+deployment adapters
+  translate BuildOutput to platform artifacts and bootstraps
 ```
 
-`ev dev` uses the bundler's Node API directly:
-1. Creates bundler compiler + dev server in-process (utoopack)
-2. Watches for `dist/server/manifest.json`
-3. Writes a CJS bootstrap and runs it with `node --watch`
+TanStack Router is an SPA implementation detail owned by the framework. Page
+code uses `src/pages`, page hooks, and navigation helpers instead of constructing
+route trees directly.
 
-## Deployment Adapters
+## Manifest
 
+The framework output contract is a single `BuildOutput` serialized to:
+
+```txt
+dist/manifest.json
 ```
-Node.js          server.entry.mjs ──► @hono/node-server
-ECMA (Deno/Bun)  server.entry.mjs ──► export default app.fetch
-Service Worker   sw.entry.js ──► self.addEventListener('fetch', ...)
-```
 
-## Roadmap
+Split client/server manifest files are outside the framework contract.
+Deployment plugins and platform adapters should consume `BuildOutput`.
 
-See [ROADMAP.md](./ROADMAP.md) for the full, detailed roadmap.
+## Deployment
+
+`@evjs/ev` exposes platform-neutral deployment artifact helpers plus
+`nodeDeploymentAdapter()`. The Node adapter emits a production `dist/server.mjs`
+that imports only Node built-ins, `@evjs/ev/server/node`, and the user server
+bundle. Platform-specific adapters should consume `BuildOutput` instead of
+reading bundler config or stats.
+
+## Programmatic Preparation
+
+`prepareFrameworkBuild()` is the supported core API for tools that need
+framework semantics without running a bundler or emitting platform files. It
+resolves config, applies page-routing defaults, initializes plugins, runs
+`commandStart`, `buildStart`, `appGraph`, and `buildPlan` hooks, and returns the
+resolved config, `AppGraph`, `BuildPlan`, graph file dependencies, plugin watch
+files, and an explicit `dispose()` function.
+
+This API intentionally stops before bundler execution, manifest emission, and
+deployment adapter output.

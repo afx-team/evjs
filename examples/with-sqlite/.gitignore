@@ -1,3 +1,5 @@
+.evjs
+evjs-route-types.d.ts
 
 # SQLite databases
 *.db

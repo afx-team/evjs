@@ -14,7 +14,6 @@ const config: Config = {
   projectName: "evjs",
 
   onBrokenLinks: "throw",
-  onBrokenMarkdownLinks: "warn",
 
   future: {
     faster: {
@@ -37,6 +36,9 @@ const config: Config = {
 
   markdown: {
     mermaid: true,
+    hooks: {
+      onBrokenMarkdownLinks: "warn",
+    },
   },
 
   themes: ["@docusaurus/theme-mermaid"],
