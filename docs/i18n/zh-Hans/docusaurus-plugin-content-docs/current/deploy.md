@@ -115,6 +115,11 @@ patches 继续写入同一个 HTML response。
 region `s-maxage`。shell 显式返回的 `Cache-Control` 会被保留。
 PPR direct `HEAD` 请求可以返回 cache headers，但不会写入 region body cache；
 部署侧需要预热 PPR region 时应使用 `GET`。
+拆分式 edge/origin adapter 可以提供 `framework.ppr.regionCache`，用平台 cache、
+KV store 或区域内存缓存来承载 PPR region body cache。设置
+`framework.ppr.staleWhileRevalidate` 后，仍在 stale 窗口内的过期 entry 会以
+`x-evjs-cache: STALE` 返回；如果平台暴露 `waitUntil()`，运行时会用它在后台刷新缓存。
+Cache provider 失败会被记录，并退回到 fresh render。
 
 如果浏览器和服务端在不同 origin，构建时配置 `transport.baseUrl`。
 

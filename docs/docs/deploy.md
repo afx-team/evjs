@@ -122,6 +122,12 @@ region `s-maxage` when every region declares `{ revalidate }`. Explicit shell
 `Cache-Control` headers are preserved.
 Direct PPR `HEAD` requests can report cache headers but do not seed the region
 body cache; use `GET` when a deployment intentionally warms PPR regions.
+Split edge/origin adapters can provide `framework.ppr.regionCache` to back PPR
+region body caching with a platform cache, KV store, or regional memory cache.
+When `framework.ppr.staleWhileRevalidate` is set, stale entries inside that
+window return with `x-evjs-cache: STALE` while the runtime refreshes the cache
+with `waitUntil()` when the platform exposes it. Cache provider failures are
+logged and fall back to fresh rendering.
 
 If browser and server run on different origins, configure `transport.baseUrl` at build time.
 

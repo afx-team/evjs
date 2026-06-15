@@ -2,7 +2,10 @@ import { ServerError } from "@evjs/shared";
 import type { BuildOutput } from "@evjs/shared/manifest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
-import type { ServerRenderContext } from "../src/framework.js";
+import type {
+  PprRegionCacheEntry,
+  ServerRenderContext,
+} from "../src/framework.js";
 import {
   createManifestRenderCoordinator,
   createModuleRenderCoordinator,
@@ -764,6 +767,45 @@ describe("createApp", () => {
       }),
     ).toThrow(
       "[evjs] createApp() framework.rsc must be an RSC Flight function or coordinator object.",
+    );
+    expect(() =>
+      createApp({ framework: { manifest, ppr: [] } as never }),
+    ).toThrow("[evjs] createApp() framework.ppr must be an object.");
+    expect(() =>
+      createApp({
+        framework: {
+          manifest,
+          ppr: { regionCache: { get: () => undefined } },
+        } as never,
+      }),
+    ).toThrow(
+      "[evjs] createApp() framework.ppr.regionCache must provide get() and set() methods.",
+    );
+    expect(() =>
+      createApp({
+        framework: {
+          manifest,
+          ppr: {
+            regionCache: {
+              get: () => undefined,
+              set: () => {},
+              delete: "delete",
+            },
+          },
+        } as never,
+      }),
+    ).toThrow(
+      "[evjs] createApp() framework.ppr.regionCache.delete must be a function when provided.",
+    );
+    expect(() =>
+      createApp({
+        framework: {
+          manifest,
+          ppr: { staleWhileRevalidate: 1.5 },
+        } as never,
+      }),
+    ).toThrow(
+      "[evjs] createApp() framework.ppr.staleWhileRevalidate must be a positive integer number of seconds.",
     );
     expect(() =>
       createApp({
@@ -2053,6 +2095,58 @@ describe("createApp", () => {
     expect(html).toContain("hero patch");
   });
 
+  it("adds stale-while-revalidate to PPR page cache headers when configured", async () => {
+    const manifest = createManifest();
+    manifest.pages.dashboard.prerender = { partial: true, delivery: "merge" };
+    manifest.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        hero: {
+          id: "hero",
+          assets: { js: ["dashboard-hero-ppr-region.js"], css: [] },
+          component: "./src/pages/Hero.region.tsx",
+          cache: { revalidate: 45 },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    const app = createApp({
+      framework: {
+        manifest,
+        ppr: { staleWhileRevalidate: 10 },
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-ppr-shell": {
+              kind: "ppr-shell",
+              owner: { pageId: "dashboard" },
+              load: async () => ({
+                default() {
+                  return '<main><div data-evjs-ppr-region="hero">fallback</div></main>';
+                },
+              }),
+            },
+            "dashboard-hero-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "hero" },
+              load: async () => ({
+                default: () => "<p>hero</p>",
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const res = await app.request("/dashboard");
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe(
+      "s-maxage=45, stale-while-revalidate=10",
+    );
+    expect(await res.text()).toBe("<main><p>hero</p></main>");
+  });
+
   it("normalizes PPR region document responses into fragments", async () => {
     const manifest = createManifest();
     manifest.pages.dashboard.prerender = { partial: true, delivery: "merge" };
@@ -2514,6 +2608,195 @@ describe("createApp", () => {
     expect(second.headers.get("x-evjs-cache")).toBe("HIT");
     expect(await second.text()).toBe("<p>1</p>");
     expect(renderCount).toBe(1);
+  });
+
+  it("uses a custom PPR region cache when provided", async () => {
+    const manifest = createManifest();
+    manifest.pages.dashboard.prerender = { partial: true, delivery: "merge" };
+    manifest.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        inventory: {
+          id: "inventory",
+          assets: { js: ["dashboard-inventory-ppr-region.js"], css: [] },
+          component: "./src/pages/Inventory.region.tsx",
+          cache: { revalidate: 60 },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    const entries = new Map<string, PprRegionCacheEntry>();
+    const regionCache = {
+      get: vi.fn((key: string) => entries.get(key)),
+      set: vi.fn((key: string, entry: PprRegionCacheEntry) => {
+        entries.set(key, entry);
+      }),
+    };
+    let renderCount = 0;
+    const app = createApp({
+      framework: {
+        manifest,
+        ppr: { regionCache },
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-inventory-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "inventory" },
+              load: async () => ({
+                default: () => `<p>${++renderCount}</p>`,
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const first = await app.request("/__evjs/ppr/dashboard/inventory");
+    const second = await app.request("/__evjs/ppr/dashboard/inventory");
+
+    expect(first.headers.get("x-evjs-cache")).toBe("MISS");
+    expect(await first.text()).toBe("<p>1</p>");
+    expect(second.headers.get("x-evjs-cache")).toBe("HIT");
+    expect(await second.text()).toBe("<p>1</p>");
+    expect(renderCount).toBe(1);
+    expect(regionCache.get).toHaveBeenCalledTimes(2);
+    expect(regionCache.set).toHaveBeenCalledTimes(1);
+  });
+
+  it("serves stale PPR regions while refreshing the cache", async () => {
+    const manifest = createManifest();
+    manifest.pages.dashboard.prerender = { partial: true, delivery: "merge" };
+    manifest.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        inventory: {
+          id: "inventory",
+          assets: { js: ["dashboard-inventory-ppr-region.js"], css: [] },
+          component: "./src/pages/Inventory.region.tsx",
+          cache: { revalidate: 60 },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    const encoder = new TextEncoder();
+    let entry: PprRegionCacheEntry | undefined = {
+      expiresAt: Date.now() - 1_000,
+      staleUntil: Date.now() + 60_000,
+      status: 200,
+      statusText: "",
+      headers: [
+        ["cache-control", "s-maxage=60, stale-while-revalidate=30"],
+        ["content-type", "text/html; charset=utf-8"],
+      ],
+      body: encoder.encode("<p>stale</p>").buffer,
+    };
+    let resolveUpdated!: (entry: PprRegionCacheEntry) => void;
+    const updated = new Promise<PprRegionCacheEntry>((resolve) => {
+      resolveUpdated = resolve;
+    });
+    const regionCache = {
+      get: vi.fn(() => entry),
+      set: vi.fn((_key: string, nextEntry: PprRegionCacheEntry) => {
+        entry = nextEntry;
+        resolveUpdated(nextEntry);
+      }),
+      delete: vi.fn(() => {
+        entry = undefined;
+      }),
+    };
+    let renderCount = 0;
+    const app = createApp({
+      framework: {
+        manifest,
+        ppr: { regionCache, staleWhileRevalidate: 30 },
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-inventory-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "inventory" },
+              load: async () => ({
+                default: () => `<p>fresh-${++renderCount}</p>`,
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const stale = await app.request("/__evjs/ppr/dashboard/inventory");
+
+    expect(stale.headers.get("x-evjs-cache")).toBe("STALE");
+    expect(await stale.text()).toBe("<p>stale</p>");
+    const refreshed = await updated;
+    expect(new TextDecoder().decode(refreshed.body)).toBe("<p>fresh-1</p>");
+
+    const fresh = await app.request("/__evjs/ppr/dashboard/inventory");
+
+    expect(fresh.headers.get("x-evjs-cache")).toBe("HIT");
+    expect(await fresh.text()).toBe("<p>fresh-1</p>");
+    expect(regionCache.delete).not.toHaveBeenCalled();
+    expect(regionCache.set).toHaveBeenCalledTimes(1);
+    expect(renderCount).toBe(1);
+  });
+
+  it("renders PPR regions when the custom cache provider fails", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const manifest = createManifest();
+    manifest.pages.dashboard.prerender = { partial: true, delivery: "merge" };
+    manifest.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        inventory: {
+          id: "inventory",
+          assets: { js: ["dashboard-inventory-ppr-region.js"], css: [] },
+          component: "./src/pages/Inventory.region.tsx",
+          cache: { revalidate: 60 },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    const regionCache = {
+      get: vi.fn(() => {
+        throw new Error("read unavailable");
+      }),
+      set: vi.fn(() => {
+        throw new Error("write unavailable");
+      }),
+    };
+    const app = createApp({
+      framework: {
+        manifest,
+        ppr: { regionCache },
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "dashboard-inventory-region": {
+              kind: "ppr-region",
+              owner: { pageId: "dashboard", regionId: "inventory" },
+              load: async () => ({
+                default: () => "<p>fresh</p>",
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    try {
+      const response = await app.request("/__evjs/ppr/dashboard/inventory");
+
+      expect(response.headers.get("x-evjs-cache")).toBe("MISS");
+      expect(await response.text()).toBe("<p>fresh</p>");
+      expect(regionCache.get).toHaveBeenCalledTimes(1);
+      expect(regionCache.set).toHaveBeenCalledTimes(1);
+      expect(consoleError).toHaveBeenCalledTimes(2);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it("does not populate PPR region cache from HEAD misses", async () => {

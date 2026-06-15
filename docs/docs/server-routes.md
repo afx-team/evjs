@@ -179,6 +179,25 @@ manually, `framework.manifest` must be the emitted `BuildOutput` shape:
 `version: 1` plus object `runtime`, `apps`, `pages`, and array `routes`.
 Malformed framework manifests fail during `createApp()` startup instead of
 crashing later on the first page, PPR, or RSC request.
+PPR runtime cache options also live under `framework.ppr`; use them from
+generated or custom server adapters rather than application page config:
+
+```ts
+import type { PprRegionCache } from "@evjs/ev/server";
+
+const regionCache: PprRegionCache = platformRegionCache();
+
+createApp({
+  framework: {
+    manifest,
+    render,
+    ppr: {
+      regionCache,
+      staleWhileRevalidate: 30,
+    },
+  },
+});
+```
 
 ## Mounting Routes
 

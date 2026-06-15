@@ -330,6 +330,9 @@ function export 和 class export 都是无效的；type-only export 和 ambient
 `Cache-Control`。只要任意 region 是 `"no-store"` 或省略 `cache`，page response
 默认使用 `no-store`；如果所有 regions 都声明 `{ revalidate }`，page response 默认使用
 最小 region `s-maxage`。如果 shell renderer 自己返回了 `Cache-Control`，框架会保留它。
+服务端 adapter 可以在运行时设置 `framework.ppr.staleWhileRevalidate`。设置后，可缓存的
+PPR region response 和合成后的 page response 会包含 `stale-while-revalidate`，
+过期但仍在 stale 窗口内的 region entry 会先返回给请求，同时由框架在后台刷新缓存。
 
 `prerender.delivery` 控制初始 document response。`"merge"` 是默认非流式模式：
 框架服务端先渲染 shell 和 regions，再返回完整 HTML。`"stream"` 会先发送 shell，

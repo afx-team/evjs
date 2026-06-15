@@ -25,15 +25,22 @@ import type {
   ServerRenderPlan,
 } from "@evjs/shared/manifest";
 import { assertFrameworkManifestShape } from "@evjs/shared/manifest";
+import { tryGetContext } from "hono/context-storage";
 import { textResponse } from "./responses.js";
 
 export interface FrameworkServerOptions {
   manifest: BuildOutput;
   render?: ServerRenderHandler | ServerRenderCoordinator;
   rsc?: RscFlightHandler | RscCoordinator;
+  ppr?: PprRuntimeOptions;
   allowPageRenderRequest?: (
     request: Request,
   ) => boolean | Response | Promise<boolean | Response>;
+}
+
+export interface PprRuntimeOptions {
+  regionCache?: PprRegionCache;
+  staleWhileRevalidate?: number;
 }
 
 export interface ServerRenderContext {
@@ -126,12 +133,21 @@ export interface RscCoordinator {
   renderFlight(ctx: RscFlightContext): Response | Promise<Response>;
 }
 
-interface PprCachedResponse {
+export interface PprRegionCacheEntry {
   expiresAt: number;
+  staleUntil?: number;
   status: number;
   statusText: string;
   headers: [string, string][];
   body: ArrayBuffer;
+}
+
+export interface PprRegionCache {
+  get(
+    key: string,
+  ): PprRegionCacheEntry | undefined | Promise<PprRegionCacheEntry | undefined>;
+  set(key: string, entry: PprRegionCacheEntry): void | Promise<void>;
+  delete?(key: string): void | Promise<void>;
 }
 
 interface PprRegionMatch {
@@ -141,11 +157,20 @@ interface PprRegionMatch {
 
 const pprRegionCaches = new WeakMap<
   FrameworkServerOptions,
-  Map<string, PprCachedResponse>
+  Map<string, PprRegionCacheEntry>
+>();
+const pprRegionRevalidations = new WeakMap<
+  FrameworkServerOptions,
+  Set<string>
 >();
 
 interface PprRegionCacheWriteOptions {
   store: boolean;
+}
+
+interface PprRegionCacheRead {
+  response: Response;
+  state: "fresh" | "stale";
 }
 
 interface PprRegionNormalizeOptions {
@@ -493,7 +518,7 @@ async function renderPprPageResponse(
 
   if (request.method === "HEAD") {
     const headers = new Headers(response.headers);
-    applyDefaultPprPageCacheHeaders(headers, page);
+    applyDefaultPprPageCacheHeaders(headers, page, options);
     return new Response(null, {
       status: response.status,
       statusText: response.statusText,
@@ -553,7 +578,7 @@ async function renderPprMergedPageResponse(
 
   const headers = new Headers(response.headers);
   headers.set("Content-Type", TEXT_HTML_UTF8_CONTENT_TYPE);
-  applyDefaultPprPageCacheHeaders(headers, page);
+  applyDefaultPprPageCacheHeaders(headers, page, options);
   if (!changed) {
     return new Response(html, {
       status: response.status,
@@ -584,7 +609,7 @@ async function renderPprStreamingPageResponse(
   const { head, tail } = splitHtmlForPprStream(html);
   const headers = new Headers(response.headers);
   headers.set("Content-Type", TEXT_HTML_UTF8_CONTENT_TYPE);
-  applyDefaultPprPageCacheHeaders(headers, page);
+  applyDefaultPprPageCacheHeaders(headers, page, options);
   headers.set("x-evjs-ppr", "stream");
 
   const encoder = new TextEncoder();
@@ -641,9 +666,65 @@ async function renderPprRegionResponse(
   if (!region) return undefined;
   const cachePolicy = region.cache ?? "no-store";
   const cacheKey = createPprRegionCacheKey(request, match);
-  const cached = readPprRegionCache(options, cacheKey, cachePolicy);
-  if (cached) return cached;
+  const cached = await readPprRegionCache(options, cacheKey, cachePolicy);
+  if (cached) {
+    if (cached.state === "stale" && request.method !== "HEAD") {
+      schedulePprRegionRevalidation(options, cacheKey, () =>
+        refreshPprRegionCache(
+          options,
+          request,
+          match,
+          coordinator,
+          cacheKey,
+          cachePolicy,
+        ),
+      );
+    }
+    return cached.response;
+  }
 
+  const response = await renderFreshPprRegionResponse(
+    options,
+    request,
+    match,
+    coordinator,
+  );
+  if (!response) return undefined;
+
+  return applyPprRegionCache(options, cacheKey, cachePolicy, response, {
+    store: request.method !== "HEAD",
+  });
+}
+
+async function refreshPprRegionCache(
+  options: FrameworkServerOptions,
+  request: Request,
+  match: PprRegionMatch,
+  coordinator: ServerRenderCoordinator,
+  cacheKey: string,
+  cachePolicy: PprCachePolicy,
+): Promise<void> {
+  const freshResponse = await renderFreshPprRegionResponse(
+    options,
+    request,
+    match,
+    coordinator,
+  );
+  if (!freshResponse) return;
+
+  await applyPprRegionCache(options, cacheKey, cachePolicy, freshResponse, {
+    store: true,
+  });
+}
+
+async function renderFreshPprRegionResponse(
+  options: FrameworkServerOptions,
+  request: Request,
+  match: PprRegionMatch,
+  coordinator: ServerRenderCoordinator,
+): Promise<Response | undefined> {
+  const page = options.manifest.pages[match.pageId];
+  if (!page?.ppr) return undefined;
   const ctx: ServerRenderContext = {
     request,
     manifest: options.manifest,
@@ -663,7 +744,7 @@ async function renderPprRegionResponse(
   }
   if (!renderMatch) return undefined;
 
-  const response = await normalizePprRegionResponse(
+  return normalizePprRegionResponse(
     match,
     await runServerRender(
       coordinator,
@@ -674,10 +755,6 @@ async function renderPprRegionResponse(
       readBody: request.method !== "HEAD",
     },
   );
-
-  return applyPprRegionCache(options, cacheKey, cachePolicy, response, {
-    store: request.method !== "HEAD",
-  });
 }
 
 export async function handleRscFlightRequest(
@@ -1250,28 +1327,36 @@ function createPprRegionCacheKey(
   return `${match.pageId}:${match.regionId}:${normalizeRoutePathname(url.pathname)}${url.search}`;
 }
 
-function readPprRegionCache(
+async function readPprRegionCache(
   options: FrameworkServerOptions,
   key: string,
   policy: PprCachePolicy,
-): Response | undefined {
+): Promise<PprRegionCacheRead | undefined> {
   const revalidate = getPprRegionRevalidate(policy);
   if (revalidate === undefined) return undefined;
 
-  const cached = pprRegionCaches.get(options)?.get(key);
+  const cache = getPprRegionCache(options);
+  const cached = await getPprRegionCacheEntry(cache, key);
   if (!cached) return undefined;
-  if (cached.expiresAt <= Date.now()) {
-    pprRegionCaches.get(options)?.delete(key);
+  const now = Date.now();
+  const isFresh = cached.expiresAt > now;
+  const isStale =
+    !isFresh && cached.staleUntil !== undefined && cached.staleUntil > now;
+  if (!isFresh && !isStale) {
+    await deletePprRegionCacheEntry(cache, key);
     return undefined;
   }
 
   const headers = new Headers(cached.headers);
-  headers.set("x-evjs-cache", "HIT");
-  return new Response(cached.body.slice(0), {
-    status: cached.status,
-    statusText: cached.statusText,
-    headers,
-  });
+  headers.set("x-evjs-cache", isFresh ? "HIT" : "STALE");
+  return {
+    state: isFresh ? "fresh" : "stale",
+    response: new Response(cached.body.slice(0), {
+      status: cached.status,
+      statusText: cached.statusText,
+      headers,
+    }),
+  };
 }
 
 async function applyPprRegionCache(
@@ -1295,7 +1380,13 @@ async function applyPprRegionCache(
   }
 
   if (!headers.has("Cache-Control")) {
-    headers.set("Cache-Control", `s-maxage=${revalidate}`);
+    headers.set(
+      "Cache-Control",
+      createRevalidateCacheControl(
+        revalidate,
+        getPprStaleWhileRevalidate(options),
+      ),
+    );
   }
   headers.set("x-evjs-cache", "MISS");
 
@@ -1309,20 +1400,21 @@ async function applyPprRegionCache(
 
   const body = await response.arrayBuffer();
   if (response.ok) {
-    let cache = pprRegionCaches.get(options);
-    if (!cache) {
-      cache = new Map();
-      pprRegionCaches.set(options, cache);
-    }
-    cache.set(key, {
-      expiresAt: Date.now() + revalidate * 1000,
+    const now = Date.now();
+    const staleWhileRevalidate = getPprStaleWhileRevalidate(options);
+    const entry: PprRegionCacheEntry = {
+      expiresAt: now + revalidate * 1000,
+      ...(staleWhileRevalidate > 0
+        ? { staleUntil: now + (revalidate + staleWhileRevalidate) * 1000 }
+        : {}),
       status: response.status,
       statusText: response.statusText,
       headers: [...headers.entries()].filter(
         ([name]) => name.toLowerCase() !== "x-evjs-cache",
       ),
       body,
-    });
+    };
+    await setPprRegionCacheEntry(getPprRegionCache(options), key, entry);
   }
 
   return new Response(body.slice(0), {
@@ -1340,19 +1432,140 @@ function getPprRegionRevalidate(policy: PprCachePolicy): number | undefined {
   return policy.revalidate;
 }
 
+function getPprStaleWhileRevalidate(options: FrameworkServerOptions): number {
+  const value = options.ppr?.staleWhileRevalidate;
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+    ? value
+    : 0;
+}
+
+function createRevalidateCacheControl(
+  revalidate: number,
+  staleWhileRevalidate = 0,
+): string {
+  return staleWhileRevalidate > 0
+    ? `s-maxage=${revalidate}, stale-while-revalidate=${staleWhileRevalidate}`
+    : `s-maxage=${revalidate}`;
+}
+
+function getPprRegionCache(options: FrameworkServerOptions): PprRegionCache {
+  if (options.ppr?.regionCache) return options.ppr.regionCache;
+
+  let cache = pprRegionCaches.get(options);
+  if (!cache) {
+    cache = new Map();
+    pprRegionCaches.set(options, cache);
+  }
+  const cacheMap = cache;
+
+  return {
+    get: (key) => cacheMap.get(key),
+    set: (key, entry) => {
+      cacheMap.set(key, entry);
+    },
+    delete: (key) => {
+      cacheMap.delete(key);
+    },
+  };
+}
+
+async function getPprRegionCacheEntry(
+  cache: PprRegionCache,
+  key: string,
+): Promise<PprRegionCacheEntry | undefined> {
+  try {
+    return await cache.get(key);
+  } catch (error) {
+    console.error(
+      `[evjs] PPR region cache get failed for "${key}": ${formatUnknownError(error)}`,
+    );
+    return undefined;
+  }
+}
+
+async function setPprRegionCacheEntry(
+  cache: PprRegionCache,
+  key: string,
+  entry: PprRegionCacheEntry,
+): Promise<void> {
+  try {
+    await cache.set(key, entry);
+  } catch (error) {
+    console.error(
+      `[evjs] PPR region cache set failed for "${key}": ${formatUnknownError(error)}`,
+    );
+  }
+}
+
+async function deletePprRegionCacheEntry(
+  cache: PprRegionCache,
+  key: string,
+): Promise<void> {
+  try {
+    await cache.delete?.(key);
+  } catch (error) {
+    console.error(
+      `[evjs] PPR region cache delete failed for "${key}": ${formatUnknownError(error)}`,
+    );
+  }
+}
+
+function schedulePprRegionRevalidation(
+  options: FrameworkServerOptions,
+  key: string,
+  task: () => Promise<unknown>,
+): void {
+  let active = pprRegionRevalidations.get(options);
+  if (!active) {
+    active = new Set();
+    pprRegionRevalidations.set(options, active);
+  }
+  if (active.has(key)) return;
+  active.add(key);
+
+  const promise = Promise.resolve()
+    .then(task)
+    .catch((error) => {
+      console.error(
+        `[evjs] PPR region stale revalidation failed for "${key}": ${formatUnknownError(error)}`,
+      );
+    })
+    .finally(() => {
+      active.delete(key);
+    });
+
+  waitUntilPprRegionRevalidation(promise);
+}
+
+function waitUntilPprRegionRevalidation(promise: Promise<unknown>): void {
+  try {
+    const context = tryGetContext();
+    const executionCtx = context?.executionCtx as
+      | { waitUntil?: (p: Promise<unknown>) => void }
+      | undefined;
+    executionCtx?.waitUntil?.(promise);
+  } catch {
+    // Hono only exposes executionCtx in runtimes that provide waitUntil.
+  }
+}
+
 function applyDefaultPprPageCacheHeaders(
   headers: Headers,
   page: PageOutput,
+  options: FrameworkServerOptions,
 ): void {
   if (headers.has("Cache-Control")) return;
 
-  const cacheControl = getPprPageCacheControl(page);
+  const cacheControl = getPprPageCacheControl(page, options);
   if (cacheControl) {
     headers.set("Cache-Control", cacheControl);
   }
 }
 
-function getPprPageCacheControl(page: PageOutput): string | undefined {
+function getPprPageCacheControl(
+  page: PageOutput,
+  options: FrameworkServerOptions,
+): string | undefined {
   if (!page.ppr) return undefined;
 
   const regions = Object.values(page.ppr.regions);
@@ -1365,7 +1578,10 @@ function getPprPageCacheControl(page: PageOutput): string | undefined {
     minRevalidate = Math.min(minRevalidate, revalidate);
   }
 
-  return `s-maxage=${minRevalidate}`;
+  return createRevalidateCacheControl(
+    minRevalidate,
+    getPprStaleWhileRevalidate(options),
+  );
 }
 
 function isPatchablePprRegionResponse(

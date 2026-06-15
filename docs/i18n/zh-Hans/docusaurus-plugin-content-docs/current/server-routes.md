@@ -168,6 +168,25 @@ fallback、PPR 和 RSC handling 的底层入口。手动传入时，
 `version: 1`，以及 object 类型的 `runtime`、`apps`、`pages` 和 array
 类型的 `routes`。无效的 framework manifest 会在 `createApp()` 启动阶段失败，
 而不是等到第一次 page、PPR 或 RSC 请求时崩溃。
+PPR runtime cache 选项也放在 `framework.ppr` 下；它们面向生成的或自定义的
+server adapter，不是应用 page config：
+
+```ts
+import type { PprRegionCache } from "@evjs/ev/server";
+
+const regionCache: PprRegionCache = platformRegionCache();
+
+createApp({
+  framework: {
+    manifest,
+    render,
+    ppr: {
+      regionCache,
+      staleWhileRevalidate: 30,
+    },
+  },
+});
+```
 
 ## 挂载路由
 

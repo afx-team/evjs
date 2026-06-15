@@ -386,6 +386,7 @@ function assertFrameworkServerOptions(value: unknown): void {
   );
   assertOptionalRenderCoordinator(value.render, "framework.render");
   assertOptionalRscCoordinator(value.rsc, "framework.rsc");
+  assertOptionalPprRuntimeOptions(value.ppr, "framework.ppr");
   assertOptionalFunction(
     value.allowPageRenderRequest,
     "framework.allowPageRenderRequest",
@@ -406,6 +407,45 @@ function assertOptionalRscCoordinator(value: unknown, name: string): void {
   throw new Error(
     `[evjs] createApp() ${name} must be an RSC Flight function or coordinator object.`,
   );
+}
+
+function assertOptionalPprRuntimeOptions(value: unknown, name: string): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    throw new Error(`[evjs] createApp() ${name} must be an object.`);
+  }
+
+  if (value.regionCache !== undefined) {
+    if (
+      !isRecord(value.regionCache) ||
+      typeof value.regionCache.get !== "function" ||
+      typeof value.regionCache.set !== "function"
+    ) {
+      throw new Error(
+        `[evjs] createApp() ${name}.regionCache must provide get() and set() methods.`,
+      );
+    }
+    if (
+      value.regionCache.delete !== undefined &&
+      typeof value.regionCache.delete !== "function"
+    ) {
+      throw new Error(
+        `[evjs] createApp() ${name}.regionCache.delete must be a function when provided.`,
+      );
+    }
+  }
+
+  const staleWhileRevalidate = value.staleWhileRevalidate;
+  if (
+    staleWhileRevalidate !== undefined &&
+    (typeof staleWhileRevalidate !== "number" ||
+      !Number.isInteger(staleWhileRevalidate) ||
+      staleWhileRevalidate <= 0)
+  ) {
+    throw new Error(
+      `[evjs] createApp() ${name}.staleWhileRevalidate must be a positive integer number of seconds.`,
+    );
+  }
 }
 
 function assertOptionalFunction(value: unknown, name: string): void {

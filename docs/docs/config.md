@@ -351,6 +351,10 @@ When the framework composes a PPR page response, it derives a default
 regions declare `{ revalidate }`, the page response defaults to the smallest
 region `s-maxage`. A `Cache-Control` header returned by the shell renderer is
 preserved.
+Server adapters can add `framework.ppr.staleWhileRevalidate` at runtime. When
+set, cacheable PPR region responses and composed page responses include
+`stale-while-revalidate`, and stale region entries are served while the
+framework refreshes the cache in the background.
 
 `prerender.delivery` controls the initial document response. `"merge"` is the
 default non-streaming mode: the framework server renders the shell and regions,
