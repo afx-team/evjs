@@ -13,10 +13,11 @@ src/pages + ev.config.ts + server declarations
 
 ## 公共包
 
-应用代码如果希望只声明一个直接框架包，可以通过 `@evjs/ev/client` 和
-`@evjs/ev/server` 导入运行时 API。直接从 `@evjs/client` 和 `@evjs/server`
-导入仍然是受支持的运行时包边界。其他包是工具包、bundler adapter 或框架包之间共享的契约包。
-需要新的能力边界时，先优先考虑在现有包中增加 subpath export，再考虑新增分发包。
+应用代码通过 `@evjs/ev/client` 和 `@evjs/ev/server` 导入运行时 API，
+这样应用只需要声明一个直接框架包。直接从 `@evjs/client` 和 `@evjs/server`
+导入属于 monorepo 内部实现包边界。其他包是工具包、bundler adapter
+或框架包之间共享的契约包。需要新的能力边界时，先优先考虑在现有包中增加
+subpath export，再考虑新增分发包。
 Subpath export 必须保持显式且有文档说明；新增 package export 是公开 API 决策，
 不是为了方便导入而增加的别名。
 
@@ -39,7 +40,7 @@ Subpath export 必须保持显式且有文档说明；新增 package export 是�
 
 | 角色 | 包 | 导入建议 |
 |------|----|----------|
-| 应用框架面 | `@evjs/ev`, `@evjs/client`, `@evjs/server` | config/build API 使用 `@evjs/ev`；运行时 API 可使用 `@evjs/ev/client` / `@evjs/ev/server` facade，直接导入 runtime 包仍受支持。 |
+| 应用框架面 | `@evjs/ev` | config/build API 使用 `@evjs/ev`；运行时 API 使用 `@evjs/ev/client` / `@evjs/ev/server` facade。 |
 | 工具包 | `@evjs/cli`, `@evjs/create-app` | 用于安装或执行；应用模块不应 import 它们。 |
 | Bundler adapter | `@evjs/bundler-utoopack`, `@evjs/bundler-webpack` | `@evjs/cli` 持有默认 Utoopack adapter；只有自定义工具时才直接 import adapter。 |
 | 共享契约 | `@evjs/shared` | 发布出来是为了让框架包共享 manifest/runtime 类型；应用代码不应直接 import。 |
@@ -68,7 +69,7 @@ page bootstrap、server-function stub 和 RSC runtime entry 在只声明
 契约从 `@evjs/shared/manifest` 导出。
 
 文档中的代码示例也遵循同一包边界：应用示例从 `@evjs/ev`、
-`@evjs/ev/client`、`@evjs/ev/server` 或直接 runtime 包导入；只有展示自定义工具时，
+`@evjs/ev/client` 或 `@evjs/ev/server` 导入；只有展示自定义工具时，
 adapter 示例才直接导入 `@evjs/bundler-utoopack`。
 
 ## 内部模块
@@ -101,8 +102,8 @@ adapter 示例才直接导入 `@evjs/bundler-utoopack`。
 SPA 文件路由在框架内部使用 TanStack Router；应用页面只写 `src/pages`、
 page hooks 和导航 helper，不需要创建 route tree。Generated bootstrap 通过
 `@evjs/ev/client/internal/*` 承载。MPA 文件路由和显式 pages 使用 page runtime，
-不引入客户端路由器。顶层 `@evjs/client` 只暴露页面代码需要的 hooks、导航、
-server function、RSC 和 remote runtime API。
+不引入客户端路由器。`@evjs/ev/client` facade 暴露页面代码需要的 hooks、
+导航、server function、RSC 和 remote runtime API。
 
 ## 构建流程
 
@@ -146,7 +147,7 @@ sequenceDiagram
   participant Browser
   participant Shell as "@evjs/ev/client/internal"
   participant Runtime as "@evjs/ev/client"
-  participant Server as "@evjs/server"
+  participant Server as "@evjs/ev/server"
   participant Manifest as "BuildOutput"
 
   Browser->>Runtime: page/app boot

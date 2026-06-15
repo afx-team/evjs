@@ -28,14 +28,16 @@ const expectedPackageNames = Object.keys(
   packageDistribution,
 ).sort() as PackageName[];
 
-const applicationImportPackages = [
-  "@evjs/ev",
+const applicationImportPackages = ["@evjs/ev"] as const;
+
+const runtimeImplementationPackages = [
   "@evjs/client",
   "@evjs/server",
-] as const;
+] as const satisfies readonly PackageName[];
 
 const publicRuntimePackages = [
   ...applicationImportPackages,
+  ...runtimeImplementationPackages,
   "@evjs/shared",
 ] as const satisfies readonly PackageName[];
 
@@ -117,8 +119,6 @@ const allowedExamplePackageDependencies = new Set([
 
 const allowedDocumentationImportPackages = new Set([
   "@evjs/ev",
-  "@evjs/client",
-  "@evjs/server",
   "@evjs/bundler-utoopack",
 ]);
 
@@ -274,11 +274,9 @@ describe("workspace package surface", () => {
     }
   });
 
-  it("keeps application imports on the framework, client, and server packages", async () => {
+  it("keeps application imports on the framework facade and runtime packages free of tooling deps", async () => {
     for (const packageName of applicationImportPackages) {
-      expect(packageDistribution[packageName].role).toMatch(
-        /framework|runtime/,
-      );
+      expect(packageDistribution[packageName].role).toBe("framework");
     }
 
     for (const packageName of publicRuntimePackages) {
@@ -396,6 +394,8 @@ describe("workspace package surface", () => {
       "Application code should not import this package directly",
     );
     expect(readme).toContain("@evjs/shared/manifest");
+    expect(readme).toContain("@evjs/ev/client");
+    expect(readme).toContain("@evjs/ev/server");
     expect(readme).toContain("build identifier validation");
     expect(readme).toContain("path pattern validation");
     expect(readme).toContain("server-function ID validation");
@@ -413,10 +413,10 @@ describe("workspace package surface", () => {
       expect(architectureDoc).toContain(packageName);
     }
     expect(architectureDoc).toContain(
-      "Application code can import framework runtime APIs through `@evjs/ev/client`",
+      "Application code imports framework runtime APIs through `@evjs/ev/client`",
     );
     expect(architectureDoc).toContain(
-      "`@evjs/client` and `@evjs/server` imports remain supported runtime package",
+      "Direct `@evjs/client` and `@evjs/server` imports are implementation-package",
     );
     expect(architectureDoc).toContain("not undocumented aliases");
     expect(architectureDoc).toContain("@evjs/ev/client/internal/*");
@@ -495,7 +495,7 @@ describe("workspace package surface", () => {
       "Internal `@evjs/*` runtime dependency versions stay",
     );
     expect(rootContributing).toContain(
-      "App-facing imports stay in `@evjs/ev`, its runtime facade subpaths",
+      "App-facing imports stay in `@evjs/ev` or its runtime facade subpaths",
     );
     expect(rootContributing).toContain("`@evjs/ev/client`, `@evjs/ev/server`");
     expect(rootContributing).toContain("intentional and documented");
@@ -850,9 +850,9 @@ describe("workspace package surface", () => {
       path.join(repoRoot, "packages/server/README.md"),
       "utf-8",
     );
-    expect(readme).toContain("@evjs/server/node");
-    expect(readme).toContain("@evjs/server/fetch");
-    expect(readme).toContain(`export { fetch } from "@evjs/server/fetch"`);
+    expect(readme).toContain("@evjs/ev/server/node");
+    expect(readme).toContain("@evjs/ev/server/fetch");
+    expect(readme).toContain(`export { fetch } from "@evjs/ev/server/fetch"`);
     expect(readme).not.toContain("@evjs/server/ecma");
   });
 });

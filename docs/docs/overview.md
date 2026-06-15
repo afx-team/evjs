@@ -23,7 +23,7 @@ the framework. MPA page routes use the page runtime without adding a router.
 - **Framework pages** — page modules can declare CSR/SSR/SSG/PPR/RSC rendering metadata next to the component.
 - **Server functions** — `"use server"` modules become browser-callable RPC stubs.
 - **Server routes** — standard Web `Request`/`Response` route handlers via `createRoute()`.
-- **Unified server boundary** — `@evjs/server` handles server functions, server routes, SSR, PPR, and RSC requests.
+- **Unified server boundary** — `@evjs/ev/server` handles server functions, server routes, SSR, PPR, and RSC requests.
 - **Manifest-driven remotes** — host apps load remote apps through remote manifests and shared dependency negotiation.
 - **Plugin system** — graph, plan, bundler, output, HTML, and build lifecycle hooks.
 - **Deployment output** — one public-safe framework manifest plus adapter-generated platform artifacts.
@@ -39,7 +39,7 @@ flowchart LR
         RSCClient["RSC client runtime"]
     end
 
-    subgraph Server ["@evjs/server"]
+    subgraph Server ["@evjs/ev/server"]
         subgraph Rendering ["Rendering"]
             SSR["SSR"]
             PPR["PPR shell/regions"]

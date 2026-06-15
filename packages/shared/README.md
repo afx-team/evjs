@@ -7,8 +7,8 @@ Application code should not import this package directly. Use the app-facing
 packages instead:
 
 - `@evjs/ev` for config, plugin types, and framework build APIs.
-- `@evjs/client` for browser/page APIs and client-side server-function errors.
-- `@evjs/server` for server functions, server routes, and structured server
+- `@evjs/ev/client` for browser/page APIs and client-side server-function errors.
+- `@evjs/ev/server` for server functions, server routes, and structured server
   errors.
 
 ## Contract Surface
@@ -38,5 +38,6 @@ export function deploy(output: BuildOutput) {
 }
 ```
 
-App code should import equivalent runtime APIs from `@evjs/client` or
-`@evjs/server`, which re-export the supported app-facing pieces.
+App code should import equivalent runtime APIs from `@evjs/ev/client` or
+`@evjs/ev/server`; the direct runtime packages are implementation packages
+behind those facades.

@@ -70,12 +70,13 @@ other.
 4. Keep framework semantics out of bundler adapters. Adapters consume `BuildPlan` and return build facts.
 5. Server function files must start with `"use server";` and export named functions or supported named async values.
 6. Use `ev.config.ts`; new docs should import `defineConfig` from `@evjs/ev`.
-7. App-facing imports stay in `@evjs/ev`, its runtime facade subpaths
-   (`@evjs/ev/client`, `@evjs/ev/server`), or direct runtime packages
-   (`@evjs/client`, `@evjs/server`). Prefer a subpath export on an existing
-   package before adding another distributed package. Subpath exports stay
-   intentional and documented; do not add convenience aliases.
-8. Keep client imports on the top-level `@evjs/client` entry for page hooks,
+7. App-facing imports stay in `@evjs/ev` or its runtime facade subpaths
+   (`@evjs/ev/client`, `@evjs/ev/server`). Direct `@evjs/client` and
+   `@evjs/server` imports are implementation-package references for this
+   monorepo, not the documented application path. Prefer a subpath export on an
+   existing package before adding another distributed package. Subpath exports
+   stay intentional and documented; do not add convenience aliases.
+8. Keep client imports on the `@evjs/ev/client` facade for page hooks,
    navigation, transport, remote host helpers, and RSC helpers. Generated page
    bootstrap, server-function stubs, and shell runtime primitives stay behind
    generated-only `@evjs/ev/client/internal/*` facade subpaths.

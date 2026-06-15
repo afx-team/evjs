@@ -46,7 +46,7 @@ consume `BuildOutput` rather than raw bundler stats.
 
 @evjs/server
   server functions, REST routes, SSR/PPR/RSC request coordination, and runtime
-  adapters such as @evjs/server/node
+  adapters surfaced through facades such as @evjs/ev/server/node
 
 @evjs/bundler-utoopack
   default Utoopack adapter
@@ -55,13 +55,13 @@ consume `BuildOutput` rather than raw bundler stats.
   validation/fallback adapter for architecture features blocked on Utoopack APIs
 ```
 
-Application code can import runtime APIs through `@evjs/ev/client` and
-`@evjs/ev/server` when it wants one direct framework package. Direct
-`@evjs/client` and `@evjs/server` imports remain supported runtime package
-boundaries. Other packages are tooling, bundler adapters, or shared contracts
-for framework packages. When a new capability needs a boundary, prefer adding a
-subpath export to an existing package before creating another distributed
-package.
+Application code imports runtime APIs through `@evjs/ev/client` and
+`@evjs/ev/server` so apps can depend on one direct framework package. Direct
+`@evjs/client` and `@evjs/server` imports are implementation-package
+boundaries used inside the monorepo. Other packages are tooling, bundler
+adapters, or shared contracts for framework packages. When a new capability
+needs a boundary, prefer adding a subpath export to an existing package before
+creating another distributed package.
 
 Subpath exports stay explicit and documented; adding a new package export is a
 public API decision, not a convenience alias.
@@ -129,14 +129,14 @@ the bundler dev instance.
 ## Runtime Ownership
 
 ```txt
-@evjs/client
+@evjs/ev/client
   mounts and hydrates framework-managed React pages
 
-@evjs/client
+@evjs/ev/client/internal
   reads BuildOutput, activates app/page/remote modules, preloads modules,
   disposes lifecycles, and negotiates host-provided shared dependencies
 
-@evjs/server
+@evjs/ev/server
   owns server functions, REST routes, SSR document rendering, PPR region
   rendering, and RSC Flight endpoint routing
 

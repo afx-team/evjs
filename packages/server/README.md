@@ -12,7 +12,7 @@
 ## Install
 
 ```bash
-npm install @evjs/server hono
+npm install @evjs/ev
 ```
 
 ## Quick Start
@@ -23,7 +23,7 @@ Create standard REST endpoints using the `createRoute()` factory:
 
 ```ts
 // src/api/users.ts
-import { createRoute } from "@evjs/server";
+import { createRoute } from "@evjs/ev/server";
 
 export const GET = createRoute("/api/users", {
   GET: async (c) => Response.json([{ id: 1, name: "Alice" }]),
@@ -51,7 +51,7 @@ export async function getPosts() {
 ### Node.js
 
 ```ts
-import { serve } from "@evjs/server/node";
+import { serve } from "@evjs/ev/server/node";
 import { app } from "./app";
 
 serve(app, { port: 3001 });
@@ -60,7 +60,7 @@ serve(app, { port: 3001 });
 ### Fetch (Deno/Bun/Edge)
 
 ```ts
-import app from "@evjs/server/fetch";
+import app from "@evjs/ev/server/fetch";
 
 Deno.serve({ port: 3001 }, app.fetch);
 ```
@@ -68,7 +68,7 @@ Deno.serve({ port: 3001 }, app.fetch);
 Worker-style hosts that discover named module exports can use the same handler:
 
 ```ts
-export { fetch } from "@evjs/server/fetch";
+export { fetch } from "@evjs/ev/server/fetch";
 ```
 
 ## Core APIs
@@ -76,6 +76,10 @@ export { fetch } from "@evjs/server/fetch";
 ### Routing
 - `createRoute(path, handler)`: Create a REST endpoint.
 - `createApp(options)`: Main application factory.
+
+Application-facing server runtime APIs are exported from `@evjs/ev/server` and
+its runtime subpaths. This package backs those facades and remains an
+implementation package for the monorepo runtime.
 
 ## License
 

@@ -15,13 +15,13 @@ src/pages + ev.config.ts + server declarations
 
 ## Public Packages
 
-Application code can import framework runtime APIs through `@evjs/ev/client`
-and `@evjs/ev/server` when it wants one direct framework package. Direct
-`@evjs/client` and `@evjs/server` imports remain supported runtime package
-boundaries. Other packages are tooling, bundler adapters, or shared contracts
-for framework packages. When a new capability needs a boundary, prefer adding a
-subpath export to an existing package before creating another distributed
-package.
+Application code imports framework runtime APIs through `@evjs/ev/client`
+and `@evjs/ev/server` so apps can depend on one direct framework package.
+Direct `@evjs/client` and `@evjs/server` imports are implementation-package
+boundaries used inside the monorepo. Other packages are tooling, bundler
+adapters, or shared contracts for framework packages. When a new capability
+needs a boundary, prefer adding a subpath export to an existing package before
+creating another distributed package.
 
 ```txt
 @evjs/ev
@@ -42,7 +42,7 @@ runtime/manifest contracts stay in `@evjs/shared`.
 
 | Role | Packages | Import guidance |
 |------|----------|-----------------|
-| Application framework surface | `@evjs/ev`, `@evjs/client`, `@evjs/server` | Use `@evjs/ev` for config/build APIs and optionally `@evjs/ev/client` / `@evjs/ev/server` for runtime facades; direct runtime package imports remain supported. |
+| Application framework surface | `@evjs/ev` | Use `@evjs/ev` for config/build APIs and `@evjs/ev/client` / `@evjs/ev/server` for runtime APIs. |
 | Tooling | `@evjs/cli`, `@evjs/create-app` | Install or execute them; application modules should not import them. |
 | Bundler adapters | `@evjs/bundler-utoopack`, `@evjs/bundler-webpack` | `@evjs/cli` owns the default Utoopack adapter. Import an adapter directly only when authoring custom tooling. |
 | Shared contracts | `@evjs/shared` | Published so framework packages share manifest/runtime types; app code should not import it directly. |
@@ -80,9 +80,9 @@ Do not reintroduce legacy split packages such as `@evjs/build-tools`,
 `@evjs/shared/manifest`.
 
 Documentation code examples follow the same package boundary: application
-examples import from `@evjs/ev`, `@evjs/ev/client`, `@evjs/ev/server`, or the
-direct runtime packages; adapter examples may import `@evjs/bundler-utoopack`
-when demonstrating custom tooling.
+examples import from `@evjs/ev`, `@evjs/ev/client`, or `@evjs/ev/server`;
+adapter examples may import `@evjs/bundler-utoopack` when demonstrating custom
+tooling.
 
 ## Internal Modules
 
@@ -158,7 +158,7 @@ sequenceDiagram
   participant Browser
   participant Shell as "@evjs/ev/client/internal"
   participant Runtime as "@evjs/ev/client"
-  participant Server as "@evjs/server"
+  participant Server as "@evjs/ev/server"
   participant Manifest as "BuildOutput"
 
   Browser->>Runtime: page/app boot
