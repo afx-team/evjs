@@ -1,6 +1,6 @@
 # 插件
 
-evjs 插件扩展框架阶段，也可以在需要时修改当前 bundler 配置。插件 API 围绕 graph -> build plan -> build output 构建流水线设计。
+evjs 插件扩展稳定的框架阶段，也可以在需要时修改当前 bundler 配置。App graph 和 build plan creation 是框架内部步骤；插件面向 config、bundler config、`BuildOutput`、HTML 文档和构建结果工作。
 
 ## 快速示例
 
@@ -110,10 +110,8 @@ flowchart LR
   C --> D["commandStart"]
   D --> E["buildStart"]
   E --> F["create AppGraph"]
-  F --> G["appGraph hooks"]
-  G --> H["create BuildPlan"]
-  H --> I["buildPlan hooks"]
-  I --> J["bundlerConfig hooks"]
+  F --> H["create BuildPlan"]
+  H --> J["bundlerConfig hooks"]
   J --> K["bundler build"]
   K --> L["link BuildOutput"]
   L --> M["buildOutput hooks"]
@@ -126,13 +124,10 @@ flowchart LR
 |------|------|
 | `commandStart(ctx)` | 插件初始化后的命令级准备 |
 | `buildStart(ctx)` | graph 工作前的构建准备 |
-| `appGraph(graph, ctx)` | 添加或调整框架 graph metadata |
-| `buildPlan(plan, ctx)` | 调整 bundler 无关的 entry/html/runtime plan |
 | `bundlerConfig(config, ctx)` | 修改当前 bundler 配置 |
 | `buildOutput(output, ctx)` | 向单一框架输出添加部署/runtime metadata |
 | `transformHtml(doc, ctx)` | 逐个 HTML 文档修改输出 |
 | `buildEnd({ output, isRebuild })` | 构建后输出最终产物 |
-| `devPlanUpdate(update, ctx)` | dev 中观察框架 plan 变化 |
 | `dispose(ctx)` | 清理资源 |
 
 ## HTML Transform 上下文
@@ -185,6 +180,23 @@ setup() {
 ```
 
 部署插件应该从 `BuildOutput` 读取 routes、functions、assets、remotes 和 runtime paths。
+
+## 0.1.x 兼容性
+
+基于 0.1.x 生命周期类型编写的插件可以继续导入旧类型别名：
+`EvPlugin`、`EvPluginHooks`、`EvPluginContext`、`EvBuildResult`、
+`EvDocument`、`EvConfig` 和 `ResolvedEvConfig`。它们都是当前 plugin 和
+config 类型的别名。
+
+`buildEnd(result)` 和 `transformHtml(doc, result)` 也保留 0.1.x 的结果字段：
+
+- `result.clientManifest`；
+- `result.serverManifest`；
+- `result.isRebuild`。
+
+这些字段是从当前 `BuildOutput` 投影出来的兼容形态。新插件仍建议读取
+`result.output`，并在 HTML 场景中使用 `ctx.kind`、`ctx.fileName` 和
+`ctx.assets` 等字段。
 
 ## Bundler Config
 

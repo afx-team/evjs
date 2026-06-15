@@ -22,6 +22,7 @@ import {
   validatePageBuildContract,
 } from "../page-rendering-contract.js";
 import { sortPageRoutes } from "../page-route-order.js";
+import { PAGES_APP_ENTRY_IMPORT } from "../pages-entry.js";
 import { sanitizePageId } from "../utils.js";
 
 export interface BuildPlanConfig {
@@ -173,21 +174,25 @@ function createEntries(
   const spaRoutingEntry = getSpaRoutingEntry(config);
 
   for (const app of apps) {
+    const pagesAppRouting =
+      config.routing?.mode === "spa" && spaRoutingEntry === app.entry
+        ? config.routing
+        : undefined;
     entries.push({
       name: app.id === "default" ? "main" : app.id,
-      import: app.entry,
+      import: pagesAppRouting ? PAGES_APP_ENTRY_IMPORT : app.entry,
       environment: "client",
       runtime: "browser",
       kind: "app-client",
       owner: { appId: app.id },
-      ...(config.routing?.mode === "spa" && spaRoutingEntry === app.entry
+      ...(pagesAppRouting
         ? {
             metadata: {
               type: "pages-app",
               routes: createPagesAppRoutes(graph, app.id),
-              mount: config.routing.mount,
-              ...(config.routing.rootModule
-                ? { rootModule: config.routing.rootModule }
+              mount: pagesAppRouting.mount,
+              ...(pagesAppRouting.rootModule
+                ? { rootModule: pagesAppRouting.rootModule }
                 : {}),
             },
           }

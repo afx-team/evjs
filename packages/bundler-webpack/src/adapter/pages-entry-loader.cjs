@@ -17,11 +17,11 @@ function createPagesEntrySource(options, loaderContext) {
   const imports = [
     `import { createPagesApp } from "@evjs/client/internal";`,
     rootModule
-      ? `import * as rootModule from ${JSON.stringify(withPageQuery(toLoaderModuleRequest(rootModule, loaderContext)))};`
+      ? `import * as rootModule from ${JSON.stringify(toLoaderModuleRequest(rootModule, loaderContext))};`
       : "",
     ...routes.map(
       (route, index) =>
-        `import * as routeModule${index} from ${JSON.stringify(withPageQuery(toLoaderModuleRequest(route.module, loaderContext)))};`,
+        `import * as routeModule${index} from ${JSON.stringify(toLoaderModuleRequest(route.module, loaderContext))};`,
     ),
   ].filter(Boolean);
 
@@ -42,10 +42,6 @@ function createPagesEntrySource(options, loaderContext) {
     `export default app;`,
     ``,
   ].join("\n");
-}
-
-function withPageQuery(specifier) {
-  return `${specifier}${specifier.includes("?") ? "&" : "?"}evjs-page-route`;
 }
 
 function toLoaderModuleRequest(specifier, loaderContext) {

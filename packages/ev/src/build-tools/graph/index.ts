@@ -34,6 +34,7 @@ import {
 import { getPageBuildContractViolation } from "../page-rendering-contract.js";
 import { routePathShapeFromPath } from "../page-route-conventions.js";
 import { sortPageRoutes } from "../page-route-order.js";
+import { isPagesAppEntryImport } from "../pages-entry.js";
 import {
   extractPprRegionModuleConfig,
   extractPprRegions,
@@ -966,6 +967,7 @@ function isRequiredDefaultAppEntry(
   config: GraphConfig,
   entry: string,
 ): boolean {
+  if (isPagesAppEntryImport(entry)) return false;
   return Boolean(config.routing?.entry || entry !== DEFAULT_TOP_LEVEL_ENTRY);
 }
 

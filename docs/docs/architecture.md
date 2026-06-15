@@ -128,10 +128,8 @@ sequenceDiagram
   EV->>Plugins: setup hooks
   EV->>Tools: createAppGraph(config)
   Tools-->>EV: AppGraph + diagnostics + fileDependencies
-  EV->>Plugins: appGraph(graph)
   EV->>Tools: createBuildPlan(config, graph)
   Tools-->>EV: BuildPlan
-  EV->>Plugins: buildPlan(plan)
   EV->>Bundler: build(plan)
   Bundler-->>EV: bundler stats/assets
   EV->>Manifest: linkBuildOutput(graph, plan, bundlerFacts)
@@ -412,7 +410,6 @@ config / page route / server declaration change
   -> recreate BuildPlan
   -> diff BuildPlan
   -> if BuildPlan changes:
-       devPlanUpdate hooks
        bundlerDevController.updatePlan(update, nextGraph)
   -> if graph-only:
        refresh active graph + dependency watchers

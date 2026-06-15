@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import type { AppGraph, ResolvedConfig } from "@evjs/ev";
 import { createBuildPlan } from "@evjs/ev/build-tools";
 import { describe, expect, it } from "vitest";
@@ -5,6 +6,9 @@ import {
   createWebpackConfigs,
   type WebpackConfig,
 } from "../src/adapter/create-config.js";
+
+const require = createRequire(import.meta.url);
+const pagesEntryLoader = require("../src/adapter/pages-entry-loader.cjs");
 
 describe("createWebpackConfigs", () => {
   it("installs the pages entry loader for framework-managed pages", async () => {
@@ -20,7 +24,15 @@ describe("createWebpackConfigs", () => {
       [],
     );
 
+    const entry = configs[0]?.entry as Record<string, { import: string }>;
+    expect(entry.main?.import).toContain("pages-entry-anchor.js");
     const rules = configs[0]?.module?.rules ?? [];
+    const pagesEntryRule = rules.find((rule) =>
+      JSON.stringify(rule).includes("pages-entry-loader.cjs"),
+    ) as { test: RegExp } | undefined;
+    expect(pagesEntryRule?.test.test("/project/src/pages/index.tsx")).toBe(
+      false,
+    );
     expect(rules).toContainEqual(
       expect.objectContaining({
         test: expect.any(RegExp),
@@ -116,6 +128,34 @@ describe("createWebpackConfigs", () => {
     expect(serializedEntries).toContain("createReactPageModule");
     expect(decodedEntries).toContain("@evjs/client/internal/react-page");
     expect(decodedEntries).not.toContain('from "@evjs/client/internal";');
+  });
+
+  it("generates pages app imports without module queries", () => {
+    const source = pagesEntryLoader.call({
+      cacheable() {},
+      getOptions() {
+        return {
+          mount: "#app",
+          rootModule: "./src/layout/index.tsx",
+          routes: [
+            {
+              id: "index",
+              path: "/",
+              module: "./src/pages/index.tsx",
+            },
+          ],
+        };
+      },
+      resourcePath:
+        "/workspace/node_modules/@evjs/bundler-webpack/esm/adapter/pages-entry-anchor.js",
+      rootContext: "/workspace",
+    });
+
+    expect(source).toContain("@evjs/client/internal");
+    expect(source).toContain("createPagesApp");
+    expect(source).toContain("src/layout/index.tsx");
+    expect(source).toContain("src/pages/index.tsx");
+    expect(source).not.toContain("evjs-page-route");
   });
 
   it("keeps React and ReactDOM external in regular Node server bundles", async () => {

@@ -6,6 +6,7 @@ import { createUtoopackConfig } from "../src/adapter/create-config.js";
 
 const require = createRequire(import.meta.url);
 const componentPageLoader = require("../src/adapter/component-page-loader.cjs");
+const pagesEntryLoader = require("../src/adapter/pages-entry-loader.cjs");
 const remoteClientLoader = require("../src/adapter/remote-client-loader.cjs");
 
 describe("createUtoopackConfig", () => {
@@ -154,10 +155,17 @@ describe("createUtoopackConfig", () => {
 
     expect(utoopackConfig.entry).toEqual([
       {
-        import: "./src/pages/index.tsx",
+        import: expect.stringContaining("pages-entry-anchor.js"),
         name: "main",
       },
     ]);
+    const pagesEntryRules = utoopackConfig.module?.rules?.["**/*"] as
+      | { condition: { path: RegExp } }[]
+      | undefined;
+    const pagesEntryRule = pagesEntryRules?.[0];
+    expect(
+      pagesEntryRule?.condition.path.test("/project/src/pages/index.tsx"),
+    ).toBe(false);
     expect(utoopackConfig.module?.rules).toMatchObject({
       "**/*": [
         {
@@ -346,6 +354,34 @@ describe("createUtoopackConfig", () => {
     expect(source).toContain("createReactPageModule");
   });
 
+  it("generates pages app imports without module queries", () => {
+    const source = pagesEntryLoader.call({
+      cacheable() {},
+      getOptions() {
+        return {
+          mount: "#app",
+          rootModule: "./src/layout/index.tsx",
+          routes: [
+            {
+              id: "index",
+              path: "/",
+              module: "./src/pages/index.tsx",
+            },
+          ],
+        };
+      },
+      resourcePath:
+        "/workspace/node_modules/@evjs/bundler-utoopack/esm/adapter/pages-entry-anchor.js",
+      rootContext: "/workspace",
+    });
+
+    expect(source).toContain("@evjs/client/internal");
+    expect(source).toContain("createPagesApp");
+    expect(source).toContain("src/layout/index.tsx");
+    expect(source).toContain("src/pages/index.tsx");
+    expect(source).not.toContain("evjs-page-route");
+  });
+
   it("installs remote client loaders for framework-managed remote entries", async () => {
     const config = createResolvedConfig({
       remote: {
@@ -455,9 +491,8 @@ describe("createUtoopackConfig", () => {
             await Promise.resolve();
             cfg.output ??= {};
             cfg.output.publicPath = "runtime";
-            expect(ctx.plan.entries.map((entry) => entry.name)).toEqual([
-              "main",
-            ]);
+            expect(ctx.bundlerName).toBe("utoopack");
+            expect(ctx.environment).toBe("mixed");
           },
         },
       ],

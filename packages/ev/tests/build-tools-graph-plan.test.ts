@@ -125,7 +125,7 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
     expect(plan.entries).toContainEqual({
       name: "main",
-      import: "./src/pages/index.tsx",
+      import: "evjs:pages-app",
       environment: "client",
       runtime: "browser",
       kind: "app-client",
@@ -4174,7 +4174,7 @@ describe("createAppGraph and createBuildPlan", () => {
       expect.arrayContaining([
         {
           name: "main",
-          import: "./src/main.tsx",
+          import: "evjs:pages-app",
           environment: "client",
           runtime: "browser",
           kind: "app-client",
@@ -4537,7 +4537,7 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
     expect(plan.entries).toContainEqual({
       name: "console",
-      import: "./src/console/main.tsx",
+      import: "evjs:pages-app",
       environment: "client",
       runtime: "browser",
       kind: "app-client",
@@ -4614,7 +4614,7 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
     expect(plan.entries).toContainEqual({
       name: "console",
-      import: "./src/console/main.tsx",
+      import: "evjs:pages-app",
       environment: "client",
       runtime: "browser",
       kind: "app-client",

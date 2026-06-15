@@ -12,6 +12,7 @@ import {
   nodeDeploymentAdapter,
   staticDeploymentAdapter,
 } from "../src/deployment.js";
+import { createBuildResult } from "../src/plugin.js";
 
 const tempDirs: string[] = [];
 
@@ -872,7 +873,7 @@ async function runDeploymentBuildEnd(
   output: BuildOutput,
 ) {
   const hooks = await plugin.setup?.({} as never);
-  await hooks?.buildEnd?.({ output, isRebuild: false });
+  await hooks?.buildEnd?.(createBuildResult(output, false));
 }
 
 function extractGeneratedRouteMatcher(source: string): string {

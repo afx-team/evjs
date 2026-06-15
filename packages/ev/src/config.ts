@@ -39,13 +39,27 @@ export type DefaultBundlerConfig = Record<string, unknown>;
 export type {
   BuildResult,
   BundlerCtx,
+  ClientManifest,
+  EvBuildResult,
+  EvBundlerCtx,
+  EvDocument,
+  EvPlugin,
+  EvPluginConfigContext,
+  EvPluginContext,
+  EvPluginHooks,
   HtmlDocument,
   HtmlDocumentInfo,
   HtmlTransformContext,
+  ManifestAssets,
+  PageManifestEntry,
   Plugin,
   PluginConfigContext,
   PluginContext,
   PluginHooks,
+  RouteEntry,
+  ServerFnEntry,
+  ServerManifest,
+  ServerRouteEntry,
 } from "./plugin.js";
 
 /** Resolved dev server configuration (all defaults applied). */
@@ -236,6 +250,10 @@ export interface Config<TBundlerCfg = DefaultBundlerConfig> {
    */
   pages?: Record<string, PageConfig>;
 }
+
+export type EvConfig<TBundlerCfg = DefaultBundlerConfig> = Config<TBundlerCfg>;
+export type ResolvedEvConfig<TBundlerCfg = DefaultBundlerConfig> =
+  ResolvedConfig<TBundlerCfg>;
 
 /** Client dev server options. */
 export interface DevConfig {

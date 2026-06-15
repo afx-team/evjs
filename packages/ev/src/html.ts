@@ -5,6 +5,7 @@ import type {
   PluginContext,
   PluginHooks,
 } from "./config.js";
+import { createBuildResult } from "./plugin.js";
 
 export interface BuildHtmlOptions<TBundlerCfg = unknown> {
   /** Pre-parsed HTML document (from `generateHtml()`). */
@@ -36,17 +37,17 @@ export async function buildHtml<TBundlerCfg = unknown>(
   const { doc, hooks, html, output, pluginContext } = options;
 
   // Run transformHtml plugin hooks in sequence (mutate doc in place)
-  const buildResult = {
+  const buildResult = createBuildResult(output, options.isRebuild ?? false);
+  const htmlContext = {
     ...pluginContext,
     ...html,
-    output,
-    isRebuild: options.isRebuild ?? false,
+    ...buildResult,
     buildId: output.buildId,
     publicPath: output.publicPath,
   };
   for (const h of hooks) {
     if (h.transformHtml) {
-      await h.transformHtml(doc, buildResult);
+      await h.transformHtml(doc, htmlContext);
     }
   }
 

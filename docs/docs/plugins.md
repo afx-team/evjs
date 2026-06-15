@@ -1,6 +1,6 @@
 # Plugins
 
-evjs plugins extend framework stages and, when needed, mutate the selected bundler config. The plugin API is built around the new graph -> build plan -> build output pipeline.
+evjs plugins extend stable framework stages and, when needed, mutate the selected bundler config. App graph and build plan creation are internal framework steps; plugins work with config, bundler config, `BuildOutput`, HTML documents, and build results.
 
 ## Quick Example
 
@@ -113,10 +113,8 @@ flowchart LR
   C --> D["commandStart"]
   D --> E["buildStart"]
   E --> F["create AppGraph"]
-  F --> G["appGraph hooks"]
-  G --> H["create BuildPlan"]
-  H --> I["buildPlan hooks"]
-  I --> J["bundlerConfig hooks"]
+  F --> H["create BuildPlan"]
+  H --> J["bundlerConfig hooks"]
   J --> K["bundler build"]
   K --> L["link BuildOutput"]
   L --> M["buildOutput hooks"]
@@ -129,13 +127,10 @@ flowchart LR
 |------|---------|
 | `commandStart(ctx)` | Command-level setup after plugin initialization |
 | `buildStart(ctx)` | Build setup before graph work |
-| `appGraph(graph, ctx)` | Add or adjust framework graph metadata |
-| `buildPlan(plan, ctx)` | Adjust bundler-independent entries/html/runtime plan |
 | `bundlerConfig(config, ctx)` | Mutate selected bundler config |
 | `buildOutput(output, ctx)` | Add deployment/runtime metadata to the single framework output |
 | `transformHtml(doc, ctx)` | Mutate one HTML document at a time |
 | `buildEnd({ output, isRebuild })` | Emit final artifacts after build |
-| `devPlanUpdate(update, ctx)` | Observe framework plan changes during dev |
 | `dispose(ctx)` | Cleanup |
 
 ## HTML Transform Context
@@ -188,6 +183,24 @@ setup() {
 ```
 
 Deployment plugins should read routes, functions, assets, remotes, and runtime paths from `BuildOutput`.
+
+## 0.1.x Compatibility
+
+Plugins written against the 0.1.x lifecycle names can keep importing the old
+type aliases: `EvPlugin`, `EvPluginHooks`, `EvPluginContext`, `EvBuildResult`,
+`EvDocument`, `EvConfig`, and `ResolvedEvConfig`. They are aliases for the
+current plugin and config types.
+
+`buildEnd(result)` and `transformHtml(doc, result)` also keep the 0.1.x result
+fields:
+
+- `result.clientManifest`;
+- `result.serverManifest`;
+- `result.isRebuild`.
+
+These fields are compatibility projections from the current `BuildOutput`.
+New plugins should read `result.output` and the HTML-specific `ctx.kind`,
+`ctx.fileName`, and `ctx.assets` fields when possible.
 
 ## Bundler Config
 

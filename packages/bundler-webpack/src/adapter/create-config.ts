@@ -34,6 +34,9 @@ const rscClientReferenceLoader = fileURLToPath(
 const pagesEntryLoader = fileURLToPath(
   new URL("./pages-entry-loader.cjs", import.meta.url),
 );
+const pagesEntryAnchor = fileURLToPath(
+  new URL("./pages-entry-anchor.js", import.meta.url),
+);
 const ReactFlightWebpackPlugin = require("react-server-dom-webpack/plugin");
 const clientRscEntry = require.resolve("@evjs/client/internal/rsc-runtime");
 const clientRscPageContextEntry = require.resolve(
@@ -140,7 +143,6 @@ export async function createWebpackConfigs(
     command: plan.mode === "production" ? "build" : "dev",
     cwd,
     config,
-    plan,
     bundlerName: "webpack",
     environment:
       clientEntries.length > 0 && serverEntries.length > 0
@@ -320,43 +322,49 @@ function createRscPlugins(options: {
 }
 
 function createPagesEntryRules(entries: BuildEntry[]) {
-  const metadata = getPagesAppMetadata(entries);
-  if (!metadata) return [];
+  const entry = getPagesAppEntry(entries);
+  if (!entry) return [];
 
   return [
     {
-      test: createPagesEntryPathPattern(metadata),
+      test: createPagesEntryPathPattern(),
       resourceQuery: /^$/,
       use: [
         {
           loader: pagesEntryLoader,
-          options: metadata,
+          options: entry.metadata,
         },
       ],
     },
   ];
 }
 
-function createPagesEntryPathPattern(
-  metadata: NonNullable<BuildEntry["metadata"]>,
-): RegExp {
-  if (metadata.type !== "pages-app") return /$^/;
-  return new RegExp(
-    `${escapeRegExp(normalizeRulePath(metadata.routes[0]?.module ?? ""))}$`,
-  );
+function createPagesEntryPathPattern(): RegExp {
+  return new RegExp(`${escapeRegExp(normalizeRulePath(pagesEntryAnchor))}$`);
 }
 
 function normalizeRulePath(value: string): string {
   return value.replace(/^\.\//, "").replaceAll("\\", "/");
 }
 
-function getPagesAppMetadata(
-  entries: BuildEntry[],
-): NonNullable<BuildEntry["metadata"]> | undefined {
-  const metadata = entries.find(
-    (entry) => entry.metadata?.type === "pages-app",
-  )?.metadata;
-  return metadata?.type === "pages-app" ? metadata : undefined;
+function getPagesAppEntry(entries: BuildEntry[]):
+  | (BuildEntry & {
+      metadata: Extract<
+        NonNullable<BuildEntry["metadata"]>,
+        { type: "pages-app" }
+      >;
+    })
+  | undefined {
+  return entries.find(
+    (
+      entry,
+    ): entry is BuildEntry & {
+      metadata: Extract<
+        NonNullable<BuildEntry["metadata"]>,
+        { type: "pages-app" }
+      >;
+    } => entry.metadata?.type === "pages-app",
+  );
 }
 
 function createEntryObject(cwd: string, entries: BuildEntry[]): EntryObject {
@@ -373,6 +381,10 @@ function createEntryObject(cwd: string, entries: BuildEntry[]): EntryObject {
 function createEntryImport(cwd: string, entry: BuildEntry): string {
   if (entry.name === "evjs-rsc-client" && entry.kind === "runtime") {
     return clientRscEntry;
+  }
+
+  if (entry.metadata?.type === "pages-app") {
+    return pagesEntryAnchor;
   }
 
   if (entry.kind === "rsc-page") {

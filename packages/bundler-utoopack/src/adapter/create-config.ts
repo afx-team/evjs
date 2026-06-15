@@ -17,6 +17,9 @@ const componentPageLoader = fileURLToPath(
 const pagesEntryLoader = fileURLToPath(
   new URL("./pages-entry-loader.cjs", import.meta.url),
 );
+const pagesEntryAnchor = fileURLToPath(
+  new URL("./pages-entry-anchor.js", import.meta.url),
+);
 const remoteClientLoader = fileURLToPath(
   new URL("./remote-client-loader.cjs", import.meta.url),
 );
@@ -139,7 +142,7 @@ export async function createUtoopackConfig(
     entry: plan.entries
       .filter((entry) => entry.environment === "client")
       .map((entry) => ({
-        import: resolveClientEntry(cwd, entry),
+        import: resolveClientEntry(entry),
         name: entry.name,
       })),
     output: {
@@ -212,7 +215,6 @@ export async function createUtoopackConfig(
     command: isProduction ? "build" : "dev",
     cwd,
     config,
-    plan,
     bundlerName: "utoopack",
     environment: "mixed",
     logger,
@@ -229,28 +231,26 @@ export async function createUtoopackConfig(
 }
 
 function createPagesEntryRule(
-  metadata: PagesAppEntryMetadata,
+  entry: BuildPlan["entries"][number] & { metadata: PagesAppEntryMetadata },
 ): TurbopackRuleConfigItem {
   return {
-    condition: createPagesEntryCondition(metadata),
+    condition: createPagesEntryCondition(),
     loaders: [
       {
         loader: pagesEntryLoader,
-        options: createPagesLoaderOptions(metadata),
+        options: createPagesLoaderOptions(entry.metadata),
       },
     ],
     type: "ecmascript",
   };
 }
 
-function createPagesEntryCondition(metadata: PagesAppEntryMetadata): {
+function createPagesEntryCondition(): {
   path: RegExp;
   query: string;
 } {
   return {
-    path: new RegExp(
-      `${escapeRegExp(normalizeRulePath(metadata.routes[0]?.module ?? ""))}$`,
-    ),
+    path: new RegExp(`${escapeRegExp(normalizeRulePath(pagesEntryAnchor))}$`),
     query: "",
   };
 }
@@ -304,29 +304,23 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function resolveClientEntry(
-  cwd: string,
-  entry: BuildPlan["entries"][number],
-): string {
+function resolveClientEntry(entry: BuildPlan["entries"][number]): string {
   if (entry.metadata?.type !== "pages-app") return entry.import;
-  if (entry.import.startsWith(".") || path.isAbsolute(entry.import)) {
-    return entry.import;
-  }
-
-  try {
-    return createRequire(path.join(cwd, "package.json")).resolve(entry.import);
-  } catch {
-    return require.resolve(entry.import);
-  }
+  return pagesEntryAnchor;
 }
 
-function getPagesAppMetadata(
+function getPagesAppEntry(
   plan: BuildPlan,
-): PagesAppEntryMetadata | undefined {
-  const metadata = plan.entries.find(
-    (entry) => entry.metadata?.type === "pages-app",
-  )?.metadata;
-  return metadata?.type === "pages-app" ? metadata : undefined;
+):
+  | (BuildPlan["entries"][number] & { metadata: PagesAppEntryMetadata })
+  | undefined {
+  return plan.entries.find(
+    (
+      entry,
+    ): entry is BuildPlan["entries"][number] & {
+      metadata: PagesAppEntryMetadata;
+    } => entry.metadata?.type === "pages-app",
+  );
 }
 
 function getComponentPageMetadata(
@@ -352,7 +346,7 @@ function getRemoteClientMetadata(plan: BuildPlan): RemoteClientEntryMetadata[] {
 function createFrameworkModuleRules(
   plan: BuildPlan,
 ): TurbopackRuleConfigItem[] {
-  const pagesApp = getPagesAppMetadata(plan);
+  const pagesApp = getPagesAppEntry(plan);
   return [
     ...(pagesApp ? [createPagesEntryRule(pagesApp)] : []),
     ...getComponentPageMetadata(plan).map(createComponentPageRule),

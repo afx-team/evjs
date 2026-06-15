@@ -33,6 +33,7 @@ import {
   getPageRouteTypesPath,
   writePageRouteTypesIfChanged,
 } from "./build-tools/page-route-types.js";
+import { PAGES_APP_ENTRY_IMPORT } from "./build-tools/pages-entry.js";
 import type {
   BundlerAdapter,
   BundlerBuildFacts,
@@ -48,13 +49,14 @@ import {
   resolvePluginsConfig,
 } from "./config.js";
 import { buildHtml } from "./html.js";
-import type {
-  BuildResult,
-  HtmlDocumentInfo,
-  Plugin,
-  PluginConfigContext,
-  PluginContext,
-  PluginHooks,
+import {
+  type BuildResult,
+  createBuildResult,
+  type HtmlDocumentInfo,
+  type Plugin,
+  type PluginConfigContext,
+  type PluginContext,
+  type PluginHooks,
 } from "./plugin.js";
 
 const logger = getLogger(["evjs", "ev"]);
@@ -68,12 +70,9 @@ const INTERNAL_BUILD_OUTPUT_FILE = "build-output.json";
 const PLUGIN_HOOK_NAMES = [
   "commandStart",
   "buildStart",
-  "appGraph",
-  "buildPlan",
   "buildOutput",
   "bundlerConfig",
   "buildEnd",
-  "devPlanUpdate",
   "dispose",
   "transformHtml",
 ] as const satisfies readonly (keyof PluginHooks)[];
@@ -234,11 +233,10 @@ function readRoutingConfig<TBundlerCfg>(
 function createPagesEntryImport(
   routes: NonNullable<ResolvedConfig["routing"]>["routes"],
 ): string {
-  const entry = routes[0]?.module;
-  if (!entry) {
+  if (!routes[0]) {
     throw new Error("[evjs] Page routes need at least one page module.");
   }
-  return entry;
+  return PAGES_APP_ENTRY_IMPORT;
 }
 
 async function syncPageRouteTypes(
@@ -553,48 +551,10 @@ async function runCommandStartHooks<TBundlerCfg>(
   }
 }
 
-async function runAppGraphHooks<TBundlerCfg>(
-  hooks: PluginHooks<TBundlerCfg>[],
-  graph: AppGraph,
-  ctx: PluginContext<TBundlerCfg>,
-): Promise<void> {
-  for (const h of hooks) {
-    if (h.appGraph) {
-      await h.appGraph(graph, ctx);
-    }
-  }
-}
-
-async function runBuildPlanHooks<TBundlerCfg>(
-  hooks: PluginHooks<TBundlerCfg>[],
-  plan: BuildPlan,
-  graph: AppGraph,
-  ctx: PluginContext<TBundlerCfg>,
-): Promise<void> {
-  for (const h of hooks) {
-    if (h.buildPlan) {
-      await h.buildPlan(plan, { ...ctx, graph });
-    }
-  }
-}
-
-async function runDevPlanUpdateHooks<TBundlerCfg>(
-  hooks: PluginHooks<TBundlerCfg>[],
-  update: BuildPlanUpdate,
-  graph: AppGraph,
-  ctx: PluginContext<TBundlerCfg>,
-): Promise<void> {
-  for (const h of hooks) {
-    if (h.devPlanUpdate) {
-      await h.devPlanUpdate(update, { ...ctx, graph });
-    }
-  }
-}
-
 async function runBuildOutputHooks<TBundlerCfg>(
   hooks: PluginHooks<TBundlerCfg>[],
   output: BuildOutput,
-  ctx: PluginContext<TBundlerCfg> & { graph: AppGraph; plan: BuildPlan },
+  ctx: PluginContext<TBundlerCfg>,
 ): Promise<void> {
   for (const h of hooks) {
     if (h.buildOutput) {
@@ -869,7 +829,7 @@ function readBuildResult(cwd: string, isRebuild: boolean): BuildResult | null {
     return null;
   }
 
-  return { output, isRebuild };
+  return createBuildResult(output, isRebuild);
 }
 
 function getFrameworkOutputPaths(
@@ -1033,11 +993,7 @@ async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     rscManifests: options.bundlerFacts.rscManifests,
   });
 
-  await runBuildOutputHooks(options.hooks, output, {
-    ...options.pluginCtx,
-    graph: options.graph,
-    plan: options.plan,
-  });
+  await runBuildOutputHooks(options.hooks, output, options.pluginCtx);
   await emitFrameworkManifest(
     options.cwd,
     output,
@@ -1372,12 +1328,10 @@ export async function prepareFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
     validateHtmlTemplates(cwd, config);
     const analysis = await createAppGraph(config, cwd);
     reportGraphDiagnostics(analysis);
-    await runAppGraphHooks(hooks, analysis.graph, pluginContext);
     const plan = createBuildPlan(config, analysis.graph, {
       mode,
       ...options.plan,
     });
-    await runBuildPlanHooks(hooks, plan, analysis.graph, pluginContext);
 
     return {
       cwd,
@@ -1441,15 +1395,13 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
   validateHtmlTemplates(cwd, activeConfig);
   let activeAnalysis = await createAppGraph(activeConfig, cwd);
   reportGraphDiagnostics(activeAnalysis);
-  await runAppGraphHooks(hooks, activeAnalysis.graph, pluginCtx);
   let activePlan = createBuildPlan(activeConfig, activeAnalysis.graph, {
     mode: "development",
     distDir: DEV_DIST_DIR,
   });
-  await runBuildPlanHooks(hooks, activePlan, activeAnalysis.graph, pluginCtx);
   let apiProcess: ApiProcess | null = null;
   let restartQueue: Promise<void> = Promise.resolve();
-  let devPlanUpdateQueue: Promise<void> = Promise.resolve();
+  let devUpdateQueue: Promise<void> = Promise.resolve();
   let devController: BundlerDevController | undefined;
   let releaseDevDistLock: (() => Promise<void>) | undefined;
   let stopWatchingDevDependencies = () => {};
@@ -1634,7 +1586,7 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
         ...activeAnalysis.fileDependencies,
         ...pluginWatchFiles,
       ],
-      scheduleDevPlanUpdate,
+      scheduleDevUpdate,
     );
   };
 
@@ -1663,12 +1615,10 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
     try {
       const nextAnalysis = await createAppGraph(nextConfig, cwd);
       reportGraphDiagnostics(nextAnalysis);
-      await runAppGraphHooks(hooks, nextAnalysis.graph, pluginCtx);
       const nextPlan = createBuildPlan(nextConfig, nextAnalysis.graph, {
         mode: "development",
         distDir: DEV_DIST_DIR,
       });
-      await runBuildPlanHooks(hooks, nextPlan, nextAnalysis.graph, pluginCtx);
       const update = diffBuildPlan(activePlan, nextPlan, reason);
       if (isEmptyPlanUpdate(update)) {
         activeConfig = nextConfig;
@@ -1679,7 +1629,6 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
         return;
       }
 
-      await runDevPlanUpdateHooks(hooks, update, nextAnalysis.graph, pluginCtx);
       if (!devController) {
         await stagedPluginHooks?.rollback();
         logger.warn`The selected bundler does not expose a dev controller. Please restart ev dev to apply framework plan changes.`;
@@ -1712,14 +1661,14 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
     }
   };
 
-  function scheduleDevPlanUpdate(changedFile: string) {
+  function scheduleDevUpdate(changedFile: string) {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
-      devPlanUpdateQueue = devPlanUpdateQueue
+      devUpdateQueue = devUpdateQueue
         .catch(() => {})
         .then(() => handleDevDependencyChange(changedFile))
         .catch((err) => {
-          logger.warn`Failed to update framework dev plan: ${err}`;
+          logger.warn`Failed to update framework dev state: ${err}`;
         });
     }, 50);
   }
@@ -1804,7 +1753,7 @@ export async function build<TBundlerCfg = DefaultBundlerConfig>(
     });
 
     const buildResult = buildOutput
-      ? { output: buildOutput, isRebuild: false }
+      ? createBuildResult(buildOutput, false)
       : readBuildResult(cwd, false);
     if (buildResult) {
       await runBuildEndHooks(prepared.hooks, buildResult);

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { BuildPlan } from "@evjs/shared/manifest";
 import { execa } from "execa";
 import { describe, expect, it } from "vitest";
 import { PAGE_ROUTE_CONVENTION_SUMMARY } from "../src/build-tools/page-route-conventions.js";
@@ -9,6 +10,9 @@ import {
   build,
   type Config,
   dev,
+  type EvBuildResult,
+  type EvDocument,
+  type EvPlugin,
   type Plugin,
   prepareFrameworkBuild,
 } from "../src/index.js";
@@ -92,10 +96,12 @@ async function writeRouteTypeCheckTsConfig(cwd: string) {
 
 function createMockBundler(
   events: string[],
+  options: { onBuildPlan?: (plan: BuildPlan) => void } = {},
 ): BundlerAdapter<Record<string, never>> {
   return {
     name: "mock",
     async build({ config, plan }) {
+      options.onBuildPlan?.(plan);
       events.push("bundler.build");
       events.push(
         `bundler.entries:${plan.entries.map((entry) => entry.name).join(",")}`,
@@ -249,14 +255,6 @@ describe("prepareFrameworkBuild", () => {
           buildStart() {
             events.push("buildStart");
           },
-          appGraph(graph) {
-            events.push(`appGraph:${Object.keys(graph.apps).join(",")}`);
-          },
-          buildPlan(plan) {
-            events.push(
-              `buildPlan:${plan.entries.map((entry) => entry.name).join(",")}`,
-            );
-          },
           dispose() {
             events.push("dispose");
           },
@@ -296,8 +294,6 @@ describe("prepareFrameworkBuild", () => {
       "setup:build",
       "commandStart",
       "buildStart",
-      "appGraph:default",
-      "buildPlan:main",
     ]);
 
     await prepared.dispose();
@@ -308,8 +304,6 @@ describe("prepareFrameworkBuild", () => {
       "setup:build",
       "commandStart",
       "buildStart",
-      "appGraph:default",
-      "buildPlan:main",
       "dispose",
     ]);
   });
@@ -380,14 +374,6 @@ describe("build", () => {
           buildStart() {
             events.push("buildStart");
           },
-          appGraph(graph) {
-            events.push(`appGraph:${Object.keys(graph.apps).join(",")}`);
-          },
-          buildPlan(plan) {
-            events.push(
-              `buildPlan:${plan.entries.map((entry) => entry.name).join(",")}`,
-            );
-          },
           buildOutput(output) {
             events.push(`buildOutput:${Object.keys(output.assets).join(",")}`);
             output.apps.default.assets.js = ["main.patched.js"];
@@ -414,13 +400,55 @@ describe("build", () => {
       "setup:production",
       "commandStart:build",
       "buildStart",
-      "appGraph:default",
-      "buildPlan:main",
       "bundler.build",
       "bundler.entries:main",
       "buildOutput:main",
       "buildEnd:main.patched.js",
       "dispose:production",
+    ]);
+  });
+
+  it("keeps 0.1.x plugin lifecycle result fields available", async () => {
+    const cwd = await createProject();
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+    const plugin: EvPlugin<Record<string, never>> = {
+      name: "legacy-lifecycle",
+      setup() {
+        return {
+          buildStart() {
+            events.push("legacy:buildStart");
+          },
+          transformHtml(doc: EvDocument, result: EvBuildResult) {
+            events.push(`legacy:html:${result.clientManifest.assets.js[0]}`);
+            doc.head?.appendChild(doc.createComment(" legacy html "));
+          },
+          buildEnd(result: EvBuildResult) {
+            events.push(
+              `legacy:buildEnd:${result.clientManifest.assets.js[0]}:${result.serverManifest?.entry ?? "none"}`,
+            );
+          },
+        };
+      },
+    };
+
+    await build(
+      { server: false, plugins: [plugin] },
+      {
+        cwd,
+        bundler,
+      },
+    );
+
+    await expect(
+      fs.promises.readFile(path.join(cwd, "dist/index.html"), "utf-8"),
+    ).resolves.toContain("legacy html");
+    expect(events).toEqual([
+      "legacy:buildStart",
+      "bundler.build",
+      "bundler.entries:main",
+      "legacy:html:main.js",
+      "legacy:buildEnd:main.js:none",
     ]);
   });
 
@@ -433,25 +461,17 @@ describe("build", () => {
       "utf-8",
     );
     const events: string[] = [];
-    const bundler = createMockBundler(events);
+    const bundler = createMockBundler(events, {
+      onBuildPlan(plan) {
+        const entry = plan.entries[0];
+        events.push(`entry:${entry?.import}`);
+        events.push(`metadata:${entry?.metadata?.type}`);
+      },
+    });
 
     await build(
       {
         server: false,
-        plugins: [
-          {
-            name: "records-pages-plan",
-            setup() {
-              return {
-                buildPlan(plan) {
-                  const entry = plan.entries[0];
-                  events.push(`entry:${entry?.import}`);
-                  events.push(`metadata:${entry?.metadata?.type}`);
-                },
-              };
-            },
-          },
-        ],
       },
       {
         cwd,
@@ -460,7 +480,7 @@ describe("build", () => {
     );
 
     expect(events).toEqual([
-      "entry:./src/pages/index.tsx",
+      "entry:evjs:pages-app",
       "metadata:pages-app",
       "bundler.build",
       "bundler.entries:main",
@@ -884,24 +904,16 @@ describe("build", () => {
       "utf-8",
     );
     const events: string[] = [];
-    const bundler = createMockBundler(events);
+    const bundler = createMockBundler(events, {
+      onBuildPlan(plan) {
+        events.push(`entry:${plan.entries[0]?.import}`);
+        events.push(`metadata:${plan.entries[0]?.metadata?.type}`);
+      },
+    });
 
     await build(
       {
         server: false,
-        plugins: [
-          {
-            name: "records-pages-entry",
-            setup() {
-              return {
-                buildPlan(plan) {
-                  events.push(`entry:${plan.entries[0]?.import}`);
-                  events.push(`metadata:${plan.entries[0]?.metadata?.type}`);
-                },
-              };
-            },
-          },
-        ],
       },
       {
         cwd,
@@ -910,7 +922,7 @@ describe("build", () => {
     );
 
     expect(events).toEqual([
-      "entry:./src/pages/index.tsx",
+      "entry:evjs:pages-app",
       "metadata:pages-app",
       "bundler.build",
       "bundler.entries:main",
@@ -937,7 +949,14 @@ describe("build", () => {
       "utf-8",
     );
     const events: string[] = [];
-    const bundler = createMockBundler(events);
+    const bundler = createMockBundler(events, {
+      onBuildPlan(plan) {
+        const metadata = plan.entries.find(
+          (entry) => entry.metadata?.type === "pages-app",
+        )?.metadata;
+        recordPagesAppRootModule("root", metadata, events);
+      },
+    });
 
     await build(
       {
@@ -945,21 +964,6 @@ describe("build", () => {
         routing: {
           layout: "./src/shell/AppLayout.tsx",
         },
-        plugins: [
-          {
-            name: "records-pages-root-layout",
-            setup() {
-              return {
-                buildPlan(plan) {
-                  const metadata = plan.entries.find(
-                    (entry) => entry.metadata?.type === "pages-app",
-                  )?.metadata;
-                  recordPagesAppRootModule("root", metadata, events);
-                },
-              };
-            },
-          },
-        ],
       },
       {
         cwd,
@@ -985,7 +989,14 @@ describe("build", () => {
       "utf-8",
     );
     const events: string[] = [];
-    const bundler = createMockBundler(events);
+    const bundler = createMockBundler(events, {
+      onBuildPlan(plan) {
+        const metadata = plan.entries.find(
+          (entry) => entry.metadata?.type === "pages-app",
+        )?.metadata;
+        recordPagesAppRootModule("root", metadata, events);
+      },
+    });
 
     await build(
       {
@@ -993,21 +1004,6 @@ describe("build", () => {
         routing: {
           layout: false,
         },
-        plugins: [
-          {
-            name: "records-pages-root-layout",
-            setup() {
-              return {
-                buildPlan(plan) {
-                  const metadata = plan.entries.find(
-                    (entry) => entry.metadata?.type === "pages-app",
-                  )?.metadata;
-                  recordPagesAppRootModule("root", metadata, events);
-                },
-              };
-            },
-          },
-        ],
       },
       {
         cwd,
@@ -1459,7 +1455,7 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      '[evjs] Plugin "typo-lifecycle-hook" setup hook returned unknown hook "buildstart". Supported hooks: commandStart, buildStart, appGraph, buildPlan, buildOutput, bundlerConfig, buildEnd, devPlanUpdate, dispose, transformHtml.',
+      '[evjs] Plugin "typo-lifecycle-hook" setup hook returned unknown hook "buildstart". Supported hooks: commandStart, buildStart, buildOutput, bundlerConfig, buildEnd, dispose, transformHtml.',
     );
     expect(events).toEqual(["setup"]);
   });
@@ -3411,7 +3407,7 @@ describe("dev", () => {
       ),
     ]);
 
-    expect(events).toEqual(["entry:./src/pages/index.tsx", "routeTypes:true"]);
+    expect(events).toEqual(["entry:evjs:pages-app", "routeTypes:true"]);
     await expect(
       fs.promises.readFile(
         path.join(cwd, "src/evjs-route-types.d.ts"),
@@ -3602,7 +3598,7 @@ describe("dev", () => {
     ]);
   });
 
-  it("runs dev plan update hooks when config changes add an MPA page", async () => {
+  it("updates the dev bundler when config changes add an MPA page", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await fs.promises.writeFile(
@@ -3622,24 +3618,11 @@ describe("dev", () => {
     );
 
     const events: string[] = [];
-    const plugin: Plugin<Record<string, never>> = {
-      name: "dev-plan-recorder",
-      setup() {
-        return {
-          devPlanUpdate(update) {
-            events.push(
-              `hook:${update.entries.added.map((entry) => entry.name).join(",")}`,
-            );
-          },
-        };
-      },
-    };
     let currentConfig: Config<Record<string, never>> = {
       server: false,
       pages: {
         home: "./src/pages/Home.tsx",
       },
-      plugins: [plugin],
     };
 
     const bundler: BundlerAdapter<Record<string, never>> = {
@@ -3692,7 +3675,7 @@ describe("dev", () => {
       ),
     ]);
 
-    expect(events).toEqual(["bundler.dev", "hook:orders", "update:orders"]);
+    expect(events).toEqual(["bundler.dev", "update:orders"]);
   });
 
   it("recreates same-name plugin hooks when dev config changes", async () => {
@@ -3720,10 +3703,8 @@ describe("dev", () => {
         name: "same-name-plugin",
         setup() {
           return {
-            devPlanUpdate(update) {
-              events.push(
-                `hook:${label}:${update.entries.added.map((entry) => entry.name).join(",")}`,
-              );
+            dispose() {
+              events.push(`dispose:${label}`);
             },
           };
         },
@@ -3789,6 +3770,11 @@ describe("dev", () => {
       ),
     ]);
 
-    expect(events).toEqual(["bundler.dev", "hook:v2:orders", "update:orders"]);
+    expect(events).toEqual([
+      "bundler.dev",
+      "update:orders",
+      "dispose:v1",
+      "dispose:v2",
+    ]);
   });
 });
