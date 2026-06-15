@@ -3,6 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import * as buildTools from "../src/build-tools/index.js";
+import { collectModuleExportNames } from "../src/build-tools/module-exports.js";
+import { parseRouteModuleOrThrow } from "../src/build-tools/routes/shared.js";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -162,6 +164,65 @@ const expectedBuildToolsRuntimeExports = [
   "transformRscClientFile",
   "transformServerFile",
   "transpileTypeScriptConfig",
+] as const;
+
+const expectedClientFacadeRuntimeExports = [
+  "Link",
+  "Navigate",
+  "RemoteApp",
+  "ServerFunctionError",
+  "createReactRscModel",
+  "createRemoteAppManifest",
+  "fetchRscDebugPayload",
+  "fetchRscFlight",
+  "formatRemoteSharedNegotiation",
+  "getFnQueryKey",
+  "getFnQueryOptions",
+  "getRemoteSharedVersion",
+  "initTransport",
+  "isNotFound",
+  "isRedirect",
+  "loadRscDebugPage",
+  "mountReactRscPage",
+  "mountRscDebugPayload",
+  "notFound",
+  "redirect",
+  "resolveRemoteAppManifestUrl",
+  "startReactRscPageRuntime",
+  "startRemoteAppRuntime",
+  "unmountReactRscPage",
+  "useLinkProps",
+  "useLocation",
+  "useMutation",
+  "useNavigate",
+  "usePageContext",
+  "usePageLoaderData",
+  "usePageParams",
+  "usePageSearch",
+  "useQuery",
+  "useQueryClient",
+  "useRemoteContext",
+  "useRemoteHost",
+  "useSuspenseQuery",
+] as const;
+
+const expectedServerFacadeRuntimeExports = [
+  "ServerError",
+  "createApp",
+  "createRoute",
+  "deleteCookie",
+  "dispatch",
+  "generateCookie",
+  "generateSignedCookie",
+  "getContext",
+  "getCookie",
+  "getSignedCookie",
+  "headers",
+  "request",
+  "requestLogger",
+  "setCookie",
+  "setSignedCookie",
+  "waitUntil",
 ] as const;
 
 const privateBuildToolsRuntimeExports = [
@@ -382,6 +443,42 @@ describe("workspace package surface", () => {
     );
   });
 
+  it("keeps @evjs/ev runtime facades curated instead of package mirrors", async () => {
+    const clientRuntimeExports = await readRuntimeExportNames(
+      "packages/ev/src/client.ts",
+    );
+    const serverRuntimeExports = await readRuntimeExportNames(
+      "packages/ev/src/server.ts",
+    );
+
+    expect(clientRuntimeExports).toEqual([
+      ...expectedClientFacadeRuntimeExports,
+    ]);
+    expect(serverRuntimeExports).toEqual([
+      ...expectedServerFacadeRuntimeExports,
+    ]);
+    expect(clientRuntimeExports).not.toEqual(
+      expect.arrayContaining([
+        "QueryClient",
+        "QueryClientProvider",
+        "keepPreviousData",
+        "useInfiniteQuery",
+        "useIsFetching",
+        "usePrefetchQuery",
+      ]),
+    );
+    expect(serverRuntimeExports).not.toEqual(
+      expect.arrayContaining([
+        "createManifestRenderCoordinator",
+        "createModuleRenderCoordinator",
+        "handleFrameworkRenderRequest",
+        "handlePprRegionRequest",
+        "handleRscFlightRequest",
+        "registerServerReference",
+      ]),
+    );
+  });
+
   it("keeps shared as a contract package instead of a feature package", async () => {
     const sharedPackageJson = await readPackageJson("shared");
     expect(runtimeDependencyNames(sharedPackageJson)).toEqual([]);
@@ -418,7 +515,7 @@ describe("workspace package surface", () => {
     expect(architectureDoc).toContain(
       "Direct `@evjs/client` and `@evjs/server` imports are implementation-package",
     );
-    expect(architectureDoc).toContain("not undocumented aliases");
+    expect(architectureDoc).toContain("not runtime package mirrors");
     expect(architectureDoc).toContain("@evjs/ev/client/internal/*");
     expect(architectureDoc).toContain("@evjs/ev/client/internal/route-types");
     expect(architectureDoc).toContain("generated-only internal helpers");
@@ -514,7 +611,7 @@ describe("workspace package surface", () => {
     }
     expect(rootArchitecture).toContain("`@evjs/ev/client`");
     expect(rootArchitecture).toContain(
-      "facade subpaths are real package boundaries",
+      "facade subpaths are curated application API boundaries",
     );
     expect(rootArchitecture).toContain(
       "Internal `@evjs/*` runtime dependencies are kept explicit",
@@ -932,6 +1029,12 @@ async function readPackageJson(packageDir: string): Promise<PackageJson> {
       "utf-8",
     ),
   ) as PackageJson;
+}
+
+async function readRuntimeExportNames(relativeFile: string): Promise<string[]> {
+  const source = await fs.readFile(path.join(repoRoot, relativeFile), "utf-8");
+  const ast = parseRouteModuleOrThrow(source);
+  return collectModuleExportNames(ast.body).sort();
 }
 
 async function readPackageJsonByName(

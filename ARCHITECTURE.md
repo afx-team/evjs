@@ -68,11 +68,12 @@ public API decision, not a convenience alias.
 
 Internal `@evjs/*` runtime dependencies are kept explicit and workspace-local.
 `@evjs/ev` consumes `@evjs/client`, `@evjs/server`, and shared contracts so
-facade subpaths are real package boundaries. `@evjs/server` also consumes
-`@evjs/client` for shared runtime types. `@evjs/cli` owns the default Utoopack
-adapter dependency, and bundler adapters depend on `@evjs/ev` instead of
-depending on each other. Internal runtime dependency versions stay `"*"` so
-release automation treats the distributed packages as one framework version.
+facade subpaths are curated application API boundaries rather than runtime
+package mirrors. `@evjs/server` also consumes `@evjs/client` for shared runtime
+types. `@evjs/cli` owns the default Utoopack adapter dependency, and bundler
+adapters depend on `@evjs/ev` instead of depending on each other. Internal
+runtime dependency versions stay `"*"` so release automation treats the
+distributed packages as one framework version.
 
 Do not reintroduce legacy split packages:
 

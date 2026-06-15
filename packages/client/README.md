@@ -7,7 +7,7 @@
 - **Page Hooks** — `usePageParams()`, `usePageSearch()`, and `usePageLoaderData()` expose framework-managed route data while evjs owns route discovery.
 - **SPA Navigation** — SPA pages use evjs page hooks and navigation helpers while the framework owns route discovery and app bootstrap.
 - **Router-Free Pages** — MPA and framework-managed pages use the page runtime without adding a client router.
-- **Data Fetching** — Re-exports [TanStack Query](https://tanstack.com/query) with built-in server function proxies.
+- **Data Fetching** — Wraps [TanStack Query](https://tanstack.com/query) with built-in server function proxies.
 - **Server Function Support** — `useQuery(fn)` and `useMutation(fn)` for zero-boilerplate RPC.
 - **Focused Client Facade** — Application code imports transport, page hooks, navigation helpers, and remote helpers from `@evjs/ev/client`; generated framework bootstrap uses `@evjs/ev/client/internal`.
 
@@ -151,8 +151,11 @@ function Posts() {
 - Generated component-page and remote bootstrap APIs are also framework-owned and imported through `@evjs/ev/client/internal`.
 
 Application-facing client runtime APIs are exported from `@evjs/ev/client`.
-This package backs that facade and remains an implementation package for the
-monorepo runtime.
+That facade is intentionally narrower than this package: generic TanStack
+Query APIs that are not paired with evjs server functions should come from
+`@tanstack/react-query`, while evjs page, navigation, server-function, remote,
+and RSC APIs come from `@evjs/ev/client`. This package backs that facade and
+remains an implementation package for the monorepo runtime.
 
 ## License
 
