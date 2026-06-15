@@ -198,6 +198,18 @@ function createFrameworkCallbacks(options: {
   };
 }
 
+async function expectRejectedMessage(action: () => void | Promise<void>) {
+  let thrown: unknown;
+  try {
+    await action();
+  } catch (error) {
+    thrown = error;
+  }
+
+  expect(thrown).toBeInstanceOf(Error);
+  return (thrown as Error).message;
+}
+
 describe("utoopackAdapter dev", () => {
   it("emits flat CSR manifest and index.html in server:false mode", async () => {
     const cwd = await makeProject();
@@ -411,9 +423,59 @@ describe("utoopackAdapter dev", () => {
       });
       const update = diffBuildPlan(buildContext.plan, nextPlan, "config");
 
-      await expect(
+      const message = await expectRejectedMessage(() =>
         controller.updatePlan(update, nextAnalysis.graph),
-      ).rejects.toThrow("Utoopack dev cannot apply framework entry changes");
+      );
+      expect(message).toContain(
+        "Utoopack dev cannot apply framework plan changes",
+      );
+      expect(message).toContain("entry additions: about (page-client)");
+      expect(message).toContain("HTML additions: about -> about.html");
+    } finally {
+      await controller.close?.();
+    }
+  });
+
+  it("reports server-changing dev plan updates", async () => {
+    const cwd = await makeProject();
+    const config = resolveConfig<ConfigComplete>({
+      server: false,
+      entry: "./src/main.tsx",
+      html: "./index.html",
+    });
+    const buildContext = await createBuildContext(config, cwd);
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      ...buildContext,
+      callbacks: createFrameworkCallbacks({
+        config,
+        cwd,
+        ...buildContext,
+      }),
+      hooks: [],
+    });
+    if (!controller) throw new Error("Expected Utoopack dev controller");
+
+    try {
+      const nextConfig = resolveConfig<ConfigComplete>({
+        entry: "./src/main.tsx",
+        html: "./index.html",
+      });
+      const nextAnalysis = await createAppGraph(nextConfig, cwd);
+      const nextPlan = createBuildPlan(nextConfig, nextAnalysis.graph, {
+        mode: "development",
+      });
+      const update = diffBuildPlan(buildContext.plan, nextPlan, "config");
+
+      const message = await expectRejectedMessage(() =>
+        controller.updatePlan(update, nextAnalysis.graph),
+      );
+      expect(message).toContain(
+        "Utoopack dev cannot apply framework plan changes",
+      );
+      expect(message).toContain("entry additions: server (server-runtime)");
+      expect(message).toContain("server output changed");
     } finally {
       await controller.close?.();
     }

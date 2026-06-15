@@ -180,7 +180,7 @@ class UtoopackDevController implements BundlerDevController {
 
     if (!isHtmlOnlyUpdate(update)) {
       throw new Error(
-        "[evjs] Utoopack dev cannot apply framework entry changes without restarting ev dev. HTML-only framework plan updates are supported; entry additions, removals, server changes, and route metadata changes still require a lower-layer Utoopack update API.",
+        `[evjs] Utoopack dev cannot apply framework plan changes without restarting ev dev (${formatUnsupportedPlanUpdate(update)}). HTML-only framework plan updates are supported; entry additions, removals, server changes, and route metadata changes still require a lower-layer Utoopack update API.`,
       );
     }
 
@@ -221,4 +221,35 @@ function isHtmlOnlyUpdate(update: BuildPlanUpdate): boolean {
       update.html.removed.length > 0 ||
       update.html.changed.length > 0)
   );
+}
+
+function formatUnsupportedPlanUpdate(update: BuildPlanUpdate): string {
+  const changes = [
+    formatPlanItems("entry additions", update.entries.added, formatBuildEntry),
+    formatPlanItems("entry removals", update.entries.removed, formatBuildEntry),
+    formatPlanItems("entry changes", update.entries.changed, formatBuildEntry),
+    formatPlanItems("HTML additions", update.html.added, formatHtmlPlan),
+    formatPlanItems("HTML removals", update.html.removed, formatHtmlPlan),
+    formatPlanItems("HTML changes", update.html.changed, formatHtmlPlan),
+    update.serverChanged ? "server output changed" : undefined,
+  ].filter((change): change is string => Boolean(change));
+
+  return changes.length > 0 ? changes.join("; ") : "unknown plan change";
+}
+
+function formatPlanItems<T>(
+  label: string,
+  items: T[],
+  formatItem: (item: T) => string,
+): string | undefined {
+  if (items.length === 0) return undefined;
+  return `${label}: ${items.map(formatItem).join(", ")}`;
+}
+
+function formatBuildEntry(entry: BuildPlan["entries"][number]): string {
+  return `${entry.name} (${entry.kind})`;
+}
+
+function formatHtmlPlan(html: BuildPlan["html"][number]): string {
+  return `${html.id} -> ${html.fileName}`;
 }
