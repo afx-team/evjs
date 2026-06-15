@@ -83,6 +83,9 @@ Adapter 不应从文件名或 bundler stats 反推这些能力。
 /__evjs/rsc      启用 server.rsc 时的 Flight endpoint
 ```
 
+RSC Flight response 默认使用 `Cache-Control: no-store`；renderer 显式返回的
+cache headers 会被保留。
+
 PPR 文档请求通过页面 route 服务；PPR endpoint 主要用于 direct/debug 访问和 fallback
 adapter，不是默认浏览器首屏协议。
 

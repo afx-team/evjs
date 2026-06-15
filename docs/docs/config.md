@@ -392,6 +392,9 @@ export default function InsightsPage() {
 `hydrate = "none"` may be omitted on RSC pages because it is the default for
 RSC documents. If `hydrate` is declared, it must be `"none"`; full-page browser
 hydration modes are not valid for RSC documents.
+RSC Flight responses default to `Cache-Control: no-store` because they can
+depend on request state and server data. A `Cache-Control` header returned by
+the RSC renderer is preserved.
 RSC pages cannot also declare partial prerendering. Split RSC and PPR behavior
 into separate page routes until the combined runtime contract is available.
 

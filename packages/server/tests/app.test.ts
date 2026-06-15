@@ -3104,6 +3104,7 @@ describe("createApp", () => {
     );
 
     expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
     expect(res.headers.get("Content-Type")).toBe("text/x-component");
     expect(await res.text()).toBe("/dashboard?tab=stats");
   });
@@ -3163,9 +3164,35 @@ describe("createApp", () => {
     });
 
     expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
     expect(res.headers.get("Content-Type")).toBe("text/x-component");
     expect(res.headers.get("x-flight")).toBe("ok");
     expect(await res.text()).toBe("");
+  });
+
+  it("preserves explicit RSC flight cache headers", async () => {
+    const manifest = createManifest();
+    configureRscManifest(manifest);
+    const app = createApp({
+      framework: {
+        manifest,
+        rsc() {
+          return new Response("flight", {
+            headers: {
+              "Cache-Control": "s-maxage=30",
+              "Content-Type": "text/x-component",
+            },
+          });
+        },
+      },
+    });
+
+    const res = await app.request("/__evjs/rsc?page=dashboard");
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("s-maxage=30");
+    expect(res.headers.get("Content-Type")).toBe("text/x-component");
+    expect(await res.text()).toBe("flight");
   });
 
   it("returns 405 for unsupported RSC flight methods", async () => {

@@ -758,7 +758,10 @@ export async function handleRscFlightRequest(
   try {
     const response = await coordinator.renderFlight(ctx);
     assertRscFlightResponse(response, "RSC Flight coordinator renderFlight()");
-    return request.method === "HEAD" ? withoutResponseBody(response) : response;
+    const cacheSafeResponse = withDefaultRscFlightCacheHeaders(response);
+    return request.method === "HEAD"
+      ? withoutResponseBody(cacheSafeResponse)
+      : cacheSafeResponse;
   } catch (error) {
     const response = textResponse(
       `[evjs] RSC Flight render failed: ${formatUnknownError(error)}`,
@@ -905,6 +908,18 @@ function normalizeRscCoordinator(
     };
   }
   return rsc;
+}
+
+function withDefaultRscFlightCacheHeaders(response: Response): Response {
+  if (response.headers.has("Cache-Control")) return response;
+
+  const headers = new Headers(response.headers);
+  headers.set("Cache-Control", "no-store");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 function assertRscFlightResponse(

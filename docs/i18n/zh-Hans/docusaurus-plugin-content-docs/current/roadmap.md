@@ -24,13 +24,15 @@
   server routes、SSR、PPR、RSC。
 - PPR page response 会根据 region 策略为 merged、streamed 和 HEAD response
   派生 cache headers。
+- RSC Flight response 默认使用 `Cache-Control: no-store`，并保留 renderer
+  显式 cache headers。
 
 ## 进行中
 
 - Utoopack dynamic entry/server dev plan update，用于不重启 `ev dev` 增删 entry。
 - Utoopack 对多 server render entry 的 build facts 支持。
 - Utoopack 运行 RSC 和 framework-managed render entry 所需的 reference metadata。
-- 非根 public path、CDN/edge+origin 部署下剩余的 RSC/PPR cache 行为 hardening。
+- CDN/edge+origin 拆分部署下剩余的 cache 行为 hardening。
 
 ## 计划中
 

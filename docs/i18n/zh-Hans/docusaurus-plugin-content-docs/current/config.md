@@ -370,6 +370,8 @@ export default function InsightsPage() {
 RSC 页面可以省略 `hydrate = "none"`，因为这是 RSC document 的默认值。
 如果显式声明 `hydrate`，则必须是 `"none"`；RSC document 不支持整页浏览器
 hydration 模式。
+RSC Flight response 默认使用 `Cache-Control: no-store`，因为它可能依赖 request
+状态和服务端数据。RSC renderer 显式返回的 `Cache-Control` 会被保留。
 RSC 页面不能同时声明 partial prerendering；在组合 runtime contract 可用之前，
 请把 RSC 和 PPR 行为拆到不同 page routes。
 

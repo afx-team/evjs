@@ -85,6 +85,9 @@ Framework server endpoints are derived from `server.basePath`:
 /__evjs/rsc      RSC Flight endpoint when server.rsc is enabled
 ```
 
+RSC Flight responses default to `Cache-Control: no-store`; explicit renderer
+cache headers are preserved.
+
 PPR document requests are served through their page route. The PPR endpoint is
 available for direct/debug access, not as the default browser initial-load
 protocol.

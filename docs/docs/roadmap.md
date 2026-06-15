@@ -28,6 +28,8 @@
   functions, server routes, SSR, PPR, and RSC.
 - PPR page response cache headers derived from region policies for merged,
   streamed, and HEAD responses.
+- RSC Flight responses default to `Cache-Control: no-store` while preserving
+  explicit renderer cache headers.
 
 ## In Progress
 
@@ -36,8 +38,7 @@
 - Utoopack lower-layer support for framework server render entries, including
   build facts for multiple SSR/PPR/RSC renderers.
 - Utoopack reference metadata needed for RSC and framework-managed render entries.
-- Remaining RSC/PPR cache hardening across non-root public paths and split
-  edge/origin deployments.
+- Remaining cache hardening for split edge/origin deployments.
 
 ## Planned
 
