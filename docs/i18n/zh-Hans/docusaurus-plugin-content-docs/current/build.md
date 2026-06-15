@@ -70,7 +70,7 @@ config、`AppGraph`、`BuildPlan`、graph file dependencies、plugin watch files
 | 端 | 行为 |
 |----|------|
 | Client | 函数体替换为内部 RPC stub |
-| Server | 函数实现注册到 `@evjs/server` dispatch |
+| Server | 函数实现注册到 framework server dispatch |
 
 函数输出记录在 `BuildOutput.server.functions`。它的 object key 是 server
 function id：必须是非空字符串，且不能包含首尾空白。它们不是 build identifier，

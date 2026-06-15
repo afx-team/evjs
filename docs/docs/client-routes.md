@@ -215,9 +215,10 @@ convention for paths and params.
 During `ev dev` and `ev build`, SPA routing writes the generated declaration
 `src/evjs-route-types.d.ts` for the default `src/pages` route directory. A
 custom `routing.dir` writes the same file name beside that route directory's
-parent. That file augments `@evjs/client` types for `Link`, `useLinkProps`,
-`redirect`, and related helpers. It is type-only; application code should not
-import it or write TanStack route trees manually.
+parent. That file augments the underlying `@evjs/client` route register used by
+the `@evjs/ev/client` `Link`, `useLinkProps`, `redirect`, and related helpers.
+It is type-only; application code should not import it or write TanStack route
+trees manually.
 
 The generated file imports its type helper from
 `@evjs/ev/client/internal/route-types`, a generated-only facade subpath that

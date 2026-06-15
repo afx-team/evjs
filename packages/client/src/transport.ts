@@ -50,23 +50,6 @@ export interface TransportAdapter {
     args: unknown[],
     context?: RequestContext,
   ): Promise<unknown>;
-  /**
-   * Experimental extension point reserved for future RSC Flight requests.
-   *
-   * Not part of the stable adapter contract yet; this signature may change
-   * when RSC support is implemented.
-   */
-  flight?(
-    request: Request,
-    context?: RequestContext,
-  ): Promise<Response | ReadableStream<Uint8Array>>;
-  /**
-   * Experimental extension point reserved for future SSR document rendering.
-   *
-   * Not part of the stable adapter contract yet; this signature may change
-   * when SSR support is implemented.
-   */
-  render?(request: Request, context?: RequestContext): Promise<Response>;
 }
 
 type MaybePromise<T> = T | Promise<T>;
@@ -510,7 +493,7 @@ type AnyFn = (...args: unknown[]) => unknown;
  * so use this type when you need typed access to the metadata.
  *
  * @example
- * import type { ServerFunction } from "@evjs/client";
+ * import type { ServerFunction } from "@evjs/ev/client";
  * import { getUsers } from "./api/users.server";
  *
  * // Runtime properties (added by build system):
@@ -743,11 +726,17 @@ function assertTransportAdapter(
   if (!isRecord(adapter)) {
     throw new Error("[evjs] initTransport() adapter must be an object.");
   }
-  for (const key of ["send", "flight", "render"] as const) {
-    const value = adapter[key];
-    if (value !== undefined && typeof value !== "function") {
+
+  if (adapter.send !== undefined && typeof adapter.send !== "function") {
+    throw new Error(
+      "[evjs] initTransport() adapter.send must be a function when provided.",
+    );
+  }
+
+  for (const key of ["flight", "render"] as const) {
+    if (adapter[key] !== undefined) {
       throw new Error(
-        `[evjs] initTransport() adapter.${key} must be a function when provided.`,
+        `[evjs] initTransport() adapter.${key} is not supported. Custom transports only support send(fnId, args, context).`,
       );
     }
   }

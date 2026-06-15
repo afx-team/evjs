@@ -72,7 +72,7 @@ Files with `"use server"` are transformed into browser-callable references and s
 | Side | What happens |
 |------|-------------|
 | Client | Function bodies are replaced with internal RPC stubs |
-| Server | Function implementations are registered for `@evjs/server` dispatch |
+| Server | Function implementations are registered for framework server dispatch |
 
 Function output is recorded in `BuildOutput.server.functions`. Its object keys
 are server function ids: non-empty strings without leading or trailing

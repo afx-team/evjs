@@ -221,7 +221,7 @@ PPR 页面在 public manifest 中的 page-level hydration 是 `none`。需要客
 应通过显式 client islands 或 region-level hydration metadata 引入，而不是 hydrate 整个
 PPR shell。
 
-RSC Flight 请求也通过同一个 `@evjs/server` 边界进入。Flight endpoint 接受
+RSC Flight 请求也通过同一个 `@evjs/ev/server` 边界进入。Flight endpoint 接受
 `page=<id>` 和可选的 `url=<pathname+search>`；`page` id 必须是 manifest page id，
 并遵循 build identifier 规则。URL context 必须是同源绝对 path 或 HTTP(S) URL，
 且不能包含 hash。Webpack 验证路径已经使用 React Flight client consumption 和 React
@@ -301,7 +301,7 @@ entry 解析。
   -> client transform creates internal client references
   -> server transform/register path
   -> BuildOutput.server.functions
-  -> @evjs/server dispatches POST runtime.server.fn
+  -> framework server dispatches POST runtime.server.fn
 ```
 
 公开配置只暴露 `server.basePath`；函数 endpoint 从这个 base path 派生。

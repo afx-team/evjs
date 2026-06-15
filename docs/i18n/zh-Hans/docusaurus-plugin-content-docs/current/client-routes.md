@@ -189,8 +189,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 默认 `src/pages` 路由目录下，`ev dev` 和 `ev build` 会在 SPA 模式下写入
 `src/evjs-route-types.d.ts`。自定义 `routing.dir` 时，会在该路由目录的父级写入同名文件。
-这个文件只用于增强 `@evjs/client` 的 `Link`、`useLinkProps`、`redirect`
-等类型；应用代码不需要导入它，也不需要手写 TanStack route tree。
+这个文件只用于增强 `@evjs/ev/client` 中 `Link`、`useLinkProps`、`redirect`
+等 helper 使用的底层 `@evjs/client` route register；应用代码不需要导入它，
+也不需要手写 TanStack route tree。
 
 生成文件会从 `@evjs/ev/client/internal/route-types` 导入类型 helper。
 这是生成专用的 facade subpath，用来让脚手架应用只直接依赖一个 framework 包；

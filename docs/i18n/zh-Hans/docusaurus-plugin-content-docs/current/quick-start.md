@@ -106,8 +106,8 @@ export default defineConfig({
 | [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | 框架 API、配置、插件、构建编排，以及运行时 facade subpath（`@evjs/ev/client`、`@evjs/ev/server`） |
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | 注入默认构建器的轻量 CLI 包装 (`ev dev`, `ev build`) |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | 项目脚手架 (`npx @evjs/create-app`) |
-| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | 浏览器运行时、transport、page hooks、导航 helpers 和 remote host helpers |
-| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Hono/fetch 服务端运行时、服务端函数、路由和 SSR/PPR/RSC 请求处理 |
+| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | `@evjs/ev/client` 背后的浏览器运行时实现包 |
+| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | `@evjs/ev/server` 背后的 Hono/fetch 服务端运行时实现包 |
 
 Manifest schema、build tools、page runtime 和 shell 内部实现都位于上述公开包中。
 应用代码通常应从 `@evjs/ev` 及其 runtime facade subpath
@@ -116,8 +116,8 @@ Manifest schema、build tools、page runtime 和 shell 内部实现都位于上�
 `@evjs/bundler-utoopack` 这类 bundler adapter 以及 `@evjs/shared` 这类共享契约模块，
 只面向自定义框架工具或 adapter 开发。
 
-直接从 `@evjs/client` 和 `@evjs/server` 导入仍然是受支持的 runtime 包边界，
-适用于明确选择直接依赖这些 runtime 包的项目。
+将 `@evjs/client` 和 `@evjs/server` 视为 runtime 实现包。只有应用源码明确
+要拥有更底层 runtime 契约时，才应直接从这些包导入。
 
 ## 必需依赖
 

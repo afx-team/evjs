@@ -110,8 +110,8 @@ as normal components and do not accept `routing.layout`.
 | [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | Framework API, config, plugins, build orchestration, and runtime facade subpaths (`@evjs/ev/client`, `@evjs/ev/server`) |
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`) with the default bundler |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
-| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Browser runtime, transport, page hooks, navigation helpers, and remote host helpers |
-| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Hono/fetch server runtime, server functions, routes, and SSR/PPR/RSC request handling |
+| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Browser runtime implementation behind `@evjs/ev/client` |
+| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Hono/fetch server runtime implementation behind `@evjs/ev/server` |
 
 Manifest schemas, build tools, page runtime, and shell internals are internal
 modules under the public packages above. Application code should normally
@@ -121,9 +121,9 @@ Use `@evjs/cli` and `@evjs/create-app` as tools, not application imports.
 Bundler adapters such as `@evjs/bundler-utoopack` and shared contract modules
 such as `@evjs/shared` are only for custom framework tooling or adapter work.
 
-Direct `@evjs/client` and `@evjs/server` imports remain supported runtime
-package boundaries for projects that choose to depend on those packages
-explicitly.
+Treat `@evjs/client` and `@evjs/server` as runtime implementation packages.
+Application source should only import them directly when it intentionally owns
+that lower-level runtime contract.
 
 ## Required Dependencies
 

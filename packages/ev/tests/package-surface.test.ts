@@ -464,6 +464,40 @@ describe("workspace package surface", () => {
     expect(agentGuide).toContain("Scaffolded apps and template packs");
   });
 
+  it("keeps public package guidance facade-first", async () => {
+    const packageTableDocs = [
+      "README.md",
+      "docs/docs/quick-start.md",
+      "docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/quick-start.md",
+    ];
+    const facadeGuidanceDocs = [
+      ...packageTableDocs,
+      "docs/docs/roadmap.md",
+      "docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/roadmap.md",
+    ];
+
+    for (const doc of packageTableDocs) {
+      const source = await fs.readFile(path.join(repoRoot, doc), "utf-8");
+      expect(source).toContain("@evjs/ev/client");
+      expect(source).toContain("@evjs/ev/server");
+      expect(source).toContain("@evjs/client");
+      expect(source).toContain("@evjs/server");
+    }
+
+    for (const doc of facadeGuidanceDocs) {
+      const source = await fs.readFile(path.join(repoRoot, doc), "utf-8");
+      expect(source).toContain("@evjs/ev/client");
+      expect(source).not.toContain(
+        "Direct `@evjs/client` and `@evjs/server` imports remain supported runtime",
+      );
+      expect(source).not.toContain(
+        "直接从 `@evjs/client` 和 `@evjs/server` 导入仍然是受支持的 runtime 包边界",
+      );
+      expect(source).not.toContain("from the public `@evjs/client` package");
+      expect(source).not.toContain("通过公开 `@evjs/client` 包");
+    }
+  });
+
   it("keeps root engineering guides aligned with package boundaries", async () => {
     const rootArchitecture = await fs.readFile(
       path.join(repoRoot, "ARCHITECTURE.md"),

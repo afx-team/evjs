@@ -117,7 +117,7 @@ sequenceDiagram
 Graph analysis may read static import closure for semantic discovery, but dev
 watching must remain narrower than that closure. `fileDependencies` should
 include explicit route/server roots and framework marker files such as
-`src/pages`, `@evjs/server createRoute()`, `"use server"`, and
+`src/pages`, `@evjs/ev/server createRoute()`, `"use server"`, and
 `"use client"`. Ordinary component and style edits stay in the bundler HMR path.
 
 HTML-only dev plan updates can be relinked from existing bundler stats. Dynamic

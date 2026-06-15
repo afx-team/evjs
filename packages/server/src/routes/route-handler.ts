@@ -6,7 +6,7 @@
  *
  * @example
  * ```ts
- * import { createRoute } from "@evjs/server";
+ * import { createRoute } from "@evjs/ev/server";
  *
  * export const usersHandler = createRoute("/api/users", {
  *   GET: async (req) => Response.json(await db.getUsers()),

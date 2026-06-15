@@ -238,7 +238,7 @@ PPR page hydration is page-level `none` in the public manifest. Client
 interactivity should be introduced through explicit client islands or
 region-level hydration metadata, not by hydrating the whole PPR shell.
 
-RSC uses the same `@evjs/server` boundary for Flight requests. The Flight
+RSC uses the same `@evjs/ev/server` boundary for Flight requests. The Flight
 endpoint accepts `page=<id>` and an optional `url=<pathname+search>` value; that
 `page` id must be a manifest page id using the build-identifier rule. The URL
 context must be an absolute same-origin path or HTTP(S) URL and must not include
@@ -335,7 +335,7 @@ belongs in the referenced page module, not in `ev.config.ts`.
   -> client transform creates internal client references
   -> server transform/register path
   -> BuildOutput.server.functions
-  -> @evjs/server dispatches POST runtime.server.fn
+  -> framework server dispatches POST runtime.server.fn
 ```
 
 The public config exposes `server.basePath`; the function endpoint is derived from that base path.
