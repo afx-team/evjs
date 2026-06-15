@@ -58,9 +58,10 @@ Manifest linking does not rescan user source after bundling.
 
 Tools that need framework semantics without invoking a bundler can call
 `prepareFrameworkBuild()` from `@evjs/ev`. It resolves config, applies
-page-routing defaults, initializes plugins, runs `buildStart` hooks, and returns
-the resolved config, `AppGraph`, `BuildPlan`, graph file dependencies, plugin
-watch files, and `dispose()`.
+page-routing defaults, initializes plugins, runs `buildStart` hooks, reports
+graph diagnostics, and returns the resolved config, graph file dependencies,
+plugin watch files, and `dispose()`. `AppGraph` and `BuildPlan` remain internal
+framework state.
 
 The preparation API stops before bundler execution, manifest emission, HTML
 emission, and deployment adapter output.

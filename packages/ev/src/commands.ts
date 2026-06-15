@@ -8,6 +8,7 @@ import type {
   BuildPlanUpdate,
 } from "@evjs/shared/manifest";
 import {
+  assertFrameworkManifestShape,
   createPublicManifest,
   linkBuildOutput,
   linkRemoteManifest,
@@ -110,7 +111,6 @@ export interface PrepareFrameworkBuildOptions<
   bundler?: BundlerAdapter<TBundlerCfg>;
   requireBundler?: boolean;
   runLifecycleHooks?: boolean;
-  plan?: CreateBuildPlanOptions;
 }
 
 export interface PreparedFrameworkBuild<TBundlerCfg = DefaultBundlerConfig> {
@@ -118,13 +118,23 @@ export interface PreparedFrameworkBuild<TBundlerCfg = DefaultBundlerConfig> {
   mode: "development" | "production";
   command: "dev" | "build";
   config: ResolvedConfig<TBundlerCfg>;
+  fileDependencies: string[];
+  pluginWatchFiles: string[];
+  dispose(): Promise<void>;
+}
+
+interface InternalPrepareFrameworkBuildOptions<
+  TBundlerCfg = DefaultBundlerConfig,
+> extends PrepareFrameworkBuildOptions<TBundlerCfg> {
+  plan?: CreateBuildPlanOptions;
+}
+
+interface InternalPreparedFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>
+  extends PreparedFrameworkBuild<TBundlerCfg> {
   graph: AppGraph;
   plan: BuildPlan;
   hooks: PluginHooks<TBundlerCfg>[];
   pluginContext: PluginContext<TBundlerCfg>;
-  fileDependencies: string[];
-  pluginWatchFiles: string[];
-  dispose(): Promise<void>;
 }
 
 function resolveBundler<TBundlerCfg>(
@@ -982,6 +992,7 @@ async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   });
 
   await runBuildOutputHooks(options.hooks, output, options.pluginCtx);
+  assertFrameworkManifestShape(output, "BuildOutput after buildOutput hooks");
   await emitFrameworkManifest(
     options.cwd,
     output,
@@ -1246,10 +1257,12 @@ function waitForApiReady(child: ApiProcess, timeoutMs = 10_000): Promise<void> {
   });
 }
 
-export async function prepareFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
+async function prepareInternalFrameworkBuild<
+  TBundlerCfg = DefaultBundlerConfig,
+>(
   userConfig?: Config<TBundlerCfg>,
-  options: PrepareFrameworkBuildOptions<TBundlerCfg> = {},
-): Promise<PreparedFrameworkBuild<TBundlerCfg>> {
+  options: InternalPrepareFrameworkBuildOptions<TBundlerCfg> = {},
+): Promise<InternalPreparedFrameworkBuild<TBundlerCfg>> {
   const cwd = options.cwd ?? process.cwd();
   const command =
     options.command ??
@@ -1337,6 +1350,22 @@ export async function prepareFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
     await dispose();
     throw err;
   }
+}
+
+export async function prepareFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
+  userConfig?: Config<TBundlerCfg>,
+  options: PrepareFrameworkBuildOptions<TBundlerCfg> = {},
+): Promise<PreparedFrameworkBuild<TBundlerCfg>> {
+  const prepared = await prepareInternalFrameworkBuild(userConfig, options);
+  return {
+    cwd: prepared.cwd,
+    mode: prepared.mode,
+    command: prepared.command,
+    config: prepared.config,
+    fileDependencies: prepared.fileDependencies,
+    pluginWatchFiles: prepared.pluginWatchFiles,
+    dispose: prepared.dispose,
+  };
 }
 
 export async function dev<TBundlerCfg = DefaultBundlerConfig>(
@@ -1703,7 +1732,7 @@ export async function build<TBundlerCfg = DefaultBundlerConfig>(
 ): Promise<void> {
   const cwd = options?.cwd ?? process.cwd();
   process.env.NODE_ENV ??= "production";
-  const prepared = await prepareFrameworkBuild(userConfig, {
+  const prepared = await prepareInternalFrameworkBuild(userConfig, {
     cwd,
     mode: "production",
     command: "build",

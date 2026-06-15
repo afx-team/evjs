@@ -121,7 +121,7 @@ flowchart LR
 
 | Hook | 用途 |
 |------|------|
-| `buildStart(ctx)` | graph 工作前的构建准备 |
+| `buildStart(ctx)` | 框架分析前的构建准备 |
 | `bundlerConfig(config, ctx)` | 修改当前 bundler 配置 |
 | `buildOutput(output, ctx)` | 向单一框架输出添加部署/runtime metadata |
 | `transformHtml(doc, ctx)` | 逐个 HTML 文档修改输出 |

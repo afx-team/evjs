@@ -11,12 +11,12 @@ are preserved in `CHANGELOG.md`; this file should reflect active reality.
       `@evjs/shared/manifest`.
 - [x] Graph analysis and build planning under `@evjs/ev/src/build-tools`.
 - [x] Single framework manifest output at `dist/manifest.json`.
-- [x] Stage-based plugin hooks: `appGraph`, `buildPlan`, `bundlerConfig`,
-      `buildOutput`, per-document `transformHtml`, `buildEnd({ output })`,
-      `devPlanUpdate`, and `dispose`.
+- [x] Stage-based plugin hooks: `buildStart`, `bundlerConfig`, `buildOutput`,
+      per-document `transformHtml`, `buildEnd({ output })`, and `dispose`.
 - [x] Programmatic `prepareFrameworkBuild()` API for resolving config,
-      running graph/plan plugin hooks, and returning `AppGraph` + `BuildPlan`
-      without invoking a bundler or platform adapter.
+      running framework preflight hooks, reporting graph diagnostics, and
+      returning resolved config, graph file dependencies, plugin watch files,
+      and `dispose()` without invoking a bundler or platform adapter.
 - [x] Consolidated package shape around `@evjs/ev`, `@evjs/client`,
       `@evjs/server`, `@evjs/shared`, `@evjs/cli`, and `@evjs/create-app`.
 - [x] Single top-level `@evjs/client` entry with framework-managed page,
@@ -46,8 +46,8 @@ are preserved in `CHANGELOG.md`; this file should reflect active reality.
 - [ ] Platform-specific deployment adapters after runtime contracts are concrete
       for each platform.
 - [ ] RSC server actions beyond the current `"use server"` RPC/action transport.
-- [ ] More granular `BuildPlanUpdate` reasons for plugin authors if real plugins
-      need them.
+- [ ] More granular internal `BuildPlanUpdate` reasons if real adapters need
+      them.
 - [ ] Further graph dependency narrowing once bundlers expose module/reference
       facts that can replace framework-side static import closure analysis.
 - [ ] Migration guides for external deployment plugins that still consume older

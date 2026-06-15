@@ -25,7 +25,7 @@ the framework. MPA page routes use the page runtime without adding a router.
 - **Server routes** — standard Web `Request`/`Response` route handlers via `createRoute()`.
 - **Unified server boundary** — `@evjs/server` handles server functions, server routes, SSR, PPR, and RSC requests.
 - **Manifest-driven remotes** — host apps load remote apps through remote manifests and shared dependency negotiation.
-- **Plugin system** — graph, plan, bundler, output, HTML, and build lifecycle hooks.
+- **Plugin system** — config, bundler, output, HTML, and build lifecycle hooks.
 - **Deployment output** — one public-safe framework manifest plus adapter-generated platform artifacts.
 
 ## Full-Stack Architecture
@@ -93,5 +93,5 @@ flowchart LR
 
 evjs discovers page routes and explicit server/page metadata into an `AppGraph`,
 derives a bundler-independent `BuildPlan`, links bundler facts into a single
-`BuildOutput`, and lets runtime, server, remote, plugin, and deployment adapters
-consume that output.
+`BuildOutput`, and lets runtime, server, remote, and deployment adapters consume
+that output while plugins extend the supported lifecycle stages.

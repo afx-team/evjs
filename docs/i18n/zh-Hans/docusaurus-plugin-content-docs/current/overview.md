@@ -22,7 +22,7 @@ SPA 页面路由把导航、loader、search 和 params 语义保留在框架内�
 - **服务端路由** —— 通过 `createRoute()` 编写标准 Web `Request`/`Response` route handler。
 - **统一服务端边界** —— `@evjs/server` 处理 server functions、server routes、SSR、PPR、RSC。
 - **Manifest 驱动远程应用** —— host app 通过 remote manifest 和 shared dependency negotiation 加载远程应用。
-- **插件系统** —— graph、plan、bundler、output、HTML、build 生命周期 hooks。
+- **插件系统** —— config、bundler、output、HTML、build 生命周期 hooks。
 - **部署输出** —— 单一 public-safe framework manifest，加 adapter 生成的平台产物。
 
 ## 全栈架构
@@ -88,4 +88,4 @@ flowchart LR
 
 ## 当前架构一句话
 
-evjs 将页面路由和显式 server/page 元信息分析成 `AppGraph`，派生 bundler-independent `BuildPlan`，再把 bundler facts 链接成单一 `BuildOutput`，运行时、服务端、远程应用、插件和部署 adapter 都消费这个输出。
+evjs 将页面路由和显式 server/page 元信息分析成 `AppGraph`，派生 bundler-independent `BuildPlan`，再把 bundler facts 链接成单一 `BuildOutput`。运行时、服务端、远程应用和部署 adapter 消费这个输出，插件扩展受支持的生命周期阶段。

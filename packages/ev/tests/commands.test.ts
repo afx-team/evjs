@@ -234,7 +234,7 @@ describe("prepareFrameworkBuild", () => {
     ).rejects.toThrow("[evjs] options.bundler.dev must be a function.");
   });
 
-  it("prepares a framework graph and build plan without a bundler adapter", async () => {
+  it("prepares framework inputs without exposing graph and plan internals", async () => {
     const cwd = await createProject();
     const events: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
@@ -267,21 +267,10 @@ describe("prepareFrameworkBuild", () => {
     );
 
     expect(prepared.config.serverEnabled).toBe(false);
-    expect(prepared.graph.apps.default).toEqual({
-      id: "default",
-      entry: "./src/main.tsx",
-      html: "./index.html",
-    });
-    expect(prepared.plan.entries).toEqual([
-      {
-        name: "main",
-        import: "./src/main.tsx",
-        environment: "client",
-        runtime: "browser",
-        kind: "app-client",
-        owner: { appId: "default" },
-      },
-    ]);
+    expect("graph" in prepared).toBe(false);
+    expect("plan" in prepared).toBe(false);
+    expect("hooks" in prepared).toBe(false);
+    expect("pluginContext" in prepared).toBe(false);
     expect(prepared.pluginWatchFiles).toEqual([
       path.join(cwd, "framework-extra.json"),
     ]);
@@ -391,6 +380,48 @@ describe("build", () => {
       "buildOutput:main",
       "buildEnd:main.patched.js",
       "dispose:production",
+    ]);
+  });
+
+  it("validates buildOutput hook mutations before emitting artifacts", async () => {
+    const cwd = await createProject();
+    const events: string[] = [];
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-output",
+      setup() {
+        return {
+          buildOutput(output) {
+            events.push("buildOutput");
+            (output as { version: number }).version = 2;
+          },
+          dispose() {
+            events.push("dispose");
+          },
+        };
+      },
+    };
+
+    await expect(
+      build(
+        {
+          server: false,
+          plugins: [plugin],
+        },
+        {
+          cwd,
+          bundler: createMockBundler(events),
+        },
+      ),
+    ).rejects.toThrow(
+      "[evjs] BuildOutput after buildOutput hooks.version must be 1.",
+    );
+
+    expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
+    expect(events).toEqual([
+      "bundler.build",
+      "bundler.entries:main",
+      "buildOutput",
+      "dispose",
     ]);
   });
 

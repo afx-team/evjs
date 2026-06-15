@@ -8,10 +8,10 @@
 - Explicit multi-page output through `pages`.
 - Server functions from `"use server"` modules.
 - Hono/fetch server runtime with explicit server routes.
-- Plugin system with config, graph, plan, bundler, output, HTML, and build hooks.
+- Plugin system with config, bundler, output, HTML, and build hooks.
 - Bundler adapter contract based on `BuildPlan` and `BuildOutput`.
-- Programmatic `prepareFrameworkBuild()` API for framework graph/plan
-  preparation without invoking a bundler or platform adapter.
+- Programmatic `prepareFrameworkBuild()` API for framework preflight without
+  exposing internal graph/plan state or invoking a bundler or platform adapter.
 - Single framework manifest at `dist/manifest.json`.
 - Manifest-driven app/page/remote activation through the public
   `@evjs/client` runtime package.

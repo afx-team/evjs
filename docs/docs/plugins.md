@@ -124,7 +124,7 @@ flowchart LR
 
 | Hook | Purpose |
 |------|---------|
-| `buildStart(ctx)` | Build setup before graph work |
+| `buildStart(ctx)` | Build setup before framework analysis |
 | `bundlerConfig(config, ctx)` | Mutate selected bundler config |
 | `buildOutput(output, ctx)` | Add deployment/runtime metadata to the single framework output |
 | `transformHtml(doc, ctx)` | Mutate one HTML document at a time |

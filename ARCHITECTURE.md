@@ -98,9 +98,7 @@ sequenceDiagram
   EV->>EV: run config/setup/buildStart hooks
   EV->>Tools: createAppGraph(config)
   Tools-->>EV: AppGraph, diagnostics, fileDependencies
-  EV->>EV: run appGraph hooks
   EV->>Tools: createBuildPlan(config, graph)
-  EV->>EV: run buildPlan hooks
   EV->>Bundler: build(plan)
   Bundler-->>EV: stats/assets/build facts
   EV->>Manifest: linkBuildOutput(plan, bundlerFacts)
@@ -170,9 +168,9 @@ reading bundler config or stats.
 `prepareFrameworkBuild()` is the supported core API for tools that need
 framework semantics without running a bundler or emitting platform files. It
 resolves config, applies page-routing defaults, initializes plugins, runs
-`buildStart` hooks, creates the internal `AppGraph` and `BuildPlan`, and returns
-the resolved config, graph, plan, graph file dependencies, plugin watch files,
-and an explicit `dispose()` function.
+`buildStart` hooks, reports graph diagnostics, and returns the resolved config,
+graph file dependencies, plugin watch files, and an explicit `dispose()`
+function. `AppGraph` and `BuildPlan` remain internal framework state.
 
 This API intentionally stops before bundler execution, manifest emission, and
 deployment adapter output.
