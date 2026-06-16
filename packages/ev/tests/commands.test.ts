@@ -1751,7 +1751,7 @@ describe("build", () => {
     );
     expect((error as Error).message).toContain("src/pages/users/[id].tsx");
     expect((error as Error).message).toContain(
-      'Dynamic page route segments must use $param filenames. Bracket segment "[id]" is not supported.',
+      'Dynamic page route segments must use $param filenames. Bracket segment "[id]" is not supported. Rename the file to "$id" for a dynamic segment, or use explicit pages config for a custom URL.',
     );
     expect((error as Error).message).toContain(PAGE_ROUTE_CONVENTION_SUMMARY);
     expect((error as Error).message).toContain(
@@ -1801,7 +1801,7 @@ describe("build", () => {
     );
     expect((error as Error).message).toContain("src/pages/contact us.tsx");
     expect((error as Error).message).toContain(
-      'Static page route segment "contact us" must use lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~". Use explicit pages config for custom paths.',
+      'Static page route segment "contact us" must use lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~". Rename the file to a lowercase URL-safe segment, or use explicit pages config for custom paths.',
     );
     expect((error as Error).message).toContain("src/pages/users/$123.tsx");
     expect((error as Error).message).toContain(

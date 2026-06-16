@@ -104,7 +104,7 @@ export default defineConfig({
 | 包 | 用途 |
 |---|------|
 | [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | 框架 API、配置、插件、构建编排和 deployment helpers |
-| [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | 注入默认构建器的轻量 CLI 包装 (`ev dev`, `ev build`) |
+| [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | 注入默认构建器的轻量 CLI 包装 (`ev dev`, `ev build`, `ev inspect`) |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | 项目脚手架 (`npx @evjs/create-app`) |
 | [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | page hooks、导航、transport、remotes 和 RSC 浏览器运行时 API |
 | [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | server functions、routes、渲染和部署相关的 Hono/fetch 服务端运行时 API |

@@ -20,7 +20,7 @@
     "description": "Title for Client Routes feature"
   },
   "homepage.feature.clientRoutes.description": {
-    "message": "基于 src/pages 提供类型安全的页面参数、搜索参数、loader 和导航，无需编写 route tree。",
+    "message": "基于 src/pages 提供类型安全的页面参数、搜索参数、loader 和导航，router 接线由 evjs 托管。",
     "description": "Description for Client Routes feature"
   },
   "homepage.feature.serverFn.title": {

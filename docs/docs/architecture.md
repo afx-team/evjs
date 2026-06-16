@@ -146,7 +146,7 @@ The manifest is `dist/manifest.json`. Legacy `dist/client/manifest.json` and `di
 
 TanStack Router is an SPA implementation detail owned by the framework. Page
 code uses `src/pages`, page hooks, and navigation helpers instead of constructing
-route trees directly.
+router bootstraps directly.
 
 ## Runtime Flow
 

@@ -8,6 +8,19 @@ ev build
 
 `ev build` 会解析配置、创建 `AppGraph`、派生 `BuildPlan`、运行当前 bundler、链接单一 `BuildOutput`，然后输出 HTML。
 
+当你需要解释 evjs 在 bundling 前发现了什么时，使用 `ev inspect`：
+
+```bash
+ev inspect
+ev inspect --json
+```
+
+`ev inspect` 会解析配置和框架声明，但不会运行 bundler，也不会写入 `dist`。
+它会报告 routing mode、发现的 page routes、被忽略或拒绝的 route files、
+生成 route type 的位置、server functions、server routes、页面 render metadata、
+remotes、runtime server paths、计划中的 entries/documents 和 diagnostics。只要存在
+error 级 diagnostic，命令就以非 0 退出；warning 只展示，不会让命令失败。
+
 ## 输出
 
 全栈输出：
@@ -43,7 +56,7 @@ dist/
 
 1. 加载并解析 `ev.config.ts`。
 2. 执行 config/setup 插件 hooks。
-3. `createAppGraph()` 分析文件化页面路由树、底层 app/page 输出、server entry 和 remotes。
+3. `createAppGraph()` 分析文件化页面路由文件、底层 app/page 输出、server entry 和 remotes。
 4. `createBuildPlan()` 生成具体 client/server entries 和 HTML documents。
 5. 当前 bundler 编译 `BuildPlan.entries`。
 6. `linkBuildOutput()` 合并 `AppGraph`、`BuildPlan` 和 bundler facts。
@@ -62,6 +75,10 @@ file dependencies、plugin watch files 和 `dispose()`。`AppGraph` 和
 `BuildPlan` 保持为框架内部状态。
 
 该准备 API 会在 bundler 执行、manifest 输出、HTML 输出和 deployment adapter 输出之前停止。
+
+如果需要 CLI 形式的 preflight 和可读 diagnostics，优先使用 `ev inspect`。
+它使用同一套 graph 和 plan 准备路径，同时仍将 `AppGraph` 和 `BuildPlan`
+保留为框架内部状态。
 
 ## 服务端函数
 

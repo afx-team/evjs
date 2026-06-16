@@ -29,7 +29,7 @@ function useFeatures() {
       description: translate({
         id: "homepage.feature.clientRoutes.description",
         message:
-          "Type-safe page params, search, loaders, and navigation from src/pages without route-tree boilerplate.",
+          "Type-safe page params, search, loaders, and navigation from src/pages while evjs owns router setup.",
       }),
     },
     {

@@ -22,7 +22,7 @@ React fullstack framework with file-based SPA routes, router-free MPA pages, ser
 - **Programmatic Route Handlers** — Standard Request/Response REST API endpoints via `createRoute()`.
 - **Typed Errors** — `ServerError` flows structured data server → client.
 - **Multi-Runtime** — [Hono](https://hono.dev/)-based server with Node, Deno, Bun, Edge adapters.
-- **CLI** — `ev dev` · `ev build`
+- **CLI** — `ev dev` · `ev build` · `ev inspect`
 
 ## 🚀 Quick Start
 
@@ -43,7 +43,7 @@ config needed.
 | Package | Purpose |
 |---------|---------|
 | [`@evjs/ev`](./packages/ev) | Framework API, config, plugins, and build orchestration (`defineConfig`, `dev`, `build`) |
-| [`@evjs/cli`](./packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`) with the default bundler |
+| [`@evjs/cli`](./packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`, `ev inspect`) with the default bundler |
 | [`@evjs/create-app`](./packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
 | [`@evjs/client`](./packages/client) | Browser runtime APIs for page hooks, navigation, transport, remotes, and RSC |
 | [`@evjs/server`](./packages/server) | Hono/fetch server runtime APIs for server functions, routes, rendering, and deployment |

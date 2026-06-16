@@ -70,7 +70,7 @@ export function getFnQueryKey<TArgs extends unknown[], TData>(
 ): unknown[] {
   return requireServerFunction(
     fn,
-    "[evjs] getFnQueryKey() only accepts server functions.",
+    "[evjs] getFnQueryKey() only accepts compiler-generated server function stubs. Plain functions do not carry the server-boundary metadata required for query keys.",
   ).queryKey(...args);
 }
 
@@ -93,7 +93,7 @@ export function getFnQueryOptions<TArgs extends unknown[], TData>(
 } {
   return requireServerFunction(
     fn,
-    "[evjs] getFnQueryOptions() only accepts server functions.",
+    "[evjs] getFnQueryOptions() only accepts compiler-generated server function stubs. Plain functions do not carry the server-boundary metadata required for query options.",
   ).queryOptions(...args);
 }
 
@@ -125,7 +125,7 @@ export function useQuery(
   if (typeof fnOrOptions === "function") {
     const serverFunction = requireServerFunction(
       fnOrOptions,
-      '[evjs] useQuery() only accepts server functions generated from "use server" modules.',
+      '[evjs] useQuery() only accepts server functions generated from "use server" modules. Plain async functions do not carry the server-boundary metadata required for framework dispatch.',
     );
     return _useQuery(serverFunction.queryOptions(...args));
   }
@@ -158,7 +158,7 @@ export function useSuspenseQuery(
   if (typeof fnOrOptions === "function") {
     const serverFunction = requireServerFunction(
       fnOrOptions,
-      '[evjs] useSuspenseQuery() only accepts server functions generated from "use server" modules.',
+      '[evjs] useSuspenseQuery() only accepts server functions generated from "use server" modules. Plain async functions do not carry the server-boundary metadata required for framework dispatch.',
     );
     return _useSuspenseQuery(serverFunction.queryOptions(...args));
   }
@@ -205,7 +205,7 @@ export function useMutation(
     const fn = fnOrOptions as (...args: unknown[]) => Promise<unknown>;
     const serverFunction = requireServerFunction(
       fn,
-      '[evjs] useMutation() only accepts server functions generated from "use server" modules.',
+      '[evjs] useMutation() only accepts server functions generated from "use server" modules. Plain async functions do not carry the server-boundary metadata required for framework dispatch.',
     );
     const mutationFn = (variables: unknown) => {
       const args = serializeMutationArgs(serverFunction, variables);

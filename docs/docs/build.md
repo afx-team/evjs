@@ -8,6 +8,20 @@ ev build
 
 `ev build` resolves config, creates an `AppGraph`, derives a `BuildPlan`, runs the selected bundler, links a single `BuildOutput`, and emits HTML.
 
+Use `ev inspect` when you need to explain what evjs discovers before bundling:
+
+```bash
+ev inspect
+ev inspect --json
+```
+
+`ev inspect` resolves config and framework declarations, but it does not run a
+bundler and does not write `dist`. It reports routing mode, discovered page
+routes, ignored or rejected route files, generated route type location, server
+functions, server routes, page render metadata, remotes, runtime server paths,
+planned entries/documents, and diagnostics. If any diagnostic is an error, the
+command exits non-zero; warnings are printed without failing the command.
+
 ## Output
 
 Fullstack output:
@@ -44,7 +58,7 @@ parameters.
 
 1. Load and resolve `ev.config.ts`.
 2. Run config/setup plugin hooks.
-3. `createAppGraph()` analyzes the file-based page route tree, lower-level app/page outputs, server entry, and remotes.
+3. `createAppGraph()` analyzes the file-based page route files, lower-level app/page outputs, server entry, and remotes.
 4. `createBuildPlan()` produces concrete client/server entries and HTML documents.
 5. The selected bundler compiles `BuildPlan.entries`.
 6. `linkBuildOutput()` combines `AppGraph`, `BuildPlan`, and bundler facts.
@@ -65,6 +79,10 @@ framework state.
 
 The preparation API stops before bundler execution, manifest emission, HTML
 emission, and deployment adapter output.
+
+For a CLI preflight with human-readable diagnostics, prefer `ev inspect`. It
+uses the same graph and plan preparation path, while keeping `AppGraph` and
+`BuildPlan` as framework internals.
 
 ## Server Functions
 

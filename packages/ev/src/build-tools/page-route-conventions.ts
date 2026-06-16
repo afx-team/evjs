@@ -357,11 +357,16 @@ export function formatPageRouteSegmentConventionViolation(
 }
 
 function formatBracketRouteSegmentViolation(segment: string): string {
-  return `Dynamic page route segments must use $param filenames. Bracket segment "${segment}" is not supported.`;
+  const name = segment.replace(/^\[+/, "").replace(/\]+$/, "");
+  const suggestion =
+    name && !name.startsWith("...")
+      ? ` Rename the file to "$${name}" for a dynamic segment, or use explicit pages config for a custom URL.`
+      : " Use explicit pages config for catch-all or custom URL shapes.";
+  return `Dynamic page route segments must use $param filenames. Bracket segment "${segment}" is not supported.${suggestion}`;
 }
 
 function formatRouteGroupSegmentViolation(segment: string): string {
-  return `Page route groups are not supported. Segment "${segment}" would be ambiguous; use a real URL segment or explicit pages config instead.`;
+  return `Page route groups are not supported. Segment "${segment}" would be ambiguous; use a real URL segment, move grouping into folders outside routing.dir, or use explicit pages config instead.`;
 }
 
 function formatUnsupportedDynamicRouteSegmentViolation(
@@ -371,10 +376,10 @@ function formatUnsupportedDynamicRouteSegmentViolation(
     return 'Dynamic page route segments must include a name after "$". Segment "$" is not supported.';
   }
   if (segment.startsWith("$...")) {
-    return `Catch-all page route segments are not supported. Use explicit page files instead of "${segment}".`;
+    return `Catch-all page route segments are not supported. Use explicit pages config for wildcard or custom URL shapes instead of "${segment}".`;
   }
   if (segment.endsWith("?")) {
-    return `Optional page route segments are not supported. Use explicit page files instead of "${segment}".`;
+    return `Optional page route segments are not supported. Split the route into explicit files or use explicit pages config instead of "${segment}".`;
   }
   return `Unsupported dynamic page route segment "${segment}".`;
 }
@@ -392,7 +397,7 @@ function formatInvalidRouteSegmentViolation(
     return `Dynamic page route segment "${invalid.segment}" repeats a param name. Use unique dynamic param filenames within one route path.`;
   }
 
-  return `Static page route segment "${invalid.segment}" must use lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~". Use explicit pages config for custom paths.`;
+  return `Static page route segment "${invalid.segment}" must use lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~". Rename the file to a lowercase URL-safe segment, or use explicit pages config for custom paths.`;
 }
 
 export function routePathFromSegments(segments: string[]): string {

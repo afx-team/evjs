@@ -17,6 +17,9 @@ are preserved in `CHANGELOG.md`; this file should reflect active reality.
       running framework preflight hooks, reporting graph diagnostics, and
       returning resolved config, graph file dependencies, plugin watch files,
       and `dispose()` without invoking a bundler or platform adapter.
+- [x] `ev inspect` CLI preflight for explaining route discovery, server
+      declarations, render metadata, runtime paths, planned entries, and
+      diagnostics without invoking a bundler or writing `dist`.
 - [x] Consolidated package shape around `@evjs/ev`, `@evjs/client`,
       `@evjs/server`, `@evjs/shared`, `@evjs/cli`, and `@evjs/create-app`.
 - [x] Single top-level `@evjs/client` entry with framework-managed page,
@@ -35,11 +38,14 @@ are preserved in `CHANGELOG.md`; this file should reflect active reality.
 - [x] `@evjs/bundler-utoopack` remains the default adapter and consumes
       `BuildPlan` where its lower-layer APIs are sufficient.
 - [x] `@evjs/bundler-webpack` validates the complete new architecture path.
-- [ ] Utoopack dynamic dev entry update API for configured MPA page additions.
-- [ ] Utoopack generic entry wrapping/loadable entry facts for component pages.
-- [ ] Utoopack multi server-entry support for SSR/PPR/RSC renderers.
-- [ ] Utoopack structured dev build callbacks and stats delivery.
-- [ ] Utoopack RSC client/server reference to chunk metadata.
+- [ ] Priority 1: Utoopack dynamic dev entry/server update API for configured
+      page additions/removals.
+- [ ] Priority 2: Utoopack generic entry wrapping/loadable entry facts for
+      component pages and remote entries.
+- [ ] Priority 3: Utoopack multi server-entry support and structured build facts
+      for SSR/PPR/RSC renderers.
+- [ ] Priority 4: Utoopack RSC client/server reference to chunk metadata.
+- [ ] Priority 5: Utoopack structured dev build callbacks and stats delivery.
 
 ## Remaining Product Work
 

@@ -239,8 +239,8 @@ During `ev dev` and `ev build`, SPA routing writes the generated declaration
 custom `routing.dir` writes the same file name beside that route directory's
 parent. That file augments the underlying `@evjs/client` route register used by
 the `@evjs/client` `Link`, `useLinkProps`, `redirect`, and related helpers.
-It is type-only; application code should not import it or write TanStack route
-trees manually.
+It is type-only; application code should not import it or write framework
+router bootstraps manually.
 
 The generated file imports its type helper from
 `@evjs/client/internal/route-types`, a generated-only internal subpath. Do not

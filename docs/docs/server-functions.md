@@ -1,6 +1,12 @@
 # Server Functions
 
-Server functions let you write backend logic alongside your frontend code and call them from React components as if they were local functions. While not strictly required, we recommend suffixing server function files with `.server.ts`. The build system transforms them into RPC calls automatically.
+Server functions let you write backend logic alongside your frontend code and
+call it from React components with local-call ergonomics over a typed server
+boundary. The call shape looks like a normal async function, but the framework
+still serializes arguments, dispatches the request through the framework server,
+and returns a serialized result or structured error. While not strictly
+required, we recommend suffixing server function files with `.server.ts`. The
+build system transforms them into RPC calls automatically.
 
 ## Basic Usage
 
@@ -40,6 +46,9 @@ export const deleteUser = async (id: string) => {
 - Return values and structured `ServerError.data` must be JSON-serializable.
   Returning `undefined` is allowed and resolves as `undefined` in client code;
   on the raw HTTP response it serializes as an empty success payload.
+- Calls are always async server-boundary calls. Do not rely on closure identity,
+  synchronous side effects, class instances, DOM objects, streams, or other
+  non-serializable references crossing the boundary.
 - Export aliases can use identifier or string-literal names, but the local
   binding must be a function declaration or `const` initialized to a function.
   String-literal aliases must not be empty or padded with whitespace. Prefer
@@ -122,11 +131,13 @@ loader: ({ context }) =>
   context.queryClient.ensureQueryData(getFnQueryOptions(getUsers));
 ```
 
-The function overloads require compiler-generated server function stubs. Passing
-a plain async function to `useQuery(fn)`, `useSuspenseQuery(fn)`,
-`useMutation(fn)`, `getFnQueryKey(fn)`, or `getFnQueryOptions(fn)` throws an
-`[evjs]` diagnostic that names the rejected function. Use the TanStack object
-form for non-server functions, for example `useQuery({ queryKey, queryFn })`.
+The function overloads require compiler-generated server function stubs because
+the server boundary needs a stable function id, a request endpoint, and query
+key metadata. Passing a plain async function to `useQuery(fn)`,
+`useSuspenseQuery(fn)`, `useMutation(fn)`, `getFnQueryKey(fn)`, or
+`getFnQueryOptions(fn)` throws an `[evjs]` diagnostic that names the rejected
+function. Use the TanStack object form for non-server functions, for example
+`useQuery({ queryKey, queryFn })`.
 
 ### Server Function Metadata
 

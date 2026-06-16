@@ -96,9 +96,19 @@ Quick rules:
 - If an output cannot follow the directory shape, use explicit `pages` config
   instead of hand-writing `routing.routes`.
 
+Migration rules stay explicit rather than adding alternate filename dialects:
+
+- Rename bracket dynamic routes such as `[id].tsx` to `$id.tsx`.
+- Replace route groups such as `(marketing)/about.tsx` with a real URL segment,
+  move the grouping outside `routing.dir`, or use explicit `pages` config.
+- Model nested layouts as ordinary components imported by the page that needs
+  them; only one SPA root layout is discovered by the framework.
+- Use explicit `pages` config for catch-all, optional, case-sensitive, or other
+  custom URL shapes.
+
 | File or folder | Framework meaning | Use it for | Do not use it for |
 | --- | --- | --- | --- |
-| `src/pages/**/*.{tsx,jsx,ts,js}` | SPA/MPA page route discovery | Thin page components with optional literal rendering metadata | Shared helpers, tests, route groups, bracket routes, catch-all routes, or hand-written TanStack route trees |
+| `src/pages/**/*.{tsx,jsx,ts,js}` | SPA/MPA page route discovery | Thin page components with optional literal rendering metadata | Shared helpers, tests, route groups, bracket routes, catch-all routes, or hand-written SPA router/bootstrap code |
 | Route paths, dynamic URL shapes, and generated route IDs under `src/pages` | Route collision checks before graph/build-plan generation | One page module per URL path, one parameter naming choice per dynamic URL shape, and unique generated route IDs | Parallel `users.tsx`/`users/index.tsx`, `users/$id.tsx`/`users/$userId.tsx`, or `admin/panel.tsx`/`admin_panel.tsx` routes |
 | `src/pages/_*` and `src/pages/**/_*` | Ignored private route modules | Colocated helper components, utilities, fixtures, and page-local implementation details | URL routes, SPA root layouts, or generated files |
 | `src/pages/.*` and `src/pages/**/.*` | Ignored hidden route modules | Local scratch files or tool metadata that should stay invisible to route discovery | URL routes, generated route types, or source modules that should be imported by pages |

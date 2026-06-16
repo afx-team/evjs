@@ -80,9 +80,17 @@ my-evjs-app/
   `routing.layout`。MPA 路由不消费框架 layout。
 - 输出无法遵循目录形状时，使用显式 `pages` 配置，而不是手写 `routing.routes`。
 
+迁移规则保持显式，不通过新增文件名方言来兼容：
+
+- 将 `[id].tsx` 这类 bracket dynamic routes 改成 `$id.tsx`。
+- 将 `(marketing)/about.tsx` 这类 route group 改成真实 URL segment，
+  或把分组目录移到 `routing.dir` 外，或改用显式 `pages` 配置。
+- 嵌套 layout 建模为普通组件，由需要它的页面自行 import；框架只自动发现一个 SPA 根布局。
+- catch-all、optional、大小写敏感或其他自定义 URL shape 使用显式 `pages` 配置。
+
 | 文件或目录 | 框架含义 | 用于 | 不用于 |
 | --- | --- | --- | --- |
-| `src/pages/**/*.{tsx,jsx,ts,js}` | SPA/MPA 页面路由发现 | 轻量页面组件和可选的字面量渲染元信息 | 共享 helper、测试、route group、bracket route、catch-all route 或手写 TanStack route tree |
+| `src/pages/**/*.{tsx,jsx,ts,js}` | SPA/MPA 页面路由发现 | 轻量页面组件和可选的字面量渲染元信息 | 共享 helper、测试、route group、bracket route、catch-all route 或手写 SPA router/bootstrap 代码 |
 | `src/pages` 下的 route paths、dynamic URL shapes 和生成的 route ID | graph/build plan 生成前的路由冲突检查 | 每个 URL path 只保留一个页面模块，每个 dynamic URL shape 只保留一种参数命名，并且生成的 route ID 必须唯一 | 并存的 `users.tsx`/`users/index.tsx`、`users/$id.tsx`/`users/$userId.tsx` 或 `admin/panel.tsx`/`admin_panel.tsx` 路由 |
 | `src/pages/_*` 和 `src/pages/**/_*` | 忽略的私有路由模块 | 就近放置 helper component、utility、fixture 和页面局部实现细节 | URL 路由、SPA 根布局或生成文件 |
 | `src/pages/.*` 和 `src/pages/**/.*` | 忽略的隐藏路由模块 | 本地临时文件或不应参与路由发现的工具元信息 | URL 路由、生成的 route types，或应被页面导入的源码模块 |

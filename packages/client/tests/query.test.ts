@@ -31,7 +31,7 @@ describe("useQuery and useSuspenseQuery wrappers", () => {
 
   it("reports anonymous non-server functions passed to useQuery", () => {
     expect(() => useQuery(async () => {})).toThrow(
-      '[evjs] useQuery() only accepts server functions generated from "use server" modules. Received an anonymous function.',
+      '[evjs] useQuery() only accepts server functions generated from "use server" modules. Plain async functions do not carry the server-boundary metadata required for framework dispatch. Received an anonymous function.',
     );
   });
 
@@ -39,13 +39,13 @@ describe("useQuery and useSuspenseQuery wrappers", () => {
     const rawFn = async () => "ok";
 
     expect(() => useQuery(rawFn)).toThrow(
-      '[evjs] useQuery() only accepts server functions generated from "use server" modules. Received function "rawFn".',
+      '[evjs] useQuery() only accepts server functions generated from "use server" modules. Plain async functions do not carry the server-boundary metadata required for framework dispatch. Received function "rawFn".',
     );
     expect(() => useSuspenseQuery(rawFn)).toThrow(
-      '[evjs] useSuspenseQuery() only accepts server functions generated from "use server" modules. Received function "rawFn".',
+      '[evjs] useSuspenseQuery() only accepts server functions generated from "use server" modules. Plain async functions do not carry the server-boundary metadata required for framework dispatch. Received function "rawFn".',
     );
     expect(() => useMutation(rawFn)).toThrow(
-      '[evjs] useMutation() only accepts server functions generated from "use server" modules. Received function "rawFn".',
+      '[evjs] useMutation() only accepts server functions generated from "use server" modules. Plain async functions do not carry the server-boundary metadata required for framework dispatch. Received function "rawFn".',
     );
   });
 
@@ -114,10 +114,10 @@ describe("useQuery and useSuspenseQuery wrappers", () => {
     const rawFn = async () => "ok";
 
     expect(() => getFnQueryKey(rawFn)).toThrow(
-      '[evjs] getFnQueryKey() only accepts server functions. Received function "rawFn".',
+      '[evjs] getFnQueryKey() only accepts compiler-generated server function stubs. Plain functions do not carry the server-boundary metadata required for query keys. Received function "rawFn".',
     );
     expect(() => getFnQueryOptions(rawFn)).toThrow(
-      '[evjs] getFnQueryOptions() only accepts server functions. Received function "rawFn".',
+      '[evjs] getFnQueryOptions() only accepts compiler-generated server function stubs. Plain functions do not carry the server-boundary metadata required for query options. Received function "rawFn".',
     );
   });
 

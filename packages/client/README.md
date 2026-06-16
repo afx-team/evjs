@@ -8,7 +8,7 @@
 - **SPA Navigation** — SPA pages use evjs page hooks and navigation helpers while the framework owns route discovery and app bootstrap.
 - **Router-Free Pages** — MPA and framework-managed pages use the page runtime without adding a client router.
 - **Data Fetching** — Wraps [TanStack Query](https://tanstack.com/query) with built-in server function proxies.
-- **Server Function Support** — `useQuery(fn)` and `useMutation(fn)` for zero-boilerplate RPC.
+- **Server Function Support** — `useQuery(fn)` and `useMutation(fn)` for typed server-boundary calls.
 - **Focused Client API** — Application code imports transport, page hooks, navigation helpers, and remote helpers from `@evjs/client`; generated framework bootstrap uses `@evjs/client/internal`.
 
 ## Install

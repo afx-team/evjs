@@ -1,6 +1,9 @@
 # 服务端函数
 
-服务端函数允许你在与前端代码同源的地方编写后端逻辑，并在 React 组件中像调用本地函数一样调用它们。虽然我们不强制要求，但建议将服务端函数文件以 `.server.ts` 结尾。构建系统会自动将它们转换为 RPC 调用。
+服务端函数允许你在与前端代码同源的地方编写后端逻辑，并在 React 组件中获得类似本地
+async 函数调用的体验，但它本质上仍是类型安全的服务端边界。框架会序列化参数，
+通过 framework server 分发请求，并返回序列化后的结果或结构化错误。虽然我们不强制要求，
+但建议将服务端函数文件以 `.server.ts` 结尾。构建系统会自动将它们转换为 RPC 调用。
 
 ## 基本用法
 
@@ -38,6 +41,8 @@ export const deleteUser = async (id: string) => {
   不是单个 transport 结果。
 - 返回值和结构化的 `ServerError.data` 必须可以 JSON 序列化。返回
   `undefined` 是允许的，客户端代码会解析为 `undefined`；原始 HTTP 响应会序列化为空的成功 payload。
+- 调用始终是异步的服务端边界调用。不要依赖 closure identity、同步副作用、
+  class instance、DOM object、stream 或其他不可序列化引用跨越该边界。
 - 导出别名可以使用 identifier 或字符串字面量名称，但本地绑定必须是函数声明，
   或初始化为函数的 `const`。字符串字面量别名不能为空，也不能带首尾空白。
   普通 TypeScript import 推荐使用 identifier 名称。
@@ -115,9 +120,11 @@ loader: ({ context }) =>
   context.queryClient.ensureQueryData(getFnQueryOptions(getUsers));
 ```
 
-函数重载要求传入编译器生成的 server function stub。把普通 async function 传给
-`useQuery(fn)`、`useSuspenseQuery(fn)`、`useMutation(fn)`、
-`getFnQueryKey(fn)` 或 `getFnQueryOptions(fn)` 时，会抛出带 `[evjs]` 前缀并指出被拒绝函数名称的诊断。非 server function 请使用 TanStack object 形式，例如
+函数重载要求传入编译器生成的 server function stub，因为服务端边界需要稳定的函数 ID、
+请求 endpoint 和 query key 元信息。把普通 async function 传给 `useQuery(fn)`、
+`useSuspenseQuery(fn)`、`useMutation(fn)`、`getFnQueryKey(fn)` 或
+`getFnQueryOptions(fn)` 时，会抛出带 `[evjs]` 前缀并指出被拒绝函数名称的诊断。
+非 server function 请使用 TanStack object 形式，例如
 `useQuery({ queryKey, queryFn })`。
 
 ### 服务端函数元信息

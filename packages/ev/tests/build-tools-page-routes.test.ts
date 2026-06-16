@@ -235,7 +235,7 @@ describe("discoverPageRoutes", () => {
         segment: "(marketing)",
       }),
     ).toBe(
-      'Page route groups are not supported. Segment "(marketing)" would be ambiguous; use a real URL segment or explicit pages config instead.',
+      'Page route groups are not supported. Segment "(marketing)" would be ambiguous; use a real URL segment, move grouping into folders outside routing.dir, or use explicit pages config instead.',
     );
     expect(findPageRouteSegmentConventionViolation(["users", "[id]"])).toEqual({
       kind: "bracket",
@@ -251,7 +251,7 @@ describe("discoverPageRoutes", () => {
         segment: "[id]",
       }),
     ).toBe(
-      'Dynamic page route segments must use $param filenames. Bracket segment "[id]" is not supported.',
+      'Dynamic page route segments must use $param filenames. Bracket segment "[id]" is not supported. Rename the file to "$id" for a dynamic segment, or use explicit pages config for a custom URL.',
     );
     expect(
       findPageRouteSegmentConventionViolation(["files", "$...path"]),
@@ -265,7 +265,7 @@ describe("discoverPageRoutes", () => {
         segment: "$...path",
       }),
     ).toBe(
-      'Catch-all page route segments are not supported. Use explicit page files instead of "$...path".',
+      'Catch-all page route segments are not supported. Use explicit pages config for wildcard or custom URL shapes instead of "$...path".',
     );
     expect(findPageRouteSegmentConventionViolation(["Users"])).toEqual({
       kind: "static",
@@ -277,7 +277,7 @@ describe("discoverPageRoutes", () => {
         segment: "Users",
       }),
     ).toBe(
-      'Static page route segment "Users" must use lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~". Use explicit pages config for custom paths.',
+      'Static page route segment "Users" must use lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~". Rename the file to a lowercase URL-safe segment, or use explicit pages config for custom paths.',
     );
     expect(findInvalidRouteSegment(["$__proto__"])).toEqual({
       kind: "reserved-dynamic",
@@ -794,13 +794,13 @@ describe("discoverPageRoutes", () => {
         level: "error",
         file: "src/pages/files/[...path].tsx",
         message:
-          'Dynamic page route segments must use $param filenames. Bracket segment "[...path]" is not supported.',
+          'Dynamic page route segments must use $param filenames. Bracket segment "[...path]" is not supported. Use explicit pages config for catch-all or custom URL shapes.',
       },
       {
         level: "error",
         file: "src/pages/posts/[postId].tsx",
         message:
-          'Dynamic page route segments must use $param filenames. Bracket segment "[postId]" is not supported.',
+          'Dynamic page route segments must use $param filenames. Bracket segment "[postId]" is not supported. Rename the file to "$postId" for a dynamic segment, or use explicit pages config for a custom URL.',
       },
     ]);
   });
@@ -828,13 +828,13 @@ describe("discoverPageRoutes", () => {
         level: "error",
         file: "src/pages/(marketing)/about.tsx",
         message:
-          'Page route groups are not supported. Segment "(marketing)" would be ambiguous; use a real URL segment or explicit pages config instead.',
+          'Page route groups are not supported. Segment "(marketing)" would be ambiguous; use a real URL segment, move grouping into folders outside routing.dir, or use explicit pages config instead.',
       },
       {
         level: "error",
         file: "src/pages/shop/(checkout)/cart.tsx",
         message:
-          'Page route groups are not supported. Segment "(checkout)" would be ambiguous; use a real URL segment or explicit pages config instead.',
+          'Page route groups are not supported. Segment "(checkout)" would be ambiguous; use a real URL segment, move grouping into folders outside routing.dir, or use explicit pages config instead.',
       },
     ]);
   });
@@ -864,7 +864,7 @@ describe("discoverPageRoutes", () => {
         level: "error",
         file: "src/pages/files/$...path.tsx",
         message:
-          'Catch-all page route segments are not supported. Use explicit page files instead of "$...path".',
+          'Catch-all page route segments are not supported. Use explicit pages config for wildcard or custom URL shapes instead of "$...path".',
       },
       {
         level: "error",
@@ -876,7 +876,7 @@ describe("discoverPageRoutes", () => {
         level: "error",
         file: "src/pages/users/$id?.tsx",
         message:
-          'Optional page route segments are not supported. Use explicit page files instead of "$id?".',
+          'Optional page route segments are not supported. Split the route into explicit files or use explicit pages config instead of "$id?".',
       },
     ]);
   });
@@ -910,13 +910,13 @@ describe("discoverPageRoutes", () => {
         level: "error",
         file: "src/pages/About.tsx",
         message:
-          'Static page route segment "About" must use lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~". Use explicit pages config for custom paths.',
+          'Static page route segment "About" must use lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~". Rename the file to a lowercase URL-safe segment, or use explicit pages config for custom paths.',
       },
       {
         level: "error",
         file: "src/pages/docs/API.tsx",
         message:
-          'Static page route segment "API" must use lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~". Use explicit pages config for custom paths.',
+          'Static page route segment "API" must use lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~". Rename the file to a lowercase URL-safe segment, or use explicit pages config for custom paths.',
       },
     ]);
   });
@@ -956,7 +956,7 @@ describe("discoverPageRoutes", () => {
         level: "error",
         file: "src/pages/contact us.tsx",
         message:
-          'Static page route segment "contact us" must use lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~". Use explicit pages config for custom paths.',
+          'Static page route segment "contact us" must use lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~". Rename the file to a lowercase URL-safe segment, or use explicit pages config for custom paths.',
       },
       {
         level: "error",
@@ -980,7 +980,7 @@ describe("discoverPageRoutes", () => {
         level: "error",
         file: "src/pages/settings?.tsx",
         message:
-          'Static page route segment "settings?" must use lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~". Use explicit pages config for custom paths.',
+          'Static page route segment "settings?" must use lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~". Rename the file to a lowercase URL-safe segment, or use explicit pages config for custom paths.',
       },
       {
         level: "error",

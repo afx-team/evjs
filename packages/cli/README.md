@@ -24,6 +24,7 @@ No configuration file is needed. `ev dev` and `ev build` delegate to `@evjs/ev` 
 |---------|-------------|
 | `ev dev` | Start dev server (client HMR + API watch) |
 | `ev build` | Production build (client + server) |
+| `ev inspect` | Explain framework discovery without running a bundler or writing `dist` |
 
 > **Scaffolding:** Use `npx @evjs/create-app` to scaffold a new project.
 
@@ -39,6 +40,13 @@ Runs the production build through `@evjs/ev` with `NODE_ENV=production`:
 - `dist/client/` — optimized client assets with content hashes.
 - `dist/server/main.[hash].js` — server bundle.
 - `dist/manifest.json` — single framework manifest with client, server, route, and function metadata.
+
+### `ev inspect`
+
+Runs the framework preflight path without bundling. Use it to inspect page
+routes, ignored/rejected route files, server functions, server routes, render
+metadata, remotes, runtime paths, planned entries, and diagnostics. Add
+`--json` for machine-readable output.
 
 ## Configuration
 
@@ -68,13 +76,13 @@ my-app/
 ├── package.json
 ├── tsconfig.json
 └── src/
-    ├── main.tsx           # app bootstrap (keep minimal)
-    ├── routes.tsx         # route tree + components
+    ├── pages/             # page routes
+    │   ├── index.tsx
+    │   └── users/$id.tsx
     ├── api/               # server functions
     │   ├── users.server.ts
     │   └── posts.server.ts
-
-        └── auth.ts
+    └── server.ts          # optional server entry
 ```
 
 ## Common Mistakes

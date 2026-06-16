@@ -31,8 +31,9 @@ The server function endpoint is derived from `server.basePath`; there is no sepa
 
 The top-level config object accepts only `entry`, `html`, `dev`, `server`,
 `transport`, `app`, `routing`, `remotes`, `remote`, `bundler`, `plugins`, and
-`pages`. Framework metadata such as `apps`, route trees, and server-function
-endpoints is derived by evjs instead of being configured directly.
+`pages`. Framework metadata such as generated app declarations, page-route
+runtime wiring, and server-function endpoints is derived by evjs instead of
+being configured directly.
 
 ## Routing
 
@@ -92,8 +93,8 @@ when the document wrapper needs to differ.
 must be either `false` or a non-empty module path.
 
 Use top-level `entry` / `html` only for a manually bootstrapped single app.
-Applications that use `src/pages` should not create a client route tree
-manually:
+Applications that use `src/pages` should not create a separate client router or
+framework bootstrap manually:
 
 ```ts
 export default defineConfig({
@@ -262,14 +263,14 @@ Remove it unless the page should become an RSC page with `rsc = true`.
 Page rendering modes are intentionally narrow. Unsupported combinations fail
 before bundling so deployment adapters can trust the manifest:
 
-| Capability | Required page contract | Server required at build | Browser entry | Notes |
-| --- | --- | --- | --- | --- |
-| CSR | Omit `render`, or export `render = "csr"` | No | Yes | Default for SPA and MPA page files. |
-| SSR | `render = "ssr"` | Yes | Yes unless `hydrate = "none"` | The page route is served by the framework server. MPA file routes stay route-owned and do not emit static HTML files for SSR. |
-| SSG | `render = "ssg"` | Yes | No by default | Manifest marks `rendering.html = "static"`. MPA file routes and configured component pages without `path` emit standalone HTML files; SPA file routes stay route-owned. |
-| PPR | `render = "ssr"` + `prerender = { partial: true }` on a component page | Yes | No full-page entry | PPR is SSR document rendering with server-composed regions. It cannot be combined with RSC yet. |
-| RSC | `render = "ssr"` + `rsc = true` on a component page | Yes | RSC client runtime only | Requires a server RSC endpoint and cannot be combined with PPR yet. |
-| Remote app build | `remote` config with one or more entries | No by default | Remote client entries | Remote apps are manifest-driven and are not page render modes. |
+| Capability | Required page contract | SPA document output | MPA document output | Server/runtime requirement | Unsupported combination |
+| --- | --- | --- | --- | --- | --- |
+| CSR | Omit `render`, or export `render = "csr"` | App HTML fallback | One HTML document per page | No server required | None |
+| SSR | `render = "ssr"` | Route-owned server document | Route-owned server document, no static HTML file | Framework server document route | `server: false` |
+| SSG | `render = "ssg"` | App HTML fallback plus static metadata for the route page | Standalone static HTML document | Server build required for generation/manifest linking | `server: false` |
+| PPR | `render = "ssr"` + `prerender = { partial: true }` on a component page | Route-owned server document with server-composed regions | Route-owned server document with server-composed regions | Framework server document route plus optional `runtime.server.ppr` direct/debug endpoint | RSC on the same page, full-page hydration entry, `server: false` |
+| RSC | `render = "ssr"` + `rsc = true` on a component page | Route-owned server document plus RSC Flight endpoint | Route-owned server document plus RSC Flight endpoint | Framework server document route plus `runtime.server.rsc` | PPR on the same page, `hydrate` other than `"none"`, `server: false` |
+| Remote app build | `remote` config with one or more entries | Not a page render mode | Not a page render mode | Remote manifest/assets; server only if the remote also declares server-rendered pages | Treating `remote` as host `remotes` |
 
 If a page needs both RSC data flow and partial prerendered regions, keep those
 capabilities on separate page routes for now. A single component page must choose

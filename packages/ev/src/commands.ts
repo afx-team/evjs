@@ -123,6 +123,117 @@ export interface PreparedFrameworkBuild<TBundlerCfg = DefaultBundlerConfig> {
   dispose(): Promise<void>;
 }
 
+export interface InspectFrameworkBuildOptions<
+  TBundlerCfg = DefaultBundlerConfig,
+> {
+  cwd?: string;
+  mode?: "development" | "production";
+  command?: "dev" | "build";
+  bundler?: BundlerAdapter<TBundlerCfg>;
+  runLifecycleHooks?: boolean;
+}
+
+export interface InspectDiagnostic {
+  level: "warning" | "error";
+  source: "config" | "html" | "page-routes" | "graph" | "plan";
+  message: string;
+  file?: string;
+  line?: number;
+  column?: number;
+}
+
+export interface InspectRouteFile {
+  file: string;
+  status: "route" | "ignored" | "rejected";
+  routeId?: string;
+  routePath?: string;
+  diagnostics?: InspectDiagnostic[];
+}
+
+export interface InspectPageRoute {
+  id: string;
+  path: string;
+  module: string;
+}
+
+export interface InspectPageOutput {
+  id: string;
+  path?: string;
+  routeId?: string;
+  component?: string;
+  entry?: string;
+  app?: string;
+  render: string;
+  hydrate?: string;
+  prerender?: unknown;
+  rsc: boolean;
+  partialPrerender: boolean;
+}
+
+export interface InspectServerFunction {
+  id: string;
+  module: string;
+  exportName: string;
+}
+
+export interface InspectServerRoute {
+  id: string;
+  module: string;
+  path: string;
+  methods: string[];
+}
+
+export interface InspectBuildEntry {
+  name: string;
+  kind: string;
+  environment: string;
+  owner?: unknown;
+}
+
+export interface InspectHtmlDocument {
+  id: string;
+  fileName: string;
+  owner: unknown;
+}
+
+export interface InspectFrameworkBuildResult {
+  cwd: string;
+  mode: "development" | "production";
+  command: "dev" | "build";
+  routing?: {
+    mode: "spa" | "mpa";
+    dir: string;
+    html: string;
+    mount: string;
+    layout?: string | false;
+    rootModule?: string;
+    routeTypes?: string;
+  };
+  pageRoutes: InspectPageRoute[];
+  routeFiles: InspectRouteFile[];
+  pages: InspectPageOutput[];
+  serverFunctions: InspectServerFunction[];
+  serverRoutes: InspectServerRoute[];
+  remotes: Record<string, { manifest: string; activeWhen?: string[] }>;
+  remote?: {
+    name: string;
+    baseUrl: string;
+    entries: Record<string, { app: string; activeWhen?: string[] }>;
+  };
+  runtime: {
+    serverEnabled: boolean;
+    server?: ResolvedConfig["server"]["runtime"];
+    transport?: ResolvedConfig["transport"];
+  };
+  buildPlan?: {
+    entries: InspectBuildEntry[];
+    html: InspectHtmlDocument[];
+  };
+  diagnostics: InspectDiagnostic[];
+  fileDependencies: string[];
+  pluginWatchFiles: string[];
+}
+
 interface InternalPrepareFrameworkBuildOptions<
   TBundlerCfg = DefaultBundlerConfig,
 > extends PrepareFrameworkBuildOptions<TBundlerCfg> {
@@ -135,6 +246,16 @@ interface InternalPreparedFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>
   plan: BuildPlan;
   hooks: PluginHooks<TBundlerCfg>[];
   pluginContext: PluginContext<TBundlerCfg>;
+}
+
+interface PageRoutingDefaultsOptions {
+  syncRouteTypes?: boolean;
+  reportDiagnostics?: boolean;
+  allowEmptyRoutes?: boolean;
+  onDiscovery?: (
+    base: NonNullable<ResolvedConfig["routing"]>,
+    discovery: Awaited<ReturnType<typeof discoverPageRoutes>>,
+  ) => void;
 }
 
 function resolveBundler<TBundlerCfg>(
@@ -171,10 +292,14 @@ async function withPageRoutingDefaults<TBundlerCfg>(
   config: ResolvedConfig<TBundlerCfg>,
   userConfig: Config<TBundlerCfg> | undefined,
   cwd: string,
+  options: PageRoutingDefaultsOptions = {},
 ): Promise<ResolvedConfig<TBundlerCfg>> {
   const routingOption = readRoutingConfig(userConfig);
+  const syncRouteTypes = options.syncRouteTypes !== false;
   if (routingOption === false) {
-    await removeAllPageRouteTypes(cwd);
+    if (syncRouteTypes) {
+      await removeAllPageRouteTypes(cwd);
+    }
     return { ...config, routing: undefined };
   }
 
@@ -185,7 +310,9 @@ async function withPageRoutingDefaults<TBundlerCfg>(
     );
   }
   if (config.pages || config.app || config.remote) {
-    await removeAllPageRouteTypes(cwd);
+    if (syncRouteTypes) {
+      await removeAllPageRouteTypes(cwd);
+    }
     return config;
   }
 
@@ -201,19 +328,36 @@ async function withPageRoutingDefaults<TBundlerCfg>(
     rootLayout: base.mode === "spa" ? (base.layout ?? true) : false,
     required: requested,
   });
-  reportPageRouteDiagnostics(discovery.diagnostics);
+  options.onDiscovery?.(base, discovery);
+  if (options.reportDiagnostics !== false) {
+    reportPageRouteDiagnostics(discovery.diagnostics);
+  }
 
   if (discovery.routes.length === 0) {
     if (!requested) {
-      await removeAllPageRouteTypes(cwd);
+      if (syncRouteTypes) {
+        await removeAllPageRouteTypes(cwd);
+      }
       return config;
+    }
+    if (options.allowEmptyRoutes) {
+      return {
+        ...config,
+        html: base.html,
+        routing: {
+          ...base,
+          routes: [],
+        },
+      };
     }
     throw new Error(
       `[evjs] No page routes found in ${base.dir}. Add a default-exporting route module such as ${base.dir.replace(/\/+$/, "")}/index.tsx or set routing: false. ${PAGE_ROUTE_CONVENTION_DOCS_HINT}`,
     );
   }
 
-  await syncPageRouteTypes(cwd, base.dir, base.mode, discovery.routes);
+  if (syncRouteTypes) {
+    await syncPageRouteTypes(cwd, base.dir, base.mode, discovery.routes);
+  }
 
   const entry =
     base.mode === "spa" ? createPagesEntryImport(discovery.routes) : undefined;
@@ -1366,6 +1510,346 @@ export async function prepareFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
     pluginWatchFiles: prepared.pluginWatchFiles,
     dispose: prepared.dispose,
   };
+}
+
+export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
+  userConfig?: Config<TBundlerCfg>,
+  options: InspectFrameworkBuildOptions<TBundlerCfg> = {},
+): Promise<InspectFrameworkBuildResult> {
+  const cwd = options.cwd ?? process.cwd();
+  const command =
+    options.command ??
+    (options.mode === "development" ? "dev" : ("build" as const));
+  const expectedMode = command === "dev" ? "development" : "production";
+  if (options.mode && options.mode !== expectedMode) {
+    throw new Error(
+      `[evjs] inspectFrameworkBuild command "${command}" must use mode "${expectedMode}".`,
+    );
+  }
+  const mode = options.mode ?? expectedMode;
+  const diagnostics: InspectDiagnostic[] = [];
+  let pageRouteDiscovery:
+    | {
+        base: NonNullable<ResolvedConfig["routing"]>;
+        discovery: Awaited<ReturnType<typeof discoverPageRoutes>>;
+      }
+    | undefined;
+
+  const configuredConfig = await runConfigHooks(userConfig, {
+    mode,
+    command,
+    cwd,
+  });
+  const rawResolvedConfig = await withPageRoutingDefaults(
+    resolveConfig(configuredConfig),
+    configuredConfig,
+    cwd,
+    {
+      allowEmptyRoutes: true,
+      reportDiagnostics: false,
+      syncRouteTypes: false,
+      onDiscovery(base, discovery) {
+        pageRouteDiscovery = { base, discovery };
+        diagnostics.push(
+          ...discovery.diagnostics.map((diagnostic) =>
+            toInspectDiagnostic("page-routes", diagnostic),
+          ),
+        );
+        if (
+          discovery.routes.length === 0 &&
+          readRoutingConfig(configuredConfig) !== undefined &&
+          !discovery.diagnostics.some(
+            (diagnostic) => diagnostic.level === "error",
+          )
+        ) {
+          diagnostics.push({
+            level: "error",
+            source: "page-routes",
+            message: `No page routes found in ${base.dir}. Add a default-exporting route module such as ${base.dir.replace(/\/+$/, "")}/index.tsx or set routing: false.`,
+          });
+        }
+      },
+    },
+  );
+  const resolvedConfig = {
+    ...rawResolvedConfig,
+    plugins: orderPluginsByDependencies(rawResolvedConfig.plugins),
+  };
+  const optionBundler = resolveBundlerConfig<TBundlerCfg>(
+    options.bundler,
+    "options.bundler",
+  );
+  const bundler = optionBundler ?? resolvedConfig.bundler ?? undefined;
+  const config = bundler
+    ? withActiveBundler(resolvedConfig, bundler)
+    : resolvedConfig;
+  const pluginWatchFiles = new Set<string>();
+  const pluginContext: PluginContext<TBundlerCfg> = {
+    mode,
+    command,
+    cwd,
+    config,
+    logger,
+    addWatchFile(file) {
+      pluginWatchFiles.add(path.resolve(cwd, file));
+    },
+  };
+  const hooks = await collectPluginHooks(config.plugins, pluginContext);
+  let disposed = false;
+  const dispose = async () => {
+    if (disposed) return;
+    disposed = true;
+    await runDisposeHooks(hooks, pluginContext);
+  };
+
+  try {
+    if (options.runLifecycleHooks === true) {
+      await runBuildStartHooks(hooks, pluginContext);
+    }
+    try {
+      validateHtmlTemplates(cwd, config);
+    } catch (err) {
+      diagnostics.push({
+        level: "error",
+        source: "html",
+        message: formatInspectError(err),
+      });
+    }
+
+    const analysis = await createAppGraph(config, cwd);
+    diagnostics.push(
+      ...analysis.diagnostics.map((diagnostic) =>
+        toInspectDiagnostic("graph", diagnostic),
+      ),
+    );
+
+    let plan: BuildPlan | undefined;
+    try {
+      plan = createBuildPlan(config, analysis.graph, { mode });
+    } catch (err) {
+      diagnostics.push({
+        level: "error",
+        source: "plan",
+        message: formatInspectError(err),
+      });
+    }
+
+    return {
+      cwd,
+      mode,
+      command,
+      routing: createInspectRouting(cwd, config),
+      pageRoutes: (config.routing?.routes ?? []).map((route) => ({
+        id: route.id,
+        path: route.path,
+        module: route.module,
+      })),
+      routeFiles: createInspectRouteFiles(cwd, pageRouteDiscovery, diagnostics),
+      pages: Object.values(analysis.graph.pages)
+        .map(createInspectPageOutput)
+        .sort((left, right) => left.id.localeCompare(right.id)),
+      serverFunctions: analysis.graph.serverFunctions
+        .map((fn) => ({
+          id: fn.id,
+          module: fn.module,
+          exportName: fn.exportName,
+        }))
+        .sort(compareById),
+      serverRoutes: analysis.graph.serverRoutes
+        .map((route) => ({
+          id: route.id,
+          module: route.module,
+          path: route.path,
+          methods: route.methods,
+        }))
+        .sort(compareById),
+      remotes: config.remotes,
+      remote: config.remote
+        ? {
+            name: config.remote.name,
+            baseUrl: config.remote.baseUrl,
+            entries: Object.fromEntries(
+              Object.entries(config.remote.entries).map(([id, entry]) => [
+                id,
+                {
+                  app: entry.app,
+                  ...(entry.activeWhen ? { activeWhen: entry.activeWhen } : {}),
+                },
+              ]),
+            ),
+          }
+        : undefined,
+      runtime: {
+        serverEnabled: config.serverEnabled,
+        ...(config.serverEnabled ? { server: config.server.runtime } : {}),
+        ...(config.transport.baseUrl ? { transport: config.transport } : {}),
+      },
+      buildPlan: plan
+        ? {
+            entries: plan.entries.map((entry) => ({
+              name: entry.name,
+              kind: entry.kind,
+              environment: entry.environment,
+              ...(entry.owner ? { owner: entry.owner } : {}),
+            })),
+            html: plan.html.map((document) => ({
+              id: document.id,
+              fileName: document.fileName,
+              owner: document.owner,
+            })),
+          }
+        : undefined,
+      diagnostics,
+      fileDependencies: analysis.fileDependencies,
+      pluginWatchFiles: [...pluginWatchFiles].sort(),
+    };
+  } finally {
+    await dispose();
+  }
+}
+
+function toInspectDiagnostic(
+  source: InspectDiagnostic["source"],
+  diagnostic: {
+    level: "warning" | "error";
+    message: string;
+    file?: string;
+    line?: number;
+    column?: number;
+  },
+): InspectDiagnostic {
+  return {
+    level: diagnostic.level,
+    source,
+    message: diagnostic.message,
+    ...(diagnostic.file ? { file: diagnostic.file } : {}),
+    ...(diagnostic.line !== undefined ? { line: diagnostic.line } : {}),
+    ...(diagnostic.column !== undefined ? { column: diagnostic.column } : {}),
+  };
+}
+
+function formatInspectError(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  return String(error);
+}
+
+function createInspectRouting<TBundlerCfg>(
+  cwd: string,
+  config: ResolvedConfig<TBundlerCfg>,
+): InspectFrameworkBuildResult["routing"] {
+  if (!config.routing) return undefined;
+  return {
+    mode: config.routing.mode,
+    dir: config.routing.dir,
+    html: config.routing.html,
+    mount: config.routing.mount,
+    ...(config.routing.layout !== undefined
+      ? { layout: config.routing.layout }
+      : {}),
+    ...(config.routing.rootModule
+      ? { rootModule: config.routing.rootModule }
+      : {}),
+    ...(config.routing.mode === "spa"
+      ? {
+          routeTypes: toProjectPath(
+            cwd,
+            getPageRouteTypesPath(cwd, config.routing.dir).file,
+          ),
+        }
+      : {}),
+  };
+}
+
+function createInspectRouteFiles(
+  cwd: string,
+  pageRouteDiscovery:
+    | {
+        discovery: Awaited<ReturnType<typeof discoverPageRoutes>>;
+      }
+    | undefined,
+  diagnostics: InspectDiagnostic[],
+): InspectRouteFile[] {
+  if (!pageRouteDiscovery) return [];
+
+  const routeByModule = new Map(
+    pageRouteDiscovery.discovery.routes.map((route) => [route.module, route]),
+  );
+  const diagnosticsByFile = new Map<string, InspectDiagnostic[]>();
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.source !== "page-routes" || !diagnostic.file) continue;
+    const file = normalizeDiagnosticFile(diagnostic.file);
+    const entries = diagnosticsByFile.get(file) ?? [];
+    entries.push(diagnostic);
+    diagnosticsByFile.set(file, entries);
+  }
+
+  return pageRouteDiscovery.discovery.files
+    .map((file) => {
+      const projectFile = toProjectPath(cwd, file);
+      const route = routeByModule.get(projectFile);
+      const fileDiagnostics =
+        diagnosticsByFile.get(normalizeDiagnosticFile(projectFile)) ?? [];
+      if (route) {
+        return {
+          file: projectFile,
+          status: "route" as const,
+          routeId: route.id,
+          routePath: route.path,
+        };
+      }
+      if (fileDiagnostics.some((diagnostic) => diagnostic.level === "error")) {
+        return {
+          file: projectFile,
+          status: "rejected" as const,
+          diagnostics: fileDiagnostics,
+        };
+      }
+      return {
+        file: projectFile,
+        status: "ignored" as const,
+        ...(fileDiagnostics.length > 0 ? { diagnostics: fileDiagnostics } : {}),
+      };
+    })
+    .sort((left, right) => left.file.localeCompare(right.file));
+}
+
+function createInspectPageOutput(
+  page: AppGraph["pages"][string],
+): InspectPageOutput {
+  return {
+    id: page.id,
+    ...(page.path ? { path: page.path } : {}),
+    ...(page.routeId ? { routeId: page.routeId } : {}),
+    ...(page.component ? { component: page.component } : {}),
+    ...(page.entry ? { entry: page.entry } : {}),
+    ...(page.app ? { app: page.app } : {}),
+    render: page.render,
+    ...(page.hydrate ? { hydrate: page.hydrate } : {}),
+    ...(page.prerender ? { prerender: page.prerender } : {}),
+    rsc: page.componentModel === "rsc",
+    partialPrerender:
+      Boolean(page.ppr) ||
+      (typeof page.prerender === "object" &&
+        page.prerender !== null &&
+        "partial" in page.prerender &&
+        page.prerender.partial === true),
+  };
+}
+
+function compareById<T extends { id: string }>(left: T, right: T): number {
+  return left.id.localeCompare(right.id);
+}
+
+function toProjectPath(cwd: string, absolute: string): string {
+  return `./${toPosixPath(path.relative(cwd, absolute))}`;
+}
+
+function toPosixPath(value: string): string {
+  return value.replaceAll(path.sep, "/").replaceAll("\\", "/");
+}
+
+function normalizeDiagnosticFile(file: string): string {
+  return file.replace(/^\.\//, "");
 }
 
 export async function dev<TBundlerCfg = DefaultBundlerConfig>(

@@ -99,7 +99,7 @@ adapter 示例才直接导入 `@evjs/bundler-utoopack`。
 保留为 `@evjs/ev` 私有实现。
 
 SPA 文件路由在框架内部使用 TanStack Router；应用页面只写 `src/pages`、
-page hooks 和导航 helper，不需要创建 route tree。Generated bootstrap 通过
+page hooks 和导航 helper，不需要创建 router bootstrap。Generated bootstrap 通过
 `@evjs/client/internal/*` 承载。MPA 文件路由和显式 pages 使用 page runtime，
 不引入客户端路由器。`@evjs/client` facade 暴露页面代码需要的 hooks、
 导航、server function、RSC 和 remote runtime API。

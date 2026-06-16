@@ -12,6 +12,9 @@
 - 基于 `BuildPlan` 和 `BuildOutput` 的 bundler adapter contract。
 - 程序化 `prepareFrameworkBuild()` API，可在不启动 bundler 或平台 adapter
   的情况下完成框架 preflight，且不暴露内部 graph/plan 状态。
+- `ev inspect` CLI preflight，可在不运行 bundler、不写入 `dist` 的情况下解释
+  page route discovery、server declarations、render metadata、runtime paths、
+  planned entries 和 diagnostics。
 - 单一框架 manifest：`dist/manifest.json`。
 - 通过公开 `@evjs/client` runtime 包提供 manifest-driven app/page/remote activation。
 - 框架托管 SPA 页面路由，并为 MPA 提供无路由器 page runtime。
@@ -31,9 +34,12 @@
 
 ## 进行中
 
-- Utoopack dynamic entry/server dev plan update，用于不重启 `ev dev` 增删 entry。
-- Utoopack 对多 server render entry 的 build facts 支持。
-- Utoopack 运行 RSC 和 framework-managed render entry 所需的 reference metadata。
+- Utoopack parity 优先级 1：dynamic entry/server dev plan update，用于不重启
+  `ev dev` 增删 entry。
+- Utoopack parity 优先级 2：framework-managed component pages 和 remotes 所需的
+  generic entry wrapping/loadable entry facts。
+- Utoopack parity 优先级 3：SSR/PPR/RSC renderers 的 multi server-entry build facts。
+- Utoopack parity 优先级 4：RSC client/server reference metadata。
 
 ## 计划中
 

@@ -12,6 +12,9 @@
 - Bundler adapter contract based on `BuildPlan` and `BuildOutput`.
 - Programmatic `prepareFrameworkBuild()` API for framework preflight without
   exposing internal graph/plan state or invoking a bundler or platform adapter.
+- `ev inspect` CLI preflight for explaining page route discovery, server
+  declarations, render metadata, runtime paths, planned entries, and diagnostics
+  without running a bundler or writing `dist`.
 - Single framework manifest at `dist/manifest.json`.
 - Manifest-driven app/page/remote activation through the public
   `@evjs/client` runtime package.
@@ -36,11 +39,13 @@
 
 ## In Progress
 
-- Utoopack dynamic entry/server dev plan updates for adding/removing entries
-  without restarting `ev dev`.
-- Utoopack lower-layer support for framework server render entries, including
-  build facts for multiple SSR/PPR/RSC renderers.
-- Utoopack reference metadata needed for RSC and framework-managed render entries.
+- Utoopack parity priority 1: dynamic entry/server dev plan updates for
+  adding/removing entries without restarting `ev dev`.
+- Utoopack parity priority 2: generic entry wrapping/loadable entry facts for
+  framework-managed component pages and remotes.
+- Utoopack parity priority 3: multi server-entry build facts for SSR/PPR/RSC
+  renderers.
+- Utoopack parity priority 4: RSC client/server reference metadata.
 
 ## Planned
 

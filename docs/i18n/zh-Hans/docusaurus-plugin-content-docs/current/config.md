@@ -30,8 +30,8 @@ export default defineConfig({
 
 顶层 config object 只接受 `entry`、`html`、`dev`、`server`、`transport`、
 `app`、`routing`、`remotes`、`remote`、`bundler`、`plugins` 和 `pages`。
-`apps`、route tree、server-function endpoint 等框架 metadata 都由 evjs 派生，
-不需要也不能直接配置。
+生成的 app 声明、页面路由运行时接线、server-function endpoint 等框架
+metadata 都由 evjs 派生，不需要也不能直接配置。
 
 ## 路由
 
@@ -88,7 +88,7 @@ MPA 模式不支持 `routing.layout`。MPA 页面需要共享外框时，应像�
 `false` 或非空模块路径。
 
 只有手动 bootstrap 单应用时，才使用顶层 `entry` / `html`。使用
-`src/pages` 的应用不应该手写客户端 route tree：
+`src/pages` 的应用不应该额外手写客户端 router 或 framework bootstrap：
 
 ```ts
 export default defineConfig({
@@ -244,14 +244,14 @@ Analyzer 支持直接的 `export const` 声明，也支持本地 export specifie
 页面渲染模式刻意保持收敛。不支持的组合会在 bundling 之前失败，因此 deployment
 adapter 可以信任 manifest：
 
-| 能力 | 必需页面契约 | 构建时需要 server | 浏览器 entry | 说明 |
-| --- | --- | --- | --- | --- |
-| CSR | 省略 `render`，或导出 `render = "csr"` | 否 | 是 | SPA 和 MPA 页面文件的默认模式。 |
-| SSR | `render = "ssr"` | 是 | 除非 `hydrate = "none"`，否则有 | 页面路由由框架服务端提供。MPA 文件路由仍归 route 所有，不会为 SSR 输出静态 HTML 文件。 |
-| SSG | `render = "ssg"` | 是 | 默认无 | Manifest 标记 `rendering.html = "static"`。MPA 文件路由和不带 `path` 的 configured component page 会输出独立 HTML；SPA 文件路由仍归 route 所有。 |
-| PPR | component page 上声明 `render = "ssr"` + `prerender = { partial: true }` | 是 | 无整页 entry | PPR 是 SSR document rendering 加服务端合成 regions。暂不能与 RSC 组合。 |
-| RSC | component page 上声明 `render = "ssr"` + `rsc = true` | 是 | 只有 RSC client runtime | 需要 server RSC endpoint，暂不能与 PPR 组合。 |
-| Remote app build | `remote` config 配置一个或多个 entries | 默认不需要 | Remote client entries | Remote app 是 manifest 驱动，不是 page render mode。 |
+| 能力 | 必需页面契约 | SPA document 输出 | MPA document 输出 | Server/runtime 要求 | 不支持的组合 |
+| --- | --- | --- | --- | --- | --- |
+| CSR | 省略 `render`，或导出 `render = "csr"` | App HTML fallback | 每个页面一个 HTML document | 不需要 server | 无 |
+| SSR | `render = "ssr"` | route-owned server document | route-owned server document，不输出静态 HTML 文件 | Framework server document route | `server: false` |
+| SSG | `render = "ssg"` | App HTML fallback，并为 route page 记录 static metadata | 独立静态 HTML document | 生成和 manifest linking 阶段需要 server build | `server: false` |
+| PPR | component page 上声明 `render = "ssr"` + `prerender = { partial: true }` | 带服务端合成 regions 的 route-owned server document | 带服务端合成 regions 的 route-owned server document | Framework server document route，另有可选 `runtime.server.ppr` direct/debug endpoint | 同页 RSC、整页 hydration entry、`server: false` |
+| RSC | component page 上声明 `render = "ssr"` + `rsc = true` | route-owned server document 加 RSC Flight endpoint | route-owned server document 加 RSC Flight endpoint | Framework server document route 加 `runtime.server.rsc` | 同页 PPR、`hydrate` 不是 `"none"`、`server: false` |
+| Remote app build | `remote` config 配置一个或多个 entries | 不是 page render mode | 不是 page render mode | Remote manifest/assets；只有 remote 同时声明 server-rendered pages 时才需要 server | 把 `remote` 当作 host `remotes` |
 
 如果同一个页面同时需要 RSC 数据流和 partial prerendered regions，当前请拆成不同
 page routes。单个 component page 必须在 `rsc = true` 和

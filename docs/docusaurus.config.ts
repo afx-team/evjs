@@ -4,7 +4,7 @@ import { themes as prismThemes } from "prism-react-renderer";
 
 const config: Config = {
   title: "evjs",
-  tagline: "React fullstack framework built on TanStack + Hono",
+  tagline: "React fullstack framework for file-based pages and Hono servers",
   favicon: "img/favicon.ico",
 
   url: "https://evaijs.github.io",

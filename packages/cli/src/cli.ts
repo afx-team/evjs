@@ -6,6 +6,10 @@ import { configure, getConsoleSink, getLogger } from "@logtape/logtape";
 import { Command } from "commander";
 import type { DefaultBundlerConfig } from "./index.js";
 import { build, dev } from "./index.js";
+import {
+  formatInspectCommandErrorJson,
+  runInspectCommand,
+} from "./inspect-command.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -77,6 +81,31 @@ program
       await build(config ?? undefined, { cwd });
     } catch (err) {
       logger.error`Build failed: ${err}`;
+      process.exit(1);
+    }
+  });
+
+program
+  .command("inspect")
+  .description("Inspect evjs framework discovery without running a bundler")
+  .option("--json", "Print machine-readable JSON")
+  .action(async (options: { json?: boolean }) => {
+    const cwd = process.cwd();
+    try {
+      const result = await runInspectCommand({
+        cwd,
+        json: Boolean(options.json),
+      });
+      process.stdout.write(result.output);
+      if (result.exitCode !== 0) {
+        process.exit(result.exitCode);
+      }
+    } catch (err) {
+      if (options.json) {
+        process.stdout.write(formatInspectCommandErrorJson(err));
+      } else {
+        logger.error`Inspect failed: ${err}`;
+      }
       process.exit(1);
     }
   });
