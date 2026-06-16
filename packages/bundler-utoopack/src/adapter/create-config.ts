@@ -116,8 +116,8 @@ export async function createUtoopackConfig(
 ): Promise<ConfigComplete> {
   validateUtoopackPlanSupport(plan);
 
-  const isProduction = process.env.NODE_ENV === "production";
-  const mode = isProduction ? "production" : "development";
+  const mode = plan.mode;
+  const isProduction = mode === "production";
   const serverEnabled = config.serverEnabled;
   const frameworkRules = createFrameworkModuleRules(plan);
   const devProxy: DevServerProxy = [
@@ -135,7 +135,7 @@ export async function createUtoopackConfig(
     throw new Error("Failed to resolve a server entry for the server bundle.");
   }
 
-  const outputPaths = getOutputPaths(cwd, serverEnabled);
+  const outputPaths = getOutputPaths(cwd, serverEnabled, plan.distDir);
 
   const utoopackConfig: ConfigComplete = {
     mode,
@@ -249,8 +249,14 @@ function createPagesEntryCondition(): {
   path: RegExp;
   query: string;
 } {
+  const normalizedAnchor = normalizeRulePath(pagesEntryAnchor);
+  const frameworkAnchorSuffix =
+    "(?:packages/bundler-utoopack|node_modules/@evjs/bundler-utoopack)/(?:src|esm)/adapter/pages-entry-anchor\\.js";
+
   return {
-    path: new RegExp(`${escapeRegExp(normalizeRulePath(pagesEntryAnchor))}$`),
+    path: new RegExp(
+      `(?:${escapeRegExp(normalizedAnchor)}|(?:^|/)${frameworkAnchorSuffix})$`,
+    ),
     query: "",
   };
 }

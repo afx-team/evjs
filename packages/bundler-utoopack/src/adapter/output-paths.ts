@@ -9,8 +9,9 @@ export interface UtoopackOutputPaths {
 export function getOutputPaths(
   cwd: string,
   serverEnabled: boolean,
+  distDir = "dist",
 ): UtoopackOutputPaths {
-  const rootDir = path.resolve(cwd, "dist");
+  const rootDir = path.resolve(cwd, distDir);
   const clientDir = serverEnabled ? path.join(rootDir, "client") : rootDir;
   const serverDir = path.join(rootDir, "server");
 

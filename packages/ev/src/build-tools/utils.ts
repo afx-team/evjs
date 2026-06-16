@@ -63,10 +63,24 @@ export function makeFnId(
   resourcePath: string,
   exportName: string,
 ): string {
-  const moduleId = path
-    .relative(rootContext, resourcePath)
-    .replaceAll("\\", "/");
+  const moduleId = toPosixPath(path.relative(rootContext, resourcePath));
   return hashServerFunction(moduleId, exportName);
+}
+
+export function toPosixPath(value: string): string {
+  return value.replaceAll(path.sep, "/").replaceAll("\\", "/");
+}
+
+export function toProjectPath(cwd: string, absolute: string): string {
+  return `./${toPosixPath(path.relative(cwd, absolute))}`;
+}
+
+export function isInsideCwd(cwd: string, candidate: string): boolean {
+  const relative = path.relative(cwd, candidate);
+  return (
+    relative === "" ||
+    (!relative.startsWith("..") && !path.isAbsolute(relative))
+  );
 }
 
 export type FrameworkDirective = "use client" | "use server";

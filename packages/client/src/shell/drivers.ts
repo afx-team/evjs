@@ -1,3 +1,4 @@
+import { formatErrorDetail, isRecord } from "../validation.js";
 import { createActivationRequestFromUrl } from "./routing.js";
 import type {
   BrowserWindowLike,
@@ -210,12 +211,4 @@ function assertBrowserWindow(
       `[evjs] createHistoryDriver() ${path}.removeEventListener must be a function.`,
     );
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function formatErrorDetail(error: unknown): string {
-  return error instanceof Error && error.message ? `: ${error.message}` : ".";
 }

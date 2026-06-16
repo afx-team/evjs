@@ -24,6 +24,10 @@ import {
   formatFetchErrorResponseDetail,
   readFetchErrorResponseBody,
 } from "../fetch-response.js";
+import {
+  formatErrorDetail,
+  isRecord as isObjectRecord,
+} from "../validation.js";
 import { readRegisteredModule, resolveBrowserHref } from "./registry.js";
 import { resolveRemoteHref } from "./routing.js";
 import type { AppContext, AppModule } from "./types.js";
@@ -92,10 +96,8 @@ async function parseRemoteManifestJson(
   try {
     return (await response.json()) as unknown;
   } catch (error) {
-    const detail =
-      error instanceof Error && error.message ? `: ${error.message}` : ".";
     throw new Error(
-      `[evjs] Failed to parse remote manifest "${manifestUrl}" as JSON${detail}`,
+      `[evjs] Failed to parse remote manifest "${manifestUrl}" as JSON${formatErrorDetail(error)}`,
     );
   }
 }
@@ -620,14 +622,6 @@ function assertRemoteHrefResolvable(
 
 function isHttpRemoteUrl(url: URL): boolean {
   return url.protocol === "http:" || url.protocol === "https:";
-}
-
-function formatErrorDetail(error: unknown): string {
-  return error instanceof Error && error.message ? `: ${error.message}` : ".";
-}
-
-function isObjectRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function throwRemoteManifestPathError(

@@ -24,6 +24,7 @@ import {
   type Shell,
 } from "./shell.js";
 import { initTransportFromManifest } from "./transport.js";
+import { formatErrorDetail, isRecord } from "./validation.js";
 
 export interface PageRuntimeOptions {
   document?: Document;
@@ -76,7 +77,7 @@ async function loadManifest(
   try {
     response = await fetchImpl(manifestUrl);
   } catch (error) {
-    throw new Error(`${errorPrefix}${formatParseError(error)}`);
+    throw new Error(`${errorPrefix}${formatErrorDetail(error)}`);
   }
   assertFetchResponseObject(response, errorPrefix);
   if (!response.ok) {
@@ -128,7 +129,7 @@ function readEmbeddedManifest(document: Document): BuildOutput | undefined {
     manifest = JSON.parse(text);
   } catch (error) {
     throw new Error(
-      `[evjs] Failed to parse embedded manifest "__EVJS_MANIFEST__" as JSON${formatParseError(error)}`,
+      `[evjs] Failed to parse embedded manifest "__EVJS_MANIFEST__" as JSON${formatErrorDetail(error)}`,
     );
   }
   assertLoadedManifest(manifest, 'embedded manifest "__EVJS_MANIFEST__"');
@@ -144,7 +145,7 @@ async function parseFetchedManifest(
     manifest = await response.json();
   } catch (error) {
     throw new Error(
-      `[evjs] Failed to parse manifest "${manifestUrl}" as JSON${formatParseError(error)}`,
+      `[evjs] Failed to parse manifest "${manifestUrl}" as JSON${formatErrorDetail(error)}`,
     );
   }
   assertLoadedManifest(manifest, `manifest "${manifestUrl}"`);
@@ -186,10 +187,6 @@ function assertLoadedManifest(
     pprRendererReferences: "optional",
     rscRendererReferences: "optional",
   });
-}
-
-function formatParseError(error: unknown): string {
-  return error instanceof Error && error.message ? `: ${error.message}` : ".";
 }
 
 function assertPageRuntimeOptions(
@@ -323,10 +320,6 @@ function assertMountOption(value: unknown): void {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
 function outputMount(ctx: AppContext): string {
   if (ctx.kind === "page" && "mount" in ctx.output && ctx.output.mount) {
     return ctx.output.mount;
@@ -351,7 +344,7 @@ function resolveMountPoint(
     mountPoint = document.querySelector(mount);
   } catch (error) {
     throw new Error(
-      `[evjs] startPageRuntime() mount selector "${mount}" is invalid${formatParseError(error)}`,
+      `[evjs] startPageRuntime() mount selector "${mount}" is invalid${formatErrorDetail(error)}`,
     );
   }
   return assertResolvedMountPoint(mountPoint, `mount selector "${mount}"`);

@@ -27,6 +27,7 @@ import {
   getFetchResponseContentType,
   readFetchErrorResponseBody,
 } from "./fetch-response.js";
+import { formatErrorDetail, isRecord } from "./validation.js";
 
 /**
  * Request context passed through server calls.
@@ -128,10 +129,6 @@ function mergeHeaders(...values: (HeadersInit | undefined)[]): Headers {
     });
   }
   return headers;
-}
-
-function formatErrorDetail(error: unknown): string {
-  return error instanceof Error && error.message ? `: ${error.message}` : ".";
 }
 
 function createInvalidFetchResponseError(
@@ -761,10 +758,6 @@ function formatTransportBaseUrlError(error: UrlStringValidationError): string {
     case "invalid-url":
       return "must be a valid URL string.";
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function getManifestTransport(

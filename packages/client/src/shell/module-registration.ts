@@ -1,3 +1,4 @@
+import { isRecord } from "../validation.js";
 import type { AppModule, ShellModuleRegistration } from "./types.js";
 
 export function assertShellModuleHref(
@@ -53,8 +54,4 @@ function assertOptionalLifecycleHook(
   if (value !== undefined && typeof value !== "function") {
     throw new Error(`${prefix} ${name} must be a function when provided.`);
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

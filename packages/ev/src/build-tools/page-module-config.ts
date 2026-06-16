@@ -10,7 +10,7 @@ import {
   collectModuleExportNames,
 } from "./module-exports.js";
 import {
-  getParseErrorMessage,
+  formatParseErrorMessage,
   getPropertyName,
   parseRouteModuleWithError,
 } from "./routes/shared.js";
@@ -52,7 +52,7 @@ export function analyzePageModuleConfig(
       diagnostics: [
         {
           level: "error",
-          message: `${PAGE_MODULE_METADATA_PARSE_DIAGNOSTIC_PREFIX} ${formatParseError(error)}`,
+          message: `${PAGE_MODULE_METADATA_PARSE_DIAGNOSTIC_PREFIX} ${formatParseErrorMessage(error, { firstLine: true })}`,
         },
       ],
     };
@@ -152,13 +152,6 @@ function createInvalidRenderDiagnostic(value: string): string {
     return 'Page render mode "ppr" is not supported. PPR is declared with render = "ssr" and prerender = { partial: true }.';
   }
   return `Unsupported page render mode "${value}". Expected "csr", "ssr", or "ssg".`;
-}
-
-function formatParseError(error: unknown): string {
-  return (
-    getParseErrorMessage(error).split("\n").find(Boolean)?.trim() ??
-    "Unknown parse error."
-  );
 }
 
 function getExportedValue(

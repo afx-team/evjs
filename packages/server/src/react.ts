@@ -19,6 +19,7 @@ import {
   type ReactServerRenderAdapterOptions,
 } from "./react-renderer.js";
 import { textResponse } from "./responses.js";
+import { isRecord } from "./validation.js";
 
 export type {
   ReactRscDebugPayload,
@@ -170,10 +171,6 @@ function assertOptionalRscCoordinator(value: unknown, source: string): void {
   throw new Error(
     `[evjs] ${source} must be an RSC Flight function or coordinator object.`,
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function createDevPageRenderGuard():

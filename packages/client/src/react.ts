@@ -42,6 +42,7 @@ import type {
   AppModule,
   RemoteSharedResolution,
 } from "./shell.js";
+import { formatErrorDetail, isRecord } from "./validation.js";
 
 export interface ReactPageRuntimeOptions {
   component: ReactComponentExport;
@@ -603,10 +604,6 @@ export function getRscFetchResponseContentType(
   return getFetchResponseContentType(response);
 }
 
-function formatErrorDetail(error: unknown): string {
-  return error instanceof Error && error.message ? `: ${error.message}` : ".";
-}
-
 export function mountRscDebugPayload(
   options: RscDebugPayloadMountOptions,
 ): void {
@@ -840,10 +837,6 @@ function readLocationPathname(): string {
 function readLocationSearch(): PageSearchParams {
   const search = globalThis.location?.search;
   return search ? parsePageSearch(search) : {};
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {

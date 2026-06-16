@@ -1,4 +1,5 @@
 import type { BuildOutput, RemoteManifest } from "@evjs/shared/manifest";
+import { isRecord } from "../validation.js";
 import { normalizeAndValidateRemoteManifest } from "./assets.js";
 import {
   findRemoteIdForPath,
@@ -111,10 +112,6 @@ function readRuntimeModuleHref(
     );
   }
   return href;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 async function resolveRemoteTarget(

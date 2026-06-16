@@ -12,6 +12,7 @@ import {
   createRemoteReactModule,
   type RemoteReactModuleExports,
 } from "../react.js";
+import { isRecord } from "../validation.js";
 import {
   defaultLoadModule,
   defaultLoadRemoteManifest,
@@ -653,10 +654,6 @@ function assertOptionalFunction(value: unknown, name: string): void {
       `[evjs] createShell() ${name} must be a function when provided.`,
     );
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 async function initializeModule(

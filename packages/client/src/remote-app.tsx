@@ -19,6 +19,7 @@ import * as React from "react";
 import type { RemoteRuntimeContext } from "./react.js";
 import { assertSharedScope } from "./shell/shared.js";
 import { createShell } from "./shell.js";
+import { formatErrorDetail, isRecord } from "./validation.js";
 
 const REMOTE_APP_BUILD_ID = "remote-app";
 
@@ -784,14 +785,6 @@ function assertRemoteAppRequestTarget(
       `[evjs] RemoteApp request.remoteId "${value.remoteId}" must match configured remote "${remote}".`,
     );
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function formatErrorDetail(error: unknown): string {
-  return error instanceof Error && error.message ? `: ${error.message}` : ".";
 }
 
 function assertRemoteAppBuildIdentifier(value: unknown, path: string): string {

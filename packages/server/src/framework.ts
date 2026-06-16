@@ -27,6 +27,7 @@ import type {
 import { assertFrameworkManifestShape } from "@evjs/shared/manifest";
 import { tryGetContext } from "hono/context-storage";
 import { textResponse } from "./responses.js";
+import { formatUnknownError, isRecord } from "./validation.js";
 
 export interface FrameworkServerOptions {
   manifest: BuildOutput;
@@ -352,10 +353,6 @@ function assertObject(
   if (!isRecord(value)) {
     throw new Error(`[evjs] ${source} must be an object.`);
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 export async function handleFrameworkRenderRequest(
@@ -1029,22 +1026,6 @@ function withoutResponseBody(response: Response): Response {
     statusText: response.statusText,
     headers: response.headers,
   });
-}
-
-function formatUnknownError(error: unknown): string {
-  return sanitizeDiagnosticText(
-    error instanceof Error ? error.message : String(error),
-  );
-}
-
-function sanitizeDiagnosticText(value: string): string {
-  return value
-    .replace(/file:\/\/\/[^\s"'<>)]*/g, "[redacted-file-url]")
-    .replace(
-      /(?:\/(?:Users|home|private|tmp)\/[^\s"'<>)]*)/g,
-      "[redacted-path]",
-    )
-    .replace(/[A-Za-z]:\\[^\s"'<>)]*/g, "[redacted-path]");
 }
 
 function createRendererRegistryFromManifest(

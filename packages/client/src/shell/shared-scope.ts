@@ -1,3 +1,4 @@
+import { isRecord } from "../validation.js";
 import type { SharedScope, SharedScopeEntry } from "./types.js";
 
 export function assertSharedDependencyName(
@@ -67,8 +68,4 @@ function assertOptionalSharedString(value: unknown, path: string): void {
 function assertOptionalSharedBoolean(value: unknown, path: string): void {
   if (value === undefined || typeof value === "boolean") return;
   throw new Error(`${path} must be a boolean when provided.`);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

@@ -124,7 +124,7 @@ function createFrameworkCallbacks(options: {
       });
       await options.onBuildOutput?.(output);
 
-      const rootDir = path.join(options.cwd, "dist");
+      const rootDir = path.join(options.cwd, plan.distDir);
       const clientDir = options.config.serverEnabled
         ? path.join(rootDir, "client")
         : rootDir;
@@ -294,6 +294,39 @@ describe("utoopackAdapter dev", () => {
       ),
     ).resolves.toBeUndefined();
     await controller.close?.();
+  });
+
+  it("emits dev artifacts under the build plan distDir", async () => {
+    const cwd = await makeProject();
+    const config = resolveConfig<ConfigComplete>({
+      server: false,
+      entry: "./src/main.tsx",
+      html: "./index.html",
+    });
+    const buildContext = await createBuildContext(config, cwd, {
+      distDir: "custom-dist",
+    });
+
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      ...buildContext,
+      callbacks: createFrameworkCallbacks({
+        config,
+        cwd,
+        ...buildContext,
+      }),
+      hooks: [],
+    });
+
+    const manifestPath = path.join(cwd, "custom-dist/manifest.json");
+    const htmlPath = path.join(cwd, "custom-dist/index.html");
+
+    expect(fs.existsSync(manifestPath)).toBe(true);
+    expect(fs.existsSync(htmlPath)).toBe(true);
+    expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
+    expect(controller).toBeDefined();
+    await controller?.close?.();
   });
 
   it("applies html-only plan updates without restarting Utoopack dev", async () => {
@@ -556,10 +589,14 @@ describe("utoopackAdapter dev", () => {
 async function createBuildContext(
   config: ResolvedConfig<ConfigComplete>,
   cwd: string,
+  options: { distDir?: string } = {},
 ) {
   const analysis = await createAppGraph(config, cwd);
   return {
     graph: analysis.graph,
-    plan: createBuildPlan(config, analysis.graph, { mode: "development" }),
+    plan: createBuildPlan(config, analysis.graph, {
+      mode: "development",
+      distDir: options.distDir,
+    }),
   };
 }

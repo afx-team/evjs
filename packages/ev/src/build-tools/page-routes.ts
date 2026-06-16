@@ -15,11 +15,16 @@ import {
 } from "./page-route-conventions.js";
 import { sortPageRoutes } from "./page-route-order.js";
 import {
-  getParseErrorMessage,
+  formatParseErrorMessage,
   hasDefaultExport,
   parseRouteModuleWithError,
 } from "./routes/shared.js";
-import { deriveRouteIdFromPath } from "./utils.js";
+import {
+  deriveRouteIdFromPath,
+  isInsideCwd,
+  toPosixPath,
+  toProjectPath,
+} from "./utils.js";
 
 export interface DiscoverPageRoutesOptions {
   dir: string;
@@ -60,11 +65,8 @@ export async function discoverPageRoutes(
     };
   }
 
-  const files = await collectSourceFiles(cwd, absoluteDir);
-  const pageLayoutDirectories = await collectPageLayoutDirectories(
-    cwd,
-    absoluteDir,
-  );
+  const { files, layoutDirectories: pageLayoutDirectories } =
+    await collectPageRouteTree(cwd, absoluteDir);
   const pageLayoutDirectoriesWithSourceFiles = new Set<string>();
   const routes: PageRouteNode[] = [];
   const routeByPath = new Map<string, string>();
@@ -389,7 +391,7 @@ async function validateDefaultExport(
     diagnostics.push({
       level: "error",
       file,
-      message: `${messages.parseError}: ${formatParseError(error)}`,
+      message: `${messages.parseError}: ${formatParseErrorMessage(error, { firstLine: true })}`,
     });
     return false;
   }
@@ -406,17 +408,19 @@ async function validateDefaultExport(
   return true;
 }
 
-function formatParseError(error: unknown): string {
-  return (
-    getParseErrorMessage(error).split("\n").find(Boolean)?.trim() ??
-    "Unknown parse error."
-  );
+interface PageRouteTree {
+  files: string[];
+  layoutDirectories: string[];
 }
 
-async function collectSourceFiles(cwd: string, dir: string): Promise<string[]> {
+async function collectPageRouteTree(
+  cwd: string,
+  dir: string,
+): Promise<PageRouteTree> {
   const files: string[] = [];
+  const layoutDirectories: string[] = [];
 
-  async function visit(current: string) {
+  async function visit(current: string, insideLayoutDirectory = false) {
     let entries: import("node:fs").Dirent[];
     try {
       entries = await fs.readdir(current, { withFileTypes: true });
@@ -429,10 +433,19 @@ async function collectSourceFiles(cwd: string, dir: string): Promise<string[]> {
       if (entry.name.startsWith(".")) continue;
       const absolute = path.join(current, entry.name);
       if (!isInsideCwd(cwd, absolute)) continue;
+
       if (entry.isDirectory()) {
-        await visit(absolute);
+        const isLayoutDirectory =
+          !insideLayoutDirectory &&
+          entry.name === "layout" &&
+          !routeSegmentsFromDir(dir, absolute).some(isIgnoredPageRouteSegment);
+        if (isLayoutDirectory) {
+          layoutDirectories.push(absolute);
+        }
+        await visit(absolute, insideLayoutDirectory || isLayoutDirectory);
         continue;
       }
+
       if (entry.isFile() && isPageRouteSourceModuleFile(entry.name)) {
         files.push(absolute);
       }
@@ -440,45 +453,14 @@ async function collectSourceFiles(cwd: string, dir: string): Promise<string[]> {
   }
 
   await visit(dir);
-  return files.sort();
+  return {
+    files: files.sort(),
+    layoutDirectories: layoutDirectories.sort(),
+  };
 }
 
-async function collectPageLayoutDirectories(
-  cwd: string,
-  dir: string,
-): Promise<string[]> {
-  const directories: string[] = [];
-
-  async function visit(current: string) {
-    let entries: import("node:fs").Dirent[];
-    try {
-      entries = await fs.readdir(current, { withFileTypes: true });
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
-      throw err;
-    }
-
-    for (const entry of entries) {
-      if (entry.name.startsWith(".")) continue;
-      const absolute = path.join(current, entry.name);
-      if (!entry.isDirectory() || !isInsideCwd(cwd, absolute)) continue;
-
-      const routeSegments = toPosixPath(path.relative(dir, absolute))
-        .split("/")
-        .filter(Boolean);
-      if (routeSegments.some(isIgnoredPageRouteSegment)) continue;
-
-      if (entry.name === "layout") {
-        directories.push(absolute);
-        continue;
-      }
-
-      await visit(absolute);
-    }
-  }
-
-  await visit(dir);
-  return directories.sort();
+function routeSegmentsFromDir(dir: string, absolute: string): string[] {
+  return toPosixPath(path.relative(dir, absolute)).split("/").filter(Boolean);
 }
 
 function getPageLayoutDirectory(
@@ -505,16 +487,8 @@ function createAmbiguousRouteShapeDiagnostic(
   ].join(" ");
 }
 
-function toProjectPath(cwd: string, file: string): string {
-  return `./${toPosixPath(path.relative(cwd, file))}`;
-}
-
 function toDiagnosticPath(projectPath: string): string {
   return projectPath.replace(/^\.\//, "");
-}
-
-function toPosixPath(value: string): string {
-  return value.replaceAll(path.sep, "/").replaceAll("\\", "/");
 }
 
 async function statIfExists(
@@ -526,12 +500,4 @@ async function statIfExists(
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw err;
   }
-}
-
-function isInsideCwd(cwd: string, candidate: string): boolean {
-  const relative = path.relative(cwd, candidate);
-  return (
-    relative === "" ||
-    (!relative.startsWith("..") && !path.isAbsolute(relative))
-  );
 }

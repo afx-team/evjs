@@ -18,12 +18,13 @@ import {
 } from "./module-exports.js";
 import {
   collectImportedNames,
-  getParseErrorMessage,
+  formatParseErrorMessage,
   getPropertyName,
   parseRouteModule,
   parseRouteModuleWithError,
   type RouteAst,
 } from "./routes/shared.js";
+import { toPosixPath } from "./utils.js";
 
 export interface PprRegionAnalysis {
   regions: Record<string, PprRegionConfig>;
@@ -91,7 +92,7 @@ export function extractPprRegionModuleConfig(
       diagnostics: [
         {
           level: "error",
-          message: `${PPR_REGION_METADATA_PARSE_DIAGNOSTIC_PREFIX} ${formatParseError(error)}`,
+          message: `${PPR_REGION_METADATA_PARSE_DIAGNOSTIC_PREFIX} ${formatParseErrorMessage(error, { firstLine: true })}`,
         },
       ],
     };
@@ -493,17 +494,6 @@ function derivePprRegionId(componentName: string): string {
 
 function normalizeRelativeModule(sourceRel: string, specifier: string): string {
   return `./${toPosixPath(path.normalize(path.join(path.dirname(sourceRel), specifier)))}`;
-}
-
-function formatParseError(error: unknown): string {
-  return (
-    getParseErrorMessage(error).split("\n").find(Boolean)?.trim() ??
-    "Unknown parse error."
-  );
-}
-
-function toPosixPath(value: string): string {
-  return value.split(path.sep).join("/");
 }
 
 function emptyAnalysis(): PprRegionAnalysis {

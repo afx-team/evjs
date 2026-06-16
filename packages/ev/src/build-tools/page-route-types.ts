@@ -7,6 +7,7 @@ import {
   PAGE_ROUTE_CONVENTION_SUMMARY,
 } from "./page-route-conventions.js";
 import { sortPageRoutes } from "./page-route-order.js";
+import { toProjectPath } from "./utils.js";
 
 export const PAGE_ROUTE_TYPES_FILE = "evjs-route-types.d.ts";
 export const PAGE_ROUTE_TYPES_MARKER =
@@ -214,12 +215,4 @@ function pathRelative(fromDir: string, module: string): string {
   }
 
   return [...fromParts.map(() => ".."), ...moduleParts].join("/") || ".";
-}
-
-function toProjectPath(cwd: string, absolute: string): string {
-  return `./${toPosixPath(path.relative(cwd, absolute))}`;
-}
-
-function toPosixPath(value: string): string {
-  return value.replaceAll(path.sep, "/").replaceAll("\\", "/");
 }
