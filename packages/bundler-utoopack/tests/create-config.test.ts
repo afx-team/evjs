@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import path from "node:path";
 import type { AppGraph, BuildPlan } from "@evjs/ev";
 import { createBuildPlan } from "@evjs/ev/build-tools";
 import { describe, expect, it } from "vitest";
@@ -68,6 +69,70 @@ describe("createUtoopackConfig", () => {
         target: "https://localhost:41234",
       }),
     );
+  });
+
+  it("uses the build plan distDir for client and server outputs", async () => {
+    const config = createResolvedConfig({
+      serverEnabled: true,
+      server: {
+        entry: "@evjs/server/fetch",
+        basePath: "/__evjs",
+        runtime: {
+          basePath: "/__evjs",
+          fn: "/__evjs/fn",
+          ppr: "/__evjs/ppr",
+        },
+        functionRuntime: {
+          endpoint: "/__evjs/fn",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
+        },
+        dev: {
+          port: 3001,
+          https: false,
+        },
+      },
+    });
+    const cwd = process.cwd();
+    const plan = createPlan(config, { distDir: "custom-dist" });
+
+    const utoopackConfig = await createUtoopackConfig(config, plan, cwd, []);
+
+    expect(utoopackConfig.output?.path).toBe(
+      path.resolve(cwd, "custom-dist/client"),
+    );
+    expect(utoopackConfig.server?.output?.path).toBe(
+      path.resolve(cwd, "custom-dist/server"),
+    );
+  });
+
+  it("uses the build plan mode instead of NODE_ENV", async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "development";
+    try {
+      const config = createResolvedConfig();
+      const plan = createPlan(config, { mode: "production" });
+
+      const utoopackConfig = await createUtoopackConfig(
+        config,
+        plan,
+        process.cwd(),
+        [],
+      );
+
+      expect(utoopackConfig.mode).toBe("production");
+      expect(utoopackConfig.output?.filename).toBe("[name].[contenthash:8].js");
+      expect(utoopackConfig.sourceMaps).toBe(false);
+      expect(utoopackConfig.define?.["process.env.NODE_ENV"]).toBe(
+        '"production"',
+      );
+    } finally {
+      if (previousNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = previousNodeEnv;
+      }
+    }
   });
 
   it("keeps SPA history fallback away from custom framework runtime paths", async () => {
@@ -664,6 +729,7 @@ describe("createUtoopackConfig", () => {
 
 function createPlan(
   config: Parameters<typeof createUtoopackConfig>[0],
+  options: { distDir?: string; mode?: "development" | "production" } = {},
 ): BuildPlan {
   const graph: AppGraph = {
     version: 1,
@@ -702,7 +768,10 @@ function createPlan(
     remotes: {},
   };
 
-  return createBuildPlan(config, graph, { mode: "development" });
+  return createBuildPlan(config, graph, {
+    mode: options.mode ?? "development",
+    distDir: options.distDir,
+  });
 }
 
 function getProxyRuleContexts(rule: { context: string | string[] }): string[] {

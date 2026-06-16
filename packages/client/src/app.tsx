@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AnyRoute } from "@tanstack/react-router";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { createRoot } from "react-dom/client";
+import { formatErrorDetail } from "./validation.js";
 
 /**
  * Options for creating a framework-owned SPA runtime.
@@ -122,8 +123,4 @@ function resolveAppDocument(selector: string): Document {
     );
   }
   return doc;
-}
-
-function formatErrorDetail(error: unknown): string {
-  return error instanceof Error && error.message ? `: ${error.message}` : ".";
 }

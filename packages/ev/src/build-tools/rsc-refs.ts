@@ -10,6 +10,7 @@ import {
   collectModuleExportNames,
   formatModuleExportName,
 } from "./module-exports.js";
+import { formatParseErrorMessage } from "./routes/shared.js";
 import {
   analyzeServerFunctionExportsFromAst,
   formatServerFunctionParseDiagnostic,
@@ -248,12 +249,7 @@ function createParseErrorAnalysis(
 }
 
 function formatRscReferenceParseDiagnostic(error: unknown): string {
-  return `${RSC_REFERENCE_PARSE_DIAGNOSTIC_PREFIX} ${formatParseError(error)}`;
-}
-
-function formatParseError(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message;
-  return "Unknown parse error.";
+  return `${RSC_REFERENCE_PARSE_DIAGNOSTIC_PREFIX} ${formatParseErrorMessage(error)}`;
 }
 
 function collectRscClientExportDiagnostics(

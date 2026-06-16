@@ -14,6 +14,7 @@ import {
   isServerFunctionId,
   ServerError,
 } from "@evjs/shared";
+import { isRecord } from "../validation.js";
 import { registry } from "./register.js";
 
 /** Successful dispatch result. */
@@ -132,10 +133,6 @@ function getStructuredServerError(
     status: value.status,
     data: value.data,
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function formatThrownValue(value: unknown): string {

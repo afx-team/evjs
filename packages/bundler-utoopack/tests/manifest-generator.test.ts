@@ -178,6 +178,61 @@ describe("UtoopackManifestGenerator", () => {
     ]);
   });
 
+  it("reads stats from the build plan distDir", async () => {
+    const cwd = await makeProject();
+    await fs.promises.mkdir(path.join(cwd, "custom-dist/client"), {
+      recursive: true,
+    });
+    await fs.promises.mkdir(path.join(cwd, "custom-dist/server"), {
+      recursive: true,
+    });
+    await fs.promises.writeFile(
+      path.join(cwd, "custom-dist/client/stats.json"),
+      JSON.stringify({
+        entrypoints: {
+          main: { assets: ["./main.js"] },
+        },
+      }),
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "custom-dist/server/stats.json"),
+      JSON.stringify({
+        entrypoints: {
+          server: { assets: ["./server.js"] },
+        },
+      }),
+    );
+
+    const graph: AppGraph = {
+      version: 1,
+      rootDir: cwd,
+      apps: {
+        default: {
+          id: "default",
+          entry: "./src/main.tsx",
+          html: "./index.html",
+        },
+      },
+      pages: {},
+      routes: [],
+      serverFunctions: [],
+      serverRoutes: [],
+      remotes: {},
+    };
+    const plan = createPlan(graph, true, { distDir: "custom-dist" });
+
+    const generator = new UtoopackManifestGenerator(cwd, true, plan);
+    const output = await generator.build();
+    const manifest = linkTestManifest(graph, plan, true, output);
+
+    expect(output.clientEntryAssets?.main).toEqual({
+      js: ["main.js"],
+      css: [],
+    });
+    expect(output.serverEntry).toBe("server.js");
+    expect(manifest.distDir).toBe("custom-dist");
+  });
+
   it("links page assets for MPA output", async () => {
     const cwd = await makeProject();
     await fs.promises.rm(path.join(cwd, "dist/client"), {
@@ -331,7 +386,11 @@ describe("UtoopackManifestGenerator", () => {
   });
 });
 
-function createPlan(graph: AppGraph, serverEnabled: boolean): BuildPlan {
+function createPlan(
+  graph: AppGraph,
+  serverEnabled: boolean,
+  options: { distDir?: string } = {},
+): BuildPlan {
   const pageEntries = Object.values(graph.pages).map((page) => ({
     name: page.id,
     import: page.entry ?? page.app ?? page.component ?? "",
@@ -389,7 +448,7 @@ function createPlan(graph: AppGraph, serverEnabled: boolean): BuildPlan {
     version: 1,
     buildId: "test",
     mode: "production",
-    distDir: "dist",
+    distDir: options.distDir ?? "dist",
     serverEnabled,
     entries: [
       ...appEntries,

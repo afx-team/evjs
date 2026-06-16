@@ -21,6 +21,7 @@ import { type ComponentType, createElement, type ReactNode } from "react";
 import { type App, createApp } from "./app.js";
 import { PageProvider } from "./page-context.js";
 import { isReactComponentExport } from "./react-component.js";
+import { isRecord } from "./validation.js";
 
 interface PageRouteContext {
   queryClient: QueryClient;
@@ -299,10 +300,6 @@ function assertOptionalReactComponent(value: unknown, path: string): void {
       `[evjs] createPagesApp() ${path} must be a React component.`,
     );
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function pickRouteOptions(mod: PageModule): Partial<PageModuleRouteOptions> {

@@ -26,9 +26,13 @@ import { getOutputPaths } from "./output-paths.js";
 
 const logger = getLogger(["evjs", "bundler-utoopack"]);
 
-async function cleanServerOutput(cwd: string, serverEnabled: boolean) {
+async function cleanServerOutput(
+  cwd: string,
+  serverEnabled: boolean,
+  distDir: string,
+) {
   if (!serverEnabled) return;
-  const outputPaths = getOutputPaths(cwd, serverEnabled);
+  const outputPaths = getOutputPaths(cwd, serverEnabled, distDir);
   await fs.promises.rm(outputPaths.serverDir, {
     recursive: true,
     force: true,
@@ -45,7 +49,7 @@ async function generateDevArtifacts(
   ) => void | Promise<void>,
   options: { isRebuild?: boolean } = {},
 ): Promise<boolean> {
-  const outputPaths = getOutputPaths(cwd, config.serverEnabled);
+  const outputPaths = getOutputPaths(cwd, config.serverEnabled, plan.distDir);
   const clientStatsPath = path.join(outputPaths.clientDir, "stats.json");
   if (!fs.existsSync(clientStatsPath)) return false;
 
@@ -71,7 +75,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
 
     logger.info`Building for production with utoopack...`;
 
-    await cleanServerOutput(cwd, config.serverEnabled);
+    await cleanServerOutput(cwd, config.serverEnabled, plan.distDir);
 
     const { build } = await import("@utoo/pack");
     await build({ config: utoopackConfig });
@@ -104,8 +108,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
       isRebuild: false,
     });
 
-    // Watch for server bundle readiness (utoopack emits server output
-    // to dist/server/ when "use server" modules are discovered)
+    // Watch for server bundle readiness when "use server" modules are emitted.
     if (!config.serverEnabled) {
       return new UtoopackDevController({
         config,
@@ -117,7 +120,11 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
       });
     }
 
-    const outDir = getOutputPaths(cwd, config.serverEnabled).serverDir;
+    const outDir = getOutputPaths(
+      cwd,
+      config.serverEnabled,
+      plan.distDir,
+    ).serverDir;
 
     if (!fs.existsSync(outDir)) {
       fs.mkdirSync(outDir, { recursive: true });

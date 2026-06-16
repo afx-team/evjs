@@ -3,6 +3,7 @@ import {
   formatContentTypeHeaderValue,
   isApplicationJsonContentType,
 } from "@evjs/shared";
+import { isRecord } from "./validation.js";
 
 export interface FetchResponseObject {
   ok: boolean;
@@ -105,8 +106,4 @@ export function getFetchResponseContentType(
   if (!isRecord(headers) || typeof headers.get !== "function") return null;
   const value = headers.get("Content-Type");
   return typeof value === "string" ? value : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

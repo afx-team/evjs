@@ -20,6 +20,7 @@ import {
   getRscFetchResponseContentType,
   type RscFlightFetchOptions,
 } from "./react.js";
+import { formatErrorDetail, isRecord } from "./validation.js";
 
 export interface ReactRscModelOptions extends RscFlightFetchOptions {
   moduleBaseURL?: string;
@@ -479,14 +480,6 @@ function formatBootstrapPathnameError(
     case "query-or-hash":
       return "must not include a query string or hash.";
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function formatErrorDetail(error: unknown): string {
-  return error instanceof Error && error.message ? `: ${error.message}` : ".";
 }
 
 function createBootstrapManifest(

@@ -37,6 +37,7 @@ import {
 import { type DispatchError, dispatch } from "./functions/dispatch.js";
 import { textResponse } from "./responses.js";
 import type { RouteHandler } from "./routes/index.js";
+import { isRecord } from "./validation.js";
 
 export interface CreateAppOptions {
   /**
@@ -209,10 +210,6 @@ export function createApp(options?: CreateAppOptions): Hono {
   }
 
   return app;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 async function invokeRouteHandler(

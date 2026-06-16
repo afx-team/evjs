@@ -25,6 +25,16 @@ export function getParseErrorMessage(error: unknown): string {
   return "Unknown parse error.";
 }
 
+export function formatParseErrorMessage(
+  error: unknown,
+  options: { firstLine?: boolean } = {},
+): string {
+  const message = getParseErrorMessage(error);
+  if (!options.firstLine) return message;
+
+  return message.split("\n").find(Boolean)?.trim() ?? "Unknown parse error.";
+}
+
 export function hasDefaultExport(ast: RouteAst): boolean {
   return ast.body.some(
     (item) =>

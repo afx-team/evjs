@@ -1,3 +1,4 @@
+import { isRecord } from "../validation.js";
 import {
   assertAppModule,
   assertShellModuleHref,
@@ -119,10 +120,6 @@ function getRegistryKeys(href: string): string[] {
     keys.push(absoluteHref);
   }
   return keys;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 export function resolveBrowserHref(href: string): string | undefined {

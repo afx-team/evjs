@@ -11,6 +11,7 @@ import {
   getIdentifierExportName,
   getModuleExportName,
 } from "./module-exports.js";
+import { formatParseErrorMessage } from "./routes/shared.js";
 import { detectUseServer } from "./utils.js";
 
 type ServerFunctionAst = ReturnType<typeof parseSync>;
@@ -89,7 +90,7 @@ export function parseServerFunctionModule(source: string): {
 }
 
 export function formatServerFunctionParseDiagnostic(error: unknown): string {
-  return `${SERVER_FUNCTION_PARSE_DIAGNOSTIC_PREFIX} ${formatParseError(error)}`;
+  return `${SERVER_FUNCTION_PARSE_DIAGNOSTIC_PREFIX} ${formatParseErrorMessage(error)}`;
 }
 
 export function isServerFunctionParseDiagnostic(message: string): boolean {
@@ -108,11 +109,6 @@ function createParseErrorAnalysis(
       },
     ],
   };
-}
-
-function formatParseError(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message;
-  return "Unknown parse error.";
 }
 
 export function analyzeServerFunctionExportsFromAst(

@@ -22,6 +22,11 @@ import { type ComponentType, createElement } from "react";
 import { renderToString } from "react-dom/server";
 import type { RscCoordinator, RscFlightContext } from "./framework.js";
 import { textResponse } from "./responses.js";
+import {
+  formatUnknownError,
+  isRecord,
+  sanitizeDiagnosticText,
+} from "./validation.js";
 
 export interface ReactServerRenderContext {
   request: Request;
@@ -629,10 +634,6 @@ function stripPageRouteProps(
   return rest;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
 function isStringRecord(value: unknown): value is Record<string, string> {
   return (
     isRecord(value) &&
@@ -759,22 +760,6 @@ function assetHref(manifest: BuildOutput, asset: string): string {
   if (/^(?:https?:)?\/\//.test(asset) || asset.startsWith("/")) return asset;
   const base = publicPath.endsWith("/") ? publicPath : `${publicPath}/`;
   return `${base}${asset}`;
-}
-
-function formatUnknownError(error: unknown): string {
-  return sanitizeDiagnosticText(
-    error instanceof Error ? error.message : String(error),
-  );
-}
-
-function sanitizeDiagnosticText(value: string): string {
-  return value
-    .replace(/file:\/\/\/[^\s"'<>)]*/g, "[redacted-file-url]")
-    .replace(
-      /(?:\/(?:Users|home|private|tmp)\/[^\s"'<>)]*)/g,
-      "[redacted-path]",
-    )
-    .replace(/[A-Za-z]:\\[^\s"'<>)]*/g, "[redacted-path]");
 }
 
 function emptyAssets(): AssetGroup {

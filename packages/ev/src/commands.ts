@@ -35,6 +35,7 @@ import {
   writePageRouteTypesIfChanged,
 } from "./build-tools/page-route-types.js";
 import { PAGES_APP_ENTRY_IMPORT } from "./build-tools/pages-entry.js";
+import { toProjectPath } from "./build-tools/utils.js";
 import type {
   BundlerAdapter,
   BundlerBuildFacts,
@@ -1838,14 +1839,6 @@ function createInspectPageOutput(
 
 function compareById<T extends { id: string }>(left: T, right: T): number {
   return left.id.localeCompare(right.id);
-}
-
-function toProjectPath(cwd: string, absolute: string): string {
-  return `./${toPosixPath(path.relative(cwd, absolute))}`;
-}
-
-function toPosixPath(value: string): string {
-  return value.replaceAll(path.sep, "/").replaceAll("\\", "/");
 }
 
 function normalizeDiagnosticFile(file: string): string {

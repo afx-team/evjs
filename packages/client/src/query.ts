@@ -38,6 +38,7 @@ import {
 } from "@tanstack/react-query";
 import type { ServerFunction } from "./transport.js";
 import { callServer, getServerFunction } from "./transport.js";
+import { isRecord } from "./validation.js";
 
 // biome-ignore lint/suspicious/noConfusingVoidType: TanStack uses void variables to allow mutate() without an argument.
 type NoMutationVariables = void;
@@ -271,8 +272,4 @@ function assertServerMutationOptions(
       "[evjs] useMutation() server function options must not include mutationFn. Pass the server function as the first argument instead.",
     );
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

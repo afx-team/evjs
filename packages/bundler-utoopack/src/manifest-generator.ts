@@ -22,8 +22,14 @@ interface UtoopackStatsModule {
   chunks?: Array<string | number>;
 }
 
+type UtoopackStatsAsset = string | { name?: string };
+
 function normalizeAssetName(name: string | undefined): string | undefined {
   return name?.replace(/^\.\//, "");
+}
+
+function readStatsAssetName(asset: UtoopackStatsAsset): string | undefined {
+  return typeof asset === "string" ? asset : asset.name;
 }
 
 function emptyAssets(): AssetGroup {
@@ -71,7 +77,7 @@ function assetsFromChunks(
 }
 
 function readEntrypointAssets(stats: {
-  entrypoints?: Record<string, { assets?: Array<{ name?: string }> }>;
+  entrypoints?: Record<string, { assets?: UtoopackStatsAsset[] }>;
 }): {
   byName: Record<string, AssetGroup>;
   first: AssetGroup;
@@ -82,7 +88,7 @@ function readEntrypointAssets(stats: {
   for (const [name, entry] of Object.entries(stats.entrypoints ?? {})) {
     const assets = emptyAssets();
     for (const asset of entry.assets ?? []) {
-      const assetName = normalizeAssetName(asset.name);
+      const assetName = normalizeAssetName(readStatsAssetName(asset));
       if (assetName?.endsWith(".js")) {
         assets.js.push(assetName);
       } else if (assetName?.endsWith(".css")) {
@@ -131,7 +137,7 @@ export class UtoopackManifestGenerator {
 
   constructor(cwd: string, serverEnabled: boolean, plan: BuildPlan) {
     this.serverEnabled = serverEnabled;
-    this.outputPaths = getOutputPaths(cwd, serverEnabled);
+    this.outputPaths = getOutputPaths(cwd, serverEnabled, plan.distDir);
     this.plan = plan;
   }
 

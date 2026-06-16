@@ -3,7 +3,10 @@ import type {
   ExtractedServerRoute,
 } from "@evjs/shared/manifest";
 import { analyzeServerRoutesFromAst } from "./server.js";
-import { getParseErrorMessage, parseRouteModuleWithError } from "./shared.js";
+import {
+  formatParseErrorMessage,
+  parseRouteModuleWithError,
+} from "./shared.js";
 
 export type {
   ExtractedRoute,
@@ -42,7 +45,7 @@ export function analyzeRoutes(source: string): RouteAnalysis {
     if (mayHaveServerRoute(source)) {
       diagnostics.push({
         level: "error",
-        message: `${SERVER_ROUTE_PARSE_DIAGNOSTIC_PREFIX} ${formatParseError(error)}`,
+        message: `${SERVER_ROUTE_PARSE_DIAGNOSTIC_PREFIX} ${formatParseErrorMessage(error, { firstLine: true })}`,
       });
     }
 
@@ -65,12 +68,5 @@ function mayHaveServerRoute(source: string): boolean {
   return (
     SERVER_ROUTE_IMPORT_MARKERS.some((marker) => source.includes(marker)) &&
     source.includes("createRoute")
-  );
-}
-
-function formatParseError(error: unknown): string {
-  return (
-    getParseErrorMessage(error).split("\n").find(Boolean)?.trim() ??
-    "Unknown parse error."
   );
 }

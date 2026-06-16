@@ -52,6 +52,8 @@ import {
   deriveRouteIdFromPath,
   detectUseServer,
   hashServerFunction,
+  isInsideCwd,
+  toPosixPath,
 } from "../utils.js";
 
 export interface GraphAnalysisResult {
@@ -1640,16 +1642,4 @@ async function resolveSourcePath(
   }
 
   return undefined;
-}
-
-function isInsideCwd(cwd: string, candidate: string): boolean {
-  const relative = path.relative(cwd, candidate);
-  return (
-    relative === "" ||
-    (!relative.startsWith("..") && !path.isAbsolute(relative))
-  );
-}
-
-function toPosixPath(value: string): string {
-  return value.replaceAll(path.sep, "/").replaceAll("\\", "/");
 }
