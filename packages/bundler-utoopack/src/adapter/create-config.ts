@@ -249,8 +249,14 @@ function createPagesEntryCondition(): {
   path: RegExp;
   query: string;
 } {
+  const normalizedAnchor = normalizeRulePath(pagesEntryAnchor);
+  const frameworkAnchorSuffix =
+    "(?:packages/bundler-utoopack|node_modules/@evjs/bundler-utoopack)/(?:src|esm)/adapter/pages-entry-anchor\\.js";
+
   return {
-    path: new RegExp(`${escapeRegExp(normalizeRulePath(pagesEntryAnchor))}$`),
+    path: new RegExp(
+      `(?:${escapeRegExp(normalizedAnchor)}|(?:^|/)${frameworkAnchorSuffix})$`,
+    ),
     query: "",
   };
 }

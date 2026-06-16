@@ -231,6 +231,16 @@ describe("createUtoopackConfig", () => {
     expect(
       pagesEntryRule?.condition.path.test("/project/src/pages/index.tsx"),
     ).toBe(false);
+    expect(
+      pagesEntryRule?.condition.path.test(
+        "packages/bundler-utoopack/esm/adapter/pages-entry-anchor.js",
+      ),
+    ).toBe(true);
+    expect(
+      pagesEntryRule?.condition.path.test(
+        "/workspace/node_modules/@evjs/bundler-utoopack/esm/adapter/pages-entry-anchor.js",
+      ),
+    ).toBe(true);
     expect(utoopackConfig.module?.rules).toMatchObject({
       "**/*": [
         {
