@@ -32,7 +32,6 @@
   "author": "xusd320",
   "license": "MIT",
   "dependencies": {
-    "@evjs/client": "*",
     "@evjs/ev": "*",
     "@logtape/logtape": "^2.0.4",
     "@utoo/pack": "^1.4.9",

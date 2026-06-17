@@ -31,7 +31,6 @@
   "author": "xusd320",
   "license": "MIT",
   "dependencies": {
-    "@evjs/client": "*",
     "@evjs/ev": "*",
     "@logtape/logtape": "^2.0.4",
     "css-loader": "^7.1.4",

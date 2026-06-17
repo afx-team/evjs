@@ -44,10 +44,8 @@ const pagesEntryAnchor = fileURLToPath(
   new URL("./pages-entry-anchor.js", import.meta.url),
 );
 const ReactFlightWebpackPlugin = require("react-server-dom-webpack/plugin");
-const clientRscEntry = require.resolve("@evjs/client/internal/rsc-runtime");
-const clientRscPageContextEntry = require.resolve(
-  "@evjs/client/internal/rsc-page-context",
-);
+const clientRscEntry = "@evjs/client/internal/rsc-runtime";
+const clientRscPageContextEntry = "@evjs/client/internal/rsc-page-context";
 
 type RscClientReferenceConfig =
   | string
