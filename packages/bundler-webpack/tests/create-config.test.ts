@@ -8,6 +8,7 @@ import {
 } from "../src/adapter/create-config.js";
 
 const require = createRequire(import.meta.url);
+const frameworkEntryLoader = require("../src/adapter/framework-entry-loader.cjs");
 const pagesEntryLoader = require("../src/adapter/pages-entry-loader.cjs");
 
 describe("createWebpackConfigs", () => {
@@ -122,12 +123,34 @@ describe("createWebpackConfigs", () => {
     );
     const serializedRules = JSON.stringify(configs[0]?.module?.rules);
     const serializedEntries = JSON.stringify(configs[0]?.entry);
-    const decodedEntries = decodeURIComponent(serializedEntries);
 
     expect(serializedRules).not.toContain("pages-entry-loader.cjs");
-    expect(serializedEntries).toContain("createReactPageModule");
-    expect(decodedEntries).toContain("@evjs/client/internal/react-page");
-    expect(decodedEntries).not.toContain('from "@evjs/client/internal";');
+    expect(serializedRules).toContain("framework-entry-loader.cjs");
+    expect(serializedEntries).toContain("framework-entry-anchor.js");
+    expect(serializedEntries).not.toContain("createReactPageModule");
+    expect(serializedEntries).not.toContain("@evjs/client/internal/react-page");
+  });
+
+  it("generates thin component page entries in the framework entry loader", () => {
+    const source = frameworkEntryLoader.call({
+      cacheable() {},
+      getOptions() {
+        return {
+          type: "react-component-page",
+          module: "/workspace/src/pages/about.tsx",
+          hydrate: "load",
+          mount: "#app",
+          render: "csr",
+          route: { id: "about", path: "/about" },
+        };
+      },
+    });
+
+    expect(source).toContain("@evjs/client/internal/react-page");
+    expect(source).toContain("createGeneratedReactPageEntry");
+    expect(source).toContain("import.meta.url");
+    expect(source).not.toContain("createReactPageModule");
+    expect(source).not.toContain("currentScriptHref");
   });
 
   it("generates pages app imports without module queries", () => {

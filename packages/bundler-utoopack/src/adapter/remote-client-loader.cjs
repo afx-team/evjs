@@ -10,12 +10,9 @@ module.exports = function remoteClientLoader() {
 
   return [
     `import * as mod from ${JSON.stringify(sourceRequest)};`,
-    `import { createRemoteReactModule, registerShellModule } from ${runtimeRequest};`,
+    `import { registerGeneratedRemoteClientEntry } from ${runtimeRequest};`,
     ``,
-    `const currentScript = typeof document !== "undefined" ? document.currentScript : undefined;`,
-    `const currentScriptHref = currentScript && "src" in currentScript ? currentScript.src : undefined;`,
-    `const href = currentScriptHref ?? import.meta.url;`,
-    `if (href) registerShellModule(href, () => createRemoteReactModule(mod));`,
+    `registerGeneratedRemoteClientEntry(mod, import.meta.url);`,
     `export * from ${JSON.stringify(sourceRequest)};`,
     `export { default } from ${JSON.stringify(sourceRequest)};`,
     ``,

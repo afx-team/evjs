@@ -4,34 +4,18 @@ module.exports = function componentPageLoader() {
   this.cacheable?.();
 
   const options = this.getOptions ? this.getOptions() : {};
-  const route = options.route;
+  const entryOptions = {
+    mount: options.mount ?? "#app",
+    hydrate: options.hydrate ?? "load",
+    render: options.render ?? "csr",
+    ...(options.route ? { route: options.route } : {}),
+  };
 
   return [
     `import Component from ${JSON.stringify(`./${path.basename(this.resourcePath)}?evjs-component-page-source`)};`,
-    `import { createReactPageModule, mountReactPage, registerShellModule } from "@evjs/client/internal/react-page";`,
+    `import { createGeneratedReactPageEntry } from "@evjs/client/internal/react-page";`,
     ``,
-    `const importMetaHref = import.meta.url;`,
-    `const currentScript = typeof document !== "undefined" ? document.currentScript : undefined;`,
-    `const currentScriptHref = currentScript && "src" in currentScript ? currentScript.src : undefined;`,
-    `const href = currentScriptHref ?? importMetaHref;`,
-    `const shellScript = currentScript ?? (typeof document !== "undefined" ? Array.from(document.scripts).find((script) => script.src === importMetaHref) : undefined);`,
-    `const loadedByShell = shellScript?.getAttribute?.("data-evjs-shell-load") === "true";`,
-    `const mod = createReactPageModule({`,
-    `  component: Component,`,
-    `  hydrate: ${JSON.stringify(options.hydrate ?? "load")},`,
-    `  render: ${JSON.stringify(options.render ?? "csr")},`,
-    `  route: ${JSON.stringify(route)},`,
-    `});`,
-    `if (href) registerShellModule(href, mod);`,
-    `if (!loadedByShell) {`,
-    `  mountReactPage({`,
-    `    component: Component,`,
-    `    mount: ${JSON.stringify(options.mount ?? "#app")},`,
-    `    hydrate: ${JSON.stringify(options.hydrate ?? "load")},`,
-    `    render: ${JSON.stringify(options.render ?? "csr")},`,
-    `    route: ${JSON.stringify(route)},`,
-    `  });`,
-    `}`,
+    `const mod = createGeneratedReactPageEntry(Component, ${JSON.stringify(entryOptions)}, import.meta.url);`,
     `export default mod;`,
     ``,
   ].join("\n");

@@ -568,8 +568,8 @@ describe("webpackAdapter build", () => {
       });
       expect(remoteBundle).toContain("registerShellModule");
       expect(remoteBundle).toContain("createRemoteReactModule");
-      expect(remoteBundle).toContain("import.meta.url");
-      expect(remoteBundle).toContain("currentScriptHref");
+      expect(remoteBundle).toContain("registerGeneratedRemoteClientEntry");
+      expect(remoteBundle).toContain("framework-entry-anchor.js");
       expect(remoteBundle).not.toContain("createRemoteShellModule");
       expect(remoteBundle).not.toContain("ctx && ctx.remote");
       await expect(

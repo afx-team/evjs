@@ -13,3 +13,10 @@ declare module "react-server-dom-webpack/client" {
     },
   ): unknown;
 }
+
+declare module "react-server-dom-webpack/server.node" {
+  export function renderToReadableStream(
+    model: unknown,
+    webpackMap: unknown,
+  ): Promise<ReadableStream<Uint8Array>>;
+}

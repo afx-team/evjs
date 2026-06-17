@@ -16,7 +16,7 @@
     }
   },
   "scripts": {
-    "build": "rm -rf esm && tsc && cp src/adapter/pages-entry-anchor.js src/adapter/pages-entry-loader.cjs src/adapter/server-function-loader.cjs src/adapter/rsc-client-reference-loader.cjs esm/adapter/",
+    "build": "rm -rf esm && tsc && cp src/adapter/framework-entry-anchor.js src/adapter/framework-entry-loader.cjs src/adapter/pages-entry-anchor.js src/adapter/pages-entry-loader.cjs src/adapter/server-function-loader.cjs src/adapter/rsc-client-reference-loader.cjs esm/adapter/",
     "test": "vitest run",
     "check-types": "tsc --noEmit"
   },
@@ -31,6 +31,7 @@
   "author": "xusd320",
   "license": "MIT",
   "dependencies": {
+    "@evjs/client": "*",
     "@evjs/ev": "*",
     "@logtape/logtape": "^2.0.4",
     "css-loader": "^7.1.4",

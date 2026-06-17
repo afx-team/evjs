@@ -4,13 +4,10 @@ const { pathToFileURL } = require("node:url");
 module.exports = function pagesEntryLoader() {
   this.cacheable?.();
   const options = this.getOptions ? this.getOptions() : {};
-  return createPagesEntrySource(options, {
+  const loaderContext = {
     resourcePath: this.resourcePath,
     rootContext: this.rootContext,
-  });
-};
-
-function createPagesEntrySource(options, loaderContext) {
+  };
   const routes = Array.isArray(options.routes) ? options.routes : [];
   const mount = options.mount || "#app";
   const rootModule = options.rootModule;
@@ -42,7 +39,7 @@ function createPagesEntrySource(options, loaderContext) {
     `export default app;`,
     ``,
   ].join("\n");
-}
+};
 
 function toLoaderModuleRequest(specifier, loaderContext) {
   if (!specifier.startsWith(".") && !path.isAbsolute(specifier)) {
