@@ -175,6 +175,8 @@ function getRequestPathname(url: string): string {
 
 function pathMatchesPrefix(pathname: string, prefix: string): boolean {
   const normalizedPrefix = prefix.startsWith("/") ? prefix : `/${prefix}`;
+  if (normalizedPrefix === "/") return pathname === "/";
+
   return (
     pathname === normalizedPrefix ||
     pathname.startsWith(`${normalizedPrefix.replace(/\/+$/, "")}/`)

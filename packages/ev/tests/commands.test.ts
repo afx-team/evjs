@@ -190,6 +190,20 @@ function recordPagesAppRootModule(
   events.push(`${label}:${metadata.rootModule ?? "none"}`);
 }
 
+async function waitForEvent(
+  events: string[],
+  event: string,
+  timeoutMs = devUpdateTimeoutMs,
+): Promise<void> {
+  const startedAt = Date.now();
+  while (!events.includes(event)) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error(`Timed out waiting for event: ${event}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 describe("prepareFrameworkBuild", () => {
   it("rejects mismatched command and mode options", async () => {
     const cwd = await createProject();
@@ -3613,6 +3627,72 @@ describe("dev", () => {
       "changed:/,/posts",
       "types:false",
     ]);
+  });
+
+  it("keeps plugin context on the committed config when a route update fails", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/index.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    const plugin: Plugin<Record<string, never>> = {
+      name: "observe-committed-config",
+      setup() {
+        return {
+          dispose(ctx) {
+            events.push(`dispose-routes:${ctx.config.routing?.routes.length}`);
+          },
+        };
+      },
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return {
+          async updatePlan() {
+            events.push("update:throw");
+            throw new Error("mock update failure");
+          },
+        };
+      },
+    };
+
+    const running = dev(
+      {
+        server: false,
+        plugins: [plugin],
+      },
+      { cwd, bundler },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/about.tsx"),
+      "export default function About() { return null; }",
+      "utf-8",
+    );
+    await waitForEvent(events, "update:throw");
+    process.emit("SIGINT");
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("dev shutdown timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual(["bundler.dev", "update:throw", "dispose-routes:1"]);
   });
 
   it("updates the dev bundler when config changes add an MPA page", async () => {

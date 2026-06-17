@@ -2100,8 +2100,6 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
       | undefined;
     if (isConfigChange) {
       stagedPluginHooks = await stagePluginHooks(nextConfig);
-    } else {
-      pluginCtx.config = nextConfig;
     }
 
     try {
@@ -2116,6 +2114,7 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
         activeConfig = nextConfig;
         activeAnalysis = nextAnalysis;
         activePlan = nextPlan;
+        pluginCtx.config = nextConfig;
         await stagedPluginHooks?.commit();
         refreshDevDependencyWatchers();
         return;
@@ -2141,10 +2140,12 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
         activeConfig = previousConfig;
         activeAnalysis = previousAnalysis;
         activePlan = previousPlan;
+        pluginCtx.config = previousConfig;
         await stagedPluginHooks?.rollback();
         logger.warn`Unable to apply framework plan update without restart: ${err}`;
         return;
       }
+      pluginCtx.config = nextConfig;
       await stagedPluginHooks?.commit();
       refreshDevDependencyWatchers();
     } catch (err) {

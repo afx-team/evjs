@@ -427,6 +427,8 @@ describe("createUtoopackConfig", () => {
     expect(source).toContain("@evjs/client/internal/react-page");
     expect(source).not.toContain('from "@evjs/client/internal";');
     expect(source).toContain("createReactPageModule");
+    expect(source).toContain("import.meta.url");
+    expect(source).toContain("currentScriptHref ?? importMetaHref");
   });
 
   it("generates pages app imports without module queries", () => {
@@ -549,6 +551,8 @@ describe("createUtoopackConfig", () => {
     expect(source).toContain("createRemoteReactModule");
     expect(source).toContain("registerShellModule");
     expect(source).toContain("?evjs-remote-client-source");
+    expect(source).toContain("import.meta.url");
+    expect(source).toContain("currentScriptHref ?? import.meta.url");
     expect(source).not.toContain('from "@evjs/client/internal";');
   });
 

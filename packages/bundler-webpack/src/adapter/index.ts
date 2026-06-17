@@ -45,6 +45,7 @@ interface WebpackWatching {
 }
 
 type WebpackDevProxyRule = DevProxyRule & {
+  contextFilter?: (pathname: string) => boolean;
   frameworkPageRender?: boolean;
 };
 
@@ -624,25 +625,44 @@ function createDevProxyRules(
     }
   }
 
-  const explicitServerRouteContexts = toUniqueDevProxyContexts([
+  const serverRoutePaths = [
     ...graph.serverRoutes.map((route) => route.path),
     ...getServerRenderedPaths(graph),
-  ]);
+  ];
+  const explicitServerRouteContexts =
+    toUniqueDevProxyContexts(serverRoutePaths);
   const contexts = explicitServerRouteContexts.filter(
     (context) => !configuredContexts.has(context),
   );
-  if (contexts.length === 0) return rules;
+  const pageRenderRules: WebpackDevProxyRule[] = [];
 
-  return [
-    ...rules,
-    {
+  if (contexts.length > 0) {
+    pageRenderRules.push({
       context: contexts,
       target: serverTarget,
       changeOrigin: true,
       secure: false,
       frameworkPageRender: true,
-    },
-  ];
+    });
+  }
+
+  if (
+    serverRoutePaths.some(
+      (routePath) => normalizeRoutePath(routePath) === "/",
+    ) &&
+    !configuredContexts.has("/")
+  ) {
+    pageRenderRules.push({
+      context: [],
+      contextFilter: (pathname) => pathname === "/",
+      target: serverTarget,
+      changeOrigin: true,
+      secure: false,
+      frameworkPageRender: true,
+    });
+  }
+
+  return pageRenderRules.length === 0 ? rules : [...rules, ...pageRenderRules];
 }
 
 function createFrameworkRuntimeProxyContexts(
@@ -866,7 +886,7 @@ function escapeRegExp(value: string): string {
 
 function toWebpackDevProxy(rule: WebpackDevProxyRule) {
   return {
-    context: rule.context,
+    context: rule.contextFilter ?? rule.context,
     target: rule.target,
     changeOrigin: rule.changeOrigin,
     secure: rule.secure,
@@ -996,6 +1016,7 @@ function moduleIdentity(mod: NonNullable<WebpackStatsLike["modules"]>[number]) {
 }
 
 export const __testing = {
+  createDevProxyRules,
   createHtmlFallbackBypassRewrites,
   isApiLikeRequestPath,
   mergeWebpackStats,

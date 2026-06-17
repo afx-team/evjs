@@ -294,6 +294,41 @@ describe("webpack stats ownership", () => {
     ).toBe(false);
   });
 
+  it("proxies a server-rendered root route without catching every asset", () => {
+    const config = resolveConfig<WebpackConfig>();
+    const graph: AppGraph = {
+      version: 1,
+      rootDir: process.cwd(),
+      apps: {},
+      pages: {
+        home: {
+          id: "home",
+          path: "/",
+          component: "./src/pages/Home.tsx",
+          html: "./index.html",
+          render: "ssr",
+        },
+      },
+      routes: [
+        {
+          id: "home",
+          path: "/",
+          pageId: "home",
+        },
+      ],
+      serverFunctions: [],
+      serverRoutes: [],
+      remotes: {},
+    };
+
+    const rules = webpackAdapterTesting.createDevProxyRules(config, graph);
+    const rootRule = rules.find((rule) => rule.contextFilter);
+
+    expect(rootRule?.frameworkPageRender).toBe(true);
+    expect(rootRule?.contextFilter?.("/")).toBe(true);
+    expect(rootRule?.contextFilter?.("/favicon.ico")).toBe(false);
+  });
+
   it("namespaces server-rsc chunks and de-dupes modules while merging server stats", () => {
     const serverStats: WebpackStatsLike = {
       entrypoints: {
@@ -533,6 +568,8 @@ describe("webpackAdapter build", () => {
       });
       expect(remoteBundle).toContain("registerShellModule");
       expect(remoteBundle).toContain("createRemoteReactModule");
+      expect(remoteBundle).toContain("import.meta.url");
+      expect(remoteBundle).toContain("currentScriptHref");
       expect(remoteBundle).not.toContain("createRemoteShellModule");
       expect(remoteBundle).not.toContain("ctx && ctx.remote");
       await expect(
