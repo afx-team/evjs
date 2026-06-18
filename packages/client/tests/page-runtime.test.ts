@@ -103,8 +103,8 @@ describe("startPageRuntime", () => {
         document: createDocument({
           mountPoint: {} as Element,
           attributes: {
-            "data-evjs-kind": "remote",
-            "data-evjs-id": "crm",
+            "data-evjs-kind": "worker",
+            "data-evjs-id": "jobs",
           },
         }),
       }),
@@ -639,32 +639,6 @@ describe("startPageRuntime", () => {
       }),
     ).rejects.toThrow(
       '[evjs] Loaded provided manifest.routes[0].path must start with "/".',
-    );
-
-    await expect(
-      startPageRuntime({
-        document,
-        manifest: {
-          ...createManifest(),
-          remotes: [],
-        } as never,
-      }),
-    ).rejects.toThrow(
-      "[evjs] Loaded provided manifest remotes must be an object.",
-    );
-
-    await expect(
-      startPageRuntime({
-        document,
-        manifest: {
-          ...createManifest(),
-          remotes: {
-            crm: { manifest: "", activeWhen: ["/crm/*"] },
-          },
-        } as never,
-      }),
-    ).rejects.toThrow(
-      "[evjs] Loaded provided manifest.remotes.crm.manifest must be a non-empty string.",
     );
   });
 

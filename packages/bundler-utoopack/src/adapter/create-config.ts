@@ -20,9 +20,6 @@ const pagesEntryLoader = fileURLToPath(
 const pagesEntryAnchor = fileURLToPath(
   new URL("./pages-entry-anchor.js", import.meta.url),
 );
-const remoteClientLoader = fileURLToPath(
-  new URL("./remote-client-loader.cjs", import.meta.url),
-);
 
 import type {
   BuildPlan,
@@ -30,7 +27,6 @@ import type {
   PagesAppEntryMetadata,
   PluginHooks,
   ReactComponentPageEntryMetadata,
-  RemoteClientEntryMetadata,
   ResolvedConfig,
 } from "@evjs/ev";
 import { getLogger } from "@logtape/logtape";
@@ -281,27 +277,6 @@ function createComponentPageRule(
   };
 }
 
-function createRemoteClientRule(
-  metadata: RemoteClientEntryMetadata,
-): TurbopackRuleConfigItem {
-  return {
-    condition: {
-      path: new RegExp(`${escapeRegExp(normalizeRulePath(metadata.app))}$`),
-      query: "",
-    },
-    loaders: [
-      {
-        loader: remoteClientLoader,
-        options: {
-          type: "remote-client",
-          app: metadata.app,
-        },
-      },
-    ],
-    type: "ecmascript",
-  };
-}
-
 function normalizeRulePath(value: string): string {
   return value.replace(/^\.\//, "").replaceAll("\\", "/");
 }
@@ -340,15 +315,6 @@ function getComponentPageMetadata(
     );
 }
 
-function getRemoteClientMetadata(plan: BuildPlan): RemoteClientEntryMetadata[] {
-  return plan.entries
-    .map((entry) => entry.metadata)
-    .filter(
-      (metadata): metadata is RemoteClientEntryMetadata =>
-        metadata?.type === "remote-client",
-    );
-}
-
 function createFrameworkModuleRules(
   plan: BuildPlan,
 ): TurbopackRuleConfigItem[] {
@@ -356,7 +322,6 @@ function createFrameworkModuleRules(
   return [
     ...(pagesApp ? [createPagesEntryRule(pagesApp)] : []),
     ...getComponentPageMetadata(plan).map(createComponentPageRule),
-    ...getRemoteClientMetadata(plan).map(createRemoteClientRule),
   ];
 }
 
@@ -370,6 +335,8 @@ function createPagesLoaderOptions(
       id: route.id,
       path: route.path,
       module: route.module,
+      ...(route.parentId ? { parentId: route.parentId } : {}),
+      ...(route.kind ? { kind: route.kind } : {}),
     })),
     ...(metadata.rootModule ? { rootModule: metadata.rootModule } : {}),
   };
@@ -429,8 +396,6 @@ function formatBuildEntryOwner(
   if (owner.routeId) parts.push(`route "${owner.routeId}"`);
   if (owner.regionId) parts.push(`region "${owner.regionId}"`);
   if (owner.appId) parts.push(`app "${owner.appId}"`);
-  if (owner.remoteId) parts.push(`remote "${owner.remoteId}"`);
-  if (owner.remoteEntryId) parts.push(`remote entry "${owner.remoteEntryId}"`);
 
   return parts.join(", ") || undefined;
 }

@@ -1,11 +1,4 @@
-import type {
-  AppOutput,
-  BuildOutput,
-  PageOutput,
-  RemoteEntry,
-  RemoteManifest,
-  RemoteOutput,
-} from "@evjs/shared/manifest";
+import type { AppOutput, BuildOutput, PageOutput } from "@evjs/shared/manifest";
 
 export interface AppModule {
   init?: (sharedScope: SharedScope, ctx: AppContext) => void | Promise<void>;
@@ -20,24 +13,15 @@ export type ShellModuleRegistration =
 
 export interface AppContext {
   id: string;
-  kind: "app" | "page" | "remote";
+  kind: "app" | "page";
   manifest: BuildOutput;
-  output: AppOutput | PageOutput | RemoteOutput;
+  output: AppOutput | PageOutput;
   request: ActivationRequest;
-  remote?: {
-    id: string;
-    entryId: string;
-    manifest: RemoteManifest;
-    entry: RemoteEntry;
-    shared: RemoteSharedResolution;
-  };
 }
 
 export interface ActivationRequest {
   appId?: string;
   pageId?: string;
-  remoteId?: string;
-  remoteEntryId?: string;
   buildId?: string;
   url?: string | URL;
   mountPoint?: Element;
@@ -48,24 +32,10 @@ export interface ShellOptions {
   manifest: BuildOutput;
   drivers?: ShellDriver[];
   loadModule?: (href: string, ctx: AppContext) => Promise<AppModule>;
-  loadRemoteManifest?: (
-    remote: RemoteOutput,
-    ctx: RemoteManifestLoadContext,
-  ) => Promise<RemoteManifest>;
   resolveMountPoint?: (ctx: AppContext) => Element | null;
   shared?: SharedScope;
-  sharedPolicy?: "warn" | "error";
-  onRemoteSharedNegotiated?: (
-    event: RemoteSharedNegotiationContext,
-  ) => void | Promise<void>;
   onError?: (error: unknown, ctx: ShellErrorContext) => void | Promise<void>;
   onWarning?: (warning: ShellWarningContext) => void | Promise<void>;
-}
-
-export interface RemoteManifestLoadContext {
-  id: string;
-  request: ActivationRequest;
-  manifest: BuildOutput;
 }
 
 export interface ShellErrorContext {
@@ -73,7 +43,7 @@ export interface ShellErrorContext {
   app: AppContext;
 }
 
-export type ShellWarningContext = RemoteSharedDependenciesWarning;
+export type ShellWarningContext = never;
 
 export type SharedScope = Record<string, SharedScopeEntry>;
 
@@ -85,38 +55,6 @@ export interface SharedScopeEntry {
   from?: string;
   value?: unknown;
   get?: () => unknown | Promise<unknown>;
-}
-
-export interface RemoteSharedResolution {
-  provided: Record<string, SharedScopeEntry>;
-  missing: string[];
-  incompatible: Array<{
-    name: string;
-    shareKey?: string;
-    requiredVersion: string;
-    providedVersion?: string;
-    reason: "version" | "singleton";
-  }>;
-}
-
-export interface RemoteSharedDependenciesWarning {
-  code: "remote-shared-dependencies";
-  message: string;
-  remoteId: string;
-  dependencies: string[];
-  missing: string[];
-  incompatible: RemoteSharedResolution["incompatible"];
-  resolution: RemoteSharedResolution;
-  manifest: RemoteManifest;
-  request: ActivationRequest;
-}
-
-export interface RemoteSharedNegotiationContext {
-  remoteId: string;
-  dependencies: string[];
-  resolution: RemoteSharedResolution;
-  manifest: RemoteManifest;
-  request: ActivationRequest;
 }
 
 export interface Shell {

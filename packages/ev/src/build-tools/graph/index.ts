@@ -18,12 +18,10 @@ import type {
   PageRouteNode,
   PprConfig,
   PrerenderConfig,
-  RemoteBuildNode,
   RenderMode,
   RouteNode,
   ServerFunctionNode,
   ServerRouteNode,
-  SharedDependencyMap,
 } from "@evjs/shared/manifest";
 import { parseSync } from "@swc/core";
 import type { ModuleItem } from "@swc/types";
@@ -108,26 +106,6 @@ export interface GraphConfig {
     routes: PageRouteNode[];
     rootModule?: string;
   };
-  remotes?: Record<
-    string,
-    {
-      manifest: string;
-      activeWhen?: string[];
-    }
-  >;
-  remote?: {
-    name: string;
-    baseUrl: string;
-    shared?: SharedDependencyMap;
-    entries: Record<
-      string,
-      {
-        app: string;
-        activeWhen?: string[];
-        mount?: string;
-      }
-    >;
-  };
   serverEnabled: boolean;
   server: {
     entry?: string;
@@ -167,8 +145,6 @@ export async function createAppGraph(
     routes: [],
     serverFunctions: [],
     serverRoutes: [],
-    remotes: createRemoteNodes(config),
-    remote: createRemoteBuildNode(config),
   };
 
   const sourceCache = new Map<string, string>();
@@ -323,6 +299,8 @@ export async function createAppGraph(
             id: route.id,
             path: route.path,
             module: route.module,
+            ...(route.parentId ? { parentId: route.parentId } : {}),
+            ...(route.kind ? { kind: route.kind } : {}),
             ...(defaultAppId ? { appId: defaultAppId } : {}),
           },
           sourceCache,
@@ -346,6 +324,8 @@ export async function createAppGraph(
     return {
       id: routeId,
       path: route.path,
+      ...(route.parentId ? { parentId: route.parentId } : {}),
+      ...(route.kind ? { kind: route.kind } : {}),
       ...(appId ? { appId } : {}),
       ...(pageId ? { pageId } : {}),
       ...(route.module ? { module: route.module } : {}),
@@ -828,6 +808,7 @@ function shouldCreateRouteDerivedPage(
 } {
   return Boolean(
     route.module &&
+      route.kind !== "layout" &&
       hasRouteGraphSource(config) &&
       ((route.render && route.render !== "csr") ||
         route.componentModel === "rsc" ||
@@ -838,7 +819,7 @@ function shouldCreateRouteDerivedPage(
 function hasRouteGraphSource(config: GraphConfig): boolean {
   return Boolean(
     Object.keys(config.apps ?? {}).length > 0 ||
-      (!config.pages && !config.remote) ||
+      !config.pages ||
       Object.values(config.apps ?? {}).some((app) =>
         typeof app === "string" ? app : app.source,
       ),
@@ -956,8 +937,7 @@ function hasDefaultAppNode(config: GraphConfig): boolean {
   return Boolean(
     (!config.apps || Object.keys(config.apps).length === 0) &&
       (!config.pages || Object.keys(config.pages).length === 0) &&
-      config.routing?.mode !== "mpa" &&
-      !config.remote,
+      config.routing?.mode !== "mpa",
   );
 }
 
@@ -982,6 +962,7 @@ function createPageNodes(
 
   if (config.routing?.mode === "mpa") {
     for (const route of sortPageRoutes(configuredPageRoutes)) {
+      if (route.kind === "layout") continue;
       pages[route.id] = {
         id: route.id,
         path: route.path,
@@ -1090,6 +1071,18 @@ function validateConfiguredPageRoutes(
   const validRoutes: PageRouteNode[] = [];
 
   for (const route of config.routing.routes) {
+    if (
+      route.kind !== undefined &&
+      route.kind !== "page" &&
+      route.kind !== "layout"
+    ) {
+      diagnostics.push({
+        level: "error",
+        file: toDiagnosticModulePath(route.module),
+        message: `Configured page route "${route.id}" kind must be "page" or "layout".`,
+      });
+      continue;
+    }
     const routePathError = getConfiguredPageRoutePathValidationError(
       route.path,
     );
@@ -1117,34 +1110,37 @@ function validateConfiguredPageRoutes(
       ...route,
       path: normalizedPath,
     };
+    const isLayoutRoute = normalizedRoute.kind === "layout";
 
-    const previousPathOwner = routeByPath.get(normalizedPath);
-    if (previousPathOwner) {
-      diagnostics.push({
-        level: "error",
-        file: toDiagnosticModulePath(route.module),
-        message:
-          `Configured page route path "${normalizedPath}" is already declared by ${previousPathOwner.module}. ` +
-          "Keep one page route per URL path.",
-      });
-      continue;
-    }
-    routeByPath.set(normalizedPath, normalizedRoute);
+    if (!isLayoutRoute) {
+      const previousPathOwner = routeByPath.get(normalizedPath);
+      if (previousPathOwner) {
+        diagnostics.push({
+          level: "error",
+          file: toDiagnosticModulePath(route.module),
+          message:
+            `Configured page route path "${normalizedPath}" is already declared by ${previousPathOwner.module}. ` +
+            "Keep one page route per URL path.",
+        });
+        continue;
+      }
+      routeByPath.set(normalizedPath, normalizedRoute);
 
-    const routeShape = routePathShapeFromPath(normalizedPath).key;
-    const previousShapeOwner = routeByShape.get(routeShape);
-    if (previousShapeOwner) {
-      diagnostics.push({
-        level: "error",
-        file: toDiagnosticModulePath(route.module),
-        message:
-          `Configured page route path "${normalizedPath}" has the same route shape as ` +
-          `${previousShapeOwner.module} (${normalizePublicRoutePath(previousShapeOwner.path)}). ` +
-          "Use one dynamic param name for each URL shape.",
-      });
-      continue;
+      const routeShape = routePathShapeFromPath(normalizedPath).key;
+      const previousShapeOwner = routeByShape.get(routeShape);
+      if (previousShapeOwner) {
+        diagnostics.push({
+          level: "error",
+          file: toDiagnosticModulePath(route.module),
+          message:
+            `Configured page route path "${normalizedPath}" has the same route shape as ` +
+            `${previousShapeOwner.module} (${normalizePublicRoutePath(previousShapeOwner.path)}). ` +
+            "Use one dynamic param name for each URL shape.",
+        });
+        continue;
+      }
+      routeByShape.set(routeShape, normalizedRoute);
     }
-    routeByShape.set(routeShape, normalizedRoute);
 
     const previousIdOwner = routeById.get(route.id);
     if (previousIdOwner) {
@@ -1162,7 +1158,27 @@ function validateConfiguredPageRoutes(
     validRoutes.push(normalizedRoute);
   }
 
-  return validRoutes;
+  return validRoutes.filter((route) => {
+    if (!route.parentId) return true;
+    const parent = routeById.get(route.parentId);
+    if (!parent) {
+      diagnostics.push({
+        level: "error",
+        file: toDiagnosticModulePath(route.module),
+        message: `Configured page route "${route.id}" parentId "${route.parentId}" does not match another route id.`,
+      });
+      return false;
+    }
+    if (parent.kind !== "layout") {
+      diagnostics.push({
+        level: "error",
+        file: toDiagnosticModulePath(route.module),
+        message: `Configured page route "${route.id}" parentId "${route.parentId}" must reference a layout route.`,
+      });
+      return false;
+    }
+    return true;
+  });
 }
 
 function getConfiguredPageRoutePathValidationError(
@@ -1226,42 +1242,6 @@ function getConfiguredPageDiagnosticFile(
 ): string | undefined {
   const source = page.component ?? page.app ?? page.entry;
   return source ? toDiagnosticModulePath(source) : undefined;
-}
-
-function createRemoteNodes(config: GraphConfig): AppGraph["remotes"] {
-  return Object.fromEntries(
-    Object.entries(config.remotes ?? {}).map(([id, remote]) => [
-      id,
-      {
-        id,
-        manifest: remote.manifest,
-        activeWhen: remote.activeWhen,
-      },
-    ]),
-  );
-}
-
-function createRemoteBuildNode(
-  config: GraphConfig,
-): RemoteBuildNode | undefined {
-  if (!config.remote) return undefined;
-
-  return {
-    name: config.remote.name,
-    baseUrl: config.remote.baseUrl,
-    ...(config.remote.shared ? { shared: config.remote.shared } : {}),
-    entries: Object.fromEntries(
-      Object.entries(config.remote.entries).map(([id, entry]) => [
-        id,
-        {
-          id,
-          app: entry.app,
-          activeWhen: entry.activeWhen,
-          mount: entry.mount,
-        },
-      ]),
-    ),
-  };
 }
 
 async function collectRouteDirectories(root: string): Promise<string[]> {
@@ -1377,15 +1357,6 @@ async function collectFrameworkSourceFiles(
     diagnostics,
     explicitDependencyRoots,
   );
-  for (const [entryId, entry] of Object.entries(config.remote?.entries ?? {})) {
-    await addConfiguredSource(
-      roots,
-      cwd,
-      entry.app,
-      `Remote entry "${entryId}" app`,
-      diagnostics,
-    );
-  }
   for (const [pageId, page] of Object.entries(config.pages ?? {})) {
     await addConfiguredSource(
       roots,

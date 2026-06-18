@@ -18,7 +18,7 @@ ev inspect --json
 `ev inspect` 会解析配置和框架声明，但不会运行 bundler，也不会写入 `dist`。
 它会报告 routing mode、发现的 page routes、被忽略或拒绝的 route files、
 生成 route type 的位置、server functions、server routes、页面 render metadata、
-remotes、runtime server paths、计划中的 entries/documents 和 diagnostics。只要存在
+runtime server paths、计划中的 entries/documents 和 diagnostics。只要存在
 error 级 diagnostic，命令就以非 0 退出；warning 只展示，不会让命令失败。
 
 ## 输出
@@ -56,7 +56,7 @@ dist/
 
 1. 加载并解析 `ev.config.ts`。
 2. 执行 config/setup 插件 hooks。
-3. `createAppGraph()` 分析文件化页面路由文件、底层 app/page 输出、server entry 和 remotes。
+3. `createAppGraph()` 分析文件化页面路由文件、底层 app/page 输出、server entry。
 4. `createBuildPlan()` 生成具体 client/server entries 和 HTML documents。
 5. 当前 bundler 编译 `BuildPlan.entries`。
 6. `linkBuildOutput()` 合并 `AppGraph`、`BuildPlan` 和 bundler facts。
@@ -171,7 +171,7 @@ PPR region 的 cache metadata 会进入 manifest：
 - 启用 server 的构建必须把 server runtime entry 关联到 JavaScript 资产；
   deployment adapter 会依赖 `server.entry` 导入框架 handler。
 - build entry name 是 manifest asset key。它们必须是 build identifier，并且
-  必须在 app、page、remote、runtime 和 server entry 之间全局唯一。
+  必须在 app、page、runtime 和 server entry 之间全局唯一。
 - `manifest.server.renderers` 的 key 是 renderer build entry name，也必须使用
   相同的 build-identifier 规则。
 - 在完整 server manifest 中，每个使用 server HTML 的 SSR、SSG 或 RSC document

@@ -20,7 +20,7 @@ npm run build
 
 Important output:
 
-- `dist/manifest.json` — apps, pages, routes, assets, server functions, server routes, remotes, and runtime paths;
+- `dist/manifest.json` — apps, pages, routes, assets, server functions, server routes, and runtime paths;
 - `dist/client/` — browser assets and HTML;
 - `dist/server/` — framework server bundle when `server` is enabled.
 
@@ -46,13 +46,10 @@ requirements:
 | RSC pages | page route + `runtime.server.rsc` | server-capable | The document route and Flight endpoint must share compatible manifests/assets. |
 | Server functions | `runtime.server.fn` | server-capable | Usually same origin/base path as SSR/RSC/PPR unless `transport.baseUrl` splits it. |
 | Server routes | declared route path | server-capable | Route methods and 405 behavior belong to `@evjs/server`. |
-| Remote host | remote manifest URL | static or server | Host can be static; remote manifest/assets are fetched at runtime. |
-| Remote app build | `evjs-remote.json` + assets | CDN/static file server | Remote lifecycle/shared metadata is manifest-driven. |
 
 This gives four practical deployment topologies:
 
-1. **Static-only**: CSR, MPA client entries, SSG/static HTML pages, remote
-   manifests, and static assets. No server functions, SSR, PPR, RSC, or server
+1. **Static-only**: CSR, MPA client entries, SSG/static HTML pages, and static assets. No server functions, SSR, PPR, RSC, or server
    routes.
 2. **Unified Node**: one Node process serves `dist/client`, framework endpoints,
    SSR/PPR/RSC document routes, server functions, and server routes.

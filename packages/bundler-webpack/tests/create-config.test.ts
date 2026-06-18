@@ -106,7 +106,6 @@ describe("createWebpackConfigs", () => {
       routes: [],
       serverFunctions: [],
       serverRoutes: [],
-      remotes: {},
     };
     const plan = createBuildPlan(config, graph, { mode: "development" });
 
@@ -272,7 +271,6 @@ function createResolvedConfig(): ResolvedConfig<WebpackConfig> {
       },
     },
     transport: {},
-    remotes: {},
     plugins: [],
   };
 }
@@ -296,6 +294,5 @@ function createGraph(config: ResolvedConfig<WebpackConfig>): AppGraph {
       })) ?? [],
     serverFunctions: [],
     serverRoutes: [],
-    remotes: {},
   };
 }

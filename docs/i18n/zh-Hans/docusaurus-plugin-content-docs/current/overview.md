@@ -2,7 +2,7 @@
 
 > **ev** = **Ev**aluation（执行）· **Ev**olution（演进）—— 跨运行时执行，借助 AI 工具演进。
 
-evjs 是一个零配置的 React 全栈框架，提供基于页面的客户端路由、服务端函数、路由处理器、SSR、PPR、RSC 集成点、manifest 驱动的远程应用，以及面向部署的输出。
+evjs 是一个零配置的 React 全栈框架，提供基于页面的客户端路由、服务端函数、路由处理器、SSR、PPR、RSC 集成点，以及面向部署的输出。
 
 框架会明确区分：
 
@@ -15,13 +15,12 @@ SPA 页面路由把导航、loader、search 和 params 语义保留在框架内�
 
 ## 特性
 
-- **零配置页面路由** —— 项目没有声明显式 `app`、`pages` 或 `remote` 配置时，`ev dev` / `ev build` 会发现 `src/pages`。
+- **零配置页面路由** —— 项目没有声明显式 `app` 或 `pages` 配置时，`ev dev` / `ev build` 会发现 `src/pages`。
 - **SPA 与 MPA 模式** —— `routing.mode: "spa"` 生成一个框架托管的 app；`"mpa"` 生成多个无路由器页面。
 - **框架托管页面** —— 页面模块可以把 CSR/SSR/SSG/PPR/RSC 渲染元信息写在组件旁边。
 - **服务端函数** —— `"use server"` 模块变成浏览器可调用的 RPC stub。
 - **服务端路由** —— 通过 `createRoute()` 编写标准 Web `Request`/`Response` route handler。
 - **统一服务端边界** —— `@evjs/server` 处理 server functions、server routes、SSR、PPR、RSC。
-- **Manifest 驱动远程应用** —— host app 通过 remote manifest 和 shared dependency negotiation 加载远程应用。
 - **插件系统** —— config、bundler、output、HTML、build 生命周期 hooks。
 - **部署输出** —— 单一 public-safe framework manifest，加 adapter 生成的平台产物。
 
@@ -32,7 +31,6 @@ flowchart LR
     subgraph Browser ["Browser"]
         UI["React app/page runtime"]
         RPC["Server function transport"]
-        REMOTE["Remote app shell"]
         RSCClient["RSC client runtime"]
     end
 
@@ -65,7 +63,6 @@ flowchart LR
     UI -.->|"document request"| SSR
     UI -.->|"document request"| PPR
     RSCClient -.->|"runtime.server.rsc"| RSC
-    REMOTE -.->|"remote manifest + assets"| UI
 
     SSR -->|读取| DB
     SSR -->|读取| KV

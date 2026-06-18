@@ -41,7 +41,7 @@ my-evjs-app/
 
 This shape covers the complete framework surface:
 
-- `ev.config.ts` customizes routing mode, server paths, remotes, plugins, or
+- `ev.config.ts` customizes routing mode, server paths, plugins, or
   explicit page outputs only when defaults are not enough.
 - `pages/` is the client route source of truth. SPA mode maps it to a
   framework-owned app entry; MPA mode maps it to independent page entries.
@@ -119,7 +119,6 @@ Migration rules stay explicit rather than adding alternate filename dialects:
 | `src/api/*.server.ts` | Recommended server-function boundary | Files that start with `"use server";` and export named callable server functions | Client imports that should run with `server: false`, default exports, or runtime re-exports |
 | `src/api/*.routes.ts` | Recommended server-route boundary | `createRoute()` handlers using Web `Request`/`Response` | Server functions or multiple files for the same URL shape |
 | `src/server.ts` | Framework server entry | `createApp({ routes, middlewares, framework })` and deployment runtime glue | Browser code or per-page client bootstrap |
-| Remote entry modules referenced by `remote.entries.*.app` | Remote build public entries | Default React components or explicit `init`/`mount`/`hydrate`/`unmount` lifecycles | Host `remotes` config or server-only implementation details |
 | `src/features`, `src/components`, `src/lib`, `src/hooks` | No direct framework convention | Domain code, reusable UI, browser-safe helpers, and React hooks | Files that depend on route discovery by filename |
 
 Do not mix ownership models in one app unless you need the lower-level API:
@@ -129,8 +128,6 @@ Do not mix ownership models in one app unless you need the lower-level API:
   `src/pages`.
 - Use top-level `entry`/`html` only for a manually bootstrapped single browser
   app.
-- Use `remotes` in host apps and `remote` only in a package that emits
-  `evjs-remote.json`.
 
 ## Matching Config
 
@@ -149,13 +146,6 @@ export default defineConfig({
   server: {
     entry: "./src/server.ts",
     rsc: true,
-  },
-
-  remotes: {
-    crm: {
-      manifest: "https://assets.example.com/crm/evjs-remote.json",
-      activeWhen: ["/crm/*"],
-    },
   },
 });
 ```
@@ -302,39 +292,6 @@ const app = createApp({
 
 export default { fetch: app.fetch };
 ```
-
-## Remote Builds
-
-Host applications consume remotes through `remotes`. A package that is itself a
-remote app declares `remote` in its config and can reuse the same `src/`
-organization:
-
-```ts
-export default defineConfig({
-  remote: {
-    name: "crm",
-    baseUrl: "https://assets.example.com/crm/",
-    entries: {
-      default: {
-        app: "./src/remote.tsx",
-        activeWhen: ["/crm/*"],
-      },
-    },
-  },
-});
-```
-
-Remote modules can default-export React components. Do not mix a default React
-component with explicit `mount`, `hydrate`, or `unmount` exports; use `init`
-with a default component for setup, or export lifecycle functions without
-`default` for advanced cases. Lifecycle remote modules must export `mount()` or
-`hydrate()` because `init()` / `unmount()` alone cannot render a remote entry.
-Remote builds require a build-identifier `remote.name` and at least one
-build-identifier entry with a non-empty `app` module path. Keep host `remotes`
-and build-time `remote` separate: host apps consume remote manifests, while
-remote packages emit `evjs-remote.json`.
-When hosting that manifest, serve it with `Content-Type: application/json`
-optionally followed by content-type parameters.
 
 ## Naming Guidance
 

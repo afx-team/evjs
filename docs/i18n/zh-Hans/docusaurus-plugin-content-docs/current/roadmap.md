@@ -16,11 +16,10 @@
   page route discovery、server declarations、render metadata、runtime paths、
   planned entries 和 diagnostics。
 - 单一框架 manifest：`dist/manifest.json`。
-- 通过公开 `@evjs/client` runtime 包提供 manifest-driven app/page/remote activation。
+- 通过公开 `@evjs/client` runtime 包提供 manifest-driven app/page activation。
 - 框架托管 SPA 页面路由，并为 MPA 提供无路由器 page runtime。
 - Webpack adapter 用于在 Utoopack 下层 API 补齐前验证框架能力。
-- 完整 host/remote 示例，并通过 e2e 覆盖 apps、组件页面、SSR/PPR/RSC、
-  remotes 和 per-document HTML transform。
+- 聚焦 render mode 和 deployment adapter 的示例，并通过 e2e 覆盖 apps、组件页面、SSR/PPR/RSC 和 per-document HTML transform。
 - Public manifest redaction，确保浏览器可见输出不暴露本地源码路径。
 - 内置 Node、static、edge deployment adapter artifacts。
 - 统一 server request context 和 middleware 语义，覆盖 server functions、
@@ -36,7 +35,7 @@
 
 - Utoopack parity 优先级 1：dynamic entry/server dev plan update，用于不重启
   `ev dev` 增删 entry。
-- Utoopack parity 优先级 2：framework-managed component pages 和 remotes 所需的
+- Utoopack parity 优先级 2：framework-managed component pages 所需的
   generic entry wrapping/loadable entry facts。
 - Utoopack parity 优先级 3：SSR/PPR/RSC renderers 的 multi server-entry build facts。
 - Utoopack parity 优先级 4：RSC client/server reference metadata。

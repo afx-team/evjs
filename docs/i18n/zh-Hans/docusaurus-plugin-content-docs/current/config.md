@@ -29,7 +29,7 @@ export default defineConfig({
 服务端函数端点从 `server.basePath` 派生，没有单独的公开函数端点配置。
 
 顶层 config object 只接受 `entry`、`html`、`dev`、`server`、`transport`、
-`app`、`routing`、`remotes`、`remote`、`bundler`、`plugins` 和 `pages`。
+`app`、`routing`、`bundler`、`plugins` 和 `pages`。
 生成的 app 声明、页面路由运行时接线、server-function endpoint 等框架
 metadata 都由 evjs 派生，不需要也不能直接配置。
 
@@ -58,7 +58,7 @@ export default defineConfig({
 });
 ```
 
-当项目存在 `src/pages`，且项目没有声明显式的 `app`、`pages` 或 `remote`
+当项目存在 `src/pages`，且项目没有声明显式的 `app` 或 `pages`
 配置时，SPA 路由会自动启用。
 需要显式关闭文件路由发现时，设置 `routing: false`。
 导出的 config 必须是 object。启用并配置选项时，`routing` 必须是 object；array 和
@@ -251,13 +251,11 @@ adapter 可以信任 manifest：
 | SSG | `render = "ssg"` | App HTML fallback，并为 route page 记录 static metadata | 独立静态 HTML document | 生成和 manifest linking 阶段需要 server build | `server: false` |
 | PPR | component page 上声明 `render = "ssr"` + `prerender = { partial: true }` | 带服务端合成 regions 的 route-owned server document | 带服务端合成 regions 的 route-owned server document | Framework server document route，另有可选 `runtime.server.ppr` direct/debug endpoint | 同页 RSC、整页 hydration entry、`server: false` |
 | RSC | component page 上声明 `render = "ssr"` + `rsc = true` | route-owned server document 加 RSC Flight endpoint | route-owned server document 加 RSC Flight endpoint | Framework server document route 加 `runtime.server.rsc` | 同页 PPR、`hydrate` 不是 `"none"`、`server: false` |
-| Remote app build | `remote` config 配置一个或多个 entries | 不是 page render mode | 不是 page render mode | Remote manifest/assets；只有 remote 同时声明 server-rendered pages 时才需要 server | 把 `remote` 当作 host `remotes` |
-
 如果同一个页面同时需要 RSC 数据流和 partial prerendered regions，当前请拆成不同
 page routes。单个 component page 必须在 `rsc = true` 和
 `prerender = { partial: true }` 之间二选一。
 
-`server: false` 只适用于 CSR 页面、MPA client entries、remote-only build 和静态资源。
+`server: false` 只适用于 CSR 页面、MPA client entries 和静态资源。
 SSR、SSG、PPR、RSC、server functions 和 server routes 都要求构建时启用 framework server。
 
 PPR 页面推荐在页面组件树中声明动态 region：
@@ -470,76 +468,6 @@ absolute HTTP(S) URL，且不能包含首尾空白字符。
 HTTP(S) URL 的 `target`；`null` 和 array entry 会被拒绝。Context pattern 必须以
 `/` 开头，不能包含空白字符、query string 或 hash，并且同一条规则内不能重复。Target
 不能包含首尾空白字符。可选的 `changeOrigin` 和 `secure` 必须是布尔值。
-
-## 远程应用
-
-远程应用通过 manifest 加载。Host 应用声明复数 `remotes`；当前包要输出
-remote manifest 时声明单数 `remote`。
-
-```ts
-export default defineConfig({
-  remotes: {
-    crm: {
-      manifest: "https://assets.example.com/crm/evjs-remote.json",
-      activeWhen: ["/app/crm/*"],
-    },
-  },
-});
-```
-
-`remotes` 必须是从 remote id 到 remote declaration object 的 object map。Remote
-id 必须是非空 build identifier：只能使用字母、数字、下划线或连字符。Remote declaration object
-只接受 `manifest` 和 `activeWhen`。manifest URL 必须是非空 HTTP(S) URL 或 path，且不能包含首尾空白字符。
-`activeWhen` 是 pathname pattern：每个条目都必须非空、以 `/` 开头，且不能包含空白字符、query
-string 或 hash。Host remote 之间不能声明完全重复的 pattern。Host runtime 会用 `activeWhen`
-在浏览器导航时选择远程应用；当多个 pattern 同时匹配当前 URL pathname 时，最具体的 pattern 优先。
-
-```ts
-export default defineConfig({
-  server: false,
-  remote: {
-    name: "crm",
-    baseUrl: "https://assets.example.com/crm/",
-    entries: {
-      customers: {
-        app: "./src/remote.tsx",
-        activeWhen: ["/app/crm/*"],
-        mount: "#app",
-      },
-    },
-  },
-});
-```
-
-Remote build 必须声明非空 build-identifier `name`，并至少包含一个 entry。`remote`
-值必须是 object，且只接受 `name`、`baseUrl`、`shared` 和 `entries`；`remote.entries`
-必须是从 entry id 到 remote entry object 的 object map。Remote entry object 只接受
-`app`、`activeWhen` 和 `mount`。提供 `remote.baseUrl` 时，它必须是非空 HTTP(S) URL 或 path，且不能包含首尾空白字符，
-因为该值会写入 `evjs-remote.json`。Remote entry id 也使用 build identifier 规则。每个 entry 都需要
-非空 `app` 模块路径；可选的 `activeWhen` 是 pathname pattern，必须以 `/` 开头，
-且不能包含空白字符、query string 或 hash；可选的 `mount` 在提供时也必须非空，且
-不能包含首尾空白字符。Remote entry 之间不能声明完全重复的 `activeWhen` pattern，避免
-activation 依赖对象顺序；重叠 pattern 会按最具体 pathname 匹配解析。Remote-only build 可以使用
-`server: false`，因为 remote entry 是浏览器运行时模块，不是页面 render mode。每个
-remote entry 会由默认 Utoopack adapter 包装成 generated lifecycle entry；当 remote
-build 还需要更底层的 SSR/PPR/RSC 行为验证时，webpack 仍可作为验证 adapter。每个
-remote entry 都必须产出客户端 JavaScript 资产；如果 bundler 无法关联到对应资产，
-manifest emission 会失败，而不是写出不可用的 `evjs-remote.json`。`remote.shared`
-必须是 object map；key 必须非空，并且每个依赖值都必须是 object。Shared dependency object
-只接受 `shareKey`、`requiredVersion`、`singleton`、`strictVersion` 和 `eager`。可选的
-`shareKey` 和 `requiredVersion` 必须是非空字符串，且不能包含首尾空白字符；提供
-`singleton`、`strictVersion` 或 `eager` 时，它们必须是布尔值。`requiredVersion`
-接受 runtime negotiation 支持的 range 形式：精确或部分 semver version、`*`、caret
-和 tilde range、`>=18 <20` 这样的 comparison range，以及 `^18 || ^19` 这样的 OR
-range。
-浏览器 runtime 会在 activation 前校验默认 fetch loader 或自定义 `loadRemoteManifest`
-返回的 remote manifest，并在 response media type、name、entry id、module、asset
-metadata 无效时报告对应 manifest URL。默认 fetch loader 只接受成功的
-`Content-Type: application/json` manifest response，允许附带可选 content-type 参数。
-获取到的 manifest 字符串字段，例如 `baseUrl`、module href、asset href、`mount`、
-`shareKey` 和 `requiredVersion`，都不能包含首尾空白。`baseUrl` 可以是绝对 URL，
-也可以相对 remote manifest URL；module 和 asset href 必须能从该 base URL 解析，
-这样错误的 CDN 路径会在 activation 前失败。
 
 ## 插件
 

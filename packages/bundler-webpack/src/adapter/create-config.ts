@@ -455,13 +455,6 @@ function createFrameworkEntryLoaderOptions(
     };
   }
 
-  if (entry.metadata?.type === "remote-client") {
-    return {
-      type: "remote-client",
-      module: resolveEntryModule(cwd, entry.metadata.app),
-    };
-  }
-
   if (entry.metadata?.type === "react-component-page") {
     return {
       type: "react-component-page",

@@ -70,7 +70,10 @@ function createStaticServer(
     pathRewrites?: Record<string, string>;
   },
 ): http.Server {
-  const indexHtml = fs.readFileSync(path.join(distDir, "index.html"), "utf-8");
+  const fallbackHtmlPath = resolveFallbackHtmlPath(distDir);
+  const indexHtml = fallbackHtmlPath
+    ? fs.readFileSync(fallbackHtmlPath, "utf-8")
+    : undefined;
   const proxyPrefixes = options?.proxyPrefixes ?? [];
   const pathRewrites = options?.pathRewrites ?? {};
   const publicManifestPath = resolvePublicManifestPath(distDir);
@@ -103,6 +106,11 @@ function createStaticServer(
 
     // Serve index.html
     if (url === "/" || url === "/index.html") {
+      if (!indexHtml) {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("No HTML document found");
+        return;
+      }
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(indexHtml);
       return;
@@ -133,10 +141,26 @@ function createStaticServer(
       fs.createReadStream(filePath).pipe(res);
     } else {
       // SPA fallback
+      if (!indexHtml) {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("No HTML document found");
+        return;
+      }
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(indexHtml);
     }
   });
+}
+
+function resolveFallbackHtmlPath(distDir: string): string | undefined {
+  const indexPath = path.join(distDir, "index.html");
+  if (fs.existsSync(indexPath)) return indexPath;
+
+  return fs
+    .readdirSync(distDir)
+    .filter((fileName) => fileName.endsWith(".html"))
+    .sort()
+    .map((fileName) => path.join(distDir, fileName))[0];
 }
 
 function resolveStaticFilePath(

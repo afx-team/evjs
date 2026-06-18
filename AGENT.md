@@ -10,7 +10,7 @@
 | `@evjs/ev` | `packages/ev` | `src/config.ts`, `src/plugin.ts`, `src/bundler.ts`, `src/commands.ts`, `src/deployment.ts`, `src/build-tools/*` |
 | `@evjs/create-app` | `packages/create-app` | `src/index.ts`, template restore scripts |
 | `@evjs/shared` | `packages/shared` | `src/build-identifier.ts`, `src/constants.ts`, `src/errors.ts`, `src/http.ts`, `src/page-route-data.ts`, `src/path-pattern.ts`, `src/server-function-id.ts`, `src/server-route-data.ts`, `src/manifest/*` |
-| `@evjs/client` | `packages/client` | `src/app.tsx`, `src/navigation.ts`, `src/transport.ts`, `src/page-route.ts`, `src/page.ts`, `src/react.ts`, `src/rsc.ts`, `src/remote-app.tsx`, `src/shell/*` |
+| `@evjs/client` | `packages/client` | `src/app.tsx`, `src/navigation.ts`, `src/transport.ts`, `src/page-route.ts`, `src/page.ts`, `src/react.ts`, `src/rsc.ts`, `src/shell/*` |
 | `@evjs/server` | `packages/server` | `src/app.ts`, `src/framework.ts`, `src/react.ts`, `src/react-renderer.ts`, `src/functions/*`, `src/routes/*`, `src/runtimes/*` |
 | `@evjs/bundler-utoopack` | `packages/bundler-utoopack` | `src/adapter/index.ts`, `src/adapter/create-config.ts`, `src/manifest-generator.ts` |
 | `@evjs/bundler-webpack` | `packages/bundler-webpack` | `src/adapter/index.ts`, `src/adapter/create-config.ts`, `src/manifest-generator.ts`, webpack validation tests |
@@ -29,7 +29,7 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
    exports. TanStack route trees are a framework implementation detail for
    file-based SPA routing.
 8. Application-facing runtime code should import page hooks, navigation,
-   transport, remote host helpers, and RSC helpers from `@evjs/client`, and
+   transport, and RSC helpers from `@evjs/client`, and
    server functions/routes/rendering APIs from `@evjs/server`.
    Generated page bootstrap, React page mounting, server-function stubs,
    route-tree construction, and shell runtime code belong behind generated-only
@@ -50,7 +50,7 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 | `Link`, page hooks, page metadata exports | `@evjs/client` / page modules | Public page authoring API for params, search, loader data, navigation, and render metadata |
 | React page runtime | `@evjs/client/internal/react-page` | Framework-managed component page mount/hydration |
 | Server-function stubs | `@evjs/client/internal` | Generated client references and internal transport dispatch |
-| Shell runtime | `@evjs/client/internal` | Manifest-driven app/page/remote activation and shared scope negotiation |
+| Shell runtime | `@evjs/client/internal` | Manifest-driven app/page activation and shared scope registration |
 | RSC client runtime | `@evjs/client` | React Flight client integration |
 | `createApp({ routes, middlewares })` | `@evjs/server` | Server functions, REST routes, SSR/PPR/RSC framework requests |
 | `createReactFrameworkServer()` | `@evjs/server/react` | React SSR/RSC framework server integration |
@@ -94,7 +94,7 @@ workspace script predictably:
 
 ```bash
 npm --workspace @evjs/ev test -- tests/build-tools-graph-plan.test.ts tests/deployment.test.ts tests/config.test.ts
-npm --workspace @evjs/client test -- tests/shell.test.ts tests/remote-app.test.ts
+npm --workspace @evjs/client test -- tests/shell.test.ts tests/page-runtime.test.ts
 npm --workspace @evjs/server test -- tests/app.test.ts tests/react-renderer.test.ts
 npm --workspace @evjs/bundler-webpack test -- tests/adapter.test.ts
 ```
@@ -105,7 +105,6 @@ npm --workspace @evjs/bundler-webpack test -- tests/adapter.test.ts
 | Config and package surface | `packages/ev/src/config.ts`, package manifests | `npm --workspace @evjs/ev test -- tests/config.test.ts tests/package-surface.test.ts` |
 | Server functions and route handlers | `packages/server/src/app.ts`, `functions/*`, `routes/*`, `packages/client/src/transport.ts`, `packages/ev/src/build-tools/server-fns.ts` | `npm --workspace @evjs/server test -- tests/app.test.ts tests/dispatch.test.ts tests/register.test.ts tests/route-handler.test.ts` and `npm --workspace @evjs/client test -- tests/transport.test.ts` |
 | SSR, SSG, PPR, and RSC | `packages/ev/src/build-tools/graph/index.ts`, `plan/index.ts`, `packages/server/src/framework.ts`, `react-renderer.ts`, `packages/client/src/rsc.ts` | `npm --workspace @evjs/ev test -- tests/build-tools-graph-plan.test.ts` and `npm --workspace @evjs/server test -- tests/react-renderer.test.ts tests/app.test.ts` |
-| Remote host/runtime | `packages/client/src/remote-app.tsx`, `src/shell/*`, `packages/ev/src/build-tools/graph/index.ts` | `npm --workspace @evjs/client test -- tests/remote-app.test.ts tests/shell.test.ts` |
 | Bundler adapters | `packages/bundler-utoopack/src/adapter/*`, `packages/bundler-webpack/src/adapter/*` | `npm --workspace @evjs/bundler-utoopack test` and `npm --workspace @evjs/bundler-webpack test -- tests/adapter.test.ts` |
 | Documentation-only behavior changes | `docs/docs/*`, `docs/i18n/*`, `README.md`, `AGENTS.md`, `AGENT.md` | `npm run lint`, `git diff --check`, plus the focused behavior test when prose encodes a runtime contract |
 
@@ -117,4 +116,5 @@ npm --workspace @evjs/bundler-webpack test -- tests/adapter.test.ts
   according to ownership. Export application-facing client APIs from
   `@evjs/client`, server APIs from `@evjs/server`, and keep generated bootstrap
   or shell primitives behind generated-only `@evjs/client/internal/*` subpaths.
-- Cover the feature in `examples/full-features` when it crosses graph, bundler, manifest, runtime, and server boundaries.
+- Cover cross-cutting behavior in the focused example that owns it:
+  `examples/render-modes` or `examples/deployment-adapters`.

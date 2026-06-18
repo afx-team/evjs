@@ -18,7 +18,7 @@ ev inspect --json
 `ev inspect` resolves config and framework declarations, but it does not run a
 bundler and does not write `dist`. It reports routing mode, discovered page
 routes, ignored or rejected route files, generated route type location, server
-functions, server routes, page render metadata, remotes, runtime server paths,
+functions, server routes, page render metadata, runtime server paths,
 planned entries/documents, and diagnostics. If any diagnostic is an error, the
 command exits non-zero; warnings are printed without failing the command.
 
@@ -58,7 +58,7 @@ parameters.
 
 1. Load and resolve `ev.config.ts`.
 2. Run config/setup plugin hooks.
-3. `createAppGraph()` analyzes the file-based page route files, lower-level app/page outputs, server entry, and remotes.
+3. `createAppGraph()` analyzes the file-based page route files, lower-level app/page outputs, server entry,.
 4. `createBuildPlan()` produces concrete client/server entries and HTML documents.
 5. The selected bundler compiles `BuildPlan.entries`.
 6. `linkBuildOutput()` combines `AppGraph`, `BuildPlan`, and bundler facts.
@@ -183,7 +183,7 @@ PPR regions carry cache metadata in the manifest:
   asset; deployment adapters rely on `server.entry` to import the framework
   handler.
 - Build entry names are manifest asset keys. They must be build identifiers and
-  must be globally unique across app, page, remote, runtime, and server entries.
+  must be globally unique across app, page, runtime, and server entries.
 - `manifest.server.renderers` keys are renderer build entry names and must use
   the same build-identifier rule.
 - In full server manifests, each SSR, SSG, or RSC document page with server

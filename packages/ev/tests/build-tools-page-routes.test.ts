@@ -118,7 +118,7 @@ describe("discoverPageRoutes", () => {
         expect.objectContaining({
           id: "route-group",
           category: "route",
-          invalid: expect.arrayContaining(["(marketing)/about.tsx"]),
+          valid: expect.arrayContaining(["(marketing)/about.tsx"]),
         }),
         expect.objectContaining({
           id: "client-module",
@@ -153,16 +153,16 @@ describe("discoverPageRoutes", () => {
         expect.objectContaining({
           id: "root-layout",
           category: "layout",
-          valid: expect.arrayContaining(["src/layout/index.tsx"]),
-          invalid: expect.arrayContaining([
-            "src/layout/index.jsx",
+          valid: expect.arrayContaining([
+            "src/layout.tsx",
+            "src/layout/index.tsx",
             "src/pages/layout.tsx",
           ]),
         }),
       ]),
     );
     expect(PAGE_ROUTE_CONVENTION_SUMMARY).toBe(
-      "Page route files use index files for directory roots, $param filenames for dynamic segments, one page file per URL path, one dynamic param name per URL shape, unique generated route ids, no route groups, and lowercase URL-safe static segments; ignored colocated modules include _-prefixed private modules, dot-prefixed hidden modules, declaration files, test/spec modules, Storybook modules, client-only *.client.* modules, and server-only *.server.* modules; SPA layout auto-discovery uses exact layout/index.tsx beside the route directory",
+      "Page route files use index files for directory roots, $param filenames for dynamic segments, one page file per URL path, one dynamic param name per URL shape, unique generated route ids, route groups for pathless organization, and lowercase URL-safe static segments; ignored colocated modules include _-prefixed private modules, dot-prefixed hidden modules, declaration files, test/spec modules, Storybook modules, client-only *.client.* modules, and server-only *.server.* modules; SPA layout auto-discovery supports layout source modules beside the route directory",
     );
     expect(isPageRouteSourceModuleFile("index.tsx")).toBe(true);
     expect(isPageRouteSourceModuleFile("index.d.ts")).toBe(false);
@@ -205,6 +205,7 @@ describe("discoverPageRoutes", () => {
 
     expect(routePathFromSegments([])).toBe("/");
     expect(routePathFromSegments(["users", "$userId"])).toBe("/users/$userId");
+    expect(routePathFromSegments(["(marketing)", "about"])).toBe("/about");
     expect(routeShapeFromSegments(["users", "$userId"])).toEqual({
       key: "/users/:param",
       label: "/users/:param",
@@ -219,10 +220,7 @@ describe("discoverPageRoutes", () => {
     });
     expect(
       findPageRouteSegmentConventionViolation(["(marketing)", "about"]),
-    ).toEqual({
-      kind: "route-group",
-      segment: "(marketing)",
-    });
+    ).toBeUndefined();
     expect(
       findPageRouteSegmentConventionViolation(["(marketing", "about"]),
     ).toEqual({
@@ -232,10 +230,10 @@ describe("discoverPageRoutes", () => {
     expect(
       formatPageRouteSegmentConventionViolation({
         kind: "route-group",
-        segment: "(marketing)",
+        segment: "(marketing",
       }),
     ).toBe(
-      'Page route groups are not supported. Segment "(marketing)" would be ambiguous; use a real URL segment, move grouping into folders outside routing.dir, or use explicit pages config instead.',
+      'Page route group segment "(marketing" must wrap a non-empty group name in parentheses, such as "(marketing)".',
     );
     expect(findPageRouteSegmentConventionViolation(["users", "[id]"])).toEqual({
       kind: "bracket",
@@ -445,29 +443,6 @@ describe("discoverPageRoutes", () => {
     expect(chineseClientRoutesDoc).toContain(
       "即使 `routing.layout` 显式指向其他模块",
     );
-  });
-
-  it("documents the emitted remote manifest filename in config examples", async () => {
-    const englishConfigDoc = await fs.readFile(
-      path.join(repoRoot, "docs/docs/config.md"),
-      "utf-8",
-    );
-    const chineseConfigDoc = await fs.readFile(
-      path.join(
-        repoRoot,
-        "docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/config.md",
-      ),
-      "utf-8",
-    );
-
-    for (const doc of [englishConfigDoc, chineseConfigDoc]) {
-      expect(doc).toContain(
-        'manifest: "https://assets.example.com/crm/evjs-remote.json"',
-      );
-      expect(doc).not.toContain(
-        'manifest: "https://assets.example.com/crm/manifest.json"',
-      );
-    }
   });
 
   it("orders static route siblings before dynamic route siblings", async () => {
@@ -805,13 +780,15 @@ describe("discoverPageRoutes", () => {
     ]);
   });
 
-  it("rejects route group segments", async () => {
+  it("discovers route group segments without adding URL segments", async () => {
     const cwd = await createFixture({
       "src/pages/index.tsx": "export default function Home() { return null; }",
       "src/pages/(marketing)/about.tsx":
         "export default function MarketingAbout() { return null; }",
       "src/pages/shop/(checkout)/cart.tsx":
         "export default function CheckoutCart() { return null; }",
+      "src/pages/(broken/about.tsx":
+        "export default function BrokenAbout() { return null; }",
     });
 
     const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
@@ -822,19 +799,23 @@ describe("discoverPageRoutes", () => {
         path: "/",
         module: "./src/pages/index.tsx",
       },
+      {
+        id: "about",
+        path: "/about",
+        module: "./src/pages/(marketing)/about.tsx",
+      },
+      {
+        id: "shop_cart",
+        path: "/shop/cart",
+        module: "./src/pages/shop/(checkout)/cart.tsx",
+      },
     ]);
     expect(discovery.diagnostics).toEqual([
       {
         level: "error",
-        file: "src/pages/(marketing)/about.tsx",
+        file: "src/pages/(broken/about.tsx",
         message:
-          'Page route groups are not supported. Segment "(marketing)" would be ambiguous; use a real URL segment, move grouping into folders outside routing.dir, or use explicit pages config instead.',
-      },
-      {
-        level: "error",
-        file: "src/pages/shop/(checkout)/cart.tsx",
-        message:
-          'Page route groups are not supported. Segment "(checkout)" would be ambiguous; use a real URL segment, move grouping into folders outside routing.dir, or use explicit pages config instead.',
+          'Page route group segment "(broken" must wrap a non-empty group name in parentheses, such as "(marketing)".',
       },
     ]);
   });
@@ -1003,7 +984,7 @@ describe("discoverPageRoutes", () => {
     ]);
   });
 
-  it("rejects layout files inside the page route directory", async () => {
+  it("discovers layout files inside the page route directory", async () => {
     const cwd = await createFixture({
       "src/layout/index.tsx":
         "export default function Layout() { return null; }",
@@ -1011,9 +992,13 @@ describe("discoverPageRoutes", () => {
         "export default function PostsLayout() { return null; }",
       "src/pages/admin/layout.jsx":
         "export default function AdminLayout() { return null; }",
+      "src/pages/admin/settings.tsx":
+        "export default function AdminSettings() { return null; }",
       "src/pages/layout/index.tsx":
         "export default function LayoutIndex() { return null; }",
       "src/pages/index.tsx": "export default function Home() { return null; }",
+      "src/pages/posts/$postId.tsx":
+        "export default function Post() { return null; }",
       "src/pages/posts/layout/index.jsx":
         "export default function PostLayoutIndex() { return null; }",
     });
@@ -1025,38 +1010,53 @@ describe("discoverPageRoutes", () => {
       {
         id: "index",
         path: "/",
+        parentId: "layout",
         module: "./src/pages/index.tsx",
+      },
+      {
+        id: "layout",
+        path: "/",
+        module: "./src/pages/layout/index.tsx",
+        kind: "layout",
+      },
+      {
+        id: "admin_layout",
+        path: "/admin",
+        module: "./src/pages/admin/layout.jsx",
+        parentId: "layout",
+        kind: "layout",
+      },
+      {
+        id: "admin_settings",
+        path: "/admin/settings",
+        module: "./src/pages/admin/settings.tsx",
+        parentId: "admin_layout",
+      },
+      {
+        id: "posts_layout",
+        path: "/posts",
+        module: "./src/pages/posts/layout.tsx",
+        parentId: "layout",
+        kind: "layout",
+      },
+      {
+        id: "posts_postId",
+        path: "/posts/$postId",
+        module: "./src/pages/posts/$postId.tsx",
+        parentId: "posts_layout",
       },
     ]);
     expect(discovery.diagnostics).toEqual([
       {
         level: "error",
-        file: "src/pages/admin/layout.jsx",
-        message:
-          "Layout files must live at ./src/layout/index.tsx for SPA auto-discovery. Files or folders named layout inside the page route directory are not route pages. Move shared wrappers outside the route directory, or configure routing.layout for a custom SPA layout module.",
-      },
-      {
-        level: "error",
-        file: "src/pages/layout/index.tsx",
-        message:
-          "Layout files must live at ./src/layout/index.tsx for SPA auto-discovery. Files or folders named layout inside the page route directory are not route pages. Move shared wrappers outside the route directory, or configure routing.layout for a custom SPA layout module.",
-      },
-      {
-        level: "error",
-        file: "src/pages/posts/layout.tsx",
-        message:
-          "Layout files must live at ./src/layout/index.tsx for SPA auto-discovery. Files or folders named layout inside the page route directory are not route pages. Move shared wrappers outside the route directory, or configure routing.layout for a custom SPA layout module.",
-      },
-      {
-        level: "error",
         file: "src/pages/posts/layout/index.jsx",
         message:
-          "Layout files must live at ./src/layout/index.tsx for SPA auto-discovery. Files or folders named layout inside the page route directory are not route pages. Move shared wrappers outside the route directory, or configure routing.layout for a custom SPA layout module.",
+          'Duplicate page route id "posts_layout" for layout path "/posts" also generated by ./src/pages/posts/layout.tsx (/posts). Rename one route file so generated route ids are unique.',
       },
     ]);
   });
 
-  it("reports the custom root layout path for layout files inside a custom route directory", async () => {
+  it("discovers layout files inside a custom route directory", async () => {
     const cwd = await createFixture({
       "src/app/pages/layout.tsx":
         "export default function Layout() { return null; }",
@@ -1075,26 +1075,27 @@ describe("discoverPageRoutes", () => {
       {
         id: "index",
         path: "/",
+        parentId: "layout",
         module: "./src/app/pages/index.tsx",
       },
-    ]);
-    expect(discovery.diagnostics).toEqual([
       {
-        level: "error",
-        file: "src/app/pages/layout.tsx",
-        message:
-          "Layout files must live at ./src/app/layout/index.tsx for SPA auto-discovery. Files or folders named layout inside the page route directory are not route pages. Move shared wrappers outside the route directory, or configure routing.layout for a custom SPA layout module.",
+        id: "layout",
+        path: "/",
+        module: "./src/app/pages/layout.tsx",
+        kind: "layout",
       },
       {
-        level: "error",
-        file: "src/app/pages/posts/layout/index.tsx",
-        message:
-          "Layout files must live at ./src/app/layout/index.tsx for SPA auto-discovery. Files or folders named layout inside the page route directory are not route pages. Move shared wrappers outside the route directory, or configure routing.layout for a custom SPA layout module.",
+        id: "posts_layout",
+        path: "/posts",
+        module: "./src/app/pages/posts/layout/index.tsx",
+        parentId: "layout",
+        kind: "layout",
       },
     ]);
+    expect(discovery.diagnostics).toEqual([]);
   });
 
-  it("reports configured root layout paths for layout files inside the route directory", async () => {
+  it("uses configured root layout together with route-directory layouts", async () => {
     const cwd = await createFixture({
       "src/shell/AppLayout.tsx":
         "export default function AppLayout() { return null; }",
@@ -1113,20 +1114,20 @@ describe("discoverPageRoutes", () => {
       {
         id: "index",
         path: "/",
+        parentId: "layout",
         module: "./src/pages/index.tsx",
       },
-    ]);
-    expect(discovery.diagnostics).toEqual([
       {
-        level: "error",
-        file: "src/pages/layout.tsx",
-        message:
-          "Files or folders named layout inside the page route directory are not route pages. The configured root layout is ./src/shell/AppLayout.tsx; do not also place layout files inside the route directory.",
+        id: "layout",
+        path: "/",
+        module: "./src/pages/layout.tsx",
+        kind: "layout",
       },
     ]);
+    expect(discovery.diagnostics).toEqual([]);
   });
 
-  it("reports disabled root layout discovery for layout files inside the route directory", async () => {
+  it("keeps route-directory layouts when external root layout discovery is disabled", async () => {
     const cwd = await createFixture({
       "src/layout/index.tsx":
         "export default function Layout() { return null; }",
@@ -1145,20 +1146,20 @@ describe("discoverPageRoutes", () => {
       {
         id: "index",
         path: "/",
+        parentId: "layout",
         module: "./src/pages/index.tsx",
       },
-    ]);
-    expect(discovery.diagnostics).toEqual([
       {
-        level: "error",
-        file: "src/pages/layout.tsx",
-        message:
-          "Files or folders named layout inside the page route directory are not route pages. Root layout discovery is disabled for this routing mode; move shared wrappers outside the route directory and import them from page modules.",
+        id: "layout",
+        path: "/",
+        module: "./src/pages/layout.tsx",
+        kind: "layout",
       },
     ]);
+    expect(discovery.diagnostics).toEqual([]);
   });
 
-  it("rejects layout directories inside the page route directory", async () => {
+  it("ignores layout directories without layout route modules", async () => {
     const cwd = await createFixture({
       "src/pages/layout/README.md": "# not a route",
       "src/pages/posts/layout/README.md": "# not a route",
@@ -1175,23 +1176,10 @@ describe("discoverPageRoutes", () => {
         module: "./src/pages/index.tsx",
       },
     ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/pages/layout",
-        message:
-          "Layout files must live at ./src/layout/index.tsx for SPA auto-discovery. Files or folders named layout inside the page route directory are not route pages. Move shared wrappers outside the route directory, or configure routing.layout for a custom SPA layout module.",
-      },
-      {
-        level: "error",
-        file: "src/pages/posts/layout",
-        message:
-          "Layout files must live at ./src/layout/index.tsx for SPA auto-discovery. Files or folders named layout inside the page route directory are not route pages. Move shared wrappers outside the route directory, or configure routing.layout for a custom SPA layout module.",
-      },
-    ]);
+    expect(discovery.diagnostics).toEqual([]);
   });
 
-  it("rejects root layout files inside the page route directory", async () => {
+  it("discovers root layout files inside the page route directory", async () => {
     const cwd = await createFixture({
       "src/pages/layout.tsx":
         "export default function Layout() { return null; }",
@@ -1205,20 +1193,20 @@ describe("discoverPageRoutes", () => {
       {
         id: "index",
         path: "/",
+        parentId: "layout",
         module: "./src/pages/index.tsx",
       },
-    ]);
-    expect(discovery.diagnostics).toEqual([
       {
-        level: "error",
-        file: "src/pages/layout.tsx",
-        message:
-          "Layout files must live at ./src/layout/index.tsx for SPA auto-discovery. Files or folders named layout inside the page route directory are not route pages. Move shared wrappers outside the route directory, or configure routing.layout for a custom SPA layout module.",
+        id: "layout",
+        path: "/",
+        module: "./src/pages/layout.tsx",
+        kind: "layout",
       },
     ]);
+    expect(discovery.diagnostics).toEqual([]);
   });
 
-  it("rejects root layout aliases", async () => {
+  it("reports ambiguous root layout auto-discovery modules", async () => {
     const cwd = await createFixture({
       "src/layout.jsx": "export default function LayoutJsx() { return null; }",
       "src/layout.tsx": "export default function LayoutTsx() { return null; }",
@@ -1242,24 +1230,12 @@ describe("discoverPageRoutes", () => {
         level: "error",
         file: "src/layout.tsx",
         message:
-          "Root layout auto-discovery only uses ./src/layout/index.tsx. ./src/layout.tsx is not supported. Move it to ./src/layout/index.tsx, or configure routing.layout for a custom SPA layout module.",
-      },
-      {
-        level: "error",
-        file: "src/layout.jsx",
-        message:
-          "Root layout auto-discovery only uses ./src/layout/index.tsx. ./src/layout.jsx is not supported. Move it to ./src/layout/index.tsx, or configure routing.layout for a custom SPA layout module.",
-      },
-      {
-        level: "error",
-        file: "src/layout/index.js",
-        message:
-          "Root layout auto-discovery only uses ./src/layout/index.tsx. ./src/layout/index.js is not supported. Move it to ./src/layout/index.tsx, or configure routing.layout for a custom SPA layout module.",
+          "Multiple root layout modules found beside the page route directory: ./src/layout.tsx, ./src/layout.jsx, ./src/layout/index.js. Keep one layout module or configure routing.layout explicitly.",
       },
     ]);
   });
 
-  it("rejects root layout directory aliases beside a custom page route directory", async () => {
+  it("discovers root layout directory aliases beside a custom page route directory", async () => {
     const cwd = await createFixture({
       "src/app/layout/index.jsx":
         "export default function Layout() { return null; }",
@@ -1271,7 +1247,7 @@ describe("discoverPageRoutes", () => {
       dir: "./src/app/pages",
     });
 
-    expect(discovery.rootModule).toBeUndefined();
+    expect(discovery.rootModule).toBe("./src/app/layout/index.jsx");
     expect(discovery.routes).toEqual([
       {
         id: "index",
@@ -1279,14 +1255,7 @@ describe("discoverPageRoutes", () => {
         module: "./src/app/pages/index.tsx",
       },
     ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/app/layout/index.jsx",
-        message:
-          "Root layout auto-discovery only uses ./src/app/layout/index.tsx. ./src/app/layout/index.jsx is not supported. Move it to ./src/app/layout/index.tsx, or configure routing.layout for a custom SPA layout module.",
-      },
-    ]);
+    expect(discovery.diagnostics).toEqual([]);
   });
 
   it("rejects route files without default exports", async () => {

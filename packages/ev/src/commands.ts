@@ -11,7 +11,6 @@ import {
   assertFrameworkManifestShape,
   createPublicManifest,
   linkBuildOutput,
-  linkRemoteManifest,
 } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import { execa } from "execa";
@@ -215,12 +214,6 @@ export interface InspectFrameworkBuildResult {
   pages: InspectPageOutput[];
   serverFunctions: InspectServerFunction[];
   serverRoutes: InspectServerRoute[];
-  remotes: Record<string, { manifest: string; activeWhen?: string[] }>;
-  remote?: {
-    name: string;
-    baseUrl: string;
-    entries: Record<string, { app: string; activeWhen?: string[] }>;
-  };
   runtime: {
     serverEnabled: boolean;
     server?: ResolvedConfig["server"]["runtime"];
@@ -305,12 +298,12 @@ async function withPageRoutingDefaults<TBundlerCfg>(
   }
 
   const requested = routingOption !== undefined;
-  if ((config.pages || config.app || config.remote) && requested) {
+  if ((config.pages || config.app) && requested) {
     throw new Error(
-      "[evjs] routing cannot be combined with app, pages, or remote configuration.",
+      "[evjs] routing cannot be combined with app or pages configuration.",
     );
   }
-  if (config.pages || config.app || config.remote) {
+  if (config.pages || config.app) {
     if (syncRouteTypes) {
       await removeAllPageRouteTypes(cwd);
     }
@@ -940,7 +933,7 @@ function collectHtmlTemplates<TBundlerCfg>(
     });
   }
 
-  if (templates.length === 0 && !config.remote) {
+  if (templates.length === 0) {
     templates.push({
       path: config.html,
       notFoundMessage: "[evjs] HTML template not found",
@@ -990,8 +983,6 @@ function getFrameworkOutputPaths(
 async function emitFrameworkManifest(
   cwd: string,
   output: BuildOutput,
-  bundlerFacts: BundlerBuildFacts,
-  plan: BuildPlan,
   serverEnabled: boolean,
 ): Promise<void> {
   const { rootDir } = getFrameworkOutputPaths(cwd, output, serverEnabled);
@@ -1012,19 +1003,6 @@ async function emitFrameworkManifest(
     JSON.stringify(publicManifest, null, 2),
     "utf-8",
   );
-
-  const remoteManifest = linkRemoteManifest({
-    plan,
-    clientEntryAssets: bundlerFacts.clientEntryAssets,
-    firstClientEntryAssets: bundlerFacts.firstClientEntryAssets,
-  });
-  if (remoteManifest) {
-    await fs.promises.writeFile(
-      path.join(rootDir, "evjs-remote.json"),
-      JSON.stringify(remoteManifest, null, 2),
-      "utf-8",
-    );
-  }
 }
 
 function getHtmlAssets(html: BuildPlan["html"][number], output: BuildOutput) {
@@ -1141,8 +1119,6 @@ async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   await emitFrameworkManifest(
     options.cwd,
     output,
-    options.bundlerFacts,
-    options.plan,
     options.config.serverEnabled,
   );
   await emitFrameworkHtml(
@@ -1664,22 +1640,6 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
           methods: route.methods,
         }))
         .sort(compareById),
-      remotes: config.remotes,
-      remote: config.remote
-        ? {
-            name: config.remote.name,
-            baseUrl: config.remote.baseUrl,
-            entries: Object.fromEntries(
-              Object.entries(config.remote.entries).map(([id, entry]) => [
-                id,
-                {
-                  app: entry.app,
-                  ...(entry.activeWhen ? { activeWhen: entry.activeWhen } : {}),
-                },
-              ]),
-            ),
-          }
-        : undefined,
       runtime: {
         serverEnabled: config.serverEnabled,
         ...(config.serverEnabled ? { server: config.server.runtime } : {}),

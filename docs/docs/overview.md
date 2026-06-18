@@ -3,8 +3,7 @@
 > **ev** = **Ev**aluation · **Ev**olution — evaluate across runtimes, evolve with AI tooling.
 
 evjs is a zero-config React fullstack framework with page-based client routes,
-server functions, route handlers, SSR, PPR, RSC integration points,
-manifest-driven remotes, and deployment-oriented output.
+server functions, route handlers, SSR, PPR, RSC integration points, and deployment-oriented output.
 
 The framework keeps a clear split between:
 
@@ -18,13 +17,12 @@ the framework. MPA page routes use the page runtime without adding a router.
 
 ## Features
 
-- **Zero-config page routes** — `ev dev` / `ev build` discover `src/pages` unless the project declares explicit `app`, `pages`, or `remote` config.
+- **Zero-config page routes** — `ev dev` / `ev build` discover `src/pages` unless the project declares explicit `app` or `pages` config.
 - **SPA and MPA modes** — `routing.mode: "spa"` builds one framework-owned app; `"mpa"` builds independent router-free pages.
 - **Framework pages** — page modules can declare CSR/SSR/SSG/PPR/RSC rendering metadata next to the component.
 - **Server functions** — `"use server"` modules become browser-callable RPC stubs.
 - **Server routes** — standard Web `Request`/`Response` route handlers via `createRoute()`.
 - **Unified server boundary** — `@evjs/server` handles server functions, server routes, SSR, PPR, and RSC requests.
-- **Manifest-driven remotes** — host apps load remote apps through remote manifests and shared dependency negotiation.
 - **Plugin system** — config, bundler, output, HTML, and build lifecycle hooks.
 - **Deployment output** — one public-safe framework manifest plus adapter-generated platform artifacts.
 
@@ -35,7 +33,6 @@ flowchart LR
     subgraph Browser ["Browser"]
         UI["React app/page runtime"]
         RPC["Server function transport"]
-        REMOTE["Remote app shell"]
         RSCClient["RSC client runtime"]
     end
 
@@ -68,7 +65,6 @@ flowchart LR
     UI -.->|"document request"| SSR
     UI -.->|"document request"| PPR
     RSCClient -.->|"runtime.server.rsc"| RSC
-    REMOTE -.->|"remote manifest + assets"| UI
 
     SSR -->|Read| DB
     SSR -->|Read| KV
@@ -93,5 +89,5 @@ flowchart LR
 
 evjs discovers page routes and explicit server/page metadata into an `AppGraph`,
 derives a bundler-independent `BuildPlan`, links bundler facts into a single
-`BuildOutput`, and lets runtime, server, remote, and deployment adapters consume
+`BuildOutput`, and lets runtime, server, and deployment adapters consume
 that output while plugins extend the supported lifecycle stages.

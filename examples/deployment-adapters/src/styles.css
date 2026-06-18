@@ -25,6 +25,14 @@ a:hover {
   padding: 28px 20px;
 }
 
+.page-shell {
+  display: grid;
+  gap: 16px;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 28px 20px;
+}
+
 .render-page {
   max-width: none;
   min-height: 100vh;
@@ -648,14 +656,6 @@ th {
 .triage-grid span {
   color: #475569;
   font-size: 14px;
-}
-
-.remote-frame {
-  margin-top: 16px;
-}
-
-.remote-card {
-  background: #f8fafc;
 }
 
 @media (max-width: 760px) {

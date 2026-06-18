@@ -2180,62 +2180,6 @@ describe("build", () => {
     expect(events).not.toContain("bundler.build");
   });
 
-  it("fails on invalid remote build declarations before running the bundler", async () => {
-    const cwd = await createProject();
-    const events: string[] = [];
-    const bundler = createMockBundler(events);
-
-    await expect(
-      build(
-        {
-          server: false,
-          remote: {
-            name: "crm",
-            entries: {},
-          },
-        },
-        {
-          cwd,
-          bundler,
-        },
-      ),
-    ).rejects.toThrow(
-      "[evjs] remote.entries must declare at least one remote entry.",
-    );
-    expect(events).not.toContain("bundler.build");
-  });
-
-  it("fails on missing remote entry apps before running the bundler", async () => {
-    const cwd = await createProject();
-    const events: string[] = [];
-    const bundler = createMockBundler(events);
-
-    await expect(
-      build(
-        {
-          server: false,
-          remote: {
-            name: "crm",
-            entries: {
-              customers: {
-                app: "./src/missing-remote.ts",
-                activeWhen: ["/crm/*"],
-                mount: "#remote-root",
-              },
-            },
-          },
-        },
-        {
-          cwd,
-          bundler,
-        },
-      ),
-    ).rejects.toThrow(
-      'src/missing-remote.ts - Remote entry "customers" app source file not found.',
-    );
-    expect(events).not.toContain("bundler.build");
-  });
-
   it("fails on invalid explicit page declarations before running the bundler", async () => {
     const cwd = await createProject();
     const events: string[] = [];
@@ -2940,7 +2884,7 @@ describe("build", () => {
     expect(events).not.toContain("bundler.build");
   });
 
-  it("fails when the root layout is placed in the page route directory", async () => {
+  it("builds when the root layout is placed in the page route directory", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await fs.promises.writeFile(
@@ -2968,13 +2912,11 @@ describe("build", () => {
           bundler,
         },
       ),
-    ).rejects.toThrow(
-      "Layout files must live at ./src/layout/index.tsx for SPA auto-discovery. Files or folders named layout inside the page route directory are not route pages. Move shared wrappers outside the route directory, or configure routing.layout for a custom SPA layout module.",
-    );
-    expect(events).not.toContain("bundler.build");
+    ).resolves.toBeUndefined();
+    expect(events).toContain("bundler.build");
   });
 
-  it("fails when a nested layout is placed in the page route directory", async () => {
+  it("builds when a nested layout is placed in the page route directory", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages/posts"), {
       recursive: true,
@@ -2982,6 +2924,11 @@ describe("build", () => {
     await fs.promises.writeFile(
       path.join(cwd, "src/pages/posts/layout.tsx"),
       "export default function PostsLayout() { return null; }",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/posts/$postId.tsx"),
+      "export default function Post() { return null; }",
       "utf-8",
     );
     await fs.promises.writeFile(
@@ -3004,13 +2951,11 @@ describe("build", () => {
           bundler,
         },
       ),
-    ).rejects.toThrow(
-      "Layout files must live at ./src/layout/index.tsx for SPA auto-discovery. Files or folders named layout inside the page route directory are not route pages. Move shared wrappers outside the route directory, or configure routing.layout for a custom SPA layout module.",
-    );
-    expect(events).not.toContain("bundler.build");
+    ).resolves.toBeUndefined();
+    expect(events).toContain("bundler.build");
   });
 
-  it("fails when the root layout uses a file alias", async () => {
+  it("builds when the root layout uses a file alias", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await fs.promises.writeFile(
@@ -3038,10 +2983,8 @@ describe("build", () => {
           bundler,
         },
       ),
-    ).rejects.toThrow(
-      "Root layout auto-discovery only uses ./src/layout/index.tsx. ./src/layout.tsx is not supported. Move it to ./src/layout/index.tsx, or configure routing.layout for a custom SPA layout module.",
-    );
-    expect(events).not.toContain("bundler.build");
+    ).resolves.toBeUndefined();
+    expect(events).toContain("bundler.build");
   });
 
   it("orders plugin config and lifecycle hooks by dependencies", async () => {

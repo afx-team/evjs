@@ -12,12 +12,7 @@ import type {
   PluginHooks,
   ResolvedConfig,
 } from "@evjs/ev";
-import {
-  buildHtml,
-  linkBuildOutput,
-  linkRemoteManifest,
-  resolveConfig,
-} from "@evjs/ev";
+import { buildHtml, linkBuildOutput, resolveConfig } from "@evjs/ev";
 import {
   createAppGraph,
   createBuildPlan,
@@ -184,19 +179,6 @@ async function emitFrameworkArtifacts(options: {
     "utf-8",
   );
 
-  const remoteManifest = linkRemoteManifest({
-    plan: options.plan,
-    clientEntryAssets: options.facts.clientEntryAssets,
-    firstClientEntryAssets: options.facts.firstClientEntryAssets,
-  });
-  if (remoteManifest) {
-    await fs.writeFile(
-      path.join(rootDir, "evjs-remote.json"),
-      JSON.stringify(remoteManifest, null, 2),
-      "utf-8",
-    );
-  }
-
   for (const html of options.plan.html) {
     const pageId = html.owner.pageId;
     const appId = html.owner.appId;
@@ -318,7 +300,6 @@ describe("webpack stats ownership", () => {
       ],
       serverFunctions: [],
       serverRoutes: [],
-      remotes: {},
     };
 
     const rules = webpackAdapterTesting.createDevProxyRules(config, graph);
@@ -473,108 +454,6 @@ describe("webpackAdapter build", () => {
       expect(bundle).toContain("registerShellModule");
       expect(bundle).toContain("data-evjs-shell-load");
       await expect(fs.access(path.join(cwd, ".evjs"))).rejects.toThrow();
-    },
-  );
-
-  buildIt(
-    "builds remote client entries and emits a remote manifest",
-    async () => {
-      const cwd = await createFixture({
-        "src/remote !client.tsx": `
-        import { useRemoteContext } from "@evjs/client";
-
-        export default function Remote() {
-          const remote = useRemoteContext();
-          return <h2>Remote {remote.entryId}</h2>;
-        }
-      `,
-      });
-      const config = resolveConfig<WebpackConfig>({
-        server: false,
-        remote: {
-          name: "crm",
-          baseUrl: "https://assets.example.com/crm/",
-          shared: {
-            "remote-react": {
-              shareKey: "react",
-              requiredVersion: ">=19 <20",
-              singleton: true,
-              strictVersion: true,
-              eager: true,
-            },
-          },
-          entries: {
-            customers: {
-              app: "./src/remote !client.tsx",
-              activeWhen: ["/crm/*"],
-              mount: "#remote-root",
-            },
-          },
-        },
-      });
-      const analysis = await createAppGraph(config, cwd);
-      const plan = createBuildPlan(config, analysis.graph, {
-        mode: "development",
-      });
-
-      await buildWithFrameworkArtifacts({
-        config,
-        cwd,
-        graph: analysis.graph,
-        plan,
-        hooks: [],
-      });
-
-      const manifest = JSON.parse(
-        await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
-      ) as BuildOutput;
-      const remoteManifest = JSON.parse(
-        await fs.readFile(path.join(cwd, "dist/evjs-remote.json"), "utf-8"),
-      );
-      const remoteBundle = await fs.readFile(
-        path.join(cwd, "dist/crm-customers.js"),
-        "utf-8",
-      );
-
-      expect(plan.html).toEqual([]);
-      expect(manifest.apps).toEqual({});
-      expect(remoteManifest).toEqual({
-        version: 1,
-        name: "crm",
-        baseUrl: "https://assets.example.com/crm/",
-        shared: {
-          "remote-react": {
-            shareKey: "react",
-            requiredVersion: ">=19 <20",
-            singleton: true,
-            strictVersion: true,
-            eager: true,
-          },
-        },
-        entries: {
-          customers: {
-            assets: {
-              js: ["crm-customers.js"],
-              css: [],
-            },
-            module: {
-              type: "lifecycle",
-              href: "crm-customers.js",
-            },
-            activeWhen: ["/crm/*"],
-            mount: "#remote-root",
-          },
-        },
-      });
-      expect(remoteBundle).toContain("registerShellModule");
-      expect(remoteBundle).toContain("createRemoteReactModule");
-      expect(remoteBundle).toContain("registerGeneratedRemoteClientEntry");
-      expect(remoteBundle).toContain("framework-entry-anchor.js");
-      expect(remoteBundle).not.toContain("createRemoteShellModule");
-      expect(remoteBundle).not.toContain("ctx && ctx.remote");
-      await expect(
-        fs.access(path.join(cwd, "dist/index.html")),
-      ).rejects.toThrow();
     },
   );
 

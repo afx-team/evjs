@@ -3,13 +3,11 @@ import type {
   AppGraph,
   BuildOutput,
   BuildPlan,
-  RemoteManifest,
 } from "../src/manifest/index.js";
 import {
   assertFrameworkManifestShape,
   createPublicManifest,
   linkBuildOutput,
-  linkRemoteManifest,
 } from "../src/manifest/index.js";
 
 function createMinimalBuildOutput(): BuildOutput {
@@ -189,97 +187,6 @@ describe("assertFrameworkManifestShape", () => {
       ),
     ).toThrow(
       '[evjs] manifest.assets.main.js item " main.js " must not contain leading or trailing whitespace.',
-    );
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        { ...createMinimalBuildOutput(), remotes: [] },
-        "manifest",
-      ),
-    ).toThrow("[evjs] manifest.remotes must be an object.");
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...createMinimalBuildOutput(),
-          remotes: { "crm/list": { manifest: "/crm/manifest.json" } },
-        },
-        "manifest",
-      ),
-    ).toThrow(
-      '[evjs] manifest.remotes key "crm/list" must contain only letters, numbers, underscores, or hyphens.',
-    );
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...createMinimalBuildOutput(),
-          remotes: { crm: [] },
-        },
-        "manifest",
-      ),
-    ).toThrow("[evjs] manifest.remotes.crm must be an object.");
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...createMinimalBuildOutput(),
-          remotes: { crm: { manifest: " /crm/manifest.json " } },
-        },
-        "manifest",
-      ),
-    ).toThrow(
-      "[evjs] manifest.remotes.crm.manifest must not contain leading or trailing whitespace.",
-    );
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...createMinimalBuildOutput(),
-          remotes: { crm: { manifest: "/crm/manifest.json", activeWhen: [] } },
-        },
-        "manifest",
-      ),
-    ).toThrow(
-      "[evjs] manifest.remotes.crm.activeWhen must contain at least one path.",
-    );
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...createMinimalBuildOutput(),
-          remotes: {
-            crm: {
-              manifest: "/crm/manifest.json",
-              activeWhen: ["/crm/*?preview=1"],
-            },
-          },
-        },
-        "manifest",
-      ),
-    ).toThrow(
-      '[evjs] manifest.remotes.crm.activeWhen pattern "/crm/*?preview=1" must not include a query string or hash.',
-    );
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...createMinimalBuildOutput(),
-          remotes: {
-            crm: {
-              manifest: "/crm/manifest.json",
-              activeWhen: ["/crm/*"],
-            },
-            analytics: {
-              manifest: "/analytics/manifest.json",
-              activeWhen: ["/crm/*"],
-            },
-          },
-        },
-        "manifest",
-      ),
-    ).toThrow(
-      '[evjs] manifest.remotes.analytics.activeWhen duplicates manifest.remotes.crm.activeWhen pattern "/crm/*". Remote activeWhen patterns must be unique.',
     );
 
     expect(() =>
@@ -2648,7 +2555,6 @@ describe("linkBuildOutput", () => {
       routes: [],
       serverFunctions: [],
       serverRoutes: [],
-      remotes: {},
       clientReferences: [
         {
           id: "src/pages/Client.tsx#default",
@@ -2704,7 +2610,6 @@ describe("linkBuildOutput", () => {
       routes: [],
       serverFunctions: [],
       serverRoutes: [],
-      remotes: {},
     };
     const plan: BuildPlan = {
       version: 1,
@@ -2777,7 +2682,6 @@ describe("linkBuildOutput", () => {
       routes: [],
       serverFunctions: [],
       serverRoutes: [],
-      remotes: {},
     };
     const plan: BuildPlan = {
       version: 1,
@@ -2829,7 +2733,6 @@ describe("linkBuildOutput", () => {
       routes: [],
       serverFunctions: [],
       serverRoutes: [],
-      remotes: {},
     };
     const plan: BuildPlan = {
       version: 1,
@@ -2898,7 +2801,6 @@ describe("linkBuildOutput", () => {
       routes: [],
       serverFunctions: [],
       serverRoutes: [],
-      remotes: {},
     };
     const plan: BuildPlan = {
       version: 1,
@@ -2998,7 +2900,6 @@ describe("linkBuildOutput", () => {
       ],
       serverFunctions: [],
       serverRoutes: [],
-      remotes: {},
     };
     const plan: BuildPlan = {
       version: 1,
@@ -3102,7 +3003,6 @@ describe("linkBuildOutput", () => {
       routes: [],
       serverFunctions: [],
       serverRoutes: [],
-      remotes: {},
     };
     const plan: BuildPlan = {
       version: 1,
@@ -3169,7 +3069,6 @@ describe("linkBuildOutput", () => {
       routes: [],
       serverFunctions: [],
       serverRoutes: [],
-      remotes: {},
     };
     const plan: BuildPlan = {
       version: 1,
@@ -3245,7 +3144,6 @@ describe("linkBuildOutput", () => {
       routes: [],
       serverFunctions: [],
       serverRoutes: [],
-      remotes: {},
     };
     const createPlan = (entries: BuildPlan["entries"]): BuildPlan => ({
       version: 1,
@@ -3332,7 +3230,6 @@ describe("linkBuildOutput", () => {
       routes: [],
       serverFunctions: [],
       serverRoutes: [],
-      remotes: {},
     };
     const plan: BuildPlan = {
       version: 1,
@@ -3560,362 +3457,5 @@ describe("createPublicManifest", () => {
       platform: "node",
       publicAsset: "dashboard.js",
     });
-  });
-});
-
-describe("linkRemoteManifest", () => {
-  function createCrmRemotePlan(): BuildPlan {
-    return {
-      version: 1,
-      buildId: "build",
-      mode: "production",
-      distDir: "dist",
-      serverEnabled: false,
-      entries: [
-        {
-          name: "crm-default",
-          import: "./src/remote/Crm.tsx",
-          environment: "client",
-          runtime: "browser",
-          kind: "remote-client",
-          owner: { remoteId: "crm", remoteEntryId: "default" },
-        },
-      ],
-      html: [],
-      server: { enabled: false },
-      runtime: { publicPath: "/" },
-      remote: {
-        name: "crm",
-        baseUrl: "https://assets.example.com/crm/",
-        entries: {
-          default: {
-            id: "default",
-            name: "crm-default",
-            app: "./src/remote/Crm.tsx",
-            activeWhen: ["/crm/*"],
-          },
-        },
-      },
-    };
-  }
-
-  function getCrmRemote(plan: BuildPlan): NonNullable<BuildPlan["remote"]> {
-    if (!plan.remote) {
-      throw new Error("Expected remote plan fixture to include remote config.");
-    }
-    return plan.remote;
-  }
-
-  it("does not publish remote source modules", () => {
-    const manifest = linkRemoteManifest({
-      plan: createCrmRemotePlan(),
-      clientEntryAssets: {
-        "crm-default": { js: ["crm-default.js"], css: ["crm-default.css"] },
-      },
-    }) as RemoteManifest;
-
-    expect(manifest.entries.default.module).toEqual({
-      type: "lifecycle",
-      href: "crm-default.js",
-    });
-    expect(JSON.stringify(manifest)).not.toContain(".tsx");
-  });
-
-  it("uses the named entry asset for remote lifecycle modules", () => {
-    const manifest = linkRemoteManifest({
-      plan: createCrmRemotePlan(),
-      clientEntryAssets: {
-        "crm-default": {
-          js: ["runtime.js", "shared-react.js", "crm-default.abc12345.js"],
-          css: ["crm-default.css"],
-        },
-      },
-    }) as RemoteManifest;
-
-    expect(manifest.entries.default.module).toEqual({
-      type: "lifecycle",
-      href: "crm-default.abc12345.js",
-    });
-    expect(manifest.entries.default.assets?.js).toEqual([
-      "runtime.js",
-      "shared-react.js",
-      "crm-default.abc12345.js",
-    ]);
-  });
-
-  it("fails when a remote entry has no matching remote-client build entry", () => {
-    const plan = createCrmRemotePlan();
-    const remoteEntry = plan.entries[0];
-    if (!remoteEntry) {
-      throw new Error(
-        "Expected remote plan fixture to include a client build entry.",
-      );
-    }
-    plan.entries = [
-      {
-        ...remoteEntry,
-        owner: { remoteId: "crm", remoteEntryId: "orders" },
-      },
-    ];
-
-    expect(() =>
-      linkRemoteManifest({
-        plan,
-        clientEntryAssets: {
-          "crm-default": { js: ["crm-default.js"], css: [] },
-        },
-      }),
-    ).toThrow(
-      '[evjs] Remote entry "default" for remote "crm" did not declare a matching remote-client build entry.',
-    );
-  });
-
-  it("fails when remote manifest identity is invalid", () => {
-    const createInput = (remote: Partial<NonNullable<BuildPlan["remote"]>>) => {
-      const plan = createCrmRemotePlan();
-      if (!plan.remote) {
-        throw new Error(
-          "Expected remote plan fixture to include remote config.",
-        );
-      }
-      plan.remote = {
-        ...plan.remote,
-        ...remote,
-      };
-      return {
-        plan,
-        clientEntryAssets: {
-          "crm-default": { js: ["crm-default.js"], css: ["crm-default.css"] },
-        },
-      };
-    };
-
-    expect(() => linkRemoteManifest(createInput({ name: "crm/main" }))).toThrow(
-      "[evjs] remote.name must contain only letters, numbers, underscores, or hyphens before remote manifest emission.",
-    );
-
-    expect(() => linkRemoteManifest(createInput({ name: " crm " }))).toThrow(
-      "[evjs] remote.name must not contain leading or trailing whitespace before remote manifest emission.",
-    );
-
-    expect(() => linkRemoteManifest(createInput({ baseUrl: "" }))).toThrow(
-      "[evjs] remote.baseUrl must be a non-empty string before remote manifest emission.",
-    );
-
-    expect(() =>
-      linkRemoteManifest(createInput({ baseUrl: " /crm/ " })),
-    ).toThrow(
-      "[evjs] remote.baseUrl must not contain leading or trailing whitespace before remote manifest emission.",
-    );
-
-    expect(() =>
-      linkRemoteManifest(createInput({ baseUrl: "http://[" })),
-    ).toThrow(
-      "[evjs] remote.baseUrl must be an http(s) URL or path before remote manifest emission.",
-    );
-
-    expect(() =>
-      linkRemoteManifest(createInput({ baseUrl: "javascript:alert(1)" })),
-    ).toThrow(
-      "[evjs] remote.baseUrl must be an http(s) URL or path before remote manifest emission.",
-    );
-  });
-
-  it("fails when remote entries are invalid before manifest emission", () => {
-    const createInput = (
-      mutate: (
-        remote: NonNullable<BuildPlan["remote"]>,
-        plan: BuildPlan,
-      ) => void,
-    ) => {
-      const plan = createCrmRemotePlan();
-      mutate(getCrmRemote(plan), plan);
-      return {
-        plan,
-        clientEntryAssets: {
-          "crm-default": { js: ["crm-default.js"], css: ["crm-default.css"] },
-          "crm-orders": { js: ["crm-orders.js"], css: [] },
-        },
-      };
-    };
-
-    expect(() =>
-      linkRemoteManifest(
-        createInput((remote) => {
-          remote.entries = {};
-        }),
-      ),
-    ).toThrow(
-      "[evjs] remote.entries must declare at least one remote entry before remote manifest emission.",
-    );
-
-    expect(() =>
-      linkRemoteManifest(
-        createInput((remote) => {
-          remote.entries = {
-            "default/list": {
-              ...remote.entries.default,
-              id: "default/list",
-            },
-          };
-        }),
-      ),
-    ).toThrow(
-      '[evjs] remote.entries key "default/list" must contain only letters, numbers, underscores, or hyphens before remote manifest emission.',
-    );
-
-    expect(() =>
-      linkRemoteManifest(
-        createInput((remote) => {
-          remote.entries.default = {
-            ...remote.entries.default,
-            id: "customers",
-          };
-        }),
-      ),
-    ).toThrow(
-      '[evjs] remote.entries.default.id "customers" must match remote.entries key "default" before remote manifest emission.',
-    );
-
-    expect(() =>
-      linkRemoteManifest(
-        createInput((remote) => {
-          remote.entries.default = {
-            ...remote.entries.default,
-            activeWhen: ["crm/*"],
-          };
-        }),
-      ),
-    ).toThrow(
-      '[evjs] remote.entries.default.activeWhen pattern "crm/*" must start with "/" before remote manifest emission.',
-    );
-
-    expect(() =>
-      linkRemoteManifest(
-        createInput((remote, plan) => {
-          remote.entries.orders = {
-            id: "orders",
-            name: "crm-orders",
-            app: "./src/remote/Orders.tsx",
-            activeWhen: ["/crm/*"],
-          };
-          plan.entries.push({
-            name: "crm-orders",
-            import: "./src/remote/Orders.tsx",
-            environment: "client",
-            runtime: "browser",
-            kind: "remote-client",
-            owner: { remoteId: "crm", remoteEntryId: "orders" },
-          });
-        }),
-      ),
-    ).toThrow(
-      '[evjs] remote.entries.orders.activeWhen duplicates remote.entries.default.activeWhen pattern "/crm/*". Remote entry activeWhen patterns must be unique before remote manifest emission.',
-    );
-
-    expect(() =>
-      linkRemoteManifest(
-        createInput((remote) => {
-          remote.entries.default = {
-            ...remote.entries.default,
-            mount: " #remote ",
-          };
-        }),
-      ),
-    ).toThrow(
-      "[evjs] remote.entries.default.mount must not contain leading or trailing whitespace before remote manifest emission.",
-    );
-  });
-
-  it("fails when remote shared dependency metadata is invalid before manifest emission", () => {
-    const createInput = (
-      shared: NonNullable<BuildPlan["remote"]>["shared"],
-    ) => {
-      const plan = createCrmRemotePlan();
-      getCrmRemote(plan).shared = shared;
-      return {
-        plan,
-        clientEntryAssets: {
-          "crm-default": { js: ["crm-default.js"], css: ["crm-default.css"] },
-        },
-      };
-    };
-
-    expect(() =>
-      linkRemoteManifest(
-        createInput({
-          "": {
-            shareKey: "react",
-          },
-        }),
-      ),
-    ).toThrow(
-      "[evjs] remote.shared must not contain empty keys before remote manifest emission.",
-    );
-
-    expect(() =>
-      linkRemoteManifest(
-        createInput({
-          react: {
-            requiredVersion: ">=19 <",
-          },
-        }),
-      ),
-    ).toThrow(
-      '[evjs] remote.shared.react.requiredVersion must use supported version range syntax (examples: "19", "^19.0.0", ">=18 <20", or "^18 || ^19") before remote manifest emission.',
-    );
-
-    expect(() =>
-      linkRemoteManifest(
-        createInput({
-          react: {
-            singleton: "yes" as never,
-          },
-        }),
-      ),
-    ).toThrow(
-      "[evjs] remote.shared.react.singleton must be a boolean when provided before remote manifest emission.",
-    );
-  });
-
-  it("does not fall back to first client entry assets for remote entries", () => {
-    expect(() =>
-      linkRemoteManifest({
-        plan: createCrmRemotePlan(),
-        clientEntryAssets: {},
-        firstClientEntryAssets: { js: ["app-shell.js"], css: [] },
-      }),
-    ).toThrow(
-      '[evjs] Remote entry "default" for remote "crm" did not produce a client JavaScript asset.',
-    );
-  });
-
-  it("fails when a remote entry has no client JavaScript asset", () => {
-    expect(() =>
-      linkRemoteManifest({
-        plan: createCrmRemotePlan(),
-        clientEntryAssets: {
-          "crm-default": { js: [], css: ["crm-default.css"] },
-        },
-      }),
-    ).toThrow(
-      '[evjs] Remote entry "default" for remote "crm" did not produce a client JavaScript asset.',
-    );
-  });
-
-  it("fails when remote client assets are invalid before manifest emission", () => {
-    expect(() =>
-      linkRemoteManifest({
-        plan: createCrmRemotePlan(),
-        clientEntryAssets: {
-          "crm-default": {
-            js: [" crm-default.js "],
-            css: ["crm-default.css"],
-          },
-        },
-      }),
-    ).toThrow(
-      "[evjs] remote.entries.default.assets.js must not contain leading or trailing whitespace before remote manifest emission.",
-    );
   });
 });

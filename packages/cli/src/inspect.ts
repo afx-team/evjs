@@ -82,23 +82,6 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
   }
   lines.push("");
 
-  appendMap(lines, "Remotes", result.remotes, (id, remote) => {
-    const activeWhen = remote.activeWhen?.length
-      ? ` activeWhen=${remote.activeWhen.join(",")}`
-      : "";
-    return `${id}: ${remote.manifest}${activeWhen}`;
-  });
-
-  if (result.remote) {
-    lines.push("Remote Build");
-    lines.push(`  name: ${result.remote.name}`);
-    lines.push(`  baseUrl: ${result.remote.baseUrl}`);
-    for (const [id, entry] of Object.entries(result.remote.entries)) {
-      lines.push(`  entry ${id}: ${entry.app}`);
-    }
-    lines.push("");
-  }
-
   if (result.buildPlan) {
     appendList(lines, "Build Entries", result.buildPlan.entries, (entry) => {
       return `${entry.name}: ${entry.kind}/${entry.environment}`;
@@ -130,17 +113,6 @@ function appendList<T>(
     }
   }
   lines.push("");
-}
-
-function appendMap<T>(
-  lines: string[],
-  title: string,
-  values: Record<string, T>,
-  format: (key: string, value: T) => string,
-): void {
-  appendList(lines, title, Object.entries(values), ([key, value]) =>
-    format(key, value),
-  );
 }
 
 function formatDiagnostic(diagnostic: InspectDiagnostic): string {

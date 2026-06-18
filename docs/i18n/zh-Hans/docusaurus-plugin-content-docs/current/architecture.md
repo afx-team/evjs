@@ -26,8 +26,7 @@ Subpath export 必须保持显式且有文档说明；新增 package export 是�
   配置、插件生命周期、dev/build 编排、框架构建类型和 deployment helpers
 
 @evjs/client
-  浏览器 runtime、服务端函数 transport、page hooks、导航 helpers
-  和 remote host helpers
+  浏览器 runtime、服务端函数 transport、page hooks、导航 helpers 和 RSC client runtime
 
 @evjs/server
   Hono/fetch app、服务端函数、服务端路由、SSR/PPR/RSC 请求边界
@@ -102,7 +101,7 @@ SPA 文件路由在框架内部使用 TanStack Router；应用页面只写 `src/
 page hooks 和导航 helper，不需要创建 router bootstrap。Generated bootstrap 通过
 `@evjs/client/internal/*` 承载。MPA 文件路由和显式 pages 使用 page runtime，
 不引入客户端路由器。`@evjs/client` facade 暴露页面代码需要的 hooks、
-导航、server function、RSC 和 remote runtime API。
+导航、server function 和 RSC runtime API。
 
 ## 构建流程
 
@@ -150,8 +149,7 @@ sequenceDiagram
   Browser->>Runtime: page/app boot
   Runtime->>Manifest: load embedded or /manifest.json
   Runtime->>Shell: create internal shell
-  Shell->>Manifest: resolve app/page/remote target
-  Shell->>Shell: negotiate remote shared scope
+  Shell->>Manifest: resolve app/page target
   Shell->>Browser: import JS/CSS module assets
   Shell->>Runtime: mount/hydrate/unmount lifecycle
 
@@ -223,35 +221,6 @@ RSC Flight 请求也通过同一个 `@evjs/server` 边界进入。Flight endpoin
 并遵循 build identifier 规则。URL context 必须是同源绝对 path 或 HTTP(S) URL，
 且不能包含 hash。Webpack 验证路径已经使用 React Flight client consumption 和 React
 client/server reference manifests；Utoopack 仍需要等价的下层 metadata 才能跑通同一路径。
-
-Remote shared dependencies 使用 host 显式提供的 share scope。内部 remote runtime
-会在加载 remote entry 前检查 remote `shared` 需求，支持 `shareKey`、singleton
-检查、eager metadata，以及包含复合比较符和 `||` 的 semver 风格范围；已满足的依赖会通过
-remote context 暴露。Host 应用可以通过 `onRemoteSharedNegotiated()` 观察协商结果，
-用于诊断、埋点或策略 UI；普通 remote 组件不应该渲染框架依赖版本。React host 页面应该使用
-`useRemoteHost()` / `RemoteApp`；更底层的 `startRemoteAppRuntime()` 接收高级
-`runtime` hooks，用于自定义 shared scope、manifest 加载、module 加载和错误处理。
-Remote host 的 `activeWhen` 选项使用和 `remotes` 配置相同的 pathname pattern 校验。
-`RemoteApp` target 的 `remote` 使用和 `remotes` 配置相同的 build identifier 规则；
-object 形式的 activation request 会默认继承这个目标，除非显式设置 `remoteId`。
-使用 `request.remoteEntryId` 可以选择具体 remote entry，而不需要重复 host remote id。
-也可以使用 `request.url` 通过 `activeWhen` 选择 entry；不要在同一个 request 中同时提供两者。
-object 形式的 activation request 会把 `remoteId`、`remoteEntryId`、`pageId` 和
-`buildId` 按 build identifier 规则校验；`appId` 和 `url` 必须是非空字符串，且不能带首尾空白；
-其中 `url` 只能是 HTTP(S) URL，或以 `/` 开头的 pathname。`mountPoint` 提供时必须是 Element object；`hydrate` 提供时必须是 boolean。`manifest`
-以及通过可选 `manifestQueryParam` 读取到的 manifest 值必须是非空 HTTP(S) URL 或 path，
-且不能带首尾空白。
-获取到的 remote manifest name 和 entry id 会在 activation 前按 build identifier
-规则校验；获取到的 remote manifest `name` 必须和加载它的 host `remotes.<id>`
-一致。module href、asset href 等 manifest 字符串字段如果包含首尾空白，或不能基于
-remote manifest base URL 解析成 `http:`/`https:` URL，也会被拒绝。
-默认导出的 React remote module 会自动适配成内部 lifecycle module。Remote module
-不能把默认 React component 和显式 `mount()`、`hydrate()` 或 `unmount()` 导出混用；
-`init()` 可以和默认 component 一起用于 setup。显式 lifecycle module 只作为高级生命周期逃生口保留，
-且必须导出 `mount()` 或 `hydrate()`，因为只有 `init()` / `unmount()` 不能渲染 remote entry。
-自定义 `runtime.loadModule()` hook 使用同样的 module 形状，因此对于
-`react-component` remote entry，可以返回 lifecycle functions，也可以返回
-`{ default: RemoteComponent }`。自动包加载和版本选择不属于这版实现。
 
 ## 配置归属
 
@@ -337,8 +306,7 @@ Deployment adapter 消费 `BuildOutput`。`@evjs/ev` 提供：
 - `edgeDeploymentAdapter()`：输出 edge worker 入口，由 worker 调用框架服务端 bundle
   和静态资源 binding。
 
-平台专属 adapter 应从 `BuildOutput` 派生 routing、framework endpoint、SSR、PPR、RSC、
-remote、shared dependency 和 asset metadata，而不是读取 bundler stats。
+平台专属 adapter 应从 `BuildOutput` 派生 routing、framework endpoint、SSR、PPR、RSC 和 asset metadata，而不是读取 bundler stats。
 完整 server manifest 会保留源码 module 和 server renderer reference；公开/浏览器
 manifest 保持相同的 routing 与 asset 结构，但会脱敏这些 server-only 字段，因此客户端
 校验会把它们视为可选。
@@ -347,7 +315,7 @@ manifest 保持相同的 routing 与 asset 结构，但会脱敏这些 server-on
 
 ```txt
 static-only
-  CSR / MPA client entries / SSG / remote manifests / assets
+  CSR / MPA client entries / SSG / assets
 
 unified node
   static assets + framework endpoints + SSR/PPR/RSC + server functions/routes

@@ -72,7 +72,6 @@ export interface DeploymentArtifact {
   pages: Record<string, DeploymentPage>;
   routes: DeploymentRoute[];
   server?: DeploymentServer;
-  remotes?: BuildOutput["remotes"];
   rsc?: DeploymentRsc;
   metadata?: Record<string, unknown>;
 }
@@ -213,7 +212,6 @@ export function createDeploymentArtifact(
           },
         }
       : {}),
-    ...(output.remotes ? { remotes: output.remotes } : {}),
     ...(output.rsc
       ? {
           rsc: {

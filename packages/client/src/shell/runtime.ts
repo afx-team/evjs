@@ -3,26 +3,10 @@ import {
   getHttpUrlOrAbsolutePathnameValidationError,
   isBuildIdentifier,
 } from "@evjs/shared";
-import {
-  assertFrameworkManifestShape,
-  type RemoteEntry,
-  type RemoteManifest,
-} from "@evjs/shared/manifest";
-import {
-  createRemoteReactModule,
-  type RemoteReactModuleExports,
-} from "../react.js";
+import { assertFrameworkManifestShape } from "@evjs/shared/manifest";
 import { isRecord } from "../validation.js";
-import {
-  defaultLoadModule,
-  defaultLoadRemoteManifest,
-  loadRemoteStylesheets,
-  releaseStylesheets,
-} from "./assets.js";
-import {
-  assertAppModule,
-  assertRenderableAppModule,
-} from "./module-registration.js";
+import { defaultLoadModule } from "./assets.js";
+import { assertAppModule } from "./module-registration.js";
 import { assertSharedScope, createShellSharedScope } from "./shared.js";
 import { resolveTarget } from "./targets.js";
 import type {
@@ -42,7 +26,6 @@ interface ActiveModule {
   module: AppModule;
   mountPoint: Element;
   ctx: AppContext;
-  stylesheets: string[];
   phase: ActivationPhase;
 }
 
@@ -55,12 +38,8 @@ type ActivationPhase = "hydrate" | "mount" | "none";
 export function createShell(options: ShellOptions): Shell {
   assertShellOptions(options);
   const loadModule = options.loadModule ?? defaultLoadModule;
-  const loadRemoteManifest =
-    options.loadRemoteManifest ?? defaultLoadRemoteManifest;
   const moduleCache = new Map<string, Promise<AppModule>>();
   const moduleInitCache = new Map<string, Promise<void>>();
-  const remoteManifestCache = new Map<string, Promise<RemoteManifest>>();
-  const warnedSharedRemotes = new Set<string>();
   const driverDisposers: Array<() => void> = [];
   const sharedScope = createShellSharedScope(options.shared);
   let active: ActiveModule | undefined;
@@ -115,23 +94,18 @@ export function createShell(options: ShellOptions): Shell {
       });
       const current = active;
       if (current) {
-        try {
-          if (current.module.unmount && current.phase !== "none") {
-            await callShellPhase(
-              "unmount",
-              current.ctx,
-              () => current.module.unmount?.(current.mountPoint, current.ctx),
-              options.onError,
-            );
-          }
-        } finally {
-          releaseStylesheets(current.stylesheets);
+        if (current.module.unmount && current.phase !== "none") {
+          await callShellPhase(
+            "unmount",
+            current.ctx,
+            () => current.module.unmount?.(current.mountPoint, current.ctx),
+            options.onError,
+          );
         }
       }
       active = undefined;
       moduleCache.clear();
       moduleInitCache.clear();
-      remoteManifestCache.clear();
     },
   };
 
@@ -140,17 +114,7 @@ export function createShell(options: ShellOptions): Shell {
   async function resolve(
     request: ActivationRequest,
   ): Promise<ResolvedActivation> {
-    const target = await resolveTarget(
-      options.manifest,
-      request,
-      loadRemoteManifest,
-      remoteManifestCache,
-      warnedSharedRemotes,
-      options.onWarning,
-      options.sharedPolicy ?? "warn",
-      options.onRemoteSharedNegotiated,
-      sharedScope,
-    );
+    const target = await resolveTarget(options.manifest, request);
     const mountPoint =
       request.mountPoint ?? options.resolveMountPoint?.(target.ctx);
     if (mountPoint === undefined || mountPoint === null) {
@@ -187,9 +151,8 @@ export function createShell(options: ShellOptions): Shell {
         ctx,
         async () => {
           const loadedModule = await loadModule(href, ctx);
-          const module = normalizeLoadedModule(loadedModule, ctx);
+          const module = loadedModule as AppModule;
           assertAppModule(module, `[evjs] Shell module "${href}"`);
-          assertRemoteRenderableModule(module, href, ctx);
           return module;
         },
         options.onError,
@@ -223,22 +186,8 @@ export function createShell(options: ShellOptions): Shell {
       return;
     }
 
-    const stylesheets = await loadRemoteStylesheets(target.ctx);
-    if (disposed) {
-      releaseStylesheets(stylesheets);
-      return;
-    }
-    let module: AppModule;
-    try {
-      module = await getModule(target.href, target.ctx);
-    } catch (error) {
-      releaseStylesheets(stylesheets);
-      throw error;
-    }
-    if (disposed) {
-      releaseStylesheets(stylesheets);
-      return;
-    }
+    const module = await getModule(target.href, target.ctx);
+    if (disposed) return;
 
     const previous = active;
     if (previous) {
@@ -251,24 +200,16 @@ export function createShell(options: ShellOptions): Shell {
             options.onError,
           );
         }
-      } catch (error) {
-        releaseStylesheets(stylesheets);
-        throw error;
       } finally {
-        releaseStylesheets(previous.stylesheets);
         if (active === previous) active = undefined;
       }
     }
-    if (disposed) {
-      releaseStylesheets(stylesheets);
-      return;
-    }
+    if (disposed) return;
 
     let phase: ActivationPhase;
     try {
       phase = await activateModule(target, module, request);
     } catch (error) {
-      releaseStylesheets(stylesheets);
       if (previous && !disposed) {
         await restorePreviousActivation(previous).catch(() => {
           // Keep the activation failure as the primary error.
@@ -278,17 +219,13 @@ export function createShell(options: ShellOptions): Shell {
     }
 
     if (disposed) {
-      try {
-        if (module.unmount && phase !== "none") {
-          await callShellPhase(
-            "unmount",
-            target.ctx,
-            () => module.unmount?.(target.mountPoint, target.ctx),
-            options.onError,
-          );
-        }
-      } finally {
-        releaseStylesheets(stylesheets);
+      if (module.unmount && phase !== "none") {
+        await callShellPhase(
+          "unmount",
+          target.ctx,
+          () => module.unmount?.(target.mountPoint, target.ctx),
+          options.onError,
+        );
       }
       return;
     }
@@ -299,7 +236,6 @@ export function createShell(options: ShellOptions): Shell {
       module,
       mountPoint: target.mountPoint,
       ctx: target.ctx,
-      stylesheets,
       phase,
     };
   }
@@ -335,36 +271,23 @@ export function createShell(options: ShellOptions): Shell {
 
   async function restorePreviousActivation(previous: ActiveModule) {
     if (disposed) return;
-    const stylesheets = await loadRemoteStylesheets(previous.ctx);
-    if (disposed) {
-      releaseStylesheets(stylesheets);
-      return;
-    }
     try {
       await replayActivationPhase(previous);
       if (disposed) {
-        try {
-          if (previous.module.unmount && previous.phase !== "none") {
-            await callShellPhase(
-              "unmount",
-              previous.ctx,
-              () =>
-                previous.module.unmount?.(previous.mountPoint, previous.ctx),
-              options.onError,
-            );
-          }
-        } finally {
-          releaseStylesheets(stylesheets);
+        if (previous.module.unmount && previous.phase !== "none") {
+          await callShellPhase(
+            "unmount",
+            previous.ctx,
+            () => previous.module.unmount?.(previous.mountPoint, previous.ctx),
+            options.onError,
+          );
         }
         return;
       }
       active = {
         ...previous,
-        stylesheets,
       };
-    } catch {
-      releaseStylesheets(stylesheets);
-    }
+    } catch {}
   }
 
   async function replayActivationPhase(previous: ActiveModule) {
@@ -395,37 +318,10 @@ function createActivationKey(request: ActivationRequest): string {
   return JSON.stringify({
     appId: request.appId,
     pageId: request.pageId,
-    remoteId: request.remoteId,
-    remoteEntryId: request.remoteEntryId,
     buildId: request.buildId,
     url: request.url?.toString(),
     hydrate: request.hydrate,
   });
-}
-
-function normalizeLoadedModule(module: unknown, ctx: AppContext): AppModule {
-  if (
-    ctx.kind === "remote" &&
-    ctx.remote?.entry.module.type === "react-component"
-  ) {
-    return createRemoteReactModule(module as RemoteReactModuleExports);
-  }
-  return module as AppModule;
-}
-
-function assertRemoteRenderableModule(
-  module: AppModule,
-  href: string,
-  ctx: AppContext,
-): void {
-  if (ctx.kind !== "remote" || !isLifecycleRemoteEntry(ctx.remote?.entry)) {
-    return;
-  }
-  assertRenderableAppModule(module, `[evjs] Shell remote module "${href}"`);
-}
-
-function isLifecycleRemoteEntry(entry: RemoteEntry | undefined): boolean {
-  return entry?.module.type === "lifecycle";
 }
 
 function assertShellOptions(options: unknown): asserts options is ShellOptions {
@@ -442,25 +338,11 @@ function assertShellOptions(options: unknown): asserts options is ShellOptions {
   }
 
   assertOptionalFunction(options.loadModule, "loadModule");
-  assertOptionalFunction(options.loadRemoteManifest, "loadRemoteManifest");
   assertOptionalFunction(options.resolveMountPoint, "resolveMountPoint");
-  assertOptionalFunction(
-    options.onRemoteSharedNegotiated,
-    "onRemoteSharedNegotiated",
-  );
   assertOptionalFunction(options.onError, "onError");
   assertOptionalFunction(options.onWarning, "onWarning");
 
   assertSharedScope(options.shared, "[evjs] createShell() shared");
-  if (
-    options.sharedPolicy !== undefined &&
-    options.sharedPolicy !== "warn" &&
-    options.sharedPolicy !== "error"
-  ) {
-    throw new Error(
-      '[evjs] createShell() sharedPolicy must be "warn" or "error".',
-    );
-  }
 }
 
 function assertActivationRequest(
@@ -475,8 +357,6 @@ function assertActivationRequest(
 
   assertOptionalRequestString(request.appId, `${prefix}.appId`);
   assertOptionalRequestString(request.pageId, `${prefix}.pageId`);
-  assertOptionalRequestString(request.remoteId, `${prefix}.remoteId`);
-  assertOptionalRequestString(request.remoteEntryId, `${prefix}.remoteEntryId`);
   assertOptionalRequestBuildId(request.buildId, `${prefix}.buildId`);
   assertRequestBuildId(request, prefix, manifest);
   assertActivationTargetRequest(request, prefix);
@@ -572,18 +452,11 @@ function assertActivationTargetRequest(
   request: ActivationRequest,
   prefix: string,
 ): void {
-  const targets = [
-    request.appId && "appId",
-    request.pageId && "pageId",
-    request.remoteId && "remoteId",
-  ].filter(Boolean);
+  const targets = [request.appId && "appId", request.pageId && "pageId"].filter(
+    Boolean,
+  );
   if (targets.length > 1) {
-    throw new Error(
-      `${prefix} must specify at most one of appId, pageId, or remoteId.`,
-    );
-  }
-  if (request.remoteEntryId !== undefined && request.remoteId === undefined) {
-    throw new Error(`${prefix}.remoteEntryId requires remoteId when provided.`);
+    throw new Error(`${prefix} must specify at most one of appId or pageId.`);
   }
 }
 
@@ -615,9 +488,6 @@ function assertShellManifest(manifest: unknown): void {
   }
   if (!Array.isArray(manifest.routes)) {
     throw new Error("[evjs] createShell() manifest.routes must be an array.");
-  }
-  if (manifest.remotes !== undefined && !isRecord(manifest.remotes)) {
-    throw new Error("[evjs] createShell() manifest.remotes must be an object.");
   }
   assertFrameworkManifestShape(manifest, "createShell() manifest", {
     serverFunctionModules: "optional",

@@ -1,28 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
-import { expect, type Page, type Route } from "@playwright/test";
-import { buildExample, createExampleTest } from "../fixtures";
+import { expect, type Page } from "@playwright/test";
+import { createExampleTest } from "../fixtures";
 
 const exampleDir = path.resolve(
   import.meta.dirname,
   "../..",
   "examples",
-  "full-features",
-);
-const remoteExampleDir = path.resolve(
-  import.meta.dirname,
-  "../..",
-  "examples",
-  "full-features-remote",
+  "render-modes",
 );
 
-const test = createExampleTest("full-features");
+const test = createExampleTest("render-modes");
 
-test.describe("full-features", () => {
-  test.beforeAll(async () => {
-    await buildExample(remoteExampleDir, "webpack", false);
-  });
-
+test.describe("render-modes", () => {
   test("runs the merchant operations console with server function and REST route", async ({
     page,
     baseURL,
@@ -75,10 +65,6 @@ test.describe("full-features", () => {
     await expect(
       page.getByRole("heading", { name: "Local triage workspace" }),
     ).toBeVisible();
-    await expect(page.locator("html")).toHaveAttribute(
-      "data-full-features-html",
-      "support",
-    );
   });
 
   test("renders configured SSR page path through the framework server", async ({
@@ -261,60 +247,7 @@ test.describe("full-features", () => {
     expect(flightText).toContain("Atlas Foods");
   });
 
-  test("mounts a manifest-driven remote app from the shell runtime", async ({
-    page,
-    baseURL,
-  }) => {
-    await routeRemoteAssets(page, remoteExampleDir);
-    await page.goto(`${baseURL}/remote.html`);
-    await expectRenderMode(page, "csr", "CSR + Remote");
-    await expectBackLink(page);
-
-    await expect(
-      page.getByRole("heading", { name: "CRM Workspace Host" }),
-    ).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByTestId("remote-status")).toHaveText(
-      "Remote: mounted",
-    );
-    await expect(
-      page.getByRole("heading", { name: "Northstar Outdoor" }),
-    ).toBeVisible();
-    const remoteCard = page.getByTestId("crm-remote-card");
-    await expect(remoteCard).toBeVisible();
-    await expect(remoteCard).toHaveCSS("background-image", /linear-gradient/);
-    await expect(page.getByTestId("remote-health-score")).toHaveText("92");
-    await expect(remoteCard).toContainText("expansion-ready");
-    await expect(page.getByTestId("remote-open-revenue")).toHaveText("$184.2k");
-    await expect(page.getByTestId("remote-success-owner")).toHaveText(
-      "Grace Hopper",
-    );
-    await expect(remoteCard).toContainText("Schedule retention offer review");
-    await expect(page.getByTestId("remote-entry")).toHaveText("customers");
-    await expect(page.getByTestId("remote-url")).toHaveText("/crm/customers");
-    await expect(page.getByTestId("remote-shared")).toHaveText(
-      "Shared: crm: remote-react -> 19.2.5",
-    );
-    await expect(page.getByTestId("remote-source")).toContainText(
-      "served from",
-    );
-
-    const remoteManifest = JSON.parse(
-      fs.readFileSync(
-        path.join(remoteExampleDir, "dist", "evjs-remote.json"),
-        "utf-8",
-      ),
-    );
-    expect(remoteManifest.shared).toEqual({
-      "remote-react": {
-        shareKey: "react",
-        requiredVersion: ">=19 <20",
-        singleton: true,
-        eager: true,
-      },
-    });
-  });
-
-  test("emits a single manifest with app, page, route, server, and plugin data", async () => {
+  test("emits a manifest with app, page, route, and server data", async () => {
     const manifestPath = path.join(exampleDir, "dist", "manifest.json");
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
 
@@ -379,15 +312,6 @@ test.describe("full-features", () => {
         routeId: "insights",
       }),
     );
-    expect(manifest.pages.remote).toEqual(
-      expect.objectContaining({
-        render: "csr",
-        rendering: expect.objectContaining({
-          component: "client",
-          html: "client",
-        }),
-      }),
-    );
     expect(manifest.pages.campaign).toEqual(
       expect.objectContaining({
         path: "/campaign",
@@ -449,7 +373,7 @@ test.describe("full-features", () => {
     expect(manifest.server.routes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: "/api/full-features/health",
+          path: "/api/render-modes/health",
           methods: expect.arrayContaining(["GET"]),
         }),
       ]),
@@ -474,124 +398,11 @@ test.describe("full-features", () => {
     expect(manifest.rsc.clientReferences).toBeUndefined();
     expect(manifest.rsc.clientReferenceManifest).toBeUndefined();
     expect(manifest.rsc.serverConsumerManifest).toBeUndefined();
+
     const publicManifestText = fs.readFileSync(manifestPath, "utf-8");
     expect(publicManifestText).not.toContain(".tsx");
     expect(publicManifestText).not.toContain("file://");
     expect(publicManifestText).not.toContain(exampleDir);
-    expect(manifest.remotes.crm).toEqual({
-      manifest: "https://assets.example.com/crm/evjs-remote.json",
-      activeWhen: ["/crm/*"],
-    });
-    expect(manifest.deployment.fullFeaturesExample).toEqual({
-      apps: ["default"],
-      pages: [
-        "support",
-        "campaign",
-        "dashboard",
-        "settlement",
-        "insights",
-        "remote",
-      ],
-      rscPages: ["insights"],
-      remotes: ["crm"],
-      serverBasePath: "/__evjs",
-    });
-
-    const deployArtifactPath = path.join(
-      exampleDir,
-      "dist",
-      "deployment.full-features.json",
-    );
-    const deployArtifact = JSON.parse(
-      fs.readFileSync(deployArtifactPath, "utf-8"),
-    );
-    expect(deployArtifact).toEqual(
-      expect.objectContaining({
-        platform: "full-features-example",
-        server: expect.objectContaining({
-          basePath: "/__evjs",
-          rsc: "/__evjs/rsc",
-        }),
-        rsc: expect.objectContaining({
-          endpoint: "/__evjs/rsc",
-          pages: expect.arrayContaining(["insights"]),
-        }),
-        remotes: expect.objectContaining({
-          crm: manifest.remotes.crm,
-        }),
-      }),
-    );
-    expect(
-      deployArtifact.routes.map((route: { path: string }) => route.path),
-    ).toEqual(
-      expect.arrayContaining([
-        "/support",
-        "/campaign",
-        "/dashboard",
-        "/settlement-report",
-        "/insights",
-      ]),
-    );
-
-    const nodeArtifact = JSON.parse(
-      fs.readFileSync(
-        path.join(exampleDir, "dist", "deployment.node.json"),
-        "utf-8",
-      ),
-    );
-    expect(nodeArtifact).toEqual(
-      expect.objectContaining({
-        platform: "node",
-        server: expect.objectContaining({
-          basePath: "/__evjs",
-          rsc: "/__evjs/rsc",
-        }),
-      }),
-    );
-    expect(
-      fs.readFileSync(path.join(exampleDir, "dist", "server.mjs"), "utf-8"),
-    ).toMatch(
-      /await import\(pathToFileURL\(path\.join\(serverDir, serverEntry\)\)\.href\)/,
-    );
-
-    const staticArtifact = JSON.parse(
-      fs.readFileSync(
-        path.join(exampleDir, "dist", "client", "deployment.static.json"),
-        "utf-8",
-      ),
-    );
-    expect(staticArtifact.platform).toBe("static");
-    expect(staticArtifact.metadata.static).toEqual({
-      complete: false,
-      unsupportedCapabilities: [
-        "ppr-pages",
-        "rsc-pages",
-        "server-functions",
-        "server-routes",
-        "ssr-pages",
-      ],
-    });
-    const redirects = fs.readFileSync(
-      path.join(exampleDir, "dist", "client", "_redirects"),
-      "utf-8",
-    );
-    expect(redirects).toContain("/support /support.html 200");
-    expect(redirects).not.toContain("/settlement-report /settlement.html 200");
-    expect(redirects).not.toContain("/* /index.html 200");
-
-    const edgeArtifact = JSON.parse(
-      fs.readFileSync(
-        path.join(exampleDir, "dist", "deployment.edge.json"),
-        "utf-8",
-      ),
-    );
-    expect(edgeArtifact.platform).toBe("edge");
-    const edgeWorker = fs.readFileSync(
-      path.join(exampleDir, "dist", "worker.mjs"),
-      "utf-8",
-    );
-    expect(edgeWorker).toContain('const frameworkBasePath = "/__evjs";');
-    expect(edgeWorker).toContain('const assetsBinding = "ASSETS";');
   });
 });
 
@@ -611,45 +422,4 @@ async function expectBackLink(page: Page): Promise<void> {
   await expect(backLink).toBeVisible();
   await expect(backLink).toHaveText("Back to control center");
   await expect(backLink).toHaveAttribute("href", "/");
-}
-
-async function routeRemoteAssets(page: Page, remoteDir: string): Promise<void> {
-  const distDir = path.join(remoteDir, "dist");
-  const fulfillRemoteAsset = async (route: Route) => {
-    const requestUrl = new URL(route.request().url());
-    const assetName = requestUrl.pathname
-      .replace(/^\/crm\//, "")
-      .replace(/^\/+/, "");
-    const filePath = path.join(distDir, assetName || "evjs-remote.json");
-
-    if (!fs.existsSync(filePath)) {
-      await route.fulfill({
-        status: 404,
-        contentType: "text/plain",
-        body: `Remote asset not found: ${assetName}`,
-      });
-      return;
-    }
-
-    await route.fulfill({
-      path: filePath,
-      contentType: getRemoteContentType(filePath),
-    });
-  };
-
-  await page.route("https://assets.example.com/crm/**", fulfillRemoteAsset);
-  await page.route("http://localhost:3002/**", fulfillRemoteAsset);
-}
-
-function getRemoteContentType(filePath: string): string {
-  switch (path.extname(filePath)) {
-    case ".json":
-      return "application/json";
-    case ".js":
-      return "application/javascript";
-    case ".css":
-      return "text/css";
-    default:
-      return "text/plain";
-  }
 }

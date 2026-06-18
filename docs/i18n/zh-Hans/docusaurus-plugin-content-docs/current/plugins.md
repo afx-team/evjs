@@ -181,7 +181,7 @@ setup() {
 }
 ```
 
-部署插件应该从 `output` 读取 routes、functions、assets、remotes 和
+部署插件应该从 `output` 读取 routes、functions、assets 和
 runtime paths。只需要客户端或服务端 bundle 摘要的插件可以使用
 `clientManifest` 和 `serverManifest`。HTML hook 会收到同一组结果字段，
 并额外包含 `ctx.kind`、`ctx.fileName`、`ctx.assets` 等文档字段。

@@ -49,15 +49,13 @@ describe("URL validation helpers", () => {
 
   it("classifies HTTP(S) URLs and URL-resolvable paths", () => {
     expect(
-      getHttpUrlOrPathValidationError("https://assets.example.com/remote.json"),
+      getHttpUrlOrPathValidationError("https://assets.example.com/app.json"),
     ).toBeUndefined();
-    expect(
-      getHttpUrlOrPathValidationError("/remotes/crm.json"),
-    ).toBeUndefined();
-    expect(getHttpUrlOrPathValidationError("remotes/crm.json")).toBeUndefined();
+    expect(getHttpUrlOrPathValidationError("/assets/app.json")).toBeUndefined();
+    expect(getHttpUrlOrPathValidationError("assets/app.json")).toBeUndefined();
     expect(getHttpUrlOrPathValidationError("")).toBe("empty");
     expect(getHttpUrlOrPathValidationError(undefined)).toBe("empty");
-    expect(getHttpUrlOrPathValidationError(" /remotes/crm.json")).toBe(
+    expect(getHttpUrlOrPathValidationError(" /assets/app.json")).toBe(
       "whitespace",
     );
     expect(getHttpUrlOrPathValidationError("http://[::1")).toBe(

@@ -131,7 +131,10 @@ const allowedSampleBundlerDependencies = {
     "examples/plugin-authoring",
     "packages/create-app/templates/plugin-authoring",
   ],
-  "@evjs/bundler-webpack": ["examples/full-features"],
+  "@evjs/bundler-webpack": [
+    "examples/deployment-adapters",
+    "examples/render-modes",
+  ],
 } as const satisfies Record<string, readonly string[]>;
 
 const forbiddenCoreBundlerPackages = [

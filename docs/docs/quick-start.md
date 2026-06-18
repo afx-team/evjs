@@ -74,7 +74,7 @@ export default function UserPage() {
 ```
 
 When `src/pages` exists and the project does not declare explicit `app`,
-`pages`, or `remote` config, evjs automatically builds an SPA from the file
+`pages` config, evjs automatically builds an SPA from the file
 tree. The generated routing glue stays inside the framework; SPA mode only
 writes `src/evjs-route-types.d.ts` for TypeScript and scaffolded apps ignore it
 by default.
@@ -110,7 +110,7 @@ as normal components and do not accept `routing.layout`.
 | [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | Framework API, config, plugins, build orchestration, and deployment helpers |
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`, `ev inspect`) with the default bundler |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
-| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Browser runtime APIs for page hooks, navigation, transport, remotes, and RSC |
+| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Browser runtime APIs for page hooks, navigation, transport, and RSC |
 | [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Hono/fetch server runtime APIs for server functions, routes, rendering, and deployment |
 
 Manifest schemas, build tools, page runtime, and shell internals are internal

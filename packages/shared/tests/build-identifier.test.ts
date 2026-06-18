@@ -6,7 +6,7 @@ import {
 
 describe("build identifier helpers", () => {
   it("accepts package-safe build identifiers", () => {
-    for (const value of ["default", "crm_2026", "remote-app", "A1_b-2"]) {
+    for (const value of ["default", "crm_2026", "widget-app", "A1_b-2"]) {
       expect(isBuildIdentifier(value)).toBe(true);
     }
   });

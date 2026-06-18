@@ -6,7 +6,7 @@ import {
 } from "../src/index.js";
 
 describe("shared version range helpers", () => {
-  it("accepts the range forms supported by remote shared negotiation", () => {
+  it("accepts shared dependency version range forms", () => {
     for (const value of [
       "*",
       "19",

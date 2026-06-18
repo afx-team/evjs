@@ -11,7 +11,7 @@ Read this file first, then use the deeper guides when you need details:
 
 The file-convention source of truth is the convention matrix in
 [docs/docs/project-structure.md](./docs/docs/project-structure.md). When a
-change touches page routes, server functions, server routes, remotes, examples,
+change touches page routes, server functions, server routes, examples,
 or scaffolds, update the English and Chinese project-structure docs together.
 The implementation source for page-route file rules is
 `packages/ev/src/build-tools/page-route-conventions.ts`; the discovery behavior
@@ -49,9 +49,7 @@ coverage in `packages/ev/tests/build-tools-page-routes.test.ts`.
 9. `createApp({ framework })` consumes generated `BuildOutput` manifests. Do
    not pass ad hoc manifest objects; use `createReactFrameworkServer()` unless
    a deployment adapter intentionally owns that contract.
-10. Host apps use plural `remotes`; remote builds use singular `remote` and emit
-   `evjs-remote.json`.
-11. Utoopack is the default user path. Webpack is the validation/fallback adapter
+10. Utoopack is the default user path. Webpack is the validation/fallback adapter
    for framework features still blocked on lower-level Utoopack APIs.
 
 ## Validation

@@ -58,9 +58,9 @@ export const PAGE_ROUTE_CONVENTION_RULES = [
   {
     id: "route-group",
     category: "route",
-    summary: "no route groups",
-    valid: [],
-    invalid: ["(marketing)/about.tsx"],
+    summary: "route groups for pathless organization",
+    valid: ["(marketing)/about.tsx", "(app)/dashboard/layout.tsx"],
+    invalid: [],
   },
   {
     id: "static-segment",
@@ -122,28 +122,36 @@ export const PAGE_ROUTE_CONVENTION_RULES = [
     id: "root-layout",
     category: "layout",
     summary:
-      "SPA layout auto-discovery uses exact layout/index.tsx beside the route directory",
-    valid: ["src/layout/index.tsx"],
-    invalid: [
+      "SPA layout auto-discovery supports layout source modules beside the route directory",
+    valid: [
+      "src/layout.tsx",
+      "src/layout.jsx",
+      "src/layout/index.tsx",
       "src/layout/index.jsx",
       "src/pages/layout.tsx",
-      "src/pages/layout/index.tsx",
+      "src/pages/posts/layout/index.tsx",
     ],
+    invalid: [],
   },
 ] as const satisfies readonly PageRouteConventionRule[];
 export const PAGE_ROUTE_CONVENTION_SUMMARY = formatPageRouteConventionSummary(
   PAGE_ROUTE_CONVENTION_RULES,
 );
 export const PAGE_ROUTE_ROOT_LAYOUT_FILE = path.join("layout", "index.tsx");
-export const PAGE_ROUTE_ROOT_LAYOUT_ALIAS_FILES = [
-  "layout.ts",
+export const PAGE_ROUTE_ROOT_LAYOUT_FILES = [
   "layout.tsx",
-  "layout.js",
+  "layout.ts",
   "layout.jsx",
+  "layout.js",
+  "layout/index.tsx",
   "layout/index.ts",
-  "layout/index.js",
   "layout/index.jsx",
+  "layout/index.js",
 ] as const;
+export const PAGE_ROUTE_ROOT_LAYOUT_ALIAS_FILES =
+  PAGE_ROUTE_ROOT_LAYOUT_FILES.filter(
+    (file) => file !== PAGE_ROUTE_ROOT_LAYOUT_FILE,
+  );
 
 const PAGE_ROUTE_SOURCE_EXTENSION_SET = new Set<string>(
   PAGE_ROUTE_SOURCE_EXTENSIONS,
@@ -270,8 +278,14 @@ export function isIgnoredPageRouteSegment(segment: string): boolean {
 
 export function findRouteGroupSegment(segments: string[]): string | undefined {
   return segments.find(
-    (segment) => segment.startsWith("(") || segment.endsWith(")"),
+    (segment) =>
+      (segment.startsWith("(") || segment.endsWith(")")) &&
+      !isPageRouteGroupSegment(segment),
   );
+}
+
+export function isPageRouteGroupSegment(segment: string): boolean {
+  return /^\([^)]+\)$/.test(segment);
 }
 
 export function findBracketRouteSegment(
@@ -297,6 +311,8 @@ export function findInvalidRouteSegment(
 ): InvalidPageRouteSegment | undefined {
   const dynamicNames = new Set<string>();
   for (const segment of segments) {
+    if (isPageRouteGroupSegment(segment)) continue;
+
     if (segment.startsWith("$")) {
       if (!DYNAMIC_ROUTE_PARAM_PATTERN.test(segment)) {
         return { kind: "dynamic", segment };
@@ -366,7 +382,7 @@ function formatBracketRouteSegmentViolation(segment: string): string {
 }
 
 function formatRouteGroupSegmentViolation(segment: string): string {
-  return `Page route groups are not supported. Segment "${segment}" would be ambiguous; use a real URL segment, move grouping into folders outside routing.dir, or use explicit pages config instead.`;
+  return `Page route group segment "${segment}" must wrap a non-empty group name in parentheses, such as "(marketing)".`;
 }
 
 function formatUnsupportedDynamicRouteSegmentViolation(
@@ -401,8 +417,11 @@ function formatInvalidRouteSegmentViolation(
 }
 
 export function routePathFromSegments(segments: string[]): string {
-  if (segments.length === 0) return "/";
-  return `/${segments.join("/")}`;
+  const pathSegments = segments.filter(
+    (segment) => !isPageRouteGroupSegment(segment),
+  );
+  if (pathSegments.length === 0) return "/";
+  return `/${pathSegments.join("/")}`;
 }
 
 export function routeShapeFromSegments(segments: string[]): PageRouteShape {

@@ -49,9 +49,6 @@ npx biome check --write    # 修复 lint/格式
 9. **渲染契约** —— 非 CSR 渲染模式需要 `server` 输出。PPR 和 RSC 必须使用
    component page module，并声明 `render: "ssr"`；同一页面同时启用 PPR + RSC
    在 runtime 支持前暂不支持
-10. **Remote 契约** —— Host app 使用 `remotes`；remote package 使用单数
-    `remote`。Remote build 必须有非空 name，并至少有一个带非空 `app` 模块路径的 entry
-
 ## 发布新版本
 
 1. 创建一个带有标签（如 `v0.1.0`）的 GitHub Release

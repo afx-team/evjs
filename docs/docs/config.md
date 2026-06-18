@@ -30,7 +30,7 @@ export default defineConfig({
 The server function endpoint is derived from `server.basePath`; there is no separate public function-endpoint config.
 
 The top-level config object accepts only `entry`, `html`, `dev`, `server`,
-`transport`, `app`, `routing`, `remotes`, `remote`, `bundler`, `plugins`, and
+`transport`, `app`, `routing`, `bundler`, `plugins`, and
 `pages`. Framework metadata such as generated app declarations, page-route
 runtime wiring, and server-function endpoints is derived by evjs instead of
 being configured directly.
@@ -62,7 +62,7 @@ export default defineConfig({
 ```
 
 When `src/pages` exists and the project does not declare explicit `app`,
-`pages`, or `remote` config, SPA routing is enabled automatically.
+`pages` config, SPA routing is enabled automatically.
 Set `routing: false` to disable file-route discovery explicitly.
 The exported config must be an object. When enabled with options, `routing`
 must be an object; arrays and `null` are rejected.
@@ -270,13 +270,11 @@ before bundling so deployment adapters can trust the manifest:
 | SSG | `render = "ssg"` | App HTML fallback plus static metadata for the route page | Standalone static HTML document | Server build required for generation/manifest linking | `server: false` |
 | PPR | `render = "ssr"` + `prerender = { partial: true }` on a component page | Route-owned server document with server-composed regions | Route-owned server document with server-composed regions | Framework server document route plus optional `runtime.server.ppr` direct/debug endpoint | RSC on the same page, full-page hydration entry, `server: false` |
 | RSC | `render = "ssr"` + `rsc = true` on a component page | Route-owned server document plus RSC Flight endpoint | Route-owned server document plus RSC Flight endpoint | Framework server document route plus `runtime.server.rsc` | PPR on the same page, `hydrate` other than `"none"`, `server: false` |
-| Remote app build | `remote` config with one or more entries | Not a page render mode | Not a page render mode | Remote manifest/assets; server only if the remote also declares server-rendered pages | Treating `remote` as host `remotes` |
-
 If a page needs both RSC data flow and partial prerendered regions, keep those
 capabilities on separate page routes for now. A single component page must choose
 either `rsc = true` or `prerender = { partial: true }`.
 
-`server: false` is only valid for CSR pages, MPA client entries, remote-only
+`server: false` is only valid for CSR pages, MPA client entries
 builds, and static assets. SSR, SSG, PPR, RSC, server functions, and server
 routes require the framework server to be enabled during build.
 
@@ -503,90 +501,6 @@ framework server is enabled. Each rule must be an object with a non-empty
 must not contain whitespace, a query string, or a hash, and must not repeat
 within the same rule. Targets must not contain leading or trailing whitespace.
 Optional `changeOrigin` and `secure` values must be booleans.
-
-## Remotes
-
-Remote apps are manifest-driven. Host applications declare plural `remotes`;
-packages that emit a remote manifest declare singular `remote`.
-
-```ts
-export default defineConfig({
-  remotes: {
-    crm: {
-      manifest: "https://assets.example.com/crm/evjs-remote.json",
-      activeWhen: ["/app/crm/*"],
-    },
-  },
-});
-```
-
-`remotes` must be an object map of remote IDs to remote declaration objects.
-Remote IDs must be non-empty build identifiers: use letters, numbers,
-underscores, or hyphens. Remote declaration objects accept only `manifest` and
-`activeWhen`. Manifest URLs must be non-empty HTTP(S) URLs or paths without
-leading or trailing whitespace. `activeWhen` entries are pathname patterns: each
-one must be non-empty, start with `/`, and must not contain whitespace, a query
-string, or a hash. Exact patterns must be unique across host remotes. The host
-runtime uses `activeWhen` to choose a remote for browser navigation. When
-multiple patterns match the current URL pathname, the most specific pattern wins.
-
-```ts
-export default defineConfig({
-  server: false,
-  remote: {
-    name: "crm",
-    baseUrl: "https://assets.example.com/crm/",
-    entries: {
-      customers: {
-        app: "./src/remote.tsx",
-        activeWhen: ["/app/crm/*"],
-        mount: "#app",
-      },
-    },
-  },
-});
-```
-
-Remote builds must declare a non-empty build-identifier `name` and at least one
-entry. The `remote` value must be an object and accepts only `name`, `baseUrl`,
-`shared`, and `entries`; `remote.entries` must be an object map of entry ids to
-remote entry objects. Remote entry objects accept only `app`, `activeWhen`, and
-`mount`. When provided,
-`remote.baseUrl` must be a non-empty HTTP(S) URL or path, and must not contain
-leading or trailing whitespace because it is emitted into `evjs-remote.json`.
-Remote entry ids also use the build-identifier rule. Each entry needs a
-non-empty `app` module path;
-optional `activeWhen` values are pathname patterns and must start with `/`
-without whitespace, a query string, or a hash; optional `mount` selectors must
-be non-empty without leading or trailing whitespace when provided. Exact
-`activeWhen` patterns must be unique across remote entries so
-activation does not depend on object order; overlapping patterns are resolved
-by the most specific pathname match. A remote-only build can use
-`server: false` because remote entries are browser runtime modules, not page
-render modes. The default Utoopack adapter wraps remote entry modules into
-generated lifecycle entries; webpack remains available for validation when a
-remote build also needs lower-level SSR/PPR/RSC behavior. Each remote entry
-must produce a client JavaScript asset; if the bundler cannot link one,
-manifest emission fails instead of writing an unusable `evjs-remote.json`.
-`remote.shared` must be an object map; keys must be
-non-empty, and each dependency value must be an object. Shared dependency
-objects accept only `shareKey`, `requiredVersion`, `singleton`,
-`strictVersion`, and `eager`. Optional `shareKey` and `requiredVersion` values
-must be non-empty strings without leading or trailing whitespace, and
-`singleton`, `strictVersion`, and `eager` must be booleans when provided.
-`requiredVersion` accepts the range forms supported by runtime
-negotiation: exact or partial semver versions, `*`, caret and tilde ranges,
-comparison ranges such as `>=18 <20`, and OR ranges such as `^18 || ^19`. The
-browser runtime validates remote manifests returned by the
-default fetch loader or a custom `loadRemoteManifest` before activation, and
-reports invalid response media type, name, entry id, module, and asset metadata
-with the manifest URL. The default fetch loader only accepts successful
-`Content-Type: application/json` manifest responses, allowing optional
-content-type parameters. Fetched manifest string fields such as `baseUrl`,
-module hrefs, asset hrefs, `mount`, `shareKey`, and `requiredVersion` must not
-contain leading or trailing whitespace. `baseUrl` may be absolute or relative
-to the remote manifest URL; module and asset hrefs must resolve from that base
-URL, so bad CDN paths fail before activation.
 
 ## Plugins
 

@@ -115,13 +115,6 @@ describe("UtoopackManifestGenerator", () => {
           methods: ["GET"],
         },
       ],
-      remotes: {
-        crm: {
-          id: "crm",
-          manifest: "https://assets.example.com/crm/manifest.json",
-          activeWhen: ["/crm/*"],
-        },
-      },
     };
     const plan = createPlan(graph, true);
 
@@ -151,12 +144,6 @@ describe("UtoopackManifestGenerator", () => {
         render: "ssr",
       },
     ]);
-    expect(manifest.remotes).toEqual({
-      crm: {
-        manifest: "https://assets.example.com/crm/manifest.json",
-        activeWhen: ["/crm/*"],
-      },
-    });
     expect(manifest.server?.entry).toBe("server.js");
     expect(manifest.server?.assets).toEqual({
       js: ["server.js"],
@@ -217,7 +204,6 @@ describe("UtoopackManifestGenerator", () => {
       routes: [],
       serverFunctions: [],
       serverRoutes: [],
-      remotes: {},
     };
     const plan = createPlan(graph, true, { distDir: "custom-dist" });
 
@@ -270,7 +256,6 @@ describe("UtoopackManifestGenerator", () => {
       routes: [],
       serverFunctions: [],
       serverRoutes: [],
-      remotes: {},
     };
     const plan = createPlan(graph, false);
 
@@ -354,7 +339,6 @@ describe("UtoopackManifestGenerator", () => {
       routes: [],
       serverFunctions: [],
       serverRoutes: [],
-      remotes: {},
     };
     const plan = createPlan(graph, true);
 

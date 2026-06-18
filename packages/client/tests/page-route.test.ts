@@ -28,7 +28,6 @@ describe("page route hooks", () => {
     expect("startPageRuntime" in client).toBe(false);
     expect("createReactPageModule" in client).toBe(false);
     expect("mountReactPage" in client).toBe(false);
-    expect("createRemoteReactModule" in client).toBe(false);
     expect("createShell" in client).toBe(false);
     expect("createPageDriver" in client).toBe(false);
     expect("createHistoryDriver" in client).toBe(false);
@@ -132,6 +131,44 @@ describe("createPagesApp", () => {
       rootModule: { default: RootLayout },
       routes: [
         { path: "/", module: { default: Home, pendingComponent: Pending } },
+      ],
+    });
+
+    expect(app.render).toBeTypeOf("function");
+  });
+
+  it("accepts nested layout route definitions from generated page modules", () => {
+    function RootLayout() {
+      return null;
+    }
+    function PostsLayout() {
+      return null;
+    }
+    function Post() {
+      return null;
+    }
+
+    const { app } = createPagesApp({
+      routes: [
+        {
+          id: "layout",
+          path: "/",
+          kind: "layout",
+          module: { default: RootLayout, loader: () => "root" },
+        },
+        {
+          id: "posts_layout",
+          path: "/posts",
+          parentId: "layout",
+          kind: "layout",
+          module: { default: PostsLayout, beforeLoad: () => undefined },
+        },
+        {
+          id: "posts_postId",
+          path: "/posts/$postId",
+          parentId: "posts_layout",
+          module: { default: Post },
+        },
       ],
     });
 
@@ -243,6 +280,39 @@ describe("createPagesApp", () => {
       }),
     ).toThrow(
       '[evjs] createPagesApp() routes[1].path "/users/$userId" has the same route shape as routes[0].path "/users/$id". Use one dynamic param name for each URL shape.',
+    );
+    expect(() =>
+      createPagesApp({
+        routes: [
+          {
+            id: "dashboard",
+            path: "/dashboard",
+            module: { default: Home },
+          },
+          {
+            id: "settings",
+            path: "/settings",
+            parentId: "dashboard",
+            module: { default: Home },
+          },
+        ],
+      }),
+    ).toThrow(
+      '[evjs] Page route "settings" parentId "dashboard" must reference a layout route.',
+    );
+    expect(() =>
+      createPagesApp({
+        routes: [
+          {
+            id: "settings",
+            path: "/settings",
+            parentId: "missing",
+            module: { default: Home },
+          },
+        ],
+      }),
+    ).toThrow(
+      '[evjs] Page route "settings" parentId "missing" does not match another route id.',
     );
     expect(() =>
       createPagesApp({ routes: [{ path: "/", module: {} }] }),

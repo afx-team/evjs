@@ -505,18 +505,6 @@ describe("createApp", () => {
         framework: {
           manifest: {
             ...manifest,
-            remotes: { crm: { manifest: "" } },
-          },
-        } as never,
-      }),
-    ).toThrow(
-      "[evjs] createApp() framework.manifest.remotes.crm.manifest must be a non-empty string.",
-    );
-    expect(() =>
-      createApp({
-        framework: {
-          manifest: {
-            ...manifest,
             routes: [{ id: "dashboard", path: "dashboard" }],
           },
         } as never,
@@ -3238,13 +3226,6 @@ describe("createApp", () => {
       }),
     ).toThrow(
       "[evjs] createReactFrameworkServer() manifest.version must be 1.",
-    );
-    expect(() =>
-      createReactFrameworkServer({
-        manifest: { ...manifest, remotes: [] } as never,
-      }),
-    ).toThrow(
-      "[evjs] createReactFrameworkServer() manifest.remotes must be an object.",
     );
     expect(() =>
       createReactFrameworkServer({

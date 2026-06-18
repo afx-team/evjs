@@ -101,7 +101,6 @@ my-evjs-app/
 | `src/api/*.server.ts` | 推荐的 server function 边界 | 以 `"use server";` 开头并导出命名 callable server functions 的文件 | 需要在 `server: false` 下运行的客户端导入、默认导出或 runtime re-export |
 | `src/api/*.routes.ts` | 推荐的 server route 边界 | 使用 Web `Request`/`Response` 的 `createRoute()` handlers | Server functions，或把同一个 URL shape 拆到多个文件 |
 | `src/server.ts` | Framework server entry | `createApp({ routes, middlewares, framework })` 和部署运行时 glue | 浏览器代码或按页面拆分的 client bootstrap |
-| `remote.entries.*.app` 指向的 remote entry 模块 | Remote build 公共 entry | 默认 React component，或显式 `init`/`mount`/`hydrate`/`unmount` 生命周期 | Host `remotes` 配置或 server-only 实现细节 |
 | `src/features`、`src/components`、`src/lib`、`src/hooks` | 没有直接框架约定 | 业务代码、可复用 UI、浏览器安全 helper 和 React hooks | 依赖文件名被路由发现的文件 |
 
 除非确实需要更底层 API，否则不要在一个应用中混用多套路由所有权模型：
@@ -109,7 +108,6 @@ my-evjs-app/
 - 普通 SPA/MPA 页面路由使用 `src/pages` 加 `routing`。
 - 只有输出无法用 `src/pages` 表达时，才使用显式 `pages` 配置。
 - 只有手工启动的单浏览器应用才使用 top-level `entry`/`html`。
-- Host 应用使用 `remotes`；只有会输出 `evjs-remote.json` 的包才使用 `remote`。
 
 ## 对应配置
 
@@ -128,13 +126,6 @@ export default defineConfig({
   server: {
     entry: "./src/server.ts",
     rsc: true,
-  },
-
-  remotes: {
-    crm: {
-      manifest: "https://assets.example.com/crm/evjs-remote.json",
-      activeWhen: ["/crm/*"],
-    },
   },
 });
 ```
@@ -269,37 +260,6 @@ const app = createApp({
 
 export default { fetch: app.fetch };
 ```
-
-## Remote Builds
-
-Host 应用通过 `remotes` 消费远程应用。一个包如果自身要作为 remote app 输出，则在配置中声明 `remote`，并复用同样的 `src/` 组织方式：
-
-```ts
-export default defineConfig({
-  remote: {
-    name: "crm",
-    baseUrl: "https://assets.example.com/crm/",
-    entries: {
-      default: {
-        app: "./src/remote.tsx",
-        activeWhen: ["/crm/*"],
-      },
-    },
-  },
-});
-```
-
-Remote module 可以默认导出 React component。不要把默认 React component 和显式
-`mount`、`hydrate` 或 `unmount` 导出混用；需要 setup 时可以在默认 component
-旁边导出 `init`，高级生命周期场景则导出生命周期函数且不要导出 `default`。
-Lifecycle remote module 必须导出 `mount()` 或 `hydrate()`，因为只有 `init()` /
-`unmount()` 不能渲染 remote entry。
-Remote build 必须有符合 build identifier 规则的 `remote.name`，并至少包含一个符合
-build identifier 规则且带非空 `app` 模块路径的 entry。
-保持 host `remotes` 和 build-time `remote` 分离：host app 消费 remote manifest，
-remote package 输出 `evjs-remote.json`。
-托管该 manifest 时，需要返回 `Content-Type: application/json`，可以附带
-content-type 参数。
 
 ## 命名建议
 

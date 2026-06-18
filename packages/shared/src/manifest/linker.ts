@@ -1,17 +1,3 @@
-import {
-  BUILD_IDENTIFIER_DESCRIPTION,
-  isBuildIdentifier,
-} from "../build-identifier.js";
-import {
-  getPathPatternListValidationError,
-  type PathPatternListValidationError,
-  type PathPatternValidationError,
-} from "../path-pattern.js";
-import {
-  getSharedVersionRangeValidationError,
-  SHARED_VERSION_RANGE_DESCRIPTION,
-} from "../shared-version-range.js";
-import { getHttpUrlOrPathValidationError } from "../url-validation.js";
 import type {
   AppGraph,
   AppOutput,
@@ -25,13 +11,10 @@ import type {
   PageOutput,
   PageRenderingOutput,
   PprRegionOutput,
-  RemoteEntry,
-  RemoteManifest,
   RscReferenceOutput,
   RuntimeModuleOutput,
   ServerFunctionOutput,
   ServerRouteOutput,
-  SharedDependencyMap,
 } from "./index.js";
 
 const EMPTY_ASSETS: AssetGroup = { js: [], css: [] };
@@ -292,16 +275,18 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
     assets: entryAssets,
     apps,
     pages,
-    routes: input.graph.routes.map((route) => ({
-      id: route.id,
-      path: route.path,
-      appId: route.appId,
-      pageId: route.pageId,
-      module: route.module,
-      render: route.render,
-      hydrate: route.hydrate,
-      runtime: route.runtime,
-    })),
+    routes: input.graph.routes
+      .filter((route) => route.kind !== "layout")
+      .map((route) => ({
+        id: route.id,
+        path: route.path,
+        appId: route.appId,
+        pageId: route.pageId,
+        module: route.module,
+        render: route.render,
+        hydrate: route.hydrate,
+        runtime: route.runtime,
+      })),
     server: serverEnabled
       ? {
           entry: serverEntry,
@@ -315,15 +300,6 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
           routes: serverRoutes,
         }
       : undefined,
-    remotes: Object.fromEntries(
-      Object.entries(input.graph.remotes).map(([id, remote]) => [
-        id,
-        {
-          manifest: remote.manifest,
-          activeWhen: remote.activeWhen,
-        },
-      ]),
-    ),
     ...(rsc ? { rsc } : {}),
   };
 }
@@ -455,19 +431,6 @@ export function createPublicManifest(output: BuildOutput): BuildOutput {
           ),
         })
       : undefined,
-    remotes: output.remotes
-      ? Object.fromEntries(
-          Object.entries(output.remotes).map(([id, remote]) => [
-            id,
-            pruneUndefined({
-              manifest: remote.manifest,
-              activeWhen: remote.activeWhen
-                ? [...remote.activeWhen]
-                : undefined,
-            }),
-          ]),
-        )
-      : undefined,
     rsc: output.rsc
       ? pruneUndefined({
           endpoint: output.rsc.endpoint,
@@ -513,372 +476,6 @@ function joinManifestPath(...parts: string[]): string {
     )
     .filter(Boolean)
     .join("/");
-}
-
-export interface RemoteManifestLinkInput {
-  plan: BuildPlan;
-  clientEntryAssets?: Record<string, AssetGroup>;
-  firstClientEntryAssets?: AssetGroup;
-}
-
-export function linkRemoteManifest(
-  input: RemoteManifestLinkInput,
-): RemoteManifest | undefined {
-  const remote = input.plan.remote;
-  if (!remote) return undefined;
-
-  const name = assertRemoteManifestBuildIdentifier(remote.name, "remote.name");
-  const baseUrl = assertRemoteManifestBaseUrl(remote.baseUrl, "remote.baseUrl");
-  const shared =
-    remote.shared === undefined
-      ? undefined
-      : assertRemoteManifestShared(remote.shared);
-  const entries = Object.entries(remote.entries);
-  if (entries.length === 0) {
-    throw new Error(
-      "[evjs] remote.entries must declare at least one remote entry before remote manifest emission.",
-    );
-  }
-  const clientEntryAssets = input.clientEntryAssets ?? {};
-  const remoteEntries = input.plan.entries.filter(
-    (entry) => entry.environment === "client" && entry.kind === "remote-client",
-  );
-  const activeWhenOwners = new Map<string, string>();
-
-  return {
-    version: 1,
-    name,
-    baseUrl,
-    ...(shared !== undefined ? { shared } : {}),
-    entries: Object.fromEntries(
-      entries.map(([entryId, entry]) => {
-        assertRemoteManifestBuildIdentifierKey(entryId, "remote.entries");
-        const id = assertRemoteManifestBuildIdentifier(
-          entry.id,
-          `remote.entries.${entryId}.id`,
-        );
-        if (id !== entryId) {
-          throw new Error(
-            `[evjs] remote.entries.${entryId}.id "${id}" must match remote.entries key "${entryId}" before remote manifest emission.`,
-          );
-        }
-        const activeWhen =
-          entry.activeWhen === undefined
-            ? undefined
-            : assertRemoteManifestActiveWhenPatterns(
-                entry.activeWhen,
-                `remote.entries.${entryId}.activeWhen`,
-              );
-        registerRemoteManifestActiveWhenPatterns(
-          activeWhen,
-          `remote.entries.${entryId}.activeWhen`,
-          activeWhenOwners,
-        );
-        const mount =
-          entry.mount === undefined
-            ? undefined
-            : assertRemoteManifestString(
-                entry.mount,
-                `remote.entries.${entryId}.mount`,
-              );
-        const buildEntry = assertRemoteClientBuildEntry(
-          name,
-          entryId,
-          remoteEntries,
-        );
-        const assets = clientEntryAssets[buildEntry.name] ?? EMPTY_ASSETS;
-        assertRemoteManifestAssetGroup(
-          assets,
-          `remote.entries.${entryId}.assets`,
-        );
-        const href = getClientRuntimeHref(buildEntry, assets);
-        if (!href) {
-          throw new Error(
-            `[evjs] Remote entry "${entryId}" for remote "${remote.name}" did not produce a client JavaScript asset.`,
-          );
-        }
-
-        const remoteEntry: RemoteEntry = {
-          assets,
-          module: {
-            type: "lifecycle",
-            href,
-          },
-          ...(activeWhen !== undefined ? { activeWhen } : {}),
-          ...(mount !== undefined ? { mount } : {}),
-        };
-        return [entryId, remoteEntry];
-      }),
-    ),
-  };
-}
-
-function assertRemoteClientBuildEntry(
-  remoteName: string,
-  entryId: string,
-  remoteEntries: BuildEntry[],
-): BuildEntry {
-  const buildEntry = remoteEntries.find(
-    (candidate) =>
-      candidate.owner?.remoteId === remoteName &&
-      candidate.owner?.remoteEntryId === entryId,
-  );
-  if (buildEntry) return buildEntry;
-
-  throw new Error(
-    `[evjs] Remote entry "${entryId}" for remote "${remoteName}" did not declare a matching remote-client build entry.`,
-  );
-}
-
-function assertRemoteManifestBuildIdentifierKey(
-  key: string,
-  path: string,
-): void {
-  if (!key.trim()) {
-    throw new Error(
-      `[evjs] ${path} must not contain empty keys before remote manifest emission.`,
-    );
-  }
-  if (isBuildIdentifier(key)) return;
-  throw new Error(
-    `[evjs] ${path} key "${key}" must contain only ${BUILD_IDENTIFIER_DESCRIPTION} before remote manifest emission.`,
-  );
-}
-
-function assertRemoteManifestBuildIdentifier(
-  value: unknown,
-  path: string,
-): string {
-  const identifier = assertRemoteManifestString(value, path);
-  if (isBuildIdentifier(identifier)) return identifier;
-  throw new Error(
-    `[evjs] ${path} must contain only ${BUILD_IDENTIFIER_DESCRIPTION} before remote manifest emission.`,
-  );
-}
-
-function assertRemoteManifestBaseUrl(value: unknown, path: string): string {
-  const error = getHttpUrlOrPathValidationError(value);
-  if (!error) return value as string;
-
-  switch (error) {
-    case "empty":
-      throw new Error(
-        `[evjs] ${path} must be a non-empty string before remote manifest emission.`,
-      );
-    case "whitespace":
-      throw new Error(
-        `[evjs] ${path} must not contain leading or trailing whitespace before remote manifest emission.`,
-      );
-    case "not-http-url-or-path":
-      throw new Error(
-        `[evjs] ${path} must be an http(s) URL or path before remote manifest emission.`,
-      );
-  }
-}
-
-function assertRemoteManifestString(value: unknown, path: string): string {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error(
-      `[evjs] ${path} must be a non-empty string before remote manifest emission.`,
-    );
-  }
-  if (value.trim() !== value) {
-    throw new Error(
-      `[evjs] ${path} must not contain leading or trailing whitespace before remote manifest emission.`,
-    );
-  }
-  return value;
-}
-
-function assertRemoteManifestAssetGroup(
-  assets: AssetGroup,
-  path: string,
-): void {
-  assertRemoteManifestStringArray(assets.js, `${path}.js`);
-  assertRemoteManifestStringArray(assets.css, `${path}.css`);
-}
-
-function assertRemoteManifestStringArray(value: unknown, path: string): void {
-  if (!Array.isArray(value)) {
-    throw new Error(
-      `[evjs] ${path} must be an array before remote manifest emission.`,
-    );
-  }
-  for (const item of value) {
-    assertRemoteManifestString(item, path);
-  }
-}
-
-function assertRemoteManifestActiveWhenPatterns(
-  value: unknown,
-  path: string,
-): string[] {
-  const error = getPathPatternListValidationError(value);
-  if (error) throwRemoteManifestPathPatternListError(error, path);
-  return [...(value as string[])];
-}
-
-function throwRemoteManifestPathPatternListError(
-  error: PathPatternListValidationError,
-  path: string,
-): never {
-  switch (error.kind) {
-    case "not-array":
-      throw new Error(
-        `[evjs] ${path} must be an array of path patterns before remote manifest emission.`,
-      );
-    case "empty-array":
-      throw new Error(
-        `[evjs] ${path} must contain at least one path before remote manifest emission.`,
-      );
-    case "duplicate-pattern":
-      throw new Error(
-        `[evjs] ${path} must not contain duplicate pattern "${error.pattern}" before remote manifest emission.`,
-      );
-    case "invalid-pattern":
-      throwRemoteManifestPathPatternError(error.value, error.error, path);
-  }
-}
-
-function throwRemoteManifestPathPatternError(
-  value: unknown,
-  error: PathPatternValidationError,
-  path: string,
-): never {
-  if (error === "empty" || typeof value !== "string") {
-    throw new Error(
-      `[evjs] ${path} must contain only non-empty strings before remote manifest emission.`,
-    );
-  }
-  if (error === "whitespace") {
-    throw new Error(
-      `[evjs] ${path} pattern "${value}" must not contain whitespace before remote manifest emission.`,
-    );
-  }
-  if (error === "missing-leading-slash") {
-    throw new Error(
-      `[evjs] ${path} pattern "${value}" must start with "/" before remote manifest emission.`,
-    );
-  }
-  throw new Error(
-    `[evjs] ${path} pattern "${value}" must not include a query string or hash before remote manifest emission.`,
-  );
-}
-
-function registerRemoteManifestActiveWhenPatterns(
-  patterns: string[] | undefined,
-  path: string,
-  owners: Map<string, string>,
-): void {
-  for (const pattern of patterns ?? []) {
-    const existing = owners.get(pattern);
-    if (existing) {
-      throw new Error(
-        `[evjs] ${path} duplicates ${existing} pattern "${pattern}". Remote entry activeWhen patterns must be unique before remote manifest emission.`,
-      );
-    }
-    owners.set(pattern, path);
-  }
-}
-
-function assertRemoteManifestShared(shared: unknown): SharedDependencyMap {
-  assertRemoteManifestRecord(shared, "remote.shared");
-  const dependencies: SharedDependencyMap = {};
-
-  for (const [name, dependency] of Object.entries(shared)) {
-    if (!name.trim()) {
-      throw new Error(
-        "[evjs] remote.shared must not contain empty keys before remote manifest emission.",
-      );
-    }
-    const path = `remote.shared.${name}`;
-    assertRemoteManifestRecord(dependency, path);
-    dependencies[name] = {
-      ...(dependency.shareKey !== undefined
-        ? {
-            shareKey: assertRemoteManifestString(
-              dependency.shareKey,
-              `${path}.shareKey`,
-            ),
-          }
-        : {}),
-      ...(dependency.requiredVersion !== undefined
-        ? {
-            requiredVersion: assertRemoteManifestSharedVersionRange(
-              dependency.requiredVersion,
-              `${path}.requiredVersion`,
-            ),
-          }
-        : {}),
-      ...(dependency.singleton !== undefined
-        ? {
-            singleton: assertRemoteManifestOptionalBoolean(
-              dependency.singleton,
-              `${path}.singleton`,
-            ),
-          }
-        : {}),
-      ...(dependency.strictVersion !== undefined
-        ? {
-            strictVersion: assertRemoteManifestOptionalBoolean(
-              dependency.strictVersion,
-              `${path}.strictVersion`,
-            ),
-          }
-        : {}),
-      ...(dependency.eager !== undefined
-        ? {
-            eager: assertRemoteManifestOptionalBoolean(
-              dependency.eager,
-              `${path}.eager`,
-            ),
-          }
-        : {}),
-    };
-  }
-
-  return dependencies;
-}
-
-function assertRemoteManifestRecord(
-  value: unknown,
-  path: string,
-): asserts value is Record<string, unknown> {
-  if (value && typeof value === "object" && !Array.isArray(value)) return;
-  throw new Error(
-    `[evjs] ${path} must be an object before remote manifest emission.`,
-  );
-}
-
-function assertRemoteManifestSharedVersionRange(
-  value: unknown,
-  path: string,
-): string {
-  const error = getSharedVersionRangeValidationError(value);
-  if (!error) return value as string;
-  if (error === "empty") {
-    throw new Error(
-      `[evjs] ${path} must be a non-empty string before remote manifest emission.`,
-    );
-  }
-  if (error === "whitespace") {
-    throw new Error(
-      `[evjs] ${path} must not contain leading or trailing whitespace before remote manifest emission.`,
-    );
-  }
-  throw new Error(
-    `[evjs] ${path} must use ${SHARED_VERSION_RANGE_DESCRIPTION} before remote manifest emission.`,
-  );
-}
-
-function assertRemoteManifestOptionalBoolean(
-  value: unknown,
-  path: string,
-): boolean {
-  if (typeof value === "boolean") return value;
-  throw new Error(
-    `[evjs] ${path} must be a boolean when provided before remote manifest emission.`,
-  );
 }
 
 function sanitizeAppOutput(app: AppOutput): AppOutput {

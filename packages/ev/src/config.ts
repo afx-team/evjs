@@ -3,16 +3,13 @@ import {
   BUILD_IDENTIFIER_DESCRIPTION,
   DEFAULT_SERVER_BASE_PATH,
   getAbsoluteHttpUrlValidationError,
-  getHttpUrlOrPathValidationError,
   getPageRouteParamSegmentValidationError,
   getPathPatternListValidationError,
   getPathPatternValidationError,
-  getSharedVersionRangeValidationError,
   isBuildIdentifier,
   type PageRouteParamSegmentValidationError,
   type PathPatternListValidationError,
   type PathPatternValidationError,
-  SHARED_VERSION_RANGE_DESCRIPTION,
 } from "@evjs/shared";
 import type {
   ComponentModel,
@@ -21,7 +18,6 @@ import type {
   PprConfig,
   PrerenderConfig,
   RenderMode,
-  SharedDependencyMap,
 } from "@evjs/shared/manifest";
 import { validatePageRenderingContract } from "./build-tools/page-rendering-contract.js";
 import { routePathShapeFromPath } from "./build-tools/page-route-conventions.js";
@@ -142,10 +138,6 @@ export interface ResolvedConfig<TBundlerCfg = DefaultBundlerConfig> {
   routing?: ResolvedPageRoutingConfig;
   /** Internal application declarations. */
   apps?: Record<string, ResolvedAppConfig>;
-  /** Remote app manifests configured for shell/runtime loading. */
-  remotes: Record<string, ResolvedRemoteConfig>;
-  /** Remote app manifest emitted by this build, when this package is a remote. */
-  remote?: ResolvedRemoteBuildConfig;
   /** Client dev server options. */
   dev: ResolvedDevConfig;
   /** Whether the server is enabled (true unless `server: false`). */
@@ -206,19 +198,6 @@ export interface Config<TBundlerCfg = DefaultBundlerConfig> {
    * router-free pages.
    */
   routing?: boolean | RoutingConfig;
-
-  /** Remote applications loaded from framework manifests. */
-  remotes?: Record<string, RemoteConfig>;
-
-  /**
-   * Remote app emitted by this build.
-   *
-   * Use this when the current package is a manifest-driven remote that will be
-   * loaded by another evjs shell. Host applications consume remotes through
-   * `remotes`; remote packages declare themselves through this singular
-   * `remote` field.
-   */
-  remote?: RemoteBuildConfig;
 
   /** Bundler adapter. When omitted, defaults to utoopack. */
   bundler?: BundlerAdapter<TBundlerCfg>;
@@ -367,42 +346,6 @@ export interface ResolvedPageRoutingConfig {
   rootModule?: string;
 }
 
-export interface RemoteConfig {
-  manifest: string;
-  activeWhen?: string[];
-}
-
-export interface ResolvedRemoteConfig {
-  manifest: string;
-  activeWhen?: string[];
-}
-
-export interface RemoteBuildConfig {
-  name: string;
-  baseUrl?: string;
-  shared?: SharedDependencyMap;
-  entries: Record<string, RemoteBuildEntryConfig>;
-}
-
-export interface RemoteBuildEntryConfig {
-  app: string;
-  activeWhen?: string[];
-  mount?: string;
-}
-
-export interface ResolvedRemoteBuildConfig {
-  name: string;
-  baseUrl: string;
-  shared?: SharedDependencyMap;
-  entries: Record<string, ResolvedRemoteBuildEntryConfig>;
-}
-
-export interface ResolvedRemoteBuildEntryConfig {
-  app: string;
-  activeWhen?: string[];
-  mount?: string;
-}
-
 /** Server dev options. */
 export interface ServerDevConfig {
   /** API server port (dev mode). Default: 3001. */
@@ -436,8 +379,6 @@ const PUBLIC_ROOT_CONFIG_KEYS = new Set([
   "transport",
   "app",
   "routing",
-  "remotes",
-  "remote",
   "bundler",
   "plugins",
   "pages",
@@ -473,25 +414,6 @@ const PUBLIC_DEV_PROXY_RULE_KEYS = new Set([
   "target",
   "changeOrigin",
   "secure",
-]);
-const PUBLIC_REMOTE_CONFIG_KEYS = new Set(["manifest", "activeWhen"]);
-const PUBLIC_REMOTE_BUILD_CONFIG_KEYS = new Set([
-  "name",
-  "baseUrl",
-  "shared",
-  "entries",
-]);
-const PUBLIC_REMOTE_BUILD_ENTRY_CONFIG_KEYS = new Set([
-  "app",
-  "activeWhen",
-  "mount",
-]);
-const PUBLIC_SHARED_DEPENDENCY_CONFIG_KEYS = new Set([
-  "shareKey",
-  "requiredVersion",
-  "singleton",
-  "strictVersion",
-  "eager",
 ]);
 const PUBLIC_PLUGIN_CONFIG_KEYS = new Set([
   "name",
@@ -616,8 +538,6 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
     app: resolvedApp,
     routing: resolvedPageRouting,
     apps: resolvedApps,
-    remotes: resolveRemotesConfig(config.remotes),
-    remote: resolveRemoteBuildConfig(config.remote),
     dev: {
       port: clientPort,
       https: devHttps,
@@ -848,7 +768,7 @@ function validateRootConfigKeys(config: Record<string, unknown>): void {
     config,
     PUBLIC_ROOT_CONFIG_KEYS,
     "config",
-    "entry, html, dev, server, transport, app, routing, remotes, remote, bundler, plugins, or pages",
+    "entry, html, dev, server, transport, app, routing, bundler, plugins, or pages",
     (key) => {
       if (key === "apps") {
         return "[evjs] config.apps is resolved framework metadata and cannot be configured. Use app for one explicit SPA, routing for file routes, or pages for explicit page outputs.";
@@ -1285,128 +1205,6 @@ function derivePagePprConfig(
   };
 }
 
-function resolveRemotesConfig(
-  remotes: Config["remotes"],
-): ResolvedConfig["remotes"] {
-  const activeWhenOwners = new Map<string, string>();
-  const resolved: ResolvedConfig["remotes"] = {};
-  const entries =
-    remotes === undefined
-      ? []
-      : Object.entries(assertObjectConfig(remotes, "remotes", "an object map"));
-
-  for (const [name, remote] of entries) {
-    assertBuildIdentifierObjectKey(name, "remotes");
-    const remoteConfig = assertObjectConfig(
-      remote,
-      `remotes.${name}`,
-      "a remote declaration object",
-    );
-    validateRemoteConfigKeys(remoteConfig, `remotes.${name}`);
-    const activeWhen = cloneOptionalActiveWhenPatterns(
-      remoteConfig.activeWhen,
-      `remotes.${name}.activeWhen`,
-    );
-    registerActiveWhenPatterns(
-      activeWhen,
-      `remotes.${name}.activeWhen`,
-      activeWhenOwners,
-      "Remote activeWhen patterns must be unique.",
-    );
-
-    resolved[name] = {
-      manifest: assertRemoteUrlOrPath(
-        remoteConfig.manifest,
-        `remotes.${name}.manifest`,
-      ),
-      activeWhen,
-    };
-  }
-
-  return resolved;
-}
-
-function resolveRemoteBuildConfig(
-  remote: Config["remote"],
-): ResolvedConfig["remote"] {
-  if (remote === undefined) return undefined;
-
-  const remoteConfig = assertObjectConfig(
-    remote,
-    "remote",
-    "a remote build object",
-  );
-  validateRemoteBuildConfigKeys(remoteConfig);
-  const entries =
-    remoteConfig.entries === undefined
-      ? []
-      : Object.entries(
-          assertObjectConfig(
-            remoteConfig.entries,
-            "remote.entries",
-            "an object map",
-          ),
-        );
-  if (entries.length === 0) {
-    throw new Error(
-      "[evjs] remote.entries must declare at least one remote entry.",
-    );
-  }
-
-  const activeWhenOwners = new Map<string, string>();
-  const resolvedEntries: Record<string, ResolvedRemoteBuildEntryConfig> = {};
-
-  for (const [entryId, entry] of entries) {
-    assertBuildIdentifierObjectKey(entryId, "remote.entries");
-    const entryConfig = assertObjectConfig(
-      entry,
-      `remote.entries.${entryId}`,
-      "a remote entry object",
-    );
-    validateRemoteBuildEntryConfigKeys(
-      entryConfig,
-      `remote.entries.${entryId}`,
-    );
-    const activeWhen = cloneOptionalActiveWhenPatterns(
-      entryConfig.activeWhen,
-      `remote.entries.${entryId}.activeWhen`,
-    );
-    registerActiveWhenPatterns(
-      activeWhen,
-      `remote.entries.${entryId}.activeWhen`,
-      activeWhenOwners,
-      "Remote entry activeWhen patterns must be unique.",
-    );
-
-    resolvedEntries[entryId] = {
-      app: assertNonEmptyString(
-        entryConfig.app,
-        `remote.entries.${entryId}.app`,
-      ),
-      activeWhen,
-      mount:
-        entryConfig.mount === undefined
-          ? undefined
-          : assertTrimmedNonEmptyString(
-              entryConfig.mount,
-              `remote.entries.${entryId}.mount`,
-            ),
-    };
-  }
-
-  return {
-    name: assertBuildIdentifier(remoteConfig.name, "remote.name"),
-    baseUrl:
-      remoteConfig.baseUrl === undefined
-        ? "/"
-        : assertRemoteUrlOrPath(remoteConfig.baseUrl, "remote.baseUrl"),
-    ...(remoteConfig.shared !== undefined
-      ? { shared: cloneSharedDependencies(remoteConfig.shared) }
-      : {}),
-    entries: resolvedEntries,
-  };
-}
-
 function resolveDevHttpsConfig(
   https: DevConfig["https"],
 ): ResolvedDevConfig["https"] {
@@ -1486,39 +1284,6 @@ function validateDevProxyRuleKeys(
   );
 }
 
-function validateRemoteConfigKeys(
-  remote: Record<string, unknown>,
-  path: string,
-): void {
-  assertKnownConfigKeys(
-    remote,
-    PUBLIC_REMOTE_CONFIG_KEYS,
-    path,
-    "manifest or activeWhen",
-  );
-}
-
-function validateRemoteBuildConfigKeys(remote: Record<string, unknown>): void {
-  assertKnownConfigKeys(
-    remote,
-    PUBLIC_REMOTE_BUILD_CONFIG_KEYS,
-    "remote",
-    "name, baseUrl, shared, or entries",
-  );
-}
-
-function validateRemoteBuildEntryConfigKeys(
-  entry: Record<string, unknown>,
-  path: string,
-): void {
-  assertKnownConfigKeys(
-    entry,
-    PUBLIC_REMOTE_BUILD_ENTRY_CONFIG_KEYS,
-    path,
-    "app, activeWhen, or mount",
-  );
-}
-
 function assertTcpPort(value: number, path: string): number {
   if (Number.isInteger(value) && value >= 1 && value <= 65535) return value;
   throw new Error(
@@ -1575,22 +1340,6 @@ function assertHttpUrl(value: unknown, path: string): string {
   return value as string;
 }
 
-function assertRemoteUrlOrPath(value: unknown, path: string): string {
-  const error = getHttpUrlOrPathValidationError(value);
-  if (!error) return value as string;
-
-  switch (error) {
-    case "empty":
-      throw new Error(`[evjs] ${path} must be a non-empty string.`);
-    case "whitespace":
-      throw new Error(
-        `[evjs] ${path} must not contain leading or trailing whitespace.`,
-      );
-    case "not-http-url-or-path":
-      throw new Error(`[evjs] ${path} must be an http(s) URL or path.`);
-  }
-}
-
 function formatAbsoluteHttpUrlError(
   error: AbsoluteHttpUrlValidationError,
 ): string {
@@ -1602,14 +1351,6 @@ function formatAbsoluteHttpUrlError(
     case "not-absolute-http-url":
       return "must be an absolute http(s) URL.";
   }
-}
-
-function assertBuildIdentifier(value: unknown, path: string): string {
-  const identifier = assertNonEmptyString(value, path);
-  if (isBuildIdentifier(identifier)) return identifier;
-  throw new Error(
-    `[evjs] ${path} must contain only ${BUILD_IDENTIFIER_DESCRIPTION}.`,
-  );
 }
 
 function assertRoutePath(value: unknown, path: string): string {
@@ -1704,14 +1445,6 @@ function cloneStringArray(value: unknown, path: string): string[] {
   });
 }
 
-function cloneOptionalActiveWhenPatterns(
-  value: unknown,
-  path: string,
-): string[] | undefined {
-  if (value === undefined) return undefined;
-  return clonePathPatterns(value, path);
-}
-
 function clonePathPatterns(value: unknown, path: string): string[] {
   const error = getPathPatternListValidationError(value);
   if (error) throwPathPatternListError(error, path);
@@ -1757,114 +1490,6 @@ function throwPathPatternError(
   );
 }
 
-function registerActiveWhenPatterns(
-  patterns: string[] | undefined,
-  path: string,
-  owners: Map<string, string>,
-  duplicateMessage: string,
-): void {
-  for (const pattern of patterns ?? []) {
-    const existing = owners.get(pattern);
-    if (existing) {
-      throw new Error(
-        `[evjs] ${path} duplicates ${existing} pattern "${pattern}". ${duplicateMessage}`,
-      );
-    }
-    owners.set(pattern, path);
-  }
-}
-
-function cloneSharedDependencies(shared: unknown): SharedDependencyMap {
-  const sharedConfig = assertObjectConfig(
-    shared,
-    "remote.shared",
-    "a shared dependency map",
-  );
-  const cloned: SharedDependencyMap = {};
-
-  for (const [name, dependency] of Object.entries(sharedConfig)) {
-    assertNonEmptyObjectKey(name, "remote.shared");
-    const path = `remote.shared.${name}`;
-    const dependencyConfig = assertObjectConfig(
-      dependency,
-      path,
-      "a shared dependency object",
-    );
-    validateSharedDependencyConfigKeys(dependencyConfig, path);
-    cloned[name] = {
-      ...(dependencyConfig.shareKey !== undefined
-        ? {
-            shareKey: assertTrimmedNonEmptyString(
-              dependencyConfig.shareKey,
-              `${path}.shareKey`,
-            ),
-          }
-        : {}),
-      ...(dependencyConfig.requiredVersion !== undefined
-        ? {
-            requiredVersion: assertSharedVersionRangeConfig(
-              dependencyConfig.requiredVersion,
-              `${path}.requiredVersion`,
-            ),
-          }
-        : {}),
-      ...(dependencyConfig.singleton !== undefined
-        ? {
-            singleton: assertOptionalBoolean(
-              dependencyConfig.singleton,
-              `${path}.singleton`,
-            ),
-          }
-        : {}),
-      ...(dependencyConfig.strictVersion !== undefined
-        ? {
-            strictVersion: assertOptionalBoolean(
-              dependencyConfig.strictVersion,
-              `${path}.strictVersion`,
-            ),
-          }
-        : {}),
-      ...(dependencyConfig.eager !== undefined
-        ? {
-            eager: assertOptionalBoolean(
-              dependencyConfig.eager,
-              `${path}.eager`,
-            ),
-          }
-        : {}),
-    };
-  }
-
-  return cloned;
-}
-
-function validateSharedDependencyConfigKeys(
-  dependency: Record<string, unknown>,
-  path: string,
-): void {
-  assertKnownConfigKeys(
-    dependency,
-    PUBLIC_SHARED_DEPENDENCY_CONFIG_KEYS,
-    path,
-    "shareKey, requiredVersion, singleton, strictVersion, or eager",
-  );
-}
-
-function assertSharedVersionRangeConfig(value: unknown, path: string): string {
-  const error = getSharedVersionRangeValidationError(value);
-  if (!error) return value as string;
-  if (error === "empty") {
-    throw new Error(`[evjs] ${path} must be a non-empty string.`);
-  }
-  if (error === "whitespace") {
-    throw new Error(
-      `[evjs] ${path} must not contain leading or trailing whitespace.`,
-    );
-  }
-  throw new Error(
-    `[evjs] ${path} must use ${SHARED_VERSION_RANGE_DESCRIPTION}.`,
-  );
-}
 /**
  * Define the evjs framework configuration with type inference.
  *

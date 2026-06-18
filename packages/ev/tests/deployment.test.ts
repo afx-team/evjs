@@ -106,12 +106,6 @@ describe("createDeploymentArtifact", () => {
           },
         ],
       },
-      remotes: {
-        crm: {
-          manifest: "https://assets.example.com/crm/evjs-remote.json",
-          activeWhen: ["/crm/*"],
-        },
-      },
       rsc: {
         endpoint: "/framework/rsc",
         pages: {
@@ -197,7 +191,6 @@ describe("createDeploymentArtifact", () => {
           },
         ],
       },
-      remotes: output.remotes,
       rsc: {
         endpoint: "/framework/rsc",
         pages: ["insights"],

@@ -45,7 +45,7 @@ Runs the production build through `@evjs/ev` with `NODE_ENV=production`:
 
 Runs the framework preflight path without bundling. Use it to inspect page
 routes, ignored/rejected route files, server functions, server routes, render
-metadata, remotes, runtime paths, planned entries, and diagnostics. Add
+metadata, runtime paths, planned entries, and diagnostics. Add
 `--json` for machine-readable output.
 
 ## Configuration

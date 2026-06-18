@@ -1,11 +1,5 @@
 import { webpackAdapter } from "@evjs/bundler-webpack";
-import {
-  defineConfig,
-  edgeDeploymentAdapter,
-  nodeDeploymentAdapter,
-  staticDeploymentAdapter,
-} from "@evjs/ev";
-import { fullFeaturesDeployAdapter } from "./deploy-adapter.mjs";
+import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
   bundler: webpackAdapter,
@@ -48,32 +42,9 @@ export default defineConfig({
       html: "./index.html",
       mount: "#app",
     },
-    remote: {
-      component: "./src/pages/RemoteApp.tsx",
-      html: "./index.html",
-      mount: "#app",
-    },
   },
 
   server: {
     entry: "./src/server.ts",
   },
-
-  remotes: {
-    crm: {
-      manifest:
-        process.env.FULL_FEATURES_REMOTE_MANIFEST ??
-        "https://assets.example.com/crm/evjs-remote.json",
-      activeWhen: ["/crm/*"],
-    },
-  },
-
-  plugins: [
-    fullFeaturesDeployAdapter(),
-    nodeDeploymentAdapter(),
-    staticDeploymentAdapter(),
-    edgeDeploymentAdapter({
-      assetsBinding: "ASSETS",
-    }),
-  ],
 });

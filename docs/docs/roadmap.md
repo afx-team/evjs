@@ -16,12 +16,12 @@
   declarations, render metadata, runtime paths, planned entries, and diagnostics
   without running a bundler or writing `dist`.
 - Single framework manifest at `dist/manifest.json`.
-- Manifest-driven app/page/remote activation through the public
+- Manifest-driven app/page activation through the public
   `@evjs/client` runtime package.
 - Framework-owned SPA page routes and router-free page runtime for MPA.
 - Webpack adapter for framework validation while Utoopack lower-layer APIs catch up.
-- Full-feature host/remote example plus end-to-end coverage for apps,
-  component pages, SSR/PPR/RSC, remotes, and per-document HTML transforms.
+- Focused render-mode and deployment-adapter examples plus end-to-end coverage for apps,
+  component pages, SSR/PPR/RSC, and per-document HTML transforms.
 - Public manifest redaction so browser-visible output does not expose local
   source paths.
 - Built-in Node, static, and edge deployment adapter artifacts.
@@ -42,7 +42,7 @@
 - Utoopack parity priority 1: dynamic entry/server dev plan updates for
   adding/removing entries without restarting `ev dev`.
 - Utoopack parity priority 2: generic entry wrapping/loadable entry facts for
-  framework-managed component pages and remotes.
+  framework-managed component pages.
 - Utoopack parity priority 3: multi server-entry build facts for SSR/PPR/RSC
   renderers.
 - Utoopack parity priority 4: RSC client/server reference metadata.

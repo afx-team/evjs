@@ -6,37 +6,6 @@ export type PublicPageHookExports = [
   typeof Client.usePageLoaderData,
 ];
 
-export type PublicRemoteExports = [
-  typeof Client.RemoteApp,
-  typeof Client.useRemoteHost,
-  typeof Client.useRemoteContext,
-  typeof Client.startRemoteAppRuntime,
-  typeof Client.createRemoteAppManifest,
-  typeof Client.resolveRemoteAppManifestUrl,
-  typeof Client.formatRemoteSharedNegotiation,
-  typeof Client.getRemoteSharedVersion,
-  Client.RemoteAppActivationRequest,
-  Client.RemoteAppContext,
-  Client.RemoteAppHookOptions,
-  Client.RemoteAppHookResult,
-  Client.RemoteAppManifestLoadContext,
-  Client.RemoteAppModule,
-  Client.RemoteAppProps,
-  Client.RemoteAppReactProps,
-  Client.RemoteAppRuntimeController,
-  Client.RemoteAppRuntimeErrorContext,
-  Client.RemoteAppRuntimeHooks,
-  Client.RemoteAppRuntimeOptions,
-  Client.RemoteAppSharedNegotiation,
-  Client.RemoteAppSharedResolution,
-  Client.RemoteAppSharedScope,
-  Client.RemoteAppSharedScopeEntry,
-  Client.RemoteAppState,
-  Client.RemoteAppStatus,
-  Client.RemoteAppTargetOptions,
-  Client.RemoteRuntimeContext,
-];
-
 export type PublicRscExports = [
   typeof Client.createReactRscModel,
   typeof Client.fetchRscFlight,
@@ -79,17 +48,6 @@ export type HiddenCreateReactPageModule = typeof Client.createReactPageModule;
 
 // @ts-expect-error mountReactPage is internal to generated page bootstrap.
 export type HiddenMountReactPage = typeof Client.mountReactPage;
-
-// @ts-expect-error RemoteReactModuleExports is internal to generated remote bootstrap.
-export type HiddenRemoteReactModuleExports = Client.RemoteReactModuleExports;
-
-export type HiddenCreateRemoteReactModule =
-  // @ts-expect-error createRemoteReactModule is internal to generated remote bootstrap.
-  typeof Client.createRemoteReactModule;
-
-export type HiddenCreateRemoteRuntimeContext =
-  // @ts-expect-error createRemoteRuntimeContext is internal to generated remote bootstrap.
-  typeof Client.createRemoteRuntimeContext;
 
 // @ts-expect-error createShell is internal to generated shell bootstrap.
 export type HiddenCreateShell = typeof Client.createShell;

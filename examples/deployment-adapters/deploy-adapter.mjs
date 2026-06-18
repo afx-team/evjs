@@ -2,43 +2,42 @@ import fs from "node:fs";
 import path from "node:path";
 import { createDeploymentArtifact } from "@evjs/ev";
 
-export function fullFeaturesDeployAdapter() {
+export function deploymentExampleAdapter() {
   return {
-    name: "full-features-deploy-adapter",
+    name: "deployment-example-adapter",
     setup(ctx) {
       return {
         buildOutput(output) {
           output.deployment = {
             ...(output.deployment ?? {}),
-            fullFeaturesExample: {
+            deploymentAdaptersExample: {
               apps: Object.keys(output.apps),
               pages: Object.keys(output.pages),
               rscPages: Object.keys(output.rsc?.pages ?? {}),
-              remotes: Object.keys(output.remotes ?? {}),
               serverBasePath: output.runtime.server?.basePath,
             },
           };
         },
         transformHtml(doc, htmlCtx) {
           const id = htmlCtx.kind === "page" ? htmlCtx.pageId : htmlCtx.appId;
-          doc.documentElement?.setAttribute("data-full-features-html", id);
+          doc.documentElement?.setAttribute("data-deployment-example-html", id);
           doc.head?.insertAdjacentHTML(
             "beforeend",
-            `<meta name="evjs-example-html" content="${htmlCtx.kind}:${id}">`,
+            `<meta name="evjs-deployment-example-html" content="${htmlCtx.kind}:${id}">`,
           );
         },
         buildEnd({ output }) {
           const artifactPath = path.join(
             ctx.cwd,
             output.distDir,
-            "deployment.full-features.json",
+            "deployment.example.json",
           );
           fs.mkdirSync(path.dirname(artifactPath), { recursive: true });
           fs.writeFileSync(
             artifactPath,
             JSON.stringify(
               createDeploymentArtifact(output, {
-                platform: "full-features-example",
+                platform: "deployment-adapters-example",
               }),
               null,
               2,

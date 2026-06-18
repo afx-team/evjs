@@ -25,18 +25,6 @@ module.exports = function frameworkEntryLoader() {
     ].join("\n");
   }
 
-  if (options.type === "remote-client") {
-    return [
-      `import * as mod from ${JSON.stringify(moduleRequest)};`,
-      `import { registerGeneratedRemoteClientEntry } from "@evjs/client/internal/react-page";`,
-      ``,
-      `registerGeneratedRemoteClientEntry(mod, import.meta.url);`,
-      `export * from ${JSON.stringify(moduleRequest)};`,
-      `export { default } from ${JSON.stringify(moduleRequest)};`,
-      ``,
-    ].join("\n");
-  }
-
   if (options.type === "server-renderer") {
     return [
       `export { PageProvider } from "@evjs/client/internal/page-context";`,

@@ -1,14 +1,11 @@
 /**
- * Router-free React page runtime used by framework-generated MPA and remote
- * entries.
+ * Router-free React page runtime used by framework-generated MPA entries.
  */
 
 import {
   createReactPageModule,
-  createRemoteReactModule,
   mountReactPage,
   type ReactPageRuntimeOptions,
-  type RemoteReactModuleExports,
 } from "./react.js";
 import type { AppModule } from "./shell.js";
 import { registerShellModule } from "./shell.js";
@@ -17,14 +14,9 @@ export type {
   ReactPageMountOptions,
   ReactPageRouteContext,
   ReactPageRuntimeOptions,
-  RemoteReactModuleExports,
-  RemoteReactProps,
-  RemoteRuntimeSharedContext,
 } from "./react.js";
 export {
   createReactPageModule,
-  createRemoteReactModule,
-  createRemoteRuntimeContext,
   mountReactPage,
 } from "./react.js";
 export { registerShellModule } from "./shell.js";
@@ -55,14 +47,6 @@ export function createGeneratedReactPageEntry(
     });
   }
   return mod;
-}
-
-export function registerGeneratedRemoteClientEntry(
-  mod: RemoteReactModuleExports,
-  importMetaHref: string,
-): void {
-  const href = getCurrentScriptHref(importMetaHref);
-  if (href) registerShellModule(href, () => createRemoteReactModule(mod));
 }
 
 function getCurrentScriptHref(importMetaHref: string): string | undefined {

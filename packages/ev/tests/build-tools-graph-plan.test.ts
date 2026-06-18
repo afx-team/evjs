@@ -1109,42 +1109,6 @@ describe("createAppGraph and createBuildPlan", () => {
     });
   });
 
-  it("rejects remote build entry names that collide with app outputs", async () => {
-    const cwd = await createFixture({
-      "src/main.tsx": "console.log('app');",
-      "src/remote.ts": "export function mount() {}",
-      "index.html": '<div id="app"></div>',
-    });
-    const config = createConfig({
-      apps: {
-        "crm-customers": {
-          entry: "./src/main.tsx",
-          html: "./index.html",
-        },
-      },
-      remote: {
-        name: "crm",
-        baseUrl: "/",
-        entries: {
-          customers: {
-            app: "./src/remote.ts",
-            activeWhen: ["/crm/*"],
-            mount: "#remote-root",
-          },
-        },
-      },
-    });
-    const analysis = await createAppGraph(config, cwd);
-
-    expect(() =>
-      createBuildPlan(config, analysis.graph, {
-        mode: "development",
-      }),
-    ).toThrow(
-      '[evjs] Duplicate build entry name "crm-customers" from app "crm-customers" and remote "crm" entry "customers". Build entry names are manifest asset keys and must be globally unique.',
-    );
-  });
-
   it("rejects duplicate HTML output filenames before bundling", async () => {
     const cwd = await createFixture({
       "src/main.tsx": "console.log('app');",
@@ -4105,7 +4069,7 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
   });
 
-  it("collects page route and remote declarations", async () => {
+  it("collects page route declarations", async () => {
     const cwd = await createFixture({
       "src/main.tsx": "console.log('app');",
       "src/pages/Dashboard.tsx": `
@@ -4130,12 +4094,6 @@ describe("createAppGraph and createBuildPlan", () => {
             module: "./src/pages/Dashboard.tsx",
           },
         ],
-      },
-      remotes: {
-        crm: {
-          manifest: "https://assets.example.com/crm/evjs-remote.json",
-          activeWhen: ["/crm/*"],
-        },
       },
     });
     const analysis = await createAppGraph(config, cwd);
@@ -4224,130 +4182,10 @@ describe("createAppGraph and createBuildPlan", () => {
         owner: { appId: "default" },
       },
     ]);
-    expect(analysis.graph.remotes).toEqual({
-      crm: {
-        id: "crm",
-        manifest: "https://assets.example.com/crm/evjs-remote.json",
-        activeWhen: ["/crm/*"],
-      },
-    });
     expect(relativeFileDependencies(cwd, analysis.fileDependencies)).toEqual([
       "src/pages",
       "src/pages/Dashboard.tsx",
     ]);
-  });
-
-  it("creates remote-client entries for remote-only builds without app html", async () => {
-    const cwd = await createFixture({
-      "src/remote.ts": `
-        export function mount() {}
-        export function unmount() {}
-      `,
-      "src/unused.ts": "console.log('unused');",
-    });
-    const config = createConfig({
-      serverEnabled: false,
-      remote: {
-        name: "crm",
-        baseUrl: "https://assets.example.com/crm/",
-        shared: {
-          "remote-react": {
-            shareKey: "react",
-            requiredVersion: ">=19 <20",
-            singleton: true,
-            strictVersion: true,
-            eager: true,
-          },
-        },
-        entries: {
-          customers: {
-            app: "./src/remote.ts",
-            activeWhen: ["/crm/*"],
-            mount: "#remote-root",
-          },
-        },
-      },
-      server: {
-        entry: undefined,
-        basePath: "/__evjs",
-        functionRuntime: {
-          endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client/internal",
-          serverRegister: "@evjs/server/register",
-        },
-      },
-    });
-    const analysis = await createAppGraph(config, cwd);
-    const plan = createBuildPlan(config, analysis.graph, {
-      mode: "development",
-    });
-
-    expect(analysis.graph.apps).toEqual({});
-    expect(analysis.graph.pages).toEqual({});
-    expect(analysis.graph.remote).toEqual({
-      name: "crm",
-      baseUrl: "https://assets.example.com/crm/",
-      shared: {
-        "remote-react": {
-          shareKey: "react",
-          requiredVersion: ">=19 <20",
-          singleton: true,
-          strictVersion: true,
-          eager: true,
-        },
-      },
-      entries: {
-        customers: {
-          id: "customers",
-          app: "./src/remote.ts",
-          activeWhen: ["/crm/*"],
-          mount: "#remote-root",
-        },
-      },
-    });
-    expect(plan.html).toEqual([]);
-    expect(plan.remote).toEqual({
-      name: "crm",
-      baseUrl: "https://assets.example.com/crm/",
-      shared: {
-        "remote-react": {
-          shareKey: "react",
-          requiredVersion: ">=19 <20",
-          singleton: true,
-          strictVersion: true,
-          eager: true,
-        },
-      },
-      entries: {
-        customers: {
-          id: "customers",
-          name: "crm-customers",
-          app: "./src/remote.ts",
-          activeWhen: ["/crm/*"],
-          mount: "#remote-root",
-        },
-      },
-    });
-    expect(plan.entries).toEqual([
-      {
-        name: "crm-customers",
-        import: "./src/remote.ts",
-        environment: "client",
-        runtime: "browser",
-        kind: "remote-client",
-        owner: {
-          remoteId: "crm",
-          remoteEntryId: "customers",
-        },
-        metadata: {
-          type: "remote-client",
-          app: "./src/remote.ts",
-        },
-      },
-    ]);
-    expect(relativeFileDependencies(cwd, analysis.fileDependencies)).toEqual(
-      [],
-    );
   });
 
   it("allows explicit apps and configured pages to coexist", async () => {
@@ -4931,7 +4769,7 @@ async function createFixture(files: Record<string, string>) {
   return dir;
 }
 
-type TestConfig = BuildPlanConfig & Pick<GraphConfig, "apps" | "remotes">;
+type TestConfig = BuildPlanConfig & Pick<GraphConfig, "apps">;
 
 function createConfig(overrides: Partial<TestConfig> = {}): TestConfig {
   return {

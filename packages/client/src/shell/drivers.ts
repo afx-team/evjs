@@ -180,11 +180,6 @@ function assertHistoryDriverManifest(
       "[evjs] createHistoryDriver() manifest.routes must be an array.",
     );
   }
-  if (manifest.remotes !== undefined && !isRecord(manifest.remotes)) {
-    throw new Error(
-      "[evjs] createHistoryDriver() manifest.remotes must be an object when provided.",
-    );
-  }
 }
 
 function assertBrowserWindow(

@@ -9,7 +9,7 @@
 - **Router-Free Pages** — MPA and framework-managed pages use the page runtime without adding a client router.
 - **Data Fetching** — Wraps [TanStack Query](https://tanstack.com/query) with built-in server function proxies.
 - **Server Function Support** — `useQuery(fn)` and `useMutation(fn)` for typed server-boundary calls.
-- **Focused Client API** — Application code imports transport, page hooks, navigation helpers, and remote helpers from `@evjs/client`; generated framework bootstrap uses `@evjs/client/internal`.
+- **Focused Client API** — Application code imports transport, page hooks, navigation helpers, and RSC helpers from `@evjs/client`; generated framework bootstrap uses `@evjs/client/internal`.
 
 ## Install
 
@@ -37,9 +37,9 @@ not passed as page component props.
 
 ### 2. Let evjs Build the Route Entry
 
-When `src/pages` exists and the project does not declare explicit `app`,
-`pages`, or `remote` config, evjs discovers the page files and builds the SPA
-entry internally.
+When `src/pages` exists and the project does not declare explicit `app` or
+`pages` config, evjs discovers the page files and builds the SPA entry
+internally.
 
 SPA mode writes `src/evjs-route-types.d.ts` for type-safe `Link`,
 `useLinkProps`, and `redirect` calls. Treat it as generated output: keep it
@@ -112,24 +112,6 @@ function Posts() {
 - `initTransport({ adapter })`: Replace transport behavior with a custom adapter.
 - Generated server-function stubs use internal transport helpers from `@evjs/client/internal`.
 
-### Remote
-- `useRemoteHost()` and `RemoteApp`: Mount a remote app from a remote manifest.
-- `createRemoteAppManifest()` and `resolveRemoteAppManifestUrl()`: Build the
-  host-side manifest and resolve opt-in manifest overrides.
-- `formatRemoteSharedNegotiation()` and `getRemoteSharedVersion()`: Format and
-  inspect shared dependency negotiation events for diagnostics.
-- Remote manifest values and query-param overrides must be HTTP(S) URLs or paths.
-- The default remote manifest loader requires `Content-Type: application/json`
-  with optional parameters.
-- RemoteApp request objects use `remoteEntryId` for explicit entry selection or
-  `url` for `activeWhen` routing; do not pass both together.
-- Remote modules either default-export a React component or export explicit
-  `mount` / `hydrate` lifecycle functions, with optional `init` / `unmount`.
-  Do not mix the two modes; `init` may accompany a default component for setup.
-- React-component remote entries are mounted on the client path; use lifecycle
-  exports when a remote needs a custom hydrate phase.
-- `startRemoteAppRuntime({ runtime })`: Advanced host runtime hooks for shared scope, manifest loading, module loading, and error handling.
-
 ### Runtime
 - Page runtime bootstrap is framework-owned and imported through `@evjs/client/internal`.
 - Page runtime loads the embedded `__EVJS_MANIFEST__` first. When it falls back
@@ -148,12 +130,12 @@ function Posts() {
   lists before any diagnostic HTML is mounted.
 - Manifest shell primitives such as `createShell()`, `createPageDriver()`, and `createHistoryDriver()` are framework-owned and imported through `@evjs/client/internal`.
 - Shell activation request URLs must be HTTP(S) URLs or pathnames starting with `/`.
-- Generated component-page and remote bootstrap APIs are also framework-owned and imported through `@evjs/client/internal`.
+- Generated component-page bootstrap APIs are also framework-owned and imported through `@evjs/client/internal`.
 
 Application-facing client runtime APIs are exported from `@evjs/client`.
 Generic TanStack Query APIs that are not paired with evjs server functions
 should come from `@tanstack/react-query`, while evjs page, navigation,
-server-function, remote, and RSC APIs come from `@evjs/client`.
+server-function, and RSC APIs come from `@evjs/client`.
 
 ## License
 

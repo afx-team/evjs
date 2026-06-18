@@ -178,9 +178,6 @@ function assertLoadedManifest(
   if (!Array.isArray(manifest.routes)) {
     throw new Error(`[evjs] Loaded ${source} routes must be an array.`);
   }
-  if (manifest.remotes !== undefined && !isRecord(manifest.remotes)) {
-    throw new Error(`[evjs] Loaded ${source} remotes must be an object.`);
-  }
   assertFrameworkManifestShape(manifest, `Loaded ${source}`, {
     serverFunctionModules: "optional",
     pageRendererReferences: "optional",
@@ -323,13 +320,6 @@ function assertMountOption(value: unknown): void {
 function outputMount(ctx: AppContext): string {
   if (ctx.kind === "page" && "mount" in ctx.output && ctx.output.mount) {
     return ctx.output.mount;
-  }
-  if (
-    ctx.kind === "remote" &&
-    ctx.remote?.entry.mount &&
-    typeof ctx.remote.entry.mount === "string"
-  ) {
-    return ctx.remote.entry.mount;
   }
   return "#app";
 }

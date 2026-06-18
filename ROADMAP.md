@@ -5,7 +5,7 @@ are preserved in `CHANGELOG.md`; this file should reflect active reality.
 
 ## Completed Core Architecture
 
-- [x] Explicit config and static declaration model for apps, pages, remotes,
+- [x] Explicit config and static declaration model for apps, pages,
       server functions, server routes, SSR/PPR/RSC render metadata.
 - [x] `AppGraph`, `BuildPlan`, and `BuildOutput` schemas under
       `@evjs/shared/manifest`.
@@ -26,12 +26,11 @@ are preserved in `CHANGELOG.md`; this file should reflect active reality.
       navigation, shell, RSC, and static route APIs.
 - [x] RSC client runtime exports remain available from `@evjs/client`, while
       `react-server-dom-webpack/client` is loaded only when RSC APIs are used.
-- [x] React page runtime, shell runtime, remote loading, and host-provided shared
-      scope negotiation.
+- [x] React page runtime, shell runtime, and framework-managed page activation.
 - [x] `@evjs/server` framework rendering boundary for SSR, PPR, and RSC Flight.
 - [x] Production Node deployment adapter driven by `BuildOutput`.
-- [x] Full-feature host/remote example plus e2e coverage on the webpack
-      validation path.
+- [x] Focused render-mode and deployment-adapter examples plus e2e coverage on
+      the webpack validation path.
 
 ## Adapter Status
 
@@ -41,7 +40,7 @@ are preserved in `CHANGELOG.md`; this file should reflect active reality.
 - [ ] Priority 1: Utoopack dynamic dev entry/server update API for configured
       page additions/removals.
 - [ ] Priority 2: Utoopack generic entry wrapping/loadable entry facts for
-      component pages and remote entries.
+      component pages.
 - [ ] Priority 3: Utoopack multi server-entry support and structured build facts
       for SSR/PPR/RSC renderers.
 - [ ] Priority 4: Utoopack RSC client/server reference to chunk metadata.

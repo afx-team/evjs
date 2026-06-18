@@ -64,7 +64,7 @@ route 文件，或改用显式 `pages` 配置并提供唯一 page id。
 `*.server.*` 命名，或移到 `src/pages` 外部。语法错误和默认导出错误会在路由发现阶段、
 bundler 运行前报告。
 
-当项目存在 `src/pages`，且项目没有声明显式的 `app`、`pages` 或 `remote`
+当项目存在 `src/pages`，且项目没有声明显式的 `app` 或 `pages`
 配置时，SPA 路由会自动启用。也可以显式配置：
 
 ```ts

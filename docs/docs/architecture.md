@@ -30,7 +30,7 @@ package.
 
 @evjs/client
   browser runtime, server-function transport, page hooks, navigation helpers,
-  and remote host helpers
+  and RSC client runtime
 
 @evjs/server
   Hono/fetch app, server functions, server routes, SSR/PPR/RSC request boundary
@@ -161,8 +161,7 @@ sequenceDiagram
   Browser->>Runtime: page/app boot
   Runtime->>Manifest: load embedded or /manifest.json
   Runtime->>Shell: create internal shell
-  Shell->>Manifest: resolve app/page/remote target
-  Shell->>Shell: negotiate remote shared scope
+  Shell->>Manifest: resolve app/page target
   Shell->>Browser: import JS/CSS module assets
   Shell->>Runtime: mount/hydrate/unmount lifecycle
 
@@ -243,46 +242,6 @@ a hash.
 The Webpack validation path uses React Flight client consumption and React
 client/server reference manifests; Utoopack still needs equivalent lower-layer
 metadata before it can run the same path.
-
-Remote shared dependencies use an explicit host-provided share scope. The
-internal remote runtime checks remote `shared` requirements before loading the
-remote entry, supports `shareKey`, singleton checks, eager metadata, and
-semver-style ranges including compound comparators and `||`, and exposes
-provided entries to remote React components through remote context. Host
-applications can observe negotiation results with `onRemoteSharedNegotiated()`
-for diagnostics, telemetry, or policy UI; ordinary remote components should not
-render framework dependency versions. React host pages should use
-`useRemoteHost()` / `RemoteApp`; lower-level `startRemoteAppRuntime()` accepts
-advanced `runtime` hooks for custom shared scope, manifest loading, module
-loading, and error handling. Remote host `activeWhen` options use the same
-pathname-pattern validation as `remotes` config. `RemoteApp` target `remote`
-uses the same build-identifier rule as `remotes` config, and object-shaped
-activation requests inherit that target unless they explicitly set `remoteId`.
-Use `request.remoteEntryId` to select a specific remote entry without repeating
-the host remote id, or use `request.url` to pick an entry through `activeWhen`;
-do not provide both in one request. Object-shaped activation requests validate
-`remoteId`, `remoteEntryId`, `pageId`, and `buildId` as build identifiers;
-`appId` and `url` must be non-empty strings without leading or trailing
-whitespace, with `url` limited to HTTP(S) URLs or pathnames that start with `/`.
-`mountPoint` must be an Element object when provided. `hydrate` must be boolean
-when provided. `manifest` and manifest values read through optional
-`manifestQueryParam` must be non-empty HTTP(S) URLs or paths without leading or
-trailing whitespace. Fetched remote manifest names and entry ids are validated
-as build identifiers before activation. A fetched remote manifest `name` must
-match the host `remotes.<id>` that loaded it. Manifest string fields such as
-module and asset hrefs are
-rejected when they contain leading or trailing whitespace or do not resolve to
-`http:` or `https:` URLs from the remote manifest base URL.
-Default-exported React remote modules are automatically adapted to internal
-lifecycle modules. A remote module must not mix a default React component with
-explicit `mount()`, `hydrate()`, or `unmount()` exports; `init()` may accompany a
-default component for setup. Explicit lifecycle modules remain available only as
-an advanced escape hatch; they must export `mount()` or `hydrate()` because
-`init()` / `unmount()` alone cannot render a remote entry. Custom
-`runtime.loadModule()` hooks use the same module shape, so they may return either
-lifecycle functions or `{ default: RemoteComponent }` for a `react-component`
-remote entry. Automatic package loading/version selection remains outside this
-implementation.
 
 ## Configuration Ownership
 
@@ -373,7 +332,7 @@ Deployment adapters consume `BuildOutput`. `@evjs/ev` provides:
   framework server bundle and an asset binding.
 
 Platform-specific adapters should derive their routing, framework endpoint, SSR,
-PPR, RSC, remote, shared dependency, and asset metadata from `BuildOutput`
+PPR, RSC, and asset metadata from `BuildOutput`
 instead of reading bundler stats.
 Full server manifests retain source modules and server renderer references;
 public/browser manifests keep the same routing and asset shape but redact those
@@ -383,7 +342,7 @@ The deployment model is capability-driven:
 
 ```txt
 static-only
-  CSR / MPA client entries / SSG / remote manifests / assets
+  CSR / MPA client entries / SSG / assets
 
 unified node
   static assets + framework endpoints + SSR/PPR/RSC + server functions/routes

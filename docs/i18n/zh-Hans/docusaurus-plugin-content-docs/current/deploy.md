@@ -20,7 +20,7 @@ npm run build
 
 重要输出：
 
-- `dist/manifest.json`：apps、pages、routes、assets、server functions、server routes、remotes 和 runtime paths；
+- `dist/manifest.json`：apps、pages、routes、assets、server functions、server routes 和 runtime paths；
 - `dist/client/`：浏览器资源和 HTML；
 - `dist/server/`：启用 `server` 时的框架服务端 bundle。
 
@@ -45,13 +45,10 @@ manifest 中识别这些 runtime requirements：
 | RSC pages | page route + `runtime.server.rsc` | 需要服务端能力 | document route 与 Flight endpoint 必须共享兼容 manifest/assets。 |
 | Server functions | `runtime.server.fn` | 需要服务端能力 | 通常与 SSR/RSC/PPR 共用同一个 origin/base path，除非用 `transport.baseUrl` 拆分。 |
 | Server routes | 声明的 route path | 需要服务端能力 | methods 与 405 行为属于 `@evjs/server`。 |
-| Remote host | remote manifest URL | 静态或服务端 | Host 可以静态；remote manifest/assets 运行时加载。 |
-| Remote app build | `evjs-remote.json` + assets | CDN/静态文件服务 | Remote lifecycle/shared metadata 由 manifest 驱动。 |
 
 由此得到四类实际部署拓扑：
 
-1. **Static-only**：CSR、MPA client entries、SSG/static HTML 页面、remote
-   manifests 和静态资源。不包含 server functions、SSR、PPR、RSC 或 server routes。
+1. **Static-only**：CSR、MPA client entries、SSG/static HTML 页面 和静态资源。不包含 server functions、SSR、PPR、RSC 或 server routes。
 2. **Unified Node**：一个 Node 进程提供 `dist/client`、framework endpoints、
    SSR/PPR/RSC document routes、server functions 和 server routes。
 3. **Unified Edge Worker**：一个 edge worker 从 binding 提供资源，并把 framework

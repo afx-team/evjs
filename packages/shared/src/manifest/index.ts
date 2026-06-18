@@ -18,9 +18,7 @@ import {
   pageRoutePathShapeFromPath,
 } from "../page-route-data.js";
 import {
-  getPathPatternListValidationError,
   getPathPatternValidationError,
-  type PathPatternListValidationError,
   type PathPatternValidationError,
 } from "../path-pattern.js";
 import { isServerFunctionId } from "../server-function-id.js";
@@ -53,8 +51,6 @@ export interface AppGraph {
   routes: RouteNode[];
   serverFunctions: ServerFunctionNode[];
   serverRoutes: ServerRouteNode[];
-  remotes: Record<string, RemoteNode>;
-  remote?: RemoteBuildNode;
   clientReferences?: ClientReferenceNode[];
   serverReferences?: ServerReferenceNode[];
 }
@@ -103,6 +99,7 @@ export interface RouteNode {
   id: string;
   path: string;
   parentId?: string;
+  kind?: PageRouteKind;
   pageId?: string;
   appId?: string;
   module?: string;
@@ -122,26 +119,6 @@ export interface ServerRouteNode {
   module: string;
   path: string;
   methods: string[];
-}
-
-export interface RemoteNode {
-  id: string;
-  manifest: string;
-  activeWhen?: string[];
-}
-
-export interface RemoteBuildNode {
-  name: string;
-  baseUrl: string;
-  shared?: SharedDependencyMap;
-  entries: Record<string, RemoteBuildEntryNode>;
-}
-
-export interface RemoteBuildEntryNode {
-  id: string;
-  app: string;
-  activeWhen?: string[];
-  mount?: string;
 }
 
 export interface ClientReferenceNode {
@@ -187,7 +164,6 @@ export interface BuildPlan {
   html: HtmlPlan[];
   server: ServerBuildPlan;
   runtime: RuntimePlan;
-  remote?: RemoteBuildPlan;
 }
 
 export interface BuildEntry {
@@ -203,7 +179,6 @@ export interface BuildEntry {
     | "ppr-shell"
     | "ppr-region"
     | "server-runtime"
-    | "remote-client"
     | "runtime";
   owner?: BuildEntryOwner;
   metadata?: BuildEntryMetadata;
@@ -214,13 +189,10 @@ export interface BuildEntryOwner {
   pageId?: string;
   routeId?: string;
   regionId?: string;
-  remoteId?: string;
-  remoteEntryId?: string;
 }
 
 export type BuildEntryMetadata =
   | ReactComponentPageEntryMetadata
-  | RemoteClientEntryMetadata
   | PagesAppEntryMetadata;
 
 export interface ReactComponentPageEntryMetadata {
@@ -235,11 +207,6 @@ export interface ReactComponentPageEntryMetadata {
   };
 }
 
-export interface RemoteClientEntryMetadata {
-  type: "remote-client";
-  app: string;
-}
-
 export interface PagesAppEntryMetadata {
   type: "pages-app";
   routes: PageRouteNode[];
@@ -251,22 +218,11 @@ export interface PageRouteNode {
   id: string;
   path: string;
   module: string;
+  parentId?: string;
+  kind?: PageRouteKind;
 }
 
-export interface RemoteBuildPlan {
-  name: string;
-  baseUrl: string;
-  shared?: SharedDependencyMap;
-  entries: Record<string, RemoteBuildEntryPlan>;
-}
-
-export interface RemoteBuildEntryPlan {
-  id: string;
-  name: string;
-  app: string;
-  activeWhen?: string[];
-  mount?: string;
-}
+export type PageRouteKind = "page" | "layout";
 
 export interface HtmlPlan {
   id: string;
@@ -331,7 +287,6 @@ export interface BuildOutput {
   pages: Record<string, PageOutput>;
   routes: RouteOutput[];
   server?: ServerOutput;
-  remotes?: Record<string, RemoteOutput>;
   rsc?: RscOutput;
   deployment?: Record<string, unknown>;
 }
@@ -432,6 +387,8 @@ export interface RuntimeModuleOutput {
 export interface RouteOutput {
   id: string;
   path: string;
+  parentId?: string;
+  kind?: PageRouteKind;
   appId?: string;
   pageId?: string;
   module?: string;
@@ -467,36 +424,6 @@ export interface ServerRouteOutput {
   assets: AssetGroup;
 }
 
-export interface RemoteOutput {
-  manifest: string;
-  activeWhen?: string[];
-}
-
-export interface RemoteManifest {
-  version: 1;
-  name: string;
-  baseUrl: string;
-  shared?: SharedDependencyMap;
-  entries: Record<string, RemoteEntry>;
-}
-
-export interface RemoteEntry {
-  assets?: AssetGroup;
-  module: RuntimeModuleOutput;
-  activeWhen?: string[];
-  mount?: string;
-}
-
-export type SharedDependencyMap = Record<string, SharedDependency>;
-
-export interface SharedDependency {
-  shareKey?: string;
-  requiredVersion?: string;
-  singleton?: boolean;
-  strictVersion?: boolean;
-  eager?: boolean;
-}
-
 export interface RscOutput {
   endpoint?: string;
   pages?: Record<string, RscPageOutput>;
@@ -526,6 +453,10 @@ export interface ExtractedRoute {
   path: string;
   /** Stable route id derived from the file path or page id. */
   id?: string;
+  /** Parent route id for framework-managed file route trees. */
+  parentId?: string;
+  /** Framework-managed file route node kind. */
+  kind?: PageRouteKind;
   /** Static page/component module declared for this route. */
   module?: string;
   /** Render mode declared by the route target module. */
@@ -578,6 +509,8 @@ export interface ExtractedServerRoute {
 export function resolveRoutes(routes: ExtractedRoute[]): Array<{
   path: string;
   id?: string;
+  parentId?: string;
+  kind?: PageRouteKind;
   module?: string;
   render?: RenderMode;
   hydrate?: HydrationMode;
@@ -626,6 +559,8 @@ export function resolveRoutes(routes: ExtractedRoute[]): Array<{
   const result: Array<{
     path: string;
     id?: string;
+    parentId?: string;
+    kind?: PageRouteKind;
     module?: string;
     render?: RenderMode;
     hydrate?: HydrationMode;
@@ -649,12 +584,18 @@ export function resolveRoutes(routes: ExtractedRoute[]): Array<{
       }
     }
 
-    const seenKey = `${r.appId ?? ""}:${fullPath}`;
+    const routeKind = r.kind ?? "page";
+    const seenKey =
+      routeKind === "layout"
+        ? `${r.appId ?? ""}:layout:${r.id ?? fullPath}`
+        : `${r.appId ?? ""}:page:${fullPath}`;
     if (!seen.has(seenKey)) {
       seen.add(seenKey);
       result.push({
         path: fullPath,
         id: r.id,
+        parentId: r.parentId,
+        kind: r.kind,
         module: r.module,
         render: r.render,
         hydrate: r.hydrate,
@@ -713,10 +654,6 @@ export function assertFrameworkManifestShape(
     throw new Error(`[evjs] ${source}.routes must be an array.`);
   }
   assertRouteOutputs(value.routes, `${source}.routes`, value.pages, value.apps);
-  if (value.remotes !== undefined) {
-    assertObject(value.remotes, `${source}.remotes`);
-    assertRemoteOutputs(value.remotes, `${source}.remotes`);
-  }
 
   if (value.runtime.server !== undefined) {
     assertObject(value.runtime.server, `${source}.runtime.server`);
@@ -1459,31 +1396,6 @@ function formatServerRouteParamSegmentError(
   return `uses duplicate dynamic param name "${error.name}" in segment "${error.segment}". Use unique param names within one route path.`;
 }
 
-function assertRemoteOutputs(
-  value: Record<string, unknown>,
-  source: string,
-): void {
-  const activeWhenOwners = new Map<string, string>();
-  for (const [name, remote] of Object.entries(value)) {
-    assertManifestBuildIdentifierKey(name, source);
-    const remoteSource = `${source}.${name}`;
-    assertObject(remote, remoteSource);
-    assertManifestString(remote.manifest, `${remoteSource}.manifest`);
-    if (remote.activeWhen !== undefined) {
-      const activeWhen = assertManifestPathPatternList(
-        remote.activeWhen,
-        `${remoteSource}.activeWhen`,
-      );
-      registerManifestPathPatternOwners(
-        activeWhen,
-        `${remoteSource}.activeWhen`,
-        createManifestReferenceLabel(`${remoteSource}.activeWhen`),
-        activeWhenOwners,
-      );
-    }
-  }
-}
-
 function assertOptionalRecordReference(
   value: unknown,
   source: string,
@@ -1544,76 +1456,6 @@ function assertManifestString(
       `[evjs] ${source} must not contain leading or trailing whitespace.`,
     );
   }
-}
-
-function assertManifestPathPatternList(
-  value: unknown,
-  source: string,
-): string[] {
-  const error = getPathPatternListValidationError(value);
-  if (error) throwManifestPathPatternListError(error, source);
-  return [...(value as string[])];
-}
-
-function throwManifestPathPatternListError(
-  error: PathPatternListValidationError,
-  source: string,
-): never {
-  switch (error.kind) {
-    case "not-array":
-      throw new Error(`[evjs] ${source} must be an array of path patterns.`);
-    case "empty-array":
-      throw new Error(`[evjs] ${source} must contain at least one path.`);
-    case "duplicate-pattern":
-      throw new Error(
-        `[evjs] ${source} must not contain duplicate pattern "${error.pattern}".`,
-      );
-    case "invalid-pattern":
-      throwManifestPathPatternError(error.value, error.error, source);
-  }
-}
-
-function throwManifestPathPatternError(
-  value: unknown,
-  error: PathPatternValidationError,
-  source: string,
-): never {
-  if (error === "empty" || typeof value !== "string") {
-    throw new Error(`[evjs] ${source} must contain only non-empty strings.`);
-  }
-  if (error === "whitespace") {
-    throw new Error(
-      `[evjs] ${source} pattern "${value}" must not contain whitespace.`,
-    );
-  }
-  if (error === "missing-leading-slash") {
-    throw new Error(`[evjs] ${source} pattern "${value}" must start with "/".`);
-  }
-  throw new Error(
-    `[evjs] ${source} pattern "${value}" must not include a query string or hash.`,
-  );
-}
-
-function registerManifestPathPatternOwners(
-  patterns: string[],
-  source: string,
-  ownerLabel: string,
-  owners: Map<string, string>,
-): void {
-  for (const pattern of patterns) {
-    const existing = owners.get(pattern);
-    if (existing) {
-      throw new Error(
-        `[evjs] ${source} duplicates ${existing} pattern "${pattern}". Remote activeWhen patterns must be unique.`,
-      );
-    }
-    owners.set(pattern, ownerLabel);
-  }
-}
-
-function createManifestReferenceLabel(source: string): string {
-  const manifestIndex = source.indexOf("manifest.");
-  return manifestIndex === -1 ? source : source.slice(manifestIndex);
 }
 
 function assertPprPageOutput(value: unknown, source: string): void {
@@ -2052,8 +1894,6 @@ export {
   type BuildOutputServerModule,
   createPublicManifest,
   linkBuildOutput,
-  linkRemoteManifest,
-  type RemoteManifestLinkInput,
 } from "./linker.js";
 export {
   type ClientRouteMatch,

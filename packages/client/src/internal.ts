@@ -1,8 +1,8 @@
 /**
  * Framework-only client runtime APIs used by evjs generated entries.
  *
- * Application code should import page hooks, navigation, transport, and remote
- * helpers from `@evjs/client` instead.
+ * Application code should import page hooks, navigation, and transport helpers
+ * from `@evjs/client` instead.
  */
 
 export type { PageRuntimeOptions } from "./page.js";
@@ -21,14 +21,9 @@ export type {
   ReactPageMountOptions,
   ReactPageRouteContext,
   ReactPageRuntimeOptions,
-  RemoteReactModuleExports,
-  RemoteReactProps,
-  RemoteRuntimeSharedContext,
 } from "./react.js";
 export {
   createReactPageModule,
-  createRemoteReactModule,
-  createRemoteRuntimeContext,
   mountReactPage,
 } from "./react.js";
 export type {
@@ -39,10 +34,6 @@ export type {
   HistoryDriverOptions,
   PageDriver,
   PageDriverOptions,
-  RemoteManifestLoadContext,
-  RemoteSharedDependenciesWarning,
-  RemoteSharedNegotiationContext,
-  RemoteSharedResolution,
   SharedScope,
   SharedScopeEntry,
   Shell,

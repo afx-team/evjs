@@ -1,12 +1,7 @@
 import type { BuildOutput } from "@evjs/shared/manifest";
 import { memo } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  createReactPageModule,
-  createRemoteReactModule,
-  createRemoteRuntimeContext,
-  mountReactPage,
-} from "../src/internal";
+import { createReactPageModule, mountReactPage } from "../src/internal";
 import {
   fetchRscDebugPayload,
   fetchRscFlight,
@@ -328,15 +323,15 @@ describe("createReactPageModule", () => {
     await mod.mount?.(
       {} as Element,
       {
-        id: "crm",
-        kind: "remote",
+        id: "default",
+        kind: "app",
       } as never,
     );
 
     expect(calls).toEqual(["createRoot", "render"]);
     expect((renderedElements[0] as { props?: unknown }).props).toEqual({
-      kind: "remote",
-      id: "crm",
+      kind: "app",
+      id: "default",
     });
   });
 
@@ -577,184 +572,6 @@ describe("createReactPageModule", () => {
       loaderData: { title: "Hello" },
     });
     expect(element.props?.children?.props).toEqual({ title: "Post" });
-  });
-});
-
-describe("createRemoteReactModule", () => {
-  it("adapts default React exports to shell lifecycle modules", async () => {
-    calls.length = 0;
-    renderedElements.length = 0;
-    const init = vi.fn();
-    const mod = createRemoteReactModule({
-      default: Component,
-      init,
-    });
-
-    expect(mod.init).toBe(init);
-    await mod.mount?.(
-      {} as Element,
-      {
-        id: "crm",
-        kind: "remote",
-        request: { url: "/crm/customers" },
-        remote: {
-          id: "crm",
-          entryId: "customers",
-          manifest: {
-            version: 1,
-            name: "crm",
-            baseUrl: "https://assets.example.com/crm/",
-            entries: {},
-          },
-          entry: {
-            module: { type: "lifecycle", href: "remote.js" },
-          },
-          shared: {
-            provided: {
-              react: {
-                version: "19.2.5",
-              },
-            },
-            missing: [],
-            incompatible: [],
-          },
-        },
-      } as never,
-    );
-
-    expect(calls).toEqual(["createRoot", "render"]);
-  });
-
-  it("adapts React wrapped default exports", async () => {
-    calls.length = 0;
-    renderedElements.length = 0;
-    const MemoComponent = memo(Component);
-    const mod = createRemoteReactModule({
-      default: MemoComponent,
-    });
-
-    await mod.mount?.(
-      {} as Element,
-      {
-        id: "crm",
-        kind: "remote",
-        request: { url: "/crm/customers" },
-        remote: {
-          id: "crm",
-          entryId: "customers",
-          manifest: {
-            version: 1,
-            name: "crm",
-            baseUrl: "https://assets.example.com/crm/",
-            entries: {},
-          },
-          entry: {
-            module: { type: "react-component", href: "remote.js" },
-          },
-          shared: {
-            provided: {},
-            missing: [],
-            incompatible: [],
-          },
-        },
-      } as never,
-    );
-
-    expect(calls).toEqual(["createRoot", "render"]);
-    expect(renderedElements[0]).toMatchObject({
-      props: {
-        component: MemoComponent,
-      },
-    });
-  });
-
-  it("keeps explicit lifecycle remote modules as-is", async () => {
-    const lifecycle = {
-      mount: vi.fn(),
-    };
-
-    expect(createRemoteReactModule(lifecycle)).toBe(lifecycle);
-  });
-
-  it("reports malformed remote React module payloads with evjs errors", () => {
-    expect(() => createRemoteReactModule(null as never)).toThrow(
-      "[evjs] Remote modules must export a module object with a default React component or lifecycle functions.",
-    );
-
-    expect(() =>
-      createRemoteReactModule({
-        default: "not-a-component",
-      } as never),
-    ).toThrow("[evjs] Remote module default export must be a React component.");
-
-    expect(() =>
-      createRemoteReactModule({
-        default: Component,
-        unmount: "not-callable",
-      } as never),
-    ).toThrow(
-      "[evjs] Remote module unmount export must be a function when provided.",
-    );
-
-    expect(() =>
-      createRemoteReactModule({
-        default: Component,
-        mount() {},
-      }),
-    ).toThrow(
-      "[evjs] Remote modules must not mix a default React component with mount, hydrate, or unmount lifecycle exports. Use init with a default component, or export lifecycle functions without default.",
-    );
-  });
-
-  it("creates public-safe remote runtime context", () => {
-    const runtime = createRemoteRuntimeContext({
-      id: "crm",
-      kind: "remote",
-      request: { url: "/crm/customers" },
-      remote: {
-        id: "crm",
-        entryId: "customers",
-        manifest: {
-          version: 1,
-          name: "crm",
-          baseUrl: "https://assets.example.com/crm/",
-          entries: {},
-        },
-        entry: {
-          module: { type: "lifecycle", href: "remote.js" },
-        },
-        shared: {
-          provided: {
-            react: {
-              version: "19.2.5",
-              singleton: true,
-              value: { createElement: true },
-              get() {
-                return { createElement: true };
-              },
-            },
-          },
-          missing: [],
-          incompatible: [],
-        },
-      },
-    } as never);
-
-    expect(runtime).toMatchObject({
-      id: "crm",
-      name: "crm",
-      entryId: "customers",
-      requestUrl: "/crm/customers",
-      source: "served from assets.example.com",
-    });
-    expect(runtime.shared.version("remote-react", "react")).toBe("19.2.5");
-    expect(runtime.shared.provided.react).toEqual({
-      version: "19.2.5",
-      singleton: true,
-      eager: undefined,
-      loaded: undefined,
-      from: undefined,
-    });
   });
 });
 

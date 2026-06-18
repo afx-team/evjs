@@ -184,7 +184,7 @@ setup() {
 }
 ```
 
-Deployment plugins should read routes, functions, assets, remotes, and runtime
+Deployment plugins should read routes, functions, assets, and runtime
 paths from `output`. Plugins that only need client or server bundle summaries can
 use `clientManifest` and `serverManifest`. HTML hooks receive the same result
 fields plus document-specific fields such as `ctx.kind`, `ctx.fileName`, and

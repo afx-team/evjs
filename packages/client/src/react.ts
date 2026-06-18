@@ -14,13 +14,7 @@ import {
   type HydrationMode,
   type RenderMode,
 } from "@evjs/shared/manifest";
-import {
-  type ComponentType,
-  createContext,
-  createElement,
-  type ElementType,
-  useContext,
-} from "react";
+import { type ComponentType, createElement } from "react";
 import { createRoot, hydrateRoot, type Root } from "react-dom/client";
 import {
   assertFetchErrorResponseStatus,
@@ -36,12 +30,7 @@ import {
   isReactComponentExport,
   type ReactComponentExport,
 } from "./react-component.js";
-import type {
-  ActivationRequest,
-  AppContext,
-  AppModule,
-  RemoteSharedResolution,
-} from "./shell.js";
+import type { AppContext, AppModule } from "./shell.js";
 import { formatErrorDetail, isRecord } from "./validation.js";
 
 export interface ReactPageRuntimeOptions {
@@ -66,44 +55,6 @@ export interface ReactPageMountOptions {
 export interface ReactPageRouteContext {
   id: string;
   path: string;
-}
-
-export interface RemoteRuntimeContext {
-  id: string;
-  name: string;
-  entryId: string;
-  baseUrl?: string;
-  source: string;
-  requestUrl?: string;
-  shared: RemoteRuntimeSharedContext;
-}
-
-export interface RemoteRuntimeSharedContext {
-  provided: Record<string, RemoteRuntimeSharedEntry>;
-  missing: string[];
-  incompatible: RemoteSharedResolution["incompatible"];
-  version(...names: string[]): string | undefined;
-}
-
-export interface RemoteRuntimeSharedEntry {
-  version?: string;
-  singleton?: boolean;
-  eager?: boolean;
-  loaded?: boolean;
-  from?: string;
-}
-
-export interface RemoteReactProps {
-  remote: RemoteRuntimeContext;
-  request: ActivationRequest;
-}
-
-export interface RemoteReactModuleExports {
-  default?: ElementType<RemoteReactProps>;
-  init?: AppModule["init"];
-  mount?: AppModule["mount"];
-  hydrate?: AppModule["hydrate"];
-  unmount?: AppModule["unmount"];
 }
 
 export interface RscFlightFetchOptions {
@@ -136,9 +87,6 @@ export interface RscDebugPayloadMountOptions {
 }
 
 const rootByMountPoint = new WeakMap<Element, Root>();
-const RemoteContext = createContext<RemoteRuntimeContext | undefined>(
-  undefined,
-);
 
 export function createReactPageModule(
   options: ReactPageMountOptions,
@@ -181,158 +129,6 @@ export function createReactPageModule(
       unmountMountedReactRoot(mountPoint);
     },
   };
-}
-
-export function createRemoteReactModule(
-  exports: RemoteReactModuleExports,
-): AppModule {
-  assertRemoteReactModuleExports(exports);
-  assertRemoteReactModuleMode(exports);
-  if (isLifecycleModule(exports)) return exports as AppModule;
-
-  if (!exports.default) {
-    throw new Error(
-      "[evjs] Remote modules must export a default React component or lifecycle functions.",
-    );
-  }
-  if (!isRemoteReactComponentExport(exports.default)) {
-    throw new Error(
-      "[evjs] Remote module default export must be a React component.",
-    );
-  }
-
-  const component = exports.default;
-
-  return {
-    ...createReactPageModule({
-      component: RemoteReactRoot as ComponentType,
-      hydrate: "load",
-      render: "csr",
-      props(ctx) {
-        return {
-          component,
-          remote: createRemoteRuntimeContext(ctx),
-          request: ctx?.request ?? {},
-        };
-      },
-    }),
-    init: exports.init,
-  };
-}
-
-export function useRemoteContext(): RemoteRuntimeContext {
-  const ctx = useContext(RemoteContext);
-  if (!ctx) {
-    throw new Error(
-      "[evjs] useRemoteContext() must be used inside an evjs remote React module.",
-    );
-  }
-  return ctx;
-}
-
-export function createRemoteRuntimeContext(
-  ctx: AppContext | undefined,
-): RemoteRuntimeContext {
-  const remote = ctx?.remote;
-  const provided = sanitizeRemoteSharedEntries(remote?.shared.provided ?? {});
-
-  return {
-    id: remote?.id ?? ctx?.id ?? "unknown",
-    name: remote?.manifest.name ?? remote?.id ?? ctx?.id ?? "unknown",
-    entryId: remote?.entryId ?? "unknown",
-    baseUrl: remote?.manifest.baseUrl,
-    source: getRemoteSourceLabel(remote?.manifest.baseUrl),
-    requestUrl: ctx?.request.url?.toString(),
-    shared: {
-      provided,
-      missing: remote?.shared.missing ?? [],
-      incompatible: remote?.shared.incompatible ?? [],
-      version(...names) {
-        for (const name of names) {
-          const version = provided[name]?.version;
-          if (version) return version;
-        }
-        return undefined;
-      },
-    },
-  };
-}
-
-function sanitizeRemoteSharedEntries(
-  provided: RemoteSharedResolution["provided"],
-): Record<string, RemoteRuntimeSharedEntry> {
-  return Object.fromEntries(
-    Object.entries(provided).map(([name, entry]) => [
-      name,
-      {
-        version: entry.version,
-        singleton: entry.singleton,
-        eager: entry.eager,
-        loaded: entry.loaded,
-        from: entry.from,
-      },
-    ]),
-  );
-}
-
-interface RemoteReactRootProps {
-  component: ElementType<RemoteReactProps>;
-  remote: RemoteRuntimeContext;
-  request: ActivationRequest;
-}
-
-function RemoteReactRoot({ component, remote, request }: RemoteReactRootProps) {
-  return createElement(
-    RemoteContext.Provider,
-    { value: remote },
-    createElement(component, { remote, request }),
-  );
-}
-
-function isLifecycleModule(exports: RemoteReactModuleExports): boolean {
-  return (
-    typeof exports.mount === "function" ||
-    typeof exports.hydrate === "function" ||
-    typeof exports.unmount === "function"
-  );
-}
-
-function assertRemoteReactModuleExports(
-  exports: unknown,
-): asserts exports is RemoteReactModuleExports {
-  if (!isRecord(exports)) {
-    throw new Error(
-      "[evjs] Remote modules must export a module object with a default React component or lifecycle functions.",
-    );
-  }
-  assertOptionalRemoteLifecycleHook(exports.init, "init");
-  assertOptionalRemoteLifecycleHook(exports.mount, "mount");
-  assertOptionalRemoteLifecycleHook(exports.hydrate, "hydrate");
-  assertOptionalRemoteLifecycleHook(exports.unmount, "unmount");
-}
-
-function assertRemoteReactModuleMode(exports: RemoteReactModuleExports): void {
-  if (exports.default === undefined || !isLifecycleModule(exports)) return;
-  throw new Error(
-    "[evjs] Remote modules must not mix a default React component with mount, hydrate, or unmount lifecycle exports. Use init with a default component, or export lifecycle functions without default.",
-  );
-}
-
-function assertOptionalRemoteLifecycleHook(
-  value: unknown,
-  name: keyof Pick<AppModule, "init" | "mount" | "hydrate" | "unmount">,
-): void {
-  if (value !== undefined && typeof value !== "function") {
-    throw new Error(
-      `[evjs] Remote module ${name} export must be a function when provided.`,
-    );
-  }
-}
-
-function isRemoteReactComponentExport(
-  value: unknown,
-): value is ElementType<RemoteReactProps> {
-  return isReactComponentExport(value);
 }
 
 function mountReactRoot(
@@ -842,17 +638,6 @@ function readLocationSearch(): PageSearchParams {
 function isStringRecord(value: unknown): value is Record<string, string> {
   if (!isRecord(value)) return false;
   return Object.values(value).every((entry) => typeof entry === "string");
-}
-
-function getRemoteSourceLabel(baseUrl: string | undefined): string {
-  if (!baseUrl) return "served from remote manifest";
-
-  try {
-    const url = new URL(baseUrl);
-    return `served from ${url.host}`;
-  } catch {
-    return `served from ${baseUrl}`;
-  }
 }
 
 function assertRscDebugPayloadMountOptions(

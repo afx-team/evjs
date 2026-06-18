@@ -1,6 +1,6 @@
 import { createRoute } from "@evjs/server";
 
-export const healthRoute = createRoute("/api/full-features/health", {
+export const healthRoute = createRoute("/api/deployment-adapters/health", {
   GET: async () =>
     Response.json({
       ok: true,

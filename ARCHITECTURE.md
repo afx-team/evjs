@@ -8,7 +8,7 @@ and the current status matrix lives in [ROADMAP.md](./ROADMAP.md).
 
 evjs is a React framework with file-based page routes, explicit lower-level
 app/page declarations, server functions, REST routes, SSR, PPR, RSC integration
-points, manifest-driven remotes, and bundler adapters.
+points, and bundler adapters.
 
 ```txt
 src/pages + ev.config.ts + static server declarations
@@ -41,7 +41,7 @@ consume `BuildOutput` rather than raw bundler stats.
 
 @evjs/client
   browser runtime, server-function transport, page hooks, navigation helpers,
-  RSC client runtime, and remote host helpers
+  and RSC client runtime
 
 @evjs/server
   server functions, REST routes, SSR/PPR/RSC request coordination, and runtime
@@ -129,8 +129,8 @@ the bundler dev instance.
   mounts and hydrates framework-managed React pages
 
 @evjs/client/internal
-  reads BuildOutput, activates app/page/remote modules, preloads modules,
-  disposes lifecycles, and negotiates host-provided shared dependencies
+  reads BuildOutput, activates app/page modules, preloads modules, and disposes
+  lifecycles
 
 @evjs/server
   owns server functions, REST routes, SSR document rendering, PPR region

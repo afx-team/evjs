@@ -54,10 +54,6 @@ npx biome check --write    # Fix lint/format
 9. **Rendering contracts** — Non-CSR render modes require `server` output. PPR
    and RSC require component page modules with `render: "ssr"`, and PPR + RSC on
    the same page is unsupported until the runtime supports that combination
-10. **Remote contracts** — Host apps use `remotes`; remote packages use
-    singular `remote`. Remote builds need a non-empty name and at least one entry
-    with a non-empty `app` module path
-
 ## Common Tasks
 
 ### Add a new server function

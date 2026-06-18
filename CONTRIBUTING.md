@@ -18,7 +18,7 @@
 | `@evjs/ev` | `packages/ev` | Config, plugin lifecycle, graph analysis, build planning, HTML, deployment helpers, and bundler adapter contracts |
 | `@evjs/create-app` | `packages/create-app` | Project scaffolding from examples/templates |
 | `@evjs/shared` | `packages/shared` | Runtime shared helpers plus `@evjs/shared/manifest` graph/plan/output schemas |
-| `@evjs/client` | `packages/client` | Browser runtime, transport, page hooks, navigation helpers, remote host helpers, and RSC client |
+| `@evjs/client` | `packages/client` | Browser runtime, transport, page hooks, navigation helpers, and RSC client |
 | `@evjs/server` | `packages/server` | Server functions, REST routes, SSR/PPR/RSC request coordination, and Node/fetch runtimes |
 | `@evjs/bundler-utoopack` | `packages/bundler-utoopack` | Default Utoopack adapter; consumes `BuildPlan` and links `BuildOutput` where supported |
 | `@evjs/bundler-webpack` | `packages/bundler-webpack` | Validation/fallback adapter for new architecture features that Utoopack cannot build yet |
@@ -73,7 +73,7 @@ other.
    behavior before adding another distributed package. Subpath exports stay
    intentional and documented; do not add convenience aliases.
 8. Keep client imports on `@evjs/client` for page hooks, navigation,
-   transport, remote host helpers, and RSC helpers. Generated page
+   transport, and RSC helpers. Generated page
    bootstrap, server-function stubs, and shell runtime primitives stay behind
    generated-only `@evjs/client/internal/*` subpaths.
 9. Use `server.basePath` for framework server runtime paths. Do not reintroduce public `server.functions.endpoint` config.

@@ -45,10 +45,20 @@ export interface RootLayoutModule {
   default?: ComponentType<{ children?: ReactNode }>;
 }
 
+export type PageRouteKind = "page" | "layout";
+
 /** Framework-generated SPA bootstrap contract. */
 export interface PageDefinition {
+  id?: string;
   path: string;
+  parentId?: string;
+  kind?: PageRouteKind;
   module: PageModule;
+}
+
+interface NormalizedPageDefinition extends PageDefinition {
+  id: string;
+  kind: PageRouteKind;
 }
 
 /** Framework-generated SPA bootstrap contract. */
@@ -83,47 +93,82 @@ function createGeneratedRouteTree(options: CreatePagesAppOptions): AnyRoute {
   }
 
   const rootRoute = createPageRootRoute({ component: RootRoute });
-  const routes = options.routes.map((definition, index) =>
-    createGeneratedPageRoute(rootRoute, definition, index),
+  const definitions = normalizePageDefinitions(options.routes);
+  const childrenByParentId = groupPageDefinitionsByParentId(definitions);
+  const routes = (childrenByParentId.get(undefined) ?? []).map((definition) =>
+    createGeneratedRoute(
+      rootRoute,
+      definition,
+      "/",
+      childrenByParentId,
+      new Set(),
+    ),
   );
 
   return rootRoute.addChildren(routes);
 }
 
-function createGeneratedPageRoute<TRootRoute extends AnyRoute>(
-  rootRoute: TRootRoute,
-  definition: PageDefinition,
-  index: number,
+function createGeneratedRoute<TRootRoute extends AnyRoute>(
+  parentRoute: TRootRoute,
+  definition: NormalizedPageDefinition,
+  parentFullPath: string,
+  childrenByParentId: Map<string | undefined, NormalizedPageDefinition[]>,
+  visitedRouteIds: Set<string>,
 ): AnyRoute {
+  if (visitedRouteIds.has(definition.id)) {
+    throw new Error(
+      `[evjs] Page route "${definition.id}" has a circular parentId chain.`,
+    );
+  }
+  const nextVisitedRouteIds = new Set(visitedRouteIds).add(definition.id);
   let route: AnyRoute;
   // Generated route paths are runtime data, so TanStack's literal route generics
   // cannot be preserved past this generated route-tree adapter boundary.
   route = createTanStackRoute({
-    getParentRoute: () => rootRoute,
-    path: definition.path,
+    getParentRoute: () => parentRoute,
+    ...createGeneratedRoutePathOptions(definition, parentFullPath),
     ...pickRouteOptions(definition.module),
-    component: function EvPageRoute() {
-      const Component = definition.module.default;
-      if (!Component) {
-        throw new Error(
-          `[evjs] Page route ${definition.path || index} must export a default React component.`,
-        );
-      }
-      const pageProps = {
-        params: route.useParams(),
-        search: route.useSearch(),
-        loaderData: route.useLoaderData(),
-      };
+    component:
+      definition.kind === "layout"
+        ? function EvLayoutRoute() {
+            const outlet = createElement(Outlet);
+            const Layout = definition.module.default;
+            return Layout ? createElement(Layout, undefined, outlet) : outlet;
+          }
+        : function EvPageRoute() {
+            const Component = definition.module.default;
+            if (!Component) {
+              throw new Error(
+                `[evjs] Page route ${definition.path} must export a default React component.`,
+              );
+            }
+            const pageProps = {
+              params: route.useParams(),
+              search: route.useSearch(),
+              loaderData: route.useLoaderData(),
+            };
 
-      return createElement(
-        PageProvider,
-        { value: pageProps },
-        createElement(Component),
-      );
-    },
+            return createElement(
+              PageProvider,
+              { value: pageProps },
+              createElement(Component),
+            );
+          },
   });
 
-  return route;
+  const children = childrenByParentId.get(definition.id) ?? [];
+  if (children.length === 0) return route;
+  return route.addChildren(
+    children.map((child) =>
+      createGeneratedRoute(
+        route,
+        child,
+        definition.path,
+        childrenByParentId,
+        nextVisitedRouteIds,
+      ),
+    ),
+  );
 }
 
 function assertCreatePagesAppOptions(
@@ -149,6 +194,8 @@ function assertCreatePagesAppOptions(
 
   const routePathOwners = new Map<string, string>();
   const routeShapeOwners = new Map<string, { path: string; owner: string }>();
+  const routeIdOwners = new Map<string, string>();
+  const normalizedRoutes: NormalizedPageDefinition[] = [];
   options.routes.forEach((definition, index) => {
     const routePath = `routes[${index}]`;
     if (!isRecord(definition)) {
@@ -156,49 +203,156 @@ function assertCreatePagesAppOptions(
         `[evjs] createPagesApp() ${routePath} must be an object.`,
       );
     }
-    assertRoutePath(definition.path, `${routePath}.path`);
-    assertUniqueRoutePath(definition.path, routePath, routePathOwners);
-    assertUniqueRouteShape(definition.path, routePath, routeShapeOwners);
-    if (!isRecord(definition.module)) {
+    const routeDefinition = definition as Partial<PageDefinition>;
+    assertOptionalRouteId(routeDefinition.id, `${routePath}.id`);
+    assertOptionalRouteId(routeDefinition.parentId, `${routePath}.parentId`);
+    assertOptionalRouteKind(routeDefinition.kind, `${routePath}.kind`);
+    assertRoutePath(routeDefinition.path, `${routePath}.path`);
+    const definitionPath = routeDefinition.path;
+    const routeKind = getPageDefinitionKind(routeDefinition);
+    const routeId = getPageDefinitionId(
+      {
+        id: routeDefinition.id,
+        kind: routeDefinition.kind,
+        path: definitionPath,
+      },
+      index,
+    );
+    assertUniqueRouteId(routeId, routePath, routeIdOwners);
+    if (routeKind !== "layout") {
+      assertUniqueRoutePath(definitionPath, routePath, routePathOwners);
+      assertUniqueRouteShape(definitionPath, routePath, routeShapeOwners);
+    }
+    if (!isRecord(routeDefinition.module)) {
       throw new Error(
         `[evjs] createPagesApp() ${routePath}.module must be an object.`,
       );
     }
-    if (definition.module.default == null) {
+    if (routeKind !== "layout" && routeDefinition.module.default == null) {
       throw new Error(
-        `[evjs] Page route ${definition.path} must export a default React component.`,
+        `[evjs] Page route ${routeDefinition.path} must export a default React component.`,
       );
     }
-    if (!isReactComponentExport(definition.module.default)) {
+    if (
+      routeDefinition.module.default !== undefined &&
+      !isReactComponentExport(routeDefinition.module.default)
+    ) {
       throw new Error(
-        `[evjs] Page route ${definition.path} default export must be a React component.`,
+        `[evjs] Page route ${routeDefinition.path} default export must be a React component.`,
       );
     }
     assertOptionalFunction(
-      definition.module.beforeLoad,
+      routeDefinition.module.beforeLoad,
       `${routePath}.module.beforeLoad`,
     );
     assertOptionalFunction(
-      definition.module.loader,
+      routeDefinition.module.loader,
       `${routePath}.module.loader`,
     );
     assertOptionalFunction(
-      definition.module.validateSearch,
+      routeDefinition.module.validateSearch,
       `${routePath}.module.validateSearch`,
     );
     assertOptionalReactComponent(
-      definition.module.pendingComponent,
+      routeDefinition.module.pendingComponent,
       `${routePath}.module.pendingComponent`,
     );
     assertOptionalReactComponent(
-      definition.module.errorComponent,
+      routeDefinition.module.errorComponent,
       `${routePath}.module.errorComponent`,
     );
     assertOptionalReactComponent(
-      definition.module.notFoundComponent,
+      routeDefinition.module.notFoundComponent,
       `${routePath}.module.notFoundComponent`,
     );
+    normalizedRoutes.push({
+      id: routeId,
+      path: definitionPath,
+      ...(routeDefinition.parentId
+        ? { parentId: routeDefinition.parentId }
+        : {}),
+      kind: routeKind,
+      module: routeDefinition.module,
+    });
   });
+  assertRouteParentReferences(normalizedRoutes);
+}
+
+function normalizePageDefinitions(
+  definitions: PageDefinition[],
+): NormalizedPageDefinition[] {
+  return definitions.map((definition, index) => ({
+    ...definition,
+    id: getPageDefinitionId(definition, index),
+    kind: getPageDefinitionKind(definition),
+  }));
+}
+
+function groupPageDefinitionsByParentId(
+  definitions: NormalizedPageDefinition[],
+): Map<string | undefined, NormalizedPageDefinition[]> {
+  const childrenByParentId = new Map<
+    string | undefined,
+    NormalizedPageDefinition[]
+  >();
+  for (const definition of definitions) {
+    const siblings = childrenByParentId.get(definition.parentId) ?? [];
+    siblings.push(definition);
+    childrenByParentId.set(definition.parentId, siblings);
+  }
+  return childrenByParentId;
+}
+
+function getPageDefinitionKind(definition: {
+  kind?: PageRouteKind;
+}): PageRouteKind {
+  return definition.kind === "layout" ? "layout" : "page";
+}
+
+function getPageDefinitionId(
+  definition: { id?: string; kind?: PageRouteKind; path: string },
+  index: number,
+): string {
+  if (definition.id) return definition.id;
+  return `${getPageDefinitionKind(definition)}:${definition.path}:${index}`;
+}
+
+function createGeneratedRoutePathOptions(
+  definition: NormalizedPageDefinition,
+  parentFullPath: string,
+): { id: string } | { path: string } {
+  if (
+    definition.kind === "layout" &&
+    normalizeGeneratedRoutePath(definition.path) ===
+      normalizeGeneratedRoutePath(parentFullPath)
+  ) {
+    return { id: definition.id };
+  }
+  return {
+    path: toRelativeGeneratedRoutePath(definition.path, parentFullPath),
+  };
+}
+
+function toRelativeGeneratedRoutePath(
+  fullPath: string,
+  parentFullPath: string,
+): string {
+  const routePath = normalizeGeneratedRoutePath(fullPath);
+  const parentPath = normalizeGeneratedRoutePath(parentFullPath);
+  if (routePath === parentPath) return "/";
+  if (parentPath === "/") {
+    return routePath === "/" ? "/" : routePath.replace(/^\/+/, "");
+  }
+  const prefix = `${parentPath}/`;
+  if (routePath.startsWith(prefix)) {
+    return routePath.slice(prefix.length) || "/";
+  }
+  return routePath;
+}
+
+function normalizeGeneratedRoutePath(routePath: string): string {
+  if (routePath === "/") return "/";
+  return routePath.replace(/\/+$/g, "");
 }
 
 function assertRoutePath(
@@ -227,6 +381,34 @@ function assertRoutePath(
   if (paramError) {
     throw new Error(
       `[evjs] createPagesApp() ${path} ${formatRouteParamError(paramError)}`,
+    );
+  }
+}
+
+function assertOptionalRouteId(
+  value: unknown,
+  path: string,
+): asserts value is string | undefined {
+  if (value === undefined) return;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(
+      `[evjs] createPagesApp() ${path} must be a non-empty route id string.`,
+    );
+  }
+  if (value.trim() !== value) {
+    throw new Error(
+      `[evjs] createPagesApp() ${path} must not include leading or trailing whitespace.`,
+    );
+  }
+}
+
+function assertOptionalRouteKind(
+  value: unknown,
+  path: string,
+): asserts value is PageRouteKind | undefined {
+  if (value !== undefined && value !== "page" && value !== "layout") {
+    throw new Error(
+      `[evjs] createPagesApp() ${path} must be "page" or "layout".`,
     );
   }
 }
@@ -286,6 +468,42 @@ function assertUniqueRouteShape(
     );
   }
   routeShapeOwners.set(routeShape, { path: value, owner: path });
+}
+
+function assertUniqueRouteId(
+  value: string,
+  path: string,
+  routeIdOwners: Map<string, string>,
+): void {
+  const previousOwner = routeIdOwners.get(value);
+  if (previousOwner) {
+    throw new Error(
+      `[evjs] createPagesApp() ${path}.id duplicates ${previousOwner}.id "${value}".`,
+    );
+  }
+  routeIdOwners.set(value, path);
+}
+
+function assertRouteParentReferences(
+  definitions: NormalizedPageDefinition[],
+): void {
+  const routesById = new Map(
+    definitions.map((definition) => [definition.id, definition]),
+  );
+  for (const definition of definitions) {
+    if (!definition.parentId) continue;
+    const parent = routesById.get(definition.parentId);
+    if (!parent) {
+      throw new Error(
+        `[evjs] Page route "${definition.id}" parentId "${definition.parentId}" does not match another route id.`,
+      );
+    }
+    if (parent.kind !== "layout") {
+      throw new Error(
+        `[evjs] Page route "${definition.id}" parentId "${definition.parentId}" must reference a layout route.`,
+      );
+    }
+  }
 }
 
 function assertOptionalFunction(value: unknown, path: string): void {

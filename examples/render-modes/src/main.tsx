@@ -18,7 +18,7 @@ function App() {
 
   useEffect(() => {
     void getMerchantOperationsSnapshot().then(setSnapshot);
-    void fetch("/api/full-features/health")
+    void fetch("/api/render-modes/health")
       .then((response) => response.json() as Promise<HealthPayload>)
       .then(setHealth);
   }, []);
@@ -34,15 +34,14 @@ function App() {
         <h1>Acme Pay Control Center</h1>
         <p>
           A production-style operations console for risk review, merchant
-          support, campaign monitoring, and remote CRM activation.
+          support, campaign monitoring, and render-mode validation.
         </p>
-        <nav className="nav" aria-label="Full features navigation">
+        <nav className="nav" aria-label="Render modes navigation">
           <a href="/support.html">Support queue</a>
           <a href="/dashboard">SSR operations dashboard</a>
           <a href="/settlement-report">SSG settlement report</a>
           <a href="/campaign">PPR campaign monitor</a>
           <a href="/insights">RSC insights</a>
-          <a href="/remote.html">CRM remote workspace</a>
         </nav>
       </section>
 
@@ -136,9 +135,8 @@ function App() {
         <h2>Architecture features exercised by this business flow</h2>
         <p>
           Explicit app entry, server function RPC, REST route proxy,
-          framework-managed pages, SSR/PPR/RSC renderers, manifest-driven remote
-          shell activation, page-module render declarations, and deployment
-          artifact generation.
+          framework-managed pages, SSR/PPR/RSC renderers, and page-module render
+          declarations.
         </p>
       </section>
     </RenderModePage>

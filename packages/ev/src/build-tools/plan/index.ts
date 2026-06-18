@@ -13,7 +13,6 @@ import type {
   RuntimePlan,
   ServerBuildPlan,
   ServerRenderPlan,
-  SharedDependencyMap,
 } from "@evjs/shared/manifest";
 import { isRouteDerivedPage } from "@evjs/shared/manifest";
 import {
@@ -66,19 +65,6 @@ export interface BuildPlanConfig {
   transport?: {
     baseUrl?: string;
   };
-  remote?: {
-    name: string;
-    baseUrl: string;
-    shared?: SharedDependencyMap;
-    entries: Record<
-      string,
-      {
-        app: string;
-        activeWhen?: string[];
-        mount?: string;
-      }
-    >;
-  };
   serverEnabled: boolean;
   server: {
     entry?: string;
@@ -113,7 +99,6 @@ export function createBuildPlan(
   const html = createHtmlPlans(config, graph);
   validateBuildOutputNames(entries, html);
   const server = createServerPlan(config, serverRenderers);
-  const remote = createRemotePlan(graph);
 
   return {
     version: 1,
@@ -124,7 +109,6 @@ export function createBuildPlan(
     entries,
     html,
     server,
-    remote,
     runtime: {
       publicPath: options.publicPath ?? "/",
       server: config.serverEnabled
@@ -170,7 +154,6 @@ function createEntries(
   const entries: BuildEntry[] = [];
   const pages = Object.values(graph.pages);
   const apps = Object.values(graph.apps);
-  const remoteEntries = Object.values(graph.remote?.entries ?? {});
   const spaRoutingEntry = getSpaRoutingEntry(config);
 
   for (const app of apps) {
@@ -230,25 +213,6 @@ function createEntries(
     );
   }
 
-  for (const entry of remoteEntries) {
-    const name = `${graph.remote?.name ?? "remote"}-${entry.id}`;
-    entries.push({
-      name,
-      import: entry.app,
-      environment: "client",
-      runtime: "browser",
-      kind: "remote-client",
-      owner: {
-        remoteId: graph.remote?.name,
-        remoteEntryId: entry.id,
-      },
-      metadata: {
-        type: "remote-client",
-        app: entry.app,
-      },
-    });
-  }
-
   if (hasRscPages(graph)) {
     entries.push({
       name: "evjs-rsc-client",
@@ -281,6 +245,8 @@ function createPagesAppRoutes(graph: AppGraph, appId: string): PageRouteNode[] {
           id: route.id,
           path: route.path,
           module: route.module,
+          ...(route.parentId ? { parentId: route.parentId } : {}),
+          ...(route.kind ? { kind: route.kind } : {}),
         },
       ];
     }),
@@ -296,28 +262,6 @@ function validatePageBuildContracts(
       serverEnabled: config.serverEnabled,
     });
   }
-}
-
-function createRemotePlan(graph: AppGraph): BuildPlan["remote"] {
-  if (!graph.remote) return undefined;
-
-  return {
-    name: graph.remote.name,
-    baseUrl: graph.remote.baseUrl,
-    ...(graph.remote.shared ? { shared: graph.remote.shared } : {}),
-    entries: Object.fromEntries(
-      Object.entries(graph.remote.entries).map(([entryId, entry]) => [
-        entryId,
-        {
-          id: entry.id,
-          name: `${graph.remote?.name ?? "remote"}-${entry.id}`,
-          app: entry.app,
-          activeWhen: entry.activeWhen,
-          mount: entry.mount,
-        },
-      ]),
-    ),
-  };
 }
 
 function validateBuildOutputNames(
@@ -357,10 +301,6 @@ function describeBuildEntryOwner(entry: BuildEntry): string {
     return `page "${entry.owner.pageId}" PPR region "${entry.owner.regionId}"`;
   }
   if (entry.owner?.pageId) return `page "${entry.owner.pageId}"`;
-  if (entry.owner?.remoteId && entry.owner.remoteEntryId) {
-    return `remote "${entry.owner.remoteId}" entry "${entry.owner.remoteEntryId}"`;
-  }
-  if (entry.owner?.remoteId) return `remote "${entry.owner.remoteId}"`;
   return `${entry.kind} entry`;
 }
 

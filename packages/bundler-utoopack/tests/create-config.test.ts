@@ -8,7 +8,6 @@ import { createUtoopackConfig } from "../src/adapter/create-config.js";
 const require = createRequire(import.meta.url);
 const componentPageLoader = require("../src/adapter/component-page-loader.cjs");
 const pagesEntryLoader = require("../src/adapter/pages-entry-loader.cjs");
-const remoteClientLoader = require("../src/adapter/remote-client-loader.cjs");
 
 describe("createUtoopackConfig", () => {
   function createResolvedConfig(
@@ -41,7 +40,6 @@ describe("createUtoopackConfig", () => {
         },
       },
       transport: {},
-      remotes: {},
       plugins: [],
       ...overrides,
     };
@@ -390,7 +388,6 @@ describe("createUtoopackConfig", () => {
       routes: [],
       serverFunctions: [],
       serverRoutes: [],
-      remotes: {},
     };
     const plan = createBuildPlan(config, graph, { mode: "development" });
 
@@ -457,102 +454,6 @@ describe("createUtoopackConfig", () => {
     expect(source).toContain("src/layout/index.tsx");
     expect(source).toContain("src/pages/index.tsx");
     expect(source).not.toContain("evjs-page-route");
-  });
-
-  it("installs remote client loaders for framework-managed remote entries", async () => {
-    const config = createResolvedConfig({
-      remote: {
-        name: "crm",
-        baseUrl: "https://assets.example.com/crm/",
-        entries: {
-          customers: {
-            app: "./src/remote.tsx",
-            activeWhen: ["/customers/*"],
-            mount: "#remote-root",
-          },
-        },
-      },
-    });
-    const graph: AppGraph = {
-      version: 1,
-      rootDir: process.cwd(),
-      apps: {},
-      pages: {},
-      routes: [],
-      serverFunctions: [],
-      serverRoutes: [],
-      remotes: {},
-      remote: {
-        name: "crm",
-        baseUrl: "https://assets.example.com/crm/",
-        entries: {
-          customers: {
-            id: "customers",
-            app: "./src/remote.tsx",
-            activeWhen: ["/customers/*"],
-            mount: "#remote-root",
-          },
-        },
-      },
-    };
-    const plan = createBuildPlan(config, graph, { mode: "development" });
-
-    expect(plan.entries).toContainEqual(
-      expect.objectContaining({
-        name: "crm-customers",
-        import: "./src/remote.tsx",
-        kind: "remote-client",
-        metadata: {
-          type: "remote-client",
-          app: "./src/remote.tsx",
-        },
-      }),
-    );
-
-    const utoopackConfig = await createUtoopackConfig(
-      config,
-      plan,
-      process.cwd(),
-      [],
-    );
-
-    expect(utoopackConfig.entry).toEqual([
-      { import: "./src/remote.tsx", name: "crm-customers" },
-    ]);
-    expect(utoopackConfig.module?.rules).toMatchObject({
-      "**/*": [
-        {
-          condition: {
-            path: expect.any(RegExp),
-            query: "",
-          },
-          loaders: [
-            {
-              loader: expect.stringContaining("remote-client-loader.cjs"),
-              options: {
-                type: "remote-client",
-                app: "./src/remote.tsx",
-              },
-            },
-          ],
-          type: "ecmascript",
-        },
-      ],
-    });
-  });
-
-  it("generates remote lifecycle entry imports", () => {
-    const source = remoteClientLoader.call({
-      cacheable() {},
-      resourcePath: "/workspace/src/remote.tsx",
-    });
-
-    expect(source).toContain("@evjs/client/internal/react-page");
-    expect(source).toContain("registerGeneratedRemoteClientEntry");
-    expect(source).toContain("?evjs-remote-client-source");
-    expect(source).toContain("import.meta.url");
-    expect(source).not.toContain("currentScriptHref");
-    expect(source).not.toContain('from "@evjs/client/internal";');
   });
 
   it("awaits async bundlerConfig hooks before returning config", async () => {
@@ -631,7 +532,6 @@ describe("createUtoopackConfig", () => {
       ],
       serverFunctions: [],
       serverRoutes: [],
-      remotes: {},
     };
     const plan = createBuildPlan(config, graph, { mode: "development" });
 
@@ -778,7 +678,6 @@ function createPlan(
       })) ?? [],
     serverFunctions: [],
     serverRoutes: [],
-    remotes: {},
   };
 
   return createBuildPlan(config, graph, {

@@ -21,10 +21,16 @@ module.exports = function pagesEntryLoader() {
     ),
   ].filter(Boolean);
 
-  const routeDefinitions = routes.map(
-    (route, index) =>
-      `{ path: ${JSON.stringify(route.path)}, module: routeModule${index} }`,
-  );
+  const routeDefinitions = routes.map((route, index) => {
+    const properties = [
+      route.id ? `id: ${JSON.stringify(route.id)}` : "",
+      `path: ${JSON.stringify(route.path)}`,
+      route.parentId ? `parentId: ${JSON.stringify(route.parentId)}` : "",
+      route.kind ? `kind: ${JSON.stringify(route.kind)}` : "",
+      `module: routeModule${index}`,
+    ].filter(Boolean);
+    return `{ ${properties.join(", ")} }`;
+  });
 
   return [
     ...imports,

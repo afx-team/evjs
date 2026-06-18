@@ -42,7 +42,9 @@ export function generatePageRouteTypes({
   importBaseDir,
   clientModule = PAGE_ROUTE_TYPES_REGISTER_MODULE,
 }: GeneratePageRouteTypesOptions): string {
-  const sortedRoutes = sortPageRoutes(routes);
+  const sortedRoutes = sortPageRoutes(
+    routes.filter((route) => route.kind !== "layout"),
+  );
   const usedImportNames = new Set<string>();
   const usedRouteTypeNames = new Set<string>();
   const routeTypes = sortedRoutes.map((route) => {
