@@ -176,7 +176,8 @@ test.describe("render-modes", () => {
     );
     expect(regionResponse.status()).toBe(200);
     expect(regionResponse.headers()["cache-control"]).toBe("s-maxage=30");
-    expect(regionResponse.headers()["x-evjs-cache"]).toBe("MISS");
+    // The streamed page request above renders and caches the same PPR region.
+    expect(regionResponse.headers()["x-evjs-cache"]).toBe("HIT");
     const regionHtml = await regionResponse.text();
     expect(regionHtml).toContain("Offer Region");
     expect(regionHtml).toContain("Dynamic allocation");
