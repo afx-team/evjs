@@ -2,8 +2,11 @@
  * Bundler-agnostic build utilities for the ev framework.
  */
 
-export type { TranspileTypeScriptConfigOptions } from "./config-module.js";
-export { transpileTypeScriptConfig } from "./config-module.js";
+export type {
+  LoadConfigFileOptions,
+  TranspileTypeScriptConfigOptions,
+} from "./config-module.js";
+export { loadConfigFile, transpileTypeScriptConfig } from "./config-module.js";
 export type {
   Diagnostic,
   GraphAnalysisResult,

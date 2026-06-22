@@ -169,6 +169,7 @@ const expectedBuildToolsRuntimeExports = [
   "extractServerRoutes",
   "generateHtml",
   "generatePageRouteTypes",
+  "loadConfigFile",
   "resolveRoutes",
   "transformRscClientFile",
   "transformServerFile",
