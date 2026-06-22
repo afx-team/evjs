@@ -1,4 +1,5 @@
 import type * as Client from "../src/index";
+import type * as ClientTransport from "../src/transport";
 
 export type PublicPageHookExports = [
   typeof Client.usePageParams,
@@ -23,6 +24,38 @@ export type PublicRscExports = [
   Client.ReactRscRuntimeBootstrap,
 ];
 
+export type PublicStandaloneCsrExports = [
+  typeof Client.createApp,
+  Client.App<unknown>,
+  Client.CreateAppOptions<Client.AnyRoute>,
+  Client.CreateAppRouterOptions<Client.AnyRoute>,
+  Client.AppRouteContext,
+  typeof Client.createAppRootRoute,
+  typeof Client.createRoute,
+  typeof Client.createRouter,
+  typeof Client.createRootRoute,
+  typeof Client.createRootRouteWithContext,
+  Client.RegisteredRouter,
+  Client.AnyRouter,
+  typeof Client.Outlet,
+  typeof Client.RouterProvider,
+  typeof Client.useParams,
+  typeof Client.useSearch,
+  typeof Client.useRouter,
+];
+
+export type PublicTransportSubpathExports = [
+  typeof ClientTransport.createServerReference,
+  typeof ClientTransport.getFnId,
+  typeof ClientTransport.getFnName,
+  typeof ClientTransport.initTransport,
+  ClientTransport.HeaderFactory,
+  ClientTransport.RequestContext,
+  ClientTransport.ServerFunction,
+  ClientTransport.TransportAdapter,
+  ClientTransport.TransportOptions,
+];
+
 // Public page code should use hooks instead of importing framework page props.
 // @ts-expect-error PageProps is internal to the framework-managed page runtime.
 export type HiddenPageProps = Client.PageProps;
@@ -32,10 +65,6 @@ export type HiddenPageComponent = Client.PageComponent;
 
 // @ts-expect-error PageProvider is internal to generated page bootstrap.
 export type HiddenPageProvider = typeof Client.PageProvider;
-
-// Router construction stays behind the framework-managed page runtime.
-// @ts-expect-error createApp is internal to generated SPA bootstrap.
-export type HiddenCreateApp = typeof Client.createApp;
 
 // @ts-expect-error createPagesApp is internal to generated SPA bootstrap.
 export type HiddenCreatePagesApp = typeof Client.createPagesApp;
@@ -76,32 +105,17 @@ export type HiddenGetRscFetchResponseContentType =
   // @ts-expect-error getRscFetchResponseContentType is an internal runtime helper.
   typeof Client.getRscFetchResponseContentType;
 
-// @ts-expect-error createRoute is internal to generated SPA routing.
-export type HiddenCreateRoute = typeof Client.createRoute;
-
-// @ts-expect-error createRouter is internal to generated SPA routing.
-export type HiddenCreateRouter = typeof Client.createRouter;
-
-// @ts-expect-error createRootRoute is internal to generated SPA routing.
-export type HiddenCreateRootRoute = typeof Client.createRootRoute;
-
-// @ts-expect-error createAppRootRoute is internal to generated SPA routing.
-export type HiddenCreateAppRootRoute = typeof Client.createAppRootRoute;
-
-// @ts-expect-error RegisteredRouter is a router implementation detail.
-export type HiddenRegisteredRouter = Client.RegisteredRouter;
-
-// @ts-expect-error AnyRouter is a router implementation detail.
-export type HiddenAnyRouter = Client.AnyRouter;
-
 // @ts-expect-error FileRoute is a router implementation detail.
 export type HiddenFileRoute = Client.FileRoute;
 
-// @ts-expect-error Outlet is internal to the framework-owned route tree.
-export type HiddenOutlet = typeof Client.Outlet;
+export type HiddenPublicTransportManifestInit =
+  // @ts-expect-error initTransportFromManifest is framework bootstrap-only.
+  typeof ClientTransport.initTransportFromManifest;
 
-// @ts-expect-error useParams is replaced by usePageParams for page code.
-export type HiddenUseParams = typeof Client.useParams;
+export type HiddenPublicTransportGetServerFunction =
+  // @ts-expect-error getServerFunction is internal query runtime plumbing.
+  typeof ClientTransport.getServerFunction;
 
-// @ts-expect-error useSearch is replaced by usePageSearch for page code.
-export type HiddenUseSearch = typeof Client.useSearch;
+export type HiddenPublicTransportReset =
+  // @ts-expect-error __resetForTesting is test-only.
+  typeof ClientTransport.__resetForTesting;

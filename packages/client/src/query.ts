@@ -37,7 +37,7 @@ import {
   useSuspenseQuery as _useSuspenseQuery,
 } from "@tanstack/react-query";
 import type { ServerFunction } from "./transport.js";
-import { callServer, getServerFunction } from "./transport.js";
+import { callServer, getServerFunction } from "./transport-runtime.js";
 import { isRecord } from "./validation.js";
 
 // biome-ignore lint/suspicious/noConfusingVoidType: TanStack uses void variables to allow mutate() without an argument.

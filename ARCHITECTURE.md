@@ -33,19 +33,22 @@ consume `BuildOutput` rather than raw bundler stats.
   project scaffolding and template restoration
 
 @evjs/ev
-  config, plugins, graph analysis, build planning, HTML, deployment helpers,
-  and bundler adapter contracts
+  composition/control plane for config, plugins, graph analysis, build
+  planning, HTML, capability validation, deployment helpers, and bundler
+  adapter contracts
 
 @evjs/shared
   runtime shared helpers and @evjs/shared/manifest schemas/linkers
 
 @evjs/client
-  browser runtime, server-function transport, page hooks, navigation helpers,
-  and RSC client runtime
+  browser runtime core for standalone CSR/manual routing, framework-managed
+  page runtime, server-function transport, page hooks, navigation helpers, and
+  RSC client runtime
 
 @evjs/server
-  server functions, REST routes, SSR/PPR/RSC request coordination, and runtime
-  adapters such as @evjs/server/node
+  server runtime core for server functions, REST routes, request context,
+  SSR/PPR/RSC request coordination, and runtime adapters such as
+  @evjs/server/node
 
 @evjs/bundler-utoopack
   default Utoopack adapter
@@ -54,12 +57,14 @@ consume `BuildOutput` rather than raw bundler stats.
   validation/fallback adapter for architecture features blocked on Utoopack APIs
 ```
 
-`@evjs/ev` owns config, plugin, build, and deployment APIs. Runtime APIs live in
-`@evjs/client` and `@evjs/server`, and applications that use those capabilities
-declare those runtime packages directly. Other packages are tooling, bundler
-adapters, or shared contracts for framework packages. When a new capability
-needs a boundary, prefer adding a subpath export to the package that owns the
-behavior before creating another distributed package.
+`@evjs/ev` owns config, plugin, build, and deployment APIs, and composes runtime
+capabilities through graph analysis, build plans, and manifest validation.
+Runtime APIs live in `@evjs/client` and `@evjs/server`, and applications that
+use those capabilities declare those runtime packages directly. Browser-only
+CSR apps can use `@evjs/client` without depending on `@evjs/ev`. Other packages
+are tooling, bundler adapters, or shared contracts for framework packages. When
+a new capability needs a boundary, prefer adding a subpath export to the
+package that owns the behavior before creating another distributed package.
 
 Subpath exports stay explicit and documented; adding a new package export is a
 public API decision, not a convenience alias.
@@ -126,7 +131,7 @@ the bundler dev instance.
 
 ```txt
 @evjs/client
-  mounts and hydrates framework-managed React pages
+  mounts standalone CSR apps and framework-managed React pages
 
 @evjs/client/internal
   reads BuildOutput, activates app/page modules, preloads modules, and disposes
@@ -140,9 +145,10 @@ deployment adapters
   translate BuildOutput to platform artifacts and bootstraps
 ```
 
-TanStack Router is an SPA implementation detail owned by the framework. Page
-code uses `src/pages`, page hooks, and navigation helpers instead of constructing
-route trees directly.
+TanStack Router is available through the `@evjs/client` standalone CSR surface
+for manual browser apps. In framework-managed apps, `@evjs/ev` owns file-route
+discovery and generated bootstraps, so page code uses `src/pages`, page hooks,
+and navigation helpers instead of constructing route trees directly.
 
 ## Manifest
 

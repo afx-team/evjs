@@ -23,7 +23,7 @@ import {
   createShell,
   type Shell,
 } from "./shell.js";
-import { initTransportFromManifest } from "./transport.js";
+import { initTransportFromManifest } from "./transport-runtime.js";
 import { formatErrorDetail, isRecord } from "./validation.js";
 
 export interface PageRuntimeOptions {

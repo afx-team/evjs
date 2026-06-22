@@ -110,13 +110,15 @@ as normal components and do not accept `routing.layout`.
 | [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | Framework API, config, plugins, build orchestration, and deployment helpers |
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`, `ev inspect`) with the default bundler |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
-| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Browser runtime APIs for page hooks, navigation, transport, and RSC |
-| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Hono/fetch server runtime APIs for server functions, routes, rendering, and deployment |
+| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Browser runtime core for standalone CSR, page hooks, navigation, transport, and RSC |
+| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Server runtime core for Hono/fetch apps, server functions, routes, rendering, and deployment |
 
-Manifest schemas, build tools, page runtime, and shell internals are internal
-modules under the public packages above. Application config/build code imports
-from `@evjs/ev`; runtime code imports from `@evjs/client`, `@evjs/server`, or
-`@evjs/server/react`.
+Manifest schemas, build tools, generated page runtime, and shell internals are
+internal modules under the public packages above. Application config/build code
+imports framework composition APIs from `@evjs/ev`; runtime code imports from
+`@evjs/client`, `@evjs/server`, or `@evjs/server/react`. Browser-only CSR apps
+that own their build pipeline can use `@evjs/client` without depending on
+`@evjs/ev`.
 Use `@evjs/cli` and `@evjs/create-app` as tools, not application imports.
 Bundler adapters such as `@evjs/bundler-utoopack` and shared contract modules
 such as `@evjs/shared` are only for custom framework tooling or adapter work.

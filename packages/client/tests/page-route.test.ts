@@ -21,8 +21,8 @@ describe("page route hooks", () => {
     expect(usePageLoaderData).toBeTypeOf("function");
   });
 
-  it("does not expose generated SPA bootstrap APIs from the public client entry", () => {
-    expect("createApp" in client).toBe(false);
+  it("exposes standalone CSR APIs without exposing generated bootstrap internals", () => {
+    expect("createApp" in client).toBe(true);
     expect("createPagesApp" in client).toBe(false);
     expect("PageProvider" in client).toBe(false);
     expect("startPageRuntime" in client).toBe(false);
@@ -37,21 +37,21 @@ describe("page route hooks", () => {
     expect("createServerReference" in client).toBe(false);
     expect("callServer" in client).toBe(false);
     expect("getFnId" in client).toBe(false);
-    expect("getFnName" in client).toBe(false);
+    expect("getFnName" in client).toBe(true);
     expect("initTransportFromManifest" in client).toBe(false);
   });
 
-  it("does not expose router construction APIs from the public client entry", () => {
-    expect("createRoute" in client).toBe(false);
-    expect("createRouter" in client).toBe(false);
-    expect("createRootRoute" in client).toBe(false);
-    expect("createRootRouteWithContext" in client).toBe(false);
-    expect("createAppRootRoute" in client).toBe(false);
-    expect("Outlet" in client).toBe(false);
-    expect("RouterProvider" in client).toBe(false);
-    expect("useParams" in client).toBe(false);
-    expect("useSearch" in client).toBe(false);
-    expect("useRouter" in client).toBe(false);
+  it("exposes manual router construction APIs for standalone CSR apps", () => {
+    expect("createRoute" in client).toBe(true);
+    expect("createRouter" in client).toBe(true);
+    expect("createRootRoute" in client).toBe(true);
+    expect("createRootRouteWithContext" in client).toBe(true);
+    expect("createAppRootRoute" in client).toBe(true);
+    expect("Outlet" in client).toBe(true);
+    expect("RouterProvider" in client).toBe(true);
+    expect("useParams" in client).toBe(true);
+    expect("useSearch" in client).toBe(true);
+    expect("useRouter" in client).toBe(true);
   });
 });
 

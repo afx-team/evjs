@@ -13,33 +13,39 @@ src/pages + ev.config.ts + server declarations
 
 ## 公共包
 
-应用代码通过 `@evjs/ev` 导入 config、plugin、build 和 deployment API。
-运行时 API 来自 `@evjs/client` 和 `@evjs/server`，使用这些能力的应用应直接
-声明对应 runtime 包。其他包是工具包、bundler adapter 或框架包之间共享的
-契约包。需要新的能力边界时，先优先考虑在拥有该行为的包中增加 subpath
-export，再考虑新增分发包。
+应用代码通过 `@evjs/ev` 导入 config、plugin、build、deployment 和能力组合
+API。运行时 API 来自 `@evjs/client` 和 `@evjs/server`，使用这些能力的应用应
+直接声明对应 runtime 包。浏览器-only CSR 应用可以只使用 `@evjs/client`，不
+依赖 `@evjs/ev`。其他包是工具包、bundler adapter 或框架包之间共享的契约包。
+需要新的能力边界时，先优先考虑在拥有该行为的包中增加 subpath export，再考虑
+新增分发包。
 Subpath export 必须保持显式且有文档说明；新增 package export 是公开 API 决策，
 不是为了方便导入而增加的别名。
 
 ```txt
 @evjs/ev
-  配置、插件生命周期、dev/build 编排、框架构建类型和 deployment helpers
+  config、插件生命周期、文件路由发现、dev/build 编排、框架构建类型、
+  能力组合/校验和 deployment helpers
 
 @evjs/client
-  浏览器 runtime、服务端函数 transport、page hooks、导航 helpers 和 RSC client runtime
+  standalone CSR/manual routing、框架托管 page runtime、服务端函数 transport、
+  page hooks、导航 helpers 和 RSC client runtime
 
 @evjs/server
-  Hono/fetch app、服务端函数、服务端路由、SSR/PPR/RSC 请求边界
+  Hono/fetch app、服务端函数、服务端路由、request context 和
+  SSR/PPR/RSC 请求处理 runtime core
 ```
 
 `@evjs/cli` 和 `@evjs/create-app` 是分发工具包。Bundler adapter 保留在
 `@evjs/bundler-utoopack` 和 `@evjs/bundler-webpack`，共享 runtime/manifest
-契约保留在 `@evjs/shared`。
+契约保留在 `@evjs/shared`。`@evjs/ev` 通过配置解析、graph analysis、
+build-plan 生成和 manifest 校验决定一个应用中能组合哪些 runtime 能力；
+runtime 包提供具体能力原语。
 
 | 角色 | 包 | 导入建议 |
 |------|----|----------|
-| 框架面 | `@evjs/ev` | config/build/plugin/deployment API 使用 `@evjs/ev`。 |
-| 运行时 API | `@evjs/client`, `@evjs/server` | page hooks、导航、server functions、server routes、渲染和部署运行时使用这些包。 |
+| 框架面 | `@evjs/ev` | config/build/plugin/deployment API 和能力组合使用 `@evjs/ev`。 |
+| 运行时 API | `@evjs/client`, `@evjs/server` | standalone CSR、page hooks、导航、server functions、server routes、渲染和部署运行时使用这些包。 |
 | 工具包 | `@evjs/cli`, `@evjs/create-app` | 用于安装或执行；应用模块不应 import 它们。 |
 | Bundler adapter | `@evjs/bundler-utoopack`, `@evjs/bundler-webpack` | `@evjs/cli` 持有默认 Utoopack adapter；只有自定义工具时才直接 import adapter。 |
 | 共享契约 | `@evjs/shared` | 发布出来是为了让框架包共享 manifest/runtime 类型；应用代码不应直接 import。 |
@@ -57,8 +63,8 @@ runtime subpath；`@evjs/server` 会消费 `@evjs/client` 中的共享 runtime
 
 生成专用的 `@evjs/client/internal/*` subpath 用于让框架生成的路由声明、
 page bootstrap、server-function stub 和 RSC runtime entry 完成类型检查。
-应用代码仍应从 `@evjs/client` 导入导航和运行时 API，不要导入这些生成专用的
-internal helper。
+应用代码仍应从 `@evjs/client` 导入 standalone CSR、导航、page、transport
+和 RSC API，不要导入这些生成专用的 internal helper。
 例如，`@evjs/client/internal/route-types` 用于生成的 SPA 路由声明，
 `@evjs/client/internal/rsc-runtime` 用于 RSC page bootstrap。
 
@@ -97,11 +103,13 @@ adapter 示例才直接导入 `@evjs/bundler-utoopack`。
 底层 module export 解析、server-function ID hashing 和 module-ref helper
 保留为 `@evjs/ev` 私有实现。
 
-SPA 文件路由在框架内部使用 TanStack Router；应用页面只写 `src/pages`、
-page hooks 和导航 helper，不需要创建 router bootstrap。Generated bootstrap 通过
-`@evjs/client/internal/*` 承载。MPA 文件路由和显式 pages 使用 page runtime，
-不引入客户端路由器。`@evjs/client` facade 暴露页面代码需要的 hooks、
-导航、server function 和 RSC runtime API。
+TanStack Router 通过 `@evjs/client` 的 standalone CSR surface 提供给手写
+浏览器应用使用。在框架托管应用中，`@evjs/ev` 负责文件路由发现和 generated
+bootstrap，应用页面只写 `src/pages`、page hooks 和导航 helper，不需要创建
+router bootstrap。Generated bootstrap 通过 `@evjs/client/internal/*` 承载。
+MPA 文件路由和显式 pages 使用 page runtime，不引入客户端路由器。
+`@evjs/client` facade 暴露 standalone CSR、页面 hooks、导航、server function
+和 RSC runtime API。
 
 ## 构建流程
 

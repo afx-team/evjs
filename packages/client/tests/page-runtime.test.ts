@@ -5,7 +5,7 @@ import {
   __resetForTesting,
   callServer,
   initTransport,
-} from "../src/transport.js";
+} from "../src/transport-runtime.js";
 
 afterEach(() => {
   __resetForTesting();

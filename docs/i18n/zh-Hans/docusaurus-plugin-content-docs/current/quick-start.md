@@ -106,12 +106,13 @@ export default defineConfig({
 | [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | 框架 API、配置、插件、构建编排和 deployment helpers |
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | 注入默认构建器的轻量 CLI 包装 (`ev dev`, `ev build`, `ev inspect`) |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | 项目脚手架 (`npx @evjs/create-app`) |
-| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | page hooks、导航、transport 和 RSC 浏览器运行时 API |
-| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | server functions、routes、渲染和部署相关的 Hono/fetch 服务端运行时 API |
+| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | standalone CSR、page hooks、导航、transport 和 RSC 浏览器运行时 core |
+| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Hono/fetch app、server functions、routes、渲染和部署相关的服务端运行时 core |
 
-Manifest schema、build tools、page runtime 和 shell 内部实现都位于上述公开包中。
-应用的 config/build 代码从 `@evjs/ev` 导入；运行时代码从 `@evjs/client`、
-`@evjs/server` 或 `@evjs/server/react` 导入。
+Manifest schema、build tools、生成 page runtime 和 shell 内部实现都位于上述公开包中。
+应用的 config/build 代码从 `@evjs/ev` 导入框架组合 API；运行时代码从
+`@evjs/client`、`@evjs/server` 或 `@evjs/server/react` 导入。自己持有构建
+管线的浏览器-only CSR 应用可以只使用 `@evjs/client`，不依赖 `@evjs/ev`。
 `@evjs/cli` 和 `@evjs/create-app` 应作为工具使用，不应被应用模块 import。
 `@evjs/bundler-utoopack` 这类 bundler adapter 以及 `@evjs/shared` 这类共享契约模块，
 只面向自定义框架工具或 adapter 开发。

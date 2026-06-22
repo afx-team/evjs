@@ -207,6 +207,7 @@ const expectedPackageExportSubpaths = {
   "@evjs/ev": [".", "./build-tools"],
   "@evjs/client": [
     ".",
+    "./transport",
     "./internal",
     "./internal/page-context",
     "./internal/react-page",
@@ -846,7 +847,7 @@ describe("workspace package surface", () => {
     );
   });
 
-  it("keeps @evjs/client router internals out of published subpath exports", async () => {
+  it("keeps @evjs/client published subpath exports intentional", async () => {
     const clientPackageJson = JSON.parse(
       await fs.readFile(
         path.join(repoRoot, "packages/client/package.json"),
@@ -867,7 +868,13 @@ describe("workspace package surface", () => {
       "./internal/route-types",
       "./internal/rsc-page-context",
       "./internal/rsc-runtime",
+      "./transport",
     ]);
+    expect(clientPackageJson.exports?.["./transport"]).toEqual({
+      types: "./esm/transport.d.ts",
+      import: "./esm/transport.js",
+      default: "./esm/transport.js",
+    });
     expect(exportedSubpaths).not.toEqual(
       expect.arrayContaining([
         "./app",

@@ -1,6 +1,6 @@
 # @evjs/server
 
-> Server-side runtime for the **evjs** fullstack framework.
+> Server runtime core for the **evjs** framework and standalone Hono/fetch apps.
 
 ## Features
 
@@ -12,7 +12,7 @@
 ## Install
 
 ```bash
-npm install @evjs/ev
+npm install @evjs/server
 ```
 
 ## Quick Start
@@ -78,7 +78,9 @@ export { fetch } from "@evjs/server/fetch";
 - `createApp(options)`: Main application factory.
 
 Application-facing server runtime APIs are exported from `@evjs/server` and
-its runtime subpaths.
+its runtime subpaths. Use `@evjs/ev` when the app needs framework composition
+such as file-route discovery, server-function transforms, SSR/PPR/RSC build
+validation, manifests, or deployment artifacts.
 
 ## License
 

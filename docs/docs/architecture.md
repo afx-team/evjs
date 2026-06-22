@@ -25,25 +25,31 @@ package.
 
 ```txt
 @evjs/ev
-  config, plugin lifecycle, dev/build orchestration, framework build types,
-  and deployment helpers
+  composition/control plane for config, plugin lifecycle, file-route
+  discovery, dev/build orchestration, framework build types, capability
+  validation, and deployment helpers
 
 @evjs/client
-  browser runtime, server-function transport, page hooks, navigation helpers,
-  and RSC client runtime
+  browser runtime core for standalone CSR/manual routing,
+  framework-managed page runtime, server-function transport, page hooks,
+  navigation helpers, and RSC client runtime
 
 @evjs/server
-  Hono/fetch app, server functions, server routes, SSR/PPR/RSC request boundary
+  server runtime core for Hono/fetch apps, server functions, server routes,
+  request context, and SSR/PPR/RSC request handling
 ```
 
 `@evjs/cli` and `@evjs/create-app` are distribution tooling. Bundler adapters
 stay in `@evjs/bundler-utoopack` and `@evjs/bundler-webpack`, and shared
-runtime/manifest contracts stay in `@evjs/shared`.
+runtime/manifest contracts stay in `@evjs/shared`. `@evjs/ev` decides which
+runtime capabilities can be composed in one app through config resolution,
+graph analysis, build-plan generation, and manifest validation; the runtime
+packages provide the capability primitives.
 
 | Role | Packages | Import guidance |
 |------|----------|-----------------|
-| Framework surface | `@evjs/ev` | Use `@evjs/ev` for config/build/plugin/deployment APIs. |
-| Runtime APIs | `@evjs/client`, `@evjs/server` | Use these packages for page hooks, navigation, server functions, server routes, rendering, and deployment runtimes. |
+| Framework surface | `@evjs/ev` | Use `@evjs/ev` for config/build/plugin/deployment APIs and feature composition. |
+| Runtime APIs | `@evjs/client`, `@evjs/server` | Use these packages for standalone CSR, page hooks, navigation, server functions, server routes, rendering, and deployment runtimes. |
 | Tooling | `@evjs/cli`, `@evjs/create-app` | Install or execute them; application modules should not import them. |
 | Bundler adapters | `@evjs/bundler-utoopack`, `@evjs/bundler-webpack` | `@evjs/cli` owns the default Utoopack adapter. Import an adapter directly only when authoring custom tooling. |
 | Shared contracts | `@evjs/shared` | Published so framework packages share manifest/runtime types; app code should not import it directly. |
@@ -67,8 +73,9 @@ version.
 
 Generated-only `@evjs/client/internal/*` subpaths let framework-emitted
 route declarations, page bootstraps, server-function stubs, and RSC runtime
-entries type-check. Application code should keep importing navigation/runtime
-APIs from `@evjs/client` and should not import generated-only internal helpers.
+entries type-check. Application code should keep importing standalone CSR,
+navigation, page, transport, and RSC APIs from `@evjs/client` and should not
+import generated-only internal helpers.
 Examples include `@evjs/client/internal/route-types` for generated SPA
 route declarations and `@evjs/client/internal/rsc-runtime` for RSC page
 bootstraps.
@@ -144,9 +151,11 @@ sequenceDiagram
 
 The manifest is `dist/manifest.json`. Legacy `dist/client/manifest.json` and `dist/server/manifest.json` are not the new framework contract.
 
-TanStack Router is an SPA implementation detail owned by the framework. Page
-code uses `src/pages`, page hooks, and navigation helpers instead of constructing
-router bootstraps directly.
+TanStack Router is available through the `@evjs/client` standalone CSR surface
+for manual browser applications. In framework-managed apps, `@evjs/ev` owns
+file-route discovery and generated bootstraps, so page code uses `src/pages`,
+page hooks, and navigation helpers instead of constructing router bootstraps
+directly.
 
 ## Runtime Flow
 

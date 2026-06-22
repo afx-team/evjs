@@ -1,10 +1,11 @@
 # @evjs/client
 
-> Client-side runtime for the **evjs** fullstack framework.
+> Browser runtime core for standalone CSR apps and the **evjs** framework.
 
 ## Features
 
 - **Page Hooks** — `usePageParams()`, `usePageSearch()`, and `usePageLoaderData()` expose framework-managed route data while evjs owns route discovery.
+- **Standalone CSR** — `createApp()`, `createAppRootRoute()`, and TanStack Router re-exports support manual browser-only apps without `@evjs/ev`.
 - **SPA Navigation** — SPA pages use evjs page hooks and navigation helpers while the framework owns route discovery and app bootstrap.
 - **Router-Free Pages** — MPA and framework-managed pages use the page runtime without adding a client router.
 - **Data Fetching** — Wraps [TanStack Query](https://tanstack.com/query) with built-in server function proxies.
@@ -14,12 +15,58 @@
 ## Install
 
 ```bash
-npm install @evjs/client @evjs/ev react react-dom
+npm install @evjs/client react react-dom
 ```
 
 ## Quick Start
 
-### 1. Write Page Files
+### Standalone CSR
+
+Use `@evjs/client` directly when a browser-only app owns its routing and build
+pipeline:
+
+```tsx
+import {
+  createApp,
+  createAppRootRoute,
+  createRoute,
+  Link,
+  Outlet,
+} from "@evjs/client";
+
+const rootRoute = createAppRootRoute({
+  component: () => (
+    <main>
+      <Link to="/">Home</Link>
+      <Outlet />
+    </main>
+  ),
+});
+
+const indexRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/",
+  component: () => <h1>Home</h1>,
+});
+
+const app = createApp({
+  routeTree: rootRoute.addChildren([indexRoute]),
+});
+
+declare module "@evjs/client" {
+  interface Register {
+    router: typeof app.router;
+  }
+}
+
+app.render("#app");
+```
+
+Use `@evjs/ev` only when the app wants framework composition such as file-based
+routing, server-function transforms, manifests, SSR, PPR, RSC, or deployment
+artifacts.
+
+### Framework-Managed Pages
 
 ```tsx
 // src/pages/users/$userId.tsx
@@ -35,7 +82,7 @@ Use the page hooks for route data in both SPA and MPA output. They are the
 zero-annotation path for page code; `params`, `search`, and `loaderData` are
 not passed as page component props.
 
-### 2. Let evjs Build the Route Entry
+### Let evjs Build the Route Entry
 
 When `src/pages` exists and the project does not declare explicit `app` or
 `pages` config, evjs discovers the page files and builds the SPA entry
@@ -103,8 +150,9 @@ function Posts() {
 - Plain async functions are not server function stubs. Use `useQuery({ queryKey, queryFn })` or `useMutation({ mutationFn })` for non-server functions.
 
 ### Transport
-- `initTransport({ baseUrl, credentials, headers })`: Configure the default HTTP adapter. The server function path is derived from the framework server runtime.
+- `initTransport({ baseUrl, credentials, headers, functions })`: Configure the default HTTP adapter. `functions.endpoint` can override the server function path for standalone runtimes.
 - `credentials` / `headers`: Supported HTTP defaults; fetch `mode` is intentionally not configurable.
+- `@evjs/client/transport`: Public subpath for low-level transport APIs such as `createServerReference`, `getFnId`, `getFnName`, and `initTransport`.
 - The default HTTP adapter expects successful server-function responses to use
   `Content-Type: application/json`. Non-JSON error responses use their trimmed
   body text for `ServerFunctionError`, falling back to `statusText` when the

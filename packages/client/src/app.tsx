@@ -1,15 +1,63 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { AnyRoute } from "@tanstack/react-router";
+import type {
+  AnyRoute,
+  RouterConstructorOptions,
+  RouterHistory,
+  TrailingSlashOption,
+} from "@tanstack/react-router";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { createRoot } from "react-dom/client";
+import type { AppRouteContext } from "./context.js";
 import { formatErrorDetail } from "./validation.js";
 
 /**
- * Options for creating a framework-owned SPA runtime.
+ * Router options available to standalone CSR applications.
  */
-export interface CreateAppOptions<TRouteTree extends AnyRoute> {
-  /** The root route tree assembled by the generated page-route bootstrap. */
+export type CreateAppRouterOptions<
+  TRouteTree extends AnyRoute,
+  TTrailingSlashOption extends TrailingSlashOption = "never",
+  TDefaultStructuralSharingOption extends boolean = false,
+  TRouterHistory extends RouterHistory = RouterHistory,
+  TDehydrated extends Record<string, unknown> = Record<string, unknown>,
+> = Omit<
+  RouterConstructorOptions<
+    TRouteTree,
+    TTrailingSlashOption,
+    TDefaultStructuralSharingOption,
+    TRouterHistory,
+    TDehydrated
+  >,
+  "context" | "routeTree"
+>;
+
+/**
+ * Options for creating a standalone or framework-owned SPA runtime.
+ */
+export interface CreateAppOptions<
+  TRouteTree extends AnyRoute,
+  TTrailingSlashOption extends TrailingSlashOption = "never",
+  TDefaultStructuralSharingOption extends boolean = false,
+  TRouterHistory extends RouterHistory = RouterHistory,
+  TDehydrated extends Record<string, unknown> = Record<string, unknown>,
+> {
+  /** The root route tree assembled by application code or generated bootstrap. */
   routeTree: TRouteTree;
+  /**
+   * The base path for the application.
+   */
+  basepath?: string;
+  /**
+   * Optional custom history for the router, such as memory or hash history.
+   */
+  history?: TRouterHistory;
+  /** TanStack Router options passed through to `createRouter()`. */
+  router?: CreateAppRouterOptions<
+    TRouteTree,
+    TTrailingSlashOption,
+    TDefaultStructuralSharingOption,
+    TRouterHistory,
+    TDehydrated
+  >;
   /**
    * Optional custom QueryClient instance.
    */
@@ -17,9 +65,11 @@ export interface CreateAppOptions<TRouteTree extends AnyRoute> {
 }
 
 /**
- * An initialized framework-owned SPA runtime.
+ * An initialized standalone or framework-owned SPA runtime.
  */
-export interface App {
+export interface App<TRouter = unknown> {
+  /** The TanStack Router instance. */
+  router: TRouter;
   /** The TanStack Query Client instance. */
   queryClient: QueryClient;
   /**
@@ -34,17 +84,54 @@ export interface App {
 }
 
 /**
- * Create a framework-owned SPA runtime from the generated page route tree.
+ * Create a standalone or framework-owned SPA runtime from a route tree.
  */
-export function createApp<TRouteTree extends AnyRoute>(
-  options: CreateAppOptions<TRouteTree>,
-): App {
-  const { routeTree, queryClient = new QueryClient() } = options;
-
-  const router = createRouter({
+export function createApp<
+  TRouteTree extends AnyRoute,
+  TTrailingSlashOption extends TrailingSlashOption = "never",
+  TDefaultStructuralSharingOption extends boolean = false,
+  TRouterHistory extends RouterHistory = RouterHistory,
+  TDehydrated extends Record<string, unknown> = Record<string, unknown>,
+>(
+  options: CreateAppOptions<
+    TRouteTree,
+    TTrailingSlashOption,
+    TDefaultStructuralSharingOption,
+    TRouterHistory,
+    TDehydrated
+  >,
+): App<
+  ReturnType<
+    typeof createRouter<
+      TRouteTree,
+      TTrailingSlashOption,
+      TDefaultStructuralSharingOption,
+      TRouterHistory,
+      TDehydrated
+    >
+  >
+> {
+  const {
     routeTree,
-    defaultPreload: "intent",
-    context: { queryClient },
+    queryClient = new QueryClient(),
+    basepath,
+    history,
+    router: routerOptions,
+  } = options;
+
+  const router = createRouter<
+    TRouteTree,
+    TTrailingSlashOption,
+    TDefaultStructuralSharingOption,
+    TRouterHistory,
+    TDehydrated
+  >({
+    ...routerOptions,
+    routeTree,
+    basepath: routerOptions?.basepath ?? basepath,
+    history: routerOptions?.history ?? history,
+    defaultPreload: routerOptions?.defaultPreload ?? "intent",
+    context: { queryClient } as AppRouteContext,
   });
 
   let root: ReturnType<typeof createRoot> | undefined;
@@ -65,7 +152,7 @@ export function createApp<TRouteTree extends AnyRoute>(
     root = undefined;
   }
 
-  return { queryClient, render, unmount };
+  return { router, queryClient, render, unmount };
 }
 
 function resolveAppContainer(container: string | HTMLElement): HTMLElement {

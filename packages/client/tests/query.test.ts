@@ -15,7 +15,7 @@ import {
   __resetForTesting,
   createServerReference,
   initTransport,
-} from "../src/transport.js";
+} from "../src/transport-runtime.js";
 
 vi.mock("@tanstack/react-query", async () => ({
   useMutation: vi.fn(),

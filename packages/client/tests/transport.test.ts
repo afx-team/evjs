@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as publicTransport from "../src/transport.js";
 import {
   __resetForTesting,
   callServer,
@@ -11,7 +12,7 @@ import {
   type ServerFunction,
   type TransportAdapter,
   type TransportOptions,
-} from "../src/transport.js";
+} from "../src/transport-runtime.js";
 
 describe("createServerReference / getFnId / getFnName", () => {
   beforeEach(() => {
@@ -272,6 +273,25 @@ describe("initTransport + callServer", () => {
     expect(() => initTransport({ headers: null as never })).toThrow(
       "[evjs] initTransport() headers must be valid HeadersInit or a header factory.",
     );
+    expect(() => initTransport({ functions: null as never })).toThrow(
+      "[evjs] initTransport() functions must be an object.",
+    );
+    expect(() => initTransport({ functions: [] as never })).toThrow(
+      "[evjs] initTransport() functions must be an object.",
+    );
+    expect(() => initTransport({ functions: { endpoint: "" } })).toThrow(
+      "[evjs] initTransport() functions.endpoint must be a non-empty URL string.",
+    );
+    expect(() =>
+      initTransport({ functions: { endpoint: " /api/rpc" } }),
+    ).toThrow(
+      "[evjs] initTransport() functions.endpoint must not contain leading or trailing whitespace.",
+    );
+    expect(() =>
+      initTransport({ functions: { endpoint: "http://[::1" } }),
+    ).toThrow(
+      "[evjs] initTransport() functions.endpoint must be a valid URL string.",
+    );
     expect(() => initTransport({ adapter: null as never })).toThrow(
       "[evjs] initTransport() adapter must be an object.",
     );
@@ -391,10 +411,12 @@ describe("transport types", () => {
   it("only exposes supported HTTP defaults as top-level options", () => {
     const options: TransportOptions = {
       credentials: "include",
+      functions: { endpoint: "/api/rpc" },
       headers: { Authorization: "Bearer xyz" },
     };
     expect(options).toEqual({
       credentials: "include",
+      functions: { endpoint: "/api/rpc" },
       headers: { Authorization: "Bearer xyz" },
     });
 
@@ -418,13 +440,27 @@ describe("transport types", () => {
       requestInit: { credentials: "include" },
     });
 
-    const invalidFunctions: TransportOptions = {
-      // @ts-expect-error Server function endpoint is provided by framework runtime metadata.
-      functions: { endpoint: "/api/rpc" },
+    const invalidEndpointOption: TransportOptions = {
+      functions: {
+        // @ts-expect-error Endpoint must be a URL string.
+        endpoint: new URL("https://api.example.com/fn"),
+      },
     };
-    expect(invalidFunctions).toEqual({
-      functions: { endpoint: "/api/rpc" },
+    expect(invalidEndpointOption).toEqual({
+      functions: { endpoint: new URL("https://api.example.com/fn") },
     });
+  });
+});
+
+describe("public transport subpath", () => {
+  it("exposes stable transport APIs without framework bootstrap helpers", () => {
+    expect(publicTransport.createServerReference).toBe(createServerReference);
+    expect(publicTransport.getFnId).toBe(getFnId);
+    expect(publicTransport.getFnName).toBe(getFnName);
+    expect(publicTransport.initTransport).toBe(initTransport);
+    expect("initTransportFromManifest" in publicTransport).toBe(false);
+    expect("getServerFunction" in publicTransport).toBe(false);
+    expect("__resetForTesting" in publicTransport).toBe(false);
   });
 });
 
@@ -466,6 +502,22 @@ describe("default fetch adapter", () => {
 
     initTransport({
       headers: { Authorization: "Bearer xyz" },
+    });
+    await callServer("myFn", []);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      new URL("http://localhost/api/rpc"),
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("uses initTransport functions endpoint over the build-time endpoint", async () => {
+    const mockFetch = createSuccessfulFetchMock({ result: "ok" });
+    vi.stubGlobal("fetch", mockFetch);
+    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/fn");
+
+    initTransport({
+      functions: { endpoint: "/api/rpc" },
     });
     await callServer("myFn", []);
 
