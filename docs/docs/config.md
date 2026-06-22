@@ -67,13 +67,14 @@ Set `routing: false` to disable file-route discovery explicitly.
 The exported config must be an object. When enabled with options, `routing`
 must be an object; arrays and `null` are rejected.
 
-SPA mode can use a root layout module. By default evjs looks for
-`layout/index.tsx` beside the route directory, such as `src/layout/index.tsx`
-for `src/pages`. Set `routing.layout` to a module path when a migrated app has
-its shell in another location, or when it uses a non-TSX layout module such as
-`layout/index.jsx`. Explicit layout modules must be source modules, not
-declaration, test, spec, story, client-only, or server-only files. Set it to
-`false` to disable framework layout discovery:
+SPA mode can use a root layout module. By default evjs looks for a single
+`layout.*` or `layout/index.*` source module beside the route directory, such
+as `src/layout.tsx` or `src/layout/index.tsx` for `src/pages`. If more than one
+candidate exists, keep one file or configure `routing.layout` explicitly. Set
+`routing.layout` to a module path when a migrated app has its shell in another
+location. Explicit layout modules must be source modules, not declaration,
+test, spec, story, client-only, or server-only files. Set it to `false` to
+disable external root layout discovery:
 
 ```ts
 export default defineConfig({
@@ -84,9 +85,10 @@ export default defineConfig({
 });
 ```
 
-`routing.layout` is not supported in MPA mode. MPA pages should compose shared
-shells as normal React components, or use page-specific/shared HTML templates
-when the document wrapper needs to differ.
+`routing.layout` is not supported in MPA mode. Route-directory layout modules
+are SPA route conventions. MPA pages should compose shared shells as normal
+React components, or use page-specific/shared HTML templates when the document
+wrapper needs to differ.
 
 `routing.mode` must be either `spa` or `mpa`. When provided, `routing.dir`,
 `routing.html`, and `routing.mount` must be non-empty strings. `routing.layout`

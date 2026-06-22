@@ -32,8 +32,9 @@ coverage in `packages/ev/tests/build-tools-page-routes.test.ts`.
    generated output. Scaffolded apps and template packs should not copy generated
    route types.
 5. Page route conventions are strict: `src/pages`, `$param` dynamic segments,
-   `index` for directory roots, `_`-prefixed private files, and SPA-only
-   `layout/index.tsx` beside the route directory. Keep one page file per URL
+   `index` for directory roots, `(group)` pathless route groups, `_`-prefixed
+   private files, ignored colocated support files, and SPA layout source
+   modules named `layout.*` or `layout/index.*`. Keep one page file per URL
    path, one parameter naming choice per dynamic URL shape, and unique
    generated route IDs. Do not add alternate filename dialects unless the build
    graph, docs, scaffolds, and generated route types are updated together.

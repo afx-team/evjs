@@ -33,10 +33,11 @@ npx biome check --write    # 修复 lint/格式
 1. **导入** —— 所有导入放在文件顶部。类型导入使用 `import type`
 2. **Lint** —— Biome 强制执行；禁止 `any`，禁止 `import * as`（除非必要）
 3. **页面路由** —— 默认以 `src/pages` 为事实来源。路由文件使用 `.tsx`、`.jsx`、`.ts`
-   或 `.js`；动态段使用 `$param`；`index` 映射到目录根路径；`_` 前缀文件/目录是私有模块；
-   bracket、catch-all、空动态段和可选段暂不支持
-4. **布局** —— SPA 根布局约定在默认路由下必须是 `src/layout/index.tsx`，自定义路由目录时
-   使用旁边的 `layout/index.tsx`。MPA 路由不消费框架 layout
+   或 `.js`；动态段使用 `$param`；`index` 映射到目录根路径；`(group)` 段是 pathless
+   分组；`_` 前缀文件/目录是私有模块；bracket、catch-all、空动态段和可选段暂不支持
+4. **布局** —— SPA 根布局会从路由目录旁边唯一的 `layout.*` 或
+   `layout/index.*` 源码模块自动发现。SPA route layout 放在路由目录内，同样使用
+   `layout.*` 或 `layout/index.*`。MPA 路由不消费框架 layout
 5. **服务端函数** —— 必须以 `"use server";` 开头，使用 `.server.ts` 或 `src/api/`
 6. **服务端函数导出** —— 只使用命名可调用导出：function declaration 或
    `const` arrow/function expression。不使用默认导出、跨模块 re-export 或导出非函数值

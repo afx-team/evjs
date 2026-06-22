@@ -15,8 +15,10 @@ src/
 ├── layout/
 │   └── index.tsx          # Optional SPA root layout
 └── pages/
+    ├── layout.tsx         # Optional SPA route layout
     ├── index.tsx          # /
-    ├── about.tsx          # /about
+    ├── (marketing)/
+    │   └── about.tsx      # /about
     ├── users/$userId.tsx  # /users/$userId
     └── posts/index.tsx    # /posts
 ```
@@ -37,9 +39,12 @@ Dynamic sibling routes that only differ by parameter name are also rejected:
 `users/$id.tsx` and `users/$userId.tsx` both match `/users/:param`, so keep one
 canonical name or use explicit `pages` config.
 
-Route group segments such as `(marketing)/about.tsx` are not supported; use a
-real URL segment such as `marketing/about.tsx`, or use explicit `pages` config
-when a file should map to a URL that does not follow the directory shape.
+Route group segments such as `(marketing)/about.tsx` are supported as pathless
+organization. They do not add URL segments, so that file maps to `/about`.
+Malformed group segments such as `(marketing` are rejected. Use a real URL
+segment such as `marketing/about.tsx` when the group name should appear in the
+browser path, or use explicit `pages` config when a file should map to a URL
+that does not follow the directory shape.
 
 Route discovery treats `.tsx`, `.jsx`, `.ts`, and `.js` files as possible page
 modules. Declaration files (`.d.ts`), test files (`*.test.*` and `*.spec.*`),
@@ -69,11 +74,13 @@ together because both produce `admin_panel`. Server-rendered route-derived page
 IDs use the same rule. When generated IDs collide, rename one route file or move
 the page to explicit `pages` config with a unique page id.
 
-Every discovered route file must default-export a React component. If a module
-under `src/pages` is not a route page, put it in an underscore-prefixed file or
-folder, name it `*.client.*` for client-only code, name it `*.server.*` for
-server-only code, or move it outside `src/pages`. Syntax and default-export
-errors are reported during route discovery before the bundler runs.
+Every discovered page file must default-export a React component. Layout route
+files can default-export a wrapper component; when they do not, they behave as
+pathless outlet routes. If a module under `src/pages` is not a route page or
+layout, put it in an underscore-prefixed file or folder, name it `*.client.*`
+for client-only code, name it `*.server.*` for server-only code, or move it
+outside `src/pages`. Syntax and default-export errors are reported during route
+discovery before the bundler runs.
 
 SPA routing is enabled automatically when `src/pages` exists and the project
 does not declare explicit `app` or `pages` config. To opt in
@@ -184,34 +191,39 @@ export default function SearchPage() {
 
 ## Layout
 
-For SPA mode, the root layout is optional. It lives beside the route directory:
-the default `src/pages` uses `src/layout/index.tsx`, and a custom `routing.dir` such
-as `src/app/pages` uses `src/app/layout/index.tsx`. When present, the default export
-wraps the current page as `children`, so user code does not need a router outlet
-component.
+For SPA mode, the external root layout is optional. It lives beside the route
+directory: the default `src/pages` can use `src/layout.tsx`,
+`src/layout/index.tsx`, or the matching `.ts`, `.jsx`, and `.js` source module
+variants. A custom `routing.dir` such as `src/app/pages` uses the same
+`layout.*` or `layout/index.*` convention under `src/app`. When present, the
+default export wraps the entire generated route tree as `children`, so user code
+does not need a router outlet component at the app root.
 
-If a migration has a shared application shell somewhere else, configure it
-explicitly with `routing.layout: "./src/shell/AppLayout.tsx"`. Do the same for
-non-TSX layout modules such as `layout/index.jsx` or `layout/index.js`; the
-auto-discovered convention remains only `layout/index.tsx`. Set
-`routing.layout: false` when the SPA should not consume any framework root
-layout.
+Keep one auto-discovered external root layout module. If multiple candidates
+exist, evjs reports an ambiguity and asks you to keep one file or configure the
+shell explicitly with `routing.layout: "./src/shell/AppLayout.tsx"`. Set
+`routing.layout: false` when the SPA should not consume any external framework
+root layout.
 
-The layout convention is SPA-only and has exactly one root directory entry beside
-the route directory: use the exact path `layout/index.tsx`. `layout.tsx`,
-`layout.jsx`, `layout.ts`, and non-TSX `layout/index.*` files are not aliases.
-MPA mode does not accept or consume a framework layout file; share visual
-wrappers by importing ordinary components from each page, or share the HTML
-template when only document chrome is common.
+SPA route layouts can also live inside the route directory. Use `layout.tsx`,
+`layout.jsx`, `layout.ts`, `layout.js`, or `layout/index.*` beside the pages
+they should wrap. `src/pages/layout.tsx` wraps root-level page routes;
+`src/pages/posts/layout.tsx` wraps routes below `/posts`; and
+`src/pages/(app)/dashboard/layout.tsx` creates a layout at `/dashboard` without
+adding `(app)` to the URL. These route-directory layouts can coexist with an
+external root layout. This remains true when `routing.layout` points at an explicit module.
+It also remains true when external root layout discovery is disabled with
+`routing.layout: false`.
 
-The route directory is only for route pages. Do not put files or folders named
-`layout` under it; evjs reports that as a convention error instead of turning
-them into routes. This reserved segment is exact and case-sensitive, but
-uppercase filenames such as `Layout.tsx` still fail the lowercase static segment
-rule in discovered routes. Nested visual wrappers should be normal components
-imported by the page that needs them.
-This remains true when `routing.layout` points at an explicit module or when
-layout discovery is disabled with `routing.layout: false` or MPA mode.
+The layout conventions are SPA-only. MPA mode does not accept `routing.layout`
+or consume framework layouts; share visual wrappers by importing ordinary
+components from each page, or share the HTML template when only document chrome
+is common.
+
+A route-directory segment named `layout` is reserved for layout modules named
+`layout.{ts,tsx,js,jsx}` or `layout/index.{ts,tsx,js,jsx}`. Put layout-local
+helpers under underscore-prefixed files or folders. Uppercase filenames such as
+`Layout.tsx` still fail the lowercase static segment rule in discovered routes.
 
 ```tsx
 // src/layout/index.tsx

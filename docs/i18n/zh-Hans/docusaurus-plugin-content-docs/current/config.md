@@ -64,11 +64,12 @@ export default defineConfig({
 导出的 config 必须是 object。启用并配置选项时，`routing` 必须是 object；array 和
 `null` 都会被拒绝。
 
-SPA 模式可以使用根布局模块。默认情况下，evjs 会在路由目录旁边查找
-`layout/index.tsx`，例如 `src/pages` 对应 `src/layout/index.tsx`。如果迁移应用的
-外框在其他位置，或者使用 `layout/index.jsx` 这类非 TSX 布局模块，可以通过
+SPA 模式可以使用根布局模块。默认情况下，evjs 会在路由目录旁边查找唯一的
+`layout.*` 或 `layout/index.*` 源码模块，例如 `src/pages` 对应
+`src/layout.tsx` 或 `src/layout/index.tsx`。如果存在多个候选文件，需要只保留一个，
+或显式配置 `routing.layout`。如果迁移应用的外框在其他位置，也可以通过
 `routing.layout` 显式指定模块路径。显式布局模块必须是源码模块，不能是声明文件、
-测试/spec、Storybook、client-only 或 server-only 文件；如果 SPA 不需要框架根布局，可以设置为
+测试/spec、Storybook、client-only 或 server-only 文件；如果 SPA 不需要外部根布局，可以设置为
 `false`：
 
 ```ts
@@ -80,8 +81,9 @@ export default defineConfig({
 });
 ```
 
-MPA 模式不支持 `routing.layout`。MPA 页面需要共享外框时，应像普通 React 代码一样组合共享组件；
-如果只是文档外壳相同，可以复用页面 HTML 模板。
+MPA 模式不支持 `routing.layout`。路由目录内的 layout 模块也是 SPA 路由约定。
+MPA 页面需要共享外框时，应像普通 React 代码一样组合共享组件；如果只是文档外壳相同，
+可以复用页面 HTML 模板。
 
 `routing.mode` 必须是 `spa` 或 `mpa`。提供 `routing.dir`、`routing.html`
 或 `routing.mount` 时，它们必须是非空字符串。`routing.layout` 必须是

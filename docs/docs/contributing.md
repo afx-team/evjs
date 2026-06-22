@@ -34,12 +34,13 @@ npx biome check --write    # Fix lint/format
 2. **Linting** — Biome enforced; no `any`, no `import * as` unless necessary
 3. **Page routes** — Source of truth is `src/pages` by default. Route files use
    `.tsx`, `.jsx`, `.ts`, or `.js`; dynamic segments use `$param`; `index` maps
-   to the directory root; `_`-prefixed files/folders are private; bracket,
-   catch-all, empty, and optional segments are unsupported
-4. **Layouts** — The SPA root layout convention is exactly
-   `src/layout/index.tsx` for default routes or the sibling `layout/index.tsx`
-   beside a custom route directory. MPA routing does not consume framework
-   layouts
+   to the directory root; `(group)` segments are pathless; `_`-prefixed
+   files/folders are private; bracket, catch-all, empty, and optional segments
+   are unsupported
+4. **Layouts** — SPA root layouts are discovered from a single `layout.*` or
+   `layout/index.*` source module beside the route directory. SPA route layouts
+   live inside the route directory as `layout.*` or `layout/index.*`. MPA
+   routing does not consume framework layouts
 5. **Server functions** — Must start with `"use server";`, use `.server.ts` or `src/api/`
 6. **Server function exports** — Named callable exports only: function
    declarations or `const` arrow/function expressions. No default exports,
