@@ -59,6 +59,38 @@ describe("createWebpackConfigs", () => {
     );
   });
 
+  it("sets crossorigin for dynamically loaded browser chunks", async () => {
+    const config: ResolvedConfig<WebpackConfig> = {
+      ...createResolvedConfig(),
+      output: {
+        crossOriginLoading: "use-credentials",
+      },
+    };
+    const graph = createGraph(config);
+    const plan = createBuildPlan(config, graph, { mode: "production" });
+
+    const configs = await createWebpackConfigs(
+      config,
+      plan,
+      graph,
+      process.cwd(),
+      [],
+    );
+
+    const clientConfig = configs.find((item) => item.name === "client");
+    const miniCssPlugin = clientConfig?.plugins?.find(
+      (plugin) =>
+        plugin &&
+        typeof plugin === "object" &&
+        plugin.constructor.name === "MiniCssExtractPlugin",
+    ) as { options?: { attributes?: Record<string, string> } } | undefined;
+
+    expect(clientConfig?.output?.crossOriginLoading).toBe("use-credentials");
+    expect(miniCssPlugin?.options?.attributes).toEqual({
+      crossorigin: "use-credentials",
+    });
+  });
+
   it("uses component page bootstrap instead of the SPA router loader for MPA page routes", async () => {
     const config: ResolvedConfig<WebpackConfig> = {
       ...createResolvedConfig(),
@@ -258,6 +290,9 @@ function createResolvedConfig(): ResolvedConfig<WebpackConfig> {
       port: 3000,
       https: false,
       proxy: [],
+    },
+    output: {
+      crossOriginLoading: undefined,
     },
     serverEnabled: false,
     server: {

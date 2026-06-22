@@ -483,6 +483,46 @@ describe("build", () => {
     ]);
   });
 
+  it("adds crossorigin to injected output HTML assets", async () => {
+    const cwd = await createProject();
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock-crossorigin-assets",
+      async build() {
+        return {
+          clientEntryAssets: {
+            main: { js: ["main.js"], css: ["main.css"] },
+          },
+          firstClientEntryAssets: { js: ["main.js"], css: ["main.css"] },
+        };
+      },
+      async dev() {},
+    };
+
+    await build(
+      {
+        server: false,
+        output: {
+          crossOriginLoading: "anonymous",
+        },
+      },
+      {
+        cwd,
+        bundler,
+      },
+    );
+
+    const html = await fs.promises.readFile(
+      path.join(cwd, "dist/index.html"),
+      "utf-8",
+    );
+    expect(html).toMatch(
+      /<link[^>]*href="\/main\.css"[^>]*crossorigin="anonymous"/,
+    );
+    expect(html).toMatch(
+      /<script[^>]*src="\/main\.js"[^>]*crossorigin="anonymous"/,
+    );
+  });
+
   it("builds a pages SPA without a user entry file", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });

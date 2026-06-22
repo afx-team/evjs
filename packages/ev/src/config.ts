@@ -125,6 +125,8 @@ export interface ResolvedConfig<TBundlerCfg = DefaultBundlerConfig> {
   entry: string;
   /** HTML template path (SPA mode). */
   html: string;
+  /** Emitted HTML and asset-tag output options. */
+  output: ResolvedOutputConfig;
   /**
    * Resolved pages for MPA mode.
    *
@@ -160,6 +162,9 @@ export interface Config<TBundlerCfg = DefaultBundlerConfig> {
   entry?: string;
   /** HTML template path. Default: "./index.html". */
   html?: string;
+
+  /** Emitted HTML and asset-tag output options. */
+  output?: OutputConfig;
 
   /** Client dev server options. */
   dev?: DevConfig;
@@ -285,6 +290,21 @@ export interface ResolvedTransportConfig {
   baseUrl?: string;
 }
 
+export type CrossOriginLoadingPolicy = false | "anonymous" | "use-credentials";
+
+export interface OutputConfig {
+  /**
+   * Adds a `crossorigin` attribute to JavaScript and CSS asset tags in emitted
+   * HTML documents and configures the browser chunk loader to use the same
+   * policy for dynamically loaded chunks.
+   */
+  crossOriginLoading?: CrossOriginLoadingPolicy;
+}
+
+export interface ResolvedOutputConfig {
+  crossOriginLoading?: CrossOriginLoadingPolicy;
+}
+
 export type AppConfig = string | AppSourceConfig | AppEntryConfig;
 
 export interface AppSourceConfig {
@@ -374,6 +394,7 @@ const MPA_LAYOUT_UNSUPPORTED_MESSAGE =
 const PUBLIC_ROOT_CONFIG_KEYS = new Set([
   "entry",
   "html",
+  "output",
   "dev",
   "server",
   "transport",
@@ -408,6 +429,7 @@ const PUBLIC_SERVER_CONFIG_KEYS = new Set(["entry", "basePath", "rsc", "dev"]);
 const PUBLIC_SERVER_DEV_CONFIG_KEYS = new Set(["port", "https"]);
 const PUBLIC_SERVER_RSC_CONFIG_KEYS = new Set(["endpoint"]);
 const PUBLIC_TRANSPORT_CONFIG_KEYS = new Set(["baseUrl"]);
+const PUBLIC_OUTPUT_CONFIG_KEYS = new Set(["crossOriginLoading"]);
 const PUBLIC_HTTPS_CONFIG_KEYS = new Set(["key", "cert"]);
 const PUBLIC_DEV_PROXY_RULE_KEYS = new Set([
   "context",
@@ -478,6 +500,11 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
     "transport",
   );
   validateTransportConfigKeys(transportConfig);
+  const outputConfig = resolveOptionalObjectConfig<OutputConfig>(
+    config.output,
+    "output",
+  );
+  validateOutputConfigKeys(outputConfig);
 
   const entry =
     config.entry === undefined
@@ -587,6 +614,15 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
         transportConfig.baseUrl === undefined
           ? undefined
           : assertHttpUrl(transportConfig.baseUrl, "transport.baseUrl"),
+    },
+    output: {
+      crossOriginLoading:
+        outputConfig.crossOriginLoading === undefined
+          ? undefined
+          : assertCrossOriginPolicy(
+              outputConfig.crossOriginLoading,
+              "output.crossOriginLoading",
+            ),
     },
     bundler: resolveBundlerConfig<TBundlerCfg>(config.bundler),
     plugins: resolvePluginsConfig(config.plugins),
@@ -768,7 +804,7 @@ function validateRootConfigKeys(config: Record<string, unknown>): void {
     config,
     PUBLIC_ROOT_CONFIG_KEYS,
     "config",
-    "entry, html, dev, server, transport, app, routing, bundler, plugins, or pages",
+    "entry, html, output, dev, server, transport, app, routing, bundler, plugins, or pages",
     (key) => {
       if (key === "apps") {
         return "[evjs] config.apps is resolved framework metadata and cannot be configured. Use app for one explicit SPA, routing for file routes, or pages for explicit page outputs.";
@@ -844,6 +880,15 @@ function validateTransportConfigKeys(transport: TransportConfig): void {
     PUBLIC_TRANSPORT_CONFIG_KEYS,
     "transport",
     "baseUrl",
+  );
+}
+
+function validateOutputConfigKeys(output: OutputConfig): void {
+  assertKnownConfigKeys(
+    output,
+    PUBLIC_OUTPUT_CONFIG_KEYS,
+    "output",
+    "crossOriginLoading",
   );
 }
 
@@ -1135,6 +1180,18 @@ function assertPageHydrationMode(value: unknown, path: string): HydrationMode {
   }
   throw new Error(
     `[evjs] ${path} must be "none", "load", "visible", or "idle".`,
+  );
+}
+
+function assertCrossOriginPolicy(
+  value: unknown,
+  path: string,
+): CrossOriginLoadingPolicy {
+  if (value === false || value === "anonymous" || value === "use-credentials") {
+    return value;
+  }
+  throw new Error(
+    `[evjs] ${path} must be false, "anonymous", or "use-credentials".`,
   );
 }
 

@@ -51,6 +51,20 @@ describe("defineConfig", () => {
       },
     });
   });
+
+  it("accepts output crossorigin loading configuration", () => {
+    const config = defineConfig({
+      output: {
+        crossOriginLoading: "anonymous",
+      },
+    });
+
+    expect(config).toEqual({
+      output: {
+        crossOriginLoading: "anonymous",
+      },
+    });
+  });
 });
 
 describe("resolveConfig", () => {
@@ -74,6 +88,7 @@ describe("resolveConfig", () => {
     expect(resolved.routing).toBeUndefined();
     expect(resolved.server.dev.port).toBe(CONFIG_DEFAULTS.serverPort);
     expect(resolved.server.dev.https).toBe(false);
+    expect(resolved.output).toEqual({ crossOriginLoading: undefined });
     expect(resolved.bundler).toBeUndefined();
     expect(resolved.plugins).toEqual([]);
   });
@@ -120,7 +135,62 @@ describe("resolveConfig", () => {
         vite: {},
       }),
     ).toThrow(
-      "[evjs] config.vite is not supported. Use entry, html, dev, server, transport, app, routing, bundler, plugins, or pages.",
+      "[evjs] config.vite is not supported. Use entry, html, output, dev, server, transport, app, routing, bundler, plugins, or pages.",
+    );
+  });
+
+  it("resolves output crossorigin loading configuration", () => {
+    expect(
+      resolveConfig({
+        output: {
+          crossOriginLoading: "anonymous",
+        },
+      }).output,
+    ).toEqual({ crossOriginLoading: "anonymous" });
+
+    expect(
+      resolveConfig({
+        output: {
+          crossOriginLoading: "use-credentials",
+        },
+      }).output,
+    ).toEqual({ crossOriginLoading: "use-credentials" });
+
+    expect(
+      resolveConfig({
+        output: {
+          crossOriginLoading: false,
+        },
+      }).output,
+    ).toEqual({ crossOriginLoading: false });
+  });
+
+  it("rejects invalid output declarations", () => {
+    expect(() =>
+      resolveConfig({
+        output: null as never,
+      }),
+    ).toThrow("[evjs] output must be a config object.");
+
+    expect(() =>
+      resolveConfig({
+        output: {
+          // @ts-expect-error runtime config loading can still produce unknown keys.
+          crossOrigin: "anonymous",
+        },
+      }),
+    ).toThrow(
+      "[evjs] output.crossOrigin is not supported. Use crossOriginLoading.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        output: {
+          crossOriginLoading: true as never,
+        },
+      }),
+    ).toThrow(
+      '[evjs] output.crossOriginLoading must be false, "anonymous", or "use-credentials".',
     );
   });
 

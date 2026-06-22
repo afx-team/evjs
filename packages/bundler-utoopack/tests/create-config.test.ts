@@ -16,6 +16,9 @@ describe("createUtoopackConfig", () => {
     return {
       entry: "./src/main.tsx",
       html: "./index.html",
+      output: {
+        crossOriginLoading: undefined,
+      },
       dev: {
         port: 41234,
         https: true,
@@ -131,6 +134,24 @@ describe("createUtoopackConfig", () => {
         process.env.NODE_ENV = previousNodeEnv;
       }
     }
+  });
+
+  it("sets crossorigin for dynamically loaded browser chunks", async () => {
+    const config = createResolvedConfig({
+      output: {
+        crossOriginLoading: "use-credentials",
+      },
+    });
+    const plan = createPlan(config);
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.output?.crossOriginLoading).toBe("use-credentials");
   });
 
   it("keeps SPA history fallback away from custom framework runtime paths", async () => {

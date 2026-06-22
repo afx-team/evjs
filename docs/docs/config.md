@@ -21,6 +21,7 @@ export default defineConfig({
 |---------|---------|
 | `entry` | `./src/main.tsx` |
 | `html` | `./index.html` |
+| `output.crossOriginLoading` | unset |
 | `routing.mode` | `spa` |
 | `dev.port` | `3000` |
 | `server.dev.port` | `3001` |
@@ -29,11 +30,30 @@ export default defineConfig({
 
 The server function endpoint is derived from `server.basePath`; there is no separate public function-endpoint config.
 
-The top-level config object accepts only `entry`, `html`, `dev`, `server`,
-`transport`, `app`, `routing`, `bundler`, `plugins`, and
+The top-level config object accepts only `entry`, `html`, `output`, `dev`,
+`server`, `transport`, `app`, `routing`, `bundler`, `plugins`, and
 `pages`. Framework metadata such as generated app declarations, page-route
 runtime wiring, and server-function endpoints is derived by evjs instead of
 being configured directly.
+
+## Output HTML Assets
+
+Set `output.crossOriginLoading` to add a `crossorigin` attribute to JavaScript and CSS
+asset tags that evjs injects into emitted HTML documents, and to configure the
+browser chunk loader to use the same policy for dynamically loaded chunks:
+
+```ts
+export default defineConfig({
+  output: {
+    crossOriginLoading: "anonymous",
+  },
+});
+```
+
+`output.crossOriginLoading` accepts `false`, `"anonymous"`, or
+`"use-credentials"`. Leave it unset to omit the attribute and use the bundler
+default for dynamic chunks. Use a `transformHtml` plugin when different HTML
+documents or individual initial assets need different attributes.
 
 ## Routing
 
@@ -449,10 +469,11 @@ export default defineConfig({
 });
 ```
 
-`dev`, `server`, `server.dev`, and `transport` must be objects when provided;
-use `server: false` to disable the framework server. `server.entry` must be a
-non-empty module path when provided, and evjs validates configured source
-paths such as `server.entry` during app graph analysis before the bundler runs.
+`output`, `dev`, `server`, `server.dev`, and `transport` must be objects when
+provided; use `server: false` to disable the framework server. `server.entry`
+must be a non-empty module path when provided, and evjs validates configured
+source paths such as `server.entry` during app graph analysis before the
+bundler runs.
 `server.basePath` must be a non-empty URL
 pathname that starts with `/`, without whitespace, a query string, or a hash;
 trailing slashes are normalized away. If `server.rsc` is configured as an

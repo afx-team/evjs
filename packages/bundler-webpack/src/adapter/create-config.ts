@@ -90,6 +90,7 @@ export async function createWebpackConfigs(
         outputPath: outputPaths.clientDir,
         publicPath: plan.runtime.publicPath,
         functionEndpoint: config.server.functionRuntime.endpoint,
+        crossOriginLoading: config.output.crossOriginLoading,
         rscClientReferences: getRscClientReferenceModules(cwd, graph),
         enableRscClientRuntime: plan.entries.some(
           (entry) =>
@@ -114,6 +115,7 @@ export async function createWebpackConfigs(
         outputPath: outputPaths.serverDir,
         publicPath: plan.runtime.publicPath,
         functionEndpoint: config.server.functionRuntime.endpoint,
+        crossOriginLoading: undefined,
         rscClientReferences: getRscClientReferenceModules(cwd, graph),
         enableRscClientRuntime: false,
         clean: (options.clean ?? true) && rscServerEntries.length === 0,
@@ -133,6 +135,7 @@ export async function createWebpackConfigs(
         outputPath: outputPaths.serverDir,
         publicPath: plan.runtime.publicPath,
         functionEndpoint: config.server.functionRuntime.endpoint,
+        crossOriginLoading: undefined,
         rscClientReferences: getRscClientReferenceModules(cwd, graph),
         enableRscClientRuntime: false,
         clean: false,
@@ -175,6 +178,7 @@ function createWebpackConfig(options: {
   outputPath: string;
   publicPath: PublicPathOutput;
   functionEndpoint: string;
+  crossOriginLoading: ResolvedConfig["output"]["crossOriginLoading"];
   rscClientReferences: RscClientReferenceConfig[];
   enableRscClientRuntime: boolean;
   reactServerConditions: boolean;
@@ -199,6 +203,8 @@ function createWebpackConfig(options: {
         ? `[name].[contenthash:8]${outputExtension}`
         : `[name]${outputExtension}`,
       publicPath: webpackPublicPath(options.publicPath),
+      crossOriginLoading:
+        options.target === "web" ? options.crossOriginLoading : undefined,
       clean: options.clean,
       library:
         options.target === "node"
@@ -298,7 +304,11 @@ function createWebpackConfig(options: {
         ),
         __EVJS_FUNCTION_ENDPOINT__: JSON.stringify(options.functionEndpoint),
       }),
-      new MiniCssExtractPlugin(),
+      new MiniCssExtractPlugin(
+        options.target === "web" && options.crossOriginLoading
+          ? { attributes: { crossorigin: options.crossOriginLoading } }
+          : undefined,
+      ),
       ...createRscPlugins(options),
     ],
     stats: {

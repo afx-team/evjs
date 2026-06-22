@@ -22,6 +22,7 @@ import {
   diffBuildPlan,
   discoverPageRoutes,
   generateHtml,
+  type HtmlAsset,
 } from "./build-tools/index.js";
 import {
   PAGE_ROUTE_CONVENTION_DOCS_URL,
@@ -1043,6 +1044,17 @@ function createHtmlDocumentInfo(
   };
 }
 
+function withHtmlAssetCrossOrigin(
+  assets: string[],
+  crossOriginLoading: ResolvedConfig["output"]["crossOriginLoading"],
+): HtmlAsset[] {
+  if (!crossOriginLoading) return assets;
+  return assets.map((url) => ({
+    url,
+    attrs: { crossorigin: crossOriginLoading },
+  }));
+}
+
 async function emitFrameworkHtml<TBundlerCfg>(
   cwd: string,
   config: ResolvedConfig<TBundlerCfg>,
@@ -1064,8 +1076,14 @@ async function emitFrameworkHtml<TBundlerCfg>(
 
     const doc = generateHtml({
       template: path.resolve(cwd, html.template),
-      js: htmlInfo.assets.js,
-      css: htmlInfo.assets.css,
+      js: withHtmlAssetCrossOrigin(
+        htmlInfo.assets.js,
+        config.output.crossOriginLoading,
+      ),
+      css: withHtmlAssetCrossOrigin(
+        htmlInfo.assets.css,
+        config.output.crossOriginLoading,
+      ),
     });
     doc.documentElement?.setAttribute("data-evjs-build", output.buildId);
     if (htmlInfo.kind === "page") {

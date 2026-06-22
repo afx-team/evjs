@@ -20,6 +20,7 @@ export default defineConfig({
 |------|--------|
 | `entry` | `./src/main.tsx` |
 | `html` | `./index.html` |
+| `output.crossOriginLoading` | 未设置 |
 | `routing.mode` | `spa` |
 | `dev.port` | `3000` |
 | `server.dev.port` | `3001` |
@@ -28,10 +29,28 @@ export default defineConfig({
 
 服务端函数端点从 `server.basePath` 派生，没有单独的公开函数端点配置。
 
-顶层 config object 只接受 `entry`、`html`、`dev`、`server`、`transport`、
-`app`、`routing`、`bundler`、`plugins` 和 `pages`。
+顶层 config object 只接受 `entry`、`html`、`output`、`dev`、`server`、
+`transport`、`app`、`routing`、`bundler`、`plugins` 和 `pages`。
 生成的 app 声明、页面路由运行时接线、server-function endpoint 等框架
 metadata 都由 evjs 派生，不需要也不能直接配置。
+
+## 输出 HTML 资源
+
+设置 `output.crossOriginLoading` 可以为 evjs 注入到输出 HTML document 中的
+JavaScript 和 CSS 资源标签添加 `crossorigin` 属性，并让浏览器 chunk loader
+对动态加载的 chunk 使用同一策略：
+
+```ts
+export default defineConfig({
+  output: {
+    crossOriginLoading: "anonymous",
+  },
+});
+```
+
+`output.crossOriginLoading` 可设置为 `false`、`"anonymous"` 或
+`"use-credentials"`。不设置时不会添加该属性，动态 chunk 使用 bundler 默认行为。
+如果不同 HTML document 或单个首屏资源需要不同属性，请使用 `transformHtml` 插件。
 
 ## 路由
 
@@ -422,8 +441,8 @@ export default defineConfig({
 });
 ```
 
-提供 `dev`、`server`、`server.dev` 和 `transport` 时，它们都必须是 object；使用
-`server: false` 关闭框架服务端。提供 `server.entry` 时，它必须是非空模块路径；
+提供 `output`、`dev`、`server`、`server.dev` 和 `transport` 时，它们都必须是
+object；使用 `server: false` 关闭框架服务端。提供 `server.entry` 时，它必须是非空模块路径；
 evjs 会在 app graph analysis 阶段、bundler 运行之前校验 `server.entry` 等已配置的
 source path。`server.basePath` 必须是以 `/` 开头的非空 URL pathname，不能包含空白字符、query
 string 或 hash；尾部 `/` 会被归一化移除。如果 `server.rsc` 配置为 object，
