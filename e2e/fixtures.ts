@@ -46,6 +46,8 @@ function getContentType(ext: string): string {
     case ".html":
       return "text/html";
     case ".js":
+    case ".cjs":
+    case ".mjs":
       return "application/javascript";
     case ".css":
       return "text/css";
@@ -391,11 +393,12 @@ export function createExampleTest(exampleName: string) {
           serverEntry,
         );
 
-        // Write a CJS bootstrap that requires the hashed server bundle
+        // Match the runtime loader path so package ESM scopes are covered.
         const bootstrapPath = path.join(exampleDir, "dist", "_e2e_start.cjs");
         fs.writeFileSync(
           bootstrapPath,
           [
+            `(async () => {`,
             `const fs = require("node:fs");`,
             `const path = require("node:path");`,
             `const { pathToFileURL } = require("node:url");`,
@@ -403,12 +406,13 @@ export function createExampleTest(exampleName: string) {
             `globalThis.__EVJS_MANIFEST__ = manifest;`,
             `const serverDir = path.dirname(${JSON.stringify(serverEntryPath)});`,
             `globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => { const mod = await import(pathToFileURL(path.resolve(serverDir, asset)).href); const nested = mod && typeof mod.default === "object" ? mod.default : undefined; return nested && ("default" in nested || "render" in nested) ? nested : mod; };`,
-            `const serverModule = require(${JSON.stringify(serverEntryPath)});`,
+            `const serverModule = await import(pathToFileURL(${JSON.stringify(serverEntryPath)}).href);`,
             `const handler = serverModule.default?.default ?? serverModule.default ?? serverModule;`,
             `const { serve } = require("@hono/node-server");`,
             `serve({ fetch: handler.fetch, port: 0 }, (info) => {`,
             `  console.log("E2E_SERVER_READY:" + info.port);`,
             `});`,
+            `})().catch((err) => { console.error(err); process.exit(1); });`,
           ].join("\n"),
         );
 

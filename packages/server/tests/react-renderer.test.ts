@@ -3,7 +3,7 @@ import {
   assertFrameworkManifestShape,
   type BuildOutput,
 } from "@evjs/shared/manifest";
-import { createElement } from "react";
+import { createElement, lazy, Suspense } from "react";
 import { describe, expect, it } from "vitest";
 import {
   createReactRscFlightAdapter,
@@ -72,6 +72,50 @@ describe("createReactServerRenderAdapter", () => {
         "</html>",
       ].join(""),
     });
+  });
+
+  it("waits for Suspense content during complete server rendering", async () => {
+    const adapter = createReactServerRenderAdapter();
+    const LazyContent = lazy(async () => ({
+      default() {
+        return createElement("strong", null, "ready");
+      },
+    }));
+
+    const result = await adapter(
+      {
+        default() {
+          return createElement(
+            Suspense,
+            { fallback: createElement("span", null, "loading") },
+            createElement(LazyContent),
+          );
+        },
+      },
+      {
+        request: new Request("https://example.com/dashboard"),
+        manifest: createManifest(),
+        pageId: "dashboard",
+        page: {
+          assets: { js: ["dashboard.js"], css: [] },
+          render: "ssr",
+          rendering: {
+            component: "server",
+            html: "server",
+            streaming: false,
+            hydrate: "load",
+          },
+          mount: "#root",
+        },
+      },
+    );
+
+    if (!result || result instanceof Response || typeof result === "string") {
+      throw new Error("Expected HTML result.");
+    }
+
+    expect(result.html).toContain("<strong>ready</strong>");
+    expect(result.html).not.toContain("loading");
   });
 
   it("does not embed framework manifest internals in default hydration props", async () => {

@@ -47,6 +47,7 @@ export interface PprRuntimeOptions {
 export interface ServerRenderContext {
   request: Request;
   manifest: BuildOutput;
+  pageUrl?: string;
   route?: RouteOutput;
   page?: PageOutput;
   pageId?: string;
@@ -154,6 +155,7 @@ export interface PprRegionCache {
 interface PprRegionMatch {
   pageId: string;
   regionId: string;
+  pageUrl?: string;
 }
 
 const pprRegionCaches = new WeakMap<
@@ -379,6 +381,7 @@ export async function handleFrameworkRenderRequest(
   const ctx: ServerRenderContext = {
     request,
     manifest: options.manifest,
+    pageUrl: url.toString(),
     route,
     page,
     pageId,
@@ -468,6 +471,9 @@ export async function handlePprRegionRequest(
   let match: PprRegionMatch | undefined;
   try {
     match = matchPprRegion(options.manifest, url.pathname);
+    if (match) {
+      match = withPprRegionPageUrl(options.manifest, match, url);
+    }
   } catch (error) {
     if (error instanceof PprRegionRequestError) {
       const response = textResponse(error.message, 400);
@@ -557,7 +563,7 @@ async function renderPprMergedPageResponse(
     const regionResponse = await renderPprRegionResponse(
       options,
       request,
-      { pageId, regionId },
+      { pageId, regionId, pageUrl: request.url },
       coordinator,
     );
     if (!isPatchablePprRegionResponse(regionResponse)) continue;
@@ -619,7 +625,7 @@ async function renderPprStreamingPageResponse(
           const regionResponse = await renderPprRegionResponse(
             options,
             request,
-            { pageId, regionId },
+            { pageId, regionId, pageUrl: request.url },
             coordinator,
           );
           if (!isPatchablePprRegionResponse(regionResponse)) continue;
@@ -725,6 +731,7 @@ async function renderFreshPprRegionResponse(
   const ctx: ServerRenderContext = {
     request,
     manifest: options.manifest,
+    pageUrl: match.pageUrl,
     page,
     pageId: match.pageId,
     regionId: match.regionId,
@@ -879,6 +886,89 @@ function resolveRscFlightPageUrl(url: URL): string | undefined {
   return result.value;
 }
 
+function withPprRegionPageUrl(
+  manifest: BuildOutput,
+  match: PprRegionMatch,
+  url: URL,
+): PprRegionMatch {
+  const page = manifest.pages[match.pageId];
+  const explicitPageUrl = resolvePprRegionPageUrl(url);
+  const pageUrl =
+    explicitPageUrl ?? inferStaticPprRegionPageUrl(manifest, match, page, url);
+  if (!pageUrl && shouldRequirePprRegionPageUrl(manifest, match, page)) {
+    throw new PprRegionRequestError(
+      `[evjs] PPR region request url is required for page "${match.pageId}" because its route cannot be inferred from the direct region endpoint.`,
+    );
+  }
+  if (pageUrl && !pageUrlMatchesPage(manifest, match.pageId, page, pageUrl)) {
+    throw new PprRegionRequestError(
+      `[evjs] PPR region request url does not match page "${match.pageId}".`,
+    );
+  }
+  return pageUrl ? { ...match, pageUrl } : match;
+}
+
+function inferStaticPprRegionPageUrl(
+  manifest: BuildOutput,
+  match: PprRegionMatch,
+  page: PageOutput | undefined,
+  requestUrl: URL,
+): string | undefined {
+  const paths = getPprRegionPagePaths(manifest, match.pageId, page);
+  return paths.length === 1 && isStaticPagePath(paths[0])
+    ? new URL(paths[0], requestUrl).toString()
+    : undefined;
+}
+
+function shouldRequirePprRegionPageUrl(
+  manifest: BuildOutput,
+  match: PprRegionMatch,
+  page: PageOutput | undefined,
+): boolean {
+  const paths = getPprRegionPagePaths(manifest, match.pageId, page);
+  return (
+    paths.length > 0 && !(paths.length === 1 && isStaticPagePath(paths[0]))
+  );
+}
+
+function getPprRegionPagePaths(
+  manifest: BuildOutput,
+  pageId: string,
+  page: PageOutput | undefined,
+): string[] {
+  const routePaths = manifest.routes
+    .filter((route) => route.pageId === pageId)
+    .map((route) => route.path);
+  return routePaths.length > 0 ? routePaths : page?.path ? [page.path] : [];
+}
+
+function isStaticPagePath(pathname: string): boolean {
+  return !/(^|\/)(?:[$:]|[*])/.test(pathname);
+}
+
+function resolvePprRegionPageUrl(url: URL): string | undefined {
+  const result = resolveRscFlightRequestPageUrl(url);
+  if (result.error) {
+    throw new PprRegionRequestError(
+      formatPprRegionRequestPageUrlError(result.error),
+    );
+  }
+  return result.value;
+}
+
+function formatPprRegionRequestPageUrlError(
+  error: RscFlightRequestPageUrlError,
+): string {
+  switch (error) {
+    case "not-absolute-path":
+      return '[evjs] PPR region request url must be an absolute path starting with "/".';
+    case "invalid-path":
+      return "[evjs] PPR region request url is not a valid URL path.";
+    case "cross-origin-or-hash":
+      return "[evjs] PPR region request url must stay on the same origin and must not include a hash.";
+  }
+}
+
 class RscFlightRequestError extends Error {}
 
 function formatRscFlightRequestPageUrlError(
@@ -948,10 +1038,17 @@ function validateRscFlightContext(ctx: RscFlightContext): Response | undefined {
 
 function rscFlightPageUrlMatchesPage(ctx: RscFlightContext): boolean {
   if (!ctx.pageUrl || !ctx.pageId) return true;
-  const pathname = normalizeRoutePathname(new URL(ctx.pageUrl).pathname);
-  const pageRoutes = ctx.manifest.routes.filter(
-    (route) => route.pageId === ctx.pageId,
-  );
+  return pageUrlMatchesPage(ctx.manifest, ctx.pageId, ctx.page, ctx.pageUrl);
+}
+
+function pageUrlMatchesPage(
+  manifest: BuildOutput,
+  pageId: string,
+  page: PageOutput | undefined,
+  pageUrl: string,
+): boolean {
+  const pathname = normalizeRoutePathname(new URL(pageUrl).pathname);
+  const pageRoutes = manifest.routes.filter((route) => route.pageId === pageId);
 
   if (pageRoutes.length > 0) {
     return pageRoutes.some((route) =>
@@ -959,7 +1056,7 @@ function rscFlightPageUrlMatchesPage(ctx: RscFlightContext): boolean {
     );
   }
 
-  return ctx.page?.path ? pageRoutePathMatches(ctx.page.path, pathname) : true;
+  return page?.path ? pageRoutePathMatches(page.path, pathname) : true;
 }
 
 function normalizeRenderCoordinator(
@@ -1304,7 +1401,7 @@ function createPprRegionCacheKey(
   request: Request,
   match: PprRegionMatch,
 ): string {
-  const url = new URL(request.url);
+  const url = new URL(match.pageUrl ?? request.url, request.url);
   return `${match.pageId}:${match.regionId}:${normalizeRoutePathname(url.pathname)}${url.search}`;
 }
 

@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -26,7 +25,6 @@ import { webpackAdapter } from "../src/index.js";
 import type { WebpackStatsLike } from "../src/manifest-generator.js";
 
 const tempDirs: string[] = [];
-const require = createRequire(import.meta.url);
 const WEBPACK_BUILD_TEST_TIMEOUT = 20_000;
 const WEBPACK_DEV_TEST_TIMEOUT = 20_000;
 const WEBPACK_DEV_PORT_BASE = 31_000 + (process.pid % 1_000) * 10;
@@ -314,14 +312,14 @@ describe("webpack stats ownership", () => {
     const serverStats: WebpackStatsLike = {
       entrypoints: {
         server: {
-          assets: ["server.js"],
+          assets: ["server.cjs"],
         },
       },
       chunks: [
         {
           id: 1,
           names: ["server"],
-          files: ["server.js"],
+          files: ["server.cjs"],
         },
       ],
       modules: [
@@ -334,14 +332,14 @@ describe("webpack stats ownership", () => {
     const rscStats: WebpackStatsLike = {
       entrypoints: {
         "insights-rsc": {
-          assets: ["insights-rsc.js"],
+          assets: ["insights-rsc.cjs"],
         },
       },
       chunks: [
         {
           id: 1,
           names: ["insights-rsc"],
-          files: ["insights-rsc.js"],
+          files: ["insights-rsc.cjs"],
         },
       ],
       modules: [
@@ -366,12 +364,12 @@ describe("webpack stats ownership", () => {
       {
         id: 1,
         names: ["server"],
-        files: ["server.js"],
+        files: ["server.cjs"],
       },
       {
         id: "server-rsc:1",
         names: ["server-rsc:insights-rsc"],
-        files: ["insights-rsc.js"],
+        files: ["insights-rsc.cjs"],
       },
     ]);
     expect(merged.modules).toEqual([
@@ -576,10 +574,10 @@ describe("webpackAdapter build", () => {
         hydrate: "load",
       });
       expect(manifest.assets["dashboard-server"]).toEqual({
-        js: ["dashboard-server.js"],
+        js: ["dashboard-server.cjs"],
         css: [],
       });
-      expect(manifest.server?.entry).toBe("server.js");
+      expect(manifest.server?.entry).toBe("server.cjs");
       expect(manifest.assets.plugin).toEqual({ js: ["plugin.js"], css: [] });
       expect(html).toContain('src="/main.js"');
       expect(html).toContain('data-evjs-kind="app"');
@@ -764,11 +762,11 @@ describe("webpackAdapter build", () => {
       );
       expect(manifest.server?.renderers?.["insights-server"]).toMatchObject({
         kind: "page-server",
-        assets: { js: ["insights-server.js"], css: ["insights-server.css"] },
+        assets: { js: ["insights-server.cjs"], css: ["insights-server.css"] },
       });
       expect(manifest.server?.renderers?.["insights-rsc"]).toMatchObject({
         kind: "rsc-page",
-        assets: { js: ["insights-rsc.js"], css: ["insights-rsc.css"] },
+        assets: { js: ["insights-rsc.cjs"], css: ["insights-rsc.css"] },
       });
       expect(manifest.pages.insights.assets).toEqual({
         js: ["evjs-rsc-client.js"],
@@ -873,11 +871,11 @@ describe("webpackAdapter build", () => {
 
       expect(manifest.pages.campaign.ppr).toMatchObject({
         delivery: "merge",
-        shell: { js: ["campaign-ppr-shell.js"], css: [] },
+        shell: { js: ["campaign-ppr-shell.cjs"], css: [] },
         regions: {
           offer: {
             id: "offer",
-            assets: { js: ["campaign-offer-ppr-region.js"], css: [] },
+            assets: { js: ["campaign-offer-ppr-region.cjs"], css: [] },
             component: "./src/pages/Offer.tsx",
             cache: "no-store",
           },
@@ -887,7 +885,7 @@ describe("webpackAdapter build", () => {
         kind: "ppr-shell",
         owner: { pageId: "campaign" },
         module: "./src/pages/Campaign.tsx",
-        assets: { js: ["campaign-ppr-shell.js"], css: [] },
+        assets: { js: ["campaign-ppr-shell.cjs"], css: [] },
       });
       expect(
         manifest.server?.renderers?.["campaign-offer-ppr-region"],
@@ -895,7 +893,7 @@ describe("webpackAdapter build", () => {
         kind: "ppr-region",
         owner: { pageId: "campaign", regionId: "offer" },
         module: "./src/pages/Offer.tsx",
-        assets: { js: ["campaign-offer-ppr-region.js"], css: [] },
+        assets: { js: ["campaign-offer-ppr-region.cjs"], css: [] },
       });
 
       const shellResponse = await requestServerEntry(
@@ -1463,7 +1461,7 @@ async function requestServerEntry(
   };
 
   try {
-    const serverModule = require(serverEntryPath);
+    const serverModule = await import(pathToFileURL(serverEntryPath).href);
     const handler =
       serverModule.default?.default ?? serverModule.default ?? serverModule;
     return await handler.fetch(new Request(`https://example.com${pathname}`));

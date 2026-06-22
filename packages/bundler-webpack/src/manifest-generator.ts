@@ -104,7 +104,7 @@ function readEntrypointAssets(stats: WebpackStatsLike | undefined): {
         typeof asset === "string"
           ? normalizeAssetName(asset)
           : normalizeAssetName(asset.name);
-      if (assetName?.endsWith(".js")) {
+      if (assetName && isJavaScriptAsset(assetName)) {
         assets.js.push(assetName);
       } else if (assetName?.endsWith(".css")) {
         assets.css.push(assetName);
@@ -157,7 +157,7 @@ function assetsFromChunks(
   for (const chunk of chunks ?? []) {
     for (const file of chunkFiles.get(chunk) ?? []) {
       const name = normalizeAssetName(file);
-      if (name?.endsWith(".js")) {
+      if (name && isJavaScriptAsset(name)) {
         assets.js.push(name);
       } else if (name?.endsWith(".css")) {
         assets.css.push(name);
@@ -183,6 +183,10 @@ function dedupeAssets(assets: AssetGroup): AssetGroup {
 
 function normalizeAssetName(name: string | undefined): string | undefined {
   return name?.replace(/^\.\//, "");
+}
+
+function isJavaScriptAsset(name: string): boolean {
+  return /\.(?:cjs|mjs|js)$/.test(name);
 }
 
 function normalizeModuleId(

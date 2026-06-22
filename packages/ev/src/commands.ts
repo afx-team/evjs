@@ -1247,21 +1247,35 @@ function readServerEntryFromStats(
 
   try {
     const stats = JSON.parse(fs.readFileSync(statsPath, "utf-8")) as {
-      entrypoints?: Record<string, { assets?: Array<{ name?: string }> }>;
+      entrypoints?: Record<
+        string,
+        { assets?: Array<string | { name?: string }> }
+      >;
     };
     const entrypoints = stats.entrypoints ?? {};
     const entrypointValues = Object.values(entrypoints);
     const firstEntry =
       entrypoints.server ??
       (entrypointValues.length === 1 ? entrypointValues[0] : undefined);
-    const jsAsset = firstEntry?.assets?.find((asset) =>
-      asset.name?.endsWith(".js"),
-    );
-    return normalizeAssetName(jsAsset?.name);
+    const jsAsset = firstEntry?.assets?.find((asset) => {
+      const assetName = readStatsAssetName(asset);
+      return assetName ? isJavaScriptAsset(assetName) : false;
+    });
+    return normalizeAssetName(readStatsAssetName(jsAsset));
   } catch (err) {
     logger.warn`Failed to parse server stats.json: ${err}`;
     return undefined;
   }
+}
+
+function readStatsAssetName(
+  asset: string | { name?: string } | undefined,
+): string | undefined {
+  return typeof asset === "string" ? asset : asset?.name;
+}
+
+function isJavaScriptAsset(name: string): boolean {
+  return /\.(?:cjs|mjs|js)$/.test(name);
 }
 
 function isExistingDevServerEntry(
@@ -1293,9 +1307,10 @@ async function findDevServerEntry(
 
   const serverDir = path.resolve(cwd, distDir, "server");
   const files: string[] = await fs.promises.readdir(serverDir).catch(() => []);
+  if (files.includes("server.cjs")) return "server.cjs";
   if (files.includes("server.js")) return "server.js";
 
-  const jsFiles = files.filter((file) => file.endsWith(".js"));
+  const jsFiles = files.filter(isJavaScriptAsset);
   return jsFiles.length === 1 ? jsFiles[0] : undefined;
 }
 

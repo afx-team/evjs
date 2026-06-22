@@ -182,6 +182,7 @@ function createWebpackConfig(options: {
   target: "web" | "node";
 }): Configuration {
   const isProduction = options.mode === "production";
+  const outputExtension = options.target === "node" ? ".cjs" : ".js";
 
   return {
     name: options.name,
@@ -191,8 +192,12 @@ function createWebpackConfig(options: {
     entry: createEntryObject(options.cwd, options.entries),
     output: {
       path: options.outputPath,
-      filename: isProduction ? "[name].[contenthash:8].js" : "[name].js",
-      chunkFilename: isProduction ? "[name].[contenthash:8].js" : "[name].js",
+      filename: isProduction
+        ? `[name].[contenthash:8]${outputExtension}`
+        : `[name]${outputExtension}`,
+      chunkFilename: isProduction
+        ? `[name].[contenthash:8]${outputExtension}`
+        : `[name]${outputExtension}`,
       publicPath: webpackPublicPath(options.publicPath),
       clean: options.clean,
       library:

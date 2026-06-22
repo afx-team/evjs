@@ -18,8 +18,8 @@ import type {
   RouteOutput,
   ServerRendererOutput,
 } from "@evjs/shared/manifest";
-import { type ComponentType, createElement } from "react";
-import { renderToString } from "react-dom/server";
+import { type ComponentType, createElement, type ReactNode } from "react";
+import * as ReactDomServer from "react-dom/server";
 import type { RscCoordinator, RscFlightContext } from "./framework.js";
 import { textResponse } from "./responses.js";
 import {
@@ -31,6 +31,7 @@ import {
 export interface ReactServerRenderContext {
   request: Request;
   manifest: BuildOutput;
+  pageUrl?: string;
   route?: RouteOutput;
   page?: PageOutput;
   pageId?: string;
@@ -102,8 +103,9 @@ export function createReactServerRenderAdapter(
 
     const Component = module.default as ComponentType<Record<string, unknown>>;
     const props = await resolveServerRenderProps(options, ctx);
-    const appHtml = renderToString(
+    const appHtml = await renderReactHtml(
       createPageElement(Component, props, ctx, resolvePageProvider(module)),
+      shouldRenderPprShell(ctx) ? "shell" : "complete",
     );
 
     if (ctx.regionId) {
@@ -125,6 +127,52 @@ export function createReactServerRenderAdapter(
       html: renderDefaultDocument(appHtml, ctx, props),
     };
   };
+}
+
+type ReactRenderReadiness = "complete" | "shell";
+
+async function renderReactHtml(
+  element: ReactNode,
+  readiness: ReactRenderReadiness = "complete",
+): Promise<string> {
+  if (readiness === "shell") {
+    return ReactDomServer.renderToString(element);
+  }
+
+  const renderToReadableStream = ReactDomServer.renderToReadableStream as
+    | typeof ReactDomServer.renderToReadableStream
+    | undefined;
+  if (!renderToReadableStream) {
+    return ReactDomServer.renderToString(element);
+  }
+
+  const stream = await renderToReadableStream(element);
+  await stream.allReady;
+  return readReactHtmlStream(stream);
+}
+
+async function readReactHtmlStream(
+  stream: ReadableStream<Uint8Array>,
+): Promise<string> {
+  const decoder = new TextDecoder();
+  const reader = stream.getReader();
+  let html = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      html += decoder.decode(value, { stream: true });
+    }
+    html += decoder.decode();
+    return html;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function shouldRenderPprShell(ctx: ReactServerRenderContext): boolean {
+  return Boolean(ctx.page?.ppr && !ctx.regionId);
 }
 
 export function createReactRscFlightAdapter(
@@ -381,7 +429,7 @@ async function renderRscRendererModule(
 
   const Component = module.default as ComponentType<Record<string, unknown>>;
   const props = await resolveRscRenderProps(options, ctx);
-  return renderToString(createPageElement(Component, props, ctx));
+  return renderReactHtml(createPageElement(Component, props, ctx));
 }
 
 function getModuleFunction(

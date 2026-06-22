@@ -1664,6 +1664,91 @@ describe("createApp", () => {
     expect(await regionHead.text()).toBe("");
   });
 
+  it("passes and validates the source page URL for direct PPR region requests", async () => {
+    const manifest = createManifest();
+    manifest.pages.order = {
+      assets: { js: [], css: [] },
+      render: "ssr",
+      rendering: {
+        component: "server",
+        html: "partial",
+        prerender: "partial",
+        streaming: false,
+        hydrate: "none",
+      },
+      ppr: {
+        delivery: "merge",
+        shell: { js: ["order-ppr-shell.js"], css: [] },
+        regions: {
+          details: {
+            id: "details",
+            assets: { js: ["order-details-ppr-region.js"], css: [] },
+            component: "./src/pages/orders/Details.region.tsx",
+            cache: { revalidate: 60 },
+          },
+        },
+      },
+    };
+    manifest.routes.push({
+      id: "order",
+      path: "/orders/$orderId",
+      pageId: "order",
+    });
+    let renderCount = 0;
+    const app = createApp({
+      framework: {
+        manifest,
+        render: createModuleRenderCoordinator({
+          renderers: {
+            "order-details-region": {
+              kind: "ppr-region",
+              owner: { pageId: "order", regionId: "details" },
+              load: async () => ({
+                default(ctx: ServerRenderContext) {
+                  const pageUrl = ctx.pageUrl
+                    ? new URL(ctx.pageUrl)
+                    : undefined;
+                  return `<p>${++renderCount}:${pageUrl?.pathname}${pageUrl?.search}</p>`;
+                },
+              }),
+            },
+          },
+        }),
+      },
+    });
+
+    const first = await app.request(
+      "/__evjs/ppr/order/details?url=%2Forders%2F42%3Ftab%3Dopen",
+    );
+    const second = await app.request(
+      "/__evjs/ppr/order/details?url=%2Forders%2F42%3Ftab%3Dopen",
+    );
+    const third = await app.request(
+      "/__evjs/ppr/order/details?url=%2Forders%2F43%3Ftab%3Dopen",
+    );
+    const invalid = await app.request(
+      "/__evjs/ppr/order/details?url=%2Fdashboard",
+    );
+    const missingUrl = await app.request("/__evjs/ppr/order/details");
+
+    expect(first.status).toBe(200);
+    expect(first.headers.get("x-evjs-cache")).toBe("MISS");
+    expect(await first.text()).toBe("<p>1:/orders/42?tab=open</p>");
+    expect(second.headers.get("x-evjs-cache")).toBe("HIT");
+    expect(await second.text()).toBe("<p>1:/orders/42?tab=open</p>");
+    expect(third.headers.get("x-evjs-cache")).toBe("MISS");
+    expect(await third.text()).toBe("<p>2:/orders/43?tab=open</p>");
+    expect(invalid.status).toBe(400);
+    await expect(invalid.text()).resolves.toContain(
+      'PPR region request url does not match page "order"',
+    );
+    expect(missingUrl.status).toBe(400);
+    await expect(missingUrl.text()).resolves.toContain(
+      'PPR region request url is required for page "order"',
+    );
+    expect(renderCount).toBe(2);
+  });
+
   it("leaves PPR page responses with non-html media types unchanged", async () => {
     const manifest = createManifest();
     manifest.pages.dashboard.prerender = { partial: true, delivery: "merge" };

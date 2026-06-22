@@ -216,13 +216,20 @@ describe("createWebpackConfigs", () => {
       [],
     );
 
-    expect(configs.find((item) => item.name === "server")?.externals).toEqual(
+    const serverConfig = configs.find((item) => item.name === "server");
+    expect(serverConfig?.externals).toEqual(
       expect.objectContaining({
         react: "commonjs react",
         "react-dom": "commonjs react-dom",
         "react-dom/client": "commonjs react-dom/client",
         "react-dom/server": "commonjs react-dom/server",
         "react-dom/server.node": "commonjs react-dom/server.node",
+      }),
+    );
+    expect(serverConfig?.output).toEqual(
+      expect.objectContaining({
+        filename: "[name].cjs",
+        chunkFilename: "[name].cjs",
       }),
     );
   });
