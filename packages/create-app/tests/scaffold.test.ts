@@ -118,6 +118,7 @@ describe("create-app scaffolding", () => {
       false,
     );
     expect(shouldCopyTemplatePath("/some/path/.turbo")).toBe(false);
+    expect(shouldCopyTemplatePath("/some/path/.turbopack")).toBe(false);
     expect(shouldCopyTemplatePath("/some/path/.evjs")).toBe(false);
     expect(shouldCopyTemplatePath("/some/path/.evjs/dev/manifest.json")).toBe(
       false,

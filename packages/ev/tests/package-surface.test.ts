@@ -143,7 +143,11 @@ const forbiddenCoreBundlerPackages = [
   "webpack-dev-server",
 ] as const;
 
-const generatedFrameworkArtifacts = [".evjs", "evjs-route-types.d.ts"] as const;
+const generatedFrameworkArtifacts = [
+  ".evjs",
+  ".turbopack",
+  "evjs-route-types.d.ts",
+] as const;
 
 const forbiddenPackageNames = [
   "@evjs/build-tools",

@@ -1,4 +1,5 @@
 .evjs
+.turbopack
 evjs-route-types.d.ts
 
 # SQLite databases
