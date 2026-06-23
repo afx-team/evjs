@@ -136,6 +136,40 @@ describe("createUtoopackConfig", () => {
     }
   });
 
+  it("content-hashes client CSS output filenames in production", async () => {
+    const config = createResolvedConfig();
+    const plan = createPlan(config, { mode: "production" });
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.output?.cssFilename).toBe(
+      "[name].[contenthash:8].css",
+    );
+    expect(utoopackConfig.output?.cssChunkFilename).toBe(
+      "[name].[contenthash:8].css",
+    );
+  });
+
+  it("uses stable client CSS output filenames in development", async () => {
+    const config = createResolvedConfig();
+    const plan = createPlan(config, { mode: "development" });
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.output?.cssFilename).toBe("[name].css");
+    expect(utoopackConfig.output?.cssChunkFilename).toBe("[name].css");
+  });
+
   it("sets crossorigin for dynamically loaded browser chunks", async () => {
     const config = createResolvedConfig({
       output: {
