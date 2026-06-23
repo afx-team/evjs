@@ -136,7 +136,7 @@ test.describe("render-modes", () => {
     const browserRegionRequests: string[] = [];
     page.on("request", (browserRequest) => {
       const url = new URL(browserRequest.url());
-      if (url.pathname === "/__evjs/ppr/campaign/offer") {
+      if (url.pathname.startsWith("/__evjs/ppr/campaign/")) {
         browserRegionRequests.push(browserRequest.url());
       }
     });
@@ -168,11 +168,14 @@ test.describe("render-modes", () => {
     expect(pageResponse.status()).toBe(200);
     expect(pageResponse.headers()["x-evjs-ppr"]).toBe("stream");
     const pageHtml = await pageResponse.text();
-    expect(pageHtml).toContain('data-evjs-ppr-stream-region="offer"');
+    const { id: regionId } = getSinglePprRegion(
+      readRenderModesManifest().pages.campaign.ppr.regions,
+    );
+    expect(pageHtml).toContain(`data-evjs-ppr-stream-region="${regionId}"`);
     expect(pageHtml).toContain("Dynamic PPR region rendered on demand");
 
     const regionResponse = await request.get(
-      `${apiURL}/__evjs/ppr/campaign/offer`,
+      `${apiURL}/__evjs/ppr/campaign/${encodeURIComponent(regionId)}`,
     );
     expect(regionResponse.status()).toBe(200);
     expect(regionResponse.headers()["cache-control"]).toBe("s-maxage=30");
@@ -249,8 +252,8 @@ test.describe("render-modes", () => {
   });
 
   test("emits a manifest with app, page, route, and server data", async () => {
-    const manifestPath = path.join(exampleDir, "dist", "manifest.json");
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    const manifestPath = getRenderModesManifestPath();
+    const manifest = readRenderModesManifest();
 
     expect(manifest.apps.default).toEqual(
       expect.objectContaining({
@@ -330,8 +333,12 @@ test.describe("render-modes", () => {
         },
       }),
     );
-    expect(manifest.pages.campaign.ppr.regions.offer).toEqual(
+    const { id: campaignRegionId, region: campaignRegion } = getSinglePprRegion(
+      manifest.pages.campaign.ppr.regions,
+    );
+    expect(campaignRegion).toEqual(
       expect.objectContaining({
+        id: campaignRegionId,
         cache: { revalidate: 30 },
       }),
     );
@@ -423,4 +430,28 @@ async function expectBackLink(page: Page): Promise<void> {
   await expect(backLink).toBeVisible();
   await expect(backLink).toHaveText("Back to control center");
   await expect(backLink).toHaveAttribute("href", "/");
+}
+
+function getRenderModesManifestPath(): string {
+  return path.join(exampleDir, "dist", "manifest.json");
+}
+
+function readRenderModesManifest() {
+  return JSON.parse(fs.readFileSync(getRenderModesManifestPath(), "utf-8"));
+}
+
+function getSinglePprRegion(
+  regions: Record<string, { id?: string; cache?: unknown }>,
+): { id: string; region: { id?: string; cache?: unknown } } {
+  const entries = Object.entries(regions);
+  if (entries.length !== 1) {
+    throw new Error(
+      `Expected one campaign PPR region, received ${entries.length}.`,
+    );
+  }
+
+  const [id, region] = entries[0];
+  expect(id).toMatch(/^region_[0-9a-f]{12}$/);
+  expect(region.id).toBe(id);
+  return { id, region };
 }
