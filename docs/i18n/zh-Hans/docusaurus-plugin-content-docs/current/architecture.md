@@ -171,7 +171,7 @@ sequenceDiagram
 
   Browser->>Server: GET PPR page route
   Server->>Manifest: match shell and region renderers
-  Server->>Server: render/cache declared regions
+  Server->>Server: render/cache internal regions
   Server-->>Browser: PPR HTML in the same route response
 
   Browser->>Server: GET runtime.server.rsc?page=id
@@ -197,9 +197,9 @@ sequenceDiagram
 
   Browser->>Edge: GET /campaign
   Edge->>Edge: load cached PPR shell
-  Edge->>Edge: read public manifest PPR region metadata
-  Edge->>Origin: GET /__evjs/ppr/campaign/offer
-  Origin->>Origin: render/cache offer region
+  Edge->>Edge: read manifest PPR region metadata
+  Edge->>Origin: GET /__evjs/ppr/campaign/region_a1b2c3d4e5f6
+  Origin->>Origin: render/cache internal region
   Origin-->>Edge: region HTML fragment + cache headers
   Edge->>Edge: apply region cache policy
   alt delivery = merge
@@ -213,12 +213,14 @@ sequenceDiagram
 浏览器网络日志里。长期运行时边界应是可替换的 region resolver：Node/dev 可以在
 本进程调用 renderer，edge adapter 可以 fetch 内源 FaaS endpoint，而不改变公开页面协议。
 
-推荐的 PPR 编写模型是 React `Suspense` 包裹 `lazy(() => import(...))` 子组件。
-页面组件声明 `export const render = "ssr"`，并通过
+推荐的 PPR 编写模型是 React `Suspense`。页面组件声明
+`export const render = "ssr"`，并通过
 `export const prerender = { partial: true, delivery }` 开启 partial
-prerendering。动态 region 模块可以声明 `export const cache` 和
-`export const hydrate`。PPR 是建立在 SSR 之上的 prerendering 策略，不是
-独立的 document render mode。
+prerendering。PPR 是建立在 SSR 之上的 prerendering 策略，不是独立的 document
+render mode。evjs 0.2 中这部分仍是 experimental：任意 Suspense boundary 的
+runtime postponed/resume 尚未实现，当前兼容 splitter 只会为受限的 `Suspense` +
+直接 `lazy(() => import(...))` 形态生成内部 region renderer。Region id 是框架
+内部 opaque 细节。
 
 PPR 页面在 public manifest 中的 page-level hydration 是 `none`。需要客户端交互时，
 应通过显式 client islands 或 region-level hydration metadata 引入，而不是 hydrate 整个

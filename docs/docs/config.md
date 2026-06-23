@@ -270,7 +270,7 @@ last-write-wins behavior.
 | `hydrate` | `"visible"` | Declare that hydration may wait until the mount point is visible. Runtimes/adapters that do not implement visibility scheduling may fall back to `load`. |
 | `hydrate` | `"idle"` | Declare that hydration may wait for an idle browser period. Runtimes/adapters that do not implement idle scheduling may fall back to `load`. |
 | `prerender` | `true` | Mark a non-CSR page as fully prerenderable without enabling partial prerendering. The manifest reports `rendering.prerender = "full"`; use `render = "ssg"` when the initial HTML should be statically delivered. |
-| `prerender` | `{ partial: true }` | Enable PPR. The framework derives dynamic regions from `Suspense` + `lazy(() => import(...))` boundaries in the page tree. |
+| `prerender` | `{ partial: true }` | Enable experimental PPR. The public authoring model is React `Suspense`; evjs 0.2 does not yet implement runtime postponed/resume for arbitrary Suspense boundaries. |
 | `prerender.delivery` | `"merge"` | Non-streaming PPR delivery. The server resolves shell and regions, then returns one complete HTML response. This is the default for partial prerendering. |
 | `prerender.delivery` | `"stream"` | Streaming PPR delivery. The server can flush the shell before all regions finish, then patch resolved regions into the same response. |
 | `prerender.revalidate` | positive integer | Declare a revalidation interval, in seconds, for prerendered output. |
@@ -300,7 +300,7 @@ either `rsc = true` or `prerender = { partial: true }`.
 builds, and static assets. SSR, SSG, PPR, RSC, server functions, and server
 routes require the framework server to be enabled during build.
 
-PPR pages should declare dynamic regions in the page component tree:
+PPR pages should express deferred content with ordinary React `Suspense`:
 
 ```ts
 export default defineConfig({
@@ -314,9 +314,9 @@ export default defineConfig({
 ```
 
 ```tsx
-import { lazy, Suspense } from "react";
-
-const OfferRegion = lazy(() => import("./Offer.region"));
+import { Suspense } from "react";
+import Offer from "./Offer";
+import OfferSkeleton from "./OfferSkeleton";
 
 export const render = "ssr";
 export const hydrate = "none";
@@ -327,27 +327,23 @@ export const prerender = {
 
 export default function CampaignPage() {
   return (
-    <Suspense fallback={<p>Loading</p>}>
-      <OfferRegion />
+    <Suspense fallback={<OfferSkeleton />}>
+      <Offer />
     </Suspense>
   );
 }
 ```
 
-```tsx
-// ./Offer.region.tsx
-export const cache = { revalidate: 60 } as const;
+Partial prerendering is experimental in evjs 0.2. The stable authoring API is
+`prerender = { partial: true }` plus React `Suspense`; users should not declare
+or depend on PPR region ids. Runtime postponed/resume support for arbitrary
+Suspense boundaries is not implemented yet. For compatibility with the current
+server-composed implementation, graph analysis can still split a limited shape
+into internal region renderers: a `Suspense` boundary whose direct child is a
+statically declared `React.lazy(() => import("./..."))` component. Those
+generated region ids are opaque framework details and may change.
 
-export default function OfferRegion() {
-  return <section>Live offer inventory</section>;
-}
-```
-
-The framework analyzes the page module and turns Suspense lazy boundaries into
-internal region renderers. Region ids are derived from the lazy component name,
-so `OfferRegion` becomes `offer`.
-
-Region modules can declare these static exports:
+Compatibility region modules can declare these static exports:
 
 | Export | Values | Meaning |
 | --- | --- | --- |
@@ -491,10 +487,10 @@ Derived runtime paths:
 ```
 
 PPR page loads do not require the browser to call `/__evjs/ppr`; the framework
-server resolves declared regions while serving the page route. Direct/debug
+server resolves internal regions while serving the page route. Direct/debug
 region calls use exactly `GET /__evjs/ppr/<pageId>/<regionId>`; `pageId` and
-`regionId` use the build-identifier rule, and extra path segments are not
-matched.
+the opaque internal `regionId` use the build-identifier rule, and extra path
+segments are not matched.
 Successful RSC page model responses must use
 `Content-Type: text/x-component`, allowing optional content-type parameters.
 Client-side RSC debug JSON helpers only parse responses served with

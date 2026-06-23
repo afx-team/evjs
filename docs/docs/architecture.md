@@ -184,7 +184,7 @@ sequenceDiagram
 
   Browser->>Server: GET PPR page route
   Server->>Manifest: match shell and region renderers
-  Server->>Server: render/cache declared regions
+  Server->>Server: render/cache internal regions
   Server-->>Browser: PPR HTML in the same route response
 
   Browser->>Server: GET runtime.server.rsc?page=id
@@ -213,9 +213,9 @@ sequenceDiagram
 
   Browser->>Edge: GET /campaign
   Edge->>Edge: load cached PPR shell
-  Edge->>Edge: read public manifest PPR region metadata
-  Edge->>Origin: GET /__evjs/ppr/campaign/offer
-  Origin->>Origin: render/cache offer region
+  Edge->>Edge: read manifest PPR region metadata
+  Edge->>Origin: GET /__evjs/ppr/campaign/region_a1b2c3d4e5f6
+  Origin->>Origin: render/cache internal region
   Origin-->>Edge: region HTML fragment + cache headers
   Edge->>Edge: apply region cache policy
   alt delivery = merge
@@ -230,14 +230,14 @@ in browser network logs. The long-term runtime boundary is a replaceable region
 resolver: local Node/dev can call the renderer in-process, while edge adapters
 can fetch an internal FaaS endpoint without changing the public page protocol.
 
-The preferred PPR authoring model is React `Suspense` with a
-`lazy(() => import(...))` child. The page component declares
-`export const render = "ssr"` plus
-`export const prerender = { partial: true, delivery }`. Dynamic regions can
-declare `export const cache` and `export const hydrate` in their
-own modules.
-PPR is a prerendering strategy on top of SSR, not a separate document render
-mode.
+The preferred PPR authoring model is React `Suspense`. The page component
+declares `export const render = "ssr"` plus
+`export const prerender = { partial: true, delivery }`. PPR is a prerendering
+strategy on top of SSR, not a separate document render mode. In evjs 0.2 this
+area remains experimental: runtime postponed/resume for arbitrary Suspense
+boundaries is not implemented yet, and the current compatibility splitter only
+creates internal region renderers for the limited `Suspense` + direct
+`lazy(() => import(...))` shape. Region ids are opaque framework details.
 
 PPR page hydration is page-level `none` in the public manifest. Client
 interactivity should be introduced through explicit client islands or

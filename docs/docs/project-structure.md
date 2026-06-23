@@ -267,7 +267,8 @@ literal with `partial`, `delivery`, or `revalidate`, `prerender.revalidate` is
 `false` or a positive integer number of seconds, and `rsc` is a boolean literal
 for RSC pages. Malformed page modules are reported during graph analysis with
 the file path and parser message before the bundler runs; malformed PPR region
-modules are reported the same way when region metadata is read.
+modules from the experimental compatibility path are reported the same way when
+region metadata is read.
 
 ## Server Boundary
 

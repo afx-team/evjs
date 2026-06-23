@@ -234,7 +234,7 @@ export default function Campaign() {
 `partial`、`delivery`、`revalidate` 的对象字面量；`prerender.revalidate` 是
 `false` 或表示秒数的正整数；`rsc` 是 RSC 页面使用的布尔字面量。格式错误的
 页面模块会在 graph analysis 阶段报告文件路径和 parser message，再进入 bundler 前即可定位问题；
-读取 region metadata 时，格式错误的 PPR region 模块也会以同样方式报告。
+读取 region metadata 时，experimental 兼容路径中的格式错误 PPR region 模块也会以同样方式报告。
 
 ## 服务端边界
 

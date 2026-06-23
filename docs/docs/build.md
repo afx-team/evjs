@@ -114,10 +114,14 @@ runtime. The `BuildPlan.import` remains the user component path; evjs does not
 write hidden production source files.
 
 SSR/PPR pages add server render entries to the plan. PPR pages produce a shell
-renderer and one renderer per React `Suspense` boundary whose direct child is
-`lazy(() => import(...))`. At runtime the framework server resolves those
-regions while serving the page route, so the initial browser navigation stays
-one document request. PPR supports two document delivery modes:
+renderer. Partial prerendering is experimental in evjs 0.2: the public
+authoring model is React `Suspense`, while the current compatibility
+implementation can additionally produce internal region renderers for the
+limited `Suspense` + direct `lazy(() => import(...))` shape. Runtime
+postponed/resume for arbitrary Suspense boundaries is not implemented yet. When
+internal regions exist, the framework server resolves them while serving the
+page route, so the initial browser navigation stays one document request. PPR
+supports two document delivery modes:
 
 - `merge` is the default non-streaming mode. The server waits for resolved
   regions and returns a complete HTML response.
@@ -143,7 +147,7 @@ MPA file-route pages that export `render = "ssr"` are route-owned server
 documents instead: they get a `page-server` renderer and, when hydrated, a
 page-level browser entry, but no static HTML file is emitted.
 
-PPR regions carry cache metadata in the manifest:
+Internal PPR regions carry cache metadata in the manifest:
 
 ```json
 {
@@ -160,7 +164,7 @@ PPR regions carry cache metadata in the manifest:
       "ppr": {
         "delivery": "stream",
         "regions": {
-          "inventory": {
+          "region_a1b2c3d4e5f6": {
             "cache": { "revalidate": 60 }
           }
         }
@@ -175,8 +179,8 @@ PPR regions carry cache metadata in the manifest:
 - One framework manifest: `dist/manifest.json`.
 - `BuildOutput` is the framework manifest contract.
 - Manifest object keys that become runtime ids, including app ids, page ids,
-  and PPR region ids, must be build identifiers: letters, numbers, underscores,
-  or hyphens.
+  and opaque internal PPR region ids, must be build identifiers: letters,
+  numbers, underscores, or hyphens.
 - App and page runtime modules must link to a JavaScript asset; manifest
   emission fails if a client entry only produced CSS or no assets.
 - Server-enabled builds must link the server runtime entry to a JavaScript

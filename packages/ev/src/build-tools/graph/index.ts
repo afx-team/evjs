@@ -635,7 +635,7 @@ async function collectPprRegionsFromPageClosure(
         diagnostics.push({
           level: "error",
           file: sourceRel,
-          message: `Duplicate PPR region id "${id}" in the same PPR page component tree.`,
+          message: `Duplicate internal PPR region id "${id}" in the same PPR page component tree.`,
         });
         continue;
       }

@@ -98,8 +98,8 @@ Browser
   GET /campaign
     -> Edge/CDN
        load cached shell
-       read public manifest PPR region metadata
-       server-to-server GET /__evjs/ppr/campaign/offer
+       read manifest PPR region metadata
+       server-to-server GET /__evjs/ppr/campaign/region_a1b2c3d4e5f6
          -> Internal FaaS/origin renders region fragment
        merge or stream the region into the same /campaign response
     <- Browser receives one document response
@@ -108,7 +108,8 @@ Browser
 In this topology `/__evjs/ppr/<page>/<region>` is not a browser initial-load
 request. It is an internal region resolver endpoint used by the edge/runtime
 layer. The direct endpoint matches exactly two encoded path segments after the
-PPR base path: `<pageId>/<regionId>`. Source modules declare
+PPR base path: `<pageId>/<regionId>`, where `regionId` is an opaque internal
+manifest id rather than a user-authored API. Source modules declare
 `prerender.delivery = "merge"` to wait for required regions before returning the
 document, or
 `prerender.delivery = "stream"` to flush the cached shell first and append

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 import type {
   HydrationMode,
@@ -46,6 +47,8 @@ export interface PprRegionModuleConfigAnalysis {
 const PPR_REGION_METADATA_EXPORTS = ["cache", "hydrate"] as const;
 const PPR_REGION_METADATA_PARSE_DIAGNOSTIC_PREFIX =
   "PPR region metadata could not be parsed:";
+const UNSUPPORTED_PPR_SUSPENSE_DIAGNOSTIC =
+  'PPR Suspense boundary was not split into an internal region renderer. Partial prerendering is experimental; evjs currently recognizes only a direct React.lazy(() => import("./...")) component child for compatibility, and other Suspense boundaries render as part of the shell until runtime postponed/resume support lands.';
 
 interface LazyComponentReference {
   module: string;
@@ -61,22 +64,49 @@ export function extractPprRegions(
   const reactImports = collectReactImports(ast);
   const hasSuspenseImport =
     reactImports.suspenseNames.size > 0 || reactImports.namespaceNames.size > 0;
-  const hasLazyImport =
-    reactImports.lazyNames.size > 0 || reactImports.namespaceNames.size > 0;
-  if (!hasSuspenseImport || !hasLazyImport) {
+  if (!hasSuspenseImport) {
     return emptyAnalysis();
   }
-
-  const lazyComponents = collectLazyComponents(ast, sourceRel, reactImports);
-  if (lazyComponents.size === 0) return emptyAnalysis();
 
   const analysis: PprRegionAnalysis = {
     regions: {},
     diagnostics: [],
   };
+  let warnedUnsupportedSuspense = false;
+  const warnUnsupportedSuspense = () => {
+    if (warnedUnsupportedSuspense) return;
+    warnedUnsupportedSuspense = true;
+    analysis.diagnostics.push({
+      level: "warning",
+      message: UNSUPPORTED_PPR_SUSPENSE_DIAGNOSTIC,
+    });
+  };
+
+  const hasLazyImport =
+    reactImports.lazyNames.size > 0 || reactImports.namespaceNames.size > 0;
+  const lazyComponents = collectLazyComponents(ast, sourceRel, reactImports);
+  let regionIndex = 0;
 
   walkModuleItems(ast.body, (element) => {
-    collectSuspenseRegion(element, reactImports, lazyComponents, analysis);
+    const elementName = getJsxElementName(element.opening.name);
+    if (!isSuspenseElementName(elementName, reactImports)) return;
+    if (!hasLazyImport || lazyComponents.size === 0) {
+      warnUnsupportedSuspense();
+      return;
+    }
+    const collected = collectSuspenseRegion(
+      element,
+      sourceRel,
+      reactImports,
+      lazyComponents,
+      analysis,
+      regionIndex,
+    );
+    if (collected) {
+      regionIndex += 1;
+    } else {
+      warnUnsupportedSuspense();
+    }
   });
 
   return analysis;
@@ -216,23 +246,37 @@ function collectLazyComponents(
 
 function collectSuspenseRegion(
   element: JSXElement,
+  sourceRel: string,
   reactImports: ReturnType<typeof collectReactImports>,
   lazyComponents: Map<string, LazyComponentReference>,
   analysis: PprRegionAnalysis,
-) {
+  regionIndex: number,
+): boolean {
   const elementName = getJsxElementName(element.opening.name);
-  if (!isSuspenseElementName(elementName, reactImports)) return;
+  if (!isSuspenseElementName(elementName, reactImports)) return false;
 
   const componentName = getFirstComponentChildName(element);
   const component = componentName
     ? lazyComponents.get(componentName)
     : undefined;
-  if (!componentName || !component) return;
+  if (!componentName || !component) return false;
 
-  const id = derivePprRegionId(componentName);
+  const id = createInternalPprRegionId(
+    sourceRel,
+    component.module,
+    regionIndex,
+  );
+  if (analysis.regions[id]) {
+    analysis.diagnostics.push({
+      level: "error",
+      message: `Duplicate internal PPR region id "${id}" in the same module.`,
+    });
+    return false;
+  }
   analysis.regions[id] = {
     component: component.module,
   };
+  return true;
 }
 
 function getLazyImportSpecifier(
@@ -481,15 +525,16 @@ function isPositiveInteger(value: number): boolean {
   return Number.isInteger(value) && value > 0;
 }
 
-function derivePprRegionId(componentName: string): string {
-  const withoutSuffix = componentName
-    .replace(/PprRegion$/, "")
-    .replace(/Region$/, "");
-  const kebab = withoutSuffix
-    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
-    .replace(/([A-Z])([A-Z][a-z])/g, "$1-$2")
-    .toLowerCase();
-  return kebab || componentName.toLowerCase();
+function createInternalPprRegionId(
+  sourceRel: string,
+  module: string,
+  regionIndex: number,
+): string {
+  const hash = createHash("sha256")
+    .update(`${sourceRel}\0${module}\0${regionIndex}`)
+    .digest("hex")
+    .slice(0, 12);
+  return `region_${hash}`;
 }
 
 function normalizeRelativeModule(sourceRel: string, specifier: string): string {

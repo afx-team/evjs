@@ -17,6 +17,16 @@ function relativeFileDependencies(cwd: string, files: string[]): string[] {
   return files.map((file) => path.relative(cwd, file));
 }
 
+function getSinglePprRegionId(
+  regions: Record<string, unknown> | undefined,
+): string {
+  const ids = Object.keys(regions ?? {});
+  expect(ids).toHaveLength(1);
+  const [id] = ids;
+  expect(id).toMatch(/^region_[0-9a-f]{12}$/);
+  return id as string;
+}
+
 afterEach(async () => {
   await Promise.all(
     tempDirs
@@ -1445,10 +1455,13 @@ describe("createAppGraph and createBuildPlan", () => {
       component: "./src/pages/pricing.tsx",
       render: "ssg",
     });
+    const campaignRegionId = getSinglePprRegionId(
+      analysis.graph.pages.campaign.ppr?.regions,
+    );
     expect(analysis.graph.pages.campaign.ppr).toMatchObject({
       delivery: "stream",
       regions: {
-        offer: {
+        [campaignRegionId]: {
           component: "./src/pages/offer-region.tsx",
         },
       },
@@ -1496,12 +1509,12 @@ describe("createAppGraph and createBuildPlan", () => {
           owner: { pageId: "campaign" },
         },
         {
-          name: "campaign-offer-ppr-region",
+          name: `campaign-${campaignRegionId}-ppr-region`,
           import: "./src/pages/offer-region.tsx",
           environment: "server",
           runtime: "node",
           kind: "ppr-region",
-          owner: { pageId: "campaign", regionId: "offer" },
+          owner: { pageId: "campaign", regionId: campaignRegionId },
         },
         {
           name: "insights-rsc",
@@ -1965,11 +1978,14 @@ describe("createAppGraph and createBuildPlan", () => {
     const plan = createBuildPlan(config, analysis.graph, {
       mode: "production",
     });
+    const campaignRegionId = getSinglePprRegionId(
+      analysis.graph.pages.campaign.ppr?.regions,
+    );
 
     expect(analysis.graph.pages.campaign.ppr).toEqual({
       delivery: "merge",
       regions: {
-        offer: {
+        [campaignRegionId]: {
           component: "./src/campaign/Offer.region.tsx",
           cache: "no-store",
           hydrate: "visible",
@@ -2001,12 +2017,12 @@ describe("createAppGraph and createBuildPlan", () => {
           owner: { pageId: "campaign" },
         },
         {
-          name: "campaign-offer-ppr-region",
+          name: `campaign-${campaignRegionId}-ppr-region`,
           import: "./src/campaign/Offer.region.tsx",
           environment: "server",
           runtime: "node",
           kind: "ppr-region",
-          owner: { pageId: "campaign", regionId: "offer" },
+          owner: { pageId: "campaign", regionId: campaignRegionId },
         },
       ]),
     );
@@ -2018,10 +2034,10 @@ describe("createAppGraph and createBuildPlan", () => {
         owner: { pageId: "campaign" },
       },
       {
-        name: "campaign-offer-ppr-region",
+        name: `campaign-${campaignRegionId}-ppr-region`,
         import: "./src/campaign/Offer.region.tsx",
         kind: "ppr-region",
-        owner: { pageId: "campaign", regionId: "offer" },
+        owner: { pageId: "campaign", regionId: campaignRegionId },
       },
     ]);
     expect(relativeFileDependencies(cwd, analysis.fileDependencies)).toEqual([
@@ -2074,12 +2090,15 @@ describe("createAppGraph and createBuildPlan", () => {
     const plan = createBuildPlan(config, analysis.graph, {
       mode: "production",
     });
+    const campaignRegionId = getSinglePprRegionId(
+      analysis.graph.pages.campaign.ppr?.regions,
+    );
 
     expect(analysis.diagnostics).toEqual([]);
     expect(analysis.graph.pages.campaign.ppr).toEqual({
       delivery: "merge",
       regions: {
-        offer: {
+        [campaignRegionId]: {
           component: "./src/campaign/Offer.region.tsx",
           cache: { revalidate: 30 },
           hydrate: "none",
@@ -2097,14 +2116,73 @@ describe("createAppGraph and createBuildPlan", () => {
           owner: { pageId: "campaign" },
         },
         {
-          name: "campaign-offer-ppr-region",
+          name: `campaign-${campaignRegionId}-ppr-region`,
           import: "./src/campaign/Offer.region.tsx",
           environment: "server",
           runtime: "node",
           kind: "ppr-region",
-          owner: { pageId: "campaign", regionId: "offer" },
+          owner: { pageId: "campaign", regionId: campaignRegionId },
         },
       ]),
+    );
+  });
+
+  it("keeps ordinary Suspense PPR boundaries as shell-only until runtime resume support lands", async () => {
+    const cwd = await createFixture({
+      "src/campaign/Page.tsx": `
+        import { Suspense } from "react";
+        import Offer from "./Offer";
+
+        export const render = "ssr";
+        export const hydrate = "none";
+        export const prerender = { partial: true } as const;
+        export default function Page() {
+          return (
+            <Suspense fallback={<p>Loading offer</p>}>
+              <Offer />
+            </Suspense>
+          );
+        }
+      `,
+      "src/campaign/Offer.tsx": `
+        export default function Offer() { return null; }
+      `,
+      "index.html": '<div id="app"></div>',
+    });
+    const config = createConfig({
+      pages: {
+        campaign: {
+          component: "./src/campaign/Page.tsx",
+          html: "./index.html",
+        },
+      },
+    });
+    const analysis = await createAppGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "production",
+    });
+
+    expect(analysis.diagnostics).toEqual([
+      {
+        level: "warning",
+        file: "src/campaign/Page.tsx",
+        message:
+          'PPR Suspense boundary was not split into an internal region renderer. Partial prerendering is experimental; evjs currently recognizes only a direct React.lazy(() => import("./...")) component child for compatibility, and other Suspense boundaries render as part of the shell until runtime postponed/resume support lands.',
+      },
+    ]);
+    expect(analysis.graph.pages.campaign.ppr).toEqual({
+      delivery: "merge",
+    });
+    expect(plan.entries).toContainEqual({
+      name: "campaign-ppr-shell",
+      import: "./src/campaign/Page.tsx",
+      environment: "server",
+      runtime: "node",
+      kind: "ppr-shell",
+      owner: { pageId: "campaign" },
+    });
+    expect(plan.entries.filter((entry) => entry.kind === "ppr-region")).toEqual(
+      [],
     );
   });
 
@@ -2141,6 +2219,9 @@ describe("createAppGraph and createBuildPlan", () => {
     });
 
     const analysis = await createAppGraph(config, cwd);
+    const campaignRegionId = getSinglePprRegionId(
+      analysis.graph.pages.campaign.ppr?.regions,
+    );
 
     expect(analysis.diagnostics).toEqual([
       {
@@ -2156,7 +2237,9 @@ describe("createAppGraph and createBuildPlan", () => {
           'PPR region hydrate must be one of "none", "load", "visible", or "idle".',
       },
     ]);
-    expect(analysis.graph.pages.campaign.ppr?.regions?.offer).toEqual({
+    expect(
+      analysis.graph.pages.campaign.ppr?.regions?.[campaignRegionId],
+    ).toEqual({
       component: "./src/campaign/Offer.region.tsx",
     });
   });
@@ -2193,6 +2276,9 @@ describe("createAppGraph and createBuildPlan", () => {
     });
 
     const analysis = await createAppGraph(config, cwd);
+    const campaignRegionId = getSinglePprRegionId(
+      analysis.graph.pages.campaign.ppr?.regions,
+    );
 
     expect(analysis.diagnostics).toContainEqual({
       level: "error",
@@ -2201,7 +2287,9 @@ describe("createAppGraph and createBuildPlan", () => {
         "PPR region metadata could not be parsed:",
       ),
     });
-    expect(analysis.graph.pages.campaign.ppr?.regions?.offer).toEqual({
+    expect(
+      analysis.graph.pages.campaign.ppr?.regions?.[campaignRegionId],
+    ).toEqual({
       component: "./src/campaign/Offer.region.tsx",
     });
   });
@@ -2244,6 +2332,9 @@ describe("createAppGraph and createBuildPlan", () => {
     });
 
     const analysis = await createAppGraph(config, cwd);
+    const campaignRegionId = getSinglePprRegionId(
+      analysis.graph.pages.campaign.ppr?.regions,
+    );
 
     expect(analysis.diagnostics).toEqual([
       {
@@ -2259,7 +2350,9 @@ describe("createAppGraph and createBuildPlan", () => {
           'PPR region metadata export "hydrate" is declared more than once. Keep one static export for each region metadata field.',
       },
     ]);
-    expect(analysis.graph.pages.campaign.ppr?.regions?.offer).toEqual({
+    expect(
+      analysis.graph.pages.campaign.ppr?.regions?.[campaignRegionId],
+    ).toEqual({
       component: "./src/campaign/Offer.region.tsx",
     });
   });
@@ -2298,6 +2391,9 @@ describe("createAppGraph and createBuildPlan", () => {
     });
 
     const analysis = await createAppGraph(config, cwd);
+    const campaignRegionId = getSinglePprRegionId(
+      analysis.graph.pages.campaign.ppr?.regions,
+    );
 
     expect(analysis.diagnostics).toEqual([
       {
@@ -2313,7 +2409,9 @@ describe("createAppGraph and createBuildPlan", () => {
           'PPR region hydrate must be one of "none", "load", "visible", or "idle".',
       },
     ]);
-    expect(analysis.graph.pages.campaign.ppr?.regions?.offer).toEqual({
+    expect(
+      analysis.graph.pages.campaign.ppr?.regions?.[campaignRegionId],
+    ).toEqual({
       component: "./src/campaign/Offer.region.tsx",
     });
   });
@@ -2356,6 +2454,9 @@ describe("createAppGraph and createBuildPlan", () => {
     });
 
     const analysis = await createAppGraph(config, cwd);
+    const campaignRegionId = getSinglePprRegionId(
+      analysis.graph.pages.campaign.ppr?.regions,
+    );
 
     expect(analysis.diagnostics).toEqual([
       {
@@ -2371,7 +2472,9 @@ describe("createAppGraph and createBuildPlan", () => {
           'PPR region metadata export "hydrate" must be declared as a local variable with a static initializer. Re-exported, function, and class exports are not supported for PPR region metadata.',
       },
     ]);
-    expect(analysis.graph.pages.campaign.ppr?.regions?.offer).toEqual({
+    expect(
+      analysis.graph.pages.campaign.ppr?.regions?.[campaignRegionId],
+    ).toEqual({
       component: "./src/campaign/Offer.region.tsx",
     });
   });

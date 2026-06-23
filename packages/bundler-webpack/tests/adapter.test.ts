@@ -54,6 +54,16 @@ function buildIt(name: string, run: () => void | Promise<void>) {
   it(name, run, WEBPACK_BUILD_TEST_TIMEOUT);
 }
 
+function getSinglePprRegionId(
+  regions: Record<string, unknown> | undefined,
+): string {
+  const ids = Object.keys(regions ?? {});
+  expect(ids).toHaveLength(1);
+  const [id] = ids;
+  expect(id).toMatch(/^region_[0-9a-f]{12}$/);
+  return id as string;
+}
+
 function requireRouting(
   routing: ResolvedConfig<WebpackConfig>["routing"],
 ): NonNullable<ResolvedConfig<WebpackConfig>["routing"]> {
@@ -868,14 +878,19 @@ describe("webpackAdapter build", () => {
       const manifest = JSON.parse(
         await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
       ) as BuildOutput;
+      const campaignRegionId = getSinglePprRegionId(
+        manifest.pages.campaign.ppr?.regions,
+      );
+      const campaignRegionRenderer = `campaign-${campaignRegionId}-ppr-region`;
+      const campaignRegionAsset = `${campaignRegionRenderer}.cjs`;
 
       expect(manifest.pages.campaign.ppr).toMatchObject({
         delivery: "merge",
         shell: { js: ["campaign-ppr-shell.cjs"], css: [] },
         regions: {
-          offer: {
-            id: "offer",
-            assets: { js: ["campaign-offer-ppr-region.cjs"], css: [] },
+          [campaignRegionId]: {
+            id: campaignRegionId,
+            assets: { js: [campaignRegionAsset], css: [] },
             component: "./src/pages/Offer.tsx",
             cache: "no-store",
           },
@@ -888,12 +903,12 @@ describe("webpackAdapter build", () => {
         assets: { js: ["campaign-ppr-shell.cjs"], css: [] },
       });
       expect(
-        manifest.server?.renderers?.["campaign-offer-ppr-region"],
+        manifest.server?.renderers?.[campaignRegionRenderer],
       ).toMatchObject({
         kind: "ppr-region",
-        owner: { pageId: "campaign", regionId: "offer" },
+        owner: { pageId: "campaign", regionId: campaignRegionId },
         module: "./src/pages/Offer.tsx",
-        assets: { js: ["campaign-offer-ppr-region.cjs"], css: [] },
+        assets: { js: [campaignRegionAsset], css: [] },
       });
 
       const shellResponse = await requestServerEntry(
@@ -909,7 +924,7 @@ describe("webpackAdapter build", () => {
       const regionResponse = await requestServerEntry(
         cwd,
         manifest,
-        "/__evjs/ppr/campaign/offer",
+        `/__evjs/ppr/campaign/${campaignRegionId}`,
       );
       expect(regionResponse.status).toBe(200);
       expect(await regionResponse.text()).toContain(
