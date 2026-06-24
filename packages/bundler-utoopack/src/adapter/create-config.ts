@@ -34,7 +34,7 @@ import type {
   PluginHooks,
   ReactComponentPageEntryMetadata,
   ResolvedConfig,
-  ServerRoutesEntryMetadata,
+  ServerAppEntryMetadata,
 } from "@evjs/ev";
 import { getLogger } from "@logtape/logtape";
 import type {
@@ -264,7 +264,7 @@ function createPagesEntryRule(
 
 function createServerRoutesEntryRule(
   entry: BuildPlan["entries"][number] & {
-    metadata: ServerRoutesEntryMetadata;
+    metadata: ServerAppEntryMetadata;
   },
 ): TurbopackRuleConfigItem {
   return {
@@ -347,14 +347,14 @@ function resolveClientEntry(entry: BuildPlan["entries"][number]): string {
 function getServerRoutesEntry(
   plan: BuildPlan,
 ):
-  | (BuildPlan["entries"][number] & { metadata: ServerRoutesEntryMetadata })
+  | (BuildPlan["entries"][number] & { metadata: ServerAppEntryMetadata })
   | undefined {
   return plan.entries.find(
     (
       entry,
     ): entry is BuildPlan["entries"][number] & {
-      metadata: ServerRoutesEntryMetadata;
-    } => entry.metadata?.type === "server-routes",
+      metadata: ServerAppEntryMetadata;
+    } => entry.metadata?.type === "server-app",
   );
 }
 
@@ -413,16 +413,38 @@ function createPagesLoaderOptions(
 }
 
 function createServerRoutesLoaderOptions(
-  metadata: ServerRoutesEntryMetadata,
+  metadata: ServerAppEntryMetadata,
 ): TurbopackLoaderOptions {
+  const middlewares = metadata.middlewares ?? [];
   return {
-    type: "server-routes",
-    routes: metadata.routes.map((route) => ({
-      id: route.id,
-      path: route.path,
-      module: route.module,
-      methods: route.methods,
-    })),
+    type: "server-app",
+    ...(middlewares.length > 0
+      ? {
+          middlewares: middlewares.map((middleware) => ({
+            id: middleware.id,
+            module: middleware.module,
+            scope: middleware.scope,
+          })),
+        }
+      : {}),
+    routes: metadata.routes.map((route) => {
+      const routeMiddlewares = route.middlewares ?? [];
+      return {
+        id: route.id,
+        path: route.path,
+        module: route.module,
+        methods: route.methods,
+        ...(routeMiddlewares.length > 0
+          ? {
+              middlewares: routeMiddlewares.map((middleware) => ({
+                id: middleware.id,
+                module: middleware.module,
+                scope: middleware.scope,
+              })),
+            }
+          : {}),
+      };
+    }),
   };
 }
 

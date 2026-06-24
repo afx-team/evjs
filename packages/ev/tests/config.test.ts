@@ -70,6 +70,24 @@ describe("defineConfig", () => {
     });
   });
 
+  it("accepts server convention configuration", () => {
+    const config = defineConfig({
+      server: {
+        conventions: {
+          middleware: false,
+        },
+      },
+    });
+
+    expect(config).toEqual({
+      server: {
+        conventions: {
+          middleware: false,
+        },
+      },
+    });
+  });
+
   it("accepts output crossorigin loading configuration", () => {
     const config = defineConfig({
       output: {
@@ -899,6 +917,61 @@ describe("resolveConfig", () => {
     ).toBeUndefined();
   });
 
+  it("resolves server convention configuration", () => {
+    expect(
+      resolveConfig({
+        server: {
+          routing: true,
+        },
+      }).server.conventions,
+    ).toEqual({
+      middleware: true,
+      globalMiddlewares: [],
+      routeMiddlewares: [],
+    });
+
+    expect(
+      resolveConfig({
+        server: {
+          conventions: true,
+        },
+      }).server.conventions,
+    ).toEqual({
+      middleware: true,
+      globalMiddlewares: [],
+      routeMiddlewares: [],
+    });
+
+    expect(
+      resolveConfig({
+        server: {
+          routing: true,
+          conventions: false,
+        },
+      }).server.conventions,
+    ).toBeUndefined();
+
+    expect(
+      resolveConfig({
+        server: {
+          routing: true,
+          conventions: {
+            middleware: false,
+          },
+        },
+      }).server.conventions,
+    ).toBeUndefined();
+
+    expect(
+      resolveConfig({
+        server: {
+          entry: "./src/server.ts",
+          conventions: true,
+        },
+      }).server.conventions,
+    ).toBeUndefined();
+  });
+
   it("rejects invalid server and transport declarations", () => {
     expect(() =>
       resolveConfig({
@@ -953,7 +1026,7 @@ describe("resolveConfig", () => {
         },
       }),
     ).toThrow(
-      "[evjs] server.endpoint is not supported. Use entry, routing, basePath, rsc, or dev.",
+      "[evjs] server.endpoint is not supported. Use entry, routing, conventions, basePath, rsc, or dev.",
     );
 
     expect(() =>
@@ -1005,6 +1078,39 @@ describe("resolveConfig", () => {
         },
       }),
     ).toThrow("[evjs] server.routing.dir must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          conventions: null as never,
+        },
+      }),
+    ).toThrow(
+      "[evjs] server.conventions must be true, false, or a server conventions object.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          conventions: {
+            // @ts-expect-error runtime config loading can still produce unknown keys.
+            errors: true,
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] server.conventions.errors is not supported. Use middleware.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          conventions: {
+            middleware: "yes" as never,
+          },
+        },
+      }),
+    ).toThrow("[evjs] server.conventions.middleware must be a boolean.");
 
     expect(() =>
       resolveConfig({

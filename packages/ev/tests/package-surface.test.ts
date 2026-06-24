@@ -165,12 +165,14 @@ const forbiddenPackageNames = [
 
 const expectedBuildToolsRuntimeExports = [
   "analyzeRoutes",
+  "applyRouteScopedMiddlewares",
   "createAppGraph",
   "createBuildPlan",
   "detectServerRouteExports",
   "detectUseClient",
   "diffBuildPlan",
   "discoverPageRoutes",
+  "discoverServerConventions",
   "discoverServerRoutes",
   "extractRscReferences",
   "extractServerFunctionExports",

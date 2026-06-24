@@ -24,6 +24,7 @@ export default defineConfig({
 | `output.crossOriginLoading` | `"anonymous"` |
 | `routing.mode` | `spa` |
 | `server.routing.dir` | `./src/server/routes` when `server.routing` is enabled |
+| `server.conventions.middleware` | `true` when server conventions are enabled |
 | `dev.port` | `3000` |
 | `server.dev.port` | `3001` |
 | `server.basePath` | `/__evjs` |
@@ -493,12 +494,33 @@ export default defineConfig({
 });
 ```
 
+Server conventions are enabled by default when `server.routing` is enabled.
+The current convention discovers `src/server/middleware.ts` for global
+middleware and `src/server/routes/**/middleware.ts` for route-scoped file-route
+middleware. Missing middleware files are ignored.
+
+```ts
+export default defineConfig({
+  server: {
+    routing: true,
+    conventions: {
+      middleware: false,
+    },
+  },
+});
+```
+
+Use `server.conventions: false` to disable all server conventions. Explicit
+`server.entry` disables convention discovery because the entry owns
+`createApp()` composition.
+
 `output`, `dev`, `server`, `server.dev`, and `transport` must be objects when
 provided; use `server: false` to disable the framework server. `server.entry`
 must be a non-empty module path when provided, and evjs validates configured
 source paths such as `server.entry` during app graph analysis before the
 bundler runs. `server.routing` must be `true`, `false`, or an object with an
-optional non-empty `dir` string.
+optional non-empty `dir` string. `server.conventions` must be `true`, `false`,
+or an object; object form currently supports `middleware`.
 `server.basePath` must be a non-empty URL
 pathname that starts with `/`, without whitespace, a query string, or a hash;
 trailing slashes are normalized away. If `server.rsc` is configured as an

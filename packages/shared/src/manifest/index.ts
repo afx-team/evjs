@@ -198,7 +198,7 @@ export interface BuildEntryOwner {
 export type BuildEntryMetadata =
   | ReactComponentPageEntryMetadata
   | PagesAppEntryMetadata
-  | ServerRoutesEntryMetadata;
+  | ServerAppEntryMetadata;
 
 export interface ReactComponentPageEntryMetadata {
   type: "react-component-page";
@@ -219,9 +219,21 @@ export interface PagesAppEntryMetadata {
   rootModule?: string;
 }
 
-export interface ServerRoutesEntryMetadata {
-  type: "server-routes";
-  routes: ServerRouteNode[];
+export interface ServerMiddlewareNode {
+  id: string;
+  module: string;
+  scope: "global" | "route";
+  scopeSegments?: string[];
+}
+
+export interface ServerAppRouteNode extends ServerRouteNode {
+  middlewares?: ServerMiddlewareNode[];
+}
+
+export interface ServerAppEntryMetadata {
+  type: "server-app";
+  routes: ServerAppRouteNode[];
+  middlewares?: ServerMiddlewareNode[];
 }
 
 export interface PageRouteNode {

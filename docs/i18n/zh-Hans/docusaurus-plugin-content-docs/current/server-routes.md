@@ -31,15 +31,10 @@ src/server/routes/api/users.ts          -> /api/users
 ```
 
 只有导出至少一个大写 HTTP method 的文件才会成为路由：
-`GET`、`POST`、`PUT`、`PATCH`、`DELETE`、`HEAD` 或 `OPTIONS`。可选的
-per-route middleware 通过 `middlewares` 导出：
+`GET`、`POST`、`PUT`、`PATCH`、`DELETE`、`HEAD` 或 `OPTIONS`：
 
 ```ts
 // src/server/routes/api/posts.ts
-const requireAuth = async (_req, next) => next();
-
-export const middlewares = [requireAuth];
-
 export const GET = async (req) => {
   const url = new URL(req.url);
   const limit = Number(url.searchParams.get("limit")) || 10;
@@ -53,11 +48,66 @@ export const POST = async (req) => {
 ```
 
 没有 route exports 的文件会被忽略，因此可以就近放置 `schema.ts`、`db.ts`
-和 `types.ts`。route candidate 只能导出大写 HTTP methods 和 `middlewares`；
-helper 应移到非路由文件。重复 path、重复 dynamic shape、bracket routes、
-catch-all routes、optional params、小写 method exports、route candidate 中的
-default exports、route candidate 中的不支持 runtime exports，以及
-`posts.get.ts` 这类 method suffix 文件都会在 bundling 之前被拒绝。
+和 `types.ts`。route candidate 只能导出大写 HTTP methods；helper 应移到非路由文件。
+`middleware`、`middlewares`、默认导出、重复 path、重复 dynamic shape、bracket
+routes、catch-all routes、optional params、小写 method exports、route candidate
+中的不支持 runtime exports，以及 `posts.get.ts` 这类 method suffix 文件都会在
+bundling 之前被拒绝。
+
+## 文件路由中间件
+
+文件路由 middleware 使用 filesystem-scoped convention。Middleware 文件默认导出一个
+Hono-compatible middleware 函数，不包含 matcher 配置：
+
+```ts
+// src/server/middleware.ts
+import type { MiddlewareHandler } from "@evjs/server";
+
+const middleware: MiddlewareHandler = async (ctx, next) => {
+  await next();
+  ctx.header("x-server", "evjs");
+};
+
+export default middleware;
+```
+
+全局 middleware 位于 `src/server/middleware.ts`，会在 server file routes、
+server functions、SSR、PPR 和 RSC framework handling 之前运行。Route-scoped
+middleware 位于 route tree 内，只作用于 descendant server file routes：
+
+```text
+src/server/routes/middleware.ts            -> all file routes
+src/server/routes/api/middleware.ts        -> routes under routes/api/**
+src/server/routes/api/admin/middleware.ts  -> routes under routes/api/admin/**
+src/server/routes/(admin)/middleware.ts    -> routes under routes/(admin)/**
+```
+
+执行顺序是 global middleware，然后从父目录到子目录的 route-scoped middleware，
+最后是 HTTP method handler。Route group 不增加 URL segment，但会参与 filesystem
+scope。`routes/api/middleware.ts` 覆盖 `routes/api/index.ts`、
+`routes/api/users.ts` 和 `routes/api/**` 下的嵌套文件；不会覆盖 flat sibling
+`routes/api.ts`。
+
+签名遵循 Hono：
+
+```ts
+import type { MiddlewareHandler } from "@evjs/server";
+
+const requireAuth: MiddlewareHandler = async (ctx, next) => {
+  if (!ctx.req.header("authorization")) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  await next();
+  ctx.header("x-authenticated", "true");
+};
+
+export default requireAuth;
+```
+
+`ctx` 是 Hono `Context`。`next` 会继续后续 middleware/handler chain。返回
+`Response` 可以短路请求。`await next()` 之后，middleware 可以通过
+`ctx.header()` 或 `ctx.res` 修改下游响应。Route-scoped middleware 通过 route
+handler chain 挂载，因此可以用 `ctx.req.param()` 读取 route params。
 
 `server.routing` 不能和 `server.entry` 同时使用。需要自定义 composition 或
 非约定式 URL shape 时，使用 `server.entry` 和编程式路由。
@@ -192,9 +242,9 @@ export const postDetailsRoute = createRoute("/api/posts/:id", {
 });
 ```
 
-## 中间件
+## 编程式中间件
 
-使用 `middlewares` 选项在处理器之前运行逻辑。调用 `next()` 继续或返回 `Response` 短路：
+在自定义 server entry 中使用 `createRoute()` 时，可以用 `middlewares` 选项在处理器之前运行逻辑。调用 `next()` 继续或返回 `Response` 短路：
 
 ```ts
 import { createRoute } from "@evjs/server";

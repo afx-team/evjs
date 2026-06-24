@@ -3599,11 +3599,32 @@ describe("createAppGraph and createBuildPlan", () => {
           return Response.json({ ok: true });
         }
       `,
+      "src/server/middleware.ts": `
+        export default async function middleware(_ctx, next) {
+          await next();
+        }
+      `,
+      "src/server/routes/users/middleware.ts": `
+        export default async function middleware(_ctx, next) {
+          await next();
+        }
+      `,
       "src/server/routes/users/$userId.ts": `
-        export const middlewares = [];
         export const POST = async () => Response.json({ ok: true });
       `,
     });
+    const globalMiddleware = {
+      id: "src/server/middleware.ts:global-middleware",
+      module: "src/server/middleware.ts",
+      scope: "global" as const,
+      scopeSegments: [],
+    };
+    const userMiddleware = {
+      id: "src/server/routes/users/middleware.ts:route-middleware",
+      module: "src/server/routes/users/middleware.ts",
+      scope: "route" as const,
+      scopeSegments: ["users"],
+    };
     const config = createConfig({
       server: {
         entry: undefined,
@@ -3627,9 +3648,14 @@ describe("createAppGraph and createBuildPlan", () => {
               module: "src/server/routes/users/$userId.ts",
               path: "/users/:userId",
               methods: ["POST"],
-              hasMiddlewares: true,
+              moduleSegments: ["users"],
+              middlewares: [userMiddleware],
             },
           ],
+        },
+        conventions: {
+          globalMiddlewares: [globalMiddleware],
+          routeMiddlewares: [userMiddleware],
         },
       },
     });
@@ -3655,10 +3681,12 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
     expect(analysis.graph.serverFunctions).toEqual([]);
     expect(relativeFileDependencies(cwd, analysis.fileDependencies)).toEqual([
+      "src/server/middleware.ts",
       "src/server/routes",
       "src/server/routes/health.ts",
       "src/server/routes/users",
       "src/server/routes/users/$userId.ts",
+      "src/server/routes/users/middleware.ts",
     ]);
     expect(plan.entries).toContainEqual({
       name: "server",
@@ -3667,7 +3695,8 @@ describe("createAppGraph and createBuildPlan", () => {
       runtime: "node",
       kind: "server-runtime",
       metadata: {
-        type: "server-routes",
+        type: "server-app",
+        middlewares: [globalMiddleware],
         routes: [
           {
             id: "src/server/routes/health.ts:/health:GET",
@@ -3680,7 +3709,8 @@ describe("createAppGraph and createBuildPlan", () => {
             module: "src/server/routes/users/$userId.ts",
             path: "/users/:userId",
             methods: ["POST"],
-            hasMiddlewares: true,
+            moduleSegments: ["users"],
+            middlewares: [userMiddleware],
           },
         ],
       },

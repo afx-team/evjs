@@ -48,6 +48,15 @@ export {
   extractRscReferences,
   transformRscClientFile,
 } from "./rsc-refs.js";
+export type {
+  DiscoverServerConventionsOptions,
+  ServerConventionDiagnostic,
+  ServerConventionDiscovery,
+} from "./server-conventions.js";
+export {
+  applyRouteScopedMiddlewares,
+  discoverServerConventions,
+} from "./server-conventions.js";
 export { extractServerFunctionExports } from "./server-fns.js";
 export type {
   DiscoverServerRoutesOptions,

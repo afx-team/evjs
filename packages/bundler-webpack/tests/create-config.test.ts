@@ -137,7 +137,7 @@ describe("createWebpackConfigs", () => {
           {
             loader: expect.stringContaining("server-routes-entry-loader.cjs"),
             options: {
-              type: "server-routes",
+              type: "server-app",
               routes: [
                 {
                   id: "src/server/routes/health.ts:/health:GET",
@@ -289,7 +289,16 @@ describe("createWebpackConfigs", () => {
               path: "/secure",
               module: "src/server/routes/secure.ts",
               methods: ["POST"],
-              hasMiddlewares: true,
+              middlewares: [
+                {
+                  module: "src/server/routes/middleware.ts",
+                },
+              ],
+            },
+          ],
+          middlewares: [
+            {
+              module: "src/server/middleware.ts",
             },
           ],
         };
@@ -303,13 +312,16 @@ describe("createWebpackConfigs", () => {
     expect(source).toContain("@evjs/server/react");
     expect(source).toContain('createRoute("/health", routeDefinition0)');
     expect(source).toContain('createRoute("/secure", routeDefinition1)');
+    expect(source).toContain("import middleware0 from");
+    expect(source).toContain("src/server/middleware.ts");
+    expect(source).toContain("import middleware1 from");
+    expect(source).toContain("src/server/routes/middleware.ts");
     expect(source).toContain("routeDefinition0.GET = routeModule0.GET");
     expect(source).not.toContain("routeDefinition0.middlewares");
-    expect(source).toContain(
-      "routeDefinition1.middlewares = routeModule1.middlewares",
-    );
+    expect(source).toContain("routeDefinition1.middlewares = [middleware1]");
     expect(source).toContain("routeDefinition1.POST = routeModule1.POST");
-    expect(source).toContain("createApp({ routes");
+    expect(source).toContain("const middlewares = [middleware0]");
+    expect(source).toContain("createApp({ middlewares, routes");
   });
 
   it("keeps React and ReactDOM external in regular Node server bundles", async () => {

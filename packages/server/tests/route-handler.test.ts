@@ -306,6 +306,50 @@ describe("createRoute", () => {
     expect(order).toEqual(["mw1", "mw2", "handler"]);
   });
 
+  it("runs app middleware before route middleware and supports after-next response updates", async () => {
+    const { createApp } = await import("../src/app.js");
+    const order: string[] = [];
+    const handler = createRoute("/api/items/:id", {
+      middlewares: [
+        async (ctx, next) => {
+          order.push(`route-before:${ctx.req.param("id")}`);
+          await next();
+          order.push("route-after");
+          ctx.header("x-route-middleware", "done");
+        },
+      ],
+      GET: async (_req, ctx) => {
+        order.push(`handler:${ctx.req.param("id")}`);
+        return Response.json({ id: ctx.req.param("id") });
+      },
+    });
+    const app = createApp({
+      middlewares: [
+        async (ctx, next) => {
+          order.push("global-before");
+          await next();
+          order.push("global-after");
+          ctx.header("x-global-middleware", "done");
+        },
+      ],
+      routes: [handler],
+    });
+
+    const res = await app.request("/api/items/42");
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id: "42" });
+    expect(res.headers.get("x-route-middleware")).toBe("done");
+    expect(res.headers.get("x-global-middleware")).toBe("done");
+    expect(order).toEqual([
+      "global-before",
+      "route-before:42",
+      "handler:42",
+      "route-after",
+      "global-after",
+    ]);
+  });
+
   it("middleware can short-circuit the request", async () => {
     const handler = createRoute("/api/items", {
       middlewares: [async () => new Response("Unauthorized", { status: 401 })],

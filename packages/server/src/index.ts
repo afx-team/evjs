@@ -10,6 +10,7 @@
  */
 
 export { ServerError } from "@evjs/shared";
+export type { MiddlewareHandler } from "hono";
 export type { CreateAppOptions } from "./app.js";
 export { createApp } from "./app.js";
 export {

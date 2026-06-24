@@ -2367,6 +2367,97 @@ describe("build", () => {
     expect(events).not.toContain("bundler.build");
   });
 
+  it("discovers server middleware conventions for generated server app entries", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/server/routes/api"), {
+      recursive: true,
+    });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/main.tsx"),
+      "export const clientEntry = true;",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/server/middleware.ts"),
+      [
+        "export default async function middleware(_ctx, next) {",
+        "  await next();",
+        "}",
+      ].join("\n"),
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/server/routes/api/middleware.ts"),
+      [
+        "export default async function middleware(_ctx, next) {",
+        "  await next();",
+        "}",
+      ].join("\n"),
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/server/routes/api/health.ts"),
+      "export const GET = async () => Response.json({ ok: true });",
+      "utf-8",
+    );
+
+    let observedPlan: BuildPlan | undefined;
+    const events: string[] = [];
+    const bundler = createMockBundler(events, {
+      onBuildPlan(plan) {
+        observedPlan = plan;
+      },
+    });
+
+    await build(
+      {
+        server: {
+          routing: true,
+        },
+      },
+      {
+        cwd,
+        bundler,
+      },
+    );
+
+    expect(events).toContain("bundler.build");
+    expect(observedPlan?.entries).toContainEqual(
+      expect.objectContaining({
+        name: "server",
+        import: "evjs:server-routes",
+        metadata: {
+          type: "server-app",
+          middlewares: [
+            {
+              id: "src/server/middleware.ts:global-middleware",
+              module: "src/server/middleware.ts",
+              scope: "global",
+              scopeSegments: [],
+            },
+          ],
+          routes: [
+            {
+              id: "src/server/routes/api/health.ts:/api/health:GET",
+              module: "src/server/routes/api/health.ts",
+              path: "/api/health",
+              methods: ["GET"],
+              moduleSegments: ["api"],
+              middlewares: [
+                {
+                  id: "src/server/routes/api/middleware.ts:route-middleware",
+                  module: "src/server/routes/api/middleware.ts",
+                  scope: "route",
+                  scopeSegments: ["api"],
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+  });
+
   it("fails on missing explicit server entries before running the bundler", async () => {
     const cwd = await createProject();
     const events: string[] = [];

@@ -13,7 +13,7 @@ my-evjs-app/
 ├── public/                      # 原样复制的静态文件
 ├── tsconfig.json
 └── src/
-    ├── server.ts                # framework/server entry
+    ├── server.ts                # 可选自定义 framework/server entry
     ├── styles.css               # 全局 CSS / Tailwind 入口
     ├── layout/
     │   └── index.tsx            # 可选 SPA 根布局
@@ -29,6 +29,12 @@ my-evjs-app/
     ├── api/
     │   ├── operators.server.ts  # "use server" functions
     │   └── health.routes.ts     # Request/Response route handlers
+    ├── server/
+    │   ├── middleware.ts        # 全局 server middleware
+    │   └── routes/
+    │       ├── middleware.ts    # route-scoped server route middleware
+    │       └── api/
+    │           └── health.ts    # /api/health server file route
     ├── components/              # 可复用 UI
     ├── features/                # 业务领域模块
     │   └── operations/
@@ -109,7 +115,9 @@ my-evjs-app/
 | `src/pages/**/layout.{tsx,ts,jsx,js}` 或 `src/pages/**/layout/index.{tsx,ts,jsx,js}` | SPA route layout | 在同一 URL 前缀下包裹子路由的 pathless layout route | MPA 公共外框，或命名为 `layout` 的非 layout helper 目录 |
 | `<routing-dir-parent>/route-types.d.ts` | SPA 导航类型生成物 | 编辑器和类型检查支持 | 手工修改、从应用代码导入、放入模板或脚手架源码，或用于 MPA 模式 |
 | `src/api/*.server.ts` | 推荐的 server function 边界 | 以 `"use server";` 开头并导出命名 callable server functions 的文件 | 需要在 `server: false` 下运行的客户端导入、默认导出或 runtime re-export |
-| `src/server/routes/**/*.{ts,tsx,js,jsx}` | 启用 `server.routing` 时的服务端文件路由发现 | 导出大写 HTTP method 和可选 `middlewares` 的 Request/Response route 模块 | `route.ts` 哨兵、`foo.get.ts` method suffix 文件、bracket/catch-all/optional routes，或从 route candidate 导出 helper |
+| `src/server/routes/**/*.{ts,tsx,js,jsx}` | 启用 `server.routing` 时的服务端文件路由发现 | 导出大写 HTTP method 的 Request/Response route 模块 | `route.ts` 哨兵、`foo.get.ts` method suffix 文件、bracket/catch-all/optional routes、`middleware`/`middlewares`、默认导出，或从 route candidate 导出 helper |
+| `src/server/middleware.{ts,tsx,js,jsx}` | 启用 server conventions 时的全局服务端中间件约定 | 在 server file routes、server functions、SSR、PPR 和 RSC 之前运行的 Hono-compatible middleware | Matcher 配置、route handlers、helper exports，或自定义 server composition |
+| `src/server/routes/**/middleware.{ts,tsx,js,jsx}` | route-scoped server file-route middleware | 作用于该目录树下 descendant server file routes 的 Hono-compatible middleware | `api.ts` 这类 flat sibling routes、全局 server functions/SSR middleware，或 matcher 配置 |
 | `src/server/routes` 下的 server route paths 和 dynamic URL shapes | graph/build plan 生成前的 server route 冲突检查 | 每个 URL path 只保留一个 server route module，每个 dynamic URL shape 只保留一种参数命名 | 并存的 `users.ts`/`users/index.ts`、`users/$id.ts`/`users/$userId.ts`，或把同一路径的方法拆到多个文件 |
 | `src/server.ts` | 自定义 framework server entry | `createApp({ routes, middlewares, framework })`、非约定式 routing 和部署运行时 glue | 浏览器代码、按页面拆分的 client bootstrap，或和 `server.routing` 同时使用 |
 | `src/features`、`src/components`、`src/lib`、`src/hooks` | 没有直接框架约定 | 业务代码、可复用 UI、浏览器安全 helper 和 React hooks | 依赖文件名被路由发现的文件 |
@@ -257,6 +265,35 @@ export const GET = async () => Response.json({ ok: true });
 `/api/health`。根路由使用 `src/server/routes/index.ts`；动态段使用
 `$param` 文件名，并映射为 Hono params，例如 `:userId`。
 
+服务端 middleware 使用 Hono 的 middleware 签名，并放在专门的 `middleware.ts`
+约定文件中：
+
+```ts
+// src/server/middleware.ts
+import type { MiddlewareHandler } from "@evjs/server";
+
+const middleware: MiddlewareHandler = async (ctx, next) => {
+  await next();
+  ctx.header("x-server", "evjs");
+};
+
+export default middleware;
+```
+
+```ts
+// src/server/routes/api/middleware.ts
+import type { MiddlewareHandler } from "@evjs/server";
+
+const middleware: MiddlewareHandler = async (ctx, next) => {
+  if (!ctx.req.header("authorization")) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  await next();
+};
+
+export default middleware;
+```
+
 ```ts
 // src/server/routes/users/$userId.ts
 export const GET = async (_req, ctx) => {
@@ -310,6 +347,9 @@ export default defineConfig({
 - `pages/` 是文件路由目录，也可以包含 SSR/PPR/RSC components。
 - `api/` 放 callable server functions 和自定义 route helpers。
 - `server/routes/` 是启用 `server.routing` 时的服务端文件路由目录。
+- `server/middleware.ts` 是全局服务端 middleware；嵌套的
+  `server/routes/**/middleware.ts` 会把 middleware 作用域限制到 descendant file
+  routes。
 - `features/` 放业务领域模块。
 - `components/` 放通用 UI。
 - `lib/` 放浏览器安全的共享工具。

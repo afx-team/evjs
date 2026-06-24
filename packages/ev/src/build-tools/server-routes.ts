@@ -1,12 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { HTTP_METHODS, serverRoutePathShapeFromPath } from "@evjs/shared";
-import type { ServerRouteNode } from "@evjs/shared/manifest";
-import type { Expression, ModuleItem } from "@swc/types";
-import {
-  collectExportedVariableValueAnalysis,
-  collectModuleExportNames,
-} from "./module-exports.js";
+import type {
+  ServerMiddlewareNode,
+  ServerRouteNode,
+} from "@evjs/shared/manifest";
+import { collectModuleExportNames } from "./module-exports.js";
 import {
   findPageRouteSegmentConventionViolation,
   isIgnoredPageRouteSegment,
@@ -20,6 +19,7 @@ import {
   hasDefaultExport,
   parseRouteModuleWithError,
 } from "./routes/shared.js";
+import { isServerMiddlewareConventionFileName } from "./server-conventions.js";
 import { isInsideCwd, toPosixPath } from "./utils.js";
 
 export interface DiscoverServerRoutesOptions {
@@ -34,7 +34,8 @@ export interface ServerRouteDiscoveryDiagnostic {
 }
 
 export interface DiscoveredServerRouteNode extends ServerRouteNode {
-  hasMiddlewares?: boolean;
+  moduleSegments?: string[];
+  middlewares?: ServerMiddlewareNode[];
 }
 
 export interface ServerRouteDiscovery {
@@ -79,6 +80,7 @@ export async function discoverServerRoutes(
     const fileDiagnostics = await analyzeServerRouteFile(
       file,
       routeFile.segments,
+      routeFile.moduleSegments,
       diagnosticFile,
     );
     diagnostics.push(...fileDiagnostics.diagnostics);
@@ -130,6 +132,7 @@ export async function discoverServerRoutes(
 
 interface ServerRouteFileConvention {
   segments: string[];
+  moduleSegments: string[];
 }
 
 interface ServerRouteFileAnalysis {
@@ -143,6 +146,7 @@ function parseServerRouteFile(
   const normalizedRouteRel = normalizePageRouteConventionPath(routeRel);
   const basename = path.posix.basename(normalizedRouteRel);
   if (!isPageRouteSourceModuleFile(basename)) return undefined;
+  if (isServerMiddlewareConventionFileName(basename)) return undefined;
 
   const extension = path.posix.extname(normalizedRouteRel);
   const withoutExt = normalizedRouteRel.slice(0, -extension.length);
@@ -152,12 +156,13 @@ function parseServerRouteFile(
 
   const name = segments[segments.length - 1] ?? "";
   const routeSegments = name === "index" ? segments.slice(0, -1) : segments;
-  return { segments: routeSegments };
+  return { segments: routeSegments, moduleSegments: segments.slice(0, -1) };
 }
 
 async function analyzeServerRouteFile(
   absolute: string,
   segments: string[],
+  moduleSegments: string[],
   diagnosticFile: string,
 ): Promise<ServerRouteFileAnalysis> {
   const diagnostics: ServerRouteDiscoveryDiagnostic[] = [];
@@ -201,18 +206,29 @@ async function analyzeServerRouteFile(
   const exportedNames = new Set(exportNames);
   const methods = HTTP_METHODS.filter((method) => exportedNames.has(method));
   const lowercaseMethods = exportNames.filter(isLowercaseHttpMethod);
+  const routeModuleMiddlewareExports = exportNames.filter(
+    (name) => name === "middleware" || name === "middlewares",
+  );
   const hasRouteExport =
     methods.length > 0 ||
     lowercaseMethods.length > 0 ||
-    exportNames.includes("middlewares");
+    routeModuleMiddlewareExports.length > 0;
   if (!hasRouteExport) return { diagnostics };
 
-  if (methods.length === 0) {
+  if (methods.length === 0 && routeModuleMiddlewareExports.length === 0) {
     diagnostics.push({
       level: "error",
       file: diagnosticFile,
       message:
         "Server route modules must export at least one uppercase HTTP method such as GET or POST.",
+    });
+  }
+
+  for (const exportName of routeModuleMiddlewareExports) {
+    diagnostics.push({
+      level: "error",
+      file: diagnosticFile,
+      message: `Server file routes must not export "${exportName}". Move middleware logic to a middleware.ts file in the route tree.`,
     });
   }
 
@@ -233,35 +249,27 @@ async function analyzeServerRouteFile(
     });
   }
 
-  const supportedExports = new Set([...HTTP_METHODS, "middlewares"]);
+  const supportedExports = new Set<string>(HTTP_METHODS);
   for (const exportName of exportNames) {
     if (
       supportedExports.has(exportName) ||
       exportName === "default" ||
-      isLowercaseHttpMethod(exportName)
+      isLowercaseHttpMethod(exportName) ||
+      exportName === "middleware" ||
+      exportName === "middlewares"
     ) {
       continue;
     }
     diagnostics.push({
       level: "error",
       file: diagnosticFile,
-      message: `Server route module export "${exportName}" is not supported. Move helpers to a non-route file or export only HTTP methods and middlewares.`,
-    });
-  }
-
-  const middlewareDiagnostic = validateExportedMiddlewares(ast.body);
-  if (middlewareDiagnostic) {
-    diagnostics.push({
-      level: "error",
-      file: diagnosticFile,
-      message: middlewareDiagnostic,
+      message: `Server route module export "${exportName}" is not supported. Move helpers to a non-route file or export only uppercase HTTP methods.`,
     });
   }
 
   if (diagnostics.length > 0) return { diagnostics };
 
   const routePath = serverRoutePathFromSegments(segments);
-  const hasMiddlewares = exportedNames.has("middlewares");
   return {
     diagnostics,
     route: {
@@ -269,7 +277,7 @@ async function analyzeServerRouteFile(
       module: diagnosticFile,
       path: routePath,
       methods,
-      ...(hasMiddlewares ? { hasMiddlewares } : {}),
+      moduleSegments,
     },
   };
 }
@@ -283,80 +291,6 @@ function getMethodSuffix(filename: string): string | undefined {
 
 function isLowercaseHttpMethod(exportName: string): boolean {
   return LOWERCASE_HTTP_METHODS.has(exportName);
-}
-
-function validateExportedMiddlewares(body: ModuleItem[]): string | undefined {
-  const variableAnalysis = collectExportedVariableValueAnalysis(body);
-  if (variableAnalysis.duplicateNames.has("middlewares")) {
-    return 'Server route module export "middlewares" is declared more than once.';
-  }
-
-  const middlewares = variableAnalysis.values.get("middlewares");
-  if (!middlewares) return undefined;
-  return validateMiddlewaresExpression(middlewares);
-}
-
-function validateMiddlewaresExpression(value: Expression): string | undefined {
-  const expression = unwrapExpression(value);
-  if (expression.type === "ArrayExpression") {
-    for (const element of expression.elements) {
-      if (!element) {
-        return "Server route middlewares must be an array of functions.";
-      }
-      if (element.spread) continue;
-      if (isKnownNonFunctionExpression(element.expression)) {
-        return "Server route middlewares must be an array of functions.";
-      }
-    }
-    return undefined;
-  }
-
-  if (isObviouslyNonArrayExpression(expression)) {
-    return "Server route middlewares must be an array of functions.";
-  }
-
-  return undefined;
-}
-
-function unwrapExpression(expression: Expression): Expression {
-  let current = expression;
-  while (
-    current.type === "ParenthesisExpression" ||
-    current.type === "TsAsExpression" ||
-    current.type === "TsSatisfiesExpression" ||
-    current.type === "TsTypeAssertion" ||
-    current.type === "TsNonNullExpression"
-  ) {
-    current = current.expression;
-  }
-  return current;
-}
-
-function isKnownNonFunctionExpression(expression: Expression): boolean {
-  const value = unwrapExpression(expression);
-  if (
-    value.type === "StringLiteral" ||
-    value.type === "NumericLiteral" ||
-    value.type === "BooleanLiteral" ||
-    value.type === "NullLiteral" ||
-    value.type === "ArrayExpression" ||
-    value.type === "ObjectExpression"
-  ) {
-    return true;
-  }
-  return false;
-}
-
-function isObviouslyNonArrayExpression(expression: Expression): boolean {
-  return (
-    expression.type === "StringLiteral" ||
-    expression.type === "NumericLiteral" ||
-    expression.type === "BooleanLiteral" ||
-    expression.type === "NullLiteral" ||
-    expression.type === "ObjectExpression" ||
-    expression.type === "ArrowFunctionExpression" ||
-    expression.type === "FunctionExpression"
-  );
 }
 
 function serverRoutePathFromSegments(segments: string[]): string {

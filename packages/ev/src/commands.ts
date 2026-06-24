@@ -17,11 +17,13 @@ import { getLogger } from "@logtape/logtape";
 import { execa } from "execa";
 import { validateHtmlTemplate } from "./build-tools/html.js";
 import {
+  applyRouteScopedMiddlewares,
   type CreateBuildPlanOptions,
   createAppGraph,
   createBuildPlan,
   diffBuildPlan,
   discoverPageRoutes,
+  discoverServerConventions,
   discoverServerRoutes,
   generateHtml,
   type HtmlAsset,
@@ -143,6 +145,7 @@ export interface InspectDiagnostic {
     | "html"
     | "page-routes"
     | "server-routes"
+    | "server-conventions"
     | "graph"
     | "plan";
   message: string;
@@ -267,6 +270,13 @@ interface ServerRoutingDefaultsOptions {
   onDiscovery?: (
     base: NonNullable<ResolvedConfig["server"]["routing"]>,
     discovery: Awaited<ReturnType<typeof discoverServerRoutes>>,
+  ) => void;
+}
+
+interface ServerConventionDefaultsOptions {
+  reportDiagnostics?: boolean;
+  onDiscovery?: (
+    discovery: Awaited<ReturnType<typeof discoverServerConventions>>,
   ) => void;
 }
 
@@ -456,6 +466,60 @@ async function withServerRoutingDefaults<TBundlerCfg>(
   };
 }
 
+async function withServerConventionDefaults<TBundlerCfg>(
+  config: ResolvedConfig<TBundlerCfg>,
+  cwd: string,
+  options: ServerConventionDefaultsOptions = {},
+): Promise<ResolvedConfig<TBundlerCfg>> {
+  const conventions = config.server.conventions;
+  if (
+    !config.serverEnabled ||
+    config.server.entry ||
+    conventions?.middleware !== true
+  ) {
+    return {
+      ...config,
+      server: {
+        ...config.server,
+        conventions: undefined,
+      },
+    };
+  }
+
+  const discovery = await discoverServerConventions(cwd, {
+    globalFile: CONFIG_DEFAULTS.serverMiddlewareFile,
+    routingDir: config.server.routing?.dir,
+    middleware: conventions.middleware,
+  });
+  options.onDiscovery?.(discovery);
+  if (options.reportDiagnostics !== false) {
+    reportServerConventionDiagnostics(discovery.diagnostics);
+  }
+
+  const nextRouting = config.server.routing
+    ? {
+        ...config.server.routing,
+        routes: applyRouteScopedMiddlewares(
+          config.server.routing.routes,
+          discovery.routeMiddlewares,
+        ),
+      }
+    : undefined;
+
+  return {
+    ...config,
+    server: {
+      ...config.server,
+      ...(nextRouting ? { routing: nextRouting } : { routing: undefined }),
+      conventions: {
+        ...conventions,
+        globalMiddlewares: discovery.globalMiddlewares,
+        routeMiddlewares: discovery.routeMiddlewares,
+      },
+    },
+  };
+}
+
 function readRoutingConfig<TBundlerCfg>(
   config: Config<TBundlerCfg> | undefined,
 ): Config<TBundlerCfg>["routing"] {
@@ -577,6 +641,31 @@ function reportServerRouteDiagnostics(
   if (errors.length > 0) {
     throw new Error(
       ["[evjs] Server route discovery failed.", ...errors].join("\n"),
+    );
+  }
+}
+
+function reportServerConventionDiagnostics(
+  diagnostics: Array<{
+    level: "warning" | "error";
+    message: string;
+    file?: string;
+  }>,
+): void {
+  const errors: string[] = [];
+  for (const diagnostic of diagnostics) {
+    const message = diagnostic.file
+      ? `${diagnostic.file} - ${diagnostic.message}`
+      : diagnostic.message;
+    if (diagnostic.level === "error") {
+      errors.push(message);
+    } else {
+      logger.warn`${message}`;
+    }
+  }
+  if (errors.length > 0) {
+    throw new Error(
+      ["[evjs] Server convention discovery failed.", ...errors].join("\n"),
     );
   }
 }
@@ -1563,9 +1652,13 @@ async function prepareInternalFrameworkBuild<
     configuredConfig,
     cwd,
   );
+  const conventionResolvedConfig = await withServerConventionDefaults(
+    rawResolvedConfig,
+    cwd,
+  );
   const resolvedConfig = {
-    ...rawResolvedConfig,
-    plugins: orderPluginsByDependencies(rawResolvedConfig.plugins),
+    ...conventionResolvedConfig,
+    plugins: orderPluginsByDependencies(conventionResolvedConfig.plugins),
   };
 
   const optionBundler = resolveBundlerConfig<TBundlerCfg>(
@@ -1735,9 +1828,23 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
       },
     },
   );
+  const conventionResolvedConfig = await withServerConventionDefaults(
+    rawResolvedConfig,
+    cwd,
+    {
+      reportDiagnostics: false,
+      onDiscovery(discovery) {
+        diagnostics.push(
+          ...discovery.diagnostics.map((diagnostic) =>
+            toInspectDiagnostic("server-conventions", diagnostic),
+          ),
+        );
+      },
+    },
+  );
   const resolvedConfig = {
-    ...rawResolvedConfig,
-    plugins: orderPluginsByDependencies(rawResolvedConfig.plugins),
+    ...conventionResolvedConfig,
+    plugins: orderPluginsByDependencies(conventionResolvedConfig.plugins),
   };
   const optionBundler = resolveBundlerConfig<TBundlerCfg>(
     options.bundler,
@@ -2013,9 +2120,13 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
     configuredConfig,
     cwd,
   );
+  const conventionResolvedConfig = await withServerConventionDefaults(
+    rawResolvedConfig,
+    cwd,
+  );
   const resolvedConfig = {
-    ...rawResolvedConfig,
-    plugins: orderPluginsByDependencies(rawResolvedConfig.plugins),
+    ...conventionResolvedConfig,
+    plugins: orderPluginsByDependencies(conventionResolvedConfig.plugins),
   };
 
   const bundler = resolveBundler(resolvedConfig.bundler, options?.bundler);
@@ -2171,9 +2282,13 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
       nextConfiguredConfig,
       cwd,
     );
+    const nextConventionResolvedConfig = await withServerConventionDefaults(
+      nextRawResolvedConfig,
+      cwd,
+    );
     const nextResolvedConfig = {
-      ...nextRawResolvedConfig,
-      plugins: orderPluginsByDependencies(nextRawResolvedConfig.plugins),
+      ...nextConventionResolvedConfig,
+      plugins: orderPluginsByDependencies(nextConventionResolvedConfig.plugins),
     };
 
     return withActiveBundler(nextResolvedConfig, bundler);

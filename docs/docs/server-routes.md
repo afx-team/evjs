@@ -32,15 +32,10 @@ src/server/routes/api/users.ts          -> /api/users
 ```
 
 A file becomes a route only when it exports at least one uppercase HTTP method:
-`GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, or `OPTIONS`. Export optional
-per-route middleware as `middlewares`:
+`GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, or `OPTIONS`:
 
 ```ts
 // src/server/routes/api/posts.ts
-const requireAuth = async (_req, next) => next();
-
-export const middlewares = [requireAuth];
-
 export const GET = async (req) => {
   const url = new URL(req.url);
   const limit = Number(url.searchParams.get("limit")) || 10;
@@ -55,11 +50,70 @@ export const POST = async (req) => {
 
 Files with no route exports are ignored, so `schema.ts`, `db.ts`, and
 `types.ts` can be colocated. Route candidates may export only uppercase HTTP
-methods and `middlewares`; move helpers to non-route files. Duplicate paths,
-duplicate dynamic shapes, bracket routes, catch-all routes, optional params,
-lowercase method exports, default exports in route candidates, unsupported
-runtime exports in route candidates, and method suffix files such as
-`posts.get.ts` are rejected before bundling.
+methods; move helpers to non-route files. `middleware`, `middlewares`, default
+exports, duplicate paths, duplicate dynamic shapes, bracket routes, catch-all
+routes, optional params, lowercase method exports, unsupported runtime exports
+in route candidates, and method suffix files such as `posts.get.ts` are
+rejected before bundling.
+
+## File Route Middleware
+
+File-route middleware is a filesystem-scoped convention. Middleware files
+default-export a Hono-compatible middleware function and do not contain matcher
+configuration:
+
+```ts
+// src/server/middleware.ts
+import type { MiddlewareHandler } from "@evjs/server";
+
+const middleware: MiddlewareHandler = async (ctx, next) => {
+  await next();
+  ctx.header("x-server", "evjs");
+};
+
+export default middleware;
+```
+
+Global middleware lives at `src/server/middleware.ts` and runs before server
+file routes, server functions, SSR, PPR, and RSC framework handling.
+Route-scoped middleware lives inside the route tree and runs only for
+descendant server file routes:
+
+```text
+src/server/routes/middleware.ts            -> all file routes
+src/server/routes/api/middleware.ts        -> routes under routes/api/**
+src/server/routes/api/admin/middleware.ts  -> routes under routes/api/admin/**
+src/server/routes/(admin)/middleware.ts    -> routes under routes/(admin)/**
+```
+
+Execution order is global middleware, then route-scoped middleware from parent
+directory to child directory, then the HTTP method handler. Route groups do not
+add URL segments, but they do participate in filesystem scoping.
+`routes/api/middleware.ts` covers `routes/api/index.ts`, `routes/api/users.ts`,
+and nested files under `routes/api/**`; it does not cover the flat sibling
+`routes/api.ts`.
+
+The signature follows Hono:
+
+```ts
+import type { MiddlewareHandler } from "@evjs/server";
+
+const requireAuth: MiddlewareHandler = async (ctx, next) => {
+  if (!ctx.req.header("authorization")) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  await next();
+  ctx.header("x-authenticated", "true");
+};
+
+export default requireAuth;
+```
+
+`ctx` is Hono's `Context`. `next` continues the remaining middleware/handler
+chain. Returning a `Response` short-circuits the request. After `await next()`,
+middleware can modify the downstream response with APIs such as `ctx.header()`
+or `ctx.res`. Route-scoped middleware is mounted in the route handler chain, so
+it can read route params with `ctx.req.param()`.
 
 `server.routing` cannot be combined with `server.entry`. Use `server.entry` and
 programmatic routes when you need custom composition or non-conventional URL
@@ -204,10 +258,11 @@ export const postDetailsRoute = createRoute("/api/posts/:id", {
 });
 ```
 
-## Middleware
+## Programmatic Middleware
 
-Use the `middlewares` option to run logic before handlers. Call `next()` to
-proceed or return a `Response` to short-circuit:
+When using `createRoute()` in a custom server entry, use the `middlewares`
+option to run logic before handlers. Call `next()` to proceed or return a
+`Response` to short-circuit:
 
 ```ts
 import { createRoute } from "@evjs/server";

@@ -15,7 +15,7 @@ my-evjs-app/
 ├── public/                      # copied static files
 ├── tsconfig.json
 └── src/
-    ├── server.ts                # framework/server entry
+    ├── server.ts                # optional custom framework/server entry
     ├── styles.css               # global CSS / Tailwind entry
     ├── layout/
     │   └── index.tsx            # optional SPA root layout
@@ -31,6 +31,12 @@ my-evjs-app/
     ├── api/
     │   ├── operators.server.ts  # "use server" functions
     │   └── health.routes.ts     # Request/Response route handlers
+    ├── server/
+    │   ├── middleware.ts        # global server middleware
+    │   └── routes/
+    │       ├── middleware.ts    # route-scoped server route middleware
+    │       └── api/
+    │           └── health.ts    # /api/health server file route
     ├── components/              # reusable UI
     ├── features/                # domain modules
     │   └── operations/
@@ -128,7 +134,9 @@ Migration rules stay explicit rather than adding alternate filename dialects:
 | `src/pages/**/layout.{tsx,ts,jsx,js}` or `src/pages/**/layout/index.{tsx,ts,jsx,js}` | SPA route layout | Pathless layout routes that wrap child routes at the same URL prefix | MPA shared chrome or non-layout helper folders named `layout` |
 | `<routing-dir-parent>/route-types.d.ts` | Generated SPA navigation types | Editor and type-checker support | Manual edits, imports from app code, template/scaffold source, or MPA mode |
 | `src/api/*.server.ts` | Recommended server-function boundary | Files that start with `"use server";` and export named callable server functions | Client imports that should run with `server: false`, default exports, or runtime re-exports |
-| `src/server/routes/**/*.{ts,tsx,js,jsx}` | Server file route discovery when `server.routing` is enabled | Request/Response route modules exporting uppercase HTTP methods and optional `middlewares` | `route.ts` sentinels, `foo.get.ts` method suffix files, bracket/catch-all/optional routes, or helper exports from route candidates |
+| `src/server/routes/**/*.{ts,tsx,js,jsx}` | Server file route discovery when `server.routing` is enabled | Request/Response route modules exporting uppercase HTTP methods | `route.ts` sentinels, `foo.get.ts` method suffix files, bracket/catch-all/optional routes, `middleware`/`middlewares`, default exports, or helper exports from route candidates |
+| `src/server/middleware.{ts,tsx,js,jsx}` | Global server middleware convention when server conventions are enabled | Hono-compatible middleware that runs before server file routes, server functions, SSR, PPR, and RSC | Matcher config, route handlers, helper exports, or custom server composition |
+| `src/server/routes/**/middleware.{ts,tsx,js,jsx}` | Route-scoped server file-route middleware | Hono-compatible middleware for descendant server file routes in that directory tree | Flat sibling routes such as `api.ts`, global server functions/SSR middleware, or matcher config |
 | Server route paths and dynamic URL shapes under `src/server/routes` | Server route collision checks before graph/build-plan generation | One server route module per URL path and one parameter naming choice per dynamic URL shape | Parallel `users.ts`/`users/index.ts`, `users/$id.ts`/`users/$userId.ts`, or splitting methods for one path across files |
 | `src/server.ts` | Custom framework server entry | `createApp({ routes, middlewares, framework })`, non-conventional routing, and deployment runtime glue | Browser code, per-page client bootstrap, or use together with `server.routing` |
 | `src/features`, `src/components`, `src/lib`, `src/hooks` | No direct framework convention | Domain code, reusable UI, browser-safe helpers, and React hooks | Files that depend on route discovery by filename |
@@ -291,6 +299,35 @@ The file path under `src/server/routes` is the URL path, so the example above
 maps to `/api/health`. A root route uses `src/server/routes/index.ts`; dynamic
 segments use `$param` filenames and map to Hono params such as `:userId`.
 
+Server middleware uses Hono's middleware signature and lives in dedicated
+`middleware.ts` convention files:
+
+```ts
+// src/server/middleware.ts
+import type { MiddlewareHandler } from "@evjs/server";
+
+const middleware: MiddlewareHandler = async (ctx, next) => {
+  await next();
+  ctx.header("x-server", "evjs");
+};
+
+export default middleware;
+```
+
+```ts
+// src/server/routes/api/middleware.ts
+import type { MiddlewareHandler } from "@evjs/server";
+
+const middleware: MiddlewareHandler = async (ctx, next) => {
+  if (!ctx.req.header("authorization")) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  await next();
+};
+
+export default middleware;
+```
+
 ```ts
 // src/server/routes/users/$userId.ts
 export const GET = async (_req, ctx) => {
@@ -345,6 +382,9 @@ export default defineConfig({
 - `api/` contains callable server functions and custom route helpers.
 - `server/routes/` is the server file route source folder when `server.routing`
   is enabled.
+- `server/middleware.ts` is global server middleware; nested
+  `server/routes/**/middleware.ts` files scope middleware to descendant file
+  routes.
 - `features/` owns business domains.
 - `components/` owns generic UI.
 - `lib/` contains browser-safe shared helpers.

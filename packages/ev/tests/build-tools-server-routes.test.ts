@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { discoverServerRoutes } from "../src/build-tools/index.js";
+import {
+  applyRouteScopedMiddlewares,
+  discoverServerConventions,
+  discoverServerRoutes,
+} from "../src/build-tools/index.js";
 
 const tempDirs: string[] = [];
 
@@ -43,6 +47,11 @@ describe("discoverServerRoutes", () => {
       "src/server/routes/types.d.ts": `
         export interface User {}
       `,
+      "src/server/routes/middleware.ts": `
+        export default async function middleware(_ctx, next) {
+          await next();
+        }
+      `,
     });
 
     const discovery = await discoverServerRoutes(cwd, {
@@ -56,30 +65,35 @@ describe("discoverServerRoutes", () => {
         module: "src/server/routes/api/users.ts",
         path: "/api/users",
         methods: ["GET", "DELETE"],
+        moduleSegments: ["api"],
       },
       {
         id: "src/server/routes/health.ts:/health:GET,HEAD",
         module: "src/server/routes/health.ts",
         path: "/health",
         methods: ["GET", "HEAD"],
+        moduleSegments: [],
       },
       {
         id: "src/server/routes/(internal)/metrics.ts:/metrics:GET",
         module: "src/server/routes/(internal)/metrics.ts",
         path: "/metrics",
         methods: ["GET"],
+        moduleSegments: ["(internal)"],
       },
       {
         id: "src/server/routes/users/$userId.ts:/users/:userId:POST",
         module: "src/server/routes/users/$userId.ts",
         path: "/users/:userId",
         methods: ["POST"],
+        moduleSegments: ["users"],
       },
       {
         id: "src/server/routes/index.ts:/:GET",
         module: "src/server/routes/index.ts",
         path: "/",
         methods: ["GET"],
+        moduleSegments: [],
       },
     ]);
   });
@@ -101,17 +115,19 @@ describe("discoverServerRoutes", () => {
         module: "src/server/routes/users/index.ts",
         path: "/users",
         methods: ["GET"],
+        moduleSegments: ["users"],
       },
     ]);
   });
 
-  it("marks routes that export middlewares for generated entries", async () => {
+  it("rejects route module middleware exports", async () => {
     const cwd = await createFixture({
       "src/server/routes/guarded.ts": `
         export const middlewares = [];
         export const GET = async () => Response.json({ ok: true });
       `,
-      "src/server/routes/public.ts": `
+      "src/server/routes/legacy.ts": `
+        export const middleware = async (_ctx, next) => next();
         export const GET = async () => Response.json({ ok: true });
       `,
     });
@@ -120,19 +136,19 @@ describe("discoverServerRoutes", () => {
       dir: "./src/server/routes",
     });
 
-    expect(discovery.routes).toEqual([
+    expect(discovery.routes).toEqual([]);
+    expect(discovery.diagnostics).toEqual([
       {
-        id: "src/server/routes/guarded.ts:/guarded:GET",
-        module: "src/server/routes/guarded.ts",
-        path: "/guarded",
-        methods: ["GET"],
-        hasMiddlewares: true,
+        level: "error",
+        file: "src/server/routes/guarded.ts",
+        message:
+          'Server file routes must not export "middlewares". Move middleware logic to a middleware.ts file in the route tree.',
       },
       {
-        id: "src/server/routes/public.ts:/public:GET",
-        module: "src/server/routes/public.ts",
-        path: "/public",
-        methods: ["GET"],
+        level: "error",
+        file: "src/server/routes/legacy.ts",
+        message:
+          'Server file routes must not export "middleware". Move middleware logic to a middleware.ts file in the route tree.',
       },
     ]);
   });
@@ -163,12 +179,14 @@ describe("discoverServerRoutes", () => {
         module: "src/server/routes/orders/$id.ts",
         path: "/orders/:id",
         methods: ["GET"],
+        moduleSegments: ["orders"],
       },
       {
         id: "src/server/routes/users.ts:/users:GET",
         module: "src/server/routes/users.ts",
         path: "/users",
         methods: ["GET"],
+        moduleSegments: [],
       },
     ]);
     expect(discovery.diagnostics).toEqual([
@@ -254,7 +272,8 @@ describe("discoverServerRoutes", () => {
       {
         level: "error",
         file: "src/server/routes/invalid-middlewares.ts",
-        message: "Server route middlewares must be an array of functions.",
+        message:
+          'Server file routes must not export "middlewares". Move middleware logic to a middleware.ts file in the route tree.',
       },
       {
         level: "error",
@@ -272,19 +291,181 @@ describe("discoverServerRoutes", () => {
         level: "error",
         file: "src/server/routes/middleware-only.ts",
         message:
-          "Server route modules must export at least one uppercase HTTP method such as GET or POST.",
+          'Server file routes must not export "middlewares". Move middleware logic to a middleware.ts file in the route tree.',
       },
       {
         level: "error",
         file: "src/server/routes/schema.ts",
         message:
-          'Server route module export "schema" is not supported. Move helpers to a non-route file or export only HTTP methods and middlewares.',
+          'Server route module export "schema" is not supported. Move helpers to a non-route file or export only uppercase HTTP methods.',
       },
       {
         level: "error",
         file: "src/server/routes/users/[id].ts",
         message:
           'Dynamic server route segments must use $param filenames. Bracket segment "[id]" is not supported. Rename the file to "$id" for a dynamic segment.',
+      },
+    ]);
+  });
+});
+
+describe("discoverServerConventions", () => {
+  it("discovers global and route-scoped middleware in filesystem order", async () => {
+    const cwd = await createFixture({
+      "src/server/middleware.ts": `
+        import type { MiddlewareHandler } from "@evjs/server";
+        const middleware: MiddlewareHandler = async (_ctx, next) => {
+          await next();
+        };
+        export default middleware;
+      `,
+      "src/server/routes/middleware.ts": `
+        export default async function middleware(_ctx, next) {
+          await next();
+        }
+      `,
+      "src/server/routes/api/middleware.ts": `
+        export default async (_ctx, next) => next();
+      `,
+      "src/server/routes/api/admin/middleware.ts": `
+        export default async (_ctx, next) => next();
+      `,
+      "src/server/routes/(admin)/middleware.ts": `
+        export default async (_ctx, next) => next();
+      `,
+      "src/server/routes/api/users.ts": `
+        export const GET = async () => Response.json([]);
+      `,
+      "src/server/routes/api/admin/index.ts": `
+        export const GET = async () => Response.json([]);
+      `,
+      "src/server/routes/(admin)/health.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/server/routes/api.ts": `
+        export const GET = async () => Response.json({ flat: true });
+      `,
+    });
+
+    const routeDiscovery = await discoverServerRoutes(cwd, {
+      dir: "./src/server/routes",
+    });
+    const conventionDiscovery = await discoverServerConventions(cwd, {
+      globalFile: "./src/server/middleware.ts",
+      routingDir: "./src/server/routes",
+    });
+
+    expect(conventionDiscovery.diagnostics).toEqual([]);
+    expect(conventionDiscovery.globalMiddlewares).toEqual([
+      {
+        id: "src/server/middleware.ts:global-middleware",
+        module: "src/server/middleware.ts",
+        scope: "global",
+        scopeSegments: [],
+      },
+    ]);
+    expect(conventionDiscovery.routeMiddlewares).toEqual([
+      {
+        id: "src/server/routes/middleware.ts:route-middleware",
+        module: "src/server/routes/middleware.ts",
+        scope: "route",
+        scopeSegments: [],
+      },
+      {
+        id: "src/server/routes/(admin)/middleware.ts:route-middleware",
+        module: "src/server/routes/(admin)/middleware.ts",
+        scope: "route",
+        scopeSegments: ["(admin)"],
+      },
+      {
+        id: "src/server/routes/api/middleware.ts:route-middleware",
+        module: "src/server/routes/api/middleware.ts",
+        scope: "route",
+        scopeSegments: ["api"],
+      },
+      {
+        id: "src/server/routes/api/admin/middleware.ts:route-middleware",
+        module: "src/server/routes/api/admin/middleware.ts",
+        scope: "route",
+        scopeSegments: ["api", "admin"],
+      },
+    ]);
+    const middlewareByModule = new Map(
+      conventionDiscovery.routeMiddlewares.map((middleware) => [
+        middleware.module,
+        middleware,
+      ]),
+    );
+    const rootMiddleware = middlewareByModule.get(
+      "src/server/routes/middleware.ts",
+    );
+    const apiMiddleware = middlewareByModule.get(
+      "src/server/routes/api/middleware.ts",
+    );
+    const apiAdminMiddleware = middlewareByModule.get(
+      "src/server/routes/api/admin/middleware.ts",
+    );
+    const adminGroupMiddleware = middlewareByModule.get(
+      "src/server/routes/(admin)/middleware.ts",
+    );
+
+    const routes = applyRouteScopedMiddlewares(
+      routeDiscovery.routes,
+      conventionDiscovery.routeMiddlewares,
+    );
+    expect(routes.find((route) => route.path === "/api")?.middlewares).toEqual([
+      rootMiddleware,
+    ]);
+    expect(
+      routes.find((route) => route.path === "/api/users")?.middlewares,
+    ).toEqual([rootMiddleware, apiMiddleware]);
+    expect(
+      routes.find((route) => route.path === "/api/admin")?.middlewares,
+    ).toEqual([rootMiddleware, apiMiddleware, apiAdminMiddleware]);
+    expect(
+      routes.find((route) => route.path === "/health")?.middlewares,
+    ).toEqual([rootMiddleware, adminGroupMiddleware]);
+  });
+
+  it("reports invalid middleware convention modules", async () => {
+    const cwd = await createFixture({
+      "src/server/middleware.ts": `
+        export const helper = true;
+        export default {};
+      `,
+      "src/server/routes/api/middleware.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+    });
+
+    const discovery = await discoverServerConventions(cwd, {
+      globalFile: "./src/server/middleware.ts",
+      routingDir: "./src/server/routes",
+    });
+
+    expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/server/middleware.ts",
+        message:
+          'Server middleware module export "helper" is not supported. Move helpers to a private module and default-export only the middleware.',
+      },
+      {
+        level: "error",
+        file: "src/server/middleware.ts",
+        message: "Server middleware default export must be a function.",
+      },
+      {
+        level: "error",
+        file: "src/server/routes/api/middleware.ts",
+        message:
+          "Server middleware modules must default-export a Hono-compatible middleware function.",
+      },
+      {
+        level: "error",
+        file: "src/server/routes/api/middleware.ts",
+        message:
+          'Server middleware module export "GET" is not supported. Move helpers to a private module and default-export only the middleware.',
       },
     ]);
   });

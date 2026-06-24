@@ -21,6 +21,7 @@ import type {
   RenderMode,
   RouteNode,
   ServerFunctionNode,
+  ServerMiddlewareNode,
   ServerRouteNode,
 } from "@evjs/shared/manifest";
 import { parseSync } from "@swc/core";
@@ -114,6 +115,10 @@ export interface GraphConfig {
       dir: string;
       routes: DiscoveredServerRouteNode[];
     };
+    conventions?: {
+      globalMiddlewares: ServerMiddlewareNode[];
+      routeMiddlewares: ServerMiddlewareNode[];
+    };
   };
 }
 
@@ -185,6 +190,12 @@ export async function createAppGraph(
       fileDependencies.add(dir);
     }
   }
+  for (const middleware of [
+    ...(config.server.conventions?.globalMiddlewares ?? []),
+    ...(config.server.conventions?.routeMiddlewares ?? []),
+  ]) {
+    fileDependencies.add(path.resolve(cwd, middleware.module));
+  }
   const clientRoutes: ExtractedRoute[] = [];
   const serverRoutes = new Map<string, ServerRouteNode>();
   const serverRoutePathOwners = new Map<string, ServerRouteNode>();
@@ -193,6 +204,12 @@ export async function createAppGraph(
     (config.server.routing?.routes ?? []).map((route) =>
       path.resolve(cwd, route.module),
     ),
+  );
+  const serverConventionModules = new Set(
+    [
+      ...(config.server.conventions?.globalMiddlewares ?? []),
+      ...(config.server.conventions?.routeMiddlewares ?? []),
+    ].map((middleware) => path.resolve(cwd, middleware.module)),
   );
   const serverFunctions: ServerFunctionNode[] = [];
   const clientReferences = new Map<
@@ -235,7 +252,7 @@ export async function createAppGraph(
       })),
     );
 
-    if (serverFileRouteModules.has(file)) {
+    if (serverFileRouteModules.has(file) || serverConventionModules.has(file)) {
       continue;
     }
 
@@ -1404,6 +1421,19 @@ async function collectFrameworkSourceFiles(
       cwd,
       route.module,
       `Server route "${route.path}" module`,
+      diagnostics,
+      explicitDependencyRoots,
+    );
+  }
+  for (const middleware of [
+    ...(config.server.conventions?.globalMiddlewares ?? []),
+    ...(config.server.conventions?.routeMiddlewares ?? []),
+  ]) {
+    await addConfiguredSource(
+      roots,
+      cwd,
+      middleware.module,
+      `Server middleware "${middleware.module}" module`,
       diagnostics,
       explicitDependencyRoots,
     );

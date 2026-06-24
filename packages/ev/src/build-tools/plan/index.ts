@@ -12,6 +12,7 @@ import type {
   RenderMode,
   RuntimePlan,
   ServerBuildPlan,
+  ServerMiddlewareNode,
   ServerRenderPlan,
 } from "@evjs/shared/manifest";
 import { isRouteDerivedPage } from "@evjs/shared/manifest";
@@ -75,6 +76,10 @@ export interface BuildPlanConfig {
     routing?: {
       dir: string;
       routes: DiscoveredServerRouteNode[];
+    };
+    conventions?: {
+      globalMiddlewares: ServerMiddlewareNode[];
+      routeMiddlewares: ServerMiddlewareNode[];
     };
     basePath: string;
     functionRuntime: {
@@ -530,12 +535,14 @@ function createServerRuntimeEntry(
 ): Pick<BuildEntry, "import" | "metadata"> {
   if (config.server.entry) return { import: config.server.entry };
   const routes = getConfiguredServerRoutes(config, graph);
-  if (routes.length > 0) {
+  const middlewares = config.server.conventions?.globalMiddlewares ?? [];
+  if (routes.length > 0 || middlewares.length > 0) {
     return {
       import: SERVER_ROUTES_ENTRY_IMPORT,
       metadata: {
-        type: "server-routes",
+        type: "server-app",
         routes,
+        ...(middlewares.length > 0 ? { middlewares } : {}),
       },
     };
   }

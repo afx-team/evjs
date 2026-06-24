@@ -18,6 +18,7 @@ import type {
   PprConfig,
   PrerenderConfig,
   RenderMode,
+  ServerMiddlewareNode,
   ServerRouteNode,
 } from "@evjs/shared/manifest";
 import { validatePageRenderingContract } from "./build-tools/page-rendering-contract.js";
@@ -109,6 +110,8 @@ export interface ResolvedServerConfig {
   rsc?: ResolvedServerRscConfig;
   /** Framework-managed server file routing declaration, when enabled. */
   routing?: ResolvedServerRoutingConfig;
+  /** Framework-managed server conventions, when enabled. */
+  conventions?: ResolvedServerConventionsConfig;
   /** Server dev options. */
   dev: ResolvedServerDevConfig;
 }
@@ -269,6 +272,13 @@ export interface ServerConfig {
    */
   routing?: boolean | ServerRoutingConfig;
   /**
+   * Framework-managed server conventions.
+   *
+   * Defaults to enabled when server file routing is enabled. Explicit
+   * `server.entry` owns server composition and disables convention discovery.
+   */
+  conventions?: boolean | ServerConventionsConfig;
+  /**
    * Framework server runtime base path. Defaults to "/__evjs".
    *
    * Server function, PPR, and RSC endpoints are derived from this path.
@@ -299,6 +309,17 @@ export interface ServerRoutingConfig {
 export interface ResolvedServerRoutingConfig {
   dir: string;
   routes: ServerRouteNode[];
+}
+
+export interface ServerConventionsConfig {
+  /** Discover filesystem-scoped server middleware files. Default: true. */
+  middleware?: boolean;
+}
+
+export interface ResolvedServerConventionsConfig {
+  middleware: boolean;
+  globalMiddlewares: ServerMiddlewareNode[];
+  routeMiddlewares: ServerMiddlewareNode[];
 }
 
 export interface TransportConfig {
@@ -409,6 +430,7 @@ export const CONFIG_DEFAULTS = {
   routingDir: "./src/pages",
   routingMode: "spa",
   serverRoutingDir: "./src/server/routes",
+  serverMiddlewareFile: "./src/server/middleware.ts",
   mount: "#app",
 } as const;
 const MPA_LAYOUT_UNSUPPORTED_MESSAGE =
@@ -450,11 +472,13 @@ const PUBLIC_DEV_CONFIG_KEYS = new Set(["port", "https", "proxy"]);
 const PUBLIC_SERVER_CONFIG_KEYS = new Set([
   "entry",
   "routing",
+  "conventions",
   "basePath",
   "rsc",
   "dev",
 ]);
 const PUBLIC_SERVER_ROUTING_CONFIG_KEYS = new Set(["dir"]);
+const PUBLIC_SERVER_CONVENTIONS_CONFIG_KEYS = new Set(["middleware"]);
 const PUBLIC_SERVER_DEV_CONFIG_KEYS = new Set(["port", "https"]);
 const PUBLIC_SERVER_RSC_CONFIG_KEYS = new Set(["endpoint"]);
 const PUBLIC_TRANSPORT_CONFIG_KEYS = new Set(["baseUrl"]);
@@ -560,6 +584,12 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
       "[evjs] server.routing cannot be combined with server.entry. Use server.entry for custom server composition, or remove it to let evjs generate the server route entry.",
     );
   }
+  const resolvedServerConventions = serverEntry
+    ? undefined
+    : resolveServerConventionsConfig(
+        serverConfig.conventions,
+        resolvedServerRouting !== undefined,
+      );
   const clientPort =
     devConfig.port === undefined
       ? CONFIG_DEFAULTS.port
@@ -629,6 +659,7 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
       },
       rsc: rscEndpoint ? { endpoint: rscEndpoint } : undefined,
       routing: resolvedServerRouting,
+      conventions: resolvedServerConventions,
       functionRuntime: {
         endpoint: serverEndpoint,
         clientProxy: CONFIG_DEFAULTS.clientProxy,
@@ -852,7 +883,7 @@ function validateServerConfigKeys(server: ServerConfig): void {
     server,
     PUBLIC_SERVER_CONFIG_KEYS,
     "server",
-    "entry, routing, basePath, rsc, or dev",
+    "entry, routing, conventions, basePath, rsc, or dev",
     (key) => {
       if (key === "functions") {
         return "[evjs] server.functions is not a public config field. Server function, PPR, and RSC endpoints are derived from server.basePath.";
@@ -862,6 +893,46 @@ function validateServerConfigKeys(server: ServerConfig): void {
       }
     },
   );
+}
+
+function resolveServerConventionsConfig(
+  conventions: ServerConfig["conventions"],
+  defaultsEnabled: boolean,
+): ResolvedServerConventionsConfig | undefined {
+  if (conventions === undefined) {
+    return defaultsEnabled
+      ? { middleware: true, globalMiddlewares: [], routeMiddlewares: [] }
+      : undefined;
+  }
+  if (conventions === false) return undefined;
+
+  let options: ServerConventionsConfig;
+  if (conventions === true) {
+    options = {};
+  } else if (
+    conventions &&
+    typeof conventions === "object" &&
+    !Array.isArray(conventions)
+  ) {
+    options = conventions as ServerConventionsConfig;
+  } else {
+    throw new Error(
+      "[evjs] server.conventions must be true, false, or a server conventions object.",
+    );
+  }
+  validateServerConventionsConfigKeys(options);
+
+  const middleware = options.middleware ?? true;
+  if (typeof middleware !== "boolean") {
+    throw new Error("[evjs] server.conventions.middleware must be a boolean.");
+  }
+  if (!middleware) return undefined;
+
+  return {
+    middleware,
+    globalMiddlewares: [],
+    routeMiddlewares: [],
+  };
 }
 
 function resolveServerRoutingConfig(
@@ -898,6 +969,17 @@ function validateServerRoutingConfigKeys(routing: ServerRoutingConfig): void {
     PUBLIC_SERVER_ROUTING_CONFIG_KEYS,
     "server.routing",
     "dir",
+  );
+}
+
+function validateServerConventionsConfigKeys(
+  conventions: ServerConventionsConfig,
+): void {
+  assertKnownConfigKeys(
+    conventions,
+    PUBLIC_SERVER_CONVENTIONS_CONFIG_KEYS,
+    "server.conventions",
+    "middleware",
   );
 }
 

@@ -8,9 +8,21 @@ module.exports = function serverRoutesEntryLoader() {
     rootContext: this.rootContext,
   };
   const routes = Array.isArray(options.routes) ? options.routes : [];
+  const middlewares = toMiddlewares(options.middlewares);
+  const middlewareModules = collectMiddlewareModules(middlewares, routes);
+  const middlewareImportNames = new Map(
+    middlewareModules.map((middleware, index) => [
+      middleware.module,
+      `middleware${index}`,
+    ]),
+  );
   const imports = [
     `import { createApp, createRoute } from "@evjs/server";`,
     `import { createReactFrameworkServer } from "@evjs/server/react";`,
+    ...middlewareModules.map(
+      (middleware, index) =>
+        `import middleware${index} from ${JSON.stringify(toLoaderRelativeRequest(middleware.module, loaderContext))};`,
+    ),
     ...routes.map(
       (route, index) =>
         `import * as routeModule${index} from ${JSON.stringify(toLoaderRelativeRequest(route.module, loaderContext))};`,
@@ -18,9 +30,9 @@ module.exports = function serverRoutesEntryLoader() {
   ];
   const routeDefinitions = routes.flatMap((route, index) => [
     `const routeDefinition${index} = {};`,
-    ...(route.hasMiddlewares
+    ...(toMiddlewares(route.middlewares).length > 0
       ? [
-          `routeDefinition${index}.middlewares = routeModule${index}.middlewares;`,
+          `routeDefinition${index}.middlewares = [${toMiddlewareReferences(route.middlewares, middlewareImportNames).join(", ")}];`,
         ]
       : []),
     ...toMethods(route).map(
@@ -39,8 +51,9 @@ module.exports = function serverRoutesEntryLoader() {
     ...routeDefinitions,
     ``,
     `const framework = createReactFrameworkServer();`,
+    `const middlewares = [${toMiddlewareReferences(middlewares, middlewareImportNames).join(", ")}];`,
     `const routes = [${routeEntries.join(", ")}];`,
-    `const app = createApp({ routes, ...(framework ? { framework } : {}) });`,
+    `const app = createApp({ middlewares, routes, ...(framework ? { framework } : {}) });`,
     `export const fetch = app.fetch;`,
     `export default { fetch };`,
     ``,
@@ -49,6 +62,36 @@ module.exports = function serverRoutesEntryLoader() {
 
 function toMethods(route) {
   return Array.isArray(route.methods) ? route.methods : [];
+}
+
+function toMiddlewares(value) {
+  return Array.isArray(value)
+    ? value.filter(
+        (middleware) =>
+          middleware &&
+          typeof middleware === "object" &&
+          typeof middleware.module === "string",
+      )
+    : [];
+}
+
+function collectMiddlewareModules(globalMiddlewares, routes) {
+  const byModule = new Map();
+  for (const middleware of globalMiddlewares) {
+    byModule.set(middleware.module, middleware);
+  }
+  for (const route of routes) {
+    for (const middleware of toMiddlewares(route.middlewares)) {
+      byModule.set(middleware.module, middleware);
+    }
+  }
+  return [...byModule.values()];
+}
+
+function toMiddlewareReferences(value, importNames) {
+  return toMiddlewares(value)
+    .map((middleware) => importNames.get(middleware.module))
+    .filter(Boolean);
 }
 
 function toLoaderRelativeRequest(specifier, loaderContext) {

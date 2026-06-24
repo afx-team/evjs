@@ -457,7 +457,7 @@ function getServerRoutesEntry(entries: BuildEntry[]):
   | (BuildEntry & {
       metadata: Extract<
         NonNullable<BuildEntry["metadata"]>,
-        { type: "server-routes" }
+        { type: "server-app" }
       >;
     })
   | undefined {
@@ -467,9 +467,9 @@ function getServerRoutesEntry(entries: BuildEntry[]):
     ): entry is BuildEntry & {
       metadata: Extract<
         NonNullable<BuildEntry["metadata"]>,
-        { type: "server-routes" }
+        { type: "server-app" }
       >;
-    } => entry.metadata?.type === "server-routes",
+    } => entry.metadata?.type === "server-app",
   );
 }
 
@@ -493,7 +493,7 @@ function createEntryImport(cwd: string, entry: BuildEntry): string {
     return pagesEntryAnchor;
   }
 
-  if (entry.metadata?.type === "server-routes") {
+  if (entry.metadata?.type === "server-app") {
     return serverRoutesEntryAnchor;
   }
 
