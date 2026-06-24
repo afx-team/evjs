@@ -2,7 +2,67 @@
 
 服务端路由让你完全掌控 HTTP 方法、请求头和标准 Web `Request`/`Response` 对象 —— 不同于使用自动 RPC 的服务端函数。
 
-## 基本用法
+## 文件路由
+
+通过 `server.routing` 启用服务端文件路由：
+
+```ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  server: {
+    routing: true,
+  },
+});
+```
+
+`server.routing: true` 会扫描 `./src/server/routes`，并把该目录映射到 `/`。
+object 形式目前只支持 `dir`。这里没有 `prefix` 选项；如果 URL 需要以 `/api`
+开头，请把文件放在 `src/server/routes/api` 这样的目录下。
+
+```text
+src/server/routes/index.ts              -> /
+src/server/routes/health.ts             -> /health
+src/server/routes/users.ts              -> /users
+src/server/routes/users/index.ts        -> /users
+src/server/routes/users/$userId.ts      -> /users/:userId
+src/server/routes/(internal)/health.ts  -> /health
+src/server/routes/api/users.ts          -> /api/users
+```
+
+只有导出至少一个大写 HTTP method 的文件才会成为路由：
+`GET`、`POST`、`PUT`、`PATCH`、`DELETE`、`HEAD` 或 `OPTIONS`。可选的
+per-route middleware 通过 `middlewares` 导出：
+
+```ts
+// src/server/routes/api/posts.ts
+const requireAuth = async (_req, next) => next();
+
+export const middlewares = [requireAuth];
+
+export const GET = async (req) => {
+  const url = new URL(req.url);
+  const limit = Number(url.searchParams.get("limit")) || 10;
+  return Response.json([{ id: 1, title: "Hello World", limit }]);
+};
+
+export const POST = async (req) => {
+  const data = await req.json();
+  return Response.json({ success: true, data }, { status: 201 });
+};
+```
+
+没有 route exports 的文件会被忽略，因此可以就近放置 `schema.ts`、`db.ts`
+和 `types.ts`。route candidate 只能导出大写 HTTP methods 和 `middlewares`；
+helper 应移到非路由文件。重复 path、重复 dynamic shape、bracket routes、
+catch-all routes、optional params、小写 method exports、route candidate 中的
+default exports、route candidate 中的不支持 runtime exports，以及
+`posts.get.ts` 这类 method suffix 文件都会在 bundling 之前被拒绝。
+
+`server.routing` 不能和 `server.entry` 同时使用。需要自定义 composition 或
+非约定式 URL shape 时，使用 `server.entry` 和编程式路由。
+
+## 编程式路由
 
 使用 `@evjs/server` 的 `createRoute(path, definition)` 定义路由：
 
@@ -188,7 +248,7 @@ createApp({
 });
 ```
 
-## 挂载路由
+## 挂载编程式路由
 
 在服务端入口中将路由处理器提供给 `createApp()`：
 

@@ -3587,6 +3587,162 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
   });
 
+  it("publishes configured server file routes through a generated server entry", async () => {
+    const cwd = await createFixture({
+      "src/main.tsx": `
+        export const clientEntry = true;
+      `,
+      "src/server/routes/health.ts": `
+        "use server";
+
+        export async function GET() {
+          return Response.json({ ok: true });
+        }
+      `,
+      "src/server/routes/users/$userId.ts": `
+        export const middlewares = [];
+        export const POST = async () => Response.json({ ok: true });
+      `,
+    });
+    const config = createConfig({
+      server: {
+        entry: undefined,
+        basePath: "/__evjs",
+        functionRuntime: {
+          endpoint: "/__evjs/fn",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
+        },
+        routing: {
+          dir: "./src/server/routes",
+          routes: [
+            {
+              id: "src/server/routes/health.ts:/health:GET",
+              module: "src/server/routes/health.ts",
+              path: "/health",
+              methods: ["GET"],
+            },
+            {
+              id: "src/server/routes/users/$userId.ts:/users/:userId:POST",
+              module: "src/server/routes/users/$userId.ts",
+              path: "/users/:userId",
+              methods: ["POST"],
+              hasMiddlewares: true,
+            },
+          ],
+        },
+      },
+    });
+    const analysis = await createAppGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "development",
+    });
+
+    expect(analysis.diagnostics).toEqual([]);
+    expect(analysis.graph.serverRoutes).toEqual([
+      {
+        id: "src/server/routes/health.ts:/health:GET",
+        module: "src/server/routes/health.ts",
+        path: "/health",
+        methods: ["GET"],
+      },
+      {
+        id: "src/server/routes/users/$userId.ts:/users/:userId:POST",
+        module: "src/server/routes/users/$userId.ts",
+        path: "/users/:userId",
+        methods: ["POST"],
+      },
+    ]);
+    expect(analysis.graph.serverFunctions).toEqual([]);
+    expect(relativeFileDependencies(cwd, analysis.fileDependencies)).toEqual([
+      "src/server/routes",
+      "src/server/routes/health.ts",
+      "src/server/routes/users",
+      "src/server/routes/users/$userId.ts",
+    ]);
+    expect(plan.entries).toContainEqual({
+      name: "server",
+      import: "evjs:server-routes",
+      environment: "server",
+      runtime: "node",
+      kind: "server-runtime",
+      metadata: {
+        type: "server-routes",
+        routes: [
+          {
+            id: "src/server/routes/health.ts:/health:GET",
+            module: "src/server/routes/health.ts",
+            path: "/health",
+            methods: ["GET"],
+          },
+          {
+            id: "src/server/routes/users/$userId.ts:/users/:userId:POST",
+            module: "src/server/routes/users/$userId.ts",
+            path: "/users/:userId",
+            methods: ["POST"],
+            hasMiddlewares: true,
+          },
+        ],
+      },
+    });
+    expect(plan.server.entry).toBe("evjs:server-routes");
+  });
+
+  it("reports duplicate server file routes against programmatic routes", async () => {
+    const cwd = await createFixture({
+      "src/main.tsx": `
+        import "./api";
+      `,
+      "src/api.ts": `
+        import { createRoute } from "@evjs/server";
+        export const health = createRoute("/health", {
+          POST: async () => Response.json({ ok: true }),
+        });
+      `,
+      "src/server/routes/health.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+    });
+    const config = createConfig({
+      server: {
+        entry: undefined,
+        basePath: "/__evjs",
+        functionRuntime: {
+          endpoint: "/__evjs/fn",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
+        },
+        routing: {
+          dir: "./src/server/routes",
+          routes: [
+            {
+              id: "src/server/routes/health.ts:/health:GET",
+              module: "src/server/routes/health.ts",
+              path: "/health",
+              methods: ["GET"],
+            },
+          ],
+        },
+      },
+    });
+    const analysis = await createAppGraph(config, cwd);
+
+    expect(analysis.graph.serverRoutes).toEqual([
+      {
+        id: "src/server/routes/health.ts:/health:GET",
+        module: "src/server/routes/health.ts",
+        path: "/health",
+        methods: ["GET"],
+      },
+    ]);
+    expect(analysis.diagnostics).toContainEqual({
+      level: "error",
+      file: "src/api.ts",
+      message:
+        'Server route path "/health" is already declared by src/server/routes/health.ts. Declare all HTTP methods for a path in one createRoute() call.',
+    });
+  });
+
   it("reports missing explicit server entries during graph analysis", async () => {
     const cwd = await createFixture({
       "src/main.tsx": `

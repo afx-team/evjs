@@ -45,6 +45,7 @@ describe("CONFIG_DEFAULTS", () => {
     expect(CONFIG_DEFAULTS.clientProxy).toBe("@evjs/client/internal");
     expect(CONFIG_DEFAULTS.serverRegister).toBe("@evjs/server/register");
     expect(CONFIG_DEFAULTS.crossOriginLoading).toBe("anonymous");
+    expect(CONFIG_DEFAULTS.serverRoutingDir).toBe("./src/server/routes");
   });
 
   it("is readonly", () => {
@@ -61,6 +62,7 @@ describe("CONFIG_DEFAULTS", () => {
       crossOriginLoading: "anonymous",
       routingDir: "./src/pages",
       routingMode: "spa",
+      serverRoutingDir: "./src/server/routes",
       mount: "#app",
     });
   });

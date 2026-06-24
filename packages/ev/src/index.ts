@@ -87,6 +87,7 @@ export {
   type ResolvedPageRoutingConfig,
   type ResolvedServerConfig,
   type ResolvedServerDevConfig,
+  type ResolvedServerRoutingConfig,
   type ResolvedServerRscConfig,
   type ResolvedTransportConfig,
   type RouteEntry,
@@ -98,6 +99,7 @@ export {
   type ServerFnEntry,
   type ServerManifest,
   type ServerRouteEntry,
+  type ServerRoutingConfig,
   type ServerRscConfig,
   type TransportConfig,
 } from "./config.js";

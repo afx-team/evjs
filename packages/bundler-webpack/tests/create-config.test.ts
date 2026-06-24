@@ -10,6 +10,7 @@ import {
 const require = createRequire(import.meta.url);
 const frameworkEntryLoader = require("../src/adapter/framework-entry-loader.cjs");
 const pagesEntryLoader = require("../src/adapter/pages-entry-loader.cjs");
+const serverRoutesEntryLoader = require("../src/adapter/server-routes-entry-loader.cjs");
 
 describe("createWebpackConfigs", () => {
   it("installs the pages entry loader for framework-managed pages", async () => {
@@ -91,6 +92,65 @@ describe("createWebpackConfigs", () => {
     expect(miniCssPlugin?.options?.attributes).toEqual({
       crossorigin: "use-credentials",
     });
+  });
+
+  it("installs the server routes entry loader for framework-managed server routes", async () => {
+    const base = createResolvedConfig();
+    const config: ResolvedConfig<WebpackConfig> = {
+      ...base,
+      serverEnabled: true,
+      server: {
+        ...base.server,
+        entry: undefined,
+        routing: {
+          dir: "./src/server/routes",
+          routes: [
+            {
+              id: "src/server/routes/health.ts:/health:GET",
+              module: "src/server/routes/health.ts",
+              path: "/health",
+              methods: ["GET"],
+            },
+          ],
+        },
+      },
+    };
+    const graph = createGraph(config);
+    const plan = createBuildPlan(config, graph, { mode: "development" });
+
+    const configs = await createWebpackConfigs(
+      config,
+      plan,
+      graph,
+      process.cwd(),
+      [],
+    );
+
+    const serverConfig = configs.find((item) => item.name === "server");
+    const entry = serverConfig?.entry as Record<string, { import: string }>;
+    expect(entry.server?.import).toContain("server-routes-entry-anchor.js");
+    expect(serverConfig?.module?.rules).toContainEqual(
+      expect.objectContaining({
+        test: expect.any(RegExp),
+        resourceQuery: /^$/,
+        use: [
+          {
+            loader: expect.stringContaining("server-routes-entry-loader.cjs"),
+            options: {
+              type: "server-routes",
+              routes: [
+                {
+                  id: "src/server/routes/health.ts:/health:GET",
+                  module: "src/server/routes/health.ts",
+                  path: "/health",
+                  methods: ["GET"],
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    );
   });
 
   it("uses component page bootstrap instead of the SPA router loader for MPA page routes", async () => {
@@ -212,6 +272,44 @@ describe("createWebpackConfigs", () => {
     expect(source).toContain("src/layout/index.tsx");
     expect(source).toContain("src/pages/index.tsx");
     expect(source).not.toContain("evjs-page-route");
+  });
+
+  it("generates server routes entries from method exports", () => {
+    const source = serverRoutesEntryLoader.call({
+      cacheable() {},
+      getOptions() {
+        return {
+          routes: [
+            {
+              path: "/health",
+              module: "src/server/routes/health.ts",
+              methods: ["GET"],
+            },
+            {
+              path: "/secure",
+              module: "src/server/routes/secure.ts",
+              methods: ["POST"],
+              hasMiddlewares: true,
+            },
+          ],
+        };
+      },
+      resourcePath:
+        "/workspace/node_modules/@evjs/bundler-webpack/esm/adapter/server-routes-entry-anchor.js",
+      rootContext: "/workspace",
+    });
+
+    expect(source).toContain('@evjs/server"');
+    expect(source).toContain("@evjs/server/react");
+    expect(source).toContain('createRoute("/health", routeDefinition0)');
+    expect(source).toContain('createRoute("/secure", routeDefinition1)');
+    expect(source).toContain("routeDefinition0.GET = routeModule0.GET");
+    expect(source).not.toContain("routeDefinition0.middlewares");
+    expect(source).toContain(
+      "routeDefinition1.middlewares = routeModule1.middlewares",
+    );
+    expect(source).toContain("routeDefinition1.POST = routeModule1.POST");
+    expect(source).toContain("createApp({ routes");
   });
 
   it("keeps React and ReactDOM external in regular Node server bundles", async () => {
@@ -338,6 +436,6 @@ function createGraph(config: ResolvedConfig<WebpackConfig>): AppGraph {
         appId: "default",
       })) ?? [],
     serverFunctions: [],
-    serverRoutes: [],
+    serverRoutes: config.server.routing?.routes ?? [],
   };
 }

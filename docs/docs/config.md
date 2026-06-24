@@ -23,6 +23,7 @@ export default defineConfig({
 | `html` | `./index.html` |
 | `output.crossOriginLoading` | `"anonymous"` |
 | `routing.mode` | `spa` |
+| `server.routing.dir` | `./src/server/routes` when `server.routing` is enabled |
 | `dev.port` | `3000` |
 | `server.dev.port` | `3001` |
 | `server.basePath` | `/__evjs` |
@@ -59,7 +60,9 @@ HTML documents or individual initial assets need different attributes.
 
 ## Routing
 
-`src/pages` is the primary client-routing model. SPA mode builds one
+`src/pages` is the primary client-routing model. Top-level `routing` only
+controls page/client file routing; server file routes are configured under
+`server.routing`. SPA mode builds one
 framework-owned app from those page files:
 
 ```ts
@@ -458,7 +461,6 @@ The framework server boundary defaults to `/__evjs`. Configure
 ```ts
 export default defineConfig({
   server: {
-    entry: "./src/server.ts",
     dev: {
       port: 3001,
       https: false,
@@ -467,11 +469,36 @@ export default defineConfig({
 });
 ```
 
+Enable server file routes with `server.routing`. `true` scans
+`./src/server/routes`; object form currently supports only `dir`. There is no
+`prefix` option: put files under a folder such as `src/server/routes/api` when
+the URL should start with `/api`.
+
+```ts
+export default defineConfig({
+  server: {
+    routing: true,
+  },
+});
+```
+
+`server.routing` and `server.entry` are mutually exclusive. Use `server.entry`
+only when the app needs custom server composition or non-conventional routing:
+
+```ts
+export default defineConfig({
+  server: {
+    entry: "./src/server.ts",
+  },
+});
+```
+
 `output`, `dev`, `server`, `server.dev`, and `transport` must be objects when
 provided; use `server: false` to disable the framework server. `server.entry`
 must be a non-empty module path when provided, and evjs validates configured
 source paths such as `server.entry` during app graph analysis before the
-bundler runs.
+bundler runs. `server.routing` must be `true`, `false`, or an object with an
+optional non-empty `dir` string.
 `server.basePath` must be a non-empty URL
 pathname that starts with `/`, without whitespace, a query string, or a hash;
 trailing slashes are normalized away. If `server.rsc` is configured as an

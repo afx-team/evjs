@@ -16,7 +16,7 @@
     }
   },
   "scripts": {
-    "build": "rm -rf esm && tsc && cp src/adapter/component-page-loader.cjs src/adapter/pages-entry-anchor.js src/adapter/pages-entry-loader.cjs esm/adapter/",
+    "build": "rm -rf esm && tsc && cp src/adapter/component-page-loader.cjs src/adapter/pages-entry-anchor.js src/adapter/pages-entry-loader.cjs src/adapter/server-routes-entry-anchor.js src/adapter/server-routes-entry-loader.cjs esm/adapter/",
     "test": "vitest run",
     "check-types": "tsc --noEmit"
   },

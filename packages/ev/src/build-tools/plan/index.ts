@@ -22,6 +22,8 @@ import {
 } from "../page-rendering-contract.js";
 import { sortPageRoutes } from "../page-route-order.js";
 import { PAGES_APP_ENTRY_IMPORT } from "../pages-entry.js";
+import type { DiscoveredServerRouteNode } from "../server-routes.js";
+import { SERVER_ROUTES_ENTRY_IMPORT } from "../server-routes-entry.js";
 import { sanitizePageId } from "../utils.js";
 
 const DEFAULT_PUBLIC_PATH: RuntimePlan["publicPath"] = "auto";
@@ -70,6 +72,10 @@ export interface BuildPlanConfig {
   serverEnabled: boolean;
   server: {
     entry?: string;
+    routing?: {
+      dir: string;
+      routes: DiscoveredServerRouteNode[];
+    };
     basePath: string;
     functionRuntime: {
       endpoint: string;
@@ -100,7 +106,7 @@ export function createBuildPlan(
   const entries = createEntries(config, graph, serverRenderers);
   const html = createHtmlPlans(config, graph);
   validateBuildOutputNames(entries, html);
-  const server = createServerPlan(config, serverRenderers);
+  const server = createServerPlan(config, graph, serverRenderers);
 
   return {
     version: 1,
@@ -226,12 +232,14 @@ function createEntries(
   }
 
   if (config.serverEnabled) {
+    const serverEntry = createServerRuntimeEntry(config, graph);
     entries.push({
       name: "server",
-      import: resolveServerEntry(config, serverRenderers),
+      import: serverEntry.import,
       environment: "server",
       runtime: "node",
       kind: "server-runtime",
+      ...(serverEntry.metadata ? { metadata: serverEntry.metadata } : {}),
     });
   }
 
@@ -497,6 +505,7 @@ function isMpaFileRoutePage(
 
 function createServerPlan(
   config: BuildPlanConfig,
+  graph: AppGraph,
   renderers: ServerRenderPlan[],
 ): ServerBuildPlan {
   if (!config.serverEnabled) {
@@ -505,7 +514,7 @@ function createServerPlan(
 
   return {
     enabled: true,
-    entry: resolveServerEntry(config, renderers),
+    entry: createServerRuntimeEntry(config, graph).import,
     ...(renderers.length > 0 ? { renderers } : {}),
     functionRuntime: {
       endpoint: config.server.functionRuntime.endpoint,
@@ -515,12 +524,32 @@ function createServerPlan(
   };
 }
 
-function resolveServerEntry(
+function createServerRuntimeEntry(
   config: BuildPlanConfig,
-  _renderers: ServerRenderPlan[],
-): string {
-  if (config.server.entry) return config.server.entry;
-  return "@evjs/server/fetch";
+  graph: AppGraph,
+): Pick<BuildEntry, "import" | "metadata"> {
+  if (config.server.entry) return { import: config.server.entry };
+  const routes = getConfiguredServerRoutes(config, graph);
+  if (routes.length > 0) {
+    return {
+      import: SERVER_ROUTES_ENTRY_IMPORT,
+      metadata: {
+        type: "server-routes",
+        routes,
+      },
+    };
+  }
+  return { import: "@evjs/server/fetch" };
+}
+
+function getConfiguredServerRoutes(
+  config: BuildPlanConfig,
+  graph: AppGraph,
+): DiscoveredServerRouteNode[] {
+  const configured = config.server.routing?.routes ?? [];
+  if (configured.length === 0) return [];
+  const graphIds = new Set(graph.serverRoutes.map((route) => route.id));
+  return configured.filter((route) => graphIds.has(route.id));
 }
 
 function readBuildMode(): "development" | "production" {

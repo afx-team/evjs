@@ -20,6 +20,12 @@ const pagesEntryLoader = fileURLToPath(
 const pagesEntryAnchor = fileURLToPath(
   new URL("./pages-entry-anchor.js", import.meta.url),
 );
+const serverRoutesEntryLoader = fileURLToPath(
+  new URL("./server-routes-entry-loader.cjs", import.meta.url),
+);
+const serverRoutesEntryAnchor = fileURLToPath(
+  new URL("./server-routes-entry-anchor.js", import.meta.url),
+);
 
 import type {
   BuildPlan,
@@ -28,6 +34,7 @@ import type {
   PluginHooks,
   ReactComponentPageEntryMetadata,
   ResolvedConfig,
+  ServerRoutesEntryMetadata,
 } from "@evjs/ev";
 import { getLogger } from "@logtape/logtape";
 import type {
@@ -43,6 +50,7 @@ const logger = getLogger(["evjs", "bundler-utoopack", "config"]);
 
 function createSpaHistoryFallbackRule(
   config: ResolvedConfig<ConfigComplete>,
+  plan: BuildPlan,
 ): ProxyRule {
   const target = new URL(
     config.dev.https ? "https://localhost" : "http://localhost",
@@ -50,7 +58,7 @@ function createSpaHistoryFallbackRule(
   target.port = String(config.dev.port);
 
   return {
-    context: [createSpaHistoryFallbackContext(config)],
+    context: [createSpaHistoryFallbackContext(config, plan)],
     target: target.origin,
     changeOrigin: true,
     secure: false,
@@ -62,8 +70,9 @@ function createSpaHistoryFallbackRule(
 
 function createSpaHistoryFallbackContext(
   config: ResolvedConfig<ConfigComplete>,
+  plan: BuildPlan,
 ): string {
-  const exclusions = createSpaHistoryFallbackExclusions(config)
+  const exclusions = createSpaHistoryFallbackExclusions(config, plan)
     .map(normalizeRoutePrefix)
     .filter((prefix) => prefix !== "/")
     .map((prefix) => `(?!${escapeRegExp(prefix.slice(1))}(?:/|$))`)
@@ -74,6 +83,7 @@ function createSpaHistoryFallbackContext(
 
 function createSpaHistoryFallbackExclusions(
   config: ResolvedConfig<ConfigComplete>,
+  plan: BuildPlan,
 ): string[] {
   const exclusions = new Set(["/api"]);
 
@@ -83,6 +93,9 @@ function createSpaHistoryFallbackExclusions(
     exclusions.add(config.server.runtime.ppr);
     if (config.server.runtime.rsc) {
       exclusions.add(config.server.runtime.rsc);
+    }
+    for (const context of toUniqueDevProxyContexts(getServerRoutePaths(plan))) {
+      exclusions.add(context);
     }
   }
 
@@ -118,13 +131,16 @@ export async function createUtoopackConfig(
   const frameworkRules = createFrameworkModuleRules(plan);
   const devProxy: DevServerProxy = [
     ...config.dev.proxy,
-    ...(hasAppClientEntry(plan) ? [createSpaHistoryFallbackRule(config)] : []),
+    ...createServerRouteProxyRules(config, plan, config.dev.proxy),
+    ...(hasAppClientEntry(plan)
+      ? [createSpaHistoryFallbackRule(config, plan)]
+      : []),
   ];
 
   let finalServerEntry: string | undefined;
 
   if (serverEnabled) {
-    finalServerEntry = resolveServerEntry(plan.server.entry);
+    finalServerEntry = resolveServerEntry(plan);
   }
 
   if (serverEnabled && !finalServerEntry) {
@@ -246,6 +262,23 @@ function createPagesEntryRule(
   };
 }
 
+function createServerRoutesEntryRule(
+  entry: BuildPlan["entries"][number] & {
+    metadata: ServerRoutesEntryMetadata;
+  },
+): TurbopackRuleConfigItem {
+  return {
+    condition: createServerRoutesEntryCondition(),
+    loaders: [
+      {
+        loader: serverRoutesEntryLoader,
+        options: createServerRoutesLoaderOptions(entry.metadata),
+      },
+    ],
+    type: "ecmascript",
+  };
+}
+
 function createPagesEntryCondition(): {
   path: RegExp;
   query: string;
@@ -253,6 +286,22 @@ function createPagesEntryCondition(): {
   const normalizedAnchor = normalizeRulePath(pagesEntryAnchor);
   const frameworkAnchorSuffix =
     "(?:packages/bundler-utoopack|node_modules/@evjs/bundler-utoopack)/(?:src|esm)/adapter/pages-entry-anchor\\.js";
+
+  return {
+    path: new RegExp(
+      `(?:${escapeRegExp(normalizedAnchor)}|(?:^|/)${frameworkAnchorSuffix})$`,
+    ),
+    query: "",
+  };
+}
+
+function createServerRoutesEntryCondition(): {
+  path: RegExp;
+  query: string;
+} {
+  const normalizedAnchor = normalizeRulePath(serverRoutesEntryAnchor);
+  const frameworkAnchorSuffix =
+    "(?:packages/bundler-utoopack|node_modules/@evjs/bundler-utoopack)/(?:src|esm)/adapter/server-routes-entry-anchor\\.js";
 
   return {
     path: new RegExp(
@@ -295,6 +344,20 @@ function resolveClientEntry(entry: BuildPlan["entries"][number]): string {
   return pagesEntryAnchor;
 }
 
+function getServerRoutesEntry(
+  plan: BuildPlan,
+):
+  | (BuildPlan["entries"][number] & { metadata: ServerRoutesEntryMetadata })
+  | undefined {
+  return plan.entries.find(
+    (
+      entry,
+    ): entry is BuildPlan["entries"][number] & {
+      metadata: ServerRoutesEntryMetadata;
+    } => entry.metadata?.type === "server-routes",
+  );
+}
+
 function getPagesAppEntry(
   plan: BuildPlan,
 ):
@@ -324,8 +387,10 @@ function createFrameworkModuleRules(
   plan: BuildPlan,
 ): TurbopackRuleConfigItem[] {
   const pagesApp = getPagesAppEntry(plan);
+  const serverRoutes = getServerRoutesEntry(plan);
   return [
     ...(pagesApp ? [createPagesEntryRule(pagesApp)] : []),
+    ...(serverRoutes ? [createServerRoutesEntryRule(serverRoutes)] : []),
     ...getComponentPageMetadata(plan).map(createComponentPageRule),
   ];
 }
@@ -344,6 +409,20 @@ function createPagesLoaderOptions(
       ...(route.kind ? { kind: route.kind } : {}),
     })),
     ...(metadata.rootModule ? { rootModule: metadata.rootModule } : {}),
+  };
+}
+
+function createServerRoutesLoaderOptions(
+  metadata: ServerRoutesEntryMetadata,
+): TurbopackLoaderOptions {
+  return {
+    type: "server-routes",
+    routes: metadata.routes.map((route) => ({
+      id: route.id,
+      path: route.path,
+      module: route.module,
+      methods: route.methods,
+    })),
   };
 }
 
@@ -405,8 +484,94 @@ function formatBuildEntryOwner(
   return parts.join(", ") || undefined;
 }
 
-function resolveServerEntry(entry: string | undefined): string | undefined {
+function resolveServerEntry(plan: BuildPlan): string | undefined {
+  const serverRoutesEntry = getServerRoutesEntry(plan);
+  if (serverRoutesEntry) return serverRoutesEntryAnchor;
+
+  const entry = plan.server.entry;
   if (!entry) return undefined;
   if (entry.startsWith(".") || path.isAbsolute(entry)) return entry;
   return require.resolve(entry);
+}
+
+function createServerRouteProxyRules(
+  config: ResolvedConfig<ConfigComplete>,
+  plan: BuildPlan,
+  existingRules: DevServerProxy,
+): ProxyRule[] {
+  if (!config.serverEnabled) return [];
+
+  const configuredContexts = new Set(
+    existingRules.flatMap((rule) => getProxyRuleContexts(rule)),
+  );
+  const contexts = toUniqueDevProxyContexts(getServerRoutePaths(plan)).filter(
+    (context) => !configuredContexts.has(context),
+  );
+  if (
+    getServerRoutePaths(plan).some(
+      (routePath) => normalizeRoutePath(routePath) === "/",
+    ) &&
+    !configuredContexts.has("^/$")
+  ) {
+    contexts.push("^/$");
+  }
+  if (contexts.length === 0) return [];
+
+  const target = new URL(
+    config.server.dev.https ? "https://localhost" : "http://localhost",
+  );
+  target.port = String(config.server.dev.port);
+
+  return [
+    {
+      context: contexts,
+      target: target.origin,
+      changeOrigin: true,
+      secure: false,
+    },
+  ];
+}
+
+function getProxyRuleContexts(rule: { context: string | string[] }): string[] {
+  return Array.isArray(rule.context) ? rule.context : [rule.context];
+}
+
+function getServerRoutePaths(plan: BuildPlan): string[] {
+  return (
+    getServerRoutesEntry(plan)?.metadata.routes.map((route) => route.path) ?? []
+  );
+}
+
+function toDevProxyContext(routePath: string): string | undefined {
+  const segments = routePath.split("/").filter(Boolean);
+  const staticSegments: string[] = [];
+
+  for (const segment of segments) {
+    if (
+      segment === "*" ||
+      segment.startsWith(":") ||
+      segment.startsWith("$") ||
+      segment.includes("*")
+    ) {
+      break;
+    }
+    staticSegments.push(segment);
+  }
+
+  if (staticSegments.length === 0) return undefined;
+  return `/${staticSegments.join("/")}`;
+}
+
+function toUniqueDevProxyContexts(routePaths: string[]): string[] {
+  const contexts = new Set<string>();
+  for (const routePath of routePaths) {
+    const context = toDevProxyContext(routePath);
+    if (context) contexts.add(context);
+  }
+  return [...contexts];
+}
+
+function normalizeRoutePath(routePath: string): string {
+  if (!routePath.startsWith("/")) return `/${routePath}`;
+  return routePath.replace(/\/+$/, "") || "/";
 }

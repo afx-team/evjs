@@ -171,6 +171,7 @@ const expectedBuildToolsRuntimeExports = [
   "detectUseClient",
   "diffBuildPlan",
   "discoverPageRoutes",
+  "discoverServerRoutes",
   "extractRscReferences",
   "extractServerFunctionExports",
   "extractServerRoutes",

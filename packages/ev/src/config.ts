@@ -18,6 +18,7 @@ import type {
   PprConfig,
   PrerenderConfig,
   RenderMode,
+  ServerRouteNode,
 } from "@evjs/shared/manifest";
 import { validatePageRenderingContract } from "./build-tools/page-rendering-contract.js";
 import { routePathShapeFromPath } from "./build-tools/page-route-conventions.js";
@@ -106,6 +107,8 @@ export interface ResolvedServerConfig {
   functionRuntime: ResolvedFunctionRuntimeConfig;
   /** RSC Flight endpoint configuration when enabled. */
   rsc?: ResolvedServerRscConfig;
+  /** Framework-managed server file routing declaration, when enabled. */
+  routing?: ResolvedServerRoutingConfig;
   /** Server dev options. */
   dev: ResolvedServerDevConfig;
 }
@@ -259,6 +262,13 @@ export interface ServerConfig {
   /** Explicit server entry file. If provided, overrides auto-generated entry. */
   entry?: string;
   /**
+   * Framework-managed server file routing.
+   *
+   * When enabled, evjs discovers Request/Response route modules from
+   * `src/server/routes`. This cannot be combined with `server.entry`.
+   */
+  routing?: boolean | ServerRoutingConfig;
+  /**
    * Framework server runtime base path. Defaults to "/__evjs".
    *
    * Server function, PPR, and RSC endpoints are derived from this path.
@@ -279,6 +289,16 @@ export interface ServerRscConfig {
 
 export interface ResolvedServerRscConfig {
   endpoint: string;
+}
+
+export interface ServerRoutingConfig {
+  /** Directory containing server route modules. Default: "./src/server/routes". */
+  dir?: string;
+}
+
+export interface ResolvedServerRoutingConfig {
+  dir: string;
+  routes: ServerRouteNode[];
 }
 
 export interface TransportConfig {
@@ -388,6 +408,7 @@ export const CONFIG_DEFAULTS = {
   crossOriginLoading: "anonymous",
   routingDir: "./src/pages",
   routingMode: "spa",
+  serverRoutingDir: "./src/server/routes",
   mount: "#app",
 } as const;
 const MPA_LAYOUT_UNSUPPORTED_MESSAGE =
@@ -426,7 +447,14 @@ const PUBLIC_PAGE_CONFIG_KEYS = new Set([
   "rsc",
 ]);
 const PUBLIC_DEV_CONFIG_KEYS = new Set(["port", "https", "proxy"]);
-const PUBLIC_SERVER_CONFIG_KEYS = new Set(["entry", "basePath", "rsc", "dev"]);
+const PUBLIC_SERVER_CONFIG_KEYS = new Set([
+  "entry",
+  "routing",
+  "basePath",
+  "rsc",
+  "dev",
+]);
+const PUBLIC_SERVER_ROUTING_CONFIG_KEYS = new Set(["dir"]);
 const PUBLIC_SERVER_DEV_CONFIG_KEYS = new Set(["port", "https"]);
 const PUBLIC_SERVER_RSC_CONFIG_KEYS = new Set(["endpoint"]);
 const PUBLIC_TRANSPORT_CONFIG_KEYS = new Set(["baseUrl"]);
@@ -524,6 +552,14 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
     serverConfig.entry === undefined
       ? undefined
       : assertNonEmptyString(serverConfig.entry, "server.entry");
+  const resolvedServerRouting = resolveServerRoutingConfig(
+    serverConfig.routing,
+  );
+  if (serverEntry && resolvedServerRouting) {
+    throw new Error(
+      "[evjs] server.routing cannot be combined with server.entry. Use server.entry for custom server composition, or remove it to let evjs generate the server route entry.",
+    );
+  }
   const clientPort =
     devConfig.port === undefined
       ? CONFIG_DEFAULTS.port
@@ -592,6 +628,7 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
         ...(rscEndpoint ? { rsc: rscEndpoint } : {}),
       },
       rsc: rscEndpoint ? { endpoint: rscEndpoint } : undefined,
+      routing: resolvedServerRouting,
       functionRuntime: {
         endpoint: serverEndpoint,
         clientProxy: CONFIG_DEFAULTS.clientProxy,
@@ -815,7 +852,7 @@ function validateServerConfigKeys(server: ServerConfig): void {
     server,
     PUBLIC_SERVER_CONFIG_KEYS,
     "server",
-    "entry, basePath, rsc, or dev",
+    "entry, routing, basePath, rsc, or dev",
     (key) => {
       if (key === "functions") {
         return "[evjs] server.functions is not a public config field. Server function, PPR, and RSC endpoints are derived from server.basePath.";
@@ -824,6 +861,43 @@ function validateServerConfigKeys(server: ServerConfig): void {
         return `[evjs] server.${key} is resolved framework metadata and cannot be configured. Use server.basePath to change framework endpoint paths.`;
       }
     },
+  );
+}
+
+function resolveServerRoutingConfig(
+  routing: ServerConfig["routing"],
+): ResolvedServerRoutingConfig | undefined {
+  if (routing === undefined || routing === false) return undefined;
+  let options: ServerRoutingConfig;
+  if (routing === true) {
+    options = {};
+  } else if (
+    routing &&
+    typeof routing === "object" &&
+    !Array.isArray(routing)
+  ) {
+    options = routing as ServerRoutingConfig;
+  } else {
+    throw new Error(
+      "[evjs] server.routing must be true, false, or a server routing object.",
+    );
+  }
+  validateServerRoutingConfigKeys(options);
+  return {
+    dir:
+      options.dir === undefined
+        ? CONFIG_DEFAULTS.serverRoutingDir
+        : assertNonEmptyString(options.dir, "server.routing.dir"),
+    routes: [],
+  };
+}
+
+function validateServerRoutingConfigKeys(routing: ServerRoutingConfig): void {
+  assertKnownConfigKeys(
+    routing,
+    PUBLIC_SERVER_ROUTING_CONFIG_KEYS,
+    "server.routing",
+    "dir",
   );
 }
 

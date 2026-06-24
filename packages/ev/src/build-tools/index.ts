@@ -49,6 +49,12 @@ export {
   transformRscClientFile,
 } from "./rsc-refs.js";
 export { extractServerFunctionExports } from "./server-fns.js";
+export type {
+  DiscoverServerRoutesOptions,
+  ServerRouteDiscovery,
+  ServerRouteDiscoveryDiagnostic,
+} from "./server-routes.js";
+export { discoverServerRoutes } from "./server-routes.js";
 export type { TransformResult } from "./transforms/index.js";
 export { transformServerFile } from "./transforms/index.js";
 export type {

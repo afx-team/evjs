@@ -15,7 +15,7 @@ cd my-app && npm install
 |------|------|
 | `basic` | 路由 + 服务端函数 |
 | `mpa` | 多页面应用模板 |
-| `api-routes` | 通过 `createRoute()` 构建程序化 REST API |
+| `api-routes` | 通过 `server.routing` 文件路由构建 REST API |
 | `complex-routing` | 参数、搜索、根布局、加载器、嵌套路径 |
 | `with-tailwind` | 通过 PostCSS 使用 Tailwind CSS |
 | `with-trpc` | tRPC 互操作示例 |
@@ -51,9 +51,12 @@ my-app/
 │   ├── pages/              # 文件路由
 │   │   ├── index.tsx       # /
 │   │   └── users/$id.tsx   # /users/$id
-│   └── api/                # 服务端模块
-│       ├── users.server.ts # "use server" 函数
-│       └── health.routes.ts
+│   ├── api/                # 服务端函数模块
+│   │   └── users.server.ts # "use server" 函数
+│   └── server/
+│       └── routes/         # 服务端文件路由
+│           └── api/
+│               └── health.ts # /api/health
 ├── package.json
 └── tsconfig.json
 ```

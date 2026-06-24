@@ -52,6 +52,24 @@ describe("defineConfig", () => {
     });
   });
 
+  it("accepts server routing configuration", () => {
+    const config = defineConfig({
+      server: {
+        routing: {
+          dir: "./src/server/routes",
+        },
+      },
+    });
+
+    expect(config).toEqual({
+      server: {
+        routing: {
+          dir: "./src/server/routes",
+        },
+      },
+    });
+  });
+
   it("accepts output crossorigin loading configuration", () => {
     const config = defineConfig({
       output: {
@@ -83,6 +101,7 @@ describe("resolveConfig", () => {
       rsc: "/__evjs/rsc",
     });
     expect(resolved.server.functionRuntime.endpoint).toBe("/__evjs/fn");
+    expect(resolved.server.routing).toBeUndefined();
     expect(resolved.transport).toEqual({ baseUrl: undefined });
     expect(resolved.apps).toBeUndefined();
     expect(resolved.routing).toBeUndefined();
@@ -846,6 +865,40 @@ describe("resolveConfig", () => {
     });
   });
 
+  it("resolves server file routing configuration", () => {
+    expect(
+      resolveConfig({
+        server: {
+          routing: true,
+        },
+      }).server.routing,
+    ).toEqual({
+      dir: CONFIG_DEFAULTS.serverRoutingDir,
+      routes: [],
+    });
+
+    expect(
+      resolveConfig({
+        server: {
+          routing: {
+            dir: "./src/custom-routes",
+          },
+        },
+      }).server.routing,
+    ).toEqual({
+      dir: "./src/custom-routes",
+      routes: [],
+    });
+
+    expect(
+      resolveConfig({
+        server: {
+          routing: false,
+        },
+      }).server.routing,
+    ).toBeUndefined();
+  });
+
   it("rejects invalid server and transport declarations", () => {
     expect(() =>
       resolveConfig({
@@ -900,7 +953,7 @@ describe("resolveConfig", () => {
         },
       }),
     ).toThrow(
-      "[evjs] server.endpoint is not supported. Use entry, basePath, rsc, or dev.",
+      "[evjs] server.endpoint is not supported. Use entry, routing, basePath, rsc, or dev.",
     );
 
     expect(() =>
@@ -910,6 +963,48 @@ describe("resolveConfig", () => {
         },
       }),
     ).toThrow("[evjs] server.entry must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          entry: "./src/server.ts",
+          routing: true,
+        },
+      }),
+    ).toThrow(
+      "[evjs] server.routing cannot be combined with server.entry. Use server.entry for custom server composition, or remove it to let evjs generate the server route entry.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          routing: null as never,
+        },
+      }),
+    ).toThrow(
+      "[evjs] server.routing must be true, false, or a server routing object.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          routing: {
+            // @ts-expect-error runtime config loading can still produce unknown keys.
+            prefix: "/api",
+          },
+        },
+      }),
+    ).toThrow("[evjs] server.routing.prefix is not supported. Use dir.");
+
+    expect(() =>
+      resolveConfig({
+        server: {
+          routing: {
+            dir: "",
+          },
+        },
+      }),
+    ).toThrow("[evjs] server.routing.dir must be a non-empty string.");
 
     expect(() =>
       resolveConfig({

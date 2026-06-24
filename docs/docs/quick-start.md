@@ -15,7 +15,7 @@ Both arguments are optional — if omitted, the CLI prompts interactively.
 |----------|-------------|
 | `basic` | Routing + server functions |
 | `mpa` | Multi-page application setup |
-| `api-routes` | Programmatic REST API routes via `createRoute()` |
+| `api-routes` | REST API routes via `server.routing` file routes |
 | `complex-routing` | Params, search, root layout, loaders, nested paths |
 | `with-tailwind` | Tailwind CSS via PostCSS |
 | `with-trpc` | tRPC interop example |
@@ -52,9 +52,12 @@ my-app/
 │   ├── pages/              # Page routes
 │   │   ├── index.tsx       # /
 │   │   └── users/$id.tsx   # /users/$id
-│   └── api/                # Server-only modules
-│       ├── users.server.ts # "use server" functions
-│       └── health.routes.ts
+│   ├── api/                # Server function modules
+│   │   └── users.server.ts # "use server" functions
+│   └── server/
+│       └── routes/         # Server file routes
+│           └── api/
+│               └── health.ts # /api/health
 ├── package.json
 └── tsconfig.json
 ```

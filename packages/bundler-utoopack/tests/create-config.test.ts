@@ -8,6 +8,7 @@ import { createUtoopackConfig } from "../src/adapter/create-config.js";
 const require = createRequire(import.meta.url);
 const componentPageLoader = require("../src/adapter/component-page-loader.cjs");
 const pagesEntryLoader = require("../src/adapter/pages-entry-loader.cjs");
+const serverRoutesEntryLoader = require("../src/adapter/server-routes-entry-loader.cjs");
 
 describe("createUtoopackConfig", () => {
   function createResolvedConfig(
@@ -245,6 +246,85 @@ describe("createUtoopackConfig", () => {
     expect(fallbackPattern.test("/turbopack-hmr")).toBe(false);
   });
 
+  it("proxies server file routes and keeps them out of SPA fallback", async () => {
+    const config = createResolvedConfig({
+      serverEnabled: true,
+      server: {
+        entry: undefined,
+        basePath: "/__evjs",
+        runtime: {
+          basePath: "/__evjs",
+          fn: "/__evjs/fn",
+          ppr: "/__evjs/ppr",
+        },
+        functionRuntime: {
+          endpoint: "/__evjs/fn",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
+        },
+        dev: {
+          port: 3001,
+          https: false,
+        },
+        routing: {
+          dir: "./src/server/routes",
+          routes: [
+            {
+              id: "src/server/routes/health.ts:/health:GET",
+              module: "src/server/routes/health.ts",
+              path: "/health",
+              methods: ["GET"],
+            },
+            {
+              id: "src/server/routes/users/$userId.ts:/users/:userId:GET",
+              module: "src/server/routes/users/$userId.ts",
+              path: "/users/:userId",
+              methods: ["GET"],
+            },
+            {
+              id: "src/server/routes/index.ts:/:GET",
+              module: "src/server/routes/index.ts",
+              path: "/",
+              methods: ["GET"],
+            },
+          ],
+        },
+      },
+    });
+    const plan = createPlan(config);
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+    const serverRouteRule = utoopackConfig.devServer?.proxy?.find((rule) =>
+      getProxyRuleContexts(rule).includes("/health"),
+    );
+    const fallbackRule = utoopackConfig.devServer?.proxy?.find((rule) =>
+      getProxyRuleContexts(rule).some((context) =>
+        context.includes("turbopack-hmr"),
+      ),
+    );
+    const fallbackPattern = new RegExp(
+      getProxyRuleContexts(fallbackRule as { context: string | string[] })[0] ??
+        "",
+    );
+
+    expect(
+      getProxyRuleContexts(serverRouteRule as { context: string | string[] }),
+    ).toEqual(["/health", "/users", "^/$"]);
+    expect(serverRouteRule).toMatchObject({
+      target: "http://localhost:3001",
+      changeOrigin: true,
+      secure: false,
+    });
+    expect(fallbackPattern.test("/dashboard")).toBe(true);
+    expect(fallbackPattern.test("/health")).toBe(false);
+    expect(fallbackPattern.test("/users/123")).toBe(false);
+  });
+
   it("installs the pages entry loader for framework-managed pages", async () => {
     const config = createResolvedConfig({
       entry: "./src/pages/index.tsx",
@@ -323,6 +403,117 @@ describe("createUtoopackConfig", () => {
         },
       ],
     });
+  });
+
+  it("installs the server routes entry loader for framework-managed server routes", async () => {
+    const config = createResolvedConfig({
+      serverEnabled: true,
+      server: {
+        entry: undefined,
+        basePath: "/__evjs",
+        runtime: {
+          basePath: "/__evjs",
+          fn: "/__evjs/fn",
+          ppr: "/__evjs/ppr",
+        },
+        functionRuntime: {
+          endpoint: "/__evjs/fn",
+          clientProxy: "@evjs/client/internal",
+          serverRegister: "@evjs/server/register",
+        },
+        dev: {
+          port: 3001,
+          https: false,
+        },
+        routing: {
+          dir: "./src/server/routes",
+          routes: [
+            {
+              id: "src/server/routes/health.ts:/health:GET",
+              module: "src/server/routes/health.ts",
+              path: "/health",
+              methods: ["GET"],
+            },
+          ],
+        },
+      },
+    });
+    const plan = createPlan(config);
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.server?.entry).toEqual(
+      expect.stringContaining("server-routes-entry-anchor.js"),
+    );
+    expect(utoopackConfig.module?.rules).toMatchObject({
+      "**/*": expect.arrayContaining([
+        expect.objectContaining({
+          condition: {
+            path: expect.any(RegExp),
+            query: "",
+          },
+          loaders: [
+            {
+              loader: expect.stringContaining("server-routes-entry-loader.cjs"),
+              options: {
+                type: "server-routes",
+                routes: [
+                  {
+                    id: "src/server/routes/health.ts:/health:GET",
+                    module: "src/server/routes/health.ts",
+                    path: "/health",
+                    methods: ["GET"],
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      ]),
+    });
+  });
+
+  it("generates server routes entries from method and middleware exports", () => {
+    const source = serverRoutesEntryLoader.call({
+      cacheable() {},
+      getOptions() {
+        return {
+          routes: [
+            {
+              path: "/health",
+              module: "src/server/routes/health.ts",
+              methods: ["GET"],
+            },
+            {
+              path: "/secure",
+              module: "src/server/routes/secure.ts",
+              methods: ["POST"],
+              hasMiddlewares: true,
+            },
+          ],
+        };
+      },
+      resourcePath:
+        "/workspace/node_modules/@evjs/bundler-utoopack/esm/adapter/server-routes-entry-anchor.js",
+      rootContext: "/workspace",
+    });
+
+    expect(source).toContain('@evjs/server"');
+    expect(source).toContain("@evjs/server/react");
+    expect(source).toContain('createRoute("/health", routeDefinition0)');
+    expect(source).toContain('createRoute("/secure", routeDefinition1)');
+    expect(source).toContain("routeDefinition0.GET = routeModule0.GET");
+    expect(source).not.toContain("routeDefinition0.middlewares");
+    expect(source).toContain(
+      "routeDefinition1.middlewares = routeModule1.middlewares",
+    );
+    expect(source).toContain("routeDefinition1.POST = routeModule1.POST");
+    expect(source).toContain("createApp({ routes");
   });
 
   it("does not add SPA history fallback for MPA builds", async () => {
@@ -734,7 +925,7 @@ function createPlan(
         appId: "default",
       })) ?? [],
     serverFunctions: [],
-    serverRoutes: [],
+    serverRoutes: config.server.routing?.routes ?? [],
   };
 
   return createBuildPlan(config, graph, {

@@ -109,8 +109,9 @@ my-evjs-app/
 | `src/pages/**/layout.{tsx,ts,jsx,js}` 或 `src/pages/**/layout/index.{tsx,ts,jsx,js}` | SPA route layout | 在同一 URL 前缀下包裹子路由的 pathless layout route | MPA 公共外框，或命名为 `layout` 的非 layout helper 目录 |
 | `<routing-dir-parent>/route-types.d.ts` | SPA 导航类型生成物 | 编辑器和类型检查支持 | 手工修改、从应用代码导入、放入模板或脚手架源码，或用于 MPA 模式 |
 | `src/api/*.server.ts` | 推荐的 server function 边界 | 以 `"use server";` 开头并导出命名 callable server functions 的文件 | 需要在 `server: false` 下运行的客户端导入、默认导出或 runtime re-export |
-| `src/api/*.routes.ts` | 推荐的 server route 边界 | 使用 Web `Request`/`Response` 的 `createRoute()` handlers | Server functions，或把同一个 URL shape 拆到多个文件 |
-| `src/server.ts` | Framework server entry | `createApp({ routes, middlewares, framework })` 和部署运行时 glue | 浏览器代码或按页面拆分的 client bootstrap |
+| `src/server/routes/**/*.{ts,tsx,js,jsx}` | 启用 `server.routing` 时的服务端文件路由发现 | 导出大写 HTTP method 和可选 `middlewares` 的 Request/Response route 模块 | `route.ts` 哨兵、`foo.get.ts` method suffix 文件、bracket/catch-all/optional routes，或从 route candidate 导出 helper |
+| `src/server/routes` 下的 server route paths 和 dynamic URL shapes | graph/build plan 生成前的 server route 冲突检查 | 每个 URL path 只保留一个 server route module，每个 dynamic URL shape 只保留一种参数命名 | 并存的 `users.ts`/`users/index.ts`、`users/$id.ts`/`users/$userId.ts`，或把同一路径的方法拆到多个文件 |
+| `src/server.ts` | 自定义 framework server entry | `createApp({ routes, middlewares, framework })`、非约定式 routing 和部署运行时 glue | 浏览器代码、按页面拆分的 client bootstrap，或和 `server.routing` 同时使用 |
 | `src/features`、`src/components`、`src/lib`、`src/hooks` | 没有直接框架约定 | 业务代码、可复用 UI、浏览器安全 helper 和 React hooks | 依赖文件名被路由发现的文件 |
 
 除非确实需要更底层 API，否则不要在一个应用中混用多套路由所有权模型：
@@ -134,7 +135,7 @@ export default defineConfig({
   },
 
   server: {
-    entry: "./src/server.ts",
+    routing: true,
     rsc: true,
   },
 });
@@ -235,7 +236,8 @@ export default function Campaign() {
 
 ## 服务端边界
 
-默认把服务端专用代码放在 `src/api/` 下。
+默认把 callable server functions 放在 `src/api/` 下，把服务端文件路由放在
+`src/server/routes` 下。
 
 ```ts
 // src/api/operators.server.ts
@@ -247,17 +249,36 @@ export async function listOperators() {
 ```
 
 ```ts
+// src/server/routes/api/health.ts
+export const GET = async () => Response.json({ ok: true });
+```
+
+`src/server/routes` 下的文件路径就是 URL path，因此上面的例子映射到
+`/api/health`。根路由使用 `src/server/routes/index.ts`；动态段使用
+`$param` 文件名，并映射为 Hono params，例如 `:userId`。
+
+```ts
+// src/server/routes/users/$userId.ts
+export const GET = async (_req, ctx) => {
+  const userId = ctx.req.param("userId");
+  return Response.json({ id: userId });
+};
+```
+
+需要自定义 composition 或非约定式 routing 时，关闭 `server.routing` 并在
+`src/server.ts` 中挂载 routes：
+
+```ts
 // src/api/health.routes.ts
 import { createRoute } from "@evjs/server";
 
-export const healthRoute = createRoute("/api/health", {
+export const healthRoute = createRoute("/health", {
   GET: async () => Response.json({ ok: true }),
 });
 ```
 
-在 `src/server.ts` 中挂载 routes 和 framework rendering：
-
 ```ts
+// src/server.ts
 import { createApp, requestLogger } from "@evjs/server";
 import { createReactFrameworkServer } from "@evjs/server/react";
 import { healthRoute } from "./api/health.routes";
@@ -273,11 +294,23 @@ const app = createApp({
 export default { fetch: app.fetch };
 ```
 
+```ts
+// ev.config.ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  server: {
+    entry: "./src/server.ts",
+  },
+});
+```
+
 ## 命名建议
 
 - `pages/` 是文件路由目录，也可以包含 SSR/PPR/RSC components。
-- `api/` 是服务端边界。
+- `api/` 放 callable server functions 和自定义 route helpers。
+- `server/routes/` 是启用 `server.routing` 时的服务端文件路由目录。
 - `features/` 放业务领域模块。
 - `components/` 放通用 UI。
 - `lib/` 放浏览器安全的共享工具。
-- 服务端密钥和 Node-only API 应留在 `api/`，或只被 server-only code 引用的模块中。
+- 服务端密钥和 Node-only API 应留在 `api/`、`server/`，或只被 server-only code 引用的模块中。

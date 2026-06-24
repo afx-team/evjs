@@ -22,6 +22,7 @@ import {
   createBuildPlan,
   diffBuildPlan,
   discoverPageRoutes,
+  discoverServerRoutes,
   generateHtml,
   type HtmlAsset,
 } from "./build-tools/index.js";
@@ -137,7 +138,13 @@ export interface InspectFrameworkBuildOptions<
 
 export interface InspectDiagnostic {
   level: "warning" | "error";
-  source: "config" | "html" | "page-routes" | "graph" | "plan";
+  source:
+    | "config"
+    | "html"
+    | "page-routes"
+    | "server-routes"
+    | "graph"
+    | "plan";
   message: string;
   file?: string;
   line?: number;
@@ -251,6 +258,15 @@ interface PageRoutingDefaultsOptions {
   onDiscovery?: (
     base: NonNullable<ResolvedConfig["routing"]>,
     discovery: Awaited<ReturnType<typeof discoverPageRoutes>>,
+  ) => void;
+}
+
+interface ServerRoutingDefaultsOptions {
+  reportDiagnostics?: boolean;
+  allowEmptyRoutes?: boolean;
+  onDiscovery?: (
+    base: NonNullable<ResolvedConfig["server"]["routing"]>,
+    discovery: Awaited<ReturnType<typeof discoverServerRoutes>>,
   ) => void;
 }
 
@@ -373,11 +389,90 @@ async function withPageRoutingDefaults<TBundlerCfg>(
   };
 }
 
+async function withServerRoutingDefaults<TBundlerCfg>(
+  config: ResolvedConfig<TBundlerCfg>,
+  userConfig: Config<TBundlerCfg> | undefined,
+  cwd: string,
+  options: ServerRoutingDefaultsOptions = {},
+): Promise<ResolvedConfig<TBundlerCfg>> {
+  const routingOption = readServerRoutingConfig(userConfig);
+  if (!config.serverEnabled || routingOption === false) {
+    return {
+      ...config,
+      server: {
+        ...config.server,
+        routing: undefined,
+      },
+    };
+  }
+
+  if (!config.server.routing) return config;
+
+  const requested = routingOption !== undefined;
+  const base = config.server.routing;
+  const discovery = await discoverServerRoutes(cwd, {
+    dir: base.dir,
+    required: requested,
+  });
+  options.onDiscovery?.(base, discovery);
+  if (options.reportDiagnostics !== false) {
+    reportServerRouteDiagnostics(discovery.diagnostics);
+  }
+
+  if (discovery.routes.length === 0) {
+    if (!requested) {
+      return {
+        ...config,
+        server: {
+          ...config.server,
+          routing: undefined,
+        },
+      };
+    }
+    if (options.allowEmptyRoutes) {
+      return {
+        ...config,
+        server: {
+          ...config.server,
+          routing: {
+            ...base,
+            routes: [],
+          },
+        },
+      };
+    }
+    throw new Error(createNoServerRoutesFoundMessage(base.dir));
+  }
+
+  return {
+    ...config,
+    server: {
+      ...config.server,
+      routing: {
+        ...base,
+        routes: discovery.routes,
+      },
+    },
+  };
+}
+
 function readRoutingConfig<TBundlerCfg>(
   config: Config<TBundlerCfg> | undefined,
 ): Config<TBundlerCfg>["routing"] {
   return config?.routing;
 }
+
+function readServerRoutingConfig<TBundlerCfg>(
+  config: Config<TBundlerCfg> | undefined,
+): ServerRoutingConfigValue<TBundlerCfg> {
+  const server = config?.server;
+  if (server === undefined || server === false) return undefined;
+  return server.routing;
+}
+
+type ServerRoutingConfigValue<TBundlerCfg> =
+  | Exclude<Config<TBundlerCfg>["server"], false | undefined>["routing"]
+  | undefined;
 
 function createPagesEntryImport(
   routes: NonNullable<ResolvedConfig["routing"]>["routes"],
@@ -459,6 +554,35 @@ function reportPageRouteDiagnostics(
       ].join("\n"),
     );
   }
+}
+
+function reportServerRouteDiagnostics(
+  diagnostics: Array<{
+    level: "warning" | "error";
+    message: string;
+    file?: string;
+  }>,
+): void {
+  const errors: string[] = [];
+  for (const diagnostic of diagnostics) {
+    const message = diagnostic.file
+      ? `${diagnostic.file} - ${diagnostic.message}`
+      : diagnostic.message;
+    if (diagnostic.level === "error") {
+      errors.push(message);
+    } else {
+      logger.warn`${message}`;
+    }
+  }
+  if (errors.length > 0) {
+    throw new Error(
+      ["[evjs] Server route discovery failed.", ...errors].join("\n"),
+    );
+  }
+}
+
+function createNoServerRoutesFoundMessage(dir: string): string {
+  return `[evjs] No server routes found in ${dir}. Add a route module exporting GET or POST such as ${dir.replace(/\/+$/, "")}/index.ts or set server.routing: false.`;
 }
 
 function orderPluginsByDependencies<TBundlerCfg>(
@@ -1429,8 +1553,13 @@ async function prepareInternalFrameworkBuild<
     command,
     cwd,
   });
-  const rawResolvedConfig = await withPageRoutingDefaults(
+  const pageResolvedConfig = await withPageRoutingDefaults(
     resolveConfig(configuredConfig),
+    configuredConfig,
+    cwd,
+  );
+  const rawResolvedConfig = await withServerRoutingDefaults(
+    pageResolvedConfig,
     configuredConfig,
     cwd,
   );
@@ -1546,7 +1675,7 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
     command,
     cwd,
   });
-  const rawResolvedConfig = await withPageRoutingDefaults(
+  const pageResolvedConfig = await withPageRoutingDefaults(
     resolveConfig(configuredConfig),
     configuredConfig,
     cwd,
@@ -1572,6 +1701,35 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
             level: "error",
             source: "page-routes",
             message: `No page routes found in ${base.dir}. Add a default-exporting route module such as ${base.dir.replace(/\/+$/, "")}/index.tsx or set routing: false.`,
+          });
+        }
+      },
+    },
+  );
+  const rawResolvedConfig = await withServerRoutingDefaults(
+    pageResolvedConfig,
+    configuredConfig,
+    cwd,
+    {
+      allowEmptyRoutes: true,
+      reportDiagnostics: false,
+      onDiscovery(base, discovery) {
+        diagnostics.push(
+          ...discovery.diagnostics.map((diagnostic) =>
+            toInspectDiagnostic("server-routes", diagnostic),
+          ),
+        );
+        if (
+          discovery.routes.length === 0 &&
+          readServerRoutingConfig(configuredConfig) !== undefined &&
+          !discovery.diagnostics.some(
+            (diagnostic) => diagnostic.level === "error",
+          )
+        ) {
+          diagnostics.push({
+            level: "error",
+            source: "server-routes",
+            message: createNoServerRoutesFoundMessage(base.dir),
           });
         }
       },
@@ -1845,8 +2003,13 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
     command: "dev",
     cwd,
   });
-  const rawResolvedConfig = await withPageRoutingDefaults(
+  const pageResolvedConfig = await withPageRoutingDefaults(
     resolveConfig(configuredConfig),
+    configuredConfig,
+    cwd,
+  );
+  const rawResolvedConfig = await withServerRoutingDefaults(
+    pageResolvedConfig,
     configuredConfig,
     cwd,
   );
@@ -1998,8 +2161,13 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
       command: "dev",
       cwd,
     });
-    const nextRawResolvedConfig = await withPageRoutingDefaults(
+    const nextPageResolvedConfig = await withPageRoutingDefaults(
       resolveConfig(nextConfiguredConfig),
+      nextConfiguredConfig,
+      cwd,
+    );
+    const nextRawResolvedConfig = await withServerRoutingDefaults(
+      nextPageResolvedConfig,
       nextConfiguredConfig,
       cwd,
     );

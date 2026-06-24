@@ -22,6 +22,7 @@ export default defineConfig({
 | `html` | `./index.html` |
 | `output.crossOriginLoading` | `"anonymous"` |
 | `routing.mode` | `spa` |
+| `server.routing.dir` | 启用 `server.routing` 时为 `./src/server/routes` |
 | `dev.port` | `3000` |
 | `server.dev.port` | `3001` |
 | `server.basePath` | `/__evjs` |
@@ -55,7 +56,8 @@ export default defineConfig({
 
 ## 路由
 
-`src/pages` 是主要客户端路由模型。SPA 模式会从页面文件构建一个
+`src/pages` 是主要客户端路由模型。顶层 `routing` 只控制页面/客户端文件路由；
+服务端文件路由在 `server.routing` 下配置。SPA 模式会从页面文件构建一个
 框架托管的应用：
 
 ```ts
@@ -428,7 +430,6 @@ export default defineConfig({ server: false });
 ```ts
 export default defineConfig({
   server: {
-    entry: "./src/server.ts",
     dev: {
       port: 3001,
       https: false,
@@ -437,10 +438,34 @@ export default defineConfig({
 });
 ```
 
+通过 `server.routing` 启用服务端文件路由。`true` 会扫描
+`./src/server/routes`；object 形式目前只支持 `dir`。这里没有 `prefix` 选项：
+如果 URL 需要以 `/api` 开头，请把文件放在 `src/server/routes/api` 这样的目录下。
+
+```ts
+export default defineConfig({
+  server: {
+    routing: true,
+  },
+});
+```
+
+`server.routing` 和 `server.entry` 互斥。只有应用需要自定义 server composition
+或非约定式 routing 时，才使用 `server.entry`：
+
+```ts
+export default defineConfig({
+  server: {
+    entry: "./src/server.ts",
+  },
+});
+```
+
 提供 `output`、`dev`、`server`、`server.dev` 和 `transport` 时，它们都必须是
 object；使用 `server: false` 关闭框架服务端。提供 `server.entry` 时，它必须是非空模块路径；
 evjs 会在 app graph analysis 阶段、bundler 运行之前校验 `server.entry` 等已配置的
-source path。`server.basePath` 必须是以 `/` 开头的非空 URL pathname，不能包含空白字符、query
+source path。`server.routing` 必须是 `true`、`false` 或 object；object 形式只接受可选的
+非空 `dir` 字符串。`server.basePath` 必须是以 `/` 开头的非空 URL pathname，不能包含空白字符、query
 string 或 hash；尾部 `/` 会被归一化移除。如果 `server.rsc` 配置为 object，
 `server.rsc.endpoint` 也遵循同样的 URL pathname 规则。`dev.https` 和
 `server.dev.https` 中的 key/cert 值必须是非空字符串，HTTPS object config 不能是

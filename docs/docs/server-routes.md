@@ -2,7 +2,70 @@
 
 Server routes give you full control over HTTP methods, headers, and standard Web `Request`/`Response` objects — unlike server functions which use automatic RPC.
 
-## Basic Usage
+## File Routes
+
+Enable file-based server routes with `server.routing`:
+
+```ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  server: {
+    routing: true,
+  },
+});
+```
+
+`server.routing: true` scans `./src/server/routes` and maps that directory to
+`/`. Object form currently supports only `dir`. There is no `prefix` option;
+put files under a folder such as `src/server/routes/api` when the URL should
+start with `/api`.
+
+```text
+src/server/routes/index.ts              -> /
+src/server/routes/health.ts             -> /health
+src/server/routes/users.ts              -> /users
+src/server/routes/users/index.ts        -> /users
+src/server/routes/users/$userId.ts      -> /users/:userId
+src/server/routes/(internal)/health.ts  -> /health
+src/server/routes/api/users.ts          -> /api/users
+```
+
+A file becomes a route only when it exports at least one uppercase HTTP method:
+`GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, or `OPTIONS`. Export optional
+per-route middleware as `middlewares`:
+
+```ts
+// src/server/routes/api/posts.ts
+const requireAuth = async (_req, next) => next();
+
+export const middlewares = [requireAuth];
+
+export const GET = async (req) => {
+  const url = new URL(req.url);
+  const limit = Number(url.searchParams.get("limit")) || 10;
+  return Response.json([{ id: 1, title: "Hello World", limit }]);
+};
+
+export const POST = async (req) => {
+  const data = await req.json();
+  return Response.json({ success: true, data }, { status: 201 });
+};
+```
+
+Files with no route exports are ignored, so `schema.ts`, `db.ts`, and
+`types.ts` can be colocated. Route candidates may export only uppercase HTTP
+methods and `middlewares`; move helpers to non-route files. Duplicate paths,
+duplicate dynamic shapes, bracket routes, catch-all routes, optional params,
+lowercase method exports, default exports in route candidates, unsupported
+runtime exports in route candidates, and method suffix files such as
+`posts.get.ts` are rejected before bundling.
+
+`server.routing` cannot be combined with `server.entry`. Use `server.entry` and
+programmatic routes when you need custom composition or non-conventional URL
+shapes.
+
+## Programmatic Routes
 
 Define routes using `createRoute(path, definition)` from `@evjs/server`:
 
@@ -199,7 +262,7 @@ createApp({
 });
 ```
 
-## Mounting Routes
+## Mounting Programmatic Routes
 
 Provide route handlers to `createApp()` in your server entry:
 

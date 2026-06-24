@@ -128,8 +128,9 @@ Migration rules stay explicit rather than adding alternate filename dialects:
 | `src/pages/**/layout.{tsx,ts,jsx,js}` or `src/pages/**/layout/index.{tsx,ts,jsx,js}` | SPA route layout | Pathless layout routes that wrap child routes at the same URL prefix | MPA shared chrome or non-layout helper folders named `layout` |
 | `<routing-dir-parent>/route-types.d.ts` | Generated SPA navigation types | Editor and type-checker support | Manual edits, imports from app code, template/scaffold source, or MPA mode |
 | `src/api/*.server.ts` | Recommended server-function boundary | Files that start with `"use server";` and export named callable server functions | Client imports that should run with `server: false`, default exports, or runtime re-exports |
-| `src/api/*.routes.ts` | Recommended server-route boundary | `createRoute()` handlers using Web `Request`/`Response` | Server functions or multiple files for the same URL shape |
-| `src/server.ts` | Framework server entry | `createApp({ routes, middlewares, framework })` and deployment runtime glue | Browser code or per-page client bootstrap |
+| `src/server/routes/**/*.{ts,tsx,js,jsx}` | Server file route discovery when `server.routing` is enabled | Request/Response route modules exporting uppercase HTTP methods and optional `middlewares` | `route.ts` sentinels, `foo.get.ts` method suffix files, bracket/catch-all/optional routes, or helper exports from route candidates |
+| Server route paths and dynamic URL shapes under `src/server/routes` | Server route collision checks before graph/build-plan generation | One server route module per URL path and one parameter naming choice per dynamic URL shape | Parallel `users.ts`/`users/index.ts`, `users/$id.ts`/`users/$userId.ts`, or splitting methods for one path across files |
+| `src/server.ts` | Custom framework server entry | `createApp({ routes, middlewares, framework })`, non-conventional routing, and deployment runtime glue | Browser code, per-page client bootstrap, or use together with `server.routing` |
 | `src/features`, `src/components`, `src/lib`, `src/hooks` | No direct framework convention | Domain code, reusable UI, browser-safe helpers, and React hooks | Files that depend on route discovery by filename |
 
 Do not mix ownership models in one app unless you need the lower-level API:
@@ -155,7 +156,7 @@ export default defineConfig({
   },
 
   server: {
-    entry: "./src/server.ts",
+    routing: true,
     rsc: true,
   },
 });
@@ -269,7 +270,8 @@ region metadata is read.
 
 ## Server Boundary
 
-Put server-only code under `src/api/` by default.
+Put callable server functions under `src/api/` and file-based server routes
+under `src/server/routes` by default.
 
 ```ts
 // src/api/operators.server.ts
@@ -281,17 +283,36 @@ export async function listOperators() {
 ```
 
 ```ts
+// src/server/routes/api/health.ts
+export const GET = async () => Response.json({ ok: true });
+```
+
+The file path under `src/server/routes` is the URL path, so the example above
+maps to `/api/health`. A root route uses `src/server/routes/index.ts`; dynamic
+segments use `$param` filenames and map to Hono params such as `:userId`.
+
+```ts
+// src/server/routes/users/$userId.ts
+export const GET = async (_req, ctx) => {
+  const userId = ctx.req.param("userId");
+  return Response.json({ id: userId });
+};
+```
+
+When you need custom composition or non-conventional routing, disable
+`server.routing` and mount routes in `src/server.ts`:
+
+```ts
 // src/api/health.routes.ts
 import { createRoute } from "@evjs/server";
 
-export const healthRoute = createRoute("/api/health", {
+export const healthRoute = createRoute("/health", {
   GET: async () => Response.json({ ok: true }),
 });
 ```
 
-Mount routes and framework rendering in `src/server.ts`:
-
 ```ts
+// src/server.ts
 import { createApp, requestLogger } from "@evjs/server";
 import { createReactFrameworkServer } from "@evjs/server/react";
 import { healthRoute } from "./api/health.routes";
@@ -307,12 +328,25 @@ const app = createApp({
 export default { fetch: app.fetch };
 ```
 
+```ts
+// ev.config.ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  server: {
+    entry: "./src/server.ts",
+  },
+});
+```
+
 ## Naming Guidance
 
 - `pages/` is the page route source folder and can include SSR/PPR/RSC components.
-- `api/` is the server boundary.
+- `api/` contains callable server functions and custom route helpers.
+- `server/routes/` is the server file route source folder when `server.routing`
+  is enabled.
 - `features/` owns business domains.
 - `components/` owns generic UI.
 - `lib/` contains browser-safe shared helpers.
-- Keep server secrets and Node-only APIs in `api/` or modules imported only by
-  server-only code.
+- Keep server secrets and Node-only APIs in `api/`, `server/`, or modules
+  imported only by server-only code.

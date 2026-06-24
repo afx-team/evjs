@@ -51,7 +51,7 @@ export async function runCreateAppCli(argv = process.argv): Promise<void> {
               { title: "Basic (Routing + Server Functions)", value: "basic" },
               { title: "MPA (Multi-Page Application)", value: "mpa" },
               {
-                title: "API Routes (Programmatic REST API via createRoute())",
+                title: "API Routes (REST API via server file routes)",
                 value: "api-routes",
               },
               {
