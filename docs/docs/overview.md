@@ -55,7 +55,7 @@ flowchart LR
     end
 
     subgraph Build ["Build output"]
-        MANIFEST["dist/manifest.json"]
+        MANIFEST["dist/client + dist/server manifests"]
         ASSETS["dist/client assets"]
         SERVERBUNDLE["dist/server bundle"]
     end

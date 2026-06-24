@@ -10,6 +10,7 @@ import type {
 } from "@evjs/ev";
 import {
   buildHtml,
+  createPublicManifest,
   linkBuildOutput,
   type ResolvedConfig,
   resolveConfig,
@@ -129,9 +130,19 @@ function createFrameworkCallbacks(options: {
         ? path.join(rootDir, "client")
         : rootDir;
       await fs.promises.mkdir(rootDir, { recursive: true });
+      if (options.config.serverEnabled) {
+        const serverDir = path.join(rootDir, "server");
+        await fs.promises.mkdir(serverDir, { recursive: true });
+        await fs.promises.writeFile(
+          path.join(serverDir, "manifest.json"),
+          JSON.stringify(output, null, 2),
+          "utf-8",
+        );
+      }
+      await fs.promises.mkdir(clientDir, { recursive: true });
       await fs.promises.writeFile(
-        path.join(rootDir, "manifest.json"),
-        JSON.stringify(output, null, 2),
+        path.join(clientDir, "manifest.json"),
+        JSON.stringify(createPublicManifest(output), null, 2),
         "utf-8",
       );
 
@@ -261,23 +272,21 @@ describe("utoopackAdapter dev", () => {
         js: ["main.js"],
         css: ["main.css"],
       },
-      devHook: {
-        js: ["dev-hook.js"],
-        css: [],
-      },
     });
     expect(onBuildOutput).toHaveBeenCalledTimes(1);
+    expect(onBuildOutput.mock.calls[0]?.[0].assets.devHook).toEqual({
+      js: ["dev-hook.js"],
+      css: [],
+    });
     expect(manifest.apps.default).toEqual({
       assets: {
         js: ["main.js"],
         css: ["main.css"],
       },
       document: { fileName: "index.html" },
-      entry: "./src/main.tsx",
       module: {
         type: "entry",
         href: "main.js",
-        source: "./src/main.tsx",
       },
     });
     expect(html).toContain('<link rel="stylesheet" href="/main.css">');
@@ -514,7 +523,7 @@ describe("utoopackAdapter dev", () => {
     }
   });
 
-  it("emits a single build manifest plus index.html in fullstack mode", async () => {
+  it("emits split build manifests plus index.html in fullstack mode", async () => {
     const cwd = await makeProject();
     const onServerBundleReady = vi.fn();
     const config = resolveConfig<ConfigComplete>({
@@ -556,7 +565,16 @@ describe("utoopackAdapter dev", () => {
     });
 
     const manifest = JSON.parse(
-      await fs.promises.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
+      await fs.promises.readFile(
+        path.join(cwd, "dist/server/manifest.json"),
+        "utf-8",
+      ),
+    );
+    const publicManifest = JSON.parse(
+      await fs.promises.readFile(
+        path.join(cwd, "dist/client/manifest.json"),
+        "utf-8",
+      ),
     );
     const html = await fs.promises.readFile(
       path.join(cwd, "dist/client/index.html"),
@@ -577,6 +595,12 @@ describe("utoopackAdapter dev", () => {
       },
     });
     expect(manifest.server.entry).toBe("index.js");
+    expect(publicManifest.apps.default.entry).toBeUndefined();
+    expect(publicManifest.apps.default.module).toEqual({
+      type: "entry",
+      href: "main.js",
+    });
+    expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
     expect(html).toContain('<link rel="stylesheet" href="/main.css">');
     expect(html).toContain('src="/main.js"');
     expect(html).toContain('data-evjs-kind="app"');

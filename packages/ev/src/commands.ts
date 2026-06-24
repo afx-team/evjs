@@ -68,7 +68,8 @@ const API_READY_MARKER = "__EVJS_API_READY__";
 const DEV_PAGE_RENDER_PROXY_HEADER = "x-evjs-dev-page-render";
 const DEV_DIST_DIR = "dist";
 const DEV_DIST_LOCK_FILE = ".evjs-dev.lock";
-const INTERNAL_BUILD_OUTPUT_FILE = "build-output.json";
+const MANIFEST_FILE = "manifest.json";
+const STALE_BUILD_OUTPUT_FILE = "build-output.json";
 const PLUGIN_HOOK_NAMES = [
   "buildStart",
   "buildOutput",
@@ -935,39 +936,16 @@ function collectHtmlTemplates<TBundlerCfg>(
   return templates;
 }
 
-function readBuildResult(cwd: string, isRebuild: boolean): BuildResult | null {
-  const manifestPath = path.resolve(
-    cwd,
-    "dist/server",
-    INTERNAL_BUILD_OUTPUT_FILE,
-  );
-  const fallbackManifestPath = path.resolve(cwd, "dist/manifest.json");
-  const outputPath = fs.existsSync(manifestPath)
-    ? manifestPath
-    : fallbackManifestPath;
-
-  if (!fs.existsSync(outputPath)) return null;
-
-  let output: BuildOutput;
-  try {
-    output = JSON.parse(fs.readFileSync(outputPath, "utf-8"));
-  } catch (err) {
-    logger.warn`Failed to parse build manifest: ${err}`;
-    return null;
-  }
-
-  return createBuildResult(output, isRebuild);
-}
-
 function getFrameworkOutputPaths(
   cwd: string,
   output: BuildOutput,
   serverEnabled: boolean,
-): { rootDir: string; clientDir: string } {
+): { rootDir: string; clientDir: string; serverDir?: string } {
   const rootDir = path.resolve(cwd, output.distDir);
   return {
     rootDir,
     clientDir: serverEnabled ? path.join(rootDir, "client") : rootDir,
+    ...(serverEnabled ? { serverDir: path.join(rootDir, "server") } : {}),
   };
 }
 
@@ -976,21 +954,39 @@ async function emitFrameworkManifest(
   output: BuildOutput,
   serverEnabled: boolean,
 ): Promise<void> {
-  const { rootDir } = getFrameworkOutputPaths(cwd, output, serverEnabled);
+  const { rootDir, clientDir, serverDir } = getFrameworkOutputPaths(
+    cwd,
+    output,
+    serverEnabled,
+  );
   await fs.promises.mkdir(rootDir, { recursive: true });
-  if (serverEnabled) {
-    const serverDir = path.join(rootDir, "server");
+  if (serverDir) {
     await fs.promises.mkdir(serverDir, { recursive: true });
     await fs.promises.writeFile(
-      path.join(serverDir, INTERNAL_BUILD_OUTPUT_FILE),
+      path.join(serverDir, MANIFEST_FILE),
       JSON.stringify(output, null, 2),
       "utf-8",
+    );
+    await fs.promises.rm(path.join(serverDir, STALE_BUILD_OUTPUT_FILE), {
+      force: true,
+    });
+    await fs.promises.rm(path.join(rootDir, MANIFEST_FILE), { force: true });
+  } else {
+    await fs.promises.rm(path.join(rootDir, "server", MANIFEST_FILE), {
+      force: true,
+    });
+    await fs.promises.rm(
+      path.join(rootDir, "server", STALE_BUILD_OUTPUT_FILE),
+      {
+        force: true,
+      },
     );
   }
 
   const publicManifest = createPublicManifest(output);
+  await fs.promises.mkdir(clientDir, { recursive: true });
   await fs.promises.writeFile(
-    path.join(rootDir, "manifest.json"),
+    path.join(clientDir, MANIFEST_FILE),
     JSON.stringify(publicManifest, null, 2),
     "utf-8",
   );
@@ -1225,14 +1221,7 @@ function readServerEntryFromManifest(
   cwd: string,
   distDir: string,
 ): string | undefined {
-  const internalPath = path.resolve(
-    cwd,
-    distDir,
-    "server",
-    INTERNAL_BUILD_OUTPUT_FILE,
-  );
-  const publicPath = path.resolve(cwd, distDir, "manifest.json");
-  const manifestPath = fs.existsSync(internalPath) ? internalPath : publicPath;
+  const manifestPath = path.resolve(cwd, distDir, "server", MANIFEST_FILE);
   if (!fs.existsSync(manifestPath)) return undefined;
 
   try {
@@ -1938,10 +1927,8 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
           `const fs = require("node:fs");`,
           `const path = require("node:path");`,
           `const { pathToFileURL } = require("node:url");`,
-          `const manifestPath = ${JSON.stringify(path.join(devRootDir, "server", INTERNAL_BUILD_OUTPUT_FILE))};`,
-          `const publicManifestPath = ${JSON.stringify(path.join(devRootDir, "manifest.json"))};`,
-          `const selectedManifestPath = fs.existsSync(manifestPath) ? manifestPath : publicManifestPath;`,
-          `const manifest = fs.existsSync(selectedManifestPath) ? JSON.parse(fs.readFileSync(selectedManifestPath, "utf-8")) : undefined;`,
+          `const manifestPath = ${JSON.stringify(path.join(devRootDir, "server", MANIFEST_FILE))};`,
+          `const manifest = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, "utf-8")) : undefined;`,
           `if (manifest) globalThis.__EVJS_MANIFEST__ = manifest;`,
           `globalThis.__EVJS_DEV_PAGE_RENDER_PROXY_HEADER__ = ${JSON.stringify(DEV_PAGE_RENDER_PROXY_HEADER)};`,
           `const serverDir = path.dirname(${JSON.stringify(serverBundlePath)});`,
@@ -2207,7 +2194,6 @@ export async function build<TBundlerCfg = DefaultBundlerConfig>(
       "[evjs] No bundler configured. Pass a bundler adapter in ev.config.ts or through dev/build options.",
     );
   }
-  let buildOutput: BuildOutput | undefined;
   try {
     await assertNoActiveDevDistLock(cwd, prepared.plan.distDir);
     const bundlerFacts = await bundler.build({
@@ -2217,7 +2203,7 @@ export async function build<TBundlerCfg = DefaultBundlerConfig>(
       graph: prepared.graph,
       plan: prepared.plan,
     });
-    buildOutput = await linkAndEmitBuildOutput({
+    const buildOutput = await linkAndEmitBuildOutput({
       bundlerFacts,
       graph: prepared.graph,
       plan: prepared.plan,
@@ -2228,12 +2214,10 @@ export async function build<TBundlerCfg = DefaultBundlerConfig>(
       isRebuild: false,
     });
 
-    const buildResult = buildOutput
-      ? createBuildResult(buildOutput, false)
-      : readBuildResult(cwd, false);
-    if (buildResult) {
-      await runBuildEndHooks(prepared.hooks, buildResult);
-    }
+    await runBuildEndHooks(
+      prepared.hooks,
+      createBuildResult(buildOutput, false),
+    );
   } finally {
     await prepared.dispose();
   }

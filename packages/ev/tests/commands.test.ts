@@ -1245,7 +1245,7 @@ describe("build", () => {
     expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(true);
   });
 
-  it("emits a public-safe manifest and keeps internal build output server-side", async () => {
+  it("emits split public and server manifests for server-enabled builds", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await fs.promises.writeFile(
@@ -1304,19 +1304,23 @@ describe("build", () => {
     );
 
     const publicManifest = fs.readFileSync(
-      path.join(cwd, "dist/manifest.json"),
+      path.join(cwd, "dist/client/manifest.json"),
       "utf-8",
     );
-    const internalOutput = fs.readFileSync(
-      path.join(cwd, "dist/server/build-output.json"),
+    const serverManifest = fs.readFileSync(
+      path.join(cwd, "dist/server/manifest.json"),
       "utf-8",
     );
 
     expect(rawOutputComponents).toEqual(["./src/pages/Dashboard.tsx"]);
     expect(publicManifest).not.toContain(".tsx");
     expect(publicManifest).not.toContain("server.js");
-    expect(internalOutput).toContain("./src/pages/Dashboard.tsx");
-    expect(internalOutput).toContain("server.js");
+    expect(serverManifest).toContain("./src/pages/Dashboard.tsx");
+    expect(serverManifest).toContain("server.js");
+    expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
+    expect(fs.existsSync(path.join(cwd, "dist/server/build-output.json"))).toBe(
+      false,
+    );
   });
 
   it("runs plugin config hooks before resolving config", async () => {

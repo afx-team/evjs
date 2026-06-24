@@ -52,18 +52,17 @@ export function createWebSocketExampleTest() {
           stdio: "pipe",
         });
 
-        // 2. Read internal build output for server bootstrap metadata. The
-        // public manifest is browser-safe and does not expose server entries.
-        const buildOutputPath = path.join(
+        // 2. Read the server manifest for bootstrap metadata.
+        const serverManifestPath = path.join(
           exampleDir,
           "dist",
           "server",
-          "build-output.json",
+          "manifest.json",
         );
-        const buildOutput = JSON.parse(
-          fs.readFileSync(buildOutputPath, "utf-8"),
+        const serverManifest = JSON.parse(
+          fs.readFileSync(serverManifestPath, "utf-8"),
         );
-        const serverEntry = buildOutput.server?.entry;
+        const serverEntry = serverManifest.server?.entry;
         if (!serverEntry) {
           throw new Error(
             "Built WebSocket example did not emit a server entry.",
@@ -90,7 +89,7 @@ export function createWebSocketExampleTest() {
             ...process.env,
             SERVER_ENTRY: serverEntryPath,
             CLIENT_DIR: clientDir,
-            MANIFEST_PATH: buildOutputPath,
+            MANIFEST_PATH: serverManifestPath,
             PORT: String(webPort),
           },
         });

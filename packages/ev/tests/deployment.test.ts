@@ -273,7 +273,7 @@ describe("createDeploymentArtifact", () => {
       'import { fileURLToPath, pathToFileURL } from "node:url";',
     );
     expect(files.serverModule).toContain(
-      'await readJsonIfExists(path.join(serverDir, "build-output.json"))',
+      'const manifest = await readJsonIfExists(path.join(serverDir, "manifest.json"))',
     );
     expect(files.serverModule).toContain(
       "globalThis.__EVJS_MANIFEST__ = manifest",

@@ -370,7 +370,7 @@ function assertServerRuntimeEntry(
 
 /**
  * Project the internal build output into the public runtime manifest that is
- * safe to serve to browsers and deployment adapters.
+ * safe to serve to browsers.
  *
  * The internal `BuildOutput` intentionally keeps source modules, server
  * renderer modules, and raw React Flight manifests because the server runtime

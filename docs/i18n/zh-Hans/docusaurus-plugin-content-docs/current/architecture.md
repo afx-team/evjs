@@ -135,14 +135,16 @@ sequenceDiagram
   EV->>Manifest: linkBuildOutput(graph, plan, bundlerFacts)
   Manifest-->>EV: BuildOutput
   EV->>Plugins: buildOutput(output)
-  EV->>EV: emit dist/manifest.json
+  EV->>EV: emit framework manifests
   loop each HTML document
     EV->>Plugins: transformHtml(doc, htmlContext)
   end
   EV->>Plugins: buildEnd({ output, isRebuild })
 ```
 
-框架 manifest 是 `dist/manifest.json`。旧的 `dist/client/manifest.json` 和 `dist/server/manifest.json` 不再是新架构的核心契约。
+启用 server 的构建会在 `dist/client/manifest.json` 输出 public manifest，并在
+`dist/server/manifest.json` 输出完整 `BuildOutput` manifest。CSR-only 构建保持
+扁平结构，输出 `dist/manifest.json`。
 
 ## 运行时流程
 

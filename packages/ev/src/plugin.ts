@@ -384,10 +384,11 @@ export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig>
 
   /**
    * Inspect or mutate the linked framework build output before it is emitted
-   * as `dist/manifest.json` and before HTML documents are transformed.
+   * as the framework manifest and before HTML documents are transformed.
    *
    * Deployment adapters should use this hook to add deployment metadata to the
-   * single framework output emitted as `dist/manifest.json`.
+   * BuildOutput emitted as `dist/server/manifest.json` for server-enabled
+   * builds or `dist/manifest.json` for CSR-only builds.
    */
   buildOutput?: (
     output: BuildOutput,

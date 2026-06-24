@@ -182,7 +182,6 @@ class WebpackDevSession implements BundlerDevController {
           this.config,
           this.plan,
           this.graph,
-          outputPaths.rootDir,
           outputPaths.clientDir,
         ),
         compiler,
@@ -510,7 +509,6 @@ function createDevServerOptions(
   config: ResolvedConfig<WebpackConfig>,
   plan: BuildPlan,
   graph: AppGraph,
-  rootDir: string,
   clientDir: string,
 ): ConstructorParameters<typeof WebpackDevServer>[0] {
   return {
@@ -541,7 +539,7 @@ function createDevServerOptions(
           return;
         }
 
-        const manifestPath = path.join(rootDir, "manifest.json");
+        const manifestPath = path.join(clientDir, "manifest.json");
         if (!fs.existsSync(manifestPath)) {
           response.statusCode = 404;
           response.setHeader("Content-Type", "text/plain; charset=utf-8");

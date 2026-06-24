@@ -15,7 +15,7 @@ src/pages + ev.config.ts + static server declarations
   -> AppGraph
   -> BuildPlan
   -> selected bundler adapter
-  -> BuildOutput / dist/manifest.json
+  -> BuildOutput / dist/server/manifest.json or dist/manifest.json
   -> client runtime, server runtime, deployment adapters
 ```
 
@@ -152,14 +152,16 @@ and navigation helpers instead of constructing route trees directly.
 
 ## Manifest
 
-The framework output contract is a single `BuildOutput` serialized to:
+The framework output contract is `BuildOutput`. Server-enabled builds serialize
+the complete contract to:
 
 ```txt
-dist/manifest.json
+dist/server/manifest.json
 ```
 
-Split client/server manifest files are outside the framework contract.
-Deployment plugins and platform adapters should consume `BuildOutput`.
+They also emit a browser-safe public manifest to `dist/client/manifest.json`.
+CSR-only builds stay flat and emit `dist/manifest.json`. Deployment plugins and
+platform adapters should consume `BuildOutput`.
 
 ## Deployment
 

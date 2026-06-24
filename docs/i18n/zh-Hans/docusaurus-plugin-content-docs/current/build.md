@@ -46,11 +46,26 @@ dist/
 └── manifest.json
 ```
 
-`dist/manifest.json` 是 runtime、server、shell 和 deployment adapter
-共同消费的框架契约。HTML 可以把该 manifest 内嵌为 `__EVJS_MANIFEST__`；
-当浏览器 runtime 通过 `manifestUrl`、`data-evjs-manifest` 或
-`/manifest.json` 获取它时，响应必须是成功的 JSON，并使用
-`Content-Type: application/json`，允许附带可选 content-type 参数。
+启用 server 的输出会拆分 manifest：
+
+```txt
+dist/
+├── client/
+│   ├── index.html
+│   ├── main.[hash].js
+│   └── manifest.json
+└── server/
+    ├── main.[hash].js
+    └── manifest.json
+```
+
+`dist/server/manifest.json` 包含 server runtime 和 deployment adapter
+消费的完整 `BuildOutput` 契约。`dist/client/manifest.json` 是浏览器安全的
+public manifest。CSR-only 输出保持扁平结构，写入 `dist/manifest.json`。
+HTML 可以把 public manifest 内嵌为 `__EVJS_MANIFEST__`；当浏览器 runtime
+通过 `manifestUrl`、`data-evjs-manifest` 或 `/manifest.json` 获取它时，响应
+必须是成功的 JSON，并使用 `Content-Type: application/json`，允许附带可选
+content-type 参数。
 
 ## 构建流水线
 
@@ -60,7 +75,7 @@ dist/
 4. `createBuildPlan()` 生成具体 client/server entries 和 HTML documents。
 5. 当前 bundler 编译 `BuildPlan.entries`。
 6. `linkBuildOutput()` 合并 `AppGraph`、`BuildPlan` 和 bundler facts。
-7. evjs 输出 `dist/manifest.json`。
+7. evjs 输出框架 manifest。
 8. evjs 生成每个计划内 HTML 文档，并调用 `transformHtml(doc, ctx)`。
 9. evjs 调用 `buildEnd({ output, isRebuild })`。
 
@@ -164,8 +179,9 @@ browser page entry。
 
 ## 要点
 
-- 单一框架 manifest：`dist/manifest.json`。
-- `BuildOutput` 是框架 manifest 契约。
+- 启用 server 的构建输出 `dist/client/manifest.json` 和
+  `dist/server/manifest.json`；CSR-only 构建输出 `dist/manifest.json`。
+- `BuildOutput` 是框架 manifest 契约，启用 server 时保存在 server manifest。
 - 会成为 runtime id 的 manifest object key 必须是 build identifier，包括
   app id、page id 和 opaque internal PPR region id：只能使用字母、数字、下划线或连字符。
 - app 和 page runtime module 必须关联到 JavaScript 资产；如果 client entry

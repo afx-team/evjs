@@ -1,15 +1,20 @@
 # Deployment
 
-An evjs production build contains static assets, an optional server bundle, and a single framework manifest.
+An evjs production build contains static assets, an optional server bundle, and
+framework manifests.
 
 ```txt
 dist/
 ├── client/
-├── server/
-└── manifest.json
+│   └── manifest.json
+└── server/
+    └── manifest.json
 ```
 
-Deployment adapters should consume `dist/manifest.json` / `BuildOutput` and derive platform-specific routing or asset manifests from it.
+Deployment adapters should consume `dist/server/manifest.json` / `BuildOutput`
+for server-enabled builds and derive platform-specific routing or asset
+manifests from it. CSR-only builds keep the same contract in
+`dist/manifest.json`.
 
 ## Production Build
 
@@ -20,7 +25,8 @@ npm run build
 
 Important output:
 
-- `dist/manifest.json` — apps, pages, routes, assets, server functions, server routes, and runtime paths;
+- `dist/client/manifest.json` — browser-safe apps, pages, routes, assets, and runtime paths;
+- `dist/server/manifest.json` — complete BuildOutput with server functions, server routes, and runtime paths;
 - `dist/client/` — browser assets and HTML;
 - `dist/server/` — framework server bundle when `server` is enabled.
 
@@ -342,5 +348,5 @@ export function deployAdapter() {
 }
 ```
 
-Read `dist/manifest.json`; split client/server manifest files are not part of
-the framework contract.
+Read `dist/server/manifest.json` for server-enabled builds. CSR-only builds use
+the flat `dist/manifest.json` path.

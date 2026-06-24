@@ -3,7 +3,10 @@
  *
  * Shared manifest schemas for the ev framework build system.
  *
- * Bundler adapters emit one framework manifest to `dist/manifest.json`.
+ * Bundler adapters emit framework manifests under the configured dist
+ * directory. Server-enabled builds write the public client manifest to
+ * `dist/client/manifest.json` and the full BuildOutput manifest to
+ * `dist/server/manifest.json`; CSR-only builds write `dist/manifest.json`.
  */
 
 import {

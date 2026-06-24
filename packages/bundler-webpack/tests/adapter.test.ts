@@ -11,7 +11,12 @@ import type {
   PluginHooks,
   ResolvedConfig,
 } from "@evjs/ev";
-import { buildHtml, linkBuildOutput, resolveConfig } from "@evjs/ev";
+import {
+  buildHtml,
+  createPublicManifest,
+  linkBuildOutput,
+  resolveConfig,
+} from "@evjs/ev";
 import {
   createAppGraph,
   createBuildPlan,
@@ -181,9 +186,19 @@ async function emitFrameworkArtifacts(options: {
     ? path.join(rootDir, "client")
     : rootDir;
   await fs.mkdir(rootDir, { recursive: true });
+  if (options.config.serverEnabled) {
+    const serverDir = path.join(rootDir, "server");
+    await fs.mkdir(serverDir, { recursive: true });
+    await fs.writeFile(
+      path.join(serverDir, "manifest.json"),
+      JSON.stringify(output, null, 2),
+      "utf-8",
+    );
+  }
+  await fs.mkdir(clientDir, { recursive: true });
   await fs.writeFile(
-    path.join(rootDir, "manifest.json"),
-    JSON.stringify(output, null, 2),
+    path.join(clientDir, "manifest.json"),
+    JSON.stringify(createPublicManifest(output), null, 2),
     "utf-8",
   );
 
@@ -447,13 +462,11 @@ describe("webpackAdapter build", () => {
       });
       expect(manifest.pages.home).toMatchObject({
         assets: { js: ["home.js"], css: [] },
-        component: "./src/pages/Home ! page 中文.tsx",
         mount: "#root",
         render: "csr",
         module: {
           type: "react-component",
           href: "home.js",
-          source: "./src/pages/Home ! page 中文.tsx",
         },
       });
       expect(html).toContain('data-evjs-kind="page"');
@@ -540,7 +553,10 @@ describe("webpackAdapter build", () => {
       });
 
       const manifest = JSON.parse(
-        await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
+        await fs.readFile(path.join(cwd, "dist/server/manifest.json"), "utf-8"),
+      ) as BuildOutput;
+      const publicManifest = JSON.parse(
+        await fs.readFile(path.join(cwd, "dist/client/manifest.json"), "utf-8"),
       ) as BuildOutput;
       const html = await fs.readFile(
         path.join(cwd, "dist/client/index.html"),
@@ -589,6 +605,15 @@ describe("webpackAdapter build", () => {
       });
       expect(manifest.server?.entry).toBe("server.cjs");
       expect(manifest.assets.plugin).toEqual({ js: ["plugin.js"], css: [] });
+      expect(publicManifest.apps.default.entry).toBeUndefined();
+      expect(publicManifest.apps.default.module).toEqual({
+        type: "entry",
+        href: "main.js",
+      });
+      expect(publicManifest.pages.dashboard.component).toBeUndefined();
+      await expect(
+        fs.access(path.join(cwd, "dist/manifest.json")),
+      ).rejects.toThrow();
       expect(html).toContain('src="/main.js"');
       expect(html).toContain('data-evjs-kind="app"');
       expect(html).toContain('data-evjs-id="default"');
@@ -656,7 +681,7 @@ describe("webpackAdapter build", () => {
       });
 
       const manifest = JSON.parse(
-        await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
+        await fs.readFile(path.join(cwd, "dist/server/manifest.json"), "utf-8"),
       ) as BuildOutput;
       const response = await requestServerEntry(cwd, manifest, "/dashboard");
 
@@ -730,7 +755,7 @@ describe("webpackAdapter build", () => {
       });
 
       const manifest = JSON.parse(
-        await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
+        await fs.readFile(path.join(cwd, "dist/server/manifest.json"), "utf-8"),
       ) as BuildOutput;
       const clientReferenceManifest = JSON.parse(
         await fs.readFile(
@@ -876,7 +901,7 @@ describe("webpackAdapter build", () => {
       });
 
       const manifest = JSON.parse(
-        await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
+        await fs.readFile(path.join(cwd, "dist/server/manifest.json"), "utf-8"),
       ) as BuildOutput;
       const campaignRegionId = getSinglePprRegionId(
         manifest.pages.campaign.ppr?.regions,

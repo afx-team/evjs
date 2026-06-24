@@ -142,14 +142,16 @@ sequenceDiagram
   EV->>Manifest: linkBuildOutput(graph, plan, bundlerFacts)
   Manifest-->>EV: BuildOutput
   EV->>Plugins: buildOutput(output)
-  EV->>EV: emit dist/manifest.json
+  EV->>EV: emit framework manifests
   loop each HTML document
     EV->>Plugins: transformHtml(doc, htmlContext)
   end
   EV->>Plugins: buildEnd({ output, isRebuild })
 ```
 
-The manifest is `dist/manifest.json`. Legacy `dist/client/manifest.json` and `dist/server/manifest.json` are not the new framework contract.
+Server-enabled builds emit a public manifest at `dist/client/manifest.json` and
+the complete `BuildOutput` manifest at `dist/server/manifest.json`. CSR-only
+builds stay flat and emit `dist/manifest.json`.
 
 TanStack Router is available through the `@evjs/client` standalone CSR surface
 for manual browser applications. In framework-managed apps, `@evjs/ev` owns

@@ -47,12 +47,26 @@ dist/
 └── manifest.json
 ```
 
-`dist/manifest.json` is the framework contract consumed by runtime, server,
-shell, and deployment adapters. HTML may embed this manifest as
-`__EVJS_MANIFEST__`; when the browser runtime fetches it through `manifestUrl`,
-`data-evjs-manifest`, or `/manifest.json`, the response must be successful JSON
-with `Content-Type: application/json`, allowing optional content-type
-parameters.
+Server-enabled output uses separate manifests:
+
+```txt
+dist/
+├── client/
+│   ├── index.html
+│   ├── main.[hash].js
+│   └── manifest.json
+└── server/
+    ├── main.[hash].js
+    └── manifest.json
+```
+
+`dist/server/manifest.json` contains the complete `BuildOutput` contract for the
+server runtime and deployment adapters. `dist/client/manifest.json` is the
+browser-safe public manifest. CSR-only output stays flat and writes
+`dist/manifest.json`. HTML may embed the public manifest as `__EVJS_MANIFEST__`;
+when the browser runtime fetches it through `manifestUrl`, `data-evjs-manifest`,
+or `/manifest.json`, the response must be successful JSON with
+`Content-Type: application/json`, allowing optional content-type parameters.
 
 ## Build Pipeline
 
@@ -62,7 +76,7 @@ parameters.
 4. `createBuildPlan()` produces concrete client/server entries and HTML documents.
 5. The selected bundler compiles `BuildPlan.entries`.
 6. `linkBuildOutput()` combines `AppGraph`, `BuildPlan`, and bundler facts.
-7. evjs emits `dist/manifest.json`.
+7. evjs emits framework manifests.
 8. evjs generates each planned HTML document and calls `transformHtml(doc, ctx)`.
 9. evjs calls `buildEnd({ output, isRebuild })`.
 
@@ -176,8 +190,10 @@ Internal PPR regions carry cache metadata in the manifest:
 
 ## Key Points
 
-- One framework manifest: `dist/manifest.json`.
-- `BuildOutput` is the framework manifest contract.
+- Server-enabled builds emit `dist/client/manifest.json` and
+  `dist/server/manifest.json`; CSR-only builds emit `dist/manifest.json`.
+- `BuildOutput` is the framework manifest contract and is stored in the server
+  manifest for server-enabled builds.
 - Manifest object keys that become runtime ids, including app ids, page ids,
   and opaque internal PPR region ids, must be build identifiers: letters,
   numbers, underscores, or hyphens.

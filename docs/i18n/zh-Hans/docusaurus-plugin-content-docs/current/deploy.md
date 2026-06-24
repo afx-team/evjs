@@ -1,15 +1,18 @@
 # 部署
 
-evjs 生产构建包含静态资源、可选服务端 bundle，以及单一框架 manifest。
+evjs 生产构建包含静态资源、可选服务端 bundle，以及框架 manifest。
 
 ```txt
 dist/
 ├── client/
-├── server/
-└── manifest.json
+│   └── manifest.json
+└── server/
+    └── manifest.json
 ```
 
-部署 adapter 应消费 `dist/manifest.json` / `BuildOutput`，并从中派生平台特定路由或资源 manifest。
+启用 server 时，部署 adapter 应消费 `dist/server/manifest.json` /
+`BuildOutput`，并从中派生平台特定路由或资源 manifest。CSR-only 构建继续使用
+扁平的 `dist/manifest.json`。
 
 ## 生产构建
 
@@ -20,7 +23,8 @@ npm run build
 
 重要输出：
 
-- `dist/manifest.json`：apps、pages、routes、assets、server functions、server routes 和 runtime paths；
+- `dist/client/manifest.json`：浏览器安全的 apps、pages、routes、assets 和 runtime paths；
+- `dist/server/manifest.json`：包含 server functions、server routes 和 runtime paths 的完整 BuildOutput；
 - `dist/client/`：浏览器资源和 HTML；
 - `dist/server/`：启用 `server` 时的框架服务端 bundle。
 
