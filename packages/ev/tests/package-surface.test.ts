@@ -150,14 +150,10 @@ const allowedSampleBundlerDependencies = {
 const defaultBundlerTypePackage = "@utoo/pack";
 const forbiddenCoreBundlerPackages = ["webpack", "webpack-dev-server"] as const;
 
-const generatedRouteTypeArtifacts = [
-  "route-types.d.ts",
-  "evjs-route-types.d.ts",
-] as const;
 const generatedFrameworkArtifacts = [
   ".evjs",
   ".turbopack",
-  ...generatedRouteTypeArtifacts,
+  "route-types.d.ts",
 ] as const;
 
 const forbiddenPackageNames = [
@@ -704,9 +700,7 @@ describe("workspace package surface", () => {
           }
           if (
             importSpecifier.startsWith("@evjs/client/internal") &&
-            !generatedRouteTypeArtifacts.some((artifact) =>
-              relativeFile.endsWith(artifact),
-            )
+            !relativeFile.endsWith("route-types.d.ts")
           ) {
             violations.push(
               `${relativeFile} imports generated-only ${importSpecifier}`,
@@ -841,15 +835,13 @@ describe("workspace package surface", () => {
         }
       }
 
-      for (const artifact of generatedRouteTypeArtifacts) {
-        for (const routeTypesFile of await listFilesNamed(
-          sampleDir,
-          artifact,
-        )) {
-          violations.push(
-            `${path.relative(repoRoot, routeTypesFile)} should not exist in an MPA sample`,
-          );
-        }
+      for (const routeTypesFile of await listFilesNamed(
+        sampleDir,
+        "route-types.d.ts",
+      )) {
+        violations.push(
+          `${path.relative(repoRoot, routeTypesFile)} should not exist in an MPA sample`,
+        );
       }
     }
 

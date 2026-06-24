@@ -16,7 +16,6 @@ const templateCopyExcludedBasenames = new Set([
   ".turbopack",
   ".evjs",
   "route-types.d.ts",
-  "evjs-route-types.d.ts",
 ]);
 
 for (const entry of fs.readdirSync(templatesDir)) {

@@ -532,11 +532,6 @@ describe("build", () => {
       "export default function Home() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/evjs-route-types.d.ts"),
-      generatedRouteTypesSource,
-      "utf-8",
-    );
     const events: string[] = [];
     const bundler = createMockBundler(events, {
       onBuildPlan(plan) {
@@ -563,9 +558,6 @@ describe("build", () => {
       "bundler.entries:main",
     ]);
     expect(fs.existsSync(path.join(cwd, ".evjs"))).toBe(false);
-    expect(fs.existsSync(path.join(cwd, "src/evjs-route-types.d.ts"))).toBe(
-      false,
-    );
     await expect(
       fs.promises.readFile(path.join(cwd, "src/route-types.d.ts"), "utf-8"),
     ).resolves.toContain('import type * as EvPage_index from "./pages/index";');
