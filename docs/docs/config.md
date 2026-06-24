@@ -23,6 +23,8 @@ export default defineConfig({
 | `html` | `./index.html` |
 | `output.crossOriginLoading` | `"anonymous"` |
 | `routing.mode` | `spa` |
+| `routing.dir` | `./src/pages` when `routing` is enabled |
+| `routing.layout` | auto-discovers a root layout beside `routing.dir` in SPA mode when present |
 | `server.routing.dir` | `./src/server/routes` when `server.routing` is enabled |
 | `server.conventions.middleware` | `true` when server conventions are enabled |
 | `dev.port` | `3000` |
@@ -38,6 +40,23 @@ The top-level config object accepts only `entry`, `html`, `output`, `dev`,
 `pages`. Framework metadata such as generated app declarations, page-route
 runtime wiring, and server-function endpoints is derived by evjs instead of
 being configured directly.
+
+## Convention Config
+
+Client and server conventions use the same owner model even though the object
+names differ:
+
+| Surface | Route discovery | Convention controls | Default files |
+|---------|-----------------|---------------------|---------------|
+| Client pages | `routing` | `routing.layout` for the SPA root layout; page-route file rules live under `routing.dir` | `./src/pages`, plus `layout.*` or `layout/index.*` beside that directory when present |
+| Server requests | `server.routing` | `server.conventions.middleware` for filesystem-scoped middleware | `./src/server/routes`, `./src/server/middleware.ts`, and `./src/server/routes/**/middleware.ts` |
+
+Top-level `routing` remains the client/page convention surface. evjs does not
+add a separate `client.conventions` object because page discovery, layout,
+mode, HTML, and mount all belong to one client routing owner. Server
+conventions live under `server` because the server also has `server.entry`,
+server functions, RSC, PPR, and runtime endpoints; explicit `server.entry` opts
+out of convention discovery.
 
 ## Output HTML Assets
 
@@ -61,10 +80,11 @@ HTML documents or individual initial assets need different attributes.
 
 ## Routing
 
-`src/pages` is the primary client-routing model. Top-level `routing` only
-controls page/client file routing; server file routes are configured under
-`server.routing`. SPA mode builds one
-framework-owned app from those page files:
+`src/pages` is the primary client-routing model. Treat top-level `routing` as
+the client convention object: it owns the route directory, output mode, SPA
+root layout convention, HTML template, and mount selector. Server file routes
+use the parallel `server.routing` and `server.conventions` surface. SPA mode
+builds one framework-owned app from those page files:
 
 ```ts
 export default defineConfig({
@@ -469,6 +489,10 @@ export default defineConfig({
   },
 });
 ```
+
+Server conventions use the same owner model under `server`: `server.routing`
+owns server file-route discovery, and `server.conventions` owns server behavior
+modules discovered from the server tree.
 
 Enable server file routes with `server.routing`. `true` scans
 `./src/server/routes`; object form currently supports only `dir`. There is no

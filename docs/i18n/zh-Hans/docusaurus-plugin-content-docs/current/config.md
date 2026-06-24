@@ -22,6 +22,8 @@ export default defineConfig({
 | `html` | `./index.html` |
 | `output.crossOriginLoading` | `"anonymous"` |
 | `routing.mode` | `spa` |
+| `routing.dir` | 启用 `routing` 时为 `./src/pages` |
+| `routing.layout` | SPA 模式下，存在时从 `routing.dir` 旁边自动发现根布局 |
 | `server.routing.dir` | 启用 `server.routing` 时为 `./src/server/routes` |
 | `server.conventions.middleware` | 启用 server conventions 时为 `true` |
 | `dev.port` | `3000` |
@@ -35,6 +37,21 @@ export default defineConfig({
 `transport`、`app`、`routing`、`bundler`、`plugins` 和 `pages`。
 生成的 app 声明、页面路由运行时接线、server-function endpoint 等框架
 metadata 都由 evjs 派生，不需要也不能直接配置。
+
+## 约定配置
+
+客户端和服务端 conventions 使用同一种归属模型，只是对象名称不同：
+
+| 约定入口 | 路由发现 | 约定控制项 | 默认文件 |
+|--------|----------|------------|----------|
+| 客户端页面 | `routing` | `routing.layout` 控制 SPA 根布局；page-route 文件规则位于 `routing.dir` 下 | `./src/pages`，以及存在时该目录旁边的 `layout.*` 或 `layout/index.*` |
+| 服务端请求 | `server.routing` | `server.conventions.middleware` 控制按文件系统作用域生效的 middleware | `./src/server/routes`、`./src/server/middleware.ts` 和 `./src/server/routes/**/middleware.ts` |
+
+顶层 `routing` 仍然是客户端/page 约定入口。evjs 不新增单独的
+`client.conventions` object，因为页面发现、layout、mode、HTML 和 mount
+都属于同一个客户端路由归属对象。Server conventions 放在 `server` 下，因为服务端同时还有
+`server.entry`、server functions、RSC、PPR 和 runtime endpoints；显式
+`server.entry` 会退出 convention discovery。
 
 ## 输出 HTML 资源
 
@@ -57,9 +74,10 @@ export default defineConfig({
 
 ## 路由
 
-`src/pages` 是主要客户端路由模型。顶层 `routing` 只控制页面/客户端文件路由；
-服务端文件路由在 `server.routing` 下配置。SPA 模式会从页面文件构建一个
-框架托管的应用：
+`src/pages` 是主要客户端路由模型。可以把顶层 `routing` 视为客户端约定对象：
+它拥有路由目录、输出模式、SPA 根布局约定、HTML 模板和 mount selector。
+服务端文件路由使用对应的 `server.routing` 和 `server.conventions` 约定入口。SPA
+模式会从页面文件构建一个框架托管的应用：
 
 ```ts
 export default defineConfig({
@@ -438,6 +456,10 @@ export default defineConfig({
   },
 });
 ```
+
+Server conventions 在 `server` 下使用同一种归属模型：`server.routing` 拥有
+服务端文件路由发现，`server.conventions` 拥有从服务端目录树发现的
+服务端行为模块。
 
 通过 `server.routing` 启用服务端文件路由。`true` 会扫描
 `./src/server/routes`；object 形式目前只支持 `dir`。这里没有 `prefix` 选项：
