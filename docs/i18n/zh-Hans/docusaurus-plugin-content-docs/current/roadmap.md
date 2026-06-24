@@ -16,7 +16,7 @@
   page route discovery、server declarations、render metadata、runtime paths、
   planned entries 和 diagnostics。
 - 启用 server 时拆分框架 manifest：`dist/client/manifest.json`、
-  `dist/server/manifest.json` 和 `dist/server/build-output.json`；CSR-only 构建
+  `dist/server/manifest.json` 和 `dist/build-output.json`；CSR-only 构建
   保持 `dist/manifest.json`。
 - 通过公开 `@evjs/client` runtime 包提供 manifest-driven app/page activation。
 - 框架托管 SPA 页面路由，并为 MPA 提供无路由器 page runtime。

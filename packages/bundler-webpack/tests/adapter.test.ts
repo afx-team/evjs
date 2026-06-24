@@ -196,7 +196,7 @@ async function emitFrameworkArtifacts(options: {
       "utf-8",
     );
     await fs.writeFile(
-      path.join(serverDir, "build-output.json"),
+      path.join(rootDir, "build-output.json"),
       JSON.stringify(output, null, 2),
       "utf-8",
     );
@@ -559,10 +559,7 @@ describe("webpackAdapter build", () => {
       });
 
       const manifest = JSON.parse(
-        await fs.readFile(
-          path.join(cwd, "dist/server/build-output.json"),
-          "utf-8",
-        ),
+        await fs.readFile(path.join(cwd, "dist/build-output.json"), "utf-8"),
       ) as BuildOutput;
       const publicManifest = JSON.parse(
         await fs.readFile(path.join(cwd, "dist/client/manifest.json"), "utf-8"),
@@ -690,10 +687,7 @@ describe("webpackAdapter build", () => {
       });
 
       const manifest = JSON.parse(
-        await fs.readFile(
-          path.join(cwd, "dist/server/build-output.json"),
-          "utf-8",
-        ),
+        await fs.readFile(path.join(cwd, "dist/build-output.json"), "utf-8"),
       ) as BuildOutput;
       const response = await requestServerEntry(cwd, manifest, "/dashboard");
 
@@ -767,10 +761,7 @@ describe("webpackAdapter build", () => {
       });
 
       const manifest = JSON.parse(
-        await fs.readFile(
-          path.join(cwd, "dist/server/build-output.json"),
-          "utf-8",
-        ),
+        await fs.readFile(path.join(cwd, "dist/build-output.json"), "utf-8"),
       ) as BuildOutput;
       const clientReferenceManifest = JSON.parse(
         await fs.readFile(
@@ -916,10 +907,7 @@ describe("webpackAdapter build", () => {
       });
 
       const manifest = JSON.parse(
-        await fs.readFile(
-          path.join(cwd, "dist/server/build-output.json"),
-          "utf-8",
-        ),
+        await fs.readFile(path.join(cwd, "dist/build-output.json"), "utf-8"),
       ) as BuildOutput;
       const campaignRegionId = getSinglePprRegionId(
         manifest.pages.campaign.ppr?.regions,

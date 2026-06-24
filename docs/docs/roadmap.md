@@ -17,7 +17,7 @@
   without running a bundler or writing `dist`.
 - Split framework manifests for server-enabled builds:
   `dist/client/manifest.json`, `dist/server/manifest.json`, and
-  `dist/server/build-output.json`, with flat `dist/manifest.json` for CSR-only
+  `dist/build-output.json`, with flat `dist/manifest.json` for CSR-only
   builds.
 - Manifest-driven app/page activation through the public
   `@evjs/client` runtime package.

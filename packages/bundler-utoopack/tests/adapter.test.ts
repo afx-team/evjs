@@ -140,7 +140,7 @@ function createFrameworkCallbacks(options: {
           "utf-8",
         );
         await fs.promises.writeFile(
-          path.join(serverDir, "build-output.json"),
+          path.join(rootDir, "build-output.json"),
           JSON.stringify(output, null, 2),
           "utf-8",
         );
@@ -572,7 +572,7 @@ describe("utoopackAdapter dev", () => {
 
     const buildOutput = JSON.parse(
       await fs.promises.readFile(
-        path.join(cwd, "dist/server/build-output.json"),
+        path.join(cwd, "dist/build-output.json"),
         "utf-8",
       ),
     );

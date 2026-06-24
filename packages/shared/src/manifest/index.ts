@@ -7,7 +7,7 @@
  * directory. Server-enabled builds write the public client manifest to
  * `dist/client/manifest.json`, the 0.1-compatible server manifest to
  * `dist/server/manifest.json`, and the full BuildOutput manifest to
- * `dist/server/build-output.json`; CSR-only builds write `dist/manifest.json`.
+ * `dist/build-output.json`; CSR-only builds write `dist/manifest.json`.
  */
 
 import {

@@ -54,14 +54,14 @@ dist/
 │   ├── index.html
 │   ├── main.[hash].js
 │   └── manifest.json
-└── server/
-    ├── main.[hash].js
-    ├── manifest.json
-    └── build-output.json
+├── server/
+│   ├── main.[hash].js
+│   └── manifest.json
+└── build-output.json
 ```
 
 `dist/server/manifest.json` 保持 0.1 兼容的 server manifest 结构：
-`entry`、`assets`、`fns` 和 `routes`。`dist/server/build-output.json`
+`entry`、`assets`、`fns` 和 `routes`。`dist/build-output.json`
 包含 server runtime 和 deployment adapter 消费的完整 `BuildOutput` 契约。
 `dist/client/manifest.json` 是浏览器安全的 public manifest。CSR-only 输出保持
 扁平结构，写入 `dist/manifest.json`。HTML 可以把 public manifest 内嵌为
@@ -182,10 +182,10 @@ browser page entry。
 ## 要点
 
 - 启用 server 的构建输出 `dist/client/manifest.json`、
-  `dist/server/manifest.json` 和 `dist/server/build-output.json`；CSR-only 构建
+  `dist/server/manifest.json` 和 `dist/build-output.json`；CSR-only 构建
   输出 `dist/manifest.json`。
 - `BuildOutput` 是框架 manifest 契约，启用 server 时保存在
-  `dist/server/build-output.json`。
+  `dist/build-output.json`。
 - 会成为 runtime id 的 manifest object key 必须是 build identifier，包括
   app id、page id 和 opaque internal PPR region id：只能使用字母、数字、下划线或连字符。
 - app 和 page runtime module 必须关联到 JavaScript 资产；如果 client entry

@@ -388,7 +388,7 @@ export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig>
    * as the framework manifest and before HTML documents are transformed.
    *
    * Deployment adapters should use this hook to add deployment metadata to the
-   * BuildOutput emitted as `dist/server/build-output.json` for server-enabled
+   * BuildOutput emitted as `dist/build-output.json` for server-enabled
    * builds or `dist/manifest.json` for CSR-only builds.
    */
   buildOutput?: (

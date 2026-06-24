@@ -975,13 +975,19 @@ async function emitFrameworkManifest(
       "utf-8",
     );
     await fs.promises.writeFile(
-      path.join(serverDir, BUILD_OUTPUT_FILE),
+      path.join(rootDir, BUILD_OUTPUT_FILE),
       JSON.stringify(output, null, 2),
       "utf-8",
     );
+    await fs.promises.rm(path.join(serverDir, BUILD_OUTPUT_FILE), {
+      force: true,
+    });
     await fs.promises.rm(path.join(rootDir, MANIFEST_FILE), { force: true });
   } else {
     await fs.promises.rm(path.join(rootDir, "server", MANIFEST_FILE), {
+      force: true,
+    });
+    await fs.promises.rm(path.join(rootDir, BUILD_OUTPUT_FILE), {
       force: true,
     });
     await fs.promises.rm(path.join(rootDir, "server", BUILD_OUTPUT_FILE), {

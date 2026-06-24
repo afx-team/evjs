@@ -7,12 +7,12 @@ framework manifests.
 dist/
 ├── client/
 │   └── manifest.json
-└── server/
-    ├── manifest.json
-    └── build-output.json
+├── server/
+│   └── manifest.json
+└── build-output.json
 ```
 
-Deployment adapters should consume `dist/server/build-output.json` /
+Deployment adapters should consume `dist/build-output.json` /
 `BuildOutput` for server-enabled builds and derive platform-specific routing or
 asset manifests from it. `dist/server/manifest.json` keeps the 0.1-compatible
 server manifest shape for server bundle metadata. CSR-only builds keep the same
@@ -29,7 +29,7 @@ Important output:
 
 - `dist/client/manifest.json` — browser-safe apps, pages, routes, assets, and runtime paths;
 - `dist/server/manifest.json` — 0.1-compatible server bundle metadata;
-- `dist/server/build-output.json` — complete BuildOutput with server functions, server routes, and runtime paths;
+- `dist/build-output.json` — complete BuildOutput with server functions, server routes, and runtime paths;
 - `dist/client/` — browser assets and HTML;
 - `dist/server/` — framework server bundle when `server` is enabled.
 
@@ -351,5 +351,5 @@ export function deployAdapter() {
 }
 ```
 
-Read `dist/server/build-output.json` for server-enabled builds. CSR-only builds
+Read `dist/build-output.json` for server-enabled builds. CSR-only builds
 use the flat `dist/manifest.json` path.

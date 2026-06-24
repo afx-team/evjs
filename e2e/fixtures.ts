@@ -395,7 +395,6 @@ export function createExampleTest(exampleName: string) {
         const buildOutputPath = path.join(
           exampleDir,
           "dist",
-          "server",
           "build-output.json",
         );
         const serverEntryPath = path.join(

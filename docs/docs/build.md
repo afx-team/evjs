@@ -55,14 +55,14 @@ dist/
 │   ├── index.html
 │   ├── main.[hash].js
 │   └── manifest.json
-└── server/
-    ├── main.[hash].js
-    ├── manifest.json
-    └── build-output.json
+├── server/
+│   ├── main.[hash].js
+│   └── manifest.json
+└── build-output.json
 ```
 
 `dist/server/manifest.json` keeps the 0.1-compatible server manifest shape:
-`entry`, `assets`, `fns`, and `routes`. `dist/server/build-output.json`
+`entry`, `assets`, `fns`, and `routes`. `dist/build-output.json`
 contains the complete `BuildOutput` contract for the server runtime and
 deployment adapters. `dist/client/manifest.json` is the browser-safe public
 manifest. CSR-only output stays flat and writes `dist/manifest.json`. HTML may
@@ -194,10 +194,10 @@ Internal PPR regions carry cache metadata in the manifest:
 ## Key Points
 
 - Server-enabled builds emit `dist/client/manifest.json`,
-  `dist/server/manifest.json`, and `dist/server/build-output.json`; CSR-only
+  `dist/server/manifest.json`, and `dist/build-output.json`; CSR-only
   builds emit `dist/manifest.json`.
 - `BuildOutput` is the framework manifest contract and is stored in
-  `dist/server/build-output.json` for server-enabled builds.
+  `dist/build-output.json` for server-enabled builds.
 - Manifest object keys that become runtime ids, including app ids, page ids,
   and opaque internal PPR region ids, must be build identifiers: letters,
   numbers, underscores, or hyphens.

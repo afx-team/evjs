@@ -1304,7 +1304,7 @@ describe("build", () => {
       "utf-8",
     );
     const buildOutput = fs.readFileSync(
-      path.join(cwd, "dist/server/build-output.json"),
+      path.join(cwd, "dist/build-output.json"),
       "utf-8",
     );
     const serverManifestJson = JSON.parse(serverManifest);
@@ -1328,8 +1328,9 @@ describe("build", () => {
     expect(buildOutput).toContain("./src/pages/Dashboard.tsx");
     expect(buildOutput).toContain("server.js");
     expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
+    expect(fs.existsSync(path.join(cwd, "dist/build-output.json"))).toBe(true);
     expect(fs.existsSync(path.join(cwd, "dist/server/build-output.json"))).toBe(
-      true,
+      false,
     );
   });
 

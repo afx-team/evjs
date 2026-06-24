@@ -150,7 +150,7 @@ sequenceDiagram
 ```
 
 Server-enabled builds emit a public manifest at `dist/client/manifest.json` and
-the complete `BuildOutput` manifest at `dist/server/build-output.json`.
+the complete `BuildOutput` manifest at `dist/build-output.json`.
 `dist/server/manifest.json` keeps the 0.1-compatible server manifest shape.
 CSR-only builds stay flat and emit `dist/manifest.json`.
 
