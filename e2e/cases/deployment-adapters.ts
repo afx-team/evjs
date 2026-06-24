@@ -51,7 +51,12 @@ test.describe("deployment-adapters", () => {
   });
 
   test("emits manifest and deployment artifacts from BuildOutput", async () => {
-    const manifestPath = path.join(exampleDir, "dist", "manifest.json");
+    const manifestPath = path.join(
+      exampleDir,
+      "dist",
+      "server",
+      "manifest.json",
+    );
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
 
     expect(manifest.apps.default).toEqual(

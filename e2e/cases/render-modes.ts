@@ -169,7 +169,7 @@ test.describe("render-modes", () => {
     expect(pageResponse.headers()["x-evjs-ppr"]).toBe("stream");
     const pageHtml = await pageResponse.text();
     const { id: regionId } = getSinglePprRegion(
-      readRenderModesManifest().pages.campaign.ppr.regions,
+      readRenderModesPublicManifest().pages.campaign.ppr.regions,
     );
     expect(pageHtml).toContain(`data-evjs-ppr-stream-region="${regionId}"`);
     expect(pageHtml).toContain("Dynamic PPR region rendered on demand");
@@ -252,8 +252,8 @@ test.describe("render-modes", () => {
   });
 
   test("emits a manifest with app, page, route, and server data", async () => {
-    const manifestPath = getRenderModesManifestPath();
-    const manifest = readRenderModesManifest();
+    const manifestPath = getRenderModesPublicManifestPath();
+    const manifest = readRenderModesPublicManifest();
 
     expect(manifest.apps.default).toEqual(
       expect.objectContaining({
@@ -432,12 +432,14 @@ async function expectBackLink(page: Page): Promise<void> {
   await expect(backLink).toHaveAttribute("href", "/");
 }
 
-function getRenderModesManifestPath(): string {
-  return path.join(exampleDir, "dist", "manifest.json");
+function getRenderModesPublicManifestPath(): string {
+  return path.join(exampleDir, "dist", "client", "manifest.json");
 }
 
-function readRenderModesManifest() {
-  return JSON.parse(fs.readFileSync(getRenderModesManifestPath(), "utf-8"));
+function readRenderModesPublicManifest() {
+  return JSON.parse(
+    fs.readFileSync(getRenderModesPublicManifestPath(), "utf-8"),
+  );
 }
 
 function getSinglePprRegion(
