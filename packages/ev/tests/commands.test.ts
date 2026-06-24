@@ -975,7 +975,7 @@ describe("build", () => {
     ]);
   });
 
-  it("uses routing.layout as the SPA root layout module", async () => {
+  it("uses routing.conventions.layout as the SPA root layout module", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await fs.promises.mkdir(path.join(cwd, "src/shell"), { recursive: true });
@@ -1008,7 +1008,9 @@ describe("build", () => {
       {
         server: false,
         routing: {
-          layout: "./src/shell/AppLayout.tsx",
+          conventions: {
+            layout: "./src/shell/AppLayout.tsx",
+          },
         },
       },
       {
@@ -1020,7 +1022,7 @@ describe("build", () => {
     expect(events).toContain("root:./src/shell/AppLayout.tsx");
   });
 
-  it("disables SPA root layout discovery with routing.layout false", async () => {
+  it("disables SPA root layout discovery with routing.conventions.layout false", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/layout"), { recursive: true });
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
@@ -1048,7 +1050,9 @@ describe("build", () => {
       {
         server: false,
         routing: {
-          layout: false,
+          conventions: {
+            layout: false,
+          },
         },
       },
       {

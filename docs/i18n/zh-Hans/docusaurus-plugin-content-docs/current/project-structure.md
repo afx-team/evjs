@@ -53,10 +53,10 @@ my-evjs-app/
 - SPA 模式可以有一个可选的外部根布局源码模块。默认 `src/pages` 会在旁边查找
   `src/layout.tsx`、`src/layout.ts`、`src/layout.jsx`、`src/layout.js`，
   或对应的 `src/layout/index.*` 源码模块；自定义 `routing.dir` 时使用该路由目录的父级。
-  自动发现的根布局候选只能保留一个，或者通过 `routing.layout` 指向自定义位置。
+  自动发现的根布局候选只能保留一个，或者通过 `routing.conventions.layout` 指向自定义位置。
   显式布局模块必须使用 `.ts`、`.tsx`、`.js` 或 `.jsx`；声明文件、测试/spec、
   Storybook、client-only 和 server-only 文件都不被接受。设置
-  `routing.layout: false` 可以关闭外部根布局发现。
+  `routing.conventions.layout: false` 可以关闭外部根布局发现。
 - `pages/**/layout.*` 和 `pages/**/layout/index.*` 是 SPA route layout。
   它们会在发现到的路由树中创建 pathless layout route，因此
   `src/pages/layout.tsx` 会包裹根级页面路由，`src/pages/posts/layout.tsx`
@@ -92,7 +92,7 @@ my-evjs-app/
   `*.server.*` 文件都会被路由目录忽略，因此就近放置的支撑文件不会变成路由。
 - SPA 根布局自动发现接受路由目录旁边唯一的 `layout.*` 或 `layout/index.*`
   源码模块。SPA route layout 使用路由目录内的 `layout.*` 或 `layout/index.*`
-  模块。自定义外部根布局模块使用 `routing.layout`。MPA 路由不消费框架 layout。
+  模块。自定义外部根布局模块使用 `routing.conventions.layout`。MPA 路由不消费框架 layout。
 - 输出无法遵循目录形状时，使用显式 `pages` 配置，而不是手写 `routing.routes`。
 
 迁移规则保持显式，不通过新增文件名方言来兼容：

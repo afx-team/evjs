@@ -217,7 +217,9 @@ export interface InspectFrameworkBuildResult {
     dir: string;
     html: string;
     mount: string;
-    layout?: string | false;
+    conventions?: {
+      layout: boolean | string;
+    };
     rootModule?: string;
     routeTypes?: string;
   };
@@ -343,11 +345,15 @@ async function withPageRoutingDefaults<TBundlerCfg>(
     dir: CONFIG_DEFAULTS.routingDir,
     html: config.html,
     mount: CONFIG_DEFAULTS.mount,
+    conventions: {
+      layout: true,
+    },
     routes: [],
   };
   const discovery = await discoverPageRoutes(cwd, {
     dir: base.dir,
-    rootLayout: base.mode === "spa" ? (base.layout ?? true) : false,
+    rootLayout:
+      base.mode === "spa" ? (base.conventions?.layout ?? false) : false,
     required: requested,
   });
   options.onDiscovery?.(base, discovery);
@@ -1998,8 +2004,8 @@ function createInspectRouting<TBundlerCfg>(
     dir: config.routing.dir,
     html: config.routing.html,
     mount: config.routing.mount,
-    ...(config.routing.layout !== undefined
-      ? { layout: config.routing.layout }
+    ...(config.routing.conventions
+      ? { conventions: config.routing.conventions }
       : {}),
     ...(config.routing.rootModule
       ? { rootModule: config.routing.rootModule }

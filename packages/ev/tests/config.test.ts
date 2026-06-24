@@ -38,7 +38,9 @@ describe("defineConfig", () => {
     const config = defineConfig({
       routing: {
         dir: "./src/pages",
-        layout: "./src/shell/AppLayout.tsx",
+        conventions: {
+          layout: "./src/shell/AppLayout.tsx",
+        },
         mount: "#root",
       },
     });
@@ -46,7 +48,9 @@ describe("defineConfig", () => {
     expect(config).toEqual({
       routing: {
         dir: "./src/pages",
-        layout: "./src/shell/AppLayout.tsx",
+        conventions: {
+          layout: "./src/shell/AppLayout.tsx",
+        },
         mount: "#root",
       },
     });
@@ -243,6 +247,9 @@ describe("resolveConfig", () => {
       dir: "./src/pages",
       html: "./index.html",
       mount: "#app",
+      conventions: {
+        layout: true,
+      },
       routes: [],
     });
   });
@@ -253,7 +260,9 @@ describe("resolveConfig", () => {
       routing: {
         dir: "./app/pages",
         html: "./shell.html",
-        layout: "./app/ShellLayout.tsx",
+        conventions: {
+          layout: "./app/ShellLayout.tsx",
+        },
         mount: "#root",
       },
     });
@@ -262,17 +271,19 @@ describe("resolveConfig", () => {
       mode: "spa",
       dir: "./app/pages",
       html: "./shell.html",
-      layout: "./app/ShellLayout.tsx",
+      conventions: {
+        layout: "./app/ShellLayout.tsx",
+      },
       mount: "#root",
       routes: [],
     });
   });
 
-  it("supports disabling the SPA root layout", () => {
+  it("supports the legacy routing layout alias", () => {
     const resolved = resolveConfig({
       routing: {
         mode: "spa",
-        layout: false,
+        layout: "./app/ShellLayout.tsx",
       },
     });
 
@@ -281,7 +292,48 @@ describe("resolveConfig", () => {
       dir: "./src/pages",
       html: "./index.html",
       mount: "#app",
-      layout: false,
+      conventions: {
+        layout: "./app/ShellLayout.tsx",
+      },
+      routes: [],
+    });
+  });
+
+  it("supports disabling the SPA root layout", () => {
+    const resolved = resolveConfig({
+      routing: {
+        mode: "spa",
+        conventions: {
+          layout: false,
+        },
+      },
+    });
+
+    expect(resolved.routing).toEqual({
+      mode: "spa",
+      dir: "./src/pages",
+      html: "./index.html",
+      mount: "#app",
+      conventions: {
+        layout: false,
+      },
+      routes: [],
+    });
+  });
+
+  it("supports disabling all page routing conventions", () => {
+    const resolved = resolveConfig({
+      routing: {
+        mode: "spa",
+        conventions: false,
+      },
+    });
+
+    expect(resolved.routing).toEqual({
+      mode: "spa",
+      dir: "./src/pages",
+      html: "./index.html",
+      mount: "#app",
       routes: [],
     });
   });
@@ -295,7 +347,20 @@ describe("resolveConfig", () => {
         },
       }),
     ).toThrow(
-      "[evjs] routing.layout is only supported in SPA mode. MPA pages should import shared shell components directly or use shared HTML templates.",
+      "[evjs] routing.layout is only supported in SPA mode. Use routing.conventions.layout for new config. MPA pages should import shared shell components directly or use shared HTML templates.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        routing: {
+          mode: "mpa",
+          conventions: {
+            layout: true,
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] routing.conventions.layout is only supported in SPA mode. MPA pages should import shared shell components directly or use shared HTML templates.",
     );
   });
 
@@ -357,6 +422,64 @@ describe("resolveConfig", () => {
     expect(() =>
       resolveConfig({
         routing: {
+          conventions: null as never,
+        },
+      }),
+    ).toThrow(
+      "[evjs] routing.conventions must be true, false, or a routing conventions object.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        routing: {
+          conventions: {
+            layout: "",
+          },
+        },
+      }),
+    ).toThrow("[evjs] routing.conventions.layout must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        routing: {
+          conventions: {
+            layout: 1 as never,
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] routing.conventions.layout must be a boolean or a non-empty string.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        routing: {
+          conventions: {
+            // @ts-expect-error runtime config loading can still produce unknown keys.
+            loading: true,
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] routing.conventions.loading is not supported. Use layout.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        routing: {
+          layout: false,
+          conventions: {
+            layout: false,
+          },
+        },
+      }),
+    ).toThrow(
+      "[evjs] routing.layout cannot be combined with routing.conventions.layout. Use routing.conventions.layout.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        routing: {
           // @ts-expect-error runtime config loading can still produce internal fields.
           entry: "./src/main.tsx",
         },
@@ -384,7 +507,7 @@ describe("resolveConfig", () => {
         },
       }),
     ).toThrow(
-      "[evjs] routing.fallback is not supported. Use mode, dir, html, mount, or layout.",
+      "[evjs] routing.fallback is not supported. Use mode, dir, html, mount, conventions, or layout.",
     );
   });
 

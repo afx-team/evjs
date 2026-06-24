@@ -24,7 +24,7 @@ export default defineConfig({
 | `output.crossOriginLoading` | `"anonymous"` |
 | `routing.mode` | `spa` |
 | `routing.dir` | `./src/pages` when `routing` is enabled |
-| `routing.layout` | auto-discovers a root layout beside `routing.dir` in SPA mode when present |
+| `routing.conventions.layout` | `true` in SPA mode; auto-discovers a root layout beside `routing.dir` when present |
 | `server.routing.dir` | `./src/server/routes` when `server.routing` is enabled |
 | `server.conventions.middleware` | `true` when server conventions are enabled |
 | `dev.port` | `3000` |
@@ -48,15 +48,14 @@ names differ:
 
 | Surface | Route discovery | Convention controls | Default files |
 |---------|-----------------|---------------------|---------------|
-| Client pages | `routing` | `routing.layout` for the SPA root layout; page-route file rules live under `routing.dir` | `./src/pages`, plus `layout.*` or `layout/index.*` beside that directory when present |
+| Client pages | `routing` | `routing.conventions.layout` for the SPA root layout; page-route file rules live under `routing.dir` | `./src/pages`, plus `layout.*` or `layout/index.*` beside that directory when present |
 | Server requests | `server.routing` | `server.conventions.middleware` for filesystem-scoped middleware | `./src/server/routes`, `./src/server/middleware.ts`, and `./src/server/routes/**/middleware.ts` |
 
-Top-level `routing` remains the client/page convention surface. evjs does not
-add a separate `client.conventions` object because page discovery, layout,
-mode, HTML, and mount all belong to one client routing owner. Server
-conventions live under `server` because the server also has `server.entry`,
-server functions, RSC, PPR, and runtime endpoints; explicit `server.entry` opts
-out of convention discovery.
+Top-level `routing` remains the client/page owner, and client convention
+toggles live under `routing.conventions`. Server conventions live under
+`server.conventions` because the server also has `server.entry`, server
+functions, RSC, PPR, and runtime endpoints; explicit `server.entry` opts out of
+server convention discovery.
 
 ## Output HTML Assets
 
@@ -116,29 +115,35 @@ must be an object; arrays and `null` are rejected.
 SPA mode can use a root layout module. By default evjs looks for a single
 `layout.*` or `layout/index.*` source module beside the route directory, such
 as `src/layout.tsx` or `src/layout/index.tsx` for `src/pages`. If more than one
-candidate exists, keep one file or configure `routing.layout` explicitly. Set
-`routing.layout` to a module path when a migrated app has its shell in another
-location. Explicit layout modules must be source modules, not declaration,
-test, spec, story, client-only, or server-only files. Set it to `false` to
-disable external root layout discovery:
+candidate exists, keep one file or configure `routing.conventions.layout`
+explicitly. Set `routing.conventions.layout` to a module path when a migrated
+app has its shell in another location. Explicit layout modules must be source
+modules, not declaration, test, spec, story, client-only, or server-only files.
+Set it to `false` to disable external root layout discovery:
 
 ```ts
 export default defineConfig({
   routing: {
     mode: "spa",
-    layout: "./src/shell/AppLayout.tsx",
+    conventions: {
+      layout: "./src/shell/AppLayout.tsx",
+    },
   },
 });
 ```
 
-`routing.layout` is not supported in MPA mode. Route-directory layout modules
-are SPA route conventions. MPA pages should compose shared shells as normal
-React components, or use page-specific/shared HTML templates when the document
-wrapper needs to differ.
+`routing.layout` remains as a compatibility alias for
+`routing.conventions.layout`, but new configuration should use
+`routing.conventions.layout`. Layout conventions are not supported in MPA mode.
+Route-directory layout modules are SPA route conventions. MPA pages should
+compose shared shells as normal React components, or use page-specific/shared
+HTML templates when the document wrapper needs to differ.
 
 `routing.mode` must be either `spa` or `mpa`. When provided, `routing.dir`,
-`routing.html`, and `routing.mount` must be non-empty strings. `routing.layout`
-must be either `false` or a non-empty module path.
+`routing.html`, and `routing.mount` must be non-empty strings.
+`routing.conventions` must be `true`, `false`, or an object; object form
+currently supports `layout`. `routing.conventions.layout` must be a boolean or
+a non-empty module path.
 
 Use top-level `entry` / `html` only for a manually bootstrapped single app.
 Applications that use `src/pages` should not create a separate client router or

@@ -7,8 +7,8 @@
 | 文件或目录 | 归属配置 | 含义 |
 | --- | --- | --- |
 | `src/pages/**/*.{ts,tsx,js,jsx}` | `routing` | SPA 和 MPA 的客户端页面路由发现。 |
-| `<routing-dir-parent>/layout.{ts,tsx,js,jsx}` | `routing.layout` | 存在一个匹配文件时，作为可选外部 SPA 根布局。 |
-| `<routing-dir-parent>/layout/index.{ts,tsx,js,jsx}` | `routing.layout` | 可选外部 SPA 根布局的目录形式。 |
+| `<routing-dir-parent>/layout.{ts,tsx,js,jsx}` | `routing.conventions.layout` | 存在一个匹配文件时，作为可选外部 SPA 根布局。 |
+| `<routing-dir-parent>/layout/index.{ts,tsx,js,jsx}` | `routing.conventions.layout` | 可选外部 SPA 根布局的目录形式。 |
 | `src/pages/**/layout.{ts,tsx,js,jsx}` | `routing` | 页面路由树内的 SPA route layout。 |
 | `src/pages/**/layout/index.{ts,tsx,js,jsx}` | `routing` | SPA route layout 的目录形式。 |
 | `<routing-dir-parent>/route-types.d.ts` | generated | evjs 生成的 SPA 导航类型声明。 |
@@ -100,8 +100,8 @@ src/layout/index.tsx
 ```
 
 如果存在多个外部根布局候选文件，需要保留一个文件，或显式配置
-`routing.layout`。设置 `routing.layout: false` 可以关闭外部根布局发现。
-MPA 模式不消费框架 layout。
+`routing.conventions.layout`。设置 `routing.conventions.layout: false`
+可以关闭外部根布局发现。MPA 模式不消费框架 layout。
 
 SPA 模式会把生成的路由类型写入 `<routing-dir-parent>/route-types.d.ts`。
 不要手工修改这个文件，不要从应用代码导入它，也不要把它复制进模板。

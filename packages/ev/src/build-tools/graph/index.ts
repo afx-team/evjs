@@ -105,6 +105,9 @@ export interface GraphConfig {
     entry?: string;
     html: string;
     mount: string;
+    conventions?: {
+      layout: boolean | string;
+    };
     routes: PageRouteNode[];
     rootModule?: string;
   };

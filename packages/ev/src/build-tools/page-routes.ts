@@ -469,7 +469,7 @@ async function discoverRootLayout(
         .map((candidate) => candidate.projectPath)
         .join(
           ", ",
-        )}. Keep one layout module or configure routing.layout explicitly.`,
+        )}. Keep one layout module or configure routing.conventions.layout explicitly.`,
     });
     return undefined;
   }

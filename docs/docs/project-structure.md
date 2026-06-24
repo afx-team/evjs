@@ -59,10 +59,11 @@ This shape covers the complete framework surface:
   `src/layout.ts`, `src/layout.jsx`, `src/layout.js`, or the matching
   `src/layout/index.*` source modules. Custom `routing.dir` values use the
   parent of that route directory. Keep exactly one auto-discovered root layout
-  module, or use `routing.layout` for a custom location. Explicit layout
-  modules must use `.ts`, `.tsx`, `.js`, or `.jsx`; declaration, test, spec,
-  story, client-only, and server-only files are not accepted. Set
-  `routing.layout: false` to disable external root layout discovery.
+  module, or use `routing.conventions.layout` for a custom location. Explicit
+  layout modules must use `.ts`, `.tsx`, `.js`, or `.jsx`; declaration, test,
+  spec, story, client-only, and server-only files are not accepted. Set
+  `routing.conventions.layout: false` to disable external root layout
+  discovery.
 - `pages/**/layout.*` and `pages/**/layout/index.*` are SPA route layouts. They
   create pathless layout routes inside the discovered route tree, so
   `src/pages/layout.tsx` wraps the root page routes and
@@ -106,9 +107,9 @@ Quick rules:
   colocated support files do not become routes.
 - SPA root layout auto-discovery accepts one `layout.*` or `layout/index.*`
   source module beside the route directory. SPA route layouts use `layout.*` or
-  `layout/index.*` modules inside the route directory. Use `routing.layout` for
-  a custom external root layout module. MPA routes do not consume framework
-  layouts.
+  `layout/index.*` modules inside the route directory. Use
+  `routing.conventions.layout` for a custom external root layout module. MPA
+  routes do not consume framework layouts.
 - If an output cannot follow the directory shape, use explicit `pages` config
   instead of hand-writing `routing.routes`.
 

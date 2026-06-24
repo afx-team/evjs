@@ -21,7 +21,11 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
     lines.push(`  dir: ${result.routing.dir}`);
     lines.push(`  html: ${result.routing.html}`);
     lines.push(`  mount: ${result.routing.mount}`);
-    lines.push(`  layout: ${formatValue(result.routing.layout ?? "auto")}`);
+    lines.push(
+      `  conventions.layout: ${formatLayoutConvention(
+        result.routing.conventions?.layout,
+      )}`,
+    );
     if (result.routing.rootModule) {
       lines.push(`  rootModule: ${result.routing.rootModule}`);
     }
@@ -134,4 +138,10 @@ function formatDiagnostic(diagnostic: InspectDiagnostic): string {
 
 function formatValue(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value);
+}
+
+function formatLayoutConvention(value: boolean | string | undefined): string {
+  if (value === true) return "auto";
+  if (value === false || value === undefined) return "disabled";
+  return formatValue(value);
 }

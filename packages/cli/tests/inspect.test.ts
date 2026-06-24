@@ -127,10 +127,12 @@ describe("inspect", () => {
     const text = formatInspectText(result);
     expect(text).toContain("ev inspect");
     expect(text).toContain("Routing");
+    expect(text).toContain("conventions.layout: auto");
     expect(text).toContain("/ -> index");
 
     const json = JSON.parse(formatInspectJson(result));
     expect(json.routing.mode).toBe("spa");
+    expect(json.routing.conventions.layout).toBe(true);
     expect(json.pageRoutes[0].path).toBe("/");
   });
 

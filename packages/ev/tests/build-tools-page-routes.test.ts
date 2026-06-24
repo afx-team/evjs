@@ -436,12 +436,10 @@ describe("discoverPageRoutes", () => {
     expect(englishClientRoutesDoc).toContain(
       "`routing.routes` is not a public",
     );
-    expect(englishClientRoutesDoc).toContain(
-      "when `routing.layout` points at an explicit module",
-    );
+    expect(englishClientRoutesDoc).toContain("`routing.conventions.layout`");
     expect(chineseClientRoutesDoc).toContain("`routing.routes` 不是公开的");
     expect(chineseClientRoutesDoc).toContain(
-      "即使 `routing.layout` 显式指向其他模块",
+      "即使 `routing.conventions.layout` 显式指向其他模块",
     );
   });
 
@@ -1230,7 +1228,7 @@ describe("discoverPageRoutes", () => {
         level: "error",
         file: "src/layout.tsx",
         message:
-          "Multiple root layout modules found beside the page route directory: ./src/layout.tsx, ./src/layout.jsx, ./src/layout/index.js. Keep one layout module or configure routing.layout explicitly.",
+          "Multiple root layout modules found beside the page route directory: ./src/layout.tsx, ./src/layout.jsx, ./src/layout/index.js. Keep one layout module or configure routing.conventions.layout explicitly.",
       },
     ]);
   });

@@ -84,10 +84,10 @@ by default.
 
 SPA root layout discovery is optional. Use one `layout.*` or `layout/index.*`
 source module beside the route directory, such as `src/layout.tsx` or
-`src/layout/index.tsx`, set `routing.layout` to another module path, or set
-`routing.layout: false` when the app should not have a framework root layout.
-SPA route layouts can also live inside the route directory as `layout.*` or
-`layout/index.*` modules.
+`src/layout/index.tsx`, set `routing.conventions.layout` to another module
+path, or set `routing.conventions.layout: false` when the app should not have a
+framework root layout. SPA route layouts can also live inside the route
+directory as `layout.*` or `layout/index.*` modules.
 
 ## MPA Mode
 
@@ -106,7 +106,8 @@ export default defineConfig({
 
 Each page is emitted as its own HTML document and client entry without
 SPA router setup. Framework layout conventions are SPA-only; MPA pages compose
-shared wrappers as normal components and do not accept `routing.layout`.
+shared wrappers as normal components and do not accept
+`routing.conventions.layout`.
 
 ## Packages
 

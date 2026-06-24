@@ -23,7 +23,7 @@ export default defineConfig({
 | `output.crossOriginLoading` | `"anonymous"` |
 | `routing.mode` | `spa` |
 | `routing.dir` | 启用 `routing` 时为 `./src/pages` |
-| `routing.layout` | SPA 模式下，存在时从 `routing.dir` 旁边自动发现根布局 |
+| `routing.conventions.layout` | SPA 模式下为 `true`，存在时从 `routing.dir` 旁边自动发现根布局 |
 | `server.routing.dir` | 启用 `server.routing` 时为 `./src/server/routes` |
 | `server.conventions.middleware` | 启用 server conventions 时为 `true` |
 | `dev.port` | `3000` |
@@ -44,14 +44,13 @@ metadata 都由 evjs 派生，不需要也不能直接配置。
 
 | 约定入口 | 路由发现 | 约定控制项 | 默认文件 |
 |--------|----------|------------|----------|
-| 客户端页面 | `routing` | `routing.layout` 控制 SPA 根布局；page-route 文件规则位于 `routing.dir` 下 | `./src/pages`，以及存在时该目录旁边的 `layout.*` 或 `layout/index.*` |
+| 客户端页面 | `routing` | `routing.conventions.layout` 控制 SPA 根布局；page-route 文件规则位于 `routing.dir` 下 | `./src/pages`，以及存在时该目录旁边的 `layout.*` 或 `layout/index.*` |
 | 服务端请求 | `server.routing` | `server.conventions.middleware` 控制按文件系统作用域生效的 middleware | `./src/server/routes`、`./src/server/middleware.ts` 和 `./src/server/routes/**/middleware.ts` |
 
-顶层 `routing` 仍然是客户端/page 约定入口。evjs 不新增单独的
-`client.conventions` object，因为页面发现、layout、mode、HTML 和 mount
-都属于同一个客户端路由归属对象。Server conventions 放在 `server` 下，因为服务端同时还有
-`server.entry`、server functions、RSC、PPR 和 runtime endpoints；显式
-`server.entry` 会退出 convention discovery。
+顶层 `routing` 仍然是客户端/page 归属对象，客户端约定开关放在
+`routing.conventions` 下。Server conventions 放在 `server.conventions` 下，
+因为服务端同时还有 `server.entry`、server functions、RSC、PPR 和 runtime
+endpoints；显式 `server.entry` 会退出 server convention discovery。
 
 ## 输出 HTML 资源
 
@@ -108,27 +107,31 @@ export default defineConfig({
 SPA 模式可以使用根布局模块。默认情况下，evjs 会在路由目录旁边查找唯一的
 `layout.*` 或 `layout/index.*` 源码模块，例如 `src/pages` 对应
 `src/layout.tsx` 或 `src/layout/index.tsx`。如果存在多个候选文件，需要只保留一个，
-或显式配置 `routing.layout`。如果迁移应用的外框在其他位置，也可以通过
-`routing.layout` 显式指定模块路径。显式布局模块必须是源码模块，不能是声明文件、
-测试/spec、Storybook、client-only 或 server-only 文件；如果 SPA 不需要外部根布局，可以设置为
-`false`：
+或显式配置 `routing.conventions.layout`。如果迁移应用的外框在其他位置，也可以通过
+`routing.conventions.layout` 显式指定模块路径。显式布局模块必须是源码模块，不能是声明文件、
+测试/spec、Storybook、client-only 或 server-only 文件；如果 SPA 不需要外部根布局，
+可以设置为 `false`：
 
 ```ts
 export default defineConfig({
   routing: {
     mode: "spa",
-    layout: "./src/shell/AppLayout.tsx",
+    conventions: {
+      layout: "./src/shell/AppLayout.tsx",
+    },
   },
 });
 ```
 
-MPA 模式不支持 `routing.layout`。路由目录内的 layout 模块也是 SPA 路由约定。
-MPA 页面需要共享外框时，应像普通 React 代码一样组合共享组件；如果只是文档外壳相同，
-可以复用页面 HTML 模板。
+`routing.layout` 仍作为 `routing.conventions.layout` 的兼容别名保留，但新配置应使用
+`routing.conventions.layout`。MPA 模式不支持 layout conventions。路由目录内的
+layout 模块也是 SPA 路由约定。MPA 页面需要共享外框时，应像普通 React 代码一样组合共享组件；
+如果只是文档外壳相同，可以复用页面 HTML 模板。
 
 `routing.mode` 必须是 `spa` 或 `mpa`。提供 `routing.dir`、`routing.html`
-或 `routing.mount` 时，它们必须是非空字符串。`routing.layout` 必须是
-`false` 或非空模块路径。
+或 `routing.mount` 时，它们必须是非空字符串。`routing.conventions` 必须是
+`true`、`false` 或 object；object 形式目前支持 `layout`。
+`routing.conventions.layout` 必须是 boolean 或非空模块路径。
 
 只有手动 bootstrap 单应用时，才使用顶层 `entry` / `html`。使用
 `src/pages` 的应用不应该额外手写客户端 router 或 framework bootstrap：

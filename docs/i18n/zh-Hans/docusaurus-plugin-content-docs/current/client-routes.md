@@ -162,18 +162,18 @@ SPA 模式下，外部根布局是可选文件。它放在路由目录旁边：�
 路由 outlet 组件。
 
 自动发现的外部根布局模块只能保留一个。如果存在多个候选文件，evjs 会报告歧义，并要求只保留一个文件，
-或通过 `routing.layout: "./src/shell/AppLayout.tsx"` 显式指定外框。
-设置 `routing.layout: false` 可以让 SPA 不消费任何外部框架根布局。
+或通过 `routing.conventions.layout: "./src/shell/AppLayout.tsx"` 显式指定外框。
+设置 `routing.conventions.layout: false` 可以让 SPA 不消费任何外部框架根布局。
 
 SPA route layout 也可以放在路由目录内部。使用 `layout.tsx`、`layout.jsx`、
 `layout.ts`、`layout.js` 或 `layout/index.*`，放在需要包裹的页面旁边。
 `src/pages/layout.tsx` 会包裹根级页面路由；`src/pages/posts/layout.tsx`
 会包裹 `/posts` 下的路由；`src/pages/(app)/dashboard/layout.tsx` 会在
 `/dashboard` 创建 layout，且不会把 `(app)` 加入 URL。这些路由目录内的 layout 可以和外部根布局共存。
-即使 `routing.layout` 显式指向其他模块，或通过 `routing.layout: false`
-关闭外部根布局发现，这条规则也仍然成立。
+即使 `routing.conventions.layout` 显式指向其他模块，或通过
+`routing.conventions.layout: false` 关闭外部根布局发现，这条规则也仍然成立。
 
-Layout 约定只用于 SPA。MPA 模式不接受 `routing.layout`，也不消费框架 layout；
+Layout 约定只用于 SPA。MPA 模式不接受 `routing.conventions.layout`，也不消费框架 layout；
 需要公共视觉包裹时，在各页面里导入普通组件即可。如果只是文档外壳相同，可以复用 HTML 模板。
 
 路由目录中名为 `layout` 的 segment 保留给 `layout.{ts,tsx,js,jsx}` 或

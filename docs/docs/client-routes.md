@@ -204,9 +204,10 @@ does not need a router outlet component at the app root.
 
 Keep one auto-discovered external root layout module. If multiple candidates
 exist, evjs reports an ambiguity and asks you to keep one file or configure the
-shell explicitly with `routing.layout: "./src/shell/AppLayout.tsx"`. Set
-`routing.layout: false` when the SPA should not consume any external framework
-root layout.
+shell explicitly with
+`routing.conventions.layout: "./src/shell/AppLayout.tsx"`. Set
+`routing.conventions.layout: false` when the SPA should not consume any
+external framework root layout.
 
 SPA route layouts can also live inside the route directory. Use `layout.tsx`,
 `layout.jsx`, `layout.ts`, `layout.js`, or `layout/index.*` beside the pages
@@ -214,14 +215,14 @@ they should wrap. `src/pages/layout.tsx` wraps root-level page routes;
 `src/pages/posts/layout.tsx` wraps routes below `/posts`; and
 `src/pages/(app)/dashboard/layout.tsx` creates a layout at `/dashboard` without
 adding `(app)` to the URL. These route-directory layouts can coexist with an
-external root layout. This remains true when `routing.layout` points at an explicit module.
-It also remains true when external root layout discovery is disabled with
-`routing.layout: false`.
+external root layout. This remains true when `routing.conventions.layout`
+points at an explicit module, or when external root layout discovery is
+disabled with `routing.conventions.layout: false`.
 
-The layout conventions are SPA-only. MPA mode does not accept `routing.layout`
-or consume framework layouts; share visual wrappers by importing ordinary
-components from each page, or share the HTML template when only document chrome
-is common.
+The layout conventions are SPA-only. MPA mode does not accept
+`routing.conventions.layout` or consume framework layouts; share visual
+wrappers by importing ordinary components from each page, or share the HTML
+template when only document chrome is common.
 
 A route-directory segment named `layout` is reserved for layout modules named
 `layout.{ts,tsx,js,jsx}` or `layout/index.{ts,tsx,js,jsx}`. Put layout-local

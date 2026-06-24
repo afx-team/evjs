@@ -381,27 +381,49 @@ export interface PageRoutingConfig {
   /** Mount selector for generated page routes. Default: "#app". */
   mount?: string;
   /**
+   * Framework-managed page routing conventions.
+   *
+   * Defaults to enabled for SPA routing. `false` disables all page conventions.
+   */
+  conventions?: boolean | PageRoutingConventionsConfig;
+  /**
    * SPA root layout module.
    *
-   * Defaults to the `layout/index.tsx` convention beside the page route
-   * directory in SPA mode. Set to `false` to disable the framework root layout.
-   * MPA mode does not use framework layouts.
+   * Legacy alias for `routing.conventions.layout`. Prefer
+   * `routing.conventions.layout` for new configuration.
    */
   layout?: PageRoutingLayoutConfig;
 }
 
 export type PageRoutingMode = "spa" | "mpa";
 export type PageRoutingLayoutConfig = string | false;
+export type PageRoutingLayoutConvention = boolean | string;
+
+export interface PageRoutingConventionsConfig {
+  /**
+   * SPA root layout convention.
+   *
+   * `true` auto-discovers one `layout.*` or `layout/index.*` source module
+   * beside the route directory, `false` disables root layout discovery, and a
+   * string points at an explicit root layout module. MPA mode does not use
+   * framework layouts.
+   */
+  layout?: PageRoutingLayoutConvention;
+}
 
 export type RoutingConfig = PageRoutingConfig;
 export type RoutingMode = PageRoutingMode;
+
+export interface ResolvedPageRoutingConventionsConfig {
+  layout: PageRoutingLayoutConvention;
+}
 
 export interface ResolvedPageRoutingConfig {
   mode: PageRoutingMode;
   dir: string;
   html: string;
   mount: string;
-  layout?: PageRoutingLayoutConfig;
+  conventions?: ResolvedPageRoutingConventionsConfig;
   entry?: string;
   routes: PageRouteNode[];
   rootModule?: string;
@@ -434,7 +456,9 @@ export const CONFIG_DEFAULTS = {
   mount: "#app",
 } as const;
 const MPA_LAYOUT_UNSUPPORTED_MESSAGE =
-  "[evjs] routing.layout is only supported in SPA mode. MPA pages should import shared shell components directly or use shared HTML templates.";
+  "[evjs] routing.conventions.layout is only supported in SPA mode. MPA pages should import shared shell components directly or use shared HTML templates.";
+const LEGACY_MPA_LAYOUT_UNSUPPORTED_MESSAGE =
+  "[evjs] routing.layout is only supported in SPA mode. Use routing.conventions.layout for new config. MPA pages should import shared shell components directly or use shared HTML templates.";
 const PUBLIC_ROOT_CONFIG_KEYS = new Set([
   "entry",
   "html",
@@ -453,8 +477,10 @@ const PUBLIC_PAGE_ROUTING_CONFIG_KEYS = new Set([
   "dir",
   "html",
   "mount",
+  "conventions",
   "layout",
 ]);
+const PUBLIC_PAGE_ROUTING_CONVENTIONS_CONFIG_KEYS = new Set(["layout"]);
 const PUBLIC_APP_CONFIG_KEYS = new Set(["source", "entry", "html", "mount"]);
 const PUBLIC_PAGE_CONFIG_KEYS = new Set([
   "path",
@@ -1047,10 +1073,11 @@ function resolvePageRoutingConfig(
   }
   validatePageRoutingConfigKeys(options);
   const mode = resolvePageRoutingMode(options.mode);
-  if (mode === "mpa" && options.layout !== undefined) {
-    throw new Error(MPA_LAYOUT_UNSUPPORTED_MESSAGE);
-  }
-  const layout = resolvePageRoutingLayout(options.layout);
+  const conventions = resolvePageRoutingConventionsConfig(
+    options.conventions,
+    options.layout,
+    mode,
+  );
   return {
     mode,
     dir:
@@ -1065,7 +1092,7 @@ function resolvePageRoutingConfig(
       options.mount === undefined
         ? CONFIG_DEFAULTS.mount
         : assertNonEmptyString(options.mount, "routing.mount"),
-    ...(layout !== undefined ? { layout } : {}),
+    ...(conventions ? { conventions } : {}),
     routes: [],
   };
 }
@@ -1075,7 +1102,7 @@ function validatePageRoutingConfigKeys(routing: PageRoutingConfig): void {
     routing,
     PUBLIC_PAGE_ROUTING_CONFIG_KEYS,
     "routing",
-    "mode, dir, html, mount, or layout",
+    "mode, dir, html, mount, conventions, or layout",
     (key) => {
       if (key === "entry") {
         return "[evjs] routing.entry is not a public config field. Use top-level entry or app entries for SPA applications; MPA routing creates one page entry per route file.";
@@ -1095,10 +1122,81 @@ function resolvePageRoutingMode(
   throw new Error('[evjs] routing.mode must be "spa" or "mpa".');
 }
 
-function resolvePageRoutingLayout(
-  layout: PageRoutingLayoutConfig | undefined,
-): PageRoutingLayoutConfig | undefined {
-  if (layout === undefined || layout === false) return layout;
+function resolvePageRoutingConventionsConfig(
+  conventions: PageRoutingConfig["conventions"],
+  legacyLayout: PageRoutingLayoutConfig | undefined,
+  mode: PageRoutingMode,
+): ResolvedPageRoutingConventionsConfig | undefined {
+  if (legacyLayout !== undefined && conventions !== undefined) {
+    throw new Error(
+      "[evjs] routing.layout cannot be combined with routing.conventions.layout. Use routing.conventions.layout.",
+    );
+  }
+
+  if (legacyLayout !== undefined) {
+    if (mode === "mpa") throw new Error(LEGACY_MPA_LAYOUT_UNSUPPORTED_MESSAGE);
+    return {
+      layout: resolveLegacyPageRoutingLayout(legacyLayout),
+    };
+  }
+
+  if (conventions === false) return undefined;
+
+  let options: PageRoutingConventionsConfig;
+  if (conventions === undefined || conventions === true) {
+    options = {};
+  } else if (
+    conventions &&
+    typeof conventions === "object" &&
+    !Array.isArray(conventions)
+  ) {
+    options = conventions as PageRoutingConventionsConfig;
+  } else {
+    throw new Error(
+      "[evjs] routing.conventions must be true, false, or a routing conventions object.",
+    );
+  }
+  validatePageRoutingConventionsConfigKeys(options);
+
+  if (mode === "mpa") {
+    if (options.layout !== undefined && options.layout !== false) {
+      throw new Error(MPA_LAYOUT_UNSUPPORTED_MESSAGE);
+    }
+    return undefined;
+  }
+
+  return {
+    layout: resolvePageRoutingLayoutConvention(
+      options.layout ?? true,
+      "routing.conventions.layout",
+    ),
+  };
+}
+
+function validatePageRoutingConventionsConfigKeys(
+  conventions: PageRoutingConventionsConfig,
+): void {
+  assertKnownConfigKeys(
+    conventions,
+    PUBLIC_PAGE_ROUTING_CONVENTIONS_CONFIG_KEYS,
+    "routing.conventions",
+    "layout",
+  );
+}
+
+function resolvePageRoutingLayoutConvention(
+  layout: PageRoutingLayoutConvention,
+  path: string,
+): PageRoutingLayoutConvention {
+  if (layout === true || layout === false) return layout;
+  if (typeof layout === "string") return assertNonEmptyString(layout, path);
+  throw new Error(`[evjs] ${path} must be a boolean or a non-empty string.`);
+}
+
+function resolveLegacyPageRoutingLayout(
+  layout: PageRoutingLayoutConfig,
+): PageRoutingLayoutConvention {
+  if (layout === false) return layout;
   if (typeof layout === "string") {
     return assertNonEmptyString(layout, "routing.layout");
   }

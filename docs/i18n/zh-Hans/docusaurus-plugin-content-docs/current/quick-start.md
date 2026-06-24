@@ -82,9 +82,9 @@ export default function UserPage() {
 
 SPA 根布局发现是可选的。可以在路由目录旁边保留唯一的 `layout.*` 或
 `layout/index.*` 源码模块，例如 `src/layout.tsx` 或 `src/layout/index.tsx`；
-也可以通过 `routing.layout` 指向其他模块；如果应用不需要框架根布局，设置
-`routing.layout: false`。SPA route layout 也可以放在路由目录内，命名为
-`layout.*` 或 `layout/index.*`。
+也可以通过 `routing.conventions.layout` 指向其他模块；如果应用不需要框架根布局，
+设置 `routing.conventions.layout: false`。SPA route layout 也可以放在路由目录内，
+命名为 `layout.*` 或 `layout/index.*`。
 
 ## MPA 模式
 
@@ -103,7 +103,7 @@ export default defineConfig({
 
 每个页面都会生成独立 HTML 文档和客户端 entry，不引入客户端路由器配置。
 框架 layout 约定只用于 SPA；MPA 页面需要公共外框时，应像普通 React 代码一样组合共享组件，
-且不支持 `routing.layout`。
+且不支持 `routing.conventions.layout`。
 
 ## 包列表
 
