@@ -35,7 +35,7 @@ describe("createDeploymentArtifact", () => {
       version: 1,
       buildId: "build-1",
       distDir: "dist",
-      publicPath: { mode: "runtime" },
+      publicPath: "auto",
       runtime: {
         server: {
           basePath: "/framework",
@@ -147,7 +147,7 @@ describe("createDeploymentArtifact", () => {
         publicDir: "dist/client",
         serverDir: "dist/server",
       },
-      publicPath: { mode: "runtime" },
+      publicPath: "auto",
       runtime: output.runtime,
       apps: {
         default: {

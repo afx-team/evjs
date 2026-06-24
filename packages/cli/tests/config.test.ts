@@ -44,6 +44,7 @@ describe("CONFIG_DEFAULTS", () => {
     expect(CONFIG_DEFAULTS.serverBasePath).toBe("/__evjs");
     expect(CONFIG_DEFAULTS.clientProxy).toBe("@evjs/client/internal");
     expect(CONFIG_DEFAULTS.serverRegister).toBe("@evjs/server/register");
+    expect(CONFIG_DEFAULTS.crossOriginLoading).toBe("anonymous");
   });
 
   it("is readonly", () => {
@@ -57,6 +58,7 @@ describe("CONFIG_DEFAULTS", () => {
       serverBasePath: "/__evjs",
       clientProxy: "@evjs/client/internal",
       serverRegister: "@evjs/server/register",
+      crossOriginLoading: "anonymous",
       routingDir: "./src/pages",
       routingMode: "spa",
       mount: "#app",

@@ -527,7 +527,7 @@ describe("startPageRuntime", () => {
         } as never,
       }),
     ).rejects.toThrow(
-      '[evjs] Loaded provided manifest.publicPath.mode must be "runtime".',
+      "[evjs] Loaded provided manifest.publicPath must be a non-empty string.",
     );
 
     await expect(

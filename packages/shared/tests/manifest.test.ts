@@ -79,7 +79,7 @@ describe("assertFrameworkManifestShape", () => {
         { ...createMinimalBuildOutput(), publicPath: { mode: "asset" } },
         "manifest",
       ),
-    ).toThrow('[evjs] manifest.publicPath.mode must be "runtime".');
+    ).toThrow("[evjs] manifest.publicPath must be a non-empty string.");
 
     expect(() =>
       assertFrameworkManifestShape(

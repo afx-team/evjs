@@ -20,7 +20,7 @@ export default defineConfig({
 |------|--------|
 | `entry` | `./src/main.tsx` |
 | `html` | `./index.html` |
-| `output.crossOriginLoading` | 未设置 |
+| `output.crossOriginLoading` | `"anonymous"` |
 | `routing.mode` | `spa` |
 | `dev.port` | `3000` |
 | `server.dev.port` | `3001` |
@@ -36,9 +36,9 @@ metadata 都由 evjs 派生，不需要也不能直接配置。
 
 ## 输出 HTML 资源
 
-设置 `output.crossOriginLoading` 可以为 evjs 注入到输出 HTML document 中的
-JavaScript 和 CSS 资源标签添加 `crossorigin` 属性，并让浏览器 chunk loader
-对动态加载的 chunk 使用同一策略：
+evjs 默认会为注入到输出 HTML document 中的 JavaScript 和 CSS 资源标签添加
+`crossorigin="anonymous"`，并让浏览器 chunk loader 对动态加载的 chunk 使用
+同一策略。设置 `output.crossOriginLoading` 可以修改或关闭这个策略：
 
 ```ts
 export default defineConfig({
@@ -49,7 +49,8 @@ export default defineConfig({
 ```
 
 `output.crossOriginLoading` 可设置为 `false`、`"anonymous"` 或
-`"use-credentials"`。不设置时不会添加该属性，动态 chunk 使用 bundler 默认行为。
+`"use-credentials"`。设置为 `false` 时不会添加该属性，动态 chunk 使用 bundler
+默认行为。
 如果不同 HTML document 或单个首屏资源需要不同属性，请使用 `transformHtml` 插件。
 
 ## 路由

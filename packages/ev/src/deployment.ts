@@ -927,7 +927,6 @@ function getFrameworkServerRoutes(output: BuildOutput): string[] {
 function getStaticAssetPrefix(
   publicPath: PublicPathOutput,
 ): string | undefined {
-  if (typeof publicPath !== "string") return undefined;
   if (!publicPath.startsWith("/") || publicPath.startsWith("//")) {
     return undefined;
   }

@@ -804,7 +804,11 @@ function serializePageProps(props: Record<string, unknown>): string {
 
 function assetHref(manifest: BuildOutput, asset: string): string {
   const publicPath = manifest.publicPath;
-  if (typeof publicPath !== "string") return asset;
+  if (publicPath === "auto") {
+    return /^(?:https?:)?\/\//.test(asset) || asset.startsWith("/")
+      ? asset
+      : `/${asset}`;
+  }
   if (/^(?:https?:)?\/\//.test(asset) || asset.startsWith("/")) return asset;
   const base = publicPath.endsWith("/") ? publicPath : `${publicPath}/`;
   return `${base}${asset}`;

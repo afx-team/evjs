@@ -296,13 +296,13 @@ export interface OutputConfig {
   /**
    * Adds a `crossorigin` attribute to JavaScript and CSS asset tags in emitted
    * HTML documents and configures the browser chunk loader to use the same
-   * policy for dynamically loaded chunks.
+   * policy for dynamically loaded chunks. Default: "anonymous".
    */
   crossOriginLoading?: CrossOriginLoadingPolicy;
 }
 
 export interface ResolvedOutputConfig {
-  crossOriginLoading?: CrossOriginLoadingPolicy;
+  crossOriginLoading: CrossOriginLoadingPolicy;
 }
 
 export type AppConfig = string | AppSourceConfig | AppEntryConfig;
@@ -385,6 +385,7 @@ export const CONFIG_DEFAULTS = {
   serverBasePath: DEFAULT_SERVER_BASE_PATH,
   clientProxy: "@evjs/client/internal",
   serverRegister: "@evjs/server/register",
+  crossOriginLoading: "anonymous",
   routingDir: "./src/pages",
   routingMode: "spa",
   mount: "#app",
@@ -610,7 +611,7 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
     output: {
       crossOriginLoading:
         outputConfig.crossOriginLoading === undefined
-          ? undefined
+          ? CONFIG_DEFAULTS.crossOriginLoading
           : assertCrossOriginPolicy(
               outputConfig.crossOriginLoading,
               "output.crossOriginLoading",

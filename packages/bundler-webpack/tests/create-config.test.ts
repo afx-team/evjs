@@ -57,6 +57,8 @@ describe("createWebpackConfigs", () => {
         ],
       }),
     );
+    expect(configs[0]?.output?.publicPath).toBe("auto");
+    expect(configs[0]?.output?.crossOriginLoading).toBe("anonymous");
   });
 
   it("sets crossorigin for dynamically loaded browser chunks", async () => {
@@ -262,6 +264,7 @@ describe("createWebpackConfigs", () => {
       expect.objectContaining({
         filename: "[name].cjs",
         chunkFilename: "[name].cjs",
+        publicPath: "/",
       }),
     );
   });
@@ -292,7 +295,7 @@ function createResolvedConfig(): ResolvedConfig<WebpackConfig> {
       proxy: [],
     },
     output: {
-      crossOriginLoading: undefined,
+      crossOriginLoading: "anonymous",
     },
     serverEnabled: false,
     server: {

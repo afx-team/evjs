@@ -17,7 +17,7 @@ describe("createUtoopackConfig", () => {
       entry: "./src/main.tsx",
       html: "./index.html",
       output: {
-        crossOriginLoading: undefined,
+        crossOriginLoading: "anonymous",
       },
       dev: {
         port: 41234,
@@ -62,6 +62,8 @@ describe("createUtoopackConfig", () => {
     expect(utoopackConfig.entry).toEqual([
       { import: "./src/main.tsx", name: "main" },
     ]);
+    expect(utoopackConfig.output?.publicPath).toBe("auto");
+    expect(utoopackConfig.output?.crossOriginLoading).toBe("anonymous");
     expect(utoopackConfig.devServer?.port).toBe(41234);
     expect(utoopackConfig.devServer?.https).toBe(true);
     expect(utoopackConfig.devServer?.proxy).toContainEqual(

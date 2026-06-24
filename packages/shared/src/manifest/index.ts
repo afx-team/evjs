@@ -145,7 +145,7 @@ export type PrerenderConfig =
 export type HydrationMode = "none" | "load" | "visible" | "idle";
 export type BuildEnvironment = "client" | "server";
 export type ServerRuntime = "node" | "edge";
-export type PublicPathOutput = string | { mode: "runtime" };
+export type PublicPathOutput = string;
 
 /**
  * Internal build-unit arrangement derived from ResolvedConfig + AppGraph.
@@ -763,19 +763,7 @@ function assertManifestBuildId(value: unknown, source: string): void {
 }
 
 function assertPublicPathOutput(value: unknown, source: string): void {
-  if (typeof value === "string") {
-    assertManifestString(value, source);
-    return;
-  }
-
-  if (!isRecord(value)) {
-    throw new Error(
-      `[evjs] ${source} must be a non-empty string or { mode: "runtime" }.`,
-    );
-  }
-  if (value.mode !== "runtime") {
-    throw new Error(`[evjs] ${source}.mode must be "runtime".`);
-  }
+  assertManifestString(value, source);
 }
 
 function assertBuildOutputPaths(value: unknown, source: string): void {

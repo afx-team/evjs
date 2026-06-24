@@ -71,6 +71,7 @@ describe("createAppGraph and createBuildPlan", () => {
         owner: { appId: "default" },
       },
     ]);
+    expect(plan.runtime.publicPath).toBe("auto");
   });
 
   it("creates a framework-managed SPA entry from page routes", async () => {

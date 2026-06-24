@@ -680,7 +680,7 @@ describe("React RSC runtime", () => {
         }),
       }),
     ).rejects.toThrow(
-      '[evjs] RSC bootstrap "__EVJS_RSC_BOOTSTRAP__" publicPath.mode must be "runtime".',
+      '[evjs] RSC bootstrap "__EVJS_RSC_BOOTSTRAP__" publicPath must be a non-empty string.',
     );
 
     await expect(

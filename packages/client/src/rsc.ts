@@ -227,7 +227,7 @@ function publicPathModuleBaseURL(
   publicPath: PublicPathOutput | undefined,
   document: Document,
 ): string | undefined {
-  if (typeof publicPath !== "string") return undefined;
+  if (!publicPath || publicPath === "auto") return undefined;
   try {
     return new URL(
       publicPath,
@@ -396,18 +396,7 @@ function assertBootstrapPage(value: unknown, path: string): void {
 }
 
 function assertBootstrapPublicPath(value: unknown, path: string): void {
-  if (typeof value === "string") {
-    assertBootstrapTrimmedString(value, path);
-    return;
-  }
-  if (!isRecord(value)) {
-    throw new Error(
-      `[evjs] ${path} must be a non-empty string or { mode: "runtime" }.`,
-    );
-  }
-  if (value.mode !== "runtime") {
-    throw new Error(`[evjs] ${path}.mode must be "runtime".`);
-  }
+  assertBootstrapTrimmedString(value, path);
 }
 
 function assertBootstrapAssets(value: unknown, path: string): void {
@@ -490,7 +479,7 @@ function createBootstrapManifest(
     version: 1,
     buildId: bootstrap.buildId,
     distDir: "dist",
-    publicPath: bootstrap.publicPath ?? "/",
+    publicPath: bootstrap.publicPath ?? "auto",
     runtime: {
       server: {
         basePath,

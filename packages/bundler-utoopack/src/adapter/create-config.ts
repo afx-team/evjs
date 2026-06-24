@@ -149,7 +149,7 @@ export async function createUtoopackConfig(
       cssChunkFilename: isProduction
         ? "[name].[contenthash:8].css"
         : "[name].css",
-      publicPath: toUtoopackPublicPath(plan.runtime.publicPath),
+      publicPath: plan.runtime.publicPath,
       crossOriginLoading: config.output.crossOriginLoading,
       clean: true,
     },
@@ -409,10 +409,4 @@ function resolveServerEntry(entry: string | undefined): string | undefined {
   if (!entry) return undefined;
   if (entry.startsWith(".") || path.isAbsolute(entry)) return entry;
   return require.resolve(entry);
-}
-
-function toUtoopackPublicPath(
-  publicPath: BuildPlan["runtime"]["publicPath"],
-): string {
-  return typeof publicPath === "string" ? publicPath : "auto";
 }

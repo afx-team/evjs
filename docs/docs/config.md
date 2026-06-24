@@ -21,7 +21,7 @@ export default defineConfig({
 |---------|---------|
 | `entry` | `./src/main.tsx` |
 | `html` | `./index.html` |
-| `output.crossOriginLoading` | unset |
+| `output.crossOriginLoading` | `"anonymous"` |
 | `routing.mode` | `spa` |
 | `dev.port` | `3000` |
 | `server.dev.port` | `3001` |
@@ -39,9 +39,10 @@ being configured directly.
 
 ## Output HTML Assets
 
-Set `output.crossOriginLoading` to add a `crossorigin` attribute to JavaScript and CSS
-asset tags that evjs injects into emitted HTML documents, and to configure the
-browser chunk loader to use the same policy for dynamically loaded chunks:
+evjs adds `crossorigin="anonymous"` to JavaScript and CSS asset tags that it
+injects into emitted HTML documents by default, and configures the browser chunk
+loader to use the same policy for dynamically loaded chunks. Set
+`output.crossOriginLoading` to change or disable that policy:
 
 ```ts
 export default defineConfig({
@@ -52,9 +53,9 @@ export default defineConfig({
 ```
 
 `output.crossOriginLoading` accepts `false`, `"anonymous"`, or
-`"use-credentials"`. Leave it unset to omit the attribute and use the bundler
-default for dynamic chunks. Use a `transformHtml` plugin when different HTML
-documents or individual initial assets need different attributes.
+`"use-credentials"`. Set it to `false` to omit the attribute and use the
+bundler default for dynamic chunks. Use a `transformHtml` plugin when different
+HTML documents or individual initial assets need different attributes.
 
 ## Routing
 

@@ -74,6 +74,50 @@ describe("createReactServerRenderAdapter", () => {
     });
   });
 
+  it("renders root-relative assets for auto public paths", async () => {
+    const adapter = createReactServerRenderAdapter();
+    const result = await adapter(
+      {
+        default() {
+          return createElement("h1", null, "Dashboard");
+        },
+      },
+      {
+        request: new Request("https://example.com/dashboard"),
+        manifest: {
+          ...createManifest(),
+          publicPath: "auto",
+        },
+        pageId: "dashboard",
+        page: {
+          assets: { js: ["dashboard.js"], css: ["dashboard.css"] },
+          render: "ssr",
+          rendering: {
+            component: "server",
+            html: "server",
+            streaming: false,
+            hydrate: "load",
+          },
+        },
+      },
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        html: expect.stringContaining(
+          '<link rel="stylesheet" href="/dashboard.css">',
+        ),
+      }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        html: expect.stringContaining(
+          '<script defer src="/dashboard.js"></script>',
+        ),
+      }),
+    );
+  });
+
   it("waits for Suspense content during complete server rendering", async () => {
     const adapter = createReactServerRenderAdapter();
     const LazyContent = lazy(async () => ({

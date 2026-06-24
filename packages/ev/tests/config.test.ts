@@ -88,7 +88,9 @@ describe("resolveConfig", () => {
     expect(resolved.routing).toBeUndefined();
     expect(resolved.server.dev.port).toBe(CONFIG_DEFAULTS.serverPort);
     expect(resolved.server.dev.https).toBe(false);
-    expect(resolved.output).toEqual({ crossOriginLoading: undefined });
+    expect(resolved.output).toEqual({
+      crossOriginLoading: CONFIG_DEFAULTS.crossOriginLoading,
+    });
     expect(resolved.bundler).toBeUndefined();
     expect(resolved.plugins).toEqual([]);
   });

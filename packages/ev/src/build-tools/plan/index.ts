@@ -24,6 +24,8 @@ import { sortPageRoutes } from "../page-route-order.js";
 import { PAGES_APP_ENTRY_IMPORT } from "../pages-entry.js";
 import { sanitizePageId } from "../utils.js";
 
+const DEFAULT_PUBLIC_PATH: RuntimePlan["publicPath"] = "auto";
+
 export interface BuildPlanConfig {
   entry: string;
   html: string;
@@ -110,7 +112,7 @@ export function createBuildPlan(
     html,
     server,
     runtime: {
-      publicPath: options.publicPath ?? "/",
+      publicPath: options.publicPath ?? DEFAULT_PUBLIC_PATH,
       server: config.serverEnabled
         ? {
             basePath: config.server.basePath,

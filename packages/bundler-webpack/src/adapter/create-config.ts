@@ -178,7 +178,9 @@ function createWebpackConfig(options: {
   outputPath: string;
   publicPath: PublicPathOutput;
   functionEndpoint: string;
-  crossOriginLoading: ResolvedConfig["output"]["crossOriginLoading"];
+  crossOriginLoading:
+    | ResolvedConfig["output"]["crossOriginLoading"]
+    | undefined;
   rscClientReferences: RscClientReferenceConfig[];
   enableRscClientRuntime: boolean;
   reactServerConditions: boolean;
@@ -202,7 +204,7 @@ function createWebpackConfig(options: {
       chunkFilename: isProduction
         ? `[name].[contenthash:8]${outputExtension}`
         : `[name]${outputExtension}`,
-      publicPath: webpackPublicPath(options.publicPath),
+      publicPath: webpackPublicPath(options.publicPath, options.target),
       crossOriginLoading:
         options.target === "web" ? options.crossOriginLoading : undefined,
       clean: options.clean,
@@ -488,8 +490,12 @@ function resolveEntryModule(cwd: string, specifier: string): string {
   return path.isAbsolute(specifier) ? specifier : path.resolve(cwd, specifier);
 }
 
-function webpackPublicPath(publicPath: PublicPathOutput): string {
-  return typeof publicPath === "string" ? publicPath : "auto";
+function webpackPublicPath(
+  publicPath: PublicPathOutput,
+  target: "web" | "node",
+): string {
+  if (target === "node" && publicPath === "auto") return "/";
+  return publicPath;
 }
 
 function getRscClientReferenceModules(
