@@ -2,6 +2,9 @@
 
 Server routes give you full control over HTTP methods, headers, and standard Web `Request`/`Response` objects — unlike server functions which use automatic RPC.
 
+For the complete server file route and middleware filename rules, see
+[File Conventions](./file-conventions.md).
+
 ## File Routes
 
 Enable file-based server routes with `server.routing`:

@@ -45,7 +45,7 @@ describe("discoverPageRoutes", () => {
       ".jsx",
     ]);
     expect(PAGE_ROUTE_CONVENTION_DOCS_URL).toBe(
-      "https://evaijs.github.io/evjs/docs/project-structure#convention-matrix",
+      "https://evaijs.github.io/evjs/docs/file-conventions#client-page-routes",
     );
     expect(PAGE_ROUTE_CONVENTION_RULES.map((rule) => rule.id)).toEqual([
       "directory-index",

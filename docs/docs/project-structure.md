@@ -87,6 +87,8 @@ This shape covers the complete framework surface:
 
 Use this table as the source of truth when creating files. Only a few paths are
 framework conventions; the rest are ordinary project organization.
+For a dedicated filename and scope reference, see
+[File Conventions](./file-conventions.md).
 
 Quick rules:
 

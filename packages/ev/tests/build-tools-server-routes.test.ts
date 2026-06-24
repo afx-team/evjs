@@ -233,6 +233,9 @@ describe("discoverServerRoutes", () => {
       "src/server/routes/middleware-only.ts": `
         export const middlewares = [];
       `,
+      "src/server/routes/route.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
       "src/server/routes/invalid-middlewares.ts": `
         export const middlewares = [null];
         export const GET = async () => Response.json({ ok: true });
@@ -292,6 +295,12 @@ describe("discoverServerRoutes", () => {
         file: "src/server/routes/middleware-only.ts",
         message:
           'Server file routes must not export "middlewares". Move middleware logic to a middleware.ts file in the route tree.',
+      },
+      {
+        level: "error",
+        file: "src/server/routes/route.ts",
+        message:
+          'Server route sentinel files are not supported. Rename "route.ts" so the URL path comes from the file path; use "index.ts" for a directory root.',
       },
       {
         level: "error",

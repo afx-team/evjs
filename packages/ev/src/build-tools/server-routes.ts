@@ -215,6 +215,18 @@ async function analyzeServerRouteFile(
     routeModuleMiddlewareExports.length > 0;
   if (!hasRouteExport) return { diagnostics };
 
+  if (isRouteSentinelFilename(path.basename(absolute))) {
+    diagnostics.push({
+      level: "error",
+      file: diagnosticFile,
+      message: `Server route sentinel files are not supported. Rename "${path.basename(
+        absolute,
+      )}" so the URL path comes from the file path; use "index${path.extname(
+        absolute,
+      )}" for a directory root.`,
+    });
+  }
+
   if (methods.length === 0 && routeModuleMiddlewareExports.length === 0) {
     diagnostics.push({
       level: "error",
@@ -287,6 +299,11 @@ function getMethodSuffix(filename: string): string | undefined {
   const stem = filename.slice(0, -extension.length);
   const suffix = stem.split(".").pop();
   return suffix && LOWERCASE_HTTP_METHODS.has(suffix) ? suffix : undefined;
+}
+
+function isRouteSentinelFilename(filename: string): boolean {
+  const extension = path.extname(filename);
+  return filename.slice(0, -extension.length) === "route";
 }
 
 function isLowercaseHttpMethod(exportName: string): boolean {

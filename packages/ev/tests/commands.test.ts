@@ -1775,7 +1775,7 @@ describe("build", () => {
     );
     expect((error as Error).message).toContain(PAGE_ROUTE_CONVENTION_SUMMARY);
     expect((error as Error).message).toContain(
-      "See https://evaijs.github.io/evjs/docs/project-structure#convention-matrix for the page route file convention.",
+      "See https://evaijs.github.io/evjs/docs/file-conventions#client-page-routes for the page route file convention.",
     );
     expect(events).not.toContain("bundler.build");
   });
@@ -1820,7 +1820,7 @@ describe("build", () => {
     );
     expect((error as Error).message).toContain(PAGE_ROUTE_CONVENTION_SUMMARY);
     expect((error as Error).message).toContain(
-      "See https://evaijs.github.io/evjs/docs/project-structure#convention-matrix for the page route file convention.",
+      "See https://evaijs.github.io/evjs/docs/file-conventions#client-page-routes for the page route file convention.",
     );
     expect(events).not.toContain("bundler.build");
   });

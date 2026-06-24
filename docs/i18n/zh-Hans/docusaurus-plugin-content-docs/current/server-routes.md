@@ -2,6 +2,8 @@
 
 服务端路由让你完全掌控 HTTP 方法、请求头和标准 Web `Request`/`Response` 对象 —— 不同于使用自动 RPC 的服务端函数。
 
+完整服务端文件路由和 middleware 文件名规则见 [文件约定](./file-conventions.md)。
+
 ## 文件路由
 
 通过 `server.routing` 启用服务端文件路由：

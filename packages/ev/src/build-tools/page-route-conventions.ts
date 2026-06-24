@@ -12,7 +12,7 @@ export const PAGE_ROUTE_SOURCE_EXTENSIONS = [
 ] as const;
 export const PAGE_ROUTE_SOURCE_EXTENSION_LABEL = ".ts, .tsx, .js, or .jsx";
 export const PAGE_ROUTE_CONVENTION_DOCS_URL =
-  "https://evaijs.github.io/evjs/docs/project-structure#convention-matrix";
+  "https://evaijs.github.io/evjs/docs/file-conventions#client-page-routes";
 export const PAGE_ROUTE_CONVENTION_RULES = [
   {
     id: "directory-index",
