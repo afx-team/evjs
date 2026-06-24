@@ -41,7 +41,7 @@
     "@evjs/shared": "*",
     "@logtape/logtape": "^2.0.4",
     "@swc/core": "^1.15.21",
-    "@utoo/pack": "^1.4.9",
+    "@utoo/pack": "^1.4.17",
     "domparser-rs": "^0.1.0",
     "execa": "^9.6.1"
   },

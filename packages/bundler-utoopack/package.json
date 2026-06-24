@@ -34,7 +34,7 @@
   "dependencies": {
     "@evjs/ev": "*",
     "@logtape/logtape": "^2.0.4",
-    "@utoo/pack": "^1.4.9",
+    "@utoo/pack": "^1.4.17",
     "chokidar": "^3.6.0",
     "fast-glob": "^3.3.3"
   },
