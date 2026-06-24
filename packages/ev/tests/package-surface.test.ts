@@ -1,12 +1,21 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import * as buildTools from "../src/build-tools/index.js";
+
+const execFileAsync = promisify(execFile);
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../..",
+);
+const releaseDependencyScript = path.join(
+  repoRoot,
+  "scripts/sync-internal-dependency-versions.mjs",
 );
 
 const packageDistribution = {
@@ -267,6 +276,73 @@ describe("workspace package surface", () => {
       for (const dependencyName of internalDependencies) {
         expect(packageJson.dependencies?.[dependencyName]).toBe("*");
       }
+    }
+  });
+
+  it("rewrites internal package dependency versions before publishing", async () => {
+    const tempRoot = await fs.mkdtemp(
+      path.join(os.tmpdir(), "evjs-release-deps-"),
+    );
+
+    try {
+      await fs.mkdir(path.join(tempRoot, "packages"), { recursive: true });
+
+      for (const packageName of expectedPackageNames) {
+        const packageDir = path.join(
+          tempRoot,
+          "packages",
+          packageDistribution[packageName].dir,
+        );
+        const dependencies = Object.fromEntries(
+          expectedInternalRuntimeDependencies[packageName].map(
+            (dependencyName) => [dependencyName, "*"],
+          ),
+        );
+
+        await fs.mkdir(packageDir, { recursive: true });
+        await fs.writeFile(
+          path.join(packageDir, "package.json"),
+          `${JSON.stringify(
+            {
+              name: packageName,
+              version: "1.2.3",
+              ...(Object.keys(dependencies).length > 0 ? { dependencies } : {}),
+            },
+            null,
+            2,
+          )}\n`,
+        );
+      }
+
+      await execFileAsync(process.execPath, [
+        releaseDependencyScript,
+        "--root",
+        tempRoot,
+        "--version",
+        "1.2.3",
+      ]);
+
+      for (const packageName of expectedPackageNames) {
+        const packageJson = JSON.parse(
+          await fs.readFile(
+            path.join(
+              tempRoot,
+              "packages",
+              packageDistribution[packageName].dir,
+              "package.json",
+            ),
+            "utf-8",
+          ),
+        ) as PackageJson;
+
+        for (const dependencyName of expectedInternalRuntimeDependencies[
+          packageName
+        ]) {
+          expect(packageJson.dependencies?.[dependencyName]).toBe("1.2.3");
+        }
+      }
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
     }
   });
 

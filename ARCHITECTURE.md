@@ -74,9 +74,10 @@ Internal `@evjs/*` runtime dependencies are kept explicit and workspace-local.
 subpaths. `@evjs/server` consumes `@evjs/client` for shared runtime types.
 `@evjs/cli` owns the default Utoopack adapter dependency, and bundler adapters
 depend on `@evjs/ev` instead of depending on each other. Internal runtime
-dependency versions stay `"*"` so release automation treats the distributed
-packages as one framework version. `@evjs/ev` exports stay limited to framework
-and build tooling entries.
+dependency versions stay `"*"` in source manifests for workspace development,
+then release automation rewrites them to the concrete release version before
+publishing.
+`@evjs/ev` exports stay limited to framework and build tooling entries.
 
 Do not reintroduce legacy split packages:
 

@@ -68,8 +68,8 @@ shared contracts but does not publish runtime subpaths. `@evjs/server`
 also consumes `@evjs/client` for shared runtime types. `@evjs/cli` owns the
 default Utoopack adapter dependency, and bundler adapters depend on `@evjs/ev`
 instead of depending on each other. Internal runtime dependency versions stay
-`"*"` so release automation treats the distributed packages as one framework
-version.
+`"*"` in source manifests for workspace development, then release automation
+rewrites them to the concrete release version before publishing.
 
 Generated-only `@evjs/client/internal/*` subpaths let framework-emitted
 route declarations, page bootstraps, server-function stubs, and RSC runtime
