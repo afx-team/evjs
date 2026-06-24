@@ -13,7 +13,8 @@ dist/
 
 启用 server 时，部署 adapter 应消费 `dist/build-output.json` /
 `BuildOutput`，并从中派生平台特定路由或资源 manifest。`dist/server/manifest.json`
-包含 server bundle metadata。CSR-only 构建继续使用扁平的 `dist/manifest.json`。
+只是派生出的 server bundle metadata 视图，不能替代 `BuildOutput`。CSR-only 构建
+继续使用扁平的 `dist/manifest.json`。
 
 ## 生产构建
 
@@ -25,7 +26,7 @@ npm run build
 重要输出：
 
 - `dist/client/manifest.json`：浏览器安全的 apps、pages、routes、assets 和 runtime paths；
-- `dist/server/manifest.json`：server bundle metadata；
+- `dist/server/manifest.json`：派生出的 server bundle metadata；
 - `dist/build-output.json`：包含 server functions、server routes 和 runtime paths 的完整 BuildOutput；
 - `dist/client/`：浏览器资源和 HTML；
 - `dist/server/`：启用 `server` 时的框架服务端 bundle。

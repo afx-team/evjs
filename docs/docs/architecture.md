@@ -149,10 +149,11 @@ sequenceDiagram
   EV->>Plugins: buildEnd({ output, isRebuild })
 ```
 
-Server-enabled builds emit a public manifest at `dist/client/manifest.json` and
-the complete `BuildOutput` manifest at `dist/build-output.json`.
-`dist/server/manifest.json` contains server bundle metadata. CSR-only builds
-stay flat and emit `dist/manifest.json`.
+Server-enabled builds emit the complete `BuildOutput` manifest at
+`dist/build-output.json`. `dist/client/manifest.json` and
+`dist/server/manifest.json` are derived views for browser-safe public metadata
+and server bundle metadata. CSR-only builds stay flat and emit
+`dist/manifest.json`.
 
 TanStack Router is available through the `@evjs/client` standalone CSR surface
 for manual browser applications. In framework-managed apps, `@evjs/ev` owns

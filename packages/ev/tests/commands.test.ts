@@ -1491,7 +1491,7 @@ describe("build", () => {
     expect(events).toEqual(["setup"]);
   });
 
-  it("ignores unknown lifecycle hook keys for 0.1 plugin compatibility", async () => {
+  it("ignores unknown lifecycle hook keys", async () => {
     const cwd = await createProject();
     const events: string[] = [];
     const bundler = createMockBundler(events);

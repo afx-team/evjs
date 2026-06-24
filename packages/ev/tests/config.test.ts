@@ -1359,7 +1359,7 @@ describe("resolveConfig", () => {
     expect(resolved.plugins).toEqual([plugin]);
   });
 
-  it("accepts 0.1-compatible plugin metadata", () => {
+  it("accepts plugin object metadata", () => {
     const resolved = resolveConfig({
       plugins: [
         {

@@ -12,7 +12,7 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ### 🐛 Bug Fixes
 
-- **Plugin API compatibility** — Restored compatibility with the latest evjs 0.1 plugin surface by keeping `EvPlugin*`, `EvConfig`, and `ResolvedEvConfig` type names, defaulting plugin bundler config types to Utoopack, preserving 0.1-style lifecycle hook signatures, and ignoring extra plugin metadata fields instead of treating them as fatal configuration errors. Projects can still switch to webpack through `webpackAdapter` and the typed `webpack()` helper.
+- **Plugin API tolerance** — Kept `EvPlugin*`, `EvConfig`, and `ResolvedEvConfig` type names, defaulted plugin bundler config types to Utoopack, preserved no-argument lifecycle hook signatures, and ignored extra plugin metadata fields instead of treating them as fatal configuration errors. Projects can still switch to webpack through `webpackAdapter` and the typed `webpack()` helper.
 
 ### 🧹 Code Quality
 

@@ -142,10 +142,10 @@ sequenceDiagram
   EV->>Plugins: buildEnd({ output, isRebuild })
 ```
 
-启用 server 的构建会在 `dist/client/manifest.json` 输出 public manifest，并在
-`dist/build-output.json` 输出完整 `BuildOutput` manifest。
-`dist/server/manifest.json` 包含 server bundle metadata。CSR-only 构建保持扁平结构，
-输出 `dist/manifest.json`。
+启用 server 的构建会在 `dist/build-output.json` 输出完整 `BuildOutput` manifest。
+`dist/client/manifest.json` 和 `dist/server/manifest.json` 是派生视图，分别承载浏览器安全的
+public metadata 和 server bundle metadata。CSR-only 构建保持扁平结构，输出
+`dist/manifest.json`。
 
 ## 运行时流程
 

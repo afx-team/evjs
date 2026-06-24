@@ -156,9 +156,7 @@ export interface ServerManifest {
   routes?: ServerRouteEntry[];
 }
 
-/**
- * Context passed to 0.1-compatible plugin bundler hooks.
- */
+/** Base context passed to plugin bundler hooks. */
 export interface EvBundlerCtx<TBundlerCfg = DefaultBundlerConfig> {
   /** The current mode. */
   mode: "development" | "production";
@@ -185,9 +183,7 @@ export interface BundlerCtx<TBundlerCfg = DefaultBundlerConfig>
   addWatchFile(file: string): void;
 }
 
-/**
- * Context passed to 0.1-compatible plugin config hooks.
- */
+/** Base context passed to plugin config hooks. */
 export interface EvPluginConfigContext {
   /** The current mode. */
   mode: "development" | "production";
@@ -268,9 +264,7 @@ export interface EvPlugin<TBundlerCfg = DefaultBundlerConfig> {
   ) => EvPluginSetupResult<TBundlerCfg>;
 }
 
-/**
- * An evjs 0.2 plugin. The 0.1 `EvPlugin` shape is still accepted.
- */
+/** An evjs plugin. The `EvPlugin` alias shape is accepted. */
 export interface Plugin<TBundlerCfg = DefaultBundlerConfig>
   extends Omit<EvPlugin<TBundlerCfg>, "config" | "setup"> {
   /**
@@ -300,9 +294,7 @@ export interface Plugin<TBundlerCfg = DefaultBundlerConfig>
   setup?: (ctx: PluginContext<TBundlerCfg>) => PluginSetupResult<TBundlerCfg>;
 }
 
-/**
- * Context passed to 0.1-compatible plugin setup().
- */
+/** Base context passed to plugin setup(). */
 export interface EvPluginContext<TBundlerCfg = DefaultBundlerConfig> {
   /** Current mode. */
   mode: "development" | "production";
@@ -334,9 +326,7 @@ export interface BuildOutputContext<TBundlerCfg = DefaultBundlerConfig>
 export interface DisposeContext<TBundlerCfg = DefaultBundlerConfig>
   extends PluginContext<TBundlerCfg> {}
 
-/**
- * Lifecycle hooks returned from 0.1-compatible plugin setup().
- */
+/** Lifecycle hooks returned from plugin setup(). */
 export interface EvPluginHooks<TBundlerCfg = DefaultBundlerConfig> {
   /** Called before compilation begins. */
   buildStart?: () => void | Promise<void>;
@@ -428,9 +418,7 @@ export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig>
   ) => void | Promise<void>;
 }
 
-/**
- * 0.1-compatible build result passed to plugin hooks.
- */
+/** Build result passed to plugin hooks. */
 export interface EvBuildResult {
   /** Client-focused manifest view derived from `output`. */
   clientManifest: ClientManifest;
