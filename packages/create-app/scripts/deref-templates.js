@@ -15,6 +15,7 @@ const templateCopyExcludedBasenames = new Set([
   ".turbo",
   ".turbopack",
   ".evjs",
+  "route-types.d.ts",
   "evjs-route-types.d.ts",
 ]);
 

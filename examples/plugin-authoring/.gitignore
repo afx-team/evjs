@@ -1,3 +1,4 @@
 .evjs
 .turbopack
+route-types.d.ts
 evjs-route-types.d.ts

@@ -40,7 +40,7 @@ npx @evjs/create-app my-new-app
 
 Follow the interactive prompts to select your features and get started in seconds.
 
-Generated route type files such as `src/evjs-route-types.d.ts` are not copied
+Generated route type files such as `src/route-types.d.ts` are not copied
 from templates; `ev dev` and `ev build` recreate them for the new project.
 
 ## License

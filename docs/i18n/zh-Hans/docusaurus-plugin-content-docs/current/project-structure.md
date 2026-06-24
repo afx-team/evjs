@@ -56,9 +56,9 @@ my-evjs-app/
   `src/pages/layout.tsx` 会包裹根级页面路由，`src/pages/posts/layout.tsx`
   会包裹 `/posts` 下的子路由。MPA 页面需要公共外框时，应直接导入普通共享组件，
   或复用 HTML 模板。
-- `<routing-dir-parent>/evjs-route-types.d.ts` 是 SPA 模式生成的类型安全导航声明。
-  默认 `src/pages` 会写入 `src/evjs-route-types.d.ts`；`routing.dir:
-  "./src/app/pages"` 会写入 `src/app/evjs-route-types.d.ts`。MPA 模式会移除旧的生成路由类型文件。
+- `<routing-dir-parent>/route-types.d.ts` 是 SPA 模式生成的类型安全导航声明。
+  默认 `src/pages` 会写入 `src/route-types.d.ts`；`routing.dir:
+  "./src/app/pages"` 会写入 `src/app/route-types.d.ts`。MPA 模式会移除旧的生成路由类型文件。
   生成声明使用生成专用的 `@evjs/client/internal/route-types` helper，
   并增强 client runtime 导航类型。保持忽略生成的 route types，不要在应用代码里导入它们。
 - 渲染元信息放在页面模块旁边。
@@ -107,7 +107,7 @@ my-evjs-app/
 | `src/pages/**/*.d.ts`、`src/pages/**/*.{test,spec,story,stories}.*`、`src/pages/**/*.{client,server}.*` | 忽略的路由支撑模块 | 与页面就近放置类型声明、测试、Storybook story、client-only 模块和 server-only 模块 | 路由页面或应该变成 URL 的文件 |
 | `<routing-dir-parent>/layout.{tsx,ts,jsx,js}` 或 `<routing-dir-parent>/layout/index.{tsx,ts,jsx,js}` | 可选外部 SPA 根布局 | 包裹已发现 SPA 路由树的一层应用 shell | MPA 公共外框、route-specific 嵌套布局或多个根布局候选 |
 | `src/pages/**/layout.{tsx,ts,jsx,js}` 或 `src/pages/**/layout/index.{tsx,ts,jsx,js}` | SPA route layout | 在同一 URL 前缀下包裹子路由的 pathless layout route | MPA 公共外框，或命名为 `layout` 的非 layout helper 目录 |
-| `<routing-dir-parent>/evjs-route-types.d.ts` | SPA 导航类型生成物 | 编辑器和类型检查支持 | 手工修改、从应用代码导入、放入模板或脚手架源码，或用于 MPA 模式 |
+| `<routing-dir-parent>/route-types.d.ts` | SPA 导航类型生成物 | 编辑器和类型检查支持 | 手工修改、从应用代码导入、放入模板或脚手架源码，或用于 MPA 模式 |
 | `src/api/*.server.ts` | 推荐的 server function 边界 | 以 `"use server";` 开头并导出命名 callable server functions 的文件 | 需要在 `server: false` 下运行的客户端导入、默认导出或 runtime re-export |
 | `src/api/*.routes.ts` | 推荐的 server route 边界 | 使用 Web `Request`/`Response` 的 `createRoute()` handlers | Server functions，或把同一个 URL shape 拆到多个文件 |
 | `src/server.ts` | Framework server entry | `createApp({ routes, middlewares, framework })` 和部署运行时 glue | 浏览器代码或按页面拆分的 client bootstrap |
