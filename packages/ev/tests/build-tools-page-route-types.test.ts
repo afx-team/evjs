@@ -134,36 +134,34 @@ describe("generatePageRouteTypes", () => {
     ].join("\n");
 
     await writeFixtureFiles(cwd, {
-      "src/evjs-route-types.d.ts": generatedSource,
-      "types/evjs-route-types.d.ts": "declare const userOwned: string;",
-      "dist/evjs-route-types.d.ts": generatedSource,
-      "node_modules/pkg/evjs-route-types.d.ts": generatedSource,
-      ".turbo/evjs-route-types.d.ts": generatedSource,
+      "src/route-types.d.ts": generatedSource,
+      "types/route-types.d.ts": "declare const userOwned: string;",
+      "dist/route-types.d.ts": generatedSource,
+      "node_modules/pkg/route-types.d.ts": generatedSource,
+      ".turbo/route-types.d.ts": generatedSource,
     });
 
     await expect(
-      isGeneratedPageRouteTypesFile(
-        path.join(cwd, "src", "evjs-route-types.d.ts"),
-      ),
+      isGeneratedPageRouteTypesFile(path.join(cwd, "src", "route-types.d.ts")),
     ).resolves.toBe(true);
     await expect(
       isGeneratedPageRouteTypesFile(
-        path.join(cwd, "types", "evjs-route-types.d.ts"),
+        path.join(cwd, "types", "route-types.d.ts"),
       ),
     ).resolves.toBe(false);
     await expect(
       isGeneratedPageRouteTypesFile(
-        path.join(cwd, "missing", "evjs-route-types.d.ts"),
+        path.join(cwd, "missing", "route-types.d.ts"),
       ),
     ).resolves.toBe(false);
     await expect(collectGeneratedPageRouteTypeFiles(cwd)).resolves.toEqual([
-      path.join(cwd, "src", "evjs-route-types.d.ts"),
+      path.join(cwd, "src", "route-types.d.ts"),
     ]);
   });
 
   it("writes route declarations only when content changes", async () => {
     const cwd = await createTempDir();
-    const file = path.join(cwd, "evjs-route-types.d.ts");
+    const file = path.join(cwd, "route-types.d.ts");
     const source = [PAGE_ROUTE_TYPES_MARKER, "export {};"].join("\n");
 
     await writePageRouteTypesIfChanged(file, source);
@@ -255,7 +253,7 @@ describe("generatePageRouteTypes", () => {
 });
 
 async function createTempDir(): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "evjs-route-types-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "route-types-"));
   tempDirs.push(dir);
   return dir;
 }

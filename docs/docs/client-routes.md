@@ -4,7 +4,7 @@ evjs uses `src/pages` as the client-routing source of truth. Application code
 lives in page files; the framework discovers those files and either builds one
 framework-owned SPA or one router-free MPA page per file. evjs does not write
 temporary runtime route files; SPA mode only emits a type declaration such as
-`src/evjs-route-types.d.ts` so TypeScript can infer navigation paths from the
+`src/route-types.d.ts` so TypeScript can infer navigation paths from the
 page tree.
 
 ## Project Structure
@@ -247,7 +247,7 @@ remain the source of truth, and navigation helpers use the same file-path
 convention for paths and params.
 
 During `ev dev` and `ev build`, SPA routing writes the generated declaration
-`src/evjs-route-types.d.ts` for the default `src/pages` route directory. A
+`src/route-types.d.ts` for the default `src/pages` route directory. A
 custom `routing.dir` writes the same file name beside that route directory's
 parent. That file augments the underlying `@evjs/client` route register used by
 the `@evjs/client` `Link`, `useLinkProps`, `redirect`, and related helpers.

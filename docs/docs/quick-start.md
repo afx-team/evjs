@@ -76,7 +76,7 @@ export default function UserPage() {
 When `src/pages` exists and the project does not declare explicit `app`,
 `pages` config, evjs automatically builds an SPA from the file
 tree. The generated routing glue stays inside the framework; SPA mode only
-writes `src/evjs-route-types.d.ts` for TypeScript and scaffolded apps ignore it
+writes `src/route-types.d.ts` for TypeScript and scaffolded apps ignore it
 by default.
 
 SPA root layout discovery is optional. Use one `layout.*` or `layout/index.*`
@@ -166,5 +166,5 @@ with the rest of the framework packages.
 - HTML must have `<div id="app">` for the render target
 - Do NOT add `"type": "module"` to your **project's** `package.json` — the server bundle uses CJS format
 - Prefer `src/pages` as the route source of truth.
-- Keep `src/evjs-route-types.d.ts` generated and ignored; do not import it.
+- Keep `src/route-types.d.ts` generated and ignored; do not import it.
 - Use `routing.mode: "mpa"` for independent pages without a client router.

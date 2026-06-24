@@ -144,7 +144,7 @@ const forbiddenCoreBundlerPackages = ["webpack", "webpack-dev-server"] as const;
 const generatedFrameworkArtifacts = [
   ".evjs",
   ".turbopack",
-  "evjs-route-types.d.ts",
+  "route-types.d.ts",
 ] as const;
 
 const forbiddenPackageNames = [
@@ -624,7 +624,7 @@ describe("workspace package surface", () => {
           }
           if (
             importSpecifier.startsWith("@evjs/client/internal") &&
-            !relativeFile.endsWith("src/evjs-route-types.d.ts")
+            !relativeFile.endsWith("src/route-types.d.ts")
           ) {
             violations.push(
               `${relativeFile} imports generated-only ${importSpecifier}`,
@@ -761,7 +761,7 @@ describe("workspace package surface", () => {
 
       for (const routeTypesFile of await listFilesNamed(
         sampleDir,
-        "evjs-route-types.d.ts",
+        "route-types.d.ts",
       )) {
         violations.push(
           `${path.relative(repoRoot, routeTypesFile)} should not exist in an MPA sample`,

@@ -16,7 +16,7 @@ const templateCopyExcludedBasenames = new Set([
   ".turbo",
   ".turbopack",
   ".evjs",
-  "evjs-route-types.d.ts",
+  "route-types.d.ts",
 ]);
 
 export function shouldCopyTemplatePath(src: string): boolean {

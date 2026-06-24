@@ -63,10 +63,10 @@ This shape covers the complete framework surface:
   `src/pages/posts/layout.tsx` wraps children below `/posts`. MPA pages should
   import shared components directly or share HTML templates when they need
   common chrome.
-- `<routing-dir-parent>/evjs-route-types.d.ts` is generated in SPA mode for
+- `<routing-dir-parent>/route-types.d.ts` is generated in SPA mode for
   type-safe navigation. The default `src/pages` writes
-  `src/evjs-route-types.d.ts`; `routing.dir: "./src/app/pages"` writes
-  `src/app/evjs-route-types.d.ts`. MPA mode removes stale generated route type
+  `src/route-types.d.ts`; `routing.dir: "./src/app/pages"` writes
+  `src/app/route-types.d.ts`. MPA mode removes stale generated route type
   files. The generated declaration uses the generated-only
   `@evjs/client/internal/route-types` helper and augments the client runtime
   navigation types. Keep generated route types ignored and do not import them
@@ -126,7 +126,7 @@ Migration rules stay explicit rather than adding alternate filename dialects:
 | `src/pages/**/*.d.ts`, `src/pages/**/*.{test,spec,story,stories}.*`, `src/pages/**/*.{client,server}.*` | Ignored route support modules | Type declarations, tests, Storybook stories, client-only modules, and server-only modules colocated with pages | Route pages or files that should become URLs |
 | `<routing-dir-parent>/layout.{tsx,ts,jsx,js}` or `<routing-dir-parent>/layout/index.{tsx,ts,jsx,js}` | Optional external SPA root layout | One app shell around the discovered SPA route tree | MPA shared chrome, route-specific nested layouts, or multiple root layout candidates |
 | `src/pages/**/layout.{tsx,ts,jsx,js}` or `src/pages/**/layout/index.{tsx,ts,jsx,js}` | SPA route layout | Pathless layout routes that wrap child routes at the same URL prefix | MPA shared chrome or non-layout helper folders named `layout` |
-| `<routing-dir-parent>/evjs-route-types.d.ts` | Generated SPA navigation types | Editor and type-checker support | Manual edits, imports from app code, template/scaffold source, or MPA mode |
+| `<routing-dir-parent>/route-types.d.ts` | Generated SPA navigation types | Editor and type-checker support | Manual edits, imports from app code, template/scaffold source, or MPA mode |
 | `src/api/*.server.ts` | Recommended server-function boundary | Files that start with `"use server";` and export named callable server functions | Client imports that should run with `server: false`, default exports, or runtime re-exports |
 | `src/api/*.routes.ts` | Recommended server-route boundary | `createRoute()` handlers using Web `Request`/`Response` | Server functions or multiple files for the same URL shape |
 | `src/server.ts` | Framework server entry | `createApp({ routes, middlewares, framework })` and deployment runtime glue | Browser code or per-page client bootstrap |

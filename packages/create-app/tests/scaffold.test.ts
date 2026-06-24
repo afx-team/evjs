@@ -80,7 +80,7 @@ describe("create-app scaffolding", () => {
 
       const ignoredPaths = gitignore.split(/\r?\n/);
       expect(ignoredPaths).toContain(".evjs");
-      expect(ignoredPaths).toContain("evjs-route-types.d.ts");
+      expect(ignoredPaths).toContain("route-types.d.ts");
     }
   });
 
@@ -123,7 +123,7 @@ describe("create-app scaffolding", () => {
     expect(shouldCopyTemplatePath("/some/path/.evjs/dev/manifest.json")).toBe(
       false,
     );
-    expect(shouldCopyTemplatePath("/some/path/src/evjs-route-types.d.ts")).toBe(
+    expect(shouldCopyTemplatePath("/some/path/src/route-types.d.ts")).toBe(
       false,
     );
     expect(shouldCopyTemplatePath("/some/path/src")).toBe(true);

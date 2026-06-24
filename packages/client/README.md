@@ -88,7 +88,7 @@ When `src/pages` exists and the project does not declare explicit `app` or
 `pages` config, evjs discovers the page files and builds the SPA entry
 internally.
 
-SPA mode writes `src/evjs-route-types.d.ts` for type-safe `Link`,
+SPA mode writes `src/route-types.d.ts` for type-safe `Link`,
 `useLinkProps`, and `redirect` calls. Treat it as generated output: keep it
 ignored and do not import it from application code.
 

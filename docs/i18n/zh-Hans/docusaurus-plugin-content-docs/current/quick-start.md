@@ -75,7 +75,7 @@ export default function UserPage() {
 当项目存在 `src/pages`，且项目没有声明显式的 `app` 或 `pages`
 配置时，evjs 会自动基于文件树构建一个 SPA。用户不需要创建
 路由胶水；这些内容由框架生成和托管。SPA 模式只会为 TypeScript 写入
-`src/evjs-route-types.d.ts`，脚手架应用默认忽略它。
+`src/route-types.d.ts`，脚手架应用默认忽略它。
 
 SPA 根布局发现是可选的。可以在路由目录旁边保留唯一的 `layout.*` 或
 `layout/index.*` 源码模块，例如 `src/layout.tsx` 或 `src/layout/index.tsx`；
@@ -159,5 +159,5 @@ server functions、server routes、框架渲染或部署运行时包装时声明
 - HTML 必须包含 `<div id="app">` 作为渲染目标
 - 不要在你的**项目** `package.json` 中添加 `"type": "module"` —— 服务端 bundle 使用 CJS 格式
 - 优先使用 `src/pages` 作为路由事实来源
-- 保持 `src/evjs-route-types.d.ts` 为生成且被忽略的文件；不要在应用代码里导入它
+- 保持 `src/route-types.d.ts` 为生成且被忽略的文件；不要在应用代码里导入它
 - 独立页面且不需要客户端路由器时，使用 `routing.mode: "mpa"`

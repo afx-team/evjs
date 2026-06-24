@@ -68,7 +68,7 @@ For detailed guides on specific topics, see the `references/` directory:
 - Read route data with `usePageParams()`, `usePageSearch()`, and
   `usePageLoaderData()` from `@evjs/client`.
 - Use `Link`, `Navigate`, `useLinkProps`, and `redirect` from `@evjs/client`
-  for SPA navigation. Generated `evjs-route-types.d.ts` augments
+  for SPA navigation. Generated `route-types.d.ts` augments
   `@evjs/client`; app code should not import TanStack Router directly.
 
 **React Data Loading:**

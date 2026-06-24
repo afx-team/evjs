@@ -9,7 +9,7 @@ packages/client/esm
 packages/server/esm
 esm
 .evjs
-evjs-route-types.d.ts
+route-types.d.ts
 test-results
 playwright-report
 evjs-dev

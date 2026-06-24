@@ -420,8 +420,8 @@ describe("discoverPageRoutes", () => {
       expect(doc).toContain("src/pages/**/.*");
       expect(doc).toContain("src/pages/**/*.{client,server}.*");
       expect(doc).toContain("admin_panel");
-      expect(doc).toContain("<routing-dir-parent>/evjs-route-types.d.ts");
-      expect(doc).toContain("src/app/evjs-route-types.d.ts");
+      expect(doc).toContain("<routing-dir-parent>/route-types.d.ts");
+      expect(doc).toContain("src/app/route-types.d.ts");
       expect(doc).not.toContain("Direct `routing.routes`");
       expect(doc).not.toContain("直接传入的 `routing.routes`");
     }
@@ -499,7 +499,7 @@ describe("discoverPageRoutes", () => {
   it("ignores declarations, tests, hidden files, client/server modules, and private route segments", async () => {
     const cwd = await createFixture({
       "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/evjs-route-types.d.ts": "export {};",
+      "src/pages/route-types.d.ts": "export {};",
       "src/pages/about.test.tsx":
         "export default function AboutTest() { return null; }",
       "src/pages/about.spec.tsx":

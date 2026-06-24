@@ -151,7 +151,7 @@ function createRouteUpdateBundler(
             events,
           );
           const routeTypes = await fs.promises.readFile(
-            path.join(cwd, "src/evjs-route-types.d.ts"),
+            path.join(cwd, "src/route-types.d.ts"),
             "utf-8",
           );
           events.push(
@@ -559,10 +559,7 @@ describe("build", () => {
     ]);
     expect(fs.existsSync(path.join(cwd, ".evjs"))).toBe(false);
     await expect(
-      fs.promises.readFile(
-        path.join(cwd, "src/evjs-route-types.d.ts"),
-        "utf-8",
-      ),
+      fs.promises.readFile(path.join(cwd, "src/route-types.d.ts"), "utf-8"),
     ).resolves.toContain('import type * as EvPage_index from "./pages/index";');
   });
 
@@ -574,7 +571,7 @@ describe("build", () => {
       "export default function Home() { return null; }",
       "utf-8",
     );
-    const routeTypesPath = path.join(cwd, "src/evjs-route-types.d.ts");
+    const routeTypesPath = path.join(cwd, "src/route-types.d.ts");
 
     await build(
       {
@@ -611,7 +608,7 @@ describe("build", () => {
     await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
     await fs.promises.mkdir(path.join(cwd, "app/pages"), { recursive: true });
     await fs.promises.writeFile(
-      path.join(cwd, "src/evjs-route-types.d.ts"),
+      path.join(cwd, "src/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
@@ -635,14 +632,9 @@ describe("build", () => {
       },
     );
 
-    expect(fs.existsSync(path.join(cwd, "src/evjs-route-types.d.ts"))).toBe(
-      false,
-    );
+    expect(fs.existsSync(path.join(cwd, "src/route-types.d.ts"))).toBe(false);
     await expect(
-      fs.promises.readFile(
-        path.join(cwd, "app/evjs-route-types.d.ts"),
-        "utf-8",
-      ),
+      fs.promises.readFile(path.join(cwd, "app/route-types.d.ts"), "utf-8"),
     ).resolves.toContain('import type * as EvPage_index from "./pages/index";');
   });
 
@@ -674,9 +666,7 @@ describe("build", () => {
         bundler: createMockBundler([]),
       },
     );
-    expect(fs.existsSync(path.join(cwd, "app/evjs-route-types.d.ts"))).toBe(
-      true,
-    );
+    expect(fs.existsSync(path.join(cwd, "app/route-types.d.ts"))).toBe(true);
 
     await build(
       {
@@ -688,14 +678,9 @@ describe("build", () => {
       },
     );
 
-    expect(fs.existsSync(path.join(cwd, "app/evjs-route-types.d.ts"))).toBe(
-      false,
-    );
+    expect(fs.existsSync(path.join(cwd, "app/route-types.d.ts"))).toBe(false);
     await expect(
-      fs.promises.readFile(
-        path.join(cwd, "src/evjs-route-types.d.ts"),
-        "utf-8",
-      ),
+      fs.promises.readFile(path.join(cwd, "src/route-types.d.ts"), "utf-8"),
     ).resolves.toContain('import type * as EvPage_index from "./pages/index";');
   });
 
@@ -709,7 +694,7 @@ describe("build", () => {
       "utf-8",
     );
     await fs.promises.writeFile(
-      path.join(cwd, "types/evjs-route-types.d.ts"),
+      path.join(cwd, "types/route-types.d.ts"),
       "declare const userAuthoredRouteTypes: string;",
       "utf-8",
     );
@@ -725,10 +710,7 @@ describe("build", () => {
     );
 
     await expect(
-      fs.promises.readFile(
-        path.join(cwd, "types/evjs-route-types.d.ts"),
-        "utf-8",
-      ),
+      fs.promises.readFile(path.join(cwd, "types/route-types.d.ts"), "utf-8"),
     ).resolves.toBe("declare const userAuthoredRouteTypes: string;");
   });
 
@@ -737,12 +719,12 @@ describe("build", () => {
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await fs.promises.mkdir(path.join(cwd, "app"), { recursive: true });
     await fs.promises.writeFile(
-      path.join(cwd, "src/evjs-route-types.d.ts"),
+      path.join(cwd, "src/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
     await fs.promises.writeFile(
-      path.join(cwd, "app/evjs-route-types.d.ts"),
+      path.join(cwd, "app/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
@@ -763,12 +745,8 @@ describe("build", () => {
       },
     );
 
-    expect(fs.existsSync(path.join(cwd, "src/evjs-route-types.d.ts"))).toBe(
-      false,
-    );
-    expect(fs.existsSync(path.join(cwd, "app/evjs-route-types.d.ts"))).toBe(
-      false,
-    );
+    expect(fs.existsSync(path.join(cwd, "src/route-types.d.ts"))).toBe(false);
+    expect(fs.existsSync(path.join(cwd, "app/route-types.d.ts"))).toBe(false);
   });
 
   it("removes generated route types when explicit pages config replaces routing", async () => {
@@ -776,12 +754,12 @@ describe("build", () => {
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await fs.promises.mkdir(path.join(cwd, "app"), { recursive: true });
     await fs.promises.writeFile(
-      path.join(cwd, "src/evjs-route-types.d.ts"),
+      path.join(cwd, "src/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
     await fs.promises.writeFile(
-      path.join(cwd, "app/evjs-route-types.d.ts"),
+      path.join(cwd, "app/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
@@ -804,12 +782,8 @@ describe("build", () => {
       },
     );
 
-    expect(fs.existsSync(path.join(cwd, "src/evjs-route-types.d.ts"))).toBe(
-      false,
-    );
-    expect(fs.existsSync(path.join(cwd, "app/evjs-route-types.d.ts"))).toBe(
-      false,
-    );
+    expect(fs.existsSync(path.join(cwd, "src/route-types.d.ts"))).toBe(false);
+    expect(fs.existsSync(path.join(cwd, "app/route-types.d.ts"))).toBe(false);
   });
 
   it(
@@ -949,7 +923,7 @@ describe("build", () => {
 
       await expect(
         fs.promises.readFile(
-          path.join(cwd, "src/app/evjs-route-types.d.ts"),
+          path.join(cwd, "src/app/route-types.d.ts"),
           "utf-8",
         ),
       ).resolves.toContain(
@@ -1090,7 +1064,7 @@ describe("build", () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await fs.promises.writeFile(
-      path.join(cwd, "src/evjs-route-types.d.ts"),
+      path.join(cwd, "src/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
@@ -1149,9 +1123,7 @@ describe("build", () => {
       "metadata:react-component-page,react-component-page",
     ]);
     expect(fs.existsSync(path.join(cwd, ".evjs"))).toBe(false);
-    expect(fs.existsSync(path.join(cwd, "src/evjs-route-types.d.ts"))).toBe(
-      false,
-    );
+    expect(fs.existsSync(path.join(cwd, "src/route-types.d.ts"))).toBe(false);
   });
 
   it("removes stale default route types when MPA routing uses a custom directory", async () => {
@@ -1159,12 +1131,12 @@ describe("build", () => {
     await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
     await fs.promises.mkdir(path.join(cwd, "app/pages"), { recursive: true });
     await fs.promises.writeFile(
-      path.join(cwd, "src/evjs-route-types.d.ts"),
+      path.join(cwd, "src/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
     await fs.promises.writeFile(
-      path.join(cwd, "app/evjs-route-types.d.ts"),
+      path.join(cwd, "app/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
@@ -1188,12 +1160,8 @@ describe("build", () => {
       },
     );
 
-    expect(fs.existsSync(path.join(cwd, "src/evjs-route-types.d.ts"))).toBe(
-      false,
-    );
-    expect(fs.existsSync(path.join(cwd, "app/evjs-route-types.d.ts"))).toBe(
-      false,
-    );
+    expect(fs.existsSync(path.join(cwd, "src/route-types.d.ts"))).toBe(false);
+    expect(fs.existsSync(path.join(cwd, "app/route-types.d.ts"))).toBe(false);
   });
 
   it("does not remove user-authored route type declarations in MPA mode", async () => {
@@ -1201,7 +1169,7 @@ describe("build", () => {
     const userAuthoredSource = "declare const userAuthoredRouteTypes: string;";
     await fs.promises.mkdir(path.join(cwd, "app/pages"), { recursive: true });
     await fs.promises.writeFile(
-      path.join(cwd, "app/evjs-route-types.d.ts"),
+      path.join(cwd, "app/route-types.d.ts"),
       userAuthoredSource,
       "utf-8",
     );
@@ -1226,10 +1194,7 @@ describe("build", () => {
     );
 
     await expect(
-      fs.promises.readFile(
-        path.join(cwd, "app/evjs-route-types.d.ts"),
-        "utf-8",
-      ),
+      fs.promises.readFile(path.join(cwd, "app/route-types.d.ts"), "utf-8"),
     ).resolves.toBe(userAuthoredSource);
   });
 
@@ -3410,7 +3375,7 @@ describe("dev", () => {
       async dev({ plan }) {
         events.push(`entry:${plan.entries[0]?.import}`);
         events.push(
-          `routeTypes:${fs.existsSync(path.join(cwd, "src/evjs-route-types.d.ts"))}`,
+          `routeTypes:${fs.existsSync(path.join(cwd, "src/route-types.d.ts"))}`,
         );
         process.emit("SIGINT");
       },
@@ -3428,10 +3393,7 @@ describe("dev", () => {
 
     expect(events).toEqual(["entry:evjs:pages-app", "routeTypes:true"]);
     await expect(
-      fs.promises.readFile(
-        path.join(cwd, "src/evjs-route-types.d.ts"),
-        "utf-8",
-      ),
+      fs.promises.readFile(path.join(cwd, "src/route-types.d.ts"), "utf-8"),
     ).resolves.toContain('import type * as EvPage_index from "./pages/index";');
   });
 
@@ -3439,7 +3401,7 @@ describe("dev", () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await fs.promises.writeFile(
-      path.join(cwd, "src/evjs-route-types.d.ts"),
+      path.join(cwd, "src/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
@@ -3458,7 +3420,7 @@ describe("dev", () => {
       async dev({ plan }) {
         events.push(`entry:${plan.entries[0]?.kind}`);
         events.push(
-          `routeTypes:${fs.existsSync(path.join(cwd, "src/evjs-route-types.d.ts"))}`,
+          `routeTypes:${fs.existsSync(path.join(cwd, "src/route-types.d.ts"))}`,
         );
         process.emit("SIGINT");
       },
@@ -3483,9 +3445,7 @@ describe("dev", () => {
     ]);
 
     expect(events).toEqual(["entry:page-client", "routeTypes:false"]);
-    expect(fs.existsSync(path.join(cwd, "src/evjs-route-types.d.ts"))).toBe(
-      false,
-    );
+    expect(fs.existsSync(path.join(cwd, "src/route-types.d.ts"))).toBe(false);
   });
 
   it("updates generated SPA route types when a nested page route is added during dev", async () => {

@@ -3,7 +3,7 @@
 evjs 以 `src/pages` 作为客户端路由的唯一事实来源。应用页面写在
 页面文件中；框架会发现这些文件，并按配置生成一个框架托管的 SPA，
 或生成多个不带路由器的 MPA 页面。evjs 不会写入临时 runtime 路由文件；SPA
-模式只会生成类似 `src/evjs-route-types.d.ts` 的类型声明，让 TypeScript 从页面树推导导航 path。
+模式只会生成类似 `src/route-types.d.ts` 的类型声明，让 TypeScript 从页面树推导导航 path。
 
 ## 目录结构
 
@@ -198,7 +198,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 使用同一套文件路径约定来描述 path 和 params。
 
 默认 `src/pages` 路由目录下，`ev dev` 和 `ev build` 会在 SPA 模式下写入
-`src/evjs-route-types.d.ts`。自定义 `routing.dir` 时，会在该路由目录的父级写入同名文件。
+`src/route-types.d.ts`。自定义 `routing.dir` 时，会在该路由目录的父级写入同名文件。
 这个文件只用于增强 `@evjs/client` 中 `Link`、`useLinkProps`、`redirect`
 等 helper 使用的底层 `@evjs/client` route register；应用代码不需要导入它，
 也不需要手写 framework router bootstrap。

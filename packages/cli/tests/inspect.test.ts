@@ -64,7 +64,7 @@ describe("inspect", () => {
     expect(result.routing).toMatchObject({
       mode: "spa",
       dir: "./src/pages",
-      routeTypes: "./src/evjs-route-types.d.ts",
+      routeTypes: "./src/route-types.d.ts",
     });
     expect(result.pageRoutes).toEqual([
       { id: "index", path: "/", module: "./src/pages/index.tsx" },
@@ -111,7 +111,7 @@ describe("inspect", () => {
       rsc: "/__evjs/rsc",
     });
     await expectPathMissing(path.join(cwd, "dist"));
-    await expectPathMissing(path.join(cwd, "src/evjs-route-types.d.ts"));
+    await expectPathMissing(path.join(cwd, "src/route-types.d.ts"));
   });
 
   it("formats text and JSON output", async () => {
@@ -169,7 +169,7 @@ describe("inspect", () => {
       ]),
     );
     await expectPathMissing(path.join(cwd, "dist"));
-    await expectPathMissing(path.join(cwd, "src/evjs-route-types.d.ts"));
+    await expectPathMissing(path.join(cwd, "src/route-types.d.ts"));
   });
 
   it("returns a failing CLI exit code for error diagnostics", async () => {
@@ -205,7 +205,7 @@ describe("inspect", () => {
       ]),
     );
     await expectPathMissing(path.join(cwd, "dist"));
-    await expectPathMissing(path.join(cwd, "src/evjs-route-types.d.ts"));
+    await expectPathMissing(path.join(cwd, "src/route-types.d.ts"));
   });
 });
 

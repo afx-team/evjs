@@ -29,5 +29,5 @@ npm run build
 - Independent router-free React page for each page file
 - Shared HTML template reused by all pages
 - Static links between pages
-- No `@evjs/client`, `@evjs/server`, or generated `evjs-route-types.d.ts`
+- No `@evjs/client`, `@evjs/server`, or generated `route-types.d.ts`
   dependency is needed for this router-free client output

@@ -28,7 +28,7 @@ coverage in `packages/ev/tests/build-tools-page-routes.test.ts`.
 3. Keep framework semantics in `packages/ev/src/build-tools` and manifest
    contracts in `packages/shared/src/manifest`; bundler adapters consume
    `BuildPlan` and return build facts.
-4. Treat `src/evjs-route-types.d.ts`, `dist`, `.turbo`, and `node_modules` as
+4. Treat `src/route-types.d.ts`, `dist`, `.turbo`, and `node_modules` as
    generated output. Scaffolded apps and template packs should not copy generated
    route types.
 5. Page route conventions are strict: `src/pages`, `$param` dynamic segments,
