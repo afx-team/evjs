@@ -11,10 +11,11 @@ dist/
 └── build-output.json
 ```
 
-启用 server 时，部署 adapter 应消费 `dist/build-output.json` /
-`BuildOutput`，并从中派生平台特定路由或资源 manifest。`dist/server/manifest.json`
-只是派生出的 server bundle metadata 视图，不能替代 `BuildOutput`。CSR-only 构建
-继续使用扁平的 `dist/manifest.json`。
+启用 server 时，部署 adapter 应消费 `BuildOutput`，并从中派生平台特定路由或资源
+manifest。运行在构建流水线里的 adapter 会直接收到这个对象；构建后的工具可以从
+`dist/build-output.json` 读取同一份完整模型。`dist/server/manifest.json` 只是派生出的
+server bundle metadata 视图，不能替代 `BuildOutput`。CSR-only 构建继续使用扁平的
+`dist/manifest.json`。
 
 ## 生产构建
 
@@ -27,7 +28,7 @@ npm run build
 
 - `dist/client/manifest.json`：浏览器安全的 apps、pages、routes、assets 和 runtime paths；
 - `dist/server/manifest.json`：派生出的 server bundle metadata；
-- `dist/build-output.json`：包含 server functions、server routes 和 runtime paths 的完整 BuildOutput；
+- `dist/build-output.json`：面向工具和调试的私有完整 BuildOutput handoff；
 - `dist/client/`：浏览器资源和 HTML；
 - `dist/server/`：启用 `server` 时的框架服务端 bundle。
 
@@ -333,5 +334,6 @@ export function deployAdapter() {
 }
 ```
 
-启用 server 时读取 `dist/build-output.json`。CSR-only 构建使用扁平的
-`dist/manifest.json`。
+构建后的工具可以在启用 server 时读取 `dist/build-output.json`。运行在 `ev build`
+过程中的 adapter 会在内存里收到同一份 `BuildOutput`，并可以内嵌所需 runtime 数据。
+CSR-only 构建使用扁平的 `dist/manifest.json`。

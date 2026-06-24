@@ -149,10 +149,12 @@ sequenceDiagram
   EV->>Plugins: buildEnd({ output, isRebuild })
 ```
 
-Server-enabled builds emit the complete `BuildOutput` manifest at
-`dist/build-output.json`. `dist/client/manifest.json` and
+Server-enabled builds emit the complete private `BuildOutput` handoff artifact
+at `dist/build-output.json`. `dist/client/manifest.json` and
 `dist/server/manifest.json` are derived views for browser-safe public metadata
-and server bundle metadata. CSR-only builds stay flat and emit
+and server bundle metadata. Deployment adapters may embed equivalent runtime
+data into platform files, so deployed server runtimes do not have to read
+`dist/build-output.json` at startup. CSR-only builds stay flat and emit
 `dist/manifest.json`.
 
 TanStack Router is available through the `@evjs/client` standalone CSR surface
@@ -345,8 +347,9 @@ Deployment adapters consume `BuildOutput`. `@evjs/ev` provides:
   framework server bundle and an asset binding.
 
 Platform-specific adapters should derive their routing, framework endpoint, SSR,
-PPR, RSC, and asset metadata from `BuildOutput`
-instead of reading bundler stats.
+PPR, RSC, and asset metadata from `BuildOutput` instead of reading bundler stats.
+Build-pipeline adapters receive that object in memory; post-build tools can read
+`dist/build-output.json`.
 Full BuildOutput manifests retain source modules and server renderer references;
 public/browser manifests keep the same routing and asset shape but redact those
 server-only fields, so client-side validation treats them as optional.

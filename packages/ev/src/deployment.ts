@@ -462,8 +462,8 @@ const frameworkRoutes = ${JSON.stringify(frameworkRoutes, null, 2)};
 const staticRoutes = ${JSON.stringify(staticRoutes, null, 2)};
 const staticFallback = ${JSON.stringify(staticFallback ?? "")};
 const staticAssetPrefix = ${JSON.stringify(staticAssetPrefix ?? "")};
-const manifest = await readJsonIfExists(path.join(serverDir, "manifest.json"));
-if (manifest) globalThis.__EVJS_MANIFEST__ = manifest;
+const manifest = ${JSON.stringify(output, null, 2)};
+globalThis.__EVJS_MANIFEST__ = manifest;
 globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => {
   const mod = await import(pathToFileURL(path.resolve(serverDir, asset)).href);
   return normalizeServerModule(mod);
@@ -557,17 +557,6 @@ async function serveFile(filePath) {
     });
   } catch {
     return undefined;
-  }
-}
-
-async function readJsonIfExists(filePath) {
-  try {
-    return JSON.parse(await readFile(filePath, "utf-8"));
-  } catch (error) {
-    if (error && typeof error === "object" && error.code === "ENOENT") {
-      return undefined;
-    }
-    throw error;
   }
 }
 

@@ -41,7 +41,7 @@ Runs the production build through `@evjs/ev` with `NODE_ENV=production`:
 - `dist/server/main.[hash].js` — server bundle.
 - `dist/client/manifest.json` — browser-safe public manifest.
 - `dist/server/manifest.json` — derived server bundle metadata.
-- `dist/build-output.json` — complete BuildOutput with client, server, route, and function metadata.
+- `dist/build-output.json` — private complete BuildOutput handoff for tooling and debugging.
 
 ### `ev inspect`
 

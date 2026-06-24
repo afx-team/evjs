@@ -142,10 +142,11 @@ sequenceDiagram
   EV->>Plugins: buildEnd({ output, isRebuild })
 ```
 
-启用 server 的构建会在 `dist/build-output.json` 输出完整 `BuildOutput` manifest。
-`dist/client/manifest.json` 和 `dist/server/manifest.json` 是派生视图，分别承载浏览器安全的
-public metadata 和 server bundle metadata。CSR-only 构建保持扁平结构，输出
-`dist/manifest.json`。
+启用 server 的构建会在 `dist/build-output.json` 输出完整私有 `BuildOutput` handoff
+artifact。`dist/client/manifest.json` 和 `dist/server/manifest.json` 是派生视图，分别承载
+浏览器安全的 public metadata 和 server bundle metadata。Deployment adapter 可以把等价的
+runtime 数据内嵌进平台产物，因此已部署的 server runtime 不必在启动时读取
+`dist/build-output.json`。CSR-only 构建保持扁平结构，输出 `dist/manifest.json`。
 
 ## 运行时流程
 
@@ -320,6 +321,7 @@ Deployment adapter 消费 `BuildOutput`。`@evjs/ev` 提供：
   和静态资源 binding。
 
 平台专属 adapter 应从 `BuildOutput` 派生 routing、framework endpoint、SSR、PPR、RSC 和 asset metadata，而不是读取 bundler stats。
+构建流水线中的 adapter 会在内存里收到这个对象；构建后的工具可以读取 `dist/build-output.json`。
 完整 BuildOutput manifest 会保留源码 module 和 server renderer reference；公开/浏览器
 manifest 保持相同的 routing 与 asset 结构，但会脱敏这些 server-only 字段，因此客户端
 校验会把它们视为可选。

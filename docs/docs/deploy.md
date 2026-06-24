@@ -12,11 +12,13 @@ dist/
 └── build-output.json
 ```
 
-Deployment adapters should consume `dist/build-output.json` /
-`BuildOutput` for server-enabled builds and derive platform-specific routing or
-asset manifests from it. `dist/server/manifest.json` is only the derived server
-bundle metadata view, not a replacement for `BuildOutput`. CSR-only builds keep
-the same public manifest contract in `dist/manifest.json`.
+Deployment adapters should consume `BuildOutput` for server-enabled builds and
+derive platform-specific routing or asset manifests from it. Adapters running in
+the build pipeline receive that object directly; post-build tools can read the
+same complete model from `dist/build-output.json`. `dist/server/manifest.json`
+is only the derived server bundle metadata view, not a replacement for
+`BuildOutput`. CSR-only builds keep the same public manifest contract in
+`dist/manifest.json`.
 
 ## Production Build
 
@@ -29,7 +31,7 @@ Important output:
 
 - `dist/client/manifest.json` — browser-safe apps, pages, routes, assets, and runtime paths;
 - `dist/server/manifest.json` — derived server bundle metadata;
-- `dist/build-output.json` — complete BuildOutput with server functions, server routes, and runtime paths;
+- `dist/build-output.json` — private complete BuildOutput handoff for tooling and debugging;
 - `dist/client/` — browser assets and HTML;
 - `dist/server/` — framework server bundle when `server` is enabled.
 
@@ -351,5 +353,7 @@ export function deployAdapter() {
 }
 ```
 
-Read `dist/build-output.json` for server-enabled builds. CSR-only builds
-use the flat `dist/manifest.json` path.
+Post-build tooling can read `dist/build-output.json` for server-enabled builds.
+Adapters running during `ev build` receive the same `BuildOutput` in memory and
+can embed the runtime data they need. CSR-only builds use the flat
+`dist/manifest.json` path.

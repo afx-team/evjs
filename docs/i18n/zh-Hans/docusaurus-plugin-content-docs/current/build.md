@@ -60,15 +60,16 @@ dist/
 └── build-output.json
 ```
 
-`dist/build-output.json` 是 server runtime 和 deployment adapter 消费的完整
-`BuildOutput` 契约。`dist/client/manifest.json` 和 `dist/server/manifest.json`
-都是从它派生出的确定性视图：client manifest 是浏览器安全的 public metadata，
-server manifest 包含 server bundle metadata（`entry`、`assets`、`fns` 和
-`routes`）。CSR-only 输出保持扁平结构，将 public manifest 写入
-`dist/manifest.json`。HTML 可以把 public manifest 内嵌为 `__EVJS_MANIFEST__`；
-当浏览器 runtime 通过 `manifestUrl`、`data-evjs-manifest` 或 `/manifest.json`
-获取它时，响应必须是成功的 JSON，并使用 `Content-Type: application/json`，
-允许附带可选 content-type 参数。
+`dist/build-output.json` 是完整的私有 `BuildOutput` handoff artifact，供构建后仍需要
+完整框架模型的工具使用。`dist/client/manifest.json` 和
+`dist/server/manifest.json` 都是从它派生出的确定性视图：client manifest 是浏览器安全的
+public metadata，server manifest 包含 server bundle metadata（`entry`、`assets`、
+`fns` 和 `routes`）。Deployment adapter 可以在构建过程中消费 `BuildOutput`，并把等价的
+runtime 数据内嵌进平台产物，因此已部署的 server package 不必在启动时读取
+`dist/build-output.json`。CSR-only 输出保持扁平结构，将 public manifest 写入
+`dist/manifest.json`。HTML 可以把 public manifest 内嵌为 `__EVJS_MANIFEST__`；当浏览器
+runtime 通过 `manifestUrl`、`data-evjs-manifest` 或 `/manifest.json` 获取它时，响应必须是
+成功的 JSON，并使用 `Content-Type: application/json`，允许附带可选 content-type 参数。
 
 ## 构建流水线
 
@@ -185,8 +186,8 @@ browser page entry。
 - 启用 server 的构建输出 `dist/client/manifest.json`、
   `dist/server/manifest.json` 和 `dist/build-output.json`；CSR-only 构建
   输出 `dist/manifest.json`。
-- `dist/build-output.json` 是启用 server 时必需的完整 `BuildOutput`；
-  `dist/client/manifest.json` 和 `dist/server/manifest.json` 是派生 manifest 视图。
+- `dist/build-output.json` 是面向构建后工具和调试的完整私有 `BuildOutput` handoff；
+  runtime deployment 可以内嵌等价数据，而不是启动时读取该文件。
 - 会成为 runtime id 的 manifest object key 必须是 build identifier，包括
   app id、page id 和 opaque internal PPR region id：只能使用字母、数字、下划线或连字符。
 - app 和 page runtime module 必须关联到 JavaScript 资产；如果 client entry

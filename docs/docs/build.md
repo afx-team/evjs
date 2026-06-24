@@ -61,15 +61,18 @@ dist/
 └── build-output.json
 ```
 
-`dist/build-output.json` is the complete `BuildOutput` contract for server
-runtime and deployment adapters. `dist/client/manifest.json` and
-`dist/server/manifest.json` are deterministic views derived from it: the client
-manifest is browser-safe public metadata, while the server manifest contains
-server bundle metadata (`entry`, `assets`, `fns`, and `routes`). CSR-only output
-stays flat and writes the public manifest to `dist/manifest.json`. HTML may
-embed the public manifest as `__EVJS_MANIFEST__`; when the browser runtime
-fetches it through `manifestUrl`, `data-evjs-manifest`, or `/manifest.json`, the
-response must be successful JSON with
+`dist/build-output.json` is the complete private `BuildOutput` handoff artifact
+for tools that need the full framework model after build. `dist/client/manifest.json`
+and `dist/server/manifest.json` are deterministic views derived from it: the
+client manifest is browser-safe public metadata, while the server manifest
+contains server bundle metadata (`entry`, `assets`, `fns`, and `routes`).
+Deployment adapters can consume `BuildOutput` during the build and embed the
+equivalent runtime data into platform files, so a deployed server package does
+not have to read `dist/build-output.json` at startup. CSR-only output stays flat
+and writes the public manifest to `dist/manifest.json`. HTML may embed the
+public manifest as `__EVJS_MANIFEST__`; when the browser runtime fetches it
+through `manifestUrl`, `data-evjs-manifest`, or `/manifest.json`, the response
+must be successful JSON with
 `Content-Type: application/json`, allowing optional content-type parameters.
 
 ## Build Pipeline
@@ -197,9 +200,9 @@ Internal PPR regions carry cache metadata in the manifest:
 - Server-enabled builds emit `dist/client/manifest.json`,
   `dist/server/manifest.json`, and `dist/build-output.json`; CSR-only
   builds emit `dist/manifest.json`.
-- `dist/build-output.json` is the required complete `BuildOutput` for
-  server-enabled builds; `dist/client/manifest.json` and
-  `dist/server/manifest.json` are derived manifest views.
+- `dist/build-output.json` is the complete private `BuildOutput` handoff for
+  post-build tools and debugging; runtime deployments may embed equivalent data
+  instead of reading that file at startup.
 - Manifest object keys that become runtime ids, including app ids, page ids,
   and opaque internal PPR region ids, must be build identifiers: letters,
   numbers, underscores, or hyphens.
