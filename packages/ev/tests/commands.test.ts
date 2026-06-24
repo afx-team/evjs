@@ -1334,6 +1334,24 @@ describe("build", () => {
     );
   });
 
+  it("removes stale split client manifests when rebuilding as CSR-only", async () => {
+    const cwd = await createProject();
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+
+    await build({}, { cwd, bundler });
+    expect(fs.existsSync(path.join(cwd, "dist/client/manifest.json"))).toBe(
+      true,
+    );
+
+    await build({ server: false }, { cwd, bundler });
+
+    expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(true);
+    expect(fs.existsSync(path.join(cwd, "dist/client/manifest.json"))).toBe(
+      false,
+    );
+  });
+
   it("runs plugin config hooks before resolving config", async () => {
     const cwd = await createProject();
     const events: string[] = [];

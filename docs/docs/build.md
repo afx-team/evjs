@@ -24,19 +24,6 @@ command exits non-zero; warnings are printed without failing the command.
 
 ## Output
 
-Fullstack output:
-
-```txt
-dist/
-├── client/
-│   ├── index.html
-│   ├── main.[hash].js
-│   └── [chunk].[hash].js
-├── server/
-│   └── server.[hash].js
-└── manifest.json
-```
-
 CSR-only output (`server: false`) is flat:
 
 ```txt

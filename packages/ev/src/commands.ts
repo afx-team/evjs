@@ -984,6 +984,9 @@ async function emitFrameworkManifest(
     });
     await fs.promises.rm(path.join(rootDir, MANIFEST_FILE), { force: true });
   } else {
+    await fs.promises.rm(path.join(rootDir, "client", MANIFEST_FILE), {
+      force: true,
+    });
     await fs.promises.rm(path.join(rootDir, "server", MANIFEST_FILE), {
       force: true,
     });

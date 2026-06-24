@@ -23,19 +23,6 @@ error 级 diagnostic，命令就以非 0 退出；warning 只展示，不会让�
 
 ## 输出
 
-全栈输出：
-
-```txt
-dist/
-├── client/
-│   ├── index.html
-│   ├── main.[hash].js
-│   └── [chunk].[hash].js
-├── server/
-│   └── server.[hash].js
-└── manifest.json
-```
-
 纯 CSR 输出（`server: false`）是扁平结构：
 
 ```txt
