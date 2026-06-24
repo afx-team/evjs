@@ -60,14 +60,13 @@ dist/
 └── build-output.json
 ```
 
-`dist/server/manifest.json` 保持 0.1 兼容的 server manifest 结构：
-`entry`、`assets`、`fns` 和 `routes`。`dist/build-output.json`
-包含 server runtime 和 deployment adapter 消费的完整 `BuildOutput` 契约。
-`dist/client/manifest.json` 是浏览器安全的 public manifest。CSR-only 输出保持
-扁平结构，写入 `dist/manifest.json`。HTML 可以把 public manifest 内嵌为
-`__EVJS_MANIFEST__`；当浏览器 runtime 通过 `manifestUrl`、
-`data-evjs-manifest` 或 `/manifest.json` 获取它时，响应必须是成功的 JSON，
-并使用 `Content-Type: application/json`，允许附带可选 content-type 参数。
+`dist/server/manifest.json` 包含 server bundle metadata：`entry`、`assets`、
+`fns` 和 `routes`。`dist/build-output.json` 包含 server runtime 和 deployment
+adapter 消费的完整 `BuildOutput` 契约。`dist/client/manifest.json` 是浏览器安全的
+public manifest。CSR-only 输出保持扁平结构，写入 `dist/manifest.json`。HTML
+可以把 public manifest 内嵌为 `__EVJS_MANIFEST__`；当浏览器 runtime 通过
+`manifestUrl`、`data-evjs-manifest` 或 `/manifest.json` 获取它时，响应必须是成功的
+JSON，并使用 `Content-Type: application/json`，允许附带可选 content-type 参数。
 
 ## 构建流水线
 

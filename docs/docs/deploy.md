@@ -14,9 +14,9 @@ dist/
 
 Deployment adapters should consume `dist/build-output.json` /
 `BuildOutput` for server-enabled builds and derive platform-specific routing or
-asset manifests from it. `dist/server/manifest.json` keeps the 0.1-compatible
-server manifest shape for server bundle metadata. CSR-only builds keep the same
-public manifest contract in `dist/manifest.json`.
+asset manifests from it. `dist/server/manifest.json` contains server bundle
+metadata. CSR-only builds keep the same public manifest contract in
+`dist/manifest.json`.
 
 ## Production Build
 
@@ -28,7 +28,7 @@ npm run build
 Important output:
 
 - `dist/client/manifest.json` — browser-safe apps, pages, routes, assets, and runtime paths;
-- `dist/server/manifest.json` — 0.1-compatible server bundle metadata;
+- `dist/server/manifest.json` — server bundle metadata;
 - `dist/build-output.json` — complete BuildOutput with server functions, server routes, and runtime paths;
 - `dist/client/` — browser assets and HTML;
 - `dist/server/` — framework server bundle when `server` is enabled.

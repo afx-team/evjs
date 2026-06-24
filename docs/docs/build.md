@@ -61,14 +61,14 @@ dist/
 └── build-output.json
 ```
 
-`dist/server/manifest.json` keeps the 0.1-compatible server manifest shape:
-`entry`, `assets`, `fns`, and `routes`. `dist/build-output.json`
-contains the complete `BuildOutput` contract for the server runtime and
-deployment adapters. `dist/client/manifest.json` is the browser-safe public
-manifest. CSR-only output stays flat and writes `dist/manifest.json`. HTML may
-embed the public manifest as `__EVJS_MANIFEST__`; when the browser runtime
-fetches it through `manifestUrl`, `data-evjs-manifest`, or `/manifest.json`, the
-response must be successful JSON with
+`dist/server/manifest.json` contains server bundle metadata: `entry`, `assets`,
+`fns`, and `routes`. `dist/build-output.json` contains the complete
+`BuildOutput` contract for the server runtime and deployment adapters.
+`dist/client/manifest.json` is the browser-safe public manifest. CSR-only output
+stays flat and writes `dist/manifest.json`. HTML may embed the public manifest
+as `__EVJS_MANIFEST__`; when the browser runtime fetches it through
+`manifestUrl`, `data-evjs-manifest`, or `/manifest.json`, the response must be
+successful JSON with
 `Content-Type: application/json`, allowing optional content-type parameters.
 
 ## Build Pipeline

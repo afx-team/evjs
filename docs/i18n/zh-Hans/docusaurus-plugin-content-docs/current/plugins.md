@@ -58,7 +58,7 @@ interface Plugin<TBundlerConfig = DefaultBundlerConfig> {
 `optionalDependencies` 控制排序，并同时作用于 `config()` 和 `setup()`。依赖列表中
 的 plugin name 必须非空且不能重复；同一个 plugin name 不能同时出现在
 `dependencies` 和 `optionalDependencies` 中。evjs 会忽略 plugin object 上的额外
-metadata 字段，让已有 0.1 插件可以保留插件包自己的元信息。
+metadata 字段，让插件可以保留插件包自己的元信息。
 
 ## Config Hook
 
@@ -105,7 +105,7 @@ interface PluginContext<TBundlerConfig = DefaultBundlerConfig> {
 
 在 `setup()` 中初始化共享状态并返回生命周期 hooks。返回值必须是 hooks object 或
 `undefined`；`null`、array 和非函数 hook 字段会在生命周期 hooks 运行前被拒绝。
-为了兼容会在返回对象上挂载插件包自有 metadata 的 0.1 插件，未知 hook key 会被忽略。
+插件在返回对象上挂载插件包自有 metadata 时，未知 hook key 会被忽略。
 
 ## 生命周期
 
@@ -127,10 +127,10 @@ flowchart LR
 
 | Hook | 用途 |
 |------|------|
-| `buildStart(ctx)` | 框架分析前的构建准备；仍支持 0.1 风格的 `buildStart()` |
+| `buildStart(ctx)` | 框架分析前的构建准备 |
 | `bundlerConfig(config, ctx)` | 修改当前 bundler 配置 |
 | `buildOutput(output, ctx)` | 向单一框架输出添加部署/runtime metadata |
-| `transformHtml(doc, ctx)` | 逐个 HTML 文档修改输出；0.1 风格的 `transformHtml(doc, result)` 仍会收到 manifest result 字段 |
+| `transformHtml(doc, ctx)` | 逐个 HTML 文档修改输出；接收当前 manifest result 字段 |
 | `buildEnd({ output, isRebuild })` | 构建后输出最终产物 |
 | `dispose(ctx)` | 清理资源 |
 

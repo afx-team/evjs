@@ -3462,7 +3462,7 @@ describe("createPublicManifest", () => {
 });
 
 describe("createServerManifest", () => {
-  it("projects BuildOutput into the 0.1-compatible server manifest shape", () => {
+  it("projects BuildOutput into the server manifest shape", () => {
     const output: BuildOutput = {
       ...createMinimalBuildOutput(),
       server: {

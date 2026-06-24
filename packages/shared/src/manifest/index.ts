@@ -5,9 +5,9 @@
  *
  * Bundler adapters emit framework manifests under the configured dist
  * directory. Server-enabled builds write the public client manifest to
- * `dist/client/manifest.json`, the 0.1-compatible server manifest to
- * `dist/server/manifest.json`, and the full BuildOutput manifest to
- * `dist/build-output.json`; CSR-only builds write `dist/manifest.json`.
+ * `dist/client/manifest.json`, the server manifest to `dist/server/manifest.json`,
+ * and the full BuildOutput manifest to `dist/build-output.json`; CSR-only builds
+ * write `dist/manifest.json`.
  */
 
 import {

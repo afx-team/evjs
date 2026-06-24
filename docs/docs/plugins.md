@@ -59,7 +59,7 @@ provided. `dependencies` and `optionalDependencies` control ordering and are
 applied to both `config()` and `setup()` hooks. Dependency lists must contain
 unique, non-empty plugin names; the same plugin name cannot appear in both
 `dependencies` and `optionalDependencies`. Extra plugin object metadata is
-ignored by evjs so existing 0.1 plugins can keep package-local metadata fields.
+ignored by evjs so plugins can keep package-local metadata fields.
 
 ## Config Hook
 
@@ -107,9 +107,8 @@ interface PluginContext<TBundlerConfig = DefaultBundlerConfig> {
 
 Use `setup()` to allocate shared state and return lifecycle hooks. Return a
 hooks object or `undefined`; `null`, arrays, and non-function hook fields are
-rejected before lifecycle hooks run. Unknown hook keys are ignored for
-compatibility with 0.1 plugins that attach package-local metadata to the
-returned object.
+rejected before lifecycle hooks run. Unknown hook keys are ignored when plugins
+attach package-local metadata to the returned object.
 
 ## Lifecycle
 
@@ -131,10 +130,10 @@ flowchart LR
 
 | Hook | Purpose |
 |------|---------|
-| `buildStart(ctx)` | Build setup before framework analysis; 0.1-style `buildStart()` is still supported |
+| `buildStart(ctx)` | Build setup before framework analysis |
 | `bundlerConfig(config, ctx)` | Mutate selected bundler config |
 | `buildOutput(output, ctx)` | Add deployment/runtime metadata to the single framework output |
-| `transformHtml(doc, ctx)` | Mutate one HTML document at a time; 0.1-style `transformHtml(doc, result)` still receives manifest result fields |
+| `transformHtml(doc, ctx)` | Mutate one HTML document at a time; receives the current manifest result fields |
 | `buildEnd({ output, isRebuild })` | Emit final artifacts after build |
 | `dispose(ctx)` | Cleanup |
 
