@@ -26,7 +26,10 @@ jobs:
         run: npm install
 
       - name: Sync version from release tag
-        run: npm pkg set version="${GITHUB_REF_NAME#v}" -ws --include-workspace-root
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          npm pkg set version="${VERSION}" -ws --include-workspace-root
+          npm run sync-release-dependencies -- --version "${VERSION}"
 
       - name: Build Packages
         run: npm run build

@@ -269,7 +269,7 @@ describe("generatePageRouteTypes", () => {
 });
 
 async function createTempDir(): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "evjs-route-types-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "route-types-"));
   tempDirs.push(dir);
   return dir;
 }

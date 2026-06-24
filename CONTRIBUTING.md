@@ -55,10 +55,10 @@
   -> @hono/node-server
 ```
 
-Internal `@evjs/*` runtime dependency versions stay `"*"`. Release automation
-treats the distributed packages as one framework version, so app-facing packages
-should move together and adapters should depend on `@evjs/ev` instead of on each
-other.
+Internal `@evjs/*` runtime dependency versions stay `"*"` in source manifests
+for workspace development. Release automation rewrites those dependencies to the
+concrete release version before publishing, so app-facing packages move together
+and adapters depend on `@evjs/ev` instead of on each other.
 
 ## Coding Rules
 
