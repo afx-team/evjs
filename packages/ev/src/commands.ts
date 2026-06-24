@@ -10,6 +10,7 @@ import type {
 import {
   assertFrameworkManifestShape,
   createPublicManifest,
+  createServerManifest,
   linkBuildOutput,
 } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
@@ -69,7 +70,7 @@ const DEV_PAGE_RENDER_PROXY_HEADER = "x-evjs-dev-page-render";
 const DEV_DIST_DIR = "dist";
 const DEV_DIST_LOCK_FILE = ".evjs-dev.lock";
 const MANIFEST_FILE = "manifest.json";
-const STALE_BUILD_OUTPUT_FILE = "build-output.json";
+const BUILD_OUTPUT_FILE = "build-output.json";
 const PLUGIN_HOOK_NAMES = [
   "buildStart",
   "buildOutput",
@@ -962,25 +963,30 @@ async function emitFrameworkManifest(
   await fs.promises.mkdir(rootDir, { recursive: true });
   if (serverDir) {
     await fs.promises.mkdir(serverDir, { recursive: true });
+    const serverManifest = createServerManifest(output);
+    if (!serverManifest) {
+      throw new Error(
+        "[evjs] Server-enabled build did not produce a server manifest.",
+      );
+    }
     await fs.promises.writeFile(
       path.join(serverDir, MANIFEST_FILE),
+      JSON.stringify(serverManifest, null, 2),
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(serverDir, BUILD_OUTPUT_FILE),
       JSON.stringify(output, null, 2),
       "utf-8",
     );
-    await fs.promises.rm(path.join(serverDir, STALE_BUILD_OUTPUT_FILE), {
-      force: true,
-    });
     await fs.promises.rm(path.join(rootDir, MANIFEST_FILE), { force: true });
   } else {
     await fs.promises.rm(path.join(rootDir, "server", MANIFEST_FILE), {
       force: true,
     });
-    await fs.promises.rm(
-      path.join(rootDir, "server", STALE_BUILD_OUTPUT_FILE),
-      {
-        force: true,
-      },
-    );
+    await fs.promises.rm(path.join(rootDir, "server", BUILD_OUTPUT_FILE), {
+      force: true,
+    });
   }
 
   const publicManifest = createPublicManifest(output);
@@ -1225,10 +1231,12 @@ function readServerEntryFromManifest(
   if (!fs.existsSync(manifestPath)) return undefined;
 
   try {
-    const manifest = JSON.parse(
-      fs.readFileSync(manifestPath, "utf-8"),
-    ) as BuildOutput;
-    return normalizeAssetName(manifest.server?.entry);
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as {
+      entry?: unknown;
+    };
+    return normalizeAssetName(
+      typeof manifest.entry === "string" ? manifest.entry : undefined,
+    );
   } catch (err) {
     logger.warn`Failed to parse build manifest for server entry: ${err}`;
     return undefined;

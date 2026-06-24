@@ -46,6 +46,24 @@ export interface BuildOutputLinkInput {
   };
 }
 
+export interface ServerManifestOutput {
+  version: 1;
+  entry?: string;
+  assets: AssetGroup;
+  fns: Record<string, ServerManifestFnOutput>;
+  routes?: ServerManifestRouteOutput[];
+}
+
+export interface ServerManifestFnOutput {
+  assets: AssetGroup;
+}
+
+export interface ServerManifestRouteOutput {
+  path: string;
+  methods: string[];
+  assets: AssetGroup;
+}
+
 export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   const serverEnabled = input.serverEnabled ?? input.plan.serverEnabled;
   const clientEntryAssets = input.clientEntryAssets ?? {};
@@ -452,6 +470,31 @@ export function createPublicManifest(output: BuildOutput): BuildOutput {
       ? sanitizePublicMetadata(output.deployment)
       : undefined,
   }) as BuildOutput;
+}
+
+export function createServerManifest(
+  output: BuildOutput,
+): ServerManifestOutput | undefined {
+  if (!output.server) return undefined;
+
+  const routes = output.server.routes.map((route) => ({
+    path: route.path,
+    methods: [...route.methods],
+    assets: cloneAssets(route.assets),
+  }));
+
+  return {
+    version: 1,
+    ...(output.server.entry ? { entry: output.server.entry } : {}),
+    assets: cloneAssets(output.server.assets),
+    fns: Object.fromEntries(
+      Object.entries(output.server.functions).map(([id, fn]) => [
+        id,
+        { assets: cloneAssets(fn.assets) },
+      ]),
+    ),
+    ...(routes.length > 0 ? { routes } : {}),
+  };
 }
 
 function createBuildOutputPaths(

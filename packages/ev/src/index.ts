@@ -5,6 +5,7 @@
 export type * from "@evjs/shared/manifest";
 export {
   createPublicManifest,
+  createServerManifest,
   getClientRouteMatches,
   getClientRouteTarget,
   getServerRenderedPagePaths,

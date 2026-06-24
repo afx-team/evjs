@@ -52,7 +52,8 @@ export function createWebSocketExampleTest() {
           stdio: "pipe",
         });
 
-        // 2. Read the server manifest for bootstrap metadata.
+        // 2. Read the server manifest for the bundle entry and the full
+        // BuildOutput for framework bootstrap.
         const serverManifestPath = path.join(
           exampleDir,
           "dist",
@@ -62,12 +63,18 @@ export function createWebSocketExampleTest() {
         const serverManifest = JSON.parse(
           fs.readFileSync(serverManifestPath, "utf-8"),
         );
-        const serverEntry = serverManifest.server?.entry;
+        const serverEntry = serverManifest.entry;
         if (!serverEntry) {
           throw new Error(
             "Built WebSocket example did not emit a server entry.",
           );
         }
+        const buildOutputPath = path.join(
+          exampleDir,
+          "dist",
+          "server",
+          "build-output.json",
+        );
         const serverEntryPath = path.join(
           exampleDir,
           "dist",
@@ -89,7 +96,7 @@ export function createWebSocketExampleTest() {
             ...process.env,
             SERVER_ENTRY: serverEntryPath,
             CLIENT_DIR: clientDir,
-            MANIFEST_PATH: serverManifestPath,
+            MANIFEST_PATH: buildOutputPath,
             PORT: String(webPort),
           },
         });

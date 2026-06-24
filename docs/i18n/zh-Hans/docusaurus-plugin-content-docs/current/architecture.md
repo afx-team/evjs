@@ -143,8 +143,9 @@ sequenceDiagram
 ```
 
 启用 server 的构建会在 `dist/client/manifest.json` 输出 public manifest，并在
-`dist/server/manifest.json` 输出完整 `BuildOutput` manifest。CSR-only 构建保持
-扁平结构，输出 `dist/manifest.json`。
+`dist/server/build-output.json` 输出完整 `BuildOutput` manifest。
+`dist/server/manifest.json` 保持 0.1 兼容的 server manifest 结构。CSR-only 构建
+保持扁平结构，输出 `dist/manifest.json`。
 
 ## 运行时流程
 
@@ -263,7 +264,7 @@ Page modules 通过文件名拥有 path-to-component wiring，并通过 `render`
 `rsc`、`prerender` 等静态导出拥有渲染元信息。当 graph creation 发现 SSR、RSC
 或 partial prerender metadata 时，会从该页面模块派生所需的 server renderers、
 PPR regions、assets 和 manifest output。
-完整 server manifest 会显式保留这些 renderer 关系：SSR、SSG 和 RSC document page
+完整 BuildOutput manifest 会显式保留这些 renderer 关系：SSR、SSG 和 RSC document page
 通过由 page id 拥有的 `page-server` renderer 解析，或通过该 page 的某个 route id
 拥有的 `page-server` renderer 解析。PPR 页面改由 `ppr-shell` 和 `ppr-region`
 entry 解析。
@@ -296,7 +297,7 @@ alias 仍是合法 JavaScript。
 只有 reference metadata 的 RSC output 可以省略 `BuildOutput.rsc.endpoint`；
 包含 RSC page output 时不能省略，因为 Flight 请求需要明确的 endpoint。缺少
 `runtime.server.rsc` 时，manifest linker 会拒绝 RSC page output。
-在完整 server manifest 中，每个 RSC page renderer reference 必须解析到
+在完整 BuildOutput manifest 中，每个 RSC page renderer reference 必须解析到
 `owner.pageId` 匹配该 RSC page id 的 `rsc-page` renderer；公开 manifest
 可以省略这些 server-only renderer metadata。
 忽略 type-only 和 ambient declaration 后，`"use client"` 模块仍必须暴露至少一个
@@ -319,7 +320,7 @@ Deployment adapter 消费 `BuildOutput`。`@evjs/ev` 提供：
   和静态资源 binding。
 
 平台专属 adapter 应从 `BuildOutput` 派生 routing、framework endpoint、SSR、PPR、RSC 和 asset metadata，而不是读取 bundler stats。
-完整 server manifest 会保留源码 module 和 server renderer reference；公开/浏览器
+完整 BuildOutput manifest 会保留源码 module 和 server renderer reference；公开/浏览器
 manifest 保持相同的 routing 与 asset 结构，但会脱敏这些 server-only 字段，因此客户端
 校验会把它们视为可选。
 

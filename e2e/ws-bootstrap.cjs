@@ -9,6 +9,7 @@
  * Environment variables:
  *   SERVER_ENTRY - path to the built server entry
  *   CLIENT_DIR   - path to the built client directory
+ *   MANIFEST_PATH - path to the full BuildOutput manifest
  *   PORT         - port to listen on
  */
 

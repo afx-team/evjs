@@ -3,6 +3,7 @@ import type {
   BuildEnvironment,
   BuildOutput,
 } from "@evjs/shared/manifest";
+import { createServerManifest } from "@evjs/shared/manifest";
 import type { Logger } from "@logtape/logtape";
 import type { Config, DefaultBundlerConfig, ResolvedConfig } from "./config.js";
 
@@ -387,7 +388,7 @@ export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig>
    * as the framework manifest and before HTML documents are transformed.
    *
    * Deployment adapters should use this hook to add deployment metadata to the
-   * BuildOutput emitted as `dist/server/manifest.json` for server-enabled
+   * BuildOutput emitted as `dist/server/build-output.json` for server-enabled
    * builds or `dist/manifest.json` for CSR-only builds.
    */
   buildOutput?: (
@@ -533,29 +534,6 @@ function createClientManifest(output: BuildOutput): ClientManifest {
       : cloneAssets(getAppAssets(output)),
     ...(routes.length > 0 ? { routes } : {}),
     ...(pages ? { pages } : {}),
-  };
-}
-
-function createServerManifest(output: BuildOutput): ServerManifest | undefined {
-  if (!output.server) return undefined;
-
-  const routes = output.server.routes.map((route) => ({
-    path: route.path,
-    methods: [...route.methods],
-    assets: cloneAssets(route.assets),
-  }));
-
-  return {
-    version: 1,
-    ...(output.server.entry ? { entry: output.server.entry } : {}),
-    assets: cloneAssets(output.server.assets),
-    fns: Object.fromEntries(
-      Object.entries(output.server.functions).map(([id, fn]) => [
-        id,
-        { assets: cloneAssets(fn.assets) },
-      ]),
-    ),
-    ...(routes.length > 0 ? { routes } : {}),
   };
 }
 

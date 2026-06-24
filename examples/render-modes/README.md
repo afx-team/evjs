@@ -25,7 +25,8 @@ It exercises the render-mode framework contracts with the webpack adapter:
   streamed shell/region patches in one document response;
 - RSC page renderer plus framework Flight endpoint;
 - server function transform and REST route;
-- split `dist/client/manifest.json` and `dist/server/manifest.json` output.
+- split `dist/client/manifest.json`, `dist/server/manifest.json`, and
+  `dist/server/build-output.json` output.
 
 Utoopack remains the default bundler for normal examples. This example uses
 webpack because it currently validates dynamic framework entries, component

@@ -11,6 +11,7 @@ import type {
 import {
   buildHtml,
   createPublicManifest,
+  createServerManifest,
   linkBuildOutput,
   type ResolvedConfig,
   resolveConfig,
@@ -135,6 +136,11 @@ function createFrameworkCallbacks(options: {
         await fs.promises.mkdir(serverDir, { recursive: true });
         await fs.promises.writeFile(
           path.join(serverDir, "manifest.json"),
+          JSON.stringify(createServerManifest(output), null, 2),
+          "utf-8",
+        );
+        await fs.promises.writeFile(
+          path.join(serverDir, "build-output.json"),
           JSON.stringify(output, null, 2),
           "utf-8",
         );
@@ -564,7 +570,13 @@ describe("utoopackAdapter dev", () => {
       hooks,
     });
 
-    const manifest = JSON.parse(
+    const buildOutput = JSON.parse(
+      await fs.promises.readFile(
+        path.join(cwd, "dist/server/build-output.json"),
+        "utf-8",
+      ),
+    );
+    const serverManifest = JSON.parse(
       await fs.promises.readFile(
         path.join(cwd, "dist/server/manifest.json"),
         "utf-8",
@@ -581,7 +593,7 @@ describe("utoopackAdapter dev", () => {
       "utf-8",
     );
 
-    expect(manifest.apps.default).toEqual({
+    expect(buildOutput.apps.default).toEqual({
       assets: {
         js: ["main.js"],
         css: ["main.css"],
@@ -594,7 +606,7 @@ describe("utoopackAdapter dev", () => {
         source: "./src/main.tsx",
       },
     });
-    expect(manifest.server.entry).toBe("index.js");
+    expect(serverManifest.entry).toBe("index.js");
     expect(publicManifest.apps.default.entry).toBeUndefined();
     expect(publicManifest.apps.default.module).toEqual({
       type: "entry",

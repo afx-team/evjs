@@ -7,6 +7,7 @@ import type {
 import {
   assertFrameworkManifestShape,
   createPublicManifest,
+  createServerManifest,
   linkBuildOutput,
 } from "../src/manifest/index.js";
 
@@ -3457,5 +3458,61 @@ describe("createPublicManifest", () => {
       platform: "node",
       publicAsset: "dashboard.js",
     });
+  });
+});
+
+describe("createServerManifest", () => {
+  it("projects BuildOutput into the 0.1-compatible server manifest shape", () => {
+    const output: BuildOutput = {
+      ...createMinimalBuildOutput(),
+      server: {
+        entry: "server.js",
+        assets: { js: ["server.js"], css: ["server.css"] },
+        functions: {
+          "fn:getUser": {
+            assets: { js: ["users.server.js"], css: [] },
+            module: "./src/api/users.server.ts",
+            exportName: "getUser",
+          },
+        },
+        routes: [
+          {
+            path: "/api/users",
+            methods: ["GET", "POST"],
+            assets: { js: ["users.routes.js"], css: [] },
+          },
+        ],
+        renderers: {
+          dashboard: {
+            kind: "page-server",
+            owner: { pageId: "dashboard" },
+            module: "./src/pages/dashboard.tsx",
+            assets: { js: ["dashboard-server.js"], css: [] },
+          },
+        },
+      },
+    };
+
+    expect(createServerManifest(output)).toEqual({
+      version: 1,
+      entry: "server.js",
+      assets: { js: ["server.js"], css: ["server.css"] },
+      fns: {
+        "fn:getUser": {
+          assets: { js: ["users.server.js"], css: [] },
+        },
+      },
+      routes: [
+        {
+          path: "/api/users",
+          methods: ["GET", "POST"],
+          assets: { js: ["users.routes.js"], css: [] },
+        },
+      ],
+    });
+  });
+
+  it("omits the server manifest when BuildOutput has no server section", () => {
+    expect(createServerManifest(createMinimalBuildOutput())).toBeUndefined();
   });
 });

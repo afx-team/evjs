@@ -368,9 +368,10 @@ export function createExampleTest(exampleName: string) {
         // Build with specified bundler (fullstack = server enabled)
         await buildExample(exampleDir, bundlerName, true);
 
-        // Read the public manifest for client routing and the server manifest
-        // for bootstrap metadata. The public manifest is browser-safe and
-        // intentionally does not expose server entry files.
+        // Read the public manifest for client routing, the server manifest for
+        // the bundle entry, and the full BuildOutput for framework bootstrap.
+        // The public manifest is browser-safe and intentionally does not
+        // expose server entry files.
         const manifestPath = path.join(
           exampleDir,
           "dist",
@@ -387,10 +388,16 @@ export function createExampleTest(exampleName: string) {
         const serverManifest = JSON.parse(
           fs.readFileSync(serverManifestPath, "utf-8"),
         );
-        const serverEntry = serverManifest.server?.entry;
+        const serverEntry = serverManifest.entry;
         if (!serverEntry) {
           throw new Error("Built example did not emit a server entry.");
         }
+        const buildOutputPath = path.join(
+          exampleDir,
+          "dist",
+          "server",
+          "build-output.json",
+        );
         const serverEntryPath = path.join(
           exampleDir,
           "dist",
@@ -407,7 +414,7 @@ export function createExampleTest(exampleName: string) {
             `const fs = require("node:fs");`,
             `const path = require("node:path");`,
             `const { pathToFileURL } = require("node:url");`,
-            `const manifest = JSON.parse(fs.readFileSync(${JSON.stringify(serverManifestPath)}, "utf-8"));`,
+            `const manifest = JSON.parse(fs.readFileSync(${JSON.stringify(buildOutputPath)}, "utf-8"));`,
             `globalThis.__EVJS_MANIFEST__ = manifest;`,
             `const serverDir = path.dirname(${JSON.stringify(serverEntryPath)});`,
             `globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => { const mod = await import(pathToFileURL(path.resolve(serverDir, asset)).href); const nested = mod && typeof mod.default === "object" ? mod.default : undefined; return nested && ("default" in nested || "render" in nested) ? nested : mod; };`,

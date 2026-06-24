@@ -150,8 +150,9 @@ sequenceDiagram
 ```
 
 Server-enabled builds emit a public manifest at `dist/client/manifest.json` and
-the complete `BuildOutput` manifest at `dist/server/manifest.json`. CSR-only
-builds stay flat and emit `dist/manifest.json`.
+the complete `BuildOutput` manifest at `dist/server/build-output.json`.
+`dist/server/manifest.json` keeps the 0.1-compatible server manifest shape.
+CSR-only builds stay flat and emit `dist/manifest.json`.
 
 TanStack Router is available through the `@evjs/client` standalone CSR surface
 for manual browser applications. In framework-managed apps, `@evjs/ev` owns
@@ -285,7 +286,7 @@ through static exports such as `render`, `hydrate`, `rsc`, and `prerender`.
 When graph creation sees SSR, RSC, or partial prerender metadata, it derives the
 required server renderers, PPR regions, assets, and manifest output from that
 page module.
-Full server manifests keep those renderer relationships explicit: SSR, SSG, and
+Full BuildOutput manifests keep those renderer relationships explicit: SSR, SSG, and
 RSC document pages resolve through a `page-server` renderer owned by the page id
 or by one of that page's route ids. PPR pages resolve through `ppr-shell` and
 `ppr-region` entries instead.
@@ -320,7 +321,7 @@ and optional trimmed `exportName`.
 Reference-only RSC output can omit `BuildOutput.rsc.endpoint`; RSC page output
 cannot, because Flight requests need a concrete endpoint. The manifest linker
 rejects RSC page output when `runtime.server.rsc` is missing.
-For full server manifests, each RSC page renderer reference must resolve to an
+For full BuildOutput manifests, each RSC page renderer reference must resolve to an
 `rsc-page` renderer whose `owner.pageId` matches the RSC page id; public
 manifests may omit that server-only renderer metadata.
 After ignoring type-only and ambient declarations, a `"use client"` module must
@@ -345,7 +346,7 @@ Deployment adapters consume `BuildOutput`. `@evjs/ev` provides:
 Platform-specific adapters should derive their routing, framework endpoint, SSR,
 PPR, RSC, and asset metadata from `BuildOutput`
 instead of reading bundler stats.
-Full server manifests retain source modules and server renderer references;
+Full BuildOutput manifests retain source modules and server renderer references;
 public/browser manifests keep the same routing and asset shape but redact those
 server-only fields, so client-side validation treats them as optional.
 

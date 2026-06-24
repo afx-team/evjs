@@ -55,7 +55,7 @@ test.describe("deployment-adapters", () => {
       exampleDir,
       "dist",
       "server",
-      "manifest.json",
+      "build-output.json",
     );
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
 

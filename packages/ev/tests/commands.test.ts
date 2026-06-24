@@ -1303,15 +1303,33 @@ describe("build", () => {
       path.join(cwd, "dist/server/manifest.json"),
       "utf-8",
     );
+    const buildOutput = fs.readFileSync(
+      path.join(cwd, "dist/server/build-output.json"),
+      "utf-8",
+    );
+    const serverManifestJson = JSON.parse(serverManifest);
+    const buildOutputJson = JSON.parse(buildOutput);
 
     expect(rawOutputComponents).toEqual(["./src/pages/Dashboard.tsx"]);
     expect(publicManifest).not.toContain(".tsx");
     expect(publicManifest).not.toContain("server.js");
-    expect(serverManifest).toContain("./src/pages/Dashboard.tsx");
-    expect(serverManifest).toContain("server.js");
+    expect(serverManifestJson).toEqual({
+      version: 1,
+      entry: "server.js",
+      assets: { js: ["server.js"], css: [] },
+      fns: {},
+    });
+    expect(serverManifestJson.server).toBeUndefined();
+    expect(serverManifest).not.toContain("./src/pages/Dashboard.tsx");
+    expect(buildOutputJson.server?.entry).toBe("server.js");
+    expect(buildOutputJson.server?.renderers).toHaveProperty(
+      "dashboard-server",
+    );
+    expect(buildOutput).toContain("./src/pages/Dashboard.tsx");
+    expect(buildOutput).toContain("server.js");
     expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
     expect(fs.existsSync(path.join(cwd, "dist/server/build-output.json"))).toBe(
-      false,
+      true,
     );
   });
 

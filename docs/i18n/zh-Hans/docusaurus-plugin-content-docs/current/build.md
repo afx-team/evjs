@@ -56,16 +56,18 @@ dist/
 │   └── manifest.json
 └── server/
     ├── main.[hash].js
-    └── manifest.json
+    ├── manifest.json
+    └── build-output.json
 ```
 
-`dist/server/manifest.json` 包含 server runtime 和 deployment adapter
-消费的完整 `BuildOutput` 契约。`dist/client/manifest.json` 是浏览器安全的
-public manifest。CSR-only 输出保持扁平结构，写入 `dist/manifest.json`。
-HTML 可以把 public manifest 内嵌为 `__EVJS_MANIFEST__`；当浏览器 runtime
-通过 `manifestUrl`、`data-evjs-manifest` 或 `/manifest.json` 获取它时，响应
-必须是成功的 JSON，并使用 `Content-Type: application/json`，允许附带可选
-content-type 参数。
+`dist/server/manifest.json` 保持 0.1 兼容的 server manifest 结构：
+`entry`、`assets`、`fns` 和 `routes`。`dist/server/build-output.json`
+包含 server runtime 和 deployment adapter 消费的完整 `BuildOutput` 契约。
+`dist/client/manifest.json` 是浏览器安全的 public manifest。CSR-only 输出保持
+扁平结构，写入 `dist/manifest.json`。HTML 可以把 public manifest 内嵌为
+`__EVJS_MANIFEST__`；当浏览器 runtime 通过 `manifestUrl`、
+`data-evjs-manifest` 或 `/manifest.json` 获取它时，响应必须是成功的 JSON，
+并使用 `Content-Type: application/json`，允许附带可选 content-type 参数。
 
 ## 构建流水线
 
@@ -179,9 +181,11 @@ browser page entry。
 
 ## 要点
 
-- 启用 server 的构建输出 `dist/client/manifest.json` 和
-  `dist/server/manifest.json`；CSR-only 构建输出 `dist/manifest.json`。
-- `BuildOutput` 是框架 manifest 契约，启用 server 时保存在 server manifest。
+- 启用 server 的构建输出 `dist/client/manifest.json`、
+  `dist/server/manifest.json` 和 `dist/server/build-output.json`；CSR-only 构建
+  输出 `dist/manifest.json`。
+- `BuildOutput` 是框架 manifest 契约，启用 server 时保存在
+  `dist/server/build-output.json`。
 - 会成为 runtime id 的 manifest object key 必须是 build identifier，包括
   app id、page id 和 opaque internal PPR region id：只能使用字母、数字、下划线或连字符。
 - app 和 page runtime module 必须关联到 JavaScript 资产；如果 client entry
@@ -190,13 +194,13 @@ browser page entry。
   deployment adapter 会依赖 `server.entry` 导入框架 handler。
 - build entry name 是 manifest asset key。它们必须是 build identifier，并且
   必须在 app、page、runtime 和 server entry 之间全局唯一。
-- `manifest.server.renderers` 的 key 是 renderer build entry name，也必须使用
+- `BuildOutput.server.renderers` 的 key 是 renderer build entry name，也必须使用
   相同的 build-identifier 规则。
-- 在完整 server manifest 中，每个使用 server HTML 的 SSR、SSG 或 RSC document
+- 在完整 BuildOutput manifest 中，每个使用 server HTML 的 SSR、SSG 或 RSC document
   page 都必须有一个 `page-server` renderer，并由该 page id 拥有，或由
-  `manifest.routes` 中指向该 page 的 route id 拥有。PPR 页面改用 `ppr-shell`
+  `BuildOutput.routes` 中指向该 page 的 route id 拥有。PPR 页面改用 `ppr-shell`
   和 `ppr-region` renderer reference。
-- `manifest.routes` 的 id 必须唯一，且是无首尾空白的非空字符串。Page route
+- `BuildOutput.routes` 的 id 必须唯一，且是无首尾空白的非空字符串。Page route
   path 必须保持每个归一化 URL path 和 dynamic URL shape 只有一个条目；
   `pageId` 和 `appId` 必须指向已存在的 manifest page 或 app。
 - RSC reference map 不使用 build identifier 作为 key：reference id 可以包含
@@ -207,7 +211,7 @@ browser page entry。
   可以省略；一旦 `BuildOutput.rsc.pages` 包含 Flight-rendered page，就必须提供
   endpoint。缺少 `runtime.server.rsc` endpoint 的 RSC page output 会在 manifest
   emission 前失败。
-- 在完整 server manifest 中，每个 `BuildOutput.rsc.pages[id].renderer`
+- 在完整 BuildOutput manifest 中，每个 `BuildOutput.rsc.pages[id].renderer`
   必须指向由同一个 page id 拥有的 `rsc-page` server renderer。公开 manifest
   可以省略 server renderer metadata，因为这些字段会被脱敏。
 - `BuildOutput.server.routes` 必须保持每个 URL path 和 dynamic URL shape 只有
