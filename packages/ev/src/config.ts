@@ -268,7 +268,7 @@ export interface ServerConfig {
    * Framework-managed server file routing.
    *
    * When enabled, evjs discovers Request/Response route modules from
-   * `src/server/routes`. This cannot be combined with `server.entry`.
+   * `src/apis`. This cannot be combined with `server.entry`.
    */
   routing?: boolean | ServerRoutingConfig;
   /**
@@ -302,7 +302,7 @@ export interface ResolvedServerRscConfig {
 }
 
 export interface ServerRoutingConfig {
-  /** Directory containing server route modules. Default: "./src/server/routes". */
+  /** Directory containing server route modules. Default: "./src/apis". */
   dir?: string;
 }
 
@@ -443,7 +443,7 @@ export const CONFIG_DEFAULTS = {
   crossOriginLoading: "anonymous",
   routingDir: "./src/pages",
   routingMode: "spa",
-  serverRoutingDir: "./src/server/routes",
+  serverRoutingDir: "./src/apis",
   serverMiddlewareFile: "./src/server/middleware.ts",
   mount: "#app",
 } as const;

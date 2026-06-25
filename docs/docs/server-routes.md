@@ -19,26 +19,26 @@ export default defineConfig({
 });
 ```
 
-`server.routing: true` scans `./src/server/routes` and maps that directory to
+`server.routing: true` scans `./src/apis` and maps that directory to
 `/`. Object form currently supports only `dir`. There is no `prefix` option;
-put files under a folder such as `src/server/routes/api` when the URL should
+put files under a folder such as `src/apis/api` when the URL should
 start with `/api`.
 
 ```text
-src/server/routes/index.ts              -> /
-src/server/routes/health.ts             -> /health
-src/server/routes/users.ts              -> /users
-src/server/routes/users/index.ts        -> /users
-src/server/routes/users/$userId.ts      -> /users/:userId
-src/server/routes/(internal)/health.ts  -> /health
-src/server/routes/api/users.ts          -> /api/users
+src/apis/index.ts              -> /
+src/apis/health.ts             -> /health
+src/apis/users.ts              -> /users
+src/apis/users/index.ts        -> /users
+src/apis/users/$userId.ts      -> /users/:userId
+src/apis/(internal)/health.ts  -> /health
+src/apis/api/users.ts          -> /api/users
 ```
 
 A file becomes a route only when it exports at least one uppercase HTTP method:
 `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, or `OPTIONS`:
 
 ```ts
-// src/server/routes/api/posts.ts
+// src/apis/api/posts.ts
 export const GET = async (req) => {
   const url = new URL(req.url);
   const limit = Number(url.searchParams.get("limit")) || 10;
@@ -83,18 +83,18 @@ Route-scoped middleware lives inside the route tree and runs only for
 descendant server file routes:
 
 ```text
-src/server/routes/middleware.ts            -> all file routes
-src/server/routes/api/middleware.ts        -> routes under routes/api/**
-src/server/routes/api/admin/middleware.ts  -> routes under routes/api/admin/**
-src/server/routes/(admin)/middleware.ts    -> routes under routes/(admin)/**
+src/apis/middleware.ts            -> all file routes
+src/apis/api/middleware.ts        -> routes under api/**
+src/apis/api/admin/middleware.ts  -> routes under api/admin/**
+src/apis/(admin)/middleware.ts    -> routes under (admin)/**
 ```
 
 Execution order is global middleware, then route-scoped middleware from parent
 directory to child directory, then the HTTP method handler. Route groups do not
 add URL segments, but they do participate in filesystem scoping.
-`routes/api/middleware.ts` covers `routes/api/index.ts`, `routes/api/users.ts`,
-and nested files under `routes/api/**`; it does not cover the flat sibling
-`routes/api.ts`.
+`src/apis/api/middleware.ts` covers `src/apis/api/index.ts`,
+`src/apis/api/users.ts`, and nested files under `src/apis/api/**`; it does not
+cover the flat sibling `src/apis/api.ts`.
 
 The signature follows Hono:
 

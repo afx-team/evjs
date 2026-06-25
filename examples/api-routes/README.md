@@ -13,11 +13,11 @@ npm run dev
 | File | Purpose |
 |------|---------| 
 | `src/server/middleware.ts` | Global server middleware for all server requests |
-| `src/server/routes/api/middleware.ts` | Route-scoped middleware for `/api/**` file routes |
-| `src/server/routes/api/posts.ts` | List/create handlers for `/api/posts` |
-| `src/server/routes/api/posts/$id.ts` | Dynamic handlers for `/api/posts/:id` |
-| `src/server/routes/api/health.ts` | Health check endpoint |
-| `src/server/routes/api/posts-store.ts` | Colocated helper module ignored by route discovery |
+| `src/apis/api/middleware.ts` | Route-scoped middleware for `/api/**` file routes |
+| `src/apis/api/posts.ts` | List/create handlers for `/api/posts` |
+| `src/apis/api/posts/$id.ts` | Dynamic handlers for `/api/posts/:id` |
+| `src/apis/api/health.ts` | Health check endpoint |
+| `src/apis/api/posts-store.ts` | Colocated helper module ignored by route discovery |
 
 ## What It Demonstrates
 

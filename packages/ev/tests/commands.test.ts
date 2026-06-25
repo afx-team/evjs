@@ -2434,7 +2434,10 @@ describe("build", () => {
 
   it("discovers server middleware conventions for generated server app entries", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/server/routes/api"), {
+    await fs.promises.mkdir(path.join(cwd, "src/apis/api"), {
+      recursive: true,
+    });
+    await fs.promises.mkdir(path.join(cwd, "src/server"), {
       recursive: true,
     });
     await fs.promises.writeFile(
@@ -2452,7 +2455,7 @@ describe("build", () => {
       "utf-8",
     );
     await fs.promises.writeFile(
-      path.join(cwd, "src/server/routes/api/middleware.ts"),
+      path.join(cwd, "src/apis/api/middleware.ts"),
       [
         "export default async function middleware(_ctx, next) {",
         "  await next();",
@@ -2461,7 +2464,7 @@ describe("build", () => {
       "utf-8",
     );
     await fs.promises.writeFile(
-      path.join(cwd, "src/server/routes/api/health.ts"),
+      path.join(cwd, "src/apis/api/health.ts"),
       "export const GET = async () => Response.json({ ok: true });",
       "utf-8",
     );
@@ -2503,15 +2506,15 @@ describe("build", () => {
           ],
           routes: [
             {
-              id: "src/server/routes/api/health.ts:/api/health:GET",
-              module: "src/server/routes/api/health.ts",
+              id: "src/apis/api/health.ts:/api/health:GET",
+              module: "src/apis/api/health.ts",
               path: "/api/health",
               methods: ["GET"],
               moduleSegments: ["api"],
               middlewares: [
                 {
-                  id: "src/server/routes/api/middleware.ts:route-middleware",
-                  module: "src/server/routes/api/middleware.ts",
+                  id: "src/apis/api/middleware.ts:route-middleware",
+                  module: "src/apis/api/middleware.ts",
                   scope: "route",
                   scopeSegments: ["api"],
                 },
@@ -2521,6 +2524,40 @@ describe("build", () => {
         },
       }),
     );
+  });
+
+  it("does not fall back to src/server/routes for server file routes", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/apis"), {
+      recursive: true,
+    });
+    await fs.promises.mkdir(path.join(cwd, "src/server/routes"), {
+      recursive: true,
+    });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/server/routes/health.ts"),
+      "export const GET = async () => Response.json({ ok: true });",
+      "utf-8",
+    );
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+
+    await expect(
+      build(
+        {
+          server: {
+            routing: true,
+          },
+        },
+        {
+          cwd,
+          bundler,
+        },
+      ),
+    ).rejects.toThrow(
+      "[evjs] No server routes found in ./src/apis. Add a route module exporting GET or POST such as ./src/apis/index.ts or set server.routing: false.",
+    );
+    expect(events).not.toContain("bundler.build");
   });
 
   it("fails on missing explicit server entries before running the bundler", async () => {

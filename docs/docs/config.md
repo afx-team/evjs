@@ -25,7 +25,7 @@ export default defineConfig({
 | `routing.mode` | `spa` |
 | `routing.dir` | `./src/pages` when `routing` is enabled |
 | `routing.conventions.layout` | `true` in SPA mode; auto-discovers a root layout beside `routing.dir` when present |
-| `server.routing.dir` | `./src/server/routes` when `server.routing` is enabled |
+| `server.routing.dir` | `./src/apis` when `server.routing` is enabled |
 | `server.conventions.middleware` | `true` when server conventions are enabled |
 | `dev.port` | `3000` |
 | `server.dev.port` | `3001` |
@@ -49,7 +49,7 @@ names differ:
 | Surface | Route discovery | Convention controls | Default files |
 |---------|-----------------|---------------------|---------------|
 | Client pages | `routing` | `routing.conventions.layout` for the SPA root layout; page-route file rules live under `routing.dir` | `./src/pages`, plus `layout.*` or `layout/index.*` beside that directory when present |
-| Server requests | `server.routing` | `server.conventions.middleware` for filesystem-scoped middleware | `./src/server/routes`, `./src/server/middleware.ts`, and `./src/server/routes/**/middleware.ts` |
+| Server requests | `server.routing` | `server.conventions.middleware` for filesystem-scoped middleware | `./src/apis`, `./src/server/middleware.ts`, and `./src/apis/**/middleware.ts` |
 
 Top-level `routing` remains the client/page owner, and client convention
 toggles live under `routing.conventions`. Server conventions live under
@@ -505,8 +505,8 @@ owns server file-route discovery, and `server.conventions` owns server behavior
 modules discovered from the server tree.
 
 Enable server file routes with `server.routing`. `true` scans
-`./src/server/routes`; object form currently supports only `dir`. There is no
-`prefix` option: put files under a folder such as `src/server/routes/api` when
+`./src/apis`; object form currently supports only `dir`. There is no
+`prefix` option: put files under a folder such as `src/apis/api` when
 the URL should start with `/api`.
 
 ```ts
@@ -530,7 +530,7 @@ export default defineConfig({
 
 Server conventions are enabled by default when `server.routing` is enabled.
 The current convention discovers `src/server/middleware.ts` for global
-middleware and `src/server/routes/**/middleware.ts` for route-scoped file-route
+middleware and `src/apis/**/middleware.ts` for route-scoped file-route
 middleware. Missing middleware files are ignored.
 
 ```ts

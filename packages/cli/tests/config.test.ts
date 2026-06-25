@@ -45,7 +45,7 @@ describe("CONFIG_DEFAULTS", () => {
     expect(CONFIG_DEFAULTS.clientProxy).toBe("@evjs/client/internal");
     expect(CONFIG_DEFAULTS.serverRegister).toBe("@evjs/server/register");
     expect(CONFIG_DEFAULTS.crossOriginLoading).toBe("anonymous");
-    expect(CONFIG_DEFAULTS.serverRoutingDir).toBe("./src/server/routes");
+    expect(CONFIG_DEFAULTS.serverRoutingDir).toBe("./src/apis");
     expect(CONFIG_DEFAULTS.serverMiddlewareFile).toBe(
       "./src/server/middleware.ts",
     );
@@ -65,7 +65,7 @@ describe("CONFIG_DEFAULTS", () => {
       crossOriginLoading: "anonymous",
       routingDir: "./src/pages",
       routingMode: "spa",
-      serverRoutingDir: "./src/server/routes",
+      serverRoutingDir: "./src/apis",
       serverMiddlewareFile: "./src/server/middleware.ts",
       mount: "#app",
     });

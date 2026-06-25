@@ -54,10 +54,11 @@ my-app/
 │   │   └── users/$id.tsx   # /users/$id
 │   ├── api/                # Server function modules
 │   │   └── users.server.ts # "use server" functions
+│   ├── apis/               # Server file routes
+│   │   └── api/
+│   │       └── health.ts   # /api/health
 │   └── server/
-│       └── routes/         # Server file routes
-│           └── api/
-│               └── health.ts # /api/health
+│       └── middleware.ts   # Global server middleware
 ├── package.json
 └── tsconfig.json
 ```

@@ -18,25 +18,25 @@ export default defineConfig({
 });
 ```
 
-`server.routing: true` 会扫描 `./src/server/routes`，并把该目录映射到 `/`。
+`server.routing: true` 会扫描 `./src/apis`，并把该目录映射到 `/`。
 object 形式目前只支持 `dir`。这里没有 `prefix` 选项；如果 URL 需要以 `/api`
-开头，请把文件放在 `src/server/routes/api` 这样的目录下。
+开头，请把文件放在 `src/apis/api` 这样的目录下。
 
 ```text
-src/server/routes/index.ts              -> /
-src/server/routes/health.ts             -> /health
-src/server/routes/users.ts              -> /users
-src/server/routes/users/index.ts        -> /users
-src/server/routes/users/$userId.ts      -> /users/:userId
-src/server/routes/(internal)/health.ts  -> /health
-src/server/routes/api/users.ts          -> /api/users
+src/apis/index.ts              -> /
+src/apis/health.ts             -> /health
+src/apis/users.ts              -> /users
+src/apis/users/index.ts        -> /users
+src/apis/users/$userId.ts      -> /users/:userId
+src/apis/(internal)/health.ts  -> /health
+src/apis/api/users.ts          -> /api/users
 ```
 
 只有导出至少一个大写 HTTP method 的文件才会成为路由：
 `GET`、`POST`、`PUT`、`PATCH`、`DELETE`、`HEAD` 或 `OPTIONS`：
 
 ```ts
-// src/server/routes/api/posts.ts
+// src/apis/api/posts.ts
 export const GET = async (req) => {
   const url = new URL(req.url);
   const limit = Number(url.searchParams.get("limit")) || 10;
@@ -78,17 +78,17 @@ server functions、SSR、PPR 和 RSC framework handling 之前运行。Route-sco
 middleware 位于 route tree 内，只作用于 descendant server file routes：
 
 ```text
-src/server/routes/middleware.ts            -> all file routes
-src/server/routes/api/middleware.ts        -> routes under routes/api/**
-src/server/routes/api/admin/middleware.ts  -> routes under routes/api/admin/**
-src/server/routes/(admin)/middleware.ts    -> routes under routes/(admin)/**
+src/apis/middleware.ts            -> all file routes
+src/apis/api/middleware.ts        -> routes under api/**
+src/apis/api/admin/middleware.ts  -> routes under api/admin/**
+src/apis/(admin)/middleware.ts    -> routes under (admin)/**
 ```
 
 执行顺序是 global middleware，然后从父目录到子目录的 route-scoped middleware，
 最后是 HTTP method handler。Route group 不增加 URL segment，但会参与 filesystem
-scope。`routes/api/middleware.ts` 覆盖 `routes/api/index.ts`、
-`routes/api/users.ts` 和 `routes/api/**` 下的嵌套文件；不会覆盖 flat sibling
-`routes/api.ts`。
+scope。`src/apis/api/middleware.ts` 覆盖 `src/apis/api/index.ts`、
+`src/apis/api/users.ts` 和 `src/apis/api/**` 下的嵌套文件；不会覆盖 flat sibling
+`src/apis/api.ts`。
 
 签名遵循 Hono：
 

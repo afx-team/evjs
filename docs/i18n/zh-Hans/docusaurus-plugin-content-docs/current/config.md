@@ -24,7 +24,7 @@ export default defineConfig({
 | `routing.mode` | `spa` |
 | `routing.dir` | 启用 `routing` 时为 `./src/pages` |
 | `routing.conventions.layout` | SPA 模式下为 `true`，存在时从 `routing.dir` 旁边自动发现根布局 |
-| `server.routing.dir` | 启用 `server.routing` 时为 `./src/server/routes` |
+| `server.routing.dir` | 启用 `server.routing` 时为 `./src/apis` |
 | `server.conventions.middleware` | 启用 server conventions 时为 `true` |
 | `dev.port` | `3000` |
 | `server.dev.port` | `3001` |
@@ -45,7 +45,7 @@ metadata 都由 evjs 派生，不需要也不能直接配置。
 | 约定入口 | 路由发现 | 约定控制项 | 默认文件 |
 |--------|----------|------------|----------|
 | 客户端页面 | `routing` | `routing.conventions.layout` 控制 SPA 根布局；page-route 文件规则位于 `routing.dir` 下 | `./src/pages`，以及存在时该目录旁边的 `layout.*` 或 `layout/index.*` |
-| 服务端请求 | `server.routing` | `server.conventions.middleware` 控制按文件系统作用域生效的 middleware | `./src/server/routes`、`./src/server/middleware.ts` 和 `./src/server/routes/**/middleware.ts` |
+| 服务端请求 | `server.routing` | `server.conventions.middleware` 控制按文件系统作用域生效的 middleware | `./src/apis`、`./src/server/middleware.ts` 和 `./src/apis/**/middleware.ts` |
 
 顶层 `routing` 仍然是客户端/page 归属对象，客户端约定开关放在
 `routing.conventions` 下。Server conventions 放在 `server.conventions` 下，
@@ -470,8 +470,8 @@ Server conventions 在 `server` 下使用同一种归属模型：`server.routing
 服务端行为模块。
 
 通过 `server.routing` 启用服务端文件路由。`true` 会扫描
-`./src/server/routes`；object 形式目前只支持 `dir`。这里没有 `prefix` 选项：
-如果 URL 需要以 `/api` 开头，请把文件放在 `src/server/routes/api` 这样的目录下。
+`./src/apis`；object 形式目前只支持 `dir`。这里没有 `prefix` 选项：
+如果 URL 需要以 `/api` 开头，请把文件放在 `src/apis/api` 这样的目录下。
 
 ```ts
 export default defineConfig({
@@ -494,7 +494,7 @@ export default defineConfig({
 
 启用 `server.routing` 时，server conventions 默认启用。当前 convention 会发现
 `src/server/middleware.ts` 作为全局 middleware，并发现
-`src/server/routes/**/middleware.ts` 作为 route-scoped file-route middleware。
+`src/apis/**/middleware.ts` 作为 route-scoped file-route middleware。
 缺失的 middleware 文件会被忽略。
 
 ```ts

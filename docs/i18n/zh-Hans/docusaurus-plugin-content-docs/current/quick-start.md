@@ -53,10 +53,11 @@ my-app/
 │   │   └── users/$id.tsx   # /users/$id
 │   ├── api/                # 服务端函数模块
 │   │   └── users.server.ts # "use server" 函数
+│   ├── apis/               # 服务端文件路由
+│   │   └── api/
+│   │       └── health.ts   # /api/health
 │   └── server/
-│       └── routes/         # 服务端文件路由
-│           └── api/
-│               └── health.ts # /api/health
+│       └── middleware.ts   # 全局 server middleware
 ├── package.json
 └── tsconfig.json
 ```

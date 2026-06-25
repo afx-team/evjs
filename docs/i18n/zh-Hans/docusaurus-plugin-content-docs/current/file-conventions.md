@@ -14,13 +14,13 @@
 | `src/pages/**/layout/index.{ts,tsx,js,jsx}` | `routing` | SPA route layout 的目录形式。 |
 | `<routing-dir-parent>/route-types.d.ts` | generated | evjs 生成的 SPA 导航类型声明。 |
 | 带 `"use server";` 的 `*.server.ts` 文件 | server functions | 推荐的 server function 命名约定。 |
-| `src/server/routes/**/*.{ts,tsx,js,jsx}` | `server.routing` | 启用 `server.routing` 时的服务端文件路由。 |
+| `src/apis/**/*.{ts,tsx,js,jsx}` | `server.routing` | 启用 `server.routing` 时的服务端文件路由。 |
 | `src/server/middleware.{ts,tsx,js,jsx}` | `server.conventions.middleware` | 启用 server conventions 时的全局 server middleware。 |
-| `src/server/routes/**/middleware.{ts,tsx,js,jsx}` | `server.conventions.middleware` | route-scoped server file-route middleware。 |
+| `src/apis/**/middleware.{ts,tsx,js,jsx}` | `server.conventions.middleware` | route-scoped server file-route middleware。 |
 | `src/server.ts` | `server.entry` | 自定义 framework server entry 和 escape hatch。 |
 
 默认客户端路由目录是 `./src/pages`。默认服务端文件路由目录是
-`./src/server/routes`。需要更换目录时，配置 `routing.dir` 或
+`./src/apis`。需要更换客户端路由目录时配置 `routing.dir`；需要更换服务端文件路由目录时配置
 `server.routing.dir`。
 
 ## 路径段规则
@@ -147,20 +147,20 @@ export async function listUsers() {
 下的文件路径；这里没有 `prefix` 选项。
 
 ```text
-src/server/routes/index.ts              -> /
-src/server/routes/health.ts             -> /health
-src/server/routes/users.ts              -> /users
-src/server/routes/users/index.ts        -> /users
-src/server/routes/users/$userId.ts      -> /users/:userId
-src/server/routes/(internal)/health.ts  -> /health
-src/server/routes/api/users.ts          -> /api/users
+src/apis/index.ts              -> /
+src/apis/health.ts             -> /health
+src/apis/users.ts              -> /users
+src/apis/users/index.ts        -> /users
+src/apis/users/$userId.ts      -> /users/:userId
+src/apis/(internal)/health.ts  -> /health
+src/apis/api/users.ts          -> /api/users
 ```
 
 只有导出至少一个大写 HTTP method 的文件才会成为路由：
 `GET`、`POST`、`PUT`、`PATCH`、`DELETE`、`HEAD` 或 `OPTIONS`。
 
 ```ts
-// src/server/routes/api/posts.ts
+// src/apis/api/posts.ts
 export const GET = async () => Response.json([]);
 
 export const POST = async (request) => {
@@ -211,10 +211,10 @@ src/server/middleware.ts
 Route-scoped middleware：
 
 ```text
-src/server/routes/middleware.ts
-src/server/routes/api/middleware.ts
-src/server/routes/api/admin/middleware.ts
-src/server/routes/(admin)/middleware.ts
+src/apis/middleware.ts
+src/apis/api/middleware.ts
+src/apis/api/admin/middleware.ts
+src/apis/(admin)/middleware.ts
 ```
 
 执行顺序是：
@@ -225,9 +225,9 @@ src/server/routes/(admin)/middleware.ts
 
 Middleware 文件必须默认导出一个 middleware 函数，不能导出命名值或 matcher
 配置。Route-scoped middleware 只作用于后代 server file routes；例如
-`src/server/routes/api/middleware.ts` 覆盖
-`src/server/routes/api/users.ts`，但不覆盖 flat sibling
-`src/server/routes/api.ts`。
+`src/apis/api/middleware.ts` 覆盖
+`src/apis/api/users.ts`，但不覆盖 flat sibling
+`src/apis/api.ts`。
 
 关闭 middleware discovery：
 
