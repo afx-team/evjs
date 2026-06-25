@@ -1,11 +1,13 @@
 # Architecture
 
-evjs is a React framework built around file-based page routes, explicit source
+evjs is a React framework built around file conventions, explicit source
 declarations, a framework graph, a bundler-independent build plan, and one
-runtime manifest.
+runtime manifest. The framework-owned route model is file-based: client pages
+come from `src/pages`, server file routes come from `src/apis`, and server
+middleware comes from `src/middleware.ts` plus `src/apis/**/middleware.ts`.
 
 ```txt
-src/pages + ev.config.ts + server declarations
+src/pages + src/apis + src/middleware.ts + ev.config.ts
   -> AppGraph
   -> BuildPlan
   -> bundler build
@@ -35,8 +37,8 @@ package.
   navigation helpers, and RSC client runtime
 
 @evjs/server
-  server runtime core for Hono/fetch apps, server functions, server routes,
-  request context, and SSR/PPR/RSC request handling
+  server runtime core for Hono/fetch apps, server functions, standalone route
+  primitives, request context, and SSR/PPR/RSC request handling
 ```
 
 `@evjs/cli` and `@evjs/create-app` are distribution tooling. Bundler adapters
@@ -45,11 +47,14 @@ runtime/manifest contracts stay in `@evjs/shared`. `@evjs/ev` decides which
 runtime capabilities can be composed in one app through config resolution,
 graph analysis, build-plan generation, and manifest validation; the runtime
 packages provide the capability primitives.
+Programmatic `@evjs/server` APIs such as `createApp()` and `createRoute()` are
+runtime primitives. evjs framework builds do not scan them as an alternate route
+declaration model; use `src/apis` for framework-managed server routes.
 
 | Role | Packages | Import guidance |
 |------|----------|-----------------|
 | Framework surface | `@evjs/ev` | Use `@evjs/ev` for config/build/plugin/deployment APIs and feature composition. |
-| Runtime APIs | `@evjs/client`, `@evjs/server` | Use these packages for standalone CSR, page hooks, navigation, server functions, server routes, rendering, and deployment runtimes. |
+| Runtime APIs | `@evjs/client`, `@evjs/server` | Use these packages for standalone CSR, page hooks, navigation, server functions, standalone route primitives, rendering, and deployment runtimes. |
 | Tooling | `@evjs/cli`, `@evjs/create-app` | Install or execute them; application modules should not import them. |
 | Bundler adapters | `@evjs/bundler-utoopack`, `@evjs/bundler-webpack` | `@evjs/cli` owns the default Utoopack adapter. Import an adapter directly only when authoring custom tooling. |
 | Shared contracts | `@evjs/shared` | Published so framework packages share manifest/runtime types; app code should not import it directly. |
@@ -94,8 +99,8 @@ tooling.
 
 ```txt
 @evjs/ev/build-tools
-  source analysis, route/server-function extraction, graph/plan helpers,
-  framework transforms, HTML helpers
+  source analysis, file-route discovery, server-function extraction,
+  graph/plan helpers, framework transforms, HTML helpers
 
 @evjs/shared/manifest
   AppGraph, BuildPlan, BuildOutput, and manifest schemas
@@ -264,6 +269,9 @@ metadata before it can run the same path.
 routing
   page route source of truth: spa or mpa mode, dir, html, mount point
 
+server.routing
+  server file route source of truth: dir, discovered HTTP method modules
+
 entry/html
   manual single app shorthand
 
@@ -283,6 +291,12 @@ plugins
 `routing` points to `src/pages` by default. In SPA mode, graph creation turns
 the discovered files into one internal TanStack Router app entry. In MPA mode,
 the same files become independent page outputs without a client router.
+
+`server.routing` points to `src/apis` by default. A server route file becomes a
+route only when it exports uppercase HTTP methods. Middleware is discovered by
+filesystem scope from `src/middleware.ts` and `src/apis/**/middleware.ts`;
+route modules do not export middleware and there is no `server.entry`
+composition path.
 
 Page modules own path-to-component wiring by filename and rendering metadata
 through static exports such as `render`, `hydrate`, `rsc`, and `prerender`.
@@ -377,10 +391,10 @@ routes unless a server-capable runtime is attached.
 
 ## Dev Updates
 
-Framework-level declaration changes are handled separately from normal HMR:
+Framework-level file-convention changes are handled separately from normal HMR:
 
 ```txt
-config / page route / server declaration change
+config / page route / server file-route / middleware convention change
   -> recreate AppGraph
   -> recreate BuildPlan
   -> diff BuildPlan
@@ -399,11 +413,12 @@ path. Server-function and server-route implementation edits usually keep the
 same `BuildPlan`; in that case the framework refreshes graph metadata and watch
 inputs, while the bundler's normal server watch emits the updated code.
 
-Graph analysis reads page route modules plus static import closures to discover
-server functions, server routes, page metadata, and RSC references. Static import
-closure discovery parses modules, so it follows ordinary imports, re-exports,
-and valid string-literal import aliases. Literal dynamic imports are also tracked
-when they point at project-relative modules. Dev watches the page route
+Graph analysis reads page route modules, server file route modules, middleware
+convention modules, and static import closures to discover server functions,
+page metadata, and RSC references. Static import closure discovery parses
+modules, so it follows ordinary imports, re-exports, and valid string-literal
+import aliases. Literal dynamic imports are also tracked when they point at
+project-relative modules. Dev watches the page route directory, server route
 directory, explicit graph roots, and files that already contain framework
 markers. Configured page components are explicit graph roots because their
 static `render`, `hydrate`, `rsc`, and `prerender` exports affect framework

@@ -5,8 +5,9 @@ are preserved in `CHANGELOG.md`; this file should reflect active reality.
 
 ## Completed Core Architecture
 
-- [x] Explicit config and static declaration model for apps, pages,
-      server functions, server routes, SSR/PPR/RSC render metadata.
+- [x] File-convention-first framework model for apps, pages, server functions,
+      server file routes, middleware, SSR/PPR/RSC render metadata, with
+      `@evjs/client` and `@evjs/server` kept as independent runtime cores.
 - [x] `AppGraph`, `BuildPlan`, and `BuildOutput` schemas under
       `@evjs/shared/manifest`.
 - [x] Graph analysis and build planning under `@evjs/ev/src/build-tools`.
@@ -17,8 +18,8 @@ are preserved in `CHANGELOG.md`; this file should reflect active reality.
       running framework preflight hooks, reporting graph diagnostics, and
       returning resolved config, graph file dependencies, plugin watch files,
       and `dispose()` without invoking a bundler or platform adapter.
-- [x] `ev inspect` CLI preflight for explaining route discovery, server
-      declarations, render metadata, runtime paths, planned entries, and
+- [x] `ev inspect` CLI preflight for explaining file-route discovery, server
+      conventions, render metadata, runtime paths, planned entries, and
       diagnostics without invoking a bundler or writing `dist`.
 - [x] Consolidated package shape around `@evjs/ev`, `@evjs/client`,
       `@evjs/server`, `@evjs/shared`, `@evjs/cli`, and `@evjs/create-app`.

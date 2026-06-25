@@ -5,7 +5,8 @@
 [![DeepWiki](https://img.shields.io/badge/DeepWiki-evaijs%2Fevjs-blue?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTQgMTkuNXYtMTVBMi41IDIuNSAwIDAgMSA2LjUgMkgxOXYyMEg2LjVhMi41IDIuNSAwIDAgMS0yLjUtMi41eiIvPjxwYXRoIGQ9Ik04IDdoOCIvPjxwYXRoIGQ9Ik04IDExaDgiLz48cGF0aCBkPSJNOCAxNWg1Ii8+PC9zdmc+)](https://deepwiki.com/evaijs/evjs)
 [![Vibe Coding](https://img.shields.io/badge/vibe-coding-ff69b4?style=flat-square)](https://en.wikipedia.org/wiki/Vibe_coding)
 
-React fullstack framework with file-based SPA routes, router-free MPA pages, server functions, and a Hono server runtime.
+React fullstack framework with file-based SPA/MPA pages, server file routes,
+server functions, and independent client/server runtime cores.
 
 > **ev** = **Ev**aluation · **Ev**olution — evaluate across runtimes, evolve with AI tooling.
 
@@ -19,7 +20,7 @@ React fullstack framework with file-based SPA routes, router-free MPA pages, ser
 - **Server Functions** — `"use server"` directive, auto-discovered at build time.
 - **Pluggable Transport** — HTTP, WebSocket, or custom via `ServerTransport`.
 - **Plugin System** — extend builds with custom loaders (Tailwind, SVG, etc.).
-- **Programmatic Route Handlers** — Standard Request/Response REST API endpoints via `createRoute()`.
+- **Server File Routes** — `src/apis` maps Request/Response method modules to HTTP endpoints.
 - **Typed Errors** — `ServerError` flows structured data server → client.
 - **Multi-Runtime** — [Hono](https://hono.dev/)-based server with Node, Deno, Bun, Edge adapters.
 - **CLI** — `ev dev` · `ev build` · `ev inspect`
@@ -46,14 +47,16 @@ config needed.
 | [`@evjs/cli`](./packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`, `ev inspect`) with the default bundler |
 | [`@evjs/create-app`](./packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
 | [`@evjs/client`](./packages/client) | Browser runtime core for standalone CSR, page hooks, navigation, transport, and RSC |
-| [`@evjs/server`](./packages/server) | Server runtime core for Hono/fetch apps, server functions, routes, rendering, and deployment |
+| [`@evjs/server`](./packages/server) | Server runtime core for Hono/fetch apps, server functions, standalone route primitives, rendering, and deployment |
 | [`examples/`](./examples) | Starter templates |
 
 Internal modules such as manifest schemas, build tools, page runtime, and shell
 live inside the public packages above instead of separate application-facing
 packages. Application code imports framework composition APIs from `@evjs/ev`
 and runtime APIs from `@evjs/client` or `@evjs/server`. Browser-only apps can
-use `@evjs/client` without depending on `@evjs/ev`.
+use `@evjs/client` without depending on `@evjs/ev`; `@evjs/server` runtime APIs
+such as Hono/fetch app composition remain independent from evjs file
+conventions.
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) · [AGENTS.md](./AGENTS.md) · [AGENT.md](./AGENT.md)
 

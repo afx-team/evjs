@@ -18,6 +18,19 @@ The implementation source for page-route file rules is
 and diagnostics live in `packages/ev/src/build-tools/page-routes.ts`, with
 coverage in `packages/ev/tests/build-tools-page-routes.test.ts`.
 
+## Core Principles
+
+- Framework-owned app structure is file-convention first. Client routes are
+  discovered from `src/pages` through top-level `routing`; server request routes
+  are discovered from `src/apis` through `server.routing`; server middleware is
+  discovered from `src/middleware.ts` and `src/apis/**/middleware.ts`.
+- `@evjs/ev` is the config, plugin, graph, build-plan, manifest, and deployment
+  control plane. It owns convention discovery and composes generated framework
+  output; it must not become a runtime facade.
+- `@evjs/client` and `@evjs/server` are independent runtime cores. Public
+  client/server APIs live there and stay usable outside evjs file conventions.
+  Their runtime APIs are not a second framework routing/configuration mode.
+
 ## Working Rules
 
 1. Keep config/build/plugin imports on `@evjs/ev`; runtime imports use
@@ -38,9 +51,14 @@ coverage in `packages/ev/tests/build-tools-page-routes.test.ts`.
    path, one parameter naming choice per dynamic URL shape, and unique
    generated route IDs. Do not add alternate filename dialects unless the build
    graph, docs, scaffolds, and generated route types are updated together.
-6. Server route URL shapes are unique: keep all HTTP methods for one shape in
-   one `createRoute()` call, including dynamic shapes that only differ by
-   parameter names.
+6. Server file route conventions are strict: `src/apis`, `$param` dynamic
+   segments, `index` for directory roots, `(group)` pathless route groups,
+   uppercase HTTP method exports only, ignored helper files without route
+   exports, and filesystem-scoped `middleware.ts`. Keep one server route module
+   per URL path and one parameter naming choice per dynamic URL shape. Do not
+   add `route.ts` sentinels, method suffix files, bracket routes, catch-all
+   routes, optional params, route-module middleware exports, or a `server.entry`
+   composition path.
 7. Server functions must start with `"use server";` and export named callable
    functions or supported named async values. No default exports or runtime
    re-exports.
@@ -50,7 +68,10 @@ coverage in `packages/ev/tests/build-tools-page-routes.test.ts`.
 9. `createApp({ framework })` consumes generated `BuildOutput` manifests. Do
    not pass ad hoc manifest objects; use `createReactFrameworkServer()` unless
    a deployment adapter intentionally owns that contract.
-10. Utoopack is the default user path. Webpack is the validation/fallback adapter
+10. Programmatic `@evjs/server` app and route APIs remain runtime primitives.
+    evjs framework routing does not inspect or publish programmatic
+    `createRoute()` declarations.
+11. Utoopack is the default user path. Webpack is the validation/fallback adapter
    for framework features still blocked on lower-level Utoopack APIs.
 
 ## Validation

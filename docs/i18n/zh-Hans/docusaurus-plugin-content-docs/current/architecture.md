@@ -1,9 +1,12 @@
 # 架构
 
-evjs 是围绕文件式页面路由、显式 source declaration、框架 graph、bundler 无关 build plan，以及单一 runtime manifest 构建的 React 框架。
+evjs 是围绕文件约定、显式 source declaration、框架 graph、bundler 无关 build
+plan，以及单一 runtime manifest 构建的 React 框架。框架托管的路由模型是文件化的：
+客户端页面来自 `src/pages`，服务端文件路由来自 `src/apis`，server middleware
+来自 `src/middleware.ts` 和 `src/apis/**/middleware.ts`。
 
 ```txt
-src/pages + ev.config.ts + server declarations
+src/pages + src/apis + src/middleware.ts + ev.config.ts
   -> AppGraph
   -> BuildPlan
   -> bundler build
@@ -32,7 +35,7 @@ Subpath export 必须保持显式且有文档说明；新增 package export 是�
   page hooks、导航 helpers 和 RSC client runtime
 
 @evjs/server
-  Hono/fetch app、服务端函数、服务端路由、request context 和
+  Hono/fetch app、服务端函数、独立 route primitives、request context 和
   SSR/PPR/RSC 请求处理 runtime core
 ```
 
@@ -40,12 +43,14 @@ Subpath export 必须保持显式且有文档说明；新增 package export 是�
 `@evjs/bundler-utoopack` 和 `@evjs/bundler-webpack`，共享 runtime/manifest
 契约保留在 `@evjs/shared`。`@evjs/ev` 通过配置解析、graph analysis、
 build-plan 生成和 manifest 校验决定一个应用中能组合哪些 runtime 能力；
-runtime 包提供具体能力原语。
+runtime 包提供具体能力原语。`@evjs/server` 的 `createApp()`、`createRoute()`
+等编程式 API 是 runtime primitives，不是 evjs framework 的第二套路由声明模型；
+框架托管的 server routes 使用 `src/apis`。
 
 | 角色 | 包 | 导入建议 |
 |------|----|----------|
 | 框架面 | `@evjs/ev` | config/build/plugin/deployment API 和能力组合使用 `@evjs/ev`。 |
-| 运行时 API | `@evjs/client`, `@evjs/server` | standalone CSR、page hooks、导航、server functions、server routes、渲染和部署运行时使用这些包。 |
+| 运行时 API | `@evjs/client`, `@evjs/server` | standalone CSR、page hooks、导航、server functions、独立 route primitives、渲染和部署运行时使用这些包。 |
 | 工具包 | `@evjs/cli`, `@evjs/create-app` | 用于安装或执行；应用模块不应 import 它们。 |
 | Bundler adapter | `@evjs/bundler-utoopack`, `@evjs/bundler-webpack` | `@evjs/cli` 持有默认 Utoopack adapter；只有自定义工具时才直接 import adapter。 |
 | 共享契约 | `@evjs/shared` | 发布出来是为了让框架包共享 manifest/runtime 类型；应用代码不应直接 import。 |
@@ -80,7 +85,7 @@ adapter 示例才直接导入 `@evjs/bundler-utoopack`。
 
 ```txt
 @evjs/ev/build-tools
-  源码分析、路由/服务端函数提取、graph/plan helpers、框架 transform、HTML helpers
+  源码分析、文件路由发现、服务端函数提取、graph/plan helpers、框架 transform、HTML helpers
 
 @evjs/shared/manifest
   AppGraph、BuildPlan、BuildOutput 和 manifest schema
@@ -242,6 +247,9 @@ client/server reference manifests；Utoopack 仍需要等价的下层 metadata �
 routing
   文件路由事实来源：spa/mpa mode、dir、html、mount point
 
+server.routing
+  服务端文件路由事实来源：dir、发现到的 HTTP method modules
+
 entry/html
   手动单应用快捷配置
 
@@ -260,6 +268,11 @@ plugins
 
 `routing` 默认指向 `src/pages`。SPA 模式会把发现到的文件转成内部 TanStack
 Router app entry；MPA 模式会把同一批文件转成不带客户端路由器的独立页面输出。
+
+`server.routing` 默认指向 `src/apis`。服务端路由文件只有导出大写 HTTP methods
+时才会成为 route。Middleware 按文件系统作用域从 `src/middleware.ts` 和
+`src/apis/**/middleware.ts` 发现；route module 不导出 middleware，也不存在
+`server.entry` 组合路径。
 
 Page modules 通过文件名拥有 path-to-component wiring，并通过 `render`、`hydrate`、
 `rsc`、`prerender` 等静态导出拥有渲染元信息。当 graph creation 发现 SSR、RSC
@@ -348,10 +361,10 @@ PPR、RSC、server functions 或 server routes，除非同时接入具备服务�
 
 ## Dev 更新
 
-框架级声明变化和普通 HMR 分开处理：
+框架级文件约定变化和普通 HMR 分开处理：
 
 ```txt
-config / page route / server declaration change
+config / page route / server file-route / middleware convention change
   -> recreate AppGraph
   -> recreate BuildPlan
   -> diff BuildPlan
@@ -368,11 +381,11 @@ dynamic entry 和 server renderer update 仍会返回明确 unsupported error，
 `BuildPlan`；此时框架只刷新 graph metadata 和 watch inputs，更新后的代码由 bundler
 的普通 server watch 输出。
 
-Graph analysis 会读取文件路由模块和静态 import closure 来发现 server functions、
-server routes、page metadata 和 RSC references。静态 import closure discovery 会解析
-模块，因此会跟随普通 import、re-export 和合法的字符串字面量 import alias；字面量
-dynamic import 指向项目相对模块时也会被跟踪。dev 会 watch 文件路由目录、显式 graph
-roots，以及已经包含 framework marker 的文件。显式配置的 page component 属于 graph
-root，因为它的静态 `render`、`hydrate`、`rsc`、`prerender` 导出会影响 framework
-planning。普通组件、app entry 和样式编辑继续走 bundler HMR，除非这些模块声明了
-framework marker。
+Graph analysis 会读取页面路由模块、服务端文件路由模块、middleware convention
+modules 和静态 import closure 来发现 server functions、page metadata 和 RSC
+references。静态 import closure discovery 会解析模块，因此会跟随普通 import、
+re-export 和合法的字符串字面量 import alias；字面量 dynamic import 指向项目相对模块时也会被跟踪。
+dev 会 watch 页面路由目录、服务端路由目录、显式 graph roots，以及已经包含
+framework marker 的文件。显式配置的 page component 属于 graph root，因为它的静态
+`render`、`hydrate`、`rsc`、`prerender` 导出会影响 framework planning。普通组件、
+app entry 和样式编辑继续走 bundler HMR，除非这些模块声明了 framework marker。

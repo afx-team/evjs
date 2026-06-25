@@ -25,6 +25,19 @@
 
 `packages/build-tools` and `packages/manifest` no longer exist as public workspace packages. Build-tool helpers live under `packages/ev/src/build-tools`, and manifest schemas/linkers live under `packages/shared/src/manifest`.
 
+## Core Principles
+
+- Framework-owned app structure uses file conventions. Client pages live under
+  `src/pages`, server file routes under `src/apis`, global server middleware in
+  `src/middleware.ts`, route-scoped server middleware in
+  `src/apis/**/middleware.ts`, and server functions in `"use server"` modules.
+- `@evjs/ev` owns config, plugins, convention discovery, graph/build planning,
+  manifest/deployment helpers, and bundler contracts. It should not expose
+  client or server runtime mirrors.
+- `@evjs/client` and `@evjs/server` are runtime core packages. Their APIs can
+  be used independently from evjs file conventions; do not treat programmatic
+  server runtime APIs as framework route declarations.
+
 ## Dependency Graph
 
 ```txt
@@ -77,6 +90,9 @@ and adapters depend on `@evjs/ev` instead of on each other.
    server-function stubs, and shell runtime primitives stay behind
    generated-only `@evjs/client/internal/*` subpaths.
 9. Use `server.basePath` for framework server runtime paths. Do not reintroduce public `server.functions.endpoint` config.
+10. Do not reintroduce `server.entry` or framework-side source extraction of
+    `createRoute()` calls. Server framework routes are file routes under
+    `src/apis`; `@evjs/server`'s `createRoute()` remains a runtime package API.
 
 ## Common Tasks
 
@@ -92,6 +108,15 @@ and adapters depend on `@evjs/ev` instead of on each other.
 1. Create a page module under `src/pages`.
 2. Export a default React component.
 3. Add static page metadata exports next to the component when needed.
+
+### Add a server file route
+
+1. Create a route module under `src/apis`.
+2. Export uppercase HTTP method handlers such as `GET` or `POST`.
+3. Keep helper exports out of route candidates; place helpers in colocated
+   non-route modules and import them.
+4. Add filesystem-scoped middleware with `src/middleware.ts` or
+   `src/apis/**/middleware.ts`, not route-module middleware exports.
 
 ### Add a configured page
 
@@ -136,7 +161,7 @@ start from the same graph and BuildPlan pipeline
 start selected bundler dev controller
 serve HTML and manifest from framework state
 component/style edits stay in bundler HMR
-config/route/server declaration edits rebuild graph and diff BuildPlan
+config/page-route/server-file-route/middleware convention edits rebuild graph and diff BuildPlan
 call bundlerDevController.updatePlan(update, graph) when the adapter supports it
 ```
 
