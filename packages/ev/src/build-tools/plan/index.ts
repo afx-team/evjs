@@ -537,13 +537,19 @@ function createServerRuntimeEntry(
 ): Pick<BuildEntry, "import" | "metadata"> {
   const routes = getConfiguredServerRoutes(config, graph);
   const middlewares = config.server.conventions?.globalMiddlewares ?? [];
-  if (routes.length > 0 || middlewares.length > 0) {
+  const serverFunctions = graph.serverFunctions;
+  if (
+    routes.length > 0 ||
+    middlewares.length > 0 ||
+    serverFunctions.length > 0
+  ) {
     return {
       import: SERVER_ROUTES_ENTRY_IMPORT,
       metadata: {
         type: "server-app",
         routes,
         ...(middlewares.length > 0 ? { middlewares } : {}),
+        ...(serverFunctions.length > 0 ? { serverFunctions } : {}),
       },
     };
   }

@@ -3751,6 +3751,9 @@ describe("createAppGraph and createBuildPlan", () => {
       },
     });
     const analysis = await createAppGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "production",
+    });
 
     expect(analysis.diagnostics).toEqual([]);
     expect(
@@ -3767,6 +3770,39 @@ describe("createAppGraph and createBuildPlan", () => {
     expect(relativeFileDependencies(cwd, analysis.fileDependencies)).toEqual([
       "src/actions.ts",
     ]);
+    expect(plan.entries).toContainEqual({
+      name: "server",
+      import: "evjs:server-routes",
+      environment: "server",
+      runtime: "node",
+      kind: "server-runtime",
+      metadata: {
+        type: "server-app",
+        routes: [],
+        serverFunctions: [
+          {
+            id: expect.any(String),
+            module: "src/actions.ts",
+            exportName: "saveOrder",
+          },
+          {
+            id: expect.any(String),
+            module: "src/actions.ts",
+            exportName: "createOrder",
+          },
+          {
+            id: expect.any(String),
+            module: "src/actions.ts",
+            exportName: "removeOrder",
+          },
+          {
+            id: expect.any(String),
+            module: "src/actions.ts",
+            exportName: "cancel-order",
+          },
+        ],
+      },
+    });
   });
 
   it("reports unsupported use-server exports during graph analysis", async () => {

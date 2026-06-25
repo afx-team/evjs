@@ -234,6 +234,7 @@ export interface ServerAppEntryMetadata {
   type: "server-app";
   routes: ServerAppRouteNode[];
   middlewares?: ServerMiddlewareNode[];
+  serverFunctions?: ServerFunctionNode[];
 }
 
 export interface PageRouteNode {

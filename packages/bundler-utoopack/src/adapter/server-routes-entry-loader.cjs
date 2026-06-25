@@ -9,6 +9,9 @@ module.exports = function serverRoutesEntryLoader() {
   };
   const routes = Array.isArray(options.routes) ? options.routes : [];
   const middlewares = toMiddlewares(options.middlewares);
+  const serverFunctionModules = collectServerFunctionModules(
+    options.serverFunctions,
+  );
   const middlewareModules = collectMiddlewareModules(middlewares, routes);
   const middlewareImportNames = new Map(
     middlewareModules.map((middleware, index) => [
@@ -22,6 +25,10 @@ module.exports = function serverRoutesEntryLoader() {
     ...middlewareModules.map(
       (middleware, index) =>
         `import middleware${index} from ${JSON.stringify(toLoaderRelativeRequest(middleware.module, loaderContext))};`,
+    ),
+    ...serverFunctionModules.map(
+      (module) =>
+        `import ${JSON.stringify(toLoaderRelativeRequest(module, loaderContext))};`,
     ),
     ...routes.map(
       (route, index) =>
@@ -73,6 +80,21 @@ function toMiddlewares(value) {
           typeof middleware.module === "string",
       )
     : [];
+}
+
+function collectServerFunctionModules(value) {
+  const modules = new Set();
+  if (!Array.isArray(value)) return [];
+  for (const serverFunction of value) {
+    if (
+      serverFunction &&
+      typeof serverFunction === "object" &&
+      typeof serverFunction.module === "string"
+    ) {
+      modules.add(serverFunction.module);
+    }
+  }
+  return [...modules];
 }
 
 function collectMiddlewareModules(globalMiddlewares, routes) {

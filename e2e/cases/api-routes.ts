@@ -9,7 +9,7 @@ test.describe("api-routes", () => {
 
     await expect(page.locator("h1")).toHaveText("Route Handlers Example");
     await expect(
-      page.getByText("REST endpoints powered by createRoute()"),
+      page.getByText("REST endpoints discovered from src/apis"),
     ).toBeVisible({
       timeout: 10_000,
     });

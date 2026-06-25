@@ -416,6 +416,7 @@ function createServerRoutesLoaderOptions(
   metadata: ServerAppEntryMetadata,
 ): TurbopackLoaderOptions {
   const middlewares = metadata.middlewares ?? [];
+  const serverFunctions = metadata.serverFunctions ?? [];
   return {
     type: "server-app",
     ...(middlewares.length > 0
@@ -424,6 +425,15 @@ function createServerRoutesLoaderOptions(
             id: middleware.id,
             module: middleware.module,
             scope: middleware.scope,
+          })),
+        }
+      : {}),
+    ...(serverFunctions.length > 0
+      ? {
+          serverFunctions: serverFunctions.map((serverFunction) => ({
+            id: serverFunction.id,
+            module: serverFunction.module,
+            exportName: serverFunction.exportName,
           })),
         }
       : {}),

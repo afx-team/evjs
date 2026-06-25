@@ -501,6 +501,18 @@ describe("createUtoopackConfig", () => {
               module: "src/middleware.ts",
             },
           ],
+          serverFunctions: [
+            {
+              id: "save",
+              module: "src/api/actions.server.ts",
+              exportName: "saveOrder",
+            },
+            {
+              id: "load",
+              module: "src/api/actions.server.ts",
+              exportName: "loadOrders",
+            },
+          ],
         };
       },
       resourcePath:
@@ -516,6 +528,10 @@ describe("createUtoopackConfig", () => {
     expect(source).toContain("src/middleware.ts");
     expect(source).toContain("import middleware1 from");
     expect(source).toContain("src/apis/middleware.ts");
+    expect(source).toContain(
+      'import "../../../../../src/api/actions.server.ts";',
+    );
+    expect(source.match(/actions\.server\.ts/g)).toHaveLength(1);
     expect(source).toContain("routeDefinition0.GET = routeModule0.GET");
     expect(source).not.toContain("routeDefinition0.middlewares");
     expect(source).toContain("routeDefinition1.middlewares = [middleware1]");
