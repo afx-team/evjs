@@ -49,7 +49,7 @@ names differ:
 | Surface | Route discovery | Convention controls | Default files |
 |---------|-----------------|---------------------|---------------|
 | Client pages | `routing` | `routing.conventions.layout` for the SPA root layout; page-route file rules live under `routing.dir` | `./src/pages`, plus `layout.*` or `layout/index.*` beside that directory when present |
-| Server requests | `server.routing` | `server.conventions.middleware` for filesystem-scoped middleware | `./src/apis`, `./src/server/middleware.ts`, and `./src/apis/**/middleware.ts` |
+| Server requests | `server.routing` | `server.conventions.middleware` for filesystem-scoped middleware | `./src/apis`, `./src/middleware.ts`, and `./src/apis/**/middleware.ts` |
 
 Top-level `routing` remains the client/page owner, and client convention
 toggles live under `routing.conventions`. Server conventions live under
@@ -529,7 +529,7 @@ export default defineConfig({
 ```
 
 Server conventions are enabled by default when `server.routing` is enabled.
-The current convention discovers `src/server/middleware.ts` for global
+The current convention discovers `src/middleware.ts` for global
 middleware and `src/apis/**/middleware.ts` for route-scoped file-route
 middleware. Missing middleware files are ignored.
 

@@ -17,6 +17,7 @@ my-evjs-app/
 └── src/
     ├── server.ts                # optional custom framework/server entry
     ├── styles.css               # global CSS / Tailwind entry
+    ├── middleware.ts            # global server middleware
     ├── layout/
     │   └── index.tsx            # optional SPA root layout
     ├── pages/                   # page routes
@@ -34,8 +35,6 @@ my-evjs-app/
     │   ├── middleware.ts        # route-scoped server route middleware
     │   └── api/
     │       └── health.ts        # /api/health server file route
-    ├── server/
-    │   └── middleware.ts        # global server middleware
     ├── components/              # reusable UI
     ├── features/                # domain modules
     │   └── operations/
@@ -138,7 +137,7 @@ Migration rules stay explicit rather than adding alternate filename dialects:
 | `<routing-dir-parent>/route-types.d.ts` | Generated SPA navigation types | Editor and type-checker support | Manual edits, imports from app code, template/scaffold source, or MPA mode |
 | `src/api/*.server.ts` | Recommended server-function boundary | Files that start with `"use server";` and export named callable server functions | Client imports that should run with `server: false`, default exports, or runtime re-exports |
 | `src/apis/**/*.{ts,tsx,js,jsx}` | Server file route discovery when `server.routing` is enabled | Request/Response route modules exporting uppercase HTTP methods | `route.ts` sentinels, `foo.get.ts` method suffix files, bracket/catch-all/optional routes, `middleware`/`middlewares`, default exports, or helper exports from route candidates |
-| `src/server/middleware.{ts,tsx,js,jsx}` | Global server middleware convention when server conventions are enabled | Hono-compatible middleware that runs before server file routes, server functions, SSR, PPR, and RSC | Matcher config, route handlers, helper exports, or custom server composition |
+| `src/middleware.{ts,tsx,js,jsx}` | Global server middleware convention when server conventions are enabled | Hono-compatible middleware that runs before server file routes, server functions, SSR, PPR, and RSC | Matcher config, route handlers, helper exports, or custom server composition |
 | `src/apis/**/middleware.{ts,tsx,js,jsx}` | Route-scoped server file-route middleware | Hono-compatible middleware for descendant server file routes in that directory tree | Flat sibling routes such as `api.ts`, global server functions/SSR middleware, or matcher config |
 | Server route paths and dynamic URL shapes under `src/apis` | Server route collision checks before graph/build-plan generation | One server route module per URL path and one parameter naming choice per dynamic URL shape | Parallel `users.ts`/`users/index.ts`, `users/$id.ts`/`users/$userId.ts`, or splitting methods for one path across files |
 | `src/server.ts` | Custom framework server entry | `createApp({ routes, middlewares, framework })`, non-conventional routing, and deployment runtime glue | Browser code, per-page client bootstrap, or use together with `server.routing` |
@@ -309,7 +308,7 @@ Server middleware uses Hono's middleware signature and lives in dedicated
 `middleware.ts` convention files:
 
 ```ts
-// src/server/middleware.ts
+// src/middleware.ts
 import type { MiddlewareHandler } from "@evjs/server";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
@@ -388,11 +387,11 @@ export default defineConfig({
 - `api/` contains callable server functions and custom route helpers.
 - `apis/` is the server file route source folder when `server.routing`
   is enabled.
-- `server/middleware.ts` is global server middleware; nested
+- `middleware.ts` is global server middleware; nested
   `apis/**/middleware.ts` files scope middleware to descendant file
   routes.
 - `features/` owns business domains.
 - `components/` owns generic UI.
 - `lib/` contains browser-safe shared helpers.
-- Keep server secrets and Node-only APIs in `api/`, `server/`, or modules
+- Keep server secrets and Node-only APIs in `api/`, `apis/`, or modules
   imported only by server-only code.

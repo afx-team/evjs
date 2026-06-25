@@ -45,7 +45,7 @@ metadata 都由 evjs 派生，不需要也不能直接配置。
 | 约定入口 | 路由发现 | 约定控制项 | 默认文件 |
 |--------|----------|------------|----------|
 | 客户端页面 | `routing` | `routing.conventions.layout` 控制 SPA 根布局；page-route 文件规则位于 `routing.dir` 下 | `./src/pages`，以及存在时该目录旁边的 `layout.*` 或 `layout/index.*` |
-| 服务端请求 | `server.routing` | `server.conventions.middleware` 控制按文件系统作用域生效的 middleware | `./src/apis`、`./src/server/middleware.ts` 和 `./src/apis/**/middleware.ts` |
+| 服务端请求 | `server.routing` | `server.conventions.middleware` 控制按文件系统作用域生效的 middleware | `./src/apis`、`./src/middleware.ts` 和 `./src/apis/**/middleware.ts` |
 
 顶层 `routing` 仍然是客户端/page 归属对象，客户端约定开关放在
 `routing.conventions` 下。Server conventions 放在 `server.conventions` 下，
@@ -493,7 +493,7 @@ export default defineConfig({
 ```
 
 启用 `server.routing` 时，server conventions 默认启用。当前 convention 会发现
-`src/server/middleware.ts` 作为全局 middleware，并发现
+`src/middleware.ts` 作为全局 middleware，并发现
 `src/apis/**/middleware.ts` 作为 route-scoped file-route middleware。
 缺失的 middleware 文件会被忽略。
 

@@ -56,8 +56,7 @@ my-app/
 │   ├── apis/               # 服务端文件路由
 │   │   └── api/
 │   │       └── health.ts   # /api/health
-│   └── server/
-│       └── middleware.ts   # 全局 server middleware
+│   └── middleware.ts       # 全局 server middleware
 ├── package.json
 └── tsconfig.json
 ```

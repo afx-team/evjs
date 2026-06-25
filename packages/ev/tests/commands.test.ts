@@ -2437,16 +2437,13 @@ describe("build", () => {
     await fs.promises.mkdir(path.join(cwd, "src/apis/api"), {
       recursive: true,
     });
-    await fs.promises.mkdir(path.join(cwd, "src/server"), {
-      recursive: true,
-    });
     await fs.promises.writeFile(
       path.join(cwd, "src/main.tsx"),
       "export const clientEntry = true;",
       "utf-8",
     );
     await fs.promises.writeFile(
-      path.join(cwd, "src/server/middleware.ts"),
+      path.join(cwd, "src/middleware.ts"),
       [
         "export default async function middleware(_ctx, next) {",
         "  await next();",
@@ -2498,8 +2495,8 @@ describe("build", () => {
           type: "server-app",
           middlewares: [
             {
-              id: "src/server/middleware.ts:global-middleware",
-              module: "src/server/middleware.ts",
+              id: "src/middleware.ts:global-middleware",
+              module: "src/middleware.ts",
               scope: "global",
               scopeSegments: [],
             },
@@ -2558,6 +2555,67 @@ describe("build", () => {
       "[evjs] No server routes found in ./src/apis. Add a route module exporting GET or POST such as ./src/apis/index.ts or set server.routing: false.",
     );
     expect(events).not.toContain("bundler.build");
+  });
+
+  it("does not fall back to src/server/middleware for global server middleware", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/apis"), {
+      recursive: true,
+    });
+    await fs.promises.mkdir(path.join(cwd, "src/server"), {
+      recursive: true,
+    });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/main.tsx"),
+      "export const clientEntry = true;",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/server/middleware.ts"),
+      [
+        "export default async function middleware(_ctx, next) {",
+        "  await next();",
+        "}",
+      ].join("\n"),
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/apis/health.ts"),
+      "export const GET = async () => Response.json({ ok: true });",
+      "utf-8",
+    );
+
+    let observedPlan: BuildPlan | undefined;
+    const events: string[] = [];
+    const bundler = createMockBundler(events, {
+      onBuildPlan(plan) {
+        observedPlan = plan;
+      },
+    });
+
+    await build(
+      {
+        server: {
+          routing: true,
+        },
+      },
+      {
+        cwd,
+        bundler,
+      },
+    );
+
+    expect(events).toContain("bundler.build");
+    const serverEntry = observedPlan?.entries.find(
+      (entry) => entry.name === "server",
+    );
+    expect(serverEntry?.metadata).toEqual(
+      expect.objectContaining({
+        type: "server-app",
+        routes: [expect.objectContaining({ module: "src/apis/health.ts" })],
+      }),
+    );
+    expect(serverEntry?.metadata).not.toHaveProperty("middlewares");
   });
 
   it("fails on missing explicit server entries before running the bundler", async () => {

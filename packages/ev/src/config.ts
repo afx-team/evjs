@@ -444,7 +444,7 @@ export const CONFIG_DEFAULTS = {
   routingDir: "./src/pages",
   routingMode: "spa",
   serverRoutingDir: "./src/apis",
-  serverMiddlewareFile: "./src/server/middleware.ts",
+  serverMiddlewareFile: "./src/middleware.ts",
   mount: "#app",
 } as const;
 const MPA_LAYOUT_UNSUPPORTED_MESSAGE =

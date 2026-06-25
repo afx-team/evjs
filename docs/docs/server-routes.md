@@ -66,7 +66,7 @@ default-export a Hono-compatible middleware function and do not contain matcher
 configuration:
 
 ```ts
-// src/server/middleware.ts
+// src/middleware.ts
 import type { MiddlewareHandler } from "@evjs/server";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
@@ -77,7 +77,7 @@ const middleware: MiddlewareHandler = async (ctx, next) => {
 export default middleware;
 ```
 
-Global middleware lives at `src/server/middleware.ts` and runs before server
+Global middleware lives at `src/middleware.ts` and runs before server
 file routes, server functions, SSR, PPR, and RSC framework handling.
 Route-scoped middleware lives inside the route tree and runs only for
 descendant server file routes:

@@ -57,8 +57,7 @@ my-app/
 │   ├── apis/               # Server file routes
 │   │   └── api/
 │   │       └── health.ts   # /api/health
-│   └── server/
-│       └── middleware.ts   # Global server middleware
+│   └── middleware.ts       # Global server middleware
 ├── package.json
 └── tsconfig.json
 ```

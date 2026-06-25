@@ -267,23 +267,23 @@ describe("createUtoopackConfig", () => {
           https: false,
         },
         routing: {
-          dir: "./src/server/routes",
+          dir: "./src/apis",
           routes: [
             {
-              id: "src/server/routes/health.ts:/health:GET",
-              module: "src/server/routes/health.ts",
+              id: "src/apis/health.ts:/health:GET",
+              module: "src/apis/health.ts",
               path: "/health",
               methods: ["GET"],
             },
             {
-              id: "src/server/routes/users/$userId.ts:/users/:userId:GET",
-              module: "src/server/routes/users/$userId.ts",
+              id: "src/apis/users/$userId.ts:/users/:userId:GET",
+              module: "src/apis/users/$userId.ts",
               path: "/users/:userId",
               methods: ["GET"],
             },
             {
-              id: "src/server/routes/index.ts:/:GET",
-              module: "src/server/routes/index.ts",
+              id: "src/apis/index.ts:/:GET",
+              module: "src/apis/index.ts",
               path: "/",
               methods: ["GET"],
             },
@@ -426,11 +426,11 @@ describe("createUtoopackConfig", () => {
           https: false,
         },
         routing: {
-          dir: "./src/server/routes",
+          dir: "./src/apis",
           routes: [
             {
-              id: "src/server/routes/health.ts:/health:GET",
-              module: "src/server/routes/health.ts",
+              id: "src/apis/health.ts:/health:GET",
+              module: "src/apis/health.ts",
               path: "/health",
               methods: ["GET"],
             },
@@ -464,8 +464,8 @@ describe("createUtoopackConfig", () => {
                 type: "server-app",
                 routes: [
                   {
-                    id: "src/server/routes/health.ts:/health:GET",
-                    module: "src/server/routes/health.ts",
+                    id: "src/apis/health.ts:/health:GET",
+                    module: "src/apis/health.ts",
                     path: "/health",
                     methods: ["GET"],
                   },
@@ -486,23 +486,23 @@ describe("createUtoopackConfig", () => {
           routes: [
             {
               path: "/health",
-              module: "src/server/routes/health.ts",
+              module: "src/apis/health.ts",
               methods: ["GET"],
             },
             {
               path: "/secure",
-              module: "src/server/routes/secure.ts",
+              module: "src/apis/secure.ts",
               methods: ["POST"],
               middlewares: [
                 {
-                  module: "src/server/routes/middleware.ts",
+                  module: "src/apis/middleware.ts",
                 },
               ],
             },
           ],
           middlewares: [
             {
-              module: "src/server/middleware.ts",
+              module: "src/middleware.ts",
             },
           ],
         };
@@ -517,9 +517,9 @@ describe("createUtoopackConfig", () => {
     expect(source).toContain('createRoute("/health", routeDefinition0)');
     expect(source).toContain('createRoute("/secure", routeDefinition1)');
     expect(source).toContain("import middleware0 from");
-    expect(source).toContain("src/server/middleware.ts");
+    expect(source).toContain("src/middleware.ts");
     expect(source).toContain("import middleware1 from");
-    expect(source).toContain("src/server/routes/middleware.ts");
+    expect(source).toContain("src/apis/middleware.ts");
     expect(source).toContain("routeDefinition0.GET = routeModule0.GET");
     expect(source).not.toContain("routeDefinition0.middlewares");
     expect(source).toContain("routeDefinition1.middlewares = [middleware1]");

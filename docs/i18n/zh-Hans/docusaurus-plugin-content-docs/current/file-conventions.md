@@ -15,7 +15,7 @@
 | `<routing-dir-parent>/route-types.d.ts` | generated | evjs 生成的 SPA 导航类型声明。 |
 | 带 `"use server";` 的 `*.server.ts` 文件 | server functions | 推荐的 server function 命名约定。 |
 | `src/apis/**/*.{ts,tsx,js,jsx}` | `server.routing` | 启用 `server.routing` 时的服务端文件路由。 |
-| `src/server/middleware.{ts,tsx,js,jsx}` | `server.conventions.middleware` | 启用 server conventions 时的全局 server middleware。 |
+| `src/middleware.{ts,tsx,js,jsx}` | `server.conventions.middleware` | 启用 server conventions 时的全局 server middleware。 |
 | `src/apis/**/middleware.{ts,tsx,js,jsx}` | `server.conventions.middleware` | route-scoped server file-route middleware。 |
 | `src/server.ts` | `server.entry` | 自定义 framework server entry 和 escape hatch。 |
 
@@ -191,7 +191,7 @@ Server middleware 使用专门的 `middleware.*` 文件，并遵循 Hono 的
 `MiddlewareHandler` 签名：
 
 ```ts
-// src/server/middleware.ts
+// src/middleware.ts
 import type { MiddlewareHandler } from "@evjs/server";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
@@ -205,7 +205,7 @@ export default middleware;
 全局 middleware：
 
 ```text
-src/server/middleware.ts
+src/middleware.ts
 ```
 
 Route-scoped middleware：

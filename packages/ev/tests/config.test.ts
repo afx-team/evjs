@@ -60,7 +60,7 @@ describe("defineConfig", () => {
     const config = defineConfig({
       server: {
         routing: {
-          dir: "./src/server/routes",
+          dir: "./src/apis",
         },
       },
     });
@@ -68,7 +68,7 @@ describe("defineConfig", () => {
     expect(config).toEqual({
       server: {
         routing: {
-          dir: "./src/server/routes",
+          dir: "./src/apis",
         },
       },
     });

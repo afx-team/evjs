@@ -12,7 +12,7 @@ npm run dev
 
 | File | Purpose |
 |------|---------| 
-| `src/server/middleware.ts` | Global server middleware for all server requests |
+| `src/middleware.ts` | Global server middleware for all server requests |
 | `src/apis/api/middleware.ts` | Route-scoped middleware for `/api/**` file routes |
 | `src/apis/api/posts.ts` | List/create handlers for `/api/posts` |
 | `src/apis/api/posts/$id.ts` | Dynamic handlers for `/api/posts/:id` |

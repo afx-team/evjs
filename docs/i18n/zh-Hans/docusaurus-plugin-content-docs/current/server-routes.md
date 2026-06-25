@@ -62,7 +62,7 @@ bundling 之前被拒绝。
 Hono-compatible middleware 函数，不包含 matcher 配置：
 
 ```ts
-// src/server/middleware.ts
+// src/middleware.ts
 import type { MiddlewareHandler } from "@evjs/server";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
@@ -73,7 +73,7 @@ const middleware: MiddlewareHandler = async (ctx, next) => {
 export default middleware;
 ```
 
-全局 middleware 位于 `src/server/middleware.ts`，会在 server file routes、
+全局 middleware 位于 `src/middleware.ts`，会在 server file routes、
 server functions、SSR、PPR 和 RSC framework handling 之前运行。Route-scoped
 middleware 位于 route tree 内，只作用于 descendant server file routes：
 

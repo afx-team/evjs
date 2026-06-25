@@ -3594,36 +3594,36 @@ describe("createAppGraph and createBuildPlan", () => {
       "src/main.tsx": `
         export const clientEntry = true;
       `,
-      "src/server/routes/health.ts": `
+      "src/apis/health.ts": `
         "use server";
 
         export async function GET() {
           return Response.json({ ok: true });
         }
       `,
-      "src/server/middleware.ts": `
+      "src/middleware.ts": `
         export default async function middleware(_ctx, next) {
           await next();
         }
       `,
-      "src/server/routes/users/middleware.ts": `
+      "src/apis/users/middleware.ts": `
         export default async function middleware(_ctx, next) {
           await next();
         }
       `,
-      "src/server/routes/users/$userId.ts": `
+      "src/apis/users/$userId.ts": `
         export const POST = async () => Response.json({ ok: true });
       `,
     });
     const globalMiddleware = {
-      id: "src/server/middleware.ts:global-middleware",
-      module: "src/server/middleware.ts",
+      id: "src/middleware.ts:global-middleware",
+      module: "src/middleware.ts",
       scope: "global" as const,
       scopeSegments: [],
     };
     const userMiddleware = {
-      id: "src/server/routes/users/middleware.ts:route-middleware",
-      module: "src/server/routes/users/middleware.ts",
+      id: "src/apis/users/middleware.ts:route-middleware",
+      module: "src/apis/users/middleware.ts",
       scope: "route" as const,
       scopeSegments: ["users"],
     };
@@ -3637,17 +3637,17 @@ describe("createAppGraph and createBuildPlan", () => {
           serverRegister: "@evjs/server/register",
         },
         routing: {
-          dir: "./src/server/routes",
+          dir: "./src/apis",
           routes: [
             {
-              id: "src/server/routes/health.ts:/health:GET",
-              module: "src/server/routes/health.ts",
+              id: "src/apis/health.ts:/health:GET",
+              module: "src/apis/health.ts",
               path: "/health",
               methods: ["GET"],
             },
             {
-              id: "src/server/routes/users/$userId.ts:/users/:userId:POST",
-              module: "src/server/routes/users/$userId.ts",
+              id: "src/apis/users/$userId.ts:/users/:userId:POST",
+              module: "src/apis/users/$userId.ts",
               path: "/users/:userId",
               methods: ["POST"],
               moduleSegments: ["users"],
@@ -3669,26 +3669,26 @@ describe("createAppGraph and createBuildPlan", () => {
     expect(analysis.diagnostics).toEqual([]);
     expect(analysis.graph.serverRoutes).toEqual([
       {
-        id: "src/server/routes/health.ts:/health:GET",
-        module: "src/server/routes/health.ts",
+        id: "src/apis/health.ts:/health:GET",
+        module: "src/apis/health.ts",
         path: "/health",
         methods: ["GET"],
       },
       {
-        id: "src/server/routes/users/$userId.ts:/users/:userId:POST",
-        module: "src/server/routes/users/$userId.ts",
+        id: "src/apis/users/$userId.ts:/users/:userId:POST",
+        module: "src/apis/users/$userId.ts",
         path: "/users/:userId",
         methods: ["POST"],
       },
     ]);
     expect(analysis.graph.serverFunctions).toEqual([]);
     expect(relativeFileDependencies(cwd, analysis.fileDependencies)).toEqual([
-      "src/server/middleware.ts",
-      "src/server/routes",
-      "src/server/routes/health.ts",
-      "src/server/routes/users",
-      "src/server/routes/users/$userId.ts",
-      "src/server/routes/users/middleware.ts",
+      "src/apis",
+      "src/apis/health.ts",
+      "src/apis/users",
+      "src/apis/users/$userId.ts",
+      "src/apis/users/middleware.ts",
+      "src/middleware.ts",
     ]);
     expect(plan.entries).toContainEqual({
       name: "server",
@@ -3701,14 +3701,14 @@ describe("createAppGraph and createBuildPlan", () => {
         middlewares: [globalMiddleware],
         routes: [
           {
-            id: "src/server/routes/health.ts:/health:GET",
-            module: "src/server/routes/health.ts",
+            id: "src/apis/health.ts:/health:GET",
+            module: "src/apis/health.ts",
             path: "/health",
             methods: ["GET"],
           },
           {
-            id: "src/server/routes/users/$userId.ts:/users/:userId:POST",
-            module: "src/server/routes/users/$userId.ts",
+            id: "src/apis/users/$userId.ts:/users/:userId:POST",
+            module: "src/apis/users/$userId.ts",
             path: "/users/:userId",
             methods: ["POST"],
             moduleSegments: ["users"],
@@ -3731,7 +3731,7 @@ describe("createAppGraph and createBuildPlan", () => {
           POST: async () => Response.json({ ok: true }),
         });
       `,
-      "src/server/routes/health.ts": `
+      "src/apis/health.ts": `
         export const GET = async () => Response.json({ ok: true });
       `,
     });
@@ -3745,11 +3745,11 @@ describe("createAppGraph and createBuildPlan", () => {
           serverRegister: "@evjs/server/register",
         },
         routing: {
-          dir: "./src/server/routes",
+          dir: "./src/apis",
           routes: [
             {
-              id: "src/server/routes/health.ts:/health:GET",
-              module: "src/server/routes/health.ts",
+              id: "src/apis/health.ts:/health:GET",
+              module: "src/apis/health.ts",
               path: "/health",
               methods: ["GET"],
             },
@@ -3761,8 +3761,8 @@ describe("createAppGraph and createBuildPlan", () => {
 
     expect(analysis.graph.serverRoutes).toEqual([
       {
-        id: "src/server/routes/health.ts:/health:GET",
-        module: "src/server/routes/health.ts",
+        id: "src/apis/health.ts:/health:GET",
+        module: "src/apis/health.ts",
         path: "/health",
         methods: ["GET"],
       },
@@ -3771,7 +3771,7 @@ describe("createAppGraph and createBuildPlan", () => {
       level: "error",
       file: "src/api.ts",
       message:
-        'Server route path "/health" is already declared by src/server/routes/health.ts. Declare all HTTP methods for a path in one createRoute() call.',
+        'Server route path "/health" is already declared by src/apis/health.ts. Declare all HTTP methods for a path in one createRoute() call.',
     });
   });
 

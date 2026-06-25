@@ -125,7 +125,7 @@ async function discoverGlobalMiddlewares(
       level: "error",
       file: toDiagnosticPath(toPosixPath(path.relative(cwd, files[0]))),
       message:
-        "Duplicate global server middleware files found. Keep one src/server/middleware source module.",
+        "Duplicate global server middleware files found. Keep one src/middleware source module.",
     });
     return { middlewares: [], files };
   }
