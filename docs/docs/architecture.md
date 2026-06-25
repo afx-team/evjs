@@ -76,15 +76,17 @@ instead of depending on each other. Internal runtime dependency versions stay
 `"*"` in source manifests for workspace development, then release automation
 rewrites them to the concrete release version before publishing.
 
-Generated-only `@evjs/client/internal/*` subpaths let framework-emitted
-route declarations, page bootstraps, server-function stubs, and RSC runtime
-entries type-check. Application code should keep importing standalone CSR,
-navigation, page, transport, and RSC APIs from `@evjs/client` and should not
-import generated-only internal helpers.
+Generated-only `@evjs/client/internal/*` and `@evjs/server/internal/*`
+subpaths let framework-emitted route declarations, page bootstraps,
+server-function stubs/registrations, and RSC runtime entries type-check.
+Application code should keep importing standalone CSR, navigation, page,
+transport, and RSC APIs from `@evjs/client`, and runtime server APIs from
+`@evjs/server`; it should not import generated-only internal helpers.
 Examples include `@evjs/client/internal/route-types` for generated SPA
 route declarations, `@evjs/client/internal/server-functions` for generated
-`"use server"` client stubs, and `@evjs/client/internal/rsc-runtime` for RSC
-page bootstraps.
+`"use server"` client stubs, `@evjs/server/internal/server-functions` for
+generated `"use server"` server registrations, and
+`@evjs/client/internal/rsc-runtime` for RSC page bootstraps.
 
 Do not reintroduce legacy split packages such as `@evjs/build-tools`,
 `@evjs/manifest`, or `@evjs/router-*`. Build helpers are exported from

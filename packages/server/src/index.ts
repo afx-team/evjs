@@ -5,8 +5,8 @@
  * - @evjs/server/node
  * - @evjs/server/fetch
  *
- * For minimal function registration (no Hono), use:
- * - @evjs/server/register
+ * Framework-generated server function registrations use:
+ * - @evjs/server/internal/server-functions
  */
 
 export { ServerError } from "@evjs/shared";

@@ -66,13 +66,17 @@ runtime subpath；`@evjs/server` 会消费 `@evjs/client` 中的共享 runtime
 `@evjs/ev`，而不是彼此依赖。内部 runtime 依赖版本保持为 `"*"`，让发布自动化
 把所有分发包作为同一个框架版本处理。
 
-生成专用的 `@evjs/client/internal/*` subpath 用于让框架生成的路由声明、
-page bootstrap、server-function stub 和 RSC runtime entry 完成类型检查。
-应用代码仍应从 `@evjs/client` 导入 standalone CSR、导航、page、transport
-和 RSC API，不要导入这些生成专用的 internal helper。
+生成专用的 `@evjs/client/internal/*` 和 `@evjs/server/internal/*`
+subpath 用于让框架生成的路由声明、page bootstrap、server-function
+stub/registration 和 RSC runtime entry 完成类型检查。应用代码仍应从
+`@evjs/client` 导入 standalone CSR、导航、page、transport 和 RSC API，
+从 `@evjs/server` 导入 server runtime API，不要导入这些生成专用的
+internal helper。
 例如，`@evjs/client/internal/route-types` 用于生成的 SPA 路由声明，
 `@evjs/client/internal/server-functions` 用于生成的 `"use server"` 客户端
-stub，`@evjs/client/internal/rsc-runtime` 用于 RSC page bootstrap。
+stub，`@evjs/server/internal/server-functions` 用于生成的 `"use server"`
+服务端 registration，`@evjs/client/internal/rsc-runtime` 用于 RSC page
+bootstrap。
 
 不要重新引入 `@evjs/build-tools`、`@evjs/manifest` 或 `@evjs/router-*`
 这类历史拆分包。构建 helper 从 `@evjs/ev/build-tools` 导出，manifest

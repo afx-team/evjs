@@ -46,10 +46,10 @@
       "import": "./esm/index.js",
       "default": "./esm/index.js"
     },
-    "./register": {
-      "types": "./esm/functions/register.d.ts",
-      "import": "./esm/functions/register.js",
-      "default": "./esm/functions/register.js"
+    "./internal/server-functions": {
+      "types": "./esm/server-function-runtime.d.ts",
+      "import": "./esm/server-function-runtime.js",
+      "default": "./esm/server-function-runtime.js"
     },
     "./node": {
       "types": "./esm/runtimes/node.d.ts",
