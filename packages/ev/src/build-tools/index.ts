@@ -61,3 +61,4 @@ export type {
   RouteModuleInfo,
   TransformOptions,
 } from "./types.js";
+export { SERVER_FUNCTION_TRANSFORM_RUNTIME } from "./types.js";

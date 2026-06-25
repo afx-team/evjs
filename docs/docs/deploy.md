@@ -54,8 +54,8 @@ requirements:
 | SSR pages | page route | server-capable | Route must reach the framework server bundle. |
 | PPR pages | page route | server-capable or edge+origin | Browser requests the page route; region resolution may be in-process or server-to-server. |
 | RSC pages | page route + `runtime.server.rsc` | server-capable | The document route and Flight endpoint must share compatible manifests/assets. |
-| Server functions | `runtime.server.fn` | server-capable | Usually same origin/base path as SSR/RSC/PPR unless `transport.baseUrl` splits it. |
-| Server routes | declared route path | server-capable | Route methods and 405 behavior belong to `@evjs/server`. |
+| Server functions | `runtime.server.fn` | server-capable | Usually same origin/base path as SSR/RSC/PPR and server routes unless `transport.baseUrl` splits browser calls. |
+| Server routes | declared route path | server-capable | Route methods and 405 behavior belong to `@evjs/server`; client helpers should use the same `transport.baseUrl` as other framework server requests. |
 
 This gives four practical deployment topologies:
 
@@ -137,7 +137,7 @@ window return with `x-evjs-cache: STALE` while the runtime refreshes the cache
 with `waitUntil()` when the platform exposes it. Cache provider failures are
 logged and fall back to fresh rendering.
 
-If browser and server run on different origins, configure `transport.baseUrl` at build time.
+If browser and server run on different origins, configure `transport.baseUrl` at build time so browser-initiated framework requests share the same server base URL.
 
 ## Routing Priority
 

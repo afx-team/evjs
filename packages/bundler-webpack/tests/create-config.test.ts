@@ -432,11 +432,6 @@ function createResolvedConfig(): ResolvedConfig<WebpackConfig> {
         fn: "/__evjs/fn",
         ppr: "/__evjs/ppr",
       },
-      functionRuntime: {
-        endpoint: "/__evjs/fn",
-        clientProxy: "@evjs/client/internal",
-        serverRegister: "@evjs/server/register",
-      },
       dev: {
         port: 3001,
         https: false,

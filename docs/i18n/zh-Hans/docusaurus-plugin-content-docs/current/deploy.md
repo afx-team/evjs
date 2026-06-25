@@ -51,8 +51,8 @@ manifest 中识别这些 runtime requirements：
 | SSR pages | page route | 需要服务端能力 | route 必须到达 framework server bundle。 |
 | PPR pages | page route | 服务端能力或 edge+origin | 浏览器请求 page route；region resolution 可本进程或 server-to-server。 |
 | RSC pages | page route + `runtime.server.rsc` | 需要服务端能力 | document route 与 Flight endpoint 必须共享兼容 manifest/assets。 |
-| Server functions | `runtime.server.fn` | 需要服务端能力 | 通常与 SSR/RSC/PPR 共用同一个 origin/base path，除非用 `transport.baseUrl` 拆分。 |
-| Server routes | 声明的 route path | 需要服务端能力 | methods 与 405 行为属于 `@evjs/server`。 |
+| Server functions | `runtime.server.fn` | 需要服务端能力 | 通常与 SSR/RSC/PPR 和 server routes 共用同一个 origin/base path，除非用 `transport.baseUrl` 拆分浏览器请求。 |
+| Server routes | 声明的 route path | 需要服务端能力 | methods 与 405 行为属于 `@evjs/server`；客户端 helper 应与其它 framework server 请求共用 `transport.baseUrl`。 |
 
 由此得到四类实际部署拓扑：
 
@@ -127,7 +127,7 @@ KV store 或区域内存缓存来承载 PPR region body cache。设置
 `x-evjs-cache: STALE` 返回；如果平台暴露 `waitUntil()`，运行时会用它在后台刷新缓存。
 Cache provider 失败会被记录，并退回到 fresh render。
 
-如果浏览器和服务端在不同 origin，构建时配置 `transport.baseUrl`。
+如果浏览器和服务端在不同 origin，构建时配置 `transport.baseUrl`，让浏览器发起的 framework 请求共用同一个 server base URL。
 
 ## 路由优先级
 

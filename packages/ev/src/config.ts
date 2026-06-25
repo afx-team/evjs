@@ -70,16 +70,6 @@ export interface ResolvedDevConfig {
   proxy: DevProxyRule[];
 }
 
-/** Internal server-function transform/runtime wiring. */
-export interface ResolvedFunctionRuntimeConfig {
-  /** Server function RPC endpoint path. */
-  endpoint: string;
-  /** Client-side transport module for server function stubs. */
-  clientProxy: string;
-  /** Server-side registration module for server functions. */
-  serverRegister: string;
-}
-
 /** Proxy rule for the dev server. */
 export interface DevProxyRule {
   context: string[];
@@ -102,8 +92,6 @@ export interface ResolvedServerConfig {
   basePath: string;
   /** Derived framework server runtime paths. */
   runtime: ResolvedServerRuntimeConfig;
-  /** Internal build-time modules used by server-function transforms. */
-  functionRuntime: ResolvedFunctionRuntimeConfig;
   /** RSC Flight endpoint configuration when enabled. */
   rsc?: ResolvedServerRscConfig;
   /** Framework-managed server file routing declaration, when enabled. */
@@ -434,8 +422,6 @@ export const CONFIG_DEFAULTS = {
   port: 3000,
   serverPort: 3001,
   serverBasePath: DEFAULT_SERVER_BASE_PATH,
-  clientProxy: "@evjs/client/internal",
-  serverRegister: "@evjs/server/register",
   crossOriginLoading: "anonymous",
   outputClientDir: "dist/client",
   outputServerDir: "dist/server",
@@ -654,11 +640,6 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
       rsc: rscEndpoint ? { endpoint: rscEndpoint } : undefined,
       routing: resolvedServerRouting,
       conventions: resolvedServerConventions,
-      functionRuntime: {
-        endpoint: serverEndpoint,
-        clientProxy: CONFIG_DEFAULTS.clientProxy,
-        serverRegister: CONFIG_DEFAULTS.serverRegister,
-      },
       dev: {
         port: serverPort,
         https: serverHttps,
@@ -886,8 +867,11 @@ function validateServerConfigKeys(server: ServerConfig): void {
       if (key === "functions") {
         return "[evjs] server.functions is not a public config field. Server function, PPR, and RSC endpoints are derived from server.basePath.";
       }
-      if (key === "runtime" || key === "functionRuntime") {
+      if (key === "runtime") {
         return `[evjs] server.${key} is resolved framework metadata and cannot be configured. Use server.basePath to change framework endpoint paths.`;
+      }
+      if (key === "functionRuntime") {
+        return "[evjs] server.functionRuntime is internal build metadata and cannot be configured. Use server.basePath to change framework endpoint paths.";
       }
     },
   );

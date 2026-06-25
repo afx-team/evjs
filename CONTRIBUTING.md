@@ -87,7 +87,7 @@ and adapters depend on `@evjs/ev` instead of on each other.
    intentional and documented; do not add convenience aliases.
 8. Keep client imports on `@evjs/client` for standalone CSR, page hooks,
    navigation, transport, and RSC helpers. Generated page bootstrap,
-   server-function stubs, and shell runtime primitives stay behind
+   server-function stubs, and shell runtime primitives stay behind focused
    generated-only `@evjs/client/internal/*` subpaths.
 9. Use `server.basePath` for framework server runtime paths. Do not reintroduce public `server.functions.endpoint` config.
 10. Do not reintroduce `server.entry` or framework-side source extraction of

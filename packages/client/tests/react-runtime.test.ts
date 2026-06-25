@@ -628,6 +628,30 @@ describe("fetchRscFlight", () => {
     );
   });
 
+  it("uses the framework server transport base URL for RSC Flight requests", async () => {
+    vi.stubGlobal("location", { href: "https://app.example.com/current" });
+    const fetchMock = vi.fn(async () => new Response("flight"));
+
+    await fetchRscFlight({
+      manifest: {
+        ...createRscManifest(),
+        runtime: {
+          ...createRscManifest().runtime,
+          transport: {
+            baseUrl: "https://runtime.example.com/service/",
+          },
+        },
+      },
+      pageId: "dashboard",
+      url: "https://app.example.com/dashboard?tab=stats",
+      fetch: fetchMock,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://runtime.example.com/__evjs/rsc?page=dashboard&url=%2Fdashboard%3Ftab%3Dstats",
+    );
+  });
+
   it("rejects malformed RSC Flight options before fetching", async () => {
     const fetchMock = vi.fn(async () => new Response("flight"));
 

@@ -1,8 +1,13 @@
 import { type Module, parseSync } from "@swc/core";
 import type { ModuleItem } from "@swc/types";
 import type { ServerFunctionExport } from "../../server-fns.js";
-import { RUNTIME, type TransformOptions } from "../../types.js";
+import {
+  SERVER_FUNCTION_TRANSFORM_RUNTIME,
+  type TransformOptions,
+} from "../../types.js";
 import { makeFnId } from "../../utils.js";
+
+const runtime = SERVER_FUNCTION_TRANSFORM_RUNTIME;
 
 /** Notify the manifest collector about each server function. */
 function reportToManifest(
@@ -32,11 +37,11 @@ export function buildServerOutput(
     const fnId = JSON.stringify(
       makeFnId(options.rootContext, options.resourcePath, exportName),
     );
-    return `${RUNTIME.registerServerReference}(${localName}, ${fnId}, ${JSON.stringify(exportName)});`;
+    return `${runtime.registerServerReference}(${localName}, ${fnId}, ${JSON.stringify(exportName)});`;
   });
 
   const injectCode = [
-    `import { ${RUNTIME.registerServerReference} } from "${RUNTIME.serverModule}";`,
+    `import { ${runtime.registerServerReference} } from "${runtime.serverModule}";`,
     ...registrations,
   ].join("\n");
 

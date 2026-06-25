@@ -91,8 +91,9 @@ Do not reintroduce legacy split packages:
 ```
 
 Build helpers are exported from `@evjs/ev/build-tools`, manifest contracts are
-exported from `@evjs/shared/manifest`, and generated page/shell runtime
-primitives stay behind generated-only `@evjs/client/internal/*` subpaths.
+exported from `@evjs/shared/manifest`, and generated page/shell/server-function
+runtime primitives stay behind focused generated-only
+`@evjs/client/internal/*` subpaths.
 
 ## Build-Time Flow
 

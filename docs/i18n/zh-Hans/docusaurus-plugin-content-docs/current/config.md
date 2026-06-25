@@ -549,7 +549,9 @@ export default defineConfig({
 ```
 
 提供 `transport` 时它必须是 object。提供 `transport.baseUrl` 时，它必须是
-absolute HTTP(S) URL，且不能包含首尾空白字符。
+absolute HTTP(S) URL，且不能包含首尾空白字符。这个值会被浏览器发起的
+framework server 请求共享，包括 server functions、RSC Flight，以及面向
+server routes 的客户端 helper。
 
 启用 framework server 时，用户配置的 `dev.proxy` 规则会排在框架代理之前。每条规则都
 必须是 object，包含非空的 `context` pathname pattern 数组，以及作为 absolute

@@ -463,11 +463,6 @@ function createPlan(
     ],
     server: {
       entry: "@evjs/server/fetch",
-      functionRuntime: {
-        endpoint: "/__evjs/fn",
-        clientProxy: "@evjs/client/internal",
-        serverRegister: "@evjs/server/register",
-      },
     },
     runtime: {
       publicPath: "/",

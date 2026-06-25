@@ -34,11 +34,6 @@ describe("createUtoopackConfig", () => {
           fn: "/__evjs/fn",
           ppr: "/__evjs/ppr",
         },
-        functionRuntime: {
-          endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client/internal",
-          serverRegister: "@evjs/server/register",
-        },
         dev: {
           port: 3001,
           https: false,
@@ -91,11 +86,6 @@ describe("createUtoopackConfig", () => {
           basePath: "/__evjs",
           fn: "/__evjs/fn",
           ppr: "/__evjs/ppr",
-        },
-        functionRuntime: {
-          endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client/internal",
-          serverRegister: "@evjs/server/register",
         },
         dev: {
           port: 3001,
@@ -210,11 +200,6 @@ describe("createUtoopackConfig", () => {
           rsc: "/rpc/rsc",
         },
         rsc: { endpoint: "/rpc/rsc" },
-        functionRuntime: {
-          endpoint: "/rpc/fn",
-          clientProxy: "@evjs/client/internal",
-          serverRegister: "@evjs/server/register",
-        },
         dev: {
           port: 3001,
           https: false,
@@ -260,11 +245,6 @@ describe("createUtoopackConfig", () => {
           basePath: "/__evjs",
           fn: "/__evjs/fn",
           ppr: "/__evjs/ppr",
-        },
-        functionRuntime: {
-          endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client/internal",
-          serverRegister: "@evjs/server/register",
         },
         dev: {
           port: 3001,
@@ -417,11 +397,6 @@ describe("createUtoopackConfig", () => {
           basePath: "/__evjs",
           fn: "/__evjs/fn",
           ppr: "/__evjs/ppr",
-        },
-        functionRuntime: {
-          endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client/internal",
-          serverRegister: "@evjs/server/register",
         },
         dev: {
           port: 3001,
@@ -768,11 +743,6 @@ describe("createUtoopackConfig", () => {
           fn: "/__evjs/fn",
           ppr: "/__evjs/ppr",
         },
-        functionRuntime: {
-          endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client/internal",
-          serverRegister: "@evjs/server/register",
-        },
         dev: {
           port: 3001,
           https: false,
@@ -850,11 +820,6 @@ describe("createUtoopackConfig", () => {
           basePath: "/__evjs",
           fn: "/__evjs/fn",
           ppr: "/__evjs/ppr",
-        },
-        functionRuntime: {
-          endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client/internal",
-          serverRegister: "@evjs/server/register",
         },
         dev: {
           port: 3001,

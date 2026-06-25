@@ -87,12 +87,9 @@ export interface BuildPlanConfig {
       routeMiddlewares: ServerMiddlewareNode[];
     };
     basePath: string;
-    functionRuntime: {
-      endpoint: string;
-      clientProxy: string;
-      serverRegister: string;
-    };
-    runtime?: {
+    runtime: {
+      fn: string;
+      ppr?: string;
       rsc?: string;
     };
   };
@@ -134,14 +131,15 @@ export function createBuildPlan(
       publicPath: options.publicPath ?? DEFAULT_PUBLIC_PATH,
       server: {
         basePath: config.server.basePath,
-        fn: config.server.functionRuntime.endpoint,
+        fn: config.server.runtime.fn,
         ppr: hasPprPages(graph)
-          ? joinPath(config.server.basePath, "ppr")
+          ? (config.server.runtime.ppr ??
+            joinPath(config.server.basePath, "ppr"))
           : undefined,
         rsc: hasRscPages(graph)
-          ? (config.server.runtime?.rsc ??
+          ? (config.server.runtime.rsc ??
             joinPath(config.server.basePath, "rsc"))
-          : config.server.runtime?.rsc,
+          : config.server.runtime.rsc,
       },
       transport: config.transport,
     },
@@ -511,11 +509,6 @@ function createServerPlan(
   return {
     entry: createServerRuntimeEntry(config, graph).import,
     ...(renderers.length > 0 ? { renderers } : {}),
-    functionRuntime: {
-      endpoint: config.server.functionRuntime.endpoint,
-      clientProxy: config.server.functionRuntime.clientProxy,
-      serverRegister: config.server.functionRuntime.serverRegister,
-    },
   };
 }
 

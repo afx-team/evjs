@@ -224,15 +224,20 @@ initTransport({
 });
 ```
 
-`baseUrl`, `credentials`, and `headers` configure the built-in HTTP adapter.
-The function path itself is framework runtime metadata derived from
-`server.basePath`, so application code normally only changes `baseUrl` when the
-server runtime is hosted on another origin:
+`baseUrl`, `credentials`, and `headers` configure the built-in server-function
+HTTP adapter. The function path itself is framework runtime metadata derived
+from `server.basePath`, so application code normally only changes `baseUrl`
+when the server runtime is hosted on another origin:
 
 - `baseUrl`: absolute HTTP(S) origin or base URL for framework server calls;
   it must not contain leading or trailing whitespace.
 - `credentials`: fetch credentials policy, for example `"include"`.
 - `headers`: static headers or a function evaluated for each call.
+
+For framework builds, prefer `transport.baseUrl` in `ev.config.ts` when the
+browser talks to a framework server on another origin. That build-time value is
+published in the manifest and shared by browser-initiated framework requests
+such as server functions, RSC Flight, and client helpers for server routes.
   The built-in adapter owns `Content-Type: application/json`; use this option
   for additional headers such as auth, tracing, or CSRF tokens.
 

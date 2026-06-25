@@ -1159,11 +1159,6 @@ describe("createAppGraph and createBuildPlan", () => {
     const config = createConfig({
       server: {
         basePath: "/__evjs",
-        functionRuntime: {
-          endpoint: "/__evjs/fn",
-          clientProxy: "client-proxy",
-          serverRegister: "server-register",
-        },
       },
     });
     const analysis = await createAppGraph(config, cwd);
@@ -1173,11 +1168,6 @@ describe("createAppGraph and createBuildPlan", () => {
 
     expect(plan.server).toEqual({
       entry: "@evjs/server/fetch",
-      functionRuntime: {
-        endpoint: "/__evjs/fn",
-        clientProxy: "client-proxy",
-        serverRegister: "server-register",
-      },
     });
     expect(plan.entries).toContainEqual({
       name: "server",
@@ -1197,11 +1187,6 @@ describe("createAppGraph and createBuildPlan", () => {
         basePath: "/__evjs",
         runtime: {
           rsc: "/__evjs/rsc",
-        },
-        functionRuntime: {
-          endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client/internal",
-          serverRegister: "@evjs/server/register",
         },
       },
     });
@@ -3508,11 +3493,6 @@ describe("createAppGraph and createBuildPlan", () => {
     const config = createConfig({
       server: {
         basePath: "/__evjs",
-        functionRuntime: {
-          endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client/internal",
-          serverRegister: "@evjs/server/register",
-        },
         routing: {
           dir: "./src/apis",
           routes: [
@@ -3615,11 +3595,6 @@ describe("createAppGraph and createBuildPlan", () => {
     const config = createConfig({
       server: {
         basePath: "/__evjs",
-        functionRuntime: {
-          endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client/internal",
-          serverRegister: "@evjs/server/register",
-        },
         routing: {
           dir: "./src/apis",
           routes: [
@@ -3681,11 +3656,6 @@ describe("createAppGraph and createBuildPlan", () => {
     const config = createConfig({
       server: {
         basePath: "/__evjs",
-        functionRuntime: {
-          endpoint: "/__evjs/fn",
-          clientProxy: "@evjs/client/internal",
-          serverRegister: "@evjs/server/register",
-        },
       },
     });
     const analysis = await createAppGraph(config, cwd);
@@ -4600,9 +4570,15 @@ async function createFixture(files: Record<string, string>) {
 }
 
 type TestConfig = BuildPlanConfig & Pick<GraphConfig, "apps">;
+type TestConfigOverrides = Partial<Omit<TestConfig, "output" | "server">> & {
+  output?: Partial<TestConfig["output"]>;
+  server?: Partial<Omit<TestConfig["server"], "runtime">> & {
+    runtime?: Partial<TestConfig["server"]["runtime"]>;
+  };
+};
 
-function createConfig(overrides: Partial<TestConfig> = {}): TestConfig {
-  return {
+function createConfig(overrides: TestConfigOverrides = {}): TestConfig {
+  const base: TestConfig = {
     entry: "./src/main.tsx",
     html: "./index.html",
     pages: undefined,
@@ -4612,12 +4588,27 @@ function createConfig(overrides: Partial<TestConfig> = {}): TestConfig {
     },
     server: {
       basePath: "/__evjs",
-      functionRuntime: {
-        endpoint: "/__evjs/fn",
-        clientProxy: "@evjs/client/internal",
-        serverRegister: "@evjs/server/register",
+      runtime: {
+        fn: "/__evjs/fn",
+        ppr: "/__evjs/ppr",
       },
     },
+  };
+
+  return {
+    ...base,
     ...overrides,
+    output: {
+      ...base.output,
+      ...overrides.output,
+    },
+    server: {
+      ...base.server,
+      ...overrides.server,
+      runtime: {
+        ...base.server.runtime,
+        ...overrides.server?.runtime,
+      },
+    },
   };
 }

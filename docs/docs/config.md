@@ -587,7 +587,8 @@ export default defineConfig({
 
 `transport` must be an object when provided. `transport.baseUrl` must be an
 absolute HTTP(S) URL when provided and must not contain leading or trailing
-whitespace.
+whitespace. The value is shared by browser-initiated framework server requests,
+including server functions, RSC Flight, and client helpers for server routes.
 
 User `dev.proxy` rules are appended before the framework proxy when the
 framework server is enabled. Each rule must be an object with a non-empty

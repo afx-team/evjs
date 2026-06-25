@@ -52,8 +52,8 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
    transport, and RSC helpers from `@evjs/client`, and
    server functions/routes/rendering APIs from `@evjs/server`.
    Generated page bootstrap, React page mounting, server-function stubs,
-   route-tree construction, and shell runtime code belong behind generated-only
-   `@evjs/client/internal/*` subpaths.
+   route-tree construction, and shell runtime code belong behind focused
+   generated-only `@evjs/client/internal/*` subpaths.
 10. Utoopack remains the default. Do not present webpack as the normal user path; it is the validation/fallback backend for features blocked on Utoopack APIs.
 11. Route/path/build-ID/server-function-ID conventions should use the shared
     helpers in `@evjs/shared` first. Keep caller-specific error text local, but
@@ -70,7 +70,7 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 | `createPagesApp()` | `@evjs/client/internal` | Internal/framework-managed page route runtime used by generated SPA entries |
 | `Link`, page hooks, page metadata exports | `@evjs/client` / page modules | Public page authoring API for params, search, loader data, navigation, and render metadata |
 | React page runtime | `@evjs/client/internal/react-page` | Framework-managed component page mount/hydration |
-| Server-function stubs | `@evjs/client/internal` | Generated client references and internal transport dispatch |
+| Server-function stubs | `@evjs/client/internal/server-functions` | Generated client references for `"use server"` modules |
 | Shell runtime | `@evjs/client/internal` | Manifest-driven app/page activation and generated module registration |
 | RSC client runtime | `@evjs/client` | React Flight client integration |
 | `createApp({ routes, middlewares })` | `@evjs/server` | Standalone server runtime app composition; independent from evjs file-convention discovery |

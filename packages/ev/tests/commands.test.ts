@@ -110,9 +110,7 @@ function createMockBundler(
         `bundler.entries:${plan.entries.map((entry) => entry.name).join(",")}`,
       );
       if (options.recordEndpoint) {
-        events.push(
-          `bundler.endpoint:${config.server.functionRuntime.endpoint}`,
-        );
+        events.push(`bundler.endpoint:${config.server.runtime.fn}`);
       }
       return {
         clientEntryAssets: {
@@ -1448,7 +1446,7 @@ describe("build", () => {
         return config;
       },
       setup(ctx) {
-        events.push(`setup:${ctx.config.server.functionRuntime.endpoint}`);
+        events.push(`setup:${ctx.config.server.runtime.fn}`);
       },
     };
 

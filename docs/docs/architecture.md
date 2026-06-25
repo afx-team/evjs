@@ -82,8 +82,9 @@ entries type-check. Application code should keep importing standalone CSR,
 navigation, page, transport, and RSC APIs from `@evjs/client` and should not
 import generated-only internal helpers.
 Examples include `@evjs/client/internal/route-types` for generated SPA
-route declarations and `@evjs/client/internal/rsc-runtime` for RSC page
-bootstraps.
+route declarations, `@evjs/client/internal/server-functions` for generated
+`"use server"` client stubs, and `@evjs/client/internal/rsc-runtime` for RSC
+page bootstraps.
 
 Do not reintroduce legacy split packages such as `@evjs/build-tools`,
 `@evjs/manifest`, or `@evjs/router-*`. Build helpers are exported from
@@ -280,7 +281,7 @@ server.basePath
   derives framework server runtime paths: fn, ppr, rsc
 
 transport.baseUrl
-  browser-to-framework-server origin override
+  browser-to-framework-server base URL shared by framework requests
 
 plugins
   framework and bundler extension points

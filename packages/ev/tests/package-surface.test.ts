@@ -164,6 +164,7 @@ const forbiddenPackageNames = [
 ];
 
 const expectedBuildToolsRuntimeExports = [
+  "SERVER_FUNCTION_TRANSFORM_RUNTIME",
   "applyRouteScopedMiddlewares",
   "createAppGraph",
   "createBuildPlan",
@@ -221,6 +222,7 @@ const expectedPackageExportSubpaths = {
     "./internal/route-types",
     "./internal/rsc-page-context",
     "./internal/rsc-runtime",
+    "./internal/server-functions",
   ],
   "@evjs/server": expectedServerSubpathExports,
   "@evjs/cli": ["."],
@@ -907,12 +909,18 @@ describe("workspace package surface", () => {
       "./internal/route-types",
       "./internal/rsc-page-context",
       "./internal/rsc-runtime",
+      "./internal/server-functions",
       "./transport",
     ]);
     expect(clientPackageJson.exports?.["./transport"]).toEqual({
       types: "./esm/transport.d.ts",
       import: "./esm/transport.js",
       default: "./esm/transport.js",
+    });
+    expect(clientPackageJson.exports?.["./internal/server-functions"]).toEqual({
+      types: "./esm/server-function-runtime.d.ts",
+      import: "./esm/server-function-runtime.js",
+      default: "./esm/server-function-runtime.js",
     });
     expect(exportedSubpaths).not.toEqual(
       expect.arrayContaining([

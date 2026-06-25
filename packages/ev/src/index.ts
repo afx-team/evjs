@@ -83,7 +83,6 @@ export {
   type ResolvedConfig,
   type ResolvedDevConfig,
   type ResolvedEvConfig,
-  type ResolvedFunctionRuntimeConfig,
   type ResolvedOutputConfig,
   type ResolvedPageRoutingConfig,
   type ResolvedPageRoutingConventionsConfig,

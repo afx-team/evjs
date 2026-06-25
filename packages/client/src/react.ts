@@ -423,7 +423,8 @@ function resolveRscFlightUrl(
   const explicitUrl = options.url?.toString();
   const locationHref = globalThis.location?.href;
   const currentUrl = explicitUrl ?? locationHref;
-  const base = locationHref ?? explicitUrl ?? endpoint;
+  const transportBaseUrl = options.manifest.runtime.transport?.baseUrl;
+  const base = transportBaseUrl ?? locationHref ?? explicitUrl ?? endpoint;
   const url = new URL(endpoint, base);
   if (options.pageId) {
     url.searchParams.set("page", options.pageId);
@@ -432,7 +433,7 @@ function resolveRscFlightUrl(
     currentUrl !== undefined
       ? toPageUrlParam(currentUrl, {
           explicit: explicitUrl !== undefined,
-          locationHref,
+          locationHref: locationHref ?? getAbsoluteHttpUrl(explicitUrl),
           requestUrl: url,
         })
       : undefined;
@@ -440,6 +441,18 @@ function resolveRscFlightUrl(
     url.searchParams.set("url", pageUrl);
   }
   return url.toString();
+}
+
+function getAbsoluteHttpUrl(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function toPageUrlParam(

@@ -158,7 +158,8 @@ function Posts() {
   body text for `ServerFunctionError`, falling back to `statusText` when the
   body is empty or only whitespace.
 - `initTransport({ adapter })`: Replace transport behavior with a custom adapter.
-- Generated server-function stubs use internal transport helpers from `@evjs/client/internal`.
+- Generated server-function stubs use `@evjs/client/internal/server-functions`;
+  application code should keep using the public transport APIs above.
 
 ### Runtime
 - Page runtime bootstrap is framework-owned and imported through `@evjs/client/internal`.

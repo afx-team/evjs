@@ -6,7 +6,9 @@ import {
   transformRscClientFile,
   transformServerFile,
 } from "../src/build-tools/index.js";
-import { RUNTIME } from "../src/build-tools/types.js";
+import { SERVER_FUNCTION_TRANSFORM_RUNTIME } from "../src/build-tools/types.js";
+
+const runtime = SERVER_FUNCTION_TRANSFORM_RUNTIME;
 
 const ROOT = "/project";
 const FILE = "/project/src/api/users.server.ts";
@@ -38,7 +40,7 @@ describe("transformServerFile", () => {
         isServer: false,
       });
 
-      expect(result.code).toContain(RUNTIME.createServerReference);
+      expect(result.code).toContain(runtime.createServerReference);
       expect(result.code).toContain("export { EvServerFn_0 as getUsers }");
       expect(result.code).toContain("export { EvServerFn_1 as createUser }");
     });
@@ -50,10 +52,10 @@ describe("transformServerFile", () => {
         isServer: false,
       });
 
-      expect(result.code).toContain(RUNTIME.createServerReference);
+      expect(result.code).toContain(runtime.createServerReference);
       // Should have a createServerReference call for each exported function
       const refCount = (
-        result.code.match(new RegExp(RUNTIME.createServerReference, "g")) || []
+        result.code.match(new RegExp(runtime.createServerReference, "g")) || []
       ).length;
       expect(refCount).toBe(3); // import + getUsers + createUser
     });
@@ -67,12 +69,12 @@ describe("transformServerFile", () => {
 
       expect(result.code).toMatch(
         new RegExp(
-          `${RUNTIME.createServerReference}\\("[a-f0-9]{16}", "getUsers", 0\\)`,
+          `${runtime.createServerReference}\\("[a-f0-9]{16}", "getUsers", 0\\)`,
         ),
       );
       expect(result.code).toMatch(
         new RegExp(
-          `${RUNTIME.createServerReference}\\("[a-f0-9]{16}", "createUser", 1\\)`,
+          `${runtime.createServerReference}\\("[a-f0-9]{16}", "createUser", 1\\)`,
         ),
       );
     });
@@ -100,31 +102,31 @@ describe("transformServerFile", () => {
 
       expect(result.code).toMatch(
         new RegExp(
-          `${RUNTIME.createServerReference}\\("[a-f0-9]{16}", "searchUsers"\\)`,
+          `${runtime.createServerReference}\\("[a-f0-9]{16}", "searchUsers"\\)`,
         ),
       );
       expect(result.code).toMatch(
         new RegExp(
-          `${RUNTIME.createServerReference}\\("[a-f0-9]{16}", "saveTags"\\)`,
+          `${runtime.createServerReference}\\("[a-f0-9]{16}", "saveTags"\\)`,
         ),
       );
       expect(result.code).toMatch(
         new RegExp(
-          `${RUNTIME.createServerReference}\\("[a-f0-9]{16}", "maybeUser"\\)`,
+          `${runtime.createServerReference}\\("[a-f0-9]{16}", "maybeUser"\\)`,
         ),
       );
     });
 
-    it("imports createServerReference from the internal client module", async () => {
+    it("imports createServerReference from the generated server function runtime module", async () => {
       const result = await transformServerFile(SERVER_FILE, {
         resourcePath: FILE,
         rootContext: ROOT,
         isServer: false,
       });
 
-      expect(result.code).toContain(RUNTIME.clientTransportModule);
+      expect(result.code).toContain(runtime.clientModule);
       expect(result.code).toContain(
-        `import { ${RUNTIME.createServerReference} }`,
+        `import { ${runtime.createServerReference} }`,
       );
     });
 
@@ -565,11 +567,11 @@ describe("transformServerFile", () => {
         isServer: true,
       });
 
-      expect(result.code).toContain(RUNTIME.registerServerReference);
-      expect(result.code).toContain(`${RUNTIME.registerServerReference}(`);
+      expect(result.code).toContain(runtime.registerServerReference);
+      expect(result.code).toContain(`${runtime.registerServerReference}(`);
       // One registration per exported function
       const registerCount = (
-        result.code.match(new RegExp(RUNTIME.registerServerReference, "g")) ||
+        result.code.match(new RegExp(runtime.registerServerReference, "g")) ||
         []
       ).length;
       // import + 2 registrations = 3
@@ -584,7 +586,7 @@ describe("transformServerFile", () => {
       });
 
       expect(result.code).toContain(
-        `import { ${RUNTIME.registerServerReference} } from "${RUNTIME.serverModule}"`,
+        `import { ${runtime.registerServerReference} } from "${runtime.serverModule}"`,
       );
     });
 
@@ -606,7 +608,7 @@ describe("transformServerFile", () => {
 
       expect(result.code).toMatch(
         new RegExp(
-          `^"use strict";\\n"use server";\\nimport \\{ ${RUNTIME.registerServerReference} \\}`,
+          `^"use strict";\\n"use server";\\nimport \\{ ${runtime.registerServerReference} \\}`,
         ),
       );
     });
@@ -642,12 +644,12 @@ describe("transformServerFile", () => {
       );
 
       expect(result.code).toContain(
-        `${RUNTIME.registerServerReference}(saveUser,`,
+        `${runtime.registerServerReference}(saveUser,`,
       );
       expect(result.code).toContain('"updateUser"');
       expect(result.code).toContain('"save-user"');
       expect(result.code).not.toContain(
-        `${RUNTIME.registerServerReference}(updateUser,`,
+        `${runtime.registerServerReference}(updateUser,`,
       );
     });
 

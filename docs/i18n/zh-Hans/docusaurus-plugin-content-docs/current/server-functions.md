@@ -198,15 +198,20 @@ initTransport({
 });
 ```
 
-`baseUrl`、`credentials` 和 `headers` 用于配置内置 HTTP 适配器。函数路径本身
-是由 `server.basePath` 派生的框架运行时元数据，所以应用代码通常只在服务端运行时
-部署到另一个 origin 时配置 `baseUrl`：
+`baseUrl`、`credentials` 和 `headers` 用于配置内置 server-function HTTP
+适配器。函数路径本身是由 `server.basePath` 派生的框架运行时元数据，所以应用代码
+通常只在服务端运行时部署到另一个 origin 时配置 `baseUrl`：
 
 - `baseUrl`：框架服务端调用的 absolute HTTP(S) origin 或 base URL；不能包含首尾空白字符。
 - `credentials`：fetch credentials 策略，例如 `"include"`。
 - `headers`：静态请求头，或每次调用时求值的函数。
   内置 adapter 会固定使用 `Content-Type: application/json`；该选项用于追加
   auth、tracing 或 CSRF token 等请求头。
+
+对于 framework build，如果浏览器需要访问另一个 origin 上的 framework server，
+优先在 `ev.config.ts` 中配置 `transport.baseUrl`。这个构建期值会写入 manifest，
+并被浏览器发起的 framework 请求共享，例如 server functions、RSC Flight，以及
+面向 server routes 的客户端 helper。
 
 Fetch `mode` 不提供配置。服务端函数请求使用浏览器默认 CORS 行为；跨域
 cookie 应通过 `credentials` 和服务端 CORS 响应头配合控制。

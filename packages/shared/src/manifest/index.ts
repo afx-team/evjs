@@ -266,11 +266,6 @@ export interface HtmlPlan {
 export interface ServerBuildPlan {
   entry: string;
   renderers?: ServerRenderPlan[];
-  functionRuntime: {
-    endpoint: string;
-    clientProxy: string;
-    serverRegister: string;
-  };
 }
 
 export interface ServerRenderPlan {

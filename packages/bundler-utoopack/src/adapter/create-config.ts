@@ -36,6 +36,7 @@ import type {
   ResolvedConfig,
   ServerAppEntryMetadata,
 } from "@evjs/ev";
+import { SERVER_FUNCTION_TRANSFORM_RUNTIME } from "@evjs/ev/build-tools";
 import { getLogger } from "@logtape/logtape";
 import type {
   ConfigComplete,
@@ -181,12 +182,10 @@ export async function createUtoopackConfig(
     },
     define: {
       "process.env.EVJS_FUNCTION_ENDPOINT": JSON.stringify(
-        config.server.functionRuntime.endpoint,
+        config.server.runtime.fn,
       ),
       "process.env.NODE_ENV": JSON.stringify(mode),
-      __EVJS_FUNCTION_ENDPOINT__: JSON.stringify(
-        config.server.functionRuntime.endpoint,
-      ),
+      __EVJS_FUNCTION_ENDPOINT__: JSON.stringify(config.server.runtime.fn),
     },
     // Server functions config — utoopack handles "use server" natively
     server: {
@@ -197,8 +196,8 @@ export async function createUtoopackConfig(
         chunkFilename: isProduction ? "[name].[contenthash:8].js" : "[name].js",
       },
       function: {
-        clientProxy: config.server.functionRuntime.clientProxy,
-        serverRegister: config.server.functionRuntime.serverRegister,
+        clientProxy: SERVER_FUNCTION_TRANSFORM_RUNTIME.clientModule,
+        serverRegister: SERVER_FUNCTION_TRANSFORM_RUNTIME.serverModule,
       },
     },
 

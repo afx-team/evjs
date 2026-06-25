@@ -54,6 +54,11 @@
       "import": "./esm/internal.js",
       "default": "./esm/internal.js"
     },
+    "./internal/server-functions": {
+      "types": "./esm/server-function-runtime.d.ts",
+      "import": "./esm/server-function-runtime.js",
+      "default": "./esm/server-function-runtime.js"
+    },
     "./internal/page-context": {
       "types": "./esm/page-context.d.ts",
       "import": "./esm/page-context.js",

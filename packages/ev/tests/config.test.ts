@@ -121,7 +121,7 @@ describe("resolveConfig", () => {
       ppr: "/__evjs/ppr",
       rsc: "/__evjs/rsc",
     });
-    expect(resolved.server.functionRuntime.endpoint).toBe("/__evjs/fn");
+    expect(resolved.server.runtime.fn).toBe("/__evjs/fn");
     expect(resolved.server.routing).toBeUndefined();
     expect(resolved.transport).toEqual({ baseUrl: undefined });
     expect(resolved.apps).toBeUndefined();
@@ -875,7 +875,7 @@ describe("resolveConfig", () => {
     });
     expect(resolved.server.runtime.fn).toBe("/api/fn");
     expect(resolved.server.runtime.ppr).toBe("/api/ppr");
-    expect(resolved.server.functionRuntime.endpoint).toBe("/api/fn");
+    expect(resolved.server.runtime.fn).toBe("/api/fn");
     expect(resolved.server.dev.port).toBe(4000);
   });
 
@@ -898,7 +898,7 @@ describe("resolveConfig", () => {
   it("uses a pathname proxy context for the default framework endpoint", () => {
     const resolved = resolveConfig();
 
-    expect(resolved.server.functionRuntime.endpoint).toBe("/__evjs/fn");
+    expect(resolved.server.runtime.fn).toBe("/__evjs/fn");
     expect(resolved.dev.proxy).toContainEqual({
       context: ["/__evjs/fn", "/__evjs/ppr", "/__evjs/rsc"],
       target: "http://localhost:3001",
@@ -1116,7 +1116,7 @@ describe("resolveConfig", () => {
         },
       }),
     ).toThrow(
-      "[evjs] server.functionRuntime is resolved framework metadata and cannot be configured. Use server.basePath to change framework endpoint paths.",
+      "[evjs] server.functionRuntime is internal build metadata and cannot be configured. Use server.basePath to change framework endpoint paths.",
     );
 
     expect(() =>

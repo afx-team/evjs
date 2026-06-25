@@ -1,8 +1,13 @@
 import { type Module, parseSync } from "@swc/core";
 import { formatModuleExportName } from "../../module-exports.js";
 import type { ServerFunctionExport } from "../../server-fns.js";
-import { RUNTIME, type TransformOptions } from "../../types.js";
+import {
+  SERVER_FUNCTION_TRANSFORM_RUNTIME,
+  type TransformOptions,
+} from "../../types.js";
 import { makeFnId } from "../../utils.js";
+
+const runtime = SERVER_FUNCTION_TRANSFORM_RUNTIME;
 
 /** Client build: replace function bodies with createServerReference stubs via AST replacement. */
 export function buildClientOutput(
@@ -21,13 +26,13 @@ export function buildClientOutput(
       ...(arity === undefined ? [] : [String(arity)]),
     ].join(", ");
     return [
-      `const ${localName} = ${RUNTIME.createServerReference}(${args});`,
+      `const ${localName} = ${runtime.createServerReference}(${args});`,
       `export { ${localName} as ${formatModuleExportName(exportName)} };`,
     ].join("\n");
   });
 
   const injectCode = [
-    `import { ${RUNTIME.createServerReference} } from "${RUNTIME.clientTransportModule}";`,
+    `import { ${runtime.createServerReference} } from "${runtime.clientModule}";`,
     ...stubs,
   ].join("\n");
 

@@ -52,11 +52,6 @@ function createServerPlan(
   return {
     entry: "@evjs/server/fetch",
     ...(renderers ? { renderers } : {}),
-    functionRuntime: {
-      endpoint: "/__evjs/fn",
-      clientProxy: "@evjs/client/internal",
-      serverRegister: "@evjs/server/register",
-    },
   };
 }
 
