@@ -37,8 +37,17 @@ dist/
 └── build-output.json
 ```
 
-当 public/client 产物需要直接写入 `dist` 时，配置 `output.client: "dist"`。
-server 产物仍写入 `output.server` 配置的目录，默认是 `dist/server`：
+当 public/client 产物需要直接写入 `dist`，同时 server 产物需要放在 public
+目录外时，配置 `output.client: "dist"` 和 `output.server: "dist-server"`：
+
+```ts
+export default defineConfig({
+  output: {
+    client: "dist",
+    server: "dist-server",
+  },
+});
+```
 
 ```txt
 dist/
@@ -46,10 +55,10 @@ dist/
 ├── main.[hash].js
 ├── [chunk].[hash].js
 ├── manifest.json
-├── server/
-│   ├── main.[hash].js
-│   └── manifest.json
 └── build-output.json
+dist-server/
+├── main.[hash].js
+└── manifest.json
 ```
 
 `dist/build-output.json` 是完整的私有 `BuildOutput` handoff artifact，供构建后仍需要
@@ -176,8 +185,9 @@ browser page entry。
 
 - 默认输出目录会写入 `dist/client/manifest.json`、
   `dist/server/manifest.json` 和 `dist/build-output.json`。
-- `output.client: "dist"` 会把 public assets 和 `dist/manifest.json`
-  直接写入 `dist`，server assets 仍写入 `output.server`。
+- `output.client: "dist"` 和 `output.server: "dist-server"` 会把 public
+  assets 和 `dist/manifest.json` 直接写入 `dist`，server assets 则保留在
+  public 输出目录外。
 - `dist/build-output.json` 是面向构建后工具和调试的完整私有 `BuildOutput` handoff；
   runtime deployment 可以内嵌等价数据，而不是启动时读取该文件。
 - 会成为 runtime id 的 manifest object key 必须是 build identifier，包括

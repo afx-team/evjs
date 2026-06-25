@@ -38,9 +38,18 @@ dist/
 └── build-output.json
 ```
 
-Set `output.client: "dist"` when public/client assets should be written
-directly under `dist`. Server artifacts stay in the directory configured by
-`output.server`, which defaults to `dist/server`:
+Set `output.client: "dist"` and `output.server: "dist-server"` when
+public/client assets should be written directly under `dist` while server
+artifacts stay outside that public directory:
+
+```ts
+export default defineConfig({
+  output: {
+    client: "dist",
+    server: "dist-server",
+  },
+});
+```
 
 ```txt
 dist/
@@ -48,10 +57,10 @@ dist/
 ├── main.[hash].js
 ├── [chunk].[hash].js
 ├── manifest.json
-├── server/
-│   ├── main.[hash].js
-│   └── manifest.json
 └── build-output.json
+dist-server/
+├── main.[hash].js
+└── manifest.json
 ```
 
 `dist/build-output.json` is the complete private `BuildOutput` handoff artifact
@@ -190,8 +199,9 @@ Internal PPR regions carry cache metadata in the manifest:
 
 - The default output directories emit `dist/client/manifest.json`,
   `dist/server/manifest.json`, and `dist/build-output.json`.
-- `output.client: "dist"` emits public assets and `dist/manifest.json`
-  directly under `dist`, while server assets remain in `output.server`.
+- `output.client: "dist"` with `output.server: "dist-server"` emits public
+  assets and `dist/manifest.json` directly under `dist`, while server assets
+  remain outside the public output directory.
 - `dist/build-output.json` is the complete private `BuildOutput` handoff for
   post-build tools and debugging; runtime deployments may embed equivalent data
   instead of reading that file at startup.

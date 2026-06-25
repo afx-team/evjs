@@ -476,7 +476,7 @@ lookup and mount selector resolution.
 export default defineConfig({
   output: {
     client: "dist",
-    server: "dist/server",
+    server: "dist-server",
   },
 });
 ```
@@ -485,8 +485,9 @@ export default defineConfig({
 
 - `output.client` defaults to `dist/client`.
 - `output.server` defaults to `dist/server`.
-- Set `output.client: "dist"` when the public manifest and browser assets
-  should be written directly under `dist`.
+- Set `output.client: "dist"` with `output.server: "dist-server"` when the
+  public manifest and browser assets should be written directly under `dist`
+  while server artifacts stay outside the public output directory.
 
 ## Server
 

@@ -443,7 +443,7 @@ assets 或缺少必填字段都会报告为启动错误。自定义 runtime 调�
 export default defineConfig({
   output: {
     client: "dist",
-    server: "dist/server",
+    server: "dist-server",
   },
 });
 ```
@@ -452,8 +452,9 @@ export default defineConfig({
 
 - `output.client` 默认是 `dist/client`。
 - `output.server` 默认是 `dist/server`。
-- 当 public manifest 和浏览器资源需要直接写入 `dist` 时，设置
-  `output.client: "dist"`。
+- 当 public manifest 和浏览器资源需要直接写入 `dist`，同时 server 产物需要保留在
+  public 输出目录外时，设置 `output.client: "dist"` 和
+  `output.server: "dist-server"`。
 
 ## 服务端
 
