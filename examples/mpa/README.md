@@ -19,15 +19,16 @@ npm run build
 | File | Purpose |
 |------|---------|
 | `ev.config.ts` | Enables page MPA mode |
-| `index.html` | Shared HTML template for all pages |
+| `index.html` | Shared fallback HTML template |
 | `src/pages/home.tsx` | Home page component |
 | `src/pages/about.tsx` | About page component |
+| `src/pages/about.html` | Page-specific MPA HTML template for `about.tsx` |
 
 ## What It Demonstrates
 
 - Multi-page build via `routing.mode: "mpa"`
 - Independent router-free React page for each page file
-- Shared HTML template reused by all pages
+- Shared HTML fallback plus a colocated page-specific HTML template
 - Static links between pages
 - No `@evjs/client`, `@evjs/server`, or generated `route-types.d.ts`
   dependency is needed for this router-free client output

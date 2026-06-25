@@ -364,6 +364,7 @@ describe("createAppGraph and createBuildPlan", () => {
     const cwd = await createFixture({
       "src/pages/index.tsx": "export default function Home() { return null; }",
       "src/pages/about.tsx": "export default function About() { return null; }",
+      "src/pages/about.html": '<div id="app"></div>',
       "index.html": '<div id="app"></div>',
     });
     const config = createConfig({
@@ -382,6 +383,7 @@ describe("createAppGraph and createBuildPlan", () => {
             id: "about",
             path: "/about",
             module: "./src/pages/about.tsx",
+            html: "./src/pages/about.html",
           },
         ],
       },
@@ -405,7 +407,7 @@ describe("createAppGraph and createBuildPlan", () => {
         id: "about",
         path: "/about",
         component: "./src/pages/about.tsx",
-        html: "./index.html",
+        html: "./src/pages/about.html",
         render: "csr",
         mount: "#app",
       },
@@ -448,7 +450,7 @@ describe("createAppGraph and createBuildPlan", () => {
       },
       {
         id: "about",
-        template: "./index.html",
+        template: "./src/pages/about.html",
         fileName: "about.html",
         owner: { pageId: "about" },
       },

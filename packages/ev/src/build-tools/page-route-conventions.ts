@@ -133,6 +133,17 @@ export const PAGE_ROUTE_CONVENTION_RULES = [
     ],
     invalid: [],
   },
+  {
+    id: "mpa-html-template",
+    category: "html",
+    summary:
+      "MPA page routes can use colocated HTML templates with the same basename",
+    valid: [
+      "about.html beside about.tsx",
+      "users/index.html beside users/index.tsx",
+    ],
+    invalid: [],
+  },
 ] as const satisfies readonly PageRouteConventionRule[];
 export const PAGE_ROUTE_CONVENTION_SUMMARY = formatPageRouteConventionSummary(
   PAGE_ROUTE_CONVENTION_RULES,
@@ -184,8 +195,9 @@ export interface PageRouteConventionRule {
     | "story-module"
     | "client-module"
     | "server-module"
-    | "root-layout";
-  category: "route" | "ignored" | "layout";
+    | "root-layout"
+    | "mpa-html-template";
+  category: "route" | "ignored" | "layout" | "html";
   summary: string;
   valid: readonly string[];
   invalid: readonly string[];
@@ -214,6 +226,9 @@ function formatPageRouteConventionSummary(
   const layoutRules = rules
     .filter((rule) => rule.category === "layout")
     .map((rule) => rule.summary);
+  const htmlRules = rules
+    .filter((rule) => rule.category === "html")
+    .map((rule) => rule.summary);
 
   const sections = [
     `Page route files use ${joinConventionSummaryList(routeFileRules)}`,
@@ -224,6 +239,7 @@ function formatPageRouteConventionSummary(
     );
   }
   sections.push(...layoutRules);
+  sections.push(...htmlRules);
   return sections.join("; ");
 }
 

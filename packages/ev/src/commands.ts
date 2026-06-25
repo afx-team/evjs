@@ -352,6 +352,7 @@ async function withPageRoutingDefaults<TBundlerCfg>(
   };
   const discovery = await discoverPageRoutes(cwd, {
     dir: base.dir,
+    mode: base.mode,
     rootLayout:
       base.mode === "spa" ? (base.conventions?.layout ?? false) : false,
     required: requested,
@@ -1134,7 +1135,34 @@ function collectHtmlTemplates<TBundlerCfg>(
     });
   }
 
-  if (config.routing) {
+  if (config.routing?.mode === "mpa") {
+    let usesRoutingHtml = false;
+    for (const route of config.routing.routes) {
+      if (route.kind === "layout") continue;
+      if (route.html) {
+        templates.push({
+          path: route.html,
+          notFoundMessage: `[evjs] MPA page route "${route.id}" html template not found`,
+          notFileMessage: `[evjs] MPA page route "${route.id}" html template must be a file`,
+          mount: config.routing.mount,
+          mountNotFoundMessage: `[evjs] MPA page route "${route.id}" mount target was not found`,
+          mountInvalidMessage: `[evjs] MPA page route "${route.id}" mount selector is invalid`,
+        });
+      } else {
+        usesRoutingHtml = true;
+      }
+    }
+    if (usesRoutingHtml) {
+      templates.push({
+        path: config.routing.html,
+        notFoundMessage: "[evjs] Page routing html template not found",
+        notFileMessage: "[evjs] Page routing html template must be a file",
+        mount: config.routing.mount,
+        mountNotFoundMessage: "[evjs] Page routing mount target was not found",
+        mountInvalidMessage: "[evjs] Page routing mount selector is invalid",
+      });
+    }
+  } else if (config.routing) {
     templates.push({
       path: config.routing.html,
       notFoundMessage: "[evjs] Page routing html template not found",

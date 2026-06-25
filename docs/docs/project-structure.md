@@ -128,6 +128,7 @@ Migration rules stay explicit rather than adding alternate filename dialects:
 | File or folder | Framework meaning | Use it for | Do not use it for |
 | --- | --- | --- | --- |
 | `src/pages/**/*.{tsx,jsx,ts,js}` | SPA/MPA page route discovery | Thin page components with optional literal rendering metadata | Shared helpers, tests, bracket routes, catch-all routes, or hand-written SPA router/bootstrap code |
+| Same-basename `src/pages/**/*.html` beside a page route | MPA page HTML template | Page-specific document templates such as `about.html` beside `about.tsx` or `users/index.html` beside `users/index.tsx` | SPA layouts, route modules, or templates for unrelated routes |
 | Route paths, dynamic URL shapes, and generated route IDs under `src/pages` | Route collision checks before graph/build-plan generation | One page module per URL path, one parameter naming choice per dynamic URL shape, and unique generated route IDs | Parallel `users.tsx`/`users/index.tsx`, `users/$id.tsx`/`users/$userId.tsx`, or `admin/panel.tsx`/`admin_panel.tsx` routes |
 | `src/pages/(group)/**` | Pathless route group | Organizing page and layout modules without adding a URL segment | URL segments that should be visible in the browser path |
 | `src/pages/_*` and `src/pages/**/_*` | Ignored private route modules | Colocated helper components, utilities, fixtures, and page-local implementation details | URL routes, SPA root layouts, or generated files |
@@ -174,8 +175,11 @@ export default defineConfig({
 ```
 
 Use `routing: { mode: "mpa" }` when every route should be emitted as its own
-HTML document without SPA router setup or framework layouts. Use the lower-level
-`pages` config only for page outputs that do not map cleanly to `src/pages`.
+HTML document without SPA router setup or framework layouts. MPA routes can
+override the global `routing.html` with a same-basename colocated template,
+such as `src/pages/product/index.html` for `src/pages/product/index.tsx`. Use
+the lower-level `pages` config only for page outputs that do not map cleanly to
+`src/pages`.
 
 ## Page Modules
 

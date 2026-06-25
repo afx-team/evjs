@@ -9,6 +9,7 @@ modules unless they are imported by a convention file.
 | File or directory | Owner config | Meaning |
 | --- | --- | --- |
 | `src/pages/**/*.{ts,tsx,js,jsx}` | `routing` | Client page route discovery for SPA and MPA output. |
+| `src/pages/**/*.html` beside a same-basename page route | `routing` | MPA page-specific HTML template, such as `about.html` for `about.tsx` or `users/index.html` for `users/index.tsx`. |
 | `<routing-dir-parent>/layout.{ts,tsx,js,jsx}` | `routing.conventions.layout` | Optional external SPA root layout when one matching file exists. |
 | `<routing-dir-parent>/layout/index.{ts,tsx,js,jsx}` | `routing.conventions.layout` | Optional external SPA root layout directory form. |
 | `src/pages/**/layout.{ts,tsx,js,jsx}` | `routing` | SPA route layout inside the page route tree. |
@@ -71,7 +72,7 @@ with routes:
 | `*.story.*` and `*.stories.*` | Storybook stories. |
 | `*.client.*` | Client-only modules. |
 | `*.server.*` | Server-only modules. |
-| files without `.ts`, `.tsx`, `.js`, or `.jsx` | Non-source assets or metadata. |
+| files without `.ts`, `.tsx`, `.js`, or `.jsx` | Non-source assets or metadata, except same-basename MPA `.html` templates. |
 
 Use `_`-prefixed files or folders for route-local helpers that still use source
 extensions. For example, `src/pages/users/_format.ts` and
@@ -111,6 +112,19 @@ When multiple external root layout candidates exist, keep one file or configure
 `routing.conventions.layout` explicitly. Set
 `routing.conventions.layout: false` to disable external root layout discovery.
 MPA mode does not consume framework layouts.
+
+In MPA mode, a page route can use a colocated HTML template with the same
+basename as the page module:
+
+```text
+src/pages/about.tsx        -> /about, template src/pages/about.html
+src/pages/about.html
+src/pages/users/index.tsx  -> /users, template src/pages/users/index.html
+src/pages/users/index.html
+```
+
+Routes without a colocated template fall back to `routing.html`. If every MPA
+route has a colocated template, the global `routing.html` file is not required.
 
 SPA mode writes generated route types to `<routing-dir-parent>/route-types.d.ts`.
 Do not edit that file, import it from app code, or copy it into templates.

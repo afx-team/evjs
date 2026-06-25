@@ -1088,6 +1088,11 @@ describe("build", () => {
       "export default function About() { return null; }",
       "utf-8",
     );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/about.html"),
+      '<div id="app"></div>',
+      "utf-8",
+    );
     const events: string[] = [];
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock-mpa",
@@ -1097,6 +1102,9 @@ describe("build", () => {
         );
         events.push(
           `metadata:${plan.entries.map((entry) => entry.metadata?.type ?? "none").join(",")}`,
+        );
+        events.push(
+          `html:${plan.html.map((document) => `${document.id}:${document.template}`).join(",")}`,
         );
         return {
           clientEntryAssets: {
@@ -1125,9 +1133,62 @@ describe("build", () => {
     expect(events).toEqual([
       "entries:index:page-client,about:page-client",
       "metadata:react-component-page,react-component-page",
+      "html:index:./index.html,about:./src/pages/about.html",
     ]);
     expect(fs.existsSync(path.join(cwd, ".evjs"))).toBe(false);
     expect(fs.existsSync(path.join(cwd, "src/route-types.d.ts"))).toBe(false);
+  });
+
+  it("builds MPA page routes with colocated HTML templates without a root routing html", async () => {
+    const cwd = await createProject();
+    await fs.promises.rm(path.join(cwd, "index.html"));
+    await fs.promises.mkdir(path.join(cwd, "src/pages/product"), {
+      recursive: true,
+    });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/product/index.tsx"),
+      "export default function Product() { return null; }",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/product/index.html"),
+      '<html><body><main id="app"></main></body></html>',
+      "utf-8",
+    );
+    const events: string[] = [];
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock-mpa-colocated-html",
+      async build({ plan }) {
+        events.push(
+          `html:${plan.html.map((document) => `${document.id}:${document.template}`).join(",")}`,
+        );
+        return {
+          clientEntryAssets: {
+            product: { js: ["product.js"], css: [] },
+          },
+          firstClientEntryAssets: { js: ["product.js"], css: [] },
+        };
+      },
+      async dev() {},
+    };
+
+    await build(
+      {
+        server: false,
+        routing: {
+          mode: "mpa",
+        },
+      },
+      {
+        cwd,
+        bundler,
+      },
+    );
+
+    expect(events).toEqual(["html:product:./src/pages/product/index.html"]);
+    await expect(
+      fs.promises.readFile(path.join(cwd, "dist/product.html"), "utf-8"),
+    ).resolves.toContain('<main id="app">');
   });
 
   it("removes stale default route types when MPA routing uses a custom directory", async () => {

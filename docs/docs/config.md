@@ -106,6 +106,12 @@ export default defineConfig({
 });
 ```
 
+MPA file routes can override the global `routing.html` with a colocated HTML
+template that uses the same basename as the route module. For example,
+`src/pages/about.html` is used by `src/pages/about.tsx`, and
+`src/pages/product/index.html` is used by `src/pages/product/index.tsx`.
+Routes without a colocated template fall back to `routing.html`.
+
 When `src/pages` exists and the project does not declare explicit `app`,
 `pages` config, SPA routing is enabled automatically.
 Set `routing: false` to disable file-route discovery explicitly.

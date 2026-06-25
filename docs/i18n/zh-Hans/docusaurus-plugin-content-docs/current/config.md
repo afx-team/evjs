@@ -98,6 +98,11 @@ export default defineConfig({
 });
 ```
 
+MPA 文件路由可以用同 basename 的 colocated HTML 模板覆盖全局
+`routing.html`。例如 `src/pages/about.tsx` 使用 `src/pages/about.html`，
+`src/pages/product/index.tsx` 使用 `src/pages/product/index.html`。没有 colocated
+模板的路由会回退到 `routing.html`。
+
 当项目存在 `src/pages`，且项目没有声明显式的 `app` 或 `pages`
 配置时，SPA 路由会自动启用。
 需要显式关闭文件路由发现时，设置 `routing: false`。

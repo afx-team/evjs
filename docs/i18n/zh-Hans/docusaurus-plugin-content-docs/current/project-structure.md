@@ -107,6 +107,7 @@ my-evjs-app/
 | 文件或目录 | 框架含义 | 用于 | 不用于 |
 | --- | --- | --- | --- |
 | `src/pages/**/*.{tsx,jsx,ts,js}` | SPA/MPA 页面路由发现 | 轻量页面组件和可选的字面量渲染元信息 | 共享 helper、测试、bracket route、catch-all route 或手写 SPA router/bootstrap 代码 |
+| 页面路由旁同 basename 的 `src/pages/**/*.html` | MPA 页面 HTML 模板 | 页面专属 document 模板，例如 `about.tsx` 旁的 `about.html`，或 `users/index.tsx` 旁的 `users/index.html` | SPA layout、路由模块，或其他路由的模板 |
 | `src/pages` 下的 route paths、dynamic URL shapes 和生成的 route ID | graph/build plan 生成前的路由冲突检查 | 每个 URL path 只保留一个页面模块，每个 dynamic URL shape 只保留一种参数命名，并且生成的 route ID 必须唯一 | 并存的 `users.tsx`/`users/index.tsx`、`users/$id.tsx`/`users/$userId.tsx` 或 `admin/panel.tsx`/`admin_panel.tsx` 路由 |
 | `src/pages/(group)/**` | Pathless route group | 不增加 URL segment 的页面和 layout 组织目录 | 应出现在浏览器 URL 中的路径段 |
 | `src/pages/_*` 和 `src/pages/**/_*` | 忽略的私有路由模块 | 就近放置 helper component、utility、fixture 和页面局部实现细节 | URL 路由、SPA 根布局或生成文件 |
@@ -151,8 +152,10 @@ export default defineConfig({
 ```
 
 当每个路由都应该输出独立 HTML 文档且不需要客户端路由器配置时，使用
-`routing: { mode: "mpa" }`；这种模式不使用框架 layout。只有页面输出无法自然映射到
-`src/pages` 时，才使用更底层的 `pages` 配置。
+`routing: { mode: "mpa" }`；这种模式不使用框架 layout。MPA 路由可以用同
+basename 的 colocated 模板覆盖全局 `routing.html`，例如
+`src/pages/product/index.tsx` 对应 `src/pages/product/index.html`。只有页面输出无法
+自然映射到 `src/pages` 时，才使用更底层的 `pages` 配置。
 
 ## 页面模块
 

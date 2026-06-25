@@ -1036,7 +1036,7 @@ function createPageNodes(
         id: route.id,
         path: route.path,
         component: route.module,
-        html: config.routing.html,
+        html: route.html ?? config.routing.html,
         render: "csr",
         mount: config.routing.mount,
       };

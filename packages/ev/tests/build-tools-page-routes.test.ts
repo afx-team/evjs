@@ -63,6 +63,7 @@ describe("discoverPageRoutes", () => {
       "client-module",
       "server-module",
       "root-layout",
+      "mpa-html-template",
     ]);
     expect(PAGE_ROUTE_CONVENTION_RULES.map((rule) => rule.category)).toEqual([
       "route",
@@ -80,6 +81,7 @@ describe("discoverPageRoutes", () => {
       "ignored",
       "ignored",
       "layout",
+      "html",
     ]);
     expect(PAGE_ROUTE_CONVENTION_RULES).toEqual(
       expect.arrayContaining([
@@ -159,10 +161,18 @@ describe("discoverPageRoutes", () => {
             "src/pages/layout.tsx",
           ]),
         }),
+        expect.objectContaining({
+          id: "mpa-html-template",
+          category: "html",
+          valid: expect.arrayContaining([
+            "about.html beside about.tsx",
+            "users/index.html beside users/index.tsx",
+          ]),
+        }),
       ]),
     );
     expect(PAGE_ROUTE_CONVENTION_SUMMARY).toBe(
-      "Page route files use index files for directory roots, $param filenames for dynamic segments, one page file per URL path, one dynamic param name per URL shape, unique generated route ids, route groups for pathless organization, and lowercase URL-safe static segments; ignored colocated modules include _-prefixed private modules, dot-prefixed hidden modules, declaration files, test/spec modules, Storybook modules, client-only *.client.* modules, and server-only *.server.* modules; SPA layout auto-discovery supports layout source modules beside the route directory",
+      "Page route files use index files for directory roots, $param filenames for dynamic segments, one page file per URL path, one dynamic param name per URL shape, unique generated route ids, route groups for pathless organization, and lowercase URL-safe static segments; ignored colocated modules include _-prefixed private modules, dot-prefixed hidden modules, declaration files, test/spec modules, Storybook modules, client-only *.client.* modules, and server-only *.server.* modules; SPA layout auto-discovery supports layout source modules beside the route directory; MPA page routes can use colocated HTML templates with the same basename",
     );
     expect(isPageRouteSourceModuleFile("index.tsx")).toBe(true);
     expect(isPageRouteSourceModuleFile("index.d.ts")).toBe(false);
@@ -297,7 +307,9 @@ describe("discoverPageRoutes", () => {
     const cwd = await createFixture({
       "src/layout/index.tsx": "export default function Root() { return null; }",
       "src/pages/index.tsx": "export default function Home() { return null; }",
+      "src/pages/index.html": '<div id="app"></div>',
       "src/pages/about.tsx": "export default function About() { return null; }",
+      "src/pages/about.html": '<div id="app"></div>',
       "src/pages/users/$userId.tsx":
         "export default function User() { return null; }",
       "src/pages/posts/$postId.tsx":
@@ -332,6 +344,52 @@ describe("discoverPageRoutes", () => {
         id: "posts_postId",
         path: "/posts/$postId",
         module: "./src/pages/posts/$postId.tsx",
+      },
+      {
+        id: "users_userId",
+        path: "/users/$userId",
+        module: "./src/pages/users/$userId.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([]);
+  });
+
+  it("discovers colocated MPA HTML templates with the same basename", async () => {
+    const cwd = await createFixture({
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+      "src/pages/index.html": '<div id="app"></div>',
+      "src/pages/about.tsx": "export default function About() { return null; }",
+      "src/pages/about.html": '<div id="app"></div>',
+      "src/pages/users/index.tsx":
+        "export default function Users() { return null; }",
+      "src/pages/users/index.html": '<div id="app"></div>',
+      "src/pages/users/$userId.tsx":
+        "export default function User() { return null; }",
+    });
+
+    const discovery = await discoverPageRoutes(cwd, {
+      dir: "./src/pages",
+      mode: "mpa",
+    });
+
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/pages/index.tsx",
+        html: "./src/pages/index.html",
+      },
+      {
+        id: "about",
+        path: "/about",
+        module: "./src/pages/about.tsx",
+        html: "./src/pages/about.html",
+      },
+      {
+        id: "users",
+        path: "/users",
+        module: "./src/pages/users/index.tsx",
+        html: "./src/pages/users/index.html",
       },
       {
         id: "users_userId",

@@ -29,6 +29,7 @@ import {
 
 export interface DiscoverPageRoutesOptions {
   dir: string;
+  mode?: "spa" | "mpa";
   rootLayout?: boolean | string;
   required?: boolean;
 }
@@ -197,11 +198,17 @@ export async function discoverPageRoutes(
       continue;
     }
 
+    const html =
+      options.mode === "mpa"
+        ? await findColocatedPageHtmlTemplate(cwd, file)
+        : undefined;
+
     routeById.set(routeId, { file: sourceRel, path: routePath });
     routeCandidates.push({
       id: routeId,
       path: routePath,
       module: sourceRel,
+      ...(html ? { html } : {}),
       segments: routeFile.segments,
       kind: "page",
     });
@@ -226,6 +233,7 @@ export async function discoverPageRoutes(
           id: route.id,
           path: route.path,
           module: route.module,
+          ...(route.html ? { html: route.html } : {}),
           ...(parentId ? { parentId } : {}),
           ...(route.kind === "layout" ? { kind: route.kind } : {}),
         };
@@ -485,6 +493,17 @@ async function discoverRootLayout(
   });
   if (!validRootLayout) return undefined;
   return projectPath;
+}
+
+async function findColocatedPageHtmlTemplate(
+  cwd: string,
+  routeFile: string,
+): Promise<string | undefined> {
+  const extension = path.extname(routeFile);
+  const htmlFile = `${routeFile.slice(0, -extension.length)}.html`;
+  const stat = await statIfExists(htmlFile);
+  if (!stat) return undefined;
+  return toProjectPath(cwd, htmlFile);
 }
 
 async function validateRouteModule(

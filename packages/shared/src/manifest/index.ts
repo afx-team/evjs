@@ -240,6 +240,7 @@ export interface PageRouteNode {
   id: string;
   path: string;
   module: string;
+  html?: string;
   parentId?: string;
   kind?: PageRouteKind;
 }

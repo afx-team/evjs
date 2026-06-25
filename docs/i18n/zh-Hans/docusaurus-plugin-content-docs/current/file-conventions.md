@@ -7,6 +7,7 @@
 | 文件或目录 | 归属配置 | 含义 |
 | --- | --- | --- |
 | `src/pages/**/*.{ts,tsx,js,jsx}` | `routing` | SPA 和 MPA 的客户端页面路由发现。 |
+| 与同 basename 页面路由相邻的 `src/pages/**/*.html` | `routing` | MPA 页面专属 HTML 模板，例如 `about.tsx` 对应 `about.html`，`users/index.tsx` 对应 `users/index.html`。 |
 | `<routing-dir-parent>/layout.{ts,tsx,js,jsx}` | `routing.conventions.layout` | 存在一个匹配文件时，作为可选外部 SPA 根布局。 |
 | `<routing-dir-parent>/layout/index.{ts,tsx,js,jsx}` | `routing.conventions.layout` | 可选外部 SPA 根布局的目录形式。 |
 | `src/pages/**/layout.{ts,tsx,js,jsx}` | `routing` | 页面路由树内的 SPA route layout。 |
@@ -64,7 +65,7 @@
 | `*.story.*` 和 `*.stories.*` | Storybook stories。 |
 | `*.client.*` | 客户端专用模块。 |
 | `*.server.*` | 服务端专用模块。 |
-| 不使用 `.ts`、`.tsx`、`.js` 或 `.jsx` 的文件 | 非源码资源或元信息。 |
+| 不使用 `.ts`、`.tsx`、`.js` 或 `.jsx` 的文件 | 非源码资源或元信息；同 basename 的 MPA `.html` 模板除外。 |
 
 仍然使用源码扩展名的 route-local helper 可以放在 `_` 前缀文件或目录里。例如
 `src/pages/users/_format.ts` 和 `src/pages/users/_components/Card.tsx`
@@ -102,6 +103,18 @@ src/layout/index.tsx
 如果存在多个外部根布局候选文件，需要保留一个文件，或显式配置
 `routing.conventions.layout`。设置 `routing.conventions.layout: false`
 可以关闭外部根布局发现。MPA 模式不消费框架 layout。
+
+MPA 模式下，页面路由可以使用同 basename 的 colocated HTML 模板：
+
+```text
+src/pages/about.tsx        -> /about，模板 src/pages/about.html
+src/pages/about.html
+src/pages/users/index.tsx  -> /users，模板 src/pages/users/index.html
+src/pages/users/index.html
+```
+
+没有 colocated 模板的路由会回退到 `routing.html`。如果每个 MPA 路由都有
+colocated 模板，则不要求存在全局 `routing.html` 文件。
 
 SPA 模式会把生成的路由类型写入 `<routing-dir-parent>/route-types.d.ts`。
 不要手工修改这个文件，不要从应用代码导入它，也不要把它复制进模板。
