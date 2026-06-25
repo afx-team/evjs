@@ -279,26 +279,6 @@ describe("resolveConfig", () => {
     });
   });
 
-  it("supports the legacy routing layout alias", () => {
-    const resolved = resolveConfig({
-      routing: {
-        mode: "spa",
-        layout: "./app/ShellLayout.tsx",
-      },
-    });
-
-    expect(resolved.routing).toEqual({
-      mode: "spa",
-      dir: "./src/pages",
-      html: "./index.html",
-      mount: "#app",
-      conventions: {
-        layout: "./app/ShellLayout.tsx",
-      },
-      routes: [],
-    });
-  });
-
   it("supports disabling the SPA root layout", () => {
     const resolved = resolveConfig({
       routing: {
@@ -339,17 +319,6 @@ describe("resolveConfig", () => {
   });
 
   it("rejects routing layout configuration in MPA mode", () => {
-    expect(() =>
-      resolveConfig({
-        routing: {
-          mode: "mpa",
-          layout: "./src/shell/AppLayout.tsx",
-        },
-      }),
-    ).toThrow(
-      "[evjs] routing.layout is only supported in SPA mode. Use routing.conventions.layout for new config. MPA pages should import shared shell components directly or use shared HTML templates.",
-    );
-
     expect(() =>
       resolveConfig({
         routing: {
@@ -414,14 +383,6 @@ describe("resolveConfig", () => {
     expect(() =>
       resolveConfig({
         routing: {
-          layout: "",
-        },
-      }),
-    ).toThrow("[evjs] routing.layout must be a non-empty string.");
-
-    expect(() =>
-      resolveConfig({
-        routing: {
           conventions: null as never,
         },
       }),
@@ -467,19 +428,6 @@ describe("resolveConfig", () => {
     expect(() =>
       resolveConfig({
         routing: {
-          layout: false,
-          conventions: {
-            layout: false,
-          },
-        },
-      }),
-    ).toThrow(
-      "[evjs] routing.layout cannot be combined with routing.conventions.layout. Use routing.conventions.layout.",
-    );
-
-    expect(() =>
-      resolveConfig({
-        routing: {
           // @ts-expect-error runtime config loading can still produce internal fields.
           entry: "./src/main.tsx",
         },
@@ -507,7 +455,7 @@ describe("resolveConfig", () => {
         },
       }),
     ).toThrow(
-      "[evjs] routing.fallback is not supported. Use mode, dir, html, mount, conventions, or layout.",
+      "[evjs] routing.fallback is not supported. Use mode, dir, html, mount, or conventions.",
     );
   });
 

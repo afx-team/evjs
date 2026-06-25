@@ -132,12 +132,10 @@ export default defineConfig({
 });
 ```
 
-`routing.layout` remains as a compatibility alias for
-`routing.conventions.layout`, but new configuration should use
-`routing.conventions.layout`. Layout conventions are not supported in MPA mode.
-Route-directory layout modules are SPA route conventions. MPA pages should
-compose shared shells as normal React components, or use page-specific/shared
-HTML templates when the document wrapper needs to differ.
+Layout conventions are not supported in MPA mode. Route-directory layout
+modules are SPA route conventions. MPA pages should compose shared shells as
+normal React components, or use page-specific/shared HTML templates when the
+document wrapper needs to differ.
 
 `routing.mode` must be either `spa` or `mpa`. When provided, `routing.dir`,
 `routing.html`, and `routing.mount` must be non-empty strings.

@@ -74,7 +74,6 @@ export {
   type PageObjectConfig,
   type PageRoutingConfig,
   type PageRoutingConventionsConfig,
-  type PageRoutingLayoutConfig,
   type PageRoutingLayoutConvention,
   type Plugin,
   type PluginConfigContext,

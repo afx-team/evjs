@@ -123,10 +123,9 @@ export default defineConfig({
 });
 ```
 
-`routing.layout` 仍作为 `routing.conventions.layout` 的兼容别名保留，但新配置应使用
-`routing.conventions.layout`。MPA 模式不支持 layout conventions。路由目录内的
-layout 模块也是 SPA 路由约定。MPA 页面需要共享外框时，应像普通 React 代码一样组合共享组件；
-如果只是文档外壳相同，可以复用页面 HTML 模板。
+MPA 模式不支持 layout conventions。路由目录内的 layout 模块也是 SPA 路由约定。
+MPA 页面需要共享外框时，应像普通 React 代码一样组合共享组件；如果只是文档外壳相同，
+可以复用页面 HTML 模板。
 
 `routing.mode` 必须是 `spa` 或 `mpa`。提供 `routing.dir`、`routing.html`
 或 `routing.mount` 时，它们必须是非空字符串。`routing.conventions` 必须是
