@@ -305,7 +305,7 @@ createApp({
 在服务端入口中将路由处理器提供给 `createApp()`：
 
 ```ts
-// src/server.ts
+// src/custom-server.ts
 import { createApp } from "@evjs/server";
 import { postsRoute, postDetailsRoute } from "./api/posts.routes";
 
@@ -323,11 +323,13 @@ import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
   server: {
-    entry: "./src/server.ts",
+    entry: "./src/custom-server.ts",
     dev: { port: 3001 },
   },
 });
 ```
+
+文件名可以自定义，因为 `server.entry` 会显式指向这个入口。
 
 ## 内置行为
 

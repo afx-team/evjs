@@ -19,12 +19,15 @@ modules unless they are imported by a convention file.
 | `src/apis/**/*.{ts,tsx,js,jsx}` | `server.routing` | Server file routes when `server.routing` is enabled. |
 | `src/middleware.{ts,tsx,js,jsx}` | `server.conventions.middleware` | Global server middleware when server conventions are enabled. |
 | `src/apis/**/middleware.{ts,tsx,js,jsx}` | `server.conventions.middleware` | Route-scoped server file-route middleware. |
-| `src/server.ts` | `server.entry` | Custom framework server entry and escape hatch. |
 
 The default client route directory is `./src/pages`. The default server file
 route directory is `./src/apis`. Configure a different client route directory
 with `routing.dir`, or a different server file route directory with
 `server.routing.dir`.
+
+`server.entry` is not a file convention. It is an explicit escape hatch for
+custom server composition; the configured entry can be any module path and
+disables generated server convention discovery.
 
 ## Segment Rules
 

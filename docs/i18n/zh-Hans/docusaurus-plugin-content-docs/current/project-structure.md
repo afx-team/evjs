@@ -13,7 +13,6 @@ my-evjs-app/
 ├── public/                      # 原样复制的静态文件
 ├── tsconfig.json
 └── src/
-    ├── server.ts                # 可选自定义 framework/server entry
     ├── styles.css               # 全局 CSS / Tailwind 入口
     ├── middleware.ts            # 全局 server middleware
     ├── layout/
@@ -119,7 +118,6 @@ my-evjs-app/
 | `src/middleware.{ts,tsx,js,jsx}` | 启用 server conventions 时的全局服务端中间件约定 | 在 server file routes、server functions、SSR、PPR 和 RSC 之前运行的 Hono-compatible middleware | Matcher 配置、route handlers、helper exports，或自定义 server composition |
 | `src/apis/**/middleware.{ts,tsx,js,jsx}` | route-scoped server file-route middleware | 作用于该目录树下 descendant server file routes 的 Hono-compatible middleware | `api.ts` 这类 flat sibling routes、全局 server functions/SSR middleware，或 matcher 配置 |
 | `src/apis` 下的 server route paths 和 dynamic URL shapes | graph/build plan 生成前的 server route 冲突检查 | 每个 URL path 只保留一个 server route module，每个 dynamic URL shape 只保留一种参数命名 | 并存的 `users.ts`/`users/index.ts`、`users/$id.ts`/`users/$userId.ts`，或把同一路径的方法拆到多个文件 |
-| `src/server.ts` | 自定义 framework server entry | `createApp({ routes, middlewares, framework })`、非约定式 routing 和部署运行时 glue | 浏览器代码、按页面拆分的 client bootstrap，或和 `server.routing` 同时使用 |
 | `src/features`、`src/components`、`src/lib`、`src/hooks` | 没有直接框架约定 | 业务代码、可复用 UI、浏览器安全 helper 和 React hooks | 依赖文件名被路由发现的文件 |
 
 除非确实需要更底层 API，否则不要在一个应用中混用多套路由所有权模型：
@@ -127,6 +125,9 @@ my-evjs-app/
 - 普通 SPA/MPA 页面路由使用 `src/pages` 加 `routing`。
 - 只有输出无法用 `src/pages` 表达时，才使用显式 `pages` 配置。
 - 只有手工启动的单浏览器应用才使用 top-level `entry`/`html`。
+- 只有无法使用生成式 server conventions 做自定义 server composition 时，才使用
+  `server.entry`。配置的 entry 文件可以是任意模块路径，evjs 不会自动发现
+  任何 server entry 文件名。
 
 ## 对应配置
 
@@ -304,8 +305,8 @@ export const GET = async (_req, ctx) => {
 };
 ```
 
-需要自定义 composition 或非约定式 routing 时，关闭 `server.routing` 并在
-`src/server.ts` 中挂载 routes：
+需要自定义 composition 或非约定式 routing 时，关闭 `server.routing`，
+配置显式 `server.entry`，并在该入口中挂载 routes：
 
 ```ts
 // src/api/health.routes.ts
@@ -317,7 +318,7 @@ export const healthRoute = createRoute("/health", {
 ```
 
 ```ts
-// src/server.ts
+// src/custom-server.ts
 import { createApp, requestLogger } from "@evjs/server";
 import { createReactFrameworkServer } from "@evjs/server/react";
 import { healthRoute } from "./api/health.routes";
@@ -339,7 +340,7 @@ import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
   server: {
-    entry: "./src/server.ts",
+    entry: "./src/custom-server.ts",
   },
 });
 ```

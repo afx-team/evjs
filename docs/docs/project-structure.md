@@ -15,7 +15,6 @@ my-evjs-app/
 ├── public/                      # copied static files
 ├── tsconfig.json
 └── src/
-    ├── server.ts                # optional custom framework/server entry
     ├── styles.css               # global CSS / Tailwind entry
     ├── middleware.ts            # global server middleware
     ├── layout/
@@ -140,7 +139,6 @@ Migration rules stay explicit rather than adding alternate filename dialects:
 | `src/middleware.{ts,tsx,js,jsx}` | Global server middleware convention when server conventions are enabled | Hono-compatible middleware that runs before server file routes, server functions, SSR, PPR, and RSC | Matcher config, route handlers, helper exports, or custom server composition |
 | `src/apis/**/middleware.{ts,tsx,js,jsx}` | Route-scoped server file-route middleware | Hono-compatible middleware for descendant server file routes in that directory tree | Flat sibling routes such as `api.ts`, global server functions/SSR middleware, or matcher config |
 | Server route paths and dynamic URL shapes under `src/apis` | Server route collision checks before graph/build-plan generation | One server route module per URL path and one parameter naming choice per dynamic URL shape | Parallel `users.ts`/`users/index.ts`, `users/$id.ts`/`users/$userId.ts`, or splitting methods for one path across files |
-| `src/server.ts` | Custom framework server entry | `createApp({ routes, middlewares, framework })`, non-conventional routing, and deployment runtime glue | Browser code, per-page client bootstrap, or use together with `server.routing` |
 | `src/features`, `src/components`, `src/lib`, `src/hooks` | No direct framework convention | Domain code, reusable UI, browser-safe helpers, and React hooks | Files that depend on route discovery by filename |
 
 Do not mix ownership models in one app unless you need the lower-level API:
@@ -150,6 +148,9 @@ Do not mix ownership models in one app unless you need the lower-level API:
   `src/pages`.
 - Use top-level `entry`/`html` only for a manually bootstrapped single browser
   app.
+- Use `server.entry` only for custom server composition that cannot use
+  generated server conventions. The configured entry file can be any module
+  path; evjs does not auto-discover any server entry filename.
 
 ## Matching Config
 
@@ -342,7 +343,7 @@ export const GET = async (_req, ctx) => {
 ```
 
 When you need custom composition or non-conventional routing, disable
-`server.routing` and mount routes in `src/server.ts`:
+`server.routing`, configure an explicit `server.entry`, and mount routes there:
 
 ```ts
 // src/api/health.routes.ts
@@ -354,7 +355,7 @@ export const healthRoute = createRoute("/health", {
 ```
 
 ```ts
-// src/server.ts
+// src/custom-server.ts
 import { createApp, requestLogger } from "@evjs/server";
 import { createReactFrameworkServer } from "@evjs/server/react";
 import { healthRoute } from "./api/health.routes";
@@ -376,7 +377,7 @@ import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
   server: {
-    entry: "./src/server.ts",
+    entry: "./src/custom-server.ts",
   },
 });
 ```

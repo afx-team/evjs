@@ -523,10 +523,13 @@ only when the app needs custom server composition or non-conventional routing:
 ```ts
 export default defineConfig({
   server: {
-    entry: "./src/server.ts",
+    entry: "./src/custom-server.ts",
   },
 });
 ```
+
+The server entry path is explicit; evjs does not auto-discover any server
+entry filename.
 
 Server conventions are enabled by default when `server.routing` is enabled.
 The current convention discovers `src/middleware.ts` for global

@@ -325,7 +325,7 @@ createApp({
 Provide route handlers to `createApp()` in your server entry:
 
 ```ts
-// src/server.ts
+// src/custom-server.ts
 import { createApp } from "@evjs/server";
 import { postsRoute, postDetailsRoute } from "./api/posts.routes";
 
@@ -343,11 +343,13 @@ import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
   server: {
-    entry: "./src/server.ts",
+    entry: "./src/custom-server.ts",
     dev: { port: 3001 },
   },
 });
 ```
+
+The filename is arbitrary because `server.entry` points to it explicitly.
 
 ## Built-in Behaviors
 

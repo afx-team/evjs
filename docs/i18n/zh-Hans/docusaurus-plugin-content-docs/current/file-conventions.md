@@ -17,11 +17,13 @@
 | `src/apis/**/*.{ts,tsx,js,jsx}` | `server.routing` | 启用 `server.routing` 时的服务端文件路由。 |
 | `src/middleware.{ts,tsx,js,jsx}` | `server.conventions.middleware` | 启用 server conventions 时的全局 server middleware。 |
 | `src/apis/**/middleware.{ts,tsx,js,jsx}` | `server.conventions.middleware` | route-scoped server file-route middleware。 |
-| `src/server.ts` | `server.entry` | 自定义 framework server entry 和 escape hatch。 |
 
 默认客户端路由目录是 `./src/pages`。默认服务端文件路由目录是
 `./src/apis`。需要更换客户端路由目录时配置 `routing.dir`；需要更换服务端文件路由目录时配置
 `server.routing.dir`。
+
+`server.entry` 不是文件约定，而是自定义 server composition 的显式 escape hatch。
+配置的入口可以是任意模块路径，并且会关闭生成式 server convention discovery。
 
 ## 路径段规则
 

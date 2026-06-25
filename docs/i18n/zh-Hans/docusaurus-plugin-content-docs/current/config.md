@@ -487,10 +487,12 @@ export default defineConfig({
 ```ts
 export default defineConfig({
   server: {
-    entry: "./src/server.ts",
+    entry: "./src/custom-server.ts",
   },
 });
 ```
+
+Server entry 路径是显式配置，evjs 不会自动发现任何 server entry 文件名。
 
 启用 `server.routing` 时，server conventions 默认启用。当前 convention 会发现
 `src/middleware.ts` 作为全局 middleware，并发现
