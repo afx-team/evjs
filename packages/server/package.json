@@ -3,7 +3,6 @@
   "version": "0.0.0",
   "description": "Server-side runtime for the evjs framework",
   "dependencies": {
-    "@evjs/client": "*",
     "@evjs/shared": "*",
     "@hono/node-server": "^1.19.11",
     "@logtape/logtape": "^2.0.4",
@@ -78,10 +77,9 @@
     }
   },
   "scripts": {
-    "prepare-client-runtime": "npm --workspace @evjs/client run prepare-shared-runtime && (test -f ../client/esm/page-context.js || npm --workspace @evjs/client run build)",
-    "build": "npm run prepare-client-runtime && tsc",
-    "test": "npm run prepare-client-runtime && vitest run",
-    "check-types": "npm run prepare-client-runtime && tsc --noEmit"
+    "build": "tsc",
+    "test": "vitest run",
+    "check-types": "tsc --noEmit"
   },
   "files": [
     "esm"

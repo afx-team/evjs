@@ -26,16 +26,19 @@ coverage in `packages/ev/tests/build-tools-page-routes.test.ts`.
   discovered from `src/middleware.ts` and `src/apis/**/middleware.ts`.
 - `@evjs/ev` is the config, plugin, graph, build-plan, manifest, and deployment
   control plane. It owns convention discovery and composes generated framework
-  output; it must not become a runtime facade.
+  output; its runtime-facing subpaths are curated authoring and generated-only
+  entries, not generic runtime mirrors.
 - `@evjs/client` and `@evjs/server` are independent runtime cores. Public
   client/server APIs live there and stay usable outside evjs file conventions.
   Their runtime APIs are not a second framework routing/configuration mode.
 
 ## Working Rules
 
-1. Keep config/build/plugin imports on `@evjs/ev`; runtime imports use
-   `@evjs/client` and `@evjs/server`. `@evjs/ev` does not re-export client or
-   server runtime packages.
+1. Keep config/build/plugin imports on `@evjs/ev`. File-convention app source
+   imports page helpers from `@evjs/ev/page`, request helpers from
+   `@evjs/ev/request`, and custom transport helpers from `@evjs/ev/transport`.
+   Standalone/manual runtime imports use `@evjs/client` and `@evjs/server`;
+   `@evjs/ev` root does not re-export client or server runtime packages.
 2. Do not add new distributed `@evjs/*` packages without first trying a subpath
    export on an existing package.
 3. Keep framework semantics in `packages/ev/src/build-tools` and manifest

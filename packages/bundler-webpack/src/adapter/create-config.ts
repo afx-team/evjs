@@ -50,8 +50,9 @@ const serverRoutesEntryAnchor = fileURLToPath(
   new URL("./server-routes-entry-anchor.js", import.meta.url),
 );
 const ReactFlightWebpackPlugin = require("react-server-dom-webpack/plugin");
-const clientRscEntry = "@evjs/client/internal/rsc-runtime";
-const clientRscPageContextEntry = "@evjs/client/internal/rsc-page-context";
+const clientRscEntry = "@evjs/ev/internal/client/rsc-runtime";
+const clientRscPageContextEntry = "@evjs/ev/internal/client/rsc-page-context";
+const evPageRscEntry = "@evjs/ev/internal/client/rsc-page-context";
 
 type RscClientReferenceConfig =
   | string
@@ -244,6 +245,7 @@ function createWebpackConfig(options: {
         ? {
             alias: {
               "@evjs/client$": clientRscPageContextEntry,
+              "@evjs/ev/page$": evPageRscEntry,
             },
           }
         : {}),

@@ -234,7 +234,7 @@ function createEntries(
   if (hasRscPages(graph)) {
     entries.push({
       name: "evjs-rsc-client",
-      import: "@evjs/client/internal/rsc-runtime",
+      import: "@evjs/ev/internal/client/rsc-runtime",
       environment: "client",
       runtime: "browser",
       kind: "runtime",
@@ -534,7 +534,7 @@ function createServerRuntimeEntry(
       },
     };
   }
-  return { import: "@evjs/server/fetch" };
+  return { import: "@evjs/ev/internal/server/fetch" };
 }
 
 function getConfiguredServerRoutes(

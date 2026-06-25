@@ -69,13 +69,13 @@ export const deleteUser = async (id: string) => {
 ## Request Context Helpers
 
 Server functions run inside the framework request lifecycle, so they can use the
-request helpers exported by `@evjs/server`:
+request helpers exported by `@evjs/ev/request`:
 
 ```ts
 // src/api/session.server.ts
 "use server";
 
-import { getCookie, headers, request, waitUntil } from "@evjs/server";
+import { getCookie, headers, request, waitUntil } from "@evjs/ev/request";
 
 export async function currentSession() {
   const req = request();
@@ -110,7 +110,7 @@ import {
   useQueryClient,
   getFnQueryKey,
   getFnQueryOptions,
-} from "@evjs/client";
+} from "@evjs/ev/page";
 import { getUsers, getUser, createUser } from "../api/users.server";
 
 // Queries — pass server functions directly, types are inferred
@@ -213,7 +213,7 @@ const { data } = useQuery({
 ### HTTP (Default)
 
 ```tsx
-import { initTransport } from "@evjs/client";
+import { initTransport } from "@evjs/ev/transport";
 
 initTransport({
   // Optional. Defaults to the current page origin.
@@ -274,8 +274,8 @@ plus `text()` for error responses.
 Implement a `TransportAdapter` for custom protocols:
 
 ```tsx
-import { initTransport } from "@evjs/client";
-import type { TransportAdapter } from "@evjs/client";
+import { initTransport } from "@evjs/ev/transport";
+import type { TransportAdapter } from "@evjs/ev/transport";
 
 const wsAdapter: TransportAdapter = {
   send: async (fnId, args) => {
@@ -310,7 +310,7 @@ export default defineConfig({
 Throw structured errors with status codes and data:
 
 ```ts
-import { ServerError } from "@evjs/server";
+import { ServerError } from "@evjs/ev/request";
 
 export async function getUser(id: string) {
   const user = await db.users.findById(id);
@@ -329,7 +329,7 @@ export async function getUser(id: string) {
 Catch typed errors:
 
 ```tsx
-import { ServerFunctionError } from "@evjs/client";
+import { ServerFunctionError } from "@evjs/ev/transport";
 
 try {
   const user = await getUser("123");

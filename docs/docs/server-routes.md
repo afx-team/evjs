@@ -100,7 +100,7 @@ configuration:
 
 ```ts
 // src/middleware.ts
-import type { MiddlewareHandler } from "@evjs/server";
+import type { MiddlewareHandler } from "@evjs/ev/request";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
   await next();
@@ -132,7 +132,7 @@ cover the flat sibling `src/apis/api.ts`.
 The signature follows Hono:
 
 ```ts
-import type { MiddlewareHandler } from "@evjs/server";
+import type { MiddlewareHandler } from "@evjs/ev/request";
 
 const requireAuth: MiddlewareHandler = async (ctx, next) => {
   if (!ctx.req.header("authorization")) {

@@ -78,9 +78,10 @@ async function writeRouteTypeCheckTsConfig(cwd: string) {
           noEmit: true,
           types: ["node"],
           paths: {
-            "@evjs/client/internal/route-types": [
-              "../../packages/client/src/route-types.ts",
+            "@evjs/ev/internal/client/route-types": [
+              "../../packages/ev/src/internal/client/route-types.ts",
             ],
+            "@evjs/ev/page": ["../../packages/ev/src/page.ts"],
             "@evjs/client": ["../../packages/client/src/index.ts"],
             "@evjs/shared": ["../../packages/shared/src/index.ts"],
           },
@@ -831,7 +832,7 @@ describe("build", () => {
       await fs.promises.writeFile(
         path.join(cwd, "src/check-links.tsx"),
         [
-          'import { Link, useLinkProps, usePageLoaderData, usePageParams, usePageSearch } from "@evjs/client";',
+          'import { Link, useLinkProps, usePageLoaderData, usePageParams, usePageSearch } from "@evjs/ev/page";',
           "",
           "export function CheckLinks() {",
           '  <Link to="/posts/$postId" params={{ postId: "p1" }} />;',
@@ -899,7 +900,7 @@ describe("build", () => {
       await fs.promises.writeFile(
         path.join(cwd, "src/check-custom-dir-links.tsx"),
         [
-          'import { useLinkProps } from "@evjs/client";',
+          'import { useLinkProps } from "@evjs/ev/page";',
           "",
           "export function CheckCustomDirLinks() {",
           '  useLinkProps({ to: "/admin/$section", params: { section: "users" } });',

@@ -10,9 +10,10 @@ evjs is a React framework whose framework-managed application model is
 file-convention first. Client pages come from `src/pages`, server request
 routes come from `src/apis`, middleware comes from `src/middleware.ts` and
 `src/apis/**/middleware.ts`, and `"use server"` modules provide server
-functions. `@evjs/client` and `@evjs/server` are independent runtime cores that
-provide browser/server primitives without becoming alternate framework
-configuration modes.
+functions. `@evjs/ev` exposes curated file-convention authoring subpaths and
+generated-only internal bridges, while `@evjs/client` and `@evjs/server` remain
+independent runtime cores that provide browser/server primitives without
+becoming alternate framework configuration modes.
 
 ```txt
 src/pages + src/apis + src/middleware.ts + ev.config.ts
@@ -39,20 +40,19 @@ consume `BuildOutput` rather than raw bundler stats.
 @evjs/ev
   composition/control plane for config, plugins, graph analysis, build
   planning, HTML, capability validation, deployment helpers, and bundler
-  adapter contracts
+  adapter contracts, plus curated file-convention authoring subpaths
 
 @evjs/shared
   runtime shared helpers and @evjs/shared/manifest schemas/linkers
 
 @evjs/client
-  browser runtime core for standalone CSR/manual routing, framework-managed
-  page runtime, server-function transport, page hooks, navigation helpers, and
-  RSC client runtime
+  standalone/manual browser runtime core, framework-managed page runtime,
+  server-function transport, navigation primitives, and RSC client runtime
 
 @evjs/server
-  server runtime core for server functions, REST routes, request context,
-  SSR/PPR/RSC request coordination, and runtime adapters such as
-  @evjs/server/node
+  standalone/manual server runtime core for server functions, REST routes,
+  request context, SSR/PPR/RSC request coordination, and runtime adapters such
+  as @evjs/server/node
 
 @evjs/bundler-utoopack
   default Utoopack adapter
@@ -63,25 +63,30 @@ consume `BuildOutput` rather than raw bundler stats.
 
 `@evjs/ev` owns config, plugin, build, and deployment APIs, and composes runtime
 capabilities through graph analysis, build plans, and manifest validation.
-Runtime APIs live in `@evjs/client` and `@evjs/server`, and applications that
-use those capabilities declare those runtime packages directly. Browser-only
-CSR apps can use `@evjs/client` without depending on `@evjs/ev`. Other packages
-are tooling, bundler adapters, or shared contracts for framework packages. When
-a new capability needs a boundary, prefer adding a subpath export to the
-package that owns the behavior before creating another distributed package.
+File-convention application source imports curated authoring APIs from
+`@evjs/ev/page`, `@evjs/ev/request`, and `@evjs/ev/transport`; generated
+framework code resolves runtime internals through `@evjs/ev/internal/*`.
+Runtime APIs in `@evjs/client` and `@evjs/server` remain standalone/manual
+surfaces for applications that intentionally own those primitives directly.
+Other packages are tooling, bundler adapters, or shared contracts for framework
+packages. When a new capability needs a boundary, prefer adding a subpath export
+to the package that owns the behavior before creating another distributed
+package.
 
 Subpath exports stay explicit and documented; adding a new package export is a
 public API decision, not a convenience alias.
 
 Internal `@evjs/*` runtime dependencies are kept explicit and workspace-local.
-`@evjs/ev` consumes shared contracts but does not publish runtime
-subpaths. `@evjs/server` consumes `@evjs/client` for shared runtime types.
+`@evjs/ev` consumes `@evjs/client`, `@evjs/server`, and shared contracts so
+file-convention apps can install one framework package while generated code
+still reaches the runtime cores. `@evjs/server` consumes `@evjs/client` for
+shared runtime types.
 `@evjs/cli` owns the default Utoopack adapter dependency, and bundler adapters
 depend on `@evjs/ev` instead of depending on each other. Internal runtime
 dependency versions stay `"*"` in source manifests for workspace development,
 then release automation rewrites them to the concrete release version before
 publishing.
-`@evjs/ev` exports stay limited to framework and build tooling entries.
+`@evjs/ev` root exports stay limited to framework and build tooling entries.
 
 Do not reintroduce legacy split packages:
 
@@ -93,7 +98,7 @@ Do not reintroduce legacy split packages:
 Build helpers are exported from `@evjs/ev/build-tools`, manifest contracts are
 exported from `@evjs/shared/manifest`, and generated page/shell/server-function
 runtime primitives stay behind focused generated-only
-`@evjs/client/internal/*` subpaths.
+`@evjs/ev/internal/*` subpaths.
 
 ## Build-Time Flow
 

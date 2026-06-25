@@ -689,7 +689,7 @@ describe("webpackAdapter build", () => {
           '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
         "src/pages/Insights !page.tsx": `
         import { createElement } from "react";
-        import { usePageParams, usePageSearch } from "@evjs/client";
+        import { usePageParams, usePageSearch } from "@evjs/ev/page";
         import "./insights.css";
         import Badge from "./InsightsBadge";
 

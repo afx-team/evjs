@@ -65,7 +65,7 @@ my-app/
 
 ```tsx
 // src/pages/users/$id.tsx
-import { usePageParams, useQuery } from "@evjs/client";
+import { usePageParams, useQuery } from "@evjs/ev/page";
 import { getUser } from "../../api/users.server";
 
 export default function UserPage() {
@@ -109,31 +109,31 @@ export default defineConfig({
 
 | 包 | 用途 |
 |---|------|
-| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | 框架 API、配置、插件、构建编排和 deployment helpers |
+| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | 框架 API、配置、插件、构建编排、deployment helpers 和 file-convention authoring subpaths |
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | 注入默认构建器的轻量 CLI 包装 (`ev dev`, `ev build`, `ev inspect`) |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | 项目脚手架 (`npx @evjs/create-app`) |
-| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | standalone CSR、page hooks、导航、transport 和 RSC 浏览器运行时 core |
-| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Hono/fetch app、server functions、routes、渲染和部署相关的服务端运行时 core |
+| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | 不使用 evjs file conventions 时的 standalone/manual 浏览器运行时 core |
+| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | 手写 Hono/fetch app 和 route primitives 的 standalone/manual 服务端运行时 core |
 
 Manifest schema、build tools、生成 page runtime 和 shell 内部实现都位于上述公开包中。
-应用的 config/build 代码从 `@evjs/ev` 导入框架组合 API；运行时代码从
-`@evjs/client`、`@evjs/server` 或 `@evjs/server/react` 导入。自己持有构建
+应用的 config/build 代码从 `@evjs/ev` 导入框架组合 API。file-convention 应用源码从
+`@evjs/ev/page` 导入 page helpers，从 `@evjs/ev/request` 导入 request helpers，
+从 `@evjs/ev/transport` 导入自定义 server-function transport helpers。自己持有构建
 管线的浏览器-only CSR 应用可以只使用 `@evjs/client`，不依赖 `@evjs/ev`。
 `@evjs/cli` 和 `@evjs/create-app` 应作为工具使用，不应被应用模块 import。
 `@evjs/bundler-utoopack` 这类 bundler adapter 以及 `@evjs/shared` 这类共享契约模块，
 只面向自定义框架工具或 adapter 开发。
 
-应用源码或生成的 SPA entry 需要浏览器运行时时声明 `@evjs/client`。应用使用
-server functions、server routes、框架渲染或部署运行时包装时声明 `@evjs/server`。
+生成的 framework 代码通过 `@evjs/ev/internal/*` 解析 client/server runtime
+internals，因此普通 file-convention 应用不再直接安装 `@evjs/client` 或
+`@evjs/server`。
 
 ## 必需依赖
 
 ```json
 {
   "dependencies": {
-    "@evjs/client": "<same version>",
     "@evjs/ev": "<same version>",
-    "@evjs/server": "<same version>",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -148,17 +148,18 @@ server functions、server routes、框架渲染或部署运行时包装时声明
 
 :::important
 
-应用中的所有 `@evjs/*` 包必须保持相同版本。应用源码直接 import 的 runtime
-包需要显式声明；脚手架生成的全栈模板通常会在 `@evjs/ev` 和 `@evjs/cli`
-之外包含 `@evjs/client` 与 `@evjs/server`。如果额外添加 adapter 包，升级时也要和
-其他框架包一起升级。
+应用中的所有 `@evjs/*` 包必须保持相同版本。只有应用源码直接导入
+standalone/manual runtime surface 时才需要显式声明 runtime packages。脚手架
+file-convention 模板包含 `@evjs/ev` 与 `@evjs/cli`；`@evjs/client` 和
+`@evjs/server` 是 `@evjs/ev` 为生成代码携带的 runtime dependencies。如果额外添加
+adapter 包，升级时也要和其他框架包一起升级。
 
 :::
 
 ## 重要规则
 
 - 配置文件：`ev.config.ts`（不是 `evjs.config.ts`）
-- 从 `@evjs/ev` 导入 `defineConfig`，不是从 `@evjs/server`
+- 从 `@evjs/ev` 导入 `defineConfig`
 - HTML 必须包含 `<div id="app">` 作为渲染目标
 - 不要在你的**项目** `package.json` 中添加 `"type": "module"` —— 服务端 bundle 使用 CJS 格式
 - 优先使用 `src/pages` 作为路由事实来源

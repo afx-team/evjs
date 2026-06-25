@@ -2,7 +2,7 @@
 
 import path from "node:path";
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
-import { ServerError } from "@evjs/server";
+import { ServerError } from "@evjs/ev/request";
 
 /**
  * SQLite database connection using Node.js built-in sqlite module.

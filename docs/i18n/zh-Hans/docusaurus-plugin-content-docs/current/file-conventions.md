@@ -191,7 +191,7 @@ Server middleware 使用专门的 `middleware.*` 文件，并遵循 Hono 的
 
 ```ts
 // src/middleware.ts
-import type { MiddlewareHandler } from "@evjs/server";
+import type { MiddlewareHandler } from "@evjs/ev/request";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
   await next();

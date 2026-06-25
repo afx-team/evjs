@@ -16,9 +16,9 @@ export const PAGE_ROUTE_TYPES_MARKER =
 export const PAGE_ROUTE_TYPES_USAGE_HINT =
   "// Do not import this file from application code; include its directory in tsconfig instead.";
 export const PAGE_ROUTE_TYPES_CONVENTION_HINT = `// Page route file convention: ${PAGE_ROUTE_CONVENTION_SUMMARY}. See ${PAGE_ROUTE_CONVENTION_DOCS_URL}`;
-export const PAGE_ROUTE_TYPES_REGISTER_MODULE = "@evjs/client";
+export const PAGE_ROUTE_TYPES_REGISTER_MODULE = "@evjs/ev/page";
 export const PAGE_ROUTE_TYPES_HELPER_MODULE =
-  "@evjs/client/internal/route-types";
+  "@evjs/ev/internal/client/route-types";
 const PAGE_ROUTE_TYPES_CLEANUP_SKIP_DIRS = new Set([
   ".git",
   ".turbo",

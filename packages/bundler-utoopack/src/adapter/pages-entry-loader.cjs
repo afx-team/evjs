@@ -11,7 +11,7 @@ module.exports = function pagesEntryLoader() {
   const mount = options.mount || "#app";
   const rootModule = options.rootModule;
   const imports = [
-    `import { createPagesApp } from "@evjs/client/internal";`,
+    `import { createPagesApp } from "@evjs/ev/internal/client";`,
     rootModule
       ? `import * as rootModule from ${JSON.stringify(toLoaderRelativeRequest(rootModule, loaderContext))};`
       : "",

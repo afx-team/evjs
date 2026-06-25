@@ -1,8 +1,4 @@
 import {
-  PageProvider,
-  type PageProviderProps,
-} from "@evjs/client/internal/page-context";
-import {
   findBestPageRoute,
   formatContentTypeHeaderValue,
   isHeadersInit,
@@ -27,6 +23,19 @@ import {
   isRecord,
   sanitizeDiagnosticText,
 } from "./validation.js";
+
+export interface PageProviderProps<
+  TParams extends Record<string, string> = Record<string, string>,
+  TSearch extends Record<string, unknown> = Record<string, unknown>,
+  TLoaderData = unknown,
+> {
+  value: {
+    params: TParams;
+    search: TSearch;
+    loaderData: TLoaderData;
+  };
+  children?: ReactNode;
+}
 
 export interface ReactServerRenderContext {
   request: Request;
@@ -429,7 +438,9 @@ async function renderRscRendererModule(
 
   const Component = module.default as ComponentType<Record<string, unknown>>;
   const props = await resolveRscRenderProps(options, ctx);
-  return renderReactHtml(createPageElement(Component, props, ctx));
+  return renderReactHtml(
+    createPageElement(Component, props, ctx, resolvePageProvider(module)),
+  );
 }
 
 function getModuleFunction(
@@ -586,9 +597,9 @@ function createPageElement(
   component: ComponentType<Record<string, unknown>>,
   props: Record<string, unknown>,
   ctx: PageElementContext,
-  Provider: ComponentType<PageProviderProps> = PageProvider,
+  Provider: ComponentType<PageProviderProps> | undefined,
 ) {
-  if (!shouldProvidePageRouteProps(props, ctx)) {
+  if (!Provider || !shouldProvidePageRouteProps(props, ctx)) {
     return createElement(component, props);
   }
 
@@ -601,10 +612,10 @@ function createPageElement(
 
 function resolvePageProvider(
   module: ReactServerRendererModule,
-): ComponentType<PageProviderProps> {
+): ComponentType<PageProviderProps> | undefined {
   return typeof module.PageProvider === "function"
     ? (module.PageProvider as ComponentType<PageProviderProps>)
-    : PageProvider;
+    : undefined;
 }
 
 function shouldProvidePageRouteProps(

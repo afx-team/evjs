@@ -212,38 +212,7 @@ The generated server mounts the framework server bundle at `server.basePath`,
 mounts SSR/PPR/RSC document routes and explicit server routes, serves
 `dist/client`, and falls back to the app HTML for client routes.
 
-If you need full control, the equivalent shape is:
-
-```js
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { serve } from "@evjs/server/node";
-import serverHandler from "./dist/server/server.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const clientRoot = path.join(__dirname, "dist/client");
-
-const app = {
-  async fetch(request) {
-    const url = new URL(request.url);
-    if (url.pathname.startsWith("/__evjs/") || url.pathname === "/dashboard") {
-      return serverHandler.fetch(request);
-    }
-
-    const file = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
-    try {
-      return new Response(await readFile(path.join(clientRoot, file)));
-    } catch {
-      return new Response(await readFile(path.join(clientRoot, "index.html")));
-    }
-  },
-};
-
-serve(app, { port: Number(process.env.PORT ?? 3000) });
-```
-
-Adjust the mounted framework path if `server.basePath` is not `/__evjs`.
+If you need full control, treat it as a standalone/manual server runtime setup: declare `@evjs/server` explicitly, mount the emitted `{ fetch }` handler, and adjust the framework path if `server.basePath` is not `/__evjs`.
 
 ## Static Hosting
 

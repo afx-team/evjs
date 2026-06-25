@@ -62,12 +62,12 @@ my-evjs-app/
 - `<routing-dir-parent>/route-types.d.ts` 是 SPA 模式生成的类型安全导航声明。
   默认 `src/pages` 会写入 `src/route-types.d.ts`；`routing.dir:
   "./src/app/pages"` 会写入 `src/app/route-types.d.ts`。MPA 模式会移除旧的生成路由类型文件。
-  生成声明使用生成专用的 `@evjs/client/internal/route-types` helper，
-  并增强 client runtime 导航类型。保持忽略生成的 route types，不要在应用代码里导入它们。
+  生成声明使用生成专用的 `@evjs/ev/internal/client/route-types` helper，
+  并增强 `@evjs/ev/page` 导航类型。保持忽略生成的 route types，不要在应用代码里导入它们。
 - 渲染元信息放在页面模块旁边。
 - `api/*.server.ts` 放 server functions。
 - `api/*.routes.ts` 放标准 HTTP route handlers。
-- `server.ts` 组合 `@evjs/server` routes、middleware 和 framework rendering。
+- `server.ts` 只在你持有自定义 server entry 时组合 standalone/manual `@evjs/server` routes、middleware 和 framework rendering。
 - `features/` 把业务逻辑从 route/page files 中移走。
 
 ## 约定矩阵
@@ -270,7 +270,7 @@ export const GET = async () => Response.json({ ok: true });
 
 ```ts
 // src/middleware.ts
-import type { MiddlewareHandler } from "@evjs/server";
+import type { MiddlewareHandler } from "@evjs/ev/request";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
   await next();
@@ -282,7 +282,7 @@ export default middleware;
 
 ```ts
 // src/apis/api/middleware.ts
-import type { MiddlewareHandler } from "@evjs/server";
+import type { MiddlewareHandler } from "@evjs/ev/request";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
   if (!ctx.req.header("authorization")) {

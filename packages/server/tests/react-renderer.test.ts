@@ -1,14 +1,53 @@
-import { usePageParams, usePageSearch } from "@evjs/client";
 import {
   assertFrameworkManifestShape,
   type BuildOutput,
 } from "@evjs/shared/manifest";
-import { createElement, lazy, Suspense } from "react";
+import {
+  createContext,
+  createElement,
+  lazy,
+  type ReactNode,
+  Suspense,
+  useContext,
+} from "react";
 import { describe, expect, it } from "vitest";
 import {
   createReactRscFlightAdapter,
   createReactServerRenderAdapter,
 } from "../src/react-renderer.js";
+
+interface PageProps {
+  params: Record<string, string>;
+  search: Record<string, unknown>;
+  loaderData: unknown;
+}
+
+interface PageProviderProps {
+  value: PageProps;
+  children?: ReactNode;
+}
+
+const PageContext = createContext<PageProps | undefined>(undefined);
+
+function PageProvider({ value, children }: PageProviderProps) {
+  return createElement(PageContext.Provider, { value }, children);
+}
+
+function usePageContext(): PageProps {
+  const ctx = useContext(PageContext);
+  if (!ctx) {
+    throw new Error("Expected page context.");
+  }
+  return ctx;
+}
+
+function usePageParams<TParams extends Record<string, string>>(): TParams {
+  return usePageContext().params as TParams;
+}
+
+function usePageSearch<TSearch extends Record<string, unknown>>(): TSearch {
+  return usePageContext().search as TSearch;
+}
 
 describe("createReactServerRenderAdapter", () => {
   it("rejects invalid server render adapter options", () => {
@@ -271,6 +310,7 @@ describe("createReactServerRenderAdapter", () => {
     const result = await adapter(
       {
         default: PostPage,
+        PageProvider,
       },
       {
         request: new Request(
@@ -336,6 +376,7 @@ describe("createReactServerRenderAdapter", () => {
     const result = await adapter(
       {
         default: ProfilePage,
+        PageProvider,
       },
       {
         request: new Request("https://example.com/users/settings?tab=account"),
@@ -380,6 +421,7 @@ describe("createReactServerRenderAdapter", () => {
     const result = await adapter(
       {
         default: PostPage,
+        PageProvider,
       },
       {
         request: new Request("https://example.com/posts/42"),
@@ -425,6 +467,7 @@ describe("createReactServerRenderAdapter", () => {
     const result = await adapter(
       {
         default: DocsPage,
+        PageProvider,
       },
       {
         request: new Request("https://example.com/docs/guides/install"),
@@ -471,6 +514,7 @@ describe("createReactServerRenderAdapter", () => {
     const result = await adapter(
       {
         default: CustomPostPage,
+        PageProvider,
       },
       {
         request: new Request("https://example.com/posts/42?tab=ignored"),

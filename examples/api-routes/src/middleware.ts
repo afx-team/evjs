@@ -1,4 +1,4 @@
-import type { MiddlewareHandler } from "@evjs/server";
+import type { MiddlewareHandler } from "@evjs/ev/request";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
   const startedAt = Date.now();

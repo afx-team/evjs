@@ -158,6 +158,7 @@ class WebpackDevSession implements BundlerDevController {
       this.graph,
       this.ctx.cwd,
       this.ctx.hooks,
+      { clean: false },
     );
     const clientConfigs = configs.filter((config) => config.name === "client");
     const serverConfigs = configs.filter(

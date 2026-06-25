@@ -132,7 +132,7 @@ page logic needs the current route params, search params, or loader data:
 
 ```tsx
 // src/pages/users/$userId.tsx
-import { usePageParams, useQuery } from "@evjs/client";
+import { usePageParams, useQuery } from "@evjs/ev/page";
 import { getUser } from "../../api/users.server";
 
 export default function UserPage() {
@@ -157,7 +157,7 @@ In SPA projects with generated route types, page hooks can take a literal route
 path for route-specific inference without importing the generated declaration:
 
 ```tsx
-import { usePageLoaderData, usePageParams, usePageSearch } from "@evjs/client";
+import { usePageLoaderData, usePageParams, usePageSearch } from "@evjs/ev/page";
 
 export const validateSearch = (search: Record<string, unknown>) => ({
   tab: typeof search.tab === "string" ? search.tab : "overview",
@@ -183,7 +183,7 @@ are ignored; use normal component/data logic in the page.
 
 ```tsx
 // src/pages/search.tsx
-import { usePageSearch } from "@evjs/client";
+import { usePageSearch } from "@evjs/ev/page";
 
 export const validateSearch = (search: Record<string, unknown>) => ({
   q: typeof search.q === "string" ? search.q : "",
@@ -250,20 +250,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 ## Navigation
 
-Navigation can use ordinary anchors or `Link` from `@evjs/client`. Route files
+Navigation can use ordinary anchors or `Link` from `@evjs/ev/page`. Route files
 remain the source of truth, and navigation helpers use the same file-path
 convention for paths and params.
 
 During `ev dev` and `ev build`, SPA routing writes the generated declaration
 `src/route-types.d.ts` for the default `src/pages` route directory. A
 custom `routing.dir` writes the same file name beside that route directory's
-parent. That file augments the underlying `@evjs/client` route register used by
-the `@evjs/client` `Link`, `useLinkProps`, `redirect`, and related helpers.
+parent. That file augments the `@evjs/ev/page` route register used by
+`Link`, `useLinkProps`, `redirect`, and related helpers.
 It is type-only; application code should not import it or write framework
 router bootstraps manually.
 
 The generated file imports its type helper from
-`@evjs/client/internal/route-types`, a generated-only internal subpath. Do not
+`@evjs/ev/internal/client/route-types`, a generated-only internal subpath. Do not
 import that internal helper from application source.
 
 The declaration preserves each route's literal ID and path for navigation
@@ -277,7 +277,7 @@ under `src`, such as `src/app/pages`. If you place routes outside `src`, include
 that route directory's parent as well.
 
 ```tsx
-import { Link } from "@evjs/client";
+import { Link } from "@evjs/ev/page";
 
 export default function HomePage() {
   return (

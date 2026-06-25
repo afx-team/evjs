@@ -33,7 +33,8 @@
   `src/apis/**/middleware.ts`, and server functions in `"use server"` modules.
 - `@evjs/ev` owns config, plugins, convention discovery, graph/build planning,
   manifest/deployment helpers, and bundler contracts. It should not expose
-  client or server runtime mirrors.
+  client or server runtime mirrors; its runtime-facing subpaths are curated
+  file-convention authoring and generated-only entries.
 - `@evjs/client` and `@evjs/server` are runtime core packages. Their APIs can
   be used independently from evjs file conventions; do not treat programmatic
   server runtime APIs as framework route declarations.
@@ -81,14 +82,16 @@ and adapters depend on `@evjs/ev` instead of on each other.
 4. Keep framework semantics out of bundler adapters. Adapters consume `BuildPlan` and return build facts.
 5. Server function files must start with `"use server";` and export named functions or supported named async values.
 6. Use `ev.config.ts`; new docs should import `defineConfig` from `@evjs/ev`.
-7. Config/build imports stay on `@evjs/ev`; runtime imports use `@evjs/client`
-   and `@evjs/server`. Prefer a subpath export on the package that owns the
-   behavior before adding another distributed package. Subpath exports stay
-   intentional and documented; do not add convenience aliases.
-8. Keep client imports on `@evjs/client` for standalone CSR, page hooks,
-   navigation, transport, and RSC helpers. Generated page bootstrap,
-   server-function stubs, and shell runtime primitives stay behind focused
-   generated-only `@evjs/client/internal/*` subpaths.
+7. Config/build imports stay on `@evjs/ev`. File-convention app source imports
+   page helpers from `@evjs/ev/page`, request helpers from `@evjs/ev/request`,
+   and custom transport helpers from `@evjs/ev/transport`; standalone/manual
+   runtime imports use `@evjs/client` and `@evjs/server`. Prefer a subpath
+   export on the package that owns the behavior before adding another
+   distributed package. Subpath exports stay intentional and documented; do not
+   add convenience aliases.
+8. Keep generated page bootstrap, server-function stubs, server runtime
+   bootstrap, and shell runtime primitives behind focused generated-only
+   `@evjs/ev/internal/*` subpaths.
 9. Use `server.basePath` for framework server runtime paths. Do not reintroduce public `server.functions.endpoint` config.
 10. Do not reintroduce `server.entry` or framework-side source extraction of
     `createRoute()` calls. Server framework routes are file routes under

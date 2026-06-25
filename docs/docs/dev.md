@@ -73,13 +73,13 @@ rules before the framework proxy for `/__evjs/*`.
 4. `BundlerAdapter.dev()` is invoked (applying plugin `bundlerConfig` hooks to the config).
 5. Starts `dev server` for client HMR.
 6. The adapter signals `onServerBundleReady` after discovery.
-7. The CLI core auto-starts the API server via `@evjs/server/node`.
+7. The CLI core auto-starts the API server via `@evjs/ev/internal/server/node`.
 8. Sets up reverse proxy for the derived framework runtime paths, for example
    `/__evjs/fn`, `/__evjs/ppr`, and `/__evjs/rsc` → `localhost:3001`.
 
 ## API Server Runtime
 
-In dev mode, evjs runs the built server bundle through a small Node bootstrap that calls `@evjs/server/node`. For production, deploy the emitted `{ fetch }` handler with the runtime wrapper that matches your host.
+In dev mode, evjs runs the built server bundle through a small Node bootstrap that calls the generated-only `@evjs/ev/internal/server/node` entry. For production, deploy the emitted `{ fetch }` handler with the runtime wrapper that matches your host.
 
 ## Programmatic API
 

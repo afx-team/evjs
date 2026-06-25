@@ -72,13 +72,13 @@ This shape covers the complete framework surface:
   `src/route-types.d.ts`; `routing.dir: "./src/app/pages"` writes
   `src/app/route-types.d.ts`. MPA mode removes stale generated route type
   files. The generated declaration uses the generated-only
-  `@evjs/client/internal/route-types` helper and augments the client runtime
-  navigation types. Keep generated route types ignored and do not import them
-  from application code.
+  `@evjs/ev/internal/client/route-types` helper and augments the
+  `@evjs/ev/page` navigation types. Keep generated route types ignored and do
+  not import them from application code.
 - Rendering metadata lives with page modules.
 - `api/*.server.ts` contains server functions.
 - `api/*.routes.ts` contains standard HTTP route handlers.
-- `server.ts` composes `@evjs/server` routes, middleware, and framework rendering.
+- `server.ts` composes standalone/manual `@evjs/server` routes, middleware, and framework rendering when you own a custom server entry.
 - `features/` keeps domain logic out of route/page files.
 
 ## Convention Matrix
@@ -307,7 +307,7 @@ Server middleware uses Hono's middleware signature and lives in dedicated
 
 ```ts
 // src/middleware.ts
-import type { MiddlewareHandler } from "@evjs/server";
+import type { MiddlewareHandler } from "@evjs/ev/request";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
   await next();
@@ -319,7 +319,7 @@ export default middleware;
 
 ```ts
 // src/apis/api/middleware.ts
-import type { MiddlewareHandler } from "@evjs/server";
+import type { MiddlewareHandler } from "@evjs/ev/request";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
   if (!ctx.req.header("authorization")) {

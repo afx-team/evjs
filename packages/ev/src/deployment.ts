@@ -439,7 +439,7 @@ function createNodeServerModule(
   return `import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { serve } from "@evjs/server/node";
+import { serve } from "@evjs/ev/internal/server/node";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientRoot = path.join(__dirname, ${JSON.stringify(clientRoot)});

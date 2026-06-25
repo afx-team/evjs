@@ -2252,7 +2252,7 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
           `globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => { const mod = await import(pathToFileURL(path.resolve(serverDir, asset)).href); const nested = mod && typeof mod.default === "object" ? mod.default : undefined; return nested && ("default" in nested || "render" in nested) ? nested : mod; };`,
           `const serverModule = await import(${JSON.stringify(pathToFileURL(serverBundlePath).href)});`,
           `const handler = serverModule.default?.default ?? serverModule.default ?? serverModule;`,
-          `const { serve } = require("@evjs/server/node");`,
+          `const { serve } = require("@evjs/ev/internal/server/node");`,
           `const server = serve({ fetch: handler.fetch }, { port: ${serverPort}, https: ${JSON.stringify(activeConfig.server?.dev?.https ?? false)} });`,
           `const ready = () => console.log(${JSON.stringify(API_READY_MARKER)});`,
           `if (server.listening) ready(); else server.once("listening", ready);`,

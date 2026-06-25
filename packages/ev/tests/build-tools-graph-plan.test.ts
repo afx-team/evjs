@@ -1167,11 +1167,11 @@ describe("createAppGraph and createBuildPlan", () => {
     });
 
     expect(plan.server).toEqual({
-      entry: "@evjs/server/fetch",
+      entry: "@evjs/ev/internal/server/fetch",
     });
     expect(plan.entries).toContainEqual({
       name: "server",
-      import: "@evjs/server/fetch",
+      import: "@evjs/ev/internal/server/fetch",
       environment: "server",
       runtime: "node",
       kind: "server-runtime",
@@ -1895,7 +1895,7 @@ describe("createAppGraph and createBuildPlan", () => {
     const plan = createBuildPlan(config, analysis.graph, {
       mode: "production",
     });
-    expect(plan.server.entry).toBe("@evjs/server/fetch");
+    expect(plan.server.entry).toBe("@evjs/ev/internal/server/fetch");
     expect(plan.server.renderers).toEqual([
       {
         name: "pricing-server",
@@ -1977,7 +1977,7 @@ describe("createAppGraph and createBuildPlan", () => {
     });
     expect(plan.entries).toContainEqual({
       name: "server",
-      import: "@evjs/server/fetch",
+      import: "@evjs/ev/internal/server/fetch",
       environment: "server",
       runtime: "node",
       kind: "server-runtime",
@@ -3171,7 +3171,7 @@ describe("createAppGraph and createBuildPlan", () => {
     expect(plan.entries).toContainEqual(
       expect.objectContaining({
         name: "evjs-rsc-client",
-        import: "@evjs/client/internal/rsc-runtime",
+        import: "@evjs/ev/internal/client/rsc-runtime",
         environment: "client",
         kind: "runtime",
       }),
@@ -3951,7 +3951,7 @@ describe("createAppGraph and createBuildPlan", () => {
         },
         {
           name: "server",
-          import: "@evjs/server/fetch",
+          import: "@evjs/ev/internal/server/fetch",
           environment: "server",
           runtime: "node",
           kind: "server-runtime",

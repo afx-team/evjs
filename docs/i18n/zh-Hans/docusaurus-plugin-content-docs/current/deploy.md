@@ -197,38 +197,7 @@ node dist/server.mjs
 SSR/PPR/RSC 文档路由和显式 server routes，提供 `dist/client` 静态资源，
 并对客户端路由回退到 app HTML。
 
-如果需要完全自定义，等价结构如下：
-
-```js
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { serve } from "@evjs/server/node";
-import serverHandler from "./dist/server/server.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const clientRoot = path.join(__dirname, "dist/client");
-
-const app = {
-  async fetch(request) {
-    const url = new URL(request.url);
-    if (url.pathname.startsWith("/__evjs/") || url.pathname === "/dashboard") {
-      return serverHandler.fetch(request);
-    }
-
-    const file = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
-    try {
-      return new Response(await readFile(path.join(clientRoot, file)));
-    } catch {
-      return new Response(await readFile(path.join(clientRoot, "index.html")));
-    }
-  },
-};
-
-serve(app, { port: Number(process.env.PORT ?? 3000) });
-```
-
-如果 `server.basePath` 不是 `/__evjs`，需要同步调整挂载路径。
+如果需要完全自定义，应把它视为 standalone/manual server runtime 场景：显式声明 `@evjs/server`，挂载产出的 `{ fetch }` handler；如果 `server.basePath` 不是 `/__evjs`，请同步调整挂载路径。
 
 ## 静态托管
 

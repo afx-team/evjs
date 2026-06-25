@@ -501,8 +501,8 @@ describe("createUtoopackConfig", () => {
       rootContext: "/workspace",
     });
 
-    expect(source).toContain('@evjs/server"');
-    expect(source).toContain("@evjs/server/react");
+    expect(source).toContain('@evjs/ev/internal/server"');
+    expect(source).toContain("@evjs/ev/internal/server/react");
     expect(source).toContain('createRoute("/health", routeDefinition0)');
     expect(source).toContain('createRoute("/secure", routeDefinition1)');
     expect(source).toContain("import middleware0 from");
@@ -675,8 +675,8 @@ describe("createUtoopackConfig", () => {
       resourcePath: "/workspace/src/pages/about.tsx",
     });
 
-    expect(source).toContain("@evjs/client/internal/react-page");
-    expect(source).not.toContain('from "@evjs/client/internal";');
+    expect(source).toContain("@evjs/ev/internal/client/react-page");
+    expect(source).not.toContain('from "@evjs/ev/internal/client";');
     expect(source).toContain("createGeneratedReactPageEntry");
     expect(source).toContain("import.meta.url");
     expect(source).not.toContain("currentScriptHref");
@@ -703,7 +703,7 @@ describe("createUtoopackConfig", () => {
       rootContext: "/workspace",
     });
 
-    expect(source).toContain("@evjs/client/internal");
+    expect(source).toContain("@evjs/ev/internal/client");
     expect(source).toContain("createPagesApp");
     expect(source).toContain("src/layout/index.tsx");
     expect(source).toContain("src/pages/index.tsx");
@@ -789,7 +789,7 @@ describe("createUtoopackConfig", () => {
       "server",
     ]);
     expect(plan.server).toMatchObject({
-      entry: "@evjs/server/fetch",
+      entry: "@evjs/ev/internal/server/fetch",
       renderers: [
         {
           name: "dashboard-server",

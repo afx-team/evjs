@@ -86,10 +86,9 @@
     }
   },
   "scripts": {
-    "prepare-shared-runtime": "test -f ../shared/esm/index.js || npm --workspace @evjs/shared run build",
-    "build": "npm run prepare-shared-runtime && rm -rf esm && tsc",
-    "test": "npm run prepare-shared-runtime && vitest run",
-    "check-types": "npm run prepare-shared-runtime && tsc --noEmit"
+    "build": "rm -rf esm && tsc",
+    "test": "vitest run",
+    "check-types": "tsc --noEmit"
   },
   "files": [
     "esm"

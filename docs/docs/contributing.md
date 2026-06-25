@@ -46,12 +46,15 @@ npx biome check --write    # Fix lint/format
    declarations or `const` arrow/function expressions. No default exports,
    cross-module re-exports, or exported non-function values
 7. **Config file** — Named `ev.config.ts` (not `evjs.config.ts`)
-8. **Package boundaries** — Config/build imports stay on `@evjs/ev`; runtime
-   imports use `@evjs/client` and `@evjs/server`. Use subpath exports on the
-   package that owns the behavior before adding another distributed package.
-   Subpath exports stay intentional and documented; do not add convenience
-   aliases. `@evjs/cli` owns the default Utoopack adapter; `@evjs/shared` is a
-   shared contract package, not an app API
+8. **Package boundaries** — Config/build imports stay on `@evjs/ev`.
+   File-convention app source imports page helpers from `@evjs/ev/page`,
+   request helpers from `@evjs/ev/request`, and custom transport helpers from
+   `@evjs/ev/transport`; standalone/manual runtime imports use `@evjs/client`
+   and `@evjs/server`. Use subpath exports on the package that owns the
+   behavior before adding another distributed package. Subpath exports stay
+   intentional and documented; do not add convenience aliases. `@evjs/cli` owns
+   the default Utoopack adapter; `@evjs/shared` is a shared contract package,
+   not an app API
 9. **Rendering contracts** — Non-CSR render modes require `server` output. PPR
    and RSC require component page modules with `render: "ssr"`, and PPR + RSC on
    the same page is unsupported until the runtime supports that combination

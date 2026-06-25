@@ -66,7 +66,7 @@ my-app/
 
 ```tsx
 // src/pages/users/$id.tsx
-import { usePageParams, useQuery } from "@evjs/client";
+import { usePageParams, useQuery } from "@evjs/ev/page";
 import { getUser } from "../../api/users.server";
 
 export default function UserPage() {
@@ -113,34 +113,33 @@ shared wrappers as normal components and do not accept
 
 | Package | Purpose |
 |---------|---------|
-| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | Framework API, config, plugins, build orchestration, and deployment helpers |
+| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | Framework API, config, plugins, build orchestration, deployment helpers, and file-convention authoring subpaths |
 | [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`, `ev inspect`) with the default bundler |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
-| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Browser runtime core for standalone CSR, page hooks, navigation, transport, and RSC |
-| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Server runtime core for Hono/fetch apps, server functions, routes, rendering, and deployment |
+| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Standalone/manual browser runtime core for apps that do not use evjs file conventions |
+| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Standalone/manual server runtime core for hand-written Hono/fetch apps and route primitives |
 
 Manifest schemas, build tools, generated page runtime, and shell internals are
 internal modules under the public packages above. Application config/build code
-imports framework composition APIs from `@evjs/ev`; runtime code imports from
-`@evjs/client`, `@evjs/server`, or `@evjs/server/react`. Browser-only CSR apps
-that own their build pipeline can use `@evjs/client` without depending on
-`@evjs/ev`.
+imports framework composition APIs from `@evjs/ev`. File-convention application
+source imports page helpers from `@evjs/ev/page`, request helpers from
+`@evjs/ev/request`, and custom server-function transport helpers from
+`@evjs/ev/transport`. Browser-only CSR apps that own their build pipeline can
+use `@evjs/client` without depending on `@evjs/ev`.
 Use `@evjs/cli` and `@evjs/create-app` as tools, not application imports.
 Bundler adapters such as `@evjs/bundler-utoopack` and shared contract modules
 such as `@evjs/shared` are only for custom framework tooling or adapter work.
 
-Declare `@evjs/client` when application source or generated SPA entries need the
-browser runtime. Declare `@evjs/server` when the app uses server functions,
-server routes, framework rendering, or deployment runtime wrappers.
+Generated framework code resolves client and server runtime internals through
+`@evjs/ev/internal/*`, so ordinary file-convention apps do not install
+`@evjs/client` or `@evjs/server` directly.
 
 ## Required Dependencies
 
 ```json
 {
   "dependencies": {
-    "@evjs/client": "<same version>",
     "@evjs/ev": "<same version>",
-    "@evjs/server": "<same version>",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -156,17 +155,18 @@ server routes, framework rendering, or deployment runtime wrappers.
 :::important
 
 Keep all `@evjs/*` packages in your app on the same version. Declare runtime
-packages that application source imports directly; scaffolded full-stack
-templates usually include `@evjs/client` and `@evjs/server` alongside
-`@evjs/ev` and `@evjs/cli`. If you add adapter packages, upgrade them together
-with the rest of the framework packages.
+packages only when application source imports the standalone/manual runtime
+surfaces directly. Scaffolded file-convention templates include `@evjs/ev` and
+`@evjs/cli`; `@evjs/client` and `@evjs/server` are runtime dependencies of
+`@evjs/ev` for generated framework code. If you add adapter packages, upgrade
+them together with the rest of the framework packages.
 
 :::
 
 ## Key Rules
 
 - Config file: `ev.config.ts` (not `evjs.config.ts`)
-- Import `defineConfig` from `@evjs/ev`, not from `@evjs/server`
+- Import `defineConfig` from `@evjs/ev`.
 - HTML must have `<div id="app">` for the render target
 - Do NOT add `"type": "module"` to your **project's** `package.json` — the server bundle uses CJS format
 - Prefer `src/pages` as the route source of truth.

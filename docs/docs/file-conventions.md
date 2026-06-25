@@ -206,7 +206,7 @@ Server middleware uses dedicated `middleware.*` files and follows Hono's
 
 ```ts
 // src/middleware.ts
-import type { MiddlewareHandler } from "@evjs/server";
+import type { MiddlewareHandler } from "@evjs/ev/request";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
   await next();

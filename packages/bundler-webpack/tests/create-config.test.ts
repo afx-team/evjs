@@ -222,7 +222,9 @@ describe("createWebpackConfigs", () => {
     expect(serializedRules).toContain("framework-entry-loader.cjs");
     expect(serializedEntries).toContain("framework-entry-anchor.js");
     expect(serializedEntries).not.toContain("createReactPageModule");
-    expect(serializedEntries).not.toContain("@evjs/client/internal/react-page");
+    expect(serializedEntries).not.toContain(
+      "@evjs/ev/internal/client/react-page",
+    );
   });
 
   it("generates thin component page entries in the framework entry loader", () => {
@@ -240,7 +242,7 @@ describe("createWebpackConfigs", () => {
       },
     });
 
-    expect(source).toContain("@evjs/client/internal/react-page");
+    expect(source).toContain("@evjs/ev/internal/client/react-page");
     expect(source).toContain("createGeneratedReactPageEntry");
     expect(source).toContain("import.meta.url");
     expect(source).not.toContain("createReactPageModule");
@@ -268,7 +270,7 @@ describe("createWebpackConfigs", () => {
       rootContext: "/workspace",
     });
 
-    expect(source).toContain("@evjs/client/internal");
+    expect(source).toContain("@evjs/ev/internal/client");
     expect(source).toContain("createPagesApp");
     expect(source).toContain("src/layout/index.tsx");
     expect(source).toContain("src/pages/index.tsx");
@@ -321,8 +323,8 @@ describe("createWebpackConfigs", () => {
       rootContext: "/workspace",
     });
 
-    expect(source).toContain('@evjs/server"');
-    expect(source).toContain("@evjs/server/react");
+    expect(source).toContain('@evjs/ev/internal/server"');
+    expect(source).toContain("@evjs/ev/internal/server/react");
     expect(source).toContain('createRoute("/health", routeDefinition0)');
     expect(source).toContain('createRoute("/secure", routeDefinition1)');
     expect(source).toContain("import middleware0 from");

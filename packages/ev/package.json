@@ -17,6 +17,81 @@
       "types": "./esm/build-tools/index.d.ts",
       "import": "./esm/build-tools/index.js",
       "default": "./esm/build-tools/index.js"
+    },
+    "./page": {
+      "types": "./esm/page.d.ts",
+      "import": "./esm/page.js",
+      "default": "./esm/page.js"
+    },
+    "./request": {
+      "types": "./esm/request.d.ts",
+      "import": "./esm/request.js",
+      "default": "./esm/request.js"
+    },
+    "./transport": {
+      "types": "./esm/transport.d.ts",
+      "import": "./esm/transport.js",
+      "default": "./esm/transport.js"
+    },
+    "./internal/client": {
+      "types": "./esm/internal/client/index.d.ts",
+      "import": "./esm/internal/client/index.js",
+      "default": "./esm/internal/client/index.js"
+    },
+    "./internal/client/page-context": {
+      "types": "./esm/internal/client/page-context.d.ts",
+      "import": "./esm/internal/client/page-context.js",
+      "default": "./esm/internal/client/page-context.js"
+    },
+    "./internal/client/react-page": {
+      "types": "./esm/internal/client/react-page.d.ts",
+      "import": "./esm/internal/client/react-page.js",
+      "default": "./esm/internal/client/react-page.js"
+    },
+    "./internal/client/route-types": {
+      "types": "./esm/internal/client/route-types.d.ts",
+      "import": "./esm/internal/client/route-types.js",
+      "default": "./esm/internal/client/route-types.js"
+    },
+    "./internal/client/rsc-page-context": {
+      "types": "./esm/internal/client/rsc-page-context.d.ts",
+      "import": "./esm/internal/client/rsc-page-context.js",
+      "default": "./esm/internal/client/rsc-page-context.js"
+    },
+    "./internal/client/rsc-runtime": {
+      "types": "./esm/internal/client/rsc-runtime.d.ts",
+      "import": "./esm/internal/client/rsc-runtime.js",
+      "default": "./esm/internal/client/rsc-runtime.js"
+    },
+    "./internal/client/server-functions": {
+      "types": "./esm/internal/client/server-functions.d.ts",
+      "import": "./esm/internal/client/server-functions.js",
+      "default": "./esm/internal/client/server-functions.js"
+    },
+    "./internal/server": {
+      "types": "./esm/internal/server/index.d.ts",
+      "import": "./esm/internal/server/index.js",
+      "default": "./esm/internal/server/index.js"
+    },
+    "./internal/server/fetch": {
+      "types": "./esm/internal/server/fetch.d.ts",
+      "import": "./esm/internal/server/fetch.js",
+      "default": "./esm/internal/server/fetch.js"
+    },
+    "./internal/server/node": {
+      "types": "./esm/internal/server/node.d.ts",
+      "import": "./esm/internal/server/node.js",
+      "default": "./esm/internal/server/node.js"
+    },
+    "./internal/server/react": {
+      "types": "./esm/internal/server/react.d.ts",
+      "import": "./esm/internal/server/react.js",
+      "default": "./esm/internal/server/react.js"
+    },
+    "./internal/server/server-functions": {
+      "types": "./esm/internal/server/server-functions.d.ts",
+      "import": "./esm/internal/server/server-functions.js",
+      "default": "./esm/internal/server/server-functions.js"
     }
   },
   "scripts": {
@@ -38,15 +113,33 @@
   "license": "MIT",
   "author": "xusd320",
   "dependencies": {
+    "@evjs/client": "*",
+    "@evjs/server": "*",
     "@evjs/shared": "*",
+    "@tanstack/react-router": "^1.168.3",
     "@logtape/logtape": "^2.0.4",
     "@swc/core": "^1.15.21",
     "@utoo/pack": "^1.4.17",
     "domparser-rs": "^0.1.0",
     "execa": "^9.6.1"
   },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0",
+    "react-server-dom-webpack": "^19.2.5"
+  },
+  "peerDependenciesMeta": {
+    "react-server-dom-webpack": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@types/node": "^22.19.15",
+    "@types/react": ">=18.0.0",
+    "@types/react-dom": ">=18.0.0",
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0",
+    "react-server-dom-webpack": "^19.2.5",
     "typescript": "^6.0.2"
   },
   "keywords": [

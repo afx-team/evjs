@@ -1,4 +1,4 @@
-import { redirect } from "@evjs/client";
+import { redirect } from "@evjs/ev/page";
 
 export function beforeLoad() {
   throw redirect({ to: "/posts" });

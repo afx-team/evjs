@@ -43,20 +43,20 @@ config needed.
 
 | Package | Purpose |
 |---------|---------|
-| [`@evjs/ev`](./packages/ev) | Framework API, config, plugins, and build orchestration (`defineConfig`, `dev`, `build`) |
+| [`@evjs/ev`](./packages/ev) | Framework API, config, plugins, build orchestration, deployment helpers, and file-convention authoring subpaths |
 | [`@evjs/cli`](./packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`, `ev inspect`) with the default bundler |
 | [`@evjs/create-app`](./packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
-| [`@evjs/client`](./packages/client) | Browser runtime core for standalone CSR, page hooks, navigation, transport, and RSC |
-| [`@evjs/server`](./packages/server) | Server runtime core for Hono/fetch apps, server functions, standalone route primitives, rendering, and deployment |
+| [`@evjs/client`](./packages/client) | Standalone/manual browser runtime core |
+| [`@evjs/server`](./packages/server) | Standalone/manual server runtime core for Hono/fetch apps and route primitives |
 | [`examples/`](./examples) | Starter templates |
 
 Internal modules such as manifest schemas, build tools, page runtime, and shell
 live inside the public packages above instead of separate application-facing
 packages. Application code imports framework composition APIs from `@evjs/ev`
-and runtime APIs from `@evjs/client` or `@evjs/server`. Browser-only apps can
-use `@evjs/client` without depending on `@evjs/ev`; `@evjs/server` runtime APIs
-such as Hono/fetch app composition remain independent from evjs file
-conventions.
+and file-convention authoring APIs from `@evjs/ev/page`, `@evjs/ev/request`,
+or `@evjs/ev/transport`. `@evjs/client` and `@evjs/server` remain independent
+standalone/manual runtime packages for apps that intentionally own those
+surfaces directly.
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) · [AGENTS.md](./AGENTS.md) · [AGENT.md](./AGENT.md)
 

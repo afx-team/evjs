@@ -441,7 +441,7 @@ function createPlan(
       ...pprEntries,
       {
         name: "server",
-        import: "@evjs/server/fetch",
+        import: "@evjs/ev/internal/server/fetch",
         environment: "server" as const,
         runtime: "node" as const,
         kind: "server-runtime" as const,
@@ -462,7 +462,7 @@ function createPlan(
       })),
     ],
     server: {
-      entry: "@evjs/server/fetch",
+      entry: "@evjs/ev/internal/server/fetch",
     },
     runtime: {
       publicPath: "/",

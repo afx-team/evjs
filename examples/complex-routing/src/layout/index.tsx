@@ -1,4 +1,4 @@
-import { Link } from "@evjs/client";
+import { Link } from "@evjs/ev/page";
 import type { ReactNode } from "react";
 
 const styles = {

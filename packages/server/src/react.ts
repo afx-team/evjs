@@ -22,6 +22,7 @@ import { textResponse } from "./responses.js";
 import { isRecord } from "./validation.js";
 
 export type {
+  PageProviderProps,
   ReactRscDebugPayload,
   ReactRscFlightAdapterOptions,
   ReactServerRenderAdapterOptions,

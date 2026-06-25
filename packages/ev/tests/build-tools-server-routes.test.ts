@@ -322,7 +322,7 @@ describe("discoverServerConventions", () => {
   it("discovers global and route-scoped middleware in filesystem order", async () => {
     const cwd = await createFixture({
       "src/middleware.ts": `
-        import type { MiddlewareHandler } from "@evjs/server";
+        import type { MiddlewareHandler } from "@evjs/ev/request";
         const middleware: MiddlewareHandler = async (_ctx, next) => {
           await next();
         };
