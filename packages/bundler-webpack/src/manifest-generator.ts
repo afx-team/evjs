@@ -47,7 +47,6 @@ export class WebpackManifestGenerator {
 
   constructor(
     private cwd: string,
-    private serverEnabled: boolean,
     private plan: BuildPlan,
     private clientStats?: WebpackStatsLike,
     private serverStats?: WebpackStatsLike,
@@ -56,27 +55,28 @@ export class WebpackManifestGenerator {
   collectBuildFacts(): BundlerBuildFacts {
     const outputPaths = getOutputPaths(
       this.cwd,
-      this.serverEnabled,
+      {
+        client: this.plan.output.clientDir,
+        server: this.plan.output.serverDir,
+      },
       this.plan.distDir,
     );
     const clientEntrypoints = readEntrypointAssets(this.clientStats);
     this.clientEntryAssets = clientEntrypoints.byName;
     this.firstClientEntryAssets = clientEntrypoints.first;
 
-    if (this.serverEnabled) {
-      const serverEntrypoints = readEntrypointAssets(this.serverStats);
-      this.serverEntryAssets = serverEntrypoints.byName;
-      const serverEntryName =
-        this.plan.entries.find((entry) => entry.kind === "server-runtime")
-          ?.name ?? "server";
-      this.serverAssets =
-        this.serverEntryAssets[serverEntryName] ?? serverEntrypoints.first;
-      this.serverEntry = this.serverAssets.js[0];
-      this.serverModules = collectServerModules(
-        this.serverStats,
-        this.serverAssets,
-      );
-    }
+    const serverEntrypoints = readEntrypointAssets(this.serverStats);
+    this.serverEntryAssets = serverEntrypoints.byName;
+    const serverEntryName =
+      this.plan.entries.find((entry) => entry.kind === "server-runtime")
+        ?.name ?? "server";
+    this.serverAssets =
+      this.serverEntryAssets[serverEntryName] ?? serverEntrypoints.first;
+    this.serverEntry = this.serverAssets.js[0];
+    this.serverModules = collectServerModules(
+      this.serverStats,
+      this.serverAssets,
+    );
 
     return {
       clientEntryAssets: this.clientEntryAssets,

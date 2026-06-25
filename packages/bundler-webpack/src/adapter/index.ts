@@ -66,7 +66,7 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
     ctx: BundlerBuildContext<WebpackConfig>,
   ): Promise<BundlerBuildFacts> {
     const { config, cwd, graph, hooks, plan } = ctx;
-    const outputPaths = getOutputPaths(cwd, config.serverEnabled, plan.distDir);
+    const outputPaths = getOutputPaths(cwd, config.output, plan.distDir);
 
     logger.info`Building for production with webpack...`;
 
@@ -79,19 +79,16 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
     const stats = await runWebpack(configs);
 
     await emitStats(outputPaths.clientDir, stats.clientStats);
-    if (config.serverEnabled) {
-      await emitStats(outputPaths.serverDir, stats.serverStats);
-      await copyServerCssAssetsToClient(
-        outputPaths.serverDir,
-        outputPaths.clientDir,
-        stats.serverStats,
-      );
-    }
+    await emitStats(outputPaths.serverDir, stats.serverStats);
+    await copyServerCssAssetsToClient(
+      outputPaths.serverDir,
+      outputPaths.clientDir,
+      stats.serverStats,
+    );
 
     logger.info`Collecting webpack build facts...`;
     const generator = new WebpackManifestGenerator(
       cwd,
-      config.serverEnabled,
       plan,
       stats.clientStats,
       stats.serverStats,
@@ -140,7 +137,7 @@ class WebpackDevSession implements BundlerDevController {
     const generation = ++this.startGeneration;
     const outputPaths = getOutputPaths(
       this.ctx.cwd,
-      this.config.serverEnabled,
+      this.config.output,
       this.plan.distDir,
     );
 
@@ -167,7 +164,7 @@ class WebpackDevSession implements BundlerDevController {
       (config) => config.name === "server" || config.name === "server-rsc",
     );
     const needsClient = clientConfigs.length > 0;
-    const needsServer = this.config.serverEnabled && serverConfigs.length > 0;
+    const needsServer = serverConfigs.length > 0;
     this.initialDone = createInitialBuildBarrier({ needsClient, needsServer });
 
     if (needsClient) {
@@ -231,7 +228,7 @@ class WebpackDevSession implements BundlerDevController {
     try {
       const outputPaths = getOutputPaths(
         this.ctx.cwd,
-        this.config.serverEnabled,
+        this.config.output,
         this.plan.distDir,
       );
       if (isHtmlOnlyUpdate(update)) {
@@ -349,7 +346,7 @@ class WebpackDevSession implements BundlerDevController {
     const split = splitStatsByName(stats);
     const outputPaths = getOutputPaths(
       this.ctx.cwd,
-      this.config.serverEnabled,
+      this.config.output,
       this.plan.distDir,
     );
 
@@ -383,17 +380,17 @@ class WebpackDevSession implements BundlerDevController {
     const hasClientEntries = this.plan.entries.some(
       (entry) => entry.environment === "client",
     );
-    const hasServerEntries =
-      this.config.serverEnabled &&
-      this.plan.entries.some((entry) => entry.environment === "server");
+    const hasServerEntries = this.plan.entries.some(
+      (entry) => entry.environment === "server",
+    );
 
     if (hasClientEntries && !this.latestClientStats) return false;
     if (hasServerEntries && !this.latestServerStats) return false;
 
-    if (this.config.serverEnabled && this.latestServerStats) {
+    if (this.latestServerStats) {
       const outputPaths = getOutputPaths(
         this.ctx.cwd,
-        this.config.serverEnabled,
+        this.config.output,
         this.plan.distDir,
       );
       await copyServerCssAssetsToClient(
@@ -406,7 +403,6 @@ class WebpackDevSession implements BundlerDevController {
     logger.info`Generating development manifest and HTML...`;
     const generator = new WebpackManifestGenerator(
       this.ctx.cwd,
-      this.config.serverEnabled,
       this.plan,
       this.latestClientStats,
       this.latestServerStats,
@@ -601,8 +597,6 @@ function createDevProxyRules(
   config: ResolvedConfig<WebpackConfig>,
   graph: AppGraph,
 ): WebpackDevProxyRule[] {
-  if (!config.serverEnabled) return config.dev.proxy;
-
   const serverTarget = `${config.server.dev.https ? "https" : "http"}://localhost:${config.server.dev.port}`;
   const rules = [...config.dev.proxy];
   const configuredContexts = new Set(rules.flatMap((rule) => rule.context));

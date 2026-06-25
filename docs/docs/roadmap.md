@@ -15,10 +15,8 @@
 - `ev inspect` CLI preflight for explaining page route discovery, server
   declarations, render metadata, runtime paths, planned entries, and diagnostics
   without running a bundler or writing `dist`.
-- Split framework manifests for server-enabled builds:
-  `dist/client/manifest.json`, `dist/server/manifest.json`, and
-  `dist/build-output.json`, with flat `dist/manifest.json` for CSR-only
-  builds.
+- Configurable framework manifest directories through `output.client` and
+  `output.server`, plus the complete private `dist/build-output.json` handoff.
 - Manifest-driven app/page activation through the public
   `@evjs/client` runtime package.
 - Framework-owned SPA page routes and router-free page runtime for MPA.

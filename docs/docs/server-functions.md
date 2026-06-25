@@ -61,10 +61,10 @@ export const deleteUser = async (id: string) => {
 - **Recommendation**: Use the `.server.ts` extension (e.g. `users.server.ts`) or place them in a `src/api/` directory to help differentiate them from client code.
 - No default exports, runtime re-exports from other modules, or exported
   non-function runtime values such as constants
-- Server functions require the framework server. If `server: false`, any
-  reachable `"use server"` module is a build error. "Reachable" means imported
-  by the app, page, server file-route, or server middleware convention graph;
-  unrelated files outside the graph are ignored.
+- Reachable `"use server"` modules are transformed into client references and
+  server registrations. "Reachable" means imported by the app, page, server
+  file-route, or server middleware convention graph; unrelated files outside
+  the graph are ignored.
 
 ## Request Context Helpers
 
@@ -372,9 +372,8 @@ For example, `export default`, `export const VERSION = "1"`, and
 Runtime re-exports such as `export { getUser } from "./other"` are also
 unsupported.
 
-With `server: false`, graph analysis stops before these transforms and reports a
-clear error for reachable server modules. Remove the import from the CSR graph
-or enable `server` in `ev.config.ts`.
+Reachable server modules are included in the framework server output. Remove an
+import when a server function should stay outside the application graph.
 
 ## Key Points
 

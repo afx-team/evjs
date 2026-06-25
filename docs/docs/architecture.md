@@ -154,13 +154,11 @@ sequenceDiagram
   EV->>Plugins: buildEnd({ output, isRebuild })
 ```
 
-Server-enabled builds emit the complete private `BuildOutput` handoff artifact
-at `dist/build-output.json`. `dist/client/manifest.json` and
-`dist/server/manifest.json` are derived views for browser-safe public metadata
-and server bundle metadata. Deployment adapters may embed equivalent runtime
-data into platform files, so deployed server runtimes do not have to read
-`dist/build-output.json` at startup. CSR-only builds stay flat and emit
-`dist/manifest.json`.
+Builds emit the complete private `BuildOutput` handoff artifact at
+`dist/build-output.json`. The public manifest path comes from `output.client`;
+the server manifest path comes from `output.server`. Deployment adapters may
+embed equivalent runtime data into platform files, so deployed server runtimes
+do not have to read `dist/build-output.json` at startup.
 
 TanStack Router is available through the `@evjs/client` standalone CSR surface
 for manual browser applications. In framework-managed apps, `@evjs/ev` owns

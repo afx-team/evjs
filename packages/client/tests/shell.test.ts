@@ -14,7 +14,12 @@ const manifest: BuildOutput = {
   buildId: "test",
   distDir: "dist",
   publicPath: "/",
-  runtime: {},
+  runtime: {
+    server: {
+      basePath: "/__evjs",
+      fn: "/__evjs/fn",
+    },
+  },
   assets: {},
   apps: {
     default: {
@@ -72,6 +77,11 @@ const manifest: BuildOutput = {
       appId: "default",
     },
   ],
+  server: {
+    assets: { js: [], css: [] },
+    functions: {},
+    routes: [],
+  },
 };
 
 afterEach(() => {
@@ -256,7 +266,10 @@ describe("createShell", () => {
     );
     expect(() =>
       createShell({
-        manifest: { ...manifest, runtime: { transport: [] } },
+        manifest: {
+          ...manifest,
+          runtime: { ...manifest.runtime, transport: [] },
+        },
         resolveMountPoint: () => ({}) as Element,
       } as never),
     ).toThrow(
@@ -266,7 +279,10 @@ describe("createShell", () => {
       createShell({
         manifest: {
           ...manifest,
-          runtime: { transport: { baseUrl: "http://[::1" } },
+          runtime: {
+            ...manifest.runtime,
+            transport: { baseUrl: "http://[::1" },
+          },
         },
         resolveMountPoint: () => ({}) as Element,
       } as never),

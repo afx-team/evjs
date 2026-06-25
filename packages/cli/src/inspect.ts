@@ -72,14 +72,13 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
   });
 
   lines.push("Runtime");
-  lines.push(`  serverEnabled: ${String(result.runtime.serverEnabled)}`);
-  if (result.runtime.server) {
-    lines.push(`  server.basePath: ${result.runtime.server.basePath}`);
-    lines.push(`  server.fn: ${result.runtime.server.fn}`);
-    lines.push(`  server.ppr: ${result.runtime.server.ppr}`);
-    if (result.runtime.server.rsc) {
-      lines.push(`  server.rsc: ${result.runtime.server.rsc}`);
-    }
+  lines.push(`  output.client: ${result.output.client}`);
+  lines.push(`  output.server: ${result.output.server}`);
+  lines.push(`  server.basePath: ${result.runtime.server.basePath}`);
+  lines.push(`  server.fn: ${result.runtime.server.fn}`);
+  lines.push(`  server.ppr: ${result.runtime.server.ppr}`);
+  if (result.runtime.server.rsc) {
+    lines.push(`  server.rsc: ${result.runtime.server.rsc}`);
   }
   if (result.runtime.transport?.baseUrl) {
     lines.push(`  transport.baseUrl: ${result.runtime.transport.baseUrl}`);

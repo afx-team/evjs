@@ -64,7 +64,12 @@ const TEST_OUTPUT: BuildOutput = {
   buildId: "test",
   distDir: "dist",
   publicPath: "/",
-  runtime: {},
+  runtime: {
+    server: {
+      basePath: "/__evjs",
+      fn: "/__evjs/fn",
+    },
+  },
   assets: {
     main: { js: ["main.js"], css: [] },
   },
@@ -76,6 +81,12 @@ const TEST_OUTPUT: BuildOutput = {
   },
   pages: {},
   routes: [],
+  server: {
+    entry: "server.js",
+    assets: { js: ["server.js"], css: [] },
+    functions: {},
+    routes: [],
+  },
 };
 
 function createTestBuildResult(
@@ -88,24 +99,20 @@ function createTestBuildResult(
       version: 1,
       assets: output.apps.default?.assets ?? { js: [], css: [] },
     },
-    ...(output.server
-      ? {
-          serverManifest: {
-            version: 1 as const,
-            ...(output.server.entry ? { entry: output.server.entry } : {}),
-            assets: output.server.assets,
-            fns: Object.fromEntries(
-              Object.entries(output.server.functions).map(([id, fn]) => [
-                id,
-                { assets: fn.assets },
-              ]),
-            ),
-            ...(output.server.routes.length > 0
-              ? { routes: output.server.routes }
-              : {}),
-          },
-        }
-      : {}),
+    serverManifest: {
+      version: 1 as const,
+      ...(output.server.entry ? { entry: output.server.entry } : {}),
+      assets: output.server.assets,
+      fns: Object.fromEntries(
+        Object.entries(output.server.functions).map(([id, fn]) => [
+          id,
+          { assets: fn.assets },
+        ]),
+      ),
+      ...(output.server.routes.length > 0
+        ? { routes: output.server.routes }
+        : {}),
+    },
     isRebuild,
   };
 }

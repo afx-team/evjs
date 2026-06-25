@@ -586,7 +586,7 @@ describe("startPageRuntime", () => {
         document,
         manifest: {
           ...createManifest(),
-          runtime: { transport: [] },
+          runtime: { ...createManifest().runtime, transport: [] },
         } as never,
       }),
     ).rejects.toThrow(
@@ -598,7 +598,10 @@ describe("startPageRuntime", () => {
         document,
         manifest: {
           ...createManifest(),
-          runtime: { transport: { baseUrl: "http://[::1" } },
+          runtime: {
+            ...createManifest().runtime,
+            transport: { baseUrl: "http://[::1" },
+          },
         } as never,
       }),
     ).rejects.toThrow(
@@ -855,7 +858,12 @@ function createManifest(): BuildOutput {
     buildId: "test",
     distDir: "dist",
     publicPath: "/",
-    runtime: {},
+    runtime: {
+      server: {
+        basePath: "/__evjs",
+        fn: "/__evjs/fn",
+      },
+    },
     assets: {},
     apps: {},
     pages: {
@@ -876,6 +884,11 @@ function createManifest(): BuildOutput {
       },
     },
     routes: [],
+    server: {
+      assets: { js: [], css: [] },
+      functions: {},
+      routes: [],
+    },
   };
 }
 

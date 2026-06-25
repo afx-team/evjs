@@ -3,11 +3,13 @@
  *
  * Shared manifest schemas for the ev framework build system.
  *
- * Bundler adapters emit framework manifests under the configured dist
- * directory. Server-enabled builds write the public client manifest to
- * `dist/client/manifest.json`, the derived server bundle manifest to
+ * Bundler adapters emit framework manifests under the configured output
+ * directories. By default, the public client manifest is written to
+ * `dist/client/manifest.json`, the server bundle manifest to
  * `dist/server/manifest.json`, and the full private BuildOutput handoff to
- * `dist/build-output.json`; CSR-only builds write `dist/manifest.json`.
+ * `dist/build-output.json`. `output.client` and `output.server` can point to
+ * alternate directories when an adapter or deployment target needs a different
+ * artifact layout.
  */
 
 import {
@@ -163,7 +165,10 @@ export interface BuildPlan {
   buildId: string;
   mode: "development" | "production";
   distDir: string;
-  serverEnabled: boolean;
+  output: {
+    clientDir: string;
+    serverDir: string;
+  };
   entries: BuildEntry[];
   html: HtmlPlan[];
   server: ServerBuildPlan;
@@ -259,10 +264,9 @@ export interface HtmlPlan {
 }
 
 export interface ServerBuildPlan {
-  enabled: boolean;
-  entry?: string;
+  entry: string;
   renderers?: ServerRenderPlan[];
-  functionRuntime?: {
+  functionRuntime: {
     endpoint: string;
     clientProxy: string;
     serverRegister: string;
@@ -278,7 +282,7 @@ export interface ServerRenderPlan {
 
 export interface RuntimePlan {
   publicPath: PublicPathOutput;
-  server?: RuntimeServerOutput;
+  server: RuntimeServerOutput;
   transport?: TransportOutput;
 }
 
@@ -310,7 +314,7 @@ export interface BuildOutput {
   apps: Record<string, AppOutput>;
   pages: Record<string, PageOutput>;
   routes: RouteOutput[];
-  server?: ServerOutput;
+  server: ServerOutput;
   rsc?: RscOutput;
   deployment?: Record<string, unknown>;
 }
@@ -325,11 +329,11 @@ export interface FrameworkManifestValidationOptions {
 export interface BuildOutputPaths {
   rootDir: string;
   publicDir: string;
-  serverDir?: string;
+  serverDir: string;
 }
 
 export interface RuntimeOutput {
-  server?: RuntimeServerOutput;
+  server: RuntimeServerOutput;
   transport?: TransportOutput;
 }
 
@@ -679,27 +683,25 @@ export function assertFrameworkManifestShape(
   }
   assertRouteOutputs(value.routes, `${source}.routes`, value.pages, value.apps);
 
-  if (value.runtime.server !== undefined) {
-    assertObject(value.runtime.server, `${source}.runtime.server`);
-    assertManifestPathname(
-      value.runtime.server.basePath,
-      `${source}.runtime.server.basePath`,
-      true,
-    );
-    assertManifestPathname(
-      value.runtime.server.fn,
-      `${source}.runtime.server.fn`,
-      true,
-    );
-    assertManifestPathname(
-      value.runtime.server.ppr,
-      `${source}.runtime.server.ppr`,
-    );
-    assertManifestPathname(
-      value.runtime.server.rsc,
-      `${source}.runtime.server.rsc`,
-    );
-  }
+  assertObject(value.runtime.server, `${source}.runtime.server`);
+  assertManifestPathname(
+    value.runtime.server.basePath,
+    `${source}.runtime.server.basePath`,
+    true,
+  );
+  assertManifestPathname(
+    value.runtime.server.fn,
+    `${source}.runtime.server.fn`,
+    true,
+  );
+  assertManifestPathname(
+    value.runtime.server.ppr,
+    `${source}.runtime.server.ppr`,
+  );
+  assertManifestPathname(
+    value.runtime.server.rsc,
+    `${source}.runtime.server.rsc`,
+  );
   if (value.runtime.transport !== undefined) {
     assertObject(value.runtime.transport, `${source}.runtime.transport`);
     assertManifestTransportBaseUrl(
@@ -707,32 +709,30 @@ export function assertFrameworkManifestShape(
       `${source}.runtime.transport.baseUrl`,
     );
   }
-  if (value.server !== undefined) {
-    assertObject(value.server, `${source}.server`);
-    if (value.server.entry !== undefined) {
-      assertManifestString(value.server.entry, `${source}.server.entry`);
-    }
-    if (value.server.renderers !== undefined) {
-      assertObject(value.server.renderers, `${source}.server.renderers`);
-      assertServerRendererOutputs(
-        value.server.renderers,
-        `${source}.server.renderers`,
-        value.pages,
-        value.routes,
-      );
-    }
-    assertAssetGroup(value.server.assets, `${source}.server.assets`);
-    assertObject(value.server.functions, `${source}.server.functions`);
-    assertServerFunctionOutputs(
-      value.server.functions,
-      `${source}.server.functions`,
-      requireServerFunctionModules,
-    );
-    if (!Array.isArray(value.server.routes)) {
-      throw new Error(`[evjs] ${source}.server.routes must be an array.`);
-    }
-    assertServerRouteOutputs(value.server.routes, `${source}.server.routes`);
+  assertObject(value.server, `${source}.server`);
+  if (value.server.entry !== undefined) {
+    assertManifestString(value.server.entry, `${source}.server.entry`);
   }
+  if (value.server.renderers !== undefined) {
+    assertObject(value.server.renderers, `${source}.server.renderers`);
+    assertServerRendererOutputs(
+      value.server.renderers,
+      `${source}.server.renderers`,
+      value.pages,
+      value.routes,
+    );
+  }
+  assertAssetGroup(value.server.assets, `${source}.server.assets`);
+  assertObject(value.server.functions, `${source}.server.functions`);
+  assertServerFunctionOutputs(
+    value.server.functions,
+    `${source}.server.functions`,
+    requireServerFunctionModules,
+  );
+  if (!Array.isArray(value.server.routes)) {
+    throw new Error(`[evjs] ${source}.server.routes must be an array.`);
+  }
+  assertServerRouteOutputs(value.server.routes, `${source}.server.routes`);
   assertPageServerRendererReferences(
     value.pages,
     `${source}.pages`,
@@ -794,9 +794,7 @@ function assertBuildOutputPaths(value: unknown, source: string): void {
   assertObject(value, source);
   assertManifestString(value.rootDir, `${source}.rootDir`);
   assertManifestString(value.publicDir, `${source}.publicDir`);
-  if (value.serverDir !== undefined) {
-    assertManifestString(value.serverDir, `${source}.serverDir`);
-  }
+  assertManifestString(value.serverDir, `${source}.serverDir`);
 }
 
 function assertAssetGroupRecord(

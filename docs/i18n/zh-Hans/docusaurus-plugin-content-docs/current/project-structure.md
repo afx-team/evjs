@@ -113,7 +113,7 @@ my-evjs-app/
 | `<routing-dir-parent>/layout.{tsx,ts,jsx,js}` 或 `<routing-dir-parent>/layout/index.{tsx,ts,jsx,js}` | 可选外部 SPA 根布局 | 包裹已发现 SPA 路由树的一层应用 shell | MPA 公共外框、route-specific 嵌套布局或多个根布局候选 |
 | `src/pages/**/layout.{tsx,ts,jsx,js}` 或 `src/pages/**/layout/index.{tsx,ts,jsx,js}` | SPA route layout | 在同一 URL 前缀下包裹子路由的 pathless layout route | MPA 公共外框，或命名为 `layout` 的非 layout helper 目录 |
 | `<routing-dir-parent>/route-types.d.ts` | SPA 导航类型生成物 | 编辑器和类型检查支持 | 手工修改、从应用代码导入、放入模板或脚手架源码，或用于 MPA 模式 |
-| `src/api/*.server.ts` | 推荐的 server function 边界 | 以 `"use server";` 开头并导出命名 callable server functions 的文件 | 需要在 `server: false` 下运行的客户端导入、默认导出或 runtime re-export |
+| `src/api/*.server.ts` | 推荐的 server function 边界 | 以 `"use server";` 开头并导出命名 callable server functions 的文件 | 浏览器专用 helper、默认导出或 runtime re-export |
 | `src/apis/**/*.{ts,tsx,js,jsx}` | 启用 `server.routing` 时的服务端文件路由发现 | 导出大写 HTTP method 的 Request/Response route 模块 | `route.ts` 哨兵、`foo.get.ts` method suffix 文件、bracket/catch-all/optional routes、`middleware`/`middlewares`、默认导出，或从 route candidate 导出 helper |
 | `src/middleware.{ts,tsx,js,jsx}` | 启用 server conventions 时的全局服务端中间件约定 | 在 server file routes、server functions、SSR、PPR 和 RSC 之前运行的 Hono-compatible middleware | Matcher 配置、route handlers 或 helper exports |
 | `src/apis/**/middleware.{ts,tsx,js,jsx}` | route-scoped server file-route middleware | 作用于该目录树下 descendant server file routes 的 Hono-compatible middleware | `api.ts` 这类 flat sibling routes、全局 server functions/SSR middleware，或 matcher 配置 |

@@ -29,6 +29,11 @@ describe("programmatic API", () => {
             main: { js: ["main.js"], css: [] },
           },
           firstClientEntryAssets: { js: ["main.js"], css: [] },
+          serverEntryAssets: {
+            server: { js: ["server.js"], css: [] },
+          },
+          serverEntry: "server.js",
+          serverAssets: { js: ["server.js"], css: [] },
         };
       },
       async dev() {
@@ -36,7 +41,7 @@ describe("programmatic API", () => {
       },
     };
 
-    await build({ server: false }, { cwd, bundler });
+    await build({ output: { client: "dist" } }, { cwd, bundler });
 
     expect(events).toEqual([`build:${cwd}:main`]);
   });
@@ -54,6 +59,11 @@ describe("programmatic API", () => {
             main: { js: ["main.js"], css: [] },
           },
           firstClientEntryAssets: { js: ["main.js"], css: [] },
+          serverEntryAssets: {
+            server: { js: ["server.js"], css: [] },
+          },
+          serverEntry: "server.js",
+          serverAssets: { js: ["server.js"], css: [] },
         };
       },
       async dev() {
@@ -61,7 +71,10 @@ describe("programmatic API", () => {
       },
     };
 
-    await build<CustomBundlerConfig>({ server: false }, { cwd, bundler });
+    await build<CustomBundlerConfig>(
+      { output: { client: "dist" } },
+      { cwd, bundler },
+    );
 
     expect(events).toEqual(["custom"]);
   });

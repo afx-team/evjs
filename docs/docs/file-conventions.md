@@ -151,8 +151,8 @@ Rules:
 - default exports, runtime re-exports, generators, async generators, and
   exported non-function runtime values are not supported;
 - type-only exports are ignored by the runtime transform;
-- server functions require the framework server and are build errors when
-  reachable with `server: false`.
+- reachable server functions are transformed into client references and server
+  registrations in the framework server output.
 
 ## Server File Routes
 

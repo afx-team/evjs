@@ -112,7 +112,7 @@ describe("inspect", () => {
       "src/pages/index.tsx": "export default function Home() { return null; }",
     });
     const result = await inspectFrameworkBuild(
-      { routing: true, server: false },
+      { routing: true, output: { client: "dist" } },
       { cwd },
     );
 
@@ -137,7 +137,7 @@ describe("inspect", () => {
     });
 
     const result = await inspectFrameworkBuild(
-      { routing: true, server: false },
+      { routing: true, output: { client: "dist" } },
       { cwd },
     );
 
@@ -170,7 +170,7 @@ describe("inspect", () => {
     const cwd = await createFixture({
       "ev.config.ts": `
         import { defineConfig } from "@evjs/ev";
-        export default defineConfig({ routing: true, server: false });
+        export default defineConfig({ routing: true, output: { client: "dist" } });
       `,
       "index.html": '<div id="app"></div>',
       "src/pages/index.tsx": "export default function Home() { return null; }",

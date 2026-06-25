@@ -1105,7 +1105,6 @@ describe("createAppGraph and createBuildPlan", () => {
     });
     const config = createConfig({
       entry: "./src/missing-main.tsx",
-      serverEnabled: false,
     });
 
     const analysis = await createAppGraph(config, cwd);
@@ -1153,7 +1152,7 @@ describe("createAppGraph and createBuildPlan", () => {
     );
   });
 
-  it("adds the server runtime entry when server is enabled", async () => {
+  it("adds the server runtime entry", async () => {
     const cwd = await createFixture({
       "src/main.tsx": "console.log('app');",
     });
@@ -1173,7 +1172,6 @@ describe("createAppGraph and createBuildPlan", () => {
     });
 
     expect(plan.server).toEqual({
-      enabled: true,
       entry: "@evjs/server/fetch",
       functionRuntime: {
         endpoint: "/__evjs/fn",
@@ -1223,7 +1221,6 @@ describe("createAppGraph and createBuildPlan", () => {
       "index.html": '<div id="app"></div>',
     });
     const config = createConfig({
-      serverEnabled: false,
       pages: {
         home: {
           component: "./src/pages/home.tsx",
@@ -2724,35 +2721,6 @@ describe("createAppGraph and createBuildPlan", () => {
     });
   });
 
-  it("rejects PPR pages when server output is disabled", async () => {
-    const cwd = await createFixture({
-      "src/campaign/Page.tsx": `
-        export const render = "ssr";
-        export const prerender = { partial: true } as const;
-        export default function Page() { return null; }
-      `,
-    });
-    const config = createConfig({
-      serverEnabled: false,
-      pages: {
-        campaign: {
-          component: "./src/campaign/Page.tsx",
-          html: "./index.html",
-        },
-      },
-    });
-    const analysis = await createAppGraph(config, cwd);
-
-    expect(analysis.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/campaign/Page.tsx",
-        message:
-          'Page "campaign" uses partial prerendering but server is disabled.',
-      },
-    ]);
-  });
-
   it("rejects PPR pages without a component page module", async () => {
     const cwd = await createFixture({
       "src/campaign/main.tsx": "console.log('campaign');",
@@ -2891,34 +2859,6 @@ describe("createAppGraph and createBuildPlan", () => {
         file: "src/pages/home.tsx",
         message:
           'Page "home" uses full prerendering and must declare render: "ssg" or "ssr".',
-      },
-    ]);
-  });
-
-  it("rejects RSC pages when server output is disabled", async () => {
-    const cwd = await createFixture({
-      "src/pages/rsc.tsx": `
-        export const render = "ssr";
-        export const rsc = true;
-        export default function RscPage() { return null; }
-      `,
-    });
-    const config = createConfig({
-      serverEnabled: false,
-      pages: {
-        rsc: {
-          component: "./src/pages/rsc.tsx",
-          html: "./index.html",
-        },
-      },
-    });
-    const analysis = await createAppGraph(config, cwd);
-
-    expect(analysis.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/pages/rsc.tsx",
-        message: 'Page "rsc" uses RSC but server is disabled.',
       },
     ]);
   });
@@ -3474,7 +3414,6 @@ describe("createAppGraph and createBuildPlan", () => {
       "index.html": '<div id="app"></div>',
     });
     const previousConfig = createConfig({
-      serverEnabled: false,
       pages: {
         home: {
           entry: "./src/pages/home/main.tsx",
@@ -3483,7 +3422,6 @@ describe("createAppGraph and createBuildPlan", () => {
       },
     });
     const nextConfig = createConfig({
-      serverEnabled: false,
       pages: {
         home: {
           entry: "./src/pages/home/main.tsx",
@@ -3959,38 +3897,6 @@ describe("createAppGraph and createBuildPlan", () => {
     expect(relativeFileDependencies(cwd, analysis.fileDependencies)).toEqual(
       [],
     );
-  });
-
-  it("reports reachable use-server modules when server output is disabled", async () => {
-    const cwd = await createFixture({
-      "src/main.tsx": `
-        import { saveOrder } from "./actions";
-        void saveOrder;
-      `,
-      "src/actions.ts": `
-        "use server";
-        export async function saveOrder() {
-          return { ok: true };
-        }
-      `,
-    });
-    const config = createConfig({
-      serverEnabled: false,
-    });
-    const analysis = await createAppGraph(config, cwd);
-
-    expect(analysis.graph.serverFunctions).toEqual([]);
-    expect(analysis.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/actions.ts",
-        message:
-          'This "use server" module is reachable from the app graph, but server is disabled. Remove the import or enable server in ev.config.ts.',
-      },
-    ]);
-    expect(relativeFileDependencies(cwd, analysis.fileDependencies)).toEqual([
-      "src/actions.ts",
-    ]);
   });
 
   it("collects page route declarations", async () => {
@@ -4700,7 +4606,10 @@ function createConfig(overrides: Partial<TestConfig> = {}): TestConfig {
     entry: "./src/main.tsx",
     html: "./index.html",
     pages: undefined,
-    serverEnabled: true,
+    output: {
+      client: "dist/client",
+      server: "dist/server",
+    },
     server: {
       basePath: "/__evjs",
       functionRuntime: {

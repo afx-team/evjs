@@ -305,7 +305,12 @@ describe("createDeploymentArtifact", () => {
       buildId: "build-1",
       distDir: "dist",
       publicPath: "/",
-      runtime: {},
+      runtime: {
+        server: {
+          basePath: "/__evjs",
+          fn: "/__evjs/fn",
+        },
+      },
       assets: {},
       apps: {
         default: {
@@ -344,6 +349,12 @@ describe("createDeploymentArtifact", () => {
           render: "ssg",
         },
       ],
+      server: {
+        entry: "server.js",
+        assets: { js: ["server.js"], css: [] },
+        functions: {},
+        routes: [],
+      },
     };
 
     const files = createStaticDeploymentFiles(output, {
@@ -390,7 +401,7 @@ describe("createDeploymentArtifact", () => {
   });
 
   it("routes static page documents in generated server modules without an MPA catch-all", () => {
-    const output = createMpaStaticDeploymentOutput({ server: true });
+    const output = createMpaStaticDeploymentOutput();
 
     const nodeFiles = createNodeDeploymentFiles(output);
     const edgeFiles = createEdgeDeploymentFiles(output);
@@ -638,7 +649,12 @@ describe("createDeploymentArtifact", () => {
       buildId: "build-1",
       distDir: "dist",
       publicPath: "/",
-      runtime: {},
+      runtime: {
+        server: {
+          basePath: "/__evjs",
+          fn: "/__evjs/fn",
+        },
+      },
       assets: {},
       apps: {},
       pages: {
@@ -664,6 +680,12 @@ describe("createDeploymentArtifact", () => {
           render: "ssr",
         },
       ],
+      server: {
+        entry: "server.js",
+        assets: { js: ["server.js"], css: [] },
+        functions: {},
+        routes: [],
+      },
     };
 
     const files = createStaticDeploymentFiles(output, {
@@ -683,7 +705,12 @@ describe("createDeploymentArtifact", () => {
       buildId: "build-1",
       distDir: "dist",
       publicPath: "/",
-      runtime: {},
+      runtime: {
+        server: {
+          basePath: "/__evjs",
+          fn: "/__evjs/fn",
+        },
+      },
       assets: {},
       apps: {
         default: {
@@ -715,6 +742,12 @@ describe("createDeploymentArtifact", () => {
           render: "ssg",
         },
       ],
+      server: {
+        entry: "server.js",
+        assets: { js: ["server.js"], css: [] },
+        functions: {},
+        routes: [],
+      },
     };
 
     const files = createStaticDeploymentFiles(output, {
@@ -881,22 +914,18 @@ function extractGeneratedRouteMatcher(source: string): string {
   return source.slice(start, end + 2);
 }
 
-function createMpaStaticDeploymentOutput(
-  options: { server?: boolean } = {},
-): BuildOutput {
+function createMpaStaticDeploymentOutput(): BuildOutput {
   return {
     version: 1,
     buildId: "build-1",
     distDir: "dist",
     publicPath: "/",
-    runtime: options.server
-      ? {
-          server: {
-            basePath: "/__evjs",
-            fn: "/__evjs/fn",
-          },
-        }
-      : {},
+    runtime: {
+      server: {
+        basePath: "/__evjs",
+        fn: "/__evjs/fn",
+      },
+    },
     assets: {},
     apps: {},
     pages: {
@@ -961,17 +990,13 @@ function createMpaStaticDeploymentOutput(
         render: "csr",
       },
     ],
-    ...(options.server
-      ? {
-          server: {
-            entry: "server.js",
-            assets: { js: ["server.js"], css: [] },
-            renderers: {},
-            functions: {},
-            routes: [],
-          },
-        }
-      : {}),
+    server: {
+      entry: "server.js",
+      assets: { js: ["server.js"], css: [] },
+      renderers: {},
+      functions: {},
+      routes: [],
+    },
   };
 }
 

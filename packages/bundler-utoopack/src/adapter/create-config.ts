@@ -87,16 +87,14 @@ function createSpaHistoryFallbackExclusions(
 ): string[] {
   const exclusions = new Set(["/api"]);
 
-  if (config.serverEnabled) {
-    exclusions.add(config.server.runtime.basePath);
-    exclusions.add(config.server.runtime.fn);
-    exclusions.add(config.server.runtime.ppr);
-    if (config.server.runtime.rsc) {
-      exclusions.add(config.server.runtime.rsc);
-    }
-    for (const context of toUniqueDevProxyContexts(getServerRoutePaths(plan))) {
-      exclusions.add(context);
-    }
+  exclusions.add(config.server.runtime.basePath);
+  exclusions.add(config.server.runtime.fn);
+  exclusions.add(config.server.runtime.ppr);
+  if (config.server.runtime.rsc) {
+    exclusions.add(config.server.runtime.rsc);
+  }
+  for (const context of toUniqueDevProxyContexts(getServerRoutePaths(plan))) {
+    exclusions.add(context);
   }
 
   return [...exclusions];
@@ -127,7 +125,6 @@ export async function createUtoopackConfig(
 
   const mode = plan.mode;
   const isProduction = mode === "production";
-  const serverEnabled = config.serverEnabled;
   const frameworkRules = createFrameworkModuleRules(plan);
   const devProxy: DevServerProxy = [
     ...config.dev.proxy,
@@ -137,17 +134,13 @@ export async function createUtoopackConfig(
       : []),
   ];
 
-  let finalServerEntry: string | undefined;
+  const finalServerEntry = resolveServerEntry(plan);
 
-  if (serverEnabled) {
-    finalServerEntry = resolveServerEntry(plan);
-  }
-
-  if (serverEnabled && !finalServerEntry) {
+  if (!finalServerEntry) {
     throw new Error("Failed to resolve a server entry for the server bundle.");
   }
 
-  const outputPaths = getOutputPaths(cwd, serverEnabled, plan.distDir);
+  const outputPaths = getOutputPaths(cwd, config.output, plan.distDir);
 
   const utoopackConfig: ConfigComplete = {
     mode,
@@ -196,26 +189,18 @@ export async function createUtoopackConfig(
       ),
     },
     // Server functions config — utoopack handles "use server" natively
-    ...(serverEnabled
-      ? {
-          server: {
-            entry: finalServerEntry,
-            output: {
-              path: outputPaths.serverDir,
-              filename: isProduction
-                ? "[name].[contenthash:8].js"
-                : "[name].js",
-              chunkFilename: isProduction
-                ? "[name].[contenthash:8].js"
-                : "[name].js",
-            },
-            function: {
-              clientProxy: config.server.functionRuntime.clientProxy,
-              serverRegister: config.server.functionRuntime.serverRegister,
-            },
-          },
-        }
-      : {}),
+    server: {
+      entry: finalServerEntry,
+      output: {
+        path: outputPaths.serverDir,
+        filename: isProduction ? "[name].[contenthash:8].js" : "[name].js",
+        chunkFilename: isProduction ? "[name].[contenthash:8].js" : "[name].js",
+      },
+      function: {
+        clientProxy: config.server.functionRuntime.clientProxy,
+        serverRegister: config.server.functionRuntime.serverRegister,
+      },
+    },
 
     // Dev server configuration
     devServer: {
@@ -531,8 +516,6 @@ function createServerRouteProxyRules(
   plan: BuildPlan,
   existingRules: DevServerProxy,
 ): ProxyRule[] {
-  if (!config.serverEnabled) return [];
-
   const configuredContexts = new Set(
     existingRules.flatMap((rule) => getProxyRuleContexts(rule)),
   );

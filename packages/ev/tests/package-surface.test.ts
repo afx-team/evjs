@@ -756,47 +756,6 @@ describe("workspace package surface", () => {
     expect(violations).toEqual([]);
   });
 
-  it("keeps server-disabled examples off the server runtime package", async () => {
-    const violations: string[] = [];
-    const sampleDirs = [
-      ...(await listExampleDirs()),
-      ...(await listTemplateDirs()),
-    ];
-
-    for (const sampleDir of sampleDirs) {
-      if (!(await sampleDisablesFrameworkServer(sampleDir))) continue;
-
-      const relativeSampleDir = path.relative(repoRoot, sampleDir);
-      const packageJson = await readSamplePackageJson(sampleDir);
-      const declaredDependencies = allDependencyNames(packageJson);
-      if (declaredDependencies.has("@evjs/server")) {
-        violations.push(
-          `${relativeSampleDir} declares @evjs/server with server: false`,
-        );
-      }
-
-      const sourceFiles = await listSourceFiles(sampleDir);
-      for (const sourceFile of sourceFiles) {
-        const relativeFile = path.relative(repoRoot, sourceFile);
-        const source = await fs.readFile(sourceFile, "utf-8");
-        for (const importSpecifier of parseEvjsImportSpecifiers(source)) {
-          if (packageNameFromSpecifier(importSpecifier) === "@evjs/server") {
-            violations.push(
-              `${relativeFile} imports ${importSpecifier} with server: false`,
-            );
-          }
-        }
-        if (hasUseServerDirective(source)) {
-          violations.push(
-            `${relativeFile} uses "use server" with server: false`,
-          );
-        }
-      }
-    }
-
-    expect(violations).toEqual([]);
-  });
-
   it("keeps MPA examples router-free and runtime-light", async () => {
     const violations: string[] = [];
     const sampleDirs = [
@@ -1111,15 +1070,6 @@ async function readSamplePackageJson(sampleDir: string): Promise<PackageJson> {
   ) as PackageJson;
 }
 
-async function sampleDisablesFrameworkServer(
-  sampleDir: string,
-): Promise<boolean> {
-  const configPath = path.join(sampleDir, "ev.config.ts");
-  if (!(await fileExists(configPath))) return false;
-  const source = await fs.readFile(configPath, "utf-8");
-  return /\bserver\s*:\s*false\b/.test(source);
-}
-
 async function sampleUsesMpaRouting(sampleDir: string): Promise<boolean> {
   const configPath = path.join(sampleDir, "ev.config.ts");
   if (!(await fileExists(configPath))) return false;
@@ -1227,10 +1177,6 @@ function parseEvjsImportSpecifiers(source: string): string[] {
 function packageNameFromSpecifier(specifier: string): string {
   const [scope, name] = specifier.split("/");
   return `${scope}/${name}`;
-}
-
-function hasUseServerDirective(source: string): boolean {
-  return /(?:^|\n)\s*["']use server["']/.test(source);
 }
 
 function escapeRegExp(value: string): string {

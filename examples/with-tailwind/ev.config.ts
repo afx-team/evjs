@@ -9,5 +9,7 @@ import { defineConfig } from "@evjs/ev";
  * No custom loaders or `bundler` hooks are needed!
  */
 export default defineConfig({
-  server: false,
+  output: {
+    client: "dist",
+  },
 });

@@ -81,7 +81,11 @@ describe.each(BUNDLERS)("build notifier plugin [%s]", (_name, bundler) => {
       },
     };
 
-    await build({ server: false, bundler, plugins: [buildNotifier] });
+    await build({
+      output: { client: "dist" },
+      bundler,
+      plugins: [buildNotifier],
+    });
 
     expect(report.started).toBe(true);
     expect(report.duration).toBeGreaterThan(0);
@@ -122,7 +126,11 @@ describe.each(BUNDLERS)("deployment manifest plugin [%s]", (_name, bundler) => {
       },
     };
 
-    await build({ server: false, bundler, plugins: [deployPlugin] });
+    await build({
+      output: { client: "dist" },
+      bundler,
+      plugins: [deployPlugin],
+    });
 
     // Verify the plugin actually wrote the file
     expect(fs.existsSync(manifestPath)).toBe(true);
@@ -199,7 +207,7 @@ describe.each(
     };
 
     await build({
-      server: false,
+      output: { client: "dist" },
       bundler,
       plugins: [htmlPlugin],
     });
@@ -229,7 +237,7 @@ describe.each(
     };
 
     await build({
-      server: false,
+      output: { client: "dist" },
       bundler,
       plugins: [commentPlugin],
     });
@@ -275,7 +283,7 @@ describe.each(BUNDLERS)("transformHtml composition [%s]", (_name, bundler) => {
     };
 
     await build({
-      server: false,
+      output: { client: "dist" },
       bundler,
       plugins: [plugin1, plugin2],
     });

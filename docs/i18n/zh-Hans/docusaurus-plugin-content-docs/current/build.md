@@ -23,17 +23,7 @@ error 级 diagnostic，命令就以非 0 退出；warning 只展示，不会让�
 
 ## 输出
 
-纯 CSR 输出（`server: false`）是扁平结构：
-
-```txt
-dist/
-├── index.html
-├── main.[hash].js
-├── [chunk].[hash].js
-└── manifest.json
-```
-
-启用 server 的输出会拆分 manifest：
+默认情况下，evjs 输出拆分的 public 和 server 产物：
 
 ```txt
 dist/
@@ -47,14 +37,28 @@ dist/
 └── build-output.json
 ```
 
+当 public/client 产物需要直接写入 `dist` 时，配置 `output.client: "dist"`。
+server 产物仍写入 `output.server` 配置的目录，默认是 `dist/server`：
+
+```txt
+dist/
+├── index.html
+├── main.[hash].js
+├── [chunk].[hash].js
+├── manifest.json
+├── server/
+│   ├── main.[hash].js
+│   └── manifest.json
+└── build-output.json
+```
+
 `dist/build-output.json` 是完整的私有 `BuildOutput` handoff artifact，供构建后仍需要
 完整框架模型的工具使用。`dist/client/manifest.json` 和
 `dist/server/manifest.json` 都是从它派生出的确定性视图：client manifest 是浏览器安全的
 public metadata，server manifest 包含 server bundle metadata（`entry`、`assets`、
 `fns` 和 `routes`）。Deployment adapter 可以在构建过程中消费 `BuildOutput`，并把等价的
 runtime 数据内嵌进平台产物，因此已部署的 server package 不必在启动时读取
-`dist/build-output.json`。CSR-only 输出保持扁平结构，将 public manifest 写入
-`dist/manifest.json`。HTML 可以把 public manifest 内嵌为 `__EVJS_MANIFEST__`；当浏览器
+`dist/build-output.json`。HTML 可以把 public manifest 内嵌为 `__EVJS_MANIFEST__`；当浏览器
 runtime 通过 `manifestUrl`、`data-evjs-manifest` 或 `/manifest.json` 获取它时，响应必须是
 成功的 JSON，并使用 `Content-Type: application/json`，允许附带可选 content-type 参数。
 
@@ -170,16 +174,17 @@ browser page entry。
 
 ## 要点
 
-- 启用 server 的构建输出 `dist/client/manifest.json`、
-  `dist/server/manifest.json` 和 `dist/build-output.json`；CSR-only 构建
-  输出 `dist/manifest.json`。
+- 默认输出目录会写入 `dist/client/manifest.json`、
+  `dist/server/manifest.json` 和 `dist/build-output.json`。
+- `output.client: "dist"` 会把 public assets 和 `dist/manifest.json`
+  直接写入 `dist`，server assets 仍写入 `output.server`。
 - `dist/build-output.json` 是面向构建后工具和调试的完整私有 `BuildOutput` handoff；
   runtime deployment 可以内嵌等价数据，而不是启动时读取该文件。
 - 会成为 runtime id 的 manifest object key 必须是 build identifier，包括
   app id、page id 和 opaque internal PPR region id：只能使用字母、数字、下划线或连字符。
 - app 和 page runtime module 必须关联到 JavaScript 资产；如果 client entry
   只产出 CSS 或没有产物，manifest 输出会失败。
-- 启用 server 的构建必须把 server runtime entry 关联到 JavaScript 资产；
+- 构建必须把 server runtime entry 关联到 JavaScript 资产；
   deployment adapter 会依赖 `BuildOutput.server.entry` 导入框架 handler。
 - build entry name 是 manifest asset key。它们必须是 build identifier，并且
   必须在 app、page、runtime 和生成的 server entries 之间全局唯一。

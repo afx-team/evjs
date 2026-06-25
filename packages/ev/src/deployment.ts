@@ -71,7 +71,7 @@ export interface DeploymentArtifact {
   apps: Record<string, DeploymentApp>;
   pages: Record<string, DeploymentPage>;
   routes: DeploymentRoute[];
-  server?: DeploymentServer;
+  server: DeploymentServer;
   rsc?: DeploymentRsc;
   metadata?: Record<string, unknown>;
 }
@@ -194,24 +194,20 @@ export function createDeploymentArtifact(
       render: route.render,
       runtime: route.runtime,
     })),
-    ...(output.server
-      ? {
-          server: {
-            entry: output.server.entry,
-            basePath: output.runtime.server?.basePath,
-            fn: output.runtime.server?.fn,
-            ppr: output.runtime.server?.ppr,
-            rsc: output.runtime.server?.rsc,
-            ...(includeAssets ? { assets: output.server.assets } : {}),
-            renderers: Object.keys(output.server.renderers ?? {}),
-            functions: Object.keys(output.server.functions),
-            routes: output.server.routes.map((route) => ({
-              path: route.path,
-              methods: route.methods,
-            })),
-          },
-        }
-      : {}),
+    server: {
+      entry: output.server.entry,
+      basePath: output.runtime.server.basePath,
+      fn: output.runtime.server.fn,
+      ppr: output.runtime.server.ppr,
+      rsc: output.runtime.server.rsc,
+      ...(includeAssets ? { assets: output.server.assets } : {}),
+      renderers: Object.keys(output.server.renderers ?? {}),
+      functions: Object.keys(output.server.functions),
+      routes: output.server.routes.map((route) => ({
+        path: route.path,
+        methods: route.methods,
+      })),
+    },
     ...(output.rsc
       ? {
           rsc: {
@@ -233,7 +229,7 @@ export function createNodeDeploymentFiles(
   options: NodeDeploymentAdapterOptions = {},
 ): NodeDeploymentFiles {
   const artifactFileName = options.artifactFileName ?? "deployment.node.json";
-  const serverFileName = output.server?.entry
+  const serverFileName = output.server.entry
     ? (options.serverFileName ?? "server.mjs")
     : undefined;
 
@@ -338,7 +334,7 @@ export function createEdgeDeploymentFiles(
   options: EdgeDeploymentAdapterOptions = {},
 ): EdgeDeploymentFiles {
   const artifactFileName = options.artifactFileName ?? "deployment.edge.json";
-  const workerFileName = output.server?.entry
+  const workerFileName = output.server.entry
     ? (options.workerFileName ?? "worker.mjs")
     : undefined;
 
@@ -391,17 +387,10 @@ function getDeploymentOutputPaths(
 ): NonNullable<BuildOutput["paths"]> {
   if (output.paths) return output.paths;
 
-  const serverEnabled = Boolean(output.server);
   return {
     rootDir: output.distDir,
-    publicDir: serverEnabled
-      ? joinManifestPath(output.distDir, "client")
-      : output.distDir,
-    ...(serverEnabled
-      ? {
-          serverDir: joinManifestPath(output.distDir, "server"),
-        }
-      : {}),
+    publicDir: joinManifestPath(output.distDir, "client"),
+    serverDir: joinManifestPath(output.distDir, "server"),
   };
 }
 
@@ -432,7 +421,7 @@ function createNodeServerModule(
   output: BuildOutput,
   options: NodeDeploymentAdapterOptions,
 ): string {
-  const serverEntry = output.server?.entry;
+  const serverEntry = output.server.entry;
   const staticFallback = getStaticFallbackHtml(output);
   const staticRoutes = getStaticDocumentRoutes(output).map((route) => ({
     path: toNodeRoutePath(route.path),
@@ -609,7 +598,7 @@ function createEdgeWorkerModule(
   output: BuildOutput,
   options: EdgeDeploymentAdapterOptions,
 ): string {
-  const serverEntry = output.server?.entry;
+  const serverEntry = output.server.entry;
   const staticFallback = getStaticFallbackHtml(output);
   const staticRoutes = getStaticDocumentRoutes(output).map((route) => ({
     path: toNodeRoutePath(route.path),
@@ -784,10 +773,10 @@ function analyzeStaticDeploymentCompatibility(
 ): StaticDeploymentCompatibility {
   const unsupported = new Set<StaticDeploymentUnsupportedCapability>();
 
-  if (Object.keys(output.server?.functions ?? {}).length > 0) {
+  if (Object.keys(output.server.functions).length > 0) {
     unsupported.add("server-functions");
   }
-  if ((output.server?.routes ?? []).length > 0) {
+  if (output.server.routes.length > 0) {
     unsupported.add("server-routes");
   }
 
@@ -897,7 +886,7 @@ function getFrameworkEndpointPaths(output: BuildOutput): string[] {
 function getFrameworkServerRoutes(output: BuildOutput): string[] {
   const routes = new Set<string>();
 
-  for (const route of output.server?.routes ?? []) {
+  for (const route of output.server.routes) {
     routes.add(route.path);
   }
 

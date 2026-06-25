@@ -116,7 +116,6 @@ function createFrameworkCallbacks(options: {
       const output = linkBuildOutput({
         graph,
         plan,
-        serverEnabled: options.config.serverEnabled,
         clientEntryAssets: facts.clientEntryAssets,
         firstClientEntryAssets: facts.firstClientEntryAssets,
         serverEntryAssets: facts.serverEntryAssets,
@@ -127,24 +126,20 @@ function createFrameworkCallbacks(options: {
       await options.onBuildOutput?.(output);
 
       const rootDir = path.join(options.cwd, plan.distDir);
-      const clientDir = options.config.serverEnabled
-        ? path.join(rootDir, "client")
-        : rootDir;
+      const clientDir = path.resolve(options.cwd, plan.output.clientDir);
       await fs.promises.mkdir(rootDir, { recursive: true });
-      if (options.config.serverEnabled) {
-        const serverDir = path.join(rootDir, "server");
-        await fs.promises.mkdir(serverDir, { recursive: true });
-        await fs.promises.writeFile(
-          path.join(serverDir, "manifest.json"),
-          JSON.stringify(createServerManifest(output), null, 2),
-          "utf-8",
-        );
-        await fs.promises.writeFile(
-          path.join(rootDir, "build-output.json"),
-          JSON.stringify(output, null, 2),
-          "utf-8",
-        );
-      }
+      const serverDir = path.join(rootDir, "server");
+      await fs.promises.mkdir(serverDir, { recursive: true });
+      await fs.promises.writeFile(
+        path.join(serverDir, "manifest.json"),
+        JSON.stringify(createServerManifest(output), null, 2),
+        "utf-8",
+      );
+      await fs.promises.writeFile(
+        path.join(rootDir, "build-output.json"),
+        JSON.stringify(output, null, 2),
+        "utf-8",
+      );
       await fs.promises.mkdir(clientDir, { recursive: true });
       await fs.promises.writeFile(
         path.join(clientDir, "manifest.json"),
@@ -228,10 +223,10 @@ async function expectRejectedMessage(action: () => void | Promise<void>) {
 }
 
 describe("utoopackAdapter dev", () => {
-  it("emits flat CSR manifest and index.html in server:false mode", async () => {
+  it("emits flat CSR manifest and index.html in flat output mode", async () => {
     const cwd = await makeProject();
     const config = resolveConfig<ConfigComplete>({
-      server: false,
+      output: { client: "dist" },
       entry: "./src/main.tsx",
       html: "./index.html",
     });
@@ -311,10 +306,10 @@ describe("utoopackAdapter dev", () => {
     await controller.close?.();
   });
 
-  it("emits dev artifacts under the build plan distDir", async () => {
+  it("emits dev artifacts under the configured client output directory", async () => {
     const cwd = await makeProject();
     const config = resolveConfig<ConfigComplete>({
-      server: false,
+      output: { client: "custom-dist", server: "custom-dist/server" },
       entry: "./src/main.tsx",
       html: "./index.html",
     });
@@ -352,7 +347,7 @@ describe("utoopackAdapter dev", () => {
       "utf-8",
     );
     const config = resolveConfig<ConfigComplete>({
-      server: false,
+      output: { client: "dist" },
       pages: {
         home: {
           component: "./src/main.tsx",
@@ -381,7 +376,7 @@ describe("utoopackAdapter dev", () => {
 
     try {
       const nextConfig = resolveConfig<ConfigComplete>({
-        server: false,
+        output: { client: "dist" },
         pages: {
           home: {
             component: "./src/main.tsx",
@@ -426,7 +421,7 @@ describe("utoopackAdapter dev", () => {
   it("fails clearly for entry-changing dev plan updates", async () => {
     const cwd = await makeProject();
     const config = resolveConfig<ConfigComplete>({
-      server: false,
+      output: { client: "dist" },
       pages: {
         home: {
           component: "./src/main.tsx",
@@ -451,7 +446,7 @@ describe("utoopackAdapter dev", () => {
 
     try {
       const nextConfig = resolveConfig<ConfigComplete>({
-        server: false,
+        output: { client: "dist" },
         pages: {
           home: {
             component: "./src/main.tsx",
@@ -487,7 +482,7 @@ describe("utoopackAdapter dev", () => {
   it("reports server-changing dev plan updates", async () => {
     const cwd = await makeProject();
     const config = resolveConfig<ConfigComplete>({
-      server: false,
+      output: { client: "dist" },
       entry: "./src/main.tsx",
       html: "./index.html",
     });
@@ -522,7 +517,6 @@ describe("utoopackAdapter dev", () => {
       expect(message).toContain(
         "Utoopack dev cannot apply framework plan changes",
       );
-      expect(message).toContain("entry additions: server (server-runtime)");
       expect(message).toContain("server output changed");
     } finally {
       await controller.close?.();
@@ -547,10 +541,7 @@ describe("utoopackAdapter dev", () => {
           expect(ctx.mode).toBe("development");
           expect(ctx.buildId).toBe(ctx.output.buildId);
           expect(ctx.publicPath).toBe(ctx.output.publicPath);
-          meta.setAttribute(
-            "name",
-            ctx.output.server ? "server-enabled" : "client-only",
-          );
+          meta.setAttribute("name", "server");
           doc.head?.appendChild(meta);
         },
       },
@@ -617,7 +608,7 @@ describe("utoopackAdapter dev", () => {
     expect(html).toContain('src="/main.js"');
     expect(html).toContain('data-evjs-kind="app"');
     expect(html).toContain('data-evjs-id="default"');
-    expect(html).toContain('<meta name="server-enabled">');
+    expect(html).toContain('<meta name="server">');
     expect(onServerBundleReady).toHaveBeenCalledTimes(1);
   });
 });

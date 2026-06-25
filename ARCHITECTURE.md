@@ -159,16 +159,16 @@ and navigation helpers instead of constructing route trees directly.
 
 ## Manifest
 
-The framework output contract is `BuildOutput`. Server-enabled builds serialize
-the complete contract to:
+The framework output contract is `BuildOutput`. Builds serialize the complete
+contract to:
 
 ```txt
 dist/server/manifest.json
 ```
 
-They also emit a browser-safe public manifest to `dist/client/manifest.json`.
-CSR-only builds stay flat and emit `dist/manifest.json`. Deployment plugins and
-platform adapters should consume `BuildOutput`.
+They also emit a browser-safe public manifest to `output.client` and a server
+bundle manifest to `output.server`. Deployment plugins and platform adapters
+should consume `BuildOutput`.
 
 ## Deployment
 

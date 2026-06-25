@@ -8,7 +8,7 @@ import {
   assertFrameworkManifestShape,
   createPublicManifest,
   createServerManifest,
-  linkBuildOutput,
+  linkBuildOutput as linkManifestBuildOutput,
 } from "../src/manifest/index.js";
 
 function createMinimalBuildOutput(): BuildOutput {
@@ -27,7 +27,67 @@ function createMinimalBuildOutput(): BuildOutput {
     apps: {},
     pages: {},
     routes: [],
+    server: {
+      entry: "server.js",
+      assets: { js: ["server.js"], css: [] },
+      functions: {},
+      routes: [],
+    },
   };
+}
+
+function createServerRuntimeEntry(): BuildPlan["entries"][number] {
+  return {
+    name: "server",
+    import: "@evjs/server/fetch",
+    environment: "server",
+    runtime: "node",
+    kind: "server-runtime",
+  };
+}
+
+function createServerPlan(
+  renderers?: BuildPlan["server"]["renderers"],
+): BuildPlan["server"] {
+  return {
+    entry: "@evjs/server/fetch",
+    ...(renderers ? { renderers } : {}),
+    functionRuntime: {
+      endpoint: "/__evjs/fn",
+      clientProxy: "@evjs/client/internal",
+      serverRegister: "@evjs/server/register",
+    },
+  };
+}
+
+function createRuntimePlan(
+  server?: Partial<NonNullable<BuildPlan["runtime"]["server"]>>,
+): BuildPlan["runtime"] {
+  return {
+    publicPath: "/",
+    server: {
+      basePath: "/__evjs",
+      fn: "/__evjs/fn",
+      ...server,
+    },
+  };
+}
+
+function createDefaultServerEntryAssets(): {
+  server: { js: string[]; css: string[] };
+} {
+  return {
+    server: { js: ["server.js"], css: [] },
+  };
+}
+
+function linkBuildOutput(
+  input: Parameters<typeof linkManifestBuildOutput>[0],
+): ReturnType<typeof linkManifestBuildOutput> {
+  return linkManifestBuildOutput({
+    serverEntryAssets: createDefaultServerEntryAssets(),
+    ...input,
+  });
 }
 
 describe("assertFrameworkManifestShape", () => {
@@ -2569,11 +2629,11 @@ describe("linkBuildOutput", () => {
       buildId: "build",
       mode: "production",
       distDir: "dist",
-      serverEnabled: false,
-      entries: [],
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
+      entries: [createServerRuntimeEntry()],
       html: [],
-      server: { enabled: false },
-      runtime: { publicPath: "/" },
+      server: createServerPlan(),
+      runtime: createRuntimePlan(),
     };
 
     const output = linkBuildOutput({ graph, plan });
@@ -2617,8 +2677,9 @@ describe("linkBuildOutput", () => {
       buildId: "build",
       mode: "production",
       distDir: "dist",
-      serverEnabled: false,
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
       entries: [
+        createServerRuntimeEntry(),
         {
           name: "admin",
           import: "./src/main.tsx",
@@ -2636,8 +2697,8 @@ describe("linkBuildOutput", () => {
           owner: { appId: "admin" },
         },
       ],
-      server: { enabled: false },
-      runtime: { publicPath: "/" },
+      server: createServerPlan(),
+      runtime: createRuntimePlan(),
     };
 
     const output = linkBuildOutput({
@@ -2689,8 +2750,9 @@ describe("linkBuildOutput", () => {
       buildId: "build",
       mode: "production",
       distDir: "dist",
-      serverEnabled: false,
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
       entries: [
+        createServerRuntimeEntry(),
         {
           name: "home",
           import: "./src/Home.tsx",
@@ -2708,8 +2770,8 @@ describe("linkBuildOutput", () => {
           owner: { pageId: "home" },
         },
       ],
-      server: { enabled: false },
-      runtime: { publicPath: "/" },
+      server: createServerPlan(),
+      runtime: createRuntimePlan(),
     };
 
     expect(() =>
@@ -2740,7 +2802,7 @@ describe("linkBuildOutput", () => {
       buildId: "build",
       mode: "production",
       distDir: "dist",
-      serverEnabled: true,
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
       entries: [
         {
           name: "server",
@@ -2751,11 +2813,8 @@ describe("linkBuildOutput", () => {
         },
       ],
       html: [],
-      server: { enabled: true, entry: "@evjs/server/fetch" },
-      runtime: {
-        publicPath: "/",
-        server: { basePath: "/__evjs", fn: "/__evjs/fn" },
-      },
+      server: createServerPlan(),
+      runtime: createRuntimePlan(),
     };
 
     const output = linkBuildOutput({
@@ -2765,8 +2824,8 @@ describe("linkBuildOutput", () => {
         server: { js: ["server.js"], css: ["server.css"] },
       },
     });
-    expect(output.server?.entry).toBe("server.js");
-    expect(output.server?.assets).toEqual({
+    expect(output.server.entry).toBe("server.js");
+    expect(output.server.assets).toEqual({
       js: ["server.js"],
       css: ["server.css"],
     });
@@ -2808,7 +2867,7 @@ describe("linkBuildOutput", () => {
       buildId: "build",
       mode: "production",
       distDir: "dist",
-      serverEnabled: true,
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
       entries: [
         {
           name: "server",
@@ -2834,22 +2893,15 @@ describe("linkBuildOutput", () => {
           owner: { pageId: "article" },
         },
       ],
-      server: {
-        enabled: true,
-        entry: "@evjs/server/fetch",
-        renderers: [
-          {
-            name: "article-server",
-            import: "./src/Article.tsx",
-            kind: "page-server",
-            owner: { pageId: "article" },
-          },
-        ],
-      },
-      runtime: {
-        publicPath: "/",
-        server: { basePath: "/__evjs", fn: "/__evjs/fn" },
-      },
+      server: createServerPlan([
+        {
+          name: "article-server",
+          import: "./src/Article.tsx",
+          kind: "page-server",
+          owner: { pageId: "article" },
+        },
+      ]),
+      runtime: createRuntimePlan(),
     };
 
     const output = linkBuildOutput({
@@ -2907,7 +2959,7 @@ describe("linkBuildOutput", () => {
       buildId: "build",
       mode: "production",
       distDir: "dist",
-      serverEnabled: true,
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
       entries: [
         {
           name: "server",
@@ -2933,26 +2985,15 @@ describe("linkBuildOutput", () => {
           owner: { pageId: "campaign" },
         },
       ],
-      server: {
-        enabled: true,
-        entry: "@evjs/server/fetch",
-        renderers: [
-          {
-            name: "campaign-ppr-shell",
-            import: "./src/Campaign.tsx",
-            kind: "ppr-shell",
-            owner: { pageId: "campaign" },
-          },
-        ],
-      },
-      runtime: {
-        publicPath: "/",
-        server: {
-          basePath: "/__evjs",
-          fn: "/__evjs/fn",
-          ppr: "/__evjs/ppr",
+      server: createServerPlan([
+        {
+          name: "campaign-ppr-shell",
+          import: "./src/Campaign.tsx",
+          kind: "ppr-shell",
+          owner: { pageId: "campaign" },
         },
-      },
+      ]),
+      runtime: createRuntimePlan({ ppr: "/__evjs/ppr" }),
     };
 
     const output = linkBuildOutput({
@@ -3010,7 +3051,7 @@ describe("linkBuildOutput", () => {
       buildId: "build",
       mode: "production",
       distDir: "dist",
-      serverEnabled: true,
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
       entries: [
         {
           name: "server",
@@ -3029,14 +3070,8 @@ describe("linkBuildOutput", () => {
         },
       ],
       html: [],
-      server: { enabled: true, entry: "@evjs/server/fetch" },
-      runtime: {
-        publicPath: "/",
-        server: {
-          basePath: "/__evjs",
-          fn: "/__evjs/fn",
-        },
-      },
+      server: createServerPlan(),
+      runtime: createRuntimePlan(),
     };
 
     expect(() =>
@@ -3076,7 +3111,7 @@ describe("linkBuildOutput", () => {
       buildId: "build",
       mode: "production",
       distDir: "dist",
-      serverEnabled: true,
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
       entries: [
         {
           name: "server",
@@ -3095,15 +3130,8 @@ describe("linkBuildOutput", () => {
         },
       ],
       html: [],
-      server: { enabled: true, entry: "@evjs/server/fetch" },
-      runtime: {
-        publicPath: "/",
-        server: {
-          basePath: "/__evjs",
-          fn: "/__evjs/fn",
-          rsc: "/__evjs/rsc",
-        },
-      },
+      server: createServerPlan(),
+      runtime: createRuntimePlan({ rsc: "/__evjs/rsc" }),
     };
 
     expect(() =>
@@ -3151,7 +3179,7 @@ describe("linkBuildOutput", () => {
       buildId: "build",
       mode: "production",
       distDir: "dist",
-      serverEnabled: true,
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
       entries: [
         {
           name: "server",
@@ -3163,15 +3191,8 @@ describe("linkBuildOutput", () => {
         ...entries,
       ],
       html: [],
-      server: { enabled: true, entry: "@evjs/server/fetch" },
-      runtime: {
-        publicPath: "/",
-        server: {
-          basePath: "/__evjs",
-          fn: "/__evjs/fn",
-          ppr: "/__evjs/ppr",
-        },
-      },
+      server: createServerPlan(),
+      runtime: createRuntimePlan({ ppr: "/__evjs/ppr" }),
     });
 
     expect(() =>
@@ -3222,7 +3243,7 @@ describe("linkBuildOutput", () => {
     );
   });
 
-  it("fails when a server-enabled plan has no server runtime entry", () => {
+  it("fails when a server-present plan has no server runtime entry", () => {
     const graph: AppGraph = {
       version: 1,
       rootDir: "/repo",
@@ -3237,14 +3258,11 @@ describe("linkBuildOutput", () => {
       buildId: "build",
       mode: "production",
       distDir: "dist",
-      serverEnabled: true,
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
       entries: [],
       html: [],
-      server: { enabled: true, entry: "@evjs/server/fetch" },
-      runtime: {
-        publicPath: "/",
-        server: { basePath: "/__evjs", fn: "/__evjs/fn" },
-      },
+      server: createServerPlan(),
+      runtime: createRuntimePlan(),
     };
 
     expect(() =>
@@ -3253,9 +3271,7 @@ describe("linkBuildOutput", () => {
         plan,
         serverAssets: { js: ["server.js"], css: [] },
       }),
-    ).toThrow(
-      "[evjs] Server-enabled build did not declare a server runtime entry.",
-    );
+    ).toThrow("[evjs] Server build did not declare a server runtime entry.");
   });
 });
 
@@ -3512,7 +3528,12 @@ describe("createServerManifest", () => {
     });
   });
 
-  it("omits the server manifest when BuildOutput has no server section", () => {
-    expect(createServerManifest(createMinimalBuildOutput())).toBeUndefined();
+  it("projects the minimal server output into the server manifest shape", () => {
+    expect(createServerManifest(createMinimalBuildOutput())).toEqual({
+      version: 1,
+      entry: "server.js",
+      assets: { js: ["server.js"], css: [] },
+      fns: {},
+    });
   });
 });

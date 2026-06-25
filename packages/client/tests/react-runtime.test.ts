@@ -596,6 +596,11 @@ describe("fetchRscFlight", () => {
         apps: {},
         pages: {},
         routes: [],
+        server: {
+          assets: { js: [], css: [] },
+          functions: {},
+          routes: [],
+        },
       },
       pageId: "dashboard",
       url: "https://example.com/dashboard?tab=comments&tag=a&tag=b",
@@ -1097,5 +1102,10 @@ function createRscManifest(): BuildOutput {
     apps: {},
     pages: {},
     routes: [],
+    server: {
+      assets: { js: [], css: [] },
+      functions: {},
+      routes: [],
+    },
   };
 }

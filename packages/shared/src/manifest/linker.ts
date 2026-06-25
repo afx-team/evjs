@@ -33,7 +33,6 @@ export interface BuildOutputServerModule {
 export interface BuildOutputLinkInput {
   graph: AppGraph;
   plan: BuildPlan;
-  serverEnabled?: boolean;
   clientEntryAssets?: Record<string, AssetGroup>;
   firstClientEntryAssets?: AssetGroup;
   serverEntryAssets?: Record<string, AssetGroup>;
@@ -65,7 +64,6 @@ export interface ServerManifestRouteOutput {
 }
 
 export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
-  const serverEnabled = input.serverEnabled ?? input.plan.serverEnabled;
   const clientEntryAssets = input.clientEntryAssets ?? {};
   const firstClientEntryAssets = input.firstClientEntryAssets ?? EMPTY_ASSETS;
   const serverEntryAssets = input.serverEntryAssets ?? {};
@@ -89,16 +87,12 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   const serverRuntimeAssets = serverRuntimeEntry
     ? serverAssetsForEntry(serverRuntimeEntry)
     : fallbackServerAssets;
-  const serverEntry = serverEnabled
-    ? assertServerRuntimeEntry(
-        input.serverEntry ?? serverRuntimeAssets.js[0],
-        serverRuntimeAssets,
-        serverRuntimeEntry,
-      )
-    : undefined;
-  const serverAssets = serverEnabled
-    ? serverRuntimeAssets
-    : fallbackServerAssets;
+  const serverEntry = assertServerRuntimeEntry(
+    input.serverEntry ?? serverRuntimeAssets.js[0],
+    serverRuntimeAssets,
+    serverRuntimeEntry,
+  );
+  const serverAssets = serverRuntimeAssets;
 
   const findEntryByOwner = (
     owner: BuildEntry["owner"],
@@ -284,7 +278,7 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
     version: 1,
     buildId: input.plan.buildId,
     distDir: input.plan.distDir,
-    paths: createBuildOutputPaths(input.plan.distDir, serverEnabled),
+    paths: createBuildOutputPaths(input.plan),
     publicPath: input.plan.runtime.publicPath,
     runtime: {
       server: input.plan.runtime.server,
@@ -305,19 +299,17 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
         hydrate: route.hydrate,
         runtime: route.runtime,
       })),
-    server: serverEnabled
-      ? {
-          entry: serverEntry,
-          assets: serverAssets,
-          renderers: linkServerRenderers(
-            input.plan,
-            serverAssetsForEntry,
-            assetsForSource,
-          ),
-          functions: serverFunctions,
-          routes: serverRoutes,
-        }
-      : undefined,
+    server: {
+      entry: serverEntry,
+      assets: serverAssets,
+      renderers: linkServerRenderers(
+        input.plan,
+        serverAssetsForEntry,
+        assetsForSource,
+      ),
+      functions: serverFunctions,
+      routes: serverRoutes,
+    },
     ...(rsc ? { rsc } : {}),
   };
 }
@@ -377,7 +369,7 @@ function assertServerRuntimeEntry(
 ): string {
   if (!runtimeEntry) {
     throw new Error(
-      "[evjs] Server-enabled build did not declare a server runtime entry.",
+      "[evjs] Server build did not declare a server runtime entry.",
     );
   }
   if (serverEntry && assets.js.length > 0) return serverEntry;
@@ -428,27 +420,25 @@ export function createPublicManifest(output: BuildOutput): BuildOutput {
         runtime: route.runtime,
       }),
     ),
-    server: output.server
-      ? pruneUndefined({
-          assets: clonePublicAssets(output.server.assets, publicAssetFiles),
-          functions: Object.fromEntries(
-            Object.entries(output.server.functions).map(([id, fn]) => [
-              id,
-              pruneUndefined({
-                assets: clonePublicAssets(fn.assets, publicAssetFiles),
-                exportName: fn.exportName,
-              }),
-            ]),
-          ),
-          routes: output.server.routes.map((route) =>
-            pruneUndefined({
-              path: route.path,
-              methods: [...route.methods],
-              assets: clonePublicAssets(route.assets, publicAssetFiles),
-            }),
-          ),
-        })
-      : undefined,
+    server: pruneUndefined({
+      assets: clonePublicAssets(output.server.assets, publicAssetFiles),
+      functions: Object.fromEntries(
+        Object.entries(output.server.functions).map(([id, fn]) => [
+          id,
+          pruneUndefined({
+            assets: clonePublicAssets(fn.assets, publicAssetFiles),
+            exportName: fn.exportName,
+          }),
+        ]),
+      ),
+      routes: output.server.routes.map((route) =>
+        pruneUndefined({
+          path: route.path,
+          methods: [...route.methods],
+          assets: clonePublicAssets(route.assets, publicAssetFiles),
+        }),
+      ),
+    }),
     rsc: output.rsc
       ? pruneUndefined({
           endpoint: output.rsc.endpoint,
@@ -474,9 +464,7 @@ export function createPublicManifest(output: BuildOutput): BuildOutput {
 
 export function createServerManifest(
   output: BuildOutput,
-): ServerManifestOutput | undefined {
-  if (!output.server) return undefined;
-
+): ServerManifestOutput {
   const routes = output.server.routes.map((route) => ({
     path: route.path,
     methods: [...route.methods],
@@ -498,27 +486,13 @@ export function createServerManifest(
 }
 
 function createBuildOutputPaths(
-  distDir: string,
-  serverEnabled: boolean,
+  plan: BuildPlan,
 ): NonNullable<BuildOutput["paths"]> {
   return {
-    rootDir: distDir,
-    publicDir: serverEnabled ? joinManifestPath(distDir, "client") : distDir,
-    ...(serverEnabled
-      ? {
-          serverDir: joinManifestPath(distDir, "server"),
-        }
-      : {}),
+    rootDir: plan.distDir,
+    publicDir: plan.output.clientDir,
+    serverDir: plan.output.serverDir,
   };
-}
-
-function joinManifestPath(...parts: string[]): string {
-  return parts
-    .map((part, index) =>
-      index === 0 ? part.replace(/\/+$/, "") : part.replace(/^\/+|\/+$/g, ""),
-    )
-    .filter(Boolean)
-    .join("/");
 }
 
 function sanitizeAppOutput(app: AppOutput): AppOutput {
@@ -714,7 +688,7 @@ function linkRscOutput(
   input: BuildOutputLinkInput,
   serverAssetsForEntry: (entry: BuildEntry) => AssetGroup,
 ): BuildOutput["rsc"] | undefined {
-  const endpoint = input.plan.runtime.server?.rsc;
+  const endpoint = input.plan.runtime.server.rsc;
   const rscRenderers = input.plan.entries.filter(
     (entry) => entry.environment === "server" && entry.kind === "rsc-page",
   );

@@ -322,18 +322,17 @@ before bundling so deployment adapters can trust the manifest:
 
 | Capability | Required page contract | SPA document output | MPA document output | Server/runtime requirement | Unsupported combination |
 | --- | --- | --- | --- | --- | --- |
-| CSR | Omit `render`, or export `render = "csr"` | App HTML fallback | One HTML document per page | No server required | None |
-| SSR | `render = "ssr"` | Route-owned server document | Route-owned server document, no static HTML file | Framework server document route | `server: false` |
-| SSG | `render = "ssg"` | App HTML fallback plus static metadata for the route page | Standalone static HTML document | Server build required for generation/manifest linking | `server: false` |
-| PPR | `render = "ssr"` + `prerender = { partial: true }` on a component page | Route-owned server document with server-composed regions | Route-owned server document with server-composed regions | Framework server document route plus optional `runtime.server.ppr` direct/debug endpoint | RSC on the same page, full-page hydration entry, `server: false` |
-| RSC | `render = "ssr"` + `rsc = true` on a component page | Route-owned server document plus RSC Flight endpoint | Route-owned server document plus RSC Flight endpoint | Framework server document route plus `runtime.server.rsc` | PPR on the same page, `hydrate` other than `"none"`, `server: false` |
+| CSR | Omit `render`, or export `render = "csr"` | App HTML fallback | One HTML document per page | Framework server still emitted for conventions and functions | None |
+| SSR | `render = "ssr"` | Route-owned server document | Route-owned server document, no static HTML file | Framework server document route | None |
+| SSG | `render = "ssg"` | App HTML fallback plus static metadata for the route page | Standalone static HTML document | Server build for generation/manifest linking | None |
+| PPR | `render = "ssr"` + `prerender = { partial: true }` on a component page | Route-owned server document with server-composed regions | Route-owned server document with server-composed regions | Framework server document route plus optional `runtime.server.ppr` direct/debug endpoint | RSC on the same page, full-page hydration entry |
+| RSC | `render = "ssr"` + `rsc = true` on a component page | Route-owned server document plus RSC Flight endpoint | Route-owned server document plus RSC Flight endpoint | Framework server document route plus `runtime.server.rsc` | PPR on the same page, `hydrate` other than `"none"` |
 If a page needs both RSC data flow and partial prerendered regions, keep those
 capabilities on separate page routes for now. A single component page must choose
 either `rsc = true` or `prerender = { partial: true }`.
 
-`server: false` is only valid for CSR pages, MPA client entries
-builds, and static assets. SSR, SSG, PPR, RSC, server functions, and server
-routes require the framework server to be enabled during build.
+The framework server is always part of the build. Use `output.client` and
+`output.server` to choose artifact directories instead of disabling the server.
 
 PPR pages should express deferred content with ordinary React `Suspense`:
 
@@ -471,19 +470,25 @@ missing required fields as startup errors. Custom runtimes that call
 `startReactRscPageRuntime({ document })` use that document for both bootstrap
 lookup and mount selector resolution.
 
-## Server
-
-Set `server: false` for CSR-only output:
+## Output
 
 ```ts
-export default defineConfig({ server: false });
+export default defineConfig({
+  output: {
+    client: "dist",
+    server: "dist/server",
+  },
+});
 ```
 
-When `server: false`:
+`output.client` and `output.server` control emitted artifact directories:
 
-- build output is flat `dist/`;
-- `"use server"` modules are build errors;
-- no framework server proxy is configured in dev.
+- `output.client` defaults to `dist/client`.
+- `output.server` defaults to `dist/server`.
+- Set `output.client: "dist"` when the public manifest and browser assets
+  should be written directly under `dist`.
+
+## Server
 
 The framework server boundary defaults to `/__evjs`. Configure
 `server.basePath` only when a deployment platform requires a different path:
@@ -535,7 +540,8 @@ export default defineConfig({
 Use `server.conventions: false` to disable all server conventions.
 
 `output`, `dev`, `server`, `server.dev`, and `transport` must be objects when
-provided; use `server: false` to disable the framework server.
+provided. `output.client` and `output.server` must be non-empty strings that
+point to different directories.
 `server.routing` must be `true`, `false`, or an object with an optional
 non-empty `dir` string. `server.conventions` must be `true`, `false`, or an
 object; object form currently supports `middleware`.

@@ -125,7 +125,6 @@ function collectServerModules(
 }
 
 export class UtoopackManifestGenerator {
-  private serverEnabled: boolean;
   private outputPaths: UtoopackOutputPaths;
   private plan: BuildPlan;
   private clientEntryAssets: Record<string, AssetGroup> = {};
@@ -135,9 +134,15 @@ export class UtoopackManifestGenerator {
   private serverAssets: AssetGroup = EMPTY_ASSETS;
   private serverModules: BuildOutputServerModule[] = [];
 
-  constructor(cwd: string, serverEnabled: boolean, plan: BuildPlan) {
-    this.serverEnabled = serverEnabled;
-    this.outputPaths = getOutputPaths(cwd, serverEnabled, plan.distDir);
+  constructor(cwd: string, plan: BuildPlan) {
+    this.outputPaths = getOutputPaths(
+      cwd,
+      {
+        client: plan.output.clientDir,
+        server: plan.output.serverDir,
+      },
+      plan.distDir,
+    );
     this.plan = plan;
   }
 
@@ -163,7 +168,6 @@ export class UtoopackManifestGenerator {
   }
 
   async loadServerStats() {
-    if (!this.serverEnabled) return;
     this.serverEntry = undefined;
     this.serverEntryAssets = {};
     this.serverAssets = EMPTY_ASSETS;

@@ -378,8 +378,7 @@ export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig>
    * as the framework manifest and before HTML documents are transformed.
    *
    * Deployment adapters should use this hook to add deployment metadata to the
-   * BuildOutput emitted as `dist/build-output.json` for server-enabled
-   * builds or `dist/manifest.json` for CSR-only builds.
+   * BuildOutput emitted as `dist/build-output.json`.
    */
   buildOutput?: (
     output: BuildOutput,
@@ -422,8 +421,8 @@ export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig>
 export interface EvBuildResult {
   /** Client-focused manifest view derived from `output`. */
   clientManifest: ClientManifest;
-  /** Server-focused manifest view derived from `output`, when server output exists. */
-  serverManifest?: ServerManifest;
+  /** Server-focused manifest view derived from `output`. */
+  serverManifest: ServerManifest;
   /** True if this is a rebuild triggered by file change (dev watch mode only). */
   isRebuild: boolean;
 }
@@ -484,12 +483,10 @@ export function createBuildResult(
   output: BuildOutput,
   isRebuild: boolean,
 ): BuildResult {
-  const serverManifest = createServerManifest(output);
-
   return {
     output,
     clientManifest: createClientManifest(output),
-    ...(serverManifest ? { serverManifest } : {}),
+    serverManifest: createServerManifest(output),
     isRebuild,
   };
 }

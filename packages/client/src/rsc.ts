@@ -479,6 +479,11 @@ function createBootstrapManifest(
     version: 1,
     buildId: bootstrap.buildId,
     distDir: "dist",
+    paths: {
+      rootDir: "dist",
+      publicDir: "dist/client",
+      serverDir: "dist/server",
+    },
     publicPath: bootstrap.publicPath ?? "auto",
     runtime: {
       server: {

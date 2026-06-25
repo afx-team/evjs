@@ -1,6 +1,6 @@
 # Deployment
 
-An evjs production build contains static assets, an optional server bundle, and
+An evjs production build contains static assets, a framework server bundle, and
 framework manifests.
 
 ```txt
@@ -12,13 +12,12 @@ dist/
 └── build-output.json
 ```
 
-Deployment adapters should consume `BuildOutput` for server-enabled builds and
-derive platform-specific routing or asset manifests from it. Adapters running in
-the build pipeline receive that object directly; post-build tools can read the
-same complete model from `dist/build-output.json`. `dist/server/manifest.json`
-is only the derived server bundle metadata view, not a replacement for
-`BuildOutput`. CSR-only builds keep the same public manifest contract in
-`dist/manifest.json`.
+Deployment adapters should consume `BuildOutput` and derive platform-specific
+routing or asset manifests from it. Adapters running in the build pipeline
+receive that object directly; post-build tools can read the same complete model
+from `dist/build-output.json`. `dist/server/manifest.json` is only the derived
+server bundle metadata view, not a replacement for `BuildOutput`. The public
+manifest path follows `output.client`.
 
 ## Production Build
 
@@ -353,7 +352,6 @@ export function deployAdapter() {
 }
 ```
 
-Post-build tooling can read `dist/build-output.json` for server-enabled builds.
-Adapters running during `ev build` receive the same `BuildOutput` in memory and
-can embed the runtime data they need. CSR-only builds use the flat
-`dist/manifest.json` path.
+Post-build tooling can read `dist/build-output.json`. Adapters running during
+`ev build` receive the same `BuildOutput` in memory and can embed the runtime
+data they need.

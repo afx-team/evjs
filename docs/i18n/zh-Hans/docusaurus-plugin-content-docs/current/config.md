@@ -297,17 +297,17 @@ adapter 可以信任 manifest：
 
 | 能力 | 必需页面契约 | SPA document 输出 | MPA document 输出 | Server/runtime 要求 | 不支持的组合 |
 | --- | --- | --- | --- | --- | --- |
-| CSR | 省略 `render`，或导出 `render = "csr"` | App HTML fallback | 每个页面一个 HTML document | 不需要 server | 无 |
-| SSR | `render = "ssr"` | route-owned server document | route-owned server document，不输出静态 HTML 文件 | Framework server document route | `server: false` |
-| SSG | `render = "ssg"` | App HTML fallback，并为 route page 记录 static metadata | 独立静态 HTML document | 生成和 manifest linking 阶段需要 server build | `server: false` |
-| PPR | component page 上声明 `render = "ssr"` + `prerender = { partial: true }` | 带服务端合成 regions 的 route-owned server document | 带服务端合成 regions 的 route-owned server document | Framework server document route，另有可选 `runtime.server.ppr` direct/debug endpoint | 同页 RSC、整页 hydration entry、`server: false` |
-| RSC | component page 上声明 `render = "ssr"` + `rsc = true` | route-owned server document 加 RSC Flight endpoint | route-owned server document 加 RSC Flight endpoint | Framework server document route 加 `runtime.server.rsc` | 同页 PPR、`hydrate` 不是 `"none"`、`server: false` |
+| CSR | 省略 `render`，或导出 `render = "csr"` | App HTML fallback | 每个页面一个 HTML document | 仍会输出 framework server 以承载 conventions 和 functions | 无 |
+| SSR | `render = "ssr"` | route-owned server document | route-owned server document，不输出静态 HTML 文件 | Framework server document route | 无 |
+| SSG | `render = "ssg"` | App HTML fallback，并为 route page 记录 static metadata | 独立静态 HTML document | 生成和 manifest linking 阶段需要 server build | 无 |
+| PPR | component page 上声明 `render = "ssr"` + `prerender = { partial: true }` | 带服务端合成 regions 的 route-owned server document | 带服务端合成 regions 的 route-owned server document | Framework server document route，另有可选 `runtime.server.ppr` direct/debug endpoint | 同页 RSC、整页 hydration entry |
+| RSC | component page 上声明 `render = "ssr"` + `rsc = true` | route-owned server document 加 RSC Flight endpoint | route-owned server document 加 RSC Flight endpoint | Framework server document route 加 `runtime.server.rsc` | 同页 PPR、`hydrate` 不是 `"none"` |
 如果同一个页面同时需要 RSC 数据流和 partial prerendered regions，当前请拆成不同
 page routes。单个 component page 必须在 `rsc = true` 和
 `prerender = { partial: true }` 之间二选一。
 
-`server: false` 只适用于 CSR 页面、MPA client entries 和静态资源。
-SSR、SSG、PPR、RSC、server functions 和 server routes 都要求构建时启用 framework server。
+Framework server 始终是构建的一部分。使用 `output.client` 和
+`output.server` 选择产物目录，而不是禁用 server。
 
 PPR 页面推荐用普通 React `Suspense` 表达可延后内容：
 
@@ -437,22 +437,25 @@ assets 或缺少必填字段都会报告为启动错误。自定义 runtime 调�
 `startReactRscPageRuntime({ document })` 时，会用这个 document 同时查找 bootstrap
 和解析 mount selector。
 
-## 服务端
-
-纯 CSR 可以禁用服务端：
+## 输出
 
 ```ts
-export default defineConfig({ server: false });
+export default defineConfig({
+  output: {
+    client: "dist",
+    server: "dist/server",
+  },
+});
 ```
 
-`server: false` 时：
+`output.client` 和 `output.server` 控制产物目录：
 
-- 构建输出为扁平 `dist/`；
-- `"use server"` 模块会成为构建错误；
-- dev 模式不会配置框架服务端代理。
+- `output.client` 默认是 `dist/client`。
+- `output.server` 默认是 `dist/server`。
+- 当 public manifest 和浏览器资源需要直接写入 `dist` 时，设置
+  `output.client: "dist"`。
 
-框架服务端边界默认是 `/__evjs`。只有部署平台要求固定路径时，才需要配置
-`server.basePath`：
+## 服务端
 
 ```ts
 export default defineConfig({
@@ -464,6 +467,9 @@ export default defineConfig({
   },
 });
 ```
+
+框架服务端边界默认是 `/__evjs`。只有部署平台要求固定路径时，才需要配置
+`server.basePath`：
 
 Server conventions 在 `server` 下使用同一种归属模型：`server.routing` 拥有
 服务端文件路由发现，`server.conventions` 拥有从服务端目录树发现的
@@ -500,7 +506,8 @@ export default defineConfig({
 使用 `server.conventions: false` 可以关闭所有 server conventions。
 
 提供 `output`、`dev`、`server`、`server.dev` 和 `transport` 时，它们都必须是
-object；使用 `server: false` 关闭框架服务端。`server.routing` 必须是 `true`、`false` 或
+object。`output.client` 和 `output.server` 必须是非空字符串，并且指向不同目录。
+`server.routing` 必须是 `true`、`false` 或
 object；object 形式只接受可选的非空 `dir` 字符串。`server.conventions` 必须是
 `true`、`false` 或 object；object
 形式目前支持 `middleware`。`server.basePath` 必须是以 `/` 开头的非空 URL pathname，不能包含空白字符、query

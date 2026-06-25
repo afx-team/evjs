@@ -71,7 +71,7 @@ export async function createWebpackConfigs(
   hooks: PluginHooks<WebpackConfig>[],
   options: { clean?: boolean } = {},
 ): Promise<Configuration[]> {
-  const outputPaths = getOutputPaths(cwd, config.serverEnabled, plan.distDir);
+  const outputPaths = getOutputPaths(cwd, config.output, plan.distDir);
   const configs: Configuration[] = [];
   const clientEntries = plan.entries.filter(
     (entry) => entry.environment === "client",
@@ -111,7 +111,7 @@ export async function createWebpackConfigs(
     );
   }
 
-  if (config.serverEnabled && regularServerEntries.length > 0) {
+  if (regularServerEntries.length > 0) {
     configs.push(
       createWebpackConfig({
         cwd,
@@ -131,7 +131,7 @@ export async function createWebpackConfigs(
     );
   }
 
-  if (config.serverEnabled && rscServerEntries.length > 0) {
+  if (rscServerEntries.length > 0) {
     configs.push(
       createWebpackConfig({
         cwd,

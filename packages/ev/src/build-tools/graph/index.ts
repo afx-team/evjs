@@ -110,7 +110,6 @@ export interface GraphConfig {
     routes: PageRouteNode[];
     rootModule?: string;
   };
-  serverEnabled: boolean;
   server: {
     routing?: {
       dir: string;
@@ -257,18 +256,6 @@ export async function createAppGraph(
       continue;
     }
 
-    if (!config.serverEnabled) {
-      if (usesServerDirective) {
-        diagnostics.push({
-          level: "error",
-          file: sourceRel,
-          message:
-            'This "use server" module is reachable from the app graph, but server is disabled. Remove the import or enable server in ev.config.ts.',
-        });
-      }
-      continue;
-    }
-
     if (hasBlockingReferenceParseDiagnostic(rscReferenceAnalysis)) {
       continue;
     }
@@ -360,7 +347,7 @@ export async function createAppGraph(
     diagnostics,
     fileDependencies,
   );
-  validateGraphPageContracts(config, graph, diagnostics);
+  validateGraphPageContracts(graph, diagnostics);
   graph.serverRoutes = [...serverRoutes.values()];
   graph.serverFunctions = serverFunctions;
   graph.clientReferences = [...clientReferences.values()];
@@ -843,7 +830,6 @@ function hasRouteGraphSource(config: GraphConfig): boolean {
 }
 
 function validateGraphPageContracts(
-  config: GraphConfig,
   graph: AppGraph,
   diagnostics: Diagnostic[],
 ): void {
@@ -854,7 +840,6 @@ function validateGraphPageContracts(
     const renderingError = getPageBuildContractViolation(
       `Page "${page.id}"`,
       page,
-      { serverEnabled: config.serverEnabled },
     );
     if (renderingError) {
       diagnostics.push({

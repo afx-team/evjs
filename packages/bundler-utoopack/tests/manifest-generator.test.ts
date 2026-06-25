@@ -15,6 +15,7 @@ async function makeProject() {
   tempDirs.push(cwd);
   await fs.promises.mkdir(path.join(cwd, "dist/client"), { recursive: true });
   await fs.promises.mkdir(path.join(cwd, "dist/server"), { recursive: true });
+  await fs.promises.writeFile(path.join(cwd, "dist/server/server.js"), "");
   return cwd;
 }
 
@@ -32,13 +33,11 @@ afterEach(async () => {
 function linkTestManifest(
   graph: AppGraph,
   plan: BuildPlan,
-  serverEnabled: boolean,
   facts: BundlerBuildFacts,
 ) {
   return linkBuildOutput({
     graph,
     plan,
-    serverEnabled,
     clientEntryAssets: facts.clientEntryAssets,
     firstClientEntryAssets: facts.firstClientEntryAssets,
     serverEntryAssets: facts.serverEntryAssets,
@@ -116,11 +115,11 @@ describe("UtoopackManifestGenerator", () => {
         },
       ],
     };
-    const plan = createPlan(graph, true);
+    const plan = createPlan(graph);
 
-    const generator = new UtoopackManifestGenerator(cwd, true, plan);
+    const generator = new UtoopackManifestGenerator(cwd, plan);
     const output = await generator.build();
-    const manifest = linkTestManifest(graph, plan, true, output);
+    const manifest = linkTestManifest(graph, plan, output);
 
     expect(output.clientEntryAssets?.main).toEqual({
       js: ["main.js"],
@@ -205,11 +204,11 @@ describe("UtoopackManifestGenerator", () => {
       serverFunctions: [],
       serverRoutes: [],
     };
-    const plan = createPlan(graph, true, { distDir: "custom-dist" });
+    const plan = createPlan(graph, { distDir: "custom-dist" });
 
-    const generator = new UtoopackManifestGenerator(cwd, true, plan);
+    const generator = new UtoopackManifestGenerator(cwd, plan);
     const output = await generator.build();
-    const manifest = linkTestManifest(graph, plan, true, output);
+    const manifest = linkTestManifest(graph, plan, output);
 
     expect(output.clientEntryAssets?.main).toEqual({
       js: ["main.js"],
@@ -257,11 +256,11 @@ describe("UtoopackManifestGenerator", () => {
       serverFunctions: [],
       serverRoutes: [],
     };
-    const plan = createPlan(graph, false);
+    const plan = createPlan(graph, { clientDir: "dist" });
 
-    const generator = new UtoopackManifestGenerator(cwd, false, plan);
+    const generator = new UtoopackManifestGenerator(cwd, plan);
     const output = await generator.build();
-    const manifest = linkTestManifest(graph, plan, false, output);
+    const manifest = linkTestManifest(graph, plan, output);
 
     expect(manifest.apps).toEqual({});
     expect(manifest.pages.home).toMatchObject({
@@ -340,11 +339,11 @@ describe("UtoopackManifestGenerator", () => {
       serverFunctions: [],
       serverRoutes: [],
     };
-    const plan = createPlan(graph, true);
+    const plan = createPlan(graph);
 
-    const generator = new UtoopackManifestGenerator(cwd, true, plan);
+    const generator = new UtoopackManifestGenerator(cwd, plan);
     const output = await generator.build();
-    const manifest = linkTestManifest(graph, plan, true, output);
+    const manifest = linkTestManifest(graph, plan, output);
 
     expect(manifest.pages.campaign).toMatchObject({
       assets: { js: ["campaign.client.js"], css: [] },
@@ -372,8 +371,7 @@ describe("UtoopackManifestGenerator", () => {
 
 function createPlan(
   graph: AppGraph,
-  serverEnabled: boolean,
-  options: { distDir?: string } = {},
+  options: { clientDir?: string; distDir?: string; serverDir?: string } = {},
 ): BuildPlan {
   const pageEntries = Object.values(graph.pages).map((page) => ({
     name: page.id,
@@ -433,22 +431,21 @@ function createPlan(
     buildId: "test",
     mode: "production",
     distDir: options.distDir ?? "dist",
-    serverEnabled,
+    output: {
+      clientDir: options.clientDir ?? `${options.distDir ?? "dist"}/client`,
+      serverDir: options.serverDir ?? `${options.distDir ?? "dist"}/server`,
+    },
     entries: [
       ...appEntries,
       ...pageEntries,
       ...pprEntries,
-      ...(serverEnabled
-        ? [
-            {
-              name: "server",
-              import: "@evjs/server/fetch",
-              environment: "server" as const,
-              runtime: "node" as const,
-              kind: "server-runtime" as const,
-            },
-          ]
-        : []),
+      {
+        name: "server",
+        import: "@evjs/server/fetch",
+        environment: "server" as const,
+        runtime: "node" as const,
+        kind: "server-runtime" as const,
+      },
     ],
     html: [
       ...Object.values(graph.apps).map((app) => ({
@@ -464,25 +461,20 @@ function createPlan(
         owner: { pageId: page.id },
       })),
     ],
-    server: serverEnabled
-      ? {
-          enabled: true,
-          entry: "@evjs/server/fetch",
-          functionRuntime: {
-            endpoint: "/__evjs/fn",
-            clientProxy: "@evjs/client/internal",
-            serverRegister: "@evjs/server/register",
-          },
-        }
-      : { enabled: false },
+    server: {
+      entry: "@evjs/server/fetch",
+      functionRuntime: {
+        endpoint: "/__evjs/fn",
+        clientProxy: "@evjs/client/internal",
+        serverRegister: "@evjs/server/register",
+      },
+    },
     runtime: {
       publicPath: "/",
-      server: serverEnabled
-        ? {
-            basePath: "/__evjs",
-            fn: "/__evjs/fn",
-          }
-        : undefined,
+      server: {
+        basePath: "/__evjs",
+        fn: "/__evjs/fn",
+      },
     },
   };
 }

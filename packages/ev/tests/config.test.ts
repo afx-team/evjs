@@ -114,7 +114,6 @@ describe("resolveConfig", () => {
     expect(resolved.html).toBe(CONFIG_DEFAULTS.html);
     expect(resolved.dev.port).toBe(CONFIG_DEFAULTS.port);
     expect(resolved.dev.https).toBe(false);
-    expect(resolved.serverEnabled).toBe(true);
     expect(resolved.server.basePath).toBe("/__evjs");
     expect(resolved.server.runtime).toEqual({
       basePath: "/__evjs",
@@ -130,6 +129,8 @@ describe("resolveConfig", () => {
     expect(resolved.server.dev.port).toBe(CONFIG_DEFAULTS.serverPort);
     expect(resolved.server.dev.https).toBe(false);
     expect(resolved.output).toEqual({
+      client: "dist/client",
+      server: "dist/server",
       crossOriginLoading: CONFIG_DEFAULTS.crossOriginLoading,
     });
     expect(resolved.bundler).toBeUndefined();
@@ -182,22 +183,32 @@ describe("resolveConfig", () => {
     );
   });
 
-  it("resolves output crossorigin loading configuration", () => {
+  it("resolves output configuration", () => {
     expect(
       resolveConfig({
         output: {
           crossOriginLoading: "anonymous",
         },
       }).output,
-    ).toEqual({ crossOriginLoading: "anonymous" });
+    ).toEqual({
+      client: "dist/client",
+      server: "dist/server",
+      crossOriginLoading: "anonymous",
+    });
 
     expect(
       resolveConfig({
         output: {
+          client: "dist",
+          server: ".ev/server",
           crossOriginLoading: "use-credentials",
         },
       }).output,
-    ).toEqual({ crossOriginLoading: "use-credentials" });
+    ).toEqual({
+      client: "dist",
+      server: ".ev/server",
+      crossOriginLoading: "use-credentials",
+    });
 
     expect(
       resolveConfig({
@@ -205,7 +216,11 @@ describe("resolveConfig", () => {
           crossOriginLoading: false,
         },
       }).output,
-    ).toEqual({ crossOriginLoading: false });
+    ).toEqual({
+      client: "dist/client",
+      server: "dist/server",
+      crossOriginLoading: false,
+    });
   });
 
   it("rejects invalid output declarations", () => {
@@ -223,7 +238,7 @@ describe("resolveConfig", () => {
         },
       }),
     ).toThrow(
-      "[evjs] output.crossOrigin is not supported. Use crossOriginLoading.",
+      "[evjs] output.crossOrigin is not supported. Use client, server, or crossOriginLoading.",
     );
 
     expect(() =>
@@ -234,6 +249,25 @@ describe("resolveConfig", () => {
       }),
     ).toThrow(
       '[evjs] output.crossOriginLoading must be false, "anonymous", or "use-credentials".',
+    );
+
+    expect(() =>
+      resolveConfig({
+        output: {
+          client: "" as never,
+        },
+      }),
+    ).toThrow("[evjs] output.client must be a non-empty string.");
+
+    expect(() =>
+      resolveConfig({
+        output: {
+          client: "dist",
+          server: "dist/",
+        },
+      }),
+    ).toThrow(
+      "[evjs] output.client and output.server must point to different directories.",
     );
   });
 
@@ -802,17 +836,8 @@ describe("resolveConfig", () => {
     ).toThrow("[evjs] dev.proxy[0].secure must be a boolean when provided.");
   });
 
-  it("sets serverEnabled=false when server is false", () => {
-    const resolved = resolveConfig({ server: false });
-    expect(resolved.serverEnabled).toBe(false);
-    expect(resolved.server.runtime.fn).toBe("/__evjs/fn");
-    expect(resolved.server.runtime.ppr).toBe("/__evjs/ppr");
-    expect(resolved.dev.proxy).toEqual([]);
-  });
-
-  it("keeps user dev proxy rules without framework proxy rules when server is false", () => {
+  it("keeps framework proxy rules with user dev proxy rules", () => {
     const resolved = resolveConfig({
-      server: false,
       dev: {
         proxy: [
           {
@@ -825,11 +850,16 @@ describe("resolveConfig", () => {
       },
     });
 
-    expect(resolved.serverEnabled).toBe(false);
     expect(resolved.dev.proxy).toEqual([
       {
         context: ["/api"],
         target: "http://localhost:4000",
+        changeOrigin: true,
+        secure: false,
+      },
+      {
+        context: ["/__evjs/fn", "/__evjs/ppr", "/__evjs/rsc"],
+        target: "http://localhost:3001",
         changeOrigin: true,
         secure: false,
       },
@@ -843,7 +873,6 @@ describe("resolveConfig", () => {
         dev: { port: 4000 },
       },
     });
-    expect(resolved.serverEnabled).toBe(true);
     expect(resolved.server.runtime.fn).toBe("/api/fn");
     expect(resolved.server.runtime.ppr).toBe("/api/ppr");
     expect(resolved.server.functionRuntime.endpoint).toBe("/api/fn");

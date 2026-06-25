@@ -61,6 +61,8 @@ describe("CONFIG_DEFAULTS", () => {
       clientProxy: "@evjs/client/internal",
       serverRegister: "@evjs/server/register",
       crossOriginLoading: "anonymous",
+      outputClientDir: "dist/client",
+      outputServerDir: "dist/server",
       routingDir: "./src/pages",
       routingMode: "spa",
       serverRoutingDir: "./src/apis",

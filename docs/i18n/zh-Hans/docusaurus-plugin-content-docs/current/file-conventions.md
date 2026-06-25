@@ -138,7 +138,7 @@ export async function listUsers() {
 - 模块必须导出至少一个命名 callable function；
 - 不支持默认导出、runtime re-export、generator、async generator，以及导出的非函数 runtime 值；
 - type-only export 会被 runtime transform 忽略；
-- server function 需要 framework server；配置 `server: false` 时，可达的 server function 是构建错误。
+- 可达的 server function 会被转换为 client reference 和 framework server output 中的 server registration。
 
 ## 服务端文件路由
 

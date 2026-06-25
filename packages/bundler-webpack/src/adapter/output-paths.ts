@@ -6,14 +6,19 @@ export interface WebpackOutputPaths {
   serverDir: string;
 }
 
+export interface OutputDirectoryConfig {
+  client: string;
+  server: string;
+}
+
 export function getOutputPaths(
   cwd: string,
-  serverEnabled: boolean,
+  output: OutputDirectoryConfig,
   distDir = "dist",
 ): WebpackOutputPaths {
   const rootDir = path.resolve(cwd, distDir);
-  const clientDir = serverEnabled ? path.join(rootDir, "client") : rootDir;
-  const serverDir = path.join(rootDir, "server");
+  const clientDir = path.resolve(cwd, output.client);
+  const serverDir = path.resolve(cwd, output.server);
 
   return {
     rootDir,

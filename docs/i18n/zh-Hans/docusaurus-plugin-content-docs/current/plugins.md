@@ -178,9 +178,9 @@ setup() {
     buildEnd({ output, clientManifest, serverManifest, isRebuild }) {
       console.log("Apps:", Object.keys(output.apps));
       console.log("Pages:", Object.keys(output.pages));
-      console.log("Functions:", Object.keys(output.server?.functions ?? {}));
+      console.log("Functions:", Object.keys(output.server.functions));
       console.log("Client JS:", clientManifest.assets.js);
-      console.log("Server entry:", serverManifest?.entry);
+      console.log("Server entry:", serverManifest.entry);
       console.log("Rebuild:", isRebuild);
     },
   };

@@ -229,9 +229,12 @@ export interface InspectFrameworkBuildResult {
   serverFunctions: InspectServerFunction[];
   serverRoutes: InspectServerRoute[];
   runtime: {
-    serverEnabled: boolean;
-    server?: ResolvedConfig["server"]["runtime"];
+    server: ResolvedConfig["server"]["runtime"];
     transport?: ResolvedConfig["transport"];
+  };
+  output: {
+    client: ResolvedConfig["output"]["client"];
+    server: ResolvedConfig["output"]["server"];
   };
   buildPlan?: {
     entries: InspectBuildEntry[];
@@ -413,7 +416,7 @@ async function withServerRoutingDefaults<TBundlerCfg>(
   options: ServerRoutingDefaultsOptions = {},
 ): Promise<ResolvedConfig<TBundlerCfg>> {
   const routingOption = readServerRoutingConfig(userConfig);
-  if (!config.serverEnabled || routingOption === false) {
+  if (routingOption === false) {
     return {
       ...config,
       server: {
@@ -479,7 +482,7 @@ async function withServerConventionDefaults<TBundlerCfg>(
   options: ServerConventionDefaultsOptions = {},
 ): Promise<ResolvedConfig<TBundlerCfg>> {
   const conventions = config.server.conventions;
-  if (!config.serverEnabled || conventions?.middleware !== true) {
+  if (conventions?.middleware !== true) {
     return {
       ...config,
       server: {
@@ -532,13 +535,11 @@ function readRoutingConfig<TBundlerCfg>(
 function readServerRoutingConfig<TBundlerCfg>(
   config: Config<TBundlerCfg> | undefined,
 ): ServerRoutingConfigValue<TBundlerCfg> {
-  const server = config?.server;
-  if (server === undefined || server === false) return undefined;
-  return server.routing;
+  return config?.server?.routing;
 }
 
 type ServerRoutingConfigValue<TBundlerCfg> =
-  | Exclude<Config<TBundlerCfg>["server"], false | undefined>["routing"]
+  | Exclude<Config<TBundlerCfg>["server"], undefined>["routing"]
   | undefined;
 
 function createPagesEntryImport(
@@ -1183,63 +1184,51 @@ function collectHtmlTemplates<TBundlerCfg>(
 function getFrameworkOutputPaths(
   cwd: string,
   output: BuildOutput,
-  serverEnabled: boolean,
-): { rootDir: string; clientDir: string; serverDir?: string } {
+): { rootDir: string; clientDir: string; serverDir: string } {
   const rootDir = path.resolve(cwd, output.distDir);
+  const publicDir = output.paths?.publicDir ?? output.distDir;
+  const serverDir =
+    output.paths?.serverDir ?? path.join(output.distDir, "server");
   return {
     rootDir,
-    clientDir: serverEnabled ? path.join(rootDir, "client") : rootDir,
-    ...(serverEnabled ? { serverDir: path.join(rootDir, "server") } : {}),
+    clientDir: path.resolve(cwd, publicDir),
+    serverDir: path.resolve(cwd, serverDir),
   };
 }
 
 async function emitFrameworkManifest(
   cwd: string,
   output: BuildOutput,
-  serverEnabled: boolean,
 ): Promise<void> {
   const { rootDir, clientDir, serverDir } = getFrameworkOutputPaths(
     cwd,
     output,
-    serverEnabled,
   );
   await fs.promises.mkdir(rootDir, { recursive: true });
-  if (serverDir) {
-    await fs.promises.mkdir(serverDir, { recursive: true });
-    const serverManifest = createServerManifest(output);
-    if (!serverManifest) {
-      throw new Error(
-        "[evjs] Server-enabled build did not produce a server manifest.",
-      );
-    }
-    await fs.promises.writeFile(
-      path.join(serverDir, MANIFEST_FILE),
-      JSON.stringify(serverManifest, null, 2),
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(rootDir, BUILD_OUTPUT_FILE),
-      JSON.stringify(output, null, 2),
-      "utf-8",
-    );
-    await fs.promises.rm(path.join(serverDir, BUILD_OUTPUT_FILE), {
-      force: true,
-    });
-    await fs.promises.rm(path.join(rootDir, MANIFEST_FILE), { force: true });
-  } else {
-    await fs.promises.rm(path.join(rootDir, "client", MANIFEST_FILE), {
-      force: true,
-    });
-    await fs.promises.rm(path.join(rootDir, "server", MANIFEST_FILE), {
-      force: true,
-    });
-    await fs.promises.rm(path.join(rootDir, BUILD_OUTPUT_FILE), {
-      force: true,
-    });
-    await fs.promises.rm(path.join(rootDir, "server", BUILD_OUTPUT_FILE), {
-      force: true,
-    });
-  }
+  await fs.promises.mkdir(serverDir, { recursive: true });
+  const serverManifest = createServerManifest(output);
+  await fs.promises.writeFile(
+    path.join(serverDir, MANIFEST_FILE),
+    JSON.stringify(serverManifest, null, 2),
+    "utf-8",
+  );
+  await fs.promises.writeFile(
+    path.join(rootDir, BUILD_OUTPUT_FILE),
+    JSON.stringify(output, null, 2),
+    "utf-8",
+  );
+  await fs.promises.rm(path.join(serverDir, BUILD_OUTPUT_FILE), {
+    force: true,
+  });
+  await removeManifestIfInactive(rootDir, [clientDir, serverDir]);
+  await removeManifestIfInactive(path.join(rootDir, "client"), [
+    clientDir,
+    serverDir,
+  ]);
+  await removeManifestIfInactive(path.join(rootDir, "server"), [
+    clientDir,
+    serverDir,
+  ]);
 
   const publicManifest = createPublicManifest(output);
   await fs.promises.mkdir(clientDir, { recursive: true });
@@ -1248,6 +1237,21 @@ async function emitFrameworkManifest(
     JSON.stringify(publicManifest, null, 2),
     "utf-8",
   );
+}
+
+async function removeManifestIfInactive(
+  dir: string,
+  activeDirs: string[],
+): Promise<void> {
+  const normalizedDir = path.resolve(dir);
+  if (
+    activeDirs.some((activeDir) => path.resolve(activeDir) === normalizedDir)
+  ) {
+    return;
+  }
+  await fs.promises.rm(path.join(normalizedDir, MANIFEST_FILE), {
+    force: true,
+  });
 }
 
 function getHtmlAssets(html: BuildPlan["html"][number], output: BuildOutput) {
@@ -1308,11 +1312,7 @@ async function emitFrameworkHtml<TBundlerCfg>(
   plan: BuildPlan,
   isRebuild: boolean,
 ): Promise<void> {
-  const { clientDir } = getFrameworkOutputPaths(
-    cwd,
-    output,
-    config.serverEnabled,
-  );
+  const { clientDir } = getFrameworkOutputPaths(cwd, output);
 
   for (const html of plan.html) {
     const htmlInfo = createHtmlDocumentInfo(html, output);
@@ -1366,7 +1366,6 @@ async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   const output = linkBuildOutput({
     graph: options.graph,
     plan: options.plan,
-    serverEnabled: options.config.serverEnabled,
     clientEntryAssets: options.bundlerFacts.clientEntryAssets,
     firstClientEntryAssets: options.bundlerFacts.firstClientEntryAssets,
     serverEntryAssets: options.bundlerFacts.serverEntryAssets,
@@ -1378,11 +1377,7 @@ async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
 
   await runBuildOutputHooks(options.hooks, output, options.pluginCtx);
   assertFrameworkManifestShape(output, "BuildOutput after buildOutput hooks");
-  await emitFrameworkManifest(
-    options.cwd,
-    output,
-    options.config.serverEnabled,
-  );
+  await emitFrameworkManifest(options.cwd, output);
   await emitFrameworkHtml(
     options.cwd,
     options.config,
@@ -1965,9 +1960,12 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
         }))
         .sort(compareById),
       runtime: {
-        serverEnabled: config.serverEnabled,
-        ...(config.serverEnabled ? { server: config.server.runtime } : {}),
+        server: config.server.runtime,
         ...(config.transport.baseUrl ? { transport: config.transport } : {}),
+      },
+      output: {
+        client: config.output.client,
+        server: config.output.server,
       },
       buildPlan: plan
         ? {
@@ -2212,8 +2210,6 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
   process.once("SIGTERM", stopApiOnParentShutdown);
 
   const restartApiServer = async () => {
-    if (!activeConfig.serverEnabled) return;
-
     const serverEntry = await findDevServerEntry(cwd, activePlan.distDir);
     if (!serverEntry) return;
 

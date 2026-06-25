@@ -1,7 +1,9 @@
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  server: false,
+  output: {
+    client: "dist",
+  },
   html: "./index.html",
   routing: {
     mode: "mpa",

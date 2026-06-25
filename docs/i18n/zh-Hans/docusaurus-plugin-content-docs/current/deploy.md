@@ -1,6 +1,6 @@
 # 部署
 
-evjs 生产构建包含静态资源、可选服务端 bundle，以及框架 manifest。
+evjs 生产构建包含静态资源、framework server bundle，以及框架 manifest。
 
 ```txt
 dist/
@@ -11,11 +11,11 @@ dist/
 └── build-output.json
 ```
 
-启用 server 时，部署 adapter 应消费 `BuildOutput`，并从中派生平台特定路由或资源
-manifest。运行在构建流水线里的 adapter 会直接收到这个对象；构建后的工具可以从
+部署 adapter 应消费 `BuildOutput`，并从中派生平台特定路由或资源 manifest。
+运行在构建流水线里的 adapter 会直接收到这个对象；构建后的工具可以从
 `dist/build-output.json` 读取同一份完整模型。`dist/server/manifest.json` 只是派生出的
-server bundle metadata 视图，不能替代 `BuildOutput`。CSR-only 构建继续使用扁平的
-`dist/manifest.json`。
+server bundle metadata 视图，不能替代 `BuildOutput`。public manifest 路径跟随
+`output.client`。
 
 ## 生产构建
 
@@ -334,6 +334,5 @@ export function deployAdapter() {
 }
 ```
 
-构建后的工具可以在启用 server 时读取 `dist/build-output.json`。运行在 `ev build`
-过程中的 adapter 会在内存里收到同一份 `BuildOutput`，并可以内嵌所需 runtime 数据。
-CSR-only 构建使用扁平的 `dist/manifest.json`。
+构建后的工具可以读取 `dist/build-output.json`。运行在 `ev build` 过程中的 adapter
+会在内存里收到同一份 `BuildOutput`，并可以内嵌所需 runtime 数据。

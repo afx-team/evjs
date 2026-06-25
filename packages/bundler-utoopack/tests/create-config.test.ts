@@ -18,6 +18,8 @@ describe("createUtoopackConfig", () => {
       entry: "./src/main.tsx",
       html: "./index.html",
       output: {
+        client: "dist/client",
+        server: "dist/server",
         crossOriginLoading: "anonymous",
       },
       dev: {
@@ -25,7 +27,6 @@ describe("createUtoopackConfig", () => {
         https: true,
         proxy: [],
       },
-      serverEnabled: false,
       server: {
         basePath: "/__evjs",
         runtime: {
@@ -69,15 +70,21 @@ describe("createUtoopackConfig", () => {
     expect(utoopackConfig.devServer?.https).toBe(true);
     expect(utoopackConfig.devServer?.proxy).toContainEqual(
       expect.objectContaining({
-        context: ["^/(?!api(?:/|$))(?!turbopack-hmr$)(?!.*\\.[^/]+$).+"],
+        context: [
+          "^/(?!api(?:/|$))(?!__evjs(?:/|$))(?!__evjs/fn(?:/|$))(?!__evjs/ppr(?:/|$))(?!turbopack-hmr$)(?!.*\\.[^/]+$).+",
+        ],
         target: "https://localhost:41234",
       }),
     );
   });
 
-  it("uses the build plan distDir for client and server outputs", async () => {
+  it("uses configured client and server output directories", async () => {
     const config = createResolvedConfig({
-      serverEnabled: true,
+      output: {
+        client: "custom-dist/client",
+        server: "custom-dist/server",
+        crossOriginLoading: "anonymous",
+      },
       server: {
         basePath: "/__evjs",
         runtime: {
@@ -97,7 +104,7 @@ describe("createUtoopackConfig", () => {
       },
     });
     const cwd = process.cwd();
-    const plan = createPlan(config, { distDir: "custom-dist" });
+    const plan = createPlan(config);
 
     const utoopackConfig = await createUtoopackConfig(config, plan, cwd, []);
 
@@ -175,6 +182,8 @@ describe("createUtoopackConfig", () => {
   it("sets crossorigin for dynamically loaded browser chunks", async () => {
     const config = createResolvedConfig({
       output: {
+        client: "dist/client",
+        server: "dist/server",
         crossOriginLoading: "use-credentials",
       },
     });
@@ -192,7 +201,6 @@ describe("createUtoopackConfig", () => {
 
   it("keeps SPA history fallback away from custom framework runtime paths", async () => {
     const config = createResolvedConfig({
-      serverEnabled: true,
       server: {
         basePath: "/rpc",
         runtime: {
@@ -246,7 +254,6 @@ describe("createUtoopackConfig", () => {
 
   it("proxies server file routes and keeps them out of SPA fallback", async () => {
     const config = createResolvedConfig({
-      serverEnabled: true,
       server: {
         basePath: "/__evjs",
         runtime: {
@@ -404,7 +411,6 @@ describe("createUtoopackConfig", () => {
 
   it("installs the server routes entry loader for framework-managed server routes", async () => {
     const config = createResolvedConfig({
-      serverEnabled: true,
       server: {
         basePath: "/__evjs",
         runtime: {
@@ -663,10 +669,11 @@ describe("createUtoopackConfig", () => {
     };
     const plan = createBuildPlan(config, graph, { mode: "development" });
 
-    expect(plan.entries.map((entry) => entry.metadata?.type)).toEqual([
-      "react-component-page",
-      "react-component-page",
-    ]);
+    expect(
+      plan.entries
+        .filter((entry) => entry.environment === "client")
+        .map((entry) => entry.metadata?.type),
+    ).toEqual(["react-component-page", "react-component-page"]);
     const utoopackConfig = await createUtoopackConfig(
       config,
       plan,
@@ -754,7 +761,6 @@ describe("createUtoopackConfig", () => {
 
   it("fails clearly when the plan contains framework server renderer entries", async () => {
     const config = createResolvedConfig({
-      serverEnabled: true,
       server: {
         basePath: "/__evjs",
         runtime: {
@@ -838,7 +844,6 @@ describe("createUtoopackConfig", () => {
 
   it("fails clearly for framework server page entries until Utoopack supports them", async () => {
     const config = createResolvedConfig({
-      serverEnabled: true,
       server: {
         basePath: "/__evjs",
         runtime: {

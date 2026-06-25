@@ -1083,11 +1083,22 @@ function createManifest(): BuildOutput {
     buildId: "test",
     distDir: "dist",
     publicPath: "/assets/",
-    runtime: {},
+    runtime: {
+      server: {
+        basePath: "/__evjs",
+        fn: "/__evjs/fn",
+      },
+    },
     assets: {},
     apps: {},
     pages: {},
     routes: [],
+    server: {
+      entry: "server.js",
+      assets: { js: ["server.js"], css: [] },
+      functions: {},
+      routes: [],
+    },
   };
 }
 

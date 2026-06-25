@@ -22,10 +22,6 @@ export interface ValidatePageRenderingContractOptions {
   requireExplicitRenderForFullPrerender?: boolean;
 }
 
-export interface PageBuildContractOptions {
-  serverEnabled: boolean;
-}
-
 export function validatePageRenderingContract(
   label: string,
   page: PageRenderingContract,
@@ -38,9 +34,8 @@ export function validatePageRenderingContract(
 export function validatePageBuildContract(
   label: string,
   page: PageBuildContract,
-  options: PageBuildContractOptions,
 ): void {
-  const violation = getPageBuildContractViolation(label, page, options);
+  const violation = getPageBuildContractViolation(label, page);
   if (violation) throw new Error(`[evjs] ${violation}`);
 }
 
@@ -77,19 +72,12 @@ export function getPageRenderingContractViolation(
 export function getPageBuildContractViolation(
   label: string,
   page: PageBuildContract,
-  options: PageBuildContractOptions,
 ): string | undefined {
   const rsc = isRscPage(page);
   const partial = isPartialPrerenderPage(page);
 
-  if (rsc && !options.serverEnabled) {
-    return `${label} uses RSC but server is disabled.`;
-  }
   if (rsc && !page.component) {
     return `${label} uses RSC but does not declare a component page module.`;
-  }
-  if (partial && !options.serverEnabled) {
-    return `${label} uses partial prerendering but server is disabled.`;
   }
   if (partial && !page.component) {
     return `${label} uses partial prerendering but does not declare a component page module.`;
@@ -97,14 +85,6 @@ export function getPageBuildContractViolation(
 
   const renderingViolation = getPageRenderingContractViolation(label, page);
   if (renderingViolation) return renderingViolation;
-
-  if (
-    page.render !== undefined &&
-    page.render !== "csr" &&
-    !options.serverEnabled
-  ) {
-    return `${label} uses render: "${page.render}" but server is disabled.`;
-  }
   return undefined;
 }
 

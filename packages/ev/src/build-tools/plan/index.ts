@@ -73,7 +73,10 @@ export interface BuildPlanConfig {
   transport?: {
     baseUrl?: string;
   };
-  serverEnabled: boolean;
+  output: {
+    client: string;
+    server: string;
+  };
   server: {
     routing?: {
       dir: string;
@@ -108,8 +111,8 @@ export function createBuildPlan(
   options: CreateBuildPlanOptions = {},
 ): BuildPlan {
   const mode = options.mode ?? readBuildMode();
-  validatePageBuildContracts(config, graph);
-  const serverRenderers = createServerRenderers(config, graph);
+  validatePageBuildContracts(graph);
+  const serverRenderers = createServerRenderers(graph);
   const entries = createEntries(config, graph, serverRenderers);
   const html = createHtmlPlans(config, graph);
   validateBuildOutputNames(entries, html);
@@ -120,25 +123,26 @@ export function createBuildPlan(
     buildId: options.buildId ?? mode,
     mode,
     distDir: options.distDir ?? "dist",
-    serverEnabled: config.serverEnabled,
+    output: {
+      clientDir: config.output.client,
+      serverDir: config.output.server,
+    },
     entries,
     html,
     server,
     runtime: {
       publicPath: options.publicPath ?? DEFAULT_PUBLIC_PATH,
-      server: config.serverEnabled
-        ? {
-            basePath: config.server.basePath,
-            fn: config.server.functionRuntime.endpoint,
-            ppr: hasPprPages(graph)
-              ? joinPath(config.server.basePath, "ppr")
-              : undefined,
-            rsc: hasRscPages(graph)
-              ? (config.server.runtime?.rsc ??
-                joinPath(config.server.basePath, "rsc"))
-              : config.server.runtime?.rsc,
-          }
-        : undefined,
+      server: {
+        basePath: config.server.basePath,
+        fn: config.server.functionRuntime.endpoint,
+        ppr: hasPprPages(graph)
+          ? joinPath(config.server.basePath, "ppr")
+          : undefined,
+        rsc: hasRscPages(graph)
+          ? (config.server.runtime?.rsc ??
+            joinPath(config.server.basePath, "rsc"))
+          : config.server.runtime?.rsc,
+      },
       transport: config.transport,
     },
   };
@@ -156,7 +160,8 @@ export function diffBuildPlan(
     entries: diffByKey(previous.entries, next.entries, buildEntryKey),
     html: diffByKey(previous.html, next.html, (html) => html.id),
     serverChanged:
-      previous.serverEnabled !== next.serverEnabled ||
+      previous.output.clientDir !== next.output.clientDir ||
+      previous.output.serverDir !== next.output.serverDir ||
       stableStringify(previous.server) !== stableStringify(next.server),
   };
 }
@@ -238,17 +243,15 @@ function createEntries(
     });
   }
 
-  if (config.serverEnabled) {
-    const serverEntry = createServerRuntimeEntry(config, graph);
-    entries.push({
-      name: "server",
-      import: serverEntry.import,
-      environment: "server",
-      runtime: "node",
-      kind: "server-runtime",
-      ...(serverEntry.metadata ? { metadata: serverEntry.metadata } : {}),
-    });
-  }
+  const serverEntry = createServerRuntimeEntry(config, graph);
+  entries.push({
+    name: "server",
+    import: serverEntry.import,
+    environment: "server",
+    runtime: "node",
+    kind: "server-runtime",
+    ...(serverEntry.metadata ? { metadata: serverEntry.metadata } : {}),
+  });
 
   return entries;
 }
@@ -270,14 +273,9 @@ function createPagesAppRoutes(graph: AppGraph, appId: string): PageRouteNode[] {
   );
 }
 
-function validatePageBuildContracts(
-  config: BuildPlanConfig,
-  graph: AppGraph,
-): void {
+function validatePageBuildContracts(graph: AppGraph): void {
   for (const page of Object.values(graph.pages)) {
-    validatePageBuildContract(`Page "${page.id}"`, page, {
-      serverEnabled: config.serverEnabled,
-    });
+    validatePageBuildContract(`Page "${page.id}"`, page);
   }
 }
 
@@ -326,12 +324,7 @@ function describeHtmlOwner(document: HtmlPlan): string {
   return `page "${document.owner.pageId}"`;
 }
 
-function createServerRenderers(
-  config: BuildPlanConfig,
-  graph: AppGraph,
-): ServerRenderPlan[] {
-  if (!config.serverEnabled) return [];
-
+function createServerRenderers(graph: AppGraph): ServerRenderPlan[] {
   const renderers: ServerRenderPlan[] = [];
   for (const page of Object.values(graph.pages)) {
     if (page.render === "csr") continue;
@@ -515,12 +508,7 @@ function createServerPlan(
   graph: AppGraph,
   renderers: ServerRenderPlan[],
 ): ServerBuildPlan {
-  if (!config.serverEnabled) {
-    return { enabled: false };
-  }
-
   return {
-    enabled: true,
     entry: createServerRuntimeEntry(config, graph).import,
     ...(renderers.length > 0 ? { renderers } : {}),
     functionRuntime: {

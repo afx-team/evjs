@@ -541,7 +541,7 @@ describe("createApp", () => {
         framework: {
           manifest: {
             ...manifest,
-            runtime: { transport: [] },
+            runtime: { ...manifest.runtime, transport: [] },
           },
         } as never,
       }),

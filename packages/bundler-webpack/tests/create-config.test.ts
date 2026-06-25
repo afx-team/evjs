@@ -66,6 +66,8 @@ describe("createWebpackConfigs", () => {
     const config: ResolvedConfig<WebpackConfig> = {
       ...createResolvedConfig(),
       output: {
+        client: "dist/client",
+        server: "dist/server",
         crossOriginLoading: "use-credentials",
       },
     };
@@ -98,7 +100,6 @@ describe("createWebpackConfigs", () => {
     const base = createResolvedConfig();
     const config: ResolvedConfig<WebpackConfig> = {
       ...base,
-      serverEnabled: true,
       server: {
         ...base.server,
         routing: {
@@ -202,10 +203,11 @@ describe("createWebpackConfigs", () => {
     };
     const plan = createBuildPlan(config, graph, { mode: "development" });
 
-    expect(plan.entries.map((entry) => entry.metadata?.type)).toEqual([
-      "react-component-page",
-      "react-component-page",
-    ]);
+    expect(
+      plan.entries
+        .filter((entry) => entry.environment === "client")
+        .map((entry) => entry.metadata?.type),
+    ).toEqual(["react-component-page", "react-component-page"]);
     const configs = await createWebpackConfigs(
       config,
       plan,
@@ -342,7 +344,6 @@ describe("createWebpackConfigs", () => {
   it("keeps React and ReactDOM external in regular Node server bundles", async () => {
     const config: ResolvedConfig<WebpackConfig> = {
       ...createResolvedConfig(),
-      serverEnabled: true,
     };
     const graph: AppGraph = {
       ...createGraph(config),
@@ -420,9 +421,10 @@ function createResolvedConfig(): ResolvedConfig<WebpackConfig> {
       proxy: [],
     },
     output: {
+      client: "dist/client",
+      server: "dist/server",
       crossOriginLoading: "anonymous",
     },
-    serverEnabled: false,
     server: {
       basePath: "/__evjs",
       runtime: {

@@ -838,6 +838,11 @@ function createManifest(): BuildOutput {
     apps: {},
     pages: {},
     routes: [],
+    server: {
+      assets: { js: [], css: [] },
+      functions: {},
+      routes: [],
+    },
   };
 }
 

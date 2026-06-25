@@ -146,8 +146,6 @@ export interface ResolvedConfig<TBundlerCfg = DefaultBundlerConfig> {
   apps?: Record<string, ResolvedAppConfig>;
   /** Client dev server options. */
   dev: ResolvedDevConfig;
-  /** Whether the server is enabled (true unless `server: false`). */
-  serverEnabled: boolean;
   /** Server configuration. */
   server: ResolvedServerConfig;
   /** Browser-to-server transport configuration. */
@@ -173,14 +171,8 @@ export interface Config<TBundlerCfg = DefaultBundlerConfig> {
   /** Client dev server options. */
   dev?: DevConfig;
 
-  /**
-   * Server configuration.
-   *
-   * Set to `false` to disable the server entirely (CSR-only mode).
-   * When `false`, build output goes to flat `dist/` instead of `dist/client/` + `dist/server/`,
-   * and any `"use server"` module will cause a build error.
-   */
-  server?: false | ServerConfig;
+  /** Server configuration. */
+  server?: ServerConfig;
 
   /**
    * Browser-to-server transport options.
@@ -329,6 +321,14 @@ export type CrossOriginLoadingPolicy = false | "anonymous" | "use-credentials";
 
 export interface OutputConfig {
   /**
+   * Directory for browser/public build artifacts. Default: "dist/client".
+   */
+  client?: string;
+  /**
+   * Directory for framework server build artifacts. Default: "dist/server".
+   */
+  server?: string;
+  /**
    * Adds a `crossorigin` attribute to JavaScript and CSS asset tags in emitted
    * HTML documents and configures the browser chunk loader to use the same
    * policy for dynamically loaded chunks. Default: "anonymous".
@@ -337,6 +337,8 @@ export interface OutputConfig {
 }
 
 export interface ResolvedOutputConfig {
+  client: string;
+  server: string;
   crossOriginLoading: CrossOriginLoadingPolicy;
 }
 
@@ -435,6 +437,8 @@ export const CONFIG_DEFAULTS = {
   clientProxy: "@evjs/client/internal",
   serverRegister: "@evjs/server/register",
   crossOriginLoading: "anonymous",
+  outputClientDir: "dist/client",
+  outputServerDir: "dist/server",
   routingDir: "./src/pages",
   routingMode: "spa",
   serverRoutingDir: "./src/apis",
@@ -490,7 +494,11 @@ const PUBLIC_SERVER_CONVENTIONS_CONFIG_KEYS = new Set(["middleware"]);
 const PUBLIC_SERVER_DEV_CONFIG_KEYS = new Set(["port", "https"]);
 const PUBLIC_SERVER_RSC_CONFIG_KEYS = new Set(["endpoint"]);
 const PUBLIC_TRANSPORT_CONFIG_KEYS = new Set(["baseUrl"]);
-const PUBLIC_OUTPUT_CONFIG_KEYS = new Set(["crossOriginLoading"]);
+const PUBLIC_OUTPUT_CONFIG_KEYS = new Set([
+  "client",
+  "server",
+  "crossOriginLoading",
+]);
 const PUBLIC_HTTPS_CONFIG_KEYS = new Set(["key", "cert"]);
 const PUBLIC_DEV_PROXY_RULE_KEYS = new Set([
   "context",
@@ -534,13 +542,12 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
   userConfig?: Config<TBundlerCfg>,
 ): ResolvedConfig<TBundlerCfg> {
   const config = resolveRootConfig(userConfig);
-  const serverEnabled = config.server !== false;
   const devConfig = resolveOptionalObjectConfig<DevConfig>(config.dev, "dev");
   validateDevConfigKeys(devConfig);
-  const serverConfig =
-    config.server === false
-      ? {}
-      : resolveOptionalObjectConfig<ServerConfig>(config.server, "server");
+  const serverConfig = resolveOptionalObjectConfig<ServerConfig>(
+    config.server,
+    "server",
+  );
   validateServerConfigKeys(serverConfig);
   const serverRscConfig = resolveServerRscConfig(serverConfig.rsc);
   const serverDevConfig = resolveOptionalObjectConfig<ServerDevConfig>(
@@ -602,11 +609,7 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
   );
   const serverEndpoint = joinPath(serverBasePath, "fn");
   const pprEndpoint = joinPath(serverBasePath, "ppr");
-  const rscEndpoint = resolveRscEndpoint(
-    serverRscConfig,
-    serverEnabled,
-    serverBasePath,
-  );
+  const rscEndpoint = resolveRscEndpoint(serverRscConfig, true, serverBasePath);
   const devHttps = resolveDevHttpsConfig(devConfig.https);
   const serverHttps = resolveServerDevHttpsConfig(serverDevConfig.https);
   const serverTarget = new URL(
@@ -627,24 +630,19 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
       proxy: [
         // User-defined proxies take precedence
         ...resolveDevProxyRules(devConfig.proxy),
-        // Framework runtime paths proxy to the API dev server only when it exists.
-        ...(serverEnabled
-          ? [
-              {
-                context: [
-                  toProxyContext(serverEndpoint),
-                  toProxyContext(pprEndpoint),
-                  ...(rscEndpoint ? [toProxyContext(rscEndpoint)] : []),
-                ],
-                target: serverTarget.origin,
-                changeOrigin: true,
-                secure: false,
-              },
-            ]
-          : []),
+        // Framework runtime paths proxy to the API dev server.
+        {
+          context: [
+            toProxyContext(serverEndpoint),
+            toProxyContext(pprEndpoint),
+            ...(rscEndpoint ? [toProxyContext(rscEndpoint)] : []),
+          ],
+          target: serverTarget.origin,
+          changeOrigin: true,
+          secure: false,
+        },
       ],
     },
-    serverEnabled,
     server: {
       basePath: serverBasePath,
       runtime: {
@@ -673,6 +671,7 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
           : assertHttpUrl(transportConfig.baseUrl, "transport.baseUrl"),
     },
     output: {
+      ...resolveOutputDirectories(outputConfig),
       crossOriginLoading:
         outputConfig.crossOriginLoading === undefined
           ? CONFIG_DEFAULTS.crossOriginLoading
@@ -1023,7 +1022,7 @@ function validateOutputConfigKeys(output: OutputConfig): void {
     output,
     PUBLIC_OUTPUT_CONFIG_KEYS,
     "output",
-    "crossOriginLoading",
+    "client, server, or crossOriginLoading",
   );
 }
 
@@ -1375,6 +1374,35 @@ function assertCrossOriginPolicy(
   throw new Error(
     `[evjs] ${path} must be false, "anonymous", or "use-credentials".`,
   );
+}
+
+function resolveOutputDirectories(
+  outputConfig: OutputConfig,
+): Pick<ResolvedOutputConfig, "client" | "server"> {
+  const client =
+    outputConfig.client === undefined
+      ? CONFIG_DEFAULTS.outputClientDir
+      : assertOutputDirectory(outputConfig.client, "output.client");
+  const server =
+    outputConfig.server === undefined
+      ? CONFIG_DEFAULTS.outputServerDir
+      : assertOutputDirectory(outputConfig.server, "output.server");
+
+  if (normalizeOutputDirectory(client) === normalizeOutputDirectory(server)) {
+    throw new Error(
+      "[evjs] output.client and output.server must point to different directories.",
+    );
+  }
+
+  return { client, server };
+}
+
+function assertOutputDirectory(value: unknown, path: string): string {
+  return assertNonEmptyString(value, path);
+}
+
+function normalizeOutputDirectory(value: string): string {
+  return value.replace(/\\/g, "/").replace(/\/+$/, "") || ".";
 }
 
 function resolvePagePrerenderConfig(

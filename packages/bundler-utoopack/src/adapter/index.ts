@@ -28,11 +28,10 @@ const logger = getLogger(["evjs", "bundler-utoopack"]);
 
 async function cleanServerOutput(
   cwd: string,
-  serverEnabled: boolean,
+  output: ResolvedConfig<ConfigComplete>["output"],
   distDir: string,
 ) {
-  if (!serverEnabled) return;
-  const outputPaths = getOutputPaths(cwd, serverEnabled, distDir);
+  const outputPaths = getOutputPaths(cwd, output, distDir);
   await fs.promises.rm(outputPaths.serverDir, {
     recursive: true,
     force: true,
@@ -49,16 +48,12 @@ async function generateDevArtifacts(
   ) => void | Promise<void>,
   options: { isRebuild?: boolean } = {},
 ): Promise<boolean> {
-  const outputPaths = getOutputPaths(cwd, config.serverEnabled, plan.distDir);
+  const outputPaths = getOutputPaths(cwd, config.output, plan.distDir);
   const clientStatsPath = path.join(outputPaths.clientDir, "stats.json");
   if (!fs.existsSync(clientStatsPath)) return false;
 
   logger.info`Generating development manifest and HTML...`;
-  const generator = new UtoopackManifestGenerator(
-    cwd,
-    config.serverEnabled,
-    plan,
-  );
+  const generator = new UtoopackManifestGenerator(cwd, plan);
   const facts = await generator.collectBuildFacts();
   await onBuildFacts(facts, options);
   return true;
@@ -75,17 +70,13 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
 
     logger.info`Building for production with utoopack...`;
 
-    await cleanServerOutput(cwd, config.serverEnabled, plan.distDir);
+    await cleanServerOutput(cwd, config.output, plan.distDir);
 
     const { build } = await import("@utoo/pack");
     await build({ config: utoopackConfig });
 
     logger.info`Collecting utoopack build facts...`;
-    const generator = new UtoopackManifestGenerator(
-      cwd,
-      config.serverEnabled,
-      plan,
-    );
+    const generator = new UtoopackManifestGenerator(cwd, plan);
 
     logger.info`Build complete!`;
     return generator.collectBuildFacts();
@@ -108,23 +99,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
       isRebuild: false,
     });
 
-    // Watch for server bundle readiness when "use server" modules are emitted.
-    if (!config.serverEnabled) {
-      return new UtoopackDevController({
-        config,
-        cwd,
-        onBuildFacts: callbacks.onBuildFacts,
-        closeWatcher() {
-          serverReadyWatcher?.close();
-        },
-      });
-    }
-
-    const outDir = getOutputPaths(
-      cwd,
-      config.serverEnabled,
-      plan.distDir,
-    ).serverDir;
+    const outDir = getOutputPaths(cwd, config.output, plan.distDir).serverDir;
 
     if (!fs.existsSync(outDir)) {
       fs.mkdirSync(outDir, { recursive: true });

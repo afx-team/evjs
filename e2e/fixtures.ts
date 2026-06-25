@@ -289,14 +289,10 @@ async function loadExampleConfig(
  * Build an example app programmatically with the specified bundler.
  *
  * Loads the example's own ev.config.ts so that per-example settings
- * (server.entry, plugins, etc.) are picked up during the build.
+ * (plugins, output structure, etc.) are picked up during the build.
  * Only the bundler adapter is overridden by the test configuration.
  */
-export async function buildExample(
-  exampleDir: string,
-  bundlerName: string,
-  serverEnabled: boolean,
-) {
+export async function buildExample(exampleDir: string, bundlerName: string) {
   const { build } = await import("@evjs/cli");
   const bundler = await resolveBundler(bundlerName);
   const runBuild = build as (
@@ -317,7 +313,6 @@ export async function buildExample(
       {
         ...exampleConfig,
         ...(bundler ? { bundler } : {}),
-        server: serverEnabled ? (exampleConfig?.server ?? undefined) : false,
       },
       { cwd: exampleDir },
     );
@@ -365,8 +360,7 @@ export function createExampleTest(exampleName: string) {
           (workerInfo.project.use as unknown as { bundlerName?: string })
             .bundlerName ?? "utoopack";
 
-        // Build with specified bundler (fullstack = server enabled)
-        await buildExample(exampleDir, bundlerName, true);
+        await buildExample(exampleDir, bundlerName);
 
         // Read the public manifest for client routing, the server manifest for
         // the bundle entry, and the full BuildOutput for framework bootstrap.
@@ -490,9 +484,9 @@ export function createExampleTest(exampleName: string) {
 }
 
 /**
- * Create a test fixture for a CSR-only example (no server functions).
+ * Create a test fixture for a static client example.
  *
- * Builds with the specified bundler, serves static files from dist/ — no API server.
+ * Builds with the specified bundler and serves static files from dist/.
  */
 export function createCsrExampleTest(exampleName: string) {
   const exampleDir = path.resolve(
@@ -510,8 +504,7 @@ export function createCsrExampleTest(exampleName: string) {
           (workerInfo.project.use as unknown as { bundlerName?: string })
             .bundlerName ?? "utoopack";
 
-        // Build with specified bundler (CSR = server disabled)
-        await buildExample(exampleDir, bundlerName, false);
+        await buildExample(exampleDir, bundlerName);
 
         const distDir = path.join(exampleDir, "dist");
         const staticServer = createStaticServer(distDir);
