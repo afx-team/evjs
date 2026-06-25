@@ -98,10 +98,11 @@ export default defineConfig({
 });
 ```
 
-MPA 文件路由可以用 colocated HTML 模板替代 routing fallback 模板。例如
+MPA 文件路由可以用 colocated HTML 模板替代全局 `index.html` 模板。例如
 `src/pages/about.tsx` 使用 `src/pages/about.html`，`src/pages/product/index.tsx`
-使用 `src/pages/product/index.html`。没有 colocated 模板的路由会回退到
-`routing.html`，它默认继承顶层 `html`。
+使用 `src/pages/product/index.html`。没有 colocated 模板的路由会使用
+`routing.html` 配置的模板；未配置时，它会继承顶层 `html`，其默认值是
+`./index.html`。
 
 当项目存在 `src/pages`，且项目没有声明显式的 `app` 或 `pages`
 配置时，SPA 路由会自动启用。

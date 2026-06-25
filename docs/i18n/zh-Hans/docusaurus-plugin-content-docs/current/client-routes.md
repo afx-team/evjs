@@ -107,7 +107,8 @@ static generation 的 server renderer；默认不创建 browser page entry。MPA
 客户端路由器配置。文件路由可以通过旁边同 basename 的 `.html` 文件使用页面专属
 HTML 模板，例如 `src/pages/about.tsx` 对应 `src/pages/about.html`，
 `src/pages/product/index.tsx` 对应 `src/pages/product/index.html`；没有 colocated
-模板的路由使用 `routing.html`。
+模板的路由使用由 `routing.html` 配置的 routing fallback，其默认值是全局
+`index.html` 模板。
 
 ## 页面
 

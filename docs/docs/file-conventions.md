@@ -123,9 +123,10 @@ src/pages/users/index.tsx  -> /users, template src/pages/users/index.html
 src/pages/users/index.html
 ```
 
-Routes without a colocated template fall back to the routing HTML template
-configured by `routing.html`. If every MPA route has a colocated template, that
-fallback template file is not required.
+Routes without a colocated template use the routing fallback configured by
+`routing.html`. By default, that fallback is the global `index.html` template.
+If every MPA route has a colocated template, `index.html` is not required for
+those routes.
 
 SPA mode writes generated route types to `<routing-dir-parent>/route-types.d.ts`.
 Do not edit that file, import it from app code, or copy it into templates.

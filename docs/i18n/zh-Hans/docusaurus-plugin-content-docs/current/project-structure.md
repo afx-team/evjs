@@ -153,7 +153,7 @@ export default defineConfig({
 
 当每个路由都应该输出独立 HTML 文档且不需要客户端路由器配置时，使用
 `routing: { mode: "mpa" }`；这种模式不使用框架 layout。MPA 路由可以用同
-basename 的 colocated 模板替代 routing fallback 模板，例如
+basename 的 colocated 模板替代全局 `index.html` fallback，例如
 `src/pages/product/index.tsx` 对应 `src/pages/product/index.html`。只有页面输出无法
 自然映射到 `src/pages` 时，才使用更底层的 `pages` 配置。
 

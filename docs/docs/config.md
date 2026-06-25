@@ -106,11 +106,12 @@ export default defineConfig({
 });
 ```
 
-MPA file routes can use a colocated HTML template instead of the routing
-fallback template. For example, `src/pages/about.html` is used by
+MPA file routes can use a colocated HTML template instead of the global
+`index.html` template. For example, `src/pages/about.html` is used by
 `src/pages/about.tsx`, and `src/pages/product/index.html` is used by
-`src/pages/product/index.tsx`. Routes without a colocated template fall back to
-`routing.html`, which defaults to the top-level `html`.
+`src/pages/product/index.tsx`. Routes without a colocated template use the
+template configured by `routing.html`; when it is omitted, it inherits the
+top-level `html`, whose default is `./index.html`.
 
 When `src/pages` exists and the project does not declare explicit `app`,
 `pages` config, SPA routing is enabled automatically.
