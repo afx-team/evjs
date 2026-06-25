@@ -3,6 +3,7 @@ node_modules
 .turbo
 .turbopack
 dist
+dist-server
 .next
 packages/shared/esm
 packages/client/esm
