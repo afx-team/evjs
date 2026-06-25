@@ -839,13 +839,11 @@ describe("resolveConfig", () => {
   it("respects server overrides", () => {
     const resolved = resolveConfig({
       server: {
-        entry: "./server.ts",
         basePath: "/api",
         dev: { port: 4000 },
       },
     });
     expect(resolved.serverEnabled).toBe(true);
-    expect(resolved.server.entry).toBe("./server.ts");
     expect(resolved.server.runtime.fn).toBe("/api/fn");
     expect(resolved.server.runtime.ppr).toBe("/api/ppr");
     expect(resolved.server.functionRuntime.endpoint).toBe("/api/fn");
@@ -1036,11 +1034,14 @@ describe("resolveConfig", () => {
     expect(
       resolveConfig({
         server: {
-          entry: "./src/server.ts",
           conventions: true,
         },
       }).server.conventions,
-    ).toBeUndefined();
+    ).toEqual({
+      middleware: true,
+      globalMiddlewares: [],
+      routeMiddlewares: [],
+    });
   });
 
   it("rejects invalid server and transport declarations", () => {
@@ -1097,26 +1098,18 @@ describe("resolveConfig", () => {
         },
       }),
     ).toThrow(
-      "[evjs] server.endpoint is not supported. Use entry, routing, conventions, basePath, rsc, or dev.",
+      "[evjs] server.endpoint is not supported. Use routing, conventions, basePath, rsc, or dev.",
     );
 
     expect(() =>
       resolveConfig({
         server: {
-          entry: "",
-        },
-      }),
-    ).toThrow("[evjs] server.entry must be a non-empty string.");
-
-    expect(() =>
-      resolveConfig({
-        server: {
+          // @ts-expect-error runtime config loading can still produce unknown keys.
           entry: "./src/server.ts",
-          routing: true,
         },
       }),
     ).toThrow(
-      "[evjs] server.routing cannot be combined with server.entry. Use server.entry for custom server composition, or remove it to let evjs generate the server route entry.",
+      "[evjs] server.entry is not supported. Use server.routing file conventions under src/apis instead.",
     );
 
     expect(() =>

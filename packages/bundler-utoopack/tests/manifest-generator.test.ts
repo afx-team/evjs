@@ -442,7 +442,7 @@ function createPlan(
         ? [
             {
               name: "server",
-              import: "./src/server.ts",
+              import: "@evjs/server/fetch",
               environment: "server" as const,
               runtime: "node" as const,
               kind: "server-runtime" as const,
@@ -467,7 +467,7 @@ function createPlan(
     server: serverEnabled
       ? {
           enabled: true,
-          entry: "./src/server.ts",
+          entry: "@evjs/server/fetch",
           functionRuntime: {
             endpoint: "/__evjs/fn",
             clientProxy: "@evjs/client/internal",

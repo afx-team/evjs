@@ -39,23 +39,15 @@ describe("inspect", () => {
           return [];
         }
       `,
-      "src/api/health.routes.ts": `
-        import { createRoute } from "@evjs/server";
-        export const healthRoute = createRoute("/api/health", {
-          GET: () => Response.json({ ok: true }),
-        });
-      `,
-      "src/server.ts": `
-        import { createApp } from "@evjs/server";
-        import { healthRoute } from "./api/health.routes";
-        export default createApp({ routes: [healthRoute] });
+      "src/apis/api/health.ts": `
+        export const GET = () => Response.json({ ok: true });
       `,
     });
 
     const result = await inspectFrameworkBuild(
       {
         routing: { mode: "spa" },
-        server: { entry: "./src/server.ts" },
+        server: { routing: true },
       },
       { cwd },
     );
@@ -99,7 +91,7 @@ describe("inspect", () => {
     ]);
     expect(result.serverRoutes).toEqual([
       expect.objectContaining({
-        module: "src/api/health.routes.ts",
+        module: "src/apis/api/health.ts",
         path: "/api/health",
         methods: ["GET"],
       }),

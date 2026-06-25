@@ -46,7 +46,7 @@
   adding/removing entries without restarting `ev dev`.
 - Utoopack parity priority 2: generic entry wrapping/loadable entry facts for
   framework-managed component pages.
-- Utoopack parity priority 3: multi server-entry build facts for SSR/PPR/RSC
+- Utoopack parity priority 3: multi server build-entry facts for SSR/PPR/RSC
   renderers.
 - Utoopack parity priority 4: RSC client/server reference metadata.
 
@@ -55,4 +55,4 @@
 - More production-grade PPR behavior for explicit client islands and deeper
   React streaming renderer integration.
 - Utoopack lower-layer parity for dynamic entries, structured build results,
-  multiple server entry classes, and RSC/client reference metadata.
+  multiple server build-entry classes, and RSC/client reference metadata.

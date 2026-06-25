@@ -115,7 +115,7 @@ my-evjs-app/
 | `<routing-dir-parent>/route-types.d.ts` | SPA 导航类型生成物 | 编辑器和类型检查支持 | 手工修改、从应用代码导入、放入模板或脚手架源码，或用于 MPA 模式 |
 | `src/api/*.server.ts` | 推荐的 server function 边界 | 以 `"use server";` 开头并导出命名 callable server functions 的文件 | 需要在 `server: false` 下运行的客户端导入、默认导出或 runtime re-export |
 | `src/apis/**/*.{ts,tsx,js,jsx}` | 启用 `server.routing` 时的服务端文件路由发现 | 导出大写 HTTP method 的 Request/Response route 模块 | `route.ts` 哨兵、`foo.get.ts` method suffix 文件、bracket/catch-all/optional routes、`middleware`/`middlewares`、默认导出，或从 route candidate 导出 helper |
-| `src/middleware.{ts,tsx,js,jsx}` | 启用 server conventions 时的全局服务端中间件约定 | 在 server file routes、server functions、SSR、PPR 和 RSC 之前运行的 Hono-compatible middleware | Matcher 配置、route handlers、helper exports，或自定义 server composition |
+| `src/middleware.{ts,tsx,js,jsx}` | 启用 server conventions 时的全局服务端中间件约定 | 在 server file routes、server functions、SSR、PPR 和 RSC 之前运行的 Hono-compatible middleware | Matcher 配置、route handlers 或 helper exports |
 | `src/apis/**/middleware.{ts,tsx,js,jsx}` | route-scoped server file-route middleware | 作用于该目录树下 descendant server file routes 的 Hono-compatible middleware | `api.ts` 这类 flat sibling routes、全局 server functions/SSR middleware，或 matcher 配置 |
 | `src/apis` 下的 server route paths 和 dynamic URL shapes | graph/build plan 生成前的 server route 冲突检查 | 每个 URL path 只保留一个 server route module，每个 dynamic URL shape 只保留一种参数命名 | 并存的 `users.ts`/`users/index.ts`、`users/$id.ts`/`users/$userId.ts`，或把同一路径的方法拆到多个文件 |
 | `src/features`、`src/components`、`src/lib`、`src/hooks` | 没有直接框架约定 | 业务代码、可复用 UI、浏览器安全 helper 和 React hooks | 依赖文件名被路由发现的文件 |
@@ -125,9 +125,6 @@ my-evjs-app/
 - 普通 SPA/MPA 页面路由使用 `src/pages` 加 `routing`。
 - 只有输出无法用 `src/pages` 表达时，才使用显式 `pages` 配置。
 - 只有手工启动的单浏览器应用才使用 top-level `entry`/`html`。
-- 只有无法使用生成式 server conventions 做自定义 server composition 时，才使用
-  `server.entry`。配置的 entry 文件可以是任意模块路径，evjs 不会自动发现
-  任何 server entry 文件名。
 
 ## 对应配置
 
@@ -303,46 +300,6 @@ export const GET = async (_req, ctx) => {
   const userId = ctx.req.param("userId");
   return Response.json({ id: userId });
 };
-```
-
-需要自定义 composition 或非约定式 routing 时，关闭 `server.routing`，
-配置显式 `server.entry`，并在该入口中挂载 routes：
-
-```ts
-// src/api/health.routes.ts
-import { createRoute } from "@evjs/server";
-
-export const healthRoute = createRoute("/health", {
-  GET: async () => Response.json({ ok: true }),
-});
-```
-
-```ts
-// src/custom-server.ts
-import { createApp, requestLogger } from "@evjs/server";
-import { createReactFrameworkServer } from "@evjs/server/react";
-import { healthRoute } from "./api/health.routes";
-
-const framework = createReactFrameworkServer();
-
-const app = createApp({
-  middlewares: [requestLogger()],
-  routes: [healthRoute],
-  framework,
-});
-
-export default { fetch: app.fetch };
-```
-
-```ts
-// ev.config.ts
-import { defineConfig } from "@evjs/ev";
-
-export default defineConfig({
-  server: {
-    entry: "./src/custom-server.ts",
-  },
-});
 ```
 
 ## 命名建议

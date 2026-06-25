@@ -101,7 +101,6 @@ describe("createWebpackConfigs", () => {
       serverEnabled: true,
       server: {
         ...base.server,
-        entry: undefined,
         routing: {
           dir: "./src/apis",
           routes: [

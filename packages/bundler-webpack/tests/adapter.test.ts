@@ -491,16 +491,6 @@ describe("webpackAdapter build", () => {
         "index.html":
           '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
         "src/main.ts": "console.log('client app');",
-        "src/server.ts": `
-        import { createApp } from "@evjs/server";
-        import { createReactFrameworkServer } from "@evjs/server/react";
-
-        const app = createApp({
-          framework: createReactFrameworkServer(),
-        });
-
-        export default { fetch: app.fetch };
-      `,
         "src/pages/Dashboard !page 中文.ts": `
         export const render = "ssr";
         export const hydrate = "load";
@@ -513,9 +503,6 @@ describe("webpackAdapter build", () => {
       const baseConfig = resolveConfig<WebpackConfig>({
         entry: "./src/main.ts",
         routing: true,
-        server: {
-          entry: "./src/server.ts",
-        },
       });
       const routing = requireRouting(baseConfig.routing);
       const config = {

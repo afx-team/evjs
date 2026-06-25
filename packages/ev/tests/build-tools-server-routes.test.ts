@@ -194,7 +194,7 @@ describe("discoverServerRoutes", () => {
         level: "error",
         file: "src/apis/orders/$orderId.ts",
         message:
-          'Ambiguous server route shape "/orders/:param" for path "/orders/:orderId" also matches src/apis/orders/$id.ts (/orders/:id). Use one dynamic param name for each URL shape or programmatic createRoute().',
+          'Ambiguous server route shape "/orders/:param" for path "/orders/:orderId" also matches src/apis/orders/$id.ts (/orders/:id). Use one dynamic param name for each URL shape.',
       },
       {
         level: "error",
@@ -264,7 +264,7 @@ describe("discoverServerRoutes", () => {
         level: "error",
         file: "src/apis/files/$...path.ts",
         message:
-          'Catch-all server route segments are not supported. Use programmatic createRoute() for wildcard or custom URL shapes instead of "$...path".',
+          'Catch-all server route segments are not supported. Split wildcard handling into explicit file routes instead of "$...path".',
       },
       {
         level: "error",

@@ -53,9 +53,8 @@ names differ:
 
 Top-level `routing` remains the client/page owner, and client convention
 toggles live under `routing.conventions`. Server conventions live under
-`server.conventions` because the server also has `server.entry`, server
-functions, RSC, PPR, and runtime endpoints; explicit `server.entry` opts out of
-server convention discovery.
+`server.conventions` because server functions, RSC, PPR, and runtime endpoints
+are separate server framework surfaces.
 
 ## Output HTML Assets
 
@@ -517,20 +516,6 @@ export default defineConfig({
 });
 ```
 
-`server.routing` and `server.entry` are mutually exclusive. Use `server.entry`
-only when the app needs custom server composition or non-conventional routing:
-
-```ts
-export default defineConfig({
-  server: {
-    entry: "./src/custom-server.ts",
-  },
-});
-```
-
-The server entry path is explicit; evjs does not auto-discover any server
-entry filename.
-
 Server conventions are enabled by default when `server.routing` is enabled.
 The current convention discovers `src/middleware.ts` for global
 middleware and `src/apis/**/middleware.ts` for route-scoped file-route
@@ -547,17 +532,13 @@ export default defineConfig({
 });
 ```
 
-Use `server.conventions: false` to disable all server conventions. Explicit
-`server.entry` disables convention discovery because the entry owns
-`createApp()` composition.
+Use `server.conventions: false` to disable all server conventions.
 
 `output`, `dev`, `server`, `server.dev`, and `transport` must be objects when
-provided; use `server: false` to disable the framework server. `server.entry`
-must be a non-empty module path when provided, and evjs validates configured
-source paths such as `server.entry` during app graph analysis before the
-bundler runs. `server.routing` must be `true`, `false`, or an object with an
-optional non-empty `dir` string. `server.conventions` must be `true`, `false`,
-or an object; object form currently supports `middleware`.
+provided; use `server: false` to disable the framework server.
+`server.routing` must be `true`, `false`, or an object with an optional
+non-empty `dir` string. `server.conventions` must be `true`, `false`, or an
+object; object form currently supports `middleware`.
 `server.basePath` must be a non-empty URL
 pathname that starts with `/`, without whitespace, a query string, or a hash;
 trailing slashes are normalized away. If `server.rsc` is configured as an

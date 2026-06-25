@@ -12,7 +12,6 @@ import type {
   AppNode,
   ComponentModel,
   ExtractedRoute,
-  ExtractedServerRoute,
   HydrationMode,
   PageNode,
   PageRouteNode,
@@ -24,6 +23,7 @@ import type {
   ServerMiddlewareNode,
   ServerRouteNode,
 } from "@evjs/shared/manifest";
+import { resolveRoutes } from "@evjs/shared/manifest";
 import { parseSync } from "@swc/core";
 import type { ModuleItem } from "@swc/types";
 import {
@@ -38,7 +38,6 @@ import {
   extractPprRegionModuleConfig,
   extractPprRegions,
 } from "../ppr-regions.js";
-import { analyzeRoutes, resolveRoutes } from "../routes/index.js";
 import {
   extractRscReferences,
   hasBlockingReferenceParseDiagnostic,
@@ -113,7 +112,6 @@ export interface GraphConfig {
   };
   serverEnabled: boolean;
   server: {
-    entry?: string;
     routing?: {
       dir: string;
       routes: DiscoveredServerRouteNode[];
@@ -259,17 +257,6 @@ export async function createAppGraph(
       continue;
     }
 
-    const routeAnalysis = analyzeRoutes(source);
-    const hasRouteDiagnostics = routeAnalysis.diagnostics.some(
-      (diagnostic) => diagnostic.level === "error",
-    );
-    diagnostics.push(
-      ...routeAnalysis.diagnostics.map((diagnostic) => ({
-        ...diagnostic,
-        file: sourceRel,
-      })),
-    );
-
     if (!config.serverEnabled) {
       if (usesServerDirective) {
         diagnostics.push({
@@ -302,32 +289,12 @@ export async function createAppGraph(
       })),
     );
 
-    if (
-      hasRscReferenceDiagnostics ||
-      hasRouteDiagnostics ||
-      hasServerFunctionDiagnostics
-    ) {
-      continue;
-    }
-
-    const routePublication = validateServerRoutePublication(
-      sourceRel,
-      routeAnalysis.serverRoutes,
-      serverRoutePathOwners,
-      serverRouteShapeOwners,
-    );
-    diagnostics.push(...routePublication.diagnostics);
-    if (routePublication.diagnostics.length > 0) {
+    if (hasRscReferenceDiagnostics || hasServerFunctionDiagnostics) {
       continue;
     }
 
     for (const reference of rscReferenceAnalysis.clientReferences) {
       clientReferences.set(reference.id, reference);
-    }
-    for (const node of routePublication.nodes) {
-      serverRoutePathOwners.set(node.path, node);
-      serverRouteShapeOwners.set(serverRoutePathShapeFromPath(node.path), node);
-      serverRoutes.set(node.id, node);
     }
     for (const reference of rscReferenceAnalysis.serverReferences) {
       serverReferences.set(reference.id, reference);
@@ -406,26 +373,6 @@ export async function createAppGraph(
   };
 }
 
-function validateServerRoutePublication(
-  sourceRel: string,
-  routes: ExtractedServerRoute[],
-  serverRoutePathOwners: Map<string, ServerRouteNode>,
-  serverRouteShapeOwners: Map<string, ServerRouteNode>,
-): { nodes: ServerRouteNode[]; diagnostics: Diagnostic[] } {
-  const nodes = routes.map<ServerRouteNode>((route) => ({
-    id: `${sourceRel}:${route.path}:${route.methods.join(",")}`,
-    module: sourceRel,
-    path: route.path,
-    methods: route.methods,
-  }));
-
-  return validateServerRouteNodePublication(
-    nodes,
-    serverRoutePathOwners,
-    serverRouteShapeOwners,
-  );
-}
-
 function validateServerRouteNodePublication(
   routes: ServerRouteNode[],
   serverRoutePathOwners: Map<string, ServerRouteNode>,
@@ -444,7 +391,7 @@ function validateServerRouteNodePublication(
         file: route.module,
         message:
           `Server route path "${route.path}" is already declared by ${existing.module}. ` +
-          "Declare all HTTP methods for a path in one createRoute() call.",
+          "Declare all HTTP methods for a path in one server file route module.",
       });
       continue;
     }
@@ -1473,17 +1420,6 @@ async function collectFrameworkSourceFiles(
       diagnostics,
     );
   }
-  if (config.server.entry) {
-    await addConfiguredSource(
-      roots,
-      cwd,
-      config.server.entry,
-      "Server entry",
-      diagnostics,
-      explicitDependencyRoots,
-    );
-  }
-
   for (const root of roots) {
     await collectStaticImportClosure(files, cwd, root, sourceCache);
   }
@@ -1660,10 +1596,7 @@ function extractStaticImportSpecifiersWithRegex(source: string): string[] {
 }
 
 function isFrameworkDependencySource(source: string): boolean {
-  return (
-    /^\s*["']use (client|server)["']/m.test(source.slice(0, 200)) ||
-    (source.includes("@evjs/server") && source.includes("createRoute"))
-  );
+  return /^\s*["']use (client|server)["']/m.test(source.slice(0, 200));
 }
 
 async function resolveSourceImport(

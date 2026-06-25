@@ -79,7 +79,6 @@ describe("createUtoopackConfig", () => {
     const config = createResolvedConfig({
       serverEnabled: true,
       server: {
-        entry: "@evjs/server/fetch",
         basePath: "/__evjs",
         runtime: {
           basePath: "/__evjs",
@@ -195,7 +194,6 @@ describe("createUtoopackConfig", () => {
     const config = createResolvedConfig({
       serverEnabled: true,
       server: {
-        entry: "@evjs/server/fetch",
         basePath: "/rpc",
         runtime: {
           basePath: "/rpc",
@@ -250,7 +248,6 @@ describe("createUtoopackConfig", () => {
     const config = createResolvedConfig({
       serverEnabled: true,
       server: {
-        entry: undefined,
         basePath: "/__evjs",
         runtime: {
           basePath: "/__evjs",
@@ -409,7 +406,6 @@ describe("createUtoopackConfig", () => {
     const config = createResolvedConfig({
       serverEnabled: true,
       server: {
-        entry: undefined,
         basePath: "/__evjs",
         runtime: {
           basePath: "/__evjs",

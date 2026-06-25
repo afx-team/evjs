@@ -7,7 +7,7 @@ temporary runtime route files; SPA mode only emits a type declaration such as
 `src/route-types.d.ts` so TypeScript can infer navigation paths from the
 page tree.
 
-For the complete filename, ignored-file, layout, and escape-hatch rules, see
+For the complete filename, ignored-file, and layout rules, see
 [File Conventions](./file-conventions.md).
 
 ## Project Structure

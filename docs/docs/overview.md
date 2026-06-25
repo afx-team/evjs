@@ -21,7 +21,7 @@ the framework. MPA page routes use the page runtime without adding a router.
 - **SPA and MPA modes** — `routing.mode: "spa"` builds one framework-owned app; `"mpa"` builds independent router-free pages.
 - **Framework pages** — page modules can declare CSR/SSR/SSG/PPR/RSC rendering metadata next to the component.
 - **Server functions** — `"use server"` modules become browser-callable RPC stubs.
-- **Server routes** — standard Web `Request`/`Response` route handlers via `createRoute()`.
+- **Server routes** — standard Web `Request`/`Response` route handlers discovered from `src/apis`.
 - **Unified server boundary** — `@evjs/server` handles server functions, server routes, SSR, PPR, and RSC requests.
 - **Plugin system** — config, bundler, output, HTML, and build lifecycle hooks.
 - **Deployment output** — one public-safe framework manifest plus adapter-generated platform artifacts.

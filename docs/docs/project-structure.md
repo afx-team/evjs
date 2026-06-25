@@ -136,7 +136,7 @@ Migration rules stay explicit rather than adding alternate filename dialects:
 | `<routing-dir-parent>/route-types.d.ts` | Generated SPA navigation types | Editor and type-checker support | Manual edits, imports from app code, template/scaffold source, or MPA mode |
 | `src/api/*.server.ts` | Recommended server-function boundary | Files that start with `"use server";` and export named callable server functions | Client imports that should run with `server: false`, default exports, or runtime re-exports |
 | `src/apis/**/*.{ts,tsx,js,jsx}` | Server file route discovery when `server.routing` is enabled | Request/Response route modules exporting uppercase HTTP methods | `route.ts` sentinels, `foo.get.ts` method suffix files, bracket/catch-all/optional routes, `middleware`/`middlewares`, default exports, or helper exports from route candidates |
-| `src/middleware.{ts,tsx,js,jsx}` | Global server middleware convention when server conventions are enabled | Hono-compatible middleware that runs before server file routes, server functions, SSR, PPR, and RSC | Matcher config, route handlers, helper exports, or custom server composition |
+| `src/middleware.{ts,tsx,js,jsx}` | Global server middleware convention when server conventions are enabled | Hono-compatible middleware that runs before server file routes, server functions, SSR, PPR, and RSC | Matcher config, route handlers, or helper exports |
 | `src/apis/**/middleware.{ts,tsx,js,jsx}` | Route-scoped server file-route middleware | Hono-compatible middleware for descendant server file routes in that directory tree | Flat sibling routes such as `api.ts`, global server functions/SSR middleware, or matcher config |
 | Server route paths and dynamic URL shapes under `src/apis` | Server route collision checks before graph/build-plan generation | One server route module per URL path and one parameter naming choice per dynamic URL shape | Parallel `users.ts`/`users/index.ts`, `users/$id.ts`/`users/$userId.ts`, or splitting methods for one path across files |
 | `src/features`, `src/components`, `src/lib`, `src/hooks` | No direct framework convention | Domain code, reusable UI, browser-safe helpers, and React hooks | Files that depend on route discovery by filename |
@@ -148,9 +148,6 @@ Do not mix ownership models in one app unless you need the lower-level API:
   `src/pages`.
 - Use top-level `entry`/`html` only for a manually bootstrapped single browser
   app.
-- Use `server.entry` only for custom server composition that cannot use
-  generated server conventions. The configured entry file can be any module
-  path; evjs does not auto-discover any server entry filename.
 
 ## Matching Config
 
@@ -340,46 +337,6 @@ export const GET = async (_req, ctx) => {
   const userId = ctx.req.param("userId");
   return Response.json({ id: userId });
 };
-```
-
-When you need custom composition or non-conventional routing, disable
-`server.routing`, configure an explicit `server.entry`, and mount routes there:
-
-```ts
-// src/api/health.routes.ts
-import { createRoute } from "@evjs/server";
-
-export const healthRoute = createRoute("/health", {
-  GET: async () => Response.json({ ok: true }),
-});
-```
-
-```ts
-// src/custom-server.ts
-import { createApp, requestLogger } from "@evjs/server";
-import { createReactFrameworkServer } from "@evjs/server/react";
-import { healthRoute } from "./api/health.routes";
-
-const framework = createReactFrameworkServer();
-
-const app = createApp({
-  middlewares: [requestLogger()],
-  routes: [healthRoute],
-  framework,
-});
-
-export default { fetch: app.fetch };
-```
-
-```ts
-// ev.config.ts
-import { defineConfig } from "@evjs/ev";
-
-export default defineConfig({
-  server: {
-    entry: "./src/custom-server.ts",
-  },
-});
 ```
 
 ## Naming Guidance

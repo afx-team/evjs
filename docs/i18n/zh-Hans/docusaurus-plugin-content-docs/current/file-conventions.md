@@ -22,9 +22,6 @@
 `./src/apis`。需要更换客户端路由目录时配置 `routing.dir`；需要更换服务端文件路由目录时配置
 `server.routing.dir`。
 
-`server.entry` 不是文件约定，而是自定义 server composition 的显式 escape hatch。
-配置的入口可以是任意模块路径，并且会关闭生成式 server convention discovery。
-
 ## 路径段规则
 
 页面路由、服务端文件路由和 route-scoped server middleware 使用同一套路径段规则：
@@ -53,8 +50,8 @@
 - `users.tsx` 和 `users/index.tsx` 这类重复 path；
 - `users/$id.tsx` 和 `users/$userId.tsx` 这类重复 dynamic shape。
 
-客户端页面 URL 无法遵循文件形状时，使用显式 `pages` 配置。服务端 URL
-无法遵循服务端文件路由形状时，使用 `server.entry` 和编程式 `createRoute()`。
+路由必须遵循文件形状。evjs 不提供 catch-all、optional 或 bracket routes
+的替代文件名方言。
 
 ## 忽略的支撑文件
 
@@ -243,15 +240,3 @@ export default defineConfig({
   },
 });
 ```
-
-显式 `server.entry` 会关闭 convention discovery，因为该 entry 自己负责 server composition。
-
-## Escape Hatches
-
-文件约定无法描述应用时，使用更底层 API：
-
-- 自定义客户端页面 URL、catch-all route、optional param 或大小写敏感 path
-  使用显式 `pages` 配置；
-- 自定义 server composition、wildcard route、自定义 URL shape 或编程式
-  middleware chain 使用 `server.entry` 和 `createRoute()`；
-- wrapper 或 utility 不应该参与 route discovery 时，使用普通 import 的组件和 helper。

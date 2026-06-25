@@ -75,7 +75,6 @@ export interface BuildPlanConfig {
   };
   serverEnabled: boolean;
   server: {
-    entry?: string;
     routing?: {
       dir: string;
       routes: DiscoveredServerRouteNode[];
@@ -536,7 +535,6 @@ function createServerRuntimeEntry(
   config: BuildPlanConfig,
   graph: AppGraph,
 ): Pick<BuildEntry, "import" | "metadata"> {
-  if (config.server.entry) return { import: config.server.entry };
   const routes = getConfiguredServerRoutes(config, graph);
   const middlewares = config.server.conventions?.globalMiddlewares ?? [];
   if (routes.length > 0 || middlewares.length > 0) {

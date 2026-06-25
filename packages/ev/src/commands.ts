@@ -479,11 +479,7 @@ async function withServerConventionDefaults<TBundlerCfg>(
   options: ServerConventionDefaultsOptions = {},
 ): Promise<ResolvedConfig<TBundlerCfg>> {
   const conventions = config.server.conventions;
-  if (
-    !config.serverEnabled ||
-    config.server.entry ||
-    conventions?.middleware !== true
-  ) {
+  if (!config.serverEnabled || conventions?.middleware !== true) {
     return {
       ...config,
       server: {

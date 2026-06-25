@@ -474,7 +474,7 @@ function formatServerMiddlewareSegmentConventionViolation(
     const suggestion =
       name && !name.startsWith("...")
         ? ` Rename the directory to "$${name}" for a dynamic segment.`
-        : " Use programmatic createRoute() for catch-all or custom URL shapes.";
+        : " Split it into explicit file-route directories.";
     return `Dynamic server middleware scope segments must use $param directories. Bracket segment "${violation.segment}" is not supported.${suggestion}`;
   }
   if (violation.kind === "unsupported-dynamic") {
@@ -482,10 +482,10 @@ function formatServerMiddlewareSegmentConventionViolation(
       return 'Dynamic server middleware scope segments must include a name after "$". Segment "$" is not supported.';
     }
     if (violation.segment.startsWith("$...")) {
-      return `Catch-all server middleware scope segments are not supported. Use programmatic createRoute() instead of "${violation.segment}".`;
+      return `Catch-all server middleware scope segments are not supported. Split wildcard handling into explicit file-route directories instead of "${violation.segment}".`;
     }
     if (violation.segment.endsWith("?")) {
-      return `Optional server middleware scope segments are not supported. Split the route tree or use programmatic createRoute() instead of "${violation.segment}".`;
+      return `Optional server middleware scope segments are not supported. Split the route tree instead of "${violation.segment}".`;
     }
     return `Unsupported dynamic server middleware scope segment "${violation.segment}".`;
   }

@@ -417,7 +417,7 @@ function formatServerRouteSegmentConventionViolation(
     const suggestion =
       name && !name.startsWith("...")
         ? ` Rename the file to "$${name}" for a dynamic segment.`
-        : " Use programmatic createRoute() for catch-all or custom URL shapes.";
+        : " Split it into explicit file routes.";
     return `Dynamic server route segments must use $param filenames. Bracket segment "${violation.segment}" is not supported.${suggestion}`;
   }
   if (violation.kind === "unsupported-dynamic") {
@@ -425,10 +425,10 @@ function formatServerRouteSegmentConventionViolation(
       return 'Dynamic server route segments must include a name after "$". Segment "$" is not supported.';
     }
     if (violation.segment.startsWith("$...")) {
-      return `Catch-all server route segments are not supported. Use programmatic createRoute() for wildcard or custom URL shapes instead of "${violation.segment}".`;
+      return `Catch-all server route segments are not supported. Split wildcard handling into explicit file routes instead of "${violation.segment}".`;
     }
     if (violation.segment.endsWith("?")) {
-      return `Optional server route segments are not supported. Split the route into explicit files or use programmatic createRoute() instead of "${violation.segment}".`;
+      return `Optional server route segments are not supported. Split the route into explicit files instead of "${violation.segment}".`;
     }
     return `Unsupported dynamic server route segment "${violation.segment}".`;
   }
@@ -462,7 +462,7 @@ function createAmbiguousServerRouteShapeDiagnostic(
   return [
     `Ambiguous server route shape "${routeShape}" for path "${routePath}"`,
     `also matches ${previous.file} (${previous.path}).`,
-    "Use one dynamic param name for each URL shape or programmatic createRoute().",
+    "Use one dynamic param name for each URL shape.",
   ].join(" ");
 }
 

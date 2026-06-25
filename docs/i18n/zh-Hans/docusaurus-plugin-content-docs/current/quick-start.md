@@ -29,8 +29,8 @@ cd my-app && npm install
 ev dev
 ```
 
-开发服务器运行在 `http://localhost:3000`，支持热模块替换。app、page 和
-server entry import graph 中可达的 `"use server"` 模块会被自动发现。
+开发服务器运行在 `http://localhost:3000`，支持热模块替换。app、page、server
+file-route 和 server middleware convention import graph 中可达的 `"use server"` 模块会被自动发现。
 
 ## 生产构建
 

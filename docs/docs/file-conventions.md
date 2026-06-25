@@ -25,10 +25,6 @@ route directory is `./src/apis`. Configure a different client route directory
 with `routing.dir`, or a different server file route directory with
 `server.routing.dir`.
 
-`server.entry` is not a file convention. It is an explicit escape hatch for
-custom server composition; the configured entry can be any module path and
-disables generated server convention discovery.
-
 ## Segment Rules
 
 Page routes, server file routes, and route-scoped server middleware use the same
@@ -60,9 +56,8 @@ The following are rejected:
 - duplicate dynamic shapes, such as `users/$id.tsx` beside
   `users/$userId.tsx`.
 
-Use explicit `pages` config for client page URLs that cannot follow the file
-shape. Use `server.entry` plus programmatic `createRoute()` for server URLs
-that cannot follow the server file route shape.
+Routes must follow the file shape. evjs does not provide alternate filename
+dialects for catch-all, optional, or bracket routes.
 
 ## Ignored Support Files
 
@@ -260,17 +255,3 @@ export default defineConfig({
   },
 });
 ```
-
-Explicit `server.entry` disables convention discovery because the entry owns
-server composition.
-
-## Escape Hatches
-
-Use the lower-level APIs when the file convention cannot describe the app:
-
-- use explicit `pages` config for custom client page URLs, catch-all routes,
-  optional params, or case-sensitive paths;
-- use `server.entry` and `createRoute()` for custom server composition,
-  wildcard routes, custom URL shapes, or programmatic middleware chains;
-- use ordinary imported components and helpers when a wrapper or utility should
-  not participate in route discovery.

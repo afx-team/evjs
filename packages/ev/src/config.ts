@@ -98,8 +98,6 @@ export interface ResolvedServerDevConfig {
 
 /** Resolved server configuration (all defaults applied). */
 export interface ResolvedServerConfig {
-  /** Explicit server entry file. Omitted when auto-generated. */
-  entry?: string;
   /** Framework server runtime base path. */
   basePath: string;
   /** Derived framework server runtime paths. */
@@ -262,20 +260,16 @@ export interface DevConfig {
 
 /** Server configuration. */
 export interface ServerConfig {
-  /** Explicit server entry file. If provided, overrides auto-generated entry. */
-  entry?: string;
   /**
    * Framework-managed server file routing.
    *
-   * When enabled, evjs discovers Request/Response route modules from
-   * `src/apis`. This cannot be combined with `server.entry`.
+   * When enabled, evjs discovers Request/Response route modules from `src/apis`.
    */
   routing?: boolean | ServerRoutingConfig;
   /**
    * Framework-managed server conventions.
    *
-   * Defaults to enabled when server file routing is enabled. Explicit
-   * `server.entry` owns server composition and disables convention discovery.
+   * Defaults to enabled when server file routing is enabled.
    */
   conventions?: boolean | ServerConventionsConfig;
   /**
@@ -485,7 +479,6 @@ const PUBLIC_PAGE_CONFIG_KEYS = new Set([
 ]);
 const PUBLIC_DEV_CONFIG_KEYS = new Set(["port", "https", "proxy"]);
 const PUBLIC_SERVER_CONFIG_KEYS = new Set([
-  "entry",
   "routing",
   "conventions",
   "basePath",
@@ -587,24 +580,13 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
   );
   const resolvedApps = resolvedApp ? { default: resolvedApp } : undefined;
 
-  const serverEntry =
-    serverConfig.entry === undefined
-      ? undefined
-      : assertNonEmptyString(serverConfig.entry, "server.entry");
   const resolvedServerRouting = resolveServerRoutingConfig(
     serverConfig.routing,
   );
-  if (serverEntry && resolvedServerRouting) {
-    throw new Error(
-      "[evjs] server.routing cannot be combined with server.entry. Use server.entry for custom server composition, or remove it to let evjs generate the server route entry.",
-    );
-  }
-  const resolvedServerConventions = serverEntry
-    ? undefined
-    : resolveServerConventionsConfig(
-        serverConfig.conventions,
-        resolvedServerRouting !== undefined,
-      );
+  const resolvedServerConventions = resolveServerConventionsConfig(
+    serverConfig.conventions,
+    resolvedServerRouting !== undefined,
+  );
   const clientPort =
     devConfig.port === undefined
       ? CONFIG_DEFAULTS.port
@@ -664,7 +646,6 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
     },
     serverEnabled,
     server: {
-      entry: serverEntry,
       basePath: serverBasePath,
       runtime: {
         basePath: serverBasePath,
@@ -898,8 +879,11 @@ function validateServerConfigKeys(server: ServerConfig): void {
     server,
     PUBLIC_SERVER_CONFIG_KEYS,
     "server",
-    "entry, routing, conventions, basePath, rsc, or dev",
+    "routing, conventions, basePath, rsc, or dev",
     (key) => {
+      if (key === "entry") {
+        return "[evjs] server.entry is not supported. Use server.routing file conventions under src/apis instead.";
+      }
       if (key === "functions") {
         return "[evjs] server.functions is not a public config field. Server function, PPR, and RSC endpoints are derived from server.basePath.";
       }

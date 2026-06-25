@@ -5,7 +5,7 @@ export default function Root({ children }: { children?: ReactNode }) {
     <div style={{ fontFamily: "system-ui, sans-serif", padding: "1rem" }}>
       <h1>Route Handlers Example</h1>
       <p style={{ color: "#666" }}>
-        REST endpoints powered by <code>createRoute()</code>
+        REST endpoints discovered from <code>src/apis</code>
       </p>
       {children}
     </div>

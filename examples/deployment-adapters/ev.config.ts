@@ -18,7 +18,7 @@ export default defineConfig({
   },
 
   server: {
-    entry: "./src/server.ts",
+    routing: true,
   },
 
   plugins: [

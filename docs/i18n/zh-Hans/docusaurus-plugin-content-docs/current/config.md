@@ -49,8 +49,8 @@ metadata 都由 evjs 派生，不需要也不能直接配置。
 
 顶层 `routing` 仍然是客户端/page 归属对象，客户端约定开关放在
 `routing.conventions` 下。Server conventions 放在 `server.conventions` 下，
-因为服务端同时还有 `server.entry`、server functions、RSC、PPR 和 runtime
-endpoints；显式 `server.entry` 会退出 server convention discovery。
+因为 server functions、RSC、PPR 和 runtime endpoints 是独立的 server framework
+能力。
 
 ## 输出 HTML 资源
 
@@ -481,19 +481,6 @@ export default defineConfig({
 });
 ```
 
-`server.routing` 和 `server.entry` 互斥。只有应用需要自定义 server composition
-或非约定式 routing 时，才使用 `server.entry`：
-
-```ts
-export default defineConfig({
-  server: {
-    entry: "./src/custom-server.ts",
-  },
-});
-```
-
-Server entry 路径是显式配置，evjs 不会自动发现任何 server entry 文件名。
-
 启用 `server.routing` 时，server conventions 默认启用。当前 convention 会发现
 `src/middleware.ts` 作为全局 middleware，并发现
 `src/apis/**/middleware.ts` 作为 route-scoped file-route middleware。
@@ -510,15 +497,12 @@ export default defineConfig({
 });
 ```
 
-使用 `server.conventions: false` 可以关闭所有 server conventions。显式
-`server.entry` 会关闭 convention discovery，因为该 entry 自己负责
-`createApp()` composition。
+使用 `server.conventions: false` 可以关闭所有 server conventions。
 
 提供 `output`、`dev`、`server`、`server.dev` 和 `transport` 时，它们都必须是
-object；使用 `server: false` 关闭框架服务端。提供 `server.entry` 时，它必须是非空模块路径；
-evjs 会在 app graph analysis 阶段、bundler 运行之前校验 `server.entry` 等已配置的
-source path。`server.routing` 必须是 `true`、`false` 或 object；object 形式只接受可选的
-非空 `dir` 字符串。`server.conventions` 必须是 `true`、`false` 或 object；object
+object；使用 `server: false` 关闭框架服务端。`server.routing` 必须是 `true`、`false` 或
+object；object 形式只接受可选的非空 `dir` 字符串。`server.conventions` 必须是
+`true`、`false` 或 object；object
 形式目前支持 `middleware`。`server.basePath` 必须是以 `/` 开头的非空 URL pathname，不能包含空白字符、query
 string 或 hash；尾部 `/` 会被归一化移除。如果 `server.rsc` 配置为 object，
 `server.rsc.endpoint` 也遵循同样的 URL pathname 规则。`dev.https` 和

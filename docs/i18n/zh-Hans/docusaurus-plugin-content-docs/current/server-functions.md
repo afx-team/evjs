@@ -53,8 +53,8 @@ export const deleteUser = async (id: string) => {
 - **推荐**：使用 `.server.ts` 扩展名（例如 `users.server.ts`）或将它们放在 `src/api/` 目录下，以帮助区分客户端代码。
 - 不支持默认导出、跨模块 runtime re-export，也不支持导出常量等非函数 runtime 值
 - 服务端函数需要 framework server。配置 `server: false` 时，任何可达的
-  `"use server"` 模块都会成为构建错误。"可达" 指由 app、page 或 server entry
-  import graph 导入；graph 外的无关文件会被忽略。
+  `"use server"` 模块都会成为构建错误。"可达" 指由 app、page、server
+  file-route 或 server middleware convention graph 导入；graph 外的无关文件会被忽略。
 
 ## 请求上下文 helper
 
@@ -306,8 +306,8 @@ flowchart TD
     SERVER --> MANIFEST["manifest.json 条目"]
 ```
 
-- **Graph analysis**：跟随 app、page 和 server entry import graph，
-  校验并记录可达的 `"use server"` 模块。
+- **Graph analysis**：跟随 app、page、server file-route 和 server middleware
+  convention import graph，校验并记录可达的 `"use server"` 模块。
 - **Client build**：函数体会被替换为内部 client reference 桩代码。固定签名会携带 arity 元信息；optional、default 和 rest 参数签名会省略它。
 - **Server build**：保留原始函数体，并注入 `registerServerReference()`。
 - 函数 ID 是由 `filePath + exportName` 生成的稳定 SHA-256 hash。

@@ -63,8 +63,8 @@ export const deleteUser = async (id: string) => {
   non-function runtime values such as constants
 - Server functions require the framework server. If `server: false`, any
   reachable `"use server"` module is a build error. "Reachable" means imported
-  by the app, page, or server entry import graph; unrelated files outside the
-  graph are ignored.
+  by the app, page, server file-route, or server middleware convention graph;
+  unrelated files outside the graph are ignored.
 
 ## Request Context Helpers
 
@@ -353,8 +353,9 @@ flowchart TD
     SERVER --> MANIFEST["manifest.json entry"]
 ```
 
-- **Graph analysis**: follows app, page, and server entry import graphs, then
-  validates and records reachable `"use server"` modules.
+- **Graph analysis**: follows app, page, server file-route, and server
+  middleware convention import graphs, then validates and records reachable
+  `"use server"` modules.
 - **Client build**: function bodies → internal client reference stubs. Fixed
   signatures include arity metadata; optional, default, and rest-parameter
   signatures omit it.

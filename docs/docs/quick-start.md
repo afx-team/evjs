@@ -31,7 +31,7 @@ ev dev
 
 The dev server runs at `http://localhost:3000` with Hot Module Replacement.
 Server functions in reachable `"use server"` modules are auto-discovered from
-app, page, and server entry import graphs.
+app, page, server file-route, and server middleware convention import graphs.
 
 ## Production Build
 

@@ -62,7 +62,7 @@ runtime 通过 `manifestUrl`、`data-evjs-manifest` 或 `/manifest.json` 获取�
 
 1. 加载并解析 `ev.config.ts`。
 2. 执行 config/setup 插件 hooks。
-3. `createAppGraph()` 分析文件化页面路由文件、底层 app/page 输出、server entry。
+3. `createAppGraph()` 分析文件化页面路由、底层 app/page 输出、server file routes 和 server conventions。
 4. `createBuildPlan()` 生成具体 client/server entries 和 HTML documents。
 5. 当前 bundler 编译 `BuildPlan.entries`。
 6. `linkBuildOutput()` 合并 `AppGraph`、`BuildPlan` 和 bundler facts。
@@ -180,9 +180,9 @@ browser page entry。
 - app 和 page runtime module 必须关联到 JavaScript 资产；如果 client entry
   只产出 CSS 或没有产物，manifest 输出会失败。
 - 启用 server 的构建必须把 server runtime entry 关联到 JavaScript 资产；
-  deployment adapter 会依赖 `server.entry` 导入框架 handler。
+  deployment adapter 会依赖 `BuildOutput.server.entry` 导入框架 handler。
 - build entry name 是 manifest asset key。它们必须是 build identifier，并且
-  必须在 app、page、runtime 和 server entry 之间全局唯一。
+  必须在 app、page、runtime 和生成的 server entries 之间全局唯一。
 - `BuildOutput.server.renderers` 的 key 是 renderer build entry name，也必须使用
   相同的 build-identifier 规则。
 - 在完整 BuildOutput manifest 中，每个使用 server HTML 的 SSR、SSG 或 RSC document

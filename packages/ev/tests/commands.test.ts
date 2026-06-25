@@ -2618,7 +2618,7 @@ describe("build", () => {
     expect(serverEntry?.metadata).not.toHaveProperty("middlewares");
   });
 
-  it("fails on missing explicit server entries before running the bundler", async () => {
+  it("fails on unsupported server.entry config before running the bundler", async () => {
     const cwd = await createProject();
     const events: string[] = [];
     const bundler = createMockBundler(events);
@@ -2627,6 +2627,7 @@ describe("build", () => {
       build(
         {
           server: {
+            // @ts-expect-error runtime config loading can still produce unknown keys.
             entry: "./src/missing-server.ts",
           },
         },
@@ -2636,7 +2637,7 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      "src/missing-server.ts - Server entry source file not found.",
+      "[evjs] server.entry is not supported. Use server.routing file conventions under src/apis instead.",
     );
     expect(events).not.toContain("bundler.build");
   });
@@ -2660,278 +2661,6 @@ describe("build", () => {
       ),
     ).rejects.toThrow(
       "[evjs] dev.port must be an integer TCP port from 1 to 65535.",
-    );
-    expect(events).not.toContain("bundler.build");
-  });
-
-  it("fails on unsupported exported server route declarations before running the bundler", async () => {
-    const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
-      "export const clientEntry = true;",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/server.ts"),
-      'import "./api";',
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/api.ts"),
-      [
-        'import { createRoute } from "@evjs/server";',
-        'const routePath = "/api/dynamic";',
-        "export const dynamic = createRoute(routePath, {",
-        "  GET: async () => Response.json({ ok: true }),",
-        "});",
-      ].join("\n"),
-      "utf-8",
-    );
-    const events: string[] = [];
-    const bundler = createMockBundler(events);
-
-    await expect(
-      build(
-        {
-          server: {
-            entry: "./src/server.ts",
-          },
-        },
-        {
-          cwd,
-          bundler,
-        },
-      ),
-    ).rejects.toThrow(
-      'src/api.ts - Server route "dynamic" must use a string-literal createRoute() path.',
-    );
-    expect(events).not.toContain("bundler.build");
-  });
-
-  it("fails on malformed server route modules before running the bundler", async () => {
-    const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
-      "export const clientEntry = true;",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/server.ts"),
-      'import "./api";',
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/api.ts"),
-      [
-        'import { createRoute } from "@evjs/server";',
-        'export const users = createRoute("/api/users", {',
-        "  GET: async () => Response.json([])",
-      ].join("\n"),
-      "utf-8",
-    );
-    const events: string[] = [];
-    const bundler = createMockBundler(events);
-
-    await expect(
-      build(
-        {
-          server: {
-            entry: "./src/server.ts",
-          },
-        },
-        {
-          cwd,
-          bundler,
-        },
-      ),
-    ).rejects.toThrow("Server route module could not be parsed:");
-    expect(events).not.toContain("bundler.build");
-  });
-
-  it("fails on unsupported server route definition keys before running the bundler", async () => {
-    const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
-      "export const clientEntry = true;",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/server.ts"),
-      'import "./api";',
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/api.ts"),
-      [
-        'import { createRoute } from "@evjs/server";',
-        'export const users = createRoute("/api/users", {',
-        "  get: async () => Response.json([]),",
-        "});",
-      ].join("\n"),
-      "utf-8",
-    );
-    const events: string[] = [];
-    const bundler = createMockBundler(events);
-
-    await expect(
-      build(
-        {
-          server: {
-            entry: "./src/server.ts",
-          },
-        },
-        {
-          cwd,
-          bundler,
-        },
-      ),
-    ).rejects.toThrow(
-      'src/api.ts - Server route "users" definition key "get" is not supported. Use GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS or "middlewares".',
-    );
-    expect(events).not.toContain("bundler.build");
-  });
-
-  it("fails on invalid server route handler values before running the bundler", async () => {
-    const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
-      "export const clientEntry = true;",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/server.ts"),
-      'import "./api";',
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/api.ts"),
-      [
-        'import { createRoute } from "@evjs/server";',
-        'export const users = createRoute("/api/users", {',
-        '  GET: "not a function",',
-        "});",
-      ].join("\n"),
-      "utf-8",
-    );
-    const events: string[] = [];
-    const bundler = createMockBundler(events);
-
-    await expect(
-      build(
-        {
-          server: {
-            entry: "./src/server.ts",
-          },
-        },
-        {
-          cwd,
-          bundler,
-        },
-      ),
-    ).rejects.toThrow(
-      'src/api.ts - Server route "users" GET handler must be a function.',
-    );
-    expect(events).not.toContain("bundler.build");
-  });
-
-  it("fails on invalid server route path shapes before running the bundler", async () => {
-    const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
-      "export const clientEntry = true;",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/server.ts"),
-      'import "./api";',
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/api.ts"),
-      [
-        'import { createRoute } from "@evjs/server";',
-        'export const users = createRoute("/api/users?filter=all", {',
-        "  GET: async () => Response.json([]),",
-        "});",
-      ].join("\n"),
-      "utf-8",
-    );
-    const events: string[] = [];
-    const bundler = createMockBundler(events);
-
-    await expect(
-      build(
-        {
-          server: {
-            entry: "./src/server.ts",
-          },
-        },
-        {
-          cwd,
-          bundler,
-        },
-      ),
-    ).rejects.toThrow(
-      'src/api.ts - Server route "users" must use a createRoute() path without query strings or hashes.',
-    );
-    expect(events).not.toContain("bundler.build");
-  });
-
-  it("fails on duplicate server route paths before running the bundler", async () => {
-    const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/api"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
-      "export const clientEntry = true;",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/server.ts"),
-      ['import "./api/a-customers";', 'import "./api/b-customers";'].join("\n"),
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/api/a-customers.ts"),
-      [
-        'import { createRoute } from "@evjs/server";',
-        'export const customersGet = createRoute("/api/customers", {',
-        "  GET: async () => Response.json([]),",
-        "});",
-      ].join("\n"),
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/api/b-customers.ts"),
-      [
-        'import { createRoute } from "@evjs/server";',
-        'export const customersPost = createRoute("/api/customers", {',
-        "  POST: async () => Response.json({ ok: true }),",
-        "});",
-      ].join("\n"),
-      "utf-8",
-    );
-    const events: string[] = [];
-    const bundler = createMockBundler(events);
-
-    await expect(
-      build(
-        {
-          server: {
-            entry: "./src/server.ts",
-          },
-        },
-        {
-          cwd,
-          bundler,
-        },
-      ),
-    ).rejects.toThrow(
-      'src/api/b-customers.ts - Server route path "/api/customers" is already declared by src/api/a-customers.ts. Declare all HTTP methods for a path in one createRoute() call.',
     );
     expect(events).not.toContain("bundler.build");
   });

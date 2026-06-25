@@ -168,7 +168,7 @@ delivery guarantee; static-only routing uses pages whose manifest reports
 
 `@evjs/ev` ships three deployment adapters:
 
-- `nodeDeploymentAdapter()` emits a Node server entry plus deployment metadata.
+- `nodeDeploymentAdapter()` emits a Node server module plus deployment metadata.
 - `staticDeploymentAdapter()` emits deployment metadata plus `_redirects` for
   static hosts that support SPA/MPA rewrites.
 - `edgeDeploymentAdapter()` emits deployment metadata plus an edge-worker module

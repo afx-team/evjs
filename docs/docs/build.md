@@ -66,7 +66,7 @@ must be successful JSON with
 
 1. Load and resolve `ev.config.ts`.
 2. Run config/setup plugin hooks.
-3. `createAppGraph()` analyzes the file-based page route files, lower-level app/page outputs, server entry,.
+3. `createAppGraph()` analyzes file-based page routes, lower-level app/page outputs, server file routes, and server conventions.
 4. `createBuildPlan()` produces concrete client/server entries and HTML documents.
 5. The selected bundler compiles `BuildPlan.entries`.
 6. `linkBuildOutput()` combines `AppGraph`, `BuildPlan`, and bundler facts.
@@ -196,10 +196,11 @@ Internal PPR regions carry cache metadata in the manifest:
 - App and page runtime modules must link to a JavaScript asset; manifest
   emission fails if a client entry only produced CSS or no assets.
 - Server-enabled builds must link the server runtime entry to a JavaScript
-  asset; deployment adapters rely on `server.entry` to import the framework
-  handler.
+  asset; deployment adapters rely on `BuildOutput.server.entry` to import the
+  framework handler.
 - Build entry names are manifest asset keys. They must be build identifiers and
-  must be globally unique across app, page, runtime, and server entries.
+  must be globally unique across app, page, runtime, and generated server
+  entries.
 - `BuildOutput.server.renderers` keys are renderer build entry names and must use
   the same build-identifier rule.
 - In full BuildOutput manifests, each SSR, SSG, or RSC document page with server

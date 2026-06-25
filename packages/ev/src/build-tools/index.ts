@@ -28,17 +28,8 @@ export type {
   CreateBuildPlanOptions,
 } from "./plan/index.js";
 export { createBuildPlan, diffBuildPlan } from "./plan/index.js";
-export type {
-  ExtractedRoute,
-  ExtractedServerRoute,
-  RouteAnalysis,
-} from "./routes.js";
-export {
-  analyzeRoutes,
-  detectServerRouteExports,
-  extractServerRoutes,
-  resolveRoutes,
-} from "./routes.js";
+export type { ExtractedRoute } from "./routes.js";
+export { resolveRoutes } from "./routes.js";
 export type {
   RscReferenceAnalysis,
   TransformRscClientFileOptions,

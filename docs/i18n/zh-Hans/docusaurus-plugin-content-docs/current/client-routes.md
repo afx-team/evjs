@@ -5,7 +5,7 @@ evjs 以 `src/pages` 作为客户端路由的唯一事实来源。应用页面�
 或生成多个不带路由器的 MPA 页面。evjs 不会写入临时 runtime 路由文件；SPA
 模式只会生成类似 `src/route-types.d.ts` 的类型声明，让 TypeScript 从页面树推导导航 path。
 
-完整文件名、忽略文件、layout 和 escape hatch 规则见
+完整文件名、忽略文件和 layout 规则见
 [文件约定](./file-conventions.md)。
 
 ## 目录结构

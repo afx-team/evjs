@@ -39,11 +39,11 @@
   `ev dev` 增删 entry。
 - Utoopack parity 优先级 2：framework-managed component pages 所需的
   generic entry wrapping/loadable entry facts。
-- Utoopack parity 优先级 3：SSR/PPR/RSC renderers 的 multi server-entry build facts。
+- Utoopack parity 优先级 3：SSR/PPR/RSC renderers 的 multi server build-entry facts。
 - Utoopack parity 优先级 4：RSC client/server reference metadata。
 
 ## 计划中
 
 - 页面路由类型能力继续收敛：在不暴露 router internals 的前提下保留更完整的 params/search/loader data 类型。
 - 更生产级的 PPR 行为，包括显式 client islands 和更深入的 React streaming renderer 集成。
-- Utoopack 下层能力补齐：dynamic entries、structured build result、多 server entry class、RSC/client reference metadata。
+- Utoopack 下层能力补齐：dynamic entries、structured build result、多 server build-entry class、RSC/client reference metadata。

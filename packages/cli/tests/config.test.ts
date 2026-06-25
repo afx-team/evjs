@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 describe("defineConfig", () => {
   it("returns the config object unchanged", () => {
     const config: Config = {
-      server: { entry: "./src/server.ts" },
+      server: { routing: true },
       entry: "./src/app.tsx",
     };
     expect(defineConfig(config)).toBe(config);
@@ -18,7 +18,7 @@ describe("defineConfig", () => {
 
   it("handles full config", () => {
     const server: ServerConfig = {
-      entry: "./custom-server.ts",
+      routing: { dir: "./src/apis" },
       basePath: "/api",
       dev: { port: 4000 },
     };

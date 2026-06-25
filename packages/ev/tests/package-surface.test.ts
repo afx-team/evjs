@@ -164,11 +164,9 @@ const forbiddenPackageNames = [
 ];
 
 const expectedBuildToolsRuntimeExports = [
-  "analyzeRoutes",
   "applyRouteScopedMiddlewares",
   "createAppGraph",
   "createBuildPlan",
-  "detectServerRouteExports",
   "detectUseClient",
   "diffBuildPlan",
   "discoverPageRoutes",
@@ -176,7 +174,6 @@ const expectedBuildToolsRuntimeExports = [
   "discoverServerRoutes",
   "extractRscReferences",
   "extractServerFunctionExports",
-  "extractServerRoutes",
   "generateHtml",
   "generatePageRouteTypes",
   "loadConfigFile",
