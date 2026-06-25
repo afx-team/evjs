@@ -400,6 +400,27 @@ describe("discoverPageRoutes", () => {
     expect(discovery.diagnostics).toEqual([]);
   });
 
+  it("does not treat routing.html as an MPA file-route convention", async () => {
+    const cwd = await createFixture({
+      "src/pages/index.tsx": "export default function Home() { return null; }",
+      "src/pages/routing.html": '<div id="app"></div>',
+    });
+
+    const discovery = await discoverPageRoutes(cwd, {
+      dir: "./src/pages",
+      mode: "mpa",
+    });
+
+    expect(discovery.routes).toEqual([
+      {
+        id: "index",
+        path: "/",
+        module: "./src/pages/index.tsx",
+      },
+    ]);
+    expect(discovery.diagnostics).toEqual([]);
+  });
+
   it("discovers supported page route source extensions", async () => {
     const cwd = await createFixture({
       "src/pages/index.ts": "export default function Home() { return null; }",

@@ -100,9 +100,9 @@ export default defineConfig({
 
 MPA 文件路由可以用 colocated HTML 模板替代全局 `index.html` 模板。例如
 `src/pages/about.tsx` 使用 `src/pages/about.html`，`src/pages/product/index.tsx`
-使用 `src/pages/product/index.html`。没有 colocated 模板的路由会使用
-`routing.html` 配置的模板；未配置时，它会继承顶层 `html`，其默认值是
-`./index.html`。
+使用 `src/pages/product/index.html`。没有 colocated 模板的路由会使用顶层
+`html` 模板，其默认值是 `./index.html`；也可以通过
+`routing: { html: "..." }` 覆盖。
 
 当项目存在 `src/pages`，且项目没有声明显式的 `app` 或 `pages`
 配置时，SPA 路由会自动启用。
@@ -133,7 +133,7 @@ MPA 模式不支持 layout conventions。路由目录内的 layout 模块也是 
 MPA 页面需要共享外框时，应像普通 React 代码一样组合共享组件；如果只是文档外壳相同，
 可以复用页面 HTML 模板。
 
-`routing.mode` 必须是 `spa` 或 `mpa`。提供 `routing.dir`、`routing.html`
+`routing.mode` 必须是 `spa` 或 `mpa`。提供 `routing.dir`、`routing: { html }`
 或 `routing.mount` 时，它们必须是非空字符串。`routing.conventions` 必须是
 `true`、`false` 或 object；object 形式目前支持 `layout`。
 `routing.conventions.layout` 必须是 boolean 或非空模块路径。
@@ -166,7 +166,7 @@ export default defineConfig({
 `app` 必须且只能指定 `source` 或 `entry` 之一。提供 `source`、`entry`、`html`
 或 `mount` 时，它们必须是非空字符串。object 形式的 `app` 只接受 `source`、
 `entry`、`html` 和 `mount`。
-顶层 `html`、`app.html`、`routing.html` 和 `pages.*.html` 中配置的 HTML
+顶层 `html`、`app.html`、`routing: { html }` 和 `pages.*.html` 中配置的 HTML
 模板必须指向文件，并会在 bundler 运行之前被校验。配置对象声明了 `mount`
 时，该 selector 必须能在对应 HTML 模板中匹配到元素。共享模板是允许的，
 每个声明的 mount selector 都会独立校验。

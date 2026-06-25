@@ -113,8 +113,7 @@ src/pages/users/index.tsx  -> /users，模板 src/pages/users/index.html
 src/pages/users/index.html
 ```
 
-没有 colocated 模板的路由会使用由 `routing.html` 配置的 routing fallback。
-默认情况下，这个 fallback 是全局 `index.html` 模板。如果每个 MPA 路由都有
+没有 colocated 模板的路由默认使用全局 `index.html` 模板。如果每个 MPA 路由都有
 colocated 模板，则这些路由不要求存在 `index.html`。
 
 SPA 模式会把生成的路由类型写入 `<routing-dir-parent>/route-types.d.ts`。

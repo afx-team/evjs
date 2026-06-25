@@ -110,8 +110,8 @@ MPA file routes can use a colocated HTML template instead of the global
 `index.html` template. For example, `src/pages/about.html` is used by
 `src/pages/about.tsx`, and `src/pages/product/index.html` is used by
 `src/pages/product/index.tsx`. Routes without a colocated template use the
-template configured by `routing.html`; when it is omitted, it inherits the
-top-level `html`, whose default is `./index.html`.
+top-level `html` template, whose default is `./index.html`, unless the
+template is overridden with `routing: { html: "..." }`.
 
 When `src/pages` exists and the project does not declare explicit `app`,
 `pages` config, SPA routing is enabled automatically.
@@ -145,7 +145,7 @@ normal React components, or use page-specific/shared HTML templates when the
 document wrapper needs to differ.
 
 `routing.mode` must be either `spa` or `mpa`. When provided, `routing.dir`,
-`routing.html`, and `routing.mount` must be non-empty strings.
+`routing: { html }`, and `routing.mount` must be non-empty strings.
 `routing.conventions` must be `true`, `false`, or an object; object form
 currently supports `layout`. `routing.conventions.layout` must be a boolean or
 a non-empty module path.
@@ -180,11 +180,11 @@ export default defineConfig({
 Object-form `app` must specify exactly one of `source` or `entry`. `source`,
 `entry`, `html`, and `mount` must be non-empty strings when provided.
 Object-form `app` accepts only `source`, `entry`, `html`, and `mount`.
-Configured HTML templates from top-level `html`, `app.html`, `routing.html`,
-and `pages.*.html` must point to files and are validated before the bundler
-runs. When a config object declares `mount`, that selector must match an
-element in the corresponding HTML template. Shared templates are allowed; each
-declared mount selector is checked independently.
+Configured HTML templates from top-level `html`, `app.html`,
+`routing: { html }`, and `pages.*.html` must point to files and are validated
+before the bundler runs. When a config object declares `mount`, that selector
+must match an element in the corresponding HTML template. Shared templates are
+allowed; each declared mount selector is checked independently.
 
 ## Pages
 

@@ -123,8 +123,7 @@ added. A file-route page can use a page-specific HTML template by placing an
 `.html` file with the same basename beside the page module, such as
 `src/pages/about.html` for `src/pages/about.tsx` or
 `src/pages/product/index.html` for `src/pages/product/index.tsx`; routes
-without one use the routing fallback configured by `routing.html`, which
-defaults to the global `index.html` template.
+without one use the global `index.html` template by default.
 
 ## Pages
 

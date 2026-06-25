@@ -178,7 +178,7 @@ Use `routing: { mode: "mpa" }` when every route should be emitted as its own
 HTML document without SPA router setup or framework layouts. MPA routes can
 use a same-basename colocated template, such as
 `src/pages/product/index.html` for `src/pages/product/index.tsx`, instead of
-the global `index.html` fallback. Use the lower-level `pages` config only for
+the global `index.html` template. Use the lower-level `pages` config only for
 page outputs that do not map cleanly to `src/pages`.
 
 ## Page Modules
