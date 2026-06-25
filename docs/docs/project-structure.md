@@ -176,10 +176,10 @@ export default defineConfig({
 
 Use `routing: { mode: "mpa" }` when every route should be emitted as its own
 HTML document without SPA router setup or framework layouts. MPA routes can
-override the global `routing.html` with a same-basename colocated template,
-such as `src/pages/product/index.html` for `src/pages/product/index.tsx`. Use
-the lower-level `pages` config only for page outputs that do not map cleanly to
-`src/pages`.
+use a same-basename colocated template instead of the routing fallback template,
+such as `src/pages/product/index.html` for `src/pages/product/index.tsx`.
+Use the lower-level `pages` config only for page outputs that do not map
+cleanly to `src/pages`.
 
 ## Page Modules
 

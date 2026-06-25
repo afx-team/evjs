@@ -113,8 +113,8 @@ src/pages/users/index.tsx  -> /users，模板 src/pages/users/index.html
 src/pages/users/index.html
 ```
 
-没有 colocated 模板的路由会回退到 `routing.html`。如果每个 MPA 路由都有
-colocated 模板，则不要求存在全局 `routing.html` 文件。
+没有 colocated 模板的路由会回退到由 `routing.html` 配置的 routing HTML 模板。
+如果每个 MPA 路由都有 colocated 模板，则不要求存在这个 fallback 模板文件。
 
 SPA 模式会把生成的路由类型写入 `<routing-dir-parent>/route-types.d.ts`。
 不要手工修改这个文件，不要从应用代码导入它，也不要把它复制进模板。
