@@ -198,15 +198,16 @@ const expectedServerSubpathExports = [
   "./app",
   "./fetch",
   "./framework",
+  "./internal/server-functions",
   "./node",
   "./react",
-  "./register",
 ] as const;
 
 const forbiddenServerSubpathExports = [
   "./context",
   "./ecma",
   "./functions",
+  "./register",
   "./middleware",
   "./routes",
 ] as const;
@@ -814,7 +815,7 @@ describe("workspace package surface", () => {
       parseEvjsImportSpecifiers(`
         import { defineConfig } from "@evjs/ev";
         import { createRoute } from "@evjs/server";
-        import "@evjs/server/register";
+        import "@evjs/server/internal/server-functions";
         export { createApp } from "@evjs/server";
         export * from "@evjs/client/internal";
         const runtime = import("@evjs/shared/manifest");
@@ -822,7 +823,7 @@ describe("workspace package surface", () => {
     ).toEqual([
       "@evjs/ev",
       "@evjs/server",
-      "@evjs/server/register",
+      "@evjs/server/internal/server-functions",
       "@evjs/server",
       "@evjs/client/internal",
       "@evjs/shared/manifest",
@@ -954,6 +955,11 @@ describe("workspace package surface", () => {
     expect(exportedSubpaths).not.toEqual(
       expect.arrayContaining([...forbiddenServerSubpathExports]),
     );
+    expect(serverPackageJson.exports?.["./internal/server-functions"]).toEqual({
+      types: "./esm/server-function-runtime.d.ts",
+      import: "./esm/server-function-runtime.js",
+      default: "./esm/server-function-runtime.js",
+    });
 
     const readme = await fs.readFile(
       path.join(repoRoot, "packages/server/README.md"),

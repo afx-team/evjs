@@ -25,8 +25,8 @@ export interface TransformOptions {
  * URLs and browser-facing origins live in config/manifest runtime fields.
  */
 export const SERVER_FUNCTION_TRANSFORM_RUNTIME = {
-  /** Module path for server-side function registration (no Hono dependency). */
-  serverModule: "@evjs/server/register",
+  /** Module path for generated server-side function registrations. */
+  serverModule: "@evjs/server/internal/server-functions",
   /** Module path for generated client-side server reference stubs. */
   clientModule: "@evjs/client/internal/server-functions",
   /** Server-side function registration (RSC convention). */
