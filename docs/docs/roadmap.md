@@ -15,10 +15,10 @@
 - `ev inspect` CLI preflight for explaining page route discovery, server
   declarations, render metadata, runtime paths, planned entries, and diagnostics
   without running a bundler or writing `dist`.
-- Configurable framework manifest directories through `output.client` and
-  `output.server`, plus the complete private `dist/build-output.json` handoff.
-- Manifest-driven app/page activation through the public
-  `@evjs/client` runtime package.
+- Configurable framework metadata directories through `output.client` and
+  `output.server`, plus canonical deployment metadata at `dist/build-output.json`.
+- ClientRuntime-driven app/page activation through the public
+  `@evjs/client` runtime package and generated framework bootstraps.
 - Framework-owned SPA page routes and router-free page runtime for MPA.
 - Webpack adapter for framework validation while Utoopack lower-layer APIs catch up.
 - Focused render-mode and deployment-adapter examples plus end-to-end coverage for apps,

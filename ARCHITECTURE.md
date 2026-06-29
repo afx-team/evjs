@@ -21,8 +21,9 @@ src/pages + src/apis + src/middleware.ts + ev.config.ts
   -> AppGraph
   -> BuildPlan
   -> selected bundler adapter
-  -> BuildOutput / dist/client/manifest.json / dist/server/manifest.json
-  -> ClientRuntime / FrameworkRuntime contracts / deployment adapters
+  -> in-memory BuildOutput
+  -> ClientRuntime / FrameworkRuntime contracts
+  -> DeploymentMetadata / lightweight manifests / deployment adapters
 ```
 
 Framework semantics are owned by `@evjs/ev` and `@evjs/shared/manifest`.
@@ -157,8 +158,8 @@ the bundler dev instance.
   rendering, PPR region rendering, and RSC Flight endpoint routing
 
 deployment adapters
-  translate BuildOutput to platform artifacts and injected FrameworkRuntime
-  bootstraps
+  translate BuildOutput/DeploymentMetadata to platform artifacts and injected
+  FrameworkRuntime bootstraps
 ```
 
 TanStack Router is available through the `@evjs/client` standalone CSR surface
@@ -168,28 +169,35 @@ and navigation helpers instead of constructing route trees directly.
 
 ## Manifest
 
-The framework output contract is `BuildOutput`. Builds serialize the complete
-private contract to:
+The framework output contract is the in-memory `BuildOutput`. Builds serialize
+the canonical deployment projection to:
 
 ```txt
 dist/build-output.json
 ```
 
-They also emit deployment-focused client/server manifests to `output.client`
-and `output.server`, plus a generated browser `runtime.json`. Deployment
-plugins and platform adapters should consume `BuildOutput`; generated runtimes
-consume minimal `ClientRuntime` and injected `FrameworkRuntime` contracts.
-Routes in these artifacts are URL-to-app/page indexes. Page behavior stays
-under page records, and framework endpoint data stays under runtime/server
-projections instead of being repeated on every route.
+They also emit compatibility deployment manifests to `output.client` and
+`output.server`. The client manifest keeps public assets and SPA/MPA routing
+only. The server manifest keeps only the server entry field for existing
+deployment integrations. Generated HTML embeds `ClientRuntime`, and raw server
+bundles read `dist/server/framework-runtime.json`; deployment adapters embed the
+same FrameworkRuntime data into their bootstrap code.
+
+Deployment plugins and platform adapters should consume
+`deploymentMetadata`/`createDeploymentArtifact()` for post-build routing and
+assets. Plugins that need the complete graph can still inspect the in-memory
+`BuildOutput`. Generated runtimes consume minimal `ClientRuntime` and
+`FrameworkRuntime` contracts rather than manifest or build-output files.
 
 ## Deployment
 
 `@evjs/ev` exposes platform-neutral deployment artifact helpers plus
-`nodeDeploymentAdapter()`. The Node adapter emits a production `dist/server.mjs`
-that imports only Node built-ins, `@evjs/server/node`, and the generated server
-bundle. Platform-specific adapters should consume `BuildOutput` instead of
-reading bundler config or stats.
+`nodeDeploymentAdapter()`, `staticDeploymentAdapter()`, and
+`edgeDeploymentAdapter()`. The Node adapter emits a production
+`dist/server.mjs` that imports only Node built-ins, `@evjs/server/node`, and
+the generated server bundle. Platform-specific adapters should derive platform
+routes from `DeploymentMetadata` and the in-memory `BuildOutput` instead of
+reading bundler config, stats, manifests, or runtime contracts.
 
 ## Programmatic Preparation
 

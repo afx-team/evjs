@@ -136,47 +136,32 @@ describe("createDeploymentArtifact", () => {
         serverDir: "dist/server",
       },
       publicPath: "auto",
-      app: {
-        mount: "#app",
-      },
-      pages: {
-        insights: {
-          path: "/insights",
-          routeId: "insights",
-          render: "ssr",
-          componentModel: "rsc",
-          hydrate: "none",
-          mount: "#app",
-        },
-      },
+      documents: [],
       routes: [
         {
-          id: "insights",
+          kind: "page-server",
           path: "/insights",
           pageId: "insights",
+          methods: ["GET", "HEAD"],
+        },
+        {
+          kind: "framework-function",
+          path: "/framework/fn",
+          methods: ["POST"],
+        },
+        {
+          kind: "framework-rsc",
+          path: "/framework/rsc",
+          methods: ["GET", "HEAD"],
+        },
+        {
+          kind: "server-route",
+          path: "/api/webhooks/payment",
+          methods: ["POST"],
         },
       ],
       server: {
         entry: "server.js",
-        basePath: "/framework",
-        fn: "/framework/fn",
-        ppr: "/framework/ppr",
-        rsc: "/framework/rsc",
-        transport: {
-          baseUrl: "https://api.example.com",
-        },
-        renderers: ["insights-rsc"],
-        functions: ["search"],
-        routes: [
-          {
-            path: "/api/webhooks/payment",
-            methods: ["POST"],
-          },
-        ],
-      },
-      rsc: {
-        endpoint: "/framework/rsc",
-        pages: ["insights"],
       },
       metadata: {
         extra: true,

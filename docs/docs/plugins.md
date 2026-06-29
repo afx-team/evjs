@@ -172,30 +172,37 @@ import type { HtmlDocument } from "@evjs/ev";
 
 ## Build Result
 
-`buildEnd()` receives the final build output plus narrower client and server
-manifest views:
+`buildEnd()` receives the final build output plus narrower client/server
+manifest and deployment metadata views:
 
 ```ts
 setup() {
   return {
-    buildEnd({ output, clientManifest, serverManifest, isRebuild }) {
+    buildEnd({
+      output,
+      clientManifest,
+      serverManifest,
+      deploymentMetadata,
+      isRebuild,
+    }) {
       console.log("Apps:", Object.keys(output.apps));
       console.log("Pages:", Object.keys(output.pages));
-      console.log("Client JS:", clientManifest.assets.js);
+      console.log("Client asset groups:", Object.keys(clientManifest.assets ?? {}));
       console.log("Server entry:", serverManifest.entry);
+      console.log("Deploy routes:", deploymentMetadata.routes.length);
       console.log("Rebuild:", isRebuild);
     },
   };
 }
 ```
 
-Deployment plugins should read routes, functions, assets, and runtime paths from
-`output`. Plugins that only need the client bundle summary can use
-`clientManifest`: check `clientManifest.kind` before reading SPA `routes` or
-MPA `pages`. Plugins that only need the server entry, function ids, or route
-method summary can use `serverManifest`. HTML hooks receive the same result
-fields plus document-specific fields such as `ctx.kind`, `ctx.fileName`, and
-`ctx.assets`.
+Deployment plugins should prefer `deploymentMetadata` for routes, documents,
+assets, and the server entry. Plugins that need the complete internal build graph
+can still inspect `output` in memory. Plugins that only need the client bundle
+summary can use `clientManifest`: check `clientManifest.routing.kind` before
+reading SPA `routes` or MPA `pages`. `serverManifest` is entry-only. HTML hooks
+receive the same result fields plus document-specific fields such as `ctx.kind`,
+`ctx.fileName`, and `ctx.assets`.
 
 ## Bundler Config
 

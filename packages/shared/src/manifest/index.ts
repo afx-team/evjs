@@ -3,10 +3,10 @@
  *
  * Shared manifest schemas for the ev framework build system.
  *
- * Bundler adapters emit framework manifests under the configured output
- * directories. By default, the public client manifest is written to
- * `dist/client/manifest.json`, the server bundle manifest to
- * `dist/server/manifest.json`, and the full private BuildOutput handoff to
+ * Bundler adapters emit framework metadata under the configured output
+ * directories. By default, the lightweight client deployment manifest is
+ * written to `dist/client/manifest.json`, the entry-only server manifest to
+ * `dist/server/manifest.json`, and canonical deployment metadata to
  * `dist/build-output.json`. `output.client` and `output.server` can point to
  * alternate directories when an adapter or deployment target needs a different
  * artifact layout.
@@ -335,9 +335,7 @@ export interface PublicManifestOutput {
   buildId: string;
   publicPath: PublicPathOutput;
   assets?: Record<string, AssetGroup>;
-  app?: PublicAppOutput;
   routing: PublicRoutingOutput;
-  rsc?: PublicRscOutput;
 }
 
 export type PublicRoutingOutput =
@@ -379,10 +377,6 @@ export interface AppOutput {
   module?: RuntimeModuleOutput;
 }
 
-export interface PublicAppOutput extends Omit<AppOutput, "module"> {
-  module?: PublicRuntimeModuleOutput;
-}
-
 export interface PageOutput {
   assets: AssetGroup;
   document?: HtmlDocumentOutput;
@@ -398,9 +392,11 @@ export interface PageOutput {
   ppr?: PprPageOutput;
 }
 
-export interface PublicPageOutput extends Omit<PageOutput, "module" | "ppr"> {
-  module?: PublicRuntimeModuleOutput;
-  ppr?: PublicPprPageOutput;
+export interface PublicPageOutput {
+  assets: AssetGroup;
+  document?: HtmlDocumentOutput;
+  path?: string;
+  routeId?: string;
 }
 
 export interface HtmlDocumentOutput {
@@ -426,10 +422,6 @@ export interface PprPageOutput {
   regions: Record<string, PprRegionOutput>;
 }
 
-export interface PublicPprPageOutput extends Omit<PprPageOutput, "regions"> {
-  regions: Record<string, PublicPprRegionOutput>;
-}
-
 export interface PprRegionOutput {
   id: string;
   assets: AssetGroup;
@@ -437,14 +429,10 @@ export interface PprRegionOutput {
   hydrate?: HydrationMode;
 }
 
-export type PublicPprRegionOutput = PprRegionOutput;
-
 export interface RuntimeModuleOutput {
   type: "entry" | "lifecycle" | "react-component";
   href?: string;
 }
-
-export type PublicRuntimeModuleOutput = RuntimeModuleOutput;
 
 export interface RouteOutput {
   id: string;
@@ -456,6 +444,76 @@ export interface RouteOutput {
 }
 
 export type PublicRouteOutput = Pick<RouteOutput, "id" | "path" | "pageId">;
+
+export interface DeploymentMetadata {
+  version: 1;
+  buildId: string;
+  paths: BuildOutputPaths;
+  publicPath: PublicPathOutput;
+  assets?: Record<string, AssetGroup>;
+  documents: DeploymentDocumentOutput[];
+  routes: DeploymentRouteOutput[];
+  server: DeploymentServerOutput;
+  metadata?: Record<string, unknown>;
+}
+
+export type DeploymentDocumentOutput =
+  | {
+      kind: "app";
+      id: string;
+      fileName: string;
+      assets?: AssetGroup;
+    }
+  | {
+      kind: "page";
+      id: string;
+      fileName: string;
+      assets?: AssetGroup;
+    };
+
+export type DeploymentRouteOutput =
+  | {
+      kind: "static-document";
+      path: string;
+      documentId: string;
+      methods: ["GET", "HEAD"];
+    }
+  | {
+      kind: "spa-fallback";
+      path: string;
+      documentId: string;
+      methods: ["GET", "HEAD"];
+    }
+  | {
+      kind: "page-server";
+      path: string;
+      pageId: string;
+      methods: ["GET", "HEAD"];
+    }
+  | {
+      kind: "framework-function";
+      path: string;
+      methods: ["POST"];
+    }
+  | {
+      kind: "framework-ppr";
+      path: string;
+      methods: ["GET", "HEAD"];
+    }
+  | {
+      kind: "framework-rsc";
+      path: string;
+      methods: ["GET", "HEAD"];
+    }
+  | {
+      kind: "server-route";
+      path: string;
+      methods: string[];
+    };
+
+export interface DeploymentServerOutput {
+  entry?: string;
+}
 
 export interface ServerOutput {
   entry?: string;
@@ -486,17 +544,11 @@ export interface RscOutput {
   pages?: Record<string, RscPageOutput>;
 }
 
-export interface PublicRscOutput {
-  pages?: Record<string, PublicRscPageOutput>;
-}
-
 export interface RscPageOutput {
   renderer: string;
   assets: AssetGroup;
   routeId?: string;
 }
-
-export type PublicRscPageOutput = RscPageOutput;
 
 // ── Route resolution ────────────────────────────────────────────────────
 
@@ -858,7 +910,7 @@ function assertManifestRoutingProjection(
     }
     if (value.routing.kind === "mpa") {
       assertObject(value.routing.pages, `${source}.routing.pages`);
-      assertPageOutputs(value.routing.pages, `${source}.routing.pages`);
+      assertPublicPageOutputs(value.routing.pages, `${source}.routing.pages`);
       const routes = createRoutesFromManifestPages(value.routing.pages);
       assertRouteOutputs(
         routes,
@@ -1193,6 +1245,22 @@ function assertPageOutputs(
     assertPageRenderingOutput(output.rendering, `${source}.${name}.rendering`);
     assertPprPageOutputContract(output, `${source}.${name}`);
     assertRscPageOutputContract(output, `${source}.${name}`);
+  }
+}
+
+function assertPublicPageOutputs(
+  value: Record<string, unknown>,
+  source: string,
+): void {
+  for (const [name, output] of Object.entries(value)) {
+    assertManifestBuildIdentifierKey(name, source);
+    assertObject(output, `${source}.${name}`);
+    assertAssetGroup(output.assets, `${source}.${name}.assets`);
+    assertHtmlDocumentOutput(output.document, `${source}.${name}.document`);
+    assertManifestPathname(output.path, `${source}.${name}.path`);
+    if (output.routeId !== undefined) {
+      assertManifestString(output.routeId, `${source}.${name}.routeId`);
+    }
   }
 }
 
@@ -1986,11 +2054,12 @@ function formatManifestPathnameError(
 export {
   type BuildOutputLinkInput,
   type BuildOutputServerModule,
+  createDeploymentMetadata,
   createPublicManifest,
   createServerManifest,
+  type DeploymentMetadataOptions,
   linkBuildOutput,
   type ServerManifestOutput,
-  type ServerManifestRouteOutput,
 } from "./linker.js";
 export {
   type ClientRouteMatch,

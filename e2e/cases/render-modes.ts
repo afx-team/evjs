@@ -180,8 +180,8 @@ test.describe("render-modes", () => {
     expect(pageResponse.status()).toBe(200);
     expect(pageResponse.headers()["x-evjs-ppr"]).toBe("stream");
     const pageHtml = await pageResponse.text();
-    const publicPages = getRenderModesPublicPages();
-    const campaignPpr = getRenderModesCampaignPpr(publicPages);
+    const runtimePages = getRenderModesRuntimePages();
+    const campaignPpr = getRenderModesCampaignPpr(runtimePages);
     const { id: regionId } = getSinglePprRegion(campaignPpr.regions);
     expect(pageHtml).toContain(`data-evjs-ppr-stream-region="${regionId}"`);
     expect(pageHtml).toContain("Dynamic PPR region rendered on demand");
@@ -266,68 +266,47 @@ test.describe("render-modes", () => {
   test("emits a manifest with app, page, route, and server data", async () => {
     const manifestPath = getRenderModesPublicManifestPath();
     const manifest = readRenderModesPublicManifest();
-    const buildOutput = readRenderModesBuildOutput();
-    const buildOutputText = JSON.stringify(buildOutput);
+    const deploymentMetadata = readRenderModesDeploymentMetadata();
+    const deploymentMetadataText = JSON.stringify(deploymentMetadata);
     const frameworkRuntime = readRenderModesFrameworkRuntime();
     const publicPages = getRenderModesPublicPages(manifest);
+    const runtimePages = getRenderModesRuntimePages(frameworkRuntime);
     const publicRoutes = Object.entries(publicPages).map(([pageId, page]) => ({
       id: page.routeId,
       path: page.path,
       pageId,
     }));
 
-    expect("distDir" in buildOutput).toBe(false);
-    expect(buildOutput.paths).toEqual({
+    expect("distDir" in deploymentMetadata).toBe(false);
+    expect(deploymentMetadata.paths).toEqual({
       rootDir: "dist",
       publicDir: "dist/client",
       serverDir: "dist/server",
     });
-    expect(buildOutputText).not.toContain('"chunks"');
-    expect(manifest.app).toEqual(
-      expect.objectContaining({
-        mount: "#app",
-        module: expect.objectContaining({ type: "entry" }),
-      }),
-    );
+    expect(deploymentMetadataText).not.toContain('"chunks"');
+    expect(deploymentMetadataText).not.toContain('"renderers"');
+    expect("app" in manifest).toBe(false);
     expect(manifest).not.toHaveProperty("pages");
     expect(manifest).not.toHaveProperty("routes");
     expect(manifest.routing.kind).toBe("mpa");
     expect(publicPages.support).toEqual(
       expect.objectContaining({
-        render: "csr",
-        rendering: {
-          component: "client",
-          html: "client",
-          streaming: false,
-          hydrate: "load",
-        },
-        module: expect.objectContaining({ type: "react-component" }),
+        path: "/support",
+        routeId: "support",
       }),
     );
+    expect("render" in publicPages.support).toBe(false);
+    expect("rendering" in publicPages.support).toBe(false);
+    expect("module" in publicPages.support).toBe(false);
     expect(publicPages.dashboard).toEqual(
       expect.objectContaining({
         path: "/dashboard",
-        render: "ssr",
-        rendering: {
-          component: "server",
-          html: "server",
-          streaming: false,
-          hydrate: "load",
-        },
         routeId: "dashboard",
       }),
     );
     expect(publicPages.settlement).toEqual(
       expect.objectContaining({
         path: "/settlement-report",
-        render: "ssg",
-        rendering: {
-          component: "server",
-          html: "static",
-          prerender: "full",
-          streaming: false,
-          hydrate: "none",
-        },
         routeId: "settlement",
       }),
     );
@@ -336,6 +315,53 @@ test.describe("render-modes", () => {
     expect(publicPages.insights).toEqual(
       expect.objectContaining({
         path: "/insights",
+        routeId: "insights",
+      }),
+    );
+    expect(publicPages.campaign).toEqual(
+      expect.objectContaining({
+        path: "/campaign",
+        routeId: "campaign",
+      }),
+    );
+    expect("ppr" in publicPages.campaign).toBe(false);
+
+    expect(runtimePages.support).toEqual(
+      expect.objectContaining({
+        render: "csr",
+        rendering: {
+          component: "client",
+          html: "client",
+          streaming: false,
+          hydrate: "load",
+        },
+      }),
+    );
+    expect(runtimePages.dashboard).toEqual(
+      expect.objectContaining({
+        render: "ssr",
+        rendering: {
+          component: "server",
+          html: "server",
+          streaming: false,
+          hydrate: "load",
+        },
+      }),
+    );
+    expect(runtimePages.settlement).toEqual(
+      expect.objectContaining({
+        render: "ssg",
+        rendering: {
+          component: "server",
+          html: "static",
+          prerender: "full",
+          streaming: false,
+          hydrate: "none",
+        },
+      }),
+    );
+    expect(runtimePages.insights).toEqual(
+      expect.objectContaining({
         render: "ssr",
         componentModel: "rsc",
         rendering: {
@@ -344,17 +370,11 @@ test.describe("render-modes", () => {
           streaming: true,
           hydrate: "none",
         },
-        routeId: "insights",
       }),
     );
-    expect(publicPages.campaign).toEqual(
+    expect(runtimePages.campaign).toEqual(
       expect.objectContaining({
-        path: "/campaign",
         render: "ssr",
-        prerender: expect.objectContaining({
-          partial: true,
-          delivery: "stream",
-        }),
         rendering: {
           component: "server",
           html: "partial",
@@ -364,7 +384,7 @@ test.describe("render-modes", () => {
         },
       }),
     );
-    const campaignPpr = getRenderModesCampaignPpr(publicPages);
+    const campaignPpr = getRenderModesCampaignPpr(runtimePages);
     const { id: campaignRegionId, region: campaignRegion } = getSinglePprRegion(
       campaignPpr.regions,
     );
@@ -399,22 +419,50 @@ test.describe("render-modes", () => {
         }),
       ]),
     );
-    expect(Object.values(buildOutput.server.functions)).toEqual(
+    expect(deploymentMetadata.routes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          exportName: "getMerchantOperationsSnapshot",
-        }),
-      ]),
-    );
-    expect(buildOutput.server.routes).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
+        {
+          kind: "page-server",
+          path: "/dashboard",
+          pageId: "dashboard",
+          methods: ["GET", "HEAD"],
+        },
+        {
+          kind: "page-server",
+          path: "/settlement-report",
+          pageId: "settlement",
+          methods: ["GET", "HEAD"],
+        },
+        {
+          kind: "framework-function",
+          path: "/__evjs/fn",
+          methods: ["POST"],
+        },
+        {
+          kind: "framework-ppr",
+          path: "/__evjs/ppr/*",
+          methods: ["GET", "HEAD"],
+        },
+        {
+          kind: "framework-rsc",
+          path: "/__evjs/rsc",
+          methods: ["GET", "HEAD"],
+        },
+        {
+          kind: "server-route",
           path: "/api/render-modes/health",
-          methods: expect.arrayContaining(["GET"]),
-        }),
+          methods: ["GET"],
+        },
       ]),
     );
-    expect(buildOutput.runtime.server).toEqual(
+    expect(deploymentMetadata.server).toEqual(
+      expect.objectContaining({
+        entry: expect.any(String),
+      }),
+    );
+    expect("runtime" in deploymentMetadata).toBe(false);
+    expect("rsc" in deploymentMetadata).toBe(false);
+    expect(frameworkRuntime.runtime.server).toEqual(
       expect.objectContaining({
         basePath: "/__evjs",
         fn: "/__evjs/fn",
@@ -422,7 +470,7 @@ test.describe("render-modes", () => {
         rsc: "/__evjs/rsc",
       }),
     );
-    expect(buildOutput.rsc.pages.insights).toEqual(
+    expect(frameworkRuntime.rsc.pages.insights).toEqual(
       expect.objectContaining({
         renderer: "insights-rsc",
         routeId: "insights",
@@ -431,9 +479,7 @@ test.describe("render-modes", () => {
         }),
       }),
     );
-    expect(manifest.rsc.clientReferences).toBeUndefined();
-    expect(manifest.rsc.clientReferenceManifest).toBeUndefined();
-    expect(manifest.rsc.serverConsumerManifest).toBeUndefined();
+    expect("rsc" in manifest).toBe(false);
     expect(frameworkRuntime.rsc.clientReferenceManifest).toBeDefined();
     expect(
       fs.existsSync(
@@ -490,6 +536,13 @@ function getRenderModesPublicPages(
   return manifest.routing.pages;
 }
 
+function getRenderModesRuntimePages(
+  frameworkRuntime = readRenderModesFrameworkRuntime(),
+): Record<string, RenderModesPublicPage> {
+  expect(frameworkRuntime.routing?.kind).toBe("mpa");
+  return frameworkRuntime.routing.pages;
+}
+
 function getRenderModesCampaignPpr(
   pages: Record<string, RenderModesPublicPage>,
 ): NonNullable<RenderModesPublicPage["ppr"]> {
@@ -498,7 +551,7 @@ function getRenderModesCampaignPpr(
   return ppr as NonNullable<RenderModesPublicPage["ppr"]>;
 }
 
-function readRenderModesBuildOutput() {
+function readRenderModesDeploymentMetadata() {
   return JSON.parse(
     fs.readFileSync(
       path.join(exampleDir, "dist", "build-output.json"),
@@ -509,7 +562,10 @@ function readRenderModesBuildOutput() {
 
 function readRenderModesFrameworkRuntime() {
   return JSON.parse(
-    fs.readFileSync(path.join(exampleDir, "dist/server/runtime.json"), "utf-8"),
+    fs.readFileSync(
+      path.join(exampleDir, "dist/server/framework-runtime.json"),
+      "utf-8",
+    ),
   );
 }
 

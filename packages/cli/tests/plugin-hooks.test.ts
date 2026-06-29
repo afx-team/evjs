@@ -6,7 +6,11 @@ import type {
   PluginContext,
   PluginHooks,
 } from "@evjs/ev";
-import { resolveConfig } from "@evjs/ev";
+import {
+  createDeploymentMetadata,
+  createPublicManifest,
+  resolveConfig,
+} from "@evjs/ev";
 import { getLogger } from "@logtape/logtape";
 import { describe, expect, it } from "vitest";
 
@@ -98,20 +102,12 @@ function createTestBuildResult(
 ): BuildResult {
   return {
     output,
-    clientManifest: {
-      version: 1,
-      kind: "spa",
-      assets: output.apps.default?.assets ?? { js: [], css: [] },
-    },
+    clientManifest: createPublicManifest(output),
     serverManifest: {
       version: 1 as const,
       ...(output.server.entry ? { entry: output.server.entry } : {}),
-      functions: Object.keys(output.server.functions),
-      routes: output.server.routes.map((route) => ({
-        path: route.path,
-        methods: route.methods,
-      })),
     },
+    deploymentMetadata: createDeploymentMetadata(output),
     isRebuild,
   };
 }

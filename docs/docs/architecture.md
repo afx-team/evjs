@@ -164,28 +164,25 @@ sequenceDiagram
   EV->>Plugins: buildEnd({ output, frameworkRuntime, isRebuild })
 ```
 
-Builds emit the private deployment handoff artifact at
-`dist/build-output.json`. Its output locations are grouped under
-`BuildOutput.paths`; there is no separate top-level `distDir`. The client and
-server manifest files are deployment/tooling metadata. Browser bootstraps
-consume a generated client `runtime.json` projection, and server bootstraps
-consume an explicit `FrameworkRuntime` projection from `dist/server/runtime.json`
-or an equivalent value embedded by a deployment adapter. Deployed server
-runtimes do not read `dist/build-output.json` or manifest files at startup.
-The browser runtime projection is intentionally smaller than the public
-manifest: it keeps only the build id, transport base URL, RSC endpoint,
-app/page module targets, mount selectors, and the routing metadata needed to
-boot or navigate. Asset indexes, deployment metadata, source references, and
-renderer bundle metadata stay in manifests or `BuildOutput`; React Flight
-client reference data stays in the explicit `FrameworkRuntime` projection.
-Public manifests, deployment artifacts, and client runtime projections expose a
-single SPA app as `app`, not an `apps.default` map. `BuildOutput.apps` remains
-the complete private/plugin view for named build graph app nodes. `BuildOutput`
-keeps the complete private `pages` and `routes` graph. Public manifests and
-runtime projections group client routing under `routing`: SPA uses
-`{ kind: "spa", routes }`, while MPA/page outputs use
-`{ kind: "mpa", pages }` with page route metadata on each page entry.
-Framework endpoints stay under runtime/server projections.
+Builds emit canonical deployment metadata at `dist/build-output.json`. The
+internal `BuildOutput` remains an in-memory plugin/build contract and is not
+serialized wholesale. Client and server manifest files are compatibility
+projections for deployment tooling: `client/manifest.json` keeps public assets
+and SPA/MPA routing, while `server/manifest.json` only keeps the server entry.
+Generated HTML embeds the browser `ClientRuntime`; CLI builds no longer write
+`client/runtime.json` by default. Raw server bundles consume the explicit
+`FrameworkRuntime` sidecar at `dist/server/framework-runtime.json`, while
+deployment adapters embed the same runtime contract in their bootstrap code.
+Deployed runtimes do not read `dist/build-output.json` or manifest files at
+startup.
+
+Runtime-required data is intentionally separated from deployment metadata.
+ClientRuntime keeps only the build id, transport base URL, RSC endpoint,
+app/page module targets, mount selectors, and routing metadata needed to boot or
+navigate. FrameworkRuntime keeps SSR/PPR/RSC render coordination and React
+Flight client reference data. Deployment metadata keeps public assets, HTML
+documents, server entry, and deployable route rows such as static documents,
+page-server routes, server routes, and framework endpoints.
 
 TanStack Router is available through the `@evjs/client` standalone CSR surface
 for manual browser applications. In framework-managed apps, `@evjs/ev` owns
@@ -205,7 +202,7 @@ sequenceDiagram
   participant FrameworkRuntime as "FrameworkRuntime"
 
   Browser->>Runtime: page/app boot
-  Runtime->>ClientRuntime: load embedded or /runtime.json
+  Runtime->>ClientRuntime: read embedded JSON or configured runtime URL
   Runtime->>Shell: create internal shell
   Shell->>ClientRuntime: resolve app/page target
   Shell->>Browser: import JS/CSS module assets
@@ -331,10 +328,10 @@ through static exports such as `render`, `hydrate`, `rsc`, and `prerender`.
 When graph creation sees SSR, RSC, or partial prerender metadata, it derives the
 required server renderers, PPR regions, assets, and manifest output from that
 page module.
-Full BuildOutput manifests keep those renderer relationships explicit: SSR, SSG, and
-RSC document pages resolve through a `page-server` renderer owned by the page id
-or by one of that page's route ids. PPR pages resolve through `ppr-shell` and
-`ppr-region` entries instead.
+The in-memory BuildOutput keeps those renderer relationships explicit: SSR,
+SSG, and RSC document pages resolve through a `page-server` renderer owned by
+the page id or by one of that page's route ids. PPR pages resolve through
+`ppr-shell` and `ppr-region` entries instead.
 
 `pages.*` remains the explicit lower-level page API. It is useful when a page
 does not map cleanly to the `src/pages` file tree. Rendering metadata still
@@ -380,9 +377,9 @@ The RSC output rules are strict:
 - The manifest linker rejects RSC page output when `runtime.server.rsc` is
   missing.
 
-For full BuildOutput manifests, each RSC page renderer reference must resolve
-to an `rsc-page` renderer whose `owner.pageId` matches the RSC page id. Public
-manifests may omit that server-only renderer metadata.
+For in-memory BuildOutput validation, each RSC page renderer reference must
+resolve to an `rsc-page` renderer whose `owner.pageId` matches the RSC page id.
+Public manifests may omit that server-only renderer metadata.
 
 After ignoring type-only and ambient declarations, a `"use client"` module must
 still expose at least one runtime client reference. Bare runtime
@@ -395,7 +392,9 @@ file path and parser message before the bundler transform runs.
 
 ## Deployment
 
-Deployment adapters consume `BuildOutput`. `@evjs/ev` provides:
+Deployment adapters consume the in-memory `BuildOutput` during the build and can
+emit platform-specific files from the canonical `DeploymentMetadata` projection.
+`@evjs/ev` provides:
 
 - `createDeploymentArtifact(output)` for platform-neutral routing/assets/server metadata;
 - `nodeDeploymentAdapter()` for a concrete Node production target that emits
@@ -404,19 +403,17 @@ Deployment adapters consume `BuildOutput`. `@evjs/ev` provides:
 - `edgeDeploymentAdapter()` for edge-worker style runtime bootstraps that call the
   framework server bundle and an asset binding.
 
-Platform-specific adapters should derive their routing, framework endpoint, SSR,
-PPR, RSC, and asset metadata from `BuildOutput` instead of reading bundler stats.
-Build-pipeline adapters receive that object in memory; post-build tools can read
-`dist/build-output.json`.
-Full BuildOutput manifests retain deployment-facing route, asset, server
-function, server route, renderer, and RSC page metadata without publishing
-source module paths or bundler chunk maps.
+Platform-specific adapters should derive routing, framework endpoints, SSR, PPR,
+RSC, and asset metadata from `BuildOutput` in memory instead of reading bundler
+stats. Post-build tools should read `dist/build-output.json`, whose routes table
+uses explicit kinds such as `static-document`, `page-server`,
+`framework-function`, `framework-ppr`, `framework-rsc`, and `server-route`.
 Client/server manifests are deployment metadata; generated browser and server
 runtimes consume minimal ClientRuntime and FrameworkRuntime contracts. Those
 runtime contracts use `routing.kind` to distinguish SPA routes from MPA/page
 targets instead of serializing empty top-level `pages` or `routes` fields.
-Deployment artifacts group framework endpoint and transport data under their
-server section instead of duplicating the raw runtime object.
+Deployment metadata expresses framework endpoints as route rows instead of
+duplicating the raw runtime object or per-function ids.
 
 The deployment model is capability-driven:
 
@@ -435,9 +432,9 @@ edge + origin/FaaS split
   origin/FaaS resolves functions, routes, SSR/RSC, and PPR regions
 ```
 
-Adapters should classify `BuildOutput` first, then emit platform routes. Static
-hosting must not claim support for SSR, PPR, RSC, server functions, or server
-routes unless a server-capable runtime is attached.
+Adapters should classify `deploymentMetadata.routes` first, then emit platform
+routes. Static hosting must not claim support for SSR, PPR, RSC, server
+functions, or server routes unless a server-capable runtime is attached.
 
 ## Dev Updates
 

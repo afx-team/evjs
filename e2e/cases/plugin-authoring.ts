@@ -16,6 +16,7 @@ test.describe("plugin-authoring", () => {
   test("uses server endpoint configured by plugin config hook", async ({
     page,
     baseURL,
+    apiURL,
   }) => {
     const rpcResponsePromise = page.waitForResponse((res) => {
       const url = new URL(res.url());
@@ -41,7 +42,7 @@ test.describe("plugin-authoring", () => {
     await expect(page.getByText("Server mode: production")).toBeVisible();
 
     const defaultEndpointResponse = await page.request.post(
-      new URL("__evjs/fn", baseURL).toString(),
+      new URL("__evjs/fn", apiURL).toString(),
       {
         data: { fnId: "missing", args: [] },
       },

@@ -30,11 +30,12 @@ dist/
 │   ├── index.html
 │   ├── main.[hash].js
 │   ├── [chunk].[hash].js
+│   └── manifest.json
+├── server/
+│   ├── main.[hash].js
 │   ├── manifest.json
-│   └── runtime.json
-└── server/
-    ├── main.[hash].js
-    └── manifest.json
+│   └── framework-runtime.json
+└── build-output.json
 ```
 
 Use `output.client` and `output.server` when your host expects public files in a
@@ -59,19 +60,19 @@ dist/
 ├── index.html
 ├── main.[hash].js
 ├── [chunk].[hash].js
-├── manifest.json
-└── runtime.json
+└── manifest.json
 dist-server/
 ├── main.[hash].js
-└── manifest.json
+├── manifest.json
+└── framework-runtime.json
 ```
 
-`runtime.json` is generated browser runtime configuration with only boot,
-navigation, transport, and RSC endpoint data. `manifest.json` files and
-`build-output.json` are generated deployment/tooling metadata. Client route
-entries are URL-to-app/page indexes; page rendering behavior stays on page
-records, and runtime endpoints stay out of the public client manifest.
-Application code should not import or edit these files.
+Generated HTML embeds the `ClientRuntime` needed by the browser bootstrap.
+`client/manifest.json` is lightweight deployment metadata with public assets and
+SPA/MPA route information. `server/manifest.json` only preserves the server
+entry filename. `server/framework-runtime.json` is runtime-required data for raw
+server bundles, and `build-output.json` is canonical deployment metadata.
+Application code should not import or edit deployment metadata files.
 
 ## Page Output
 

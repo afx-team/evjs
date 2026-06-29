@@ -15,9 +15,10 @@
 - `ev inspect` CLI preflight，可在不运行 bundler、不写入 `dist` 的情况下解释
   page route discovery、server declarations、render metadata、runtime paths、
   planned entries 和 diagnostics。
-- 通过 `output.client` 和 `output.server` 配置 framework manifest 目录，并保留完整私有
-  `dist/build-output.json` handoff。
-- 通过公开 `@evjs/client` runtime 包提供 manifest-driven app/page activation。
+- 通过 `output.client` 和 `output.server` 配置 framework metadata 目录，并在
+  `dist/build-output.json` 输出 canonical deployment metadata。
+- 通过公开 `@evjs/client` runtime 包和生成的 framework bootstrap 提供
+  ClientRuntime-driven app/page activation。
 - 框架托管 SPA 页面路由，并为 MPA 提供无路由器 page runtime。
 - Webpack adapter 用于在 Utoopack 下层 API 补齐前验证框架能力。
 - 聚焦 render mode 和 deployment adapter 的示例，并通过 e2e 覆盖 apps、组件页面、SSR/PPR/RSC 和 per-document HTML transform。

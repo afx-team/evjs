@@ -156,22 +156,23 @@ sequenceDiagram
   EV->>Plugins: buildEnd({ output, frameworkRuntime, isRebuild })
 ```
 
-构建会在 `dist/build-output.json` 输出私有部署 handoff artifact。输出位置统一放在
-`BuildOutput.paths` 下，不再有单独的顶层 `distDir`。client/server manifest 文件是部署/工具
-元信息。浏览器 bootstrap 消费生成的 client `runtime.json` 投影，服务端 bootstrap 消费
-`dist/server/runtime.json` 中的显式 `FrameworkRuntime` 投影，或消费 Deployment adapter
-内嵌的等价数据。因此已部署的 server runtime 不会在启动时读取 `dist/build-output.json`
-或 manifest 文件。
-浏览器运行时投影刻意小于 public manifest：只保留启动和导航需要的 build id、
-transport base URL、RSC endpoint、app/page module target、mount selector 和必要的
-routing 元信息。资源索引、部署元信息、源码引用和 renderer bundle 元信息留在 manifest 或
-`BuildOutput` 中；React Flight client reference 数据留在显式 `FrameworkRuntime` 投影中。
-public manifest、deployment artifact 和 client runtime 投影会把单 SPA app 表达成
-`app` 字段，而不是 `apps.default` 映射。`BuildOutput.apps` 仍然保留完整的私有/plugin
-视图，用于命名 build graph app 节点。`BuildOutput` 保留完整的私有 `pages`/`routes`
-图；public manifest 和 runtime 投影把客户端路由统一放到 `routing` 下：SPA 使用
-`{ kind: "spa", routes }`，MPA/page output 使用 `{ kind: "mpa", pages }`，每个 page
-entry 自带 route 元信息。framework endpoint 留在 runtime/server 投影下。
+构建会在 `dist/build-output.json` 输出 canonical deployment metadata。内部 `BuildOutput`
+仍是内存中的 plugin/build contract，不再完整序列化落盘。client/server manifest 是部署工具
+兼容投影：`client/manifest.json` 只保留公开 assets 和 SPA/MPA routing，
+`server/manifest.json` 只保留 server entry。
+
+生成的 HTML 会内嵌浏览器 `ClientRuntime`，CLI build 默认不再写
+`client/runtime.json`。raw server bundle 消费显式的
+`dist/server/framework-runtime.json`，Node/Edge deployment adapter 则把同一份
+`FrameworkRuntime` contract 内嵌到 bootstrap 中。因此已部署 runtime 不会在启动时读取
+`dist/build-output.json` 或 manifest 文件。
+
+Runtime-required 数据刻意和 deployment metadata 分离。ClientRuntime 只保留启动和导航
+需要的 build id、transport base URL、RSC endpoint、app/page module target、mount
+selector 和必要 routing 元信息。FrameworkRuntime 保留 SSR/PPR/RSC 渲染协调和 React
+Flight client reference 数据。Deployment metadata 保留 public assets、HTML documents、
+server entry，以及 static document、page-server、server route、framework endpoint 等
+可部署 route row。
 
 ## 运行时流程
 
@@ -185,7 +186,7 @@ sequenceDiagram
   participant FrameworkRuntime as "FrameworkRuntime"
 
   Browser->>Runtime: page/app boot
-  Runtime->>ClientRuntime: load embedded or /runtime.json
+  Runtime->>ClientRuntime: read embedded JSON or configured runtime URL
   Runtime->>Shell: create internal shell
   Shell->>ClientRuntime: resolve app/page target
   Shell->>Browser: import JS/CSS module assets
@@ -300,10 +301,9 @@ Page modules 通过文件名拥有 path-to-component wiring，并通过 `render`
 `rsc`、`prerender` 等静态导出拥有渲染元信息。当 graph creation 发现 SSR、RSC
 或 partial prerender metadata 时，会从该页面模块派生所需的 server renderers、
 PPR regions、assets 和 manifest output。
-完整 BuildOutput manifest 会显式保留这些 renderer 关系：SSR、SSG 和 RSC document page
+内存中的 BuildOutput 会显式保留这些 renderer 关系：SSR、SSG 和 RSC document page
 通过由 page id 拥有的 `page-server` renderer 解析，或通过该 page 的某个 route id
-拥有的 `page-server` renderer 解析。PPR 页面改由 `ppr-shell` 和 `ppr-region`
-entry 解析。
+拥有的 `page-server` renderer 解析。PPR 页面改由 `ppr-shell` 和 `ppr-region` entry 解析。
 
 `pages.*` 保留为显式底层页面 API。它适合页面无法自然映射到 `src/pages` 文件树的场景。
 渲染元信息仍属于被引用的 page module，而不是 `ev.config.ts`。
@@ -343,7 +343,7 @@ RSC output 规则保持严格：
 - Flight endpoint 只通过 `BuildOutput.runtime.server.rsc` 表达一次。
 - 缺少 `runtime.server.rsc` 时，manifest linker 会拒绝 RSC page output。
 
-在完整 BuildOutput manifest 中，每个 RSC page renderer reference 必须解析到
+在内存 BuildOutput 校验中，每个 RSC page renderer reference 必须解析到
 `owner.pageId` 匹配该 RSC page id 的 `rsc-page` renderer。公开 manifest 可以省略这些
 server-only renderer metadata。
 
@@ -357,7 +357,8 @@ message，再进入 bundler transform 前即可定位问题。
 
 ## 部署
 
-Deployment adapter 消费 `BuildOutput`。`@evjs/ev` 提供：
+Deployment adapter 在构建过程中消费内存中的 `BuildOutput`，并可从 canonical
+`DeploymentMetadata` 投影生成平台文件。`@evjs/ev` 提供：
 
 - `createDeploymentArtifact(output)`：生成平台中立的路由、资源和服务端 metadata；
 - `nodeDeploymentAdapter()`：具体 Node 生产目标，输出 `dist/deployment.node.json`
@@ -366,15 +367,13 @@ Deployment adapter 消费 `BuildOutput`。`@evjs/ev` 提供：
 - `edgeDeploymentAdapter()`：输出 edge worker 入口，由 worker 调用框架服务端 bundle
   和静态资源 binding。
 
-平台专属 adapter 应从 `BuildOutput` 派生 routing、framework endpoint、SSR、PPR、RSC 和 asset metadata，而不是读取 bundler stats。
-构建流水线中的 adapter 会在内存里收到这个对象；构建后的工具可以读取 `dist/build-output.json`。
-完整 BuildOutput manifest 会保留面向部署的 route、asset、server function、server
-route、renderer 和 RSC page metadata，但不发布源码 module path 或 bundler chunk map。client/server manifest
+平台专属 adapter 应从内存 `BuildOutput` 派生 routing、framework endpoint、SSR、PPR、RSC
+和 asset metadata，而不是读取 bundler stats。构建后的工具应读取 `dist/build-output.json`；
+其中 route table 使用 `static-document`、`page-server`、`framework-function`、
+`framework-ppr`、`framework-rsc` 和 `server-route` 等显式 kind。client/server manifest
 是部署元信息；生成的浏览器和服务端运行时消费最小化的 ClientRuntime 和 FrameworkRuntime
-contract。这些 runtime contract 使用 `routing.kind` 区分 SPA routes 和 MPA/page targets，
-不再序列化空的顶层 `pages` 或 `routes` 字段。
-Deployment artifact 会把 framework endpoint 和 transport 数据归到 server 分组下，而不是
-重复携带原始 runtime 对象。
+contract。Deployment metadata 把 framework endpoint 表达成 route row，不重复携带原始
+runtime object，也不按单个 server function id 暴露给部署平台。
 
 部署模型由能力分类驱动：
 
@@ -393,8 +392,8 @@ edge + origin/FaaS split
   origin/FaaS resolves functions, routes, SSR/RSC, and PPR regions
 ```
 
-Adapter 应先分类 `BuildOutput`，再输出平台路由。Static hosting 不应声明支持 SSR、
-PPR、RSC、server functions 或 server routes，除非同时接入具备服务端能力的 runtime。
+Adapter 应先分类 `deploymentMetadata.routes`，再输出平台路由。Static hosting 不应声明支持
+SSR、PPR、RSC、server functions 或 server routes，除非同时接入具备服务端能力的 runtime。
 
 ## Dev 更新
 

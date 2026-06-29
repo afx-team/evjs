@@ -12,12 +12,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import {
-  type BuildOutput,
-  type ClientRouteTarget,
-  getClientRouteMatches,
-  getServerRenderedPaths,
-} from "@evjs/shared/manifest";
+import type { DeploymentMetadata } from "@evjs/shared/manifest";
 import { test as base, expect } from "@playwright/test";
 
 export { expect };
@@ -33,10 +28,7 @@ interface WorkerFixture {
   _exampleApp: { webPort: number; apiPort: number };
 }
 
-type RoutingFixture = Pick<
-  BuildOutput,
-  "apps" | "pages" | "routes" | "runtime"
->;
+type RoutingFixture = Pick<DeploymentMetadata, "documents" | "routes">;
 
 /**
  * Content-type mapping for static file serving.
@@ -212,32 +204,38 @@ function pathMatchesPrefix(pathname: string, prefix: string): boolean {
 function getServerProxyPrefixes(output: RoutingFixture): string[] {
   return compactUnique([
     "/api",
-    "/__evjs",
-    output.runtime?.server?.basePath,
-    output.runtime?.server?.fn,
-    output.runtime?.server?.ppr,
-    output.runtime?.server?.rsc,
-    ...getServerRenderedPaths(output),
+    ...output.routes
+      .filter((route) =>
+        [
+          "framework-function",
+          "framework-ppr",
+          "framework-rsc",
+          "page-server",
+          "server-route",
+        ].includes(route.kind),
+      )
+      .map((route) => normalizeProxyRoutePath(route.path)),
   ]);
 }
 
 function getClientPathRewrites(output: RoutingFixture): Record<string, string> {
-  const rewrites = Object.fromEntries(
-    Object.entries(output.pages ?? {}).flatMap(([pageId, page]) =>
-      page.path && page.render === "csr" ? [[page.path, `${pageId}.html`]] : [],
-    ),
+  const documentFiles = new Map(
+    output.documents.map((document) => [document.id, document.fileName]),
   );
-
-  for (const { path, target } of getClientRouteMatches(output)) {
-    rewrites[path] ??= getClientRouteHtmlFileName(target);
-  }
-
-  return rewrites;
+  return Object.fromEntries(
+    output.routes.flatMap((route) => {
+      if (route.kind !== "static-document" && route.kind !== "spa-fallback") {
+        return [];
+      }
+      if (!route.path.startsWith("/")) return [];
+      const fileName = documentFiles.get(route.documentId);
+      return fileName ? [[route.path, fileName]] : [];
+    }),
+  );
 }
 
-function getClientRouteHtmlFileName(target: ClientRouteTarget): string {
-  if (target.kind === "page") return `${target.pageId}.html`;
-  return target.appId === "default" ? "index.html" : `${target.appId}.html`;
+function normalizeProxyRoutePath(routePath: string): string {
+  return routePath.replace(/\/\*$/, "");
 }
 
 function compactUnique(values: Array<string | undefined>): string[] {
@@ -379,7 +377,7 @@ export function createExampleTest(exampleName: string) {
           exampleDir,
           "dist",
           "server",
-          "runtime.json",
+          "framework-runtime.json",
         );
         const frameworkRuntime = JSON.parse(
           fs.readFileSync(frameworkRuntimePath, "utf-8"),
@@ -389,9 +387,9 @@ export function createExampleTest(exampleName: string) {
           "dist",
           "build-output.json",
         );
-        const buildOutput = JSON.parse(
+        const deploymentMetadata = JSON.parse(
           fs.readFileSync(buildOutputPath, "utf-8"),
-        ) as BuildOutput;
+        ) as DeploymentMetadata;
         const serverEntryPath = path.join(
           exampleDir,
           "dist",
@@ -452,8 +450,8 @@ export function createExampleTest(exampleName: string) {
         const distDir = path.join(exampleDir, "dist", "client");
         const staticServer = createStaticServer(distDir, {
           apiPort,
-          proxyPrefixes: getServerProxyPrefixes(buildOutput),
-          pathRewrites: getClientPathRewrites(buildOutput),
+          proxyPrefixes: getServerProxyPrefixes(deploymentMetadata),
+          pathRewrites: getClientPathRewrites(deploymentMetadata),
         });
 
         await new Promise<void>((resolve) => {

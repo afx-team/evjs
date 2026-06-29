@@ -39,9 +39,10 @@ Uses the default bundler adapter directly (no temp config files):
 Runs the production build through `@evjs/ev` with `NODE_ENV=production`:
 - `dist/client/` — optimized client assets with content hashes.
 - `dist/server/main.[hash].js` — server bundle.
-- `dist/client/manifest.json` — browser-safe public manifest.
-- `dist/server/manifest.json` — derived server bundle metadata.
-- `dist/build-output.json` — private complete BuildOutput handoff for tooling and debugging.
+- `dist/client/manifest.json` — lightweight client deployment metadata.
+- `dist/server/manifest.json` — entry-only server manifest.
+- `dist/server/framework-runtime.json` — runtime-required framework data for raw server bundles.
+- `dist/build-output.json` — canonical deployment metadata for tooling and adapters.
 
 ### `ev inspect`
 

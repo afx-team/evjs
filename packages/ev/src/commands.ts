@@ -9,6 +9,7 @@ import type {
 } from "@evjs/shared/manifest";
 import {
   assertFrameworkManifestShape,
+  createDeploymentMetadata,
   createPublicManifest,
   createServerManifest,
   linkBuildOutput,
@@ -77,7 +78,9 @@ const DEV_PAGE_RENDER_PROXY_HEADER = "x-evjs-dev-page-render";
 const DEV_DIST_DIR = "dist";
 const DEV_DIST_LOCK_FILE = ".evjs-dev.lock";
 const MANIFEST_FILE = "manifest.json";
-const RUNTIME_FILE = "runtime.json";
+const CLIENT_RUNTIME_SCRIPT_ID = "__EVJS_CLIENT_RUNTIME__";
+const LEGACY_RUNTIME_FILE = "runtime.json";
+const FRAMEWORK_RUNTIME_FILE = "framework-runtime.json";
 const BUILD_OUTPUT_FILE = "build-output.json";
 const RUNTIME_ONLY_BUNDLER_MANIFEST_FILES = [
   "react-client-manifest.json",
@@ -1226,7 +1229,7 @@ async function emitFrameworkManifest(
   );
   await fs.promises.writeFile(
     path.join(rootDir, BUILD_OUTPUT_FILE),
-    JSON.stringify(output, null, 2),
+    JSON.stringify(createDeploymentMetadata(output), null, 2),
     "utf-8",
   );
   await fs.promises.rm(path.join(serverDir, BUILD_OUTPUT_FILE), {
@@ -1236,7 +1239,7 @@ async function emitFrameworkManifest(
     clientDir,
     serverDir,
   ]);
-  await removeFrameworkOutputFileIfInactive(rootDir, RUNTIME_FILE, [
+  await removeFrameworkOutputFileIfInactive(rootDir, LEGACY_RUNTIME_FILE, [
     clientDir,
     serverDir,
   ]);
@@ -1247,7 +1250,7 @@ async function emitFrameworkManifest(
   );
   await removeFrameworkOutputFileIfInactive(
     path.join(rootDir, "client"),
-    RUNTIME_FILE,
+    LEGACY_RUNTIME_FILE,
     [clientDir, serverDir],
   );
   await removeFrameworkOutputFileIfInactive(
@@ -1257,12 +1260,16 @@ async function emitFrameworkManifest(
   );
   await removeFrameworkOutputFileIfInactive(
     path.join(rootDir, "server"),
-    RUNTIME_FILE,
+    LEGACY_RUNTIME_FILE,
+    [clientDir, serverDir],
+  );
+  await removeFrameworkOutputFileIfInactive(
+    path.join(rootDir, "server"),
+    FRAMEWORK_RUNTIME_FILE,
     [clientDir, serverDir],
   );
 
   const publicManifest = createPublicManifest(output);
-  const clientRuntime = createClientRuntime(output);
   const frameworkRuntime =
     options.frameworkRuntime ?? createFrameworkRuntime(output);
   await fs.promises.mkdir(clientDir, { recursive: true });
@@ -1271,18 +1278,23 @@ async function emitFrameworkManifest(
     JSON.stringify(publicManifest, null, 2),
     "utf-8",
   );
-  await fs.promises.writeFile(
-    path.join(clientDir, RUNTIME_FILE),
-    JSON.stringify(clientRuntime, null, 2),
-    "utf-8",
-  );
+  await fs.promises.rm(path.join(clientDir, LEGACY_RUNTIME_FILE), {
+    force: true,
+  });
   if (output.server.entry) {
     await fs.promises.mkdir(serverDir, { recursive: true });
     await fs.promises.writeFile(
-      path.join(serverDir, RUNTIME_FILE),
+      path.join(serverDir, FRAMEWORK_RUNTIME_FILE),
       JSON.stringify(frameworkRuntime, null, 2),
       "utf-8",
     );
+    await fs.promises.rm(path.join(serverDir, LEGACY_RUNTIME_FILE), {
+      force: true,
+    });
+  } else {
+    await fs.promises.rm(path.join(serverDir, FRAMEWORK_RUNTIME_FILE), {
+      force: true,
+    });
   }
   await removeRuntimeOnlyBundlerManifests(clientDir);
 }
@@ -1372,6 +1384,7 @@ async function emitFrameworkHtml<TBundlerCfg>(
   isRebuild: boolean,
 ): Promise<void> {
   const { clientDir } = getFrameworkOutputPaths(cwd, output);
+  const clientRuntime = createClientRuntime(output);
 
   for (const html of plan.html) {
     const htmlInfo = createHtmlDocumentInfo(html, output);
@@ -1396,6 +1409,7 @@ async function emitFrameworkHtml<TBundlerCfg>(
       doc.documentElement?.setAttribute("data-evjs-kind", "app");
       doc.documentElement?.setAttribute("data-evjs-id", htmlInfo.appId);
     }
+    embedClientRuntime(doc, clientRuntime);
 
     const finalHtml = await buildHtml({
       doc,
@@ -1410,6 +1424,28 @@ async function emitFrameworkHtml<TBundlerCfg>(
     await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
     await fs.promises.writeFile(outPath, finalHtml, "utf-8");
   }
+}
+
+function embedClientRuntime(
+  doc: ReturnType<typeof generateHtml>,
+  runtime: ReturnType<typeof createClientRuntime>,
+): void {
+  const body = doc.body ?? doc.querySelector("body");
+  if (!body) return;
+  const json = JSON.stringify(runtime)
+    .replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+  const script = doc.createElement("script");
+  script.id = CLIENT_RUNTIME_SCRIPT_ID;
+  script.setAttribute("type", "application/json");
+  script.textContent = json;
+  const firstScript = body.querySelector("script[src]");
+  if (firstScript) {
+    body.insertBefore(script, firstScript);
+    return;
+  }
+  body.appendChild(script);
 }
 
 async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
@@ -1558,7 +1594,12 @@ function readFrameworkRuntime(
   cwd: string,
   distDir: string,
 ): ReturnType<typeof createFrameworkRuntime> | undefined {
-  const runtimePath = path.resolve(cwd, distDir, "server", RUNTIME_FILE);
+  const runtimePath = path.resolve(
+    cwd,
+    distDir,
+    "server",
+    FRAMEWORK_RUNTIME_FILE,
+  );
   if (fs.existsSync(runtimePath)) {
     try {
       return JSON.parse(fs.readFileSync(runtimePath, "utf-8")) as ReturnType<
@@ -1569,19 +1610,7 @@ function readFrameworkRuntime(
       return undefined;
     }
   }
-
-  const outputPath = path.resolve(cwd, distDir, BUILD_OUTPUT_FILE);
-  if (!fs.existsSync(outputPath)) return undefined;
-
-  try {
-    const output = JSON.parse(
-      fs.readFileSync(outputPath, "utf-8"),
-    ) as BuildOutput;
-    return createFrameworkRuntime(output);
-  } catch (err) {
-    logger.warn`Failed to parse build output for framework runtime: ${err}`;
-    return undefined;
-  }
+  return undefined;
 }
 
 function readServerEntryFromStats(

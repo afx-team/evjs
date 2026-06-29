@@ -20,10 +20,10 @@ Typical output:
 dist/
 ├── client/
 │   ├── manifest.json
-│   ├── runtime.json
 │   └── ...
 ├── server/
 │   ├── manifest.json
+│   ├── framework-runtime.json
 │   └── ...
 └── build-output.json
 ```
@@ -33,16 +33,18 @@ Important paths:
 - `dist/client/`: browser assets and generated HTML.
 - `dist/client/manifest.json`: browser-safe route and asset metadata for
   deployment tooling.
-- `dist/client/runtime.json`: minimal browser runtime configuration loaded by
-  generated page bootstraps when it is not embedded in HTML.
 - `dist/server/`: server bundle and server metadata when the app uses server
   functions, server file routes, SSR, PPR, or RSC.
-- `dist/build-output.json`: complete build metadata for tooling and deployment
-  adapters. Application code should not import or edit it.
+- `dist/server/manifest.json`: entry-only server manifest for deployment
+  compatibility.
+- `dist/server/framework-runtime.json`: runtime-required framework data for raw
+  server bundle startup.
+- `dist/build-output.json`: canonical deployment metadata for tooling and
+  deployment adapters. Application code should not import or edit it.
 
-If page HTML does not embed the runtime config, the browser runtime fetches it
-from the configured runtime URL or `/runtime.json`. Serve that response as JSON
-with `Content-Type: application/json`.
+Generated HTML embeds the browser `ClientRuntime`. The manual `@evjs/client`
+runtime URL APIs still support loading JSON from a configured URL, but CLI
+builds no longer emit `dist/client/runtime.json` by default.
 
 ## Choose A Target
 
@@ -210,21 +212,21 @@ CMD ["node", "dist/server.mjs"]
 
 ## Custom Deployment Plugins
 
-Deployment plugins can use `buildEnd({ output })` to emit platform files. For a
-portable metadata shape, start from `createDeploymentArtifact()`:
+Deployment plugins can use `buildEnd({ deploymentMetadata })` to emit platform
+files. For platform-specific compatibility fields, wrap that metadata before
+writing files:
 
 ```ts
-import { createDeploymentArtifact } from "@evjs/ev";
-
 export function deployAdapter() {
   return {
     name: "deploy-adapter",
     setup() {
       return {
-        buildEnd({ output }) {
-          const artifact = createDeploymentArtifact(output, {
+        buildEnd({ deploymentMetadata }) {
+          const artifact = {
+            ...deploymentMetadata,
             platform: "custom",
-          });
+          };
 
           emitPlatformFiles(artifact);
         },

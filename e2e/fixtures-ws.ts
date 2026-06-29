@@ -73,7 +73,7 @@ export function createWebSocketExampleTest() {
           exampleDir,
           "dist",
           "server",
-          "runtime.json",
+          "framework-runtime.json",
         );
         const frameworkRuntimePath = path.join(
           exampleDir,

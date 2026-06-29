@@ -4,6 +4,7 @@
 
 export type * from "@evjs/shared/manifest";
 export {
+  createDeploymentMetadata,
   createPublicManifest,
   createServerManifest,
   getClientRouteMatches,
@@ -97,9 +98,7 @@ export {
   resolveConfig,
   type ServerConfig,
   type ServerDevConfig,
-  type ServerFnEntry,
   type ServerManifest,
-  type ServerRouteEntry,
   type ServerRoutingConfig,
   type ServerRscConfig,
   type TransportConfig,
@@ -109,12 +108,10 @@ export {
   createEdgeDeploymentFiles,
   createNodeDeploymentFiles,
   createStaticDeploymentFiles,
-  type DeploymentApp,
   type DeploymentArtifact,
   type DeploymentArtifactOptions,
-  type DeploymentPage,
+  type DeploymentDocument,
   type DeploymentRoute,
-  type DeploymentRsc,
   type DeploymentServer,
   type EdgeDeploymentAdapterOptions,
   type EdgeDeploymentFiles,

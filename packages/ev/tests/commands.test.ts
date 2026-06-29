@@ -27,6 +27,19 @@ const devStartupTimeoutMs = 10_000;
 const devUpdateTimeoutMs = 10_000;
 const routeTypeCheckTimeoutMs = 30_000;
 
+interface EmbeddedClientRuntime {
+  runtime: {
+    server?: Record<string, unknown>;
+  };
+  app?: Record<string, unknown>;
+  routing: {
+    kind: string;
+    pages?: Record<string, Record<string, unknown>>;
+    routes?: Array<Record<string, unknown>>;
+  };
+  [key: string]: unknown;
+}
+
 async function createProject() {
   const cwd = await fs.promises.mkdtemp(path.join(os.tmpdir(), "evjs-"));
   await fs.promises.writeFile(
@@ -35,6 +48,16 @@ async function createProject() {
     "utf-8",
   );
   return cwd;
+}
+
+function readEmbeddedClientRuntime(html: string): EmbeddedClientRuntime {
+  const match = html.match(
+    /<script\b(?=[^>]*\bid="__EVJS_CLIENT_RUNTIME__")(?=[^>]*\btype="application\/json")[^>]*>([\s\S]*?)<\/script>/,
+  );
+  if (!match) {
+    throw new Error("Expected embedded client runtime script.");
+  }
+  return JSON.parse(match[1]) as EmbeddedClientRuntime;
 }
 
 async function createWorkspaceProject() {
@@ -451,6 +474,8 @@ describe("build", () => {
     const cwd = await createProject();
     const events: string[] = [];
     const bundler = createMockBundler(events);
+    const firstClientJs = (result: EvBuildResult) =>
+      Object.values(result.clientManifest.assets ?? {})[0]?.js[0] ?? "none";
     const plugin: EvPlugin<Record<string, never>> = {
       name: "manifest-result",
       setup() {
@@ -459,12 +484,12 @@ describe("build", () => {
             events.push("manifest:buildStart");
           },
           transformHtml(doc: HtmlDocument, result: EvBuildResult) {
-            events.push(`manifest:html:${result.clientManifest.assets.js[0]}`);
+            events.push(`manifest:html:${firstClientJs(result)}`);
             doc.head?.appendChild(doc.createComment(" manifest html "));
           },
           buildEnd(result: EvBuildResult) {
             events.push(
-              `manifest:buildEnd:${result.clientManifest.assets.js[0]}:${result.serverManifest.entry ?? "none"}`,
+              `manifest:buildEnd:${firstClientJs(result)}:${result.serverManifest.entry ?? "none"}`,
             );
           },
         };
@@ -479,9 +504,16 @@ describe("build", () => {
       },
     );
 
-    await expect(
-      fs.promises.readFile(path.join(cwd, "dist/index.html"), "utf-8"),
-    ).resolves.toContain("manifest html");
+    const html = await fs.promises.readFile(
+      path.join(cwd, "dist/index.html"),
+      "utf-8",
+    );
+    const clientRuntime = readEmbeddedClientRuntime(html);
+
+    expect(html).toContain("manifest html");
+    expect(clientRuntime.routing.kind).toBe("spa");
+    expect(clientRuntime).not.toHaveProperty("assets");
+    expect(fs.existsSync(path.join(cwd, "dist/runtime.json"))).toBe(false);
     expect(events).toEqual([
       "manifest:buildStart",
       "bundler.build",
@@ -1397,6 +1429,7 @@ describe("build", () => {
       {
         pages: {
           dashboard: {
+            path: "/dashboard",
             component: "./src/pages/Dashboard.tsx",
             html: "./index.html",
           },
@@ -1423,12 +1456,12 @@ describe("build", () => {
       path.join(cwd, "dist/client/manifest.json"),
       "utf-8",
     );
-    const clientRuntime = fs.readFileSync(
-      path.join(cwd, "dist/client/runtime.json"),
-      "utf-8",
-    );
     const serverManifest = fs.readFileSync(
       path.join(cwd, "dist/server/manifest.json"),
+      "utf-8",
+    );
+    const frameworkRuntime = fs.readFileSync(
+      path.join(cwd, "dist/server/framework-runtime.json"),
       "utf-8",
     );
     const buildOutput = fs.readFileSync(
@@ -1437,7 +1470,7 @@ describe("build", () => {
     );
     const publicManifestJson = JSON.parse(publicManifest);
     const serverManifestJson = JSON.parse(serverManifest);
-    const clientRuntimeJson = JSON.parse(clientRuntime);
+    const frameworkRuntimeJson = JSON.parse(frameworkRuntime);
     const buildOutputJson = JSON.parse(buildOutput);
 
     expect(rawOutputModules).toEqual(["react-component"]);
@@ -1452,53 +1485,33 @@ describe("build", () => {
         Object.keys(page as Record<string, unknown>),
       ),
     ).not.toEqual(expect.arrayContaining(["component", "source", "runtime"]));
-    expect(clientRuntime).not.toContain(".tsx");
-    expect(clientRuntime).not.toContain("server.js");
-    expect(clientRuntimeJson).not.toHaveProperty("publicPath");
-    expect(clientRuntimeJson).not.toHaveProperty("assets");
-    expect(clientRuntimeJson).not.toHaveProperty("pages");
-    expect(clientRuntimeJson).not.toHaveProperty("routes");
-    expect(clientRuntimeJson.routing.kind).toBe("mpa");
-    expect(Object.keys(clientRuntimeJson.runtime.server ?? {})).not.toEqual(
-      expect.arrayContaining(["basePath", "fn", "ppr"]),
-    );
-    expect(Object.keys(clientRuntimeJson.app ?? {})).not.toEqual(
-      expect.arrayContaining(["assets", "document", "entry"]),
-    );
-    expect(
-      Object.values(clientRuntimeJson.routing.pages).flatMap((page) =>
-        Object.keys(page as Record<string, unknown>),
-      ),
-    ).not.toEqual(
-      expect.arrayContaining([
-        "assets",
-        "document",
-        "render",
-        "rendering",
-        "path",
-        "routeId",
-        "componentModel",
-        "hydrate",
-        "ppr",
-      ]),
-    );
-    expect(clientRuntimeJson).not.toHaveProperty("rsc");
     expect(serverManifestJson).toEqual({
       version: 1,
       entry: "server.js",
-      functions: [],
-      routes: [],
     });
     expect(serverManifestJson.server).toBeUndefined();
     expect(serverManifest).not.toContain("./src/pages/Dashboard.tsx");
     expect(buildOutputJson.server?.entry).toBe("server.js");
-    expect(buildOutputJson.server?.renderers).toHaveProperty(
+    expect(buildOutputJson.routes).toContainEqual({
+      kind: "page-server",
+      path: "/dashboard",
+      pageId: "dashboard",
+      methods: ["GET", "HEAD"],
+    });
+    expect("renderers" in (buildOutputJson.server ?? {})).toBe(false);
+    expect(frameworkRuntimeJson.server?.renderers).toHaveProperty(
       "dashboard-server",
     );
     expect(buildOutput).not.toContain("./src/pages/Dashboard.tsx");
     expect(buildOutput).toContain("server.js");
     expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
     expect(fs.existsSync(path.join(cwd, "dist/runtime.json"))).toBe(false);
+    expect(fs.existsSync(path.join(cwd, "dist/client/runtime.json"))).toBe(
+      false,
+    );
+    expect(fs.existsSync(path.join(cwd, "dist/server/runtime.json"))).toBe(
+      false,
+    );
     expect(fs.existsSync(path.join(cwd, "dist/build-output.json"))).toBe(true);
     expect(fs.existsSync(path.join(cwd, "dist/server/build-output.json"))).toBe(
       false,
@@ -1515,13 +1528,13 @@ describe("build", () => {
       true,
     );
     expect(fs.existsSync(path.join(cwd, "dist/client/runtime.json"))).toBe(
-      true,
+      false,
     );
 
     await build({ output: { client: "dist" } }, { cwd, bundler });
 
     expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(true);
-    expect(fs.existsSync(path.join(cwd, "dist/runtime.json"))).toBe(true);
+    expect(fs.existsSync(path.join(cwd, "dist/runtime.json"))).toBe(false);
     expect(fs.existsSync(path.join(cwd, "dist/client/manifest.json"))).toBe(
       false,
     );
@@ -2404,7 +2417,7 @@ describe("build", () => {
     );
     expect(events).toContain("bundler.build");
     expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(true);
-    expect(fs.existsSync(path.join(cwd, "dist/runtime.json"))).toBe(true);
+    expect(fs.existsSync(path.join(cwd, "dist/runtime.json"))).toBe(false);
     expect(fs.existsSync(path.join(cwd, "dist/server/manifest.json"))).toBe(
       true,
     );

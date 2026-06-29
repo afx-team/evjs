@@ -6,6 +6,7 @@ import type {
 } from "../src/manifest/index.js";
 import {
   assertFrameworkManifestShape,
+  createDeploymentMetadata,
   createPublicManifest,
   createServerManifest,
   linkBuildOutput as linkManifestBuildOutput,
@@ -2951,6 +2952,7 @@ describe("createPublicManifest", () => {
         server: {
           basePath: "/__evjs",
           fn: "/__evjs/fn",
+          ppr: "/__evjs/ppr",
           rsc: "/__evjs/rsc",
         },
       },
@@ -2986,6 +2988,33 @@ describe("createPublicManifest", () => {
             href: "evjs-rsc-client.js",
           },
         },
+        landing: {
+          assets: { js: ["landing.js"], css: ["landing.css"] },
+          document: { fileName: "landing.html" },
+          render: "ssg",
+          rendering: {
+            component: "client",
+            html: "static",
+            prerender: "full",
+            streaming: false,
+            hydrate: "load",
+          },
+          path: "/landing",
+          routeId: "landing",
+        },
+        settlement: {
+          assets: { js: [], css: ["settlement-server.css"] },
+          render: "ssg",
+          rendering: {
+            component: "server",
+            html: "static",
+            prerender: "full",
+            streaming: false,
+            hydrate: "none",
+          },
+          path: "/settlement-report",
+          routeId: "settlement",
+        },
         campaign: {
           assets: { js: [], css: [] },
           document: { fileName: "campaign.html" },
@@ -3017,6 +3046,21 @@ describe("createPublicManifest", () => {
           id: "insights",
           path: "/insights",
           pageId: "insights",
+        },
+        {
+          id: "landing",
+          path: "/landing",
+          pageId: "landing",
+        },
+        {
+          id: "settlement",
+          path: "/settlement-report",
+          pageId: "settlement",
+        },
+        {
+          id: "spa_fallback",
+          path: "*",
+          appId: "admin",
         },
       ],
       server: {
@@ -3084,14 +3128,11 @@ describe("createPublicManifest", () => {
       js: ["evjs-rsc-client.js"],
       css: ["insights.css"],
     });
-    expect(pages.insights.module).toEqual({
-      type: "react-component",
-      href: "evjs-rsc-client.js",
-    });
+    expect("module" in pages.insights).toBe(false);
     expect("runtime" in manifest).toBe(false);
     expect("pages" in manifest).toBe(false);
     expect("routes" in manifest).toBe(false);
-    expect(manifest.app?.document).toEqual({ fileName: "admin.html" });
+    expect("app" in manifest).toBe(false);
     expect(pages.insights.document).toEqual({
       fileName: "insights.html",
     });
@@ -3099,29 +3140,91 @@ describe("createPublicManifest", () => {
     expect(pages.campaign.document).toEqual({
       fileName: "campaign.html",
     });
-    expect(pages.campaign.hydrate).toBe("none");
-    expect(pages.campaign.rendering.hydrate).toBe("none");
-    expect(pages.campaign.ppr?.delivery).toBe("stream");
-    expect(pages.campaign.ppr?.regions.offer).toEqual({
-      id: "offer",
-      assets: { js: [], css: [] },
-      cache: "no-store",
-    });
+    expect(pages.settlement.document).toBeUndefined();
+    expect("hydrate" in pages.campaign).toBe(false);
+    expect("rendering" in pages.campaign).toBe(false);
+    expect("ppr" in pages.campaign).toBe(false);
     expect("server" in manifest).toBe(false);
-    expect(
-      manifest.rsc ? "clientReferenceManifest" in manifest.rsc : false,
-    ).toBe(false);
-    expect(manifest.rsc ? "clientReferences" in manifest.rsc : false).toBe(
-      false,
-    );
-    expect(manifest.rsc?.pages?.insights).toEqual({
-      renderer: "insights-rsc",
-      assets: { js: [], css: ["insights.css"] },
-      routeId: "insights",
-    });
+    expect("rsc" in manifest).toBe(false);
     expect("distDir" in manifest).toBe(false);
     expect("paths" in manifest).toBe(false);
     expect("deployment" in manifest).toBe(false);
+
+    const deployment = createDeploymentMetadata(output);
+    expect(deployment.documents).toEqual([
+      {
+        kind: "app",
+        id: "admin",
+        fileName: "admin.html",
+        assets: { js: ["admin.js"], css: [] },
+      },
+      {
+        kind: "page",
+        id: "insights",
+        fileName: "insights.html",
+        assets: { js: ["evjs-rsc-client.js"], css: ["insights.css"] },
+      },
+      {
+        kind: "page",
+        id: "landing",
+        fileName: "landing.html",
+        assets: { js: ["landing.js"], css: ["landing.css"] },
+      },
+      {
+        kind: "page",
+        id: "campaign",
+        fileName: "campaign.html",
+        assets: { js: [], css: [] },
+      },
+    ]);
+    expect(deployment.routes).toEqual([
+      {
+        kind: "page-server",
+        path: "/insights",
+        pageId: "insights",
+        methods: ["GET", "HEAD"],
+      },
+      {
+        kind: "static-document",
+        path: "/landing",
+        documentId: "landing",
+        methods: ["GET", "HEAD"],
+      },
+      {
+        kind: "page-server",
+        path: "/settlement-report",
+        pageId: "settlement",
+        methods: ["GET", "HEAD"],
+      },
+      {
+        kind: "spa-fallback",
+        path: "*",
+        documentId: "admin",
+        methods: ["GET", "HEAD"],
+      },
+      {
+        kind: "framework-function",
+        path: "/__evjs/fn",
+        methods: ["POST"],
+      },
+      {
+        kind: "framework-ppr",
+        path: "/__evjs/ppr/*",
+        methods: ["GET", "HEAD"],
+      },
+      {
+        kind: "framework-rsc",
+        path: "/__evjs/rsc",
+        methods: ["GET", "HEAD"],
+      },
+      {
+        kind: "server-route",
+        path: "/api/health",
+        methods: ["GET"],
+      },
+    ]);
+    expect(JSON.stringify(deployment)).not.toContain("fn:refund");
+    expect(JSON.stringify(deployment)).not.toContain("insights-rsc");
   });
 });
 
@@ -3158,13 +3261,6 @@ describe("createServerManifest", () => {
     expect(createServerManifest(output)).toEqual({
       version: 1,
       entry: "server.js",
-      functions: ["fn:getUser"],
-      routes: [
-        {
-          path: "/api/users",
-          methods: ["GET", "POST"],
-        },
-      ],
     });
   });
 
@@ -3172,8 +3268,6 @@ describe("createServerManifest", () => {
     expect(createServerManifest(createMinimalBuildOutput())).toEqual({
       version: 1,
       entry: "server.js",
-      functions: [],
-      routes: [],
     });
   });
 });

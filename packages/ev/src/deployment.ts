@@ -1,13 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type {
-  AssetGroup,
   BuildOutput,
-  ComponentModel,
-  PublicPathOutput,
-  RenderMode,
-  RuntimeOutput,
+  DeploymentDocumentOutput,
+  DeploymentMetadata,
+  DeploymentRouteOutput,
+  DeploymentServerOutput,
 } from "@evjs/shared/manifest";
+import { createDeploymentMetadata } from "@evjs/shared/manifest";
 import {
   createFrameworkRuntime,
   type FrameworkRuntimeOutput,
@@ -64,68 +64,13 @@ export interface EdgeDeploymentFiles {
   workerModule?: string;
 }
 
-export interface DeploymentArtifact {
-  version: 1;
+export interface DeploymentArtifact extends DeploymentMetadata {
   platform?: string;
-  buildId: string;
-  paths: BuildOutput["paths"];
-  publicPath: PublicPathOutput;
-  assets?: Record<string, AssetGroup>;
-  app?: DeploymentApp;
-  pages: Record<string, DeploymentPage>;
-  routes: DeploymentRoute[];
-  server: DeploymentServer;
-  rsc?: DeploymentRsc;
-  metadata?: Record<string, unknown>;
 }
 
-export interface DeploymentApp {
-  assets?: AssetGroup;
-  document?: {
-    fileName: string;
-  };
-  mount?: string;
-}
-
-export interface DeploymentPage {
-  assets?: AssetGroup;
-  document?: {
-    fileName: string;
-  };
-  path?: string;
-  routeId?: string;
-  render: RenderMode;
-  componentModel?: ComponentModel;
-  hydrate?: string;
-  mount?: string;
-}
-
-export interface DeploymentRoute {
-  id: string;
-  path: string;
-  pageId?: string;
-}
-
-export interface DeploymentServer {
-  entry?: string;
-  basePath?: string;
-  fn?: string;
-  ppr?: string;
-  rsc?: string;
-  transport?: RuntimeOutput["transport"];
-  assets?: AssetGroup;
-  renderers: string[];
-  functions: string[];
-  routes: Array<{
-    path: string;
-    methods: string[];
-  }>;
-}
-
-export interface DeploymentRsc {
-  endpoint?: string;
-  pages: string[];
-}
+export type DeploymentDocument = DeploymentDocumentOutput;
+export type DeploymentRoute = DeploymentRouteOutput;
+export type DeploymentServer = DeploymentServerOutput;
 
 interface StaticDocumentRoute {
   path: string;
@@ -148,79 +93,12 @@ export function createDeploymentArtifact(
   output: BuildOutput,
   options: DeploymentArtifactOptions = {},
 ): DeploymentArtifact {
-  const includeAssets = options.includeAssets ?? true;
-  const artifact: DeploymentArtifact = {
-    version: 1,
-    ...(options.platform ? { platform: options.platform } : {}),
-    buildId: output.buildId,
-    paths: getDeploymentOutputPaths(output),
-    publicPath: output.publicPath,
-    ...(includeAssets ? { assets: output.assets } : {}),
-    app: createDeploymentApp(output, includeAssets),
-    pages: Object.fromEntries(
-      Object.entries(output.pages).map(([id, page]) => [
-        id,
-        pruneUndefined({
-          ...(includeAssets ? { assets: page.assets } : {}),
-          document: page.document,
-          path: page.path,
-          routeId: page.routeId,
-          render: page.render,
-          componentModel: page.componentModel,
-          hydrate: page.hydrate,
-          mount: page.mount,
-        }),
-      ]),
-    ),
-    routes: output.routes.map((route) =>
-      pruneUndefined({
-        id: route.id,
-        path: route.path,
-        pageId: route.pageId,
-      }),
-    ),
-    server: {
-      entry: output.server.entry,
-      basePath: output.runtime.server.basePath,
-      fn: output.runtime.server.fn,
-      ppr: output.runtime.server.ppr,
-      rsc: output.runtime.server.rsc,
-      ...(output.runtime.transport
-        ? { transport: output.runtime.transport }
-        : {}),
-      ...(includeAssets ? { assets: output.server.assets } : {}),
-      renderers: Object.keys(output.server.renderers ?? {}),
-      functions: Object.keys(output.server.functions),
-      routes: output.server.routes.map((route) => ({
-        path: route.path,
-        methods: route.methods,
-      })),
-    },
-    ...(output.rsc
-      ? {
-          rsc: {
-            endpoint: output.runtime.server.rsc,
-            pages: Object.keys(output.rsc.pages ?? {}),
-          },
-        }
-      : {}),
-    ...(output.deployment ? { metadata: output.deployment } : {}),
-  };
-
-  return artifact;
-}
-
-function createDeploymentApp(
-  output: BuildOutput,
-  includeAssets: boolean,
-): DeploymentApp | undefined {
-  const app = output.apps.default ?? Object.values(output.apps)[0];
-  if (!app) return undefined;
   return pruneUndefined({
-    ...(includeAssets ? { assets: app.assets } : {}),
-    document: app.document,
-    mount: app.mount,
-  });
+    ...createDeploymentMetadata(output, {
+      includeAssets: options.includeAssets,
+    }),
+    ...(options.platform ? { platform: options.platform } : {}),
+  }) as DeploymentArtifact;
 }
 
 function pruneUndefined<T extends Record<string, unknown>>(value: T): T {
@@ -900,7 +778,7 @@ function getFrameworkServerRoutes(output: BuildOutput): string[] {
 }
 
 function getStaticAssetPrefix(
-  publicPath: PublicPathOutput,
+  publicPath: BuildOutput["publicPath"],
 ): string | undefined {
   if (!publicPath.startsWith("/") || publicPath.startsWith("//")) {
     return undefined;

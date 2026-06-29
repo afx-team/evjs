@@ -10,6 +10,7 @@ import type {
 } from "@evjs/ev";
 import {
   buildHtml,
+  createDeploymentMetadata,
   createPublicManifest,
   createServerManifest,
   linkBuildOutput,
@@ -24,6 +25,7 @@ import {
 } from "@evjs/ev/build-tools";
 import type { ConfigComplete } from "@utoo/pack";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createClientRuntime } from "../../ev/src/framework-runtime.js";
 import { utoopackAdapter } from "../src/adapter/index.js";
 
 vi.mock("@utoo/pack", () => ({
@@ -65,6 +67,7 @@ vi.mock("@utoo/pack", () => ({
   build: vi.fn(),
 }));
 
+const CLIENT_RUNTIME_SCRIPT_ID = "__EVJS_CLIENT_RUNTIME__";
 const tempDirs: string[] = [];
 
 async function makeProject() {
@@ -137,7 +140,7 @@ function createFrameworkCallbacks(options: {
       );
       await fs.promises.writeFile(
         path.join(rootDir, "build-output.json"),
-        JSON.stringify(output, null, 2),
+        JSON.stringify(createDeploymentMetadata(output), null, 2),
         "utf-8",
       );
       await fs.promises.mkdir(clientDir, { recursive: true });
@@ -170,6 +173,7 @@ function createFrameworkCallbacks(options: {
           doc.documentElement?.setAttribute("data-evjs-kind", "app");
           doc.documentElement?.setAttribute("data-evjs-id", appId);
         }
+        embedClientRuntime(doc, output);
 
         const finalHtml = await buildHtml({
           doc,
@@ -208,6 +212,28 @@ function createFrameworkCallbacks(options: {
     },
     onServerBundleReady: options.onServerBundleReady ?? vi.fn(),
   };
+}
+
+function embedClientRuntime(
+  doc: ReturnType<typeof generateHtml>,
+  output: BuildOutput,
+): void {
+  const body = doc.body ?? doc.querySelector("body");
+  if (!body) return;
+  const json = JSON.stringify(createClientRuntime(output)).replace(
+    /</g,
+    "\\u003c",
+  );
+  const script = doc.createElement("script");
+  script.id = CLIENT_RUNTIME_SCRIPT_ID;
+  script.setAttribute("type", "application/json");
+  script.textContent = json;
+  const firstScript = body.querySelector("script[src]");
+  if (firstScript) {
+    body.insertBefore(script, firstScript);
+    return;
+  }
+  body.appendChild(script);
 }
 
 async function expectRejectedMessage(action: () => void | Promise<void>) {
@@ -278,17 +304,8 @@ describe("utoopackAdapter dev", () => {
       js: ["dev-hook.js"],
       css: [],
     });
-    expect(manifest.app).toEqual({
-      assets: {
-        js: ["main.js"],
-        css: ["main.css"],
-      },
-      document: { fileName: "index.html" },
-      module: {
-        type: "entry",
-        href: "main.js",
-      },
-    });
+    expect("app" in manifest).toBe(false);
+    expect(manifest.routing).toEqual({ kind: "spa", routes: [] });
     expect(html).toContain('<link rel="stylesheet" href="/main.css">');
     expect(html).toContain('src="/main.js"');
     expect(html).toContain('data-evjs-kind="app"');
@@ -562,7 +579,7 @@ describe("utoopackAdapter dev", () => {
       hooks,
     });
 
-    const buildOutput = JSON.parse(
+    const deploymentMetadata = JSON.parse(
       await fs.promises.readFile(
         path.join(cwd, "dist/build-output.json"),
         "utf-8",
@@ -585,23 +602,21 @@ describe("utoopackAdapter dev", () => {
       "utf-8",
     );
 
-    expect(buildOutput.apps.default).toEqual({
-      assets: {
-        js: ["main.js"],
-        css: ["main.css"],
+    expect("apps" in deploymentMetadata).toBe(false);
+    expect(deploymentMetadata.documents).toEqual([
+      {
+        kind: "app",
+        id: "default",
+        fileName: "index.html",
+        assets: {
+          js: ["main.js"],
+          css: ["main.css"],
+        },
       },
-      document: { fileName: "index.html" },
-      module: {
-        type: "entry",
-        href: "main.js",
-      },
-    });
+    ]);
     expect(serverManifest.entry).toBe("index.js");
-    expect(publicManifest.app.entry).toBeUndefined();
-    expect(publicManifest.app.module).toEqual({
-      type: "entry",
-      href: "main.js",
-    });
+    expect("app" in publicManifest).toBe(false);
+    expect(publicManifest.routing.kind).toBe("spa");
     expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
     expect(html).toContain('<link rel="stylesheet" href="/main.css">');
     expect(html).toContain('src="/main.js"');

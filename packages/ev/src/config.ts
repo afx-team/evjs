@@ -55,9 +55,7 @@ export type {
   PluginContext,
   PluginHooks,
   RouteEntry,
-  ServerFnEntry,
   ServerManifest,
-  ServerRouteEntry,
 } from "./plugin.js";
 
 /** Resolved dev server configuration (all defaults applied). */
