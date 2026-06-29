@@ -2973,16 +2973,7 @@ describe("createPublicManifest", () => {
       assets: {
         dashboard: { js: ["dashboard.js"], css: ["dashboard.css"] },
       },
-      apps: {
-        admin: {
-          assets: { js: ["admin.js"], css: [] },
-          document: { fileName: "admin.html" },
-          module: {
-            type: "entry",
-            href: "admin.js",
-          },
-        },
-      },
+      apps: {},
       pages: {
         insights: {
           assets: { js: ["evjs-rsc-client.js"], css: ["insights.css"] },
@@ -3070,11 +3061,6 @@ describe("createPublicManifest", () => {
           id: "settlement",
           path: "/settlement-report",
           pageId: "settlement",
-        },
-        {
-          id: "spa_fallback",
-          path: "*",
-          appId: "admin",
         },
       ],
       server: {
@@ -3186,13 +3172,6 @@ describe("createPublicManifest", () => {
     const deployment = createDeploymentMetadata(output);
     expect(deployment.documents).toEqual([
       {
-        kind: "app",
-        id: "admin",
-        fileName: "admin.html",
-        fallback: "*",
-        assets: { js: ["admin.js"], css: [] },
-      },
-      {
         kind: "page",
         id: "insights",
         fileName: "insights.html",
@@ -3288,6 +3267,55 @@ describe("createPublicManifest", () => {
       routing: {
         kind: "spa",
         routes: [{ id: "home", path: "/" }],
+      },
+    });
+  });
+
+  it("keeps route-owned SSG page documents in SPA manifests", () => {
+    const output: BuildOutput = {
+      ...createMinimalBuildOutput(),
+      assets: {
+        main: { js: ["main.js"], css: [] },
+      },
+      apps: {
+        default: {
+          assets: { js: ["main.js"], css: [] },
+          document: { fileName: "index.html" },
+        },
+      },
+      pages: {
+        report: {
+          assets: { js: [], css: [] },
+          document: { fileName: "report.html" },
+          render: "ssg",
+          rendering: {
+            component: "server",
+            html: "static",
+            prerender: "full",
+            streaming: false,
+            hydrate: "none",
+          },
+          path: "/report",
+          routeId: "report",
+        },
+      },
+      routes: [
+        {
+          id: "report",
+          path: "/report",
+          appId: "default",
+          pageId: "report",
+        },
+      ],
+    };
+
+    expect(createPublicManifest(output)).toMatchObject({
+      assets: {
+        main: { js: ["main.js"], css: [] },
+      },
+      routing: {
+        kind: "spa",
+        routes: [{ id: "report", path: "/report", pageId: "report" }],
       },
     });
   });

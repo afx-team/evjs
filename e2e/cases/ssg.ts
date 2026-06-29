@@ -1,7 +1,10 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import type { DeploymentMetadata } from "@evjs/shared/manifest";
+import type {
+  DeploymentMetadata,
+  PublicManifestOutput,
+} from "@evjs/shared/manifest";
 import { test as base, expect } from "@playwright/test";
 import { buildExample } from "../fixtures.js";
 
@@ -79,6 +82,25 @@ test.describe("ssg", () => {
   test("emits a prerendered static page document", async ({
     deploymentMetadata,
   }) => {
+    const clientManifest = JSON.parse(
+      fs.readFileSync(
+        path.join(exampleDir, "dist", "client", "manifest.json"),
+        "utf-8",
+      ),
+    ) as PublicManifestOutput;
+
+    expect(clientManifest.routing.kind).toBe("spa");
+    if (clientManifest.routing.kind !== "spa") {
+      throw new Error("Expected SSG example to use SPA routing.");
+    }
+    expect(clientManifest.routing.routes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "report",
+          path: "/report",
+        }),
+      ]),
+    );
     expect(deploymentMetadata.documents).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

@@ -389,7 +389,8 @@ function createPublicManifestRouting(
   output: BuildOutput,
   publicAssetFiles: Set<string>,
 ): PublicRoutingOutput {
-  if (Object.keys(output.pages).length > 0) {
+  const hasSpaRoute = output.routes.some((route) => route.appId);
+  if (!hasSpaRoute && Object.keys(output.pages).length > 0) {
     return {
       kind: "mpa",
       pages: Object.fromEntries(
