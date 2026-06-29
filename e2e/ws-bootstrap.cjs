@@ -9,7 +9,7 @@
  * Environment variables:
  *   SERVER_ENTRY - path to the built server entry
  *   CLIENT_DIR   - path to the built client directory
- *   FRAMEWORK_RUNTIME_PATH - path to the projected framework runtime JSON
+ *   FRAMEWORK_RUNTIME_JSON - serialized FrameworkRuntime contract
  *   PORT         - port to listen on
  */
 
@@ -22,11 +22,11 @@ const { WebSocketServer } = require("ws");
 const serverEntryPath = process.env.SERVER_ENTRY;
 const distDir = process.env.CLIENT_DIR;
 const port = Number(process.env.PORT);
-const frameworkRuntimePath = process.env.FRAMEWORK_RUNTIME_PATH;
+const frameworkRuntimeJson = process.env.FRAMEWORK_RUNTIME_JSON;
 
-if (!serverEntryPath || !distDir || !port || !frameworkRuntimePath) {
+if (!serverEntryPath || !distDir || !port || !frameworkRuntimeJson) {
   console.error(
-    "Missing required env: SERVER_ENTRY, CLIENT_DIR, PORT, FRAMEWORK_RUNTIME_PATH",
+    "Missing required env: SERVER_ENTRY, CLIENT_DIR, PORT, FRAMEWORK_RUNTIME_JSON",
   );
   process.exit(1);
 }
@@ -35,9 +35,7 @@ if (!serverEntryPath || !distDir || !port || !frameworkRuntimePath) {
 // and exports the fetch handler (app.fetch) as `default`.
 // We use the bundle's own fetch handler to ensure it shares the same
 // server function registry that registerServerReference populated.
-globalThis.__EVJS_FRAMEWORK_RUNTIME__ = JSON.parse(
-  fs.readFileSync(frameworkRuntimePath, "utf-8"),
-);
+globalThis.__EVJS_FRAMEWORK_RUNTIME__ = JSON.parse(frameworkRuntimeJson);
 const serverDir = path.dirname(serverEntryPath);
 globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => {
   const mod = await import(pathToFileURL(path.resolve(serverDir, asset)).href);

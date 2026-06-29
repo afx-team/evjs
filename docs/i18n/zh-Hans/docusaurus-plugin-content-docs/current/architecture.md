@@ -162,10 +162,9 @@ sequenceDiagram
 routing；`server/manifest.json` 保留 server entry 和轻量 server route projection。
 
 生成的 HTML 会内嵌浏览器 `ClientRuntime`，CLI build 默认不再写
-`client/runtime.json`。raw server bundle 消费显式的
-`dist/server/framework-runtime.json`，Node/Edge deployment adapter 则把同一份
-`FrameworkRuntime` contract 内嵌到 bootstrap 中。因此已部署 runtime 不会在启动时读取
-`dist/build-output.json` 或 manifest 文件。
+`client/runtime.json`。Runtime-only 的 `FrameworkRuntime` 数据保留在内存中的 plugin/build
+result，并注入 dev 或 deployment adapter bootstrap，不再作为默认 JSON artifact 输出。因此
+已部署 runtime 不会在启动时读取 `dist/build-output.json` 或 manifest 文件。
 
 Runtime-required 数据刻意和 deployment metadata 分离。ClientRuntime 只保留启动和导航
 需要的 build id、transport base URL、RSC endpoint、app/page module target、mount

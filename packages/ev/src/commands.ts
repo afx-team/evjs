@@ -80,7 +80,7 @@ const DEV_DIST_LOCK_FILE = ".evjs-dev.lock";
 const MANIFEST_FILE = "manifest.json";
 const CLIENT_RUNTIME_SCRIPT_ID = "__EVJS_CLIENT_RUNTIME__";
 const LEGACY_RUNTIME_FILE = "runtime.json";
-const FRAMEWORK_RUNTIME_FILE = "framework-runtime.json";
+const LEGACY_FRAMEWORK_RUNTIME_FILE = "framework-runtime.json";
 const BUILD_OUTPUT_FILE = "build-output.json";
 const RUNTIME_ONLY_BUNDLER_MANIFEST_FILES = [
   "react-client-manifest.json",
@@ -1211,9 +1211,6 @@ function getFrameworkOutputPaths(
 async function emitFrameworkManifest(
   cwd: string,
   output: BuildOutput,
-  options: {
-    frameworkRuntime?: ReturnType<typeof createFrameworkRuntime>;
-  } = {},
 ): Promise<void> {
   const { rootDir, clientDir, serverDir } = getFrameworkOutputPaths(
     cwd,
@@ -1265,13 +1262,11 @@ async function emitFrameworkManifest(
   );
   await removeFrameworkOutputFileIfInactive(
     path.join(rootDir, "server"),
-    FRAMEWORK_RUNTIME_FILE,
+    LEGACY_FRAMEWORK_RUNTIME_FILE,
     [clientDir, serverDir],
   );
 
   const publicManifest = createPublicManifest(output);
-  const frameworkRuntime =
-    options.frameworkRuntime ?? createFrameworkRuntime(output);
   await fs.promises.mkdir(clientDir, { recursive: true });
   await fs.promises.writeFile(
     path.join(clientDir, MANIFEST_FILE),
@@ -1283,19 +1278,13 @@ async function emitFrameworkManifest(
   });
   if (output.server.entry) {
     await fs.promises.mkdir(serverDir, { recursive: true });
-    await fs.promises.writeFile(
-      path.join(serverDir, FRAMEWORK_RUNTIME_FILE),
-      JSON.stringify(frameworkRuntime, null, 2),
-      "utf-8",
-    );
     await fs.promises.rm(path.join(serverDir, LEGACY_RUNTIME_FILE), {
       force: true,
     });
-  } else {
-    await fs.promises.rm(path.join(serverDir, FRAMEWORK_RUNTIME_FILE), {
-      force: true,
-    });
   }
+  await fs.promises.rm(path.join(serverDir, LEGACY_FRAMEWORK_RUNTIME_FILE), {
+    force: true,
+  });
   await removeRuntimeOnlyBundlerManifests(clientDir);
 }
 
@@ -1477,7 +1466,7 @@ async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   const frameworkRuntime = createFrameworkRuntime(output, {
     rscManifests: options.bundlerFacts.rscManifests,
   });
-  await emitFrameworkManifest(options.cwd, output, { frameworkRuntime });
+  await emitFrameworkManifest(options.cwd, output);
   await emitFrameworkHtml(
     options.cwd,
     options.config,
@@ -1588,29 +1577,6 @@ function readServerEntryFromManifest(
     logger.warn`Failed to parse build manifest for server entry: ${err}`;
     return undefined;
   }
-}
-
-function readFrameworkRuntime(
-  cwd: string,
-  distDir: string,
-): ReturnType<typeof createFrameworkRuntime> | undefined {
-  const runtimePath = path.resolve(
-    cwd,
-    distDir,
-    "server",
-    FRAMEWORK_RUNTIME_FILE,
-  );
-  if (fs.existsSync(runtimePath)) {
-    try {
-      return JSON.parse(fs.readFileSync(runtimePath, "utf-8")) as ReturnType<
-        typeof createFrameworkRuntime
-      >;
-    } catch (err) {
-      logger.warn`Failed to parse framework runtime: ${err}`;
-      return undefined;
-    }
-  }
-  return undefined;
 }
 
 function readServerEntryFromStats(
@@ -2312,6 +2278,9 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
   let releaseDevDistLock: (() => Promise<void>) | undefined;
   let stopWatchingDevDependencies = () => {};
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  let activeFrameworkRuntime:
+    | ReturnType<typeof createFrameworkRuntime>
+    | undefined;
   const expectedApiExits = new WeakSet<ApiProcess>();
   let resolveShutdown: (() => void) | undefined;
   const waitForShutdown = new Promise<void>((resolve) => {
@@ -2356,7 +2325,6 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
     const bootstrapPath = path.join(devRootDir, "_dev_start.cjs");
     try {
       const serverBundlePath = path.join(devRootDir, "server", serverEntry);
-      const frameworkRuntime = readFrameworkRuntime(cwd, activePlan.distDir);
 
       if (!fs.existsSync(path.dirname(bootstrapPath))) {
         fs.mkdirSync(path.dirname(bootstrapPath), { recursive: true });
@@ -2367,7 +2335,7 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
           `(async () => {`,
           `const path = require("node:path");`,
           `const { pathToFileURL } = require("node:url");`,
-          `globalThis.__EVJS_FRAMEWORK_RUNTIME__ = ${JSON.stringify(frameworkRuntime, null, 2)};`,
+          `globalThis.__EVJS_FRAMEWORK_RUNTIME__ = ${JSON.stringify(activeFrameworkRuntime, null, 2)};`,
           `globalThis.__EVJS_DEV_PAGE_RENDER_PROXY_HEADER__ = ${JSON.stringify(DEV_PAGE_RENDER_PROXY_HEADER)};`,
           `const serverDir = path.dirname(${JSON.stringify(serverBundlePath)});`,
           `globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => { const mod = await import(pathToFileURL(path.resolve(serverDir, asset)).href); const nested = mod && typeof mod.default === "object" ? mod.default : undefined; return nested && ("default" in nested || "render" in nested) ? nested : mod; };`,
@@ -2593,7 +2561,7 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
         plan: activePlan,
         callbacks: {
           async onBuildFacts(bundlerFacts, options) {
-            await linkAndEmitBuildOutput({
+            const { frameworkRuntime } = await linkAndEmitBuildOutput({
               bundlerFacts,
               graph: activeAnalysis.graph,
               plan: activePlan,
@@ -2603,6 +2571,7 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
               pluginCtx,
               isRebuild: options?.isRebuild ?? false,
             });
+            activeFrameworkRuntime = frameworkRuntime;
           },
           onServerBundleReady: handleServerBundleReady,
         },

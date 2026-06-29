@@ -180,9 +180,9 @@ They also emit compatibility deployment manifests to `output.client` and
 `output.server`. The client manifest keeps public assets for SPA builds and
 page-level assets plus routing for MPA builds. The server manifest keeps the
 server entry and a lightweight projection of server-handled routes for existing
-deployment integrations. Generated HTML embeds `ClientRuntime`, and raw server
-bundles read `dist/server/framework-runtime.json`; deployment adapters embed the
-same FrameworkRuntime data into their bootstrap code.
+deployment integrations. Generated HTML embeds `ClientRuntime`, and runtime-only
+`FrameworkRuntime` data is injected into dev or deployment adapter bootstraps
+instead of being emitted as a default JSON artifact.
 
 Deployment plugins and platform adapters should consume
 `deploymentMetadata`/`createDeploymentArtifact()` for post-build routing and

@@ -60,6 +60,11 @@ type ServerRuntimeGlobals = typeof globalThis & {
   ) => Promise<Record<string, unknown>>;
 };
 
+const frameworkRuntimeByOutput = new WeakMap<
+  BuildOutput,
+  FrameworkRuntimeOutput
+>();
+
 function devIt(name: string, run: () => void | Promise<void>) {
   it(name, run, WEBPACK_DEV_TEST_TIMEOUT);
 }
@@ -189,6 +194,7 @@ async function emitFrameworkArtifacts(options: {
   const frameworkRuntime = createFrameworkRuntime(output, {
     rscManifests: options.facts.rscManifests,
   });
+  frameworkRuntimeByOutput.set(output, frameworkRuntime);
   await options.onBuildOutput?.(output);
 
   const rootDir = path.join(options.cwd, options.plan.distDir);
@@ -199,11 +205,6 @@ async function emitFrameworkArtifacts(options: {
   await fs.writeFile(
     path.join(serverDir, "manifest.json"),
     JSON.stringify(createServerManifest(output), null, 2),
-    "utf-8",
-  );
-  await fs.writeFile(
-    path.join(serverDir, "framework-runtime.json"),
-    JSON.stringify(frameworkRuntime, null, 2),
     "utf-8",
   );
   await fs.writeFile(
@@ -798,12 +799,8 @@ describe("webpackAdapter build", () => {
       const deploymentMetadata = JSON.parse(
         await fs.readFile(path.join(cwd, "dist/build-output.json"), "utf-8"),
       );
-      const frameworkRuntime = JSON.parse(
-        await fs.readFile(
-          path.join(cwd, "dist/server/framework-runtime.json"),
-          "utf-8",
-        ),
-      ) as FrameworkRuntimeOutput;
+      const frameworkRuntime = frameworkRuntimeByOutput.get(output);
+      expect(frameworkRuntime).toBeDefined();
       const clientReferenceManifest = JSON.parse(
         await fs.readFile(
           path.join(cwd, "dist/client/react-client-manifest.json"),
@@ -822,7 +819,7 @@ describe("webpackAdapter build", () => {
         ]),
       );
       expect("rsc" in deploymentMetadata).toBe(false);
-      expect(frameworkRuntime.rsc?.clientReferenceManifest).toEqual(
+      expect(frameworkRuntime?.rsc?.clientReferenceManifest).toEqual(
         clientReferenceManifest,
       );
       expect(Object.keys(clientReferenceManifest)).toEqual(
@@ -1540,10 +1537,8 @@ async function requestServerEntry(
     manifest.server?.entry ?? "",
   );
   const serverDir = path.dirname(serverEntryPath);
-  const frameworkRuntimePath = path.join(serverDir, "framework-runtime.json");
-  const frameworkRuntime = JSON.parse(
-    await fs.readFile(frameworkRuntimePath, "utf-8"),
-  ) as FrameworkRuntimeOutput;
+  const frameworkRuntime =
+    frameworkRuntimeByOutput.get(manifest) ?? createFrameworkRuntime(manifest);
   const runtimeGlobals = globalThis as ServerRuntimeGlobals;
   runtimeGlobals.__EVJS_FRAMEWORK_RUNTIME__ = frameworkRuntime;
   runtimeGlobals.__EVJS_SERVER_MODULE_LOADER__ = async (asset: string) => {

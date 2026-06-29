@@ -144,6 +144,7 @@ test.describe("render-modes", () => {
     request,
     baseURL,
     apiURL,
+    frameworkRuntime,
   }) => {
     const browserRegionRequests: string[] = [];
     page.on("request", (browserRequest) => {
@@ -180,7 +181,7 @@ test.describe("render-modes", () => {
     expect(pageResponse.status()).toBe(200);
     expect(pageResponse.headers()["x-evjs-ppr"]).toBe("stream");
     const pageHtml = await pageResponse.text();
-    const runtimePages = getRenderModesRuntimePages();
+    const runtimePages = getRenderModesRuntimePages(frameworkRuntime);
     const campaignPpr = getRenderModesCampaignPpr(runtimePages);
     const { id: regionId } = getSinglePprRegion(campaignPpr.regions);
     expect(pageHtml).toContain(`data-evjs-ppr-stream-region="${regionId}"`);
@@ -263,14 +264,15 @@ test.describe("render-modes", () => {
     expect(flightText).toContain("Atlas Foods");
   });
 
-  test("emits a manifest with app, page, route, and server data", async () => {
+  test("emits a manifest with app, page, route, and server data", async ({
+    frameworkRuntime,
+  }) => {
     const manifestPath = getRenderModesPublicManifestPath();
     const manifest = readRenderModesPublicManifest();
     const serverManifest = readRenderModesServerManifest();
     const serverManifestText = JSON.stringify(serverManifest);
     const deploymentMetadata = readRenderModesDeploymentMetadata();
     const deploymentMetadataText = JSON.stringify(deploymentMetadata);
-    const frameworkRuntime = readRenderModesFrameworkRuntime();
     const publicPages = getRenderModesPublicPages(manifest);
     const runtimePages = getRenderModesRuntimePages(frameworkRuntime);
     const publicRoutes = Object.entries(publicPages).map(([pageId, page]) => ({
@@ -532,7 +534,9 @@ test.describe("render-modes", () => {
         rsc: "/__evjs/rsc",
       }),
     );
-    expect(frameworkRuntime.rsc.pages.insights).toEqual(
+    expect(frameworkRuntime.rsc).toBeDefined();
+    expect(frameworkRuntime.rsc?.pages).toBeDefined();
+    expect(frameworkRuntime.rsc?.pages?.insights).toEqual(
       expect.objectContaining({
         renderer: "insights-rsc",
         routeId: "insights",
@@ -542,7 +546,7 @@ test.describe("render-modes", () => {
       }),
     );
     expect("rsc" in manifest).toBe(false);
-    expect(frameworkRuntime.rsc.clientReferenceManifest).toBeDefined();
+    expect(frameworkRuntime.rsc?.clientReferenceManifest).toBeDefined();
     expect(
       fs.existsSync(
         path.join(exampleDir, "dist/client/react-client-manifest.json"),
@@ -607,11 +611,14 @@ function getRenderModesPublicPages(
   return manifest.routing.pages;
 }
 
-function getRenderModesRuntimePages(
-  frameworkRuntime = readRenderModesFrameworkRuntime(),
-): Record<string, RenderModesPublicPage> {
+function getRenderModesRuntimePages(frameworkRuntime: {
+  routing?: {
+    kind?: string;
+    pages?: Record<string, RenderModesPublicPage>;
+  };
+}): Record<string, RenderModesPublicPage> {
   expect(frameworkRuntime.routing?.kind).toBe("mpa");
-  return frameworkRuntime.routing.pages;
+  return frameworkRuntime.routing?.pages ?? {};
 }
 
 function getRenderModesCampaignPpr(
@@ -626,15 +633,6 @@ function readRenderModesDeploymentMetadata() {
   return JSON.parse(
     fs.readFileSync(
       path.join(exampleDir, "dist", "build-output.json"),
-      "utf-8",
-    ),
-  );
-}
-
-function readRenderModesFrameworkRuntime() {
-  return JSON.parse(
-    fs.readFileSync(
-      path.join(exampleDir, "dist/server/framework-runtime.json"),
       "utf-8",
     ),
   );

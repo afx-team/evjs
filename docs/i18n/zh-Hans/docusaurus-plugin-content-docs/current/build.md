@@ -32,8 +32,7 @@ dist/
 │   └── manifest.json
 ├── server/
 │   ├── main.[hash].js
-│   ├── manifest.json
-│   └── framework-runtime.json
+│   └── manifest.json
 └── build-output.json
 ```
 
@@ -61,16 +60,15 @@ dist/
 └── manifest.json
 dist-server/
 ├── main.[hash].js
-├── manifest.json
-└── framework-runtime.json
+└── manifest.json
 ```
 
 生成的 HTML 会内嵌浏览器启动所需的 `ClientRuntime`。`client/manifest.json` 是轻量部署
 元信息：SPA manifest 保留顶层公开 assets，MPA manifest 把 assets 保留在每个 routing
 page 上。`server/manifest.json` 保留 server entry 文件名和 server route projection。
-`server/framework-runtime.json` 是 raw server bundle 启动所需的运行时数据，
-`build-output.json` 是 canonical deployment metadata。应用代码不应该导入或修改部署
-元信息文件。
+Runtime-only 的 `FrameworkRuntime` 数据会注入 dev 和 deployment bootstrap，不再作为
+JSON 文件输出。`build-output.json` 是 canonical deployment metadata。应用代码不应该导入或
+修改部署元信息文件。
 
 ## 页面输出
 

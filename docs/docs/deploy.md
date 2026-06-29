@@ -23,7 +23,6 @@ dist/
 │   └── ...
 ├── server/
 │   ├── manifest.json
-│   ├── framework-runtime.json
 │   └── ...
 └── build-output.json
 ```
@@ -37,14 +36,15 @@ Important paths:
   functions, server file routes, SSR, PPR, or RSC.
 - `dist/server/manifest.json`: lightweight server manifest with the server
   entry and server-handled route projection for deployment compatibility.
-- `dist/server/framework-runtime.json`: runtime-required framework data for raw
-  server bundle startup.
 - `dist/build-output.json`: canonical deployment metadata for tooling and
   deployment adapters. Application code should not import or edit it.
 
 Generated HTML embeds the browser `ClientRuntime`. The manual `@evjs/client`
 runtime URL APIs still support loading JSON from a configured URL, but CLI
 builds no longer emit `dist/client/runtime.json` by default.
+Runtime-only `FrameworkRuntime` data is passed through build/plugin results and
+injected into dev or deployment adapter bootstraps; it is not emitted as a
+default JSON artifact.
 
 ## Choose A Target
 

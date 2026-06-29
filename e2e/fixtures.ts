@@ -12,6 +12,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import type { BuildResult } from "@evjs/ev";
 import type { DeploymentMetadata } from "@evjs/shared/manifest";
 import { test as base, expect } from "@playwright/test";
 
@@ -22,13 +23,23 @@ interface ExampleFixture {
   baseURL: string;
   /** Base URL where the framework/API server is served. */
   apiURL: string;
+  /** Framework runtime captured from the build pipeline. */
+  frameworkRuntime: FrameworkRuntimeOutput;
 }
 
 interface WorkerFixture {
-  _exampleApp: { webPort: number; apiPort: number };
+  _exampleApp: {
+    webPort: number;
+    apiPort: number;
+    frameworkRuntime?: FrameworkRuntimeOutput;
+  };
 }
 
 type RoutingFixture = Pick<DeploymentMetadata, "documents" | "routes">;
+type FrameworkRuntimeOutput = NonNullable<BuildResult["frameworkRuntime"]>;
+type BuildExampleResult = {
+  frameworkRuntime?: FrameworkRuntimeOutput;
+};
 
 /**
  * Content-type mapping for static file serving.
@@ -288,9 +299,23 @@ async function loadExampleConfig(
  * (plugins, output structure, etc.) are picked up during the build.
  * Only the bundler adapter is overridden by the test configuration.
  */
-export async function buildExample(exampleDir: string, bundlerName: string) {
+export async function buildExample(
+  exampleDir: string,
+  bundlerName: string,
+): Promise<BuildExampleResult> {
   const { build } = await import("@evjs/cli");
   const bundler = await resolveBundler(bundlerName);
+  let frameworkRuntime: FrameworkRuntimeOutput | undefined;
+  const captureFrameworkRuntimePlugin: import("@evjs/ev").Plugin<unknown> = {
+    name: "e2e-framework-runtime-capture",
+    setup() {
+      return {
+        buildEnd(result) {
+          frameworkRuntime = result.frameworkRuntime;
+        },
+      };
+    },
+  };
   const runBuild = build as (
     config: import("@evjs/ev").Config<unknown>,
     options: { cwd: string },
@@ -308,6 +333,11 @@ export async function buildExample(exampleDir: string, bundlerName: string) {
     await runBuild(
       {
         ...exampleConfig,
+        plugins: [
+          ...((exampleConfig?.plugins as import("@evjs/ev").Plugin<unknown>[]) ??
+            []),
+          captureFrameworkRuntimePlugin,
+        ],
         ...(bundler ? { bundler } : {}),
       },
       { cwd: exampleDir },
@@ -320,6 +350,8 @@ export async function buildExample(exampleDir: string, bundlerName: string) {
       process.env.NODE_ENV = savedNodeEnv;
     }
   }
+
+  return { frameworkRuntime };
 }
 
 async function resolveBundler(
@@ -356,10 +388,14 @@ export function createExampleTest(exampleName: string) {
           (workerInfo.project.use as unknown as { bundlerName?: string })
             .bundlerName ?? "utoopack";
 
-        await buildExample(exampleDir, bundlerName);
+        const buildResult = await buildExample(exampleDir, bundlerName);
+        const { frameworkRuntime } = buildResult;
+        if (!frameworkRuntime) {
+          throw new Error("Built example did not produce FrameworkRuntime.");
+        }
 
-        // Read the server manifest for the bundle entry and the generated
-        // FrameworkRuntime contract for server startup.
+        // Read only the deployment manifest for the bundle entry; runtime-only
+        // FrameworkRuntime data comes from the buildEnd hook above.
         const serverManifestPath = path.join(
           exampleDir,
           "dist",
@@ -373,15 +409,6 @@ export function createExampleTest(exampleName: string) {
         if (!serverEntry) {
           throw new Error("Built example did not emit a server entry.");
         }
-        const frameworkRuntimePath = path.join(
-          exampleDir,
-          "dist",
-          "server",
-          "framework-runtime.json",
-        );
-        const frameworkRuntime = JSON.parse(
-          fs.readFileSync(frameworkRuntimePath, "utf-8"),
-        );
         const buildOutputPath = path.join(
           exampleDir,
           "dist",
@@ -459,7 +486,7 @@ export function createExampleTest(exampleName: string) {
         });
         const { port: webPort } = staticServer.address() as { port: number };
 
-        await use({ webPort, apiPort });
+        await use({ webPort, apiPort, frameworkRuntime });
 
         // Cleanup
         staticServer.close();
@@ -477,6 +504,12 @@ export function createExampleTest(exampleName: string) {
     },
     apiURL: async ({ _exampleApp }, use) => {
       await use(`http://localhost:${_exampleApp.apiPort}`);
+    },
+    frameworkRuntime: async ({ _exampleApp }, use) => {
+      if (!_exampleApp.frameworkRuntime) {
+        throw new Error("Built example did not produce FrameworkRuntime.");
+      }
+      await use(_exampleApp.frameworkRuntime);
     },
   });
 }

@@ -1,8 +1,9 @@
-import { execSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { createServer } from "node:net";
 import path from "node:path";
 import { test as base, expect } from "@playwright/test";
+import { buildExample } from "./fixtures";
 
 export { expect };
 
@@ -46,14 +47,16 @@ export function createWebSocketExampleTest() {
         // Use dynamic port allocation to avoid conflicts
         const webPort = await getAvailablePort();
 
-        // 1. Build with utoopack
-        execSync("ev build", {
-          cwd: exampleDir,
-          stdio: "pipe",
-        });
+        // 1. Build with utoopack and capture runtime-only framework data.
+        const buildResult = await buildExample(exampleDir, "utoopack");
+        const { frameworkRuntime } = buildResult;
+        if (!frameworkRuntime) {
+          throw new Error(
+            "Built WebSocket example did not produce FrameworkRuntime.",
+          );
+        }
 
-        // 2. Read the server manifest for the bundle entry and project the
-        // Use the generated framework runtime contract for bootstrap.
+        // 2. Read the server manifest for the bundle entry.
         const serverManifestPath = path.join(
           exampleDir,
           "dist",
@@ -69,22 +72,6 @@ export function createWebSocketExampleTest() {
             "Built WebSocket example did not emit a server entry.",
           );
         }
-        const runtimePath = path.join(
-          exampleDir,
-          "dist",
-          "server",
-          "framework-runtime.json",
-        );
-        const frameworkRuntimePath = path.join(
-          exampleDir,
-          "dist",
-          "_e2e_framework_runtime.json",
-        );
-        fs.writeFileSync(
-          frameworkRuntimePath,
-          fs.readFileSync(runtimePath, "utf-8"),
-          "utf-8",
-        );
         const serverEntryPath = path.join(
           exampleDir,
           "dist",
@@ -106,7 +93,7 @@ export function createWebSocketExampleTest() {
             ...process.env,
             SERVER_ENTRY: serverEntryPath,
             CLIENT_DIR: clientDir,
-            FRAMEWORK_RUNTIME_PATH: frameworkRuntimePath,
+            FRAMEWORK_RUNTIME_JSON: JSON.stringify(frameworkRuntime),
             PORT: String(webPort),
           },
         });

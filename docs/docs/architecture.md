@@ -171,11 +171,10 @@ projections for deployment tooling: `client/manifest.json` keeps SPA public
 assets or MPA page-level assets plus routing, while `server/manifest.json`
 keeps the server entry and lightweight server route projection.
 Generated HTML embeds the browser `ClientRuntime`; CLI builds no longer write
-`client/runtime.json` by default. Raw server bundles consume the explicit
-`FrameworkRuntime` sidecar at `dist/server/framework-runtime.json`, while
-deployment adapters embed the same runtime contract in their bootstrap code.
-Deployed runtimes do not read `dist/build-output.json` or manifest files at
-startup.
+`client/runtime.json` by default. Runtime-only `FrameworkRuntime` data is kept
+in memory for plugins and injected into dev or deployment adapter bootstraps
+instead of being emitted as a default JSON artifact. Deployed runtimes do not
+read `dist/build-output.json` or manifest files at startup.
 
 Runtime-required data is intentionally separated from deployment metadata.
 ClientRuntime keeps only the build id, transport base URL, RSC endpoint,

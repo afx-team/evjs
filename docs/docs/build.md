@@ -33,8 +33,7 @@ dist/
 │   └── manifest.json
 ├── server/
 │   ├── main.[hash].js
-│   ├── manifest.json
-│   └── framework-runtime.json
+│   └── manifest.json
 └── build-output.json
 ```
 
@@ -63,17 +62,17 @@ dist/
 └── manifest.json
 dist-server/
 ├── main.[hash].js
-├── manifest.json
-└── framework-runtime.json
+└── manifest.json
 ```
 
 Generated HTML embeds the `ClientRuntime` needed by the browser bootstrap.
 `client/manifest.json` is lightweight deployment metadata: SPA manifests keep
 top-level public assets, while MPA manifests keep assets on each routing page.
 `server/manifest.json` preserves the server entry filename plus the server route
-projection. `server/framework-runtime.json` is runtime-required data for raw
-server bundles, and `build-output.json` is canonical deployment metadata.
-Application code should not import or edit deployment metadata files.
+projection. Runtime-only `FrameworkRuntime` data is injected into dev and
+deployment bootstraps instead of being emitted as JSON. `build-output.json` is
+canonical deployment metadata. Application code should not import or edit
+deployment metadata files.
 
 ## Page Output
 

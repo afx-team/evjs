@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { PAGE_ROUTE_CONVENTION_SUMMARY } from "../src/build-tools/page-route-conventions.js";
 import type { BundlerAdapter } from "../src/bundler.js";
 import {
+  type BuildResult,
   build,
   type Config,
   dev,
@@ -1414,6 +1415,7 @@ describe("build", () => {
     );
 
     const rawOutputModules: Array<string | undefined> = [];
+    let frameworkRuntime: BuildResult["frameworkRuntime"];
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "memory-output",
       async build() {
@@ -1451,6 +1453,7 @@ describe("build", () => {
                   rawOutputModules.push(
                     result.output.pages.dashboard.module?.type,
                   );
+                  frameworkRuntime = result.frameworkRuntime;
                 },
               };
             },
@@ -1468,17 +1471,12 @@ describe("build", () => {
       path.join(cwd, "dist/server/manifest.json"),
       "utf-8",
     );
-    const frameworkRuntime = fs.readFileSync(
-      path.join(cwd, "dist/server/framework-runtime.json"),
-      "utf-8",
-    );
     const buildOutput = fs.readFileSync(
       path.join(cwd, "dist/build-output.json"),
       "utf-8",
     );
     const publicManifestJson = JSON.parse(publicManifest);
     const serverManifestJson = JSON.parse(serverManifest);
-    const frameworkRuntimeJson = JSON.parse(frameworkRuntime);
     const buildOutputJson = JSON.parse(buildOutput);
 
     expect(rawOutputModules).toEqual(["react-component"]);
@@ -1519,7 +1517,7 @@ describe("build", () => {
       methods: ["GET", "HEAD"],
     });
     expect("renderers" in (buildOutputJson.server ?? {})).toBe(false);
-    expect(frameworkRuntimeJson.server?.renderers).toHaveProperty(
+    expect(frameworkRuntime?.server?.renderers).toHaveProperty(
       "dashboard-server",
     );
     expect(buildOutput).not.toContain("./src/pages/Dashboard.tsx");
@@ -1532,6 +1530,9 @@ describe("build", () => {
     expect(fs.existsSync(path.join(cwd, "dist/server/runtime.json"))).toBe(
       false,
     );
+    expect(
+      fs.existsSync(path.join(cwd, "dist/server/framework-runtime.json")),
+    ).toBe(false);
     expect(fs.existsSync(path.join(cwd, "dist/build-output.json"))).toBe(true);
     expect(fs.existsSync(path.join(cwd, "dist/server/build-output.json"))).toBe(
       false,

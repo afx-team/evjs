@@ -41,7 +41,6 @@ Runs the production build through `@evjs/ev` with `NODE_ENV=production`:
 - `dist/server/main.[hash].js` — server bundle.
 - `dist/client/manifest.json` — lightweight client deployment metadata.
 - `dist/server/manifest.json` — lightweight server entry and route metadata.
-- `dist/server/framework-runtime.json` — runtime-required framework data for raw server bundles.
 - `dist/build-output.json` — canonical deployment metadata for tooling and adapters.
 
 ### `ev inspect`
