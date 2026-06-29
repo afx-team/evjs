@@ -202,19 +202,14 @@ function normalizeModuleId(
 function readRscManifests(clientDir: string):
   | {
       clientReferenceManifest?: Record<string, unknown>;
-      serverConsumerManifest?: Record<string, unknown>;
     }
   | undefined {
   const clientReferenceManifest = readJsonObject(
     path.join(clientDir, "react-client-manifest.json"),
   );
-  const serverConsumerManifest = readJsonObject(
-    path.join(clientDir, "react-ssr-manifest.json"),
-  );
-  if (!clientReferenceManifest && !serverConsumerManifest) return undefined;
+  if (!clientReferenceManifest) return undefined;
   return {
     clientReferenceManifest,
-    serverConsumerManifest,
   };
 }
 

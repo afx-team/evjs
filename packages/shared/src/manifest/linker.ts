@@ -16,7 +16,6 @@ import type {
   PublicPageOutput,
   PublicPprRegionOutput,
   PublicRuntimeModuleOutput,
-  RscReferenceOutput,
   ServerFunctionOutput,
   ServerRouteOutput,
 } from "./index.js";
@@ -43,10 +42,6 @@ export interface BuildOutputLinkInput {
   serverEntry?: string;
   serverAssets?: AssetGroup;
   serverModules?: BuildOutputServerModule[];
-  rscManifests?: {
-    clientReferenceManifest?: Record<string, unknown>;
-    serverConsumerManifest?: Record<string, unknown>;
-  };
 }
 
 export interface ServerManifestOutput {
@@ -150,7 +145,6 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
         {
           assets,
           document: cloneHtmlDocument(htmlDocuments.apps.get(id)),
-          entry: app.entry,
           mount: app.mount,
           module: entry
             ? {
@@ -202,10 +196,7 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
           rendering: derivePageRendering(page),
           path: page.path,
           routeId: page.routeId,
-          entry: page.entry,
-          component: page.component,
           componentModel: page.componentModel,
-          app: page.app,
           hydrate: effectivePageHydrate(page),
           mount: page.mount,
           prerender: page.prerender,
@@ -242,8 +233,6 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
                         {
                           id: regionId,
                           assets: serverAssetsForEntry(regionEntry),
-                          component: region.component,
-                          fallback: region.fallback,
                           cache: region.cache,
                           hydrate: region.hydrate,
                         },
@@ -262,7 +251,6 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   for (const fn of input.graph.serverFunctions) {
     serverFunctions[fn.id] = {
       assets: assetsForSource(fn.module),
-      module: fn.module,
       exportName: fn.exportName,
     };
   }
@@ -279,7 +267,6 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   return {
     version: 1,
     buildId: input.plan.buildId,
-    distDir: input.plan.distDir,
     paths: createBuildOutputPaths(input.plan),
     publicPath: input.plan.runtime.publicPath,
     runtime: {
@@ -297,7 +284,6 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
           path: route.path,
           appId: route.appId,
           pageId: route.pageId,
-          module: route.module,
         }),
       ),
     server: {
@@ -383,10 +369,9 @@ function assertServerRuntimeEntry(
  * Project the internal build output into the public runtime manifest that is
  * safe to serve to browsers.
  *
- * The internal `BuildOutput` intentionally keeps source modules, server
- * renderer modules, and raw React Flight manifests because the server runtime
- * needs those facts. The public manifest must not expose that implementation
- * metadata.
+ * The public manifest keeps browser-safe deployment metadata. Runtime startup
+ * data lives in `runtime.json`; framework endpoints live under
+ * `BuildOutput.runtime.server`.
  */
 export function createPublicManifest(
   output: BuildOutput,
@@ -419,7 +404,6 @@ export function createPublicManifest(
     ),
     rsc: output.rsc
       ? pruneUndefined({
-          endpoint: output.rsc.endpoint,
           pages: output.rsc.pages
             ? Object.fromEntries(
                 Object.entries(output.rsc.pages).map(([id, page]) => [
@@ -620,30 +604,21 @@ function linkRscOutput(
   input: BuildOutputLinkInput,
   serverAssetsForEntry: (entry: BuildEntry) => AssetGroup,
 ): BuildOutput["rsc"] | undefined {
-  const endpoint = input.plan.runtime.server.rsc;
   const rscRenderers = input.plan.entries.filter(
     (entry) => entry.environment === "server" && entry.kind === "rsc-page",
   );
   const rscPages = Object.values(input.graph.pages).filter(isRscPage);
 
-  if (
-    !endpoint &&
-    rscPages.length === 0 &&
-    !input.graph.clientReferences?.length &&
-    !input.graph.serverReferences?.length &&
-    !input.rscManifests?.clientReferenceManifest &&
-    !input.rscManifests?.serverConsumerManifest
-  ) {
+  if (rscPages.length === 0) {
     return undefined;
   }
-  if (!endpoint && rscPages.length > 0) {
+  if (!input.plan.runtime.server.rsc) {
     throw new Error(
       `[evjs] RSC page "${rscPages[0].id}" requires runtime.server.rsc before RSC manifest emission.`,
     );
   }
 
   return {
-    endpoint,
     pages:
       rscPages.length > 0
         ? Object.fromEntries(
@@ -654,17 +629,12 @@ function linkRscOutput(
                 {
                   renderer: renderer.name,
                   assets: serverAssetsForEntry(renderer),
-                  component: page.component,
                   routeId: page.routeId,
                 },
               ];
             }),
           )
         : undefined,
-    clientReferences: referencesToRecord(input.graph.clientReferences),
-    serverReferences: referencesToRecord(input.graph.serverReferences),
-    clientReferenceManifest: input.rscManifests?.clientReferenceManifest,
-    serverConsumerManifest: input.rscManifests?.serverConsumerManifest,
   };
 }
 
@@ -677,23 +647,6 @@ function findRscRendererForPage(
 
   throw new Error(
     `[evjs] RSC page "${pageId}" did not declare a matching rsc-page server renderer.`,
-  );
-}
-
-function referencesToRecord(
-  references:
-    | Array<{ id: string; module: string; exportName?: string }>
-    | undefined,
-): Record<string, RscReferenceOutput> | undefined {
-  if (!references?.length) return undefined;
-  return Object.fromEntries(
-    references.map((reference) => [
-      reference.id,
-      {
-        module: reference.module,
-        exportName: reference.exportName,
-      },
-    ]),
   );
 }
 
@@ -717,7 +670,6 @@ function linkServerRenderers(
         {
           kind: renderer.kind,
           owner: renderer.owner,
-          module: renderer.import,
           assets: entry
             ? serverAssetsForEntry(entry)
             : assetsForSource(renderer.import),

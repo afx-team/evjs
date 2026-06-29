@@ -3242,30 +3242,8 @@ describe("createAppGraph and createBuildPlan", () => {
         exportName: "saveInsight",
       },
     ]);
-    expect(output.rsc?.clientReferences).toEqual({
-      "src/pages/ClientCard.tsx#default": {
-        module: "src/pages/ClientCard.tsx",
-        exportName: "default",
-      },
-      "src/pages/ClientCard.tsx#ClientWidget": {
-        module: "src/pages/ClientCard.tsx",
-        exportName: "ClientWidget",
-      },
-      "src/pages/ClientCard.tsx#ClientNamespace": {
-        module: "src/pages/ClientCard.tsx",
-        exportName: "ClientNamespace",
-      },
-      "src/pages/ClientCard.tsx#client-widget": {
-        module: "src/pages/ClientCard.tsx",
-        exportName: "client-widget",
-      },
-    });
-    expect(output.rsc?.serverReferences).toEqual({
-      [hashServerFunction("src/actions.ts", "saveInsight")]: {
-        module: "src/actions.ts",
-        exportName: "saveInsight",
-      },
-    });
+    expect(output.rsc).not.toHaveProperty("clientReferences");
+    expect(output.rsc).not.toHaveProperty("serverReferences");
     expect(relativeFileDependencies(cwd, analysis.fileDependencies)).toEqual([
       "src/actions.ts",
       "src/pages/ClientCard.tsx",

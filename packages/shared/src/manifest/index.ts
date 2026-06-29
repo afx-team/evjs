@@ -310,8 +310,7 @@ export interface BuildPlanUpdate {
 export interface BuildOutput {
   version: 1;
   buildId: string;
-  distDir: string;
-  paths?: BuildOutputPaths;
+  paths: BuildOutputPaths;
   publicPath: PublicPathOutput;
   runtime: RuntimeOutput;
   assets: Record<string, AssetGroup>;
@@ -367,12 +366,11 @@ export interface TransportOutput {
 export interface AppOutput {
   assets: AssetGroup;
   document?: HtmlDocumentOutput;
-  entry?: string;
   mount?: string;
   module?: RuntimeModuleOutput;
 }
 
-export interface PublicAppOutput extends Omit<AppOutput, "entry" | "module"> {
+export interface PublicAppOutput extends Omit<AppOutput, "module"> {
   module?: PublicRuntimeModuleOutput;
 }
 
@@ -383,10 +381,7 @@ export interface PageOutput {
   rendering: PageRenderingOutput;
   path?: string;
   routeId?: string;
-  entry?: string;
-  component?: string;
   componentModel?: ComponentModel;
-  app?: string;
   hydrate?: HydrationMode;
   mount?: string;
   prerender?: PrerenderConfig;
@@ -394,8 +389,7 @@ export interface PageOutput {
   ppr?: PprPageOutput;
 }
 
-export interface PublicPageOutput
-  extends Omit<PageOutput, "entry" | "component" | "app" | "module" | "ppr"> {
+export interface PublicPageOutput extends Omit<PageOutput, "module" | "ppr"> {
   module?: PublicRuntimeModuleOutput;
   ppr?: PublicPprPageOutput;
 }
@@ -430,16 +424,11 @@ export interface PublicPprPageOutput extends Omit<PprPageOutput, "regions"> {
 export interface PprRegionOutput {
   id: string;
   assets: AssetGroup;
-  component: string;
-  fallback?: string;
   cache?: PprCachePolicy;
   hydrate?: HydrationMode;
 }
 
-export type PublicPprRegionOutput = Omit<
-  PprRegionOutput,
-  "component" | "fallback"
->;
+export type PublicPprRegionOutput = PprRegionOutput;
 
 export interface RuntimeModuleOutput {
   type: "entry" | "lifecycle" | "react-component";
@@ -455,7 +444,6 @@ export interface RouteOutput {
   kind?: PageRouteKind;
   appId?: string;
   pageId?: string;
-  module?: string;
 }
 
 export type PublicRouteOutput = Pick<
@@ -474,13 +462,11 @@ export interface ServerOutput {
 export interface ServerRendererOutput {
   kind: ServerRenderPlan["kind"];
   owner?: BuildEntryOwner;
-  module: string;
   assets: AssetGroup;
 }
 
 export interface ServerFunctionOutput {
   assets: AssetGroup;
-  module: string;
   exportName: string;
 }
 
@@ -491,32 +477,20 @@ export interface ServerRouteOutput {
 }
 
 export interface RscOutput {
-  endpoint?: string;
   pages?: Record<string, RscPageOutput>;
-  clientReferences?: Record<string, RscReferenceOutput>;
-  serverReferences?: Record<string, RscReferenceOutput>;
-  clientReferenceManifest?: Record<string, unknown>;
-  serverConsumerManifest?: Record<string, unknown>;
 }
 
 export interface PublicRscOutput {
-  endpoint?: string;
   pages?: Record<string, PublicRscPageOutput>;
 }
 
 export interface RscPageOutput {
   renderer: string;
   assets: AssetGroup;
-  component?: string;
   routeId?: string;
 }
 
-export type PublicRscPageOutput = Omit<RscPageOutput, "component">;
-
-export interface RscReferenceOutput {
-  module: string;
-  exportName?: string;
-}
+export type PublicRscPageOutput = RscPageOutput;
 
 // ── Route resolution ────────────────────────────────────────────────────
 
@@ -724,8 +698,6 @@ export function assertFrameworkManifestShape(
   options: FrameworkManifestValidationOptions = {},
 ): asserts value is BuildOutput | PublicManifestOutput {
   const requireServer = options.server !== "optional";
-  const requireServerFunctionModules =
-    options.serverFunctionModules !== "optional";
   const requirePageRendererReferences =
     options.pageRendererReferences !== "optional";
   const requirePprRendererReferences =
@@ -737,17 +709,14 @@ export function assertFrameworkManifestShape(
     throw new Error(`[evjs] ${source}.version must be 1.`);
   }
   assertManifestBuildId(value.buildId, `${source}.buildId`);
-  if (value.distDir === undefined) {
+  if (value.paths === undefined) {
     if (requireServer) {
-      throw new Error(`[evjs] ${source}.distDir must be a non-empty string.`);
+      throw new Error(`[evjs] ${source}.paths must be an object.`);
     }
   } else {
-    assertManifestString(value.distDir, `${source}.distDir`);
-  }
-  assertPublicPathOutput(value.publicPath, `${source}.publicPath`);
-  if (value.paths !== undefined) {
     assertBuildOutputPaths(value.paths, `${source}.paths`);
   }
+  assertPublicPathOutput(value.publicPath, `${source}.publicPath`);
   if (value.runtime === undefined) {
     if (requireServer) {
       throw new Error(`[evjs] ${source}.runtime must be an object.`);
@@ -819,7 +788,6 @@ export function assertFrameworkManifestShape(
     assertServerFunctionOutputs(
       value.server.functions,
       `${source}.server.functions`,
-      requireServerFunctionModules,
     );
     if (!Array.isArray(value.server.routes)) {
       throw new Error(`[evjs] ${source}.server.routes must be an array.`);
@@ -912,7 +880,6 @@ function assertServerRendererOutputs(
     assertManifestBuildIdentifierKey(name, source);
     assertObject(output, `${source}.${name}`);
     assertServerRendererKind(output.kind, `${source}.${name}.kind`);
-    assertManifestString(output.module, `${source}.${name}.module`);
     assertAssetGroup(output.assets, `${source}.${name}.assets`);
     assertServerRendererOwner(
       output.owner,
@@ -1056,14 +1023,10 @@ function assertServerRendererKind(value: unknown, source: string): void {
 function assertServerFunctionOutputs(
   value: Record<string, unknown>,
   source: string,
-  requireModule: boolean,
 ): void {
   for (const [name, output] of Object.entries(value)) {
     assertManifestServerFunctionIdKey(name, source);
     assertObject(output, `${source}.${name}`);
-    if (requireModule || output.module !== undefined) {
-      assertManifestString(output.module, `${source}.${name}.module`);
-    }
     assertManifestString(output.exportName, `${source}.${name}.exportName`);
     assertAssetGroup(output.assets, `${source}.${name}.assets`);
   }
@@ -1320,9 +1283,6 @@ function assertRouteOutputs(
       "apps",
       apps,
     );
-    if (route.module !== undefined) {
-      assertManifestString(route.module, `${routeSource}.module`);
-    }
     if (page) {
       assertPageRouteOutputContract(route, page, routeSource);
     }
@@ -1515,17 +1475,6 @@ function assertManifestServerFunctionIdKey(key: string, source: string): void {
   );
 }
 
-function assertManifestStringKey(key: string, source: string): void {
-  if (!key.trim()) {
-    throw new Error(`[evjs] ${source} must not contain empty keys.`);
-  }
-  if (key.trim() !== key) {
-    throw new Error(
-      `[evjs] ${source} key "${key}" must not contain leading or trailing whitespace.`,
-    );
-  }
-}
-
 function assertManifestString(
   value: unknown,
   source: string,
@@ -1555,18 +1504,6 @@ function assertPprPageOutput(value: unknown, source: string): void {
       );
     }
     assertAssetGroup(region.assets, `${source}.regions.${name}.assets`);
-    if (region.component !== undefined) {
-      assertManifestString(
-        region.component,
-        `${source}.regions.${name}.component`,
-      );
-    }
-    if (region.fallback !== undefined) {
-      assertManifestString(
-        region.fallback,
-        `${source}.regions.${name}.fallback`,
-      );
-    }
     if (region.cache !== undefined) {
       assertPprRegionCache(region.cache, `${source}.regions.${name}.cache`);
     }
@@ -1728,31 +1665,6 @@ function assertRscOutput(
   requireServerRendererReferences: boolean,
 ): void {
   assertObject(value, source);
-  assertManifestPathname(
-    value.endpoint,
-    `${source}.endpoint`,
-    value.pages !== undefined,
-  );
-  assertRscReferenceOutputs(
-    value.clientReferences,
-    `${source}.clientReferences`,
-  );
-  assertRscReferenceOutputs(
-    value.serverReferences,
-    `${source}.serverReferences`,
-  );
-  if (value.clientReferenceManifest !== undefined) {
-    assertObject(
-      value.clientReferenceManifest,
-      `${source}.clientReferenceManifest`,
-    );
-  }
-  if (value.serverConsumerManifest !== undefined) {
-    assertObject(
-      value.serverConsumerManifest,
-      `${source}.serverConsumerManifest`,
-    );
-  }
   if (value.pages === undefined) return;
 
   assertObject(value.pages, `${source}.pages`);
@@ -1769,23 +1681,6 @@ function assertRscOutput(
       routesById,
       requireServerRendererReferences,
     );
-  }
-}
-
-function assertRscReferenceOutputs(value: unknown, source: string): void {
-  if (value === undefined) return;
-  assertObject(value, source);
-  for (const [id, reference] of Object.entries(value)) {
-    assertManifestStringKey(id, source);
-    const referenceSource = `${source}.${id}`;
-    assertObject(reference, referenceSource);
-    assertManifestString(reference.module, `${referenceSource}.module`);
-    if (reference.exportName !== undefined) {
-      assertManifestString(
-        reference.exportName,
-        `${referenceSource}.exportName`,
-      );
-    }
   }
 }
 
@@ -1825,10 +1720,6 @@ function assertRscPageOutputReferences(
       );
     }
     assertRscServerRendererOwner(renderer, name, `${source}.renderer`);
-  }
-
-  if (page.component !== undefined) {
-    assertManifestString(page.component, `${source}.component`);
   }
 
   if (page.routeId === undefined) return;

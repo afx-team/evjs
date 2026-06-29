@@ -255,7 +255,16 @@ test.describe("render-modes", () => {
     const manifestPath = getRenderModesPublicManifestPath();
     const manifest = readRenderModesPublicManifest();
     const buildOutput = readRenderModesBuildOutput();
+    const buildOutputText = JSON.stringify(buildOutput);
+    const frameworkRuntime = readRenderModesFrameworkRuntime();
 
+    expect("distDir" in buildOutput).toBe(false);
+    expect(buildOutput.paths).toEqual({
+      rootDir: "dist",
+      publicDir: "dist/client",
+      serverDir: "dist/server",
+    });
+    expect(buildOutputText).not.toContain('"chunks"');
     expect(manifest.apps.default).toEqual(
       expect.objectContaining({
         mount: "#app",
@@ -407,8 +416,21 @@ test.describe("render-modes", () => {
     expect(manifest.rsc.clientReferences).toBeUndefined();
     expect(manifest.rsc.clientReferenceManifest).toBeUndefined();
     expect(manifest.rsc.serverConsumerManifest).toBeUndefined();
+    expect(frameworkRuntime.rsc.clientReferenceManifest).toBeDefined();
+    expect(
+      fs.existsSync(
+        path.join(exampleDir, "dist/client/react-client-manifest.json"),
+      ),
+    ).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(exampleDir, "dist/client/react-ssr-manifest.json"),
+      ),
+    ).toBe(false);
 
     const publicManifestText = fs.readFileSync(manifestPath, "utf-8");
+    expect(publicManifestText).not.toContain('"distDir"');
+    expect(publicManifestText).not.toContain('"chunks"');
     expect(publicManifestText).not.toContain(".tsx");
     expect(publicManifestText).not.toContain("file://");
     expect(publicManifestText).not.toContain(exampleDir);
@@ -449,6 +471,12 @@ function readRenderModesBuildOutput() {
       path.join(exampleDir, "dist", "build-output.json"),
       "utf-8",
     ),
+  );
+}
+
+function readRenderModesFrameworkRuntime() {
+  return JSON.parse(
+    fs.readFileSync(path.join(exampleDir, "dist/server/runtime.json"), "utf-8"),
   );
 }
 

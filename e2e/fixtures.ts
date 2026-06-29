@@ -19,7 +19,6 @@ import {
   getServerRenderedPaths,
 } from "@evjs/shared/manifest";
 import { test as base, expect } from "@playwright/test";
-import { createFrameworkRuntime } from "../packages/ev/src/framework-runtime";
 
 export { expect };
 
@@ -361,9 +360,8 @@ export function createExampleTest(exampleName: string) {
 
         await buildExample(exampleDir, bundlerName);
 
-        // Read BuildOutput for fixture routing and the server manifest
-        // for the bundle entry. BuildOutput stays in the fixture process and
-        // is projected before the server bootstrap sees it.
+        // Read the server manifest for the bundle entry and the generated
+        // FrameworkRuntime contract for server startup.
         const serverManifestPath = path.join(
           exampleDir,
           "dist",
@@ -377,6 +375,15 @@ export function createExampleTest(exampleName: string) {
         if (!serverEntry) {
           throw new Error("Built example did not emit a server entry.");
         }
+        const frameworkRuntimePath = path.join(
+          exampleDir,
+          "dist",
+          "server",
+          "runtime.json",
+        );
+        const frameworkRuntime = JSON.parse(
+          fs.readFileSync(frameworkRuntimePath, "utf-8"),
+        );
         const buildOutputPath = path.join(
           exampleDir,
           "dist",
@@ -385,7 +392,6 @@ export function createExampleTest(exampleName: string) {
         const buildOutput = JSON.parse(
           fs.readFileSync(buildOutputPath, "utf-8"),
         ) as BuildOutput;
-        const frameworkRuntime = createFrameworkRuntime(buildOutput);
         const serverEntryPath = path.join(
           exampleDir,
           "dist",

@@ -585,7 +585,6 @@ describe("utoopackAdapter dev", () => {
         css: ["main.css"],
       },
       document: { fileName: "index.html" },
-      entry: "./src/main.tsx",
       module: {
         type: "entry",
         href: "main.js",

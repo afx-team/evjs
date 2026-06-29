@@ -62,7 +62,11 @@ const CTX: PluginContext = {
 const TEST_OUTPUT: BuildOutput = {
   version: 1,
   buildId: "test",
-  distDir: "dist",
+  paths: {
+    rootDir: "dist",
+    publicDir: "dist/client",
+    serverDir: "dist/server",
+  },
   publicPath: "/",
   runtime: {
     server: {
@@ -76,7 +80,6 @@ const TEST_OUTPUT: BuildOutput = {
   apps: {
     default: {
       assets: { js: ["main.js"], css: [] },
-      entry: "./src/main.tsx",
     },
   },
   pages: {},

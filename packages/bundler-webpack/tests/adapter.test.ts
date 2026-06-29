@@ -182,6 +182,8 @@ async function emitFrameworkArtifacts(options: {
     serverEntry: options.facts.serverEntry,
     serverAssets: options.facts.serverAssets,
     serverModules: options.facts.serverModules,
+  });
+  const frameworkRuntime = createFrameworkRuntime(output, {
     rscManifests: options.facts.rscManifests,
   });
   await options.onBuildOutput?.(output);
@@ -194,6 +196,11 @@ async function emitFrameworkArtifacts(options: {
   await fs.writeFile(
     path.join(serverDir, "manifest.json"),
     JSON.stringify(createServerManifest(output), null, 2),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(serverDir, "runtime.json"),
+    JSON.stringify(frameworkRuntime, null, 2),
     "utf-8",
   );
   await fs.writeFile(
@@ -566,7 +573,6 @@ describe("webpackAdapter build", () => {
           js: ["main.js"],
           css: [],
         },
-        entry: "./src/main.ts",
         mount: "#app",
         document: {
           fileName: "index.html",
@@ -581,7 +587,6 @@ describe("webpackAdapter build", () => {
           js: [],
           css: [],
         },
-        component: "./src/pages/Dashboard !page 中文.ts",
         hydrate: "load",
         render: "ssr",
         routeId: "dashboard",
@@ -591,7 +596,6 @@ describe("webpackAdapter build", () => {
         path: "/dashboard",
         appId: "default",
         pageId: "dashboard",
-        module: "./src/pages/Dashboard !page 中文.ts",
       });
       expect(manifest.assets["dashboard-server"]).toEqual({
         js: ["dashboard-server.cjs"],
@@ -599,12 +603,12 @@ describe("webpackAdapter build", () => {
       });
       expect(manifest.server?.entry).toBe("server.cjs");
       expect(manifest.assets.plugin).toEqual({ js: ["plugin.js"], css: [] });
-      expect(publicManifest.apps.default.entry).toBeUndefined();
+      expect("entry" in publicManifest.apps.default).toBe(false);
       expect(publicManifest.apps.default.module).toEqual({
         type: "entry",
         href: "main.js",
       });
-      expect(publicManifest.pages.dashboard.component).toBeUndefined();
+      expect("component" in publicManifest.pages.dashboard).toBe(false);
       await expect(
         fs.access(path.join(cwd, "dist/manifest.json")),
       ).rejects.toThrow();
@@ -750,15 +754,12 @@ describe("webpackAdapter build", () => {
       const manifest = JSON.parse(
         await fs.readFile(path.join(cwd, "dist/build-output.json"), "utf-8"),
       ) as BuildOutput;
+      const frameworkRuntime = JSON.parse(
+        await fs.readFile(path.join(cwd, "dist/server/runtime.json"), "utf-8"),
+      ) as FrameworkRuntimeOutput;
       const clientReferenceManifest = JSON.parse(
         await fs.readFile(
           path.join(cwd, "dist/client/react-client-manifest.json"),
-          "utf-8",
-        ),
-      );
-      const serverConsumerManifest = JSON.parse(
-        await fs.readFile(
-          path.join(cwd, "dist/client/react-ssr-manifest.json"),
           "utf-8",
         ),
       );
@@ -773,11 +774,10 @@ describe("webpackAdapter build", () => {
           "insights-rsc",
         ]),
       );
-      expect(manifest.rsc?.clientReferenceManifest).toEqual(
+      expect("clientReferenceManifest" in (manifest.rsc ?? {})).toBe(false);
+      expect("serverConsumerManifest" in (manifest.rsc ?? {})).toBe(false);
+      expect(frameworkRuntime.rsc?.clientReferenceManifest).toEqual(
         clientReferenceManifest,
-      );
-      expect(manifest.rsc?.serverConsumerManifest).toEqual(
-        serverConsumerManifest,
       );
       expect(Object.keys(clientReferenceManifest)).toEqual(
         expect.arrayContaining([badgeFileUrl]),
@@ -785,7 +785,6 @@ describe("webpackAdapter build", () => {
       expect(manifest.rsc?.pages?.insights).toEqual(
         expect.objectContaining({
           renderer: "insights-rsc",
-          component: "./src/pages/Insights !page.tsx",
         }),
       );
       expect(manifest.server?.renderers?.["insights-server"]).toMatchObject({
@@ -909,7 +908,6 @@ describe("webpackAdapter build", () => {
           [campaignRegionId]: {
             id: campaignRegionId,
             assets: { js: [campaignRegionAsset], css: [] },
-            component: "./src/pages/Offer.tsx",
             cache: "no-store",
           },
         },
@@ -917,7 +915,6 @@ describe("webpackAdapter build", () => {
       expect(manifest.server?.renderers?.["campaign-ppr-shell"]).toMatchObject({
         kind: "ppr-shell",
         owner: { pageId: "campaign" },
-        module: "./src/pages/Campaign.tsx",
         assets: { js: ["campaign-ppr-shell.cjs"], css: [] },
       });
       expect(
@@ -925,7 +922,6 @@ describe("webpackAdapter build", () => {
       ).toMatchObject({
         kind: "ppr-region",
         owner: { pageId: "campaign", regionId: campaignRegionId },
-        module: "./src/pages/Offer.tsx",
         assets: { js: [campaignRegionAsset], css: [] },
       });
 
@@ -1492,8 +1488,12 @@ async function requestServerEntry(
     manifest.server?.entry ?? "",
   );
   const serverDir = path.dirname(serverEntryPath);
+  const frameworkRuntimePath = path.join(serverDir, "runtime.json");
+  const frameworkRuntime = JSON.parse(
+    await fs.readFile(frameworkRuntimePath, "utf-8"),
+  ) as FrameworkRuntimeOutput;
   const runtimeGlobals = globalThis as ServerRuntimeGlobals;
-  runtimeGlobals.__EVJS_FRAMEWORK_RUNTIME__ = createFrameworkRuntime(manifest);
+  runtimeGlobals.__EVJS_FRAMEWORK_RUNTIME__ = frameworkRuntime;
   runtimeGlobals.__EVJS_SERVER_MODULE_LOADER__ = async (asset: string) => {
     const mod = await import(
       pathToFileURL(path.resolve(serverDir, asset)).href

@@ -161,21 +161,23 @@ sequenceDiagram
   loop each HTML document
     EV->>Plugins: transformHtml(doc, htmlContext)
   end
-  EV->>Plugins: buildEnd({ output, isRebuild })
+  EV->>Plugins: buildEnd({ output, frameworkRuntime, isRebuild })
 ```
 
-Builds emit the complete private `BuildOutput` handoff artifact at
-`dist/build-output.json`. The client and server manifest paths come from
-`output.client` and `output.server`; those files are deployment/tooling
-metadata. Browser bootstraps consume a generated `runtime.json` projection, and
-deployment adapters embed equivalent `FrameworkRuntime` data into platform
-server files, so deployed server runtimes do not read `dist/build-output.json`
-or manifest files at startup.
+Builds emit the private deployment handoff artifact at
+`dist/build-output.json`. Its output locations are grouped under
+`BuildOutput.paths`; there is no separate top-level `distDir`. The client and
+server manifest files are deployment/tooling metadata. Browser bootstraps
+consume a generated client `runtime.json` projection, and server bootstraps
+consume an explicit `FrameworkRuntime` projection from `dist/server/runtime.json`
+or an equivalent value embedded by a deployment adapter. Deployed server
+runtimes do not read `dist/build-output.json` or manifest files at startup.
 The browser runtime projection is intentionally smaller than the public
 manifest: it keeps only the build id, transport base URL, RSC endpoint,
 app/page module targets, mount selectors, and route lookup data needed to boot
 or navigate. Asset indexes, deployment metadata, source references, and
-renderer bundle metadata stay in manifests or `BuildOutput`.
+renderer bundle metadata stay in manifests or `BuildOutput`; React Flight
+client reference data stays in the explicit `FrameworkRuntime` projection.
 In `BuildOutput` and public manifests, client routes are URL-to-target indexes.
 Page rendering, hydration, and component model metadata stay under `pages`, and
 framework endpoints stay under runtime/server projections.
@@ -347,7 +349,8 @@ belongs in the referenced page module, not in `ev.config.ts`.
 The public config exposes `server.basePath`; the function endpoint is derived from that base path.
 
 RSC `use client` reference extraction preserves these names in
-`BuildOutput.rsc`:
+RSC reference extraction records these export names for the bundler transform
+and React Flight manifest generation:
 
 - default exports;
 - identifier exports;
@@ -360,16 +363,15 @@ Type-only exports are ignored. The client reference transform emits internal
 bindings with export specifiers, so reserved words and string-literal aliases
 stay valid JavaScript.
 
-The RSC manifest rules are strict:
+The RSC output rules are strict:
 
-- `BuildOutput.rsc.clientReferences` and `BuildOutput.rsc.serverReferences` use
-  the extracted reference id as a trimmed string key.
-- Reference ids may contain file paths, URL syntax, `#`, or `:`.
-- The value object carries the trimmed `module` and optional trimmed
-  `exportName`.
-- Reference-only RSC output can omit `BuildOutput.rsc.endpoint`.
-- RSC page output cannot omit `BuildOutput.rsc.endpoint`, because Flight
-  requests need a concrete endpoint.
+- `BuildOutput.rsc` does not publish extracted source reference ids or source
+  modules.
+- RSC page output carries renderer ids and emitted assets.
+- React Flight client reference manifests stay out of `BuildOutput` and
+  client/server manifests; the generated `FrameworkRuntime` carries the runtime
+  client reference data needed by the RSC endpoint.
+- The Flight endpoint is expressed once as `BuildOutput.runtime.server.rsc`.
 - The manifest linker rejects RSC page output when `runtime.server.rsc` is
   missing.
 
@@ -401,7 +403,9 @@ Platform-specific adapters should derive their routing, framework endpoint, SSR,
 PPR, RSC, and asset metadata from `BuildOutput` instead of reading bundler stats.
 Build-pipeline adapters receive that object in memory; post-build tools can read
 `dist/build-output.json`.
-Full BuildOutput manifests retain source modules and server renderer references.
+Full BuildOutput manifests retain deployment-facing route, asset, server
+function, server route, renderer, and RSC page metadata without publishing
+source module paths or bundler chunk maps.
 Client/server manifests are deployment metadata; generated browser and server
 runtimes consume minimal ClientRuntime and FrameworkRuntime contracts.
 Deployment artifacts group framework endpoint and transport data under their

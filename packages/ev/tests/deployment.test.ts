@@ -34,7 +34,11 @@ describe("createDeploymentArtifact", () => {
     const output: BuildOutput = {
       version: 1,
       buildId: "build-1",
-      distDir: "dist",
+      paths: {
+        rootDir: "dist",
+        publicDir: "dist/client",
+        serverDir: "dist/server",
+      },
       publicPath: "auto",
       runtime: {
         server: {
@@ -53,7 +57,6 @@ describe("createDeploymentArtifact", () => {
       apps: {
         default: {
           assets: { js: ["main.js"], css: ["main.css"] },
-          entry: "./src/main.tsx",
           mount: "#app",
         },
       },
@@ -70,7 +73,6 @@ describe("createDeploymentArtifact", () => {
           },
           path: "/insights",
           routeId: "insights",
-          component: "./src/pages/Insights.tsx",
           hydrate: "none",
           mount: "#app",
         },
@@ -89,13 +91,11 @@ describe("createDeploymentArtifact", () => {
           "insights-rsc": {
             kind: "rsc-page",
             owner: { pageId: "insights" },
-            module: "./src/pages/Insights.tsx",
             assets: { js: ["insights-rsc.js"], css: [] },
           },
         },
         functions: {
           search: {
-            module: "src/actions.ts",
             exportName: "search",
             assets: { js: ["server.js"], css: [] },
           },
@@ -109,23 +109,10 @@ describe("createDeploymentArtifact", () => {
         ],
       },
       rsc: {
-        endpoint: "/framework/rsc",
         pages: {
           insights: {
             renderer: "insights-rsc",
             assets: { js: ["insights-rsc.js"], css: [] },
-          },
-        },
-        clientReferences: {
-          "src/Client.tsx#default": {
-            module: "src/Client.tsx",
-            exportName: "default",
-          },
-        },
-        serverReferences: {
-          ref: {
-            module: "src/actions.ts",
-            exportName: "search",
           },
         },
       },
@@ -143,7 +130,6 @@ describe("createDeploymentArtifact", () => {
       version: 1,
       platform: "node-example",
       buildId: "build-1",
-      distDir: "dist",
       paths: {
         rootDir: "dist",
         publicDir: "dist/client",
@@ -152,8 +138,6 @@ describe("createDeploymentArtifact", () => {
       publicPath: "auto",
       apps: {
         default: {
-          entry: "./src/main.tsx",
-          routes: undefined,
           mount: "#app",
         },
       },
@@ -196,8 +180,6 @@ describe("createDeploymentArtifact", () => {
       rsc: {
         endpoint: "/framework/rsc",
         pages: ["insights"],
-        clientReferences: ["src/Client.tsx#default"],
-        serverReferences: ["ref"],
       },
       metadata: {
         extra: true,
@@ -209,7 +191,11 @@ describe("createDeploymentArtifact", () => {
     const output: BuildOutput = {
       version: 1,
       buildId: "build-1",
-      distDir: "dist",
+      paths: {
+        rootDir: "dist",
+        publicDir: "dist/client",
+        serverDir: "dist/server",
+      },
       publicPath: "/",
       runtime: {
         server: {
@@ -222,7 +208,6 @@ describe("createDeploymentArtifact", () => {
       apps: {
         default: {
           assets: { js: ["main.js"], css: [] },
-          entry: "./src/main.tsx",
         },
       },
       pages: {
@@ -306,7 +291,11 @@ describe("createDeploymentArtifact", () => {
     const output: BuildOutput = {
       version: 1,
       buildId: "build-1",
-      distDir: "dist",
+      paths: {
+        rootDir: "dist",
+        publicDir: "dist/client",
+        serverDir: "dist/server",
+      },
       publicPath: "/",
       runtime: {
         server: {
@@ -319,7 +308,6 @@ describe("createDeploymentArtifact", () => {
         default: {
           assets: { js: ["main.js"], css: [] },
           document: { fileName: "index.html" },
-          entry: "./src/main.tsx",
         },
       },
       pages: {
@@ -503,7 +491,11 @@ describe("createDeploymentArtifact", () => {
     const output: BuildOutput = {
       version: 1,
       buildId: "build-1",
-      distDir: "dist",
+      paths: {
+        rootDir: "dist",
+        publicDir: "dist/client",
+        serverDir: "dist/server",
+      },
       publicPath: "/",
       runtime: {
         server: {
@@ -518,7 +510,6 @@ describe("createDeploymentArtifact", () => {
         default: {
           assets: { js: ["main.js"], css: [] },
           document: { fileName: "index.html" },
-          entry: "./src/main.tsx",
         },
       },
       pages: {
@@ -594,7 +585,6 @@ describe("createDeploymentArtifact", () => {
         renderers: {},
         functions: {
           search: {
-            module: "src/actions.ts",
             exportName: "search",
             assets: { js: ["server.js"], css: [] },
           },
@@ -608,15 +598,12 @@ describe("createDeploymentArtifact", () => {
         ],
       },
       rsc: {
-        endpoint: "/framework/rsc",
         pages: {
           insights: {
             renderer: "insights-rsc",
             assets: { js: ["insights-rsc.js"], css: [] },
           },
         },
-        clientReferences: {},
-        serverReferences: {},
       },
     };
 
@@ -644,7 +631,11 @@ describe("createDeploymentArtifact", () => {
     const output: BuildOutput = {
       version: 1,
       buildId: "build-1",
-      distDir: "dist",
+      paths: {
+        rootDir: "dist",
+        publicDir: "dist/client",
+        serverDir: "dist/server",
+      },
       publicPath: "/",
       runtime: {
         server: {
@@ -699,7 +690,11 @@ describe("createDeploymentArtifact", () => {
     const output: BuildOutput = {
       version: 1,
       buildId: "build-1",
-      distDir: "dist",
+      paths: {
+        rootDir: "dist",
+        publicDir: "dist/client",
+        serverDir: "dist/server",
+      },
       publicPath: "/",
       runtime: {
         server: {
@@ -712,7 +707,6 @@ describe("createDeploymentArtifact", () => {
         default: {
           assets: { js: ["main.js"], css: [] },
           document: { fileName: "index.html" },
-          entry: "./src/main.tsx",
         },
       },
       pages: {
@@ -756,7 +750,11 @@ describe("createDeploymentArtifact", () => {
     const output: BuildOutput = {
       version: 1,
       buildId: "build-1",
-      distDir: "dist",
+      paths: {
+        rootDir: "dist",
+        publicDir: "dist/client",
+        serverDir: "dist/server",
+      },
       publicPath: "/",
       runtime: {
         server: {
@@ -769,7 +767,6 @@ describe("createDeploymentArtifact", () => {
       apps: {
         default: {
           assets: { js: ["main.js"], css: [] },
-          entry: "./src/main.tsx",
         },
       },
       pages: {
@@ -914,7 +911,11 @@ function createMpaStaticDeploymentOutput(): BuildOutput {
   return {
     version: 1,
     buildId: "build-1",
-    distDir: "dist",
+    paths: {
+      rootDir: "dist",
+      publicDir: "dist/client",
+      serverDir: "dist/server",
+    },
     publicPath: "/",
     runtime: {
       server: {
@@ -1001,7 +1002,6 @@ function createServerDeploymentOutput(paths: {
   return {
     version: 1,
     buildId: "build-1",
-    distDir: paths.rootDir,
     paths,
     publicPath: "/",
     runtime: {
@@ -1014,7 +1014,6 @@ function createServerDeploymentOutput(paths: {
     apps: {
       default: {
         assets: { js: ["main.js"], css: [] },
-        entry: "./src/main.tsx",
       },
     },
     pages: {},

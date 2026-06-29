@@ -53,7 +53,15 @@ test.describe("deployment-adapters", () => {
   test("emits manifest and deployment artifacts from BuildOutput", async () => {
     const manifestPath = path.join(exampleDir, "dist", "build-output.json");
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    const manifestText = JSON.stringify(manifest);
 
+    expect("distDir" in manifest).toBe(false);
+    expect(manifest.paths).toEqual({
+      rootDir: "dist",
+      publicDir: "dist/client",
+      serverDir: "dist/server",
+    });
+    expect(manifestText).not.toContain('"chunks"');
     expect(manifest.apps.default).toEqual(
       expect.objectContaining({
         mount: "#app",
@@ -96,7 +104,15 @@ test.describe("deployment-adapters", () => {
         "utf-8",
       ),
     );
+    const deployArtifactText = JSON.stringify(deployArtifact);
     expect(deployArtifact.platform).toBe("deployment-adapters-example");
+    expect("distDir" in deployArtifact).toBe(false);
+    expect(deployArtifact.paths).toEqual({
+      rootDir: "dist",
+      publicDir: "dist/client",
+      serverDir: "dist/server",
+    });
+    expect(deployArtifactText).not.toContain('"chunks"');
     expect(deployArtifact.apps.default).toEqual(
       expect.objectContaining({ mount: "#app" }),
     );

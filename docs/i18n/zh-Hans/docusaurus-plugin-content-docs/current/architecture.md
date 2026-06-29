@@ -153,18 +153,19 @@ sequenceDiagram
   loop each HTML document
     EV->>Plugins: transformHtml(doc, htmlContext)
   end
-  EV->>Plugins: buildEnd({ output, isRebuild })
+  EV->>Plugins: buildEnd({ output, frameworkRuntime, isRebuild })
 ```
 
-构建会在 `dist/build-output.json` 输出完整私有 `BuildOutput` handoff artifact。
-client/server manifest 路径来自 `output.client` 和 `output.server`；这些文件是部署/工具
-元信息。浏览器 bootstrap 消费生成的 `runtime.json` 投影，Deployment adapter 会把等价的
-`FrameworkRuntime` 数据内嵌进平台服务端产物，因此已部署的 server runtime 不会在启动时读取
-`dist/build-output.json` 或 manifest 文件。
+构建会在 `dist/build-output.json` 输出私有部署 handoff artifact。输出位置统一放在
+`BuildOutput.paths` 下，不再有单独的顶层 `distDir`。client/server manifest 文件是部署/工具
+元信息。浏览器 bootstrap 消费生成的 client `runtime.json` 投影，服务端 bootstrap 消费
+`dist/server/runtime.json` 中的显式 `FrameworkRuntime` 投影，或消费 Deployment adapter
+内嵌的等价数据。因此已部署的 server runtime 不会在启动时读取 `dist/build-output.json`
+或 manifest 文件。
 浏览器运行时投影刻意小于 public manifest：只保留启动和导航需要的 build id、
 transport base URL、RSC endpoint、app/page module target、mount selector 和 route
 lookup 数据。资源索引、部署元信息、源码引用和 renderer bundle 元信息留在 manifest 或
-`BuildOutput` 中。
+`BuildOutput` 中；React Flight client reference 数据留在显式 `FrameworkRuntime` 投影中。
 在 `BuildOutput` 和公开 manifest 中，client route 是 URL 到目标的索引。页面渲染、
 hydrate 和 component model 元信息留在 `pages` 下，framework endpoint 留在 runtime/server
 投影下。
@@ -317,7 +318,8 @@ entry 解析。
 
 公开配置只暴露 `server.basePath`；函数 endpoint 从这个 base path 派生。
 
-RSC `use client` reference extraction 会在 `BuildOutput.rsc` 中保留这些名称：
+RSC `use client` reference extraction 会为 bundler transform 和 React Flight
+manifest 生成记录这些导出名称：
 
 - default export；
 - identifier export；
@@ -329,15 +331,13 @@ RSC `use client` reference extraction 会在 `BuildOutput.rsc` 中保留这些�
 type-only export 会被忽略。client reference transform 会生成内部 binding，并通过
 export specifier 导出，因此 reserved word 和字符串字面量 alias 仍是合法 JavaScript。
 
-RSC manifest 规则保持严格：
+RSC output 规则保持严格：
 
-- `BuildOutput.rsc.clientReferences` 和 `BuildOutput.rsc.serverReferences` 使用提取出的
-  reference id 作为无首尾空白的字符串 key。
-- reference id 可以包含文件路径、URL 语法、`#` 或 `:`。
-- value object 携带无首尾空白的 `module` 和可选 `exportName`。
-- 只有 reference metadata 的 RSC output 可以省略 `BuildOutput.rsc.endpoint`。
-- 包含 RSC page output 时不能省略 `BuildOutput.rsc.endpoint`，因为 Flight 请求需要明确的
-  endpoint。
+- `BuildOutput.rsc` 不发布提取出的源码 reference id 或源码 module。
+- RSC page output 携带 renderer id 和构建出的 assets。
+- React Flight client reference manifest 不进入 `BuildOutput` 和 client/server manifest；
+  生成的 `FrameworkRuntime` 携带 RSC endpoint 运行时需要的 client reference 数据。
+- Flight endpoint 只通过 `BuildOutput.runtime.server.rsc` 表达一次。
 - 缺少 `runtime.server.rsc` 时，manifest linker 会拒绝 RSC page output。
 
 在完整 BuildOutput manifest 中，每个 RSC page renderer reference 必须解析到
@@ -365,9 +365,10 @@ Deployment adapter 消费 `BuildOutput`。`@evjs/ev` 提供：
 
 平台专属 adapter 应从 `BuildOutput` 派生 routing、framework endpoint、SSR、PPR、RSC 和 asset metadata，而不是读取 bundler stats。
 构建流水线中的 adapter 会在内存里收到这个对象；构建后的工具可以读取 `dist/build-output.json`。
-完整 BuildOutput manifest 会保留源码 module 和 server renderer reference。client/server
-manifest 是部署元信息；生成的浏览器和服务端运行时消费最小化的 ClientRuntime 和
-FrameworkRuntime contract。
+完整 BuildOutput manifest 会保留面向部署的 route、asset、server function、server
+route、renderer 和 RSC page metadata，但不发布源码 module path 或 bundler chunk map。client/server manifest
+是部署元信息；生成的浏览器和服务端运行时消费最小化的 ClientRuntime 和 FrameworkRuntime
+contract。
 Deployment artifact 会把 framework endpoint 和 transport 数据归到 server 分组下，而不是
 重复携带原始 runtime 对象。
 

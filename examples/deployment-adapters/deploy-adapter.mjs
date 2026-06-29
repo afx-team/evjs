@@ -29,7 +29,7 @@ export function deploymentExampleAdapter() {
         buildEnd({ output }) {
           const artifactPath = path.join(
             ctx.cwd,
-            output.distDir,
+            output.paths.rootDir,
             "deployment.example.json",
           );
           fs.mkdirSync(path.dirname(artifactPath), { recursive: true });

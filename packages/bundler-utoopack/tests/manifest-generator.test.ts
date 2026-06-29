@@ -138,7 +138,6 @@ describe("UtoopackManifestGenerator", () => {
         id: "home",
         path: "/",
         appId: "default",
-        module: "./pages/Home.tsx",
       },
     ]);
     expect(manifest.server?.entry).toBe("server.js");
@@ -149,7 +148,6 @@ describe("UtoopackManifestGenerator", () => {
     expect(manifest.server?.functions).toEqual({
       "function-id": {
         assets: { js: ["server.js"], css: [] },
-        module: "src/actions.ts",
         exportName: "save",
       },
     });
@@ -213,7 +211,7 @@ describe("UtoopackManifestGenerator", () => {
       css: [],
     });
     expect(output.serverEntry).toBe("server.js");
-    expect(manifest.distDir).toBe("custom-dist");
+    expect(manifest.paths.rootDir).toBe("custom-dist");
   });
 
   it("links page assets for MPA output", async () => {
@@ -264,7 +262,6 @@ describe("UtoopackManifestGenerator", () => {
     expect(manifest.pages.home).toMatchObject({
       assets: { js: ["home.js"], css: [] },
       render: "csr",
-      entry: "./src/home.tsx",
       module: {
         type: "entry",
         href: "home.js",
@@ -273,7 +270,6 @@ describe("UtoopackManifestGenerator", () => {
     expect(manifest.pages.about).toMatchObject({
       assets: { js: ["about.js"], css: [] },
       render: "csr",
-      entry: "./src/about.tsx",
       module: {
         type: "entry",
         href: "about.js",
@@ -346,7 +342,6 @@ describe("UtoopackManifestGenerator", () => {
       render: "ssr",
       prerender: { partial: true },
       routeId: "campaign-route",
-      component: "./src/campaign/Page.tsx",
       ppr: {
         delivery: "merge",
         shell: { js: ["campaign.shell.js"], css: [] },
@@ -354,8 +349,6 @@ describe("UtoopackManifestGenerator", () => {
           offer: {
             id: "offer",
             assets: { js: ["campaign.offer.js"], css: [] },
-            component: "./src/campaign/Offer.region.tsx",
-            fallback: "./src/campaign/OfferSkeleton.tsx",
             cache: "no-store",
             hydrate: "visible",
           },

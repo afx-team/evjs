@@ -2,9 +2,7 @@ import { execSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import { createServer } from "node:net";
 import path from "node:path";
-import type { BuildOutput } from "@evjs/shared/manifest";
 import { test as base, expect } from "@playwright/test";
-import { createFrameworkRuntime } from "../packages/ev/src/framework-runtime";
 
 export { expect };
 
@@ -55,7 +53,7 @@ export function createWebSocketExampleTest() {
         });
 
         // 2. Read the server manifest for the bundle entry and project the
-        // BuildOutput into the framework runtime for bootstrap.
+        // Use the generated framework runtime contract for bootstrap.
         const serverManifestPath = path.join(
           exampleDir,
           "dist",
@@ -71,14 +69,12 @@ export function createWebSocketExampleTest() {
             "Built WebSocket example did not emit a server entry.",
           );
         }
-        const buildOutputPath = path.join(
+        const runtimePath = path.join(
           exampleDir,
           "dist",
-          "build-output.json",
+          "server",
+          "runtime.json",
         );
-        const buildOutput = JSON.parse(
-          fs.readFileSync(buildOutputPath, "utf-8"),
-        ) as BuildOutput;
         const frameworkRuntimePath = path.join(
           exampleDir,
           "dist",
@@ -86,7 +82,7 @@ export function createWebSocketExampleTest() {
         );
         fs.writeFileSync(
           frameworkRuntimePath,
-          JSON.stringify(createFrameworkRuntime(buildOutput), null, 2),
+          fs.readFileSync(runtimePath, "utf-8"),
           "utf-8",
         );
         const serverEntryPath = path.join(

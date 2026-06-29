@@ -6,6 +6,7 @@ import type {
 import { createServerManifest } from "@evjs/shared/manifest";
 import type { Logger } from "@logtape/logtape";
 import type { Config, DefaultBundlerConfig, ResolvedConfig } from "./config.js";
+import type { FrameworkRuntimeOutput } from "./framework-runtime.js";
 
 /**
  * Minimal DOM element / document interface for plugin HTML manipulation.
@@ -433,6 +434,8 @@ export interface EvBuildResult {
 export interface BuildResult extends EvBuildResult {
   /** Single framework build output. */
   output: BuildOutput;
+  /** Server runtime contract generated from BuildOutput plus runtime-only facts. */
+  frameworkRuntime?: FrameworkRuntimeOutput;
 }
 
 export type HtmlDocumentInfo =
@@ -482,9 +485,13 @@ const EMPTY_ASSETS: ManifestAssets = { js: [], css: [] };
 export function createBuildResult(
   output: BuildOutput,
   isRebuild: boolean,
+  options: { frameworkRuntime?: FrameworkRuntimeOutput } = {},
 ): BuildResult {
   return {
     output,
+    ...(options.frameworkRuntime
+      ? { frameworkRuntime: options.frameworkRuntime }
+      : {}),
     clientManifest: createClientManifest(output),
     serverManifest: createServerManifest(output),
     isRebuild,

@@ -8,7 +8,10 @@ import type {
   RenderMode,
   RuntimeOutput,
 } from "@evjs/shared/manifest";
-import { createFrameworkRuntime } from "./framework-runtime.js";
+import {
+  createFrameworkRuntime,
+  type FrameworkRuntimeOutput,
+} from "./framework-runtime.js";
 import type { Plugin } from "./plugin.js";
 
 export interface DeploymentArtifactOptions {
@@ -22,6 +25,7 @@ export interface NodeDeploymentAdapterOptions
   serverFileName?: string;
   portEnv?: string;
   defaultPort?: number;
+  frameworkRuntime?: FrameworkRuntimeOutput;
 }
 
 export interface StaticDeploymentAdapterOptions
@@ -35,6 +39,7 @@ export interface EdgeDeploymentAdapterOptions
   artifactFileName?: string;
   workerFileName?: string;
   assetsBinding?: string;
+  frameworkRuntime?: FrameworkRuntimeOutput;
 }
 
 export interface NodeDeploymentFiles {
@@ -63,8 +68,7 @@ export interface DeploymentArtifact {
   version: 1;
   platform?: string;
   buildId: string;
-  distDir: string;
-  paths?: BuildOutput["paths"];
+  paths: BuildOutput["paths"];
   publicPath: PublicPathOutput;
   assets?: Record<string, AssetGroup>;
   apps: Record<string, DeploymentApp>;
@@ -80,7 +84,6 @@ export interface DeploymentApp {
   document?: {
     fileName: string;
   };
-  entry?: string;
   mount?: string;
 }
 
@@ -123,8 +126,6 @@ export interface DeploymentServer {
 export interface DeploymentRsc {
   endpoint?: string;
   pages: string[];
-  clientReferences: string[];
-  serverReferences: string[];
 }
 
 interface StaticDocumentRoute {
@@ -153,7 +154,6 @@ export function createDeploymentArtifact(
     version: 1,
     ...(options.platform ? { platform: options.platform } : {}),
     buildId: output.buildId,
-    distDir: output.distDir,
     paths: getDeploymentOutputPaths(output),
     publicPath: output.publicPath,
     ...(includeAssets ? { assets: output.assets } : {}),
@@ -163,7 +163,6 @@ export function createDeploymentArtifact(
         {
           ...(includeAssets ? { assets: app.assets } : {}),
           document: app.document,
-          entry: app.entry,
           mount: app.mount,
         },
       ]),
@@ -209,10 +208,8 @@ export function createDeploymentArtifact(
     ...(output.rsc
       ? {
           rsc: {
-            endpoint: output.rsc.endpoint,
+            endpoint: output.runtime.server.rsc,
             pages: Object.keys(output.rsc.pages ?? {}),
-            clientReferences: Object.keys(output.rsc.clientReferences ?? {}),
-            serverReferences: Object.keys(output.rsc.serverReferences ?? {}),
           },
         }
       : {}),
@@ -253,8 +250,11 @@ export function nodeDeploymentAdapter(
     name: "node-deployment-adapter",
     setup() {
       return {
-        async buildEnd({ output }) {
-          const files = createNodeDeploymentFiles(output, options);
+        async buildEnd({ output, frameworkRuntime }) {
+          const files = createNodeDeploymentFiles(output, {
+            ...options,
+            frameworkRuntime,
+          });
           const rootDir = resolveOutputDir(output, "rootDir");
           await fs.mkdir(rootDir, { recursive: true });
           await fs.writeFile(
@@ -358,8 +358,11 @@ export function edgeDeploymentAdapter(
     name: "edge-deployment-adapter",
     setup() {
       return {
-        async buildEnd({ output }) {
-          const files = createEdgeDeploymentFiles(output, options);
+        async buildEnd({ output, frameworkRuntime }) {
+          const files = createEdgeDeploymentFiles(output, {
+            ...options,
+            frameworkRuntime,
+          });
           const rootDir = resolveOutputDir(output, "rootDir");
           await fs.mkdir(rootDir, { recursive: true });
           await fs.writeFile(
@@ -383,13 +386,7 @@ export function edgeDeploymentAdapter(
 function getDeploymentOutputPaths(
   output: BuildOutput,
 ): NonNullable<BuildOutput["paths"]> {
-  if (output.paths) return output.paths;
-
-  return {
-    rootDir: output.distDir,
-    publicDir: joinManifestPath(output.distDir, "client"),
-    serverDir: joinManifestPath(output.distDir, "server"),
-  };
+  return output.paths;
 }
 
 function resolveOutputDir(
@@ -404,15 +401,6 @@ function getPublicDirRelativeToRoot(output: BuildOutput): string {
   const paths = getDeploymentOutputPaths(output);
   const relative = path.relative(paths.rootDir, paths.publicDir);
   return relative || ".";
-}
-
-function joinManifestPath(...parts: string[]): string {
-  return parts
-    .map((part, index) =>
-      index === 0 ? part.replace(/\/+$/, "") : part.replace(/^\/+|\/+$/g, ""),
-    )
-    .filter(Boolean)
-    .join("/");
 }
 
 function createNodeServerModule(
@@ -433,7 +421,8 @@ function createNodeServerModule(
   const clientRoot = getPublicDirRelativeToRoot(output);
   const portEnv = options.portEnv ?? "PORT";
   const defaultPort = options.defaultPort ?? 3000;
-  const frameworkRuntime = createFrameworkRuntime(output);
+  const frameworkRuntime =
+    options.frameworkRuntime ?? createFrameworkRuntime(output);
 
   return `import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -612,7 +601,8 @@ function createEdgeWorkerModule(
   const frameworkRequestCondition = serverEntry
     ? "isFrameworkRequest(url.pathname)"
     : "false";
-  const frameworkRuntime = createFrameworkRuntime(output);
+  const frameworkRuntime =
+    options.frameworkRuntime ?? createFrameworkRuntime(output);
 
   return [
     `globalThis.__EVJS_FRAMEWORK_RUNTIME__ = ${JSON.stringify(frameworkRuntime, null, 2)};`,

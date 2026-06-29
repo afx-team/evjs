@@ -15,7 +15,11 @@ function createMinimalBuildOutput(): BuildOutput {
   return {
     version: 1,
     buildId: "build",
-    distDir: "dist",
+    paths: {
+      rootDir: "dist",
+      publicDir: "dist/client",
+      serverDir: "dist/server",
+    },
     publicPath: "/",
     runtime: {
       server: {
@@ -118,10 +122,10 @@ describe("assertFrameworkManifestShape", () => {
 
     expect(() =>
       assertFrameworkManifestShape(
-        { ...createMinimalBuildOutput(), distDir: "" },
+        { ...createMinimalBuildOutput(), paths: null },
         "manifest",
       ),
-    ).toThrow("[evjs] manifest.distDir must be a non-empty string.");
+    ).toThrow("[evjs] manifest.paths must be an object.");
 
     expect(() =>
       assertFrameworkManifestShape(
@@ -1265,24 +1269,6 @@ describe("assertFrameworkManifestShape", () => {
       assertFrameworkManifestShape(
         {
           ...createMinimalBuildOutput(),
-          routes: [
-            {
-              id: "home",
-              path: "/home",
-              module: " ./src/pages/Home.tsx ",
-            },
-          ],
-        },
-        "manifest",
-      ),
-    ).toThrow(
-      "[evjs] manifest.routes[0].module must not contain leading or trailing whitespace.",
-    );
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...createMinimalBuildOutput(),
           pages: {
             home: {
               assets: { js: [], css: [] },
@@ -1381,29 +1367,6 @@ describe("assertFrameworkManifestShape", () => {
       ),
     ).toThrow(
       '[evjs] manifest.server.renderers key "dashboard.server" must contain only letters, numbers, underscores, or hyphens.',
-    );
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...createMinimalBuildOutput(),
-          server: {
-            assets: { js: [], css: [] },
-            renderers: {
-              dashboard: {
-                kind: "page-server",
-                module: "",
-                assets: { js: [], css: [] },
-              },
-            },
-            functions: {},
-            routes: [],
-          },
-        },
-        "manifest",
-      ),
-    ).toThrow(
-      "[evjs] manifest.server.renderers.dashboard.module must be a non-empty string.",
     );
 
     expect(() =>
@@ -1711,28 +1674,6 @@ describe("assertFrameworkManifestShape", () => {
       ),
     ).toThrow(
       '[evjs] manifest.server.functions key " getUser" must be a non-empty string without leading or trailing whitespace.',
-    );
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...createMinimalBuildOutput(),
-          server: {
-            assets: { js: [], css: [] },
-            functions: {
-              getUser: {
-                module: "",
-                exportName: "getUser",
-                assets: { js: [], css: [] },
-              },
-            },
-            routes: [],
-          },
-        },
-        "manifest",
-      ),
-    ).toThrow(
-      "[evjs] manifest.server.functions.getUser.module must be a non-empty string.",
     );
 
     expect(() =>
@@ -2089,7 +2030,6 @@ describe("assertFrameworkManifestShape", () => {
         {
           ...createMinimalBuildOutput(),
           rsc: {
-            endpoint: "/__evjs/rsc",
             pages: [],
           },
         },
@@ -2102,7 +2042,6 @@ describe("assertFrameworkManifestShape", () => {
         {
           ...createMinimalBuildOutput(),
           rsc: {
-            endpoint: "/__evjs/rsc",
             pages: {
               insights: [],
             },
@@ -2117,7 +2056,6 @@ describe("assertFrameworkManifestShape", () => {
         {
           ...createMinimalBuildOutput(),
           rsc: {
-            endpoint: "/__evjs/rsc",
             pages: {
               insights: {
                 renderer: "insights-rsc",
@@ -2188,7 +2126,6 @@ describe("assertFrameworkManifestShape", () => {
       },
     };
     const rsc = (page: Record<string, unknown>) => ({
-      endpoint: "/__evjs/rsc",
       pages: {
         insights: {
           renderer: "insights-rsc",
@@ -2201,183 +2138,8 @@ describe("assertFrameworkManifestShape", () => {
     expect(() =>
       assertFrameworkManifestShape(
         {
-          ...createMinimalBuildOutput(),
-          rsc: {
-            endpoint: "/__evjs/rsc",
-            clientReferences: {
-              "src/pages/Client.tsx#default": {
-                module: "src/pages/Client.tsx",
-                exportName: "default",
-              },
-            },
-            serverReferences: {
-              "fn:saveInsight": {
-                module: "src/actions.ts",
-                exportName: "saveInsight",
-              },
-            },
-            clientReferenceManifest: {},
-            serverConsumerManifest: {},
-          },
-        },
-        "manifest",
-      ),
-    ).not.toThrow();
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...createMinimalBuildOutput(),
-          rsc: {
-            clientReferences: {
-              "src/pages/Client.tsx#default": {
-                module: "src/pages/Client.tsx",
-                exportName: "default",
-              },
-            },
-          },
-        },
-        "manifest",
-      ),
-    ).not.toThrow();
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...createMinimalBuildOutput(),
-          rsc: {
-            endpoint: "/__evjs/rsc",
-            clientReferences: [],
-          },
-        },
-        "manifest",
-      ),
-    ).toThrow("[evjs] manifest.rsc.clientReferences must be an object.");
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...createMinimalBuildOutput(),
-          rsc: {
-            endpoint: "/__evjs/rsc",
-            clientReferences: {
-              " src/pages/Client.tsx#default": {
-                module: "src/pages/Client.tsx",
-              },
-            },
-          },
-        },
-        "manifest",
-      ),
-    ).toThrow(
-      '[evjs] manifest.rsc.clientReferences key " src/pages/Client.tsx#default" must not contain leading or trailing whitespace.',
-    );
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...createMinimalBuildOutput(),
-          rsc: {
-            endpoint: "/__evjs/rsc",
-            clientReferences: {
-              "src/pages/Client.tsx#default": [],
-            },
-          },
-        },
-        "manifest",
-      ),
-    ).toThrow(
-      "[evjs] manifest.rsc.clientReferences.src/pages/Client.tsx#default must be an object.",
-    );
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...createMinimalBuildOutput(),
-          rsc: {
-            endpoint: "/__evjs/rsc",
-            clientReferences: {
-              "src/pages/Client.tsx#default": {
-                module: " src/pages/Client.tsx ",
-              },
-            },
-          },
-        },
-        "manifest",
-      ),
-    ).toThrow(
-      "[evjs] manifest.rsc.clientReferences.src/pages/Client.tsx#default.module must not contain leading or trailing whitespace.",
-    );
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...createMinimalBuildOutput(),
-          rsc: {
-            endpoint: "/__evjs/rsc",
-            serverReferences: {
-              "fn:saveInsight": {
-                module: "src/actions.ts",
-                exportName: "",
-              },
-            },
-          },
-        },
-        "manifest",
-      ),
-    ).toThrow(
-      "[evjs] manifest.rsc.serverReferences.fn:saveInsight.exportName must be a non-empty string.",
-    );
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...createMinimalBuildOutput(),
-          rsc: {
-            endpoint: "/__evjs/rsc",
-            clientReferenceManifest: [],
-          },
-        },
-        "manifest",
-      ),
-    ).toThrow("[evjs] manifest.rsc.clientReferenceManifest must be an object.");
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...createMinimalBuildOutput(),
-          rsc: {
-            endpoint: "/__evjs/rsc",
-            serverConsumerManifest: [],
-          },
-        },
-        "manifest",
-      ),
-    ).toThrow("[evjs] manifest.rsc.serverConsumerManifest must be an object.");
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
           ...rscReferenceManifest,
           rsc: {
-            pages: {
-              insights: {
-                renderer: "insights-rsc",
-                assets: { js: [], css: [] },
-              },
-            },
-          },
-        },
-        "manifest",
-      ),
-    ).toThrow("[evjs] manifest.rsc.endpoint must be a non-empty pathname.");
-
-    expect(() =>
-      assertFrameworkManifestShape(
-        {
-          ...rscReferenceManifest,
-          rsc: {
-            endpoint: "/__evjs/rsc",
             pages: {
               missing: {
                 assets: { js: [], css: [] },
@@ -2396,7 +2158,6 @@ describe("assertFrameworkManifestShape", () => {
         {
           ...rscReferenceManifest,
           rsc: {
-            endpoint: "/__evjs/rsc",
             pages: {
               dashboard: {
                 assets: { js: [], css: [] },
@@ -2520,7 +2281,7 @@ describe("assertFrameworkManifestShape", () => {
 });
 
 describe("linkBuildOutput", () => {
-  it("links metadata-only RSC references without requiring a Flight endpoint", () => {
+  it("does not expose metadata-only RSC source references", () => {
     const graph: AppGraph = {
       version: 1,
       rootDir: "/repo",
@@ -2551,19 +2312,7 @@ describe("linkBuildOutput", () => {
 
     const output = linkBuildOutput({ graph, plan });
 
-    expect(output.rsc).toEqual({
-      endpoint: undefined,
-      pages: undefined,
-      clientReferences: {
-        "src/pages/Client.tsx#default": {
-          module: "src/pages/Client.tsx",
-          exportName: "default",
-        },
-      },
-      serverReferences: undefined,
-      clientReferenceManifest: undefined,
-      serverConsumerManifest: undefined,
-    });
+    expect(output.rsc).toBeUndefined();
     expect(() =>
       assertFrameworkManifestShape(output, "manifest"),
     ).not.toThrow();
@@ -3192,7 +2941,11 @@ describe("createPublicManifest", () => {
     const output: BuildOutput = {
       version: 1,
       buildId: "build",
-      distDir: "dist",
+      paths: {
+        rootDir: "dist",
+        publicDir: "dist/client",
+        serverDir: "dist/server",
+      },
       publicPath: "/assets/",
       runtime: {
         server: {
@@ -3208,7 +2961,6 @@ describe("createPublicManifest", () => {
         admin: {
           assets: { js: ["admin.js"], css: [] },
           document: { fileName: "admin.html" },
-          entry: "./src/main.tsx",
           module: {
             type: "entry",
             href: "admin.js",
@@ -3229,7 +2981,6 @@ describe("createPublicManifest", () => {
           },
           path: "/insights",
           routeId: "insights",
-          component: "./src/pages/Insights.tsx",
           module: {
             type: "react-component",
             href: "evjs-rsc-client.js",
@@ -3248,7 +2999,6 @@ describe("createPublicManifest", () => {
             hydrate: "none",
           },
           hydrate: "none",
-          component: "./src/pages/Campaign.tsx",
           ppr: {
             delivery: "stream",
             shell: { js: ["campaign-ppr-shell.js"], css: [] },
@@ -3256,8 +3006,6 @@ describe("createPublicManifest", () => {
               offer: {
                 id: "offer",
                 assets: { js: ["campaign-offer-ppr-region.js"], css: [] },
-                component: "./src/pages/Offer.region.tsx",
-                fallback: "./src/pages/OfferSkeleton.tsx",
                 cache: "no-store",
               },
             },
@@ -3269,7 +3017,6 @@ describe("createPublicManifest", () => {
           id: "insights",
           path: "/insights",
           pageId: "insights",
-          module: "./src/pages/Insights.tsx",
         },
       ],
       server: {
@@ -3279,14 +3026,12 @@ describe("createPublicManifest", () => {
           "insights-rsc": {
             kind: "rsc-page",
             owner: { pageId: "insights" },
-            module: "./src/pages/Insights.tsx",
             assets: { js: ["insights-rsc.js"], css: ["insights.css"] },
           },
         },
         functions: {
           "fn:refund": {
             assets: { js: ["orders.server.js"], css: [] },
-            module: "./src/api/orders.server.ts",
             exportName: "refund",
           },
         },
@@ -3299,24 +3044,11 @@ describe("createPublicManifest", () => {
         ],
       },
       rsc: {
-        endpoint: "/__evjs/rsc",
         pages: {
           insights: {
             renderer: "insights-rsc",
             assets: { js: ["insights-rsc.js"], css: ["insights.css"] },
-            component: "./src/pages/Insights.tsx",
             routeId: "insights",
-          },
-        },
-        clientReferences: {
-          "src/pages/Client.tsx#default": {
-            module: "src/pages/Client.tsx",
-            exportName: "default",
-          },
-        },
-        clientReferenceManifest: {
-          "file:///Users/example/repo/src/pages/Client.tsx": {
-            id: "client",
           },
         },
       },
@@ -3404,7 +3136,6 @@ describe("createServerManifest", () => {
         functions: {
           "fn:getUser": {
             assets: { js: ["users.server.js"], css: [] },
-            module: "./src/api/users.server.ts",
             exportName: "getUser",
           },
         },
@@ -3419,7 +3150,6 @@ describe("createServerManifest", () => {
           dashboard: {
             kind: "page-server",
             owner: { pageId: "dashboard" },
-            module: "./src/pages/dashboard.tsx",
             assets: { js: ["dashboard-server.js"], css: [] },
           },
         },

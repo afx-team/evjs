@@ -1373,7 +1373,7 @@ describe("build", () => {
       "utf-8",
     );
 
-    const rawOutputComponents: Array<string | undefined> = [];
+    const rawOutputModules: Array<string | undefined> = [];
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "memory-output",
       async build() {
@@ -1407,8 +1407,8 @@ describe("build", () => {
             setup() {
               return {
                 buildEnd(result) {
-                  rawOutputComponents.push(
-                    result.output.pages.dashboard.component,
+                  rawOutputModules.push(
+                    result.output.pages.dashboard.module?.type,
                   );
                 },
               };
@@ -1440,7 +1440,7 @@ describe("build", () => {
     const clientRuntimeJson = JSON.parse(clientRuntime);
     const buildOutputJson = JSON.parse(buildOutput);
 
-    expect(rawOutputComponents).toEqual(["./src/pages/Dashboard.tsx"]);
+    expect(rawOutputModules).toEqual(["react-component"]);
     expect(publicManifest).not.toContain(".tsx");
     expect(publicManifest).not.toContain("server.js");
     expect(publicManifestJson).not.toHaveProperty("runtime");
@@ -1507,7 +1507,7 @@ describe("build", () => {
     expect(buildOutputJson.server?.renderers).toHaveProperty(
       "dashboard-server",
     );
-    expect(buildOutput).toContain("./src/pages/Dashboard.tsx");
+    expect(buildOutput).not.toContain("./src/pages/Dashboard.tsx");
     expect(buildOutput).toContain("server.js");
     expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
     expect(fs.existsSync(path.join(cwd, "dist/runtime.json"))).toBe(false);

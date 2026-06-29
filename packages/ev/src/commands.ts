@@ -79,6 +79,10 @@ const DEV_DIST_LOCK_FILE = ".evjs-dev.lock";
 const MANIFEST_FILE = "manifest.json";
 const RUNTIME_FILE = "runtime.json";
 const BUILD_OUTPUT_FILE = "build-output.json";
+const RUNTIME_ONLY_BUNDLER_MANIFEST_FILES = [
+  "react-client-manifest.json",
+  "react-ssr-manifest.json",
+];
 const PLUGIN_HOOK_NAMES = [
   "buildStart",
   "buildOutput",
@@ -1191,10 +1195,9 @@ function getFrameworkOutputPaths(
   cwd: string,
   output: BuildOutput,
 ): { rootDir: string; clientDir: string; serverDir: string } {
-  const rootDir = path.resolve(cwd, output.distDir);
-  const publicDir = output.paths?.publicDir ?? output.distDir;
-  const serverDir =
-    output.paths?.serverDir ?? path.join(output.distDir, "server");
+  const rootDir = path.resolve(cwd, output.paths.rootDir);
+  const publicDir = output.paths.publicDir;
+  const serverDir = output.paths.serverDir;
   return {
     rootDir,
     clientDir: path.resolve(cwd, publicDir),
@@ -1205,6 +1208,9 @@ function getFrameworkOutputPaths(
 async function emitFrameworkManifest(
   cwd: string,
   output: BuildOutput,
+  options: {
+    frameworkRuntime?: ReturnType<typeof createFrameworkRuntime>;
+  } = {},
 ): Promise<void> {
   const { rootDir, clientDir, serverDir } = getFrameworkOutputPaths(
     cwd,
@@ -1257,6 +1263,8 @@ async function emitFrameworkManifest(
 
   const publicManifest = createPublicManifest(output);
   const clientRuntime = createClientRuntime(output);
+  const frameworkRuntime =
+    options.frameworkRuntime ?? createFrameworkRuntime(output);
   await fs.promises.mkdir(clientDir, { recursive: true });
   await fs.promises.writeFile(
     path.join(clientDir, MANIFEST_FILE),
@@ -1267,6 +1275,25 @@ async function emitFrameworkManifest(
     path.join(clientDir, RUNTIME_FILE),
     JSON.stringify(clientRuntime, null, 2),
     "utf-8",
+  );
+  if (output.server.entry) {
+    await fs.promises.mkdir(serverDir, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(serverDir, RUNTIME_FILE),
+      JSON.stringify(frameworkRuntime, null, 2),
+      "utf-8",
+    );
+  }
+  await removeRuntimeOnlyBundlerManifests(clientDir);
+}
+
+async function removeRuntimeOnlyBundlerManifests(
+  clientDir: string,
+): Promise<void> {
+  await Promise.all(
+    RUNTIME_ONLY_BUNDLER_MANIFEST_FILES.map((fileName) =>
+      fs.promises.rm(path.join(clientDir, fileName), { force: true }),
+    ),
   );
 }
 
@@ -1394,7 +1421,10 @@ async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   hooks: PluginHooks<TBundlerCfg>[];
   pluginCtx: PluginContext<TBundlerCfg>;
   isRebuild: boolean;
-}): Promise<BuildOutput> {
+}): Promise<{
+  output: BuildOutput;
+  frameworkRuntime: ReturnType<typeof createFrameworkRuntime>;
+}> {
   const output = linkBuildOutput({
     graph: options.graph,
     plan: options.plan,
@@ -1404,12 +1434,14 @@ async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     serverEntry: options.bundlerFacts.serverEntry,
     serverAssets: options.bundlerFacts.serverAssets,
     serverModules: options.bundlerFacts.serverModules,
-    rscManifests: options.bundlerFacts.rscManifests,
   });
 
   await runBuildOutputHooks(options.hooks, output, options.pluginCtx);
   assertFrameworkManifestShape(output, "BuildOutput after buildOutput hooks");
-  await emitFrameworkManifest(options.cwd, output);
+  const frameworkRuntime = createFrameworkRuntime(output, {
+    rscManifests: options.bundlerFacts.rscManifests,
+  });
+  await emitFrameworkManifest(options.cwd, output, { frameworkRuntime });
   await emitFrameworkHtml(
     options.cwd,
     options.config,
@@ -1420,7 +1452,7 @@ async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     options.isRebuild,
   );
 
-  return output;
+  return { output, frameworkRuntime };
 }
 
 function normalizeAssetName(name: string | undefined): string | undefined {
@@ -1526,6 +1558,18 @@ function readFrameworkRuntime(
   cwd: string,
   distDir: string,
 ): ReturnType<typeof createFrameworkRuntime> | undefined {
+  const runtimePath = path.resolve(cwd, distDir, "server", RUNTIME_FILE);
+  if (fs.existsSync(runtimePath)) {
+    try {
+      return JSON.parse(fs.readFileSync(runtimePath, "utf-8")) as ReturnType<
+        typeof createFrameworkRuntime
+      >;
+    } catch (err) {
+      logger.warn`Failed to parse framework runtime: ${err}`;
+      return undefined;
+    }
+  }
+
   const outputPath = path.resolve(cwd, distDir, BUILD_OUTPUT_FILE);
   if (!fs.existsSync(outputPath)) return undefined;
 
@@ -2577,7 +2621,7 @@ export async function build<TBundlerCfg = DefaultBundlerConfig>(
       graph: prepared.graph,
       plan: prepared.plan,
     });
-    const buildOutput = await linkAndEmitBuildOutput({
+    const { output, frameworkRuntime } = await linkAndEmitBuildOutput({
       bundlerFacts,
       graph: prepared.graph,
       plan: prepared.plan,
@@ -2590,7 +2634,7 @@ export async function build<TBundlerCfg = DefaultBundlerConfig>(
 
     await runBuildEndHooks(
       prepared.hooks,
-      createBuildResult(buildOutput, false),
+      createBuildResult(output, false, { frameworkRuntime }),
     );
   } finally {
     await prepared.dispose();

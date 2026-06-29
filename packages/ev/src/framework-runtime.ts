@@ -16,8 +16,10 @@ export interface ClientRuntimeOutputRuntime {
 
 export type ClientRuntimeTargetOutput = Pick<
   BuildOutput["apps"][string],
-  "mount" | "module"
->;
+  "mount"
+> & {
+  module?: BuildOutput["apps"][string]["module"];
+};
 
 export type ClientRuntimeRouteOutput = Pick<
   BuildOutput["routes"][number],
@@ -82,6 +84,12 @@ export interface FrameworkRuntimeRsc {
   clientReferenceManifest?: Record<string, unknown>;
 }
 
+export interface FrameworkRuntimeOptions {
+  rscManifests?: {
+    clientReferenceManifest?: Record<string, unknown>;
+  };
+}
+
 export type FrameworkRuntimeRscPage = Pick<
   NonNullable<NonNullable<BuildOutput["rsc"]>["pages"]>[string],
   "renderer" | "assets" | "routeId"
@@ -136,6 +144,7 @@ function createClientRuntimeRuntime(
 
 export function createFrameworkRuntime(
   output: BuildOutput,
+  options: FrameworkRuntimeOptions = {},
 ): FrameworkRuntimeOutput {
   return pruneUndefined({
     version: 1 as const,
@@ -193,12 +202,13 @@ export function createFrameworkRuntime(
           )
         : undefined,
     }),
-    rsc: createFrameworkRuntimeRsc(output.rsc),
+    rsc: createFrameworkRuntimeRsc(output.rsc, options.rscManifests),
   });
 }
 
 function createFrameworkRuntimeRsc(
   rsc: BuildOutput["rsc"],
+  rscManifests: FrameworkRuntimeOptions["rscManifests"],
 ): FrameworkRuntimeRsc | undefined {
   if (!rsc) return undefined;
   const runtimeRsc = pruneUndefined({
@@ -214,7 +224,7 @@ function createFrameworkRuntimeRsc(
           ]),
         )
       : undefined,
-    clientReferenceManifest: rsc.clientReferenceManifest,
+    clientReferenceManifest: rscManifests?.clientReferenceManifest,
   });
   return Object.keys(runtimeRsc).length > 0 ? runtimeRsc : undefined;
 }

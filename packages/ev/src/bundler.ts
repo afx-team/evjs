@@ -20,7 +20,6 @@ export interface BundlerBuildFacts {
   serverModules?: BuildOutputServerModule[];
   rscManifests?: {
     clientReferenceManifest?: Record<string, unknown>;
-    serverConsumerManifest?: Record<string, unknown>;
   };
 }
 
