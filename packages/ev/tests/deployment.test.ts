@@ -139,23 +139,24 @@ describe("createDeploymentArtifact", () => {
       documents: [],
       routes: [
         {
-          kind: "page-server",
+          kind: "server-page",
           path: "/insights",
           pageId: "insights",
+          render: "rsc",
           methods: ["GET", "HEAD"],
         },
         {
-          kind: "framework-function",
+          kind: "server-function",
           path: "/framework/fn",
           methods: ["POST"],
         },
         {
-          kind: "framework-rsc",
+          kind: "rsc-endpoint",
           path: "/framework/rsc",
           methods: ["GET", "HEAD"],
         },
         {
-          kind: "server-route",
+          kind: "api-route",
           path: "/api/webhooks/payment",
           methods: ["POST"],
         },

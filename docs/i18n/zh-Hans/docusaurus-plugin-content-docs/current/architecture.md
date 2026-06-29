@@ -170,8 +170,8 @@ Runtime-required 数据刻意和 deployment metadata 分离。ClientRuntime 只�
 需要的 build id、transport base URL、RSC endpoint、app/page module target、mount
 selector 和必要 routing 元信息。FrameworkRuntime 保留 SSR/PPR/RSC 渲染协调和 React
 Flight client reference 数据。Deployment metadata 保留 public assets、HTML documents、
-server entry，以及 static document、page-server、server route、framework endpoint 等
-可部署 route row。
+server entry，以及 static document、server-rendered page route、API route、
+server function、PPR endpoint、RSC endpoint 等可部署 route row。
 
 ## 运行时流程
 
@@ -368,11 +368,13 @@ Deployment adapter 在构建过程中消费内存中的 `BuildOutput`，并可�
 
 平台专属 adapter 应从内存 `BuildOutput` 派生 routing、framework endpoint、SSR、PPR、RSC
 和 asset metadata，而不是读取 bundler stats。构建后的工具应读取 `dist/build-output.json`；
-其中 route table 使用 `static-document`、`page-server`、`framework-function`、
-`framework-ppr`、`framework-rsc` 和 `server-route` 等显式 kind。client/server manifest
-是部署元信息；生成的浏览器和服务端运行时消费最小化的 ClientRuntime 和 FrameworkRuntime
-contract。Deployment metadata 把 framework endpoint 表达成 route row，不重复携带原始
-runtime object，也不按单个 server function id 暴露给部署平台。
+其中 documents table 携带 app shell fallback 元信息，route table 使用
+`static-page`、`server-page`、`server-function`、`ppr-endpoint`、`rsc-endpoint`
+和 `api-route` 等显式 kind。页面 route row 通过 `render` 单独表达 `csr`、`ssg`、
+`ssr`、`ppr` 或 `rsc` 等渲染策略，和部署 kind 分离。client/server manifest 是部署元信息；
+生成的浏览器和服务端运行时消费最小化的 ClientRuntime 和 FrameworkRuntime contract。
+Deployment metadata 把 framework endpoint 表达成 route row，不重复携带原始 runtime object，
+也不按单个 server function id 暴露给部署平台。
 
 部署模型由能力分类驱动：
 

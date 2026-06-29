@@ -218,11 +218,11 @@ function getServerProxyPrefixes(output: RoutingFixture): string[] {
     ...output.routes
       .filter((route) =>
         [
-          "framework-function",
-          "framework-ppr",
-          "framework-rsc",
-          "page-server",
-          "server-route",
+          "server-function",
+          "ppr-endpoint",
+          "rsc-endpoint",
+          "server-page",
+          "api-route",
         ].includes(route.kind),
       )
       .map((route) => normalizeProxyRoutePath(route.path)),
@@ -233,16 +233,20 @@ function getClientPathRewrites(output: RoutingFixture): Record<string, string> {
   const documentFiles = new Map(
     output.documents.map((document) => [document.id, document.fileName]),
   );
-  return Object.fromEntries(
-    output.routes.flatMap((route) => {
-      if (route.kind !== "static-document" && route.kind !== "spa-fallback") {
+  return Object.fromEntries([
+    ...output.documents.flatMap((document) => {
+      if (document.kind !== "app" || !document.fallback?.startsWith("/")) {
         return [];
       }
+      return [[document.fallback, document.fileName]];
+    }),
+    ...output.routes.flatMap((route) => {
+      if (route.kind !== "static-page") return [];
       if (!route.path.startsWith("/")) return [];
       const fileName = documentFiles.get(route.documentId);
       return fileName ? [[route.path, fileName]] : [];
     }),
-  );
+  ]);
 }
 
 function normalizeProxyRoutePath(routePath: string): string {

@@ -182,7 +182,8 @@ app/page module targets, mount selectors, and routing metadata needed to boot or
 navigate. FrameworkRuntime keeps SSR/PPR/RSC render coordination and React
 Flight client reference data. Deployment metadata keeps public assets, HTML
 documents, server entry, and deployable route rows such as static documents,
-page-server routes, server routes, and framework endpoints.
+server-rendered page routes, API routes, server functions, PPR endpoints, and
+RSC endpoints.
 
 TanStack Router is available through the `@evjs/client` standalone CSR surface
 for manual browser applications. In framework-managed apps, `@evjs/ev` owns
@@ -405,9 +406,11 @@ emit platform-specific files from the canonical `DeploymentMetadata` projection.
 
 Platform-specific adapters should derive routing, framework endpoints, SSR, PPR,
 RSC, and asset metadata from `BuildOutput` in memory instead of reading bundler
-stats. Post-build tools should read `dist/build-output.json`, whose routes table
-uses explicit kinds such as `static-document`, `page-server`,
-`framework-function`, `framework-ppr`, `framework-rsc`, and `server-route`.
+stats. Post-build tools should read `dist/build-output.json`, whose documents
+table carries app shell fallback metadata and whose routes table uses explicit
+kinds such as `static-page`, `server-page`, `server-function`, `ppr-endpoint`,
+`rsc-endpoint`, and `api-route`. Page route rows carry `render` metadata such
+as `csr`, `ssg`, `ssr`, `ppr`, or `rsc` separately from the deployment kind.
 Client/server manifests are deployment metadata; generated browser and server
 runtimes consume minimal ClientRuntime and FrameworkRuntime contracts. Those
 runtime contracts use `routing.kind` to distinguish SPA routes from MPA/page

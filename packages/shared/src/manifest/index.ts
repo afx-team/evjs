@@ -477,6 +477,7 @@ export type DeploymentDocumentOutput =
       kind: "app";
       id: string;
       fileName: string;
+      fallback?: string;
       assets?: AssetGroup;
     }
   | {
@@ -486,42 +487,40 @@ export type DeploymentDocumentOutput =
       assets?: AssetGroup;
     };
 
+export type DeploymentPageRenderOutput = RenderMode | "ppr" | "rsc";
+
 export type DeploymentRouteOutput =
   | {
-      kind: "static-document";
+      kind: "static-page";
       path: string;
       documentId: string;
+      render: Extract<DeploymentPageRenderOutput, "csr" | "ssg">;
       methods: ["GET", "HEAD"];
     }
   | {
-      kind: "spa-fallback";
-      path: string;
-      documentId: string;
-      methods: ["GET", "HEAD"];
-    }
-  | {
-      kind: "page-server";
+      kind: "server-page";
       path: string;
       pageId: string;
+      render: Exclude<DeploymentPageRenderOutput, "csr">;
       methods: ["GET", "HEAD"];
     }
   | {
-      kind: "framework-function";
+      kind: "server-function";
       path: string;
       methods: ["POST"];
     }
   | {
-      kind: "framework-ppr";
+      kind: "ppr-endpoint";
       path: string;
       methods: ["GET", "HEAD"];
     }
   | {
-      kind: "framework-rsc";
+      kind: "rsc-endpoint";
       path: string;
       methods: ["GET", "HEAD"];
     }
   | {
-      kind: "server-route";
+      kind: "api-route";
       path: string;
       methods: string[];
     };

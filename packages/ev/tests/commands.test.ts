@@ -1497,9 +1497,10 @@ describe("build", () => {
       entry: "server.js",
       routes: [
         {
-          kind: "page-server",
+          kind: "server-page",
           path: "/dashboard",
           pageId: "dashboard",
+          render: "ssr",
           methods: ["GET", "HEAD"],
         },
       ],
@@ -1511,9 +1512,10 @@ describe("build", () => {
     expect(serverManifest).not.toContain("./src/pages/Dashboard.tsx");
     expect(buildOutputJson.server?.entry).toBe("server.js");
     expect(buildOutputJson.routes).toContainEqual({
-      kind: "page-server",
+      kind: "server-page",
       path: "/dashboard",
       pageId: "dashboard",
+      render: "ssr",
       methods: ["GET", "HEAD"],
     });
     expect("renderers" in (buildOutputJson.server ?? {})).toBe(false);

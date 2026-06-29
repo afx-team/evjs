@@ -3175,6 +3175,7 @@ describe("createPublicManifest", () => {
         kind: "app",
         id: "admin",
         fileName: "admin.html",
+        fallback: "*",
         assets: { js: ["admin.js"], css: [] },
       },
       {
@@ -3198,46 +3199,43 @@ describe("createPublicManifest", () => {
     ]);
     expect(deployment.routes).toEqual([
       {
-        kind: "page-server",
+        kind: "server-page",
         path: "/insights",
         pageId: "insights",
+        render: "rsc",
         methods: ["GET", "HEAD"],
       },
       {
-        kind: "static-document",
+        kind: "static-page",
         path: "/landing",
         documentId: "landing",
+        render: "ssg",
         methods: ["GET", "HEAD"],
       },
       {
-        kind: "page-server",
+        kind: "server-page",
         path: "/settlement-report",
         pageId: "settlement",
+        render: "ssg",
         methods: ["GET", "HEAD"],
       },
       {
-        kind: "spa-fallback",
-        path: "*",
-        documentId: "admin",
-        methods: ["GET", "HEAD"],
-      },
-      {
-        kind: "framework-function",
+        kind: "server-function",
         path: "/__evjs/fn",
         methods: ["POST"],
       },
       {
-        kind: "framework-ppr",
+        kind: "ppr-endpoint",
         path: "/__evjs/ppr/*",
         methods: ["GET", "HEAD"],
       },
       {
-        kind: "framework-rsc",
+        kind: "rsc-endpoint",
         path: "/__evjs/rsc",
         methods: ["GET", "HEAD"],
       },
       {
-        kind: "server-route",
+        kind: "api-route",
         path: "/api/health",
         methods: ["GET"],
       },
@@ -3367,34 +3365,36 @@ describe("createServerManifest", () => {
       entry: "server.js",
       routes: [
         {
-          kind: "page-server",
+          kind: "server-page",
           path: "/dashboard",
           pageId: "dashboard",
+          render: "rsc",
           methods: ["GET", "HEAD"],
         },
         {
-          kind: "page-server",
+          kind: "server-page",
           path: "/campaign",
           pageId: "campaign",
+          render: "ppr",
           methods: ["GET", "HEAD"],
         },
         {
-          kind: "framework-function",
+          kind: "server-function",
           path: "/__evjs/fn",
           methods: ["POST"],
         },
         {
-          kind: "framework-ppr",
+          kind: "ppr-endpoint",
           path: "/__evjs/ppr/*",
           methods: ["GET", "HEAD"],
         },
         {
-          kind: "framework-rsc",
+          kind: "rsc-endpoint",
           path: "/__evjs/rsc",
           methods: ["GET", "HEAD"],
         },
         {
-          kind: "server-route",
+          kind: "api-route",
           path: "/api/users",
           methods: ["GET", "POST"],
         },
@@ -3404,7 +3404,7 @@ describe("createServerManifest", () => {
     expect(serverManifestText).not.toContain("fn:getUser");
     expect(serverManifestText).not.toContain('"assets"');
     expect(serverManifestText).not.toContain('"renderers"');
-    expect(serverManifestText).not.toContain('"rsc"');
+    expect(serverManifestText).not.toContain("dashboard-rsc");
   });
 
   it("projects the minimal server output into the server manifest shape", () => {

@@ -427,34 +427,36 @@ test.describe("render-modes", () => {
     expect(deploymentMetadata.routes).toEqual(
       expect.arrayContaining([
         {
-          kind: "page-server",
+          kind: "server-page",
           path: "/dashboard",
           pageId: "dashboard",
+          render: "ssr",
           methods: ["GET", "HEAD"],
         },
         {
-          kind: "page-server",
+          kind: "server-page",
           path: "/settlement-report",
           pageId: "settlement",
+          render: "ssg",
           methods: ["GET", "HEAD"],
         },
         {
-          kind: "framework-function",
+          kind: "server-function",
           path: "/__evjs/fn",
           methods: ["POST"],
         },
         {
-          kind: "framework-ppr",
+          kind: "ppr-endpoint",
           path: "/__evjs/ppr/*",
           methods: ["GET", "HEAD"],
         },
         {
-          kind: "framework-rsc",
+          kind: "rsc-endpoint",
           path: "/__evjs/rsc",
           methods: ["GET", "HEAD"],
         },
         {
-          kind: "server-route",
+          kind: "api-route",
           path: "/api/render-modes/health",
           methods: ["GET"],
         },
@@ -469,46 +471,50 @@ test.describe("render-modes", () => {
     expect(serverManifest.routes).toEqual(
       expect.arrayContaining([
         {
-          kind: "page-server",
+          kind: "server-page",
           path: "/dashboard",
           pageId: "dashboard",
+          render: "ssr",
           methods: ["GET", "HEAD"],
         },
         {
-          kind: "page-server",
+          kind: "server-page",
           path: "/settlement-report",
           pageId: "settlement",
+          render: "ssg",
           methods: ["GET", "HEAD"],
         },
         {
-          kind: "page-server",
+          kind: "server-page",
           path: "/campaign",
           pageId: "campaign",
+          render: "ppr",
           methods: ["GET", "HEAD"],
         },
         {
-          kind: "page-server",
+          kind: "server-page",
           path: "/insights",
           pageId: "insights",
+          render: "rsc",
           methods: ["GET", "HEAD"],
         },
         {
-          kind: "framework-function",
+          kind: "server-function",
           path: "/__evjs/fn",
           methods: ["POST"],
         },
         {
-          kind: "framework-ppr",
+          kind: "ppr-endpoint",
           path: "/__evjs/ppr/*",
           methods: ["GET", "HEAD"],
         },
         {
-          kind: "framework-rsc",
+          kind: "rsc-endpoint",
           path: "/__evjs/rsc",
           methods: ["GET", "HEAD"],
         },
         {
-          kind: "server-route",
+          kind: "api-route",
           path: "/api/render-modes/health",
           methods: ["GET"],
         },
@@ -516,13 +522,12 @@ test.describe("render-modes", () => {
     );
     expect(
       serverManifest.routes.some(
-        (route: { kind: string }) =>
-          route.kind === "static-document" || route.kind === "spa-fallback",
+        (route: { kind: string }) => route.kind === "static-page",
       ),
     ).toBe(false);
     expect(serverManifestText).not.toContain('"assets"');
     expect(serverManifestText).not.toContain('"renderers"');
-    expect(serverManifestText).not.toContain('"rsc"');
+    expect(serverManifestText).not.toContain("insights-rsc");
     expect(serverManifestText).not.toContain("getMerchantOperationsSnapshot");
     expect("runtime" in deploymentMetadata).toBe(false);
     expect("rsc" in deploymentMetadata).toBe(false);

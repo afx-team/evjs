@@ -77,12 +77,12 @@ test.describe("deployment-adapters", () => {
     expect(manifest.routes).toEqual(
       expect.arrayContaining([
         {
-          kind: "framework-function",
+          kind: "server-function",
           path: "/__evjs/fn",
           methods: ["POST"],
         },
         {
-          kind: "server-route",
+          kind: "api-route",
           path: "/api/deployment-adapters/health",
           methods: ["GET"],
         },
@@ -128,12 +128,12 @@ test.describe("deployment-adapters", () => {
     expect(deployArtifact.routes).toEqual(
       expect.arrayContaining([
         {
-          kind: "framework-function",
+          kind: "server-function",
           path: "/__evjs/fn",
           methods: ["POST"],
         },
         {
-          kind: "server-route",
+          kind: "api-route",
           path: "/api/deployment-adapters/health",
           methods: ["GET"],
         },

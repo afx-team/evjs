@@ -632,9 +632,10 @@ describe("webpackAdapter build", () => {
         routeId: "dashboard",
       });
       expect(deploymentMetadata.routes).toContainEqual({
-        kind: "page-server",
+        kind: "server-page",
         path: "/dashboard",
         pageId: "dashboard",
+        render: "ssr",
         methods: ["GET", "HEAD"],
       });
       expect(output.assets["dashboard-server"]).toEqual({

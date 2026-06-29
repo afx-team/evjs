@@ -6,6 +6,7 @@ import type {
   BuildPlan,
   DeploymentDocumentOutput,
   DeploymentMetadata,
+  DeploymentPageRenderOutput,
   DeploymentRouteOutput,
   HtmlDocumentOutput,
   HydrationMode,
@@ -50,11 +51,11 @@ export interface ServerManifestOutput {
 }
 
 export type ServerManifestRouteOutput =
-  | Extract<DeploymentRouteOutput, { kind: "page-server" }>
-  | Extract<DeploymentRouteOutput, { kind: "framework-function" }>
-  | Extract<DeploymentRouteOutput, { kind: "framework-ppr" }>
-  | Extract<DeploymentRouteOutput, { kind: "framework-rsc" }>
-  | Extract<DeploymentRouteOutput, { kind: "server-route" }>;
+  | Extract<DeploymentRouteOutput, { kind: "server-page" }>
+  | Extract<DeploymentRouteOutput, { kind: "server-function" }>
+  | Extract<DeploymentRouteOutput, { kind: "ppr-endpoint" }>
+  | Extract<DeploymentRouteOutput, { kind: "rsc-endpoint" }>
+  | Extract<DeploymentRouteOutput, { kind: "api-route" }>;
 
 export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   const clientEntryAssets = input.clientEntryAssets ?? {};
@@ -430,11 +431,11 @@ function isServerManifestRoute(
   route: DeploymentRouteOutput,
 ): route is ServerManifestRouteOutput {
   return (
-    route.kind === "page-server" ||
-    route.kind === "framework-function" ||
-    route.kind === "framework-ppr" ||
-    route.kind === "framework-rsc" ||
-    route.kind === "server-route"
+    route.kind === "server-page" ||
+    route.kind === "server-function" ||
+    route.kind === "ppr-endpoint" ||
+    route.kind === "rsc-endpoint" ||
+    route.kind === "api-route"
   );
 }
 
@@ -495,11 +496,13 @@ function createDeploymentDocuments(
   const documents: DeploymentDocumentOutput[] = [];
   for (const [id, app] of Object.entries(output.apps)) {
     if (!app.document) continue;
+    const fallbackRoute = findOutputRouteForApp(output, id);
     documents.push(
       pruneUndefined({
         kind: "app" as const,
         id,
         fileName: app.document.fileName,
+        fallback: fallbackRoute?.path,
         assets: includeAssets ? app.assets : undefined,
       }),
     );
@@ -526,39 +529,32 @@ function createDeploymentRoutes(output: BuildOutput): DeploymentRouteOutput[] {
       if (!page) continue;
       if (page.document && (page.render === "csr" || page.render === "ssg")) {
         routes.push({
-          kind: "static-document",
+          kind: "static-page",
           path: route.path,
           documentId: route.pageId,
+          render: page.render,
           methods: ["GET", "HEAD"],
         });
         continue;
       }
       if (page.render !== "csr") {
         routes.push({
-          kind: "page-server",
+          kind: "server-page",
           path: route.path,
           pageId: route.pageId,
+          render: createDeploymentPageRender(output, route.pageId, page),
           methods: ["GET", "HEAD"],
         });
       }
       continue;
     }
 
-    if (route.appId) {
-      const app = output.apps[route.appId];
-      if (!app?.document) continue;
-      routes.push({
-        kind: "spa-fallback",
-        path: route.path,
-        documentId: route.appId,
-        methods: ["GET", "HEAD"],
-      });
-    }
+    if (route.appId) continue;
   }
 
   if (Object.keys(output.server.functions).length > 0) {
     routes.push({
-      kind: "framework-function",
+      kind: "server-function",
       path: output.runtime.server.fn,
       methods: ["POST"],
     });
@@ -567,7 +563,7 @@ function createDeploymentRoutes(output: BuildOutput): DeploymentRouteOutput[] {
     const pprPath = output.runtime.server.ppr;
     if (pprPath) {
       routes.push({
-        kind: "framework-ppr",
+        kind: "ppr-endpoint",
         path: `${pprPath}/*`,
         methods: ["GET", "HEAD"],
       });
@@ -575,14 +571,14 @@ function createDeploymentRoutes(output: BuildOutput): DeploymentRouteOutput[] {
   }
   if (output.rsc && output.runtime.server.rsc) {
     routes.push({
-      kind: "framework-rsc",
+      kind: "rsc-endpoint",
       path: output.runtime.server.rsc,
       methods: ["GET", "HEAD"],
     });
   }
   for (const route of output.server.routes) {
     routes.push({
-      kind: "server-route",
+      kind: "api-route",
       path: route.path,
       methods: [...route.methods],
     });
@@ -590,11 +586,33 @@ function createDeploymentRoutes(output: BuildOutput): DeploymentRouteOutput[] {
   return routes;
 }
 
+function createDeploymentPageRender(
+  output: BuildOutput,
+  pageId: string,
+  page: PageOutput,
+): Exclude<DeploymentPageRenderOutput, "csr"> {
+  if (page.ppr) return "ppr";
+  if (output.rsc?.pages?.[pageId]) return "rsc";
+  if (page.render === "csr") {
+    throw new Error(
+      `[evjs] CSR page "${pageId}" cannot be emitted as a server deployment route.`,
+    );
+  }
+  return page.render;
+}
+
 function findOutputRouteForPage(
   output: BuildOutput,
   pageId: string,
 ): BuildOutput["routes"][number] | undefined {
   return output.routes.find((route) => route.pageId === pageId);
+}
+
+function findOutputRouteForApp(
+  output: BuildOutput,
+  appId: string,
+): BuildOutput["routes"][number] | undefined {
+  return output.routes.find((route) => route.appId === appId);
 }
 
 function createHtmlDocumentLookup(html: BuildPlan["html"]): {
