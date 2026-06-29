@@ -127,11 +127,8 @@ export interface ClientManifest {
   pages?: Record<string, PageManifestEntry>;
 }
 
-/** Server function entry exposed to plugin manifest views. */
-export interface ServerFnEntry {
-  /** Emitted assets containing this function. */
-  assets: ManifestAssets;
-}
+/** Server function id exposed to plugin manifest views. */
+export type ServerFnEntry = string;
 
 /** Server route entry exposed to plugin manifest views. */
 export interface ServerRouteEntry {
@@ -139,8 +136,6 @@ export interface ServerRouteEntry {
   path: string;
   /** HTTP methods explicitly handled by this route. */
   methods: string[];
-  /** Emitted assets containing this route handler. */
-  assets: ManifestAssets;
 }
 
 /** Server-focused manifest view derived from the linked framework output. */
@@ -149,10 +144,8 @@ export interface ServerManifest {
   version: 1;
   /** Server bundle entry filename. */
   entry?: string;
-  /** Server bundle asset paths. */
-  assets: ManifestAssets;
   /** Registered server functions. */
-  functions: Record<string, ServerFnEntry>;
+  functions: ServerFnEntry[];
   /** Registered server route handlers. */
   routes: ServerRouteEntry[];
 }

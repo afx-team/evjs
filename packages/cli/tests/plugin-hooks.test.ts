@@ -105,14 +105,11 @@ function createTestBuildResult(
     serverManifest: {
       version: 1 as const,
       ...(output.server.entry ? { entry: output.server.entry } : {}),
-      assets: output.server.assets,
-      functions: Object.fromEntries(
-        Object.entries(output.server.functions).map(([id, fn]) => [
-          id,
-          { assets: fn.assets },
-        ]),
-      ),
-      routes: output.server.routes,
+      functions: Object.keys(output.server.functions),
+      routes: output.server.routes.map((route) => ({
+        path: route.path,
+        methods: route.methods,
+      })),
     },
     isRebuild,
   };

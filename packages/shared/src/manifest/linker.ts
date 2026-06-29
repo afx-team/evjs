@@ -47,19 +47,13 @@ export interface BuildOutputLinkInput {
 export interface ServerManifestOutput {
   version: 1;
   entry?: string;
-  assets: AssetGroup;
-  functions: Record<string, ServerManifestFunctionOutput>;
+  functions: string[];
   routes: ServerManifestRouteOutput[];
-}
-
-export interface ServerManifestFunctionOutput {
-  assets: AssetGroup;
 }
 
 export interface ServerManifestRouteOutput {
   path: string;
   methods: string[];
-  assets: AssetGroup;
 }
 
 export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
@@ -428,19 +422,12 @@ export function createServerManifest(
   const routes = output.server.routes.map((route) => ({
     path: route.path,
     methods: [...route.methods],
-    assets: cloneAssets(route.assets),
   }));
 
   return {
     version: 1,
     ...(output.server.entry ? { entry: output.server.entry } : {}),
-    assets: cloneAssets(output.server.assets),
-    functions: Object.fromEntries(
-      Object.entries(output.server.functions).map(([id, fn]) => [
-        id,
-        { assets: cloneAssets(fn.assets) },
-      ]),
-    ),
+    functions: Object.keys(output.server.functions),
     routes,
   };
 }

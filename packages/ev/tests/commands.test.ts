@@ -1495,8 +1495,7 @@ describe("build", () => {
     expect(serverManifestJson).toEqual({
       version: 1,
       entry: "server.js",
-      assets: { js: ["server.js"], css: [] },
-      functions: {},
+      functions: [],
       routes: [],
     });
     expect(serverManifestJson.server).toBeUndefined();

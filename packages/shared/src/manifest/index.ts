@@ -1891,7 +1891,6 @@ export {
   createPublicManifest,
   createServerManifest,
   linkBuildOutput,
-  type ServerManifestFunctionOutput,
   type ServerManifestOutput,
   type ServerManifestRouteOutput,
 } from "./linker.js";

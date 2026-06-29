@@ -190,10 +190,11 @@ setup() {
 ```
 
 Deployment plugins should read routes, functions, assets, and runtime paths from
-`output`. Plugins that only need client or server bundle summaries can use
-`clientManifest` and `serverManifest`. HTML hooks receive the same result fields
-plus document-specific fields such as `ctx.kind`, `ctx.fileName`, and
-`ctx.assets`.
+`output`. Plugins that only need the client bundle summary can use
+`clientManifest`; plugins that only need the server entry, function ids, or
+route method summary can use `serverManifest`. HTML hooks receive the same
+result fields plus document-specific fields such as `ctx.kind`, `ctx.fileName`,
+and `ctx.assets`.
 
 ## Bundler Config
 

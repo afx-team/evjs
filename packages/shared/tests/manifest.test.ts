@@ -3159,17 +3159,11 @@ describe("createServerManifest", () => {
     expect(createServerManifest(output)).toEqual({
       version: 1,
       entry: "server.js",
-      assets: { js: ["server.js"], css: ["server.css"] },
-      functions: {
-        "fn:getUser": {
-          assets: { js: ["users.server.js"], css: [] },
-        },
-      },
+      functions: ["fn:getUser"],
       routes: [
         {
           path: "/api/users",
           methods: ["GET", "POST"],
-          assets: { js: ["users.routes.js"], css: [] },
         },
       ],
     });
@@ -3179,8 +3173,7 @@ describe("createServerManifest", () => {
     expect(createServerManifest(createMinimalBuildOutput())).toEqual({
       version: 1,
       entry: "server.js",
-      assets: { js: ["server.js"], css: [] },
-      functions: {},
+      functions: [],
       routes: [],
     });
   });
