@@ -16,6 +16,22 @@ const storage = new AsyncLocalStorage<PageProps>();
 
 interface RscPageRuntime {
   buildId: string;
+  routing?: {
+    kind: "spa" | "mpa";
+    routes?: Array<{
+      id: string;
+      path: string;
+      pageId?: string;
+    }>;
+    pages?: Record<
+      string,
+      {
+        path?: string;
+        routeId?: string;
+      }
+    >;
+  };
+  /** @deprecated Use routing. */
   routes?: Array<{
     id: string;
     path: string;
@@ -124,7 +140,7 @@ function findRouteForPage(
   pageId: string | undefined,
 ): { id: string; path: string } | undefined {
   if (!pageId) return undefined;
-  const route = runtime.routes?.find(
+  const route = getRuntimeRoutes(runtime).find(
     (candidate) => candidate.pageId === pageId,
   );
   return route
@@ -133,6 +149,21 @@ function findRouteForPage(
         path: route.path,
       }
     : undefined;
+}
+
+function getRuntimeRoutes(
+  runtime: RscPageRuntime,
+): Array<{ id: string; path: string; pageId?: string }> {
+  if (runtime.routing?.kind === "spa") return runtime.routing.routes ?? [];
+  if (runtime.routing?.kind === "mpa") {
+    return Object.entries(runtime.routing.pages ?? {}).flatMap(
+      ([pageId, page]) =>
+        page.path && page.routeId
+          ? [{ id: page.routeId, path: page.path, pageId }]
+          : [],
+    );
+  }
+  return runtime.routes ?? [];
 }
 
 function createRscPageProps(ctx: RscPageFlightRenderContext): PageProps & {

@@ -401,7 +401,7 @@ describe("utoopackAdapter dev", () => {
           path.join(cwd, "dist/manifest.json"),
           "utf-8",
         ),
-      ) as BuildOutput;
+      ) as ReturnType<typeof createPublicManifest>;
 
       expect(update.entries.added).toHaveLength(0);
       expect(update.entries.changed).toHaveLength(0);
@@ -409,7 +409,13 @@ describe("utoopackAdapter dev", () => {
       expect(html).toContain("next-shell");
       expect(html).toContain('data-evjs-kind="page"');
       expect(html).toContain('data-evjs-id="home"');
-      expect(manifest.pages.home.document).toEqual({ fileName: "home.html" });
+      expect(manifest.routing.kind).toBe("mpa");
+      if (manifest.routing.kind !== "mpa") {
+        throw new Error("Expected MPA public manifest.");
+      }
+      expect(manifest.routing.pages.home.document).toEqual({
+        fileName: "home.html",
+      });
       expect(onBuildOutput).toHaveBeenCalledTimes(2);
     } finally {
       await controller.close?.();

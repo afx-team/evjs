@@ -469,7 +469,7 @@ describe("webpackAdapter build", () => {
 
       const manifest = JSON.parse(
         await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
-      ) as BuildOutput;
+      ) as PublicManifestOutput;
       const html = await fs.readFile(path.join(cwd, "dist/home.html"), "utf-8");
       const bundle = await fs.readFile(path.join(cwd, "dist/home.js"), "utf-8");
 
@@ -479,7 +479,11 @@ describe("webpackAdapter build", () => {
         component: "./src/pages/Home ! page 中文.tsx",
         mount: "#root",
       });
-      expect(manifest.pages.home).toMatchObject({
+      expect(manifest.routing.kind).toBe("mpa");
+      if (manifest.routing.kind !== "mpa") {
+        throw new Error("Expected MPA public manifest.");
+      }
+      expect(manifest.routing.pages.home).toMatchObject({
         assets: { js: ["home.js"], css: [] },
         mount: "#root",
         render: "csr",
@@ -609,7 +613,11 @@ describe("webpackAdapter build", () => {
         type: "entry",
         href: "main.js",
       });
-      expect("component" in publicManifest.pages.dashboard).toBe(false);
+      expect(publicManifest.routing.kind).toBe("mpa");
+      if (publicManifest.routing.kind !== "mpa") {
+        throw new Error("Expected MPA public manifest.");
+      }
+      expect("component" in publicManifest.routing.pages.dashboard).toBe(false);
       await expect(
         fs.access(path.join(cwd, "dist/manifest.json")),
       ).rejects.toThrow();
@@ -998,17 +1006,26 @@ describe("webpackAdapter dev", () => {
     try {
       const manifest = JSON.parse(
         await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
-      ) as { pages: BuildOutput["pages"] };
+      ) as PublicManifestOutput;
       const runtime = JSON.parse(
         await fs.readFile(path.join(cwd, "dist/runtime.json"), "utf-8"),
-      ) as { pages: Record<string, Record<string, unknown>> };
+      ) as {
+        routing: {
+          kind: "mpa";
+          pages: Record<string, Record<string, unknown>>;
+        };
+      };
       const html = await fetchDevText(`http://127.0.0.1:${port}/home.html`);
 
       expect(onBuildOutput).toHaveBeenCalledTimes(1);
       expect("distDir" in manifest).toBe(false);
-      expect(manifest.pages.home.assets.js).toEqual(["home.js"]);
-      expect(runtime.pages.home).not.toHaveProperty("assets");
-      expect(runtime.pages.home).toEqual({
+      expect(manifest.routing.kind).toBe("mpa");
+      if (manifest.routing.kind !== "mpa") {
+        throw new Error("Expected MPA public manifest.");
+      }
+      expect(manifest.routing.pages.home.assets.js).toEqual(["home.js"]);
+      expect(runtime.routing.pages.home).not.toHaveProperty("assets");
+      expect(runtime.routing.pages.home).toMatchObject({
         module: { type: "react-component", href: "home.js" },
         mount: "#root",
       });
@@ -1368,13 +1385,17 @@ describe("webpackAdapter dev", () => {
 
       const manifest = JSON.parse(
         await fs.readFile(path.join(cwd, "dist/manifest.json"), "utf-8"),
-      ) as BuildOutput;
+      ) as PublicManifestOutput;
       const html = await fetchDevText(`http://127.0.0.1:${port}/about.html`);
 
       expect(update.entries.added.map((entry) => entry.name)).toEqual([
         "about",
       ]);
-      expect(manifest.pages.about.assets.js).toEqual(["about.js"]);
+      expect(manifest.routing.kind).toBe("mpa");
+      if (manifest.routing.kind !== "mpa") {
+        throw new Error("Expected MPA public manifest.");
+      }
+      expect(manifest.routing.pages.about.assets.js).toEqual(["about.js"]);
       expect(html).toContain('data-evjs-kind="page"');
       expect(html).toContain('data-evjs-id="about"');
       expect(html).toContain('src="/about.js"');

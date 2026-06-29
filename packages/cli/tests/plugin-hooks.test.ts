@@ -100,6 +100,7 @@ function createTestBuildResult(
     output,
     clientManifest: {
       version: 1,
+      kind: "spa",
       assets: output.apps.default?.assets ?? { js: [], css: [] },
     },
     serverManifest: {

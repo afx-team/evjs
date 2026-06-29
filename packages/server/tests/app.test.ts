@@ -2,6 +2,8 @@ import { ServerError } from "@evjs/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import type {
+  FrameworkPageRuntime,
+  FrameworkRouteRuntime,
   FrameworkRuntime,
   PprRegionCacheEntry,
   ServerRenderContext,
@@ -16,6 +18,11 @@ import {
 } from "../src/functions/register.js";
 import { requestLogger } from "../src/index.js";
 import { createReactFrameworkServer } from "../src/react.js";
+
+type LegacyFrameworkRuntime = FrameworkRuntime & {
+  pages: Record<string, FrameworkPageRuntime>;
+  routes: FrameworkRouteRuntime[];
+};
 
 describe("createApp", () => {
   beforeEach(() => {
@@ -3757,7 +3764,7 @@ describe("createApp", () => {
   });
 });
 
-function createManifest(): FrameworkRuntime {
+function createManifest(): LegacyFrameworkRuntime {
   return {
     version: 1,
     buildId: "test",
@@ -3800,7 +3807,7 @@ function createManifest(): FrameworkRuntime {
   };
 }
 
-function configureRscManifest(manifest: FrameworkRuntime): void {
+function configureRscManifest(manifest: LegacyFrameworkRuntime): void {
   configureRscPage(manifest);
   manifest.rsc = {
     pages: {
@@ -3827,7 +3834,7 @@ function configureRscManifest(manifest: FrameworkRuntime): void {
 }
 
 function addRscManifestPage(
-  manifest: FrameworkRuntime,
+  manifest: LegacyFrameworkRuntime,
   options: {
     pageId: string;
     path: string;
@@ -3873,7 +3880,7 @@ function addRscManifestPage(
   };
 }
 
-function configureRscPage(manifest: FrameworkRuntime): void {
+function configureRscPage(manifest: LegacyFrameworkRuntime): void {
   manifest.pages.dashboard.render = "ssr";
   manifest.pages.dashboard.componentModel = "rsc";
   manifest.pages.dashboard.rendering = {
@@ -3884,7 +3891,7 @@ function configureRscPage(manifest: FrameworkRuntime): void {
   };
 }
 
-function configurePprRendering(manifest: FrameworkRuntime): void {
+function configurePprRendering(manifest: LegacyFrameworkRuntime): void {
   const delivery = manifest.pages.dashboard.ppr?.delivery ?? "merge";
   manifest.pages.dashboard.rendering = {
     component: "server",

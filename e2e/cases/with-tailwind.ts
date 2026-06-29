@@ -37,7 +37,10 @@ test.describe("with-tailwind", () => {
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
 
     expect(manifest.assets.main.js.length).toBeGreaterThan(0);
-    expect(manifest.routes).toEqual([
+    expect(manifest).not.toHaveProperty("pages");
+    expect(manifest).not.toHaveProperty("routes");
+    expect(manifest.routing.kind).toBe("spa");
+    expect(manifest.routing.routes).toEqual([
       expect.objectContaining({
         id: expect.any(String),
         path: "/",

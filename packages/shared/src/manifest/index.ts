@@ -336,10 +336,19 @@ export interface PublicManifestOutput {
   publicPath: PublicPathOutput;
   assets?: Record<string, AssetGroup>;
   app?: PublicAppOutput;
-  pages: Record<string, PublicPageOutput>;
-  routes: PublicRouteOutput[];
+  routing: PublicRoutingOutput;
   rsc?: PublicRscOutput;
 }
+
+export type PublicRoutingOutput =
+  | {
+      kind: "spa";
+      routes: PublicRouteOutput[];
+    }
+  | {
+      kind: "mpa";
+      pages: Record<string, PublicPageOutput>;
+    };
 
 export interface BuildOutputPaths {
   rootDir: string;
@@ -726,12 +735,12 @@ export function assertFrameworkManifestShape(
     assertAssetGroupRecord(value.assets, `${source}.assets`);
   }
   const apps = assertManifestAppProjection(value, source, requireServer);
-  assertObject(value.pages, `${source}.pages`);
-  assertPageOutputs(value.pages, `${source}.pages`);
-  if (!Array.isArray(value.routes)) {
-    throw new Error(`[evjs] ${source}.routes must be an array.`);
-  }
-  assertRouteOutputs(value.routes, `${source}.routes`, value.pages, apps);
+  const { pages, routes } = assertManifestRoutingProjection(
+    value,
+    source,
+    requireServer,
+    apps,
+  );
 
   if (value.runtime !== undefined) {
     assertObject(value.runtime.server, `${source}.runtime.server`);
@@ -775,8 +784,8 @@ export function assertFrameworkManifestShape(
       assertServerRendererOutputs(
         value.server.renderers,
         `${source}.server.renderers`,
-        value.pages,
-        value.routes,
+        pages,
+        routes,
       );
     }
     assertAssetGroup(value.server.assets, `${source}.server.assets`);
@@ -792,15 +801,15 @@ export function assertFrameworkManifestShape(
   }
   const serverRenderers = getServerRendererOutputs(value.server);
   assertPageServerRendererReferences(
-    value.pages,
-    `${source}.pages`,
+    pages,
+    getManifestPagesSource(value, source),
     serverRenderers,
-    value.routes,
+    routes,
     requirePageRendererReferences,
   );
   assertPprPageOutputReferences(
-    value.pages,
-    `${source}.pages`,
+    pages,
+    getManifestPagesSource(value, source),
     serverRenderers,
     requirePprRendererReferences,
   );
@@ -808,12 +817,101 @@ export function assertFrameworkManifestShape(
     assertRscOutput(
       value.rsc,
       `${source}.rsc`,
-      value.pages,
+      pages,
       serverRenderers,
-      value.routes,
+      routes,
       requireRscRendererReferences,
     );
   }
+}
+
+function assertManifestRoutingProjection(
+  value: Record<string, unknown>,
+  source: string,
+  requireLegacyRouting: boolean,
+  apps: Record<string, unknown>,
+): {
+  pages: Record<string, unknown>;
+  routes: Array<Record<string, unknown>>;
+} {
+  if (value.routing !== undefined) {
+    if (value.pages !== undefined || value.routes !== undefined) {
+      throw new Error(
+        `[evjs] ${source} must not define both routing and pages/routes.`,
+      );
+    }
+    assertObject(value.routing, `${source}.routing`);
+    if (value.routing.kind === "spa") {
+      if (!Array.isArray(value.routing.routes)) {
+        throw new Error(`[evjs] ${source}.routing.routes must be an array.`);
+      }
+      assertRouteOutputs(
+        value.routing.routes,
+        `${source}.routing.routes`,
+        {},
+        apps,
+      );
+      return {
+        pages: {},
+        routes: value.routing.routes as Array<Record<string, unknown>>,
+      };
+    }
+    if (value.routing.kind === "mpa") {
+      assertObject(value.routing.pages, `${source}.routing.pages`);
+      assertPageOutputs(value.routing.pages, `${source}.routing.pages`);
+      const routes = createRoutesFromManifestPages(value.routing.pages);
+      assertRouteOutputs(
+        routes,
+        `${source}.routing.pages`,
+        value.routing.pages,
+        apps,
+      );
+      return { pages: value.routing.pages, routes };
+    }
+    throw new Error(`[evjs] ${source}.routing.kind must be "spa" or "mpa".`);
+  }
+
+  if (value.pages === undefined && value.routes === undefined) {
+    if (requireLegacyRouting) {
+      throw new Error(`[evjs] ${source}.pages must be an object.`);
+    }
+    return { pages: {}, routes: [] };
+  }
+
+  assertObject(value.pages, `${source}.pages`);
+  assertPageOutputs(value.pages, `${source}.pages`);
+  if (!Array.isArray(value.routes)) {
+    throw new Error(`[evjs] ${source}.routes must be an array.`);
+  }
+  assertRouteOutputs(value.routes, `${source}.routes`, value.pages, apps);
+  return { pages: value.pages, routes: value.routes };
+}
+
+function createRoutesFromManifestPages(
+  pages: Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  return Object.entries(pages).flatMap(([pageId, page]) => {
+    if (!isRecord(page)) return [];
+    if (typeof page.path !== "string" || typeof page.routeId !== "string") {
+      return [];
+    }
+    return [
+      {
+        id: page.routeId,
+        path: page.path,
+        pageId,
+      },
+    ];
+  });
+}
+
+function getManifestPagesSource(
+  value: Record<string, unknown>,
+  source: string,
+): string {
+  return value.routing !== undefined
+    ? `${source}.routing.pages`
+    : `${source}.pages`;
 }
 
 function assertManifestAppProjection(

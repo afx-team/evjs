@@ -1,3 +1,4 @@
+import { assertClientRuntime } from "../runtime-config.js";
 import { formatErrorDetail, isRecord } from "../validation.js";
 import { createActivationRequestFromUrl } from "./routing.js";
 import type {
@@ -175,11 +176,7 @@ function assertHistoryDriverRuntime(
   if (!isRecord(runtime)) {
     throw new Error("[evjs] createHistoryDriver() runtime must be an object.");
   }
-  if (!Array.isArray(runtime.routes)) {
-    throw new Error(
-      "[evjs] createHistoryDriver() runtime.routes must be an array.",
-    );
-  }
+  assertClientRuntime(runtime, "createHistoryDriver() runtime");
 }
 
 function assertBrowserWindow(

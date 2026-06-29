@@ -3075,35 +3075,34 @@ describe("createPublicManifest", () => {
     expect(serialized).not.toContain(".ts");
     expect(serialized).not.toContain("file://");
     expect(serialized).not.toContain("/Users/");
-    expect(manifest.pages.insights.assets).toEqual({
+    expect(manifest.routing.kind).toBe("mpa");
+    if (manifest.routing.kind !== "mpa") {
+      throw new Error("Expected MPA public manifest.");
+    }
+    const pages = manifest.routing.pages;
+    expect(pages.insights.assets).toEqual({
       js: ["evjs-rsc-client.js"],
       css: ["insights.css"],
     });
-    expect(manifest.pages.insights.module).toEqual({
+    expect(pages.insights.module).toEqual({
       type: "react-component",
       href: "evjs-rsc-client.js",
     });
     expect("runtime" in manifest).toBe(false);
-    expect(manifest.routes).toContainEqual({
-      id: "insights",
-      path: "/insights",
-      pageId: "insights",
-    });
-    expect(manifest.routes.flatMap((route) => Object.keys(route))).not.toEqual(
-      expect.arrayContaining(["module", "render", "hydrate", "runtime"]),
-    );
+    expect("pages" in manifest).toBe(false);
+    expect("routes" in manifest).toBe(false);
     expect(manifest.app?.document).toEqual({ fileName: "admin.html" });
-    expect(manifest.pages.insights.document).toEqual({
+    expect(pages.insights.document).toEqual({
       fileName: "insights.html",
     });
-    expect(manifest.pages.campaign.assets).toEqual({ js: [], css: [] });
-    expect(manifest.pages.campaign.document).toEqual({
+    expect(pages.campaign.assets).toEqual({ js: [], css: [] });
+    expect(pages.campaign.document).toEqual({
       fileName: "campaign.html",
     });
-    expect(manifest.pages.campaign.hydrate).toBe("none");
-    expect(manifest.pages.campaign.rendering.hydrate).toBe("none");
-    expect(manifest.pages.campaign.ppr?.delivery).toBe("stream");
-    expect(manifest.pages.campaign.ppr?.regions.offer).toEqual({
+    expect(pages.campaign.hydrate).toBe("none");
+    expect(pages.campaign.rendering.hydrate).toBe("none");
+    expect(pages.campaign.ppr?.delivery).toBe("stream");
+    expect(pages.campaign.ppr?.regions.offer).toEqual({
       id: "offer",
       assets: { js: [], css: [] },
       cache: "no-store",

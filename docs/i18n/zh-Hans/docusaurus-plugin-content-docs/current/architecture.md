@@ -163,14 +163,15 @@ sequenceDiagram
 内嵌的等价数据。因此已部署的 server runtime 不会在启动时读取 `dist/build-output.json`
 或 manifest 文件。
 浏览器运行时投影刻意小于 public manifest：只保留启动和导航需要的 build id、
-transport base URL、RSC endpoint、app/page module target、mount selector 和 route
-lookup 数据。资源索引、部署元信息、源码引用和 renderer bundle 元信息留在 manifest 或
+transport base URL、RSC endpoint、app/page module target、mount selector 和必要的
+routing 元信息。资源索引、部署元信息、源码引用和 renderer bundle 元信息留在 manifest 或
 `BuildOutput` 中；React Flight client reference 数据留在显式 `FrameworkRuntime` 投影中。
 public manifest、deployment artifact 和 client runtime 投影会把单 SPA app 表达成
 `app` 字段，而不是 `apps.default` 映射。`BuildOutput.apps` 仍然保留完整的私有/plugin
-视图，用于命名 build graph app 节点。在 `BuildOutput` 和公开 manifest 中，client route
-是 URL 到目标的索引。页面渲染、hydrate 和 component model 元信息留在 `pages` 下，
-framework endpoint 留在 runtime/server 投影下。
+视图，用于命名 build graph app 节点。`BuildOutput` 保留完整的私有 `pages`/`routes`
+图；public manifest 和 runtime 投影把客户端路由统一放到 `routing` 下：SPA 使用
+`{ kind: "spa", routes }`，MPA/page output 使用 `{ kind: "mpa", pages }`，每个 page
+entry 自带 route 元信息。framework endpoint 留在 runtime/server 投影下。
 
 ## 运行时流程
 
@@ -370,7 +371,8 @@ Deployment adapter 消费 `BuildOutput`。`@evjs/ev` 提供：
 完整 BuildOutput manifest 会保留面向部署的 route、asset、server function、server
 route、renderer 和 RSC page metadata，但不发布源码 module path 或 bundler chunk map。client/server manifest
 是部署元信息；生成的浏览器和服务端运行时消费最小化的 ClientRuntime 和 FrameworkRuntime
-contract。
+contract。这些 runtime contract 使用 `routing.kind` 区分 SPA routes 和 MPA/page targets，
+不再序列化空的顶层 `pages` 或 `routes` 字段。
 Deployment artifact 会把 framework endpoint 和 transport 数据归到 server 分组下，而不是
 重复携带原始 runtime 对象。
 

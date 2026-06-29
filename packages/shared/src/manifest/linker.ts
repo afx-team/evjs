@@ -15,6 +15,7 @@ import type {
   PublicManifestOutput,
   PublicPageOutput,
   PublicPprRegionOutput,
+  PublicRoutingOutput,
   PublicRuntimeModuleOutput,
   ServerFunctionOutput,
   ServerRouteOutput,
@@ -377,19 +378,7 @@ export function createPublicManifest(
     publicPath: output.publicPath,
     assets: clonePublicAssetRecord(output.assets, publicAssetFiles),
     app: createPublicManifestApp(output),
-    pages: Object.fromEntries(
-      Object.entries(output.pages).map(([id, page]) => [
-        id,
-        sanitizePageOutput(page, publicAssetFiles),
-      ]),
-    ),
-    routes: output.routes.map((route) =>
-      pruneUndefined({
-        id: route.id,
-        path: route.path,
-        pageId: route.pageId,
-      }),
-    ),
+    routing: createPublicManifestRouting(output, publicAssetFiles),
     rsc: output.rsc
       ? pruneUndefined({
           pages: output.rsc.pages
@@ -407,6 +396,38 @@ export function createPublicManifest(
         })
       : undefined,
   }) as PublicManifestOutput;
+}
+
+function createPublicManifestRouting(
+  output: BuildOutput,
+  publicAssetFiles: Set<string>,
+): PublicRoutingOutput {
+  if (Object.keys(output.pages).length > 0) {
+    return {
+      kind: "mpa",
+      pages: Object.fromEntries(
+        Object.entries(output.pages).map(([id, page]) => [
+          id,
+          sanitizePageOutput(
+            page,
+            publicAssetFiles,
+            findOutputRouteForPage(output, id),
+          ),
+        ]),
+      ),
+    };
+  }
+
+  return {
+    kind: "spa",
+    routes: output.routes.map((route) =>
+      pruneUndefined({
+        id: route.id,
+        path: route.path,
+        pageId: route.pageId,
+      }),
+    ),
+  };
 }
 
 function createPublicManifestApp(
@@ -454,14 +475,15 @@ function sanitizeAppOutput(app: AppOutput): PublicAppOutput {
 function sanitizePageOutput(
   page: PageOutput,
   publicAssetFiles: Set<string>,
+  route?: BuildOutput["routes"][number],
 ): PublicPageOutput {
   return pruneUndefined({
     assets: clonePublicAssets(page.assets, publicAssetFiles),
     document: cloneHtmlDocument(page.document),
     render: page.render,
     rendering: page.rendering,
-    path: page.path,
-    routeId: page.routeId,
+    path: page.path ?? route?.path,
+    routeId: page.routeId ?? route?.id,
     componentModel: page.componentModel,
     hydrate: page.hydrate,
     mount: page.mount,
@@ -480,6 +502,13 @@ function sanitizePageOutput(
         }
       : undefined,
   }) as PublicPageOutput;
+}
+
+function findOutputRouteForPage(
+  output: BuildOutput,
+  pageId: string,
+): BuildOutput["routes"][number] | undefined {
+  return output.routes.find((route) => route.pageId === pageId);
 }
 
 function createHtmlDocumentLookup(html: BuildPlan["html"]): {

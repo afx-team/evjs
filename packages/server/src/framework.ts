@@ -33,8 +33,11 @@ export interface FrameworkRuntime {
     server: FrameworkRuntimeServer;
     transport?: FrameworkRuntimeTransport;
   };
-  pages: Record<string, FrameworkPageRuntime>;
-  routes: FrameworkRouteRuntime[];
+  routing?: FrameworkRuntimeRouting;
+  /** @deprecated Use routing.kind === "mpa".pages. */
+  pages?: Record<string, FrameworkPageRuntime>;
+  /** @deprecated Use routing.kind === "spa".routes or page route metadata. */
+  routes?: FrameworkRouteRuntime[];
   server: FrameworkServerRuntime;
   rsc?: FrameworkRscRuntime;
 }
@@ -91,6 +94,16 @@ export interface FrameworkRouteRuntime {
   path: string;
   pageId?: string;
 }
+
+export type FrameworkRuntimeRouting =
+  | {
+      kind: "spa";
+      routes: FrameworkRouteRuntime[];
+    }
+  | {
+      kind: "mpa";
+      pages: Record<string, FrameworkPageRuntime>;
+    };
 
 export interface FrameworkServerRuntime {
   renderers?: Record<string, FrameworkServerRenderer>;
@@ -490,12 +503,7 @@ export function assertFrameworkRuntime(
       `${source}.runtime.transport.baseUrl`,
     );
   }
-  assertObject(value.pages, `${source}.pages`);
-  assertFrameworkRuntimePages(value.pages, `${source}.pages`);
-  if (!Array.isArray(value.routes)) {
-    throw new Error(`[evjs] ${source}.routes must be an array.`);
-  }
-  assertFrameworkRuntimeRoutes(value.routes, `${source}.routes`, value.pages);
+  const { pages, routes } = assertFrameworkRuntimeRouting(value, source);
   assertObject(value.server, `${source}.server`);
   if (
     value.server.renderers !== undefined &&
@@ -507,13 +515,87 @@ export function assertFrameworkRuntime(
     assertFrameworkRuntimeRenderers(
       value.server.renderers,
       `${source}.server.renderers`,
-      value.pages,
-      value.routes,
+      pages,
+      routes,
     );
   }
   if (value.rsc !== undefined) {
-    assertFrameworkRuntimeRsc(value.rsc, `${source}.rsc`, value.pages);
+    assertFrameworkRuntimeRsc(value.rsc, `${source}.rsc`, pages);
   }
+}
+
+export function getFrameworkRuntimePages(
+  runtime: FrameworkRuntime,
+): Record<string, FrameworkPageRuntime> {
+  if (runtime.routing?.kind === "mpa") return runtime.routing.pages;
+  return runtime.pages ?? {};
+}
+
+export function getFrameworkRuntimeRoutes(
+  runtime: FrameworkRuntime,
+): FrameworkRouteRuntime[] {
+  if (runtime.routing?.kind === "spa") return runtime.routing.routes;
+  if (runtime.routing?.kind === "mpa") {
+    return createRoutesFromFrameworkPages(runtime.routing.pages);
+  }
+  return runtime.routes ?? [];
+}
+
+function assertFrameworkRuntimeRouting(
+  value: Record<string, unknown>,
+  source: string,
+): {
+  pages: Record<string, unknown>;
+  routes: FrameworkRouteRuntime[];
+} {
+  if (value.routing !== undefined) {
+    if (value.pages !== undefined || value.routes !== undefined) {
+      throw new Error(
+        `[evjs] ${source} must not define both routing and pages/routes.`,
+      );
+    }
+    assertObject(value.routing, `${source}.routing`);
+    if (value.routing.kind === "spa") {
+      if (!Array.isArray(value.routing.routes)) {
+        throw new Error(`[evjs] ${source}.routing.routes must be an array.`);
+      }
+      assertFrameworkRuntimeRoutes(
+        value.routing.routes,
+        `${source}.routing.routes`,
+        {},
+      );
+      return {
+        pages: {},
+        routes: value.routing.routes as FrameworkRouteRuntime[],
+      };
+    }
+    if (value.routing.kind === "mpa") {
+      assertObject(value.routing.pages, `${source}.routing.pages`);
+      assertFrameworkRuntimePages(
+        value.routing.pages,
+        `${source}.routing.pages`,
+      );
+      const routes = createRoutesFromFrameworkPages(value.routing.pages);
+      assertFrameworkRuntimeRoutes(
+        routes,
+        `${source}.routing.pages`,
+        value.routing.pages,
+      );
+      return { pages: value.routing.pages, routes };
+    }
+    throw new Error(`[evjs] ${source}.routing.kind must be "spa" or "mpa".`);
+  }
+
+  assertObject(value.pages, `${source}.pages`);
+  assertFrameworkRuntimePages(value.pages, `${source}.pages`);
+  if (!Array.isArray(value.routes)) {
+    throw new Error(`[evjs] ${source}.routes must be an array.`);
+  }
+  assertFrameworkRuntimeRoutes(value.routes, `${source}.routes`, value.pages);
+  return {
+    pages: value.pages,
+    routes: value.routes as FrameworkRouteRuntime[],
+  };
 }
 
 function assertBuildIdentifier(value: unknown, source: string): void {
@@ -571,6 +653,24 @@ function assertFrameworkRuntimePages(
       assertPprPageRuntimeContract(page, pageSource);
     }
   }
+}
+
+function createRoutesFromFrameworkPages(
+  pages: Record<string, unknown>,
+): FrameworkRouteRuntime[] {
+  return Object.entries(pages).flatMap(([pageId, page]) => {
+    if (!isRecord(page)) return [];
+    if (typeof page.path !== "string" || typeof page.routeId !== "string") {
+      return [];
+    }
+    return [
+      {
+        id: page.routeId,
+        path: page.path,
+        pageId,
+      },
+    ];
+  });
 }
 
 function assertPageRendering(value: unknown, source: string): void {
@@ -1089,9 +1189,11 @@ export async function handleFrameworkRenderRequest(
   }
 
   const url = new URL(request.url);
-  const route = matchRoute(options.runtime.routes, url.pathname);
+  const routes = getFrameworkRuntimeRoutes(options.runtime);
+  const pages = getFrameworkRuntimePages(options.runtime);
+  const route = matchRoute(routes, url.pathname);
   const pageId = route?.pageId ?? inferPageId(options.runtime, url.pathname);
-  const page = pageId ? options.runtime.pages[pageId] : undefined;
+  const page = pageId ? pages[pageId] : undefined;
 
   if (!route && !page) return undefined;
 
@@ -1202,7 +1304,7 @@ export async function handlePprRegionRequest(
   }
   if (!match) return undefined;
 
-  const page = options.runtime.pages[match.pageId];
+  const page = getFrameworkRuntimePages(options.runtime)[match.pageId];
   if (!page?.ppr) return undefined;
   const region = page.ppr?.regions[match.regionId];
   if (!region) return undefined;
@@ -1226,7 +1328,9 @@ async function renderPprPageResponse(
   coordinator: ServerRenderCoordinator,
 ): Promise<Response> {
   const pageId = ctx.pageId;
-  const page = pageId ? options.runtime.pages[pageId] : undefined;
+  const page = pageId
+    ? getFrameworkRuntimePages(options.runtime)[pageId]
+    : undefined;
   if (!pageId || !page?.ppr) {
     return request.method === "HEAD" ? withoutResponseBody(response) : response;
   }
@@ -1270,7 +1374,7 @@ async function renderPprMergedPageResponse(
   response: Response,
   coordinator: ServerRenderCoordinator,
 ): Promise<Response> {
-  const page = options.runtime.pages[pageId];
+  const page = getFrameworkRuntimePages(options.runtime)[pageId];
   if (!page?.ppr) return response;
 
   let html = await response.text();
@@ -1322,7 +1426,7 @@ async function renderPprStreamingPageResponse(
   response: Response,
   coordinator: ServerRenderCoordinator,
 ): Promise<Response> {
-  const page = options.runtime.pages[pageId];
+  const page = getFrameworkRuntimePages(options.runtime)[pageId];
   if (!page?.ppr) return response;
 
   const html = await response.text();
@@ -1380,7 +1484,7 @@ async function renderPprRegionResponse(
   match: PprRegionMatch,
   coordinator: ServerRenderCoordinator,
 ): Promise<Response | undefined> {
-  const page = options.runtime.pages[match.pageId];
+  const page = getFrameworkRuntimePages(options.runtime)[match.pageId];
   if (!page?.ppr) return undefined;
   const region = page.ppr?.regions[match.regionId];
   if (!region) return undefined;
@@ -1443,7 +1547,7 @@ async function renderFreshPprRegionResponse(
   match: PprRegionMatch,
   coordinator: ServerRenderCoordinator,
 ): Promise<Response | undefined> {
-  const page = options.runtime.pages[match.pageId];
+  const page = getFrameworkRuntimePages(options.runtime)[match.pageId];
   if (!page?.ppr) return undefined;
   const ctx: ServerRenderContext = {
     request,
@@ -1576,7 +1680,7 @@ function createRscFlightPageContext(
   "pageUrl" | "pageId" | "page" | "rscPage" | "renderer"
 > {
   const pageId = url.searchParams.get("page") ?? undefined;
-  const page = pageId ? runtime.pages[pageId] : undefined;
+  const page = pageId ? getFrameworkRuntimePages(runtime)[pageId] : undefined;
   const rscPage = pageId ? runtime.rsc?.pages?.[pageId] : undefined;
   const renderer = rscPage?.renderer
     ? runtime.server?.renderers?.[rscPage.renderer]
@@ -1607,7 +1711,7 @@ function withPprRegionPageUrl(
   match: PprRegionMatch,
   url: URL,
 ): PprRegionMatch {
-  const page = runtime.pages[match.pageId];
+  const page = getFrameworkRuntimePages(runtime)[match.pageId];
   const explicitPageUrl = resolvePprRegionPageUrl(url);
   const pageUrl =
     explicitPageUrl ?? inferStaticPprRegionPageUrl(runtime, match, page, url);
@@ -1652,7 +1756,7 @@ function getPprRegionPagePaths(
   pageId: string,
   page: FrameworkPageRuntime | undefined,
 ): string[] {
-  const routePaths = runtime.routes
+  const routePaths = getFrameworkRuntimeRoutes(runtime)
     .filter((route) => route.pageId === pageId)
     .map((route) => route.path);
   return routePaths.length > 0 ? routePaths : page?.path ? [page.path] : [];
@@ -1764,7 +1868,9 @@ function pageUrlMatchesPage(
   pageUrl: string,
 ): boolean {
   const pathname = normalizeRoutePathname(new URL(pageUrl).pathname);
-  const pageRoutes = runtime.routes.filter((route) => route.pageId === pageId);
+  const pageRoutes = getFrameworkRuntimeRoutes(runtime).filter(
+    (route) => route.pageId === pageId,
+  );
 
   if (pageRoutes.length > 0) {
     return pageRoutes.some((route) =>
@@ -2054,12 +2160,13 @@ function inferPageId(
   const normalized = normalizeRoutePathname(pathname);
   const directId = normalized === "/" ? "index" : normalized.slice(1);
   const withoutHtml = directId.replace(/\.html$/, "");
+  const pages = getFrameworkRuntimePages(runtime);
 
-  if (runtime.pages[withoutHtml]) return withoutHtml;
-  if (runtime.pages[directId]) return directId;
+  if (pages[withoutHtml]) return withoutHtml;
+  if (pages[directId]) return directId;
 
   const dotted = withoutHtml.replaceAll("/", ".");
-  return runtime.pages[dotted] ? dotted : undefined;
+  return pages[dotted] ? dotted : undefined;
 }
 
 function matchPprRegion(

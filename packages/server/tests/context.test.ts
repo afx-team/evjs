@@ -9,12 +9,21 @@ import {
   setCookie,
   waitUntil,
 } from "../src/context.js";
-import type { FrameworkRuntime } from "../src/framework.js";
+import type {
+  FrameworkPageRuntime,
+  FrameworkRouteRuntime,
+  FrameworkRuntime,
+} from "../src/framework.js";
 import {
   registerServerReference,
   registry,
 } from "../src/functions/register.js";
 import { createRoute } from "../src/routes/index.js";
+
+type LegacyFrameworkRuntime = FrameworkRuntime & {
+  pages: Record<string, FrameworkPageRuntime>;
+  routes: FrameworkRouteRuntime[];
+};
 
 describe("Server Request Context", () => {
   beforeEach(() => {
@@ -225,7 +234,7 @@ describe("Server Request Context", () => {
   });
 });
 
-function createFrameworkManifest(): FrameworkRuntime {
+function createFrameworkManifest(): LegacyFrameworkRuntime {
   return {
     version: 1,
     buildId: "test",
@@ -268,7 +277,7 @@ function createFrameworkManifest(): FrameworkRuntime {
   };
 }
 
-function configurePprManifest(manifest: FrameworkRuntime): void {
+function configurePprManifest(manifest: LegacyFrameworkRuntime): void {
   manifest.pages.dashboard.ppr = {
     delivery: "merge",
     shell: { js: ["dashboard-ppr-shell.js"], css: [] },
@@ -288,7 +297,7 @@ function configurePprManifest(manifest: FrameworkRuntime): void {
   };
 }
 
-function configureRscManifest(manifest: FrameworkRuntime): void {
+function configureRscManifest(manifest: LegacyFrameworkRuntime): void {
   manifest.pages.dashboard.componentModel = "rsc";
   manifest.pages.dashboard.rendering = {
     component: "rsc",

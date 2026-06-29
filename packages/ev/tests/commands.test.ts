@@ -1444,17 +1444,21 @@ describe("build", () => {
     expect(publicManifest).not.toContain(".tsx");
     expect(publicManifest).not.toContain("server.js");
     expect(publicManifestJson).not.toHaveProperty("runtime");
+    expect(publicManifestJson).not.toHaveProperty("pages");
+    expect(publicManifestJson).not.toHaveProperty("routes");
+    expect(publicManifestJson.routing.kind).toBe("mpa");
     expect(
-      publicManifestJson.routes.flatMap((route: Record<string, unknown>) =>
-        Object.keys(route),
+      Object.values(publicManifestJson.routing.pages).flatMap((page) =>
+        Object.keys(page as Record<string, unknown>),
       ),
-    ).not.toEqual(
-      expect.arrayContaining(["module", "render", "hydrate", "runtime"]),
-    );
+    ).not.toEqual(expect.arrayContaining(["component", "source", "runtime"]));
     expect(clientRuntime).not.toContain(".tsx");
     expect(clientRuntime).not.toContain("server.js");
     expect(clientRuntimeJson).not.toHaveProperty("publicPath");
     expect(clientRuntimeJson).not.toHaveProperty("assets");
+    expect(clientRuntimeJson).not.toHaveProperty("pages");
+    expect(clientRuntimeJson).not.toHaveProperty("routes");
+    expect(clientRuntimeJson.routing.kind).toBe("mpa");
     expect(Object.keys(clientRuntimeJson.runtime.server ?? {})).not.toEqual(
       expect.arrayContaining(["basePath", "fn", "ppr"]),
     );
@@ -1462,7 +1466,7 @@ describe("build", () => {
       expect.arrayContaining(["assets", "document", "entry"]),
     );
     expect(
-      Object.values(clientRuntimeJson.pages).flatMap((page) =>
+      Object.values(clientRuntimeJson.routing.pages).flatMap((page) =>
         Object.keys(page as Record<string, unknown>),
       ),
     ).not.toEqual(
@@ -1479,19 +1483,6 @@ describe("build", () => {
       ]),
     );
     expect(clientRuntimeJson).not.toHaveProperty("rsc");
-    expect(
-      clientRuntimeJson.routes.flatMap((route: Record<string, unknown>) =>
-        Object.keys(route),
-      ),
-    ).not.toEqual(
-      expect.arrayContaining([
-        "parentId",
-        "kind",
-        "render",
-        "hydrate",
-        "runtime",
-      ]),
-    );
     expect(serverManifestJson).toEqual({
       version: 1,
       entry: "server.js",

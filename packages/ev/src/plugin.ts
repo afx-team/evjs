@@ -116,15 +116,30 @@ export interface PageManifestEntry {
 }
 
 /** Client-focused manifest view derived from the linked framework output. */
-export interface ClientManifest {
+export type ClientManifest = SpaClientManifest | MpaClientManifest;
+
+/** Shared client manifest fields exposed to plugin hooks. */
+export interface BaseClientManifest {
   /** Schema version for this manifest view. */
   version: 1;
   /** Bundle asset paths for SPA HTML injection. */
   assets: ManifestAssets;
+}
+
+/** SPA client manifest view exposed to plugin hooks. */
+export interface SpaClientManifest extends BaseClientManifest {
+  /** Client output shape. */
+  kind: "spa";
   /** Discovered client routes. */
   routes?: RouteEntry[];
+}
+
+/** MPA/page-output client manifest view exposed to plugin hooks. */
+export interface MpaClientManifest extends BaseClientManifest {
+  /** Client output shape. */
+  kind: "mpa";
   /** Per-page assets for page-style outputs. */
-  pages?: Record<string, PageManifestEntry>;
+  pages: Record<string, PageManifestEntry>;
 }
 
 /** Server function id exposed to plugin manifest views. */
@@ -496,29 +511,33 @@ function createClientManifest(output: BuildOutput): ClientManifest {
     ([, page]) => page.document,
   );
   const routes = createRouteEntries(output);
-  const pages =
-    pageEntries.length > 0
-      ? Object.fromEntries(
-          pageEntries.map(([pageId, page]) => {
-            const pageRoutes = createRouteEntries(output, pageId);
-            return [
-              pageId,
-              {
-                assets: cloneAssets(page.assets),
-                ...(pageRoutes.length > 0 ? { routes: pageRoutes } : {}),
-              },
-            ];
-          }),
-        )
-      : undefined;
+  if (pageEntries.length > 0) {
+    const pages = Object.fromEntries(
+      pageEntries.map(([pageId, page]) => {
+        const pageRoutes = createRouteEntries(output, pageId);
+        return [
+          pageId,
+          {
+            assets: cloneAssets(page.assets),
+            ...(pageRoutes.length > 0 ? { routes: pageRoutes } : {}),
+          },
+        ];
+      }),
+    );
+
+    return {
+      version: 1,
+      kind: "mpa",
+      assets: cloneAssets(EMPTY_ASSETS),
+      pages,
+    };
+  }
 
   return {
     version: 1,
-    assets: pages
-      ? cloneAssets(EMPTY_ASSETS)
-      : cloneAssets(getAppAssets(output)),
+    kind: "spa",
+    assets: cloneAssets(getAppAssets(output)),
     ...(routes.length > 0 ? { routes } : {}),
-    ...(pages ? { pages } : {}),
   };
 }
 

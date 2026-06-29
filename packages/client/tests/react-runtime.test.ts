@@ -7,7 +7,16 @@ import {
   loadRscDebugPage,
   mountRscDebugPayload,
 } from "../src/react.js";
-import type { ClientRuntime } from "../src/runtime-config.js";
+import type {
+  ClientRuntime,
+  ClientRuntimePage,
+  ClientRuntimeRoute,
+} from "../src/runtime-config.js";
+
+type LegacyClientRuntime = ClientRuntime & {
+  pages: Record<string, ClientRuntimePage>;
+  routes: ClientRuntimeRoute[];
+};
 
 const calls: string[] = [];
 const renderedElements: unknown[] = [];
@@ -343,7 +352,7 @@ describe("createReactPageModule", () => {
       pathname: "/users/settings",
       search: "",
     });
-    const runtime: ClientRuntime = {
+    const runtime: LegacyClientRuntime = {
       ...createRscRuntime(),
       pages: {
         profile: {},

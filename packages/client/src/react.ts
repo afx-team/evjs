@@ -27,6 +27,7 @@ import {
 import {
   assertClientRuntime,
   type ClientRuntime,
+  getClientRuntimeRoutes,
   type HydrationMode,
   type RenderMode,
 } from "./runtime-config.js";
@@ -541,7 +542,7 @@ function findRouteForPage(
   pageId: string,
   pathname: string | undefined,
 ): ReactPageRouteContext | undefined {
-  const pageRoutes = runtime.routes.filter(
+  const pageRoutes = getClientRuntimeRoutes(runtime).filter(
     (candidate) => candidate.pageId === pageId,
   );
   const route = pathname

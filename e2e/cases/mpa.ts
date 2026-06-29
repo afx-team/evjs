@@ -91,10 +91,16 @@ test.describe("mpa", () => {
   test("emits MPA pages in manifest", async () => {
     const manifestPath = path.join(exampleDir, "dist", "manifest.json");
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as {
-      pages?: Record<string, unknown>;
+      routing?: {
+        kind?: string;
+        pages?: Record<string, unknown>;
+      };
     };
 
-    expect(manifest.pages).toEqual({
+    expect(manifest).not.toHaveProperty("pages");
+    expect(manifest).not.toHaveProperty("routes");
+    expect(manifest.routing?.kind).toBe("mpa");
+    expect(manifest.routing?.pages).toEqual({
       about: expect.objectContaining({
         assets: expect.objectContaining({
           js: expect.arrayContaining([expect.stringMatching(/about.*\.js$/)]),

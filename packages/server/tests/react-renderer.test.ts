@@ -9,6 +9,8 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   assertFrameworkRuntime,
+  type FrameworkPageRuntime,
+  type FrameworkRouteRuntime,
   type FrameworkRuntime,
 } from "../src/framework.js";
 import {
@@ -21,6 +23,11 @@ interface PageProps {
   search: Record<string, unknown>;
   loaderData: unknown;
 }
+
+type LegacyFrameworkRuntime = FrameworkRuntime & {
+  pages: Record<string, FrameworkPageRuntime>;
+  routes: FrameworkRouteRuntime[];
+};
 
 interface PageProviderProps {
   value: PageProps;
@@ -1094,7 +1101,7 @@ describe("createReactRscFlightAdapter", () => {
   });
 });
 
-function createManifest(): FrameworkRuntime {
+function createManifest(): LegacyFrameworkRuntime {
   return {
     version: 1,
     buildId: "test",

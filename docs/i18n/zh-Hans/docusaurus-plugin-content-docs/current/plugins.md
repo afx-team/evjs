@@ -184,9 +184,10 @@ setup() {
 ```
 
 部署插件应该从 `output` 读取 routes、functions、assets 和 runtime paths。
-只需要客户端 bundle 摘要的插件可以使用 `clientManifest`；只需要 server entry、
-function ids 或 route method 摘要的插件可以使用 `serverManifest`。HTML hook 会收到
-同一组结果字段，并额外包含 `ctx.kind`、`ctx.fileName`、`ctx.assets` 等文档字段。
+只需要客户端 bundle 摘要的插件可以使用 `clientManifest`：读取 SPA `routes` 或 MPA
+`pages` 前先检查 `clientManifest.kind`。只需要 server entry、function ids 或 route
+method 摘要的插件可以使用 `serverManifest`。HTML hook 会收到同一组结果字段，并额外包含
+`ctx.kind`、`ctx.fileName`、`ctx.assets` 等文档字段。
 
 ## Bundler Config
 

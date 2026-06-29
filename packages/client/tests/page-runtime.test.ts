@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startPageRuntime } from "../src/internal";
-import type { ClientRuntime } from "../src/runtime-config.js";
+import type {
+  ClientRuntime,
+  ClientRuntimePage,
+  ClientRuntimeRoute,
+} from "../src/runtime-config.js";
 import {
   __resetForTesting,
   callServer,
@@ -489,7 +493,7 @@ describe("startPageRuntime", () => {
         }),
       }),
     ).rejects.toThrow(
-      '[evjs] Loaded embedded runtime "__EVJS_CLIENT_RUNTIME__" pages must be an object.',
+      '[evjs] Loaded embedded runtime "__EVJS_CLIENT_RUNTIME__".pages must be an object.',
     );
   });
 
@@ -581,7 +585,7 @@ describe("startPageRuntime", () => {
         } as never,
       }),
     ).rejects.toThrow(
-      "[evjs] Loaded provided runtime routes must be an array.",
+      "[evjs] Loaded provided runtime.routes must be an array.",
     );
 
     await expect(
@@ -804,7 +808,12 @@ describe("startPageRuntime", () => {
   });
 });
 
-function createRuntime(): ClientRuntime {
+type LegacyClientRuntime = ClientRuntime & {
+  pages: Record<string, ClientRuntimePage>;
+  routes: ClientRuntimeRoute[];
+};
+
+function createRuntime(): LegacyClientRuntime {
   return {
     version: 1,
     buildId: "test",

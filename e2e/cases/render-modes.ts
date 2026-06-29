@@ -12,6 +12,18 @@ const exampleDir = path.resolve(
 
 const test = createExampleTest("render-modes");
 
+interface RenderModesPublicPage {
+  document?: unknown;
+  module?: unknown;
+  path?: string;
+  routeId?: string;
+  ppr?: {
+    delivery?: string;
+    regions: Record<string, { id?: string; cache?: unknown }>;
+  };
+  [key: string]: unknown;
+}
+
 test.describe("render-modes", () => {
   test("runs the merchant operations console with server function and REST route", async ({
     page,
@@ -168,9 +180,9 @@ test.describe("render-modes", () => {
     expect(pageResponse.status()).toBe(200);
     expect(pageResponse.headers()["x-evjs-ppr"]).toBe("stream");
     const pageHtml = await pageResponse.text();
-    const { id: regionId } = getSinglePprRegion(
-      readRenderModesPublicManifest().pages.campaign.ppr.regions,
-    );
+    const publicPages = getRenderModesPublicPages();
+    const campaignPpr = getRenderModesCampaignPpr(publicPages);
+    const { id: regionId } = getSinglePprRegion(campaignPpr.regions);
     expect(pageHtml).toContain(`data-evjs-ppr-stream-region="${regionId}"`);
     expect(pageHtml).toContain("Dynamic PPR region rendered on demand");
 
@@ -257,6 +269,12 @@ test.describe("render-modes", () => {
     const buildOutput = readRenderModesBuildOutput();
     const buildOutputText = JSON.stringify(buildOutput);
     const frameworkRuntime = readRenderModesFrameworkRuntime();
+    const publicPages = getRenderModesPublicPages(manifest);
+    const publicRoutes = Object.entries(publicPages).map(([pageId, page]) => ({
+      id: page.routeId,
+      path: page.path,
+      pageId,
+    }));
 
     expect("distDir" in buildOutput).toBe(false);
     expect(buildOutput.paths).toEqual({
@@ -271,7 +289,10 @@ test.describe("render-modes", () => {
         module: expect.objectContaining({ type: "entry" }),
       }),
     );
-    expect(manifest.pages.support).toEqual(
+    expect(manifest).not.toHaveProperty("pages");
+    expect(manifest).not.toHaveProperty("routes");
+    expect(manifest.routing.kind).toBe("mpa");
+    expect(publicPages.support).toEqual(
       expect.objectContaining({
         render: "csr",
         rendering: {
@@ -283,7 +304,7 @@ test.describe("render-modes", () => {
         module: expect.objectContaining({ type: "react-component" }),
       }),
     );
-    expect(manifest.pages.dashboard).toEqual(
+    expect(publicPages.dashboard).toEqual(
       expect.objectContaining({
         path: "/dashboard",
         render: "ssr",
@@ -296,7 +317,7 @@ test.describe("render-modes", () => {
         routeId: "dashboard",
       }),
     );
-    expect(manifest.pages.settlement).toEqual(
+    expect(publicPages.settlement).toEqual(
       expect.objectContaining({
         path: "/settlement-report",
         render: "ssg",
@@ -310,9 +331,9 @@ test.describe("render-modes", () => {
         routeId: "settlement",
       }),
     );
-    expect(manifest.pages.settlement.document).toBeUndefined();
-    expect(manifest.pages.settlement.module).toBeUndefined();
-    expect(manifest.pages.insights).toEqual(
+    expect(publicPages.settlement.document).toBeUndefined();
+    expect(publicPages.settlement.module).toBeUndefined();
+    expect(publicPages.insights).toEqual(
       expect.objectContaining({
         path: "/insights",
         render: "ssr",
@@ -326,7 +347,7 @@ test.describe("render-modes", () => {
         routeId: "insights",
       }),
     );
-    expect(manifest.pages.campaign).toEqual(
+    expect(publicPages.campaign).toEqual(
       expect.objectContaining({
         path: "/campaign",
         render: "ssr",
@@ -343,8 +364,9 @@ test.describe("render-modes", () => {
         },
       }),
     );
+    const campaignPpr = getRenderModesCampaignPpr(publicPages);
     const { id: campaignRegionId, region: campaignRegion } = getSinglePprRegion(
-      manifest.pages.campaign.ppr.regions,
+      campaignPpr.regions,
     );
     expect(campaignRegion).toEqual(
       expect.objectContaining({
@@ -352,8 +374,8 @@ test.describe("render-modes", () => {
         cache: { revalidate: 30 },
       }),
     );
-    expect(manifest.pages.campaign.ppr.delivery).toBe("stream");
-    expect(manifest.routes).toEqual(
+    expect(campaignPpr.delivery).toBe("stream");
+    expect(publicRoutes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: "dashboard",
@@ -459,6 +481,21 @@ function readRenderModesPublicManifest() {
   return JSON.parse(
     fs.readFileSync(getRenderModesPublicManifestPath(), "utf-8"),
   );
+}
+
+function getRenderModesPublicPages(
+  manifest = readRenderModesPublicManifest(),
+): Record<string, RenderModesPublicPage> {
+  expect(manifest.routing?.kind).toBe("mpa");
+  return manifest.routing.pages;
+}
+
+function getRenderModesCampaignPpr(
+  pages: Record<string, RenderModesPublicPage>,
+): NonNullable<RenderModesPublicPage["ppr"]> {
+  const ppr = pages.campaign?.ppr;
+  expect(ppr).toBeDefined();
+  return ppr as NonNullable<RenderModesPublicPage["ppr"]>;
 }
 
 function readRenderModesBuildOutput() {

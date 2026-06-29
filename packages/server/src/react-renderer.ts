@@ -18,6 +18,7 @@ import type {
   RscCoordinator,
   RscFlightContext,
 } from "./framework.js";
+import { getFrameworkRuntimeRoutes } from "./framework.js";
 import { textResponse } from "./responses.js";
 import {
   formatUnknownError,
@@ -568,7 +569,7 @@ function findRouteForPage(
 ): { id: string; path: string } | undefined {
   if (!pageId) return undefined;
 
-  const pageRoutes = runtime.routes.filter(
+  const pageRoutes = getFrameworkRuntimeRoutes(runtime).filter(
     (candidate) => candidate.pageId === pageId,
   );
   const route = pathname

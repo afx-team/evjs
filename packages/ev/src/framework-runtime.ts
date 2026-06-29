@@ -3,8 +3,7 @@ import type { BuildOutput } from "@evjs/shared/manifest";
 export type ClientRuntimeOutput = Pick<BuildOutput, "version" | "buildId"> & {
   runtime: ClientRuntimeOutputRuntime;
   app?: ClientRuntimeTargetOutput;
-  pages: Record<string, ClientRuntimeTargetOutput>;
-  routes: ClientRuntimeRouteOutput[];
+  routing: ClientRuntimeRoutingOutput;
 };
 
 export interface ClientRuntimeOutputRuntime {
@@ -21,18 +20,30 @@ export type ClientRuntimeTargetOutput = Pick<
   module?: BuildOutput["apps"][string]["module"];
 };
 
+export type ClientRuntimePageOutput = ClientRuntimeTargetOutput &
+  Pick<BuildOutput["pages"][string], "path" | "routeId">;
+
 export type ClientRuntimeRouteOutput = Pick<
   BuildOutput["routes"][number],
   "id" | "path" | "pageId"
 >;
+
+export type ClientRuntimeRoutingOutput =
+  | {
+      kind: "spa";
+      routes: ClientRuntimeRouteOutput[];
+    }
+  | {
+      kind: "mpa";
+      pages: Record<string, ClientRuntimePageOutput>;
+    };
 
 export interface FrameworkRuntimeOutput {
   version: 1;
   buildId: string;
   publicPath: string;
   runtime: BuildOutput["runtime"];
-  pages: Record<string, FrameworkRuntimePage>;
-  routes: FrameworkRuntimeRoute[];
+  routing: FrameworkRuntimeRouting;
   server: {
     renderers?: Record<string, FrameworkRuntimeRenderer>;
   };
@@ -68,6 +79,16 @@ export type FrameworkRuntimeRoute = Pick<
   "id" | "path" | "pageId"
 >;
 
+export type FrameworkRuntimeRouting =
+  | {
+      kind: "spa";
+      routes: FrameworkRuntimeRoute[];
+    }
+  | {
+      kind: "mpa";
+      pages: Record<string, FrameworkRuntimePage>;
+    };
+
 export interface FrameworkRuntimeRenderer {
   kind: NonNullable<BuildOutput["server"]["renderers"]>[string]["kind"];
   owner?: FrameworkRuntimeOwner;
@@ -101,15 +122,27 @@ export function createClientRuntime(output: BuildOutput): ClientRuntimeOutput {
     buildId: output.buildId,
     runtime: createClientRuntimeRuntime(output.runtime),
     app: createClientRuntimeApp(output),
-    pages: Object.fromEntries(
-      Object.entries(output.pages).map(([id, page]) => [
-        id,
-        pruneUndefined({
-          mount: page.mount,
-          module: page.module,
-        }),
-      ]),
-    ),
+    routing: createClientRuntimeRouting(output),
+  });
+}
+
+function createClientRuntimeRouting(
+  output: BuildOutput,
+): ClientRuntimeRoutingOutput {
+  if (Object.keys(output.pages).length > 0) {
+    return {
+      kind: "mpa",
+      pages: Object.fromEntries(
+        Object.entries(output.pages).map(([id, page]) => [
+          id,
+          createClientRuntimePage(output, id, page),
+        ]),
+      ),
+    };
+  }
+
+  return {
+    kind: "spa",
     routes: output.routes.map((route) =>
       pruneUndefined({
         id: route.id,
@@ -117,6 +150,20 @@ export function createClientRuntime(output: BuildOutput): ClientRuntimeOutput {
         pageId: route.pageId,
       }),
     ),
+  };
+}
+
+function createClientRuntimePage(
+  output: BuildOutput,
+  id: string,
+  page: BuildOutput["pages"][string],
+): ClientRuntimePageOutput {
+  const route = findOutputRouteForPage(output, id);
+  return pruneUndefined({
+    mount: page.mount,
+    module: page.module,
+    path: page.path ?? route?.path,
+    routeId: page.routeId ?? route?.id,
   });
 }
 
@@ -153,43 +200,7 @@ export function createFrameworkRuntime(
     buildId: output.buildId,
     publicPath: output.publicPath,
     runtime: output.runtime,
-    pages: Object.fromEntries(
-      Object.entries(output.pages).map(([id, page]) => [
-        id,
-        pruneUndefined({
-          assets: page.assets,
-          render: page.render,
-          rendering: page.rendering,
-          path: page.path,
-          routeId: page.routeId,
-          componentModel: page.componentModel,
-          mount: page.mount,
-          ppr: page.ppr
-            ? {
-                delivery: page.ppr.delivery,
-                shell: page.ppr.shell,
-                regions: Object.fromEntries(
-                  Object.entries(page.ppr.regions).map(([regionId, region]) => [
-                    regionId,
-                    pruneUndefined({
-                      id: region.id,
-                      assets: region.assets,
-                      cache: region.cache,
-                    }),
-                  ]),
-                ),
-              }
-            : undefined,
-        }),
-      ]),
-    ),
-    routes: output.routes.map((route) =>
-      pruneUndefined({
-        id: route.id,
-        path: route.path,
-        pageId: route.pageId,
-      }),
-    ),
+    routing: createFrameworkRuntimeRouting(output),
     server: pruneUndefined({
       renderers: output.server.renderers
         ? Object.fromEntries(
@@ -206,6 +217,73 @@ export function createFrameworkRuntime(
     }),
     rsc: createFrameworkRuntimeRsc(output.rsc, options.rscManifests),
   });
+}
+
+function createFrameworkRuntimeRouting(
+  output: BuildOutput,
+): FrameworkRuntimeRouting {
+  if (Object.keys(output.pages).length === 0) {
+    return {
+      kind: "spa",
+      routes: output.routes.map((route) =>
+        pruneUndefined({
+          id: route.id,
+          path: route.path,
+          pageId: route.pageId,
+        }),
+      ),
+    };
+  }
+
+  return {
+    kind: "mpa",
+    pages: Object.fromEntries(
+      Object.entries(output.pages).map(([id, page]) => [
+        id,
+        createFrameworkRuntimePage(output, id, page),
+      ]),
+    ),
+  };
+}
+
+function createFrameworkRuntimePage(
+  output: BuildOutput,
+  id: string,
+  page: BuildOutput["pages"][string],
+): FrameworkRuntimePage {
+  const route = findOutputRouteForPage(output, id);
+  return pruneUndefined({
+    assets: page.assets,
+    render: page.render,
+    rendering: page.rendering,
+    path: page.path ?? route?.path,
+    routeId: page.routeId ?? route?.id,
+    componentModel: page.componentModel,
+    mount: page.mount,
+    ppr: page.ppr
+      ? {
+          delivery: page.ppr.delivery,
+          shell: page.ppr.shell,
+          regions: Object.fromEntries(
+            Object.entries(page.ppr.regions).map(([regionId, region]) => [
+              regionId,
+              pruneUndefined({
+                id: region.id,
+                assets: region.assets,
+                cache: region.cache,
+              }),
+            ]),
+          ),
+        }
+      : undefined,
+  });
+}
+
+function findOutputRouteForPage(
+  output: BuildOutput,
+  pageId: string,
+): BuildOutput["routes"][number] | undefined {
+  return output.routes.find((route) => route.pageId === pageId);
 }
 
 function createFrameworkRuntimeRsc(

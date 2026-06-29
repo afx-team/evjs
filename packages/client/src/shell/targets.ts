@@ -1,4 +1,7 @@
-import type { ClientRuntime } from "../runtime-config.js";
+import {
+  type ClientRuntime,
+  getClientRuntimePages,
+} from "../runtime-config.js";
 import { isRecord } from "../validation.js";
 import type { ActivationRequest, ResolvedShellTarget } from "./types.js";
 
@@ -7,7 +10,7 @@ export async function resolveTarget(
   request: ActivationRequest,
 ): Promise<ResolvedShellTarget> {
   if (request.pageId) {
-    const page = runtime.pages[request.pageId];
+    const page = getClientRuntimePages(runtime)[request.pageId];
     if (!page) {
       throw new Error(`[evjs] Page "${request.pageId}" is not in the runtime.`);
     }

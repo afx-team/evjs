@@ -174,16 +174,18 @@ or an equivalent value embedded by a deployment adapter. Deployed server
 runtimes do not read `dist/build-output.json` or manifest files at startup.
 The browser runtime projection is intentionally smaller than the public
 manifest: it keeps only the build id, transport base URL, RSC endpoint,
-app/page module targets, mount selectors, and route lookup data needed to boot
-or navigate. Asset indexes, deployment metadata, source references, and
+app/page module targets, mount selectors, and the routing metadata needed to
+boot or navigate. Asset indexes, deployment metadata, source references, and
 renderer bundle metadata stay in manifests or `BuildOutput`; React Flight
 client reference data stays in the explicit `FrameworkRuntime` projection.
 Public manifests, deployment artifacts, and client runtime projections expose a
 single SPA app as `app`, not an `apps.default` map. `BuildOutput.apps` remains
-the complete private/plugin view for named build graph app nodes. In
-`BuildOutput` and public manifests, client routes are URL-to-target indexes.
-Page rendering, hydration, and component model metadata stay under `pages`, and
-framework endpoints stay under runtime/server projections.
+the complete private/plugin view for named build graph app nodes. `BuildOutput`
+keeps the complete private `pages` and `routes` graph. Public manifests and
+runtime projections group client routing under `routing`: SPA uses
+`{ kind: "spa", routes }`, while MPA/page outputs use
+`{ kind: "mpa", pages }` with page route metadata on each page entry.
+Framework endpoints stay under runtime/server projections.
 
 TanStack Router is available through the `@evjs/client` standalone CSR surface
 for manual browser applications. In framework-managed apps, `@evjs/ev` owns
@@ -410,7 +412,9 @@ Full BuildOutput manifests retain deployment-facing route, asset, server
 function, server route, renderer, and RSC page metadata without publishing
 source module paths or bundler chunk maps.
 Client/server manifests are deployment metadata; generated browser and server
-runtimes consume minimal ClientRuntime and FrameworkRuntime contracts.
+runtimes consume minimal ClientRuntime and FrameworkRuntime contracts. Those
+runtime contracts use `routing.kind` to distinguish SPA routes from MPA/page
+targets instead of serializing empty top-level `pages` or `routes` fields.
 Deployment artifacts group framework endpoint and transport data under their
 server section instead of duplicating the raw runtime object.
 

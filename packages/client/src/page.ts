@@ -166,14 +166,8 @@ function assertLoadedRuntime(
   if (!isRecord(runtime.runtime)) {
     throw new Error(`[evjs] Loaded ${source} runtime must be an object.`);
   }
-  if (!isRecord(runtime.pages)) {
-    throw new Error(`[evjs] Loaded ${source} pages must be an object.`);
-  }
   if (runtime.app !== undefined && !isRecord(runtime.app)) {
     throw new Error(`[evjs] Loaded ${source} app must be an object.`);
-  }
-  if (!Array.isArray(runtime.routes)) {
-    throw new Error(`[evjs] Loaded ${source} routes must be an array.`);
   }
   assertClientRuntime(runtime, `Loaded ${source}`);
 }

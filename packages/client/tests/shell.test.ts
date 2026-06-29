@@ -7,9 +7,18 @@ import {
   type HistoryDriverOptions,
   registerShellModule,
 } from "../src/internal";
-import type { ClientRuntime } from "../src/runtime-config.js";
+import type {
+  ClientRuntime,
+  ClientRuntimePage,
+  ClientRuntimeRoute,
+} from "../src/runtime-config.js";
 
-const runtime: ClientRuntime = {
+type LegacyClientRuntime = ClientRuntime & {
+  pages: Record<string, ClientRuntimePage>;
+  routes: ClientRuntimeRoute[];
+};
+
+const runtime: LegacyClientRuntime = {
   version: 1,
   buildId: "test",
   runtime: {},
