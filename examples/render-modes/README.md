@@ -7,7 +7,7 @@ simulates a payment operations console with:
 - a REST health route for operations service status;
 - a CSR support queue page for agent workflows;
 - an SSR operations dashboard for document rendering;
-- an SSG settlement report with no client hydration bundle;
+- a full-prerender SSR settlement report with no client hydration bundle;
 - a PPR campaign monitor with a dynamic offer region;
 - an RSC insights page with a client reference.
 
@@ -19,7 +19,7 @@ It exercises the render-mode framework contracts with the webpack adapter:
 - `pages` declarations for standalone page outputs, with render metadata kept in
   the referenced page modules;
 - framework-managed SSR React page;
-- framework-managed SSG React page;
+- framework-managed SSR React page with full prerender metadata;
 - framework-managed CSR component page;
 - PPR page shell plus Suspense-driven dynamic region renderer, delivered with
   streamed shell/region patches in one document response;

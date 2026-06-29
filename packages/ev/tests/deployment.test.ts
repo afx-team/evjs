@@ -142,7 +142,8 @@ describe("createDeploymentArtifact", () => {
           kind: "server-page",
           path: "/insights",
           pageId: "insights",
-          render: "rsc",
+          render: "ssr",
+          rsc: true,
           methods: ["GET", "HEAD"],
         },
         {
@@ -669,7 +670,7 @@ describe("createDeploymentArtifact", () => {
     expect(files.redirects).toBe("\n");
   });
 
-  it("does not create static redirects for route-owned SSG pages without emitted documents", () => {
+  it("creates static redirects for route-owned SSG pages with emitted documents", () => {
     const output: BuildOutput = {
       version: 1,
       buildId: "build-1",
@@ -695,6 +696,7 @@ describe("createDeploymentArtifact", () => {
       pages: {
         pricing: {
           assets: { js: [], css: [] },
+          document: { fileName: "pricing.html" },
           render: "ssg",
           rendering: {
             component: "server",
@@ -726,7 +728,9 @@ describe("createDeploymentArtifact", () => {
       includeAssets: false,
     });
 
-    expect(files.redirects).toBe(["/* /index.html 200", ""].join("\n"));
+    expect(files.redirects).toBe(
+      ["/pricing /pricing.html 200", "/* /index.html 200", ""].join("\n"),
+    );
   });
 
   it("creates Edge deployment files from BuildOutput", () => {

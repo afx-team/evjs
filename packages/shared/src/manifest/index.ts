@@ -487,7 +487,11 @@ export type DeploymentDocumentOutput =
       assets?: AssetGroup;
     };
 
-export type DeploymentPageRenderOutput = RenderMode | "ppr" | "rsc";
+export type DeploymentPageRenderOutput = RenderMode;
+export type DeploymentServerPageRenderOutput = Extract<
+  DeploymentPageRenderOutput,
+  "ssr"
+>;
 
 export type DeploymentRouteOutput =
   | {
@@ -501,7 +505,9 @@ export type DeploymentRouteOutput =
       kind: "server-page";
       path: string;
       pageId: string;
-      render: Exclude<DeploymentPageRenderOutput, "csr">;
+      render: DeploymentServerPageRenderOutput;
+      prerender?: "full" | "partial";
+      rsc?: true;
       methods: ["GET", "HEAD"];
     }
   | {

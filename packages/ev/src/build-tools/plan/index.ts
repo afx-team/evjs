@@ -487,12 +487,32 @@ function shouldEmitDocumentForPage(
   },
 ): boolean {
   if (isMpaFileRoutePage(config, page) && page.render === "ssg") return true;
+  const pagePath = getPageRoutePath(config, page);
+  if (page.render === "ssg" && pagePath && isStaticPagePath(pagePath)) {
+    return true;
+  }
 
   // Route-derived pages are served through the owning app/framework route.
   // In SPA mode this avoids colliding with the app HTML fallback.
   if (isRouteDerivedPage(page)) return false;
   if (page.path && page.render !== "csr") return false;
   return true;
+}
+
+function getPageRoutePath(
+  config: BuildPlanConfig,
+  page: {
+    id: string;
+    path?: string;
+    routeId?: string;
+  },
+): string | undefined {
+  return (
+    page.path ??
+    config.routing?.routes.find(
+      (route) => route.id === (page.routeId ?? page.id),
+    )?.path
+  );
 }
 
 function isMpaFileRoutePage(
@@ -511,6 +531,10 @@ function isMpaFileRoutePage(
       route.path === page.path &&
       route.module === page.component,
   );
+}
+
+function isStaticPagePath(pathname: string): boolean {
+  return !/(^|\/)(?:[$:]|[*])/.test(pathname);
 }
 
 function createServerPlan(

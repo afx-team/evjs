@@ -121,10 +121,9 @@ export default defineConfig({
 ```
 
 MPA 模式下，每个发现到的 CSR 页面都会生成独立 HTML 文档和客户端 entry。
-导出 `render = "ssg"` 的文件路由会输出独立 static HTML document，并获得用于
-static generation 的 server renderer；默认不创建 browser page entry。MPA 不会引入
-客户端路由器配置。文件路由可以通过旁边同 basename 的 `.html` 文件使用页面专属
-HTML 模板，例如 `src/pages/about.tsx` 对应 `src/pages/about.html`，
+导出 `render = "ssg"` 的文件路由会在 `ev build` 期间渲染成独立 static HTML
+document；默认不创建 browser page entry。MPA 不会引入客户端路由器配置。文件路由可以通过旁边同 basename
+的 `.html` 文件使用页面专属 HTML 模板，例如 `src/pages/about.tsx` 对应 `src/pages/about.html`，
 `src/pages/product/index.tsx` 对应 `src/pages/product/index.html`；没有 colocated
 模板的路由默认使用全局 `index.html` 模板。
 

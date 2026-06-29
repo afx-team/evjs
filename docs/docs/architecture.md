@@ -329,10 +329,12 @@ through static exports such as `render`, `hydrate`, `rsc`, and `prerender`.
 When graph creation sees SSR, RSC, or partial prerender metadata, it derives the
 required server renderers, PPR regions, assets, and manifest output from that
 page module.
-The in-memory BuildOutput keeps those renderer relationships explicit: SSR,
-SSG, and RSC document pages resolve through a `page-server` renderer owned by
-the page id or by one of that page's route ids. PPR pages resolve through
-`ppr-shell` and `ppr-region` entries instead.
+The in-memory BuildOutput keeps those renderer relationships explicit: SSR and
+RSC document pages resolve through a `page-server` renderer owned by the page id
+or by one of that page's route ids. SSG pages use a `page-server` renderer during
+the production build to emit static HTML, then deployment metadata exposes them
+as `static-page` routes. PPR pages resolve through `ppr-shell` and `ppr-region`
+entries instead.
 
 `pages.*` remains the explicit lower-level page API. It is useful when a page
 does not map cleanly to the `src/pages` file tree. Rendering metadata still
@@ -409,9 +411,13 @@ RSC, and asset metadata from `BuildOutput` in memory instead of reading bundler
 stats. Post-build tools should read `dist/build-output.json`, whose documents
 table carries app shell fallback metadata and whose routes table uses explicit
 kinds such as `static-page`, `server-page`, `server-function`, `ppr-endpoint`,
-`rsc-endpoint`, and `api-route`. Page route rows carry `render` metadata such
-as `csr`, `ssg`, `ssr`, `ppr`, or `rsc` separately from the deployment kind.
-Client/server manifests are deployment metadata; generated browser and server
+`rsc-endpoint`, and `api-route`. Static page route rows point at emitted HTML
+documents and carry `render: "csr" | "ssg"`; server page route rows describe
+server-handled pages and carry `render: "ssr"`. Server page rows add
+`prerender: "full" | "partial"` for full prerender or PPR behavior, and
+`rsc: true` for RSC pages, so derived capabilities do not masquerade as source
+`render` values. Client/server manifests are
+deployment metadata; generated browser and server
 runtimes consume minimal ClientRuntime and FrameworkRuntime contracts. Those
 runtime contracts use `routing.kind` to distinguish SPA routes from MPA/page
 targets instead of serializing empty top-level `pages` or `routes` fields.

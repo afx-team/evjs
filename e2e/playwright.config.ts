@@ -20,6 +20,7 @@ export default defineConfig<ExtTestOptions>({
         "cases/scaffold.ts",
         "cases/render-modes.ts",
         "cases/deployment-adapters.ts",
+        "cases/ssg.ts",
       ],
       use: {
         browserName: "chromium",
@@ -28,7 +29,11 @@ export default defineConfig<ExtTestOptions>({
     },
     {
       name: "webpack-examples",
-      testMatch: ["cases/render-modes.ts", "cases/deployment-adapters.ts"],
+      testMatch: [
+        "cases/render-modes.ts",
+        "cases/deployment-adapters.ts",
+        "cases/ssg.ts",
+      ],
       use: {
         browserName: "chromium",
         bundlerName: "webpack",

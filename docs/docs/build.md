@@ -95,7 +95,10 @@ export default function ProductPage() {
 }
 ```
 
-For static pages, use `render = "ssg"`. For partial prerendering, use
+For build-time static generation, use `render = "ssg"` on a statically
+addressable page. `ev build` renders that page into an emitted HTML document
+such as `dist/client/report.html`, and deployment metadata represents it as a
+`static-page` route. For server pages with partial prerendering, use
 `render = "ssr"` with `prerender = { partial: true }`.
 
 ```tsx

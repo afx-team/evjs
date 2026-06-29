@@ -132,11 +132,11 @@ export default defineConfig({
 ```
 
 In MPA mode every discovered CSR page is emitted as an independent HTML document
-and client entry. File-route pages that export `render = "ssg"` emit an
-independent static HTML document and a server renderer for static generation; by
-default they do not create a browser page entry. No client router setup is
-added. A file-route page can use a page-specific HTML template by placing an
-`.html` file with the same basename beside the page module, such as
+and client entry. File-route pages that export `render = "ssg"` are rendered
+during `ev build` into independent static HTML documents; by default they do
+not create a browser page entry. No client router setup is added. A file-route
+page can use a page-specific HTML template by placing an `.html` file with the
+same basename beside the page module, such as
 `src/pages/about.html` for `src/pages/about.tsx` or
 `src/pages/product/index.html` for `src/pages/product/index.tsx`; routes
 without one use the global `index.html` template by default.

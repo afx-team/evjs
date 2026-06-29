@@ -2520,7 +2520,13 @@ describe("linkBuildOutput", () => {
           prerender: true,
         },
       },
-      routes: [],
+      routes: [
+        {
+          id: "article",
+          path: "/article",
+          pageId: "article",
+        },
+      ],
       serverFunctions: [],
       serverRoutes: [],
     };
@@ -2584,6 +2590,14 @@ describe("linkBuildOutput", () => {
     });
     expect(output.pages.article.document).toEqual({
       fileName: "article.html",
+    });
+    expect(createDeploymentMetadata(output).routes).toContainEqual({
+      kind: "server-page",
+      path: "/article",
+      pageId: "article",
+      render: "ssr",
+      prerender: "full",
+      methods: ["GET", "HEAD"],
     });
   });
 
@@ -3202,7 +3216,8 @@ describe("createPublicManifest", () => {
         kind: "server-page",
         path: "/insights",
         pageId: "insights",
-        render: "rsc",
+        render: "ssr",
+        rsc: true,
         methods: ["GET", "HEAD"],
       },
       {
@@ -3216,7 +3231,8 @@ describe("createPublicManifest", () => {
         kind: "server-page",
         path: "/settlement-report",
         pageId: "settlement",
-        render: "ssg",
+        render: "ssr",
+        prerender: "full",
         methods: ["GET", "HEAD"],
       },
       {
@@ -3368,14 +3384,16 @@ describe("createServerManifest", () => {
           kind: "server-page",
           path: "/dashboard",
           pageId: "dashboard",
-          render: "rsc",
+          render: "ssr",
+          rsc: true,
           methods: ["GET", "HEAD"],
         },
         {
           kind: "server-page",
           path: "/campaign",
           pageId: "campaign",
-          render: "ppr",
+          render: "ssr",
+          prerender: "partial",
           methods: ["GET", "HEAD"],
         },
         {

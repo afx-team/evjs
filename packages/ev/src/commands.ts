@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { createApp } from "@evjs/server/app";
+import { createReactFrameworkServer } from "@evjs/server/react";
 import type {
   AppGraph,
   BuildOutput,
@@ -1370,9 +1372,10 @@ async function emitFrameworkHtml<TBundlerCfg>(
   pluginCtx: PluginContext<TBundlerCfg>,
   output: BuildOutput,
   plan: BuildPlan,
+  frameworkRuntime: ReturnType<typeof createFrameworkRuntime>,
   isRebuild: boolean,
 ): Promise<void> {
-  const { clientDir } = getFrameworkOutputPaths(cwd, output);
+  const { clientDir, serverDir } = getFrameworkOutputPaths(cwd, output);
   const clientRuntime = createClientRuntime(output);
 
   for (const html of plan.html) {
@@ -1399,6 +1402,18 @@ async function emitFrameworkHtml<TBundlerCfg>(
       doc.documentElement?.setAttribute("data-evjs-id", htmlInfo.appId);
     }
     embedClientRuntime(doc, clientRuntime);
+    if (
+      plan.mode === "production" &&
+      shouldPrerenderStaticPage(output, htmlInfo)
+    ) {
+      await prerenderStaticPageHtml({
+        doc,
+        output,
+        html: htmlInfo,
+        frameworkRuntime,
+        serverDir,
+      });
+    }
 
     const finalHtml = await buildHtml({
       doc,
@@ -1413,6 +1428,100 @@ async function emitFrameworkHtml<TBundlerCfg>(
     await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
     await fs.promises.writeFile(outPath, finalHtml, "utf-8");
   }
+}
+
+function shouldPrerenderStaticPage(
+  output: BuildOutput,
+  html: HtmlDocumentInfo,
+): html is Extract<HtmlDocumentInfo, { kind: "page" }> {
+  if (html.kind !== "page") return false;
+  const page = output.pages[html.pageId];
+  return Boolean(
+    page &&
+      page.render === "ssg" &&
+      page.rendering.html === "static" &&
+      page.rendering.prerender === "full",
+  );
+}
+
+async function prerenderStaticPageHtml(options: {
+  doc: ReturnType<typeof generateHtml>;
+  output: BuildOutput;
+  html: Extract<HtmlDocumentInfo, { kind: "page" }>;
+  frameworkRuntime: ReturnType<typeof createFrameworkRuntime>;
+  serverDir: string;
+}): Promise<void> {
+  const { doc, output, html, frameworkRuntime, serverDir } = options;
+  const page = output.pages[html.pageId];
+  const pathname = findStaticPagePath(output, html.pageId, page);
+  if (!page || !pathname) return;
+
+  const framework = createReactFrameworkServer({
+    runtime: frameworkRuntime,
+    loadModule: async (asset) =>
+      normalizeServerModule(
+        await import(pathToFileURL(path.resolve(serverDir, asset)).href),
+      ),
+    react: {
+      renderDocument(appHtml) {
+        return appHtml;
+      },
+    },
+  });
+  if (!framework?.render) {
+    throw new Error(
+      `[evjs] Unable to prerender SSG page "${html.pageId}" because no server renderer was emitted.`,
+    );
+  }
+
+  const app = createApp({ framework });
+  const response = await app.fetch(
+    new Request(new URL(pathname, "http://evjs.local").toString(), {
+      method: "GET",
+    }),
+  );
+  if (!response.ok) {
+    throw new Error(
+      `[evjs] Failed to prerender SSG page "${html.pageId}": ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const mount = doc.querySelector(page.mount ?? "#app");
+  if (!mount) {
+    throw new Error(
+      `[evjs] Unable to prerender SSG page "${html.pageId}" because mount target "${page.mount ?? "#app"}" was not found.`,
+    );
+  }
+  mount.innerHTML = await response.text();
+}
+
+function findStaticPagePath(
+  output: BuildOutput,
+  pageId: string,
+  page: BuildOutput["pages"][string] | undefined,
+): string | undefined {
+  const routePath = output.routes.find(
+    (route) => route.pageId === pageId,
+  )?.path;
+  const pathname = routePath ?? page?.path;
+  if (!pathname || !isStaticPagePath(pathname)) return undefined;
+  return pathname;
+}
+
+function isStaticPagePath(pathname: string): boolean {
+  return !/(^|\/)(?:[$:]|[*])/.test(pathname);
+}
+
+function normalizeServerModule(mod: unknown): Record<string, unknown> {
+  const nested =
+    mod && typeof mod === "object" && "default" in mod
+      ? (mod as { default?: unknown }).default
+      : undefined;
+  return nested &&
+    typeof nested === "object" &&
+    ("default" in nested || "render" in nested || "fetch" in nested)
+    ? (nested as Record<string, unknown>)
+    : (mod as Record<string, unknown>);
 }
 
 function embedClientRuntime(
@@ -1474,6 +1583,7 @@ async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     options.pluginCtx,
     output,
     options.plan,
+    frameworkRuntime,
     options.isRebuild,
   );
 

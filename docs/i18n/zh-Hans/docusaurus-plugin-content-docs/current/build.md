@@ -90,7 +90,9 @@ export default function ProductPage() {
 }
 ```
 
-静态页面使用 `render = "ssg"`。Partial prerendering 使用 `render = "ssr"`
+构建期静态生成使用 `render = "ssg"`，并要求页面拥有静态可寻址路径。`ev build`
+会把该页面渲染成输出 HTML，例如 `dist/client/report.html`，部署元信息中表现为
+`static-page` route。服务端页面的 partial prerendering 使用 `render = "ssr"`
 加 `prerender = { partial: true }`。
 
 ```tsx

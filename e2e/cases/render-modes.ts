@@ -110,7 +110,7 @@ test.describe("render-modes", () => {
     ).toBeVisible();
   });
 
-  test("serves a configured SSG page path through the framework server", async ({
+  test("serves a full-prerendered SSR page path through the framework server", async ({
     page,
     request,
     baseURL,
@@ -120,18 +120,18 @@ test.describe("render-modes", () => {
     expect(htmlResponse.status()).toBe(200);
     const html = await htmlResponse.text();
     expect(html).toContain("Settlement Readiness Report");
-    expect(html).toContain('data-render-mode="ssg"');
+    expect(html).toContain('data-render-mode="ssr"');
     expect(html).not.toContain("settlement.js");
 
     await page.goto(`${baseURL}/settlement-report`);
-    await expectRenderMode(page, "ssg", "SSG");
+    await expectRenderMode(page, "ssr", "Prerendered SSR");
     await expectBackLink(page);
 
     await expect(
       page.getByRole("heading", { name: "Settlement Readiness Report" }),
     ).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("settlement-render-mode")).toHaveText(
-      "static",
+      "full prerender",
     );
     await expect(page.getByTestId("settlement-hydration")).toHaveText("none");
     await expect(page.getByTestId("settlement-ready-count")).toHaveText("2");
@@ -355,10 +355,10 @@ test.describe("render-modes", () => {
     );
     expect(runtimePages.settlement).toEqual(
       expect.objectContaining({
-        render: "ssg",
+        render: "ssr",
         rendering: {
           component: "server",
-          html: "static",
+          html: "server",
           prerender: "full",
           streaming: false,
           hydrate: "none",
@@ -437,7 +437,8 @@ test.describe("render-modes", () => {
           kind: "server-page",
           path: "/settlement-report",
           pageId: "settlement",
-          render: "ssg",
+          render: "ssr",
+          prerender: "full",
           methods: ["GET", "HEAD"],
         },
         {
@@ -481,21 +482,24 @@ test.describe("render-modes", () => {
           kind: "server-page",
           path: "/settlement-report",
           pageId: "settlement",
-          render: "ssg",
+          render: "ssr",
+          prerender: "full",
           methods: ["GET", "HEAD"],
         },
         {
           kind: "server-page",
           path: "/campaign",
           pageId: "campaign",
-          render: "ppr",
+          render: "ssr",
+          prerender: "partial",
           methods: ["GET", "HEAD"],
         },
         {
           kind: "server-page",
           path: "/insights",
           pageId: "insights",
-          render: "rsc",
+          render: "ssr",
+          rsc: true,
           methods: ["GET", "HEAD"],
         },
         {

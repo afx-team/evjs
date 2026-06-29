@@ -300,9 +300,11 @@ Page modules 通过文件名拥有 path-to-component wiring，并通过 `render`
 `rsc`、`prerender` 等静态导出拥有渲染元信息。当 graph creation 发现 SSR、RSC
 或 partial prerender metadata 时，会从该页面模块派生所需的 server renderers、
 PPR regions、assets 和 manifest output。
-内存中的 BuildOutput 会显式保留这些 renderer 关系：SSR、SSG 和 RSC document page
+内存中的 BuildOutput 会显式保留这些 renderer 关系：SSR 和 RSC document page
 通过由 page id 拥有的 `page-server` renderer 解析，或通过该 page 的某个 route id
-拥有的 `page-server` renderer 解析。PPR 页面改由 `ppr-shell` 和 `ppr-region` entry 解析。
+拥有的 `page-server` renderer 解析。SSG 页面在 production build 阶段使用 `page-server`
+renderer 产出静态 HTML，随后部署元信息中表现为 `static-page` route。PPR 页面改由
+`ppr-shell` 和 `ppr-region` entry 解析。
 
 `pages.*` 保留为显式底层页面 API。它适合页面无法自然映射到 `src/pages` 文件树的场景。
 渲染元信息仍属于被引用的 page module，而不是 `ev.config.ts`。
@@ -370,9 +372,12 @@ Deployment adapter 在构建过程中消费内存中的 `BuildOutput`，并可�
 和 asset metadata，而不是读取 bundler stats。构建后的工具应读取 `dist/build-output.json`；
 其中 documents table 携带 app shell fallback 元信息，route table 使用
 `static-page`、`server-page`、`server-function`、`ppr-endpoint`、`rsc-endpoint`
-和 `api-route` 等显式 kind。页面 route row 通过 `render` 单独表达 `csr`、`ssg`、
-`ssr`、`ppr` 或 `rsc` 等渲染策略，和部署 kind 分离。client/server manifest 是部署元信息；
-生成的浏览器和服务端运行时消费最小化的 ClientRuntime 和 FrameworkRuntime contract。
+和 `api-route` 等显式 kind。Static page route row 指向已输出的 HTML document，并携带
+`render: "csr" | "ssg"`；server page route row 表达由 framework server 处理的页面，并携带
+`render: "ssr"`。server page row 用 `prerender: "full" | "partial"` 表达 full prerender
+或 PPR 行为，用 `rsc: true` 表达 RSC 页面，避免把派生能力伪装成源码里的 `render` 值。
+client/server manifest 是部署元信息；生成的浏览器和服务端运行时消费最小化的 ClientRuntime 和
+FrameworkRuntime contract。
 Deployment metadata 把 framework endpoint 表达成 route row，不重复携带原始 runtime object，
 也不按单个 server function id 暴露给部署平台。
 

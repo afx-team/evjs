@@ -1541,6 +1541,87 @@ describe("build", () => {
     );
   });
 
+  it("prerenders SSG page HTML during production builds", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/Report.tsx"),
+      [
+        'export const render = "ssg";',
+        "export default function Report() { return null; }",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "ssg-mock",
+      async build({ cwd, plan }) {
+        const serverDir = path.resolve(cwd, plan.output.serverDir);
+        await fs.promises.mkdir(serverDir, { recursive: true });
+        await fs.promises.writeFile(
+          path.join(serverDir, "server.js"),
+          'export default { fetch() { return new Response("ok"); } };',
+          "utf-8",
+        );
+        await fs.promises.writeFile(
+          path.join(serverDir, "report-server.js"),
+          [
+            "export function render(ctx) {",
+            "  return '<main data-page=\"' + ctx.pageId + '\"><h1>Prerendered Report</h1><p>' + ctx.request.url + '</p></main>';",
+            "}",
+          ].join("\n"),
+          "utf-8",
+        );
+        return {
+          clientEntryAssets: {},
+          firstClientEntryAssets: { js: [], css: [] },
+          serverEntry: "server.js",
+          serverEntryAssets: {
+            server: { js: ["server.js"], css: [] },
+            "report-server": { js: ["report-server.js"], css: [] },
+          },
+          serverAssets: { js: ["server.js"], css: [] },
+        };
+      },
+      async dev() {
+        return undefined;
+      },
+    };
+
+    await build(
+      {
+        pages: {
+          report: {
+            path: "/report",
+            component: "./src/pages/Report.tsx",
+            html: "./index.html",
+            mount: "#app",
+          },
+        },
+      },
+      { cwd, bundler },
+    );
+
+    const html = fs.readFileSync(
+      path.join(cwd, "dist/client/report.html"),
+      "utf-8",
+    );
+    const buildOutput = JSON.parse(
+      fs.readFileSync(path.join(cwd, "dist/build-output.json"), "utf-8"),
+    );
+
+    expect(html).toContain("Prerendered Report");
+    expect(html).toContain("http://evjs.local/report");
+    expect(html).not.toMatch(/<script[^>]+src=/);
+    expect(buildOutput.routes).toContainEqual({
+      kind: "static-page",
+      path: "/report",
+      documentId: "report",
+      render: "ssg",
+      methods: ["GET", "HEAD"],
+    });
+  });
+
   it("removes stale split client manifests when rebuilding with flat client output", async () => {
     const cwd = await createProject();
     const events: string[] = [];
@@ -2413,7 +2494,9 @@ describe("build", () => {
     await fs.promises.writeFile(
       path.join(cwd, "src/pages/campaign.tsx"),
       [
-        'export const render = "ssg";',
+        'export const render = "ssr";',
+        'export const hydrate = "none";',
+        "export const prerender = true;",
         "export default function Campaign() { return null; }",
       ].join("\n"),
       "utf-8",

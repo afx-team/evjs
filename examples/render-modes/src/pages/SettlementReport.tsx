@@ -5,7 +5,9 @@ import {
 } from "@/domain/operations";
 import RenderModePage from "./RenderModePage";
 
-export const render = "ssg";
+export const render = "ssr";
+export const hydrate = "none";
+export const prerender = true;
 
 export default function SettlementReport() {
   const snapshot = getOperationsSnapshot();
@@ -17,24 +19,24 @@ export default function SettlementReport() {
   return (
     <RenderModePage
       backHref="/"
-      description="This report is rendered as a static page with no client hydration bundle."
-      mode="ssg"
-      title="SSG"
+      description="This report is server rendered with full prerender metadata and no client hydration bundle."
+      mode="ssr"
+      title="Prerendered SSR"
     >
-      <section className="panel hero-panel hero-panel--ssg">
+      <section className="panel hero-panel hero-panel--ssr">
         <div>
-          <p className="eyebrow">Static settlement report</p>
+          <p className="eyebrow">Full-prerender settlement report</p>
           <h1>Settlement Readiness Report</h1>
           <p>
-            SSG pages precompute stable operational summaries for static hosting
-            and audit review. This document is generated from framework page
-            metadata without shipping a page-specific browser bundle.
+            Full prerender pages precompute stable operational summaries through
+            the framework server and audit review path without shipping a
+            page-specific browser bundle.
           </p>
         </div>
-        <dl className="meta-list" aria-label="SSG report metadata">
+        <dl className="meta-list" aria-label="Prerender report metadata">
           <div>
             <dt>Mode</dt>
-            <dd data-testid="settlement-render-mode">static</dd>
+            <dd data-testid="settlement-render-mode">full prerender</dd>
           </div>
           <div>
             <dt>Generated</dt>
@@ -53,7 +55,10 @@ export default function SettlementReport() {
         </dl>
       </section>
 
-      <section className="status-grid" aria-label="Static settlement metrics">
+      <section
+        className="status-grid"
+        aria-label="Prerender settlement metrics"
+      >
         <div className="status">
           <h2>Ready releases</h2>
           <strong data-testid="settlement-ready-count">
@@ -76,7 +81,7 @@ export default function SettlementReport() {
       <section className="panel">
         <div className="section-header">
           <h2>Settlement batches</h2>
-          <span>static HTML table</span>
+          <span>server-rendered HTML table</span>
         </div>
         <table>
           <thead>

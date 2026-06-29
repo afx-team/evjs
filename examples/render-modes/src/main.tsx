@@ -39,7 +39,7 @@ function App() {
         <nav className="nav" aria-label="Render modes navigation">
           <a href="/support.html">Support queue</a>
           <a href="/dashboard">SSR operations dashboard</a>
-          <a href="/settlement-report">SSG settlement report</a>
+          <a href="/settlement-report">Prerendered settlement report</a>
           <a href="/campaign">PPR campaign monitor</a>
           <a href="/insights">RSC insights</a>
         </nav>

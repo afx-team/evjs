@@ -140,6 +140,7 @@ const allowedSampleBundlerDependencies = {
   "@evjs/bundler-webpack": [
     "examples/deployment-adapters",
     "examples/render-modes",
+    "examples/ssg",
   ],
 } as const satisfies Record<string, readonly string[]>;
 

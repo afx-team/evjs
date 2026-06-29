@@ -6,8 +6,8 @@ import type {
   BuildPlan,
   DeploymentDocumentOutput,
   DeploymentMetadata,
-  DeploymentPageRenderOutput,
   DeploymentRouteOutput,
+  DeploymentServerPageRenderOutput,
   HtmlDocumentOutput,
   HydrationMode,
   PageNode,
@@ -538,11 +538,16 @@ function createDeploymentRoutes(output: BuildOutput): DeploymentRouteOutput[] {
         continue;
       }
       if (page.render !== "csr") {
+        const rendering = createDeploymentServerPageRendering(
+          output,
+          route.pageId,
+          page,
+        );
         routes.push({
           kind: "server-page",
           path: route.path,
           pageId: route.pageId,
-          render: createDeploymentPageRender(output, route.pageId, page),
+          ...rendering,
           methods: ["GET", "HEAD"],
         });
       }
@@ -586,19 +591,29 @@ function createDeploymentRoutes(output: BuildOutput): DeploymentRouteOutput[] {
   return routes;
 }
 
-function createDeploymentPageRender(
+function createDeploymentServerPageRendering(
   output: BuildOutput,
   pageId: string,
   page: PageOutput,
-): Exclude<DeploymentPageRenderOutput, "csr"> {
-  if (page.ppr) return "ppr";
-  if (output.rsc?.pages?.[pageId]) return "rsc";
+): {
+  render: DeploymentServerPageRenderOutput;
+  prerender?: "full" | "partial";
+  rsc?: true;
+} {
+  if (page.ppr) return { render: "ssr", prerender: "partial" };
+  if (output.rsc?.pages?.[pageId]) return { render: "ssr", rsc: true };
+  if (page.render === "ssg" || page.rendering.prerender === "full") {
+    return { render: "ssr", prerender: "full" };
+  }
+  if (page.render === "ssr") return { render: "ssr" };
   if (page.render === "csr") {
     throw new Error(
       `[evjs] CSR page "${pageId}" cannot be emitted as a server deployment route.`,
     );
   }
-  return page.render;
+  throw new Error(
+    `[evjs] Page "${pageId}" render mode "${page.render}" cannot be emitted as a server deployment route.`,
+  );
 }
 
 function findOutputRouteForPage(

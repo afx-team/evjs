@@ -4461,7 +4461,7 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
   });
 
-  it("keeps route-derived SSG pages on the SPA framework route", async () => {
+  it("emits static route-derived SSG pages as independent documents", async () => {
     const cwd = await createFixture({
       "src/pages/index.tsx": "export default function Home() { return null; }",
       "src/pages/pricing.tsx": `
@@ -4523,6 +4523,12 @@ describe("createAppGraph and createBuildPlan", () => {
         template: "./index.html",
         fileName: "index.html",
         owner: { appId: "default" },
+      },
+      {
+        id: "pricing",
+        template: "./index.html",
+        fileName: "pricing.html",
+        owner: { pageId: "pricing" },
       },
     ]);
   });
