@@ -1458,11 +1458,9 @@ describe("build", () => {
     expect(Object.keys(clientRuntimeJson.runtime.server ?? {})).not.toEqual(
       expect.arrayContaining(["basePath", "fn", "ppr"]),
     );
-    expect(
-      Object.values(clientRuntimeJson.apps).flatMap((app) =>
-        Object.keys(app as Record<string, unknown>),
-      ),
-    ).not.toEqual(expect.arrayContaining(["assets", "document", "entry"]));
+    expect(Object.keys(clientRuntimeJson.app ?? {})).not.toEqual(
+      expect.arrayContaining(["assets", "document", "entry"]),
+    );
     expect(
       Object.values(clientRuntimeJson.pages).flatMap((page) =>
         Object.keys(page as Record<string, unknown>),

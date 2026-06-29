@@ -12,7 +12,6 @@ export function createActivationRequestFromUrl(
 
   return {
     url: href,
-    appId: route?.appId,
     pageId: route?.pageId,
   };
 }

@@ -13,12 +13,10 @@ const runtime: ClientRuntime = {
   version: 1,
   buildId: "test",
   runtime: {},
-  apps: {
-    default: {
-      module: {
-        type: "lifecycle",
-        href: "/default.js",
-      },
+  app: {
+    module: {
+      type: "lifecycle",
+      href: "/default.js",
     },
   },
   pages: {
@@ -49,7 +47,6 @@ const runtime: ClientRuntime = {
     {
       id: "app.order",
       path: "/orders/$orderId",
-      appId: "default",
     },
   ],
 };
@@ -106,25 +103,10 @@ describe("createShell", () => {
     ).toThrow("[evjs] createShell() runtime.pages must be an object.");
     expect(() =>
       createShell({
-        runtime: { ...runtime, apps: [] },
+        runtime: { ...runtime, app: [] },
         resolveMountPoint: () => ({}) as Element,
       } as never),
-    ).toThrow("[evjs] createShell() runtime.apps must be an object.");
-    expect(() =>
-      createShell({
-        runtime: {
-          ...runtime,
-          apps: {
-            "admin.app": {
-              module: { type: "lifecycle", href: "/admin.js" },
-            },
-          },
-        },
-        resolveMountPoint: () => ({}) as Element,
-      } as never),
-    ).toThrow(
-      '[evjs] createShell() runtime.apps key "admin.app" must contain only letters, numbers, underscores, or hyphens.',
-    );
+    ).toThrow("[evjs] createShell() runtime.app must be an object.");
     expect(() =>
       createShell({
         runtime: { ...runtime, routes: {} },
@@ -152,28 +134,6 @@ describe("createShell", () => {
       } as never),
     ).toThrow(
       "[evjs] createShell() runtime.routes[0].id must not contain leading or trailing whitespace.",
-    );
-    expect(() =>
-      createShell({
-        runtime: {
-          ...runtime,
-          routes: [{ id: "orders", path: "/orders", appId: "missing" }],
-        },
-        resolveMountPoint: () => ({}) as Element,
-      } as never),
-    ).toThrow(
-      '[evjs] createShell() runtime.routes[0].appId "missing" does not match any runtime.apps entry.',
-    );
-    expect(() =>
-      createShell({
-        runtime: {
-          ...runtime,
-          routes: [{ id: "orders", path: "/orders", appId: "default " }],
-        },
-        resolveMountPoint: () => ({}) as Element,
-      } as never),
-    ).toThrow(
-      "[evjs] createShell() runtime.routes[0].appId must not contain leading or trailing whitespace.",
     );
     expect(() =>
       createShell({
@@ -366,17 +326,15 @@ describe("createShell", () => {
     expect(() =>
       createMalformedShell({
         ...runtime,
-        apps: {
-          default: {
-            module: {
-              type: "lifecycle",
-              href: " /app.js",
-            },
+        app: {
+          module: {
+            type: "lifecycle",
+            href: " /app.js",
           },
         },
       }),
     ).toThrow(
-      "[evjs] createShell() runtime.apps.default.module.href must not contain leading or trailing whitespace.",
+      "[evjs] createShell() runtime.app.module.href must not contain leading or trailing whitespace.",
     );
 
     expect(loadModule).not.toHaveBeenCalled();
@@ -1439,7 +1397,6 @@ describe("createHistoryDriver", () => {
     });
 
     expect(driver.current()).toEqual({
-      appId: "default",
       pageId: undefined,
       url: "https://example.com/orders/123",
     });

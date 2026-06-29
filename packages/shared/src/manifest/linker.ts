@@ -382,12 +382,7 @@ export function createPublicManifest(
     buildId: output.buildId,
     publicPath: output.publicPath,
     assets: clonePublicAssetRecord(output.assets, publicAssetFiles),
-    apps: Object.fromEntries(
-      Object.entries(output.apps).map(([id, app]) => [
-        id,
-        sanitizeAppOutput(app),
-      ]),
-    ),
+    app: createPublicManifestApp(output),
     pages: Object.fromEntries(
       Object.entries(output.pages).map(([id, page]) => [
         id,
@@ -398,7 +393,6 @@ export function createPublicManifest(
       pruneUndefined({
         id: route.id,
         path: route.path,
-        appId: route.appId,
         pageId: route.pageId,
       }),
     ),
@@ -419,6 +413,13 @@ export function createPublicManifest(
         })
       : undefined,
   }) as PublicManifestOutput;
+}
+
+function createPublicManifestApp(
+  output: BuildOutput,
+): PublicAppOutput | undefined {
+  const app = output.apps.default ?? Object.values(output.apps)[0];
+  return app ? sanitizeAppOutput(app) : undefined;
 }
 
 export function createServerManifest(

@@ -92,7 +92,7 @@ test.describe("deployment-adapters", () => {
       }),
     );
     expect(manifest.deployment.deploymentAdaptersExample).toEqual({
-      apps: ["default"],
+      app: true,
       pages: [],
       rscPages: [],
       serverBasePath: "/__evjs",
@@ -113,7 +113,7 @@ test.describe("deployment-adapters", () => {
       serverDir: "dist/server",
     });
     expect(deployArtifactText).not.toContain('"chunks"');
-    expect(deployArtifact.apps.default).toEqual(
+    expect(deployArtifact.app).toEqual(
       expect.objectContaining({ mount: "#app" }),
     );
     expect(deployArtifact.server).toEqual(

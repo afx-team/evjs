@@ -178,7 +178,10 @@ app/page module targets, mount selectors, and route lookup data needed to boot
 or navigate. Asset indexes, deployment metadata, source references, and
 renderer bundle metadata stay in manifests or `BuildOutput`; React Flight
 client reference data stays in the explicit `FrameworkRuntime` projection.
-In `BuildOutput` and public manifests, client routes are URL-to-target indexes.
+Public manifests, deployment artifacts, and client runtime projections expose a
+single SPA app as `app`, not an `apps.default` map. `BuildOutput.apps` remains
+the complete private/plugin view for named build graph app nodes. In
+`BuildOutput` and public manifests, client routes are URL-to-target indexes.
 Page rendering, hydration, and component model metadata stay under `pages`, and
 framework endpoints stay under runtime/server projections.
 

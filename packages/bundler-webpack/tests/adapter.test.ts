@@ -24,6 +24,7 @@ import {
   diffBuildPlan,
   generateHtml,
 } from "@evjs/ev/build-tools";
+import type { PublicManifestOutput } from "@evjs/shared/manifest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createClientRuntime,
@@ -561,7 +562,7 @@ describe("webpackAdapter build", () => {
       ) as BuildOutput;
       const publicManifest = JSON.parse(
         await fs.readFile(path.join(cwd, "dist/client/manifest.json"), "utf-8"),
-      ) as BuildOutput;
+      ) as PublicManifestOutput;
       const html = await fs.readFile(
         path.join(cwd, "dist/client/index.html"),
         "utf-8",
@@ -603,8 +604,8 @@ describe("webpackAdapter build", () => {
       });
       expect(manifest.server?.entry).toBe("server.cjs");
       expect(manifest.assets.plugin).toEqual({ js: ["plugin.js"], css: [] });
-      expect("entry" in publicManifest.apps.default).toBe(false);
-      expect(publicManifest.apps.default.module).toEqual({
+      expect(publicManifest.app).not.toHaveProperty("entry");
+      expect(publicManifest.app?.module).toEqual({
         type: "entry",
         href: "main.js",
       });

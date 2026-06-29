@@ -3092,7 +3092,7 @@ describe("createPublicManifest", () => {
     expect(manifest.routes.flatMap((route) => Object.keys(route))).not.toEqual(
       expect.arrayContaining(["module", "render", "hydrate", "runtime"]),
     );
-    expect(manifest.apps.admin.document).toEqual({ fileName: "admin.html" });
+    expect(manifest.app?.document).toEqual({ fileName: "admin.html" });
     expect(manifest.pages.insights.document).toEqual({
       fileName: "insights.html",
     });

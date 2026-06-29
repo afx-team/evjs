@@ -335,7 +335,7 @@ export interface PublicManifestOutput {
   buildId: string;
   publicPath: PublicPathOutput;
   assets?: Record<string, AssetGroup>;
-  apps: Record<string, PublicAppOutput>;
+  app?: PublicAppOutput;
   pages: Record<string, PublicPageOutput>;
   routes: PublicRouteOutput[];
   rsc?: PublicRscOutput;
@@ -446,10 +446,7 @@ export interface RouteOutput {
   pageId?: string;
 }
 
-export type PublicRouteOutput = Pick<
-  RouteOutput,
-  "id" | "path" | "appId" | "pageId"
->;
+export type PublicRouteOutput = Pick<RouteOutput, "id" | "path" | "pageId">;
 
 export interface ServerOutput {
   entry?: string;
@@ -728,14 +725,13 @@ export function assertFrameworkManifestShape(
     assertObject(value.assets, `${source}.assets`);
     assertAssetGroupRecord(value.assets, `${source}.assets`);
   }
-  assertObject(value.apps, `${source}.apps`);
-  assertAppOutputs(value.apps, `${source}.apps`);
+  const apps = assertManifestAppProjection(value, source, requireServer);
   assertObject(value.pages, `${source}.pages`);
   assertPageOutputs(value.pages, `${source}.pages`);
   if (!Array.isArray(value.routes)) {
     throw new Error(`[evjs] ${source}.routes must be an array.`);
   }
-  assertRouteOutputs(value.routes, `${source}.routes`, value.pages, value.apps);
+  assertRouteOutputs(value.routes, `${source}.routes`, value.pages, apps);
 
   if (value.runtime !== undefined) {
     assertObject(value.runtime.server, `${source}.runtime.server`);
@@ -818,6 +814,29 @@ export function assertFrameworkManifestShape(
       requireRscRendererReferences,
     );
   }
+}
+
+function assertManifestAppProjection(
+  value: Record<string, unknown>,
+  source: string,
+  requireApps: boolean,
+): Record<string, unknown> {
+  if (value.app !== undefined && value.apps !== undefined) {
+    throw new Error(`[evjs] ${source} must not define both app and apps.`);
+  }
+  if (value.apps !== undefined) {
+    assertObject(value.apps, `${source}.apps`);
+    assertAppOutputs(value.apps, `${source}.apps`);
+    return value.apps;
+  }
+  if (value.app !== undefined) {
+    assertAppOutput(value.app, `${source}.app`);
+    return { app: value.app };
+  }
+  if (requireApps) {
+    throw new Error(`[evjs] ${source}.apps must be an object.`);
+  }
+  return {};
 }
 
 function assertObject(
@@ -1038,11 +1057,15 @@ function assertAppOutputs(
 ): void {
   for (const [name, output] of Object.entries(value)) {
     assertManifestBuildIdentifierKey(name, source);
-    assertObject(output, `${source}.${name}`);
-    assertAssetGroup(output.assets, `${source}.${name}.assets`);
-    assertHtmlDocumentOutput(output.document, `${source}.${name}.document`);
-    assertRuntimeModuleOutput(output.module, `${source}.${name}.module`);
+    assertAppOutput(output, `${source}.${name}`);
   }
+}
+
+function assertAppOutput(value: unknown, source: string): void {
+  assertObject(value, source);
+  assertAssetGroup(value.assets, `${source}.assets`);
+  assertHtmlDocumentOutput(value.document, `${source}.document`);
+  assertRuntimeModuleOutput(value.module, `${source}.module`);
 }
 
 function assertPageOutputs(

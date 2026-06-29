@@ -136,10 +136,8 @@ describe("createDeploymentArtifact", () => {
         serverDir: "dist/server",
       },
       publicPath: "auto",
-      apps: {
-        default: {
-          mount: "#app",
-        },
+      app: {
+        mount: "#app",
       },
       pages: {
         insights: {
@@ -155,7 +153,6 @@ describe("createDeploymentArtifact", () => {
         {
           id: "insights",
           path: "/insights",
-          appId: undefined,
           pageId: "insights",
         },
       ],

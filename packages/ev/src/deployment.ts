@@ -71,7 +71,7 @@ export interface DeploymentArtifact {
   paths: BuildOutput["paths"];
   publicPath: PublicPathOutput;
   assets?: Record<string, AssetGroup>;
-  apps: Record<string, DeploymentApp>;
+  app?: DeploymentApp;
   pages: Record<string, DeploymentPage>;
   routes: DeploymentRoute[];
   server: DeploymentServer;
@@ -103,7 +103,6 @@ export interface DeploymentPage {
 export interface DeploymentRoute {
   id: string;
   path: string;
-  appId?: string;
   pageId?: string;
 }
 
@@ -157,20 +156,11 @@ export function createDeploymentArtifact(
     paths: getDeploymentOutputPaths(output),
     publicPath: output.publicPath,
     ...(includeAssets ? { assets: output.assets } : {}),
-    apps: Object.fromEntries(
-      Object.entries(output.apps).map(([id, app]) => [
-        id,
-        {
-          ...(includeAssets ? { assets: app.assets } : {}),
-          document: app.document,
-          mount: app.mount,
-        },
-      ]),
-    ),
+    app: createDeploymentApp(output, includeAssets),
     pages: Object.fromEntries(
       Object.entries(output.pages).map(([id, page]) => [
         id,
-        {
+        pruneUndefined({
           ...(includeAssets ? { assets: page.assets } : {}),
           document: page.document,
           path: page.path,
@@ -179,15 +169,16 @@ export function createDeploymentArtifact(
           componentModel: page.componentModel,
           hydrate: page.hydrate,
           mount: page.mount,
-        },
+        }),
       ]),
     ),
-    routes: output.routes.map((route) => ({
-      id: route.id,
-      path: route.path,
-      appId: route.appId,
-      pageId: route.pageId,
-    })),
+    routes: output.routes.map((route) =>
+      pruneUndefined({
+        id: route.id,
+        path: route.path,
+        pageId: route.pageId,
+      }),
+    ),
     server: {
       entry: output.server.entry,
       basePath: output.runtime.server.basePath,
@@ -217,6 +208,26 @@ export function createDeploymentArtifact(
   };
 
   return artifact;
+}
+
+function createDeploymentApp(
+  output: BuildOutput,
+  includeAssets: boolean,
+): DeploymentApp | undefined {
+  const app = output.apps.default ?? Object.values(output.apps)[0];
+  if (!app) return undefined;
+  return pruneUndefined({
+    ...(includeAssets ? { assets: app.assets } : {}),
+    document: app.document,
+    mount: app.mount,
+  });
+}
+
+function pruneUndefined<T extends Record<string, unknown>>(value: T): T {
+  for (const key of Object.keys(value)) {
+    if (value[key] === undefined) delete value[key];
+  }
+  return value;
 }
 
 export function createNodeDeploymentFiles(

@@ -24,7 +24,7 @@ export interface ClientRuntime {
       baseUrl?: string;
     };
   };
-  apps: Record<string, ClientRuntimeApp>;
+  app?: ClientRuntimeApp;
   pages: Record<string, ClientRuntimePage>;
   routes: ClientRuntimeRoute[];
 }
@@ -52,7 +52,6 @@ export interface ClientRuntimePage {
 export interface ClientRuntimeRoute {
   id: string;
   path: string;
-  appId?: string;
   pageId?: string;
 }
 
@@ -80,27 +79,24 @@ export function assertClientRuntime(
       `${source}.runtime.transport.baseUrl`,
     );
   }
-  assertObject(value.apps, `${source}.apps`);
-  assertApps(value.apps, `${source}.apps`);
+  if (value.app !== undefined) {
+    assertApp(value.app, `${source}.app`);
+  }
   assertObject(value.pages, `${source}.pages`);
   assertPages(value.pages, `${source}.pages`);
   if (!Array.isArray(value.routes)) {
     throw new Error(`[evjs] ${source}.routes must be an array.`);
   }
-  assertRoutes(value.routes, `${source}.routes`, value.pages, value.apps);
+  assertRoutes(value.routes, `${source}.routes`, value.pages);
 }
 
-function assertApps(value: Record<string, unknown>, source: string): void {
-  for (const [name, app] of Object.entries(value)) {
-    assertBuildIdentifierKey(name, source);
-    const appSource = `${source}.${name}`;
-    assertObject(app, appSource);
-    if (app.module !== undefined) {
-      assertRuntimeModule(app.module, `${appSource}.module`);
-    }
-    if (app.mount !== undefined) {
-      assertRuntimeString(app.mount, `${appSource}.mount`);
-    }
+function assertApp(value: unknown, source: string): void {
+  assertObject(value, source);
+  if (value.module !== undefined) {
+    assertRuntimeModule(value.module, `${source}.module`);
+  }
+  if (value.mount !== undefined) {
+    assertRuntimeString(value.mount, `${source}.mount`);
   }
 }
 
@@ -138,7 +134,6 @@ function assertRoutes(
   value: unknown[],
   source: string,
   pages: Record<string, unknown>,
-  apps: Record<string, unknown>,
 ): void {
   const idOwners = new Map<string, string>();
   const pathOwners = new Map<string, { path: string; source: string }>();
@@ -158,12 +153,6 @@ function assertRoutes(
       `${routeSource}.pageId`,
       `${source.replace(/\.routes$/, "")}.pages`,
       pages,
-    );
-    assertOptionalRecordReference(
-      route.appId,
-      `${routeSource}.appId`,
-      `${source.replace(/\.routes$/, "")}.apps`,
-      apps,
     );
   });
 }

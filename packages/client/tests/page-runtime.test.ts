@@ -567,10 +567,10 @@ describe("startPageRuntime", () => {
         document,
         runtime: {
           ...createRuntime(),
-          apps: [],
+          app: [],
         } as never,
       }),
-    ).rejects.toThrow("[evjs] Loaded provided runtime apps must be an object.");
+    ).rejects.toThrow("[evjs] Loaded provided runtime app must be an object.");
 
     await expect(
       startPageRuntime({
@@ -809,7 +809,6 @@ function createRuntime(): ClientRuntime {
     version: 1,
     buildId: "test",
     runtime: {},
-    apps: {},
     pages: {
       home: {
         mount: "#root",

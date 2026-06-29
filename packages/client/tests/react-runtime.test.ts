@@ -579,7 +579,6 @@ describe("fetchRscFlight", () => {
             rsc: "/__evjs/rsc",
           },
         },
-        apps: {},
         pages: {},
         routes: [],
       },
@@ -1099,7 +1098,6 @@ function createRscRuntime(): ClientRuntime {
         rsc: "/__evjs/rsc",
       },
     },
-    apps: {},
     pages: {},
     routes: [],
   };

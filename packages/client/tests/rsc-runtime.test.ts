@@ -830,7 +830,6 @@ function createRuntime(): ClientRuntime {
         rsc: "/__evjs/rsc",
       },
     },
-    apps: {},
     pages: {},
     routes: [],
   };

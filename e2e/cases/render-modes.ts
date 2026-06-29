@@ -265,7 +265,7 @@ test.describe("render-modes", () => {
       serverDir: "dist/server",
     });
     expect(buildOutputText).not.toContain('"chunks"');
-    expect(manifest.apps.default).toEqual(
+    expect(manifest.app).toEqual(
       expect.objectContaining({
         mount: "#app",
         module: expect.objectContaining({ type: "entry" }),
@@ -358,25 +358,21 @@ test.describe("render-modes", () => {
         expect.objectContaining({
           id: "dashboard",
           path: "/dashboard",
-          appId: "default",
           pageId: "dashboard",
         }),
         expect.objectContaining({
           id: "campaign",
           path: "/campaign",
-          appId: "default",
           pageId: "campaign",
         }),
         expect.objectContaining({
           id: "settlement",
           path: "/settlement-report",
-          appId: "default",
           pageId: "settlement",
         }),
         expect.objectContaining({
           id: "insights",
           path: "/insights",
-          appId: "default",
           pageId: "insights",
         }),
       ]),

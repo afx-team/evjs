@@ -166,9 +166,11 @@ sequenceDiagram
 transport base URL、RSC endpoint、app/page module target、mount selector 和 route
 lookup 数据。资源索引、部署元信息、源码引用和 renderer bundle 元信息留在 manifest 或
 `BuildOutput` 中；React Flight client reference 数据留在显式 `FrameworkRuntime` 投影中。
-在 `BuildOutput` 和公开 manifest 中，client route 是 URL 到目标的索引。页面渲染、
-hydrate 和 component model 元信息留在 `pages` 下，framework endpoint 留在 runtime/server
-投影下。
+public manifest、deployment artifact 和 client runtime 投影会把单 SPA app 表达成
+`app` 字段，而不是 `apps.default` 映射。`BuildOutput.apps` 仍然保留完整的私有/plugin
+视图，用于命名 build graph app 节点。在 `BuildOutput` 和公开 manifest 中，client route
+是 URL 到目标的索引。页面渲染、hydrate 和 component model 元信息留在 `pages` 下，
+framework endpoint 留在 runtime/server 投影下。
 
 ## 运行时流程
 

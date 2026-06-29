@@ -278,7 +278,7 @@ describe("utoopackAdapter dev", () => {
       js: ["dev-hook.js"],
       css: [],
     });
-    expect(manifest.apps.default).toEqual({
+    expect(manifest.app).toEqual({
       assets: {
         js: ["main.js"],
         css: ["main.css"],
@@ -591,8 +591,8 @@ describe("utoopackAdapter dev", () => {
       },
     });
     expect(serverManifest.entry).toBe("index.js");
-    expect(publicManifest.apps.default.entry).toBeUndefined();
-    expect(publicManifest.apps.default.module).toEqual({
+    expect(publicManifest.app.entry).toBeUndefined();
+    expect(publicManifest.app.module).toEqual({
       type: "entry",
       href: "main.js",
     });

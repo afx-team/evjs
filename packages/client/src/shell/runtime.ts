@@ -471,8 +471,8 @@ function assertShellRuntime(runtime: unknown): void {
   if (!isRecord(runtime.pages)) {
     throw new Error("[evjs] createShell() runtime.pages must be an object.");
   }
-  if (!isRecord(runtime.apps)) {
-    throw new Error("[evjs] createShell() runtime.apps must be an object.");
+  if (runtime.app !== undefined && !isRecord(runtime.app)) {
+    throw new Error("[evjs] createShell() runtime.app must be an object.");
   }
   if (!Array.isArray(runtime.routes)) {
     throw new Error("[evjs] createShell() runtime.routes must be an array.");

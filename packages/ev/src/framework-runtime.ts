@@ -2,7 +2,7 @@ import type { BuildOutput } from "@evjs/shared/manifest";
 
 export type ClientRuntimeOutput = Pick<BuildOutput, "version" | "buildId"> & {
   runtime: ClientRuntimeOutputRuntime;
-  apps: Record<string, ClientRuntimeTargetOutput>;
+  app?: ClientRuntimeTargetOutput;
   pages: Record<string, ClientRuntimeTargetOutput>;
   routes: ClientRuntimeRouteOutput[];
 };
@@ -23,7 +23,7 @@ export type ClientRuntimeTargetOutput = Pick<
 
 export type ClientRuntimeRouteOutput = Pick<
   BuildOutput["routes"][number],
-  "id" | "path" | "appId" | "pageId"
+  "id" | "path" | "pageId"
 >;
 
 export interface FrameworkRuntimeOutput {
@@ -100,15 +100,7 @@ export function createClientRuntime(output: BuildOutput): ClientRuntimeOutput {
     version: output.version,
     buildId: output.buildId,
     runtime: createClientRuntimeRuntime(output.runtime),
-    apps: Object.fromEntries(
-      Object.entries(output.apps).map(([id, app]) => [
-        id,
-        pruneUndefined({
-          mount: app.mount,
-          module: app.module,
-        }),
-      ]),
-    ),
+    app: createClientRuntimeApp(output),
     pages: Object.fromEntries(
       Object.entries(output.pages).map(([id, page]) => [
         id,
@@ -122,10 +114,20 @@ export function createClientRuntime(output: BuildOutput): ClientRuntimeOutput {
       pruneUndefined({
         id: route.id,
         path: route.path,
-        appId: route.appId,
         pageId: route.pageId,
       }),
     ),
+  });
+}
+
+function createClientRuntimeApp(
+  output: BuildOutput,
+): ClientRuntimeTargetOutput | undefined {
+  const app = output.apps.default ?? Object.values(output.apps)[0];
+  if (!app) return undefined;
+  return pruneUndefined({
+    mount: app.mount,
+    module: app.module,
   });
 }
 

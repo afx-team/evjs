@@ -478,7 +478,6 @@ function createBootstrapRuntime(
       },
       transport: {},
     },
-    apps: {},
     pages: {
       [bootstrap.pageId]: {},
     },

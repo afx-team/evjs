@@ -30,22 +30,21 @@ export async function resolveTarget(
     };
   }
 
-  const appId = request.appId ?? Object.keys(runtime.apps)[0];
-  const app = appId ? runtime.apps[appId] : undefined;
-  if (!appId || !app) {
+  const app = runtime.app;
+  if (!app) {
     throw new Error("[evjs] No app target is available in the runtime.");
   }
-  const href = readRuntimeModuleHref(app.module, `App "${appId}"`);
+  const id = request.appId ?? "default";
+  const label = request.appId ? `App "${request.appId}"` : "App";
+  const href = readRuntimeModuleHref(app.module, label);
   if (!href) {
-    throw new Error(
-      `[evjs] App "${appId}" does not expose an importable runtime module.`,
-    );
+    throw new Error(`${label} does not expose an importable runtime module.`);
   }
   return {
-    id: appId,
+    id,
     href,
     ctx: {
-      id: appId,
+      id,
       kind: "app",
       runtime,
       output: app,
