@@ -9,6 +9,7 @@ import type {
 import {
   createDeploymentMetadata,
   createPublicManifest,
+  createServerManifest,
   resolveConfig,
 } from "@evjs/ev";
 import { getLogger } from "@logtape/logtape";
@@ -103,10 +104,7 @@ function createTestBuildResult(
   return {
     output,
     clientManifest: createPublicManifest(output),
-    serverManifest: {
-      version: 1 as const,
-      ...(output.server.entry ? { entry: output.server.entry } : {}),
-    },
+    serverManifest: createServerManifest(output),
     deploymentMetadata: createDeploymentMetadata(output),
     isRebuild,
   };

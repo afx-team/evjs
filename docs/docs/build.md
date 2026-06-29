@@ -68,9 +68,10 @@ dist-server/
 ```
 
 Generated HTML embeds the `ClientRuntime` needed by the browser bootstrap.
-`client/manifest.json` is lightweight deployment metadata with public assets and
-SPA/MPA route information. `server/manifest.json` only preserves the server
-entry filename. `server/framework-runtime.json` is runtime-required data for raw
+`client/manifest.json` is lightweight deployment metadata: SPA manifests keep
+top-level public assets, while MPA manifests keep assets on each routing page.
+`server/manifest.json` preserves the server entry filename plus the server route
+projection. `server/framework-runtime.json` is runtime-required data for raw
 server bundles, and `build-output.json` is canonical deployment metadata.
 Application code should not import or edit deployment metadata files.
 

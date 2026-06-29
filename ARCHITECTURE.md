@@ -177,8 +177,9 @@ dist/build-output.json
 ```
 
 They also emit compatibility deployment manifests to `output.client` and
-`output.server`. The client manifest keeps public assets and SPA/MPA routing
-only. The server manifest keeps only the server entry field for existing
+`output.server`. The client manifest keeps public assets for SPA builds and
+page-level assets plus routing for MPA builds. The server manifest keeps the
+server entry and a lightweight projection of server-handled routes for existing
 deployment integrations. Generated HTML embeds `ClientRuntime`, and raw server
 bundles read `dist/server/framework-runtime.json`; deployment adapters embed the
 same FrameworkRuntime data into their bootstrap code.

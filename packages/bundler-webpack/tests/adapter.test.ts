@@ -498,6 +498,7 @@ describe("webpackAdapter build", () => {
         component: "./src/pages/Home ! page 中文.tsx",
         mount: "#root",
       });
+      expect(manifest).not.toHaveProperty("assets");
       expect(manifest.routing.kind).toBe("mpa");
       if (manifest.routing.kind !== "mpa") {
         throw new Error("Expected MPA public manifest.");
@@ -644,6 +645,7 @@ describe("webpackAdapter build", () => {
       expect("apps" in deploymentMetadata).toBe(false);
       expect("pages" in deploymentMetadata).toBe(false);
       expect("app" in publicManifest).toBe(false);
+      expect(publicManifest).not.toHaveProperty("assets");
       expect(publicManifest.routing.kind).toBe("mpa");
       if (publicManifest.routing.kind !== "mpa") {
         throw new Error("Expected MPA public manifest.");
@@ -1037,6 +1039,7 @@ describe("webpackAdapter dev", () => {
 
       expect(onBuildOutput).toHaveBeenCalledTimes(1);
       expect("distDir" in manifest).toBe(false);
+      expect(manifest).not.toHaveProperty("assets");
       expect(manifest.routing.kind).toBe("mpa");
       if (manifest.routing.kind !== "mpa") {
         throw new Error("Expected MPA public manifest.");
@@ -1407,6 +1410,7 @@ describe("webpackAdapter dev", () => {
       expect(update.entries.added.map((entry) => entry.name)).toEqual([
         "about",
       ]);
+      expect(manifest).not.toHaveProperty("assets");
       expect(manifest.routing.kind).toBe("mpa");
       if (manifest.routing.kind !== "mpa") {
         throw new Error("Expected MPA public manifest.");

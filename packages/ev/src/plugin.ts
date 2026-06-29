@@ -6,6 +6,7 @@ import type {
   PublicManifestOutput,
   PublicPageOutput,
   PublicRouteOutput,
+  ServerManifestOutput,
 } from "@evjs/shared/manifest";
 import {
   createDeploymentMetadata,
@@ -114,12 +115,7 @@ export type PageManifestEntry = PublicPageOutput;
 export type ClientManifest = PublicManifestOutput;
 
 /** Server-focused manifest view derived from the linked framework output. */
-export interface ServerManifest {
-  /** Schema version for this manifest view. */
-  version: 1;
-  /** Server bundle entry filename. */
-  entry?: string;
-}
+export type ServerManifest = ServerManifestOutput;
 
 /** Base context passed to plugin bundler hooks. */
 export interface EvBundlerCtx<TBundlerCfg = DefaultBundlerConfig> {

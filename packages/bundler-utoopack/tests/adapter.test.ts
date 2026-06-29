@@ -426,6 +426,7 @@ describe("utoopackAdapter dev", () => {
       expect(html).toContain("next-shell");
       expect(html).toContain('data-evjs-kind="page"');
       expect(html).toContain('data-evjs-id="home"');
+      expect(manifest).not.toHaveProperty("assets");
       expect(manifest.routing.kind).toBe("mpa");
       if (manifest.routing.kind !== "mpa") {
         throw new Error("Expected MPA public manifest.");
@@ -615,6 +616,8 @@ describe("utoopackAdapter dev", () => {
       },
     ]);
     expect(serverManifest.entry).toBe("index.js");
+    expect(serverManifest.routes).toEqual([]);
+    expect(serverManifest.assets).toBeUndefined();
     expect("app" in publicManifest).toBe(false);
     expect(publicManifest.routing.kind).toBe("spa");
     expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);

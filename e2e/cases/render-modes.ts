@@ -266,6 +266,8 @@ test.describe("render-modes", () => {
   test("emits a manifest with app, page, route, and server data", async () => {
     const manifestPath = getRenderModesPublicManifestPath();
     const manifest = readRenderModesPublicManifest();
+    const serverManifest = readRenderModesServerManifest();
+    const serverManifestText = JSON.stringify(serverManifest);
     const deploymentMetadata = readRenderModesDeploymentMetadata();
     const deploymentMetadataText = JSON.stringify(deploymentMetadata);
     const frameworkRuntime = readRenderModesFrameworkRuntime();
@@ -288,6 +290,7 @@ test.describe("render-modes", () => {
     expect("app" in manifest).toBe(false);
     expect(manifest).not.toHaveProperty("pages");
     expect(manifest).not.toHaveProperty("routes");
+    expect(manifest).not.toHaveProperty("assets");
     expect(manifest.routing.kind).toBe("mpa");
     expect(publicPages.support).toEqual(
       expect.objectContaining({
@@ -460,6 +463,65 @@ test.describe("render-modes", () => {
         entry: expect.any(String),
       }),
     );
+    expect(serverManifest.entry).toEqual(expect.any(String));
+    expect(serverManifest.routes).toEqual(
+      expect.arrayContaining([
+        {
+          kind: "page-server",
+          path: "/dashboard",
+          pageId: "dashboard",
+          methods: ["GET", "HEAD"],
+        },
+        {
+          kind: "page-server",
+          path: "/settlement-report",
+          pageId: "settlement",
+          methods: ["GET", "HEAD"],
+        },
+        {
+          kind: "page-server",
+          path: "/campaign",
+          pageId: "campaign",
+          methods: ["GET", "HEAD"],
+        },
+        {
+          kind: "page-server",
+          path: "/insights",
+          pageId: "insights",
+          methods: ["GET", "HEAD"],
+        },
+        {
+          kind: "framework-function",
+          path: "/__evjs/fn",
+          methods: ["POST"],
+        },
+        {
+          kind: "framework-ppr",
+          path: "/__evjs/ppr/*",
+          methods: ["GET", "HEAD"],
+        },
+        {
+          kind: "framework-rsc",
+          path: "/__evjs/rsc",
+          methods: ["GET", "HEAD"],
+        },
+        {
+          kind: "server-route",
+          path: "/api/render-modes/health",
+          methods: ["GET"],
+        },
+      ]),
+    );
+    expect(
+      serverManifest.routes.some(
+        (route: { kind: string }) =>
+          route.kind === "static-document" || route.kind === "spa-fallback",
+      ),
+    ).toBe(false);
+    expect(serverManifestText).not.toContain('"assets"');
+    expect(serverManifestText).not.toContain('"renderers"');
+    expect(serverManifestText).not.toContain('"rsc"');
+    expect(serverManifestText).not.toContain("getMerchantOperationsSnapshot");
     expect("runtime" in deploymentMetadata).toBe(false);
     expect("rsc" in deploymentMetadata).toBe(false);
     expect(frameworkRuntime.runtime.server).toEqual(
@@ -526,6 +588,15 @@ function getRenderModesPublicManifestPath(): string {
 function readRenderModesPublicManifest() {
   return JSON.parse(
     fs.readFileSync(getRenderModesPublicManifestPath(), "utf-8"),
+  );
+}
+
+function readRenderModesServerManifest() {
+  return JSON.parse(
+    fs.readFileSync(
+      path.join(exampleDir, "dist", "server", "manifest.json"),
+      "utf-8",
+    ),
   );
 }
 

@@ -32,7 +32,8 @@ dist/
 - `dist/client/`：浏览器资源和生成的 HTML。
 - `dist/client/manifest.json`：给部署工具消费的浏览器安全路由和资源元信息。
 - `dist/server/`：应用使用服务端函数、服务端文件路由、SSR、PPR 或 RSC 时生成的服务端 bundle 和服务端元信息。
-- `dist/server/manifest.json`：为了部署兼容保留的 entry-only server manifest。
+- `dist/server/manifest.json`：为了部署兼容保留的轻量 server manifest，包含 server entry
+  和服务端处理的 route projection。
 - `dist/server/framework-runtime.json`：raw server bundle 启动所需的框架运行时数据。
 - `dist/build-output.json`：面向工具和部署 adapter 的 canonical deployment metadata。应用代码不应导入或修改它。
 

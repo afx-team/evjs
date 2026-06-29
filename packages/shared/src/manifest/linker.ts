@@ -46,7 +46,15 @@ export interface BuildOutputLinkInput {
 export interface ServerManifestOutput {
   version: 1;
   entry?: string;
+  routes: ServerManifestRouteOutput[];
 }
+
+export type ServerManifestRouteOutput =
+  | Extract<DeploymentRouteOutput, { kind: "page-server" }>
+  | Extract<DeploymentRouteOutput, { kind: "framework-function" }>
+  | Extract<DeploymentRouteOutput, { kind: "framework-ppr" }>
+  | Extract<DeploymentRouteOutput, { kind: "framework-rsc" }>
+  | Extract<DeploymentRouteOutput, { kind: "server-route" }>;
 
 export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   const clientEntryAssets = input.clientEntryAssets ?? {};
@@ -363,12 +371,16 @@ export function createPublicManifest(
   output: BuildOutput,
 ): PublicManifestOutput {
   const publicAssetFiles = collectPublicAssetFiles(output);
+  const routing = createPublicManifestRouting(output, publicAssetFiles);
   return pruneUndefined({
     version: output.version,
     buildId: output.buildId,
     publicPath: output.publicPath,
-    assets: clonePublicAssetRecord(output.assets, publicAssetFiles),
-    routing: createPublicManifestRouting(output, publicAssetFiles),
+    assets:
+      routing.kind === "spa"
+        ? clonePublicAssetRecord(output.assets, publicAssetFiles)
+        : undefined,
+    routing,
   }) as PublicManifestOutput;
 }
 
@@ -410,7 +422,20 @@ export function createServerManifest(
   return {
     version: 1,
     ...(output.server.entry ? { entry: output.server.entry } : {}),
+    routes: createDeploymentRoutes(output).filter(isServerManifestRoute),
   };
+}
+
+function isServerManifestRoute(
+  route: DeploymentRouteOutput,
+): route is ServerManifestRouteOutput {
+  return (
+    route.kind === "page-server" ||
+    route.kind === "framework-function" ||
+    route.kind === "framework-ppr" ||
+    route.kind === "framework-rsc" ||
+    route.kind === "server-route"
+  );
 }
 
 export interface DeploymentMetadataOptions {

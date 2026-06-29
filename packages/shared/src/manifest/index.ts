@@ -5,11 +5,11 @@
  *
  * Bundler adapters emit framework metadata under the configured output
  * directories. By default, the lightweight client deployment manifest is
- * written to `dist/client/manifest.json`, the entry-only server manifest to
- * `dist/server/manifest.json`, and canonical deployment metadata to
- * `dist/build-output.json`. `output.client` and `output.server` can point to
- * alternate directories when an adapter or deployment target needs a different
- * artifact layout.
+ * written to `dist/client/manifest.json`, the lightweight server deployment
+ * manifest to `dist/server/manifest.json`, and canonical deployment metadata
+ * to `dist/build-output.json`. `output.client` and `output.server` can point
+ * to alternate directories when an adapter or deployment target needs a
+ * different artifact layout.
  */
 
 import {
@@ -330,23 +330,38 @@ export interface FrameworkManifestValidationOptions {
   rscRendererReferences?: "required" | "optional";
 }
 
-export interface PublicManifestOutput {
+export type PublicManifestOutput =
+  | PublicSpaManifestOutput
+  | PublicMpaManifestOutput;
+
+export interface PublicSpaManifestOutput {
   version: 1;
   buildId: string;
   publicPath: PublicPathOutput;
   assets?: Record<string, AssetGroup>;
-  routing: PublicRoutingOutput;
+  routing: PublicSpaRoutingOutput;
+}
+
+export interface PublicMpaManifestOutput {
+  version: 1;
+  buildId: string;
+  publicPath: PublicPathOutput;
+  routing: PublicMpaRoutingOutput;
 }
 
 export type PublicRoutingOutput =
-  | {
-      kind: "spa";
-      routes: PublicRouteOutput[];
-    }
-  | {
-      kind: "mpa";
-      pages: Record<string, PublicPageOutput>;
-    };
+  | PublicSpaRoutingOutput
+  | PublicMpaRoutingOutput;
+
+export interface PublicSpaRoutingOutput {
+  kind: "spa";
+  routes: PublicRouteOutput[];
+}
+
+export interface PublicMpaRoutingOutput {
+  kind: "mpa";
+  pages: Record<string, PublicPageOutput>;
+}
 
 export interface BuildOutputPaths {
   rootDir: string;
@@ -793,6 +808,16 @@ export function assertFrameworkManifestShape(
     requireServer,
     apps,
   );
+  if (
+    !requireServer &&
+    value.assets !== undefined &&
+    isRecord(value.routing) &&
+    value.routing.kind === "mpa"
+  ) {
+    throw new Error(
+      `[evjs] ${source}.assets must be omitted when routing.kind is "mpa".`,
+    );
+  }
 
   if (value.runtime !== undefined) {
     assertObject(value.runtime.server, `${source}.runtime.server`);
@@ -2060,6 +2085,7 @@ export {
   type DeploymentMetadataOptions,
   linkBuildOutput,
   type ServerManifestOutput,
+  type ServerManifestRouteOutput,
 } from "./linker.js";
 export {
   type ClientRouteMatch,

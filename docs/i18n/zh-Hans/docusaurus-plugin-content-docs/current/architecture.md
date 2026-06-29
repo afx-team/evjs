@@ -158,8 +158,8 @@ sequenceDiagram
 
 构建会在 `dist/build-output.json` 输出 canonical deployment metadata。内部 `BuildOutput`
 仍是内存中的 plugin/build contract，不再完整序列化落盘。client/server manifest 是部署工具
-兼容投影：`client/manifest.json` 只保留公开 assets 和 SPA/MPA routing，
-`server/manifest.json` 只保留 server entry。
+兼容投影：`client/manifest.json` 保留 SPA 公开 assets，或 MPA page 级 assets 与
+routing；`server/manifest.json` 保留 server entry 和轻量 server route projection。
 
 生成的 HTML 会内嵌浏览器 `ClientRuntime`，CLI build 默认不再写
 `client/runtime.json`。raw server bundle 消费显式的

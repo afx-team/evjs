@@ -167,8 +167,9 @@ sequenceDiagram
 Builds emit canonical deployment metadata at `dist/build-output.json`. The
 internal `BuildOutput` remains an in-memory plugin/build contract and is not
 serialized wholesale. Client and server manifest files are compatibility
-projections for deployment tooling: `client/manifest.json` keeps public assets
-and SPA/MPA routing, while `server/manifest.json` only keeps the server entry.
+projections for deployment tooling: `client/manifest.json` keeps SPA public
+assets or MPA page-level assets plus routing, while `server/manifest.json`
+keeps the server entry and lightweight server route projection.
 Generated HTML embeds the browser `ClientRuntime`; CLI builds no longer write
 `client/runtime.json` by default. Raw server bundles consume the explicit
 `FrameworkRuntime` sidecar at `dist/server/framework-runtime.json`, while

@@ -66,8 +66,9 @@ dist-server/
 ```
 
 生成的 HTML 会内嵌浏览器启动所需的 `ClientRuntime`。`client/manifest.json` 是轻量部署
-元信息，只包含公开资源和 SPA/MPA route 信息。`server/manifest.json` 只保留 server
-entry 文件名。`server/framework-runtime.json` 是 raw server bundle 启动所需的运行时数据，
+元信息：SPA manifest 保留顶层公开 assets，MPA manifest 把 assets 保留在每个 routing
+page 上。`server/manifest.json` 保留 server entry 文件名和 server route projection。
+`server/framework-runtime.json` 是 raw server bundle 启动所需的运行时数据，
 `build-output.json` 是 canonical deployment metadata。应用代码不应该导入或修改部署
 元信息文件。
 

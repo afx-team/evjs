@@ -99,6 +99,7 @@ test.describe("mpa", () => {
 
     expect(manifest).not.toHaveProperty("pages");
     expect(manifest).not.toHaveProperty("routes");
+    expect(manifest).not.toHaveProperty("assets");
     expect(manifest.routing?.kind).toBe("mpa");
     expect(manifest.routing?.pages).toEqual({
       about: expect.objectContaining({

@@ -35,8 +35,8 @@ Important paths:
   deployment tooling.
 - `dist/server/`: server bundle and server metadata when the app uses server
   functions, server file routes, SSR, PPR, or RSC.
-- `dist/server/manifest.json`: entry-only server manifest for deployment
-  compatibility.
+- `dist/server/manifest.json`: lightweight server manifest with the server
+  entry and server-handled route projection for deployment compatibility.
 - `dist/server/framework-runtime.json`: runtime-required framework data for raw
   server bundle startup.
 - `dist/build-output.json`: canonical deployment metadata for tooling and

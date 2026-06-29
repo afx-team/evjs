@@ -183,6 +183,7 @@ setup() {
       console.log("Pages:", Object.keys(output.pages));
       console.log("Client asset groups:", Object.keys(clientManifest.assets ?? {}));
       console.log("Server entry:", serverManifest.entry);
+      console.log("Server routes:", serverManifest.routes.length);
       console.log("Deploy routes:", deploymentMetadata.routes.length);
       console.log("Rebuild:", isRebuild);
     },
@@ -193,8 +194,9 @@ setup() {
 部署插件应优先从 `deploymentMetadata` 读取 routes、documents、assets 和 server entry。
 需要完整内部构建图的插件仍可在内存中检查 `output`。只需要客户端 bundle 摘要的插件可以使用
 `clientManifest`：读取 SPA `routes` 或 MPA `pages` 前先检查
-`clientManifest.routing.kind`。`serverManifest` 只保留 entry。HTML hook 会收到同一组结果
-字段，并额外包含 `ctx.kind`、`ctx.fileName`、`ctx.assets` 等文档字段。
+`clientManifest.routing.kind`。只需要 server entry 和服务端处理 route 摘要的插件可以读取
+`serverManifest.routes`；完整部署规划仍应使用 `deploymentMetadata.routes`。HTML hook 会收到
+同一组结果字段，并额外包含 `ctx.kind`、`ctx.fileName`、`ctx.assets` 等文档字段。
 
 ## Bundler Config
 

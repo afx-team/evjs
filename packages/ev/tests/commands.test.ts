@@ -474,8 +474,16 @@ describe("build", () => {
     const cwd = await createProject();
     const events: string[] = [];
     const bundler = createMockBundler(events);
-    const firstClientJs = (result: EvBuildResult) =>
-      Object.values(result.clientManifest.assets ?? {})[0]?.js[0] ?? "none";
+    const firstClientJs = (result: EvBuildResult) => {
+      const { clientManifest } = result;
+      if (clientManifest.routing.kind === "mpa") {
+        return (
+          Object.values(clientManifest.routing.pages)[0]?.assets.js[0] ?? "none"
+        );
+      }
+      const assets = "assets" in clientManifest ? clientManifest.assets : {};
+      return Object.values(assets ?? {})[0]?.js[0] ?? "none";
+    };
     const plugin: EvPlugin<Record<string, never>> = {
       name: "manifest-result",
       setup() {
@@ -1479,6 +1487,7 @@ describe("build", () => {
     expect(publicManifestJson).not.toHaveProperty("runtime");
     expect(publicManifestJson).not.toHaveProperty("pages");
     expect(publicManifestJson).not.toHaveProperty("routes");
+    expect(publicManifestJson).not.toHaveProperty("assets");
     expect(publicManifestJson.routing.kind).toBe("mpa");
     expect(
       Object.values(publicManifestJson.routing.pages).flatMap((page) =>
@@ -1488,8 +1497,19 @@ describe("build", () => {
     expect(serverManifestJson).toEqual({
       version: 1,
       entry: "server.js",
+      routes: [
+        {
+          kind: "page-server",
+          path: "/dashboard",
+          pageId: "dashboard",
+          methods: ["GET", "HEAD"],
+        },
+      ],
     });
     expect(serverManifestJson.server).toBeUndefined();
+    expect(serverManifestJson.assets).toBeUndefined();
+    expect(serverManifestJson.functions).toBeUndefined();
+    expect(serverManifestJson.renderers).toBeUndefined();
     expect(serverManifest).not.toContain("./src/pages/Dashboard.tsx");
     expect(buildOutputJson.server?.entry).toBe("server.js");
     expect(buildOutputJson.routes).toContainEqual({
