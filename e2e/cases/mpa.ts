@@ -109,6 +109,7 @@ test.describe("mpa", () => {
         }),
         document: { fileName: "about.html" },
         path: "/about",
+        render: "csr",
         routeId: "about",
       }),
       home: expect.objectContaining({
@@ -118,12 +119,12 @@ test.describe("mpa", () => {
         }),
         document: { fileName: "home.html" },
         path: "/home",
+        render: "csr",
         routeId: "home",
       }),
     });
     const publicManifestText = fs.readFileSync(manifestPath, "utf-8");
     expect(publicManifestText).not.toContain(".tsx");
-    expect(publicManifestText).not.toContain('"render"');
     expect(publicManifestText).not.toContain('"module"');
   });
 });
