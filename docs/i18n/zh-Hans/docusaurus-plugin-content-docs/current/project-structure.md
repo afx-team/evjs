@@ -52,15 +52,15 @@ my-evjs-app/
 | 配置 | `ev.config.ts` | 只在默认值不够时自定义 routing 模式、服务端路径、插件或显式页面输出。 |
 | 导入别名 | `tsconfig.json` `paths["@/*"]` | `@/components/Button` 解析到 `src/components/Button`；evjs 会自动配置 bundler alias，模板会配置 TypeScript 以支持编辑器和类型检查。 |
 | 客户端路由 | `src/pages` | SPA 和 MPA 页面路由的事实来源。SPA 模式映射到一个 evjs 管理的 app entry；MPA 模式映射到独立页面 entry。 |
-| SPA 根 shell | `<routing-dir-parent>/layout/index.tsx` | 默认 `src/pages` 使用 `src/layout/index.tsx`；`routing.dir: "./src/app/pages"` 使用 `src/app/layout/index.tsx`。只有应用 shell 明确放在自定义位置时才使用 `routing.conventions.layout`；设为 `false` 可关闭根布局发现。 |
+| SPA 根 shell | `<routing-dir-parent>/layout/index.tsx` | 默认 `src/pages` 使用 `src/layout/index.tsx`；`routing.dir: "./src/app/pages"` 使用 `src/app/layout/index.tsx`。只有应用 shell 明确放在自定义位置时才使用 `routing.conventions.layout`。 |
 | 嵌套 SPA 路由布局 | `src/pages/<segment>/layout.*` | 包裹某个路由段下的后代路由。`src/pages/layout.tsx` 和 `src/pages/<segment>/layout/index.*` 都会被拒绝。MPA 页面需要公共外框时导入普通共享组件或复用 HTML 模板。 |
 | SPA route 边界 | `src/pages/**/error.*`、`src/pages/**/not-found.*` | 按目录作用域生效的 SPA error 和 not-found boundaries。MPA 页面会把这些文件名当作普通路由。 |
 | 生成路由类型 | `<routing-dir-parent>/route-types.d.ts` | SPA 模式写入类型安全导航声明，例如 `src/route-types.d.ts` 或 `src/app/route-types.d.ts`。保持忽略它们，不要在应用代码里导入。 |
 | 页面元信息 | 页面模块的 named exports | 渲染元信息和页面组件放在一起。 |
 | 服务端函数 | `"use server";` 加 `*.server.*` 模块 | 服务端函数没有目录约定，可以放在 pages、features 或服务端文件路由旁边。 |
-| 服务端文件路由 | `src/apis` | 启用 `server.routing` 后发现的 Request/Response 路由模块。没有 route exports 的文件仍然是普通就近 helper。 |
+| 服务端文件路由 | `src/apis` | 默认发现的 Request/Response 路由模块。没有 route exports 的文件仍然是普通就近 helper。 |
 | 服务端中间件 | `src/middleware.ts`、`src/apis/**/middleware.ts` | 全局服务端中间件包裹服务端运行时请求；API 路由中间件只包裹后代服务端文件路由。 |
-| 手工 server 代码 | `server.ts` 等普通文件 | Standalone/manual `@evjs/server` 代码不会作为文件约定发现，也和 `server.routing` 无关。 |
+| 手工 server 代码 | `server.ts` 等普通文件 | Standalone/manual `@evjs/server` 代码不会作为文件约定发现，也和服务端文件路由发现无关。 |
 | 业务代码 | `features/`、`components/`、`lib/`、`hooks/` | 把业务逻辑、可复用 UI、浏览器安全 helper 和 React hooks 从 route/page files 中移走。 |
 
 ## 约定矩阵
@@ -112,7 +112,7 @@ my-evjs-app/
 | `src/pages/**/not-found.{ts,tsx,js,jsx}` | 作用域 SPA not-found boundary | 该路由目录作用域及后代路由调用 `notFound()` 时的 React fallback 组件 | URL 路由、MPA 行为、服务端 404 响应，或 helper 模块 |
 | `<routing-dir-parent>/route-types.d.ts` | SPA 导航类型生成物 | 编辑器和类型检查支持 | 手工修改、从应用代码导入、放入模板或脚手架源码，或用于 MPA 模式 |
 | 带 `"use server";` 的 `**/*.server.{ts,tsx,js,jsx}` | 推荐的服务端函数模块命名 | 可达并导出命名可调用服务端函数的模块 | 浏览器专用 helper、默认导出、运行时再导出，或依赖目录名触发发现 |
-| `src/apis/**/*.{ts,tsx,js,jsx}` | 启用 `server.routing` 时的服务端文件路由发现 | 导出大写 HTTP method 的 Request/Response 路由模块 | `route.ts` 哨兵、`foo.get.ts` method suffix 文件、bracket/catch-all/optional routes、`middleware`/`middlewares`、默认导出，或从路由候选文件导出 helper |
+| `src/apis/**/*.{ts,tsx,js,jsx}` | 默认服务端文件路由发现 | 导出大写 HTTP method 的 Request/Response 路由模块 | `route.ts` 哨兵、`foo.get.ts` method suffix 文件、bracket/catch-all/optional routes、`middleware`/`middlewares`、默认导出，或从路由候选文件导出 helper |
 | `src/middleware.{ts,tsx,js,jsx}` | 全局服务端中间件 | 在服务端运行时请求之前运行的 Hono-compatible middleware，包括服务端文件路由、服务端函数、SSR、PPR 和 RSC | 只属于 API routes 的逻辑、matcher 配置、route handlers 或 helper exports |
 | `src/apis/**/middleware.{ts,tsx,js,jsx}` | API 路由中间件 | 作用于该目录树下后代服务端文件路由的 Hono-compatible middleware | `api.ts` 这类同级扁平路由、服务端函数/SSR 的全局服务端中间件，或 matcher 配置 |
 | `src/apis` 下的 server route paths 和 dynamic URL shapes | 生成构建产物前的 server route 冲突检查 | 每个 URL path 只保留一个 server route module，每个 dynamic URL shape 只保留一种参数命名 | 并存的 `users.ts`/`users/index.ts`、`users/$id.ts`/`users/$userId.ts`，或把同一路径的方法拆到多个文件 |
@@ -139,7 +139,6 @@ export default defineConfig({
   },
 
   server: {
-    routing: true,
     rsc: true,
   },
 });
@@ -353,8 +352,8 @@ export const GET = async (_req, ctx) => {
 ## 命名建议
 
 - `pages/` 是文件路由目录，也可以包含 SSR/PPR/RSC components。
-- `apis/` 是启用 `server.routing` 时的服务端文件路由目录。被可达应用代码导入的
-  服务端函数可以用 `*.server.*` 文件名就近放在这里。
+- `apis/` 是默认服务端文件路由目录。用 `server.routing.dir` 更换目录。被可达
+  应用代码导入的服务端函数可以用 `*.server.*` 文件名就近放在这里。
 - `src/middleware.ts` 是全局服务端中间件；嵌套的 `apis/**/middleware.ts` 是作用于
   后代服务端文件路由的 API 路由中间件。
 - `features/` 放业务领域模块。

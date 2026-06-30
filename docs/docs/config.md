@@ -1,7 +1,7 @@
 # Configuration
 
 evjs is zero-config by default. Most apps only add `ev.config.ts` to choose SPA
-or MPA routing, enable server file routes, or adjust deployment-facing paths.
+or MPA routing, customize server file routes, or adjust deployment-facing paths.
 
 ```ts
 import { defineConfig } from "@evjs/ev";
@@ -26,7 +26,8 @@ export default defineConfig({
 | `routing.mode` | `spa` |
 | `routing.dir` | `./src/pages` when `routing` is enabled |
 | `routing.mount` | `#app` |
-| `server.routing.dir` | `./src/apis` when `server.routing` is enabled |
+| `server.routing` | `true`; scans `./src/apis` by default and drops out when no route modules exist |
+| `server.routing.dir` | `./src/apis` |
 | `output.client` | `dist/client` |
 | `output.server` | `dist/server` |
 | `output.crossOriginLoading` | `"anonymous"` |
@@ -64,17 +65,8 @@ export default defineConfig({
 });
 ```
 
-For server file routes under `src/apis`, enable `server.routing`:
-
-```ts
-import { defineConfig } from "@evjs/ev";
-
-export default defineConfig({
-  server: {
-    routing: true,
-  },
-});
-```
+Server file routes under `src/apis` are discovered by default. Configure
+`server.routing.dir` only when the route directory should live somewhere else.
 
 Only spell out fields you want to change:
 
@@ -108,8 +100,7 @@ export default defineConfig({
 ```
 
 When `src/pages` exists and the project does not declare explicit `app` or
-`pages` config, SPA routing is enabled automatically. Set `routing: false` to
-disable file-route discovery.
+`pages` config, SPA routing is enabled automatically.
 
 In SPA routing mode, the browser entry is generated from the discovered page
 tree. Use `app.entry` only when the app intentionally uses an explicit SPA
@@ -129,9 +120,8 @@ export default defineConfig({
 });
 ```
 
-Set `routing.conventions.layout: false` when the SPA should not use a framework
-root layout. Layout conventions are SPA-only; MPA pages should compose shared
-React components or reuse HTML templates.
+Layout conventions are SPA-only; MPA pages should compose shared React
+components or reuse HTML templates.
 
 MPA file routes can use colocated HTML templates. For example,
 `src/pages/about.html` is used by `src/pages/about.tsx`, and
@@ -225,40 +215,16 @@ export default defineConfig({
 });
 ```
 
-Enable server file routes with `server.routing`:
+Server file routes are enabled by default and scan `./src/apis`. Object form
+currently supports `dir`; there is no `prefix` option. Put files under a folder
+such as `src/apis/api` when URLs should start with `/api`.
 
-```ts
-export default defineConfig({
-  server: {
-    routing: true,
-  },
-});
-```
-
-`server.routing: true` scans `./src/apis`. Object form currently supports
-`dir`; there is no `prefix` option. Put files under a folder such as
-`src/apis/api` when URLs should start with `/api`.
-
-Server middleware conventions are enabled by default when `server.routing` is
-enabled:
+Server middleware conventions are enabled by default with server file-route
+discovery:
 
 - `src/middleware.ts` for global server middleware.
 - `src/apis/**/middleware.ts` for API route middleware scoped to descendant
   server file routes.
-
-Disable all server conventions with `server.conventions: false`, or only
-middleware discovery with:
-
-```ts
-export default defineConfig({
-  server: {
-    routing: true,
-    conventions: {
-      middleware: false,
-    },
-  },
-});
-```
 
 Enable React Server Components support with `server.rsc: true`:
 
@@ -388,6 +354,6 @@ These are intentionally not public config fields:
 - `routing.entry`
 - top-level `functions` or `serverFunctions`
 
-Use `server.routing` for server file routes, `"use server"` modules for server
-functions, `server.basePath` for server runtime paths, and `pages` for
-explicit page outputs.
+Use `server.routing.dir` to customize the server file-route directory,
+`"use server"` modules for server functions, `server.basePath` for server
+runtime paths, and `pages` for explicit page outputs.

@@ -152,18 +152,7 @@ Files with `"use server";` are included when they are imported by reachable app,
 page, server route, or middleware code. The build makes them callable from the
 browser through the server runtime.
 
-Server file routes are discovered from `src/apis` when `server.routing` is
-enabled:
-
-```ts
-import { defineConfig } from "@evjs/ev";
-
-export default defineConfig({
-  server: {
-    routing: true,
-  },
-});
-```
+Server file routes are discovered from `src/apis` by default:
 
 ```ts
 // src/apis/api/health.ts

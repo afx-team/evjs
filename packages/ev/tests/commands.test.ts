@@ -2685,7 +2685,7 @@ describe("build", () => {
     expect(events).not.toContain("bundler.build");
   });
 
-  it("discovers server middleware conventions for generated server app entries", async () => {
+  it("discovers default server routes and middleware conventions", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/apis/api"), {
       recursive: true,
@@ -2727,17 +2727,7 @@ describe("build", () => {
       },
     });
 
-    await build(
-      {
-        server: {
-          routing: true,
-        },
-      },
-      {
-        cwd,
-        bundler,
-      },
-    );
+    await build({}, { cwd, bundler });
 
     expect(events).toContain("bundler.build");
     expect(observedPlan?.entries).toContainEqual(

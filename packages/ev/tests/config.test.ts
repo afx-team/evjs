@@ -126,7 +126,15 @@ describe("resolveConfig", () => {
       rsc: "/__evjs/rsc",
     });
     expect(resolved.server.runtime.fn).toBe("/__evjs/fn");
-    expect(resolved.server.routing).toBeUndefined();
+    expect(resolved.server.routing).toEqual({
+      dir: CONFIG_DEFAULTS.serverRoutingDir,
+      routes: [],
+    });
+    expect(resolved.server.conventions).toEqual({
+      middleware: true,
+      globalMiddlewares: [],
+      routeMiddlewares: [],
+    });
     expect(resolved.transport).toEqual({ baseUrl: undefined });
     expect(resolved.apps).toBeUndefined();
     expect(resolved.routing).toBeUndefined();
@@ -994,6 +1002,11 @@ describe("resolveConfig", () => {
   });
 
   it("resolves server file routing configuration", () => {
+    expect(resolveConfig({ server: {} }).server.routing).toEqual({
+      dir: CONFIG_DEFAULTS.serverRoutingDir,
+      routes: [],
+    });
+
     expect(
       resolveConfig({
         server: {

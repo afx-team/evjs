@@ -4,19 +4,19 @@
 
 ## 约定入口
 
-| 文件或目录 | 归属配置 | 含义 |
+| 文件或目录 | 约定领域 | 含义 |
 | --- | --- | --- |
-| `src/pages/**/*.{ts,tsx,js,jsx}` | `routing` | SPA 和 MPA 的客户端页面路由发现。 |
-| 与同 basename 页面路由相邻的 `src/pages/**/*.html` | `routing` | MPA 页面专属 HTML 模板，例如 `about.tsx` 对应 `about.html`，`users/index.tsx` 对应 `users/index.html`。 |
-| `<routing-dir-parent>/layout/index.tsx` | `routing.conventions.layout` | 按约定自动发现的可选外部 SPA 根布局。 |
-| `src/pages/<segment>/**/layout.{ts,tsx,js,jsx}` | `routing` | 页面路由树内的嵌套 SPA route layout。 |
-| `src/pages/**/error.{ts,tsx,js,jsx}` | `routing` | 离当前路由目录作用域最近的 SPA error boundary。 |
-| `src/pages/**/not-found.{ts,tsx,js,jsx}` | `routing` | 离当前路由目录作用域最近的 SPA not-found boundary。 |
-| `<routing-dir-parent>/route-types.d.ts` | generated | evjs 生成的 SPA 导航类型声明。 |
+| `src/pages/**/*.{ts,tsx,js,jsx}` | 客户端页面 | SPA 和 MPA 的客户端页面路由发现。 |
+| 与同 basename 页面路由相邻的 `src/pages/**/*.html` | MPA 页面 | MPA 页面专属 HTML 模板，例如 `about.tsx` 对应 `about.html`，`users/index.tsx` 对应 `users/index.html`。 |
+| `<routing-dir-parent>/layout/index.tsx` | SPA 布局 | 按约定自动发现的可选外部 SPA 根布局。 |
+| `src/pages/<segment>/**/layout.{ts,tsx,js,jsx}` | SPA 布局 | 页面路由树内的嵌套 SPA route layout。 |
+| `src/pages/**/error.{ts,tsx,js,jsx}` | SPA 边界 | 离当前路由目录作用域最近的 SPA error boundary。 |
+| `src/pages/**/not-found.{ts,tsx,js,jsx}` | SPA 边界 | 离当前路由目录作用域最近的 SPA not-found boundary。 |
+| `<routing-dir-parent>/route-types.d.ts` | 生成产物 | evjs 生成的 SPA 导航类型声明。 |
 | 带 `"use server";` 的 `*.server.{ts,tsx,js,jsx}` 文件 | server functions | 推荐的 server function 命名约定。 |
-| `src/apis/**/*.{ts,tsx,js,jsx}` | `server.routing` | 启用 `server.routing` 时的服务端文件路由。 |
-| `src/middleware.{ts,tsx,js,jsx}` | `server.conventions.middleware` | 启用 server conventions 时的全局服务端中间件。 |
-| `src/apis/**/middleware.{ts,tsx,js,jsx}` | `server.conventions.middleware` | server file routes 的 API route middleware。 |
+| `src/apis/**/*.{ts,tsx,js,jsx}` | 服务端文件路由 | 默认发现的服务端文件路由。 |
+| `src/middleware.{ts,tsx,js,jsx}` | 服务端中间件 | 全局服务端中间件。 |
+| `src/apis/**/middleware.{ts,tsx,js,jsx}` | API route middleware | server file routes 的 API route middleware。 |
 
 默认客户端路由目录是 `./src/pages`。默认服务端文件路由目录是
 `./src/apis`。需要更换客户端路由目录时配置 `routing.dir`；需要更换服务端文件路由目录时配置
@@ -100,7 +100,7 @@ src/layout/index.tsx
 `src/pages/layout.tsx`、`src/layout.tsx` 这类根布局别名，以及
 `src/pages/dashboard/layout/index.tsx` 这类 route layout 目录别名都会被约定拒绝。
 只有当应用 shell 明确放在其他位置时，才显式配置 `routing.conventions.layout`。
-设置 `routing.conventions.layout: false` 可以关闭外部根布局发现。MPA 模式不消费框架 layout。
+MPA 模式不消费框架 layout。
 
 SPA route 边界使用专用约定文件：
 
@@ -153,8 +153,8 @@ export async function listUsers() {
 
 ## 服务端文件路由
 
-通过 `server.routing` 启用服务端文件路由。URL 来自 `server.routing.dir`
-下的文件路径；这里没有 `prefix` 选项。
+服务端文件路由默认启用。URL 来自 `server.routing.dir` 下的文件路径；这里没有
+`prefix` 选项。
 
 ```text
 src/apis/index.ts              -> /
@@ -240,16 +240,3 @@ API route middleware 只作用于后代 server file routes；例如
 `src/apis/api/middleware.ts` 覆盖
 `src/apis/api/users.ts`，但不覆盖 flat sibling
 `src/apis/api.ts`。
-
-关闭 middleware discovery：
-
-```ts
-export default defineConfig({
-  server: {
-    routing: true,
-    conventions: {
-      middleware: false,
-    },
-  },
-});
-```

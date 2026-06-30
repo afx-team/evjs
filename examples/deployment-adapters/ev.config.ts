@@ -17,10 +17,6 @@ export default defineConfig({
     mount: "#app",
   },
 
-  server: {
-    routing: true,
-  },
-
   plugins: [
     deploymentExampleAdapter(),
     nodeDeploymentAdapter(),

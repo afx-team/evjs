@@ -241,7 +241,8 @@ export interface ServerConfig {
   /**
    * Framework-managed server file routing.
    *
-   * When enabled, evjs discovers Request/Response route modules from `src/apis`.
+   * Defaults to enabled. evjs discovers Request/Response route modules from
+   * `src/apis` unless disabled.
    */
   routing?: boolean | ServerRoutingConfig;
   /**
@@ -568,7 +569,7 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
   const resolvedApps = resolvedApp ? { default: resolvedApp } : undefined;
 
   const resolvedServerRouting = resolveServerRoutingConfig(
-    serverConfig.routing,
+    serverConfig.routing === undefined ? true : serverConfig.routing,
   );
   const resolvedServerConventions = resolveServerConventionsConfig(
     serverConfig.conventions,

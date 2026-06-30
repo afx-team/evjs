@@ -229,10 +229,8 @@ the default export wraps the entire generated route tree as `children`, so user
 code does not need a router outlet component at the app root.
 
 Use `routing.conventions.layout: "./src/shell/AppLayout.tsx"` only when the
-shell intentionally lives outside the convention path. Set
-`routing.conventions.layout: false` when the SPA should not consume any
-external framework root layout. Root layout aliases such as `src/layout.tsx`
-are rejected by automatic discovery.
+shell intentionally lives outside the convention path. Root layout aliases such
+as `src/layout.tsx` are rejected by automatic discovery.
 
 SPA route layouts can also live inside the route directory:
 
@@ -243,9 +241,8 @@ SPA route layouts can also live inside the route directory:
   without adding `(app)` to the URL.
 
 Nested route layouts can coexist with an external root layout. This remains
-true when `routing.conventions.layout` points at an explicit module, or when
-external root layout discovery is disabled with `routing.conventions.layout:
-false`. `src/pages/layout.tsx` is not a root layout convention; use
+true when `routing.conventions.layout` points at an explicit module.
+`src/pages/layout.tsx` is not a root layout convention; use
 `src/layout/index.tsx` for the app shell.
 
 The layout conventions are SPA-only. MPA mode does not accept

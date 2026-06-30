@@ -128,7 +128,9 @@ const allowedExamplePackageDependencies = new Set([
 ]);
 
 const allowedDocumentationImportPackages = new Set([
+  "@evjs/client",
   "@evjs/ev",
+  "@evjs/server",
   "@evjs/cli",
   "@evjs/bundler-utoopack",
   "@evjs/bundler-webpack",

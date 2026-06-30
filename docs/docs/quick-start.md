@@ -15,7 +15,7 @@ Both arguments are optional — if omitted, the CLI prompts interactively.
 |----------|-------------|
 | `basic` | Routing + server functions |
 | `mpa` | Multi-page application setup |
-| `api-routes` | REST API routes via `server.routing` file routes |
+| `api-routes` | REST API routes via default server file routes |
 | `complex-routing` | Params, search, root layout, loaders, nested paths |
 | `with-tailwind` | Tailwind CSS via PostCSS |
 | `with-trpc` | tRPC interop example |
@@ -83,10 +83,9 @@ writes `src/route-types.d.ts` for TypeScript and scaffolded apps ignore it
 by default.
 
 SPA root layout discovery is optional. Use `src/layout/index.tsx` beside the
-default route directory, set `routing.conventions.layout` to another module
-path, or set `routing.conventions.layout: false` when the app should not have a
-framework root layout. Nested SPA route layouts can live below a route segment,
-such as `src/pages/posts/layout.tsx`.
+default route directory, or set `routing.conventions.layout` to another module
+path when the shell intentionally lives elsewhere. Nested SPA route layouts can
+live below a route segment, such as `src/pages/posts/layout.tsx`.
 
 ## MPA Mode
 

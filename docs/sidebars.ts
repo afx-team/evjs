@@ -22,7 +22,14 @@ const sidebars: SidebarsConfig = {
     {
       type: "category",
       label: "Reference",
-      items: ["architecture", "config", "dev", "build", "deploy"],
+      items: [
+        "architecture",
+        "config",
+        "advanced-conventions",
+        "dev",
+        "build",
+        "deploy",
+      ],
     },
     {
       type: "category",

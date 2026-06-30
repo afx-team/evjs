@@ -1,7 +1,7 @@
 # 配置
 
 evjs 默认零配置。多数应用只需要添加 `ev.config.ts` 来选择 SPA/MPA 路由、
-启用服务端文件路由，或调整部署相关路径。
+自定义服务端文件路由，或调整部署相关路径。
 
 ```ts
 import { defineConfig } from "@evjs/ev";
@@ -26,7 +26,8 @@ export default defineConfig({
 | `routing.mode` | `spa` |
 | `routing.dir` | 启用 `routing` 时为 `./src/pages` |
 | `routing.mount` | `#app` |
-| `server.routing.dir` | 启用 `server.routing` 时为 `./src/apis` |
+| `server.routing` | `true`；默认扫描 `./src/apis`，没有路由模块时自动退出 |
+| `server.routing.dir` | `./src/apis` |
 | `output.client` | `dist/client` |
 | `output.server` | `dist/server` |
 | `output.crossOriginLoading` | `"anonymous"` |
@@ -63,17 +64,8 @@ export default defineConfig({
 });
 ```
 
-使用 `src/apis` 下的服务端文件路由时，启用 `server.routing`：
-
-```ts
-import { defineConfig } from "@evjs/ev";
-
-export default defineConfig({
-  server: {
-    routing: true,
-  },
-});
-```
+`src/apis` 下的服务端文件路由默认会被发现。只有需要更换路由目录时，才配置
+`server.routing.dir`。
 
 只写需要修改的字段：
 
@@ -107,7 +99,6 @@ export default defineConfig({
 ```
 
 当项目存在 `src/pages`，且没有声明显式 `app` 或 `pages` 配置时，SPA 路由会自动启用。
-需要关闭文件路由发现时，设置 `routing: false`。
 
 SPA routing 模式下，浏览器入口会从已发现的页面树生成。只有应用明确要用手写 SPA
 bootstrap 代替文件路由时，才使用 `app.entry`。
@@ -126,8 +117,7 @@ export default defineConfig({
 });
 ```
 
-如果 SPA 不需要框架根布局，设置 `routing.conventions.layout: false`。Layout 约定只用于
-SPA；MPA 页面应组合普通 React 组件或复用 HTML 模板。
+Layout 约定只用于 SPA；MPA 页面应组合普通 React 组件或复用 HTML 模板。
 
 MPA 文件路由可以使用 colocated HTML 模板。例如 `src/pages/about.tsx` 使用
 `src/pages/about.html`，`src/pages/product/index.tsx` 使用
@@ -219,36 +209,14 @@ export default defineConfig({
 });
 ```
 
-启用服务端文件路由：
+服务端文件路由默认启用并扫描 `./src/apis`。对象形式目前支持 `dir`；没有
+`prefix` 选项。如果 URL 需要以 `/api` 开头，请把文件放到 `src/apis/api`
+这样的目录中。
 
-```ts
-export default defineConfig({
-  server: {
-    routing: true,
-  },
-});
-```
-
-`server.routing: true` 会扫描 `./src/apis`。对象形式目前支持 `dir`；没有 `prefix`
-选项。如果 URL 需要以 `/api` 开头，请把文件放到 `src/apis/api` 这样的目录中。
-
-启用 `server.routing` 时，服务端中间件约定默认启用：
+服务端文件路由发现启用时，服务端中间件约定默认启用：
 
 - `src/middleware.ts`：全局服务端中间件。
 - `src/apis/**/middleware.ts`：只作用于后代服务端文件路由的 API 路由中间件。
-
-可以用 `server.conventions: false` 关闭所有服务端约定，或只关闭 middleware 发现：
-
-```ts
-export default defineConfig({
-  server: {
-    routing: true,
-    conventions: {
-      middleware: false,
-    },
-  },
-});
-```
 
 启用 React Server Components 支持：
 
@@ -374,5 +342,5 @@ export default defineConfig({
 - `routing.entry`
 - 顶层 `functions` 或 `serverFunctions`
 
-服务端文件路由使用 `server.routing`，服务端函数使用 `"use server"` 模块，服务端运行时路径使用
-`server.basePath`，显式页面输出使用 `pages`。
+用 `server.routing.dir` 自定义服务端文件路由目录，服务端函数使用 `"use server"`
+模块，服务端运行时路径使用 `server.basePath`，显式页面输出使用 `pages`。

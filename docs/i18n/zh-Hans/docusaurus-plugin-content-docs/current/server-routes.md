@@ -11,21 +11,9 @@ evjs framework routing 也不会分析编程式 route 声明。
 
 ## 文件路由
 
-使用 `server.routing` 启用服务端文件路由：
-
-```ts
-import { defineConfig } from "@evjs/ev";
-
-export default defineConfig({
-  server: {
-    routing: true,
-  },
-});
-```
-
-`server.routing: true` 扫描 `./src/apis`，并把该目录映射到 `/`。Object
-形式目前只支持 `dir`。没有 `prefix` 选项；如果 URL 需要以 `/api` 开头，把文件放在
-`src/apis/api` 这类目录下。
+文件化服务端路由默认启用。evjs 扫描 `./src/apis`，并把该目录映射到 `/`。
+Object 形式目前只支持 `dir`。没有 `prefix` 选项；如果 URL 需要以 `/api`
+开头，把文件放在 `src/apis/api` 这类目录下。
 
 ```text
 src/apis/index.ts              -> /

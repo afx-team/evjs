@@ -1,6 +1,6 @@
 # api-routes
 
-REST route handlers using `server.routing` file routes.
+REST route handlers using default server file routes.
 
 ## Run
 

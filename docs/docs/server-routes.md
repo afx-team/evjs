@@ -13,22 +13,10 @@ For the complete server file route and middleware filename rules, see
 
 ## File Routes
 
-Enable file-based server routes with `server.routing`:
-
-```ts
-import { defineConfig } from "@evjs/ev";
-
-export default defineConfig({
-  server: {
-    routing: true,
-  },
-});
-```
-
-`server.routing: true` scans `./src/apis` and maps that directory to `/`.
-Object form currently supports only `dir`. There is no `prefix` option; put
-files under a folder such as `src/apis/api` when the URL should start with
-`/api`.
+File-based server routes are enabled by default. evjs scans `./src/apis` and
+maps that directory to `/`. Object form currently supports only `dir`. There is
+no `prefix` option; put files under a folder such as `src/apis/api` when the URL
+should start with `/api`.
 
 ```text
 src/apis/index.ts              -> /

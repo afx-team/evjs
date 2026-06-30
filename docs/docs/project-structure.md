@@ -54,15 +54,15 @@ This shape covers the complete framework surface:
 | Config | `ev.config.ts` | Customize routing mode, server paths, plugins, or explicit page outputs only when defaults are not enough. |
 | Import alias | `tsconfig.json` `paths["@/*"]` | `@/components/Button` resolves to `src/components/Button`; evjs configures the bundler alias automatically and templates configure TypeScript for editor/type-checker support. |
 | Client routes | `src/pages` | Source of truth for SPA and MPA page routes. SPA mode maps it to one framework-owned app entry; MPA mode maps it to independent page entries. |
-| SPA root shell | `<routing-dir-parent>/layout/index.tsx` | The default `src/pages` route directory uses `src/layout/index.tsx`; `routing.dir: "./src/app/pages"` uses `src/app/layout/index.tsx`. Use `routing.conventions.layout` only for an intentional custom shell path, or set it to `false` to disable root layout discovery. |
+| SPA root shell | `<routing-dir-parent>/layout/index.tsx` | The default `src/pages` route directory uses `src/layout/index.tsx`; `routing.dir: "./src/app/pages"` uses `src/app/layout/index.tsx`. Use `routing.conventions.layout` only for an intentional custom shell path. |
 | Nested SPA layouts | `src/pages/<segment>/layout.*` | Wrap descendants below a route segment. `src/pages/layout.tsx` and `src/pages/<segment>/layout/index.*` are rejected. MPA pages import shared components or share HTML templates instead. |
 | SPA route boundaries | `src/pages/**/error.*`, `src/pages/**/not-found.*` | Scoped SPA error and not-found boundaries. MPA pages treat these filenames as ordinary routes. |
 | Generated route types | `<routing-dir-parent>/route-types.d.ts` | SPA mode writes type-safe navigation declarations, such as `src/route-types.d.ts` or `src/app/route-types.d.ts`. Keep them ignored and do not import them from application code. |
 | Page metadata | Named exports in page modules | Rendering metadata lives with the page component. |
 | Server functions | `"use server";` in `*.server.*` modules | Server functions have no convention directory and can live beside pages, features, or server file routes. |
-| Server file routes | `src/apis` | Request/Response route modules discovered when `server.routing` is enabled. Files without route exports stay ordinary colocated helpers. |
+| Server file routes | `src/apis` | Request/Response route modules discovered by default. Files without route exports stay ordinary colocated helpers. |
 | Server middleware | `src/middleware.ts`, `src/apis/**/middleware.ts` | Global server middleware wraps server runtime requests; API route middleware wraps descendant server file routes only. |
-| Manual server code | Ordinary files such as `server.ts` | Standalone/manual `@evjs/server` code is not discovered as a file convention and is unrelated to `server.routing`. |
+| Manual server code | Ordinary files such as `server.ts` | Standalone/manual `@evjs/server` code is not discovered as a file convention and is unrelated to server file-route discovery. |
 | Domain code | `features/`, `components/`, `lib/`, `hooks/` | Keep business logic, reusable UI, browser-safe helpers, and React hooks out of route/page files. |
 
 ## Convention Matrix
@@ -123,7 +123,7 @@ Migration rules stay explicit rather than adding alternate filename dialects:
 | `src/pages/**/not-found.{ts,tsx,js,jsx}` | Scoped SPA not-found boundary | React component fallback for `notFound()` in that route directory scope and descendants | URL routes, MPA behavior, server 404 responses, or helper modules |
 | `<routing-dir-parent>/route-types.d.ts` | Generated SPA navigation types | Editor and type-checker support | Manual edits, imports from app code, template/scaffold source, or MPA mode |
 | `**/*.server.{ts,tsx,js,jsx}` with `"use server";` | Recommended server-function module naming | Reachable modules that export named callable server functions | Browser-only helpers, default exports, runtime re-exports, or relying on a directory name for discovery |
-| `src/apis/**/*.{ts,tsx,js,jsx}` | Server file route discovery when `server.routing` is enabled | Request/Response route modules exporting uppercase HTTP methods | `route.ts` sentinels, `foo.get.ts` method suffix files, bracket/catch-all/optional routes, `middleware`/`middlewares`, default exports, or helper exports from route candidates |
+| `src/apis/**/*.{ts,tsx,js,jsx}` | Default server file route discovery | Request/Response route modules exporting uppercase HTTP methods | `route.ts` sentinels, `foo.get.ts` method suffix files, bracket/catch-all/optional routes, `middleware`/`middlewares`, default exports, or helper exports from route candidates |
 | `src/middleware.{ts,tsx,js,jsx}` | Global server middleware | Hono-compatible middleware that runs before server runtime requests: server file routes, server functions, SSR, PPR, and RSC | API-route-only concerns, matcher config, route handlers, or helper exports |
 | `src/apis/**/middleware.{ts,tsx,js,jsx}` | API route middleware | Hono-compatible middleware for descendant server file routes in that directory tree | Flat sibling routes such as `api.ts`, global server middleware for server functions/SSR, or matcher config |
 | Server route paths and dynamic URL shapes under `src/apis` | Server route collision checks before build output is generated | One server route module per URL path and one parameter naming choice per dynamic URL shape | Parallel `users.ts`/`users/index.ts`, `users/$id.ts`/`users/$userId.ts`, or splitting methods for one path across files |
@@ -151,7 +151,6 @@ export default defineConfig({
   },
 
   server: {
-    routing: true,
     rsc: true,
   },
 });
@@ -379,9 +378,10 @@ export const GET = async (_req, ctx) => {
 ## Naming Guidance
 
 - `pages/` is the page route source folder and can include SSR/PPR/RSC components.
-- `apis/` is the server file route source folder when `server.routing`
-  is enabled. `*.server.*` modules can be colocated there when server functions
-  are imported by reachable app code.
+- `apis/` is the default server file route source folder. Use
+  `server.routing.dir` when the route tree intentionally lives in another
+  folder. `*.server.*` modules can be colocated there when server functions are
+  imported by reachable app code.
 - `middleware.ts` at `src/` is global server middleware. Nested
   `apis/**/middleware.ts` files are API route middleware for descendant server
   file routes.

@@ -24,7 +24,7 @@ npx @evjs/create-app [name] [options]
 |------|-------------|
 | **`basic`** | Basic full-stack example with routing and server functions. |
 | **`mpa`** | Multi-page application with separate page entries. |
-| **`api-routes`** | REST API routes via `server.routing` file routes. |
+| **`api-routes`** | REST API routes via default server file routes. |
 | **`complex-routing`** | Root layout, loaders, search params, and nested paths. |
 | **`custom-ws-transport`** | Custom transport example using WebSockets. |
 | **`plugin-authoring`** | Starter focused on plugin authoring and bundler hooks. |
