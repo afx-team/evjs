@@ -230,9 +230,6 @@ function getServerProxyPrefixes(output: RoutingFixture): string[] {
 }
 
 function getClientPathRewrites(output: RoutingFixture): Record<string, string> {
-  const documentFiles = new Map(
-    output.documents.map((document) => [document.id, document.fileName]),
-  );
   return Object.fromEntries([
     ...output.documents.flatMap((document) => {
       if (document.kind !== "app" || !document.fallback?.startsWith("/")) {
@@ -240,11 +237,11 @@ function getClientPathRewrites(output: RoutingFixture): Record<string, string> {
       }
       return [[document.fallback, document.fileName]];
     }),
-    ...output.routes.flatMap((route) => {
-      if (route.kind !== "static-page") return [];
-      if (!route.path.startsWith("/")) return [];
-      const fileName = documentFiles.get(route.documentId);
-      return fileName ? [[route.path, fileName]] : [];
+    ...output.documents.flatMap((document) => {
+      if (document.kind !== "page" || !document.path?.startsWith("/")) {
+        return [];
+      }
+      return [[document.path, document.fileName]];
     }),
   ]);
 }

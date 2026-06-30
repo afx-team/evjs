@@ -98,6 +98,13 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
     await generateDevArtifacts(config, cwd, plan, callbacks.onBuildFacts, {
       isRebuild: false,
     });
+    if (!hasRuntimeServerEntry(plan)) {
+      return new UtoopackDevController({
+        config,
+        cwd,
+        onBuildFacts: callbacks.onBuildFacts,
+      });
+    }
 
     const outDir = getOutputPaths(cwd, config.output, plan.distDir).serverDir;
 
@@ -143,18 +150,25 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
   },
 };
 
+function hasRuntimeServerEntry(plan: BuildPlan): boolean {
+  return plan.entries.some(
+    (entry) =>
+      entry.environment === "server" && entry.kind === "server-runtime",
+  );
+}
+
 class UtoopackDevController implements BundlerDevController {
   constructor(
     private options: {
       config: ResolvedConfig<ConfigComplete>;
       cwd: string;
       onBuildFacts: BundlerDevContext<ConfigComplete>["callbacks"]["onBuildFacts"];
-      closeWatcher: () => void;
+      closeWatcher?: () => void;
     },
   ) {}
 
   close(): void {
-    this.options.closeWatcher();
+    this.options.closeWatcher?.();
   }
 
   async updatePlan(update: BuildPlanUpdate): Promise<void> {

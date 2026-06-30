@@ -137,10 +137,6 @@ export async function createUtoopackConfig(
 
   const finalServerEntry = resolveServerEntry(plan);
 
-  if (!finalServerEntry) {
-    throw new Error("Failed to resolve a server entry for the server bundle.");
-  }
-
   const outputPaths = getOutputPaths(cwd, config.output, plan.distDir);
 
   const utoopackConfig: ConfigComplete = {
@@ -188,19 +184,27 @@ export async function createUtoopackConfig(
       "process.env.NODE_ENV": JSON.stringify(mode),
       __EVJS_FUNCTION_ENDPOINT__: JSON.stringify(config.server.runtime.fn),
     },
-    // Server functions config — utoopack handles "use server" natively
-    server: {
-      entry: finalServerEntry,
-      output: {
-        path: outputPaths.serverDir,
-        filename: isProduction ? "[name].[contenthash:8].js" : "[name].js",
-        chunkFilename: isProduction ? "[name].[contenthash:8].js" : "[name].js",
-      },
-      function: {
-        clientProxy: SERVER_FUNCTION_TRANSFORM_RUNTIME.clientModule,
-        serverRegister: SERVER_FUNCTION_TRANSFORM_RUNTIME.serverModule,
-      },
-    },
+    ...(finalServerEntry
+      ? {
+          // Server functions config — utoopack handles "use server" natively.
+          server: {
+            entry: finalServerEntry,
+            output: {
+              path: outputPaths.serverDir,
+              filename: isProduction
+                ? "[name].[contenthash:8].js"
+                : "[name].js",
+              chunkFilename: isProduction
+                ? "[name].[contenthash:8].js"
+                : "[name].js",
+            },
+            function: {
+              clientProxy: SERVER_FUNCTION_TRANSFORM_RUNTIME.clientModule,
+              serverRegister: SERVER_FUNCTION_TRANSFORM_RUNTIME.serverModule,
+            },
+          },
+        }
+      : {}),
 
     // Dev server configuration
     devServer: {
@@ -218,7 +222,7 @@ export async function createUtoopackConfig(
     cwd,
     config,
     bundlerName: "utoopack",
-    environment: "mixed",
+    environment: finalServerEntry ? "mixed" : "client",
     logger,
     addWatchFile() {},
   };

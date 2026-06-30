@@ -80,10 +80,16 @@ export async function createWebpackConfigs(
   const serverEntries = plan.entries.filter(
     (entry) => entry.environment === "server",
   );
-  const rscServerEntries = serverEntries.filter(
+  const buildOnlyServerEntries = serverEntries.filter(
+    (entry) => entry.phase === "build",
+  );
+  const runtimeServerEntries = serverEntries.filter(
+    (entry) => entry.phase !== "build",
+  );
+  const rscServerEntries = runtimeServerEntries.filter(
     (entry) => entry.kind === "rsc-page",
   );
-  const regularServerEntries = serverEntries.filter(
+  const regularServerEntries = runtimeServerEntries.filter(
     (entry) => entry.kind !== "rsc-page",
   );
 
@@ -128,6 +134,27 @@ export async function createWebpackConfigs(
         rscClientReferences: getRscClientReferenceModules(cwd, graph),
         enableRscClientRuntime: false,
         clean: (options.clean ?? true) && rscServerEntries.length === 0,
+        reactServerConditions: false,
+        target: "node",
+      }),
+    );
+  }
+
+  if (buildOnlyServerEntries.length > 0) {
+    configs.push(
+      createWebpackConfig({
+        cwd,
+        entries: buildOnlyServerEntries,
+        mode: plan.mode,
+        name: "server-build",
+        outputPath: path.join(outputPaths.rootDir, "__evjs_build_server"),
+        publicPath: plan.runtime.publicPath,
+        resolveAlias: plan.resolve?.alias,
+        functionEndpoint: config.server.runtime.fn,
+        crossOriginLoading: undefined,
+        rscClientReferences: getRscClientReferenceModules(cwd, graph),
+        enableRscClientRuntime: false,
+        clean: false,
         reactServerConditions: false,
         target: "node",
       }),

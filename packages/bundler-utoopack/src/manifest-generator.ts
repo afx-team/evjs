@@ -180,12 +180,14 @@ export class UtoopackManifestGenerator {
         const stats = JSON.parse(statsStr);
         const { byName, first } = readEntrypointAssets(stats);
         this.serverEntryAssets = byName;
-        const serverEntryName =
-          this.plan.entries.find((entry) => entry.kind === "server-runtime")
-            ?.name ?? "server";
-        const entryAssets = byName[serverEntryName] ?? first;
-        this.serverAssets = entryAssets;
-        this.serverEntry = entryAssets.js[0];
+        const serverRuntimeEntry = this.plan.entries.find(
+          (entry) => entry.kind === "server-runtime",
+        );
+        if (serverRuntimeEntry) {
+          const entryAssets = byName[serverRuntimeEntry.name] ?? first;
+          this.serverAssets = entryAssets;
+          this.serverEntry = entryAssets.js[0];
+        }
         this.serverModules = collectServerModules(
           stats.modules,
           this.serverAssets,
@@ -197,7 +199,10 @@ export class UtoopackManifestGenerator {
     }
 
     const serverDir = this.outputPaths.serverDir;
-    if (fs.existsSync(serverDir)) {
+    if (
+      this.plan.entries.some((entry) => entry.kind === "server-runtime") &&
+      fs.existsSync(serverDir)
+    ) {
       const files = await fs.promises.readdir(serverDir);
       const jsEntry = files.find((file) => file.endsWith(".js"));
       if (jsEntry) {

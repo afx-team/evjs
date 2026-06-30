@@ -5,7 +5,7 @@ import type { BuildPlan } from "@evjs/shared/manifest";
 import { execa } from "execa";
 import { describe, expect, it } from "vitest";
 import { PAGE_ROUTE_CONVENTION_SUMMARY } from "../src/build-tools/page-route-conventions.js";
-import type { BundlerAdapter } from "../src/bundler.js";
+import type { BundlerAdapter, BundlerBuildFacts } from "../src/bundler.js";
 import {
   type BuildResult,
   build,
@@ -142,7 +142,7 @@ function createMockBundler(
           main: { js: ["main.js"], css: [] },
         },
         firstClientEntryAssets: { js: ["main.js"], css: [] },
-        ...serverBuildFacts(),
+        ...serverBuildFacts(plan),
       };
     },
     async dev() {
@@ -151,13 +151,26 @@ function createMockBundler(
   };
 }
 
-function serverBuildFacts() {
+function serverBuildFacts(
+  plan: BuildPlan,
+): Pick<
+  BundlerBuildFacts,
+  "serverEntryAssets" | "serverEntry" | "serverAssets"
+> {
+  const serverRuntimeEntry = plan.entries.find(
+    (entry) => entry.kind === "server-runtime",
+  );
+  if (!serverRuntimeEntry) return {};
+
   return {
     serverEntryAssets: {
-      server: { js: ["server.js"], css: [] },
+      [serverRuntimeEntry.name]: {
+        js: [`${serverRuntimeEntry.name}.js`],
+        css: [],
+      },
     },
-    serverEntry: "server.js",
-    serverAssets: { js: ["server.js"], css: [] },
+    serverEntry: `${serverRuntimeEntry.name}.js`,
+    serverAssets: { js: [`${serverRuntimeEntry.name}.js`], css: [] },
   };
 }
 
@@ -421,8 +434,8 @@ describe("build", () => {
       "setup:production",
       "buildStart",
       "bundler.build",
-      "bundler.entries:main,server",
-      "buildOutput:main,server",
+      "bundler.entries:main",
+      "buildOutput:main",
       "buildEnd:main.patched.js",
       "dispose:production",
     ]);
@@ -465,7 +478,7 @@ describe("build", () => {
     expect(fs.existsSync(path.join(cwd, "dist/runtime.json"))).toBe(false);
     expect(events).toEqual([
       "bundler.build",
-      "bundler.entries:main,server",
+      "bundler.entries:main",
       "buildOutput",
       "dispose",
     ]);
@@ -477,7 +490,10 @@ describe("build", () => {
     const bundler = createMockBundler(events);
     const firstClientJs = (result: EvBuildResult) => {
       const { clientManifest } = result;
-      if (clientManifest.routing.kind === "mpa") {
+      if (
+        "routing" in clientManifest &&
+        clientManifest.routing.kind === "mpa"
+      ) {
         return (
           Object.values(clientManifest.routing.pages)[0]?.assets.js[0] ?? "none"
         );
@@ -526,9 +542,9 @@ describe("build", () => {
     expect(events).toEqual([
       "manifest:buildStart",
       "bundler.build",
-      "bundler.entries:main,server",
+      "bundler.entries:main",
       "manifest:html:main.js",
-      "manifest:buildEnd:main.js:server.js",
+      "manifest:buildEnd:main.js:none",
     ]);
   });
 
@@ -536,17 +552,13 @@ describe("build", () => {
     const cwd = await createProject();
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock-crossorigin-assets",
-      async build() {
+      async build({ plan }) {
         return {
           clientEntryAssets: {
             main: { js: ["main.js"], css: ["main.css"] },
           },
           firstClientEntryAssets: { js: ["main.js"], css: ["main.css"] },
-          serverEntryAssets: {
-            server: { js: ["server.js"], css: [] },
-          },
-          serverEntry: "server.js",
-          serverAssets: { js: ["server.js"], css: [] },
+          ...serverBuildFacts(plan),
         };
       },
       async dev() {},
@@ -608,7 +620,7 @@ describe("build", () => {
       "entry:evjs:pages-app",
       "metadata:pages-app",
       "bundler.build",
-      "bundler.entries:main,server",
+      "bundler.entries:main",
     ]);
     expect(fs.existsSync(path.join(cwd, ".evjs"))).toBe(false);
     await expect(
@@ -1024,7 +1036,7 @@ describe("build", () => {
       "entry:evjs:pages-app",
       "metadata:pages-app",
       "bundler.build",
-      "bundler.entries:main,server",
+      "bundler.entries:main",
     ]);
   });
 
@@ -1209,7 +1221,7 @@ describe("build", () => {
             about: { js: ["about.js"], css: [] },
           },
           firstClientEntryAssets: { js: ["index.js"], css: [] },
-          ...serverBuildFacts(),
+          ...serverBuildFacts(plan),
         };
       },
       async dev() {},
@@ -1229,8 +1241,8 @@ describe("build", () => {
     );
 
     expect(events).toEqual([
-      "entries:index:page-client,about:page-client,server:server-runtime",
-      "metadata:react-component-page,react-component-page,none",
+      "entries:index:page-client,about:page-client",
+      "metadata:react-component-page,react-component-page",
       "html:index:./index.html,about:./src/pages/about.html",
     ]);
     expect(fs.existsSync(path.join(cwd, ".evjs"))).toBe(false);
@@ -1265,7 +1277,7 @@ describe("build", () => {
             product: { js: ["product.js"], css: [] },
           },
           firstClientEntryAssets: { js: ["product.js"], css: [] },
-          ...serverBuildFacts(),
+          ...serverBuildFacts(plan),
         };
       },
       async dev() {},
@@ -1367,13 +1379,13 @@ describe("build", () => {
     const events: string[] = [];
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "memory-output",
-      async build() {
+      async build({ plan }) {
         return {
           clientEntryAssets: {
             main: { js: ["memory.js"], css: [] },
           },
           firstClientEntryAssets: { js: ["memory.js"], css: [] },
-          ...serverBuildFacts(),
+          ...serverBuildFacts(plan),
         };
       },
       async dev() {},
@@ -1418,18 +1430,19 @@ describe("build", () => {
     let frameworkRuntime: BuildResult["frameworkRuntime"];
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "memory-output",
-      async build() {
+      async build({ plan }) {
+        const serverFacts = serverBuildFacts(plan);
         return {
           clientEntryAssets: {
             dashboard: { js: ["dashboard.js"], css: [] },
           },
           firstClientEntryAssets: { js: ["dashboard.js"], css: [] },
           serverEntryAssets: {
-            server: { js: ["server.js"], css: [] },
+            ...serverFacts.serverEntryAssets,
             "dashboard-server": { js: ["dashboard-server.js"], css: [] },
           },
-          serverEntry: "server.js",
-          serverAssets: { js: ["server.js"], css: [] },
+          serverEntry: serverFacts.serverEntry,
+          serverAssets: serverFacts.serverAssets,
         };
       },
       async dev() {},
@@ -1555,32 +1568,24 @@ describe("build", () => {
 
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "ssg-mock",
-      async build({ cwd, plan }) {
-        const serverDir = path.resolve(cwd, plan.output.serverDir);
-        await fs.promises.mkdir(serverDir, { recursive: true });
-        await fs.promises.writeFile(
-          path.join(serverDir, "server.js"),
-          'export default { fetch() { return new Response("ok"); } };',
-          "utf-8",
-        );
-        await fs.promises.writeFile(
-          path.join(serverDir, "report-server.js"),
-          [
-            "export function render(ctx) {",
-            "  return '<main data-page=\"' + ctx.pageId + '\"><h1>Prerendered Report</h1><p>' + ctx.request.url + '</p></main>';",
-            "}",
-          ].join("\n"),
-          "utf-8",
-        );
+      async build() {
         return {
           clientEntryAssets: {},
           firstClientEntryAssets: { js: [], css: [] },
-          serverEntry: "server.js",
           serverEntryAssets: {
-            server: { js: ["server.js"], css: [] },
             "report-server": { js: ["report-server.js"], css: [] },
           },
-          serverAssets: { js: ["server.js"], css: [] },
+          serverAssets: { js: [], css: [] },
+          async loadServerModule(asset) {
+            if (asset !== "report-server.js") {
+              throw new Error(`Unexpected server module asset: ${asset}`);
+            }
+            return {
+              render(ctx: { pageId: string; request: Request }) {
+                return `<main data-page="${ctx.pageId}"><h1>Prerendered Report</h1><p>${ctx.request.url}</p></main>`;
+              },
+            };
+          },
         };
       },
       async dev() {
@@ -1613,13 +1618,17 @@ describe("build", () => {
     expect(html).toContain("Prerendered Report");
     expect(html).toContain("http://evjs.local/report");
     expect(html).not.toMatch(/<script[^>]+src=/);
-    expect(buildOutput.routes).toContainEqual({
-      kind: "static-page",
+    expect(html).not.toContain("__EVJS_CLIENT_RUNTIME__");
+    expect(buildOutput.server).toEqual({});
+    expect(buildOutput.documents).toContainEqual({
+      kind: "page",
+      id: "report",
+      fileName: "report.html",
       path: "/report",
-      documentId: "report",
       render: "ssg",
-      methods: ["GET", "HEAD"],
     });
+    expect(buildOutput.routes).toEqual([]);
+    expect(fs.existsSync(path.join(cwd, "dist/server"))).toBe(false);
   });
 
   it("removes stale split client manifests when rebuilding with flat client output", async () => {
@@ -1679,7 +1688,7 @@ describe("build", () => {
       "config:production",
       "setup:/api/fn",
       "bundler.build",
-      "bundler.entries:main,server",
+      "bundler.entries:main",
       "bundler.endpoint:/api/fn",
     ]);
   });
@@ -1833,7 +1842,7 @@ describe("build", () => {
       "setup",
       "buildStart",
       "bundler.build",
-      "bundler.entries:main,server",
+      "bundler.entries:main",
     ]);
   });
 
@@ -3308,7 +3317,7 @@ describe("build", () => {
       "buildStart:a",
       "buildStart:b",
       "bundler.build",
-      "bundler.entries:main,server",
+      "bundler.entries:main",
       "buildEnd:a",
       "buildEnd:b",
     ]);
@@ -3352,7 +3361,7 @@ describe("build", () => {
       "setup:plugin-c",
       "setup:plugin-a",
       "bundler.build",
-      "bundler.entries:main,server",
+      "bundler.entries:main",
     ]);
   });
 
@@ -3398,7 +3407,7 @@ describe("build", () => {
       "setup:normal",
       "setup:post",
       "bundler.build",
-      "bundler.entries:main,server",
+      "bundler.entries:main",
     ]);
   });
 
@@ -3446,7 +3455,7 @@ describe("build", () => {
       "setup:plugin-a",
       "setup:plugin-b",
       "bundler.build",
-      "bundler.entries:main,server",
+      "bundler.entries:main",
     ]);
   });
 
@@ -3485,7 +3494,7 @@ describe("build", () => {
       "setup:plugin-c",
       "setup:plugin-b",
       "bundler.build",
-      "bundler.entries:main,server",
+      "bundler.entries:main",
     ]);
   });
 

@@ -500,14 +500,13 @@ describe("webpackAdapter build", () => {
         mount: "#root",
       });
       expect(manifest).not.toHaveProperty("assets");
-      expect(manifest.routing.kind).toBe("mpa");
-      if (manifest.routing.kind !== "mpa") {
+      if (!("routing" in manifest) || manifest.routing.kind !== "mpa") {
         throw new Error("Expected MPA public manifest.");
       }
       expect(manifest.routing.pages.home).toMatchObject({
         assets: { js: ["home.js"], css: [] },
+        render: "csr",
       });
-      expect("render" in manifest.routing.pages.home).toBe(false);
       expect("module" in manifest.routing.pages.home).toBe(false);
       expect(output.pages.home).toMatchObject({
         render: "csr",
@@ -647,17 +646,28 @@ describe("webpackAdapter build", () => {
       expect("apps" in deploymentMetadata).toBe(false);
       expect("pages" in deploymentMetadata).toBe(false);
       expect("app" in publicManifest).toBe(false);
-      expect(publicManifest).not.toHaveProperty("assets");
-      expect(publicManifest.routing.kind).toBe("mpa");
-      if (publicManifest.routing.kind !== "mpa") {
-        throw new Error("Expected MPA public manifest.");
+      if (
+        !("routing" in publicManifest) ||
+        publicManifest.routing.kind !== "spa"
+      ) {
+        throw new Error("Expected SPA public manifest.");
       }
-      expect(publicManifest.routing.pages.dashboard.assets).toEqual({
-        js: [],
-        css: [],
+      expect("assets" in publicManifest).toBe(true);
+      if (!("assets" in publicManifest)) {
+        throw new Error("Expected SPA public manifest assets.");
+      }
+      expect(publicManifest.assets).toEqual({
+        main: {
+          js: ["main.js"],
+          css: [],
+        },
       });
-      expect("component" in publicManifest.routing.pages.dashboard).toBe(false);
-      expect("module" in publicManifest.routing.pages.dashboard).toBe(false);
+      expect(publicManifest.routing.routes).toContainEqual({
+        id: "dashboard",
+        path: "/dashboard",
+        pageId: "dashboard",
+        render: "ssr",
+      });
       await expect(
         fs.access(path.join(cwd, "dist/manifest.json")),
       ).rejects.toThrow();
@@ -1038,8 +1048,7 @@ describe("webpackAdapter dev", () => {
       expect(onBuildOutput).toHaveBeenCalledTimes(1);
       expect("distDir" in manifest).toBe(false);
       expect(manifest).not.toHaveProperty("assets");
-      expect(manifest.routing.kind).toBe("mpa");
-      if (manifest.routing.kind !== "mpa") {
+      if (!("routing" in manifest) || manifest.routing.kind !== "mpa") {
         throw new Error("Expected MPA public manifest.");
       }
       expect(manifest.routing.pages.home.assets.js).toEqual(["home.js"]);
@@ -1302,10 +1311,7 @@ describe("webpackAdapter dev", () => {
       const session = controller as unknown as {
         plan: { entries: Array<{ name: string }> };
       };
-      expect(session.plan.entries.map((entry) => entry.name)).toEqual([
-        "home",
-        "server",
-      ]);
+      expect(session.plan.entries.map((entry) => entry.name)).toEqual(["home"]);
     } finally {
       await controller?.close?.();
     }
@@ -1409,8 +1415,7 @@ describe("webpackAdapter dev", () => {
         "about",
       ]);
       expect(manifest).not.toHaveProperty("assets");
-      expect(manifest.routing.kind).toBe("mpa");
-      if (manifest.routing.kind !== "mpa") {
+      if (!("routing" in manifest) || manifest.routing.kind !== "mpa") {
         throw new Error("Expected MPA public manifest.");
       }
       expect(manifest.routing.pages.about.assets.js).toEqual(["about.js"]);

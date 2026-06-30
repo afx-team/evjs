@@ -2919,7 +2919,7 @@ describe("linkBuildOutput", () => {
     );
   });
 
-  it("fails when a server-present plan has no server runtime entry", () => {
+  it("ignores server build facts when no server runtime entry is planned", () => {
     const graph: AppGraph = {
       version: 1,
       rootDir: "/repo",
@@ -2941,13 +2941,17 @@ describe("linkBuildOutput", () => {
       runtime: createRuntimePlan(),
     };
 
-    expect(() =>
+    expect(
       linkBuildOutput({
         graph,
         plan,
         serverAssets: { js: ["server.js"], css: [] },
-      }),
-    ).toThrow("[evjs] Server build did not declare a server runtime entry.");
+      }).server,
+    ).toEqual({
+      assets: { js: [], css: [] },
+      functions: {},
+      routes: [],
+    });
   });
 });
 
@@ -3137,8 +3141,7 @@ describe("createPublicManifest", () => {
     expect(serialized).not.toContain(".ts");
     expect(serialized).not.toContain("file://");
     expect(serialized).not.toContain("/Users/");
-    expect(manifest.routing.kind).toBe("mpa");
-    if (manifest.routing.kind !== "mpa") {
+    if (!("routing" in manifest) || manifest.routing.kind !== "mpa") {
       throw new Error("Expected MPA public manifest.");
     }
     const pages = manifest.routing.pages;
@@ -3146,6 +3149,8 @@ describe("createPublicManifest", () => {
       js: ["evjs-rsc-client.js"],
       css: ["insights.css"],
     });
+    expect(pages.insights.render).toBe("ssr");
+    expect(pages.landing.render).toBe("ssg");
     expect("module" in pages.insights).toBe(false);
     expect("runtime" in manifest).toBe(false);
     expect("pages" in manifest).toBe(false);
@@ -3181,13 +3186,14 @@ describe("createPublicManifest", () => {
         kind: "page",
         id: "landing",
         fileName: "landing.html",
+        path: "/landing",
+        render: "ssg",
         assets: { js: ["landing.js"], css: ["landing.css"] },
       },
       {
         kind: "page",
         id: "campaign",
         fileName: "campaign.html",
-        assets: { js: [], css: [] },
       },
     ]);
     expect(deployment.routes).toEqual([
@@ -3197,13 +3203,6 @@ describe("createPublicManifest", () => {
         pageId: "insights",
         render: "ssr",
         rsc: true,
-        methods: ["GET", "HEAD"],
-      },
-      {
-        kind: "static-page",
-        path: "/landing",
-        documentId: "landing",
-        render: "ssg",
         methods: ["GET", "HEAD"],
       },
       {
@@ -3315,8 +3314,103 @@ describe("createPublicManifest", () => {
       },
       routing: {
         kind: "spa",
-        routes: [{ id: "report", path: "/report", pageId: "report" }],
+        routes: [
+          {
+            id: "report",
+            path: "/report",
+            pageId: "report",
+            render: "ssg",
+          },
+        ],
       },
+    });
+  });
+
+  it("keeps static-only SSG SPA manifests minimal", () => {
+    const output: BuildOutput = {
+      ...createMinimalBuildOutput(),
+      assets: {},
+      apps: {
+        default: {
+          assets: { js: [], css: [] },
+        },
+      },
+      pages: {
+        report: {
+          assets: { js: [], css: [] },
+          document: { fileName: "report.html" },
+          render: "ssg",
+          rendering: {
+            component: "server",
+            html: "static",
+            prerender: "full",
+            streaming: false,
+            hydrate: "none",
+          },
+          path: "/report",
+          routeId: "report",
+        },
+      },
+      routes: [
+        {
+          id: "report",
+          path: "/report",
+          appId: "default",
+          pageId: "report",
+        },
+      ],
+      server: {
+        assets: { js: [], css: [] },
+        functions: {},
+        routes: [],
+        renderers: {
+          "report-server": {
+            kind: "page-server",
+            phase: "build",
+            owner: { pageId: "report", routeId: "report" },
+            assets: { js: ["report-server.js"], css: [] },
+          },
+        },
+      },
+    };
+
+    expect(createPublicManifest(output)).toEqual({
+      version: 1,
+      buildId: "build",
+      publicPath: "/",
+      documents: [
+        {
+          id: "report",
+          path: "/report",
+          fileName: "report.html",
+          render: "ssg",
+        },
+      ],
+    });
+    expect(createDeploymentMetadata(output)).toEqual({
+      version: 1,
+      buildId: "build",
+      paths: {
+        rootDir: "dist",
+        publicDir: "dist/client",
+        serverDir: "dist/server",
+      },
+      publicPath: "/",
+      documents: [
+        {
+          kind: "page",
+          id: "report",
+          fileName: "report.html",
+          path: "/report",
+          render: "ssg",
+        },
+      ],
+      routes: [],
+      server: {},
+    });
+    expect(createServerManifest(output)).toEqual({
+      version: 1,
+      routes: [],
     });
   });
 });

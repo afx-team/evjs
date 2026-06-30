@@ -292,15 +292,26 @@ test.describe("render-modes", () => {
     expect("app" in manifest).toBe(false);
     expect(manifest).not.toHaveProperty("pages");
     expect(manifest).not.toHaveProperty("routes");
-    expect(manifest).not.toHaveProperty("assets");
-    expect(manifest.routing.kind).toBe("mpa");
+    expect(manifest.assets).toEqual(
+      expect.objectContaining({
+        main: expect.objectContaining({
+          js: expect.arrayContaining([expect.stringMatching(/^main\..+\.js$/)]),
+        }),
+        support: expect.objectContaining({
+          js: expect.arrayContaining([
+            expect.stringMatching(/^support\..+\.js$/),
+          ]),
+        }),
+      }),
+    );
+    expect(manifest.routing.kind).toBe("spa");
     expect(publicPages.support).toEqual(
       expect.objectContaining({
         path: "/support",
         routeId: "support",
       }),
     );
-    expect("render" in publicPages.support).toBe(false);
+    expect(publicPages.support.render).toBe("csr");
     expect("rendering" in publicPages.support).toBe(false);
     expect("module" in publicPages.support).toBe(false);
     expect(publicPages.dashboard).toEqual(
@@ -524,11 +535,6 @@ test.describe("render-modes", () => {
         },
       ]),
     );
-    expect(
-      serverManifest.routes.some(
-        (route: { kind: string }) => route.kind === "static-page",
-      ),
-    ).toBe(false);
     expect(serverManifestText).not.toContain('"assets"');
     expect(serverManifestText).not.toContain('"renderers"');
     expect(serverManifestText).not.toContain("insights-rsc");
@@ -616,8 +622,32 @@ function readRenderModesServerManifest() {
 function getRenderModesPublicPages(
   manifest = readRenderModesPublicManifest(),
 ): Record<string, RenderModesPublicPage> {
-  expect(manifest.routing?.kind).toBe("mpa");
-  return manifest.routing.pages;
+  if (manifest.routing?.kind === "mpa") {
+    return manifest.routing.pages;
+  }
+  expect(manifest.routing?.kind).toBe("spa");
+  return Object.fromEntries(
+    manifest.routing.routes.flatMap(
+      (route: {
+        id: string;
+        pageId?: string;
+        path: string;
+        render?: string;
+      }) =>
+        route.pageId
+          ? [
+              [
+                route.pageId,
+                {
+                  path: route.path,
+                  render: route.render,
+                  routeId: route.id,
+                },
+              ],
+            ]
+          : [],
+    ),
+  );
 }
 
 function getRenderModesRuntimePages(frameworkRuntime: {
@@ -625,9 +655,13 @@ function getRenderModesRuntimePages(frameworkRuntime: {
     kind?: string;
     pages?: Record<string, RenderModesPublicPage>;
   };
+  pages?: Record<string, RenderModesPublicPage>;
 }): Record<string, RenderModesPublicPage> {
-  expect(frameworkRuntime.routing?.kind).toBe("mpa");
-  return frameworkRuntime.routing?.pages ?? {};
+  if (frameworkRuntime.routing?.kind === "mpa") {
+    return frameworkRuntime.routing.pages ?? {};
+  }
+  expect(frameworkRuntime.routing?.kind).toBe("spa");
+  return frameworkRuntime.pages ?? {};
 }
 
 function getRenderModesCampaignPpr(

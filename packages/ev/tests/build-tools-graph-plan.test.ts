@@ -907,6 +907,7 @@ describe("createAppGraph and createBuildPlan", () => {
       environment: "server",
       runtime: "node",
       kind: "page-server",
+      phase: "build",
       owner: { pageId: "pricing", routeId: "pricing" },
     });
     expect(
@@ -1103,6 +1104,8 @@ describe("createAppGraph and createBuildPlan", () => {
   it("rejects build entry names that collide across client and server outputs", async () => {
     const cwd = await createFixture({
       "src/main.tsx": "console.log('app');",
+      "src/apis/health.ts":
+        "export const GET = async () => Response.json({ ok: true });",
       "index.html": '<div id="app"></div>',
     });
     const config = createConfig({
@@ -1110,6 +1113,19 @@ describe("createAppGraph and createBuildPlan", () => {
         server: {
           entry: "./src/main.tsx",
           html: "./index.html",
+        },
+      },
+      server: {
+        routing: {
+          dir: "./src/apis",
+          routes: [
+            {
+              id: "src/apis/health.ts:/health:GET",
+              module: "src/apis/health.ts",
+              path: "/health",
+              methods: ["GET"],
+            },
+          ],
         },
       },
     });
@@ -1177,7 +1193,7 @@ describe("createAppGraph and createBuildPlan", () => {
     );
   });
 
-  it("adds the server runtime entry", async () => {
+  it("omits the server runtime entry when no server surface is present", async () => {
     const cwd = await createFixture({
       "src/main.tsx": "console.log('app');",
     });
@@ -1191,16 +1207,10 @@ describe("createAppGraph and createBuildPlan", () => {
       mode: "production",
     });
 
-    expect(plan.server).toEqual({
-      entry: "@evjs/ev/internal/server/fetch",
-    });
-    expect(plan.entries).toContainEqual({
-      name: "server",
-      import: "@evjs/ev/internal/server/fetch",
-      environment: "server",
-      runtime: "node",
-      kind: "server-runtime",
-    });
+    expect(plan.server).toEqual({});
+    expect(
+      plan.entries.filter((entry) => entry.kind === "server-runtime"),
+    ).toEqual([]);
   });
 
   it("carries the RSC endpoint into the runtime plan", async () => {
@@ -1506,6 +1516,7 @@ describe("createAppGraph and createBuildPlan", () => {
           environment: "server",
           runtime: "node",
           kind: "page-server",
+          phase: "build",
           owner: { pageId: "pricing" },
         },
         {
@@ -1920,12 +1931,13 @@ describe("createAppGraph and createBuildPlan", () => {
     const plan = createBuildPlan(config, analysis.graph, {
       mode: "production",
     });
-    expect(plan.server.entry).toBe("@evjs/ev/internal/server/fetch");
+    expect(plan.server.entry).toBeUndefined();
     expect(plan.server.renderers).toEqual([
       {
         name: "pricing-server",
         import: "./src/pages/pricing.tsx",
         kind: "page-server",
+        phase: "build",
         owner: { pageId: "pricing" },
       },
     ]);
@@ -1938,8 +1950,12 @@ describe("createAppGraph and createBuildPlan", () => {
       environment: "server",
       runtime: "node",
       kind: "page-server",
+      phase: "build",
       owner: { pageId: "pricing" },
     });
+    expect(
+      plan.entries.filter((entry) => entry.kind === "server-runtime"),
+    ).toEqual([]);
     await expect(fs.access(path.join(cwd, ".evjs"))).rejects.toThrow();
   });
 
@@ -4510,6 +4526,7 @@ describe("createAppGraph and createBuildPlan", () => {
       environment: "server",
       runtime: "node",
       kind: "page-server",
+      phase: "build",
       owner: { pageId: "pricing", routeId: "pricing" },
     });
     expect(
@@ -4529,6 +4546,72 @@ describe("createAppGraph and createBuildPlan", () => {
         template: "./index.html",
         fileName: "pricing.html",
         owner: { pageId: "pricing" },
+      },
+    ]);
+  });
+
+  it("omits the SPA shell for static-only SSG routes", async () => {
+    const cwd = await createFixture({
+      "src/pages/report.tsx": `
+        export const render = "ssg";
+        export default function Report() { return null; }
+      `,
+      "index.html": '<div id="app"></div>',
+    });
+    const config = createConfig({
+      entry: "./src/pages/report.tsx",
+      routing: {
+        mode: "spa",
+        dir: "./src/pages",
+        entry: "./src/pages/report.tsx",
+        html: "./index.html",
+        mount: "#app",
+        routes: [
+          {
+            id: "report",
+            path: "/report",
+            module: "./src/pages/report.tsx",
+          },
+        ],
+      },
+    });
+
+    const analysis = await createAppGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "production",
+    });
+
+    expect(plan.server.entry).toBeUndefined();
+    expect(plan.server.renderers).toEqual([
+      {
+        name: "report-server",
+        import: "./src/pages/report.tsx",
+        kind: "page-server",
+        phase: "build",
+        owner: { pageId: "report", routeId: "report" },
+      },
+    ]);
+    expect(plan.entries.filter((entry) => entry.kind === "app-client")).toEqual(
+      [],
+    );
+    expect(
+      plan.entries.filter((entry) => entry.kind === "server-runtime"),
+    ).toEqual([]);
+    expect(plan.entries).toContainEqual({
+      name: "report-server",
+      import: "./src/pages/report.tsx",
+      environment: "server",
+      runtime: "node",
+      kind: "page-server",
+      phase: "build",
+      owner: { pageId: "report", routeId: "report" },
+    });
+    expect(plan.html).toEqual([
+      {
+        id: "report",
+        template: "./index.html",
+        fileName: "report.html",
+        owner: { pageId: "report" },
       },
     ]);
   });

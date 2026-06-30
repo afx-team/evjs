@@ -132,12 +132,15 @@ function createFrameworkCallbacks(options: {
       const clientDir = path.resolve(options.cwd, plan.output.clientDir);
       await fs.promises.mkdir(rootDir, { recursive: true });
       const serverDir = path.join(rootDir, "server");
-      await fs.promises.mkdir(serverDir, { recursive: true });
-      await fs.promises.writeFile(
-        path.join(serverDir, "manifest.json"),
-        JSON.stringify(createServerManifest(output), null, 2),
-        "utf-8",
-      );
+      const serverManifest = createServerManifest(output);
+      if (serverManifest.entry || serverManifest.routes.length > 0) {
+        await fs.promises.mkdir(serverDir, { recursive: true });
+        await fs.promises.writeFile(
+          path.join(serverDir, "manifest.json"),
+          JSON.stringify(serverManifest, null, 2),
+          "utf-8",
+        );
+      }
       await fs.promises.writeFile(
         path.join(rootDir, "build-output.json"),
         JSON.stringify(createDeploymentMetadata(output), null, 2),
@@ -427,8 +430,7 @@ describe("utoopackAdapter dev", () => {
       expect(html).toContain('data-evjs-kind="page"');
       expect(html).toContain('data-evjs-id="home"');
       expect(manifest).not.toHaveProperty("assets");
-      expect(manifest.routing.kind).toBe("mpa");
-      if (manifest.routing.kind !== "mpa") {
+      if (!("routing" in manifest) || manifest.routing.kind !== "mpa") {
         throw new Error("Expected MPA public manifest.");
       }
       expect(manifest.routing.pages.home.document).toEqual({
@@ -543,7 +545,7 @@ describe("utoopackAdapter dev", () => {
     }
   });
 
-  it("emits split build manifests plus index.html in fullstack mode", async () => {
+  it("emits split build manifests plus index.html in client-only mode", async () => {
     const cwd = await makeProject();
     const onServerBundleReady = vi.fn();
     const config = resolveConfig<ConfigComplete>({
@@ -586,12 +588,6 @@ describe("utoopackAdapter dev", () => {
         "utf-8",
       ),
     );
-    const serverManifest = JSON.parse(
-      await fs.promises.readFile(
-        path.join(cwd, "dist/server/manifest.json"),
-        "utf-8",
-      ),
-    );
     const publicManifest = JSON.parse(
       await fs.promises.readFile(
         path.join(cwd, "dist/client/manifest.json"),
@@ -615,9 +611,9 @@ describe("utoopackAdapter dev", () => {
         },
       },
     ]);
-    expect(serverManifest.entry).toBe("index.js");
-    expect(serverManifest.routes).toEqual([]);
-    expect(serverManifest.assets).toBeUndefined();
+    expect(fs.existsSync(path.join(cwd, "dist/server/manifest.json"))).toBe(
+      false,
+    );
     expect("app" in publicManifest).toBe(false);
     expect(publicManifest.routing.kind).toBe("spa");
     expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
@@ -626,7 +622,7 @@ describe("utoopackAdapter dev", () => {
     expect(html).toContain('data-evjs-kind="app"');
     expect(html).toContain('data-evjs-id="default"');
     expect(html).toContain('<meta name="server">');
-    expect(onServerBundleReady).toHaveBeenCalledTimes(1);
+    expect(onServerBundleReady).not.toHaveBeenCalled();
   });
 });
 

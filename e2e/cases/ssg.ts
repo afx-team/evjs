@@ -78,8 +78,29 @@ const test = base.extend<
   },
 });
 
+const expectedPages = [
+  {
+    fileName: "forecast.html",
+    heading: "Build-Time Revenue Forecast",
+    id: "forecast",
+    path: "/forecast",
+  },
+  {
+    fileName: "regions_apac.html",
+    heading: "APAC Operations Snapshot",
+    id: "regions_apac",
+    path: "/regions/apac",
+  },
+  {
+    fileName: "report.html",
+    heading: "Build-Time Commerce Report",
+    id: "report",
+    path: "/report",
+  },
+] as const;
+
 test.describe("ssg", () => {
-  test("emits a prerendered static page document", async ({
+  test("emits prerendered static page documents", async ({
     deploymentMetadata,
   }) => {
     const clientManifest = JSON.parse(
@@ -89,87 +110,87 @@ test.describe("ssg", () => {
       ),
     ) as PublicManifestOutput;
 
-    expect(clientManifest.routing.kind).toBe("spa");
-    if (clientManifest.routing.kind !== "spa") {
-      throw new Error("Expected SSG example to use SPA routing.");
+    expect("routing" in clientManifest).toBe(false);
+    expect("assets" in clientManifest).toBe(false);
+    if (!("documents" in clientManifest)) {
+      throw new Error("Expected SSG public manifest documents.");
     }
-    expect(clientManifest.routing.routes).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: "report",
-          path: "/report",
-        }),
-      ]),
+    expect(clientManifest.documents).toEqual(
+      expectedPages.map((page) => ({
+        fileName: page.fileName,
+        id: page.id,
+        path: page.path,
+        render: "ssg",
+      })),
     );
     expect(deploymentMetadata.documents).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          fileName: "report.html",
-          id: "report",
-          kind: "page",
-        }),
-      ]),
+      expectedPages.map((page) => ({
+        fileName: page.fileName,
+        id: page.id,
+        kind: "page",
+        path: page.path,
+        render: "ssg",
+      })),
     );
-    expect(deploymentMetadata.routes).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          documentId: "report",
-          kind: "static-page",
-          methods: ["GET", "HEAD"],
-          path: "/report",
-          render: "ssg",
-        }),
-      ]),
-    );
+    expect(deploymentMetadata.server).toEqual({});
+    expect(deploymentMetadata.routes).toEqual([]);
     expect(deploymentMetadata.routes).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           kind: "server-page",
-          pageId: "report",
         }),
       ]),
     );
 
-    const html = fs.readFileSync(
-      path.join(exampleDir, "dist", "client", "report.html"),
-      "utf-8",
-    );
-    expect(html).toContain("Build-Time Commerce Report");
-    expect(html).toContain("12,480");
-    expect(html).toContain("<main");
-    expect(html).not.toMatch(/<script[^>]+src=/);
+    expect(
+      fs.readdirSync(path.join(exampleDir, "dist", "client")).sort(),
+    ).toEqual([
+      "forecast.html",
+      "manifest.json",
+      "regions_apac.html",
+      "report.html",
+    ]);
+    expect(fs.existsSync(path.join(exampleDir, "dist", "server"))).toBe(false);
+
+    for (const page of expectedPages) {
+      const html = fs.readFileSync(
+        path.join(exampleDir, "dist", "client", page.fileName),
+        "utf-8",
+      );
+      expect(html).toContain(page.heading);
+      expect(html).toContain("<main");
+      expect(html).not.toMatch(/<script[^>]+src=/);
+      expect(html).not.toContain("__EVJS_CLIENT_RUNTIME__");
+    }
   });
 
-  test("serves the page from static files without a framework server", async ({
+  test("serves pages from static files without a framework server", async ({
     page,
     baseURL,
   }) => {
-    await page.goto(`${baseURL}/report`);
+    for (const staticPage of expectedPages) {
+      await page.goto(`${baseURL}${staticPage.path}`);
 
-    await expect(
-      page.getByRole("heading", { name: "Build-Time Commerce Report" }),
-    ).toBeVisible({ timeout: 10_000 });
+      await expect(
+        page.getByRole("heading", { name: staticPage.heading }),
+      ).toBeVisible({ timeout: 10_000 });
+      await expect(page.locator("script[src]")).toHaveCount(0);
+    }
+
+    await page.goto(`${baseURL}/report`);
     await expect(page.getByTestId("metric-orders")).toHaveText("12,480");
-    await expect(page.locator("script[src]")).toHaveCount(0);
   });
 });
 
 function createStaticPageRewrites(
   deploymentMetadata: DeploymentMetadata,
 ): Record<string, string> {
-  const documents = new Map(
-    deploymentMetadata.documents.map((document) => [
-      document.id,
-      document.fileName,
-    ]),
-  );
   return Object.fromEntries(
-    deploymentMetadata.routes.flatMap((route) => {
-      if (route.kind !== "static-page" || !route.path.startsWith("/")) {
+    deploymentMetadata.documents.flatMap((document) => {
+      if (document.kind !== "page" || !document.path?.startsWith("/")) {
         return [];
       }
-      const fileName = documents.get(route.documentId);
-      return fileName ? [[route.path, fileName]] : [];
+      return [[document.path, document.fileName]];
     }),
   );
 }

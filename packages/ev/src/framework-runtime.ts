@@ -44,6 +44,7 @@ export interface FrameworkRuntimeOutput {
   publicPath: string;
   runtime: BuildOutput["runtime"];
   routing: FrameworkRuntimeRouting;
+  pages?: Record<string, FrameworkRuntimePage>;
   server: {
     renderers?: Record<string, FrameworkRuntimeRenderer>;
   };
@@ -129,7 +130,7 @@ export function createClientRuntime(output: BuildOutput): ClientRuntimeOutput {
 function createClientRuntimeRouting(
   output: BuildOutput,
 ): ClientRuntimeRoutingOutput {
-  if (Object.keys(output.pages).length > 0) {
+  if (!hasSpaRoutes(output) && Object.keys(output.pages).length > 0) {
     return {
       kind: "mpa",
       pages: Object.fromEntries(
@@ -195,12 +196,17 @@ export function createFrameworkRuntime(
   output: BuildOutput,
   options: FrameworkRuntimeOptions = {},
 ): FrameworkRuntimeOutput {
+  const routing = createFrameworkRuntimeRouting(output);
   return pruneUndefined({
     version: 1 as const,
     buildId: output.buildId,
     publicPath: output.publicPath,
     runtime: output.runtime,
-    routing: createFrameworkRuntimeRouting(output),
+    routing,
+    pages:
+      routing.kind === "spa" && Object.keys(output.pages).length > 0
+        ? createFrameworkRuntimePages(output)
+        : undefined,
     server: pruneUndefined({
       renderers: output.server.renderers
         ? Object.fromEntries(
@@ -219,10 +225,21 @@ export function createFrameworkRuntime(
   });
 }
 
+function createFrameworkRuntimePages(
+  output: BuildOutput,
+): Record<string, FrameworkRuntimePage> {
+  return Object.fromEntries(
+    Object.entries(output.pages).map(([id, page]) => [
+      id,
+      createFrameworkRuntimePage(output, id, page),
+    ]),
+  );
+}
+
 function createFrameworkRuntimeRouting(
   output: BuildOutput,
 ): FrameworkRuntimeRouting {
-  if (Object.keys(output.pages).length === 0) {
+  if (hasSpaRoutes(output) || Object.keys(output.pages).length === 0) {
     return {
       kind: "spa",
       routes: output.routes.map((route) =>
@@ -237,13 +254,12 @@ function createFrameworkRuntimeRouting(
 
   return {
     kind: "mpa",
-    pages: Object.fromEntries(
-      Object.entries(output.pages).map(([id, page]) => [
-        id,
-        createFrameworkRuntimePage(output, id, page),
-      ]),
-    ),
+    pages: createFrameworkRuntimePages(output),
   };
+}
+
+function hasSpaRoutes(output: BuildOutput): boolean {
+  return output.routes.some((route) => route.appId);
 }
 
 function createFrameworkRuntimePage(

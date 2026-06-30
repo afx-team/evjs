@@ -28,6 +28,7 @@ import { SERVER_ROUTES_ENTRY_IMPORT } from "../server-routes-entry.js";
 import { sanitizePageId } from "../utils.js";
 
 const DEFAULT_PUBLIC_PATH: RuntimePlan["publicPath"] = "auto";
+const FRAMEWORK_SERVER_FETCH_ENTRY = "@evjs/ev/internal/server/fetch";
 const DEFAULT_RESOLVE_ALIAS = {
   "@": "./src",
 } as const satisfies NonNullable<BuildPlan["resolve"]>["alias"];
@@ -183,6 +184,8 @@ function createEntries(
   const spaRoutingEntry = getSpaRoutingEntry(config);
 
   for (const app of apps) {
+    if (isStaticOnlyRoutingApp(config, graph, app.id)) continue;
+
     const pagesAppRouting =
       config.routing?.mode === "spa" && spaRoutingEntry === app.entry
         ? config.routing
@@ -234,6 +237,7 @@ function createEntries(
           environment: "server" as const,
           runtime: "node" as const,
           kind: renderer.kind,
+          ...(renderer.phase ? { phase: renderer.phase } : {}),
           owner: renderer.owner,
         })),
     );
@@ -249,15 +253,17 @@ function createEntries(
     });
   }
 
-  const serverEntry = createServerRuntimeEntry(config, graph);
-  entries.push({
-    name: "server",
-    import: serverEntry.import,
-    environment: "server",
-    runtime: "node",
-    kind: "server-runtime",
-    ...(serverEntry.metadata ? { metadata: serverEntry.metadata } : {}),
-  });
+  const serverEntry = createServerRuntimeEntry(config, graph, serverRenderers);
+  if (serverEntry) {
+    entries.push({
+      name: "server",
+      import: serverEntry.import,
+      environment: "server",
+      runtime: "node",
+      kind: "server-runtime",
+      ...(serverEntry.metadata ? { metadata: serverEntry.metadata } : {}),
+    });
+  }
 
   return entries;
 }
@@ -369,6 +375,7 @@ function createServerRenderers(graph: AppGraph): ServerRenderPlan[] {
           name: `${page.id}-server`,
           import: pageServerEntry,
           kind: "page-server",
+          ...(isBuildOnlySsgPage(page) ? { phase: "build" as const } : {}),
           owner: pageOwner(page),
         });
       }
@@ -404,6 +411,21 @@ function getPageServerEntry(page: {
   app?: string;
 }): string | undefined {
   return page.component ?? page.app ?? page.entry;
+}
+
+function isBuildOnlySsgPage(page: {
+  render: RenderMode;
+  componentModel?: ComponentModel;
+  prerender?: PrerenderConfig;
+  ppr?: PprConfig;
+  hydrate?: HydrationMode;
+}): boolean {
+  return (
+    page.render === "ssg" &&
+    !isRscPage(page) &&
+    !isPartialPrerenderPage(page) &&
+    (page.hydrate ?? defaultHydrate(page.render)) === "none"
+  );
 }
 
 function getPageClientEntry(page: {
@@ -459,12 +481,14 @@ function createHtmlPlans(config: BuildPlanConfig, graph: AppGraph): HtmlPlan[] {
   const pages = Object.values(graph.pages);
 
   return [
-    ...apps.map((app) => ({
-      id: app.id === "default" ? "index" : app.id,
-      template: app.html,
-      fileName: app.id === "default" ? "index.html" : `${app.id}.html`,
-      owner: { appId: app.id },
-    })),
+    ...apps
+      .filter((app) => !isStaticOnlyRoutingApp(config, graph, app.id))
+      .map((app) => ({
+        id: app.id === "default" ? "index" : app.id,
+        template: app.html,
+        fileName: app.id === "default" ? "index.html" : `${app.id}.html`,
+        owner: { appId: app.id },
+      })),
     ...pages
       .filter((page) => shouldEmitDocumentForPage(config, page))
       .map((page) => ({
@@ -474,6 +498,27 @@ function createHtmlPlans(config: BuildPlanConfig, graph: AppGraph): HtmlPlan[] {
         owner: { pageId: page.id },
       })),
   ];
+}
+
+function isStaticOnlyRoutingApp(
+  config: BuildPlanConfig,
+  graph: AppGraph,
+  appId: string,
+): boolean {
+  if (config.routing?.mode !== "spa") return false;
+
+  const routes = graph.routes.filter((route) => route.appId === appId);
+  if (routes.length === 0) return false;
+
+  return routes.every((route) => isStaticSsgRoute(graph, route));
+}
+
+function isStaticSsgRoute(graph: AppGraph, route: AppGraph["routes"][number]) {
+  if (route.kind === "layout" || !route.pageId) return false;
+  if (!isStaticPagePath(route.path)) return false;
+
+  const page = graph.pages[route.pageId];
+  return page ? isBuildOnlySsgPage(page) : false;
 }
 
 function shouldEmitDocumentForPage(
@@ -542,8 +587,9 @@ function createServerPlan(
   graph: AppGraph,
   renderers: ServerRenderPlan[],
 ): ServerBuildPlan {
+  const entry = createServerRuntimeEntry(config, graph, renderers)?.import;
   return {
-    entry: createServerRuntimeEntry(config, graph).import,
+    ...(entry ? { entry } : {}),
     ...(renderers.length > 0 ? { renderers } : {}),
   };
 }
@@ -551,10 +597,14 @@ function createServerPlan(
 function createServerRuntimeEntry(
   config: BuildPlanConfig,
   graph: AppGraph,
-): Pick<BuildEntry, "import" | "metadata"> {
+  renderers: ServerRenderPlan[],
+): Pick<BuildEntry, "import" | "metadata"> | undefined {
   const routes = getConfiguredServerRoutes(config, graph);
   const middlewares = config.server.conventions?.globalMiddlewares ?? [];
   const serverFunctions = graph.serverFunctions;
+  const runtimeRenderers = renderers.filter(
+    (renderer) => renderer.phase !== "build",
+  );
   if (
     routes.length > 0 ||
     middlewares.length > 0 ||
@@ -570,7 +620,10 @@ function createServerRuntimeEntry(
       },
     };
   }
-  return { import: "@evjs/ev/internal/server/fetch" };
+  if (runtimeRenderers.length > 0) {
+    return { import: FRAMEWORK_SERVER_FETCH_ENTRY };
+  }
+  return undefined;
 }
 
 function getConfiguredServerRoutes(

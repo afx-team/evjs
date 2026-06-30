@@ -187,6 +187,7 @@ export interface BuildEntry {
   import: string;
   environment: BuildEnvironment;
   runtime?: "browser" | ServerRuntime;
+  phase?: BuildEntryPhase;
   kind:
     | "app-client"
     | "page-client"
@@ -199,6 +200,8 @@ export interface BuildEntry {
   owner?: BuildEntryOwner;
   metadata?: BuildEntryMetadata;
 }
+
+export type BuildEntryPhase = "runtime" | "build";
 
 export interface BuildEntryOwner {
   appId?: string;
@@ -273,13 +276,14 @@ export interface HtmlPlan {
 }
 
 export interface ServerBuildPlan {
-  entry: string;
+  entry?: string;
   renderers?: ServerRenderPlan[];
 }
 
 export interface ServerRenderPlan {
   name: string;
   import: string;
+  phase?: BuildEntryPhase;
   kind: "page-server" | "rsc-page" | "ppr-shell" | "ppr-region";
   owner?: BuildEntryOwner;
 }
@@ -332,7 +336,8 @@ export interface FrameworkManifestValidationOptions {
 
 export type PublicManifestOutput =
   | PublicSpaManifestOutput
-  | PublicMpaManifestOutput;
+  | PublicMpaManifestOutput
+  | PublicStaticManifestOutput;
 
 export interface PublicSpaManifestOutput {
   version: 1;
@@ -349,6 +354,13 @@ export interface PublicMpaManifestOutput {
   routing: PublicMpaRoutingOutput;
 }
 
+export interface PublicStaticManifestOutput {
+  version: 1;
+  buildId: string;
+  publicPath: PublicPathOutput;
+  documents: PublicDocumentOutput[];
+}
+
 export type PublicRoutingOutput =
   | PublicSpaRoutingOutput
   | PublicMpaRoutingOutput;
@@ -361,6 +373,14 @@ export interface PublicSpaRoutingOutput {
 export interface PublicMpaRoutingOutput {
   kind: "mpa";
   pages: Record<string, PublicPageOutput>;
+}
+
+export interface PublicDocumentOutput {
+  id: string;
+  path: string;
+  fileName: string;
+  render: Extract<RenderMode, "csr" | "ssg">;
+  assets?: AssetGroup;
 }
 
 export interface BuildOutputPaths {
@@ -412,6 +432,7 @@ export interface PublicPageOutput {
   document?: HtmlDocumentOutput;
   path?: string;
   routeId?: string;
+  render?: RenderMode;
 }
 
 export interface HtmlDocumentOutput {
@@ -458,7 +479,12 @@ export interface RouteOutput {
   pageId?: string;
 }
 
-export type PublicRouteOutput = Pick<RouteOutput, "id" | "path" | "pageId">;
+export interface PublicRouteOutput {
+  id: string;
+  path: string;
+  pageId?: string;
+  render?: RenderMode;
+}
 
 export interface DeploymentMetadata {
   version: 1;
@@ -484,6 +510,8 @@ export type DeploymentDocumentOutput =
       kind: "page";
       id: string;
       fileName: string;
+      path?: string;
+      render?: Extract<DeploymentPageRenderOutput, "csr" | "ssg">;
       assets?: AssetGroup;
     };
 
@@ -494,13 +522,6 @@ export type DeploymentServerPageRenderOutput = Extract<
 >;
 
 export type DeploymentRouteOutput =
-  | {
-      kind: "static-page";
-      path: string;
-      documentId: string;
-      render: Extract<DeploymentPageRenderOutput, "csr" | "ssg">;
-      methods: ["GET", "HEAD"];
-    }
   | {
       kind: "server-page";
       path: string;
@@ -545,6 +566,7 @@ export interface ServerOutput {
 
 export interface ServerRendererOutput {
   kind: ServerRenderPlan["kind"];
+  phase?: BuildEntryPhase;
   owner?: BuildEntryOwner;
   assets: AssetGroup;
 }
@@ -806,6 +828,24 @@ export function assertFrameworkManifestShape(
     assertObject(value.assets, `${source}.assets`);
     assertAssetGroupRecord(value.assets, `${source}.assets`);
   }
+  if (value.documents !== undefined) {
+    if (requireServer) {
+      throw new Error(
+        `[evjs] ${source}.documents is only supported in public manifests.`,
+      );
+    }
+    if (value.routing !== undefined) {
+      throw new Error(
+        `[evjs] ${source} must not define both documents and routing.`,
+      );
+    }
+    if (value.assets !== undefined) {
+      throw new Error(
+        `[evjs] ${source}.assets must be omitted when documents are used.`,
+      );
+    }
+    assertPublicDocumentOutputs(value.documents, `${source}.documents`);
+  }
   const apps = assertManifestAppProjection(value, source, requireServer);
   const { pages, routes } = assertManifestRoutingProjection(
     value,
@@ -907,6 +947,37 @@ export function assertFrameworkManifestShape(
   }
 }
 
+function assertPublicDocumentOutputs(value: unknown, source: string): void {
+  if (!Array.isArray(value)) {
+    throw new Error(`[evjs] ${source} must be an array.`);
+  }
+  const pathOwners = new Map<string, { path: string; source: string }>();
+  for (const [index, document] of value.entries()) {
+    const documentSource = `${source}[${index}]`;
+    assertObject(document, documentSource);
+    assertManifestString(document.id, `${documentSource}.id`);
+    assertManifestPathname(document.path, `${documentSource}.path`, true);
+    assertUniquePageRoutePath(
+      document.path as string,
+      `${documentSource}.path`,
+      pathOwners,
+    );
+    assertHtmlDocumentOutput(
+      { fileName: document.fileName },
+      `${documentSource}`,
+    );
+    assertStaticDocumentRenderMode(document.render, `${documentSource}.render`);
+    if (document.assets !== undefined) {
+      assertAssetGroup(document.assets, `${documentSource}.assets`);
+    }
+  }
+}
+
+function assertStaticDocumentRenderMode(value: unknown, source: string): void {
+  if (value === "csr" || value === "ssg") return;
+  throw new Error(`[evjs] ${source} must be "csr" or "ssg".`);
+}
+
 function assertManifestRoutingProjection(
   value: Record<string, unknown>,
   source: string,
@@ -927,14 +998,15 @@ function assertManifestRoutingProjection(
       if (!Array.isArray(value.routing.routes)) {
         throw new Error(`[evjs] ${source}.routing.routes must be an array.`);
       }
+      const pages = createPagesFromPublicManifestRoutes(value.routing.routes);
       assertRouteOutputs(
         value.routing.routes,
         `${source}.routing.routes`,
-        {},
+        pages,
         apps,
       );
       return {
-        pages: {},
+        pages,
         routes: value.routing.routes as Array<Record<string, unknown>>,
       };
     }
@@ -982,9 +1054,26 @@ function createRoutesFromManifestPages(
         id: page.routeId,
         path: page.path,
         pageId,
+        render: page.render,
       },
     ];
   });
+}
+
+function createPagesFromPublicManifestRoutes(
+  routes: unknown[],
+): Record<string, unknown> {
+  return Object.fromEntries(
+    routes.flatMap((route) => {
+      if (!isRecord(route) || typeof route.pageId !== "string") return [];
+      return [
+        [
+          route.pageId,
+          route.render === undefined ? {} : { render: route.render },
+        ],
+      ];
+    }),
+  );
 }
 
 function getManifestPagesSource(
@@ -1079,6 +1168,9 @@ function assertServerRendererOutputs(
     assertManifestBuildIdentifierKey(name, source);
     assertObject(output, `${source}.${name}`);
     assertServerRendererKind(output.kind, `${source}.${name}.kind`);
+    if (output.phase !== undefined) {
+      assertBuildEntryPhase(output.phase, `${source}.${name}.phase`);
+    }
     assertAssetGroup(output.assets, `${source}.${name}.assets`);
     assertServerRendererOwner(
       output.owner,
@@ -1219,6 +1311,11 @@ function assertServerRendererKind(value: unknown, source: string): void {
   );
 }
 
+function assertBuildEntryPhase(value: unknown, source: string): void {
+  if (value === "runtime" || value === "build") return;
+  throw new Error(`[evjs] ${source} must be "runtime" or "build".`);
+}
+
 function assertServerFunctionOutputs(
   value: Record<string, unknown>,
   source: string,
@@ -1290,6 +1387,9 @@ function assertPublicPageOutputs(
     assertManifestPathname(output.path, `${source}.${name}.path`);
     if (output.routeId !== undefined) {
       assertManifestString(output.routeId, `${source}.${name}.routeId`);
+    }
+    if (output.render !== undefined) {
+      assertRenderMode(output.render, `${source}.${name}.render`);
     }
   }
 }
@@ -1496,6 +1596,9 @@ function assertRouteOutputs(
       "pages",
       pages,
     );
+    if (route.render !== undefined) {
+      assertRenderMode(route.render, `${routeSource}.render`);
+    }
     assertOptionalRecordReference(
       route.appId,
       `${routeSource}.appId`,
@@ -1520,6 +1623,15 @@ function assertPageRouteOutputContract(
   ) {
     throw new Error(
       `[evjs] ${routeSource}.path "${route.path as string}" must match manifest.pages.${route.pageId as string}.path "${page.path}".`,
+    );
+  }
+  if (
+    route.render !== undefined &&
+    page.render !== undefined &&
+    route.render !== page.render
+  ) {
+    throw new Error(
+      `[evjs] ${routeSource}.render "${route.render as string}" must match manifest.pages.${route.pageId as string}.render "${page.render as string}".`,
     );
   }
 }

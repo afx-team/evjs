@@ -549,27 +549,36 @@ function assertFrameworkRuntimeRouting(
   routes: FrameworkRouteRuntime[];
 } {
   if (value.routing !== undefined) {
-    if (value.pages !== undefined || value.routes !== undefined) {
+    if (value.routes !== undefined) {
       throw new Error(
-        `[evjs] ${source} must not define both routing and pages/routes.`,
+        `[evjs] ${source} must not define both routing and routes.`,
       );
     }
     assertObject(value.routing, `${source}.routing`);
     if (value.routing.kind === "spa") {
+      const pages =
+        value.pages === undefined
+          ? {}
+          : assertFrameworkRuntimePageRecord(value.pages, `${source}.pages`);
       if (!Array.isArray(value.routing.routes)) {
         throw new Error(`[evjs] ${source}.routing.routes must be an array.`);
       }
       assertFrameworkRuntimeRoutes(
         value.routing.routes,
         `${source}.routing.routes`,
-        {},
+        pages,
       );
       return {
-        pages: {},
+        pages,
         routes: value.routing.routes as FrameworkRouteRuntime[],
       };
     }
     if (value.routing.kind === "mpa") {
+      if (value.pages !== undefined) {
+        throw new Error(
+          `[evjs] ${source} must not define both routing.kind "mpa" and pages.`,
+        );
+      }
       assertObject(value.routing.pages, `${source}.routing.pages`);
       assertFrameworkRuntimePages(
         value.routing.pages,
@@ -596,6 +605,15 @@ function assertFrameworkRuntimeRouting(
     pages: value.pages,
     routes: value.routes as FrameworkRouteRuntime[],
   };
+}
+
+function assertFrameworkRuntimePageRecord(
+  value: unknown,
+  source: string,
+): Record<string, unknown> {
+  assertObject(value, source);
+  assertFrameworkRuntimePages(value, source);
+  return value;
 }
 
 function assertBuildIdentifier(value: unknown, source: string): void {

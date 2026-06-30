@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import type { ClientRequest } from "node:http";
+import { createRequire } from "node:module";
 import path from "node:path";
+import vm from "node:vm";
 import type {
   AppGraph,
   BuildPlan,
@@ -16,6 +18,7 @@ import type {
 } from "@evjs/ev";
 import { getClientRouteMatches, getServerRenderedPaths } from "@evjs/ev";
 import { getLogger } from "@logtape/logtape";
+import { createFsFromVolume, Volume } from "memfs";
 import type {
   Compiler,
   Configuration,
@@ -34,6 +37,7 @@ import { getOutputPaths } from "./output-paths.js";
 
 const logger = getLogger(["evjs", "bundler-webpack"]);
 const DEV_PAGE_RENDER_PROXY_HEADER = "x-evjs-dev-page-render";
+const BUILD_ONLY_SERVER_CONFIG_NAME = "server-build";
 
 interface WebpackDevServerInstance {
   start(): Promise<void>;
@@ -77,14 +81,19 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
 
     const configs = await createWebpackConfigs(config, plan, graph, cwd, hooks);
     const stats = await runWebpack(configs);
+    const hasRuntimeServerEntries = plan.entries.some(
+      (entry) => entry.environment === "server" && entry.phase !== "build",
+    );
 
     await emitStats(outputPaths.clientDir, stats.clientStats);
-    await emitStats(outputPaths.serverDir, stats.serverStats);
-    await copyServerCssAssetsToClient(
-      outputPaths.serverDir,
-      outputPaths.clientDir,
-      stats.serverStats,
-    );
+    if (hasRuntimeServerEntries) {
+      await emitStats(outputPaths.serverDir, stats.serverStats);
+      await copyServerCssAssetsToClient(
+        outputPaths.serverDir,
+        outputPaths.clientDir,
+        stats.serverStats,
+      );
+    }
 
     logger.info`Collecting webpack build facts...`;
     const generator = new WebpackManifestGenerator(
@@ -95,7 +104,17 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
     );
 
     logger.info`Build complete!`;
-    return generator.collectBuildFacts();
+    return {
+      ...generator.collectBuildFacts(),
+      ...(stats.memoryFiles.size > 0
+        ? {
+            loadServerModule: createMemoryServerModuleLoader(
+              cwd,
+              stats.memoryFiles,
+            ),
+          }
+        : {}),
+    };
   },
 
   async dev(
@@ -894,8 +913,23 @@ function toWebpackDevProxy(rule: WebpackDevProxyRule) {
 async function runWebpack(configs: Configuration[]): Promise<{
   clientStats?: WebpackStatsLike;
   serverStats?: WebpackStatsLike;
+  memoryFiles: Map<string, string>;
 }> {
   const compiler = webpack(configs);
+  const memoryVolume = new Volume();
+  const memoryFs = createFsFromVolume(memoryVolume);
+  const memoryOutputPaths = new Set<string>();
+  const childCompilers =
+    "compilers" in compiler
+      ? (compiler.compilers as Compiler[])
+      : ([compiler] as Compiler[]);
+  for (const child of childCompilers) {
+    if (child.options.name !== BUILD_ONLY_SERVER_CONFIG_NAME) continue;
+    child.outputFileSystem =
+      memoryFs as unknown as Compiler["outputFileSystem"];
+    const outputPath = child.options.output.path;
+    if (outputPath) memoryOutputPaths.add(outputPath);
+  }
 
   const stats = await new Promise<Stats | MultiStats>((resolve, reject) => {
     compiler.run((error, result) => {
@@ -921,7 +955,10 @@ async function runWebpack(configs: Configuration[]): Promise<{
     throw new Error(formatWebpackErrors(stats));
   }
 
-  return splitStatsByName(stats);
+  return {
+    ...splitStatsByName(stats),
+    memoryFiles: collectMemoryFiles(memoryVolume, memoryOutputPaths),
+  };
 }
 
 function splitStatsByName(stats: Stats | MultiStats): {
@@ -943,7 +980,11 @@ function splitStatsByName(stats: Stats | MultiStats): {
   let serverStats: WebpackStatsLike | undefined;
 
   for (const child of children) {
-    if (child.name === "server" || child.name === "server-rsc") {
+    if (
+      child.name === "server" ||
+      child.name === "server-rsc" ||
+      child.name === BUILD_ONLY_SERVER_CONFIG_NAME
+    ) {
       serverStats = mergeWebpackStats(serverStats, child, child.name);
     } else if (child.name === "client") {
       clientStats = child;
@@ -951,6 +992,58 @@ function splitStatsByName(stats: Stats | MultiStats): {
   }
 
   return { clientStats, serverStats };
+}
+
+function collectMemoryFiles(
+  volume: Volume,
+  outputPaths: Set<string>,
+): Map<string, string> {
+  const files = new Map<string, string>();
+  for (const outputPath of outputPaths) {
+    const tree = volume.toJSON(outputPath, {}, true);
+    for (const [filePath, value] of Object.entries(tree)) {
+      if (typeof value !== "string") continue;
+      const fileName = path.basename(filePath);
+      files.set(fileName, value);
+    }
+  }
+  return files;
+}
+
+function createMemoryServerModuleLoader(
+  cwd: string,
+  files: Map<string, string>,
+): (asset: string) => Promise<unknown> {
+  const require = createRequire(path.join(cwd, "package.json"));
+  const cache = new Map<string, unknown>();
+  return async (asset) => {
+    const fileName = path.basename(asset);
+    if (cache.has(fileName)) return cache.get(fileName);
+
+    const source = files.get(fileName);
+    if (source === undefined) {
+      throw new Error(
+        `[evjs] Webpack build-only server module "${asset}" was not emitted in memory.`,
+      );
+    }
+
+    const module = { exports: {} as unknown };
+    const filename = path.join(cwd, fileName);
+    const dirname = path.dirname(filename);
+    const factory = vm.runInThisContext(
+      `(function(exports, require, module, __filename, __dirname) {\n${source}\n})`,
+      { filename },
+    ) as (
+      exports: unknown,
+      require: NodeJS.Require,
+      module: { exports: unknown },
+      __filename: string,
+      __dirname: string,
+    ) => void;
+    factory(module.exports, require, module, filename, dirname);
+    cache.set(fileName, module.exports);
+    return module.exports;
+  };
 }
 
 function mergeWebpackStats(

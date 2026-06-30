@@ -104,9 +104,7 @@ describe("createUtoopackConfig", () => {
     expect(utoopackConfig.output?.path).toBe(
       path.resolve(cwd, "custom-dist/client"),
     );
-    expect(utoopackConfig.server?.output?.path).toBe(
-      path.resolve(cwd, "custom-dist/server"),
-    );
+    expect(utoopackConfig.server).toBeUndefined();
   });
 
   it("uses the build plan mode instead of NODE_ENV", async () => {
@@ -741,7 +739,7 @@ describe("createUtoopackConfig", () => {
             cfg.output ??= {};
             cfg.output.publicPath = "runtime";
             expect(ctx.bundlerName).toBe("utoopack");
-            expect(ctx.environment).toBe("mixed");
+            expect(ctx.environment).toBe("client");
           },
         },
       ],

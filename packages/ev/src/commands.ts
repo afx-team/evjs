@@ -1219,13 +1219,15 @@ async function emitFrameworkManifest(
     output,
   );
   await fs.promises.mkdir(rootDir, { recursive: true });
-  await fs.promises.mkdir(serverDir, { recursive: true });
   const serverManifest = createServerManifest(output);
-  await fs.promises.writeFile(
-    path.join(serverDir, MANIFEST_FILE),
-    JSON.stringify(serverManifest, null, 2),
-    "utf-8",
-  );
+  if (serverManifest.entry || serverManifest.routes.length > 0) {
+    await fs.promises.mkdir(serverDir, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(serverDir, MANIFEST_FILE),
+      JSON.stringify(serverManifest, null, 2),
+      "utf-8",
+    );
+  }
   await fs.promises.writeFile(
     path.join(rootDir, BUILD_OUTPUT_FILE),
     JSON.stringify(createDeploymentMetadata(output), null, 2),
@@ -1374,6 +1376,7 @@ async function emitFrameworkHtml<TBundlerCfg>(
   plan: BuildPlan,
   frameworkRuntime: ReturnType<typeof createFrameworkRuntime>,
   isRebuild: boolean,
+  loadServerModule?: (asset: string) => Promise<unknown>,
 ): Promise<void> {
   const { clientDir, serverDir } = getFrameworkOutputPaths(cwd, output);
   const clientRuntime = createClientRuntime(output);
@@ -1401,7 +1404,9 @@ async function emitFrameworkHtml<TBundlerCfg>(
       doc.documentElement?.setAttribute("data-evjs-kind", "app");
       doc.documentElement?.setAttribute("data-evjs-id", htmlInfo.appId);
     }
-    embedClientRuntime(doc, clientRuntime);
+    if (htmlInfo.assets.js.length > 0) {
+      embedClientRuntime(doc, clientRuntime);
+    }
     if (
       plan.mode === "production" &&
       shouldPrerenderStaticPage(output, htmlInfo)
@@ -1412,6 +1417,7 @@ async function emitFrameworkHtml<TBundlerCfg>(
         html: htmlInfo,
         frameworkRuntime,
         serverDir,
+        loadServerModule,
       });
     }
 
@@ -1450,8 +1456,10 @@ async function prerenderStaticPageHtml(options: {
   html: Extract<HtmlDocumentInfo, { kind: "page" }>;
   frameworkRuntime: ReturnType<typeof createFrameworkRuntime>;
   serverDir: string;
+  loadServerModule?: (asset: string) => Promise<unknown>;
 }): Promise<void> {
-  const { doc, output, html, frameworkRuntime, serverDir } = options;
+  const { doc, output, html, frameworkRuntime, serverDir, loadServerModule } =
+    options;
   const page = output.pages[html.pageId];
   const pathname = findStaticPagePath(output, html.pageId, page);
   if (!page || !pathname) return;
@@ -1460,7 +1468,9 @@ async function prerenderStaticPageHtml(options: {
     runtime: frameworkRuntime,
     loadModule: async (asset) =>
       normalizeServerModule(
-        await import(pathToFileURL(path.resolve(serverDir, asset)).href),
+        loadServerModule
+          ? await loadServerModule(asset)
+          : await import(pathToFileURL(path.resolve(serverDir, asset)).href),
       ),
     react: {
       renderDocument(appHtml) {
@@ -1585,6 +1595,7 @@ async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     options.plan,
     frameworkRuntime,
     options.isRebuild,
+    options.bundlerFacts.loadServerModule,
   );
 
   return { output, frameworkRuntime };
