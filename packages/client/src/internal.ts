@@ -5,27 +5,18 @@
  * from `@evjs/client` instead.
  */
 
-export type { PageRuntimeOptions } from "./page.js";
-export { startPageRuntime } from "./page.js";
-export type { PageProviderProps } from "./page-context.js";
-export { PageProvider } from "./page-context.js";
+export type { PageRuntimeOptions } from "./framework/page/page.js";
+export { startPageRuntime } from "./framework/page/page.js";
+export type { PageProviderProps } from "./framework/page/page-context.js";
+export { PageProvider } from "./framework/page/page-context.js";
 export type {
   CreatePagesAppOptions,
   PageDefinition,
   PageModule,
   PagesApp,
   RootLayoutModule,
-} from "./page-route.js";
-export { createPagesApp } from "./page-route.js";
-export type {
-  ReactPageMountOptions,
-  ReactPageRouteContext,
-  ReactPageRuntimeOptions,
-} from "./react.js";
-export {
-  createReactPageModule,
-  mountReactPage,
-} from "./react.js";
+} from "./framework/page/page-route.js";
+export { createPagesApp } from "./framework/page/page-route.js";
 export type {
   ActivationRequest,
   AppContext,
@@ -40,18 +31,27 @@ export type {
   ShellModuleRegistration,
   ShellOptions,
   ShellWarningContext,
-} from "./shell.js";
+} from "./framework/shell/index.js";
 export {
   createActivationRequestFromUrl,
   createHistoryDriver,
   createPageDriver,
   createShell,
   registerShellModule,
-} from "./shell.js";
+} from "./framework/shell/index.js";
+export type {
+  ReactPageMountOptions,
+  ReactPageRouteContext,
+  ReactPageRuntimeOptions,
+} from "./rsc/react.js";
+export {
+  createReactPageModule,
+  mountReactPage,
+} from "./rsc/react.js";
 export {
   callServer,
   createServerReference,
   getFnId,
   getFnName,
   initTransportFromRuntime,
-} from "./transport-runtime.js";
+} from "./server-functions/transport-runtime.js";

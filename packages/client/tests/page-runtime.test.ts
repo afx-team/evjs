@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startPageRuntime } from "../src/internal";
-import type {
-  ClientRuntime,
-  ClientRuntimePage,
-  ClientRuntimeRoute,
-} from "../src/runtime-config.js";
 import {
   __resetForTesting,
   callServer,
   initTransport,
-} from "../src/transport-runtime.js";
+} from "../src/server-functions/transport-runtime.js";
+import type {
+  ClientRuntime,
+  ClientRuntimePage,
+  ClientRuntimeRoute,
+} from "../src/shared/runtime-config.js";
 
 afterEach(() => {
   __resetForTesting();

@@ -6,11 +6,10 @@ import type {
   AppGraph,
   BuildEntry,
   BuildPlan,
-  BundlerCtx,
-  PluginHooks,
   PublicPathOutput,
-  ResolvedConfig,
-} from "@evjs/ev";
+} from "@evjs/ev/_internal/manifest";
+import type { ResolvedConfig } from "@evjs/ev/config";
+import type { BundlerCtx, PluginHooks } from "@evjs/ev/plugin";
 import { getLogger } from "@logtape/logtape";
 import MiniCssExtractPlugin from "mini-css-extract-plugin";
 import type { Configuration, EntryObject } from "webpack";
@@ -50,9 +49,9 @@ const serverRoutesEntryAnchor = fileURLToPath(
   new URL("./server-routes-entry-anchor.js", import.meta.url),
 );
 const ReactFlightWebpackPlugin = require("react-server-dom-webpack/plugin");
-const clientRscEntry = "@evjs/ev/internal/client/rsc-runtime";
-const clientRscPageContextEntry = "@evjs/ev/internal/client/rsc-page-context";
-const evPageRscEntry = "@evjs/ev/internal/client/rsc-page-context";
+const clientRscEntry = "@evjs/ev/_internal/client/rsc-runtime";
+const clientRscPageContextEntry = "@evjs/ev/_internal/client/rsc-page-context";
+const evRouteRscEntry = "@evjs/ev/_internal/client/rsc-page-context";
 
 type RscClientReferenceConfig =
   | string
@@ -277,7 +276,7 @@ function createWebpackConfig(options: {
         ...(options.reactServerConditions
           ? {
               "@evjs/client$": clientRscPageContextEntry,
-              "@evjs/ev/page$": evPageRscEntry,
+              "@evjs/ev/route$": evRouteRscEntry,
             }
           : {}),
       }),

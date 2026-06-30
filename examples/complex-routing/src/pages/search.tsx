@@ -1,4 +1,6 @@
-import { Link, usePageSearch, useQuery } from "@evjs/ev/page";
+import { Link } from "@evjs/ev/navigation";
+import { useQuery } from "@evjs/ev/query";
+import { usePageSearch } from "@evjs/ev/route";
 import { getPosts } from "@/apis/data.server";
 
 const styles = {

@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { createApp } from "../src/app.js";
+import { createApp } from "../src/app/app.js";
+import type {
+  FrameworkPageRuntime,
+  FrameworkRouteRuntime,
+  FrameworkRuntime,
+} from "../src/framework-rendering/framework.js";
 import {
   deleteCookie,
   getContext,
@@ -8,17 +13,12 @@ import {
   request,
   setCookie,
   waitUntil,
-} from "../src/context.js";
-import type {
-  FrameworkPageRuntime,
-  FrameworkRouteRuntime,
-  FrameworkRuntime,
-} from "../src/framework.js";
+} from "../src/request-context/context.js";
+import { createRoute } from "../src/routes/index.js";
 import {
   registerServerReference,
   registry,
-} from "../src/functions/register.js";
-import { createRoute } from "../src/routes/index.js";
+} from "../src/server-functions/register.js";
 
 type LegacyFrameworkRuntime = FrameworkRuntime & {
   pages: Record<string, FrameworkPageRuntime>;

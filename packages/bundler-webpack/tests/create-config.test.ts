@@ -1,7 +1,8 @@
 import { createRequire } from "node:module";
 import path from "node:path";
-import type { AppGraph, ResolvedConfig } from "@evjs/ev";
-import { createBuildPlan } from "@evjs/ev/build-tools";
+import { createBuildPlan } from "@evjs/ev/_internal/build";
+import type { AppGraph } from "@evjs/ev/_internal/manifest";
+import type { ResolvedConfig } from "@evjs/ev/config";
 import { describe, expect, it } from "vitest";
 import {
   createWebpackConfigs,
@@ -229,7 +230,7 @@ describe("createWebpackConfigs", () => {
     expect(serializedEntries).toContain("framework-entry-anchor.js");
     expect(serializedEntries).not.toContain("createReactPageModule");
     expect(serializedEntries).not.toContain(
-      "@evjs/ev/internal/client/react-page",
+      "@evjs/ev/_internal/client/react-page",
     );
   });
 
@@ -248,7 +249,7 @@ describe("createWebpackConfigs", () => {
       },
     });
 
-    expect(source).toContain("@evjs/ev/internal/client/react-page");
+    expect(source).toContain("@evjs/ev/_internal/client/react-page");
     expect(source).toContain("createGeneratedReactPageEntry");
     expect(source).toContain("import.meta.url");
     expect(source).not.toContain("createReactPageModule");
@@ -278,7 +279,7 @@ describe("createWebpackConfigs", () => {
       rootContext: "/workspace",
     });
 
-    expect(source).toContain("@evjs/ev/internal/client");
+    expect(source).toContain("@evjs/ev/_internal/client");
     expect(source).toContain("createPagesApp");
     expect(source).toContain("src/pages/error.tsx");
     expect(source).toContain("src/pages/not-found.tsx");
@@ -337,8 +338,8 @@ describe("createWebpackConfigs", () => {
       rootContext: "/workspace",
     });
 
-    expect(source).toContain('@evjs/ev/internal/server"');
-    expect(source).toContain("@evjs/ev/internal/server/react");
+    expect(source).toContain('@evjs/ev/_internal/server"');
+    expect(source).toContain("@evjs/ev/_internal/server/react");
     expect(source).toContain('createRoute("/health", routeDefinition0)');
     expect(source).toContain('createRoute("/secure", routeDefinition1)');
     expect(source).toContain("import middleware0 from");

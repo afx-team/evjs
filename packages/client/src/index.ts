@@ -23,10 +23,27 @@ export {
   usePrefetchQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-export type { App, CreateAppOptions, CreateAppRouterOptions } from "./app.js";
-export { createApp } from "./app.js";
-export type { AppRouteContext } from "./context.js";
-export { createAppRootRoute } from "./context.js";
+export {
+  usePageContext,
+  usePageLoaderData,
+  usePageParams,
+  usePageSearch,
+} from "./framework/page/page-context.js";
+export {
+  getFnQueryKey,
+  getFnQueryOptions,
+  useMutation,
+  useQuery,
+  useSuspenseQuery,
+} from "./server-functions/query.js";
+export type {
+  App,
+  CreateAppOptions,
+  CreateAppRouterOptions,
+} from "./standalone/app.js";
+export { createApp } from "./standalone/app.js";
+export type { AppRouteContext } from "./standalone/context.js";
+export { createAppRootRoute } from "./standalone/context.js";
 export type {
   ActiveLinkOptions,
   LinkOptions,
@@ -36,7 +53,7 @@ export type {
   RedirectOptions,
   ToOptions,
   UseLinkPropsOptions,
-} from "./navigation.js";
+} from "./standalone/navigation.js";
 export {
   isNotFound,
   isRedirect,
@@ -47,34 +64,46 @@ export {
   useLinkProps,
   useLocation,
   useNavigate,
-} from "./navigation.js";
-export {
-  usePageContext,
-  usePageLoaderData,
-  usePageParams,
-  usePageSearch,
-} from "./page-context.js";
-export {
-  getFnQueryKey,
-  getFnQueryOptions,
-  useMutation,
-  useQuery,
-  useSuspenseQuery,
-} from "./query.js";
+} from "./standalone/navigation.js";
 // biome-ignore lint/suspicious/noEmptyInterface: Generated SPA route types augment this interface.
 export interface Register {}
 
 export type {
+  PageRouteLoaderData,
+  PageRouteParams,
+  PageRoutePath,
+  PageRouteSearch,
+} from "./framework/page/route-types.js";
+export type {
   RscDebugPayload,
   RscDebugPayloadMountOptions,
   RscFlightFetchOptions,
-} from "./react.js";
+} from "./rsc/react.js";
 export {
   fetchRscDebugPayload,
   fetchRscFlight,
   loadRscDebugPage,
   mountRscDebugPayload,
-} from "./react.js";
+} from "./rsc/react.js";
+export type {
+  ReactRscModelOptions,
+  ReactRscMountOptions,
+  ReactRscRuntimeBootstrap,
+} from "./rsc/rsc.js";
+export {
+  createReactRscModel,
+  mountReactRscPage,
+  startReactRscPageRuntime,
+  unmountReactRscPage,
+} from "./rsc/rsc.js";
+export type {
+  HeaderFactory,
+  RequestContext,
+  ServerFunction,
+  TransportAdapter,
+  TransportOptions,
+} from "./server-functions/transport.js";
+export { getFnName, initTransport } from "./server-functions/transport.js";
 export type {
   AnyRootRoute,
   AnyRoute,
@@ -116,7 +145,7 @@ export type {
   ToMaskOptions,
   UseBlockerOpts,
   UseMatchRouteOptions,
-} from "./route.js";
+} from "./standalone/route.js";
 export {
   Await,
   Block,
@@ -171,29 +200,4 @@ export {
   useRouter,
   useRouterState,
   useSearch,
-} from "./route.js";
-export type {
-  PageRouteLoaderData,
-  PageRouteParams,
-  PageRoutePath,
-  PageRouteSearch,
-} from "./route-types.js";
-export type {
-  ReactRscModelOptions,
-  ReactRscMountOptions,
-  ReactRscRuntimeBootstrap,
-} from "./rsc.js";
-export {
-  createReactRscModel,
-  mountReactRscPage,
-  startReactRscPageRuntime,
-  unmountReactRscPage,
-} from "./rsc.js";
-export type {
-  HeaderFactory,
-  RequestContext,
-  ServerFunction,
-  TransportAdapter,
-  TransportOptions,
-} from "./transport.js";
-export { getFnName, initTransport } from "./transport.js";
+} from "./standalone/route.js";

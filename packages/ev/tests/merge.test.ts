@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Config } from "../src/config.js";
-import { merge } from "../src/merge.js";
+import type { Config } from "../src/config/index.js";
+import { merge } from "../src/config/merge.js";
 
 describe("merge", () => {
   it("merges nested config sections", () => {

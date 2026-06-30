@@ -93,7 +93,8 @@ Adapter 基于 evjs 构建结果工作，不应从文件名或 bundler stats 反
 
 ```ts
 // ev.config.ts
-import { defineConfig, nodeDeploymentAdapter } from "@evjs/ev";
+import { defineConfig } from "@evjs/ev";
+import { nodeDeploymentAdapter } from "@evjs/ev/deployment";
 
 export default defineConfig({
   plugins: [nodeDeploymentAdapter()],
@@ -122,7 +123,8 @@ SSR/PPR/RSC 文档路由，并对客户端导航回退到应用 HTML。默认从
 当应用兼容静态托管时，可以使用 static adapter：
 
 ```ts
-import { defineConfig, staticDeploymentAdapter } from "@evjs/ev";
+import { defineConfig } from "@evjs/ev";
+import { staticDeploymentAdapter } from "@evjs/ev/deployment";
 
 export default defineConfig({
   plugins: [staticDeploymentAdapter()],
@@ -148,7 +150,8 @@ fallback。无路由器 MPA 页面使用精确 rewrite，不会创建全局 catc
 当平台提供 `fetch()` worker 和静态资源 binding 时，可以使用 edge adapter：
 
 ```ts
-import { defineConfig, edgeDeploymentAdapter } from "@evjs/ev";
+import { defineConfig } from "@evjs/ev";
+import { edgeDeploymentAdapter } from "@evjs/ev/deployment";
 
 export default defineConfig({
   plugins: [

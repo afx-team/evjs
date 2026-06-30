@@ -1,4 +1,4 @@
-import { Link } from "@evjs/ev/page";
+import { Link } from "@evjs/ev/navigation";
 import "@/styles.css";
 import type { ReactNode } from "react";
 

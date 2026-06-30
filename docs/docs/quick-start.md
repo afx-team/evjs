@@ -65,7 +65,8 @@ my-app/
 
 ```tsx
 // src/pages/users/$id.tsx
-import { usePageParams, useQuery } from "@evjs/ev/page";
+import { usePageParams } from "@evjs/ev/route";
+import { useQuery } from "@evjs/ev/query";
 import { getUser } from "../../apis/users.server";
 
 export default function UserPage() {
@@ -120,16 +121,19 @@ shared wrappers as normal components and do not accept
 Manifest schemas, build tools, generated page runtime, and shell internals are
 internal modules under the public packages above. Application config/build code
 imports framework composition APIs from `@evjs/ev`. File-convention application
-source imports page helpers from `@evjs/ev/page`, request helpers from
-`@evjs/ev/request`, and custom server-function transport helpers from
+source imports route data helpers from `@evjs/ev/route`, navigation helpers from `@evjs/ev/navigation`, query helpers from `@evjs/ev/query`, request helpers from
+`@evjs/ev/server-context`, and custom server-function transport helpers from
 `@evjs/ev/transport`. Browser-only CSR apps that own their build pipeline can
 use `@evjs/client` without depending on `@evjs/ev`.
+The `@evjs/ev/*` subpaths are curated around evjs file-convention authoring
+semantics. They are not mirrors of `@evjs/client` or `@evjs/server`, which are
+lower-level standalone/manual runtime packages.
 Use `@evjs/cli` and `@evjs/create-app` as tools, not application imports.
 Bundler adapters such as `@evjs/bundler-utoopack` and shared contract modules
 such as `@evjs/shared` are only for custom framework tooling or adapter work.
 
 Generated framework code resolves client and server runtime internals through
-`@evjs/ev/internal/*`, so ordinary file-convention apps do not install
+`@evjs/ev/_internal/*`, so ordinary file-convention apps do not install
 `@evjs/client` or `@evjs/server` directly.
 
 ## Required Dependencies

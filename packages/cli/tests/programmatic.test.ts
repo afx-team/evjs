@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { BundlerAdapter } from "@evjs/ev";
+import type { BundlerAdapter } from "@evjs/ev/_internal/build";
 import { describe, expect, it } from "vitest";
 import type { DefaultBundlerConfig } from "../src/index.js";
 import { build } from "../src/index.js";

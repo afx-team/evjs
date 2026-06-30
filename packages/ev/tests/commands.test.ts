@@ -4,19 +4,24 @@ import path from "node:path";
 import type { BuildPlan } from "@evjs/shared/manifest";
 import { execa } from "execa";
 import { describe, expect, it } from "vitest";
-import { PAGE_ROUTE_CONVENTION_SUMMARY } from "../src/build-tools/page-route-conventions.js";
-import type { BundlerAdapter, BundlerBuildFacts } from "../src/bundler.js";
+import type {
+  BundlerAdapter,
+  BundlerBuildFacts,
+} from "../src/_internal/build/bundler.js";
 import {
-  type BuildResult,
   build,
-  type Config,
   dev,
-  type EvBuildResult,
-  type EvPlugin,
-  type HtmlDocument,
-  type Plugin,
   prepareFrameworkBuild,
-} from "../src/index.js";
+} from "../src/_internal/build/commands.js";
+import { PAGE_ROUTE_CONVENTION_SUMMARY } from "../src/_internal/build/page-route-conventions.js";
+import type { Config } from "../src/config/index.js";
+import type {
+  BuildResult,
+  EvBuildResult,
+  EvPlugin,
+  HtmlDocument,
+  Plugin,
+} from "../src/plugin/index.js";
 
 const repoRoot = path.resolve(process.cwd(), "../..");
 const generatedRouteTypesSource = [
@@ -102,10 +107,13 @@ async function writeRouteTypeCheckTsConfig(cwd: string) {
           noEmit: true,
           types: ["node"],
           paths: {
-            "@evjs/ev/internal/client/route-types": [
-              "../../packages/ev/src/internal/client/route-types.ts",
+            "@evjs/ev/_internal/client/route-types": [
+              "../../packages/ev/src/_internal/generated/client/route-types.ts",
             ],
-            "@evjs/ev/page": ["../../packages/ev/src/page.ts"],
+            "@evjs/ev/route": ["../../packages/ev/src/route/index.ts"],
+            "@evjs/ev/navigation": [
+              "../../packages/ev/src/navigation/index.ts",
+            ],
             "@evjs/client": ["../../packages/client/src/index.ts"],
             "@evjs/shared": ["../../packages/shared/src/index.ts"],
           },
@@ -886,7 +894,8 @@ describe("build", () => {
       await fs.promises.writeFile(
         path.join(cwd, "src/check-links.tsx"),
         [
-          'import { Link, useLinkProps, usePageLoaderData, usePageParams, usePageSearch } from "@evjs/ev/page";',
+          'import { usePageLoaderData, usePageParams, usePageSearch } from "@evjs/ev/route";',
+          'import { Link, useLinkProps } from "@evjs/ev/navigation";',
           "",
           "export function CheckLinks() {",
           '  <Link to="/posts/$postId" params={{ postId: "p1" }} />;',
@@ -954,7 +963,7 @@ describe("build", () => {
       await fs.promises.writeFile(
         path.join(cwd, "src/check-custom-dir-links.tsx"),
         [
-          'import { useLinkProps } from "@evjs/ev/page";',
+          'import { useLinkProps } from "@evjs/ev/navigation";',
           "",
           "export function CheckCustomDirLinks() {",
           '  useLinkProps({ to: "/admin/$section", params: { section: "users" } });',

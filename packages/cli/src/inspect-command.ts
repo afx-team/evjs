@@ -1,4 +1,4 @@
-import { inspectFrameworkBuild } from "@evjs/ev";
+import { inspectFrameworkBuild } from "@evjs/ev/_internal/build";
 import type { DefaultBundlerConfig } from "./index.js";
 import {
   formatInspectJson,

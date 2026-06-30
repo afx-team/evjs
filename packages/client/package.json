@@ -45,9 +45,9 @@
       "default": "./esm/index.js"
     },
     "./transport": {
-      "types": "./esm/transport.d.ts",
-      "import": "./esm/transport.js",
-      "default": "./esm/transport.js"
+      "types": "./esm/server-functions/transport.d.ts",
+      "import": "./esm/server-functions/transport.js",
+      "default": "./esm/server-functions/transport.js"
     },
     "./internal": {
       "types": "./esm/internal.d.ts",
@@ -55,34 +55,34 @@
       "default": "./esm/internal.js"
     },
     "./internal/server-functions": {
-      "types": "./esm/server-function-runtime.d.ts",
-      "import": "./esm/server-function-runtime.js",
-      "default": "./esm/server-function-runtime.js"
+      "types": "./esm/server-functions/server-function-runtime.d.ts",
+      "import": "./esm/server-functions/server-function-runtime.js",
+      "default": "./esm/server-functions/server-function-runtime.js"
     },
     "./internal/page-context": {
-      "types": "./esm/page-context.d.ts",
-      "import": "./esm/page-context.js",
-      "default": "./esm/page-context.js"
+      "types": "./esm/framework/page/page-context.d.ts",
+      "import": "./esm/framework/page/page-context.js",
+      "default": "./esm/framework/page/page-context.js"
     },
     "./internal/react-page": {
-      "types": "./esm/react-page.d.ts",
-      "import": "./esm/react-page.js",
-      "default": "./esm/react-page.js"
+      "types": "./esm/framework/page/react-page.d.ts",
+      "import": "./esm/framework/page/react-page.js",
+      "default": "./esm/framework/page/react-page.js"
     },
     "./internal/rsc-page-context": {
-      "types": "./esm/rsc-page-context.d.ts",
-      "import": "./esm/rsc-page-context.js",
-      "default": "./esm/rsc-page-context.js"
+      "types": "./esm/framework/page/rsc-page-context.d.ts",
+      "import": "./esm/framework/page/rsc-page-context.js",
+      "default": "./esm/framework/page/rsc-page-context.js"
     },
     "./internal/rsc-runtime": {
-      "types": "./esm/rsc-runtime.d.ts",
-      "import": "./esm/rsc-runtime.js",
-      "default": "./esm/rsc-runtime.js"
+      "types": "./esm/rsc/rsc-runtime.d.ts",
+      "import": "./esm/rsc/rsc-runtime.js",
+      "default": "./esm/rsc/rsc-runtime.js"
     },
     "./internal/route-types": {
-      "types": "./esm/route-types.d.ts",
-      "import": "./esm/route-types.js",
-      "default": "./esm/route-types.js"
+      "types": "./esm/framework/page/route-types.d.ts",
+      "import": "./esm/framework/page/route-types.js",
+      "default": "./esm/framework/page/route-types.js"
     }
   },
   "scripts": {

@@ -5,7 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import * as buildTools from "../src/build-tools/index.js";
+import * as buildTools from "../src/_internal/build/index.js";
+import * as evRoot from "../src/index.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -128,6 +129,7 @@ const allowedExamplePackageDependencies = new Set([
 
 const allowedDocumentationImportPackages = new Set([
   "@evjs/ev",
+  "@evjs/cli",
   "@evjs/bundler-utoopack",
   "@evjs/bundler-webpack",
 ]);
@@ -163,9 +165,12 @@ const forbiddenPackageNames = [
 const expectedBuildToolsRuntimeExports = [
   "SERVER_FUNCTION_TRANSFORM_RUNTIME",
   "applyRouteScopedMiddlewares",
+  "build",
+  "buildHtml",
   "createAppGraph",
   "createBuildPlan",
   "detectUseClient",
+  "dev",
   "diffBuildPlan",
   "discoverPageRoutes",
   "discoverServerConventions",
@@ -174,11 +179,14 @@ const expectedBuildToolsRuntimeExports = [
   "extractServerFunctionExports",
   "generateHtml",
   "generatePageRouteTypes",
+  "inspectFrameworkBuild",
   "loadConfigFile",
+  "prepareFrameworkBuild",
   "resolveRoutes",
   "transformRscClientFile",
   "transformServerFile",
   "transpileTypeScriptConfig",
+  "validateHtmlTemplate",
 ] as const;
 
 const privateBuildToolsRuntimeExports = [
@@ -212,21 +220,27 @@ const forbiddenServerSubpathExports = [
 const expectedPackageExportSubpaths = {
   "@evjs/ev": [
     ".",
-    "./build-tools",
-    "./internal/client",
-    "./internal/client/page-context",
-    "./internal/client/react-page",
-    "./internal/client/route-types",
-    "./internal/client/rsc-page-context",
-    "./internal/client/rsc-runtime",
-    "./internal/client/server-functions",
-    "./internal/server",
-    "./internal/server/fetch",
-    "./internal/server/node",
-    "./internal/server/react",
-    "./internal/server/server-functions",
-    "./page",
-    "./request",
+    "./_internal/build",
+    "./_internal/client",
+    "./_internal/client/page-context",
+    "./_internal/client/react-page",
+    "./_internal/client/route-types",
+    "./_internal/client/rsc-page-context",
+    "./_internal/client/rsc-runtime",
+    "./_internal/client/server-functions",
+    "./_internal/manifest",
+    "./_internal/server",
+    "./_internal/server/fetch",
+    "./_internal/server/node",
+    "./_internal/server/react",
+    "./_internal/server/server-functions",
+    "./config",
+    "./deployment",
+    "./navigation",
+    "./plugin",
+    "./query",
+    "./route",
+    "./server-context",
     "./transport",
   ],
   "@evjs/client": [
@@ -393,23 +407,30 @@ describe("workspace package surface", () => {
     expect(evPackageJson.exports?.["."]).toEqual(
       expectedPrimaryPackageExports["@evjs/ev"],
     );
-    expect(evPackageJson.exports?.["./page"]).toEqual({
-      types: "./esm/page.d.ts",
-      import: "./esm/page.js",
-      default: "./esm/page.js",
+    expect(Object.keys(evRoot).sort()).toEqual(["defineConfig"]);
+    expect(evPackageJson.exports?.["./route"]).toEqual({
+      types: "./esm/route/index.d.ts",
+      import: "./esm/route/index.js",
+      default: "./esm/route/index.js",
     });
-    expect(evPackageJson.exports?.["./request"]).toEqual({
-      types: "./esm/request.d.ts",
-      import: "./esm/request.js",
-      default: "./esm/request.js",
+    expect(evPackageJson.exports?.["./navigation"]).toEqual({
+      types: "./esm/navigation/index.d.ts",
+      import: "./esm/navigation/index.js",
+      default: "./esm/navigation/index.js",
     });
-    expect(evPackageJson.exports?.["./transport"]).toEqual({
-      types: "./esm/transport.d.ts",
-      import: "./esm/transport.js",
-      default: "./esm/transport.js",
+    expect(evPackageJson.exports?.["./query"]).toEqual({
+      types: "./esm/query/index.d.ts",
+      import: "./esm/query/index.js",
+      default: "./esm/query/index.js",
+    });
+    expect(evPackageJson.exports?.["./server-context"]).toEqual({
+      types: "./esm/server-context/index.d.ts",
+      import: "./esm/server-context/index.js",
+      default: "./esm/server-context/index.js",
     });
     expect(exportedSubpaths).not.toEqual(
       expect.arrayContaining([
+        "./build-tools",
         "./client",
         "./client/internal",
         "./client/internal/page-context",
@@ -422,6 +443,10 @@ describe("workspace package surface", () => {
         "./server/node",
         "./server/react",
         "./server/register",
+        "./page",
+        "./request",
+        "./internal/client",
+        "./internal/server",
       ]),
     );
     expect(evjsRuntimeDependencyNames(evPackageJson)).toEqual([
@@ -490,7 +515,7 @@ describe("workspace package surface", () => {
     expect(violations).toEqual([]);
   });
 
-  it("keeps @evjs/ev/build-tools limited to bundler and CLI tooling APIs", () => {
+  it("keeps @evjs/ev/_internal/build limited to bundler and CLI tooling APIs", () => {
     const runtimeExports = Object.keys(buildTools).sort();
 
     expect(runtimeExports).toEqual([...expectedBuildToolsRuntimeExports]);
@@ -551,15 +576,15 @@ describe("workspace package surface", () => {
       expect(architectureDoc).toContain(packageName);
     }
     expect(architectureDoc).toContain(
-      "Application code imports config, plugin, build, and deployment APIs through",
+      "Application config files import the minimal config authoring API through",
     );
     expect(architectureDoc).toContain(
-      "`@evjs/ev/page`, `@evjs/ev/request`, and `@evjs/ev/transport`",
+      "`@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`, `@evjs/ev/server-context`, and `@evjs/ev/transport`",
     );
     expect(architectureDoc).toContain("`@evjs/ev` consumes");
     expect(architectureDoc).toContain("`@evjs/client`, `@evjs/server`");
-    expect(architectureDoc).toContain("@evjs/ev/internal/client/*");
-    expect(architectureDoc).toContain("@evjs/ev/internal/client/route-types");
+    expect(architectureDoc).toContain("@evjs/ev/_internal/client/*");
+    expect(architectureDoc).toContain("@evjs/ev/_internal/client/route-types");
     expect(architectureDoc).toContain("generated-only internal helpers");
     expect(architectureDoc).toContain(
       "Published package manifests stay ESM-only and intentionally narrow",
@@ -586,16 +611,18 @@ describe("workspace package surface", () => {
     expect(agentGuide).toContain("[AGENT.md](./AGENT.md)");
     expect(agentGuide).toContain("[ARCHITECTURE.md](./ARCHITECTURE.md)");
     expect(agentGuide).toContain("[CONTRIBUTING.md](./CONTRIBUTING.md)");
-    expect(agentGuide).toContain(
-      "Keep config/build/plugin imports on `@evjs/ev`",
-    );
-    expect(agentGuide).toContain("`@evjs/ev/page`");
-    expect(agentGuide).toContain("`@evjs/ev/request`");
+    expect(agentGuide).toContain("Keep simple config imports on `@evjs/ev`");
+    expect(agentGuide).toContain("`@evjs/ev/route`");
+    expect(agentGuide).toContain("`@evjs/ev/navigation`");
+    expect(agentGuide).toContain("`@evjs/ev/query`");
+    expect(agentGuide).toContain("`@evjs/ev/server-context`");
     expect(agentGuide).toContain("`@evjs/ev/transport`");
     expect(agentGuide).toContain(
-      "packages/ev/src/build-tools/page-route-conventions.ts",
+      "packages/ev/src/_internal/build/page-route-conventions.ts",
     );
-    expect(agentGuide).toContain("packages/ev/src/build-tools/page-routes.ts");
+    expect(agentGuide).toContain(
+      "packages/ev/src/_internal/build/page-routes.ts",
+    );
     expect(agentGuide).toContain(
       "packages/ev/tests/build-tools-page-routes.test.ts",
     );
@@ -622,12 +649,14 @@ describe("workspace package surface", () => {
       expect(source).toContain("@evjs/ev");
       expect(source).toContain("@evjs/client");
       expect(source).toContain("@evjs/server");
-      expect(source).toContain("@evjs/ev/page");
-      expect(source).toContain("@evjs/ev/request");
+      expect(source).toContain("@evjs/ev/route");
+      expect(source).toContain("@evjs/ev/navigation");
+      expect(source).toContain("@evjs/ev/query");
+      expect(source).toContain("@evjs/ev/server-context");
       expect(source).not.toContain('"@evjs/client": "<same version>"');
       expect(source).not.toContain('"@evjs/server": "<same version>"');
       expect(source).not.toContain("@evjs/ev/client");
-      expect(source).not.toContain("@evjs/ev/server");
+      expect(source).not.toMatch(/@evjs\/ev\/server(?:[`"',\s]|$)/);
     }
 
     for (const doc of facadeGuidanceDocs) {
@@ -659,13 +688,13 @@ describe("workspace package surface", () => {
       expect(rootContributing).toContain(packageName);
     }
     expect(rootArchitecture).toContain(
-      "`@evjs/ev` owns config, plugin, build, and deployment APIs",
+      "`@evjs/ev` owns config and plugin authoring APIs",
     );
     expect(rootArchitecture).toContain("`@evjs/client`");
     expect(rootArchitecture).toContain(
-      "`@evjs/ev` root exports stay limited to framework",
+      "`@evjs/ev` root exports stay limited to minimal config",
     );
-    expect(rootArchitecture).toContain("and build tooling entries");
+    expect(rootArchitecture).toContain("Advanced config/plugin utilities");
     expect(rootArchitecture).toContain(
       "Internal `@evjs/*` runtime dependencies are kept explicit",
     );
@@ -679,10 +708,13 @@ describe("workspace package surface", () => {
       "Internal `@evjs/*` runtime dependency versions stay",
     );
     expect(rootContributing).toContain(
-      "Config/build imports stay on `@evjs/ev`. File-convention app source imports",
+      "Simple config imports stay on `@evjs/ev`.",
     );
-    expect(rootContributing).toContain("`@evjs/ev/page`");
-    expect(rootContributing).toContain("`@evjs/ev/internal/*`");
+    expect(rootContributing).toContain("File-convention app source imports");
+    expect(rootContributing).toContain("`@evjs/ev/route`");
+    expect(rootContributing).toContain("`@evjs/ev/navigation`");
+    expect(rootContributing).toContain("`@evjs/ev/query`");
+    expect(rootContributing).toContain("`@evjs/ev/_internal/*`");
     expect(rootContributing).toContain("intentional and documented");
     expect(rootContributing).toContain("generated page bootstrap");
     expect(rootContributing).toContain("shell runtime primitives behind");
@@ -734,8 +766,8 @@ describe("workspace package surface", () => {
           if (
             importSpecifier.startsWith("@evjs/shared") ||
             importSpecifier.startsWith("@evjs/create-app") ||
-            importSpecifier.startsWith("@evjs/ev/build-tools") ||
-            importSpecifier.startsWith("@evjs/ev/internal") ||
+            importSpecifier.startsWith("@evjs/ev/_internal/build") ||
+            importSpecifier.startsWith("@evjs/ev/_internal") ||
             forbiddenPackageNames.some(
               (forbiddenName) =>
                 importSpecifier === forbiddenName ||
@@ -748,7 +780,7 @@ describe("workspace package surface", () => {
           }
           if (
             (importSpecifier.startsWith("@evjs/client/internal") ||
-              importSpecifier.startsWith("@evjs/ev/internal")) &&
+              importSpecifier.startsWith("@evjs/ev/_internal")) &&
             !relativeFile.endsWith("route-types.d.ts")
           ) {
             violations.push(
@@ -860,20 +892,20 @@ describe("workspace package surface", () => {
     expect(
       parseEvjsImportSpecifiers(`
         import { defineConfig } from "@evjs/ev";
-        import { Link } from "@evjs/ev/page";
-        import { headers } from "@evjs/ev/request";
-        import "@evjs/ev/internal/server/server-functions";
+        import { Link } from "@evjs/ev/navigation";
+        import { headers } from "@evjs/ev/server-context";
+        import "@evjs/ev/_internal/server/server-functions";
         export { initTransport } from "@evjs/ev/transport";
-        export * from "@evjs/ev/internal/client";
+        export * from "@evjs/ev/_internal/client";
         const runtime = import("@evjs/shared/manifest");
       `),
     ).toEqual([
       "@evjs/ev",
-      "@evjs/ev/page",
-      "@evjs/ev/request",
-      "@evjs/ev/internal/server/server-functions",
+      "@evjs/ev/navigation",
+      "@evjs/ev/server-context",
+      "@evjs/ev/_internal/server/server-functions",
       "@evjs/ev/transport",
-      "@evjs/ev/internal/client",
+      "@evjs/ev/_internal/client",
       "@evjs/shared/manifest",
     ]);
   });
@@ -897,8 +929,8 @@ describe("workspace package surface", () => {
 
         if (
           importSpecifier.startsWith("@evjs/client/internal") ||
-          importSpecifier.startsWith("@evjs/ev/build-tools") ||
-          importSpecifier.startsWith("@evjs/ev/internal") ||
+          importSpecifier.startsWith("@evjs/ev/_internal/build") ||
+          importSpecifier.startsWith("@evjs/ev/_internal") ||
           importSpecifier.startsWith("@evjs/shared") ||
           forbiddenPackageNames.some(
             (forbiddenName) =>
@@ -963,14 +995,14 @@ describe("workspace package surface", () => {
       "./transport",
     ]);
     expect(clientPackageJson.exports?.["./transport"]).toEqual({
-      types: "./esm/transport.d.ts",
-      import: "./esm/transport.js",
-      default: "./esm/transport.js",
+      types: "./esm/server-functions/transport.d.ts",
+      import: "./esm/server-functions/transport.js",
+      default: "./esm/server-functions/transport.js",
     });
     expect(clientPackageJson.exports?.["./internal/server-functions"]).toEqual({
-      types: "./esm/server-function-runtime.d.ts",
-      import: "./esm/server-function-runtime.js",
-      default: "./esm/server-function-runtime.js",
+      types: "./esm/server-functions/server-function-runtime.d.ts",
+      import: "./esm/server-functions/server-function-runtime.js",
+      default: "./esm/server-functions/server-function-runtime.js",
     });
     expect(exportedSubpaths).not.toEqual(
       expect.arrayContaining([
@@ -1005,9 +1037,9 @@ describe("workspace package surface", () => {
       expect.arrayContaining([...forbiddenServerSubpathExports]),
     );
     expect(serverPackageJson.exports?.["./internal/server-functions"]).toEqual({
-      types: "./esm/server-function-runtime.d.ts",
-      import: "./esm/server-function-runtime.js",
-      default: "./esm/server-function-runtime.js",
+      types: "./esm/server-functions/server-function-runtime.d.ts",
+      import: "./esm/server-functions/server-function-runtime.js",
+      default: "./esm/server-functions/server-function-runtime.js",
     });
 
     const readme = await fs.readFile(

@@ -338,7 +338,7 @@ functions, SSR, PPR, and RSC:
 
 ```ts
 // src/middleware.ts
-import type { MiddlewareHandler } from "@evjs/ev/request";
+import type { MiddlewareHandler } from "@evjs/ev/server-context";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
   await next();
@@ -356,7 +356,7 @@ under `src/apis/api/**`, but not the flat sibling route `src/apis/api.ts`:
 
 ```ts
 // src/apis/middleware.ts
-import type { MiddlewareHandler } from "@evjs/ev/request";
+import type { MiddlewareHandler } from "@evjs/ev/server-context";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
   if (!ctx.req.header("authorization")) {

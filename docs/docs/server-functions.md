@@ -69,13 +69,13 @@ export const deleteUser = async (id: string) => {
 ## Request Context Helpers
 
 Server functions run inside the framework request lifecycle, so they can use the
-request helpers exported by `@evjs/ev/request`:
+request helpers exported by `@evjs/ev/server-context`:
 
 ```ts
 // src/apis/session.server.ts
 "use server";
 
-import { getCookie, headers, request, waitUntil } from "@evjs/ev/request";
+import { getCookie, headers, request, waitUntil } from "@evjs/ev/server-context";
 
 export async function currentSession() {
   const req = request();
@@ -112,7 +112,7 @@ import {
   useQueryClient,
   getFnQueryKey,
   getFnQueryOptions,
-} from "@evjs/ev/page";
+} from "@evjs/ev/query";
 import { getUsers, getUser, createUser } from "../apis/users.server";
 
 // Queries — pass server functions directly, types are inferred
@@ -285,7 +285,7 @@ export default defineConfig({
 Throw structured errors with status codes and data:
 
 ```ts
-import { ServerError } from "@evjs/ev/request";
+import { ServerError } from "@evjs/ev/server-context";
 
 export async function getUser(id: string) {
   const user = await db.users.findById(id);

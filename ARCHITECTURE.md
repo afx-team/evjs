@@ -64,11 +64,14 @@ artifacts.
   validation/fallback adapter for architecture features blocked on Utoopack APIs
 ```
 
-`@evjs/ev` owns config, plugin, build, and deployment APIs, and composes runtime
-capabilities through graph analysis, build plans, and manifest validation.
+`@evjs/ev` owns config and plugin authoring APIs, with the root export limited
+to minimal config authoring. Advanced config/plugin utilities, deployment
+adapters, build tooling entries, and generated runtime bridges live on explicit
+subpaths, and runtime capabilities are composed through graph analysis, build
+plans, and manifest validation.
 File-convention application source imports curated authoring APIs from
-`@evjs/ev/page`, `@evjs/ev/request`, and `@evjs/ev/transport`; generated
-framework code resolves runtime internals through `@evjs/ev/internal/*`.
+`@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`, `@evjs/ev/server-context`, and `@evjs/ev/transport`; generated
+framework code resolves runtime internals through `@evjs/ev/_internal/*`.
 Runtime APIs in `@evjs/client` and `@evjs/server` remain standalone/manual
 surfaces for applications that intentionally own those primitives directly.
 Other packages are tooling, bundler adapters, or shared contracts for framework
@@ -89,19 +92,21 @@ depend on `@evjs/ev` instead of depending on each other. Internal runtime
 dependency versions stay `"*"` in source manifests for workspace development,
 then release automation rewrites them to the concrete release version before
 publishing.
-`@evjs/ev` root exports stay limited to framework and build tooling entries.
+`@evjs/ev` root exports stay limited to minimal config authoring; advanced
+config/plugin utilities, deployment helpers, and build tooling entries stay on
+their own subpaths.
 
 Do not reintroduce legacy split packages:
 
 ```txt
-@evjs/build-tools  -> packages/ev/src/build-tools
+@evjs/build-tools  -> packages/ev/src/_internal/build
 @evjs/manifest     -> packages/shared/src/manifest
 ```
 
-Build helpers are exported from `@evjs/ev/build-tools`, manifest contracts are
+Build helpers are exported from `@evjs/ev/_internal/build`, manifest contracts are
 exported from `@evjs/shared/manifest`, and generated page/shell/server-function
 runtime primitives stay behind focused generated-only
-`@evjs/ev/internal/*` subpaths.
+`@evjs/ev/_internal/*` subpaths.
 
 ## Build-Time Flow
 

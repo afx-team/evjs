@@ -76,7 +76,7 @@ HTTP(S) URL `target`。Context pattern 必须以 `/` 开头，不能包含空白
 `ev dev` 和 `ev build` 也可以在代码中编程式调用：
 
 ```ts
-import { dev, build } from "@evjs/ev";
+import { dev, build } from "@evjs/cli";
 import { utoopackAdapter } from "@evjs/bundler-utoopack";
 
 // 使用显式构建器适配器启动开发服务器

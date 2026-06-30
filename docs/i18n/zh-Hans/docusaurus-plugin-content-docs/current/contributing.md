@@ -44,7 +44,7 @@ npx biome check --write    # 修复 lint/格式
    `const` arrow/function expression。不使用默认导出、跨模块 re-export 或导出非函数值
 7. **配置文件** —— 命名为 `ev.config.ts`（不是 `evjs.config.ts`）
 8. **包边界** —— config/build 导入保留在 `@evjs/ev`。file-convention 应用源码从
-   `@evjs/ev/page` 导入 page helpers，从 `@evjs/ev/request` 导入 request helpers，
+   `@evjs/ev/route` 导入 route data helpers，从 `@evjs/ev/server-context` 导入 request helpers，
    从 `@evjs/ev/transport` 导入自定义 transport helpers；standalone/manual runtime
    imports 使用 `@evjs/client` 和 `@evjs/server`。新增分发包前先优先在拥有该行为的包中使用
    subpath export。Subpath export 应保持显式且有文档说明，不要为了方便导入增加别名。

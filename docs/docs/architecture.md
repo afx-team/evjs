@@ -19,11 +19,13 @@ src/pages + src/apis + src/middleware.ts + ev.config.ts
 
 ## Public Packages
 
-Application code imports config, plugin, build, and deployment APIs through
-`@evjs/ev`. File-convention apps also import curated authoring APIs from
-`@evjs/ev/page`, `@evjs/ev/request`, and `@evjs/ev/transport`; generated
+Application config files import the minimal config authoring API through
+`@evjs/ev`. Advanced config utilities, plugin authoring types, deployment
+adapters, and internal build/manifest helpers live on explicit subpaths.
+File-convention apps import curated authoring APIs from
+`@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`, `@evjs/ev/server-context`, and `@evjs/ev/transport`; generated
 framework code resolves client/server runtime internals through
-`@evjs/ev/internal/*`. `@evjs/client` and `@evjs/server` remain
+`@evjs/ev/_internal/*`. `@evjs/client` and `@evjs/server` remain
 standalone/manual runtime packages for apps that intentionally own those
 surfaces directly. Other packages are tooling, bundler adapters, or shared
 contracts for framework packages. When a new capability needs a boundary,
@@ -32,9 +34,7 @@ creating another distributed package.
 
 ```txt
 @evjs/ev
-  composition/control plane for config, plugin lifecycle, file-route
-  discovery, dev/build orchestration, framework build types, capability
-  validation, deployment helpers, and file-convention authoring subpaths
+  minimal config authoring entry: defineConfig plus config/plugin shape types
 
 @evjs/client
   standalone/manual browser runtime core, framework-managed page runtime,
@@ -57,11 +57,26 @@ declaration model; use `src/apis` for framework-managed server routes.
 
 | Role | Packages | Import guidance |
 |------|----------|-----------------|
-| Framework surface | `@evjs/ev` | Use `@evjs/ev` for config/build/plugin/deployment APIs and feature composition; use `@evjs/ev/page`, `@evjs/ev/request`, and `@evjs/ev/transport` in file-convention app source. |
+| Framework surface | `@evjs/ev` | Use `@evjs/ev` for simple config authoring, `@evjs/ev/config` for advanced config utilities, `@evjs/ev/plugin` for plugin authoring details, `@evjs/ev/deployment` for deployment adapters, and `@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`, `@evjs/ev/server-context`, and `@evjs/ev/transport` in file-convention app source. |
 | Standalone runtime APIs | `@evjs/client`, `@evjs/server` | Use these packages only when application source intentionally owns standalone/manual CSR or server runtime primitives. |
 | Tooling | `@evjs/cli`, `@evjs/create-app` | Install or execute them; application modules should not import them. |
 | Bundler adapters | `@evjs/bundler-utoopack`, `@evjs/bundler-webpack` | `@evjs/cli` owns the default Utoopack adapter. Import an adapter directly only when authoring custom tooling. |
 | Shared contracts | `@evjs/shared` | Published so framework packages share manifest/runtime types; app code should not import it directly. |
+
+### Import Ownership Principle
+
+Ordinary file-convention applications should import from `@evjs/ev` and its
+semantic authoring subpaths only. Use `@evjs/ev` for the minimal config entry,
+then use `@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`,
+`@evjs/ev/server-context`, and `@evjs/ev/transport` for application source.
+CLI code, bundler adapters, and generated framework modules are the only code
+that should use `@evjs/ev/_internal/*`.
+
+`@evjs/client` and `@evjs/server` stay public for standalone/manual runtime
+use, but they are lower-level runtime packages rather than the default import
+surface for file-convention apps. Do not make `@evjs/ev/*` a mirror of
+`@evjs/client` or `@evjs/server`; each `@evjs/ev/*` subpath must be a curated
+API shaped around evjs user semantics.
 
 Published package manifests stay ESM-only and intentionally narrow. Every
 distributed package sets `"type": "module"`, publishes with public access and
@@ -82,33 +97,33 @@ instead of depending on each other. Internal runtime dependency versions stay
 `"*"` in source manifests for workspace development, then release automation
 rewrites them to the concrete release version before publishing.
 
-Generated-only `@evjs/ev/internal/client/*` and
-`@evjs/ev/internal/server/*` subpaths let framework-emitted route
+Generated-only `@evjs/ev/_internal/client/*` and
+`@evjs/ev/_internal/server/*` subpaths let framework-emitted route
 declarations, page bootstraps, server-function stubs/registrations, and RSC
 runtime entries type-check. Application code imports public authoring APIs from
-`@evjs/ev/page`, `@evjs/ev/request`, or `@evjs/ev/transport`; it must not
+`@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`, `@evjs/ev/server-context`, or `@evjs/ev/transport`; it must not
 import generated-only internal helpers. Examples include
-`@evjs/ev/internal/client/route-types` for generated SPA route declarations,
-`@evjs/ev/internal/client/server-functions` for generated `"use server"`
-client stubs, `@evjs/ev/internal/server/server-functions` for generated
+`@evjs/ev/_internal/client/route-types` for generated SPA route declarations,
+`@evjs/ev/_internal/client/server-functions` for generated `"use server"`
+client stubs, `@evjs/ev/_internal/server/server-functions` for generated
 `"use server"` server registrations, and
-`@evjs/ev/internal/client/rsc-runtime` for RSC page bootstraps.
+`@evjs/ev/_internal/client/rsc-runtime` for RSC page bootstraps.
 
 Do not reintroduce legacy split packages such as `@evjs/build-tools`,
 `@evjs/manifest`, or `@evjs/router-*`. Build helpers are exported from
-`@evjs/ev/build-tools`, and manifest contracts are exported from
+`@evjs/ev/_internal/build`, and manifest contracts are exported from
 `@evjs/shared/manifest`.
 
 Documentation code examples follow the same package boundary: file-convention
-application examples import from `@evjs/ev`, `@evjs/ev/page`,
-`@evjs/ev/request`, or `@evjs/ev/transport`; standalone runtime examples may
+application examples import from `@evjs/ev`, `@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`,
+`@evjs/ev/server-context`, or `@evjs/ev/transport`; standalone runtime examples may
 import from `@evjs/client` or `@evjs/server`; adapter examples may import
 `@evjs/bundler-utoopack` when demonstrating custom tooling.
 
 ## Internal Modules
 
 ```txt
-@evjs/ev/build-tools
+@evjs/ev/_internal/build
   source analysis, file-route discovery, server-function extraction,
   graph/plan helpers, framework transforms, HTML helpers
 
@@ -118,7 +133,7 @@ import from `@evjs/client` or `@evjs/server`; adapter examples may import
 @evjs/ev generated-only runtime internals
   framework-managed runtime, shell, router-free react-page runtime, transport,
   RSC client runtime, SPA router integration, and generated bootstrap behind
-  @evjs/ev/internal/* subpaths backed by @evjs/client and @evjs/server internals
+  @evjs/ev/_internal/* subpaths backed by @evjs/client and @evjs/server internals
 
 @evjs/bundler-utoopack
   default bundler adapter used by @evjs/cli
@@ -128,8 +143,8 @@ import from `@evjs/client` or `@evjs/server`; adapter examples may import
   dev plan updates while Utoopack lower-layer APIs catch up
 ```
 
-`@evjs/ev/build-tools` does not import bundler adapters. Bundler adapters consume `BuildPlan`; they do not rediscover framework semantics from source files after bundling.
-The `@evjs/ev/build-tools` subpath is intentionally limited to CLI and bundler
+`@evjs/ev/_internal/build` does not import bundler adapters. Bundler adapters consume `BuildPlan`; they do not rediscover framework semantics from source files after bundling.
+The `@evjs/ev/_internal/build` subpath is intentionally limited to CLI and bundler
 adapter tooling APIs. Low-level module export parsing, server-function ID
 hashing, and module-ref helpers stay private to `@evjs/ev`.
 
@@ -139,7 +154,7 @@ hashing, and module-ref helpers stay private to `@evjs/ev`.
 sequenceDiagram
   participant CLI as "@evjs/cli"
   participant EV as "@evjs/ev"
-  participant Tools as "@evjs/ev/build-tools"
+  participant Tools as "@evjs/ev/_internal/build"
   participant Bundler as "BundlerAdapter"
   participant Manifest as "manifest linker"
   participant Plugins as "Plugins"
@@ -189,16 +204,17 @@ TanStack Router is available through the `@evjs/client` standalone CSR surface
 for manual browser applications. In framework-managed apps, `@evjs/ev` owns
 file-route discovery and generated bootstraps, so page code uses `src/pages`,
 page hooks, and navigation helpers instead of constructing router bootstraps
-directly. Generated bootstraps use `@evjs/ev/internal/client/*`.
+directly. Generated bootstraps use `@evjs/ev/_internal/client/*`.
 
 ## Runtime Flow
 
 ```mermaid
 sequenceDiagram
   participant Browser
-  participant Shell as "@evjs/ev/internal/client"
-  participant Runtime as "@evjs/ev/page"
-  participant Server as "@evjs/ev/internal/server"
+  participant Shell as "@evjs/ev/_internal/client"
+  participant Route as "@evjs/ev/route"
+  participant Navigation as "@evjs/ev/navigation"
+  participant Server as "@evjs/ev/_internal/server"
   participant ClientRuntime as "ClientRuntime"
   participant FrameworkRuntime as "FrameworkRuntime"
 

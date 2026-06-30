@@ -1,4 +1,4 @@
-import { useQuery } from "@evjs/ev/page";
+import { useQuery } from "@evjs/ev/query";
 import { createTRPCClient, type TRPCLink } from "@trpc/client";
 import { observable } from "@trpc/server/observable";
 import { useCallback, useEffect, useState } from "react";

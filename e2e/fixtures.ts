@@ -12,7 +12,9 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import type { BuildResult } from "@evjs/ev";
+import type { BundlerAdapter } from "@evjs/ev/_internal/build";
+import type { Config } from "@evjs/ev/config";
+import type { BuildResult, Plugin } from "@evjs/ev/plugin";
 import type { DeploymentMetadata } from "@evjs/shared/manifest";
 import { test as base, expect } from "@playwright/test";
 
@@ -264,7 +266,7 @@ function compactUnique(values: Array<string | undefined>): string[] {
  */
 async function loadExampleConfig(
   exampleDir: string,
-): Promise<import("@evjs/ev").Config<unknown> | undefined> {
+): Promise<Config<unknown> | undefined> {
   const configPath = path.join(exampleDir, "ev.config.ts");
   if (!fs.existsSync(configPath)) return undefined;
 
@@ -307,7 +309,7 @@ export async function buildExample(
   const { build } = await import("@evjs/cli");
   const bundler = await resolveBundler(bundlerName);
   let frameworkRuntime: FrameworkRuntimeOutput | undefined;
-  const captureFrameworkRuntimePlugin: import("@evjs/ev").Plugin<unknown> = {
+  const captureFrameworkRuntimePlugin: Plugin<unknown> = {
     name: "e2e-framework-runtime-capture",
     setup() {
       return {
@@ -318,7 +320,7 @@ export async function buildExample(
     },
   };
   const runBuild = build as (
-    config: import("@evjs/ev").Config<unknown>,
+    config: Config<unknown>,
     options: { cwd: string },
   ) => Promise<void>;
 
@@ -335,8 +337,7 @@ export async function buildExample(
       {
         ...exampleConfig,
         plugins: [
-          ...((exampleConfig?.plugins as import("@evjs/ev").Plugin<unknown>[]) ??
-            []),
+          ...((exampleConfig?.plugins as Plugin<unknown>[]) ?? []),
           captureFrameworkRuntimePlugin,
         ],
         ...(bundler ? { bundler } : {}),
@@ -357,11 +358,11 @@ export async function buildExample(
 
 async function resolveBundler(
   bundlerName: string,
-): Promise<import("@evjs/ev").BundlerAdapter<unknown> | undefined> {
+): Promise<BundlerAdapter<unknown> | undefined> {
   if (bundlerName === "utoopack") return undefined;
   if (bundlerName === "webpack") {
     const { webpackAdapter } = await import("@evjs/bundler-webpack");
-    return webpackAdapter as import("@evjs/ev").BundlerAdapter<unknown>;
+    return webpackAdapter as BundlerAdapter<unknown>;
   }
 
   throw new Error(`Unsupported e2e bundler: ${bundlerName}`);

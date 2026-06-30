@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { discoverPageRoutes } from "../src/build-tools/index.js";
+import { discoverPageRoutes } from "../src/_internal/build/index.js";
 import {
   findInvalidRouteSegment,
   findPageRouteSegmentConventionViolation,
@@ -20,7 +20,7 @@ import {
   routePathFromSegments,
   routePathShapeFromPath,
   routeShapeFromSegments,
-} from "../src/build-tools/page-route-conventions.js";
+} from "../src/_internal/build/page-route-conventions.js";
 
 const tempDirs: string[] = [];
 const repoRoot = path.resolve(

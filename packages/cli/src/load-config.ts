@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { Config, DefaultBundlerConfig } from "@evjs/ev";
-import { loadConfigFile } from "@evjs/ev/build-tools";
+import { loadConfigFile } from "@evjs/ev/_internal/build";
+import type { Config, DefaultBundlerConfig } from "@evjs/ev/config";
 
 export const CONFIG_FILES = ["ev.config.ts", "ev.config.js", "ev.config.mjs"];
 

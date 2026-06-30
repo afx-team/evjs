@@ -10,15 +10,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import type {
-  BuildPlan,
-  BuildPlanUpdate,
   BundlerAdapter,
   BundlerBuildContext,
   BundlerBuildFacts,
   BundlerDevContext,
   BundlerDevController,
-  ResolvedConfig,
-} from "@evjs/ev";
+} from "@evjs/ev/_internal/build";
+import type { BuildPlan, BuildPlanUpdate } from "@evjs/ev/_internal/manifest";
+import type { ResolvedConfig } from "@evjs/ev/config";
 import { getLogger } from "@logtape/logtape";
 import type { ConfigComplete } from "@utoo/pack";
 import { UtoopackManifestGenerator } from "../manifest-generator.js";

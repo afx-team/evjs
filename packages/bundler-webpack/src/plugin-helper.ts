@@ -1,4 +1,4 @@
-import type { BundlerCtx, PluginHooks } from "@evjs/ev";
+import type { BundlerCtx, PluginHooks } from "@evjs/ev/plugin";
 import type { WebpackConfig } from "./adapter/create-config.js";
 
 type WebpackBundlerConfigHook = NonNullable<

@@ -312,7 +312,7 @@ HTTP methods；helper 应移到普通非路由文件、`_` 前缀私有文件，
 
 ```ts
 // src/middleware.ts
-import type { MiddlewareHandler } from "@evjs/ev/request";
+import type { MiddlewareHandler } from "@evjs/ev/server-context";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
   await next();
@@ -330,7 +330,7 @@ API 路由中间件位于服务端文件路由树内。`src/apis/middleware.ts`
 
 ```ts
 // src/apis/middleware.ts
-import type { MiddlewareHandler } from "@evjs/ev/request";
+import type { MiddlewareHandler } from "@evjs/ev/server-context";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
   if (!ctx.req.header("authorization")) {

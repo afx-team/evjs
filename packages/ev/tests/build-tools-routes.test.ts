@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveRoutes } from "../src/build-tools/routes.js";
+import { resolveRoutes } from "../src/_internal/build/routes.js";
 
 describe("resolveRoutes", () => {
   it("resolves simple child paths to full paths", () => {

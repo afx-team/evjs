@@ -2,38 +2,42 @@ import { utoopackAdapter } from "@evjs/bundler-utoopack";
 import {
   type BuildOptions,
   type BundlerAdapter,
-  type Config,
   type DevOptions,
   build as frameworkBuild,
   dev as frameworkDev,
-} from "@evjs/ev";
+} from "@evjs/ev/_internal/build";
+import type { Config } from "@evjs/ev/config";
 
+export type {
+  BuildOptions,
+  BundlerAdapter,
+  DevOptions,
+} from "@evjs/ev/_internal/build";
 export {
-  type BuildOptions,
-  type BuildResult,
-  type BundlerAdapter,
-  type BundlerCtx,
-  type ClientManifest,
   CONFIG_DEFAULTS,
   type Config,
-  type DevOptions,
   defineConfig,
-  type EvBuildResult,
-  type EvBundlerCtx,
   type EvConfig,
-  type EvDocument,
-  type EvPlugin,
-  type EvPluginConfigContext,
-  type EvPluginContext,
-  type EvPluginHooks,
-  type Plugin,
-  type PluginContext,
-  type PluginHooks,
   type ResolvedConfig,
   type ResolvedEvConfig,
   resolveConfig,
-  type ServerManifest,
-} from "@evjs/ev";
+} from "@evjs/ev/config";
+export type {
+  BuildResult,
+  BundlerCtx,
+  ClientManifest,
+  EvBuildResult,
+  EvBundlerCtx,
+  EvDocument,
+  EvPlugin,
+  EvPluginConfigContext,
+  EvPluginContext,
+  EvPluginHooks,
+  Plugin,
+  PluginContext,
+  PluginHooks,
+  ServerManifest,
+} from "@evjs/ev/plugin";
 export { loadConfig } from "./load-config.js";
 
 export type DefaultBundlerConfig =

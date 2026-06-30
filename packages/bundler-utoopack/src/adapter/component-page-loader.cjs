@@ -13,7 +13,7 @@ module.exports = function componentPageLoader() {
 
   return [
     `import Component from ${JSON.stringify(`./${path.basename(this.resourcePath)}?evjs-component-page-source`)};`,
-    `import { createGeneratedReactPageEntry } from "@evjs/ev/internal/client/react-page";`,
+    `import { createGeneratedReactPageEntry } from "@evjs/ev/_internal/client/react-page";`,
     ``,
     `const mod = createGeneratedReactPageEntry(Component, ${JSON.stringify(entryOptions)}, import.meta.url);`,
     `export default mod;`,

@@ -29,13 +29,8 @@ export default defineConfig({
 ## 插件结构
 
 ```ts
-import type {
-  Config,
-  DefaultBundlerConfig,
-  Plugin,
-  PluginHooks,
-  ResolvedConfig,
-} from "@evjs/ev";
+import type { Config, DefaultBundlerConfig, ResolvedConfig } from "@evjs/ev/config";
+import type { Plugin, PluginConfigContext, PluginContext, PluginHooks } from "@evjs/ev/plugin";
 
 interface Plugin<TBundlerConfig = DefaultBundlerConfig> {
   name: string;
@@ -69,7 +64,8 @@ array 和其他返回值会被拒绝。最终配置会经过和用户配置相�
 运行 `setup()` hooks 或开始 bundling。
 
 ```ts
-import { defineConfig, merge } from "@evjs/ev";
+import { defineConfig } from "@evjs/ev";
+import { merge } from "@evjs/ev/config";
 
 export default defineConfig({
   plugins: [
@@ -162,7 +158,7 @@ transformHtml(doc, ctx) {
 文档类型是 `HtmlDocument`，它是标准 DOM API 的 bundler 无关子集：
 
 ```ts
-import type { HtmlDocument } from "@evjs/ev";
+import type { HtmlDocument } from "@evjs/ev/plugin";
 ```
 
 ## Build Result

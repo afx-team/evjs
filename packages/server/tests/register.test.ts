@@ -3,7 +3,7 @@ import {
   registerServerReference,
   registry,
   type ServerFn,
-} from "../src/functions/register.js";
+} from "../src/server-functions/register.js";
 
 describe("registerServerReference", () => {
   beforeEach(() => {

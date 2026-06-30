@@ -1,4 +1,6 @@
-import { Link, usePageParams, useQuery } from "@evjs/ev/page";
+import { Link } from "@evjs/ev/navigation";
+import { useQuery } from "@evjs/ev/query";
+import { usePageParams } from "@evjs/ev/route";
 import { getPost } from "@/apis/data.server";
 
 const styles = {

@@ -30,13 +30,8 @@ export default defineConfig({
 ## Plugin Shape
 
 ```ts
-import type {
-  Config,
-  DefaultBundlerConfig,
-  Plugin,
-  PluginHooks,
-  ResolvedConfig,
-} from "@evjs/ev";
+import type { Config, DefaultBundlerConfig, ResolvedConfig } from "@evjs/ev/config";
+import type { Plugin, PluginConfigContext, PluginContext, PluginHooks } from "@evjs/ev/plugin";
 
 interface Plugin<TBundlerConfig = DefaultBundlerConfig> {
   name: string;
@@ -73,7 +68,8 @@ resulting config is validated by the same resolver as user config before
 `setup()` hooks or bundling run.
 
 ```ts
-import { defineConfig, merge } from "@evjs/ev";
+import { defineConfig } from "@evjs/ev";
+import { merge } from "@evjs/ev/config";
 
 export default defineConfig({
   plugins: [
@@ -167,7 +163,7 @@ Context fields include:
 The document type is `HtmlDocument`, a bundler-agnostic subset of standard DOM APIs:
 
 ```ts
-import type { HtmlDocument } from "@evjs/ev";
+import type { HtmlDocument } from "@evjs/ev/plugin";
 ```
 
 ## Build Result

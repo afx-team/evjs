@@ -1,31 +1,30 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type {
-  AppGraph,
-  BuildOutput,
-  BuildPlan,
-  BundlerBuildFacts,
-  PluginHooks,
-} from "@evjs/ev";
+import type { BundlerBuildFacts } from "@evjs/ev/_internal/build";
 import {
   buildHtml,
-  createDeploymentMetadata,
-  createPublicManifest,
-  createServerManifest,
-  linkBuildOutput,
-  type ResolvedConfig,
-  resolveConfig,
-} from "@evjs/ev";
-import {
   createAppGraph,
   createBuildPlan,
   diffBuildPlan,
   generateHtml,
-} from "@evjs/ev/build-tools";
+} from "@evjs/ev/_internal/build";
+import type {
+  AppGraph,
+  BuildOutput,
+  BuildPlan,
+} from "@evjs/ev/_internal/manifest";
+import {
+  createDeploymentMetadata,
+  createPublicManifest,
+  createServerManifest,
+  linkBuildOutput,
+} from "@evjs/ev/_internal/manifest";
+import { type ResolvedConfig, resolveConfig } from "@evjs/ev/config";
+import type { PluginHooks } from "@evjs/ev/plugin";
 import type { ConfigComplete } from "@utoo/pack";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createClientRuntime } from "../../ev/src/framework-runtime.js";
+import { createClientRuntime } from "../../ev/src/_internal/build/framework-runtime.js";
 import { utoopackAdapter } from "../src/adapter/index.js";
 
 vi.mock("@utoo/pack", () => ({

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { inspectFrameworkBuild } from "@evjs/ev";
+import { inspectFrameworkBuild } from "@evjs/ev/_internal/build";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   formatInspectJson,

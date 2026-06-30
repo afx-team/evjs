@@ -1,5 +1,5 @@
 import type * as Client from "../src/index";
-import type * as ClientTransport from "../src/transport";
+import type * as ClientTransport from "../src/server-functions/transport";
 
 export type PublicPageHookExports = [
   typeof Client.usePageParams,

@@ -9,7 +9,7 @@ import {
   usePageSearch,
 } from "@evjs/client";
 import { useLinkProps as useTanStackLinkProps } from "@tanstack/react-router";
-import type { CreatePageRouteRegister } from "../src/route-types";
+import type { CreatePageRouteRegister } from "../src/framework/page/route-types";
 
 type Empty = Record<PropertyKey, never>;
 

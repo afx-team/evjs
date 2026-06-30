@@ -1,4 +1,7 @@
-import type { InspectDiagnostic, InspectFrameworkBuildResult } from "@evjs/ev";
+import type {
+  InspectDiagnostic,
+  InspectFrameworkBuildResult,
+} from "@evjs/ev/_internal/build";
 
 export function hasInspectErrors(result: InspectFrameworkBuildResult): boolean {
   return result.diagnostics.some((diagnostic) => diagnostic.level === "error");

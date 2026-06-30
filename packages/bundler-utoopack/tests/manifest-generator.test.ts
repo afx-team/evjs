@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { AppGraph, BuildPlan, BundlerBuildFacts } from "@evjs/ev";
-import { linkBuildOutput } from "@evjs/ev";
+import type { BundlerBuildFacts } from "@evjs/ev/_internal/build";
+import type { AppGraph, BuildPlan } from "@evjs/ev/_internal/manifest";
+import { linkBuildOutput } from "@evjs/ev/_internal/manifest";
 import { afterEach, describe, expect, it } from "vitest";
 import { UtoopackManifestGenerator } from "../src/manifest-generator.js";
 
@@ -430,7 +431,7 @@ function createPlan(
       ...pprEntries,
       {
         name: "server",
-        import: "@evjs/ev/internal/server/fetch",
+        import: "@evjs/ev/_internal/server/fetch",
         environment: "server" as const,
         runtime: "node" as const,
         kind: "server-runtime" as const,
@@ -451,7 +452,7 @@ function createPlan(
       })),
     ],
     server: {
-      entry: "@evjs/ev/internal/server/fetch",
+      entry: "@evjs/ev/_internal/server/fetch",
     },
     runtime: {
       publicPath: "/",

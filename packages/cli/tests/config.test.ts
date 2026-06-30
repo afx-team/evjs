@@ -1,5 +1,6 @@
-import type { Config, ServerConfig } from "@evjs/ev";
-import { CONFIG_DEFAULTS, defineConfig } from "@evjs/ev";
+import { defineConfig } from "@evjs/ev";
+import type { Config, ServerConfig } from "@evjs/ev/config";
+import { CONFIG_DEFAULTS } from "@evjs/ev/config";
 import { describe, expect, it } from "vitest";
 
 describe("defineConfig", () => {

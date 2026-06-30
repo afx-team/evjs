@@ -6,7 +6,7 @@ import {
   makeFnId,
   parseModuleRef,
   sanitizePageId,
-} from "../src/build-tools/utils.js";
+} from "../src/_internal/build/utils.js";
 
 describe("deriveRouteIdFromPath", () => {
   it("uses index for the root route", () => {

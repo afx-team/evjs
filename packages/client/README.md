@@ -10,7 +10,7 @@
 - **Router-Free Pages** — MPA and framework-managed pages use the page runtime without adding a client router.
 - **Data Fetching** — Wraps [TanStack Query](https://tanstack.com/query) with built-in server function proxies.
 - **Server Function Support** — `useQuery(fn)` and `useMutation(fn)` for typed server-boundary calls.
-- **Focused Client API** — Standalone/manual client code imports transport, page hooks, navigation helpers, and RSC helpers from `@evjs/client`; file-convention app source reaches the same authoring APIs through `@evjs/ev/page` and `@evjs/ev/transport`; generated framework bootstrap uses `@evjs/client/internal`.
+- **Focused Client API** — Standalone/manual client code imports transport, page hooks, navigation helpers, and RSC helpers from `@evjs/client`; file-convention app source reaches the same authoring APIs through `@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`, and `@evjs/ev/transport`; generated framework bootstrap uses `@evjs/client/internal`.
 
 ## Install
 
@@ -70,7 +70,7 @@ artifacts.
 
 ```tsx
 // src/pages/users/$userId.tsx
-import { usePageParams } from "@evjs/ev/page";
+import { usePageParams } from "@evjs/ev/route";
 
 export default function UserPage() {
   const { userId } = usePageParams();
@@ -125,11 +125,11 @@ export default defineConfig({
 ## Server Functions
 
 Use the `"use server"` directive in reachable `*.server.ts` files. In
-file-convention apps, import the page/query hooks from `@evjs/ev/page`:
+file-convention apps, import the route data hooks from `@evjs/ev/route` and query hooks from `@evjs/ev/query`:
 
 ```tsx
 // src/pages/posts.tsx
-import { useQuery } from "@evjs/ev/page";
+import { useQuery } from "@evjs/ev/query";
 import { getPosts } from "../apis/posts.server";
 
 function Posts() {
@@ -191,7 +191,7 @@ Generic TanStack Query APIs that are not paired with evjs server functions
 should come from `@tanstack/react-query`. Standalone/manual clients use
 `@evjs/client` for evjs page, navigation, server-function, and RSC APIs; normal
 file-convention app source imports the public authoring surface from
-`@evjs/ev/page` and `@evjs/ev/transport`.
+`@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`, and `@evjs/ev/transport`.
 
 ## License
 

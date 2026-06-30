@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server";
 import { describe, expect, it } from "vitest";
-import { createApp } from "../src/app.js";
+import { createApp } from "../src/app/app.js";
 import {
   createRoute,
   type RouteHandlerDefinition,
@@ -307,7 +307,7 @@ describe("createRoute", () => {
   });
 
   it("runs app middleware before route middleware and supports after-next response updates", async () => {
-    const { createApp } = await import("../src/app.js");
+    const { createApp } = await import("../src/app/app.js");
     const order: string[] = [];
     const handler = createRoute("/api/items/:id", {
       middlewares: [
@@ -382,7 +382,7 @@ describe("createRoute", () => {
 
   it("mounts on createApp via routes option", async () => {
     // This tests the integration path through createApp
-    const { createApp } = await import("../src/app.js");
+    const { createApp } = await import("../src/app/app.js");
 
     const items = createRoute("/items", {
       GET: async () => Response.json(["a", "b"]),

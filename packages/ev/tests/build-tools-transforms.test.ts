@@ -5,8 +5,8 @@ import {
   extractServerFunctionExports,
   transformRscClientFile,
   transformServerFile,
-} from "../src/build-tools/index.js";
-import { SERVER_FUNCTION_TRANSFORM_RUNTIME } from "../src/build-tools/types.js";
+} from "../src/_internal/build/index.js";
+import { SERVER_FUNCTION_TRANSFORM_RUNTIME } from "../src/_internal/build/types.js";
 
 const runtime = SERVER_FUNCTION_TRANSFORM_RUNTIME;
 

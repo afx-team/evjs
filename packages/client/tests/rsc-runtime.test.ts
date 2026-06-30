@@ -5,8 +5,8 @@ import {
   type ReactRscRuntimeBootstrap,
   startReactRscPageRuntime,
   unmountReactRscPage,
-} from "../src/rsc.js";
-import type { ClientRuntime } from "../src/runtime-config.js";
+} from "../src/rsc/rsc.js";
+import type { ClientRuntime } from "../src/shared/runtime-config.js";
 
 const calls: string[] = [];
 const rootElements: unknown[] = [];
@@ -437,7 +437,7 @@ describe("React RSC runtime", () => {
 
     try {
       vi.resetModules();
-      await import("../src/rsc.js");
+      await import("../src/rsc/rsc.js");
 
       expect(queuedStarts).toHaveLength(1);
       queuedStarts[0]();

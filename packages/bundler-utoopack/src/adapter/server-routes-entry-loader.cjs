@@ -20,8 +20,8 @@ module.exports = function serverRoutesEntryLoader() {
     ]),
   );
   const imports = [
-    `import { createApp, createRoute } from "@evjs/ev/internal/server";`,
-    `import { createReactFrameworkServer } from "@evjs/ev/internal/server/react";`,
+    `import { createApp, createRoute } from "@evjs/ev/_internal/server";`,
+    `import { createReactFrameworkServer } from "@evjs/ev/_internal/server/react";`,
     ...middlewareModules.map(
       (middleware, index) =>
         `import middleware${index} from ${JSON.stringify(toLoaderRelativeRequest(middleware.module, loaderContext))};`,

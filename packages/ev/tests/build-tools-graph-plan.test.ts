@@ -3,13 +3,16 @@ import os from "node:os";
 import path from "node:path";
 import { linkBuildOutput } from "@evjs/shared/manifest";
 import { afterEach, describe, expect, it } from "vitest";
-import type { BuildPlanConfig, GraphConfig } from "../src/build-tools/index.js";
+import type {
+  BuildPlanConfig,
+  GraphConfig,
+} from "../src/_internal/build/index.js";
 import {
   createAppGraph,
   createBuildPlan,
   diffBuildPlan,
-} from "../src/build-tools/index.js";
-import { hashServerFunction } from "../src/build-tools/utils.js";
+} from "../src/_internal/build/index.js";
+import { hashServerFunction } from "../src/_internal/build/utils.js";
 
 const tempDirs: string[] = [];
 
@@ -2018,7 +2021,7 @@ describe("createAppGraph and createBuildPlan", () => {
     });
     expect(plan.entries).toContainEqual({
       name: "server",
-      import: "@evjs/ev/internal/server/fetch",
+      import: "@evjs/ev/_internal/server/fetch",
       environment: "server",
       runtime: "node",
       kind: "server-runtime",
@@ -3212,7 +3215,7 @@ describe("createAppGraph and createBuildPlan", () => {
     expect(plan.entries).toContainEqual(
       expect.objectContaining({
         name: "evjs-rsc-client",
-        import: "@evjs/ev/internal/client/rsc-runtime",
+        import: "@evjs/ev/_internal/client/rsc-runtime",
         environment: "client",
         kind: "runtime",
       }),
@@ -4003,7 +4006,7 @@ describe("createAppGraph and createBuildPlan", () => {
         },
         {
           name: "server",
-          import: "@evjs/ev/internal/server/fetch",
+          import: "@evjs/ev/_internal/server/fetch",
           environment: "server",
           runtime: "node",
           kind: "server-runtime",

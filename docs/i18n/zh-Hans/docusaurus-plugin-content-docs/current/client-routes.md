@@ -134,7 +134,8 @@ loader data 时，使用 page hooks；生成的路由胶水由 evjs 管理。
 
 ```tsx
 // src/pages/users/$userId.tsx
-import { usePageParams, useQuery } from "@evjs/ev/page";
+import { usePageParams } from "@evjs/ev/route";
+import { useQuery } from "@evjs/ev/query";
 import { getUser } from "../../apis/users.server";
 
 export default function UserPage() {
@@ -163,7 +164,7 @@ SPA 模式还会识别专用 route convention 模块：
 
 ```tsx
 // src/pages/search.tsx
-import { usePageSearch } from "@evjs/ev/page";
+import { usePageSearch } from "@evjs/ev/route";
 
 export const validateSearch = (search: Record<string, unknown>) => ({
   q: typeof search.q === "string" ? search.q : "",
@@ -222,13 +223,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 ## 导航
 
-页面内可以使用普通 `<a>`，也可以使用 `@evjs/ev/page` 的 `Link`。导航 helper
+页面内可以使用普通 `<a>`，也可以使用 `@evjs/ev/navigation` 的 `Link`。导航 helper
 使用同一套文件路径约定来描述 path 和 params。
 
 默认 `src/pages` 路由目录下，`ev dev` 和 `ev build` 会在 SPA 模式下写入
 `src/route-types.d.ts`。自定义 `routing.dir` 时，会在该路由目录的父级写入同名文件。
-这个文件只用于增强 `@evjs/ev/page` 中 `Link`、`useLinkProps`、`redirect`
-等 helper 使用的 route register；应用代码不需要导入它，
+这个文件只用于增强 `@evjs/ev/route` 中的 route register，供 `@evjs/ev/navigation` 的
+`Link`、`useLinkProps`、`redirect` 等 helper 使用；应用代码不需要导入它，
 也不需要手写 framework router bootstrap。
 
 该声明文件会保留每个路由的字面量 path，用于导航类型推导。保持忽略这个生成文件，
@@ -240,7 +241,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 `include`。
 
 ```tsx
-import { Link } from "@evjs/ev/page";
+import { Link } from "@evjs/ev/navigation";
 
 export default function HomePage() {
   return (

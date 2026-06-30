@@ -23,7 +23,7 @@
 | `@evjs/bundler-utoopack` | `packages/bundler-utoopack` | Default Utoopack adapter; consumes `BuildPlan` and links `BuildOutput` where supported |
 | `@evjs/bundler-webpack` | `packages/bundler-webpack` | Validation/fallback adapter for new architecture features that Utoopack cannot build yet |
 
-`packages/build-tools` and `packages/manifest` no longer exist as public workspace packages. Build-tool helpers live under `packages/ev/src/build-tools`, and manifest schemas/linkers live under `packages/shared/src/manifest`.
+`packages/build-tools` and `packages/manifest` no longer exist as public workspace packages. Build-tool helpers live under `packages/ev/src/_internal/build`, and manifest schemas/linkers live under `packages/shared/src/manifest`.
 
 ## Core Principles
 
@@ -85,8 +85,10 @@ and adapters depend on `@evjs/ev` instead of on each other.
    filenames when colocated with route convention files, and export named
    functions or supported named async values.
 6. Use `ev.config.ts`; new docs should import `defineConfig` from `@evjs/ev`.
-7. Config/build imports stay on `@evjs/ev`. File-convention app source imports
-   page helpers from `@evjs/ev/page`, request helpers from `@evjs/ev/request`,
+7. Simple config imports stay on `@evjs/ev`. Advanced config utilities use
+   `@evjs/ev/config`, plugin authoring details use `@evjs/ev/plugin`, and
+   CLI/adapter/generated code uses `@evjs/ev/_internal/*`. File-convention app source imports
+   route data helpers from `@evjs/ev/route`, navigation helpers from `@evjs/ev/navigation`, query helpers from `@evjs/ev/query`, request helpers from `@evjs/ev/server-context`,
    and custom transport helpers from `@evjs/ev/transport`; standalone/manual
    runtime imports use `@evjs/client` and `@evjs/server`. Prefer a subpath
    export on the package that owns the behavior before adding another
@@ -94,7 +96,7 @@ and adapters depend on `@evjs/ev` instead of on each other.
    add convenience aliases.
 8. Keep generated page bootstrap, server-function stubs, server runtime
    bootstrap, and shell runtime primitives behind focused generated-only
-   `@evjs/ev/internal/*` subpaths.
+   `@evjs/ev/_internal/*` subpaths.
 9. Use `server.basePath` for framework server runtime paths. Do not reintroduce public `server.functions.endpoint` config.
 10. Do not reintroduce `server.entry` or framework-side source extraction of
     `createRoute()` calls. Server framework routes are file routes under

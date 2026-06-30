@@ -98,7 +98,7 @@ SSR、PPR 和 RSC framework handling：
 
 ```ts
 // src/middleware.ts
-import type { MiddlewareHandler } from "@evjs/ev/request";
+import type { MiddlewareHandler } from "@evjs/ev/server-context";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
   await next();
@@ -126,7 +126,7 @@ src/apis/(admin)/middleware.ts    -> (admin)/** 下的路由
 函数签名遵循 Hono：
 
 ```ts
-import type { MiddlewareHandler } from "@evjs/ev/request";
+import type { MiddlewareHandler } from "@evjs/ev/server-context";
 
 const requireAuth: MiddlewareHandler = async (ctx, next) => {
   if (!ctx.req.header("authorization")) {

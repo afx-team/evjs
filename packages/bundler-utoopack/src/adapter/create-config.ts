@@ -27,16 +27,15 @@ const serverRoutesEntryAnchor = fileURLToPath(
   new URL("./server-routes-entry-anchor.js", import.meta.url),
 );
 
+import { SERVER_FUNCTION_TRANSFORM_RUNTIME } from "@evjs/ev/_internal/build";
 import type {
   BuildPlan,
-  BundlerCtx,
   PagesAppEntryMetadata,
-  PluginHooks,
   ReactComponentPageEntryMetadata,
-  ResolvedConfig,
   ServerAppEntryMetadata,
-} from "@evjs/ev";
-import { SERVER_FUNCTION_TRANSFORM_RUNTIME } from "@evjs/ev/build-tools";
+} from "@evjs/ev/_internal/manifest";
+import type { ResolvedConfig } from "@evjs/ev/config";
+import type { BundlerCtx, PluginHooks } from "@evjs/ev/plugin";
 import { getLogger } from "@logtape/logtape";
 import type {
   ConfigComplete,

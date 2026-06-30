@@ -1,10 +1,10 @@
+import { Link } from "@evjs/ev/navigation";
 import {
   getFnQueryKey,
-  Link,
   useMutation,
   useQuery,
   useQueryClient,
-} from "@evjs/ev/page";
+} from "@evjs/ev/query";
 import { useState } from "react";
 import { createUser, getUsers } from "@/apis/users.server";
 

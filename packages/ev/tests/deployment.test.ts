@@ -11,8 +11,8 @@ import {
   edgeDeploymentAdapter,
   nodeDeploymentAdapter,
   staticDeploymentAdapter,
-} from "../src/deployment.js";
-import { createBuildResult } from "../src/plugin.js";
+} from "../src/deployment/index.js";
+import { createBuildResult } from "../src/plugin/index.js";
 
 const tempDirs: string[] = [];
 
@@ -261,7 +261,7 @@ describe("createDeploymentArtifact", () => {
     expect(files.serverModule).toContain('"/api/health"');
     expect(files.serverModule).toContain('"/insights/:id"');
     expect(files.serverModule).toContain(
-      'from "@evjs/ev/internal/server/node"',
+      'from "@evjs/ev/_internal/server/node"',
     );
     expect(files.serverModule).not.toContain('from "hono"');
     expect(files.serverModule).not.toContain(

@@ -3,35 +3,35 @@ import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type {
-  AppGraph,
-  BuildOutput,
-  BuildPlan,
-  BundlerBuildFacts,
-  PluginHooks,
-  ResolvedConfig,
-} from "@evjs/ev";
+import type { BundlerBuildFacts } from "@evjs/ev/_internal/build";
 import {
   buildHtml,
-  createDeploymentMetadata,
-  createPublicManifest,
-  createServerManifest,
-  linkBuildOutput,
-  resolveConfig,
-} from "@evjs/ev";
-import {
   createAppGraph,
   createBuildPlan,
   diffBuildPlan,
   generateHtml,
-} from "@evjs/ev/build-tools";
+} from "@evjs/ev/_internal/build";
+import type {
+  AppGraph,
+  BuildOutput,
+  BuildPlan,
+} from "@evjs/ev/_internal/manifest";
+import {
+  createDeploymentMetadata,
+  createPublicManifest,
+  createServerManifest,
+  linkBuildOutput,
+} from "@evjs/ev/_internal/manifest";
+import type { ResolvedConfig } from "@evjs/ev/config";
+import { resolveConfig } from "@evjs/ev/config";
+import type { PluginHooks } from "@evjs/ev/plugin";
 import type { PublicManifestOutput } from "@evjs/shared/manifest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createClientRuntime,
   createFrameworkRuntime,
   type FrameworkRuntimeOutput,
-} from "../../ev/src/framework-runtime.js";
+} from "../../ev/src/_internal/build/framework-runtime.js";
 import type { WebpackConfig } from "../src/adapter/create-config.js";
 import { __testing as webpackAdapterTesting } from "../src/adapter/index.js";
 import { webpackAdapter } from "../src/index.js";
@@ -754,7 +754,7 @@ describe("webpackAdapter build", () => {
           '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
         "src/pages/Insights !page.tsx": `
         import { createElement } from "react";
-        import { usePageParams, usePageSearch } from "@evjs/ev/page";
+        import { usePageParams, usePageSearch } from "@evjs/ev/route";
         import "./insights.css";
         import Badge from "./InsightsBadge";
 

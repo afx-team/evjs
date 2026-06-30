@@ -12,7 +12,7 @@ module.exports = function pagesEntryLoader() {
   const mount = options.mount || "#app";
   const rootModule = options.rootModule;
   const imports = [
-    `import { createPagesApp } from "@evjs/ev/internal/client";`,
+    `import { createPagesApp } from "@evjs/ev/_internal/client";`,
     rootModule
       ? `import * as rootModule from ${JSON.stringify(toLoaderModuleRequest(rootModule, loaderContext))};`
       : "",

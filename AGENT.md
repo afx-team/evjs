@@ -7,11 +7,11 @@
 | Package | Path | Key Files |
 | --- | --- | --- |
 | `@evjs/cli` | `packages/cli` | `src/index.ts`, `src/load-config.ts` |
-| `@evjs/ev` | `packages/ev` | `src/config.ts`, `src/plugin.ts`, `src/bundler.ts`, `src/commands.ts`, `src/deployment.ts`, `src/build-tools/*` |
+| `@evjs/ev` | `packages/ev` | `src/config/`, `src/plugin/`, `src/deployment/`, `src/_internal/build/*` |
 | `@evjs/create-app` | `packages/create-app` | `src/index.ts`, template restore scripts |
 | `@evjs/shared` | `packages/shared` | `src/build-identifier.ts`, `src/constants.ts`, `src/errors.ts`, `src/http.ts`, `src/page-route-data.ts`, `src/path-pattern.ts`, `src/server-function-id.ts`, `src/server-route-data.ts`, `src/manifest/*` |
-| `@evjs/client` | `packages/client` | `src/app.tsx`, `src/navigation.ts`, `src/transport.ts`, `src/page-route.ts`, `src/page.ts`, `src/react.ts`, `src/rsc.ts`, `src/shell/*` |
-| `@evjs/server` | `packages/server` | `src/app.ts`, `src/framework.ts`, `src/react.ts`, `src/react-renderer.ts`, `src/functions/*`, `src/routes/*`, `src/runtimes/*` |
+| `@evjs/client` | `packages/client` | `src/standalone/`, `src/framework/page/`, `src/framework/shell/`, `src/server-functions/`, `src/rsc/`, `src/shared/` |
+| `@evjs/server` | `packages/server` | `src/app/`, `src/request-context/`, `src/server-functions/`, `src/routes/`, `src/framework-rendering/`, `src/runtimes/`, `src/shared/` |
 | `@evjs/bundler-utoopack` | `packages/bundler-utoopack` | `src/adapter/index.ts`, `src/adapter/create-config.ts`, `src/manifest-generator.ts` |
 | `@evjs/bundler-webpack` | `packages/bundler-webpack` | `src/adapter/index.ts`, `src/adapter/create-config.ts`, `src/manifest-generator.ts`, webpack validation tests |
 
@@ -49,13 +49,13 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 8. Server route code owned by the framework should use `src/apis` route modules
    with uppercase HTTP method exports. Do not add `server.entry`, `route.ts`
    sentinels, `foo.get.ts` method suffixes, or route-module middleware exports.
-9. File-convention app source should import page helpers from `@evjs/ev/page`,
-   request helpers from `@evjs/ev/request`, and custom transport helpers from
+9. File-convention app source should import route data helpers from `@evjs/ev/route`,
+   request helpers from `@evjs/ev/server-context`, and custom transport helpers from
    `@evjs/ev/transport`. Standalone/manual runtime code imports directly from
    `@evjs/client` and `@evjs/server`. Generated page bootstrap, React page
    mounting, server-function stubs, route-tree construction, server runtime
    bootstrap, and shell runtime code belong behind focused generated-only
-   `@evjs/ev/internal/*` subpaths.
+   `@evjs/ev/_internal/*` subpaths.
 10. Utoopack remains the default. Do not present webpack as the normal user path; it is the validation/fallback backend for features blocked on Utoopack APIs.
 11. Route/path/build-ID/server-function-ID conventions should use the shared
     helpers in `@evjs/shared` first. Keep caller-specific error text local, but
@@ -69,14 +69,14 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 | `defineConfig(config)` | `@evjs/ev` | Type-safe `ev.config.ts` helper |
 | `src/pages` + `routing` | `@evjs/ev` | File-based SPA/MPA route source; users write page modules, not route trees |
 | `src/apis` + `server.routing` | `@evjs/ev` | File-based server route source; users write Request/Response method modules |
-| `createPagesApp()` | `@evjs/ev/internal/client` | Internal/framework-managed page route runtime used by generated SPA entries |
-| `Link`, page hooks, page metadata exports | `@evjs/ev/page` / page modules | Public page authoring API for params, search, loader data, navigation, and render metadata |
-| React page runtime | `@evjs/ev/internal/client/react-page` | Framework-managed component page mount/hydration |
-| Server-function stubs | `@evjs/ev/internal/client/server-functions` | Generated client references for `"use server"` modules |
-| Shell runtime | `@evjs/ev/internal/client` | Manifest-driven app/page activation and generated module registration |
-| RSC client runtime | `@evjs/ev/internal/client/rsc-runtime` | React Flight client integration for generated RSC pages |
+| `createPagesApp()` | `@evjs/ev/_internal/client` | Internal/framework-managed page route runtime used by generated SPA entries |
+| `Link`, page hooks, page metadata exports | `@evjs/ev/route` / page modules | Public page authoring API for params, search, loader data, navigation, and render metadata |
+| React page runtime | `@evjs/ev/_internal/client/react-page` | Framework-managed component page mount/hydration |
+| Server-function stubs | `@evjs/ev/_internal/client/server-functions` | Generated client references for `"use server"` modules |
+| Shell runtime | `@evjs/ev/_internal/client` | Manifest-driven app/page activation and generated module registration |
+| RSC client runtime | `@evjs/ev/_internal/client/rsc-runtime` | React Flight client integration for generated RSC pages |
 | `createApp({ routes, middlewares })` | `@evjs/server` | Standalone server runtime app composition; independent from evjs file-convention discovery |
-| `createReactFrameworkServer()` | `@evjs/ev/internal/server/react` | React SSR/RSC framework server integration for generated server entries |
+| `createReactFrameworkServer()` | `@evjs/ev/_internal/server/react` | React SSR/RSC framework server integration for generated server entries |
 | `nodeDeploymentAdapter()` | `@evjs/ev` | Production Node deployment artifact and server module emission |
 
 ## Common Mistakes
@@ -139,25 +139,25 @@ npm --workspace @evjs/ev test -- tests/build-tools-graph-plan.test.ts
 
 | Surface | Primary files | Focused validation |
 | --- | --- | --- |
-| File route convention and SPA/MPA graph | `packages/ev/src/build-tools/page-route-conventions.ts`, `page-routes.ts`, `graph/index.ts`, `plan/index.ts` | `npx turbo run test --filter=@evjs/ev` |
-| Server file route and middleware conventions | `packages/ev/src/build-tools/server-routes.ts`, `server-conventions.ts`, `server-routes-entry.ts`, `graph/index.ts`, `plan/index.ts` | `npx turbo run test --filter=@evjs/ev` |
-| Config and package surface | `packages/ev/src/config.ts`, package manifests | `npx turbo run test --filter=@evjs/ev` |
-| Server functions and route handlers | `packages/server/src/app.ts`, `functions/*`, `routes/*`, `packages/client/src/transport.ts`, `packages/ev/src/build-tools/server-fns.ts` | `npx turbo run test --filter=@evjs/server` and `npx turbo run test --filter=@evjs/client` |
-| SSR, SSG, PPR, and RSC | `packages/ev/src/build-tools/graph/index.ts`, `plan/index.ts`, `packages/server/src/framework.ts`, `react-renderer.ts`, `packages/client/src/rsc.ts` | `npx turbo run test --filter=@evjs/ev`, `npx turbo run test --filter=@evjs/server`, and `npx turbo run test --filter=@evjs/client` |
+| File route convention and SPA/MPA graph | `packages/ev/src/_internal/build/page-route-conventions.ts`, `page-routes.ts`, `graph/index.ts`, `plan/index.ts` | `npx turbo run test --filter=@evjs/ev` |
+| Server file route and middleware conventions | `packages/ev/src/_internal/build/server-routes.ts`, `server-conventions.ts`, `server-routes-entry.ts`, `graph/index.ts`, `plan/index.ts` | `npx turbo run test --filter=@evjs/ev` |
+| Config and package surface | `packages/ev/src/config/`, package manifests | `npx turbo run test --filter=@evjs/ev` |
+| Server functions and route handlers | `packages/server/src/app/`, `server-functions/`, `routes/*`, `packages/client/src/server-functions/`, `packages/ev/src/_internal/build/server-fns.ts` | `npx turbo run test --filter=@evjs/server` and `npx turbo run test --filter=@evjs/client` |
+| SSR, SSG, PPR, and RSC | `packages/ev/src/_internal/build/graph/index.ts`, `plan/index.ts`, `packages/server/src/framework-rendering/`, `packages/client/src/rsc/` | `npx turbo run test --filter=@evjs/ev`, `npx turbo run test --filter=@evjs/server`, and `npx turbo run test --filter=@evjs/client` |
 | Bundler adapters | `packages/bundler-utoopack/src/adapter/*`, `packages/bundler-webpack/src/adapter/*` | `npx turbo run test --filter=@evjs/bundler-utoopack` and `npx turbo run test --filter=@evjs/bundler-webpack` |
 | Documentation-only behavior changes | `docs/docs/*`, `docs/i18n/*`, `README.md`, `AGENTS.md`, `AGENT.md` | `npm run lint`, `git diff --check`, plus the focused behavior test when prose encodes a runtime contract |
 
 ## Adding New Features
 
-- Add framework semantics in `packages/ev/src/build-tools` and `@evjs/shared/manifest` first.
+- Add framework semantics in `packages/ev/src/_internal/build` and `@evjs/shared/manifest` first.
 - If the feature changes file conventions, update English and Chinese
   `project-structure`, `file-conventions`, config, and relevant examples
   together.
 - Add bundler support by mapping `BuildPlan` to the selected adapter.
 - Add runtime behavior under `packages/client/src/*` or `packages/server/src/*`
   according to ownership. Expose file-convention authoring APIs through
-  `@evjs/ev/page`, `@evjs/ev/request`, or `@evjs/ev/transport`; keep generated
-  bootstrap and shell primitives behind generated-only `@evjs/ev/internal/*`
+  `@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`, `@evjs/ev/server-context`, or `@evjs/ev/transport`; keep generated
+  bootstrap and shell primitives behind generated-only `@evjs/ev/_internal/*`
   subpaths.
 - Cover cross-cutting behavior in the focused example that owns it:
   `examples/render-modes` or `examples/deployment-adapters`.

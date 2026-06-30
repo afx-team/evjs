@@ -10,12 +10,12 @@ import {
   useMutation,
   useQuery,
   useSuspenseQuery,
-} from "../src/query.js";
+} from "../src/server-functions/query.js";
 import {
   __resetForTesting,
   createServerReference,
   initTransport,
-} from "../src/transport-runtime.js";
+} from "../src/server-functions/transport-runtime.js";
 
 vi.mock("@tanstack/react-query", async () => ({
   useMutation: vi.fn(),

@@ -1,4 +1,4 @@
-import { Link } from "@evjs/ev/page";
+import { Link } from "@evjs/ev/navigation";
 import type { ReactNode } from "react";
 
 export default function Root({ children }: { children?: ReactNode }) {

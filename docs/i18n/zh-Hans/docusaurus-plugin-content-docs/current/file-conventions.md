@@ -205,7 +205,7 @@ file routes、server functions、SSR、PPR 和 RSC：
 
 ```ts
 // src/middleware.ts
-import type { MiddlewareHandler } from "@evjs/ev/request";
+import type { MiddlewareHandler } from "@evjs/ev/server-context";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
   await next();

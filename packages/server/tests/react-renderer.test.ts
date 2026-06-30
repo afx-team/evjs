@@ -12,11 +12,11 @@ import {
   type FrameworkPageRuntime,
   type FrameworkRouteRuntime,
   type FrameworkRuntime,
-} from "../src/framework.js";
+} from "../src/framework-rendering/framework.js";
 import {
   createReactRscFlightAdapter,
   createReactServerRenderAdapter,
-} from "../src/react-renderer.js";
+} from "../src/framework-rendering/react-renderer.js";
 
 interface PageProps {
   params: Record<string, string>;

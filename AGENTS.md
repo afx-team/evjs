@@ -14,8 +14,8 @@ The file-convention source of truth is the convention matrix in
 change touches page routes, server functions, server routes, examples,
 or scaffolds, update the English and Chinese project-structure docs together.
 The implementation source for page-route file rules is
-`packages/ev/src/build-tools/page-route-conventions.ts`; the discovery behavior
-and diagnostics live in `packages/ev/src/build-tools/page-routes.ts`, with
+`packages/ev/src/_internal/build/page-route-conventions.ts`; the discovery behavior
+and diagnostics live in `packages/ev/src/_internal/build/page-routes.ts`, with
 coverage in `packages/ev/tests/build-tools-page-routes.test.ts`.
 
 ## Core Principles
@@ -34,14 +34,16 @@ coverage in `packages/ev/tests/build-tools-page-routes.test.ts`.
 
 ## Working Rules
 
-1. Keep config/build/plugin imports on `@evjs/ev`. File-convention app source
-   imports page helpers from `@evjs/ev/page`, request helpers from
-   `@evjs/ev/request`, and custom transport helpers from `@evjs/ev/transport`.
+1. Keep simple config imports on `@evjs/ev`. Advanced config utilities use
+   `@evjs/ev/config`, plugin authoring details use `@evjs/ev/plugin`, and
+   CLI/adapter/generated code uses `@evjs/ev/_internal/*`. File-convention app source
+   imports route data helpers from `@evjs/ev/route`, navigation helpers from `@evjs/ev/navigation`, query helpers from `@evjs/ev/query`, request helpers from
+   `@evjs/ev/server-context`, and custom transport helpers from `@evjs/ev/transport`.
    Standalone/manual runtime imports use `@evjs/client` and `@evjs/server`;
    `@evjs/ev` root does not re-export client or server runtime packages.
 2. Do not add new distributed `@evjs/*` packages without first trying a subpath
    export on an existing package.
-3. Keep framework semantics in `packages/ev/src/build-tools` and manifest
+3. Keep framework semantics in `packages/ev/src/_internal/build` and manifest
    contracts in `packages/shared/src/manifest`; bundler adapters consume
    `BuildPlan` and return build facts.
 4. Treat `src/route-types.d.ts`, `dist`, `.turbo`, and `node_modules` as

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { PAGE_ROUTE_CONVENTION_SUMMARY } from "../src/build-tools/page-route-conventions.js";
+import { PAGE_ROUTE_CONVENTION_SUMMARY } from "../src/_internal/build/page-route-conventions.js";
 import {
   collectGeneratedPageRouteTypeFiles,
   generatePageRouteTypes,
@@ -15,7 +15,7 @@ import {
   PAGE_ROUTE_TYPES_REGISTER_MODULE,
   PAGE_ROUTE_TYPES_USAGE_HINT,
   writePageRouteTypesIfChanged,
-} from "../src/build-tools/page-route-types.js";
+} from "../src/_internal/build/page-route-types.js";
 
 const tempDirs: string[] = [];
 
@@ -89,7 +89,7 @@ describe("generatePageRouteTypes", () => {
 
     expect(source).toContain(PAGE_ROUTE_TYPES_HELPER_MODULE);
     expect(source).toContain(PAGE_ROUTE_TYPES_REGISTER_MODULE);
-    expect(source).toContain("@evjs/ev/internal/client/route-types");
+    expect(source).toContain("@evjs/ev/_internal/client/route-types");
     expect(source).not.toContain("@evjs/client/internal/route-types");
   });
 

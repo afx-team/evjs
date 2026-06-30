@@ -103,7 +103,7 @@ PPR, and RSC framework handling:
 
 ```ts
 // src/middleware.ts
-import type { MiddlewareHandler } from "@evjs/ev/request";
+import type { MiddlewareHandler } from "@evjs/ev/server-context";
 
 const middleware: MiddlewareHandler = async (ctx, next) => {
   await next();
@@ -133,7 +133,7 @@ cover the flat sibling `src/apis/api.ts`.
 The signature follows Hono:
 
 ```ts
-import type { MiddlewareHandler } from "@evjs/ev/request";
+import type { MiddlewareHandler } from "@evjs/ev/server-context";
 
 const requireAuth: MiddlewareHandler = async (ctx, next) => {
   if (!ctx.req.header("authorization")) {

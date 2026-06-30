@@ -17,7 +17,7 @@ module.exports = function frameworkEntryLoader() {
     };
     return [
       `import Component from ${JSON.stringify(moduleRequest)};`,
-      `import { createGeneratedReactPageEntry } from "@evjs/ev/internal/client/react-page";`,
+      `import { createGeneratedReactPageEntry } from "@evjs/ev/_internal/client/react-page";`,
       ``,
       `const mod = createGeneratedReactPageEntry(Component, ${JSON.stringify(entryOptions)}, import.meta.url);`,
       `export default mod;`,
@@ -27,7 +27,7 @@ module.exports = function frameworkEntryLoader() {
 
   if (options.type === "server-renderer") {
     return [
-      `export { PageProvider } from "@evjs/ev/internal/client/page-context";`,
+      `export { PageProvider } from "@evjs/ev/_internal/client/page-context";`,
       `export { default } from ${JSON.stringify(moduleRequest)};`,
       `export * from ${JSON.stringify(moduleRequest)};`,
       ``,
@@ -37,7 +37,7 @@ module.exports = function frameworkEntryLoader() {
   if (options.type === "rsc-page-renderer") {
     return [
       `import Component from ${JSON.stringify(moduleRequest)};`,
-      `import { createRscPageFlightRenderer } from "@evjs/ev/internal/client/rsc-page-context";`,
+      `import { createRscPageFlightRenderer } from "@evjs/ev/_internal/client/rsc-page-context";`,
       ``,
       `export const renderFlight = createRscPageFlightRenderer(Component);`,
       `export default Component;`,

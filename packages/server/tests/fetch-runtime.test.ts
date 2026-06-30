@@ -16,7 +16,7 @@ describe("@evjs/server/fetch", () => {
   it("serves the generated server function endpoint", async () => {
     vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
     const { registerServerReference } = await import(
-      "../src/functions/register.js"
+      "../src/server-functions/register.js"
     );
 
     registerServerReference(

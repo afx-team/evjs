@@ -1,4 +1,4 @@
-import type { BundlerCtx } from "@evjs/ev";
+import type { BundlerCtx } from "@evjs/ev/plugin";
 import { describe, expect, it } from "vitest";
 import type { WebpackConfig } from "../src/index.js";
 import { webpack } from "../src/plugin-helper.js";

@@ -85,7 +85,7 @@ paths, so app-specific API proxies can keep their own routing behavior.
 `ev dev` and `ev build` can also be used programmatically:
 
 ```ts
-import { dev, build } from "@evjs/ev";
+import { dev, build } from "@evjs/cli";
 import { utoopackAdapter } from "@evjs/bundler-utoopack";
 
 // Start dev server with an explicit bundler adapter

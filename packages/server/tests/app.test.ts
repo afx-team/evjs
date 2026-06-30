@@ -1,23 +1,23 @@
 import { ServerError } from "@evjs/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp } from "../src/app.js";
+import { createApp } from "../src/app/app.js";
 import type {
   FrameworkPageRuntime,
   FrameworkRouteRuntime,
   FrameworkRuntime,
   PprRegionCacheEntry,
   ServerRenderContext,
-} from "../src/framework.js";
+} from "../src/framework-rendering/framework.js";
 import {
   createFrameworkRenderCoordinator,
   createModuleRenderCoordinator,
-} from "../src/framework.js";
+} from "../src/framework-rendering/framework.js";
+import { createReactFrameworkServer } from "../src/framework-rendering/react.js";
+import { requestLogger } from "../src/index.js";
 import {
   registerServerReference,
   registry,
-} from "../src/functions/register.js";
-import { requestLogger } from "../src/index.js";
-import { createReactFrameworkServer } from "../src/react.js";
+} from "../src/server-functions/register.js";
 
 type LegacyFrameworkRuntime = FrameworkRuntime & {
   pages: Record<string, FrameworkPageRuntime>;

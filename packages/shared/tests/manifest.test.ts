@@ -44,7 +44,7 @@ function createMinimalBuildOutput(): BuildOutput {
 function createServerRuntimeEntry(): BuildPlan["entries"][number] {
   return {
     name: "server",
-    import: "@evjs/ev/internal/server/fetch",
+    import: "@evjs/ev/_internal/server/fetch",
     environment: "server",
     runtime: "node",
     kind: "server-runtime",
@@ -55,7 +55,7 @@ function createServerPlan(
   renderers?: BuildPlan["server"]["renderers"],
 ): BuildPlan["server"] {
   return {
-    entry: "@evjs/ev/internal/server/fetch",
+    entry: "@evjs/ev/_internal/server/fetch",
     ...(renderers ? { renderers } : {}),
   };
 }
@@ -2468,7 +2468,7 @@ describe("linkBuildOutput", () => {
       entries: [
         {
           name: "server",
-          import: "@evjs/ev/internal/server/fetch",
+          import: "@evjs/ev/_internal/server/fetch",
           environment: "server",
           runtime: "node",
           kind: "server-runtime",
@@ -2539,7 +2539,7 @@ describe("linkBuildOutput", () => {
       entries: [
         {
           name: "server",
-          import: "@evjs/ev/internal/server/fetch",
+          import: "@evjs/ev/_internal/server/fetch",
           environment: "server",
           runtime: "node",
           kind: "server-runtime",
@@ -2639,7 +2639,7 @@ describe("linkBuildOutput", () => {
       entries: [
         {
           name: "server",
-          import: "@evjs/ev/internal/server/fetch",
+          import: "@evjs/ev/_internal/server/fetch",
           environment: "server",
           runtime: "node",
           kind: "server-runtime",
@@ -2731,7 +2731,7 @@ describe("linkBuildOutput", () => {
       entries: [
         {
           name: "server",
-          import: "@evjs/ev/internal/server/fetch",
+          import: "@evjs/ev/_internal/server/fetch",
           environment: "server",
           runtime: "node",
           kind: "server-runtime",
@@ -2791,7 +2791,7 @@ describe("linkBuildOutput", () => {
       entries: [
         {
           name: "server",
-          import: "@evjs/ev/internal/server/fetch",
+          import: "@evjs/ev/_internal/server/fetch",
           environment: "server",
           runtime: "node",
           kind: "server-runtime",
@@ -2859,7 +2859,7 @@ describe("linkBuildOutput", () => {
       entries: [
         {
           name: "server",
-          import: "@evjs/ev/internal/server/fetch",
+          import: "@evjs/ev/_internal/server/fetch",
           environment: "server",
           runtime: "node",
           kind: "server-runtime",

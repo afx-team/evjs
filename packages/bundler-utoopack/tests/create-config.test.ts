@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
-import type { AppGraph, BuildPlan } from "@evjs/ev";
-import { createBuildPlan } from "@evjs/ev/build-tools";
+import { createBuildPlan } from "@evjs/ev/_internal/build";
+import type { AppGraph, BuildPlan } from "@evjs/ev/_internal/manifest";
 import { describe, expect, it } from "vitest";
 import { createUtoopackConfig } from "../src/adapter/create-config.js";
 
@@ -506,8 +506,8 @@ describe("createUtoopackConfig", () => {
       rootContext: "/workspace",
     });
 
-    expect(source).toContain('@evjs/ev/internal/server"');
-    expect(source).toContain("@evjs/ev/internal/server/react");
+    expect(source).toContain('@evjs/ev/_internal/server"');
+    expect(source).toContain("@evjs/ev/_internal/server/react");
     expect(source).toContain('createRoute("/health", routeDefinition0)');
     expect(source).toContain('createRoute("/secure", routeDefinition1)');
     expect(source).toContain("import middleware0 from");
@@ -681,8 +681,8 @@ describe("createUtoopackConfig", () => {
       rootContext: "/workspace",
     });
 
-    expect(source).toContain("@evjs/ev/internal/client/react-page");
-    expect(source).not.toContain('from "@evjs/ev/internal/client";');
+    expect(source).toContain("@evjs/ev/_internal/client/react-page");
+    expect(source).not.toContain('from "@evjs/ev/_internal/client";');
     expect(source).toContain("createGeneratedReactPageEntry");
     expect(source).toContain("import.meta.url");
     expect(source).not.toContain("currentScriptHref");
@@ -711,7 +711,7 @@ describe("createUtoopackConfig", () => {
       rootContext: "/workspace",
     });
 
-    expect(source).toContain("@evjs/ev/internal/client");
+    expect(source).toContain("@evjs/ev/_internal/client");
     expect(source).toContain("createPagesApp");
     expect(source).toContain("src/pages/error.tsx");
     expect(source).toContain("src/pages/not-found.tsx");
@@ -803,7 +803,7 @@ describe("createUtoopackConfig", () => {
       "server",
     ]);
     expect(plan.server).toMatchObject({
-      entry: "@evjs/ev/internal/server/fetch",
+      entry: "@evjs/ev/_internal/server/fetch",
       renderers: [
         {
           name: "dashboard-server",

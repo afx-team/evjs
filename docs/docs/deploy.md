@@ -106,7 +106,8 @@ path:
 
 ```ts
 // ev.config.ts
-import { defineConfig, nodeDeploymentAdapter } from "@evjs/ev";
+import { defineConfig } from "@evjs/ev";
+import { nodeDeploymentAdapter } from "@evjs/ev/deployment";
 
 export default defineConfig({
   plugins: [nodeDeploymentAdapter()],
@@ -136,7 +137,8 @@ client-side navigation. It reads the port from `PORT` by default.
 Use the static adapter when the app is static-compatible:
 
 ```ts
-import { defineConfig, staticDeploymentAdapter } from "@evjs/ev";
+import { defineConfig } from "@evjs/ev";
+import { staticDeploymentAdapter } from "@evjs/ev/deployment";
 
 export default defineConfig({
   plugins: [staticDeploymentAdapter()],
@@ -166,7 +168,8 @@ Use the edge adapter when the platform provides a `fetch()` worker and a static
 asset binding:
 
 ```ts
-import { defineConfig, edgeDeploymentAdapter } from "@evjs/ev";
+import { defineConfig } from "@evjs/ev";
+import { edgeDeploymentAdapter } from "@evjs/ev/deployment";
 
 export default defineConfig({
   plugins: [

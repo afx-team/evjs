@@ -1,4 +1,4 @@
-import { useQuery } from "@evjs/ev/page";
+import { useQuery } from "@evjs/ev/query";
 import { getPluginMessage } from "@/apis/plugin.server";
 
 export default function Home() {

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { generateHtml } from "../src/build-tools/html.js";
+import { generateHtml } from "../src/_internal/build/html.js";
 
 const FIXTURES_DIR = path.join(import.meta.dirname, "__fixtures__");
 const TEMPLATE_PATH = path.join(FIXTURES_DIR, "template.html");

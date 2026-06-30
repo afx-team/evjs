@@ -1,4 +1,5 @@
-import { Link, useQuery } from "@evjs/ev/page";
+import { Link } from "@evjs/ev/navigation";
+import { useQuery } from "@evjs/ev/query";
 import { getPosts } from "@/apis/data.server";
 
 const styles = {

@@ -4,7 +4,7 @@ module.exports = function serverFunctionLoader(source, inputMap) {
   const callback = this.async();
   const options = this.getOptions();
 
-  import("@evjs/ev/build-tools")
+  import("@evjs/ev/_internal/build")
     .then(({ transformServerFile }) =>
       transformServerFile(source, {
         resourcePath: this.resourcePath,

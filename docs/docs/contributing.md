@@ -49,8 +49,8 @@ npx biome check --write    # Fix lint/format
    cross-module re-exports, or exported non-function values
 7. **Config file** — Named `ev.config.ts` (not `evjs.config.ts`)
 8. **Package boundaries** — Config/build imports stay on `@evjs/ev`.
-   File-convention app source imports page helpers from `@evjs/ev/page`,
-   request helpers from `@evjs/ev/request`, and custom transport helpers from
+   File-convention app source imports route data helpers from `@evjs/ev/route`, navigation helpers from `@evjs/ev/navigation`, query helpers from `@evjs/ev/query`,
+   request helpers from `@evjs/ev/server-context`, and custom transport helpers from
    `@evjs/ev/transport`; standalone/manual runtime imports use `@evjs/client`
    and `@evjs/server`. Use subpath exports on the package that owns the
    behavior before adding another distributed package. Subpath exports stay

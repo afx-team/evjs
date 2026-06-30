@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { BundlerBuildFacts } from "@evjs/ev/_internal/build";
 import type {
   AssetGroup,
   BuildOutputServerModule,
   BuildPlan,
-  BundlerBuildFacts,
-} from "@evjs/ev";
+} from "@evjs/ev/_internal/manifest";
 import { getLogger } from "@logtape/logtape";
 import {
   getOutputPaths,

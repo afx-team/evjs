@@ -64,7 +64,8 @@ my-app/
 
 ```tsx
 // src/pages/users/$id.tsx
-import { usePageParams, useQuery } from "@evjs/ev/page";
+import { usePageParams } from "@evjs/ev/route";
+import { useQuery } from "@evjs/ev/query";
 import { getUser } from "../../apis/users.server";
 
 export default function UserPage() {
@@ -115,14 +116,18 @@ export default defineConfig({
 
 Manifest schema、build tools、生成 page runtime 和 shell 内部实现都位于上述公开包中。
 应用的 config/build 代码从 `@evjs/ev` 导入框架组合 API。file-convention 应用源码从
-`@evjs/ev/page` 导入 page helpers，从 `@evjs/ev/request` 导入 request helpers，
+`@evjs/ev/route` 导入 route data helpers，从 `@evjs/ev/navigation` 导入导航 helpers，
+从 `@evjs/ev/query` 导入 server-function query helpers，从 `@evjs/ev/server-context` 导入 request helpers，
 从 `@evjs/ev/transport` 导入自定义 server-function transport helpers。自己持有构建
 管线的浏览器-only CSR 应用可以只使用 `@evjs/client`，不依赖 `@evjs/ev`。
+`@evjs/ev/*` subpaths 围绕 evjs file-convention authoring 语义整理，不是
+`@evjs/client` 或 `@evjs/server` 的镜像 re-export；后两者是更底层的
+standalone/manual runtime packages。
 `@evjs/cli` 和 `@evjs/create-app` 应作为工具使用，不应被应用模块 import。
 `@evjs/bundler-utoopack` 这类 bundler adapter 以及 `@evjs/shared` 这类共享契约模块，
 只面向自定义框架工具或 adapter 开发。
 
-生成的 framework 代码通过 `@evjs/ev/internal/*` 解析 client/server runtime
+生成的 framework 代码通过 `@evjs/ev/_internal/*` 解析 client/server runtime
 internals，因此普通 file-convention 应用不再直接安装 `@evjs/client` 或
 `@evjs/server`。
 

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { createDeploymentArtifact } from "@evjs/ev";
+import { createDeploymentArtifact } from "@evjs/ev/deployment";
 
 export function deploymentExampleAdapter() {
   return {

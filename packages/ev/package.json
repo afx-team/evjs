@@ -13,85 +13,115 @@
       "import": "./esm/index.js",
       "default": "./esm/index.js"
     },
-    "./build-tools": {
-      "types": "./esm/build-tools/index.d.ts",
-      "import": "./esm/build-tools/index.js",
-      "default": "./esm/build-tools/index.js"
+    "./config": {
+      "types": "./esm/config/index.d.ts",
+      "import": "./esm/config/index.js",
+      "default": "./esm/config/index.js"
     },
-    "./page": {
-      "types": "./esm/page.d.ts",
-      "import": "./esm/page.js",
-      "default": "./esm/page.js"
+    "./plugin": {
+      "types": "./esm/plugin/index.d.ts",
+      "import": "./esm/plugin/index.js",
+      "default": "./esm/plugin/index.js"
     },
-    "./request": {
-      "types": "./esm/request.d.ts",
-      "import": "./esm/request.js",
-      "default": "./esm/request.js"
+    "./route": {
+      "types": "./esm/route/index.d.ts",
+      "import": "./esm/route/index.js",
+      "default": "./esm/route/index.js"
+    },
+    "./navigation": {
+      "types": "./esm/navigation/index.d.ts",
+      "import": "./esm/navigation/index.js",
+      "default": "./esm/navigation/index.js"
+    },
+    "./query": {
+      "types": "./esm/query/index.d.ts",
+      "import": "./esm/query/index.js",
+      "default": "./esm/query/index.js"
+    },
+    "./server-context": {
+      "types": "./esm/server-context/index.d.ts",
+      "import": "./esm/server-context/index.js",
+      "default": "./esm/server-context/index.js"
     },
     "./transport": {
-      "types": "./esm/transport.d.ts",
-      "import": "./esm/transport.js",
-      "default": "./esm/transport.js"
+      "types": "./esm/transport/index.d.ts",
+      "import": "./esm/transport/index.js",
+      "default": "./esm/transport/index.js"
     },
-    "./internal/client": {
-      "types": "./esm/internal/client/index.d.ts",
-      "import": "./esm/internal/client/index.js",
-      "default": "./esm/internal/client/index.js"
+    "./deployment": {
+      "types": "./esm/deployment/index.d.ts",
+      "import": "./esm/deployment/index.js",
+      "default": "./esm/deployment/index.js"
     },
-    "./internal/client/page-context": {
-      "types": "./esm/internal/client/page-context.d.ts",
-      "import": "./esm/internal/client/page-context.js",
-      "default": "./esm/internal/client/page-context.js"
+    "./_internal/build": {
+      "types": "./esm/_internal/build/index.d.ts",
+      "import": "./esm/_internal/build/index.js",
+      "default": "./esm/_internal/build/index.js"
     },
-    "./internal/client/react-page": {
-      "types": "./esm/internal/client/react-page.d.ts",
-      "import": "./esm/internal/client/react-page.js",
-      "default": "./esm/internal/client/react-page.js"
+    "./_internal/manifest": {
+      "types": "./esm/_internal/manifest/index.d.ts",
+      "import": "./esm/_internal/manifest/index.js",
+      "default": "./esm/_internal/manifest/index.js"
     },
-    "./internal/client/route-types": {
-      "types": "./esm/internal/client/route-types.d.ts",
-      "import": "./esm/internal/client/route-types.js",
-      "default": "./esm/internal/client/route-types.js"
+    "./_internal/client": {
+      "types": "./esm/_internal/generated/client/index.d.ts",
+      "import": "./esm/_internal/generated/client/index.js",
+      "default": "./esm/_internal/generated/client/index.js"
     },
-    "./internal/client/rsc-page-context": {
-      "types": "./esm/internal/client/rsc-page-context.d.ts",
-      "import": "./esm/internal/client/rsc-page-context.js",
-      "default": "./esm/internal/client/rsc-page-context.js"
+    "./_internal/client/page-context": {
+      "types": "./esm/_internal/generated/client/page-context.d.ts",
+      "import": "./esm/_internal/generated/client/page-context.js",
+      "default": "./esm/_internal/generated/client/page-context.js"
     },
-    "./internal/client/rsc-runtime": {
-      "types": "./esm/internal/client/rsc-runtime.d.ts",
-      "import": "./esm/internal/client/rsc-runtime.js",
-      "default": "./esm/internal/client/rsc-runtime.js"
+    "./_internal/client/react-page": {
+      "types": "./esm/_internal/generated/client/react-page.d.ts",
+      "import": "./esm/_internal/generated/client/react-page.js",
+      "default": "./esm/_internal/generated/client/react-page.js"
     },
-    "./internal/client/server-functions": {
-      "types": "./esm/internal/client/server-functions.d.ts",
-      "import": "./esm/internal/client/server-functions.js",
-      "default": "./esm/internal/client/server-functions.js"
+    "./_internal/client/route-types": {
+      "types": "./esm/_internal/generated/client/route-types.d.ts",
+      "import": "./esm/_internal/generated/client/route-types.js",
+      "default": "./esm/_internal/generated/client/route-types.js"
     },
-    "./internal/server": {
-      "types": "./esm/internal/server/index.d.ts",
-      "import": "./esm/internal/server/index.js",
-      "default": "./esm/internal/server/index.js"
+    "./_internal/client/rsc-page-context": {
+      "types": "./esm/_internal/generated/client/rsc-page-context.d.ts",
+      "import": "./esm/_internal/generated/client/rsc-page-context.js",
+      "default": "./esm/_internal/generated/client/rsc-page-context.js"
     },
-    "./internal/server/fetch": {
-      "types": "./esm/internal/server/fetch.d.ts",
-      "import": "./esm/internal/server/fetch.js",
-      "default": "./esm/internal/server/fetch.js"
+    "./_internal/client/rsc-runtime": {
+      "types": "./esm/_internal/generated/client/rsc-runtime.d.ts",
+      "import": "./esm/_internal/generated/client/rsc-runtime.js",
+      "default": "./esm/_internal/generated/client/rsc-runtime.js"
     },
-    "./internal/server/node": {
-      "types": "./esm/internal/server/node.d.ts",
-      "import": "./esm/internal/server/node.js",
-      "default": "./esm/internal/server/node.js"
+    "./_internal/client/server-functions": {
+      "types": "./esm/_internal/generated/client/server-functions.d.ts",
+      "import": "./esm/_internal/generated/client/server-functions.js",
+      "default": "./esm/_internal/generated/client/server-functions.js"
     },
-    "./internal/server/react": {
-      "types": "./esm/internal/server/react.d.ts",
-      "import": "./esm/internal/server/react.js",
-      "default": "./esm/internal/server/react.js"
+    "./_internal/server": {
+      "types": "./esm/_internal/generated/server/index.d.ts",
+      "import": "./esm/_internal/generated/server/index.js",
+      "default": "./esm/_internal/generated/server/index.js"
     },
-    "./internal/server/server-functions": {
-      "types": "./esm/internal/server/server-functions.d.ts",
-      "import": "./esm/internal/server/server-functions.js",
-      "default": "./esm/internal/server/server-functions.js"
+    "./_internal/server/fetch": {
+      "types": "./esm/_internal/generated/server/fetch.d.ts",
+      "import": "./esm/_internal/generated/server/fetch.js",
+      "default": "./esm/_internal/generated/server/fetch.js"
+    },
+    "./_internal/server/node": {
+      "types": "./esm/_internal/generated/server/node.d.ts",
+      "import": "./esm/_internal/generated/server/node.js",
+      "default": "./esm/_internal/generated/server/node.js"
+    },
+    "./_internal/server/react": {
+      "types": "./esm/_internal/generated/server/react.d.ts",
+      "import": "./esm/_internal/generated/server/react.js",
+      "default": "./esm/_internal/generated/server/react.js"
+    },
+    "./_internal/server/server-functions": {
+      "types": "./esm/_internal/generated/server/server-functions.d.ts",
+      "import": "./esm/_internal/generated/server/server-functions.js",
+      "default": "./esm/_internal/generated/server/server-functions.js"
     }
   },
   "scripts": {

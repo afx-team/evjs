@@ -53,8 +53,8 @@ config needed.
 Internal modules such as manifest schemas, build tools, page runtime, and shell
 live inside the public packages above instead of separate application-facing
 packages. Application code imports framework composition APIs from `@evjs/ev`
-and file-convention authoring APIs from `@evjs/ev/page`, `@evjs/ev/request`,
-or `@evjs/ev/transport`. `@evjs/client` and `@evjs/server` remain independent
+and file-convention authoring APIs from `@evjs/ev/route`, `@evjs/ev/navigation`,
+`@evjs/ev/query`, `@evjs/ev/server-context`, or `@evjs/ev/transport`. `@evjs/client` and `@evjs/server` remain independent
 standalone/manual runtime packages for apps that intentionally own those
 surfaces directly.
 

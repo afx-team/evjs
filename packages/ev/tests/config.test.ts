@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { BundlerAdapter } from "../src/bundler.js";
-import { CONFIG_DEFAULTS, defineConfig, resolveConfig } from "../src/config.js";
+import type { BundlerAdapter } from "../src/_internal/build/bundler.js";
+import {
+  CONFIG_DEFAULTS,
+  defineConfig,
+  resolveConfig,
+} from "../src/config/index.js";
 
 describe("defineConfig", () => {
   it("returns the config object unchanged", () => {

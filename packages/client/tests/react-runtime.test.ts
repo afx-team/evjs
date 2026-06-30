@@ -6,12 +6,12 @@ import {
   fetchRscFlight,
   loadRscDebugPage,
   mountRscDebugPayload,
-} from "../src/react.js";
+} from "../src/rsc/react.js";
 import type {
   ClientRuntime,
   ClientRuntimePage,
   ClientRuntimeRoute,
-} from "../src/runtime-config.js";
+} from "../src/shared/runtime-config.js";
 
 type LegacyClientRuntime = ClientRuntime & {
   pages: Record<string, ClientRuntimePage>;

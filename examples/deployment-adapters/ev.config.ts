@@ -1,10 +1,10 @@
 import { webpackAdapter } from "@evjs/bundler-webpack";
+import { defineConfig } from "@evjs/ev";
 import {
-  defineConfig,
   edgeDeploymentAdapter,
   nodeDeploymentAdapter,
   staticDeploymentAdapter,
-} from "@evjs/ev";
+} from "@evjs/ev/deployment";
 import { deploymentExampleAdapter } from "./deploy-adapter.mjs";
 
 export default defineConfig({

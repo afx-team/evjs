@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadConfigFile } from "../src/build-tools/index.js";
+import { loadConfigFile } from "../src/_internal/build/index.js";
 
 const tempDirs: string[] = [];
 

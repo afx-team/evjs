@@ -6,7 +6,7 @@ import {
   applyRouteScopedMiddlewares,
   discoverServerConventions,
   discoverServerRoutes,
-} from "../src/build-tools/index.js";
+} from "../src/_internal/build/index.js";
 
 const tempDirs: string[] = [];
 
@@ -322,7 +322,7 @@ describe("discoverServerConventions", () => {
   it("discovers global and route-scoped middleware in filesystem order", async () => {
     const cwd = await createFixture({
       "src/middleware.ts": `
-        import type { MiddlewareHandler } from "@evjs/ev/request";
+        import type { MiddlewareHandler } from "@evjs/ev/server-context";
         const middleware: MiddlewareHandler = async (_ctx, next) => {
           await next();
         };

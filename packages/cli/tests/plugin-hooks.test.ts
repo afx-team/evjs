@@ -1,17 +1,17 @@
-import type {
-  BuildOutput,
-  BuildResult,
-  BundlerAdapter,
-  Plugin,
-  PluginContext,
-  PluginHooks,
-} from "@evjs/ev";
+import type { BundlerAdapter } from "@evjs/ev/_internal/build";
+import type { BuildOutput } from "@evjs/ev/_internal/manifest";
 import {
   createDeploymentMetadata,
   createPublicManifest,
   createServerManifest,
-  resolveConfig,
-} from "@evjs/ev";
+} from "@evjs/ev/_internal/manifest";
+import { resolveConfig } from "@evjs/ev/config";
+import type {
+  BuildResult,
+  Plugin,
+  PluginContext,
+  PluginHooks,
+} from "@evjs/ev/plugin";
 import { getLogger } from "@logtape/logtape";
 import { describe, expect, it } from "vitest";
 

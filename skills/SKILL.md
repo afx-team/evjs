@@ -67,10 +67,10 @@ For detailed guides on specific topics, see the docs:
 - Page components are plain default exports. Do not wrap them in `definePage`
   and do not type props as framework route props.
 - Read route data with `usePageParams()`, `usePageSearch()`, and
-  `usePageLoaderData()` from `@evjs/ev/page`.
-- Use `Link`, `Navigate`, `useLinkProps`, and `redirect` from `@evjs/ev/page`
+  `usePageLoaderData()` from `@evjs/ev/route`.
+- Use `Link`, `Navigate`, `useLinkProps`, and `redirect` from `@evjs/ev/navigation`
   for SPA navigation. Generated `route-types.d.ts` augments
-  `@evjs/ev/page`; app code should not import TanStack Router directly.
+  `@evjs/ev/route`; app code should not import TanStack Router directly.
 
 **React Data Loading:**
 - Page loaders should fetch using: `context.queryClient.ensureQueryData(getFnQueryOptions(myFn))`

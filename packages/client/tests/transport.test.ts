@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import * as publicTransport from "../src/transport.js";
+import * as publicTransport from "../src/server-functions/transport.js";
 import {
   __resetForTesting,
   callServer,
@@ -12,7 +12,7 @@ import {
   type ServerFunction,
   type TransportAdapter,
   type TransportOptions,
-} from "../src/transport-runtime.js";
+} from "../src/server-functions/transport-runtime.js";
 
 describe("createServerReference / getFnId / getFnName", () => {
   beforeEach(() => {

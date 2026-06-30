@@ -46,9 +46,9 @@
       "default": "./esm/index.js"
     },
     "./internal/server-functions": {
-      "types": "./esm/server-function-runtime.d.ts",
-      "import": "./esm/server-function-runtime.js",
-      "default": "./esm/server-function-runtime.js"
+      "types": "./esm/server-functions/server-function-runtime.d.ts",
+      "import": "./esm/server-functions/server-function-runtime.js",
+      "default": "./esm/server-functions/server-function-runtime.js"
     },
     "./node": {
       "types": "./esm/runtimes/node.d.ts",
@@ -56,9 +56,9 @@
       "default": "./esm/runtimes/node.js"
     },
     "./app": {
-      "types": "./esm/app.d.ts",
-      "import": "./esm/app.js",
-      "default": "./esm/app.js"
+      "types": "./esm/app/app.d.ts",
+      "import": "./esm/app/app.js",
+      "default": "./esm/app/app.js"
     },
     "./fetch": {
       "types": "./esm/runtimes/fetch.d.ts",
@@ -66,14 +66,14 @@
       "default": "./esm/runtimes/fetch.js"
     },
     "./framework": {
-      "types": "./esm/framework.d.ts",
-      "import": "./esm/framework.js",
-      "default": "./esm/framework.js"
+      "types": "./esm/framework-rendering/framework.d.ts",
+      "import": "./esm/framework-rendering/framework.js",
+      "default": "./esm/framework-rendering/framework.js"
     },
     "./react": {
-      "types": "./esm/react.d.ts",
-      "import": "./esm/react.js",
-      "default": "./esm/react.js"
+      "types": "./esm/framework-rendering/react.d.ts",
+      "import": "./esm/framework-rendering/react.js",
+      "default": "./esm/framework-rendering/react.js"
     }
   },
   "scripts": {

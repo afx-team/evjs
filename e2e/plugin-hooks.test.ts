@@ -3,7 +3,8 @@ import path from "node:path";
 import { utoopackAdapter } from "@evjs/bundler-utoopack";
 import type { DefaultBundlerConfig } from "@evjs/cli";
 import { build } from "@evjs/cli";
-import type { BundlerAdapter, Plugin } from "@evjs/ev";
+import type { BundlerAdapter } from "@evjs/ev/_internal/build";
+import type { Plugin } from "@evjs/ev/plugin";
 import { configure, getConsoleSink } from "@logtape/logtape";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 

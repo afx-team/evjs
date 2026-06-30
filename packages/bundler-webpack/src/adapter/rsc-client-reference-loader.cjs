@@ -2,7 +2,7 @@ module.exports = function rscClientReferenceLoader(source, inputMap) {
   this.cacheable?.();
 
   const callback = this.async();
-  import("@evjs/ev/build-tools")
+  import("@evjs/ev/_internal/build")
     .then(({ transformRscClientFile }) =>
       transformRscClientFile(source, {
         resourcePath: this.resourcePath,

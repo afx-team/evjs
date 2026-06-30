@@ -57,14 +57,14 @@ export const deleteUser = async (id: string) => {
 
 ## 请求上下文 helper
 
-Server function 运行在框架请求生命周期内，因此可以使用 `@evjs/ev/request`
+Server function 运行在框架请求生命周期内，因此可以使用 `@evjs/ev/server-context`
 导出的请求 helper：
 
 ```ts
 // src/apis/session.server.ts
 "use server";
 
-import { getCookie, headers, request, waitUntil } from "@evjs/ev/request";
+import { getCookie, headers, request, waitUntil } from "@evjs/ev/server-context";
 
 export async function currentSession() {
   const req = request();
@@ -99,7 +99,7 @@ import {
   useQueryClient,
   getFnQueryKey,
   getFnQueryOptions,
-} from "@evjs/ev/page";
+} from "@evjs/ev/query";
 import { getUsers, getUser, createUser } from "../apis/users.server";
 
 // 查询 —— 直接传入服务端函数，类型自动推导
@@ -237,7 +237,7 @@ initTransport({ adapter: wsAdapter });
 抛出带状态码和数据的结构化错误：
 
 ```ts
-import { ServerError } from "@evjs/ev/request";
+import { ServerError } from "@evjs/ev/server-context";
 
 export async function getUser(id: string) {
   const user = await db.users.findById(id);

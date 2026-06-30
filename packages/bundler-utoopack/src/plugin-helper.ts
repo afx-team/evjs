@@ -1,7 +1,8 @@
-import { type BundlerCtx, merge, type PluginHooks } from "@evjs/ev";
+import { merge } from "@evjs/ev/config";
+import type { BundlerCtx, PluginHooks } from "@evjs/ev/plugin";
 import type { ConfigComplete } from "@utoo/pack";
 
-export type { ConfigPatch } from "@evjs/ev";
+export type { ConfigPatch } from "@evjs/ev/config";
 
 type UtoopackBundlerConfigHook = NonNullable<
   PluginHooks<ConfigComplete>["bundlerConfig"]

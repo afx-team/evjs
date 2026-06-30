@@ -4,19 +4,23 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import vm from "node:vm";
 import type {
-  AppGraph,
-  BuildPlan,
-  BuildPlanUpdate,
   BundlerAdapter,
   BundlerBuildContext,
   BundlerBuildFacts,
   BundlerDevContext,
   BundlerDevController,
+} from "@evjs/ev/_internal/build";
+import type {
+  AppGraph,
+  BuildPlan,
+  BuildPlanUpdate,
   ClientRouteTarget,
-  DevProxyRule,
-  ResolvedConfig,
-} from "@evjs/ev";
-import { getClientRouteMatches, getServerRenderedPaths } from "@evjs/ev";
+} from "@evjs/ev/_internal/manifest";
+import {
+  getClientRouteMatches,
+  getServerRenderedPaths,
+} from "@evjs/ev/_internal/manifest";
+import type { DevProxyRule, ResolvedConfig } from "@evjs/ev/config";
 import { getLogger } from "@logtape/logtape";
 import { createFsFromVolume, Volume } from "memfs";
 import type {
