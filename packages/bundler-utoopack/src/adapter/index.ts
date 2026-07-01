@@ -8,6 +8,7 @@
  */
 
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import type {
   BundlerAdapter,
@@ -24,6 +25,8 @@ import { UtoopackManifestGenerator } from "../manifest-generator.js";
 import { getOutputPaths } from "./output-paths.js";
 
 const logger = getLogger(["evjs", "bundler-utoopack"]);
+const require = createRequire(import.meta.url);
+type UtoopackRuntime = Pick<typeof import("@utoo/pack"), "build" | "serve">;
 
 async function cleanServerOutput(
   cwd: string,
@@ -58,6 +61,11 @@ async function generateDevArtifacts(
   return true;
 }
 
+function requireUtoopack(): UtoopackRuntime {
+  // @utoo/pack's import condition targets ESM .js files; Node 18 parses them as CJS.
+  return require("@utoo/pack") as UtoopackRuntime;
+}
+
 export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
   name: "utoopack",
   async build(
@@ -71,7 +79,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
 
     await cleanServerOutput(cwd, config.output, plan.distDir);
 
-    const { build } = await import("@utoo/pack");
+    const { build } = requireUtoopack();
     await build({ config: utoopackConfig });
 
     logger.info`Collecting utoopack build facts...`;
@@ -91,7 +99,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
 
     logger.info`Starting development server with utoopack...`;
 
-    const { serve } = await import("@utoo/pack");
+    const { serve } = requireUtoopack();
     await serve({ config: utoopackConfig });
 
     await generateDevArtifacts(config, cwd, plan, callbacks.onBuildFacts, {

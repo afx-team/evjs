@@ -27,44 +27,62 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createClientRuntime } from "../../ev/src/_internal/build/framework-runtime.js";
 import { utoopackAdapter } from "../src/adapter/index.js";
 
-vi.mock("@utoo/pack", () => ({
-  serve: vi.fn(async ({ config }) => {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const clientOutDir = config.output.path;
+const utoopackMock = vi.hoisted(() => ({
+  requireUtoopack: vi.fn(() => ({
+    serve: vi.fn(async ({ config }) => {
+      const fs = await import("node:fs");
+      const path = await import("node:path");
+      const clientOutDir = config.output.path;
 
-    await fs.promises.mkdir(clientOutDir, { recursive: true });
-    await fs.promises.writeFile(path.join(clientOutDir, "main.js"), "");
-    await fs.promises.writeFile(path.join(clientOutDir, "main.css"), "");
-    await fs.promises.writeFile(
-      path.join(clientOutDir, "stats.json"),
-      JSON.stringify({
-        entrypoints: {
-          main: {
-            assets: [{ name: "main.js" }, { name: "main.css" }],
-          },
-        },
-      }),
-    );
-
-    if (config.server) {
-      const serverOutDir = config.server.output.path;
-      await fs.promises.mkdir(serverOutDir, { recursive: true });
-      await fs.promises.writeFile(path.join(serverOutDir, "index.js"), "");
+      await fs.promises.mkdir(clientOutDir, { recursive: true });
+      await fs.promises.writeFile(path.join(clientOutDir, "main.js"), "");
+      await fs.promises.writeFile(path.join(clientOutDir, "main.css"), "");
       await fs.promises.writeFile(
-        path.join(serverOutDir, "stats.json"),
+        path.join(clientOutDir, "stats.json"),
         JSON.stringify({
           entrypoints: {
             main: {
-              assets: [{ name: "index.js" }],
+              assets: [{ name: "main.js" }, { name: "main.css" }],
             },
           },
         }),
       );
-    }
-  }),
-  build: vi.fn(),
+
+      if (config.server) {
+        const serverOutDir = config.server.output.path;
+        await fs.promises.mkdir(serverOutDir, { recursive: true });
+        await fs.promises.writeFile(path.join(serverOutDir, "index.js"), "");
+        await fs.promises.writeFile(
+          path.join(serverOutDir, "stats.json"),
+          JSON.stringify({
+            entrypoints: {
+              main: {
+                assets: [{ name: "index.js" }],
+              },
+            },
+          }),
+        );
+      }
+    }),
+    build: vi.fn(),
+  })),
 }));
+
+vi.mock("node:module", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:module")>();
+  return {
+    ...actual,
+    createRequire(filename: string | URL) {
+      const actualRequire = actual.createRequire(filename);
+      return ((specifier: string) =>
+        specifier === "@utoo/pack"
+          ? utoopackMock.requireUtoopack()
+          : actualRequire(specifier)) as ReturnType<
+        typeof actual.createRequire
+      >;
+    },
+  };
+});
 
 const CLIENT_RUNTIME_SCRIPT_ID = "__EVJS_CLIENT_RUNTIME__";
 const tempDirs: string[] = [];
