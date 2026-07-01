@@ -116,6 +116,7 @@ shared wrappers as normal components and do not accept
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
 | [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Standalone/manual browser runtime core for apps that do not use evjs file conventions |
 | [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Standalone/manual server runtime core for hand-written Hono/fetch apps and route primitives |
+| [`@evjs/plugin-qiankun`](https://github.com/evaijs/evjs/tree/main/packages/plugin-qiankun) | Optional qiankun master/slave micro-frontend bridge plugin |
 
 Manifest schemas, build tools, generated page runtime, and shell internals are
 internal modules under the public packages above. Application config/build code

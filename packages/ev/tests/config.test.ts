@@ -551,6 +551,7 @@ describe("resolveConfig", () => {
           {
             context: ["/api"],
             target: "http://localhost:4000",
+            pathRewrite: { "^/api": "" },
             changeOrigin: true,
             secure: false,
           },
@@ -561,6 +562,7 @@ describe("resolveConfig", () => {
     expect(resolved.dev.proxy[0]).toEqual({
       context: ["/api"],
       target: "http://localhost:4000",
+      pathRewrite: { "^/api": "" },
       changeOrigin: true,
       secure: false,
     });
@@ -683,8 +685,41 @@ describe("resolveConfig", () => {
         },
       }),
     ).toThrow(
-      "[evjs] dev.proxy[0].rewrite is not supported. Use context, target, changeOrigin, or secure.",
+      "[evjs] dev.proxy[0].rewrite is not supported. Use context, target, pathRewrite, changeOrigin, or secure.",
     );
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          proxy: [
+            {
+              context: ["/api"],
+              target: "http://localhost:4000",
+              pathRewrite: null as never,
+            },
+          ],
+        },
+      }),
+    ).toThrow(
+      "[evjs] dev.proxy[0].pathRewrite must be a path rewrite object or function.",
+    );
+
+    expect(() =>
+      resolveConfig({
+        dev: {
+          proxy: [
+            {
+              context: ["/api"],
+              target: "http://localhost:4000",
+              pathRewrite: {
+                // @ts-expect-error runtime config loading can still produce non-string replacements.
+                "^/api": false,
+              },
+            },
+          ],
+        },
+      }),
+    ).toThrow('[evjs] dev.proxy[0].pathRewrite["^/api"] must be a string.');
 
     expect(() =>
       resolveConfig({
@@ -863,6 +898,7 @@ describe("resolveConfig", () => {
           {
             context: ["/api"],
             target: "http://localhost:4000",
+            pathRewrite: { "^/api": "" },
             changeOrigin: true,
             secure: false,
           },
@@ -874,6 +910,7 @@ describe("resolveConfig", () => {
       {
         context: ["/api"],
         target: "http://localhost:4000",
+        pathRewrite: { "^/api": "" },
         changeOrigin: true,
         secure: false,
       },

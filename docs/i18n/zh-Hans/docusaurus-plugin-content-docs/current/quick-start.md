@@ -112,6 +112,7 @@ export default defineConfig({
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | 项目脚手架 (`npx @evjs/create-app`) |
 | [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | 不使用 evjs file conventions 时的 standalone/manual 浏览器运行时 core |
 | [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | 手写 Hono/fetch app 和 route primitives 的 standalone/manual 服务端运行时 core |
+| [`@evjs/plugin-qiankun`](https://github.com/evaijs/evjs/tree/main/packages/plugin-qiankun) | 可选的 qiankun master/slave 微前端桥接插件 |
 
 Manifest schema、build tools、生成 page runtime 和 shell 内部实现都位于上述公开包中。
 应用的 config/build 代码从 `@evjs/ev` 导入框架组合 API。file-convention 应用源码从

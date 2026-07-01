@@ -25,6 +25,7 @@ const sidebars: SidebarsConfig = {
       items: [
         "architecture",
         "config",
+        "qiankun",
         "advanced-conventions",
         "dev",
         "build",

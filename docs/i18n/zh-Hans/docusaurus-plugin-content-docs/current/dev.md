@@ -60,7 +60,8 @@ export default defineConfig({
 `dev.port` 和 `server.dev.port` 必须是 `1` 到 `65535` 之间的 TCP 端口整数。
 自定义 `dev.proxy` 规则必须提供非空 `context` pathname pattern 数组，以及 absolute
 HTTP(S) URL `target`。Context pattern 必须以 `/` 开头，不能包含空白字符、query string
-或 hash，并且同一条规则内不能重复。Target 不能包含首尾空白字符。
+或 hash，并且同一条规则内不能重复。Target 不能包含首尾空白字符。使用
+`pathRewrite` 可以在转发到 target 前改写被代理的请求路径。
 
 自定义代理规则会先于服务端运行时路径的内置代理应用，因此应用自己的 API proxy 可以保留独立的路由行为。
 

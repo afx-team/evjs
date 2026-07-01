@@ -1,0 +1,54 @@
+{
+  "name": "@evjs/plugin-qiankun",
+  "version": "0.0.0",
+  "description": "Qiankun micro-frontend plugin for evjs",
+  "type": "module",
+  "types": "./esm/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./esm/index.d.ts",
+      "import": "./esm/index.js",
+      "default": "./esm/index.js"
+    },
+    "./runtime": {
+      "types": "./esm/runtime.d.ts",
+      "import": "./esm/runtime.js",
+      "default": "./esm/runtime.js"
+    }
+  },
+  "scripts": {
+    "build": "rm -rf esm && tsc && cp src/entry-loader.cjs esm/entry-loader.cjs",
+    "test": "vitest run",
+    "check-types": "tsc --noEmit"
+  },
+  "files": [
+    "esm"
+  ],
+  "homepage": "https://github.com/afx-team/evjs#readme",
+  "bugs": {
+    "url": "https://github.com/afx-team/evjs/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/afx-team/evjs.git"
+  },
+  "license": "MIT",
+  "author": "xusd320",
+  "dependencies": {
+    "@evjs/ev": "*",
+    "qiankun": "^3.0.0-rc.21"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.15",
+    "typescript": "^6.0.2"
+  },
+  "keywords": [
+    "evjs",
+    "plugin",
+    "qiankun",
+    "micro-frontend"
+  ]
+}

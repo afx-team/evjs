@@ -17,6 +17,7 @@
 | `@evjs/cli` | `packages/cli` | CLI binary and programmatic command entrypoints |
 | `@evjs/ev` | `packages/ev` | Config, plugin lifecycle, graph analysis, build planning, HTML, deployment helpers, and bundler adapter contracts |
 | `@evjs/create-app` | `packages/create-app` | Project scaffolding from examples/templates |
+| `@evjs/plugin-qiankun` | `packages/plugin-qiankun` | Optional qiankun master/slave micro-frontend bridge plugin |
 | `@evjs/shared` | `packages/shared` | Runtime shared helpers plus `@evjs/shared/manifest` graph/plan/output schemas |
 | `@evjs/client` | `packages/client` | Browser runtime core for standalone CSR, transport, page hooks, navigation helpers, and RSC client |
 | `@evjs/server` | `packages/server` | Server runtime core for server functions, REST routes, SSR/PPR/RSC request coordination, and Node/fetch runtimes |

@@ -40,6 +40,9 @@ artifacts.
 @evjs/create-app
   project scaffolding and template restoration
 
+@evjs/plugin-qiankun
+  optional qiankun master/slave micro-frontend bridge plugin
+
 @evjs/ev
   composition/control plane for config, plugins, graph analysis, build
   planning, HTML, capability validation, deployment helpers, and bundler
@@ -78,6 +81,10 @@ Other packages are tooling, bundler adapters, or shared contracts for framework
 packages. When a new capability needs a boundary, prefer adding a subpath export
 to the package that owns the behavior before creating another distributed
 package.
+`@evjs/plugin-qiankun` is an explicit plugin-package boundary for qiankun
+micro-frontend integration because it carries an optional third-party runtime
+dependency and generated bridge behavior that should not become part of the
+core framework surface.
 
 Subpath exports stay explicit and documented; adding a new package export is a
 public API decision, not a convenience alias.

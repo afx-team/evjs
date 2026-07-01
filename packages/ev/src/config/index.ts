@@ -74,9 +74,14 @@ export interface ResolvedDevConfig {
 export interface DevProxyRule {
   context: string[];
   target: string;
+  pathRewrite?: DevProxyPathRewrite;
   changeOrigin?: boolean;
   secure?: boolean;
 }
+
+export type DevProxyPathRewrite =
+  | Record<string, string>
+  | ((path: string) => string);
 
 /** Resolved server dev configuration (all defaults applied). */
 export interface ResolvedServerDevConfig {
@@ -487,6 +492,7 @@ const PUBLIC_HTTPS_CONFIG_KEYS = new Set(["key", "cert"]);
 const PUBLIC_DEV_PROXY_RULE_KEYS = new Set([
   "context",
   "target",
+  "pathRewrite",
   "changeOrigin",
   "secure",
 ]);
@@ -1507,6 +1513,10 @@ function resolveDevProxyRule(rule: unknown, index: number): DevProxyRule {
   const ruleConfig = assertObjectConfig(rule, path, "a proxy rule object");
   validateDevProxyRuleKeys(ruleConfig, path);
   const context = clonePathPatterns(ruleConfig.context, `${path}.context`);
+  const pathRewrite = resolveDevProxyPathRewrite(
+    ruleConfig.pathRewrite,
+    `${path}.pathRewrite`,
+  );
   const changeOrigin = assertOptionalBoolean(
     ruleConfig.changeOrigin,
     `${path}.changeOrigin`,
@@ -1516,9 +1526,36 @@ function resolveDevProxyRule(rule: unknown, index: number): DevProxyRule {
   return {
     context,
     target: assertHttpUrl(ruleConfig.target, `${path}.target`),
+    ...(pathRewrite !== undefined ? { pathRewrite } : {}),
     ...(changeOrigin !== undefined ? { changeOrigin } : {}),
     ...(secure !== undefined ? { secure } : {}),
   };
+}
+
+function resolveDevProxyPathRewrite(
+  value: unknown,
+  path: string,
+): DevProxyPathRewrite | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "function") {
+    return value as (path: string) => string;
+  }
+
+  const rules = assertObjectConfig(
+    value,
+    path,
+    "a path rewrite object or function",
+  );
+  const resolved: Record<string, string> = {};
+  for (const [pattern, replacement] of Object.entries(rules)) {
+    if (typeof replacement !== "string") {
+      throw new Error(
+        `[evjs] ${path}[${JSON.stringify(pattern)}] must be a string.`,
+      );
+    }
+    resolved[pattern] = replacement;
+  }
+  return resolved;
 }
 
 function validateDevProxyRuleKeys(
@@ -1529,7 +1566,7 @@ function validateDevProxyRuleKeys(
     rule,
     PUBLIC_DEV_PROXY_RULE_KEYS,
     path,
-    "context, target, changeOrigin, or secure",
+    "context, target, pathRewrite, changeOrigin, or secure",
   );
 }
 

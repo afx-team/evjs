@@ -66,7 +66,8 @@ the generated page app entry when page routes are discovered.
 pathname patterns and a `target` absolute HTTP(S) URL. Context patterns must
 start with `/`, must not contain whitespace, a query string, or a hash, and
 must not repeat within the same rule. Targets must not contain leading or
-trailing whitespace.
+trailing whitespace. Use `pathRewrite` to rewrite proxied request paths before
+forwarding them to the target.
 
 Custom proxy rules are applied before the built-in proxy for server runtime
 paths, so app-specific API proxies can keep their own routing behavior.

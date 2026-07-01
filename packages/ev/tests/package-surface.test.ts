@@ -25,6 +25,7 @@ const packageDistribution = {
   "@evjs/server": { dir: "server", role: "runtime" },
   "@evjs/cli": { dir: "cli", role: "tooling" },
   "@evjs/create-app": { dir: "create-app", role: "tooling" },
+  "@evjs/plugin-qiankun": { dir: "plugin-qiankun", role: "plugin" },
   "@evjs/bundler-utoopack": { dir: "bundler-utoopack", role: "adapter" },
   "@evjs/bundler-webpack": { dir: "bundler-webpack", role: "adapter" },
   "@evjs/shared": { dir: "shared", role: "contract" },
@@ -62,6 +63,7 @@ const expectedPublishedFiles = {
   "@evjs/server": ["esm"],
   "@evjs/cli": ["bin", "dist"],
   "@evjs/create-app": ["dist", "templates"],
+  "@evjs/plugin-qiankun": ["esm"],
   "@evjs/bundler-utoopack": ["esm"],
   "@evjs/bundler-webpack": ["esm"],
   "@evjs/shared": ["esm"],
@@ -92,6 +94,11 @@ const expectedPrimaryPackageExports = {
     import: "./dist/index.js",
     default: "./dist/index.js",
   },
+  "@evjs/plugin-qiankun": {
+    types: "./esm/index.d.ts",
+    import: "./esm/index.js",
+    default: "./esm/index.js",
+  },
   "@evjs/bundler-utoopack": {
     types: "./esm/index.d.ts",
     import: "./esm/index.js",
@@ -115,6 +122,7 @@ const expectedInternalRuntimeDependencies = {
   "@evjs/server": ["@evjs/shared"],
   "@evjs/cli": ["@evjs/bundler-utoopack", "@evjs/ev"],
   "@evjs/create-app": [],
+  "@evjs/plugin-qiankun": ["@evjs/ev"],
   "@evjs/bundler-utoopack": ["@evjs/ev"],
   "@evjs/bundler-webpack": ["@evjs/ev"],
   "@evjs/shared": [],
@@ -123,6 +131,7 @@ const expectedInternalRuntimeDependencies = {
 const allowedExamplePackageDependencies = new Set([
   "@evjs/ev",
   "@evjs/cli",
+  "@evjs/plugin-qiankun",
   "@evjs/bundler-utoopack",
   "@evjs/bundler-webpack",
 ]);
@@ -132,6 +141,7 @@ const allowedDocumentationImportPackages = new Set([
   "@evjs/ev",
   "@evjs/server",
   "@evjs/cli",
+  "@evjs/plugin-qiankun",
   "@evjs/bundler-utoopack",
   "@evjs/bundler-webpack",
 ]);
@@ -259,6 +269,7 @@ const expectedPackageExportSubpaths = {
   "@evjs/server": expectedServerSubpathExports,
   "@evjs/cli": ["."],
   "@evjs/create-app": ["."],
+  "@evjs/plugin-qiankun": [".", "./runtime"],
   "@evjs/bundler-utoopack": ["."],
   "@evjs/bundler-webpack": ["."],
   "@evjs/shared": [".", "./manifest"],

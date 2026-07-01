@@ -53,6 +53,7 @@ interface WebpackWatching {
 }
 
 type WebpackDevProxyRule = DevProxyRule & {
+  pathRewrite?: Record<string, string> | ((path: string) => string);
   contextFilter?: (pathname: string) => boolean;
   frameworkPageRender?: boolean;
 };
@@ -904,6 +905,7 @@ function toWebpackDevProxy(rule: WebpackDevProxyRule) {
   return {
     context: rule.contextFilter ?? rule.context,
     target: rule.target,
+    pathRewrite: rule.pathRewrite,
     changeOrigin: rule.changeOrigin,
     secure: rule.secure,
     onProxyReq(proxyReq: ClientRequest) {

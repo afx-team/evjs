@@ -43,6 +43,9 @@ creating another distributed package.
 @evjs/server
   standalone/manual server runtime core for Hono/fetch apps, server functions,
   route primitives, request context, and SSR/PPR/RSC request handling
+
+@evjs/plugin-qiankun
+  optional qiankun master/slave micro-frontend bridge plugin
 ```
 
 `@evjs/cli` and `@evjs/create-app` are distribution tooling. Bundler adapters
@@ -60,6 +63,7 @@ declaration model; use `src/apis` for framework-managed server routes.
 | Framework surface | `@evjs/ev` | Use `@evjs/ev` for simple config authoring, `@evjs/ev/config` for advanced config utilities, `@evjs/ev/plugin` for plugin authoring details, `@evjs/ev/deployment` for deployment adapters, and `@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`, `@evjs/ev/server-context`, and `@evjs/ev/transport` in file-convention app source. |
 | Standalone runtime APIs | `@evjs/client`, `@evjs/server` | Use these packages only when application source intentionally owns standalone/manual CSR or server runtime primitives. |
 | Tooling | `@evjs/cli`, `@evjs/create-app` | Install or execute them; application modules should not import them. |
+| Micro-frontend plugins | `@evjs/plugin-qiankun` | Configure it from `ev.config.ts` when an app intentionally participates in a qiankun master/slave topology. |
 | Bundler adapters | `@evjs/bundler-utoopack`, `@evjs/bundler-webpack` | `@evjs/cli` owns the default Utoopack adapter. Import an adapter directly only when authoring custom tooling. |
 | Shared contracts | `@evjs/shared` | Published so framework packages share manifest/runtime types; app code should not import it directly. |
 
@@ -141,6 +145,9 @@ import from `@evjs/client` or `@evjs/server`; adapter examples may import
 @evjs/bundler-webpack
   validation/fallback adapter for SSR/PPR/RSC and dynamic entry/server
   dev plan updates while Utoopack lower-layer APIs catch up
+
+@evjs/plugin-qiankun
+  optional qiankun master/slave bridge plugin layered on @evjs/ev plugin hooks
 ```
 
 `@evjs/ev/_internal/build` does not import bundler adapters. Bundler adapters consume `BuildPlan`; they do not rediscover framework semantics from source files after bundling.

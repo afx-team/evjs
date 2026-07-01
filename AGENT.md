@@ -9,6 +9,7 @@
 | `@evjs/cli` | `packages/cli` | `src/index.ts`, `src/load-config.ts` |
 | `@evjs/ev` | `packages/ev` | `src/config/`, `src/plugin/`, `src/deployment/`, `src/_internal/build/*` |
 | `@evjs/create-app` | `packages/create-app` | `src/index.ts`, template restore scripts |
+| `@evjs/plugin-qiankun` | `packages/plugin-qiankun` | `src/index.ts`, `src/runtime.ts`, qiankun bridge tests |
 | `@evjs/shared` | `packages/shared` | `src/build-identifier.ts`, `src/constants.ts`, `src/errors.ts`, `src/http.ts`, `src/page-route-data.ts`, `src/path-pattern.ts`, `src/server-function-id.ts`, `src/server-route-data.ts`, `src/manifest/*` |
 | `@evjs/client` | `packages/client` | `src/standalone/`, `src/framework/page/`, `src/framework/shell/`, `src/server-functions/`, `src/rsc/`, `src/shared/` |
 | `@evjs/server` | `packages/server` | `src/app/`, `src/request-context/`, `src/server-functions/`, `src/routes/`, `src/framework-rendering/`, `src/runtimes/`, `src/shared/` |
