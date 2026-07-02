@@ -179,6 +179,11 @@ export function getGlobalRuntimeTransport():
   return hasClientRuntimeTransport(transport) ? transport : undefined;
 }
 
+/**
+ * Resolve defaults for framework-managed browser requests to evjs server
+ * endpoints. Keep new server-route, PPR, or other framework client fetch
+ * consumers on this helper instead of reading runtime.transport directly.
+ */
 export function resolveClientRuntimeTransport(
   runtime: Pick<ClientRuntime, "runtime">,
 ): ClientRuntimeTransport | undefined {
