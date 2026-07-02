@@ -143,11 +143,11 @@ export function createBuildPlan(
         fn: config.server.runtime.fn,
         ppr: hasPprPages(graph)
           ? (config.server.runtime.ppr ??
-            joinPath(config.server.basePath, "ppr"))
+            toRuntimeEndpoint(joinPath(config.server.basePath, "ppr")))
           : undefined,
         rsc: hasRscPages(graph)
           ? (config.server.runtime.rsc ??
-            joinPath(config.server.basePath, "rsc"))
+            toRuntimeEndpoint(joinPath(config.server.basePath, "rsc")))
           : config.server.runtime.rsc,
       },
       transport: config.transport,
@@ -655,6 +655,10 @@ function hasRscPages(graph: AppGraph): boolean {
 
 function joinPath(base: string, segment: string): string {
   return `${base.replace(/\/+$/, "")}/${segment.replace(/^\/+/, "")}`;
+}
+
+function toRuntimeEndpoint(pathname: string): string {
+  return pathname.startsWith("/") ? pathname.slice(1) : pathname;
 }
 
 function buildEntryKey(entry: BuildEntry): string {

@@ -528,8 +528,8 @@ describe("createReactServerRenderAdapter", () => {
     const manifest = createManifest();
     manifest.runtime.server = {
       basePath: "/__evjs",
-      fn: "/__evjs/fn",
-      rsc: "/__evjs/rsc",
+      fn: "__evjs/fn",
+      rsc: "__evjs/rsc",
     };
     manifest.rsc = {
       pages: {
@@ -578,7 +578,7 @@ describe("createReactServerRenderAdapter", () => {
       '<script id="__EVJS_RSC_BOOTSTRAP__" type="application/json">',
     );
     expect(result.html).toContain('"pageId":"insights"');
-    expect(result.html).toContain('"endpoint":"/__evjs/rsc"');
+    expect(result.html).toContain('"endpoint":"__evjs/rsc"');
     expect(result.html).toContain('"mount":"#app"');
     expect(result.html).toContain(
       '<script defer src="/assets/evjs-rsc-client.js"></script>',
@@ -758,8 +758,8 @@ describe("createReactRscFlightAdapter", () => {
     const manifest = createManifest();
     manifest.runtime.server = {
       basePath: "/__evjs",
-      fn: "/__evjs/fn",
-      rsc: "/__evjs/rsc",
+      fn: "__evjs/fn",
+      rsc: "__evjs/rsc",
     };
     manifest.pages.dashboard = {
       assets: { js: [], css: [] },
@@ -823,8 +823,8 @@ describe("createReactRscFlightAdapter", () => {
     const manifest = createManifest();
     manifest.runtime.server = {
       basePath: "/__evjs",
-      fn: "/__evjs/fn",
-      rsc: "/__evjs/rsc",
+      fn: "__evjs/fn",
+      rsc: "__evjs/rsc",
     };
 
     const adapter = createReactRscFlightAdapter();
@@ -846,8 +846,8 @@ describe("createReactRscFlightAdapter", () => {
     const manifest = createManifest();
     manifest.runtime.server = {
       basePath: "/__evjs",
-      fn: "/__evjs/fn",
-      rsc: "/__evjs/rsc",
+      fn: "__evjs/fn",
+      rsc: "__evjs/rsc",
     };
     const adapter = createReactRscFlightAdapter({
       renderFlight() {
@@ -1109,7 +1109,7 @@ function createManifest(): LegacyFrameworkRuntime {
     runtime: {
       server: {
         basePath: "/__evjs",
-        fn: "/__evjs/fn",
+        fn: "__evjs/fn",
       },
     },
     pages: {},

@@ -759,7 +759,7 @@ describe("startPageRuntime", () => {
       json: async () => ({ result: "ok" }),
     });
     vi.stubGlobal("fetch", fetchMock);
-    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/__evjs/fn");
+    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "__evjs/fn");
 
     await startPageRuntime({
       document,
@@ -772,7 +772,7 @@ describe("startPageRuntime", () => {
     await callServer("fn", []);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      new URL("https://api.example.com/__evjs/fn"),
+      new URL("https://api.example.com/framework/__evjs/fn"),
       expect.objectContaining({ method: "POST" }),
     );
   });

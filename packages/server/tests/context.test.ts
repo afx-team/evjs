@@ -242,8 +242,8 @@ function createFrameworkManifest(): LegacyFrameworkRuntime {
     runtime: {
       server: {
         basePath: "/__evjs",
-        fn: "/__evjs/fn",
-        rsc: "/__evjs/rsc",
+        fn: "__evjs/fn",
+        rsc: "__evjs/rsc",
       },
     },
     pages: {

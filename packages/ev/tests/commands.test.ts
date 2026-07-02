@@ -1695,10 +1695,10 @@ describe("build", () => {
 
     expect(events).toEqual([
       "config:production",
-      "setup:/api/fn",
+      "setup:api/fn",
       "bundler.build",
       "bundler.entries:main",
-      "bundler.endpoint:/api/fn",
+      "bundler.endpoint:api/fn",
     ]);
   });
 

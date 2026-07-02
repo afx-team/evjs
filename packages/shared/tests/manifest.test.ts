@@ -25,7 +25,7 @@ function createMinimalBuildOutput(): BuildOutput {
     runtime: {
       server: {
         basePath: "/__evjs",
-        fn: "/__evjs/fn",
+        fn: "__evjs/fn",
       },
     },
     assets: {},
@@ -67,7 +67,7 @@ function createRuntimePlan(
     publicPath: "/",
     server: {
       basePath: "/__evjs",
-      fn: "/__evjs/fn",
+      fn: "__evjs/fn",
       ...server,
     },
   };
@@ -1094,7 +1094,7 @@ describe("assertFrameworkManifestShape", () => {
       assertFrameworkManifestShape(
         {
           ...createMinimalBuildOutput(),
-          runtime: { server: { fn: "/__evjs/fn" } },
+          runtime: { server: { fn: "__evjs/fn" } },
         },
         "manifest",
       ),
@@ -1930,13 +1930,15 @@ describe("assertFrameworkManifestShape", () => {
           runtime: {
             server: {
               basePath: "/__evjs",
-              fn: "__evjs/fn",
+              fn: "__evjs/fn?debug=1",
             },
           },
         },
         "manifest",
       ),
-    ).toThrow('[evjs] manifest.runtime.server.fn must start with "/".');
+    ).toThrow(
+      "[evjs] manifest.runtime.server.fn must not include a query string or hash.",
+    );
 
     expect(() =>
       assertFrameworkManifestShape(
@@ -1945,7 +1947,7 @@ describe("assertFrameworkManifestShape", () => {
           runtime: {
             server: {
               basePath: "/__evjs",
-              fn: "/__evjs/fn",
+              fn: "__evjs/fn",
               ppr: " /__evjs/ppr ",
             },
           },
@@ -1963,7 +1965,7 @@ describe("assertFrameworkManifestShape", () => {
           runtime: {
             server: {
               basePath: "/__evjs",
-              fn: "/__evjs/fn",
+              fn: "__evjs/fn",
             },
             transport: [],
           },
@@ -1979,7 +1981,7 @@ describe("assertFrameworkManifestShape", () => {
           runtime: {
             server: {
               basePath: "/__evjs",
-              fn: "/__evjs/fn",
+              fn: "__evjs/fn",
             },
             transport: { baseUrl: "" },
           },
@@ -1997,7 +1999,7 @@ describe("assertFrameworkManifestShape", () => {
           runtime: {
             server: {
               basePath: "/__evjs",
-              fn: "/__evjs/fn",
+              fn: "__evjs/fn",
             },
             transport: { baseUrl: "https://api.example.com " },
           },
@@ -2015,7 +2017,7 @@ describe("assertFrameworkManifestShape", () => {
           runtime: {
             server: {
               basePath: "/__evjs",
-              fn: "/__evjs/fn",
+              fn: "__evjs/fn",
             },
             transport: { baseUrl: "http://[::1" },
           },
@@ -2669,7 +2671,7 @@ describe("linkBuildOutput", () => {
           owner: { pageId: "campaign" },
         },
       ]),
-      runtime: createRuntimePlan({ ppr: "/__evjs/ppr" }),
+      runtime: createRuntimePlan({ ppr: "__evjs/ppr" }),
     };
 
     const output = linkBuildOutput({
@@ -2807,7 +2809,7 @@ describe("linkBuildOutput", () => {
       ],
       html: [],
       server: createServerPlan(),
-      runtime: createRuntimePlan({ rsc: "/__evjs/rsc" }),
+      runtime: createRuntimePlan({ rsc: "__evjs/rsc" }),
     };
 
     expect(() =>
@@ -2868,7 +2870,7 @@ describe("linkBuildOutput", () => {
       ],
       html: [],
       server: createServerPlan(),
-      runtime: createRuntimePlan({ ppr: "/__evjs/ppr" }),
+      runtime: createRuntimePlan({ ppr: "__evjs/ppr" }),
     });
 
     expect(() =>
@@ -2969,9 +2971,9 @@ describe("createPublicManifest", () => {
       runtime: {
         server: {
           basePath: "/__evjs",
-          fn: "/__evjs/fn",
-          ppr: "/__evjs/ppr",
-          rsc: "/__evjs/rsc",
+          fn: "__evjs/fn",
+          ppr: "__evjs/ppr",
+          rsc: "__evjs/rsc",
         },
       },
       assets: {
@@ -3422,9 +3424,9 @@ describe("createServerManifest", () => {
       runtime: {
         server: {
           basePath: "/__evjs",
-          fn: "/__evjs/fn",
-          ppr: "/__evjs/ppr",
-          rsc: "/__evjs/rsc",
+          fn: "__evjs/fn",
+          ppr: "__evjs/ppr",
+          rsc: "__evjs/rsc",
         },
       },
       pages: {

@@ -458,7 +458,7 @@ function createPlan(
       publicPath: "/",
       server: {
         basePath: "/__evjs",
-        fn: "/__evjs/fn",
+        fn: "__evjs/fn",
       },
     },
   };

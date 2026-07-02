@@ -586,7 +586,7 @@ describe("fetchRscFlight", () => {
         buildId: "test",
         runtime: {
           server: {
-            rsc: "/__evjs/rsc",
+            rsc: "__evjs/rsc",
           },
         },
         pages: {},
@@ -638,7 +638,7 @@ describe("fetchRscFlight", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://runtime.example.com/__evjs/rsc?page=dashboard&url=%2Fdashboard%3Ftab%3Dstats",
+      "https://runtime.example.com/service/__evjs/rsc?page=dashboard&url=%2Fdashboard%3Ftab%3Dstats",
     );
   });
 
@@ -669,7 +669,7 @@ describe("fetchRscFlight", () => {
     const init = fetchMock.mock.calls[0]?.[1];
     const headers = new Headers(init?.headers);
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://runtime.example.com/__evjs/rsc?page=dashboard&url=%2Fdashboard%3Ftab%3Dstats",
+      "https://runtime.example.com/service/__evjs/rsc?page=dashboard&url=%2Fdashboard%3Ftab%3Dstats",
       expect.objectContaining({ credentials: "include" }),
     );
     expect(headers.get("x-webgw-appid")).toBe("1800");
@@ -697,7 +697,7 @@ describe("fetchRscFlight", () => {
     const init = fetchMock.mock.calls[0]?.[1];
     const headers = new Headers(init?.headers);
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://webgw.example.com/__evjs/rsc?page=dashboard&url=%2Fdashboard%3Ftab%3Dstats",
+      "https://webgw.example.com/app/api/yuyan/1800/version/__evjs/rsc?page=dashboard&url=%2Fdashboard%3Ftab%3Dstats",
       expect.objectContaining({ credentials: "include" }),
     );
     expect(headers.get("x-webgw-appid")).toBe("1800");
@@ -1166,7 +1166,7 @@ function createRscRuntime(): ClientRuntime {
     buildId: "test",
     runtime: {
       server: {
-        rsc: "/__evjs/rsc",
+        rsc: "__evjs/rsc",
       },
     },
     pages: {},

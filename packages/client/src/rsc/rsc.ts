@@ -367,7 +367,7 @@ function assertRscBootstrap(
   }
   assertBootstrapBuildIdentifier(value.buildId, `${source} buildId`);
   assertBootstrapBuildIdentifier(value.pageId, `${source} pageId`);
-  assertBootstrapPathname(value.endpoint, `${source} endpoint`);
+  assertBootstrapEndpoint(value.endpoint, `${source} endpoint`);
   assertBootstrapString(value.mount, `${source} mount`);
 
   if (value.basePath !== undefined) {
@@ -452,6 +452,19 @@ function assertBootstrapPathname(value: unknown, path: string): string {
     throw new Error(`[evjs] ${path} ${formatBootstrapPathnameError(error)}`);
   }
   return pathname;
+}
+
+function assertBootstrapEndpoint(value: unknown, path: string): string {
+  const endpoint = assertBootstrapTrimmedString(value, path);
+  if (endpoint.startsWith("/")) {
+    throw new Error(`[evjs] ${path} must not start with "/".`);
+  }
+
+  const error = getPathPatternValidationError(`/${endpoint}`);
+  if (error) {
+    throw new Error(`[evjs] ${path} ${formatBootstrapPathnameError(error)}`);
+  }
+  return endpoint;
 }
 
 function formatBootstrapPathnameError(

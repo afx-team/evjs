@@ -458,9 +458,11 @@ function resolveRscFlightUrl(
   const explicitUrl = options.url?.toString();
   const locationHref = globalThis.location?.href;
   const currentUrl = explicitUrl ?? locationHref;
-  const transportBaseUrl = transport?.baseUrl;
-  const base = transportBaseUrl ?? locationHref ?? explicitUrl ?? endpoint;
-  const url = new URL(endpoint, base);
+  const url = resolveRuntimeEndpointUrl(
+    endpoint,
+    transport?.baseUrl ??
+      getOriginRootUrl(locationHref ?? getAbsoluteHttpUrl(explicitUrl)),
+  );
   if (options.pageId) {
     url.searchParams.set("page", options.pageId);
   }
@@ -476,6 +478,28 @@ function resolveRscFlightUrl(
     url.searchParams.set("url", pageUrl);
   }
   return url.toString();
+}
+
+function resolveRuntimeEndpointUrl(endpoint: string, baseHref?: string): URL {
+  const base = new URL(baseHref ?? "http://evjs.local/");
+  base.search = "";
+  base.hash = "";
+  if (!base.pathname.endsWith("/")) {
+    base.pathname = `${base.pathname}/`;
+  }
+  return new URL(endpoint.replace(/^\/+/, ""), base);
+}
+
+function getOriginRootUrl(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.origin
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function getAbsoluteHttpUrl(value: string | undefined): string | undefined {

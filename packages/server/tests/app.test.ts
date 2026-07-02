@@ -54,7 +54,7 @@ describe("createApp", () => {
     const manifest = createManifest();
     manifest.runtime.server = {
       basePath: "/framework",
-      fn: "/framework/fn",
+      fn: "framework/fn",
     };
 
     const app = createApp({
@@ -318,7 +318,7 @@ describe("createApp", () => {
     const manifest = createManifest();
     manifest.runtime.server = {
       basePath: "/api",
-      fn: "/api/rpc",
+      fn: "api/rpc",
     };
     manifest.routes.push({
       id: "rpc-page",
@@ -477,7 +477,7 @@ describe("createApp", () => {
         framework: {
           runtime: {
             ...manifest,
-            runtime: { server: { fn: "/__evjs/fn" } },
+            runtime: { server: { fn: "__evjs/fn" } },
           },
         } as never,
       }),
@@ -492,14 +492,14 @@ describe("createApp", () => {
             runtime: {
               server: {
                 basePath: "/__evjs",
-                fn: "__evjs/fn",
+                fn: "__evjs/fn?debug=1",
               },
             },
           },
         } as never,
       }),
     ).toThrow(
-      '[evjs] createApp() framework.runtime.runtime.server.fn must start with "/".',
+      "[evjs] createApp() framework.runtime.runtime.server.fn must not include a query string or hash.",
     );
     expect(() =>
       createApp({
@@ -509,7 +509,7 @@ describe("createApp", () => {
             runtime: {
               server: {
                 basePath: "/__evjs",
-                fn: "/__evjs/fn",
+                fn: "__evjs/fn",
                 ppr: " /__evjs/ppr ",
               },
             },
@@ -527,8 +527,8 @@ describe("createApp", () => {
             runtime: {
               server: {
                 basePath: "/__evjs",
-                fn: "/__evjs/fn",
-                rsc: "/__evjs/rsc?flight=1",
+                fn: "__evjs/fn",
+                rsc: "__evjs/rsc?flight=1",
               },
             },
           },
@@ -3772,8 +3772,8 @@ function createManifest(): LegacyFrameworkRuntime {
     runtime: {
       server: {
         basePath: "/__evjs",
-        fn: "/__evjs/fn",
-        rsc: "/__evjs/rsc",
+        fn: "__evjs/fn",
+        rsc: "__evjs/rsc",
       },
     },
     pages: {

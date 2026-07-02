@@ -284,7 +284,7 @@ describe("createDeploymentArtifact", () => {
       runtime: {
         server: {
           basePath: "/__evjs",
-          fn: "/__evjs/fn",
+          fn: "__evjs/fn",
         },
       },
       assets: {},
@@ -408,8 +408,8 @@ describe("createDeploymentArtifact", () => {
     });
     output.runtime.server = {
       basePath: "/__evjs",
-      fn: "/__evjs/fn",
-      ppr: "/__evjs/ppr",
+      fn: "__evjs/fn",
+      ppr: "__evjs/ppr",
       rsc: "/flight",
     };
 
@@ -624,7 +624,7 @@ describe("createDeploymentArtifact", () => {
       runtime: {
         server: {
           basePath: "/__evjs",
-          fn: "/__evjs/fn",
+          fn: "__evjs/fn",
         },
       },
       assets: {},
@@ -683,7 +683,7 @@ describe("createDeploymentArtifact", () => {
       runtime: {
         server: {
           basePath: "/__evjs",
-          fn: "/__evjs/fn",
+          fn: "__evjs/fn",
         },
       },
       assets: {},
@@ -907,7 +907,7 @@ function createMpaStaticDeploymentOutput(): BuildOutput {
     runtime: {
       server: {
         basePath: "/__evjs",
-        fn: "/__evjs/fn",
+        fn: "__evjs/fn",
       },
     },
     assets: {},
@@ -994,7 +994,7 @@ function createServerDeploymentOutput(paths: {
     runtime: {
       server: {
         basePath: "/__evjs",
-        fn: "/__evjs/fn",
+        fn: "__evjs/fn",
       },
     },
     assets: {},

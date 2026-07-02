@@ -99,7 +99,7 @@ export function assertClientRuntime(
   assertObject(value.runtime, `${source}.runtime`);
   if (value.runtime.server !== undefined) {
     assertObject(value.runtime.server, `${source}.runtime.server`);
-    assertRuntimePathname(
+    assertRuntimeEndpoint(
       value.runtime.server.rsc,
       `${source}.runtime.server.rsc`,
     );
@@ -464,6 +464,34 @@ function assertRuntimePathname(
     );
   }
   const error = getPathPatternValidationError(value);
+  if (error) {
+    throw new Error(`[evjs] ${source} ${formatRuntimePathnameError(error)}`);
+  }
+}
+
+function assertRuntimeEndpoint(
+  value: unknown,
+  source: string,
+  required = false,
+): void {
+  if (value === undefined) {
+    if (required) {
+      throw new Error(`[evjs] ${source} must be a non-empty endpoint.`);
+    }
+    return;
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`[evjs] ${source} must be a non-empty endpoint.`);
+  }
+  if (value.trim() !== value) {
+    throw new Error(
+      `[evjs] ${source} must not contain leading or trailing whitespace.`,
+    );
+  }
+  if (value.startsWith("/")) {
+    throw new Error(`[evjs] ${source} must not start with "/".`);
+  }
+  const error = getPathPatternValidationError(`/${value}`);
   if (error) {
     throw new Error(`[evjs] ${source} ${formatRuntimePathnameError(error)}`);
   }

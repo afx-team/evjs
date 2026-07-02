@@ -544,9 +544,9 @@ test.describe("render-modes", () => {
     expect(frameworkRuntime.runtime.server).toEqual(
       expect.objectContaining({
         basePath: "/__evjs",
-        fn: "/__evjs/fn",
-        ppr: "/__evjs/ppr",
-        rsc: "/__evjs/rsc",
+        fn: "__evjs/fn",
+        ppr: "__evjs/ppr",
+        rsc: "__evjs/rsc",
       }),
     );
     expect(frameworkRuntime.rsc).toBeDefined();

@@ -71,8 +71,9 @@ export interface CreateAppOptions {
 export function createApp(options?: CreateAppOptions): Hono {
   assertCreateAppOptions(options);
   const { routes = [], middlewares = [], framework } = options ?? {};
-  const endpoint =
-    framework?.runtime.runtime.server.fn ?? getFunctionEndpoint();
+  const endpoint = toRuntimePathname(
+    framework?.runtime.runtime.server.fn ?? getFunctionEndpoint(),
+  );
   const maxServerFunctionBodySize = 1024 * 1024;
 
   const app = new Hono();
@@ -172,9 +173,10 @@ export function createApp(options?: CreateAppOptions): Hono {
     return c.json(payload, 405, { Allow: "POST" });
   });
 
-  const rscPath = framework?.rsc
-    ? framework.runtime.runtime.server.rsc
-    : undefined;
+  const rscPath =
+    framework?.rsc && framework.runtime.runtime.server.rsc
+      ? toRuntimePathname(framework.runtime.runtime.server.rsc)
+      : undefined;
   if (framework?.rsc && rscPath) {
     app.all(rscPath, async (c, next) => {
       const response = await handleRscFlightRequest(framework, c.req.raw);
@@ -184,9 +186,10 @@ export function createApp(options?: CreateAppOptions): Hono {
   }
 
   if (framework?.render) {
-    const pprPath =
+    const pprPath = toRuntimePathname(
       framework.runtime.runtime.server.ppr ??
-      joinPath(framework.runtime.runtime.server.basePath, "ppr");
+        joinPath(framework.runtime.runtime.server.basePath, "ppr"),
+    );
     app.on(["GET", "HEAD"], [`${pprPath}/*`], async (c, next) => {
       const response = await handlePprRegionRequest(framework, c.req.raw);
       if (!response) return next();
@@ -528,6 +531,10 @@ function assertRouteHandler(route: RouteHandler, index: number): void {
       `[evjs] createApp() ${name}.allowedMethods includes method "${unsupportedAllowedMethod}" without a handler.`,
     );
   }
+}
+
+function toRuntimePathname(endpoint: string): string {
+  return endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
 }
 
 function formatRoutePathError(error: PathPatternValidationError): string {

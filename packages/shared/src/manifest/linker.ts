@@ -658,7 +658,7 @@ function createDeploymentRoutes(output: BuildOutput): DeploymentRouteOutput[] {
   if (Object.keys(output.server.functions).length > 0) {
     routes.push({
       kind: "server-function",
-      path: output.runtime.server.fn,
+      path: toRuntimePathname(output.runtime.server.fn),
       methods: ["POST"],
     });
   }
@@ -667,7 +667,7 @@ function createDeploymentRoutes(output: BuildOutput): DeploymentRouteOutput[] {
     if (pprPath) {
       routes.push({
         kind: "ppr-endpoint",
-        path: `${pprPath}/*`,
+        path: `${toRuntimePathname(pprPath)}/*`,
         methods: ["GET", "HEAD"],
       });
     }
@@ -675,7 +675,7 @@ function createDeploymentRoutes(output: BuildOutput): DeploymentRouteOutput[] {
   if (output.rsc && output.runtime.server.rsc) {
     routes.push({
       kind: "rsc-endpoint",
-      path: output.runtime.server.rsc,
+      path: toRuntimePathname(output.runtime.server.rsc),
       methods: ["GET", "HEAD"],
     });
   }
@@ -991,6 +991,10 @@ function isFullPrerenderPage(
   if (page.render === "ssg") return true;
   if (!page.prerender || isPartialPrerenderPage(page)) return false;
   return true;
+}
+
+function toRuntimePathname(endpoint: string): string {
+  return endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
 }
 
 function moduleIdMatchesSource(moduleId: string, sourceRel: string): boolean {

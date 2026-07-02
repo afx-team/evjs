@@ -483,16 +483,16 @@ export function assertFrameworkRuntime(
     `${source}.runtime.server.basePath`,
     true,
   );
-  assertRuntimePathname(
+  assertRuntimeEndpoint(
     value.runtime.server.fn,
     `${source}.runtime.server.fn`,
     true,
   );
-  assertRuntimePathname(
+  assertRuntimeEndpoint(
     value.runtime.server.ppr,
     `${source}.runtime.server.ppr`,
   );
-  assertRuntimePathname(
+  assertRuntimeEndpoint(
     value.runtime.server.rsc,
     `${source}.runtime.server.rsc`,
   );
@@ -1153,6 +1153,35 @@ function assertRuntimePathname(
   }
 }
 
+function assertRuntimeEndpoint(
+  value: unknown,
+  source: string,
+  required = false,
+): void {
+  if (value === undefined) {
+    if (required) {
+      throw new Error(`[evjs] ${source} must be a non-empty endpoint.`);
+    }
+    return;
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`[evjs] ${source} must be a non-empty endpoint.`);
+  }
+  if (value.trim() !== value) {
+    throw new Error(
+      `[evjs] ${source} must not contain leading or trailing whitespace.`,
+    );
+  }
+  if (value.startsWith("/")) {
+    throw new Error(`[evjs] ${source} must not start with "/".`);
+  }
+
+  const error = getPathPatternValidationError(`/${value}`);
+  if (error) {
+    throw new Error(`[evjs] ${source} ${formatRuntimePathnameError(error)}`);
+  }
+}
+
 function assertRuntimeTransportBaseUrl(value: unknown, source: string): void {
   if (value === undefined) return;
 
@@ -1606,8 +1635,9 @@ export async function handleRscFlightRequest(
 ): Promise<Response | undefined> {
   if (!options.rsc) return undefined;
 
-  const rscPath = options.runtime.runtime.server.rsc;
-  if (!rscPath) return undefined;
+  const rscEndpoint = options.runtime.runtime.server.rsc;
+  if (!rscEndpoint) return undefined;
+  const rscPath = toRuntimePathname(rscEndpoint);
 
   const url = new URL(request.url);
   if (
@@ -2192,8 +2222,10 @@ function matchPprRegion(
   pathname: string,
 ): PprRegionMatch | undefined {
   const endpoint = normalizeRoutePathname(
-    runtime.runtime.server?.ppr ??
-      joinPath(runtime.runtime.server?.basePath ?? "/__evjs", "ppr"),
+    toRuntimePathname(
+      runtime.runtime.server?.ppr ??
+        joinPath(runtime.runtime.server?.basePath ?? "/__evjs", "ppr"),
+    ),
   );
   const normalized = normalizeRoutePathname(pathname);
   if (normalized === endpoint || !normalized.startsWith(`${endpoint}/`)) {
@@ -2767,6 +2799,10 @@ function escapeRegExp(value: string): string {
 
 function joinPath(base: string, segment: string): string {
   return `${base.replace(/\/+$/, "")}/${segment.replace(/^\/+/, "")}`;
+}
+
+function toRuntimePathname(endpoint: string): string {
+  return endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
 }
 
 function toResponse(result: unknown, source: string): Response {

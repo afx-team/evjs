@@ -5,8 +5,8 @@
 /** Default framework server base path. */
 export const DEFAULT_SERVER_BASE_PATH = "/__evjs";
 
-/** Default server function endpoint path, shared between client and server. */
-export const DEFAULT_ENDPOINT = `${DEFAULT_SERVER_BASE_PATH}/fn`;
+/** Default server function endpoint, resolved relative to transport base URLs. */
+export const DEFAULT_ENDPOINT = "__evjs/fn";
 
 declare const __EVJS_FUNCTION_ENDPOINT__: string | undefined;
 declare const process: {

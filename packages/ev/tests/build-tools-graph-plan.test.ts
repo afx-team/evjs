@@ -1224,7 +1224,7 @@ describe("createAppGraph and createBuildPlan", () => {
       server: {
         basePath: "/__evjs",
         runtime: {
-          rsc: "/__evjs/rsc",
+          rsc: "__evjs/rsc",
         },
       },
     });
@@ -1233,8 +1233,8 @@ describe("createAppGraph and createBuildPlan", () => {
 
     expect(plan.runtime.server).toEqual({
       basePath: "/__evjs",
-      fn: "/__evjs/fn",
-      rsc: "/__evjs/rsc",
+      fn: "__evjs/fn",
+      rsc: "__evjs/rsc",
     });
   });
 
@@ -1493,8 +1493,8 @@ describe("createAppGraph and createBuildPlan", () => {
       hydrate: "none",
       componentModel: "rsc",
     });
-    expect(plan.runtime.server?.ppr).toBe("/__evjs/ppr");
-    expect(plan.runtime.server?.rsc).toBe("/__evjs/rsc");
+    expect(plan.runtime.server?.ppr).toBe("__evjs/ppr");
+    expect(plan.runtime.server?.rsc).toBe("__evjs/rsc");
     expect(plan.entries).toEqual(
       expect.arrayContaining([
         {
@@ -2026,7 +2026,7 @@ describe("createAppGraph and createBuildPlan", () => {
       runtime: "node",
       kind: "server-runtime",
     });
-    expect(plan.runtime.server?.ppr).toBe("/__evjs/ppr");
+    expect(plan.runtime.server?.ppr).toBe("__evjs/ppr");
     expect(plan.entries).not.toContainEqual(
       expect.objectContaining({
         name: "campaign",
@@ -2822,7 +2822,7 @@ describe("createAppGraph and createBuildPlan", () => {
       mode: "production",
     });
 
-    expect(plan.runtime.server?.rsc).toBe("/__evjs/rsc");
+    expect(plan.runtime.server?.rsc).toBe("__evjs/rsc");
     expect(plan.entries).toEqual(
       expect.arrayContaining([
         {
@@ -4717,8 +4717,8 @@ function createConfig(overrides: TestConfigOverrides = {}): TestConfig {
     server: {
       basePath: "/__evjs",
       runtime: {
-        fn: "/__evjs/fn",
-        ppr: "/__evjs/ppr",
+        fn: "__evjs/fn",
+        ppr: "__evjs/ppr",
       },
     },
   };

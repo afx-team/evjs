@@ -67,6 +67,16 @@ describe("createWebpackConfigs", () => {
     expect(configs[0]?.resolve?.alias).toMatchObject({
       "@": path.resolve(process.cwd(), "src"),
     });
+    const definePlugin = configs[0]?.plugins?.find(
+      (plugin) =>
+        plugin &&
+        typeof plugin === "object" &&
+        plugin.constructor.name === "DefinePlugin",
+    ) as { definitions?: Record<string, string> } | undefined;
+    expect(definePlugin?.definitions).toMatchObject({
+      "process.env.EVJS_FUNCTION_ENDPOINT": JSON.stringify("__evjs/fn"),
+      __EVJS_FUNCTION_ENDPOINT__: JSON.stringify("__evjs/fn"),
+    });
   });
 
   it("sets crossorigin for dynamically loaded browser chunks", async () => {
@@ -448,8 +458,8 @@ function createResolvedConfig(): ResolvedConfig<WebpackConfig> {
       basePath: "/__evjs",
       runtime: {
         basePath: "/__evjs",
-        fn: "/__evjs/fn",
-        ppr: "/__evjs/ppr",
+        fn: "__evjs/fn",
+        ppr: "__evjs/ppr",
       },
       dev: {
         port: 3001,

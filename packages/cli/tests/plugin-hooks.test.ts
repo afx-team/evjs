@@ -76,7 +76,7 @@ const TEST_OUTPUT: BuildOutput = {
   runtime: {
     server: {
       basePath: "/__evjs",
-      fn: "/__evjs/fn",
+      fn: "__evjs/fn",
     },
   },
   assets: {

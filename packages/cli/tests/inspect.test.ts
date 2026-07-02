@@ -98,9 +98,9 @@ describe("inspect", () => {
     ]);
     expect(result.runtime.server).toMatchObject({
       basePath: "/__evjs",
-      fn: "/__evjs/fn",
-      ppr: "/__evjs/ppr",
-      rsc: "/__evjs/rsc",
+      fn: "__evjs/fn",
+      ppr: "__evjs/ppr",
+      rsc: "__evjs/rsc",
     });
     await expectPathMissing(path.join(cwd, "dist"));
     await expectPathMissing(path.join(cwd, "src/route-types.d.ts"));

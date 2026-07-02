@@ -570,21 +570,21 @@ describe("default fetch adapter", () => {
     const mockFetch = createSuccessfulFetchMock({ result: "ok" });
     vi.stubGlobal("fetch", mockFetch);
     vi.stubGlobal("__EVJS_TRANSPORT__", {
-      baseUrl: "https://webgw.example.com/app/api/yuyan/1800/version",
+      baseUrl: "https://webgw.example.com/app/api/yuyan/1800",
       credentials: "include",
       headers: {
         "x-webgw-appid": "1800",
         "x-webgw-version": "2.0",
       },
     } satisfies RuntimeTransportOptions);
-    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "fn");
+    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "__evjs/fn");
 
     await callServer("myFn", []);
 
     const init = mockFetch.mock.calls[0]?.[1];
     const headers = new Headers(init?.headers);
     expect(mockFetch).toHaveBeenCalledWith(
-      new URL("https://webgw.example.com/app/api/yuyan/1800/version/fn"),
+      new URL("https://webgw.example.com/app/api/yuyan/1800/__evjs/fn"),
       expect.objectContaining({
         credentials: "include",
         method: "POST",

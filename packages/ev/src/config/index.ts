@@ -513,6 +513,10 @@ function joinPath(basePath: string, segment: string): string {
   return `${normalizePath(basePath)}/${segment.replace(/^\/+/, "")}`;
 }
 
+function toRuntimeEndpoint(endpoint: string): string {
+  return endpoint.startsWith("/") ? endpoint.slice(1) : endpoint;
+}
+
 function resolveRscEndpoint(
   rsc: ServerConfig["rsc"],
   shouldExposeDefaultEndpoint: boolean,
@@ -520,9 +524,11 @@ function resolveRscEndpoint(
 ): string | undefined {
   if (!rsc && !shouldExposeDefaultEndpoint) return undefined;
   if (typeof rsc === "object" && rsc.endpoint !== undefined) {
-    return normalizePath(assertRoutePath(rsc.endpoint, "server.rsc.endpoint"));
+    return toRuntimeEndpoint(
+      normalizePath(assertRoutePath(rsc.endpoint, "server.rsc.endpoint")),
+    );
   }
-  return joinPath(serverBasePath, "rsc");
+  return toRuntimeEndpoint(joinPath(serverBasePath, "rsc"));
 }
 
 /**
@@ -594,8 +600,8 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
       ? CONFIG_DEFAULTS.serverBasePath
       : assertRoutePath(serverConfig.basePath, "server.basePath"),
   );
-  const serverEndpoint = joinPath(serverBasePath, "fn");
-  const pprEndpoint = joinPath(serverBasePath, "ppr");
+  const serverEndpoint = toRuntimeEndpoint(joinPath(serverBasePath, "fn"));
+  const pprEndpoint = toRuntimeEndpoint(joinPath(serverBasePath, "ppr"));
   const rscEndpoint = resolveRscEndpoint(serverRscConfig, true, serverBasePath);
   const devHttps = resolveDevHttpsConfig(devConfig.https);
   const serverHttps = resolveServerDevHttpsConfig(serverDevConfig.https);

@@ -121,11 +121,11 @@ describe("resolveConfig", () => {
     expect(resolved.server.basePath).toBe("/__evjs");
     expect(resolved.server.runtime).toEqual({
       basePath: "/__evjs",
-      fn: "/__evjs/fn",
-      ppr: "/__evjs/ppr",
-      rsc: "/__evjs/rsc",
+      fn: "__evjs/fn",
+      ppr: "__evjs/ppr",
+      rsc: "__evjs/rsc",
     });
-    expect(resolved.server.runtime.fn).toBe("/__evjs/fn");
+    expect(resolved.server.runtime.fn).toBe("__evjs/fn");
     expect(resolved.server.routing).toEqual({
       dir: CONFIG_DEFAULTS.serverRoutingDir,
       routes: [],
@@ -930,9 +930,9 @@ describe("resolveConfig", () => {
         dev: { port: 4000 },
       },
     });
-    expect(resolved.server.runtime.fn).toBe("/api/fn");
-    expect(resolved.server.runtime.ppr).toBe("/api/ppr");
-    expect(resolved.server.runtime.fn).toBe("/api/fn");
+    expect(resolved.server.runtime.fn).toBe("api/fn");
+    expect(resolved.server.runtime.ppr).toBe("api/ppr");
+    expect(resolved.server.runtime.fn).toBe("api/fn");
     expect(resolved.server.dev.port).toBe(4000);
   });
 
@@ -955,7 +955,7 @@ describe("resolveConfig", () => {
   it("uses a pathname proxy context for the default framework endpoint", () => {
     const resolved = resolveConfig();
 
-    expect(resolved.server.runtime.fn).toBe("/__evjs/fn");
+    expect(resolved.server.runtime.fn).toBe("__evjs/fn");
     expect(resolved.dev.proxy).toContainEqual({
       context: ["/__evjs/fn", "/__evjs/ppr", "/__evjs/rsc"],
       target: "http://localhost:3001",
@@ -976,9 +976,9 @@ describe("resolveConfig", () => {
 
     expect(resolved.server.runtime).toEqual({
       basePath: "/_ev",
-      fn: "/_ev/fn",
-      ppr: "/_ev/ppr",
-      rsc: "/_ev/rsc",
+      fn: "_ev/fn",
+      ppr: "_ev/ppr",
+      rsc: "_ev/rsc",
     });
     expect(resolved.transport.baseUrl).toBe("https://api.example.com");
   });
@@ -993,12 +993,12 @@ describe("resolveConfig", () => {
 
     expect(resolved.server.runtime).toEqual({
       basePath: "/_ev",
-      fn: "/_ev/fn",
-      ppr: "/_ev/ppr",
-      rsc: "/_ev/rsc",
+      fn: "_ev/fn",
+      ppr: "_ev/ppr",
+      rsc: "_ev/rsc",
     });
     expect(resolved.server.rsc).toEqual({
-      endpoint: "/_ev/rsc",
+      endpoint: "_ev/rsc",
     });
     expect(resolved.dev.proxy).toContainEqual({
       context: ["/_ev/fn", "/_ev/ppr", "/_ev/rsc"],
@@ -1017,8 +1017,8 @@ describe("resolveConfig", () => {
       },
     });
 
-    expect(resolved.server.runtime.rsc).toBe("/flight");
-    expect(resolved.server.rsc?.endpoint).toBe("/flight");
+    expect(resolved.server.runtime.rsc).toBe("flight");
+    expect(resolved.server.rsc?.endpoint).toBe("flight");
   });
 
   it("enables the RSC endpoint with the framework server runtime", () => {
@@ -1028,8 +1028,8 @@ describe("resolveConfig", () => {
       },
     });
 
-    expect(resolved.server.runtime.rsc).toBe("/_ev/rsc");
-    expect(resolved.server.rsc?.endpoint).toBe("/_ev/rsc");
+    expect(resolved.server.runtime.rsc).toBe("_ev/rsc");
+    expect(resolved.server.rsc?.endpoint).toBe("_ev/rsc");
     expect(resolved.dev.proxy).toContainEqual({
       context: ["/_ev/fn", "/_ev/ppr", "/_ev/rsc"],
       target: "http://localhost:3001",

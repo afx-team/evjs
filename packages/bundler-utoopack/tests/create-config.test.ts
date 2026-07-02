@@ -31,8 +31,8 @@ describe("createUtoopackConfig", () => {
         basePath: "/__evjs",
         runtime: {
           basePath: "/__evjs",
-          fn: "/__evjs/fn",
-          ppr: "/__evjs/ppr",
+          fn: "__evjs/fn",
+          ppr: "__evjs/ppr",
         },
         dev: {
           port: 3001,
@@ -64,6 +64,10 @@ describe("createUtoopackConfig", () => {
     expect(utoopackConfig.resolve?.alias?.["@"]).toBe(
       path.resolve(process.cwd(), "src"),
     );
+    expect(utoopackConfig.define).toMatchObject({
+      "process.env.EVJS_FUNCTION_ENDPOINT": JSON.stringify("__evjs/fn"),
+      __EVJS_FUNCTION_ENDPOINT__: JSON.stringify("__evjs/fn"),
+    });
     expect(utoopackConfig.devServer?.port).toBe(41234);
     expect(utoopackConfig.devServer?.https).toBe(true);
     expect(utoopackConfig.devServer?.proxy).toContainEqual(
@@ -87,8 +91,8 @@ describe("createUtoopackConfig", () => {
         basePath: "/__evjs",
         runtime: {
           basePath: "/__evjs",
-          fn: "/__evjs/fn",
-          ppr: "/__evjs/ppr",
+          fn: "__evjs/fn",
+          ppr: "__evjs/ppr",
         },
         dev: {
           port: 3001,
@@ -196,7 +200,7 @@ describe("createUtoopackConfig", () => {
         basePath: "/rpc",
         runtime: {
           basePath: "/rpc",
-          fn: "/rpc/fn",
+          fn: "rpc/fn",
           ppr: "/rpc/ppr",
           rsc: "/rpc/rsc",
         },
@@ -244,8 +248,8 @@ describe("createUtoopackConfig", () => {
         basePath: "/__evjs",
         runtime: {
           basePath: "/__evjs",
-          fn: "/__evjs/fn",
-          ppr: "/__evjs/ppr",
+          fn: "__evjs/fn",
+          ppr: "__evjs/ppr",
         },
         dev: {
           port: 3001,
@@ -400,8 +404,8 @@ describe("createUtoopackConfig", () => {
         basePath: "/__evjs",
         runtime: {
           basePath: "/__evjs",
-          fn: "/__evjs/fn",
-          ppr: "/__evjs/ppr",
+          fn: "__evjs/fn",
+          ppr: "__evjs/ppr",
         },
         dev: {
           port: 3001,
@@ -754,8 +758,8 @@ describe("createUtoopackConfig", () => {
         basePath: "/__evjs",
         runtime: {
           basePath: "/__evjs",
-          fn: "/__evjs/fn",
-          ppr: "/__evjs/ppr",
+          fn: "__evjs/fn",
+          ppr: "__evjs/ppr",
         },
         dev: {
           port: 3001,
@@ -832,8 +836,8 @@ describe("createUtoopackConfig", () => {
         basePath: "/__evjs",
         runtime: {
           basePath: "/__evjs",
-          fn: "/__evjs/fn",
-          ppr: "/__evjs/ppr",
+          fn: "__evjs/fn",
+          ppr: "__evjs/ppr",
         },
         dev: {
           port: 3001,
