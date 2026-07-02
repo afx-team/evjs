@@ -11,6 +11,7 @@ import type {
   ClientRuntime,
   ClientRuntimePage,
   ClientRuntimeRoute,
+  RuntimeTransportOptions,
 } from "../src/shared/runtime-config.js";
 
 type LegacyClientRuntime = ClientRuntime & {
@@ -639,6 +640,67 @@ describe("fetchRscFlight", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "https://runtime.example.com/__evjs/rsc?page=dashboard&url=%2Fdashboard%3Ftab%3Dstats",
     );
+  });
+
+  it("uses runtime transport request defaults for RSC Flight requests", async () => {
+    vi.stubGlobal("location", { href: "https://app.example.com/current" });
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response("flight"));
+
+    await fetchRscFlight({
+      runtime: {
+        ...createRscRuntime(),
+        runtime: {
+          ...createRscRuntime().runtime,
+          transport: {
+            baseUrl: "https://runtime.example.com/service/",
+            credentials: "include",
+            headers: {
+              "x-webgw-appid": "1800",
+              "x-webgw-version": "2.0",
+            },
+          },
+        },
+      },
+      pageId: "dashboard",
+      url: "https://app.example.com/dashboard?tab=stats",
+      fetch: fetchMock,
+    });
+
+    const init = fetchMock.mock.calls[0]?.[1];
+    const headers = new Headers(init?.headers);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://runtime.example.com/__evjs/rsc?page=dashboard&url=%2Fdashboard%3Ftab%3Dstats",
+      expect.objectContaining({ credentials: "include" }),
+    );
+    expect(headers.get("x-webgw-appid")).toBe("1800");
+    expect(headers.get("x-webgw-version")).toBe("2.0");
+  });
+
+  it("uses global transport config for RSC Flight requests", async () => {
+    vi.stubGlobal("location", { href: "https://app.example.com/current" });
+    vi.stubGlobal("__EVJS_TRANSPORT__", {
+      baseUrl: "https://webgw.example.com/app/api/yuyan/1800/version",
+      credentials: "include",
+      headers: {
+        "x-webgw-appid": "1800",
+      },
+    } satisfies RuntimeTransportOptions);
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response("flight"));
+
+    await fetchRscFlight({
+      runtime: createRscRuntime(),
+      pageId: "dashboard",
+      url: "https://app.example.com/dashboard?tab=stats",
+      fetch: fetchMock,
+    });
+
+    const init = fetchMock.mock.calls[0]?.[1];
+    const headers = new Headers(init?.headers);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://webgw.example.com/__evjs/rsc?page=dashboard&url=%2Fdashboard%3Ftab%3Dstats",
+      expect.objectContaining({ credentials: "include" }),
+    );
+    expect(headers.get("x-webgw-appid")).toBe("1800");
   });
 
   it("rejects malformed RSC Flight options before fetching", async () => {

@@ -370,14 +370,7 @@ describe("initTransport + callServer", () => {
         runtime: { transport: { functions: [] } },
       } as never),
     ).toThrow(
-      "[evjs] initTransportFromRuntime() runtime.runtime.transport.functions must be an object.",
-    );
-    expect(() =>
-      initTransportFromRuntime({
-        runtime: { transport: { functions: { endpoint: "" } } },
-      } as never),
-    ).toThrow(
-      "[evjs] initTransportFromRuntime() runtime.runtime.transport.functions.endpoint must be a non-empty URL string.",
+      "[evjs] initTransportFromRuntime() runtime.runtime.transport.functions is not supported. Runtime transport config uses framework runtime endpoints.",
     );
     expect(() =>
       initTransportFromRuntime({
@@ -504,14 +497,20 @@ describe("transport types", () => {
     const options: RuntimeTransportOptions = {
       baseUrl: "https://api.example.com",
       credentials: "include",
-      functions: { endpoint: "/api/rpc" },
       headers: { Authorization: "Bearer xyz" },
     };
     expect(options).toEqual({
       baseUrl: "https://api.example.com",
       credentials: "include",
-      functions: { endpoint: "/api/rpc" },
       headers: { Authorization: "Bearer xyz" },
+    });
+
+    const invalidFunctions: RuntimeTransportOptions = {
+      // @ts-expect-error Runtime transport uses framework runtime endpoints.
+      functions: { endpoint: "/api/rpc" },
+    };
+    expect(invalidFunctions).toEqual({
+      functions: { endpoint: "/api/rpc" },
     });
 
     const invalidHeaderFactory: RuntimeTransportOptions = {
@@ -573,12 +572,12 @@ describe("default fetch adapter", () => {
     vi.stubGlobal("__EVJS_TRANSPORT__", {
       baseUrl: "https://webgw.example.com/app/api/yuyan/1800/version",
       credentials: "include",
-      functions: { endpoint: "fn" },
       headers: {
         "x-webgw-appid": "1800",
         "x-webgw-version": "2.0",
       },
     } satisfies RuntimeTransportOptions);
+    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "fn");
 
     await callServer("myFn", []);
 
@@ -602,13 +601,13 @@ describe("default fetch adapter", () => {
       baseUrl: "https://global.example.com/api",
       headers: { "x-source": "global" },
     } satisfies RuntimeTransportOptions);
+    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "fn");
 
     initTransportFromRuntime({
       runtime: {
         transport: {
           baseUrl: "https://runtime.example.com/api",
           credentials: "include",
-          functions: { endpoint: "fn" },
           headers: { "x-source": "runtime" },
         },
       },

@@ -45,9 +45,18 @@ export interface ClientRuntimeTransport {
   baseUrl?: string;
   credentials?: RequestCredentials;
   headers?: HeadersInit;
-  functions?: {
-    endpoint?: string;
-  };
+}
+
+export type RuntimeTransportOptions = ClientRuntimeTransport;
+
+declare global {
+  /**
+   * Dynamic transport configuration injected by hosting runtimes before evjs
+   * framework server requests start. Endpoint paths still come from framework
+   * runtime metadata.
+   */
+  // eslint-disable-next-line no-var
+  var __EVJS_TRANSPORT__: RuntimeTransportOptions | undefined;
 }
 
 export interface ClientRuntimeApp {
@@ -96,29 +105,10 @@ export function assertClientRuntime(
     );
   }
   if (value.runtime.transport !== undefined) {
-    assertObject(value.runtime.transport, `${source}.runtime.transport`);
-    assertRuntimeTransportBaseUrl(
-      value.runtime.transport.baseUrl,
-      `${source}.runtime.transport.baseUrl`,
+    assertClientRuntimeTransport(
+      value.runtime.transport,
+      `${source}.runtime.transport`,
     );
-    assertRuntimeTransportCredentials(
-      value.runtime.transport.credentials,
-      `${source}.runtime.transport.credentials`,
-    );
-    assertRuntimeTransportHeaders(
-      value.runtime.transport.headers,
-      `${source}.runtime.transport.headers`,
-    );
-    if (value.runtime.transport.functions !== undefined) {
-      assertObject(
-        value.runtime.transport.functions,
-        `${source}.runtime.transport.functions`,
-      );
-      assertRuntimeTransportBaseUrl(
-        value.runtime.transport.functions.endpoint,
-        `${source}.runtime.transport.functions.endpoint`,
-      );
-    }
   }
   if (value.app !== undefined) {
     assertApp(value.app, `${source}.app`);
@@ -141,6 +131,50 @@ export function getClientRuntimeRoutes(
     return createRoutesFromPages(runtime.routing.pages);
   }
   return runtime.routes ?? [];
+}
+
+export function assertClientRuntimeTransport(
+  value: unknown,
+  source: string,
+): asserts value is ClientRuntimeTransport {
+  assertObject(value, source);
+  assertRuntimeTransportBaseUrl(value.baseUrl, `${source}.baseUrl`);
+  assertRuntimeTransportCredentials(value.credentials, `${source}.credentials`);
+  assertRuntimeTransportHeaders(value.headers, `${source}.headers`);
+  if (value.functions !== undefined) {
+    throw new Error(
+      `[evjs] ${source}.functions is not supported. Runtime transport config uses framework runtime endpoints.`,
+    );
+  }
+  if (value.adapter !== undefined) {
+    throw new Error(
+      `[evjs] ${source}.adapter is not supported. Runtime transport config must be serializable.`,
+    );
+  }
+  if (value.silent !== undefined) {
+    throw new Error(
+      `[evjs] ${source}.silent is not supported. Runtime transport config must be serializable.`,
+    );
+  }
+}
+
+export function getGlobalRuntimeTransport():
+  | RuntimeTransportOptions
+  | undefined {
+  const transport = globalThis.__EVJS_TRANSPORT__;
+  if (transport === undefined) return undefined;
+  assertClientRuntimeTransport(transport, "__EVJS_TRANSPORT__");
+  return hasClientRuntimeTransport(transport) ? transport : undefined;
+}
+
+export function hasClientRuntimeTransport(
+  transport: ClientRuntimeTransport,
+): boolean {
+  return (
+    transport.baseUrl !== undefined ||
+    transport.credentials !== undefined ||
+    transport.headers !== undefined
+  );
 }
 
 function assertRuntimeRouting(
