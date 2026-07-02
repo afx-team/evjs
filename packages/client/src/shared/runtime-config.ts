@@ -3,6 +3,7 @@ import {
   getPathPatternValidationError,
   getUrlStringValidationError,
   isBuildIdentifier,
+  isHeadersInit,
   normalizeRoutePathname,
   type PathPatternValidationError,
   pageRoutePathShapeFromPath,
@@ -20,9 +21,7 @@ export interface ClientRuntime {
     server?: {
       rsc?: string;
     };
-    transport?: {
-      baseUrl?: string;
-    };
+    transport?: ClientRuntimeTransport;
   };
   app?: ClientRuntimeApp;
   routing?: ClientRuntimeRouting;
@@ -40,6 +39,15 @@ export interface ClientAssetGroup {
 export interface ClientRuntimeModule {
   type: "entry" | "lifecycle" | "react-component";
   href?: string;
+}
+
+export interface ClientRuntimeTransport {
+  baseUrl?: string;
+  credentials?: RequestCredentials;
+  headers?: HeadersInit;
+  functions?: {
+    endpoint?: string;
+  };
 }
 
 export interface ClientRuntimeApp {
@@ -93,6 +101,24 @@ export function assertClientRuntime(
       value.runtime.transport.baseUrl,
       `${source}.runtime.transport.baseUrl`,
     );
+    assertRuntimeTransportCredentials(
+      value.runtime.transport.credentials,
+      `${source}.runtime.transport.credentials`,
+    );
+    assertRuntimeTransportHeaders(
+      value.runtime.transport.headers,
+      `${source}.runtime.transport.headers`,
+    );
+    if (value.runtime.transport.functions !== undefined) {
+      assertObject(
+        value.runtime.transport.functions,
+        `${source}.runtime.transport.functions`,
+      );
+      assertRuntimeTransportBaseUrl(
+        value.runtime.transport.functions.endpoint,
+        `${source}.runtime.transport.functions.endpoint`,
+      );
+    }
   }
   if (value.app !== undefined) {
     assertApp(value.app, `${source}.app`);
@@ -391,6 +417,25 @@ function assertRuntimeTransportBaseUrl(value: unknown, source: string): void {
     throw new Error(
       `[evjs] ${source} ${formatRuntimeTransportBaseUrlError(error)}`,
     );
+  }
+}
+
+function assertRuntimeTransportCredentials(
+  value: unknown,
+  source: string,
+): void {
+  if (value === undefined) return;
+  if (value !== "omit" && value !== "same-origin" && value !== "include") {
+    throw new Error(
+      `[evjs] ${source} must be "omit", "same-origin", or "include".`,
+    );
+  }
+}
+
+function assertRuntimeTransportHeaders(value: unknown, source: string): void {
+  if (value === undefined) return;
+  if (typeof value === "function" || !isHeadersInit(value)) {
+    throw new Error(`[evjs] ${source} must be valid HeadersInit.`);
   }
 }
 

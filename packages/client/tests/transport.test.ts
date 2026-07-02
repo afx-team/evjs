@@ -9,6 +9,7 @@ import {
   getServerFunction,
   initTransport,
   initTransportFromRuntime,
+  type RuntimeTransportOptions,
   type ServerFunction,
   type TransportAdapter,
   type TransportOptions,
@@ -350,6 +351,54 @@ describe("initTransport + callServer", () => {
     ).toThrow(
       "[evjs] initTransportFromRuntime() runtime.runtime.transport.baseUrl must be a valid URL string.",
     );
+    expect(() =>
+      initTransportFromRuntime({
+        runtime: { transport: { credentials: "credentialed" } },
+      } as never),
+    ).toThrow(
+      '[evjs] initTransportFromRuntime() runtime.runtime.transport.credentials must be "omit", "same-origin", or "include".',
+    );
+    expect(() =>
+      initTransportFromRuntime({
+        runtime: { transport: { headers: () => ({}) } },
+      } as never),
+    ).toThrow(
+      "[evjs] initTransportFromRuntime() runtime.runtime.transport.headers must be valid HeadersInit.",
+    );
+    expect(() =>
+      initTransportFromRuntime({
+        runtime: { transport: { functions: [] } },
+      } as never),
+    ).toThrow(
+      "[evjs] initTransportFromRuntime() runtime.runtime.transport.functions must be an object.",
+    );
+    expect(() =>
+      initTransportFromRuntime({
+        runtime: { transport: { functions: { endpoint: "" } } },
+      } as never),
+    ).toThrow(
+      "[evjs] initTransportFromRuntime() runtime.runtime.transport.functions.endpoint must be a non-empty URL string.",
+    );
+    expect(() =>
+      initTransportFromRuntime({
+        runtime: { transport: { adapter: { send: async () => null } } },
+      } as never),
+    ).toThrow(
+      "[evjs] initTransportFromRuntime() runtime.runtime.transport.adapter is not supported. Runtime transport config must be serializable.",
+    );
+    expect(() =>
+      initTransportFromRuntime({
+        runtime: { transport: { silent: true } },
+      } as never),
+    ).toThrow(
+      "[evjs] initTransportFromRuntime() runtime.runtime.transport.silent is not supported. Runtime transport config must be serializable.",
+    );
+    vi.stubGlobal("__EVJS_TRANSPORT__", {
+      headers: () => ({}),
+    });
+    expect(() => initTransportFromRuntime({ runtime: {} } as never)).toThrow(
+      "[evjs] __EVJS_TRANSPORT__.headers must be valid HeadersInit.",
+    );
   });
 
   it("rejects invalid server function call payloads before adapters run", async () => {
@@ -450,6 +499,37 @@ describe("transport types", () => {
       functions: { endpoint: new URL("https://api.example.com/fn") },
     });
   });
+
+  it("keeps runtime transport config serializable", () => {
+    const options: RuntimeTransportOptions = {
+      baseUrl: "https://api.example.com",
+      credentials: "include",
+      functions: { endpoint: "/api/rpc" },
+      headers: { Authorization: "Bearer xyz" },
+    };
+    expect(options).toEqual({
+      baseUrl: "https://api.example.com",
+      credentials: "include",
+      functions: { endpoint: "/api/rpc" },
+      headers: { Authorization: "Bearer xyz" },
+    });
+
+    const invalidHeaderFactory: RuntimeTransportOptions = {
+      // @ts-expect-error Runtime transport config must be serializable.
+      headers: () => ({ Authorization: "Bearer xyz" }),
+    };
+    expect(invalidHeaderFactory).toEqual({
+      headers: expect.any(Function),
+    });
+
+    const invalidAdapter: RuntimeTransportOptions = {
+      // @ts-expect-error Runtime transport config does not accept custom adapters.
+      adapter: { send: async () => "ok" },
+    };
+    expect(invalidAdapter).toEqual({
+      adapter: { send: expect.any(Function) },
+    });
+  });
 });
 
 describe("public transport subpath", () => {
@@ -485,6 +565,93 @@ describe("default fetch adapter", () => {
       new URL("http://localhost/api/rpc"),
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("uses global transport config before explicit initialization", async () => {
+    const mockFetch = createSuccessfulFetchMock({ result: "ok" });
+    vi.stubGlobal("fetch", mockFetch);
+    vi.stubGlobal("__EVJS_TRANSPORT__", {
+      baseUrl: "https://webgw.example.com/app/api/yuyan/1800/version",
+      credentials: "include",
+      functions: { endpoint: "fn" },
+      headers: {
+        "x-webgw-appid": "1800",
+        "x-webgw-version": "2.0",
+      },
+    } satisfies RuntimeTransportOptions);
+
+    await callServer("myFn", []);
+
+    const init = mockFetch.mock.calls[0]?.[1];
+    const headers = new Headers(init?.headers);
+    expect(mockFetch).toHaveBeenCalledWith(
+      new URL("https://webgw.example.com/app/api/yuyan/1800/version/fn"),
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST",
+      }),
+    );
+    expect(headers.get("x-webgw-appid")).toBe("1800");
+    expect(headers.get("x-webgw-version")).toBe("2.0");
+  });
+
+  it("prefers embedded runtime transport over global transport config", async () => {
+    const mockFetch = createSuccessfulFetchMock({ result: "ok" });
+    vi.stubGlobal("fetch", mockFetch);
+    vi.stubGlobal("__EVJS_TRANSPORT__", {
+      baseUrl: "https://global.example.com/api",
+      headers: { "x-source": "global" },
+    } satisfies RuntimeTransportOptions);
+
+    initTransportFromRuntime({
+      runtime: {
+        transport: {
+          baseUrl: "https://runtime.example.com/api",
+          credentials: "include",
+          functions: { endpoint: "fn" },
+          headers: { "x-source": "runtime" },
+        },
+      },
+    });
+    await callServer("myFn", []);
+
+    const headers = new Headers(mockFetch.mock.calls[0]?.[1]?.headers);
+    expect(mockFetch).toHaveBeenCalledWith(
+      new URL("https://runtime.example.com/api/fn"),
+      expect.objectContaining({ credentials: "include" }),
+    );
+    expect(headers.get("x-source")).toBe("runtime");
+  });
+
+  it("keeps explicit initTransport ahead of global transport config", async () => {
+    const mockFetch = createSuccessfulFetchMock({ result: "ok" });
+    vi.stubGlobal("fetch", mockFetch);
+    vi.stubGlobal("__EVJS_TRANSPORT__", {
+      baseUrl: "https://global.example.com/api",
+      headers: { "x-source": "global" },
+    } satisfies RuntimeTransportOptions);
+
+    initTransport({
+      baseUrl: "https://user.example.com/api",
+      functions: { endpoint: "fn" },
+      headers: { "x-source": "user" },
+    });
+    initTransportFromRuntime({
+      runtime: {
+        transport: {
+          baseUrl: "https://runtime.example.com/api",
+          headers: { "x-source": "runtime" },
+        },
+      },
+    });
+    await callServer("myFn", []);
+
+    const headers = new Headers(mockFetch.mock.calls[0]?.[1]?.headers);
+    expect(mockFetch).toHaveBeenCalledWith(
+      new URL("https://user.example.com/api/fn"),
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(headers.get("x-source")).toBe("user");
   });
 
   it("resolves undefined when the server function success payload omits result", async () => {

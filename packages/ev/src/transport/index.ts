@@ -5,6 +5,7 @@
 export type {
   HeaderFactory,
   RequestContext,
+  RuntimeTransportOptions,
   ServerFunction,
   TransportAdapter,
   TransportOptions,

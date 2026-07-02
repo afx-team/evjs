@@ -157,6 +157,10 @@ Standalone/manual clients can import the same query hooks directly from
 ### Transport
 - `initTransport({ baseUrl, credentials, headers, functions })`: Configure the default HTTP adapter. `functions.endpoint` can override the server function path for standalone runtimes.
 - `credentials` / `headers`: Supported HTTP defaults; fetch `mode` is intentionally not configurable.
+- Hosting runtimes can set `window.__EVJS_TRANSPORT__` before server functions
+  run. The value accepts data-only `RuntimeTransportOptions` such as `baseUrl`,
+  `credentials`, `headers`, and `functions.endpoint`; application
+  `initTransport()` calls still take priority.
 - `@evjs/client/transport`: Public subpath for low-level transport APIs such as `createServerReference`, `getFnId`, `getFnName`, and `initTransport`.
 - The default HTTP adapter expects successful server-function responses to use
   `Content-Type: application/json`. Non-JSON error responses use their trimmed

@@ -59,6 +59,18 @@ export type HeaderFactory = (
   context: RequestContext,
 ) => MaybePromise<HeadersInit | undefined>;
 
+interface BaseTransportOptions {
+  /** Base URL for framework server calls. Defaults to the current page origin. */
+  baseUrl?: string;
+  /** Credentials policy for HTTP server function requests. */
+  credentials?: RequestCredentials;
+  /** Server function endpoint override. */
+  functions?: {
+    /** Path or URL for the server function endpoint. */
+    endpoint?: string;
+  };
+}
+
 interface HttpRequestDefaults {
   /** Credentials policy for HTTP server function requests. */
   credentials?: RequestCredentials;
@@ -66,22 +78,28 @@ interface HttpRequestDefaults {
   headers?: HeadersInit | HeaderFactory;
 }
 
-export interface TransportOptions {
-  /** Base URL for framework server calls. Defaults to the current page origin. */
-  baseUrl?: string;
-  /** Credentials policy for HTTP server function requests. */
-  credentials?: RequestCredentials;
+export interface RuntimeTransportOptions extends BaseTransportOptions {
+  /** Static headers for HTTP server function requests. */
+  headers?: HeadersInit;
+}
+
+export interface TransportOptions extends BaseTransportOptions {
   /** Static headers or a factory evaluated for each transport call. */
   headers?: HeadersInit | HeaderFactory;
-  /** Server function endpoint override. */
-  functions?: {
-    /** Path or URL for the server function endpoint. */
-    endpoint?: string;
-  };
   /** Adapter capabilities for custom runtimes or protocols. */
   adapter?: TransportAdapter;
   /** Suppress warnings when re-initializing transport. Useful for HMR. */
   silent?: boolean;
+}
+
+declare global {
+  /**
+   * Dynamic transport configuration injected by hosting runtimes before evjs
+   * server function calls start. This is data-only; custom adapters should use
+   * initTransport() from application code.
+   */
+  // eslint-disable-next-line no-var
+  var __EVJS_TRANSPORT__: RuntimeTransportOptions | undefined;
 }
 
 interface TransportRuntime {
@@ -405,7 +423,8 @@ function readServerFunctionSuccessResult(payload: Record<string, unknown>) {
 }
 
 let _runtime: TransportRuntime | null = null;
-let _runtimeSource: "default" | "client-runtime" | "user" | null = null;
+let _runtimeSource: "default" | "global" | "client-runtime" | "user" | null =
+  null;
 
 function createTransportRuntime(options: TransportOptions): TransportRuntime {
   const endpoint = options.functions?.endpoint ?? getFunctionEndpoint();
@@ -422,8 +441,9 @@ function createTransportRuntime(options: TransportOptions): TransportRuntime {
 
 function getRuntime(): TransportRuntime {
   if (!_runtime) {
-    _runtime = createTransportRuntime({});
-    _runtimeSource = "default";
+    const transport = getGlobalTransport();
+    _runtime = createTransportRuntime(transport ?? {});
+    _runtimeSource = transport ? "global" : "default";
   }
   return _runtime;
 }
@@ -453,13 +473,10 @@ export function initTransport(options: TransportOptions = {}): void {
 export function initTransportFromRuntime(
   runtime: Pick<ClientRuntime, "runtime">,
 ): void {
-  const transport = getClientRuntimeTransport(runtime);
-  if (!transport?.baseUrl || _runtimeSource === "user") return;
+  const transport = getClientRuntimeTransport(runtime) ?? getGlobalTransport();
+  if (!transport || _runtimeSource === "user") return;
 
-  _runtime = createTransportRuntime({
-    baseUrl: transport.baseUrl,
-    silent: true,
-  });
+  _runtime = createTransportRuntime(transport);
   _runtimeSource = "client-runtime";
 }
 
@@ -689,20 +706,7 @@ function assertTransportOptions(
     throw new Error("[evjs] initTransport() options must be an object.");
   }
 
-  if (options.baseUrl !== undefined) {
-    assertTransportBaseUrl(options.baseUrl, "initTransport() baseUrl");
-  }
-
-  if (
-    options.credentials !== undefined &&
-    options.credentials !== "omit" &&
-    options.credentials !== "same-origin" &&
-    options.credentials !== "include"
-  ) {
-    throw new Error(
-      '[evjs] initTransport() credentials must be "omit", "same-origin", or "include".',
-    );
-  }
+  assertBaseTransportOptions(options, "initTransport()");
 
   if (options.headers !== undefined && typeof options.headers !== "function") {
     if (!isHeadersInit(options.headers)) {
@@ -727,17 +731,79 @@ function assertTransportOptions(
 
 function assertTransportFunctionsOptions(
   functions: unknown,
+  source = "initTransport() functions",
 ): asserts functions is NonNullable<TransportOptions["functions"]> {
   if (!isRecord(functions)) {
-    throw new Error("[evjs] initTransport() functions must be an object.");
+    throw new Error(`[evjs] ${source} must be an object.`);
   }
 
   if (functions.endpoint !== undefined) {
-    assertTransportEndpoint(
-      functions.endpoint,
-      "initTransport() functions.endpoint",
+    assertTransportEndpoint(functions.endpoint, `${source}.endpoint`);
+  }
+}
+
+function assertRuntimeTransportOptions(
+  options: unknown,
+  source: string,
+): asserts options is RuntimeTransportOptions {
+  if (!isRecord(options)) {
+    throw new Error(`[evjs] ${source} must be an object.`);
+  }
+
+  assertBaseTransportOptions(options, source);
+
+  if (
+    options.headers !== undefined &&
+    (typeof options.headers === "function" || !isHeadersInit(options.headers))
+  ) {
+    throw new Error(`[evjs] ${source}.headers must be valid HeadersInit.`);
+  }
+
+  if (options.adapter !== undefined) {
+    throw new Error(
+      `[evjs] ${source}.adapter is not supported. Runtime transport config must be serializable.`,
     );
   }
+
+  if (options.silent !== undefined) {
+    throw new Error(
+      `[evjs] ${source}.silent is not supported. Runtime transport config must be serializable.`,
+    );
+  }
+}
+
+function assertBaseTransportOptions(
+  options: Record<string, unknown>,
+  source: string,
+): void {
+  if (options.baseUrl !== undefined) {
+    assertTransportBaseUrl(
+      options.baseUrl,
+      formatTransportOptionSource(source, "baseUrl"),
+    );
+  }
+
+  if (
+    options.credentials !== undefined &&
+    options.credentials !== "omit" &&
+    options.credentials !== "same-origin" &&
+    options.credentials !== "include"
+  ) {
+    throw new Error(
+      `[evjs] ${formatTransportOptionSource(source, "credentials")} must be "omit", "same-origin", or "include".`,
+    );
+  }
+
+  if (options.functions !== undefined) {
+    assertTransportFunctionsOptions(
+      options.functions,
+      formatTransportOptionSource(source, "functions"),
+    );
+  }
+}
+
+function formatTransportOptionSource(source: string, key: string): string {
+  return source.endsWith(")") ? `${source} ${key}` : `${source}.${key}`;
 }
 
 function assertTransportAdapter(
@@ -795,7 +861,7 @@ function formatTransportBaseUrlError(error: UrlStringValidationError): string {
 
 function getClientRuntimeTransport(
   runtime: unknown,
-): { baseUrl?: string } | undefined {
+): RuntimeTransportOptions | undefined {
   if (!isRecord(runtime)) {
     throw new Error(
       "[evjs] initTransportFromRuntime() runtime must be a client runtime object.",
@@ -809,19 +875,27 @@ function getClientRuntimeTransport(
 
   const transport = runtime.runtime.transport;
   if (transport === undefined) return undefined;
-  if (!isRecord(transport)) {
-    throw new Error(
-      "[evjs] initTransportFromRuntime() runtime.runtime.transport must be an object.",
-    );
-  }
+  assertRuntimeTransportOptions(
+    transport,
+    "initTransportFromRuntime() runtime.runtime.transport",
+  );
+  return hasRuntimeTransportOptions(transport) ? transport : undefined;
+}
 
-  if (transport.baseUrl === undefined) return undefined;
-  return {
-    baseUrl: assertTransportBaseUrl(
-      transport.baseUrl,
-      "initTransportFromRuntime() runtime.runtime.transport.baseUrl",
-    ),
-  };
+function getGlobalTransport(): RuntimeTransportOptions | undefined {
+  const transport = globalThis.__EVJS_TRANSPORT__;
+  if (transport === undefined) return undefined;
+  assertRuntimeTransportOptions(transport, "__EVJS_TRANSPORT__");
+  return hasRuntimeTransportOptions(transport) ? transport : undefined;
+}
+
+function hasRuntimeTransportOptions(options: RuntimeTransportOptions): boolean {
+  return (
+    options.baseUrl !== undefined ||
+    options.credentials !== undefined ||
+    options.headers !== undefined ||
+    options.functions !== undefined
+  );
 }
 
 /**
@@ -863,5 +937,6 @@ function hasServerFunctionMetadata<TArgs extends unknown[], TData>(
 export function __resetForTesting(): void {
   _runtime = null;
   _runtimeSource = null;
+  delete globalThis.__EVJS_TRANSPORT__;
   fnNameRegistry.clear();
 }

@@ -51,6 +51,7 @@ export type PublicTransportSubpathExports = [
   typeof ClientTransport.initTransport,
   ClientTransport.HeaderFactory,
   ClientTransport.RequestContext,
+  ClientTransport.RuntimeTransportOptions,
   ClientTransport.ServerFunction,
   ClientTransport.TransportAdapter,
   ClientTransport.TransportOptions,
