@@ -29,10 +29,10 @@ import {
   type ClientRuntime,
   type ClientRuntimeTransport,
   getClientRuntimeRoutes,
-  getGlobalRuntimeTransport,
+  getClientRuntimeServer,
   type HydrationMode,
-  hasClientRuntimeTransport,
   type RenderMode,
+  resolveClientRuntimeTransport,
 } from "../shared/runtime-config.js";
 import { formatErrorDetail, isRecord } from "../shared/validation.js";
 import {
@@ -313,7 +313,7 @@ export async function fetchRscFlight(
   options: RscFlightFetchOptions,
 ): Promise<Response> {
   assertRscFlightFetchOptions(options);
-  const endpoint = options.runtime.runtime.server?.rsc;
+  const endpoint = getClientRuntimeServer(options.runtime)?.rsc;
   if (!endpoint) {
     throw new Error(
       "[evjs] RSC Flight endpoint is not present in the runtime.",
@@ -325,9 +325,7 @@ export async function fetchRscFlight(
     throw new Error("[evjs] RSC Flight fetch requires a fetch implementation.");
   }
 
-  const transport = resolveRscFlightTransport(
-    options.runtime.runtime.transport,
-  );
+  const transport = resolveClientRuntimeTransport(options.runtime);
   const requestUrl = resolveRscFlightUrl(endpoint, options, transport);
   const requestInit = resolveRscFlightRequestInit(transport);
   let response: unknown;
@@ -374,15 +372,6 @@ function resolveRscFlightRequestInit(
   return init.credentials !== undefined || init.headers !== undefined
     ? init
     : undefined;
-}
-
-function resolveRscFlightTransport(
-  transport: ClientRuntimeTransport | undefined,
-): ClientRuntimeTransport | undefined {
-  if (transport !== undefined && hasClientRuntimeTransport(transport)) {
-    return transport;
-  }
-  return getGlobalRuntimeTransport();
 }
 
 function assertOptionalRscFlightString(value: unknown, path: string): void {

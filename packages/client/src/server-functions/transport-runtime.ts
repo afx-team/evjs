@@ -29,6 +29,7 @@ import {
 import {
   assertClientRuntimeTransport,
   type ClientRuntime,
+  getClientRuntimeTransport,
   getGlobalRuntimeTransport,
   hasClientRuntimeTransport,
   type RuntimeTransportOptions,
@@ -467,7 +468,7 @@ export function initTransportFromRuntime(
   runtime: Pick<ClientRuntime, "runtime">,
 ): void {
   const transport =
-    getClientRuntimeTransport(runtime) ?? getGlobalRuntimeTransport();
+    readClientRuntimeTransport(runtime) ?? getGlobalRuntimeTransport();
   if (!transport || _runtimeSource === "user") return;
 
   _runtime = createTransportRuntime(transport);
@@ -816,7 +817,7 @@ function formatTransportBaseUrlError(error: UrlStringValidationError): string {
   }
 }
 
-function getClientRuntimeTransport(
+function readClientRuntimeTransport(
   runtime: unknown,
 ): RuntimeTransportOptions | undefined {
   if (!isRecord(runtime)) {
@@ -830,7 +831,9 @@ function getClientRuntimeTransport(
     );
   }
 
-  const transport = runtime.runtime.transport;
+  const transport = getClientRuntimeTransport(
+    runtime as Pick<ClientRuntime, "runtime">,
+  );
   if (transport === undefined) return undefined;
   assertClientRuntimeTransport(
     transport,

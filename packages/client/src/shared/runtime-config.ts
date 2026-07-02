@@ -133,6 +133,18 @@ export function getClientRuntimeRoutes(
   return runtime.routes ?? [];
 }
 
+export function getClientRuntimeServer(
+  runtime: Pick<ClientRuntime, "runtime">,
+): ClientRuntime["runtime"]["server"] {
+  return runtime.runtime.server;
+}
+
+export function getClientRuntimeTransport(
+  runtime: Pick<ClientRuntime, "runtime">,
+): ClientRuntimeTransport | undefined {
+  return runtime.runtime.transport;
+}
+
 export function assertClientRuntimeTransport(
   value: unknown,
   source: string,
@@ -165,6 +177,16 @@ export function getGlobalRuntimeTransport():
   if (transport === undefined) return undefined;
   assertClientRuntimeTransport(transport, "__EVJS_TRANSPORT__");
   return hasClientRuntimeTransport(transport) ? transport : undefined;
+}
+
+export function resolveClientRuntimeTransport(
+  runtime: Pick<ClientRuntime, "runtime">,
+): ClientRuntimeTransport | undefined {
+  const transport = getClientRuntimeTransport(runtime);
+  if (transport !== undefined && hasClientRuntimeTransport(transport)) {
+    return transport;
+  }
+  return getGlobalRuntimeTransport();
 }
 
 export function hasClientRuntimeTransport(
