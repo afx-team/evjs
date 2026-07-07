@@ -55,7 +55,8 @@ The structure is stable and readable:
 
 Generated files may import generated-only `@evjs/ev/_internal/*` helpers when
 they need framework runtime internals. Plugin source should not import those
-subpaths; plugin authoring uses `@evjs/ev/plugin`.
+subpaths; plugin authoring uses `@evjs/ev/plugin`. The `ctx.framework` object
+is immutable so plugins can inspect the IR but cannot mutate framework state.
 
 ## Authoring API
 

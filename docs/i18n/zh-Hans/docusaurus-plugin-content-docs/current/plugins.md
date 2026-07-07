@@ -158,10 +158,10 @@ Contribution 模型由四部分组成：
 | Link edge | 通过 `ctx.emit.importOf(ref)` 或 `helpers.importOf(ref)` 声明的 generated-to-generated import。 |
 | Slot item | 通过 `ctx.slot(name).add(...)` 声明的结构化挂载。 |
 
-`ctx.framework` 是只读的公开 framework IR view。它暴露 entries、apps、pages、routes、
-server routes 和 server functions，但不暴露内部 `BuildPlan` 或 `AppGraph` 对象。插件
-代码应从 `@evjs/ev/plugin` 导入 authoring 类型；`@evjs/ev/_internal/*` 只用于 CLI
-tooling、bundler adapter 和框架生成代码。
+`ctx.framework` 是 immutable/read-only 的公开 framework IR view。它暴露 entries、apps、
+pages、routes、server routes 和 server functions，但不暴露内部 `BuildPlan` 或
+`AppGraph` 对象。插件代码应从 `@evjs/ev/plugin` 导入 authoring 类型；
+`@evjs/ev/_internal/*` 只用于 CLI tooling、bundler adapter 和框架生成代码。
 
 插件生成模块使用 opaque ref，不暴露文件系统路径：
 

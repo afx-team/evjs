@@ -53,7 +53,8 @@ flowchart LR
 
 生成文件在需要 framework runtime internals 时可以 import generated-only
 `@evjs/ev/_internal/*` helper。插件源码不应 import 这些 subpath；插件 authoring 使用
-`@evjs/ev/plugin`。
+`@evjs/ev/plugin`。`ctx.framework` 对象是 immutable 的，插件可以 inspect IR，但不能修改
+framework state。
 
 ## Authoring API
 

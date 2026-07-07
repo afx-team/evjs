@@ -165,11 +165,11 @@ The contribution model has four parts:
 | Link edge | A generated-to-generated import declared through `ctx.emit.importOf(ref)` or `helpers.importOf(ref)`. |
 | Slot item | A structured attachment declared through `ctx.slot(name).add(...)`. |
 
-`ctx.framework` is a read-only public view of the framework IR. It exposes
-entries, apps, pages, routes, server routes, and server functions without
-exposing the internal `BuildPlan` or `AppGraph` objects. Plugin code should
-import authoring types from `@evjs/ev/plugin`; `@evjs/ev/_internal/*` is for
-CLI tooling, bundler adapters, and framework-generated code.
+`ctx.framework` is an immutable, read-only public view of the framework IR. It
+exposes entries, apps, pages, routes, server routes, and server functions
+without exposing the internal `BuildPlan` or `AppGraph` objects. Plugin code
+should import authoring types from `@evjs/ev/plugin`; `@evjs/ev/_internal/*` is
+for CLI tooling, bundler adapters, and framework-generated code.
 
 Generated modules use opaque refs instead of exposing filesystem paths:
 

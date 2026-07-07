@@ -376,6 +376,12 @@ describe("prepareFrameworkBuild", () => {
     const plugin: Plugin<Record<string, never>> = {
       name: "generated-fixture",
       contributions(ctx) {
+        expect(Object.isFrozen(ctx.framework)).toBe(true);
+        expect(Object.isFrozen(ctx.framework.entries)).toBe(true);
+        const mainEntry = ctx.framework.getEntry("main");
+        expect(mainEntry).toBeDefined();
+        expect(Object.isFrozen(mainEntry)).toBe(true);
+
         const runtime = ctx.emit.module({
           id: "runtime",
           scope: { kind: "app" },
@@ -442,6 +448,10 @@ describe("prepareFrameworkBuild", () => {
         "utf-8",
       ),
     ) as { plan: BuildPlan };
+    const generatedTypes = await fs.promises.readFile(
+      path.join(cwd, ".ev/types.d.ts"),
+      "utf-8",
+    );
 
     expect(runtimeModule?.specifier).toBe(
       "evjs:generated/generated-fixture/runtime",
@@ -491,6 +501,8 @@ describe("prepareFrameworkBuild", () => {
       qiankun: { source: "qiankun", runtime: "client" },
     });
     expect(entry?.file).toBe("./.ev/entries/main.ts");
+    expect(generatedTypes).toContain('declare module "evjs:generated/*";');
+    expect(generatedTypes).toContain('declare module "*.json";');
     await expect(
       fs.promises.readFile(path.join(cwd, runtimeModule?.file ?? ""), "utf-8"),
     ).resolves.toContain("export const value = 1;");
@@ -838,6 +850,12 @@ describe("prepareFrameworkBuild", () => {
     expect(serverEntry).toContain(
       "const middlewares = [contributedMiddleware0];",
     );
+    expect(serverEntry).toContain(
+      ["const routeDefinition0 = {", "  GET: routeModule0.GET,", "};"].join(
+        "\n",
+      ),
+    );
+    expect(serverEntry).not.toContain("routeDefinition0.GET =");
     expect(serverEntry).toContain('createRoute("/hello", routeDefinition0)');
 
     await prepared.dispose();
