@@ -80,7 +80,9 @@ and adapters depend on `@evjs/ev` instead of on each other.
 
 1. Keep imports at the top of files and use `import type` for type-only imports.
 2. Use Biome formatting and linting. Avoid `any` and broad namespace imports unless there is a concrete reason.
-3. Do not add hidden production source files such as `.evjs/server/entry.ts`; framework-owned entries should be library/runtime entries or bundler adapter mechanics.
+3. Do not add hidden production source files such as `.evjs/server/entry.ts`.
+   Framework-owned entry composition belongs in the generated `.ev` IR, not in
+   adapter-specific virtual entry loaders or ad hoc hidden source trees.
 4. Keep framework semantics out of bundler adapters. Adapters consume `BuildPlan` and return build facts.
 5. Server function files must start with `"use server";`, use `.server.*`
    filenames when colocated with route convention files, and export named

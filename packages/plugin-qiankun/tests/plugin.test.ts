@@ -2,11 +2,13 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AppGraph, BuildPlan } from "@evjs/ev/_internal/manifest";
 import type { ResolvedConfig } from "@evjs/ev/config";
 import type {
   ContributionContext,
   EmitApi,
+  FrameworkEntryView,
+  FrameworkIRView,
+  FrameworkPagesAppEntryMetadata,
   FrameworkSlotInput,
   FrameworkSlotName,
   GeneratedModuleRef,
@@ -57,7 +59,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
       qiankunRuntime,
     ]);
     expect(captured.modules).toHaveLength(1);
-    expect(captured.modules[0]?.id).toBe("master-entry-wrapper-module");
+    expect(captured.modules[0]?.id).toBe("entry-wrapper");
     const source = renderModule(
       captured.modules[0],
       captured.importOf,
@@ -72,7 +74,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
     expect(captured.slots).toContainEqual({
       name: "client.entry",
       input: expect.objectContaining({
-        id: "master-entry-wrapper-slot",
+        id: "entry-wrapper-slot",
         position: "after-main",
         target: { kind: "app" },
       }),
@@ -94,7 +96,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
 
     await plugin.contributions?.(captured.ctx);
     const wrapper = captured.modules.find(
-      (module) => module.id === "slave-entry-wrapper-module",
+      (module) => module.id === "entry-wrapper",
     );
     const sourceDir = generatedModuleDir(cwd, "@evjs/plugin-qiankun:slave");
     const source = renderModule(wrapper, captured.importOf, (file) =>
@@ -104,7 +106,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
     expect(captured.slots).toContainEqual({
       name: "client.entry",
       input: expect.objectContaining({
-        id: "slave-entry-wrapper-slot",
+        id: "entry-wrapper-slot",
         position: "before-main",
         mode: "replace",
         target: { kind: "app" },
@@ -151,36 +153,23 @@ describe("@evjs/plugin-qiankun plugin", () => {
     const captured = createContributionCapture(
       cwd,
       { routing: createSpaRoutingConfig() },
-      createPagesAppPlan(),
+      createPagesAppFramework(),
     );
 
     await plugin.contributions?.(captured.ctx);
 
     const original = captured.modules.find(
-      (module) => module.id === "slave-original-entry-module",
+      (module) => module.id === "original-entry",
     );
     const wrapper = captured.modules.find(
-      (module) => module.id === "slave-entry-wrapper-module",
+      (module) => module.id === "entry-wrapper",
     );
     const sourceDir = generatedModuleDir(cwd, "@evjs/plugin-qiankun:slave");
     const importFile = (file: string) => toRelativeImport(sourceDir, file);
-    const originalSource = renderModule(
-      original,
-      captured.importOf,
-      importFile,
-    );
     const wrapperSource = renderModule(wrapper, captured.importOf, importFile);
-    expect(originalSource).toContain("createPagesApp");
-    expect(originalSource).toContain("routeModule0");
-    expect(originalSource).toContain(
-      toRelativeImport(sourceDir, path.join(cwd, "src/pages/index.tsx")),
-    );
-    expect(originalSource).toContain(
-      toRelativeImport(sourceDir, path.join(cwd, "src/pages/error.tsx")),
-    );
-    expect(originalSource).not.toContain(toImportPath(cwd));
+    expect(original).toBeDefined();
     expect(wrapperSource).toContain(
-      'loadEntry: () => import("virtual:slave-original-entry-module")',
+      'loadEntry: () => import("virtual:original-entry")',
     );
   });
 
@@ -239,7 +228,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
 function createContributionCapture(
   cwd: string,
   config: Partial<ResolvedConfig>,
-  plan: BuildPlan = createAppPlan(),
+  framework: FrameworkIRView = createAppFramework(),
 ) {
   const watched: string[] = [];
   const modules: CapturedModule[] = [];
@@ -258,16 +247,22 @@ function createContributionCapture(
       modules.push({ id: input.id, source: JSON.stringify(input.value) });
       return ref;
     },
+    entryFacade(input) {
+      const ref = { id: input.id } as unknown as GeneratedModuleRef;
+      refs.set(ref, input.id);
+      modules.push({
+        id: input.id,
+        source: "/* framework entry facade */",
+      });
+      return ref;
+    },
     importOf(ref) {
       return `virtual:${refs.get(ref) ?? "unknown"}`;
     },
   };
   const ctx: ContributionContext = {
     ...createPluginContext(cwd, watched, config),
-    framework: {
-      graph: createGraph(),
-      plan,
-    },
+    framework,
     emit,
     slot(name) {
       return {
@@ -349,71 +344,65 @@ function createSpaRoutingConfig() {
   };
 }
 
-function createGraph(): AppGraph {
+function createFramework(entries: FrameworkEntryView[]): FrameworkIRView {
   return {
-    version: 1,
-    rootDir: "/repo",
-    apps: {},
-    pages: {},
+    apps: [],
+    pages: [],
     routes: [],
-    serverFunctions: [],
     serverRoutes: [],
-  };
-}
-
-function createAppPlan(): BuildPlan {
-  return {
-    version: 1,
-    buildId: "test",
-    mode: "production",
-    distDir: "dist",
-    output: { clientDir: "dist/client", serverDir: "dist/server" },
-    resolve: { alias: { "@": "./src" } },
-    entries: [
-      {
-        name: "main",
-        import: "./src/main.tsx",
-        environment: "client",
-        runtime: "browser",
-        kind: "app-client",
-        owner: { appId: "default" },
-      },
-    ],
-    html: [],
-    server: {},
-    runtime: {
-      publicPath: "auto",
-      server: { basePath: "/__evjs", fn: "__evjs/fn" },
+    serverFunctions: [],
+    entries,
+    getEntry(name) {
+      return entries.find((entry) => entry.name === name);
     },
-  };
+    getPagesAppEntry() {
+      return entries.find(
+        (
+          entry,
+        ): entry is FrameworkEntryView & {
+          metadata: FrameworkPagesAppEntryMetadata;
+        } => entry.metadata?.type === "pages-app",
+      );
+    },
+  } satisfies FrameworkIRView;
 }
 
-function createPagesAppPlan(): BuildPlan {
-  return {
-    ...createAppPlan(),
-    entries: [
-      {
-        name: "main",
-        import: "./src/main.tsx",
-        environment: "client",
-        runtime: "browser",
-        kind: "app-client",
-        owner: { appId: "default" },
-        metadata: {
-          type: "pages-app",
-          mount: "#app",
-          routes: [
-            {
-              id: "index",
-              path: "/",
-              module: "./src/pages/index.tsx",
-              errorModule: "./src/pages/error.tsx",
-            },
-          ],
-        },
+function createAppFramework(): FrameworkIRView {
+  return createFramework([
+    {
+      name: "main",
+      import: "./src/main.tsx",
+      environment: "client",
+      runtime: "browser",
+      kind: "app-client",
+      owner: { appId: "default" },
+    },
+  ]);
+}
+
+function createPagesAppFramework(): FrameworkIRView {
+  return createFramework([
+    {
+      name: "main",
+      import: "./src/main.tsx",
+      environment: "client",
+      runtime: "browser",
+      kind: "app-client",
+      owner: { appId: "default" },
+      metadata: {
+        type: "pages-app",
+        mount: "#app",
+        routes: [
+          {
+            id: "index",
+            path: "/",
+            module: "./src/pages/index.tsx",
+            errorModule: "./src/pages/error.tsx",
+          },
+        ],
       },
-    ],
-  };
+    },
+  ]);
 }
 
 function toImportPath(file: string): string {
@@ -436,8 +425,12 @@ function sanitizePathSegment(value: string): string {
     .replace(/^@/, "")
     .replace(/\/plugin-/g, "/")
     .replace(/^plugin-/, "");
-  const sanitized = normalized
-    .replace(/[^a-zA-Z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  return sanitized || "generated";
+  const segments = normalized
+    .replace(/:/g, "/")
+    .split(/[\\/]+/)
+    .map((segment) =>
+      segment.replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, ""),
+    )
+    .filter(Boolean);
+  return segments.join("/") || "generated";
 }

@@ -19,7 +19,7 @@ server functions, and independent client/server runtime cores.
 - **Data Fetching** — [TanStack Query](https://tanstack.com/query) with built-in proxies.
 - **Server Functions** — `"use server"` directive, auto-discovered at build time.
 - **Pluggable Transport** — HTTP, WebSocket, or custom via `ServerTransport`.
-- **Plugin System** — extend builds with custom loaders (Tailwind, SVG, etc.).
+- **Plugin System** — extend framework IR through generated contributions and lifecycle hooks.
 - **Server File Routes** — `src/apis` maps Request/Response method modules to HTTP endpoints.
 - **Typed Errors** — `ServerError` flows structured data server → client.
 - **Multi-Runtime** — [Hono](https://hono.dev/)-based server with Node, Deno, Bun, Edge adapters.

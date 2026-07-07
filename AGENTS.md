@@ -28,6 +28,10 @@ coverage in `packages/ev/tests/build-tools-page-routes.test.ts`.
   control plane. It owns convention discovery and composes generated framework
   output; its runtime-facing subpaths are curated authoring and generated-only
   entries, not generic runtime mirrors.
+- `.ev` is the generated framework IR for convention results, entry facades,
+  plugin generated artifacts, framework slots, import edges, and the final
+  manifest. Do not reintroduce adapter-specific virtual entry loaders for
+  file-convention entry composition.
 - `@evjs/client` and `@evjs/server` are independent runtime cores. Public
   client/server APIs live there and stay usable outside evjs file conventions.
   Their runtime APIs are not a second framework routing/configuration mode.

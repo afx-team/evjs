@@ -696,6 +696,71 @@ describe("prepareFrameworkBuild", () => {
     await prepared.dispose();
   });
 
+  it("lets entry wrapper plugins preserve the original generated entry facade", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/index.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "entry-wrapper",
+      contributions(ctx) {
+        const entry = ctx.framework.getPagesAppEntry();
+        if (!entry) throw new Error("missing pages app entry");
+        const original = ctx.emit.entryFacade({
+          id: "original-entry",
+          entry,
+        });
+        const wrapper = ctx.emit.module({
+          id: "wrapper",
+          scope: { kind: "app" },
+          source: ({ importOf }) =>
+            `export const load = () => import(${JSON.stringify(importOf(original))});`,
+        });
+        ctx.slot("client.entry").add({
+          id: "wrapper-slot",
+          module: wrapper,
+          position: "before-main",
+          mode: "replace",
+        });
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        routing: { mode: "spa" },
+        output: { client: "dist" },
+        plugins: [plugin],
+      },
+      { cwd },
+    );
+
+    const originalEntry = await fs.promises.readFile(
+      path.join(cwd, ".ev/plugins/entry-wrapper/original-entry.ts"),
+      "utf-8",
+    );
+    const wrapper = await fs.promises.readFile(
+      path.join(cwd, ".ev/plugins/entry-wrapper/wrapper.ts"),
+      "utf-8",
+    );
+    const mainEntry = await fs.promises.readFile(
+      path.join(cwd, ".ev/entries/main.ts"),
+      "utf-8",
+    );
+
+    expect(originalEntry).toContain("createPagesApp");
+    expect(originalEntry).toContain("../../src/pages/index");
+    expect(wrapper).toContain('import("./original-entry")');
+    expect(mainEntry).toContain(
+      'export * from "../plugins/entry-wrapper/wrapper";',
+    );
+    expect(mainEntry).not.toContain("createPagesApp");
+
+    await prepared.dispose();
+  });
+
   it("adds server.request.middleware contributions to the generated server entry", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/apis"), { recursive: true });

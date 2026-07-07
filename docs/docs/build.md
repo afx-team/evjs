@@ -28,7 +28,7 @@ ev prepare
 ```
 
 `ev prepare` writes `.ev/` with the discovered app graph, final build plan,
-generated entry facades, plugin generated modules, contribution slots, and
+generated entry facades, plugin generated artifacts, framework slots, and
 import edges. It does not run the bundler and does not write `dist`.
 
 ## Output

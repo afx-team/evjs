@@ -134,17 +134,34 @@ flowchart LR
 
 ## Generated Contributions
 
-当插件需要向框架生成的 `.ev` IR 添加代码时，使用 `contributions()`。这一层适合处理
-entry import、runtime plugin module、HTML tag、framework request middleware 和语义化
-resolution 变更。真正需要 bundler transform 的场景，例如编译自定义文件类型，仍应使用 loader。
+Contribution 是 framework IR 里的声明式单元。它可以生成产物、把这些产物链接起来，
+并把它们挂到 framework slot 上。
+
+当插件需要扩展生成的 `.ev` IR 时，使用 `contributions()`。这一层适合处理 entry import、
+runtime plugin module、HTML tag、framework request middleware 和语义化 resolution 变更。
+真正需要 bundler transform 的场景，例如编译自定义文件类型，仍应使用 loader。
 
 `.ev` 是生成产物，包含：
 
 - `.ev/framework/app-graph.json`：file-convention 发现后的 graph；
 - `.ev/framework/build-plan.json`：最终的 bundler 无关 build plan；
 - `.ev/entries/*`：bundler 消费的框架 entry facade；
-- `.ev/plugins/<plugin>/*`：插件生成模块；
-- `.ev/manifest.json`：graph、generated modules、slots、import edges 和最终 entries。
+- `.ev/plugins/<plugin>/*`：插件生成模块和 entry facade；
+- `.ev/manifest.json`：graph、generated artifacts、slots、import edges 和最终 entries。
+
+Contribution 模型由四部分组成：
+
+| 概念 | 语义 |
+|------|------|
+| Generated artifact | 通过 `ctx.emit` 声明的 module、data file 或 framework entry facade。 |
+| Opaque ref | `ctx.emit` 返回的 `GeneratedModuleRef`；插件拿不到 `.ev` 文件路径。 |
+| Link edge | 通过 `ctx.emit.importOf(ref)` 或 `helpers.importOf(ref)` 声明的 generated-to-generated import。 |
+| Slot item | 通过 `ctx.slot(name).add(...)` 声明的结构化挂载。 |
+
+`ctx.framework` 是只读的公开 framework IR view。它暴露 entries、apps、pages、routes、
+server routes 和 server functions，但不暴露内部 `BuildPlan` 或 `AppGraph` 对象。插件
+代码应从 `@evjs/ev/plugin` 导入 authoring 类型；`@evjs/ev/_internal/*` 只用于 CLI
+tooling、bundler adapter 和框架生成代码。
 
 插件生成模块使用 opaque ref，不暴露文件系统路径：
 
@@ -177,6 +194,39 @@ export function analyticsPlugin(): Plugin {
   };
 }
 ```
+
+当插件需要替换 entry、但仍要保留原始 framework facade 时，使用
+`ctx.emit.entryFacade()`，不要在插件里重建 framework internal：
+
+```ts
+contributions(ctx) {
+  const entry = ctx.framework.getPagesAppEntry();
+  if (!entry) return;
+
+  const original = ctx.emit.entryFacade({
+    id: "original-entry",
+    entry,
+  });
+
+  const wrapper = ctx.emit.module({
+    id: "entry-wrapper",
+    scope: { kind: "app" },
+    source: ({ importOf }) =>
+      `export const load = () => import(${JSON.stringify(importOf(original))});`,
+  });
+
+  ctx.slot("client.entry").add({
+    id: "entry-wrapper-slot",
+    module: wrapper,
+    position: "before-main",
+    mode: "replace",
+  });
+}
+```
+
+插件生成路径稳定且可读。例如名为 `@evjs/plugin-qiankun:slave` 的插件会写入
+`.ev/plugins/qiankun/slave/*`，并暴露类似
+`evjs:generated/qiankun/slave/entry-wrapper` 的 specifier。
 
 可用 slots：
 

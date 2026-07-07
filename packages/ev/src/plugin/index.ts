@@ -1,9 +1,10 @@
 import type {
-  AppGraph,
   AssetGroup,
+  BuildEntryOwner,
+  BuildEntryPhase,
   BuildEnvironment,
   BuildOutput,
-  BuildPlan,
+  ComponentModel,
   ContributionRuntime,
   ContributionTarget,
   DeploymentMetadata,
@@ -12,10 +13,16 @@ import type {
   GeneratedScope,
   HtmlTagName,
   HtmlTagPlacement,
+  HydrationMode,
+  PageRouteKind,
+  PprConfig,
+  PrerenderConfig,
   PublicManifestOutput,
   PublicPageOutput,
   PublicRouteOutput,
+  RenderMode,
   ServerManifestOutput,
+  ServerRuntime,
 } from "@evjs/shared/manifest";
 import {
   createDeploymentMetadata,
@@ -323,9 +330,149 @@ export interface PluginContext<TBundlerCfg = DefaultBundlerConfig>
   addWatchFile(file: string): void;
 }
 
+/** Read-only framework IR snapshot exposed to contribution hooks. */
 export interface FrameworkIRView {
-  readonly graph: AppGraph;
-  readonly plan: BuildPlan;
+  /** File-convention apps discovered before bundling. */
+  readonly apps: readonly FrameworkAppView[];
+  /** Explicit or convention-derived pages discovered before bundling. */
+  readonly pages: readonly FrameworkPageView[];
+  /** Client route graph discovered from `src/pages` or config. */
+  readonly routes: readonly FrameworkRouteView[];
+  /** Server file routes discovered from `src/apis`. */
+  readonly serverRoutes: readonly FrameworkServerRouteView[];
+  /** Server functions discovered from `"use server"` modules. */
+  readonly serverFunctions: readonly FrameworkServerFunctionView[];
+  /** Bundler-independent entries that the framework will materialize. */
+  readonly entries: readonly FrameworkEntryView[];
+  getEntry(name: string): FrameworkEntryView | undefined;
+  getPagesAppEntry(): FrameworkPagesAppEntryView | undefined;
+}
+
+export interface FrameworkAppView {
+  readonly id: string;
+  readonly entry: string;
+  readonly html: string;
+  readonly mount?: string;
+}
+
+export interface FrameworkPageView {
+  readonly id: string;
+  readonly path?: string;
+  readonly routeId?: string;
+  readonly entry?: string;
+  readonly component?: string;
+  readonly app?: string;
+  readonly html: string;
+  readonly render: RenderMode;
+  readonly componentModel?: ComponentModel;
+  readonly hydrate?: HydrationMode;
+  readonly mount?: string;
+  readonly prerender?: PrerenderConfig;
+  readonly ppr?: PprConfig;
+}
+
+export interface FrameworkRouteView {
+  readonly id: string;
+  readonly path: string;
+  readonly parentId?: string;
+  readonly kind?: PageRouteKind;
+  readonly pageId?: string;
+  readonly appId?: string;
+  readonly module?: string;
+  readonly errorModule?: string;
+  readonly notFoundModule?: string;
+  readonly render?: RenderMode;
+  readonly hydrate?: HydrationMode;
+  readonly runtime?: ServerRuntime;
+}
+
+export interface FrameworkServerFunctionView {
+  readonly id: string;
+  readonly module: string;
+  readonly exportName: string;
+}
+
+export interface FrameworkServerRouteView {
+  readonly id: string;
+  readonly module: string;
+  readonly path: string;
+  readonly methods: readonly string[];
+}
+
+export interface FrameworkEntryView {
+  readonly name: string;
+  readonly import: string;
+  readonly environment: BuildEnvironment;
+  readonly runtime?: "browser" | ServerRuntime;
+  readonly phase?: BuildEntryPhase;
+  readonly kind:
+    | "app-client"
+    | "page-client"
+    | "page-server"
+    | "rsc-page"
+    | "ppr-shell"
+    | "ppr-region"
+    | "server-runtime"
+    | "runtime";
+  readonly owner?: BuildEntryOwner;
+  readonly metadata?: FrameworkEntryMetadataView;
+}
+
+export interface FrameworkPagesAppEntryView extends FrameworkEntryView {
+  readonly metadata: FrameworkPagesAppEntryMetadata;
+}
+
+export type FrameworkEntryMetadataView =
+  | FrameworkReactComponentPageEntryMetadata
+  | FrameworkPagesAppEntryMetadata
+  | FrameworkServerAppEntryMetadata;
+
+export interface FrameworkReactComponentPageEntryMetadata {
+  readonly type: "react-component-page";
+  readonly component: string;
+  readonly mount: string;
+  readonly hydrate: HydrationMode;
+  readonly render: RenderMode;
+  readonly route?: {
+    readonly id: string;
+    readonly path: string;
+  };
+}
+
+export interface FrameworkPagesAppEntryMetadata {
+  readonly type: "pages-app";
+  readonly routes: readonly FrameworkPageAppRouteView[];
+  readonly mount: string;
+  readonly rootModule?: string;
+}
+
+export interface FrameworkPageAppRouteView {
+  readonly id: string;
+  readonly path: string;
+  readonly module: string;
+  readonly html?: string;
+  readonly parentId?: string;
+  readonly kind?: PageRouteKind;
+  readonly errorModule?: string;
+  readonly notFoundModule?: string;
+}
+
+export interface FrameworkServerMiddlewareView {
+  readonly id: string;
+  readonly module: string;
+  readonly scope: "global" | "route";
+  readonly scopeSegments?: readonly string[];
+}
+
+export interface FrameworkServerAppRouteView extends FrameworkServerRouteView {
+  readonly middlewares?: readonly FrameworkServerMiddlewareView[];
+}
+
+export interface FrameworkServerAppEntryMetadata {
+  readonly type: "server-app";
+  readonly routes: readonly FrameworkServerAppRouteView[];
+  readonly middlewares?: readonly FrameworkServerMiddlewareView[];
+  readonly serverFunctions?: readonly FrameworkServerFunctionView[];
 }
 
 export interface ContributionContext<TBundlerCfg = DefaultBundlerConfig>
@@ -352,6 +499,12 @@ export interface EmitApi {
     id: string;
     scope: GeneratedScope;
     value: unknown;
+  }): GeneratedModuleRef;
+
+  entryFacade(input: {
+    id: string;
+    entry: FrameworkEntryView;
+    scope?: GeneratedScope;
   }): GeneratedModuleRef;
 
   importOf(ref: GeneratedModuleRef): string;

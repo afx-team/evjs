@@ -497,6 +497,34 @@ describe("workspace package surface", () => {
     }
   });
 
+  it("keeps plugin packages off generated-only framework internals", async () => {
+    const violations: string[] = [];
+
+    for (const packageName of expectedPackageNames) {
+      if (packageDistribution[packageName].role !== "plugin") continue;
+      const packageDir = path.join(
+        repoRoot,
+        "packages",
+        packageDistribution[packageName].dir,
+        "src",
+      );
+
+      for (const sourceFile of await listSourceFiles(packageDir)) {
+        const relativeFile = path.relative(repoRoot, sourceFile);
+        const source = await fs.readFile(sourceFile, "utf-8");
+        for (const importSpecifier of parseEvjsImportSpecifiers(source)) {
+          if (importSpecifier.startsWith("@evjs/ev/_internal")) {
+            violations.push(
+              `${relativeFile} imports generated-only ${importSpecifier}`,
+            );
+          }
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
+
   it("keeps @evjs/ev tied only to the default Utoopack type package", async () => {
     const evPackageJson = await readPackageJson("ev");
     const declaredDependencies = allDependencyNames(evPackageJson);

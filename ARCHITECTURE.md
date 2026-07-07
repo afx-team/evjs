@@ -20,6 +20,7 @@ becoming alternate framework configuration modes.
 src/pages + src/apis + src/middleware.ts + ev.config.ts
   -> AppGraph
   -> BuildPlan
+  -> .ev generated framework IR
   -> selected bundler adapter
   -> in-memory BuildOutput
   -> ClientRuntime / FrameworkRuntime contracts
@@ -77,6 +78,9 @@ File-convention application source imports curated authoring APIs from
 framework code resolves runtime internals through `@evjs/ev/_internal/*`.
 Runtime APIs in `@evjs/client` and `@evjs/server` remain standalone/manual
 surfaces for applications that intentionally own those primitives directly.
+Plugin authoring details, including generated contribution types and the public
+framework IR view, live under `@evjs/ev/plugin`; plugin packages should not
+import `@evjs/ev/_internal/*`.
 Other packages are tooling, bundler adapters, or shared contracts for framework
 packages. When a new capability needs a boundary, prefer adding a subpath export
 to the package that owns the behavior before creating another distributed
@@ -114,6 +118,12 @@ Build helpers are exported from `@evjs/ev/_internal/build`, manifest contracts a
 exported from `@evjs/shared/manifest`, and generated page/shell/server-function
 runtime primitives stay behind focused generated-only
 `@evjs/ev/_internal/*` subpaths.
+
+Before bundling, evjs writes `.ev` as the generated framework IR. It contains
+framework graph/plan snapshots, generated entry facades, plugin generated
+artifacts, framework slot items, import edges, and the final manifest. That IR
+is the source of truth for file-convention entry composition and plugin
+entry/runtime/html/resolution injection.
 
 ## Build-Time Flow
 

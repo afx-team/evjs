@@ -31,6 +31,9 @@ import type { ResolvedConfig } from "../../config/index.js";
 import type {
   ContributionContext,
   EmitApi,
+  FrameworkEntryView,
+  FrameworkIRView,
+  FrameworkPagesAppEntryView,
   FrameworkSlot,
   FrameworkSlotInput,
   GeneratedModuleRef,
@@ -228,10 +231,7 @@ class ContributionCollector<TBundlerCfg> {
       command: this.options.command,
       cwd: this.options.cwd,
       config: this.options.config,
-      framework: {
-        graph: this.options.graph,
-        plan: this.options.plan,
-      },
+      framework: createFrameworkIRView(this.options.graph, this.options.plan),
       emit,
       slot: <K extends FrameworkSlotName>(name: K) =>
         this.createSlot(plugin.name, name),
@@ -283,36 +283,45 @@ class ContributionCollector<TBundlerCfg> {
     return {
       module: (input) => {
         const id = validateContributionId(input.id, pluginName);
-        const extension = input.extension ?? ".ts";
-        if (!SUPPORTED_GENERATED_EXTENSIONS.has(extension)) {
-          throw new Error(
-            `[evjs] Plugin "${pluginName}" generated module "${id}" uses unsupported extension "${extension}".`,
-          );
-        }
-        validateGeneratedScope(pluginName, id, input.scope);
-        const key = this.reserveKey(pluginName, id, "generated module");
-        const module = this.createGeneratedModule({
-          pluginName,
+        return this.emitGeneratedModule(pluginName, {
           id,
-          key,
           scope: input.scope,
           source: input.source,
-          extension,
+          extension: input.extension ?? ".ts",
+          keyKind: "generated module",
         });
-        this.modules.push(module);
-        this.refs.set(key, module);
-        return {
-          __evGeneratedModuleRef: generatedModuleRefSymbol,
-          key,
-        } as unknown as GeneratedModuleRef;
       },
       data: (input) => {
         const source = `${JSON.stringify(input.value, null, 2)}\n`;
-        return this.createEmitApi(pluginName).module({
-          id: input.id,
+        const id = validateContributionId(input.id, pluginName);
+        return this.emitGeneratedModule(pluginName, {
+          id,
           scope: input.scope,
           source,
           extension: ".json",
+          keyKind: "generated data",
+        });
+      },
+      entryFacade: (input) => {
+        const id = validateContributionId(input.id, pluginName);
+        const entry = findFrameworkEntry(
+          this.options.plan,
+          input.entry,
+          pluginName,
+          id,
+        );
+        if (entry.environment !== "client") {
+          throw new Error(
+            `[evjs] Plugin "${pluginName}" entry facade "${id}" can only target client entries.`,
+          );
+        }
+        return this.emitGeneratedModule(pluginName, {
+          id,
+          scope: input.scope ?? generatedScopeForEntry(entry),
+          source: ({ importFile }) =>
+            createOriginalClientEntryFacadeSource(entry, importFile),
+          extension: ".ts",
+          keyKind: "entry facade",
         });
       },
       importOf: (ref) =>
@@ -321,6 +330,39 @@ class ContributionCollector<TBundlerCfg> {
           kind: "plugin-import-helper",
         }),
     };
+  }
+
+  private emitGeneratedModule(
+    pluginName: string,
+    input: {
+      id: string;
+      scope: GeneratedScope;
+      source: GeneratedSource;
+      extension: string;
+      keyKind: string;
+    },
+  ): GeneratedModuleRef {
+    if (!SUPPORTED_GENERATED_EXTENSIONS.has(input.extension)) {
+      throw new Error(
+        `[evjs] Plugin "${pluginName}" generated module "${input.id}" uses unsupported extension "${input.extension}".`,
+      );
+    }
+    validateGeneratedScope(pluginName, input.id, input.scope);
+    const key = this.reserveKey(pluginName, input.id, input.keyKind);
+    const module = this.createGeneratedModule({
+      pluginName,
+      id: input.id,
+      key,
+      scope: input.scope,
+      source: input.source,
+      extension: input.extension,
+    });
+    this.modules.push(module);
+    this.refs.set(key, module);
+    return {
+      __evGeneratedModuleRef: generatedModuleRefSymbol,
+      key,
+    } as unknown as GeneratedModuleRef;
   }
 
   private createSlot<K extends FrameworkSlotName>(
@@ -777,6 +819,60 @@ function createManifestView(plan: BuildPlan, graph: AppGraph): unknown {
   };
 }
 
+function createFrameworkIRView(
+  graph: AppGraph,
+  plan: BuildPlan,
+): FrameworkIRView {
+  const entries = plan.entries.map(createFrameworkEntryView);
+  return {
+    apps: Object.values(graph.apps).map(cloneJson),
+    pages: Object.values(graph.pages).map(cloneJson),
+    routes: graph.routes.map(cloneJson),
+    serverRoutes: graph.serverRoutes.map(cloneJson),
+    serverFunctions: graph.serverFunctions.map(cloneJson),
+    entries,
+    getEntry(name) {
+      return entries.find((entry) => entry.name === name);
+    },
+    getPagesAppEntry() {
+      return entries.find(isFrameworkPagesAppEntryView);
+    },
+  };
+}
+
+function createFrameworkEntryView(entry: BuildEntry): FrameworkEntryView {
+  return cloneJson(entry) as FrameworkEntryView;
+}
+
+function isFrameworkPagesAppEntryView(
+  entry: FrameworkEntryView,
+): entry is FrameworkPagesAppEntryView {
+  return entry.metadata?.type === "pages-app";
+}
+
+function findFrameworkEntry(
+  plan: BuildPlan,
+  view: FrameworkEntryView,
+  pluginName: string,
+  id: string,
+): BuildEntry {
+  const entry = plan.entries.find((item) => item.name === view.name);
+  if (entry) return entry;
+  throw new Error(
+    `[evjs] Plugin "${pluginName}" entry facade "${id}" references unknown framework entry "${view.name}".`,
+  );
+}
+
+function generatedScopeForEntry(entry: BuildEntry): GeneratedScope {
+  if (entry.owner?.pageId) {
+    return { kind: "page", pageId: entry.owner.pageId };
+  }
+  if (entry.environment === "server") {
+    return { kind: "server" };
+  }
+  return { kind: "app" };
+}
+
 function withGeneratedHeader(
   source: string,
   extension: string,
@@ -1097,33 +1193,61 @@ function createClientEntrySource(options: {
     .join("\n");
 }
 
+function createOriginalClientEntryFacadeSource(
+  entry: BuildEntry,
+  importFile: (file: string) => string,
+): string {
+  if (entry.metadata?.type === "pages-app") {
+    return createPagesAppMainSourceFromImportFile(
+      entry.metadata,
+      importFile,
+    ).join("\n");
+  }
+  if (entry.metadata?.type === "react-component-page") {
+    return createReactComponentPageMainSourceFromImportFile(
+      entry.metadata,
+      importFile,
+    ).join("\n");
+  }
+  return `import ${JSON.stringify(importFile(entry.import))};`;
+}
+
 function createPagesAppMainSource(
   cwd: string,
   fromFile: string,
   metadata: PagesAppEntryMetadata,
 ): string[] {
+  return createPagesAppMainSourceFromImportFile(metadata, (file) =>
+    toGeneratedImportSpecifier(cwd, fromFile, file),
+  );
+}
+
+function createPagesAppMainSourceFromImportFile(
+  metadata: PagesAppEntryMetadata,
+  importFile: (file: string) => string,
+): string[] {
   const imports = [
     `import { createPagesApp } from "@evjs/ev/_internal/client";`,
     metadata.rootModule
       ? `import * as rootModule from ${JSON.stringify(
-          toGeneratedImportSpecifier(cwd, fromFile, metadata.rootModule),
+          importFile(metadata.rootModule),
         )};`
       : "",
     ...metadata.routes.map(
       (route, index) =>
         `import * as routeModule${index} from ${JSON.stringify(
-          toGeneratedImportSpecifier(cwd, fromFile, route.module),
+          importFile(route.module),
         )};`,
     ),
     ...metadata.routes.flatMap((route, index) => [
       route.errorModule
         ? `import * as routeErrorModule${index} from ${JSON.stringify(
-            toGeneratedImportSpecifier(cwd, fromFile, route.errorModule),
+            importFile(route.errorModule),
           )};`
         : "",
       route.notFoundModule
         ? `import * as routeNotFoundModule${index} from ${JSON.stringify(
-            toGeneratedImportSpecifier(cwd, fromFile, route.notFoundModule),
+            importFile(route.notFoundModule),
           )};`
         : "",
     ]),
@@ -1158,11 +1282,16 @@ function createReactComponentPageMainSource(
   fromFile: string,
   metadata: ReactComponentPageEntryMetadata,
 ): string[] {
-  const component = toGeneratedImportSpecifier(
-    cwd,
-    fromFile,
-    metadata.component,
+  return createReactComponentPageMainSourceFromImportFile(metadata, (file) =>
+    toGeneratedImportSpecifier(cwd, fromFile, file),
   );
+}
+
+function createReactComponentPageMainSourceFromImportFile(
+  metadata: ReactComponentPageEntryMetadata,
+  importFile: (file: string) => string,
+): string[] {
+  const component = importFile(metadata.component);
   const entryOptions = {
     mount: metadata.mount,
     hydrate: metadata.hydrate,
@@ -1419,7 +1548,12 @@ function sanitizePluginPathSegment(value: string): string {
     .replace(/^@/, "")
     .replace(/\/plugin-/g, "/")
     .replace(/^plugin-/, "");
-  return sanitizePathSegment(normalized);
+  const segments = normalized
+    .replace(/:/g, "/")
+    .split(/[\\/]+/)
+    .map(sanitizePathSegment)
+    .filter(Boolean);
+  return segments.join("/") || "generated";
 }
 
 function shortHash(value: string): string {

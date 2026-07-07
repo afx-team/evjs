@@ -75,7 +75,9 @@ semantic authoring subpaths only. Use `@evjs/ev` for the minimal config entry,
 then use `@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`,
 `@evjs/ev/server-context`, and `@evjs/ev/transport` for application source.
 CLI code, bundler adapters, and generated framework modules are the only code
-that should use `@evjs/ev/_internal/*`.
+that should use `@evjs/ev/_internal/*`. Plugin authoring uses
+`@evjs/ev/plugin`, including the public framework IR view exposed to
+`contributions(ctx)`.
 
 `@evjs/client` and `@evjs/server` stay public for standalone/manual runtime
 use, but they are lower-level runtime packages rather than the default import
@@ -193,8 +195,11 @@ Before bundling, evjs materializes `.ev` as an agent-readable framework IR.
 `.ev/framework/app-graph.json` records convention discovery,
 `.ev/framework/build-plan.json` records the final bundler-independent plan,
 `.ev/entries/*` contains generated entry facades, `.ev/plugins/*` contains
-plugin generated modules, and `.ev/manifest.json` ties together graph data,
-generated modules, slots, import edges, and final entries. Bundler adapters
+plugin generated artifacts, and `.ev/manifest.json` ties together graph data,
+generated artifacts, framework slots, import edges, and final entries. A
+contribution is a declarative unit in that IR: it can produce generated
+artifacts, link those artifacts together, and attach them to framework slots.
+Bundler adapters
 consume those generated entries; they do not recreate file-convention entry
 logic with adapter-specific loaders.
 

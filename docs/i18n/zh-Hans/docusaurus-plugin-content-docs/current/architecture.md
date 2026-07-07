@@ -69,7 +69,8 @@ runtime 包提供具体能力原语。`@evjs/server` 的 `createApp()`、`create
 导入。`@evjs/ev` 根入口用于最小 config authoring；应用源码使用
 `@evjs/ev/route`、`@evjs/ev/navigation`、`@evjs/ev/query`、
 `@evjs/ev/server-context` 和 `@evjs/ev/transport`。CLI、bundler adapter
-以及框架生成模块才使用 `@evjs/ev/_internal/*`。
+以及框架生成模块才使用 `@evjs/ev/_internal/*`。插件 authoring 使用
+`@evjs/ev/plugin`，包括 `contributions(ctx)` 暴露的公开 framework IR view。
 
 `@evjs/client` 和 `@evjs/server` 仍然作为 public standalone/manual runtime
 包存在，但它们是更底层的 runtime 包，不是 file-convention 应用的默认导入面。
@@ -183,10 +184,11 @@ sequenceDiagram
 Bundling 前，evjs 会 materialize `.ev` 作为 agent-readable framework IR。
 `.ev/framework/app-graph.json` 记录 convention discovery，
 `.ev/framework/build-plan.json` 记录最终 bundler 无关 plan，`.ev/entries/*`
-包含生成的 entry facade，`.ev/plugins/*` 包含插件 generated modules，
-`.ev/manifest.json` 串联 graph data、generated modules、slots、import edges
-和最终 entries。Bundler adapter 消费这些生成 entry；不再用 adapter-specific
-loader 重新拼 file-convention entry 逻辑。
+包含生成的 entry facade，`.ev/plugins/*` 包含插件 generated artifacts，
+`.ev/manifest.json` 串联 graph data、generated artifacts、framework slots、
+import edges 和最终 entries。Contribution 是这个 IR 里的声明式单元：它可以生成
+产物、把这些产物链接起来，并把它们挂到 framework slot 上。Bundler adapter 消费这些
+生成 entry；不再用 adapter-specific loader 重新拼 file-convention entry 逻辑。
 
 构建会在 `dist/build-output.json` 输出 canonical deployment metadata。内部 `BuildOutput`
 仍是内存中的 plugin/build contract，不再完整序列化落盘。client/server manifest 是部署工具

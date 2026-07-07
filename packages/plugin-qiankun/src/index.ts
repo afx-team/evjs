@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { PagesAppEntryMetadata } from "@evjs/ev/_internal/manifest";
 import { CONFIG_DEFAULTS, type ResolvedConfig } from "@evjs/ev/config";
 import type {
   ContributionContext,
@@ -85,13 +84,13 @@ export function evPluginQiankunMaster(
         addQiankunExternalContribution(ctx);
       }
       const wrapper = ctx.emit.module({
-        id: "master-entry-wrapper-module",
+        id: "entry-wrapper",
         scope: { kind: "app" },
         source: (helpers) =>
           createMasterEntryWrapperSource(currentState, helpers),
       });
       ctx.slot("client.entry").add({
-        id: "master-entry-wrapper-slot",
+        id: "entry-wrapper-slot",
         module: wrapper,
         position: "after-main",
         target: { kind: "app" },
@@ -125,7 +124,7 @@ export function evPluginQiankunSlave(
       }
       const originalEntry = emitOriginalEntryModule(ctx, currentState);
       const wrapper = ctx.emit.module({
-        id: "slave-entry-wrapper-module",
+        id: "entry-wrapper",
         scope: { kind: "app" },
         source: ({ importFile, importOf }) =>
           createSlaveEntryWrapperSource(
@@ -137,7 +136,7 @@ export function evPluginQiankunSlave(
           ),
       });
       ctx.slot("client.entry").add({
-        id: "slave-entry-wrapper-slot",
+        id: "entry-wrapper-slot",
         module: wrapper,
         position: "before-main",
         mode: "replace",
@@ -310,12 +309,15 @@ function emitOriginalEntryModule(
   state: EntryWrapperState,
 ): GeneratedModuleRef | undefined {
   if (state.entry.kind === "file") return undefined;
-  const metadata = findPagesAppEntryMetadata(ctx);
-  return ctx.emit.module({
-    id: "slave-original-entry-module",
-    scope: { kind: "app" },
-    source: (helpers) =>
-      createPagesAppOriginalEntrySource(ctx.cwd, helpers, metadata),
+  const entry = ctx.framework.getPagesAppEntry();
+  if (!entry) {
+    throw new Error(
+      "[evjs:plugin-qiankun] Failed to find generated SPA routing entry metadata.",
+    );
+  }
+  return ctx.emit.entryFacade({
+    id: "original-entry",
+    entry,
   });
 }
 
@@ -364,85 +366,6 @@ function createSlaveEntryWrapperSource(
     .join("\n");
 }
 
-function findPagesAppEntryMetadata(
-  ctx: ContributionContext,
-): PagesAppEntryMetadata {
-  const metadata = ctx.framework.plan.entries.find(
-    (entry) => entry.metadata?.type === "pages-app",
-  )?.metadata;
-  if (metadata?.type === "pages-app") return metadata;
-  throw new Error(
-    "[evjs:plugin-qiankun] Failed to find generated SPA routing entry metadata.",
-  );
-}
-
-function createPagesAppOriginalEntrySource(
-  cwd: string,
-  helpers: GeneratedSourceHelpers,
-  metadata: PagesAppEntryMetadata,
-): string {
-  const imports = [
-    `import { createPagesApp } from "@evjs/ev/_internal/client";`,
-    metadata.rootModule
-      ? `import * as rootModule from ${JSON.stringify(toSourceImport(cwd, helpers, metadata.rootModule))};`
-      : "",
-    ...metadata.routes.map(
-      (route, index) =>
-        `import * as routeModule${index} from ${JSON.stringify(toSourceImport(cwd, helpers, route.module))};`,
-    ),
-    ...metadata.routes.flatMap((route, index) => [
-      route.errorModule
-        ? `import * as routeErrorModule${index} from ${JSON.stringify(toSourceImport(cwd, helpers, route.errorModule))};`
-        : "",
-      route.notFoundModule
-        ? `import * as routeNotFoundModule${index} from ${JSON.stringify(toSourceImport(cwd, helpers, route.notFoundModule))};`
-        : "",
-    ]),
-  ].filter(Boolean);
-  const routes = metadata.routes.map((route, index) => {
-    const properties = [
-      route.id ? `id: ${JSON.stringify(route.id)}` : "",
-      `path: ${JSON.stringify(route.path)}`,
-      route.parentId ? `parentId: ${JSON.stringify(route.parentId)}` : "",
-      route.kind ? `kind: ${JSON.stringify(route.kind)}` : "",
-      `module: ${createRouteModuleExpression(route, index)}`,
-    ].filter(Boolean);
-    return `{ ${properties.join(", ")} }`;
-  });
-  return [
-    ...imports,
-    "",
-    "const { app } = createPagesApp({",
-    metadata.rootModule ? "  rootModule," : "",
-    `  routes: [${routes.join(", ")}],`,
-    "});",
-    `app.render(${JSON.stringify(metadata.mount)});`,
-    "export { app };",
-    "export default app;",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-function createRouteModuleExpression(
-  route: PagesAppEntryMetadata["routes"][number],
-  index: number,
-): string {
-  const properties = [];
-  if (route.errorModule) {
-    properties.push(
-      `errorComponent: routeErrorModule${index}.default ?? routeErrorModule${index}.errorComponent`,
-    );
-  }
-  if (route.notFoundModule) {
-    properties.push(
-      `notFoundComponent: routeNotFoundModule${index}.default ?? routeNotFoundModule${index}.notFoundComponent`,
-    );
-  }
-  if (properties.length === 0) return `routeModule${index}`;
-  return `{ ${properties.join(", ")}, ...routeModule${index} }`;
-}
-
 function getFileEntryImport(
   state: EntryWrapperState,
   importFile: GeneratedSourceHelpers["importFile"],
@@ -462,15 +385,6 @@ function toModuleImport(
   if (moduleRef.kind === "package") return moduleRef.importSpecifier;
   if (!moduleRef.absolutePath) return moduleRef.importSpecifier;
   return helpers.importFile(moduleRef.absolutePath);
-}
-
-function toSourceImport(
-  cwd: string,
-  helpers: GeneratedSourceHelpers,
-  specifier: string,
-): string {
-  if (!isProjectPathSpecifier(cwd, specifier)) return specifier;
-  return helpers.importFile(resolveModulePath(cwd, specifier));
 }
 
 function assertSupportedBundler(bundlerName: string): void {
@@ -665,13 +579,6 @@ function isPathSpecifier(specifier: string): boolean {
     specifier.startsWith("/") ||
     path.isAbsolute(specifier)
   );
-}
-
-function isProjectPathSpecifier(cwd: string, specifier: string): boolean {
-  if (isPathSpecifier(specifier)) return true;
-  if (!specifier.includes("/") || specifier.startsWith("@")) return false;
-  if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(specifier)) return false;
-  return existsSync(path.resolve(cwd, specifier));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -26,7 +26,7 @@ ev prepare
 ```
 
 `ev prepare` 会写入 `.ev/`，其中包含发现到的 app graph、最终 build plan、生成的
-entry facade、插件 generated modules、contribution slots 和 import edges。它不会运行
+entry facade、插件 generated artifacts、framework slots 和 import edges。它不会运行
 bundler，也不会写入 `dist`。
 
 ## 输出
