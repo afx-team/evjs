@@ -2,10 +2,10 @@
 
 evjs uses `src/pages` as the client-routing source of truth. Application code
 lives in page files; the framework discovers those files and either builds one
-framework-owned SPA or one router-free MPA page per file. evjs does not write
-temporary runtime route files; SPA mode only emits a type declaration such as
-`src/route-types.d.ts` so TypeScript can infer navigation paths from the
-page tree.
+framework-owned SPA or one router-free MPA page per file. Build-time framework
+code is materialized under `.ev` as generated IR; user source only receives the
+type declaration, such as `src/route-types.d.ts`, that lets TypeScript infer
+navigation paths from the page tree.
 
 For the complete filename, ignored-file, and layout rules, see
 [File Conventions](./file-conventions).
