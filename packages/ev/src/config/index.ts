@@ -698,6 +698,7 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
     enforce: rawEnforce,
     config: rawConfig,
     setup: rawSetup,
+    contributions: rawContributions,
   } = pluginConfig;
 
   if (rawConfig !== undefined) {
@@ -710,6 +711,12 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
     assertFunction<NonNullable<Plugin<TBundlerCfg>["setup"]>>(
       rawSetup,
       `${path}.setup`,
+    );
+  }
+  if (rawContributions !== undefined) {
+    assertFunction<NonNullable<Plugin<TBundlerCfg>["contributions"]>>(
+      rawContributions,
+      `${path}.contributions`,
     );
   }
   const dependencies =
@@ -738,6 +745,9 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
       : {}),
     ...(rawConfig !== undefined ? { config: rawConfig } : {}),
     ...(rawSetup !== undefined ? { setup: rawSetup } : {}),
+    ...(rawContributions !== undefined
+      ? { contributions: rawContributions }
+      : {}),
   };
 }
 

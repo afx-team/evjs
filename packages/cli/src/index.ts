@@ -5,6 +5,8 @@ import {
   type DevOptions,
   build as frameworkBuild,
   dev as frameworkDev,
+  type PrepareFrameworkBuildOptions,
+  prepareFrameworkBuild,
 } from "@evjs/ev/_internal/build";
 import type { Config } from "@evjs/ev/config";
 
@@ -12,6 +14,7 @@ export type {
   BuildOptions,
   BundlerAdapter,
   DevOptions,
+  PrepareFrameworkBuildOptions,
 } from "@evjs/ev/_internal/build";
 export {
   CONFIG_DEFAULTS,
@@ -26,6 +29,8 @@ export type {
   BuildResult,
   BundlerCtx,
   ClientManifest,
+  ContributionContext,
+  EmitApi,
   EvBuildResult,
   EvBundlerCtx,
   EvDocument,
@@ -33,6 +38,10 @@ export type {
   EvPluginConfigContext,
   EvPluginContext,
   EvPluginHooks,
+  FrameworkIRView,
+  FrameworkSlot,
+  FrameworkSlotInput,
+  GeneratedModuleRef,
   Plugin,
   PluginContext,
   PluginHooks,
@@ -76,4 +85,15 @@ export async function build<TBundlerCfg = DefaultBundlerConfig>(
     ...options,
     bundler,
   });
+}
+
+export async function prepare<TBundlerCfg = DefaultBundlerConfig>(
+  userConfig?: Config<TBundlerCfg>,
+  options?: PrepareFrameworkBuildOptions<TBundlerCfg>,
+): Promise<void> {
+  const prepared = await prepareFrameworkBuild<TBundlerCfg>(
+    userConfig,
+    options,
+  );
+  await prepared.dispose();
 }

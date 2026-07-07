@@ -1,24 +1,22 @@
-import { createRequire } from "node:module";
 import path from "node:path";
-import { createBuildPlan } from "@evjs/ev/_internal/build";
+import {
+  createBuildPlan,
+  materializeFrameworkIR,
+} from "@evjs/ev/_internal/build";
 import type { AppGraph } from "@evjs/ev/_internal/manifest";
 import type { ResolvedConfig } from "@evjs/ev/config";
+import type { Plugin } from "@evjs/ev/plugin";
 import { describe, expect, it } from "vitest";
 import {
   createWebpackConfigs,
   type WebpackConfig,
 } from "../src/adapter/create-config.js";
 
-const require = createRequire(import.meta.url);
-const frameworkEntryLoader = require("../src/adapter/framework-entry-loader.cjs");
-const pagesEntryLoader = require("../src/adapter/pages-entry-loader.cjs");
-const serverRoutesEntryLoader = require("../src/adapter/server-routes-entry-loader.cjs");
-
 describe("createWebpackConfigs", () => {
-  it("installs the pages entry loader for framework-managed pages", async () => {
+  it("uses a generated pages app entry for framework-managed pages", async () => {
     const config = createResolvedConfig();
     const graph = createGraph(config);
-    const plan = createBuildPlan(config, graph, { mode: "development" });
+    const plan = await createGeneratedPlan(config, graph, "development");
 
     const configs = await createWebpackConfigs(
       config,
@@ -29,39 +27,7 @@ describe("createWebpackConfigs", () => {
     );
 
     const entry = configs[0]?.entry as Record<string, { import: string }>;
-    expect(entry.main?.import).toContain("pages-entry-anchor.js");
-    const rules = configs[0]?.module?.rules ?? [];
-    const pagesEntryRule = rules.find((rule) =>
-      JSON.stringify(rule).includes("pages-entry-loader.cjs"),
-    ) as { test: RegExp } | undefined;
-    expect(pagesEntryRule?.test.test("/project/src/pages/index.tsx")).toBe(
-      false,
-    );
-    expect(rules).toContainEqual(
-      expect.objectContaining({
-        test: expect.any(RegExp),
-        resourceQuery: /^$/,
-        use: [
-          {
-            loader: expect.stringContaining("pages-entry-loader.cjs"),
-            options: {
-              type: "pages-app",
-              mount: "#app",
-              rootModule: "./src/layout/index.tsx",
-              routes: [
-                {
-                  id: "index",
-                  path: "/",
-                  module: "./src/pages/index.tsx",
-                  errorModule: "./src/pages/error.tsx",
-                  notFoundModule: "./src/pages/not-found.tsx",
-                },
-              ],
-            },
-          },
-        ],
-      }),
-    );
+    expect(entry.main?.import).toBe("./.ev/entries/main.ts");
     expect(configs[0]?.output?.publicPath).toBe("auto");
     expect(configs[0]?.output?.crossOriginLoading).toBe("anonymous");
     expect(configs[0]?.resolve?.alias).toMatchObject({
@@ -79,6 +45,54 @@ describe("createWebpackConfigs", () => {
     });
   });
 
+  it("resolves generated alias contributions directly to generated files", async () => {
+    const plugin: Plugin<WebpackConfig> = {
+      name: "generated-alias",
+      contributions(ctx) {
+        const configModule = ctx.emit.data({
+          id: "config",
+          scope: { kind: "app" },
+          value: { enabled: true },
+        });
+        ctx.slot("resolve.alias").add({
+          id: "config-alias",
+          specifier: "@generated/config",
+          replacement: configModule,
+        });
+      },
+    };
+    const config: ResolvedConfig<WebpackConfig> = {
+      ...createResolvedConfig(),
+      plugins: [plugin],
+    };
+    const graph = createGraph(config);
+    const plan = await createGeneratedPlan(config, graph, "development");
+
+    const configs = await createWebpackConfigs(
+      config,
+      plan,
+      graph,
+      process.cwd(),
+      [],
+    );
+
+    const module = plan.generated?.modules.find((item) => item.id === "config");
+    const clientConfig = configs.find((item) => item.name === "client");
+    const alias = clientConfig?.resolve?.alias as Record<string, string>;
+
+    expect(plan.generated?.slots).toContainEqual(
+      expect.objectContaining({
+        slot: "resolve.alias",
+        specifier: "@generated/config",
+        replacement: module?.file,
+      }),
+    );
+    expect(plan.resolve?.alias?.["@generated/config"]).toBe(module?.file);
+    expect(alias["@generated/config"]).toBe(
+      path.resolve(process.cwd(), module?.file ?? ""),
+    );
+  });
+
   it("sets crossorigin for dynamically loaded browser chunks", async () => {
     const config: ResolvedConfig<WebpackConfig> = {
       ...createResolvedConfig(),
@@ -89,7 +103,7 @@ describe("createWebpackConfigs", () => {
       },
     };
     const graph = createGraph(config);
-    const plan = createBuildPlan(config, graph, { mode: "production" });
+    const plan = await createGeneratedPlan(config, graph, "production");
 
     const configs = await createWebpackConfigs(
       config,
@@ -113,7 +127,78 @@ describe("createWebpackConfigs", () => {
     });
   });
 
-  it("installs the server routes entry loader for framework-managed server routes", async () => {
+  it("filters resolve.external contributions by webpack target runtime", async () => {
+    const config: ResolvedConfig<WebpackConfig> = {
+      ...createResolvedConfig(),
+    };
+    const graph: AppGraph = {
+      ...createGraph(config),
+      pages: {
+        dashboard: {
+          id: "dashboard",
+          path: "/dashboard",
+          component: "./src/pages/dashboard.tsx",
+          html: "./index.html",
+          render: "ssr",
+          mount: "#app",
+        },
+      },
+      routes: [
+        {
+          id: "dashboard",
+          path: "/dashboard",
+          pageId: "dashboard",
+          render: "ssr",
+        },
+      ],
+    };
+    const plan = await createGeneratedPlan(config, graph, "development");
+    plan.resolve = {
+      ...plan.resolve,
+      external: {
+        "client-only-lib": {
+          source: "ClientOnlyLib",
+          runtime: "client",
+        },
+        "server-only-lib": {
+          source: "commonjs server-only-lib",
+          runtime: "server",
+        },
+        "shared-lib": {
+          source: "SharedLib",
+          runtime: "all",
+        },
+      },
+    };
+
+    const configs = await createWebpackConfigs(
+      config,
+      plan,
+      graph,
+      process.cwd(),
+      [],
+    );
+
+    const clientConfig = configs.find((item) => item.name === "client");
+    const serverConfig = configs.find((item) => item.name === "server");
+    const serverExternalsText = JSON.stringify(serverConfig?.externals);
+
+    expect(clientConfig?.externals).toEqual({
+      "client-only-lib": "ClientOnlyLib",
+      "shared-lib": "SharedLib",
+    });
+    expect(serverConfig?.externals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          "server-only-lib": "commonjs server-only-lib",
+          "shared-lib": "SharedLib",
+        }),
+      ]),
+    );
+    expect(serverExternalsText).not.toContain("ClientOnlyLib");
+  });
+
+  it("uses a generated server entry for framework-managed server routes", async () => {
     const base = createResolvedConfig();
     const config: ResolvedConfig<WebpackConfig> = {
       ...base,
@@ -133,7 +218,7 @@ describe("createWebpackConfigs", () => {
       },
     };
     const graph = createGraph(config);
-    const plan = createBuildPlan(config, graph, { mode: "development" });
+    const plan = await createGeneratedPlan(config, graph, "development");
 
     const configs = await createWebpackConfigs(
       config,
@@ -145,29 +230,7 @@ describe("createWebpackConfigs", () => {
 
     const serverConfig = configs.find((item) => item.name === "server");
     const entry = serverConfig?.entry as Record<string, { import: string }>;
-    expect(entry.server?.import).toContain("server-routes-entry-anchor.js");
-    expect(serverConfig?.module?.rules).toContainEqual(
-      expect.objectContaining({
-        test: expect.any(RegExp),
-        resourceQuery: /^$/,
-        use: [
-          {
-            loader: expect.stringContaining("server-routes-entry-loader.cjs"),
-            options: {
-              type: "server-app",
-              routes: [
-                {
-                  id: "src/apis/health.ts:/health:GET",
-                  module: "src/apis/health.ts",
-                  path: "/health",
-                  methods: ["GET"],
-                },
-              ],
-            },
-          },
-        ],
-      }),
-    );
+    expect(entry.server?.import).toBe("./.ev/entries/server.ts");
   });
 
   it("uses component page bootstrap instead of the SPA router loader for MPA page routes", async () => {
@@ -218,7 +281,7 @@ describe("createWebpackConfigs", () => {
       serverFunctions: [],
       serverRoutes: [],
     };
-    const plan = createBuildPlan(config, graph, { mode: "development" });
+    const plan = await createGeneratedPlan(config, graph, "development");
 
     expect(
       plan.entries
@@ -232,140 +295,13 @@ describe("createWebpackConfigs", () => {
       process.cwd(),
       [],
     );
-    const serializedRules = JSON.stringify(configs[0]?.module?.rules);
     const serializedEntries = JSON.stringify(configs[0]?.entry);
 
-    expect(serializedRules).not.toContain("pages-entry-loader.cjs");
-    expect(serializedRules).toContain("framework-entry-loader.cjs");
-    expect(serializedEntries).toContain("framework-entry-anchor.js");
+    expect(serializedEntries).toContain("./.ev/entries/index.ts");
     expect(serializedEntries).not.toContain("createReactPageModule");
     expect(serializedEntries).not.toContain(
       "@evjs/ev/_internal/client/react-page",
     );
-  });
-
-  it("generates thin component page entries in the framework entry loader", () => {
-    const source = frameworkEntryLoader.call({
-      cacheable() {},
-      getOptions() {
-        return {
-          type: "react-component-page",
-          module: "/workspace/src/pages/about.tsx",
-          hydrate: "load",
-          mount: "#app",
-          render: "csr",
-          route: { id: "about", path: "/about" },
-        };
-      },
-    });
-
-    expect(source).toContain("@evjs/ev/_internal/client/react-page");
-    expect(source).toContain("createGeneratedReactPageEntry");
-    expect(source).toContain("import.meta.url");
-    expect(source).not.toContain("createReactPageModule");
-    expect(source).not.toContain("currentScriptHref");
-  });
-
-  it("generates pages app imports without module queries", () => {
-    const source = pagesEntryLoader.call({
-      cacheable() {},
-      getOptions() {
-        return {
-          mount: "#app",
-          rootModule: "./src/layout/index.tsx",
-          routes: [
-            {
-              id: "index",
-              path: "/",
-              module: "./src/pages/index.tsx",
-              errorModule: "./src/pages/error.tsx",
-              notFoundModule: "./src/pages/not-found.tsx",
-            },
-          ],
-        };
-      },
-      resourcePath:
-        "/workspace/node_modules/@evjs/bundler-webpack/esm/adapter/pages-entry-anchor.js",
-      rootContext: "/workspace",
-    });
-
-    expect(source).toContain("@evjs/ev/_internal/client");
-    expect(source).toContain("createPagesApp");
-    expect(source).toContain("src/pages/error.tsx");
-    expect(source).toContain("src/pages/not-found.tsx");
-    expect(source).not.toContain("globalModule:");
-    expect(source).not.toContain("globalNotFoundModule");
-    expect(source).toContain("routeErrorModule0.default");
-    expect(source).toContain("routeNotFoundModule0.default");
-    expect(source).toContain("src/layout/index.tsx");
-    expect(source).toContain("src/pages/index.tsx");
-    expect(source).not.toContain("evjs-page-route");
-  });
-
-  it("generates server routes entries from method exports", () => {
-    const source = serverRoutesEntryLoader.call({
-      cacheable() {},
-      getOptions() {
-        return {
-          routes: [
-            {
-              path: "/health",
-              module: "src/apis/health.ts",
-              methods: ["GET"],
-            },
-            {
-              path: "/secure",
-              module: "src/apis/secure.ts",
-              methods: ["POST"],
-              middlewares: [
-                {
-                  module: "src/apis/middleware.ts",
-                },
-              ],
-            },
-          ],
-          middlewares: [
-            {
-              module: "src/middleware.ts",
-            },
-          ],
-          serverFunctions: [
-            {
-              id: "save",
-              module: "src/api/actions.server.ts",
-              exportName: "saveOrder",
-            },
-            {
-              id: "load",
-              module: "src/api/actions.server.ts",
-              exportName: "loadOrders",
-            },
-          ],
-        };
-      },
-      resourcePath:
-        "/workspace/node_modules/@evjs/bundler-webpack/esm/adapter/server-routes-entry-anchor.js",
-      rootContext: "/workspace",
-    });
-
-    expect(source).toContain('@evjs/ev/_internal/server"');
-    expect(source).toContain("@evjs/ev/_internal/server/react");
-    expect(source).toContain('createRoute("/health", routeDefinition0)');
-    expect(source).toContain('createRoute("/secure", routeDefinition1)');
-    expect(source).toContain("import middleware0 from");
-    expect(source).toContain("src/middleware.ts");
-    expect(source).toContain("import middleware1 from");
-    expect(source).toContain("src/apis/middleware.ts");
-    expect(source).toContain(
-      'import "file:///workspace/src/api/actions.server.ts";',
-    );
-    expect(source.match(/actions\.server\.ts/g)).toHaveLength(1);
-    expect(source).toContain("routeDefinition0.GET = routeModule0.GET");
-    expect(source).not.toContain("routeDefinition0.middlewares");
-    expect(source).toContain("routeDefinition1.middlewares = [middleware1]");
-    expect(source).toContain("routeDefinition1.POST = routeModule1.POST");
-    expect(source).toContain("const middlewares = [middleware0]");
-    expect(source).toContain("createApp({ middlewares, routes");
   });
 
   it("keeps React and ReactDOM external in regular Node server bundles", async () => {
@@ -393,7 +329,7 @@ describe("createWebpackConfigs", () => {
         },
       ],
     };
-    const plan = createBuildPlan(config, graph, { mode: "development" });
+    const plan = await createGeneratedPlan(config, graph, "development");
 
     const configs = await createWebpackConfigs(
       config,
@@ -469,6 +405,31 @@ function createResolvedConfig(): ResolvedConfig<WebpackConfig> {
     transport: {},
     plugins: [],
   };
+}
+
+async function createGeneratedPlan(
+  config: ResolvedConfig<WebpackConfig>,
+  graph: AppGraph,
+  mode: "development" | "production",
+) {
+  return materializeFrameworkIR({
+    cwd: process.cwd(),
+    mode,
+    command: mode === "development" ? "dev" : "build",
+    config,
+    graph,
+    plugins: config.plugins,
+    pluginContext: {
+      cwd: process.cwd(),
+      mode,
+      command: mode === "development" ? "dev" : "build",
+      config,
+      logger: {} as never,
+      addWatchFile() {},
+    },
+    plan: createBuildPlan(config, graph, { mode }),
+    write: false,
+  });
 }
 
 function createGraph(config: ResolvedConfig<WebpackConfig>): AppGraph {

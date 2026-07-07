@@ -112,7 +112,7 @@ shared wrappers as normal components and do not accept
 | Package | Purpose |
 |---------|---------|
 | [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | Framework API, config, plugins, build orchestration, deployment helpers, and file-convention authoring subpaths |
-| [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`, `ev inspect`) with the default bundler |
+| [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`, `ev prepare`, `ev inspect`) with the default bundler |
 | [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
 | [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Standalone/manual browser runtime core for apps that do not use evjs file conventions |
 | [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Standalone/manual server runtime core for hand-written Hono/fetch apps and route primitives |

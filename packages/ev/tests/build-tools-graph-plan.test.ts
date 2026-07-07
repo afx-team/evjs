@@ -157,7 +157,7 @@ describe("createAppGraph and createBuildPlan", () => {
     });
     expect(plan.entries).toContainEqual({
       name: "main",
-      import: "evjs:pages-app",
+      import: "./src/pages/index.tsx",
       environment: "client",
       runtime: "browser",
       kind: "app-client",
@@ -3571,7 +3571,7 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
     expect(plan.entries).toContainEqual({
       name: "server",
-      import: "evjs:server-routes",
+      import: "@evjs/ev/_internal/server/fetch",
       environment: "server",
       runtime: "node",
       kind: "server-runtime",
@@ -3596,7 +3596,7 @@ describe("createAppGraph and createBuildPlan", () => {
         ],
       },
     });
-    expect(plan.server.entry).toBe("evjs:server-routes");
+    expect(plan.server.entry).toBe("@evjs/ev/_internal/server/fetch");
   });
 
   it("does not publish programmatic routes from the application graph", async () => {
@@ -3702,7 +3702,7 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
     expect(plan.entries).toContainEqual({
       name: "server",
-      import: "evjs:server-routes",
+      import: "@evjs/ev/_internal/server/fetch",
       environment: "server",
       runtime: "node",
       kind: "server-runtime",
@@ -3987,7 +3987,7 @@ describe("createAppGraph and createBuildPlan", () => {
       expect.arrayContaining([
         {
           name: "main",
-          import: "evjs:pages-app",
+          import: "./src/main.tsx",
           environment: "client",
           runtime: "browser",
           kind: "app-client",
@@ -4230,7 +4230,7 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
     expect(plan.entries).toContainEqual({
       name: "console",
-      import: "evjs:pages-app",
+      import: "./src/console/main.tsx",
       environment: "client",
       runtime: "browser",
       kind: "app-client",
@@ -4307,7 +4307,7 @@ describe("createAppGraph and createBuildPlan", () => {
     ]);
     expect(plan.entries).toContainEqual({
       name: "console",
-      import: "evjs:pages-app",
+      import: "./src/console/main.tsx",
       environment: "client",
       runtime: "browser",
       kind: "app-client",

@@ -4,7 +4,7 @@ import path from "node:path";
 import type { BundlerAdapter } from "@evjs/ev/_internal/build";
 import { describe, expect, it } from "vitest";
 import type { DefaultBundlerConfig } from "../src/index.js";
-import { build } from "../src/index.js";
+import { build, prepare } from "../src/index.js";
 
 async function createProject() {
   const cwd = await fs.promises.mkdtemp(path.join(os.tmpdir(), "evjs-cli-"));
@@ -17,6 +17,23 @@ async function createProject() {
 }
 
 describe("programmatic API", () => {
+  it("forwards prepare calls through the framework API", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/main.tsx"),
+      "console.log('app');",
+      "utf-8",
+    );
+
+    await prepare({ output: { client: "dist" } }, { cwd });
+
+    await expect(
+      fs.promises.access(path.join(cwd, ".ev/manifest.json")),
+    ).resolves.toBeUndefined();
+    await expect(fs.promises.access(path.join(cwd, "dist"))).rejects.toThrow();
+  });
+
   it("forwards build calls through the framework API", async () => {
     const cwd = await createProject();
     const events: string[] = [];

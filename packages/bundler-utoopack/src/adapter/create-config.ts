@@ -8,30 +8,12 @@
 
 import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-const componentPageLoader = fileURLToPath(
-  new URL("./component-page-loader.cjs", import.meta.url),
-);
-const pagesEntryLoader = fileURLToPath(
-  new URL("./pages-entry-loader.cjs", import.meta.url),
-);
-const pagesEntryAnchor = fileURLToPath(
-  new URL("./pages-entry-anchor.js", import.meta.url),
-);
-const serverRoutesEntryLoader = fileURLToPath(
-  new URL("./server-routes-entry-loader.cjs", import.meta.url),
-);
-const serverRoutesEntryAnchor = fileURLToPath(
-  new URL("./server-routes-entry-anchor.js", import.meta.url),
-);
 
 import { SERVER_FUNCTION_TRANSFORM_RUNTIME } from "@evjs/ev/_internal/build";
 import type {
   BuildPlan,
-  PagesAppEntryMetadata,
-  ReactComponentPageEntryMetadata,
   ServerAppEntryMetadata,
 } from "@evjs/ev/_internal/manifest";
 import type { ResolvedConfig } from "@evjs/ev/config";
@@ -40,9 +22,8 @@ import { getLogger } from "@logtape/logtape";
 import type {
   ConfigComplete,
   DevServerProxy,
+  ExternalConfig,
   ProxyRule,
-  TurbopackLoaderOptions,
-  TurbopackRuleConfigItem,
 } from "@utoo/pack";
 import { getOutputPaths } from "./output-paths.js";
 
@@ -125,7 +106,6 @@ export async function createUtoopackConfig(
 
   const mode = plan.mode;
   const isProduction = mode === "production";
-  const frameworkRules = createFrameworkModuleRules(plan);
   const devProxy: DevServerProxy = [
     ...config.dev.proxy,
     ...createServerRouteProxyRules(config, plan, config.dev.proxy),
@@ -143,7 +123,7 @@ export async function createUtoopackConfig(
     entry: plan.entries
       .filter((entry) => entry.environment === "client")
       .map((entry) => ({
-        import: resolveClientEntry(entry),
+        import: entry.import,
         name: entry.name,
       })),
     output: {
@@ -162,15 +142,7 @@ export async function createUtoopackConfig(
       alias: createResolveAlias(cwd, plan),
       extensions: [".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs"],
     },
-    ...(frameworkRules.length > 0
-      ? {
-          module: {
-            rules: {
-              "**/*": frameworkRules,
-            },
-          },
-        }
-      : {}),
+    externals: createResolveExternals(plan),
     sourceMaps: !isProduction,
     stats: true,
     react: {
@@ -235,21 +207,6 @@ export async function createUtoopackConfig(
   return utoopackConfig;
 }
 
-function createPagesEntryRule(
-  entry: BuildPlan["entries"][number] & { metadata: PagesAppEntryMetadata },
-): TurbopackRuleConfigItem {
-  return {
-    condition: createPagesEntryCondition(),
-    loaders: [
-      {
-        loader: pagesEntryLoader,
-        options: createPagesLoaderOptions(entry.metadata),
-      },
-    ],
-    type: "ecmascript",
-  };
-}
-
 function createResolveAlias(
   cwd: string,
   plan: BuildPlan,
@@ -267,86 +224,29 @@ function resolveAliasTarget(cwd: string, target: string): string {
   return target.startsWith(".") ? path.resolve(cwd, target) : target;
 }
 
-function createServerRoutesEntryRule(
-  entry: BuildPlan["entries"][number] & {
-    metadata: ServerAppEntryMetadata;
-  },
-): TurbopackRuleConfigItem {
-  return {
-    condition: createServerRoutesEntryCondition(),
-    loaders: [
-      {
-        loader: serverRoutesEntryLoader,
-        options: createServerRoutesLoaderOptions(entry.metadata),
-      },
-    ],
-    type: "ecmascript",
-  };
+function createResolveExternals(
+  plan: BuildPlan,
+): Record<string, ExternalConfig> | undefined {
+  assertSupportedResolveExternals(plan);
+  const external = Object.fromEntries(
+    Object.entries(plan.resolve?.external ?? {})
+      .filter(([, value]) => value.runtime !== "server")
+      .map(([specifier, value]) => [specifier, value.source ?? specifier]),
+  );
+  return Object.keys(external).length > 0 ? external : undefined;
 }
 
-function createPagesEntryCondition(): {
-  path: RegExp;
-  query: string;
-} {
-  const normalizedAnchor = normalizeRulePath(pagesEntryAnchor);
-  const frameworkAnchorSuffix =
-    "(?:packages/bundler-utoopack|node_modules/@evjs/bundler-utoopack)/(?:src|esm)/adapter/pages-entry-anchor\\.js";
+function assertSupportedResolveExternals(plan: BuildPlan): void {
+  if (!hasClientEntries(plan)) return;
 
-  return {
-    path: new RegExp(
-      `(?:${escapeRegExp(normalizedAnchor)}|(?:^|/)${frameworkAnchorSuffix})$`,
-    ),
-    query: "",
-  };
-}
+  const serverOnly = Object.entries(plan.resolve?.external ?? {})
+    .filter(([, value]) => value.runtime === "server")
+    .map(([specifier]) => specifier);
+  if (serverOnly.length === 0) return;
 
-function createServerRoutesEntryCondition(): {
-  path: RegExp;
-  query: string;
-} {
-  const normalizedAnchor = normalizeRulePath(serverRoutesEntryAnchor);
-  const frameworkAnchorSuffix =
-    "(?:packages/bundler-utoopack|node_modules/@evjs/bundler-utoopack)/(?:src|esm)/adapter/server-routes-entry-anchor\\.js";
-
-  return {
-    path: new RegExp(
-      `(?:${escapeRegExp(normalizedAnchor)}|(?:^|/)${frameworkAnchorSuffix})$`,
-    ),
-    query: "",
-  };
-}
-
-function createComponentPageRule(
-  metadata: ReactComponentPageEntryMetadata,
-): TurbopackRuleConfigItem {
-  return {
-    condition: {
-      path: new RegExp(
-        `${escapeRegExp(normalizeRulePath(metadata.component))}$`,
-      ),
-      query: "",
-    },
-    loaders: [
-      {
-        loader: componentPageLoader,
-        options: createComponentPageLoaderOptions(metadata),
-      },
-    ],
-    type: "ecmascript",
-  };
-}
-
-function normalizeRulePath(value: string): string {
-  return value.replace(/^\.\//, "").replaceAll("\\", "/");
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function resolveClientEntry(entry: BuildPlan["entries"][number]): string {
-  if (entry.metadata?.type !== "pages-app") return entry.import;
-  return pagesEntryAnchor;
+  throw new Error(
+    `[evjs] The current Utoopack adapter cannot map server-only resolve.external contributions while client entries are present: ${serverOnly.join(", ")}. Use runtime "client" or "all", switch bundlers, or configure the lower-level bundler directly until Utoopack exposes server-scoped externals.`,
+  );
 }
 
 function getServerRoutesEntry(
@@ -363,122 +263,12 @@ function getServerRoutesEntry(
   );
 }
 
-function getPagesAppEntry(
-  plan: BuildPlan,
-):
-  | (BuildPlan["entries"][number] & { metadata: PagesAppEntryMetadata })
-  | undefined {
-  return plan.entries.find(
-    (
-      entry,
-    ): entry is BuildPlan["entries"][number] & {
-      metadata: PagesAppEntryMetadata;
-    } => entry.metadata?.type === "pages-app",
-  );
-}
-
-function getComponentPageMetadata(
-  plan: BuildPlan,
-): ReactComponentPageEntryMetadata[] {
-  return plan.entries
-    .map((entry) => entry.metadata)
-    .filter(
-      (metadata): metadata is ReactComponentPageEntryMetadata =>
-        metadata?.type === "react-component-page",
-    );
-}
-
-function createFrameworkModuleRules(
-  plan: BuildPlan,
-): TurbopackRuleConfigItem[] {
-  const pagesApp = getPagesAppEntry(plan);
-  const serverRoutes = getServerRoutesEntry(plan);
-  return [
-    ...(pagesApp ? [createPagesEntryRule(pagesApp)] : []),
-    ...(serverRoutes ? [createServerRoutesEntryRule(serverRoutes)] : []),
-    ...getComponentPageMetadata(plan).map(createComponentPageRule),
-  ];
-}
-
-function createPagesLoaderOptions(
-  metadata: PagesAppEntryMetadata,
-): TurbopackLoaderOptions {
-  return {
-    type: "pages-app",
-    mount: metadata.mount,
-    routes: metadata.routes.map((route) => ({
-      id: route.id,
-      path: route.path,
-      module: route.module,
-      ...(route.parentId ? { parentId: route.parentId } : {}),
-      ...(route.kind ? { kind: route.kind } : {}),
-      ...(route.errorModule ? { errorModule: route.errorModule } : {}),
-      ...(route.notFoundModule ? { notFoundModule: route.notFoundModule } : {}),
-    })),
-    ...(metadata.rootModule ? { rootModule: metadata.rootModule } : {}),
-  };
-}
-
-function createServerRoutesLoaderOptions(
-  metadata: ServerAppEntryMetadata,
-): TurbopackLoaderOptions {
-  const middlewares = metadata.middlewares ?? [];
-  const serverFunctions = metadata.serverFunctions ?? [];
-  return {
-    type: "server-app",
-    ...(middlewares.length > 0
-      ? {
-          middlewares: middlewares.map((middleware) => ({
-            id: middleware.id,
-            module: middleware.module,
-            scope: middleware.scope,
-          })),
-        }
-      : {}),
-    ...(serverFunctions.length > 0
-      ? {
-          serverFunctions: serverFunctions.map((serverFunction) => ({
-            id: serverFunction.id,
-            module: serverFunction.module,
-            exportName: serverFunction.exportName,
-          })),
-        }
-      : {}),
-    routes: metadata.routes.map((route) => {
-      const routeMiddlewares = route.middlewares ?? [];
-      return {
-        id: route.id,
-        path: route.path,
-        module: route.module,
-        methods: route.methods,
-        ...(routeMiddlewares.length > 0
-          ? {
-              middlewares: routeMiddlewares.map((middleware) => ({
-                id: middleware.id,
-                module: middleware.module,
-                scope: middleware.scope,
-              })),
-            }
-          : {}),
-      };
-    }),
-  };
-}
-
-function createComponentPageLoaderOptions(
-  metadata: ReactComponentPageEntryMetadata,
-): TurbopackLoaderOptions {
-  return {
-    type: "react-component-page",
-    mount: metadata.mount,
-    hydrate: metadata.hydrate,
-    render: metadata.render,
-    ...(metadata.route ? { route: metadata.route } : {}),
-  };
-}
-
 function hasAppClientEntry(plan: BuildPlan): boolean {
   return plan.entries.some((entry) => entry.kind === "app-client");
+}
+
+function hasClientEntries(plan: BuildPlan): boolean {
+  return plan.entries.some((entry) => entry.environment === "client");
 }
 
 function validateUtoopackPlanSupport(plan: BuildPlan): void {
@@ -524,9 +314,6 @@ function formatBuildEntryOwner(
 }
 
 function resolveServerEntry(plan: BuildPlan): string | undefined {
-  const serverRoutesEntry = getServerRoutesEntry(plan);
-  if (serverRoutesEntry) return serverRoutesEntryAnchor;
-
   const entry = plan.server.entry;
   if (!entry) return undefined;
   if (entry.startsWith(".") || path.isAbsolute(entry)) return entry;
@@ -611,4 +398,8 @@ function toUniqueDevProxyContexts(routePaths: string[]): string[] {
 function normalizeRoutePath(routePath: string): string {
   if (!routePath.startsWith("/")) return `/${routePath}`;
   return routePath.replace(/\/+$/, "") || "/";
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

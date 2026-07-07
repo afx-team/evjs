@@ -24,7 +24,8 @@ No configuration file is needed. `ev dev` and `ev build` delegate to `@evjs/ev` 
 |---------|-------------|
 | `ev dev` | Start dev server (client HMR + API watch) |
 | `ev build` | Production build (client + server) |
-| `ev inspect` | Explain framework discovery without running a bundler or writing `dist` |
+| `ev prepare` | Generate `.ev` framework IR without bundling or writing `dist` |
+| `ev inspect` | Explain framework discovery without running a bundler or writing generated output |
 
 > **Scaffolding:** Use `npx @evjs/create-app` to scaffold a new project.
 
@@ -43,11 +44,19 @@ Runs the production build through `@evjs/ev` with `NODE_ENV=production`:
 - `dist/server/manifest.json` — lightweight server entry and route metadata.
 - `dist/build-output.json` — canonical deployment metadata for tooling and adapters.
 
+### `ev prepare`
+
+Runs config resolution, file-convention discovery, generated contributions, and
+entry facade generation without invoking the bundler. It writes `.ev/` so tools
+and agents can inspect `.ev/manifest.json`, `.ev/framework/app-graph.json`,
+`.ev/framework/build-plan.json`, generated entries, and plugin generated
+modules.
+
 ### `ev inspect`
 
-Runs the framework preflight path without bundling. Use it to inspect page
-routes, ignored/rejected route files, server functions, server routes, render
-metadata, runtime paths, planned entries, and diagnostics. Add
+Runs the framework preflight path without bundling and without writing `dist` or
+`.ev`. Use it to inspect page routes, ignored/rejected route files, server
+functions, server routes, render metadata, runtime paths, planned entries, and diagnostics. Add
 `--json` for machine-readable output.
 
 ## Configuration

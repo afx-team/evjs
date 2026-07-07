@@ -172,6 +172,7 @@ export interface BuildPlan {
     serverDir: string;
   };
   resolve?: ResolvePlan;
+  generated?: GeneratedFrameworkPlan;
   entries: BuildEntry[];
   html: HtmlPlan[];
   server: ServerBuildPlan;
@@ -180,6 +181,12 @@ export interface BuildPlan {
 
 export interface ResolvePlan {
   alias?: Record<string, string>;
+  external?: Record<string, ResolveExternalPlan>;
+}
+
+export interface ResolveExternalPlan {
+  source?: string;
+  runtime?: "client" | "server" | "all";
 }
 
 export interface BuildEntry {
@@ -945,6 +952,146 @@ export function assertFrameworkManifestShape(
       requireRscRendererReferences,
     );
   }
+}
+
+export type GeneratedScope =
+  | { kind: "app" }
+  | { kind: "page"; pageId: string }
+  | { kind: "server" };
+
+export type FrameworkSlotName =
+  | "client.entry"
+  | "client.runtime.plugin"
+  | "server.request.middleware"
+  | "html.tag"
+  | "resolve.alias"
+  | "resolve.external";
+
+export type EntryContributionPosition =
+  | "polyfill"
+  | "before-main-imports"
+  | "after-main-imports"
+  | "before-main"
+  | "after-main";
+
+export type ContributionRuntime = "client" | "server" | "all";
+
+export type ContributionTarget =
+  | { kind: "app"; appId?: string }
+  | { kind: "page"; pageId: string };
+
+export interface GeneratedFrameworkPlan {
+  version: 1;
+  rootDir: string;
+  entriesDir: string;
+  frameworkDir: string;
+  pluginsDir: string;
+  frameworkFiles: GeneratedFrameworkFilePlan[];
+  modules: GeneratedModulePlan[];
+  slots: FrameworkSlotPlanItem[];
+  importEdges: GeneratedImportEdgePlan[];
+  entries: GeneratedEntryPlan[];
+}
+
+export interface GeneratedFrameworkFilePlan {
+  id: "app-graph" | "build-plan";
+  file: string;
+}
+
+export interface GeneratedModulePlan {
+  key: string;
+  id: string;
+  pluginName: string;
+  scope: GeneratedScope;
+  file: string;
+  specifier: string;
+  extension: string;
+}
+
+export interface GeneratedEntryPlan {
+  name: string;
+  file: string;
+  originalImport: string;
+  kind: BuildEntry["kind"];
+  environment: BuildEnvironment;
+}
+
+export interface GeneratedImportEdgePlan {
+  from: string;
+  to: string;
+  kind:
+    | "module-import"
+    | "slot-module"
+    | "resolve-alias"
+    | "plugin-import-helper";
+  specifier: string;
+}
+
+export type FrameworkSlotPlanItem =
+  | ClientEntrySlotPlanItem
+  | ClientRuntimePluginSlotPlanItem
+  | ServerRequestMiddlewareSlotPlanItem
+  | HtmlTagSlotPlanItem
+  | ResolveAliasSlotPlanItem
+  | ResolveExternalSlotPlanItem;
+
+interface FrameworkSlotPlanItemBase {
+  key: string;
+  id: string;
+  pluginName: string;
+}
+
+export interface ClientEntrySlotPlanItem extends FrameworkSlotPlanItemBase {
+  slot: "client.entry";
+  module: string;
+  position: EntryContributionPosition;
+  runtime: ContributionRuntime;
+  mode: "import" | "replace";
+  target?: ContributionTarget;
+}
+
+export interface ClientRuntimePluginSlotPlanItem
+  extends FrameworkSlotPlanItemBase {
+  slot: "client.runtime.plugin";
+  module: string;
+  exportKeys?: string[];
+  target?: ContributionTarget;
+}
+
+export interface ServerRequestMiddlewareSlotPlanItem
+  extends FrameworkSlotPlanItemBase {
+  slot: "server.request.middleware";
+  module: string;
+}
+
+export type HtmlTagPlacement =
+  | "head-prepend"
+  | "head-append"
+  | "body-prepend"
+  | "body-append";
+
+export type HtmlTagName = "meta" | "link" | "script" | "style";
+
+export interface HtmlTagSlotPlanItem extends FrameworkSlotPlanItemBase {
+  slot: "html.tag";
+  tag: HtmlTagName;
+  placement: HtmlTagPlacement;
+  attrs?: Record<string, string | boolean>;
+  children?: string;
+  target?: ContributionTarget;
+}
+
+export interface ResolveAliasSlotPlanItem extends FrameworkSlotPlanItemBase {
+  slot: "resolve.alias";
+  specifier: string;
+  replacement: string;
+}
+
+export interface ResolveExternalSlotPlanItem extends FrameworkSlotPlanItemBase {
+  slot: "resolve.external";
+  specifier: string;
+  source?: string;
+  runtime: ContributionRuntime;
 }
 
 function assertPublicDocumentOutputs(value: unknown, source: string): void {

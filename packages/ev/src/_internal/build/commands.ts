@@ -8,6 +8,7 @@ import type {
   BuildOutput,
   BuildPlan,
   BuildPlanUpdate,
+  GeneratedFrameworkPlan,
 } from "@evjs/shared/manifest";
 import {
   assertFrameworkManifestShape,
@@ -48,6 +49,7 @@ import {
 import { validateHtmlTemplate } from "./html.js";
 import { buildHtml } from "./html-transform.js";
 import {
+  applyHtmlTagContributions,
   applyRouteScopedMiddlewares,
   type CreateBuildPlanOptions,
   createAppGraph,
@@ -58,6 +60,7 @@ import {
   discoverServerRoutes,
   generateHtml,
   type HtmlAsset,
+  materializeFrameworkIR,
 } from "./index.js";
 import {
   PAGE_ROUTE_CONVENTION_DOCS_URL,
@@ -69,7 +72,6 @@ import {
   getPageRouteTypesPath,
   writePageRouteTypesIfChanged,
 } from "./page-route-types.js";
-import { PAGES_APP_ENTRY_IMPORT } from "./pages-entry.js";
 import { toProjectPath } from "./utils.js";
 
 const logger = getLogger(["evjs", "ev"]);
@@ -161,7 +163,8 @@ export interface InspectDiagnostic {
     | "server-routes"
     | "server-conventions"
     | "graph"
-    | "plan";
+    | "plan"
+    | "contributions";
   message: string;
   file?: string;
   line?: number;
@@ -253,6 +256,7 @@ export interface InspectFrameworkBuildResult {
   buildPlan?: {
     entries: InspectBuildEntry[];
     html: InspectHtmlDocument[];
+    generated?: GeneratedFrameworkPlan;
   };
   diagnostics: InspectDiagnostic[];
   fileDependencies: string[];
@@ -406,16 +410,11 @@ async function withPageRoutingDefaults<TBundlerCfg>(
     await syncPageRouteTypes(cwd, base.dir, base.mode, discovery.routes);
   }
 
-  const entry =
-    base.mode === "spa" ? createPagesEntryImport(discovery.routes) : undefined;
-
   return {
     ...config,
-    ...(entry ? { entry } : {}),
     html: base.html,
     routing: {
       ...base,
-      ...(entry ? { entry } : {}),
       routes: discovery.routes,
       ...(base.mode === "spa" && discovery.rootModule
         ? { rootModule: discovery.rootModule }
@@ -556,15 +555,6 @@ function readServerRoutingConfig<TBundlerCfg>(
 type ServerRoutingConfigValue<TBundlerCfg> =
   | Exclude<Config<TBundlerCfg>["server"], undefined>["routing"]
   | undefined;
-
-function createPagesEntryImport(
-  routes: NonNullable<ResolvedConfig["routing"]>["routes"],
-): string {
-  if (!routes[0]) {
-    throw new Error("[evjs] Page routes need at least one page module.");
-  }
-  return PAGES_APP_ENTRY_IMPORT;
-}
 
 async function syncPageRouteTypes(
   cwd: string,
@@ -1407,6 +1397,7 @@ async function emitFrameworkHtml<TBundlerCfg>(
     if (htmlInfo.assets.js.length > 0) {
       embedClientRuntime(doc, clientRuntime);
     }
+    applyHtmlTagContributions(doc, htmlInfo, plan);
     if (
       plan.mode === "production" &&
       shouldPrerenderStaticPage(output, htmlInfo)
@@ -1935,9 +1926,18 @@ async function prepareInternalFrameworkBuild<
     validateHtmlTemplates(cwd, config);
     const analysis = await createAppGraph(config, cwd);
     reportGraphDiagnostics(analysis);
-    const plan = createBuildPlan(config, analysis.graph, {
+    const plan = await materializeFrameworkIR({
+      cwd,
       mode,
-      ...options.plan,
+      command,
+      config,
+      graph: analysis.graph,
+      plugins: config.plugins,
+      pluginContext,
+      plan: createBuildPlan(config, analysis.graph, {
+        mode,
+        ...options.plan,
+      }),
     });
 
     return {
@@ -2131,11 +2131,21 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
 
     let plan: BuildPlan | undefined;
     try {
-      plan = createBuildPlan(config, analysis.graph, { mode });
+      plan = await materializeFrameworkIR({
+        cwd,
+        mode,
+        command,
+        config,
+        graph: analysis.graph,
+        plugins: config.plugins,
+        pluginContext,
+        plan: createBuildPlan(config, analysis.graph, { mode }),
+        write: false,
+      });
     } catch (err) {
       diagnostics.push({
         level: "error",
-        source: "plan",
+        source: "contributions",
         message: formatInspectError(err),
       });
     }
@@ -2190,6 +2200,7 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
               fileName: document.fileName,
               owner: document.owner,
             })),
+            ...(plan.generated ? { generated: plan.generated } : {}),
           }
         : undefined,
       diagnostics,
@@ -2388,9 +2399,18 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
   validateHtmlTemplates(cwd, activeConfig);
   let activeAnalysis = await createAppGraph(activeConfig, cwd);
   reportGraphDiagnostics(activeAnalysis);
-  let activePlan = createBuildPlan(activeConfig, activeAnalysis.graph, {
+  let activePlan = await materializeFrameworkIR({
+    cwd,
     mode: "development",
-    distDir: DEV_DIST_DIR,
+    command: "dev",
+    config: activeConfig,
+    graph: activeAnalysis.graph,
+    plugins: activeConfig.plugins,
+    pluginContext: pluginCtx,
+    plan: createBuildPlan(activeConfig, activeAnalysis.graph, {
+      mode: "development",
+      distDir: DEV_DIST_DIR,
+    }),
   });
   let apiProcess: ApiProcess | null = null;
   let restartQueue: Promise<void> = Promise.resolve();
@@ -2611,9 +2631,21 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
     try {
       const nextAnalysis = await createAppGraph(nextConfig, cwd);
       reportGraphDiagnostics(nextAnalysis);
-      const nextPlan = createBuildPlan(nextConfig, nextAnalysis.graph, {
+      const nextPlan = await materializeFrameworkIR({
+        cwd,
         mode: "development",
-        distDir: DEV_DIST_DIR,
+        command: "dev",
+        config: nextConfig,
+        graph: nextAnalysis.graph,
+        plugins: nextConfig.plugins,
+        pluginContext: {
+          ...pluginCtx,
+          config: nextConfig,
+        },
+        plan: createBuildPlan(nextConfig, nextAnalysis.graph, {
+          mode: "development",
+          distDir: DEV_DIST_DIR,
+        }),
       });
       const update = diffBuildPlan(activePlan, nextPlan, reason);
       if (isEmptyPlanUpdate(update)) {

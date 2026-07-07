@@ -9,7 +9,8 @@ ev build
 `ev build` reads `ev.config.ts`, discovers configured page and server
 conventions, runs the active bundler, and writes production artifacts.
 
-Use `ev inspect` when you want a quick preflight without writing `dist`:
+Use `ev inspect` when you want a quick preflight without writing `dist` or
+`.ev`:
 
 ```bash
 ev inspect
@@ -19,6 +20,16 @@ ev inspect --json
 `ev inspect` reports the resolved routing mode, discovered page routes, server
 functions, server routes, render metadata, generated route type location, and
 diagnostics. Errors make the command exit non-zero.
+
+Use `ev prepare` when you want the generated framework IR but not a full build:
+
+```bash
+ev prepare
+```
+
+`ev prepare` writes `.ev/` with the discovered app graph, final build plan,
+generated entry facades, plugin generated modules, contribution slots, and
+import edges. It does not run the bundler and does not write `dist`.
 
 ## Output
 
@@ -179,7 +190,7 @@ When a build fails, check the inputs users control first:
 
 - `ev build` is the production build command.
 - `ev inspect` is the preflight command when you need diagnostics without
-  writing output.
+  writing generated output.
 - Browser files and server files are split by default.
 - Use `output.client` / `output.server` to match a deployment platform's folder
   layout.

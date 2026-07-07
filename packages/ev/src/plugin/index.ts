@@ -1,8 +1,17 @@
 import type {
+  AppGraph,
   AssetGroup,
   BuildEnvironment,
   BuildOutput,
+  BuildPlan,
+  ContributionRuntime,
+  ContributionTarget,
   DeploymentMetadata,
+  EntryContributionPosition,
+  FrameworkSlotName,
+  GeneratedScope,
+  HtmlTagName,
+  HtmlTagPlacement,
   PublicManifestOutput,
   PublicPageOutput,
   PublicRouteOutput,
@@ -20,6 +29,16 @@ import type {
   DefaultBundlerConfig,
   ResolvedConfig,
 } from "../config/index.js";
+
+export type {
+  ContributionRuntime,
+  ContributionTarget,
+  EntryContributionPosition,
+  FrameworkSlotName,
+  GeneratedScope,
+  HtmlTagName,
+  HtmlTagPlacement,
+} from "@evjs/shared/manifest";
 
 /**
  * Minimal DOM element / document interface for plugin HTML manipulation.
@@ -185,6 +204,8 @@ type PluginSetupResult<TBundlerCfg> =
   | Promise<PluginHooks<TBundlerCfg> | undefined>
   | Promise<void>;
 
+type ContributionsHookResult = void | Promise<void>;
+
 /**
  * An evjs plugin.
  */
@@ -227,6 +248,15 @@ export interface EvPlugin<TBundlerCfg = DefaultBundlerConfig> {
   setup?: (
     ctx: EvPluginContext<TBundlerCfg>,
   ) => EvPluginSetupResult<TBundlerCfg>;
+
+  /**
+   * Declare generated framework contributions for the `.ev` IR.
+   *
+   * The alias shape receives the same contribution context as Plugin.
+   */
+  contributions?: (
+    ctx: ContributionContext<TBundlerCfg>,
+  ) => ContributionsHookResult;
 }
 
 /** An evjs plugin. The `EvPlugin` alias shape is accepted. */
@@ -257,6 +287,17 @@ export interface Plugin<TBundlerCfg = DefaultBundlerConfig>
    * hooks share state through closure.
    */
   setup?: (ctx: PluginContext<TBundlerCfg>) => PluginSetupResult<TBundlerCfg>;
+
+  /**
+   * Declare generated framework contributions for the `.ev` IR.
+   *
+   * This hook is separate from setup() lifecycle hooks. It declares generated
+   * modules, structured framework slots, and resolution changes before bundler
+   * configuration is created.
+   */
+  contributions?: (
+    ctx: ContributionContext<TBundlerCfg>,
+  ) => ContributionsHookResult;
 }
 
 /** Base context passed to plugin setup(). */
@@ -280,6 +321,113 @@ export interface PluginContext<TBundlerCfg = DefaultBundlerConfig>
   logger: Logger;
   /** Adds an extra framework-level watch file in dev mode. */
   addWatchFile(file: string): void;
+}
+
+export interface FrameworkIRView {
+  readonly graph: AppGraph;
+  readonly plan: BuildPlan;
+}
+
+export interface ContributionContext<TBundlerCfg = DefaultBundlerConfig>
+  extends PluginContext<TBundlerCfg> {
+  readonly framework: FrameworkIRView;
+  readonly emit: EmitApi;
+  slot<K extends FrameworkSlotName>(name: K): FrameworkSlot<K>;
+}
+
+export interface EmitApi {
+  module(input: {
+    id: string;
+    scope: GeneratedScope;
+    source:
+      | string
+      | ((helpers: {
+          importOf(ref: GeneratedModuleRef): string;
+          importFile(file: string): string;
+        }) => string);
+    extension?: ".ts" | ".tsx" | ".js" | ".jsx" | ".css" | ".less" | ".json";
+  }): GeneratedModuleRef;
+
+  data(input: {
+    id: string;
+    scope: GeneratedScope;
+    value: unknown;
+  }): GeneratedModuleRef;
+
+  importOf(ref: GeneratedModuleRef): string;
+}
+
+export interface GeneratedModuleRef {
+  readonly __evGeneratedModuleRef: unique symbol;
+}
+
+export interface FrameworkSlot<K extends FrameworkSlotName> {
+  add(input: FrameworkSlotInput<K>): void;
+}
+
+export type FrameworkSlotInput<K extends FrameworkSlotName> =
+  K extends "client.entry"
+    ? ClientEntryContribution
+    : K extends "client.runtime.plugin"
+      ? ClientRuntimePluginContribution
+      : K extends "server.request.middleware"
+        ? ServerRequestMiddlewareContribution
+        : K extends "html.tag"
+          ? HtmlTagContribution
+          : K extends "resolve.alias"
+            ? ResolveAliasContribution
+            : K extends "resolve.external"
+              ? ResolveExternalContribution
+              : never;
+
+export interface ClientEntryContribution {
+  id: string;
+  module: GeneratedModuleRef | string;
+  position: EntryContributionPosition;
+  runtime?: ContributionRuntime;
+  target?: ContributionTarget;
+  /**
+   * Replaces the generated entry facade with this module.
+   *
+   * Default "import" mode preserves the framework main import and imports this
+   * contribution at the requested position. "replace" is reserved for plugins
+   * such as qiankun slave mode that must own the entry exports.
+   */
+  mode?: "import" | "replace";
+}
+
+export interface ClientRuntimePluginContribution {
+  id: string;
+  module: GeneratedModuleRef | string;
+  exportKeys?: string[];
+  target?: ContributionTarget;
+}
+
+export interface ServerRequestMiddlewareContribution {
+  id: string;
+  module: GeneratedModuleRef | string;
+}
+
+export interface HtmlTagContribution {
+  id: string;
+  tag: HtmlTagName;
+  placement: HtmlTagPlacement;
+  attrs?: Record<string, string | boolean>;
+  children?: string;
+  target?: ContributionTarget;
+}
+
+export interface ResolveAliasContribution {
+  id: string;
+  specifier: string;
+  replacement: GeneratedModuleRef | string;
+}
+
+export interface ResolveExternalContribution {
+  id: string;
+  specifier: string;
+  source?: string;
+  runtime?: ContributionRuntime;
 }
 
 export interface BuildStartContext<TBundlerCfg = DefaultBundlerConfig>

@@ -10,6 +10,7 @@ middleware 分成 `src/middleware.ts` 中的 framework request middleware，以�
 src/pages + src/apis + src/middleware.ts + ev.config.ts
   -> AppGraph
   -> BuildPlan
+  -> .ev generated framework IR
   -> bundler build
   -> BuildOutput
   -> runtime / shell / deployment adapters
@@ -165,6 +166,8 @@ sequenceDiagram
   Tools-->>EV: AppGraph + diagnostics + fileDependencies
   EV->>Tools: createBuildPlan(config, graph)
   Tools-->>EV: BuildPlan
+  EV->>Plugins: contributions(ctx)
+  EV->>EV: materialize .ev framework IR
   EV->>Bundler: build(plan)
   Bundler-->>EV: bundler stats/assets
   EV->>Manifest: linkBuildOutput(graph, plan, bundlerFacts)
@@ -176,6 +179,14 @@ sequenceDiagram
   end
   EV->>Plugins: buildEnd({ output, frameworkRuntime, isRebuild })
 ```
+
+Bundling 前，evjs 会 materialize `.ev` 作为 agent-readable framework IR。
+`.ev/framework/app-graph.json` 记录 convention discovery，
+`.ev/framework/build-plan.json` 记录最终 bundler 无关 plan，`.ev/entries/*`
+包含生成的 entry facade，`.ev/plugins/*` 包含插件 generated modules，
+`.ev/manifest.json` 串联 graph data、generated modules、slots、import edges
+和最终 entries。Bundler adapter 消费这些生成 entry；不再用 adapter-specific
+loader 重新拼 file-convention entry 逻辑。
 
 构建会在 `dist/build-output.json` 输出 canonical deployment metadata。内部 `BuildOutput`
 仍是内存中的 plugin/build contract，不再完整序列化落盘。client/server manifest 是部署工具

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { inspectFrameworkBuild } from "@evjs/ev/_internal/build";
+import type { Plugin } from "@evjs/ev/plugin";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   formatInspectJson,
@@ -103,7 +104,56 @@ describe("inspect", () => {
       rsc: "__evjs/rsc",
     });
     await expectPathMissing(path.join(cwd, "dist"));
+    await expectPathMissing(path.join(cwd, ".ev"));
     await expectPathMissing(path.join(cwd, "src/route-types.d.ts"));
+  });
+
+  it("reports contribution IR without materializing .ev files", async () => {
+    const cwd = await createFixture({
+      "index.html": '<div id="app"></div>',
+      "src/main.tsx": "console.log('app');",
+    });
+    const plugin: Plugin<Record<string, never>> = {
+      name: "inspect-contribution",
+      contributions(ctx) {
+        const module = ctx.emit.module({
+          id: "entry",
+          scope: { kind: "app" },
+          source: "window.__fromInspect = true;",
+        });
+        ctx.slot("client.entry").add({
+          id: "entry-slot",
+          module,
+          position: "after-main",
+        });
+      },
+    };
+
+    const result = await inspectFrameworkBuild(
+      {
+        output: { client: "dist" },
+        plugins: [plugin],
+      },
+      { cwd },
+    );
+
+    expect(result.buildPlan?.generated?.modules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "entry",
+          pluginName: "inspect-contribution",
+        }),
+      ]),
+    );
+    expect(result.buildPlan?.generated?.slots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slot: "client.entry",
+          id: "entry-slot",
+        }),
+      ]),
+    );
+    await expectPathMissing(path.join(cwd, ".ev"));
   });
 
   it("formats text and JSON output", async () => {

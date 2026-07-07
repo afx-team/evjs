@@ -56,6 +56,18 @@ async function createProject() {
   return cwd;
 }
 
+function generatedImport(cwd: string, fromFile: string, targetFile: string) {
+  let relative = path
+    .relative(
+      path.dirname(path.resolve(cwd, fromFile)),
+      path.resolve(cwd, targetFile),
+    )
+    .split(path.sep)
+    .join(path.posix.sep);
+  if (!relative.startsWith(".")) relative = `./${relative}`;
+  return relative.replace(/\.(?:[cm]?[jt]sx?)$/, "");
+}
+
 function readEmbeddedClientRuntime(html: string): EmbeddedClientRuntime {
   const match = html.match(
     /<script\b(?=[^>]*\bid="__EVJS_CLIENT_RUNTIME__")(?=[^>]*\btype="application\/json")[^>]*>([\s\S]*?)<\/script>/,
@@ -352,6 +364,482 @@ describe("prepareFrameworkBuild", () => {
       "dispose",
     ]);
   });
+
+  it("generates .ev framework IR and plugin contributions", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/main.tsx"),
+      "console.log('app');",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "generated-fixture",
+      contributions(ctx) {
+        const runtime = ctx.emit.module({
+          id: "runtime",
+          scope: { kind: "app" },
+          source: "export const value = 1;",
+        });
+        const entryCode = ctx.emit.module({
+          id: "entry-code",
+          scope: { kind: "app" },
+          source: ({ importOf }) =>
+            [
+              `import { value } from ${JSON.stringify(importOf(runtime))};`,
+              "window.__evGeneratedValue = value;",
+            ].join("\n"),
+        });
+        ctx.slot("client.entry").add({
+          id: "entry-import",
+          module: runtime,
+          position: "before-main",
+        });
+        ctx.slot("client.entry").add({
+          id: "entry-code-slot",
+          module: entryCode,
+          position: "after-main",
+        });
+        ctx.slot("resolve.external").add({
+          id: "external",
+          specifier: "qiankun",
+          source: "qiankun",
+          runtime: "client",
+        });
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        output: { client: "dist" },
+        plugins: [plugin],
+      },
+      { cwd },
+    );
+
+    const manifestPath = path.join(cwd, ".ev/manifest.json");
+    const manifest = JSON.parse(
+      await fs.promises.readFile(manifestPath, "utf-8"),
+    ) as BuildPlan & { graph: { rootDir: string } };
+    const runtimeModule = manifest.generated?.modules.find(
+      (module) => module.id === "runtime",
+    );
+    const entryCodeModule = manifest.generated?.modules.find(
+      (module) => module.id === "entry-code",
+    );
+    const entry = manifest.generated?.entries.find(
+      (item) => item.name === "main",
+    );
+    const frameworkGraph = JSON.parse(
+      await fs.promises.readFile(
+        path.join(cwd, ".ev/framework/app-graph.json"),
+        "utf-8",
+      ),
+    ) as { graph: { rootDir: string } };
+    const frameworkPlan = JSON.parse(
+      await fs.promises.readFile(
+        path.join(cwd, ".ev/framework/build-plan.json"),
+        "utf-8",
+      ),
+    ) as { plan: BuildPlan };
+
+    expect(runtimeModule?.specifier).toBe(
+      "evjs:generated/generated-fixture/runtime",
+    );
+    expect(manifest.graph).toMatchObject({ rootDir: cwd });
+    expect(frameworkGraph.graph.rootDir).toBe(cwd);
+    expect(frameworkPlan.plan.entries[0]?.import).toBe("./.ev/entries/main.ts");
+    expect(manifest.generated?.frameworkFiles).toEqual([
+      {
+        id: "app-graph",
+        file: "./.ev/framework/app-graph.json",
+      },
+      {
+        id: "build-plan",
+        file: "./.ev/framework/build-plan.json",
+      },
+    ]);
+    expect(manifest.generated?.slots).toContainEqual(
+      expect.objectContaining({
+        slot: "client.entry",
+        id: "entry-import",
+        module: runtimeModule?.file,
+        position: "before-main",
+      }),
+    );
+    expect(manifest.generated?.importEdges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "generated-fixture:entry-code",
+          to: "generated-fixture:runtime",
+          kind: "module-import",
+          specifier: generatedImport(
+            cwd,
+            entryCodeModule?.file ?? "",
+            runtimeModule?.file ?? "",
+          ),
+        }),
+        expect.objectContaining({
+          from: "generated-fixture:entry-code-slot",
+          to: "generated-fixture:entry-code",
+          kind: "slot-module",
+          specifier: entryCodeModule?.file,
+        }),
+      ]),
+    );
+    expect(manifest.resolve?.external).toEqual({
+      qiankun: { source: "qiankun", runtime: "client" },
+    });
+    expect(entry?.file).toBe("./.ev/entries/main.ts");
+    await expect(
+      fs.promises.readFile(path.join(cwd, runtimeModule?.file ?? ""), "utf-8"),
+    ).resolves.toContain("export const value = 1;");
+    await expect(
+      fs.promises.readFile(
+        path.join(cwd, entryCodeModule?.file ?? ""),
+        "utf-8",
+      ),
+    ).resolves.toContain(
+      `import { value } from "${generatedImport(
+        cwd,
+        entryCodeModule?.file ?? "",
+        runtimeModule?.file ?? "",
+      )}";`,
+    );
+    await expect(
+      fs.promises.readFile(path.join(cwd, entry?.file ?? ""), "utf-8"),
+    ).resolves.toContain('import "../../src/main";');
+
+    await prepared.dispose();
+  });
+
+  it("models tmp module entry/runtime/html/resolution patterns as structured contributions", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/main.tsx"),
+      "console.log('app');",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "tmp-parity",
+      contributions(ctx) {
+        const config = ctx.emit.data({
+          id: "ctoken-config",
+          scope: { kind: "app" },
+          value: { appId: "demo" },
+        });
+        const ctokenRuntime = ctx.emit.module({
+          id: "ctoken-runtime",
+          scope: { kind: "app" },
+          source: ({ importOf }) =>
+            [
+              `import config from ${JSON.stringify(importOf(config))};`,
+              "window.__evCtokenConfig = config;",
+            ].join("\n"),
+        });
+        const themeRuntime = ctx.emit.module({
+          id: "theme-runtime-plugin",
+          scope: { kind: "app" },
+          source: [
+            "export const theme = 'light';",
+            "export function applyTheme() {}",
+          ].join("\n"),
+        });
+        ctx.slot("client.entry").add({
+          id: "ctoken-entry",
+          module: ctokenRuntime,
+          position: "before-main",
+        });
+        ctx.slot("client.runtime.plugin").add({
+          id: "theme-plugin",
+          module: themeRuntime,
+          exportKeys: ["applyTheme"],
+        });
+        ctx.slot("html.tag").add({
+          id: "external-react-cdn",
+          tag: "script",
+          placement: "head-append",
+          attrs: {
+            src: "https://cdn.example.com/react.production.min.js",
+            crossorigin: "anonymous",
+          },
+        });
+        ctx.slot("resolve.alias").add({
+          id: "config-alias",
+          specifier: "@tmp/config",
+          replacement: config,
+        });
+        ctx.slot("resolve.external").add({
+          id: "react-external",
+          specifier: "react",
+          source: "React",
+          runtime: "client",
+        });
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        output: { client: "dist" },
+        plugins: [plugin],
+      },
+      { cwd },
+    );
+
+    const manifest = JSON.parse(
+      await fs.promises.readFile(path.join(cwd, ".ev/manifest.json"), "utf-8"),
+    ) as BuildPlan;
+    const configModule = manifest.generated?.modules.find(
+      (module) => module.id === "ctoken-config",
+    );
+    const ctokenModule = manifest.generated?.modules.find(
+      (module) => module.id === "ctoken-runtime",
+    );
+    const themeModule = manifest.generated?.modules.find(
+      (module) => module.id === "theme-runtime-plugin",
+    );
+    const mainEntry = await fs.promises.readFile(
+      path.join(cwd, ".ev/entries/main.ts"),
+      "utf-8",
+    );
+    const ctokenSource = await fs.promises.readFile(
+      path.join(cwd, ctokenModule?.file ?? ""),
+      "utf-8",
+    );
+
+    expect(manifest.generated?.slots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slot: "client.entry",
+          id: "ctoken-entry",
+          module: ctokenModule?.file,
+          position: "before-main",
+        }),
+        expect.objectContaining({
+          slot: "client.runtime.plugin",
+          id: "theme-plugin",
+          module: themeModule?.file,
+          exportKeys: ["applyTheme"],
+        }),
+        expect.objectContaining({
+          slot: "html.tag",
+          id: "external-react-cdn",
+          tag: "script",
+        }),
+        expect.objectContaining({
+          slot: "resolve.alias",
+          id: "config-alias",
+          replacement: configModule?.file,
+        }),
+        expect.objectContaining({
+          slot: "resolve.external",
+          id: "react-external",
+          specifier: "react",
+          source: "React",
+          runtime: "client",
+        }),
+      ]),
+    );
+    expect(manifest.generated?.importEdges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "tmp-parity:ctoken-runtime",
+          to: "tmp-parity:ctoken-config",
+          kind: "module-import",
+          specifier: generatedImport(
+            cwd,
+            ctokenModule?.file ?? "",
+            configModule?.file ?? "",
+          ),
+        }),
+        expect.objectContaining({
+          from: "tmp-parity:ctoken-entry",
+          to: "tmp-parity:ctoken-runtime",
+          kind: "slot-module",
+          specifier: ctokenModule?.file,
+        }),
+        expect.objectContaining({
+          from: "tmp-parity:config-alias",
+          to: "tmp-parity:ctoken-config",
+          kind: "resolve-alias",
+          specifier: configModule?.file,
+        }),
+      ]),
+    );
+    expect(manifest.resolve?.alias?.["@tmp/config"]).toBe(configModule?.file);
+    expect(manifest.resolve?.external?.react).toEqual({
+      source: "React",
+      runtime: "client",
+    });
+    expect(ctokenSource).toContain(
+      `import config from "${generatedImport(
+        cwd,
+        ctokenModule?.file ?? "",
+        configModule?.file ?? "",
+      )}";`,
+    );
+    expect(mainEntry).toContain(
+      `import * as __evRuntimePlugin0 from "${generatedImport(
+        cwd,
+        ".ev/entries/main.ts",
+        themeModule?.file ?? "",
+      )}";`,
+    );
+    expect(mainEntry).toContain('exportKeys: ["applyTheme"]');
+    expect(
+      mainEntry.indexOf(
+        generatedImport(cwd, ".ev/entries/main.ts", ctokenModule?.file ?? ""),
+      ),
+    ).toBeLessThan(mainEntry.indexOf("../../src/main"));
+
+    await prepared.dispose();
+  });
+
+  it("adds server.request.middleware contributions to the generated server entry", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/apis"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/apis/hello.ts"),
+      "export function GET() { return new Response('ok'); }",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "server-contribution",
+      contributions(ctx) {
+        const middleware = ctx.emit.module({
+          id: "request-middleware",
+          scope: { kind: "server" },
+          source: [
+            "export default async function contributedMiddleware(ctx, next) {",
+            "  await next();",
+            "}",
+          ].join("\n"),
+        });
+        ctx.slot("server.request.middleware").add({
+          id: "request-middleware-slot",
+          module: middleware,
+        });
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        output: { client: "dist" },
+        server: { routing: true },
+        plugins: [plugin],
+      },
+      { cwd },
+    );
+
+    const manifest = JSON.parse(
+      await fs.promises.readFile(path.join(cwd, ".ev/manifest.json"), "utf-8"),
+    ) as BuildPlan;
+    const middlewareModule = manifest.generated?.modules.find(
+      (module) => module.id === "request-middleware",
+    );
+    const serverEntry = await fs.promises.readFile(
+      path.join(cwd, ".ev/entries/server.ts"),
+      "utf-8",
+    );
+
+    expect(manifest.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "server",
+          import: "./.ev/entries/server.ts",
+          kind: "server-runtime",
+        }),
+      ]),
+    );
+    expect(manifest.generated?.slots).toContainEqual(
+      expect.objectContaining({
+        slot: "server.request.middleware",
+        id: "request-middleware-slot",
+        module: middlewareModule?.file,
+      }),
+    );
+    expect(serverEntry).toContain(
+      `import contributedMiddleware0 from "${generatedImport(
+        cwd,
+        ".ev/entries/server.ts",
+        middlewareModule?.file ?? "",
+      )}";`,
+    );
+    expect(serverEntry).toContain(
+      'import * as routeModule0 from "../../src/apis/hello";',
+    );
+    expect(serverEntry).not.toContain('from "src/apis/hello.ts"');
+    expect(serverEntry).toContain(
+      "const middlewares = [contributedMiddleware0];",
+    );
+    expect(serverEntry).toContain('createRoute("/hello", routeDefinition0)');
+
+    await prepared.dispose();
+  });
+
+  it("rejects duplicate contribution ids per plugin", async () => {
+    const cwd = await createProject();
+    const plugin: Plugin<Record<string, never>> = {
+      name: "duplicate-contributions",
+      contributions(ctx) {
+        ctx.emit.module({
+          id: "same",
+          scope: { kind: "app" },
+          source: "export {};",
+        });
+        ctx.slot("html.tag").add({
+          id: "same",
+          tag: "meta",
+          placement: "head-append",
+          attrs: { name: "same" },
+        });
+      },
+    };
+
+    await expect(
+      prepareFrameworkBuild(
+        {
+          output: { client: "dist" },
+          plugins: [plugin],
+        },
+        { cwd },
+      ),
+    ).rejects.toThrow(
+      'Duplicate contribution id "same" in plugin "duplicate-contributions"',
+    );
+  });
+
+  it("rejects invalid contribution slot payloads", async () => {
+    const cwd = await createProject();
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-contribution",
+      contributions(ctx) {
+        const module = ctx.emit.module({
+          id: "module",
+          scope: { kind: "app" },
+          source: "export {};",
+        });
+        ctx.slot("client.entry").add({
+          id: "entry",
+          module,
+          position: "during-main" as never,
+        });
+      },
+    };
+
+    await expect(
+      prepareFrameworkBuild(
+        {
+          output: { client: "dist" },
+          plugins: [plugin],
+        },
+        { cwd },
+      ),
+    ).rejects.toThrow(
+      'invalid-contribution:entry.position must be one of: "polyfill", "before-main-imports", "after-main-imports", "before-main", "after-main"',
+    );
+  });
 });
 
 describe("build", () => {
@@ -597,6 +1085,188 @@ describe("build", () => {
     );
   });
 
+  it("applies html.tag contributions before transformHtml hooks", async () => {
+    const cwd = await createProject();
+    const events: string[] = [];
+    let transformSawContribution = false;
+    const plugin: Plugin<Record<string, never>> = {
+      name: "html-contribution",
+      contributions(ctx) {
+        ctx.slot("html.tag").add({
+          id: "meta",
+          tag: "meta",
+          placement: "head-prepend",
+          attrs: { name: "from-contribution", content: "1" },
+        });
+        ctx.slot("html.tag").add({
+          id: "script",
+          tag: "script",
+          placement: "body-append",
+          attrs: { src: "https://cdn.example.com/runtime.js" },
+        });
+      },
+      setup() {
+        return {
+          transformHtml(doc) {
+            transformSawContribution = Boolean(
+              doc.head?.querySelector('meta[name="from-contribution"]'),
+            );
+          },
+        };
+      },
+    };
+
+    await build(
+      {
+        output: { client: "dist" },
+        plugins: [plugin],
+      },
+      {
+        cwd,
+        bundler: createMockBundler(events),
+      },
+    );
+
+    const html = await fs.promises.readFile(
+      path.join(cwd, "dist/index.html"),
+      "utf-8",
+    );
+    expect(transformSawContribution).toBe(true);
+    expect(html).toMatch(/<meta[^>]*name="from-contribution"[^>]*content="1"/);
+    expect(html).toMatch(
+      /<script[^>]*src="https:\/\/cdn\.example\.com\/runtime\.js"/,
+    );
+  });
+
+  it("applies page-scoped entry runtime and html contributions to matching MPA pages", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/home.tsx"),
+      "console.log('home');",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/admin.tsx"),
+      "console.log('admin');",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "page-scope",
+      contributions(ctx) {
+        const homeEntry = ctx.emit.module({
+          id: "home-entry",
+          scope: { kind: "page", pageId: "home" },
+          source: "window.__homeContribution = true;",
+        });
+        const adminRuntime = ctx.emit.module({
+          id: "admin-runtime",
+          scope: { kind: "page", pageId: "admin" },
+          source: "export const adminRuntime = true;",
+        });
+        ctx.slot("client.entry").add({
+          id: "home-entry-slot",
+          module: homeEntry,
+          position: "before-main",
+          target: { kind: "page", pageId: "home" },
+        });
+        ctx.slot("client.runtime.plugin").add({
+          id: "admin-runtime-slot",
+          module: adminRuntime,
+          target: { kind: "page", pageId: "admin" },
+        });
+        ctx.slot("html.tag").add({
+          id: "home-meta",
+          tag: "meta",
+          placement: "head-append",
+          attrs: { name: "page-scope", content: "home" },
+          target: { kind: "page", pageId: "home" },
+        });
+      },
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock-pages",
+      async build({ plan }) {
+        const clientEntries = plan.entries.filter(
+          (entry) => entry.environment === "client",
+        );
+        const clientEntryAssets = Object.fromEntries(
+          clientEntries.map((entry) => [
+            entry.name,
+            { js: [`${entry.name}.js`], css: [] },
+          ]),
+        );
+        return {
+          clientEntryAssets,
+          firstClientEntryAssets: { js: ["home.js"], css: [] },
+          ...serverBuildFacts(plan),
+        };
+      },
+      async dev() {},
+    };
+
+    await build(
+      {
+        output: { client: "dist" },
+        plugins: [plugin],
+        pages: {
+          home: {
+            entry: "./src/home.tsx",
+            html: "./index.html",
+            mount: "#app",
+          },
+          admin: {
+            entry: "./src/admin.tsx",
+            html: "./index.html",
+            mount: "#app",
+          },
+        },
+      },
+      { cwd, bundler },
+    );
+
+    const manifest = JSON.parse(
+      await fs.promises.readFile(path.join(cwd, ".ev/manifest.json"), "utf-8"),
+    ) as BuildPlan;
+    const homeModule = manifest.generated?.modules.find(
+      (module) => module.id === "home-entry",
+    );
+    const adminModule = manifest.generated?.modules.find(
+      (module) => module.id === "admin-runtime",
+    );
+    const homeEntry = await fs.promises.readFile(
+      path.join(cwd, ".ev/entries/home.ts"),
+      "utf-8",
+    );
+    const adminEntry = await fs.promises.readFile(
+      path.join(cwd, ".ev/entries/admin.ts"),
+      "utf-8",
+    );
+    const homeHtml = await fs.promises.readFile(
+      path.join(cwd, "dist/home.html"),
+      "utf-8",
+    );
+    const adminHtml = await fs.promises.readFile(
+      path.join(cwd, "dist/admin.html"),
+      "utf-8",
+    );
+
+    expect(homeEntry).toContain(
+      generatedImport(cwd, ".ev/entries/home.ts", homeModule?.file ?? ""),
+    );
+    expect(homeEntry).not.toContain(
+      generatedImport(cwd, ".ev/entries/home.ts", adminModule?.file ?? ""),
+    );
+    expect(adminEntry).toContain(
+      generatedImport(cwd, ".ev/entries/admin.ts", adminModule?.file ?? ""),
+    );
+    expect(adminEntry).not.toContain(
+      generatedImport(cwd, ".ev/entries/admin.ts", homeModule?.file ?? ""),
+    );
+    expect(homeHtml).toContain('name="page-scope"');
+    expect(adminHtml).not.toContain('name="page-scope"');
+  });
+
   it("builds a pages SPA without a user entry file", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
@@ -645,13 +1315,14 @@ describe("build", () => {
     );
 
     expect(events).toEqual([
-      "entry:evjs:pages-app",
+      "entry:./.ev/entries/main.ts",
       "metadata:pages-app",
       "routes:/,/docs/$,/legacyCamelCase",
       "bundler.build",
       "bundler.entries:main",
     ]);
     expect(fs.existsSync(path.join(cwd, ".evjs"))).toBe(false);
+    expect(fs.existsSync(path.join(cwd, ".ev/manifest.json"))).toBe(true);
     await expect(
       fs.promises.readFile(path.join(cwd, "src/route-types.d.ts"), "utf-8"),
     ).resolves.toContain(
@@ -1065,7 +1736,7 @@ describe("build", () => {
     );
 
     expect(events).toEqual([
-      "entry:evjs:pages-app",
+      "entry:./.ev/entries/main.ts",
       "metadata:pages-app",
       "bundler.build",
       "bundler.entries:main",
@@ -2756,7 +3427,7 @@ describe("build", () => {
     expect(observedPlan?.entries).toContainEqual(
       expect.objectContaining({
         name: "server",
-        import: "evjs:server-routes",
+        import: "./.ev/entries/server.ts",
         metadata: {
           type: "server-app",
           middlewares: [
@@ -3674,7 +4345,7 @@ describe("dev", () => {
       ),
     ]);
 
-    expect(events).toEqual(["entry:evjs:pages-app", "routeTypes:true"]);
+    expect(events).toEqual(["entry:./.ev/entries/main.ts", "routeTypes:true"]);
     await expect(
       fs.promises.readFile(path.join(cwd, "src/route-types.d.ts"), "utf-8"),
     ).resolves.toContain('import type * as EvPage_index from "./pages/index";');

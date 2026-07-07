@@ -12,6 +12,7 @@ framework request middleware in `src/middleware.ts` and API route middleware in
 src/pages + src/apis + src/middleware.ts + ev.config.ts
   -> AppGraph
   -> BuildPlan
+  -> .ev generated framework IR
   -> bundler build
   -> BuildOutput
   -> runtime / shell / deployment adapters
@@ -174,6 +175,8 @@ sequenceDiagram
   Tools-->>EV: AppGraph + diagnostics + fileDependencies
   EV->>Tools: createBuildPlan(config, graph)
   Tools-->>EV: BuildPlan
+  EV->>Plugins: contributions(ctx)
+  EV->>EV: materialize .ev framework IR
   EV->>Bundler: build(plan)
   Bundler-->>EV: bundler stats/assets
   EV->>Manifest: linkBuildOutput(graph, plan, bundlerFacts)
@@ -185,6 +188,15 @@ sequenceDiagram
   end
   EV->>Plugins: buildEnd({ output, frameworkRuntime, isRebuild })
 ```
+
+Before bundling, evjs materializes `.ev` as an agent-readable framework IR.
+`.ev/framework/app-graph.json` records convention discovery,
+`.ev/framework/build-plan.json` records the final bundler-independent plan,
+`.ev/entries/*` contains generated entry facades, `.ev/plugins/*` contains
+plugin generated modules, and `.ev/manifest.json` ties together graph data,
+generated modules, slots, import edges, and final entries. Bundler adapters
+consume those generated entries; they do not recreate file-convention entry
+logic with adapter-specific loaders.
 
 Builds emit canonical deployment metadata at `dist/build-output.json`. The
 internal `BuildOutput` remains an in-memory plugin/build contract and is not

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { configure, getConsoleSink, getLogger } from "@logtape/logtape";
 import { Command } from "commander";
 import type { DefaultBundlerConfig } from "./index.js";
-import { build, dev } from "./index.js";
+import { build, dev, prepare } from "./index.js";
 import {
   formatInspectCommandErrorJson,
   runInspectCommand,
@@ -81,6 +81,21 @@ program
       await build(config ?? undefined, { cwd });
     } catch (err) {
       logger.error`Build failed: ${err}`;
+      process.exit(1);
+    }
+  });
+
+program
+  .command("prepare")
+  .description("Generate .ev framework IR without running a bundler")
+  .action(async () => {
+    const cwd = process.cwd();
+    const { loadConfig } = await import("./load-config.js");
+    const config = await loadConfig<DefaultBundlerConfig>(cwd);
+    try {
+      await prepare(config ?? undefined, { cwd });
+    } catch (err) {
+      logger.error`Prepare failed: ${err}`;
       process.exit(1);
     }
   });

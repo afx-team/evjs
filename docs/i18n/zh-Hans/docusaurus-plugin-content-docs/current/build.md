@@ -9,7 +9,7 @@ ev build
 `ev build` 会读取 `ev.config.ts`，发现已配置的页面和服务端约定，运行当前 bundler，
 并写入生产产物。
 
-如果只想在不写入 `dist` 的情况下做一次预检查，可以使用：
+如果只想在不写入 `dist` 或 `.ev` 的情况下做一次预检查，可以使用：
 
 ```bash
 ev inspect
@@ -18,6 +18,16 @@ ev inspect --json
 
 `ev inspect` 会报告解析后的 routing mode、发现到的页面路由、服务端函数、服务端路由、
 渲染元信息、生成路由类型的位置和诊断信息。存在 error 时命令会以非 0 状态退出。
+
+如果需要生成框架 IR，但不执行完整构建，可以使用：
+
+```bash
+ev prepare
+```
+
+`ev prepare` 会写入 `.ev/`，其中包含发现到的 app graph、最终 build plan、生成的
+entry facade、插件 generated modules、contribution slots 和 import edges。它不会运行
+bundler，也不会写入 `dist`。
 
 ## 输出
 
@@ -166,7 +176,7 @@ export const GET = async () => Response.json({ ok: true });
 ## 要点
 
 - `ev build` 是生产构建命令。
-- 需要诊断但不写产物时使用 `ev inspect`。
+- 需要诊断但不写生成产物时使用 `ev inspect`。
 - 默认会拆分浏览器文件和服务端文件。
 - 用 `output.client` / `output.server` 适配部署平台目录结构。
 - 应用代码不要导入生成的 manifest 文件。

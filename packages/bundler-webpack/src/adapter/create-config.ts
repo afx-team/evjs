@@ -30,24 +30,6 @@ const serverFunctionLoader = fileURLToPath(
 const rscClientReferenceLoader = fileURLToPath(
   new URL("./rsc-client-reference-loader.cjs", import.meta.url),
 );
-const frameworkEntryLoader = fileURLToPath(
-  new URL("./framework-entry-loader.cjs", import.meta.url),
-);
-const frameworkEntryAnchor = fileURLToPath(
-  new URL("./framework-entry-anchor.js", import.meta.url),
-);
-const pagesEntryLoader = fileURLToPath(
-  new URL("./pages-entry-loader.cjs", import.meta.url),
-);
-const pagesEntryAnchor = fileURLToPath(
-  new URL("./pages-entry-anchor.js", import.meta.url),
-);
-const serverRoutesEntryLoader = fileURLToPath(
-  new URL("./server-routes-entry-loader.cjs", import.meta.url),
-);
-const serverRoutesEntryAnchor = fileURLToPath(
-  new URL("./server-routes-entry-anchor.js", import.meta.url),
-);
 const ReactFlightWebpackPlugin = require("react-server-dom-webpack/plugin");
 const clientRscEntry = "@evjs/ev/_internal/client/rsc-runtime";
 const clientRscPageContextEntry = "@evjs/ev/_internal/client/rsc-page-context";
@@ -102,6 +84,7 @@ export async function createWebpackConfigs(
         outputPath: outputPaths.clientDir,
         publicPath: plan.runtime.publicPath,
         resolveAlias: plan.resolve?.alias,
+        resolveExternal: plan.resolve?.external,
         functionEndpoint: config.server.runtime.fn,
         crossOriginLoading: config.output.crossOriginLoading,
         rscClientReferences: getRscClientReferenceModules(cwd, graph),
@@ -128,6 +111,7 @@ export async function createWebpackConfigs(
         outputPath: outputPaths.serverDir,
         publicPath: plan.runtime.publicPath,
         resolveAlias: plan.resolve?.alias,
+        resolveExternal: plan.resolve?.external,
         functionEndpoint: config.server.runtime.fn,
         crossOriginLoading: undefined,
         rscClientReferences: getRscClientReferenceModules(cwd, graph),
@@ -149,6 +133,7 @@ export async function createWebpackConfigs(
         outputPath: path.join(outputPaths.rootDir, "__evjs_build_server"),
         publicPath: plan.runtime.publicPath,
         resolveAlias: plan.resolve?.alias,
+        resolveExternal: plan.resolve?.external,
         functionEndpoint: config.server.runtime.fn,
         crossOriginLoading: undefined,
         rscClientReferences: getRscClientReferenceModules(cwd, graph),
@@ -170,6 +155,7 @@ export async function createWebpackConfigs(
         outputPath: outputPaths.serverDir,
         publicPath: plan.runtime.publicPath,
         resolveAlias: plan.resolve?.alias,
+        resolveExternal: plan.resolve?.external,
         functionEndpoint: config.server.runtime.fn,
         crossOriginLoading: undefined,
         rscClientReferences: getRscClientReferenceModules(cwd, graph),
@@ -214,6 +200,7 @@ function createWebpackConfig(options: {
   outputPath: string;
   publicPath: PublicPathOutput;
   resolveAlias?: NonNullable<BuildPlan["resolve"]>["alias"];
+  resolveExternal?: NonNullable<BuildPlan["resolve"]>["external"];
   functionEndpoint: string;
   crossOriginLoading:
     | ResolvedConfig["output"]["crossOriginLoading"]
@@ -232,7 +219,7 @@ function createWebpackConfig(options: {
     mode: options.mode,
     context: options.cwd,
     target: options.target,
-    entry: createEntryObject(options.cwd, options.entries),
+    entry: createEntryObject(options.entries),
     output: {
       path: options.outputPath,
       filename: isProduction
@@ -252,18 +239,7 @@ function createWebpackConfig(options: {
             }
           : undefined,
     },
-    externals:
-      options.target === "node" && !options.reactServerConditions
-        ? {
-            react: "commonjs react",
-            "react-dom": "commonjs react-dom",
-            "react-dom/client": "commonjs react-dom/client",
-            "react-dom/server": "commonjs react-dom/server",
-            "react-dom/server.node": "commonjs react-dom/server.node",
-            "react/jsx-dev-runtime": "commonjs react/jsx-dev-runtime",
-            "react/jsx-runtime": "commonjs react/jsx-runtime",
-          }
-        : undefined,
+    externals: createWebpackExternals(options),
     devtool: isProduction ? false : "source-map",
     experiments: {
       futureDefaults: true,
@@ -330,9 +306,6 @@ function createWebpackConfig(options: {
               : []),
           ],
         },
-        ...createPagesEntryRules(options.entries),
-        ...createServerRoutesEntryRules(options.entries),
-        ...createFrameworkEntryRules(options.cwd, options.entries),
         {
           test: /\.css$/,
           use: [miniCssExtractLoader, cssLoader],
@@ -383,6 +356,43 @@ function resolveAliasTarget(cwd: string, target: string): string {
   return target.startsWith(".") ? path.resolve(cwd, target) : target;
 }
 
+function createWebpackExternals(options: {
+  target: "web" | "node";
+  reactServerConditions: boolean;
+  resolveExternal?: NonNullable<BuildPlan["resolve"]>["external"];
+}): Configuration["externals"] {
+  const contributed = Object.fromEntries(
+    Object.entries(options.resolveExternal ?? {})
+      .filter(([, external]) =>
+        options.target === "web"
+          ? external.runtime !== "server"
+          : external.runtime !== "client",
+      )
+      .map(([specifier, external]) => [
+        specifier,
+        external.source ?? specifier,
+      ]),
+  );
+  const hasContributed = Object.keys(contributed).length > 0;
+  const defaultNodeExternals =
+    options.target === "node" && !options.reactServerConditions
+      ? {
+          react: "commonjs react",
+          "react-dom": "commonjs react-dom",
+          "react-dom/client": "commonjs react-dom/client",
+          "react-dom/server": "commonjs react-dom/server",
+          "react-dom/server.node": "commonjs react-dom/server.node",
+          "react/jsx-dev-runtime": "commonjs react/jsx-dev-runtime",
+          "react/jsx-runtime": "commonjs react/jsx-runtime",
+        }
+      : undefined;
+
+  if (defaultNodeExternals && hasContributed) {
+    return [defaultNodeExternals, contributed];
+  }
+  return defaultNodeExternals ?? (hasContributed ? contributed : undefined);
+}
+
 function createRscPlugins(options: {
   target: "web" | "node";
   enableRscClientRuntime: boolean;
@@ -400,199 +410,22 @@ function createRscPlugins(options: {
   ];
 }
 
-function createPagesEntryRules(entries: BuildEntry[]) {
-  const entry = getPagesAppEntry(entries);
-  if (!entry) return [];
-
-  return [
-    {
-      test: createPagesEntryPathPattern(),
-      resourceQuery: /^$/,
-      use: [
-        {
-          loader: pagesEntryLoader,
-          options: entry.metadata,
-        },
-      ],
-    },
-  ];
-}
-
-function createPagesEntryPathPattern(): RegExp {
-  return new RegExp(`${escapeRegExp(normalizeRulePath(pagesEntryAnchor))}$`);
-}
-
-function createServerRoutesEntryRules(entries: BuildEntry[]) {
-  const entry = getServerRoutesEntry(entries);
-  if (!entry) return [];
-
-  return [
-    {
-      test: createServerRoutesEntryPathPattern(),
-      resourceQuery: /^$/,
-      use: [
-        {
-          loader: serverRoutesEntryLoader,
-          options: entry.metadata,
-        },
-      ],
-    },
-  ];
-}
-
-function createServerRoutesEntryPathPattern(): RegExp {
-  return new RegExp(
-    `${escapeRegExp(normalizeRulePath(serverRoutesEntryAnchor))}$`,
-  );
-}
-
-function createFrameworkEntryRules(cwd: string, entries: BuildEntry[]) {
-  return entries.flatMap((entry) => {
-    const options = createFrameworkEntryLoaderOptions(cwd, entry);
-    if (!options) return [];
-    return [
-      {
-        test: createFrameworkEntryPathPattern(),
-        resourceQuery: createFrameworkEntryQueryPattern(entry.name),
-        use: [
-          {
-            loader: frameworkEntryLoader,
-            options,
-          },
-        ],
-      },
-    ];
-  });
-}
-
-function createFrameworkEntryPathPattern(): RegExp {
-  return new RegExp(
-    `${escapeRegExp(normalizeRulePath(frameworkEntryAnchor))}$`,
-  );
-}
-
-function createFrameworkEntryQueryPattern(name: string): RegExp {
-  return new RegExp(`^\\?${escapeRegExp(createFrameworkEntryQuery(name))}$`);
-}
-
-function createFrameworkEntryQuery(name: string): string {
-  return new URLSearchParams({ "evjs-entry": name }).toString();
-}
-
-function normalizeRulePath(value: string): string {
-  return value.replace(/^\.\//, "").replaceAll("\\", "/");
-}
-
-function getPagesAppEntry(entries: BuildEntry[]):
-  | (BuildEntry & {
-      metadata: Extract<
-        NonNullable<BuildEntry["metadata"]>,
-        { type: "pages-app" }
-      >;
-    })
-  | undefined {
-  return entries.find(
-    (
-      entry,
-    ): entry is BuildEntry & {
-      metadata: Extract<
-        NonNullable<BuildEntry["metadata"]>,
-        { type: "pages-app" }
-      >;
-    } => entry.metadata?.type === "pages-app",
-  );
-}
-
-function getServerRoutesEntry(entries: BuildEntry[]):
-  | (BuildEntry & {
-      metadata: Extract<
-        NonNullable<BuildEntry["metadata"]>,
-        { type: "server-app" }
-      >;
-    })
-  | undefined {
-  return entries.find(
-    (
-      entry,
-    ): entry is BuildEntry & {
-      metadata: Extract<
-        NonNullable<BuildEntry["metadata"]>,
-        { type: "server-app" }
-      >;
-    } => entry.metadata?.type === "server-app",
-  );
-}
-
-function createEntryObject(cwd: string, entries: BuildEntry[]): EntryObject {
+function createEntryObject(entries: BuildEntry[]): EntryObject {
   return Object.fromEntries(
     entries.map((entry) => [
       entry.name,
       {
-        import: createEntryImport(cwd, entry),
+        import: createEntryImport(entry),
       },
     ]),
   );
 }
 
-function createEntryImport(cwd: string, entry: BuildEntry): string {
+function createEntryImport(entry: BuildEntry): string {
   if (entry.name === "evjs-rsc-client" && entry.kind === "runtime") {
     return clientRscEntry;
   }
-
-  if (entry.metadata?.type === "pages-app") {
-    return pagesEntryAnchor;
-  }
-
-  if (entry.metadata?.type === "server-app") {
-    return serverRoutesEntryAnchor;
-  }
-
-  if (createFrameworkEntryLoaderOptions(cwd, entry)) {
-    return `${frameworkEntryAnchor}?${createFrameworkEntryQuery(entry.name)}`;
-  }
-
   return entry.import;
-}
-
-function createFrameworkEntryLoaderOptions(
-  cwd: string,
-  entry: BuildEntry,
-): Record<string, unknown> | undefined {
-  if (entry.kind === "rsc-page") {
-    return {
-      type: "rsc-page-renderer",
-      module: resolveEntryModule(cwd, entry.import),
-    };
-  }
-
-  if (
-    entry.environment === "server" &&
-    (entry.kind === "page-server" ||
-      entry.kind === "ppr-shell" ||
-      entry.kind === "ppr-region")
-  ) {
-    return {
-      type: "server-renderer",
-      module: resolveEntryModule(cwd, entry.import),
-    };
-  }
-
-  if (entry.metadata?.type === "react-component-page") {
-    return {
-      type: "react-component-page",
-      module: resolveEntryModule(cwd, entry.metadata.component),
-      mount: entry.metadata.mount,
-      hydrate: entry.metadata.hydrate,
-      render: entry.metadata.render,
-      ...(entry.metadata.route ? { route: entry.metadata.route } : {}),
-    };
-  }
-
-  return undefined;
-}
-
-function resolveEntryModule(cwd: string, specifier: string): string {
-  return path.isAbsolute(specifier) ? specifier : path.resolve(cwd, specifier);
 }
 
 function webpackPublicPath(

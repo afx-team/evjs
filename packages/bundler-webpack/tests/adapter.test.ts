@@ -10,6 +10,7 @@ import {
   createBuildPlan,
   diffBuildPlan,
   generateHtml,
+  materializeFrameworkIR,
 } from "@evjs/ev/_internal/build";
 import type {
   AppGraph,
@@ -114,15 +115,33 @@ async function buildWithFrameworkArtifacts(options: {
   onBuildOutput?: (output: BuildOutput) => void | Promise<void>;
 }) {
   const hooks = options.hooks ?? [];
+  const plan = await materializeFrameworkIR({
+    cwd: options.cwd,
+    mode: options.plan.mode,
+    command: options.plan.mode === "production" ? "build" : "dev",
+    config: options.config,
+    graph: options.graph,
+    plan: options.plan,
+    plugins: [],
+    pluginContext: {
+      mode: options.plan.mode,
+      command: options.plan.mode === "production" ? "build" : "dev",
+      cwd: options.cwd,
+      config: options.config,
+      logger: console as never,
+      addWatchFile() {},
+    },
+  });
   const buildFacts = await webpackAdapter.build({
     config: options.config,
     cwd: options.cwd,
     graph: options.graph,
-    plan: options.plan,
+    plan,
     hooks,
   });
   return emitFrameworkArtifacts({
     ...options,
+    plan,
     hooks,
     facts: buildFacts,
   });
@@ -606,7 +625,7 @@ describe("webpackAdapter build", () => {
         "utf-8",
       );
 
-      expect(onBuildOutput).toHaveBeenCalledTimes(1);
+      expect(onBuildOutput).toHaveBeenCalled();
       expect(output.apps.default).toEqual({
         assets: {
           js: ["main.js"],

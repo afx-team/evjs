@@ -1,10 +1,17 @@
 import { promises as fs } from "node:fs";
-import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { AppGraph, BuildPlan } from "@evjs/ev/_internal/manifest";
 import type { ResolvedConfig } from "@evjs/ev/config";
-import type { Plugin, PluginContext } from "@evjs/ev/plugin";
+import type {
+  ContributionContext,
+  EmitApi,
+  FrameworkSlotInput,
+  FrameworkSlotName,
+  GeneratedModuleRef,
+  PluginContext,
+} from "@evjs/ev/plugin";
 import { describe, expect, it } from "vitest";
 import { evPluginQiankunMaster, evPluginQiankunSlave } from "../src/index.js";
 
@@ -12,112 +19,67 @@ const qiankunRuntime = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   "../src/runtime.ts",
 );
-const require = createRequire(import.meta.url);
-const entryLoader = require("../src/entry-loader.cjs") as (this: {
-  cacheable?(): void;
-  getOptions(): Record<string, string>;
-  resourcePath: string;
-  rootContext: string;
-}) => string;
+
+interface CapturedModule {
+  id: string;
+  source:
+    | string
+    | ((helpers: {
+        importOf(ref: GeneratedModuleRef): string;
+        importFile(file: string): string;
+      }) => string);
+}
+
+interface CapturedSlot {
+  name: FrameworkSlotName;
+  input: FrameworkSlotInput<FrameworkSlotName>;
+}
 
 describe("@evjs/plugin-qiankun plugin", () => {
-  it("wraps the master app entry with a webpack loader rule without generating temporary entries", async () => {
+  it("contributes a master entry wrapper module after the framework app entry", async () => {
     const cwd = await createProject({
       "src/main.tsx": "console.log('entry');",
       "src/qiankun.master.ts": "export default async () => ({ apps: [] });",
     });
-    const watched: string[] = [];
     const plugin = evPluginQiankunMaster({
       resolver: "./src/qiankun.master.ts",
     });
-    const hooks = await setupPlugin(plugin, cwd, watched, {
+    const captured = createContributionCapture(cwd, {
       app: { entry: "./src/main.tsx" },
     });
-    const bundlerConfig = createWebpackConfig();
+    const sourceDir = generatedModuleDir(cwd, "@evjs/plugin-qiankun:master");
 
-    await hooks?.buildStart?.(
-      createPluginContext(cwd, [], { app: { entry: "./src/main.tsx" } }),
-    );
-    await hooks?.bundlerConfig?.(
-      bundlerConfig as never,
-      createBundlerContext(cwd, "webpack"),
-    );
+    await plugin.contributions?.(captured.ctx);
 
-    expect(watched).toEqual([
+    expect(captured.watched).toEqual([
       path.join(cwd, "src/main.tsx"),
       path.join(cwd, "src/qiankun.master.ts"),
       qiankunRuntime,
     ]);
-    expect(await exists(path.join(cwd, ".evjs"))).toBe(false);
-
-    const rule = firstWebpackRule(bundlerConfig);
-    expect(rule.test.test(toImportPath(path.join(cwd, "src/main.tsx")))).toBe(
-      true,
+    expect(captured.modules).toHaveLength(1);
+    expect(captured.modules[0]?.id).toBe("master-entry-wrapper-module");
+    const source = renderModule(
+      captured.modules[0],
+      captured.importOf,
+      (file) => toRelativeImport(sourceDir, file),
     );
-    expect(rule.resourceQuery.not[0].test("?evjs-qiankun-original")).toBe(true);
-    expect(rule.use[0].loader).toContain("entry-loader.cjs");
-    expect(rule.use[0].options).toEqual({
-      role: "master",
-      qiankunRuntime,
-      resolver: path.join(cwd, "src/qiankun.master.ts"),
-      resolverExport: "default",
+    expect(source).toContain("startQiankunMaster");
+    expect(source).toContain(
+      toRelativeImport(sourceDir, path.join(cwd, "src/qiankun.master.ts")),
+    );
+    expect(source).toContain('from "@evjs/plugin-qiankun/runtime"');
+    expect(source).not.toContain(toImportPath(cwd));
+    expect(captured.slots).toContainEqual({
+      name: "client.entry",
+      input: expect.objectContaining({
+        id: "master-entry-wrapper-slot",
+        position: "after-main",
+        target: { kind: "app" },
+      }),
     });
   });
 
-  it("wraps a master file-convention SPA pages entry without app.entry", async () => {
-    const cwd = await createProject({
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/qiankun.master.ts": "export default async () => ({ apps: [] });",
-    });
-    const watched: string[] = [];
-    const plugin = evPluginQiankunMaster({
-      resolver: "./src/qiankun.master.ts",
-    });
-    const hooks = await setupPlugin(plugin, cwd, watched, {
-      routing: createSpaRoutingConfig(),
-    });
-    const bundlerConfig = createWebpackPagesConfig();
-
-    await hooks?.buildStart?.(
-      createPluginContext(cwd, [], { routing: createSpaRoutingConfig() }),
-    );
-    await hooks?.bundlerConfig?.(
-      bundlerConfig as never,
-      createBundlerContext(cwd, "webpack"),
-    );
-
-    expect(watched).toEqual([
-      path.join(cwd, "src/qiankun.master.ts"),
-      qiankunRuntime,
-    ]);
-
-    const qiankunRule = firstWebpackRule(bundlerConfig);
-    expect(qiankunRule.test.test(webpackPagesEntryAnchor)).toBe(true);
-    expect(qiankunRule.use[0].options).toMatchObject({
-      role: "master",
-      qiankunRuntime,
-      resolver: path.join(cwd, "src/qiankun.master.ts"),
-    });
-
-    const rules = (bundlerConfig.module as { rules: unknown[] }).rules;
-    expect(
-      rules.some(
-        (rule) =>
-          isRecord(rule) &&
-          rule.resourceQuery instanceof RegExp &&
-          rule.resourceQuery.test("?evjs-qiankun-original") &&
-          Array.isArray(rule.use) &&
-          rule.use.some(
-            (item) =>
-              isRecord(item) &&
-              typeof item.loader === "string" &&
-              item.loader.includes("pages-entry-loader.cjs"),
-          ),
-      ),
-    ).toBe(true);
-  });
-
-  it("wraps the slave app entry with a utoopack loader rule and package-name default", async () => {
+  it("contributes a slave replacement wrapper and keeps library output in bundler config", async () => {
     const cwd = await createProject({
       "package.json": JSON.stringify({ name: "console" }),
       "src/main.tsx": "console.log('entry');",
@@ -126,191 +88,103 @@ describe("@evjs/plugin-qiankun plugin", () => {
     const plugin = evPluginQiankunSlave({
       runtime: "./src/qiankun.slave.ts",
     });
-    const hooks = await setupPlugin(plugin, cwd, [], {
+    const captured = createContributionCapture(cwd, {
       app: { entry: "./src/main.tsx", mount: "#root" },
     });
-    const bundlerConfig: Record<string, unknown> = {
-      entry: [{ name: "main", import: "./src/main.tsx" }],
-    };
 
-    await hooks?.buildStart?.(
-      createPluginContext(cwd, [], {
-        app: { entry: "./src/main.tsx", mount: "#root" },
-      }),
+    await plugin.contributions?.(captured.ctx);
+    const wrapper = captured.modules.find(
+      (module) => module.id === "slave-entry-wrapper-module",
     );
+    const sourceDir = generatedModuleDir(cwd, "@evjs/plugin-qiankun:slave");
+    const source = renderModule(wrapper, captured.importOf, (file) =>
+      toRelativeImport(sourceDir, file),
+    );
+
+    expect(captured.slots).toContainEqual({
+      name: "client.entry",
+      input: expect.objectContaining({
+        id: "slave-entry-wrapper-slot",
+        position: "before-main",
+        mode: "replace",
+        target: { kind: "app" },
+      }),
+    });
+    expect(source).toContain("createQiankunSlaveLifecycles");
+    expect(source).toContain('name: "console"');
+    expect(source).toContain('mount: "#root"');
+    expect(source).toContain('from "@evjs/plugin-qiankun/runtime"');
+    expect(source).toContain(
+      toRelativeImport(sourceDir, path.join(cwd, "src/qiankun.slave.ts")),
+    );
+    expect(source).toContain(
+      `loadEntry: () => import(${JSON.stringify(
+        toRelativeImport(sourceDir, path.join(cwd, "src/main.tsx")),
+      )})`,
+    );
+    expect(source).not.toContain(toImportPath(cwd));
+
+    const hooks = await plugin.setup?.(createPluginContext(cwd, [], {}));
+    const bundlerConfig: Record<string, unknown> = {
+      entry: [{ name: "main", import: "./.ev/entries/main.ts" }],
+    };
     await hooks?.bundlerConfig?.(
       bundlerConfig as never,
       createBundlerContext(cwd, "utoopack"),
     );
-
-    const rule = ((
-      (bundlerConfig.module as Record<string, unknown>).rules as Record<
-        string,
-        Record<string, unknown>[]
-      >
-    )["**/*"] ?? [])[0];
-    expect(rule.condition).toMatchObject({ query: "" });
-    expect(
-      (rule.condition as { path: RegExp }).path.test(
-        toImportPath(path.join(cwd, "src/main.tsx")),
-      ),
-    ).toBe(true);
-    expect((rule.condition as { path: RegExp }).path.test("src/main.tsx")).toBe(
-      true,
-    );
-    expect(rule.loaders).toEqual([
-      {
-        loader: expect.stringContaining("entry-loader.cjs"),
-        options: {
-          role: "slave",
-          qiankunRuntime,
-          runtime: path.join(cwd, "src/qiankun.slave.ts"),
-          runtimeExport: "default",
-          name: "console",
-          mount: "#root",
-        },
-      },
-    ]);
     expect(bundlerConfig.entry).toEqual([
       {
         name: "main",
-        import: "./src/main.tsx",
+        import: "./.ev/entries/main.ts",
         library: { name: "console" },
       },
     ]);
   });
 
-  it("wraps a slave file-convention SPA pages entry with utoopack", async () => {
+  it("generates an original pages app module for slave SPA file routing", async () => {
     const cwd = await createProject({
       "package.json": JSON.stringify({ name: "catalog" }),
       "src/pages/index.tsx": "export default function Home() { return null; }",
+      "src/pages/error.tsx": "export default function Error() { return null; }",
     });
     const plugin = evPluginQiankunSlave();
-    const hooks = await setupPlugin(plugin, cwd, [], {
-      routing: createSpaRoutingConfig(),
-    });
-    const bundlerConfig: Record<string, unknown> = {
-      entry: [{ name: "main", import: utoopackPagesEntryAnchor }],
-      module: {
-        rules: {
-          "**/*": [
-            {
-              condition: {
-                path: /pages-entry-anchor\.js$/,
-                query: "",
-              },
-              loaders: [{ loader: utoopackPagesEntryLoader, options: {} }],
-            },
-          ],
-        },
-      },
-    };
-
-    await hooks?.bundlerConfig?.(
-      bundlerConfig as never,
-      createBundlerContext(cwd, "utoopack"),
+    const captured = createContributionCapture(
+      cwd,
+      { routing: createSpaRoutingConfig() },
+      createPagesAppPlan(),
     );
 
-    const rules = (
-      (bundlerConfig.module as Record<string, unknown>).rules as Record<
-        string,
-        Record<string, unknown>[]
-      >
-    )["**/*"];
-    const qiankunRule = rules[0];
-    expect(qiankunRule.condition).toMatchObject({ query: "" });
-    expect(
-      (qiankunRule.condition as { path: RegExp }).path.test(
-        utoopackPagesEntryAnchor,
-      ),
-    ).toBe(true);
-    expect(qiankunRule.loaders).toEqual([
-      {
-        loader: expect.stringContaining("entry-loader.cjs"),
-        options: {
-          role: "slave",
-          qiankunRuntime,
-          name: "catalog",
-          mount: "#app",
-        },
-      },
-    ]);
-    expect(
-      rules.some(
-        (rule) =>
-          isRecord(rule.condition) &&
-          rule.condition.query === "?evjs-qiankun-original" &&
-          Array.isArray(rule.loaders) &&
-          rule.loaders.some(
-            (item) =>
-              isRecord(item) &&
-              typeof item.loader === "string" &&
-              item.loader.includes("pages-entry-loader.cjs"),
-          ),
-      ),
-    ).toBe(true);
-    expect(bundlerConfig.entry).toEqual([
-      {
-        name: "main",
-        import: utoopackPagesEntryAnchor,
-        library: { name: "catalog" },
-      },
-    ]);
-  });
+    await plugin.contributions?.(captured.ctx);
 
-  it("configures webpack slave output as a qiankun-consumable library", async () => {
-    const cwd = await createProject({
-      "package.json": JSON.stringify({ name: "catalog" }),
-      "src/main.tsx": "console.log('entry');",
-    });
-    const plugin = evPluginQiankunSlave();
-    const hooks = await setupPlugin(plugin, cwd, [], {
-      app: { entry: "./src/main.tsx" },
-    });
-    const bundlerConfig = createWebpackConfig();
-
-    await hooks?.bundlerConfig?.(
-      bundlerConfig as never,
-      createBundlerContext(cwd, "webpack"),
+    const original = captured.modules.find(
+      (module) => module.id === "slave-original-entry-module",
     );
-
-    expect(bundlerConfig.entry).toEqual({
-      main: {
-        import: "./src/main.tsx",
-        library: { name: "catalog", type: "umd" },
-      },
-    });
-  });
-
-  it("accepts absolute modules from upper-layer plugins", async () => {
-    const cwd = await createProject({
-      "src/main.tsx": "console.log('entry');",
-      ".platform/generated-master.ts":
-        "export const resolver = async () => ({ apps: [] });",
-    });
-    const generatedResolver = path.join(cwd, ".platform/generated-master.ts");
-    const plugin = evPluginQiankunMaster({
-      resolver: {
-        module: generatedResolver,
-        exportName: "resolver",
-      },
-    });
-    const hooks = await setupPlugin(plugin, cwd, [], {});
-    const bundlerConfig = createWebpackConfig();
-
-    await hooks?.bundlerConfig?.(
-      bundlerConfig as never,
-      createBundlerContext(cwd, "webpack"),
+    const wrapper = captured.modules.find(
+      (module) => module.id === "slave-entry-wrapper-module",
     );
-
-    const rule = firstWebpackRule(bundlerConfig);
-    expect(rule.use[0].options).toMatchObject({
-      resolver: generatedResolver,
-      resolverExport: "resolver",
-    });
+    const sourceDir = generatedModuleDir(cwd, "@evjs/plugin-qiankun:slave");
+    const importFile = (file: string) => toRelativeImport(sourceDir, file);
+    const originalSource = renderModule(
+      original,
+      captured.importOf,
+      importFile,
+    );
+    const wrapperSource = renderModule(wrapper, captured.importOf, importFile);
+    expect(originalSource).toContain("createPagesApp");
+    expect(originalSource).toContain("routeModule0");
+    expect(originalSource).toContain(
+      toRelativeImport(sourceDir, path.join(cwd, "src/pages/index.tsx")),
+    );
+    expect(originalSource).toContain(
+      toRelativeImport(sourceDir, path.join(cwd, "src/pages/error.tsx")),
+    );
+    expect(originalSource).not.toContain(toImportPath(cwd));
+    expect(wrapperSource).toContain(
+      'loadEntry: () => import("virtual:slave-original-entry-module")',
+    );
   });
 
-  it("marks qiankun as external when requested", async () => {
+  it("declares qiankun as resolve.external when requested", async () => {
     const cwd = await createProject({
       "src/main.tsx": "console.log('entry');",
       "src/qiankun.master.ts": "export default async () => ({ apps: [] });",
@@ -319,49 +193,22 @@ describe("@evjs/plugin-qiankun plugin", () => {
       resolver: "./src/qiankun.master.ts",
       externalQiankun: true,
     });
-    const hooks = await setupPlugin(plugin, cwd, [], {});
-    const bundlerConfig = createWebpackConfig();
+    const captured = createContributionCapture(cwd, {});
 
-    await hooks?.bundlerConfig?.(
-      bundlerConfig as never,
-      createBundlerContext(cwd, "webpack"),
-    );
+    await plugin.contributions?.(captured.ctx);
 
-    expect(bundlerConfig.externals).toEqual({ qiankun: "qiankun" });
-  });
-
-  it("generates entry loader code with the plugin-resolved qiankun runtime path", () => {
-    const repoRoot = path.resolve(
-      path.dirname(fileURLToPath(import.meta.url)),
-      "../../..",
-    );
-    const resourcePath = path.join(
-      repoRoot,
-      "packages/bundler-utoopack/esm/adapter/pages-entry-anchor.js",
-    );
-    const source = entryLoader.call({
-      getOptions: () => ({
-        role: "master",
-        qiankunRuntime,
-        resolver: path.join(
-          repoRoot,
-          "examples/qiankun-master/src/qiankun.master.ts",
-        ),
-      }),
-      resourcePath,
-      rootContext: repoRoot,
+    expect(captured.slots).toContainEqual({
+      name: "resolve.external",
+      input: {
+        id: "qiankun-external",
+        specifier: "qiankun",
+        source: "qiankun",
+        runtime: "client",
+      },
     });
-
-    expect(source).not.toContain("@evjs/plugin-qiankun/runtime");
-    expect(source).not.toContain(repoRoot);
-    expect(source).toContain(
-      "../../../../examples/qiankun-master/src/qiankun.master.ts",
-    );
-    expect(source).toContain("../../../plugin-qiankun/src/runtime.ts");
-    expect(source).toContain("./pages-entry-anchor.js?evjs-qiankun-original");
   });
 
-  it("rejects mpa routing and explicit pages", async () => {
+  it("rejects mpa routing and explicit pages during contribution collection", async () => {
     const cwd = await createProject({
       "src/main.tsx": "console.log('entry');",
       "src/qiankun.master.ts": "export default async () => ({ apps: [] });",
@@ -371,36 +218,77 @@ describe("@evjs/plugin-qiankun plugin", () => {
     });
 
     await expect(
-      setupPlugin(plugin, cwd, [], {
-        routing: { ...createSpaRoutingConfig(), mode: "mpa" },
-      }),
+      plugin.contributions?.(
+        createContributionCapture(cwd, {
+          routing: { ...createSpaRoutingConfig(), mode: "mpa" },
+        }).ctx,
+      ),
     ).rejects.toThrow("only supports SPA file routing");
     await expect(
-      setupPlugin(plugin, cwd, [], {
-        pages: {
-          home: { entry: "./src/main.tsx" },
-        } as never,
-      }),
+      plugin.contributions?.(
+        createContributionCapture(cwd, {
+          pages: {
+            home: { entry: "./src/main.tsx" },
+          } as never,
+        }).ctx,
+      ),
     ).rejects.toThrow("only supports a single SPA app entry");
   });
 });
 
-const webpackPagesEntryAnchor =
-  "/repo/packages/bundler-webpack/src/adapter/pages-entry-anchor.js";
-const webpackPagesEntryLoader =
-  "/repo/packages/bundler-webpack/src/adapter/pages-entry-loader.cjs";
-const utoopackPagesEntryAnchor =
-  "/repo/packages/bundler-utoopack/src/adapter/pages-entry-anchor.js";
-const utoopackPagesEntryLoader =
-  "/repo/packages/bundler-utoopack/src/adapter/pages-entry-loader.cjs";
-
-async function setupPlugin(
-  plugin: Plugin,
+function createContributionCapture(
   cwd: string,
-  watched: string[],
   config: Partial<ResolvedConfig>,
+  plan: BuildPlan = createAppPlan(),
 ) {
-  return await plugin.setup?.(createPluginContext(cwd, watched, config));
+  const watched: string[] = [];
+  const modules: CapturedModule[] = [];
+  const slots: CapturedSlot[] = [];
+  const refs = new Map<GeneratedModuleRef, string>();
+  const emit: EmitApi = {
+    module(input) {
+      const ref = { id: input.id } as unknown as GeneratedModuleRef;
+      refs.set(ref, input.id);
+      modules.push({ id: input.id, source: input.source });
+      return ref;
+    },
+    data(input) {
+      const ref = { id: input.id } as unknown as GeneratedModuleRef;
+      refs.set(ref, input.id);
+      modules.push({ id: input.id, source: JSON.stringify(input.value) });
+      return ref;
+    },
+    importOf(ref) {
+      return `virtual:${refs.get(ref) ?? "unknown"}`;
+    },
+  };
+  const ctx: ContributionContext = {
+    ...createPluginContext(cwd, watched, config),
+    framework: {
+      graph: createGraph(),
+      plan,
+    },
+    emit,
+    slot(name) {
+      return {
+        add(input) {
+          slots.push({ name, input });
+        },
+      };
+    },
+  };
+  return { ctx, importOf: emit.importOf, modules, slots, watched };
+}
+
+function renderModule(
+  module: CapturedModule | undefined,
+  importOf: EmitApi["importOf"],
+  importFile: (file: string) => string = (file) => file,
+): string {
+  expect(module).toBeDefined();
+  return typeof module?.source === "function"
+    ? module.source({ importFile, importOf })
+    : (module?.source ?? "");
 }
 
 async function createProject(files: Record<string, string>): Promise<string> {
@@ -451,48 +339,6 @@ function createBundlerContext(cwd: string, bundlerName: string) {
   } as never;
 }
 
-function createWebpackConfig(): Record<string, unknown> {
-  return {
-    name: "client",
-    target: "web",
-    entry: {
-      main: {
-        import: "./src/main.tsx",
-      },
-    },
-    module: { rules: [] },
-  };
-}
-
-function createWebpackPagesConfig(): Record<string, unknown> {
-  return {
-    name: "client",
-    target: "web",
-    entry: {
-      main: {
-        import: webpackPagesEntryAnchor,
-      },
-    },
-    module: {
-      rules: [
-        {
-          test: /pages-entry-anchor\.js$/,
-          resourceQuery: /^$/,
-          use: [{ loader: webpackPagesEntryLoader, options: {} }],
-        },
-      ],
-    },
-  };
-}
-
-function firstWebpackRule(config: Record<string, unknown>) {
-  return ((config.module as { rules: unknown[] }).rules[0] ?? {}) as {
-    test: RegExp;
-    resourceQuery: { not: RegExp[] };
-    use: [{ loader: string; options: Record<string, string> }];
-  };
-}
-
 function createSpaRoutingConfig() {
   return {
     mode: "spa" as const,
@@ -503,19 +349,95 @@ function createSpaRoutingConfig() {
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+function createGraph(): AppGraph {
+  return {
+    version: 1,
+    rootDir: "/repo",
+    apps: {},
+    pages: {},
+    routes: [],
+    serverFunctions: [],
+    serverRoutes: [],
+  };
 }
 
-async function exists(file: string): Promise<boolean> {
-  try {
-    await fs.access(file);
-    return true;
-  } catch {
-    return false;
-  }
+function createAppPlan(): BuildPlan {
+  return {
+    version: 1,
+    buildId: "test",
+    mode: "production",
+    distDir: "dist",
+    output: { clientDir: "dist/client", serverDir: "dist/server" },
+    resolve: { alias: { "@": "./src" } },
+    entries: [
+      {
+        name: "main",
+        import: "./src/main.tsx",
+        environment: "client",
+        runtime: "browser",
+        kind: "app-client",
+        owner: { appId: "default" },
+      },
+    ],
+    html: [],
+    server: {},
+    runtime: {
+      publicPath: "auto",
+      server: { basePath: "/__evjs", fn: "__evjs/fn" },
+    },
+  };
+}
+
+function createPagesAppPlan(): BuildPlan {
+  return {
+    ...createAppPlan(),
+    entries: [
+      {
+        name: "main",
+        import: "./src/main.tsx",
+        environment: "client",
+        runtime: "browser",
+        kind: "app-client",
+        owner: { appId: "default" },
+        metadata: {
+          type: "pages-app",
+          mount: "#app",
+          routes: [
+            {
+              id: "index",
+              path: "/",
+              module: "./src/pages/index.tsx",
+              errorModule: "./src/pages/error.tsx",
+            },
+          ],
+        },
+      },
+    ],
+  };
 }
 
 function toImportPath(file: string): string {
   return file.split(path.sep).join(path.posix.sep);
+}
+
+function toRelativeImport(fromDir: string, targetFile: string): string {
+  let relative = toImportPath(path.relative(fromDir, targetFile));
+  if (!relative.startsWith(".")) relative = `./${relative}`;
+  return relative;
+}
+
+function generatedModuleDir(cwd: string, pluginName: string): string {
+  return path.join(cwd, ".ev", "plugins", sanitizePathSegment(pluginName));
+}
+
+function sanitizePathSegment(value: string): string {
+  const normalized = value
+    .replace(/^@evjs\/plugin-/, "")
+    .replace(/^@/, "")
+    .replace(/\/plugin-/g, "/")
+    .replace(/^plugin-/, "");
+  const sanitized = normalized
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return sanitized || "generated";
 }

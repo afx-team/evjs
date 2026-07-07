@@ -34,6 +34,12 @@ export type {
   TranspileTypeScriptConfigOptions,
 } from "./config-module.js";
 export { loadConfigFile, transpileTypeScriptConfig } from "./config-module.js";
+export {
+  applyHtmlTagContributions,
+  GENERATED_IR_DIR,
+  GENERATED_IR_MANIFEST,
+  materializeFrameworkIR,
+} from "./generated-contributions.js";
 export type {
   Diagnostic,
   GraphAnalysisResult,

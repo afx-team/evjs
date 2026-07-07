@@ -22,9 +22,7 @@ import {
   validatePageBuildContract,
 } from "../page-rendering-contract.js";
 import { sortPageRoutes } from "../page-route-order.js";
-import { PAGES_APP_ENTRY_IMPORT } from "../pages-entry.js";
 import type { DiscoveredServerRouteNode } from "../server-routes.js";
-import { SERVER_ROUTES_ENTRY_IMPORT } from "../server-routes-entry.js";
 import { sanitizePageId } from "../utils.js";
 
 const DEFAULT_PUBLIC_PATH: RuntimePlan["publicPath"] = "auto";
@@ -192,7 +190,7 @@ function createEntries(
         : undefined;
     entries.push({
       name: app.id === "default" ? "main" : app.id,
-      import: pagesAppRouting ? PAGES_APP_ENTRY_IMPORT : app.entry,
+      import: app.entry,
       environment: "client",
       runtime: "browser",
       kind: "app-client",
@@ -611,7 +609,7 @@ function createServerRuntimeEntry(
     serverFunctions.length > 0
   ) {
     return {
-      import: SERVER_ROUTES_ENTRY_IMPORT,
+      import: FRAMEWORK_SERVER_FETCH_ENTRY,
       metadata: {
         type: "server-app",
         routes,

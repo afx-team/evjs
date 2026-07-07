@@ -20,7 +20,7 @@
     }
   },
   "scripts": {
-    "build": "rm -rf esm && tsc && cp src/entry-loader.cjs esm/entry-loader.cjs",
+    "build": "rm -rf esm && tsc",
     "test": "vitest run",
     "check-types": "tsc --noEmit"
   },

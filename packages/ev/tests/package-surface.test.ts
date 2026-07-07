@@ -162,6 +162,7 @@ const defaultBundlerTypePackage = "@utoo/pack";
 const forbiddenCoreBundlerPackages = ["webpack", "webpack-dev-server"] as const;
 
 const generatedFrameworkArtifacts = [
+  ".ev",
   ".evjs",
   ".turbopack",
   "route-types.d.ts",
@@ -175,7 +176,10 @@ const forbiddenPackageNames = [
 ];
 
 const expectedBuildToolsRuntimeExports = [
+  "GENERATED_IR_DIR",
+  "GENERATED_IR_MANIFEST",
   "SERVER_FUNCTION_TRANSFORM_RUNTIME",
+  "applyHtmlTagContributions",
   "applyRouteScopedMiddlewares",
   "build",
   "buildHtml",
@@ -193,6 +197,7 @@ const expectedBuildToolsRuntimeExports = [
   "generatePageRouteTypes",
   "inspectFrameworkBuild",
   "loadConfigFile",
+  "materializeFrameworkIR",
   "prepareFrameworkBuild",
   "resolveRoutes",
   "transformRscClientFile",

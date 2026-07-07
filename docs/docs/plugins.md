@@ -31,7 +31,7 @@ export default defineConfig({
 
 ```ts
 import type { Config, DefaultBundlerConfig, ResolvedConfig } from "@evjs/ev/config";
-import type { Plugin, PluginConfigContext, PluginContext, PluginHooks } from "@evjs/ev/plugin";
+import type { ContributionContext, Plugin, PluginConfigContext, PluginContext, PluginHooks } from "@evjs/ev/plugin";
 
 interface Plugin<TBundlerConfig = DefaultBundlerConfig> {
   name: string;
@@ -48,6 +48,10 @@ interface Plugin<TBundlerConfig = DefaultBundlerConfig> {
     | PluginHooks<TBundlerConfig>
     | undefined
     | Promise<PluginHooks<TBundlerConfig> | undefined>;
+
+  contributions?(ctx: ContributionContext<TBundlerConfig>):
+    | void
+    | Promise<void>;
 }
 ```
 
@@ -132,6 +136,75 @@ flowchart LR
 | `transformHtml(doc, ctx)` | Mutate one HTML document at a time; receives the current manifest result fields |
 | `buildEnd({ output, isRebuild })` | Emit final artifacts after build |
 | `dispose(ctx)` | Cleanup |
+
+## Generated Contributions
+
+Use `contributions()` when a plugin needs to add framework-owned code to the
+generated `.ev` IR. This is the right layer for entry imports, runtime plugin
+modules, HTML tags, framework request middleware, and semantic resolution
+changes. Keep loaders for real bundler transforms such as compiling a custom
+file type.
+
+`.ev` is generated output. It contains:
+
+- `.ev/framework/app-graph.json`: discovered file-convention graph;
+- `.ev/framework/build-plan.json`: final bundler-independent build plan;
+- `.ev/entries/*`: framework entry facades consumed by bundlers;
+- `.ev/plugins/<plugin>/*`: plugin generated modules;
+- `.ev/manifest.json`: graph, generated modules, slots, import edges, and final entries.
+
+Generated modules use opaque refs instead of exposing filesystem paths:
+
+```ts
+import type { Plugin } from "@evjs/ev/plugin";
+
+export function analyticsPlugin(): Plugin {
+  return {
+    name: "analytics",
+    contributions(ctx) {
+      const runtime = ctx.emit.module({
+        id: "runtime",
+        scope: { kind: "app" },
+        source: "export function install() { console.log('analytics'); }",
+      });
+
+      const entry = ctx.emit.module({
+        id: "entry",
+        scope: { kind: "app" },
+        source: ({ importOf }) =>
+          `import { install } from ${JSON.stringify(importOf(runtime))};\ninstall();`,
+      });
+
+      ctx.slot("client.entry").add({
+        id: "entry",
+        module: entry,
+        position: "after-main",
+      });
+    },
+  };
+}
+```
+
+Available slots:
+
+| Slot | Purpose |
+|------|---------|
+| `client.entry` | Add generated modules around the client entry at `polyfill`, `before-main-imports`, `after-main-imports`, `before-main`, or `after-main` |
+| `client.runtime.plugin` | Register runtime plugin modules and optional export keys |
+| `server.request.middleware` | Add framework request middleware to the server pipeline |
+| `html.tag` | Add structured `meta`, `link`, `script`, or `style` tags |
+| `resolve.alias` | Redirect a module specifier to a user module, package, absolute path, or generated module |
+| `resolve.external` | Mark a specifier as provided by an external runtime; inject CDN tags separately through `html.tag` |
+
+`resolve.external` accepts `runtime: "client" | "server" | "all"`. The
+Webpack adapter applies that filter per target. The current Utoopack adapter
+only exposes a top-level externals config, so client/all externals are mapped
+there and server-only externals fail fast when client entries are present.
+
+`contributions()` is separate from lifecycle hooks. Existing `config()`,
+`setup()`, `bundlerConfig()`, `transformHtml()`, and `buildEnd()` hooks remain
+the extension points for configuration, low-level bundler changes, AST-level
+HTML rewrites, and deployment output.
 
 ## HTML Transform Context
 

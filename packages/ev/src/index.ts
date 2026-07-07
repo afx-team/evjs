@@ -4,4 +4,13 @@
 
 export type { Config, EvConfig } from "./config/index.js";
 export { defineConfig } from "./config/index.js";
-export type { EvPlugin, Plugin } from "./plugin/index.js";
+export type {
+  ContributionContext,
+  EmitApi,
+  EvPlugin,
+  FrameworkIRView,
+  FrameworkSlot,
+  FrameworkSlotInput,
+  GeneratedModuleRef,
+  Plugin,
+} from "./plugin/index.js";

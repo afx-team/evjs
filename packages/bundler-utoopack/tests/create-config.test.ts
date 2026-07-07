@@ -1,14 +1,13 @@
-import { createRequire } from "node:module";
 import path from "node:path";
-import { createBuildPlan } from "@evjs/ev/_internal/build";
+import {
+  createBuildPlan,
+  materializeFrameworkIR,
+} from "@evjs/ev/_internal/build";
 import type { AppGraph, BuildPlan } from "@evjs/ev/_internal/manifest";
+import type { Plugin } from "@evjs/ev/plugin";
+import type { ConfigComplete } from "@utoo/pack";
 import { describe, expect, it } from "vitest";
 import { createUtoopackConfig } from "../src/adapter/create-config.js";
-
-const require = createRequire(import.meta.url);
-const componentPageLoader = require("../src/adapter/component-page-loader.cjs");
-const pagesEntryLoader = require("../src/adapter/pages-entry-loader.cjs");
-const serverRoutesEntryLoader = require("../src/adapter/server-routes-entry-loader.cjs");
 
 describe("createUtoopackConfig", () => {
   function createResolvedConfig(
@@ -47,7 +46,7 @@ describe("createUtoopackConfig", () => {
 
   it("passes resolved dev server options and SPA fallback to Utoopack", async () => {
     const config = createResolvedConfig();
-    const plan = createPlan(config);
+    const plan = await createPlan(config);
 
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -80,6 +79,117 @@ describe("createUtoopackConfig", () => {
     );
   });
 
+  it("resolves generated alias contributions directly to generated files", async () => {
+    const plugin: Plugin<ConfigComplete> = {
+      name: "generated-alias",
+      contributions(ctx) {
+        const configModule = ctx.emit.data({
+          id: "config",
+          scope: { kind: "app" },
+          value: { enabled: true },
+        });
+        ctx.slot("resolve.alias").add({
+          id: "config-alias",
+          specifier: "@generated/config",
+          replacement: configModule,
+        });
+      },
+    };
+    const config = createResolvedConfig({
+      plugins: [plugin],
+    });
+    const plan = await createPlan(config);
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    const module = plan.generated?.modules.find((item) => item.id === "config");
+
+    expect(plan.generated?.slots).toContainEqual(
+      expect.objectContaining({
+        slot: "resolve.alias",
+        specifier: "@generated/config",
+        replacement: module?.file,
+      }),
+    );
+    expect(plan.resolve?.alias?.["@generated/config"]).toBe(module?.file);
+    expect(utoopackConfig.resolve?.alias?.["@generated/config"]).toBe(
+      path.resolve(process.cwd(), module?.file ?? ""),
+    );
+  });
+
+  it("maps client and shared resolve.external contributions to Utoopack externals", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+    plan.resolve = {
+      ...plan.resolve,
+      external: {
+        react: { source: "React", runtime: "client" },
+        lodash: { source: "_", runtime: "all" },
+      },
+    };
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.externals).toEqual({
+      react: "React",
+      lodash: "_",
+    });
+  });
+
+  it("rejects server-only resolve.external contributions for mixed Utoopack plans", async () => {
+    const config = createResolvedConfig({
+      server: {
+        basePath: "/__evjs",
+        runtime: {
+          basePath: "/__evjs",
+          fn: "__evjs/fn",
+          ppr: "__evjs/ppr",
+        },
+        dev: {
+          port: 3001,
+          https: false,
+        },
+        routing: {
+          dir: "./src/apis",
+          routes: [
+            {
+              id: "src/apis/health.ts:/health:GET",
+              module: "src/apis/health.ts",
+              path: "/health",
+              methods: ["GET"],
+            },
+          ],
+        },
+      },
+    });
+    const plan = await createPlan(config);
+    plan.resolve = {
+      ...plan.resolve,
+      external: {
+        "server-only-lib": {
+          source: "server-only-lib",
+          runtime: "server",
+        },
+      },
+    };
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), []),
+    ).rejects.toThrow(
+      "cannot map server-only resolve.external contributions while client entries are present: server-only-lib",
+    );
+  });
+
   it("uses configured client and server output directories", async () => {
     const config = createResolvedConfig({
       output: {
@@ -101,7 +211,7 @@ describe("createUtoopackConfig", () => {
       },
     });
     const cwd = process.cwd();
-    const plan = createPlan(config);
+    const plan = await createPlan(config);
 
     const utoopackConfig = await createUtoopackConfig(config, plan, cwd, []);
 
@@ -116,7 +226,7 @@ describe("createUtoopackConfig", () => {
     process.env.NODE_ENV = "development";
     try {
       const config = createResolvedConfig();
-      const plan = createPlan(config, { mode: "production" });
+      const plan = await createPlan(config, { mode: "production" });
 
       const utoopackConfig = await createUtoopackConfig(
         config,
@@ -142,7 +252,7 @@ describe("createUtoopackConfig", () => {
 
   it("content-hashes client CSS output filenames in production", async () => {
     const config = createResolvedConfig();
-    const plan = createPlan(config, { mode: "production" });
+    const plan = await createPlan(config, { mode: "production" });
 
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -161,7 +271,7 @@ describe("createUtoopackConfig", () => {
 
   it("uses stable client CSS output filenames in development", async () => {
     const config = createResolvedConfig();
-    const plan = createPlan(config, { mode: "development" });
+    const plan = await createPlan(config, { mode: "development" });
 
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -182,7 +292,7 @@ describe("createUtoopackConfig", () => {
         crossOriginLoading: "use-credentials",
       },
     });
-    const plan = createPlan(config);
+    const plan = await createPlan(config);
 
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -211,7 +321,7 @@ describe("createUtoopackConfig", () => {
         },
       },
     });
-    const plan = createPlan(config);
+    const plan = await createPlan(config);
 
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -280,7 +390,7 @@ describe("createUtoopackConfig", () => {
         },
       },
     });
-    const plan = createPlan(config);
+    const plan = await createPlan(config);
 
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -314,7 +424,7 @@ describe("createUtoopackConfig", () => {
     expect(fallbackPattern.test("/users/123")).toBe(false);
   });
 
-  it("installs the pages entry loader for framework-managed pages", async () => {
+  it("uses a generated pages app entry for framework-managed pages", async () => {
     const config = createResolvedConfig({
       entry: "./src/pages/index.tsx",
       routing: {
@@ -335,7 +445,7 @@ describe("createUtoopackConfig", () => {
         ],
       },
     });
-    const plan = createPlan(config);
+    const plan = await createPlan(config);
 
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -346,59 +456,13 @@ describe("createUtoopackConfig", () => {
 
     expect(utoopackConfig.entry).toEqual([
       {
-        import: expect.stringContaining("pages-entry-anchor.js"),
+        import: "./.ev/entries/main.ts",
         name: "main",
       },
     ]);
-    const pagesEntryRules = utoopackConfig.module?.rules?.["**/*"] as
-      | { condition: { path: RegExp } }[]
-      | undefined;
-    const pagesEntryRule = pagesEntryRules?.[0];
-    expect(
-      pagesEntryRule?.condition.path.test("/project/src/pages/index.tsx"),
-    ).toBe(false);
-    expect(
-      pagesEntryRule?.condition.path.test(
-        "packages/bundler-utoopack/esm/adapter/pages-entry-anchor.js",
-      ),
-    ).toBe(true);
-    expect(
-      pagesEntryRule?.condition.path.test(
-        "/workspace/node_modules/@evjs/bundler-utoopack/esm/adapter/pages-entry-anchor.js",
-      ),
-    ).toBe(true);
-    expect(utoopackConfig.module?.rules).toMatchObject({
-      "**/*": [
-        {
-          condition: {
-            path: expect.any(RegExp),
-            query: "",
-          },
-          loaders: [
-            {
-              loader: expect.stringContaining("pages-entry-loader.cjs"),
-              options: {
-                type: "pages-app",
-                mount: "#app",
-                rootModule: "./src/layout/index.tsx",
-                routes: [
-                  {
-                    id: "index",
-                    path: "/",
-                    module: "./src/pages/index.tsx",
-                    errorModule: "./src/pages/error.tsx",
-                    notFoundModule: "./src/pages/not-found.tsx",
-                  },
-                ],
-              },
-            },
-          ],
-        },
-      ],
-    });
   });
 
-  it("installs the server routes entry loader for framework-managed server routes", async () => {
+  it("uses a generated server entry for framework-managed server routes", async () => {
     const config = createResolvedConfig({
       server: {
         basePath: "/__evjs",
@@ -424,7 +488,7 @@ describe("createUtoopackConfig", () => {
         },
       },
     });
-    const plan = createPlan(config);
+    const plan = await createPlan(config);
 
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -433,101 +497,7 @@ describe("createUtoopackConfig", () => {
       [],
     );
 
-    expect(utoopackConfig.server?.entry).toEqual(
-      expect.stringContaining("server-routes-entry-anchor.js"),
-    );
-    expect(utoopackConfig.module?.rules).toMatchObject({
-      "**/*": expect.arrayContaining([
-        expect.objectContaining({
-          condition: {
-            path: expect.any(RegExp),
-            query: "",
-          },
-          loaders: [
-            {
-              loader: expect.stringContaining("server-routes-entry-loader.cjs"),
-              options: {
-                type: "server-app",
-                routes: [
-                  {
-                    id: "src/apis/health.ts:/health:GET",
-                    module: "src/apis/health.ts",
-                    path: "/health",
-                    methods: ["GET"],
-                  },
-                ],
-              },
-            },
-          ],
-        }),
-      ]),
-    });
-  });
-
-  it("generates server routes entries from method and middleware exports", () => {
-    const source = serverRoutesEntryLoader.call({
-      cacheable() {},
-      getOptions() {
-        return {
-          routes: [
-            {
-              path: "/health",
-              module: "src/apis/health.ts",
-              methods: ["GET"],
-            },
-            {
-              path: "/secure",
-              module: "src/apis/secure.ts",
-              methods: ["POST"],
-              middlewares: [
-                {
-                  module: "src/apis/middleware.ts",
-                },
-              ],
-            },
-          ],
-          middlewares: [
-            {
-              module: "src/middleware.ts",
-            },
-          ],
-          serverFunctions: [
-            {
-              id: "save",
-              module: "src/api/actions.server.ts",
-              exportName: "saveOrder",
-            },
-            {
-              id: "load",
-              module: "src/api/actions.server.ts",
-              exportName: "loadOrders",
-            },
-          ],
-        };
-      },
-      resourcePath:
-        "/workspace/node_modules/@evjs/bundler-utoopack/esm/adapter/server-routes-entry-anchor.js",
-      rootContext: "/workspace",
-    });
-
-    expect(source).toContain('@evjs/ev/_internal/server"');
-    expect(source).toContain("@evjs/ev/_internal/server/react");
-    expect(source).toContain('createRoute("/health", routeDefinition0)');
-    expect(source).toContain('createRoute("/secure", routeDefinition1)');
-    expect(source).toContain("import middleware0 from");
-    expect(source).toContain("src/middleware.ts");
-    expect(source).toContain("import middleware1 from");
-    expect(source).toContain("src/apis/middleware.ts");
-    expect(source).toContain(
-      'import "../../../../../src/api/actions.server.ts";',
-    );
-    expect(source.match(/actions\.server\.ts/g)).toHaveLength(1);
-    expect(source).toContain("routeDefinition0.GET = routeModule0.GET");
-    expect(source).not.toContain("routeDefinition0.middlewares");
-    expect(source).toContain("routeDefinition1.middlewares = [middleware1]");
-    expect(source).toContain("routeDefinition1.POST = routeModule1.POST");
-    expect(source).toContain("const middlewares = [middleware0]");
-    expect(source).toContain("createApp({ middlewares, routes");
+    expect(utoopackConfig.server?.entry).toBe("./.ev/entries/server.ts");
   });
 
   it("does not add SPA history fallback for MPA builds", async () => {
@@ -540,7 +510,7 @@ describe("createUtoopackConfig", () => {
         },
       },
     });
-    const plan = createPlan(config);
+    const plan = await createPlan(config);
 
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -556,7 +526,7 @@ describe("createUtoopackConfig", () => {
     expect(utoopackConfig.devServer?.proxy).toEqual([]);
   });
 
-  it("installs component page loaders for framework-managed page entries", async () => {
+  it("uses generated component page entries for framework-managed page entries", async () => {
     const config = createResolvedConfig({
       pages: {
         home: {
@@ -566,9 +536,9 @@ describe("createUtoopackConfig", () => {
         },
       },
     });
-    const plan = createPlan(config);
+    const plan = await createPlan(config);
 
-    expect(plan.entries[0]?.import).toBe("./src/pages/Home.tsx");
+    expect(plan.entries[0]?.import).toBe("./.ev/entries/home.ts");
     expect(plan.entries[0]?.metadata).toMatchObject({
       type: "react-component-page",
       component: "./src/pages/Home.tsx",
@@ -580,31 +550,12 @@ describe("createUtoopackConfig", () => {
       [],
     );
 
-    expect(utoopackConfig.module?.rules).toMatchObject({
-      "**/*": [
-        {
-          condition: {
-            path: expect.any(RegExp),
-            query: "",
-          },
-          loaders: [
-            {
-              loader: expect.stringContaining("component-page-loader.cjs"),
-              options: {
-                type: "react-component-page",
-                mount: "#app",
-                hydrate: "load",
-                render: "csr",
-              },
-            },
-          ],
-          type: "ecmascript",
-        },
-      ],
-    });
+    expect(utoopackConfig.entry).toEqual([
+      { import: "./.ev/entries/home.ts", name: "home" },
+    ]);
   });
 
-  it("uses component page loaders instead of the SPA router loader for MPA page routes", async () => {
+  it("uses generated component page entries instead of SPA router entries for MPA page routes", async () => {
     const config = createResolvedConfig({
       routing: {
         mode: "mpa",
@@ -651,7 +602,24 @@ describe("createUtoopackConfig", () => {
       serverFunctions: [],
       serverRoutes: [],
     };
-    const plan = createBuildPlan(config, graph, { mode: "development" });
+    const plan = await materializeFrameworkIR({
+      cwd: process.cwd(),
+      mode: "development",
+      command: "dev",
+      config,
+      graph,
+      plugins: [],
+      pluginContext: {
+        cwd: process.cwd(),
+        mode: "development",
+        command: "dev",
+        config,
+        logger: {} as never,
+        addWatchFile() {},
+      },
+      plan: createBuildPlan(config, graph, { mode: "development" }),
+      write: false,
+    });
 
     expect(
       plan.entries
@@ -664,73 +632,21 @@ describe("createUtoopackConfig", () => {
       process.cwd(),
       [],
     );
-    const serializedRules = JSON.stringify(utoopackConfig.module?.rules);
 
-    expect(serializedRules).toContain("component-page-loader.cjs");
-    expect(serializedRules).not.toContain("pages-entry-loader.cjs");
-  });
-
-  it("generates router-free component page entry imports", () => {
-    const source = componentPageLoader.call({
-      cacheable() {},
-      getOptions() {
-        return {
-          hydrate: "load",
-          mount: "#app",
-          render: "csr",
-          route: { id: "about", path: "/about" },
-        };
-      },
-      resourcePath: "/workspace/src/pages/about.tsx",
-      rootContext: "/workspace",
-    });
-
-    expect(source).toContain("@evjs/ev/_internal/client/react-page");
-    expect(source).not.toContain('from "@evjs/ev/_internal/client";');
-    expect(source).toContain("createGeneratedReactPageEntry");
-    expect(source).toContain("import.meta.url");
-    expect(source).not.toContain("currentScriptHref");
-  });
-
-  it("generates pages app imports without module queries", () => {
-    const source = pagesEntryLoader.call({
-      cacheable() {},
-      getOptions() {
-        return {
-          mount: "#app",
-          rootModule: "./src/layout/index.tsx",
-          routes: [
-            {
-              id: "index",
-              path: "/",
-              module: "./src/pages/index.tsx",
-              errorModule: "./src/pages/error.tsx",
-              notFoundModule: "./src/pages/not-found.tsx",
-            },
-          ],
-        };
-      },
-      resourcePath:
-        "/workspace/node_modules/@evjs/bundler-utoopack/esm/adapter/pages-entry-anchor.js",
-      rootContext: "/workspace",
-    });
-
-    expect(source).toContain("@evjs/ev/_internal/client");
-    expect(source).toContain("createPagesApp");
-    expect(source).toContain("src/pages/error.tsx");
-    expect(source).toContain("src/pages/not-found.tsx");
-    expect(source).not.toContain("globalModule:");
-    expect(source).not.toContain("globalNotFoundModule");
-    expect(source).toContain("routeErrorModule0.default");
-    expect(source).toContain("routeNotFoundModule0.default");
-    expect(source).toContain("src/layout/index.tsx");
-    expect(source).toContain("src/pages/index.tsx");
-    expect(source).not.toContain("evjs-page-route");
+    expect(
+      plan.entries
+        .filter((entry) => entry.environment === "client")
+        .map((entry) => entry.import),
+    ).toEqual(["./.ev/entries/index.ts", "./.ev/entries/about.ts"]);
+    expect(utoopackConfig.entry).toEqual([
+      { import: "./.ev/entries/index.ts", name: "index" },
+      { import: "./.ev/entries/about.ts", name: "about" },
+    ]);
   });
 
   it("awaits async bundlerConfig hooks before returning config", async () => {
     const config = createResolvedConfig();
-    const plan = createPlan(config);
+    const plan = await createPlan(config);
 
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -845,7 +761,7 @@ describe("createUtoopackConfig", () => {
         },
       },
     });
-    const plan = createPlan(config);
+    const plan = await createPlan(config);
     plan.entries.push({
       name: "dashboard-server",
       import: "./src/pages/Dashboard.tsx",
@@ -903,7 +819,7 @@ describe("createUtoopackConfig", () => {
 function createPlan(
   config: Parameters<typeof createUtoopackConfig>[0],
   options: { distDir?: string; mode?: "development" | "production" } = {},
-): BuildPlan {
+): Promise<BuildPlan> {
   const graph: AppGraph = {
     version: 1,
     rootDir: process.cwd(),
@@ -940,9 +856,27 @@ function createPlan(
     serverRoutes: config.server.routing?.routes ?? [],
   };
 
-  return createBuildPlan(config, graph, {
-    mode: options.mode ?? "development",
-    distDir: options.distDir,
+  const mode = options.mode ?? "development";
+  return materializeFrameworkIR({
+    cwd: process.cwd(),
+    mode,
+    command: mode === "development" ? "dev" : "build",
+    config,
+    graph,
+    plugins: config.plugins,
+    pluginContext: {
+      cwd: process.cwd(),
+      mode,
+      command: mode === "development" ? "dev" : "build",
+      config,
+      logger: {} as never,
+      addWatchFile() {},
+    },
+    plan: createBuildPlan(config, graph, {
+      mode,
+      distDir: options.distDir,
+    }),
+    write: false,
   });
 }
 
