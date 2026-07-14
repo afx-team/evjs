@@ -41,6 +41,7 @@ export {
   materializeFrameworkIR,
 } from "./generated-contributions.js";
 export type {
+  CreateAppGraphOptions,
   Diagnostic,
   GraphAnalysisResult,
   GraphConfig,

@@ -49,7 +49,11 @@ export function createShell(options: ShellOptions): Shell {
       if (driverDisposers.length === 0) {
         for (const driver of options.drivers ?? []) {
           const dispose = driver.subscribe?.((next) => {
-            void shell.activate(next);
+            void shell.activate(next).catch(() => {
+              // Driver transitions run outside a caller-owned promise. Phase
+              // failures have already reached onError; consume the rejection
+              // here so it does not become a global unhandledrejection.
+            });
           });
           if (dispose) driverDisposers.push(dispose);
         }

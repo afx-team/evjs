@@ -816,7 +816,6 @@ describe("assertFrameworkManifestShape", () => {
             id: "offer",
             assets: { js: [], css: [] },
             cache: "no-store",
-            hydrate: "visible",
           },
         },
       },
@@ -907,7 +906,7 @@ describe("assertFrameworkManifestShape", () => {
                   offer: {
                     id: "offer",
                     assets: { js: [], css: [] },
-                    hydrate: "soon",
+                    hydrate: "visible",
                   },
                 },
               },
@@ -917,7 +916,7 @@ describe("assertFrameworkManifestShape", () => {
         "manifest",
       ),
     ).toThrow(
-      '[evjs] manifest.pages.campaign.ppr.regions.offer.hydrate must be "none", "load", "visible", or "idle".',
+      "[evjs] manifest.pages.campaign.ppr.regions.offer.hydrate is not supported for PPR regions. Use an explicit client island instead.",
     );
 
     expect(() =>
@@ -3115,7 +3114,6 @@ describe("createPublicManifest", () => {
     expect(() =>
       assertFrameworkManifestShape(manifest, "public manifest", {
         server: "optional",
-        serverFunctionModules: "optional",
         pageRendererReferences: "optional",
         pprRendererReferences: "optional",
         rscRendererReferences: "optional",
@@ -3130,7 +3128,6 @@ describe("createPublicManifest", () => {
         "public manifest",
         {
           server: "optional",
-          serverFunctionModules: "optional",
           pageRendererReferences: "optional",
           pprRendererReferences: "optional",
           rscRendererReferences: "optional",

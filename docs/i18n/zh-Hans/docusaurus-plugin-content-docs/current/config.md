@@ -184,6 +184,10 @@ export default function CampaignPage() {
 }
 ```
 
+Hydration mode 决定客户端交互开始的时机：`load` 立即激活，`visible` 等待挂载点进入
+视口，`idle` 等待浏览器 idle callback，`none` 则让服务端或静态 HTML 保持无交互。
+浏览器缺少对应调度 API 时会回退到 `load`。
+
 ## 显式 App
 
 只有手动自举 SPA 时才使用 `app.entry`：

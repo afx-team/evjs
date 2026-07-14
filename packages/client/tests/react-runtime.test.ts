@@ -117,6 +117,64 @@ describe("createReactPageModule", () => {
     expect(calls).toEqual(["hydrateRoot", "unmount"]);
   });
 
+  it("defers visible hydration until the mount point intersects", async () => {
+    calls.length = 0;
+    let notifyVisible:
+      | ((entries: IntersectionObserverEntry[]) => void)
+      | undefined;
+    const disconnect = vi.fn();
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: (entries: IntersectionObserverEntry[]) => void) {
+          notifyVisible = callback;
+        }
+        observe() {}
+        disconnect = disconnect;
+      },
+    );
+    const mountPoint = {} as Element;
+    const mod = createReactPageModule({
+      component: Component,
+      render: "ssr",
+      hydrate: "visible",
+    });
+
+    await mod.hydrate?.(mountPoint, {} as never);
+    expect(calls).toEqual([]);
+
+    notifyVisible?.([{ isIntersecting: true } as IntersectionObserverEntry]);
+    expect(calls).toEqual(["hydrateRoot"]);
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("defers idle hydration and cancels pending work on unmount", async () => {
+    calls.length = 0;
+    let runIdle: (() => void) | undefined;
+    const cancelIdleCallback = vi.fn();
+    vi.stubGlobal("requestIdleCallback", (callback: () => void) => {
+      runIdle = callback;
+      return 7;
+    });
+    vi.stubGlobal("cancelIdleCallback", cancelIdleCallback);
+    const firstMount = {} as Element;
+    const secondMount = {} as Element;
+    const mod = createReactPageModule({
+      component: Component,
+      render: "ssr",
+      hydrate: "idle",
+    });
+
+    await mod.hydrate?.(firstMount, {} as never);
+    expect(calls).toEqual([]);
+    runIdle?.();
+    expect(calls).toEqual(["hydrateRoot"]);
+
+    await mod.hydrate?.(secondMount, {} as never);
+    await mod.unmount?.(secondMount, {} as never);
+    expect(cancelIdleCallback).toHaveBeenCalledWith(7);
+  });
+
   it("replaces an existing React page root on the same mount point", async () => {
     calls.length = 0;
     renderedElements.length = 0;

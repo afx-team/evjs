@@ -9,6 +9,9 @@ slots 上。
 Contribution 是 framework IR 里的声明式单元。它可以生成产物、把这些产物链接起来，
 并把它们挂到 framework slot 上。
 
+`contributions(ctx)` 应保持确定性且不产生外部副作用。当贡献的源码 alias 改变 framework
+graph 时，evjs 可能会再次执行该 hook。
+
 这个定义刻意比任意临时文件系统更窄。插件不会随意向 `.ev` 写文件；插件声明 artifact
 和关系，由 evjs 统一 materialize 最终 `.ev` 目录和 manifest。
 

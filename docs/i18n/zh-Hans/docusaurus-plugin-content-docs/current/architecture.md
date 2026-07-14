@@ -338,8 +338,8 @@ runtime postponed/resume 尚未实现，当前兼容 splitter 只会为受限的
 内部 opaque 细节。
 
 PPR 页面在 client runtime 中的 page-level hydration 是 `none`。需要客户端交互时，
-应通过显式 client islands 或 region-level hydration metadata 引入，而不是 hydrate 整个
-PPR shell。
+应通过显式 client islands 引入，而不是 hydrate 整个 PPR shell。PPR region 不提供
+独立的 hydration mode。
 
 RSC Flight 请求也通过同一个 `@evjs/server` 边界进入。Flight endpoint 接受
 `page=<id>` 和可选的 `url=<pathname+search>`；`page` id 必须是 manifest page id，

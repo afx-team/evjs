@@ -1451,6 +1451,7 @@ async function renderPprMergedPageResponse(
   }
 
   const headers = new Headers(response.headers);
+  removeStaleBodyHeaders(headers);
   headers.set("Content-Type", TEXT_HTML_UTF8_CONTENT_TYPE);
   applyDefaultPprPageCacheHeaders(headers, page, options);
   if (!changed) {
@@ -1482,6 +1483,7 @@ async function renderPprStreamingPageResponse(
   const html = await response.text();
   const { head, tail } = splitHtmlForPprStream(html);
   const headers = new Headers(response.headers);
+  removeStaleBodyHeaders(headers);
   headers.set("Content-Type", TEXT_HTML_UTF8_CONTENT_TYPE);
   applyDefaultPprPageCacheHeaders(headers, page, options);
   headers.set("x-evjs-ppr", "stream");
@@ -2575,11 +2577,24 @@ async function normalizePprRegionResponse(
   }
 
   const html = await response.text();
+  removeStaleBodyHeaders(headers);
   return new Response(extractPprRegionFragment(html), {
     status: response.status,
     statusText: response.statusText,
     headers,
   });
+}
+
+function removeStaleBodyHeaders(headers: Headers): void {
+  for (const name of [
+    "Content-Encoding",
+    "Content-Length",
+    "Content-MD5",
+    "Digest",
+    "ETag",
+  ]) {
+    headers.delete(name);
+  }
 }
 
 function extractPprRegionFragment(html: string): string {

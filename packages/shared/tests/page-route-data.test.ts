@@ -21,6 +21,13 @@ describe("page route data helpers", () => {
     );
   });
 
+  it("matches encoded and decoded Unicode static route segments", () => {
+    expect(pageRoutePathMatches("/你好", "/%E4%BD%A0%E5%A5%BD")).toBe(true);
+    expect(pageRoutePathMatches("/%E4%BD%A0%E5%A5%BD", "/你好")).toBe(true);
+    expect(pageRoutePathMatches("/a%2Fb", "/a%2Fb")).toBe(true);
+    expect(pageRoutePathMatches("/a%2Fb", "/a/b")).toBe(false);
+  });
+
   it("finds the most specific matching page route independent of route order", () => {
     const routes = [
       { id: "user", path: "/users/$userId" },

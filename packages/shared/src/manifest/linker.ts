@@ -232,7 +232,6 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
                           id: regionId,
                           assets: serverAssetsForEntry(regionEntry),
                           cache: region.cache,
-                          hydrate: region.hydrate,
                         },
                       ];
                     },

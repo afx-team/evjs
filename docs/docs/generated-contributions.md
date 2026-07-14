@@ -10,6 +10,10 @@ A contribution is a declarative unit in the framework IR. It can produce
 generated artifacts, link those artifacts together, and attach them to
 framework slots.
 
+Keep `contributions(ctx)` deterministic and free of external side effects.
+evjs may evaluate it again when contributed source aliases change the
+framework graph.
+
 That definition is intentionally narrower than an arbitrary temporary file
 system. Plugins do not write random files into `.ev`; they declare artifacts and
 relationships. evjs then materializes the final `.ev` tree and manifest.

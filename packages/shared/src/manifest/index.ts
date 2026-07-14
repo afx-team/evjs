@@ -94,7 +94,6 @@ export interface PprRegionConfig {
   component: string;
   fallback?: string;
   cache?: PprCachePolicy;
-  hydrate?: HydrationMode;
 }
 
 export type PprCachePolicy = "no-store" | { revalidate: number };
@@ -335,7 +334,6 @@ export interface BuildOutput {
 
 export interface FrameworkManifestValidationOptions {
   server?: "required" | "optional";
-  serverFunctionModules?: "required" | "optional";
   pageRendererReferences?: "required" | "optional";
   pprRendererReferences?: "required" | "optional";
   rscRendererReferences?: "required" | "optional";
@@ -469,7 +467,6 @@ export interface PprRegionOutput {
   id: string;
   assets: AssetGroup;
   cache?: PprCachePolicy;
-  hydrate?: HydrationMode;
 }
 
 export interface RuntimeModuleOutput {
@@ -1989,7 +1986,9 @@ function assertPprPageOutput(value: unknown, source: string): void {
       assertPprRegionCache(region.cache, `${source}.regions.${name}.cache`);
     }
     if (region.hydrate !== undefined) {
-      assertHydrationMode(region.hydrate, `${source}.regions.${name}.hydrate`);
+      throw new Error(
+        `[evjs] ${source}.regions.${name}.hydrate is not supported for PPR regions. Use an explicit client island instead.`,
+      );
     }
   }
 }

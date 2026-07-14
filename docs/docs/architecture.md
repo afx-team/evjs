@@ -364,8 +364,9 @@ creates internal region renderers for the limited `Suspense` + direct
 `lazy(() => import(...))` shape. Region ids are opaque framework details.
 
 PPR page hydration is page-level `none` in the client runtime. Client
-interactivity should be introduced through explicit client islands or
-region-level hydration metadata, not by hydrating the whole PPR shell.
+interactivity should be introduced through explicit client islands, not by
+hydrating the whole PPR shell. PPR regions do not expose a standalone
+hydration mode.
 
 RSC uses the same `@evjs/server` boundary for Flight requests. The Flight
 endpoint accepts `page=<id>` and an optional `url=<pathname+search>` value; that

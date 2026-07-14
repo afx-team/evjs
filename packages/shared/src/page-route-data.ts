@@ -194,7 +194,11 @@ function matchPageRoutePath(
   }
 
   return {
-    exact: normalizedRoutePath === normalizedPathname,
+    exact:
+      routeSegments.length === pathSegments.length &&
+      routeSegments.every((segment, index) =>
+        routeSegmentEquals(segment, pathSegments[index] ?? ""),
+      ),
     staticSegments: segmentsToMatch.filter(isStaticRouteSegment).length,
     dynamicSegments: segmentsToMatch.filter(isDynamicRouteSegment).length,
     wildcardSegments:
@@ -210,10 +214,14 @@ function routeSegmentMatches(
   pathSegment: string,
 ): boolean {
   return (
-    routeSegment === pathSegment ||
+    routeSegmentEquals(routeSegment, pathSegment) ||
     isDynamicRouteSegment(routeSegment) ||
     isWildcardRouteSegment(routeSegment)
   );
+}
+
+function routeSegmentEquals(left: string, right: string): boolean {
+  return safeDecodeURIComponent(left) === safeDecodeURIComponent(right);
 }
 
 function isBetterPageRouteMatch<T extends { path: string; id?: string }>(

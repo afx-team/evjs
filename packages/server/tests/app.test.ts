@@ -1486,7 +1486,16 @@ describe("createApp", () => {
               owner: { pageId: "dashboard" },
               load: async () => ({
                 default(ctx: ServerRenderContext) {
-                  return `<main><h1>${ctx.page?.render}:${ctx.pageId}</h1><div data-evjs-ppr-region="hero">fallback</div></main>`;
+                  return new Response(
+                    `<main><h1>${ctx.page?.render}:${ctx.pageId}</h1><div data-evjs-ppr-region="hero">fallback</div></main>`,
+                    {
+                      headers: {
+                        "Content-Type": "text/html",
+                        "Content-Length": "10",
+                        ETag: '"stale-shell"',
+                      },
+                    },
+                  );
                 },
               }),
             },
@@ -1495,7 +1504,13 @@ describe("createApp", () => {
               owner: { pageId: "dashboard", regionId: "hero" },
               load: async () => ({
                 default: (ctx: ServerRenderContext) =>
-                  `<p>${ctx.pageId}:${ctx.regionId}</p>`,
+                  new Response(`<p>${ctx.pageId}:${ctx.regionId}</p>`, {
+                    headers: {
+                      "Content-Type": "text/html",
+                      "Content-Length": "5",
+                      ETag: '"stale-region"',
+                    },
+                  }),
               }),
             },
           },
@@ -1507,6 +1522,8 @@ describe("createApp", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get("x-evjs-ppr")).toBe("merged");
+    expect(res.headers.get("Content-Length")).toBeNull();
+    expect(res.headers.get("ETag")).toBeNull();
     expect(await res.text()).toBe(
       "<main><h1>ssr:dashboard</h1><p>dashboard:hero</p></main>",
     );
@@ -1514,6 +1531,8 @@ describe("createApp", () => {
     const region = await app.request("/__evjs/ppr/dashboard/hero");
 
     expect(region.status).toBe(200);
+    expect(region.headers.get("Content-Length")).toBeNull();
+    expect(region.headers.get("ETag")).toBeNull();
     expect(await region.text()).toBe("<p>dashboard:hero</p>");
 
     const regionHead = await app.request("/__evjs/ppr/dashboard/hero", {
@@ -1753,13 +1772,22 @@ describe("createApp", () => {
               owner: { pageId: "dashboard" },
               load: async () => ({
                 default() {
-                  return [
-                    "<!doctype html><html><body><main>",
-                    "<h1>dashboard</h1>",
-                    '<!--$!--><template data-msg="lazy"></template>',
-                    "<div>fallback</div><!--/$-->",
-                    "</main></body></html>",
-                  ].join("");
+                  return new Response(
+                    [
+                      "<!doctype html><html><body><main>",
+                      "<h1>dashboard</h1>",
+                      '<!--$!--><template data-msg="lazy"></template>',
+                      "<div>fallback</div><!--/$-->",
+                      "</main></body></html>",
+                    ].join(""),
+                    {
+                      headers: {
+                        "Content-Type": "text/html",
+                        "Content-Length": "12",
+                        ETag: '"stale-stream"',
+                      },
+                    },
+                  );
                 },
               }),
             },
@@ -1780,6 +1808,8 @@ describe("createApp", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get("x-evjs-ppr")).toBe("stream");
+    expect(res.headers.get("Content-Length")).toBeNull();
+    expect(res.headers.get("ETag")).toBeNull();
     const html = await res.text();
     expect(html).toContain("<div>fallback</div>");
     expect(html).toContain('data-evjs-ppr-stream-region="hero"');

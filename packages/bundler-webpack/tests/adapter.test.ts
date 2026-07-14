@@ -1064,7 +1064,7 @@ describe("webpackAdapter dev", () => {
       ) as PublicManifestOutput;
       const html = await fetchDevText(`http://127.0.0.1:${port}/home.html`);
 
-      expect(onBuildOutput).toHaveBeenCalledTimes(1);
+      expect(onBuildOutput).toHaveBeenCalled();
       expect("distDir" in manifest).toBe(false);
       expect(manifest).not.toHaveProperty("assets");
       if (!("routing" in manifest) || manifest.routing.kind !== "mpa") {

@@ -1980,15 +1980,10 @@ describe("createAppGraph and createBuildPlan", () => {
       `,
       "src/campaign/Offer.region.tsx": `
         const cachePolicy = "no-store";
-        const hydration = "visible";
-        export { cachePolicy as cache, hydration as hydrate };
+        export { cachePolicy as cache };
         const ignoredCache = { revalidate: "60" } as const;
-        const ignoredHydration = "soon";
         export type { ignoredCache as cache };
-        export { type ignoredHydration as hydrate };
         export declare const cache: { revalidate: 60 };
-        declare const ambientHydration: "idle";
-        export { ambientHydration as hydrate };
         export default function Offer() { return null; }
       `,
       "index.html": '<div id="app"></div>',
@@ -2015,7 +2010,6 @@ describe("createAppGraph and createBuildPlan", () => {
         [campaignRegionId]: {
           component: "./src/campaign/Offer.region.tsx",
           cache: "no-store",
-          hydrate: "visible",
         },
       },
     });
@@ -2100,7 +2094,6 @@ describe("createAppGraph and createBuildPlan", () => {
       `,
       "src/campaign/Offer.region.tsx": `
         export const cache = { revalidate: 30 as const } as const;
-        export const hydrate = "none";
         export default function Offer() { return null; }
       `,
       "index.html": '<div id="app"></div>',
@@ -2128,7 +2121,6 @@ describe("createAppGraph and createBuildPlan", () => {
         [campaignRegionId]: {
           component: "./src/campaign/Offer.region.tsx",
           cache: { revalidate: 30 },
-          hydrate: "none",
         },
       },
     });
@@ -2231,7 +2223,7 @@ describe("createAppGraph and createBuildPlan", () => {
       `,
       "src/campaign/Offer.region.tsx": `
         export const cache = { revalidate: 30, revalidate: 60 } as const;
-        export const hydrate = "soon";
+        export const hydrate = "visible";
         export default function Offer() { return null; }
       `,
       "index.html": '<div id="app"></div>',
@@ -2255,13 +2247,13 @@ describe("createAppGraph and createBuildPlan", () => {
         level: "error",
         file: "src/campaign/Offer.region.tsx",
         message:
-          'PPR region cache property "revalidate" is declared more than once.',
+          "PPR region hydrate is not supported. Use an explicit client island for region interactivity.",
       },
       {
         level: "error",
         file: "src/campaign/Offer.region.tsx",
         message:
-          'PPR region hydrate must be one of "none", "load", "visible", or "idle".',
+          'PPR region cache property "revalidate" is declared more than once.',
       },
     ]);
     expect(
@@ -2340,11 +2332,8 @@ describe("createAppGraph and createBuildPlan", () => {
       "src/campaign/Offer.region.tsx": `
         const noStore = "no-store";
         const cached = { revalidate: 30 } as const;
-        const loadHydrate = "load";
         export { noStore as cache };
         export { cached as cache };
-        export { loadHydrate as hydrate };
-        export const hydrate = "none";
         export default function Offer() { return null; }
       `,
       "index.html": '<div id="app"></div>',
@@ -2369,12 +2358,6 @@ describe("createAppGraph and createBuildPlan", () => {
         file: "src/campaign/Offer.region.tsx",
         message:
           'PPR region metadata export "cache" is declared more than once. Keep one static export for each region metadata field.',
-      },
-      {
-        level: "error",
-        file: "src/campaign/Offer.region.tsx",
-        message:
-          'PPR region metadata export "hydrate" is declared more than once. Keep one static export for each region metadata field.',
       },
     ]);
     expect(
@@ -2402,8 +2385,6 @@ describe("createAppGraph and createBuildPlan", () => {
       `,
       "src/campaign/Offer.region.tsx": `
         export let cache;
-        let hydration;
-        export { hydration as hydrate };
         export default function Offer() { return null; }
       `,
       "index.html": '<div id="app"></div>',
@@ -2428,12 +2409,6 @@ describe("createAppGraph and createBuildPlan", () => {
         file: "src/campaign/Offer.region.tsx",
         message:
           'PPR region cache must be "no-store" or an object literal with a positive integer revalidate.',
-      },
-      {
-        level: "error",
-        file: "src/campaign/Offer.region.tsx",
-        message:
-          'PPR region hydrate must be one of "none", "load", "visible", or "idle".',
       },
     ]);
     expect(
@@ -2461,9 +2436,6 @@ describe("createAppGraph and createBuildPlan", () => {
       `,
       "src/campaign/Offer.region.tsx": `
         export { policy as cache } from "./region-cache";
-        export function hydrate() {
-          return "none";
-        }
         export default function Offer() { return null; }
       `,
       "src/campaign/region-cache.ts": `
@@ -2491,12 +2463,6 @@ describe("createAppGraph and createBuildPlan", () => {
         file: "src/campaign/Offer.region.tsx",
         message:
           'PPR region metadata export "cache" must be declared as a local variable with a static initializer. Re-exported, function, and class exports are not supported for PPR region metadata.',
-      },
-      {
-        level: "error",
-        file: "src/campaign/Offer.region.tsx",
-        message:
-          'PPR region metadata export "hydrate" must be declared as a local variable with a static initializer. Re-exported, function, and class exports are not supported for PPR region metadata.',
       },
     ]);
     expect(
@@ -3921,6 +3887,66 @@ describe("createAppGraph and createBuildPlan", () => {
     ).toEqual([{ module: "src/actions.ts", exportName: "saveOrder" }]);
     expect(relativeFileDependencies(cwd, analysis.fileDependencies)).toEqual([
       "src/actions.ts",
+    ]);
+  });
+
+  it("does not follow type-only imports when discovering server functions", async () => {
+    const cwd = await createFixture({
+      "src/main.tsx": `
+        import type { SaveOrderInput } from "./actions";
+        export type { SaveOrderResult } from "./actions";
+        export { type SaveOrderOptions } from "./actions";
+        void (0 as unknown as SaveOrderInput);
+      `,
+      "src/actions.ts": `
+        "use server";
+
+        export interface SaveOrderInput { id: string }
+        export interface SaveOrderResult { ok: boolean }
+        export interface SaveOrderOptions { notify: boolean }
+        export async function saveOrder() {
+          return { ok: true };
+        }
+      `,
+    });
+    const analysis = await createAppGraph(createConfig(), cwd);
+
+    expect(analysis.graph.serverFunctions).toEqual([]);
+    expect(relativeFileDependencies(cwd, analysis.fileDependencies)).toEqual(
+      [],
+    );
+  });
+
+  it("follows configured source aliases when discovering server functions", async () => {
+    const cwd = await createFixture({
+      "src/main.tsx": `
+        import { saveOrder } from "@features/orders/actions";
+        void saveOrder();
+      `,
+      "src/features/orders/actions.ts": `
+        "use server";
+        export async function saveOrder() {
+          return { ok: true };
+        }
+      `,
+    });
+    const analysis = await createAppGraph(createConfig(), cwd, {
+      resolve: {
+        alias: { "@features": "./src/features" },
+      },
+    });
+
+    expect(analysis.diagnostics).toEqual([]);
+    expect(
+      analysis.graph.serverFunctions.map((fn) => ({
+        module: fn.module,
+        exportName: fn.exportName,
+      })),
+    ).toEqual([
+      {
+        module: "src/features/orders/actions.ts",
+        exportName: "saveOrder",
+      },
     ]);
   });
 

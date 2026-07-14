@@ -189,6 +189,11 @@ export default function CampaignPage() {
 }
 ```
 
+Hydration modes control when client interactivity starts: `load` activates
+immediately, `visible` waits for the mount point to intersect the viewport,
+`idle` waits for the browser idle callback, and `none` leaves server or static
+HTML non-interactive. Browsers without the scheduling API fall back to `load`.
+
 ## Explicit App
 
 Use `app.entry` only for a manually bootstrapped SPA:

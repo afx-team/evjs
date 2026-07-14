@@ -1,10 +1,6 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
-import type {
-  HydrationMode,
-  PprCachePolicy,
-  PprRegionConfig,
-} from "@evjs/shared/manifest";
+import type { PprCachePolicy, PprRegionConfig } from "@evjs/shared/manifest";
 import type {
   CallExpression,
   Expression,
@@ -44,7 +40,7 @@ export interface PprRegionModuleConfigAnalysis {
   diagnostics: PprRegionDiagnostic[];
 }
 
-const PPR_REGION_METADATA_EXPORTS = ["cache", "hydrate"] as const;
+const PPR_REGION_METADATA_EXPORTS = ["cache"] as const;
 const PPR_REGION_METADATA_PARSE_DIAGNOSTIC_PREFIX =
   "PPR region metadata could not be parsed:";
 const UNSUPPORTED_PPR_SUSPENSE_DIAGNOSTIC =
@@ -135,6 +131,14 @@ export function extractPprRegionModuleConfig(
   const exportedValues = new Map(exportAnalysis.values);
   const runtimeExportNames = new Set(collectModuleExportNames(ast.body));
 
+  if (runtimeExportNames.has("hydrate")) {
+    diagnostics.push({
+      level: "error",
+      message:
+        "PPR region hydrate is not supported. Use an explicit client island for region interactivity.",
+    });
+  }
+
   for (const name of PPR_REGION_METADATA_EXPORTS) {
     if (!exportAnalysis.duplicateNames.has(name)) continue;
     exportedValues.delete(name);
@@ -168,17 +172,6 @@ export function extractPprRegionModuleConfig(
         message: cacheAnalysis.message,
       });
     }
-  }
-
-  const hydrate = getExportedValue(exportedValues, "hydrate");
-  if (hydrate?.type === "StringLiteral" && isHydrationMode(hydrate.value)) {
-    config.hydrate = hydrate.value;
-  } else if (exportedValues.has("hydrate")) {
-    diagnostics.push({
-      level: "error",
-      message:
-        'PPR region hydrate must be one of "none", "load", "visible", or "idle".',
-    });
   }
 
   return { config, diagnostics };
@@ -510,15 +503,6 @@ function getNumericObjectProperty(
     return value?.type === "NumericLiteral" ? value.value : undefined;
   }
   return undefined;
-}
-
-function isHydrationMode(value: string | undefined): value is HydrationMode {
-  return (
-    value === "none" ||
-    value === "load" ||
-    value === "visible" ||
-    value === "idle"
-  );
 }
 
 function isPositiveInteger(value: number): boolean {
