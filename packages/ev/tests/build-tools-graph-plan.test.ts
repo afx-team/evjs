@@ -3917,6 +3917,47 @@ describe("createAppGraph and createBuildPlan", () => {
     );
   });
 
+  it("ignores import type queries while following runtime dynamic imports", async () => {
+    const cwd = await createFixture({
+      "src/main.tsx": `
+        type SaveOrderInput = import("./type-actions").SaveOrderInput;
+        void (0 as unknown as SaveOrderInput);
+        void import("./runtime-actions");
+      `,
+      "src/type-actions.ts": `
+        "use server";
+
+        export interface SaveOrderInput { id: string }
+        export async function typeOnlyAction() {
+          return { ok: true };
+        }
+      `,
+      "src/runtime-actions.ts": `
+        "use server";
+
+        export async function runtimeAction() {
+          return { ok: true };
+        }
+      `,
+    });
+    const analysis = await createAppGraph(createConfig(), cwd);
+
+    expect(
+      analysis.graph.serverFunctions.map((fn) => ({
+        module: fn.module,
+        exportName: fn.exportName,
+      })),
+    ).toEqual([
+      {
+        module: "src/runtime-actions.ts",
+        exportName: "runtimeAction",
+      },
+    ]);
+    expect(relativeFileDependencies(cwd, analysis.fileDependencies)).toEqual([
+      "src/runtime-actions.ts",
+    ]);
+  });
+
   it("follows configured source aliases when discovering server functions", async () => {
     const cwd = await createFixture({
       "src/main.tsx": `

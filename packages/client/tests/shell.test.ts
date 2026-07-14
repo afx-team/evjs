@@ -1072,6 +1072,44 @@ describe("createShell", () => {
     await shell.dispose();
   });
 
+  it("reports driver resolution failures that cannot reach onError", async () => {
+    let notify: ((request: ActivationRequest) => void) | undefined;
+    const errors: string[] = [];
+    const reportError = vi.fn();
+    vi.stubGlobal("reportError", reportError);
+    const shell = createShell({
+      runtime,
+      drivers: [
+        {
+          current: () => ({ pageId: "home", hydrate: false }),
+          subscribe(callback) {
+            notify = callback;
+            return () => {};
+          },
+        },
+      ],
+      resolveMountPoint: () => ({}) as Element,
+      async loadModule() {
+        return { mount() {} };
+      },
+      onError(error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+      },
+    });
+
+    await shell.start();
+    notify?.({ pageId: "missing" });
+    await vi.waitFor(() => {
+      expect(reportError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '[evjs] Page "missing" is not in the runtime.',
+        }),
+      );
+    });
+    expect(errors).toEqual([]);
+    await shell.dispose();
+  });
+
   it("reports lifecycle errors", async () => {
     const error = new Error("mount failed");
     const events: string[] = [];

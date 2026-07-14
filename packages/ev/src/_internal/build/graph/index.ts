@@ -1578,9 +1578,6 @@ function extractStaticImportSpecifiers(
   for (const specifier of extractParsedStaticImportSpecifiers(source)) {
     specifiers.add(specifier);
   }
-  for (const specifier of extractDynamicImportSpecifiers(source)) {
-    specifiers.add(specifier);
-  }
 
   return [...specifiers].filter((specifier) =>
     isLocalSourceImportSpecifier(specifier, aliases),
@@ -1606,9 +1603,15 @@ function extractParsedStaticImportSpecifiers(source: string): string[] {
       tsx: true,
       target: "esnext",
     });
-    return ast.body.flatMap(getStaticModuleSpecifier);
+    return [
+      ...ast.body.flatMap(getStaticModuleSpecifier),
+      ...extractParsedDynamicImportSpecifiers(ast),
+    ];
   } catch {
-    return extractStaticImportSpecifiersWithRegex(source);
+    return [
+      ...extractStaticImportSpecifiersWithRegex(source),
+      ...extractDynamicImportSpecifiersWithRegex(source),
+    ];
   }
 }
 
@@ -1645,7 +1648,52 @@ function getStaticModuleSpecifier(item: ModuleItem): string[] {
   return [];
 }
 
-function extractDynamicImportSpecifiers(source: string): string[] {
+function extractParsedDynamicImportSpecifiers(ast: unknown): string[] {
+  const specifiers = new Set<string>();
+
+  function visit(value: unknown): void {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    if (!isAstRecord(value)) return;
+    if (value.type === "TsImportType") return;
+
+    const specifier = getRuntimeDynamicImportSpecifier(value);
+    if (specifier) specifiers.add(specifier);
+    for (const child of Object.values(value)) visit(child);
+  }
+
+  visit(ast);
+  return [...specifiers];
+}
+
+function getRuntimeDynamicImportSpecifier(
+  expression: Record<string, unknown>,
+): string | undefined {
+  if (expression.type !== "CallExpression") return undefined;
+  if (!isAstRecord(expression.callee) || expression.callee.type !== "Import") {
+    return undefined;
+  }
+  if (!Array.isArray(expression.arguments)) return undefined;
+
+  const firstArgument = expression.arguments[0];
+  if (!isAstRecord(firstArgument) || firstArgument.spread) return undefined;
+  if (
+    !isAstRecord(firstArgument.expression) ||
+    firstArgument.expression.type !== "StringLiteral" ||
+    typeof firstArgument.expression.value !== "string"
+  ) {
+    return undefined;
+  }
+  return firstArgument.expression.value;
+}
+
+function isAstRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+function extractDynamicImportSpecifiersWithRegex(source: string): string[] {
   const specifiers: string[] = [];
   const importPattern = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
 

@@ -93,7 +93,6 @@ function isFrameworkSourceAlias(
   }
   const relative = path.relative(cwd, path.resolve(cwd, replacement));
   return (
-    relative !== "" &&
     !relative.startsWith("..") &&
     !path.isAbsolute(relative) &&
     relative !== ".ev" &&

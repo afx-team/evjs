@@ -39,9 +39,34 @@ export function createShell(options: ShellOptions): Shell {
   const moduleCache = new Map<string, Promise<AppModule>>();
   const moduleInitCache = new Map<string, Promise<void>>();
   const driverDisposers: Array<() => void> = [];
+  const reportedShellErrors = new WeakSet<object>();
   let active: ActiveModule | undefined;
   let activationQueue: Promise<void> = Promise.resolve();
   let disposed = false;
+
+  const reportShellError = async (
+    error: unknown,
+    context: ShellErrorContext,
+  ): Promise<void> => {
+    if (!options.onError) return;
+    if (isObjectLike(error)) reportedShellErrors.add(error);
+    await options.onError(error, context);
+  };
+
+  const reportUnhandledDriverTransitionError = (error: unknown): void => {
+    if (isObjectLike(error) && reportedShellErrors.has(error)) return;
+
+    const runtime = globalThis as typeof globalThis & {
+      reportError?: (error: unknown) => void;
+    };
+    if (typeof runtime.reportError === "function") {
+      runtime.reportError(error);
+      return;
+    }
+    setTimeout(() => {
+      throw error;
+    }, 0);
+  };
 
   const shell: Shell = {
     async start(request) {
@@ -49,10 +74,8 @@ export function createShell(options: ShellOptions): Shell {
       if (driverDisposers.length === 0) {
         for (const driver of options.drivers ?? []) {
           const dispose = driver.subscribe?.((next) => {
-            void shell.activate(next).catch(() => {
-              // Driver transitions run outside a caller-owned promise. Phase
-              // failures have already reached onError; consume the rejection
-              // here so it does not become a global unhandledrejection.
+            void shell.activate(next).catch((error) => {
+              reportUnhandledDriverTransitionError(error);
             });
           });
           if (dispose) driverDisposers.push(dispose);
@@ -100,7 +123,7 @@ export function createShell(options: ShellOptions): Shell {
             "unmount",
             current.ctx,
             () => current.module.unmount?.(current.mountPoint, current.ctx),
-            options.onError,
+            reportShellError,
           );
         }
       }
@@ -122,7 +145,7 @@ export function createShell(options: ShellOptions): Shell {
       const error = new Error(
         `[evjs] Unable to resolve mount point for ${target.ctx.kind} "${target.id}".`,
       );
-      await options.onError?.(error, {
+      await reportShellError(error, {
         phase: "resolve",
         app: target.ctx,
       });
@@ -132,7 +155,7 @@ export function createShell(options: ShellOptions): Shell {
       const error = new Error(
         `[evjs] Shell resolveMountPoint() for ${target.ctx.kind} "${target.id}" must return an Element or null.`,
       );
-      await options.onError?.(error, {
+      await reportShellError(error, {
         phase: "resolve",
         app: target.ctx,
       });
@@ -156,7 +179,7 @@ export function createShell(options: ShellOptions): Shell {
           assertAppModule(module, `[evjs] Shell module "${href}"`);
           return module;
         },
-        options.onError,
+        reportShellError,
       ).catch((error) => {
         moduleCache.delete(href);
         throw error;
@@ -164,7 +187,13 @@ export function createShell(options: ShellOptions): Shell {
       moduleCache.set(href, promise);
     }
     const module = await promise;
-    await initializeModule(href, module, ctx, moduleInitCache, options.onError);
+    await initializeModule(
+      href,
+      module,
+      ctx,
+      moduleInitCache,
+      reportShellError,
+    );
     return module;
   }
 
@@ -191,7 +220,7 @@ export function createShell(options: ShellOptions): Shell {
             "unmount",
             previous.ctx,
             () => previous.module.unmount?.(previous.mountPoint, previous.ctx),
-            options.onError,
+            reportShellError,
           );
         }
       } finally {
@@ -218,7 +247,7 @@ export function createShell(options: ShellOptions): Shell {
           "unmount",
           target.ctx,
           () => module.unmount?.(target.mountPoint, target.ctx),
-          options.onError,
+          reportShellError,
         );
       }
       return;
@@ -245,7 +274,7 @@ export function createShell(options: ShellOptions): Shell {
         "hydrate",
         target.ctx,
         () => module.hydrate?.(target.mountPoint, target.ctx),
-        options.onError,
+        reportShellError,
       );
       return "hydrate";
     }
@@ -255,7 +284,7 @@ export function createShell(options: ShellOptions): Shell {
         "mount",
         target.ctx,
         () => module.mount?.(target.mountPoint, target.ctx),
-        options.onError,
+        reportShellError,
       );
       return "mount";
     }
@@ -273,7 +302,7 @@ export function createShell(options: ShellOptions): Shell {
             "unmount",
             previous.ctx,
             () => previous.module.unmount?.(previous.mountPoint, previous.ctx),
-            options.onError,
+            reportShellError,
           );
         }
         return;
@@ -290,14 +319,14 @@ export function createShell(options: ShellOptions): Shell {
         "hydrate",
         previous.ctx,
         () => previous.module.hydrate?.(previous.mountPoint, previous.ctx),
-        options.onError,
+        reportShellError,
       );
     } else if (previous.phase === "mount" && previous.module.mount) {
       await callShellPhase(
         "mount",
         previous.ctx,
         () => previous.module.mount?.(previous.mountPoint, previous.ctx),
-        options.onError,
+        reportShellError,
       );
     }
   }
@@ -306,6 +335,12 @@ export function createShell(options: ShellOptions): Shell {
     if (!disposed) return;
     throw new Error(`[evjs] Shell ${method} cannot run after dispose().`);
   }
+}
+
+function isObjectLike(value: unknown): value is object {
+  return (
+    (typeof value === "object" && value !== null) || typeof value === "function"
+  );
 }
 
 function createActivationKey(request: ActivationRequest): string {

@@ -674,6 +674,18 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
     );
   };
 
+  const commitStagedPluginHooks = async (
+    stagedPluginHooks: Awaited<ReturnType<typeof stagePluginHooks>> | undefined,
+  ) => {
+    try {
+      await stagedPluginHooks?.commit();
+    } catch (error) {
+      logger.warn`Framework plan update was applied, but previous plugin cleanup failed: ${error}`;
+    } finally {
+      refreshDevDependencyWatchers();
+    }
+  };
+
   const handleDevDependencyChange = async (changedFiles: readonly string[]) => {
     const configDependencyFiles = new Set(listConfigDependencyFiles(cwd));
     const isConfigChange = changedFiles.some((file) =>
@@ -717,8 +729,7 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
         activeAnalysis = nextAnalysis;
         activePlan = nextPlan;
         pluginCtx.config = nextConfig;
-        await stagedPluginHooks?.commit();
-        refreshDevDependencyWatchers();
+        await commitStagedPluginHooks(stagedPluginHooks);
         return;
       }
 
@@ -748,8 +759,7 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
         return;
       }
       pluginCtx.config = nextConfig;
-      await stagedPluginHooks?.commit();
-      refreshDevDependencyWatchers();
+      await commitStagedPluginHooks(stagedPluginHooks);
     } catch (err) {
       await stagedPluginHooks?.rollback();
       throw err;

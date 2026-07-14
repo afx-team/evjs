@@ -198,16 +198,21 @@ export async function stopApiProcess(
   timeoutMs = 3000,
 ): Promise<void> {
   processToStop.kill();
-  const exited = await Promise.race([
-    processToStop.then(() => true).catch(() => true),
-    new Promise<boolean>((resolve) =>
-      setTimeout(() => resolve(false), timeoutMs),
-    ),
-  ]);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const exited = await Promise.race([
+      processToStop.then(() => true).catch(() => true),
+      new Promise<boolean>((resolve) => {
+        timeout = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
 
-  if (!exited) {
-    processToStop.kill("SIGKILL");
-    await processToStop.catch(() => {});
+    if (!exited) {
+      processToStop.kill("SIGKILL");
+      await processToStop.catch(() => {});
+    }
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
   }
 }
 

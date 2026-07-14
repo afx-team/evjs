@@ -789,12 +789,22 @@ describe("prepareFrameworkBuild", () => {
     });
     await fs.promises.writeFile(
       path.join(cwd, "src/main.tsx"),
-      'import { saveOrder } from "@features/orders/actions"; void saveOrder();',
+      [
+        'import { saveOrder } from "@features/orders/actions";',
+        'import { saveProject } from "@project/src/project-actions";',
+        "void saveOrder();",
+        "void saveProject();",
+      ].join("\n"),
       "utf-8",
     );
     await fs.promises.writeFile(
       path.join(cwd, "src/features/orders/actions.ts"),
       '"use server"; export async function saveOrder() { return { ok: true }; }',
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/project-actions.ts"),
+      '"use server"; export async function saveProject() { return { ok: true }; }',
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
@@ -804,6 +814,11 @@ describe("prepareFrameworkBuild", () => {
           id: "features",
           specifier: "@features",
           replacement: "./src/features",
+        });
+        ctx.slot("resolve.alias").add({
+          id: "project",
+          specifier: "@project",
+          replacement: ".",
         });
       },
     };
@@ -822,12 +837,18 @@ describe("prepareFrameworkBuild", () => {
       ),
     ) as { graph: AppGraph };
 
-    expect(generatedGraph.graph.serverFunctions).toEqual([
-      expect.objectContaining({
-        module: "src/features/orders/actions.ts",
-        exportName: "saveOrder",
-      }),
-    ]);
+    expect(generatedGraph.graph.serverFunctions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          module: "src/features/orders/actions.ts",
+          exportName: "saveOrder",
+        }),
+        expect.objectContaining({
+          module: "src/project-actions.ts",
+          exportName: "saveProject",
+        }),
+      ]),
+    );
     await prepared.dispose();
   });
 
@@ -5158,5 +5179,135 @@ describe("dev", () => {
       "dispose:v1",
       "dispose:v2",
     ]);
+  });
+
+  it("refreshes plugin watch files after committed plugin cleanup fails", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/Home.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/Orders.tsx"),
+      "export default function Orders() { return null; }",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "ev.config.ts"),
+      "export default {};",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "old-watch.txt"),
+      "old",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "new-watch.txt"),
+      "new",
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    function createPlugin(
+      label: string,
+      watchFile: string,
+      failDispose = false,
+    ): Plugin<Record<string, never>> {
+      return {
+        name: "same-name-plugin",
+        setup(ctx) {
+          ctx.addWatchFile(`./${watchFile}`);
+          events.push(`setup:${label}`);
+          return {
+            dispose() {
+              events.push(`dispose:${label}`);
+              if (failDispose) throw new Error(`${label} dispose blocked`);
+            },
+          };
+        },
+      };
+    }
+
+    let currentConfig: Config<Record<string, never>> = {
+      output: { client: "dist" },
+      pages: { home: "./src/pages/Home.tsx" },
+      plugins: [createPlugin("old", "old-watch.txt", true)],
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return {
+          async updatePlan(update) {
+            events.push(
+              `update:${update.entries.added.map((entry) => entry.name).join(",")}`,
+            );
+          },
+        };
+      },
+    };
+    let loadCount = 0;
+    const running = dev(currentConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        loadCount += 1;
+        events.push(`load:${loadCount}`);
+        return currentConfig;
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    currentConfig = {
+      ...currentConfig,
+      pages: {
+        ...currentConfig.pages,
+        orders: "./src/pages/Orders.tsx",
+      },
+      plugins: [createPlugin("new", "new-watch.txt")],
+    };
+    await fs.promises.writeFile(
+      path.join(cwd, "ev.config.ts"),
+      "export default { pages: { home: './src/pages/Home.tsx', orders: './src/pages/Orders.tsx' } };",
+      "utf-8",
+    );
+    await waitForEvent(events, "update:orders");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const loadCountBeforeNewWatch = loadCount;
+    await fs.promises.writeFile(
+      path.join(cwd, "new-watch.txt"),
+      "changed",
+      "utf-8",
+    );
+    await waitForEvent(events, `load:${loadCountBeforeNewWatch + 1}`);
+    process.emit("SIGINT");
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("dev shutdown timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        "setup:old",
+        "bundler.dev",
+        "setup:new",
+        "update:orders",
+        "dispose:old",
+        "dispose:new",
+      ]),
+    );
   });
 });

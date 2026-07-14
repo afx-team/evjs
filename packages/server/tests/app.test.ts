@@ -1528,6 +1528,13 @@ describe("createApp", () => {
       "<main><h1>ssr:dashboard</h1><p>dashboard:hero</p></main>",
     );
 
+    const pageHead = await app.request("/dashboard", { method: "HEAD" });
+
+    expect(pageHead.status).toBe(200);
+    expect(pageHead.headers.get("Content-Length")).toBeNull();
+    expect(pageHead.headers.get("ETag")).toBeNull();
+    expect(await pageHead.text()).toBe("");
+
     const region = await app.request("/__evjs/ppr/dashboard/hero");
 
     expect(region.status).toBe(200);
@@ -1542,6 +1549,8 @@ describe("createApp", () => {
     expect(regionHead.status).toBe(200);
     expect(regionHead.headers.get("x-evjs-page")).toBe("dashboard");
     expect(regionHead.headers.get("x-evjs-ppr-region")).toBe("hero");
+    expect(regionHead.headers.get("Content-Length")).toBeNull();
+    expect(regionHead.headers.get("ETag")).toBeNull();
     expect(await regionHead.text()).toBe("");
   });
 
