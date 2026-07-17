@@ -28,6 +28,8 @@ import type {
 import { getOutputPaths } from "./output-paths.js";
 
 const logger = getLogger(["evjs", "bundler-utoopack", "config"]);
+const lessImplementation = require.resolve("less");
+const lessLoader = require.resolve("less-loader");
 
 function createSpaHistoryFallbackRule(
   config: ResolvedConfig<ConfigComplete>,
@@ -147,6 +149,13 @@ export async function createUtoopackConfig(
     stats: true,
     react: {
       runtime: "automatic",
+    },
+    // lock less and less-loader for evjs framework
+    styles: {
+      less: {
+        loader: lessLoader,
+        implementation: lessImplementation,
+      },
     },
     define: {
       "process.env.EVJS_FUNCTION_ENDPOINT": JSON.stringify(

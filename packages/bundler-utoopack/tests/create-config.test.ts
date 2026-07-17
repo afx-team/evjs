@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import path from "node:path";
 import {
   createBuildPlan,
@@ -8,6 +9,8 @@ import type { Plugin } from "@evjs/ev/plugin";
 import type { ConfigComplete } from "@utoo/pack";
 import { describe, expect, it } from "vitest";
 import { createUtoopackConfig } from "../src/adapter/create-config.js";
+
+const require = createRequire(import.meta.url);
 
 describe("createUtoopackConfig", () => {
   function createResolvedConfig(
@@ -282,6 +285,23 @@ describe("createUtoopackConfig", () => {
 
     expect(utoopackConfig.output?.cssFilename).toBe("[name].css");
     expect(utoopackConfig.output?.cssChunkFilename).toBe("[name].css");
+  });
+
+  it("uses framework-owned Less tooling paths", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.styles?.less).toEqual({
+      loader: require.resolve("less-loader"),
+      implementation: require.resolve("less"),
+    });
   });
 
   it("sets crossorigin for dynamically loaded browser chunks", async () => {

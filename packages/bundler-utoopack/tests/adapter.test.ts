@@ -78,12 +78,13 @@ vi.mock("node:module", async (importOriginal) => {
     ...actual,
     createRequire(filename: string | URL) {
       const actualRequire = actual.createRequire(filename);
-      return ((specifier: string) =>
+      const mockRequire = ((specifier: string) =>
         specifier === "@utoo/pack"
           ? utoopackMock.requireUtoopack()
           : actualRequire(specifier)) as ReturnType<
         typeof actual.createRequire
       >;
+      return Object.assign(mockRequire, actualRequire);
     },
   };
 });
