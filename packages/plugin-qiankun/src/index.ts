@@ -54,7 +54,7 @@ interface EntryWrapperState {
   entry: ResolvedAppEntry;
   qiankunRuntime: string;
   moduleRef?: ResolvedModuleRef;
-  libraryName?: string;
+  appName?: string;
 }
 
 interface GeneratedSourceHelpers {
@@ -66,6 +66,7 @@ const masterPluginName = "@evjs/plugin-qiankun:master";
 const slavePluginName = "@evjs/plugin-qiankun:slave";
 const qiankunRuntime = resolveQiankunRuntimeModulePath();
 const qiankunRuntimeImport = "@evjs/plugin-qiankun/runtime";
+const qiankunLifecycleProxyId = "__EVJS_QIANKUN_LIFECYCLE_PROXY__";
 
 export function evPluginQiankunMaster(
   options: QiankunMasterPluginOptions,
@@ -147,10 +148,10 @@ export function evPluginQiankunSlave(
       return {
         bundlerConfig(config, bundlerCtx) {
           assertSupportedBundler(bundlerCtx.bundlerName);
-          applySlaveLibrary(config, bundlerCtx.bundlerName, state);
+          applySlaveBundlerConfig(config, bundlerCtx.bundlerName, state);
         },
         transformHtml(doc) {
-          transformQiankunSlaveHtml(doc);
+          transformQiankunSlaveHtml(doc, state);
         },
       };
     },
@@ -267,7 +268,7 @@ async function createSlaveState(
     entry,
     qiankunRuntime,
     moduleRef: runtime,
-    libraryName: appName,
+    appName,
   };
 }
 
@@ -347,7 +348,7 @@ function createSlaveEntryWrapperSource(
     runtimeValue,
     "",
     "const qiankunSlave = createQiankunSlaveLifecycles({",
-    `  name: ${JSON.stringify(state.libraryName ?? "evjs-qiankun-slave")},`,
+    `  name: ${JSON.stringify(state.appName ?? "evjs-qiankun-slave")},`,
     `  mount: ${JSON.stringify(state.entry.mount)},`,
     "  runtime: slaveRuntime,",
     `  loadEntry: () => import(${JSON.stringify(originalEntry)}),`,
@@ -357,6 +358,11 @@ function createSlaveEntryWrapperSource(
     "export const mount = qiankunSlave.mount;",
     "export const unmount = qiankunSlave.unmount;",
     "export const update = qiankunSlave.update;",
+    "",
+    "const qiankunLifecycles = { bootstrap, mount, unmount, update };",
+    'if (typeof window !== "undefined") {',
+    `  (window as unknown as Record<string, unknown>)[${JSON.stringify(state.appName ?? "evjs-qiankun-slave")}] = qiankunLifecycles;`,
+    "}",
     "",
     "if (!qiankunSlave.isPoweredByQiankun()) {",
     "  void qiankunSlave.standalone();",
@@ -394,7 +400,7 @@ function assertSupportedBundler(bundlerName: string): void {
   );
 }
 
-function applySlaveLibrary(
+function applySlaveBundlerConfig(
   config: unknown,
   bundlerName: string,
   state: EntryWrapperState | undefined,
@@ -406,10 +412,6 @@ function applySlaveLibrary(
   }
   if (bundlerName === "webpack") {
     applyWebpackSlaveLibraryToConfig(config, state);
-    return;
-  }
-  if (bundlerName === "utoopack") {
-    applyUtoopackSlaveLibraryToConfig(config, state);
   }
 }
 
@@ -425,19 +427,11 @@ function applyWebpackSlaveLibraryToConfig(
   }
 }
 
-function applyUtoopackSlaveLibraryToConfig(
-  config: unknown,
-  state: EntryWrapperState,
-): void {
-  if (!isRecord(config)) return;
-  applyUtoopackSlaveLibrary(config, state);
-}
-
 function applyWebpackSlaveLibrary(
   config: Record<string, unknown>,
   state: EntryWrapperState,
 ): void {
-  const libraryName = state.libraryName ?? "evjs-qiankun-slave";
+  const libraryName = state.appName ?? "evjs-qiankun-slave";
   const library = { name: libraryName, type: "umd" };
   const entry = config.entry;
   if (!isRecord(entry)) {
@@ -455,20 +449,6 @@ function applyWebpackSlaveLibrary(
     }
     if (typeof value === "string") {
       entry[name] = { import: value, library };
-    }
-  }
-}
-
-function applyUtoopackSlaveLibrary(
-  config: Record<string, unknown>,
-  state: EntryWrapperState,
-): void {
-  const entries = config.entry;
-  if (!Array.isArray(entries)) return;
-
-  for (const entry of entries) {
-    if (isRecord(entry)) {
-      entry.library = { name: state.libraryName ?? "evjs-qiankun-slave" };
     }
   }
 }
@@ -518,7 +498,10 @@ async function assertFileExists(
   }
 }
 
-function transformQiankunSlaveHtml(doc: HtmlDocument): void {
+function transformQiankunSlaveHtml(
+  doc: HtmlDocument,
+  state: EntryWrapperState | undefined,
+): void {
   for (const link of doc.getElementsByTagName("link")) {
     if (link.getAttribute("rel") === "stylesheet") {
       rewriteRootRelativeAttribute(link, "href");
@@ -532,9 +515,60 @@ function transformQiankunSlaveHtml(doc: HtmlDocument): void {
     rewriteRootRelativeAttribute(script, "src");
   }
 
-  if (!scripts.some((script) => script.hasAttribute("entry"))) {
-    scripts.at(-1)?.setAttribute("entry", "");
-  }
+  const entryScript =
+    scripts.find((script) => script.hasAttribute("entry")) ?? scripts.at(-1);
+  if (!entryScript) return;
+
+  entryScript.setAttribute("entry", "");
+  if (doc.getElementById(qiankunLifecycleProxyId)) return;
+
+  const proxyScript = doc.createElement("script");
+  proxyScript.id = qiankunLifecycleProxyId;
+  proxyScript.textContent = createQiankunLifecycleProxyScript(
+    state?.appName ?? "evjs-qiankun-slave",
+  );
+  entryScript.before(proxyScript);
+}
+
+function createQiankunLifecycleProxyScript(appName: string): string {
+  return `(function() {
+  var appName = ${JSON.stringify(appName)};
+  var lifecycleNames = ["bootstrap", "mount", "unmount", "update"];
+  var global = window;
+  var existed = global[appName];
+  if (existed && typeof existed.bootstrap === "function" && typeof existed.mount === "function" && typeof existed.unmount === "function") return;
+  var resolveReady;
+  var ready = new Promise(function(resolve) { resolveReady = resolve; });
+  var proxy = {};
+  lifecycleNames.forEach(function(name) {
+    proxy[name] = function() {
+      var context = this;
+      var args = arguments;
+      return ready.then(function(lifecycles) {
+        var lifecycle = lifecycles && lifecycles[name];
+        if (typeof lifecycle !== "function") {
+          if (name === "update") return undefined;
+          throw new Error("[evjs:plugin-qiankun] lifecycle " + name + " is not available for " + appName + ".");
+        }
+        return lifecycle.apply(context, args);
+      });
+    };
+  });
+  Object.defineProperty(global, appName, {
+    configurable: true,
+    enumerable: true,
+    get: function() { return proxy; },
+    set: function(lifecycles) {
+      Object.defineProperty(global, appName, {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value: lifecycles
+      });
+      resolveReady(lifecycles);
+    }
+  });
+})();`;
 }
 
 function rewriteRootRelativeAttribute(

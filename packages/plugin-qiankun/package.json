@@ -43,6 +43,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.19.15",
+    "domparser-rs": "^0.1.0",
     "typescript": "^6.0.2"
   },
   "keywords": [

@@ -14,6 +14,7 @@ import type {
   GeneratedModuleRef,
   PluginContext,
 } from "@evjs/ev/plugin";
+import { DOMParser } from "domparser-rs";
 import { describe, expect, it } from "vitest";
 import { evPluginQiankunMaster, evPluginQiankunSlave } from "../src/index.js";
 
@@ -81,7 +82,7 @@ describe("@evjs/plugin-qiankun plugin", () => {
     });
   });
 
-  it("contributes a slave replacement wrapper and keeps library output in bundler config", async () => {
+  it("contributes a slave replacement wrapper without library output for utoopack", async () => {
     const cwd = await createProject({
       "package.json": JSON.stringify({ name: "console" }),
       "src/main.tsx": "console.log('entry');",
@@ -125,6 +126,9 @@ describe("@evjs/plugin-qiankun plugin", () => {
       )})`,
     );
     expect(source).not.toContain(toImportPath(cwd));
+    expect(source).toContain(
+      '(window as unknown as Record<string, unknown>)["console"] = qiankunLifecycles',
+    );
 
     const hooks = await plugin.setup?.(createPluginContext(cwd, [], {}));
     const bundlerConfig: Record<string, unknown> = {
@@ -135,12 +139,62 @@ describe("@evjs/plugin-qiankun plugin", () => {
       createBundlerContext(cwd, "utoopack"),
     );
     expect(bundlerConfig.entry).toEqual([
-      {
-        name: "main",
-        import: "./.ev/entries/main.ts",
-        library: { name: "console" },
-      },
+      { name: "main", import: "./.ev/entries/main.ts" },
     ]);
+  });
+
+  it("keeps UMD library output for webpack slave builds", async () => {
+    const cwd = await createProject({
+      "package.json": JSON.stringify({ name: "console" }),
+      "src/main.tsx": "console.log('entry');",
+    });
+    const plugin = evPluginQiankunSlave();
+    const captured = createContributionCapture(cwd, {
+      app: { entry: "./src/main.tsx" },
+    });
+    await plugin.contributions?.(captured.ctx);
+
+    const hooks = await plugin.setup?.(createPluginContext(cwd, [], {}));
+    const bundlerConfig: Record<string, unknown> = {
+      entry: { main: "./.ev/entries/main.ts" },
+    };
+    await hooks?.bundlerConfig?.(
+      bundlerConfig as never,
+      createBundlerContext(cwd, "webpack"),
+    );
+
+    expect(bundlerConfig.entry).toEqual({
+      main: {
+        import: "./.ev/entries/main.ts",
+        library: { name: "console", type: "umd" },
+      },
+    });
+  });
+
+  it("injects an utoopack lifecycle proxy before the qiankun entry script", async () => {
+    const cwd = await createProject({
+      "package.json": JSON.stringify({ name: "console" }),
+      "src/main.tsx": "console.log('entry');",
+    });
+    const plugin = evPluginQiankunSlave();
+    const captured = createContributionCapture(cwd, {
+      app: { entry: "./src/main.tsx" },
+    });
+    await plugin.contributions?.(captured.ctx);
+    const hooks = await plugin.setup?.(createPluginContext(cwd, [], {}));
+    const doc = new DOMParser().parseFromString(
+      '<!doctype html><html><head></head><body><script src="/main.js"></script></body></html>',
+      "text/html",
+    );
+
+    await hooks?.transformHtml?.(doc as never, {} as never);
+
+    const scripts = doc.querySelectorAll("script");
+    expect(scripts).toHaveLength(2);
+    expect(scripts[0]?.id).toBe("__EVJS_QIANKUN_LIFECYCLE_PROXY__");
+    expect(scripts[0]?.textContent).toContain('var appName = "console"');
+    expect(scripts[1]?.getAttribute("src")).toBe("main.js");
+    expect(scripts[1]?.hasAttribute("entry")).toBe(true);
   });
 
   it("generates an original pages app module for slave SPA file routing", async () => {
