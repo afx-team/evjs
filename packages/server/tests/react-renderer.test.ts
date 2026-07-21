@@ -302,12 +302,8 @@ describe("createReactServerRenderAdapter", () => {
     function PostPage(props: Record<string, unknown>) {
       renderedProps = props;
       const { postId } = usePageParams<{ postId: string }>();
-      const search = usePageSearch<{ tab?: string; tag?: string[] }>();
-      return createElement(
-        "h1",
-        null,
-        `${postId}:${search.tab}:${search.tag?.join(",")}`,
-      );
+      const search = usePageSearch<{ tab?: string; tag?: string }>();
+      return createElement("h1", null, `${postId}:${search.tab}:${search.tag}`);
     }
 
     const result = await adapter(
@@ -330,7 +326,7 @@ describe("createReactServerRenderAdapter", () => {
       throw new Error("Expected HTML result.");
     }
 
-    expect(result.html).toContain("<h1>42:comments:a,b</h1>");
+    expect(result.html).toContain("<h1>42:comments:b</h1>");
     expect(renderedProps).toEqual({
       runtime: { buildId: "test" },
       route: { id: "post", path: "/posts/$postId" },

@@ -19,7 +19,7 @@ interface EvPagePostModule {
 }
 
 interface EvPageSearchModule {
-  validateSearch(search: Record<string, unknown>): {
+  validateSearch(search: Record<string, string>): {
     q: string;
     page: number;
   };

@@ -68,6 +68,9 @@ For detailed guides on specific topics, see the docs:
   and do not type props as framework route props.
 - Read route data with `usePageParams()`, `usePageSearch()`, and
   `usePageLoaderData()` from `@evjs/ev/route`.
+- Search params use `Record<string, string>` without implicit number, boolean,
+  or JSON coercion. Convert values explicitly in `validateSearch`; repeated
+  query keys keep the last value.
 - Use `Link`, `Navigate`, `useLinkProps`, and `redirect` from `@evjs/ev/navigation`
   for SPA navigation. Generated `route-types.d.ts` augments
   `@evjs/ev/route`; app code should not import TanStack Router directly.

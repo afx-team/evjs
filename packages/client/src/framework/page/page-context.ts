@@ -1,3 +1,4 @@
+import type { PageSearchParams } from "@evjs/shared";
 import {
   createContext,
   createElement,
@@ -45,7 +46,7 @@ export function usePageContext<const TPath extends PageRoutePath>(
 >;
 export function usePageContext<
   TParams extends Record<string, string> = Record<string, string>,
-  TSearch extends Record<string, unknown> = Record<string, unknown>,
+  TSearch extends Record<string, unknown> = PageSearchParams,
   TLoaderData = unknown,
 >(): PageProps<TParams, TSearch, TLoaderData>;
 export function usePageContext(_path?: string): PageProps {
@@ -72,7 +73,7 @@ export function usePageSearch<const TPath extends PageRoutePath>(
   path: TPath,
 ): PageRouteSearch<TPath>;
 export function usePageSearch<
-  TSearch extends Record<string, unknown> = Record<string, unknown>,
+  TSearch extends Record<string, unknown> = PageSearchParams,
 >(): TSearch;
 export function usePageSearch(_path?: string): Record<string, unknown> {
   return usePageContext().search;

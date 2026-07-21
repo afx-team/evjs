@@ -179,7 +179,7 @@ import {
   usePageSearch,
 } from "@evjs/ev/route";
 
-export const validateSearch = (search: Record<string, unknown>) => ({
+export const validateSearch = (search: Record<string, string>) => ({
   tab: typeof search.tab === "string" ? search.tab : "overview",
 });
 
@@ -201,6 +201,11 @@ page logic, such as `loader`, `beforeLoad`, `validateSearch`,
 those exports to the evjs-managed route. In MPA mode these lifecycle hooks
 are ignored; use normal component/data logic in the page.
 
+Search params use a raw `Record<string, string>` contract in every page mode.
+Numeric, boolean-like, and JSON-shaped values remain strings; repeated query
+keys keep the last value. Convert values explicitly in `validateSearch` when a
+page needs another type, and pass strings when navigating without a validator.
+
 SPA mode also recognizes dedicated route convention modules:
 
 - `error.*` and `not-found.*` modules default-export fallback components for
@@ -211,7 +216,7 @@ SPA mode also recognizes dedicated route convention modules:
 // src/pages/search.tsx
 import { usePageSearch } from "@evjs/ev/route";
 
-export const validateSearch = (search: Record<string, unknown>) => ({
+export const validateSearch = (search: Record<string, string>) => ({
   q: typeof search.q === "string" ? search.q : "",
 });
 

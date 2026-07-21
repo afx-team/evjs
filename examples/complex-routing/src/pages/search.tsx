@@ -12,9 +12,9 @@ const styles = {
   },
 };
 
-export function validateSearch(search: Record<string, unknown>) {
+export function validateSearch(search: Record<string, string>) {
   return {
-    q: (search.q as string) || "",
+    q: search.q || "",
   };
 }
 

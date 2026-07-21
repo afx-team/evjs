@@ -515,7 +515,7 @@ describe("createReactPageModule", () => {
     };
     const pageProps = {
       params: { postId: "42" },
-      search: { tab: "comments", tag: ["a", "b"] },
+      search: { tab: "comments", tag: "b" },
       loaderData: undefined,
     };
 
