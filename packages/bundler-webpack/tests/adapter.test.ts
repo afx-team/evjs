@@ -154,6 +154,7 @@ function createFrameworkCallbacks(options: {
   plan: BuildPlan;
   hooks?: PluginHooks<WebpackConfig>[];
   onBuildOutput?: (output: BuildOutput) => void | Promise<void>;
+  onDevServerReady?: (context: { origin: string }) => void | Promise<void>;
   onServerBundleReady?: () => void | Promise<void>;
 }) {
   let graph = options.graph;
@@ -181,6 +182,7 @@ function createFrameworkCallbacks(options: {
           isRebuild: callbackOptions?.isRebuild,
         });
       },
+      onDevServerReady: options.onDevServerReady,
       onServerBundleReady:
         options.onServerBundleReady ??
         (() => {
@@ -1042,12 +1044,14 @@ describe("webpackAdapter dev", () => {
       mode: "development",
     });
     const onBuildOutput = vi.fn();
+    const onDevServerReady = vi.fn();
     const framework = createFrameworkCallbacks({
       config,
       cwd,
       graph: analysis.graph,
       plan,
       onBuildOutput,
+      onDevServerReady,
     });
 
     const controller = await webpackAdapter.dev({
@@ -1065,6 +1069,9 @@ describe("webpackAdapter dev", () => {
       const html = await fetchDevText(`http://127.0.0.1:${port}/home.html`);
 
       expect(onBuildOutput).toHaveBeenCalled();
+      expect(onDevServerReady).toHaveBeenCalledWith({
+        origin: `http://localhost:${port}`,
+      });
       expect("distDir" in manifest).toBe(false);
       expect(manifest).not.toHaveProperty("assets");
       if (!("routing" in manifest) || manifest.routing.kind !== "mpa") {

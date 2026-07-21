@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import type { AppGraph, BuildPlan } from "@evjs/shared/manifest";
@@ -4554,6 +4555,87 @@ describe("build", () => {
 });
 
 describe("dev", () => {
+  it("rejects a duplicate dev run before starting a second bundler", async () => {
+    const cwd = await createProject();
+    let starts = 0;
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      async build() {
+        return {};
+      },
+      async dev() {
+        starts++;
+        markStarted?.();
+      },
+    };
+
+    const firstRun = dev({ output: { client: "dist" } }, { cwd, bundler });
+    await started;
+
+    await expect(
+      dev({ output: { client: "dist" } }, { cwd, bundler }),
+    ).rejects.toThrow("Dev is already running");
+    expect(starts).toBe(1);
+
+    process.emit("SIGINT");
+    await firstRun;
+  });
+
+  it("passes coordinated replacement ports to the bundler when a requested port is occupied", async () => {
+    const cwd = await createProject();
+    const occupiedServer = createServer();
+    occupiedServer.unref();
+    await new Promise<void>((resolve, reject) => {
+      occupiedServer.once("error", reject);
+      occupiedServer.listen(0, resolve);
+    });
+    const address = occupiedServer.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Expected a TCP server address.");
+    }
+
+    let receivedPorts: { client: number; server: number } | undefined;
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      async build() {
+        return {};
+      },
+      async dev({ config }) {
+        receivedPorts = {
+          client: config.dev.port,
+          server: config.server.dev.port,
+        };
+        process.emit("SIGINT");
+      },
+    };
+
+    try {
+      await dev(
+        {
+          output: { client: "dist" },
+          dev: { port: address.port },
+          server: { dev: { port: address.port } },
+        },
+        { cwd, bundler },
+      );
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        occupiedServer.close((err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+    }
+
+    expect(receivedPorts?.client).not.toBe(address.port);
+    expect(receivedPorts?.server).not.toBe(address.port);
+    expect(receivedPorts?.client).not.toBe(receivedPorts?.server);
+  });
+
   it("rejects invalid option bundler adapters before startup", async () => {
     const cwd = await createProject();
 
@@ -4817,17 +4899,21 @@ describe("dev", () => {
       resetSync();
     }
 
-    expect(logs).toContain(
-      [
-        "Dev server ready:",
-        "  Local: http://localhost:4123",
-        "  Pages:",
-        "    index: http://localhost:4123/index.html",
-        "    about: http://localhost:4123/about.html",
-        "    users_id: http://localhost:4123/users_id.html",
-        "    report: http://localhost:4123/report",
-      ].join("\n"),
+    const readyLog = logs.find((log) => log.startsWith("App listening at:"));
+    expect(readyLog).toContain("  Local: http://localhost:4123");
+    expect(readyLog).not.toContain("Loopback:");
+    expect(readyLog).toContain("  Pages:");
+    expect(readyLog).toContain("    index: http://localhost:4123/index.html");
+    expect(readyLog).toContain("    about: http://localhost:4123/about.html");
+    expect(readyLog).toContain(
+      "    users_id: http://localhost:4123/users_id.html",
     );
+    expect(readyLog).toContain("    report: http://localhost:4123/report");
+
+    const hasNetworkAddress = Object.values(os.networkInterfaces())
+      .flatMap((entries) => entries ?? [])
+      .some((entry) => entry.family === "IPv4" && !entry.internal);
+    expect(readyLog?.includes("  Network: ")).toBe(hasNetworkAddress);
   });
 
   it("updates generated SPA route types when a nested page route is added during dev", async () => {

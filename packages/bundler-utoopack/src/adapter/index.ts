@@ -104,6 +104,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
     await serve({ config: utoopackConfig }, undefined, undefined, {
       port: config.dev.port,
       https: config.dev.https !== false,
+      hostname: "0.0.0.0",
       logServerInfo: false,
       onReady({ port, hostname }) {
         devServerOrigin = formatDevServerOrigin(config, port, hostname);

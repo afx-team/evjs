@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -33,9 +34,14 @@ import {
 import {
   API_READY_MARKER,
   type ApiProcess,
+  acquireDevSessionLock,
   assertNoActiveDevDistLock,
+  assertNoActiveDevSessionLock,
+  type DevPortReservation,
+  type DevRuntimeRelease,
   findDevServerEntry,
   forwardApiOutput,
+  reserveDevPorts,
   stopApiProcess,
   waitForApiReady,
   writeDevDistLock,
@@ -63,6 +69,25 @@ const logger = getLogger(["evjs", "ev"]);
 
 const DEV_PAGE_RENDER_PROXY_HEADER = "x-evjs-dev-page-render";
 const DEV_DIST_DIR = "dist";
+const devExitCleanups = new Set<() => void>();
+
+function runDevExitCleanups(): void {
+  for (const cleanup of devExitCleanups) cleanup();
+}
+
+function registerDevExitCleanup(cleanup: () => void): () => void {
+  if (devExitCleanups.size === 0) {
+    process.once("exit", runDevExitCleanups);
+  }
+  devExitCleanups.add(cleanup);
+
+  return () => {
+    devExitCleanups.delete(cleanup);
+    if (devExitCleanups.size === 0) {
+      process.off("exit", runDevExitCleanups);
+    }
+  };
+}
 
 export interface DevOptions<TBundlerCfg = DefaultBundlerConfig> {
   cwd?: string;
@@ -358,16 +383,34 @@ function formatDevServerReady(
   plan: Pick<BuildPlan, "html">,
 ): string {
   const pageUrls = formatDevPageUrls(context.origin, config, plan);
-  if (!pageUrls) {
-    return `Dev server ready: ${context.origin}`;
+  const lines = [
+    "App listening at:",
+    ...formatDevServerAddresses(context.origin),
+  ];
+  if (pageUrls) {
+    lines.push(
+      "  Pages:",
+      ...pageUrls.map((page) => `    ${page.pageId}: ${page.url}`),
+    );
   }
+  return lines.join("\n");
+}
 
-  return [
-    "Dev server ready:",
-    `  Local: ${context.origin}`,
-    "  Pages:",
-    ...pageUrls.map((page) => `    ${page.pageId}: ${page.url}`),
-  ].join("\n");
+function formatDevServerAddresses(origin: string): string[] {
+  const addresses = [`  Local: ${origin}`];
+  try {
+    const networkUrl = new URL(origin);
+    if (networkUrl.hostname !== "localhost") return addresses;
+    const networkAddress = Object.values(os.networkInterfaces())
+      .flatMap((entries) => entries ?? [])
+      .find((entry) => entry.family === "IPv4" && !entry.internal);
+    if (!networkAddress) return addresses;
+    networkUrl.hostname = networkAddress.address;
+    addresses.push(`  Network: ${networkUrl.origin}`);
+  } catch {
+    // Custom bundler adapters may provide a non-standard origin string.
+  }
+  return addresses;
 }
 
 function formatDevPageUrls(
@@ -408,7 +451,62 @@ function formatDevUrl(origin: string, pathname: string): string {
   return `${origin}${encodeURI(pathWithLeadingSlash)}`;
 }
 
+function withReservedDevPorts<TBundlerCfg>(
+  config: ResolvedConfig<TBundlerCfg>,
+  ports: DevPortReservation,
+): ResolvedConfig<TBundlerCfg> {
+  return {
+    ...config,
+    dev: {
+      ...config.dev,
+      port: ports.client.port,
+    },
+    server: {
+      ...config.server,
+      dev: {
+        ...config.server.dev,
+        port: ports.server.port,
+      },
+    },
+  };
+}
+
+function logDevPortSelection(ports: DevPortReservation): void {
+  const changes = [
+    ports.client.port === ports.client.requestedPort
+      ? undefined
+      : `client ${ports.client.requestedPort} -> ${ports.client.port}`,
+    ports.server.port === ports.server.requestedPort
+      ? undefined
+      : `server ${ports.server.requestedPort} -> ${ports.server.port}`,
+  ].filter((change): change is string => Boolean(change));
+
+  if (changes.length > 0) {
+    logger.warn`Configured dev ports are unavailable; reserved ${changes.join(", ")} for this session.`;
+  }
+}
+
 export async function dev<TBundlerCfg = DefaultBundlerConfig>(
+  userConfig?: Config<TBundlerCfg>,
+  options?: DevOptions<TBundlerCfg>,
+): Promise<void> {
+  const cwd = options?.cwd ?? process.cwd();
+  const releaseDevSessionLock = await acquireDevSessionLock(cwd);
+  const unregisterDevSessionExitCleanup = registerDevExitCleanup(() =>
+    releaseDevSessionLock.sync(),
+  );
+  try {
+    await runDev(userConfig, options);
+  } finally {
+    try {
+      await releaseDevSessionLock();
+    } finally {
+      unregisterDevSessionExitCleanup();
+    }
+  }
+}
+
+async function runDev<TBundlerCfg = DefaultBundlerConfig>(
   userConfig?: Config<TBundlerCfg>,
   options?: DevOptions<TBundlerCfg>,
 ): Promise<void> {
@@ -435,10 +533,47 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
     rawResolvedConfig,
     cwd,
   );
-  const resolvedConfig = {
+  const requestedConfig = {
     ...conventionResolvedConfig,
     plugins: orderPluginsByDependencies(conventionResolvedConfig.plugins),
   };
+  const devPorts = await reserveDevPorts(
+    cwd,
+    requestedConfig.dev.port,
+    requestedConfig.server.dev.port,
+  );
+  const resolvedConfig = withReservedDevPorts(requestedConfig, devPorts);
+  const unregisterDevPortsExitCleanup = registerDevExitCleanup(() =>
+    devPorts.releaseSync(),
+  );
+
+  try {
+    await runDevSession(
+      userConfig,
+      options,
+      cwd,
+      flags,
+      resolvedConfig,
+      devPorts,
+    );
+  } finally {
+    try {
+      await devPorts.release();
+    } finally {
+      unregisterDevPortsExitCleanup();
+    }
+  }
+}
+
+async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
+  userConfig: Config<TBundlerCfg> | undefined,
+  options: DevOptions<TBundlerCfg> | undefined,
+  cwd: string,
+  flags: CliFlags | undefined,
+  resolvedConfig: ResolvedConfig<TBundlerCfg>,
+  devPorts: DevPortReservation,
+): Promise<void> {
+  logDevPortSelection(devPorts);
 
   const bundler = resolveBundler(resolvedConfig.bundler, options?.bundler);
   let activeConfig = withActiveBundler(resolvedConfig, bundler);
@@ -485,7 +620,8 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
   let restartQueue: Promise<void> = Promise.resolve();
   let devUpdateQueue: Promise<void> = Promise.resolve();
   let devController: BundlerDevController | undefined;
-  let releaseDevDistLock: (() => Promise<void>) | undefined;
+  let releaseDevDistLock: DevRuntimeRelease | undefined;
+  let unregisterDevDistExitCleanup = () => {};
   let stopWatchingDevDependencies = () => {};
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   const pendingDevChanges = new Set<string>();
@@ -551,7 +687,7 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
           `const serverModule = await import(${JSON.stringify(pathToFileURL(serverBundlePath).href)});`,
           `const handler = serverModule.default?.default ?? serverModule.default ?? serverModule;`,
           `const { serve } = require("@evjs/ev/_internal/server/node");`,
-          `const server = serve({ fetch: handler.fetch }, { port: ${serverPort}, https: ${JSON.stringify(activeConfig.server?.dev?.https ?? false)} });`,
+          `const server = serve({ fetch: handler.fetch }, { port: ${serverPort}, host: "0.0.0.0", https: ${JSON.stringify(activeConfig.server?.dev?.https ?? false)} });`,
           `const ready = () => console.log(${JSON.stringify(API_READY_MARKER)});`,
           `if (server.listening) ready(); else server.once("listening", ready);`,
           `server.once("error", (err) => { console.error(err); process.exit(1); });`,
@@ -574,7 +710,9 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
         }
       });
       await waitForApiReady(child);
-      logger.info`API server ready`;
+      const serverProtocol = activeConfig.server.dev.https ? "https" : "http";
+      const serverOrigin = `${serverProtocol}://localhost:${serverPort}`;
+      logger.info`${["API server listening at:", ...formatDevServerAddresses(serverOrigin)].join("\n")}`;
     } catch (err) {
       logger.error`Server runtime failed: ${err}`;
       apiProcess = null;
@@ -616,7 +754,19 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
       plugins: orderPluginsByDependencies(nextConventionResolvedConfig.plugins),
     };
 
-    return withActiveBundler(nextResolvedConfig, bundler);
+    if (
+      nextResolvedConfig.dev.port !== devPorts.client.requestedPort ||
+      nextResolvedConfig.server.dev.port !== devPorts.server.requestedPort
+    ) {
+      throw new Error(
+        "[evjs] dev.port or server.dev.port changed while ev dev is running. Restart ev dev to apply the new ports.",
+      );
+    }
+
+    return withActiveBundler(
+      withReservedDevPorts(nextResolvedConfig, devPorts),
+      bundler,
+    );
   };
 
   const stagePluginHooks = async (nextConfig: typeof activeConfig) => {
@@ -799,7 +949,13 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
     await runCleanupTasks([
       () => stopWatchingDevDependencies(),
       () => devController?.close?.(),
-      () => releaseDevDistLock?.(),
+      async () => {
+        try {
+          await releaseDevDistLock?.();
+        } finally {
+          unregisterDevDistExitCleanup();
+        }
+      },
       () => {
         process.off("SIGINT", stopApiOnParentShutdown);
         process.off("SIGTERM", stopApiOnParentShutdown);
@@ -841,6 +997,9 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
         },
       })) ?? undefined;
     releaseDevDistLock = await writeDevDistLock(cwd, activePlan.distDir);
+    unregisterDevDistExitCleanup = registerDevExitCleanup(() =>
+      releaseDevDistLock?.sync(),
+    );
     refreshDevDependencyWatchers();
     await waitForShutdown;
   } catch (error) {
@@ -858,6 +1017,7 @@ export async function build<TBundlerCfg = DefaultBundlerConfig>(
   options?: BuildOptions<TBundlerCfg>,
 ): Promise<void> {
   const cwd = options?.cwd ?? process.cwd();
+  await assertNoActiveDevSessionLock(cwd);
   process.env.NODE_ENV ??= "production";
   const prepared = await prepareInternalFrameworkBuild(userConfig, {
     cwd,

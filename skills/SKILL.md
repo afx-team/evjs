@@ -79,3 +79,5 @@ For detailed guides on specific topics, see the docs:
 
 **Misc:**
 - Use `plugins` in config to extend the build pipeline via `buildStart`, `bundlerConfig`, `transformHtml`, and `buildEnd`
+- `ev dev` permits one active session per project directory and coordinates client/server port pairs across concurrently running projects; configured ports are preferred and may move when occupied
+- Client and API dev servers accept both `localhost` and `127.0.0.1`; treat them as separate browser origins for cookies, storage, and service workers

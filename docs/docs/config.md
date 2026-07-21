@@ -244,7 +244,9 @@ export default defineConfig({
 ## Dev Server
 
 The browser dev server defaults to port `3000`; the server dev runtime defaults
-to port `3001`:
+to port `3001`. These values are preferred ports: concurrent evjs projects
+reserve coordinated client/server pairs and move to nearby available ports when
+needed:
 
 ```ts
 export default defineConfig({

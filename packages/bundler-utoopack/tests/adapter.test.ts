@@ -336,6 +336,7 @@ describe("utoopackAdapter dev", () => {
     expect(serve.mock.calls.at(-1)?.[3]).toMatchObject({
       port: 3000,
       https: false,
+      hostname: "0.0.0.0",
       logServerInfo: false,
     });
     expect(onBuildOutput.mock.calls[0]?.[0].assets.devHook).toEqual({

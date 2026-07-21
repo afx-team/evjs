@@ -17,6 +17,21 @@ ev dev
 | **客户端开发服务器** | `3000` | 浏览器 bundle、HTML 和模块热替换（HMR）。 |
 | **服务端开发运行时** | `3001` | 服务端函数、服务端文件路由、SSR、PPR 和 RSC 请求。 |
 
+每个 `ev dev` 会把客户端和服务端端口作为一组统一预留。如果首选端口已被占用，evjs
+会选择下一组可用端口，并在启动前打印映射关系。监听器、SPA history fallback、服务端代理
+和就绪日志都会使用解析后的同一组端口，因此路由请求不会再落到仍监听原配置端口的其他应用。
+
+同一个项目目录同一时间只允许一个 dev session。对同一应用重复启动 `ev dev` 时，命令会立即退出
+并显示已有进程 ID，避免两个进程同时覆盖 `.ev` 和 `dist`。不同项目目录可以并行启动，evjs
+会在进程间协调端口预留。
+
+客户端和 API 开发服务器会监听 IPv4 地址，可以同时通过 `http://localhost:<port>` 和
+`http://127.0.0.1:<port>` 访问。启动日志遵循 Bigfish 的格式，显示 `Local` localhost URL
+和本机的 `Network` URL；等价的 `127.0.0.1` URL 仍然可用，但不会额外打印。`localhost`
+和 `127.0.0.1` 属于不同的浏览器 origin，因此不会共享 cookie、local storage 和 service
+worker。使用自定义 HTTPS 证书且需要同时访问两个地址时，证书的 subject alternative names
+必须包含这两个地址。
+
 客户端开发服务器会把服务端运行时路径代理到服务端开发运行时。默认情况下这些路径来自
 `server.basePath`，包括 `/__evjs/fn`、`/__evjs/ppr` 和 `/__evjs/rsc`。
 
@@ -88,7 +103,8 @@ export default defineConfig({
 约定式 `src/pages` 应用不需要配置 `entry`。发现页面路由后，
 开发服务器会使用生成的页面应用入口。
 
-`dev.port` 和 `server.dev.port` 必须是 `1` 到 `65535` 之间的 TCP 端口整数。
+`dev.port` 和 `server.dev.port` 是首选端口，必须是 `1` 到 `65535` 之间的 TCP
+端口整数。如果端口不可用，当前 dev session 会使用附近的可用端口并输出变更信息。
 自定义 `dev.proxy` 规则必须提供非空 `context` pathname pattern 数组，以及 absolute
 HTTP(S) URL `target`。Context pattern 必须以 `/` 开头，不能包含空白字符、query string
 或 hash，并且同一条规则内不能重复。Target 不能包含首尾空白字符。使用
