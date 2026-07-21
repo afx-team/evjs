@@ -101,8 +101,11 @@ async function readRuntimeLock<T extends DevRuntimeLock>(
       await fs.promises.readFile(path.join(lockPath, "owner.json"), "utf-8"),
     ) as T;
   } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
     if (
-      (err as NodeJS.ErrnoException).code === "ENOENT" ||
+      code === "ENOENT" ||
+      code === "EACCES" ||
+      code === "EPERM" ||
       err instanceof SyntaxError
     ) {
       return undefined;

@@ -339,6 +339,12 @@ describe("utoopackAdapter dev", () => {
       hostname: "0.0.0.0",
       logServerInfo: false,
     });
+    expect(serve.mock.calls.at(-1)?.[0].config.devServer.proxy).toContainEqual(
+      expect.objectContaining({
+        target: "http://localhost:3210",
+        pathRewrite: { "^/.*$": "/" },
+      }),
+    );
     expect(onBuildOutput.mock.calls[0]?.[0].assets.devHook).toEqual({
       js: ["dev-hook.js"],
       css: [],

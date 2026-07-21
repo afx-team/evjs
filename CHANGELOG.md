@@ -13,7 +13,7 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ### 🐛 Bug Fixes
 
-- **SPA fallback port isolation** — Kept the Utoopack listener, SPA history fallback, API proxy, and readiness output on the same resolved port, preventing routes from being served by another app on the originally configured port.
+- **SPA fallback port isolation** — Keeps the Utoopack SPA history fallback synchronized with the actual listener reported at startup, including last-second port changes, so routes cannot be served by another app on the originally configured port.
 
 ---
 

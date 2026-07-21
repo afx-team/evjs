@@ -23,7 +23,9 @@ Each `ev dev` session reserves its client and server ports as one coordinated
 pair. When a preferred port is already occupied, evjs selects the next
 available pair and prints the mapping before startup. The resolved ports are
 then shared by the listener, SPA history fallback, server proxy, and readiness
-output, so requests cannot fall through to another app still listening on the
+output. If Utoopack must change the client port again during startup, evjs
+retargets the SPA fallback to the actual listener before reporting readiness,
+so requests cannot fall through to another app still listening on the
 configured port.
 
 Only one dev session can own a project directory at a time. Starting `ev dev`

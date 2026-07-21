@@ -64,6 +64,27 @@ describe("dev runtime coordination", () => {
     await releaseNextSession();
   });
 
+  it.each([
+    "EACCES",
+    "EPERM",
+  ])("retries a runtime lock read after a transient %s error", async (code) => {
+    const cwd = await createProject();
+    const release = await acquireDevSessionLock(cwd);
+    cleanups.push(release);
+    const readFile = vi
+      .spyOn(fs.promises, "readFile")
+      .mockRejectedValueOnce(Object.assign(new Error(code), { code }));
+
+    try {
+      await expect(acquireDevSessionLock(cwd)).rejects.toThrow(
+        "Dev is already running",
+      );
+      expect(readFile).toHaveBeenCalled();
+    } finally {
+      readFile.mockRestore();
+    }
+  });
+
   it("reserves distinct client and server ports across projects", async () => {
     const firstCwd = await createProject();
     const secondCwd = await createProject();
