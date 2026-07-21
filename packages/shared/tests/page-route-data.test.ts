@@ -168,10 +168,10 @@ describe("page route data helpers", () => {
     });
   });
 
-  it("parses page search params with repeated keys", () => {
+  it("parses page search params as strings and keeps the last repeated value", () => {
     expect(parsePageSearch("?q=hello+world&tag=a&tag=b&empty")).toEqual({
       q: "hello world",
-      tag: ["a", "b"],
+      tag: "b",
       empty: "",
     });
   });
@@ -182,7 +182,7 @@ describe("page route data helpers", () => {
     );
 
     expect(Object.hasOwn(params, "__proto__")).toBe(true);
-    expect(Reflect.get(params, "__proto__")).toEqual(["polluted", "safe"]);
+    expect(Reflect.get(params, "__proto__")).toBe("safe");
     expect(Reflect.get(params, "constructor")).toBe("value");
     expect(Object.getPrototypeOf(params)).toBe(Object.prototype);
   });

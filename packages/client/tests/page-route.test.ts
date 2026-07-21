@@ -68,6 +68,50 @@ describe("createPagesApp", () => {
     expect(app.queryClient).toBeDefined();
   });
 
+  it("keeps generated SPA search params as raw strings", () => {
+    function Home() {
+      return null;
+    }
+
+    const spaceId = "2026071515292425600064506";
+    const basepath = "/ai-center/linkque";
+    const initialUrl = `${basepath}/home?spaceId=${spaceId}&enabled=true&config=%7B%22a%22%3A1%7D`;
+    const history = client.createMemoryHistory({
+      initialEntries: [initialUrl],
+    });
+    const { app } = createPagesApp({
+      routes: [{ path: "/home", module: { default: Home } }],
+    });
+    const router = app.router as {
+      latestLocation: {
+        pathname: string;
+        search: Record<string, unknown>;
+        searchStr: string;
+      };
+      options: Record<string, unknown>;
+      routeTree: unknown;
+      update(options: Record<string, unknown>): void;
+    };
+
+    router.update({
+      ...router.options,
+      routeTree: router.routeTree,
+      basepath,
+      history,
+    });
+
+    expect(router.latestLocation.search).toEqual({
+      spaceId,
+      enabled: "true",
+      config: '{"a":1}',
+    });
+    expect(router.latestLocation.searchStr).toBe(
+      `?spaceId=${spaceId}&enabled=true&config=%7B%22a%22%3A1%7D`,
+    );
+    expect(router.latestLocation.pathname).toBe("/home");
+    expect(history.location.href).toBe(initialUrl);
+  });
+
   it("matches wildcard page routes from generated public route paths", () => {
     function DocsFallback() {
       return null;

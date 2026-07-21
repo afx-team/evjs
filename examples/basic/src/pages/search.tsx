@@ -11,7 +11,7 @@ const cardStyle = {
 
 const linkStyle = { color: "#2563eb", textDecoration: "none" };
 
-export function validateSearch(search: Record<string, unknown>) {
+export function validateSearch(search: Record<string, string>) {
   return {
     tab:
       search.tab === "favorites" || search.tab === "recent"

@@ -159,6 +159,10 @@ SPA 模式下，页面模块可以导出与页面逻辑相关的页面生命周�
 和 `notFoundComponent`。evjs 会把这些导出挂到 evjs 管理的 route 上。MPA 模式不处理
 这些生命周期，页面按普通 React 组件和数据逻辑编写。
 
+所有页面模式的 search 参数都使用原始 `Record<string, string>` 契约。数字、boolean
+和 JSON 形态的值都保持字符串；重复 query key 取最后一个值。页面需要其他类型时，
+应在 `validateSearch` 中显式转换；没有 validator 时，导航也应传入字符串。
+
 SPA 模式还会识别专用 route convention 模块：
 
 - `error.*` 和 `not-found.*` 模块默认导出对应路由目录作用域及后代路由的 fallback
@@ -169,7 +173,7 @@ SPA 模式还会识别专用 route convention 模块：
 // src/pages/search.tsx
 import { usePageSearch } from "@evjs/ev/route";
 
-export const validateSearch = (search: Record<string, unknown>) => ({
+export const validateSearch = (search: Record<string, string>) => ({
   q: typeof search.q === "string" ? search.q : "",
 });
 

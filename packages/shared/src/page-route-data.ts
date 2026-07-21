@@ -1,4 +1,4 @@
-export type PageSearchParams = Record<string, string | string[]>;
+export type PageSearchParams = Record<string, string>;
 
 export type PageRouteParamNameValidationError = "empty" | "reserved";
 export type PageRouteParamSegmentValidationErrorKind =
@@ -288,14 +288,7 @@ export function parsePageSearch(search: string): PageSearchParams {
     const value = decodeQueryValue(rawValue);
     if (!key) continue;
 
-    const current = params[key];
-    if (Array.isArray(current)) {
-      current.push(value);
-    } else if (typeof current === "string") {
-      defineSearchParam(params, key, [current, value]);
-    } else {
-      defineSearchParam(params, key, value);
-    }
+    defineSearchParam(params, key, value);
   }
 
   return params;
@@ -304,7 +297,7 @@ export function parsePageSearch(search: string): PageSearchParams {
 function defineSearchParam(
   params: PageSearchParams,
   key: string,
-  value: string | string[],
+  value: string,
 ): void {
   Object.defineProperty(params, key, {
     value,

@@ -1,3 +1,4 @@
+import { parsePageSearch } from "@evjs/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
   AnyRoute,
@@ -5,10 +6,16 @@ import type {
   RouterHistory,
   TrailingSlashOption,
 } from "@tanstack/react-router";
-import { createRouter, RouterProvider } from "@tanstack/react-router";
+import {
+  createRouter,
+  RouterProvider,
+  stringifySearchWith,
+} from "@tanstack/react-router";
 import { createRoot } from "react-dom/client";
 import { formatErrorDetail } from "../shared/validation.js";
 import type { AppRouteContext } from "./context.js";
+
+const stringifyRawSearch = stringifySearchWith(String);
 
 /**
  * Router options available to standalone CSR applications.
@@ -131,6 +138,8 @@ export function createApp<
     basepath: routerOptions?.basepath ?? basepath,
     history: routerOptions?.history ?? history,
     defaultPreload: routerOptions?.defaultPreload ?? "intent",
+    parseSearch: routerOptions?.parseSearch ?? parsePageSearch,
+    stringifySearch: routerOptions?.stringifySearch ?? stringifyRawSearch,
     context: { queryClient } as AppRouteContext,
   });
 

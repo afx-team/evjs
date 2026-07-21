@@ -1,3 +1,4 @@
+import type { PageSearchParams } from "@evjs/shared";
 import type {
   createRouter,
   ResolveParams,
@@ -68,8 +69,8 @@ export type PageRouteSearch<TPath extends string> =
   }
     ? TSearch extends Record<string, unknown>
       ? TSearch
-      : Record<string, unknown>
-    : Record<string, unknown>;
+      : PageSearchParams
+    : PageSearchParams;
 
 export type PageRouteLoaderData<TPath extends string> =
   PageRouteModuleByPath<TPath> extends {

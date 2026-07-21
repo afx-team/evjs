@@ -1,7 +1,11 @@
 /// <reference types="node" />
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import { matchPageRouteParams, parsePageSearch } from "@evjs/shared";
+import {
+  matchPageRouteParams,
+  type PageSearchParams,
+  parsePageSearch,
+} from "@evjs/shared";
 import { type ComponentType, createElement } from "react";
 import { renderToReadableStream } from "react-server-dom-webpack/server.node";
 import type { PageProps } from "./page-context.js";
@@ -94,7 +98,7 @@ export function usePageContext<const TPath extends PageRoutePath>(
 >;
 export function usePageContext<
   TParams extends Record<string, string> = Record<string, string>,
-  TSearch extends Record<string, unknown> = Record<string, unknown>,
+  TSearch extends Record<string, unknown> = PageSearchParams,
   TLoaderData = unknown,
 >(): PageProps<TParams, TSearch, TLoaderData>;
 export function usePageContext(_path?: string): PageProps {
@@ -121,7 +125,7 @@ export function usePageSearch<const TPath extends PageRoutePath>(
   path: TPath,
 ): PageRouteSearch<TPath>;
 export function usePageSearch<
-  TSearch extends Record<string, unknown> = Record<string, unknown>,
+  TSearch extends Record<string, unknown> = PageSearchParams,
 >(): TSearch;
 export function usePageSearch(_path?: string): Record<string, unknown> {
   return usePageContext().search;
