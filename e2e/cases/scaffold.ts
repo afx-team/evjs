@@ -160,6 +160,7 @@ test.describe("Scaffolding CLI E2E", () => {
       let closed = false;
       let webReady = false;
       let apiReady = false;
+      let stdout = "";
       const settle = (fn: () => void) => {
         if (!settled) {
           settled = true;
@@ -190,10 +191,11 @@ test.describe("Scaffolding CLI E2E", () => {
       devProcess.stdout?.on("data", (data) => {
         const text = data.toString();
         process.stdout.write(data);
-        if (text.includes(`http://localhost:${devPort}`)) {
+        stdout += text;
+        if (stdout.includes("App listening at:")) {
           webReady = true;
         }
-        if (text.includes("API server ready")) {
+        if (stdout.includes("API server listening at:")) {
           apiReady = true;
         }
         maybeResolveReady();
