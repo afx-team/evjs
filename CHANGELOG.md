@@ -8,6 +8,14 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ---
 
+## [0.2.15] — 2026-07-21
+
+### ✨ Improvements
+
+- **Plugin CLI flags** — Exposed extra `ev dev`, `ev build`, and `ev prepare` command-line flags through plugin contexts, with support for boolean, string, dashed, and repeated flag values.
+
+---
+
 ## [0.2.14] — 2026-07-20
 
 ### 🐛 Bug Fixes
