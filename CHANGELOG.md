@@ -6,6 +6,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.2.16] — 2026-07-21
+
 ### ⚠️ Breaking Changes
 
 - **Raw page search params** — evjs-managed SPA, MPA, SSR, and RSC page search params now use `Record<string, string>` without implicit number, boolean, or JSON coercion. Repeated query keys keep the last value; applications should convert values explicitly in `validateSearch`.
