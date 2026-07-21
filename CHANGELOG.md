@@ -6,6 +6,15 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### ✨ Improvements
+
+- **Concurrent dev sessions** — Added per-project dev session locking and cross-process client/server port coordination so duplicate starts fail clearly while different apps select predictable available port pairs.
+- **Dev server addresses** — Made both `localhost` and `127.0.0.1` available for client and API development servers and aligned startup output with Bigfish's `Local` and `Network` labels.
+
+### 🐛 Bug Fixes
+
+- **SPA fallback port isolation** — Keeps the Utoopack SPA history fallback synchronized with the actual listener reported at startup, including last-second port changes, so routes cannot be served by another app on the originally configured port.
+
 ---
 
 ## [0.2.15] — 2026-07-21

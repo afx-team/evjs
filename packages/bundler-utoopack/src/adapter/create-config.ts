@@ -30,6 +30,19 @@ import { getOutputPaths } from "./output-paths.js";
 const logger = getLogger(["evjs", "bundler-utoopack", "config"]);
 const lessImplementation = require.resolve("less");
 const lessLoader = require.resolve("less-loader");
+// Utoopack reads each proxy rule object on every request, so its target can be
+// synchronized after the server reports the final listening port.
+const spaHistoryFallbackRules = new WeakMap<ConfigComplete, ProxyRule>();
+
+export function updateSpaHistoryFallbackTarget(
+  config: ConfigComplete,
+  target: string,
+): boolean {
+  const rule = spaHistoryFallbackRules.get(config);
+  if (!rule) return false;
+  rule.target = target;
+  return true;
+}
 
 function createSpaHistoryFallbackRule(
   config: ResolvedConfig<ConfigComplete>,
@@ -108,12 +121,13 @@ export async function createUtoopackConfig(
 
   const mode = plan.mode;
   const isProduction = mode === "production";
+  const spaHistoryFallbackRule = hasAppClientEntry(plan)
+    ? createSpaHistoryFallbackRule(config, plan)
+    : undefined;
   const devProxy: DevServerProxy = [
     ...config.dev.proxy,
     ...createServerRouteProxyRules(config, plan, config.dev.proxy),
-    ...(hasAppClientEntry(plan)
-      ? [createSpaHistoryFallbackRule(config, plan)]
-      : []),
+    ...(spaHistoryFallbackRule ? [spaHistoryFallbackRule] : []),
   ];
 
   const finalServerEntry = resolveServerEntry(plan);
@@ -211,6 +225,13 @@ export async function createUtoopackConfig(
     if (h.bundlerConfig) {
       await h.bundlerConfig(utoopackConfig, ctx);
     }
+  }
+
+  if (
+    spaHistoryFallbackRule &&
+    utoopackConfig.devServer?.proxy?.includes(spaHistoryFallbackRule)
+  ) {
+    spaHistoryFallbackRules.set(utoopackConfig, spaHistoryFallbackRule);
   }
 
   return utoopackConfig;

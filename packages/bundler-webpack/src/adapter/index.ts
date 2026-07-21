@@ -229,6 +229,12 @@ class WebpackDevSession implements BundlerDevController {
     }
 
     await initialDone.promise;
+    if (needsClient) {
+      const protocol = this.config.dev.https ? "https" : "http";
+      await this.ctx.callbacks.onDevServerReady?.({
+        origin: `${protocol}://localhost:${this.config.dev.port}`,
+      });
+    }
   }
 
   async close(): Promise<void> {

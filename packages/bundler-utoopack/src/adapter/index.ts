@@ -93,7 +93,8 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
     ctx: BundlerDevContext<ConfigComplete>,
   ): Promise<BundlerDevController> {
     const { config, cwd, callbacks, hooks, plan } = ctx;
-    const { createUtoopackConfig } = await import("./create-config.js");
+    const { createUtoopackConfig, updateSpaHistoryFallbackTarget } =
+      await import("./create-config.js");
     const utoopackConfig = await createUtoopackConfig(config, plan, cwd, hooks);
     let serverReadyWatcher: fs.FSWatcher | undefined;
 
@@ -104,9 +105,20 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
     await serve({ config: utoopackConfig }, undefined, undefined, {
       port: config.dev.port,
       https: config.dev.https !== false,
+      hostname: "0.0.0.0",
       logServerInfo: false,
       onReady({ port, hostname }) {
         devServerOrigin = formatDevServerOrigin(config, port, hostname);
+        const fallbackUpdated = updateSpaHistoryFallbackTarget(
+          utoopackConfig,
+          devServerOrigin,
+        );
+        if (port !== config.dev.port) {
+          const fallbackStatus = fallbackUpdated
+            ? " The SPA fallback now targets the actual dev server."
+            : "";
+          logger.warn`Reserved client port ${config.dev.port} became unavailable during startup; Utoopack is listening on ${port}.${fallbackStatus}`;
+        }
       },
     });
 

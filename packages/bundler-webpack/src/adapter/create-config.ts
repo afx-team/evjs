@@ -332,6 +332,7 @@ function createWebpackConfig(options: {
       entrypoints: true,
       modules: true,
     },
+    infrastructureLogging: isProduction ? undefined : { level: "warn" },
     optimization: {
       moduleIds: "deterministic",
       runtimeChunk: false,

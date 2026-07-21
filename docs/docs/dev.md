@@ -19,6 +19,31 @@ capabilities, a server dev runtime:
 | **Client dev server** | `3000` | Browser bundle, HTML, and Hot Module Replacement (HMR). |
 | **Server dev runtime** | `3001` | Server functions, server file routes, SSR, PPR, and RSC requests. |
 
+Each `ev dev` session reserves its client and server ports as one coordinated
+pair. When a preferred port is already occupied, evjs selects the next
+available pair and prints the mapping before startup. The resolved ports are
+then shared by the listener, SPA history fallback, server proxy, and readiness
+output. If Utoopack must change the client port again during startup, evjs
+retargets the SPA fallback to the actual listener before reporting readiness,
+so requests cannot fall through to another app still listening on the
+configured port.
+
+Only one dev session can own a project directory at a time. Starting `ev dev`
+twice for the same app exits early with the existing process ID instead of
+letting both processes overwrite `.ev` and `dist`. Different project
+directories can run concurrently and coordinate their port reservations across
+processes.
+
+The client and API development servers listen on IPv4 interfaces and can be
+opened through both `http://localhost:<port>` and
+`http://127.0.0.1:<port>`. Following Bigfish's convention, startup output lists
+the `Local` localhost URL and the machine's `Network` URL; the equivalent
+`127.0.0.1` URL remains available without an extra log line. `localhost` and
+`127.0.0.1` are different browser origins, so cookies, local storage, and
+service workers are not shared between them. With custom HTTPS certificates,
+include both addresses in the certificate's subject alternative names when
+both URLs are needed.
+
 The client dev server proxies server runtime paths to the server dev runtime.
 By default those paths come from `server.basePath`, including `/__evjs/fn`,
 `/__evjs/ppr`, and `/__evjs/rsc`.
@@ -92,8 +117,10 @@ export default defineConfig({
 Conventional `src/pages` apps do not need an `entry` field. The dev server uses
 the generated page app entry when page routes are discovered.
 
-`dev.port` and `server.dev.port` must be integer TCP ports from `1` to
-`65535`. Custom `dev.proxy` rules must provide a non-empty `context` array of
+`dev.port` and `server.dev.port` are preferred ports and must be integer TCP
+ports from `1` to `65535`. If either port is unavailable, the current dev
+session uses a nearby available port and reports the change. Custom `dev.proxy`
+rules must provide a non-empty `context` array of
 pathname patterns and a `target` absolute HTTP(S) URL. Context patterns must
 start with `/`, must not contain whitespace, a query string, or a hash, and
 must not repeat within the same rule. Targets must not contain leading or
