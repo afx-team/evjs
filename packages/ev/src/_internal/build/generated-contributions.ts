@@ -49,6 +49,7 @@ export const GENERATED_IR_TYPES = "types.d.ts";
 
 const GLOBAL_STYLES_DIR = path.join("src", "styles");
 const GLOBAL_STYLES_EXTENSIONS = [".less", ".css"];
+const GLOBAL_IMPORT_MIXIN_FILE = "global-import-mixin.less";
 
 const generatedModuleRefSymbol = Symbol.for("evjs.generated.module.ref");
 const FRAMEWORK_SLOT_NAMES = [
@@ -162,6 +163,10 @@ export async function materializeFrameworkIR<TBundlerCfg>(
   ensureServerEntryForMiddlewareContributions(plan, generated);
   plan.generated = generated;
   const hasGlobalStyles = hasGlobalStylesDir(options.cwd);
+  const globalImportMixinPath = resolveGlobalImportMixinPath(options.cwd);
+  if (globalImportMixinPath) {
+    plan.styles = { globalImportMixinPath };
+  }
   const entries = createGeneratedEntryPlans(plan, generated, hasGlobalStyles);
   generated.entries = entries;
   rewritePlanEntriesToGeneratedFiles(plan, entries);
@@ -1217,12 +1222,23 @@ function hasGlobalStylesDir(cwd: string): boolean {
   );
 }
 
+function resolveGlobalImportMixinPath(cwd: string): string | undefined {
+  const mixinFile = path.resolve(
+    cwd,
+    GLOBAL_STYLES_DIR,
+    GLOBAL_IMPORT_MIXIN_FILE,
+  );
+  return existsSync(mixinFile) ? mixinFile : undefined;
+}
+
 function collectGlobalStyleImports(cwd: string, fromFile: string): string[] {
   const stylesDir = path.resolve(cwd, GLOBAL_STYLES_DIR);
   if (!existsSync(stylesDir)) return [];
-  const styleFiles = readdirSync(stylesDir).filter((file) =>
-    GLOBAL_STYLES_EXTENSIONS.some((ext) => file.endsWith(ext)),
-  );
+  const styleFiles = readdirSync(stylesDir)
+    .filter((file) =>
+      GLOBAL_STYLES_EXTENSIONS.some((ext) => file.endsWith(ext)),
+    )
+    .sort();
   return styleFiles.map((file) => {
     const specifier = toGeneratedImportSpecifier(
       cwd,

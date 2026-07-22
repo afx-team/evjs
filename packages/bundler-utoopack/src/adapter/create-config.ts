@@ -7,9 +7,8 @@
  */
 
 import { createRequire } from "node:module";
-import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 
@@ -32,8 +31,6 @@ import { getOutputPaths } from "./output-paths.js";
 const logger = getLogger(["evjs", "bundler-utoopack", "config"]);
 const lessImplementation = require.resolve("less");
 const lessLoader = require.resolve("less-loader");
-const GLOBAL_STYLES_DIR = path.join("src", "styles");
-const GLOBAL_IMPORT_MIXIN_FILE = "global-import-mixin.less";
 const lessTextTransformPlugin = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../less-text-transform-plugin",
@@ -177,7 +174,7 @@ export async function createUtoopackConfig(
       less: {
         loader: lessLoader,
         implementation: lessImplementation,
-        ...createGlobalImportMixinPlugins(cwd),
+        ...createGlobalImportMixinPlugins(plan),
       },
     },
     define: {
@@ -444,15 +441,14 @@ function escapeRegExp(value: string): string {
 }
 
 function createGlobalImportMixinPlugins(
-  cwd: string,
+  plan: BuildPlan,
 ): Record<string, unknown> | undefined {
-  const stylesDir = path.resolve(cwd, GLOBAL_STYLES_DIR);
-  const mixinFile = path.join(stylesDir, GLOBAL_IMPORT_MIXIN_FILE);
-  if (!existsSync(mixinFile)) return undefined;
+  const mixinFile = plan.styles?.globalImportMixinPath;
+  if (!mixinFile) return undefined;
 
   const pluginOptions = {
     prependText: `@import ${JSON.stringify(mixinFile)};\n`,
-    exclude: stylesDir,
+    exclude: path.dirname(mixinFile),
   };
   const serializedOptions = JSON.stringify(pluginOptions);
   const pluginModulePath = lessTextTransformPlugin;
@@ -463,7 +459,7 @@ function createGlobalImportMixinPlugins(
         filename: pluginModulePath,
         fileContent: [
           `const mod = require(${JSON.stringify(pluginModulePath)});`,
-          "const Plugin = mod && (mod.default || mod);",
+          "const Plugin = mod && (mod.default || mod.TextTransform);",
           `module.exports = typeof Plugin === 'function' ? new Plugin(${serializedOptions}) : Plugin;`,
         ].join("\n"),
       },

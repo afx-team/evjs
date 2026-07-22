@@ -18,8 +18,16 @@ interface LessPluginManager {
 
 const isRegExp = (value: unknown): value is RegExp => value instanceof RegExp;
 
-const validateMatchRule = (rule: string | RegExp, filePath: string): boolean =>
-  isRegExp(rule) ? rule.test(filePath) : filePath.includes(rule);
+const validateMatchRule = (
+  rule: string | RegExp,
+  filePath: string,
+): boolean => {
+  if (isRegExp(rule)) {
+    rule.lastIndex = 0;
+    return rule.test(filePath);
+  }
+  return filePath.includes(rule);
+};
 
 const isMatched = (
   rules: string | RegExp | (string | RegExp)[],

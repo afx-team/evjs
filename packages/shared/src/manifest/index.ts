@@ -176,6 +176,11 @@ export interface BuildPlan {
   html: HtmlPlan[];
   server: ServerBuildPlan;
   runtime: RuntimePlan;
+  styles?: BuildPlanStyles;
+}
+
+export interface BuildPlanStyles {
+  globalImportMixinPath?: string;
 }
 
 export interface ResolvePlan {

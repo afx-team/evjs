@@ -12,6 +12,7 @@ import {
   createBuildPlan,
   materializeFrameworkIR,
 } from "../src/_internal/build/index.js";
+import type { ResolvedConfig } from "../src/config/index.js";
 
 const tempDirs: string[] = [];
 
@@ -38,14 +39,14 @@ describe("global style entry injection", () => {
       cwd,
       mode: "development",
       command: "dev",
-      config: config as any,
+      config: config as ResolvedConfig,
       graph: analysis.graph,
       plugins: [],
       pluginContext: {
         cwd,
         mode: "development",
         command: "dev",
-        config: config as any,
+        config: config as ResolvedConfig,
         logger: {} as never,
         addWatchFile() {},
       },
@@ -57,14 +58,24 @@ describe("global style entry injection", () => {
       (entry) => entry.environment === "client" && entry.name === "main",
     );
     expect(clientEntry).toBeDefined();
+    if (!clientEntry) throw new Error("Expected client entry");
 
-    const entryFile = path.resolve(cwd, clientEntry!.import);
+    const entryFile = path.resolve(cwd, clientEntry.import);
     expect(existsSync(entryFile)).toBe(true);
     const source = await fs.readFile(entryFile, "utf-8");
 
-    // The global .less and .css files should be imported at the top of the entry
-    expect(source).toContain("global.less");
-    expect(source).toContain("theme.css");
+    // The global .less and .css files should be imported at the top of the entry,
+    // in deterministic (alphabetical) filename order.
+    const importLines = source
+      .split("\n")
+      .filter((line) => line.startsWith("import "))
+      .map((line) => line.trim());
+    const styleImports = importLines.filter((line) =>
+      /\.(less|css)["']/.test(line),
+    );
+    expect(styleImports).toHaveLength(2);
+    expect(styleImports[0]).toContain("global.less");
+    expect(styleImports[1]).toContain("theme.css");
   });
 
   it("does not inject style imports when src/styles/ does not exist", async () => {
@@ -79,14 +90,14 @@ describe("global style entry injection", () => {
       cwd,
       mode: "development",
       command: "dev",
-      config: config as any,
+      config: config as ResolvedConfig,
       graph: analysis.graph,
       plugins: [],
       pluginContext: {
         cwd,
         mode: "development",
         command: "dev",
-        config: config as any,
+        config: config as ResolvedConfig,
         logger: {} as never,
         addWatchFile() {},
       },
@@ -98,8 +109,9 @@ describe("global style entry injection", () => {
       (entry) => entry.environment === "client" && entry.name === "main",
     );
     expect(clientEntry).toBeDefined();
+    if (!clientEntry) throw new Error("Expected client entry");
 
-    const entryFile = path.resolve(cwd, clientEntry!.import);
+    const entryFile = path.resolve(cwd, clientEntry.import);
     const source = await fs.readFile(entryFile, "utf-8");
 
     expect(source).not.toMatch(/import.*\.less/);
@@ -125,14 +137,14 @@ describe("global style entry injection", () => {
       cwd,
       mode: "development",
       command: "dev",
-      config: config as any,
+      config: config as ResolvedConfig,
       graph: analysis.graph,
       plugins: [],
       pluginContext: {
         cwd,
         mode: "development",
         command: "dev",
-        config: config as any,
+        config: config as ResolvedConfig,
         logger: {} as never,
         addWatchFile() {},
       },
@@ -145,7 +157,8 @@ describe("global style entry injection", () => {
         (e) => e.environment === "client" && e.name === pageId,
       );
       expect(entry).toBeDefined();
-      const entryFile = path.resolve(cwd, entry!.import);
+      if (!entry) throw new Error("Expected client entry");
+      const entryFile = path.resolve(cwd, entry.import);
       expect(existsSync(entryFile)).toBe(true);
       const source = await fs.readFile(entryFile, "utf-8");
       expect(source).toContain("reset.less");
@@ -153,9 +166,7 @@ describe("global style entry injection", () => {
   });
 });
 
-async function createFixture(
-  files: Record<string, string>,
-): Promise<string> {
+async function createFixture(files: Record<string, string>): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "evjs-global-styles-"));
   tempDirs.push(dir);
   for (const [file, content] of Object.entries(files)) {

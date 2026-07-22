@@ -1,5 +1,5 @@
-import { createRequire } from "node:module";
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -308,12 +308,13 @@ describe("createUtoopackConfig", () => {
 
   it("injects global-import-mixin.less via Less plugin when the file exists", async () => {
     const cwd = await createMixinFixture({
-      "src/styles/global-import-mixin.less": ".myMixin(@rules) { body { @rules(); } }",
+      "src/styles/global-import-mixin.less":
+        ".myMixin(@rules) { body { @rules(); } }",
       "src/main.tsx": "console.log('app');",
       "index.html": '<div id="app"></div>',
     });
     const config = createResolvedConfig();
-    const plan = await createPlan(config);
+    const plan = await createPlan(config, { cwd });
     const utoopackConfig = await createUtoopackConfig(config, plan, cwd, []);
 
     const lessConfig = utoopackConfig.styles?.less as Record<string, unknown>;
@@ -328,9 +329,7 @@ describe("createUtoopackConfig", () => {
     expect(plugin.fileContent).toContain(
       path.join(cwd, "src", "styles", "global-import-mixin.less"),
     );
-    expect(plugin.fileContent).toContain(
-      path.resolve(cwd, "src", "styles"),
-    );
+    expect(plugin.fileContent).toContain(path.resolve(cwd, "src", "styles"));
   });
 
   it("does not inject Less plugins when global-import-mixin.less is absent", async () => {
@@ -339,7 +338,7 @@ describe("createUtoopackConfig", () => {
       "index.html": '<div id="app"></div>',
     });
     const config = createResolvedConfig();
-    const plan = await createPlan(config);
+    const plan = await createPlan(config, { cwd });
     const utoopackConfig = await createUtoopackConfig(config, plan, cwd, []);
 
     const lessConfig = utoopackConfig.styles?.less as Record<string, unknown>;
@@ -880,11 +879,16 @@ describe("createUtoopackConfig", () => {
 
 function createPlan(
   config: Parameters<typeof createUtoopackConfig>[0],
-  options: { distDir?: string; mode?: "development" | "production" } = {},
+  options: {
+    cwd?: string;
+    distDir?: string;
+    mode?: "development" | "production";
+  } = {},
 ): Promise<BuildPlan> {
+  const cwd = options.cwd ?? process.cwd();
   const graph: AppGraph = {
     version: 1,
-    rootDir: process.cwd(),
+    rootDir: cwd,
     apps:
       config.pages && Object.keys(config.pages).length > 0
         ? {}
@@ -920,14 +924,14 @@ function createPlan(
 
   const mode = options.mode ?? "development";
   return materializeFrameworkIR({
-    cwd: process.cwd(),
+    cwd,
     mode,
     command: mode === "development" ? "dev" : "build",
     config,
     graph,
     plugins: config.plugins,
     pluginContext: {
-      cwd: process.cwd(),
+      cwd,
       mode,
       command: mode === "development" ? "dev" : "build",
       config,
