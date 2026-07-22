@@ -7,6 +7,8 @@
  */
 
 import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const require = createRequire(import.meta.url);
@@ -30,6 +32,12 @@ import { getOutputPaths } from "./output-paths.js";
 const logger = getLogger(["evjs", "bundler-utoopack", "config"]);
 const lessImplementation = require.resolve("less");
 const lessLoader = require.resolve("less-loader");
+const GLOBAL_STYLES_DIR = path.join("src", "styles");
+const GLOBAL_IMPORT_MIXIN_FILE = "global-import-mixin.less";
+const lessTextTransformPlugin = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../less-text-transform-plugin",
+);
 // Utoopack reads each proxy rule object on every request, so its target can be
 // synchronized after the server reports the final listening port.
 const spaHistoryFallbackRules = new WeakMap<ConfigComplete, ProxyRule>();
@@ -169,6 +177,7 @@ export async function createUtoopackConfig(
       less: {
         loader: lessLoader,
         implementation: lessImplementation,
+        ...createGlobalImportMixinPlugins(cwd),
       },
     },
     define: {
@@ -432,4 +441,32 @@ function normalizeRoutePath(routePath: string): string {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function createGlobalImportMixinPlugins(
+  cwd: string,
+): Record<string, unknown> | undefined {
+  const stylesDir = path.resolve(cwd, GLOBAL_STYLES_DIR);
+  const mixinFile = path.join(stylesDir, GLOBAL_IMPORT_MIXIN_FILE);
+  if (!existsSync(mixinFile)) return undefined;
+
+  const pluginOptions = {
+    prependText: `@import ${JSON.stringify(mixinFile)};\n`,
+    exclude: stylesDir,
+  };
+  const serializedOptions = JSON.stringify(pluginOptions);
+  const pluginModulePath = lessTextTransformPlugin;
+
+  return {
+    plugins: [
+      {
+        filename: pluginModulePath,
+        fileContent: [
+          `const mod = require(${JSON.stringify(pluginModulePath)});`,
+          "const Plugin = mod && (mod.default || mod);",
+          `module.exports = typeof Plugin === 'function' ? new Plugin(${serializedOptions}) : Plugin;`,
+        ].join("\n"),
+      },
+    ],
+  };
 }

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -46,6 +46,9 @@ import { toPosixPath } from "./utils.js";
 export const GENERATED_IR_DIR = ".ev";
 export const GENERATED_IR_MANIFEST = "manifest.json";
 export const GENERATED_IR_TYPES = "types.d.ts";
+
+const GLOBAL_STYLES_DIR = path.join("src", "styles");
+const GLOBAL_STYLES_EXTENSIONS = [".less", ".css"];
 
 const generatedModuleRefSymbol = Symbol.for("evjs.generated.module.ref");
 const FRAMEWORK_SLOT_NAMES = [
@@ -158,7 +161,8 @@ export async function materializeFrameworkIR<TBundlerCfg>(
   applyResolveContributions(plan, generated);
   ensureServerEntryForMiddlewareContributions(plan, generated);
   plan.generated = generated;
-  const entries = createGeneratedEntryPlans(plan, generated);
+  const hasGlobalStyles = hasGlobalStylesDir(options.cwd);
+  const entries = createGeneratedEntryPlans(plan, generated, hasGlobalStyles);
   generated.entries = entries;
   rewritePlanEntriesToGeneratedFiles(plan, entries);
 
@@ -973,10 +977,13 @@ function ensureServerEntryForMiddlewareContributions(
 function createGeneratedEntryPlans(
   plan: BuildPlan,
   generated: GeneratedFrameworkPlan,
+  hasGlobalStyles: boolean,
 ): GeneratedEntryPlan[] {
   const used = new Set<string>();
   return plan.entries
-    .filter((entry) => shouldGenerateEntry(entry, plan, generated))
+    .filter((entry) =>
+      shouldGenerateEntry(entry, plan, generated, hasGlobalStyles),
+    )
     .map((entry) => {
       const fileName = uniqueEntryFileName(entry.name, used);
       return {
@@ -993,6 +1000,7 @@ function shouldGenerateEntry(
   entry: BuildEntry,
   plan: BuildPlan,
   generated: GeneratedFrameworkPlan,
+  hasGlobalStyles: boolean,
 ): boolean {
   if (entry.metadata) return true;
   if (
@@ -1005,6 +1013,7 @@ function shouldGenerateEntry(
   }
   if (entry.environment === "client") {
     return (
+      hasGlobalStyles ||
       getMatchingClientEntrySlots(plan, entry).length > 0 ||
       getMatchingRuntimePluginSlots(plan, entry).length > 0 ||
       getSlotItemsFromGenerated<ClientEntrySlotPlanItem>(
@@ -1124,6 +1133,10 @@ function createClientEntrySource(options: {
   plan: BuildPlan;
   mainSource: string[];
 }): string {
+  const globalStyleImports = collectGlobalStyleImports(
+    options.cwd,
+    options.fromFile,
+  );
   const entrySlots = getMatchingClientEntrySlots(options.plan, options.entry);
   const runtimePlugins = getMatchingRuntimePluginSlots(
     options.plan,
@@ -1182,6 +1195,7 @@ function createClientEntrySource(options: {
     : options.mainSource;
 
   return [
+    ...globalStyleImports,
     ...importsFor("polyfill"),
     ...importsFor("before-main-imports"),
     ...runtimeImports,
@@ -1193,6 +1207,30 @@ function createClientEntrySource(options: {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function hasGlobalStylesDir(cwd: string): boolean {
+  const stylesDir = path.resolve(cwd, GLOBAL_STYLES_DIR);
+  if (!existsSync(stylesDir)) return false;
+  return readdirSync(stylesDir).some((file) =>
+    GLOBAL_STYLES_EXTENSIONS.some((ext) => file.endsWith(ext)),
+  );
+}
+
+function collectGlobalStyleImports(cwd: string, fromFile: string): string[] {
+  const stylesDir = path.resolve(cwd, GLOBAL_STYLES_DIR);
+  if (!existsSync(stylesDir)) return [];
+  const styleFiles = readdirSync(stylesDir).filter((file) =>
+    GLOBAL_STYLES_EXTENSIONS.some((ext) => file.endsWith(ext)),
+  );
+  return styleFiles.map((file) => {
+    const specifier = toGeneratedImportSpecifier(
+      cwd,
+      fromFile,
+      path.join(stylesDir, file),
+    );
+    return `import ${JSON.stringify(specifier)};`;
+  });
 }
 
 function createOriginalClientEntryFacadeSource(

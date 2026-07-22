@@ -1,4 +1,6 @@
 import { createRequire } from "node:module";
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import {
   createBuildPlan,
@@ -302,6 +304,46 @@ describe("createUtoopackConfig", () => {
       loader: require.resolve("less-loader"),
       implementation: require.resolve("less"),
     });
+  });
+
+  it("injects global-import-mixin.less via Less plugin when the file exists", async () => {
+    const cwd = await createMixinFixture({
+      "src/styles/global-import-mixin.less": ".myMixin(@rules) { body { @rules(); } }",
+      "src/main.tsx": "console.log('app');",
+      "index.html": '<div id="app"></div>',
+    });
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+    const utoopackConfig = await createUtoopackConfig(config, plan, cwd, []);
+
+    const lessConfig = utoopackConfig.styles?.less as Record<string, unknown>;
+    expect(lessConfig.loader).toBe(require.resolve("less-loader"));
+    expect(lessConfig.implementation).toBe(require.resolve("less"));
+
+    const plugins = lessConfig.plugins as unknown[];
+    expect(plugins).toHaveLength(1);
+    const plugin = plugins[0] as { filename: string; fileContent: string };
+    expect(plugin.filename).toMatch(/less-text-transform-plugin/);
+    expect(plugin.fileContent).toContain("new Plugin(");
+    expect(plugin.fileContent).toContain(
+      path.join(cwd, "src", "styles", "global-import-mixin.less"),
+    );
+    expect(plugin.fileContent).toContain(
+      path.resolve(cwd, "src", "styles"),
+    );
+  });
+
+  it("does not inject Less plugins when global-import-mixin.less is absent", async () => {
+    const cwd = await createMixinFixture({
+      "src/main.tsx": "console.log('app');",
+      "index.html": '<div id="app"></div>',
+    });
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+    const utoopackConfig = await createUtoopackConfig(config, plan, cwd, []);
+
+    const lessConfig = utoopackConfig.styles?.less as Record<string, unknown>;
+    expect(lessConfig.plugins).toBeUndefined();
   });
 
   it("sets crossorigin for dynamically loaded browser chunks", async () => {
@@ -914,4 +956,19 @@ async function expectRejectedMessage(action: () => Promise<unknown>) {
 
   expect(thrown).toBeInstanceOf(Error);
   return (thrown as Error).message;
+}
+
+const mixinFixtureDirs: string[] = [];
+
+async function createMixinFixture(
+  files: Record<string, string>,
+): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "evjs-mixin-"));
+  mixinFixtureDirs.push(dir);
+  for (const [file, content] of Object.entries(files)) {
+    const absolute = path.join(dir, file);
+    await fs.mkdir(path.dirname(absolute), { recursive: true });
+    await fs.writeFile(absolute, content);
+  }
+  return dir;
 }
