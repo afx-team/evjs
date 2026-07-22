@@ -76,6 +76,19 @@ describe("global style entry injection", () => {
     expect(styleImports).toHaveLength(2);
     expect(styleImports[0]).toContain("global.less");
     expect(styleImports[1]).toContain("theme.css");
+
+    const lines = source.split("\n");
+    const mainImportIndex = lines.findIndex((line) =>
+      /\/src\/main["']/.test(line),
+    );
+    expect(mainImportIndex).toBeGreaterThan(0);
+    const styleImportLineNumbers = lines
+      .map((line, i) => ({ i, line }))
+      .filter(({ line }) => /\.(less|css)["']/.test(line))
+      .map(({ i }) => i);
+    for (const lineNum of styleImportLineNumbers) {
+      expect(lineNum).toBeLessThan(mainImportIndex);
+    }
   });
 
   it("does not inject style imports when src/styles/ does not exist", async () => {
