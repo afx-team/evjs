@@ -605,6 +605,11 @@ export interface EvPluginHooks<TBundlerCfg = DefaultBundlerConfig> {
   /** Called before compilation begins. */
   buildStart?: () => void | Promise<void>;
 
+  /** Called after application page routes have been resolved. */
+  onPagesResolved?: (
+    pages: readonly FrameworkRouteView[],
+  ) => void | Promise<void>;
+
   /**
    * Modify the underlying bundler configuration directly.
    *

@@ -124,6 +124,7 @@ flowchart TB
     BuildPlan["create BuildPlan"]
     Contributions["contributions(ctx)\nmodules + slots"]
     IR["materialize .ev"]
+    PagesResolved["onPagesResolved()\n完整页面清单"]
   end
 
   subgraph Build["Bundling 和输出"]
@@ -136,25 +137,46 @@ flowchart TB
   end
 
   Config --> Resolve --> Setup --> BuildStart --> Graph --> BuildPlan
-  BuildPlan --> Contributions --> IR --> BundlerConfig --> Bundler
+  BuildPlan --> Contributions --> IR --> PagesResolved --> BundlerConfig --> Bundler
   Bundler --> BuildOutput --> HTML --> BuildEnd --> Dispose
 
   classDef config fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
   classDef plan fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
   classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
   class Config,Resolve,Setup config;
-  class BuildStart,Graph,BuildPlan,Contributions,IR plan;
+  class BuildStart,Graph,BuildPlan,Contributions,IR,PagesResolved plan;
   class BundlerConfig,Bundler,BuildOutput,HTML,BuildEnd,Dispose build;
 ```
 
 | Hook | 用途 |
 |------|------|
 | `buildStart(ctx)` | 路由发现和 bundling 前的构建准备 |
+| `onPagesResolved(pages)` | 页面解析完成后读取发现到的页面 route |
 | `bundlerConfig(config, ctx)` | 修改当前 bundler 配置 |
 | `buildOutput(output, ctx)` | 向构建输出添加部署/runtime metadata |
 | `transformHtml(doc, ctx)` | 逐个 HTML 文档修改输出；接收当前 manifest result 字段 |
 | `buildEnd({ output, isRebuild })` | 构建后输出最终产物 |
 | `dispose(ctx)` | 清理资源 |
+
+使用 `onPagesResolved()` 读取页面解析完成后的页面 route 列表；layout route
+不会出现在其中：
+
+```ts
+import type { Plugin } from "@evjs/ev/plugin";
+
+export function pageInventoryPlugin(): Plugin {
+  return {
+    name: "page-inventory",
+    setup() {
+      return {
+        onPagesResolved(pages) {
+          console.log(pages.map((page) => page.path));
+        },
+      };
+    },
+  };
+}
+```
 
 ## Generated Contributions
 

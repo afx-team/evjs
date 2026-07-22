@@ -129,6 +129,7 @@ flowchart TB
     BuildPlan["create BuildPlan"]
     Contributions["contributions(ctx)\nmodules + slots"]
     IR["materialize .ev"]
+    PagesResolved["onPagesResolved()\ncomplete page inventory"]
   end
 
   subgraph Build["Bundling and output"]
@@ -141,25 +142,46 @@ flowchart TB
   end
 
   Config --> Resolve --> Setup --> BuildStart --> Graph --> BuildPlan
-  BuildPlan --> Contributions --> IR --> BundlerConfig --> Bundler
+  BuildPlan --> Contributions --> IR --> PagesResolved --> BundlerConfig --> Bundler
   Bundler --> BuildOutput --> HTML --> BuildEnd --> Dispose
 
   classDef config fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
   classDef plan fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
   classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
   class Config,Resolve,Setup config;
-  class BuildStart,Graph,BuildPlan,Contributions,IR plan;
+  class BuildStart,Graph,BuildPlan,Contributions,IR,PagesResolved plan;
   class BundlerConfig,Bundler,BuildOutput,HTML,BuildEnd,Dispose build;
 ```
 
 | Hook | Purpose |
 |------|---------|
 | `buildStart(ctx)` | Build setup before route discovery and bundling |
+| `onPagesResolved(pages)` | Read the discovered page routes after page resolution |
 | `bundlerConfig(config, ctx)` | Mutate selected bundler config |
 | `buildOutput(output, ctx)` | Add deployment/runtime metadata to the build output |
 | `transformHtml(doc, ctx)` | Mutate one HTML document at a time; receives the current manifest result fields |
 | `buildEnd({ output, isRebuild })` | Emit final artifacts after build |
 | `dispose(ctx)` | Cleanup |
+
+Use `onPagesResolved()` to read the discovered page routes after page
+resolution. Layout routes are excluded:
+
+```ts
+import type { Plugin } from "@evjs/ev/plugin";
+
+export function pageInventoryPlugin(): Plugin {
+  return {
+    name: "page-inventory",
+    setup() {
+      return {
+        onPagesResolved(pages) {
+          console.log(pages.map((page) => page.path));
+        },
+      };
+    },
+  };
+}
+```
 
 ## Generated Contributions
 

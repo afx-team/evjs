@@ -1,4 +1,4 @@
-import type { BuildOutput } from "@evjs/shared/manifest";
+import type { AppGraph, BuildOutput } from "@evjs/shared/manifest";
 import { type Config, resolvePluginsConfig } from "../../config/index.js";
 import type {
   BuildResult,
@@ -10,6 +10,7 @@ import type {
 
 const PLUGIN_HOOK_NAMES = [
   "buildStart",
+  "onPagesResolved",
   "buildOutput",
   "bundlerConfig",
   "buildEnd",
@@ -238,6 +239,18 @@ export async function runBuildStartHooks<TBundlerCfg>(
   ctx: PluginContext<TBundlerCfg>,
 ): Promise<void> {
   for (const hook of hooks) await hook.buildStart?.(ctx);
+}
+
+export async function runPagesResolvedHooks<TBundlerCfg>(
+  hooks: PluginHooks<TBundlerCfg>[],
+  graph: AppGraph,
+): Promise<void> {
+  const pages = Object.freeze(
+    graph.routes
+      .filter((route) => route.kind !== "layout")
+      .map((route) => Object.freeze({ ...route })),
+  );
+  for (const hook of hooks) await hook.onPagesResolved?.(pages);
 }
 
 export async function runBuildOutputHooks<TBundlerCfg>(

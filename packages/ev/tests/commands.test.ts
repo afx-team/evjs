@@ -401,6 +401,65 @@ describe("prepareFrameworkBuild", () => {
     expect(events).toEqual(["setup:true:true", "buildStart:true:true"]);
   });
 
+  it("exposes every resolved page to plugins after graph discovery", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/index.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/about.tsx"),
+      "export default function About() { return null; }",
+      "utf-8",
+    );
+
+    let calls = 0;
+    let pageSummary: Array<{
+      path?: string;
+      module?: string;
+    }> = [];
+    const plugin: Plugin<Record<string, never>> = {
+      name: "resolved-pages",
+      setup() {
+        return {
+          onPagesResolved(pages) {
+            calls += 1;
+            expect(Object.isFrozen(pages)).toBe(true);
+            expect(pages.every((page) => Object.isFrozen(page))).toBe(true);
+            pageSummary = pages.map((page) => ({
+              path: page.path,
+              module: page.module,
+            }));
+          },
+        };
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        routing: { mode: "spa" },
+        output: { client: "dist" },
+        plugins: [plugin],
+      },
+      { cwd },
+    );
+
+    expect(calls).toBe(1);
+    expect(pageSummary).toEqual([
+      {
+        path: "/",
+        module: "./src/pages/index.tsx",
+      },
+      {
+        path: "/about",
+        module: "./src/pages/about.tsx",
+      },
+    ]);
+    await prepared.dispose();
+  });
+
   it("rolls back earlier plugin setups when a later setup fails", async () => {
     const cwd = await createProject();
     const events: string[] = [];

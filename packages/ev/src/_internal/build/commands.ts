@@ -63,6 +63,7 @@ import {
   runCleanupTasks,
   runConfigHooks,
   runDisposeHooks,
+  runPagesResolvedHooks,
 } from "./plugin-lifecycle.js";
 
 const logger = getLogger(["evjs", "ev"]);
@@ -338,6 +339,9 @@ async function prepareInternalFrameworkBuild<
       plan: options.plan,
       onAnalysis: reportGraphDiagnostics,
     });
+    if (options.runLifecycleHooks ?? true) {
+      await runPagesResolvedHooks(hooks, analysis.graph);
+    }
 
     return {
       cwd,
@@ -606,6 +610,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       plan: { distDir: DEV_DIST_DIR },
       onAnalysis: reportGraphDiagnostics,
     });
+    await runPagesResolvedHooks(hooks, materialized.analysis.graph);
     activeAnalysis = materialized.analysis;
     activePlan = materialized.plan;
     await assertNoActiveDevDistLock(cwd, activePlan.distDir);
@@ -884,6 +889,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
           plan: { distDir: DEV_DIST_DIR },
           onAnalysis: reportGraphDiagnostics,
         });
+      await runPagesResolvedHooks(hooks, nextAnalysis.graph);
       const update = diffBuildPlan(activePlan, nextPlan, reason);
       if (isEmptyPlanUpdate(update)) {
         activeConfig = nextConfig;
