@@ -124,8 +124,8 @@ const expectedInternalRuntimeDependencies = {
   "@evjs/cli": ["@evjs/bundler-utoopack", "@evjs/ev"],
   "@evjs/create-app": [],
   "@evjs/plugin-qiankun": ["@evjs/ev"],
-  "@evjs/bundler-utoopack": ["@evjs/ev"],
-  "@evjs/bundler-webpack": ["@evjs/ev"],
+  "@evjs/bundler-utoopack": ["@evjs/ev", "@evjs/shared"],
+  "@evjs/bundler-webpack": ["@evjs/ev", "@evjs/shared"],
   "@evjs/shared": [],
 } as const satisfies Record<PackageName, readonly string[]>;
 
@@ -186,6 +186,23 @@ const forbiddenBuildToolsLoadTimeImports = [
   "@evjs/server/fetch",
 ] as const;
 
+const forbiddenPluginAuthoringAliases = [
+  "ClientManifest",
+  "EvBuildResult",
+  "EvBundlerCtx",
+  "EvDocument",
+  "EvHtmlDocument",
+  "EvPlugin",
+  "EvPluginConfigContext",
+  "EvPluginContext",
+  "EvPluginHooks",
+  "FrameworkAppView",
+  "ManifestAssets",
+  "PageManifestEntry",
+  "RouteEntry",
+  "ServerManifest",
+] as const;
+
 const expectedBuildToolsRuntimeExports = [
   "GENERATED_IR_DIR",
   "GENERATED_IR_MANIFEST",
@@ -194,8 +211,8 @@ const expectedBuildToolsRuntimeExports = [
   "applyRouteScopedMiddlewares",
   "build",
   "buildHtml",
-  "createAppGraph",
   "createBuildPlan",
+  "createCoreGraph",
   "detectUseClient",
   "dev",
   "diffBuildPlan",
@@ -256,7 +273,6 @@ const expectedPackageExportSubpaths = {
     "./_internal/client/rsc-page-context",
     "./_internal/client/rsc-runtime",
     "./_internal/client/server-functions",
-    "./_internal/manifest",
     "./_internal/server",
     "./_internal/server/fetch",
     "./_internal/server/node",
@@ -437,7 +453,10 @@ describe("workspace package surface", () => {
     expect(evPackageJson.exports?.["."]).toEqual(
       expectedPrimaryPackageExports["@evjs/ev"],
     );
-    expect(Object.keys(evRoot).sort()).toEqual(["defineConfig"]);
+    expect(Object.keys(evRoot).sort()).toEqual([
+      "defineConfig",
+      "definePageConfig",
+    ]);
     expect(evPackageJson.exports?.["./route"]).toEqual({
       types: "./esm/route/index.d.ts",
       import: "./esm/route/index.js",
@@ -490,6 +509,19 @@ describe("workspace package surface", () => {
     ]);
   });
 
+  it("keeps plugin authoring types on one canonical public vocabulary", async () => {
+    const pluginSource = await fs.readFile(
+      path.join(repoRoot, "packages/ev/src/plugin/index.ts"),
+      "utf-8",
+    );
+
+    for (const alias of forbiddenPluginAuthoringAliases) {
+      expect(pluginSource).not.toMatch(
+        new RegExp(`\\b(?:class|const|function|interface|type)\\s+${alias}\\b`),
+      );
+    }
+  });
+
   it("keeps default bundler ownership in the CLI package", async () => {
     const consumers = await packagesWithRuntimeDependency(
       "@evjs/bundler-utoopack",
@@ -502,14 +534,37 @@ describe("workspace package surface", () => {
     expect(webpackConsumers).toEqual([]);
   });
 
-  it("keeps bundler adapters on the framework package", async () => {
+  it("keeps bundler adapters on framework APIs and shared manifest contracts", async () => {
     for (const packageName of bundlerAdapterPackages) {
       const packageJson = await readPackageJsonByName(packageName);
       const declaredEvjsPackages = [...allDependencyNames(packageJson)]
         .filter((dependencyName) => dependencyName.startsWith("@evjs/"))
         .sort();
 
-      expect(declaredEvjsPackages).toEqual(["@evjs/ev"]);
+      expect(declaredEvjsPackages).toEqual(["@evjs/ev", "@evjs/shared"]);
+    }
+  });
+
+  it("keeps bundler manifest ownership on @evjs/shared/manifest", async () => {
+    for (const packageName of bundlerAdapterPackages) {
+      const sourceDir = path.join(
+        repoRoot,
+        "packages",
+        packageDistribution[packageName].dir,
+        "src",
+      );
+      const imports = (
+        await Promise.all(
+          (
+            await listSourceFiles(sourceDir)
+          ).map(async (sourceFile) =>
+            parseEvjsImportSpecifiers(await fs.readFile(sourceFile, "utf-8")),
+          ),
+        )
+      ).flat();
+
+      expect(imports).toContain("@evjs/shared/manifest");
+      expect(imports).not.toContain("@evjs/ev/_internal/manifest");
     }
   });
 
@@ -612,6 +667,7 @@ describe("workspace package surface", () => {
       "packages/ev/src/server-node.ts",
       "packages/ev/src/server-react.ts",
       "packages/ev/src/server-register.ts",
+      "packages/ev/src/_internal/manifest/index.ts",
     ];
 
     for (const removedFile of removedFacadeFiles) {
@@ -680,6 +736,7 @@ describe("workspace package surface", () => {
       path.join(repoRoot, "AGENTS.md"),
       "utf-8",
     );
+    const normalizedAgentGuide = agentGuide.replace(/\s+/g, " ");
 
     expect(readme).toContain("[AGENTS.md](./AGENTS.md)");
     expect(agentGuide).toContain("[AGENT.md](./AGENT.md)");
@@ -691,11 +748,15 @@ describe("workspace package surface", () => {
     expect(agentGuide).toContain("`@evjs/ev/query`");
     expect(agentGuide).toContain("`@evjs/ev/server-context`");
     expect(agentGuide).toContain("`@evjs/ev/transport`");
+    expect(agentGuide).toContain("packages/ev/src/config/index.ts");
     expect(agentGuide).toContain(
-      "packages/ev/src/_internal/build/page-route-conventions.ts",
+      "packages/ev/src/_internal/build/graph/core.ts",
     );
     expect(agentGuide).toContain(
       "packages/ev/src/_internal/build/page-routes.ts",
+    );
+    expect(agentGuide).toContain(
+      "packages/ev/tests/build-tools-graph-plan.test.ts",
     );
     expect(agentGuide).toContain(
       "packages/ev/tests/build-tools-page-routes.test.ts",
@@ -703,6 +764,17 @@ describe("workspace package surface", () => {
     expect(agentGuide).toContain(
       "Do not add new distributed `@evjs/*` packages",
     );
+    expect(normalizedAgentGuide).toContain(
+      "Before running a Smallfish or evjs 0.2 application on Core 0.3",
+    );
+    expect(normalizedAgentGuide).toContain(
+      "move or rename every published entry to `page.*`",
+    );
+    expect(normalizedAgentGuide).toContain(
+      "move Page configuration to `page.config.ts`",
+    );
+    expect(normalizedAgentGuide).toContain("configure only `routing.mode`");
+    expect(agentGuide).not.toContain("routing.compatibility");
     expect(agentGuide).toContain("Scaffolded apps and template packs");
   });
 

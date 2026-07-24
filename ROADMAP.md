@@ -8,10 +8,13 @@ are preserved in `CHANGELOG.md`; this file should reflect active reality.
 - [x] File-convention-first framework model for apps, pages, server functions,
       server file routes, middleware, SSR/PPR/RSC render metadata, with
       `@evjs/client` and `@evjs/server` kept as independent runtime cores.
-- [x] `AppGraph`, `BuildPlan`, and `BuildOutput` schemas under
+- [x] `CoreGraph`, `BuildPlan`, and `BuildOutput` schemas under
       `@evjs/shared/manifest`.
-- [x] Graph analysis and build planning under `@evjs/ev/src/build-tools`.
-- [x] Single framework manifest output at `dist/manifest.json`.
+- [x] Graph analysis and build planning under
+      `@evjs/ev/src/_internal/build`.
+- [x] Single serialized deployment contract at
+      `dist/deployment-metadata.json`; the complete `BuildOutput` stays in
+      memory.
 - [x] Stage-based plugin hooks: `buildStart`, `bundlerConfig`, `buildOutput`,
       per-document `transformHtml`, `buildEnd({ output })`, and `dispose`.
 - [x] Programmatic `prepareFrameworkBuild()` API for resolving config,
@@ -38,6 +41,8 @@ are preserved in `CHANGELOG.md`; this file should reflect active reality.
 - [x] `@evjs/bundler-utoopack` remains the default adapter and consumes
       `BuildPlan` where its lower-layer APIs are sufficient.
 - [x] `@evjs/bundler-webpack` validates the complete new architecture path.
+- [x] Bundler capability declarations and preflight diagnostics report
+      unsupported build and dev-plan requirements before adapter execution.
 - [ ] Priority 1: Utoopack dynamic dev entry/server update API for configured
       page additions/removals.
 - [ ] Priority 2: Utoopack generic entry wrapping/loadable entry facts for
@@ -56,5 +61,5 @@ are preserved in `CHANGELOG.md`; this file should reflect active reality.
       them.
 - [ ] Further graph dependency narrowing once bundlers expose module/reference
       facts that can replace framework-side static import closure analysis.
-- [ ] Migration guides for external deployment plugins that still consume older
-      split manifests.
+- [ ] Migration guides for external deployment adapters that still emit older
+      platform-specific split manifests.

@@ -1,21 +1,30 @@
 import type {
-  AppGraph,
+  AppNode,
   BuildEntry,
   BuildPlan,
   BuildPlanUpdate,
-  ComponentModel,
+  CoreGraph,
   HtmlPlan,
-  HydrationMode,
+  PageNode,
   PageRouteNode,
-  PprConfig,
-  PrerenderConfig,
-  RenderMode,
+  PagesAppRouteNode,
+  RouteNode,
   RuntimePlan,
   ServerBuildPlan,
   ServerMiddlewareNode,
   ServerRenderPlan,
 } from "@evjs/shared/manifest";
-import { isRouteDerivedPage } from "@evjs/shared/manifest";
+import {
+  clonePageMetadata,
+  getClientRouteMatches,
+  getServerRenderedPaths,
+  isRouteDerivedPage,
+} from "@evjs/shared/manifest";
+import type { PageRouteDiscoveryMetadata } from "../../../config/index.js";
+import {
+  GENERATED_PAGES_APP_BUILD_ENTRY,
+  SERVER_RUNTIME_BUILD_ENTRY_NAME,
+} from "../build-entry-conventions.js";
 import {
   isPartialPrerenderPage,
   isRscPage,
@@ -31,46 +40,27 @@ const DEFAULT_RESOLVE_ALIAS = {
   "@": "./src",
 } as const satisfies NonNullable<BuildPlan["resolve"]>["alias"];
 
+interface BuildPlanFacts {
+  rootDir: string;
+  apps: Record<string, AppNode>;
+  pages: Record<string, PageNode>;
+  routes: RouteNode[];
+  serverFunctions: CoreGraph["serverFunctions"];
+  serverRoutes: CoreGraph["serverRoutes"];
+  clientReferences?: CoreGraph["clientReferences"];
+  serverReferences?: CoreGraph["serverReferences"];
+}
+
 export interface BuildPlanConfig {
-  entry: string;
-  html: string;
-  pages?: Record<
-    string,
-    {
-      path?: string;
-      entry?: string;
-      component?: string;
-      app?: string;
-      html: string;
-      render?: RenderMode;
-      componentModel?: ComponentModel;
-      hydrate?: HydrationMode;
-      prerender?: PrerenderConfig;
-      mount?: string;
-      ppr?: PprConfig;
-    }
-  >;
-  apps?: Record<
-    string,
-    | string
-    | {
-        source?: string;
-        entry?: string;
-        html?: string;
-        mount?: string;
-      }
-  >;
   routing?: {
     mode: "spa" | "mpa";
     dir: string;
-    entry?: string;
     html: string;
     mount: string;
-    conventions?: {
-      layout: boolean | string;
-    };
     routes: PageRouteNode[];
     rootModule?: string;
+    metadata?: PageRouteDiscoveryMetadata;
+    dependencies?: string[];
   };
   transport?: {
     baseUrl?: string;
@@ -104,11 +94,180 @@ export interface CreateBuildPlanOptions {
   publicPath?: RuntimePlan["publicPath"];
 }
 
+function deriveBuildPlanFacts(graph: CoreGraph): BuildPlanFacts {
+  const apps: Record<string, AppNode> = {};
+  const pages: Record<string, PageNode> = {};
+  const routes: RouteNode[] = [];
+  const clientRoutes = graph.routes.filter((route) => route.realm === "client");
+
+  for (const application of Object.values(graph.applications)) {
+    const hasClientRoutes = clientRoutes.some(
+      (route) => route.applicationId === application.id,
+    );
+    if (application.topology !== "spa" || !hasClientRoutes) continue;
+    const entry = GENERATED_PAGES_APP_BUILD_ENTRY;
+    const document = application.documentIds
+      .map((id) => graph.documents[id])
+      .find(
+        (candidate) =>
+          candidate?.owner.kind === "application" &&
+          candidate.applicationId === application.id,
+      );
+    if (!document) {
+      throw new Error(
+        `[evjs] Application "${application.id}" with client entry "${entry}" must own one Document.`,
+      );
+    }
+    apps[application.id] = {
+      id: application.id,
+      entry,
+      html: document.template,
+      ...(document.mount ? { mount: document.mount } : {}),
+    };
+  }
+
+  for (const page of Object.values(graph.pages)) {
+    const application = graph.applications[page.applicationId];
+    const route = clientRoutes.find(
+      (candidate) =>
+        candidate.target.kind === "page" && candidate.target.pageId === page.id,
+    );
+    const pageDocument = Object.values(graph.documents).find(
+      (document) =>
+        document.owner.kind === "page" && document.owner.pageId === page.id,
+    );
+    const applicationDocument = application?.documentIds
+      .map((id) => graph.documents[id])
+      .find((document) => document?.owner.kind === "application");
+    const document = pageDocument ?? applicationDocument;
+    pages[page.id] = {
+      id: page.id,
+      scope: page.source.scope,
+      ...(application?.topology === "mpa" && route
+        ? { path: formatCoreRoutePattern(route.pattern) }
+        : {}),
+      ...(route ? { routeId: route.id } : {}),
+      component: page.source.module,
+      html: document?.template ?? "",
+      ...(pageDocument?.output ? { output: pageDocument.output } : {}),
+      render: page.render,
+      ...(page.componentModel ? { componentModel: page.componentModel } : {}),
+      ...(page.hydrate ? { hydrate: page.hydrate } : {}),
+      ...(document?.mount ? { mount: document.mount } : {}),
+      ...(page.prerender ? { prerender: page.prerender } : {}),
+      ...(page.ppr ? { ppr: page.ppr } : {}),
+      ...(page.metadata ? { metadata: clonePageMetadata(page.metadata) } : {}),
+    };
+  }
+
+  for (const route of clientRoutes) {
+    const path = formatCoreRoutePattern(route.pattern);
+    const page =
+      route.target.kind === "page"
+        ? graph.pages[route.target.pageId]
+        : undefined;
+    const target: RouteNode["target"] =
+      route.target.kind === "page"
+        ? { kind: "page", pageId: route.target.pageId }
+        : route.target.kind === "group"
+          ? { kind: "group" }
+          : {
+              kind: "redirect",
+              to:
+                route.target.to.kind === "url"
+                  ? { kind: "url", href: route.target.to.href }
+                  : {
+                      kind: "path",
+                      path: formatCoreRoutePattern(route.target.to.pattern),
+                    },
+            };
+    const layoutModule =
+      typeof route.facets.layout === "string" ? route.facets.layout : undefined;
+    if (layoutModule && route.target.kind === "page") {
+      const layoutId = `${route.id}:layout`;
+      routes.push({
+        id: layoutId,
+        path,
+        ...(route.parentId ? { parentId: route.parentId } : {}),
+        kind: "layout",
+        appId: route.applicationId,
+        module: layoutModule,
+        ...(route.facets.error ? { errorModule: route.facets.error } : {}),
+        ...(route.facets.notFound
+          ? { notFoundModule: route.facets.notFound }
+          : {}),
+      });
+      routes.push({
+        id: route.id,
+        path,
+        parentId: layoutId,
+        appId: route.applicationId,
+        pageId: route.target.pageId,
+        module: page?.source.module,
+        target,
+        wrappers: [...route.facets.wrappers],
+      });
+      continue;
+    }
+    routes.push({
+      id: route.id,
+      path,
+      ...(route.parentId ? { parentId: route.parentId } : {}),
+      ...(layoutModule ? { kind: "layout" as const } : {}),
+      appId: route.applicationId,
+      ...(route.target.kind === "page"
+        ? {
+            pageId: route.target.pageId,
+            module: page?.source.module,
+          }
+        : layoutModule
+          ? { module: layoutModule }
+          : {}),
+      target,
+      wrappers: [...route.facets.wrappers],
+      ...(route.facets.layout === false ? { layout: false as const } : {}),
+      ...(route.facets.error ? { errorModule: route.facets.error } : {}),
+      ...(route.facets.notFound
+        ? { notFoundModule: route.facets.notFound }
+        : {}),
+    });
+  }
+
+  return {
+    rootDir: graph.rootDir,
+    apps,
+    pages,
+    routes,
+    serverFunctions: graph.serverFunctions,
+    serverRoutes: graph.serverRoutes,
+    ...(graph.clientReferences
+      ? { clientReferences: graph.clientReferences }
+      : {}),
+    ...(graph.serverReferences
+      ? { serverReferences: graph.serverReferences }
+      : {}),
+  };
+}
+
+function formatCoreRoutePattern(
+  pattern: CoreGraph["routes"][number]["pattern"],
+): string {
+  if (pattern.segments.length === 0) return "/";
+  return `/${pattern.segments
+    .map((segment) => {
+      if (segment.kind === "static") return segment.value;
+      if (segment.kind === "param") return `$${segment.name}`;
+      return "$";
+    })
+    .join("/")}`;
+}
+
 export function createBuildPlan(
   config: BuildPlanConfig,
-  graph: AppGraph,
+  coreGraph: CoreGraph,
   options: CreateBuildPlanOptions = {},
 ): BuildPlan {
+  const graph = deriveBuildPlanFacts(coreGraph);
   const mode = options.mode ?? readBuildMode();
   validatePageBuildContracts(graph);
   const serverRenderers = createServerRenderers(graph);
@@ -150,6 +309,27 @@ export function createBuildPlan(
       },
       transport: config.transport,
     },
+    dev: {
+      clientRoutes: getClientRouteMatches(graph),
+      serverRoutePaths: [
+        ...new Set([
+          ...graph.serverRoutes.map((route) => route.path),
+          ...getServerRenderedPaths(graph),
+        ]),
+      ],
+      hasPpr: hasPprPages(graph),
+    },
+    ...((graph.clientReferences?.length ?? 0) > 0
+      ? {
+          rsc: {
+            clientReferenceModules: [
+              ...new Set(
+                graph.clientReferences?.map((reference) => reference.module),
+              ),
+            ],
+          },
+        }
+      : {}),
   };
 }
 
@@ -164,30 +344,32 @@ export function diffBuildPlan(
     next,
     entries: diffByKey(previous.entries, next.entries, buildEntryKey),
     html: diffByKey(previous.html, next.html, (html) => html.id),
+    generatedChanged:
+      stableStringify(previous.generated) !== stableStringify(next.generated),
+    resolveChanged:
+      stableStringify(previous.resolve) !== stableStringify(next.resolve),
     serverChanged:
       previous.output.clientDir !== next.output.clientDir ||
       previous.output.serverDir !== next.output.serverDir ||
-      stableStringify(previous.server) !== stableStringify(next.server),
+      stableStringify(previous.server) !== stableStringify(next.server) ||
+      stableStringify(previous.dev) !== stableStringify(next.dev) ||
+      stableStringify(previous.rsc) !== stableStringify(next.rsc),
   };
 }
 
 function createEntries(
   config: BuildPlanConfig,
-  graph: AppGraph,
+  graph: BuildPlanFacts,
   serverRenderers: ServerRenderPlan[],
 ): BuildEntry[] {
   const entries: BuildEntry[] = [];
   const pages = Object.values(graph.pages);
   const apps = Object.values(graph.apps);
-  const spaRoutingEntry = getSpaRoutingEntry(config);
 
   for (const app of apps) {
     if (isStaticOnlyRoutingApp(config, graph, app.id)) continue;
 
-    const pagesAppRouting =
-      config.routing?.mode === "spa" && spaRoutingEntry === app.entry
-        ? config.routing
-        : undefined;
+    const isGeneratedPagesApp = app.entry === GENERATED_PAGES_APP_BUILD_ENTRY;
     entries.push({
       name: app.id === "default" ? "main" : app.id,
       import: app.entry,
@@ -195,15 +377,12 @@ function createEntries(
       runtime: "browser",
       kind: "app-client",
       owner: { appId: app.id },
-      ...(pagesAppRouting
+      ...(isGeneratedPagesApp
         ? {
             metadata: {
               type: "pages-app",
               routes: createPagesAppRoutes(graph, app.id),
-              mount: pagesAppRouting.mount,
-              ...(pagesAppRouting.rootModule
-                ? { rootModule: pagesAppRouting.rootModule }
-                : {}),
+              mount: app.mount ?? "#app",
             },
           }
         : {}),
@@ -212,7 +391,7 @@ function createEntries(
 
   for (const page of pages) {
     if (!isRouteDerivedPage(page)) {
-      const pageEntry = getPageClientEntry(page);
+      const pageEntry = getPageClientEntry(config, page);
       if (pageEntry) {
         entries.push({
           name: page.id,
@@ -220,7 +399,7 @@ function createEntries(
           environment: "client",
           runtime: "browser",
           kind: "page-client",
-          owner: { pageId: page.id },
+          owner: createPageBuildOwner(config, page.id),
           ...(pageEntry.metadata ? { metadata: pageEntry.metadata } : {}),
         });
       }
@@ -254,7 +433,7 @@ function createEntries(
   const serverEntry = createServerRuntimeEntry(config, graph, serverRenderers);
   if (serverEntry) {
     entries.push({
-      name: "server",
+      name: SERVER_RUNTIME_BUILD_ENTRY_NAME,
       import: serverEntry.import,
       environment: "server",
       runtime: "node",
@@ -266,28 +445,47 @@ function createEntries(
   return entries;
 }
 
-function createPagesAppRoutes(graph: AppGraph, appId: string): PageRouteNode[] {
-  return sortPageRoutes(
-    graph.routes.flatMap((route) => {
-      if (route.appId !== appId || !route.module) return [];
-      return [
-        {
-          id: route.id,
-          path: route.path,
-          module: route.module,
-          ...(route.parentId ? { parentId: route.parentId } : {}),
-          ...(route.kind ? { kind: route.kind } : {}),
-          ...(route.errorModule ? { errorModule: route.errorModule } : {}),
-          ...(route.notFoundModule
-            ? { notFoundModule: route.notFoundModule }
-            : {}),
-        },
-      ];
-    }),
-  );
+function createPagesAppRoutes(
+  graph: BuildPlanFacts,
+  appId: string,
+): PagesAppRouteNode[] {
+  const routes = graph.routes.flatMap<PagesAppRouteNode>((route) => {
+    if (route.appId !== appId) return [];
+    if (!route.module && !route.target) return [];
+    if (route.target?.kind === "page" && !route.module) {
+      throw new Error(
+        `[evjs] Application-route Page target "${route.id}" has no component module for the pages-app entry.`,
+      );
+    }
+    const metadata =
+      route.target?.kind === "page"
+        ? clonePageMetadata(graph.pages[route.target.pageId]?.metadata)
+        : undefined;
+    return [
+      {
+        id: route.id,
+        path: route.path,
+        ...(route.module ? { module: route.module } : {}),
+        ...(route.parentId ? { parentId: route.parentId } : {}),
+        ...(route.kind ? { kind: route.kind } : {}),
+        ...(route.target ? { target: route.target } : {}),
+        ...(route.wrappers ? { wrappers: [...route.wrappers] } : {}),
+        ...(route.layout === false ? { layout: false as const } : {}),
+        ...(route.errorModule ? { errorModule: route.errorModule } : {}),
+        ...(route.notFoundModule
+          ? { notFoundModule: route.notFoundModule }
+          : {}),
+        ...(metadata ? { metadata } : {}),
+      },
+    ];
+  });
+  if (routes.every((route) => route.target === undefined && route.module)) {
+    return sortPageRoutes(routes as PageRouteNode[]);
+  }
+  return routes;
 }
 
-function validatePageBuildContracts(graph: AppGraph): void {
+function validatePageBuildContracts(graph: BuildPlanFacts): void {
   for (const page of Object.values(graph.pages)) {
     validatePageBuildContract(`Page "${page.id}"`, page);
   }
@@ -338,7 +536,7 @@ function describeHtmlOwner(document: HtmlPlan): string {
   return `page "${document.owner.pageId}"`;
 }
 
-function createServerRenderers(graph: AppGraph): ServerRenderPlan[] {
+function createServerRenderers(graph: BuildPlanFacts): ServerRenderPlan[] {
   const renderers: ServerRenderPlan[] = [];
   for (const page of Object.values(graph.pages)) {
     if (page.render === "csr") continue;
@@ -403,21 +601,11 @@ function pageOwner(
   };
 }
 
-function getPageServerEntry(page: {
-  entry?: string;
-  component?: string;
-  app?: string;
-}): string | undefined {
-  return page.component ?? page.app ?? page.entry;
+function getPageServerEntry(page: PageNode): string | undefined {
+  return page.component;
 }
 
-function isBuildOnlySsgPage(page: {
-  render: RenderMode;
-  componentModel?: ComponentModel;
-  prerender?: PrerenderConfig;
-  ppr?: PprConfig;
-  hydrate?: HydrationMode;
-}): boolean {
+function isBuildOnlySsgPage(page: PageNode): boolean {
   return (
     page.render === "ssg" &&
     !isRscPage(page) &&
@@ -426,55 +614,89 @@ function isBuildOnlySsgPage(page: {
   );
 }
 
-function getPageClientEntry(page: {
-  id: string;
-  entry?: string;
-  component?: string;
-  app?: string;
-  path?: string;
-  routeId?: string;
-  render?: RenderMode;
-  componentModel?: ComponentModel;
-  prerender?: PrerenderConfig;
-  ppr?: PprConfig;
-  hydrate?: HydrationMode;
-  mount?: string;
-}):
+function getPageClientEntry(
+  config: BuildPlanConfig,
+  page: PageNode,
+):
   | { import: string; metadata?: NonNullable<BuildEntry["metadata"]> }
   | undefined {
   if (isPartialPrerenderPage(page)) return undefined;
-  if (page.entry) return { import: page.entry };
-  if (page.app) return { import: page.app };
   if (isRscPage(page)) return undefined;
-  const hydrate = page.hydrate ?? defaultHydrate(page.render ?? "csr");
-  if (page.component && hydrate === "none" && page.render !== "csr") {
+  const hydrate = page.hydrate ?? defaultHydrate(page.render);
+  if (hydrate === "none" && page.render !== "csr") {
     return undefined;
   }
-  if (page.component)
-    return {
-      import: page.component,
-      metadata: {
-        type: "react-component-page",
-        component: page.component,
-        mount: page.mount ?? "#app",
-        hydrate,
-        render: page.render ?? "csr",
-        ...(page.path
-          ? { route: { id: page.routeId ?? page.id, path: page.path } }
-          : {}),
-      },
-    };
-  return undefined;
+  return {
+    import: page.component,
+    metadata: {
+      type: "react-component-page",
+      component: page.component,
+      ...createCanonicalMpaPageLayouts(config, page),
+      mount: page.mount ?? "#app",
+      hydrate,
+      render: page.render,
+      ...(page.path
+        ? { route: { id: page.routeId ?? page.id, path: page.path } }
+        : {}),
+    },
+  };
 }
 
-function getSpaRoutingEntry(
-  config: Pick<BuildPlanConfig, "entry" | "routing">,
-): string | undefined {
-  if (config.routing?.mode !== "spa") return undefined;
-  return config.routing.entry ?? config.entry;
+function createCanonicalMpaPageLayouts(
+  config: BuildPlanConfig,
+  page: PageNode,
+): { layouts?: string[] } {
+  if (
+    config.routing?.mode !== "mpa" ||
+    !isCanonicalPageRouting(config.routing)
+  ) {
+    return {};
+  }
+
+  const routesById = new Map(
+    config.routing.routes.map((route) => [route.id, route]),
+  );
+  const route =
+    routesById.get(page.routeId ?? page.id) ??
+    config.routing.routes.find(
+      (candidate) =>
+        candidate.kind !== "layout" &&
+        candidate.path === page.path &&
+        candidate.module === page.component,
+    );
+  const nestedLayouts: string[] = [];
+  const visited = new Set<string>();
+  let parentId = route?.parentId;
+  while (parentId) {
+    if (visited.has(parentId)) {
+      throw new Error(
+        `[evjs] Canonical MPA Page "${page.id}" has a circular layout parent chain at Route "${parentId}".`,
+      );
+    }
+    visited.add(parentId);
+    const parent = routesById.get(parentId);
+    if (!parent) {
+      throw new Error(
+        `[evjs] Canonical MPA Page "${page.id}" references missing layout Route "${parentId}".`,
+      );
+    }
+    if (parent.kind === "layout") {
+      nestedLayouts.unshift(parent.module);
+    }
+    parentId = parent.parentId;
+  }
+
+  const layouts = [
+    ...(config.routing.rootModule ? [config.routing.rootModule] : []),
+    ...nestedLayouts,
+  ];
+  return layouts.length > 0 ? { layouts: [...new Set(layouts)] } : {};
 }
 
-function createHtmlPlans(config: BuildPlanConfig, graph: AppGraph): HtmlPlan[] {
+function createHtmlPlans(
+  config: BuildPlanConfig,
+  graph: BuildPlanFacts,
+): HtmlPlan[] {
   const apps = Object.values(graph.apps);
   const pages = Object.values(graph.pages);
 
@@ -492,15 +714,46 @@ function createHtmlPlans(config: BuildPlanConfig, graph: AppGraph): HtmlPlan[] {
       .map((page) => ({
         id: page.id,
         template: page.html,
-        fileName: `${page.id}.html`,
-        owner: { pageId: page.id },
+        fileName: page.output ?? `${page.id}.html`,
+        owner: createPageBuildOwner(config, page.id),
+        ...(page.metadata
+          ? { metadata: clonePageMetadata(page.metadata) }
+          : {}),
       })),
   ];
 }
 
+function createPageBuildOwner(
+  config: Pick<BuildPlanConfig, "routing">,
+  pageId: string,
+): { appId?: string; pageId: string } {
+  if (
+    config.routing?.mode === "mpa" &&
+    isCanonicalPageRouting(config.routing)
+  ) {
+    return { appId: "default", pageId };
+  }
+  return { pageId };
+}
+
+function isCanonicalPageRouting(
+  routing: NonNullable<BuildPlanConfig["routing"]>,
+): boolean {
+  if (routing.metadata) return true;
+  const pageRoutes = routing.routes.filter((route) => route.kind !== "layout");
+  return (
+    pageRoutes.length > 0 &&
+    pageRoutes.every(
+      (route) =>
+        route.scope?.kind === "directory" &&
+        /(?:^|\/)page\.(?:[cm]?[jt]sx?)$/.test(route.module),
+    )
+  );
+}
+
 function isStaticOnlyRoutingApp(
   config: BuildPlanConfig,
-  graph: AppGraph,
+  graph: BuildPlanFacts,
   appId: string,
 ): boolean {
   if (config.routing?.mode !== "spa") return false;
@@ -511,7 +764,10 @@ function isStaticOnlyRoutingApp(
   return routes.every((route) => isStaticSsgRoute(graph, route));
 }
 
-function isStaticSsgRoute(graph: AppGraph, route: AppGraph["routes"][number]) {
+function isStaticSsgRoute(
+  graph: BuildPlanFacts,
+  route: BuildPlanFacts["routes"][number],
+) {
   if (route.kind === "layout" || !route.pageId) return false;
   if (!isStaticPagePath(route.path)) return false;
 
@@ -521,13 +777,7 @@ function isStaticSsgRoute(graph: AppGraph, route: AppGraph["routes"][number]) {
 
 function shouldEmitDocumentForPage(
   config: BuildPlanConfig,
-  page: {
-    id: string;
-    component?: string;
-    path?: string;
-    routeId?: string;
-    render: RenderMode;
-  },
+  page: PageNode,
 ): boolean {
   if (isMpaFileRoutePage(config, page) && page.render === "ssg") return true;
   const pagePath = getPageRoutePath(config, page);
@@ -582,7 +832,7 @@ function isStaticPagePath(pathname: string): boolean {
 
 function createServerPlan(
   config: BuildPlanConfig,
-  graph: AppGraph,
+  graph: BuildPlanFacts,
   renderers: ServerRenderPlan[],
 ): ServerBuildPlan {
   const entry = createServerRuntimeEntry(config, graph, renderers)?.import;
@@ -594,7 +844,7 @@ function createServerPlan(
 
 function createServerRuntimeEntry(
   config: BuildPlanConfig,
-  graph: AppGraph,
+  graph: BuildPlanFacts,
   renderers: ServerRenderPlan[],
 ): Pick<BuildEntry, "import" | "metadata"> | undefined {
   const routes = getConfiguredServerRoutes(config, graph);
@@ -626,7 +876,7 @@ function createServerRuntimeEntry(
 
 function getConfiguredServerRoutes(
   config: BuildPlanConfig,
-  graph: AppGraph,
+  graph: BuildPlanFacts,
 ): DiscoveredServerRouteNode[] {
   const configured = config.server.routing?.routes ?? [];
   if (configured.length === 0) return [];
@@ -638,16 +888,18 @@ function readBuildMode(): "development" | "production" {
   return process.env.NODE_ENV === "production" ? "production" : "development";
 }
 
-function defaultHydrate(render: RenderMode): HydrationMode {
+function defaultHydrate(
+  render: PageNode["render"],
+): NonNullable<PageNode["hydrate"]> {
   if (render === "ssg") return "none";
   return "load";
 }
 
-function hasPprPages(graph: AppGraph): boolean {
+function hasPprPages(graph: BuildPlanFacts): boolean {
   return Object.values(graph.pages).some(isPartialPrerenderPage);
 }
 
-function hasRscPages(graph: AppGraph): boolean {
+function hasRscPages(graph: BuildPlanFacts): boolean {
   return Object.values(graph.pages).some(isRscPage);
 }
 

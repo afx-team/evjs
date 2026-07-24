@@ -58,7 +58,7 @@ flowchart TB
 
   subgraph Updates["Framework updates"]
     Files["src/pages\nsrc/apis\nev.config.ts"]
-    Plan["refresh AppGraph\nand .ev plan"]
+    Plan["refresh CoreGraph\nand .ev plan"]
   end
 
   Browser --> HTML
@@ -129,15 +129,25 @@ HTTP(S) URL `target`。Context pattern 必须以 `/` 开头，不能包含空白
 import { dev, build } from "@evjs/cli";
 import { utoopackAdapter } from "@evjs/bundler-utoopack";
 
-// 使用显式构建器适配器启动开发服务器
-await dev({ dev: { port: 3000 } }, { cwd: "./my-app", bundler: utoopackAdapter });
+const appConfig = {
+  routing: {
+    mode: "spa" as const,
+  },
+};
 
-// 为约定式页面路由运行生产构建
-await build({ routing: { mode: "spa" } }, { cwd: "./my-app", bundler: utoopackAdapter });
+// 使用显式构建器适配器启动开发服务器
+await dev(
+  { ...appConfig, dev: { port: 3000 } },
+  { cwd: "./my-app", bundler: utoopackAdapter },
+);
+
+// 运行 canonical Page-and-Route production build
+await build(appConfig, { cwd: "./my-app", bundler: utoopackAdapter });
 ```
 
-`bundler` option 和 `ev.config.ts` 中的 adapter 契约一致：必须是 object，且包含非空
-`name` 以及 `build` / `dev` 函数。
+`bundler` option 和 `ev.config.ts` 中的 adapter 契约一致：必须包含非空 `name`、
+声明过的 build/dev `capabilities`，以及 `build` / `dev` 函数。启动 adapter 前，
+framework preflight 会对照 active BuildPlan 检查这些 capability。
 
 `@evjs/cli` 也导出兼容包装函数，会自动注入默认的 Utoopack 适配器，与 `ev dev`
 和 `ev build` 命令保持一致。

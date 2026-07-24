@@ -1,8 +1,8 @@
 # Generated Contributions IR
 
-`.ev` 是 evjs build 的 agent-readable framework IR。它记录 file convention 发现了
-什么、框架生成了哪些 entry、插件添加了哪些产物，以及这些生成产物如何挂到 framework
-slots 上。
+`.ev` 是 evjs build 的 agent-readable framework IR。它记录 resolved
+Page-and-Route graph、框架生成 entry、插件新增产物，以及这些产物如何挂到
+framework slot。
 
 ## 概念
 
@@ -56,7 +56,7 @@ flowchart TB
 ```txt
 .ev/
 ├── framework/
-│   ├── app-graph.json
+│   ├── core-graph.json          # normalized Page/Route/Application/Document graph
 │   └── build-plan.json
 ├── entries/
 │   ├── main.ts
@@ -72,7 +72,8 @@ flowchart TB
 
 这个结构稳定且可读：
 
-- `framework/` 保存 convention discovery 和 build-plan 快照。
+- `framework/` 保存 normalized graph、provenance、diagnostic 与 build-plan
+  快照。`core-graph.json` 是 planning 与 inspection 消费的唯一语义事实来源。
 - `entries/` 保存 bundler 消费的框架 entry facade。
 - `plugins/<plugin>/` 保存插件生成产物。
 - 插件名会规范化为路径段；例如 `@evjs/plugin-qiankun:slave` 会变成
@@ -95,27 +96,34 @@ framework state。
 返回的 specifier 只应在生成源码中使用。应用源码不应 import `.ev` 路径或
 `evjs:generated/*` specifier。
 
-使用 `ctx.slot(name).add(...)` 把 generated artifacts 挂到 framework 上。v1 支持的
+使用 `ctx.slot(name).add(...)` 把 generated artifacts 挂到 framework 上。支持的
 slots 如下：
 
 | Slot | 覆盖能力 |
 |------|----------|
 | `client.entry` | Entry imports、entry wrapper modules 和 replacement wrappers |
-| `client.runtime.plugin` | Runtime plugin modules 和 export keys |
-| `client.route` | 受约束的 SPA route additions 或 route-module replacements |
 | `server.request.middleware` | Server pipeline 中的 framework request middleware |
 | `html.tag` | 结构化 `meta`、`link`、`script`、`style` tags |
 | `resolve.alias` | 指向用户模块、package、绝对路径或 generated artifacts 的语义化 alias |
 | `resolve.external` | Externalized module resolution，通常和 `html.tag` CDN 资源配合 |
 
-`client.route` 刻意比任意 route tmp file 更窄。它可以用稳定 route id 和 path 追加一个
-generated route module，也可以替换已有 generated route id 的 module。它不能修改无关
-route metadata、创建第二套路由方言，或绕过 file conventions 使用的 path/parent 校验。
+需要 import side-effect module 或执行安装逻辑时，使用 `client.entry` 显式调用
+installer。IR 不携带 inert runtime-plugin registry。
 
-`client.runtime.plugin` module 会传给生成的 SPA runtime。Runtime plugin 可以导出
-`patchRoutes`、`patchClientRoutes`、`modifyRouterOptions`、`wrapRoot`、
-`rootContainer` 或 `render`。需要在 `.ev/manifest.json` 中可见的静态 route IR 使用
-route slot；最终路由列表必须依赖浏览器运行时状态时，才使用 runtime route hook。
+`client.entry.runtime` 只接受 `"client"` 或 `"all"`。Client entry 无法物化
+server code，因此 server-only filter 会被拒绝；请改用 server request 或
+extension-owned server entry facet。
+
+显式 Application/Page target 必须为 `client.entry` 匹配实际 client entry，或为
+`html.tag` 匹配 HTML Document。SPA 的 semantic Page 通常与 Application 共享二者，
+因此 page-targeted entry、HTML contribution 会给出诊断，
+不再静默 no-op。
+
+canonical MPA 会暴露一个逻辑 `default` Application，即使它最终为每个 Page 分别
+物化 page-client entry 与 Document。因此 Application target 会把 `client.entry` 展开到
+全部 Page entry，并把 `html.tag` 展开到全部 Page Document；Page target 仍精确
+匹配单页。展开结果记录在 generated plan。显式
+route-tree 输入必须先 normalize 到相同 Application/Page/Document ownership。
 
 ## 边界
 

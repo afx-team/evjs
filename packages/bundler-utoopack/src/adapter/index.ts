@@ -17,8 +17,8 @@ import type {
   BundlerDevContext,
   BundlerDevController,
 } from "@evjs/ev/_internal/build";
-import type { BuildPlan, BuildPlanUpdate } from "@evjs/ev/_internal/manifest";
 import type { ResolvedConfig } from "@evjs/ev/config";
+import type { BuildPlan, BuildPlanUpdate } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import type { ConfigComplete } from "@utoo/pack";
 import { UtoopackManifestGenerator } from "../manifest-generator.js";
@@ -68,6 +68,20 @@ function requireUtoopack(): UtoopackRuntime {
 
 export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
   name: "utoopack",
+  capabilities: {
+    build: {
+      server: false,
+      rsc: false,
+      ppr: false,
+    },
+    dev: {
+      html: true,
+      entries: false,
+      routes: false,
+      server: false,
+      resolution: false,
+    },
+  },
   async build(
     ctx: BundlerBuildContext<ConfigComplete>,
   ): Promise<BundlerBuildFacts> {
@@ -131,6 +145,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
         config,
         cwd,
         onBuildFacts: callbacks.onBuildFacts,
+        onServerBundleReady: callbacks.onServerBundleReady,
       });
     }
 
@@ -171,6 +186,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
       config,
       cwd,
       onBuildFacts: callbacks.onBuildFacts,
+      onServerBundleReady: callbacks.onServerBundleReady,
       closeWatcher() {
         serverReadyWatcher?.close();
       },
@@ -201,6 +217,7 @@ class UtoopackDevController implements BundlerDevController {
       config: ResolvedConfig<ConfigComplete>;
       cwd: string;
       onBuildFacts: BundlerDevContext<ConfigComplete>["callbacks"]["onBuildFacts"];
+      onServerBundleReady: BundlerDevContext<ConfigComplete>["callbacks"]["onServerBundleReady"];
       closeWatcher?: () => void;
     },
   ) {}
@@ -212,9 +229,9 @@ class UtoopackDevController implements BundlerDevController {
   async updatePlan(update: BuildPlanUpdate): Promise<void> {
     if (isEmptyPlanUpdate(update)) return;
 
-    if (!isHtmlOnlyUpdate(update)) {
+    if (!isArtifactOnlyUpdate(update)) {
       throw new Error(
-        `[evjs] Utoopack dev cannot apply framework plan changes without restarting ev dev (${formatUnsupportedPlanUpdate(update)}). HTML-only framework plan updates are supported; entry additions, removals, server changes, and route metadata changes still require a lower-layer Utoopack update API.`,
+        `[evjs] Utoopack dev cannot apply framework plan changes without restarting ev dev (${formatUnsupportedPlanUpdate(update)}). HTML/generated-only framework plan updates are supported; entry additions, removals, resolution changes, server changes, and route metadata changes still require a lower-layer Utoopack update API.`,
       );
     }
 
@@ -230,6 +247,9 @@ class UtoopackDevController implements BundlerDevController {
         "[evjs] Utoopack dev cannot regenerate framework artifacts before client build stats are available.",
       );
     }
+    if (hasRuntimeServerEntry(update.next)) {
+      await this.options.onServerBundleReady();
+    }
   }
 }
 
@@ -241,17 +261,21 @@ function isEmptyPlanUpdate(update: BuildPlanUpdate): boolean {
     update.entries.changed.length === 0 &&
     update.html.added.length === 0 &&
     update.html.removed.length === 0 &&
-    update.html.changed.length === 0
+    update.html.changed.length === 0 &&
+    !update.generatedChanged &&
+    !update.resolveChanged
   );
 }
 
-function isHtmlOnlyUpdate(update: BuildPlanUpdate): boolean {
+function isArtifactOnlyUpdate(update: BuildPlanUpdate): boolean {
   return (
     !update.serverChanged &&
+    !update.resolveChanged &&
     update.entries.added.length === 0 &&
     update.entries.removed.length === 0 &&
     update.entries.changed.length === 0 &&
-    (update.html.added.length > 0 ||
+    (update.generatedChanged ||
+      update.html.added.length > 0 ||
       update.html.removed.length > 0 ||
       update.html.changed.length > 0)
   );
@@ -265,6 +289,8 @@ function formatUnsupportedPlanUpdate(update: BuildPlanUpdate): string {
     formatPlanItems("HTML additions", update.html.added, formatHtmlPlan),
     formatPlanItems("HTML removals", update.html.removed, formatHtmlPlan),
     formatPlanItems("HTML changes", update.html.changed, formatHtmlPlan),
+    update.generatedChanged ? "generated framework IR changed" : undefined,
+    update.resolveChanged ? "module resolution changed" : undefined,
     update.serverChanged ? "server output changed" : undefined,
   ].filter((change): change is string => Boolean(change));
 

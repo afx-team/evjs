@@ -11,171 +11,111 @@ export const PAGE_ROUTE_SOURCE_EXTENSIONS = [
   ".jsx",
 ] as const;
 export const PAGE_ROUTE_SOURCE_EXTENSION_LABEL = ".ts, .tsx, .js, or .jsx";
+export const PAGE_ENTRY_BASENAME = "page";
+export const PAGE_ENTRY_FILES = PAGE_ROUTE_SOURCE_EXTENSIONS.map(
+  (extension) => `${PAGE_ENTRY_BASENAME}${extension}`,
+);
+export const PAGE_ENTRY_LABEL = "page.ts, page.tsx, page.js, or page.jsx";
+export const PAGE_CONFIG_FILES = ["page.config.ts", "page.config.js"] as const;
+export const PAGE_CONFIG_LABEL = "page.config.ts or page.config.js";
 export const PAGE_ROUTE_CONVENTION_DOCS_URL =
   "https://evaijs.github.io/evjs/docs/file-conventions#client-page-routes";
-export const PAGE_ROUTE_CONVENTION_RULES = [
+export const PAGE_ANCHOR_ROUTE_CONVENTION_RULES = [
   {
-    id: "directory-index",
+    id: "page-anchor",
     category: "route",
-    summary: "index files for directory roots",
-    valid: ["index.tsx", "users/index.tsx"],
-    invalid: ["users.tsx plus users/index.tsx for the same path"],
+    summary: `exactly one ${PAGE_ENTRY_LABEL} anchor per route directory`,
+    valid: ["page.tsx", "users/page.tsx"],
+    invalid: ["page.ts plus page.tsx in the same route directory"],
   },
   {
     id: "dynamic-segment",
     category: "route",
     summary:
-      "$param filenames for dynamic segments and terminal $...splat catch-alls",
-    valid: ["users/$userId.tsx", "files/$...splat.tsx"],
-    invalid: [
-      "users/[userId].tsx",
-      "users/$123.tsx",
-      "files/$...123.tsx",
-      "files/$...path/edit.tsx",
-      "users/$__proto__.tsx",
-      "docs/$_splat.tsx",
+      "static, $param, terminal $...splat, and pathless (group) directory segments",
+    valid: [
+      "users/$userId/page.tsx",
+      "files/$...splat/page.tsx",
+      "(admin)/settings/page.tsx",
     ],
+    invalid: ["users/[userId]/page.tsx", "files/$...path/edit/page.tsx"],
   },
   {
     id: "unique-path",
     category: "route",
-    summary: "one page file per URL path",
-    valid: ["users.tsx", "users/index.tsx"],
-    invalid: ["users.tsx plus users/index.tsx for /users"],
+    summary: "one Page anchor per normalized URL path",
+    valid: ["users/page.tsx"],
+    invalid: ["users/page.tsx plus (group)/users/page.tsx for /users"],
   },
   {
     id: "unique-dynamic-shape",
     category: "route",
-    summary: "one dynamic param name per URL shape",
-    valid: ["users/$id.tsx"],
-    invalid: ["users/$id.tsx plus users/$userId.tsx"],
+    summary: "one dynamic parameter name per URL shape",
+    valid: ["users/$id/page.tsx"],
+    invalid: ["users/$id/page.tsx plus users/$userId/page.tsx"],
   },
   {
     id: "unique-route-id",
     category: "route",
     summary: "unique generated route ids",
-    valid: ["admin/panel.tsx"],
-    invalid: ["admin/panel.tsx plus admin_panel.tsx"],
+    valid: ["admin/panel/page.tsx"],
+    invalid: ["admin/panel/page.tsx plus admin_panel/page.tsx"],
   },
   {
-    id: "route-group",
-    category: "route",
-    summary: "route groups for pathless organization",
-    valid: ["(marketing)/about.tsx", "(app)/dashboard/layout.tsx"],
+    id: "ordinary-module",
+    category: "ordinary",
+    summary:
+      "every non-anchor, non-facet source file remains ordinary application or Page code",
+    valid: ["model.ts", "components/Card.tsx", "index.tsx"],
     invalid: [],
   },
   {
-    id: "static-segment",
-    category: "route",
-    summary: "case-preserving URL-safe static segments",
-    valid: ["about.tsx", "legacyCamelCase.tsx", "docs/API.tsx"],
-    invalid: ["contact us.tsx"],
-  },
-  {
-    id: "private-module",
-    category: "ignored",
-    summary: "_-prefixed private modules",
-    valid: ["_helpers/format.ts", "posts/_draft.tsx"],
-    invalid: [],
-  },
-  {
-    id: "hidden-module",
-    category: "ignored",
-    summary: "dot-prefixed hidden modules",
-    valid: [".draft.tsx", ".hidden/secret.tsx"],
-    invalid: [],
-  },
-  {
-    id: "declaration-module",
-    category: "ignored",
-    summary: "declaration files",
-    valid: ["env.d.ts", "route-types.d.ts"],
-    invalid: [],
-  },
-  {
-    id: "test-module",
-    category: "ignored",
-    summary: "test/spec modules",
-    valid: ["about.test.tsx", "users.spec.ts"],
-    invalid: [],
-  },
-  {
-    id: "story-module",
-    category: "ignored",
-    summary: "Storybook modules",
-    valid: ["profile.story.tsx", "profile.stories.tsx"],
-    invalid: [],
-  },
-  {
-    id: "client-module",
-    category: "ignored",
-    summary: "client-only *.client.* modules",
-    valid: ["ClientCard.client.tsx", "widgets/menu.client.tsx"],
-    invalid: [],
-  },
-  {
-    id: "server-module",
-    category: "ignored",
-    summary: "server-only *.server.* modules",
-    valid: ["users.server.ts", "posts/actions.server.ts"],
-    invalid: [],
+    id: "page-config",
+    category: "config",
+    summary:
+      "optional build-time Page configuration uses one colocated page.config.ts or page.config.js module",
+    valid: ["src/pages/page.config.ts", "src/pages/users/page.config.ts"],
+    invalid: [
+      "src/pages/page.config.ts plus src/pages/page.config.js in the same Page directory",
+    ],
   },
   {
     id: "root-layout",
     category: "layout",
     summary:
-      "SPA root layout auto-discovery uses one layout/index.tsx module beside the route directory",
-    valid: ["src/layout/index.tsx"],
-    invalid: ["src/layout.tsx", "src/layout/index.jsx", "src/pages/layout.tsx"],
+      "the root route layout uses one layout source module in the routing root",
+    valid: ["src/pages/layout.tsx"],
+    invalid: ["src/pages/layout.ts plus src/pages/layout.tsx"],
   },
   {
     id: "route-layout",
     category: "layout",
-    summary: "nested SPA route layouts use layout source modules below a route",
+    summary:
+      "nested route layouts use layout source modules in route directories",
     valid: ["src/pages/posts/layout.tsx"],
-    invalid: ["src/pages/layout.tsx", "src/pages/posts/layout/index.tsx"],
+    invalid: ["src/pages/posts/layout.ts plus src/pages/posts/layout.tsx"],
   },
   {
     id: "error-boundary",
     category: "boundary",
-    summary:
-      "SPA error boundaries use error source modules scoped by directory",
+    summary: "error boundaries use error source modules scoped by directory",
     valid: ["src/pages/error.tsx", "src/pages/posts/error.tsx"],
-    invalid: ["src/pages/error/index.tsx"],
+    invalid: [],
   },
   {
     id: "not-found-boundary",
     category: "boundary",
     summary:
-      "SPA not-found boundaries use not-found source modules scoped by directory",
+      "not-found boundaries use not-found source modules scoped by directory",
     valid: ["src/pages/not-found.tsx", "src/pages/posts/not-found.tsx"],
-    invalid: ["src/pages/not-found/index.tsx"],
-  },
-  {
-    id: "mpa-html-template",
-    category: "html",
-    summary:
-      "MPA page routes can use colocated HTML templates with the same basename",
-    valid: [
-      "about.html beside about.tsx",
-      "users/index.html beside users/index.tsx",
-    ],
     invalid: [],
   },
 ] as const satisfies readonly PageRouteConventionRule[];
-export const PAGE_ROUTE_CONVENTION_SUMMARY = formatPageRouteConventionSummary(
-  PAGE_ROUTE_CONVENTION_RULES,
-);
-export const PAGE_ROUTE_ROOT_LAYOUT_FILE = path.join("layout", "index.tsx");
-export const PAGE_ROUTE_UNSUPPORTED_ROOT_LAYOUT_FILES = [
-  "layout.tsx",
-  "layout.ts",
-  "layout.jsx",
-  "layout.js",
-  "layout/index.ts",
-  "layout/index.jsx",
-  "layout/index.js",
-] as const;
+export const PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY =
+  formatPageRouteConventionSummary(
+    PAGE_ANCHOR_ROUTE_CONVENTION_RULES,
+    "Page-anchor routes use",
+  );
 
 const PAGE_ROUTE_SOURCE_EXTENSION_SET = new Set<string>(
   PAGE_ROUTE_SOURCE_EXTENSIONS,
@@ -197,15 +137,15 @@ export interface PageRouteShape {
 
 export interface PageRouteConventionRule {
   id:
-    | "directory-index"
+    | "page-anchor"
+    | "page-config"
+    | "ordinary-module"
     | "dynamic-segment"
     | "unique-path"
     | "unique-dynamic-shape"
     | "unique-route-id"
     | "route-group"
     | "static-segment"
-    | "private-module"
-    | "hidden-module"
     | "declaration-module"
     | "test-module"
     | "story-module"
@@ -214,9 +154,15 @@ export interface PageRouteConventionRule {
     | "root-layout"
     | "route-layout"
     | "error-boundary"
-    | "not-found-boundary"
-    | "mpa-html-template";
-  category: "route" | "ignored" | "layout" | "boundary" | "html";
+    | "not-found-boundary";
+  category:
+    | "route"
+    | "ignored"
+    | "ordinary"
+    | "config"
+    | "layout"
+    | "boundary"
+    | "html";
   summary: string;
   valid: readonly string[];
   invalid: readonly string[];
@@ -248,12 +194,19 @@ export type PageRouteSegmentConventionViolation =
 
 function formatPageRouteConventionSummary(
   rules: readonly PageRouteConventionRule[],
+  routePrefix = "Page route files use",
 ): string {
   const routeFileRules = rules
     .filter((rule) => rule.category === "route")
     .map((rule) => rule.summary);
   const ignoredRules = rules
     .filter((rule) => rule.category === "ignored")
+    .map((rule) => rule.summary);
+  const ordinaryRules = rules
+    .filter((rule) => rule.category === "ordinary")
+    .map((rule) => rule.summary);
+  const configRules = rules
+    .filter((rule) => rule.category === "config")
     .map((rule) => rule.summary);
   const layoutRules = rules
     .filter((rule) => rule.category === "layout")
@@ -266,13 +219,15 @@ function formatPageRouteConventionSummary(
     .map((rule) => rule.summary);
 
   const sections = [
-    `Page route files use ${joinConventionSummaryList(routeFileRules)}`,
+    `${routePrefix} ${joinConventionSummaryList(routeFileRules)}`,
   ];
   if (ignoredRules.length > 0) {
     sections.push(
       `ignored colocated modules include ${joinConventionSummaryList(ignoredRules)}`,
     );
   }
+  sections.push(...ordinaryRules);
+  sections.push(...configRules);
   sections.push(...layoutRules);
   sections.push(...boundaryRules);
   sections.push(...htmlRules);
@@ -295,9 +250,8 @@ export function normalizePageRouteConventionPath(routeRel: string): string {
   return routeRel.replaceAll("\\", "/");
 }
 
-export function parsePageRouteFile(
+export function parsePageAnchorRouteFile(
   routeRel: string,
-  options: { spaConventions?: boolean } = {},
 ): PageRouteFileConvention | undefined {
   const normalizedRouteRel = normalizePageRouteConventionPath(routeRel);
   if (!isPageRouteSourceModuleFile(path.posix.basename(normalizedRouteRel))) {
@@ -307,18 +261,8 @@ export function parsePageRouteFile(
   const extension = path.posix.extname(normalizedRouteRel);
   const withoutExt = normalizedRouteRel.slice(0, -extension.length);
   const segments = withoutExt.split("/").filter(Boolean);
-  if (segments.length === 0) return undefined;
-  if (segments.some(isIgnoredPageRouteSegment)) return undefined;
-
-  const name = segments[segments.length - 1] ?? "";
-  if (
-    options.spaConventions !== false &&
-    isPageRouteConventionModuleName(name)
-  ) {
-    return undefined;
-  }
-  const routeSegments = name === "index" ? segments.slice(0, -1) : segments;
-  return { segments: routeSegments };
+  if (segments.at(-1) !== PAGE_ENTRY_BASENAME) return undefined;
+  return { segments: segments.slice(0, -1) };
 }
 
 export function isPageRouteConventionModuleName(name: string): boolean {
@@ -478,8 +422,8 @@ function formatBracketRouteSegmentViolation(segment: string): string {
   const name = segment.replace(/^\[+/, "").replace(/\]+$/, "");
   const suggestion =
     name && !name.startsWith("...")
-      ? ` Rename the file to "$${name}" for a dynamic segment, or use explicit pages config for a custom URL.`
-      : " Use explicit pages config for catch-all or custom URL shapes.";
+      ? ` Rename the route directory to "$${name}" for a dynamic segment.`
+      : ' Use a terminal "$...splat" route directory for a catch-all.';
   return `Dynamic page route segments must use $param filenames. Bracket segment "${segment}" is not supported.${suggestion}`;
 }
 
@@ -494,10 +438,10 @@ function formatUnsupportedDynamicRouteSegmentViolation(
     return 'Dynamic page route segments must include a name after "$". Segment "$" is not supported.';
   }
   if (segment.startsWith("$...")) {
-    return `Catch-all page route segments are not supported. Use explicit pages config for wildcard or custom URL shapes instead of "${segment}".`;
+    return `Catch-all page route segments are not supported in this topology. Use routing.mode "spa" or replace "${segment}" with static Page directories.`;
   }
   if (segment.endsWith("?")) {
-    return `Optional page route segments are not supported. Split the route into explicit files or use explicit pages config instead of "${segment}".`;
+    return `Optional page route segments are not supported. Split "${segment}" into separate Page directories.`;
   }
   return `Unsupported dynamic page route segment "${segment}".`;
 }
@@ -527,7 +471,7 @@ function formatInvalidRouteSegmentViolation(
     return `Dynamic page route segment "${invalid.segment}" repeats a param name. Use unique dynamic param filenames within one route path.`;
   }
 
-  return `Static page route segment "${invalid.segment}" must use URL-safe characters: letters, numbers, ".", "_", "-", or "~". Rename the file to a URL-safe segment, or use explicit pages config for custom paths.`;
+  return `Static page route segment "${invalid.segment}" must use URL-safe characters: letters, numbers, ".", "_", "-", or "~". Rename the route directory to a URL-safe segment.`;
 }
 
 export function routePathFromSegments(segments: string[]): string {

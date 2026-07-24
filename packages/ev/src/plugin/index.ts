@@ -1,12 +1,20 @@
 import type {
+  AppRouteTarget,
   AssetGroup,
-  BuildEntryOwner,
   BuildEntryPhase,
   BuildEnvironment,
   BuildOutput,
+  ClientContributionRuntime,
   ComponentModel,
   ContributionRuntime,
   ContributionTarget,
+  CoreClientRouteTarget,
+  CoreDocumentBootstrap,
+  CoreDocumentOwner,
+  CoreNodeProvenance,
+  CorePageScope,
+  CoreRouteFacets,
+  CoreRoutePattern,
   DeploymentMetadata,
   EntryContributionPosition,
   FrameworkSlotName,
@@ -14,32 +22,28 @@ import type {
   HtmlTagName,
   HtmlTagPlacement,
   HydrationMode,
+  PageMetadata,
   PageRouteKind,
   PprConfig,
   PrerenderConfig,
-  PublicManifestOutput,
-  PublicPageOutput,
-  PublicRouteOutput,
   RenderMode,
-  ServerManifestOutput,
   ServerRuntime,
 } from "@evjs/shared/manifest";
-import {
-  createDeploymentMetadata,
-  createPublicManifest,
-  createServerManifest,
-} from "@evjs/shared/manifest";
+import { createDeploymentMetadata } from "@evjs/shared/manifest";
 import type { Logger } from "@logtape/logtape";
 import type { FrameworkRuntimeOutput } from "../_internal/build/framework-runtime.js";
 import type {
   Config,
+  ConfigExtensionNamespace,
   DefaultBundlerConfig,
   ResolvedConfig,
 } from "../config/index.js";
 
 export type {
+  ClientContributionRuntime,
   ContributionRuntime,
   ContributionTarget,
+  CorePageScope,
   EntryContributionPosition,
   FrameworkSlotName,
   GeneratedScope,
@@ -132,36 +136,16 @@ export interface HtmlDocument {
   toString(): string;
 }
 
-/** JavaScript and CSS assets exposed to plugin manifest views. */
-export type ManifestAssets = AssetGroup;
-
-/** A discovered client route exposed to plugin manifest views. */
-export type RouteEntry = PublicRouteOutput;
-
-/** Per-page client manifest entry exposed to plugin hooks. */
-export type PageManifestEntry = PublicPageOutput;
-
-/** Client-focused deployment manifest view derived from the linked output. */
-export type ClientManifest = PublicManifestOutput;
-
-/** Server-focused manifest view derived from the linked framework output. */
-export type ServerManifest = ServerManifestOutput;
-
-/** Base context passed to plugin bundler hooks. */
-export interface EvBundlerCtx<TBundlerCfg = DefaultBundlerConfig> {
+/**
+ * Context passed to plugin bundler hooks.
+ */
+export interface BundlerCtx<TBundlerCfg = DefaultBundlerConfig> {
   /** The current mode. */
   mode: "development" | "production";
   /** The current working directory. */
   cwd: string;
   /** The fully resolved framework config. */
   config: ResolvedConfig<TBundlerCfg>;
-}
-
-/**
- * Context passed to plugin bundler hooks.
- */
-export interface BundlerCtx<TBundlerCfg = DefaultBundlerConfig>
-  extends EvBundlerCtx<TBundlerCfg> {
   /** The current command. */
   command: "dev" | "build";
   /** Selected bundler adapter name. */
@@ -174,20 +158,14 @@ export interface BundlerCtx<TBundlerCfg = DefaultBundlerConfig>
   addWatchFile(file: string): void;
 }
 
-/** Base context passed to plugin config hooks. */
-export interface EvPluginConfigContext {
+/** Context passed to plugin config hooks. */
+export interface PluginConfigContext {
   /** The current mode. */
   mode: "development" | "production";
   /** The current working directory. */
   cwd: string;
   /** Extra CLI flags made available to plugins. */
   flags?: CliFlags;
-}
-
-/**
- * Context passed to plugin config hooks.
- */
-export interface PluginConfigContext extends EvPluginConfigContext {
   /** The current command. */
   command: "dev" | "build";
 }
@@ -199,13 +177,6 @@ type ConfigHookResult<TBundlerCfg> =
   | Promise<Config<TBundlerCfg> | undefined>
   | Promise<void>;
 
-type EvPluginSetupResult<TBundlerCfg> =
-  | EvPluginHooks<TBundlerCfg>
-  | undefined
-  | void
-  | Promise<EvPluginHooks<TBundlerCfg> | undefined>
-  | Promise<void>;
-
 type PluginSetupResult<TBundlerCfg> =
   | PluginHooks<TBundlerCfg>
   | undefined
@@ -215,10 +186,57 @@ type PluginSetupResult<TBundlerCfg> =
 
 type ContributionsHookResult = void | Promise<void>;
 
+/** Context available while a Page extension value is resolved. */
+export interface PluginPageExtensionContext {
+  readonly pageId: string;
+  readonly pageModule: string;
+  readonly pageRoot?: string;
+  /** Canonical build-time `page.config.*` module, when present. */
+  readonly configSource?: string;
+}
+
+/** Declarative Page extension registered by a plugin descriptor. */
+export interface PluginPageExtensionDefinition<
+  TValue = unknown,
+  TConfigured = unknown,
+> {
+  /** Globally unique namespaced extension id, for example `@company/access`. */
+  namespace: ConfigExtensionNamespace;
+  /** Optional schema version recorded in the CoreGraph extension registry. */
+  schemaVersion?: string;
+  /** Default value, evaluated independently for every Page. */
+  defaults?:
+    | TValue
+    | ((context: PluginPageExtensionContext) => TValue | undefined);
+  /**
+   * Merge defaults with an explicitly authored namespaced value. This callback
+   * is not invoked when the Page omits the namespace; defaults are materialized
+   * directly in that case. By default plain objects are shallow-merged with
+   * configured fields winning; other configured values replace defaults.
+   */
+  merge?: (
+    defaults: TValue | undefined,
+    configured: TConfigured,
+    context: PluginPageExtensionContext,
+  ) => TValue | undefined;
+  /** Return false/a message or throw to reject the materialized value. */
+  validate?: (
+    value: TValue,
+    context: PluginPageExtensionContext,
+  ) => undefined | boolean | string;
+}
+
+/** Registration context passed to a plugin's `describe` hook. */
+export interface PluginDescribeContext {
+  pageExtension<TValue = unknown, TConfigured = unknown>(
+    definition: PluginPageExtensionDefinition<TValue, TConfigured>,
+  ): void;
+}
+
 /**
  * An evjs plugin.
  */
-export interface EvPlugin<TBundlerCfg = DefaultBundlerConfig> {
+export interface Plugin<TBundlerCfg = DefaultBundlerConfig> {
   /** Plugin name for debugging and logging. */
   name: string;
 
@@ -236,47 +254,6 @@ export interface EvPlugin<TBundlerCfg = DefaultBundlerConfig> {
    * still participate in dependency ordering and cycle detection.
    */
   optionalDependencies?: string[];
-
-  /**
-   * Modify the raw user config before defaults are resolved.
-   *
-   * Use this for framework-level config such as `server.basePath` that must
-   * be visible to dev proxy setup and build-time runtime defines.
-   */
-  config?: (
-    config: Config<TBundlerCfg>,
-    ctx: EvPluginConfigContext,
-  ) => ConfigHookResult<TBundlerCfg>;
-
-  /**
-   * Initialize the plugin and return lifecycle hooks.
-   *
-   * Receives the fully resolved config and build context. All returned
-   * hooks share state through closure.
-   */
-  setup?: (
-    ctx: EvPluginContext<TBundlerCfg>,
-  ) => EvPluginSetupResult<TBundlerCfg>;
-
-  /**
-   * Declare generated framework contributions for the `.ev` IR.
-   *
-   * The alias shape receives the same contribution context as Plugin.
-   */
-  contributions?: (
-    ctx: ContributionContext<TBundlerCfg>,
-  ) => ContributionsHookResult;
-}
-
-/** An evjs plugin. The `EvPlugin` alias shape is accepted. */
-export interface Plugin<TBundlerCfg = DefaultBundlerConfig>
-  extends Omit<EvPlugin<TBundlerCfg>, "config" | "setup"> {
-  /**
-   * Relative ordering tier for plugins without an explicit dependency edge.
-   *
-   * Dependencies still win over enforce ordering.
-   */
-  enforce?: "pre" | "normal" | "post";
 
   /**
    * Modify the raw user config before defaults are resolved.
@@ -307,10 +284,30 @@ export interface Plugin<TBundlerCfg = DefaultBundlerConfig>
   contributions?: (
     ctx: ContributionContext<TBundlerCfg>,
   ) => ContributionsHookResult;
+
+  /** Declare namespaced framework extensions before graph analysis. */
+  describe?: (context: PluginDescribeContext) => void;
+
+  /**
+   * Relative ordering tier for plugins without an explicit dependency edge.
+   *
+   * Dependencies still win over enforce ordering.
+   */
+  enforce?: "pre" | "normal" | "post";
 }
 
-/** Base context passed to plugin setup(). */
-export interface EvPluginContext<TBundlerCfg = DefaultBundlerConfig> {
+/**
+ * Define an evjs plugin while preserving its inferred authoring shape.
+ */
+export function definePlugin<
+  TBundlerCfg = DefaultBundlerConfig,
+  const TPlugin extends Plugin<TBundlerCfg> = Plugin<TBundlerCfg>,
+>(plugin: TPlugin): TPlugin {
+  return plugin;
+}
+
+/** Context passed to plugin setup(). */
+export interface PluginContext<TBundlerCfg = DefaultBundlerConfig> {
   /** Current mode. */
   mode: "development" | "production";
   /** The current working directory. */
@@ -319,13 +316,6 @@ export interface EvPluginContext<TBundlerCfg = DefaultBundlerConfig> {
   config: ResolvedConfig<TBundlerCfg>;
   /** Extra CLI flags made available to plugins. */
   flags?: CliFlags;
-}
-
-/**
- * Context passed to plugin setup().
- */
-export interface PluginContext<TBundlerCfg = DefaultBundlerConfig>
-  extends EvPluginContext<TBundlerCfg> {
   /** Current command. */
   command: "dev" | "build";
   /** Logger plugins can use for framework-scoped messages. */
@@ -340,12 +330,14 @@ export type CliFlags = Record<string, CliFlagValue>;
 
 /** Read-only framework IR snapshot exposed to contribution hooks. */
 export interface FrameworkIRView {
-  /** File-convention apps discovered before bundling. */
-  readonly apps: readonly FrameworkAppView[];
+  /** Normalized Applications discovered before bundling. */
+  readonly applications: readonly FrameworkApplicationView[];
   /** Explicit or convention-derived pages discovered before bundling. */
   readonly pages: readonly FrameworkPageView[];
   /** Client route graph discovered from `src/pages` or config. */
   readonly routes: readonly FrameworkRouteView[];
+  /** Materialized HTML Documents from the normalized CoreGraph. */
+  readonly documents: readonly FrameworkDocumentView[];
   /** Server file routes discovered from `src/apis`. */
   readonly serverRoutes: readonly FrameworkServerRouteView[];
   /** Server functions discovered from `"use server"` modules. */
@@ -353,45 +345,84 @@ export interface FrameworkIRView {
   /** Bundler-independent entries that the framework will materialize. */
   readonly entries: readonly FrameworkEntryView[];
   getEntry(name: string): FrameworkEntryView | undefined;
-  getPagesAppEntry(): FrameworkPagesAppEntryView | undefined;
+  /** Resolve one normalized client Application entry. */
+  getApplicationEntry(
+    applicationId?: string,
+  ): FrameworkApplicationEntryView | undefined;
 }
 
-export interface FrameworkAppView {
+export interface FrameworkDocumentView {
   readonly id: string;
-  readonly entry: string;
-  readonly html: string;
+  readonly template: string;
+  readonly output: string;
+  readonly applicationId: string;
+  readonly owner: CoreDocumentOwner;
   readonly mount?: string;
+  readonly bootstrap?: CoreDocumentBootstrap;
+  readonly provenance: CoreNodeProvenance;
+  readonly extensions: Readonly<Record<string, unknown>>;
+}
+
+export interface FrameworkApplicationView {
+  readonly id: string;
+  /** Resolved CoreGraph Application extensions. */
+  readonly extensions: Readonly<Record<string, unknown>>;
+  /** Source boundary claimed by the Application provider. */
+  readonly root: string;
+  /** Whether this Application owns one shared client router or many Pages. */
+  readonly topology: "spa" | "mpa";
+  /** Semantic Pages owned by this Application. */
+  readonly pageIds: readonly string[];
+  /** Client or Document Routes owned by this Application. */
+  readonly routeIds: readonly string[];
+  /** HTML Documents owned by this Application. */
+  readonly documentIds: readonly string[];
+  /** Producer and source that declared this Application. */
+  readonly provenance: CoreNodeProvenance;
 }
 
 export interface FrameworkPageView {
   readonly id: string;
-  readonly path?: string;
-  readonly routeId?: string;
-  readonly entry?: string;
-  readonly component?: string;
-  readonly app?: string;
-  readonly html: string;
+  /** Logical Application that owns this normalized Page. */
+  readonly applicationId: string;
+  /** Canonical Page source and its private-code ownership boundary. */
+  readonly source: FrameworkPageSourceView;
+  /** Resolved Page extensions available to plugin consumers. */
+  readonly extensions: Readonly<Record<string, unknown>>;
   readonly render: RenderMode;
   readonly componentModel?: ComponentModel;
   readonly hydrate?: HydrationMode;
-  readonly mount?: string;
   readonly prerender?: PrerenderConfig;
   readonly ppr?: PprConfig;
+  readonly metadata?: PageMetadata;
+  /** Producer and source that declared this Page. */
+  readonly provenance: CoreNodeProvenance;
+}
+
+export interface FrameworkPageSourceView {
+  readonly module: string;
+  readonly scope: CorePageScope;
+  readonly provider: string;
+  /** Build-only canonical Page config module, when one was authored. */
+  readonly config?: string;
 }
 
 export interface FrameworkRouteView {
+  readonly realm: "client";
   readonly id: string;
-  readonly path: string;
+  /** Logical Application that owns this normalized client Route. */
+  readonly applicationId: string;
   readonly parentId?: string;
-  readonly kind?: PageRouteKind;
-  readonly pageId?: string;
-  readonly appId?: string;
-  readonly module?: string;
-  readonly errorModule?: string;
-  readonly notFoundModule?: string;
-  readonly render?: RenderMode;
-  readonly hydrate?: HydrationMode;
-  readonly runtime?: ServerRuntime;
+  /** Normalized URL pattern. */
+  readonly pattern: CoreRoutePattern;
+  /** Semantic destination of this client Route. */
+  readonly target: CoreClientRouteTarget;
+  /** Complete client Route composition facets. */
+  readonly facets: CoreRouteFacets;
+  /** Resolved CoreGraph client Route extensions. */
+  readonly extensions: Readonly<Record<string, unknown>>;
+  /** Producer and source that declared this Route. */
+  readonly provenance: CoreNodeProvenance;
 }
 
 export interface FrameworkServerFunctionView {
@@ -414,7 +445,7 @@ export interface FrameworkEntryView {
   readonly runtime?: "browser" | ServerRuntime;
   readonly phase?: BuildEntryPhase;
   readonly kind:
-    | "app-client"
+    | "application-client"
     | "page-client"
     | "page-server"
     | "rsc-page"
@@ -422,22 +453,32 @@ export interface FrameworkEntryView {
     | "ppr-region"
     | "server-runtime"
     | "runtime";
-  readonly owner?: BuildEntryOwner;
+  readonly owner?: FrameworkEntryOwner;
   readonly metadata?: FrameworkEntryMetadataView;
 }
 
-export interface FrameworkPagesAppEntryView extends FrameworkEntryView {
-  readonly metadata: FrameworkPagesAppEntryMetadata;
+/** Semantic owner exposed by the plugin framework-entry view. */
+export interface FrameworkEntryOwner {
+  readonly applicationId?: string;
+  readonly pageId?: string;
+  readonly routeId?: string;
+  readonly regionId?: string;
+}
+
+export interface FrameworkApplicationEntryView extends FrameworkEntryView {
+  readonly kind: "application-client";
+  readonly metadata: FrameworkApplicationEntryMetadata;
 }
 
 export type FrameworkEntryMetadataView =
   | FrameworkReactComponentPageEntryMetadata
-  | FrameworkPagesAppEntryMetadata
+  | FrameworkApplicationEntryMetadata
   | FrameworkServerAppEntryMetadata;
 
 export interface FrameworkReactComponentPageEntryMetadata {
   readonly type: "react-component-page";
   readonly component: string;
+  readonly layouts?: readonly string[];
   readonly mount: string;
   readonly hydrate: HydrationMode;
   readonly render: RenderMode;
@@ -447,8 +488,8 @@ export interface FrameworkReactComponentPageEntryMetadata {
   };
 }
 
-export interface FrameworkPagesAppEntryMetadata {
-  readonly type: "pages-app";
+export interface FrameworkApplicationEntryMetadata {
+  readonly type: "application";
   readonly routes: readonly FrameworkPageAppRouteView[];
   readonly mount: string;
   readonly rootModule?: string;
@@ -457,12 +498,15 @@ export interface FrameworkPagesAppEntryMetadata {
 export interface FrameworkPageAppRouteView {
   readonly id: string;
   readonly path: string;
-  readonly module: string;
-  readonly html?: string;
   readonly parentId?: string;
-  readonly kind?: PageRouteKind;
+  readonly kind?: PageRouteKind | "group" | "redirect";
+  readonly module?: string;
+  readonly target?: AppRouteTarget;
+  readonly wrappers?: readonly string[];
+  readonly layout?: false;
   readonly errorModule?: string;
   readonly notFoundModule?: string;
+  readonly metadata?: PageMetadata;
 }
 
 export interface FrameworkServerMiddlewareView {
@@ -529,23 +573,21 @@ export interface FrameworkSlot<K extends FrameworkSlotName> {
 export type FrameworkSlotInput<K extends FrameworkSlotName> =
   K extends "client.entry"
     ? ClientEntryContribution
-    : K extends "client.runtime.plugin"
-      ? ClientRuntimePluginContribution
-      : K extends "server.request.middleware"
-        ? ServerRequestMiddlewareContribution
-        : K extends "html.tag"
-          ? HtmlTagContribution
-          : K extends "resolve.alias"
-            ? ResolveAliasContribution
-            : K extends "resolve.external"
-              ? ResolveExternalContribution
-              : never;
+    : K extends "server.request.middleware"
+      ? ServerRequestMiddlewareContribution
+      : K extends "html.tag"
+        ? HtmlTagContribution
+        : K extends "resolve.alias"
+          ? ResolveAliasContribution
+          : K extends "resolve.external"
+            ? ResolveExternalContribution
+            : never;
 
 export interface ClientEntryContribution {
   id: string;
   module: GeneratedModuleRef | string;
   position: EntryContributionPosition;
-  runtime?: ContributionRuntime;
+  runtime?: ClientContributionRuntime;
   target?: ContributionTarget;
   /**
    * Replaces the generated entry facade with this module.
@@ -555,13 +597,6 @@ export interface ClientEntryContribution {
    * such as qiankun slave mode that must own the entry exports.
    */
   mode?: "import" | "replace";
-}
-
-export interface ClientRuntimePluginContribution {
-  id: string;
-  module: GeneratedModuleRef | string;
-  exportKeys?: string[];
-  target?: ContributionTarget;
 }
 
 export interface ServerRequestMiddlewareContribution {
@@ -600,52 +635,12 @@ export interface BuildOutputContext<TBundlerCfg = DefaultBundlerConfig>
 export interface DisposeContext<TBundlerCfg = DefaultBundlerConfig>
   extends PluginContext<TBundlerCfg> {}
 
-/** Lifecycle hooks returned from plugin setup(). */
-export interface EvPluginHooks<TBundlerCfg = DefaultBundlerConfig> {
-  /** Called before compilation begins. */
-  buildStart?: () => void | Promise<void>;
-
-  /**
-   * Modify the underlying bundler configuration directly.
-   *
-   * The config type defaults to Utoopack's config shape because Utoopack is
-   * the default adapter. Projects that switch bundlers can pass a narrower
-   * generic or use the typed helper exported by that adapter.
-   */
-  bundlerConfig?: (
-    config: TBundlerCfg,
-    ctx: EvBundlerCtx<TBundlerCfg>,
-  ) => void | Promise<void>;
-
-  /** Called after compilation completes. Receives build result with manifests. */
-  buildEnd?: (result: EvBuildResult) => void | Promise<void>;
-
-  /**
-   * Transform the output HTML document after asset injection.
-   *
-   * Receives the parsed DOM document and the build result (with manifests).
-   * Mutate the document in place (e.g. `doc.head.insertAdjacentHTML(...)`).
-   * Runs after evjs injects `<script>` / `<link>` tags but before the
-   * document is serialized and emitted. Multiple plugins are applied in order.
-   */
-  transformHtml?: (
-    doc: HtmlDocument,
-    result: EvBuildResult,
-  ) => void | Promise<void>;
-}
-
 /**
  * Lifecycle hooks returned from plugin setup().
  */
-export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig>
-  extends Omit<
-    EvPluginHooks<TBundlerCfg>,
-    "buildStart" | "bundlerConfig" | "buildEnd" | "transformHtml"
-  > {
+export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig> {
   /** Called before compilation begins. */
-  buildStart?:
-    | EvPluginHooks<TBundlerCfg>["buildStart"]
-    | ((ctx: BuildStartContext<TBundlerCfg>) => void | Promise<void>);
+  buildStart?: (ctx: BuildStartContext<TBundlerCfg>) => void | Promise<void>;
 
   /**
    * Inspect or mutate the linked framework build output before deployment
@@ -672,7 +667,7 @@ export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig>
     ctx: BundlerCtx<TBundlerCfg>,
   ) => void | Promise<void>;
 
-  /** Called after compilation completes. Receives build result with manifests. */
+  /** Called after compilation completes. Receives the canonical build result. */
   buildEnd?: (result: BuildResult) => void | Promise<void>;
 
   /** Called when the command is shutting down or after a build finishes. */
@@ -693,56 +688,31 @@ export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig>
 }
 
 /** Build result passed to plugin hooks. */
-export interface EvBuildResult {
-  /** Client-focused manifest view derived from `output`. */
-  clientManifest: ClientManifest;
-  /** Server-focused manifest view derived from `output`. */
-  serverManifest: ServerManifest;
+export interface BuildResult {
+  /** Single framework build output. */
+  output: BuildOutput;
+  /** Server runtime contract generated from BuildOutput plus runtime-only facts. */
+  frameworkRuntime?: FrameworkRuntimeOutput;
   /** Deployment metadata projection for adapters and tooling. */
   deploymentMetadata: DeploymentMetadata;
   /** True if this is a rebuild triggered by file change (dev watch mode only). */
   isRebuild: boolean;
 }
 
-/**
- * Build result passed to the buildEnd hook.
- */
-export interface BuildResult extends EvBuildResult {
-  /** Single framework build output. */
-  output: BuildOutput;
-  /** Server runtime contract generated from BuildOutput plus runtime-only facts. */
-  frameworkRuntime?: FrameworkRuntimeOutput;
+export interface HtmlDocumentInfo {
+  /** Stable normalized Document id. */
+  documentId: string;
+  /** Logical Application that owns this Document. */
+  applicationId: string;
+  /** Semantic owner of this normalized Document. */
+  owner: CoreDocumentOwner;
+  /** Source HTML template path from resolved config. */
+  template: string;
+  /** Output HTML filename. */
+  fileName: string;
+  /** Assets injected into this HTML document. */
+  assets: AssetGroup;
 }
-
-export type HtmlDocumentInfo =
-  | {
-      /** Framework owner type for the HTML document. */
-      kind: "app";
-      /** Stable HTML document id. */
-      htmlId: string;
-      /** Owning app id. */
-      appId: string;
-      /** Source HTML template path from resolved config. */
-      template: string;
-      /** Output HTML filename. */
-      fileName: string;
-      /** Assets injected into this HTML document. */
-      assets: AssetGroup;
-    }
-  | {
-      /** Framework owner type for the HTML document. */
-      kind: "page";
-      /** Stable HTML document id. */
-      htmlId: string;
-      /** Owning page id. */
-      pageId: string;
-      /** Source HTML template path from resolved config. */
-      template: string;
-      /** Output HTML filename. */
-      fileName: string;
-      /** Assets injected into this HTML document. */
-      assets: AssetGroup;
-    };
 
 export type HtmlTransformContext<TBundlerCfg = DefaultBundlerConfig> =
   BuildResult &
@@ -754,8 +724,6 @@ export type HtmlTransformContext<TBundlerCfg = DefaultBundlerConfig> =
 export type BuildOutputHookContext<TBundlerCfg = DefaultBundlerConfig> =
   BuildOutputContext<TBundlerCfg>;
 
-export type EvDocument = HtmlDocument;
-
 export function createBuildResult(
   output: BuildOutput,
   isRebuild: boolean,
@@ -766,8 +734,6 @@ export function createBuildResult(
     ...(options.frameworkRuntime
       ? { frameworkRuntime: options.frameworkRuntime }
       : {}),
-    clientManifest: createPublicManifest(output),
-    serverManifest: createServerManifest(output),
     deploymentMetadata: createDeploymentMetadata(output),
     isRebuild,
   };

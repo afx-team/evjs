@@ -28,11 +28,13 @@
 
 ## Core Principles
 
-- Framework-owned app structure uses file conventions. Client pages live under
-  `src/pages`, server file routes under `src/apis`, framework request
-  middleware in `src/middleware.ts`, API route middleware in
-  `src/apis/**/middleware.ts`, and server functions in reachable
-  `"use server"` modules.
+- Framework-owned applications use one Page-and-Route file convention. Pages
+  live at `src/pages/**/page.*`; the containing directory determines Page scope
+  and URL, optional `page.config.ts` owns build-time Page capabilities, and
+  `routing.mode` selects SPA/MPA output. Server file routes remain
+  under `src/apis`, framework request middleware in `src/middleware.ts`, API
+  route middleware in `src/apis/**/middleware.ts`, and server functions in
+  reachable `"use server"` modules.
 - `@evjs/ev` owns config, plugins, convention discovery, graph/build planning,
   manifest/deployment helpers, and bundler contracts. It should not expose
   client or server runtime mirrors; its runtime-facing subpaths are curated
@@ -117,9 +119,16 @@ and adapters depend on `@evjs/ev` instead of on each other.
 
 ### Add a page route
 
-1. Create a page module under `src/pages`.
-2. Export a default React component.
-3. Add static page metadata exports next to the component when needed.
+1. Create `src/pages/<route>/page.tsx` and default-export a React component.
+2. Use directory segments to express the URL: `$param` for a dynamic segment,
+   terminal `$...splat` for a catch-all, and `(group)` for pathless grouping.
+3. Keep Page-private components, hooks, models, and services inside that Page
+   directory. A nested `components/index.tsx` stays private because only
+   `page.*` is a Page anchor.
+4. Put static Page title, supported named metadata, rendering fields, and
+   namespaced plugin extensions in an adjacent `page.config.ts`; do not put
+   them in component exports. Plugins explicitly project extension values
+   needed at runtime.
 
 ### Add a server file route
 
@@ -131,15 +140,21 @@ and adapters depend on `@evjs/ev` instead of on each other.
    middleware with `src/apis/**/middleware.ts`, not route-module middleware
    exports.
 
-### Add a configured page
+### Migrate a stored Page application
 
-1. Add `pages.[id]` in `ev.config.ts`.
-2. Use `{ entry }` for user-owned bootstrap pages or `{ component }` for
-   framework-managed standalone pages.
-3. Put `render`, `hydrate`, `rsc`, and `prerender` static
-   exports in the referenced page module.
-4. Use `path` only when the framework server should route a URL to that page.
-5. In dev, page additions should flow through `BuildPlanUpdate`; do not require restarting the ev dev server.
+1. Establish one directory for every published URL and move or rename its
+   component entry to `page.tsx`.
+2. Move `title`, supported named metadata, `render`, `hydrate`, `rsc`,
+   `prerender`, and plugin-owned Page settings into adjacent `page.config.ts`.
+3. Keep Page-private code in the Page directory; `_` prefixes are not required.
+4. Configure only `routing.mode: "spa" | "mpa"` and use `ev inspect` to verify
+   the resulting Page/Route/Document graph.
+
+This source conversion is required before running Smallfish or evjs 0.2
+applications on Core 0.3. Do not add a runtime compatibility switch.
+Explicit `application.routes` and Bigfish route config may remain temporarily
+as SPA-only route-tree migration inputs, but they cannot select MPA
+materialization and new examples use the canonical Page tree.
 
 ### Add an example
 
@@ -156,14 +171,12 @@ and adapters depend on `@evjs/ev` instead of on each other.
 ```txt
 load ev.config.ts
 run config/setup hooks
-createAppGraph()
-run appGraph hooks
+createCoreGraph()
 createBuildPlan()
-run buildPlan hooks
 selected bundler builds the BuildPlan
 linkBuildOutput()
 run buildOutput hooks
-emit dist/manifest.json and HTML documents
+emit dist/deployment-metadata.json and HTML documents
 run buildEnd({ output })
 ```
 
@@ -175,7 +188,7 @@ start selected bundler dev controller
 serve HTML and manifest from framework state
 component/style edits stay in bundler HMR
 config/page-route/server-file-route/middleware convention edits rebuild graph and diff BuildPlan
-call bundlerDevController.updatePlan(update, graph) when the adapter supports it
+call bundlerDevController.updatePlan(update) when the adapter supports it
 ```
 
 Utoopack is still the default adapter. It supports HTML-only dev plan relinking;

@@ -74,4 +74,52 @@ test.describe("basic", () => {
       timeout: 10_000,
     });
   });
+
+  test("updates Page metadata on SPA navigation and restores the template baseline", async ({
+    page,
+    baseURL,
+  }) => {
+    await page.goto(baseURL);
+
+    await expect(page).toHaveTitle("evjs Basic");
+    await expect(page.locator('meta[name="description"]')).toHaveAttribute(
+      "content",
+      "The canonical evjs SPA example.",
+    );
+    await expect(page.locator('meta[name="keywords"]')).toHaveAttribute(
+      "content",
+      "evjs,spa,server functions",
+    );
+
+    await page.getByRole("link", { name: "Open static route" }).click();
+
+    await expect(page).toHaveURL(`${baseURL}/about`);
+    await expect(page).toHaveTitle("About evjs");
+    await expect(page.locator('meta[name="description"]')).toHaveAttribute(
+      "content",
+      "About the canonical evjs Page-and-Route model.",
+    );
+    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute(
+      "content",
+      "#f8fafc",
+    );
+    await expect(page.locator('meta[name="keywords"]')).toHaveCount(0);
+    await expect(page.locator('meta[name="viewport"]')).toHaveAttribute(
+      "content",
+      "width=device-width, initial-scale=1.0",
+    );
+
+    await page.goBack();
+
+    await expect(page).toHaveURL(`${baseURL}/`);
+    await expect(page).toHaveTitle("evjs Basic");
+    await expect(page.locator('meta[name="keywords"]')).toHaveAttribute(
+      "content",
+      "evjs,spa,server functions",
+    );
+    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute(
+      "content",
+      "#ffffff",
+    );
+  });
 });

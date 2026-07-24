@@ -1,13 +1,12 @@
 import type { RenderMode } from "./index.js";
 
-export interface RouteRenderingPage {
-  path?: string;
-  render?: RenderMode | string;
-}
-
 export interface RouteDerivedPage {
   path?: string;
   routeId?: string;
+}
+
+export interface RouteRenderingPage extends RouteDerivedPage {
+  render?: RenderMode | string;
 }
 
 export interface RouteRenderingRoute {
@@ -64,7 +63,7 @@ export function getServerRenderedRoutePaths(
 ): string[] {
   return compactUnique(
     (source.routes ?? []).flatMap((route) => {
-      const page = route.pageId ? source.pages?.[route.pageId] : undefined;
+      const page = route.pageId ? getPage(source, route.pageId) : undefined;
       return isServerRenderedPage(page) ? [route.path] : [];
     }),
   );
@@ -90,10 +89,13 @@ export function getClientRouteTarget(
   source: RouteRenderingSource,
   route: RouteRenderingRoute,
 ): ClientRouteTarget | undefined {
-  const page = route.pageId ? source.pages?.[route.pageId] : undefined;
+  const page = route.pageId ? getPage(source, route.pageId) : undefined;
   if (isServerRenderedPage(page)) return undefined;
 
-  if (route.pageId && page) {
+  // A route-derived semantic Page still executes through its owning SPA
+  // Application. It has page identity for plugins and diagnostics, but does
+  // not own an independent entry or HTML document.
+  if (route.pageId && page && !isRouteDerivedPage(page)) {
     return {
       kind: "page",
       pageId: route.pageId,
@@ -110,8 +112,17 @@ export function getClientRouteTarget(
   return undefined;
 }
 
+function getPage(
+  source: RouteRenderingSource,
+  pageId: string,
+): RouteRenderingPage | undefined {
+  return source.pages && Object.hasOwn(source.pages, pageId)
+    ? source.pages[pageId]
+    : undefined;
+}
+
 function hasApp(source: RouteRenderingSource, appId: string): boolean {
-  return source.apps ? Boolean(source.apps[appId]) : true;
+  return source.apps ? Object.hasOwn(source.apps, appId) : true;
 }
 
 function compactUnique(values: Array<string | undefined>): string[] {

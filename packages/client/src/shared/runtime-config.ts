@@ -24,11 +24,7 @@ export interface ClientRuntime {
     transport?: ClientRuntimeTransport;
   };
   app?: ClientRuntimeApp;
-  routing?: ClientRuntimeRouting;
-  /** @deprecated Use routing.kind === "mpa".pages. */
-  pages?: Record<string, ClientRuntimePage>;
-  /** @deprecated Use routing.kind === "spa".routes or page route metadata. */
-  routes?: ClientRuntimeRoute[];
+  routing: ClientRuntimeRouting;
 }
 
 export interface ClientAssetGroup {
@@ -119,18 +115,18 @@ export function assertClientRuntime(
 export function getClientRuntimePages(
   runtime: ClientRuntime,
 ): Record<string, ClientRuntimePage> {
-  if (runtime.routing?.kind === "mpa") return runtime.routing.pages;
-  return runtime.pages ?? {};
+  if (runtime.routing.kind === "mpa") return runtime.routing.pages;
+  return {};
 }
 
 export function getClientRuntimeRoutes(
   runtime: ClientRuntime,
 ): ClientRuntimeRoute[] {
-  if (runtime.routing?.kind === "spa") return runtime.routing.routes;
-  if (runtime.routing?.kind === "mpa") {
+  if (runtime.routing.kind === "spa") return runtime.routing.routes;
+  if (runtime.routing.kind === "mpa") {
     return createRoutesFromPages(runtime.routing.pages);
   }
-  return runtime.routes ?? [];
+  return [];
 }
 
 export function getClientRuntimeServer(
@@ -208,39 +204,30 @@ function assertRuntimeRouting(
   value: Record<string, unknown>,
   source: string,
 ): void {
-  if (value.routing !== undefined) {
-    if (value.pages !== undefined || value.routes !== undefined) {
-      throw new Error(
-        `[evjs] ${source} must not define both routing and pages/routes.`,
-      );
-    }
-    assertObject(value.routing, `${source}.routing`);
-    if (value.routing.kind === "spa") {
-      if (!Array.isArray(value.routing.routes)) {
-        throw new Error(`[evjs] ${source}.routing.routes must be an array.`);
-      }
-      assertRoutes(value.routing.routes, `${source}.routing.routes`, {});
-      return;
-    }
-    if (value.routing.kind === "mpa") {
-      assertObject(value.routing.pages, `${source}.routing.pages`);
-      assertPages(value.routing.pages, `${source}.routing.pages`);
-      assertRoutes(
-        createRoutesFromPages(value.routing.pages),
-        `${source}.routing.pages`,
-        value.routing.pages,
-      );
-      return;
-    }
-    throw new Error(`[evjs] ${source}.routing.kind must be "spa" or "mpa".`);
+  if (value.pages !== undefined || value.routes !== undefined) {
+    throw new Error(
+      `[evjs] ${source}.pages and ${source}.routes are not supported. Use ${source}.routing.`,
+    );
   }
-
-  assertObject(value.pages, `${source}.pages`);
-  assertPages(value.pages, `${source}.pages`);
-  if (!Array.isArray(value.routes)) {
-    throw new Error(`[evjs] ${source}.routes must be an array.`);
+  assertObject(value.routing, `${source}.routing`);
+  if (value.routing.kind === "spa") {
+    if (!Array.isArray(value.routing.routes)) {
+      throw new Error(`[evjs] ${source}.routing.routes must be an array.`);
+    }
+    assertRoutes(value.routing.routes, `${source}.routing.routes`);
+    return;
   }
-  assertRoutes(value.routes, `${source}.routes`, value.pages);
+  if (value.routing.kind === "mpa") {
+    assertObject(value.routing.pages, `${source}.routing.pages`);
+    assertPages(value.routing.pages, `${source}.routing.pages`);
+    assertRoutes(
+      createRoutesFromPages(value.routing.pages),
+      `${source}.routing.pages`,
+      value.routing.pages,
+    );
+    return;
+  }
+  throw new Error(`[evjs] ${source}.routing.kind must be "spa" or "mpa".`);
 }
 
 function assertApp(value: unknown, source: string): void {
@@ -310,7 +297,7 @@ function assertRuntimeModule(value: unknown, source: string): void {
 function assertRoutes(
   value: unknown[],
   source: string,
-  pages: Record<string, unknown>,
+  pages?: Record<string, unknown>,
 ): void {
   const idOwners = new Map<string, string>();
   const pathOwners = new Map<string, { path: string; source: string }>();
@@ -338,10 +325,11 @@ function assertOptionalRecordReference(
   value: unknown,
   source: string,
   recordsSource: string,
-  records: Record<string, unknown>,
+  records?: Record<string, unknown>,
 ): void {
   if (value === undefined) return;
   assertRuntimeString(value, source);
+  if (!records) return;
   if (!Object.hasOwn(records, value)) {
     throw new Error(
       `[evjs] ${source} "${value}" does not match any ${formatRecordSource(recordsSource)} entry.`,

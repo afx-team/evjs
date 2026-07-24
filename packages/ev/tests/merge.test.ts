@@ -47,11 +47,11 @@ describe("merge", () => {
     const config: Config = {};
 
     const result = merge(config, {
-      html: "./index.html",
+      routing: { mode: "spa" },
     });
 
     expect(result).toBe(config);
-    expect(config.html).toBe("./index.html");
+    expect(config.routing).toEqual({ mode: "spa" });
   });
 
   it("type-checks Config patches", () => {
@@ -69,10 +69,13 @@ describe("merge", () => {
       },
     });
 
-    merge(config, {
-      pages: {
-        home: "./src/Home.tsx",
-        about: { entry: "./src/about/main.tsx" },
+    const applicationConfig: Config = {};
+    merge(applicationConfig, {
+      application: {
+        routes: [
+          { path: "/", component: "@/pages/home/page" },
+          { path: "/about", component: "@/pages/about/page" },
+        ],
       },
     });
 

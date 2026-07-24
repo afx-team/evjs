@@ -1,31 +1,35 @@
 # 架构
 
-evjs 是围绕文件约定、显式 source declaration、框架 graph、bundler 无关 build
-plan、私有 BuildOutput 契约和生成的 runtime 投影构建的 React 框架。框架托管的路由模型
-是文件化的：客户端页面来自 `src/pages`，服务端文件路由来自 `src/apis`，server
-middleware 分成 `src/middleware.ts` 中的 framework request middleware，以及
-`src/apis/**/middleware.ts` 中的 API route middleware。
+evjs 是围绕唯一正向 Page-and-Route 约定、server file convention、normalized
+CoreGraph、bundler-independent BuildPlan，以及一份 private BuildOutput contract
+和 generated runtime projection 构建的 React 框架。canonical
+`src/pages/**/page.*` 锚点直接 normalize 到 CoreGraph；显式 route-tree
+迁移输入也 normalize 到同一模型。BuildPlan 从该 graph 派生，供 planner 和
+adapter 消费。每个 Page 目录持有其私有源码并决定客户端 URL；`routing.mode` 只改变
+SPA/MPA 物化。服务端请求路由继续位于 `src/apis`，middleware 位于
+`src/middleware.ts` 与 `src/apis/**/middleware.ts`。
 
 ```mermaid
 flowchart LR
-  Source["File conventions\nsrc/pages + src/apis + middleware"]
-  Config["ev.config.ts\nplugins + explicit entries"]
-  Graph["AppGraph\nframework model"]
+  Source["Owned source\nPage directories + src/apis + middleware"]
+  Config["ev.config.ts\nrouting.mode + plugins"]
+  Resolve["Canonical resolver\nor explicit route normalizer"]
+  Core["CoreGraph\nsemantic model"]
   Plan["BuildPlan\nbundler-independent plan"]
   IR[".ev IR\nentries + generated modules + slots"]
   Build["Bundler build\nUtoopack / webpack"]
   Output["BuildOutput\nruntime + deployment contract"]
   Runtime["Runtime targets\nbrowser + server + adapters"]
 
-  Source --> Graph
-  Config --> Graph
-  Graph --> Plan --> IR --> Build --> Output --> Runtime
+  Source --> Resolve
+  Config --> Resolve
+  Resolve --> Core --> Plan --> IR --> Build --> Output --> Runtime
 
   classDef source fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
   classDef model fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
   classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
   class Source,Config source;
-  class Graph,Plan,IR model;
+  class Resolve,Core,Plan,IR model;
   class Build,Output,Runtime build;
 ```
 
@@ -106,9 +110,11 @@ API。
 生成专用的 `@evjs/ev/_internal/client/*` 和 `@evjs/ev/_internal/server/*`
 subpath 用于让框架生成的路由声明、page bootstrap、server-function
 stub/registration 和 RSC runtime entry 完成类型检查。应用代码从
-`@evjs/ev/route`、`@evjs/ev/server-context` 或 `@evjs/ev/transport` 导入公开
-authoring API，不要导入这些生成专用的 internal helper。
-例如，`@evjs/ev/_internal/client/route-types` 用于生成的 SPA 路由声明，
+`@evjs/ev/route`、`@evjs/ev/navigation`、`@evjs/ev/query`、
+`@evjs/ev/server-context` 或 `@evjs/ev/transport` 导入公开 authoring API，
+不要导入这些生成专用的 internal helper。
+例如，`@evjs/ev/_internal/client/route-types` 用于 canonical Page-anchor
+路由声明（显式 Bigfish-style config route 当前不承诺生成），
 `@evjs/ev/_internal/client/server-functions` 用于生成的 `"use server"` 客户端
 stub，`@evjs/ev/_internal/server/server-functions` 用于生成的 `"use server"`
 服务端 registration，`@evjs/ev/_internal/client/rsc-runtime` 用于 RSC page
@@ -131,7 +137,7 @@ adapter 示例才直接导入 `@evjs/bundler-utoopack`。
   源码分析、文件路由发现、服务端函数提取、graph/plan helpers、框架 transform、HTML helpers
 
 @evjs/shared/manifest
-  AppGraph、BuildPlan、BuildOutput 和 manifest schema
+  CoreGraph、BuildPlan、BuildOutput 和 manifest schema
 
 @evjs/ev generated-only runtime internals
   framework-managed runtime、shell、router-free react-page runtime、transport、
@@ -176,7 +182,7 @@ flowchart TB
   end
 
   subgraph GraphStage["2. 构建 framework model"]
-    Graph["AppGraph\nroutes + server functions + page metadata"]
+    Core["CoreGraph\nApplication + Page + Route + Document"]
     Plan["BuildPlan\nentries + HTML + environments"]
     Contributions["contributions(ctx)\ngenerated artifacts + slots"]
   end
@@ -201,7 +207,7 @@ flowchart TB
   end
 
   Request --> ConfigHooks --> Resolved --> SetupHooks
-  SetupHooks --> Graph --> Plan --> Contributions
+  SetupHooks --> Core --> Plan --> Contributions
   Contributions --> Entries
   Contributions --> PluginFiles
   Entries --> IRManifest
@@ -215,12 +221,13 @@ flowchart TB
   classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
   class Request input;
   class ConfigHooks,Resolved,SetupHooks config;
-  class Graph,Plan,Contributions,Entries,PluginFiles,IRManifest model;
+  class Core,Plan,Contributions,Entries,PluginFiles,IRManifest model;
   class BundlerConfig,Bundler,Output,BuildOutputHook,HTML,BuildEnd,Dist build;
 ```
 
 Bundling 前，evjs 会 materialize `.ev` 作为 agent-readable framework IR。
-`.ev/framework/app-graph.json` 记录 convention discovery，
+`.ev/framework/core-graph.json` 记录 normalized
+Application、Page、Route、Document、scope 与 provenance。
 `.ev/framework/build-plan.json` 记录最终 bundler 无关 plan，`.ev/entries/*`
 包含生成的 entry facade，`.ev/plugins/*` 包含插件 generated artifacts，
 `.ev/manifest.json` 串联 graph data、generated artifacts、framework slots、
@@ -228,18 +235,18 @@ import edges 和最终 entries。Contribution 是这个 IR 里的声明式单元
 产物、把这些产物链接起来，并把它们挂到 framework slot 上。Bundler adapter 消费这些
 生成 entry；不再用 adapter-specific loader 重新拼 file-convention entry 逻辑。
 
-构建会在 `dist/build-output.json` 输出 canonical deployment metadata。内部 `BuildOutput`
-仍是内存中的 plugin/build contract，不再完整序列化落盘。client/server manifest 是部署工具
-兼容投影：`client/manifest.json` 保留 SPA 公开 assets，或 MPA page 级 assets 与
-routing；`server/manifest.json` 保留 server entry 和轻量 server route projection。
+构建会在 `dist/deployment-metadata.json` 输出 canonical deployment metadata。
+内部 `BuildOutput` 仍是内存中的 plugin/build contract，不再完整序列化落盘。Core
+不输出 split client/server compatibility manifest；平台专属 projection 由
+deployment adapter 持有。
 
 生成的 HTML 会内嵌浏览器 `ClientRuntime`，CLI build 默认不再写
 `client/runtime.json`。Runtime-only 的 `FrameworkRuntime` 数据保留在内存中的 plugin/build
 result，并注入 dev 或 deployment adapter bootstrap，不再作为默认 JSON artifact 输出。因此
-已部署 runtime 不会在启动时读取 `dist/build-output.json` 或 manifest 文件。
+已部署 runtime 不会在启动时读取 `dist/deployment-metadata.json`。
 
 Runtime-required 数据刻意和 deployment metadata 分离。ClientRuntime 只保留启动和导航
-需要的 build id、transport base URL、RSC endpoint、app/page module target、mount
+需要的 build id、transport base URL、RSC endpoint、Application/Page module target、mount
 selector 和必要 routing 元信息。FrameworkRuntime 保留 SSR/PPR/RSC 渲染协调和 React
 Flight client reference 数据。Deployment metadata 保留 public assets、HTML documents、
 server entry，以及 static document、server-rendered page route、API route、
@@ -251,7 +258,7 @@ server function、PPR endpoint、RSC endpoint 等可部署 route row。
 flowchart TB
   subgraph BrowserSide["Browser"]
     HTMLDoc["HTML document\nembedded ClientRuntime"]
-    Bootstrap["Generated app/page bootstrap"]
+    Bootstrap["Generated Application/Page bootstrap"]
     ReactApp["React runtime\nSPA / MPA / hydration"]
   end
 
@@ -328,14 +335,13 @@ flowchart TB
 浏览器网络日志里。长期运行时边界应是可替换的 region resolver：Node/dev 可以在
 本进程调用 renderer，edge adapter 可以 fetch 内源 FaaS endpoint，而不改变公开页面协议。
 
-推荐的 PPR 编写模型是 React `Suspense`。页面组件声明
-`export const render = "ssr"`，并通过
-`export const prerender = { partial: true, delivery }` 开启 partial
-prerendering。PPR 是建立在 SSR 之上的 prerendering 策略，不是独立的 document
-render mode。evjs 0.2 中这部分仍是 experimental：任意 Suspense boundary 的
-runtime postponed/resume 尚未实现，当前兼容 splitter 只会为受限的 `Suspense` +
-直接 `lazy(() => import(...))` 形态生成内部 region renderer。Region id 是框架
-内部 opaque 细节。
+PPR authoring 使用 React `Suspense`。canonical `page.*` route 在
+`page.config.ts` 中声明 `render: "ssr"` 与
+`prerender: { partial: true, delivery }`；迁移时不要把这些值继续保留为 Page
+component export。任意 Suspense boundary 的 runtime postponed/resume 尚未实现，
+当前 splitter 只会为受限的 `Suspense` + 直接
+`lazy(() => import(...))` 形态生成内部 region renderer。Region id 是框架内部
+opaque 细节。
 
 PPR 页面在 client runtime 中的 page-level hydration 是 `none`。需要客户端交互时，
 应通过显式 client islands 引入，而不是 hydrate 整个 PPR shell。PPR region 不提供
@@ -350,17 +356,23 @@ client/server reference manifests；Utoopack 仍需要等价的下层 metadata �
 ## 配置归属
 
 ```txt
-routing
-  文件路由事实来源：spa/mpa mode、dir、html、mount point
+routing.mode
+  选择 SPA 或 MPA 物化
+
+routing.dir + src/pages/**/page.*
+  客户端 Page、私有 scope 与 URL 事实来源
+
+Page 同目录 page.config.ts / index.html
+  两种 mode 的构建期 Page 能力 / MPA Page Document 模板
 
 server.routing
   服务端文件路由事实来源：dir、发现到的 HTTP method modules
 
-entry/html
-  手动单应用快捷配置
+application.routes / Bigfish routes
+  显式、仅支持 SPA 的 route-tree 迁移输入，不是 canonical routing
 
-pages.*
-  显式独立页面输出：path、entry/component/app、mount point
+Smallfish / evjs 0.2 源码树
+  resolution 前把 entry 转换为 page.*，把 setting 转换为 page.config.ts
 
 server.basePath
   派生 fn、ppr、rsc 等框架服务端路径
@@ -372,8 +384,11 @@ plugins
   框架和 bundler 扩展点
 ```
 
-`routing` 默认指向 `src/pages`。SPA 模式会把发现到的文件转成内部 TanStack
-Router app entry；MPA 模式会把同一批文件转成不带客户端路由器的独立页面输出。
+每个 `page.*` 锚点创建一个 Page 与语义 Route。Static 目录、`$param`、终止
+`$...splat` 与 `(group)` segment 相对 `routing.dir` 派生 URL；完整所在目录是
+其私有 scope。SPA 创建 Client Route，通常一个 Application Document；MPA 从
+相同语义 graph 出发并创建 Page-owned Document。动态路由输出与 React
+layout/boundary 投影仍在分阶段建设，不支持的组合会在 graph/plan 校验失败。
 
 `server.routing` 默认指向 `src/apis`。服务端路由文件只有导出大写 HTTP methods
 时才会成为 route。Framework request middleware 从 `src/middleware.ts` 发现，并包裹
@@ -381,18 +396,24 @@ framework-managed server requests。API route middleware 按文件系统作用�
 `src/apis/**/middleware.ts` 发现，只包裹 descendant server file routes。Route module
 不导出 middleware，也不存在 `server.entry` 组合路径。
 
-Page modules 通过文件名拥有 path-to-component wiring，并通过 `render`、`hydrate`、
-`rsc`、`prerender` 等静态导出拥有渲染元信息。当 graph creation 发现 SSR、RSC
-或 partial prerender metadata 时，会从该页面模块派生所需的 server renderers、
-PPR regions、assets 和 manifest output。
+源码迁移必须把 Page component 或 Page 配置中的静态 title、受支持 named
+metadata、`render`、`hydrate`、`rsc`、`prerender` 等 setting 移到同目录构建期
+`page.config.ts`。canonical `page.*` route 把这些 core 字段 normalize 为 graph
+data，并保持与 Page identity 独立。同一 config 中的 namespaced plugin extension
+value 是 graph data，直到能力所属插件显式投影 runtime code/data。对 normalized
+route，graph creation 继续派生 server renderer、PPR region、asset 与 manifest
+output。
 内存中的 BuildOutput 会显式保留这些 renderer 关系：SSR 和 RSC document page
 通过由 page id 拥有的 `page-server` renderer 解析，或通过该 page 的某个 route id
 拥有的 `page-server` renderer 解析。SSG 页面在 production build 阶段使用 `page-server`
 renderer 产出静态 HTML，随后部署元信息中表现为 `static-page` route。PPR 页面改由
 `ppr-shell` 和 `ppr-region` entry 解析。
 
-`pages.*` 保留为显式底层页面 API。它适合页面无法自然映射到 `src/pages` 文件树的场景。
-渲染元信息仍属于被引用的 page module，而不是 `ev.config.ts`。
+`application.routes` 与 Bigfish route config 保留为显式、仅支持 SPA 的 route-tree
+迁移输入；MPA topology 会被拒绝。Smallfish 与 evjs 0.2 源码树必须在 resolution
+前转换为 `page.*` 与
+`page.config.ts`。Standalone/manual runtime composition 位于该模型之外；这些都不是
+另一套 framework Page authoring model。
 
 ## 服务端函数管线
 
@@ -424,8 +445,9 @@ RSC output 规则保持严格：
 
 - `BuildOutput.rsc` 不发布提取出的源码 reference id 或源码 module。
 - RSC page output 携带 renderer id 和构建出的 assets。
-- React Flight client reference manifest 不进入 `BuildOutput` 和 client/server manifest；
-  生成的 `FrameworkRuntime` 携带 RSC endpoint 运行时需要的 client reference 数据。
+- React Flight client reference manifest 不进入 `BuildOutput` 和 serialized
+  deployment metadata；生成的 `FrameworkRuntime` 携带 RSC endpoint 运行时需要的
+  client reference 数据。
 - Flight endpoint 只通过 `BuildOutput.runtime.server.rsc` 表达一次。
 - 缺少 `runtime.server.rsc` 时，manifest linker 会拒绝 RSC page output。
 
@@ -454,14 +476,15 @@ Deployment adapter 在构建过程中消费内存中的 `BuildOutput`，并可�
   和静态资源 binding。
 
 平台专属 adapter 应从内存 `BuildOutput` 派生 routing、framework endpoint、SSR、PPR、RSC
-和 asset metadata，而不是读取 bundler stats。构建后的工具应读取 `dist/build-output.json`；
+和 asset metadata，而不是读取 bundler stats。构建后的工具应读取
+`dist/deployment-metadata.json`；
 其中 documents table 携带 app shell fallback 元信息，route table 使用
 `static-page`、`server-page`、`server-function`、`ppr-endpoint`、`rsc-endpoint`
 和 `api-route` 等显式 kind。Static page route row 指向已输出的 HTML document，并携带
 `render: "csr" | "ssg"`；server page route row 表达由 framework server 处理的页面，并携带
 `render: "ssr"`。server page row 用 `prerender: "full" | "partial"` 表达 full prerender
-或 PPR 行为，用 `rsc: true` 表达 RSC 页面，避免把派生能力伪装成源码里的 `render` 值。
-client/server manifest 是部署元信息；生成的浏览器和服务端运行时消费最小化的 ClientRuntime 和
+或 PPR 行为，用 `rsc: true` 表达 RSC 页面，避免把派生能力伪装成源码里的
+`render` 值。生成的浏览器和服务端运行时消费最小化的 ClientRuntime 和
 FrameworkRuntime contract。
 Deployment metadata 把 framework endpoint 表达成 route row，不重复携带原始 runtime object，
 也不按单个 server function id 暴露给部署平台。
@@ -488,15 +511,15 @@ SSR、PPR、RSC、server functions 或 server routes，除非同时接入具备�
 
 ## Dev 更新
 
-框架级文件约定变化和普通 HMR 分开处理：
+框架级 graph input 变化和普通 HMR 分开处理：
 
 ```txt
-config / page route / server file-route / middleware convention change
-  -> recreate AppGraph
+config / Page reference or source / server file-route / middleware change
+  -> recreate CoreGraph
   -> recreate BuildPlan
   -> diff BuildPlan
   -> if BuildPlan changes:
-       bundlerDevController.updatePlan(update, nextGraph)
+       bundlerDevController.updatePlan(update)
   -> if graph-only:
        refresh active graph + dependency watchers
 ```
@@ -508,11 +531,12 @@ dynamic entry 和 server renderer update 仍会返回明确 unsupported error，
 `BuildPlan`；此时框架只刷新 graph metadata 和 watch inputs，更新后的代码由 bundler
 的普通 server watch 输出。
 
-Graph analysis 会读取页面路由模块、服务端文件路由模块、middleware convention
-modules 和静态 import closure 来发现 server functions、page metadata 和 RSC
-references。静态 import closure discovery 会解析模块，因此会跟随普通 import、
-re-export 和合法的字符串字面量 import alias；字面量 dynamic import 指向项目相对模块时也会被跟踪。
-dev 会 watch 页面路由目录、服务端路由目录、显式 graph roots，以及已经包含
-framework marker 的文件。显式配置的 page component 属于 graph root，因为它的静态
-`render`、`hydrate`、`rsc`、`prerender` 导出会影响 framework planning。普通组件、
-app entry 和样式编辑继续走 bundler HMR，除非这些模块声明了 framework marker。
+Graph analysis 会读取 canonical Page entry、server file route module、middleware
+module 与静态 import closure 来发现 server function 和 dependency。同目录
+`page.config.ts` module 提供 Page title、named metadata、rendering metadata 与
+RSC setting。静态 import closure discovery 会解析模块，因此会跟随普通 import、
+re-export 和合法的字符串字面量 import alias；字面量 dynamic import 指向项目相对
+模块时也会被跟踪。dev 会 watch Page root、服务端路由目录、显式 graph root，以及
+已经包含 framework marker 的文件。canonical Page entry 与 Page config module 是
+显式 graph root。普通组件、app entry 与样式编辑继续走 bundler HMR，除非模块声明
+framework marker。

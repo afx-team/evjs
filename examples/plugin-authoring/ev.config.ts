@@ -1,5 +1,24 @@
 import { merge, utoopack } from "@evjs/bundler-utoopack";
 import { defineConfig } from "@evjs/ev";
+import { definePlugin } from "@evjs/ev/plugin";
+
+const pageMetadataPlugin = definePlugin({
+  name: "example-page-metadata-plugin",
+  describe(api) {
+    api.pageExtension({
+      namespace: "@example/page-metadata",
+      defaults: { label: "Plugin authoring Page" },
+    });
+  },
+  contributions(ctx) {
+    for (const page of ctx.framework.pages) {
+      const metadata = page.extensions?.["@example/page-metadata"];
+      console.log(
+        `[example-page-metadata-plugin] ${page.id}: ${JSON.stringify(metadata)}`,
+      );
+    }
+  },
+});
 
 /**
  * Example: evjs plugin system.
@@ -12,7 +31,9 @@ import { defineConfig } from "@evjs/ev";
  * - `transformHtml` — modify the output HTML document after asset injection
  */
 export default defineConfig({
+  routing: { mode: "spa" },
   plugins: [
+    pageMetadataPlugin,
     {
       name: "example-txt-plugin",
       config(config) {

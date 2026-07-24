@@ -1,6 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { PageRouteNode } from "@evjs/shared/manifest";
+import type {
+  PageAnchorMetadata,
+  PageRouteDiscoveryMetadata,
+  PageRoutingMode,
+} from "../../config/index.js";
+import { collectModuleExportNames } from "./module-exports.js";
 import {
   findPageRouteSegmentConventionViolation,
   formatPageRouteSegmentConventionViolation,
@@ -8,10 +14,11 @@ import {
   isPageRouteGroupSegment,
   isPageRouteSourceModuleFile,
   normalizePageRouteConventionPath,
-  PAGE_ROUTE_ROOT_LAYOUT_FILE,
-  PAGE_ROUTE_SOURCE_EXTENSION_LABEL,
-  PAGE_ROUTE_UNSUPPORTED_ROOT_LAYOUT_FILES,
-  parsePageRouteFile,
+  PAGE_CONFIG_FILES,
+  PAGE_CONFIG_LABEL,
+  PAGE_ENTRY_LABEL,
+  type PageRouteSegmentConventionViolation,
+  parsePageAnchorRouteFile,
   routeIdPathFromSegments,
   routePathFromSegments,
   routeShapeFromSegments,
@@ -25,15 +32,14 @@ import {
 import {
   deriveRouteIdFromPath,
   isInsideCwd,
+  isRealPathInsideCwd,
   toPosixPath,
   toProjectPath,
 } from "./utils.js";
 
 export interface DiscoverPageRoutesOptions {
   dir: string;
-  mode?: "spa" | "mpa";
-  rootLayout?: boolean | string;
-  spaConventions?: boolean;
+  mode: PageRoutingMode;
   required?: boolean;
 }
 
@@ -47,13 +53,29 @@ export interface PageRouteDiscovery {
   routes: PageRouteNode[];
   rootModule?: string;
   files: string[];
+  dependencies: string[];
+  metadata?: PageRouteDiscoveryMetadata;
   diagnostics: PageRouteDiscoveryDiagnostic[];
 }
+
+const SPA_ONLY_PAGE_EXPORTS = new Set([
+  "beforeLoad",
+  "loader",
+  "validateSearch",
+  "pendingComponent",
+  "errorComponent",
+  "notFoundComponent",
+]);
 
 export async function discoverPageRoutes(
   cwd: string,
   options: DiscoverPageRoutesOptions,
 ): Promise<PageRouteDiscovery> {
+  if (options.mode !== "spa" && options.mode !== "mpa") {
+    throw new Error(
+      '[evjs] Internal Page route discovery requires mode "spa" or "mpa".',
+    );
+  }
   const absoluteDir = path.resolve(cwd, options.dir);
   const diagnostics: PageRouteDiscoveryDiagnostic[] = [];
   const validDirectory = await validatePageRouteDirectory(
@@ -66,11 +88,71 @@ export async function discoverPageRoutes(
     return {
       routes: [],
       files: [],
+      dependencies: [],
       diagnostics,
     };
   }
 
   const { files } = await collectPageRouteTree(cwd, absoluteDir);
+  return discoverPageAnchorRoutes(
+    cwd,
+    absoluteDir,
+    files,
+    options,
+    diagnostics,
+  );
+}
+
+async function discoverPageAnchorRoutes(
+  cwd: string,
+  absoluteDir: string,
+  files: string[],
+  options: DiscoverPageRoutesOptions,
+  diagnostics: PageRouteDiscoveryDiagnostic[],
+): Promise<PageRouteDiscovery> {
+  const anchors = files.flatMap((file) => {
+    const routeRel = toPosixPath(path.relative(absoluteDir, file));
+    const parsed = parsePageAnchorRouteFile(routeRel);
+    return parsed
+      ? [
+          {
+            file,
+            routeRel,
+            sourceRel: toProjectPath(cwd, file),
+            segments: parsed.segments,
+          },
+        ]
+      : [];
+  });
+  const anchorDirectories = new Set(
+    anchors.map((anchor) => path.dirname(anchor.file)),
+  );
+  for (const file of files) {
+    if (
+      PAGE_CONFIG_FILES.includes(
+        path.basename(file) as (typeof PAGE_CONFIG_FILES)[number],
+      ) &&
+      !anchorDirectories.has(path.dirname(file))
+    ) {
+      diagnostics.push({
+        level: "error",
+        file: toDiagnosticPath(toProjectPath(cwd, file)),
+        message: `Page config modules must be colocated with a ${PAGE_ENTRY_LABEL} anchor. Add the Page anchor or rename this ordinary module.`,
+      });
+    }
+  }
+
+  if (anchors.length === 0) {
+    return { routes: [], files, dependencies: [], diagnostics };
+  }
+
+  const activeScopeKeys = new Set<string>();
+  for (const anchor of anchors) {
+    for (let length = 0; length <= anchor.segments.length; length += 1) {
+      activeScopeKeys.add(routeSegmentKey(anchor.segments.slice(0, length)));
+    }
+  }
+
   const routeCandidates: PageRouteCandidate[] = [];
   const layoutCandidatesBySegments = new Map<string, PageRouteCandidate>();
   const errorModulesBySegments = new Map<string, PageRouteConventionModule>();
@@ -81,31 +163,39 @@ export async function discoverPageRoutes(
   const routeByPath = new Map<string, string>();
   const routeByShape = new Map<string, { file: string; path: string }>();
   const routeById = new Map<string, { file: string; path: string }>();
-  let hasRouteCandidate = false;
-  const spaConventions =
-    options.mode !== "mpa" && options.spaConventions !== false;
-  const allowCatchAll = options.mode !== "mpa";
+  const discoveredFiles = new Set(files);
+  const dependencies = new Set<string>();
+  const pages: PageAnchorMetadata[] = [];
 
   for (const file of files) {
     const sourceRel = toProjectPath(cwd, file);
     const routeRel = toPosixPath(path.relative(absoluteDir, file));
-    const conventionFile = spaConventions
-      ? parsePageRouteConventionFile(routeRel)
-      : undefined;
+    const conventionFile = parsePageRouteConventionFile(routeRel, {
+      pageAnchors: true,
+    });
     if (conventionFile) {
+      const scopeKey = routeSegmentKey(conventionFile.segments);
+      if (!activeScopeKeys.has(scopeKey)) continue;
+      if (options.mode === "mpa") {
+        diagnostics.push({
+          level: "error",
+          file: toDiagnosticPath(sourceRel),
+          message: `${formatPageRouteConventionKind(conventionFile.kind)} conventions are SPA-only and cannot be used with routing.mode "mpa". Remove the facet or use routing.mode "spa".`,
+        });
+        continue;
+      }
       const segmentViolation = findPageRouteSegmentConventionViolation(
         conventionFile.segments,
-        { allowCatchAll },
+        { allowCatchAll: true },
       );
       if (segmentViolation) {
         diagnostics.push({
           level: "error",
           file: toDiagnosticPath(sourceRel),
-          message: formatPageRouteSegmentConventionViolation(segmentViolation),
+          message: formatPageAnchorSegmentViolation(segmentViolation),
         });
         continue;
       }
-
       const validConventionModule = await validatePageRouteConventionModule(
         file,
         conventionFile.kind,
@@ -118,125 +208,121 @@ export async function discoverPageRoutes(
         conventionFile.kind === "error"
           ? errorModulesBySegments
           : notFoundModulesBySegments;
-      const previous = map.get(routeSegmentKey(conventionFile.segments));
+      const previous = map.get(scopeKey);
       if (previous) {
         diagnostics.push({
           level: "error",
           file: toDiagnosticPath(sourceRel),
-          message: `Duplicate SPA ${formatPageRouteConventionKind(conventionFile.kind)} convention for ${formatPageRouteConventionScope(conventionFile.segments)}. ${previous.module} already owns this scope. Keep one ${conventionFile.kind === "error" ? "error" : "not-found"}.* module per route directory.`,
+          message: `Duplicate ${formatPageRouteConventionKind(conventionFile.kind)} convention for ${formatPageRouteConventionScope(conventionFile.segments)}. ${previous.module} already owns this scope. Keep one ${conventionFile.kind === "error" ? "error" : "not-found"}.* module per route directory.`,
         });
         continue;
       }
-      map.set(routeSegmentKey(conventionFile.segments), {
+      map.set(scopeKey, {
         module: sourceRel,
         segments: conventionFile.segments,
       });
       continue;
     }
 
-    const layoutFile = parsePageLayoutRouteFile(routeRel);
-    if (layoutFile?.invalidLayoutSource) {
-      diagnostics.push({
-        level: "error",
-        file: toDiagnosticPath(sourceRel),
-        message: createInvalidPageLayoutSourceDiagnostic(),
-      });
-      continue;
-    }
-    if (layoutFile) {
-      hasRouteCandidate = true;
-
-      const segmentViolation = findPageRouteSegmentConventionViolation(
-        layoutFile.segments,
-        { allowCatchAll },
-      );
-      if (segmentViolation) {
-        diagnostics.push({
-          level: "error",
-          file: toDiagnosticPath(sourceRel),
-          message: formatPageRouteSegmentConventionViolation(segmentViolation),
-        });
-        continue;
-      }
-
-      const validRouteModule = await validateRouteModule(file, diagnostics, {
-        file: sourceRel,
-        parseError: "Layout route module could not be parsed",
-      });
-      if (!validRouteModule) continue;
-
-      const routePath = routePathFromSegments(layoutFile.segments);
-      const routeId = deriveLayoutRouteIdFromSegments(layoutFile.segments);
-      const previousIdOwner = routeById.get(routeId);
-      if (previousIdOwner) {
-        diagnostics.push({
-          level: "error",
-          file: toDiagnosticPath(sourceRel),
-          message: `Duplicate page route id "${routeId}" for layout path "${routePath}" also generated by ${previousIdOwner.file} (${previousIdOwner.path}). Rename one route file so generated route ids are unique.`,
-        });
-        continue;
-      }
-
-      routeById.set(routeId, { file: sourceRel, path: routePath });
-      const candidate: PageRouteCandidate = {
-        id: routeId,
-        path: routePath,
-        module: sourceRel,
-        segments: layoutFile.segments,
-        kind: "layout",
-      };
-      routeCandidates.push(candidate);
-      layoutCandidatesBySegments.set(
-        routeSegmentKey(layoutFile.segments),
-        candidate,
-      );
-      continue;
-    }
-
-    const routeFile = parsePageRouteFile(routeRel, {
-      spaConventions,
+    const layoutFile = parsePageLayoutRouteFile(routeRel, {
+      pageAnchors: true,
     });
-    if (!routeFile) continue;
-    hasRouteCandidate = true;
+    if (!layoutFile || layoutFile.segments.length === 0) continue;
+    if (!activeScopeKeys.has(routeSegmentKey(layoutFile.segments))) continue;
 
     const segmentViolation = findPageRouteSegmentConventionViolation(
-      routeFile.segments,
-      { allowCatchAll },
+      layoutFile.segments,
+      { allowCatchAll: true },
     );
     if (segmentViolation) {
       diagnostics.push({
         level: "error",
         file: toDiagnosticPath(sourceRel),
-        message: formatPageRouteSegmentConventionViolation(segmentViolation),
+        message: formatPageAnchorSegmentViolation(segmentViolation),
+      });
+      continue;
+    }
+    const validRouteModule = await validateRouteModule(file, diagnostics, {
+      file: sourceRel,
+      parseError: "Layout route module could not be parsed",
+      missingDefaultExport:
+        "Page-anchor layout modules must default-export a React component.",
+    });
+    if (!validRouteModule) continue;
+
+    const routePath = routePathFromSegments(layoutFile.segments);
+    const routeId = deriveLayoutRouteIdFromSegments(layoutFile.segments);
+    const previousIdOwner = routeById.get(routeId);
+    if (previousIdOwner) {
+      diagnostics.push({
+        level: "error",
+        file: toDiagnosticPath(sourceRel),
+        message: `Duplicate page route id "${routeId}" for layout path "${routePath}" also generated by ${previousIdOwner.file} (${previousIdOwner.path}). Rename one route directory so generated route ids are unique.`,
+      });
+      continue;
+    }
+    routeById.set(routeId, { file: sourceRel, path: routePath });
+    const candidate: PageRouteCandidate = {
+      id: routeId,
+      path: routePath,
+      module: sourceRel,
+      segments: layoutFile.segments,
+      kind: "layout",
+    };
+    routeCandidates.push(candidate);
+    layoutCandidatesBySegments.set(
+      routeSegmentKey(layoutFile.segments),
+      candidate,
+    );
+  }
+
+  for (const anchor of anchors) {
+    const segmentViolation = findPageRouteSegmentConventionViolation(
+      anchor.segments,
+      { allowCatchAll: true },
+    );
+    if (segmentViolation) {
+      diagnostics.push({
+        level: "error",
+        file: toDiagnosticPath(anchor.sourceRel),
+        message: formatPageAnchorSegmentViolation(segmentViolation),
       });
       continue;
     }
 
-    const routePath = routePathFromSegments(routeFile.segments);
-    const validRouteModule = await validateRouteModule(file, diagnostics, {
-      file: sourceRel,
-      parseError: "Page route module could not be parsed",
-      missingDefaultExport: createPageRouteDefaultExportDiagnostic(),
-    });
+    const validRouteModule = await validateRouteModule(
+      anchor.file,
+      diagnostics,
+      {
+        file: anchor.sourceRel,
+        parseError: "Page-anchor route module could not be parsed",
+        missingDefaultExport:
+          "page.* anchor modules must default-export a React component. Rename ordinary modules so only route anchors use the page.* basename.",
+        ...(options.mode === "mpa"
+          ? { unsupportedExports: SPA_ONLY_PAGE_EXPORTS }
+          : {}),
+      },
+    );
     if (!validRouteModule) continue;
 
+    const routePath = routePathFromSegments(anchor.segments);
     const previous = routeByPath.get(routePath);
     if (previous) {
       diagnostics.push({
         level: "error",
-        file: toDiagnosticPath(sourceRel),
-        message: createDuplicateRoutePathDiagnostic(routePath, previous),
+        file: toDiagnosticPath(anchor.sourceRel),
+        message: `Duplicate page.* anchor for route path "${routePath}" also declared by ${previous}. Keep exactly one page.ts, page.tsx, page.js, or page.jsx module per route directory.`,
       });
       continue;
     }
+    routeByPath.set(routePath, anchor.sourceRel);
 
-    routeByPath.set(routePath, sourceRel);
-    const routeShape = routeShapeFromSegments(routeFile.segments);
+    const routeShape = routeShapeFromSegments(anchor.segments);
     const previousShapeOwner = routeByShape.get(routeShape.key);
     if (previousShapeOwner) {
       diagnostics.push({
         level: "error",
-        file: toDiagnosticPath(sourceRel),
+        file: toDiagnosticPath(anchor.sourceRel),
         message: createAmbiguousRouteShapeDiagnostic(
           routeShape.label,
           routePath,
@@ -245,35 +331,55 @@ export async function discoverPageRoutes(
       });
       continue;
     }
-    routeByShape.set(routeShape.key, { file: sourceRel, path: routePath });
+    routeByShape.set(routeShape.key, {
+      file: anchor.sourceRel,
+      path: routePath,
+    });
 
     const routeId = deriveRouteIdFromPath(
-      routeIdPathFromSegments(routeFile.segments),
+      routeIdPathFromSegments(anchor.segments),
     );
     const previousIdOwner = routeById.get(routeId);
     if (previousIdOwner) {
       diagnostics.push({
         level: "error",
-        file: toDiagnosticPath(sourceRel),
-        message: `Duplicate page route id "${routeId}" for path "${routePath}" also generated by ${previousIdOwner.file} (${previousIdOwner.path}). Rename one route file so generated route ids are unique.`,
+        file: toDiagnosticPath(anchor.sourceRel),
+        message: `Duplicate page route id "${routeId}" for path "${routePath}" also generated by ${previousIdOwner.file} (${previousIdOwner.path}). Rename one route directory so generated route ids are unique.`,
       });
       continue;
     }
-
+    routeById.set(routeId, { file: anchor.sourceRel, path: routePath });
     const html =
       options.mode === "mpa"
-        ? await findColocatedPageHtmlTemplate(cwd, file)
+        ? await discoverPageAnchorHtmlTemplate(
+            cwd,
+            anchor.file,
+            discoveredFiles,
+            diagnostics,
+          )
         : undefined;
-
-    routeById.set(routeId, { file: sourceRel, path: routePath });
     routeCandidates.push({
       id: routeId,
       path: routePath,
-      module: sourceRel,
+      module: anchor.sourceRel,
       ...(html ? { html } : {}),
-      segments: routeFile.segments,
+      scope: {
+        kind: "directory",
+        root: toProjectPath(cwd, path.dirname(anchor.file)),
+      },
+      segments: anchor.segments,
       kind: "page",
     });
+    pages.push(
+      await discoverPageAnchorMetadata(
+        cwd,
+        anchor.file,
+        routeId,
+        discoveredFiles,
+        dependencies,
+        diagnostics,
+      ),
+    );
   }
 
   for (const candidate of routeCandidates) {
@@ -286,13 +392,12 @@ export async function discoverPageRoutes(
     candidate.notFoundModule ??= scopedConventions.notFoundModule;
   }
 
-  let rootModule: string | undefined;
-  if (hasRouteCandidate && options.rootLayout !== false) {
-    rootModule =
-      typeof options.rootLayout === "string"
-        ? await discoverExplicitRootLayout(cwd, options.rootLayout, diagnostics)
-        : await discoverRootLayout(cwd, absoluteDir, diagnostics);
-  }
+  const rootModule = await discoverPageAnchorRootLayout(
+    cwd,
+    absoluteDir,
+    files,
+    diagnostics,
+  );
 
   return {
     routes: sortPageRoutes(
@@ -305,6 +410,7 @@ export async function discoverPageRoutes(
           id: route.id,
           path: route.path,
           module: route.module,
+          ...(route.scope ? { scope: route.scope } : {}),
           ...(route.html ? { html: route.html } : {}),
           ...(parentId ? { parentId } : {}),
           ...(route.kind === "layout" ? { kind: route.kind } : {}),
@@ -315,10 +421,119 @@ export async function discoverPageRoutes(
         };
       }),
     ),
-    rootModule,
-    files,
+    ...(rootModule ? { rootModule } : {}),
+    files: [...discoveredFiles].sort(),
+    dependencies: [...dependencies].sort(),
+    metadata: {
+      pages: pages.sort(comparePageAnchorMetadata),
+    },
     diagnostics,
   };
+}
+
+async function discoverPageAnchorMetadata(
+  cwd: string,
+  anchorFile: string,
+  pageId: string,
+  files: Set<string>,
+  dependencies: Set<string>,
+  diagnostics: PageRouteDiscoveryDiagnostic[],
+): Promise<PageAnchorMetadata> {
+  const absoluteDirectory = path.dirname(anchorFile);
+  const metadata: PageAnchorMetadata = {
+    pageId,
+    directory: toProjectPath(cwd, absoluteDirectory),
+    entry: toProjectPath(cwd, anchorFile),
+    exportName: "default",
+  };
+  const candidates: Array<{
+    absolute: string;
+    stat: import("node:fs").Stats;
+  }> = [];
+  for (const fileName of PAGE_CONFIG_FILES) {
+    const absolute = path.join(absoluteDirectory, fileName);
+    const stat = await statIfExists(absolute);
+    if (stat) candidates.push({ absolute, stat });
+  }
+  if (candidates.length === 0) return metadata;
+  if (candidates.length > 1) {
+    const duplicate = candidates[1];
+    if (!duplicate) return metadata;
+    diagnostics.push({
+      level: "error",
+      file: toDiagnosticPath(toProjectPath(cwd, duplicate.absolute)),
+      message: `Page "${pageId}" has more than one Page config module. Keep exactly one ${PAGE_CONFIG_LABEL} beside its page.* anchor.`,
+    });
+    return metadata;
+  }
+
+  const [{ absolute: absoluteConfigModule, stat: configStat }] = candidates;
+  const configModule = toProjectPath(cwd, absoluteConfigModule);
+  if (!(await isRealPathInsideCwd(cwd, absoluteConfigModule))) {
+    diagnostics.push({
+      level: "error",
+      file: toDiagnosticPath(configModule),
+      message: `Page config must resolve inside the project root. ${configModule} points outside after resolving symlinks.`,
+    });
+    return metadata;
+  }
+
+  files.add(absoluteConfigModule);
+  dependencies.add(absoluteConfigModule);
+  if (!configStat.isFile()) {
+    diagnostics.push({
+      level: "error",
+      file: toDiagnosticPath(configModule),
+      message: `Page config must be a regular ${PAGE_CONFIG_LABEL} module.`,
+    });
+    return metadata;
+  }
+
+  metadata.configModule = configModule;
+  return metadata;
+}
+
+async function discoverPageAnchorHtmlTemplate(
+  cwd: string,
+  anchorFile: string,
+  files: Set<string>,
+  diagnostics: PageRouteDiscoveryDiagnostic[],
+): Promise<string | undefined> {
+  const absoluteHtmlFile = path.join(path.dirname(anchorFile), "index.html");
+  const htmlStat = await statIfExists(absoluteHtmlFile);
+  if (!htmlStat) return undefined;
+
+  const htmlFile = toProjectPath(cwd, absoluteHtmlFile);
+  if (!(await isRealPathInsideCwd(cwd, absoluteHtmlFile))) {
+    diagnostics.push({
+      level: "error",
+      file: toDiagnosticPath(htmlFile),
+      message: `Page HTML template must resolve inside the project root. ${htmlFile} points outside after resolving symlinks.`,
+    });
+    return undefined;
+  }
+  if (!htmlStat.isFile()) {
+    diagnostics.push({
+      level: "error",
+      file: toDiagnosticPath(htmlFile),
+      message: "Page HTML template must be a regular file named index.html.",
+    });
+    return undefined;
+  }
+
+  files.add(absoluteHtmlFile);
+  return htmlFile;
+}
+
+function comparePageAnchorMetadata(
+  left: PageAnchorMetadata,
+  right: PageAnchorMetadata,
+): number {
+  if (left.pageId < right.pageId) return -1;
+  if (left.pageId > right.pageId) return 1;
+  if (left.directory < right.directory) return -1;
+  if (left.directory > right.directory) return 1;
+  return 0;
 }
 
 async function validatePageRouteDirectory(
@@ -351,6 +566,15 @@ async function validatePageRouteDirectory(
         message: `Page route directory not found: ${expected}.`,
       });
     }
+    return false;
+  }
+
+  if (!(await isRealPathInsideCwd(cwd, absoluteRouteDir))) {
+    diagnostics.push({
+      level: "error",
+      file: toDiagnosticPath(expected),
+      message: `Page route directory must resolve inside the project root. ${expected} points outside after resolving symlinks.`,
+    });
     return false;
   }
 
@@ -388,8 +612,13 @@ interface PageRouteConventionModule {
   segments: string[];
 }
 
+interface PageFacetParseOptions {
+  pageAnchors?: boolean;
+}
+
 function parsePageRouteConventionFile(
   routeRel: string,
+  options: PageFacetParseOptions = {},
 ): PageRouteConventionFile | undefined {
   const normalizedRouteRel = normalizePageRouteConventionPath(routeRel);
   if (!isPageRouteSourceModuleFile(path.posix.basename(normalizedRouteRel))) {
@@ -400,7 +629,9 @@ function parsePageRouteConventionFile(
   const withoutExt = normalizedRouteRel.slice(0, -extension.length);
   const segments = withoutExt.split("/").filter(Boolean);
   if (segments.length === 0) return undefined;
-  if (segments.some(isIgnoredPageRouteSegment)) return undefined;
+  if (!options.pageAnchors && segments.some(isIgnoredPageRouteSegment)) {
+    return undefined;
+  }
 
   const name = segments[segments.length - 1] ?? "";
   if (name === "error") {
@@ -414,6 +645,7 @@ function parsePageRouteConventionFile(
 
 function parsePageLayoutRouteFile(
   routeRel: string,
+  options: PageFacetParseOptions = {},
 ): PageLayoutRouteFileConvention | undefined {
   const normalizedRouteRel = normalizePageRouteConventionPath(routeRel);
   if (!isPageRouteSourceModuleFile(path.posix.basename(normalizedRouteRel))) {
@@ -424,17 +656,23 @@ function parsePageLayoutRouteFile(
   const withoutExt = normalizedRouteRel.slice(0, -extension.length);
   const segments = withoutExt.split("/").filter(Boolean);
   if (segments.length === 0) return undefined;
-  if (segments.some(isIgnoredPageRouteSegment)) return undefined;
+  if (!options.pageAnchors && segments.some(isIgnoredPageRouteSegment)) {
+    return undefined;
+  }
 
   const name = segments[segments.length - 1] ?? "";
   if (name === "error" || name === "not-found") return undefined;
   const parent = segments[segments.length - 2] ?? "";
   if (name === "layout") {
     if (segments.length === 1) {
-      return { segments: [], invalidLayoutSource: true };
+      return {
+        segments: [],
+        ...(options.pageAnchors ? {} : { invalidLayoutSource: true }),
+      };
     }
     return { segments: segments.slice(0, -1) };
   }
+  if (options.pageAnchors) return undefined;
   if (name === "index" && parent === "layout") {
     return { segments: [], invalidLayoutSource: true };
   }
@@ -442,14 +680,6 @@ function parsePageLayoutRouteFile(
     return { segments: [], invalidLayoutSource: true };
   }
   return undefined;
-}
-
-function createInvalidPageLayoutSourceDiagnostic(): string {
-  return [
-    "SPA route layouts must be nested below a route segment and named layout.{ts,tsx,js,jsx}.",
-    "Use the external root layout convention layout/index.tsx beside the route directory for the app root layout.",
-    "Move helper modules under an underscore-prefixed file or folder.",
-  ].join(" ");
 }
 
 function deriveLayoutRouteIdFromSegments(segments: string[]): string {
@@ -487,18 +717,13 @@ function routeSegmentKey(segments: string[]): string {
   return JSON.stringify(segments);
 }
 
-function createDuplicateRoutePathDiagnostic(
-  routePath: string,
-  previous: string,
+function formatPageAnchorSegmentViolation(
+  violation: PageRouteSegmentConventionViolation,
 ): string {
-  return [
-    `Duplicate page route path "${routePath}" also declared by ${previous}.`,
-    "Keep one page module per URL path; choose either a flat route file or a directory index route file.",
-  ].join(" ");
-}
-
-function createPageRouteDefaultExportDiagnostic(): string {
-  return "Page route modules must default-export a React component. Move non-route helpers under an underscore-prefixed file or folder.";
+  return formatPageRouteSegmentConventionViolation(violation)
+    .replaceAll("filenames", "directory names")
+    .replaceAll("filename", "directory name")
+    .replaceAll("Rename the file", "Rename the directory");
 }
 
 function createRootLayoutDefaultExportDiagnostic(): string {
@@ -576,124 +801,36 @@ function formatPageRouteConventionScope(segments: string[]): string {
   return `route segment scope "${segments.join("/")}"`;
 }
 
-async function discoverExplicitRootLayout(
-  cwd: string,
-  layout: string,
-  diagnostics: PageRouteDiscoveryDiagnostic[],
-): Promise<string | undefined> {
-  const absolute = path.resolve(cwd, layout);
-  const expected = toProjectPath(cwd, absolute);
-  if (!isInsideCwd(cwd, absolute)) {
-    diagnostics.push({
-      level: "error",
-      file: layout,
-      message: `Root layout must be inside the project root. ${layout} is not supported.`,
-    });
-    return undefined;
-  }
-
-  let stat: import("node:fs").Stats;
-  try {
-    stat = await fs.stat(absolute);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-    diagnostics.push({
-      level: "error",
-      file: toDiagnosticPath(expected),
-      message: `Root layout module not found: ${expected}.`,
-    });
-    return undefined;
-  }
-  if (!stat.isFile()) {
-    diagnostics.push({
-      level: "error",
-      file: toDiagnosticPath(expected),
-      message: `Root layout module must be a file: ${expected}.`,
-    });
-    return undefined;
-  }
-  if (!isPageRouteSourceModuleFile(path.basename(absolute))) {
-    diagnostics.push({
-      level: "error",
-      file: toDiagnosticPath(expected),
-      message: `Root layout module must be a source module using ${PAGE_ROUTE_SOURCE_EXTENSION_LABEL}; declaration, test, spec, story, client-only, and server-only files are not supported. ${expected} is not supported.`,
-    });
-    return undefined;
-  }
-
-  const validRootLayout = await validateRouteModule(absolute, diagnostics, {
-    file: expected,
-    parseError: "Root layout module could not be parsed",
-    missingDefaultExport: createRootLayoutDefaultExportDiagnostic(),
-  });
-  return validRootLayout ? expected : undefined;
-}
-
-async function discoverRootLayout(
+async function discoverPageAnchorRootLayout(
   cwd: string,
   absoluteRouteDir: string,
+  files: string[],
   diagnostics: PageRouteDiscoveryDiagnostic[],
 ): Promise<string | undefined> {
-  const appDir = path.dirname(absoluteRouteDir);
-  if (!isInsideCwd(cwd, appDir)) return undefined;
+  const candidates = files.filter((file) => {
+    if (path.dirname(file) !== absoluteRouteDir) return false;
+    const extension = path.extname(file);
+    return path.basename(file, extension) === "layout";
+  });
+  if (candidates.length === 0) return undefined;
 
-  let hasUnsupportedRootLayout = false;
-  for (const layoutFile of PAGE_ROUTE_UNSUPPORTED_ROOT_LAYOUT_FILES) {
-    const absolute = path.join(appDir, layoutFile);
-    const stat = await statIfExists(absolute);
-    if (!stat) continue;
-    const projectPath = toProjectPath(cwd, absolute);
-    hasUnsupportedRootLayout = true;
+  const [owner, ...duplicates] = candidates;
+  const ownerProjectPath = toProjectPath(cwd, owner);
+  for (const duplicate of duplicates) {
+    const duplicateProjectPath = toProjectPath(cwd, duplicate);
     diagnostics.push({
       level: "error",
-      file: toDiagnosticPath(projectPath),
-      message: createUnsupportedRootLayoutDiagnostic(
-        projectPath,
-        toProjectPath(cwd, path.join(appDir, PAGE_ROUTE_ROOT_LAYOUT_FILE)),
-      ),
+      file: toDiagnosticPath(duplicateProjectPath),
+      message: `Duplicate page-anchor root layout. ${ownerProjectPath} already owns the root layout facet. Keep exactly one layout.ts, layout.tsx, layout.js, or layout.jsx in the page route root.`,
     });
   }
 
-  if (hasUnsupportedRootLayout) return undefined;
-
-  const absolute = path.join(appDir, PAGE_ROUTE_ROOT_LAYOUT_FILE);
-  const stat = await statIfExists(absolute);
-  if (!stat) return undefined;
-
-  const projectPath = toProjectPath(cwd, absolute);
-  if (!stat.isFile()) {
-    diagnostics.push({
-      level: "error",
-      file: toDiagnosticPath(projectPath),
-      message: `Root layout module must be a file: ${projectPath}.`,
-    });
-    return undefined;
-  }
-  const validRootLayout = await validateRouteModule(absolute, diagnostics, {
-    file: projectPath,
+  const validRootLayout = await validateRouteModule(owner, diagnostics, {
+    file: ownerProjectPath,
     parseError: "Root layout module could not be parsed",
     missingDefaultExport: createRootLayoutDefaultExportDiagnostic(),
   });
-  if (!validRootLayout) return undefined;
-  return projectPath;
-}
-
-function createUnsupportedRootLayoutDiagnostic(
-  actual: string,
-  expected: string,
-): string {
-  return `Unsupported SPA root layout convention: ${actual}. Auto-discovery only supports ${expected}; rename the file or configure routing.conventions.layout explicitly.`;
-}
-
-async function findColocatedPageHtmlTemplate(
-  cwd: string,
-  routeFile: string,
-): Promise<string | undefined> {
-  const extension = path.extname(routeFile);
-  const htmlFile = `${routeFile.slice(0, -extension.length)}.html`;
-  const stat = await statIfExists(htmlFile);
-  if (!stat) return undefined;
-  return toProjectPath(cwd, htmlFile);
+  return validRootLayout ? ownerProjectPath : undefined;
 }
 
 async function validateRouteModule(
@@ -703,6 +840,7 @@ async function validateRouteModule(
     file: string;
     parseError: string;
     missingDefaultExport?: string;
+    unsupportedExports?: ReadonlySet<string>;
   },
 ): Promise<boolean> {
   const source = await fs.readFile(absolute, "utf-8");
@@ -723,6 +861,18 @@ async function validateRouteModule(
       level: "error",
       file,
       message: messages.missingDefaultExport,
+    });
+    return false;
+  }
+
+  const unsupportedExports = collectModuleExportNames(ast.body).filter((name) =>
+    messages.unsupportedExports?.has(name),
+  );
+  if (unsupportedExports.length > 0) {
+    diagnostics.push({
+      level: "error",
+      file,
+      message: `Page module exports ${unsupportedExports.map((name) => `"${name}"`).join(", ")} are SPA router facets and cannot be used with routing.mode "mpa". Remove them or use routing.mode "spa".`,
     });
     return false;
   }
@@ -779,7 +929,7 @@ function createAmbiguousRouteShapeDiagnostic(
   return [
     `Ambiguous page route shape "${routeShapeLabel}" for path "${routePath}"`,
     `also matches ${previous.file} (${previous.path}).`,
-    "Use one dynamic param name for each URL shape or explicit pages config.",
+    "Use one dynamic parameter directory name for each URL shape.",
   ].join(" ");
 }
 

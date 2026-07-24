@@ -3,9 +3,13 @@ import {
   createBuildPlan,
   materializeFrameworkIR,
 } from "@evjs/ev/_internal/build";
-import type { AppGraph } from "@evjs/ev/_internal/manifest";
 import type { ResolvedConfig } from "@evjs/ev/config";
 import type { Plugin } from "@evjs/ev/plugin";
+import type {
+  CoreGraph,
+  CoreRoutePattern,
+  RenderMode,
+} from "@evjs/shared/manifest";
 import { describe, expect, it } from "vitest";
 import {
   createWebpackConfigs,
@@ -18,13 +22,7 @@ describe("createWebpackConfigs", () => {
     const graph = createGraph(config);
     const plan = await createGeneratedPlan(config, graph, "development");
 
-    const configs = await createWebpackConfigs(
-      config,
-      plan,
-      graph,
-      process.cwd(),
-      [],
-    );
+    const configs = await createWebpackConfigs(config, plan, process.cwd(), []);
 
     const entry = configs[0]?.entry as Record<string, { import: string }>;
     expect(entry.main?.import).toBe("./.ev/entries/main.ts");
@@ -52,7 +50,7 @@ describe("createWebpackConfigs", () => {
       contributions(ctx) {
         const configModule = ctx.emit.data({
           id: "config",
-          scope: { kind: "app" },
+          scope: { kind: "application" },
           value: { enabled: true },
         });
         ctx.slot("resolve.alias").add({
@@ -69,13 +67,7 @@ describe("createWebpackConfigs", () => {
     const graph = createGraph(config);
     const plan = await createGeneratedPlan(config, graph, "development");
 
-    const configs = await createWebpackConfigs(
-      config,
-      plan,
-      graph,
-      process.cwd(),
-      [],
-    );
+    const configs = await createWebpackConfigs(config, plan, process.cwd(), []);
 
     const module = plan.generated?.modules.find((item) => item.id === "config");
     const clientConfig = configs.find((item) => item.name === "client");
@@ -106,13 +98,7 @@ describe("createWebpackConfigs", () => {
     const graph = createGraph(config);
     const plan = await createGeneratedPlan(config, graph, "production");
 
-    const configs = await createWebpackConfigs(
-      config,
-      plan,
-      graph,
-      process.cwd(),
-      [],
-    );
+    const configs = await createWebpackConfigs(config, plan, process.cwd(), []);
 
     const clientConfig = configs.find((item) => item.name === "client");
     const miniCssPlugin = clientConfig?.plugins?.find(
@@ -132,27 +118,16 @@ describe("createWebpackConfigs", () => {
     const config: ResolvedConfig<WebpackConfig> = {
       ...createResolvedConfig(),
     };
-    const graph: AppGraph = {
-      ...createGraph(config),
-      pages: {
-        dashboard: {
-          id: "dashboard",
-          path: "/dashboard",
-          component: "./src/pages/dashboard.tsx",
-          html: "./index.html",
-          render: "ssr",
-          mount: "#app",
-        },
-      },
-      routes: [
+    const graph = createGraph(config, {
+      pages: [
         {
           id: "dashboard",
           path: "/dashboard",
-          pageId: "dashboard",
+          module: "./src/pages/dashboard.tsx",
           render: "ssr",
         },
       ],
-    };
+    });
     const plan = await createGeneratedPlan(config, graph, "development");
     plan.resolve = {
       ...plan.resolve,
@@ -172,13 +147,7 @@ describe("createWebpackConfigs", () => {
       },
     };
 
-    const configs = await createWebpackConfigs(
-      config,
-      plan,
-      graph,
-      process.cwd(),
-      [],
-    );
+    const configs = await createWebpackConfigs(config, plan, process.cwd(), []);
 
     const clientConfig = configs.find((item) => item.name === "client");
     const serverConfig = configs.find((item) => item.name === "server");
@@ -221,13 +190,7 @@ describe("createWebpackConfigs", () => {
     const graph = createGraph(config);
     const plan = await createGeneratedPlan(config, graph, "development");
 
-    const configs = await createWebpackConfigs(
-      config,
-      plan,
-      graph,
-      process.cwd(),
-      [],
-    );
+    const configs = await createWebpackConfigs(config, plan, process.cwd(), []);
 
     const serverConfig = configs.find((item) => item.name === "server");
     const entry = serverConfig?.entry as Record<string, { import: string }>;
@@ -246,42 +209,32 @@ describe("createWebpackConfigs", () => {
           {
             id: "index",
             path: "/",
-            module: "./src/pages/index.tsx",
+            module: "./src/pages/page.tsx",
           },
           {
             id: "about",
             path: "/about",
-            module: "./src/pages/about.tsx",
+            module: "./src/pages/about/page.tsx",
           },
         ],
       },
     };
-    const graph: AppGraph = {
-      version: 1,
-      rootDir: process.cwd(),
-      apps: {},
-      pages: {
-        index: {
+    const graph = createGraph(config, {
+      pages: [
+        {
           id: "index",
           path: "/",
-          component: "./src/pages/index.tsx",
-          html: "./index.html",
+          module: "./src/pages/page.tsx",
           render: "csr",
-          mount: "#app",
         },
-        about: {
+        {
           id: "about",
           path: "/about",
-          component: "./src/pages/about.tsx",
-          html: "./index.html",
+          module: "./src/pages/about/page.tsx",
           render: "csr",
-          mount: "#app",
         },
-      },
-      routes: [],
-      serverFunctions: [],
-      serverRoutes: [],
-    };
+      ],
+    });
     const plan = await createGeneratedPlan(config, graph, "development");
 
     expect(
@@ -289,13 +242,7 @@ describe("createWebpackConfigs", () => {
         .filter((entry) => entry.environment === "client")
         .map((entry) => entry.metadata?.type),
     ).toEqual(["react-component-page", "react-component-page"]);
-    const configs = await createWebpackConfigs(
-      config,
-      plan,
-      graph,
-      process.cwd(),
-      [],
-    );
+    const configs = await createWebpackConfigs(config, plan, process.cwd(), []);
     const serializedEntries = JSON.stringify(configs[0]?.entry);
 
     expect(serializedEntries).toContain("./.ev/entries/index.ts");
@@ -309,36 +256,19 @@ describe("createWebpackConfigs", () => {
     const config: ResolvedConfig<WebpackConfig> = {
       ...createResolvedConfig(),
     };
-    const graph: AppGraph = {
-      ...createGraph(config),
-      pages: {
-        dashboard: {
-          id: "dashboard",
-          path: "/dashboard",
-          component: "./src/pages/dashboard.tsx",
-          html: "./index.html",
-          render: "ssr",
-          mount: "#app",
-        },
-      },
-      routes: [
+    const graph = createGraph(config, {
+      pages: [
         {
           id: "dashboard",
           path: "/dashboard",
-          pageId: "dashboard",
+          module: "./src/pages/dashboard.tsx",
           render: "ssr",
         },
       ],
-    };
+    });
     const plan = await createGeneratedPlan(config, graph, "development");
 
-    const configs = await createWebpackConfigs(
-      config,
-      plan,
-      graph,
-      process.cwd(),
-      [],
-    );
+    const configs = await createWebpackConfigs(config, plan, process.cwd(), []);
 
     const serverConfig = configs.find((item) => item.name === "server");
     expect(serverConfig?.externals).toEqual(
@@ -362,20 +292,18 @@ describe("createWebpackConfigs", () => {
 
 function createResolvedConfig(): ResolvedConfig<WebpackConfig> {
   return {
-    entry: "./src/pages/index.tsx",
-    html: "./index.html",
+    conventions: true,
     routing: {
       mode: "spa",
       dir: "./src/pages",
-      entry: "./src/pages/index.tsx",
       html: "./index.html",
       mount: "#app",
-      rootModule: "./src/layout/index.tsx",
+      rootModule: "./src/pages/layout.tsx",
       routes: [
         {
           id: "index",
           path: "/",
-          module: "./src/pages/index.tsx",
+          module: "./src/pages/page.tsx",
           errorModule: "./src/pages/error.tsx",
           notFoundModule: "./src/pages/not-found.tsx",
         },
@@ -410,7 +338,7 @@ function createResolvedConfig(): ResolvedConfig<WebpackConfig> {
 
 async function createGeneratedPlan(
   config: ResolvedConfig<WebpackConfig>,
-  graph: AppGraph,
+  graph: CoreGraph,
   mode: "development" | "production",
 ) {
   return materializeFrameworkIR({
@@ -433,24 +361,149 @@ async function createGeneratedPlan(
   });
 }
 
-function createGraph(config: ResolvedConfig<WebpackConfig>): AppGraph {
+interface TestPage {
+  id: string;
+  path: string;
+  module: string;
+  render?: RenderMode;
+}
+
+function createGraph(
+  config: ResolvedConfig<WebpackConfig>,
+  options: { pages?: TestPage[] } = {},
+): CoreGraph {
+  const documentTemplate = config.routing?.html ?? "./index.html";
+  const topology = config.routing?.mode ?? "spa";
+  const pages =
+    options.pages ??
+    (config.routing?.routes ?? []).flatMap<TestPage>((route) =>
+      route.kind === "layout"
+        ? []
+        : [
+            {
+              id: route.id,
+              path: route.path,
+              module: route.module,
+              render: "csr",
+            },
+          ],
+    );
+  const pageIds = pages.map((page) => page.id);
+  const routeIds = pages.map((page) => `route:${page.id}`);
+  const documentIds = topology === "spa" ? ["index"] : pageIds;
+  const provenance = {
+    producer: {
+      kind: "provider" as const,
+      id: "@evjs/provider/page-anchor",
+    },
+  };
+
   return {
-    version: 1,
     rootDir: process.cwd(),
-    apps: {
+    applications: {
       default: {
         id: "default",
-        entry: config.entry,
-        html: config.html,
+        root: config.routing?.dir ?? "./src/pages",
+        topology,
+        pageIds,
+        routeIds,
+        documentIds,
+        extensions: {},
+        provenance,
       },
     },
-    pages: {},
-    routes:
-      config.routing?.routes.map((route) => ({
-        ...route,
-        appId: "default",
-      })) ?? [],
+    pages: Object.fromEntries(
+      pages.map((page) => [
+        page.id,
+        {
+          id: page.id,
+          applicationId: "default",
+          source: {
+            module: page.module,
+            scope: {
+              kind: "directory" as const,
+              root: path.posix.dirname(page.module),
+            },
+            provider: "@evjs/provider/page-anchor",
+          },
+          render: page.render ?? "csr",
+          hydrate: "load" as const,
+          extensions: {},
+          provenance,
+        },
+      ]),
+    ),
+    routes: pages.map((page) =>
+      topology === "spa"
+        ? {
+            realm: "client" as const,
+            id: `route:${page.id}`,
+            applicationId: "default",
+            pattern: toRoutePattern(page.path),
+            target: { kind: "page" as const, pageId: page.id },
+            facets: { wrappers: [] },
+            extensions: {},
+            provenance,
+          }
+        : {
+            realm: "document" as const,
+            id: `route:${page.id}`,
+            applicationId: "default",
+            pattern: toRoutePattern(page.path),
+            target: { kind: "document" as const, documentId: page.id },
+            extensions: {},
+            provenance,
+          },
+    ),
+    documents: Object.fromEntries(
+      topology === "spa"
+        ? [
+            [
+              "index",
+              {
+                id: "index",
+                template: documentTemplate,
+                output: "index.html",
+                applicationId: "default",
+                owner: { kind: "application" as const },
+                mount: config.routing?.mount ?? "#app",
+                bootstrap: { kind: "application" as const },
+                extensions: {},
+                provenance,
+              },
+            ],
+          ]
+        : pages.map((page) => [
+            page.id,
+            {
+              id: page.id,
+              template: documentTemplate,
+              output:
+                page.path === "/" ? "index.html" : `${page.id}/index.html`,
+              applicationId: "default",
+              owner: { kind: "page" as const, pageId: page.id },
+              mount: config.routing?.mount ?? "#app",
+              bootstrap: { kind: "page" as const, pageId: page.id },
+              extensions: {},
+              provenance,
+            },
+          ]),
+    ),
+    extensions: { namespaces: {} },
     serverFunctions: [],
     serverRoutes: config.server.routing?.routes ?? [],
+  };
+}
+
+function toRoutePattern(pathname: string): CoreRoutePattern {
+  return {
+    segments: pathname
+      .split("/")
+      .filter(Boolean)
+      .map((segment) =>
+        segment.startsWith(":")
+          ? { kind: "param" as const, name: segment.slice(1) }
+          : { kind: "static" as const, value: segment },
+      ),
   };
 }

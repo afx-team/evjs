@@ -1,5 +1,8 @@
-import { memo } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createElement, memo, type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createPageMetadataController } from "../src/framework/page/page-metadata.js";
 import * as client from "../src/index";
 import {
   usePageContext,
@@ -259,6 +262,372 @@ describe("createPagesApp", () => {
     expect(app.render).toBeTypeOf("function");
   });
 
+  it("attaches metadata only to generated Page route owners", () => {
+    function Parent() {
+      return null;
+    }
+    function Child() {
+      return null;
+    }
+
+    const { app } = createPagesApp({
+      routes: [
+        {
+          id: "parent",
+          path: "/parent",
+          module: { default: Parent },
+          metadata: {
+            title: "Parent",
+            meta: { description: "Parent description" },
+          },
+        },
+        {
+          id: "child",
+          path: "/parent/child",
+          parentId: "parent",
+          module: { default: Child },
+        },
+      ],
+    });
+    const generatedRoutes = flattenGeneratedRoutes(
+      (app.router as unknown as { routeTree: InspectableGeneratedRoute })
+        .routeTree,
+    );
+    const parent = generatedRoutes.find(
+      (route) => route.fullPath === "/parent",
+    );
+    const child = generatedRoutes.find(
+      (route) => route.fullPath === "/parent/child",
+    );
+
+    expect(parent?.options.staticData).toMatchObject({
+      __evjsPageMetadataOwner: true,
+      __evjsPageMetadata: {
+        title: "Parent",
+        meta: { description: "Parent description" },
+      },
+    });
+    expect(child?.options.staticData).toEqual({
+      __evjsPageMetadataOwner: true,
+    });
+  });
+
+  it("isolates generated Page metadata from later caller mutations", () => {
+    function Home() {
+      return null;
+    }
+    const metadata = {
+      title: "Home",
+      meta: { description: "Original description" },
+    };
+    const routes = [
+      {
+        id: "home",
+        path: "/",
+        module: { default: Home },
+        metadata,
+      },
+    ];
+
+    const { app } = createPagesApp({ routes });
+    metadata.title = "Mutated";
+    metadata.meta.description = "Mutated description";
+    Object.assign(metadata.meta, { robots: "noindex" });
+
+    const generatedRoutes = flattenGeneratedRoutes(
+      (app.router as unknown as { routeTree: InspectableGeneratedRoute })
+        .routeTree,
+    );
+    const home = generatedRoutes.find(
+      (route) => route.options.staticData?.__evjsPageMetadataOwner === true,
+    );
+
+    expect(home?.options.staticData).toMatchObject({
+      __evjsPageMetadata: {
+        title: "Home",
+        meta: { description: "Original description" },
+      },
+    });
+  });
+
+  it("restores template metadata instead of leaking values across Pages", () => {
+    const document = new MetadataTestDocument();
+    const title = document.append("title", {
+      "data-evjs-page-metadata": "title",
+      "data-evjs-page-metadata-baseline": "Template title",
+    });
+    title.textContent = "Orders";
+    document.append("meta", {
+      name: "description",
+      content: "Orders description",
+      "data-evjs-page-metadata": "meta",
+      "data-evjs-page-metadata-baseline": "Template description",
+    });
+    document.append("meta", {
+      name: "Description",
+      content: "Duplicate template description",
+    });
+    document.append("meta", {
+      name: "robots",
+      content: "noindex",
+      "data-evjs-page-metadata": "meta",
+      "data-evjs-page-metadata-created": "",
+    });
+    document.append("meta", { name: "viewport" });
+
+    const controller = createPageMetadataController(
+      [
+        {
+          title: "Orders",
+          meta: {
+            description: "Orders description",
+            robots: "noindex",
+          },
+        },
+        { meta: { viewport: "width=device-width" } },
+      ],
+      () => document as unknown as Document,
+    );
+
+    controller.apply({
+      title: "Orders",
+      meta: {
+        description: "Orders description",
+        robots: "noindex",
+      },
+    });
+    expect(document.title()).toBe("Orders");
+    expect(document.meta("description")?.getAttribute("content")).toBe(
+      "Orders description",
+    );
+    expect(document.metas("description")).toHaveLength(1);
+    expect(document.meta("robots")?.getAttribute("content")).toBe("noindex");
+
+    controller.apply({ meta: { viewport: "width=device-width" } });
+    expect(document.title()).toBe("Template title");
+    expect(document.meta("description")?.getAttribute("content")).toBe(
+      "Template description",
+    );
+    expect(document.meta("robots")).toBeUndefined();
+    expect(document.meta("viewport")?.getAttribute("content")).toBe(
+      "width=device-width",
+    );
+
+    controller.restore();
+    expect(document.title()).toBe("Template title");
+    expect(document.meta("description")?.getAttribute("content")).toBe(
+      "Template description",
+    );
+    expect(document.meta("viewport")?.hasAttribute("content")).toBe(false);
+    expect(
+      document
+        .elements()
+        .some((element) =>
+          [...element.attributes.keys()].some((name) =>
+            name.startsWith("data-evjs-page-metadata"),
+          ),
+        ),
+    ).toBe(false);
+  });
+
+  it("runs config-route groups, wrappers, nested pages, and redirects", () => {
+    function Outer({ children }: { children?: ReactNode }) {
+      return children;
+    }
+    function Inner({ children }: { children?: ReactNode }) {
+      return children;
+    }
+    function User() {
+      return null;
+    }
+    function Shell() {
+      return null;
+    }
+    function Detail() {
+      return null;
+    }
+    function Docs() {
+      return null;
+    }
+    function AdminDetail() {
+      return null;
+    }
+
+    const { app } = createPagesApp({
+      routes: [
+        {
+          id: "users",
+          path: "/users",
+          kind: "group",
+          wrappers: [{ default: Outer }, { default: Inner }],
+        },
+        {
+          id: "user",
+          path: "/users/$userId",
+          parentId: "users",
+          module: { default: User },
+        },
+        {
+          id: "legacy-user",
+          path: "/users/$userId/legacy",
+          parentId: "users",
+          kind: "redirect",
+          redirect: { kind: "path", path: "/users/$userId" },
+        },
+        {
+          id: "shell",
+          path: "/shell",
+          module: { default: Shell },
+        },
+        {
+          id: "shell-detail",
+          path: "/shell/detail",
+          parentId: "shell",
+          module: { default: Detail },
+        },
+        { id: "docs", path: "/docs", kind: "group" },
+        {
+          id: "docs-index",
+          path: "/docs",
+          parentId: "docs",
+          module: { default: Docs },
+        },
+        { id: "admin", path: "/admin", kind: "group" },
+        {
+          id: "admin-detail",
+          path: "/admin/detail",
+          parentId: "admin",
+          module: { default: AdminDetail },
+        },
+        {
+          id: "external",
+          path: "/external",
+          kind: "redirect",
+          redirect: { kind: "url", href: "https://example.com/docs" },
+        },
+      ],
+    });
+    const router = app.router as unknown as {
+      routeTree: InspectableGeneratedRoute;
+      matchRoutes(path: string): Array<{ params: Record<string, string> }>;
+      update(options: {
+        history: ReturnType<typeof client.createMemoryHistory>;
+      }): void;
+    };
+    router.update({ history: client.createMemoryHistory() });
+
+    expect(router.matchRoutes("/users/42").at(-1)?.params).toMatchObject({
+      userId: "42",
+    });
+    expect(router.matchRoutes("/docs").length).toBeGreaterThanOrEqual(2);
+    expect(router.matchRoutes("/admin/detail").length).toBeGreaterThanOrEqual(
+      2,
+    );
+
+    const generatedRoutes = flattenGeneratedRoutes(router.routeTree);
+    const usersRoute = generatedRoutes.find(
+      (route) => route.fullPath === "/users",
+    );
+    const wrappedGroup = usersRoute?.options.component?.() as
+      | InspectableElement
+      | undefined;
+    expect(wrappedGroup?.type).toBe(Outer);
+    expect(wrappedGroup?.props.children?.type).toBe(Inner);
+    expect(wrappedGroup?.props.children?.props.children?.type).toBe(
+      client.Outlet,
+    );
+
+    const shellRoute = generatedRoutes.find(
+      (route) => route.fullPath === "/shell",
+    );
+    if (!shellRoute) throw new Error("missing generated shell route");
+    shellRoute.useParams = () => ({});
+    shellRoute.useSearch = () => ({});
+    shellRoute.useLoaderData = () => undefined;
+    const shellProvider =
+      shellRoute.options.component?.() as InspectableElement;
+    const shell = shellProvider.props.children;
+    expect(shell?.type).toBe(Shell);
+    expect(shell?.props.children?.type).toBe(client.Outlet);
+
+    const internalRedirect = generatedRoutes.find(
+      (route) => route.fullPath === "/users/$userId/legacy",
+    );
+    expect(catchRedirectOptions(internalRedirect)).toMatchObject({
+      to: "/users/$userId",
+      params: true,
+    });
+    const externalRedirect = generatedRoutes.find(
+      (route) => route.fullPath === "/external",
+    );
+    expect(catchRedirectOptions(externalRedirect)).toMatchObject({
+      href: "https://example.com/docs",
+      reloadDocument: true,
+    });
+  });
+
+  it("bypasses the Application root layout only for layout: false branches", async () => {
+    function RootLayout({ children }: { children?: ReactNode }) {
+      return createElement("main", { "data-root-layout": true }, children);
+    }
+    function Regular() {
+      return createElement("p", undefined, "regular");
+    }
+    function Plain() {
+      return createElement("p", undefined, "plain");
+    }
+    function NestedPlain() {
+      return createElement("p", undefined, "nested plain");
+    }
+
+    async function renderRoute(initialPath: string): Promise<string> {
+      const { app } = createPagesApp({
+        rootModule: { default: RootLayout },
+        routes: [
+          {
+            id: "regular",
+            path: "/regular",
+            module: { default: Regular },
+          },
+          {
+            id: "plain",
+            path: "/plain",
+            module: { default: Plain },
+            layout: false,
+          },
+          {
+            id: "plain-group",
+            path: "/group",
+            kind: "group",
+            layout: false,
+          },
+          {
+            id: "nested-plain",
+            path: "/group/plain",
+            parentId: "plain-group",
+            module: { default: NestedPlain },
+          },
+        ],
+      });
+      const router = app.router as client.AnyRouter;
+      router.update({
+        history: client.createMemoryHistory({ initialEntries: [initialPath] }),
+      });
+      await router.load();
+      return renderToStaticMarkup(
+        createElement(
+          QueryClientProvider,
+          { client: app.queryClient },
+          createElement(client.RouterProvider, { router }),
+        ),
+      );
+    }
+
+    expect(await renderRoute("/regular")).toContain("data-root-layout");
+    expect(await renderRoute("/plain")).not.toContain("data-root-layout");
+    expect(await renderRoute("/group/plain")).not.toContain("data-root-layout");
+  });
+
   it("rejects malformed generated page route options before router setup", () => {
     function Home() {
       return null;
@@ -283,6 +652,46 @@ describe("createPagesApp", () => {
       }),
     ).toThrow(
       "[evjs] createPagesApp() rootModule.default must be a React component.",
+    );
+    expect(() =>
+      createPagesApp({
+        routes: [
+          {
+            path: "/",
+            module: { default: Home },
+            metadata: { title: 42 as never },
+          },
+        ],
+      }),
+    ).toThrow(
+      "[evjs] createPagesApp() routes[0].metadata.title must be a string.",
+    );
+    expect(() =>
+      createPagesApp({
+        routes: [
+          {
+            path: "/",
+            module: { default: Home },
+            metadata: { meta: { "": "invalid" } },
+          },
+        ],
+      }),
+    ).toThrow(
+      "[evjs] createPagesApp() routes[0].metadata.meta keys must be non-empty strings.",
+    );
+    expect(() =>
+      createPagesApp({
+        routes: [
+          {
+            path: "/",
+            kind: "layout",
+            module: { default: Home },
+            metadata: { title: "Invalid" },
+          },
+        ],
+      }),
+    ).toThrow(
+      "[evjs] createPagesApp() routes[0].metadata is only supported for page routes.",
     );
     expect(() =>
       createPagesApp({ routes: [{ path: "home", module: { default: Home } }] }),
@@ -360,7 +769,7 @@ describe("createPagesApp", () => {
         ],
       }),
     ).toThrow(
-      '[evjs] createPagesApp() routes[1].path duplicates routes[0].path "/".',
+      '[evjs] createPagesApp() routes[1].path "/" conflicts with sibling routes[0].path "/" under the root route because they have the same runtime path shape.',
     );
     expect(() =>
       createPagesApp({
@@ -370,26 +779,86 @@ describe("createPagesApp", () => {
         ],
       }),
     ).toThrow(
-      '[evjs] createPagesApp() routes[1].path "/users/$userId" has the same route shape as routes[0].path "/users/$id". Use one dynamic param name for each URL shape.',
+      '[evjs] createPagesApp() routes[1].path "/users/$userId" conflicts with sibling routes[0].path "/users/$id" under the root route because they have the same runtime path shape.',
     );
     expect(() =>
       createPagesApp({
         routes: [
+          { id: "users-group", path: "/users", kind: "group" },
+          { id: "users-page", path: "/users", module: { default: Home } },
+        ],
+      }),
+    ).toThrow(
+      '[evjs] createPagesApp() routes[1].path "/users" conflicts with sibling routes[0].path "/users" under the root route because they have the same runtime path shape.',
+    );
+    expect(() =>
+      createPagesApp({
+        routes: [
+          { id: "admin-a", path: "/admin", kind: "group" },
+          { id: "admin-b", path: "/admin", kind: "group" },
+        ],
+      }),
+    ).toThrow(
+      '[evjs] createPagesApp() routes[1].path "/admin" conflicts with sibling routes[0].path "/admin" under the root route because they have the same runtime path shape.',
+    );
+    expect(() =>
+      createPagesApp({
+        routes: [
+          { id: "shell", path: "/shell", kind: "group" },
           {
-            id: "dashboard",
-            path: "/dashboard",
+            id: "branch-a",
+            path: "/shell",
+            parentId: "shell",
+            kind: "group",
+          },
+          {
+            id: "branch-b",
+            path: "/shell",
+            parentId: "shell",
+            kind: "group",
+          },
+          {
+            id: "item-a",
+            path: "/shell/item",
+            parentId: "branch-a",
             module: { default: Home },
+          },
+          {
+            id: "item-b",
+            path: "/shell/item",
+            parentId: "branch-b",
+            module: { default: Home },
+          },
+        ],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      createPagesApp({
+        routes: [
+          { id: "root-group", path: "/", kind: "group" },
+          { id: "root-page", path: "/", module: { default: Home } },
+        ],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      createPagesApp({
+        routes: [
+          {
+            id: "redirect",
+            path: "/old",
+            kind: "redirect",
+            redirect: { kind: "path", path: "/new" },
           },
           {
             id: "settings",
             path: "/settings",
-            parentId: "dashboard",
+            parentId: "redirect",
             module: { default: Home },
           },
         ],
       }),
     ).toThrow(
-      '[evjs] Page route "settings" parentId "dashboard" must reference a layout route.',
+      '[evjs] Page route "settings" parentId "redirect" must not reference a redirect route.',
     );
     expect(() =>
       createPagesApp({
@@ -447,3 +916,153 @@ describe("createPagesApp", () => {
     );
   });
 });
+
+interface InspectableElement {
+  type: unknown;
+  props: {
+    children?: InspectableElement;
+  };
+}
+
+interface InspectableGeneratedRoute {
+  fullPath?: string;
+  children?: InspectableGeneratedRoute[];
+  options: {
+    component?: () => unknown;
+    beforeLoad?: () => unknown;
+    staticData?: Record<string, unknown>;
+  };
+  useParams(): unknown;
+  useSearch(): unknown;
+  useLoaderData(): unknown;
+}
+
+function flattenGeneratedRoutes(
+  route: InspectableGeneratedRoute,
+): InspectableGeneratedRoute[] {
+  return [
+    route,
+    ...(route.children ?? []).flatMap((child) => flattenGeneratedRoutes(child)),
+  ];
+}
+
+function catchRedirectOptions(
+  route: InspectableGeneratedRoute | undefined,
+): Record<string, unknown> {
+  if (!route?.options.beforeLoad) {
+    throw new Error("missing generated redirect route");
+  }
+  try {
+    route.options.beforeLoad();
+  } catch (error) {
+    return (error as { options: Record<string, unknown> }).options;
+  }
+  throw new Error("generated redirect beforeLoad did not redirect");
+}
+
+class MetadataTestElement {
+  readonly attributes = new Map<string, string>();
+  parent?: MetadataTestHead;
+  textContent: string | null = null;
+
+  constructor(readonly tagName: string) {}
+
+  getAttribute(name: string): string | null {
+    return this.attributes.get(name) ?? null;
+  }
+
+  hasAttribute(name: string): boolean {
+    return this.attributes.has(name);
+  }
+
+  setAttribute(name: string, value: string): void {
+    this.attributes.set(name, value);
+  }
+
+  removeAttribute(name: string): void {
+    this.attributes.delete(name);
+  }
+
+  remove(): void {
+    this.parent?.remove(this);
+  }
+}
+
+class MetadataTestHead {
+  readonly children: MetadataTestElement[] = [];
+
+  constructor(readonly ownerDocument: MetadataTestDocument) {}
+
+  append(element: MetadataTestElement): void {
+    element.parent?.remove(element);
+    element.parent = this;
+    this.children.push(element);
+  }
+
+  contains(element: MetadataTestElement): boolean {
+    return this.children.includes(element);
+  }
+
+  querySelector(selector: string): MetadataTestElement | null {
+    return this.querySelectorAll(selector)[0] ?? null;
+  }
+
+  querySelectorAll(selector: string): MetadataTestElement[] {
+    if (selector === "title") {
+      return this.children.filter((element) => element.tagName === "title");
+    }
+    if (selector === "meta[name]") {
+      return this.children.filter(
+        (element) => element.tagName === "meta" && element.hasAttribute("name"),
+      );
+    }
+    throw new Error(`Unsupported metadata test selector: ${selector}`);
+  }
+
+  remove(element: MetadataTestElement): void {
+    const index = this.children.indexOf(element);
+    if (index >= 0) this.children.splice(index, 1);
+    element.parent = undefined;
+  }
+}
+
+class MetadataTestDocument {
+  readonly head = new MetadataTestHead(this);
+
+  createElement(tagName: string): MetadataTestElement {
+    return new MetadataTestElement(tagName);
+  }
+
+  append(
+    tagName: string,
+    attributes: Record<string, string>,
+  ): MetadataTestElement {
+    const element = this.createElement(tagName);
+    for (const [name, value] of Object.entries(attributes)) {
+      element.setAttribute(name, value);
+    }
+    this.head.append(element);
+    return element;
+  }
+
+  elements(): MetadataTestElement[] {
+    return this.head.children;
+  }
+
+  title(): string {
+    return this.head.querySelector("title")?.textContent ?? "";
+  }
+
+  meta(name: string): MetadataTestElement | undefined {
+    return this.metas(name)[0];
+  }
+
+  metas(name: string): MetadataTestElement[] {
+    const identity = name.toLowerCase();
+    return this.head
+      .querySelectorAll("meta[name]")
+      .filter(
+        (element) => element.getAttribute("name")?.toLowerCase() === identity,
+      );
+  }
+}

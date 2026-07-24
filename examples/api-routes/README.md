@@ -12,6 +12,9 @@ npm run dev
 
 | File | Purpose |
 |------|---------| 
+| `ev.config.ts` | Selects SPA routing mode |
+| `src/pages/page.tsx` | Root Page that exercises the REST endpoints |
+| `src/pages/layout.tsx` | File-convention root layout |
 | `src/middleware.ts` | Framework request middleware for all server requests |
 | `src/apis/api/middleware.ts` | API route middleware for `/api/**` file routes |
 | `src/apis/api/posts.ts` | List/create handlers for `/api/posts` |
@@ -28,6 +31,7 @@ npm run dev
 - Auto `OPTIONS` and `405 Method Not Allowed`
 - Framework request and API route `middleware.ts` conventions
 - Colocated helper files without route exports
+- A root `page.tsx` anchor mapped to `/` by file convention
 
 ## Try It
 

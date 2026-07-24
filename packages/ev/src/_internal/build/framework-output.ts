@@ -2,12 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createApp } from "@evjs/server/app";
-import type { AppGraph, BuildOutput, BuildPlan } from "@evjs/shared/manifest";
+import type { BuildOutput, BuildPlan, CoreGraph } from "@evjs/shared/manifest";
 import {
   assertFrameworkManifestShape,
   createDeploymentMetadata,
-  createPublicManifest,
-  createServerManifest,
   linkBuildOutput,
 } from "@evjs/shared/manifest";
 import type { ResolvedConfig } from "../../config/index.js";
@@ -24,13 +22,14 @@ import {
 import { applyHtmlTagContributions } from "./generated-contributions.js";
 import { generateHtml, type HtmlAsset, validateHtmlTemplate } from "./html.js";
 import { buildHtml } from "./html-transform.js";
+import { applyPageMetadataToHtmlDocument } from "./page-metadata-html.js";
 import { runBuildOutputHooks } from "./plugin-lifecycle.js";
 
-const MANIFEST_FILE = "manifest.json";
 const CLIENT_RUNTIME_SCRIPT_ID = "__EVJS_CLIENT_RUNTIME__";
 const LEGACY_RUNTIME_FILE = "runtime.json";
 const LEGACY_FRAMEWORK_RUNTIME_FILE = "framework-runtime.json";
-const BUILD_OUTPUT_FILE = "build-output.json";
+const LEGACY_BUILD_OUTPUT_FILE = "build-output.json";
+const DEPLOYMENT_METADATA_FILE = "deployment-metadata.json";
 const RUNTIME_ONLY_BUNDLER_MANIFEST_FILES = [
   "react-client-manifest.json",
   "react-ssr-manifest.json",
@@ -114,29 +113,19 @@ function collectHtmlTemplates<TBundlerCfg>(
 ): HtmlTemplateValidation[] {
   const templates: HtmlTemplateValidation[] = [];
 
-  for (const [appId, app] of Object.entries(config.apps ?? {})) {
+  if (config.application) {
     templates.push({
-      path: app.html ?? config.html,
-      notFoundMessage: `[evjs] App "${appId}" html template not found`,
-      notFileMessage: `[evjs] App "${appId}" html template must be a file`,
-      mount: app.mount,
-      mountNotFoundMessage: `[evjs] App "${appId}" mount target was not found`,
-      mountInvalidMessage: `[evjs] App "${appId}" mount selector is invalid`,
+      path: config.application.document.template,
+      notFoundMessage: "[evjs] Application Document html template not found",
+      notFileMessage:
+        "[evjs] Application Document html template must be a file",
+      mount: config.application.document.mount,
+      mountNotFoundMessage:
+        "[evjs] Application Document mount target was not found",
+      mountInvalidMessage:
+        "[evjs] Application Document mount selector is invalid",
     });
-  }
-
-  for (const [pageId, page] of Object.entries(config.pages ?? {})) {
-    templates.push({
-      path: page.html,
-      notFoundMessage: `[evjs] MPA page "${pageId}" html template not found`,
-      notFileMessage: `[evjs] MPA page "${pageId}" html template must be a file`,
-      mount: page.mount,
-      mountNotFoundMessage: `[evjs] MPA page "${pageId}" mount target was not found`,
-      mountInvalidMessage: `[evjs] MPA page "${pageId}" mount selector is invalid`,
-    });
-  }
-
-  if (config.routing?.mode === "mpa") {
+  } else if (config.routing?.mode === "mpa") {
     let usesRoutingHtml = false;
     for (const route of config.routing.routes) {
       if (route.kind === "layout") continue;
@@ -174,14 +163,6 @@ function collectHtmlTemplates<TBundlerCfg>(
     });
   }
 
-  if (templates.length === 0) {
-    templates.push({
-      path: config.html,
-      notFoundMessage: "[evjs] HTML template not found",
-      notFileMessage: "[evjs] HTML template must be a file",
-    });
-  }
-
   return templates;
 }
 
@@ -208,77 +189,40 @@ async function emitFrameworkManifest(
     output,
   );
   await fs.promises.mkdir(rootDir, { recursive: true });
-  const serverManifest = createServerManifest(output);
-  if (serverManifest.entry || serverManifest.routes.length > 0) {
-    await fs.promises.mkdir(serverDir, { recursive: true });
-    await fs.promises.writeFile(
-      path.join(serverDir, MANIFEST_FILE),
-      JSON.stringify(serverManifest, null, 2),
-      "utf-8",
-    );
-  }
   await fs.promises.writeFile(
-    path.join(rootDir, BUILD_OUTPUT_FILE),
+    path.join(rootDir, DEPLOYMENT_METADATA_FILE),
     JSON.stringify(createDeploymentMetadata(output), null, 2),
     "utf-8",
   );
-  await fs.promises.rm(path.join(serverDir, BUILD_OUTPUT_FILE), {
-    force: true,
-  });
-  await removeFrameworkOutputFileIfInactive(rootDir, MANIFEST_FILE, [
-    clientDir,
-    serverDir,
-  ]);
-  await removeFrameworkOutputFileIfInactive(rootDir, LEGACY_RUNTIME_FILE, [
-    clientDir,
-    serverDir,
-  ]);
-  await removeFrameworkOutputFileIfInactive(
-    path.join(rootDir, "client"),
-    MANIFEST_FILE,
-    [clientDir, serverDir],
-  );
-  await removeFrameworkOutputFileIfInactive(
-    path.join(rootDir, "client"),
-    LEGACY_RUNTIME_FILE,
-    [clientDir, serverDir],
-  );
-  await removeFrameworkOutputFileIfInactive(
-    path.join(rootDir, "server"),
-    MANIFEST_FILE,
-    [clientDir, serverDir],
-  );
-  await removeFrameworkOutputFileIfInactive(
-    path.join(rootDir, "server"),
-    LEGACY_RUNTIME_FILE,
-    [clientDir, serverDir],
-  );
-  await removeFrameworkOutputFileIfInactive(
-    path.join(rootDir, "server"),
-    LEGACY_FRAMEWORK_RUNTIME_FILE,
-    [clientDir, serverDir],
-  );
-
-  const publicManifest = createPublicManifest(output);
-  await fs.promises.mkdir(clientDir, { recursive: true });
-  await fs.promises.writeFile(
-    path.join(clientDir, MANIFEST_FILE),
-    JSON.stringify(publicManifest, null, 2),
-    "utf-8",
-  );
-  await fs.promises.rm(path.join(clientDir, LEGACY_RUNTIME_FILE), {
-    force: true,
-  });
-  if (output.server.entry) {
-    await fs.promises.mkdir(serverDir, { recursive: true });
-    await fs.promises.rm(path.join(serverDir, LEGACY_RUNTIME_FILE), {
-      force: true,
-    });
-  }
-  await fs.promises.rm(path.join(serverDir, LEGACY_FRAMEWORK_RUNTIME_FILE), {
-    force: true,
-  });
+  await removeLegacyFrameworkMetadata(rootDir, clientDir, serverDir);
   await removeRuntimeOnlyBundlerManifests(clientDir);
+}
+
+async function removeLegacyFrameworkMetadata(
+  rootDir: string,
+  clientDir: string,
+  serverDir: string,
+): Promise<void> {
+  const directories = new Set([
+    rootDir,
+    clientDir,
+    serverDir,
+    path.join(rootDir, "client"),
+    path.join(rootDir, "server"),
+  ]);
+  const files = [
+    "manifest.json",
+    LEGACY_BUILD_OUTPUT_FILE,
+    LEGACY_RUNTIME_FILE,
+    LEGACY_FRAMEWORK_RUNTIME_FILE,
+  ];
+  await Promise.all(
+    [...directories].flatMap((directory) =>
+      files.map((fileName) =>
+        fs.promises.rm(path.join(directory, fileName), { force: true }),
+      ),
+    ),
+  );
 }
 
 async function removeRuntimeOnlyBundlerManifests(
@@ -289,22 +233,6 @@ async function removeRuntimeOnlyBundlerManifests(
       fs.promises.rm(path.join(clientDir, fileName), { force: true }),
     ),
   );
-}
-
-async function removeFrameworkOutputFileIfInactive(
-  dir: string,
-  fileName: string,
-  activeDirs: string[],
-): Promise<void> {
-  const normalizedDir = path.resolve(dir);
-  if (
-    activeDirs.some((activeDir) => path.resolve(activeDir) === normalizedDir)
-  ) {
-    return;
-  }
-  await fs.promises.rm(path.join(normalizedDir, fileName), {
-    force: true,
-  });
 }
 
 function getHtmlAssets(html: BuildPlan["html"][number], output: BuildOutput) {
@@ -326,9 +254,9 @@ function createHtmlDocumentInfo(
 
   if (html.owner.pageId) {
     return {
-      kind: "page",
-      htmlId: html.id,
-      pageId: html.owner.pageId,
+      documentId: html.id,
+      applicationId: html.owner.appId ?? "default",
+      owner: { kind: "page", pageId: html.owner.pageId },
       template: html.template,
       fileName: html.fileName,
       assets,
@@ -336,14 +264,18 @@ function createHtmlDocumentInfo(
   }
 
   return {
-    kind: "app",
-    htmlId: html.id,
-    appId: html.owner.appId ?? "default",
+    documentId: html.id,
+    applicationId: html.owner.appId ?? "default",
+    owner: { kind: "application" },
     template: html.template,
     fileName: html.fileName,
     assets,
   };
 }
+
+type PageHtmlDocumentInfo = HtmlDocumentInfo & {
+  owner: { kind: "page"; pageId: string };
+};
 
 function withHtmlAssetCrossOrigin(
   assets: string[],
@@ -386,15 +318,22 @@ async function emitFrameworkHtml<TBundlerCfg>(
       ),
     });
     doc.documentElement?.setAttribute("data-evjs-build", output.buildId);
-    if (htmlInfo.kind === "page") {
+    if (htmlInfo.owner.kind === "page") {
       doc.documentElement?.setAttribute("data-evjs-kind", "page");
-      doc.documentElement?.setAttribute("data-evjs-id", htmlInfo.pageId);
+      doc.documentElement?.setAttribute("data-evjs-id", htmlInfo.owner.pageId);
     } else {
       doc.documentElement?.setAttribute("data-evjs-kind", "app");
-      doc.documentElement?.setAttribute("data-evjs-id", htmlInfo.appId);
+      doc.documentElement?.setAttribute("data-evjs-id", htmlInfo.applicationId);
     }
     if (htmlInfo.assets.js.length > 0) {
       embedClientRuntime(doc, clientRuntime);
+    }
+    if (htmlInfo.owner.kind === "page") {
+      applyPageMetadataToHtmlDocument(
+        doc,
+        output.pages[htmlInfo.owner.pageId]?.metadata,
+        { preserveBaseline: config.routing?.mode === "spa" },
+      );
     }
     applyHtmlTagContributions(doc, htmlInfo, plan);
     if (
@@ -429,9 +368,9 @@ async function emitFrameworkHtml<TBundlerCfg>(
 function shouldPrerenderStaticPage(
   output: BuildOutput,
   html: HtmlDocumentInfo,
-): html is Extract<HtmlDocumentInfo, { kind: "page" }> {
-  if (html.kind !== "page") return false;
-  const page = output.pages[html.pageId];
+): html is PageHtmlDocumentInfo {
+  if (html.owner.kind !== "page") return false;
+  const page = output.pages[html.owner.pageId];
   return Boolean(
     page &&
       page.render === "ssg" &&
@@ -443,15 +382,16 @@ function shouldPrerenderStaticPage(
 async function prerenderStaticPageHtml(options: {
   doc: ReturnType<typeof generateHtml>;
   output: BuildOutput;
-  html: Extract<HtmlDocumentInfo, { kind: "page" }>;
+  html: PageHtmlDocumentInfo;
   frameworkRuntime: ReturnType<typeof createFrameworkRuntime>;
   serverDir: string;
   loadServerModule?: (asset: string) => Promise<unknown>;
 }): Promise<void> {
   const { doc, output, html, frameworkRuntime, serverDir, loadServerModule } =
     options;
-  const page = output.pages[html.pageId];
-  const pathname = findStaticPagePath(output, html.pageId, page);
+  const pageId = html.owner.pageId;
+  const page = output.pages[pageId];
+  const pathname = findStaticPagePath(output, pageId, page);
   if (!page || !pathname) return;
 
   const { createReactFrameworkServer } = await import("@evjs/server/react");
@@ -471,7 +411,7 @@ async function prerenderStaticPageHtml(options: {
   });
   if (!framework?.render) {
     throw new Error(
-      `[evjs] Unable to prerender SSG page "${html.pageId}" because no server renderer was emitted.`,
+      `[evjs] Unable to prerender SSG page "${pageId}" because no server renderer was emitted.`,
     );
   }
 
@@ -483,14 +423,14 @@ async function prerenderStaticPageHtml(options: {
   );
   if (!response.ok) {
     throw new Error(
-      `[evjs] Failed to prerender SSG page "${html.pageId}": ${response.status} ${response.statusText}`,
+      `[evjs] Failed to prerender SSG page "${pageId}": ${response.status} ${response.statusText}`,
     );
   }
 
   const mount = doc.querySelector(page.mount ?? "#app");
   if (!mount) {
     throw new Error(
-      `[evjs] Unable to prerender SSG page "${html.pageId}" because mount target "${page.mount ?? "#app"}" was not found.`,
+      `[evjs] Unable to prerender SSG page "${pageId}" because mount target "${page.mount ?? "#app"}" was not found.`,
     );
   }
   mount.innerHTML = await response.text();
@@ -549,7 +489,7 @@ function embedClientRuntime(
 
 export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   bundlerFacts: BundlerBuildFacts;
-  graph: AppGraph;
+  graph: CoreGraph;
   plan: BuildPlan;
   config: ResolvedConfig<TBundlerCfg>;
   cwd: string;

@@ -494,10 +494,12 @@ function createBootstrapRuntime(
       },
       transport: {},
     },
-    pages: {
-      [bootstrap.pageId]: {},
+    routing: {
+      kind: "mpa",
+      pages: {
+        [bootstrap.pageId]: {},
+      },
     },
-    routes: [],
   };
 }
 

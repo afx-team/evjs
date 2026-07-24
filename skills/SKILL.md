@@ -15,10 +15,14 @@ and a framework-owned SPA router runtime. It provides:
 - **Server Functions** — write backend logic in files (we recommend using the `.server.ts` suffix), call from React as if local
 - **Server Routes** — build file-based REST endpoints under `src/apis` with uppercase HTTP method exports
 - **Query Integration** — type-safe `useQuery(getUsers)` with auto query keys and transport
-- **File-based Page Routing** — write default-exported React pages under
-  `src/pages`; evjs generates type-safe navigation and owns the router details
+- **Page-and-Route Model** — use positive `src/pages/**/page.*` anchors; each
+  containing directory owns one Page scope and derives its URL in SPA and MPA
+- **Page Configuration** — use adjacent build-time `page.config.ts` for static
+  title/named metadata, core rendering settings, and namespaced plugin
+  extensions
 - **Plugin System** — extend builds with `buildStart`, `bundlerConfig`, `transformHtml`, and `buildEnd` hooks
-- **Convention over Configuration** — works out of the box, optionally configure via `ev.config.ts`
+- **Minimal Routing Config** — `ev.config.ts` selects `routing.mode`; other
+  configuration is optional
 
 ## Quick Start
 
@@ -59,11 +63,32 @@ For detailed guides on specific topics, see the docs:
 - Programmatic `createRoute()` remains a standalone `@evjs/server` runtime primitive, not an evjs file-route convention
 
 **Page Routing:**
-- SPA page routes live in `src/pages` and use an optional root layout at
-  `src/layout/index.tsx`; do not create `__root.tsx`, `src/layout.tsx`, or
-  root-level layout files such as `src/pages/layout.tsx`.
-- MPA page routing uses `routing: { mode: "mpa" }`; pages are independent
-  router-free React entries and should use normal `<a href>` links.
+- Canonical SPA and MPA routes use one positive anchor:
+  `src/pages/**/page.{ts,tsx,js,jsx}`. The complete containing directory is the
+  Page scope and determines its URL; `index.*` and other colocated files are
+  ordinary Page-private source.
+- Select only the materialization with `routing: { mode: "spa" }` or
+  `routing: { mode: "mpa" }`. Do not invent separate SPA and MPA Page trees.
+- Before opening a Smallfish or evjs 0.2 application with Core 0.3, perform a
+  one-time source migration: move or rename every published entry to
+  `page.tsx`, move Page configuration to adjacent `page.config.ts`, and then
+  configure only `routing.mode`. Do not add a compatibility reader.
+- Bigfish-style explicit `application.routes` may remain temporarily as an
+  SPA-only route-tree migration input. It must reject MPA topology. Prefer
+  moving each component to its URL directory as `page.tsx`; do not introduce
+  another migration switch.
+- The optional canonical root layout is `src/pages/layout.tsx`; nested layouts
+  use `layout.*` in route directories. Do not create `__root.tsx` or the evjs
+  0.2 external `src/layout/index.tsx` shape in a new application.
+- Put optional build-time Page settings in adjacent `page.config.ts` via
+  `definePageConfig()`. Core fields include `title`, named `meta`, `render`,
+  `hydrate`, `prerender`, and `rsc`; plugin-owned values go under namespaced
+  `extensions`. `meta` emits only `<meta name="..." content="...">` entries.
+- `page.config.ts` is not a browser entry. Core title and named metadata are
+  materialized by the framework; plugins must explicitly project any extension
+  runtime data or code they need.
+- MPA Pages are independent router-free React entries and should use normal
+  `<a href>` links.
 - Page components are plain default exports. Do not wrap them in `definePage`
   and do not type props as framework route props.
 - Read route data with `usePageParams()`, `usePageSearch()`, and

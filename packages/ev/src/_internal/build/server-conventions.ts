@@ -20,7 +20,6 @@ import { isInsideCwd, toPosixPath } from "./utils.js";
 export interface DiscoverServerConventionsOptions {
   globalFile: string;
   routingDir?: string;
-  middleware?: boolean;
 }
 
 export interface ServerConventionDiagnostic {
@@ -41,15 +40,6 @@ export async function discoverServerConventions(
   options: DiscoverServerConventionsOptions,
 ): Promise<ServerConventionDiscovery> {
   const diagnostics: ServerConventionDiagnostic[] = [];
-  if (options.middleware === false) {
-    return {
-      globalMiddlewares: [],
-      routeMiddlewares: [],
-      files: [],
-      diagnostics,
-    };
-  }
-
   const files: string[] = [];
   const globalMiddlewares = await discoverGlobalMiddlewares(
     cwd,

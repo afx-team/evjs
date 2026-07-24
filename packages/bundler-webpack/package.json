@@ -32,6 +32,7 @@
   "license": "MIT",
   "dependencies": {
     "@evjs/ev": "*",
+    "@evjs/shared": "*",
     "@logtape/logtape": "^2.0.4",
     "css-loader": "^7.1.4",
     "memfs": "^4.57.8",

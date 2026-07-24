@@ -3,9 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
-  AppGraph,
   BuildPlan,
   BuildPlanUpdate,
+  CoreGraph,
 } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import { execa } from "execa";
@@ -24,7 +24,12 @@ import {
   type PluginHooks,
 } from "../../plugin/index.js";
 import { analyzeAndMaterializeFrameworkIR } from "./analyze-and-materialize.js";
-import type { BundlerAdapter, BundlerDevController } from "./bundler.js";
+import {
+  type BundlerAdapter,
+  type BundlerDevController,
+  preflightBundlerBuild,
+  preflightBundlerDevUpdate,
+} from "./bundler.js";
 import { resolveBundler, withActiveBundler } from "./bundler-config.js";
 import {
   withPageRoutingDefaults,
@@ -51,8 +56,9 @@ import {
   validateHtmlTemplates,
 } from "./framework-output.js";
 import type { createFrameworkRuntime } from "./framework-runtime.js";
-import type { createAppGraph } from "./graph/index.js";
+import type { createCoreGraph } from "./graph/index.js";
 import { type CreateBuildPlanOptions, diffBuildPlan } from "./plan/index.js";
+import { collectPluginExtensionRegistry } from "./plugin-extensions.js";
 import {
   collectPluginHooks,
   hasSamePluginIdentity,
@@ -135,11 +141,8 @@ export {
   type InspectFrameworkBuildOptions,
   type InspectFrameworkBuildResult,
   type InspectHtmlDocument,
-  type InspectPageOutput,
   type InspectPageRoute,
   type InspectRouteFile,
-  type InspectServerFunction,
-  type InspectServerRoute,
   inspectFrameworkBuild,
 } from "./inspect.js";
 
@@ -151,7 +154,7 @@ interface InternalPrepareFrameworkBuildOptions<
 
 interface InternalPreparedFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>
   extends PreparedFrameworkBuild<TBundlerCfg> {
-  graph: AppGraph;
+  graph: CoreGraph;
   plan: BuildPlan;
   hooks: PluginHooks<TBundlerCfg>[];
   pluginContext: PluginContext<TBundlerCfg>;
@@ -165,6 +168,8 @@ function isEmptyPlanUpdate(update: BuildPlanUpdate): boolean {
     update.html.added.length === 0 &&
     update.html.removed.length === 0 &&
     update.html.changed.length === 0 &&
+    !update.generatedChanged &&
+    !update.resolveChanged &&
     !update.serverChanged
   );
 }
@@ -191,7 +196,7 @@ function reportGraphDiagnostics(analysis: {
 
   if (errors.length > 0) {
     throw new Error(
-      ["[evjs] App graph analysis failed.", ...errors].join("\n"),
+      ["[evjs] CoreGraph analysis failed.", ...errors].join("\n"),
     );
   }
 }
@@ -304,6 +309,7 @@ async function prepareInternalFrameworkBuild<
   const config = bundler
     ? withActiveBundler(resolvedConfig, bundler)
     : resolvedConfig;
+  const pluginExtensions = collectPluginExtensionRegistry(config.plugins);
   const pluginWatchFiles = new Set<string>();
   const pluginContext: PluginContext<TBundlerCfg> = {
     mode,
@@ -335,6 +341,7 @@ async function prepareInternalFrameworkBuild<
       command,
       config,
       pluginContext,
+      pluginExtensions,
       plan: options.plan,
       onAnalysis: reportGraphDiagnostics,
     });
@@ -577,6 +584,9 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
 
   const bundler = resolveBundler(resolvedConfig.bundler, options?.bundler);
   let activeConfig = withActiveBundler(resolvedConfig, bundler);
+  let activePluginExtensions = collectPluginExtensionRegistry(
+    activeConfig.plugins,
+  );
 
   const pluginWatchFiles = new Set<string>();
   const addWatchFile = (file: string) => {
@@ -592,7 +602,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
     addWatchFile,
   };
   const hooks = await collectPluginHooks(activeConfig.plugins, pluginCtx);
-  let activeAnalysis: Awaited<ReturnType<typeof createAppGraph>>;
+  let activeAnalysis: Awaited<ReturnType<typeof createCoreGraph>>;
   let activePlan: BuildPlan;
   try {
     await runBuildStartHooks(hooks, pluginCtx);
@@ -603,6 +613,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       command: "dev",
       config: activeConfig,
       pluginContext: pluginCtx,
+      pluginExtensions: activePluginExtensions,
       plan: { distDir: DEV_DIST_DIR },
       onAnalysis: reportGraphDiagnostics,
     });
@@ -862,6 +873,10 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       return;
     }
 
+    const nextPluginExtensions = isConfigChange
+      ? collectPluginExtensionRegistry(nextConfig.plugins)
+      : activePluginExtensions;
+
     validateHtmlTemplates(cwd, nextConfig);
     let stagedPluginHooks:
       | Awaited<ReturnType<typeof stagePluginHooks>>
@@ -881,12 +896,14 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
             ...pluginCtx,
             config: nextConfig,
           },
+          pluginExtensions: nextPluginExtensions,
           plan: { distDir: DEV_DIST_DIR },
           onAnalysis: reportGraphDiagnostics,
         });
       const update = diffBuildPlan(activePlan, nextPlan, reason);
       if (isEmptyPlanUpdate(update)) {
         activeConfig = nextConfig;
+        activePluginExtensions = nextPluginExtensions;
         activeAnalysis = nextAnalysis;
         activePlan = nextPlan;
         pluginCtx.config = nextConfig;
@@ -901,17 +918,23 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       }
 
       const previousConfig = activeConfig;
+      const previousPluginExtensions = activePluginExtensions;
       const previousAnalysis = activeAnalysis;
       const previousPlan = activePlan;
 
+      preflightBundlerBuild(bundler, nextPlan);
+      preflightBundlerDevUpdate(bundler, update);
+
       activeConfig = nextConfig;
+      activePluginExtensions = nextPluginExtensions;
       activeAnalysis = nextAnalysis;
       activePlan = nextPlan;
 
       try {
-        await devController.updatePlan(update, nextAnalysis.graph);
+        await devController.updatePlan(update);
       } catch (err) {
         activeConfig = previousConfig;
+        activePluginExtensions = previousPluginExtensions;
         activeAnalysis = previousAnalysis;
         activePlan = previousPlan;
         pluginCtx.config = previousConfig;
@@ -965,12 +988,12 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   };
 
   try {
+    preflightBundlerBuild(bundler, activePlan);
     devController =
       (await bundler.dev({
         config: activeConfig,
         cwd,
         hooks,
-        graph: activeAnalysis.graph,
         plan: activePlan,
         callbacks: {
           onDevServerReady(context) {
@@ -1036,11 +1059,11 @@ export async function build<TBundlerCfg = DefaultBundlerConfig>(
   }
   try {
     await assertNoActiveDevDistLock(cwd, prepared.plan.distDir);
+    preflightBundlerBuild(bundler, prepared.plan);
     const bundlerFacts = await bundler.build({
       config: prepared.config,
       cwd,
       hooks: prepared.hooks,
-      graph: prepared.graph,
       plan: prepared.plan,
     });
     const { output, frameworkRuntime } = await linkAndEmitBuildOutput({

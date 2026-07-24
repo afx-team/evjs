@@ -1,10 +1,4 @@
 import type { BundlerAdapter } from "@evjs/ev/_internal/build";
-import type { BuildOutput } from "@evjs/ev/_internal/manifest";
-import {
-  createDeploymentMetadata,
-  createPublicManifest,
-  createServerManifest,
-} from "@evjs/ev/_internal/manifest";
 import { resolveConfig } from "@evjs/ev/config";
 import type {
   BuildResult,
@@ -12,6 +6,8 @@ import type {
   PluginContext,
   PluginHooks,
 } from "@evjs/ev/plugin";
+import type { BuildOutput } from "@evjs/shared/manifest";
+import { createDeploymentMetadata } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import { describe, expect, it } from "vitest";
 
@@ -103,8 +99,6 @@ function createTestBuildResult(
 ): BuildResult {
   return {
     output,
-    clientManifest: createPublicManifest(output),
-    serverManifest: createServerManifest(output),
     deploymentMetadata: createDeploymentMetadata(output),
     isRebuild,
   };
@@ -119,6 +113,16 @@ describe("resolveConfig", () => {
   it("plugin contexts can carry the active default bundler", async () => {
     const bundler = {
       name: "utoopack",
+      capabilities: {
+        build: { server: false, rsc: false, ppr: false },
+        dev: {
+          html: true,
+          entries: false,
+          routes: false,
+          server: false,
+          resolution: false,
+        },
+      },
       build: async () => ({}),
       dev: async () => {},
     } as BundlerAdapter;

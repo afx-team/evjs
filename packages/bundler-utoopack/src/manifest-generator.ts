@@ -5,7 +5,7 @@ import type {
   AssetGroup,
   BuildOutputServerModule,
   BuildPlan,
-} from "@evjs/ev/_internal/manifest";
+} from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import {
   getOutputPaths,

@@ -4,8 +4,13 @@
 
 export type {
   BundlerAdapter,
+  BundlerBuildCapability,
   BundlerBuildContext,
   BundlerBuildFacts,
+  BundlerCapabilities,
+  BundlerCapability,
+  BundlerCapabilityGap,
+  BundlerDevCapability,
   BundlerDevContext,
   BundlerDevController,
 } from "./bundler.js";
@@ -19,11 +24,8 @@ export {
   type InspectFrameworkBuildOptions,
   type InspectFrameworkBuildResult,
   type InspectHtmlDocument,
-  type InspectPageOutput,
   type InspectPageRoute,
   type InspectRouteFile,
-  type InspectServerFunction,
-  type InspectServerRoute,
   inspectFrameworkBuild,
   type PreparedFrameworkBuild,
   type PrepareFrameworkBuildOptions,
@@ -41,12 +43,12 @@ export {
   materializeFrameworkIR,
 } from "./generated-contributions.js";
 export type {
-  CreateAppGraphOptions,
+  CreateCoreGraphOptions,
   Diagnostic,
   GraphAnalysisResult,
   GraphConfig,
 } from "./graph/index.js";
-export { createAppGraph } from "./graph/index.js";
+export { createCoreGraph } from "./graph/index.js";
 export type { GenerateHtmlOptions, HtmlAsset } from "./html.js";
 export { generateHtml, validateHtmlTemplate } from "./html.js";
 export type { BuildHtmlOptions } from "./html-transform.js";

@@ -26,6 +26,9 @@ import type {
 } from "./framework.js";
 import { getFrameworkRuntimeRoutes } from "./framework.js";
 
+const PAGE_METADATA_ATTRIBUTE = "data-evjs-page-metadata";
+const PAGE_METADATA_CREATED_ATTRIBUTE = "data-evjs-page-metadata-created";
+
 export interface PageProviderProps<
   TParams extends Record<string, string> = Record<string, string>,
   TSearch extends Record<string, unknown> = Record<string, unknown>,
@@ -64,6 +67,13 @@ export interface ReactServerRenderAdapterOptions {
   createProps?(
     ctx: ReactServerRenderContext,
   ): Record<string, unknown> | Promise<Record<string, unknown>>;
+  /**
+   * Replace the complete server-rendered HTML document.
+   *
+   * Custom documents own their head and template baseline. Use
+   * `renderReactPageMetadata(ctx)` to safely serialize the current Page
+   * metadata with the ownership markers required by SPA navigation.
+   */
   renderDocument?(
     appHtml: string,
     ctx: ReactServerRenderContext,
@@ -711,6 +721,10 @@ function renderDefaultDocument(
     "<!doctype html>",
     `<html data-evjs-kind="page" data-evjs-id="${escapeHtmlAttr(ctx.pageId ?? "")}" data-evjs-build="${escapeHtmlAttr(ctx.runtime.buildId)}">`,
     "<head>",
+    ...renderPageMetadata(
+      ctx.page?.metadata,
+      ctx.runtime.routing?.kind === "spa",
+    ),
     ...assets.css.map(
       (asset) =>
         `<link rel="stylesheet" href="${escapeHtmlAttr(assetHref(ctx.runtime, asset))}">`,
@@ -731,6 +745,48 @@ function renderDefaultDocument(
     "</body>",
     "</html>",
   ].join("");
+}
+
+/**
+ * Serialize the current Page's title and named meta values for a custom React
+ * server document, including SPA ownership markers when required.
+ */
+export function renderReactPageMetadata(
+  ctx: Pick<ReactServerRenderContext, "page" | "runtime">,
+): string {
+  return renderPageMetadata(
+    ctx.page?.metadata,
+    ctx.runtime.routing?.kind === "spa",
+  ).join("");
+}
+
+function renderPageMetadata(
+  metadata: FrameworkPageRuntime["metadata"],
+  markForSpaRuntime: boolean,
+): string[] {
+  if (!metadata) return [];
+
+  const head: string[] = [];
+  const titleMarker = markForSpaRuntime
+    ? ` ${PAGE_METADATA_ATTRIBUTE}="title" ${PAGE_METADATA_CREATED_ATTRIBUTE}=""`
+    : "";
+  const metaMarker = markForSpaRuntime
+    ? ` ${PAGE_METADATA_ATTRIBUTE}="meta" ${PAGE_METADATA_CREATED_ATTRIBUTE}=""`
+    : "";
+  if (metadata.title !== undefined) {
+    head.push(`<title${titleMarker}>${escapeHtmlText(metadata.title)}</title>`);
+  }
+
+  const metaByName = new Map<string, readonly [string, string]>();
+  for (const entry of Object.entries(metadata.meta ?? {})) {
+    metaByName.set(toAsciiLowerCase(entry[0]), entry);
+  }
+  for (const [name, content] of metaByName.values()) {
+    head.push(
+      `<meta name="${escapeHtmlAttr(name)}" content="${escapeHtmlAttr(content)}"${metaMarker}>`,
+    );
+  }
+  return head;
 }
 
 function createRscBootstrap(
@@ -833,4 +889,17 @@ function escapeHtmlAttr(value: string): string {
     .replaceAll('"', "&quot;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+}
+
+function escapeHtmlText(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function toAsciiLowerCase(value: string): string {
+  return value.replace(/[A-Z]/g, (character) =>
+    String.fromCharCode(character.charCodeAt(0) + 32),
+  );
 }

@@ -8,8 +8,8 @@ modules. It does not own application routing, platform site metadata, deployment
 fields, or local development proxy conventions.
 
 Use the plugin when an SPA application explicitly runs as a qiankun master or
-slave. The default path is evjs file-convention SPA routing through
-`src/pages`. Do not enable it for MPA pages.
+slave. The default path is the canonical Page-and-Route SPA model. Do not
+enable it for MPA applications.
 
 ## Install
 
@@ -28,6 +28,7 @@ import { defineConfig } from "@evjs/ev";
 import { evPluginQiankunMaster } from "@evjs/plugin-qiankun";
 
 export default defineConfig({
+  routing: { mode: "spa" },
   plugins: [
     evPluginQiankunMaster({
       resolver: "./src/qiankun.master.ts",
@@ -70,7 +71,7 @@ running; route-local containers should be handled by a higher-level plugin that
 turns routes into micro-app components.
 
 ```tsx
-// src/layout/index.tsx
+// src/pages/layout.tsx
 import { Link } from "@evjs/ev/navigation";
 import type { ReactNode } from "react";
 
@@ -89,7 +90,7 @@ export default function RootLayout({ children }: { children?: ReactNode }) {
 ```
 
 ```tsx
-// src/pages/catalog.tsx
+// src/pages/catalog/page.tsx
 export default function CatalogPage() {
   return <h1>Catalog workspace</h1>;
 }
@@ -107,6 +108,7 @@ import { defineConfig } from "@evjs/ev";
 import { evPluginQiankunSlave } from "@evjs/plugin-qiankun";
 
 export default defineConfig({
+  routing: { mode: "spa" },
   plugins: [
     evPluginQiankunSlave({
       name: "catalog",
@@ -116,17 +118,18 @@ export default defineConfig({
 });
 ```
 
-The application remains an ordinary file-convention SPA:
+The application remains an ordinary canonical Page application:
 
 ```tsx
-// src/pages/index.tsx
-export default function CatalogPage() {
+// src/components/CatalogApp.tsx
+export function CatalogApp() {
   return <h1>Catalog</h1>;
 }
 ```
 
-When the master activates the slave at a non-root path, add the matching page
-route in the slave as well, for example `src/pages/catalog.tsx`.
+Both `src/pages/page.tsx` and `src/pages/catalog/page.tsx` may default-export
+that shared UI. Their directories publish `/` for standalone rendering and
+`/catalog` for activation by the master without a second route declaration.
 
 Use the runtime module only for lifecycle extensions. It can be empty when the
 application does not need extra lifecycle behavior:
@@ -146,10 +149,9 @@ export default defineQiankunSlaveRuntime({
 ```
 
 In qiankun mode the plugin mounts into `props.container`; outside qiankun it
-automatically renders standalone. For manually bootstrapped `app.entry` SPAs,
-the runtime scopes `document.querySelector(mount)` and
-`document.getElementById()` mount lookups to the qiankun container so common
-single-SPA entries can keep using `#app`.
+automatically renders the canonical framework entry. The plugin does not read
+legacy `app.entry` or magic `src/main.tsx` configuration. Standalone
+`@evjs/client` applications own their qiankun/container integration directly.
 
 ## Module References
 
@@ -262,6 +264,7 @@ import { defineConfig } from "@evjs/ev";
 import { evPluginQiankunMaster } from "@evjs/plugin-qiankun";
 
 export default defineConfig({
+  routing: { mode: "spa" },
   dev: {
     port: 3000,
     proxy: [
@@ -358,12 +361,12 @@ export function evPluginPlatformMicroFrontendMaster(): Plugin {
     async contributions(ctx) {
       const site = ctx.emit.data({
         id: "platform-site",
-        scope: { kind: "app" },
+        scope: { kind: "application" },
         value: await loadPlatformSiteConfig(ctx),
       });
       const resolver = ctx.emit.module({
         id: "master-resolver",
-        scope: { kind: "app" },
+        scope: { kind: "application" },
         source: ({ importOf }) => `
           import { defineQiankunMasterResolver } from "@evjs/plugin-qiankun/runtime";
           import site from ${JSON.stringify(importOf(site))};
@@ -434,7 +437,7 @@ export function evPluginPlatformMicroFrontendSlave(): Plugin {
     async contributions(ctx) {
       const runtime = ctx.emit.module({
         id: "slave-runtime",
-        scope: { kind: "app" },
+        scope: { kind: "application" },
         source: `
           import { defineQiankunSlaveRuntime } from "@evjs/plugin-qiankun/runtime";
 

@@ -6,7 +6,7 @@
 模块。它不拥有应用路由、平台站点元数据、部署字段或本地研发代理约定。
 
 当 SPA 应用明确以 qiankun master 或 slave 身份运行时再启用这个插件。默认路径是
-evjs file-convention SPA，也就是 `src/pages`。不要把它用于 MPA 页面。
+canonical Page-and-Route SPA 模型。不要把它用于 MPA 应用。
 
 ## 安装
 
@@ -25,6 +25,7 @@ import { defineConfig } from "@evjs/ev";
 import { evPluginQiankunMaster } from "@evjs/plugin-qiankun";
 
 export default defineConfig({
+  routing: { mode: "spa" },
   plugins: [
     evPluginQiankunMaster({
       resolver: "./src/qiankun.master.ts",
@@ -66,7 +67,7 @@ qiankun container；如果希望 container 跟随路由组件挂载，应由上�
 转换成 micro-app 组件。
 
 ```tsx
-// src/layout/index.tsx
+// src/pages/layout.tsx
 import { Link } from "@evjs/ev/navigation";
 import type { ReactNode } from "react";
 
@@ -85,7 +86,7 @@ export default function RootLayout({ children }: { children?: ReactNode }) {
 ```
 
 ```tsx
-// src/pages/catalog.tsx
+// src/pages/catalog/page.tsx
 export default function CatalogPage() {
   return <h1>Catalog workspace</h1>;
 }
@@ -102,6 +103,7 @@ import { defineConfig } from "@evjs/ev";
 import { evPluginQiankunSlave } from "@evjs/plugin-qiankun";
 
 export default defineConfig({
+  routing: { mode: "spa" },
   plugins: [
     evPluginQiankunSlave({
       name: "catalog",
@@ -111,17 +113,18 @@ export default defineConfig({
 });
 ```
 
-应用仍然是普通 file-convention SPA：
+应用仍然是普通 canonical Page 应用：
 
 ```tsx
-// src/pages/index.tsx
-export default function CatalogPage() {
+// src/components/CatalogApp.tsx
+export function CatalogApp() {
   return <h1>Catalog</h1>;
 }
 ```
 
-当 master 在非根路径激活 slave 时，slave 也需要提供对应 page route，例如
-`src/pages/catalog.tsx`。
+`src/pages/page.tsx` 与 `src/pages/catalog/page.tsx` 都可以 default-export
+这个共享 UI。两个目录分别发布 standalone `/` 与供 master 激活的 `/catalog`，
+不需要第二份 route declaration。
 
 runtime 模块只用于扩展 lifecycle。如果应用不需要额外行为，可以不提供 runtime：
 
@@ -140,9 +143,9 @@ export default defineQiankunSlaveRuntime({
 ```
 
 在 qiankun 环境中，插件会挂载到 `props.container`；在非 qiankun 环境中会自动
-standalone 渲染。对于手写 `app.entry` 的 SPA，runtime 会把
-`document.querySelector(mount)` 和 `document.getElementById()` 的挂载查询临时限定到
-qiankun container 内，因此常见的单页应用入口可以继续使用 `#app`。
+渲染 canonical framework entry。插件不读取 legacy `app.entry` 或 magic
+`src/main.tsx` 配置。Standalone `@evjs/client` 应用自行持有 qiankun/container
+集成。
 
 ## 模块引用
 
@@ -251,6 +254,7 @@ import { defineConfig } from "@evjs/ev";
 import { evPluginQiankunMaster } from "@evjs/plugin-qiankun";
 
 export default defineConfig({
+  routing: { mode: "spa" },
   dev: {
     port: 3000,
     proxy: [
@@ -344,13 +348,13 @@ export function evPluginPlatformMicroFrontendMaster(): Plugin {
     async contributions(ctx) {
       const site = ctx.emit.data({
         id: "platform-site",
-        scope: { kind: "app" },
+        scope: { kind: "application" },
         value: await loadPlatformSiteConfig(ctx),
       });
 
       const resolver = ctx.emit.module({
         id: "master-resolver",
-        scope: { kind: "app" },
+        scope: { kind: "application" },
         source: ({ importOf }) => `
           import { defineQiankunMasterResolver } from "@evjs/plugin-qiankun/runtime";
           import site from ${JSON.stringify(importOf(site))};
@@ -420,7 +424,7 @@ export function evPluginPlatformMicroFrontendSlave(): Plugin {
     async contributions(ctx) {
       const runtime = ctx.emit.module({
         id: "slave-runtime",
-        scope: { kind: "app" },
+        scope: { kind: "application" },
         source: `
           import { defineQiankunSlaveRuntime } from "@evjs/plugin-qiankun/runtime";
 

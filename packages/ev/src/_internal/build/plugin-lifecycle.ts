@@ -17,10 +17,26 @@ const PLUGIN_HOOK_NAMES = [
   "transformHtml",
 ] as const satisfies readonly (keyof PluginHooks)[];
 
-export function orderPluginsByDependencies<TBundlerCfg>(
-  plugins: Plugin<TBundlerCfg>[],
-): Plugin<TBundlerCfg>[] {
-  const pluginByName = new Map<string, Plugin<TBundlerCfg>>();
+const LEGACY_PLUGIN_HOOK_REPLACEMENTS = new Map<string, string>([
+  ["modifyHTML", "transformHtml"],
+  ["modifyHTMLViaAST", "transformHtml"],
+  ["modifyBundlerConfig", "bundlerConfig"],
+  ["onBuildStart", "buildStart"],
+  ["onBuildEnd", "buildEnd"],
+  ["onBuildComplete", "buildEnd"],
+]);
+
+interface PluginOrderDeclaration {
+  name: string;
+  dependencies?: string[];
+  optionalDependencies?: string[];
+  enforce?: "pre" | "normal" | "post";
+}
+
+export function orderPluginsByDependencies<
+  TPlugin extends PluginOrderDeclaration,
+>(plugins: TPlugin[]): TPlugin[] {
+  const pluginByName = new Map<string, TPlugin>();
   const dependentsByName = new Map<string, string[]>();
   const dependencyCountByName = new Map<string, number>();
 
@@ -36,7 +52,7 @@ export function orderPluginsByDependencies<TBundlerCfg>(
   }
 
   function addDependency(
-    plugin: Plugin<TBundlerCfg>,
+    plugin: TPlugin,
     dependencyName: string,
     optional: boolean,
   ): void {
@@ -65,7 +81,7 @@ export function orderPluginsByDependencies<TBundlerCfg>(
   const ready = plugins
     .filter((plugin) => dependencyCountByName.get(plugin.name) === 0)
     .sort(comparePluginEnforce);
-  const ordered: Plugin<TBundlerCfg>[] = [];
+  const ordered: TPlugin[] = [];
 
   while (ready.length > 0) {
     const plugin = ready.shift();
@@ -91,10 +107,10 @@ export function orderPluginsByDependencies<TBundlerCfg>(
   return ordered;
 }
 
-function throwPluginDependencyCycle<TBundlerCfg>(
-  plugins: Plugin<TBundlerCfg>[],
-  ordered: Plugin<TBundlerCfg>[],
-  pluginByName: Map<string, Plugin<TBundlerCfg>>,
+function throwPluginDependencyCycle<TPlugin extends PluginOrderDeclaration>(
+  plugins: TPlugin[],
+  ordered: TPlugin[],
+  pluginByName: Map<string, TPlugin>,
 ): never {
   const remainingNames = plugins
     .filter((plugin) => !ordered.includes(plugin))
@@ -137,14 +153,14 @@ function throwPluginDependencyCycle<TBundlerCfg>(
   );
 }
 
-function comparePluginEnforce<TBundlerCfg>(
-  left: Plugin<TBundlerCfg>,
-  right: Plugin<TBundlerCfg>,
+function comparePluginEnforce(
+  left: PluginOrderDeclaration,
+  right: PluginOrderDeclaration,
 ): number {
   return pluginEnforceRank(left) - pluginEnforceRank(right);
 }
 
-function pluginEnforceRank<TBundlerCfg>(plugin: Plugin<TBundlerCfg>): number {
+function pluginEnforceRank(plugin: PluginOrderDeclaration): number {
   if (plugin.enforce === "pre") return 0;
   if (plugin.enforce === "post") return 2;
   return 1;
@@ -186,17 +202,51 @@ function resolvePluginSetupHooks<TBundlerCfg>(
   }
 
   const hookConfig = hooks as Record<string, unknown>;
-  for (const hookName of PLUGIN_HOOK_NAMES) {
+  for (const key of Reflect.ownKeys(hookConfig)) {
+    if (typeof key !== "string") {
+      throw new Error(
+        `[evjs] Plugin "${pluginName}" setup hook returned an unsupported symbol field.`,
+      );
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(hookConfig, key);
+    if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) {
+      throw new Error(
+        `[evjs] Plugin "${pluginName}" setup hook returned "${key}" must be an enumerable own data property.`,
+      );
+    }
+    if (!isPluginHookName(key)) {
+      throwUnknownPluginHook(pluginName, key);
+    }
     if (
-      hookConfig[hookName] !== undefined &&
-      typeof hookConfig[hookName] !== "function"
+      descriptor.value !== undefined &&
+      typeof descriptor.value !== "function"
     ) {
       throw new Error(
-        `[evjs] Plugin "${pluginName}" setup hook returned ${hookName} must be a function.`,
+        `[evjs] Plugin "${pluginName}" setup hook returned ${key} must be a function.`,
       );
     }
   }
   return hookConfig as PluginHooks<TBundlerCfg>;
+}
+
+function isPluginHookName(value: string): value is keyof PluginHooks {
+  return (PLUGIN_HOOK_NAMES as readonly string[]).includes(value);
+}
+
+function throwUnknownPluginHook(pluginName: string, hookName: string): never {
+  const replacement =
+    LEGACY_PLUGIN_HOOK_REPLACEMENTS.get(hookName) ??
+    PLUGIN_HOOK_NAMES.find(
+      (candidate) => candidate.toLowerCase() === hookName.toLowerCase(),
+    );
+  if (replacement) {
+    throw new Error(
+      `[evjs] Plugin "${pluginName}" setup hook returned unsupported hook "${hookName}". Use "${replacement}" instead.`,
+    );
+  }
+  throw new Error(
+    `[evjs] Plugin "${pluginName}" setup hook returned unknown hook "${hookName}". Supported hooks are ${PLUGIN_HOOK_NAMES.join(", ")}.`,
+  );
 }
 
 export async function runConfigHooks<TBundlerCfg>(

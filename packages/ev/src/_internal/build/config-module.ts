@@ -36,6 +36,29 @@ export interface TranspileTypeScriptConfigOptions {
   filename: string;
 }
 
+export interface LoadedStaticConfigModule {
+  value: unknown;
+  hasDefaultExport: boolean;
+  /** Absolute project-local files in the evaluated module closure. */
+  dependencies: string[];
+}
+
+export interface LoadStaticConfigModuleOptions {
+  /** Reuse the current process cache after a caller performed batch clearing. */
+  cache?: boolean;
+}
+
+export interface ClearStaticConfigModuleCacheOptions {
+  /**
+   * Also clear dependency closures recorded for previous config roots in this
+   * project. This covers config files that were removed or renamed between
+   * discovery passes.
+   */
+  projectRoot?: string;
+}
+
+const staticConfigDependencies = new Map<string, string[]>();
+
 export async function loadConfigFile<TBundlerCfg = unknown>(
   configPath: string,
   options: LoadConfigFileOptions = {},
@@ -80,6 +103,98 @@ export async function transpileTypeScriptConfig(
   });
 
   return result.code;
+}
+
+/**
+ * Evaluate a build-only data module through the same TypeScript-capable loader
+ * as ev.config.ts while retaining its complete project-local dependency
+ * closure for dev invalidation.
+ */
+export async function loadStaticConfigModule(
+  configPath: string,
+  projectRoot: string,
+  options: LoadStaticConfigModuleOptions = {},
+): Promise<LoadedStaticConfigModule> {
+  const absoluteConfigPath = path.resolve(configPath);
+  const absoluteProjectRoot = path.resolve(projectRoot);
+
+  try {
+    if (options.cache !== true) {
+      clearStaticConfigModuleCache([absoluteConfigPath]);
+    }
+    const source = await fsp.readFile(absoluteConfigPath, "utf-8");
+    const { code } = await transform(
+      source,
+      createConfigSwcOptions(absoluteConfigPath),
+    );
+    const unregisterRequireHook = registerConfigRequireHook();
+    let loaded: CompilableModule;
+    try {
+      loaded = requireModuleFromString(code, absoluteConfigPath, (failed) => {
+        staticConfigDependencies.set(
+          absoluteConfigPath,
+          collectProjectModuleDependencies(
+            failed,
+            absoluteConfigPath,
+            absoluteProjectRoot,
+          ),
+        );
+      });
+    } finally {
+      unregisterRequireHook();
+    }
+
+    const dependencies = collectProjectModuleDependencies(
+      loaded,
+      absoluteConfigPath,
+      absoluteProjectRoot,
+    );
+    staticConfigDependencies.set(absoluteConfigPath, dependencies);
+    const resolved = resolveDefaultExport(loaded.exports);
+    return {
+      value: resolved.value,
+      hasDefaultExport: resolved.hasDefaultExport,
+      dependencies,
+    };
+  } catch (error) {
+    throw new Error(
+      `Failed to load static config module from ${absoluteConfigPath}`,
+      { cause: error },
+    );
+  }
+}
+
+export function clearStaticConfigModuleCache(
+  configPaths: string[],
+  options: ClearStaticConfigModuleCacheOptions = {},
+): void {
+  const configRoots = new Set(
+    configPaths.map((configPath) => path.resolve(configPath)),
+  );
+  if (options.projectRoot) {
+    const projectRoot = path.resolve(options.projectRoot);
+    for (const configPath of staticConfigDependencies.keys()) {
+      if (isPathInside(configPath, projectRoot)) {
+        configRoots.add(configPath);
+      }
+    }
+  }
+
+  const files = new Set<string>();
+  for (const configPath of configRoots) {
+    files.add(configPath);
+    for (const dependency of staticConfigDependencies.get(configPath) ?? []) {
+      files.add(dependency);
+    }
+    staticConfigDependencies.delete(configPath);
+  }
+  const realFiles = new Set([...files].map(safeRealpath));
+
+  for (const cachedFile of Object.keys(requireFromLoader.cache)) {
+    if (files.has(cachedFile) || realFiles.has(safeRealpath(cachedFile))) {
+      delete requireFromLoader.cache[cachedFile];
+    }
+  }
 }
 
 async function loadTypeScriptConfig(configPath: string): Promise<unknown> {
@@ -195,11 +310,24 @@ function compileConfigDependency(
 }
 
 function requireFromString(code: string, filename: string): unknown {
+  return requireModuleFromString(code, filename).exports;
+}
+
+function requireModuleFromString(
+  code: string,
+  filename: string,
+  onError?: (module: CompilableModule) => void,
+): CompilableModule {
   const mod = new nodeModule.Module(filename) as CompilableModule;
   mod.filename = filename;
   mod.paths = nodeModule._nodeModulePaths(path.dirname(filename));
-  mod._compile(code, filename);
-  return mod.exports;
+  try {
+    mod._compile(code, filename);
+  } catch (error) {
+    onError?.(mod);
+    throw error;
+  }
+  return mod;
 }
 
 function createConfigSwcOptions(filename: string): SwcOptions {
@@ -242,6 +370,45 @@ function clearConfigRequireCache(configPath: string): void {
       delete requireFromLoader.cache[cachedFile];
     }
   }
+}
+
+function collectProjectModuleDependencies(
+  root: NodeJS.Module,
+  configPath: string,
+  projectRoot: string,
+): string[] {
+  const dependencies = new Set<string>();
+  const visited = new Set<NodeJS.Module>();
+  const queue = [root];
+
+  while (queue.length > 0) {
+    const current = queue.pop();
+    if (!current || visited.has(current)) continue;
+    visited.add(current);
+
+    const filename = current.filename && path.resolve(current.filename);
+    if (
+      filename &&
+      !isNodeModulesPath(filename) &&
+      isPathInside(safeRealpath(filename), safeRealpath(projectRoot))
+    ) {
+      dependencies.add(filename);
+    }
+    queue.push(...current.children);
+  }
+
+  dependencies.add(configPath);
+  return [...dependencies].sort();
+}
+
+function resolveDefaultExport(mod: unknown): {
+  value: unknown;
+  hasDefaultExport: boolean;
+} {
+  if (isRecord(mod) && Object.hasOwn(mod, "default")) {
+    return { value: mod.default, hasDefaultExport: true };
+  }
+  return { value: mod, hasDefaultExport: false };
 }
 
 function isPathInside(file: string, dir: string): boolean {

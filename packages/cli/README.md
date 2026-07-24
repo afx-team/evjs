@@ -8,15 +8,23 @@
 npm install -g @evjs/cli
 ```
 
-## Convention over Configuration
+## Canonical Conventions
 
-No configuration file is needed. `ev dev` and `ev build` delegate to `@evjs/ev` and inject the default utoopack adapter:
+`ev dev` and `ev build` delegate to `@evjs/ev` and inject the default
+Utoopack adapter. Framework-managed applications declare whether the canonical
+Page tree is materialized as an SPA or MPA:
 
-- Entry: `./src/main.tsx`
-- HTML: `./index.html`
+- Page and client-route anchors: `./src/pages/**/page.*`
+- Page scope and URL: the complete containing directory
+- Optional build-time Page config: adjacent `page.config.ts`
+- Shared HTML template: `./index.html`
 - Client dev server: port 3000
 - API server (dev): port 3001
 - Server functions auto-discovered via `"use server"` directive
+- Server request routes auto-discovered from `./src/apis`
+
+`routing.mode` selects SPA or MPA materialization for the same semantic
+Page-and-Route tree. It does not select a different file convention.
 
 ## Commands
 
@@ -40,15 +48,14 @@ Uses the default bundler adapter directly (no temp config files):
 Runs the production build through `@evjs/ev` with `NODE_ENV=production`:
 - `dist/client/` — optimized client assets with content hashes.
 - `dist/server/main.[hash].js` — server bundle.
-- `dist/client/manifest.json` — lightweight client deployment metadata.
-- `dist/server/manifest.json` — lightweight server entry and route metadata.
-- `dist/build-output.json` — canonical deployment metadata for tooling and adapters.
+- `dist/deployment-metadata.json` — canonical deployment metadata for tooling
+  and adapters.
 
 ### `ev prepare`
 
 Runs config resolution, file-convention discovery, generated contributions, and
 entry facade generation without invoking the bundler. It writes `.ev/` so tools
-and agents can inspect `.ev/manifest.json`, `.ev/framework/app-graph.json`,
+and agents can inspect `.ev/manifest.json`, `.ev/framework/core-graph.json`,
 `.ev/framework/build-plan.json`, generated entries, and plugin generated
 modules.
 
@@ -61,14 +68,15 @@ functions, server routes, render metadata, runtime paths, planned entries, and d
 
 ## Configuration
 
-Create `ev.config.ts` in the project root (optional):
+Create `ev.config.ts` in the project root and select the materialization mode:
 
 ```ts
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  entry: "./src/main.tsx",
-  html: "./index.html",
+  routing: {
+    mode: "spa",
+  },
   dev: { port: 3000 },
   server: {
     dev: { port: 3001 },
@@ -76,32 +84,60 @@ export default defineConfig({
 });
 ```
 
-The `dev` and `server.dev` fields accept extra options that are merged with defaults.
+The `dev` and `server.dev` fields accept extra options that are merged with
+defaults. Change only `routing.mode` to `"mpa"` to materialize the same Page
+tree as Page-owned Documents. Dynamic-route output and React route facets in
+MPA remain staged; `ev inspect` and `ev build` report unsupported combinations.
 
 ## Project Structure
 
-```
+```text
 my-app/
-├── ev.config.ts          # optional config
-├── index.html            # HTML template
+├── ev.config.ts
+├── index.html                         # shared HTML template
 ├── package.json
 ├── tsconfig.json
 └── src/
-    ├── pages/             # page routes
-    │   ├── index.tsx
-    │   └── users/$id.tsx
-    ├── api/               # server functions
-    │   ├── users.server.ts
-    │   └── posts.server.ts
-    └── server.ts          # optional server entry
+    ├── pages/
+    │   ├── page.tsx                    # /
+    │   ├── page.config.ts             # optional build-time Page config
+    │   ├── components/
+    │   │   └── index.tsx              # private source, not a Page
+    │   └── users/
+    │       └── $userId/
+    │           └── page.tsx            # /users/:userId
+    ├── api/
+    │   └── users.server.ts            # reachable server functions
+    ├── apis/
+    │   └── api/
+    │       └── health.ts              # server request route
+    └── middleware.ts                  # optional server middleware
 ```
+
+Only `page.*` creates a canonical client Page and Route. Other files below a
+Page directory, including `index.*`, are ordinary Page-private source and need
+no `_` prefix. The Page directory determines the URL in both SPA and MPA mode.
 
 ## Common Mistakes
 
-1. **Don't create `custom bundler config file`** — use `ev.config.ts` instead
-2. **Don't install bundler internals manually** — the default adapter is provided by `@evjs/cli`
-3. **Config file must be `ev.config.ts`** — not `evjs.config.ts`
-4. **Import `defineConfig` from `@evjs/ev`** — not from `@evjs/server`
+1. **Do not create `src/main.tsx` or top-level `entry` for a canonical app** —
+   add `src/pages/**/page.tsx` anchors and declare `routing.mode`.
+2. **Do not use `index.tsx` as a new Page anchor** — it is ordinary private
+   source in the canonical model.
+3. **Do not create a custom bundler config file** — use `ev.config.ts` instead.
+4. **Do not install bundler internals manually** — the default adapter is
+   provided by `@evjs/cli`.
+5. **Config file must be `ev.config.ts`** — not `evjs.config.ts`.
+6. **Import `defineConfig` and `definePageConfig` from `@evjs/ev`** — not from
+   `@evjs/server`.
+
+Explicit `application.routes` and Bigfish-style route config remain SPA-only
+route-tree migration inputs in `@evjs/ev`; they normalize into the same Core
+graph, reject MPA topology, and are not additional canonical routing models.
+Before running a Smallfish or evjs
+0.2 application, move or rename every published entry to `page.tsx`, move Page
+configuration to `page.config.ts`, and configure only
+`routing.mode: "spa" | "mpa"`. There is no compatibility-reader switch.
 
 ## Bundled Dependencies
 

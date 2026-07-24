@@ -3,9 +3,9 @@ import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { CONFIG_DEFAULTS, type ResolvedConfig } from "@evjs/ev/config";
 import type {
   ContributionContext,
+  FrameworkIRView,
   GeneratedModuleRef,
   HtmlDocument,
   Plugin,
@@ -37,17 +37,10 @@ interface ResolvedModuleRef {
   kind: "file" | "package";
 }
 
-type ResolvedAppEntry =
-  | {
-      kind: "file";
-      entry: string;
-      absolutePath: string;
-      mount: string;
-    }
-  | {
-      kind: "pages-app";
-      mount: string;
-    };
+interface ResolvedAppEntry {
+  kind: "application";
+  mount: string;
+}
 
 interface EntryWrapperState {
   role: "master" | "slave";
@@ -86,7 +79,7 @@ export function evPluginQiankunMaster(
       }
       const wrapper = ctx.emit.module({
         id: "entry-wrapper",
-        scope: { kind: "app" },
+        scope: { kind: "application" },
         source: (helpers) =>
           createMasterEntryWrapperSource(currentState, helpers),
       });
@@ -94,7 +87,7 @@ export function evPluginQiankunMaster(
         id: "entry-wrapper-slot",
         module: wrapper,
         position: "after-main",
-        target: { kind: "app" },
+        target: { kind: "application" },
       });
     },
     setup() {
@@ -123,17 +116,15 @@ export function evPluginQiankunSlave(
       if (options.externalQiankun) {
         addQiankunExternalContribution(ctx);
       }
-      const originalEntry = emitOriginalEntryModule(ctx, currentState);
+      const originalEntry = emitOriginalEntryModule(ctx);
       const wrapper = ctx.emit.module({
         id: "entry-wrapper",
-        scope: { kind: "app" },
+        scope: { kind: "application" },
         source: ({ importFile, importOf }) =>
           createSlaveEntryWrapperSource(
             currentState,
             { importFile, importOf },
-            originalEntry
-              ? importOf(originalEntry)
-              : getFileEntryImport(currentState, importFile),
+            importOf(originalEntry),
           ),
       });
       ctx.slot("client.entry").add({
@@ -141,7 +132,7 @@ export function evPluginQiankunSlave(
         module: wrapper,
         position: "before-main",
         mode: "replace",
-        target: { kind: "app" },
+        target: { kind: "application" },
       });
     },
     setup() {
@@ -159,43 +150,30 @@ export function evPluginQiankunSlave(
 }
 
 function resolveSingleAppEntry(
-  config: ResolvedConfig,
-  cwd: string,
+  framework: FrameworkIRView,
   role: "master" | "slave",
 ): ResolvedAppEntry {
-  if (config.pages !== undefined) {
+  if (framework.applications.length !== 1) {
     throw new Error(
-      `[evjs:plugin-qiankun] ${role} mode only supports a single SPA app entry. Remove pages or use SPA file routing for the qiankun application.`,
+      `[evjs:plugin-qiankun] ${role} mode requires exactly one normalized SPA Application, but found ${framework.applications.length}.`,
     );
   }
-  if (config.routing?.mode === "mpa") {
+  const application = framework.applications[0];
+  if (!application || application.topology !== "spa") {
     throw new Error(
-      `[evjs:plugin-qiankun] ${role} mode only supports SPA file routing. qiankun entry wrapping cannot target MPA routing.`,
+      `[evjs:plugin-qiankun] ${role} mode only supports a normalized SPA Application.`,
     );
   }
-  if (
-    config.app !== undefined &&
-    (typeof config.app === "string" || "source" in config.app)
-  ) {
-    throw new Error(
-      `[evjs:plugin-qiankun] ${role} mode requires app.entry. app.source lifecycle modules are not wrapped by qiankun v1.`,
-    );
-  }
-
-  if (config.routing?.mode === "spa" && config.app === undefined) {
+  const applicationEntry = framework.getApplicationEntry(application.id);
+  if (applicationEntry) {
     return {
-      kind: "pages-app",
-      mount: config.routing.mount,
+      kind: "application",
+      mount: applicationEntry.metadata.mount,
     };
   }
-
-  const entry = config.app?.entry ?? config.entry ?? CONFIG_DEFAULTS.entry;
-  return {
-    kind: "file",
-    entry,
-    absolutePath: resolveModulePath(cwd, entry),
-    mount: config.app?.mount ?? CONFIG_DEFAULTS.mount,
-  };
+  throw new Error(
+    `[evjs:plugin-qiankun] ${role} mode requires a generated client entry for normalized SPA Application "${application.id}".`,
+  );
 }
 
 function resolveModuleRef(
@@ -244,7 +222,7 @@ async function createMasterState(
   ctx: ContributionContext,
   options: QiankunMasterPluginOptions,
 ): Promise<EntryWrapperState> {
-  const entry = resolveSingleAppEntry(ctx.config, ctx.cwd, "master");
+  const entry = resolveSingleAppEntry(ctx.framework, "master");
   const resolver = resolveModuleRef(ctx.cwd, options.resolver);
   return {
     role: "master",
@@ -258,7 +236,7 @@ async function createSlaveState(
   ctx: ContributionContext,
   options: QiankunSlavePluginOptions,
 ): Promise<EntryWrapperState> {
-  const entry = resolveSingleAppEntry(ctx.config, ctx.cwd, "slave");
+  const entry = resolveSingleAppEntry(ctx.framework, "slave");
   const runtime = options.runtime
     ? resolveModuleRef(ctx.cwd, options.runtime)
     : undefined;
@@ -305,12 +283,8 @@ function createMasterEntryWrapperSource(
   ].join("\n");
 }
 
-function emitOriginalEntryModule(
-  ctx: ContributionContext,
-  state: EntryWrapperState,
-): GeneratedModuleRef | undefined {
-  if (state.entry.kind === "file") return undefined;
-  const entry = ctx.framework.getPagesAppEntry();
+function emitOriginalEntryModule(ctx: ContributionContext): GeneratedModuleRef {
+  const entry = ctx.framework.getApplicationEntry();
   if (!entry) {
     throw new Error(
       "[evjs:plugin-qiankun] Failed to find generated SPA routing entry metadata.",
@@ -370,18 +344,6 @@ function createSlaveEntryWrapperSource(
   ]
     .filter(Boolean)
     .join("\n");
-}
-
-function getFileEntryImport(
-  state: EntryWrapperState,
-  importFile: GeneratedSourceHelpers["importFile"],
-): string {
-  if (state.entry.kind !== "file") {
-    throw new Error(
-      "[evjs:plugin-qiankun] Expected file app entry for qiankun slave wrapper.",
-    );
-  }
-  return importFile(state.entry.absolutePath);
 }
 
 function toModuleImport(
@@ -457,7 +419,6 @@ function addEntryWrapperWatchFiles(
   addWatchFile: (file: string) => void,
   state: EntryWrapperState,
 ): void {
-  if (state.entry.kind === "file") addWatchFile(state.entry.absolutePath);
   if (state.moduleRef?.absolutePath) addWatchFile(state.moduleRef.absolutePath);
   addWatchFile(state.qiankunRuntime);
 }
@@ -471,9 +432,6 @@ async function validateEntryWrapperState(
     );
   }
 
-  if (state.entry.kind === "file") {
-    await assertFileExists(state.role, "app entry", state.entry.absolutePath);
-  }
   await assertFileExists(state.role, "qiankun runtime", state.qiankunRuntime);
   if (state.moduleRef?.absolutePath) {
     await assertFileExists(

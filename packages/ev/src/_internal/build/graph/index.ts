@@ -8,31 +8,36 @@ import {
   serverRoutePathShapeFromPath,
 } from "@evjs/shared";
 import type {
-  AppGraph,
-  AppNode,
-  ComponentModel,
-  ExtractedRoute,
-  HydrationMode,
-  PageNode,
+  ClientReferenceNode,
+  CoreGraph,
   PageRouteNode,
   PprConfig,
   PrerenderConfig,
-  RenderMode,
-  RouteNode,
   ServerFunctionNode,
   ServerMiddlewareNode,
+  ServerReferenceNode,
   ServerRouteNode,
 } from "@evjs/shared/manifest";
-import { resolveRoutes } from "@evjs/shared/manifest";
+import { assertCoreGraph } from "@evjs/shared/manifest";
 import { parseSync } from "@swc/core";
 import type { ModuleItem } from "@swc/types";
+import type {
+  PageRouteDiscoveryMetadata,
+  ResolvedConfigRouteApplication,
+} from "../../../config/index.js";
 import {
-  analyzePageModuleConfig,
-  type PageModuleConfig,
-} from "../page-module-config.js";
+  type ResolvedPageFileConfigs,
+  resolveCorePageConfigModules,
+  resolvePageConfigModules,
+} from "../page-config-module.js";
+import { findRemovedPageModuleConfigExports } from "../page-module-config.js";
 import { getPageBuildContractViolation } from "../page-rendering-contract.js";
 import { routePathShapeFromPath } from "../page-route-conventions.js";
 import { sortPageRoutes } from "../page-route-order.js";
+import {
+  applyPluginPageExtensions,
+  type PluginExtensionRegistry,
+} from "../plugin-extensions.js";
 import {
   extractPprRegionModuleConfig,
   extractPprRegions,
@@ -47,23 +52,38 @@ import {
 } from "../server-fns.js";
 import type { DiscoveredServerRouteNode } from "../server-routes.js";
 import {
-  deriveRouteIdFromPath,
   detectUseServer,
   hashServerFunction,
   isInsideCwd,
   toPosixPath,
 } from "../utils.js";
+import {
+  collectConfigRouteCoreSourceModules,
+  createConfigRouteGraph,
+} from "./config-route.js";
+import { applyResolvedPageConfigs, createPageAnchorGraph } from "./core.js";
 
 export interface GraphAnalysisResult {
-  graph: AppGraph;
+  graph: CoreGraph;
   diagnostics: Diagnostic[];
   fileDependencies: string[];
 }
 
-export interface CreateAppGraphOptions {
+export interface CreateCoreGraphOptions {
   resolve?: {
     alias?: Record<string, string>;
   };
+  pluginExtensions?: PluginExtensionRegistry;
+  /** Canonical Page configs pre-evaluated once for alias convergence. */
+  pageConfigs?: ResolvedPageFileConfigs;
+}
+
+interface FrameworkAnalysisFacts {
+  rootDir: string;
+  serverFunctions: ServerFunctionNode[];
+  serverRoutes: ServerRouteNode[];
+  clientReferences?: ClientReferenceNode[];
+  serverReferences?: ServerReferenceNode[];
 }
 
 export interface Diagnostic {
@@ -75,45 +95,16 @@ export interface Diagnostic {
 }
 
 export interface GraphConfig {
-  entry: string;
-  html: string;
-  pages?: Record<
-    string,
-    {
-      path?: string;
-      entry?: string;
-      component?: string;
-      app?: string;
-      html: string;
-      render?: RenderMode;
-      componentModel?: ComponentModel;
-      hydrate?: HydrationMode;
-      prerender?: PrerenderConfig;
-      mount?: string;
-      ppr?: PprConfig;
-    }
-  >;
-  apps?: Record<
-    string,
-    | string
-    | {
-        source?: string;
-        entry?: string;
-        html?: string;
-        mount?: string;
-      }
-  >;
+  application?: ResolvedConfigRouteApplication;
   routing?: {
     mode: "spa" | "mpa";
     dir: string;
-    entry?: string;
     html: string;
     mount: string;
-    conventions?: {
-      layout: boolean | string;
-    };
     routes: PageRouteNode[];
     rootModule?: string;
+    metadata?: PageRouteDiscoveryMetadata;
+    dependencies?: string[];
   };
   server: {
     routing?: {
@@ -128,7 +119,6 @@ export interface GraphConfig {
 }
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
-const DEFAULT_TOP_LEVEL_ENTRY = "./src/main.tsx";
 const DEFAULT_SOURCE_ALIAS = "@/";
 
 interface FrameworkSourceFiles {
@@ -139,27 +129,29 @@ interface FrameworkSourceFiles {
 
 type PprRegionConfigMap = NonNullable<PprConfig["regions"]>;
 
-export async function createAppGraph(
+export async function createCoreGraph(
   config: GraphConfig,
   cwd: string,
-  options: CreateAppGraphOptions = {},
+  options: CreateCoreGraphOptions = {},
 ): Promise<GraphAnalysisResult> {
+  const configRouteGraph = config.application
+    ? await createConfigRouteGraph(config, cwd)
+    : undefined;
+  const pageConfigs =
+    options.pageConfigs ??
+    (hasPageAnchorDiscovery(config)
+      ? await resolvePageConfigModules(cwd, config.routing.metadata)
+      : configRouteGraph
+        ? await resolveCorePageConfigModules(cwd, configRouteGraph)
+        : { pages: {}, dependencies: [] });
   const diagnostics: Diagnostic[] = [];
   const configuredPageRoutes = validateConfiguredPageRoutes(
     config,
     diagnostics,
   );
-  const configuredPagePathIds = validateConfiguredPagePaths(
-    config,
-    diagnostics,
-  );
 
-  const graph: AppGraph = {
-    version: 1,
+  const facts: FrameworkAnalysisFacts = {
     rootDir: cwd,
-    apps: {},
-    pages: createPageNodes(config, configuredPageRoutes, configuredPagePathIds),
-    routes: [],
     serverFunctions: [],
     serverRoutes: [],
   };
@@ -170,16 +162,11 @@ export async function createAppGraph(
     cwd,
     sourceCache,
     options.resolve?.alias,
+    configRouteGraph
+      ? collectConfigRouteCoreSourceModules(configRouteGraph)
+      : [],
   );
   diagnostics.push(...sourceFiles.diagnostics);
-  graph.apps = createAppNodes(config);
-  await mergeConfiguredPageModuleConfigs(
-    config,
-    graph,
-    cwd,
-    sourceCache,
-    diagnostics,
-  );
   // Watch explicit graph roots and files that already declare framework
   // semantics. Ordinary component edits should stay on the bundler HMR path.
   // If a plain component starts declaring routes/server functions later, a
@@ -191,6 +178,12 @@ export async function createAppGraph(
     for (const dir of await collectRouteDirectories(routingDir)) {
       fileDependencies.add(dir);
     }
+    for (const dependency of config.routing.dependencies ?? []) {
+      fileDependencies.add(path.resolve(cwd, dependency));
+    }
+  }
+  for (const dependency of pageConfigs.dependencies) {
+    fileDependencies.add(dependency);
   }
   if (config.server.routing) {
     const routingDir = path.resolve(cwd, config.server.routing.dir);
@@ -204,7 +197,6 @@ export async function createAppGraph(
   ]) {
     fileDependencies.add(path.resolve(cwd, middleware.module));
   }
-  const clientRoutes: ExtractedRoute[] = [];
   const serverRoutes = new Map<string, ServerRouteNode>();
   const serverRoutePathOwners = new Map<string, ServerRouteNode>();
   const serverRouteShapeOwners = new Map<string, ServerRouteNode>();
@@ -220,14 +212,8 @@ export async function createAppGraph(
     ].map((middleware) => path.resolve(cwd, middleware.module)),
   );
   const serverFunctions: ServerFunctionNode[] = [];
-  const clientReferences = new Map<
-    string,
-    NonNullable<AppGraph["clientReferences"]>[number]
-  >();
-  const serverReferences = new Map<
-    string,
-    NonNullable<AppGraph["serverReferences"]>[number]
-  >();
+  const clientReferences = new Map<string, ClientReferenceNode>();
+  const serverReferences = new Map<string, ServerReferenceNode>();
   const configuredServerRoutePublication = validateServerRouteNodePublication(
     config.server.routing?.routes ?? [],
     serverRoutePathOwners,
@@ -303,58 +289,27 @@ export async function createAppGraph(
     }
   }
 
-  const defaultAppId = getDefaultAppId(graph, getSpaRoutingEntry(config));
-  if (config.routing?.mode === "spa") {
-    for (const route of sortPageRoutes(configuredPageRoutes)) {
-      clientRoutes.push(
-        await mergeRouteModuleConfig(
-          cwd,
-          {
-            id: route.id,
-            path: route.path,
-            module: route.module,
-            ...(route.parentId ? { parentId: route.parentId } : {}),
-            ...(route.kind ? { kind: route.kind } : {}),
-            ...(route.errorModule ? { errorModule: route.errorModule } : {}),
-            ...(route.notFoundModule
-              ? { notFoundModule: route.notFoundModule }
-              : {}),
-            ...(defaultAppId ? { appId: defaultAppId } : {}),
-          },
-          sourceCache,
-          diagnostics,
-        ),
-      );
-    }
-  }
-  clientRoutes.push(...createConfiguredPageRoutes(graph));
+  facts.serverRoutes = [...serverRoutes.values()];
+  facts.serverFunctions = serverFunctions;
+  facts.clientReferences = [...clientReferences.values()];
+  facts.serverReferences = [...serverReferences.values()];
 
-  graph.routes = resolveRoutes(clientRoutes).map<RouteNode>((route) => {
-    const routeId = route.id ?? route.path;
-    const configuredPageId = getConfiguredPageRouteId(graph, route);
-    if (configuredPageId) {
-      graph.pages[configuredPageId].routeId ??= routeId;
-    }
-    const pageId =
-      configuredPageId ??
-      createRouteDerivedPageNode(config, graph, route, routeId, diagnostics);
-    const appId = route.appId ?? defaultAppId;
-    return {
-      id: routeId,
-      path: route.path,
-      ...(route.parentId ? { parentId: route.parentId } : {}),
-      ...(route.kind ? { kind: route.kind } : {}),
-      ...(appId ? { appId } : {}),
-      ...(pageId ? { pageId } : {}),
-      ...(route.module ? { module: route.module } : {}),
-      ...(route.errorModule ? { errorModule: route.errorModule } : {}),
-      ...(route.notFoundModule ? { notFoundModule: route.notFoundModule } : {}),
-      ...(route.render ? { render: route.render } : {}),
-      ...(route.hydrate ? { hydrate: route.hydrate } : {}),
-      ...(route.runtime ? { runtime: route.runtime } : {}),
-    };
-  });
-  await mergePprRegionsFromPageModules(
+  let graph = configRouteGraph
+    ? applyResolvedPageConfigs(
+        withAnalysisFacts(configRouteGraph, facts),
+        pageConfigs.pages,
+      )
+    : hasPageAnchorDiscovery(config)
+      ? createPageAnchorGraph(
+          config,
+          {
+            ...facts,
+            routes: configuredPageRoutes,
+          },
+          pageConfigs.pages,
+        )
+      : createEmptyCoreGraph(facts);
+  await mergePprRegionsIntoCoreGraph(
     graph,
     cwd,
     sourceCache,
@@ -362,17 +317,144 @@ export async function createAppGraph(
     fileDependencies,
     options.resolve?.alias,
   );
-  validateGraphPageContracts(graph, diagnostics);
-  graph.serverRoutes = [...serverRoutes.values()];
-  graph.serverFunctions = serverFunctions;
-  graph.clientReferences = [...clientReferences.values()];
-  graph.serverReferences = [...serverReferences.values()];
+  validateCoreGraphPageContracts(graph, diagnostics);
+  await diagnoseRemovedPageModuleConfigExports(
+    graph,
+    cwd,
+    sourceCache,
+    diagnostics,
+  );
+  graph = applyPluginPageExtensions(
+    graph,
+    options.pluginExtensions ?? { pageExtensions: [] },
+    { canonical: pageConfigs.pages },
+  );
 
   return {
     graph,
     diagnostics,
     fileDependencies: [...fileDependencies].sort(),
   };
+}
+
+function hasPageAnchorDiscovery(
+  config: Pick<GraphConfig, "application" | "routing">,
+): config is Pick<GraphConfig, "application"> & {
+  routing: NonNullable<GraphConfig["routing"]>;
+} {
+  if (!config.routing || config.application) return false;
+  if (config.routing.metadata) return true;
+  const pageRoutes = config.routing.routes.filter(
+    (route) => route.kind !== "layout",
+  );
+  return (
+    pageRoutes.length > 0 &&
+    pageRoutes.every(
+      (route) =>
+        route.scope?.kind === "directory" &&
+        path.basename(route.module, path.extname(route.module)) === "page",
+    )
+  );
+}
+
+function withAnalysisFacts(
+  graph: CoreGraph,
+  facts: FrameworkAnalysisFacts,
+): CoreGraph {
+  return {
+    ...graph,
+    serverFunctions: facts.serverFunctions,
+    serverRoutes: facts.serverRoutes,
+    ...(facts.clientReferences
+      ? { clientReferences: facts.clientReferences }
+      : {}),
+    ...(facts.serverReferences
+      ? { serverReferences: facts.serverReferences }
+      : {}),
+  };
+}
+
+function createEmptyCoreGraph(facts: FrameworkAnalysisFacts): CoreGraph {
+  const graph: CoreGraph = {
+    rootDir: facts.rootDir,
+    applications: {},
+    pages: {},
+    routes: [],
+    documents: {},
+    extensions: { namespaces: {} },
+    serverFunctions: facts.serverFunctions,
+    serverRoutes: facts.serverRoutes,
+    ...(facts.clientReferences
+      ? { clientReferences: facts.clientReferences }
+      : {}),
+    ...(facts.serverReferences
+      ? { serverReferences: facts.serverReferences }
+      : {}),
+  };
+  assertCoreGraph(graph, "resolved CoreGraph");
+  return graph;
+}
+
+async function mergePprRegionsIntoCoreGraph(
+  graph: CoreGraph,
+  cwd: string,
+  sourceCache: Map<string, string>,
+  diagnostics: Diagnostic[],
+  fileDependencies: Set<string>,
+  aliases?: Record<string, string>,
+): Promise<void> {
+  for (const page of Object.values(graph.pages)) {
+    const ppr = page.ppr ?? derivePprConfig(page.prerender);
+    if (!ppr) continue;
+    const root = await resolveProjectSourceAbsolute(cwd, page.source.module);
+    if (!root) continue;
+    const analysis = await collectPprRegionsFromPageClosure(
+      cwd,
+      root,
+      sourceCache,
+      fileDependencies,
+      aliases,
+    );
+    diagnostics.push(...analysis.diagnostics);
+    if (Object.keys(analysis.regions).length === 0) {
+      page.ppr = ppr;
+      continue;
+    }
+    const resolved = await resolvePprRegionComponents(
+      cwd,
+      analysis.regions,
+      sourceCache,
+    );
+    diagnostics.push(...resolved.diagnostics);
+    page.ppr = {
+      ...ppr,
+      regions: {
+        ...(ppr.regions ?? {}),
+        ...resolved.regions,
+      },
+    };
+  }
+}
+
+function validateCoreGraphPageContracts(
+  graph: CoreGraph,
+  diagnostics: Diagnostic[],
+): void {
+  for (const page of Object.values(graph.pages)) {
+    const file = page.source.module;
+    if (hasErrorDiagnosticForFile(diagnostics, file)) continue;
+    const renderingError = getPageBuildContractViolation(`Page "${page.id}"`, {
+      ...page,
+      component: page.source.module,
+    });
+    if (renderingError) {
+      diagnostics.push({
+        level: "error",
+        file,
+        message: renderingError,
+      });
+    }
+  }
 }
 
 function validateServerRouteNodePublication(
@@ -422,148 +504,41 @@ function validateServerRouteNodePublication(
   return { nodes, diagnostics };
 }
 
-async function mergeConfiguredPageModuleConfigs(
-  config: GraphConfig,
-  graph: AppGraph,
+async function diagnoseRemovedPageModuleConfigExports(
+  graph: CoreGraph,
   cwd: string,
   sourceCache: Map<string, string>,
   diagnostics: Diagnostic[],
-) {
-  for (const [pageId] of Object.entries(graph.pages)) {
-    const page = graph.pages[pageId];
-    if (!page?.component) continue;
-
-    const analysis = await readPageModuleConfig(
+): Promise<void> {
+  for (const page of Object.values(graph.pages)) {
+    const absolute = await resolveProjectSourceAbsolute(
       cwd,
-      page.component,
-      sourceCache,
+      page.source.module,
     );
-    if (!analysis) continue;
+    if (!absolute) continue;
 
-    diagnostics.push(...analysis.diagnostics);
-    applyPageModuleConfig(
-      page,
-      analysis.config,
-      getConfiguredPageModuleConfig(config.pages?.[pageId]),
-    );
-  }
-}
-
-function getConfiguredPageModuleConfig(
-  page: NonNullable<GraphConfig["pages"]>[string] | undefined,
-): PageModuleConfig {
-  if (!page) return {};
-  return {
-    ...(page.render ? { render: page.render } : {}),
-    ...(page.componentModel ? { componentModel: page.componentModel } : {}),
-    ...(page.hydrate ? { hydrate: page.hydrate } : {}),
-    ...(page.prerender ? { prerender: page.prerender } : {}),
-  };
-}
-
-async function mergeRouteModuleConfig(
-  cwd: string,
-  route: ExtractedRoute,
-  sourceCache: Map<string, string>,
-  diagnostics: Diagnostic[],
-): Promise<ExtractedRoute> {
-  if (!route.module) return route;
-
-  const analysis = await readPageModuleConfig(cwd, route.module, sourceCache);
-  if (!analysis) return route;
-
-  diagnostics.push(...analysis.diagnostics);
-  const moduleConfig = analysis.config;
-  const ppr = derivePprConfig(moduleConfig.prerender);
-  return {
-    ...route,
-    ...(route.render === undefined && moduleConfig.render
-      ? { render: moduleConfig.render }
-      : {}),
-    ...(route.hydrate === undefined && moduleConfig.hydrate
-      ? { hydrate: moduleConfig.hydrate }
-      : {}),
-    ...(moduleConfig.componentModel
-      ? { componentModel: moduleConfig.componentModel }
-      : {}),
-    ...(moduleConfig.prerender ? { prerender: moduleConfig.prerender } : {}),
-    ...(ppr ? { ppr } : {}),
-  };
-}
-
-async function readPageModuleConfig(
-  cwd: string,
-  component: string,
-  sourceCache: Map<string, string>,
-): Promise<
-  | {
-      config: PageModuleConfig;
-      diagnostics: Diagnostic[];
+    let source: string;
+    try {
+      source =
+        sourceCache.get(absolute) ?? (await fs.readFile(absolute, "utf-8"));
+      sourceCache.set(absolute, source);
+    } catch {
+      continue;
     }
-  | undefined
-> {
-  const absolute = await resolveProjectSourceAbsolute(cwd, component);
-  if (!absolute) return undefined;
 
-  let source: string;
-  try {
-    source =
-      sourceCache.get(absolute) ?? (await fs.readFile(absolute, "utf-8"));
-    sourceCache.set(absolute, source);
-  } catch {
-    return undefined;
-  }
-
-  const analysis = analyzePageModuleConfig(source);
-  const file = toPosixPath(path.relative(cwd, absolute));
-  return {
-    config: analysis.config,
-    diagnostics: analysis.diagnostics.map((diagnostic) => ({
-      ...diagnostic,
-      file,
-    })),
-  };
-}
-
-function applyPageModuleConfig(
-  page: PageNode,
-  moduleConfig: {
-    render?: RenderMode;
-    componentModel?: ComponentModel;
-    hydrate?: HydrationMode;
-    prerender?: PrerenderConfig;
-  },
-  configured: {
-    render?: RenderMode;
-    componentModel?: ComponentModel;
-    hydrate?: HydrationMode;
-    prerender?: PrerenderConfig;
-  } = {},
-) {
-  if (!configured.render && moduleConfig.render) {
-    page.render = moduleConfig.render;
-  }
-  if (!configured.componentModel && moduleConfig.componentModel) {
-    page.componentModel = moduleConfig.componentModel;
-  }
-  if (!configured.hydrate && moduleConfig.hydrate) {
-    page.hydrate = moduleConfig.hydrate;
-  }
-  if (!configured.prerender && moduleConfig.prerender) {
-    page.prerender = moduleConfig.prerender;
-    const ppr = derivePprConfig(moduleConfig.prerender);
-    if (ppr) {
-      page.ppr = {
-        ...(page.ppr ?? {}),
-        ...ppr,
-      };
+    if (findRemovedPageModuleConfigExports(source).length > 0) {
+      diagnostics.push({
+        level: "error",
+        file: toPosixPath(path.relative(cwd, absolute)),
+        message: `Page "${page.id}" declares render, hydrate, prerender, or rsc from its component module. Component rendering exports have been removed; move these fields to the adjacent page.config.ts module.`,
+      });
     }
   }
 }
 
 function derivePprConfig(
   prerender: PrerenderConfig | undefined,
-): Pick<PprConfig, "delivery" | "revalidate"> | undefined {
+): PprConfig | undefined {
   if (!prerender || prerender === true || !prerender.partial) {
     return undefined;
   }
@@ -573,46 +548,6 @@ function derivePprConfig(
       ? { revalidate: prerender.revalidate }
       : {}),
   };
-}
-
-async function mergePprRegionsFromPageModules(
-  graph: AppGraph,
-  cwd: string,
-  sourceCache: Map<string, string>,
-  diagnostics: Diagnostic[],
-  fileDependencies: Set<string>,
-  aliases?: Record<string, string>,
-) {
-  for (const page of Object.values(graph.pages)) {
-    if (!page.ppr || !page.component) continue;
-
-    const root = await resolveProjectSourceAbsolute(cwd, page.component);
-    if (!root) continue;
-
-    const analysis = await collectPprRegionsFromPageClosure(
-      cwd,
-      root,
-      sourceCache,
-      fileDependencies,
-      aliases,
-    );
-    diagnostics.push(...analysis.diagnostics);
-
-    if (Object.keys(analysis.regions).length === 0) continue;
-    const resolved = await resolvePprRegionComponents(
-      cwd,
-      analysis.regions,
-      sourceCache,
-    );
-    diagnostics.push(...resolved.diagnostics);
-    page.ppr = {
-      ...(page.ppr ?? {}),
-      regions: {
-        ...(page.ppr?.regions ?? {}),
-        ...resolved.regions,
-      },
-    };
-  }
 }
 
 async function collectPprRegionsFromPageClosure(
@@ -765,113 +700,8 @@ async function resolveProjectSourcePath(
     : sourcePath;
 }
 
-function createRouteDerivedPageNode(
-  config: GraphConfig,
-  graph: AppGraph,
-  route: ReturnType<typeof resolveRoutes>[number],
-  routeId: string,
-  diagnostics: Diagnostic[],
-): string | undefined {
-  if (!shouldCreateRouteDerivedPage(config, route)) return undefined;
-
-  const pageId = deriveRouteIdFromPath(route.id ?? route.path);
-  const existing = graph.pages[pageId];
-  if (existing) {
-    diagnostics.push({
-      level: "error",
-      message: `Route-derived page id "${pageId}" for route path "${route.path}" conflicts with existing page "${existing.id}". Add an explicit route id or rename one route so generated page ids are unique.`,
-    });
-    return undefined;
-  }
-
-  graph.pages[pageId] = {
-    id: pageId,
-    routeId,
-    component: route.module,
-    html: config.html,
-    render: route.render ?? "csr",
-    hydrate: route.hydrate,
-    componentModel: route.componentModel,
-    prerender: route.prerender,
-    ...(route.ppr ? { ppr: route.ppr } : {}),
-  };
-  return pageId;
-}
-
-function getConfiguredPageRouteId(
-  graph: AppGraph,
-  route: ReturnType<typeof resolveRoutes>[number],
-): string | undefined {
-  if (!route.id) return undefined;
-  const page = graph.pages[route.id];
-  return page?.path ? page.id : undefined;
-}
-
-function createConfiguredPageRoutes(graph: AppGraph): ExtractedRoute[] {
-  return Object.values(graph.pages)
-    .filter((page): page is PageNode & { path: string } => Boolean(page.path))
-    .map((page) => ({
-      id: page.id,
-      path: normalizePublicRoutePath(page.path),
-      module: page.component ?? page.app ?? page.entry,
-      render: page.render,
-      hydrate: page.hydrate,
-      componentModel: page.componentModel,
-      prerender: page.prerender,
-      ppr: page.ppr,
-    }));
-}
-
 function normalizePublicRoutePath(routePath: string): string {
   return routePath.startsWith("/") ? routePath : `/${routePath}`;
-}
-
-function shouldCreateRouteDerivedPage(
-  config: GraphConfig,
-  route: ReturnType<typeof resolveRoutes>[number],
-): route is ReturnType<typeof resolveRoutes>[number] & {
-  module: string;
-} {
-  return Boolean(
-    route.module &&
-      route.kind !== "layout" &&
-      hasRouteGraphSource(config) &&
-      ((route.render && route.render !== "csr") ||
-        route.componentModel === "rsc" ||
-        route.ppr),
-  );
-}
-
-function hasRouteGraphSource(config: GraphConfig): boolean {
-  return Boolean(
-    Object.keys(config.apps ?? {}).length > 0 ||
-      !config.pages ||
-      Object.values(config.apps ?? {}).some((app) =>
-        typeof app === "string" ? app : app.source,
-      ),
-  );
-}
-
-function validateGraphPageContracts(
-  graph: AppGraph,
-  diagnostics: Diagnostic[],
-): void {
-  for (const page of Object.values(graph.pages)) {
-    const file = getPageContractDiagnosticFile(page);
-    if (file && hasErrorDiagnosticForFile(diagnostics, file)) continue;
-
-    const renderingError = getPageBuildContractViolation(
-      `Page "${page.id}"`,
-      page,
-    );
-    if (renderingError) {
-      diagnostics.push({
-        level: "error",
-        file,
-        message: renderingError,
-      });
-    }
-  }
 }
 
 function hasErrorDiagnosticForFile(
@@ -881,206 +711,6 @@ function hasErrorDiagnosticForFile(
   return diagnostics.some(
     (diagnostic) => diagnostic.level === "error" && diagnostic.file === file,
   );
-}
-
-function getPageContractDiagnosticFile(page: PageNode): string | undefined {
-  if (!page.component?.startsWith("./")) return undefined;
-  return page.component.slice(2);
-}
-
-function createAppNodes(config: GraphConfig): Record<string, AppNode> {
-  if (config.apps && Object.keys(config.apps).length > 0) {
-    return Object.fromEntries(
-      Object.entries(config.apps).flatMap(([id, app]) => {
-        if (isAppSourceConfig(app)) {
-          const source = getAppSourcePath(app);
-          if (!source) return [];
-          return [
-            [
-              id,
-              {
-                id,
-                entry: source,
-                html: config.html,
-              } satisfies AppNode,
-            ],
-          ];
-        }
-        if (!isAppEntryConfig(app)) return [];
-
-        return [
-          [
-            id,
-            {
-              id,
-              entry: app.entry,
-              html: app.html ?? config.html,
-              ...(app.mount ? { mount: app.mount } : {}),
-            } satisfies AppNode,
-          ],
-        ];
-      }),
-    );
-  }
-
-  if (!hasDefaultAppNode(config)) {
-    return {};
-  }
-
-  const app: AppNode = {
-    id: "default",
-    entry: getDefaultAppEntry(config),
-    html: config.routing?.html ?? config.html,
-    ...(config.routing?.mount ? { mount: config.routing.mount } : {}),
-  };
-  return {
-    default: app,
-  };
-}
-
-function isAppSourceConfig(
-  app: NonNullable<GraphConfig["apps"]>[string],
-): app is string | { source: string } {
-  return typeof app === "string" || "source" in app;
-}
-
-function getAppSourcePath(
-  app: NonNullable<GraphConfig["apps"]>[string],
-): string | undefined {
-  if (typeof app === "string") return app;
-  return "source" in app ? app.source : undefined;
-}
-
-function isAppEntryConfig(
-  app: NonNullable<GraphConfig["apps"]>[string],
-): app is { entry: string; html?: string; mount?: string } {
-  return typeof app !== "string" && "entry" in app && Boolean(app.entry);
-}
-
-function hasDefaultAppNode(config: GraphConfig): boolean {
-  return Boolean(
-    (!config.apps || Object.keys(config.apps).length === 0) &&
-      (!config.pages || Object.keys(config.pages).length === 0) &&
-      config.routing?.mode !== "mpa",
-  );
-}
-
-function getDefaultAppEntry(config: GraphConfig): string {
-  return config.routing?.entry ?? config.entry;
-}
-
-function isRequiredDefaultAppEntry(
-  config: GraphConfig,
-  entry: string,
-): boolean {
-  if (config.routing?.mode === "spa") return false;
-  return Boolean(config.routing?.entry || entry !== DEFAULT_TOP_LEVEL_ENTRY);
-}
-
-function createPageNodes(
-  config: GraphConfig,
-  configuredPageRoutes: PageRouteNode[] = config.routing?.routes ?? [],
-  configuredPagePathIds: Set<string> = new Set(),
-): Record<string, PageNode> {
-  const pages: Record<string, PageNode> = {};
-
-  if (config.routing?.mode === "mpa") {
-    for (const route of sortPageRoutes(configuredPageRoutes)) {
-      if (route.kind === "layout") continue;
-      pages[route.id] = {
-        id: route.id,
-        path: route.path,
-        component: route.module,
-        html: route.html ?? config.routing.html,
-        render: "csr",
-        mount: config.routing.mount,
-      };
-    }
-  }
-
-  for (const [id, page] of Object.entries(config.pages ?? {})) {
-    const pagePath =
-      page.path && configuredPagePathIds.has(id) ? page.path : undefined;
-    pages[id] = {
-      id,
-      path: pagePath,
-      entry: page.entry,
-      component: page.component,
-      app: page.app,
-      html: page.html,
-      render: page.render ?? "csr",
-      mount: page.mount,
-      ...(page.componentModel ? { componentModel: page.componentModel } : {}),
-      ...(page.hydrate ? { hydrate: page.hydrate } : {}),
-      ...(page.prerender ? { prerender: page.prerender } : {}),
-      ...(page.ppr ? { ppr: page.ppr } : {}),
-    };
-  }
-
-  return pages;
-}
-
-function validateConfiguredPagePaths(
-  config: Pick<GraphConfig, "pages">,
-  diagnostics: Diagnostic[],
-): Set<string> {
-  const routeByPath = new Map<string, { id: string; path: string }>();
-  const routeByShape = new Map<string, { id: string; path: string }>();
-  const validPagePathIds = new Set<string>();
-
-  for (const [id, page] of Object.entries(config.pages ?? {})) {
-    if (!page.path) continue;
-    const pathError = getPathPatternValidationError(page.path);
-    const file = getConfiguredPageDiagnosticFile(page);
-    if (pathError) {
-      diagnostics.push({
-        level: "error",
-        ...(file ? { file } : {}),
-        message: `Configured page "${id}" path ${formatConfiguredPageRoutePathValue(page.path)} ${formatConfiguredPageRoutePathValidationError(pathError)}`,
-      });
-      continue;
-    }
-    const paramError = getConfiguredPageRouteParamValidationError(page.path);
-    if (paramError) {
-      diagnostics.push({
-        level: "error",
-        ...(file ? { file } : {}),
-        message: `Configured page "${id}" path "${page.path}" ${formatConfiguredPageRouteParamValidationError(paramError)}`,
-      });
-      continue;
-    }
-
-    const previousPathOwner = routeByPath.get(page.path);
-    if (previousPathOwner) {
-      diagnostics.push({
-        level: "error",
-        ...(file ? { file } : {}),
-        message:
-          `Configured page "${id}" path "${page.path}" is already declared by ` +
-          `page "${previousPathOwner.id}". Keep one page route per URL path.`,
-      });
-      continue;
-    }
-    routeByPath.set(page.path, { id, path: page.path });
-
-    const routeShape = routePathShapeFromPath(page.path).key;
-    const previousShapeOwner = routeByShape.get(routeShape);
-    if (previousShapeOwner) {
-      diagnostics.push({
-        level: "error",
-        ...(file ? { file } : {}),
-        message:
-          `Configured page "${id}" path "${page.path}" has the same route shape as ` +
-          `page "${previousShapeOwner.id}" (${previousShapeOwner.path}). ` +
-          "Use one dynamic param name for each URL shape.",
-      });
-      continue;
-    }
-    routeByShape.set(routeShape, { id, path: page.path });
-    validPagePathIds.add(id);
-  }
-
-  return validPagePathIds;
 }
 
 function validateConfiguredPageRoutes(
@@ -1182,27 +812,29 @@ function validateConfiguredPageRoutes(
     validRoutes.push(normalizedRoute);
   }
 
-  return validRoutes.filter((route) => {
-    if (!route.parentId) return true;
-    const parent = routeById.get(route.parentId);
-    if (!parent) {
-      diagnostics.push({
-        level: "error",
-        file: toDiagnosticModulePath(route.module),
-        message: `Configured page route "${route.id}" parentId "${route.parentId}" does not match another route id.`,
-      });
-      return false;
-    }
-    if (parent.kind !== "layout") {
-      diagnostics.push({
-        level: "error",
-        file: toDiagnosticModulePath(route.module),
-        message: `Configured page route "${route.id}" parentId "${route.parentId}" must reference a layout route.`,
-      });
-      return false;
-    }
-    return true;
-  });
+  return sortPageRoutes(
+    validRoutes.filter((route) => {
+      if (!route.parentId) return true;
+      const parent = routeById.get(route.parentId);
+      if (!parent) {
+        diagnostics.push({
+          level: "error",
+          file: toDiagnosticModulePath(route.module),
+          message: `Configured page route "${route.id}" parentId "${route.parentId}" does not match another route id.`,
+        });
+        return false;
+      }
+      if (parent.kind !== "layout") {
+        diagnostics.push({
+          level: "error",
+          file: toDiagnosticModulePath(route.module),
+          message: `Configured page route "${route.id}" parentId "${route.parentId}" must reference a layout route.`,
+        });
+        return false;
+      }
+      return true;
+    }),
+  );
 }
 
 function getConfiguredPageRoutePathValidationError(
@@ -1263,13 +895,6 @@ function toDiagnosticModulePath(module: string): string {
   return module.replace(/^\.\//, "");
 }
 
-function getConfiguredPageDiagnosticFile(
-  page: NonNullable<GraphConfig["pages"]>[string],
-): string | undefined {
-  const source = page.component ?? page.app ?? page.entry;
-  return source ? toDiagnosticModulePath(source) : undefined;
-}
-
 async function collectRouteDirectories(root: string): Promise<string[]> {
   const dirs = new Set([root]);
 
@@ -1294,78 +919,29 @@ async function collectRouteDirectories(root: string): Promise<string[]> {
   return [...dirs].sort();
 }
 
-function getDefaultAppId(
-  graph: AppGraph,
-  preferredEntry?: string,
-): string | undefined {
-  if (preferredEntry) {
-    const app = Object.values(graph.apps).find(
-      (candidate) => candidate.entry === preferredEntry,
-    );
-    if (app) return app.id;
-  }
-
-  const appIds = Object.keys(graph.apps);
-  return appIds.length > 0 ? appIds[0] : undefined;
-}
-
-function getSpaRoutingEntry(
-  config: Pick<GraphConfig, "entry" | "routing">,
-): string | undefined {
-  if (config.routing?.mode !== "spa") return undefined;
-  return config.routing.entry ?? config.entry;
-}
-
 async function collectFrameworkSourceFiles(
   config: GraphConfig,
   cwd: string,
   sourceCache: Map<string, string>,
   aliases?: Record<string, string>,
+  providerSourceModules: string[] = [],
 ): Promise<FrameworkSourceFiles> {
   const files = new Set<string>();
   const roots = new Set<string>();
   const explicitDependencyRoots = new Set<string>();
   const diagnostics: Diagnostic[] = [];
 
-  if (config.apps && Object.keys(config.apps).length > 0) {
-    for (const [appId, app] of Object.entries(config.apps)) {
-      const appSource = getAppSourcePath(app);
-      if (appSource) {
-        await addConfiguredSource(
-          roots,
-          cwd,
-          appSource,
-          `App "${appId}" source`,
-          diagnostics,
-          explicitDependencyRoots,
-        );
-        continue;
-      }
-
-      if (!isAppEntryConfig(app)) continue;
-
-      await addConfiguredSource(
-        roots,
-        cwd,
-        app.entry,
-        `App "${appId}" entry`,
-        diagnostics,
-      );
-    }
-  } else if (hasDefaultAppNode(config)) {
-    const entry = getDefaultAppEntry(config);
-    if (isRequiredDefaultAppEntry(config, entry)) {
-      await addConfiguredSource(
-        roots,
-        cwd,
-        entry,
-        'App "default" entry',
-        diagnostics,
-      );
-    } else {
-      await addExistingSource(roots, cwd, entry);
-    }
+  for (const module of providerSourceModules) {
+    await addConfiguredSource(
+      roots,
+      cwd,
+      module,
+      `Application-route module "${module}"`,
+      diagnostics,
+      explicitDependencyRoots,
+    );
   }
+
   for (const route of config.routing?.routes ?? []) {
     await addConfiguredSource(
       roots,
@@ -1423,30 +999,6 @@ async function collectFrameworkSourceFiles(
     diagnostics,
     explicitDependencyRoots,
   );
-  for (const [pageId, page] of Object.entries(config.pages ?? {})) {
-    await addConfiguredSource(
-      roots,
-      cwd,
-      page.entry,
-      `Page "${pageId}" entry`,
-      diagnostics,
-    );
-    await addConfiguredSource(
-      roots,
-      cwd,
-      page.component,
-      `Page "${pageId}" component`,
-      diagnostics,
-      explicitDependencyRoots,
-    );
-    await addConfiguredSource(
-      roots,
-      cwd,
-      page.app,
-      `Page "${pageId}" app`,
-      diagnostics,
-    );
-  }
   for (const root of roots) {
     await collectStaticImportClosure(files, cwd, root, sourceCache, aliases);
   }
@@ -1514,28 +1066,6 @@ function getConfiguredSourceDiagnosticFile(
     return toPosixPath(path.relative(cwd, absolute));
   }
   return toPosixPath(filePath);
-}
-
-async function addExistingSource(
-  files: Set<string>,
-  cwd: string,
-  filePath: string | undefined,
-  explicitDependencyFiles?: Set<string>,
-): Promise<string | undefined> {
-  if (!filePath) return;
-  const absolute = path.resolve(cwd, filePath);
-  try {
-    const stat = await fs.stat(absolute);
-    if (stat.isFile() && SOURCE_EXTENSIONS.has(path.extname(absolute))) {
-      files.add(absolute);
-      explicitDependencyFiles?.add(absolute);
-      return absolute;
-    }
-  } catch {
-    // Missing entry files are reported by the bundler today. Keep graph
-    // creation non-blocking for phase 1 so behavior does not change.
-  }
-  return undefined;
 }
 
 async function collectStaticImportClosure(

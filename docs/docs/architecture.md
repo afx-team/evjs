@@ -1,33 +1,37 @@
 # Architecture
 
-evjs is a React framework built around file conventions, explicit source
-declarations, a framework graph, a bundler-independent build plan, and one
-private build output contract with generated runtime projections. The
-framework-owned route model is file-based: client pages come from `src/pages`,
-server file routes come from `src/apis`, and server middleware is split between
-framework request middleware in `src/middleware.ts` and API route middleware in
+evjs is a React framework built around one positive Page-and-Route convention,
+server file conventions, a normalized CoreGraph, a bundler-independent build
+plan, and one private build output contract with generated runtime
+projections. Canonical `src/pages/**/page.*` anchors normalize directly to
+CoreGraph; explicit route-tree migration inputs normalize through the same
+model. BuildPlan is derived from that graph for planners and adapters.
+Each Page directory owns its private source and determines its client URL.
+`routing.mode` changes only SPA/MPA materialization. Server request routes
+remain under `src/apis`, with middleware in `src/middleware.ts` and
 `src/apis/**/middleware.ts`.
 
 ```mermaid
 flowchart LR
-  Source["File conventions\nsrc/pages + src/apis + middleware"]
-  Config["ev.config.ts\nplugins + explicit entries"]
-  Graph["AppGraph\nframework model"]
+  Source["Owned source\nPage directories + src/apis + middleware"]
+  Config["ev.config.ts\nrouting.mode + plugins"]
+  Resolve["Canonical resolver\nor explicit route normalizer"]
+  Core["CoreGraph\nsemantic model"]
   Plan["BuildPlan\nbundler-independent plan"]
   IR[".ev IR\nentries + generated modules + slots"]
   Build["Bundler build\nUtoopack / webpack"]
   Output["BuildOutput\nruntime + deployment contract"]
   Runtime["Runtime targets\nbrowser + server + adapters"]
 
-  Source --> Graph
-  Config --> Graph
-  Graph --> Plan --> IR --> Build --> Output --> Runtime
+  Source --> Resolve
+  Config --> Resolve
+  Resolve --> Core --> Plan --> IR --> Build --> Output --> Runtime
 
   classDef source fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
   classDef model fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
   classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
   class Source,Config source;
-  class Graph,Plan,IR model;
+  class Resolve,Core,Plan,IR model;
   class Build,Output,Runtime build;
 ```
 
@@ -123,7 +127,9 @@ declarations, page bootstraps, server-function stubs/registrations, and RSC
 runtime entries type-check. Application code imports public authoring APIs from
 `@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`, `@evjs/ev/server-context`, or `@evjs/ev/transport`; it must not
 import generated-only internal helpers. Examples include
-`@evjs/ev/_internal/client/route-types` for generated SPA route declarations,
+`@evjs/ev/_internal/client/route-types` for generated canonical Page-anchor
+route declarations (explicit Bigfish-style config routes do not currently
+promise them),
 `@evjs/ev/_internal/client/server-functions` for generated `"use server"`
 client stubs, `@evjs/ev/_internal/server/server-functions` for generated
 `"use server"` server registrations, and
@@ -149,7 +155,7 @@ import from `@evjs/client` or `@evjs/server`; adapter examples may import
   graph/plan helpers, framework transforms, HTML helpers
 
 @evjs/shared/manifest
-  AppGraph, BuildPlan, BuildOutput, and manifest schemas
+  CoreGraph, BuildPlan, BuildOutput, and manifest schemas
 
 @evjs/ev generated-only runtime internals
   framework-managed runtime, shell, router-free react-page runtime, transport,
@@ -185,7 +191,7 @@ flowchart TB
   end
 
   subgraph GraphStage["2. Build framework model"]
-    Graph["AppGraph\nroutes + server functions + page metadata"]
+    Core["CoreGraph\nApplication + Page + Route + Document"]
     Plan["BuildPlan\nentries + HTML + environments"]
     Contributions["contributions(ctx)\ngenerated artifacts + slots"]
   end
@@ -210,7 +216,7 @@ flowchart TB
   end
 
   Request --> ConfigHooks --> Resolved --> SetupHooks
-  SetupHooks --> Graph --> Plan --> Contributions
+  SetupHooks --> Core --> Plan --> Contributions
   Contributions --> Entries
   Contributions --> PluginFiles
   Entries --> IRManifest
@@ -224,12 +230,13 @@ flowchart TB
   classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
   class Request input;
   class ConfigHooks,Resolved,SetupHooks config;
-  class Graph,Plan,Contributions,Entries,PluginFiles,IRManifest model;
+  class Core,Plan,Contributions,Entries,PluginFiles,IRManifest model;
   class BundlerConfig,Bundler,Output,BuildOutputHook,HTML,BuildEnd,Dist build;
 ```
 
 Before bundling, evjs materializes `.ev` as an agent-readable framework IR.
-`.ev/framework/app-graph.json` records convention discovery,
+`.ev/framework/core-graph.json` records normalized Application, Page, Route,
+Document, scope, and provenance semantics.
 `.ev/framework/build-plan.json` records the final bundler-independent plan,
 `.ev/entries/*` contains generated entry facades, `.ev/plugins/*` contains
 plugin generated artifacts, and `.ev/manifest.json` ties together graph data,
@@ -240,21 +247,20 @@ Bundler adapters
 consume those generated entries; they do not recreate file-convention entry
 logic with adapter-specific loaders.
 
-Builds emit canonical deployment metadata at `dist/build-output.json`. The
+Builds emit canonical deployment metadata at
+`dist/deployment-metadata.json`. The
 internal `BuildOutput` remains an in-memory plugin/build contract and is not
-serialized wholesale. Client and server manifest files are compatibility
-projections for deployment tooling: `client/manifest.json` keeps SPA public
-assets or MPA page-level assets plus routing, while `server/manifest.json`
-keeps the server entry and lightweight server route projection.
+serialized wholesale. Core does not emit split client/server compatibility
+manifests; a deployment adapter owns any platform-specific projection.
 Generated HTML embeds the browser `ClientRuntime`; CLI builds no longer write
 `client/runtime.json` by default. Runtime-only `FrameworkRuntime` data is kept
 in memory for plugins and injected into dev or deployment adapter bootstraps
 instead of being emitted as a default JSON artifact. Deployed runtimes do not
-read `dist/build-output.json` or manifest files at startup.
+read `dist/deployment-metadata.json` at startup.
 
 Runtime-required data is intentionally separated from deployment metadata.
 ClientRuntime keeps only the build id, transport base URL, RSC endpoint,
-app/page module targets, mount selectors, and routing metadata needed to boot or
+Application/Page module targets, mount selectors, and routing metadata needed to boot or
 navigate. FrameworkRuntime keeps SSR/PPR/RSC render coordination and React
 Flight client reference data. Deployment metadata keeps public assets, HTML
 documents, server entry, and deployable route rows such as static documents,
@@ -273,7 +279,7 @@ directly. Generated bootstraps use `@evjs/ev/_internal/client/*`.
 flowchart TB
   subgraph BrowserSide["Browser"]
     HTMLDoc["HTML document\nembedded ClientRuntime"]
-    Bootstrap["Generated app/page bootstrap"]
+    Bootstrap["Generated Application/Page bootstrap"]
     ReactApp["React runtime\nSPA / MPA / hydration"]
   end
 
@@ -354,14 +360,13 @@ in browser network logs. The long-term runtime boundary is a replaceable region
 resolver: local Node/dev can call the renderer in-process, while edge adapters
 can fetch an internal FaaS endpoint without changing the public page protocol.
 
-The preferred PPR authoring model is React `Suspense`. The page component
-declares `export const render = "ssr"` plus
-`export const prerender = { partial: true, delivery }`. PPR is a prerendering
-strategy on top of SSR, not a separate document render mode. In evjs 0.2 this
-area remains experimental: runtime postponed/resume for arbitrary Suspense
-boundaries is not implemented yet, and the current compatibility splitter only
-creates internal region renderers for the limited `Suspense` + direct
-`lazy(() => import(...))` shape. Region ids are opaque framework details.
+PPR authoring uses React `Suspense`. Canonical `page.*` routes declare
+`render: "ssr"` and `prerender: { partial: true, delivery }` in
+`page.config.ts`; do not preserve those values as Page component exports during
+migration. Runtime postponed/resume for arbitrary Suspense boundaries is not
+implemented yet, and the current splitter creates internal region renderers
+only for the limited `Suspense` + direct `lazy(() => import(...))` shape.
+Region ids are opaque framework details.
 
 PPR page hydration is page-level `none` in the client runtime. Client
 interactivity should be introduced through explicit client islands, not by
@@ -380,17 +385,23 @@ metadata before it can run the same path.
 ## Configuration Ownership
 
 ```txt
-routing
-  page route source of truth: spa or mpa mode, dir, html, mount point
+routing.mode
+  selects SPA or MPA materialization
+
+routing.dir + src/pages/**/page.*
+  client Page, private scope, and URL source of truth
+
+Page-local page.config.ts / index.html
+  build-time Page capabilities in both modes / MPA Page Document template
 
 server.routing
   server file route source of truth: dir, discovered HTTP method modules
 
-entry/html
-  manual single app shorthand
+application.routes / Bigfish routes
+  explicit SPA-only route-tree migration inputs, not canonical routing
 
-pages.*
-  explicit independent page output: path, entry/component/app, mount point
+Smallfish / evjs 0.2 source trees
+  convert entries to page.* and settings to page.config.ts before resolution
 
 server.basePath
   derives framework server runtime paths: fn, ppr, rsc
@@ -402,9 +413,13 @@ plugins
   framework and bundler extension points
 ```
 
-`routing` points to `src/pages` by default. In SPA mode, graph creation turns
-the discovered files into one internal TanStack Router app entry. In MPA mode,
-the same files become independent page outputs without a client router.
+Each `page.*` anchor creates one Page and semantic Route. Static directories,
+`$param`, terminal `$...splat`, and `(group)` segments derive its URL relative
+to `routing.dir`; the complete containing directory is its private scope. SPA
+creates Client Routes and normally one Application Document. MPA starts from
+the same semantic graph and creates Page-owned Documents. Dynamic-route output
+and React layout/boundary projection remain staged and unsupported
+combinations fail graph/plan validation.
 
 `server.routing` points to `src/apis` by default. A server route file becomes a
 route only when it exports uppercase HTTP methods. Framework request middleware
@@ -414,11 +429,14 @@ requests. API route middleware is discovered by filesystem scope from
 modules do not export middleware and there is no `server.entry` composition
 path.
 
-Page modules own path-to-component wiring by filename and rendering metadata
-through static exports such as `render`, `hydrate`, `rsc`, and `prerender`.
-When graph creation sees SSR, RSC, or partial prerender metadata, it derives the
-required server renderers, PPR regions, assets, and manifest output from that
-page module.
+Source migration must move static title, supported named metadata, `render`,
+`hydrate`, `rsc`, and `prerender` settings from old Page components or Page
+configuration into adjacent build-time `page.config.ts`. Canonical `page.*`
+routes normalize the core fields into graph data and keep them independent from
+Page identity. Namespaced plugin extension values from the same config are
+graph data until the owning plugin explicitly projects runtime code/data.
+For normalized routes, graph creation derives the required server
+renderers, PPR regions, assets, and manifest output.
 The in-memory BuildOutput keeps those renderer relationships explicit: SSR and
 RSC document pages resolve through a `page-server` renderer owned by the page id
 or by one of that page's route ids. SSG pages use a `page-server` renderer during
@@ -426,9 +444,12 @@ the production build to emit static HTML, then deployment metadata exposes them
 as `static-page` routes. PPR pages resolve through `ppr-shell` and `ppr-region`
 entries instead.
 
-`pages.*` remains the explicit lower-level page API. It is useful when a page
-does not map cleanly to the `src/pages` file tree. Rendering metadata still
-belongs in the referenced page module, not in `ev.config.ts`.
+`application.routes` and Bigfish route config remain explicit SPA-only
+route-tree migration inputs; MPA topology is rejected. Smallfish and evjs 0.2
+source trees must be converted to
+`page.*` plus `page.config.ts` before resolution. Standalone/manual runtime
+composition remains outside this model. None of these define another framework
+Page authoring model.
 
 ## Server Function Pipeline
 
@@ -464,7 +485,7 @@ The RSC output rules are strict:
   modules.
 - RSC page output carries renderer ids and emitted assets.
 - React Flight client reference manifests stay out of `BuildOutput` and
-  client/server manifests; the generated `FrameworkRuntime` carries the runtime
+  serialized deployment metadata; the generated `FrameworkRuntime` carries the runtime
   client reference data needed by the RSC endpoint.
 - The Flight endpoint is expressed once as `BuildOutput.runtime.server.rsc`.
 - The manifest linker rejects RSC page output when `runtime.server.rsc` is
@@ -498,7 +519,7 @@ emit platform-specific files from the canonical `DeploymentMetadata` projection.
 
 Platform-specific adapters should derive routing, framework endpoints, SSR, PPR,
 RSC, and asset metadata from `BuildOutput` in memory instead of reading bundler
-stats. Post-build tools should read `dist/build-output.json`, whose documents
+stats. Post-build tools should read `dist/deployment-metadata.json`, whose documents
 table carries app shell fallback metadata and whose routes table uses explicit
 kinds such as `static-page`, `server-page`, `server-function`, `ppr-endpoint`,
 `rsc-endpoint`, and `api-route`. Static page route rows point at emitted HTML
@@ -506,9 +527,8 @@ documents and carry `render: "csr" | "ssg"`; server page route rows describe
 server-handled pages and carry `render: "ssr"`. Server page rows add
 `prerender: "full" | "partial"` for full prerender or PPR behavior, and
 `rsc: true` for RSC pages, so derived capabilities do not masquerade as source
-`render` values. Client/server manifests are
-deployment metadata; generated browser and server
-runtimes consume minimal ClientRuntime and FrameworkRuntime contracts. Those
+`render` values. Generated browser and server runtimes consume minimal
+ClientRuntime and FrameworkRuntime contracts. Those
 runtime contracts use `routing.kind` to distinguish SPA routes from MPA/page
 targets instead of serializing empty top-level `pages` or `routes` fields.
 Deployment metadata expresses framework endpoints as route rows instead of
@@ -537,15 +557,15 @@ functions, or server routes unless a server-capable runtime is attached.
 
 ## Dev Updates
 
-Framework-level file-convention changes are handled separately from normal HMR:
+Framework-level graph input changes are handled separately from normal HMR:
 
 ```txt
-config / page route / server file-route / middleware convention change
-  -> recreate AppGraph
+config / Page reference or source / server file-route / middleware change
+  -> recreate CoreGraph
   -> recreate BuildPlan
   -> diff BuildPlan
   -> if BuildPlan changes:
-       bundlerDevController.updatePlan(update, nextGraph)
+       bundlerDevController.updatePlan(update)
   -> if graph-only:
        refresh active graph + dependency watchers
 ```
@@ -559,14 +579,14 @@ path. Server-function and server-route implementation edits usually keep the
 same `BuildPlan`; in that case the framework refreshes graph metadata and watch
 inputs, while the bundler's normal server watch emits the updated code.
 
-Graph analysis reads page route modules, server file route modules, middleware
-convention modules, and static import closures to discover server functions,
-page metadata, and RSC references. Static import closure discovery parses
-modules, so it follows ordinary imports, re-exports, and valid string-literal
-import aliases. Literal dynamic imports are also tracked when they point at
-project-relative modules. Dev watches the page route directory, server route
-directory, explicit graph roots, and files that already contain framework
-markers. Configured page components are explicit graph roots because their
-static `render`, `hydrate`, `rsc`, and `prerender` exports affect framework
-planning. Ordinary component, app entry, and style edits stay on the bundler
-HMR path unless those modules declare framework markers.
+Graph analysis reads canonical Page entries, server file route modules,
+middleware modules, and static import closures to discover server functions
+and dependencies. Adjacent `page.config.ts` modules provide Page title, named
+metadata, rendering metadata, and RSC settings. Static import closure discovery
+parses modules, so it follows ordinary imports, re-exports, and valid
+string-literal import aliases. Literal dynamic imports are also tracked when
+they point at project-relative modules. Dev watches Page roots, server route
+directories, explicit graph roots, and files that already contain framework
+markers. Canonical Page entries and Page config modules are explicit graph
+roots. Ordinary component, app entry, and style edits stay on the bundler HMR
+path unless those modules declare framework markers.

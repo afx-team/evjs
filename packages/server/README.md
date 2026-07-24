@@ -25,13 +25,24 @@ Create standard REST endpoints using the `createRoute()` factory:
 // src/routes/users.ts
 import { createRoute } from "@evjs/server";
 
-export const GET = createRoute("/api/users", {
+export const usersRoute = createRoute("/api/users", {
   GET: async (c) => Response.json([{ id: 1, name: "Alice" }]),
 });
 ```
 
 The `path` must be a **string literal** so the route definition keeps precise
-compile-time types.
+compile-time types. Register the route explicitly in the standalone app:
+
+```ts
+// src/app.ts
+import { createApp } from "@evjs/server";
+import { usersRoute } from "./routes/users.js";
+
+export const app = createApp({ routes: [usersRoute] });
+```
+
+This programmatic API is independent from evjs Framework file routes under
+`src/apis`; the framework does not scan `createRoute()` declarations.
 
 ### 2. Server Functions
 

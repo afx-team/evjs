@@ -1,8 +1,8 @@
 # Generated Contributions IR
 
-`.ev` is the agent-readable framework IR for evjs builds. It records what file
-conventions discovered, what framework entries were generated, what plugins
-added, and how those generated pieces are attached to framework slots.
+`.ev` is the agent-readable framework IR for evjs builds. It records the
+resolved Page-and-Route graph, generated framework entries, plugin additions,
+and how generated pieces attach to framework slots.
 
 ## Concept
 
@@ -59,7 +59,7 @@ flowchart TB
 ```txt
 .ev/
 ├── framework/
-│   ├── app-graph.json
+│   ├── core-graph.json          # normalized Page/Route/Application/Document graph
 │   └── build-plan.json
 ├── entries/
 │   ├── main.ts
@@ -75,7 +75,9 @@ flowchart TB
 
 The structure is stable and readable:
 
-- `framework/` contains convention discovery and build-plan snapshots.
+- `framework/` contains the normalized graph, provenance, diagnostics, and
+  build-plan snapshots. `core-graph.json` is the single semantic source of
+  truth consumed by planning and inspection.
 - `entries/` contains framework-owned entry facades consumed by bundlers.
 - `plugins/<plugin>/` contains plugin generated artifacts.
 - Plugin names are normalized into path segments; a role suffix such as
@@ -100,29 +102,36 @@ source. Application source should not import `.ev` paths or
 `evjs:generated/*` specifiers.
 
 Use `ctx.slot(name).add(...)` to attach generated artifacts to the framework.
-The supported v1 slots are:
+The supported slots are:
 
 | Slot | Covers |
 |------|--------|
 | `client.entry` | Entry imports and entry wrapper modules, including replacement wrappers |
-| `client.runtime.plugin` | Runtime plugin modules and export keys |
-| `client.route` | Constrained SPA route additions or route-module replacements |
 | `server.request.middleware` | Framework request middleware in the server pipeline |
 | `html.tag` | Structured `meta`, `link`, `script`, and `style` tags |
 | `resolve.alias` | Semantic module aliasing to user modules, packages, absolute paths, or generated artifacts |
 | `resolve.external` | Externalized module resolution, usually paired with `html.tag` CDN resources |
 
-`client.route` is intentionally narrower than arbitrary route tmp files. It can
-append a generated route module with a stable route id and path, or replace the
-module for an existing generated route id. It cannot mutate unrelated route
-metadata, create a second route dialect, or bypass the same path and parent
-validation used by file conventions.
+Use `client.entry` to import a side-effect module or call an explicit
+installer. The IR does not carry an inert runtime-plugin registry.
 
-`client.runtime.plugin` modules are passed to the generated SPA runtime. Runtime
-plugins may export `patchRoutes`, `patchClientRoutes`, `modifyRouterOptions`,
-`wrapRoot`, `rootContainer`, or `render`. Use route slots for static route IR
-that should be visible in `.ev/manifest.json`; use runtime route hooks only when
-the final route list must depend on browser runtime state.
+`client.entry.runtime` accepts only `"client"` or `"all"`. A server-only
+filter is rejected because a client entry cannot materialize server code; use a
+server request or extension-owned server entry facet instead.
+
+An explicit Application/Page target must match a materialized client entry for
+`client.entry`, or an HTML Document for `html.tag`.
+A semantic SPA page normally shares both with its application, so page-targeted
+entry or HTML contributions fail with a diagnostic instead of
+becoming silent no-ops.
+
+A canonical MPA exposes one logical `default` Application even though it
+materializes one page-client entry and one Document per Page. An Application target
+therefore expands `client.entry` to every Page entry and `html.tag` to every
+Page Document. A Page target remains exact. This expansion is recorded in the
+generated plan. An explicit
+route-tree input must normalize to the same
+Application/Page/Document ownership before using these semantics.
 
 ## Boundaries
 

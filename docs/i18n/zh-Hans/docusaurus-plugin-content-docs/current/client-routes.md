@@ -1,287 +1,295 @@
 # 客户端路由
 
-evjs 以 `src/pages` 作为客户端路由的唯一事实来源。应用页面写在
-页面文件中；框架会发现这些文件，并按配置生成一个 evjs 管理的 SPA，
-或生成多个不带路由器的 MPA 页面。构建期 framework 代码会 materialize 到 `.ev`
-generated IR；用户源码里只会收到类似 `src/route-types.d.ts` 的类型声明，让 TypeScript
-从页面树推导导航 path。
+客户端路由只有一种 canonical Page-and-Route 模型：
 
-完整文件名、忽略文件和 layout 规则见
-[文件约定](./file-conventions)。
-
-## 目录结构
-
-```
-src/
-├── apis/*.server.ts       # 可选就近放置的 server functions
-├── layout/
-│   └── index.tsx          # 可选 SPA 根布局
-└── pages/
-    ├── error.tsx           # 可选根 SPA error boundary
-    ├── not-found.tsx       # 可选根 SPA not-found boundary
-    ├── index.tsx          # /
-    ├── (marketing)/
-    │   └── about.tsx      # /about
-    ├── users/$userId.tsx  # /users/$userId
-    └── posts/
-        ├── layout.tsx     # 嵌套 SPA route layout
-        └── index.tsx      # /posts
-```
-
-页面路由约定故意保持收敛：
-
-- 动态路由段使用 `$param` 文件名，例如 `$userId.tsx` 或 `$team_id.tsx`。
-- `[id].tsx` 和 `[...slug].tsx` 这类 bracket 段会被拒绝。
-- SPA catch-all 段使用 `$...splat.tsx` 作为 URL path 的最后一段，并映射为 `$`。
-  运行时 params 会把匹配到的后缀暴露为 `_splat`。
-- optional 文件段不属于约定，因此 `$slug?.tsx` 和 `$.tsx` 会被拒绝。
-- 动态参数名必须是 `$` 后面的 JavaScript 标识符。
-- `$__proto__.tsx`、`$constructor.tsx`、`$prototype.tsx` 和 `$_splat.tsx`
-  这类保留名称会被拒绝。`$_splat.tsx` 被保留，是因为 wildcard 路由会把 `*`
-  暴露为 `_splat`。
-- 静态路由段必须使用 URL-safe 字符：字母、数字、`.`、`_`、`-` 或 `~`。新路由仍建议
-  使用小写命名，但既有稳定 URL 的大小写可以保留。
-
-如果文件需要映射到 optional 或其他约定外的自定义 path shape，请使用显式 `pages`
-配置。
-
-冲突检查也保持严格：
-
-- 同一个 route path 不能重复动态参数名，所以
-  `teams/$teamId/users/$teamId.tsx` 会被拒绝。
-- 只有参数名不同的同级动态路由会被拒绝。`users/$id.tsx` 和
-  `users/$userId.tsx` 都匹配 `/users/:param`，请保留一个统一参数名，或使用显式
-  `pages` 配置。
-- 生成的 route id 必须唯一。evjs 会从 URL path 派生 route id，并把分隔符和标点
-  归一化为下划线，因此 `src/pages/admin/panel.tsx` 和
-  `src/pages/admin_panel.tsx` 会被同时拒绝，因为它们都会生成 `admin_panel`。
-
-Route group 只用于组织文件：
-
-- `(marketing)/about.tsx` 映射为 `/about`。
-- `(marketing)` 不会增加 URL segment。
-- `(marketing` 这类不完整 group segment 会被拒绝。
-- 如果分组名应该出现在浏览器路径中，请使用 `marketing/about.tsx` 这样的真实路径段。
-
-路由发现会把 `.tsx`、`.jsx`、`.ts` 和 `.js` 文件视为可能的页面模块。以下文件会被忽略：
-
-- 声明文件（`.d.ts`）；
-- 测试文件（`*.test.*` 和 `*.spec.*`）；
-- Storybook 文件（`*.story.*` 和 `*.stories.*`）；
-- `*.client.*` 客户端专用模块；
-- `*.server.*` 服务端专用模块；
-- 隐藏 dot 文件和目录；
-- 没有源码扩展名的文件；
-- 路由段以 `_` 开头的文件或目录。
-
-页面局部组件、helper 或暂不暴露为 URL 的草稿页面，应该放进 `_` 前缀文件或目录。
-
-SPA 和 MPA 模式使用相同的确定性路由顺序：
-
-- `/` 最先。
-- 父路由排在子路由之前。
-- 同级静态路由排在动态路由之前，因此 `src/pages/users/settings.tsx` 会排在
-  `src/pages/users/$id.tsx` 之前。
-
-evjs 在生成构建产物前会使用同样的归一化规则。重复的 path、动态 URL shape 和
-route id 都会被拒绝。
-
-`routing.routes` 不是公开的 `defineConfig()` 字段；应用应使用 `src/pages`
-发现或显式 `pages` 配置。运行时路由匹配也会按 specificity 选择结果，因此精确/静态路由会优先于
-动态路由。
-
-每个被发现的页面文件都必须默认导出 React 组件。Layout route 文件可以默认导出一层外框组件；
-如果没有默认导出，它会作为 pathless outlet route 工作。语法错误和默认导出错误会在
-路由发现阶段、bundler 运行前报告。
-
-当项目存在 `src/pages`，且项目没有声明显式的 `app` 或 `pages`
-配置时，SPA 路由会自动启用。也可以显式配置：
+- `src/pages/**/page.*` 是正向 Page 与 Route 锚点；
+- 所在目录就是 Page 私有 scope；
+- 目录 segment 决定 URL；
+- `routing.mode` 为同一语义 Page/Route 树选择 SPA 或 MPA 物化方式。
 
 ```ts
-// ev.config.ts
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
   routing: {
     mode: "spa",
-    dir: "./src/pages",
-    mount: "#app",
   },
 });
 ```
 
-MPA 使用相同的页面文件，只需要切换输出模式：
-
-```ts
-// ev.config.ts
-import { defineConfig } from "@evjs/ev";
-
-export default defineConfig({
-  routing: {
-    mode: "mpa",
-  },
-});
+```text
+src/pages/
+├── page.tsx                         # /
+├── page.config.ts                  # / 的可选构建期配置
+├── users/
+│   ├── page.tsx                     # /users
+│   └── $userId/
+│       ├── page.tsx                 # /users/:userId
+│       └── components/
+│           └── Profile.tsx          # Page 私有代码
+└── (account)/
+    └── settings/
+        └── page.tsx                 # /settings
 ```
 
-MPA 模式下，每个发现到的 CSR 页面都会生成独立 HTML 文档和客户端 entry。
-导出 `render = "ssg"` 的文件路由会在 `ev build` 期间渲染成独立 static HTML
-document；默认不创建 browser page entry。MPA 不会引入客户端路由器配置。文件路由可以通过旁边同 basename
-的 `.html` 文件使用页面专属 HTML 模板，例如 `src/pages/about.tsx` 对应 `src/pages/about.html`，
-`src/pages/product/index.tsx` 对应 `src/pages/product/index.html`；没有 colocated
-模板的路由默认使用全局 `index.html` 模板。
+这棵树之外没有第二份 route map 需要同步。
 
-## 页面
+## Pages
 
-每个页面模块默认导出 React 组件。页面逻辑需要当前 route 参数、search 参数或
-loader data 时，使用 page hooks；生成的路由胶水由 evjs 管理。
+canonical Page：
+
+- 是一个 `page.{ts,tsx,js,jsx}` 模块；
+- 默认导出组件；
+- 持有完整所在目录作为私有源码 scope；
+- 由相对 `routing.dir` 的目录获得语义身份与 URL。
 
 ```tsx
-// src/pages/users/$userId.tsx
+// src/pages/users/$userId/page.tsx
 import { usePageParams } from "@evjs/ev/route";
 import { useQuery } from "@evjs/ev/query";
-import { getUser } from "../../apis/users.server";
+import { getUser } from "./get-user.server";
 
-export default function UserPage() {
+export default function UserDetailPage() {
   const { userId } = usePageParams();
   const { data: user } = useQuery(getUser, userId);
+
   if (!user) return null;
   return <h1>{user.name}</h1>;
 }
 ```
 
-SPA 和 MPA 模式都使用 page hooks 读取路由数据。这样页面模块不需要引入框架
-wrapper 类型，也不需要额外写 props 注解。evjs 不会把 `params`、`search`
-或 `loaderData` 作为页面组件 props 传入。文件路由从 `$param` 段派生参数；
-显式 `pages` 配置可以使用 `:param` 段。空参数名、保留对象属性名和重复参数名都会被拒绝。
-
-SPA 模式下，页面模块可以导出与页面逻辑相关的页面生命周期，例如
-`loader`、`beforeLoad`、`validateSearch`、`pendingComponent`、`errorComponent`
-和 `notFoundComponent`。evjs 会把这些导出挂到 evjs 管理的 route 上。MPA 模式不处理
-这些生命周期，页面按普通 React 组件和数据逻辑编写。
-
-所有页面模式的 search 参数都使用原始 `Record<string, string>` 契约。数字、boolean
-和 JSON 形态的值都保持字符串；重复 query key 取最后一个值。页面需要其他类型时，
-应在 `validateSearch` 中显式转换；没有 validator 时，导航也应传入字符串。
-
-SPA 模式还会识别专用 route convention 模块：
-
-- `error.*` 和 `not-found.*` 模块默认导出对应路由目录作用域及后代路由的 fallback
-  组件。
-- MPA 模式下，`error.*` 和 `not-found.*` 这些文件名仍然是普通页面路由。
+Page component 不接收框架 `params`、`search` 或 `loaderData` props。SPA Page
+使用 Page hooks：
 
 ```tsx
-// src/pages/search.tsx
-import { usePageSearch } from "@evjs/ev/route";
-
-export const validateSearch = (search: Record<string, string>) => ({
-  q: typeof search.q === "string" ? search.q : "",
-});
-
-export default function SearchPage() {
-  const search = usePageSearch();
-  const q = typeof search.q === "string" ? search.q : "";
-  return <h1>Search: {q}</h1>;
-}
+import {
+  usePageLoaderData,
+  usePageParams,
+  usePageSearch,
+} from "@evjs/ev/route";
 ```
 
-## 布局
-
-SPA 模式下，外部根布局是可选文件。自动发现只有一个文件约定：
-路由目录旁边的 `layout/index.tsx`。默认 `src/pages` 使用
-`src/layout/index.tsx`；自定义 `routing.dir: "./src/app/pages"` 使用
-`src/app/layout/index.tsx`。默认导出会以 `children` 包裹整个生成路由树，因此用户代码不需要在应用根部引入
-路由 outlet 组件。
-
-只有当应用 shell 明确放在约定路径之外时，才使用
-`routing.conventions.layout: "./src/shell/AppLayout.tsx"`。`src/layout.tsx`
-这类根布局别名会被自动发现拒绝。
-
-SPA route layout 也可以放在路由目录内部：
-
-- 使用 `layout.tsx`、`layout.jsx`、`layout.ts` 或 `layout.js`，并放在某个路由段下；
-- `src/pages/posts/layout.tsx` 会包裹 `/posts` 下的路由；
-- `src/pages/(app)/dashboard/layout.tsx` 会在 `/dashboard` 创建 layout，且不会把 `(app)` 加入 URL。
-
-嵌套 route layout 可以和外部根布局共存。即使 `routing.conventions.layout` 显式指向其他模块，
-这条规则也仍然成立。`src/pages/layout.tsx` 不是根布局约定；应用 shell 使用
-`src/layout/index.tsx`。
-
-Layout 约定只用于 SPA。MPA 模式不接受 `routing.conventions.layout`，也不消费框架 layout；
-需要公共视觉包裹时，在各页面里导入普通组件即可。如果只是文档外壳相同，可以复用 HTML 模板。
-
-路由目录中名为 `layout` 的 segment 是保留名，`layout/index.*` 别名会被拒绝。
-Layout 局部 helper 应放在 `_` 前缀文件或目录下。`Layout.tsx` 这类大写文件名仍会因为 discovered route 的小写静态段规则被拒绝。
+Search 初始类型是 `Record<string, string>`。需要 number、boolean 或结构化值时，
+在 `validateSearch` 中显式转换。
 
 ```tsx
-// src/layout/index.tsx
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export const validateSearch = (search: Record<string, string>) => ({
+  tab: typeof search.tab === "string" ? search.tab : "overview",
+});
+
+export async function loader() {
+  return { title: "User" };
+}
+
+export default function UserDetailPage() {
+  const params = usePageParams();
+  const search = usePageSearch();
+  const data = usePageLoaderData();
   return (
-    <main>
-      <nav>
-        <a href="/">Home</a>
-        <a href="/about">About</a>
-      </nav>
-      {children}
-    </main>
+    <h1>
+      {data.title}: {params.userId} ({search.tab})
+    </h1>
   );
 }
 ```
+
+SPA Page 可导出受支持的 route lifecycle，如 `loader`、`beforeLoad`、
+`validateSearch`、`pendingComponent`、`errorComponent` 和
+`notFoundComponent`。MPA 不运行浏览器 route tree，因此这些 lifecycle 不是
+MPA data-loading 模型。
+
+## 目录路由树
+
+目录嵌套就是路由嵌套。Segment 语法保持精简：
+
+| 目录 segment | 路由含义 |
+| --- | --- |
+| `users` | 静态 `users` 段。 |
+| `$userId` | 动态 `:userId` 段。 |
+| `$...splat` | 终止 catch-all。 |
+| `(account)` | 无路径组织分组。 |
+
+```text
+src/pages/
+├── page.tsx                         # /
+├── teams/
+│   ├── page.tsx                     # /teams
+│   └── $teamId/
+│       └── page.tsx                 # /teams/:teamId
+├── files/
+│   └── $...splat/
+│       └── page.tsx                 # /files/*
+└── (marketing)/
+    └── about/
+        └── page.tsx                 # /about
+```
+
+没有 `page.*` 的目录可以只组织后代，本身不创建 Page。构建会拒绝非法
+segment、非终止 splat、重复的归一化路径、动态 shape 歧义和生成 route id
+冲突。
+
+### 带子路由的 Page
+
+在 SPA mode 下，父 Page 可以渲染嵌套路由：
+
+```tsx
+import { Outlet } from "@evjs/ev/navigation";
+
+export default function TeamsPage() {
+  return (
+    <section>
+      <h1>Teams</h1>
+      <Outlet />
+    </section>
+  );
+}
+```
+
+## Page 私有代码
+
+Page 目录中的一切都属于该 Page，除非后代目录拥有另一个 `page.*`：
+
+```text
+src/pages/orders/$orderId/
+├── page.tsx
+├── page.config.ts
+├── index.ts
+├── model.ts
+├── get-order.server.ts
+├── components/
+│   └── Summary.tsx
+└── __tests__/
+    └── page.test.tsx
+```
+
+只有 `page.*` 创建 Page 与 Route。`index.*`、组件、hook、model、service、
+style、测试和 asset 都是普通 Page 私有源码，因此不需要 `_` 前缀。私有 scope
+是 ownership/discovery 边界，不是 JavaScript 访问控制。
+
+## Layout 与 Boundary
+
+SPA route composition 可以使用路由树旁边的文件切面：
+
+```text
+src/pages/
+├── layout.tsx
+├── error.tsx
+├── not-found.tsx
+└── admin/
+    ├── layout.tsx
+    ├── page.tsx
+    └── settings/
+        └── page.tsx
+```
+
+Layout 在 SPA 与 MPA materialization 中都会包裹后代；error 与 not-found
+切面定义 SPA router boundary。在具备明确 Document contract 前，MPA 会拒绝
+这些 router-only facet，而不是静默忽略。
 
 ## 导航
 
-页面内可以使用普通 `<a>`，也可以使用 `@evjs/ev/navigation` 的 `Link`。导航 helper
-使用同一套文件路径约定来描述 path 和 params。
-
-默认 `src/pages` 路由目录下，`ev dev` 和 `ev build` 会在 SPA 模式下写入
-`src/route-types.d.ts`。自定义 `routing.dir` 时，会在该路由目录的父级写入同名文件。
-这个文件只用于增强 `@evjs/ev/route` 中的 route register，供 `@evjs/ev/navigation` 的
-`Link`、`useLinkProps`、`redirect` 等 helper 使用；应用代码不需要导入它，
-也不需要手写 framework router bootstrap。
-
-该声明文件会保留每个路由的字面量 path，用于导航类型推导。保持忽略这个生成文件，
-让 evjs 自动更新它。
-
-确保生成的声明文件在 `tsconfig.json` 的 `include` 范围内。默认
-`include: ["src"]` 适用于 `src/pages`，也适用于 `src/app/pages` 这类
-`src` 下的自定义目录。如果页面路由放在 `src` 外部，需要把该路由目录的父级也加入
-`include`。
+使用普通 anchor 或公开 navigation helper：
 
 ```tsx
-import { Link } from "@evjs/ev/navigation";
+import { Link, useNavigate } from "@evjs/ev/navigation";
 
 export default function HomePage() {
+  const navigate = useNavigate();
+
   return (
-    <Link to="/users/$userId" params={{ userId: "1" }}>
-      Open user
-    </Link>
+    <>
+      <Link to="/users/1">Open user</Link>
+      <button type="button" onClick={() => navigate({ to: "/users/2" })}>
+        Next user
+      </button>
+    </>
   );
 }
 ```
 
-## 渲染元信息
+`src/route-types.d.ts` 在生成时属于生成物。保持 ignore，不要从应用源码 import，
+也不要复制到模板。
 
-页面模块仍然负责声明自身渲染元信息：
+## SPA 与 MPA
 
-```tsx
-export const render = "ssr";
-export const hydrate = "load";
-export const prerender = { partial: true } as const;
+`routing.mode` 改变物化方式，不改变 Page 或 Route 语义。
 
-export default function CampaignPage() {
-  return <main>Campaign</main>;
-}
+### SPA
+
+```ts
+export default defineConfig({
+  routing: { mode: "spa" },
+});
 ```
 
-evjs 会在构建时读取这些元信息。`render` 和 `hydrate` 必须是字符串字面量，
-`prerender` 必须是 `true`，或包含 `partial`、`delivery`、`revalidate`
-的对象字面量；`prerender.revalidate` 必须是 `false` 或表示秒数的正整数；
-`rsc` 必须是布尔字面量。Full prerendering（`prerender = true` 或非 partial
-prerender 对象）必须声明 `render = "ssg"` 或 `render = "ssr"`；partial
-prerendering 必须声明 `render = "ssr"`。
+SPA 把目录树物化为浏览器 Client Route，通常共享一个 Application-owned HTML
+Document。它支持嵌套路由、动态参数、splat、layout、boundary 与浏览器导航。
 
-只有 RSC 页面才使用 `export const rsc = true`，且这类页面也必须声明
-`render = "ssr"`，并省略 `hydrate` 或声明 `hydrate = "none"`。RSC 页面暂不能同时使用
-partial prerendering；请为一个 route 选择一种渲染模型，或拆分成多个 route。`rsc = false`
-没有效果，并会产生 warning；除非要用 `true` 启用 RSC，否则请删除它。每个 metadata
-名称只能导出一次；重复的 `render`、`hydrate`、`prerender` 或 `rsc` 导出会被拒绝，
-而不是按源码顺序取最后一个值。
+### MPA
+
+```ts
+export default defineConfig({
+  routing: { mode: "mpa" },
+});
+```
+
+MPA 发现相同的 Page 与语义 route pattern，再物化 Page-owned Document，无需
+浏览器 router。动态路由输出以及 React layout/boundary 物化仍在分阶段建设。
+`ev inspect` 和 `ev build` 会拒绝不支持的组合，而不是要求应用改用第二套路由
+模型。同一 Page 目录的 `index.html` 可以作为该 MPA Page 的 Document 模板。
+
+## Page 配置
+
+可选页面级配置放在锚点旁：
+
+```ts
+// src/pages/orders/$orderId/page.config.ts
+import { definePageConfig } from "@evjs/ev";
+
+export default definePageConfig({
+  title: "订单详情",
+  meta: {
+    description: "查看单个订单详情。",
+    keywords: "订单,详情",
+    viewport: "width=device-width, initial-scale=1",
+    "theme-color": "#ffffff",
+  },
+  render: "csr",
+  extensions: {
+    "@company/analytics": {
+      channel: "orders",
+    },
+  },
+});
+```
+
+该 module 在构建期同步求值，必须 default-export static JSON data。Core 持有
+`title`、named `meta`、`render`、`hydrate`、`prerender` 与 `rsc`。`meta`
+接受字符串 key/value，并且只生成 `<meta name="key" content="value">`；
+`property`、`charset`、link、script、动态元信息和通用 head DSL 不属于该
+contract。插件值放在已注册 namespaced `extensions` key 下。
+
+求值后的配置在 SPA 与 MPA 中附着到同一个 normalized Page identity。在 SPA
+mode 下，最深层 active Page 持有 title/meta，不继承父 Page metadata。route
+切换会恢复 HTML 模板 baseline，或清除下一个 Page 未声明的值，避免 Page 间
+元信息残留。需要 runtime extension data 的插件仍须显式生成并挂载最小
+projection。
+
+迁移后的 Page component 不应保留 literal `render`、`hydrate`、`prerender` 或
+`rsc` export。运行 Core 0.3 前把这些 setting 移到 `page.config.ts`。参见
+[构建](./build)与 [Core 0.3 RFC](./core-0.3-rfc)。
+
+## 迁移存量路由
+
+显式 SPA route-tree 形式可以作为迁移输入归一化到 Core graph：
+
+- Bigfish 路由配置，包括 `routes`、`component`、`children`、layout 与
+  wrapper；
+- 早期显式 `application.routes` 声明。
+
+这些输入拒绝 MPA topology，是迁移路径而不是另一套路由架构。Smallfish 与 evjs
+0.2 源码树不是 runtime
+reader 输入：把每个发布 entry 移到其 URL 对应目录，命名为 `page.*`，页面级
+配置移到 `page.config.ts`，Page 私有代码继续放在旁边，并只声明
+`routing.mode`。无关的 `src/pages` 目录不会发布路由，除非启用 canonical
+routing。

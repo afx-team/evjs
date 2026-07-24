@@ -9,15 +9,8 @@ import {
 } from "../src/rsc/react.js";
 import type {
   ClientRuntime,
-  ClientRuntimePage,
-  ClientRuntimeRoute,
   RuntimeTransportOptions,
 } from "../src/shared/runtime-config.js";
-
-type LegacyClientRuntime = ClientRuntime & {
-  pages: Record<string, ClientRuntimePage>;
-  routes: ClientRuntimeRoute[];
-};
 
 const calls: string[] = [];
 const renderedElements: unknown[] = [];
@@ -411,23 +404,23 @@ describe("createReactPageModule", () => {
       pathname: "/users/settings",
       search: "",
     });
-    const runtime: LegacyClientRuntime = {
+    const runtime: ClientRuntime = {
       ...createRscRuntime(),
-      pages: {
-        profile: {},
+      routing: {
+        kind: "spa",
+        routes: [
+          {
+            id: "user",
+            path: "/users/$userId",
+            pageId: "profile",
+          },
+          {
+            id: "settings",
+            path: "/users/settings",
+            pageId: "profile",
+          },
+        ],
       },
-      routes: [
-        {
-          id: "user",
-          path: "/users/$userId",
-          pageId: "profile",
-        },
-        {
-          id: "settings",
-          path: "/users/settings",
-          pageId: "profile",
-        },
-      ],
     };
     const mod = createReactPageModule({
       component: Component,
@@ -441,7 +434,7 @@ describe("createReactPageModule", () => {
         id: "profile",
         kind: "page",
         runtime,
-        output: runtime.pages.profile,
+        output: {},
         request: { url: "/users/settings" },
       } as never,
     );
@@ -647,8 +640,7 @@ describe("fetchRscFlight", () => {
             rsc: "__evjs/rsc",
           },
         },
-        pages: {},
-        routes: [],
+        routing: { kind: "spa", routes: [] },
       },
       pageId: "dashboard",
       url: "https://example.com/dashboard?tab=comments&tag=a&tag=b",
@@ -1227,7 +1219,6 @@ function createRscRuntime(): ClientRuntime {
         rsc: "__evjs/rsc",
       },
     },
-    pages: {},
-    routes: [],
+    routing: { kind: "spa", routes: [] },
   };
 }

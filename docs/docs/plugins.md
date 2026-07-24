@@ -31,13 +31,15 @@ export default defineConfig({
 
 ```ts
 import type { Config, DefaultBundlerConfig, ResolvedConfig } from "@evjs/ev/config";
-import type { ContributionContext, Plugin, PluginConfigContext, PluginContext, PluginHooks } from "@evjs/ev/plugin";
+import type { ContributionContext, Plugin, PluginConfigContext, PluginContext, PluginDescribeContext, PluginHooks } from "@evjs/ev/plugin";
 
 interface Plugin<TBundlerConfig = DefaultBundlerConfig> {
   name: string;
   dependencies?: string[];
   optionalDependencies?: string[];
   enforce?: "pre" | "normal" | "post";
+
+  describe?(api: PluginDescribeContext): void;
 
   config?(config: Config<TBundlerConfig>, ctx: PluginConfigContext):
     | Config<TBundlerConfig>
@@ -60,7 +62,95 @@ provided. `dependencies` and `optionalDependencies` control ordering and are
 applied to both `config()` and `setup()` hooks. Dependency lists must contain
 unique, non-empty plugin names; the same plugin name cannot appear in both
 `dependencies` and `optionalDependencies`. Extra plugin object metadata is
-ignored by evjs so plugins can keep package-local metadata fields.
+ignored by evjs so plugins can keep package-local metadata fields. `describe`
+is a reserved framework hook when present.
+
+## Page Extensions
+
+A plugin can register a namespaced Page extension consumed from canonical
+`page.config.ts` in both SPA and MPA:
+
+```ts
+// src/pages/page.config.ts
+import { definePageConfig } from "@evjs/ev";
+
+export default definePageConfig({
+  extensions: {
+    "@company/analytics": {
+      enabled: true,
+      channel: "checkout",
+    },
+  },
+});
+```
+
+```ts
+import { definePlugin } from "@evjs/ev/plugin";
+
+type AnalyticsValue = {
+  enabled: boolean;
+  channel: string;
+};
+
+export const analyticsPlugin = definePlugin({
+  name: "analytics",
+
+  describe(api) {
+    api.pageExtension<AnalyticsValue, Partial<AnalyticsValue>>({
+      namespace: "@company/analytics",
+      defaults: { enabled: false, channel: "web" },
+      merge(defaults, configured) {
+        return { ...defaults, ...configured };
+      },
+      validate(value) {
+        return value.channel.length > 0 || "channel must not be empty";
+      },
+    });
+  },
+
+  contributions(ctx) {
+    for (const page of ctx.framework.pages) {
+      const value = page.extensions["@company/analytics"];
+      if (value) console.log(page.id, value);
+    }
+  },
+});
+```
+
+`definePlugin()` is a type helper for the single `Plugin` interface; it does
+not select an API version or runtime path. `describe()` uses the same
+`dependencies`, `optionalDependencies`, and `enforce` ordering as every other
+plugin hook. It runs after plugin ordering and before `setup()`. In dev it runs
+again when plugin configuration is reloaded. It must be idempotent and
+synchronous; defaults functions, `merge`, and `validate` must also return
+synchronously so graph construction stays deterministic.
+
+When `merge` is omitted, plain-object defaults and configured values are
+shallow-merged with configured fields winning. A non-object configured value
+replaces the default. When a Page omits the namespace, defaults are
+materialized directly and custom `merge` is not invoked; its `configured`
+argument therefore always represents an explicitly authored value. Custom
+`merge` handles other authored source shapes. `validate` may return
+`true`/void, return `false` or a message, or throw. Every materialized value
+must be strictly JSON-serializable; functions, symbols, bigint, non-finite
+numbers, class instances, sparse arrays, and cycles are rejected.
+
+Page extensions resolve against the same normalized CoreGraph as every other
+framework capability. Canonical `page.tsx` anchors provide that graph in both
+modes; explicit route-tree migration inputs must normalize into it first. In
+`contributions()`, `ctx.framework.applications`, `.pages`, and client `.routes`
+expose their resolved, read-only `extensions` bags.
+
+The extension bag is build-time graph data, not an automatic runtime payload.
+A plugin that needs browser behavior must explicitly emit the minimal
+generated data/module and attach it through a supported contribution. Plugins
+must account for topology: a SPA Page does not own an independent client entry
+or HTML Document merely because it has Page config.
+
+The plugin API does not yet implement `transformGraph`, typed runtime-hook
+registration, semantic facet APIs, or generic extension-owned entries. Those
+remain Core 0.3 targets; use the existing generated-contribution and lifecycle
+APIs for currently supported behavior.
 
 ## Config Hook
 
@@ -110,8 +200,9 @@ interface PluginContext<TBundlerConfig = DefaultBundlerConfig> {
 
 Use `setup()` to allocate shared state and return lifecycle hooks. Return a
 hooks object or `undefined`; `null`, arrays, and non-function hook fields are
-rejected before lifecycle hooks run. Unknown hook keys are ignored when plugins
-attach package-local metadata to the returned object.
+rejected before lifecycle hooks run. Unknown hook keys are rejected so
+misspelled or legacy hooks cannot become silent no-ops. Put package-local
+metadata outside the hooks object.
 
 ## Lifecycle
 
@@ -120,6 +211,7 @@ flowchart TB
   subgraph Configure["Configuration"]
     Config["config()"]
     Resolve["resolve config"]
+    Describe["describe()\nper plugin config generation"]
     Setup["setup()"]
   end
 
@@ -140,14 +232,14 @@ flowchart TB
     Dispose["dispose()"]
   end
 
-  Config --> Resolve --> Setup --> BuildStart --> Graph --> BuildPlan
+  Config --> Resolve --> Describe --> Setup --> BuildStart --> Graph --> BuildPlan
   BuildPlan --> Contributions --> IR --> BundlerConfig --> Bundler
   Bundler --> BuildOutput --> HTML --> BuildEnd --> Dispose
 
   classDef config fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
   classDef plan fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
   classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
-  class Config,Resolve,Setup config;
+  class Config,Resolve,Describe,Setup config;
   class BuildStart,Graph,BuildPlan,Contributions,IR plan;
   class BundlerConfig,Bundler,BuildOutput,HTML,BuildEnd,Dispose build;
 ```
@@ -168,14 +260,14 @@ generated artifacts, link those artifacts together, and attach them to
 framework slots.
 
 Use `contributions()` when a plugin needs to extend the generated `.ev` IR.
-This is the right layer for entry imports, runtime plugin modules, constrained
-SPA route additions, HTML tags, framework request middleware, and semantic
+This is the right layer for entry imports and explicit installers, HTML tags,
+framework request middleware, and semantic
 resolution changes. Keep loaders for real bundler transforms such as compiling a
 custom file type.
 
 `.ev` is generated output. It contains:
 
-- `.ev/framework/app-graph.json`: discovered file-convention graph;
+- `.ev/framework/core-graph.json`: discovered file-convention graph;
 - `.ev/framework/build-plan.json`: final bundler-independent build plan;
 - `.ev/entries/*`: framework entry facades consumed by bundlers;
 - `.ev/plugins/<plugin>/*`: plugin generated modules and entry facades;
@@ -191,10 +283,22 @@ The contribution model has four parts:
 | Slot item | A structured attachment declared through `ctx.slot(name).add(...)`. |
 
 `ctx.framework` is an immutable, read-only public view of the framework IR. It
-exposes entries, apps, pages, routes, server routes, and server functions
-without exposing the internal `BuildPlan` or `AppGraph` objects. Plugin code
+exposes entries, applications, pages, routes, server routes, and server functions
+without exposing the internal `BuildPlan` or mutable graph objects. Plugin code
 should import authoring types from `@evjs/ev/plugin`; `@evjs/ev/_internal/*` is
 for CLI tooling, bundler adapters, and framework-generated code.
+
+Application, Page, and client Route views expose resolved namespaced
+`extensions`. Internal provenance and
+resolved Page values are therefore available before `contributions()`
+materializes generated code.
+
+The Application view also exposes its `root`, `topology`, and owned Page,
+Route, and Document ids. An MPA therefore appears as one logical
+Application with many Pages and Documents, not as unrelated entries. Client
+Route views come from CoreGraph and include normalized patterns,
+semantic targets, wrappers/layout facets, provenance, and extensions; pathless
+groups and redirects are visible even when they have no component module.
 
 Generated modules use opaque refs instead of exposing filesystem paths:
 
@@ -207,13 +311,13 @@ export function analyticsPlugin(): Plugin {
     contributions(ctx) {
       const runtime = ctx.emit.module({
         id: "runtime",
-        scope: { kind: "app" },
+        scope: { kind: "application" },
         source: "export function install() { console.log('analytics'); }",
       });
 
       const entry = ctx.emit.module({
         id: "entry",
-        scope: { kind: "app" },
+        scope: { kind: "application" },
         source: ({ importOf }) =>
           `import { install } from ${JSON.stringify(importOf(runtime))};\ninstall();`,
       });
@@ -233,7 +337,7 @@ use `ctx.emit.entryFacade()` instead of reconstructing framework internals:
 
 ```ts
 contributions(ctx) {
-  const entry = ctx.framework.getPagesAppEntry();
+  const entry = ctx.framework.getApplicationEntry();
   if (!entry) return;
 
   const original = ctx.emit.entryFacade({
@@ -243,7 +347,7 @@ contributions(ctx) {
 
   const wrapper = ctx.emit.module({
     id: "entry-wrapper",
-    scope: { kind: "app" },
+    scope: { kind: "application" },
     source: ({ importOf }) =>
       `export const load = () => import(${JSON.stringify(importOf(original))});`,
   });
@@ -267,20 +371,20 @@ Available slots:
 | Slot | Purpose |
 |------|---------|
 | `client.entry` | Add generated modules around the client entry at `polyfill`, `before-main-imports`, `after-main-imports`, `before-main`, or `after-main` |
-| `client.runtime.plugin` | Register runtime plugin modules and optional export keys |
-| `client.route` | Append generated SPA routes or replace modules for existing SPA route ids |
 | `server.request.middleware` | Add framework request middleware to the server pipeline |
 | `html.tag` | Add structured `meta`, `link`, `script`, or `style` tags |
 | `resolve.alias` | Redirect a module specifier to a user module, package, absolute path, or generated module |
 | `resolve.external` | Mark a specifier as provided by an external runtime; inject CDN tags separately through `html.tag` |
 
-Use `client.route` when a platform plugin needs route IR that agents and
-inspection tools can see. Append mode requires a `path` and creates a route with
-the declared `routeId`; replace mode requires an existing generated route id and
-preserves the current route path unless a new path is declared. Runtime plugins
-can still export `patchRoutes`, `patchClientRoutes`, `modifyRouterOptions`,
-`wrapRoot`, `rootContainer`, or `render` when the route or render behavior must
-be decided in the browser.
+Use `client.entry` when a generated entry must import a side-effect module or
+call an explicit installer. evjs does not expose an inert runtime-plugin
+registry; new runtime behavior requires an executable installer or a
+feature-specific typed hook.
+
+Explicit application/page targets are validated against the selected materialization
+point. A semantic SPA page shares its client entry and Document with the
+application, so page-targeted entry or HTML contributions are rejected until a
+page-module or route-runtime facet exists.
 
 `resolve.external` accepts `runtime: "client" | "server" | "all"`. The
 Webpack adapter applies that filter per target. The current Utoopack adapter
@@ -294,26 +398,28 @@ HTML rewrites, and deployment output.
 
 ## HTML Transform Context
 
-`transformHtml()` receives one parsed document per output HTML file. Branch on `ctx.kind` instead of guessing from filenames.
+`transformHtml()` receives one parsed document per output HTML file. Branch on
+`ctx.owner.kind` instead of guessing from filenames.
 
 ```ts
 transformHtml(doc, ctx) {
   doc.head?.appendChild(doc.createComment(` build ${ctx.buildId} `));
 
-  if (ctx.kind === "app") {
-    doc.documentElement?.setAttribute("data-app", ctx.appId);
+  if (ctx.owner.kind === "application") {
+    doc.documentElement?.setAttribute("data-app", ctx.applicationId);
   }
 
-  if (ctx.kind === "page") {
-    doc.documentElement?.setAttribute("data-page", ctx.pageId);
+  if (ctx.owner.kind === "page") {
+    doc.documentElement?.setAttribute("data-page", ctx.owner.pageId);
   }
 }
 ```
 
 Context fields include:
 
-- `ctx.kind`: `"app"` or `"page"`;
-- `ctx.appId` or `ctx.pageId`;
+- `ctx.documentId` and `ctx.applicationId`;
+- `ctx.owner`: `{ kind: "application" }`,
+  `{ kind: "page", pageId }`, or `{ kind: "extension", extensionId }`;
 - `ctx.fileName` and `ctx.template`;
 - `ctx.assets`;
 - `ctx.output`: the current build output;
@@ -327,24 +433,22 @@ import type { HtmlDocument } from "@evjs/ev/plugin";
 
 ## Build Result
 
-`buildEnd()` receives the final build output plus narrower client/server
-manifest and deployment metadata views:
+`buildEnd()` receives the final build output, framework runtime, and canonical
+deployment metadata:
 
 ```ts
 setup() {
   return {
     buildEnd({
       output,
-      clientManifest,
-      serverManifest,
+      frameworkRuntime,
       deploymentMetadata,
       isRebuild,
     }) {
       console.log("Apps:", Object.keys(output.apps));
       console.log("Pages:", Object.keys(output.pages));
-      console.log("Client asset groups:", Object.keys(clientManifest.assets ?? {}));
-      console.log("Server entry:", serverManifest.entry);
-      console.log("Server routes:", serverManifest.routes.length);
+      console.log("Runtime routing:", frameworkRuntime.routing.kind);
+      console.log("Server entry:", deploymentMetadata.server.entry);
       console.log("Deploy routes:", deploymentMetadata.routes.length);
       console.log("Rebuild:", isRebuild);
     },
@@ -354,13 +458,11 @@ setup() {
 
 Deployment plugins should prefer `deploymentMetadata` for routes, documents,
 assets, and the server entry. Plugins that need the complete internal build graph
-can still inspect `output` in memory. Plugins that only need the client bundle
-summary can use `clientManifest`: check `clientManifest.routing.kind` before
-reading SPA `routes` or MPA `pages`. Plugins that only need the server entry and
-server-handled route summary can use `serverManifest.routes`; full deployment
-planning should still use `deploymentMetadata.routes`. HTML hooks receive the
-same result fields plus document-specific fields such as `ctx.kind`,
-`ctx.fileName`, and `ctx.assets`.
+can still inspect `output` in memory. Runtime-aware plugins can inspect
+`frameworkRuntime`; deployment planning should use `deploymentMetadata` rather
+than deriving split client/server manifests. HTML hooks receive the same result
+fields plus document-specific fields such as `ctx.owner`, `ctx.fileName`, and
+`ctx.assets`.
 
 ## Bundler Config
 
@@ -451,10 +553,10 @@ export function pageMetadata() {
     setup() {
       return {
         transformHtml(doc, ctx) {
-          if (ctx.kind !== "page") return;
+          if (ctx.owner.kind !== "page") return;
           const meta = doc.createElement("meta");
           meta.setAttribute("name", "evjs-page");
-          meta.setAttribute("content", ctx.pageId);
+          meta.setAttribute("content", ctx.owner.pageId);
           doc.head?.appendChild(meta);
         },
       };

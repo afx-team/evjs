@@ -3,13 +3,11 @@
  *
  * Shared manifest schemas for the ev framework build system.
  *
- * Bundler adapters emit framework metadata under the configured output
- * directories. By default, the lightweight client deployment manifest is
- * written to `dist/client/manifest.json`, the lightweight server deployment
- * manifest to `dist/server/manifest.json`, and canonical deployment metadata
- * to `dist/build-output.json`. `output.client` and `output.server` can point
- * to alternate directories when an adapter or deployment target needs a
- * different artifact layout.
+ * Core builds serialize canonical deployment metadata to
+ * `dist/deployment-metadata.json`. Lightweight client/server projections are
+ * available to explicit deployment adapters through `createPublicManifest()`
+ * and `createServerManifest()`; Core does not emit split compatibility
+ * manifests by default.
  */
 
 import {
@@ -37,6 +35,7 @@ import {
   getUrlStringValidationError,
   type UrlStringValidationError,
 } from "../url-validation.js";
+import { assertPageMetadata, type PageMetadata } from "./page-metadata.js";
 
 /** JavaScript and CSS assets emitted for a manifest entry. */
 export interface AssetGroup {
@@ -44,21 +43,6 @@ export interface AssetGroup {
   js: string[];
   /** CSS bundle paths. */
   css: string[];
-}
-
-// ── Draft next-generation framework contracts ───────────────────────────
-
-/** Framework semantic graph before bundling. */
-export interface AppGraph {
-  version: 1;
-  rootDir: string;
-  apps: Record<string, AppNode>;
-  pages: Record<string, PageNode>;
-  routes: RouteNode[];
-  serverFunctions: ServerFunctionNode[];
-  serverRoutes: ServerRouteNode[];
-  clientReferences?: ClientReferenceNode[];
-  serverReferences?: ServerReferenceNode[];
 }
 
 export interface AppNode {
@@ -70,19 +54,32 @@ export interface AppNode {
 
 export interface PageNode {
   id: string;
+  /**
+   * Source boundary claimed while the Page is normalized.
+   *
+   * A module scope owns only the page entry module. Canonical Pages claim their
+   * whole directory; an explicit Bigfish SPA migration input may retain a
+   * narrower module scope.
+   */
+  scope?: PageScope;
   path?: string;
   routeId?: string;
-  entry?: string;
-  component?: string;
-  app?: string;
+  component: string;
   html: string;
+  /** Internal HTML output path projected from a CoreGraph page-owned Document. */
+  output?: string;
   render: RenderMode;
   componentModel?: ComponentModel;
   hydrate?: HydrationMode;
   mount?: string;
   prerender?: PrerenderConfig;
   ppr?: PprConfig;
+  metadata?: PageMetadata;
 }
+
+export type PageScope =
+  | { kind: "module"; file: string }
+  | { kind: "directory"; root: string };
 
 export interface PprConfig {
   delivery?: PprDeliveryMode;
@@ -113,7 +110,22 @@ export interface RouteNode {
   render?: RenderMode;
   hydrate?: HydrationMode;
   runtime?: ServerRuntime;
+  /** CoreGraph client target retained by migrated route providers. */
+  target?: AppRouteTarget;
+  /** Ordered route wrapper modules retained by migrated route providers. */
+  wrappers?: string[];
+  /** Explicit Application/root-layout bypass for this route branch. */
+  layout?: false;
 }
+
+export type AppRouteTarget =
+  | { kind: "page"; pageId: string }
+  | { kind: "group" }
+  | { kind: "redirect"; to: AppRouteLocation };
+
+export type AppRouteLocation =
+  | { kind: "path"; path: string }
+  | { kind: "url"; href: string };
 
 export interface ServerFunctionNode {
   id: string;
@@ -155,7 +167,7 @@ export type ServerRuntime = "node" | "edge";
 export type PublicPathOutput = string;
 
 /**
- * Internal build-unit arrangement derived from ResolvedConfig + AppGraph.
+ * Internal build-unit arrangement derived from ResolvedConfig + CoreGraph.
  *
  * BuildPlan is not user config, not a second graph, and not a runtime
  * manifest. It lists concrete entries and HTML documents for bundler adapters
@@ -176,6 +188,23 @@ export interface BuildPlan {
   html: HtmlPlan[];
   server: ServerBuildPlan;
   runtime: RuntimePlan;
+  dev: DevBuildPlan;
+  rsc?: RscBuildPlan;
+}
+
+export interface DevBuildPlan {
+  clientRoutes: DevClientRoutePlan[];
+  serverRoutePaths: string[];
+  hasPpr: boolean;
+}
+
+export interface DevClientRoutePlan {
+  path: string;
+  target: { kind: "app"; appId: string } | { kind: "page"; pageId: string };
+}
+
+export interface RscBuildPlan {
+  clientReferenceModules: string[];
 }
 
 export interface ResolvePlan {
@@ -224,6 +253,8 @@ export type BuildEntryMetadata =
 export interface ReactComponentPageEntryMetadata {
   type: "react-component-page";
   component: string;
+  /** Outer-to-inner layout modules composed around an independent MPA Page. */
+  layouts?: string[];
   mount: string;
   hydrate: HydrationMode;
   render: RenderMode;
@@ -235,9 +266,26 @@ export interface ReactComponentPageEntryMetadata {
 
 export interface PagesAppEntryMetadata {
   type: "pages-app";
-  routes: PageRouteNode[];
+  routes: PagesAppRouteNode[];
   mount: string;
   rootModule?: string;
+}
+
+/** Route input consumed only by the generated framework SPA bootstrap. */
+export interface PagesAppRouteNode {
+  id: string;
+  path: string;
+  parentId?: string;
+  kind?: PageRouteKind;
+  module?: string;
+  target?: AppRouteTarget;
+  wrappers?: string[];
+  /** Bypass the Application/root layout while this route branch matches. */
+  layout?: false;
+  errorModule?: string;
+  notFoundModule?: string;
+  /** Page-owned metadata projected into the generated SPA route runtime. */
+  metadata?: PageMetadata;
 }
 
 export interface ServerMiddlewareNode {
@@ -262,6 +310,8 @@ export interface PageRouteNode {
   id: string;
   path: string;
   module: string;
+  /** Page source boundary; Bigfish SPA migration may retain module scope. */
+  scope?: PageScope;
   html?: string;
   parentId?: string;
   kind?: PageRouteKind;
@@ -279,6 +329,8 @@ export interface HtmlPlan {
     appId?: string;
     pageId?: string;
   };
+  /** Page-owned metadata projected onto this concrete HTML document. */
+  metadata?: PageMetadata;
 }
 
 export interface ServerBuildPlan {
@@ -314,6 +366,10 @@ export interface BuildPlanUpdate {
     removed: HtmlPlan[];
     changed: HtmlPlan[];
   };
+  /** Generated IR or CoreGraph semantics changed without changing entry identity. */
+  generatedChanged: boolean;
+  /** Bundler resolution inputs changed and require adapter reconfiguration. */
+  resolveChanged: boolean;
   serverChanged: boolean;
 }
 
@@ -386,6 +442,7 @@ export interface PublicDocumentOutput {
   fileName: string;
   render: Extract<RenderMode, "csr" | "ssg">;
   assets?: AssetGroup;
+  metadata?: PageMetadata;
 }
 
 export interface BuildOutputPaths {
@@ -430,6 +487,7 @@ export interface PageOutput {
   prerender?: PrerenderConfig;
   module?: RuntimeModuleOutput;
   ppr?: PprPageOutput;
+  metadata?: PageMetadata;
 }
 
 export interface PublicPageOutput {
@@ -438,6 +496,7 @@ export interface PublicPageOutput {
   path?: string;
   routeId?: string;
   render?: RenderMode;
+  metadata?: PageMetadata;
 }
 
 export interface HtmlDocumentOutput {
@@ -488,6 +547,7 @@ export interface PublicRouteOutput {
   path: string;
   pageId?: string;
   render?: RenderMode;
+  metadata?: PageMetadata;
 }
 
 export interface DeploymentMetadata {
@@ -514,8 +574,6 @@ export type DeploymentDocumentOutput =
       kind: "page";
       id: string;
       fileName: string;
-      path?: string;
-      render?: Extract<DeploymentPageRenderOutput, "csr" | "ssg">;
       assets?: AssetGroup;
     };
 
@@ -526,6 +584,14 @@ export type DeploymentServerPageRenderOutput = Extract<
 >;
 
 export type DeploymentRouteOutput =
+  | {
+      kind: "static-page";
+      path: string;
+      pageId: string;
+      documentId: string;
+      render: Extract<DeploymentPageRenderOutput, "csr" | "ssg">;
+      methods: ["GET", "HEAD"];
+    }
   | {
       kind: "server-page";
       path: string;
@@ -598,7 +664,7 @@ export interface RscPageOutput {
 
 // ── Route resolution ────────────────────────────────────────────────────
 
-/** Route metadata discovered from page files or configured pages. */
+/** Route metadata discovered from Page anchors or a Bigfish SPA route tree. */
 export interface ExtractedRoute {
   /** Route path (e.g. "/", "/posts/$postId"). */
   path: string;
@@ -610,6 +676,8 @@ export interface ExtractedRoute {
   kind?: PageRouteKind;
   /** Static page/component module declared for this route. */
   module?: string;
+  /** Page source boundary; Bigfish SPA migration may retain module scope. */
+  scope?: PageScope;
   /** Scoped route error component module discovered from file conventions. */
   errorModule?: string;
   /** Scoped not-found component module discovered from file conventions. */
@@ -667,6 +735,7 @@ export function resolveRoutes(routes: ExtractedRoute[]): Array<{
   parentId?: string;
   kind?: PageRouteKind;
   module?: string;
+  scope?: PageScope;
   errorModule?: string;
   notFoundModule?: string;
   render?: RenderMode;
@@ -719,6 +788,7 @@ export function resolveRoutes(routes: ExtractedRoute[]): Array<{
     parentId?: string;
     kind?: PageRouteKind;
     module?: string;
+    scope?: PageScope;
     errorModule?: string;
     notFoundModule?: string;
     render?: RenderMode;
@@ -756,6 +826,7 @@ export function resolveRoutes(routes: ExtractedRoute[]): Array<{
         parentId: r.parentId,
         kind: r.kind,
         module: r.module,
+        scope: r.scope,
         errorModule: r.errorModule,
         notFoundModule: r.notFoundModule,
         render: r.render,
@@ -809,6 +880,9 @@ export function assertFrameworkManifestShape(
   const requireRscRendererReferences =
     options.rscRendererReferences !== "optional";
   assertObject(value, source);
+  if (!requireServer) {
+    assertPublicManifestFields(value, source);
+  }
   if (value.version !== 1) {
     throw new Error(`[evjs] ${source}.version must be 1.`);
   }
@@ -952,13 +1026,12 @@ export function assertFrameworkManifestShape(
 }
 
 export type GeneratedScope =
-  | { kind: "app" }
+  | { kind: "application" }
   | { kind: "page"; pageId: string }
   | { kind: "server" };
 
 export type FrameworkSlotName =
   | "client.entry"
-  | "client.runtime.plugin"
   | "server.request.middleware"
   | "html.tag"
   | "resolve.alias"
@@ -972,9 +1045,10 @@ export type EntryContributionPosition =
   | "after-main";
 
 export type ContributionRuntime = "client" | "server" | "all";
+export type ClientContributionRuntime = Exclude<ContributionRuntime, "server">;
 
 export type ContributionTarget =
-  | { kind: "app"; appId?: string }
+  | { kind: "application"; applicationId?: string }
   | { kind: "page"; pageId: string };
 
 export interface GeneratedFrameworkPlan {
@@ -988,10 +1062,12 @@ export interface GeneratedFrameworkPlan {
   slots: FrameworkSlotPlanItem[];
   importEdges: GeneratedImportEdgePlan[];
   entries: GeneratedEntryPlan[];
+  /** Stable digest of the CoreGraph snapshot exposed to contribution hooks. */
+  coreGraphHash?: string;
 }
 
 export interface GeneratedFrameworkFilePlan {
-  id: "app-graph" | "build-plan";
+  id: "core-graph" | "build-plan";
   file: string;
 }
 
@@ -1003,6 +1079,8 @@ export interface GeneratedModulePlan {
   file: string;
   specifier: string;
   extension: string;
+  /** Stable digest of the fully resolved generated module source. */
+  sourceHash: string;
 }
 
 export interface GeneratedEntryPlan {
@@ -1026,7 +1104,6 @@ export interface GeneratedImportEdgePlan {
 
 export type FrameworkSlotPlanItem =
   | ClientEntrySlotPlanItem
-  | ClientRuntimePluginSlotPlanItem
   | ServerRequestMiddlewareSlotPlanItem
   | HtmlTagSlotPlanItem
   | ResolveAliasSlotPlanItem
@@ -1042,16 +1119,8 @@ export interface ClientEntrySlotPlanItem extends FrameworkSlotPlanItemBase {
   slot: "client.entry";
   module: string;
   position: EntryContributionPosition;
-  runtime: ContributionRuntime;
+  runtime: ClientContributionRuntime;
   mode: "import" | "replace";
-  target?: ContributionTarget;
-}
-
-export interface ClientRuntimePluginSlotPlanItem
-  extends FrameworkSlotPlanItemBase {
-  slot: "client.runtime.plugin";
-  module: string;
-  exportKeys?: string[];
   target?: ContributionTarget;
 }
 
@@ -1114,6 +1183,9 @@ function assertPublicDocumentOutputs(value: unknown, source: string): void {
     if (document.assets !== undefined) {
       assertAssetGroup(document.assets, `${documentSource}.assets`);
     }
+    if (document.metadata !== undefined) {
+      assertPageMetadata(document.metadata, `${documentSource}.metadata`);
+    }
   }
 }
 
@@ -1125,7 +1197,7 @@ function assertStaticDocumentRenderMode(value: unknown, source: string): void {
 function assertManifestRoutingProjection(
   value: Record<string, unknown>,
   source: string,
-  requireLegacyRouting: boolean,
+  requireBuildOutputRouting: boolean,
   apps: Record<string, unknown>,
 ): {
   pages: Record<string, unknown>;
@@ -1170,8 +1242,13 @@ function assertManifestRoutingProjection(
   }
 
   if (value.pages === undefined && value.routes === undefined) {
-    if (requireLegacyRouting) {
+    if (requireBuildOutputRouting) {
       throw new Error(`[evjs] ${source}.pages must be an object.`);
+    }
+    if (value.documents === undefined) {
+      throw new Error(
+        `[evjs] ${source} must define either routing or documents.`,
+      );
     }
     return { pages: {}, routes: [] };
   }
@@ -1183,6 +1260,30 @@ function assertManifestRoutingProjection(
   }
   assertRouteOutputs(value.routes, `${source}.routes`, value.pages, apps);
   return { pages: value.pages, routes: value.routes };
+}
+
+function assertPublicManifestFields(
+  value: Record<string, unknown>,
+  source: string,
+): void {
+  const supported = new Set([
+    "version",
+    "buildId",
+    "publicPath",
+    "assets",
+    "routing",
+    "documents",
+  ]);
+  for (const field of Reflect.ownKeys(value)) {
+    if (typeof field !== "string") {
+      throw new Error(`[evjs] ${source} contains an unsupported symbol field.`);
+    }
+    if (!supported.has(field)) {
+      throw new Error(
+        `[evjs] ${source}.${field} is not supported in public manifests.`,
+      );
+    }
+  }
 }
 
 function createRoutesFromManifestPages(
@@ -1199,6 +1300,7 @@ function createRoutesFromManifestPages(
         path: page.path,
         pageId,
         render: page.render,
+        metadata: page.metadata,
       },
     ];
   });
@@ -1213,7 +1315,12 @@ function createPagesFromPublicManifestRoutes(
       return [
         [
           route.pageId,
-          route.render === undefined ? {} : { render: route.render },
+          {
+            ...(route.render === undefined ? {} : { render: route.render }),
+            ...(route.metadata === undefined
+              ? {}
+              : { metadata: route.metadata }),
+          },
         ],
       ];
     }),
@@ -1513,6 +1620,9 @@ function assertPageOutputs(
     if (output.hydrate !== undefined) {
       assertHydrationMode(output.hydrate, `${source}.${name}.hydrate`);
     }
+    if (output.metadata !== undefined) {
+      assertPageMetadata(output.metadata, `${source}.${name}.metadata`);
+    }
     assertPageRenderingOutput(output.rendering, `${source}.${name}.rendering`);
     assertPprPageOutputContract(output, `${source}.${name}`);
     assertRscPageOutputContract(output, `${source}.${name}`);
@@ -1534,6 +1644,9 @@ function assertPublicPageOutputs(
     }
     if (output.render !== undefined) {
       assertRenderMode(output.render, `${source}.${name}.render`);
+    }
+    if (output.metadata !== undefined) {
+      assertPageMetadata(output.metadata, `${source}.${name}.metadata`);
     }
   }
 }
@@ -1742,6 +1855,9 @@ function assertRouteOutputs(
     );
     if (route.render !== undefined) {
       assertRenderMode(route.render, `${routeSource}.render`);
+    }
+    if (route.metadata !== undefined) {
+      assertPageMetadata(route.metadata, `${routeSource}.metadata`);
     }
     assertOptionalRecordReference(
       route.appId,
@@ -2372,6 +2488,39 @@ function formatManifestPathnameError(
 }
 
 export {
+  type ApplicationId,
+  assertCoreGraph,
+  CONFIG_ROUTE_PROVIDER_ID,
+  type CoreApplicationNode,
+  type CoreClientRouteNode,
+  type CoreClientRouteTarget,
+  type CoreDocumentBootstrap,
+  type CoreDocumentNode,
+  type CoreDocumentOwner,
+  type CoreDocumentRouteNode,
+  type CoreDocumentRouteTarget,
+  type CoreExtensionBag,
+  type CoreExtensionNamespaceSnapshot,
+  type CoreExtensionOwnerKind,
+  type CoreExtensionRegistrySnapshot,
+  type CoreGraph,
+  type CoreNodeProvenance,
+  type CorePageNode,
+  type CorePageScope,
+  type CorePageSource,
+  type CoreProvenanceProducer,
+  type CoreRouteFacets,
+  type CoreRouteLocation,
+  type CoreRouteNode,
+  type CoreRoutePattern,
+  type CoreRouteSegment,
+  type DocumentId,
+  PAGE_ANCHOR_PROVIDER_ID,
+  type PageId,
+  type RouteId,
+  resolveCorePageOwner,
+} from "./core-graph.js";
+export {
   type BuildOutputLinkInput,
   type BuildOutputServerModule,
   createDeploymentMetadata,
@@ -2382,6 +2531,11 @@ export {
   type ServerManifestOutput,
   type ServerManifestRouteOutput,
 } from "./linker.js";
+export {
+  assertPageMetadata,
+  clonePageMetadata,
+  type PageMetadata,
+} from "./page-metadata.js";
 export {
   type ClientRouteMatch,
   type ClientRouteTarget,

@@ -44,7 +44,6 @@ export interface FrameworkRuntimeOutput {
   publicPath: string;
   runtime: BuildOutput["runtime"];
   routing: FrameworkRuntimeRouting;
-  pages?: Record<string, FrameworkRuntimePage>;
   server: {
     renderers?: Record<string, FrameworkRuntimeRenderer>;
   };
@@ -59,6 +58,7 @@ export type FrameworkRuntimePage = Pick<
   | "path"
   | "routeId"
   | "componentModel"
+  | "metadata"
   | "mount"
 > & {
   ppr?: FrameworkRuntimePprPage;
@@ -83,6 +83,7 @@ export type FrameworkRuntimeRoute = Pick<
 export type FrameworkRuntimeRouting =
   | {
       kind: "spa";
+      pages: Record<string, FrameworkRuntimePage>;
       routes: FrameworkRuntimeRoute[];
     }
   | {
@@ -203,10 +204,6 @@ export function createFrameworkRuntime(
     publicPath: output.publicPath,
     runtime: output.runtime,
     routing,
-    pages:
-      routing.kind === "spa" && Object.keys(output.pages).length > 0
-        ? createFrameworkRuntimePages(output)
-        : undefined,
     server: pruneUndefined({
       renderers: output.server.renderers
         ? Object.fromEntries(
@@ -242,6 +239,7 @@ function createFrameworkRuntimeRouting(
   if (hasSpaRoutes(output) || Object.keys(output.pages).length === 0) {
     return {
       kind: "spa",
+      pages: createFrameworkRuntimePages(output),
       routes: output.routes.map((route) =>
         pruneUndefined({
           id: route.id,
@@ -275,6 +273,7 @@ function createFrameworkRuntimePage(
     path: page.path ?? route?.path,
     routeId: page.routeId ?? route?.id,
     componentModel: page.componentModel,
+    metadata: page.metadata,
     mount: page.mount,
     ppr: page.ppr
       ? {

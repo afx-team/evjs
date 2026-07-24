@@ -12,8 +12,9 @@ npm run dev
 
 | File | Purpose |
 |------|---------|
-| `src/layout/index.tsx` | SPA root layout |
-| `src/pages/index.tsx` | Users list + todo management UI |
+| `ev.config.ts` | Selects SPA routing mode |
+| `src/pages/layout.tsx` | File-convention root layout |
+| `src/pages/page.tsx` | Users list + todo management UI |
 | `src/apis/db.server.ts` | SQLite setup plus user and todo CRUD server functions |
 
 ## What It Demonstrates

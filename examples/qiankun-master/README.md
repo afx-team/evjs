@@ -1,11 +1,13 @@
 # qiankun master
 
-Demonstrates an evjs file-convention qiankun master application using
+Demonstrates an evjs qiankun master application using
 `@evjs/plugin-qiankun`.
 
-The application source uses `src/pages` and `src/layout` like a regular evjs
-SPA. Qiankun integration is configured from `ev.config.ts`, and the master
-resolver is loaded by the plugin through the framework-managed SPA entry.
+The application uses the unified Core 0.3 SPA model. `src/pages/page.tsx` and
+`src/pages/catalog/page.tsx` define `/` and `/catalog`, while
+`src/pages/layout.tsx` is the root layout. Qiankun integration is configured
+from `ev.config.ts`, and the master resolver is loaded by the plugin through
+the framework-managed SPA entry.
 
 ## Run
 

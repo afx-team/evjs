@@ -11,15 +11,16 @@ import {
 import type {
   ClientRuntime,
   ClientRuntimePage,
-  ClientRuntimeRoute,
 } from "../src/shared/runtime-config.js";
 
-type LegacyClientRuntime = ClientRuntime & {
-  pages: Record<string, ClientRuntimePage>;
-  routes: ClientRuntimeRoute[];
+type MpaClientRuntime = ClientRuntime & {
+  routing: {
+    kind: "mpa";
+    pages: Record<string, ClientRuntimePage>;
+  };
 };
 
-const runtime: LegacyClientRuntime = {
+const runtime: MpaClientRuntime = {
   version: 1,
   buildId: "test",
   runtime: {},
@@ -29,36 +30,27 @@ const runtime: LegacyClientRuntime = {
       href: "/default.js",
     },
   },
-  pages: {
-    home: {
-      module: {
-        type: "lifecycle",
-        href: "/home.js",
+  routing: {
+    kind: "mpa",
+    pages: {
+      home: {
+        path: "/home",
+        routeId: "home",
+        module: {
+          type: "lifecycle",
+          href: "/home.js",
+        },
       },
-    },
-    about: {
-      module: {
-        type: "lifecycle",
-        href: "/about.js",
+      about: {
+        path: "/about",
+        routeId: "about",
+        module: {
+          type: "lifecycle",
+          href: "/about.js",
+        },
       },
     },
   },
-  routes: [
-    {
-      id: "home",
-      path: "/home",
-      pageId: "home",
-    },
-    {
-      id: "about",
-      path: "/about",
-      pageId: "about",
-    },
-    {
-      id: "app.order",
-      path: "/orders/$orderId",
-    },
-  ],
 };
 
 afterEach(() => {
@@ -110,7 +102,9 @@ describe("createShell", () => {
         runtime: { ...runtime, pages: [] },
         resolveMountPoint: () => ({}) as Element,
       } as never),
-    ).toThrow("[evjs] createShell() runtime.pages must be an object.");
+    ).toThrow(
+      "[evjs] createShell() runtime.pages and createShell() runtime.routes are not supported.",
+    );
     expect(() =>
       createShell({
         runtime: { ...runtime, app: [] },
@@ -119,49 +113,58 @@ describe("createShell", () => {
     ).toThrow("[evjs] createShell() runtime.app must be an object.");
     expect(() =>
       createShell({
-        runtime: { ...runtime, routes: {} },
+        runtime: { ...runtime, routing: { kind: "spa", routes: {} } },
         resolveMountPoint: () => ({}) as Element,
       } as never),
-    ).toThrow("[evjs] createShell() runtime.routes must be an array.");
+    ).toThrow("[evjs] createShell() runtime.routing.routes must be an array.");
     expect(() =>
       createShell({
         runtime: {
           ...runtime,
-          routes: [{ id: "home", path: "home", pageId: "home" }],
+          routing: {
+            kind: "spa",
+            routes: [{ id: "home", path: "home", pageId: "home" }],
+          },
         },
         resolveMountPoint: () => ({}) as Element,
       } as never),
     ).toThrow(
-      '[evjs] createShell() runtime.routes[0].path must start with "/".',
+      '[evjs] createShell() runtime.routing.routes[0].path must start with "/".',
     );
     expect(() =>
       createShell({
         runtime: {
           ...runtime,
-          routes: [{ id: " home", path: "/home", pageId: "home" }],
+          routing: {
+            kind: "spa",
+            routes: [{ id: " home", path: "/home", pageId: "home" }],
+          },
         },
         resolveMountPoint: () => ({}) as Element,
       } as never),
     ).toThrow(
-      "[evjs] createShell() runtime.routes[0].id must not contain leading or trailing whitespace.",
+      "[evjs] createShell() runtime.routing.routes[0].id must not contain leading or trailing whitespace.",
     );
     expect(() =>
       createShell({
         runtime: {
           ...runtime,
-          routes: [
-            { id: "userById", path: "/users/$id", pageId: "home" },
-            {
-              id: "userByUserId",
-              path: "/users/$userId",
-              pageId: "about",
-            },
-          ],
+          routing: {
+            kind: "spa",
+            routes: [
+              { id: "userById", path: "/users/$id", pageId: "home" },
+              {
+                id: "userByUserId",
+                path: "/users/$userId",
+                pageId: "about",
+              },
+            ],
+          },
         },
         resolveMountPoint: () => ({}) as Element,
       } as never),
     ).toThrow(
-      '[evjs] createShell() runtime.routes[1].path has the same route shape as createShell() runtime.routes[0].path "/users/$id". Use one page route per URL shape.',
+      '[evjs] createShell() runtime.routing.routes[1].path has the same route shape as createShell() runtime.routing.routes[0].path "/users/$id". Use one page route per URL shape.',
     );
     expect(() =>
       createShell({
@@ -303,34 +306,40 @@ describe("createShell", () => {
     expect(() =>
       createMalformedShell({
         ...runtime,
-        pages: {
-          ...runtime.pages,
-          home: {
-            ...runtime.pages.home,
-            module: null as never,
+        routing: {
+          kind: "mpa",
+          pages: {
+            ...runtime.routing.pages,
+            home: {
+              ...runtime.routing.pages.home,
+              module: null as never,
+            },
           },
         },
       }),
     ).toThrow(
-      "[evjs] createShell() runtime.pages.home.module must be an object.",
+      "[evjs] createShell() runtime.routing.pages.home.module must be an object.",
     );
 
     expect(() =>
       createMalformedShell({
         ...runtime,
-        pages: {
-          ...runtime.pages,
-          home: {
-            ...runtime.pages.home,
-            module: {
-              type: "lifecycle",
-              href: 42,
-            } as never,
+        routing: {
+          kind: "mpa",
+          pages: {
+            ...runtime.routing.pages,
+            home: {
+              ...runtime.routing.pages.home,
+              module: {
+                type: "lifecycle",
+                href: 42,
+              } as never,
+            },
           },
         },
       }),
     ).toThrow(
-      "[evjs] createShell() runtime.pages.home.module.href must be a non-empty string.",
+      "[evjs] createShell() runtime.routing.pages.home.module.href must be a non-empty string.",
     );
 
     expect(() =>
@@ -719,13 +728,16 @@ describe("createShell", () => {
     const scriptShell = createShell({
       runtime: {
         ...runtime,
-        pages: {
-          ...runtime.pages,
-          home: {
-            ...runtime.pages.home,
-            module: {
-              type: "lifecycle",
-              href: "/invalid-create-element.js",
+        routing: {
+          kind: "mpa",
+          pages: {
+            ...runtime.routing.pages,
+            home: {
+              ...runtime.routing.pages.home,
+              module: {
+                type: "lifecycle",
+                href: "/invalid-create-element.js",
+              },
             },
           },
         },
@@ -756,13 +768,16 @@ describe("createShell", () => {
     const scriptShell = createShell({
       runtime: {
         ...runtime,
-        pages: {
-          ...runtime.pages,
-          home: {
-            ...runtime.pages.home,
-            module: {
-              type: "lifecycle",
-              href: "/append-fail.js",
+        routing: {
+          kind: "mpa",
+          pages: {
+            ...runtime.routing.pages,
+            home: {
+              ...runtime.routing.pages.home,
+              module: {
+                type: "lifecycle",
+                href: "/append-fail.js",
+              },
             },
           },
         },
@@ -1380,10 +1395,12 @@ describe("createHistoryDriver", () => {
     );
     expect(() =>
       createHistoryDriver({
-        runtime: { ...runtime, routes: {} },
+        runtime: { ...runtime, routing: { kind: "spa", routes: {} } },
         window: createMockWindow("https://example.com/home"),
       } as never),
-    ).toThrow("[evjs] createHistoryDriver() runtime.routes must be an array.");
+    ).toThrow(
+      "[evjs] createHistoryDriver() runtime.routing.routes must be an array.",
+    );
     expect(() =>
       createHistoryDriver({
         runtime,
@@ -1490,18 +1507,21 @@ describe("createHistoryDriver", () => {
   it("prefers the most specific runtime route for activation requests", () => {
     const orderedRuntime: ClientRuntime = {
       ...runtime,
-      routes: [
-        {
-          id: "user",
-          path: "/users/$userId",
-          pageId: "about",
-        },
-        {
-          id: "user-settings",
-          path: "/users/settings",
-          pageId: "home",
-        },
-      ],
+      routing: {
+        kind: "spa",
+        routes: [
+          {
+            id: "user",
+            path: "/users/$userId",
+            pageId: "about",
+          },
+          {
+            id: "user-settings",
+            path: "/users/settings",
+            pageId: "home",
+          },
+        ],
+      },
     };
     const driver = createHistoryDriver({
       runtime: orderedRuntime,

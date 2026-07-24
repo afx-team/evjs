@@ -12,12 +12,9 @@ import path from "node:path";
 const require = createRequire(import.meta.url);
 
 import { SERVER_FUNCTION_TRANSFORM_RUNTIME } from "@evjs/ev/_internal/build";
-import type {
-  BuildPlan,
-  ServerAppEntryMetadata,
-} from "@evjs/ev/_internal/manifest";
 import type { ResolvedConfig } from "@evjs/ev/config";
 import type { BundlerCtx, PluginHooks } from "@evjs/ev/plugin";
+import type { BuildPlan, ServerAppEntryMetadata } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import type {
   ConfigComplete,

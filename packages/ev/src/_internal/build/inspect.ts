@@ -1,9 +1,10 @@
 import path from "node:path";
 import type {
-  AppGraph,
   BuildPlan,
+  CoreGraph,
   GeneratedFrameworkPlan,
 } from "@evjs/shared/manifest";
+import { CONFIG_ROUTE_PROVIDER_ID } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import {
   type Config,
@@ -14,9 +15,15 @@ import {
 } from "../../config/index.js";
 import type { CliFlags, PluginContext } from "../../plugin/index.js";
 import { analyzeAndMaterializeFrameworkIR } from "./analyze-and-materialize.js";
-import type { BundlerAdapter } from "./bundler.js";
+import {
+  type BundlerAdapter,
+  type BundlerCapabilities,
+  type BundlerCapabilityGap,
+  getBundlerBuildCapabilityGaps,
+} from "./bundler.js";
 import { withActiveBundler } from "./bundler-config.js";
 import {
+  createNoPageRoutesFoundMessage,
   createNoServerRoutesFoundMessage,
   readRoutingConfig,
   readServerRoutingConfig,
@@ -25,9 +32,10 @@ import {
   withServerRoutingDefaults,
 } from "./convention-config.js";
 import { validateHtmlTemplates } from "./framework-output.js";
-import { createAppGraph } from "./graph/index.js";
-import { getPageRouteTypesPath } from "./page-route-types.js";
+import { createCoreGraph } from "./graph/index.js";
+import { createPageRouteNodesFromCoreGraph } from "./page-route-types.js";
 import type { PageRouteDiscovery } from "./page-routes.js";
+import { collectPluginExtensionRegistry } from "./plugin-extensions.js";
 import {
   collectPluginHooks,
   orderPluginsByDependencies,
@@ -60,6 +68,7 @@ export interface InspectDiagnostic {
     | "server-conventions"
     | "graph"
     | "plan"
+    | "bundler"
     | "contributions";
   message: string;
   file?: string;
@@ -69,9 +78,10 @@ export interface InspectDiagnostic {
 
 export interface InspectRouteFile {
   file: string;
-  status: "route" | "ignored" | "rejected";
+  status: "route" | "facet" | "ignored" | "rejected";
   routeId?: string;
   routePath?: string;
+  facetKind?: "root-layout" | "layout" | "error" | "not-found";
   diagnostics?: InspectDiagnostic[];
 }
 
@@ -79,33 +89,6 @@ export interface InspectPageRoute {
   id: string;
   path: string;
   module: string;
-}
-
-export interface InspectPageOutput {
-  id: string;
-  path?: string;
-  routeId?: string;
-  component?: string;
-  entry?: string;
-  app?: string;
-  render: string;
-  hydrate?: string;
-  prerender?: unknown;
-  rsc: boolean;
-  partialPrerender: boolean;
-}
-
-export interface InspectServerFunction {
-  id: string;
-  module: string;
-  exportName: string;
-}
-
-export interface InspectServerRoute {
-  id: string;
-  module: string;
-  path: string;
-  methods: string[];
 }
 
 export interface InspectBuildEntry {
@@ -126,21 +109,20 @@ export interface InspectFrameworkBuildResult {
   mode: "development" | "production";
   command: "dev" | "build";
   routing?: {
-    mode: "spa" | "mpa";
-    dir: string;
-    html: string;
-    mount: string;
-    conventions?: {
-      layout: boolean | string;
+    /** Application topology. */
+    topology: "spa" | "mpa";
+    /** Canonical Page root. */
+    pageRoot: string;
+    document: {
+      template: string;
+      mount: string;
     };
     rootModule?: string;
-    routeTypes?: string;
   };
   pageRoutes: InspectPageRoute[];
   routeFiles: InspectRouteFile[];
-  pages: InspectPageOutput[];
-  serverFunctions: InspectServerFunction[];
-  serverRoutes: InspectServerRoute[];
+  /** The single normalized semantic graph used by planning and plugins. */
+  graph: CoreGraph;
   runtime: {
     server: ResolvedConfig["server"]["runtime"];
     transport?: ResolvedConfig["transport"];
@@ -148,6 +130,11 @@ export interface InspectFrameworkBuildResult {
   output: {
     client: ResolvedConfig["output"]["client"];
     server: ResolvedConfig["output"]["server"];
+  };
+  bundler?: {
+    name: string;
+    capabilities: BundlerCapabilities;
+    gaps: BundlerCapabilityGap[];
   };
   buildPlan?: {
     entries: InspectBuildEntry[];
@@ -209,7 +196,7 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
           diagnostics.push({
             level: "error",
             source: "page-routes",
-            message: `No page routes found in ${base.dir}. Add a default-exporting route module such as ${base.dir.replace(/\/+$/, "")}/index.tsx or set routing: false.`,
+            message: createNoPageRoutesFoundMessage(base.dir),
           });
         }
       },
@@ -270,6 +257,7 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
   const config = bundler
     ? withActiveBundler(resolvedConfig, bundler)
     : resolvedConfig;
+  const pluginExtensions = collectPluginExtensionRegistry(config.plugins);
   const pluginWatchFiles = new Set<string>();
   const pluginContext: PluginContext<TBundlerCfg> = {
     mode,
@@ -304,7 +292,7 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
       });
     }
 
-    let analysis: Awaited<ReturnType<typeof createAppGraph>>;
+    let analysis: Awaited<ReturnType<typeof createCoreGraph>>;
     let plan: BuildPlan | undefined;
     try {
       const materialized = await analyzeAndMaterializeFrameworkIR({
@@ -313,12 +301,13 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
         command,
         config,
         pluginContext,
+        pluginExtensions,
         write: false,
       });
       analysis = materialized.analysis;
       plan = materialized.plan;
     } catch (err) {
-      analysis = await createAppGraph(config, cwd);
+      analysis = await createCoreGraph(config, cwd, { pluginExtensions });
       diagnostics.push({
         level: "error",
         source: "contributions",
@@ -330,36 +319,30 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
         toInspectDiagnostic("graph", diagnostic),
       ),
     );
+    const bundlerGaps =
+      bundler && plan ? getBundlerBuildCapabilityGaps(bundler, plan) : [];
+    diagnostics.push(
+      ...bundlerGaps.map((gap) => ({
+        level: "error" as const,
+        source: "bundler" as const,
+        message: `Bundler "${bundler?.name}" lacks ${gap.capability}: ${gap.reason}.`,
+      })),
+    );
 
     return {
       cwd,
       mode,
       command,
-      routing: createInspectRouting(cwd, config),
-      pageRoutes: (config.routing?.routes ?? []).map((route) => ({
-        id: route.id,
-        path: route.path,
-        module: route.module,
-      })),
-      routeFiles: createInspectRouteFiles(cwd, pageRouteDiscovery, diagnostics),
-      pages: Object.values(analysis.graph.pages)
-        .map(createInspectPageOutput)
-        .sort((left, right) => left.id.localeCompare(right.id)),
-      serverFunctions: analysis.graph.serverFunctions
-        .map((fn) => ({
-          id: fn.id,
-          module: fn.module,
-          exportName: fn.exportName,
-        }))
-        .sort(compareById),
-      serverRoutes: analysis.graph.serverRoutes
-        .map((route) => ({
+      routing: createInspectRouting(config, analysis.graph),
+      pageRoutes: createPageRouteNodesFromCoreGraph(analysis.graph).map(
+        (route) => ({
           id: route.id,
-          module: route.module,
           path: route.path,
-          methods: route.methods,
-        }))
-        .sort(compareById),
+          module: route.module,
+        }),
+      ),
+      routeFiles: createInspectRouteFiles(cwd, pageRouteDiscovery, diagnostics),
+      graph: analysis.graph,
       runtime: {
         server: config.server.runtime,
         ...(config.transport.baseUrl ? { transport: config.transport } : {}),
@@ -368,6 +351,18 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
         client: config.output.client,
         server: config.output.server,
       },
+      ...(bundler
+        ? {
+            bundler: {
+              name: bundler.name,
+              capabilities: {
+                build: { ...bundler.capabilities.build },
+                dev: { ...bundler.capabilities.dev },
+              },
+              gaps: bundlerGaps,
+            },
+          }
+        : {}),
       buildPlan: plan
         ? {
             entries: plan.entries.map((entry) => ({
@@ -392,7 +387,6 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
     await dispose();
   }
 }
-
 function toInspectDiagnostic(
   source: InspectDiagnostic["source"],
   diagnostic: {
@@ -419,28 +413,39 @@ function formatInspectError(error: unknown): string {
 }
 
 function createInspectRouting<TBundlerCfg>(
-  cwd: string,
   config: ResolvedConfig<TBundlerCfg>,
+  graph: CoreGraph,
 ): InspectFrameworkBuildResult["routing"] {
-  if (!config.routing) return undefined;
+  if (config.routing) {
+    return {
+      topology: config.routing.mode,
+      pageRoot: config.routing.dir,
+      document: {
+        template: config.routing.html,
+        mount: config.routing.mount,
+      },
+      ...(config.routing.rootModule
+        ? { rootModule: config.routing.rootModule }
+        : {}),
+    };
+  }
+  if (!config.application) return undefined;
+
+  const rootLayout = graph.routes.find(
+    (route) =>
+      route.realm === "client" &&
+      route.id === `${CONFIG_ROUTE_PROVIDER_ID}:root-layout`,
+  );
   return {
-    mode: config.routing.mode,
-    dir: config.routing.dir,
-    html: config.routing.html,
-    mount: config.routing.mount,
-    ...(config.routing.conventions
-      ? { conventions: config.routing.conventions }
-      : {}),
-    ...(config.routing.rootModule
-      ? { rootModule: config.routing.rootModule }
-      : {}),
-    ...(config.routing.mode === "spa"
-      ? {
-          routeTypes: toProjectPath(
-            cwd,
-            getPageRouteTypesPath(cwd, config.routing.dir).file,
-          ),
-        }
+    topology: "spa",
+    pageRoot: config.application.pageRoot,
+    document: {
+      template: config.application.document.template,
+      mount: config.application.document.mount,
+    },
+    ...(rootLayout?.realm === "client" &&
+    typeof rootLayout.facets.layout === "string"
+      ? { rootModule: rootLayout.facets.layout }
       : {}),
   };
 }
@@ -453,8 +458,11 @@ function createInspectRouteFiles(
   if (!discovery) return [];
 
   const routeByModule = new Map(
-    discovery.routes.map((route) => [route.module, route]),
+    discovery.routes
+      .filter((route) => route.kind !== "layout")
+      .map((route) => [route.module, route]),
   );
+  const facetByModule = createInspectFacetClaims(discovery);
   const diagnosticsByFile = new Map<string, InspectDiagnostic[]>();
   for (const diagnostic of diagnostics) {
     if (diagnostic.source !== "page-routes" || !diagnostic.file) continue;
@@ -464,10 +472,15 @@ function createInspectRouteFiles(
     diagnosticsByFile.set(file, entries);
   }
 
-  return discovery.files
-    .map((file) => {
-      const projectFile = toProjectPath(cwd, file);
+  const projectFiles = new Set(
+    discovery.files.map((file) => toProjectPath(cwd, file)),
+  );
+  if (discovery.rootModule) projectFiles.add(discovery.rootModule);
+
+  return [...projectFiles]
+    .map((projectFile) => {
       const route = routeByModule.get(projectFile);
+      const facet = facetByModule.get(projectFile);
       const fileDiagnostics =
         diagnosticsByFile.get(normalizeDiagnosticFile(projectFile)) ?? [];
       if (route) {
@@ -476,6 +489,15 @@ function createInspectRouteFiles(
           status: "route" as const,
           routeId: route.id,
           routePath: route.path,
+        };
+      }
+      if (facet) {
+        return {
+          file: projectFile,
+          status: "facet" as const,
+          facetKind: facet.kind,
+          ...(facet.routeId ? { routeId: facet.routeId } : {}),
+          ...(facet.routePath ? { routePath: facet.routePath } : {}),
         };
       }
       if (fileDiagnostics.some((diagnostic) => diagnostic.level === "error")) {
@@ -494,31 +516,35 @@ function createInspectRouteFiles(
     .sort((left, right) => left.file.localeCompare(right.file));
 }
 
-function createInspectPageOutput(
-  page: AppGraph["pages"][string],
-): InspectPageOutput {
-  return {
-    id: page.id,
-    ...(page.path ? { path: page.path } : {}),
-    ...(page.routeId ? { routeId: page.routeId } : {}),
-    ...(page.component ? { component: page.component } : {}),
-    ...(page.entry ? { entry: page.entry } : {}),
-    ...(page.app ? { app: page.app } : {}),
-    render: page.render,
-    ...(page.hydrate ? { hydrate: page.hydrate } : {}),
-    ...(page.prerender ? { prerender: page.prerender } : {}),
-    rsc: page.componentModel === "rsc",
-    partialPrerender:
-      Boolean(page.ppr) ||
-      (typeof page.prerender === "object" &&
-        page.prerender !== null &&
-        "partial" in page.prerender &&
-        page.prerender.partial === true),
-  };
+interface InspectFacetClaim {
+  kind: "root-layout" | "layout" | "error" | "not-found";
+  routeId?: string;
+  routePath?: string;
 }
 
-function compareById<T extends { id: string }>(left: T, right: T): number {
-  return left.id.localeCompare(right.id);
+function createInspectFacetClaims(
+  discovery: PageRouteDiscovery,
+): Map<string, InspectFacetClaim> {
+  const claims = new Map<string, InspectFacetClaim>();
+  if (discovery.rootModule) {
+    claims.set(discovery.rootModule, { kind: "root-layout" });
+  }
+  for (const route of discovery.routes) {
+    if (route.kind === "layout") {
+      claims.set(route.module, {
+        kind: "layout",
+        routeId: route.id,
+        routePath: route.path,
+      });
+    }
+    if (route.errorModule && !claims.has(route.errorModule)) {
+      claims.set(route.errorModule, { kind: "error" });
+    }
+    if (route.notFoundModule && !claims.has(route.notFoundModule)) {
+      claims.set(route.notFoundModule, { kind: "not-found" });
+    }
+  }
+  return claims;
 }
 
 function normalizeDiagnosticFile(file: string): string {

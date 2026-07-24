@@ -1,7 +1,10 @@
 # 配置
 
-evjs 默认零配置。多数应用只需要添加 `ev.config.ts` 来选择 SPA/MPA 路由、
-自定义服务端文件路由，或调整部署相关路径。
+evjs Core 0.3 为 SPA 和 MPA 提供同一种应用创作模型：
+
+- `src/pages/**/page.*` 是 canonical Page 与客户端路由锚点；
+- Page 所在目录同时决定其 scope 与 URL；
+- `routing.mode` 只选择 SPA 或 MPA 物化方式，不改变语义 Page/Route 树。
 
 ```ts
 import { defineConfig } from "@evjs/ev";
@@ -13,270 +16,250 @@ export default defineConfig({
 });
 ```
 
-## 默认值与适用范围
+其余信息来自文件树：
 
-| 配置 | 默认值 / 行为 |
+```text
+src/pages/
+├── page.tsx                         # /
+├── users/
+│   ├── page.tsx                     # /users
+│   └── $userId/
+│       └── page.tsx                 # /users/:userId
+└── (account)/
+    └── settings/
+        └── page.tsx                 # /settings
+```
+
+## 文件约定发现
+
+文件约定默认启用。完全自行持有 runtime composition 的应用，可以用唯一的顶层
+开关关闭文件系统发现：
+
+```ts
+export default defineConfig({
+  conventions: false,
+});
+```
+
+该配置会关闭 `src/pages` 下的 `page.*` 发现、`src/apis` 下的 server
+file-route 发现，以及全局与 route-scoped middleware 文件发现。它不能和显式
+`routing` 或 `server.routing` 声明一起配置。框架不提供粒度更细的约定关闭
+开关。
+
+仅支持 SPA 的 `application.routes` migration input 不依赖文件约定。reachable
+且带 `"use server";` 的模块，以及插件 contribution 生成的模块也不依赖文件约定。
+已移除的 `app`、`pages` 与顶层 `routes` 声明会产生迁移错误。
+
+## Routing
+
+`routing` 启用 canonical 客户端 Page-and-Route 约定。
+
+| 字段 | 含义 |
 | --- | --- |
-| `html` | 显式 app 或约定式页面路由共用的模板默认是 `./index.html`。MPA route 也可以使用就近的 `.html` 模板。 |
-| `dev.port` | `3000` |
-| `dev.https` | `false` |
-| `server.dev.port` | `3001` |
-| `server.dev.https` | `false` |
-| `server.basePath` | `/__evjs` |
-| `routing.mode` | `spa` |
-| `routing.dir` | 启用 `routing` 时为 `./src/pages` |
-| `routing.mount` | `#app` |
-| `server.routing` | `true`；默认扫描 `./src/apis`，没有路由模块时自动退出 |
-| `server.routing.dir` | `./src/apis` |
-| `output.client` | `dist/client` |
-| `output.server` | `dist/server` |
-| `output.crossOriginLoading` | `"anonymous"` |
+| `mode` | `"spa"` 或 `"mpa"`，只改变物化方式。 |
+| `dir` | 项目相对 Page 路由根目录，默认 `./src/pages`。 |
+| `html` | 共享 HTML 模板，默认 `./index.html`。 |
+| `mount` | 共享挂载选择器，默认 `#app`。 |
 
-服务端函数、PPR 和 RSC 的运行时路径都从 `server.basePath` 派生。没有单独公开的
-`server.functions` 或函数端点配置。
-
-没有根级 `entry` 配置。约定式文件路由会在内部生成页面应用入口；手动自举 SPA 使用
-`app.entry`。
-
-## 常用配置
-
-使用 `src/pages` 的约定式 SPA 可以保持最小配置：
-
-```ts
-import { defineConfig } from "@evjs/ev";
-
-export default defineConfig({
-  routing: {
-    mode: "spa",
-  },
-});
-```
-
-MPA 输出复用同一套 `src/pages` 文件，只需要切换模式：
-
-```ts
-import { defineConfig } from "@evjs/ev";
-
-export default defineConfig({
-  routing: {
-    mode: "mpa",
-  },
-});
-```
-
-`src/apis` 下的服务端文件路由默认会被发现。只有需要更换路由目录时，才配置
-`server.routing.dir`。
-
-只写需要修改的字段：
-
-```ts
-import { defineConfig } from "@evjs/ev";
-
-export default defineConfig({
-  dev: {
-    port: 4000,
-  },
-  server: {
-    dev: {
-      port: 4001,
-    },
-  },
-});
-```
-
-## 路由
-
-`routing` 负责从 `src/pages` 发现客户端页面：
+请显式声明 mode，避免框架把一个与路由无关的 `src/pages` 目录误识别为
+Page 路由树：
 
 ```ts
 export default defineConfig({
-  routing: {
-    mode: "spa",
-    dir: "./src/pages",
-    mount: "#app",
-  },
+  routing: { mode: "spa" },
 });
 ```
 
-当项目存在 `src/pages`，且没有声明显式 `app` 或 `pages` 配置时，SPA 路由会自动启用。
+## Page 与路径规则
 
-SPA routing 模式下，浏览器入口会从已发现的页面树生成。只有应用明确要用手写 SPA
-bootstrap 代替文件路由时，才使用 `app.entry`。
+每个路由目录可以包含且只能包含一个 `page.ts`、`page.tsx`、`page.js` 或
+`page.jsx`。Page 模块默认导出组件，该目录也是 Page 的私有 ownership scope。
 
-SPA 根布局会在路由目录旁边自动查找 `layout/index.tsx`，例如 `src/pages` 对应
-`src/layout/index.tsx`。只有应用 shell 明确放在其他位置时，才使用
-`routing.conventions.layout`：
+| 目录段 | 语义路由段 |
+| --- | --- |
+| `users` | 静态 `users`。 |
+| `$userId` | 动态 `:userId`。 |
+| `$...splat` | 终止 catch-all。 |
+| `(account)` | 无路径分组。 |
 
-```ts
-export default defineConfig({
-  routing: {
-    conventions: {
-      layout: "./src/shell/AppLayout.tsx",
-    },
-  },
-});
-```
+构建会拒绝非法 segment、同一目录下的多个 Page 扩展名变体、重复的归一化
+路径、动态参数形状歧义和生成路由 id 冲突。`index.*` 没有 canonical
+客户端路由语义，可以作为普通私有模块使用。
 
-Layout 约定只用于 SPA；MPA 页面应组合普通 React 组件或复用 HTML 模板。
+### 带子路由的 Page
 
-MPA 文件路由可以使用 colocated HTML 模板。例如 `src/pages/about.tsx` 使用
-`src/pages/about.html`，`src/pages/product/index.tsx` 使用
-`src/pages/product/index.html`。没有 colocated 模板的路由会使用顶层 `html` 模板，
-除非配置了 `routing.html`。
-
-## 页面
-
-普通文件路由 SPA/MPA 优先使用 `routing`。只有输出无法用 `src/pages` 目录形状表达时，
-才使用 `pages`。
-
-字符串和 `{ component }` 都表示 evjs 托管的 React 页面：
-
-```ts
-export default defineConfig({
-  pages: {
-    home: "./src/pages/Home.tsx",
-    dashboard: {
-      path: "/dashboard",
-      component: "./src/pages/dashboard/Page.tsx",
-      html: "./src/pages/public.html",
-      mount: "#app",
-    },
-  },
-});
-```
-
-只有页面需要自己控制浏览器 bootstrap 时，才使用 `{ entry }`：
-
-```ts
-export default defineConfig({
-  pages: {
-    landing: {
-      entry: "./src/landing/main.tsx",
-      html: "./src/landing/index.html",
-    },
-  },
-});
-```
-
-Component page 对象可以直接声明渲染元信息：
-
-```ts
-export default defineConfig({
-  pages: {
-    campaign: {
-      path: "/campaign",
-      component: "./src/pages/campaign/Page.tsx",
-      render: "ssr",
-      hydrate: "load",
-    },
-  },
-});
-```
-
-同样的元信息也可以写成组件模块里的字面量导出：
+目录嵌套创建子路由。在 SPA mode 下，父 Page 可以渲染嵌套路由 outlet：
 
 ```tsx
-export const render = "ssr";
-export const hydrate = "load";
+import { Outlet } from "@evjs/ev/navigation";
 
-export default function CampaignPage() {
-  return <main>Campaign</main>;
+export default function UsersPage() {
+  return (
+    <main>
+      <h1>Users</h1>
+      <Outlet />
+    </main>
+  );
 }
 ```
 
-Hydration mode 决定客户端交互开始的时机：`load` 立即激活，`visible` 等待挂载点进入
-视口，`idle` 等待浏览器 idle callback，`none` 则让服务端或静态 HTML 保持无交互。
-浏览器缺少对应调度 API 时会回退到 `load`。
+没有 `page.*` 的目录可以只组织后代路由；`(group)` 目录还会省略自己的 URL
+segment。
 
-## 显式 App
+## SPA 与 MPA
 
-只有手动自举 SPA 时才使用 `app.entry`：
+同一棵文件树根据 `routing.mode` 改变物化结果。
+
+| 模型对象 | SPA | MPA |
+| --- | --- | --- |
+| Page | `page.*` 及所在目录 scope | 相同的 Page 与 scope |
+| Route | 同一浏览器路由树中的 Client Route | 来自同一语义 pattern 的 Document Route |
+| Document | 通常由 Application 持有一个共享 HTML Document | 通常每条 Page 路由由 Page 持有一个 HTML Document |
+| 源路径 | 相对 `routing.dir` 的路由目录 | 相同的源路径 |
+
+### SPA
 
 ```ts
 export default defineConfig({
-  app: {
-    entry: "./src/main.tsx",
-    html: "./index.html",
-  },
+  routing: { mode: "spa" },
 });
 ```
 
-## 服务端
+SPA 支持嵌套路由、动态参数、splat 和文件约定的 layout/boundary。
 
-`server.basePath` 控制服务端运行时边界。除非部署平台要求固定路径，否则保持默认值：
+### MPA
 
 ```ts
 export default defineConfig({
-  server: {
-    basePath: "/__evjs",
-  },
+  routing: { mode: "mpa" },
 });
 ```
 
-服务端文件路由默认启用并扫描 `./src/apis`。对象形式目前支持 `dir`；没有
-`prefix` 选项。如果 URL 需要以 `/api` 开头，请把文件放到 `src/apis/api`
-这样的目录中。
+MPA discovery 接受相同的 `page.*` 锚点，并生成相同的语义 Page/Route 身份。
+动态路由输出以及 React layout/boundary 物化仍在分阶段建设。暂不支持的组合会
+在 graph/plan 校验阶段失败，不会激活另一套创作模型。同一 Page 目录的
+`index.html` 会提供该 MPA Page 的 Document 模板。
 
-服务端文件路由发现启用时，服务端中间件约定默认启用：
+## Page Scope 与配置
 
-- `src/middleware.ts`：全局服务端中间件。
-- `src/apis/**/middleware.ts`：只作用于后代服务端文件路由的 API 路由中间件。
+完整 Page 目录就是它的私有 ownership scope：
 
-启用 React Server Components 支持：
-
-```ts
-export default defineConfig({
-  server: {
-    rsc: true,
-  },
-});
+```text
+src/pages/users/$userId/
+├── page.tsx
+├── page.config.ts
+├── index.ts
+├── model.ts
+├── services.ts
+└── components/
+    └── ProfileCard.tsx
 ```
 
-## 开发服务器
+只有 `page.*` 是 Page entry。其他文件不会创建路由，因此 Page 代码不需要 `_`
+前缀。“私有”描述框架发现和插件 ownership，不是安全边界或 import 限制。
+后代目录拥有自己的 `page.*` 时，会创建一个更具体的 Page scope。
 
-浏览器开发服务器默认使用端口 `3000`；服务端开发运行时默认使用端口 `3001`。
-这些值是首选端口：多个 evjs 项目并行启动时会协调预留客户端/服务端端口组，并在需要时切换到附近的可用端口：
+可选页面级配置使用同目录 `page.config.ts`：
 
 ```ts
-export default defineConfig({
-  dev: {
-    port: 4000,
+import { definePageConfig } from "@evjs/ev";
+
+export default definePageConfig({
+  title: "用户资料",
+  meta: {
+    description: "查看和管理用户资料。",
+    keywords: "用户,资料",
+    viewport: "width=device-width, initial-scale=1",
+    "theme-color": "#ffffff",
   },
-  server: {
-    dev: {
-      port: 4001,
+  render: "csr",
+  extensions: {
+    "@company/feature": {
+      enabled: true,
     },
   },
 });
 ```
 
-`dev.https` 和 `server.dev.https` 可设置为 `false`、`true`，或包含 `key` 和 `cert`
-的对象。
+evjs 构建 graph 时同步求值该 module。它必须 default-export plain object，且只
+包含 static JSON data。支持的 core 字段是 `title`、`meta`、`render`、
+`hydrate`、`prerender` 与 `rsc`。`meta` 是生成
+`<meta name="key" content="value">` 的字符串 record；它不接受 `property`、
+`charset`、link、script、函数或通用 head tree。插件持有的值必须放在
+`extensions` 下已注册 namespaced key 中。
 
-使用 `dev.proxy` 代理自己的后端服务：
+插件 API 在两种 mode 下定位相同 normalized Page identity。配置后的
+core title/meta 会在两种 mode 下为 Page 物化。extension value 是 build-time
+graph data，不会自动发布到浏览器 runtime；插件必须显式生成并挂载所需 runtime
+projection。
+
+## 其他配置
+
+### Server
+
+文件约定启用时，默认发现 `src/apis` 下的服务端文件路由。只有目录确实不同才配置：
 
 ```ts
 export default defineConfig({
+  routing: { mode: "spa" },
+  server: {
+    basePath: "/__evjs",
+    routing: {
+      dir: "./src/apis",
+    },
+  },
+});
+```
+
+`server.basePath` 统一控制 server function、PPR 和 RSC runtime 路径。没有
+公开的 `server.functions.endpoint`。
+
+服务端中间件约定：
+
+- `src/middleware.ts`：全局 server middleware；
+- `src/apis/**/middleware.ts`：只作用于后代 server file routes。
+
+`server.routing: { dir }` 只定制 discovery root，不是关闭开关。
+
+在 Page 的 `page.config.ts` 中用 `rsc: true` 启用 React Server Components。
+Flight endpoint 从 `server.basePath` 派生，也可以用
+`server.rsc: { endpoint: "/custom/flight" }` 覆盖；`server.rsc` 不是启用开关。
+
+### Dev Server
+
+浏览器 dev server 默认端口 `3000`，server runtime 默认 `3001`。它们是优选
+端口，被占用时可协调移动。
+
+```ts
+export default defineConfig({
+  routing: { mode: "spa" },
   dev: {
+    port: 4000,
     proxy: [
       {
         context: ["/api"],
         target: "http://localhost:8080",
-        pathRewrite: { "^/api": "" },
         changeOrigin: true,
       },
     ],
   },
+  server: {
+    dev: { port: 4001 },
+  },
 });
 ```
 
-## 输出
+`dev.https` 接受 `false`、`true` 或 `{ key, cert }`。
+`server.dev.https` 只接受 `false` 或显式 `{ key, cert }`；framework server 不会为
+`true` 自动生成证书。
 
-默认情况下，evjs 把浏览器资源写入 `dist/client`，服务端产物写入 `dist/server`。
-部署平台需要其他目录结构时再修改：
+### Output
+
+浏览器产物默认写入 `dist/client`，server 产物默认写入 `dist/server`。
 
 ```ts
 export default defineConfig({
+  routing: { mode: "spa" },
   output: {
     client: "dist",
     server: "dist-server",
@@ -284,69 +267,92 @@ export default defineConfig({
 });
 ```
 
-`output.crossOriginLoading` 控制 evjs 为生成的 JavaScript 和 CSS 标签添加的
-`crossorigin` 属性。可选值是 `false`、`"anonymous"` 或 `"use-credentials"`。
+`output.crossOriginLoading` 接受 `false`、`"anonymous"` 或
+`"use-credentials"`。
 
-## 传输
+### Transport
 
-同源应用不需要配置 transport。只有浏览器需要访问另一个 origin 上的服务端运行时时，
-才设置 `transport.baseUrl`：
+只有浏览器需要跨域访问 server runtime 时才配置 `transport.baseUrl`：
 
 ```ts
 export default defineConfig({
+  routing: { mode: "spa" },
   transport: {
     baseUrl: "https://api.example.com",
   },
 });
 ```
 
-## 插件
+### Plugins
 
-通过 `plugins` 注册框架插件：
+通过 `plugins` 注册插件。同一个 `Plugin` interface 可以定位归一化 graph、
+提供 Page 扩展，并承载 config、setup、contributions 与 lifecycle hooks。参见
+[插件](./plugins)与[插件迁移](./plugin-migration-0.2-to-0.3)。
 
-```ts
-export default defineConfig({
-  plugins: [
-    {
-      name: "build-timer",
-      setup() {
-        const start = Date.now();
-        return {
-          buildEnd() {
-            console.log("Build finished", Date.now() - start);
-          },
-        };
-      },
-    },
-  ],
-});
-```
+### Bundler
 
-更多 hook 签名、单 HTML 文档上下文和 bundler 辅助函数见 [插件指南](./plugins)。
-
-## Bundler
-
-Utoopack 是默认 bundler。只有确实要切换时，才显式传入 bundler adapter：
+Utoopack 是默认路径。只有明确需要验证/回退后端时才提供 bundler adapter：
 
 ```ts
 import { defineConfig } from "@evjs/ev";
-import { utoopackAdapter } from "@evjs/bundler-utoopack";
+import { webpackAdapter } from "@evjs/bundler-webpack";
 
 export default defineConfig({
-  bundler: utoopackAdapter,
+  routing: { mode: "spa" },
+  bundler: webpackAdapter,
 });
 ```
 
-## 不支持的旧字段
+每个 adapter 都声明 server rendering、RSC、PPR build capability，以及 HTML、
+entry、route、server output、resolution 的 dev-plan update capability。
+`ev inspect` 会报告选中的 adapter 与 plan gap；缺少必要 capability 时，build/dev
+会在执行 adapter 前失败。
 
-这些字段不是公开配置：
+## 迁移存量应用
 
+`routing.mode` 会启用 canonical Page discovery。缺少 `routing` 时，一个无关的
+`src/pages` 目录不会被解释为路由树。Core 0.3 不暴露 Smallfish 或 evjs 0.2
+reader 开关；启动应用前先转换这些源码树。
+
+### Bigfish SPA 路由配置
+
+Bigfish 风格的 `routes`、`component`、`children`、`layout`、`wrappers` 和
+document 配置可以进入仅支持 SPA 的迁移 normalizer。MPA topology、Alias
+冲突以及项目外部 component reference 会被拒绝。
+
+把 component 模块移动到对应路由目录，并把每个路由 entry 重命名为 `page.*`。
+目录会编码相同的路径树；文件树 canonical 后，设置
+`routing.mode: "spa"` 并删除显式 route 声明。
+
+### Smallfish 应用
+
+运行 Core 0.3 前，保留或调整每个公开 URL 目录，把其中的 `index.*` entry
+重命名为 `page.*`，把 `config.json` 的 title 与受支持 `<meta name>` 项映射到
+core `title` 和 `meta`，其余插件持有值移入 namespaced `page.config.ts`
+extension。删除 `config.json` 后，只配置 `routing.mode: "mpa"`。
+
+### evjs 0.2 应用
+
+运行 Core 0.3 前，把每个已发布 filename route 移到 URL 对应目录并把 entry
+重命名为 `page.*`。把 title、受支持 named metadata、rendering 与插件持有的
+Page setting 移到同目录 `page.config.ts`，然后只配置
+`routing.mode: "spa" | "mpa"`。转换完成后运行 `ev inspect`，验证 normalized
+Page/Route/Document graph。
+
+Provider id 只可能出现在 raw CoreGraph/debug artifact 中作为内部 provenance。
+普通 `ev inspect` routing 输出隐藏它，并报告归一化的 Page、route、source 与
+document 信息；provider 不是用户可选择的路由架构。
+
+以下旧字段仍不支持：
+
+- `app`
+- `pages`
+- 顶层 `routes`
+- 顶层 `html`
+- `application.topology` 或 `application.mode`
 - `server.entry`
 - `server.functions`
 - `server.functionRuntime`
 - `routing.routes`
 - `routing.entry`
 - 顶层 `functions` 或 `serverFunctions`
-
-用 `server.routing.dir` 自定义服务端文件路由目录，服务端函数使用 `"use server"`
-模块，服务端运行时路径使用 `server.basePath`，显式页面输出使用 `pages`。

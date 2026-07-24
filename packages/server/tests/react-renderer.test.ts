@@ -9,13 +9,12 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   assertFrameworkRuntime,
-  type FrameworkPageRuntime,
-  type FrameworkRouteRuntime,
   type FrameworkRuntime,
 } from "../src/framework-rendering/framework.js";
 import {
   createReactRscFlightAdapter,
   createReactServerRenderAdapter,
+  renderReactPageMetadata,
 } from "../src/framework-rendering/react-renderer.js";
 
 interface PageProps {
@@ -24,9 +23,8 @@ interface PageProps {
   loaderData: unknown;
 }
 
-type LegacyFrameworkRuntime = FrameworkRuntime & {
-  pages: Record<string, FrameworkPageRuntime>;
-  routes: FrameworkRouteRuntime[];
+type SpaFrameworkRuntime = FrameworkRuntime & {
+  routing: Extract<FrameworkRuntime["routing"], { kind: "spa" }>;
 };
 
 interface PageProviderProps {
@@ -116,6 +114,148 @@ describe("createReactServerRenderAdapter", () => {
         '<script defer src="/assets/dashboard.js"></script>',
         "</body>",
         "</html>",
+      ].join(""),
+    });
+  });
+
+  it("renders escaped Page metadata into the default HTML document", async () => {
+    const adapter = createReactServerRenderAdapter();
+    const result = await adapter(
+      {
+        default() {
+          return createElement("h1", null, "Metadata");
+        },
+      },
+      {
+        request: new Request("https://example.com/metadata"),
+        runtime: createManifest(),
+        pageId: "metadata",
+        page: {
+          assets: { js: [], css: [] },
+          metadata: {
+            title: 'Risk </title><script>alert("x")</script> & review',
+            meta: {
+              description: 'Final </meta> & "description"',
+              'custom"name': '<unsafe> & "quoted"',
+            },
+          },
+          render: "ssr",
+          rendering: {
+            component: "server",
+            html: "server",
+            streaming: false,
+            hydrate: "none",
+          },
+        },
+      },
+    );
+
+    if (!result || result instanceof Response || typeof result === "string") {
+      throw new Error("Expected HTML result.");
+    }
+
+    expect(result.html).toContain(
+      '<title data-evjs-page-metadata="title" data-evjs-page-metadata-created="">Risk &lt;/title&gt;&lt;script&gt;alert("x")&lt;/script&gt; &amp; review</title>',
+    );
+    expect(result.html).toContain(
+      '<meta name="description" content="Final &lt;/meta&gt; &amp; &quot;description&quot;" data-evjs-page-metadata="meta" data-evjs-page-metadata-created="">',
+    );
+    expect(result.html).toContain(
+      '<meta name="custom&quot;name" content="&lt;unsafe&gt; &amp; &quot;quoted&quot;" data-evjs-page-metadata="meta" data-evjs-page-metadata-created="">',
+    );
+    expect(result.html).not.toContain("<script>alert");
+    expect(result.html).not.toContain("</meta>");
+  });
+
+  it("marks default SPA metadata so client navigation can restore an empty baseline", async () => {
+    const runtime = createManifest();
+    runtime.routing = {
+      kind: "spa",
+      pages: runtime.routing.pages,
+      routes: [{ id: "metadata", path: "/metadata", pageId: "metadata" }],
+    };
+    const adapter = createReactServerRenderAdapter();
+    const result = await adapter(
+      {
+        default() {
+          return createElement("h1", null, "Metadata");
+        },
+      },
+      {
+        request: new Request("https://example.com/metadata"),
+        runtime,
+        pageId: "metadata",
+        page: {
+          assets: { js: [], css: [] },
+          metadata: {
+            title: "Metadata",
+            meta: { description: "Metadata description" },
+          },
+          render: "ssr",
+          rendering: {
+            component: "server",
+            html: "server",
+            streaming: false,
+            hydrate: "load",
+          },
+        },
+      },
+    );
+
+    if (!result || result instanceof Response || typeof result === "string") {
+      throw new Error("Expected HTML result.");
+    }
+    expect(result.html).toContain(
+      '<title data-evjs-page-metadata="title" data-evjs-page-metadata-created="">Metadata</title>',
+    );
+    expect(result.html).toContain(
+      '<meta name="description" content="Metadata description" data-evjs-page-metadata="meta" data-evjs-page-metadata-created="">',
+    );
+  });
+
+  it("exposes Page metadata to a custom document renderer", async () => {
+    const adapter = createReactServerRenderAdapter({
+      renderDocument(appHtml, ctx) {
+        return {
+          html: `<!doctype html><html><head>${renderReactPageMetadata(ctx)}</head><body><main>${appHtml}</main></body></html>`,
+        };
+      },
+    });
+    const runtime = createManifest();
+    runtime.routing = { kind: "spa", pages: {}, routes: [] };
+    const result = await adapter(
+      {
+        default() {
+          return createElement("h1", null, "Custom");
+        },
+      },
+      {
+        request: new Request("https://example.com/custom"),
+        runtime,
+        pageId: "custom",
+        page: {
+          assets: { js: [], css: [] },
+          metadata: {
+            title: "Custom <title>",
+            meta: { description: 'Custom "description"' },
+          },
+          render: "ssr",
+          rendering: {
+            component: "server",
+            html: "server",
+            streaming: false,
+            hydrate: "none",
+          },
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      html: [
+        "<!doctype html><html><head>",
+        '<title data-evjs-page-metadata="title" data-evjs-page-metadata-created="">Custom &lt;title&gt;</title>',
+        '<meta name="description" content="Custom &quot;description&quot;" data-evjs-page-metadata="meta" data-evjs-page-metadata-created="">',
+        "</head><body><main><h1>Custom</h1></main></body></html>",
       ].join(""),
     });
   });
@@ -211,7 +351,7 @@ describe("createReactServerRenderAdapter", () => {
   it("does not embed framework runtime internals in default hydration props", async () => {
     const adapter = createReactServerRenderAdapter();
     const manifest = createManifest();
-    manifest.pages.dashboard = {
+    manifest.routing.pages.dashboard = {
       assets: { js: ["dashboard.js"], css: [] },
       render: "ssr",
       rendering: {
@@ -221,7 +361,7 @@ describe("createReactServerRenderAdapter", () => {
         hydrate: "load",
       },
     };
-    manifest.routes.push({
+    manifest.routing.routes.push({
       id: "dashboard",
       path: "/dashboard",
       pageId: "dashboard",
@@ -237,8 +377,8 @@ describe("createReactServerRenderAdapter", () => {
         request: new Request("https://example.com/dashboard"),
         runtime: manifest,
         pageId: "dashboard",
-        page: manifest.pages.dashboard,
-        route: manifest.routes[0],
+        page: manifest.routing.pages.dashboard,
+        route: manifest.routing.routes[0],
       },
     );
 
@@ -283,7 +423,7 @@ describe("createReactServerRenderAdapter", () => {
   it("provides route params and search to page hooks during server render", async () => {
     const adapter = createReactServerRenderAdapter();
     const manifest = createManifest();
-    manifest.pages.post = {
+    manifest.routing.pages.post = {
       assets: { js: ["post.js"], css: [] },
       render: "ssr",
       rendering: {
@@ -293,7 +433,7 @@ describe("createReactServerRenderAdapter", () => {
         hydrate: "load",
       },
     };
-    manifest.routes.push({
+    manifest.routing.routes.push({
       id: "post",
       path: "/posts/$postId",
       pageId: "post",
@@ -317,8 +457,8 @@ describe("createReactServerRenderAdapter", () => {
         ),
         runtime: manifest,
         pageId: "post",
-        page: manifest.pages.post,
-        route: manifest.routes[0],
+        page: manifest.routing.pages.post,
+        route: manifest.routing.routes[0],
       },
     );
 
@@ -337,7 +477,7 @@ describe("createReactServerRenderAdapter", () => {
   it("uses the most specific runtime route for server page hooks", async () => {
     const adapter = createReactServerRenderAdapter();
     const manifest = createManifest();
-    manifest.pages.profile = {
+    manifest.routing.pages.profile = {
       assets: { js: ["profile.js"], css: [] },
       render: "ssr",
       rendering: {
@@ -347,7 +487,7 @@ describe("createReactServerRenderAdapter", () => {
         hydrate: "load",
       },
     };
-    manifest.routes.push(
+    manifest.routing.routes.push(
       {
         id: "user",
         path: "/users/$userId",
@@ -378,7 +518,7 @@ describe("createReactServerRenderAdapter", () => {
         request: new Request("https://example.com/users/settings?tab=account"),
         runtime: manifest,
         pageId: "profile",
-        page: manifest.pages.profile,
+        page: manifest.routing.pages.profile,
       },
     );
 
@@ -392,7 +532,7 @@ describe("createReactServerRenderAdapter", () => {
   it("provides colon-style route params during server render", async () => {
     const adapter = createReactServerRenderAdapter();
     const manifest = createManifest();
-    manifest.pages.post = {
+    manifest.routing.pages.post = {
       assets: { js: ["post.js"], css: [] },
       render: "ssr",
       rendering: {
@@ -402,7 +542,7 @@ describe("createReactServerRenderAdapter", () => {
         hydrate: "load",
       },
     };
-    manifest.routes.push({
+    manifest.routing.routes.push({
       id: "post",
       path: "/posts/:postId",
       pageId: "post",
@@ -421,8 +561,8 @@ describe("createReactServerRenderAdapter", () => {
         request: new Request("https://example.com/posts/42"),
         runtime: manifest,
         pageId: "post",
-        page: manifest.pages.post,
-        route: manifest.routes[0],
+        page: manifest.routing.pages.post,
+        route: manifest.routing.routes[0],
       },
     );
 
@@ -436,7 +576,7 @@ describe("createReactServerRenderAdapter", () => {
   it("provides wildcard route params during server render", async () => {
     const adapter = createReactServerRenderAdapter();
     const manifest = createManifest();
-    manifest.pages.docs = {
+    manifest.routing.pages.docs = {
       assets: { js: ["docs.js"], css: [] },
       render: "ssr",
       rendering: {
@@ -446,7 +586,7 @@ describe("createReactServerRenderAdapter", () => {
         hydrate: "load",
       },
     };
-    manifest.routes.push({
+    manifest.routing.routes.push({
       id: "docs-fallback",
       path: "/docs/$",
       pageId: "docs",
@@ -465,8 +605,8 @@ describe("createReactServerRenderAdapter", () => {
         request: new Request("https://example.com/docs/guides/install"),
         runtime: manifest,
         pageId: "docs",
-        page: manifest.pages.docs,
-        route: manifest.routes[0],
+        page: manifest.routing.pages.docs,
+        route: manifest.routing.routes[0],
       },
     );
 
@@ -535,7 +675,7 @@ describe("createReactServerRenderAdapter", () => {
         },
       },
     };
-    manifest.pages.insights = {
+    manifest.routing.pages.insights = {
       assets: { js: ["evjs-rsc-client.js"], css: ["insights.css"] },
       render: "ssr",
       componentModel: "rsc",
@@ -559,7 +699,7 @@ describe("createReactServerRenderAdapter", () => {
         request: new Request("https://example.com/insights"),
         runtime: manifest,
         pageId: "insights",
-        page: manifest.pages.insights,
+        page: manifest.routing.pages.insights,
       },
     );
 
@@ -757,7 +897,7 @@ describe("createReactRscFlightAdapter", () => {
       fn: "__evjs/fn",
       rsc: "__evjs/rsc",
     };
-    manifest.pages.dashboard = {
+    manifest.routing.pages.dashboard = {
       assets: { js: [], css: [] },
       render: "ssr",
       componentModel: "rsc",
@@ -806,7 +946,7 @@ describe("createReactRscFlightAdapter", () => {
       request: new Request("https://example.com/__evjs/rsc?page=dashboard"),
       runtime: manifest,
       pageId: "dashboard",
-      page: manifest.pages.dashboard,
+      page: manifest.routing.pages.dashboard,
       rscPage: manifest.rsc.pages?.dashboard,
       renderer: manifest.server.renderers?.["dashboard-rsc"],
     });
@@ -1097,7 +1237,7 @@ describe("createReactRscFlightAdapter", () => {
   });
 });
 
-function createManifest(): LegacyFrameworkRuntime {
+function createManifest(): SpaFrameworkRuntime {
   return {
     version: 1,
     buildId: "test",
@@ -1108,8 +1248,11 @@ function createManifest(): LegacyFrameworkRuntime {
         fn: "__evjs/fn",
       },
     },
-    pages: {},
-    routes: [],
+    routing: {
+      kind: "spa",
+      pages: {},
+      routes: [],
+    },
     server: {},
   };
 }

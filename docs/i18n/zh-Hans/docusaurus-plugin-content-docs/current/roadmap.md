@@ -3,9 +3,8 @@
 ## 已完成基础
 
 - 零配置 React 应用构建，支持 `ev dev` 和 `ev build`。
-- 通过 `src/pages` 支持页面路由 SPA discovery。
-- 通过 `routing.mode: "mpa"` 支持页面路由 MPA 输出。
-- 通过 `pages` 支持显式多页面输出。
+- canonical Page-and-Route 约定：Page directory 的正向 `page.*` 锚点、
+  可选构建期 `page.config.ts`、目录派生 URL 与 SPA/MPA `routing.mode`。
 - 从 `"use server"` 模块提取服务端函数。
 - Hono/fetch 服务端 runtime 和显式服务端路由。
 - 覆盖 config、bundler、output、HTML、build 阶段的插件系统。
@@ -15,15 +14,16 @@
 - `ev inspect` CLI preflight，可在不运行 bundler、不写入 `dist` 的情况下解释
   page route discovery、server declarations、render metadata、runtime paths、
   planned entries 和 diagnostics。
-- 通过 `output.client` 和 `output.server` 配置 framework metadata 目录，并在
-  `dist/build-output.json` 输出 canonical deployment metadata。
+- 通过 `output.client` 和 `output.server` 配置 client/server 产物目录，并在
+  `dist/deployment-metadata.json` 输出 canonical deployment metadata。
 - 通过公开 `@evjs/client` runtime 包和生成的 framework bootstrap 提供
-  ClientRuntime-driven app/page activation。
+  ClientRuntime-driven Application/Page activation。
 - 框架托管 SPA 页面路由，并为 MPA 提供无路由器 page runtime。
 - Webpack adapter 用于在 Utoopack 下层 API 补齐前验证框架能力。
 - 聚焦 render mode 和 deployment adapter 的示例，并通过 e2e 覆盖 apps、组件页面、SSR/PPR/RSC 和 per-document HTML transform。
 - Public manifest redaction，确保浏览器可见输出不暴露本地源码路径。
 - 内置 Node、static、edge deployment adapter artifacts。
+- Page data hook 覆盖 params、search、loader data，同时不暴露 router internal。
 - 统一 server request context 和 middleware 语义，覆盖 server functions、
   server routes、SSR、PPR、RSC。
 - PPR page response 会根据 region 策略为 merged、streamed 和 HEAD response
@@ -35,15 +35,26 @@
 
 ## 进行中
 
-- Utoopack parity 优先级 1：dynamic entry/server dev plan update，用于不重启
-  `ev dev` 增删 entry。
-- Utoopack parity 优先级 2：framework-managed component pages 所需的
-  generic entry wrapping/loadable entry facts。
-- Utoopack parity 优先级 3：SSR/PPR/RSC renderers 的 multi server build-entry facts。
-- Utoopack parity 优先级 4：RSC client/server reference metadata。
+- [Core 0.3](./core-0.3-rfc) 现已把唯一 canonical
+  `routing.mode + page.* + page.config.ts` 模型解析为 SPA/MPA 的 validated
+  CoreGraph，输出 `.ev/framework/core-graph.json`，并诊断非法
+  Page/Route/Document ownership 或 Page 配置。
+- 继续加固 Bigfish 显式 route normalizer，以及 Smallfish/evjs 0.2 一次性源码
+  迁移指南，不把存量模型提升为 runtime reader。
+- canonical MPA 已生成 Page-owned Document 与 Document Route，并组合
+  file-convention layout；动态 route 和 router-only boundary facet 仍明确不支持。
+- 插件 API 已落地第一个可执行纵切：按 dependency 排序、可安全 reload 的
+  `describe`、带 namespace 的 Page defaults/config/validation、严格 serialization，
+  以及供 contribution 读取的 Page resolved extension view。参见
+  [0.2 迁移指南](./plugin-migration-0.2-to-0.3)。
+- 继续实现插件 API 的 owned Application/Route/Document schema、graph
+  transform/selector、semantic facet 与 generic extension entry。
 
 ## 计划中
 
-- 页面路由类型能力继续收敛：在不暴露 router internals 的前提下保留更完整的 params/search/loader data 类型。
-- 更生产级的 PPR 行为，包括显式 client islands 和更深入的 React streaming renderer 集成。
-- Utoopack 下层能力补齐：dynamic entries、structured build result、多 server build-entry class、RSC/client reference metadata。
+- Bigfish route-normalizer 覆盖、Smallfish/evjs 0.2 源码 codemod、capability
+  report 和代表性插件迁移。
+- Generic extension entry、Document、request facet、manifest projection 就绪后，从 Core
+  移除内建 SSR/PPR/RSC 分支。
+- Utoopack 下层能力补齐：generic dynamic entry、structured build fact，以及
+  extension-owned client/server/build environment。

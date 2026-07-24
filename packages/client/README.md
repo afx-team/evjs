@@ -4,9 +4,9 @@
 
 ## Features
 
-- **Page Hooks** — `usePageParams()`, `usePageSearch()`, and `usePageLoaderData()` expose framework-managed route data while evjs owns route discovery.
+- **Page Hooks** — `usePageParams()`, `usePageSearch()`, and `usePageLoaderData()` expose framework-managed route data while evjs owns route materialization.
 - **Standalone CSR** — `createApp()`, `createAppRootRoute()`, and TanStack Router re-exports support manual browser-only apps without `@evjs/ev`.
-- **SPA Navigation** — SPA pages use evjs page hooks and navigation helpers while the framework owns route discovery and app bootstrap.
+- **SPA Navigation** — SPA Pages use evjs page hooks and navigation helpers while the framework owns the route tree and app bootstrap.
 - **Router-Free Pages** — MPA and framework-managed pages use the page runtime without adding a client router.
 - **Data Fetching** — Wraps [TanStack Query](https://tanstack.com/query) with built-in server function proxies.
 - **Server Function Support** — `useQuery(fn)` and `useMutation(fn)` for typed server-boundary calls.
@@ -62,14 +62,14 @@ declare module "@evjs/client" {
 app.render("#app");
 ```
 
-Use `@evjs/ev` only when the app wants framework composition such as file-based
+Use `@evjs/ev` only when the app wants framework composition such as Page
 routing, server-function transforms, manifests, SSR, PPR, RSC, or deployment
 artifacts.
 
 ### Framework-Managed Pages
 
 ```tsx
-// src/pages/users/$userId.tsx
+// src/pages/users/$userId/page.tsx
 import { usePageParams } from "@evjs/ev/route";
 
 export default function UserPage() {
@@ -82,34 +82,11 @@ Use the page hooks for route data in both SPA and MPA output. They are the
 zero-annotation path for page code; `params`, `search`, and `loaderData` are
 not passed as page component props.
 
-### Let evjs Build the Route Entry
+### Let evjs Build the Application
 
-When `src/pages` exists and the project does not declare explicit `app` or
-`pages` config, evjs discovers the page files and builds the SPA entry
-internally.
-
-SPA mode writes `src/route-types.d.ts` for type-safe `Link`,
-`useLinkProps`, and `redirect` calls. Treat it as generated output: keep it
-ignored and do not import it from application code.
-
-Use `layout/index.tsx` beside the page route directory only for the optional SPA
-root layout. The default `src/pages` route directory uses
-`src/layout/index.tsx`; a custom directory such as `src/app/pages` uses
-`src/app/layout/index.tsx`. It is an exact directory-entry convention:
-`layout.tsx`, `layout.jsx`, `layout.ts`, and non-TSX `layout/index.*` files are
-not aliases. Set `routing.conventions.layout` to another module path for
-migrated SPA shells, or set `routing.conventions.layout: false` to disable SPA
-root layout discovery. MPA output does not accept or consume a framework layout
-file, so MPA pages compose shared wrappers as ordinary components.
-
-The route directory is reserved for page route modules, so files or folders
-named `layout` inside it are reported as convention errors. Dynamic route
-filenames use `$param`; bracket segments such as `[id].tsx` are rejected. Every
-discovered route file must default-export a React component; put non-route
-helpers in underscore-prefixed files or folders. Syntax and default-export
-errors are reported during route discovery before the bundler runs.
-
-For MPA output:
+Framework-managed applications use one Page-and-Route convention. A `page.*`
+module is the positive Page/Route anchor; its containing directory owns private
+source and determines the URL:
 
 ```ts
 // ev.config.ts
@@ -117,10 +94,24 @@ import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
   routing: {
-    mode: "mpa",
+    mode: "spa",
   },
 });
 ```
+
+The Page directory may contain components, hooks, models, and services without
+private filename prefixes; those files never become routes. Change only
+`routing.mode` to materialize the same semantic Page/Route tree as an MPA.
+SPA and MPA applications compose the same file-convention layouts. Router-only
+lifecycle and boundary facets are rejected in MPA until they have an explicit
+Document materialization contract.
+
+Explicit `application.routes` and Bigfish-style route config remain SPA-only
+route-tree migration inputs in `@evjs/ev`; they normalize into the same
+runtime Page contracts, reject MPA topology, and are not additional
+`@evjs/client` APIs. Smallfish and evjs 0.2
+applications must first move or rename published entries to `page.tsx`, move
+Page configuration to `page.config.ts`, and configure only `routing.mode`.
 
 ## Server Functions
 
@@ -128,9 +119,9 @@ Use the `"use server"` directive in reachable `*.server.ts` files. In
 file-convention apps, import the route data hooks from `@evjs/ev/route` and query hooks from `@evjs/ev/query`:
 
 ```tsx
-// src/pages/posts.tsx
+// src/pages/posts/page.tsx
 import { useQuery } from "@evjs/ev/query";
-import { getPosts } from "../apis/posts.server";
+import { getPosts } from "../../apis/posts.server";
 
 function Posts() {
   const { data } = useQuery(getPosts);
@@ -178,10 +169,11 @@ Standalone/manual clients can import the same query hooks directly from
 
 ### Runtime
 - Page runtime bootstrap is framework-owned and imported through `@evjs/client/internal`.
-- Page runtime loads the embedded `__EVJS_CLIENT_RUNTIME__` first. When it falls
-  back to `runtimeUrl`, `data-evjs-runtime`, or `/runtime.json`, the response
-  must be successful JSON with `Content-Type: application/json`, allowing
-  optional content-type parameters.
+- Page runtime loads the embedded `__EVJS_CLIENT_RUNTIME__` first. Standalone
+  runtimes may explicitly use `runtimeUrl` or `data-evjs-runtime`; there is no
+  implicit runtime metadata URL. An external response must be successful JSON
+  with `Content-Type: application/json`, allowing optional content-type
+  parameters.
 - `fetchRscFlight()`, `createReactRscModel()`, `mountReactRscPage()`,
   `unmountReactRscPage()`, and `startReactRscPageRuntime()`: RSC page runtime
   helpers for framework-owned Flight and mount flows.

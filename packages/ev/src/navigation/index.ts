@@ -16,6 +16,7 @@ import {
   notFound,
   Link as RouterLink,
   Navigate as RouterNavigate,
+  Outlet as RouterOutlet,
   redirect as routerRedirect,
   useLinkProps as useRouterLinkProps,
   useLocation as useRouterLocation,
@@ -126,6 +127,9 @@ type LinkComponent<TComp = "a", TDefaultFrom extends string = string> = <
 ) => ReactElement;
 
 export const Link = RouterLink as LinkComponent<"a">;
+
+/** Render the currently matched child route inside a parent Page or layout. */
+export const Outlet = RouterOutlet;
 
 export function Navigate<
   const TFrom extends string = string,
