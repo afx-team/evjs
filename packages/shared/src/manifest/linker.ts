@@ -166,7 +166,18 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
     Object.entries(input.graph.pages)
       .filter(([, page]) => shouldProjectPageToOutput(input.graph, page))
       .map(([id, page]) => {
-        const entry = findEntryByOwner({ pageId: id }, "client");
+        const pageEntry = findEntryByOwner({ pageId: id }, "client");
+        const application = input.graph.applications[page.applicationId];
+        const applicationEntry =
+          application?.routingMode === "spa" &&
+          effectivePageHydrate(page) !== "none"
+            ? findEntryByOwner(
+                { appId: page.applicationId },
+                "client",
+                "app-client",
+              )
+            : undefined;
+        const entry = pageEntry ?? applicationEntry;
         const shellEntry = findEntryByOwner(
           { pageId: id },
           "server",
@@ -177,8 +188,8 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
           : isRscPage(page) && rscClientRuntimeEntry
             ? clientAssetsForEntry(rscClientRuntimeEntry)
             : EMPTY_ASSETS;
-        const href = entry
-          ? assertClientRuntimeHref(entry, baseAssets, `Page "${id}"`)
+        const href = pageEntry
+          ? assertClientRuntimeHref(pageEntry, baseAssets, `Page "${id}"`)
           : undefined;
         const serverCss = isRscPage(page)
           ? [
@@ -196,9 +207,7 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
         });
         const route = input.graph.routes.find(
           (candidate) =>
-            candidate.realm === "client" &&
-            candidate.target.kind === "page" &&
-            candidate.target.pageId === id,
+            candidate.target.kind === "page" && candidate.target.pageId === id,
         );
         const document =
           Object.values(input.graph.documents).find(
@@ -224,7 +233,7 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
             metadata: clonePageMetadata(page.metadata),
             mount: document?.mount,
             prerender: page.prerender,
-            module: entry
+            module: pageEntry
               ? {
                   type: "react-component" as const,
                   href,
@@ -343,7 +352,7 @@ function createBuildOutputRoutes(
   const routes: BuildOutput["routes"] = [];
 
   for (const route of graph.routes) {
-    if (route.realm !== "client" || route.target.kind === "group") continue;
+    if (route.target.kind === "group") continue;
 
     const pathname = formatCoreRoutePattern(route.pattern);
     const shape = pageRoutePathShapeFromPath(pathname);
@@ -933,7 +942,6 @@ function linkRscOutput(
               const renderer = findRscRendererForPage(page.id, rscRenderers);
               const route = input.graph.routes.find(
                 (candidate) =>
-                  candidate.realm === "client" &&
                   candidate.target.kind === "page" &&
                   candidate.target.pageId === page.id,
               );

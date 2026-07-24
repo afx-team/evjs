@@ -15,25 +15,30 @@ import type {
   PluginHooks,
 } from "../../plugin/index.js";
 import type { BundlerBuildFacts } from "./bundler.js";
+import { createFrameworkHtmlDocument } from "./framework-html-document.js";
 import {
   createClientRuntime,
   createFrameworkRuntime,
 } from "./framework-runtime.js";
-import { applyHtmlTagContributions } from "./generated-contributions.js";
-import { generateHtml, type HtmlAsset, validateHtmlTemplate } from "./html.js";
+import { type generateHtml, validateHtmlTemplate } from "./html.js";
 import { buildHtml } from "./html-transform.js";
-import { applyPageMetadataToHtmlDocument } from "./page-metadata-html.js";
 import { runBuildOutputHooks } from "./plugin-lifecycle.js";
+import { compileServerDocumentShells } from "./server-document-shell.js";
 
-const CLIENT_RUNTIME_SCRIPT_ID = "__EVJS_CLIENT_RUNTIME__";
-const LEGACY_RUNTIME_FILE = "runtime.json";
-const LEGACY_FRAMEWORK_RUNTIME_FILE = "framework-runtime.json";
-const LEGACY_BUILD_OUTPUT_FILE = "build-output.json";
 const DEPLOYMENT_METADATA_FILE = "deployment-metadata.json";
 const RUNTIME_ONLY_BUNDLER_MANIFEST_FILES = [
   "react-client-manifest.json",
   "react-ssr-manifest.json",
 ];
+
+interface PreviousFrameworkHtmlOutput {
+  buildId: string;
+  documents: Array<{
+    kind: "app" | "page";
+    id: string;
+    fileName: string;
+  }>;
+}
 
 export function validateHtmlTemplates<TBundlerCfg>(
   cwd: string,
@@ -183,46 +188,51 @@ function getFrameworkOutputPaths(
 async function emitFrameworkManifest(
   cwd: string,
   output: BuildOutput,
-): Promise<void> {
-  const { rootDir, clientDir, serverDir } = getFrameworkOutputPaths(
-    cwd,
-    output,
-  );
+): Promise<PreviousFrameworkHtmlOutput | undefined> {
+  const { rootDir, clientDir } = getFrameworkOutputPaths(cwd, output);
   await fs.promises.mkdir(rootDir, { recursive: true });
+  const previousHtmlOutput = await readPreviousFrameworkHtmlOutput(
+    cwd,
+    rootDir,
+    clientDir,
+  );
   await fs.promises.writeFile(
     path.join(rootDir, DEPLOYMENT_METADATA_FILE),
     JSON.stringify(createDeploymentMetadata(output), null, 2),
     "utf-8",
   );
-  await removeLegacyFrameworkMetadata(rootDir, clientDir, serverDir);
   await removeRuntimeOnlyBundlerManifests(clientDir);
+  return previousHtmlOutput;
 }
 
-async function removeLegacyFrameworkMetadata(
-  rootDir: string,
-  clientDir: string,
-  serverDir: string,
-): Promise<void> {
-  const directories = new Set([
-    rootDir,
-    clientDir,
-    serverDir,
-    path.join(rootDir, "client"),
-    path.join(rootDir, "server"),
-  ]);
-  const files = [
-    "manifest.json",
-    LEGACY_BUILD_OUTPUT_FILE,
-    LEGACY_RUNTIME_FILE,
-    LEGACY_FRAMEWORK_RUNTIME_FILE,
-  ];
-  await Promise.all(
-    [...directories].flatMap((directory) =>
-      files.map((fileName) =>
-        fs.promises.rm(path.join(directory, fileName), { force: true }),
-      ),
-    ),
+function isDeploymentMetadataSnapshot(value: Record<string, unknown>): boolean {
+  return (
+    hasFrameworkOutputHeader(value) &&
+    Array.isArray(value.documents) &&
+    Array.isArray(value.routes) &&
+    isRecord(value.server) &&
+    value.documents.every(isFrameworkDocumentRecord)
   );
+}
+
+function hasFrameworkOutputHeader(value: Record<string, unknown>): boolean {
+  return (
+    value.version === 1 &&
+    isNonEmptyString(value.buildId) &&
+    isRecord(value.paths) &&
+    isNonEmptyString(value.paths.rootDir) &&
+    isNonEmptyString(value.paths.publicDir) &&
+    isNonEmptyString(value.paths.serverDir) &&
+    typeof value.publicPath === "string"
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
 }
 
 async function removeRuntimeOnlyBundlerManifests(
@@ -232,6 +242,55 @@ async function removeRuntimeOnlyBundlerManifests(
     RUNTIME_ONLY_BUNDLER_MANIFEST_FILES.map((fileName) =>
       fs.promises.rm(path.join(clientDir, fileName), { force: true }),
     ),
+  );
+}
+
+async function readPreviousFrameworkHtmlOutput(
+  cwd: string,
+  rootDir: string,
+  clientDir: string,
+): Promise<PreviousFrameworkHtmlOutput | undefined> {
+  let value: unknown;
+  try {
+    value = JSON.parse(
+      await fs.promises.readFile(
+        path.join(rootDir, DEPLOYMENT_METADATA_FILE),
+        "utf-8",
+      ),
+    );
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(value) || !isDeploymentMetadataSnapshot(value)) {
+    return undefined;
+  }
+  const paths = value.paths as Record<string, unknown>;
+  if (
+    path.resolve(cwd, paths.rootDir as string) !== rootDir ||
+    path.resolve(cwd, paths.publicDir as string) !== clientDir
+  ) {
+    return undefined;
+  }
+
+  return {
+    buildId: value.buildId as string,
+    documents: (value.documents as unknown[]).map((document) => {
+      const record = document as Record<string, unknown>;
+      return {
+        kind: record.kind as "app" | "page",
+        id: record.id as string,
+        fileName: record.fileName as string,
+      };
+    }),
+  };
+}
+
+function isFrameworkDocumentRecord(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value.kind === "app" || value.kind === "page") &&
+    isNonEmptyString(value.id) &&
+    isNonEmptyString(value.fileName)
   );
 }
 
@@ -277,17 +336,6 @@ type PageHtmlDocumentInfo = HtmlDocumentInfo & {
   owner: { kind: "page"; pageId: string };
 };
 
-function withHtmlAssetCrossOrigin(
-  assets: string[],
-  crossOriginLoading: ResolvedConfig["output"]["crossOriginLoading"],
-): HtmlAsset[] {
-  if (!crossOriginLoading) return assets;
-  return assets.map((url) => ({
-    url,
-    attrs: { crossorigin: crossOriginLoading },
-  }));
-}
-
 async function emitFrameworkHtml<TBundlerCfg>(
   cwd: string,
   config: ResolvedConfig<TBundlerCfg>,
@@ -297,45 +345,25 @@ async function emitFrameworkHtml<TBundlerCfg>(
   plan: BuildPlan,
   frameworkRuntime: ReturnType<typeof createFrameworkRuntime>,
   isRebuild: boolean,
+  previousHtmlOutput?: PreviousFrameworkHtmlOutput,
   loadServerModule?: (asset: string) => Promise<unknown>,
 ): Promise<void> {
   const { clientDir, serverDir } = getFrameworkOutputPaths(cwd, output);
+  await removeStaleFrameworkHtml(clientDir, plan, previousHtmlOutput);
   const clientRuntime = createClientRuntime(output);
 
   for (const html of plan.html) {
     const htmlInfo = createHtmlDocumentInfo(html, output);
     if (!htmlInfo) continue;
 
-    const doc = generateHtml({
-      template: path.resolve(cwd, html.template),
-      js: withHtmlAssetCrossOrigin(
-        htmlInfo.assets.js,
-        config.output.crossOriginLoading,
-      ),
-      css: withHtmlAssetCrossOrigin(
-        htmlInfo.assets.css,
-        config.output.crossOriginLoading,
-      ),
+    const doc = createFrameworkHtmlDocument({
+      cwd,
+      config,
+      output,
+      plan,
+      html: htmlInfo,
+      clientRuntime,
     });
-    doc.documentElement?.setAttribute("data-evjs-build", output.buildId);
-    if (htmlInfo.owner.kind === "page") {
-      doc.documentElement?.setAttribute("data-evjs-kind", "page");
-      doc.documentElement?.setAttribute("data-evjs-id", htmlInfo.owner.pageId);
-    } else {
-      doc.documentElement?.setAttribute("data-evjs-kind", "app");
-      doc.documentElement?.setAttribute("data-evjs-id", htmlInfo.applicationId);
-    }
-    if (htmlInfo.assets.js.length > 0) {
-      embedClientRuntime(doc, clientRuntime);
-    }
-    if (htmlInfo.owner.kind === "page") {
-      applyPageMetadataToHtmlDocument(
-        doc,
-        output.pages[htmlInfo.owner.pageId]?.metadata,
-        { preserveBaseline: config.routing?.mode === "spa" },
-      );
-    }
-    applyHtmlTagContributions(doc, htmlInfo, plan);
     if (
       plan.mode === "production" &&
       shouldPrerenderStaticPage(output, htmlInfo)
@@ -362,6 +390,82 @@ async function emitFrameworkHtml<TBundlerCfg>(
     const outPath = path.join(clientDir, html.fileName);
     await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
     await fs.promises.writeFile(outPath, finalHtml, "utf-8");
+  }
+}
+
+async function removeStaleFrameworkHtml(
+  clientDir: string,
+  plan: BuildPlan,
+  previous: PreviousFrameworkHtmlOutput | undefined,
+): Promise<void> {
+  if (!previous) return;
+  const currentFiles = new Set(
+    plan.html.map((html) => path.resolve(clientDir, html.fileName)),
+  );
+  for (const document of previous.documents) {
+    const file = resolveContainedFile(clientDir, document.fileName);
+    if (
+      file &&
+      !currentFiles.has(file) &&
+      (await isFrameworkOwnedHtmlFile(
+        clientDir,
+        file,
+        previous.buildId,
+        document,
+      ))
+    ) {
+      await fs.promises.rm(file, { force: true });
+    }
+  }
+}
+
+function resolveContainedFile(
+  directory: string,
+  fileName: string,
+): string | undefined {
+  const file = path.resolve(directory, fileName);
+  const relative = path.relative(directory, file);
+  if (
+    relative.length === 0 ||
+    relative.startsWith(`..${path.sep}`) ||
+    relative === ".." ||
+    path.isAbsolute(relative)
+  ) {
+    return undefined;
+  }
+  return file;
+}
+
+async function isFrameworkOwnedHtmlFile(
+  clientDir: string,
+  file: string,
+  buildId: string,
+  document: PreviousFrameworkHtmlOutput["documents"][number],
+): Promise<boolean> {
+  try {
+    const [realClientDir, realFile, stat] = await Promise.all([
+      fs.promises.realpath(clientDir),
+      fs.promises.realpath(file),
+      fs.promises.stat(file),
+    ]);
+    if (!stat.isFile()) return false;
+    const relative = path.relative(realClientDir, realFile);
+    if (
+      relative.startsWith(`..${path.sep}`) ||
+      relative === ".." ||
+      path.isAbsolute(relative)
+    ) {
+      return false;
+    }
+    const doc = validateHtmlTemplate({ template: file });
+    const root = doc.documentElement;
+    return (
+      root?.getAttribute("data-evjs-build") === buildId &&
+      root.getAttribute("data-evjs-kind") === document.kind &&
+      root.getAttribute("data-evjs-id") === document.id
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -465,28 +569,6 @@ function normalizeServerModule(mod: unknown): Record<string, unknown> {
     : (mod as Record<string, unknown>);
 }
 
-function embedClientRuntime(
-  doc: ReturnType<typeof generateHtml>,
-  runtime: ReturnType<typeof createClientRuntime>,
-): void {
-  const body = doc.body ?? doc.querySelector("body");
-  if (!body) return;
-  const json = JSON.stringify(runtime)
-    .replace(/</g, "\\u003c")
-    .replace(/\u2028/g, "\\u2028")
-    .replace(/\u2029/g, "\\u2029");
-  const script = doc.createElement("script");
-  script.id = CLIENT_RUNTIME_SCRIPT_ID;
-  script.setAttribute("type", "application/json");
-  script.textContent = json;
-  const firstScript = body.querySelector("script[src]");
-  if (firstScript) {
-    body.insertBefore(script, firstScript);
-    return;
-  }
-  body.appendChild(script);
-}
-
 export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   bundlerFacts: BundlerBuildFacts;
   graph: CoreGraph;
@@ -513,10 +595,25 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
 
   await runBuildOutputHooks(options.hooks, output, options.pluginCtx);
   assertFrameworkManifestShape(output, "BuildOutput after buildOutput hooks");
+  const documentShells = await compileServerDocumentShells({
+    cwd: options.cwd,
+    config: options.config,
+    hooks: options.hooks,
+    pluginCtx: options.pluginCtx,
+    output,
+    plan: options.plan,
+    isRebuild: options.isRebuild,
+  });
   const frameworkRuntime = createFrameworkRuntime(output, {
     rscManifests: options.bundlerFacts.rscManifests,
+    documentShells,
   });
-  await emitFrameworkManifest(options.cwd, output);
+  const buildFrameworkRuntime = createFrameworkRuntime(output, {
+    rscManifests: options.bundlerFacts.rscManifests,
+    documentShells,
+    includeBuildRenderers: true,
+  });
+  const previousHtmlOutput = await emitFrameworkManifest(options.cwd, output);
   await emitFrameworkHtml(
     options.cwd,
     options.config,
@@ -524,8 +621,9 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     options.pluginCtx,
     output,
     options.plan,
-    frameworkRuntime,
+    buildFrameworkRuntime,
     options.isRebuild,
+    previousHtmlOutput,
     options.bundlerFacts.loadServerModule,
   );
 

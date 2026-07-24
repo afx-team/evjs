@@ -4,7 +4,6 @@ import type {
   CoreGraph,
   GeneratedFrameworkPlan,
 } from "@evjs/shared/manifest";
-import { CONFIG_ROUTE_PROVIDER_ID } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import {
   type Config,
@@ -35,7 +34,7 @@ import { validateHtmlTemplates } from "./framework-output.js";
 import { createCoreGraph } from "./graph/index.js";
 import { createPageRouteNodesFromCoreGraph } from "./page-route-types.js";
 import type { PageRouteDiscovery } from "./page-routes.js";
-import { collectPluginExtensionRegistry } from "./plugin-extensions.js";
+import { resolvePluginExtensionState } from "./plugin-extensions.js";
 import {
   collectPluginHooks,
   orderPluginsByDependencies,
@@ -109,8 +108,8 @@ export interface InspectFrameworkBuildResult {
   mode: "development" | "production";
   command: "dev" | "build";
   routing?: {
-    /** Application topology. */
-    topology: "spa" | "mpa";
+    /** Route and Document materialization mode. */
+    routingMode: "spa" | "mpa";
     /** Canonical Page root. */
     pageRoot: string;
     document: {
@@ -254,10 +253,14 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
     "options.bundler",
   );
   const bundler = optionBundler ?? resolvedConfig.bundler ?? undefined;
-  const config = bundler
+  const baseConfig = bundler
     ? withActiveBundler(resolvedConfig, bundler)
     : resolvedConfig;
-  const pluginExtensions = collectPluginExtensionRegistry(config.plugins);
+  const {
+    registry: pluginExtensions,
+    applicationExtensions,
+    config,
+  } = resolvePluginExtensionState(baseConfig);
   const pluginWatchFiles = new Set<string>();
   const pluginContext: PluginContext<TBundlerCfg> = {
     mode,
@@ -293,6 +296,7 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
     }
 
     let analysis: Awaited<ReturnType<typeof createCoreGraph>>;
+    let latestAnalysis: Awaited<ReturnType<typeof createCoreGraph>> | undefined;
     let plan: BuildPlan | undefined;
     try {
       const materialized = await analyzeAndMaterializeFrameworkIR({
@@ -302,12 +306,21 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
         config,
         pluginContext,
         pluginExtensions,
+        applicationExtensions,
         write: false,
+        onAnalysis(currentAnalysis) {
+          latestAnalysis = currentAnalysis;
+        },
       });
       analysis = materialized.analysis;
       plan = materialized.plan;
     } catch (err) {
-      analysis = await createCoreGraph(config, cwd, { pluginExtensions });
+      analysis =
+        latestAnalysis ??
+        (await createCoreGraph(config, cwd, {
+          pluginExtensions,
+          applicationExtensions,
+        }));
       diagnostics.push({
         level: "error",
         source: "contributions",
@@ -418,7 +431,7 @@ function createInspectRouting<TBundlerCfg>(
 ): InspectFrameworkBuildResult["routing"] {
   if (config.routing) {
     return {
-      topology: config.routing.mode,
+      routingMode: config.routing.mode,
       pageRoot: config.routing.dir,
       document: {
         template: config.routing.html,
@@ -431,22 +444,15 @@ function createInspectRouting<TBundlerCfg>(
   }
   if (!config.application) return undefined;
 
-  const rootLayout = graph.routes.find(
-    (route) =>
-      route.realm === "client" &&
-      route.id === `${CONFIG_ROUTE_PROVIDER_ID}:root-layout`,
-  );
+  const rootLayout = graph.applications.default?.layout;
   return {
-    topology: "spa",
+    routingMode: "spa",
     pageRoot: config.application.pageRoot,
     document: {
       template: config.application.document.template,
       mount: config.application.document.mount,
     },
-    ...(rootLayout?.realm === "client" &&
-    typeof rootLayout.facets.layout === "string"
-      ? { rootModule: rootLayout.facets.layout }
-      : {}),
+    ...(rootLayout ? { rootModule: rootLayout } : {}),
   };
 }
 

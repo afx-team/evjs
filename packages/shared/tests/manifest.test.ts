@@ -1,135 +1,29 @@
 import { describe, expect, it } from "vitest";
 import type {
-  AppNode,
+  AppRouteTarget,
   BuildOutput,
   BuildOutputLinkInput,
   BuildPlan,
+  ComponentModel,
   CoreGraph,
-  PageNode,
-  RouteNode,
-  RouteRenderingPage,
+  HydrationMode,
+  PageMetadata,
+  PageRouteKind,
+  PageScope,
+  PprConfig,
+  PrerenderConfig,
+  RenderMode,
   ServerFunctionNode,
   ServerRouteNode,
+  ServerRuntime,
 } from "../src/manifest/index.js";
 import {
   assertFrameworkManifestShape,
   createDeploymentMetadata,
   createPublicManifest,
   createServerManifest,
-  getClientRouteMatches,
-  getServerRenderedRoutePaths,
   linkBuildOutput as linkManifestBuildOutput,
 } from "../src/manifest/index.js";
-
-describe("getClientRouteMatches", () => {
-  it("keeps route-derived semantic pages on their SPA application target", () => {
-    expect(
-      getClientRouteMatches({
-        apps: { default: {} },
-        pages: {
-          index: {
-            routeId: "index",
-            render: "csr",
-          },
-        },
-        routes: [
-          {
-            path: "/",
-            appId: "default",
-            pageId: "index",
-          },
-        ],
-      }),
-    ).toEqual([
-      {
-        path: "/",
-        target: { kind: "app", appId: "default" },
-      },
-    ]);
-  });
-
-  it("keeps independently materialized pages as page targets", () => {
-    expect(
-      getClientRouteMatches({
-        pages: {
-          about: {
-            path: "/about",
-            render: "csr",
-          },
-        },
-        routes: [{ path: "/about", pageId: "about" }],
-      }),
-    ).toEqual([
-      {
-        path: "/about",
-        target: { kind: "page", pageId: "about" },
-      },
-    ]);
-  });
-
-  it("ignores inherited page and app keys during route lookup", () => {
-    const source = {
-      apps: { default: {} },
-      pages: {},
-      routes: [
-        {
-          path: "/inherited-page",
-          appId: "default",
-          pageId: "constructor",
-        },
-        { path: "/inherited-app", appId: "toString" },
-      ],
-    };
-
-    expect(getClientRouteMatches(source)).toEqual([
-      {
-        path: "/inherited-page",
-        target: { kind: "app", appId: "default" },
-      },
-    ]);
-    expect(getServerRenderedRoutePaths(source)).toEqual([]);
-  });
-
-  it("supports own page and app entries named after prototype keys", () => {
-    const pages = Object.create(null) as Record<string, RouteRenderingPage>;
-    Object.defineProperties(pages, {
-      constructor: {
-        value: { path: "/page", render: "csr" },
-        enumerable: true,
-      },
-      toString: {
-        value: { render: "ssr" },
-        enumerable: true,
-      },
-    });
-    const apps = Object.create(null) as Record<string, unknown>;
-    Object.defineProperty(apps, "__proto__", {
-      value: {},
-      enumerable: true,
-    });
-    const source = {
-      apps,
-      pages,
-      routes: [
-        { path: "/page", pageId: "constructor" },
-        { path: "/app", appId: "__proto__" },
-        { path: "/server", pageId: "toString" },
-      ],
-    };
-
-    expect(getClientRouteMatches(source)).toEqual([
-      {
-        path: "/page",
-        target: { kind: "page", pageId: "constructor" },
-      },
-      {
-        path: "/app",
-        target: { kind: "app", appId: "__proto__" },
-      },
-    ]);
-    expect(getServerRenderedRoutePaths(source)).toEqual(["/server"]);
-  });
-});
 
 function createMinimalBuildOutput(): BuildOutput {
   return {
@@ -207,13 +101,55 @@ type TestBuildPlan = Omit<BuildPlan, "dev"> & {
 interface LinkerFixture {
   version: 1;
   rootDir: string;
-  apps: Record<string, AppNode>;
-  pages: Record<string, PageNode>;
-  routes: RouteNode[];
+  apps: Record<string, LinkerAppFixture>;
+  pages: Record<string, LinkerPageFixture>;
+  routes: LinkerRouteFixture[];
   serverFunctions: ServerFunctionNode[];
   serverRoutes: ServerRouteNode[];
   clientReferences?: CoreGraph["clientReferences"];
   serverReferences?: CoreGraph["serverReferences"];
+}
+
+interface LinkerAppFixture {
+  id: string;
+  entry: string;
+  html: string;
+  mount?: string;
+}
+
+interface LinkerPageFixture {
+  id: string;
+  scope?: PageScope;
+  path?: string;
+  routeId?: string;
+  component: string;
+  html: string;
+  output?: string;
+  render: RenderMode;
+  componentModel?: ComponentModel;
+  hydrate?: HydrationMode;
+  mount?: string;
+  prerender?: PrerenderConfig;
+  ppr?: PprConfig;
+  metadata?: PageMetadata;
+}
+
+interface LinkerRouteFixture {
+  id: string;
+  path: string;
+  parentId?: string;
+  kind?: PageRouteKind;
+  pageId?: string;
+  appId?: string;
+  module?: string;
+  errorModule?: string;
+  notFoundModule?: string;
+  render?: RenderMode;
+  hydrate?: HydrationMode;
+  runtime?: ServerRuntime;
+  target?: AppRouteTarget;
+  wrappers?: string[];
+  layout?: false;
 }
 
 function linkBuildOutput(
@@ -250,7 +186,7 @@ function createCoreGraphFixture(fixture: LinkerFixture): CoreGraph {
     applications[app.id] = {
       id: app.id,
       root: ".",
-      topology: "spa",
+      routingMode: "spa",
       pageIds: [],
       routeIds: [],
       documentIds: [documentId],
@@ -273,7 +209,7 @@ function createCoreGraphFixture(fixture: LinkerFixture): CoreGraph {
     applications.default = {
       id: "default",
       root: ".",
-      topology: "mpa",
+      routingMode: "mpa",
       pageIds: [],
       routeIds: [],
       documentIds: [],
@@ -325,7 +261,6 @@ function createCoreGraphFixture(fixture: LinkerFixture): CoreGraph {
   for (const route of fixture.routes) {
     const applicationId = route.appId ?? "default";
     routes.push({
-      realm: "client",
       id: route.id,
       applicationId,
       ...(route.parentId ? { parentId: route.parentId } : {}),
@@ -811,7 +746,7 @@ describe("assertFrameworkManifestShape", () => {
                 component: "server",
                 html: "server",
                 streaming: false,
-                hydrate: "viewport",
+                hydrate: "visible",
               },
             },
           },
@@ -819,7 +754,7 @@ describe("assertFrameworkManifestShape", () => {
         "manifest",
       ),
     ).toThrow(
-      '[evjs] manifest.pages.home.rendering.hydrate must be "none", "load", "visible", or "idle".',
+      '[evjs] manifest.pages.home.rendering.hydrate must be "none" or "load".',
     );
 
     expect(() =>
@@ -854,7 +789,7 @@ describe("assertFrameworkManifestShape", () => {
             home: {
               assets: { js: [], css: [] },
               render: "ssr",
-              hydrate: "viewport",
+              hydrate: "idle",
               rendering: {
                 component: "server",
                 html: "server",
@@ -866,9 +801,7 @@ describe("assertFrameworkManifestShape", () => {
         },
         "manifest",
       ),
-    ).toThrow(
-      '[evjs] manifest.pages.home.hydrate must be "none", "load", "visible", or "idle".',
-    );
+    ).toThrow('[evjs] manifest.pages.home.hydrate must be "none" or "load".');
 
     expect(() =>
       assertFrameworkManifestShape(
@@ -1213,7 +1146,7 @@ describe("assertFrameworkManifestShape", () => {
                   offer: {
                     id: "offer",
                     assets: { js: [], css: [] },
-                    hydrate: "visible",
+                    hydrate: "load",
                   },
                 },
               },
@@ -2801,6 +2734,115 @@ describe("linkBuildOutput", () => {
     );
   });
 
+  it("links SPA server-rendered Pages to the owning app hydration assets", () => {
+    const graph: LinkerFixture = {
+      version: 1,
+      rootDir: "/repo",
+      apps: {
+        default: {
+          id: "default",
+          entry: "./src/main.tsx",
+          html: "./index.html",
+        },
+      },
+      pages: {
+        dashboard: {
+          id: "dashboard",
+          component: "./src/pages/dashboard/page.tsx",
+          html: "./index.html",
+          render: "ssr",
+          hydrate: "load",
+        },
+        reports: {
+          id: "reports",
+          component: "./src/pages/reports/page.tsx",
+          html: "./index.html",
+          render: "ssr",
+          hydrate: "none",
+        },
+        snapshot: {
+          id: "snapshot",
+          component: "./src/pages/snapshot/page.tsx",
+          html: "./index.html",
+          render: "ssg",
+          hydrate: "load",
+        },
+      },
+      routes: [
+        {
+          id: "dashboard",
+          path: "/dashboard",
+          appId: "default",
+          pageId: "dashboard",
+          module: "./src/pages/dashboard/page.tsx",
+        },
+        {
+          id: "reports",
+          path: "/reports",
+          appId: "default",
+          pageId: "reports",
+          module: "./src/pages/reports/page.tsx",
+        },
+        {
+          id: "snapshot",
+          path: "/snapshot",
+          appId: "default",
+          pageId: "snapshot",
+          module: "./src/pages/snapshot/page.tsx",
+        },
+      ],
+      serverFunctions: [],
+      serverRoutes: [],
+    };
+    const plan: TestBuildPlan = {
+      version: 1,
+      buildId: "build",
+      mode: "production",
+      distDir: "dist",
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
+      entries: [
+        createServerRuntimeEntry(),
+        {
+          name: "main",
+          import: "./src/main.tsx",
+          environment: "client",
+          runtime: "browser",
+          kind: "app-client",
+          owner: { appId: "default" },
+        },
+      ],
+      html: [
+        {
+          id: "index",
+          template: "./index.html",
+          fileName: "index.html",
+          owner: { appId: "default" },
+        },
+      ],
+      server: createServerPlan(),
+      runtime: createRuntimePlan(),
+    };
+
+    const output = linkBuildOutput({
+      graph,
+      plan,
+      clientEntryAssets: {
+        main: { js: ["main.js"], css: ["main.css"] },
+      },
+    });
+
+    expect(output.pages.dashboard.assets).toEqual({
+      js: ["main.js"],
+      css: ["main.css"],
+    });
+    expect(output.pages.dashboard.module).toBeUndefined();
+    expect(output.pages.reports.assets).toEqual({ js: [], css: [] });
+    expect(output.pages.snapshot.assets).toEqual({
+      js: ["main.js"],
+      css: ["main.css"],
+    });
+  });
+
   it("does not publish a logical MPA application as a runtime app", () => {
     const graph: LinkerFixture = {
       version: 1,
@@ -3328,7 +3370,7 @@ describe("linkBuildOutput", () => {
           component: "./src/Campaign.tsx",
           html: "./index.html",
           render: "ssr",
-          hydrate: "visible",
+          hydrate: "load",
           prerender: { partial: true },
           ppr: {
             delivery: "merge",

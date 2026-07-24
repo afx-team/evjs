@@ -1,10 +1,24 @@
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
+export type StaticJsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly StaticJsonValue[]
+  | { readonly [key: string]: StaticJsonValue };
+
 /**
- * Validate data before JSON serialization so unsupported values cannot be
- * silently dropped, coerced, or observed through accessors.
+ * Validate values that cross evjs static configuration and graph boundaries.
+ *
+ * This is intentionally stricter than JSON.stringify(): unsupported values,
+ * lossy properties, unsafe object keys, sparse arrays, and cycles fail instead
+ * of being dropped or coerced.
  */
-export function assertJsonSerializable(value: unknown, source: string): void {
+export function assertStaticJsonValue(
+  value: unknown,
+  source: string,
+): asserts value is StaticJsonValue {
   const ancestors = new Set<object>();
 
   function visit(current: unknown, suffix: string): void {
@@ -27,14 +41,14 @@ export function assertJsonSerializable(value: unknown, source: string): void {
     }
 
     if (Array.isArray(current)) {
-      assertStrictJsonArray(current, `${source}${suffix}`);
+      assertStrictStaticJsonArray(current, `${source}${suffix}`);
     } else {
-      if (!isPlainObject(current)) {
+      if (!isPlainStaticJsonObject(current)) {
         throw new Error(
           `[evjs] ${source}${suffix} must contain only arrays and plain objects.`,
         );
       }
-      assertEnumerableDataProperties(current, `${source}${suffix}`);
+      assertEnumerableStaticJsonProperties(current, `${source}${suffix}`);
     }
 
     ancestors.add(current);
@@ -53,7 +67,30 @@ export function assertJsonSerializable(value: unknown, source: string): void {
   visit(value, "");
 }
 
-function assertEnumerableDataProperties(value: object, source: string): void {
+export function cloneStaticJsonValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+export function deepFreezeStaticJsonValue<T>(value: T): T {
+  if (!value || typeof value !== "object") return value;
+  for (const child of Object.values(value)) {
+    deepFreezeStaticJsonValue(child);
+  }
+  return Object.freeze(value);
+}
+
+export function isPlainStaticJsonObject(
+  value: unknown,
+): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+export function assertEnumerableStaticJsonProperties(
+  value: object,
+  source: string,
+): void {
   for (const key of Reflect.ownKeys(value)) {
     if (typeof key !== "string") {
       throw new Error(`[evjs] ${source} contains an unsupported symbol field.`);
@@ -70,7 +107,7 @@ function assertEnumerableDataProperties(value: object, source: string): void {
   }
 }
 
-function assertStrictJsonArray(value: unknown[], source: string): void {
+function assertStrictStaticJsonArray(value: unknown[], source: string): void {
   const indexes = new Set<number>();
   for (const key of Reflect.ownKeys(value)) {
     if (key === "length") continue;
@@ -95,10 +132,4 @@ function assertStrictJsonArray(value: unknown[], source: string): void {
       );
     }
   }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
 }

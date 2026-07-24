@@ -133,7 +133,7 @@ no `_` prefix. The Page directory determines the URL in both SPA and MPA mode.
 
 Explicit `application.routes` and Bigfish-style route config remain SPA-only
 route-tree migration inputs in `@evjs/ev`; they normalize into the same Core
-graph, reject MPA topology, and are not additional canonical routing models.
+graph, reject MPA materialization, and are not additional canonical routing models.
 Before running a Smallfish or evjs
 0.2 application, move or rename every published entry to `page.tsx`, move Page
 configuration to `page.config.ts`, and configure only

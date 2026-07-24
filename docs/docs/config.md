@@ -118,8 +118,8 @@ The same file tree changes materialization according to `routing.mode`.
 | Model object | SPA | MPA |
 | --- | --- | --- |
 | Page | `page.*` with its containing-directory scope | The same Page and scope |
-| Route | Client Route in one browser route tree | Document Route from the same semantic pattern |
-| Document | Normally one Application-owned HTML Document | Normally one Page-owned HTML Document per Page route |
+| Route | Client Route in one browser route tree | The same semantic Route, used to select an independent Page entry |
+| Document | Application-owned shell plus Page-owned Documents for static SSG Pages | One Page-owned HTML Document per static Page route |
 | Source path | Route directory relative to `routing.dir` | The same source path |
 
 ### SPA
@@ -142,10 +142,46 @@ export default defineConfig({
 ```
 
 MPA discovery accepts the same `page.*` anchors and produces the same semantic
-Page/Route identities. Dynamic-route output and React layout/boundary
-materialization remain staged. Unsupported combinations fail during graph/plan
-validation; they do not activate another authoring model. A colocated
-`index.html` supplies that MPA Page's Document template.
+Page/Route identities. It accepts only static Page paths: `$param`, terminal
+`$...splat`, and router-only boundaries fail during graph validation. Layouts
+compose in both modes. These errors do not activate another authoring model. A
+colocated `index.html` supplies that MPA Page's Document template.
+
+## Application Extension Configuration
+
+Plugin-owned Application configuration uses the top-level `extensions` bag:
+
+```ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  routing: { mode: "spa" },
+  extensions: {
+    "@company/analytics": {
+      enabled: true,
+      channel: "checkout",
+    },
+  },
+  plugins: [analyticsPlugin()],
+});
+```
+
+Every key must be registered by an active plugin
+`applicationExtension()` declaration. Core applies plugin defaults, merge, and
+validation before `setup()`, then stores the same value on the normalized
+Application. This contract is identical for canonical SPA, canonical MPA, and
+the temporary Bigfish `application.routes` input.
+
+Values must be strict static JSON. Put functions and other executable options
+in the plugin factory, for example `oneApiPlugin({ filter })`, or reference an
+explicit generated/runtime module. Do not place secrets here: extension values
+enter the build graph. They are not sent to the browser automatically; runtime
+projection remains an explicit plugin contribution.
+
+`application.extensions` is intentionally unsupported because `application`
+is only the temporary Bigfish SPA route-tree migration input. Top-level
+`extensions` remains valid after that route tree is migrated to canonical
+`page.*` routing.
 
 ## Page Scope And Configuration
 
@@ -192,6 +228,7 @@ export default definePageConfig({
 The module is evaluated synchronously while evjs constructs the build graph.
 It must default-export a plain object containing static JSON data. Supported
 core fields are `title`, `meta`, `render`, `hydrate`, `prerender`, and `rsc`.
+`hydrate` accepts only `"none"` or `"load"`.
 `meta` is a string record for `<meta name="key" content="value">`; it does not
 accept `property`, `charset`, links, scripts, functions, or a generic head
 tree. Plugin-owned values must use registered namespaced keys under
@@ -336,10 +373,23 @@ those source trees before starting the application.
 
 ### Bigfish SPA route configuration
 
-Bigfish-style `routes`, `component`, `children`, `layout`, `wrappers`, and document
-configuration can enter through the SPA-only migration normalizer. MPA
-topology, alias conflicts, and component references outside the project are
-rejected.
+Bigfish-style nested `routes`, `component`, `layout`, `wrappers`, redirects,
+and document configuration can enter through the SPA-only migration
+normalizer. The historical `children` spelling is rejected because current
+Umi/Bigfish configuration uses `routes`. The normalizer also retains the
+documented access/menu metadata fields in the registered
+`@evjs/bigfish-route` Route extension; it does not accept a generic Route
+extension bag. MPA materialization, alias conflicts, and component references
+outside the project are rejected.
+
+An explicit component ending in `index.*` or `page.*` claims its containing
+directory as the migration Page scope. A flat component such as
+`src/pages/403.tsx` remains module-scoped so it cannot accidentally claim
+other flat Pages in `src/pages`; a module-scoped Page does not discover an
+adjacent `page.config.ts`. For incremental Page-config migration, first move
+the flat component to a dedicated directory (an explicit route may temporarily
+reference `403/index.*`), then add `page.config.ts`, and finally rename the
+entry to `page.*` before enabling canonical `routing`.
 
 Move those component modules into route directories and rename each route
 entry to `page.*`. The corresponding directories encode the same path tree;

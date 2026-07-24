@@ -54,6 +54,77 @@ describe("merge", () => {
     expect(config.routing).toEqual({ mode: "spa" });
   });
 
+  it.each([
+    "__proto__",
+    "constructor",
+    "prototype",
+  ])('rejects unsafe nested patch field "%s" without polluting prototypes', (key) => {
+    const objectPrototype = Object.prototype as Record<string, unknown>;
+    const patch = JSON.parse(
+      `{"safe":{"${key}":{"pollutedByMerge":true}}}`,
+    ) as object;
+
+    try {
+      expect(() =>
+        merge({ safe: {} }, patch as { safe?: Record<string, unknown> }),
+      ).toThrow(`patch field "${key}" is not safe`);
+      expect(objectPrototype.pollutedByMerge).toBeUndefined();
+      expect(({} as Record<string, unknown>).pollutedByMerge).toBeUndefined();
+    } finally {
+      Reflect.deleteProperty(objectPrototype, "pollutedByMerge");
+    }
+  });
+
+  it("only reads own data properties while merging", () => {
+    const inherited = { server: { basePath: "/inherited" } };
+    const inheritedTarget = Object.create(inherited) as {
+      server: { basePath?: string; dev?: { port: number } };
+    };
+
+    merge(inheritedTarget, {
+      server: { dev: { port: 3001 } },
+    });
+
+    expect(inherited.server).toEqual({ basePath: "/inherited" });
+    expect(Object.hasOwn(inheritedTarget, "server")).toBe(true);
+    expect(inheritedTarget.server).toEqual({ dev: { port: 3001 } });
+
+    let targetGetterWasCalled = false;
+    const accessorTarget = {} as {
+      routing: { mode: "spa" | "mpa" };
+    };
+    Object.defineProperty(accessorTarget, "routing", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        targetGetterWasCalled = true;
+        return { mode: "mpa" };
+      },
+    });
+
+    merge(accessorTarget, { routing: { mode: "spa" } });
+
+    expect(targetGetterWasCalled).toBe(false);
+    expect(accessorTarget.routing).toEqual({ mode: "spa" });
+  });
+
+  it("rejects accessor patch fields without invoking them", () => {
+    let patchGetterWasCalled = false;
+    const patch = {};
+    Object.defineProperty(patch, "routing", {
+      enumerable: true,
+      get() {
+        patchGetterWasCalled = true;
+        return { mode: "spa" };
+      },
+    });
+
+    expect(() => merge({}, patch)).toThrow(
+      "must be an enumerable own data property",
+    );
+    expect(patchGetterWasCalled).toBe(false);
+  });
+
   it("type-checks Config patches", () => {
     const config: Config = {};
 

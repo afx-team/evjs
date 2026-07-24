@@ -29,14 +29,14 @@ import type {
   RenderMode,
   ServerRuntime,
 } from "@evjs/shared/manifest";
-import { createDeploymentMetadata } from "@evjs/shared/manifest";
 import type { Logger } from "@logtape/logtape";
 import type { FrameworkRuntimeOutput } from "../_internal/build/framework-runtime.js";
 import type {
   Config,
   ConfigExtensionNamespace,
   DefaultBundlerConfig,
-  ResolvedConfig,
+  ResolvedFrameworkConfig,
+  StaticConfigCompatible,
 } from "../config/index.js";
 
 export type {
@@ -145,7 +145,7 @@ export interface BundlerCtx<TBundlerCfg = DefaultBundlerConfig> {
   /** The current working directory. */
   cwd: string;
   /** The fully resolved framework config. */
-  config: ResolvedConfig<TBundlerCfg>;
+  config: ResolvedFrameworkConfig<TBundlerCfg>;
   /** The current command. */
   command: "dev" | "build";
   /** Selected bundler adapter name. */
@@ -186,6 +186,34 @@ type PluginSetupResult<TBundlerCfg> =
 
 type ContributionsHookResult = void | Promise<void>;
 
+type DeepReadonly<T> = T extends object
+  ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+  : T;
+
+type StaticExtensionConstraint<T> = [StaticConfigCompatible<T>] extends [never]
+  ? never
+  : unknown extends T
+    ? unknown
+    : [T] extends [StaticConfigCompatible<T>]
+      ? unknown
+      : never;
+
+type StaticExtensionDefinitionConstraint<TValue, TConfigured> =
+  StaticExtensionConstraint<TValue> & StaticExtensionConstraint<TConfigured>;
+
+type StaticExtensionCheck<TValue, TConfigured> = [
+  StaticExtensionDefinitionConstraint<TValue, TConfigured>,
+] extends [never]
+  ? [staticConfigError: "Extension values must be static JSON"]
+  : [];
+
+/** Context available while an Application extension value is resolved. */
+export interface PluginApplicationExtensionContext {
+  readonly applicationId: string;
+  readonly applicationRoot: string;
+  readonly routingMode: "spa" | "mpa";
+}
+
 /** Context available while a Page extension value is resolved. */
 export interface PluginPageExtensionContext {
   readonly pageId: string;
@@ -195,41 +223,66 @@ export interface PluginPageExtensionContext {
   readonly configSource?: string;
 }
 
-/** Declarative Page extension registered by a plugin descriptor. */
-export interface PluginPageExtensionDefinition<
+/** Shared declaration shape for a plugin-owned CoreGraph extension. */
+export interface PluginExtensionDefinition<
   TValue = unknown,
   TConfigured = unknown,
+  TContext = unknown,
 > {
   /** Globally unique namespaced extension id, for example `@company/access`. */
   namespace: ConfigExtensionNamespace;
   /** Optional schema version recorded in the CoreGraph extension registry. */
   schemaVersion?: string;
-  /** Default value, evaluated independently for every Page. */
-  defaults?:
-    | TValue
-    | ((context: PluginPageExtensionContext) => TValue | undefined);
+  /** Default value, evaluated independently for every target owner. */
+  defaults?: TValue | ((context: TContext) => TValue | undefined);
   /**
    * Merge defaults with an explicitly authored namespaced value. This callback
-   * is not invoked when the Page omits the namespace; defaults are materialized
-   * directly in that case. By default plain objects are shallow-merged with
-   * configured fields winning; other configured values replace defaults.
+   * is not invoked when the owner omits the namespace; defaults are
+   * materialized directly in that case. By default plain objects are
+   * shallow-merged with configured fields winning; other configured values
+   * replace defaults.
    */
   merge?: (
     defaults: TValue | undefined,
     configured: TConfigured,
-    context: PluginPageExtensionContext,
+    context: TContext,
   ) => TValue | undefined;
-  /** Return false/a message or throw to reject the materialized value. */
+  /**
+   * Return false/a message or throw to reject the materialized value.
+   *
+   * The value is an isolated, deeply read-only snapshot.
+   */
   validate?: (
-    value: TValue,
-    context: PluginPageExtensionContext,
+    value: DeepReadonly<TValue>,
+    context: TContext,
   ) => undefined | boolean | string;
 }
 
+/** Declarative Application extension registered by a plugin descriptor. */
+export type PluginApplicationExtensionDefinition<
+  TValue = unknown,
+  TConfigured = unknown,
+> = PluginExtensionDefinition<
+  TValue,
+  TConfigured,
+  PluginApplicationExtensionContext
+>;
+
+/** Declarative Page extension registered by a plugin descriptor. */
+export type PluginPageExtensionDefinition<
+  TValue = unknown,
+  TConfigured = unknown,
+> = PluginExtensionDefinition<TValue, TConfigured, PluginPageExtensionContext>;
+
 /** Registration context passed to a plugin's `describe` hook. */
 export interface PluginDescribeContext {
+  applicationExtension<TValue = unknown, TConfigured = unknown>(
+    definition: PluginApplicationExtensionDefinition<TValue, TConfigured>,
+    ...check: StaticExtensionCheck<TValue, TConfigured>
+  ): void;
   pageExtension<TValue = unknown, TConfigured = unknown>(
     definition: PluginPageExtensionDefinition<TValue, TConfigured>,
+    ...check: StaticExtensionCheck<TValue, TConfigured>
   ): void;
 }
 
@@ -313,7 +366,7 @@ export interface PluginContext<TBundlerCfg = DefaultBundlerConfig> {
   /** The current working directory. */
   cwd: string;
   /** The fully resolved framework config. */
-  config: ResolvedConfig<TBundlerCfg>;
+  config: ResolvedFrameworkConfig<TBundlerCfg>;
   /** Extra CLI flags made available to plugins. */
   flags?: CliFlags;
   /** Current command. */
@@ -356,21 +409,23 @@ export interface FrameworkDocumentView {
   readonly template: string;
   readonly output: string;
   readonly applicationId: string;
-  readonly owner: CoreDocumentOwner;
+  readonly owner: DeepReadonly<CoreDocumentOwner>;
   readonly mount?: string;
-  readonly bootstrap?: CoreDocumentBootstrap;
-  readonly provenance: CoreNodeProvenance;
-  readonly extensions: Readonly<Record<string, unknown>>;
+  readonly bootstrap?: DeepReadonly<CoreDocumentBootstrap>;
+  readonly provenance: DeepReadonly<CoreNodeProvenance>;
+  readonly extensions: DeepReadonly<Record<string, unknown>>;
 }
 
 export interface FrameworkApplicationView {
   readonly id: string;
   /** Resolved CoreGraph Application extensions. */
-  readonly extensions: Readonly<Record<string, unknown>>;
+  readonly extensions: DeepReadonly<Record<string, unknown>>;
   /** Source boundary claimed by the Application provider. */
   readonly root: string;
-  /** Whether this Application owns one shared client router or many Pages. */
-  readonly topology: "spa" | "mpa";
+  /** Route and Document materialization mode for this Application. */
+  readonly routingMode: "spa" | "mpa";
+  /** Application-level React layout shared by its Page routes. */
+  readonly layout?: string;
   /** Semantic Pages owned by this Application. */
   readonly pageIds: readonly string[];
   /** Client or Document Routes owned by this Application. */
@@ -378,7 +433,7 @@ export interface FrameworkApplicationView {
   /** HTML Documents owned by this Application. */
   readonly documentIds: readonly string[];
   /** Producer and source that declared this Application. */
-  readonly provenance: CoreNodeProvenance;
+  readonly provenance: DeepReadonly<CoreNodeProvenance>;
 }
 
 export interface FrameworkPageView {
@@ -388,41 +443,40 @@ export interface FrameworkPageView {
   /** Canonical Page source and its private-code ownership boundary. */
   readonly source: FrameworkPageSourceView;
   /** Resolved Page extensions available to plugin consumers. */
-  readonly extensions: Readonly<Record<string, unknown>>;
+  readonly extensions: DeepReadonly<Record<string, unknown>>;
   readonly render: RenderMode;
   readonly componentModel?: ComponentModel;
   readonly hydrate?: HydrationMode;
-  readonly prerender?: PrerenderConfig;
-  readonly ppr?: PprConfig;
-  readonly metadata?: PageMetadata;
+  readonly prerender?: DeepReadonly<PrerenderConfig>;
+  readonly ppr?: DeepReadonly<PprConfig>;
+  readonly metadata?: DeepReadonly<PageMetadata>;
   /** Producer and source that declared this Page. */
-  readonly provenance: CoreNodeProvenance;
+  readonly provenance: DeepReadonly<CoreNodeProvenance>;
 }
 
 export interface FrameworkPageSourceView {
   readonly module: string;
-  readonly scope: CorePageScope;
+  readonly scope: DeepReadonly<CorePageScope>;
   readonly provider: string;
   /** Build-only canonical Page config module, when one was authored. */
   readonly config?: string;
 }
 
 export interface FrameworkRouteView {
-  readonly realm: "client";
   readonly id: string;
   /** Logical Application that owns this normalized client Route. */
   readonly applicationId: string;
   readonly parentId?: string;
   /** Normalized URL pattern. */
-  readonly pattern: CoreRoutePattern;
+  readonly pattern: DeepReadonly<CoreRoutePattern>;
   /** Semantic destination of this client Route. */
-  readonly target: CoreClientRouteTarget;
+  readonly target: DeepReadonly<CoreClientRouteTarget>;
   /** Complete client Route composition facets. */
-  readonly facets: CoreRouteFacets;
+  readonly facets: DeepReadonly<CoreRouteFacets>;
   /** Resolved CoreGraph client Route extensions. */
-  readonly extensions: Readonly<Record<string, unknown>>;
+  readonly extensions: DeepReadonly<Record<string, unknown>>;
   /** Producer and source that declared this Route. */
-  readonly provenance: CoreNodeProvenance;
+  readonly provenance: DeepReadonly<CoreNodeProvenance>;
 }
 
 export interface FrameworkServerFunctionView {
@@ -472,13 +526,14 @@ export interface FrameworkApplicationEntryView extends FrameworkEntryView {
 
 export type FrameworkEntryMetadataView =
   | FrameworkReactComponentPageEntryMetadata
+  | FrameworkReactServerPageEntryMetadata
   | FrameworkApplicationEntryMetadata
   | FrameworkServerAppEntryMetadata;
 
 export interface FrameworkReactComponentPageEntryMetadata {
   readonly type: "react-component-page";
   readonly component: string;
-  readonly layouts?: readonly string[];
+  readonly layers?: readonly FrameworkReactPageLayer[];
   readonly mount: string;
   readonly hydrate: HydrationMode;
   readonly render: RenderMode;
@@ -486,6 +541,17 @@ export interface FrameworkReactComponentPageEntryMetadata {
     readonly id: string;
     readonly path: string;
   };
+}
+
+export interface FrameworkReactServerPageEntryMetadata {
+  readonly type: "react-server-page";
+  readonly component: string;
+  readonly layers?: readonly FrameworkReactPageLayer[];
+}
+
+export interface FrameworkReactPageLayer {
+  readonly kind: "layout" | "wrapper";
+  readonly module: string;
 }
 
 export interface FrameworkApplicationEntryMetadata {
@@ -501,12 +567,12 @@ export interface FrameworkPageAppRouteView {
   readonly parentId?: string;
   readonly kind?: PageRouteKind | "group" | "redirect";
   readonly module?: string;
-  readonly target?: AppRouteTarget;
+  readonly target?: DeepReadonly<AppRouteTarget>;
   readonly wrappers?: readonly string[];
   readonly layout?: false;
   readonly errorModule?: string;
   readonly notFoundModule?: string;
-  readonly metadata?: PageMetadata;
+  readonly metadata?: DeepReadonly<PageMetadata>;
 }
 
 export interface FrameworkServerMiddlewareView {
@@ -573,15 +639,17 @@ export interface FrameworkSlot<K extends FrameworkSlotName> {
 export type FrameworkSlotInput<K extends FrameworkSlotName> =
   K extends "client.entry"
     ? ClientEntryContribution
-    : K extends "server.request.middleware"
-      ? ServerRequestMiddlewareContribution
-      : K extends "html.tag"
-        ? HtmlTagContribution
-        : K extends "resolve.alias"
-          ? ResolveAliasContribution
-          : K extends "resolve.external"
-            ? ResolveExternalContribution
-            : never;
+    : K extends "page.wrapper"
+      ? PageWrapperContribution
+      : K extends "server.request.middleware"
+        ? ServerRequestMiddlewareContribution
+        : K extends "html.tag"
+          ? HtmlTagContribution
+          : K extends "resolve.alias"
+            ? ResolveAliasContribution
+            : K extends "resolve.external"
+              ? ResolveExternalContribution
+              : never;
 
 export interface ClientEntryContribution {
   id: string;
@@ -597,6 +665,20 @@ export interface ClientEntryContribution {
    * such as qiankun slave mode that must own the entry exports.
    */
   mode?: "import" | "replace";
+}
+
+/**
+ * Wraps semantic Pages with one React component module.
+ *
+ * The module must default-export a component that accepts `children`.
+ */
+export interface PageWrapperContribution {
+  id: string;
+  module: GeneratedModuleRef | string;
+  /** Defaults to "all", which applies every available side and requires one. */
+  runtime?: ContributionRuntime;
+  /** Omit to wrap every semantic Page. */
+  target?: ContributionTarget;
 }
 
 export interface ServerRequestMiddlewareContribution {
@@ -679,7 +761,8 @@ export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig> {
    * Receives the parsed DOM document and the current HTML document context.
    * Mutate the document in place (e.g. `doc.head.insertAdjacentHTML(...)`).
    * Runs after evjs injects `<script>` / `<link>` tags but before the
-   * document is serialized and emitted. Multiple plugins are applied in order.
+   * document is serialized for static emission or compiled into a request-time
+   * server shell. Multiple plugins are applied in order.
    */
   transformHtml?: (
     doc: HtmlDocument,
@@ -708,7 +791,7 @@ export interface HtmlDocumentInfo {
   owner: CoreDocumentOwner;
   /** Source HTML template path from resolved config. */
   template: string;
-  /** Output HTML filename. */
+  /** Logical HTML filename; request-time server shells are not written here. */
   fileName: string;
   /** Assets injected into this HTML document. */
   assets: AssetGroup;
@@ -721,20 +804,3 @@ export type HtmlTransformContext<TBundlerCfg = DefaultBundlerConfig> =
       buildId: string;
       publicPath: BuildOutput["publicPath"];
     };
-export type BuildOutputHookContext<TBundlerCfg = DefaultBundlerConfig> =
-  BuildOutputContext<TBundlerCfg>;
-
-export function createBuildResult(
-  output: BuildOutput,
-  isRebuild: boolean,
-  options: { frameworkRuntime?: FrameworkRuntimeOutput } = {},
-): BuildResult {
-  return {
-    output,
-    ...(options.frameworkRuntime
-      ? { frameworkRuntime: options.frameworkRuntime }
-      : {}),
-    deploymentMetadata: createDeploymentMetadata(output),
-    isRebuild,
-  };
-}

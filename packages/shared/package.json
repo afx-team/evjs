@@ -17,6 +17,11 @@
       "types": "./esm/manifest/index.d.ts",
       "import": "./esm/manifest/index.js",
       "default": "./esm/manifest/index.js"
+    },
+    "./_internal/static-json": {
+      "types": "./esm/_internal/static-json.d.ts",
+      "import": "./esm/_internal/static-json.js",
+      "default": "./esm/_internal/static-json.js"
     }
   },
   "scripts": {

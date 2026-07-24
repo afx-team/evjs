@@ -2,19 +2,34 @@ import { merge, utoopack } from "@evjs/bundler-utoopack";
 import { defineConfig } from "@evjs/ev";
 import { definePlugin } from "@evjs/ev/plugin";
 
-const pageMetadataPlugin = definePlugin({
-  name: "example-page-metadata-plugin",
+const metadataPlugin = definePlugin({
+  name: "example-metadata-plugin",
   describe(api) {
+    api.applicationExtension<
+      { enabled: boolean; channel: string },
+      { enabled?: boolean }
+    >({
+      namespace: "@example/metadata",
+      schemaVersion: "1",
+      defaults: { enabled: false, channel: "web" },
+    });
     api.pageExtension({
-      namespace: "@example/page-metadata",
+      namespace: "@example/metadata",
+      schemaVersion: "1",
       defaults: { label: "Plugin authoring Page" },
     });
   },
+  setup(ctx) {
+    const metadata = ctx.config.extensions["@example/metadata"];
+    console.log(
+      `[example-metadata-plugin] Application value: ${JSON.stringify(metadata)}`,
+    );
+  },
   contributions(ctx) {
     for (const page of ctx.framework.pages) {
-      const metadata = page.extensions?.["@example/page-metadata"];
+      const metadata = page.extensions["@example/metadata"];
       console.log(
-        `[example-page-metadata-plugin] ${page.id}: ${JSON.stringify(metadata)}`,
+        `[example-metadata-plugin] Page ${page.id}: ${JSON.stringify(metadata)}`,
       );
     }
   },
@@ -32,8 +47,13 @@ const pageMetadataPlugin = definePlugin({
  */
 export default defineConfig({
   routing: { mode: "spa" },
+  extensions: {
+    "@example/metadata": {
+      enabled: true,
+    },
+  },
   plugins: [
-    pageMetadataPlugin,
+    metadataPlugin,
     {
       name: "example-txt-plugin",
       config(config) {

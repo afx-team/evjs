@@ -44,13 +44,12 @@ export function createPageRouteNodesFromCoreGraph(
 ): PageRouteNode[] {
   const spaApplicationIds = new Set(
     Object.values(graph.applications)
-      .filter((application) => application.topology === "spa")
+      .filter((application) => application.routingMode === "spa")
       .map((application) => application.id),
   );
 
   return graph.routes.flatMap((route) => {
     if (
-      route.realm !== "client" ||
       route.target.kind !== "page" ||
       !spaApplicationIds.has(route.applicationId)
     ) {

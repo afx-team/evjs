@@ -108,7 +108,7 @@ Document materialization contract.
 
 Explicit `application.routes` and Bigfish-style route config remain SPA-only
 route-tree migration inputs in `@evjs/ev`; they normalize into the same
-runtime Page contracts, reject MPA topology, and are not additional
+runtime Page contracts, reject MPA materialization, and are not additional
 `@evjs/client` APIs. Smallfish and evjs 0.2
 applications must first move or rename published entries to `page.tsx`, move
 Page configuration to `page.config.ts`, and configure only `routing.mode`.

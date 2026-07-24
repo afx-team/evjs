@@ -11,7 +11,7 @@ import {
 } from "@evjs/shared";
 import { isRecord } from "./validation.js";
 
-export type HydrationMode = "none" | "load" | "visible" | "idle";
+export type HydrationMode = "none" | "load";
 export type RenderMode = "csr" | "ssr" | "ssg";
 
 export interface ClientRuntime {

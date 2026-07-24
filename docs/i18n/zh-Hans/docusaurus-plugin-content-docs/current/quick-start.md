@@ -134,8 +134,9 @@ export default defineConfig({
 
 SPA 把文件树物化为浏览器 Client Route，通常共享一个 Document。MPA 从相同
 语义 Page 与 Route 出发，物化 Page-owned Document。同一 Page 目录的
-`index.html` 可以提供 MPA Document 模板。MPA 动态路由输出以及 React
-layout/boundary 物化仍在分阶段建设；不支持的组合会在 inspect/build 中失败。
+`index.html` 可以提供 MPA Document 模板。MPA 当前只接受静态 Page path：
+`$param`、终止 `$...splat` 与 router-only boundary 会在 inspect/build 中失败；
+layout 在两种 mode 中都会组合。
 
 ## 添加服务端函数
 
@@ -209,18 +210,19 @@ standalone/manual runtime composition 才直接使用 `@evjs/client` 和
 ## 迁移存量应用
 
 Core 0.3 不运行 Smallfish 或 evjs 0.2 route reader。启动应用前先一次性转换这些
-源码树。显式 `application.routes` 与 Bigfish-style route config 可暂时保留为
-仅支持 SPA 的 route-tree 迁移输入；MPA topology 会被拒绝。
-
-对每个已发布 Page：
+源码树。对每个已发布 Page：
 
 1. 把 entry 移动或重命名到表示其 URL 的目录，并命名为 `page.*`。
 2. 把 Page title、支持的 named metadata、rendering 与插件持有的 setting 移到
    同目录 `page.config.ts`。
 3. Page 私有代码继续放在该目录且无需 `_` 前缀。
 4. 只声明 `routing.mode: "spa"` 或 `"mpa"`。
-5. 运行 `ev inspect`；文件树展示预期 Page/Route 结构后，再删除仍保留的显式
-   route tree。
+5. 运行 `ev inspect`，确认 Page/Route 结构。
+
+Bigfish route config 属于另一条仅支持 SPA 的过渡路径。显式
+`application.routes` 可以暂时保留，但不能与 `routing` 同时配置，也不会选择
+MPA。文件转换完成后，在同一次变更中用 `routing.mode: "spa"` 替换
+`application`，再运行 `ev inspect`。
 
 无关的 `src/pages` 目录本身不会发布客户端路由。
 

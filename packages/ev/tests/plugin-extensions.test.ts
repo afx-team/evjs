@@ -7,14 +7,25 @@ import {
   type CoreGraph,
   PAGE_ANCHOR_PROVIDER_ID,
 } from "@evjs/shared/manifest";
-import { afterEach, describe, expect, it } from "vitest";
-import { prepareFrameworkBuild } from "../src/_internal/build/commands.js";
-import { createFrameworkIRView } from "../src/_internal/build/generated-contributions.js";
+import { afterEach, describe, expect, expectTypeOf, it } from "vitest";
 import {
-  applyPluginPageExtensions,
+  inspectFrameworkBuild,
+  prepareFrameworkBuild,
+} from "../src/_internal/build/commands.js";
+import { createFrameworkIRView } from "../src/_internal/build/generated-contributions.js";
+import { createCoreGraph } from "../src/_internal/build/graph/index.js";
+import {
+  applyPluginExtensions,
   collectPluginExtensionRegistry,
+  createPluginExtensionResolutionSession,
+  resolvePluginApplicationExtensions,
 } from "../src/_internal/build/plugin-extensions.js";
-import type { ConfigExtensionNamespace } from "../src/config/index.js";
+import {
+  type Config,
+  type ConfigExtensionNamespace,
+  resolveConfig,
+  type StaticConfigCompatible,
+} from "../src/config/index.js";
 import {
   definePlugin,
   type FrameworkIRView,
@@ -31,7 +42,570 @@ afterEach(async () => {
   );
 });
 
+describe("plugin Application extensions", () => {
+  it("keeps extension authoring types inside the static JSON boundary", () => {
+    // biome-ignore lint/complexity/noBannedTypes: This test covers the broad `{}` loophole.
+    type BroadEmptyObject = {};
+
+    interface OptionalValue {
+      enabled: boolean;
+      label?: string;
+      nested: {
+        values: readonly number[];
+      };
+    }
+
+    const plugin = definePlugin({
+      name: "static-extension-types",
+      describe(ctx) {
+        expectTypeOf<StaticConfigCompatible<object>>().toEqualTypeOf<never>();
+        expectTypeOf<
+          StaticConfigCompatible<BroadEmptyObject>
+        >().toEqualTypeOf<never>();
+
+        ctx.applicationExtension<OptionalValue>({
+          namespace: "@company/static-types",
+          defaults: {
+            enabled: true,
+            nested: { values: [1, 2] },
+          },
+        });
+
+        // @ts-expect-error Date cannot cross the static config boundary.
+        ctx.pageExtension<Date>({
+          namespace: "@company/date",
+          defaults: new Date(),
+        });
+        // @ts-expect-error Map cannot cross the static config boundary.
+        ctx.pageExtension<Map<string, string>>({
+          namespace: "@company/map",
+          defaults: new Map(),
+        });
+        // @ts-expect-error object does not prove a static JSON value shape.
+        ctx.pageExtension<object>({
+          namespace: "@company/object",
+          defaults: {},
+        });
+        // @ts-expect-error {} does not prove a static JSON value shape.
+        ctx.pageExtension<BroadEmptyObject>({
+          namespace: "@company/empty-object",
+          defaults: {},
+        });
+      },
+    });
+
+    expect(plugin.name).toBe("static-extension-types");
+  });
+
+  it("resolves Application and Page owners under one plugin namespace", () => {
+    const validated: string[] = [];
+    const plugin = definePlugin({
+      name: "shared-owner",
+      describe(ctx) {
+        ctx.applicationExtension<
+          { enabled: boolean; channel: string },
+          { enabled?: boolean }
+        >({
+          namespace: "@company/shared",
+          schemaVersion: "1",
+          defaults: { enabled: false, channel: "web" },
+          validate(value, context) {
+            expect(Object.isFrozen(value)).toBe(true);
+            expect(Object.isFrozen(context)).toBe(false);
+            validated.push(`application:${context.applicationId}`);
+          },
+        });
+        ctx.pageExtension({
+          namespace: "@company/shared",
+          schemaVersion: "1",
+          defaults: ({ pageId }) => ({ pageId }),
+          validate(_value, context) {
+            validated.push(`page:${context.pageId}`);
+          },
+        });
+      },
+    });
+    const registry = collectPluginExtensionRegistry([plugin]);
+    const config = resolveConfig({
+      routing: { mode: "spa" },
+      extensions: {
+        "@company/shared": { enabled: true },
+      },
+    });
+    const application = resolvePluginApplicationExtensions(config, registry);
+
+    expect(application).toEqual({
+      "@company/shared": { enabled: true, channel: "web" },
+    });
+    expect(Object.isFrozen(application)).toBe(true);
+    expect(Object.isFrozen(application["@company/shared"])).toBe(true);
+
+    const resolved = applyPluginExtensions(createSpaGraph(), registry, {
+      applicationExtensions: application,
+    });
+    expect(resolved.applications.default.extensions).toEqual({
+      "@company/shared": { enabled: true, channel: "web" },
+    });
+    expect(resolved.pages.home.extensions).toEqual({
+      "@company/shared": { pageId: "home" },
+    });
+    expect(resolved.extensions.namespaces["@company/shared"]).toEqual({
+      producer: "shared-owner",
+      owners: ["application", "page"],
+      schemaVersion: "1",
+    });
+    expect(validated).toEqual(["application:default", "page:home"]);
+  });
+
+  it("rejects unknown Application namespaces and missing Applications", () => {
+    expect(() =>
+      resolvePluginApplicationExtensions(
+        resolveConfig({
+          routing: { mode: "spa" },
+          extensions: { "@company/missing": true },
+        }),
+        collectPluginExtensionRegistry([]),
+      ),
+    ).toThrow("no plugin applicationExtension() registered it");
+
+    const plugin = definePlugin({
+      name: "application-only",
+      describe(ctx) {
+        ctx.applicationExtension({
+          namespace: "@company/application-only",
+        });
+      },
+    });
+    expect(() =>
+      resolvePluginApplicationExtensions(
+        resolveConfig({
+          conventions: false,
+          extensions: { "@company/application-only": true },
+        }),
+        collectPluginExtensionRegistry([plugin]),
+      ),
+    ).toThrow("project has no framework Application");
+  });
+
+  it("rejects duplicate owners and inconsistent shared schema versions", () => {
+    expect(() =>
+      collectPluginExtensionRegistry([
+        definePlugin({
+          name: "duplicate-owner",
+          describe(ctx) {
+            ctx.applicationExtension({ namespace: "@company/duplicate" });
+            ctx.applicationExtension({ namespace: "@company/duplicate" });
+          },
+        }),
+      ]),
+    ).toThrow("more than once");
+
+    expect(() =>
+      collectPluginExtensionRegistry([
+        definePlugin({
+          name: "schema-conflict",
+          describe(ctx) {
+            ctx.applicationExtension({
+              namespace: "@company/schema",
+              schemaVersion: "1",
+            });
+            ctx.pageExtension({
+              namespace: "@company/schema",
+              schemaVersion: "2",
+            });
+          },
+        }),
+      ]),
+    ).toThrow("must use one schemaVersion");
+  });
+
+  it("requires one pre-setup Application snapshot and never merges it twice", async () => {
+    let mergeCalls = 0;
+    const plugin = definePlugin({
+      name: "single-application-resolution",
+      describe(ctx) {
+        ctx.applicationExtension<{ count: number }, { increment: number }>({
+          namespace: "@company/single-resolution",
+          defaults: { count: 1 },
+          merge(defaults, configured) {
+            mergeCalls += 1;
+            return {
+              count: (defaults?.count ?? 0) + configured.increment,
+            };
+          },
+        });
+      },
+    });
+    const config = resolveConfig({
+      routing: { mode: "spa" },
+      extensions: {
+        "@company/single-resolution": { increment: 2 },
+      },
+      plugins: [plugin],
+    });
+    const registry = collectPluginExtensionRegistry(config.plugins);
+
+    await expect(
+      createCoreGraph(config, process.cwd(), {
+        pluginExtensions: registry,
+      }),
+    ).rejects.toThrow("resolved before plugin setup");
+    expect(mergeCalls).toBe(0);
+
+    const applicationExtensions = resolvePluginApplicationExtensions(
+      config,
+      registry,
+    );
+    expect(mergeCalls).toBe(1);
+
+    const analysis = await createCoreGraph(config, process.cwd(), {
+      pluginExtensions: registry,
+      applicationExtensions,
+    });
+    expect(mergeCalls).toBe(1);
+    expect(
+      analysis.graph.applications.default.extensions[
+        "@company/single-resolution"
+      ],
+    ).toEqual({ count: 3 });
+  });
+
+  it("does not require an Application snapshot when the graph has no Application", async () => {
+    const plugin = definePlugin({
+      name: "application-extension-without-application",
+      describe(ctx) {
+        ctx.applicationExtension({
+          namespace: "@company/no-application",
+          defaults: { enabled: true },
+        });
+      },
+    });
+    const config = resolveConfig({
+      conventions: false,
+      plugins: [plugin],
+    });
+    const registry = collectPluginExtensionRegistry(config.plugins);
+
+    const analysis = await createCoreGraph(config, process.cwd(), {
+      pluginExtensions: registry,
+    });
+
+    expect(analysis.graph.applications).toEqual({});
+    expect(
+      analysis.graph.extensions.namespaces["@company/no-application"],
+    ).toEqual({
+      producer: "application-extension-without-application",
+      owners: ["application"],
+    });
+  });
+
+  it("exposes one Application extension contract across SPA, MPA, and route-tree migration", async () => {
+    const cwd = await fs.mkdtemp(
+      path.join(os.tmpdir(), "evjs-application-extension-"),
+    );
+    tempDirs.push(cwd);
+    await fs.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await Promise.all([
+      fs.writeFile(
+        path.join(cwd, "index.html"),
+        '<div id="app"></div>',
+        "utf-8",
+      ),
+      fs.writeFile(
+        path.join(cwd, "src/pages/page.tsx"),
+        "export default function Home() { return null; }",
+        "utf-8",
+      ),
+    ]);
+
+    const setupValues: unknown[] = [];
+    const contributionValues: unknown[] = [];
+    const routingModes: string[] = [];
+    const manifestValues: unknown[] = [];
+    const plugin = definePlugin({
+      name: "setup-application-extension",
+      describe(ctx) {
+        ctx.applicationExtension({
+          namespace: "@company/setup",
+          defaults: { enabled: false, channel: "web" },
+        });
+      },
+      setup(ctx) {
+        setupValues.push(ctx.config.extensions["@company/setup"]);
+      },
+      contributions(ctx) {
+        contributionValues.push(
+          ctx.framework.applications[0]?.extensions["@company/setup"],
+        );
+        routingModes.push(
+          ctx.framework.applications[0]?.routingMode ?? "missing",
+        );
+      },
+    });
+
+    const sources: Config[] = [
+      { routing: { mode: "spa" } },
+      { routing: { mode: "mpa" } },
+      {
+        application: {
+          routes: [{ path: "/", component: "./page" }],
+        },
+      },
+    ];
+    for (const source of sources) {
+      const prepared = await prepareFrameworkBuild(
+        {
+          ...source,
+          extensions: {
+            "@company/setup": { enabled: true },
+          },
+          plugins: [plugin],
+        },
+        { cwd },
+      );
+      try {
+        const manifest = JSON.parse(
+          await fs.readFile(path.join(cwd, ".ev/manifest.json"), "utf-8"),
+        ) as { graph: CoreGraph };
+        manifestValues.push(
+          manifest.graph.applications.default.extensions["@company/setup"],
+        );
+        expect(manifest.graph.extensions.namespaces["@company/setup"]).toEqual({
+          producer: "setup-application-extension",
+          owners: ["application"],
+        });
+      } finally {
+        await prepared.dispose();
+      }
+    }
+
+    expect(setupValues).toHaveLength(3);
+    expect(setupValues.every((value) => Object.isFrozen(value))).toBe(true);
+    expect(setupValues).toEqual([
+      { enabled: true, channel: "web" },
+      { enabled: true, channel: "web" },
+      { enabled: true, channel: "web" },
+    ]);
+    expect(contributionValues).toEqual(setupValues);
+    expect(manifestValues).toEqual(setupValues);
+    expect(routingModes).toEqual(["spa", "mpa", "spa"]);
+  });
+
+  it("uses the same resolved Application snapshot in inspect setup and graph", async () => {
+    const cwd = await fs.mkdtemp(
+      path.join(os.tmpdir(), "evjs-inspect-application-extension-"),
+    );
+    tempDirs.push(cwd);
+    await fs.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await Promise.all([
+      fs.writeFile(
+        path.join(cwd, "index.html"),
+        '<div id="app"></div>',
+        "utf-8",
+      ),
+      fs.writeFile(
+        path.join(cwd, "src/pages/page.tsx"),
+        "export default function Home() { return null; }",
+        "utf-8",
+      ),
+    ]);
+
+    const setupValues: unknown[] = [];
+    let mergeCalls = 0;
+    const plugin = definePlugin({
+      name: "inspect-application-extension",
+      describe(ctx) {
+        ctx.applicationExtension<
+          { enabled: boolean; mergeCall: number },
+          { enabled: boolean }
+        >({
+          namespace: "@company/inspect",
+          defaults: { enabled: false, mergeCall: 0 },
+          merge(_defaults, configured) {
+            mergeCalls += 1;
+            return { ...configured, mergeCall: mergeCalls };
+          },
+        });
+      },
+      setup(ctx) {
+        setupValues.push(ctx.config.extensions["@company/inspect"]);
+      },
+    });
+
+    const result = await inspectFrameworkBuild(
+      {
+        routing: { mode: "spa" },
+        extensions: {
+          "@company/inspect": { enabled: true },
+        },
+        plugins: [plugin],
+      },
+      { cwd },
+    );
+
+    expect(result.diagnostics).toEqual([]);
+    expect(mergeCalls).toBe(1);
+    expect(setupValues).toEqual([{ enabled: true, mergeCall: 1 }]);
+    expect(
+      result.graph.applications.default.extensions["@company/inspect"],
+    ).toEqual(setupValues[0]);
+  });
+});
+
 describe("plugin Page extensions", () => {
+  it("reuses only unchanged Page inputs within one resolution session", () => {
+    const calls = { defaults: 0, merge: 0, validate: 0 };
+    const plugin = definePlugin({
+      name: "page-resolution-session",
+      describe(ctx) {
+        ctx.pageExtension<
+          { text: string; options: { a: number; b: number } },
+          { text: string; options: { a: number; b: number } }
+        >({
+          namespace: "@company/session",
+          defaults() {
+            calls.defaults += 1;
+            return { text: "Default", options: { a: 0, b: 0 } };
+          },
+          merge(_defaults, configured) {
+            calls.merge += 1;
+            return configured;
+          },
+          validate() {
+            calls.validate += 1;
+          },
+        });
+      },
+    });
+    const registry = collectPluginExtensionRegistry([plugin]);
+    const extensionResolutionSession =
+      createPluginExtensionResolutionSession(registry);
+    expect(() =>
+      applyPluginExtensions(
+        createSpaGraph(),
+        collectPluginExtensionRegistry([plugin]),
+        { extensionResolutionSession },
+      ),
+    ).toThrow("must use the registry that created it");
+    const resolve = (
+      source: string,
+      configured: {
+        text: string;
+        options: { a: number; b: number };
+      },
+    ) =>
+      applyPluginExtensions(createSpaGraph(), registry, {
+        canonicalPages: {
+          home: {
+            source,
+            extensions: { "@company/session": configured },
+          },
+        },
+        extensionResolutionSession,
+      });
+
+    const first = resolve("./src/pages/page.config.ts", {
+      text: "Home",
+      options: { a: 1, b: 2 },
+    });
+    (
+      first.pages.home.extensions["@company/session"] as {
+        text: string;
+      }
+    ).text = "mutated";
+    const sameInput = resolve("./src/pages/page.config.ts", {
+      text: "Home",
+      options: { b: 2, a: 1 },
+    });
+
+    expect(sameInput.pages.home.extensions["@company/session"]).toEqual({
+      text: "Home",
+      options: { a: 1, b: 2 },
+    });
+    expect(calls).toEqual({ defaults: 1, merge: 1, validate: 1 });
+
+    resolve("./src/pages/page.config.ts", {
+      text: "Orders",
+      options: { a: 1, b: 2 },
+    });
+    resolve("./src/pages/renamed.config.ts", {
+      text: "Orders",
+      options: { a: 1, b: 2 },
+    });
+    expect(calls).toEqual({ defaults: 3, merge: 3, validate: 3 });
+  });
+
+  it("keeps the failed inspect contribution on its original Page snapshot", async () => {
+    const cwd = await fs.mkdtemp(
+      path.join(os.tmpdir(), "evjs-inspect-page-extension-failure-"),
+    );
+    tempDirs.push(cwd);
+    await fs.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await Promise.all([
+      fs.writeFile(
+        path.join(cwd, "index.html"),
+        '<div id="app"></div>',
+        "utf-8",
+      ),
+      fs.writeFile(
+        path.join(cwd, "src/pages/page.tsx"),
+        "export default function Home() { return null; }",
+        "utf-8",
+      ),
+      fs.writeFile(
+        path.join(cwd, "src/pages/page.config.ts"),
+        `export default {
+          extensions: {
+            "@company/inspect-page": { enabled: true },
+          },
+        };`,
+        "utf-8",
+      ),
+    ]);
+
+    let mergeCalls = 0;
+    const plugin = definePlugin({
+      name: "inspect-page-extension-failure",
+      describe(ctx) {
+        ctx.pageExtension<
+          { enabled: boolean; generation: number },
+          { enabled: boolean }
+        >({
+          namespace: "@company/inspect-page",
+          merge(_defaults, configured) {
+            mergeCalls += 1;
+            return { ...configured, generation: mergeCalls };
+          },
+        });
+      },
+      contributions() {
+        throw new Error("inspect contribution failed");
+      },
+    });
+
+    const result = await inspectFrameworkBuild(
+      {
+        routing: { mode: "spa" },
+        plugins: [plugin],
+      },
+      { cwd },
+    );
+
+    expect(mergeCalls).toBe(1);
+    expect(
+      result.graph.pages.index.extensions["@company/inspect-page"],
+    ).toEqual({
+      enabled: true,
+      generation: 1,
+    });
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        source: "contributions",
+        message: "inspect contribution failed",
+      }),
+    );
+  });
+
   it("resolves canonical Page config in dependency order", () => {
     const events: string[] = [];
     const dependent = definePlugin({
@@ -67,8 +641,8 @@ describe("plugin Page extensions", () => {
     });
 
     const registry = collectPluginExtensionRegistry([dependent, base]);
-    const resolved = applyPluginPageExtensions(createSpaGraph(), registry, {
-      canonical: {
+    const resolved = applyPluginExtensions(createSpaGraph(), registry, {
+      canonicalPages: {
         home: {
           source: "./src/pages/page.config.ts",
           metadata: undefined,
@@ -113,7 +687,7 @@ describe("plugin Page extensions", () => {
       },
     });
 
-    const resolved = applyPluginPageExtensions(
+    const resolved = applyPluginExtensions(
       createSpaGraph(),
       collectPluginExtensionRegistry([plugin]),
     );
@@ -125,6 +699,74 @@ describe("plugin Page extensions", () => {
     expect(resolved.extensions.namespaces["@company/theme"]).toEqual({
       producer: "defaults-only",
       owners: ["page"],
+    });
+  });
+
+  it("validates an isolated deeply frozen snapshot", () => {
+    type ExtensionValue = {
+      nested: { enabled: boolean };
+      labels: string[];
+    };
+    const mergedValue: ExtensionValue = {
+      nested: { enabled: true },
+      labels: ["stable"],
+    };
+    const plugin = definePlugin({
+      name: "isolated-validation",
+      describe(ctx) {
+        ctx.pageExtension<ExtensionValue, { enabled: boolean }>({
+          namespace: "@company/isolated-validation",
+          merge(_defaults, configured) {
+            mergedValue.nested.enabled = configured.enabled;
+            return mergedValue;
+          },
+          validate(value) {
+            expect(value).not.toBe(mergedValue);
+            expect(Object.isFrozen(value)).toBe(true);
+            expect(Object.isFrozen(value.nested)).toBe(true);
+            expect(Object.isFrozen(value.labels)).toBe(true);
+            expect(() => {
+              // @ts-expect-error validate receives a deeply read-only value.
+              value.nested.enabled = false;
+            }).toThrow(TypeError);
+            expect(() => {
+              // @ts-expect-error validate receives a read-only array.
+              value.labels.push("mutated");
+            }).toThrow(TypeError);
+
+            // Even a side-channel reference to the merge result cannot change
+            // the already-materialized extension value.
+            mergedValue.nested.enabled = false;
+            Object.defineProperty(mergedValue, "lossy", {
+              enumerable: true,
+              value: undefined,
+            });
+            return true;
+          },
+        });
+      },
+    });
+
+    const resolved = applyPluginExtensions(
+      createSpaGraph(),
+      collectPluginExtensionRegistry([plugin]),
+      {
+        canonicalPages: {
+          home: {
+            source: "./src/pages/page.config.ts",
+            extensions: {
+              "@company/isolated-validation": { enabled: true },
+            },
+          },
+        },
+      },
+    );
+
+    expect(
+      resolved.pages.home.extensions["@company/isolated-validation"],
+    ).toEqual({
+      nested: { enabled: true },
+      labels: ["stable"],
     });
   });
 
@@ -154,7 +796,7 @@ describe("plugin Page extensions", () => {
       },
     });
 
-    const resolved = applyPluginPageExtensions(
+    const resolved = applyPluginExtensions(
       createSpaGraph(),
       collectPluginExtensionRegistry([plugin]),
     );
@@ -175,32 +817,15 @@ describe("plugin Page extensions", () => {
       locale: "zh-CN",
     };
     const coreRoute = coreGraph.routes[0];
-    if (!coreRoute || coreRoute.realm !== "client") {
-      throw new Error("Expected client Route fixture.");
-    }
+    if (!coreRoute) throw new Error("Expected client Route fixture.");
     coreRoute.extensions["@company/menu"] = { name: "Home" };
     coreRoute.facets.layout = "./src/layout.tsx";
     coreRoute.facets.wrappers.push("./src/wrapper.tsx");
-    const rootRouteId = "@evjs/provider/page-anchor:root-layout";
-    coreGraph.routes.unshift({
-      realm: "client",
-      id: rootRouteId,
-      applicationId: "default",
-      pattern: { segments: [] },
-      target: { kind: "group" },
-      facets: { layout: "./src/root-layout.tsx", wrappers: [] },
-      extensions: {},
-      provenance: {
-        producer: { kind: "provider", id: PAGE_ANCHOR_PROVIDER_ID },
-        source: "./src/root-layout.tsx",
-      },
-    });
+    coreGraph.applications.default.layout = "./src/root-layout.tsx";
     const coreOnlyGroupId = "@evjs/provider/page-anchor:tenant-group";
-    coreGraph.routes.splice(1, 0, {
-      realm: "client",
+    coreGraph.routes.unshift({
       id: coreOnlyGroupId,
       applicationId: "default",
-      parentId: rootRouteId,
       pattern: {
         segments: [
           { kind: "param", name: "tenant" },
@@ -214,7 +839,6 @@ describe("plugin Page extensions", () => {
     });
     const aliasRouteId = "@evjs/provider/page-anchor:home-alias";
     coreGraph.routes.push({
-      realm: "client",
       id: aliasRouteId,
       applicationId: "default",
       pattern: { segments: [{ kind: "static", value: "start" }] },
@@ -223,10 +847,7 @@ describe("plugin Page extensions", () => {
       extensions: {},
       provenance: providerProvenance(PAGE_ANCHOR_PROVIDER_ID),
     });
-    coreGraph.applications.default.routeIds.unshift(
-      rootRouteId,
-      coreOnlyGroupId,
-    );
+    coreGraph.applications.default.routeIds.unshift(coreOnlyGroupId);
     coreGraph.applications.default.routeIds.push(aliasRouteId);
     coreGraph.extensions.namespaces["@company/application"] = {
       producer: "config-route-provider",
@@ -243,9 +864,10 @@ describe("plugin Page extensions", () => {
     expect(view.applications[0]).toEqual({
       id: "default",
       root: ".",
-      topology: "spa",
+      routingMode: "spa",
+      layout: "./src/root-layout.tsx",
       pageIds: ["home"],
-      routeIds: [rootRouteId, coreOnlyGroupId, "home", aliasRouteId],
+      routeIds: [coreOnlyGroupId, "home", aliasRouteId],
       documentIds: ["app:default"],
       extensions: {
         "@company/application": { locale: "zh-CN" },
@@ -283,25 +905,9 @@ describe("plugin Page extensions", () => {
     expect(homeRoute).not.toHaveProperty("module");
     expect(Object.isFrozen(homeRoute?.target)).toBe(true);
 
-    const rootRoute = view.routes.find((route) => route.id === rootRouteId);
-    expect(rootRoute).toMatchObject({
-      realm: "client",
-      id: rootRouteId,
-      applicationId: "default",
-      pattern: { segments: [] },
-      target: { kind: "group" },
-      facets: { layout: "./src/root-layout.tsx", wrappers: [] },
-      provenance: {
-        producer: { kind: "provider", id: PAGE_ANCHOR_PROVIDER_ID },
-        source: "./src/root-layout.tsx",
-      },
-      extensions: {},
-    });
     expect(
       view.routes.find((route) => route.id === coreOnlyGroupId),
     ).toMatchObject({
-      realm: "client",
-      parentId: rootRouteId,
       applicationId: "default",
       pattern: {
         segments: [
@@ -317,15 +923,13 @@ describe("plugin Page extensions", () => {
       target: { kind: "page", pageId: "home" },
       pattern: { segments: [{ kind: "static", value: "start" }] },
     });
-    expect(view.routes).toHaveLength(4);
+    expect(view.routes).toHaveLength(3);
   });
 
   it("does not leak a physical nested-layout parent into Core route views", () => {
     const coreGraph = createSpaGraph();
     const coreRoute = coreGraph.routes[0];
-    if (!coreRoute || coreRoute.realm !== "client") {
-      throw new Error("Expected client Route fixture.");
-    }
+    if (!coreRoute) throw new Error("Expected client Route fixture.");
     coreRoute.pattern = {
       segments: [{ kind: "static", value: "users" }],
     };
@@ -431,9 +1035,9 @@ describe("plugin Page extensions", () => {
     const nonSerializable = definePlugin({
       name: "non-serializable",
       describe(ctx) {
-        ctx.pageExtension({
+        ctx.pageExtension<unknown>({
           namespace: "@company/date",
-          defaults: new Date() as never,
+          defaults: new Date(),
         });
       },
     });
@@ -452,7 +1056,7 @@ describe("plugin Page extensions", () => {
       },
     });
     expect(() =>
-      applyPluginPageExtensions(
+      applyPluginExtensions(
         createSpaGraph(),
         collectPluginExtensionRegistry([invalid]),
       ),
@@ -470,7 +1074,7 @@ describe("plugin Page extensions", () => {
     const plugin = definePlugin({
       name: "lossy-json",
       describe(ctx) {
-        ctx.pageExtension({
+        ctx.pageExtension<unknown>({
           namespace: "@company/lossy",
           defaults,
         });
@@ -491,7 +1095,7 @@ describe("plugin Page extensions", () => {
     const hiddenPlugin = definePlugin({
       name: "hidden-defaults",
       describe(ctx) {
-        ctx.pageExtension({
+        ctx.pageExtension<unknown>({
           namespace: "@company/hidden-defaults",
           defaults: hiddenDefaults,
         });
@@ -513,7 +1117,7 @@ describe("plugin Page extensions", () => {
     const accessorPlugin = definePlugin({
       name: "accessor-defaults",
       describe(ctx) {
-        ctx.pageExtension({
+        ctx.pageExtension<unknown>({
           namespace: "@company/accessor-defaults",
           defaults: accessorDefaults,
         });
@@ -579,11 +1183,11 @@ describe("plugin Page extensions", () => {
     });
 
     expect(() =>
-      applyPluginPageExtensions(
+      applyPluginExtensions(
         createSpaGraph(),
         collectPluginExtensionRegistry([plugin]),
         {
-          canonical: {
+          canonicalPages: {
             home: {
               source: "./src/pages/page.config.ts",
               extensions: {
@@ -623,11 +1227,11 @@ describe("plugin Page extensions", () => {
     });
 
     expect(() =>
-      applyPluginPageExtensions(
+      applyPluginExtensions(
         createSpaGraph(),
         collectPluginExtensionRegistry([plugin]),
         {
-          canonical: {
+          canonicalPages: {
             home: {
               source: "./src/pages/page.config.ts",
               extensions: {
@@ -653,14 +1257,14 @@ describe("plugin Page extensions", () => {
     });
 
     expect(() =>
-      applyPluginPageExtensions(
+      applyPluginExtensions(
         createSpaGraph(),
         collectPluginExtensionRegistry([plugin]),
       ),
     ).toThrow("must return true, false, a message, or undefined");
   });
 
-  it("keeps canonical Page extensions and semantic routes topology-neutral", async () => {
+  it("keeps canonical Page extensions and semantic routes materialization-neutral", async () => {
     const cwd = await fs.mkdtemp(
       path.join(os.tmpdir(), "evjs-plugin-extensions-"),
     );
@@ -749,14 +1353,13 @@ describe("plugin Page extensions", () => {
     const spa = observations.get("spa");
     const mpa = observations.get("mpa");
     if (!spa || !mpa) {
-      throw new Error("Expected plugin observations for both topologies.");
+      throw new Error("Expected plugin observations for both routing modes.");
     }
 
     expect(mpa.pages).toEqual(spa.pages);
     expect(mpa.routes).toEqual(spa.routes);
     expect(spa.routes).toEqual([
       {
-        realm: "client",
         id: "about",
         applicationId: "default",
         pattern: { segments: [{ kind: "static", value: "about" }] },
@@ -772,7 +1375,6 @@ describe("plugin Page extensions", () => {
         },
       },
       {
-        realm: "client",
         id: "index",
         applicationId: "default",
         pattern: { segments: [] },
@@ -1012,7 +1614,6 @@ describe("plugin Page extensions", () => {
       });
       const route = manifest.graph.routes.find(
         (candidate) =>
-          candidate.realm === "client" &&
           candidate.target.kind === "page" &&
           candidate.target.pageId === "dashboard",
       );
@@ -1244,13 +1845,25 @@ describe("plugin Page extensions", () => {
     );
 
     const events: string[] = [];
+    const extensionEvents: string[] = [];
     let observed: unknown;
     const plugin = definePlugin<Record<string, never>>({
       name: "observable-extension",
       describe(ctx) {
         events.push("describe");
-        ctx.pageExtension({
+        ctx.pageExtension<{ text: string }, { text: string }>({
           namespace: "@company/title",
+          defaults() {
+            extensionEvents.push("defaults");
+            return { text: "Untitled" };
+          },
+          merge(_defaults, configured) {
+            extensionEvents.push("merge");
+            return configured;
+          },
+          validate() {
+            extensionEvents.push("validate");
+          },
         });
       },
       setup() {
@@ -1280,6 +1893,7 @@ describe("plugin Page extensions", () => {
     expect(events[1]).toBe("setup");
     expect(events.filter((event) => event === "describe")).toHaveLength(1);
     expect(events.filter((event) => event === "contributions").length).toBe(2);
+    expect(extensionEvents).toEqual(["defaults", "merge", "validate"]);
     expect(observed).toEqual({ text: "Home" });
     await prepared.dispose();
   });
@@ -1314,7 +1928,7 @@ function createSpaGraph(): CoreGraph {
       default: {
         id: "default",
         root: ".",
-        topology: "spa",
+        routingMode: "spa",
         pageIds: ["home"],
         routeIds: ["home"],
         documentIds: ["app:default"],
@@ -1338,7 +1952,6 @@ function createSpaGraph(): CoreGraph {
     },
     routes: [
       {
-        realm: "client",
         id: "home",
         applicationId: "default",
         pattern: { segments: [] },
@@ -1385,7 +1998,6 @@ function createCanonicalFrameworkSnapshot(framework: FrameworkIRView) {
       .sort((left, right) => left.id.localeCompare(right.id)),
     routes: framework.routes
       .map((route) => ({
-        realm: route.realm,
         id: route.id,
         applicationId: route.applicationId,
         ...(route.parentId ? { parentId: route.parentId } : {}),

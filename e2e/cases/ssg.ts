@@ -77,7 +77,7 @@ const test = base.extend<
 
 const expectedPages = [
   {
-    fileName: "forecast.html",
+    fileName: "forecast/index.html",
     heading: "Build-Time Revenue Forecast",
     id: "forecast",
     path: "/forecast",
@@ -85,7 +85,7 @@ const expectedPages = [
   },
   {
     description: "A nested APAC operations snapshot generated as static HTML.",
-    fileName: "regions_apac.html",
+    fileName: "regions/apac/index.html",
     heading: "APAC Operations Snapshot",
     id: "regions_apac",
     path: "/regions/apac",
@@ -93,7 +93,7 @@ const expectedPages = [
   },
   {
     description: "A commerce report rendered as static HTML during ev build.",
-    fileName: "report.html",
+    fileName: "report/index.html",
     heading: "Build-Time Commerce Report",
     id: "report",
     path: "/report",
@@ -131,9 +131,9 @@ test.describe("ssg", () => {
       ]),
     );
 
-    expect(
-      fs.readdirSync(path.join(exampleDir, "dist", "client")).sort(),
-    ).toEqual(["forecast.html", "regions_apac.html", "report.html"]);
+    expect(listRelativeFiles(path.join(exampleDir, "dist", "client"))).toEqual(
+      expectedPages.map((page) => page.fileName).sort(),
+    );
     expect(
       fs.existsSync(path.join(exampleDir, "dist", "build-output.json")),
     ).toBe(false);
@@ -152,7 +152,8 @@ test.describe("ssg", () => {
       expect(html).toContain(`>${page.title}</title>`);
       if ("description" in page) {
         expect(html).toContain(`content="${page.description}"`);
-        expect(html).toContain('data-evjs-page-metadata="meta"');
+        // Static documents do not need SPA metadata restoration markers.
+        expect(html).not.toContain("data-evjs-page-metadata");
       } else {
         expect(html).not.toContain('meta name="description"');
       }
@@ -230,4 +231,24 @@ function getRequestPathname(url: string): string {
   } catch {
     return url.split("?")[0] || "/";
   }
+}
+
+function listRelativeFiles(root: string): string[] {
+  const files: string[] = [];
+
+  function visit(directory: string, relativeDirectory = ""): void {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const relativePath = relativeDirectory
+        ? `${relativeDirectory}/${entry.name}`
+        : entry.name;
+      if (entry.isDirectory()) {
+        visit(path.join(directory, entry.name), relativePath);
+      } else {
+        files.push(relativePath);
+      }
+    }
+  }
+
+  visit(root);
+  return files.sort();
 }

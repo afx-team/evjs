@@ -2,12 +2,16 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  BIGFISH_ROUTE_EXTENSION_ID,
   CONFIG_ROUTE_PROVIDER_ID,
+  linkBuildOutput,
   type PagesAppEntryMetadata,
 } from "@evjs/shared/manifest";
 import { afterEach, describe, expect, it } from "vitest";
 import { GENERATED_PAGES_APP_BUILD_ENTRY } from "../src/_internal/build/build-entry-conventions.js";
 import { prepareFrameworkBuild } from "../src/_internal/build/commands.js";
+import { createFrameworkHtmlDocument } from "../src/_internal/build/framework-html-document.js";
+import { createClientRuntime } from "../src/_internal/build/framework-runtime.js";
 import { createConfigRouteGraph } from "../src/_internal/build/graph/config-route.js";
 import { createCoreGraph } from "../src/_internal/build/graph/index.js";
 import { createBuildPlan } from "../src/_internal/build/plan/index.js";
@@ -24,6 +28,36 @@ afterEach(async () => {
 });
 
 describe("Bigfish SPA migration route graph", () => {
+  it("targets the canonical Page at application.pageRoot", async () => {
+    const cwd = await createFixture({
+      "index.html": '<main id="app"></main>',
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "src/pages/page.config.ts": `
+        export default { title: "Home" };
+      `,
+    });
+    const config = resolveConfig({
+      application: {
+        routes: [{ path: "/", page: "." }],
+      },
+    });
+    const { graph } = await createCoreGraph(config, cwd);
+
+    expect(graph.pages.index).toMatchObject({
+      id: "index",
+      source: {
+        module: "./src/pages/page.tsx",
+        scope: { kind: "directory", root: "./src/pages" },
+      },
+      metadata: { title: "Home" },
+    });
+    expect(graph.routes).toContainEqual(
+      expect.objectContaining({
+        target: { kind: "page", pageId: "index" },
+      }),
+    );
+  });
+
   it("normalizes one source profile into Pages, Routes, and one Document", async () => {
     const cwd = await createFixture({
       "app.html": '<main id="root"></main>',
@@ -58,7 +92,7 @@ describe("Bigfish SPA migration route graph", () => {
     const graph = await createConfigRouteGraph(config, cwd);
     expect(graph.applications.default).toMatchObject({
       id: "default",
-      topology: "spa",
+      routingMode: "spa",
       pageIds: expect.arrayContaining(["home", "users_detail"]),
       documentIds: ["index"],
     });
@@ -72,18 +106,12 @@ describe("Bigfish SPA migration route graph", () => {
     });
     expect(graph.extensions).toEqual({ namespaces: {} });
 
-    const rootLayout = graph.routes.find(
-      (route) => route.id === `${CONFIG_ROUTE_PROVIDER_ID}:root-layout`,
-    );
-    expect(rootLayout).toMatchObject({
-      realm: "client",
-      target: { kind: "group" },
-      facets: { layout: "./src/layouts/AppLayout.tsx", wrappers: [] },
+    expect(graph.applications.default).toMatchObject({
+      layout: "./src/layouts/AppLayout.tsx",
     });
     expect(
       graph.routes.some(
         (route) =>
-          route.realm === "client" &&
           route.target.kind === "page" &&
           route.target.pageId === "users_detail" &&
           route.pattern.segments.some(
@@ -92,11 +120,143 @@ describe("Bigfish SPA migration route graph", () => {
           route.facets.layout === false,
       ),
     ).toBe(true);
+    expect(graph.routes.some((route) => route.target.kind === "redirect")).toBe(
+      true,
+    );
+  });
+
+  it("analyzes the Application layout import closure", async () => {
+    const cwd = await createFixture({
+      "index.html": '<main id="app"></main>',
+      "src/layouts/AppLayout.tsx": `
+        import { saveLayoutState } from "./actions.server";
+        void saveLayoutState;
+        export default function AppLayout({ children }) { return children; }
+      `,
+      "src/layouts/actions.server.ts": `
+        "use server";
+        export async function saveLayoutState() {}
+      `,
+      "src/pages/home/page.tsx":
+        "export default function Home() { return null; }",
+    });
+    const config = resolveConfig({
+      application: {
+        layout: "@/layouts/AppLayout",
+        routes: [{ path: "/", page: "home" }],
+      },
+    });
+
+    const analysis = await createCoreGraph(config, cwd);
+
+    expect(analysis.graph.serverFunctions).toContainEqual(
+      expect.objectContaining({
+        module: "src/layouts/actions.server.ts",
+        exportName: "saveLayoutState",
+      }),
+    );
+    expect(analysis.fileDependencies).toEqual(
+      expect.arrayContaining([
+        path.join(cwd, "src/layouts/AppLayout.tsx"),
+        path.join(cwd, "src/layouts/actions.server.ts"),
+      ]),
+    );
+  });
+
+  it("retains strict Bigfish metadata on the semantic Route extension", async () => {
+    const cwd = await createFixture({
+      "index.html": '<div id="app"></div>',
+      "src/layouts/Section.tsx":
+        "export default function Section({ children }) { return children; }",
+      "src/pages/home/page.tsx":
+        "export default function Home() { return null; }",
+    });
+    const config = resolveConfig({
+      application: {
+        routes: [
+          {
+            path: "/home",
+            page: "home",
+            layout: "@/layouts/Section",
+            name: "首页",
+            icon: "home",
+            title: "Home",
+            hideInMenu: false,
+            flatMenu: true,
+            spmBPos: { a226: "b1", a1853: "b2" },
+            access: "canReadHome",
+            menuKey: { spcenter: null, merchant_b: "" },
+            menuAssetOptions: {
+              source: "route",
+              nested: { enabled: true },
+            },
+            exact: true,
+          },
+        ],
+      },
+    });
+
+    const graph = await createConfigRouteGraph(config, cwd);
+    expect(graph.extensions.namespaces).toEqual({
+      [BIGFISH_ROUTE_EXTENSION_ID]: {
+        producer: CONFIG_ROUTE_PROVIDER_ID,
+        owners: ["route"],
+      },
+    });
+    const pageRoute = graph.routes.find(
+      (route) => route.target.kind === "page" && route.target.pageId === "home",
+    );
+    expect(pageRoute?.extensions).toEqual({
+      [BIGFISH_ROUTE_EXTENSION_ID]: {
+        name: "首页",
+        icon: "home",
+        title: "Home",
+        hideInMenu: false,
+        flatMenu: true,
+        spmBPos: { a226: "b1", a1853: "b2" },
+        access: "canReadHome",
+        menuKey: { spcenter: null, merchant_b: "" },
+        menuAssetOptions: {
+          source: "route",
+          nested: { enabled: true },
+        },
+      },
+    });
     expect(
-      graph.routes.some(
-        (route) => route.realm === "client" && route.target.kind === "redirect",
-      ),
-    ).toBe(true);
+      pageRoute?.extensions[BIGFISH_ROUTE_EXTENSION_ID],
+    ).not.toHaveProperty("exact");
+    const layoutRoute = graph.routes.find(
+      (route) =>
+        route.target.kind === "group" &&
+        route.facets.layout === "./src/layouts/Section.tsx",
+    );
+    expect(layoutRoute?.extensions).toEqual({});
+  });
+
+  it.each([
+    "__proto__",
+    "constructor",
+    "prototype",
+  ])('rejects unsafe Bigfish nested metadata key "%s"', (key) => {
+    const menuAssetOptions = Object.create(null) as Record<string, unknown>;
+    Object.defineProperty(menuAssetOptions, key, {
+      enumerable: true,
+      value: true,
+    });
+
+    expect(() =>
+      resolveConfig({
+        application: {
+          routes: [
+            {
+              path: "/home",
+              page: "home",
+              menuAssetOptions,
+            },
+          ],
+        },
+      } as never),
+    ).toThrow("not a safe config field");
   });
 
   it("loads only adjacent page.config.ts and ignores Smallfish config.json", async () => {
@@ -209,6 +369,34 @@ describe("Bigfish SPA migration route graph", () => {
       scope: { kind: "directory", root: "./src/pages/legacy" },
       provider: CONFIG_ROUTE_PROVIDER_ID,
     });
+  });
+
+  it("keeps a direct Bigfish component module as a module-scoped Page", async () => {
+    const cwd = await createFixture({
+      "index.html": '<div id="app"></div>',
+      "src/pages/403.tsx":
+        "export default function Forbidden() { return null; }",
+    });
+    const config = resolveConfig({
+      application: {
+        routes: [{ path: "/403", component: "./403" }],
+      },
+    });
+
+    const graph = await createConfigRouteGraph(config, cwd);
+    expect(graph.pages["403"]?.source).toEqual({
+      module: "./src/pages/403.tsx",
+      scope: { kind: "module", file: "./src/pages/403.tsx" },
+      provider: CONFIG_ROUTE_PROVIDER_ID,
+    });
+    expect(graph.routes).toContainEqual(
+      expect.objectContaining({
+        pattern: {
+          segments: [{ kind: "static", value: "403" }],
+        },
+        target: { kind: "page", pageId: "403" },
+      }),
+    );
   });
 
   it("uses explicit Bigfish path syntax and diagnoses the target file convention", async () => {
@@ -384,6 +572,89 @@ describe("Bigfish SPA migration route graph", () => {
     ]);
   });
 
+  it("preserves SPA metadata baselines for application.routes Page documents", async () => {
+    const cwd = await createFixture({
+      "app.html": `<!doctype html>
+        <html>
+          <head>
+            <title>Application baseline</title>
+            <meta name="viewport" content="width=device-width">
+          </head>
+          <body><main id="app"></main></body>
+        </html>`,
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+        export default {
+          render: "ssg",
+          hydrate: "load",
+          title: "Report",
+          meta: { viewport: "width=device-width, initial-scale=1" },
+        };
+      `,
+    });
+    const config = resolveConfig({
+      application: {
+        document: { template: "./app.html" },
+        routes: [{ path: "/report", page: "report" }],
+      },
+    });
+    const graph = (await createCoreGraph(config, cwd)).graph;
+    const plan = createBuildPlan(config, graph, {
+      mode: "production",
+      buildId: "config-route-metadata",
+    });
+    const output = linkBuildOutput({
+      graph,
+      plan,
+      firstClientEntryAssets: { js: ["main.js"], css: [] },
+    });
+    const htmlPlan = plan.html.find(
+      (candidate) => candidate.owner.pageId === "report",
+    );
+    if (!htmlPlan) {
+      throw new Error("Expected an SSG Page document.");
+    }
+
+    expect(config.routing).toBeUndefined();
+    expect(plan.entries).toContainEqual(
+      expect.objectContaining({
+        kind: "app-client",
+        owner: { appId: "default" },
+      }),
+    );
+
+    const doc = createFrameworkHtmlDocument({
+      cwd,
+      config,
+      output,
+      plan,
+      html: {
+        documentId: htmlPlan.id,
+        applicationId: "default",
+        owner: { kind: "page", pageId: "report" },
+        template: htmlPlan.template,
+        fileName: htmlPlan.fileName,
+        assets: output.pages.report.assets,
+      },
+      clientRuntime: createClientRuntime(output),
+    });
+
+    expect(doc.querySelector("title")?.textContent).toBe("Report");
+    expect(
+      doc
+        .querySelector("title")
+        ?.getAttribute("data-evjs-page-metadata-baseline"),
+    ).toBe("Application baseline");
+    const viewport = doc.querySelector('meta[name="viewport"]');
+    expect(viewport?.getAttribute("content")).toBe(
+      "width=device-width, initial-scale=1",
+    );
+    expect(viewport?.getAttribute("data-evjs-page-metadata-baseline")).toBe(
+      "width=device-width",
+    );
+  });
+
   it("materializes graph-derived route types and the generated SPA facade", async () => {
     const cwd = await createFixture({
       "index.html": '<div id="app"></div>',
@@ -423,14 +694,14 @@ describe("Bigfish SPA migration route graph", () => {
         "utf-8",
       );
       expect(entrySource).toContain(
-        'import * as routeModule0 from "../../src/layouts/AppLayout";',
+        'import * as rootModule from "../../src/layouts/AppLayout";',
       );
       expect(entrySource).toContain(
-        'import * as routeWrapperModule1_0 from "../../src/wrappers/Auth";',
+        'import * as routeWrapperModule0_0 from "../../src/wrappers/Auth";',
       );
       expect(entrySource).toContain('path: "/users/$userId"');
       expect(entrySource).toContain("layout: false");
-      expect(entrySource).toContain('app.render("#app")');
+      expect(entrySource).toContain('startPagesApp(app, "#app")');
 
       const routeTypes = await fs.readFile(
         path.join(cwd, "src/route-types.d.ts"),

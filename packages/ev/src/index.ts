@@ -4,9 +4,10 @@
 
 export type {
   Config,
-  PageExtensionConfig,
+  ConfigExtensionNamespace,
+  ConfigExtensionValues,
   PageFileConfig,
   PageMetadata,
-  StaticPageConfigValue,
+  StaticConfigValue,
 } from "./config/index.js";
 export { defineConfig, definePageConfig } from "./config/index.js";

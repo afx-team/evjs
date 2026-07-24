@@ -14,16 +14,17 @@ import {
   type Config,
   type DefaultBundlerConfig,
   type ResolvedConfig,
+  type ResolvedFrameworkConfig,
   resolveBundlerConfig,
   resolveConfig,
 } from "../../config/index.js";
-import {
-  type CliFlags,
-  createBuildResult,
-  type PluginContext,
-  type PluginHooks,
+import type {
+  CliFlags,
+  PluginContext,
+  PluginHooks,
 } from "../../plugin/index.js";
 import { analyzeAndMaterializeFrameworkIR } from "./analyze-and-materialize.js";
+import { createBuildResult } from "./build-result.js";
 import {
   type BundlerAdapter,
   type BundlerDevController,
@@ -58,7 +59,10 @@ import {
 import type { createFrameworkRuntime } from "./framework-runtime.js";
 import type { createCoreGraph } from "./graph/index.js";
 import { type CreateBuildPlanOptions, diffBuildPlan } from "./plan/index.js";
-import { collectPluginExtensionRegistry } from "./plugin-extensions.js";
+import {
+  collectPluginExtensionRegistry,
+  resolvePluginExtensionState,
+} from "./plugin-extensions.js";
 import {
   collectPluginHooks,
   hasSamePluginIdentity,
@@ -129,7 +133,7 @@ export interface PreparedFrameworkBuild<TBundlerCfg = DefaultBundlerConfig> {
   cwd: string;
   mode: "development" | "production";
   command: "dev" | "build";
-  config: ResolvedConfig<TBundlerCfg>;
+  config: ResolvedFrameworkConfig<TBundlerCfg>;
   fileDependencies: string[];
   pluginWatchFiles: string[];
   dispose(): Promise<void>;
@@ -170,6 +174,8 @@ function isEmptyPlanUpdate(update: BuildPlanUpdate): boolean {
     update.html.changed.length === 0 &&
     !update.generatedChanged &&
     !update.resolveChanged &&
+    !update.runtimeChanged &&
+    !update.deliveryChanged &&
     !update.serverChanged
   );
 }
@@ -306,10 +312,14 @@ async function prepareInternalFrameworkBuild<
       "[evjs] No bundler configured. Pass a bundler adapter in ev.config.ts or through dev/build options.",
     );
   }
-  const config = bundler
+  const baseConfig = bundler
     ? withActiveBundler(resolvedConfig, bundler)
     : resolvedConfig;
-  const pluginExtensions = collectPluginExtensionRegistry(config.plugins);
+  const {
+    registry: pluginExtensions,
+    applicationExtensions,
+    config,
+  } = resolvePluginExtensionState(baseConfig);
   const pluginWatchFiles = new Set<string>();
   const pluginContext: PluginContext<TBundlerCfg> = {
     mode,
@@ -342,6 +352,7 @@ async function prepareInternalFrameworkBuild<
       config,
       pluginContext,
       pluginExtensions,
+      applicationExtensions,
       plan: options.plan,
       onAnalysis: reportGraphDiagnostics,
     });
@@ -583,10 +594,13 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   logDevPortSelection(devPorts);
 
   const bundler = resolveBundler(resolvedConfig.bundler, options?.bundler);
-  let activeConfig = withActiveBundler(resolvedConfig, bundler);
-  let activePluginExtensions = collectPluginExtensionRegistry(
-    activeConfig.plugins,
-  );
+  const baseActiveConfig = withActiveBundler(resolvedConfig, bundler);
+  const initialPluginExtensionState =
+    resolvePluginExtensionState(baseActiveConfig);
+  let activePluginExtensions = initialPluginExtensionState.registry;
+  let activeApplicationExtensions =
+    initialPluginExtensionState.applicationExtensions;
+  let activeConfig = initialPluginExtensionState.config;
 
   const pluginWatchFiles = new Set<string>();
   const addWatchFile = (file: string) => {
@@ -614,6 +628,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       config: activeConfig,
       pluginContext: pluginCtx,
       pluginExtensions: activePluginExtensions,
+      applicationExtensions: activeApplicationExtensions,
       plan: { distDir: DEV_DIST_DIR },
       onAnalysis: reportGraphDiagnostics,
     });
@@ -796,6 +811,15 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       nextConfig.plugins,
       nextPluginCtx,
     );
+    try {
+      await runBuildStartHooks(nextHooks, nextPluginCtx);
+    } catch (error) {
+      return rethrowAfterCleanup(
+        error,
+        () => runDisposeHooks(nextHooks, nextPluginCtx),
+        "[evjs] Plugin reload buildStart failed and rollback also failed.",
+      );
+    }
 
     hooks.splice(0, hooks.length, ...nextHooks);
     pluginWatchFiles.clear();
@@ -867,15 +891,29 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       ? "config"
       : "route-declaration";
 
-    const nextConfig = await loadCurrentConfig();
-    if (!hasSamePluginIdentity(activeConfig.plugins, nextConfig.plugins)) {
+    const baseNextConfig = await loadCurrentConfig();
+    if (!hasSamePluginIdentity(activeConfig.plugins, baseNextConfig.plugins)) {
       logger.warn`Plugin configuration changed. Please restart ev dev to apply plugin additions, removals, or reordering.`;
       return;
     }
 
     const nextPluginExtensions = isConfigChange
-      ? collectPluginExtensionRegistry(nextConfig.plugins)
+      ? collectPluginExtensionRegistry(baseNextConfig.plugins)
       : activePluginExtensions;
+    let nextApplicationExtensions = activeApplicationExtensions;
+    let nextConfig: ResolvedFrameworkConfig<TBundlerCfg> = {
+      ...baseNextConfig,
+      extensions: activeApplicationExtensions,
+    };
+    if (isConfigChange) {
+      const nextPluginExtensionState = resolvePluginExtensionState(
+        baseNextConfig,
+        nextPluginExtensions,
+      );
+      nextApplicationExtensions =
+        nextPluginExtensionState.applicationExtensions;
+      nextConfig = nextPluginExtensionState.config;
+    }
 
     validateHtmlTemplates(cwd, nextConfig);
     let stagedPluginHooks:
@@ -897,6 +935,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
             config: nextConfig,
           },
           pluginExtensions: nextPluginExtensions,
+          applicationExtensions: nextApplicationExtensions,
           plan: { distDir: DEV_DIST_DIR },
           onAnalysis: reportGraphDiagnostics,
         });
@@ -904,6 +943,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       if (isEmptyPlanUpdate(update)) {
         activeConfig = nextConfig;
         activePluginExtensions = nextPluginExtensions;
+        activeApplicationExtensions = nextApplicationExtensions;
         activeAnalysis = nextAnalysis;
         activePlan = nextPlan;
         pluginCtx.config = nextConfig;
@@ -919,6 +959,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
 
       const previousConfig = activeConfig;
       const previousPluginExtensions = activePluginExtensions;
+      const previousApplicationExtensions = activeApplicationExtensions;
       const previousAnalysis = activeAnalysis;
       const previousPlan = activePlan;
 
@@ -927,6 +968,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
 
       activeConfig = nextConfig;
       activePluginExtensions = nextPluginExtensions;
+      activeApplicationExtensions = nextApplicationExtensions;
       activeAnalysis = nextAnalysis;
       activePlan = nextPlan;
 
@@ -935,6 +977,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       } catch (err) {
         activeConfig = previousConfig;
         activePluginExtensions = previousPluginExtensions;
+        activeApplicationExtensions = previousApplicationExtensions;
         activeAnalysis = previousAnalysis;
         activePlan = previousPlan;
         pluginCtx.config = previousConfig;

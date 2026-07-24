@@ -92,7 +92,11 @@ describe("loadConfigFile", () => {
   it("reloads JavaScript ESM config files without native ESM cache staleness", async () => {
     const cwd = await createFixture({
       "package.json": JSON.stringify({ type: "module" }),
-      "ev.config.mjs": `export default { html: "./first.html" };`,
+      "settings.mjs": `export const html = "./first.html";`,
+      "ev.config.mjs": `
+        import { html } from "./settings.mjs";
+        export default { html };
+      `,
     });
     const configPath = path.join(cwd, "ev.config.mjs");
 
@@ -100,7 +104,10 @@ describe("loadConfigFile", () => {
       html: "./first.html",
     });
 
-    await fs.writeFile(configPath, `export default { html: "./second.html" };`);
+    await fs.writeFile(
+      path.join(cwd, "settings.mjs"),
+      `export const html = "./second.html";`,
+    );
 
     await expect(loadConfigFile(configPath)).resolves.toMatchObject({
       html: "./second.html",

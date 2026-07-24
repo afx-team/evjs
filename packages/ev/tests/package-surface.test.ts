@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import * as buildTools from "../src/_internal/build/index.js";
 import * as publicBuildTools from "../src/build-tools/index.js";
 import * as evRoot from "../src/index.js";
+import * as pluginAuthoring from "../src/plugin/index.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -227,10 +228,8 @@ const expectedBuildToolsRuntimeExports = [
   "loadConfigFile",
   "materializeFrameworkIR",
   "prepareFrameworkBuild",
-  "resolveRoutes",
   "transformRscClientFile",
   "transformServerFile",
-  "transpileTypeScriptConfig",
   "validateHtmlTemplate",
 ] as const;
 
@@ -305,7 +304,7 @@ const expectedPackageExportSubpaths = {
   "@evjs/plugin-qiankun": [".", "./runtime"],
   "@evjs/bundler-utoopack": ["."],
   "@evjs/bundler-webpack": ["."],
-  "@evjs/shared": [".", "./manifest"],
+  "@evjs/shared": [".", "./_internal/static-json", "./manifest"],
 } as const satisfies Record<PackageName, readonly string[]>;
 
 describe("workspace package surface", () => {
@@ -510,6 +509,8 @@ describe("workspace package surface", () => {
   });
 
   it("keeps plugin authoring types on one canonical public vocabulary", async () => {
+    expect(Object.keys(pluginAuthoring).sort()).toEqual(["definePlugin"]);
+
     const pluginSource = await fs.readFile(
       path.join(repoRoot, "packages/ev/src/plugin/index.ts"),
       "utf-8",

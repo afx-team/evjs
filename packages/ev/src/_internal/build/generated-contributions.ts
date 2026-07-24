@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { assertStaticJsonValue } from "@evjs/shared/_internal/static-json";
 import type {
   BuildEntry,
   BuildPlan,
@@ -21,12 +22,11 @@ import type {
   HtmlTagName,
   HtmlTagPlacement,
   HtmlTagSlotPlanItem,
-  PagesAppEntryMetadata,
-  ReactComponentPageEntryMetadata,
+  PageWrapperSlotPlanItem,
   ServerAppEntryMetadata,
   ServerMiddlewareNode,
 } from "@evjs/shared/manifest";
-import type { ResolvedConfig } from "../../config/index.js";
+import type { ResolvedFrameworkConfig } from "../../config/index.js";
 import type {
   ContributionContext,
   EmitApi,
@@ -35,7 +35,6 @@ import type {
   FrameworkEntryOwner,
   FrameworkEntryView,
   FrameworkIRView,
-  FrameworkPageAppRouteView,
   FrameworkRouteView,
   FrameworkSlot,
   FrameworkSlotInput,
@@ -45,7 +44,13 @@ import type {
   Plugin,
   PluginContext,
 } from "../../plugin/index.js";
-import { assertJsonSerializable } from "./strict-json.js";
+import {
+  createOriginalClientEntryFacadeSource,
+  createPagesAppEntryMainSource,
+  createReactComponentPageEntryMainSource,
+} from "./generated/client-entry-source.js";
+import { applyPageWrapperContributions } from "./generated/page-wrapper-contribution.js";
+import { createReactServerPageEntrySource } from "./generated/react-server-page-source.js";
 import { toPosixPath } from "./utils.js";
 
 export const GENERATED_IR_DIR = ".ev";
@@ -55,6 +60,7 @@ export const GENERATED_IR_TYPES = "types.d.ts";
 const generatedModuleRefSymbol = Symbol.for("evjs.generated.module.ref");
 const FRAMEWORK_SLOT_NAMES = [
   "client.entry",
+  "page.wrapper",
   "server.request.middleware",
   "html.tag",
   "resolve.alias",
@@ -72,7 +78,7 @@ const CONTRIBUTION_RUNTIMES = [
   "server",
   "all",
 ] as const satisfies readonly ContributionRuntime[];
-const CLIENT_ENTRY_RUNTIMES = ["client", "all"] as const;
+const CLIENT_ENTRY_RUNTIMES = ["client"] as const;
 const CLIENT_ENTRY_MODES = ["import", "replace"] as const;
 const HTML_TAG_NAMES = [
   "meta",
@@ -127,13 +133,16 @@ interface InternalGeneratedModuleRef {
   readonly key: string;
 }
 
-type TargetedSlotPlanItem = ClientEntrySlotPlanItem | HtmlTagSlotPlanItem;
+type TargetedSlotPlanItem =
+  | ClientEntrySlotPlanItem
+  | PageWrapperSlotPlanItem
+  | HtmlTagSlotPlanItem;
 
 interface MaterializeFrameworkIROptions<TBundlerCfg> {
   cwd: string;
   mode: "development" | "production";
   command: "dev" | "build";
-  config: ResolvedConfig<TBundlerCfg>;
+  config: ResolvedFrameworkConfig<TBundlerCfg>;
   graph: CoreGraph;
   plan: BuildPlan;
   plugins: Plugin<TBundlerCfg>[];
@@ -163,8 +172,10 @@ export async function materializeFrameworkIR<TBundlerCfg>(
   collector.validateTargets();
 
   const generated = collector.toGeneratedPlan();
+  applyPageWrapperContributions(plan, options.graph, generated);
   applyResolveContributions(plan, generated);
   ensureServerEntryForMiddlewareContributions(plan, generated);
+  assertUniqueBuildEntryNames(plan.entries);
   plan.generated = generated;
   const entries = createGeneratedEntryPlans(plan, generated);
   generated.entries = entries;
@@ -224,7 +235,7 @@ class ContributionCollector<TBundlerCfg> {
       cwd: string;
       mode: "development" | "production";
       command: "dev" | "build";
-      config: ResolvedConfig<TBundlerCfg>;
+      config: ResolvedFrameworkConfig<TBundlerCfg>;
       graph: CoreGraph;
       plan: BuildPlan;
       pluginContext: PluginContext<TBundlerCfg>;
@@ -307,7 +318,6 @@ class ContributionCollector<TBundlerCfg> {
         const pageId = target.pageId;
         const route = this.options.graph.routes.find(
           (candidate) =>
-            candidate.realm === "client" &&
             candidate.target.kind === "page" &&
             candidate.target.pageId === pageId,
         );
@@ -321,9 +331,13 @@ class ContributionCollector<TBundlerCfg> {
 
       if (
         slot.slot === "html.tag" &&
-        !this.options.plan.html.some((document) =>
-          targetMatchesHtmlOwner(target, document.owner),
-        )
+        ![
+          ...this.options.plan.html.map((document) => document.owner),
+          ...(this.options.plan.server.documents ?? []).map((document) => ({
+            appId: document.applicationId,
+            pageId: document.pageId,
+          })),
+        ].some((owner) => targetMatchesHtmlOwner(target, owner))
       ) {
         if (target.kind === "application") {
           const application = target.applicationId
@@ -336,7 +350,6 @@ class ContributionCollector<TBundlerCfg> {
         const pageId = target.pageId;
         const route = this.options.graph.routes.find(
           (candidate) =>
-            candidate.realm === "client" &&
             candidate.target.kind === "page" &&
             candidate.target.pageId === pageId,
         );
@@ -400,7 +413,7 @@ class ContributionCollector<TBundlerCfg> {
       },
       data: (input) => {
         const id = validateContributionId(input.id, pluginName);
-        assertJsonSerializable(
+        assertStaticJsonValue(
           input.value,
           `Plugin "${pluginName}" generated data "${id}" value`,
         );
@@ -529,6 +542,30 @@ class ContributionCollector<TBundlerCfg> {
             item.mode ?? "import",
             CLIENT_ENTRY_MODES,
             `${base.key}.mode`,
+          ),
+          ...(item.target
+            ? { target: validateContributionTarget(item.target) }
+            : {}),
+        };
+      }
+      case "page.wrapper": {
+        const item = input as FrameworkSlotInput<"page.wrapper">;
+        assertGeneratedModuleOrString(pluginName, item.id, item.module);
+        return {
+          ...base,
+          slot: name,
+          module: this.resolveModuleValue(
+            item.module,
+            {
+              from: base.key,
+              kind: "slot-module",
+            },
+            "file",
+          ),
+          runtime: validateEnum(
+            item.runtime ?? "all",
+            CONTRIBUTION_RUNTIMES,
+            `${base.key}.runtime`,
           ),
           ...(item.target
             ? { target: validateContributionTarget(item.target) }
@@ -746,7 +783,11 @@ class ContributionCollector<TBundlerCfg> {
 function isTargetedSlotPlanItem(
   slot: FrameworkSlotPlanItem,
 ): slot is TargetedSlotPlanItem {
-  return slot.slot === "client.entry" || slot.slot === "html.tag";
+  return (
+    slot.slot === "client.entry" ||
+    slot.slot === "page.wrapper" ||
+    slot.slot === "html.tag"
+  );
 }
 
 async function writeGeneratedIR(
@@ -944,9 +985,8 @@ export function createFrameworkIRView(
 function createFrameworkRouteViews(
   graph: CoreGraph,
 ): FrameworkIRView["routes"] {
-  return graph.routes.filter(isCoreClientRoute).map(
+  return graph.routes.map(
     (route): FrameworkRouteView => ({
-      realm: "client",
       id: route.id,
       applicationId: route.applicationId,
       ...(route.parentId !== undefined ? { parentId: route.parentId } : {}),
@@ -957,12 +997,6 @@ function createFrameworkRouteViews(
       extensions: cloneJson(route.extensions),
     }),
   );
-}
-
-function isCoreClientRoute(
-  route: CoreGraph["routes"][number],
-): route is Extract<CoreGraph["routes"][number], { realm: "client" }> {
-  return route.realm === "client";
 }
 
 function createFrameworkApplicationViews(
@@ -977,7 +1011,8 @@ function createCoreApplicationView(
   return {
     id: application.id,
     root: application.root,
-    topology: application.topology,
+    routingMode: application.routingMode,
+    ...(application.layout ? { layout: application.layout } : {}),
     pageIds: [...application.pageIds],
     routeIds: [...application.routeIds],
     documentIds: [...application.documentIds],
@@ -1153,8 +1188,26 @@ function ensureServerEntryForMiddlewareContributions(
   ) {
     return;
   }
-  if (plan.entries.some((entry) => entry.metadata?.type === "server-app"))
+  const serverEntries = plan.entries.filter(
+    (entry) => entry.kind === "server-runtime",
+  );
+  if (serverEntries.length > 1) {
+    throw new Error(
+      `[evjs] Framework plan has multiple server-runtime entries: ${serverEntries
+        .map((entry) => `"${entry.name}"`)
+        .join(", ")}.`,
+    );
+  }
+  const existing = serverEntries[0];
+  if (existing) {
+    if (existing.metadata?.type !== "server-app") {
+      existing.metadata = {
+        type: "server-app",
+        routes: [],
+      };
+    }
     return;
+  }
 
   plan.entries.push({
     name: "server",
@@ -1171,6 +1224,18 @@ function ensureServerEntryForMiddlewareContributions(
     ...plan.server,
     entry: "./.ev/entries/server.ts",
   };
+}
+
+function assertUniqueBuildEntryNames(entries: BuildEntry[]): void {
+  const names = new Set<string>();
+  for (const entry of entries) {
+    if (names.has(entry.name)) {
+      throw new Error(
+        `[evjs] Framework plan contains duplicate build entry name "${entry.name}" after applying plugin contributions.`,
+      );
+    }
+    names.add(entry.name);
+  }
 }
 
 function createGeneratedEntryPlans(
@@ -1254,13 +1319,17 @@ function createEntrySource(
   plan: BuildPlan,
 ): string {
   const fromFile = path.resolve(cwd, generatedEntry.file);
+  function importFile(file: string): string {
+    return toGeneratedImportSpecifier(cwd, fromFile, file);
+  }
+
   if (entry.metadata?.type === "pages-app") {
     return createClientEntrySource({
       cwd,
       entry,
       fromFile,
       plan,
-      mainSource: createPagesAppMainSource(cwd, fromFile, entry.metadata),
+      mainSource: createPagesAppEntryMainSource(entry.metadata, importFile),
     });
   }
   if (entry.metadata?.type === "react-component-page") {
@@ -1269,22 +1338,24 @@ function createEntrySource(
       entry,
       fromFile,
       plan,
-      mainSource: createReactComponentPageMainSource(
-        cwd,
-        fromFile,
+      mainSource: createReactComponentPageEntryMainSource(
         entry.metadata,
+        importFile,
       ),
     });
+  }
+  if (entry.metadata?.type === "react-server-page") {
+    return createReactServerPageEntrySource(
+      entry.metadata,
+      entry.kind,
+      importFile,
+    );
   }
   if (entry.metadata?.type === "server-app") {
     return createServerAppEntrySource(cwd, fromFile, entry.metadata, plan);
   }
   if (entry.environment === "client") {
-    const original = toGeneratedImportSpecifier(
-      cwd,
-      fromFile,
-      generatedEntry.originalImport,
-    );
+    const original = importFile(generatedEntry.originalImport);
     return createClientEntrySource({
       cwd,
       entry,
@@ -1365,175 +1436,6 @@ function createClientEntrySource(options: {
   ]
     .filter(Boolean)
     .join("\n");
-}
-
-function createOriginalClientEntryFacadeSource(
-  entry: BuildEntry,
-  importFile: (file: string) => string,
-): string {
-  if (entry.metadata?.type === "pages-app") {
-    return createPagesAppMainSourceFromImportFile(
-      entry.metadata,
-      importFile,
-    ).join("\n");
-  }
-  if (entry.metadata?.type === "react-component-page") {
-    return createReactComponentPageMainSourceFromImportFile(
-      entry.metadata,
-      importFile,
-    ).join("\n");
-  }
-  return `import ${JSON.stringify(importFile(entry.import))};`;
-}
-
-function createPagesAppMainSource(
-  cwd: string,
-  fromFile: string,
-  metadata: PagesAppEntryMetadata,
-): string[] {
-  return createPagesAppMainSourceFromImportFile(metadata, (file) =>
-    toGeneratedImportSpecifier(cwd, fromFile, file),
-  );
-}
-
-function createPagesAppMainSourceFromImportFile(
-  metadata: PagesAppEntryMetadata,
-  importFile: (file: string) => string,
-): string[] {
-  const imports = [
-    `import { createPagesApp } from "@evjs/ev/_internal/client";`,
-    metadata.rootModule
-      ? `import * as rootModule from ${JSON.stringify(
-          importFile(metadata.rootModule),
-        )};`
-      : "",
-    ...metadata.routes.flatMap((route, index) =>
-      route.module
-        ? [
-            `import * as routeModule${index} from ${JSON.stringify(
-              importFile(route.module),
-            )};`,
-          ]
-        : [],
-    ),
-    ...metadata.routes.flatMap((route, routeIndex) =>
-      (route.wrappers ?? []).map(
-        (wrapper, wrapperIndex) =>
-          `import * as routeWrapperModule${routeIndex}_${wrapperIndex} from ${JSON.stringify(
-            importFile(wrapper),
-          )};`,
-      ),
-    ),
-    ...metadata.routes.flatMap((route, index) => [
-      route.errorModule
-        ? `import * as routeErrorModule${index} from ${JSON.stringify(
-            importFile(route.errorModule),
-          )};`
-        : "",
-      route.notFoundModule
-        ? `import * as routeNotFoundModule${index} from ${JSON.stringify(
-            importFile(route.notFoundModule),
-          )};`
-        : "",
-    ]),
-  ].filter(Boolean);
-
-  const routeDefinitions = metadata.routes.map((route, index) => {
-    let routeKind: FrameworkPageAppRouteView["kind"] = route.kind;
-    if (!routeKind && route.target?.kind === "group") {
-      routeKind = "group";
-    } else if (!routeKind && route.target?.kind === "redirect") {
-      routeKind = "redirect";
-    }
-    const properties = [
-      route.id ? `id: ${JSON.stringify(route.id)}` : "",
-      `path: ${JSON.stringify(route.path)}`,
-      route.parentId ? `parentId: ${JSON.stringify(route.parentId)}` : "",
-      routeKind ? `kind: ${JSON.stringify(routeKind)}` : "",
-      route.module
-        ? `module: ${createRouteModuleExpression(route, index)}`
-        : "",
-      route.target?.kind === "redirect"
-        ? `redirect: ${JSON.stringify(route.target.to)}`
-        : "",
-      route.wrappers && route.wrappers.length > 0
-        ? `wrappers: [${route.wrappers
-            .map(
-              (_, wrapperIndex) => `routeWrapperModule${index}_${wrapperIndex}`,
-            )
-            .join(", ")}]`
-        : "",
-      route.layout === false ? "layout: false" : "",
-      route.metadata ? `metadata: ${JSON.stringify(route.metadata)}` : "",
-    ].filter(Boolean);
-    return `{ ${properties.join(", ")} }`;
-  });
-
-  return [
-    ...imports,
-    "",
-    "const { app } = createPagesApp({",
-    metadata.rootModule ? "  rootModule," : "",
-    `  routes: [${routeDefinitions.join(", ")}],`,
-    "});",
-    `app.render(${JSON.stringify(metadata.mount)});`,
-    "export { app };",
-    "export default app;",
-  ].filter(Boolean);
-}
-
-function createReactComponentPageMainSource(
-  cwd: string,
-  fromFile: string,
-  metadata: ReactComponentPageEntryMetadata,
-): string[] {
-  return createReactComponentPageMainSourceFromImportFile(metadata, (file) =>
-    toGeneratedImportSpecifier(cwd, fromFile, file),
-  );
-}
-
-function createReactComponentPageMainSourceFromImportFile(
-  metadata: ReactComponentPageEntryMetadata,
-  importFile: (file: string) => string,
-): string[] {
-  const component = importFile(metadata.component);
-  const layouts = metadata.layouts ?? [];
-  const entryOptions = {
-    mount: metadata.mount,
-    hydrate: metadata.hydrate,
-    render: metadata.render,
-    ...(metadata.route ? { route: metadata.route } : {}),
-  };
-  return [
-    `import * as pageModule from ${JSON.stringify(component)};`,
-    ...layouts.map(
-      (layout, index) =>
-        `import * as layoutModule${index} from ${JSON.stringify(importFile(layout))};`,
-    ),
-    ...(layouts.length > 0 ? [`import { createElement } from "react";`] : []),
-    `import { createGeneratedReactPageEntry } from "@evjs/ev/_internal/client/react-page";`,
-    "",
-    'const Component = pageModule.default ?? Reflect.get(pageModule, "Page");',
-    `if (!Component) throw new Error(${JSON.stringify(`[evjs] Page module "${metadata.component}" must export a default component or a named Page component.`)});`,
-    ...layouts.flatMap((layout, index) => [
-      `const Layout${index} = layoutModule${index}.default;`,
-      `if (!Layout${index}) throw new Error(${JSON.stringify(`[evjs] MPA layout module "${layout}" must export a default component.`)});`,
-    ]),
-    ...(layouts.length > 0
-      ? [
-          "function PageWithLayouts() {",
-          "  let child = createElement(Component);",
-          ...layouts.map(
-            (_, index) =>
-              `  child = createElement(Layout${layouts.length - index - 1}, undefined, child);`,
-          ),
-          "  return child;",
-          "}",
-        ]
-      : []),
-    `const mod = createGeneratedReactPageEntry(${layouts.length > 0 ? "PageWithLayouts" : "Component"}, ${JSON.stringify(entryOptions)}, import.meta.url);`,
-    "export default mod;",
-  ];
 }
 
 function createServerAppEntrySource(
@@ -1636,30 +1538,6 @@ function createServerAppEntrySource(
     "export const fetch = app.fetch;",
     "export default { fetch };",
   ].join("\n");
-}
-
-function createRouteModuleExpression(
-  route: PagesAppEntryMetadata["routes"][number],
-  index: number,
-): string {
-  if (!route.module) {
-    throw new Error(
-      `[evjs] Generated Application Route "${route.id}" has no module.`,
-    );
-  }
-  const properties = [];
-  if (route.errorModule) {
-    properties.push(
-      `errorComponent: routeErrorModule${index}.default ?? routeErrorModule${index}.errorComponent`,
-    );
-  }
-  if (route.notFoundModule) {
-    properties.push(
-      `notFoundComponent: routeNotFoundModule${index}.default ?? routeNotFoundModule${index}.notFoundComponent`,
-    );
-  }
-  if (properties.length === 0) return `routeModule${index}`;
-  return `{ ${properties.join(", ")}, ...routeModule${index} }`;
 }
 
 function getMatchingClientEntrySlots(

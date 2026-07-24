@@ -25,9 +25,11 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
    directory determines Page scope and URL. `routing.mode` selects SPA or MPA
    output without changing semantic Page or Route identity. Optional adjacent
    `page.config.ts` provides static title/named metadata, build-time rendering
-   settings, and namespaced plugin extensions in both modes. Colocated files
-   such as `components/index.tsx` stay Page-private because only `page.*` is a
-   Page anchor. `src/apis` plus `server.routing` owns server
+   settings, and namespaced Page extensions in both modes. Top-level
+   `config.extensions` provides namespaced Application extensions. Plugins
+   register both owner kinds declaratively and explicitly project any runtime
+   behavior. Colocated files such as `components/index.tsx` stay Page-private
+   because only `page.*` is a Page anchor. `src/apis` plus `server.routing` owns server
    file routes; `src/middleware.ts` owns framework request middleware;
    `src/apis/**/middleware.ts` owns API route middleware for server file routes.
 2. `@evjs/ev` is the framework control plane for config, plugin hooks, graph
@@ -80,6 +82,7 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 | `defineConfig(config)` | `@evjs/ev` | Type-safe `ev.config.ts` helper |
 | `routing.mode` + `src/pages/**/page.*` | `@evjs/ev` | Unified SPA/MPA Page ownership, file routing, and materialization |
 | `definePageConfig()` + `page.config.ts` | `@evjs/ev` | Static title/named metadata, rendering settings, and namespaced Page extensions |
+| `config.extensions` + `applicationExtension()` | `@evjs/ev`, `@evjs/ev/plugin` | Static namespaced Application configuration resolved before plugin setup |
 | `src/apis` + `server.routing` | `@evjs/ev` | File-based server route source; users write Request/Response method modules |
 | `createPagesApp()` | `@evjs/ev/_internal/client` | Internal/framework-managed page route runtime used by generated SPA entries |
 | `Link`, page hooks | `@evjs/ev/navigation`, `@evjs/ev/route` | Public Page authoring APIs for navigation, params, search, and loader data |
@@ -104,7 +107,8 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
    `$...splat`, and `(group)`. Bigfish route config and explicit
    `application.routes` are SPA-only route-tree migration inputs and must
    normalize to the same Page/Route/Application/Document graph. They never
-   select MPA materialization. Smallfish and evjs 0.2
+   select MPA materialization. Accept current Umi/Bigfish `routes` nesting and
+   reject the historical `children` spelling. Smallfish and evjs 0.2
    applications must first rename or move published entries to `page.*`, move
    Page configuration to `page.config.ts`, and then configure only
    `routing.mode`.
@@ -122,8 +126,11 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
    `createReactFrameworkServer()` unless an adapter intentionally owns that
    contract.
 11. Reintroducing public packages for build tools, manifest helpers, router
-   glue, or runtime internals. Prefer top-level public APIs or subpath exports
-   on the existing package that owns the behavior.
+    glue, or runtime internals. Prefer top-level public APIs or subpath exports
+    on the existing package that owns the behavior.
+12. Putting executable callbacks or secrets in Application/Page extension
+    values. CoreGraph extensions are strict static JSON; use typed plugin
+    factory options or explicit module references for executable behavior.
 
 ## Testing
 

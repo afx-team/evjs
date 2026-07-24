@@ -28,6 +28,7 @@ import { getFrameworkRuntimeRoutes } from "./framework.js";
 
 const PAGE_METADATA_ATTRIBUTE = "data-evjs-page-metadata";
 const PAGE_METADATA_CREATED_ATTRIBUTE = "data-evjs-page-metadata-created";
+const PAGE_HYDRATION_ATTRIBUTE = "data-evjs-hydrate";
 
 export interface PageProviderProps<
   TParams extends Record<string, string> = Record<string, string>,
@@ -714,8 +715,20 @@ function renderDefaultDocument(
   props: Record<string, unknown>,
 ): string {
   const mount = resolveMount(ctx.page?.mount);
+  const runtimeData = renderRequestRuntimeData(ctx, props, mount);
+  const document = ctx.page?.document;
+  if (document) {
+    return [
+      document.beforeContent,
+      appHtml,
+      document.betweenContentAndData,
+      runtimeData,
+      document.afterData,
+    ].join("");
+  }
+
   const assets = ctx.page?.assets ?? emptyAssets();
-  const rscBootstrap = createRscBootstrap(ctx, mount);
+  const hydrationAttribute = renderPageHydrationAttribute(ctx.page, assets);
 
   return [
     "<!doctype html>",
@@ -731,13 +744,8 @@ function renderDefaultDocument(
     ),
     "</head>",
     "<body>",
-    `<div ${mount.attribute}="${escapeHtmlAttr(mount.value)}">${appHtml}</div>`,
-    `<script id="__EVJS_PAGE_PROPS__" type="application/json">${serializePageProps(props)}</script>`,
-    ...(rscBootstrap
-      ? [
-          `<script id="__EVJS_RSC_BOOTSTRAP__" type="application/json">${serializePageProps(rscBootstrap)}</script>`,
-        ]
-      : []),
+    `<div ${mount.attribute}="${escapeHtmlAttr(mount.value)}"${hydrationAttribute}>${appHtml}</div>`,
+    runtimeData,
     ...assets.js.map(
       (asset) =>
         `<script defer src="${escapeHtmlAttr(assetHref(ctx.runtime, asset))}"></script>`,
@@ -745,6 +753,40 @@ function renderDefaultDocument(
     "</body>",
     "</html>",
   ].join("");
+}
+
+function renderRequestRuntimeData(
+  ctx: ReactServerRenderContext,
+  props: Record<string, unknown>,
+  mount: {
+    attribute: "id" | "data-evjs-mount";
+    value: string;
+  },
+): string {
+  const rscBootstrap = createRscBootstrap(ctx, mount);
+  return [
+    `<script id="__EVJS_PAGE_PROPS__" type="application/json">${serializePageProps(props)}</script>`,
+    ...(rscBootstrap
+      ? [
+          `<script id="__EVJS_RSC_BOOTSTRAP__" type="application/json">${serializePageProps(rscBootstrap)}</script>`,
+        ]
+      : []),
+  ].join("");
+}
+
+function renderPageHydrationAttribute(
+  page: FrameworkPageRuntime | undefined,
+  assets: FrameworkAssetGroup,
+): string {
+  if (
+    !page ||
+    page.render === "csr" ||
+    page.rendering.hydrate === "none" ||
+    assets.js.length === 0
+  ) {
+    return "";
+  }
+  return ` ${PAGE_HYDRATION_ATTRIBUTE}="${page.rendering.hydrate}"`;
 }
 
 /**

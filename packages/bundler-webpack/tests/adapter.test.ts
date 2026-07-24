@@ -613,7 +613,7 @@ describe("webpackAdapter build", () => {
       });
       expect(output.pages.dashboard).toMatchObject({
         assets: {
-          js: [],
+          js: ["main.js"],
           css: [],
         },
         hydrate: "load",
@@ -667,7 +667,9 @@ describe("webpackAdapter build", () => {
       expect(html).toContain('<meta name="html-kind" content="application">');
       const response = await requestServerEntry(cwd, output, "/dashboard");
       expect(response.status).toBe(200);
-      expect(await response.text()).toContain('<div id="app">dashboard</div>');
+      expect(await response.text()).toContain(
+        '<div id="app" data-evjs-hydrate="load">dashboard</div>',
+      );
       await expect(
         fs.access(path.join(cwd, "dist/client/stats.json")),
       ).resolves.toBeUndefined();
@@ -714,7 +716,7 @@ describe("webpackAdapter build", () => {
       expect(response.status).toBe(200);
       const text = await response.text();
       expect(text).toContain(
-        '<div id="app"><h1>SSR <!-- -->dashboard</h1></div>',
+        '<div id="app" data-evjs-hydrate="load"><h1>SSR <!-- -->dashboard</h1></div>',
       );
     },
   );

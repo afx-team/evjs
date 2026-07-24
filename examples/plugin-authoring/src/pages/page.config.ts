@@ -2,7 +2,7 @@ import { definePageConfig } from "@evjs/ev";
 
 export default definePageConfig({
   extensions: {
-    "@example/page-metadata": {
+    "@example/metadata": {
       label: "Configured by page.config.ts",
     },
   },

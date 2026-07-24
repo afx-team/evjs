@@ -30,7 +30,7 @@ export default defineConfig({
 ## Plugin Shape
 
 ```ts
-import type { Config, DefaultBundlerConfig, ResolvedConfig } from "@evjs/ev/config";
+import type { Config, DefaultBundlerConfig, ResolvedFrameworkConfig } from "@evjs/ev/config";
 import type { ContributionContext, Plugin, PluginConfigContext, PluginContext, PluginDescribeContext, PluginHooks } from "@evjs/ev/plugin";
 
 interface Plugin<TBundlerConfig = DefaultBundlerConfig> {
@@ -61,11 +61,64 @@ Plugin names must be unique. `config` and `setup` must be functions when
 provided. `dependencies` and `optionalDependencies` control ordering and are
 applied to both `config()` and `setup()` hooks. Dependency lists must contain
 unique, non-empty plugin names; the same plugin name cannot appear in both
-`dependencies` and `optionalDependencies`. Extra plugin object metadata is
-ignored by evjs so plugins can keep package-local metadata fields. `describe`
-is a reserved framework hook when present.
+`dependencies` and `optionalDependencies`. Unknown plugin descriptor fields
+are rejected so misspelled hooks cannot become silent no-ops. Keep
+package-local metadata outside the `Plugin` object. `describe` is a reserved
+framework hook when present.
 
-## Page Extensions
+## Application And Page Extensions
+
+Application-wide plugin configuration is authored once in top-level
+`config.extensions`:
+
+```ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  routing: { mode: "spa" },
+  extensions: {
+    "@company/analytics": {
+      endpoint: "/events",
+    },
+  },
+  plugins: [analyticsPlugin()],
+});
+```
+
+The plugin registers that namespace with `applicationExtension()`:
+
+```ts
+import { definePlugin } from "@evjs/ev/plugin";
+
+export const analyticsPlugin = definePlugin({
+  name: "analytics",
+
+  describe(api) {
+    api.applicationExtension({
+      namespace: "@company/analytics",
+      defaults: { endpoint: "/events", debug: false },
+    });
+  },
+
+  setup(ctx) {
+    // Defaults, merge, validation, cloning, and freezing are complete here.
+    const config = ctx.config.extensions["@company/analytics"];
+    console.log(config);
+  },
+
+  contributions(ctx) {
+    const value =
+      ctx.framework.applications[0]?.extensions["@company/analytics"];
+    console.log(value);
+  },
+});
+```
+
+Application extensions resolve before `setup()` and then project to the
+normalized Application. The same contract applies to SPA, MPA, and the
+Bigfish route-tree migration input.
+
+Page-specific configuration remains adjacent to its canonical Page.
 
 A plugin can register a namespaced Page extension consumed from canonical
 `page.config.ts` in both SPA and MPA:
@@ -123,11 +176,15 @@ not select an API version or runtime path. `describe()` uses the same
 plugin hook. It runs after plugin ordering and before `setup()`. In dev it runs
 again when plugin configuration is reloaded. It must be idempotent and
 synchronous; defaults functions, `merge`, and `validate` must also return
-synchronously so graph construction stays deterministic.
+synchronously so graph construction stays deterministic. Within one framework
+analysis, alias convergence reuses the first validated extension snapshot for
+each unchanged Page owner input instead of invoking those callbacks again. A
+later dev re-analysis creates a new resolution scope.
 
-When `merge` is omitted, plain-object defaults and configured values are
+`applicationExtension()` and `pageExtension()` use the same declaration
+contract. When `merge` is omitted, plain-object defaults and configured values are
 shallow-merged with configured fields winning. A non-object configured value
-replaces the default. When a Page omits the namespace, defaults are
+replaces the default. When an owner omits the namespace, defaults are
 materialized directly and custom `merge` is not invoked; its `configured`
 argument therefore always represents an explicitly authored value. Custom
 `merge` handles other authored source shapes. `validate` may return
@@ -135,7 +192,13 @@ argument therefore always represents an explicitly authored value. Custom
 must be strictly JSON-serializable; functions, symbols, bigint, non-finite
 numbers, class instances, sparse arrays, and cycles are rejected.
 
-Page extensions resolve against the same normalized CoreGraph as every other
+One namespace has one producing plugin. That plugin may register the same
+namespace once for Application and once for Page ownership; the declarations
+must use the same `schemaVersion`. Repeating an owner or claiming the namespace
+from another plugin is an error. This supports capabilities with both global
+and per-Page settings without creating a second config system.
+
+Extensions resolve against the same normalized CoreGraph as every other
 framework capability. Canonical `page.tsx` anchors provide that graph in both
 modes; explicit route-tree migration inputs must normalize into it first. In
 `contributions()`, `ctx.framework.applications`, `.pages`, and client `.routes`
@@ -144,8 +207,10 @@ expose their resolved, read-only `extensions` bags.
 The extension bag is build-time graph data, not an automatic runtime payload.
 A plugin that needs browser behavior must explicitly emit the minimal
 generated data/module and attach it through a supported contribution. Plugins
-must account for topology: a SPA Page does not own an independent client entry
-or HTML Document merely because it has Page config.
+must account for `routingMode`: a SPA Page does not own an independent client
+entry or HTML Document merely because it has Page config. Functions and other
+executable options belong in a typed plugin factory or explicit module
+reference, and secrets must not enter graph extensions.
 
 The plugin API does not yet implement `transformGraph`, typed runtime-hook
 registration, semantic facet APIs, or generic extension-owned entries. Those
@@ -192,7 +257,7 @@ interface PluginContext<TBundlerConfig = DefaultBundlerConfig> {
   mode: "development" | "production";
   command: "dev" | "build";
   cwd: string;
-  config: ResolvedConfig<TBundlerConfig>;
+  config: ResolvedFrameworkConfig<TBundlerConfig>;
   logger: Logger;
   addWatchFile(file: string): void;
 }
@@ -212,6 +277,7 @@ flowchart TB
     Config["config()"]
     Resolve["resolve config"]
     Describe["describe()\nper plugin config generation"]
+    AppExtensions["resolve Application extensions"]
     Setup["setup()"]
   end
 
@@ -232,14 +298,14 @@ flowchart TB
     Dispose["dispose()"]
   end
 
-  Config --> Resolve --> Describe --> Setup --> BuildStart --> Graph --> BuildPlan
+  Config --> Resolve --> Describe --> AppExtensions --> Setup --> BuildStart --> Graph --> BuildPlan
   BuildPlan --> Contributions --> IR --> BundlerConfig --> Bundler
   Bundler --> BuildOutput --> HTML --> BuildEnd --> Dispose
 
   classDef config fill:#eef6ff,stroke:#8fb5e8,color:#102a43;
   classDef plan fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
   classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
-  class Config,Resolve,Describe,Setup config;
+  class Config,Resolve,Describe,AppExtensions,Setup config;
   class BuildStart,Graph,BuildPlan,Contributions,IR plan;
   class BundlerConfig,Bundler,BuildOutput,HTML,BuildEnd,Dispose build;
 ```
@@ -261,7 +327,7 @@ framework slots.
 
 Use `contributions()` when a plugin needs to extend the generated `.ev` IR.
 This is the right layer for entry imports and explicit installers, HTML tags,
-framework request middleware, and semantic
+semantic Page wrappers, framework request middleware, and semantic
 resolution changes. Keep loaders for real bundler transforms such as compiling a
 custom file type.
 
@@ -293,7 +359,7 @@ Application, Page, and client Route views expose resolved namespaced
 resolved Page values are therefore available before `contributions()`
 materializes generated code.
 
-The Application view also exposes its `root`, `topology`, and owned Page,
+The Application view also exposes its `root`, `routingMode`, and owned Page,
 Route, and Document ids. An MPA therefore appears as one logical
 Application with many Pages and Documents, not as unrelated entries. Client
 Route views come from CoreGraph and include normalized patterns,
@@ -371,6 +437,7 @@ Available slots:
 | Slot | Purpose |
 |------|---------|
 | `client.entry` | Add generated modules around the client entry at `polyfill`, `before-main-imports`, `after-main-imports`, `before-main`, or `after-main` |
+| `page.wrapper` | Wrap semantic Pages on the selected `client`, `server`, or `all` runtime projections |
 | `server.request.middleware` | Add framework request middleware to the server pipeline |
 | `html.tag` | Add structured `meta`, `link`, `script`, or `style` tags |
 | `resolve.alias` | Redirect a module specifier to a user module, package, absolute path, or generated module |
@@ -379,12 +446,42 @@ Available slots:
 Use `client.entry` when a generated entry must import a side-effect module or
 call an explicit installer. evjs does not expose an inert runtime-plugin
 registry; new runtime behavior requires an executable installer or a
-feature-specific typed hook.
+feature-specific typed hook. Its runtime is only `"client"`; `"all"` is not
+accepted because this slot has no server projection.
 
-Explicit application/page targets are validated against the selected materialization
-point. A semantic SPA page shares its client entry and Document with the
-application, so page-targeted entry or HTML contributions are rejected until a
-page-module or route-runtime facet exists.
+Use `page.wrapper` when a plugin wraps the Page component itself:
+
+```ts
+contributions(ctx) {
+  ctx.slot("page.wrapper").add({
+    id: "auth-boundary",
+    module: "./src/plugin/AuthBoundary.tsx",
+    runtime: "all",
+    target: { kind: "application", applicationId: "default" },
+  });
+}
+```
+
+The module must default-export a component that accepts `children`. Application
+targets expand to their Pages; Page targets select one semantic Page. Client
+projection means SPA route composition or an MPA Page client entry. Server
+projection means each SSR, SSG, PPR-shell, or RSC Page renderer. A runtime
+filter that has no matching projection fails instead of becoming inert.
+
+Wrapper contributions run in plugin/contribution order with the same transform
+semantics as wrapping a component: a later contribution wraps an earlier one.
+Route-declared layouts and wrappers remain outside contributed Page wrappers.
+The normalized `layers` metadata records the resulting outer-to-inner order for
+both MPA client entries and server Page entries.
+
+Explicit application/page targets are validated against the selected
+materialization point. A semantic SPA Page shares its client entry with the
+Application, so page-targeted client-entry contributions remain unavailable
+without an independent Page entry. A CSR SPA Page also shares the Application
+Document and therefore rejects page-targeted HTML contributions. An
+SSR/PPR/RSC SPA Page has a build-compiled, Page-specific request-time document
+shell, so page-targeted `html.tag` contributions and `transformHtml` handling
+apply to that shell.
 
 `resolve.external` accepts `runtime: "client" | "server" | "all"`. The
 Webpack adapter applies that filter per target. The current Utoopack adapter
@@ -398,8 +495,9 @@ HTML rewrites, and deployment output.
 
 ## HTML Transform Context
 
-`transformHtml()` receives one parsed document per output HTML file. Branch on
-`ctx.owner.kind` instead of guessing from filenames.
+`transformHtml()` receives one parsed document for each emitted static HTML
+file and for each Page-specific request-time document shell compiled during
+the build. Branch on `ctx.owner.kind` instead of guessing from filenames.
 
 ```ts
 transformHtml(doc, ctx) {
@@ -420,7 +518,8 @@ Context fields include:
 - `ctx.documentId` and `ctx.applicationId`;
 - `ctx.owner`: `{ kind: "application" }`,
   `{ kind: "page", pageId }`, or `{ kind: "extension", extensionId }`;
-- `ctx.fileName` and `ctx.template`;
+- `ctx.fileName` and `ctx.template`; `fileName` is a logical Document filename
+  for a request-time shell and is not emitted as a static file;
 - `ctx.assets`;
 - `ctx.output`: the current build output;
 - `ctx.buildId` and `ctx.publicPath`.

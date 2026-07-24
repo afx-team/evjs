@@ -31,7 +31,9 @@
 - Framework-owned applications use one Page-and-Route file convention. Pages
   live at `src/pages/**/page.*`; the containing directory determines Page scope
   and URL, optional `page.config.ts` owns build-time Page capabilities, and
-  `routing.mode` selects SPA/MPA output. Server file routes remain
+  `routing.mode` selects SPA/MPA output. Plugin-owned static data uses
+  top-level Application `extensions` or Page-local `page.config.ts`
+  `extensions`; both normalize into the same CoreGraph registry. Server file routes remain
   under `src/apis`, framework request middleware in `src/middleware.ts`, API
   route middleware in `src/apis/**/middleware.ts`, and server functions in
   reachable `"use server"` modules.
@@ -140,6 +142,18 @@ and adapters depend on `@evjs/ev` instead of on each other.
    middleware with `src/apis/**/middleware.ts`, not route-module middleware
    exports.
 
+### Add plugin-owned configuration
+
+1. Put Application-wide static values in top-level `config.extensions`; put
+   Page-local values in adjacent `page.config.ts` `extensions`.
+2. Register each owner through `applicationExtension()` or `pageExtension()`
+   from the plugin's synchronous `describe()` hook.
+3. Keep extension values strict JSON. Pass callbacks through typed plugin
+   factory options or explicit module references instead.
+4. Read resolved Application values from `ctx.config.extensions` in `setup()`;
+   read normalized Application/Page values from `ctx.framework` in
+   `contributions()`.
+
 ### Migrate a stored Page application
 
 1. Establish one directory for every published URL and move or rename its
@@ -170,7 +184,9 @@ materialization and new examples use the canonical Page tree.
 
 ```txt
 load ev.config.ts
-run config/setup hooks
+run config hooks and resolve framework defaults
+register and resolve Application extensions
+run setup hooks
 createCoreGraph()
 createBuildPlan()
 selected bundler builds the BuildPlan

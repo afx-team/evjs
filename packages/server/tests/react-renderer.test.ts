@@ -54,6 +54,19 @@ function usePageSearch<TSearch extends Record<string, unknown>>(): TSearch {
   return usePageContext().search as TSearch;
 }
 
+function readHtml(result: unknown): string {
+  if (
+    !result ||
+    typeof result !== "object" ||
+    result instanceof Response ||
+    !("html" in result) ||
+    typeof result.html !== "string"
+  ) {
+    throw new Error("Expected HTML render result.");
+  }
+  return result.html;
+}
+
 describe("createReactServerRenderAdapter", () => {
   it("rejects invalid server render adapter options", () => {
     expect(() => createReactServerRenderAdapter(null as never)).toThrow(
@@ -70,6 +83,28 @@ describe("createReactServerRenderAdapter", () => {
       } as never),
     ).toThrow(
       "[evjs] createReactServerRenderAdapter() renderDocument must be a function.",
+    );
+  });
+
+  it.each([
+    "visible",
+    "idle",
+  ])("rejects the unsupported %s framework hydration mode", (hydrate) => {
+    const runtime = createManifest();
+    runtime.routing.pages.home = {
+      assets: { js: ["home.js"], css: [] },
+      render: "ssr",
+      rendering: {
+        component: "server",
+        html: "server",
+        streaming: false,
+        hydrate: "load",
+      },
+    };
+    Reflect.set(runtime.routing.pages.home.rendering, "hydrate", hydrate);
+
+    expect(() => assertRendererTestManifestShape(runtime)).toThrow(
+      '[evjs] react renderer test runtime.routing.pages.home.rendering.hydrate must be "none" or "load".',
     );
   });
 
@@ -107,7 +142,7 @@ describe("createReactServerRenderAdapter", () => {
         '<link rel="stylesheet" href="/assets/dashboard.css">',
         "</head>",
         "<body>",
-        '<div id="root"><h1>Page <!-- -->dashboard</h1></div>',
+        '<div id="root" data-evjs-hydrate="load"><h1>Page <!-- -->dashboard</h1></div>',
         '<script id="__EVJS_PAGE_PROPS__" type="application/json">',
         '{"runtime":{"buildId":"test"},"pageId":"dashboard"}',
         "</script>",
@@ -116,6 +151,102 @@ describe("createReactServerRenderAdapter", () => {
         "</html>",
       ].join(""),
     });
+  });
+
+  it("renders request data and Page HTML into a compiled framework document shell", async () => {
+    const adapter = createReactServerRenderAdapter();
+    const result = await adapter(
+      {
+        default({ pageId }: { pageId?: string }) {
+          return createElement("h1", null, "Shell ", pageId);
+        },
+      },
+      {
+        request: new Request("https://example.com/dashboard"),
+        runtime: createManifest(),
+        pageId: "dashboard",
+        page: {
+          assets: { js: ["dashboard.js"], css: ["dashboard.css"] },
+          document: {
+            beforeContent: [
+              "<!DOCTYPE html>",
+              '<html lang="zh-CN" data-template="custom">',
+              "<head>",
+              '<meta name="viewport" content="width=device-width">',
+              '<link rel="stylesheet" href="/dashboard.css">',
+              "</head>",
+              '<body class="shell"><header>Header</header>',
+              '<main id="root" data-evjs-hydrate="load">',
+            ].join(""),
+            betweenContentAndData: "</main><footer>Footer</footer>",
+            afterData:
+              '<script defer src="/dashboard.js"></script></body></html>',
+          },
+          render: "ssr",
+          rendering: {
+            component: "server",
+            html: "server",
+            streaming: false,
+            hydrate: "load",
+          },
+          mount: "#root",
+        },
+      },
+    );
+
+    expect(readHtml(result)).toBe(
+      [
+        "<!DOCTYPE html>",
+        '<html lang="zh-CN" data-template="custom">',
+        "<head>",
+        '<meta name="viewport" content="width=device-width">',
+        '<link rel="stylesheet" href="/dashboard.css">',
+        "</head>",
+        '<body class="shell"><header>Header</header>',
+        '<main id="root" data-evjs-hydrate="load">',
+        "<h1>Shell <!-- -->dashboard</h1>",
+        "</main><footer>Footer</footer>",
+        '<script id="__EVJS_PAGE_PROPS__" type="application/json">',
+        '{"runtime":{"buildId":"test"},"pageId":"dashboard"}',
+        "</script>",
+        '<script defer src="/dashboard.js"></script></body></html>',
+      ].join(""),
+    );
+  });
+
+  it("only marks server HTML when browser assets can hydrate it", async () => {
+    const adapter = createReactServerRenderAdapter();
+    const render = (hydrate: "none" | "load", js: string[]) =>
+      adapter(
+        {
+          default() {
+            return createElement("h1", null, "Page");
+          },
+        },
+        {
+          request: new Request("https://example.com/dashboard"),
+          runtime: createManifest(),
+          pageId: "dashboard",
+          page: {
+            assets: { js, css: [] },
+            render: "ssr",
+            rendering: {
+              component: "server",
+              html: "server",
+              streaming: false,
+              hydrate,
+            },
+          },
+        },
+      );
+
+    const withoutHydration = await render("none", ["dashboard.js"]);
+    const withoutJavaScript = await render("load", []);
+    const withHydration = await render("load", ["dashboard.js"]);
+
+    expect(readHtml(withoutHydration)).not.toContain("data-evjs-hydrate");
+    expect(readHtml(withoutJavaScript)).not.toContain("data-evjs-hydrate");
+    expect(readHtml(withHydration)).toContain('data-evjs-hydrate="load"');
   });
 
   it("renders escaped Page metadata into the default HTML document", async () => {

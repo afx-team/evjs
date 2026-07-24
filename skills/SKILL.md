@@ -20,7 +20,11 @@ and a framework-owned SPA router runtime. It provides:
 - **Page Configuration** — use adjacent build-time `page.config.ts` for static
   title/named metadata, core rendering settings, and namespaced plugin
   extensions
-- **Plugin System** — extend builds with `buildStart`, `bundlerConfig`, `transformHtml`, and `buildEnd` hooks
+- **Application Configuration** — use top-level namespaced `extensions` for
+  plugin-owned static Application data
+- **Plugin System** — declare Application/Page extension ownership and extend
+  builds with `buildStart`, `bundlerConfig`, `transformHtml`, and `buildEnd`
+  hooks
 - **Minimal Routing Config** — `ev.config.ts` selects `routing.mode`; other
   configuration is optional
 
@@ -74,7 +78,7 @@ For detailed guides on specific topics, see the docs:
   `page.tsx`, move Page configuration to adjacent `page.config.ts`, and then
   configure only `routing.mode`. Do not add a compatibility reader.
 - Bigfish-style explicit `application.routes` may remain temporarily as an
-  SPA-only route-tree migration input. It must reject MPA topology. Prefer
+  SPA-only route-tree migration input. It must reject MPA materialization. Prefer
   moving each component to its URL directory as `page.tsx`; do not introduce
   another migration switch.
 - The optional canonical root layout is `src/pages/layout.tsx`; nested layouts
@@ -106,6 +110,14 @@ For detailed guides on specific topics, see the docs:
 - Access server function metadata: `myFn.fnId`, `myFn.fnName`, `getFnQueryKey(myFn, ...args)`
 
 **Misc:**
-- Use `plugins` in config to extend the build pipeline via `buildStart`, `bundlerConfig`, `transformHtml`, and `buildEnd`
+- Put static plugin-owned Application values under top-level
+  `config.extensions`; plugins register them with `applicationExtension()`
+  before `setup()`. Page-local values remain under `page.config.ts`
+  `extensions` and use `pageExtension()`.
+- Extension values are strict JSON graph data. Keep functions and secrets out;
+  use typed plugin factory options or explicit module references for executable
+  behavior.
+- Use `plugins` in config to extend the build pipeline via `buildStart`,
+  `bundlerConfig`, `transformHtml`, and `buildEnd`
 - `ev dev` permits one active session per project directory and coordinates client/server port pairs across concurrently running projects; configured ports are preferred, may move when occupied, and the SPA fallback follows Utoopack's actual startup port
 - Client and API dev servers accept both `localhost` and `127.0.0.1`; treat them as separate browser origins for cookies, storage, and service workers

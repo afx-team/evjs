@@ -45,38 +45,6 @@ export interface AssetGroup {
   css: string[];
 }
 
-export interface AppNode {
-  id: string;
-  entry: string;
-  html: string;
-  mount?: string;
-}
-
-export interface PageNode {
-  id: string;
-  /**
-   * Source boundary claimed while the Page is normalized.
-   *
-   * A module scope owns only the page entry module. Canonical Pages claim their
-   * whole directory; an explicit Bigfish SPA migration input may retain a
-   * narrower module scope.
-   */
-  scope?: PageScope;
-  path?: string;
-  routeId?: string;
-  component: string;
-  html: string;
-  /** Internal HTML output path projected from a CoreGraph page-owned Document. */
-  output?: string;
-  render: RenderMode;
-  componentModel?: ComponentModel;
-  hydrate?: HydrationMode;
-  mount?: string;
-  prerender?: PrerenderConfig;
-  ppr?: PprConfig;
-  metadata?: PageMetadata;
-}
-
 export type PageScope =
   | { kind: "module"; file: string }
   | { kind: "directory"; root: string };
@@ -96,27 +64,6 @@ export interface PprRegionConfig {
 export type PprCachePolicy = "no-store" | { revalidate: number };
 
 export type PprDeliveryMode = "merge" | "stream";
-
-export interface RouteNode {
-  id: string;
-  path: string;
-  parentId?: string;
-  kind?: PageRouteKind;
-  pageId?: string;
-  appId?: string;
-  module?: string;
-  errorModule?: string;
-  notFoundModule?: string;
-  render?: RenderMode;
-  hydrate?: HydrationMode;
-  runtime?: ServerRuntime;
-  /** CoreGraph client target retained by migrated route providers. */
-  target?: AppRouteTarget;
-  /** Ordered route wrapper modules retained by migrated route providers. */
-  wrappers?: string[];
-  /** Explicit Application/root-layout bypass for this route branch. */
-  layout?: false;
-}
 
 export type AppRouteTarget =
   | { kind: "page"; pageId: string }
@@ -161,7 +108,7 @@ export type PrerenderConfig =
       delivery?: PprDeliveryMode;
       revalidate?: number | false;
     };
-export type HydrationMode = "none" | "load" | "visible" | "idle";
+export type HydrationMode = "none" | "load";
 export type BuildEnvironment = "client" | "server";
 export type ServerRuntime = "node" | "edge";
 export type PublicPathOutput = string;
@@ -247,14 +194,15 @@ export interface BuildEntryOwner {
 
 export type BuildEntryMetadata =
   | ReactComponentPageEntryMetadata
+  | ReactServerPageEntryMetadata
   | PagesAppEntryMetadata
   | ServerAppEntryMetadata;
 
 export interface ReactComponentPageEntryMetadata {
   type: "react-component-page";
   component: string;
-  /** Outer-to-inner layout modules composed around an independent MPA Page. */
-  layouts?: string[];
+  /** Outer-to-inner Page composition for an independent MPA Page. */
+  layers?: ReactPageLayer[];
   mount: string;
   hydrate: HydrationMode;
   render: RenderMode;
@@ -262,6 +210,18 @@ export interface ReactComponentPageEntryMetadata {
     id: string;
     path: string;
   };
+}
+
+export interface ReactServerPageEntryMetadata {
+  type: "react-server-page";
+  component: string;
+  /** Outer-to-inner route composition shared with the client Page tree. */
+  layers?: ReactPageLayer[];
+}
+
+export interface ReactPageLayer {
+  kind: "layout" | "wrapper";
+  module: string;
 }
 
 export interface PagesAppEntryMetadata {
@@ -336,6 +296,45 @@ export interface HtmlPlan {
 export interface ServerBuildPlan {
   entry?: string;
   renderers?: ServerRenderPlan[];
+  /**
+   * HTML templates compiled into request-time document shells for Pages that
+   * are rendered by the deployment server.
+   *
+   * These are build inputs, not emitted static documents. Keeping them on the
+   * server plan makes template ownership explicit and avoids reconstructing
+   * document semantics from the CoreGraph in the runtime emission phase.
+   */
+  documents?: ServerDocumentPlan[];
+}
+
+export interface ServerDocumentPlan {
+  /** Page whose request-time HTML is inserted into this document. */
+  pageId: string;
+  /** Core Document identity exposed to HTML plugin hooks. */
+  documentId: string;
+  /** Application identity exposed to application-scoped HTML contributions. */
+  applicationId: string;
+  /** Source HTML template path. */
+  template: string;
+  /** Logical document filename exposed to HTML plugin hooks; not emitted. */
+  fileName: string;
+  /** Mount selector whose contents are replaced by the server-rendered Page. */
+  mount: string;
+  /** Page-owned metadata applied before HTML plugin hooks run. */
+  metadata?: PageMetadata;
+}
+
+/**
+ * Serialized request-time document template split around values produced while
+ * rendering a Page request.
+ */
+export interface ServerDocumentShell {
+  /** Document bytes before the server-rendered Page HTML. */
+  beforeContent: string;
+  /** Document bytes between Page HTML and request-specific bootstrap data. */
+  betweenContentAndData: string;
+  /** Document bytes after request-specific bootstrap data. */
+  afterData: string;
 }
 
 export interface ServerRenderPlan {
@@ -344,6 +343,7 @@ export interface ServerRenderPlan {
   phase?: BuildEntryPhase;
   kind: "page-server" | "rsc-page" | "ppr-shell" | "ppr-region";
   owner?: BuildEntryOwner;
+  metadata?: ReactServerPageEntryMetadata;
 }
 
 export interface RuntimePlan {
@@ -370,6 +370,10 @@ export interface BuildPlanUpdate {
   generatedChanged: boolean;
   /** Bundler resolution inputs changed and require adapter reconfiguration. */
   resolveChanged: boolean;
+  /** Runtime endpoints, public paths, or transport settings changed. */
+  runtimeChanged: boolean;
+  /** Config or hooks changed and framework-owned artifacts must be re-emitted. */
+  deliveryChanged: boolean;
   serverChanged: boolean;
 }
 
@@ -662,196 +666,6 @@ export interface RscPageOutput {
   routeId?: string;
 }
 
-// ── Route resolution ────────────────────────────────────────────────────
-
-/** Route metadata discovered from Page anchors or a Bigfish SPA route tree. */
-export interface ExtractedRoute {
-  /** Route path (e.g. "/", "/posts/$postId"). */
-  path: string;
-  /** Stable route id derived from the file path or page id. */
-  id?: string;
-  /** Parent route id for framework-managed file route trees. */
-  parentId?: string;
-  /** Framework-managed file route node kind. */
-  kind?: PageRouteKind;
-  /** Static page/component module declared for this route. */
-  module?: string;
-  /** Page source boundary; Bigfish SPA migration may retain module scope. */
-  scope?: PageScope;
-  /** Scoped route error component module discovered from file conventions. */
-  errorModule?: string;
-  /** Scoped not-found component module discovered from file conventions. */
-  notFoundModule?: string;
-  /** Render mode declared by the route target module. */
-  render?: RenderMode;
-  /** Hydration mode declared by the route target module. */
-  hydrate?: HydrationMode;
-  /** Component execution model declared by the route target module. */
-  componentModel?: ComponentModel;
-  /** Prerender behavior declared by the route target module. */
-  prerender?: PrerenderConfig;
-  /** PPR config derived from the route target module. */
-  ppr?: PprConfig;
-  /** Server runtime declared in route metadata. */
-  runtime?: ServerRuntime;
-  /** Owning app id for framework-managed SPA routes. */
-  appId?: string;
-  /** Variable name of the parent route (e.g. "rootRoute", "postsRoute"). */
-  parentName?: string;
-  /** Variable name this route is assigned to (e.g. "homeRoute"). */
-  varName?: string;
-}
-
-/** Server route metadata extracted from an @evjs/server createRoute() export. */
-export interface ExtractedServerRoute {
-  /** Route path pattern passed to createRoute(). */
-  path: string;
-  /** HTTP methods declared on the route definition object. */
-  methods: string[];
-}
-
-/**
- * Resolve a flat list of extracted routes into de-duplicated full paths.
- *
- * Builds the parent-child hierarchy using `varName` / `parentName` and
- * walks the tree to construct full URL paths.
- *
- * Index routes (child `path: "/"` under a non-root parent) are excluded
- * since they resolve to the same URL as their parent route.
- *
- * @example
- * ```ts
- * resolveRoutes([
- *   { path: "/posts", varName: "postsRoute", parentName: "rootRoute" },
- *   { path: "/", varName: "postsIndexRoute", parentName: "postsRoute" },
- *   { path: "$postId", varName: "postDetailRoute", parentName: "postsRoute" },
- * ])
- * // => [{ path: "/posts" }, { path: "/posts/$postId" }]
- * ```
- */
-export function resolveRoutes(routes: ExtractedRoute[]): Array<{
-  path: string;
-  id?: string;
-  parentId?: string;
-  kind?: PageRouteKind;
-  module?: string;
-  scope?: PageScope;
-  errorModule?: string;
-  notFoundModule?: string;
-  render?: RenderMode;
-  hydrate?: HydrationMode;
-  componentModel?: ComponentModel;
-  prerender?: PrerenderConfig;
-  ppr?: PprConfig;
-  runtime?: ServerRuntime;
-  appId?: string;
-}> {
-  // Build a lookup: varName → ExtractedRoute
-  const byName = new Map<string, ExtractedRoute>();
-  for (const r of routes) {
-    if (r.varName) {
-      byName.set(r.varName, r);
-    }
-  }
-
-  /**
-   * Walk up the parent chain to build the full path prefix for a route.
-   * Returns the full resolved path of the given route variable.
-   */
-  function resolveParentPath(
-    route: ExtractedRoute,
-    visited = new Set<string>(),
-  ): string {
-    if (!route.parentName) return route.path;
-
-    // Guard against circular parent references
-    if (route.varName) {
-      if (visited.has(route.varName)) return route.path;
-      visited.add(route.varName);
-    }
-
-    const parent = byName.get(route.parentName);
-    if (!parent) {
-      // Parent not in the extracted set (e.g. rootRoute from createRootRoute)
-      // — treat as top-level, no prefix.
-      return route.path;
-    }
-
-    const parentPath = resolveParentPath(parent, visited);
-    return joinPaths(parentPath, route.path);
-  }
-
-  const seen = new Set<string>();
-  const result: Array<{
-    path: string;
-    id?: string;
-    parentId?: string;
-    kind?: PageRouteKind;
-    module?: string;
-    scope?: PageScope;
-    errorModule?: string;
-    notFoundModule?: string;
-    render?: RenderMode;
-    hydrate?: HydrationMode;
-    componentModel?: ComponentModel;
-    prerender?: PrerenderConfig;
-    ppr?: PprConfig;
-    runtime?: ServerRuntime;
-    appId?: string;
-  }> = [];
-
-  for (const r of routes) {
-    const fullPath = resolveParentPath(r);
-
-    // Skip index routes that resolve to the same path as their parent.
-    // An index route has path "/" and a parent that is not the root.
-    if (r.path === "/" && r.parentName) {
-      const parent = byName.get(r.parentName);
-      if (parent) {
-        // This is a non-root index route — it duplicates the parent path.
-        continue;
-      }
-    }
-
-    const routeKind = r.kind ?? "page";
-    const seenKey =
-      routeKind === "layout"
-        ? `${r.appId ?? ""}:layout:${r.id ?? fullPath}`
-        : `${r.appId ?? ""}:page:${fullPath}`;
-    if (!seen.has(seenKey)) {
-      seen.add(seenKey);
-      result.push({
-        path: fullPath,
-        id: r.id,
-        parentId: r.parentId,
-        kind: r.kind,
-        module: r.module,
-        scope: r.scope,
-        errorModule: r.errorModule,
-        notFoundModule: r.notFoundModule,
-        render: r.render,
-        hydrate: r.hydrate,
-        componentModel: r.componentModel,
-        prerender: r.prerender,
-        ppr: r.ppr,
-        runtime: r.runtime,
-        appId: r.appId,
-      });
-    }
-  }
-
-  return result;
-}
-
-/** Join two path segments, normalizing double slashes. */
-function joinPaths(parent: string, child: string): string {
-  if (child === "/") return parent;
-  if (child.startsWith("/")) return child;
-
-  const base = parent.endsWith("/") ? parent : `${parent}/`;
-  return base + child;
-}
-
 export function assertFrameworkManifestShape(
   value: unknown,
   source: string,
@@ -1032,6 +846,7 @@ export type GeneratedScope =
 
 export type FrameworkSlotName =
   | "client.entry"
+  | "page.wrapper"
   | "server.request.middleware"
   | "html.tag"
   | "resolve.alias"
@@ -1045,7 +860,7 @@ export type EntryContributionPosition =
   | "after-main";
 
 export type ContributionRuntime = "client" | "server" | "all";
-export type ClientContributionRuntime = Exclude<ContributionRuntime, "server">;
+export type ClientContributionRuntime = "client";
 
 export type ContributionTarget =
   | { kind: "application"; applicationId?: string }
@@ -1104,6 +919,7 @@ export interface GeneratedImportEdgePlan {
 
 export type FrameworkSlotPlanItem =
   | ClientEntrySlotPlanItem
+  | PageWrapperSlotPlanItem
   | ServerRequestMiddlewareSlotPlanItem
   | HtmlTagSlotPlanItem
   | ResolveAliasSlotPlanItem
@@ -1121,6 +937,13 @@ export interface ClientEntrySlotPlanItem extends FrameworkSlotPlanItemBase {
   position: EntryContributionPosition;
   runtime: ClientContributionRuntime;
   mode: "import" | "replace";
+  target?: ContributionTarget;
+}
+
+export interface PageWrapperSlotPlanItem extends FrameworkSlotPlanItemBase {
+  slot: "page.wrapper";
+  module: string;
+  runtime: ContributionRuntime;
   target?: ContributionTarget;
 }
 
@@ -1735,17 +1558,8 @@ function assertPageRenderingPrerender(value: unknown, source: string): void {
 }
 
 function assertHydrationMode(value: unknown, source: string): void {
-  if (
-    value === "none" ||
-    value === "load" ||
-    value === "visible" ||
-    value === "idle"
-  ) {
-    return;
-  }
-  throw new Error(
-    `[evjs] ${source} must be "none", "load", "visible", or "idle".`,
-  );
+  if (value === "none" || value === "load") return;
+  throw new Error(`[evjs] ${source} must be "none" or "load".`);
 }
 
 function assertRscPageOutputContract(
@@ -2488,6 +2302,14 @@ function formatManifestPathnameError(
 }
 
 export {
+  assertBigfishRouteExtension,
+  BIGFISH_ROUTE_EXTENSION_ID,
+  type BigfishRouteExtension,
+  type BigfishRouteMappedString,
+  type BigfishRouteMenuKey,
+  type BigfishRouteStaticValue,
+} from "./bigfish-route-extension.js";
+export {
   type ApplicationId,
   assertCoreGraph,
   CONFIG_ROUTE_PROVIDER_ID,
@@ -2497,8 +2319,6 @@ export {
   type CoreDocumentBootstrap,
   type CoreDocumentNode,
   type CoreDocumentOwner,
-  type CoreDocumentRouteNode,
-  type CoreDocumentRouteTarget,
   type CoreExtensionBag,
   type CoreExtensionNamespaceSnapshot,
   type CoreExtensionOwnerKind,
@@ -2536,18 +2356,3 @@ export {
   clonePageMetadata,
   type PageMetadata,
 } from "./page-metadata.js";
-export {
-  type ClientRouteMatch,
-  type ClientRouteTarget,
-  getClientRouteMatches,
-  getClientRouteTarget,
-  getServerRenderedPagePaths,
-  getServerRenderedPaths,
-  getServerRenderedRoutePaths,
-  isRouteDerivedPage,
-  isServerRenderedPage,
-  type RouteDerivedPage,
-  type RouteRenderingPage,
-  type RouteRenderingRoute,
-  type RouteRenderingSource,
-} from "./routes.js";

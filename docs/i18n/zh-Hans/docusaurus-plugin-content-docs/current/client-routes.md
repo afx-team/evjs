@@ -93,10 +93,12 @@ export default function UserDetailPage() {
 }
 ```
 
-SPA Page 可导出受支持的 route lifecycle，如 `loader`、`beforeLoad`、
+CSR SPA Page 可导出受支持的 route lifecycle，如 `loader`、`beforeLoad`、
 `validateSearch`、`pendingComponent`、`errorComponent` 和
-`notFoundComponent`。MPA 不运行浏览器 route tree，因此这些 lifecycle 不是
-MPA data-loading 模型。
+`notFoundComponent`。这些 hook 当前只在浏览器 route tree 中执行；在框架定义
+对等的服务端 route lifecycle 与首屏数据传输前，SSR 和 SSG Page 会拒绝这些
+export。MPA 不运行浏览器 route tree，因此这些 lifecycle 不是 MPA
+data-loading 模型。
 
 ## 目录路由树
 
@@ -224,6 +226,8 @@ export default defineConfig({
 
 SPA 把目录树物化为浏览器 Client Route，通常共享一个 Application-owned HTML
 Document。它支持嵌套路由、动态参数、splat、layout、boundary 与浏览器导航。
+每个静态 SSG Page 还会按语义 route path 输出 HTML：`/` 对应
+`index.html`，`/report` 对应 `report/index.html`。
 
 ### MPA
 
@@ -234,9 +238,10 @@ export default defineConfig({
 ```
 
 MPA 发现相同的 Page 与语义 route pattern，再物化 Page-owned Document，无需
-浏览器 router。动态路由输出以及 React layout/boundary 物化仍在分阶段建设。
-`ev inspect` 和 `ev build` 会拒绝不支持的组合，而不是要求应用改用第二套路由
-模型。同一 Page 目录的 `index.html` 可以作为该 MPA Page 的 Document 模板。
+浏览器 router。它当前只接受静态 Page path；`$param`、终止 `$...splat` 与
+router-only boundary 会在 graph 校验失败。Layout 在两种 mode 中都会为 Page
+组合。`ev inspect` 和 `ev build` 会拒绝不支持的组合，而不是要求应用改用第二套
+路由模型。同一 Page 目录的 `index.html` 可以作为该 MPA Page 的 Document 模板。
 
 ## Page 配置
 
@@ -283,11 +288,12 @@ projection。
 
 显式 SPA route-tree 形式可以作为迁移输入归一化到 Core graph：
 
-- Bigfish 路由配置，包括 `routes`、`component`、`children`、layout 与
-  wrapper；
+- Bigfish 路由配置，包括嵌套 `routes`、`component`、layout、wrapper、
+  redirect，以及保留在 `@evjs/bigfish-route` 中的有限 access/menu
+  metadata；当前 Umi/Bigfish 已拒绝的 `children` 声明同样会被拒绝；
 - 早期显式 `application.routes` 声明。
 
-这些输入拒绝 MPA topology，是迁移路径而不是另一套路由架构。Smallfish 与 evjs
+这些输入拒绝 MPA 物化模式，是迁移路径而不是另一套路由架构。Smallfish 与 evjs
 0.2 源码树不是 runtime
 reader 输入：把每个发布 entry 移到其 URL 对应目录，命名为 `page.*`，页面级
 配置移到 `page.config.ts`，Page 私有代码继续放在旁边，并只声明

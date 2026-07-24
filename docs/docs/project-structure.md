@@ -107,7 +107,7 @@ project root unless stated otherwise.
 | --- | --- | --- | --- |
 | `ev.config.ts` | Framework configuration | Whole project | Import `defineConfig` from `@evjs/ev`. |
 | `conventions: false` | Disable framework file discovery | Whole project | Disables Page/Route anchors, server file routes, and global/route middleware together. |
-| `routing.mode` | Output materialization | Application | `"spa"` creates Client Routes; `"mpa"` creates Page-owned Documents. It does not select a different route model. |
+| `routing.mode` | Output materialization | Application | `"spa"` creates Client Routes; `"mpa"` creates Page-owned Documents for static Page paths. It does not select a different route model. |
 | `routing.dir` | Page-route root | Application | Defaults to `./src/pages`; new applications normally omit it. |
 | `<routing.dir>/**/page.{ts,tsx,js,jsx}` | Canonical Page and Route anchor | Entire containing directory | Exactly one source-extension variant per route directory. Default-export the Page component. |
 | `<Page directory>/page.config.{ts,js}` | Optional canonical Page configuration | Build graph | Default-export static Page config. Prefer `definePageConfig()` and `page.config.ts`; exactly one variant per Page. |
@@ -193,9 +193,10 @@ src/pages/
 
 Layouts compose around descendant Pages in both SPA and MPA materialization.
 SPA Page routes may additionally render `Outlet` from `@evjs/ev/navigation`.
-Some MPA dynamic-route and React-facet materialization remains staged;
-`ev inspect` and `ev build` report unsupported combinations rather than
-selecting another authoring convention.
+MPA rejects `$param` and terminal `$...splat` routes because a dynamic pattern
+does not identify one build-time HTML output. Router-only boundary facets are
+also SPA-only. `ev inspect` and `ev build` report these combinations rather
+than selecting another authoring convention.
 
 ## Page Modules
 
@@ -217,6 +218,18 @@ import { useQuery } from "@evjs/ev/query";
 
 The exact exports are documented in [Client Routes](./client-routes) and
 [Server Functions](./server-functions).
+
+### Application and Page extension scopes
+
+Application-wide plugin data is authored once at top-level
+`ev.config.ts#extensions` and registered with
+`applicationExtension()`. Per-Page plugin data is authored under the adjacent
+`page.config.ts#extensions` and registered with `pageExtension()`.
+
+Both values enter the same CoreGraph registry. One plugin may own the same
+namespace for both scopes, which supports a global default plus Page-specific
+settings without treating the temporary `application.routes` migration object
+as a second application config system. Runtime projection is always explicit.
 
 ### Page configuration and extensions
 
@@ -312,10 +325,16 @@ directory alone does not publish routes.
 
 | Existing source | Migration action | Canonical destination |
 | --- | --- | --- |
-| Bigfish SPA route config / `application.routes` | The explicit SPA route tree may enter the migration normalizer temporarily and implies SPA; it cannot be combined with `routing`, and MPA topology is rejected | Move each route component to its URL directory as `page.*`; after removing `application`, enable the canonical tree with only `routing.mode: "spa"` |
+| Bigfish SPA route config / `application.routes` | The explicit SPA tree accepts current Umi/Bigfish `routes` nesting (not the rejected `children` spelling), `component`, layout/wrapper/redirect structure, and a finite metadata set. `name`, `icon`, `title`, `hideInMenu`, `flatMenu`, `spmBPos`, `access`, `menuKey`, and static `menuAssetOptions` are retained under the registered `@evjs/bigfish-route` Route extension. `exact: true` is a terminal-match structural assertion and is not copied; `exact: false`, or `exact: true` with nested routes, is rejected. The input implies SPA, cannot be combined with `routing`, and cannot select MPA materialization. | Move each route component to its URL directory as `page.*`; move capabilities to core fields or plugin-owned `page.config.ts` extensions; after removing `application`, enable the canonical tree with only `routing.mode: "spa"` |
 | Smallfish direct-child Page directories | Before running Core 0.3, keep or reshape each URL directory and rename `<page>/index.*` to `page.*` | Keep `routing.mode: "mpa"`; map `config.json` title and supported named meta to core `title`/`meta`, and move remaining plugin-owned values to namespaced extensions |
 | evjs 0.2 recursive routes | Before running Core 0.3, move each published filename route into its URL directory as `page.*` | Keep dynamic/group directory segments, move Page settings to `page.config.ts`, and configure only `routing.mode` |
-| Core 0.3 `page.*` preview | Reads positive file-route anchors through the previous experimental selector | Keep the tree, remove the preview selector, and declare only `routing.mode` |
+
+During Bigfish route-tree migration, an explicit `index.*` or `page.*`
+component owns its containing directory. A flat component with another
+basename remains module-scoped and cannot consume a colocated
+`page.config.ts`. Move a flat component into its dedicated Page directory
+before adding Page config; the explicit route may keep using `index.*`
+temporarily, but canonical discovery requires the final `page.*` rename.
 
 Provider names may appear in raw CoreGraph/debug artifacts as internal
 provenance. Normal inspect routing output hides them; applications do not

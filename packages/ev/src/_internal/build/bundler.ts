@@ -6,7 +6,7 @@ import type {
 } from "@evjs/shared/manifest";
 import type {
   DefaultBundlerConfig,
-  ResolvedConfig,
+  ResolvedFrameworkConfig,
 } from "../../config/index.js";
 import type { PluginHooks } from "../../plugin/index.js";
 
@@ -25,7 +25,7 @@ export interface BundlerBuildFacts {
 
 export interface BundlerBuildContext<TBundlerCfg = DefaultBundlerConfig> {
   cwd: string;
-  config: ResolvedConfig<TBundlerCfg>;
+  config: ResolvedFrameworkConfig<TBundlerCfg>;
   plan: BuildPlan;
   hooks: PluginHooks<TBundlerCfg>[];
 }
@@ -162,6 +162,7 @@ export function getBundlerDevCapabilityGaps(
     {
       capability: "html",
       required:
+        update.deliveryChanged ||
         update.generatedChanged ||
         update.html.added.length > 0 ||
         update.html.removed.length > 0 ||

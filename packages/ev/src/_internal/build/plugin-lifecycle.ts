@@ -1,5 +1,9 @@
 import type { BuildOutput } from "@evjs/shared/manifest";
 import { type Config, resolvePluginsConfig } from "../../config/index.js";
+import {
+  LEGACY_PLUGIN_HOOK_REPLACEMENTS,
+  PLUGIN_HOOK_NAMES,
+} from "../../plugin/hook-names.js";
 import type {
   BuildResult,
   Plugin,
@@ -8,23 +12,7 @@ import type {
   PluginHooks,
 } from "../../plugin/index.js";
 
-const PLUGIN_HOOK_NAMES = [
-  "buildStart",
-  "buildOutput",
-  "bundlerConfig",
-  "buildEnd",
-  "dispose",
-  "transformHtml",
-] as const satisfies readonly (keyof PluginHooks)[];
-
-const LEGACY_PLUGIN_HOOK_REPLACEMENTS = new Map<string, string>([
-  ["modifyHTML", "transformHtml"],
-  ["modifyHTMLViaAST", "transformHtml"],
-  ["modifyBundlerConfig", "bundlerConfig"],
-  ["onBuildStart", "buildStart"],
-  ["onBuildEnd", "buildEnd"],
-  ["onBuildComplete", "buildEnd"],
-]);
+const typedPluginHookNames: readonly (keyof PluginHooks)[] = PLUGIN_HOOK_NAMES;
 
 interface PluginOrderDeclaration {
   name: string;
@@ -230,7 +218,7 @@ function resolvePluginSetupHooks<TBundlerCfg>(
 }
 
 function isPluginHookName(value: string): value is keyof PluginHooks {
-  return (PLUGIN_HOOK_NAMES as readonly string[]).includes(value);
+  return (typedPluginHookNames as readonly string[]).includes(value);
 }
 
 function throwUnknownPluginHook(pluginName: string, hookName: string): never {

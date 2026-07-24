@@ -90,7 +90,7 @@ describe("UtoopackManifestGenerator", () => {
 
     const graph = createGraph({
       cwd,
-      topology: "spa",
+      routingMode: "spa",
       pages: [
         {
           id: "home",
@@ -189,7 +189,7 @@ describe("UtoopackManifestGenerator", () => {
 
     const graph = createGraph({
       cwd,
-      topology: "spa",
+      routingMode: "spa",
       pages: [
         {
           id: "index",
@@ -232,7 +232,7 @@ describe("UtoopackManifestGenerator", () => {
 
     const graph = createGraph({
       cwd,
-      topology: "mpa",
+      routingMode: "mpa",
       pages: [
         {
           id: "home",
@@ -302,7 +302,7 @@ describe("UtoopackManifestGenerator", () => {
 
     const graph = createGraph({
       cwd,
-      topology: "mpa",
+      routingMode: "mpa",
       pages: [
         {
           id: "campaign",
@@ -311,7 +311,7 @@ describe("UtoopackManifestGenerator", () => {
           module: "./src/campaign/Page.tsx",
           render: "ssr",
           prerender: { partial: true },
-          hydrate: "visible",
+          hydrate: "load",
           ppr: {
             regions: {
               offer: {
@@ -362,7 +362,7 @@ interface TestPage {
 
 function createGraph(options: {
   cwd: string;
-  topology: "spa" | "mpa";
+  routingMode: "spa" | "mpa";
   pages?: TestPage[];
   serverFunctions?: CoreGraph["serverFunctions"];
   serverRoutes?: CoreGraph["serverRoutes"];
@@ -370,7 +370,7 @@ function createGraph(options: {
   const pages = options.pages ?? [];
   const pageIds = pages.map((page) => page.id);
   const routeIds = pages.map((page) => page.routeId);
-  const documentIds = options.topology === "spa" ? ["index"] : pageIds;
+  const documentIds = options.routingMode === "spa" ? ["index"] : pageIds;
   const provenance = {
     producer: {
       kind: "provider" as const,
@@ -384,7 +384,7 @@ function createGraph(options: {
       default: {
         id: "default",
         root: "./src/pages",
-        topology: options.topology,
+        routingMode: options.routingMode,
         pageIds,
         routeIds,
         documentIds,
@@ -415,30 +415,17 @@ function createGraph(options: {
         },
       ]),
     ),
-    routes: pages.map((page) =>
-      options.topology === "spa"
-        ? {
-            realm: "client" as const,
-            id: page.routeId,
-            applicationId: "default",
-            pattern: toRoutePattern(page.path),
-            target: { kind: "page" as const, pageId: page.id },
-            facets: { wrappers: [] },
-            extensions: {},
-            provenance,
-          }
-        : {
-            realm: "document" as const,
-            id: page.routeId,
-            applicationId: "default",
-            pattern: toRoutePattern(page.path),
-            target: { kind: "document" as const, documentId: page.id },
-            extensions: {},
-            provenance,
-          },
-    ),
+    routes: pages.map((page) => ({
+      id: page.routeId,
+      applicationId: "default",
+      pattern: toRoutePattern(page.path),
+      target: { kind: "page" as const, pageId: page.id },
+      facets: { wrappers: [] },
+      extensions: {},
+      provenance,
+    })),
     documents: Object.fromEntries(
-      options.topology === "spa"
+      options.routingMode === "spa"
         ? [
             [
               "index",
@@ -482,7 +469,7 @@ function createPlan(
 ): BuildPlan {
   const pageEntries = Object.values(graph.pages)
     .filter(
-      (page) => graph.applications[page.applicationId]?.topology === "mpa",
+      (page) => graph.applications[page.applicationId]?.routingMode === "mpa",
     )
     .map((page) => ({
       name: page.id,
@@ -541,10 +528,8 @@ function createPlan(
     })),
   ]);
   const appEntries = Object.values(graph.applications).flatMap((app) =>
-    app.topology === "spa" &&
-    graph.routes.some(
-      (route) => route.realm === "client" && route.applicationId === app.id,
-    )
+    app.routingMode === "spa" &&
+    graph.routes.some((route) => route.applicationId === app.id)
       ? [
           {
             name: app.id === "default" ? "main" : app.id,
@@ -596,7 +581,7 @@ function createPlan(
     },
     dev: {
       clientRoutes: graph.routes.flatMap((route) =>
-        route.realm === "client" && route.target.kind === "page"
+        route.target.kind === "page"
           ? [
               {
                 path: formatRoutePattern(route.pattern),
@@ -627,14 +612,9 @@ function createPlan(
 }
 
 function findPageRouteId(graph: CoreGraph, pageId: string): string | undefined {
-  return graph.routes.find((route) => {
-    if (route.realm === "client") {
-      return route.target.kind === "page" && route.target.pageId === pageId;
-    }
-    if (route.target.kind !== "document") return false;
-    const document = graph.documents[route.target.documentId];
-    return document?.owner.kind === "page" && document.owner.pageId === pageId;
-  })?.id;
+  return graph.routes.find(
+    (route) => route.target.kind === "page" && route.target.pageId === pageId,
+  )?.id;
 }
 
 function findPageDocument(graph: CoreGraph, pageId: string) {

@@ -47,15 +47,17 @@
 - Continue hardening the Bigfish explicit route normalizer and one-time source
   migration guidance for Smallfish and evjs 0.2 without promoting stored
   models as runtime readers.
-- Canonical MPA emits Page-owned Documents and Document Routes and composes
-  file-convention layouts; dynamic routes and router-only boundary facets
-  remain explicitly unsupported.
-- The plugin API now has an executable first slice: dependency-ordered,
-  reload-safe `describe`, namespaced Page defaults/config/validation, strict
-  serialization, and resolved Page extension views for contributions. See the
+- Canonical MPA emits Page-owned Documents from static semantic Routes and
+  composes file-convention layouts; dynamic routes and router-only boundary
+  facets are explicitly rejected.
+- The plugin API now has dependency-ordered, reload-safe `describe`,
+  namespaced Application and Page defaults/config/validation, strict static
+  serialization, resolved extension views, and cross-runtime `page.wrapper`
+  contributions. See the
   [0.2 migration guide](./plugin-migration-0.2-to-0.3).
-- Continue the plugin API with owned Application/Route/Document schemas, graph
-  transforms/selectors, semantic facets, and generic extension entries.
+- Continue the plugin API with owned Route/Document schemas, graph
+  transforms/selectors, additional semantic facets, typed runtime hooks, and
+  generic extension entries.
 
 ## Planned
 

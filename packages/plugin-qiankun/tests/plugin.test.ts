@@ -445,7 +445,7 @@ function createApplicationFramework(mount = "#app"): FrameworkIRView {
       {
         id: "default",
         root: ".",
-        topology: "spa",
+        routingMode: "spa",
         pageIds: ["index"],
         routeIds: ["index"],
         documentIds: ["app:default"],
@@ -473,7 +473,6 @@ function createApplicationFramework(mount = "#app"): FrameworkIRView {
     ],
     [
       {
-        realm: "client",
         id: "index",
         applicationId: "default",
         pattern: { segments: [] },
@@ -510,7 +509,7 @@ function createMpaFramework(): FrameworkIRView {
       {
         id: "default",
         root: ".",
-        topology: "mpa",
+        routingMode: "mpa",
         pageIds: ["home"],
         routeIds: ["home"],
         documentIds: ["home"],
@@ -560,7 +559,7 @@ function createMultipleAppFramework(): FrameworkIRView {
       {
         id: "one",
         root: ".",
-        topology: "spa",
+        routingMode: "spa",
         pageIds: [],
         routeIds: [],
         documentIds: [],
@@ -572,7 +571,7 @@ function createMultipleAppFramework(): FrameworkIRView {
       {
         id: "two",
         root: ".",
-        topology: "spa",
+        routingMode: "spa",
         pageIds: [],
         routeIds: [],
         documentIds: [],

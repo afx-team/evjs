@@ -112,6 +112,168 @@ describe("resolveConfig", () => {
     });
   });
 
+  it("accepts only plain config records at root and nested boundaries", () => {
+    class ConfigRecord {
+      readonly mode = "spa";
+    }
+
+    const inheritedRoot = Object.create({
+      routing: { mode: "spa" },
+    }) as unknown;
+    const inheritedRouting = Object.create({
+      mode: "spa",
+    }) as unknown;
+
+    for (const [config, path] of [
+      [new ConfigRecord(), "config"],
+      [new Date(), "config"],
+      [inheritedRoot, "config"],
+      [{ routing: new ConfigRecord() }, "routing"],
+      [{ routing: new Date() }, "routing"],
+      [{ routing: inheritedRouting }, "routing"],
+    ] as const) {
+      expect(() => resolveConfig(config as never)).toThrow(
+        `[evjs] ${path} must be`,
+      );
+    }
+
+    const nullPrototypeConfig = Object.assign(Object.create(null), {
+      routing: { mode: "spa" },
+    });
+    expect(resolveConfig(nullPrototypeConfig).routing?.mode).toBe("spa");
+  });
+
+  it("isolates strictly static namespaced Application extension config", () => {
+    const configured = {
+      enabled: true,
+      nested: { channel: "web" },
+      values: [1, null, "two"],
+    };
+    const resolved = resolveConfig({
+      routing: { mode: "spa" },
+      extensions: {
+        "@company/feature": configured,
+      },
+    });
+
+    expect(resolved.extensions).toEqual({
+      "@company/feature": configured,
+    });
+    expect(resolved.extensions["@company/feature"]).not.toBe(configured);
+    expect(Object.isFrozen(resolved.extensions)).toBe(true);
+    expect(Object.isFrozen(resolved.extensions["@company/feature"])).toBe(true);
+
+    for (const extensions of [
+      { feature: true },
+      { "@company/date": new Date() },
+      { "@company/function": () => undefined },
+      { "@company/number": Number.NaN },
+      { "@company/sparse": new Array(1) },
+      { "@company/extra-array": Object.assign(["value"], { extra: true }) },
+    ]) {
+      expect(() =>
+        resolveConfig({
+          routing: { mode: "spa" },
+          extensions: extensions as never,
+        }),
+      ).toThrow();
+    }
+
+    let getterCalls = 0;
+    const accessorValue = {};
+    Object.defineProperty(accessorValue, "enabled", {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return true;
+      },
+    });
+    expect(() =>
+      resolveConfig({
+        routing: { mode: "spa" },
+        extensions: {
+          "@company/accessor": accessorValue,
+        },
+      } as never),
+    ).toThrow("must be an enumerable own data property");
+    expect(getterCalls).toBe(0);
+  });
+
+  it("rejects accessors without executing them", () => {
+    let rootGetterCalls = 0;
+    const rootConfig = {};
+    Object.defineProperty(rootConfig, "routing", {
+      enumerable: true,
+      get() {
+        rootGetterCalls++;
+        return { mode: "spa" };
+      },
+    });
+
+    expect(() => resolveConfig(rootConfig as never)).toThrow(
+      "config.routing must be an enumerable data property",
+    );
+    expect(rootGetterCalls).toBe(0);
+
+    let nestedGetterCalls = 0;
+    const server = {};
+    Object.defineProperty(server, "dev", {
+      enumerable: true,
+      get() {
+        nestedGetterCalls++;
+        return { port: 4100 };
+      },
+    });
+
+    expect(() => resolveConfig({ server } as never)).toThrow(
+      "server.dev must be an enumerable data property",
+    );
+    expect(nestedGetterCalls).toBe(0);
+
+    const output = {};
+    Object.defineProperty(output, "client", {
+      enumerable: true,
+      set(_value: string) {},
+    });
+    expect(() => resolveConfig({ output } as never)).toThrow(
+      "output.client must be an enumerable data property",
+    );
+
+    let arrayGetterCalls = 0;
+    const plugins: unknown[] = [];
+    Object.defineProperty(plugins, 0, {
+      enumerable: true,
+      get() {
+        arrayGetterCalls++;
+        return { name: "hidden-plugin" };
+      },
+    });
+    expect(() => resolveConfig({ plugins } as never)).toThrow(
+      "plugins[0] must be an enumerable data property",
+    );
+    expect(arrayGetterCalls).toBe(0);
+  });
+
+  it("rejects symbol and non-enumerable config fields", () => {
+    const routingWithSymbol = { mode: "spa" };
+    Object.defineProperty(routingWithSymbol, Symbol("private"), {
+      enumerable: true,
+      value: true,
+    });
+    expect(() =>
+      resolveConfig({ routing: routingWithSymbol } as never),
+    ).toThrow("routing must not contain symbol fields");
+
+    const nonEnumerableOutput = {};
+    Object.defineProperty(nonEnumerableOutput, "client", {
+      enumerable: false,
+      value: "build/client",
+    });
+    expect(() =>
+      resolveConfig({ output: nonEnumerableOutput } as never),
+    ).toThrow("output.client must be an enumerable data property");
+  });
+
   it("requires an explicit SPA or MPA routing mode", () => {
     expect(() =>
       resolveConfig({
@@ -173,7 +335,7 @@ describe("resolveConfig", () => {
           },
           {
             path: "/users",
-            children: [{ path: ":id", page: "users/detail" }],
+            routes: [{ path: ":id", page: "users/detail" }],
           },
         ],
       },
@@ -199,6 +361,138 @@ describe("resolveConfig", () => {
       ],
     });
     expect(resolved.routing).toBeUndefined();
+  });
+
+  it("normalizes the application Page root and empty leaf routes", () => {
+    const resolved = resolveConfig({
+      application: {
+        routes: [
+          { path: "/", page: ".", routes: [] },
+          { path: "/legacy", component: "@/pages/page" },
+        ],
+      },
+    });
+
+    expect(resolved.application?.routes).toEqual([
+      { path: "/", page: "." },
+      {
+        path: "/legacy",
+        page: ".",
+        component: "./src/pages/page",
+      },
+    ]);
+  });
+
+  it("retains only documented Bigfish route metadata", () => {
+    const resolved = resolveConfig({
+      application: {
+        routes: [
+          {
+            path: "/home",
+            page: "home",
+            name: "首页",
+            icon: "home",
+            title: "Home",
+            hideInMenu: false,
+            flatMenu: true,
+            spmBPos: { a226: "b1", a1853: "b2" },
+            access: "canReadHome",
+            menuKey: { spcenter: null, merchant_b: "" },
+            menuAssetOptions: {
+              source: "route",
+              nested: { enabled: true },
+              positions: [1, "two", null],
+            },
+            exact: true,
+          },
+        ],
+      },
+    });
+
+    expect(resolved.application?.routes).toEqual([
+      {
+        path: "/home",
+        page: "home",
+        metadata: {
+          name: "首页",
+          icon: "home",
+          title: "Home",
+          hideInMenu: false,
+          flatMenu: true,
+          spmBPos: { a226: "b1", a1853: "b2" },
+          access: "canReadHome",
+          menuKey: { spcenter: null, merchant_b: "" },
+          menuAssetOptions: {
+            source: "route",
+            nested: { enabled: true },
+            positions: [1, "two", null],
+          },
+        },
+      },
+    ]);
+  });
+
+  it("rejects removed children routes and non-structural exact matching", () => {
+    expect(() =>
+      resolveConfig({
+        application: {
+          routes: [
+            {
+              path: "/users",
+              children: [{ path: ":id", page: "users/detail" }],
+            } as never,
+          ],
+        },
+      }),
+    ).toThrow(
+      "application.routes[0].children is not supported. Current Umi/Bigfish route config uses routes",
+    );
+
+    expect(() =>
+      resolveConfig({
+        application: {
+          routes: [
+            { path: "/legacy-prefix", page: "legacy", exact: false } as never,
+          ],
+        },
+      }),
+    ).toThrow(
+      "application.routes[0].exact only accepts true because Core Routes already use exact terminal-match semantics",
+    );
+
+    expect(() =>
+      resolveConfig({
+        application: {
+          routes: [
+            {
+              path: "/parent",
+              page: "parent",
+              exact: true,
+              routes: [{ path: "child", page: "child" }],
+            },
+          ],
+        },
+      }),
+    ).toThrow(
+      "application.routes[0].exact: true is valid only on a terminal Route",
+    );
+  });
+
+  it("validates Bigfish route metadata without accepting an open JSON bag", () => {
+    for (const route of [
+      { page: "home", hideInMenu: "yes" },
+      { page: "home", spmBPos: {} },
+      { page: "home", spmBPos: { a226: false } },
+      { page: "home", menuKey: 42 },
+      { page: "home", menuAssetOptions: [] },
+      { page: "home", menuAssetOptions: { transform: () => undefined } },
+    ]) {
+      expect(() =>
+        resolveConfig({
+          application: { routes: [route as never] },
+        }),
+      ).toThrow();
+    }
   });
 
   it("keeps the Bigfish migration input SPA-only and singular", () => {
@@ -500,8 +794,8 @@ describe("resolveConfig", () => {
       resolveConfig({
         plugins: [
           {
-            name: "test-plugin",
-            description: "legacy metadata",
+            name: "metadata-plugin",
+            description: "package-local metadata",
           } as never,
         ],
       }),
@@ -512,6 +806,26 @@ describe("resolveConfig", () => {
           {
             name: "test-plugin",
             buildStart() {},
+          } as never,
+        ],
+      }),
+    ).toThrow("Return the hook from plugins[0].setup() instead");
+    expect(() =>
+      resolveConfig({
+        plugins: [
+          {
+            name: "test-plugin",
+            buildOutput() {},
+          } as never,
+        ],
+      }),
+    ).toThrow("Return the hook from plugins[0].setup() instead");
+    expect(() =>
+      resolveConfig({
+        plugins: [
+          {
+            name: "test-plugin",
+            onBuildComplete() {},
           } as never,
         ],
       }),

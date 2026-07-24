@@ -53,4 +53,5 @@ When migrating a Smallfish application, rename each published `index.tsx`
 entry to `page.tsx`, map `config.json` title and supported named meta to
 `page.config.ts` core fields, and move remaining plugin-owned values to
 namespaced extensions. There is no Smallfish route reader or compatibility
-switch.
+switch. Bigfish route config is a SPA-only migration input and is not accepted
+as an MPA authoring model.

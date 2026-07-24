@@ -63,6 +63,9 @@ export function getPageRenderingContractViolation(
   if (partial && page.render !== "ssr") {
     return `${label} uses partial prerendering and must declare render: "ssr".`;
   }
+  if (partial && page.hydrate !== undefined && page.hydrate !== "none") {
+    return `${label} uses partial prerendering and must omit hydrate or declare hydrate: "none".`;
+  }
   if (rsc && partial) {
     return `${label} combines RSC and partial prerendering, which is not supported yet. Choose either rsc: true or prerender: { partial: true }, or split them into separate page routes.`;
   }

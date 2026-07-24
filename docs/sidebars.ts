@@ -36,7 +36,7 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: "category",
-      label: "Migration Compatibility",
+      label: "Migration",
       items: ["plugin-migration-0.2-to-0.3"],
     },
     {

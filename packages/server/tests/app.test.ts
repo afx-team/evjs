@@ -444,6 +444,18 @@ describe("createApp", () => {
       '[evjs] createApp() framework.runtime.routing.pages.dashboard.metadata.meta keys "Description" and "description" conflict because HTML meta names are ASCII case-insensitive.',
     );
 
+    const documentManifest = createManifest();
+    documentManifest.routing.pages.dashboard.document = {
+      beforeContent: 42,
+      betweenContentAndData: "",
+      afterData: "",
+    } as never;
+    expect(() =>
+      createApp({ framework: { runtime: documentManifest } }),
+    ).toThrow(
+      "[evjs] createApp() framework.runtime.routing.pages.dashboard.document.beforeContent must be a string.",
+    );
+
     const pprManifest = createManifest();
     pprManifest.routing.pages.dashboard.ppr = {
       delivery: "stream",

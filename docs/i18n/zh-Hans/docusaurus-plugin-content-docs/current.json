@@ -11,6 +11,10 @@
     "message": "参考",
     "description": "The label for category Reference in sidebar guideSidebar"
   },
+  "sidebar.guideSidebar.category.Migration": {
+    "message": "迁移",
+    "description": "The label for category Migration in sidebar guideSidebar"
+  },
   "sidebar.guideSidebar.category.Community": {
     "message": "社区",
     "description": "The label for category Community in sidebar guideSidebar"

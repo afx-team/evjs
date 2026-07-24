@@ -1,4 +1,23 @@
+import { assertStaticJsonValue } from "../_internal/static-json.js";
+import {
+  BUILD_IDENTIFIER_DESCRIPTION,
+  isBuildIdentifier,
+} from "../build-identifier.js";
+import { HTTP_METHOD_LIST_DESCRIPTION, isHttpMethod } from "../http.js";
 import { getPageRouteParamNameValidationError } from "../page-route-data.js";
+import {
+  getPathPatternValidationError,
+  type PathPatternValidationError,
+} from "../path-pattern.js";
+import {
+  getServerRouteParamSegmentValidationError,
+  type ServerRouteParamSegmentValidationError,
+  serverRoutePathShapeFromPath,
+} from "../server-route-data.js";
+import {
+  assertBigfishRouteExtension,
+  BIGFISH_ROUTE_EXTENSION_ID,
+} from "./bigfish-route-extension.js";
 import type {
   ClientReferenceNode,
   ComponentModel,
@@ -12,7 +31,7 @@ import type {
 } from "./index.js";
 import { assertPageMetadata, type PageMetadata } from "./page-metadata.js";
 
-/** Built-in source provider for topology-neutral positive `page.*` anchors. */
+/** Built-in source provider for materialization-neutral positive `page.*` anchors. */
 export const PAGE_ANCHOR_PROVIDER_ID = "@evjs/provider/page-anchor";
 
 /** Built-in source provider for Bigfish-style explicit SPA route-tree migration. */
@@ -39,7 +58,9 @@ export interface CoreGraph {
 export interface CoreApplicationNode {
   id: ApplicationId;
   root: string;
-  topology: "spa" | "mpa";
+  routingMode: "spa" | "mpa";
+  /** Application-level React layout shared by its Page routes. */
+  layout?: string;
   pageIds: PageId[];
   routeIds: RouteId[];
   documentIds: DocumentId[];
@@ -73,26 +94,15 @@ export type CorePageScope =
   | { kind: "module"; file: string }
   | { kind: "directory"; root: string };
 
-export type CoreRouteNode = CoreClientRouteNode | CoreDocumentRouteNode;
+export type CoreRouteNode = CoreClientRouteNode;
 
 export interface CoreClientRouteNode {
-  realm: "client";
   id: RouteId;
   applicationId: ApplicationId;
   parentId?: RouteId;
   pattern: CoreRoutePattern;
   target: CoreClientRouteTarget;
   facets: CoreRouteFacets;
-  extensions: CoreExtensionBag;
-  provenance: CoreNodeProvenance;
-}
-
-export interface CoreDocumentRouteNode {
-  realm: "document";
-  id: RouteId;
-  applicationId: ApplicationId;
-  pattern: CoreRoutePattern;
-  target: CoreDocumentRouteTarget;
   extensions: CoreExtensionBag;
   provenance: CoreNodeProvenance;
 }
@@ -111,10 +121,6 @@ export type CoreClientRouteTarget =
   | { kind: "page"; pageId: PageId }
   | { kind: "redirect"; to: CoreRouteLocation }
   | { kind: "group" };
-
-export type CoreDocumentRouteTarget =
-  | { kind: "document"; documentId: DocumentId }
-  | { kind: "redirect"; to: CoreRouteLocation };
 
 export type CoreRouteLocation =
   | { kind: "route"; pattern: CoreRoutePattern }
@@ -161,7 +167,6 @@ export interface CoreExtensionNamespaceSnapshot {
 }
 
 export type CoreExtensionOwnerKind =
-  | "project"
   | "application"
   | "page"
   | "route"
@@ -182,14 +187,15 @@ export interface CoreProvenanceProducer {
  *
  * Exact module scopes win over directory scopes. Directory ownership uses the
  * deepest matching root so a nested Page can carve its directory out of a
- * parent Page scope. Route facet modules are deliberately outside Page source
- * ownership even when they are colocated below a Page directory.
+ * parent Page scope. Application layouts and Route facet modules are
+ * deliberately outside Page source ownership even when they are colocated
+ * below a Page directory.
  */
 export function resolveCorePageOwner(
   graph: CoreGraph,
   sourcePath: string,
 ): CorePageNode | undefined {
-  if (collectRouteFacetModules(graph).has(sourcePath)) return undefined;
+  if (collectNonPageOwnedModules(graph).has(sourcePath)) return undefined;
 
   for (const page of Object.values(graph.pages)) {
     if (
@@ -256,6 +262,14 @@ export function assertCoreGraph(
     assertStrictArray(graph.serverReferences, `${source}.serverReferences`);
   }
   assertExtensionRegistry(graph.extensions, `${source}.extensions`);
+  assertServerFunctionNodes(graph.serverFunctions, `${source}.serverFunctions`);
+  assertServerRouteNodes(graph.serverRoutes, `${source}.serverRoutes`);
+  if (graph.clientReferences !== undefined) {
+    assertReferenceNodes(graph.clientReferences, `${source}.clientReferences`);
+  }
+  if (graph.serverReferences !== undefined) {
+    assertReferenceNodes(graph.serverReferences, `${source}.serverReferences`);
+  }
 
   for (const [id, application] of Object.entries(applications)) {
     assertApplicationNode(application, id, `${source}.applications.${id}`);
@@ -295,7 +309,6 @@ export function assertCoreGraph(
     routesById,
     applications,
     pages,
-    documents,
     source,
   );
   assertDocumentOwnership(documents, applications, pages, source);
@@ -374,19 +387,22 @@ function assertApplicationNode(
     [
       "id",
       "root",
-      "topology",
+      "routingMode",
       "pageIds",
       "routeIds",
       "documentIds",
       "extensions",
       "provenance",
     ],
-    [],
+    ["layout"],
   );
   assertNodeId(application.id, id, `${source}.id`);
   assertProjectPath(application.root, `${source}.root`, { allowRoot: true });
-  if (application.topology !== "spa" && application.topology !== "mpa") {
-    throw new Error(`[evjs] ${source}.topology must be "spa" or "mpa".`);
+  if (application.routingMode !== "spa" && application.routingMode !== "mpa") {
+    throw new Error(`[evjs] ${source}.routingMode must be "spa" or "mpa".`);
+  }
+  if (application.layout !== undefined) {
+    assertProjectPath(application.layout, `${source}.layout`);
   }
   assertIdentifierList(application.pageIds, `${source}.pageIds`);
   assertIdentifierList(application.routeIds, `${source}.routeIds`);
@@ -422,13 +438,17 @@ function assertPageNode(value: unknown, id: string, source: string): void {
   if (
     page.hydrate !== undefined &&
     page.hydrate !== "none" &&
-    page.hydrate !== "load" &&
-    page.hydrate !== "visible" &&
-    page.hydrate !== "idle"
+    page.hydrate !== "load"
   ) {
-    throw new Error(
-      `[evjs] ${source}.hydrate must be "none", "load", "visible", or "idle".`,
-    );
+    throw new Error(`[evjs] ${source}.hydrate must be "none" or "load".`);
+  }
+  const prerender = getOwn(page, "prerender");
+  if (prerender !== undefined) {
+    assertPrerenderConfig(prerender, `${source}.prerender`);
+  }
+  const ppr = getOwn(page, "ppr");
+  if (ppr !== undefined) {
+    assertPprConfig(ppr, `${source}.ppr`);
   }
   const pageSource = assertObjectShape(
     page.source,
@@ -486,51 +506,32 @@ function assertRouteNode(
   source: string,
 ): Record<string, unknown> {
   const route = assertRecord(value, source);
-  if (route.realm === "client") {
-    assertObjectKeys(
-      route,
-      source,
-      [
-        "realm",
-        "id",
-        "applicationId",
-        "pattern",
-        "target",
-        "facets",
-        "extensions",
-        "provenance",
-      ],
-      ["parentId"],
-    );
-  } else if (route.realm === "document") {
-    assertObjectKeys(route, source, [
-      "realm",
+  assertObjectKeys(
+    route,
+    source,
+    [
       "id",
       "applicationId",
       "pattern",
       "target",
+      "facets",
       "extensions",
       "provenance",
-    ]);
-  } else {
-    throw new Error(`[evjs] ${source}.realm must be "client" or "document".`);
-  }
+    ],
+    ["parentId"],
+  );
   assertNonEmptyString(route.id, `${source}.id`);
   assertNonEmptyString(route.applicationId, `${source}.applicationId`);
   assertRoutePattern(route.pattern, `${source}.pattern`);
   assertExtensionBag(route.extensions, `${source}.extensions`);
   assertProvenance(route.provenance, `${source}.provenance`);
 
-  if (route.realm === "client") {
-    const parentId = getOwn(route, "parentId");
-    if (parentId !== undefined) {
-      assertNonEmptyString(parentId, `${source}.parentId`);
-    }
-    assertClientRouteTarget(route.target, `${source}.target`);
-    assertRouteFacets(route.facets, `${source}.facets`);
-    return route;
+  const parentId = getOwn(route, "parentId");
+  if (parentId !== undefined) {
+    assertNonEmptyString(parentId, `${source}.parentId`);
   }
-  assertDocumentRouteTarget(route.target, `${source}.target`);
+  assertClientRouteTarget(route.target, `${source}.target`);
+  assertRouteFacets(route.facets, `${source}.facets`);
   return route;
 }
 
@@ -591,21 +592,6 @@ function assertClientRouteTarget(value: unknown, source: string): void {
   throw new Error(
     `[evjs] ${source}.kind must be "page", "redirect", or "group".`,
   );
-}
-
-function assertDocumentRouteTarget(value: unknown, source: string): void {
-  const target = assertRecord(value, source);
-  if (target.kind === "document") {
-    assertObjectKeys(target, source, ["kind", "documentId"]);
-    assertNonEmptyString(target.documentId, `${source}.documentId`);
-    return;
-  }
-  if (target.kind === "redirect") {
-    assertObjectKeys(target, source, ["kind", "to"]);
-    assertRouteLocation(target.to, `${source}.to`);
-    return;
-  }
-  throw new Error(`[evjs] ${source}.kind must be "document" or "redirect".`);
 }
 
 function assertRouteLocation(value: unknown, source: string): void {
@@ -881,11 +867,11 @@ function assertUniqueTerminalRoutePatterns(
     const target = route.target as Record<string, unknown>;
     if (target.kind === "group") continue;
     const shape = formatRoutePatternShape(route.pattern as CoreRoutePattern);
-    const key = `${route.applicationId as string}\0${route.realm as string}\0${shape}`;
+    const key = `${route.applicationId as string}\0${shape}`;
     const previous = owners.get(key);
     if (previous) {
       throw new Error(
-        `[evjs] ${source}.routes[${index}] terminal pattern shape "${shape}" conflicts with Route "${previous}" in application "${route.applicationId as string}" and realm "${route.realm as string}".`,
+        `[evjs] ${source}.routes[${index}] terminal pattern shape "${shape}" conflicts with Route "${previous}" in application "${route.applicationId as string}".`,
       );
     }
     owners.set(key, route.id as string);
@@ -897,7 +883,6 @@ function assertRouteOwnership(
   routesById: Map<string, Record<string, unknown>>,
   applications: Record<string, unknown>,
   pages: Record<string, unknown>,
-  documents: Record<string, unknown>,
   source: string,
 ): void {
   for (const [index, route] of routes.entries()) {
@@ -908,26 +893,13 @@ function assertRouteOwnership(
         `[evjs] ${routeSource}.applicationId "${applicationId}" does not match an Application.`,
       );
     }
-    if (route.realm === "client") {
-      assertClientRouteOwnership(
-        route,
-        routesById,
-        pages,
-        applicationId,
-        routeSource,
-      );
-      continue;
-    }
-    const target = route.target as Record<string, unknown>;
-    if (target.kind === "document") {
-      assertSameApplicationTarget(
-        documents,
-        target.documentId as string,
-        applicationId,
-        `${routeSource}.target.documentId`,
-        "Document",
-      );
-    }
+    assertClientRouteOwnership(
+      route,
+      routesById,
+      pages,
+      applicationId,
+      routeSource,
+    );
   }
 }
 
@@ -946,16 +918,17 @@ function assertClientRouteOwnership(
         `[evjs] ${source}.parentId "${parentId}" does not match a Route.`,
       );
     }
-    if (parent.realm !== "client") {
-      throw new Error(
-        `[evjs] ${source}.parentId must reference a client Route.`,
-      );
-    }
     if (parent.applicationId !== applicationId) {
       throw new Error(
         `[evjs] ${source}.parentId must reference a Route in application "${applicationId}".`,
       );
     }
+    assertClientRouteParentPattern(
+      route.pattern as CoreRoutePattern,
+      parent.pattern as CoreRoutePattern,
+      parentId as string,
+      source,
+    );
   }
   const target = route.target as Record<string, unknown>;
   if (target.kind === "page") {
@@ -1056,7 +1029,7 @@ function assertClientRouteParentCycles(
       );
     }
     const route = routes.get(routeId);
-    if (!route || route.realm !== "client") return;
+    if (!route) return;
     visiting.add(routeId);
     const parentId = getOwn(route, "parentId");
     if (typeof parentId === "string") visit(parentId);
@@ -1084,6 +1057,307 @@ function assertUniqueDocumentOutputs(
   }
 }
 
+function assertServerFunctionNodes(value: unknown[], source: string): void {
+  const ids = new Set<string>();
+  for (const [index, item] of value.entries()) {
+    const nodeSource = `${source}[${index}]`;
+    const node = assertObjectShape(item, nodeSource, [
+      "id",
+      "module",
+      "exportName",
+    ]);
+    assertTrimmedNonEmptyString(node.id, `${nodeSource}.id`);
+    assertFrameworkModuleId(node.module, `${nodeSource}.module`);
+    assertTrimmedNonEmptyString(node.exportName, `${nodeSource}.exportName`);
+    assertUniqueNodeId(node.id as string, ids, `${nodeSource}.id`);
+  }
+}
+
+function assertServerRouteNodes(value: unknown[], source: string): void {
+  const ids = new Set<string>();
+  const paths = new Set<string>();
+  const shapes = new Map<string, string>();
+
+  for (const [index, item] of value.entries()) {
+    const nodeSource = `${source}[${index}]`;
+    const node = assertObjectShape(item, nodeSource, [
+      "id",
+      "module",
+      "path",
+      "methods",
+    ]);
+    assertTrimmedNonEmptyString(node.id, `${nodeSource}.id`);
+    assertFrameworkModuleId(node.module, `${nodeSource}.module`);
+    assertServerRoutePath(node.path, `${nodeSource}.path`);
+    assertHttpMethods(node.methods, `${nodeSource}.methods`);
+    assertUniqueNodeId(node.id as string, ids, `${nodeSource}.id`);
+
+    const routePath = node.path as string;
+    if (paths.has(routePath)) {
+      throw new Error(
+        `[evjs] ${nodeSource}.path "${routePath}" must be unique within ${source}.`,
+      );
+    }
+    paths.add(routePath);
+
+    const shape = serverRoutePathShapeFromPath(routePath);
+    const existing = shapes.get(shape);
+    if (existing) {
+      throw new Error(
+        `[evjs] ${nodeSource}.path "${routePath}" has the same route shape as "${existing}".`,
+      );
+    }
+    shapes.set(shape, routePath);
+  }
+}
+
+function assertReferenceNodes(value: unknown[], source: string): void {
+  const ids = new Set<string>();
+  for (const [index, item] of value.entries()) {
+    const nodeSource = `${source}[${index}]`;
+    const node = assertObjectShape(
+      item,
+      nodeSource,
+      ["id", "module"],
+      ["exportName"],
+    );
+    assertTrimmedNonEmptyString(node.id, `${nodeSource}.id`);
+    assertFrameworkModuleId(node.module, `${nodeSource}.module`);
+    const exportName = getOwn(node, "exportName");
+    if (exportName !== undefined) {
+      assertTrimmedNonEmptyString(exportName, `${nodeSource}.exportName`);
+    }
+    assertUniqueNodeId(node.id as string, ids, `${nodeSource}.id`);
+  }
+}
+
+function assertUniqueNodeId(
+  id: string,
+  ids: Set<string>,
+  source: string,
+): void {
+  if (ids.has(id)) {
+    throw new Error(`[evjs] ${source} "${id}" must be unique.`);
+  }
+  ids.add(id);
+}
+
+function assertFrameworkModuleId(value: unknown, source: string): void {
+  assertTrimmedNonEmptyString(value, source);
+  const moduleId = value as string;
+  if (moduleId.includes("\\")) {
+    throw new Error(`[evjs] ${source} must use forward slashes.`);
+  }
+  if (
+    moduleId.startsWith("/") ||
+    /^[A-Za-z]:\//.test(moduleId) ||
+    moduleId.includes("?") ||
+    moduleId.includes("#")
+  ) {
+    throw new Error(
+      `[evjs] ${source} must be a normalized project-relative module id.`,
+    );
+  }
+  const relative = moduleId.startsWith("./") ? moduleId.slice(2) : moduleId;
+  const segments = relative.split("/");
+  if (
+    segments.length === 0 ||
+    segments.some(
+      (segment) => segment === "" || segment === "." || segment === "..",
+    )
+  ) {
+    throw new Error(
+      `[evjs] ${source} must be normalized and must not contain empty, ".", or ".." segments.`,
+    );
+  }
+}
+
+function assertServerRoutePath(value: unknown, source: string): void {
+  assertTrimmedNonEmptyString(value, source);
+  const routePath = value as string;
+  const pathError = getPathPatternValidationError(routePath);
+  if (pathError) {
+    throw new Error(
+      `[evjs] ${source} ${formatPathPatternValidationError(pathError)}`,
+    );
+  }
+  const paramError = getServerRouteParamSegmentValidationError(routePath);
+  if (paramError) {
+    throw new Error(
+      `[evjs] ${source} ${formatServerRouteParamValidationError(paramError)}`,
+    );
+  }
+}
+
+function formatPathPatternValidationError(
+  error: PathPatternValidationError,
+): string {
+  switch (error) {
+    case "empty":
+      return "must be a non-empty path.";
+    case "whitespace":
+      return "must not contain whitespace.";
+    case "missing-leading-slash":
+      return 'must start with "/".';
+    case "query-or-hash":
+      return "must not include a query string or hash.";
+  }
+}
+
+function formatServerRouteParamValidationError(
+  error: ServerRouteParamSegmentValidationError,
+): string {
+  if (error.error === "empty") {
+    return `contains dynamic segment "${error.segment}" without a param name.`;
+  }
+  if (error.error === "reserved") {
+    return `uses reserved dynamic param name "${error.name}" in segment "${error.segment}".`;
+  }
+  return `uses duplicate dynamic param name "${error.name}" in segment "${error.segment}".`;
+}
+
+function assertHttpMethods(value: unknown, source: string): void {
+  assertStrictArray(value, source);
+  if (value.length === 0) {
+    throw new Error(`[evjs] ${source} must contain at least one HTTP method.`);
+  }
+  const methods = new Set<string>();
+  for (const [index, method] of value.entries()) {
+    if (typeof method !== "string" || !isHttpMethod(method)) {
+      throw new Error(
+        `[evjs] ${source}[${index}] "${String(method)}" is not a supported HTTP method. Supported methods: ${HTTP_METHOD_LIST_DESCRIPTION}.`,
+      );
+    }
+    if (methods.has(method)) {
+      throw new Error(
+        `[evjs] ${source} must not contain duplicate method "${method}".`,
+      );
+    }
+    methods.add(method);
+  }
+}
+
+function assertPrerenderConfig(value: unknown, source: string): void {
+  if (value === true) return;
+  const config = assertObjectShape(
+    value,
+    source,
+    [],
+    ["partial", "delivery", "revalidate"],
+  );
+  const partial = getOwn(config, "partial");
+  if (partial !== undefined && typeof partial !== "boolean") {
+    throw new Error(`[evjs] ${source}.partial must be a boolean.`);
+  }
+  const delivery = getOwn(config, "delivery");
+  if (delivery !== undefined && delivery !== "merge" && delivery !== "stream") {
+    throw new Error(`[evjs] ${source}.delivery must be "merge" or "stream".`);
+  }
+  const revalidate = getOwn(config, "revalidate");
+  if (revalidate !== undefined) {
+    assertRevalidate(revalidate, `${source}.revalidate`);
+  }
+}
+
+function assertPprConfig(value: unknown, source: string): void {
+  const config = assertObjectShape(
+    value,
+    source,
+    [],
+    ["delivery", "revalidate", "regions"],
+  );
+  const delivery = getOwn(config, "delivery");
+  if (delivery !== undefined && delivery !== "merge" && delivery !== "stream") {
+    throw new Error(`[evjs] ${source}.delivery must be "merge" or "stream".`);
+  }
+  const revalidate = getOwn(config, "revalidate");
+  if (revalidate !== undefined) {
+    assertRevalidate(revalidate, `${source}.revalidate`);
+  }
+  const regions = getOwn(config, "regions");
+  if (regions === undefined) return;
+
+  const regionMap = assertRecord(regions, `${source}.regions`);
+  for (const [regionId, valueRegion] of Object.entries(regionMap)) {
+    if (!isBuildIdentifier(regionId)) {
+      throw new Error(
+        `[evjs] ${source}.regions key "${regionId}" must contain only ${BUILD_IDENTIFIER_DESCRIPTION}.`,
+      );
+    }
+    assertPprRegionConfig(valueRegion, `${source}.regions.${regionId}`);
+  }
+}
+
+function assertPprRegionConfig(value: unknown, source: string): void {
+  const region = assertObjectShape(
+    value,
+    source,
+    ["component"],
+    ["fallback", "cache"],
+  );
+  assertProjectPath(region.component, `${source}.component`);
+  const fallback = getOwn(region, "fallback");
+  if (fallback !== undefined) {
+    assertProjectPath(fallback, `${source}.fallback`);
+  }
+  const cache = getOwn(region, "cache");
+  if (cache !== undefined) {
+    assertPprCache(cache, `${source}.cache`);
+  }
+}
+
+function assertPprCache(value: unknown, source: string): void {
+  if (value === "no-store") return;
+  const cache = assertObjectShape(value, source, ["revalidate"]);
+  assertPositiveInteger(cache.revalidate, `${source}.revalidate`);
+}
+
+function assertRevalidate(value: unknown, source: string): void {
+  if (value === false) return;
+  assertPositiveInteger(value, source);
+}
+
+function assertPositiveInteger(value: unknown, source: string): void {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new Error(
+      `[evjs] ${source} must be a positive integer number of seconds.`,
+    );
+  }
+}
+
+function assertClientRouteParentPattern(
+  child: CoreRoutePattern,
+  parent: CoreRoutePattern,
+  parentId: string,
+  source: string,
+): void {
+  if (
+    parent.segments.length <= child.segments.length &&
+    parent.segments.every((segment, index) =>
+      routeSegmentsEqual(segment, child.segments[index]),
+    )
+  ) {
+    return;
+  }
+  throw new Error(
+    `[evjs] ${source}.pattern must start with parent Route "${parentId}" pattern.`,
+  );
+}
+
+function routeSegmentsEqual(
+  left: CoreRouteSegment,
+  right: CoreRouteSegment | undefined,
+): boolean {
+  if (!right || left.kind !== right.kind) return false;
+  if (left.kind === "static" && right.kind === "static") {
+    return left.value === right.value;
+  }
+  if (left.kind === "param" && right.kind === "param") {
+    return left.name === right.name;
+  }
+  return left.kind === "splat" && right.kind === "splat";
+}
+
 function assertExtensionBag(value: unknown, source: string): void {
   const bag = assertRecord(value, source);
   for (const namespace of Reflect.ownKeys(bag)) {
@@ -1091,73 +1365,20 @@ function assertExtensionBag(value: unknown, source: string): void {
       throw new Error(`[evjs] ${source} contains an unsupported symbol field.`);
     }
     assertNonEmptyString(namespace, `${source} namespace`);
-    assertJsonSerializableExtensionValue(
-      bag[namespace],
-      `${source}.${namespace}`,
-    );
-  }
-}
-
-function assertJsonSerializableExtensionValue(
-  value: unknown,
-  source: string,
-): void {
-  const ancestors = new Set<object>();
-
-  function visit(current: unknown, path: string): void {
-    if (
-      current === null ||
-      typeof current === "string" ||
-      typeof current === "boolean"
-    ) {
-      return;
-    }
-    if (typeof current === "number") {
-      if (Number.isFinite(current)) return;
-      throw new Error(`[evjs] ${source}${path} must be a finite number.`);
-    }
-    if (typeof current !== "object") {
-      throw new Error(
-        `[evjs] ${source}${path} must be JSON-serializable; ${typeof current} is not supported.`,
+    assertStaticJsonValue(bag[namespace], `${source}.${namespace}`);
+    if (namespace === BIGFISH_ROUTE_EXTENSION_ID) {
+      assertBigfishRouteExtension(
+        bag[namespace],
+        `${source}.${BIGFISH_ROUTE_EXTENSION_ID}`,
       );
     }
-    if (ancestors.has(current)) {
-      throw new Error(`[evjs] ${source}${path} must not contain cycles.`);
-    }
-    const isArray = Array.isArray(current);
-    if (isArray) {
-      assertStrictArray(current, `${source}${path}`);
-    } else {
-      const prototype = Object.getPrototypeOf(current);
-      if (prototype !== Object.prototype && prototype !== null) {
-        throw new Error(
-          `[evjs] ${source}${path} must contain only arrays and plain objects.`,
-        );
-      }
-      assertEnumerableDataProperties(current, `${source}${path}`);
-    }
-    ancestors.add(current);
-    if (isArray) {
-      const array = current as unknown[];
-      for (let index = 0; index < array.length; index++) {
-        visit(array[index], `${path}[${index}]`);
-      }
-    } else {
-      for (const key of Object.keys(current)) {
-        visit((current as Record<string, unknown>)[key], `${path}.${key}`);
-      }
-    }
-    ancestors.delete(current);
   }
-
-  visit(value, "");
 }
 
 function assertExtensionRegistry(value: unknown, source: string): void {
   const registry = assertObjectShape(value, source, ["namespaces"]);
   const namespaces = assertRecord(registry.namespaces, `${source}.namespaces`);
   const ownerKinds = new Set<CoreExtensionOwnerKind>([
-    "project",
     "application",
     "page",
     "route",
@@ -1199,6 +1420,18 @@ function assertExtensionRegistry(value: unknown, source: string): void {
         schemaVersion,
         `${source}.namespaces.${namespace}.schemaVersion`,
       );
+    }
+    if (namespace === BIGFISH_ROUTE_EXTENSION_ID) {
+      if (definition.producer !== CONFIG_ROUTE_PROVIDER_ID) {
+        throw new Error(
+          `[evjs] ${source}.namespaces.${namespace}.producer must be "${CONFIG_ROUTE_PROVIDER_ID}".`,
+        );
+      }
+      if (definition.owners.length !== 1 || definition.owners[0] !== "route") {
+        throw new Error(
+          `[evjs] ${source}.namespaces.${namespace}.owners must be exactly ["route"].`,
+        );
+      }
     }
   }
 }
@@ -1333,10 +1566,12 @@ function assertDocumentOutputPath(value: unknown, source: string): void {
   }
 }
 
-function collectRouteFacetModules(graph: CoreGraph): Set<string> {
+function collectNonPageOwnedModules(graph: CoreGraph): Set<string> {
   const modules = new Set<string>();
+  for (const application of Object.values(graph.applications)) {
+    if (application.layout) modules.add(application.layout);
+  }
   for (const route of graph.routes) {
-    if (route.realm !== "client") continue;
     if (typeof route.facets.layout === "string") {
       modules.add(route.facets.layout);
     }
@@ -1382,6 +1617,18 @@ function assertNonEmptyString(
 ): asserts value is string {
   if (typeof value !== "string" || value.trim() === "") {
     throw new Error(`[evjs] ${source} must be a non-empty string.`);
+  }
+}
+
+function assertTrimmedNonEmptyString(
+  value: unknown,
+  source: string,
+): asserts value is string {
+  assertNonEmptyString(value, source);
+  if (value.trim() !== value) {
+    throw new Error(
+      `[evjs] ${source} must not contain leading or trailing whitespace.`,
+    );
   }
 }
 

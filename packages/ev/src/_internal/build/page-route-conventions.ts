@@ -438,7 +438,7 @@ function formatUnsupportedDynamicRouteSegmentViolation(
     return 'Dynamic page route segments must include a name after "$". Segment "$" is not supported.';
   }
   if (segment.startsWith("$...")) {
-    return `Catch-all page route segments are not supported in this topology. Use routing.mode "spa" or replace "${segment}" with static Page directories.`;
+    return `Catch-all page route segments are not supported in this routing mode. Use routing.mode "spa" or replace "${segment}" with static Page directories.`;
   }
   if (segment.endsWith("?")) {
     return `Optional page route segments are not supported. Split "${segment}" into separate Page directories.`;

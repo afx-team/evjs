@@ -21,7 +21,7 @@ describe("createUtoopackConfig", () => {
   function createResolvedConfig(
     overrides: Partial<Parameters<typeof createUtoopackConfig>[0]> = {},
   ): Parameters<typeof createUtoopackConfig>[0] {
-    return {
+    const config: Parameters<typeof createUtoopackConfig>[0] = {
       conventions: true,
       routing: {
         mode: "spa",
@@ -59,9 +59,11 @@ describe("createUtoopackConfig", () => {
         },
       },
       transport: {},
+      extensions: {},
       plugins: [],
       ...overrides,
     };
+    return config;
   }
 
   it("passes resolved dev server options and SPA fallback to Utoopack", async () => {
@@ -881,10 +883,10 @@ function createGraph(
           ],
   );
   const pages = options.pages ?? routingPages;
-  const topology = config.routing?.mode ?? "spa";
+  const routingMode = config.routing?.mode ?? "spa";
   const pageIds = pages.map((page) => page.id);
   const routeIds = pages.map((page) => page.id);
-  const documentIds = topology === "spa" ? ["index"] : pageIds;
+  const documentIds = routingMode === "spa" ? ["index"] : pageIds;
   const provenance = {
     producer: {
       kind: "provider" as const,
@@ -898,7 +900,7 @@ function createGraph(
       default: {
         id: "default",
         root: config.routing?.dir ?? "./src/pages",
-        topology,
+        routingMode,
         pageIds,
         routeIds,
         documentIds,
@@ -927,30 +929,17 @@ function createGraph(
         },
       ]),
     ),
-    routes: pages.map((page) =>
-      topology === "spa"
-        ? {
-            realm: "client" as const,
-            id: page.id,
-            applicationId: "default",
-            pattern: toRoutePattern(page.path),
-            target: { kind: "page" as const, pageId: page.id },
-            facets: { wrappers: [] },
-            extensions: {},
-            provenance,
-          }
-        : {
-            realm: "document" as const,
-            id: page.id,
-            applicationId: "default",
-            pattern: toRoutePattern(page.path),
-            target: { kind: "document" as const, documentId: page.id },
-            extensions: {},
-            provenance,
-          },
-    ),
+    routes: pages.map((page) => ({
+      id: page.id,
+      applicationId: "default",
+      pattern: toRoutePattern(page.path),
+      target: { kind: "page" as const, pageId: page.id },
+      facets: { wrappers: [] },
+      extensions: {},
+      provenance,
+    })),
     documents: Object.fromEntries(
-      topology === "spa"
+      routingMode === "spa"
         ? [
             [
               "index",

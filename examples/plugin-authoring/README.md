@@ -1,11 +1,13 @@
 # plugin-authoring
 
-Demonstrates one evjs plugin API combining Page extension declarations with
-the lifecycle hooks used by ordinary build-time extensions.
+Demonstrates one evjs plugin API combining Application and Page extension
+declarations with the lifecycle hooks used by ordinary build-time extensions.
 
-- **`page.config.ts`** — author static, namespaced Page extension data
-- **`definePlugin` / `describe`** — register defaults and validation for that namespace
-- **`contributions`** — read resolved metadata from semantic Page views
+- **top-level `extensions`** — author static, namespaced Application data
+- **`page.config.ts`** — author static, namespaced Page data
+- **`applicationExtension` / `pageExtension`** — register both owners of one namespace
+- **`setup`** — read the resolved Application value before graph analysis
+- **`contributions`** — read resolved Page values from semantic Page views
 - **`config`** — update framework config before defaults are resolved
 - **`bundlerConfig`** — modify the underlying bundler config (type-safe via `utoopack()` helper)
 - **`buildStart`** — run logic before compilation begins
@@ -24,9 +26,10 @@ before porting those behaviors.
 
 The application itself uses the unified Core 0.3 model:
 `src/pages/page.tsx` defines `/`, `src/pages/layout.tsx` supplies the SPA root
-layout, `src/pages/page.config.ts` configures the Page extension at build time,
-and `ev.config.ts` only selects `routing.mode`. The configured value is visible
-to `contributions()`; it is not automatically serialized into browser runtime.
+layout, `ev.config.ts` configures the Application extension, and
+`src/pages/page.config.ts` configures the Page extension. Both owners use the
+same `@example/metadata` namespace and schema version. These build-time values
+are not automatically serialized into browser runtime.
 
 ## Run
 
@@ -36,8 +39,8 @@ npm run dev
 
 ## What to look for
 
-1. The `@example/page-metadata` value from `page.config.ts` in the
-   `contributions` hook
-2. Console output from `buildStart` and `buildEnd` hooks during build
-3. The `<!-- Built with evjs | file.html | N asset(s) -->` comment in the output HTML (injected by `transformHtml`)
-4. The type-safe `.txt` rule declaration in the `bundlerConfig` hook
+1. The resolved Application `@example/metadata` value in `setup`
+2. The resolved Page `@example/metadata` value in `contributions`
+3. Console output from `buildStart` and `buildEnd` hooks during build
+4. The `<!-- Built with evjs | file.html | N asset(s) -->` comment in the output HTML (injected by `transformHtml`)
+5. The type-safe `.txt` rule declaration in the `bundlerConfig` hook

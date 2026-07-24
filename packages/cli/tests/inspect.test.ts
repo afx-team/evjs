@@ -55,7 +55,7 @@ describe("inspect", () => {
 
     expect(hasInspectErrors(result)).toBe(false);
     expect(result.routing).toMatchObject({
-      topology: "spa",
+      routingMode: "spa",
       pageRoot: "./src/pages",
     });
     expect(result.pageRoutes).toEqual([
@@ -137,7 +137,7 @@ describe("inspect", () => {
 
     expect(hasInspectErrors(result)).toBe(false);
     expect(result.routing).toMatchObject({
-      topology: "spa",
+      routingMode: "spa",
       pageRoot: "./src/pages",
     });
     expect(result.pageRoutes).toEqual([
@@ -156,7 +156,7 @@ describe("inspect", () => {
     expect(result.graph).toMatchObject({
       applications: {
         default: {
-          topology: "spa",
+          routingMode: "spa",
           pageIds: ["home", "users_detail"],
           documentIds: ["index"],
         },
@@ -241,12 +241,13 @@ describe("inspect", () => {
 
     expect(hasInspectErrors(result)).toBe(false);
     expect(result.routing).toMatchObject({
-      topology: "spa",
+      routingMode: "spa",
     });
     expect(result.graph).toMatchObject({
       applications: {
         default: {
-          topology: "spa",
+          routingMode: "spa",
+          layout: "./src/pages/layout.tsx",
           pageIds: ["index", "users"],
           documentIds: ["index"],
         },
@@ -277,13 +278,6 @@ describe("inspect", () => {
             layout: "./src/pages/users/layout.tsx",
           }),
         }),
-        expect.objectContaining({
-          id: "@evjs/provider/page-anchor:root-layout",
-          target: { kind: "group" },
-          facets: expect.objectContaining({
-            layout: "./src/pages/layout.tsx",
-          }),
-        }),
       ]),
     );
     const text = formatInspectText(result);
@@ -291,7 +285,7 @@ describe("inspect", () => {
     expect(text).toContain("Routes");
     expect(text).not.toMatch(/CoreGraph v\d+/);
     expect(text).toContain(
-      "client:users: /users -> page:users, parent=root-layout, layout=./src/pages/users/layout.tsx",
+      "client:users: /users -> page:users, layout=./src/pages/users/layout.tsx",
     );
     expect(text).not.toContain("provider=@evjs/provider/page-anchor");
     expect(result.routeFiles).toEqual(
@@ -360,7 +354,7 @@ describe("inspect", () => {
 
     expect(hasInspectErrors(result)).toBe(false);
     expect(result.routing).toMatchObject({
-      topology: "spa",
+      routingMode: "spa",
       pageRoot: "./src/pages",
     });
     expect(result.pageRoutes).toEqual([
@@ -378,7 +372,7 @@ describe("inspect", () => {
     expect(result.graph).toMatchObject({
       applications: {
         default: {
-          topology: "spa",
+          routingMode: "spa",
           pageIds: ["account", "home"],
           documentIds: ["index"],
         },
@@ -484,7 +478,7 @@ describe("inspect", () => {
     expect(text).toContain("/ -> index");
 
     const json = JSON.parse(formatInspectJson(result));
-    expect(json.routing.topology).toBe("spa");
+    expect(json.routing.routingMode).toBe("spa");
     expect(json.pageRoutes[0].path).toBe("/");
   });
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CoreGraph } from "../src/manifest/index.js";
 import {
   assertCoreGraph,
+  BIGFISH_ROUTE_EXTENSION_ID,
   CONFIG_ROUTE_PROVIDER_ID,
   PAGE_ANCHOR_PROVIDER_ID,
   resolveCorePageOwner,
@@ -25,6 +26,219 @@ describe("assertCoreGraph", () => {
     };
 
     expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
+  });
+
+  it("accepts the optional Application layout module", () => {
+    const graph = createValidGraph();
+    getApplication(graph).layout = "./src/pages/layout.tsx";
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
+  });
+
+  it.each([
+    "visible",
+    "idle",
+  ])("rejects the unsupported %s Page hydration mode", (hydrate) => {
+    const graph = createValidGraph();
+    Reflect.set(getPage(graph), "hydrate", hydrate);
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      '[evjs] coreGraph.pages.orders.hydrate must be "none" or "load".',
+    );
+  });
+
+  it("validates Server Function nodes and rejects duplicate ids", () => {
+    const graph = createValidGraph();
+    graph.serverFunctions = [
+      {
+        id: "save-order",
+        module: "src/actions.ts",
+        exportName: "saveOrder",
+      },
+    ];
+    expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
+
+    Reflect.set(graph.serverFunctions[0] as object, "unexpected", true);
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      "[evjs] coreGraph.serverFunctions[0].unexpected is not supported.",
+    );
+
+    const duplicateGraph = createValidGraph();
+    duplicateGraph.serverFunctions = [
+      {
+        id: "save-order",
+        module: "src/actions.ts",
+        exportName: "saveOrder",
+      },
+      {
+        id: "save-order",
+        module: "src/other-actions.ts",
+        exportName: "saveOtherOrder",
+      },
+    ];
+    expect(() => assertCoreGraph(duplicateGraph, "coreGraph")).toThrow(
+      '[evjs] coreGraph.serverFunctions[1].id "save-order" must be unique.',
+    );
+  });
+
+  it("validates Server Route nodes, methods, and route-shape uniqueness", () => {
+    const graph = createValidGraph();
+    graph.serverRoutes = [
+      {
+        id: "users:get",
+        module: "src/apis/users/$userId.ts",
+        path: "/users/:userId",
+        methods: ["GET", "HEAD"],
+      },
+    ];
+    expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
+
+    const route = graph.serverRoutes[0];
+    expect(route).toBeDefined();
+    if (!route) throw new Error("Expected a Server Route fixture.");
+    route.methods = ["get"];
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      'coreGraph.serverRoutes[0].methods[0] "get" is not a supported HTTP method',
+    );
+
+    const duplicateShapeGraph = createValidGraph();
+    duplicateShapeGraph.serverRoutes = [
+      {
+        id: "users:get",
+        module: "src/apis/users/$userId.ts",
+        path: "/users/:userId",
+        methods: ["GET"],
+      },
+      {
+        id: "users:update",
+        module: "src/apis/users/$accountId.ts",
+        path: "/users/:accountId",
+        methods: ["POST"],
+      },
+    ];
+    expect(() => assertCoreGraph(duplicateShapeGraph, "coreGraph")).toThrow(
+      'coreGraph.serverRoutes[1].path "/users/:accountId" has the same route shape as "/users/:userId"',
+    );
+  });
+
+  it("validates client and server reference node elements", () => {
+    const graph = createValidGraph();
+    graph.clientReferences = [
+      {
+        id: "src/ClientCard.tsx#default",
+        module: "src/ClientCard.tsx",
+        exportName: "default",
+      },
+    ];
+    graph.serverReferences = [
+      {
+        id: "save-order",
+        module: "src/actions.ts",
+        exportName: "saveOrder",
+      },
+    ];
+    expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
+
+    Reflect.set(graph.clientReferences[0] as object, "unexpected", true);
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      "[evjs] coreGraph.clientReferences[0].unexpected is not supported.",
+    );
+
+    const invalidGraph = createValidGraph();
+    invalidGraph.serverReferences = [
+      {
+        id: "save-order",
+        module: "src/actions.ts",
+        exportName: " saveOrder ",
+      },
+    ];
+    expect(() => assertCoreGraph(invalidGraph, "coreGraph")).toThrow(
+      "coreGraph.serverReferences[0].exportName must not contain leading or trailing whitespace",
+    );
+  });
+
+  it("validates Page prerender and PPR configuration structures", () => {
+    const graph = createValidGraph();
+    const page = getPage(graph);
+    page.render = "ssr";
+    page.hydrate = "none";
+    page.prerender = {
+      partial: true,
+      delivery: "stream",
+      revalidate: 60,
+    };
+    page.ppr = {
+      delivery: "stream",
+      revalidate: false,
+      regions: {
+        region_offer: {
+          component: "./src/pages/orders/Offer.region.tsx",
+          fallback: "./src/pages/orders/OfferFallback.tsx",
+          cache: { revalidate: 30 },
+        },
+        region_summary: {
+          component: "./src/pages/orders/Summary.region.tsx",
+          cache: "no-store",
+        },
+      },
+    };
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
+  });
+
+  it.each([
+    [
+      "a non-boolean partial prerender flag",
+      (page: CoreGraph["pages"][string]) =>
+        Reflect.set(page, "prerender", { partial: "yes" }),
+      "coreGraph.pages.orders.prerender.partial must be a boolean",
+    ],
+    [
+      "an unknown prerender field",
+      (page: CoreGraph["pages"][string]) =>
+        Reflect.set(page, "prerender", { revaidate: 60 }),
+      "coreGraph.pages.orders.prerender.revaidate is not supported",
+    ],
+    [
+      "an invalid PPR region id",
+      (page: CoreGraph["pages"][string]) =>
+        Reflect.set(page, "ppr", {
+          regions: {
+            "offer.v1": {
+              component: "./src/pages/orders/Offer.region.tsx",
+            },
+          },
+        }),
+      'coreGraph.pages.orders.ppr.regions key "offer.v1" must contain only',
+    ],
+    [
+      "a non-project PPR component path",
+      (page: CoreGraph["pages"][string]) =>
+        Reflect.set(page, "ppr", {
+          regions: {
+            offer: { component: "src/pages/orders/Offer.region.tsx" },
+          },
+        }),
+      "coreGraph.pages.orders.ppr.regions.offer.component must be a normalized project-relative path",
+    ],
+    [
+      "a non-positive PPR cache revalidate",
+      (page: CoreGraph["pages"][string]) =>
+        Reflect.set(page, "ppr", {
+          regions: {
+            offer: {
+              component: "./src/pages/orders/Offer.region.tsx",
+              cache: { revalidate: 0 },
+            },
+          },
+        }),
+      "coreGraph.pages.orders.ppr.regions.offer.cache.revalidate must be a positive integer",
+    ],
+  ])("rejects $label", (_label, mutate, message) => {
+    const graph = createValidGraph();
+    mutate(getPage(graph));
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(message);
   });
 
   it("rejects application entries outside the canonical route graph", () => {
@@ -133,7 +347,7 @@ describe("assertCoreGraph", () => {
     graph.applications.admin = {
       id: "admin",
       root: "./src/admin",
-      topology: "spa",
+      routingMode: "spa",
       pageIds: ["admin-settings"],
       routeIds: [],
       documentIds: [],
@@ -156,9 +370,7 @@ describe("assertCoreGraph", () => {
       provenance: providerProvenance(PAGE_ANCHOR_PROVIDER_ID),
     };
     const route = graph.routes[0];
-    if (route?.realm === "client") {
-      route.target = { kind: "page", pageId: "admin-settings" };
-    }
+    if (route) route.target = { kind: "page", pageId: "admin-settings" };
 
     expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
       '[evjs] coreGraph.routes[0].target.pageId "admin-settings" belongs to application "admin", not route application "default".',
@@ -204,17 +416,12 @@ describe("assertCoreGraph", () => {
     ["Page source", (graph: CoreGraph) => graph.pages.orders?.source],
     ["Page scope", (graph: CoreGraph) => graph.pages.orders?.source.scope],
     ["client Route", (graph: CoreGraph) => getClientRoute(graph)],
-    ["document Route", (graph: CoreGraph) => addDocumentRoute(graph)],
     ["route pattern", (graph: CoreGraph) => getClientRoute(graph).pattern],
     [
       "route segment",
       (graph: CoreGraph) => getClientRoute(graph).pattern.segments[0],
     ],
     ["client route target", (graph: CoreGraph) => getClientRoute(graph).target],
-    [
-      "document route target",
-      (graph: CoreGraph) => addDocumentRoute(graph).target,
-    ],
     ["route location", (graph: CoreGraph) => addRedirect(graph)],
     ["route facets", (graph: CoreGraph) => getClientRoute(graph).facets],
     ["Document", (graph: CoreGraph) => graph.documents["app:default"]],
@@ -392,6 +599,86 @@ describe("assertCoreGraph", () => {
     };
 
     expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
+  });
+
+  it.each([
+    "__proto__",
+    "constructor",
+    "prototype",
+  ])('rejects unsafe extension payload key "%s"', (key) => {
+    const graph = createValidGraph();
+    graph.extensions.namespaces["example.plugin"] = {
+      producer: "example-plugin",
+      owners: ["page"],
+    };
+    const nested = Object.create(null) as Record<string, unknown>;
+    Object.defineProperty(nested, key, {
+      enumerable: true,
+      value: true,
+    });
+    getPage(graph).extensions["example.plugin"] = { nested };
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      `coreGraph.pages.orders.extensions.example.plugin.nested.${key} is not a safe config field`,
+    );
+  });
+
+  it("validates the built-in Bigfish Route extension schema and owner", () => {
+    const graph = createValidGraph();
+    graph.extensions.namespaces[BIGFISH_ROUTE_EXTENSION_ID] = {
+      producer: CONFIG_ROUTE_PROVIDER_ID,
+      owners: ["route"],
+    };
+    getClientRoute(graph).extensions[BIGFISH_ROUTE_EXTENSION_ID] = {
+      name: "Orders",
+      icon: "orders",
+      title: "Orders",
+      hideInMenu: false,
+      flatMenu: true,
+      spmBPos: { a226: "b1" },
+      access: "canReadOrders",
+      menuKey: { spcenter: null, merchant_b: "" },
+      menuAssetOptions: {
+        source: "route",
+        nested: { enabled: true },
+      },
+    };
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
+
+    graph.extensions.namespaces[BIGFISH_ROUTE_EXTENSION_ID] = {
+      producer: CONFIG_ROUTE_PROVIDER_ID,
+      owners: ["page"],
+    };
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      `namespaces.${BIGFISH_ROUTE_EXTENSION_ID}.owners must be exactly ["route"]`,
+    );
+
+    graph.extensions.namespaces[BIGFISH_ROUTE_EXTENSION_ID] = {
+      producer: "example-plugin",
+      owners: ["route"],
+    };
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      `namespaces.${BIGFISH_ROUTE_EXTENSION_ID}.producer must be "${CONFIG_ROUTE_PROVIDER_ID}"`,
+    );
+  });
+
+  it.each([
+    ["an empty value", {}],
+    ["an unknown field", { label: "Orders" }],
+    ["a non-boolean menu flag", { hideInMenu: "yes" }],
+    ["an empty spm map", { spmBPos: {} }],
+    ["a non-string spm map value", { spmBPos: { a226: false } }],
+    ["a non-map menu asset value", { menuAssetOptions: [] }],
+  ])("rejects %s in the Bigfish Route extension", (_label, value) => {
+    const graph = createValidGraph();
+    graph.extensions.namespaces[BIGFISH_ROUTE_EXTENSION_ID] = {
+      producer: CONFIG_ROUTE_PROVIDER_ID,
+      owners: ["route"],
+    };
+    getClientRoute(graph).extensions[BIGFISH_ROUTE_EXTENSION_ID] = value;
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow();
   });
 
   it.each([
@@ -588,6 +875,20 @@ describe("assertCoreGraph", () => {
     expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
   });
 
+  it("excludes the Application root layout from a root Page directory scope", () => {
+    const graph = createValidGraph();
+    const rootPage = getPage(graph);
+    rootPage.source.module = "./src/pages/page.tsx";
+    rootPage.source.scope = { kind: "directory", root: "./src/pages" };
+    getApplication(graph).layout = "./src/pages/layout.tsx";
+
+    expect(
+      resolveCorePageOwner(graph, "./src/pages/layout.tsx"),
+    ).toBeUndefined();
+    expect(resolveCorePageOwner(graph, "./src/pages/model.ts")).toBe(rootPage);
+    expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
+  });
+
   it("rejects duplicate scopes while allowing parent and child directory carve-outs", () => {
     const graph = createValidGraph();
     const rootPage = getPage(graph);
@@ -661,7 +962,7 @@ describe("assertCoreGraph", () => {
     );
   });
 
-  it("rejects duplicate terminal route shapes but not groups or separate realms", () => {
+  it("rejects duplicate terminal route shapes but allows path groups", () => {
     const graph = createValidGraph();
     getClientRoute(graph).pattern.segments = [
       { kind: "static", value: "users" },
@@ -672,7 +973,6 @@ describe("assertCoreGraph", () => {
       pattern: getClientRoute(graph).pattern,
       target: { kind: "group" },
     });
-    addDocumentRoute(graph).pattern = getClientRoute(graph).pattern;
     expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
 
     addClientRoute(graph, {
@@ -686,7 +986,7 @@ describe("assertCoreGraph", () => {
       target: { kind: "redirect", to: { kind: "url", href: "/login" } },
     });
     expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
-      'conflicts with Route "orders" in application "default" and realm "client"',
+      'conflicts with Route "orders" in application "default"',
     );
   });
 
@@ -701,6 +1001,34 @@ describe("assertCoreGraph", () => {
     });
     route.parentId = "root-group";
 
+    expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
+  });
+
+  it("requires every client parent pattern to prefix its child pattern", () => {
+    const graph = createValidGraph();
+    const child = getClientRoute(graph);
+    child.pattern = {
+      segments: [
+        { kind: "static", value: "orders" },
+        { kind: "static", value: "history" },
+      ],
+    };
+    const parent = addClientRoute(graph, {
+      id: "account-layout",
+      pattern: {
+        segments: [{ kind: "static", value: "account" }],
+      },
+      target: { kind: "group" },
+    });
+    child.parentId = parent.id;
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      '[evjs] coreGraph.routes[0].pattern must start with parent Route "account-layout" pattern.',
+    );
+
+    parent.pattern = {
+      segments: [{ kind: "static", value: "orders" }],
+    };
     expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
   });
 
@@ -812,30 +1140,9 @@ describe("assertCoreGraph", () => {
   });
 });
 
-function getClientRoute(
-  graph: CoreGraph,
-): Extract<CoreGraph["routes"][number], { realm: "client" }> {
-  const route = graph.routes.find((candidate) => candidate.realm === "client");
-  if (!route || route.realm !== "client") {
-    throw new Error("Expected a client route fixture.");
-  }
-  return route;
-}
-
-function addDocumentRoute(
-  graph: CoreGraph,
-): Extract<CoreGraph["routes"][number], { realm: "document" }> {
-  const route: Extract<CoreGraph["routes"][number], { realm: "document" }> = {
-    realm: "document",
-    id: "document:default",
-    applicationId: "default",
-    pattern: { segments: [] },
-    target: { kind: "document", documentId: "app:default" },
-    extensions: {},
-    provenance: providerProvenance(PAGE_ANCHOR_PROVIDER_ID),
-  };
-  graph.routes.push(route);
-  getApplication(graph).routeIds.push(route.id);
+function getClientRoute(graph: CoreGraph): CoreGraph["routes"][number] {
+  const route = graph.routes[0];
+  if (!route) throw new Error("Expected a client route fixture.");
   return route;
 }
 
@@ -882,13 +1189,9 @@ function addPage(
 
 function addClientRoute(
   graph: CoreGraph,
-  input: Pick<
-    Extract<CoreGraph["routes"][number], { realm: "client" }>,
-    "id" | "pattern" | "target"
-  >,
-): Extract<CoreGraph["routes"][number], { realm: "client" }> {
-  const route: Extract<CoreGraph["routes"][number], { realm: "client" }> = {
-    realm: "client",
+  input: Pick<CoreGraph["routes"][number], "id" | "pattern" | "target">,
+): CoreGraph["routes"][number] {
+  const route: CoreGraph["routes"][number] = {
     applicationId: "default",
     facets: { wrappers: [] },
     extensions: {},
@@ -922,7 +1225,7 @@ function createValidGraph(): CoreGraph {
       default: {
         id: "default",
         root: ".",
-        topology: "spa",
+        routingMode: "spa",
         pageIds: ["orders"],
         routeIds: ["orders"],
         documentIds: ["app:default"],
@@ -949,7 +1252,6 @@ function createValidGraph(): CoreGraph {
     },
     routes: [
       {
-        realm: "client",
         id: "orders",
         applicationId: "default",
         pattern: {

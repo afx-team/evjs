@@ -30,13 +30,14 @@ import {
   resolveCorePageConfigModules,
   resolvePageConfigModules,
 } from "../page-config-module.js";
-import { findRemovedPageModuleConfigExports } from "../page-module-config.js";
+import { analyzePageModuleExports } from "../page-module-config.js";
 import { getPageBuildContractViolation } from "../page-rendering-contract.js";
 import { routePathShapeFromPath } from "../page-route-conventions.js";
 import { sortPageRoutes } from "../page-route-order.js";
 import {
-  applyPluginPageExtensions,
+  applyPluginExtensions,
   type PluginExtensionRegistry,
+  type PluginExtensionResolutionSession,
 } from "../plugin-extensions.js";
 import {
   extractPprRegionModuleConfig,
@@ -74,8 +75,12 @@ export interface CreateCoreGraphOptions {
     alias?: Record<string, string>;
   };
   pluginExtensions?: PluginExtensionRegistry;
+  /** Application extension values resolved before plugin setup. */
+  applicationExtensions?: Readonly<Record<string, unknown>>;
   /** Canonical Page configs pre-evaluated once for alias convergence. */
   pageConfigs?: ResolvedPageFileConfigs;
+  /** Page extension snapshots reused during one alias-convergence analysis. */
+  extensionResolutionSession?: PluginExtensionResolutionSession;
 }
 
 interface FrameworkAnalysisFacts {
@@ -96,6 +101,7 @@ export interface Diagnostic {
 
 export interface GraphConfig {
   application?: ResolvedConfigRouteApplication;
+  extensions?: Readonly<Record<string, unknown>>;
   routing?: {
     mode: "spa" | "mpa";
     dir: string;
@@ -324,11 +330,29 @@ export async function createCoreGraph(
     sourceCache,
     diagnostics,
   );
-  graph = applyPluginPageExtensions(
-    graph,
-    options.pluginExtensions ?? { pageExtensions: [] },
-    { canonical: pageConfigs.pages },
-  );
+  const pluginExtensions = options.pluginExtensions ?? {
+    applicationExtensions: [],
+    pageExtensions: [],
+    namespaces: [],
+  };
+  const requiresApplicationExtensionSnapshot =
+    (Object.hasOwn(graph.applications, "default") &&
+      pluginExtensions.applicationExtensions.length > 0) ||
+    Object.keys(config.extensions ?? {}).length > 0;
+  if (
+    requiresApplicationExtensionSnapshot &&
+    options.applicationExtensions === undefined
+  ) {
+    throw new Error(
+      "[evjs] createCoreGraph() requires Application extensions resolved before plugin setup. Pass options.applicationExtensions from framework orchestration.",
+    );
+  }
+  graph = applyPluginExtensions(graph, pluginExtensions, {
+    applicationExtensions: options.applicationExtensions,
+    canonicalPages: pageConfigs.pages,
+    extensionResolutionSession: options.extensionResolutionSession,
+  });
+  assertCoreGraph(graph, "resolved CoreGraph");
 
   return {
     graph,
@@ -342,19 +366,7 @@ function hasPageAnchorDiscovery(
 ): config is Pick<GraphConfig, "application"> & {
   routing: NonNullable<GraphConfig["routing"]>;
 } {
-  if (!config.routing || config.application) return false;
-  if (config.routing.metadata) return true;
-  const pageRoutes = config.routing.routes.filter(
-    (route) => route.kind !== "layout",
-  );
-  return (
-    pageRoutes.length > 0 &&
-    pageRoutes.every(
-      (route) =>
-        route.scope?.kind === "directory" &&
-        path.basename(route.module, path.extname(route.module)) === "page",
-    )
-  );
+  return Boolean(config.routing && !config.application);
 }
 
 function withAnalysisFacts(
@@ -526,11 +538,19 @@ async function diagnoseRemovedPageModuleConfigExports(
       continue;
     }
 
-    if (findRemovedPageModuleConfigExports(source).length > 0) {
+    const exports = analyzePageModuleExports(source);
+    if (exports.removedConfig.length > 0) {
       diagnostics.push({
         level: "error",
         file: toPosixPath(path.relative(cwd, absolute)),
         message: `Page "${page.id}" declares render, hydrate, prerender, or rsc from its component module. Component rendering exports have been removed; move these fields to the adjacent page.config.ts module.`,
+      });
+    }
+    if (page.render !== "csr" && exports.routeLifecycle.length > 0) {
+      diagnostics.push({
+        level: "error",
+        file: toPosixPath(path.relative(cwd, absolute)),
+        message: `Page "${page.id}" uses render "${page.render}" and exports browser-only route lifecycle ${exports.routeLifecycle.map((name) => `"${name}"`).join(", ")}. Non-CSR Pages require a server route lifecycle projection, which Core 0.3 does not define. Remove these exports or use render: "csr".`,
       });
     }
   }

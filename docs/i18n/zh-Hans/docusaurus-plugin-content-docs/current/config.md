@@ -113,8 +113,8 @@ segment。
 | 模型对象 | SPA | MPA |
 | --- | --- | --- |
 | Page | `page.*` 及所在目录 scope | 相同的 Page 与 scope |
-| Route | 同一浏览器路由树中的 Client Route | 来自同一语义 pattern 的 Document Route |
-| Document | 通常由 Application 持有一个共享 HTML Document | 通常每条 Page 路由由 Page 持有一个 HTML Document |
+| Route | 同一浏览器路由树中的 Client Route | 相同的语义 Route，用来选择独立 Page entry |
+| Document | Application-owned shell，外加静态 SSG Page 的 Page-owned Document | 每条静态 Page route 一个 Page-owned HTML Document |
 | 源路径 | 相对 `routing.dir` 的路由目录 | 相同的源路径 |
 
 ### SPA
@@ -136,9 +136,42 @@ export default defineConfig({
 ```
 
 MPA discovery 接受相同的 `page.*` 锚点，并生成相同的语义 Page/Route 身份。
-动态路由输出以及 React layout/boundary 物化仍在分阶段建设。暂不支持的组合会
-在 graph/plan 校验阶段失败，不会激活另一套创作模型。同一 Page 目录的
-`index.html` 会提供该 MPA Page 的 Document 模板。
+它只接受静态 Page path；`$param`、终止 `$...splat` 与 router-only boundary
+会在 graph 校验失败。Layout 在两种 mode 中都会组合。这些错误不会激活另一套
+创作模型。同一 Page 目录的 `index.html` 会提供该 MPA Page 的 Document 模板。
+
+## Application extension 配置
+
+插件持有的 Application 配置使用顶层 `extensions`：
+
+```ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  routing: { mode: "spa" },
+  extensions: {
+    "@company/analytics": {
+      enabled: true,
+      channel: "checkout",
+    },
+  },
+  plugins: [analyticsPlugin()],
+});
+```
+
+每个 key 都必须由当前插件的 `applicationExtension()` declaration 注册。Core 会在
+`setup()` 之前完成 default、merge 与 validation，然后把同一份值写入 normalized
+Application。canonical SPA、canonical MPA 与临时 Bigfish
+`application.routes` 输入使用完全相同的合同。
+
+value 必须是严格 static JSON。函数等可执行选项放入插件工厂，例如
+`oneApiPlugin({ filter })`，或引用显式 generated/runtime module。不要在这里存放
+secret：extension value 会进入 build graph。它们不会自动发送到浏览器；runtime
+投影仍必须由插件显式 contribution。
+
+不支持 `application.extensions`，因为 `application` 只是临时 Bigfish SPA
+route-tree migration input。路由树迁移到 canonical `page.*` 后，顶层
+`extensions` 仍然有效。
 
 ## Page Scope 与配置
 
@@ -183,7 +216,8 @@ export default definePageConfig({
 
 evjs 构建 graph 时同步求值该 module。它必须 default-export plain object，且只
 包含 static JSON data。支持的 core 字段是 `title`、`meta`、`render`、
-`hydrate`、`prerender` 与 `rsc`。`meta` 是生成
+`hydrate`、`prerender` 与 `rsc`。`hydrate` 只接受 `"none"` 或 `"load"`。
+`meta` 是生成
 `<meta name="key" content="value">` 的字符串 record；它不接受 `property`、
 `charset`、link、script、函数或通用 head tree。插件持有的值必须放在
 `extensions` 下已注册 namespaced key 中。
@@ -316,9 +350,19 @@ reader 开关；启动应用前先转换这些源码树。
 
 ### Bigfish SPA 路由配置
 
-Bigfish 风格的 `routes`、`component`、`children`、`layout`、`wrappers` 和
-document 配置可以进入仅支持 SPA 的迁移 normalizer。MPA topology、Alias
-冲突以及项目外部 component reference 会被拒绝。
+Bigfish 风格的嵌套 `routes`、`component`、`layout`、`wrappers`、redirect 和
+document 配置可以进入仅支持 SPA 的迁移 normalizer。历史 `children` 拼写
+会被拒绝，因为当前 Umi/Bigfish 配置使用 `routes`。normalizer 还会把文档列明
+的 access/menu metadata 保留在已注册的 `@evjs/bigfish-route` Route extension
+中，但不会接受任意 Route extension bag。MPA 物化模式、Alias 冲突以及项目
+外部 component reference 会被拒绝。
+
+显式 component 以 `index.*` 或 `page.*` 结尾时，其所在目录会成为 migration
+Page scope。`src/pages/403.tsx` 这类 flat component 仍是 module scope，避免它
+意外持有 `src/pages` 中的其他 flat Page；module-scoped Page 不会发现相邻
+`page.config.ts`。渐进迁移 Page config 时，应先把 flat component 移入独立目录
+（显式 route 可暂时引用 `403/index.*`），再添加 `page.config.ts`，最后在启用
+canonical `routing` 前把 entry 重命名为 `page.*`。
 
 把 component 模块移动到对应路由目录，并把每个路由 entry 重命名为 `page.*`。
 目录会编码相同的路径树；文件树 canonical 后，设置

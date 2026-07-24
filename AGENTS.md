@@ -70,10 +70,11 @@ materialization.
    catch-all, and pathless segments. Other colocated files—including
    `index.*`—are private application source unless they are another documented
    route facet. Keep exactly one `page.*` extension variant per route directory.
-   `application.routes` and Bigfish `component`/`children` are SPA-only
+   `application.routes` and Bigfish `component`/`routes` are SPA-only
    route-tree migration inputs that must normalize to the same CoreGraph, not
    additional canonical models. They must reject `routing.mode: "mpa"` because
-   the migration input is SPA-only. Before running a Smallfish or evjs 0.2
+   the migration input is SPA-only. Reject the historical `children` spelling;
+   current Umi/Bigfish config uses `routes`. Before running a Smallfish or evjs 0.2
    application on Core 0.3, move or rename every published entry to `page.*`, move Page
    configuration to `page.config.ts`, and configure only `routing.mode`.
    Do not add a compatibility reader or infer routes from `index.*`.
@@ -100,13 +101,20 @@ materialization.
    components. Non-CSR materialization requires server output; PPR and RSC use
    `render: "ssr"`, and PPR plus RSC on one Page remains unsupported until the
    runtime explicitly supports it.
-9. `createApp({ framework })` consumes generated `BuildOutput` manifests. Do
+9. Plugin-owned static configuration uses one namespaced extension mechanism:
+   top-level `config.extensions` targets the normalized Application, while
+   adjacent `page.config.ts` `extensions` target a Page. Plugins register these
+   owners with `applicationExtension()` and `pageExtension()` respectively.
+   Application values resolve before `setup()`; Page values resolve during
+   graph analysis. Extension values are strict JSON and enter the CoreGraph, so
+   executable callbacks and secrets do not belong there.
+10. `createApp({ framework })` consumes generated `BuildOutput` manifests. Do
    not pass ad hoc manifest objects; use `createReactFrameworkServer()` unless
    a deployment adapter intentionally owns that contract.
-10. Programmatic `@evjs/server` app and route APIs remain runtime primitives.
+11. Programmatic `@evjs/server` app and route APIs remain runtime primitives.
     evjs framework routing does not inspect or publish programmatic
     `createRoute()` declarations.
-11. Utoopack is the default user path. Webpack is the validation/fallback adapter
+12. Utoopack is the default user path. Webpack is the validation/fallback adapter
    for framework features still blocked on lower-level Utoopack APIs.
 
 ## Validation

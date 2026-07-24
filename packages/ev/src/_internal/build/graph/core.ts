@@ -3,7 +3,6 @@ import type {
   CoreApplicationNode,
   CoreClientRouteNode,
   CoreDocumentNode,
-  CoreDocumentRouteNode,
   CoreGraph,
   CorePageNode,
   CoreRouteNode,
@@ -20,15 +19,13 @@ import {
   PAGE_ANCHOR_PROVIDER_ID,
 } from "@evjs/shared/manifest";
 import type { ResolvedPageFileConfig } from "../page-config-module.js";
+import { createStaticPageDocumentOutput } from "../page-document-output.js";
 import type { GraphConfig } from "./index.js";
 
 const PAGE_ANCHOR_PRODUCER = {
   kind: "provider",
   id: PAGE_ANCHOR_PROVIDER_ID,
 } as const;
-
-export const PAGE_ANCHOR_ROOT_LAYOUT_ROUTE_ID =
-  "@evjs/provider/page-anchor:root-layout";
 
 /** Apply adjacent Page config to normalized Core Page fields. */
 export function applyResolvedPageConfigs(
@@ -143,7 +140,7 @@ export interface PageAnchorGraphFacts {
 /**
  * Normalize the canonical page-anchor provider into the Core 0.3 graph.
  *
- * Page and semantic Route identity are topology-neutral. SPA materializes one
+ * Page and semantic Route identity are materialization-neutral. SPA materializes one
  * Application-owned Document; MPA materializes one Page-owned Document for
  * every static Page Route while retaining the same semantic client Routes for
  * plugin inspection.
@@ -160,7 +157,7 @@ export function createPageAnchorGraph(
   }
   const pageConfig = config as PageAnchorGraphConfig;
 
-  const topology = pageConfig.routing.mode;
+  const routingMode = pageConfig.routing.mode;
   const applications = createRecord<CoreApplicationNode>();
   const pages = createRecord<CorePageNode>();
   const documents = createRecord<CoreDocumentNode>();
@@ -238,29 +235,6 @@ export function createPageAnchorGraph(
       pageRouteId,
     ]),
   );
-  const rootLayoutRouteIds = new Map<string, string>();
-
-  if (pageConfig.routing.rootModule) {
-    const applicationId = "default";
-    rootLayoutRouteIds.set(applicationId, PAGE_ANCHOR_ROOT_LAYOUT_ROUTE_ID);
-    routes.push({
-      realm: "client",
-      id: PAGE_ANCHOR_ROOT_LAYOUT_ROUTE_ID,
-      applicationId,
-      pattern: { segments: [] },
-      target: { kind: "group" },
-      facets: { layout: pageConfig.routing.rootModule, wrappers: [] },
-      extensions: {},
-      provenance: {
-        producer: PAGE_ANCHOR_PRODUCER,
-        source: pageConfig.routing.rootModule,
-      },
-    });
-    getOwn(applications, applicationId)?.routeIds.push(
-      PAGE_ANCHOR_ROOT_LAYOUT_ROUTE_ID,
-    );
-  }
-
   for (const route of routeFacts) {
     if (mergedLayoutReplacementIds.has(route.id)) continue;
     const applicationId = "default";
@@ -283,12 +257,11 @@ export function createPageAnchorGraph(
       : route.parentId;
     const parentId = physicalParentId
       ? (mergedLayoutReplacementIds.get(physicalParentId) ?? physicalParentId)
-      : rootLayoutRouteIds.get(applicationId);
+      : undefined;
     const layout =
       mergedLayout?.module ??
       (route.kind === "layout" ? route.module : undefined);
     routes.push({
-      realm: "client",
       id: route.id,
       applicationId,
       ...(parentId ? { parentId } : {}),
@@ -309,7 +282,7 @@ export function createPageAnchorGraph(
     getOwn(applications, applicationId)?.routeIds.push(route.id);
   }
 
-  if (topology === "mpa") {
+  if (routingMode === "mpa") {
     materializePageAnchorMpaDocuments(
       pageConfig,
       routeFacts,
@@ -343,19 +316,7 @@ export function createPageAnchorGraph(
 function isPageAnchorGraphConfig(
   config: GraphConfig,
 ): config is PageAnchorGraphConfig {
-  if (!config.routing || config.application) return false;
-  if (config.routing.metadata) return true;
-  const pageRoutes = config.routing.routes.filter(
-    (route) => route.kind !== "layout",
-  );
-  return (
-    pageRoutes.length > 0 &&
-    pageRoutes.every(
-      (route) =>
-        route.scope?.kind === "directory" &&
-        /(?:^|\/)page\.(?:[cm]?[jt]sx?)$/.test(route.module),
-    )
-  );
+  return Boolean(config.routing && !config.application);
 }
 
 function createPageAnchorApplication(
@@ -367,7 +328,10 @@ function createPageAnchorApplication(
     defineRecordValue(applications, "default", {
       id: "default",
       root: ".",
-      topology: "mpa",
+      routingMode: "mpa",
+      ...(config.routing.rootModule
+        ? { layout: config.routing.rootModule }
+        : {}),
       pageIds: [],
       routeIds: [],
       documentIds: [],
@@ -383,7 +347,8 @@ function createPageAnchorApplication(
   defineRecordValue(applications, "default", {
     id: "default",
     root: ".",
-    topology: "spa",
+    routingMode: "spa",
+    ...(config.routing.rootModule ? { layout: config.routing.rootModule } : {}),
     pageIds: [],
     routeIds: [],
     documentIds: ["index"],
@@ -441,8 +406,7 @@ function materializePageAnchorMpaDocuments(
     );
   }
   const semanticPageRoutes = routes.filter(
-    (route): route is CorePageClientRoute =>
-      route.realm === "client" && route.target.kind === "page",
+    (route): route is CorePageClientRoute => route.target.kind === "page",
   );
   const routeByPageId = new Map<string, CorePageClientRoute>();
 
@@ -482,21 +446,7 @@ function materializePageAnchorMpaDocuments(
       },
     });
 
-    const documentRoute: CoreDocumentRouteNode = {
-      realm: "document",
-      id: `document:${route.id}`,
-      applicationId: route.applicationId,
-      pattern: route.pattern,
-      target: { kind: "document", documentId },
-      extensions: {},
-      provenance: {
-        producer: PAGE_ANCHOR_PRODUCER,
-        source: page.source.module,
-      },
-    };
-    routes.push(documentRoute);
     application.documentIds.push(documentId);
-    application.routeIds.push(documentRoute.id);
   }
 
   for (const pageId of Object.keys(pages)) {
@@ -514,20 +464,14 @@ function createCanonicalMpaDocumentOutput(route: CoreClientRouteNode): string {
   );
   if (dynamic) {
     throw new Error(
-      `[evjs] Canonical MPA Route "${route.id}" cannot materialize dynamic segment "${dynamic.kind === "param" ? `$${dynamic.name}` : "$..."}" as a static HTML document yet. Use routing.mode "spa".`,
+      `[evjs] Canonical MPA Route "${route.id}" cannot materialize dynamic segment "${dynamic.kind === "param" ? `$${dynamic.name}` : "$..."}" as one static HTML document. Use routing.mode "spa".`,
     );
   }
-  const directory = route.pattern.segments
-    .map((segment) => {
-      if (segment.kind !== "static") {
-        throw new Error(
-          `[evjs] Canonical MPA Route "${route.id}" contains a non-static segment after materialization validation.`,
-        );
-      }
-      return segment.value;
-    })
-    .join("/");
-  return directory ? `${directory}/index.html` : "index.html";
+  const output = createStaticPageDocumentOutput(route.pattern);
+  if (output) return output;
+  throw new Error(
+    `[evjs] Canonical MPA Route "${route.id}" contains a non-static segment after materialization validation.`,
+  );
 }
 
 function parseRoutePattern(pathname: string): CoreRoutePattern {

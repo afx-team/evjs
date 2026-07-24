@@ -102,6 +102,7 @@ slots 如下：
 | Slot | 覆盖能力 |
 |------|----------|
 | `client.entry` | Entry imports、entry wrapper modules 和 replacement wrappers |
+| `page.wrapper` | 跨 client/server projection 的语义 Page component 包装 |
 | `server.request.middleware` | Server pipeline 中的 framework request middleware |
 | `html.tag` | 结构化 `meta`、`link`、`script`、`style` tags |
 | `resolve.alias` | 指向用户模块、package、绝对路径或 generated artifacts 的语义化 alias |
@@ -110,9 +111,16 @@ slots 如下：
 需要 import side-effect module 或执行安装逻辑时，使用 `client.entry` 显式调用
 installer。IR 不携带 inert runtime-plugin registry。
 
-`client.entry.runtime` 只接受 `"client"` 或 `"all"`。Client entry 无法物化
-server code，因此 server-only filter 会被拒绝；请改用 server request 或
-extension-owned server entry facet。
+`client.entry.runtime` 只接受 `"client"`。Client entry 无法物化 server code，
+因此 `"server"` 和具有误导性的 `"all"` 都会被拒绝。需要把 Page component
+行为真实投影到 client 与 server runtime 时，应使用 `page.wrapper`。
+
+`page.wrapper` 接受 `runtime: "client" | "server" | "all"`，以及可选的
+Application/Page target。模块必须 default-export 一个接收 `children` 的 component。
+它会按实际存在的 materialization point 投影到 SPA route composition、MPA Page
+client entry，以及 SSR/SSG/PPR shell/RSC server Page entry。filter 没有匹配
+projection 时会失败。后声明的 contribution 包在先声明的 contribution 外层；
+route layout 与 wrapper 仍位于 plugin Page wrapper 外层。
 
 显式 Application/Page target 必须为 `client.entry` 匹配实际 client entry，或为
 `html.tag` 匹配 HTML Document。SPA 的 semantic Page 通常与 Application 共享二者，
@@ -122,7 +130,8 @@ extension-owned server entry facet。
 canonical MPA 会暴露一个逻辑 `default` Application，即使它最终为每个 Page 分别
 物化 page-client entry 与 Document。因此 Application target 会把 `client.entry` 展开到
 全部 Page entry，并把 `html.tag` 展开到全部 Page Document；Page target 仍精确
-匹配单页。展开结果记录在 generated plan。显式
+匹配单页。`page.wrapper` 则按语义 Page ownership 展开，因此同一个
+Application/Page target 可以同时用于 SPA 与 MPA。展开结果记录在 generated plan。显式
 route-tree 输入必须先 normalize 到相同 Application/Page/Document ownership。
 
 ## 边界

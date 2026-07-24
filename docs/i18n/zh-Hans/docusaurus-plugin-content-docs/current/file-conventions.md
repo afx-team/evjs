@@ -145,8 +145,8 @@ src/pages/
 ```
 
 SPA 物化 Client Route；MPA 从相同 semantic Page/Route 出发物化 Page-owned
-Document。MPA materializer 的动态路由和 SPA-only facet 覆盖仍在分阶段完成；
-不支持的组合会显式失败。
+Document。MPA 只接受静态 Page path；`$param`、终止 `$...splat` 与 router-only
+boundary facet 会显式失败，layout 在两种 mode 中都会组合。
 
 ## 服务端函数
 
@@ -267,11 +267,13 @@ canonical Page discovery 不要求用户选择 route reader 或 provider。新�
 
 ### Bigfish SPA
 
-Migration normalizer 接受 `application.routes`，以及 Bigfish SPA route tree
-所需的 `component`/`children`、`layout`、`wrappers` 与 `redirect` 拼写。共享
-template 和 mount 值放在 `application.document` 下。它不接受 topology
-selector、顶层 `routes` 或顶层 `html`。canonical 目标把每个 component 移到
-公开 URL 对应目录并命名为 `page.*`。
+Migration normalizer 接受 `application.routes`，以及当前 Bigfish SPA route
+tree 使用的 `component`、嵌套 `routes`、`layout`、`wrappers` 与 `redirect`
+字段。它与当前 Umi config-route 行为一致，会拒绝 `children`。有限的 Bigfish
+access/menu metadata 会保留在已注册的 `@evjs/bigfish-route` Route extension
+中。共享 template 和 mount 值放在 `application.document` 下。它不接受
+routing mode selector、顶层 `routes` 或顶层 `html`。canonical 目标把每个
+component 移到公开 URL 对应目录并命名为 `page.*`。
 
 ### Smallfish
 
@@ -281,12 +283,11 @@ entry 重命名为 `page.*`，把 `config.json` 的 title 与受支持 named met
 `page.config.ts` extension。删除 `config.json` 后，只选择
 `routing.mode: "mpa"`。
 
-### evjs 0.2 与 `page.*` preview
+### evjs 0.2
 
 运行 Core 0.3 前，把每个已发布 filename route 移到 URL 对应目录并把 entry
-重命名为 `page.*`；按需保留 `$param` 与 `(group)` 目录段。此前
-positive-anchor preview 已理解 `page.*`；其实验性 selector 不再属于 public
-config。
+重命名为 `page.*`；按需保留 `$param` 与 `(group)` 目录段。Core 0.3 不提供
+source-reader 或 provider selector；源码树完成转换后，只声明 `routing.mode`。
 
 canonical 迁移目标：
 

@@ -20,7 +20,7 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
 
   lines.push("Routing");
   if (result.routing) {
-    lines.push(`  topology: ${result.routing.topology}`);
+    lines.push(`  routingMode: ${result.routing.routingMode}`);
     lines.push(`  pageRoot: ${result.routing.pageRoot}`);
     lines.push(`  document.template: ${result.routing.document.template}`);
     lines.push(`  document.mount: ${result.routing.document.mount}`);
@@ -49,7 +49,7 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
     "Applications",
     Object.values(result.graph.applications),
     (application) =>
-      `${application.id}: ${application.topology}, pages=${application.pageIds.length}, routes=${application.routeIds.length}, documents=${application.documentIds.length}`,
+      `${application.id}: ${application.routingMode}, pages=${application.pageIds.length}, routes=${application.routeIds.length}, documents=${application.documentIds.length}`,
   );
 
   appendList(lines, "Pages", Object.values(result.graph.pages), (page) => {
@@ -209,12 +209,11 @@ function formatPageScope(scope: InspectPageScope): string {
 
 function formatCoreRoute(route: CoreRoute): string {
   const pattern = formatCoreRoutePattern(route.pattern.segments);
-  const parent =
-    route.realm === "client" && route.parentId
-      ? `, parent=${formatCoreIdentifier(route.parentId)}`
-      : "";
+  const parent = route.parentId
+    ? `, parent=${formatCoreIdentifier(route.parentId)}`
+    : "";
   const facets = formatCoreRouteFacets(route);
-  return `${route.realm}:${formatCoreIdentifier(route.id)}: ${pattern} -> ${formatCoreRouteTarget(route)}${parent}${facets ? `, ${facets}` : ""}`;
+  return `client:${formatCoreIdentifier(route.id)}: ${pattern} -> ${formatCoreRouteTarget(route)}${parent}${facets ? `, ${facets}` : ""}`;
 }
 
 function formatCoreIdentifier(value: string): string {
@@ -226,8 +225,6 @@ function formatCoreIdentifier(value: string): string {
 }
 
 function formatCoreRouteFacets(route: CoreRoute): string {
-  if (route.realm !== "client") return "";
-
   const facets: string[] = [];
   if (route.facets.layout === false) {
     facets.push("layout=false");
@@ -259,9 +256,6 @@ function formatCoreRoutePattern(
 
 function formatCoreRouteTarget(route: CoreRoute): string {
   if (route.target.kind === "page") return `page:${route.target.pageId}`;
-  if (route.target.kind === "document") {
-    return `document:${route.target.documentId}`;
-  }
   if (route.target.kind === "group") return "group";
   if (route.target.to.kind === "url") {
     return `redirect:${route.target.to.href}`;

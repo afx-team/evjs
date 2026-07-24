@@ -43,6 +43,60 @@ describe("createFrameworkRuntime", () => {
     expect("pages" in runtime).toBe(false);
     expect("routes" in runtime).toBe(false);
   });
+
+  it("projects compiled document shells and excludes build-only renderers", () => {
+    const output = createOutput(false);
+    output.server.renderers = {
+      "dashboard-server": {
+        kind: "page-server",
+        owner: { pageId: "dashboard" },
+        assets: { js: ["dashboard-server.js"], css: [] },
+      },
+      "report-server": {
+        kind: "page-server",
+        phase: "build",
+        owner: { pageId: "dashboard" },
+        assets: { js: ["report-server.js"], css: [] },
+      },
+    };
+    const document = {
+      beforeContent: '<!DOCTYPE html><html><body><main id="app">',
+      betweenContentAndData: "</main>",
+      afterData: "</body></html>",
+    };
+
+    const runtime = createFrameworkRuntime(output, {
+      documentShells: { dashboard: document },
+    });
+
+    expect(runtime.routing.pages.dashboard.document).toEqual(document);
+    expect(runtime.server.renderers).toEqual({
+      "dashboard-server": {
+        kind: "page-server",
+        owner: { pageId: "dashboard" },
+        assets: { js: ["dashboard-server.js"], css: [] },
+      },
+    });
+    expect(
+      createFrameworkRuntime(output, {
+        includeBuildRenderers: true,
+      }).server.renderers,
+    ).toHaveProperty("report-server");
+  });
+
+  it("rejects a document shell for an unknown Page", () => {
+    expect(() =>
+      createFrameworkRuntime(createOutput(false), {
+        documentShells: {
+          missing: {
+            beforeContent: "<html>",
+            betweenContentAndData: "",
+            afterData: "</html>",
+          },
+        },
+      }),
+    ).toThrow('Runtime document shell references missing Page "missing"');
+  });
 });
 
 function createOutput(spa: boolean): BuildOutput {

@@ -41,14 +41,14 @@
   Page/Route/Document ownership 或 Page 配置。
 - 继续加固 Bigfish 显式 route normalizer，以及 Smallfish/evjs 0.2 一次性源码
   迁移指南，不把存量模型提升为 runtime reader。
-- canonical MPA 已生成 Page-owned Document 与 Document Route，并组合
-  file-convention layout；动态 route 和 router-only boundary facet 仍明确不支持。
-- 插件 API 已落地第一个可执行纵切：按 dependency 排序、可安全 reload 的
-  `describe`、带 namespace 的 Page defaults/config/validation、严格 serialization，
-  以及供 contribution 读取的 Page resolved extension view。参见
+- canonical MPA 已从静态语义 Route 生成 Page-owned Document，并组合
+  file-convention layout；动态 route 和 router-only boundary facet 会被明确拒绝。
+- 插件 API 已落地按 dependency 排序、可安全 reload 的 `describe`，带 namespace
+  的 Application/Page defaults/config/validation、严格 static serialization、
+  resolved extension view，以及跨 runtime `page.wrapper` contribution。参见
   [0.2 迁移指南](./plugin-migration-0.2-to-0.3)。
-- 继续实现插件 API 的 owned Application/Route/Document schema、graph
-  transform/selector、semantic facet 与 generic extension entry。
+- 继续实现插件 API 的 owned Route/Document schema、graph transform/selector、
+  更多 semantic facet、typed runtime hook 与 generic extension entry。
 
 ## 计划中
 

@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { GraphConfig } from "../src/_internal/build/graph/index.js";
 import { createCoreGraph } from "../src/_internal/build/graph/index.js";
 import { resolvePageConfigModules } from "../src/_internal/build/page-config-module.js";
-import { findRemovedPageModuleConfigExports } from "../src/_internal/build/page-module-config.js";
+import {
+  analyzePageModuleExports,
+  findRemovedPageModuleConfigExports,
+} from "../src/_internal/build/page-module-config.js";
 import type {
   PageAnchorMetadata,
   PageRouteDiscoveryMetadata,
@@ -40,11 +43,26 @@ describe("page.config modules", () => {
     ).toEqual([]);
   });
 
+  it("collects browser route lifecycle exports without evaluating values", () => {
+    expect(
+      analyzePageModuleExports(`
+        export async function beforeLoad() {}
+        const load = () => {};
+        export { load as loader };
+        export { validateSearch } from "./search.js";
+        export type { pendingComponent } from "./types.js";
+      `),
+    ).toEqual({
+      removedConfig: [],
+      routeLifecycle: ["beforeLoad", "loader", "validateSearch"],
+    });
+  });
+
   it("evaluates TypeScript helpers and tracks the transitive dependency closure", async () => {
     const cwd = await createFixture({
       "src/config/channel.ts": 'export const channel = "stable";',
       "src/config/page-settings.ts": `
-        import { channel } from "./channel";
+        import { channel } from "./channel.js";
 
         export const settings = {
           enabled: true,
@@ -55,7 +73,7 @@ describe("page.config modules", () => {
         "export default function Report() { return null; }",
       "src/pages/report/page.config.ts": `
         import type { PageFileConfig } from "@evjs/ev";
-        import { settings } from "../../config/page-settings";
+        import { settings } from "../../config/page-settings.js";
 
         const config = {
           title: "Quarterly report",
@@ -335,7 +353,17 @@ describe("page.config modules", () => {
     {
       field: "hydrate",
       source: 'export default { hydrate: "interaction" };',
-      message: /hydrate must be "none", "load", "visible", or "idle"/,
+      message: /hydrate must be "none" or "load"/,
+    },
+    {
+      field: "hydrate: visible",
+      source: 'export default { hydrate: "visible" };',
+      message: /hydrate must be "none" or "load"/,
+    },
+    {
+      field: "hydrate: idle",
+      source: 'export default { hydrate: "idle" };',
+      message: /hydrate must be "none" or "load"/,
     },
     {
       field: "rsc",
@@ -360,6 +388,78 @@ describe("page.config modules", () => {
         createPageMetadata("home", "./src/pages/home/page.config.ts"),
       ),
     ).rejects.toThrow(message);
+  });
+
+  it.each([
+    {
+      feature: "RSC",
+      source: 'export default { render: "ssr", hydrate: "load", rsc: true };',
+      message:
+        'Page "home" config "./src/pages/home/page.config.ts" uses RSC and must omit hydrate or declare hydrate: "none".',
+    },
+    {
+      feature: "partial prerendering",
+      source:
+        'export default { render: "ssr", hydrate: "load", prerender: { partial: true } };',
+      message:
+        'Page "home" config "./src/pages/home/page.config.ts" uses partial prerendering and must omit hydrate or declare hydrate: "none".',
+    },
+  ])("rejects hydrate: load for $feature Page configs", async ({
+    source,
+    message,
+  }) => {
+    const cwd = await createFixture({
+      "src/pages/home/page.tsx":
+        "export default function Home() { return null; }",
+      "src/pages/home/page.config.ts": source,
+    });
+
+    await expect(
+      resolvePageConfigModules(
+        cwd,
+        createPageMetadata("home", "./src/pages/home/page.config.ts"),
+      ),
+    ).rejects.toThrow(message);
+  });
+
+  it.each([
+    {
+      hydration: "omitted",
+      hydrate: "",
+    },
+    {
+      hydration: "none",
+      hydrate: 'hydrate: "none",',
+    },
+  ])("accepts partial prerendering when hydrate is $hydration", async ({
+    hydrate,
+  }) => {
+    const cwd = await createFixture({
+      "src/pages/home/page.tsx":
+        "export default function Home() { return null; }",
+      "src/pages/home/page.config.ts": `
+          export default {
+            render: "ssr",
+            ${hydrate}
+            prerender: { partial: true },
+          };
+        `,
+    });
+
+    const resolved = await resolvePageConfigModules(
+      cwd,
+      createPageMetadata("home", "./src/pages/home/page.config.ts"),
+    );
+
+    expect(resolved.pages.home).toMatchObject({
+      render: "ssr",
+      prerender: { partial: true },
+    });
+    if (hydrate) {
+      expect(resolved.pages.home.hydrate).toBe("none");
+    } else {
+      expect(resolved.pages.home).not.toHaveProperty("hydrate");
+    }
   });
 
   it("invalidates transitive helpers across graph analyses and publishes all config dependencies", async () => {
@@ -410,7 +510,7 @@ describe("page.config modules", () => {
       "index.html": '<div id="app"></div>',
       "src/pages/home/page.tsx": `
         export const render = "ssr";
-        export const hydrate = "idle";
+        export const hydrate = "load";
         export const prerender = true;
         export const rsc = true;
         export default function Home() { return null; }

@@ -23,7 +23,7 @@ npx @evjs/create-app [name] [options]
 Every template uses the same Core 0.3 authoring model: `page.tsx` anchors,
 optional build-time `page.config.ts` for static title/named metadata and
 rendering, and directory-derived URLs.
-`routing.mode` is the only route-topology configuration; SPA and MPA
+`routing.mode` is the only routing-mode configuration; SPA and MPA
 materialize the same Page tree differently.
 
 | Name | Description |

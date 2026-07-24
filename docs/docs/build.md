@@ -78,18 +78,25 @@ edit deployment metadata.
 
 `routing.mode` controls route and Document materialization:
 
-| Topology | Route output | Document output |
+| Routing mode | Route output | Document output |
 | --- | --- | --- |
-| `spa` | Client Routes in one browser route tree | Normally one Application-owned Document |
-| `mpa` | Static Document Routes | One Page entry and Page-owned Document per Page route |
+| `spa` | Client Routes in one browser route tree | One Application-owned shell, plus a Page-owned output for each static SSG Page |
+| `mpa` | Independent Page entries for static semantic routes | One Page-owned Document per static Page route |
 
 Both use the same `<routing.dir>/**/page.*` entry, directory scope, and
 semantic route pattern.
 
-MPA discovers the same static, dynamic, and splat Page/Route identities.
-Dynamic-route output and React layout/boundary projection remain staged.
-Unsupported combinations fail graph/plan validation rather than silently
-switching conventions or ignoring facets.
+Static SSG Pages use their semantic route as the output path in either mode:
+`/` writes `index.html`, while `/report` writes `report/index.html`. The output
+is never derived from the Page id. When a root SSG Page owns `index.html` in a
+mixed SPA that also needs a client-route fallback, Core keeps the Application
+shell separately at `__evjs/<application-id>.html`.
+
+MPA currently materializes only static Page routes. `$param` and terminal
+`$...splat` remain valid SPA route identities, but selecting MPA for either
+fails graph validation because one dynamic pattern does not identify one
+build-time HTML output. Route layouts compose in both modes; router-only
+boundary facets remain SPA-only and MPA rejects them explicitly.
 
 Place `index.html` beside an MPA Page when it needs a Page-specific Document
 template:
@@ -125,22 +132,29 @@ export default definePageConfig({
 ```
 
 The module is synchronously evaluated at graph-build time. Core rendering
-fields flow into the rendering BuildPlan. Static `title` and named `meta`
-materialize missing tags and override matching template baseline values for
-Page-owned MPA/SSG Documents; omitted values preserve the baseline. Registered
-plugin extensions remain static graph data unless the owning plugin explicitly
-projects them into a generated runtime artifact. Plugin `transformHtml` hooks
-run after framework metadata materialization and may explicitly override the
-result.
+fields flow into the rendering BuildPlan. For emitted MPA/SSG Documents and
+compiled SSR/PPR/RSC request-time document shells, static `title` and named
+`meta` materialize missing tags and override matching template baseline
+values; omitted values preserve the baseline. Registered plugin extensions
+remain static graph data unless the owning plugin explicitly projects them
+into a generated runtime artifact. Plugin `transformHtml` hooks run after
+framework metadata, assets, and structured HTML contributions materialize and
+may explicitly override the result.
 
-The default React server document also emits Page metadata for SSR, PPR, and
-RSC responses, including the ownership markers needed for later SPA
-navigation. Supplying a custom `renderDocument` replaces that complete
-document contract: `ctx.page.metadata` remains available, but the custom
-renderer owns the template baseline and must insert
+For every server-rendered Page, evjs compiles its configured HTML template into
+a request-time document shell during the build. This preserves authored
+`<html>`, `<head>`, and `<body>` attributes and content while applying the same
+assets, Page metadata, `html.tag` contributions, and `transformHtml` hooks as a
+static Document. The default React renderer inserts the Page HTML and
+request-specific bootstrap data into that shell.
+
+Supplying a custom `renderDocument` completely replaces the compiled shell:
+`ctx.page.metadata` remains available, but the custom renderer owns the
+template baseline, assets, and document structure. Insert
 `renderReactPageMetadata(ctx)` from `@evjs/server/react` to retain the core
 safe-serialization and SPA cleanup behavior. Build-time `transformHtml` hooks
-do not post-process arbitrary per-request custom document strings.
+do not post-process the arbitrary per-request string returned by a custom
+document renderer.
 
 ## Migrating Rendering Settings
 
@@ -158,11 +172,12 @@ export default definePageConfig({
 });
 ```
 
-Static generation uses the supported `"ssg"` rendering contract. RSC Pages use
-`render: "ssr"`, `rsc: true`, and `hydrate: "none"`. Their Flight endpoint is
-derived from `server.basePath` unless `server.rsc.endpoint` overrides it. RSC
-and partial prerendering cannot be combined on one Page. These settings
-normalize to the rendering extension without changing Page identity.
+Static generation uses the supported `"ssg"` rendering contract. RSC and
+partial-prerendered Pages must omit `hydrate` or set it to `"none"`. RSC Pages
+use `render: "ssr"` and `rsc: true`; their Flight endpoint is derived from
+`server.basePath` unless `server.rsc.endpoint` overrides it. RSC and partial
+prerendering cannot be combined on one Page. These settings normalize to Core
+Page rendering fields without changing Page identity.
 
 ## Server Functions And Routes
 
@@ -203,7 +218,7 @@ provenance, and diagnostics.
 ## Key Points
 
 - New SPA and MPA apps build from the same `page.*` Page-and-Route tree.
-- `ev inspect` reports topology, Page root, source, and Document defaults
+- `ev inspect` reports `routingMode`, Page root, source, and Document defaults
   without exposing an internal provider choice.
 - `.ev`, manifests, build output, and generated route-type declarations
   are generated.

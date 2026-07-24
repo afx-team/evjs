@@ -95,10 +95,12 @@ export default function UserDetailPage() {
 }
 ```
 
-SPA Pages may expose supported route lifecycle exports such as `loader`,
+CSR SPA Pages may expose supported route lifecycle exports such as `loader`,
 `beforeLoad`, `validateSearch`, `pendingComponent`, `errorComponent`, and
-`notFoundComponent`. MPA does not run a browser route tree, so these lifecycle
-hooks are not an MPA data-loading model.
+`notFoundComponent`. These hooks currently execute in the browser route tree;
+SSR and SSG Pages reject them until the framework defines an equivalent server
+route lifecycle and initial-data transport. MPA does not run a browser route
+tree, so these lifecycle hooks are not an MPA data-loading model.
 
 ## Directory Route Tree
 
@@ -231,6 +233,8 @@ export default defineConfig({
 SPA materializes the directory tree as browser Client Routes, normally under
 one Application-owned HTML Document. It supports nested routes, dynamic
 parameters, splats, layouts, boundaries, and browser navigation.
+Each static SSG Page additionally emits HTML at its semantic route path:
+`/` becomes `index.html` and `/report` becomes `report/index.html`.
 
 ### MPA
 
@@ -241,10 +245,11 @@ export default defineConfig({
 ```
 
 MPA discovers the same Pages and semantic route patterns, then materializes
-Page-owned Documents without requiring a browser router. Dynamic-route output
-and React layout/boundary materialization remain staged. `ev inspect` and
-`ev build` reject unsupported combinations instead of asking applications to
-use a second route model. A colocated `index.html` supplies that MPA Page's
+Page-owned Documents without requiring a browser router. It currently accepts
+only static Page paths; `$param`, terminal `$...splat`, and router-only
+boundaries fail graph validation. Layouts compose around Pages in both modes.
+`ev inspect` and `ev build` reject unsupported combinations instead of asking
+applications to use a second route model. A colocated `index.html` supplies that MPA Page's
 Document template.
 
 ## Page Configuration
@@ -296,11 +301,13 @@ running Core 0.3. See [Build](./build) and the
 Explicit SPA route-tree forms can normalize into the Core graph as migration
 inputs:
 
-- Bigfish route configuration, including `routes`, `component`, `children`,
-  layouts, and wrappers;
+- Bigfish route configuration, including nested `routes`, `component`,
+  layouts, wrappers, redirects, and the finite access/menu metadata retained
+  in `@evjs/bigfish-route`; current Umi/Bigfish `children` declarations are
+  rejected;
 - earlier explicit `application.routes` declarations.
 
-They reject MPA topology and are migration paths, not another routing
+They reject MPA materialization and are migration paths, not another routing
 architecture. Smallfish and evjs
 0.2 source trees are not runtime reader inputs: migrate each published entry
 to the directory for its URL, name it `page.*`, move Page-level configuration

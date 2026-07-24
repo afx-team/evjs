@@ -177,7 +177,8 @@ flowchart TB
 
   subgraph ConfigStage["1. 解析配置"]
     ConfigHooks["plugin config() hooks"]
-    Resolved["ResolvedConfig"]
+    Resolved["ResolvedConfig\n已静态校验的 extension 输入"]
+    FrameworkConfig["ResolvedFrameworkConfig\n已物化的 Application extension"]
     SetupHooks["plugin setup() hooks"]
   end
 
@@ -206,7 +207,7 @@ flowchart TB
     Dist["dist/\nassets + manifests + deployment metadata"]
   end
 
-  Request --> ConfigHooks --> Resolved --> SetupHooks
+  Request --> ConfigHooks --> Resolved --> FrameworkConfig --> SetupHooks
   SetupHooks --> Core --> Plan --> Contributions
   Contributions --> Entries
   Contributions --> PluginFiles
@@ -220,7 +221,7 @@ flowchart TB
   classDef model fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
   classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
   class Request input;
-  class ConfigHooks,Resolved,SetupHooks config;
+  class ConfigHooks,Resolved,FrameworkConfig,SetupHooks config;
   class Core,Plan,Contributions,Entries,PluginFiles,IRManifest model;
   class BundlerConfig,Bundler,Output,BuildOutputHook,HTML,BuildEnd,Dist build;
 ```
@@ -386,9 +387,10 @@ plugins
 
 每个 `page.*` 锚点创建一个 Page 与语义 Route。Static 目录、`$param`、终止
 `$...splat` 与 `(group)` segment 相对 `routing.dir` 派生 URL；完整所在目录是
-其私有 scope。SPA 创建 Client Route，通常一个 Application Document；MPA 从
-相同语义 graph 出发并创建 Page-owned Document。动态路由输出与 React
-layout/boundary 投影仍在分阶段建设，不支持的组合会在 graph/plan 校验失败。
+其私有 scope。SPA 创建 Client Route，通常一个 Application Document；每个静态
+SSG Page 还会在语义 route path 物化 Page-owned Document。MPA 从相同语义 graph
+出发，为静态 Page path 创建 Page-owned Document。MPA 会在 graph 校验拒绝
+dynamic/catch-all path 与 router-only boundary；layout 在两种 mode 中都会组合。
 
 `server.routing` 默认指向 `src/apis`。服务端路由文件只有导出大写 HTTP methods
 时才会成为 route。Framework request middleware 从 `src/middleware.ts` 发现，并包裹
@@ -410,7 +412,7 @@ renderer 产出静态 HTML，随后部署元信息中表现为 `static-page` rou
 `ppr-shell` 和 `ppr-region` entry 解析。
 
 `application.routes` 与 Bigfish route config 保留为显式、仅支持 SPA 的 route-tree
-迁移输入；MPA topology 会被拒绝。Smallfish 与 evjs 0.2 源码树必须在 resolution
+迁移输入；MPA 物化模式会被拒绝。Smallfish 与 evjs 0.2 源码树必须在 resolution
 前转换为 `page.*` 与
 `page.config.ts`。Standalone/manual runtime composition 位于该模型之外；这些都不是
 另一套 framework Page authoring model。

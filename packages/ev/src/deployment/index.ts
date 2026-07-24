@@ -794,6 +794,7 @@ function toNodeRoutePath(routePath: string): string {
   return routePath
     .split("/")
     .map((segment) => {
+      if (segment === "$") return "*";
       if (segment.startsWith("$")) return `:${segment.slice(1)}`;
       return segment;
     })
@@ -804,6 +805,7 @@ function toStaticRoutePath(routePath: string): string {
   return routePath
     .split("/")
     .map((segment) => {
+      if (segment === "$") return "*";
       if (segment.startsWith("$")) return `:${segment.slice(1)}`;
       return segment;
     })

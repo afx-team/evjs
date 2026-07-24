@@ -139,8 +139,9 @@ export default defineConfig({
 SPA materializes the tree as browser Client Routes, normally under one shared
 Document. MPA starts from the same semantic Pages and Routes and materializes
 Page-owned Documents. A Page-local `index.html` can provide its MPA Document
-template. Dynamic-route output and React layout/boundary materialization in
-MPA remain staged; unsupported combinations fail during inspect/build.
+template. MPA currently accepts only static Page paths: `$param`, terminal
+`$...splat`, and router-only boundaries fail during inspect/build. Layouts
+compose in both modes.
 
 ## Add A Server Function
 
@@ -217,11 +218,7 @@ standalone/manual runtime composition.
 ## Migrating An Existing App
 
 Core 0.3 does not run a Smallfish or evjs 0.2 route reader. Convert those
-source trees once before starting the application. Explicit
-`application.routes` and Bigfish-style route config may remain temporarily as
-SPA-only route-tree migration inputs; MPA topology is rejected.
-
-For each published Page:
+source trees once before starting the application. For each published Page:
 
 1. Move or rename its entry to the directory that represents its URL and name
    it `page.*`.
@@ -229,8 +226,13 @@ For each published Page:
    settings to adjacent `page.config.ts`.
 3. Keep Page-private code in that directory without `_` prefixes.
 4. Declare only `routing.mode: "spa"` or `"mpa"`.
-5. Run `ev inspect`, then remove a remaining explicit route tree after the
-   file tree reports the expected Page/Route structure.
+5. Run `ev inspect` and verify the Page/Route structure.
+
+Bigfish route config is a separate, SPA-only transition lane. Its explicit
+`application.routes` tree may remain temporarily, but it cannot be combined
+with `routing` and it never selects MPA. After converting the files, replace
+`application` with `routing.mode: "spa"` in the same change, then run
+`ev inspect`.
 
 An unrelated `src/pages` directory alone does not publish client routes.
 

@@ -8,6 +8,7 @@ import {
   normalizeRoutePathname,
   pageRoutePathMatches,
   pageRoutePathShapeFromPath,
+  pageRoutePathToRegExp,
   parsePageSearch,
 } from "../src/index.js";
 
@@ -19,6 +20,19 @@ describe("page route data helpers", () => {
     expect(pageRoutePathMatches("/orders/$orderId", "/orders/123/items")).toBe(
       false,
     );
+  });
+
+  it("compiles terminal splats as zero-or-more path segments", () => {
+    const splat = pageRoutePathToRegExp("/docs/$");
+    expect(splat.test("/docs")).toBe(true);
+    expect(splat.test("/docs/")).toBe(true);
+    expect(splat.test("/docs/a")).toBe(true);
+    expect(splat.test("/docs/a/b")).toBe(true);
+    expect(splat.test("/doc")).toBe(false);
+
+    const param = pageRoutePathToRegExp("/docs/$slug");
+    expect(param.test("/docs/a")).toBe(true);
+    expect(param.test("/docs/a/b")).toBe(false);
   });
 
   it("matches encoded and decoded Unicode static route segments", () => {

@@ -238,7 +238,8 @@ test.describe("render-modes", () => {
     expect(htmlResponse.status()).toBe(200);
     const html = await htmlResponse.text();
     expect(html).toContain("__EVJS_RSC_BOOTSTRAP__");
-    expect(html).toContain('<script defer src="/evjs-rsc-client');
+    // The HTML parser serializes boolean attributes as `defer=""`.
+    expect(html).toContain('<script defer="" src="/evjs-rsc-client');
     expect(html).not.toContain('<script type="module"');
     expect(html).not.toContain("src/pages/insights/page.tsx");
     expect(html).not.toContain("insights-rsc.js");
@@ -386,7 +387,15 @@ test.describe("render-modes", () => {
         routeId: "settlement-report",
       }),
     );
-    expect(runtimePages["settlement-report"].document).toBeUndefined();
+    // Request-time SSR Pages receive a compiled server document shell, even
+    // when their full prerender disables client hydration.
+    expect(runtimePages["settlement-report"].document).toEqual(
+      expect.objectContaining({
+        afterData: expect.any(String),
+        beforeContent: expect.any(String),
+        betweenContentAndData: expect.any(String),
+      }),
+    );
     expect(runtimePages["settlement-report"].module).toBeUndefined();
     expect(runtimePages.insights).toEqual(
       expect.objectContaining({

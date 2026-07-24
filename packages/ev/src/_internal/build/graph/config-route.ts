@@ -18,6 +18,7 @@ import type {
 } from "@evjs/shared/manifest";
 import {
   assertCoreGraph,
+  BIGFISH_ROUTE_EXTENSION_ID,
   CONFIG_ROUTE_PROVIDER_ID,
 } from "@evjs/shared/manifest";
 import type { ResolvedConfigRoute } from "../../../config/index.js";
@@ -40,7 +41,6 @@ const CONFIG_ROUTE_PRODUCER = {
   kind: "provider",
   id: CONFIG_ROUTE_PROVIDER_ID,
 } as const;
-const CONFIG_ROUTE_ROOT_LAYOUT_ROUTE_ID = `${CONFIG_ROUTE_PROVIDER_ID}:root-layout`;
 const UNSAFE_PAGE_IDS = new Set(["__proto__", "constructor", "prototype"]);
 
 type ConfigRouteGraphConfig = GraphConfig & {
@@ -88,34 +88,18 @@ export async function createConfigRouteGraph(
     pageIdByScope: new Map(),
     pageReferenceById: new Map(),
   };
-  let rootLayoutRouteId: string | undefined;
-  if (config.application.layout) {
-    const rootLayoutModule = await resolveProjectSourceModule(
-      cwd,
-      config.application.layout,
-      "application.layout",
-      "layout",
-    );
-    rootLayoutRouteId = CONFIG_ROUTE_ROOT_LAYOUT_ROUTE_ID;
-    routes.push({
-      realm: "client",
-      id: rootLayoutRouteId,
-      applicationId: "default",
-      pattern: { segments: [] },
-      target: { kind: "group" },
-      facets: { layout: rootLayoutModule, wrappers: [] },
-      extensions: {},
-      provenance: {
-        producer: CONFIG_ROUTE_PRODUCER,
-        source: rootLayoutModule,
-      },
-    });
-    state.routeIds.push(rootLayoutRouteId);
-  }
+  const rootLayoutModule = config.application.layout
+    ? await resolveProjectSourceModule(
+        cwd,
+        config.application.layout,
+        "application.layout",
+        "layout",
+      )
+    : undefined;
   await visitConfigRoutes(
     state,
     config.application.routes,
-    rootLayoutRouteId,
+    undefined,
     { segments: [] },
     [],
   );
@@ -126,7 +110,8 @@ export async function createConfigRouteGraph(
   defineRecordValue(applications, applicationId, {
     id: applicationId,
     root: ".",
-    topology: "spa",
+    routingMode: "spa",
+    ...(rootLayoutModule ? { layout: rootLayoutModule } : {}),
     pageIds: state.pageIds,
     routeIds: state.routeIds,
     documentIds: ["index"],
@@ -158,7 +143,9 @@ export async function createConfigRouteGraph(
     pages,
     routes,
     documents,
-    extensions: { namespaces: {} },
+    extensions: {
+      namespaces: createConfigRouteExtensionNamespaces(routes),
+    },
     serverFunctions: [],
     serverRoutes: [],
   };
@@ -166,22 +153,19 @@ export async function createConfigRouteGraph(
   return coreGraph;
 }
 
-/** Project-local component and wrapper modules that graph analysis must scan. */
+/** Project-local Application, Page, and wrapper modules graph analysis scans. */
 export function collectConfigRouteCoreSourceModules(
   graph: CoreGraph,
 ): string[] {
   return [
-    ...Object.values(graph.pages).map((page) => page.source.module),
-    ...graph.routes.flatMap((route) =>
-      route.realm === "client"
-        ? [
-            ...route.facets.wrappers,
-            ...(typeof route.facets.layout === "string"
-              ? [route.facets.layout]
-              : []),
-          ]
-        : [],
+    ...Object.values(graph.applications).flatMap((application) =>
+      application.layout ? [application.layout] : [],
     ),
+    ...Object.values(graph.pages).map((page) => page.source.module),
+    ...graph.routes.flatMap((route) => [
+      ...route.facets.wrappers,
+      ...(typeof route.facets.layout === "string" ? [route.facets.layout] : []),
+    ]),
   ];
 }
 
@@ -307,7 +291,6 @@ async function materializeSpaConfigRoute(
   let contentParentId = parentId;
   if (typeof layout === "string") {
     state.routes.push({
-      realm: "client",
       id: routeId,
       applicationId: "default",
       ...(parentId ? { parentId } : {}),
@@ -326,7 +309,6 @@ async function materializeSpaConfigRoute(
   }
 
   state.routes.push({
-    realm: "client",
     id: contentRouteId,
     applicationId: "default",
     ...(contentParentId ? { parentId: contentParentId } : {}),
@@ -336,7 +318,7 @@ async function materializeSpaConfigRoute(
       ...(layout === false ? { layout: false as const } : {}),
       wrappers,
     },
-    extensions: {},
+    extensions: createBigfishRouteExtensions(declaration),
     provenance: {
       producer: CONFIG_ROUTE_PRODUCER,
       ...(provenanceSource ? { source: provenanceSource } : {}),
@@ -344,6 +326,38 @@ async function materializeSpaConfigRoute(
   });
   state.routeIds.push(contentRouteId);
   return contentRouteId;
+}
+
+function createBigfishRouteExtensions(
+  declaration: ResolvedConfigRoute,
+): Record<string, unknown> {
+  const extensions = createRecord<unknown>();
+  if (declaration.metadata) {
+    defineRecordValue(
+      extensions,
+      BIGFISH_ROUTE_EXTENSION_ID,
+      declaration.metadata,
+    );
+  }
+  return extensions;
+}
+
+function createConfigRouteExtensionNamespaces(
+  routes: CoreRouteNode[],
+): CoreGraph["extensions"]["namespaces"] {
+  const namespaces =
+    createRecord<CoreGraph["extensions"]["namespaces"][string]>();
+  if (
+    routes.some((route) =>
+      Object.hasOwn(route.extensions, BIGFISH_ROUTE_EXTENSION_ID),
+    )
+  ) {
+    defineRecordValue(namespaces, BIGFISH_ROUTE_EXTENSION_ID, {
+      producer: CONFIG_ROUTE_PROVIDER_ID,
+      owners: ["route"],
+    });
+  }
+  return namespaces;
 }
 
 async function defineConfigRoutePage(
@@ -385,7 +399,7 @@ async function defineConfigRoutePage(
   );
   const derivedReference = deriveConfigRoutePageReference(
     state.config.application.pageRoot,
-    scope.root,
+    scope,
     address,
   );
   if (
@@ -394,7 +408,7 @@ async function defineConfigRoutePage(
     canonicalReference !== derivedReference
   ) {
     throw new Error(
-      `[evjs] ${address}.component resolves Page directory "${derivedReference}", but its normalized Page reference is "${canonicalReference}". The migration alias must identify one Page directory.`,
+      `[evjs] ${address}.component resolves Page source "${derivedReference}", but its normalized Page reference is "${canonicalReference}". The migration alias must identify one Page source.`,
     );
   }
   const pageReference = canonicalReference ?? derivedReference;
@@ -403,7 +417,7 @@ async function defineConfigRoutePage(
     const existingReference = state.pageReferenceById.get(existingId);
     if (existingReference !== pageReference) {
       throw new Error(
-        `[evjs] ${address} resolves Page reference "${pageReference}" to "${module}", already claimed as "${existingReference}". Use one canonical Page reference per directory.`,
+        `[evjs] ${address} resolves Page reference "${pageReference}" to "${module}", already claimed as "${existingReference}". Use one canonical Page reference per source.`,
       );
     }
     return { pageId: existingId, pageReference, module };
@@ -426,11 +440,10 @@ async function defineConfigRoutePage(
       `[evjs] ${address}.component resolves to ${formatConfigRoutePageScope(scope)}, already claimed by Page "${scopeOwner}". Move one component so page-private ownership stays unambiguous.`,
     );
   }
-  const configModule = await discoverConfigRoutePageConfigModule(
-    state.cwd,
-    scope.root,
-    pageId,
-  );
+  const configModule =
+    scope.kind === "directory"
+      ? await discoverConfigRoutePageConfigModule(state.cwd, scope.root, pageId)
+      : undefined;
 
   defineRecordValue(state.pages, pageId, {
     id: pageId,
@@ -574,6 +587,7 @@ async function collectConfigRoutePageConfigModules(
 }
 
 function deriveConfigRoutePageId(pageReference: string): string {
+  if (pageReference === ".") return "index";
   const pageId = pageReference.replace(/[^A-Za-z0-9_-]+/g, "_");
   if (!isBuildIdentifier(pageId) || UNSAFE_PAGE_IDS.has(pageId)) {
     throw new Error(
@@ -587,20 +601,17 @@ function deriveConfigRoutePageScope(
   module: string,
   address: string,
   source: "canonical" | "migration",
-): Extract<CorePageScope, { kind: "directory" }> {
+): CorePageScope {
   const basename = path.posix.basename(module).replace(/\.(?:tsx?|jsx?)$/, "");
-  const valid =
-    source === "canonical"
-      ? basename === PAGE_ENTRY_BASENAME
-      : basename === PAGE_ENTRY_BASENAME || basename === "index";
-  if (!valid) {
+  if (source === "canonical" && basename !== PAGE_ENTRY_BASENAME) {
     throw new Error(
-      source === "canonical"
-        ? `[evjs] ${address} resolves to "${module}". Canonical Pages must use a Page directory with exactly one ${PAGE_ENTRY_LABEL} entry.`
-        : `[evjs] ${address} resolves to "${module}". Migrated component aliases must use a Page directory with an index.* or page.* entry.`,
+      `[evjs] ${address} resolves to "${module}". Canonical Pages must use a Page directory with exactly one ${PAGE_ENTRY_LABEL} entry.`,
     );
   }
-  return { kind: "directory", root: path.posix.dirname(module) };
+  if (basename === PAGE_ENTRY_BASENAME || basename === "index") {
+    return { kind: "directory", root: path.posix.dirname(module) };
+  }
+  return { kind: "module", file: module };
 }
 
 function getConfigRoutePageScopeKey(scope: CorePageScope): string {
@@ -619,6 +630,7 @@ function assertSafeConfigRoutePageReference(
   value: string,
   source: string,
 ): void {
+  if (value === ".") return;
   if (
     value.trim() !== value ||
     value === "" ||
@@ -638,22 +650,25 @@ function assertSafeConfigRoutePageReference(
 
 function deriveConfigRoutePageReference(
   pageRoot: string,
-  scopeRoot: string,
+  scope: CorePageScope,
   address: string,
 ): string {
   const normalizedPageRoot = path.posix.normalize(pageRoot);
-  const relative = path.posix.relative(normalizedPageRoot, scopeRoot);
+  const source =
+    scope.kind === "directory"
+      ? scope.root
+      : scope.file.slice(0, -path.posix.extname(scope.file).length);
+  const relative = path.posix.relative(normalizedPageRoot, source);
   if (
-    relative === "" ||
-    relative === "." ||
     relative === ".." ||
     relative.startsWith("../") ||
     path.posix.isAbsolute(relative)
   ) {
     throw new Error(
-      `[evjs] ${address}.component Page directory "${scopeRoot}" must be a child of application.pageRoot "${pageRoot}".`,
+      `[evjs] ${address}.component Page source "${source}" must be a child of application.pageRoot "${pageRoot}".`,
     );
   }
+  if (relative === "" || relative === ".") return ".";
   assertSafeConfigRoutePageReference(relative, `${address}.component`);
   return relative;
 }

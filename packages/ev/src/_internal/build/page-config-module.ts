@@ -1,4 +1,10 @@
 import path from "node:path";
+import {
+  assertEnumerableStaticJsonProperties,
+  assertStaticJsonValue,
+  cloneStaticJsonValue,
+  isPlainStaticJsonObject,
+} from "@evjs/shared/_internal/static-json";
 import type {
   ComponentModel,
   CoreGraph,
@@ -8,6 +14,7 @@ import type {
   RenderMode,
 } from "@evjs/shared/manifest";
 import { assertPageMetadata, clonePageMetadata } from "@evjs/shared/manifest";
+import { resolveConfigExtensionValues } from "../../config/extensions.js";
 import type {
   PageAnchorMetadata,
   PageRouteDiscoveryMetadata,
@@ -17,7 +24,6 @@ import {
   loadStaticConfigModule,
 } from "./config-module.js";
 import { validatePageRenderingContract } from "./page-rendering-contract.js";
-import { assertJsonSerializable } from "./strict-json.js";
 
 const PAGE_CONFIG_FIELDS = new Set([
   "render",
@@ -28,7 +34,6 @@ const PAGE_CONFIG_FIELDS = new Set([
   "meta",
   "extensions",
 ]);
-const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 type PageConfigMetadata = Pick<PageAnchorMetadata, "pageId"> & {
   configModule: string;
 };
@@ -121,12 +126,12 @@ async function resolvePageConfigModule(
     );
   }
   const value = loaded.value;
-  if (!isPlainObject(value)) {
+  if (!isPlainStaticJsonObject(value)) {
     throw new Error(
       `[evjs] Page "${page.pageId}" config "${source}" default export must be a plain object.`,
     );
   }
-  assertEnumerableDataProperties(
+  assertEnumerableStaticJsonProperties(
     value,
     `Page "${page.pageId}" config "${source}"`,
   );
@@ -143,7 +148,10 @@ async function resolvePageConfigModule(
   const prerender = resolvePrerender(value.prerender, page);
   const componentModel = resolveComponentModel(value.rsc, page);
   const metadata = resolvePageMetadata(value, page);
-  const extensions = resolveExtensions(value.extensions, page);
+  const extensions = resolveConfigExtensionValues(
+    value.extensions,
+    `Page "${page.pageId}" config "${page.configModule}" extensions`,
+  );
   validatePageRenderingContract(
     `Page "${page.pageId}" config "${source}"`,
     {
@@ -204,16 +212,9 @@ function resolveHydrate(
   page: PageConfigMetadata,
 ): HydrationMode | undefined {
   if (value === undefined) return undefined;
-  if (
-    value === "none" ||
-    value === "load" ||
-    value === "visible" ||
-    value === "idle"
-  ) {
-    return value;
-  }
+  if (value === "none" || value === "load") return value;
   throw new Error(
-    `[evjs] Page "${page.pageId}" config "${page.configModule}" hydrate must be "none", "load", "visible", or "idle".`,
+    `[evjs] Page "${page.pageId}" config "${page.configModule}" hydrate must be "none" or "load".`,
   );
 }
 
@@ -235,10 +236,10 @@ function resolvePrerender(
   if (value === undefined) return undefined;
   if (value === true) return true;
   const source = `Page "${page.pageId}" config "${page.configModule}" prerender`;
-  if (!isPlainObject(value)) {
+  if (!isPlainStaticJsonObject(value)) {
     throw new Error(`[evjs] ${source} must be true or a plain object.`);
   }
-  assertEnumerableDataProperties(value, source);
+  assertEnumerableStaticJsonProperties(value, source);
   for (const key of Object.keys(value)) {
     if (key !== "partial" && key !== "delivery" && key !== "revalidate") {
       throw new Error(`[evjs] ${source} has unknown field "${key}".`);
@@ -265,68 +266,8 @@ function resolvePrerender(
       `[evjs] ${source}.revalidate must be a positive integer or false.`,
     );
   }
-  assertJsonSerializable(value, source);
-  return cloneJsonValue(value) as Exclude<PrerenderConfig, true>;
-}
-
-function resolveExtensions(
-  value: unknown,
-  page: PageConfigMetadata,
-): Record<string, unknown> {
-  if (value === undefined) return {};
-  const source = `Page "${page.pageId}" config "${page.configModule}" extensions`;
-  if (!isPlainObject(value)) {
-    throw new Error(`[evjs] ${source} must be a plain object.`);
-  }
-  assertEnumerableDataProperties(value, source);
-  for (const namespace of Object.keys(value)) {
-    assertNamespacedId(namespace, `${source} key`);
-  }
-  assertJsonSerializable(value, source);
-  return cloneJsonValue(value);
-}
-
-function assertEnumerableDataProperties(value: object, source: string): void {
-  for (const key of Reflect.ownKeys(value)) {
-    if (typeof key !== "string") {
-      throw new Error(`[evjs] ${source} contains an unsupported symbol field.`);
-    }
-    if (UNSAFE_KEYS.has(key)) {
-      throw new Error(`[evjs] ${source}.${key} is not a safe config field.`);
-    }
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
-      throw new Error(
-        `[evjs] ${source}.${key} must be an enumerable own data property.`,
-      );
-    }
-  }
-}
-
-function assertNamespacedId(value: string, source: string): void {
-  const separator = value.indexOf("/");
-  if (
-    !value.startsWith("@") ||
-    separator < 2 ||
-    separator === value.length - 1 ||
-    value !== value.trim() ||
-    /\s/.test(value) ||
-    UNSAFE_KEYS.has(value)
-  ) {
-    throw new Error(
-      `[evjs] ${source} must be a namespaced id such as "@company/feature".`,
-    );
-  }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-
-function cloneJsonValue<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
+  assertStaticJsonValue(value, source);
+  return cloneStaticJsonValue(value) as Exclude<PrerenderConfig, true>;
 }
 
 function createRecord<T>(): Record<string, T> {

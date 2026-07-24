@@ -37,3 +37,9 @@ npm run dev
 - `useQuery(getUsers)` for type-safe data fetching
 - `useMutation({ mutationFn: createUser })` for server-side mutations
 - `getFnQueryKey(getUsers)` for cache invalidation
+
+For a Bigfish application, this SPA Page tree is the canonical destination.
+An explicit `application.routes` tree is only a temporary SPA migration input;
+after moving each route component to its URL directory as `page.tsx`, replace
+`application` with `routing.mode: "spa"`. Bigfish route config does not define
+an MPA migration mode.

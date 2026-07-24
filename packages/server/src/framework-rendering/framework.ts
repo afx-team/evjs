@@ -21,7 +21,11 @@ import {
   TEXT_HTML_UTF8_CONTENT_TYPE,
   type UrlStringValidationError,
 } from "@evjs/shared";
-import { assertPageMetadata, type PageMetadata } from "@evjs/shared/manifest";
+import {
+  assertPageMetadata,
+  type PageMetadata,
+  type ServerDocumentShell,
+} from "@evjs/shared/manifest";
 import { tryGetContext } from "hono/context-storage";
 import { textResponse } from "../shared/responses.js";
 import { formatUnknownError, isRecord } from "../shared/validation.js";
@@ -57,6 +61,7 @@ export interface FrameworkAssetGroup {
 
 export interface FrameworkPageRuntime {
   assets: FrameworkAssetGroup;
+  document?: ServerDocumentShell;
   metadata?: PageMetadata;
   render: "csr" | "ssr" | "ssg";
   rendering: {
@@ -64,7 +69,7 @@ export interface FrameworkPageRuntime {
     html: "client" | "server" | "static" | "partial";
     prerender?: "full" | "partial";
     streaming: boolean;
-    hydrate: "none" | "load" | "visible" | "idle";
+    hydrate: "none" | "load";
   };
   path?: string;
   routeId?: string;
@@ -620,6 +625,9 @@ function assertFrameworkRuntimePages(
     if (page.metadata !== undefined) {
       assertPageMetadata(page.metadata, `${pageSource}.metadata`);
     }
+    if (page.document !== undefined) {
+      assertFrameworkDocumentShell(page.document, `${pageSource}.document`);
+    }
     assertRenderMode(page.render, `${pageSource}.render`);
     assertPageRendering(page.rendering, `${pageSource}.rendering`);
     if (page.path !== undefined) {
@@ -637,6 +645,19 @@ function assertFrameworkRuntimePages(
     if (page.ppr !== undefined) {
       assertPprPageRuntime(page.ppr, `${pageSource}.ppr`);
       assertPprPageRuntimeContract(page, pageSource);
+    }
+  }
+}
+
+function assertFrameworkDocumentShell(value: unknown, source: string): void {
+  assertObject(value, source);
+  for (const key of [
+    "beforeContent",
+    "betweenContentAndData",
+    "afterData",
+  ] as const) {
+    if (typeof value[key] !== "string") {
+      throw new Error(`[evjs] ${source}.${key} must be a string.`);
     }
   }
 }
@@ -1031,17 +1052,8 @@ function assertPrerenderMode(value: unknown, source: string): void {
 }
 
 function assertHydrationMode(value: unknown, source: string): void {
-  if (
-    value === "none" ||
-    value === "load" ||
-    value === "visible" ||
-    value === "idle"
-  ) {
-    return;
-  }
-  throw new Error(
-    `[evjs] ${source} must be "none", "load", "visible", or "idle".`,
-  );
+  if (value === "none" || value === "load") return;
+  throw new Error(`[evjs] ${source} must be "none" or "load".`);
 }
 
 function assertPprDeliveryMode(value: unknown, source: string): void {

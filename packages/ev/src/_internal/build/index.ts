@@ -31,11 +31,8 @@ export {
   type PrepareFrameworkBuildOptions,
   prepareFrameworkBuild,
 } from "./commands.js";
-export type {
-  LoadConfigFileOptions,
-  TranspileTypeScriptConfigOptions,
-} from "./config-module.js";
-export { loadConfigFile, transpileTypeScriptConfig } from "./config-module.js";
+export type { LoadConfigFileOptions } from "./config-module.js";
+export { loadConfigFile } from "./config-module.js";
 export {
   applyHtmlTagContributions,
   GENERATED_IR_DIR,
@@ -66,8 +63,6 @@ export type {
   CreateBuildPlanOptions,
 } from "./plan/index.js";
 export { createBuildPlan, diffBuildPlan } from "./plan/index.js";
-export type { ExtractedRoute } from "./routes.js";
-export { resolveRoutes } from "./routes.js";
 export type {
   RscReferenceAnalysis,
   TransformRscClientFileOptions,

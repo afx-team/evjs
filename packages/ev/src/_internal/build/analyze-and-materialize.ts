@@ -1,21 +1,28 @@
 import path from "node:path";
 import type { BuildPlan } from "@evjs/shared/manifest";
-import type { ResolvedConfig } from "../../config/index.js";
+import type {
+  ResolvedApplicationExtensionValues,
+  ResolvedFrameworkConfig,
+} from "../../config/index.js";
 import type { PluginContext } from "../../plugin/index.js";
 import { syncPageRouteTypesFromCoreGraph } from "./convention-config.js";
 import { materializeFrameworkIR } from "./generated-contributions.js";
 import { createCoreGraph, type GraphAnalysisResult } from "./graph/index.js";
 import { resolvePageConfigModules } from "./page-config-module.js";
 import { type CreateBuildPlanOptions, createBuildPlan } from "./plan/index.js";
-import type { PluginExtensionRegistry } from "./plugin-extensions.js";
+import {
+  createPluginExtensionResolutionSession,
+  type PluginExtensionRegistry,
+} from "./plugin-extensions.js";
 
 export interface AnalyzeAndMaterializeOptions<TBundlerCfg> {
   cwd: string;
   mode: "development" | "production";
   command: "dev" | "build";
-  config: ResolvedConfig<TBundlerCfg>;
+  config: ResolvedFrameworkConfig<TBundlerCfg>;
   pluginContext: PluginContext<TBundlerCfg>;
-  pluginExtensions?: PluginExtensionRegistry;
+  pluginExtensions: PluginExtensionRegistry;
+  applicationExtensions: ResolvedApplicationExtensionValues;
   plan?: CreateBuildPlanOptions;
   write?: boolean;
   onAnalysis?: (analysis: GraphAnalysisResult) => void;
@@ -53,13 +60,16 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
           options.config.routing.metadata,
         )
       : undefined;
+  const extensionResolutionSession = createPluginExtensionResolutionSession(
+    options.pluginExtensions,
+  );
   let aliases: Record<string, string> = {};
   for (let attempt = 0; attempt < 5; attempt++) {
     const analysis = await createCoreGraph(options.config, options.cwd, {
       resolve: { alias: aliases },
-      ...(options.pluginExtensions
-        ? { pluginExtensions: options.pluginExtensions }
-        : {}),
+      pluginExtensions: options.pluginExtensions,
+      applicationExtensions: options.applicationExtensions,
+      extensionResolutionSession,
       ...(pageConfigs ? { pageConfigs } : {}),
     });
     options.onAnalysis?.(analysis);

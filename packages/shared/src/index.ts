@@ -48,6 +48,7 @@ export {
   normalizeRoutePathname,
   pageRoutePathMatches,
   pageRoutePathShapeFromPath,
+  pageRoutePathToRegExp,
   parsePageSearch,
 } from "./page-route-data.js";
 export type {

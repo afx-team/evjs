@@ -288,7 +288,7 @@ export async function syncPageRouteTypesFromCoreGraph(
 
   if (
     !Object.values(graph.applications).some(
-      (application) => application.topology === "spa",
+      (application) => application.routingMode === "spa",
     )
   ) {
     await removeAllPageRouteTypes(cwd);

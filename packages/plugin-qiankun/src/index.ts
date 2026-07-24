@@ -159,7 +159,7 @@ function resolveSingleAppEntry(
     );
   }
   const application = framework.applications[0];
-  if (!application || application.topology !== "spa") {
+  if (!application || application.routingMode !== "spa") {
     throw new Error(
       `[evjs:plugin-qiankun] ${role} mode only supports a normalized SPA Application.`,
     );

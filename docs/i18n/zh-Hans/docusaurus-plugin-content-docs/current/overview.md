@@ -22,8 +22,8 @@ page runtime，不引入客户端路由器。
 
 - **唯一 Page-and-Route 模型** —— `src/pages/**/page.*` 锚定 Page 与 Route，所在目录持有私有代码并决定 URL。
 - **唯一 Page config 模型** —— 可选 `page.config.ts` 在 SPA/MPA 中提供静态标题、named metadata、core rendering setting 与已注册 namespaced plugin extension。
-- **SPA/MPA 物化** —— `routing.mode` 把同一语义树物化为 Client Route 或 Page-owned Document Route。
-- **渲染扩展** —— `page.config.ts` normalize SSR、SSG、PPR、RSC setting，但不改变 canonical Page identity；迁移应用运行 Core 0.3 前把 component rendering export 移入该文件。
+- **SPA/MPA 物化** —— `routing.mode` 保留同一语义 Page/Route 树，只选择浏览器 route tree 或独立的 Page-owned Document。
+- **Page rendering setting** —— `page.config.ts` normalize SSR、SSG、PPR、RSC setting，但不改变 canonical Page identity；迁移应用运行 Core 0.3 前把 component rendering export 移入该文件。
 - **服务端函数** —— `"use server"` 模块会变成浏览器可调用的函数。
 - **服务端路由** —— 从 `src/apis` 发现标准 Web `Request`/`Response` route handler。
 - **统一服务端运行时** —— 服务端函数、服务端路由、SSR、PPR、RSC 共用同一条服务端边界。

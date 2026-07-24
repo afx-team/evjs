@@ -186,7 +186,8 @@ flowchart TB
 
   subgraph ConfigStage["1. Resolve configuration"]
     ConfigHooks["plugin config() hooks"]
-    Resolved["ResolvedConfig"]
+    Resolved["ResolvedConfig\nauthored extension inputs"]
+    FrameworkConfig["ResolvedFrameworkConfig\nmaterialized Application extensions"]
     SetupHooks["plugin setup() hooks"]
   end
 
@@ -215,7 +216,7 @@ flowchart TB
     Dist["dist/\nassets + manifests + deployment metadata"]
   end
 
-  Request --> ConfigHooks --> Resolved --> SetupHooks
+  Request --> ConfigHooks --> Resolved --> FrameworkConfig --> SetupHooks
   SetupHooks --> Core --> Plan --> Contributions
   Contributions --> Entries
   Contributions --> PluginFiles
@@ -229,7 +230,7 @@ flowchart TB
   classDef model fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
   classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
   class Request input;
-  class ConfigHooks,Resolved,SetupHooks config;
+  class ConfigHooks,Resolved,FrameworkConfig,SetupHooks config;
   class Core,Plan,Contributions,Entries,PluginFiles,IRManifest model;
   class BundlerConfig,Bundler,Output,BuildOutputHook,HTML,BuildEnd,Dist build;
 ```
@@ -416,10 +417,11 @@ plugins
 Each `page.*` anchor creates one Page and semantic Route. Static directories,
 `$param`, terminal `$...splat`, and `(group)` segments derive its URL relative
 to `routing.dir`; the complete containing directory is its private scope. SPA
-creates Client Routes and normally one Application Document. MPA starts from
-the same semantic graph and creates Page-owned Documents. Dynamic-route output
-and React layout/boundary projection remain staged and unsupported
-combinations fail graph/plan validation.
+creates Client Routes and normally one Application Document; each static SSG
+Page additionally materializes a Page-owned Document at its semantic route
+path. MPA starts from the same semantic graph and creates Page-owned Documents
+for static Page paths. MPA rejects dynamic/catch-all paths and router-only
+boundaries during graph validation; layouts compose in both modes.
 
 `server.routing` points to `src/apis` by default. A server route file becomes a
 route only when it exports uppercase HTTP methods. Framework request middleware
@@ -445,7 +447,7 @@ as `static-page` routes. PPR pages resolve through `ppr-shell` and `ppr-region`
 entries instead.
 
 `application.routes` and Bigfish route config remain explicit SPA-only
-route-tree migration inputs; MPA topology is rejected. Smallfish and evjs 0.2
+route-tree migration inputs; MPA materialization is rejected. Smallfish and evjs 0.2
 source trees must be converted to
 `page.*` plus `page.config.ts` before resolution. Standalone/manual runtime
 composition remains outside this model. None of these define another framework

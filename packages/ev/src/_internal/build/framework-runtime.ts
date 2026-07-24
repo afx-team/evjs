@@ -1,4 +1,4 @@
-import type { BuildOutput } from "@evjs/shared/manifest";
+import type { BuildOutput, ServerDocumentShell } from "@evjs/shared/manifest";
 
 export type ClientRuntimeOutput = Pick<BuildOutput, "version" | "buildId"> & {
   runtime: ClientRuntimeOutputRuntime;
@@ -61,8 +61,11 @@ export type FrameworkRuntimePage = Pick<
   | "metadata"
   | "mount"
 > & {
+  document?: FrameworkRuntimeDocumentShell;
   ppr?: FrameworkRuntimePprPage;
 };
+
+export type FrameworkRuntimeDocumentShell = ServerDocumentShell;
 
 export interface FrameworkRuntimePprPage {
   delivery: NonNullable<BuildOutput["pages"][string]["ppr"]>["delivery"];
@@ -111,6 +114,10 @@ export interface FrameworkRuntimeOptions {
   rscManifests?: {
     clientReferenceManifest?: Record<string, unknown>;
   };
+  /** Build-compiled request-time document shells, keyed by Page id. */
+  documentShells?: Record<string, FrameworkRuntimeDocumentShell>;
+  /** Include build-phase renderers for static prerendering only. */
+  includeBuildRenderers?: boolean;
 }
 
 export type FrameworkRuntimeRscPage = Pick<
@@ -197,7 +204,14 @@ export function createFrameworkRuntime(
   output: BuildOutput,
   options: FrameworkRuntimeOptions = {},
 ): FrameworkRuntimeOutput {
-  const routing = createFrameworkRuntimeRouting(output);
+  assertDocumentShellPageIds(output, options.documentShells);
+  const routing = createFrameworkRuntimeRouting(output, options.documentShells);
+  const renderers = output.server.renderers
+    ? Object.entries(output.server.renderers).filter(
+        ([, renderer]) =>
+          options.includeBuildRenderers === true || renderer.phase !== "build",
+      )
+    : [];
   return pruneUndefined({
     version: 1 as const,
     buildId: output.buildId,
@@ -205,18 +219,19 @@ export function createFrameworkRuntime(
     runtime: output.runtime,
     routing,
     server: pruneUndefined({
-      renderers: output.server.renderers
-        ? Object.fromEntries(
-            Object.entries(output.server.renderers).map(([id, renderer]) => [
-              id,
-              pruneUndefined({
-                kind: renderer.kind,
-                owner: createFrameworkRuntimeOwner(renderer.owner),
-                assets: renderer.assets,
-              }),
-            ]),
-          )
-        : undefined,
+      renderers:
+        renderers.length > 0
+          ? Object.fromEntries(
+              renderers.map(([id, renderer]) => [
+                id,
+                pruneUndefined({
+                  kind: renderer.kind,
+                  owner: createFrameworkRuntimeOwner(renderer.owner),
+                  assets: renderer.assets,
+                }),
+              ]),
+            )
+          : undefined,
     }),
     rsc: createFrameworkRuntimeRsc(output.rsc, options.rscManifests),
   });
@@ -224,22 +239,24 @@ export function createFrameworkRuntime(
 
 function createFrameworkRuntimePages(
   output: BuildOutput,
+  documentShells: FrameworkRuntimeOptions["documentShells"],
 ): Record<string, FrameworkRuntimePage> {
   return Object.fromEntries(
     Object.entries(output.pages).map(([id, page]) => [
       id,
-      createFrameworkRuntimePage(output, id, page),
+      createFrameworkRuntimePage(output, id, page, documentShells?.[id]),
     ]),
   );
 }
 
 function createFrameworkRuntimeRouting(
   output: BuildOutput,
+  documentShells: FrameworkRuntimeOptions["documentShells"],
 ): FrameworkRuntimeRouting {
   if (hasSpaRoutes(output) || Object.keys(output.pages).length === 0) {
     return {
       kind: "spa",
-      pages: createFrameworkRuntimePages(output),
+      pages: createFrameworkRuntimePages(output, documentShells),
       routes: output.routes.map((route) =>
         pruneUndefined({
           id: route.id,
@@ -252,7 +269,7 @@ function createFrameworkRuntimeRouting(
 
   return {
     kind: "mpa",
-    pages: createFrameworkRuntimePages(output),
+    pages: createFrameworkRuntimePages(output, documentShells),
   };
 }
 
@@ -264,6 +281,7 @@ function createFrameworkRuntimePage(
   output: BuildOutput,
   id: string,
   page: BuildOutput["pages"][string],
+  document: FrameworkRuntimeDocumentShell | undefined,
 ): FrameworkRuntimePage {
   const route = findOutputRouteForPage(output, id);
   return pruneUndefined({
@@ -275,6 +293,7 @@ function createFrameworkRuntimePage(
     componentModel: page.componentModel,
     metadata: page.metadata,
     mount: page.mount,
+    document,
     ppr: page.ppr
       ? {
           delivery: page.ppr.delivery,
@@ -292,6 +311,19 @@ function createFrameworkRuntimePage(
         }
       : undefined,
   });
+}
+
+function assertDocumentShellPageIds(
+  output: BuildOutput,
+  documentShells: FrameworkRuntimeOptions["documentShells"],
+): void {
+  for (const pageId of Object.keys(documentShells ?? {})) {
+    if (!Object.hasOwn(output.pages, pageId)) {
+      throw new Error(
+        `[evjs] Runtime document shell references missing Page "${pageId}".`,
+      );
+    }
+  }
 }
 
 function findOutputRouteForPage(

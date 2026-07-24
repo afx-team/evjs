@@ -263,18 +263,22 @@ function isEmptyPlanUpdate(update: BuildPlanUpdate): boolean {
     update.html.removed.length === 0 &&
     update.html.changed.length === 0 &&
     !update.generatedChanged &&
-    !update.resolveChanged
+    !update.resolveChanged &&
+    !update.runtimeChanged &&
+    !update.deliveryChanged
   );
 }
 
 function isArtifactOnlyUpdate(update: BuildPlanUpdate): boolean {
   return (
     !update.serverChanged &&
+    !update.runtimeChanged &&
     !update.resolveChanged &&
     update.entries.added.length === 0 &&
     update.entries.removed.length === 0 &&
     update.entries.changed.length === 0 &&
-    (update.generatedChanged ||
+    (update.deliveryChanged ||
+      update.generatedChanged ||
       update.html.added.length > 0 ||
       update.html.removed.length > 0 ||
       update.html.changed.length > 0)
@@ -291,6 +295,8 @@ function formatUnsupportedPlanUpdate(update: BuildPlanUpdate): string {
     formatPlanItems("HTML changes", update.html.changed, formatHtmlPlan),
     update.generatedChanged ? "generated framework IR changed" : undefined,
     update.resolveChanged ? "module resolution changed" : undefined,
+    update.runtimeChanged ? "framework runtime changed" : undefined,
+    update.deliveryChanged ? "framework artifact delivery changed" : undefined,
     update.serverChanged ? "server output changed" : undefined,
   ].filter((change): change is string => Boolean(change));
 

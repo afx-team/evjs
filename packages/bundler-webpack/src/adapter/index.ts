@@ -11,6 +11,7 @@ import type {
   BundlerDevController,
 } from "@evjs/ev/_internal/build";
 import type { DevProxyRule, ResolvedConfig } from "@evjs/ev/config";
+import { pageRoutePathToRegExp } from "@evjs/shared";
 import type { BuildPlan, BuildPlanUpdate } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import { createFsFromVolume, Volume } from "memfs";
@@ -449,11 +450,13 @@ class WebpackDevSession implements BundlerDevController {
 function isArtifactOnlyUpdate(update: BuildPlanUpdate): boolean {
   return (
     !update.serverChanged &&
+    !update.runtimeChanged &&
     !update.resolveChanged &&
     update.entries.added.length === 0 &&
     update.entries.removed.length === 0 &&
     update.entries.changed.length === 0 &&
-    (update.generatedChanged ||
+    (update.deliveryChanged ||
+      update.generatedChanged ||
       update.html.added.length > 0 ||
       update.html.removed.length > 0 ||
       update.html.changed.length > 0)
@@ -472,6 +475,8 @@ function getIncrementalClientEntries(
 ): BuildPlan["entries"] | undefined {
   if (
     update.serverChanged ||
+    update.runtimeChanged ||
+    update.deliveryChanged ||
     update.generatedChanged ||
     update.resolveChanged ||
     update.entries.removed.length > 0
@@ -846,28 +851,7 @@ function getRequestPathname(url: string | undefined): string | undefined {
 }
 
 function routePathToRegExp(routePath: string): RegExp {
-  const normalized = normalizeRoutePath(routePath);
-  if (normalized === "/") return /^\/?$/;
-
-  const expression = normalized
-    .split("/")
-    .filter(Boolean)
-    .map((segment) => {
-      if (
-        segment === "*" ||
-        segment.startsWith(":") ||
-        segment.startsWith("$")
-      ) {
-        return "[^/]+";
-      }
-      if (segment.endsWith("*")) {
-        return `${escapeRegExp(segment.slice(0, -1))}.*`;
-      }
-      return escapeRegExp(segment);
-    })
-    .join("/");
-
-  return new RegExp(`^/${expression}/?$`);
+  return pageRoutePathToRegExp(normalizeRoutePath(routePath));
 }
 
 function normalizeRoutePath(routePath: string): string {

@@ -24,8 +24,8 @@ the framework. MPA page routes use the page runtime without adding a router.
 
 - **One Page-and-Route model** — `src/pages/**/page.*` anchors Pages and Routes; each containing directory owns private code and determines its URL.
 - **One Page config model** — optional `page.config.ts` supplies static titles, named metadata, core rendering settings, and registered namespaced plugin extensions in both SPA and MPA.
-- **SPA and MPA materialization** — `routing.mode` materializes the same semantic tree as Client Routes or Page-owned Document Routes.
-- **Rendering extensions** — `page.config.ts` normalizes SSR, SSG, PPR, and RSC settings without changing canonical Page identity; migrated applications move component rendering exports into this file before running Core 0.3.
+- **SPA and MPA materialization** — `routing.mode` keeps the same semantic Page/Route tree while selecting a browser route tree or independent Page-owned Documents.
+- **Page rendering settings** — `page.config.ts` normalizes SSR, SSG, PPR, and RSC settings without changing canonical Page identity; migrated applications move component rendering exports into this file before running Core 0.3.
 - **Server functions** — `"use server"` modules become browser-callable functions.
 - **Server routes** — standard Web `Request`/`Response` route handlers are discovered from `src/apis`.
 - **Unified server runtime** — server functions, server routes, SSR, PPR, and RSC share the same server boundary.

@@ -75,17 +75,24 @@ manifest。应用代码不得 import 或编辑 deployment metadata。
 
 `routing.mode` 控制 Route/Document materialization：
 
-| Topology | Route 输出 | Document 输出 |
+| Routing mode | Route 输出 | Document 输出 |
 | --- | --- | --- |
-| `spa` | 一个浏览器 route tree 中的 Client Route | 通常一个 Application-owned Document |
-| `mpa` | 静态 Document Route | 每条 Page route 一个 Page entry 与 Page-owned Document |
+| `spa` | 一个浏览器 route tree 中的 Client Route | 一个 Application-owned shell，外加每个静态 SSG Page 的 Page-owned 输出 |
+| `mpa` | 静态语义 route 的独立 Page entry | 每条静态 Page route 一个 Page-owned Document |
 
 二者使用相同 `<routing.dir>/**/page.*` entry、目录 scope 与语义 route
 pattern。
 
-MPA 会发现相同的静态、动态和 splat Page/Route 身份。动态路由输出以及 React
-layout/boundary 投影仍在分阶段建设。不支持的组合会在 graph/plan 校验失败，
-不会静默切换 convention 或忽略 facet。
+两种 mode 下，静态 SSG Page 都按语义 route 决定输出路径：`/` 写入
+`index.html`，`/report` 写入 `report/index.html`，不会从 Page id 推导文件名。
+如果混合 SPA 的根 SSG Page 已拥有 `index.html`，同时其他 client route 还需要
+fallback，Core 会把 Application shell 单独保留在
+`__evjs/<application-id>.html`。
+
+MPA 当前只物化静态 Page route。`$param` 与终止 `$...splat` 仍是有效的 SPA
+route 身份，但为它们选择 MPA 会在 graph 校验失败，因为一个动态 pattern
+不能唯一对应一个构建期 HTML 输出。Route layout 在两种 mode 中都会组合；
+router-only boundary facet 仍仅支持 SPA，MPA 会显式拒绝。
 
 需要 Page-specific Document 模板时，把 `index.html` 放在 MPA Page 旁：
 
@@ -119,19 +126,25 @@ export default definePageConfig({
 ```
 
 该 module 在 graph build 阶段同步求值。Core rendering 字段进入 rendering
-BuildPlan。静态 `title` 和 named `meta` 会物化缺失 tag，并覆盖 Page-owned
-MPA/SSG Document 模板中匹配的 baseline 值；未声明值保留 baseline。已注册
-plugin extension 保持 static graph data，除非能力所属插件把它显式投影到
-generated runtime artifact。Plugin `transformHtml` hook 在框架元信息物化后
-运行，可以显式覆盖最终结果。
+BuildPlan。对于实际发射的 MPA/SSG Document，以及构建期编译的 SSR/PPR/RSC
+request-time document shell，静态 `title` 和 named `meta` 会物化缺失 tag，并覆盖
+模板中匹配的 baseline 值；未声明值保留 baseline。已注册 plugin extension 保持
+static graph data，除非能力所属插件把它显式投影到 generated runtime artifact。
+Plugin `transformHtml` hook 在框架元信息、assets 与结构化 HTML contribution
+物化后运行，可以显式覆盖最终结果。
 
-默认 React server document 也会为 SSR、PPR 与 RSC response 输出 Page
-metadata，包括后续 SPA 导航所需的 ownership marker。提供自定义
-`renderDocument` 会替换这份完整 document contract：仍可从
-`ctx.page.metadata` 读取数据，但自定义 renderer 需要持有模板 baseline，并在
-head 中插入 `@evjs/server/react` 的 `renderReactPageMetadata(ctx)`，才能保留
-core 的安全序列化与 SPA cleanup 行为。构建期 `transformHtml` hook 不会继续处理
-逐请求返回的任意 custom document string。
+每个 server-rendered Page 都会在构建期把它配置的 HTML 模板编译成
+request-time document shell。模板中手写的 `<html>`、`<head>`、`<body>` 属性和
+内容会被保留，同时应用与 static Document 相同的 assets、Page metadata、
+`html.tag` contribution 和 `transformHtml` hook。默认 React renderer 在请求时把
+Page HTML 与请求相关的 bootstrap data 插入该 shell。
+
+提供自定义 `renderDocument` 会完全替换 compiled shell：仍可从
+`ctx.page.metadata` 读取数据，但自定义 renderer 需要自行持有模板 baseline、
+assets 与 document structure。插入 `@evjs/server/react` 的
+`renderReactPageMetadata(ctx)`，可以保留 core 的安全序列化与 SPA cleanup
+行为。构建期 `transformHtml` hook 不会继续处理 custom document renderer
+逐请求返回的任意字符串。
 
 ## 迁移 Rendering Setting
 
@@ -148,11 +161,11 @@ export default definePageConfig({
 });
 ```
 
-静态生成使用受支持的 `"ssg"` rendering contract。RSC Page 使用
-`render: "ssr"`、`rsc: true` 与 `hydrate: "none"`。Flight endpoint 从
-`server.basePath` 派生，除非用 `server.rsc.endpoint` 覆盖。同一 Page 不能组合
-RSC 与 partial prerendering。这些 setting normalize 到 rendering extension，且不改变
-Page identity。
+静态生成使用受支持的 `"ssg"` rendering contract。RSC 与 partial-prerendered
+Page 必须省略 `hydrate` 或将其设为 `"none"`。RSC Page 使用 `render: "ssr"` 与
+`rsc: true`；Flight endpoint 从 `server.basePath` 派生，除非用
+`server.rsc.endpoint` 覆盖。同一 Page 不能组合 RSC 与 partial prerendering。
+这些 setting normalize 到 Core Page rendering field，且不改变 Page identity。
 
 ## 服务端函数与路由
 
@@ -189,7 +202,7 @@ route、Document、provenance 与 diagnostic。
 ## 要点
 
 - 新 SPA/MPA 从同一棵 `page.*` Page-and-Route 树构建；
-- `ev inspect` 报告 topology、Page root、source、Document 默认值，不暴露内部
+- `ev inspect` 报告 `routingMode`、Page root、source、Document 默认值，不暴露内部
   provider 选择；
 - `.ev`、manifest、build output 与生成的 route-type declaration 都是生成物；
 - Bundler adapter 消费 BuildPlan 并返回 build fact，不持有 routing semantic。

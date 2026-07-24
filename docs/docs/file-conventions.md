@@ -152,9 +152,9 @@ src/pages/
 ```
 
 SPA materializes Client Routes. MPA starts from the same semantic Pages and
-Routes and materializes Page-owned Documents. Dynamic-route and SPA-only facet
-coverage in the MPA materializer is still staged; unsupported combinations
-fail explicitly.
+Routes and materializes Page-owned Documents for static Page paths. `$param`,
+terminal `$...splat`, and router-only boundary facets fail explicitly in MPA;
+layouts compose in both modes.
 
 ## Server Functions
 
@@ -279,12 +279,14 @@ of `src/pages` alone has no client-routing effect.
 
 ### Bigfish SPA
 
-The migration normalizer accepts `application.routes` plus the
-`component`/`children`, `layout`, `wrappers`, and `redirect` spellings needed
-by Bigfish SPA trees. Shared template and mount values live under
-`application.document`. It does not accept a topology selector, top-level
-`routes`, or top-level `html`. The canonical destination moves each component
-into the directory for its public URL as `page.*`.
+The migration normalizer accepts `application.routes` plus the `component`,
+nested `routes`, `layout`, `wrappers`, and `redirect` fields used by current
+Bigfish SPA trees. It rejects `children`, matching current Umi config-route
+behavior. The finite Bigfish access/menu metadata set is retained under the
+registered `@evjs/bigfish-route` Route extension. Shared template and mount
+values live under `application.document`. It does not accept a routing-mode
+selector, top-level `routes`, or top-level `html`. The canonical destination
+moves each component into the directory for its public URL as `page.*`.
 
 ### Smallfish
 
@@ -294,13 +296,13 @@ named meta to core `title` and `meta`, and move remaining plugin-owned values
 into namespaced `page.config.ts` extensions. Delete `config.json`, then select
 only `routing.mode: "mpa"`.
 
-### evjs 0.2 and the `page.*` preview
+### evjs 0.2
 
 Before running Core 0.3, move each published filename route to the directory
 for its URL and rename the entry to `page.*`. Preserve `$param` and `(group)`
-directory segments as needed. The earlier positive-anchor preview already
-understands `page.*`; its experimental selector is no longer part of the
-public config.
+directory segments as needed. Core 0.3 does not expose a source-reader or
+provider selector; after the source tree is converted, declare only
+`routing.mode`.
 
 For the canonical destination:
 

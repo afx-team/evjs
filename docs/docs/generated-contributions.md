@@ -107,6 +107,7 @@ The supported slots are:
 | Slot | Covers |
 |------|--------|
 | `client.entry` | Entry imports and entry wrapper modules, including replacement wrappers |
+| `page.wrapper` | Semantic Page component wrapping across client and server projections |
 | `server.request.middleware` | Framework request middleware in the server pipeline |
 | `html.tag` | Structured `meta`, `link`, `script`, and `style` tags |
 | `resolve.alias` | Semantic module aliasing to user modules, packages, absolute paths, or generated artifacts |
@@ -115,9 +116,18 @@ The supported slots are:
 Use `client.entry` to import a side-effect module or call an explicit
 installer. The IR does not carry an inert runtime-plugin registry.
 
-`client.entry.runtime` accepts only `"client"` or `"all"`. A server-only
-filter is rejected because a client entry cannot materialize server code; use a
-server request or extension-owned server entry facet instead.
+`client.entry.runtime` accepts only `"client"`. A client entry cannot
+materialize server code, so `"server"` and the misleading `"all"` value are
+rejected. Use `page.wrapper` for Page component behavior that genuinely
+projects to both client and server runtimes.
+
+`page.wrapper` accepts `runtime: "client" | "server" | "all"` and an optional
+Application or Page target. Its module must default-export a component that
+accepts `children`. It projects to SPA route composition, MPA Page client
+entries, and SSR/SSG/PPR-shell/RSC server Page entries as those materialization
+points exist. A filter with no matching projection fails. Later contributions
+wrap earlier contributions; route layouts and wrappers remain outside plugin
+Page wrappers.
 
 An explicit Application/Page target must match a materialized client entry for
 `client.entry`, or an HTML Document for `html.tag`.
@@ -128,8 +138,9 @@ becoming silent no-ops.
 A canonical MPA exposes one logical `default` Application even though it
 materializes one page-client entry and one Document per Page. An Application target
 therefore expands `client.entry` to every Page entry and `html.tag` to every
-Page Document. A Page target remains exact. This expansion is recorded in the
-generated plan. An explicit
+Page Document. `page.wrapper` instead expands through semantic Page ownership,
+so the same Application/Page target works in SPA and MPA. A Page target remains
+exact. This expansion is recorded in the generated plan. An explicit
 route-tree input must normalize to the same
 Application/Page/Document ownership before using these semantics.
 

@@ -664,6 +664,372 @@ describe("prepareFrameworkBuild", () => {
     await prepared.dispose();
   });
 
+  it("projects Page wrappers into SPA routes in deterministic nesting order", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Page() { return null; }",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "spa-page-wrappers",
+      contributions(ctx) {
+        const first = ctx.emit.module({
+          id: "first-wrapper",
+          scope: { kind: "application" },
+          source:
+            "export default function First({ children }) { return children; }",
+          extension: ".tsx",
+        });
+        const second = ctx.emit.module({
+          id: "second-wrapper",
+          scope: { kind: "page", pageId: "index" },
+          source:
+            "export default function Second({ children }) { return children; }",
+          extension: ".tsx",
+        });
+        ctx.slot("page.wrapper").add({
+          id: "first-page-wrapper",
+          module: first,
+          runtime: "client",
+          target: { kind: "application", applicationId: "default" },
+        });
+        ctx.slot("page.wrapper").add({
+          id: "second-page-wrapper",
+          module: second,
+          runtime: "client",
+          target: { kind: "page", pageId: "index" },
+        });
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        output: { client: "dist" },
+        plugins: [plugin],
+        routing: { mode: "spa" },
+      },
+      { cwd },
+    );
+
+    try {
+      const manifest = JSON.parse(
+        await fs.promises.readFile(
+          path.join(cwd, ".ev/manifest.json"),
+          "utf-8",
+        ),
+      ) as BuildPlan;
+      const first = manifest.generated?.modules.find(
+        (module) => module.id === "first-wrapper",
+      );
+      const second = manifest.generated?.modules.find(
+        (module) => module.id === "second-wrapper",
+      );
+      const main = manifest.entries.find((entry) => entry.name === "main");
+      const route =
+        main?.metadata?.type === "pages-app"
+          ? main.metadata.routes.find(
+              (candidate) => candidate.target?.kind === "page",
+            )
+          : undefined;
+      const source = await fs.promises.readFile(
+        path.join(cwd, ".ev/entries/main.ts"),
+        "utf-8",
+      );
+
+      expect(route?.wrappers).toEqual([second?.file, first?.file]);
+      expect(manifest.generated?.slots).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            slot: "page.wrapper",
+            id: "first-page-wrapper",
+            module: first?.file,
+            runtime: "client",
+            target: {
+              kind: "application",
+              applicationId: "default",
+            },
+          }),
+          expect.objectContaining({
+            slot: "page.wrapper",
+            id: "second-page-wrapper",
+            module: second?.file,
+            runtime: "client",
+            target: { kind: "page", pageId: "index" },
+          }),
+        ]),
+      );
+      expect(source).toContain(
+        `import * as routeWrapperModule0_0 from "${generatedImport(
+          cwd,
+          ".ev/entries/main.ts",
+          second?.file ?? "",
+        )}";`,
+      );
+      expect(source).toContain(
+        `import * as routeWrapperModule0_1 from "${generatedImport(
+          cwd,
+          ".ev/entries/main.ts",
+          first?.file ?? "",
+        )}";`,
+      );
+      expect(source).toContain(
+        "wrappers: [routeWrapperModule0_0, routeWrapperModule0_1]",
+      );
+    } finally {
+      await prepared.dispose();
+    }
+  });
+
+  it("projects Page wrappers through MPA client and server Page entries", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/layout.tsx"),
+      "export default function Layout({ children }) { return children; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/csr/page.tsx"),
+      "export default function Csr() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ssr/page.tsx"),
+      "export default function Ssr() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ssr/page.config.ts"),
+      'export default { render: "ssr", hydrate: "load" };',
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ssg/page.tsx"),
+      "export default function Ssg() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ssg/page.config.ts"),
+      'export default { render: "ssg", hydrate: "none", prerender: true };',
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/rsc/page.tsx"),
+      "export default function Rsc() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/rsc/page.config.ts"),
+      'export default { render: "ssr", hydrate: "none", rsc: true };',
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ppr/page.tsx"),
+      `
+        import * as React from "react";
+        const Region = React.lazy(() => import("./Offer.region"));
+        export default function Ppr() {
+          return <React.Suspense fallback={null}><Region /></React.Suspense>;
+        }
+      `,
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ppr/Offer.region.tsx"),
+      "export default function Offer() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ppr/page.config.ts"),
+      `
+        export default {
+          render: "ssr",
+          hydrate: "none",
+          prerender: { partial: true },
+        };
+      `,
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "all-runtime-page-wrappers",
+      contributions(ctx) {
+        const first = ctx.emit.module({
+          id: "first-wrapper",
+          scope: { kind: "application" },
+          source:
+            "export default function First({ children }) { return children; }",
+          extension: ".tsx",
+        });
+        const second = ctx.emit.module({
+          id: "second-wrapper",
+          scope: { kind: "application" },
+          source:
+            "export default function Second({ children }) { return children; }",
+          extension: ".tsx",
+        });
+        ctx.slot("page.wrapper").add({
+          id: "first-page-wrapper",
+          module: first,
+          target: { kind: "application" },
+        });
+        ctx.slot("page.wrapper").add({
+          id: "second-page-wrapper",
+          module: second,
+          target: { kind: "application" },
+        });
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        output: { client: "dist" },
+        plugins: [plugin],
+        routing: { mode: "mpa" },
+      },
+      { cwd },
+    );
+
+    try {
+      const manifest = JSON.parse(
+        await fs.promises.readFile(
+          path.join(cwd, ".ev/manifest.json"),
+          "utf-8",
+        ),
+      ) as BuildPlan;
+      const first = manifest.generated?.modules.find(
+        (module) => module.id === "first-wrapper",
+      );
+      const second = manifest.generated?.modules.find(
+        (module) => module.id === "second-wrapper",
+      );
+      const expectedLayers = [
+        { kind: "layout", module: "./src/pages/layout.tsx" },
+        { kind: "wrapper", module: second?.file },
+        { kind: "wrapper", module: first?.file },
+      ];
+      const entryMetadata = (name: string) =>
+        manifest.entries.find((entry) => entry.name === name)?.metadata;
+
+      expect(entryMetadata("csr")).toMatchObject({
+        type: "react-component-page",
+        layers: expectedLayers,
+      });
+      expect(entryMetadata("ssr")).toMatchObject({
+        type: "react-component-page",
+        layers: expectedLayers,
+      });
+      expect(
+        manifest.generated?.slots
+          .filter((slot) => slot.slot === "page.wrapper")
+          .map((slot) => slot.runtime),
+      ).toEqual(["all", "all"]);
+      for (const name of [
+        "ssr-server",
+        "ssg-server",
+        "rsc-server",
+        "rsc-rsc",
+        "ppr-ppr-shell",
+      ]) {
+        expect(entryMetadata(name)).toEqual({
+          type: "react-server-page",
+          component: expect.any(String),
+          layers: expectedLayers,
+        });
+      }
+      expect(
+        manifest.server.renderers?.find(
+          (renderer) => renderer.name === "rsc-rsc",
+        )?.metadata,
+      ).toMatchObject({
+        type: "react-server-page",
+        layers: expectedLayers,
+      });
+
+      const clientSource = await fs.promises.readFile(
+        path.join(cwd, ".ev/entries/ssr.ts"),
+        "utf-8",
+      );
+      const serverSource = await fs.promises.readFile(
+        path.join(cwd, ".ev/entries/ssr-server.ts"),
+        "utf-8",
+      );
+      for (const source of [clientSource, serverSource]) {
+        expect(source).toContain(
+          generatedImport(
+            cwd,
+            source === clientSource
+              ? ".ev/entries/ssr.ts"
+              : ".ev/entries/ssr-server.ts",
+            second?.file ?? "",
+          ),
+        );
+        expect(source).toContain(
+          generatedImport(
+            cwd,
+            source === clientSource
+              ? ".ev/entries/ssr.ts"
+              : ".ev/entries/ssr-server.ts",
+            first?.file ?? "",
+          ),
+        );
+        expect(source.indexOf("createElement(Layer2")).toBeLessThan(
+          source.indexOf("createElement(Layer1"),
+        );
+        expect(source).not.toContain("Reflect.get(layerModule");
+      }
+
+      const pprRegion = manifest.generated?.entries.find(
+        (entry) => entry.kind === "ppr-region",
+      );
+      const pprRegionSource = await fs.promises.readFile(
+        path.join(cwd, pprRegion?.file ?? ""),
+        "utf-8",
+      );
+      expect(pprRegionSource).not.toContain(first?.file);
+      expect(pprRegionSource).not.toContain(second?.file);
+    } finally {
+      await prepared.dispose();
+    }
+  });
+
+  it("rejects Page wrappers without a matching requested runtime", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Page() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/ServerWrapper.tsx"),
+      "export default function Wrapper({ children }) { return children; }",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-page-wrapper-runtime",
+      contributions(ctx) {
+        ctx.slot("page.wrapper").add({
+          id: "server-wrapper",
+          module: "./src/ServerWrapper.tsx",
+          runtime: "server",
+          target: { kind: "page", pageId: "index" },
+        });
+      },
+    };
+
+    await expect(
+      prepareFrameworkBuild(
+        {
+          output: { client: "dist" },
+          plugins: [plugin],
+          routing: { mode: "spa" },
+        },
+        { cwd },
+      ),
+    ).rejects.toThrow(
+      'page.wrapper contribution "server-wrapper" targets Page "index", but no server Page runtime projection exists',
+    );
+  });
+
   it("models tmp module entry/runtime/html/resolution patterns as structured contributions", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
@@ -1276,7 +1642,7 @@ describe("prepareFrameworkBuild", () => {
     }
   });
 
-  it("rejects server-only runtime filters on client entry contributions", async () => {
+  it("rejects non-client runtime filters on client entry contributions", async () => {
     const cwd = await createProject();
     await writeFile(
       path.join(cwd, "src/pages/page.tsx"),
@@ -1292,10 +1658,10 @@ describe("prepareFrameworkBuild", () => {
           source: "window.__installed = true;",
         });
         ctx.slot("client.entry").add({
-          id: "server-only-installer",
+          id: "all-runtime-installer",
           module: installer,
           position: "before-main",
-          runtime: "server" as "client",
+          runtime: "all" as "client",
         });
       },
     };
@@ -1309,7 +1675,7 @@ describe("prepareFrameworkBuild", () => {
         },
         { cwd },
       ),
-    ).rejects.toThrow('.runtime must be one of: "client", "all".');
+    ).rejects.toThrow('.runtime must be one of: "client".');
   });
 
   it("does not treat Object prototype keys as known generated page scopes", async () => {
@@ -2044,6 +2410,211 @@ describe("build", () => {
       html.match(/<meta[^>]*name="description"[^>]*>/gi) ?? [],
     ).toHaveLength(1);
     expect(html).toMatch(/<meta[^>]*name="from-contribution"[^>]*content="1"/);
+  });
+
+  it.each([
+    "spa",
+    "mpa",
+  ] as const)("compiles the configured %s SSR template into the Page runtime shell", async (mode) => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "index.html"),
+      [
+        "<!doctype html>",
+        '<html lang="zh-CN" data-template="configured">',
+        "<head>",
+        '<meta name="viewport" content="width=device-width">',
+        "<title>Template title</title>",
+        "</head>",
+        '<body class="template-body">',
+        "<header>Template header</header>",
+        '<main id="app"><p>Template fallback</p></main>',
+        "<footer>Template footer</footer>",
+        "</body>",
+        "</html>",
+      ].join(""),
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/dashboard/page.tsx"),
+      "export default function Dashboard() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/dashboard/page.config.ts"),
+      [
+        "export default {",
+        '  render: "ssr",',
+        '  hydrate: "load",',
+        '  title: "Dashboard title",',
+        '  meta: { description: "Dashboard description" },',
+        "};",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    let frameworkRuntime: BuildResult["frameworkRuntime"];
+    const transformedFiles: string[] = [];
+    const plugin: Plugin<Record<string, never>> = {
+      name: "server-document-shell",
+      contributions(ctx) {
+        ctx.slot("html.tag").add({
+          id: "server-document-contribution",
+          target: { kind: "page", pageId: "dashboard" },
+          tag: "meta",
+          placement: "head-append",
+          attrs: { name: "from-contribution", content: mode },
+        });
+      },
+      setup() {
+        return {
+          transformHtml(doc, ctx) {
+            if (ctx.owner.kind !== "page" || ctx.owner.pageId !== "dashboard") {
+              return;
+            }
+            transformedFiles.push(ctx.fileName);
+            doc.documentElement?.setAttribute("data-plugin", mode);
+            doc.body?.setAttribute("data-transformed", "yes");
+            const title = doc.querySelector("title");
+            if (title) title.textContent = "Plugin title";
+          },
+          buildEnd(result) {
+            frameworkRuntime = result.frameworkRuntime;
+          },
+        };
+      },
+    };
+    const clientEntryName = mode === "spa" ? "main" : "dashboard";
+    const clientAssets = {
+      js: [`${clientEntryName}.js`],
+      css: [`${clientEntryName}.css`],
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: `server-document-${mode}`,
+      capabilities: fullBundlerCapabilities,
+      async build({ plan }) {
+        const serverEntries = Object.fromEntries(
+          plan.entries
+            .filter((entry) => entry.environment === "server")
+            .map((entry) => [
+              entry.name,
+              {
+                js: [`${entry.name}.js`],
+                css: entry.kind === "page-server" ? [`${entry.name}.css`] : [],
+              },
+            ]),
+        );
+        const serverRuntime = plan.entries.find(
+          (entry) => entry.kind === "server-runtime",
+        );
+        return {
+          clientEntryAssets: {
+            [clientEntryName]: clientAssets,
+          },
+          firstClientEntryAssets: clientAssets,
+          serverEntryAssets: serverEntries,
+          serverEntry: serverRuntime ? `${serverRuntime.name}.js` : undefined,
+          serverAssets: serverRuntime
+            ? { js: [`${serverRuntime.name}.js`], css: [] }
+            : undefined,
+        };
+      },
+      async dev() {},
+    };
+
+    await build(
+      {
+        output: { client: "dist" },
+        routing: { mode },
+        plugins: [plugin],
+      },
+      { cwd, bundler },
+    );
+
+    const page = frameworkRuntime?.routing.pages.dashboard;
+    const document = page?.document;
+    if (!document) {
+      throw new Error(`Expected ${mode} server document shell.`);
+    }
+    const html = [
+      document.beforeContent,
+      "__PAGE_CONTENT__",
+      document.betweenContentAndData,
+      "__REQUEST_DATA__",
+      document.afterData,
+    ].join("");
+
+    expect(transformedFiles).toEqual([
+      mode === "spa" ? "index.html" : "dashboard/index.html",
+    ]);
+    expect(html).toContain('<html lang="zh-CN"');
+    expect(html).toContain('data-template="configured"');
+    expect(html).toContain(`data-plugin="${mode}"`);
+    expect(html).toContain(
+      '<body class="template-body" data-transformed="yes">',
+    );
+    expect(html).toContain(
+      '<meta name="viewport" content="width=device-width">',
+    );
+    expect(html).toContain("<title");
+    expect(html).toContain(">Plugin title</title>");
+    expect(html).toContain(`<meta name="from-contribution" content="${mode}">`);
+    expect(html).toContain(`href="/${clientEntryName}.css"`);
+    expect(html).toContain('href="/dashboard-server.css"');
+    expect(html).toContain(
+      '<main id="app" data-evjs-hydrate="load">__PAGE_CONTENT__</main>',
+    );
+    expect(html).toContain("<footer>Template footer</footer>__REQUEST_DATA__");
+    expect(html).toContain('id="__EVJS_CLIENT_RUNTIME__"');
+    expect(html).toContain(`src="/${clientEntryName}.js"`);
+    expect(html).not.toContain("Template fallback");
+  });
+
+  it("rejects transformHtml hooks that remove server document markers", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/dashboard/page.tsx"),
+      "export default function Dashboard() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/dashboard/page.config.ts"),
+      'export default { render: "ssr" };',
+      "utf-8",
+    );
+
+    await expect(
+      build(
+        {
+          output: { client: "dist" },
+          routing: { mode: "spa" },
+          plugins: [
+            {
+              name: "removes-server-document-marker",
+              setup() {
+                return {
+                  transformHtml(doc, ctx) {
+                    if (
+                      ctx.owner.kind === "page" &&
+                      ctx.owner.pageId === "dashboard"
+                    ) {
+                      const mount = doc.querySelector("#app");
+                      if (mount) mount.innerHTML = "<p>Replaced</p>";
+                    }
+                  },
+                };
+              },
+            },
+          ],
+        },
+        {
+          cwd,
+          bundler: createMockBundler([]),
+        },
+      ),
+    ).rejects.toThrow(
+      'Server document for Page "dashboard" must preserve exactly one Page-content marker followed by exactly one request-data marker through transformHtml hooks.',
+    );
   });
 
   it("projects Page metadata into the generated SPA route facade", async () => {
@@ -3262,6 +3833,7 @@ describe("build", () => {
     expect(html).toContain("http://evjs.local/report");
     expect(html).not.toMatch(/<script[^>]+src=/);
     expect(html).not.toContain("__EVJS_CLIENT_RUNTIME__");
+    expect(html).not.toContain("data-evjs-hydrate");
     expect(buildOutput.server).toEqual({});
     expect(buildOutput.documents).toContainEqual({
       kind: "page",
@@ -3281,42 +3853,271 @@ describe("build", () => {
     expect(fs.existsSync(path.join(cwd, "dist/server"))).toBe(false);
   });
 
-  it("removes stale split manifests when rebuilding with flat client output", async () => {
+  it("marks hydrated SSG HTML for client bootstrap", async () => {
     const cwd = await createProject();
-    const events: string[] = [];
-    const bundler = createMockBundler(events);
-
-    await build({}, { cwd, bundler });
-    expect(fs.existsSync(path.join(cwd, "dist/client/manifest.json"))).toBe(
-      false,
-    );
-    expect(fs.existsSync(path.join(cwd, "dist/client/runtime.json"))).toBe(
-      false,
-    );
     await writeFile(
-      path.join(cwd, "dist/client/manifest.json"),
-      '{"legacy":true}',
+      path.join(cwd, "src/pages/report/page.tsx"),
+      "export default function Report() { return null; }",
       "utf-8",
     );
     await writeFile(
-      path.join(cwd, "dist/manifest.json"),
-      '{"legacy":true}',
+      path.join(cwd, "src/pages/report/page.config.ts"),
+      'export default { render: "ssg", hydrate: "load" };',
       "utf-8",
     );
 
-    await build({ output: { client: "dist" } }, { cwd, bundler });
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "hydrated-ssg-mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {
+          clientEntryAssets: {
+            report: { js: ["report.js"], css: [] },
+          },
+          serverEntryAssets: {
+            server: { js: ["server.js"], css: [] },
+            "report-server": { js: ["report-server.js"], css: [] },
+          },
+          async loadServerModule(asset) {
+            if (asset !== "report-server.js") {
+              throw new Error(`Unexpected server module asset: ${asset}`);
+            }
+            return {
+              render() {
+                return "<h1>Hydrated Report</h1>";
+              },
+            };
+          },
+        };
+      },
+      async dev() {
+        return undefined;
+      },
+    };
 
-    expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
-    expect(fs.existsSync(path.join(cwd, "dist/runtime.json"))).toBe(false);
-    expect(fs.existsSync(path.join(cwd, "dist/client/manifest.json"))).toBe(
-      false,
+    await build(
+      {
+        routing: { mode: "mpa" },
+      },
+      { cwd, bundler },
     );
-    expect(fs.existsSync(path.join(cwd, "dist/client/runtime.json"))).toBe(
-      false,
+
+    const html = fs.readFileSync(
+      path.join(cwd, "dist/client/report/index.html"),
+      "utf-8",
     );
-    expect(fs.existsSync(path.join(cwd, "dist/deployment-metadata.json"))).toBe(
-      true,
+    expect(html).toContain(
+      '<div id="app" data-evjs-hydrate="load"><h1>Hydrated Report</h1></div>',
     );
+    expect(html).toContain('src="/report.js"');
+    expect(html).toContain("__EVJS_CLIENT_RUNTIME__");
+  });
+
+  it("emits hydrated SPA SSG HTML without duplicating the Application Document", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/report/page.tsx"),
+      "export default function Report() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/report/page.config.ts"),
+      'export default { render: "ssg", hydrate: "load" };',
+      "utf-8",
+    );
+
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "hydrated-spa-ssg-mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {
+          clientEntryAssets: {
+            main: { js: ["main.js"], css: ["main.css"] },
+          },
+          firstClientEntryAssets: {
+            js: ["main.js"],
+            css: ["main.css"],
+          },
+          serverEntryAssets: {
+            "report-server": { js: ["report-server.js"], css: [] },
+          },
+          async loadServerModule(asset) {
+            if (asset !== "report-server.js") {
+              throw new Error(`Unexpected server module asset: ${asset}`);
+            }
+            return {
+              render() {
+                return "<h1>Hydrated SPA Report</h1>";
+              },
+            };
+          },
+        };
+      },
+      async dev() {
+        return undefined;
+      },
+    };
+
+    await build(
+      {
+        routing: { mode: "spa" },
+      },
+      { cwd, bundler },
+    );
+
+    const html = fs.readFileSync(
+      path.join(cwd, "dist/client/report/index.html"),
+      "utf-8",
+    );
+    expect(html).toContain(
+      '<div id="app" data-evjs-hydrate="load"><h1>Hydrated SPA Report</h1></div>',
+    );
+    expect(html).toContain('href="/main.css"');
+    expect(html).toContain('src="/main.js"');
+    expect(html).toContain("__EVJS_CLIENT_RUNTIME__");
+    expect(fs.existsSync(path.join(cwd, "dist/client/index.html"))).toBe(false);
+  });
+
+  it("keeps root SPA SSG output separate from a mixed Application shell", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/page.config.ts"),
+      'export default { render: "ssg", hydrate: "none" };',
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/dashboard/page.tsx"),
+      "export default function Dashboard() { return null; }",
+      "utf-8",
+    );
+
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mixed-root-spa-ssg-mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {
+          clientEntryAssets: {
+            main: { js: ["main.js"], css: [] },
+          },
+          firstClientEntryAssets: {
+            js: ["main.js"],
+            css: [],
+          },
+          serverEntryAssets: {
+            "index-server": { js: ["index-server.js"], css: [] },
+          },
+          async loadServerModule(asset) {
+            if (asset !== "index-server.js") {
+              throw new Error(`Unexpected server module asset: ${asset}`);
+            }
+            return {
+              render() {
+                return "<h1>Static Home</h1>";
+              },
+            };
+          },
+        };
+      },
+      async dev() {
+        return undefined;
+      },
+    };
+
+    await build(
+      {
+        routing: { mode: "spa" },
+      },
+      { cwd, bundler },
+    );
+
+    const rootHtml = fs.readFileSync(
+      path.join(cwd, "dist/client/index.html"),
+      "utf-8",
+    );
+    const applicationHtml = fs.readFileSync(
+      path.join(cwd, "dist/client/__evjs/default.html"),
+      "utf-8",
+    );
+    expect(rootHtml).toContain('<div id="app"><h1>Static Home</h1></div>');
+    expect(rootHtml).not.toContain('src="/main.js"');
+    expect(applicationHtml).toContain('src="/main.js"');
+  });
+
+  it("removes stale framework HTML while preserving replaced and unrelated files", async () => {
+    const cwd = await createProject();
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock-mpa",
+      capabilities: fullBundlerCapabilities,
+      async build({ plan }) {
+        return {
+          clientEntryAssets: Object.fromEntries(
+            plan.entries
+              .filter((entry) => entry.environment === "client")
+              .map((entry) => [
+                entry.name,
+                { js: [`${entry.name}.js`], css: [] },
+              ]),
+          ),
+        };
+      },
+      async dev() {},
+    };
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const reportPage = path.join(cwd, "src/pages/report/page.tsx");
+    const archivePage = path.join(cwd, "src/pages/archive/page.tsx");
+    await writeFile(
+      reportPage,
+      "export default function Report() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      archivePage,
+      "export default function Archive() { return null; }",
+      "utf-8",
+    );
+
+    await build(
+      { output: { client: "dist/client" }, routing: { mode: "mpa" } },
+      { cwd, bundler },
+    );
+
+    const reportHtml = path.join(cwd, "dist/client/report/index.html");
+    const archiveHtml = path.join(cwd, "dist/client/archive/index.html");
+    const unrelatedHtml = path.join(cwd, "dist/client/manual.html");
+    expect(fs.existsSync(reportHtml)).toBe(true);
+    expect(fs.existsSync(archiveHtml)).toBe(true);
+    await writeFile(
+      archiveHtml,
+      "<!doctype html><html><head></head><body>plugin replacement</body></html>",
+      "utf-8",
+    );
+    await writeFile(
+      unrelatedHtml,
+      "<!doctype html><html><head></head><body>manual</body></html>",
+      "utf-8",
+    );
+    await fs.promises.rm(reportPage);
+    await fs.promises.rm(archivePage);
+
+    await build(
+      { output: { client: "dist/client" }, routing: { mode: "mpa" } },
+      { cwd, bundler },
+    );
+
+    expect(fs.existsSync(reportHtml)).toBe(false);
+    expect(fs.readFileSync(archiveHtml, "utf-8")).toContain(
+      "plugin replacement",
+    );
+    expect(fs.readFileSync(unrelatedHtml, "utf-8")).toContain("manual");
   });
 
   it("runs plugin config hooks before resolving config", async () => {
@@ -5956,6 +6757,111 @@ describe("dev", () => {
     ]);
   });
 
+  it("reuses the active Application extension snapshot for route updates", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages/home"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(cwd, "src/pages/home/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    let mergeCalls = 0;
+    const plugin = definePlugin<Record<string, never>>({
+      name: "stable-application-extension",
+      describe(ctx) {
+        ctx.applicationExtension<{ generation: number }, { enabled: boolean }>({
+          namespace: "@test/stable-application",
+          merge() {
+            mergeCalls += 1;
+            return { generation: mergeCalls };
+          },
+        });
+      },
+      setup(ctx) {
+        const value = ctx.config.extensions["@test/stable-application"] as {
+          generation: number;
+        };
+        events.push(`setup:${value.generation}`);
+        return {
+          dispose(disposeCtx) {
+            const disposed = disposeCtx.config.extensions[
+              "@test/stable-application"
+            ] as { generation: number };
+            events.push(`dispose:${disposed.generation}`);
+          },
+        };
+      },
+      contributions(ctx) {
+        const value = ctx.framework.applications[0]?.extensions[
+          "@test/stable-application"
+        ] as { generation: number };
+        events.push(`contribution:${value.generation}`);
+      },
+    });
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return {
+          async updatePlan() {
+            events.push("update");
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev(
+      {
+        extensions: {
+          "@test/stable-application": { enabled: true },
+        },
+        output: { client: "dist" },
+        plugins: [plugin],
+        routing: { mode: "mpa" },
+      },
+      { cwd, bundler },
+    );
+
+    await waitForEvent(events, "bundler.dev");
+    await fs.promises.mkdir(path.join(cwd, "src/pages/orders"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(cwd, "src/pages/orders/page.tsx"),
+      "export default function Orders() { return null; }",
+      "utf-8",
+    );
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("dev route update timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(mergeCalls).toBe(1);
+    expect(events).toEqual([
+      "setup:1",
+      "contribution:1",
+      "bundler.dev",
+      "contribution:1",
+      "update",
+      "dispose:1",
+    ]);
+  });
+
   it("updates Page metadata when an adjacent page.config.ts changes during dev", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
@@ -6030,7 +6936,7 @@ describe("dev", () => {
     ]);
   });
 
-  it("recreates same-name plugin hooks when dev config changes", async () => {
+  it("runs staged same-name plugin hooks before applying a dev config update", async () => {
     const cwd = await createProject();
     await writeFile(
       path.join(cwd, "src/pages-v1/home/page.tsx"),
@@ -6057,8 +6963,15 @@ describe("dev", () => {
     function createPlugin(label: string): Plugin<Record<string, never>> {
       return {
         name: "same-name-plugin",
+        contributions() {
+          events.push(`contribution:${label}`);
+        },
         setup() {
+          events.push(`setup:${label}`);
           return {
+            buildStart() {
+              events.push(`buildStart:${label}`);
+            },
             dispose() {
               events.push(`dispose:${label}`);
             },
@@ -6123,10 +7036,154 @@ describe("dev", () => {
     ]);
 
     expect(events).toEqual([
+      "setup:v1",
+      "buildStart:v1",
+      "contribution:v1",
       "bundler.dev",
+      "setup:v2",
+      "buildStart:v2",
+      "contribution:v2",
       "update:orders",
       "dispose:v1",
       "dispose:v2",
+    ]);
+  });
+
+  it("rolls back staged plugin hooks when reload buildStart fails", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages-v1/home/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages-v2/home/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages-v2/orders/page.tsx"),
+      "export default function Orders() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "ev.config.ts"),
+      "export default { routing: { mode: 'mpa', dir: './src/pages-v1' } };",
+      "utf-8",
+    );
+    await writeFile(path.join(cwd, "old-watch.txt"), "old", "utf-8");
+    await writeFile(path.join(cwd, "new-watch.txt"), "new", "utf-8");
+
+    const events: string[] = [];
+    function createPlugin(
+      label: string,
+      watchFile: string,
+      failBuildStart = false,
+    ): Plugin<Record<string, never>> {
+      let contributionCount = 0;
+      return {
+        name: "same-name-plugin",
+        contributions() {
+          contributionCount += 1;
+          events.push(`contribution:${label}:${contributionCount}`);
+        },
+        setup(ctx) {
+          events.push(`setup:${label}`);
+          ctx.addWatchFile(`./${watchFile}`);
+          return {
+            buildStart() {
+              events.push(`buildStart:${label}`);
+              if (failBuildStart) {
+                throw new Error(`${label} buildStart blocked`);
+              }
+            },
+            dispose(disposeCtx) {
+              events.push(
+                `dispose:${label}:${disposeCtx.config.routing?.dir ?? "missing"}`,
+              );
+            },
+          };
+        },
+      };
+    }
+
+    const oldPlugin = createPlugin("old", "old-watch.txt");
+    const oldConfig: Config<Record<string, never>> = {
+      output: { client: "dist" },
+      routing: { mode: "mpa", dir: "./src/pages-v1" },
+      plugins: [oldPlugin],
+    };
+    let currentConfig = oldConfig;
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return {
+          async updatePlan() {
+            events.push("update");
+          },
+        };
+      },
+    };
+    let loadCount = 0;
+    const running = dev(currentConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        loadCount += 1;
+        events.push(`load:${loadCount}`);
+        return currentConfig;
+      },
+    });
+
+    await waitForEvent(events, "bundler.dev");
+    currentConfig = {
+      ...oldConfig,
+      routing: { mode: "mpa", dir: "./src/pages-v2" },
+      plugins: [createPlugin("new", "new-watch.txt", true)],
+    };
+    await writeFile(
+      path.join(cwd, "ev.config.ts"),
+      "export default { routing: { mode: 'mpa', dir: './src/pages-v2' } };",
+      "utf-8",
+    );
+    await waitForEvent(
+      events,
+      "dispose:new:./src/pages-v2",
+      devUpdateTimeoutMs,
+    );
+
+    currentConfig = oldConfig;
+    await writeFile(path.join(cwd, "old-watch.txt"), "changed", "utf-8");
+    await waitForEvent(events, "contribution:old:2");
+    process.emit("SIGINT");
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("dev shutdown timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual([
+      "setup:old",
+      "buildStart:old",
+      "contribution:old:1",
+      "bundler.dev",
+      "load:1",
+      "setup:new",
+      "buildStart:new",
+      "dispose:new:./src/pages-v2",
+      "load:2",
+      "contribution:old:2",
+      "dispose:old:./src/pages-v1",
     ]);
   });
 

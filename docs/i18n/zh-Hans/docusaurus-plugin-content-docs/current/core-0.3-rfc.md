@@ -28,7 +28,8 @@ src/pages/
 - 同目录可选 `page.config.ts` 是构建期 Page 配置。
 - `routing.mode` 为同一棵 semantic Page/Route 树选择 SPA 或 MPA 物化。
 - 包括 `index.tsx` 在内的同目录文件都是普通 Page 私有源码。
-- 插件持有的 Page 配置放在 namespaced `extensions` 中。
+- 插件持有的 Application 配置放在顶层 `config.extensions` 中；Page 配置放在
+  同目录 `page.config.ts` 的 `extensions` 中。两者都使用已注册 namespace。
 - Core `title` 与 named `meta` 由框架物化；插件必须显式投影自己在 runtime
   需要的 extension data 或行为。
 
@@ -49,11 +50,11 @@ canonical 模型中没有第二棵 `application.routes`，也没有 SPA/MPA 各�
 
 ## 目标
 
-1. Bigfish SPA 与 Smallfish MPA 应用迁移时，无需先接受第三种 Page ownership
-   模型。
+1. 为 Bigfish SPA 与 Smallfish MPA 应用提供同一个 canonical 迁移目标，不把任一
+   源码方言带入 runtime。
 2. Page 身份、scope、Route 身份与 Page 能力数据在两种 mode 中含义一致。
 3. 构建期配置与可执行 runtime 代码明确分离。
-4. 插件获得稳定、namespaced 的 Page 配置和 normalized graph owner。
+4. 插件获得稳定、namespaced 的 Application/Page 配置和 normalized graph owner。
 5. 明确源码迁移方式，不把存量框架方言变成永久 runtime reader。
 
 Core 0.3 不承诺 Bigfish 或 Smallfish API 一比一兼容。目标是让核心心智对等：
@@ -175,7 +176,7 @@ Core 持有以下 author-facing Page 字段：
 | `title` | 静态 Page 文档标题。 |
 | `meta` | 物化为 `<meta name="key" content="value">` 的静态字符串 record。 |
 | `render` | `"csr"`、`"ssr"` 或 `"ssg"`；默认 `"csr"`。 |
-| `hydrate` | `"none"`、`"load"`、`"visible"` 或 `"idle"`。 |
+| `hydrate` | `"none"` 或 `"load"`。 |
 | `prerender` | `true` 或 `{ partial?, delivery?, revalidate? }`。 |
 | `rsc` | `true` 表示使用 RSC component model。 |
 
@@ -196,11 +197,12 @@ Title/meta 按 Page ownership 物化：
 构建会校验组合：
 
 - RSC 要求 `render: "ssr"`，并省略 `hydrate` 或设置为 `"none"`；
-- partial prerendering 要求 `render: "ssr"`；
+- partial prerendering 要求 `render: "ssr"`，并省略 `hydrate` 或设置为
+  `"none"`；
 - 一个 Page 不能同时启用 RSC 与 partial prerendering；
 - full prerendering 必须显式使用 `"ssr"` 或 `"ssg"` render mode。
 
-这些值先 normalize 到 CoreGraph rendering extension，再进入已有 rendering
+这些值先 normalize 到 CoreGraph Page rendering field，再进入 rendering
 BuildPlan；它们不会改变 Page 或 Route 身份。如果所选 backend 无法物化某个组合，
 adapter/runtime 仍可明确拒绝。
 
@@ -210,14 +212,30 @@ adapter/runtime 仍可明确拒绝。
 
 ### 插件 extension
 
-插件持有的数据必须使用全局 namespaced key：
+插件持有的 Application 数据写在 `ev.config.ts` 顶层，Page 数据写在同目录
+`page.config.ts`；两者都必须使用全局 namespaced key：
 
 ```ts
+// ev.config.ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  routing: { mode: "spa" },
+  extensions: {
+    "@company/access": {
+      enabled: true,
+    },
+  },
+});
+```
+
+`application.extensions` 不是另一处 authoring 入口。`application` 仍只用于显式
+Bigfish SPA route-tree 迁移输入。
+
+```ts
+// src/pages/admin/page.config.ts
 export default definePageConfig({
   extensions: {
-    "@company/tracert": {
-      spm: "a1.b2",
-    },
     "@company/access": {
       role: "operator",
     },
@@ -225,8 +243,9 @@ export default definePageConfig({
 });
 ```
 
-每个 namespace 必须由唯一的插件 `pageExtension()` declaration 注册。
-插件持有 default、merge、validation 和 schema version：
+能力所属插件在同步 `describe()` 中注册每种 owner。同一个插件可以为同一 namespace
+分别注册一次 Application 和 Page；该 namespace 仍只有一个 producer 和一个 schema
+version：
 
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
@@ -234,37 +253,78 @@ import { definePlugin } from "@evjs/ev/plugin";
 export const accessPlugin = definePlugin({
   name: "@company/access-plugin",
   describe(api) {
+    api.applicationExtension({
+      namespace: "@company/access",
+      schemaVersion: "1",
+      defaults: { enabled: false },
+    });
     api.pageExtension({
       namespace: "@company/access",
+      schemaVersion: "1",
       defaults: { role: "guest" },
       validate(value) {
         return typeof value.role === "string" || "role must be a string";
       },
     });
   },
+  setup(ctx) {
+    const access = ctx.config.extensions["@company/access"];
+    // 此时 Application extension 已解析并完成 deep freeze。
+    console.log(access);
+  },
   contributions(ctx) {
+    const applicationAccess =
+      ctx.framework.applications[0]?.extensions["@company/access"];
     for (const page of ctx.framework.pages) {
-      const access = page.extensions["@company/access"];
+      const pageAccess = page.extensions["@company/access"];
       // 只生成该能力真正需要的 build/runtime artifact。
-      console.log(page.id, access);
+      console.log(applicationAccess, page.id, pageAccess);
     }
   },
 });
 ```
 
-未注册 namespace 会报错，两个插件也不能持有同一 namespace。
+Application extension 在 `describe()` 后、`setup()` 前解析；隔离并 deep freeze
+后的结果通过 `ctx.config.extensions` 暴露，随后写入 normalized Application。
+Page extension 更晚解析：canonical Page config 被应用到 normalized Page graph 时
+才产生 Page extension value；它可在 `contributions()` 的
+`ctx.framework.pages` 中读取，不能从 graph 生成前的 `setup()` 读取。
+
+Extension registry 对每个 namespace 执行唯一合同：
+
+- 同一个插件可分别注册一个 Application owner 和一个 Page owner；
+- 任一 owner 重复注册都会报错；
+- 其他插件不能为任何 owner 注册同一 namespace；
+- 同一 namespace 的 Application/Page declaration 必须使用完全相同的
+  `schemaVersion`，包括两边都省略；
+- 配置了未注册 namespace 会报错。
+
+配置值、静态 default，以及 `defaults`/`merge` 返回值都必须保持严格可 JSON
+序列化。`defaults`、`merge`、`validate` 等 declaration callback 是同步插件代码，
+不会存入 graph。可执行 build option 应移入 plugin factory；可执行 runtime 行为应
+移入通过 opaque module ref 与显式 generated contribution 引用的 emitted/imported
+module。
+
+API 始终只有一套 `applicationExtension()` / `pageExtension()` 实现。
+`schemaVersion` 描述 namespace 数据合同，不用于选择带版本后缀的 API 或兼容
+runtime。
 
 ### 构建期与运行时 phase
 
-`page.config.ts` 不会作为浏览器 module 打包。Core 会提取并物化支持的
-title/meta/rendering 字段；完整 config object 与 plugin extension 不会自动
-序列化到 HTML、route object 或全局 runtime manifest。
+顶层 Application extension 与 `page.config.ts` 都不会作为 browser config module
+打包。Core 会提取并物化支持的 title/meta/rendering 字段；完整 config object 与
+plugin extension 不会自动序列化到 HTML、route object 或全局 runtime manifest。
 
 ```text
-page.config.ts
-  -> 构建期静态求值
-  -> 校验 core 字段和已注册 extension namespace
-  -> normalized CoreGraph Page 字段与 extensions
+plugin describe()
+  -> 注册 Application/Page namespace owner
+  -> 解析顶层 Application extension
+  -> plugin setup(ctx.config.extensions)
+  -> 发现 Page identity 与 scope
+  -> 求值同目录 page.config.ts
+  -> normalize Page graph
+  -> 对 normalized Page owner 解析 Page extension
+  -> CoreGraph Application/Page extension bag 与 namespace registry
   -> core title/meta/rendering 物化
   -> 可选的显式 plugin runtime projection
 ```
@@ -273,9 +333,9 @@ page.config.ts
 data/module，并通过受支持 generated contribution 挂载。这样可避免 secret 和
 build-only 字段进入浏览器 bundle，也让 runtime 成本可被 inspect。
 
-当前 generated-contribution API 仍有 topology-specific entry/Document target。
+当前 generated-contribution API 仍有 routing-mode-specific entry/Document target。
 插件不能假设每个 SPA Page 都有独立 entry，或每个 SPA Page 都持有 HTML
-Document。Topology-neutral `page.module` 与 `page.activation` facet 属于下一阶段
+Document。Routing-mode-neutral `page.module` 与 `page.activation` facet 属于下一阶段
 插件迁移。
 
 ## Normalized Core 模型
@@ -291,18 +351,22 @@ CoreGraph
 └── extension registry
 ```
 
-Page 记录 component module、可选 config source、目录 scope、所属 Application、
-extension 与 provenance。Route 指向 Page、redirect、group 或 Document，但自身
-不是 Page。Document 独立持有 template/output/bootstrap concern。
+Page 记录 component module、可选 config source、source scope、所属 Application、
+extension 与 provenance。Canonical `page.*` Page 始终持有所在目录；显式 Bigfish
+SPA migration input 暂时保留的 flat component 可以维持 module scope，直到移入
+独立 Page 目录。Route 指向 Page、redirect 或无路径 group，但自身不是 Page。
+Document 从 Application/Page graph 物化，独立持有 template/output/bootstrap
+concern，并不是 Route target。
 
 两种 mode 中的差异：
 
 | Semantic owner | SPA 物化 | MPA 物化 |
 | --- | --- | --- |
 | Application | 一个 browser application 和 route tree | 跨 Page entry 的一个逻辑 owner |
+| Application extension | 逻辑 Application 上的一份 resolved value | 同一逻辑 Application 上的相同 resolved value |
 | Page | 一个 Client Route 的 target | 一个独立 Page entry 的 owner |
-| Route | Client Route | 支持范围内的静态 Document Route |
-| Document | 通常由 Application 持有 | 通常每个 Page 持有一个 Document |
+| Route | Client Route | 选择独立 Page entry 的同一语义 Route |
+| Document | Application-owned shell，外加静态 SSG Page 的 Page-owned Document | 每个静态 Page 持有一个 Page-owned Document |
 | Page config | 相同 normalized Page title/meta/rendering/extensions | 相同 normalized Page title/meta/rendering/extensions |
 
 切换 `routing.mode` 可以改变 entry 与 Document，但不能重命名 Page、改变 source
@@ -334,11 +398,17 @@ Page config 不持有 URL、Page component path 或 Page identity；这些由
 
 | 存量来源 | 必需迁移 | Canonical 目标 |
 | --- | --- | --- |
-| Bigfish 显式 SPA route config | 现有显式 route tree 可暂时 normalize `component`、`children`、wrapper、layout 与 redirect；它自身表示 SPA，不能与 `routing` 同时声明，并拒绝 MPA topology。插件持有的 route metadata 不会被隐式复制。 | 把每个 Page 移到 URL 对应目录并命名为 `page.tsx`；Page 能力移到 `page.config.ts`；插件持有的静态值移入已注册 extension；删除 `application` 后，只用 `routing.mode: "spa"` 启用 canonical tree |
+| Bigfish 显式 SPA route config | 现有显式 route tree 可暂时 normalize `component`、嵌套 `routes`、wrapper、layout 与 redirect；当前 Umi 已拒绝的 `children` 拼写仍会被拒绝。有限的 access/menu field 会复制到已注册的 `@evjs/bigfish-route` Route extension，而不是进入开放 metadata bag。该输入自身表示 SPA，不能与 `routing` 同时声明，并拒绝 MPA 物化模式。 | 把每个 Page 移到 URL 对应目录并命名为 `page.tsx`；Page 能力移到 `page.config.ts`；其余插件持有静态值移入已注册 extension；删除 `application` 后，只用 `routing.mode: "spa"` 启用 canonical tree |
 | Bigfish 约定式 `routeProps` | 静态能力数据移入已注册 `extensions`；插件显式投影 runtime data | 使用 canonical Page tree 与 namespaced `page.config.ts` extension |
 | Smallfish directory Page | 把每个直接子级 `index.*` entry 重命名或移动到公开 URL 对应目录并命名为 `page.tsx`；把 `config.json` title 与受支持 named meta 映射到 core `title`/`meta`，其余插件持有值移入 extension，并删除 `config.json` | 使用 canonical Page tree 与 `routing.mode: "mpa"` |
 | evjs 0.2 recursive route | 把每个已发布 filename route 移到 URL 对应目录并命名为 `page.tsx`；把 component rendering export 与 Page setting 移入 `page.config.ts` | 使用 canonical Page tree，并且只配置 `routing.mode` |
 | `application.routes`，以及已移除的 `app`、`pages`、顶层 `routes` | Bigfish SPA tree 迁移期只暂时保留 `application.routes`；已移除声明产生迁移错误 | 优先使用 canonical Page tree；standalone runtime 在 Framework config 外持有自己的 entry |
+
+Bigfish flat component 应先建立目录 ownership，再添加 Page config：把
+`src/pages/403.tsx` 移入独立目录，必要时让显式 route 暂时引用
+`403/index.*`，然后添加 `page.config.ts`，并在切换 canonical `routing` 前把 entry
+重命名为 `page.*`。Flat module-scoped migration Page 不会持有共享目录，也不会从中
+发现 `page.config.ts`。
 
 新的 canonical Page 不应创建 `config.json`。在同一次源码迁移中，把静态文档
 title 与受支持 named meta 映射到 core `title`/`meta`，其他能力 owner value
@@ -396,12 +466,21 @@ runtime projection 必须显式。
 Function 无法作为稳定 graph data 校验或序列化。可执行行为应位于 Page module，
 或通过显式 contribution contract 引用的 plugin-generated runtime module。
 
+### 带版本后缀的 extension API 或兼容 reader
+
+`applicationExtensionV2()`、`pageExtensionV3()` 这类并行 API 会把迁移历史固化为
+永久框架表面积。Core 只保留一套实现。Namespace 可以用 `schemaVersion` 描述静态
+数据合同，但旧 config shape 与 hook 必须在源码侧迁移，不能通过兼容 reader 或
+runtime 选择。
+
 ## 下一阶段：插件迁移
 
-Page/config 契约稳定后，下一阶段按 semantic owner 与 phase 映射 Bigfish、
-Smallfish 插件行为：
+Application/Page config 契约稳定后，下一阶段按 semantic owner 与 phase 映射
+Bigfish、Smallfish 插件行为：
 
-- config schema/default/validation -> `describe().pageExtension()`；
+- Application config default/merge/validation ->
+  `describe().applicationExtension()`；
+- Page config default/merge/validation -> `describe().pageExtension()`；
 - 静态 Page title/named meta -> core Page metadata；
 - 插件持有的 Page build metadata -> normalized Page extensions；
 - route definition 行为 -> Route facet；

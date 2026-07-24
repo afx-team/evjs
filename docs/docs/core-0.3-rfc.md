@@ -31,7 +31,9 @@ src/pages/
 - `routing.mode` chooses SPA or MPA materialization for the same semantic Page
   and Route tree.
 - Colocated files, including `index.tsx`, remain ordinary Page-private source.
-- Plugin-owned Page configuration lives under namespaced `extensions`.
+- Plugin-owned Application configuration lives in top-level
+  `config.extensions`; Page configuration lives in adjacent
+  `page.config.ts` `extensions`. Both use registered namespaces.
 - Core `title` and named `meta` are materialized by the framework. A plugin
   must explicitly project any extension data or behavior it needs at runtime.
 
@@ -52,13 +54,13 @@ Page filename.
 
 ## Goals
 
-1. Let Bigfish SPA and Smallfish MPA applications migrate without first
-   adopting a third Page ownership model.
+1. Give Bigfish SPA and Smallfish MPA applications one canonical migration
+   destination without carrying either source dialect into the runtime.
 2. Give Page identity, scope, route identity, and Page capability data the same
    meaning in both modes.
 3. Separate build-time configuration from executable runtime code.
-4. Give plugins stable, namespaced Page configuration and normalized graph
-   owners.
+4. Give plugins stable, namespaced Application/Page configuration and
+   normalized graph owners.
 5. Make source migration explicit without turning stored framework dialects
    into permanent runtime readers.
 
@@ -190,7 +192,7 @@ Core owns these author-facing Page fields:
 | `title` | Static Page document title. |
 | `meta` | Static string record materialized as `<meta name="key" content="value">`. |
 | `render` | `"csr"`, `"ssr"`, or `"ssg"`; defaults to `"csr"`. |
-| `hydrate` | `"none"`, `"load"`, `"visible"`, or `"idle"`. |
+| `hydrate` | `"none"` or `"load"`. |
 | `prerender` | `true` or `{ partial?, delivery?, revalidate? }`. |
 | `rsc` | `true` to select the RSC component model. |
 
@@ -215,14 +217,15 @@ Title/meta materialization follows Page ownership:
 The build validates combinations:
 
 - RSC requires `render: "ssr"` and `hydrate` omitted or `"none"`;
-- partial prerendering requires `render: "ssr"`;
+- partial prerendering requires `render: "ssr"` and `hydrate` omitted or
+  `"none"`;
 - RSC and partial prerendering cannot be combined on one Page;
 - full prerendering requires an explicit `"ssr"` or `"ssg"` render mode.
 
-These values normalize into the CoreGraph rendering extension and then into
-the existing rendering BuildPlan. They do not change Page or Route identity.
-Adapter/runtime coverage can still reject a combination that the selected
-backend cannot materialize.
+These values normalize into CoreGraph Page rendering fields and then into the
+rendering BuildPlan. They do not change Page or Route identity. Adapter/runtime
+coverage can still reject a combination that the selected backend cannot
+materialize.
 
 Static `render`, `hydrate`, `prerender`, and `rsc` exports from `page.tsx` are
 not canonical configuration. Move those settings to `page.config.ts` before
@@ -230,14 +233,31 @@ running a migrated application on Core 0.3.
 
 ### Plugin extensions
 
-Plugin-owned data must use a globally namespaced key:
+Plugin-owned Application data is authored at the top level of `ev.config.ts`;
+Page data is authored in the adjacent `page.config.ts`. Both must use globally
+namespaced keys:
 
 ```ts
+// ev.config.ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  routing: { mode: "spa" },
+  extensions: {
+    "@company/access": {
+      enabled: true,
+    },
+  },
+});
+```
+
+`application.extensions` is not another authoring location. `application`
+remains only the explicit Bigfish SPA route-tree migration input.
+
+```ts
+// src/pages/admin/page.config.ts
 export default definePageConfig({
   extensions: {
-    "@company/tracert": {
-      spm: "a1.b2",
-    },
     "@company/access": {
       role: "operator",
     },
@@ -245,9 +265,9 @@ export default definePageConfig({
 });
 ```
 
-Each namespace must be registered by one plugin `pageExtension()`
-declaration. The plugin owns defaults, merge behavior, validation, schema
-version:
+The owning plugin registers each owner in synchronous `describe()`. One plugin
+may register the same namespace once for Application and once for Page; the
+namespace still has one producer and one schema version:
 
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
@@ -255,39 +275,82 @@ import { definePlugin } from "@evjs/ev/plugin";
 export const accessPlugin = definePlugin({
   name: "@company/access-plugin",
   describe(api) {
+    api.applicationExtension({
+      namespace: "@company/access",
+      schemaVersion: "1",
+      defaults: { enabled: false },
+    });
     api.pageExtension({
       namespace: "@company/access",
+      schemaVersion: "1",
       defaults: { role: "guest" },
       validate(value) {
         return typeof value.role === "string" || "role must be a string";
       },
     });
   },
+  setup(ctx) {
+    const access = ctx.config.extensions["@company/access"];
+    // Application extensions are already resolved and deeply frozen here.
+    console.log(access);
+  },
   contributions(ctx) {
+    const applicationAccess =
+      ctx.framework.applications[0]?.extensions["@company/access"];
     for (const page of ctx.framework.pages) {
-      const access = page.extensions["@company/access"];
+      const pageAccess = page.extensions["@company/access"];
       // Generate only the build/runtime artifact this capability requires.
-      console.log(page.id, access);
+      console.log(applicationAccess, page.id, pageAccess);
     }
   },
 });
 ```
 
-An unregistered namespace is an error. Two plugins cannot own the same
-namespace.
+Application extensions are resolved after `describe()` and before `setup()`.
+Their isolated, deeply frozen result is exposed as `ctx.config.extensions` and
+later stored on the normalized Application. Page extensions resolve later,
+while canonical Page config is applied to the normalized Page graph; their
+values are available from `ctx.framework.pages` in `contributions()`, not from
+pre-graph `setup()`.
+
+The extension registry enforces one contract per namespace:
+
+- the same plugin may register one Application owner and one Page owner;
+- registering either owner twice is an error;
+- another plugin cannot register that namespace for any owner;
+- Application and Page declarations for the same namespace must use exactly
+  the same `schemaVersion`, including both omitting it;
+- unregistered configured namespaces are errors.
+
+Configured values, static defaults, and values returned by `defaults` or
+`merge` must remain strictly JSON-serializable. Declaration callbacks such as
+`defaults`, `merge`, and `validate` are synchronous plugin code and are never
+stored in the graph. Move executable build options into the plugin factory;
+move executable runtime behavior into an emitted/imported module referenced
+through an opaque module ref and an explicit generated contribution.
+
+The API remains the single `applicationExtension()` / `pageExtension()`
+implementation. `schemaVersion` describes the namespace data contract; it does
+not select a version-suffixed API or a compatibility runtime.
 
 ### Build-time and runtime phases
 
-`page.config.ts` is not bundled as a browser module. Core extracts and
-materializes the supported title/meta/rendering fields; the full config object
-and plugin extensions are not automatically serialized into HTML, route
-objects, or a global runtime manifest.
+Neither top-level Application extensions nor `page.config.ts` are bundled as
+browser configuration modules. Core extracts and materializes supported
+title/meta/rendering fields; full config objects and plugin extensions are not
+automatically serialized into HTML, route objects, or a global runtime
+manifest.
 
 ```text
-page.config.ts
-  -> build-time static evaluation
-  -> validate core fields and registered extension namespaces
-  -> normalized CoreGraph Page fields and extensions
+plugin describe()
+  -> register Application/Page namespace owners
+  -> resolve top-level Application extensions
+  -> plugin setup(ctx.config.extensions)
+  -> discover Page identities and scopes
+  -> evaluate adjacent page.config.ts
+  -> normalize the Page graph
+  -> resolve Page extensions against normalized Page owners
+  -> CoreGraph Application/Page extension bags and namespace registry
   -> core title/meta/rendering materialization
   -> optional explicit plugin runtime projection
 ```
@@ -297,9 +360,9 @@ must explicitly emit the minimal data/module it needs and attach it through a
 supported generated contribution. This keeps secrets and build-only fields out
 of browser bundles and makes the runtime cost inspectable.
 
-The current generated-contribution API has topology-specific entry/Document
+The current generated-contribution API has routing-mode-specific entry/Document
 targets. A plugin must not assume every SPA Page owns an independent entry or
-every SPA Page owns an HTML Document. Topology-neutral `page.module` and
+every SPA Page owns an HTML Document. Routing-mode-neutral `page.module` and
 `page.activation` facets remain a later plugin migration step.
 
 ## Normalized Core Model
@@ -316,19 +379,24 @@ CoreGraph
 └── extension registry
 ```
 
-A Page records its component module, optional config source, directory scope,
-owning Application, extensions, and provenance. A Route targets a Page,
-redirect, group, or Document without becoming the Page itself. A Document owns
-template/output/bootstrap concerns separately from Page identity.
+A Page records its component module, optional config source, source scope,
+owning Application, extensions, and provenance. Canonical `page.*` Pages
+always claim their containing directory. A flat component retained by the
+explicit Bigfish SPA migration input may remain module-scoped until it moves
+into a dedicated Page directory. A Route targets a Page, redirect, or pathless
+group without becoming the Page itself. A Document owns
+template/output/bootstrap concerns separately from Page identity; it is
+materialized from the Application/Page graph and is not a Route target.
 
 The distinction matters across modes:
 
 | Semantic owner | SPA materialization | MPA materialization |
 | --- | --- | --- |
 | Application | One browser application and route tree | One logical owner across Page entries |
+| Application extensions | One resolved value on the logical Application | The same resolved value on the logical Application |
 | Page | Target of one Client Route | Owner of an independent Page entry |
-| Route | Client Route | Static Document Route where supported |
-| Document | Normally Application-owned | Normally one Page-owned Document per Page |
+| Route | Client Route | The same semantic Route selecting an independent Page entry |
+| Document | Application-owned shell plus Page-owned Documents for static SSG Pages | One Page-owned Document per static Page |
 | Page config | Same normalized Page title/meta/rendering/extensions | Same normalized Page title/meta/rendering/extensions |
 
 Switching `routing.mode` can change entries and Documents. It cannot rename a
@@ -363,11 +431,18 @@ models.
 
 | Existing source | Required migration | Canonical destination |
 | --- | --- | --- |
-| Bigfish explicit SPA route config | The existing explicit route tree may normalize `component`, `children`, wrappers, layouts, and redirects temporarily; it implies SPA, cannot be combined with `routing`, and rejects MPA topology. Plugin-owned route metadata is not copied implicitly. | Move each Page to its URL directory as `page.tsx`; move Page capabilities to `page.config.ts`; move plugin-owned static values to registered extensions; after removing `application`, enable the canonical tree with only `routing.mode: "spa"` |
+| Bigfish explicit SPA route config | The existing explicit route tree may normalize `component`, nested `routes`, wrappers, layouts, and redirects temporarily; current Umi's rejected `children` spelling stays rejected. The finite access/menu field set is copied into the registered `@evjs/bigfish-route` Route extension rather than an open metadata bag. The input implies SPA, cannot be combined with `routing`, and rejects MPA materialization. | Move each Page to its URL directory as `page.tsx`; move Page capabilities to `page.config.ts`; move remaining plugin-owned static values to registered extensions; after removing `application`, enable the canonical tree with only `routing.mode: "spa"` |
 | Bigfish convention `routeProps` | Move static capability data into registered `extensions`; let the plugin explicitly project runtime data | Use the canonical Page tree and namespaced `page.config.ts` extensions |
 | Smallfish directory Pages | Rename or move each direct-child `index.*` entry to the directory for its public URL as `page.tsx`; map `config.json` title and supported named meta to core `title`/`meta`, move remaining plugin-owned values to extensions, and delete `config.json` | Use the canonical Page tree with `routing.mode: "mpa"` |
 | evjs 0.2 recursive routes | Move each published filename route to its URL directory as `page.tsx`; move component rendering exports and Page settings to `page.config.ts` | Use the canonical Page tree and configure only `routing.mode` |
 | `application.routes`, removed `app`, `pages`, and top-level `routes` | Keep only `application.routes` temporarily for a Bigfish SPA tree; removed declarations produce migration errors | Prefer the canonical Page tree; standalone runtimes own their entry outside Framework config |
+
+For a Bigfish flat component, establish directory ownership before adding Page
+configuration: move `src/pages/403.tsx` to a dedicated directory, temporarily
+reference `403/index.*` from the explicit route if needed, add
+`page.config.ts`, then rename the entry to `page.*` before switching to
+canonical `routing`. A flat module-scoped migration Page intentionally does
+not claim a shared directory or discover `page.config.ts` there.
 
 New canonical Pages must not create `config.json`. Map static document title
 and supported named meta to core `title`/`meta`; move other owned capability
@@ -433,12 +508,22 @@ Functions cannot be validated or serialized as stable graph data. Executable
 behavior belongs in Page modules or plugin-generated runtime modules referenced
 through explicit contribution contracts.
 
+### Version-suffixed extension APIs or compatibility readers
+
+Parallel APIs such as `applicationExtensionV2()` or `pageExtensionV3()` would
+turn migration history into permanent framework surface. Core keeps one
+implementation. A namespace may declare `schemaVersion` for its static data
+contract, but older config shapes and hooks must be migrated at source rather
+than selected through a compatibility reader or runtime.
+
 ## Next Stage: Plugin Migration
 
-After the Page/config contract is stable, the next stage is to map existing
-Bigfish and Smallfish plugin behavior by semantic owner and phase:
+After the Application/Page config contract is stable, the next stage is to map
+existing Bigfish and Smallfish plugin behavior by semantic owner and phase:
 
-- config schema/default/validation -> `describe().pageExtension()`;
+- Application config defaults/merge/validation ->
+  `describe().applicationExtension()`;
+- Page config defaults/merge/validation -> `describe().pageExtension()`;
 - static Page title/named meta -> core Page metadata;
 - plugin-owned Page build metadata -> normalized Page extensions;
 - route definition behavior -> Route facets;
