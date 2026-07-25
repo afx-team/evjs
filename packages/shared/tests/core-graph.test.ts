@@ -35,6 +35,61 @@ describe("assertCoreGraph", () => {
     expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
   });
 
+  it("accepts normalized static Document aliases", () => {
+    const graph = createValidGraph();
+    getDocument(graph).aliases = ["legacy.html", "legacy/orders.html"];
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
+  });
+
+  it.each([
+    {
+      label: "the canonical output",
+      aliases: ["index.html"],
+      message: /must differ from the canonical output "index\.html"/,
+    },
+    {
+      label: "a duplicate",
+      aliases: ["legacy.html", "legacy.html"],
+      message: /duplicates alias "legacy\.html"/,
+    },
+    {
+      label: "an unsafe path",
+      aliases: ["../legacy.html"],
+      message: /must not contain empty, "\.", or "\.\." segments/,
+    },
+    {
+      label: "a non-HTML output",
+      aliases: ["main.js"],
+      message: /must end with "\.html" or "\.htm"/,
+    },
+  ])("rejects a Document alias that repeats $label", ({ aliases, message }) => {
+    const graph = createValidGraph();
+    getDocument(graph).aliases = aliases;
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(message);
+  });
+
+  it("rejects aliases that collide with another Document output", () => {
+    const graph = createValidGraph();
+    getDocument(graph).aliases = ["orders/index.html"];
+    graph.documents.orders = {
+      id: "orders",
+      template: "./index.html",
+      output: "orders/index.html",
+      applicationId: "default",
+      owner: { kind: "page", pageId: "orders" },
+      bootstrap: { kind: "page", pageId: "orders" },
+      extensions: {},
+      provenance: providerProvenance(PAGE_ANCHOR_PROVIDER_ID),
+    };
+    getApplication(graph).documentIds.push("orders");
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      /conflicts with alias owned by Document "app:default"/,
+    );
+  });
+
   it.each([
     "visible",
     "idle",

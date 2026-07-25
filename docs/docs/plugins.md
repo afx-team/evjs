@@ -66,7 +66,7 @@ are rejected so misspelled hooks cannot become silent no-ops. Keep
 package-local metadata outside the `Plugin` object. `describe` is a reserved
 framework hook when present.
 
-## Application And Page Extensions
+## Namespaced Extension Owners
 
 Application-wide plugin configuration is authored once in top-level
 `config.extensions`:
@@ -137,6 +137,14 @@ export default definePageConfig({
 });
 ```
 
+The same adjacent config can target the Page's unique semantic Route through
+`route.extensions`, or a Page-owned Document through `document.extensions`.
+The latter requires materialization such as canonical MPA or SPA SSG; a CSR
+SPA Page shares the Application Document. Explicit `application.routes`
+migration input configures each declared Route through its `extensions` field,
+while `application.document.extensions` configures its Application-owned
+Document.
+
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
 
@@ -178,31 +186,32 @@ again when plugin configuration is reloaded. It must be idempotent and
 synchronous; defaults functions, `merge`, and `validate` must also return
 synchronously so graph construction stays deterministic. Within one framework
 analysis, alias convergence reuses the first validated extension snapshot for
-each unchanged Page owner input instead of invoking those callbacks again. A
+each unchanged graph-owner input instead of invoking those callbacks again. A
 later dev re-analysis creates a new resolution scope.
 
-`applicationExtension()` and `pageExtension()` use the same declaration
-contract. When `merge` is omitted, plain-object defaults and configured values are
-shallow-merged with configured fields winning. A non-object configured value
-replaces the default. When an owner omits the namespace, defaults are
-materialized directly and custom `merge` is not invoked; its `configured`
-argument therefore always represents an explicitly authored value. Custom
-`merge` handles other authored source shapes. `validate` may return
-`true`/void, return `false` or a message, or throw. Every materialized value
-must be strictly JSON-serializable; functions, symbols, bigint, non-finite
-numbers, class instances, sparse arrays, and cycles are rejected.
+`applicationExtension()`, `pageExtension()`, `routeExtension()`, and
+`documentExtension()` use the same declaration contract. When `merge` is
+omitted, plain-object defaults and configured values are shallow-merged with
+configured fields winning. A non-object configured value replaces the default.
+When an owner omits the namespace, defaults are materialized directly and
+custom `merge` is not invoked; its `configured` argument therefore always
+represents an explicitly authored value. Custom `merge` handles other authored
+source shapes. `validate` may return `true`/void, return `false` or a message,
+or throw. Every materialized value must be strictly JSON-serializable;
+functions, symbols, bigint, non-finite numbers, class instances, sparse arrays,
+and cycles are rejected.
 
 One namespace has one producing plugin. That plugin may register the same
-namespace once for Application and once for Page ownership; the declarations
-must use the same `schemaVersion`. Repeating an owner or claiming the namespace
-from another plugin is an error. This supports capabilities with both global
-and per-Page settings without creating a second config system.
+namespace once for each Application, Page, Route, and Document owner; every
+declaration must use the same `schemaVersion`. Repeating an owner or claiming
+the namespace from another plugin is an error. All four owners therefore use
+one config mechanism and one producer contract.
 
 Extensions resolve against the same normalized CoreGraph as every other
 framework capability. Canonical `page.tsx` anchors provide that graph in both
 modes; explicit route-tree migration inputs must normalize into it first. In
-`contributions()`, `ctx.framework.applications`, `.pages`, and client `.routes`
-expose their resolved, read-only `extensions` bags.
+`contributions()`, `ctx.framework.applications`, `.pages`, client `.routes`,
+and `.documents` expose their resolved, read-only `extensions` bags.
 
 The extension bag is build-time graph data, not an automatic runtime payload.
 A plugin that needs browser behavior must explicitly emit the minimal
@@ -284,6 +293,7 @@ flowchart TB
   subgraph Plan["Framework planning"]
     BuildStart["buildStart()"]
     Graph["discover graph\nroutes + server functions"]
+    GraphExtensions["resolve Page/Route/Document extensions"]
     BuildPlan["create BuildPlan"]
     Contributions["contributions(ctx)\nmodules + slots"]
     IR["materialize .ev"]
@@ -298,7 +308,7 @@ flowchart TB
     Dispose["dispose()"]
   end
 
-  Config --> Resolve --> Describe --> AppExtensions --> Setup --> BuildStart --> Graph --> BuildPlan
+  Config --> Resolve --> Describe --> AppExtensions --> Setup --> BuildStart --> Graph --> GraphExtensions --> BuildPlan
   BuildPlan --> Contributions --> IR --> BundlerConfig --> Bundler
   Bundler --> BuildOutput --> HTML --> BuildEnd --> Dispose
 
@@ -306,7 +316,7 @@ flowchart TB
   classDef plan fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
   classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
   class Config,Resolve,Describe,AppExtensions,Setup config;
-  class BuildStart,Graph,BuildPlan,Contributions,IR plan;
+  class BuildStart,Graph,GraphExtensions,BuildPlan,Contributions,IR plan;
   class BundlerConfig,Bundler,BuildOutput,HTML,BuildEnd,Dispose build;
 ```
 
@@ -318,6 +328,11 @@ flowchart TB
 | `transformHtml(doc, ctx)` | Mutate one HTML document at a time; receives the current manifest result fields |
 | `buildEnd({ output, isRebuild })` | Emit final artifacts after build |
 | `dispose(ctx)` | Cleanup |
+
+`buildOutput()` may adjust linked assets and add deployment metadata, but
+Application/Page/Route/Document identity remains CoreGraph-owned. In
+particular, a hook cannot add, remove, or rename a Document or change its
+static aliases; configure those values before graph linking.
 
 ## Generated Contributions
 
@@ -354,10 +369,9 @@ without exposing the internal `BuildPlan` or mutable graph objects. Plugin code
 should import authoring types from `@evjs/ev/plugin`; `@evjs/ev/_internal/*` is
 for CLI tooling, bundler adapters, and framework-generated code.
 
-Application, Page, and client Route views expose resolved namespaced
-`extensions`. Internal provenance and
-resolved Page values are therefore available before `contributions()`
-materializes generated code.
+Application, Page, client Route, and Document views expose resolved namespaced
+`extensions`. Internal provenance and resolved owner values are therefore
+available before `contributions()` materializes generated code.
 
 The Application view also exposes its `root`, `routingMode`, and owned Page,
 Route, and Document ids. An MPA therefore appears as one logical

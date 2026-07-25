@@ -286,6 +286,39 @@ describe("discoverPageRoutes", () => {
       );
     });
 
+    it("does not treat componentless layout or group Routes as Page config owners", async () => {
+      const cwd = await createFixture({
+        "src/pages/admin/layout.tsx":
+          "export default function AdminLayout({ children }) { return children; }",
+        "src/pages/admin/page.config.ts": `
+          export default {
+            route: {
+              extensions: {
+                "@company/access": { policy: "admin" },
+              },
+            },
+          };
+        `,
+        "src/pages/admin/users/page.tsx":
+          "export default function Users() { return null; }",
+      });
+
+      const discovery = await discoverPageRoutes(cwd, {
+        dir: "./src/pages",
+        mode: "spa",
+      });
+
+      expect(discovery.diagnostics).toContainEqual(
+        expect.objectContaining({
+          level: "error",
+          file: "src/pages/admin/page.config.ts",
+          message: expect.stringContaining(
+            "A componentless layout or pathless group Route cannot own page.config.ts route extensions",
+          ),
+        }),
+      );
+    });
+
     it("discovers a root layout and nested layout and boundary facets", async () => {
       const cwd = await createFixture({
         "src/pages/layout.tsx":
@@ -529,6 +562,8 @@ describe("discoverPageRoutes", () => {
           "export default function Home() { return null; }",
         "src/pages/about.tsx":
           "export default function About() { return null; }",
+        "src/pages/_components/Card.tsx":
+          "export default function Card() { return null; }",
         "src/pages/users/$userId.tsx":
           "export default function User() { return null; }",
       });
@@ -541,6 +576,28 @@ describe("discoverPageRoutes", () => {
       expect(discovery.routes).toEqual([]);
       expect(discovery.rootModule).toBeUndefined();
       expect(discovery.diagnostics).toEqual([]);
+    });
+
+    it("diagnoses an underscore-prefixed Page route instead of treating it as private", async () => {
+      const cwd = await createFixture({
+        "src/pages/_private/page.tsx":
+          "export default function Private() { return null; }",
+      });
+
+      const discovery = await discoverPageRoutes(cwd, {
+        dir: "./src/pages",
+        mode: "spa",
+      });
+
+      expect(discovery.routes).toEqual([]);
+      expect(discovery.diagnostics).toEqual([
+        {
+          level: "error",
+          file: "src/pages/_private/page.tsx",
+          message:
+            'Static page route segment "_private" must start with a letter or number and then use only URL-safe characters: letters, numbers, ".", "_", "-", or "~". Rename the route directory to a URL-safe segment.',
+        },
+      ]);
     });
   });
 });

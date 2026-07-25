@@ -319,9 +319,10 @@ export default defineConfig({
 
 ### Plugins
 
-通过 `plugins` 注册插件。同一个 `Plugin` interface 可以定位归一化 graph、
-提供 Page 扩展，并承载 config、setup、contributions 与 lifecycle hooks。参见
-[插件](./plugins)与[插件迁移](./plugin-migration-0.2-to-0.3)。
+通过 `plugins` 注册插件。同一个 `Plugin` interface 可以注册 namespaced
+Application、Page、Route、Document 配置 owner、定位 normalized graph，并承载
+config、setup、contributions 与 lifecycle hooks。参见[插件](./plugins)与
+[插件迁移](./plugin-migration-0.2-to-0.3)。
 
 ### Bundler
 
@@ -354,8 +355,9 @@ Bigfish 风格的嵌套 `routes`、`component`、`layout`、`wrappers`、redirec
 document 配置可以进入仅支持 SPA 的迁移 normalizer。历史 `children` 拼写
 会被拒绝，因为当前 Umi/Bigfish 配置使用 `routes`。normalizer 还会把文档列明
 的 access/menu metadata 保留在已注册的 `@evjs/bigfish-route` Route extension
-中，但不会接受任意 Route extension bag。MPA 物化模式、Alias 冲突以及项目
-外部 component reference 会被拒绝。
+中。每条显式 Route 还可以携带严格静态、namespaced 的 `extensions` bag；能力所属
+插件必须用 `routeExtension()` 注册每个 namespace。MPA 物化模式、Alias 冲突以及
+项目外部 component reference 会被拒绝。
 
 显式 component 以 `index.*` 或 `page.*` 结尾时，其所在目录会成为 migration
 Page scope。`src/pages/403.tsx` 这类 flat component 仍是 module scope，避免它

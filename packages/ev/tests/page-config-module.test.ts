@@ -181,6 +181,105 @@ describe("page.config modules", () => {
     });
   });
 
+  it("resolves static Document aliases from page.config.ts", async () => {
+    const cwd = await createFixture({
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+        export default {
+          render: "ssg",
+          document: {
+            aliases: ["report.html", "legacy/report.htm"],
+            extensions: {
+              "@company/document": { channel: "legacy" },
+            },
+          },
+        };
+      `,
+    });
+
+    const resolved = await resolvePageConfigModules(
+      cwd,
+      createPageMetadata("report", "./src/pages/report/page.config.ts"),
+    );
+
+    expect(resolved.pages.report.document).toEqual({
+      aliases: ["report.html", "legacy/report.htm"],
+      extensions: {
+        "@company/document": { channel: "legacy" },
+      },
+    });
+  });
+
+  it("normalizes empty Document and Route configuration to no owner input", async () => {
+    const cwd = await createFixture({
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+        export default {
+          document: {
+            aliases: [],
+            extensions: {},
+          },
+          route: {
+            extensions: {},
+          },
+        };
+      `,
+    });
+
+    const resolved = await resolvePageConfigModules(
+      cwd,
+      createPageMetadata("report", "./src/pages/report/page.config.ts"),
+    );
+
+    expect(resolved.pages.report).toEqual({
+      source: "./src/pages/report/page.config.ts",
+      extensions: {},
+    });
+  });
+
+  it.each([
+    {
+      label: "an absolute alias",
+      aliases: '["/report.html"]',
+      message: /document\.aliases\[0\] must be a relative output path/,
+    },
+    {
+      label: "a parent traversal alias",
+      aliases: '["../report.html"]',
+      message: /must not contain empty, "\.", or "\.\." segments/,
+    },
+    {
+      label: "a duplicate alias",
+      aliases: '["report.html", "report.html"]',
+      message: /document\.aliases\[1\] duplicates alias "report\.html"/,
+    },
+    {
+      label: "a non-HTML alias",
+      aliases: '["main.js"]',
+      message: /must end with "\.html" or "\.htm"/,
+    },
+  ])("rejects $label", async ({ aliases, message }) => {
+    const cwd = await createFixture({
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+        export default {
+          render: "ssg",
+          document: { aliases: ${aliases} },
+        };
+      `,
+    });
+
+    await expect(
+      resolvePageConfigModules(
+        cwd,
+        createPageMetadata("report", "./src/pages/report/page.config.ts"),
+      ),
+    ).rejects.toThrow(message);
+  });
+
   it("invalidates helpers loaded by a previously failing config evaluation", async () => {
     const cwd = await createFixture({
       "src/config/channel.ts": 'export const channel = "stale";',

@@ -3,7 +3,9 @@
 状态：authoring 方向已接受，实现与 adapter 覆盖按阶段落地。
 
 本文定义 SPA 与 MPA 共用的 Core 0.3 Page-and-Route 模型，也定义 Bigfish、
-Smallfish 与 evjs 0.2 源码模型如何迁往 canonical authoring。
+Smallfish 与 evjs 0.2 源码模型如何迁往 canonical authoring。源码 revision、
+详细能力矩阵和应用迁移步骤记录在
+[Bigfish、Smallfish 迁移](./framework-migration-to-0.3)。
 
 ## 决策
 
@@ -28,8 +30,9 @@ src/pages/
 - 同目录可选 `page.config.ts` 是构建期 Page 配置。
 - `routing.mode` 为同一棵 semantic Page/Route 树选择 SPA 或 MPA 物化。
 - 包括 `index.tsx` 在内的同目录文件都是普通 Page 私有源码。
-- 插件持有的 Application 配置放在顶层 `config.extensions` 中；Page 配置放在
-  同目录 `page.config.ts` 的 `extensions` 中。两者都使用已注册 namespace。
+- 插件持有的 Application、Page、Route、Document 配置使用同一个已注册 namespace
+  机制。顶层 `config.extensions` 配置 Application；相邻 `page.config.ts` 配置
+  Page、它的唯一 Route 或 Page-owned Document。
 - Core `title` 与 named `meta` 由框架物化；插件必须显式投影自己在 runtime
   需要的 extension data 或行为。
 
@@ -54,7 +57,8 @@ canonical 模型中没有第二棵 `application.routes`，也没有 SPA/MPA 各�
    源码方言带入 runtime。
 2. Page 身份、scope、Route 身份与 Page 能力数据在两种 mode 中含义一致。
 3. 构建期配置与可执行 runtime 代码明确分离。
-4. 插件获得稳定、namespaced 的 Application/Page 配置和 normalized graph owner。
+4. 插件获得稳定、namespaced 的 Application/Page/Route/Document 配置和 normalized
+   graph owner。
 5. 明确源码迁移方式，不把存量框架方言变成永久 runtime reader。
 
 Core 0.3 不承诺 Bigfish 或 Smallfish API 一比一兼容。目标是让核心心智对等：
@@ -212,8 +216,9 @@ adapter/runtime 仍可明确拒绝。
 
 ### 插件 extension
 
-插件持有的 Application 数据写在 `ev.config.ts` 顶层，Page 数据写在同目录
-`page.config.ts`；两者都必须使用全局 namespaced key：
+插件持有的 Application 数据写在 `ev.config.ts` 顶层。Page 数据及其唯一 Route 或
+Page-owned Document 数据写在同目录 `page.config.ts`；所有 owner 都必须使用全局
+namespaced key：
 
 ```ts
 // ev.config.ts
@@ -240,12 +245,25 @@ export default definePageConfig({
       role: "operator",
     },
   },
+  route: {
+    extensions: {
+      "@company/access": {
+        policy: "canReadAdmin",
+      },
+    },
+  },
 });
 ```
 
+同一文件的 `document.extensions` 只在 Page 自己物化 Document 时配置
+Page-owned Document，例如 canonical MPA 或 SPA SSG。显式
+`application.routes[].extensions` 与 `application.document.extensions` migration
+input 分别配置 normalized Route 与 Application-owned Document；它们进入同一
+registry。
+
 能力所属插件在同步 `describe()` 中注册每种 owner。同一个插件可以为同一 namespace
-分别注册一次 Application 和 Page；该 namespace 仍只有一个 producer 和一个 schema
-version：
+的 Application、Page、Route、Document owner 各注册一次；该 namespace 仍只有一个
+producer 和一个 schema version：
 
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
@@ -265,6 +283,16 @@ export const accessPlugin = definePlugin({
       validate(value) {
         return typeof value.role === "string" || "role must be a string";
       },
+    });
+    api.routeExtension({
+      namespace: "@company/access",
+      schemaVersion: "1",
+      defaults: { policy: "public" },
+    });
+    api.documentExtension({
+      namespace: "@company/access",
+      schemaVersion: "1",
+      defaults: { theme: "default" },
     });
   },
   setup(ctx) {
@@ -286,17 +314,17 @@ export const accessPlugin = definePlugin({
 
 Application extension 在 `describe()` 后、`setup()` 前解析；隔离并 deep freeze
 后的结果通过 `ctx.config.extensions` 暴露，随后写入 normalized Application。
-Page extension 更晚解析：canonical Page config 被应用到 normalized Page graph 时
-才产生 Page extension value；它可在 `contributions()` 的
-`ctx.framework.pages` 中读取，不能从 graph 生成前的 `setup()` 读取。
+Page、Route、Document extension 更晚在 graph analysis 阶段解析；它们可在
+`contributions()` 对应的 `ctx.framework` view 中读取，不能从 graph 生成前的
+`setup()` 读取。
 
 Extension registry 对每个 namespace 执行唯一合同：
 
-- 同一个插件可分别注册一个 Application owner 和一个 Page owner；
-- 任一 owner 重复注册都会报错；
+- 同一个插件可分别注册一个 Application、Page、Route、Document owner；
+- 任意 owner 重复注册都会报错；
 - 其他插件不能为任何 owner 注册同一 namespace；
-- 同一 namespace 的 Application/Page declaration 必须使用完全相同的
-  `schemaVersion`，包括两边都省略；
+- 同一 namespace 的全部 declaration 必须使用完全相同的 `schemaVersion`，包括
+  全部省略；
 - 配置了未注册 namespace 会报错。
 
 配置值、静态 default，以及 `defaults`/`merge` 返回值都必须保持严格可 JSON
@@ -305,9 +333,9 @@ Extension registry 对每个 namespace 执行唯一合同：
 移入通过 opaque module ref 与显式 generated contribution 引用的 emitted/imported
 module。
 
-API 始终只有一套 `applicationExtension()` / `pageExtension()` 实现。
-`schemaVersion` 描述 namespace 数据合同，不用于选择带版本后缀的 API 或兼容
-runtime。
+API 始终只有一套实现，通过 `applicationExtension()`、`pageExtension()`、
+`routeExtension()` 与 `documentExtension()` 暴露。`schemaVersion` 描述 namespace
+数据合同，不用于选择带版本后缀的 API 或兼容 runtime。
 
 ### 构建期与运行时 phase
 
@@ -317,14 +345,14 @@ plugin extension 不会自动序列化到 HTML、route object 或全局 runtime 
 
 ```text
 plugin describe()
-  -> 注册 Application/Page namespace owner
+  -> 注册 Application/Page/Route/Document namespace owner
   -> 解析顶层 Application extension
   -> plugin setup(ctx.config.extensions)
   -> 发现 Page identity 与 scope
   -> 求值同目录 page.config.ts
   -> normalize Page graph
-  -> 对 normalized Page owner 解析 Page extension
-  -> CoreGraph Application/Page extension bag 与 namespace registry
+  -> 对 normalized owner 解析 Page/Route/Document extension
+  -> CoreGraph owner extension bag 与 namespace registry
   -> core title/meta/rendering 物化
   -> 可选的显式 plugin runtime projection
 ```
@@ -475,12 +503,15 @@ runtime 选择。
 
 ## 下一阶段：插件迁移
 
-Application/Page config 契约稳定后，下一阶段按 semantic owner 与 phase 映射
-Bigfish、Smallfish 插件行为：
+Application/Page/Route/Document config 契约稳定后，插件迁移按 semantic owner 与
+phase 映射 Bigfish、Smallfish 插件行为：
 
 - Application config default/merge/validation ->
   `describe().applicationExtension()`；
 - Page config default/merge/validation -> `describe().pageExtension()`；
+- Route config default/merge/validation -> `describe().routeExtension()`；
+- Document config default/merge/validation ->
+  `describe().documentExtension()`；
 - 静态 Page title/named meta -> core Page metadata；
 - 插件持有的 Page build metadata -> normalized Page extensions；
 - route definition 行为 -> Route facet；

@@ -31,12 +31,12 @@
 - Framework-owned applications use one Page-and-Route file convention. Pages
   live at `src/pages/**/page.*`; the containing directory determines Page scope
   and URL, optional `page.config.ts` owns build-time Page capabilities, and
-  `routing.mode` selects SPA/MPA output. Plugin-owned static data uses
-  top-level Application `extensions` or Page-local `page.config.ts`
-  `extensions`; both normalize into the same CoreGraph registry. Server file routes remain
-  under `src/apis`, framework request middleware in `src/middleware.ts`, API
-  route middleware in `src/apis/**/middleware.ts`, and server functions in
-  reachable `"use server"` modules.
+  `routing.mode` selects SPA/MPA output. Plugin-owned static data uses one
+  namespaced CoreGraph registry across Application, Page, Route, and Document
+  owners. Server file routes remain under `src/apis`, framework request
+  middleware in `src/middleware.ts`, API route middleware in
+  `src/apis/**/middleware.ts`, and server functions in reachable
+  `"use server"` modules.
 - `@evjs/ev` owns config, plugins, convention discovery, graph/build planning,
   manifest/deployment helpers, and bundler contracts. It should not expose
   client or server runtime mirrors; its runtime-facing subpaths are curated
@@ -144,15 +144,19 @@ and adapters depend on `@evjs/ev` instead of on each other.
 
 ### Add plugin-owned configuration
 
-1. Put Application-wide static values in top-level `config.extensions`; put
-   Page-local values in adjacent `page.config.ts` `extensions`.
-2. Register each owner through `applicationExtension()` or `pageExtension()`
-   from the plugin's synchronous `describe()` hook.
+1. Put Application-wide static values in top-level `config.extensions`. Use
+   adjacent `page.config.ts` for Page values and its `route.extensions` or
+   `document.extensions` when that Page uniquely owns the target. Explicit
+   migration inputs may configure their declared Route and Application-owned
+   Document.
+2. Register each owner through `applicationExtension()`, `pageExtension()`,
+   `routeExtension()`, or `documentExtension()` from the plugin's synchronous
+   `describe()` hook.
 3. Keep extension values strict JSON. Pass callbacks through typed plugin
    factory options or explicit module references instead.
 4. Read resolved Application values from `ctx.config.extensions` in `setup()`;
-   read normalized Application/Page values from `ctx.framework` in
-   `contributions()`.
+   read normalized Application/Page/Route/Document values from `ctx.framework`
+   in `contributions()`. Runtime behavior requires explicit projection.
 
 ### Migrate a stored Page application
 
@@ -185,9 +189,10 @@ materialization and new examples use the canonical Page tree.
 ```txt
 load ev.config.ts
 run config hooks and resolve framework defaults
-register and resolve Application extensions
+register Application/Page/Route/Document extensions and resolve Application values
 run setup hooks
 createCoreGraph()
+resolve Page/Route/Document extensions
 createBuildPlan()
 selected bundler builds the BuildPlan
 linkBuildOutput()

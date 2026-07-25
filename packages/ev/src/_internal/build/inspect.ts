@@ -100,6 +100,7 @@ export interface InspectBuildEntry {
 export interface InspectHtmlDocument {
   id: string;
   fileName: string;
+  aliases?: string[];
   owner: unknown;
 }
 
@@ -387,6 +388,7 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
             html: plan.html.map((document) => ({
               id: document.id,
               fileName: document.fileName,
+              ...(document.aliases ? { aliases: [...document.aliases] } : {}),
               owner: document.owner,
             })),
             ...(plan.generated ? { generated: plan.generated } : {}),

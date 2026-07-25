@@ -6,4 +6,11 @@ export default definePageConfig({
       label: "Configured by page.config.ts",
     },
   },
+  route: {
+    extensions: {
+      "@example/metadata": {
+        label: "Configured for the home Route",
+      },
+    },
+  },
 });

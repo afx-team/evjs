@@ -5,9 +5,12 @@ Demonstrates an evjs qiankun master application using
 
 The application uses the unified Core 0.3 SPA model. `src/pages/page.tsx` and
 `src/pages/catalog/page.tsx` define `/` and `/catalog`, while
-`src/pages/layout.tsx` is the root layout. Qiankun integration is configured
-from `ev.config.ts`, and the master resolver is loaded by the plugin through
-the framework-managed SPA entry.
+`src/pages/layout.tsx` is the root layout.
+`src/pages/catalog/page.config.ts#route.extensions` associates that canonical
+Route with the `catalog` micro-app; the resolver only supplies the child
+application and qiankun runtime options. Qiankun integration is configured from
+`ev.config.ts`, and the master resolver is loaded by the plugin through the
+framework-managed SPA entry.
 
 ## Run
 

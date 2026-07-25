@@ -455,7 +455,91 @@ describe("assertFrameworkManifestShape", () => {
         "manifest",
       ),
     ).toThrow(
-      "[evjs] manifest.apps.default.document.fileName must be a relative output file path.",
+      "[evjs] manifest.apps.default.document.fileName must be a normalized relative output file path.",
+    );
+
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...createMinimalBuildOutput(),
+          apps: {
+            default: {
+              assets: { js: [], css: [] },
+              document: {
+                fileName: "index.html",
+                aliases: ["../legacy.html"],
+              },
+            },
+          },
+        },
+        "manifest",
+      ),
+    ).toThrow(
+      "[evjs] manifest.apps.default.document.aliases[0] must be a normalized relative output file path.",
+    );
+
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...createMinimalBuildOutput(),
+          apps: {
+            default: {
+              assets: { js: [], css: [] },
+              document: {
+                fileName: "index.html",
+                aliases: ["main.js"],
+              },
+            },
+          },
+        },
+        "manifest",
+      ),
+    ).toThrow(
+      '[evjs] manifest.apps.default.document.aliases[0] must end with ".html" or ".htm" because a Document output contains HTML.',
+    );
+
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...createMinimalBuildOutput(),
+          apps: {
+            default: {
+              assets: { js: [], css: [] },
+              document: {
+                fileName: "index.html",
+                aliases: ["legacy.html", "legacy.html"],
+              },
+            },
+          },
+        },
+        "manifest",
+      ),
+    ).toThrow(
+      '[evjs] manifest.apps.default.document.aliases[1] duplicates alias "legacy.html".',
+    );
+
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...createMinimalBuildOutput(),
+          apps: {
+            default: {
+              assets: { js: [], css: [] },
+              document: {
+                fileName: "index.html",
+                aliases: ["admin.html"],
+              },
+            },
+            admin: {
+              assets: { js: [], css: [] },
+              document: { fileName: "admin.html" },
+            },
+          },
+        },
+        "manifest",
+      ),
+    ).toThrow(
+      'static Document output "admin.html" is owned by both Application "default" and Application "admin"',
     );
 
     expect(() =>
@@ -3766,7 +3850,10 @@ describe("createPublicManifest", () => {
         },
         landing: {
           assets: { js: ["landing.js"], css: ["landing.css"] },
-          document: { fileName: "landing.html" },
+          document: {
+            fileName: "landing.html",
+            aliases: ["legacy/landing.html"],
+          },
           render: "ssg",
           rendering: {
             component: "client",
@@ -3952,6 +4039,10 @@ describe("createPublicManifest", () => {
       meta: { description: "Business insights" },
     });
     expect(pages.landing.render).toBe("ssg");
+    expect(pages.landing.document).toEqual({
+      fileName: "landing.html",
+      aliases: ["legacy/landing.html"],
+    });
     expect("module" in pages.insights).toBe(false);
     expect("runtime" in manifest).toBe(false);
     expect("pages" in manifest).toBe(false);
@@ -3987,6 +4078,7 @@ describe("createPublicManifest", () => {
         kind: "page",
         id: "landing",
         fileName: "landing.html",
+        aliases: ["legacy/landing.html"],
         assets: { js: ["landing.js"], css: ["landing.css"] },
       },
       {

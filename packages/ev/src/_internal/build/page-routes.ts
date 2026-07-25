@@ -10,7 +10,6 @@ import { collectModuleExportNames } from "./module-exports.js";
 import {
   findPageRouteSegmentConventionViolation,
   formatPageRouteSegmentConventionViolation,
-  isIgnoredPageRouteSegment,
   isPageRouteGroupSegment,
   isPageRouteSourceModuleFile,
   normalizePageRouteConventionPath,
@@ -137,7 +136,7 @@ async function discoverPageAnchorRoutes(
       diagnostics.push({
         level: "error",
         file: toDiagnosticPath(toProjectPath(cwd, file)),
-        message: `Page config modules must be colocated with a ${PAGE_ENTRY_LABEL} anchor. Add the Page anchor or rename this ordinary module.`,
+        message: `Page config modules must be colocated with a ${PAGE_ENTRY_LABEL} anchor. A componentless layout or pathless group Route cannot own page.config.ts route extensions; add the Page anchor, keep its data in explicit application.routes, use Route-extension defaults, or rename this ordinary module.`,
       });
     }
   }
@@ -170,9 +169,7 @@ async function discoverPageAnchorRoutes(
   for (const file of files) {
     const sourceRel = toProjectPath(cwd, file);
     const routeRel = toPosixPath(path.relative(absoluteDir, file));
-    const conventionFile = parsePageRouteConventionFile(routeRel, {
-      pageAnchors: true,
-    });
+    const conventionFile = parsePageRouteConventionFile(routeRel);
     if (conventionFile) {
       const scopeKey = routeSegmentKey(conventionFile.segments);
       if (!activeScopeKeys.has(scopeKey)) continue;
@@ -224,9 +221,7 @@ async function discoverPageAnchorRoutes(
       continue;
     }
 
-    const layoutFile = parsePageLayoutRouteFile(routeRel, {
-      pageAnchors: true,
-    });
+    const layoutFile = parsePageLayoutRouteFile(routeRel);
     if (!layoutFile || layoutFile.segments.length === 0) continue;
     if (!activeScopeKeys.has(routeSegmentKey(layoutFile.segments))) continue;
 
@@ -599,7 +594,6 @@ interface PageRouteCandidate extends PageRouteNode {
 
 interface PageLayoutRouteFileConvention {
   segments: string[];
-  invalidLayoutSource?: boolean;
 }
 
 interface PageRouteConventionFile {
@@ -612,13 +606,8 @@ interface PageRouteConventionModule {
   segments: string[];
 }
 
-interface PageFacetParseOptions {
-  pageAnchors?: boolean;
-}
-
 function parsePageRouteConventionFile(
   routeRel: string,
-  options: PageFacetParseOptions = {},
 ): PageRouteConventionFile | undefined {
   const normalizedRouteRel = normalizePageRouteConventionPath(routeRel);
   if (!isPageRouteSourceModuleFile(path.posix.basename(normalizedRouteRel))) {
@@ -629,9 +618,6 @@ function parsePageRouteConventionFile(
   const withoutExt = normalizedRouteRel.slice(0, -extension.length);
   const segments = withoutExt.split("/").filter(Boolean);
   if (segments.length === 0) return undefined;
-  if (!options.pageAnchors && segments.some(isIgnoredPageRouteSegment)) {
-    return undefined;
-  }
 
   const name = segments[segments.length - 1] ?? "";
   if (name === "error") {
@@ -645,7 +631,6 @@ function parsePageRouteConventionFile(
 
 function parsePageLayoutRouteFile(
   routeRel: string,
-  options: PageFacetParseOptions = {},
 ): PageLayoutRouteFileConvention | undefined {
   const normalizedRouteRel = normalizePageRouteConventionPath(routeRel);
   if (!isPageRouteSourceModuleFile(path.posix.basename(normalizedRouteRel))) {
@@ -656,28 +641,12 @@ function parsePageLayoutRouteFile(
   const withoutExt = normalizedRouteRel.slice(0, -extension.length);
   const segments = withoutExt.split("/").filter(Boolean);
   if (segments.length === 0) return undefined;
-  if (!options.pageAnchors && segments.some(isIgnoredPageRouteSegment)) {
-    return undefined;
-  }
 
   const name = segments[segments.length - 1] ?? "";
   if (name === "error" || name === "not-found") return undefined;
-  const parent = segments[segments.length - 2] ?? "";
   if (name === "layout") {
-    if (segments.length === 1) {
-      return {
-        segments: [],
-        ...(options.pageAnchors ? {} : { invalidLayoutSource: true }),
-      };
-    }
+    if (segments.length === 1) return { segments: [] };
     return { segments: segments.slice(0, -1) };
-  }
-  if (options.pageAnchors) return undefined;
-  if (name === "index" && parent === "layout") {
-    return { segments: [], invalidLayoutSource: true };
-  }
-  if (segments.includes("layout")) {
-    return { segments: [], invalidLayoutSource: true };
   }
   return undefined;
 }

@@ -77,6 +77,10 @@ Page 私有代码不需要 `_`。Private 表示 ownership/discovery scope，不�
 `page.*` 而保持私有；`src/pages/home/components/page.tsx` 则会有意创建
 `/home/components`。
 
+下划线不会创建私有 route segment。`_components/Card.tsx` 因为没有 Page
+锚点而属于普通源码；`_private/page.tsx` 不会被静默忽略，而会产生 invalid
+static segment diagnostic。Static URL segment 必须以字母或数字开头。
+
 ### Page 配置
 
 canonical discovery 识别 anchored Page 同目录唯一可选的 `page.config.ts` 或
@@ -198,6 +202,9 @@ src/apis/
 | 普通安全名称 | 静态 URL segment。 |
 
 不支持 catch-all、optional、bracket 或 method-suffix 方言。
+Static segment 必须以小写字母或数字开头。下划线前缀不是私有 route 约定：
+没有 route export 的 helper 仍是普通源码，但带 `GET` export 的
+`_private/health.ts` 会产生诊断。
 
 ### Route export
 

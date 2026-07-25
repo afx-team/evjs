@@ -16,7 +16,15 @@ import type {
 } from "@evjs/ev/plugin";
 import { DOMParser } from "domparser-rs";
 import { describe, expect, it } from "vitest";
-import { evPluginQiankunMaster, evPluginQiankunSlave } from "../src/index.js";
+import {
+  applyQiankunSlaveBundlerConfig,
+  applyQiankunSlaveHtmlTransform,
+  contributeQiankunMaster,
+  contributeQiankunSlave,
+  evPluginQiankunMaster,
+  evPluginQiankunSlave,
+  QIANKUN_ROUTE_EXTENSION_NAMESPACE,
+} from "../src/index.js";
 
 const qiankunRuntime = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -69,6 +77,107 @@ describe("@evjs/plugin-qiankun plugin", () => {
     );
     expect(source).toContain('from "@evjs/plugin-qiankun/runtime"');
     expect(source).not.toContain(toImportPath(cwd));
+    expect(captured.slots).toContainEqual({
+      name: "client.entry",
+      input: expect.objectContaining({
+        id: "entry-wrapper-slot",
+        position: "after-main",
+        target: { kind: "application" },
+      }),
+    });
+  });
+
+  it("projects static CoreGraph Route extensions into the master resolver", async () => {
+    const cwd = await createProject({
+      "src/pages/catalog/page.tsx":
+        "export default function Catalog() { return null; }",
+      "src/qiankun.master.ts": "export default async () => ({ apps: [] });",
+    });
+    const plugin = evPluginQiankunMaster({
+      resolver: "./src/qiankun.master.ts",
+    });
+    let routeExtension:
+      | {
+          namespace: string;
+          validate?: (value: never, context: never) => unknown;
+        }
+      | undefined;
+    plugin.describe?.({
+      routeExtension(definition: unknown) {
+        routeExtension = definition as typeof routeExtension;
+      },
+    } as never);
+    expect(routeExtension?.namespace).toBe(QIANKUN_ROUTE_EXTENSION_NAMESPACE);
+
+    const framework = createQiankunRouteFramework({
+      segments: [{ kind: "static", value: "catalog" }],
+    });
+    const captured = createContributionCapture(cwd, {}, framework);
+    await plugin.contributions?.(captured.ctx);
+
+    const source = renderModule(
+      captured.modules.find((module) => module.id === "entry-wrapper"),
+      captured.importOf,
+    );
+    expect(source).toContain(
+      'const routeMappings = [{"path":"/catalog","microApp":"catalog"}]',
+    );
+    expect(source).toContain(
+      "startQiankunMaster(masterResolver, routeMappings)",
+    );
+
+    const route = framework.routes[0];
+    expect(route).toBeDefined();
+    expect(
+      routeExtension?.validate?.(
+        { microApp: "catalog", extra: true } as never,
+        createRouteExtensionContext(route) as never,
+      ),
+    ).toContain('unknown field "extra"');
+  });
+
+  it("rejects dynamic CoreGraph qiankun Route mappings", async () => {
+    const cwd = await createProject({
+      "src/pages/catalog/$item/page.tsx":
+        "export default function CatalogItem() { return null; }",
+      "src/qiankun.master.ts": "export default async () => ({ apps: [] });",
+    });
+    const plugin = evPluginQiankunMaster({
+      resolver: "./src/qiankun.master.ts",
+    });
+    const framework = createQiankunRouteFramework({
+      segments: [
+        { kind: "static", value: "catalog" },
+        { kind: "param", name: "item" },
+      ],
+    });
+
+    await expect(
+      plugin.contributions?.(createContributionCapture(cwd, {}, framework).ctx),
+    ).rejects.toThrow("requires a static Route pattern");
+  });
+
+  it("composes a master contribution from an opaque generated resolver", async () => {
+    const cwd = await createProject({
+      "src/pages/page.tsx": "export default function Page() { return null; }",
+    });
+    const captured = createContributionCapture(cwd, {});
+    const resolver = captured.ctx.emit.module({
+      id: "platform-resolver",
+      scope: { kind: "application" },
+      source: "export default async () => ({ apps: [] });",
+    });
+
+    const state = await contributeQiankunMaster(captured.ctx, { resolver });
+
+    expect(state).toMatchObject({ role: "master" });
+    expect(captured.watched).toEqual([qiankunRuntime]);
+    const wrapper = captured.modules.find(
+      (module) => module.id === "entry-wrapper",
+    );
+    const source = renderModule(wrapper, captured.importOf);
+    expect(source).toContain('from "virtual:platform-resolver"');
+    expect(source).toContain('"default"');
     expect(captured.slots).toContainEqual({
       name: "client.entry",
       input: expect.objectContaining({
@@ -138,6 +247,61 @@ describe("@evjs/plugin-qiankun plugin", () => {
     expect(bundlerConfig.entry).toEqual([
       { name: "main", import: "./.ev/entries/main.ts" },
     ]);
+  });
+
+  it("composes slave helpers around a named generated runtime", async () => {
+    const cwd = await createProject({
+      "src/pages/page.tsx": "export default function Page() { return null; }",
+    });
+    const captured = createContributionCapture(cwd, {});
+    const runtime = captured.ctx.emit.module({
+      id: "platform-runtime",
+      scope: { kind: "application" },
+      source: "export const runtime = {};",
+    });
+
+    const state = await contributeQiankunSlave(captured.ctx, {
+      name: "platform-slave",
+      runtime: { module: runtime, exportName: "runtime" },
+    });
+
+    expect(state).toEqual({ role: "slave", appName: "platform-slave" });
+    expect(captured.watched).toEqual([qiankunRuntime]);
+    const wrapper = captured.modules.find(
+      (module) => module.id === "entry-wrapper",
+    );
+    const source = renderModule(wrapper, captured.importOf);
+    expect(source).toContain('from "virtual:platform-runtime"');
+    expect(source).toContain('"runtime"');
+
+    const webpackConfig: Record<string, unknown> = {
+      entry: { main: "./.ev/entries/main.ts" },
+    };
+    applyQiankunSlaveBundlerConfig(webpackConfig, "webpack", state);
+    expect(webpackConfig.entry).toEqual({
+      main: {
+        import: "./.ev/entries/main.ts",
+        library: { name: "platform-slave", type: "umd" },
+      },
+    });
+
+    const doc = new DOMParser().parseFromString(
+      '<!doctype html><html><head></head><body><script src="/main.js"></script></body></html>',
+      "text/html",
+    );
+    applyQiankunSlaveHtmlTransform(doc as never, state);
+    expect(doc.querySelector("script")?.textContent).toContain(
+      'var appName = "platform-slave"',
+    );
+
+    const defaultDoc = new DOMParser().parseFromString(
+      '<!doctype html><html><body><script src="/main.js"></script></body></html>',
+      "text/html",
+    );
+    applyQiankunSlaveHtmlTransform(defaultDoc as never);
+    expect(defaultDoc.querySelector("script")?.textContent).toContain(
+      'var appName = "evjs-qiankun-slave"',
+    );
   });
 
   it("keeps UMD library output for webpack slave builds", async () => {
@@ -500,6 +664,40 @@ function createApplicationFramework(mount = "#app"): FrameworkIRView {
       },
     ],
   );
+}
+
+function createQiankunRouteFramework(
+  pattern: FrameworkIRView["routes"][number]["pattern"],
+): FrameworkIRView {
+  const framework = createApplicationFramework();
+  const route = framework.routes[0];
+  if (!route) throw new Error("Expected fixture Route.");
+  return {
+    ...framework,
+    routes: [
+      {
+        ...route,
+        id: "catalog",
+        pattern,
+        extensions: {
+          [QIANKUN_ROUTE_EXTENSION_NAMESPACE]: { microApp: "catalog" },
+        },
+      },
+    ],
+  };
+}
+
+function createRouteExtensionContext(
+  route: FrameworkIRView["routes"][number] | undefined,
+) {
+  if (!route) throw new Error("Expected fixture Route.");
+  return {
+    routeId: route.id,
+    applicationId: route.applicationId,
+    pattern: route.pattern,
+    target: route.target,
+    facets: route.facets,
+  };
 }
 
 function createMpaFramework(): FrameworkIRView {

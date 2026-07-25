@@ -82,6 +82,11 @@ remains private because it is not named `page.*`; a
 `src/pages/home/components/page.tsx` would intentionally create
 `/home/components`.
 
+An underscore does not create a private route segment. `_components/Card.tsx`
+is ordinary source because it has no Page anchor, while
+`_private/page.tsx` produces an invalid-static-segment diagnostic instead of
+being silently ignored. Static URL segments must start with a letter or number.
+
 ### Page configuration
 
 Canonical discovery recognizes one optional `page.config.ts` or
@@ -206,6 +211,9 @@ src/apis/
 | ordinary safe name | Static URL segment. |
 
 Catch-all, optional, bracket, and method-suffix dialects are not supported.
+Static segments must start with a lowercase letter or number. An underscore
+prefix is not a private-route convention: helpers without route exports remain
+ordinary source, but `_private/health.ts` with a `GET` export is diagnosed.
 
 ### Route exports
 

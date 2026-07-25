@@ -503,7 +503,9 @@ describe("resolveConfig", () => {
           topology: "mpa",
         } as never,
       }),
-    ).toThrow("Bigfish-style application.routes is always SPA");
+    ).toThrow(
+      'Bigfish-style application.routes is a SPA-only migration input. To move a Bigfish application to canonical routing, migrate its routes to src/pages/**/page.* and use routing.mode "spa".',
+    );
 
     expect(() =>
       resolveConfig({
@@ -512,7 +514,9 @@ describe("resolveConfig", () => {
           mode: "mpa",
         } as never,
       }),
-    ).toThrow("Bigfish-style application.routes is always SPA");
+    ).toThrow(
+      'Bigfish-style application.routes is a SPA-only migration input. To move a Bigfish application to canonical routing, migrate its routes to src/pages/**/page.* and use routing.mode "spa".',
+    );
 
     expect(() =>
       resolveConfig({
@@ -551,13 +555,53 @@ describe("resolveConfig", () => {
         },
       }),
     ).toThrow("application.routes[0].document is not supported");
+  });
+
+  it("accepts only static namespaced Route and Document extensions", () => {
+    const resolved = resolveConfig({
+      application: {
+        document: {
+          extensions: {
+            "@company/html": { theme: "dark" },
+          },
+        },
+        routes: [
+          {
+            page: "home",
+            extensions: {
+              "@company/navigation": { label: "Home" },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(resolved.application?.document.extensions).toEqual({
+      "@company/html": { theme: "dark" },
+    });
+    expect(resolved.application?.routes[0]?.extensions).toEqual({
+      "@company/navigation": { label: "Home" },
+    });
+    expect(
+      Object.isFrozen(
+        resolved.application?.routes[0]?.extensions?.["@company/navigation"],
+      ),
+    ).toBe(true);
+
     expect(() =>
       resolveConfig({
         application: {
-          routes: [{ page: "home", extensions: {} } as never],
+          routes: [
+            {
+              page: "home",
+              extensions: {
+                "@company/navigation": () => true,
+              },
+            } as never,
+          ],
         },
       }),
-    ).toThrow("application.routes[0].extensions is not supported");
+    ).toThrow("must be JSON-serializable");
   });
 
   it("validates Bigfish Page references and route-tree targets", () => {

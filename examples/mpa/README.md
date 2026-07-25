@@ -28,7 +28,7 @@ npm run build
 | `src/pages/page.config.ts` | Static title/meta and rendering config for `/` |
 | `src/pages/components/PageScopeNote.tsx` | Colocated root Page component without an `_` prefix |
 | `src/pages/about/page.tsx` | Page for `/about` |
-| `src/pages/about/page.config.ts` | Static title/meta for `/about` |
+| `src/pages/about/page.config.ts` | Static title/meta and `about.html` Document alias for `/about` |
 | `src/pages/about/index.html` | Optional Page-specific HTML template baseline |
 
 ## What It Demonstrates
@@ -45,6 +45,7 @@ npm run build
 - `/about` omits `viewport`, so its colocated HTML viewport remains the
   Document baseline
 - A colocated `index.html` customizes one MPA Page without route configuration
+- `document.aliases` emits `/about.html` as an alias of `/about/index.html`
 - Stable `/` and `/about` URLs across SPA and MPA mode
 - No `@evjs/client`, `@evjs/server`, or generated `route-types.d.ts`
   dependency is needed for this router-free client output

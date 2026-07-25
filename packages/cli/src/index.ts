@@ -37,6 +37,17 @@ export type {
   PluginHooks,
 } from "@evjs/ev/plugin";
 export { loadConfig } from "./load-config.js";
+export {
+  formatSmallfishMigrationResult,
+  migrateSmallfishProject,
+  type SmallfishDocumentAlias,
+  type SmallfishMigrationChange,
+  type SmallfishMigrationDiagnostic,
+  type SmallfishMigrationDiagnosticCode,
+  type SmallfishMigrationDiagnosticLevel,
+  type SmallfishMigrationOptions,
+  type SmallfishMigrationResult,
+} from "./migrate-smallfish.js";
 
 export type DefaultBundlerConfig =
   typeof utoopackAdapter extends BundlerAdapter<infer TBundlerCfg>

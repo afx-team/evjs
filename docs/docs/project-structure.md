@@ -110,7 +110,7 @@ project root unless stated otherwise.
 | `routing.mode` | Output materialization | Application | `"spa"` creates Client Routes; `"mpa"` creates Page-owned Documents for static Page paths. It does not select a different route model. |
 | `routing.dir` | Page-route root | Application | Defaults to `./src/pages`; new applications normally omit it. |
 | `<routing.dir>/**/page.{ts,tsx,js,jsx}` | Canonical Page and Route anchor | Entire containing directory | Exactly one source-extension variant per route directory. Default-export the Page component. |
-| `<Page directory>/page.config.{ts,js}` | Optional canonical Page configuration | Build graph | Default-export static Page config. Prefer `definePageConfig()` and `page.config.ts`; exactly one variant per Page. |
+| `<Page directory>/page.config.{ts,js}` | Optional canonical Page, Page-anchored Route, and Page-owned Document configuration | Build graph | Default-export static config. Top-level `extensions` belong to the Page; `route.extensions` belong to its unique semantic Route; `document.aliases` adds validated static output filenames without adding Routes. Prefer `definePageConfig()` and `page.config.ts`; exactly one variant per Page. |
 | `<routing.dir>/**/$param/` | Dynamic route segment | Route path | Produces a semantic `:param` segment. |
 | `<routing.dir>/**/$...splat/` | Catch-all route segment | Route path | Must be terminal. |
 | `<routing.dir>/**/(group)/` | Pathless route group | Source organization | Participates in scope but contributes no URL segment. |
@@ -173,6 +173,12 @@ by normal module rules and optional lint tooling. `index.*` has no client-route
 meaning. A descendant `page.*` intentionally creates another Page and its
 directory becomes a more specific scope.
 
+`_` has no private-route meaning. A directory such as `_components/` remains
+ordinary source only because it contains no `page.*` anchor. If
+`_private/page.tsx` exists, discovery reports an invalid static URL segment
+instead of silently hiding the Page; static segments must start with a letter
+or number.
+
 ### Route tree
 
 Directory nesting is the route tree:
@@ -219,17 +225,42 @@ import { useQuery } from "@evjs/ev/query";
 The exact exports are documented in [Client Routes](./client-routes) and
 [Server Functions](./server-functions).
 
-### Application and Page extension scopes
+### Application, Page, Route, and Document extension scopes
 
 Application-wide plugin data is authored once at top-level
 `ev.config.ts#extensions` and registered with
 `applicationExtension()`. Per-Page plugin data is authored under the adjacent
-`page.config.ts#extensions` and registered with `pageExtension()`.
+`page.config.ts#extensions` and registered with `pageExtension()`. Route-owned
+data for a canonical Page route is authored under
+`page.config.ts#route.extensions` and registered with `routeExtension()`.
+This explicit nesting keeps menu, access, tracing, and micro-frontend data on
+the semantic Route rather than silently treating it as Page data.
 
-Both values enter the same CoreGraph registry. One plugin may own the same
-namespace for both scopes, which supports a global default plus Page-specific
-settings without treating the temporary `application.routes` migration object
-as a second application config system. Runtime projection is always explicit.
+All owner kinds use the same CoreGraph extension registry. One plugin may own
+the same namespace for more than one owner kind as long as it declares each
+owner. During Bigfish migration, strict static Route values may instead be
+authored on `application.routes[*].extensions`; after moving to the canonical
+Page tree, move each Page route value to `page.config.ts#route.extensions`.
+Runtime projection is always explicit.
+
+`page.config.ts#route.extensions` requires exactly one semantic Route targeting
+that Page. If an explicit migration tree reuses one Page from multiple Routes,
+configure each `application.routes[*].extensions` value separately until the
+routes have distinct canonical Page anchors. A componentless layout Route
+cannot borrow a descendant Page config, and a pathless directory without a
+Page or layout does not materialize a Route at all. Plugins may apply
+Route-extension defaults to such structural Routes. Otherwise retain the
+explicit `application.routes` migration input until the componentless Route
+data has another real owner; evjs diagnoses an orphan `page.config.ts` instead
+of inheriting it.
+
+Application-owned Document values in an explicit migration profile use
+`application.document.extensions` and `documentExtension()`. A canonical
+Page-owned Document uses `page.config.ts#document.extensions`; this is valid
+only when that Page materializes its own Document, such as MPA or an SPA SSG
+Page. A CSR SPA Page shares the Application-owned Document, so Page-specific
+Document configuration is diagnosed instead of being applied globally.
+Plugins may register Document defaults for either materialization.
 
 ### Page configuration and extensions
 
@@ -252,6 +283,13 @@ export default definePageConfig({
       channel: "orders",
     },
   },
+  route: {
+    extensions: {
+      "@company/access": {
+        policy: "canReadOrders",
+      },
+    },
+  },
 });
 ```
 
@@ -259,11 +297,30 @@ Core fields include the static Page `title`, named `meta`, `render`, `hydrate`,
 `prerender`, and `rsc`. Each `meta` entry becomes
 `<meta name="key" content="value">`; it does not represent `property`,
 `charset`, `link`, `script`, dynamic metadata, or an arbitrary head DSL.
-Plugin-owned values live below `extensions` and use a registered namespaced
-key. The resolved config must be static JSON data. Core title and meta values
-are materialized for the active Page; extension values enter the normalized
-graph but require their owning plugin to explicitly project runtime data or
-behavior through generated contributions.
+Plugin-owned Page values live below top-level `extensions`; Route-owned values
+live below `route.extensions`. Both use registered namespaced keys, and the
+resolved config must be static JSON data. Core title and meta values are
+materialized for the active Page; extension values enter their corresponding
+normalized graph owners but require their plugin to explicitly project runtime
+data or behavior through generated contributions.
+
+When a Page owns a static Document (MPA CSR/SSG or SPA SSG), it may publish the
+same transformed HTML at additional validated paths:
+
+```ts
+export default definePageConfig({
+  document: {
+    aliases: ["orders.html", "legacy/orders.htm"],
+  },
+});
+```
+
+Aliases do not create Pages, Routes, or additional Documents. They must be
+normalized relative paths ending in `.html` or `.htm`, must differ from the
+canonical output, and must not collide with any other canonical output or
+alias. Restricting the suffix keeps framework HTML from overwriting JavaScript,
+CSS, or deployment metadata. Page-specific Document configuration is rejected
+when the Page shares a SPA Application Document or uses request-time rendering.
 
 ## Server Boundary
 
@@ -291,9 +348,12 @@ export function GET({ params }: { params: { userId: string } }) {
 ```
 
 Server route modules export uppercase HTTP methods only. Helper files without
-route exports remain ordinary source. Do not introduce `route.ts` sentinels,
-method-suffix files, bracket routes, catch-all routes, optional params,
-route-module middleware exports, or a `server.entry` composition path.
+route exports remain ordinary source, including helpers inside an
+underscore-prefixed directory. `_private/health.ts` with a `GET` export is not
+a private escape hatch: it is diagnosed as an invalid static route segment.
+Do not introduce `route.ts` sentinels, method-suffix files, bracket routes,
+catch-all routes, optional params, route-module middleware exports, or a
+`server.entry` composition path.
 
 Server functions are different again: any reachable module that starts with
 `"use server";` and exports supported named callables can define them. See

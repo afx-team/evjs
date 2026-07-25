@@ -63,7 +63,7 @@ interface Plugin<TBundlerConfig = DefaultBundlerConfig> {
 避免拼错的 hook 静默失效。插件包自己的 metadata 应放在 `Plugin` object 之外。
 `describe` 存在时是框架保留 hook。
 
-## Application 与 Page extension
+## Namespaced Extension Owner
 
 应用级插件配置统一写在顶层 `config.extensions`：
 
@@ -132,6 +132,12 @@ export default definePageConfig({
 });
 ```
 
+同一份相邻配置还可以通过 `route.extensions` 配置该 Page 的唯一 semantic Route，
+或通过 `document.extensions` 配置 Page-owned Document。后者要求 canonical MPA、
+SPA SSG 等独立 Document 物化；CSR SPA Page 会共享 Application Document。显式
+`application.routes` migration input 通过每条 Route 自己的 `extensions` 字段配置
+Route，`application.document.extensions` 则配置 Application-owned Document。
+
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
 
@@ -171,10 +177,11 @@ runtime path。`describe()` 与其他 plugin hook 使用相同的 `dependencies`
 `describe()`，最后才执行 `setup()`。dev 中 plugin configuration reload 时会
 重新执行，因此它必须幂等且同步；defaults 函数、`merge` 和 `validate` 也必须同步
 返回，以保持 graph 构造的确定性。在单次 framework analysis 内，alias 收敛会为每个
-输入未变化的 Page owner 复用首次验证通过的 extension snapshot，不会再次调用这些
+输入未变化的 graph owner 复用首次验证通过的 extension snapshot，不会再次调用这些
 回调；后续 dev re-analysis 会创建新的解析 scope。
 
-`applicationExtension()` 与 `pageExtension()` 使用相同 declaration 合同。
+`applicationExtension()`、`pageExtension()`、`routeExtension()` 与
+`documentExtension()` 使用相同 declaration 合同。
 未提供 `merge` 时，plain-object defaults 和 configured value 会进行浅合并，
 configured 字段优先。非 object configured value 会替换 default。其他输入形态由
 自定义 `merge` 处理。owner 未配置该 namespace 时会直接物化 defaults，不调用自定义
@@ -183,16 +190,16 @@ configured 字段优先。非 object configured value 会替换 default。其他
 JSON 序列化；function、symbol、bigint、非有限数值、class instance、稀疏数组和循环
 引用都会被拒绝。
 
-一个 namespace 只能有一个生产插件。同一插件可以分别为 Application 与 Page owner
-注册同一 namespace，但两份 declaration 必须使用相同 `schemaVersion`。重复注册同一
-owner 或由其他插件抢占 namespace 都会报错。这样同时拥有全局与 Page 设置的能力无需
-再引入第二套配置系统。
+一个 namespace 只能有一个生产插件。同一插件可以为 Application、Page、Route、
+Document owner 各注册一次同一 namespace，且全部 declaration 必须使用相同
+`schemaVersion`。重复注册同一 owner 或由其他插件抢占 namespace 都会报错。四种
+owner 共用同一配置机制与 producer contract。
 
 Extension 与其他框架能力解析同一份 normalized CoreGraph。canonical
 `page.tsx` anchor 在两种 mode 中都会提供该 graph；显式 route-tree 迁移输入必须先
 normalize 到该 graph。在
-`contributions()` 中，`ctx.framework.applications`、`.pages` 和 client
-`.routes` 会暴露各自解析完成、只读的 `extensions` bag。
+`contributions()` 中，`ctx.framework.applications`、`.pages`、client `.routes`
+和 `.documents` 会暴露各自解析完成、只读的 `extensions` bag。
 
 Extension bag 是 build-time graph data，不是自动 runtime payload。需要浏览器
 行为的插件必须显式 emit 最小 generated data/module，并通过受支持 contribution
@@ -268,6 +275,7 @@ flowchart TB
   subgraph Plan["框架规划"]
     BuildStart["buildStart()"]
     Graph["discover graph\nroutes + server functions"]
+    GraphExtensions["解析 Page/Route/Document extensions"]
     BuildPlan["create BuildPlan"]
     Contributions["contributions(ctx)\nmodules + slots"]
     IR["materialize .ev"]
@@ -282,7 +290,7 @@ flowchart TB
     Dispose["dispose()"]
   end
 
-  Config --> Resolve --> Describe --> AppExtensions --> Setup --> BuildStart --> Graph --> BuildPlan
+  Config --> Resolve --> Describe --> AppExtensions --> Setup --> BuildStart --> Graph --> GraphExtensions --> BuildPlan
   BuildPlan --> Contributions --> IR --> BundlerConfig --> Bundler
   Bundler --> BuildOutput --> HTML --> BuildEnd --> Dispose
 
@@ -290,7 +298,7 @@ flowchart TB
   classDef plan fill:#f3f0ff,stroke:#a78bfa,color:#2e1065;
   classDef build fill:#ecfdf5,stroke:#34d399,color:#064e3b;
   class Config,Resolve,Describe,AppExtensions,Setup config;
-  class BuildStart,Graph,BuildPlan,Contributions,IR plan;
+  class BuildStart,Graph,GraphExtensions,BuildPlan,Contributions,IR plan;
   class BundlerConfig,Bundler,BuildOutput,HTML,BuildEnd,Dispose build;
 ```
 
@@ -302,6 +310,11 @@ flowchart TB
 | `transformHtml(doc, ctx)` | 逐个 HTML 文档修改输出；接收当前 manifest result 字段 |
 | `buildEnd({ output, isRebuild })` | 构建后输出最终产物 |
 | `dispose(ctx)` | 清理资源 |
+
+`buildOutput()` 可以调整已链接 asset 并添加部署 metadata，但
+Application/Page/Route/Document identity 仍由 CoreGraph 持有。Hook 不能新增、
+删除或重命名 Document，也不能修改其静态 alias；这些值必须在 graph linking
+之前完成配置。
 
 ## Generated Contributions
 
@@ -335,9 +348,9 @@ pages、routes、server routes 和 server functions，但不暴露内部 `BuildP
 可变 graph 对象。插件代码应从 `@evjs/ev/plugin` 导入 authoring 类型；
 `@evjs/ev/_internal/*` 只用于 CLI tooling、bundler adapter 和框架生成代码。
 
-Application、Page 和 client Route view 会暴露解析后的 namespaced
-`extensions`。因此内部 provenance 与解析出的
-Page value 在 `contributions()` 物化 generated code 前就可以读取。
+Application、Page、client Route 和 Document view 会暴露解析后的 namespaced
+`extensions`。因此内部 provenance 与解析出的 owner value 在
+`contributions()` 物化 generated code 前就可以读取。
 
 Application view 还会暴露 `root`、`routingMode`，以及它拥有的 Page、Route、Document
 id。MPA 因而表现为一个拥有多个 Page/Document 的逻辑 Application，而不是

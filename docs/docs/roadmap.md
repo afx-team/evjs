@@ -44,6 +44,10 @@
   `routing.mode + page.* + page.config.ts` model into a validated CoreGraph
   for SPA and MPA, emits `.ev/framework/core-graph.json`, and diagnoses invalid
   Page/Route/Document ownership or Page configuration.
+- The [Bigfish and Smallfish migration matrix](./framework-migration-to-0.3)
+  pins audited source revisions, separates Core from ecosystem
+  responsibilities, and defines URL, Page scope, Document, and plugin migration
+  gates.
 - Continue hardening the Bigfish explicit route normalizer and one-time source
   migration guidance for Smallfish and evjs 0.2 without promoting stored
   models as runtime readers.

@@ -536,6 +536,7 @@ function createPublicDocumentManifest(
       id: document.id,
       path: document.path,
       fileName: document.fileName,
+      ...(document.aliases ? { aliases: [...document.aliases] } : {}),
       render: document.render,
       metadata: clonePageMetadata(document.metadata),
       assets: optionalAssetGroup(
@@ -584,6 +585,7 @@ function createStaticSsgDocumentRecords(output: BuildOutput): Array<{
   id: string;
   path: string;
   fileName: string;
+  aliases?: string[];
   render: Extract<PageOutput["render"], "ssg">;
   metadata?: PageOutput["metadata"];
   assets: AssetGroup;
@@ -606,6 +608,9 @@ function createStaticSsgDocumentRecords(output: BuildOutput): Array<{
         id,
         path,
         fileName: page.document.fileName,
+        ...(page.document.aliases
+          ? { aliases: [...page.document.aliases] }
+          : {}),
         render: page.render,
         metadata: clonePageMetadata(page.metadata),
         assets: page.assets,
@@ -702,6 +707,7 @@ function createDeploymentDocuments(
         kind: "app" as const,
         id,
         fileName: app.document.fileName,
+        ...(app.document.aliases ? { aliases: [...app.document.aliases] } : {}),
         fallback: fallbackRoute?.path,
         assets: includeAssets ? optionalAssetGroup(app.assets) : undefined,
       }),
@@ -714,6 +720,9 @@ function createDeploymentDocuments(
         kind: "page" as const,
         id,
         fileName: page.document.fileName,
+        ...(page.document.aliases
+          ? { aliases: [...page.document.aliases] }
+          : {}),
         assets: includeAssets ? optionalAssetGroup(page.assets) : undefined,
       }),
     );
@@ -840,10 +849,16 @@ function createHtmlDocumentLookup(html: BuildPlan["html"]): {
 
   for (const document of html) {
     if (document.owner.appId) {
-      apps.set(document.owner.appId, { fileName: document.fileName });
+      apps.set(document.owner.appId, {
+        fileName: document.fileName,
+        ...(document.aliases ? { aliases: [...document.aliases] } : {}),
+      });
     }
     if (document.owner.pageId) {
-      pages.set(document.owner.pageId, { fileName: document.fileName });
+      pages.set(document.owner.pageId, {
+        fileName: document.fileName,
+        ...(document.aliases ? { aliases: [...document.aliases] } : {}),
+      });
     }
   }
 
@@ -853,7 +868,12 @@ function createHtmlDocumentLookup(html: BuildPlan["html"]): {
 function cloneHtmlDocument(
   document: HtmlDocumentOutput | undefined,
 ): HtmlDocumentOutput | undefined {
-  return document ? { fileName: document.fileName } : undefined;
+  return document
+    ? {
+        fileName: document.fileName,
+        ...(document.aliases ? { aliases: [...document.aliases] } : {}),
+      }
+    : undefined;
 }
 
 function clonePublicAssetRecord(

@@ -137,6 +137,12 @@ export interface CoreDocumentNode {
   id: DocumentId;
   template: string;
   output: string;
+  /**
+   * Additional static output paths that contain the same transformed Document.
+   *
+   * Aliases do not create Routes or additional semantic Documents.
+   */
+  aliases?: string[];
   applicationId: ApplicationId;
   owner: CoreDocumentOwner;
   mount?: string;
@@ -647,11 +653,30 @@ function assertDocumentNode(value: unknown, id: string, source: string): void {
       "extensions",
       "provenance",
     ],
-    ["mount", "bootstrap"],
+    ["aliases", "mount", "bootstrap"],
   );
   assertNodeId(document.id, id, `${source}.id`);
   assertProjectPath(document.template, `${source}.template`);
   assertDocumentOutputPath(document.output, `${source}.output`);
+  const aliases = getOwn(document, "aliases");
+  if (aliases !== undefined) {
+    assertStrictArray(aliases, `${source}.aliases`);
+    const seen = new Set<string>();
+    for (const [index, alias] of aliases.entries()) {
+      assertDocumentOutputPath(alias, `${source}.aliases[${index}]`);
+      if (alias === document.output) {
+        throw new Error(
+          `[evjs] ${source}.aliases[${index}] must differ from the canonical output "${document.output}".`,
+        );
+      }
+      if (seen.has(alias as string)) {
+        throw new Error(
+          `[evjs] ${source}.aliases[${index}] duplicates alias "${alias}".`,
+        );
+      }
+      seen.add(alias as string);
+    }
+  }
   assertNonEmptyString(document.applicationId, `${source}.applicationId`);
   assertDocumentOwner(document.owner, `${source}.owner`);
   const mount = getOwn(document, "mount");
@@ -1044,16 +1069,35 @@ function assertUniqueDocumentOutputs(
   documents: Record<string, unknown>,
   source: string,
 ): void {
-  const owners = new Map<string, string>();
+  const owners = new Map<string, { documentId: string; kind: string }>();
   for (const [documentId, value] of Object.entries(documents)) {
-    const output = (value as Record<string, unknown>).output as string;
-    const previous = owners.get(output);
-    if (previous) {
-      throw new Error(
-        `[evjs] ${source}.documents.${documentId}.output "${output}" is already owned by Document "${previous}".`,
-      );
+    const document = value as Record<string, unknown>;
+    const outputs = [
+      {
+        output: document.output as string,
+        source: `${source}.documents.${documentId}.output`,
+        kind: "canonical output",
+      },
+      ...((document.aliases as string[] | undefined) ?? []).map(
+        (output, index) => ({
+          output,
+          source: `${source}.documents.${documentId}.aliases[${index}]`,
+          kind: "alias",
+        }),
+      ),
+    ];
+    for (const candidate of outputs) {
+      const previous = owners.get(candidate.output);
+      if (previous) {
+        throw new Error(
+          `[evjs] ${candidate.source} "${candidate.output}" conflicts with ${previous.kind} owned by Document "${previous.documentId}". Static Document outputs and aliases must be globally unique.`,
+        );
+      }
+      owners.set(candidate.output, {
+        documentId,
+        kind: candidate.kind,
+      });
     }
-    owners.set(output, documentId);
   }
 }
 
@@ -1542,6 +1586,11 @@ function assertProjectPath(
 function assertDocumentOutputPath(value: unknown, source: string): void {
   assertNonEmptyString(value, source);
   const output = value as string;
+  if (output.trim() !== output) {
+    throw new Error(
+      `[evjs] ${source} must not contain leading or trailing whitespace.`,
+    );
+  }
   if (output.includes("\\")) {
     throw new Error(`[evjs] ${source} must use forward slashes.`);
   }
@@ -1562,6 +1611,11 @@ function assertDocumentOutputPath(value: unknown, source: string): void {
   ) {
     throw new Error(
       `[evjs] ${source} must not contain empty, ".", or ".." segments.`,
+    );
+  }
+  if (!/\.html?$/i.test(output)) {
+    throw new Error(
+      `[evjs] ${source} must end with ".html" or ".htm" because a Document output contains HTML.`,
     );
   }
 }

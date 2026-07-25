@@ -351,6 +351,190 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     });
   });
 
+  it("projects MPA Page Document aliases through CoreGraph and BuildPlan", async () => {
+    const cwd = await createFixture({
+      "src/pages/about/page.tsx":
+        "export default function About() { return null; }",
+      "src/pages/about/page.config.ts": `
+        export default {
+          document: { aliases: ["about.html", "legacy/about.htm"] },
+        };
+      `,
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "mpa");
+    const analysis = await createCoreGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "production",
+    });
+
+    expect(analysis.graph.documents.about).toMatchObject({
+      output: "about/index.html",
+      aliases: ["about.html", "legacy/about.htm"],
+      owner: { kind: "page", pageId: "about" },
+    });
+    expect(plan.html).toEqual([
+      {
+        id: "about",
+        template: "./index.html",
+        fileName: "about/index.html",
+        aliases: ["about.html", "legacy/about.htm"],
+        owner: { appId: "default", pageId: "about" },
+      },
+    ]);
+
+    const output = linkBuildOutput({
+      graph: analysis.graph,
+      plan,
+      clientEntryAssets: {
+        about: { js: ["about.js"], css: [] },
+      },
+    });
+    expect(output.pages.about.document).toEqual({
+      fileName: "about/index.html",
+      aliases: ["about.html", "legacy/about.htm"],
+    });
+  });
+
+  it("materializes SPA SSG aliases as one Page-owned static Document", async () => {
+    const cwd = await createFixture({
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+        export default {
+          render: "ssg",
+          hydrate: "none",
+          document: { aliases: ["report.html"] },
+        };
+      `,
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa");
+    const analysis = await createCoreGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "production",
+    });
+
+    expect(
+      Object.values(analysis.graph.documents).filter(
+        (document) =>
+          document.owner.kind === "page" && document.owner.pageId === "report",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        output: "report/index.html",
+        aliases: ["report.html"],
+      }),
+    ]);
+    expect(plan.html).toEqual([
+      {
+        id: "report",
+        template: "./index.html",
+        fileName: "report/index.html",
+        aliases: ["report.html"],
+        owner: { pageId: "report" },
+      },
+    ]);
+  });
+
+  it("rejects Page aliases without an independently static Document", async () => {
+    const cwd = await createFixture({
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+        export default {
+          document: { aliases: ["report.html"] },
+        };
+      `,
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa");
+
+    await expect(createCoreGraph(config, cwd)).rejects.toThrow(
+      'SPA render mode "csr" shares its Application Document',
+    );
+  });
+
+  it("rejects one static alias for a dynamic SPA SSG route", async () => {
+    const cwd = await createFixture({
+      "src/pages/posts/$postId/page.tsx":
+        "export default function Post() { return null; }",
+      "src/pages/posts/$postId/page.config.ts": `
+        export default {
+          render: "ssg",
+          hydrate: "none",
+          document: { aliases: ["post.html"] },
+        };
+      `,
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa");
+
+    await expect(createCoreGraph(config, cwd)).rejects.toThrow(
+      'cannot materialize dynamic Route "/posts/$postId" as one static HTML output',
+    );
+  });
+
+  it("rejects a Page alias that collides with the SPA Application Document", async () => {
+    const cwd = await createFixture({
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+        export default {
+          render: "ssg",
+          hydrate: "none",
+          document: { aliases: ["index.html"] },
+        };
+      `,
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa");
+
+    await expect(createCoreGraph(config, cwd)).rejects.toThrow(
+      /aliases\[0\] "index\.html" conflicts with canonical output owned by Document "index"/,
+    );
+  });
+
+  it("diffs alias additions and removals as HTML Document changes", async () => {
+    const cwd = await createFixture({
+      "src/pages/about/page.tsx":
+        "export default function About() { return null; }",
+      "src/pages/about/page.config.ts":
+        'export default { document: { aliases: ["about.html"] } };',
+      "index.html": '<main id="app"></main>',
+    });
+    const previousConfig = await createCanonicalConfig(cwd, "mpa");
+    const previousAnalysis = await createCoreGraph(previousConfig, cwd);
+    const previousPlan = createBuildPlan(
+      previousConfig,
+      previousAnalysis.graph,
+      { mode: "development" },
+    );
+
+    await fs.writeFile(
+      path.join(cwd, "src/pages/about/page.config.ts"),
+      "export default {};",
+      "utf-8",
+    );
+    const nextConfig = await createCanonicalConfig(cwd, "mpa");
+    const nextAnalysis = await createCoreGraph(nextConfig, cwd);
+    const nextPlan = createBuildPlan(nextConfig, nextAnalysis.graph, {
+      mode: "development",
+    });
+    const update = diffBuildPlan(previousPlan, nextPlan, "config");
+
+    expect(update.html.added).toEqual([]);
+    expect(update.html.removed).toEqual([]);
+    expect(update.html.changed).toEqual([
+      {
+        id: "about",
+        template: "./index.html",
+        fileName: "about/index.html",
+        owner: { appId: "default", pageId: "about" },
+      },
+    ]);
+  });
+
   it("normalizes dynamic, catch-all, pathless, and prototype-shaped route ids", async () => {
     const cwd = await createFixture({
       "src/pages/constructor/page.tsx":
@@ -653,6 +837,27 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       mode: "production",
     });
 
+    expect(analysis.graph.applications.default.documentIds).toEqual([
+      "index",
+      "page:index",
+      "report",
+    ]);
+    expect(analysis.graph.documents).toMatchObject({
+      index: {
+        output: "__evjs/default.html",
+        owner: { kind: "application" },
+      },
+      "page:index": {
+        output: "index.html",
+        owner: { kind: "page", pageId: "index" },
+        bootstrap: { kind: "page", pageId: "index" },
+      },
+      report: {
+        output: "report/index.html",
+        owner: { kind: "page", pageId: "report" },
+        bootstrap: { kind: "page", pageId: "report" },
+      },
+    });
     expect(plan.html).toEqual([
       {
         id: "index",
@@ -771,10 +976,8 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       "index.html": '<main id="app"></main>',
     });
     const config = await createCanonicalConfig(cwd, "spa");
-    const analysis = await createCoreGraph(config, cwd);
-
-    expect(() => createBuildPlan(config, analysis.graph)).toThrow(
-      'uses render "ssg" on dynamic Route "/posts/$postId"',
+    await expect(createCoreGraph(config, cwd)).rejects.toThrow(
+      'cannot materialize dynamic Route "/posts/$postId" as one static HTML output',
     );
   });
 

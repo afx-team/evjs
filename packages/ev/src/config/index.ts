@@ -351,6 +351,34 @@ export interface PageFileConfig<
   readonly rsc?: true;
   /** Namespaced plugin-owned Page configuration. */
   readonly extensions?: TExtensions;
+  /**
+   * Static HTML Document output owned by this Page.
+   *
+   * This is valid only when the Page materializes its own static Document.
+   */
+  readonly document?: PageFileDocumentConfig;
+  /**
+   * Configuration for the unique semantic Route anchored by this Page.
+   *
+   * Route-owned data remains separate from Page `extensions`.
+   */
+  readonly route?: PageFileRouteConfig;
+}
+
+export interface PageFileDocumentConfig {
+  /**
+   * Additional relative output files containing the same transformed HTML.
+   *
+   * Aliases do not create Routes or additional semantic Documents.
+   */
+  readonly aliases?: readonly string[];
+  /** Namespaced plugin-owned configuration for this Page-owned Document. */
+  readonly extensions?: ConfigExtensionValues;
+}
+
+export interface PageFileRouteConfig {
+  /** Namespaced plugin-owned Route configuration. */
+  readonly extensions?: ConfigExtensionValues;
 }
 
 export interface ConfigRouteApplication {
@@ -369,11 +397,14 @@ export interface ConfigRouteApplicationDocument {
   template?: string;
   /** Default mount selector. */
   mount?: string;
+  /** Namespaced plugin-owned Document configuration. */
+  extensions?: ConfigExtensionValues;
 }
 
 export interface ResolvedConfigRouteApplicationDocument {
   template: string;
   mount: string;
+  extensions?: Readonly<Record<string, StaticConfigValue>>;
 }
 
 export interface ResolvedConfigRouteApplication {
@@ -398,6 +429,8 @@ export interface ConfigRoute {
   layout?: string | false;
   /** Nested Umi/Bigfish route declarations. */
   routes?: ConfigRoute[];
+  /** Namespaced plugin-owned configuration for this semantic Route. */
+  extensions?: ConfigExtensionValues;
   /** Menu or breadcrumb label retained for migration plugins. */
   name?: string;
   /** Static menu icon name retained for migration plugins. */
@@ -433,6 +466,7 @@ export interface ResolvedConfigRoute {
   wrappers?: string[];
   layout?: string | false;
   routes?: ResolvedConfigRoute[];
+  extensions?: Readonly<Record<string, StaticConfigValue>>;
   /** @internal Strict Bigfish metadata projected to a registered Route extension. */
   metadata?: BigfishRouteExtension;
 }
@@ -521,6 +555,7 @@ const PUBLIC_CONFIG_ROUTE_KEYS = new Set([
   "wrappers",
   "layout",
   "routes",
+  "extensions",
   "name",
   "icon",
   "title",
@@ -535,6 +570,7 @@ const PUBLIC_CONFIG_ROUTE_KEYS = new Set([
 const PUBLIC_CONFIG_ROUTE_APPLICATION_DOCUMENT_KEYS = new Set([
   "template",
   "mount",
+  "extensions",
 ]);
 const PUBLIC_DEV_CONFIG_KEYS = new Set(["port", "https", "proxy"]);
 const PUBLIC_SERVER_CONFIG_KEYS = new Set([
@@ -1086,7 +1122,7 @@ function resolveConfigRouteProfile<TBundlerCfg>(
     "pageRoot, document, layout, or routes",
     (key) => {
       if (key === "topology" || key === "mode") {
-        return `[evjs] application.${key} has been removed. Bigfish-style application.routes is always SPA; migrate to src/pages/**/page.* with routing.mode "mpa" for MPA materialization.`;
+        return `[evjs] application.${key} has been removed. Bigfish-style application.routes is a SPA-only migration input. To move a Bigfish application to canonical routing, migrate its routes to src/pages/**/page.* and use routing.mode "spa".`;
       }
       if (key === "html" || key === "mount") {
         return `[evjs] application.${key} has been removed. Use application.document.${key === "html" ? "template" : "mount"}.`;
@@ -1178,8 +1214,15 @@ function resolveConfigRouteApplicationDocument(
     document,
     PUBLIC_CONFIG_ROUTE_APPLICATION_DOCUMENT_KEYS,
     "application.document",
-    "template or mount",
+    "template, mount, or extensions",
   );
+  const extensions =
+    document.extensions === undefined
+      ? undefined
+      : resolveConfigExtensionValues(
+          document.extensions,
+          "application.document.extensions",
+        );
   return {
     template:
       document.template === undefined
@@ -1192,6 +1235,7 @@ function resolveConfigRouteApplicationDocument(
       document.mount === undefined
         ? CONFIG_DEFAULTS.mount
         : assertNonEmptyString(document.mount, "application.document.mount"),
+    ...(extensions ? { extensions } : {}),
   };
 }
 
@@ -1390,6 +1434,13 @@ function resolveConfigRoute(
       `[evjs] ${routePath}.exact: true is valid only on a terminal Route without nested routes.`,
     );
   }
+  const extensions =
+    route.extensions === undefined
+      ? undefined
+      : resolveConfigExtensionValues(
+          route.extensions,
+          `${routePath}.extensions`,
+        );
   const metadata = resolveBigfishRouteMetadata(route, routePath);
   return {
     ...(pathValue !== undefined ? { path: pathValue } : {}),
@@ -1403,6 +1454,7 @@ function resolveConfigRoute(
     ...(wrappers ? { wrappers } : {}),
     ...(layout !== undefined ? { layout } : {}),
     ...(routes ? { routes } : {}),
+    ...(extensions ? { extensions } : {}),
     ...(metadata ? { metadata } : {}),
   };
 }

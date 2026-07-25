@@ -34,8 +34,7 @@ export default defineConfig({
 });
 ```
 
-resolver 返回 qiankun 应用列表、可选路由映射，以及 qiankun framework options。
-这些字段保持扁平：
+resolver 返回 qiankun 应用列表与 qiankun framework options，这些字段保持扁平：
 
 ```ts
 // src/qiankun.master.ts
@@ -49,22 +48,36 @@ export default defineQiankunMasterResolver(async () => ({
       container: "#slave-container",
     },
   ],
-  routes: [
-    {
-      path: "/catalog",
-      microApp: "catalog",
-    },
-  ],
   sandbox: true,
   prefetch: true,
 }));
 ```
 
-`routes` 是 evjs 插件提供的便利映射，不是路由系统替代品。当 app 没有显式
-`activeRule` 时，插件会根据匹配的 `routes[].microApp` 推导 `activeRule`，并通过
-qiankun 的 `registerMicroApps` 注册应用。Master 运行期间应由 shell 稳定提供
-qiankun container；如果希望 container 跟随路由组件挂载，应由上层插件把 route
-转换成 micro-app 组件。
+canonical Route 在 `page.tsx` 锚点旁持有 micro-app 关联：
+
+```ts
+// src/pages/catalog/page.config.ts
+import { definePageConfig } from "@evjs/ev";
+
+export default definePageConfig({
+  route: {
+    extensions: {
+      "@evjs/qiankun": {
+        microApp: "catalog",
+      },
+    },
+  },
+});
+```
+
+master 插件通过 `routeExtension()` 注册该 namespace，校验它指向静态 Page Route，
+并从 normalized CoreGraph 生成 qiankun route mapping。app 未显式设置
+`activeRule` 时，插件在调用 `registerMicroApps` 时使用这份 mapping。旧的
+resolver-level `routes` 数组仅保留给渐进插件迁移；新应用不应在那里重复 canonical
+path。
+
+Master 运行期间应由 shell 稳定提供 qiankun container；如果希望 container 跟随
+路由组件挂载，应由上层插件把 route 转换成 micro-app 组件。
 
 ```tsx
 // src/pages/layout.tsx
@@ -294,12 +307,14 @@ export default async function resolveQiankunMaster() {
         container: "#slave-container",
       },
     ],
-    routes: [{ path: "/catalog", microApp: "catalog" }],
     sandbox: true,
     prefetch: true,
   };
 }
 ```
+
+`/catalog` 关联仍来自
+`src/pages/catalog/page.config.ts#route.extensions`，resolver 不重复声明路径。
 
 请把这类代理放在 `dev.proxy`，不要放进 `src/apis`；应用 API routes 不应该承担
 微前端资产代理职责。
@@ -324,15 +339,24 @@ ref 传给 qiankun helper：
 // packages/plugin-platform/src/master.ts
 import { merge } from "@evjs/ev/config";
 import type { Plugin } from "@evjs/ev/plugin";
-import { contributeQiankunMaster } from "@evjs/plugin-qiankun";
+import {
+  contributeQiankunMaster,
+  QIANKUN_ROUTE_EXTENSION_NAMESPACE,
+} from "@evjs/plugin-qiankun";
 
 export function evPluginPlatformMicroFrontendMaster(): Plugin {
   return {
     name: "@acme/evjs-platform-mf:master",
+    describe(api) {
+      api.routeExtension({
+        namespace: QIANKUN_ROUTE_EXTENSION_NAMESPACE,
+      });
+    },
     config(config) {
       merge(config, {
         dev: {
           proxy: [
+            ...(config.dev?.proxy ?? []),
             {
               context: ["/__platform_slave"],
               target: "http://localhost:3001",
@@ -361,7 +385,6 @@ export function evPluginPlatformMicroFrontendMaster(): Plugin {
 
           export default defineQiankunMasterResolver(async () => ({
             apps: site.children,
-            routes: site.routes,
             sandbox: site.sandbox ?? true,
             prefetch: site.prefetch ?? true,
           }));
@@ -377,8 +400,13 @@ export function evPluginPlatformMicroFrontendMaster(): Plugin {
 }
 ```
 
-生成的 resolver 把平台元数据适配为开源 qiankun resolver 形态。关键点是 resolver
-是带 manifest provenance 的 generated artifact，而不是未受管理的临时文件：
+`merge()` 会替换数组，因此平台插件追加代理时必须像上面一样复制已有
+`config.dev.proxy`。这样应用配置及更早插件注册的代理规则不会被覆盖。
+
+生成的 resolver 把平台应用元数据适配为开源 qiankun resolver 形态。canonical route
+关联仍位于 Page-local `route.extensions`；注册共享 namespace 后，
+`contributeQiankunMaster()` 会投影它们。resolver 仍是带 manifest provenance 的
+generated artifact，而不是未受管理的临时文件：
 
 ```ts
 import { defineQiankunMasterResolver } from "@evjs/plugin-qiankun/runtime";
@@ -392,10 +420,6 @@ export default defineQiankunMasterResolver(async () => {
       entry: child.entry,
       container: child.container,
       props: child.props,
-    })),
-    routes: site.routes.map((route) => ({
-      path: route.path,
-      microApp: route.childName,
     })),
     sandbox: site.sandbox ?? true,
     prefetch: site.prefetch ?? true,
@@ -452,13 +476,17 @@ export function evPluginPlatformMicroFrontendSlave(): Plugin {
           applyQiankunSlaveBundlerConfig(config, ctx.bundlerName, qiankunState);
         },
         transformHtml(doc) {
-          applyQiankunSlaveHtmlTransform(doc);
+          applyQiankunSlaveHtmlTransform(doc, qiankunState);
         },
       };
     },
   };
 }
 ```
+
+`contributeQiankunSlave()` 返回的 state 保证 generated entry、bundler 产物和
+lifecycle proxy 使用同一个推导出的应用名。如果明确使用默认的
+`evjs-qiankun-slave` 名称，也可以不向 `applyQiankunSlaveHtmlTransform()` 传 state。
 
 生成的 slave runtime 可在业务代码观察 props 之前统一平台专属 mount props：
 

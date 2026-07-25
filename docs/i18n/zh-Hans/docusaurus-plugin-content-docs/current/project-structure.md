@@ -104,7 +104,7 @@ reachable 的 `"use server";` 模块与插件生成的 contribution 是 graph �
 | `routing.mode` | 输出物化模式 | Application | `"spa"` 创建 Client Route；`"mpa"` 为静态 Page path 创建 Page-owned Document。它不选择另一套路由模型。 |
 | `routing.dir` | Page-route 根目录 | Application | 默认 `./src/pages`；新应用通常无需配置。 |
 | `<routing.dir>/**/page.{ts,tsx,js,jsx}` | canonical Page 与 Route 锚点 | 完整所在目录 | 每个 route 目录只允许一个源码扩展名变体；默认导出 Page 组件。 |
-| `<Page 目录>/page.config.{ts,js}` | 可选 canonical Page 配置 | Build graph | Default-export static Page config；推荐 `definePageConfig()` 与 `page.config.ts`，每个 Page 只能有一个变体。 |
+| `<Page 目录>/page.config.{ts,js}` | 可选 canonical Page、Page 锚定 Route 与 Page-owned Document 配置 | Build graph | Default-export static config；顶层 `extensions` 属于 Page，`route.extensions` 属于其唯一 semantic Route；`document.aliases` 增加经过校验的静态输出文件名，但不会增加 Route。推荐 `definePageConfig()` 与 `page.config.ts`，每个 Page 只能有一个变体。 |
 | `<routing.dir>/**/$param/` | 动态 route segment | Route path | 产生 semantic `:param` segment。 |
 | `<routing.dir>/**/$...splat/` | Catch-all route segment | Route path | 必须位于末尾。 |
 | `<routing.dir>/**/(group)/` | Pathless route group | 源码组织 | 参与 scope，但不增加 URL segment。 |
@@ -163,6 +163,10 @@ src/pages/orders/$orderId/
 JavaScript import 仍遵循普通模块规则和可选 lint 工具。`index.*` 没有客户端
 route 含义；后代 `page.*` 会有意创建另一个 Page，并让其目录成为更具体的 scope。
 
+`_` 不表示私有 route。`_components/` 这类目录只是因为没有 `page.*` 锚点而保持
+普通源码；如果存在 `_private/page.tsx`，discovery 会把它报告为无效 static URL
+segment，而不是静默隐藏该 Page。Static segment 必须以字母或数字开头。
+
 ### 路由树
 
 目录嵌套就是 route tree：
@@ -207,16 +211,36 @@ import { useQuery } from "@evjs/ev/query";
 
 具体 API 参见[客户端路由](./client-routes)和[服务端函数](./server-functions)。
 
-### Application 与 Page extension scope
+### Application、Page、Route 与 Document extension scope
 
 应用级插件数据只在顶层 `ev.config.ts#extensions` author 一次，并通过
 `applicationExtension()` 注册。Page 级插件数据写在同目录
-`page.config.ts#extensions`，并通过 `pageExtension()` 注册。
+`page.config.ts#extensions`，并通过 `pageExtension()` 注册。canonical Page
+route 的 Route-owned 数据写在 `page.config.ts#route.extensions`，并通过
+`routeExtension()` 注册。这个显式嵌套能让菜单、权限、埋点和微前端数据继续由
+semantic Route 持有，而不会被静默当成 Page 数据。
 
-两类 value 进入同一 CoreGraph registry。同一插件可以同时持有同一 namespace 的
-两个 scope，从而表达全局 default 与 Page 设置，而不会把临时
-`application.routes` migration object 变成第二套应用配置系统。runtime 投影始终
-需要显式声明。
+所有 owner kind 共用同一个 CoreGraph extension registry。同一插件可以为多个
+owner kind 持有同一 namespace，但必须逐一声明。Bigfish 迁移期间，严格 static
+Route value 也可以写在 `application.routes[*].extensions`；迁到 canonical Page
+tree 后，把每个 Page route value 移到 `page.config.ts#route.extensions`。runtime
+投影始终需要显式声明。
+
+`page.config.ts#route.extensions` 要求该 Page 只被一个 semantic Route
+指向。如果显式 migration tree 用多个 Route 复用同一个 Page，需要继续在每个
+`application.routes[*].extensions` 上分别配置，直到这些 Route 拥有各自的
+canonical Page anchor。componentless layout Route 不能借用后代 Page config；
+没有 Page 或 layout 的 pathless 目录也不会物化 Route。插件可以通过
+Route-extension default 处理这类结构 Route；否则应保留显式
+`application.routes` migration input，直到 componentless Route 数据拥有其他真实
+owner。evjs 会诊断 orphan `page.config.ts`，而不是隐式继承。
+
+显式 migration profile 中 Application-owned Document 的值使用
+`application.document.extensions` 与 `documentExtension()`。canonical
+Page-owned Document 使用 `page.config.ts#document.extensions`；只有 Page 自己物化
+Document（例如 MPA 或 SPA SSG Page）时才有效。CSR SPA Page 会共享
+Application-owned Document，因此 evjs 会诊断 Page-specific Document 配置，而
+不会把它全局应用。插件可以为两种物化方式注册 Document default。
 
 ### Page 配置与 extension
 
@@ -239,17 +263,41 @@ export default definePageConfig({
       channel: "orders",
     },
   },
+  route: {
+    extensions: {
+      "@company/access": {
+        policy: "canReadOrders",
+      },
+    },
+  },
 });
 ```
 
 Core 字段包括静态 Page `title`、named `meta`、`render`、`hydrate`、
 `prerender` 与 `rsc`。每个 `meta` 项都会生成
 `<meta name="key" content="value">`；它不表示 `property`、`charset`、
-`link`、`script`、动态元信息或任意 head DSL。插件持有的值放在
-`extensions` 下，并使用已注册 namespaced key。求值结果必须是 static JSON
-data。Core title/meta 会为当前 Page 物化；extension value 会进入 normalized
-graph，但能力所属插件仍须通过 generated contribution 显式投影 runtime data
-或行为。
+`link`、`script`、动态元信息或任意 head DSL。Plugin 持有的 Page value 放在
+顶层 `extensions`，Route-owned value 放在 `route.extensions`；两者都使用已注册
+namespaced key，求值结果必须是 static JSON data。Core title/meta 会为当前 Page
+物化；extension value 会进入各自的 normalized graph owner，但能力所属插件仍须
+通过 generated contribution 显式投影 runtime data 或行为。
+
+当 Page 持有静态 Document（MPA CSR/SSG 或 SPA SSG）时，可以把同一份
+transformed HTML 发布到额外的已校验路径：
+
+```ts
+export default definePageConfig({
+  document: {
+    aliases: ["orders.html", "legacy/orders.htm"],
+  },
+});
+```
+
+Alias 不会创建 Page、Route 或额外 Document。它必须是以 `.html` 或 `.htm`
+结尾的规范化相对路径，不能等于 canonical output，也不能与其他 canonical output
+或 alias 冲突。后缀限制可避免 framework HTML 覆盖 JavaScript、CSS 或部署
+metadata。Page 共享 SPA Application Document 或使用请求时渲染时，
+Page-specific Document 配置会被拒绝。
 
 ## Server 边界
 
@@ -277,9 +325,11 @@ export function GET({ params }: { params: { userId: string } }) {
 ```
 
 Server route module 只导出大写 HTTP method。没有 route export 的 helper file
-仍是普通源码。不要添加 `route.ts` sentinel、method suffix file、bracket
-route、catch-all、optional param、route-module middleware export 或
-`server.entry` composition path。
+仍是普通源码，包括下划线前缀目录中的 helper。带 `GET` export 的
+`_private/health.ts` 不是私有逃生口；它会被报告为无效 static route segment。
+不要添加 `route.ts` sentinel、method suffix file、bracket route、catch-all、
+optional param、route-module middleware export 或 `server.entry` composition
+path。
 
 Server function 又是另一套机制：任何 reachable、以 `"use server";` 开头并
 导出支持的命名 callable 的模块都可定义。参见

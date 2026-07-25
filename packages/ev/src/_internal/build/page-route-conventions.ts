@@ -269,20 +269,6 @@ export function isPageRouteConventionModuleName(name: string): boolean {
   return name === "error" || name === "not-found";
 }
 
-export function isPrivatePageRouteSegment(segment: string): boolean {
-  return segment.startsWith("_");
-}
-
-export function isHiddenPageRouteSegment(segment: string): boolean {
-  return segment.startsWith(".");
-}
-
-export function isIgnoredPageRouteSegment(segment: string): boolean {
-  return (
-    isHiddenPageRouteSegment(segment) || isPrivatePageRouteSegment(segment)
-  );
-}
-
 export function findRouteGroupSegment(segments: string[]): string | undefined {
   return segments.find(
     (segment) =>
@@ -471,7 +457,7 @@ function formatInvalidRouteSegmentViolation(
     return `Dynamic page route segment "${invalid.segment}" repeats a param name. Use unique dynamic param filenames within one route path.`;
   }
 
-  return `Static page route segment "${invalid.segment}" must use URL-safe characters: letters, numbers, ".", "_", "-", or "~". Rename the route directory to a URL-safe segment.`;
+  return `Static page route segment "${invalid.segment}" must start with a letter or number and then use only URL-safe characters: letters, numbers, ".", "_", "-", or "~". Rename the route directory to a URL-safe segment.`;
 }
 
 export function routePathFromSegments(segments: string[]): string {

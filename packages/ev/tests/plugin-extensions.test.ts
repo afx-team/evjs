@@ -157,6 +157,428 @@ describe("plugin Application extensions", () => {
     expect(validated).toEqual(["application:default", "page:home"]);
   });
 
+  it("resolves registered Route and Document inputs from explicit application routes", async () => {
+    const cwd = await fs.mkdtemp(
+      path.join(os.tmpdir(), "evjs-route-document-extensions-"),
+    );
+    tempDirs.push(cwd);
+    await Promise.all([
+      fs.mkdir(path.join(cwd, "src/layouts"), { recursive: true }),
+      fs.mkdir(path.join(cwd, "src/pages/home"), { recursive: true }),
+    ]);
+    await Promise.all([
+      fs.writeFile(
+        path.join(cwd, "index.html"),
+        '<div id="app"></div>',
+        "utf-8",
+      ),
+      fs.writeFile(
+        path.join(cwd, "src/layouts/Section.tsx"),
+        "export default function Section({ children }) { return children; }",
+        "utf-8",
+      ),
+      fs.writeFile(
+        path.join(cwd, "src/pages/home/page.tsx"),
+        "export default function Home() { return null; }",
+        "utf-8",
+      ),
+    ]);
+
+    const observedRouteKinds: string[] = [];
+    const plugin = definePlugin({
+      name: "route-document-owner",
+      describe(ctx) {
+        ctx.routeExtension<
+          { enabled: boolean; label: string },
+          { label: string }
+        >({
+          namespace: "@company/navigation",
+          schemaVersion: "1",
+          defaults(context) {
+            observedRouteKinds.push(context.target.kind);
+            return { enabled: true, label: context.target.kind };
+          },
+          validate(value, context) {
+            return (
+              (value.enabled === true &&
+                context.applicationId === "default" &&
+                context.pattern.segments.length >= 0) ||
+              "invalid route extension"
+            );
+          },
+        });
+        ctx.documentExtension<
+          { enabled: boolean; theme: string },
+          { theme: string }
+        >({
+          namespace: "@company/navigation",
+          schemaVersion: "1",
+          defaults: ({ owner }) => ({
+            enabled: true,
+            theme: owner.kind,
+          }),
+        });
+      },
+    });
+    const config = resolveConfig({
+      application: {
+        document: {
+          extensions: {
+            "@company/navigation": { theme: "dark" },
+          },
+        },
+        routes: [
+          {
+            path: "/",
+            page: "home",
+            layout: "@/layouts/Section",
+            extensions: {
+              "@company/navigation": { label: "Home" },
+            },
+          },
+          {
+            path: "/legacy",
+            redirect: "/",
+            extensions: {
+              "@company/navigation": { label: "Legacy" },
+            },
+          },
+          {
+            path: "/section",
+            extensions: {
+              "@company/navigation": { label: "Section" },
+            },
+            routes: [{ path: "home", page: "home" }],
+          },
+        ],
+      },
+      plugins: [plugin],
+    });
+    const registry = collectPluginExtensionRegistry(config.plugins);
+    const { graph } = await createCoreGraph(config, cwd, {
+      pluginExtensions: registry,
+    });
+
+    expect(graph.extensions.namespaces["@company/navigation"]).toEqual({
+      producer: "route-document-owner",
+      owners: ["route", "document"],
+      schemaVersion: "1",
+    });
+    const pageRoute = graph.routes.find(
+      (route) => route.target.kind === "page",
+    );
+    expect(pageRoute?.extensions["@company/navigation"]).toEqual({
+      enabled: true,
+      label: "Home",
+    });
+    expect(pageRoute?.parentId).toBe(`${CONFIG_ROUTE_PROVIDER_ID}:route:0`);
+    const layoutRoute = graph.routes.find(
+      (route) => route.facets.layout === "./src/layouts/Section.tsx",
+    );
+    expect(layoutRoute?.extensions["@company/navigation"]).toEqual({
+      enabled: true,
+      label: "group",
+    });
+    const redirectRoute = graph.routes.find(
+      (route) => route.target.kind === "redirect",
+    );
+    expect(redirectRoute?.extensions["@company/navigation"]).toEqual({
+      enabled: true,
+      label: "Legacy",
+    });
+    const sectionRoute = graph.routes.find(
+      (route) =>
+        route.target.kind === "group" &&
+        route.pattern.segments.some(
+          (segment) => segment.kind === "static" && segment.value === "section",
+        ),
+    );
+    expect(sectionRoute?.extensions["@company/navigation"]).toEqual({
+      enabled: true,
+      label: "Section",
+    });
+    expect(graph.documents.index.extensions["@company/navigation"]).toEqual({
+      enabled: true,
+      theme: "dark",
+    });
+    expect(observedRouteKinds.sort()).toEqual([
+      "group",
+      "group",
+      "page",
+      "page",
+      "redirect",
+    ]);
+
+    const unregistered = resolveConfig({
+      application: {
+        routes: [
+          {
+            path: "/",
+            page: "home",
+            extensions: {
+              "@company/missing": true,
+            },
+          },
+        ],
+      },
+    });
+    await expect(createCoreGraph(unregistered, cwd)).rejects.toThrow(
+      'application.routes[0].extensions uses extension namespace "@company/missing", but no plugin routeExtension() registered it',
+    );
+  });
+
+  it("projects canonical page.config Route extensions without changing Page ownership", async () => {
+    const cwd = await createCanonicalPageFixture(`
+      export default {
+        extensions: {
+          "@company/access": { pageLabel: "Home Page" },
+        },
+        route: {
+          extensions: {
+            "@company/access": { policy: "canReadHome" },
+          },
+        },
+      };
+    `);
+    const plugin = definePlugin({
+      name: "canonical-page-route-owner",
+      describe(ctx) {
+        ctx.pageExtension({
+          namespace: "@company/access",
+          schemaVersion: "1",
+        });
+        ctx.routeExtension({
+          namespace: "@company/access",
+          schemaVersion: "1",
+        });
+      },
+    });
+
+    for (const mode of ["spa", "mpa"] as const) {
+      const prepared = await prepareFrameworkBuild(
+        {
+          routing: { mode },
+          plugins: [plugin],
+        },
+        { cwd },
+      );
+      try {
+        const manifest = JSON.parse(
+          await fs.readFile(path.join(cwd, ".ev/manifest.json"), "utf-8"),
+        ) as { graph: CoreGraph };
+        expect(manifest.graph.pages.home.extensions["@company/access"]).toEqual(
+          {
+            pageLabel: "Home Page",
+          },
+        );
+        const route = manifest.graph.routes.find(
+          (candidate) =>
+            candidate.target.kind === "page" &&
+            candidate.target.pageId === "home",
+        );
+        expect(route?.extensions["@company/access"]).toEqual({
+          policy: "canReadHome",
+        });
+        expect(manifest.graph.extensions.namespaces["@company/access"]).toEqual(
+          {
+            producer: "canonical-page-route-owner",
+            owners: ["page", "route"],
+            schemaVersion: "1",
+          },
+        );
+      } finally {
+        await prepared.dispose();
+      }
+    }
+  });
+
+  it("projects page.config Document extensions only to Page-owned Documents", async () => {
+    const cwd = await createCanonicalPageFixture(`
+      export default {
+        document: {
+          aliases: ["home.html"],
+          extensions: {
+            "@company/html": { theme: "dark" },
+          },
+        },
+      };
+    `);
+    const plugin = definePlugin({
+      name: "canonical-page-document-owner",
+      describe(ctx) {
+        ctx.documentExtension({
+          namespace: "@company/html",
+          defaults: ({ aliases }) => ({
+            theme: "light",
+            enabled: true,
+            aliasCount: aliases?.length ?? 0,
+          }),
+        });
+      },
+    });
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        routing: { mode: "mpa" },
+        plugins: [plugin],
+      },
+      { cwd },
+    );
+    try {
+      const manifest = JSON.parse(
+        await fs.readFile(path.join(cwd, ".ev/manifest.json"), "utf-8"),
+      ) as { graph: CoreGraph };
+      expect(manifest.graph.documents.home.extensions["@company/html"]).toEqual(
+        {
+          theme: "dark",
+          enabled: true,
+          aliasCount: 1,
+        },
+      );
+      expect(manifest.graph.extensions.namespaces["@company/html"]).toEqual({
+        producer: "canonical-page-document-owner",
+        owners: ["document"],
+      });
+    } finally {
+      await prepared.dispose();
+    }
+
+    const spaSsgCwd = await createCanonicalPageFixture(`
+      export default {
+        render: "ssg",
+        document: {
+          aliases: ["home.html"],
+          extensions: {
+            "@company/html": { theme: "dark" },
+          },
+        },
+      };
+    `);
+    const spaSsgPrepared = await prepareFrameworkBuild(
+      {
+        routing: { mode: "spa" },
+        plugins: [plugin],
+      },
+      { cwd: spaSsgCwd },
+    );
+    try {
+      const manifest = JSON.parse(
+        await fs.readFile(path.join(spaSsgCwd, ".ev/manifest.json"), "utf-8"),
+      ) as { graph: CoreGraph };
+      const pageDocument = Object.values(manifest.graph.documents).find(
+        (document) =>
+          document.owner.kind === "page" && document.owner.pageId === "home",
+      );
+      expect(pageDocument).toMatchObject({
+        aliases: ["home.html"],
+        extensions: {
+          "@company/html": {
+            theme: "dark",
+            enabled: true,
+            aliasCount: 1,
+          },
+        },
+      });
+    } finally {
+      await spaSsgPrepared.dispose();
+    }
+
+    const defaultsOnlySpaSsgCwd = await createCanonicalPageFixture(`
+      export default {
+        render: "ssg",
+      };
+    `);
+    const defaultsOnlySpaSsgPrepared = await prepareFrameworkBuild(
+      {
+        routing: { mode: "spa" },
+        plugins: [plugin],
+      },
+      { cwd: defaultsOnlySpaSsgCwd },
+    );
+    try {
+      const manifest = JSON.parse(
+        await fs.readFile(
+          path.join(defaultsOnlySpaSsgCwd, ".ev/manifest.json"),
+          "utf-8",
+        ),
+      ) as { graph: CoreGraph };
+      const pageDocument = Object.values(manifest.graph.documents).find(
+        (document) =>
+          document.owner.kind === "page" && document.owner.pageId === "home",
+      );
+      expect(pageDocument).toMatchObject({
+        output: "home/index.html",
+        extensions: {
+          "@company/html": {
+            theme: "light",
+            enabled: true,
+            aliasCount: 0,
+          },
+        },
+      });
+      expect(pageDocument).not.toHaveProperty("aliases");
+    } finally {
+      await defaultsOnlySpaSsgPrepared.dispose();
+    }
+
+    await expect(
+      prepareFrameworkBuild(
+        {
+          routing: { mode: "spa" },
+          plugins: [plugin],
+        },
+        { cwd },
+      ),
+    ).rejects.toThrow(
+      "document requires an independently materialized Page Document",
+    );
+  });
+
+  it("rejects unregistered and multiply-targeted page.config Route extensions", async () => {
+    const cwd = await createCanonicalPageFixture(`
+      export default {
+        route: {
+          extensions: {
+            "@company/access": { policy: "canReadHome" },
+          },
+        },
+      };
+    `);
+    const config = resolveConfig({
+      application: {
+        routes: [
+          { path: "/", page: "home" },
+          { path: "/start", page: "home" },
+        ],
+      },
+      plugins: [
+        definePlugin({
+          name: "route-owner",
+          describe(ctx) {
+            ctx.routeExtension({ namespace: "@company/access" });
+          },
+        }),
+      ],
+    });
+
+    await expect(
+      createCoreGraph(config, cwd, {
+        pluginExtensions: collectPluginExtensionRegistry(config.plugins),
+      }),
+    ).rejects.toThrow(
+      'is ambiguous because Page "home" is targeted by 2 semantic Routes',
+    );
+
+    const unregistered = resolveConfig({
+      application: {
+        routes: [{ path: "/", page: "home" }],
+      },
+    });
+    await expect(createCoreGraph(unregistered, cwd)).rejects.toThrow(
+      "no plugin routeExtension() registered it",
+    );
+  });
+
   it("rejects unknown Application namespaces and missing Applications", () => {
     expect(() =>
       resolvePluginApplicationExtensions(

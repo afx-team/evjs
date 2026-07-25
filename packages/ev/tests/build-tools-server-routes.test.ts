@@ -42,7 +42,7 @@ describe("discoverServerRoutes", () => {
         export const userSchema = {};
       `,
       "src/apis/_helpers/db.ts": `
-        export const GET = async () => Response.json({ ignored: true });
+        export const database = {};
       `,
       "src/apis/types.d.ts": `
         export interface User {}
@@ -94,6 +94,31 @@ describe("discoverServerRoutes", () => {
         path: "/",
         methods: ["GET"],
         moduleSegments: [],
+      },
+    ]);
+  });
+
+  it("diagnoses underscore-prefixed HTTP routes instead of treating them as private", async () => {
+    const cwd = await createFixture({
+      "src/apis/_private/health.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/_helpers/db.ts": `
+        export const database = {};
+      `,
+    });
+
+    const discovery = await discoverServerRoutes(cwd, {
+      dir: "./src/apis",
+    });
+
+    expect(discovery.routes).toEqual([]);
+    expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/apis/_private/health.ts",
+        message:
+          'Static server route segment "_private" must start with a lowercase letter or number and then use only lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~".',
       },
     ]);
   });
@@ -471,6 +496,31 @@ describe("discoverServerConventions", () => {
         file: "src/apis/api/middleware.ts",
         message:
           'Server middleware module export "GET" is not supported. Move helpers to a private module and default-export only the middleware.',
+      },
+    ]);
+  });
+
+  it("diagnoses underscore-prefixed middleware scopes instead of hiding them", async () => {
+    const cwd = await createFixture({
+      "src/apis/_private/middleware.ts": `
+        export default async function middleware(_ctx, next) {
+          await next();
+        }
+      `,
+    });
+
+    const discovery = await discoverServerConventions(cwd, {
+      globalFile: "./src/middleware.ts",
+      routingDir: "./src/apis",
+    });
+
+    expect(discovery.routeMiddlewares).toEqual([]);
+    expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/apis/_private/middleware.ts",
+        message:
+          'Static server middleware scope segment "_private" must start with a lowercase letter or number and then use only lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~".',
       },
     ]);
   });

@@ -101,13 +101,18 @@ materialization.
    components. Non-CSR materialization requires server output; PPR and RSC use
    `render: "ssr"`, and PPR plus RSC on one Page remains unsupported until the
    runtime explicitly supports it.
-9. Plugin-owned static configuration uses one namespaced extension mechanism:
-   top-level `config.extensions` targets the normalized Application, while
-   adjacent `page.config.ts` `extensions` target a Page. Plugins register these
-   owners with `applicationExtension()` and `pageExtension()` respectively.
-   Application values resolve before `setup()`; Page values resolve during
-   graph analysis. Extension values are strict JSON and enter the CoreGraph, so
-   executable callbacks and secrets do not belong there.
+9. Plugin-owned static configuration uses one namespaced extension mechanism
+   across normalized Application, Page, Route, and Document owners. Top-level
+   `config.extensions` targets the Application; adjacent `page.config.ts`
+   `extensions`, `route.extensions`, and `document.extensions` target the
+   canonical Page and its uniquely owned Route or Document. Explicit
+   `application.routes` and `application.document` migration inputs may target
+   Route and Document owners directly. Plugins register the corresponding owner
+   with `applicationExtension()`, `pageExtension()`, `routeExtension()`, or
+   `documentExtension()`. Application values resolve before `setup()`; the
+   other owners resolve during graph analysis. Extension values are strict JSON
+   and enter the CoreGraph, so executable callbacks and secrets do not belong
+   there. Runtime projection remains an explicit plugin responsibility.
 10. `createApp({ framework })` consumes generated `BuildOutput` manifests. Do
    not pass ad hoc manifest objects; use `createReactFrameworkServer()` unless
    a deployment adapter intentionally owns that contract.

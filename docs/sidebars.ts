@@ -37,7 +37,7 @@ const sidebars: SidebarsConfig = {
     {
       type: "category",
       label: "Migration",
-      items: ["plugin-migration-0.2-to-0.3"],
+      items: ["framework-migration-to-0.3", "plugin-migration-0.2-to-0.3"],
     },
     {
       type: "category",

@@ -1,12 +1,14 @@
 # 插件迁移：Core 0.2 到 0.3
 
-本文描述已经确认的 Core 0.3 插件迁移合同。带 namespace 的顶层 Application
-extension、Page extension 与跨 SPA/MPA canonical Page-directory raw-config claim
+本文描述已经确认的 Core 0.3 插件迁移合同。带 namespace 的 Application、Page、
+Route、Document extension，以及跨 SPA/MPA canonical Page-directory 静态配置，
 当前已经可以执行。Graph transform、typed runtime hook、generic semantic facet
-API 和 generic extension entry 仍是目标 API，下文会明确标注。当前 0.2 行为也会
-被明确标出。
+API 和 generic build entry 仍是目标 API，下文会明确标注。当前 0.2 行为也会被
+明确标出。
 
-架构背景见 [Core 0.3 设计 RFC](./core-0.3-rfc)。
+架构背景见 [Core 0.3 设计 RFC](./core-0.3-rfc)。Bigfish、Smallfish 的源码能力
+证据和应用迁移顺序见
+[Bigfish、Smallfish 迁移](./framework-migration-to-0.3)。
 
 ## 迁移结果
 
@@ -36,8 +38,8 @@ Core 0.3 实现的前置要求。
 | --- | --- | --- |
 | `name`、dependencies、optional dependencies | 机械迁移 | plugin identity/dependency graph |
 | `enforce` | 需要复核 | 显式 dependency/order；dependency 优先 |
-| 简单 config default/validation | 机械迁移 | `describe()` Application/Page owner declaration |
-| 任意 raw `config()` mutation | 需要复核 | framework config 使用当前 `config()` hook；有 owner 的静态配置使用 Application/Page extension；ordered normalizer 仍为 planned |
+| 简单 config default/validation | 机械迁移 | 匹配的 `describe()` Application/Page/Route/Document owner declaration |
+| 任意 raw `config()` mutation | 需要复核 | framework config 使用当前 `config()` hook；有 owner 的静态配置使用 namespaced extension；ordered normalizer 仍为 planned |
 | `setup()` 状态 | 通常机械迁移 | project config 校验后的 deterministic state |
 | `emit.module()` / `emit.data()` | 机械迁移 | 保留 opaque-ref 模型的 generated artifact |
 | `emit.entryFacade()` | 需要复核 | wrap 命名 semantic facet 或 materialized entry |
@@ -63,8 +65,8 @@ Core 0.3 实现的前置要求。
 插件 API 的所有 deterministic phase 使用同一 dependency order。`describe()` 对每轮
 resolved plugin configuration 执行一次；dev config reload 会新建一轮 resolution。
 Application extension 在 `setup()` 前解析，并通过 `ctx.config.extensions` 暴露；
-Page extension 更晚针对 normalized Page owner 解析，并可供 `contributions()`
-使用。
+Page、Route、Document extension 更晚针对 normalized graph owner 解析，并可供
+`contributions()` 使用。
 
 ```text
 config
@@ -74,7 +76,7 @@ config
   -> setup
   -> buildStart
   -> discover Pages/Routes/Documents and evaluate page.config.ts
-  -> resolve Page extensions and validate CoreGraph
+  -> resolve Page/Route/Document extensions and validate CoreGraph
   -> create BuildPlan
   -> contributions and target validation
   -> materialize .ev
@@ -100,7 +102,7 @@ bootstrap
   -> discover identities and source scopes
   -> resolve colocated page config
   -> normalize the initial graph
-  -> resolve Page extensions on the Page graph
+  -> resolve Page/Route/Document extensions on the normalized graph
   -> apply declarative graph contributions
   -> final graph validation
   -> declare generated artifacts and semantic facet attachments
@@ -117,11 +119,11 @@ bootstrap
 | `resolve project config` | 先运行 config hook，再合并/校验 discovery 所需的 project/provider config。 | Page root 尚不存在时读取 colocated page config。 |
 | `describe` | 注册 extension owner、default、merge/validation、source provider、capability、runtime hook。 | network call、generated file、读取未校验 config。 |
 | `resolve Application extensions` | 解析已注册的顶层 value，并 deep-freeze 暴露给 `setup()` 的 snapshot。 | 读取 Page-owned config，或把 declaration callback 序列化为 graph data。 |
-| `setup` | 从已校验 config、已解析的 `ctx.config.extensions` 与已声明的本地项目输入分配 deterministic in-memory state。 | 在 Page graph 生成前读取 Page extension；执行 network call、external write、平台 mutation，或使用会改变 graph 的未声明事实。 |
+| `setup` | 从已校验 config、已解析的 `ctx.config.extensions` 与已声明的本地项目输入分配 deterministic in-memory state。 | 在 normalized graph 生成前读取 Page/Route/Document extension；执行 network call、external write、平台 mutation，或使用会改变 graph 的未声明事实。 |
 | `discover` | Provider 声明 Application、Page identity/scope、Route、Document、watch input。 | 修改其他 provider 拥有的 declaration。 |
 | `resolve page config` | 求值内建 Page 字段，并收集 colocated config 中的静态 namespaced value。 | 在 Page identity 存在前按 owner 解析 value，或修改 Page id/provider/scope 等身份字段。 |
 | `normalize` | Core 把 provider declaration 转成初始 immutable graph。 | 向 normalized protocol 加入 provider-specific 字段。 |
-| `resolve Page extensions` | 为每个 normalized Page 解析已注册 default/config/merge/validation，并记录 namespace ownership。 | 把 callback 序列化进 graph 或改变 Page identity。 |
+| `resolve graph extensions` | 为每个 normalized Page、Route、Document 解析已注册 default/config/merge/validation，并记录 namespace ownership。 | 把 callback 序列化进 graph 或改变 owner identity。 |
 | `transform` | 返回 structured graph patch 和带 provenance diagnostic。 | 任意原地修改 graph。 |
 | `final validation` | 每个 patch 后重新执行 identity、conflict、path-shape、target、ownership 校验。 | 通过静默丢弃 declaration 修复冲突。 |
 | `contribute` | 声明 generated module/data/type 及其 semantic facet attachment。 | 写 generated file、修改已校验 identity，或执行 external side effect。 |
@@ -133,7 +135,7 @@ bootstrap
 影响 graph 的本地项目读取必须声明为 watch input。Network call、external write、平台
 mutation 属于 lifecycle，不能为更早的 deterministic phase 暗中提供事实。
 
-## 当前可运行的 Application 与 Page Extension 形态
+## 当前可运行的 Namespaced Extension Owner
 
 canonical 应用在顶层 `ev.config.ts` 中 author Application-owned value：
 
@@ -149,6 +151,30 @@ export default defineConfig({
   },
 });
 ```
+
+同一文件还可以配置该 Page 的唯一 semantic Route，或 Page-owned Document。
+Document value 只有在该 Page 自己物化 Document 时才有效，例如 canonical MPA 或
+SPA SSG：
+
+```ts
+export default definePageConfig({
+  route: {
+    extensions: {
+      "@company/access": { policy: "canReadCheckout" },
+    },
+  },
+  document: {
+    extensions: {
+      "@company/html": { theme: "checkout" },
+    },
+  },
+});
+```
+
+显式 `application.routes` migration input 通过 Route 自己的 `extensions` 字段配置
+Route，包括 componentless layout/group/redirect Route；
+`application.document.extensions` 配置 Application-owned Document。这些输入最终
+normalize 到相同 owner bag，不是第二套 extension 机制。
 
 不要把这些 value 放在 `application.extensions` 下。`application` 仍只用于显式
 Bigfish SPA route-tree 迁移输入。
@@ -234,17 +260,20 @@ export const featurePlugin = definePlugin({
 
 Namespace registry 只有一份 producer contract：
 
-- 一个插件可以为同一 namespace 分别声明一次 `applicationExtension()` 和
-  `pageExtension()`；
+- 一个插件可以为同一 namespace 的每种适用 owner 分别声明一次
+  `applicationExtension()`、`pageExtension()`、`routeExtension()` 与
+  `documentExtension()`；
 - 重复声明同一种 owner 会报错；
 - 其他插件注册同一 namespace 会冲突，即使它声明的是另一种 owner；
-- 两种 owner declaration 必须使用相同的 `schemaVersion`，包括两边都省略；
+- 同一 namespace 的全部 owner declaration 必须使用相同的 `schemaVersion`，包括
+  全部省略；
 - 配置 namespace 却没有对应 owner declaration 会报错。
 
 Application value 在 `describe()` 后、`setup()` 前解析；它在
 `ctx.config.extensions` 中完成 deep freeze，随后复制到 normalized Application
-extension bag。Page value 在 Page graph 构建阶段解析，此时 Page identity 与同目录
-config 都已确定。Contribution view 会暴露两种 owner，无需读取 `.ev` internal。
+extension bag。Page、Route、Document value 在 graph analysis 阶段解析，此时 owner
+identity 与静态输入都已确定。Contribution view 会暴露全部四种 owner，无需读取
+`.ev` internal。
 
 所有 author value、静态 default 与 merge 后的 materialized result 都必须是严格
 static JSON data。Function、Promise、symbol、bigint、非有限数字、class instance、
@@ -254,15 +283,16 @@ build-time option 应移入 plugin factory，runtime 行为应移入通过 opaqu
 与显式 generated contribution 携带的 emitted/imported module。
 
 canonical `page.tsx` anchor 在两种 mode 中都会提供 Page owner，显式 route-tree
-迁移输入必须 normalize 到同一 graph。现有 lifecycle hook、`describe()` 与两种
+迁移输入必须 normalize 到同一 graph。现有 lifecycle hook、`describe()` 与四种
 extension declaration 同属一个 `Plugin` interface，并走唯一实现。不要引入历史
 compatibility layer，也不要增加 `applicationExtensionV2()`、
 `pageExtensionV3()` 之类名称；`schemaVersion` 只对 namespace data 做版本标记，
 不是 API 版本。
 
-Application/Page extension value 不会自动暴露到 runtime；浏览器行为仍需要显式
-generated runtime projection。任意插件持有的 Route/Document extension 在对应 owner
-API 落地前仍会被拒绝。
+Application、Page、Route、Document extension value 不会自动暴露到 runtime；
+浏览器或服务端行为仍需要显式 generated runtime projection。Route/Document value
+只有通过已注册 owner API 与严格静态 authoring input 才会被接受；它们不允许可执行
+callback，也不会触发隐式 runtime injection。
 
 ### 当前 MPA target 行为
 
@@ -326,11 +356,11 @@ config(config) {
 }
 ```
 
-在当前插件 API 中，在同步 `describe()` 中注册 Application 和/或 Page owner、
-default 与 merge/validation callback。顶层 Application value 在 `setup()` 前解析；
-canonical resolver 或显式 route-tree normalizer 随后发现 Page identity/scope，
-registry 在 Page graph 构建阶段解析 namespaced `page.config.ts` value，而且不能
-修改内部 id、source provenance、scope 等身份字段。
+在当前插件 API 中，在同步 `describe()` 中注册适用的 Application、Page、Route、
+Document owner、default 与 merge/validation callback。顶层 Application value 在
+`setup()` 前解析；canonical resolver 或显式 route-tree normalizer 随后发现
+normalized owner，registry 在 graph analysis 阶段解析各 owner 的 namespaced 静态
+输入，而且不能修改内部 id、source provenance、scope 等身份字段。
 通用 schema 生成和有顺序的 cross-field normalizer 仍是未来工作。
 
 显式 Bigfish migration normalizer 会把有限且有源码依据的 access/menu field
@@ -415,10 +445,11 @@ Core 0.3 不通过 compatibility adapter 托管 0.2 plugin object。每个插件
 
 1. 盘点 0.2 plugin 的每个 hook、generated file、target、runtime export、route change、
    bundler mutation。
-2. Application-owned static config 放入已注册的顶层 Application extension，
-   Page-owned static config 放入已注册 Page extension，并分别定义
-   default/merge/validation。不要写入无 owner 的 Route 或 Document extension；
-   等待明确 owner API，或使用现有 generated/lifecycle facet。
+2. 将静态配置放入已注册的 Application、Page、Route 或 Document owner，并分别
+   定义 default/merge/validation。Page、唯一 Route、Page-owned Document 使用
+   canonical `page.config.ts`；显式 migration input 可以配置它声明的 Route 与
+   Application-owned Document。不要把 value 放到 normalized graph 中不存在的
+   owner。
 3. 为每个 generated artifact 选择当前 structured contribution 或 lifecycle hook，
    标出所有依赖 entry name/HTML filename 的 target；需要 planned facet 的缺口单独记录，
    不把它描述成当前 API。
@@ -433,8 +464,8 @@ Core 0.3 不通过 compatibility adapter 托管 0.2 plugin object。每个插件
 ## 迁移插件的必测项
 
 - schema default 与 invalid config diagnostic；
-- Application extension 在 `setup()` 前解析，Page extension 在 normalized Page
-  graph 上解析；
+- Application extension 在 `setup()` 前解析，Page/Route/Document extension 在
+  normalized graph 上解析；
 - duplicate-owner、跨插件 namespace、跨 owner `schemaVersion` 冲突 diagnostic；
 - required/optional dependency 的 deterministic ordering；
 - SPA/MPA 中 `page.wrapper` 都对每个选定 Page projection 恰好生效一次；

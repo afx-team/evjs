@@ -37,8 +37,8 @@ export default defineConfig({
 });
 ```
 
-The resolver returns the qiankun application list, optional route mapping, and
-qiankun framework options as a flat object:
+The resolver returns the qiankun application list and framework options as a
+flat object:
 
 ```ts
 // src/qiankun.master.ts
@@ -52,23 +52,40 @@ export default defineQiankunMasterResolver(async () => ({
       container: "#slave-container",
     },
   ],
-  routes: [
-    {
-      path: "/catalog",
-      microApp: "catalog",
-    },
-  ],
   sandbox: true,
   prefetch: true,
 }));
 ```
 
-`routes` is an evjs plugin convenience, not a router replacement. When an app
-does not already define `activeRule`, the plugin derives it from matching
-`routes[].microApp` and registers the app through qiankun's `registerMicroApps`
-API. Keep the qiankun container mounted by the shell while the master is
-running; route-local containers should be handled by a higher-level plugin that
-turns routes into micro-app components.
+The canonical Route owns the micro-app association next to its `page.tsx`
+anchor:
+
+```ts
+// src/pages/catalog/page.config.ts
+import { definePageConfig } from "@evjs/ev";
+
+export default definePageConfig({
+  route: {
+    extensions: {
+      "@evjs/qiankun": {
+        microApp: "catalog",
+      },
+    },
+  },
+});
+```
+
+The master plugin registers this namespace with `routeExtension()`, validates
+that it targets a static Page Route, and generates the qiankun route mapping
+from the normalized CoreGraph. When an app does not already define
+`activeRule`, the plugin uses that mapping while calling
+`registerMicroApps`. The older resolver-level `routes` array remains readable
+for incremental plugin migration, but new applications should not repeat
+canonical paths there.
+
+Keep the qiankun container mounted by the shell while the master is running;
+route-local containers should be handled by a higher-level plugin that turns
+routes into micro-app components.
 
 ```tsx
 // src/pages/layout.tsx
@@ -305,12 +322,15 @@ export default async function resolveQiankunMaster() {
         container: "#slave-container",
       },
     ],
-    routes: [{ path: "/catalog", microApp: "catalog" }],
     sandbox: true,
     prefetch: true,
   };
 }
 ```
+
+The `/catalog` association still comes from
+`src/pages/catalog/page.config.ts#route.extensions`; the resolver does not
+repeat the path.
 
 Keep this proxy in `dev.proxy`, not in `src/apis`; application API routes should
 not be used as micro-frontend asset proxies.
@@ -337,15 +357,24 @@ pass the returned opaque ref to the qiankun helper:
 // packages/plugin-platform/src/master.ts
 import { merge } from "@evjs/ev/config";
 import type { Plugin } from "@evjs/ev/plugin";
-import { contributeQiankunMaster } from "@evjs/plugin-qiankun";
+import {
+  contributeQiankunMaster,
+  QIANKUN_ROUTE_EXTENSION_NAMESPACE,
+} from "@evjs/plugin-qiankun";
 
 export function evPluginPlatformMicroFrontendMaster(): Plugin {
   return {
     name: "@acme/evjs-platform-mf:master",
+    describe(api) {
+      api.routeExtension({
+        namespace: QIANKUN_ROUTE_EXTENSION_NAMESPACE,
+      });
+    },
     config(config) {
       merge(config, {
         dev: {
           proxy: [
+            ...(config.dev?.proxy ?? []),
             {
               context: ["/__platform_slave"],
               target: "http://localhost:3001",
@@ -373,7 +402,6 @@ export function evPluginPlatformMicroFrontendMaster(): Plugin {
 
           export default defineQiankunMasterResolver(async () => ({
             apps: site.children,
-            routes: site.routes,
             sandbox: site.sandbox ?? true,
             prefetch: site.prefetch ?? true,
           }));
@@ -389,9 +417,15 @@ export function evPluginPlatformMicroFrontendMaster(): Plugin {
 }
 ```
 
-The generated resolver adapts platform metadata to the open qiankun resolver
-shape. The important part is that the resolver is a generated artifact with
-manifest provenance, not an unmanaged temporary file:
+`merge()` replaces arrays, so a platform plugin that appends a proxy must copy
+the existing `config.dev.proxy` entries as shown above. This preserves
+application-owned and earlier plugin-owned proxy rules.
+
+The generated resolver adapts platform application metadata to the open
+qiankun resolver shape. Canonical route associations remain in Page-local
+`route.extensions`; registering the shared namespace lets
+`contributeQiankunMaster()` project them. The resolver remains a generated
+artifact with manifest provenance, not an unmanaged temporary file:
 
 ```ts
 import { defineQiankunMasterResolver } from "@evjs/plugin-qiankun/runtime";
@@ -405,10 +439,6 @@ export default defineQiankunMasterResolver(async () => {
       entry: child.entry,
       container: child.container,
       props: child.props,
-    })),
-    routes: site.routes.map((route) => ({
-      path: route.path,
-      microApp: route.childName,
     })),
     sandbox: site.sandbox ?? true,
     prefetch: site.prefetch ?? true,
@@ -465,13 +495,18 @@ export function evPluginPlatformMicroFrontendSlave(): Plugin {
           applyQiankunSlaveBundlerConfig(config, ctx.bundlerName, qiankunState);
         },
         transformHtml(doc) {
-          applyQiankunSlaveHtmlTransform(doc);
+          applyQiankunSlaveHtmlTransform(doc, qiankunState);
         },
       };
     },
   };
 }
 ```
+
+The state returned by `contributeQiankunSlave()` keeps the generated entry,
+bundler output, and lifecycle proxy on the same inferred application name.
+`applyQiankunSlaveHtmlTransform()` also accepts no state when the default
+`evjs-qiankun-slave` name is intentional.
 
 The generated slave runtime can normalize platform-specific mount props before
 business code observes them:

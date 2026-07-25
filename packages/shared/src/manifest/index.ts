@@ -285,6 +285,8 @@ export interface HtmlPlan {
   id: string;
   template: string;
   fileName: string;
+  /** Additional static paths containing the same transformed HTML Document. */
+  aliases?: string[];
   owner: {
     appId?: string;
     pageId?: string;
@@ -444,6 +446,7 @@ export interface PublicDocumentOutput {
   id: string;
   path: string;
   fileName: string;
+  aliases?: string[];
   render: Extract<RenderMode, "csr" | "ssg">;
   assets?: AssetGroup;
   metadata?: PageMetadata;
@@ -505,6 +508,7 @@ export interface PublicPageOutput {
 
 export interface HtmlDocumentOutput {
   fileName: string;
+  aliases?: string[];
 }
 
 export interface PageRenderingOutput {
@@ -571,6 +575,7 @@ export type DeploymentDocumentOutput =
       kind: "app";
       id: string;
       fileName: string;
+      aliases?: string[];
       fallback?: string;
       assets?: AssetGroup;
     }
@@ -578,6 +583,7 @@ export type DeploymentDocumentOutput =
       kind: "page";
       id: string;
       fileName: string;
+      aliases?: string[];
       assets?: AssetGroup;
     };
 
@@ -745,6 +751,7 @@ export function assertFrameworkManifestShape(
     requireServer,
     apps,
   );
+  assertUniqueManifestDocumentOutputs(apps, pages, source);
   if (
     !requireServer &&
     value.assets !== undefined &&
@@ -988,6 +995,7 @@ function assertPublicDocumentOutputs(value: unknown, source: string): void {
     throw new Error(`[evjs] ${source} must be an array.`);
   }
   const pathOwners = new Map<string, { path: string; source: string }>();
+  const outputOwners = new Map<string, string>();
   for (const [index, document] of value.entries()) {
     const documentSource = `${source}[${index}]`;
     assertObject(document, documentSource);
@@ -998,10 +1006,20 @@ function assertPublicDocumentOutputs(value: unknown, source: string): void {
       `${documentSource}.path`,
       pathOwners,
     );
-    assertHtmlDocumentOutput(
-      { fileName: document.fileName },
-      `${documentSource}`,
-    );
+    assertHtmlDocumentOutput(document, documentSource);
+    for (const output of [
+      document.fileName,
+      ...(Array.isArray(document.aliases) ? document.aliases : []),
+    ]) {
+      if (typeof output !== "string") continue;
+      const previous = outputOwners.get(output);
+      if (previous) {
+        throw new Error(
+          `[evjs] ${documentSource} static output "${output}" conflicts with ${previous}. Document filenames and aliases must be globally unique.`,
+        );
+      }
+      outputOwners.set(output, documentSource);
+    }
     assertStaticDocumentRenderMode(document.render, `${documentSource}.render`);
     if (document.assets !== undefined) {
       assertAssetGroup(document.assets, `${documentSource}.assets`);
@@ -1477,16 +1495,84 @@ function assertPublicPageOutputs(
 function assertHtmlDocumentOutput(value: unknown, source: string): void {
   if (value === undefined) return;
   assertObject(value, source);
-  assertManifestString(value.fileName, `${source}.fileName`);
+  assertHtmlOutputPath(value.fileName, `${source}.fileName`);
   const fileName = value.fileName as string;
+  if (value.aliases === undefined) return;
+  if (!Array.isArray(value.aliases)) {
+    throw new Error(`[evjs] ${source}.aliases must be an array.`);
+  }
+  const seen = new Set<string>();
+  for (const [index, alias] of value.aliases.entries()) {
+    assertHtmlOutputPath(alias, `${source}.aliases[${index}]`);
+    if (alias === fileName) {
+      throw new Error(
+        `[evjs] ${source}.aliases[${index}] must differ from fileName "${fileName}".`,
+      );
+    }
+    if (seen.has(alias as string)) {
+      throw new Error(
+        `[evjs] ${source}.aliases[${index}] duplicates alias "${alias}".`,
+      );
+    }
+    seen.add(alias as string);
+  }
+}
+
+function assertHtmlOutputPath(value: unknown, source: string): void {
+  assertManifestString(value, source);
+  const fileName = value as string;
   if (
+    fileName.trim() !== fileName ||
     fileName.startsWith("/") ||
+    /^[A-Za-z]:\//.test(fileName) ||
     fileName.includes("\\") ||
-    fileName.split("/").includes("..")
+    fileName.includes("?") ||
+    fileName.includes("#") ||
+    fileName.endsWith("/") ||
+    fileName
+      .split("/")
+      .some((segment) => segment === "" || segment === "." || segment === "..")
   ) {
     throw new Error(
-      `[evjs] ${source}.fileName must be a relative output file path.`,
+      `[evjs] ${source} must be a normalized relative output file path.`,
     );
+  }
+  if (!/\.html?$/i.test(fileName)) {
+    throw new Error(
+      `[evjs] ${source} must end with ".html" or ".htm" because a Document output contains HTML.`,
+    );
+  }
+}
+
+function assertUniqueManifestDocumentOutputs(
+  apps: Record<string, unknown>,
+  pages: Record<string, unknown>,
+  source: string,
+): void {
+  const outputs = new Map<string, string>();
+  const visit = (owner: string, value: unknown): void => {
+    if (!isRecord(value) || !isRecord(value.document)) return;
+    const document = value.document;
+    const candidates = [
+      document.fileName,
+      ...(Array.isArray(document.aliases) ? document.aliases : []),
+    ];
+    for (const candidate of candidates) {
+      if (typeof candidate !== "string") continue;
+      const previous = outputs.get(candidate);
+      if (previous) {
+        throw new Error(
+          `[evjs] ${source} static Document output "${candidate}" is owned by both ${previous} and ${owner}. Document filenames and aliases must be globally unique.`,
+        );
+      }
+      outputs.set(candidate, owner);
+    }
+  };
+  for (const [id, app] of Object.entries(apps)) {
+    visit(`Application "${id}"`, app);
+  }
+  for (const [id, page] of Object.entries(pages)) {
+    visit(`Page "${id}"`, page);
   }
 }
 

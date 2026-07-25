@@ -2146,6 +2146,54 @@ describe("build", () => {
     ]);
   });
 
+  it("keeps CoreGraph Document identity immutable through buildOutput hooks", async () => {
+    const cwd = await createSpaProject();
+    const events: string[] = [];
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-document-output",
+      setup() {
+        return {
+          buildOutput(output) {
+            events.push("buildOutput");
+            const document = output.apps.default?.document;
+            if (!document) throw new Error("Expected the SPA Document.");
+            document.aliases = ["legacy.html"];
+          },
+          dispose() {
+            events.push("dispose");
+          },
+        };
+      },
+    };
+
+    await expect(
+      build(
+        {
+          output: { client: "dist" },
+          plugins: [plugin],
+          routing: { mode: "spa" },
+        },
+        {
+          cwd,
+          bundler: createMockBundler(events),
+        },
+      ),
+    ).rejects.toThrow(
+      '[evjs] buildOutput hooks cannot change Application "default" Document fileName or aliases.',
+    );
+
+    expect(fs.existsSync(path.join(cwd, "dist/legacy.html"))).toBe(false);
+    expect(fs.existsSync(path.join(cwd, "dist/deployment-metadata.json"))).toBe(
+      false,
+    );
+    expect(events).toEqual([
+      "bundler.build",
+      "bundler.entries:main",
+      "buildOutput",
+      "dispose",
+    ]);
+  });
+
   it("passes canonical result fields to plugin lifecycle hooks", async () => {
     const cwd = await createSpaProject();
     const events: string[] = [];
@@ -3488,6 +3536,114 @@ describe("build", () => {
     ).resolves.toContain('<main id="app">');
   });
 
+  it("emits one transformed Document to aliases and removes stale aliases", async () => {
+    const cwd = await createProject();
+    const pageConfigFile = path.join(cwd, "src/pages/about/page.config.ts");
+    await writeFile(
+      path.join(cwd, "src/pages/about/page.tsx"),
+      "export default function About() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      pageConfigFile,
+      `
+        export default {
+          document: {
+            aliases: ["about.html", "legacy/about.htm"],
+          },
+        };
+      `,
+      "utf-8",
+    );
+
+    let transformCalls = 0;
+    const frameworkAliases: Array<readonly string[] | undefined> = [];
+    const plugin = definePlugin<Record<string, never>>({
+      name: "document-alias-observer",
+      contributions(ctx) {
+        frameworkAliases.push(
+          ctx.framework.documents.find(
+            (document) =>
+              document.owner.kind === "page" &&
+              document.owner.pageId === "about",
+          )?.aliases,
+        );
+      },
+      setup() {
+        return {
+          transformHtml(doc, ctx) {
+            if (ctx.owner.kind !== "page" || ctx.owner.pageId !== "about") {
+              return;
+            }
+            transformCalls += 1;
+            doc.body?.appendChild(doc.createComment(" alias-transform "));
+          },
+        };
+      },
+    });
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "document-alias-output",
+      capabilities: fullBundlerCapabilities,
+      async build({ plan }) {
+        return {
+          clientEntryAssets: {
+            about: { js: ["about.js"], css: [] },
+          },
+          firstClientEntryAssets: { js: ["about.js"], css: [] },
+          ...serverBuildFacts(plan),
+        };
+      },
+      async dev() {},
+    };
+    const config: Config<Record<string, never>> = {
+      routing: { mode: "mpa" },
+      plugins: [plugin],
+    };
+
+    await build(config, { cwd, bundler });
+
+    const primaryPath = path.join(cwd, "dist/client/about/index.html");
+    const aliasPath = path.join(cwd, "dist/client/about.html");
+    const nestedAliasPath = path.join(cwd, "dist/client/legacy/about.htm");
+    const [primary, alias, nestedAlias] = await Promise.all([
+      fs.promises.readFile(primaryPath, "utf-8"),
+      fs.promises.readFile(aliasPath, "utf-8"),
+      fs.promises.readFile(nestedAliasPath, "utf-8"),
+    ]);
+    expect(alias).toBe(primary);
+    expect(nestedAlias).toBe(primary);
+    expect(primary).toContain("alias-transform");
+    expect(transformCalls).toBe(1);
+    expect(frameworkAliases).toEqual([["about.html", "legacy/about.htm"]]);
+    const firstDeployment = JSON.parse(
+      await fs.promises.readFile(
+        path.join(cwd, "dist/deployment-metadata.json"),
+        "utf-8",
+      ),
+    ) as { documents: unknown[] };
+    expect(firstDeployment.documents).toContainEqual({
+      kind: "page",
+      id: "about",
+      fileName: "about/index.html",
+      aliases: ["about.html", "legacy/about.htm"],
+      assets: { js: ["about.js"], css: [] },
+    });
+
+    await writeFile(pageConfigFile, "export default {};", "utf-8");
+    await build(config, { cwd, bundler });
+
+    expect(transformCalls).toBe(2);
+    expect(frameworkAliases).toEqual([
+      ["about.html", "legacy/about.htm"],
+      undefined,
+    ]);
+    await expect(fs.promises.access(aliasPath)).rejects.toThrow();
+    await expect(fs.promises.access(nestedAliasPath)).rejects.toThrow();
+    await expect(fs.promises.readFile(primaryPath, "utf-8")).resolves.toContain(
+      "alias-transform",
+    );
+  });
+
   it("removes stale default route types when MPA routing uses a custom directory", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
@@ -4635,7 +4791,7 @@ describe("build", () => {
     );
     expect((error as Error).message).toContain("src/pages/contact us/page.tsx");
     expect((error as Error).message).toContain(
-      'Static page route segment "contact us" must use URL-safe characters: letters, numbers, ".", "_", "-", or "~". Rename the route directory to a URL-safe segment.',
+      'Static page route segment "contact us" must start with a letter or number and then use only URL-safe characters: letters, numbers, ".", "_", "-", or "~". Rename the route directory to a URL-safe segment.',
     );
     expect((error as Error).message).toContain("src/pages/users/$123/page.tsx");
     expect((error as Error).message).toContain(
@@ -6933,6 +7089,90 @@ describe("dev", () => {
     expect(events).toEqual([
       "bundler.dev",
       "update:true:0:1:Updated title:Updated description",
+    ]);
+  });
+
+  it("adds and removes static Document aliases during dev updates", async () => {
+    const cwd = await createProject();
+    const pageConfigPath = path.join(cwd, "src/pages/about/page.config.ts");
+    await writeFile(
+      path.join(cwd, "src/pages/about/page.tsx"),
+      "export default function About() { return null; }",
+      "utf-8",
+    );
+    await writeFile(pageConfigPath, "export default {};", "utf-8");
+
+    const events: string[] = [];
+    let updateCount = 0;
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "document-alias-dev",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ plan, callbacks }) {
+        const facts: BundlerBuildFacts = {
+          clientEntryAssets: {
+            about: { js: ["about.js"], css: [] },
+          },
+          firstClientEntryAssets: { js: ["about.js"], css: [] },
+        };
+        await callbacks.onBuildFacts(facts);
+        const aliasPath = path.resolve(
+          cwd,
+          plan.output.clientDir,
+          "about.html",
+        );
+        events.push(`initial:${fs.existsSync(aliasPath)}`);
+        return {
+          async updatePlan(update) {
+            updateCount += 1;
+            const aliases = update.next.html[0]?.aliases?.join(",") ?? "none";
+            events.push(
+              `update:${updateCount}:${update.html.changed.length}:${aliases}`,
+            );
+            await callbacks.onBuildFacts(facts, { isRebuild: true });
+            events.push(`alias:${updateCount}:${fs.existsSync(aliasPath)}`);
+            if (updateCount === 1) {
+              await writeFile(pageConfigPath, "export default {};", "utf-8");
+            } else {
+              process.emit("SIGINT");
+            }
+          },
+        };
+      },
+    };
+
+    const running = dev(
+      {
+        routing: { mode: "mpa" },
+      },
+      { cwd, bundler },
+    );
+
+    await waitForEvent(events, "initial:false");
+    await writeFile(
+      pageConfigPath,
+      'export default { document: { aliases: ["about.html"] } };',
+      "utf-8",
+    );
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("dev Document alias update timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual([
+      "initial:false",
+      "update:1:1:about.html",
+      "alias:1:true",
+      "update:2:1:none",
+      "alias:2:false",
     ]);
   });
 

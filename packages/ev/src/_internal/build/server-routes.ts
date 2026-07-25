@@ -8,7 +8,6 @@ import type {
 import { collectModuleExportNames } from "./module-exports.js";
 import {
   findPageRouteSegmentConventionViolation,
-  isIgnoredPageRouteSegment,
   isPageRouteGroupSegment,
   isPageRouteSourceModuleFile,
   normalizePageRouteConventionPath,
@@ -152,7 +151,6 @@ function parseServerRouteFile(
   const withoutExt = normalizedRouteRel.slice(0, -extension.length);
   const segments = withoutExt.split("/").filter(Boolean);
   if (segments.length === 0) return undefined;
-  if (segments.some(isIgnoredPageRouteSegment)) return undefined;
 
   const name = segments[segments.length - 1] ?? "";
   const routeSegments = name === "index" ? segments.slice(0, -1) : segments;
@@ -166,31 +164,6 @@ async function analyzeServerRouteFile(
   diagnosticFile: string,
 ): Promise<ServerRouteFileAnalysis> {
   const diagnostics: ServerRouteDiscoveryDiagnostic[] = [];
-  const methodSuffix = getMethodSuffix(path.basename(absolute));
-  if (methodSuffix) {
-    diagnostics.push({
-      level: "error",
-      file: diagnosticFile,
-      message: `Server route method suffix files are not supported. Rename "${path.basename(
-        absolute,
-      )}" so the URL path comes from the file path and HTTP methods come from uppercase exports such as "${methodSuffix.toUpperCase()}".`,
-    });
-    return { diagnostics };
-  }
-
-  const segmentViolation = findPageRouteSegmentConventionViolation(segments, {
-    allowCasePreservingStatic: false,
-    allowCatchAll: false,
-  });
-  if (segmentViolation) {
-    diagnostics.push({
-      level: "error",
-      file: diagnosticFile,
-      message: formatServerRouteSegmentConventionViolation(segmentViolation),
-    });
-    return { diagnostics };
-  }
-
   const source = await fs.readFile(absolute, "utf-8");
   const { ast, error } = parseRouteModuleWithError(source);
   if (!ast) {
@@ -217,6 +190,31 @@ async function analyzeServerRouteFile(
     lowercaseMethods.length > 0 ||
     routeModuleMiddlewareExports.length > 0;
   if (!hasRouteExport) return { diagnostics };
+
+  const methodSuffix = getMethodSuffix(path.basename(absolute));
+  if (methodSuffix) {
+    diagnostics.push({
+      level: "error",
+      file: diagnosticFile,
+      message: `Server route method suffix files are not supported. Rename "${path.basename(
+        absolute,
+      )}" so the URL path comes from the file path and HTTP methods come from uppercase exports such as "${methodSuffix.toUpperCase()}".`,
+    });
+    return { diagnostics };
+  }
+
+  const segmentViolation = findPageRouteSegmentConventionViolation(segments, {
+    allowCasePreservingStatic: false,
+    allowCatchAll: false,
+  });
+  if (segmentViolation) {
+    diagnostics.push({
+      level: "error",
+      file: diagnosticFile,
+      message: formatServerRouteSegmentConventionViolation(segmentViolation),
+    });
+    return { diagnostics };
+  }
 
   if (isRouteSentinelFilename(path.basename(absolute))) {
     diagnostics.push({
@@ -444,7 +442,7 @@ function formatServerRouteSegmentConventionViolation(
   if (violation.kind === "duplicate-dynamic") {
     return `Dynamic server route segment "${violation.segment}" repeats a param name. Use unique dynamic param filenames within one route path.`;
   }
-  return `Static server route segment "${violation.segment}" must use lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~".`;
+  return `Static server route segment "${violation.segment}" must start with a lowercase letter or number and then use only lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~".`;
 }
 
 function createDuplicateServerRoutePathDiagnostic(

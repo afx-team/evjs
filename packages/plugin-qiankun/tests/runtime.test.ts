@@ -62,6 +62,51 @@ describe("@evjs/plugin-qiankun runtime", () => {
     });
   });
 
+  it("merges CoreGraph route mappings with legacy resolver routes", async () => {
+    qiankun.registerMicroApps.mockClear();
+    qiankun.start.mockClear();
+    const container = createElement();
+
+    const options = await startQiankunMaster(
+      async () => ({
+        apps: [
+          {
+            name: "catalog",
+            entry: "https://example.com/catalog/",
+            container,
+          },
+        ],
+        routes: [{ path: "/legacy-catalog", microApp: "catalog" }],
+      }),
+      [{ path: "/catalog", microApp: "catalog" }],
+    );
+
+    expect(qiankun.registerMicroApps).toHaveBeenCalledWith([
+      {
+        name: "catalog",
+        entry: "https://example.com/catalog/",
+        container,
+        activeRule: ["/catalog", "/legacy-catalog"],
+      },
+    ]);
+    expect(options.routes).toEqual([
+      { path: "/catalog", microApp: "catalog" },
+      { path: "/legacy-catalog", microApp: "catalog" },
+    ]);
+
+    await expect(
+      startQiankunMaster(
+        async () => ({
+          apps: [],
+          routes: [{ path: "/catalog", microApp: "other" }],
+        }),
+        [{ path: "/catalog", microApp: "catalog" }],
+      ),
+    ).rejects.toThrow(
+      'Route "/catalog" maps to both micro-app "catalog" and "other"',
+    );
+  });
+
   it("resolves master app selector containers before registering apps", async () => {
     const originalDocument = Object.getOwnPropertyDescriptor(
       globalThis,

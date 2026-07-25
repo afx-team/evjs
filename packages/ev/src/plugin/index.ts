@@ -223,6 +223,30 @@ export interface PluginPageExtensionContext {
   readonly configSource?: string;
 }
 
+/** Context available while a client Route extension value is resolved. */
+export interface PluginRouteExtensionContext {
+  readonly routeId: string;
+  readonly applicationId: string;
+  readonly parentId?: string;
+  readonly pattern: DeepReadonly<CoreRoutePattern>;
+  readonly target: DeepReadonly<CoreClientRouteTarget>;
+  readonly facets: DeepReadonly<CoreRouteFacets>;
+  readonly source?: string;
+}
+
+/** Context available while a Document extension value is resolved. */
+export interface PluginDocumentExtensionContext {
+  readonly documentId: string;
+  readonly applicationId: string;
+  readonly template: string;
+  readonly output: string;
+  readonly aliases?: readonly string[];
+  readonly owner: DeepReadonly<CoreDocumentOwner>;
+  readonly mount?: string;
+  readonly bootstrap?: DeepReadonly<CoreDocumentBootstrap>;
+  readonly source?: string;
+}
+
 /** Shared declaration shape for a plugin-owned CoreGraph extension. */
 export interface PluginExtensionDefinition<
   TValue = unknown,
@@ -274,6 +298,22 @@ export type PluginPageExtensionDefinition<
   TConfigured = unknown,
 > = PluginExtensionDefinition<TValue, TConfigured, PluginPageExtensionContext>;
 
+/** Declarative client Route extension registered by a plugin descriptor. */
+export type PluginRouteExtensionDefinition<
+  TValue = unknown,
+  TConfigured = unknown,
+> = PluginExtensionDefinition<TValue, TConfigured, PluginRouteExtensionContext>;
+
+/** Declarative Document extension registered by a plugin descriptor. */
+export type PluginDocumentExtensionDefinition<
+  TValue = unknown,
+  TConfigured = unknown,
+> = PluginExtensionDefinition<
+  TValue,
+  TConfigured,
+  PluginDocumentExtensionContext
+>;
+
 /** Registration context passed to a plugin's `describe` hook. */
 export interface PluginDescribeContext {
   applicationExtension<TValue = unknown, TConfigured = unknown>(
@@ -282,6 +322,14 @@ export interface PluginDescribeContext {
   ): void;
   pageExtension<TValue = unknown, TConfigured = unknown>(
     definition: PluginPageExtensionDefinition<TValue, TConfigured>,
+    ...check: StaticExtensionCheck<TValue, TConfigured>
+  ): void;
+  routeExtension<TValue = unknown, TConfigured = unknown>(
+    definition: PluginRouteExtensionDefinition<TValue, TConfigured>,
+    ...check: StaticExtensionCheck<TValue, TConfigured>
+  ): void;
+  documentExtension<TValue = unknown, TConfigured = unknown>(
+    definition: PluginDocumentExtensionDefinition<TValue, TConfigured>,
     ...check: StaticExtensionCheck<TValue, TConfigured>
   ): void;
 }
@@ -408,6 +456,7 @@ export interface FrameworkDocumentView {
   readonly id: string;
   readonly template: string;
   readonly output: string;
+  readonly aliases?: readonly string[];
   readonly applicationId: string;
   readonly owner: DeepReadonly<CoreDocumentOwner>;
   readonly mount?: string;
@@ -731,6 +780,7 @@ export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig> {
    * Deployment adapters should prefer buildEnd().deploymentMetadata for the
    * canonical deployable artifact shape, and use this hook only when they need
    * to add data to the in-memory BuildOutput before projection.
+   * CoreGraph-owned Document file names and aliases are immutable here.
    */
   buildOutput?: (
     output: BuildOutput,

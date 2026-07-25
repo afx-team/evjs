@@ -51,10 +51,11 @@ export function applyResolvedPageConfigs(
     );
   }
   if (!changed) return graph;
-  const resolved: CoreGraph = {
+  let resolved: CoreGraph = {
     ...graph,
     pages,
   };
+  resolved = materializeSpaPageDocuments(resolved, pageConfigs);
   assertCoreGraph(resolved, "resolved Page config CoreGraph");
   return resolved;
 }
@@ -290,7 +291,16 @@ export function createPageAnchorGraph(
       pages,
       routes,
       documents,
+      pageConfigs,
     );
+  } else {
+    materializeSpaPageDocumentsInPlace({
+      applications,
+      pages,
+      routes,
+      documents,
+      pageConfigs,
+    });
   }
 
   const coreGraph: CoreGraph = {
@@ -398,6 +408,7 @@ function materializePageAnchorMpaDocuments(
   pages: Record<string, CorePageNode>,
   routes: CoreRouteNode[],
   documents: Record<string, CoreDocumentNode>,
+  pageConfigs: Record<string, ResolvedPageFileConfig>,
 ): void {
   const application = getOwn(applications, "default");
   if (!application) {
@@ -430,11 +441,19 @@ function materializePageAnchorMpaDocuments(
       );
     }
     const output = createCanonicalMpaDocumentOutput(route);
+    const resolvedPageConfig = getOwn(pageConfigs, pageId);
+    const aliases = resolvedPageConfig?.document?.aliases;
+    if (aliases?.length && page.render !== "csr" && page.render !== "ssg") {
+      throw new Error(
+        `[evjs] Page "${pageId}" config "${resolvedPageConfig?.source ?? page.source.config ?? page.source.module}" document.aliases requires a static Page-owned Document. Render mode "${page.render}" uses a request-time Document.`,
+      );
+    }
     const documentId = pageId;
     defineRecordValue(documents, documentId, {
       id: documentId,
       template: pageFact.html ?? config.routing.html,
       output,
+      ...(aliases?.length ? { aliases: [...aliases] } : {}),
       applicationId: route.applicationId,
       owner: { kind: "page", pageId },
       mount: config.routing.mount,
@@ -456,6 +475,179 @@ function materializePageAnchorMpaDocuments(
       );
     }
   }
+}
+
+function materializeSpaPageDocuments(
+  graph: CoreGraph,
+  pageConfigs: Record<string, ResolvedPageFileConfig>,
+): CoreGraph {
+  if (
+    !Object.values(graph.pages).some((page) => {
+      const application = getOwn(graph.applications, page.applicationId);
+      const config = getOwn(pageConfigs, page.id);
+      return (
+        application?.routingMode === "spa" &&
+        (page.render === "ssg" || config?.document !== undefined)
+      );
+    })
+  ) {
+    return graph;
+  }
+  const applications = cloneRecord(graph.applications, (application) => ({
+    ...application,
+    pageIds: [...application.pageIds],
+    routeIds: [...application.routeIds],
+    documentIds: [...application.documentIds],
+  }));
+  const documents = cloneRecord(graph.documents, (document) => ({
+    ...document,
+    ...(document.aliases ? { aliases: [...document.aliases] } : {}),
+  }));
+  materializeSpaPageDocumentsInPlace({
+    applications,
+    pages: graph.pages,
+    routes: graph.routes,
+    documents,
+    pageConfigs,
+  });
+  return {
+    ...graph,
+    applications,
+    documents,
+  };
+}
+
+function materializeSpaPageDocumentsInPlace(options: {
+  applications: Record<string, CoreApplicationNode>;
+  pages: Record<string, CorePageNode>;
+  routes: CoreRouteNode[];
+  documents: Record<string, CoreDocumentNode>;
+  pageConfigs: Record<string, ResolvedPageFileConfig>;
+}): void {
+  const { applications, pages, routes, documents, pageConfigs } = options;
+  for (const [pageId, page] of Object.entries(pages)) {
+    const config = getOwn(pageConfigs, pageId);
+    const application = getOwn(applications, page.applicationId);
+    if (!application || application.routingMode !== "spa") continue;
+    if (!config?.document && page.render !== "ssg") continue;
+    if (page.render !== "ssg") {
+      throw new Error(
+        `[evjs] Page "${pageId}" config "${config?.source ?? page.source.config ?? page.source.module}" document requires an independently materialized Page Document. SPA render mode "${page.render}" shares its Application Document; use render "ssg" or move Document configuration to the Application owner.`,
+      );
+    }
+    const source = config?.source ?? page.source.config ?? page.source.module;
+    const pageRoutes = routes.filter(
+      (route): route is CorePageClientRoute =>
+        route.target.kind === "page" && route.target.pageId === pageId,
+    );
+    if (pageRoutes.length !== 1) {
+      throw new Error(
+        `[evjs] SPA SSG Page "${pageId}" config "${source}" requires exactly one semantic Route to materialize its Page-owned Document; found ${pageRoutes.length}.`,
+      );
+    }
+    const route = pageRoutes[0];
+    if (!route) continue;
+    const output = createStaticPageDocumentOutput(route.pattern);
+    if (!output) {
+      throw new Error(
+        `[evjs] SPA SSG Page "${pageId}" config "${source}" cannot materialize dynamic Route "${formatRoutePattern(route.pattern)}" as one static HTML output.`,
+      );
+    }
+    const applicationDocument = Object.values(documents).find(
+      (document) =>
+        document.applicationId === application.id &&
+        document.owner.kind === "application",
+    );
+    if (!applicationDocument) {
+      throw new Error(
+        `[evjs] SPA SSG Page "${pageId}" config "${source}" requires an Application Document template.`,
+      );
+    }
+    if (
+      Object.values(documents).some(
+        (document) =>
+          document.owner.kind === "page" && document.owner.pageId === pageId,
+      )
+    ) {
+      throw new Error(
+        `[evjs] SPA SSG Page "${pageId}" config "${source}" already owns a Document.`,
+      );
+    }
+    const documentId = createPageDocumentId(pageId, documents);
+    const aliases = config?.document?.aliases;
+    defineRecordValue(documents, documentId, {
+      id: documentId,
+      template: applicationDocument.template,
+      output,
+      ...(aliases?.length ? { aliases: [...aliases] } : {}),
+      applicationId: application.id,
+      owner: { kind: "page", pageId },
+      ...(applicationDocument.mount
+        ? { mount: applicationDocument.mount }
+        : {}),
+      bootstrap: { kind: "page", pageId },
+      extensions: {},
+      provenance: {
+        producer: page.provenance.producer,
+        source,
+      },
+    });
+    application.documentIds.push(documentId);
+    if (applicationDocument.output === output) {
+      applicationDocument.output = createApplicationFallbackOutput(
+        application.id,
+        documents,
+        applicationDocument.id,
+      );
+    }
+  }
+}
+
+function createPageDocumentId(
+  pageId: string,
+  documents: Record<string, CoreDocumentNode>,
+): string {
+  if (!getOwn(documents, pageId)) return pageId;
+  const base = `page:${pageId}`;
+  if (!getOwn(documents, base)) return base;
+  let suffix = 2;
+  while (getOwn(documents, `${base}:${suffix}`)) suffix += 1;
+  return `${base}:${suffix}`;
+}
+
+function createApplicationFallbackOutput(
+  applicationId: string,
+  documents: Record<string, CoreDocumentNode>,
+  documentId: string,
+): string {
+  const occupied = new Set(
+    Object.values(documents).flatMap((document) =>
+      document.id === documentId
+        ? []
+        : [document.output, ...(document.aliases ?? [])],
+    ),
+  );
+  const slug = applicationId.replace(/[^A-Za-z0-9._~-]+/g, "_") || "app";
+  let output = `__evjs/${slug}.html`;
+  let suffix = 2;
+  while (occupied.has(output)) {
+    output = `__evjs/${slug}-${suffix}.html`;
+    suffix += 1;
+  }
+  return output;
+}
+
+function formatRoutePattern(pattern: CoreRoutePattern): string {
+  if (pattern.segments.length === 0) return "/";
+  return `/${pattern.segments
+    .map((segment) =>
+      segment.kind === "static"
+        ? segment.value
+        : segment.kind === "param"
+          ? `$${segment.name}`
+          : `$...${segment.name}`,
+    )
+    .join("/")}`;
 }
 
 function createCanonicalMpaDocumentOutput(route: CoreClientRouteNode): string {
@@ -500,6 +692,17 @@ function parseRoutePattern(pathname: string): CoreRoutePattern {
 
 function createRecord<T>(): Record<string, T> {
   return {};
+}
+
+function cloneRecord<T>(
+  record: Record<string, T>,
+  clone: (value: T) => T,
+): Record<string, T> {
+  const resolved = createRecord<T>();
+  for (const [key, value] of Object.entries(record)) {
+    defineRecordValue(resolved, key, clone(value));
+  }
+  return resolved;
 }
 
 function defineRecordValue<T>(

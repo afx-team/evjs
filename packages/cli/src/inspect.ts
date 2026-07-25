@@ -138,7 +138,10 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
       return `${entry.name}: ${entry.kind}/${entry.environment}`;
     });
     appendList(lines, "HTML Documents", result.buildPlan.html, (document) => {
-      return `${document.id}: ${document.fileName}`;
+      const aliases = document.aliases?.length
+        ? ` (aliases: ${document.aliases.join(", ")})`
+        : "";
+      return `${document.id}: ${document.fileName}${aliases}`;
     });
   }
 

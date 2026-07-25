@@ -5,7 +5,6 @@ import type { Expression, ModuleItem } from "@swc/types";
 import { collectModuleExportNames } from "./module-exports.js";
 import {
   findPageRouteSegmentConventionViolation,
-  isIgnoredPageRouteSegment,
   isPageRouteSourceModuleFile,
   normalizePageRouteConventionPath,
   type PageRouteSegmentConventionViolation,
@@ -247,7 +246,6 @@ async function collectMiddlewareFilesInTree(
 
     for (const entry of entries) {
       if (entry.name.startsWith(".")) continue;
-      if (isIgnoredPageRouteSegment(entry.name)) continue;
 
       const absolute = path.join(current, entry.name);
       if (!isInsideCwd(cwd, absolute)) continue;
@@ -283,7 +281,6 @@ function parseRouteMiddlewareFile(
   const segments = withoutExt.split("/").filter(Boolean);
   if (segments.length === 0) return undefined;
   const scopeSegments = segments.slice(0, -1);
-  if (scopeSegments.some(isIgnoredPageRouteSegment)) return undefined;
   return { scopeSegments };
 }
 
@@ -489,7 +486,7 @@ function formatServerMiddlewareSegmentConventionViolation(
   if (violation.kind === "duplicate-dynamic") {
     return `Dynamic server middleware scope segment "${violation.segment}" repeats a param name. Use unique dynamic param directories within one route path.`;
   }
-  return `Static server middleware scope segment "${violation.segment}" must use lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~".`;
+  return `Static server middleware scope segment "${violation.segment}" must start with a lowercase letter or number and then use only lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~".`;
 }
 
 function toDiagnosticPath(projectPath: string): string {

@@ -5,7 +5,9 @@ being delivered incrementally.
 
 This RFC defines the Core 0.3 Page-and-Route model shared by SPA and MPA
 applications. It also defines how Bigfish, Smallfish, and evjs 0.2 source
-models move to canonical authoring.
+models move to canonical authoring. The source revisions, detailed capability
+matrix, and application playbooks are recorded in
+[Bigfish and Smallfish Migration](./framework-migration-to-0.3).
 
 ## Decision
 
@@ -31,9 +33,10 @@ src/pages/
 - `routing.mode` chooses SPA or MPA materialization for the same semantic Page
   and Route tree.
 - Colocated files, including `index.tsx`, remain ordinary Page-private source.
-- Plugin-owned Application configuration lives in top-level
-  `config.extensions`; Page configuration lives in adjacent
-  `page.config.ts` `extensions`. Both use registered namespaces.
+- Plugin-owned Application, Page, Route, and Document configuration uses one
+  registered namespace mechanism. Top-level `config.extensions` targets the
+  Application; adjacent `page.config.ts` targets its Page, unique Route, or
+  Page-owned Document.
 - Core `title` and named `meta` are materialized by the framework. A plugin
   must explicitly project any extension data or behavior it needs at runtime.
 
@@ -59,8 +62,8 @@ Page filename.
 2. Give Page identity, scope, route identity, and Page capability data the same
    meaning in both modes.
 3. Separate build-time configuration from executable runtime code.
-4. Give plugins stable, namespaced Application/Page configuration and
-   normalized graph owners.
+4. Give plugins stable, namespaced Application/Page/Route/Document
+   configuration and normalized graph owners.
 5. Make source migration explicit without turning stored framework dialects
    into permanent runtime readers.
 
@@ -233,9 +236,9 @@ running a migrated application on Core 0.3.
 
 ### Plugin extensions
 
-Plugin-owned Application data is authored at the top level of `ev.config.ts`;
-Page data is authored in the adjacent `page.config.ts`. Both must use globally
-namespaced keys:
+Plugin-owned Application data is authored at the top level of `ev.config.ts`.
+Page data and its unique Route or Page-owned Document data are authored in the
+adjacent `page.config.ts`. All owners must use globally namespaced keys:
 
 ```ts
 // ev.config.ts
@@ -262,12 +265,25 @@ export default definePageConfig({
       role: "operator",
     },
   },
+  route: {
+    extensions: {
+      "@company/access": {
+        policy: "canReadAdmin",
+      },
+    },
+  },
 });
 ```
 
+`document.extensions` in the same file targets a Page-owned Document only when
+the Page materializes one, such as canonical MPA or SPA SSG. Explicit
+`application.routes[].extensions` and `application.document.extensions`
+migration inputs target their normalized Route and Application-owned Document.
+They feed the same registry.
+
 The owning plugin registers each owner in synchronous `describe()`. One plugin
-may register the same namespace once for Application and once for Page; the
-namespace still has one producer and one schema version:
+may register the same namespace once for each Application, Page, Route, and
+Document owner; the namespace still has one producer and one schema version:
 
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
@@ -287,6 +303,16 @@ export const accessPlugin = definePlugin({
       validate(value) {
         return typeof value.role === "string" || "role must be a string";
       },
+    });
+    api.routeExtension({
+      namespace: "@company/access",
+      schemaVersion: "1",
+      defaults: { policy: "public" },
+    });
+    api.documentExtension({
+      namespace: "@company/access",
+      schemaVersion: "1",
+      defaults: { theme: "default" },
     });
   },
   setup(ctx) {
@@ -308,18 +334,19 @@ export const accessPlugin = definePlugin({
 
 Application extensions are resolved after `describe()` and before `setup()`.
 Their isolated, deeply frozen result is exposed as `ctx.config.extensions` and
-later stored on the normalized Application. Page extensions resolve later,
-while canonical Page config is applied to the normalized Page graph; their
-values are available from `ctx.framework.pages` in `contributions()`, not from
+later stored on the normalized Application. Page, Route, and Document
+extensions resolve later during graph analysis; their values are available
+from the corresponding `ctx.framework` views in `contributions()`, not from
 pre-graph `setup()`.
 
 The extension registry enforces one contract per namespace:
 
-- the same plugin may register one Application owner and one Page owner;
-- registering either owner twice is an error;
+- the same plugin may register one owner of each Application, Page, Route, and
+  Document kind;
+- registering any owner twice is an error;
 - another plugin cannot register that namespace for any owner;
-- Application and Page declarations for the same namespace must use exactly
-  the same `schemaVersion`, including both omitting it;
+- all declarations for the same namespace must use exactly the same
+  `schemaVersion`, including all omitting it;
 - unregistered configured namespaces are errors.
 
 Configured values, static defaults, and values returned by `defaults` or
@@ -329,9 +356,10 @@ stored in the graph. Move executable build options into the plugin factory;
 move executable runtime behavior into an emitted/imported module referenced
 through an opaque module ref and an explicit generated contribution.
 
-The API remains the single `applicationExtension()` / `pageExtension()`
-implementation. `schemaVersion` describes the namespace data contract; it does
-not select a version-suffixed API or a compatibility runtime.
+The API remains one implementation exposed through `applicationExtension()`,
+`pageExtension()`, `routeExtension()`, and `documentExtension()`.
+`schemaVersion` describes the namespace data contract; it does not select a
+version-suffixed API or a compatibility runtime.
 
 ### Build-time and runtime phases
 
@@ -343,14 +371,14 @@ manifest.
 
 ```text
 plugin describe()
-  -> register Application/Page namespace owners
+  -> register Application/Page/Route/Document namespace owners
   -> resolve top-level Application extensions
   -> plugin setup(ctx.config.extensions)
   -> discover Page identities and scopes
   -> evaluate adjacent page.config.ts
   -> normalize the Page graph
-  -> resolve Page extensions against normalized Page owners
-  -> CoreGraph Application/Page extension bags and namespace registry
+  -> resolve Page/Route/Document extensions against normalized owners
+  -> CoreGraph owner extension bags and namespace registry
   -> core title/meta/rendering materialization
   -> optional explicit plugin runtime projection
 ```
@@ -518,12 +546,16 @@ than selected through a compatibility reader or runtime.
 
 ## Next Stage: Plugin Migration
 
-After the Application/Page config contract is stable, the next stage is to map
-existing Bigfish and Smallfish plugin behavior by semantic owner and phase:
+With the Application/Page/Route/Document config contract stable, plugin
+migration maps existing Bigfish and Smallfish behavior by semantic owner and
+phase:
 
 - Application config defaults/merge/validation ->
   `describe().applicationExtension()`;
 - Page config defaults/merge/validation -> `describe().pageExtension()`;
+- Route config defaults/merge/validation -> `describe().routeExtension()`;
+- Document config defaults/merge/validation ->
+  `describe().documentExtension()`;
 - static Page title/named meta -> core Page metadata;
 - plugin-owned Page build metadata -> normalized Page extensions;
 - route definition behavior -> Route facets;

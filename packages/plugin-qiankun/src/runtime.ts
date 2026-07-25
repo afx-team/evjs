@@ -83,14 +83,16 @@ export function resolveQiankunModuleExport<T>(
 
 export async function startQiankunMaster(
   resolver: QiankunMasterResolver,
+  graphRoutes: readonly QiankunMicroAppRoute[] = [],
 ): Promise<QiankunMasterOptions> {
   const masterOptions = await resolver();
   const {
     apps = [],
-    routes = [],
+    routes: resolverRoutes = [],
     appNameKeyAlias,
     ...frameworkOptions
   } = masterOptions;
+  const routes = mergeQiankunRouteMappings(graphRoutes, resolverRoutes);
   const qiankun = await importQiankun();
   const registeredApps = normalizeRegisteredApps(
     applyRouteActiveRules(apps, routes, appNameKeyAlias),
@@ -100,7 +102,40 @@ export async function startQiankunMaster(
     qiankun.registerMicroApps(registeredApps);
   }
   qiankun.start(frameworkOptions);
-  return masterOptions;
+  return graphRoutes.length > 0 ? { ...masterOptions, routes } : masterOptions;
+}
+
+function mergeQiankunRouteMappings(
+  graphRoutes: readonly QiankunMicroAppRoute[],
+  resolverRoutes: readonly QiankunMicroAppRoute[],
+): QiankunMicroAppRoute[] {
+  const routes = new Map<string, QiankunMicroAppRoute>();
+  for (const [source, values] of [
+    ["CoreGraph Route extensions", graphRoutes],
+    ["resolver.routes", resolverRoutes],
+  ] as const) {
+    for (const route of values) {
+      if (
+        !route ||
+        typeof route.path !== "string" ||
+        !route.path.startsWith("/") ||
+        typeof route.microApp !== "string" ||
+        !route.microApp.trim()
+      ) {
+        throw new Error(
+          `[evjs:plugin-qiankun] ${source} entries require an absolute path and a non-empty microApp.`,
+        );
+      }
+      const previous = routes.get(route.path);
+      if (previous && previous.microApp !== route.microApp) {
+        throw new Error(
+          `[evjs:plugin-qiankun] Route "${route.path}" maps to both micro-app "${previous.microApp}" and "${route.microApp}".`,
+        );
+      }
+      routes.set(route.path, route);
+    }
+  }
+  return [...routes.values()];
 }
 
 export function createQiankunSlaveLifecycles(options: {

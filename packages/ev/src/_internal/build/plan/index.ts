@@ -40,6 +40,8 @@ const DEFAULT_RESOLVE_ALIAS = {
 interface BuildApplicationFacts {
   id: string;
   html: string;
+  documentOutput: string;
+  documentAliases?: string[];
   mount?: string;
   rootModule?: string;
 }
@@ -65,6 +67,7 @@ interface BuildPageFacts
   /** Logical filename of the selected Page or Application Document. */
   html: string;
   documentOutput?: string;
+  documentAliases?: string[];
   /** Concrete Page-owned static output; Application fallback is not copied. */
   output?: string;
   mount?: string;
@@ -177,6 +180,8 @@ function deriveBuildPlanFacts(graph: CoreGraph): BuildPlanFacts {
     apps[application.id] = {
       id: application.id,
       html: document.template,
+      documentOutput: document.output,
+      ...(document.aliases ? { documentAliases: [...document.aliases] } : {}),
       ...(document.mount ? { mount: document.mount } : {}),
       ...(application.layout ? { rootModule: application.layout } : {}),
     };
@@ -220,6 +225,9 @@ function deriveBuildPlanFacts(graph: CoreGraph): BuildPlanFacts {
       ...(document ? { documentId: document.id } : {}),
       html: document?.template ?? "",
       ...(document?.output ? { documentOutput: document.output } : {}),
+      ...(pageDocument?.aliases
+        ? { documentAliases: [...pageDocument.aliases] }
+        : {}),
       ...(pageDocument?.output ? { output: pageDocument.output } : {}),
       render: page.render,
       ...(page.componentModel ? { componentModel: page.componentModel } : {}),
@@ -684,15 +692,17 @@ function validateBuildOutputNames(
 
   const htmlByFileName = new Map<string, HtmlPlan>();
   for (const document of html) {
-    const existing = htmlByFileName.get(document.fileName);
-    if (existing) {
-      throw new Error(
-        `[evjs] Duplicate HTML output file "${document.fileName}" from ${describeHtmlOwner(
-          existing,
-        )} and ${describeHtmlOwner(document)}. HTML output filenames must be unique.`,
-      );
+    for (const fileName of [document.fileName, ...(document.aliases ?? [])]) {
+      const existing = htmlByFileName.get(fileName);
+      if (existing) {
+        throw new Error(
+          `[evjs] Duplicate HTML output file "${fileName}" from ${describeHtmlOwner(
+            existing,
+          )} and ${describeHtmlOwner(document)}. Canonical HTML outputs and aliases must be globally unique.`,
+        );
+      }
+      htmlByFileName.set(fileName, document);
     }
-    htmlByFileName.set(document.fileName, document);
   }
 }
 
@@ -831,6 +841,7 @@ function createHtmlPlans(graph: BuildPlanFacts): HtmlPlan[] {
       id: page.id,
       template: page.html,
       fileName: resolvePageDocumentOutput(page),
+      ...(page.documentAliases ? { aliases: [...page.documentAliases] } : {}),
       owner: createPageBuildOwner(page),
       ...(page.metadata ? { metadata: clonePageMetadata(page.metadata) } : {}),
     }));
@@ -838,7 +849,8 @@ function createHtmlPlans(graph: BuildPlanFacts): HtmlPlan[] {
     .filter((app) => !isStaticDocumentApp(graph, app.id))
     .map((app) => {
       const preferredOutput =
-        app.id === "default" ? "index.html" : `${app.id}.html`;
+        app.documentOutput ??
+        (app.id === "default" ? "index.html" : `${app.id}.html`);
       const conflictsWithPage = pageDocuments.some((document) => {
         if (document.fileName !== preferredOutput || !document.owner.pageId) {
           return false;
@@ -851,6 +863,7 @@ function createHtmlPlans(graph: BuildPlanFacts): HtmlPlan[] {
         fileName: conflictsWithPage
           ? `${FRAMEWORK_SPA_FALLBACK_OUTPUT_DIR}/${sanitizePageId(app.id)}.html`
           : preferredOutput,
+        ...(app.documentAliases ? { aliases: [...app.documentAliases] } : {}),
         owner: { appId: app.id },
       };
     });

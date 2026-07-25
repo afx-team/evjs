@@ -21,7 +21,10 @@ import {
   BIGFISH_ROUTE_EXTENSION_ID,
   CONFIG_ROUTE_PROVIDER_ID,
 } from "@evjs/shared/manifest";
-import type { ResolvedConfigRoute } from "../../../config/index.js";
+import type {
+  ResolvedConfigRoute,
+  ResolvedConfigRouteApplication,
+} from "../../../config/index.js";
 import {
   PAGE_CONFIG_FILES,
   PAGE_CONFIG_LABEL,
@@ -64,6 +67,67 @@ interface ConfigRouteSiblingIdentityOwner {
   address: string;
   kind: "page" | "redirect" | "group";
   pattern: string;
+}
+
+export interface ConfigRoutePluginExtensionInput {
+  readonly source: string;
+  readonly extensions: Readonly<Record<string, unknown>>;
+}
+
+export interface ConfigRoutePluginExtensionInputs {
+  readonly routes: Readonly<Record<string, ConfigRoutePluginExtensionInput>>;
+  readonly documents: Readonly<Record<string, ConfigRoutePluginExtensionInput>>;
+}
+
+/**
+ * Retain explicit route-tree extension inputs outside the provider graph until
+ * plugin declarations have registered, merged, and validated their namespaces.
+ */
+export function collectConfigRoutePluginExtensionInputs(
+  application: ResolvedConfigRouteApplication,
+): ConfigRoutePluginExtensionInputs {
+  const routes = createRecord<ConfigRoutePluginExtensionInput>();
+  const documents = createRecord<ConfigRoutePluginExtensionInput>();
+
+  const visit = (
+    declarations: ResolvedConfigRoute[],
+    parentAddress: number[],
+  ): void => {
+    for (const [index, declaration] of declarations.entries()) {
+      const address = [...parentAddress, index];
+      if (declaration.extensions) {
+        const routeId = createConfigRouteId(address);
+        const semanticRouteId =
+          typeof declaration.layout === "string"
+            ? `${routeId}:content`
+            : routeId;
+        defineRecordValue(routes, semanticRouteId, {
+          source: `application.${formatConfigRouteAddress(address)}.extensions`,
+          extensions: declaration.extensions,
+        });
+      }
+      if (declaration.routes) {
+        visit(declaration.routes, address);
+      }
+    }
+  };
+
+  visit(application.routes, []);
+  if (application.document.extensions) {
+    defineRecordValue(documents, "index", {
+      source: "application.document.extensions",
+      extensions: application.document.extensions,
+    });
+  }
+  return { routes, documents };
+}
+
+function createConfigRouteId(address: readonly number[]): string {
+  return `${CONFIG_ROUTE_PROVIDER_ID}:route:${address.join(".")}`;
+}
+
+function formatConfigRouteAddress(address: readonly number[]): string {
+  return `routes[${address.join("].routes[")}]`;
 }
 
 /** Normalize an explicit Bigfish-style migration route tree to CoreGraph. */
@@ -182,7 +246,7 @@ async function visitConfigRoutes(
   >();
   for (const [index, declaration] of declarations.entries()) {
     const addressSegments = [...parentAddress, index];
-    const address = `routes[${addressSegments.join("].routes[")}]`;
+    const address = formatConfigRouteAddress(addressSegments);
     const hasPage = Boolean(declaration.page || declaration.component);
     if (hasPage && declaration.redirect) {
       throw new Error(
@@ -199,7 +263,7 @@ async function visitConfigRoutes(
         `[evjs] ${address} must declare page, redirect, or nested routes.`,
       );
     }
-    const routeId = `${CONFIG_ROUTE_PROVIDER_ID}:route:${addressSegments.join(".")}`;
+    const routeId = createConfigRouteId(addressSegments);
     const pattern = parseConfigRoutePattern(
       declaration.path,
       parentPattern,

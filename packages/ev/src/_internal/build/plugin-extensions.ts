@@ -7,8 +7,10 @@ import {
 } from "@evjs/shared/_internal/static-json";
 import type {
   CoreApplicationNode,
+  CoreDocumentNode,
   CoreGraph,
   CorePageNode,
+  CoreRouteNode,
 } from "@evjs/shared/manifest";
 import { assertCoreGraph } from "@evjs/shared/manifest";
 import {
@@ -23,13 +25,20 @@ import type {
 import type {
   PluginApplicationExtensionContext,
   PluginDescribeContext,
+  PluginDocumentExtensionContext,
   PluginPageExtensionContext,
+  PluginRouteExtensionContext,
 } from "../../plugin/index.js";
 import type { ResolvedPageFileConfig } from "./page-config-module.js";
 import { orderPluginsByDependencies } from "./plugin-lifecycle.js";
 
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-const PLUGIN_EXTENSION_OWNER_ORDER = ["application", "page"] as const;
+const PLUGIN_EXTENSION_OWNER_ORDER = [
+  "application",
+  "page",
+  "route",
+  "document",
+] as const;
 
 type PluginExtensionOwner = (typeof PLUGIN_EXTENSION_OWNER_ORDER)[number];
 
@@ -56,6 +65,12 @@ export type RegisteredApplicationExtension =
 export type RegisteredPageExtension =
   RegisteredExtension<PluginPageExtensionContext>;
 
+export type RegisteredRouteExtension =
+  RegisteredExtension<PluginRouteExtensionContext>;
+
+export type RegisteredDocumentExtension =
+  RegisteredExtension<PluginDocumentExtensionContext>;
+
 export interface RegisteredExtensionNamespace {
   pluginName: string;
   namespace: string;
@@ -74,23 +89,34 @@ export interface PluginGraphDeclaration {
 export interface PluginExtensionRegistry {
   readonly applicationExtensions: readonly RegisteredApplicationExtension[];
   readonly pageExtensions: readonly RegisteredPageExtension[];
+  readonly routeExtensions: readonly RegisteredRouteExtension[];
+  readonly documentExtensions: readonly RegisteredDocumentExtension[];
   readonly namespaces: readonly RegisteredExtensionNamespace[];
 }
 
-interface CachedPageExtensionResolution {
+interface CachedOwnerExtensionResolution {
   readonly fingerprint: string;
   readonly extensions: Readonly<Record<string, unknown>>;
 }
 
 export interface PluginExtensionResolutionSession {
   readonly registry: PluginExtensionRegistry;
-  readonly pageResolutions: Map<string, CachedPageExtensionResolution>;
+  readonly pageResolutions: Map<string, CachedOwnerExtensionResolution>;
+  readonly routeResolutions: Map<string, CachedOwnerExtensionResolution>;
+  readonly documentResolutions: Map<string, CachedOwnerExtensionResolution>;
+}
+
+export interface ConfiguredOwnerExtensionInput {
+  readonly source: string;
+  readonly extensions: Readonly<Record<string, unknown>>;
 }
 
 export interface ApplyPluginExtensionOptions {
   /** Values already resolved before plugin setup. */
   applicationExtensions?: Readonly<Record<string, unknown>>;
   canonicalPages?: Readonly<Record<string, ResolvedPageFileConfig>>;
+  routeExtensions?: Readonly<Record<string, ConfiguredOwnerExtensionInput>>;
+  documentExtensions?: Readonly<Record<string, ConfiguredOwnerExtensionInput>>;
   extensionResolutionSession?: PluginExtensionResolutionSession;
 }
 
@@ -188,6 +214,8 @@ export function createPluginExtensionResolutionSession(
   return Object.freeze({
     registry,
     pageResolutions: new Map(),
+    routeResolutions: new Map(),
+    documentResolutions: new Map(),
   });
 }
 
@@ -218,6 +246,26 @@ export function applyPluginExtensions(
     graph,
     registry.pageExtensions,
     options.canonicalPages,
+  );
+  const routeExtensionInputs = collectConfiguredRouteExtensionInputs(
+    graph,
+    options.canonicalPages,
+    options.routeExtensions,
+  );
+  assertConfiguredRouteExtensionInputs(
+    graph,
+    registry.routeExtensions,
+    routeExtensionInputs,
+  );
+  const documentExtensionInputs = collectConfiguredDocumentExtensionInputs(
+    graph,
+    options.canonicalPages,
+    options.documentExtensions,
+  );
+  assertConfiguredDocumentExtensionInputs(
+    graph,
+    registry.documentExtensions,
+    documentExtensionInputs,
   );
   if (registry.namespaces.length === 0) return graph;
   assertNamespaceAvailability(graph, registry.namespaces);
@@ -260,6 +308,45 @@ export function applyPluginExtensions(
     });
   }
 
+  const routes = graph.routes.map((route) => {
+    const configuredInput = routeExtensionInputs[route.id];
+    const context = createRouteContext(route);
+    const resolvedExtensions = resolveRouteExtensions(
+      extensionResolutionSession,
+      registry.routeExtensions,
+      configuredInput?.extensions ?? {},
+      context,
+      `Route "${route.id}"`,
+    );
+    return {
+      ...route,
+      extensions: {
+        ...route.extensions,
+        ...resolvedExtensions,
+      },
+    };
+  });
+
+  const documents = createRecord<CoreDocumentNode>();
+  for (const [documentId, document] of Object.entries(graph.documents)) {
+    const configuredInput = documentExtensionInputs[documentId];
+    const context = createDocumentContext(documentId, document);
+    const resolvedExtensions = resolveDocumentExtensions(
+      extensionResolutionSession,
+      registry.documentExtensions,
+      configuredInput?.extensions ?? {},
+      context,
+      `Document "${documentId}"`,
+    );
+    defineRecordValue(documents, documentId, {
+      ...document,
+      extensions: {
+        ...document.extensions,
+        ...resolvedExtensions,
+      },
+    });
+  }
+
   const namespaces = { ...graph.extensions.namespaces };
   for (const registration of registry.namespaces) {
     namespaces[registration.namespace] = {
@@ -275,6 +362,8 @@ export function applyPluginExtensions(
     ...graph,
     applications,
     pages,
+    routes,
+    documents,
     extensions: { namespaces },
   };
   assertCoreGraph(resolved, "resolved plugin extensions");
@@ -286,6 +375,8 @@ export function collectPluginExtensionRegistry(
 ): PluginExtensionRegistry {
   const applicationExtensions: RegisteredApplicationExtension[] = [];
   const pageExtensions: RegisteredPageExtension[] = [];
+  const routeExtensions: RegisteredRouteExtension[] = [];
+  const documentExtensions: RegisteredDocumentExtension[] = [];
   const namespaces = new Map<
     string,
     {
@@ -316,6 +407,24 @@ export function collectPluginExtensionRegistry(
         registerExtensionDeclaration(declaration, namespaces);
         pageExtensions.push(declaration);
       },
+      routeExtension(definition, ..._check) {
+        const declaration = validateExtensionDefinition(
+          plugin.name,
+          "route",
+          definition,
+        ) as RegisteredRouteExtension;
+        registerExtensionDeclaration(declaration, namespaces);
+        routeExtensions.push(declaration);
+      },
+      documentExtension(definition, ..._check) {
+        const declaration = validateExtensionDefinition(
+          plugin.name,
+          "document",
+          definition,
+        ) as RegisteredDocumentExtension;
+        registerExtensionDeclaration(declaration, namespaces);
+        documentExtensions.push(declaration);
+      },
     });
     if (isPromiseLike(result)) {
       throw new Error(
@@ -330,6 +439,12 @@ export function collectPluginExtensionRegistry(
     ),
     pageExtensions: Object.freeze(
       pageExtensions.map((declaration) => Object.freeze(declaration)),
+    ),
+    routeExtensions: Object.freeze(
+      routeExtensions.map((declaration) => Object.freeze(declaration)),
+    ),
+    documentExtensions: Object.freeze(
+      documentExtensions.map((declaration) => Object.freeze(declaration)),
     ),
     namespaces: Object.freeze(
       [...namespaces.entries()].map(([namespace, registration]) =>
@@ -450,6 +565,160 @@ function assertCanonicalPageConfigInputs(
       declarations,
       `Page "${pageId}" config "${config.source}"`,
       "pageExtension()",
+    );
+  }
+}
+
+function collectConfiguredRouteExtensionInputs(
+  graph: CoreGraph,
+  canonicalPages: Readonly<Record<string, ResolvedPageFileConfig>> | undefined,
+  explicitInputs:
+    | Readonly<Record<string, ConfiguredOwnerExtensionInput>>
+    | undefined,
+): Record<string, ConfiguredOwnerExtensionInput> {
+  const inputs = createRecord<ConfiguredOwnerExtensionInput>();
+  for (const [routeId, input] of Object.entries(explicitInputs ?? {})) {
+    defineRecordValue(inputs, routeId, input);
+  }
+  for (const [pageId, config] of Object.entries(canonicalPages ?? {})) {
+    if (config.routeExtensions === undefined) continue;
+    const source = `Page "${pageId}" config "${config.source}" route.extensions`;
+    const routes = graph.routes.filter(
+      (route) => route.target.kind === "page" && route.target.pageId === pageId,
+    );
+    if (routes.length === 0) {
+      throw new Error(
+        `[evjs] ${source} has no semantic CoreGraph Route targeting Page "${pageId}".`,
+      );
+    }
+    if (routes.length > 1) {
+      throw new Error(
+        `[evjs] ${source} is ambiguous because Page "${pageId}" is targeted by ${routes.length} semantic Routes. Configure extensions on each application.routes declaration instead.`,
+      );
+    }
+    const route = routes[0];
+    if (!route) continue;
+    const existing = Object.hasOwn(inputs, route.id)
+      ? inputs[route.id]
+      : undefined;
+    if (!existing) {
+      defineRecordValue(inputs, route.id, {
+        source,
+        extensions: config.routeExtensions,
+      });
+      continue;
+    }
+    for (const namespace of Object.keys(config.routeExtensions)) {
+      if (!Object.hasOwn(existing.extensions, namespace)) continue;
+      throw new Error(
+        `[evjs] Route "${route.id}" extension namespace "${namespace}" is configured by both ${existing.source} and ${source}. Keep one value per Route owner.`,
+      );
+    }
+    defineRecordValue(inputs, route.id, {
+      source: `${existing.source} and ${source}`,
+      extensions: {
+        ...existing.extensions,
+        ...config.routeExtensions,
+      },
+    });
+  }
+  return inputs;
+}
+
+function assertConfiguredRouteExtensionInputs(
+  graph: CoreGraph,
+  declarations: readonly RegisteredRouteExtension[],
+  inputs: Readonly<Record<string, ConfiguredOwnerExtensionInput>> | undefined,
+): void {
+  if (!inputs) return;
+  const routeIds = new Set(graph.routes.map((route) => route.id));
+  for (const [routeId, input] of Object.entries(inputs)) {
+    if (!routeIds.has(routeId)) {
+      throw new Error(
+        `[evjs] ${input.source} targets unknown CoreGraph Route "${routeId}".`,
+      );
+    }
+    assertConfiguredNamespaces(
+      input.extensions,
+      declarations,
+      input.source,
+      "routeExtension()",
+    );
+  }
+}
+
+function collectConfiguredDocumentExtensionInputs(
+  graph: CoreGraph,
+  canonicalPages: Readonly<Record<string, ResolvedPageFileConfig>> | undefined,
+  explicitInputs:
+    | Readonly<Record<string, ConfiguredOwnerExtensionInput>>
+    | undefined,
+): Record<string, ConfiguredOwnerExtensionInput> {
+  const inputs = createRecord<ConfiguredOwnerExtensionInput>();
+  for (const [documentId, input] of Object.entries(explicitInputs ?? {})) {
+    defineRecordValue(inputs, documentId, input);
+  }
+  for (const [pageId, config] of Object.entries(canonicalPages ?? {})) {
+    const extensions = config.document?.extensions;
+    if (extensions === undefined) continue;
+    const source = `Page "${pageId}" config "${config.source}" document.extensions`;
+    const documents = Object.values(graph.documents).filter(
+      (document) =>
+        document.owner.kind === "page" && document.owner.pageId === pageId,
+    );
+    if (documents.length === 0) {
+      throw new Error(
+        `[evjs] ${source} requires a Page-owned CoreGraph Document, but Page "${pageId}" does not materialize one. SPA uses an Application-owned Document; use a Document extension default or Page-owned MPA materialization.`,
+      );
+    }
+    if (documents.length > 1) {
+      throw new Error(
+        `[evjs] ${source} is ambiguous because Page "${pageId}" owns ${documents.length} CoreGraph Documents.`,
+      );
+    }
+    const document = documents[0];
+    if (!document) continue;
+    const existing = Object.hasOwn(inputs, document.id)
+      ? inputs[document.id]
+      : undefined;
+    if (!existing) {
+      defineRecordValue(inputs, document.id, { source, extensions });
+      continue;
+    }
+    for (const namespace of Object.keys(extensions)) {
+      if (!Object.hasOwn(existing.extensions, namespace)) continue;
+      throw new Error(
+        `[evjs] Document "${document.id}" extension namespace "${namespace}" is configured by both ${existing.source} and ${source}. Keep one value per Document owner.`,
+      );
+    }
+    defineRecordValue(inputs, document.id, {
+      source: `${existing.source} and ${source}`,
+      extensions: {
+        ...existing.extensions,
+        ...extensions,
+      },
+    });
+  }
+  return inputs;
+}
+
+function assertConfiguredDocumentExtensionInputs(
+  graph: CoreGraph,
+  declarations: readonly RegisteredDocumentExtension[],
+  inputs: Readonly<Record<string, ConfiguredOwnerExtensionInput>> | undefined,
+): void {
+  if (!inputs) return;
+  for (const [documentId, input] of Object.entries(inputs)) {
+    if (!Object.hasOwn(graph.documents, documentId)) {
+      throw new Error(
+        `[evjs] ${input.source} targets unknown CoreGraph Document "${documentId}".`,
+      );
+    }
+    assertConfiguredNamespaces(
+      input.extensions,
+      declarations,
+      input.source,
+      "documentExtension()",
     );
   }
 }
@@ -579,6 +848,39 @@ function createPageContext(
   };
 }
 
+function createRouteContext(route: CoreRouteNode): PluginRouteExtensionContext {
+  return {
+    routeId: route.id,
+    applicationId: route.applicationId,
+    ...(route.parentId ? { parentId: route.parentId } : {}),
+    pattern: cloneStaticJsonValue(route.pattern),
+    target: cloneStaticJsonValue(route.target),
+    facets: cloneStaticJsonValue(route.facets),
+    ...(route.provenance.source ? { source: route.provenance.source } : {}),
+  };
+}
+
+function createDocumentContext(
+  documentId: string,
+  document: CoreDocumentNode,
+): PluginDocumentExtensionContext {
+  return {
+    documentId,
+    applicationId: document.applicationId,
+    template: document.template,
+    output: document.output,
+    ...(document.aliases ? { aliases: [...document.aliases] } : {}),
+    owner: cloneStaticJsonValue(document.owner),
+    ...(document.mount ? { mount: document.mount } : {}),
+    ...(document.bootstrap
+      ? { bootstrap: cloneStaticJsonValue(document.bootstrap) }
+      : {}),
+    ...(document.provenance.source
+      ? { source: document.provenance.source }
+      : {}),
+  };
+}
+
 function resolvePageExtensions(
   session: PluginExtensionResolutionSession | undefined,
   declarations: readonly RegisteredPageExtension[],
@@ -586,12 +888,68 @@ function resolvePageExtensions(
   context: PluginPageExtensionContext,
   target: string,
 ): Record<string, unknown> {
-  if (!session) {
+  return resolveCachedOwnerExtensions(
+    session?.pageResolutions,
+    context.pageId,
+    declarations,
+    configured,
+    context,
+    target,
+  );
+}
+
+function resolveRouteExtensions(
+  session: PluginExtensionResolutionSession | undefined,
+  declarations: readonly RegisteredRouteExtension[],
+  configured: Readonly<Record<string, unknown>>,
+  context: PluginRouteExtensionContext,
+  target: string,
+): Record<string, unknown> {
+  return resolveCachedOwnerExtensions(
+    session?.routeResolutions,
+    context.routeId,
+    declarations,
+    configured,
+    context,
+    target,
+  );
+}
+
+function resolveDocumentExtensions(
+  session: PluginExtensionResolutionSession | undefined,
+  declarations: readonly RegisteredDocumentExtension[],
+  configured: Readonly<Record<string, unknown>>,
+  context: PluginDocumentExtensionContext,
+  target: string,
+): Record<string, unknown> {
+  return resolveCachedOwnerExtensions(
+    session?.documentResolutions,
+    context.documentId,
+    declarations,
+    configured,
+    context,
+    target,
+  );
+}
+
+function resolveCachedOwnerExtensions<TContext>(
+  cache: Map<string, CachedOwnerExtensionResolution> | undefined,
+  cacheKey: string,
+  declarations: readonly RegisteredExtension<TContext>[],
+  configured: Readonly<Record<string, unknown>>,
+  context: TContext,
+  target: string,
+): Record<string, unknown> {
+  if (!cache) {
     return resolveOwnerExtensions(declarations, configured, context, target);
   }
 
-  const fingerprint = createPageExtensionInputFingerprint(context, configured);
-  const cached = session.pageResolutions.get(context.pageId);
+  const fingerprint = createOwnerExtensionInputFingerprint(
+    context,
+    configured,
+    target,
+  );
+  const cached = cache.get(cacheKey);
   if (cached?.fingerprint === fingerprint) {
     return cloneStaticJsonValue(cached.extensions);
   }
@@ -603,22 +961,20 @@ function resolvePageExtensions(
     target,
   );
   const snapshot = deepFreezeStaticJsonValue(cloneStaticJsonValue(resolved));
-  session.pageResolutions.set(context.pageId, {
+  cache.set(cacheKey, {
     fingerprint,
     extensions: snapshot,
   });
   return cloneStaticJsonValue(snapshot);
 }
 
-function createPageExtensionInputFingerprint(
-  context: PluginPageExtensionContext,
+function createOwnerExtensionInputFingerprint(
+  context: unknown,
   configured: Readonly<Record<string, unknown>>,
+  target: string,
 ): string {
-  assertStaticJsonValue(context, `Page "${context.pageId}" extension context`);
-  assertStaticJsonValue(
-    configured,
-    `Page "${context.pageId}" resolved extension inputs`,
-  );
+  assertStaticJsonValue(context, `${target} extension context`);
+  assertStaticJsonValue(configured, `${target} resolved extension inputs`);
   return JSON.stringify([
     sortStaticJsonValue(context),
     sortStaticJsonValue(configured),
@@ -770,7 +1126,16 @@ function runExtensionValidation<TContext>(
 }
 
 function formatOwnerName(owner: PluginExtensionOwner): string {
-  return owner === "application" ? "Application" : "Page";
+  switch (owner) {
+    case "application":
+      return "Application";
+    case "page":
+      return "Page";
+    case "route":
+      return "Route";
+    case "document":
+      return "Document";
+  }
 }
 
 function assertSafeNonEmptyString(value: unknown, source: string): string {

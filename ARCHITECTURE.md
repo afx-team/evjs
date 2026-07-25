@@ -11,10 +11,12 @@ positive file-route anchor. Every `src/pages/**/page.*` defines a Page whose
 containing directory owns its scope and determines its URL. `routing.mode`
 selects SPA or MPA materialization without changing the semantic Page/Route
 tree. Optional adjacent `page.config.ts` modules are synchronously evaluated
-into core title/named metadata/rendering data and namespaced Page extensions.
-Top-level `config.extensions` is resolved into namespaced Application
-extensions before plugin setup; runtime projection of either owner remains
-explicit. Server request
+into core title/named metadata/rendering data and namespaced Page and Route
+extensions; Document extensions target a Page-owned Document only when one is
+materialized. Top-level `config.extensions` is resolved into namespaced
+Application extensions before plugin setup; explicit migration inputs may
+configure Route and Application-owned Document extensions. All four owners use
+one plugin extension registry, and runtime projection remains explicit. Server request
 routes come from `src/apis`, framework request middleware comes from
 `src/middleware.ts`, API route middleware comes from
 `src/apis/**/middleware.ts`, and reachable `"use server"` modules provide
@@ -154,7 +156,7 @@ sequenceDiagram
 
   CLI->>EV: load and resolve config
   EV->>EV: run config hooks and resolve framework defaults
-  EV->>EV: register and resolve Application extensions
+  EV->>EV: register the Application/Page/Route/Document extension owners and resolve Application values
   EV->>EV: run setup/buildStart hooks
   EV->>Tools: createCoreGraph(config)
   Tools-->>EV: CoreGraph, diagnostics, fileDependencies
@@ -243,9 +245,10 @@ reading bundler config, stats, manifests, or runtime contracts.
 
 `prepareFrameworkBuild()` is the supported core API for tools that need
 framework semantics without running a bundler or emitting platform files. It
-resolves config, applies page-routing defaults, resolves Application
-extensions, initializes plugins, runs `buildStart` hooks, reports graph
-diagnostics, and returns the resolved config,
+resolves config, applies page-routing defaults, registers all extension owners,
+resolves Application extensions before plugin setup, resolves Page/Route/
+Document extensions during graph analysis, initializes plugins, runs
+`buildStart` hooks, reports graph diagnostics, and returns the resolved config,
 graph file dependencies, plugin watch files, and an explicit `dispose()`
 function. `CoreGraph` and `BuildPlan` remain internal framework state.
 

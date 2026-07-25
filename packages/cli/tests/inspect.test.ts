@@ -457,6 +457,45 @@ describe("inspect", () => {
     await expectPathMissing(path.join(cwd, ".ev"));
   });
 
+  it("reports static Document aliases in JSON and text output", async () => {
+    const cwd = await createFixture({
+      "index.html": '<div id="app"></div>',
+      "src/pages/about/page.tsx":
+        "export default function About() { return null; }",
+      "src/pages/about/page.config.ts": `
+        export default {
+          document: { aliases: ["about.html", "legacy/about.htm"] },
+        };
+      `,
+    });
+    const result = await inspectFrameworkBuild(
+      {
+        routing: { mode: "mpa" },
+      },
+      { cwd },
+    );
+
+    expect(result.graph.documents.about?.aliases).toEqual([
+      "about.html",
+      "legacy/about.htm",
+    ]);
+    expect(result.buildPlan?.html).toEqual([
+      expect.objectContaining({
+        id: "about",
+        fileName: "about/index.html",
+        aliases: ["about.html", "legacy/about.htm"],
+      }),
+    ]);
+    expect(formatInspectText(result)).toContain(
+      "about: about/index.html (aliases: about.html, legacy/about.htm)",
+    );
+    const json = JSON.parse(formatInspectJson(result));
+    expect(json.buildPlan.html[0].aliases).toEqual([
+      "about.html",
+      "legacy/about.htm",
+    ]);
+  });
+
   it("formats text and JSON output", async () => {
     const cwd = await createFixture({
       "index.html": '<div id="app"></div>',

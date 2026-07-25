@@ -6,4 +6,7 @@ export default definePageConfig({
     description: "The about Page in the canonical evjs MPA example.",
     "theme-color": "#f8fafc",
   },
+  document: {
+    aliases: ["about.html"],
+  },
 });

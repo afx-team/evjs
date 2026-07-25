@@ -1,14 +1,16 @@
 # Plugin Migration: Core 0.2 to 0.3
 
 This guide describes the approved Core 0.3 plugin migration contract.
-Namespaced top-level Application extensions, Page extensions, and canonical
-Page-directory raw-config claims across SPA/MPA are executable today. Graph
-transforms, typed runtime hooks, generic semantic facet APIs, and generic
-extension entries remain target APIs and are labeled below. Current 0.2
-behavior is called out explicitly.
+Namespaced Application, Page, Route, and Document extensions, plus canonical
+Page-directory static config across SPA/MPA, are executable today. Graph
+transforms, typed runtime hooks, generic semantic facet APIs, and generic build
+entries remain target APIs and are labeled below. Current 0.2 behavior is
+called out explicitly.
 
 For the architecture behind these changes, read the
-[Core 0.3 Design RFC](./core-0.3-rfc).
+[Core 0.3 Design RFC](./core-0.3-rfc). For source-backed Bigfish and Smallfish
+capability evidence and application migration sequencing, read
+[Bigfish and Smallfish Migration](./framework-migration-to-0.3).
 
 ## Migration Outcome
 
@@ -41,8 +43,8 @@ the current Core 0.3 implementation.
 | --- | --- | --- |
 | `name`, dependencies, optional dependencies | Mechanical | plugin identity and dependency graph |
 | `enforce` | Review | explicit dependency/order rule; dependencies win |
-| simple config defaults and validation | Mechanical | `describe()` Application/Page owner declaration |
-| arbitrary raw `config()` mutation | Review | current `config()` hook for framework config; Application/Page extensions for owned static config; ordered normalizers remain planned |
+| simple config defaults and validation | Mechanical | the matching `describe()` Application/Page/Route/Document owner declaration |
+| arbitrary raw `config()` mutation | Review | current `config()` hook for framework config; namespaced extensions for owned static config; ordered normalizers remain planned |
 | `setup()` state | Usually mechanical | deterministic state after project config validation |
 | `emit.module()` / `emit.data()` | Mechanical | generated artifacts with the same opaque-ref model |
 | `emit.entryFacade()` | Review | wrap a named semantic facet or materialized entry |
@@ -70,9 +72,9 @@ not from that documentation row.
 The plugin API uses the same dependency order across all deterministic phases.
 `describe()` runs once for each resolved plugin configuration; a dev config
 reload starts a new resolution cycle. Application extensions resolve before
-`setup()` and are exposed through `ctx.config.extensions`; Page extensions
-resolve later against normalized Page owners and are available to
-`contributions()`.
+`setup()` and are exposed through `ctx.config.extensions`; Page, Route, and
+Document extensions resolve later against normalized graph owners and are
+available to `contributions()`.
 
 ```text
 config
@@ -82,7 +84,7 @@ config
   -> setup
   -> buildStart
   -> discover Pages/Routes/Documents and evaluate page.config.ts
-  -> resolve Page extensions and validate CoreGraph
+  -> resolve Page/Route/Document extensions and validate CoreGraph
   -> create BuildPlan
   -> contributions and target validation
   -> materialize .ev
@@ -109,7 +111,7 @@ bootstrap
   -> discover identities and source scopes
   -> resolve colocated page config
   -> normalize the initial graph
-  -> resolve Page extensions on the Page graph
+  -> resolve Page/Route/Document extensions on the normalized graph
   -> apply declarative graph contributions
   -> final graph validation
   -> declare generated artifacts and semantic facet attachments
@@ -126,11 +128,11 @@ bootstrap
 | `resolve project config` | Run config hooks, then merge and validate project/provider config needed for discovery. | Read colocated page config before Page roots exist. |
 | `describe` | Register extension owners, defaults, merge/validation, source providers, capabilities, and runtime hooks. | Network calls, generated files, or config values that have not been validated. |
 | `resolve Application extensions` | Resolve registered top-level values and deep-freeze the snapshot exposed to `setup()`. | Read Page-owned config or serialize declaration callbacks into graph data. |
-| `setup` | Allocate deterministic in-memory state from validated config, resolved `ctx.config.extensions`, and declared local project inputs. | Read Page extensions before the Page graph exists; perform network calls, external writes, platform mutation, or use undeclared facts that can change the graph. |
+| `setup` | Allocate deterministic in-memory state from validated config, resolved `ctx.config.extensions`, and declared local project inputs. | Read Page/Route/Document extensions before the normalized graph exists; perform network calls, external writes, platform mutation, or use undeclared facts that can change the graph. |
 | `discover` | Providers declare Applications, Page identities/scopes, Routes, Documents, and watch inputs. | Mutate declarations owned by another provider. |
 | `resolve page config` | Evaluate built-in Page fields and collect static namespaced values from colocated config. | Resolve values against an owner before Page identity exists, or mutate Page identity fields such as id/provider/scope. |
 | `normalize` | Core converts provider declarations into the initial immutable graph. | Add provider-specific fields to the normalized protocol. |
-| `resolve Page extensions` | Resolve registered defaults/config/merge/validation for every normalized Page and record namespace ownership. | Serialize callbacks into the graph or change Page identity. |
+| `resolve graph extensions` | Resolve registered defaults/config/merge/validation for every normalized Page, Route, and Document and record namespace ownership. | Serialize callbacks into the graph or change owner identity. |
 | `transform` | Return structured graph patches and diagnostics with provenance. | Arbitrary in-place graph mutation. |
 | `final validation` | Re-run identity, conflict, path-shape, target, and ownership validation after every patch. | Repair conflicts by silently dropping declarations. |
 | `contribute` | Declare generated modules/data/types and their semantic facet attachments. | Write generated files, mutate already-validated identities, or perform external side effects. |
@@ -143,7 +145,7 @@ Any local project read that affects the graph must be a declared watch input.
 Network calls, external writes, and platform mutations are lifecycle work; they
 cannot provide hidden facts to an earlier deterministic phase.
 
-## Runnable Application and Page Extension Shape
+## Runnable Namespaced Extension Owners
 
 Canonical applications author Application-owned values in top-level
 `ev.config.ts`:
@@ -178,6 +180,31 @@ export default definePageConfig({
   },
 });
 ```
+
+The same file may target the Page's unique semantic Route or a Page-owned
+Document. A Document value is valid only when that Page materializes its own
+Document, such as canonical MPA or SPA SSG:
+
+```ts
+export default definePageConfig({
+  route: {
+    extensions: {
+      "@company/access": { policy: "canReadCheckout" },
+    },
+  },
+  document: {
+    extensions: {
+      "@company/html": { theme: "checkout" },
+    },
+  },
+});
+```
+
+Explicit `application.routes` migration input configures a Route through its
+own `extensions` field, including componentless layout/group/redirect Routes.
+Its `application.document.extensions` field targets the Application-owned
+Document. These inputs normalize into the same owner bags; they are not a
+second extension mechanism.
 
 The owning plugin registers the same namespace:
 
@@ -246,20 +273,22 @@ Defaults functions, `merge`, and `validate` are synchronous.
 
 The namespace registry has one producer contract:
 
-- one plugin may declare the same namespace once with
-  `applicationExtension()` and once with `pageExtension()`;
+- one plugin may declare the same namespace once for each applicable owner with
+  `applicationExtension()`, `pageExtension()`, `routeExtension()`, and
+  `documentExtension()`;
 - repeating the same owner is an error;
 - registration by another plugin is a conflict, even when it asks for the
   other owner;
-- both owner declarations must use the same `schemaVersion` value, including
-  both omitting it;
+- every declaration for one namespace must use the same `schemaVersion` value,
+  including all omitting it;
 - configured namespaces without the matching owner declaration are errors.
 
 Application values resolve after `describe()` and before `setup()`. They are
 deeply frozen in `ctx.config.extensions`, then copied to the normalized
-Application extension bag. Page values resolve during Page graph construction,
-after Page identity and adjacent config are known. Contribution views expose
-both owners without requiring access to `.ev` internals.
+Application extension bag. Page, Route, and Document values resolve during
+graph analysis, after their identities and static inputs are known.
+Contribution views expose all four owners without requiring access to `.ev`
+internals.
 
 All authored values, static defaults, and materialized merge results must be
 strict static JSON data. Functions, Promises, symbols, bigint, non-finite
@@ -271,15 +300,16 @@ module carried by an opaque module ref and explicit generated contribution.
 
 Canonical `page.tsx` anchors supply Page owners in both modes; explicit
 route-tree migration inputs must normalize into the same graph. Existing
-lifecycle hooks, `describe()`, and both extension declarations are members of
-the same `Plugin` interface and use one implementation. Do not introduce a
+lifecycle hooks, `describe()`, and all four extension declarations are members
+of the same `Plugin` interface and use one implementation. Do not introduce a
 historical compatibility layer or names such as `applicationExtensionV2()` or
 `pageExtensionV3()`: `schemaVersion` versions namespace data, not the API.
 
-Application and Page extension values are not exposed automatically at
-runtime; browser behavior still requires an explicit generated runtime
-projection. Arbitrary plugin-owned Route and Document extension values remain
-rejected until those owner APIs exist.
+Application, Page, Route, and Document extension values are not exposed
+automatically at runtime; browser or server behavior still requires an
+explicit generated runtime projection. Route and Document values are accepted
+only through their registered owner APIs and strict static authoring inputs;
+they do not authorize executable callbacks or implicit runtime injection.
 
 ### Current MPA targeting
 
@@ -348,14 +378,14 @@ config(config) {
 }
 ```
 
-In the current plugin API, register Application and/or Page owners, defaults,
-and merge/validation callbacks in synchronous `describe()`. Top-level
-Application values resolve before `setup()`; the canonical resolver or explicit
-route-tree normalizer then discovers Page identities/scopes, and the registry
-resolves namespaced `page.config.ts` values during Page graph construction
-without changing identity fields such as internal id, source provenance, or
-scope. General schema generation and ordered cross-field normalizers remain
-future work.
+In the current plugin API, register the applicable Application, Page, Route,
+and/or Document owners, defaults, and merge/validation callbacks in synchronous
+`describe()`. Top-level Application values resolve before `setup()`; the
+canonical resolver or explicit route-tree normalizer then discovers normalized
+owners, and the registry resolves their namespaced static inputs during graph
+analysis without changing identity fields such as internal id, source
+provenance, or scope. General schema generation and ordered cross-field
+normalizers remain future work.
 
 The explicit Bigfish migration normalizer retains its finite, source-backed
 access/menu field set in the built-in `@evjs/bigfish-route` Route namespace.
@@ -451,11 +481,12 @@ implementation.
 
 1. Inventory every hook, generated file, target, runtime export, route change,
    and bundler mutation in the 0.2 plugin.
-2. Assign Application-owned static config to a registered top-level
-   Application extension and Page-owned static config to a registered Page
-   extension; define defaults/merge/validation for each owner. Do not write
-   unowned Route or Document extension data; wait for an explicit owner API or
-   use an existing generated/lifecycle facet.
+2. Assign static config to its registered Application, Page, Route, or Document
+   owner and define defaults/merge/validation for each owner. Use canonical
+   `page.config.ts` for Page, unique Route, and Page-owned Document values;
+   explicit migration inputs may configure their declared Route and
+   Application-owned Document. Do not put values on an owner the normalized
+   graph does not contain.
 3. Select a current structured contribution or lifecycle hook for each
    generated artifact. Flag any target that relies on an entry name or HTML
    filename, and record gaps that require a planned facet instead of inventing
@@ -475,8 +506,8 @@ implementation.
 ## Required Tests for a Migrated Plugin
 
 - schema defaults and invalid config diagnostics;
-- Application extension resolution before `setup()` and Page extension
-  resolution on the normalized Page graph;
+- Application extension resolution before `setup()` and Page/Route/Document
+  extension resolution on the normalized graph;
 - duplicate-owner, cross-plugin namespace, and cross-owner `schemaVersion`
   conflict diagnostics;
 - deterministic ordering with required and optional dependencies;

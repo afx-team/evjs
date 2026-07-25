@@ -18,6 +18,19 @@ const metadataPlugin = definePlugin({
       schemaVersion: "1",
       defaults: { label: "Plugin authoring Page" },
     });
+    api.routeExtension({
+      namespace: "@example/metadata",
+      schemaVersion: "1",
+      defaults: ({ routeId }) => ({ label: `Route ${routeId}` }),
+    });
+    api.documentExtension({
+      namespace: "@example/metadata",
+      schemaVersion: "1",
+      defaults: ({ output }) => ({
+        label: `Document ${output}`,
+        theme: "light",
+      }),
+    });
   },
   setup(ctx) {
     const metadata = ctx.config.extensions["@example/metadata"];
@@ -30,6 +43,18 @@ const metadataPlugin = definePlugin({
       const metadata = page.extensions["@example/metadata"];
       console.log(
         `[example-metadata-plugin] Page ${page.id}: ${JSON.stringify(metadata)}`,
+      );
+    }
+    for (const route of ctx.framework.routes) {
+      const metadata = route.extensions["@example/metadata"];
+      console.log(
+        `[example-metadata-plugin] Route ${route.id}: ${JSON.stringify(metadata)}`,
+      );
+    }
+    for (const document of ctx.framework.documents) {
+      const metadata = document.extensions["@example/metadata"];
+      console.log(
+        `[example-metadata-plugin] Document ${document.id}: ${JSON.stringify(metadata)}`,
       );
     }
   },

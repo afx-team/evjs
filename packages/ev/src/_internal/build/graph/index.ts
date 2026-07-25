@@ -60,6 +60,7 @@ import {
 } from "../utils.js";
 import {
   collectConfigRouteCoreSourceModules,
+  collectConfigRoutePluginExtensionInputs,
   createConfigRouteGraph,
 } from "./config-route.js";
 import { applyResolvedPageConfigs, createPageAnchorGraph } from "./core.js";
@@ -333,6 +334,8 @@ export async function createCoreGraph(
   const pluginExtensions = options.pluginExtensions ?? {
     applicationExtensions: [],
     pageExtensions: [],
+    routeExtensions: [],
+    documentExtensions: [],
     namespaces: [],
   };
   const requiresApplicationExtensionSnapshot =
@@ -347,9 +350,14 @@ export async function createCoreGraph(
       "[evjs] createCoreGraph() requires Application extensions resolved before plugin setup. Pass options.applicationExtensions from framework orchestration.",
     );
   }
+  const configRoutePluginExtensions = config.application
+    ? collectConfigRoutePluginExtensionInputs(config.application)
+    : undefined;
   graph = applyPluginExtensions(graph, pluginExtensions, {
     applicationExtensions: options.applicationExtensions,
     canonicalPages: pageConfigs.pages,
+    routeExtensions: configRoutePluginExtensions?.routes,
+    documentExtensions: configRoutePluginExtensions?.documents,
     extensionResolutionSession: options.extensionResolutionSession,
   });
   assertCoreGraph(graph, "resolved CoreGraph");

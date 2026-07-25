@@ -339,9 +339,10 @@ export default defineConfig({
 
 ### Plugins
 
-Register plugins through `plugins`. A plugin may extend Page configuration and
-target the normalized graph through the same `Plugin` interface that owns
-config, setup, contributions, and lifecycle hooks. See [Plugins](./plugins) and
+Register plugins through `plugins`. A plugin may register namespaced
+Application, Page, Route, and Document configuration owners and target the
+normalized graph through the same `Plugin` interface that owns config, setup,
+contributions, and lifecycle hooks. See [Plugins](./plugins) and
 [Plugin Migration](./plugin-migration-0.2-to-0.3).
 
 ### Bundler
@@ -378,9 +379,10 @@ and document configuration can enter through the SPA-only migration
 normalizer. The historical `children` spelling is rejected because current
 Umi/Bigfish configuration uses `routes`. The normalizer also retains the
 documented access/menu metadata fields in the registered
-`@evjs/bigfish-route` Route extension; it does not accept a generic Route
-extension bag. MPA materialization, alias conflicts, and component references
-outside the project are rejected.
+`@evjs/bigfish-route` Route extension. Each explicit Route may also carry a
+strict static, namespaced `extensions` bag; the owning plugin must register
+every namespace with `routeExtension()`. MPA materialization, alias conflicts,
+and component references outside the project are rejected.
 
 An explicit component ending in `index.*` or `page.*` claims its containing
 directory as the migration Page scope. A flat component such as

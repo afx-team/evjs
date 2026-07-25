@@ -39,6 +39,9 @@
   `routing.mode + page.* + page.config.ts` 模型解析为 SPA/MPA 的 validated
   CoreGraph，输出 `.ev/framework/core-graph.json`，并诊断非法
   Page/Route/Document ownership 或 Page 配置。
+- [Bigfish、Smallfish 迁移矩阵](./framework-migration-to-0.3) 固定了源码审计
+  revision，区分 Core 与生态职责，并定义 URL、Page scope、Document 与插件迁移
+  门禁。
 - 继续加固 Bigfish 显式 route normalizer，以及 Smallfish/evjs 0.2 一次性源码
   迁移指南，不把存量模型提升为 runtime reader。
 - canonical MPA 已从静态语义 Route 生成 Page-owned Document，并组合
