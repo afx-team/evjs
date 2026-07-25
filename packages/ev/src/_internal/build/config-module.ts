@@ -6,6 +6,10 @@ import { createJiti } from "jiti";
 import type { Config } from "../../config/index.js";
 
 const requireFromLoader = createRequire(import.meta.url);
+const evPackageManifest = requireFromLoader("../../../package.json") as {
+  exports: Record<string, { import: string }>;
+};
+const currentEvPackageAliases = resolveCurrentEvPackageAliases();
 
 const NODE_MODULES_SEGMENT = `${path.sep}node_modules${path.sep}`;
 
@@ -108,7 +112,7 @@ export async function loadStaticConfigModule(
           absoluteProjectRoot,
         );
     staticConfigDependencies.set(absoluteConfigPath, dependencies);
-    const resolved = resolveDefaultExport(loaded);
+    const resolved = readOwnDefaultExport(loaded);
     return {
       value: resolved.value,
       hasDefaultExport: resolved.hasDefaultExport,
@@ -156,8 +160,9 @@ export function clearStaticConfigModuleCache(
 }
 
 function resolveConfigExport<TBundlerCfg>(mod: unknown): Config<TBundlerCfg> {
-  if (isRecord(mod) && "default" in mod && mod.default !== undefined) {
-    return mod.default as Config<TBundlerCfg>;
+  const resolved = readOwnDefaultExport(mod);
+  if (resolved.hasDefaultExport && resolved.value !== undefined) {
+    return resolved.value as Config<TBundlerCfg>;
   }
 
   return mod as Config<TBundlerCfg>;
@@ -169,11 +174,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function createConfigLoader(configPath: string, moduleCache: boolean) {
   return createJiti(configPath, {
-    alias: {
-      "@evjs/ev": resolveCurrentEvPackageEntry(),
-    },
+    alias: currentEvPackageAliases,
     fsCache: false,
-    interopDefault: false,
+    interopDefault: true,
     moduleCache,
     tryNative: false,
   });
@@ -239,14 +242,22 @@ function collectCachedProjectModules(
   return [...dependencies].sort();
 }
 
-function resolveDefaultExport(mod: unknown): {
+/** Read the real export slot without triggering Jiti's default-interop fallback. */
+function readOwnDefaultExport(mod: unknown): {
   value: unknown;
   hasDefaultExport: boolean;
 } {
-  if (isRecord(mod) && Object.hasOwn(mod, "default")) {
-    return { value: mod.default, hasDefaultExport: true };
+  if (!isRecord(mod)) {
+    return { value: mod, hasDefaultExport: false };
   }
-  return { value: mod, hasDefaultExport: false };
+  const descriptor = Object.getOwnPropertyDescriptor(mod, "default");
+  if (!descriptor) {
+    return { value: mod, hasDefaultExport: false };
+  }
+  return {
+    value: "value" in descriptor ? descriptor.value : mod.default,
+    hasDefaultExport: true,
+  };
 }
 
 function isPathInside(file: string, dir: string): boolean {
@@ -278,6 +289,36 @@ function resolveCurrentEvPackageEntry(): string {
   if (fs.existsSync(builtEntry)) return builtEntry;
 
   return requireFromLoader.resolve("@evjs/ev");
+}
+
+function resolveCurrentEvPackageAliases(): Record<string, string> {
+  const packageEntry = resolveCurrentEvPackageEntry();
+  const packageVariantDir = path.dirname(packageEntry);
+  const useSource = path.extname(packageEntry) === ".ts";
+  const aliases: Record<string, string> = {};
+
+  for (const [subpath, target] of Object.entries(evPackageManifest.exports)) {
+    if (!target.import.startsWith("./esm/")) {
+      throw new Error(
+        `[evjs] Package export "${subpath}" must provide an import target under "./esm".`,
+      );
+    }
+    const builtRelativePath = target.import.slice("./esm/".length);
+    const relativePath = useSource
+      ? builtRelativePath.replace(/\.js$/, ".ts")
+      : builtRelativePath;
+    const specifier =
+      subpath === "." ? "@evjs/ev" : `@evjs/ev${subpath.slice(1)}`;
+    const resolved = path.resolve(packageVariantDir, relativePath);
+    if (!fs.existsSync(resolved)) {
+      throw new Error(
+        `[evjs] Package export "${specifier}" targets missing ${useSource ? "source" : "build"} module "${resolved}".`,
+      );
+    }
+    aliases[specifier] = resolved;
+  }
+
+  return aliases;
 }
 
 function isFileNotFoundError(error: unknown): boolean {

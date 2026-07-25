@@ -151,6 +151,36 @@ describe("page.config modules", () => {
     expect(second.dependencies).toEqual(first.dependencies);
   });
 
+  it("supports ESM default imports in Page config dependencies", async () => {
+    const cwd = await createFixture({
+      "src/config/page-title.ts": `
+        import path from "node:path";
+
+        export const title = path.basename("/reports/quarterly");
+      `,
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts": `
+        import { title } from "../../config/page-title.js";
+
+        export default { title };
+      `,
+    });
+
+    await expect(
+      resolvePageConfigModules(
+        cwd,
+        createPageMetadata("report", "./src/pages/report/page.config.ts"),
+      ),
+    ).resolves.toMatchObject({
+      pages: {
+        report: {
+          metadata: { title: "quarterly" },
+        },
+      },
+    });
+  });
+
   it("invalidates helpers loaded by a previously failing config evaluation", async () => {
     const cwd = await createFixture({
       "src/config/channel.ts": 'export const channel = "stale";',
@@ -255,6 +285,11 @@ describe("page.config modules", () => {
     {
       label: "a function default export",
       source: "export default function config() {}",
+      message: /default export must be a plain object/,
+    },
+    {
+      label: "an undefined default export",
+      source: "export default undefined;",
       message: /default export must be a plain object/,
     },
     {

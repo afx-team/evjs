@@ -71,12 +71,41 @@ describe("loadConfigFile", () => {
     });
   });
 
-  it("loads isolated configs that import the framework package", async () => {
+  it("supports ESM default imports throughout the config dependency closure", async () => {
+    const cwd = await createFixture({
+      "settings.ts": `
+        import path from "node:path";
+
+        export const html = path.join("pages", "index.html");
+      `,
+      "ev.config.ts": `
+        import { html } from "./settings";
+
+        export const marker = "named export";
+        export default { html };
+      `,
+    });
+
+    const config = await loadConfigFile(path.join(cwd, "ev.config.ts"));
+
+    expect(config).toEqual({
+      html: path.join("pages", "index.html"),
+    });
+  });
+
+  it("loads isolated configs through exact framework package exports", async () => {
     const cwd = await createFixture(
       {
         "ev.config.ts": `
           import { defineConfig } from "@evjs/ev";
-          export default defineConfig({ routing: { mode: "spa" } });
+          import { nodeDeploymentAdapter } from "@evjs/ev/deployment";
+          import { serve } from "@evjs/ev/_internal/server/node";
+
+          export default defineConfig({
+            html: typeof serve === "function" ? "./index.html" : "./missing.html",
+            routing: { mode: "spa" },
+            plugins: [nodeDeploymentAdapter()],
+          });
         `,
       },
       os.tmpdir(),
@@ -85,7 +114,40 @@ describe("loadConfigFile", () => {
     await expect(
       loadConfigFile(path.join(cwd, "ev.config.ts")),
     ).resolves.toMatchObject({
+      html: "./index.html",
       routing: { mode: "spa" },
+      plugins: [{ name: "node-deployment-adapter" }],
+    });
+  });
+
+  it("does not expose unpublished framework source paths through aliases", async () => {
+    const cwd = await createFixture({
+      "ev.config.ts": `
+        import { PLUGIN_HOOK_NAMES } from "@evjs/ev/plugin/hook-names";
+
+        export default { html: String(PLUGIN_HOOK_NAMES.length) };
+      `,
+    });
+
+    await expect(
+      loadConfigFile(path.join(cwd, "ev.config.ts")),
+    ).rejects.toThrow("Failed to load evjs config");
+  });
+
+  it("preserves CommonJS config exports with default interop enabled", async () => {
+    const cwd = await createFixture({
+      "package.json": JSON.stringify({ type: "commonjs" }),
+      "ev.config.js": `
+        module.exports = {
+          routing: { mode: "mpa" },
+        };
+      `,
+    });
+
+    await expect(
+      loadConfigFile(path.join(cwd, "ev.config.js")),
+    ).resolves.toEqual({
+      routing: { mode: "mpa" },
     });
   });
 
