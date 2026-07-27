@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { PageMetadata } from "@evjs/shared/manifest";
 import { expect, type Page } from "@playwright/test";
+import { createRscPageBuildEntryName } from "../../packages/ev/src/_internal/build/build-entry-conventions.js";
 import { createExampleTest } from "../fixtures";
 
 const exampleDir = path.resolve(
@@ -12,6 +13,7 @@ const exampleDir = path.resolve(
 );
 
 const test = createExampleTest("render-modes");
+const insightsRscEntryName = createRscPageBuildEntryName("insights");
 
 interface RenderModesPublicPage {
   document?: unknown;
@@ -242,7 +244,7 @@ test.describe("render-modes", () => {
     expect(html).toContain('<script defer="" src="/evjs-rsc-client');
     expect(html).not.toContain('<script type="module"');
     expect(html).not.toContain("src/pages/insights/page.tsx");
-    expect(html).not.toContain("insights-rsc.js");
+    expect(html).not.toContain(`${insightsRscEntryName}.js`);
 
     const runtimeFlightResponsePromise = page.waitForResponse((response) => {
       const url = new URL(response.url());
@@ -542,10 +544,10 @@ test.describe("render-modes", () => {
     expect(frameworkRuntime.rsc?.pages).toBeDefined();
     expect(frameworkRuntime.rsc?.pages?.insights).toEqual(
       expect.objectContaining({
-        renderer: "insights-rsc",
+        renderer: insightsRscEntryName,
         routeId: "insights",
         assets: expect.objectContaining({
-          css: expect.arrayContaining(["insights-rsc.css"]),
+          css: expect.arrayContaining([`${insightsRscEntryName}.css`]),
         }),
       }),
     );

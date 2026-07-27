@@ -365,6 +365,12 @@ describe("utoopackAdapter dev", () => {
     await expect(
       controller.updatePlan(
         diffBuildPlan(buildContext.plan, buildContext.plan, "config"),
+        { config, configChanged: true },
+      ),
+    ).rejects.toThrow("Restart ev dev to apply the updated config");
+    await expect(
+      controller.updatePlan(
+        diffBuildPlan(buildContext.plan, buildContext.plan, "config"),
       ),
     ).resolves.toBeUndefined();
     await controller.close?.();
@@ -600,7 +606,9 @@ describe("utoopackAdapter dev", () => {
       expect(message).toContain(
         "Utoopack dev cannot apply framework plan changes",
       );
-      expect(message).toContain("entry additions: about (page-client)");
+      expect(message).toContain(
+        "entry additions: page-client-about (page-client)",
+      );
       expect(message).toContain("HTML additions: about -> about/index.html");
     } finally {
       await controller.close?.();

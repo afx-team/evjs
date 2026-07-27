@@ -57,7 +57,12 @@ import {
   validateHtmlTemplates,
 } from "./framework-output.js";
 import type { createFrameworkRuntime } from "./framework-runtime.js";
+import { GENERATED_IR_DIR } from "./generated-contributions.js";
 import type { createCoreGraph } from "./graph/index.js";
+import {
+  collectGeneratedPageRouteTypeFiles,
+  getPageRouteTypesPath,
+} from "./page-route-types.js";
 import { type CreateBuildPlanOptions, diffBuildPlan } from "./plan/index.js";
 import {
   collectPluginExtensionRegistry,
@@ -178,6 +183,155 @@ function isEmptyPlanUpdate(update: BuildPlanUpdate): boolean {
     !update.deliveryChanged &&
     !update.serverChanged
   );
+}
+
+interface GeneratedDevStateSnapshot {
+  commit(): Promise<void>;
+  restore(): Promise<void>;
+}
+
+async function createGeneratedDevStateSnapshot(
+  cwd: string,
+  nextPageRoot: string | undefined,
+): Promise<GeneratedDevStateSnapshot> {
+  const snapshotRoot = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), "evjs-dev-state-"),
+  );
+  const generatedIrPath = path.resolve(cwd, GENERATED_IR_DIR);
+  const generatedIrSnapshot = path.join(snapshotRoot, "generated-ir");
+  const routeTypeFiles = new Map<string, Buffer | undefined>();
+
+  try {
+    const hadGeneratedIr = await pathExists(generatedIrPath);
+    if (hadGeneratedIr) {
+      await fs.promises.cp(generatedIrPath, generatedIrSnapshot, {
+        recursive: true,
+      });
+    }
+
+    const generatedRouteTypeFiles =
+      await collectGeneratedPageRouteTypeFiles(cwd);
+    for (const file of generatedRouteTypeFiles) {
+      routeTypeFiles.set(file, await fs.promises.readFile(file));
+    }
+
+    if (nextPageRoot) {
+      const nextRouteTypesFile = getPageRouteTypesPath(cwd, nextPageRoot).file;
+      if (!routeTypeFiles.has(nextRouteTypesFile)) {
+        routeTypeFiles.set(
+          nextRouteTypesFile,
+          await readFileIfExists(nextRouteTypesFile),
+        );
+      }
+    }
+
+    let settled = false;
+    return {
+      async commit() {
+        if (settled) return;
+        settled = true;
+        await removeDevStateSnapshot(snapshotRoot);
+      },
+      async restore() {
+        if (settled) return;
+        await runCleanupTasks([
+          () =>
+            restoreGeneratedIr(
+              cwd,
+              generatedIrPath,
+              generatedIrSnapshot,
+              hadGeneratedIr,
+            ),
+          () => restorePageRouteTypes(cwd, routeTypeFiles),
+        ]);
+        settled = true;
+        await removeDevStateSnapshot(snapshotRoot);
+      },
+    };
+  } catch (error) {
+    return rethrowAfterCleanup(
+      error,
+      () => fs.promises.rm(snapshotRoot, { force: true, recursive: true }),
+      "[evjs] Failed to capture generated dev state and remove its incomplete snapshot.",
+    );
+  }
+}
+
+async function restoreGeneratedIr(
+  cwd: string,
+  generatedIrPath: string,
+  generatedIrSnapshot: string,
+  hadGeneratedIr: boolean,
+): Promise<void> {
+  if (!hadGeneratedIr) {
+    await fs.promises.rm(generatedIrPath, { force: true, recursive: true });
+    return;
+  }
+
+  const restoreRoot = await fs.promises.mkdtemp(
+    path.join(cwd, `${GENERATED_IR_DIR}-restore-`),
+  );
+  const restoredIrPath = path.join(restoreRoot, "generated-ir");
+  try {
+    await fs.promises.cp(generatedIrSnapshot, restoredIrPath, {
+      recursive: true,
+    });
+    await fs.promises.rm(generatedIrPath, { force: true, recursive: true });
+    await fs.promises.rename(restoredIrPath, generatedIrPath);
+  } finally {
+    await fs.promises.rm(restoreRoot, { force: true, recursive: true });
+  }
+}
+
+async function restorePageRouteTypes(
+  cwd: string,
+  routeTypeFiles: ReadonlyMap<string, Buffer | undefined>,
+): Promise<void> {
+  const currentGeneratedFiles = await collectGeneratedPageRouteTypeFiles(cwd);
+  const filesToRemove = new Set([
+    ...currentGeneratedFiles,
+    ...routeTypeFiles.keys(),
+  ]);
+  await Promise.all(
+    [...filesToRemove].map((file) => fs.promises.rm(file, { force: true })),
+  );
+  await Promise.all(
+    [...routeTypeFiles].flatMap(([file, source]) => {
+      if (!source) return [];
+      return [
+        fs.promises
+          .mkdir(path.dirname(file), { recursive: true })
+          .then(() => fs.promises.writeFile(file, source)),
+      ];
+    }),
+  );
+}
+
+async function pathExists(file: string): Promise<boolean> {
+  try {
+    await fs.promises.lstat(file);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function readFileIfExists(file: string): Promise<Buffer | undefined> {
+  try {
+    return await fs.promises.readFile(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+async function removeDevStateSnapshot(snapshotRoot: string): Promise<void> {
+  try {
+    await fs.promises.rm(snapshotRoot, { force: true, recursive: true });
+  } catch (error) {
+    logger.warn`Unable to remove generated dev state snapshot ${snapshotRoot}: ${error}`;
+  }
 }
 
 function reportGraphDiagnostics(analysis: {
@@ -603,8 +757,12 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   let activeConfig = initialPluginExtensionState.config;
 
   const pluginWatchFiles = new Set<string>();
+  const bundlerConfigWatchFiles = new Set<string>();
   const addWatchFile = (file: string) => {
     pluginWatchFiles.add(path.resolve(cwd, file));
+  };
+  const addBundlerConfigWatchFile = (file: string) => {
+    bundlerConfigWatchFiles.add(path.resolve(cwd, file));
   };
   const pluginCtx: PluginContext<TBundlerCfg> = {
     mode: "development",
@@ -645,7 +803,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   let apiProcess: ApiProcess | null = null;
   let restartQueue: Promise<void> = Promise.resolve();
   let devUpdateQueue: Promise<void> = Promise.resolve();
-  let devController: BundlerDevController | undefined;
+  let devController: BundlerDevController<TBundlerCfg> | undefined;
   let releaseDevDistLock: DevRuntimeRelease | undefined;
   let unregisterDevDistExitCleanup = () => {};
   let stopWatchingDevDependencies = () => {};
@@ -865,6 +1023,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
         ...listConfigDependencyFiles(cwd),
         ...activeAnalysis.fileDependencies,
         ...pluginWatchFiles,
+        ...bundlerConfigWatchFiles,
       ],
       scheduleDevUpdate,
     );
@@ -884,10 +1043,15 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
 
   const handleDevDependencyChange = async (changedFiles: readonly string[]) => {
     const configDependencyFiles = new Set(listConfigDependencyFiles(cwd));
-    const isConfigChange = changedFiles.some((file) =>
+    const isFrameworkConfigChange = changedFiles.some((file) =>
       configDependencyFiles.has(file),
     );
-    const reason: BuildPlanUpdate["reason"] = isConfigChange
+    const isBundlerConfigChange = changedFiles.some((file) =>
+      bundlerConfigWatchFiles.has(file),
+    );
+    const requiresBundlerConfigReload =
+      isFrameworkConfigChange || isBundlerConfigChange;
+    const reason: BuildPlanUpdate["reason"] = requiresBundlerConfigReload
       ? "config"
       : "route-declaration";
 
@@ -897,7 +1061,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       return;
     }
 
-    const nextPluginExtensions = isConfigChange
+    const nextPluginExtensions = isFrameworkConfigChange
       ? collectPluginExtensionRegistry(baseNextConfig.plugins)
       : activePluginExtensions;
     let nextApplicationExtensions = activeApplicationExtensions;
@@ -905,7 +1069,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       ...baseNextConfig,
       extensions: activeApplicationExtensions,
     };
-    if (isConfigChange) {
+    if (isFrameworkConfigChange) {
       const nextPluginExtensionState = resolvePluginExtensionState(
         baseNextConfig,
         nextPluginExtensions,
@@ -919,11 +1083,21 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
     let stagedPluginHooks:
       | Awaited<ReturnType<typeof stagePluginHooks>>
       | undefined;
-    if (isConfigChange) {
+    if (isFrameworkConfigChange) {
       stagedPluginHooks = await stagePluginHooks(nextConfig);
     }
+    let generatedStateSnapshot: GeneratedDevStateSnapshot | undefined;
+    const rollbackCandidateState = () =>
+      runCleanupTasks([
+        () => stagedPluginHooks?.rollback(),
+        () => generatedStateSnapshot?.restore(),
+      ]);
 
     try {
+      generatedStateSnapshot = await createGeneratedDevStateSnapshot(
+        cwd,
+        nextConfig.routing?.dir ?? nextConfig.application?.pageRoot,
+      );
       const { analysis: nextAnalysis, plan: nextPlan } =
         await analyzeAndMaterializeFrameworkIR({
           cwd,
@@ -940,7 +1114,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
           onAnalysis: reportGraphDiagnostics,
         });
       const update = diffBuildPlan(activePlan, nextPlan, reason);
-      if (isEmptyPlanUpdate(update)) {
+      if (isEmptyPlanUpdate(update) && !requiresBundlerConfigReload) {
         activeConfig = nextConfig;
         activePluginExtensions = nextPluginExtensions;
         activeApplicationExtensions = nextApplicationExtensions;
@@ -948,11 +1122,12 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
         activePlan = nextPlan;
         pluginCtx.config = nextConfig;
         await commitStagedPluginHooks(stagedPluginHooks);
+        await generatedStateSnapshot.commit();
         return;
       }
 
       if (!devController) {
-        await stagedPluginHooks?.rollback();
+        await rollbackCandidateState();
         logger.warn`The selected bundler does not expose a dev controller. Please restart ev dev to apply framework plan changes.`;
         return;
       }
@@ -971,9 +1146,13 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       activeApplicationExtensions = nextApplicationExtensions;
       activeAnalysis = nextAnalysis;
       activePlan = nextPlan;
+      pluginCtx.config = nextConfig;
 
       try {
-        await devController.updatePlan(update);
+        await devController.updatePlan(update, {
+          config: nextConfig,
+          configChanged: requiresBundlerConfigReload,
+        });
       } catch (err) {
         activeConfig = previousConfig;
         activePluginExtensions = previousPluginExtensions;
@@ -981,15 +1160,26 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
         activeAnalysis = previousAnalysis;
         activePlan = previousPlan;
         pluginCtx.config = previousConfig;
-        await stagedPluginHooks?.rollback();
+        try {
+          await rollbackCandidateState();
+        } catch (rollbackError) {
+          throw new AggregateError(
+            [err, rollbackError],
+            "[evjs] Framework plan update failed and generated dev state rollback also failed.",
+            { cause: err },
+          );
+        }
         logger.warn`Unable to apply framework plan update without restart: ${err}`;
         return;
       }
-      pluginCtx.config = nextConfig;
       await commitStagedPluginHooks(stagedPluginHooks);
+      await generatedStateSnapshot.commit();
     } catch (err) {
-      await stagedPluginHooks?.rollback();
-      throw err;
+      return rethrowAfterCleanup(
+        err,
+        rollbackCandidateState,
+        "[evjs] Framework dev state update failed and rollback also failed.",
+      );
     }
   };
 
@@ -1038,6 +1228,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
         cwd,
         hooks,
         plan: activePlan,
+        addWatchFile: addBundlerConfigWatchFile,
         callbacks: {
           onDevServerReady(context) {
             logger.info`${formatDevServerReady(
@@ -1047,7 +1238,8 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
             )}`;
           },
           async onBuildFacts(bundlerFacts, options) {
-            const { frameworkRuntime } = await linkAndEmitBuildOutput({
+            const isRebuild = options?.isRebuild ?? false;
+            const { output, frameworkRuntime } = await linkAndEmitBuildOutput({
               bundlerFacts,
               graph: activeAnalysis.graph,
               plan: activePlan,
@@ -1055,9 +1247,13 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
               cwd,
               hooks,
               pluginCtx,
-              isRebuild: options?.isRebuild ?? false,
+              isRebuild,
             });
             activeFrameworkRuntime = frameworkRuntime;
+            await runBuildEndHooks(
+              hooks,
+              createBuildResult(output, isRebuild, { frameworkRuntime }),
+            );
           },
           onServerBundleReady: handleServerBundleReady,
         },
@@ -1108,6 +1304,7 @@ export async function build<TBundlerCfg = DefaultBundlerConfig>(
       cwd,
       hooks: prepared.hooks,
       plan: prepared.plan,
+      addWatchFile: prepared.pluginContext.addWatchFile,
     });
     const { output, frameworkRuntime } = await linkAndEmitBuildOutput({
       bundlerFacts,

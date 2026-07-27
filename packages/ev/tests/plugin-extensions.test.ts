@@ -1124,6 +1124,75 @@ describe("plugin Page extensions", () => {
     });
   });
 
+  it("resolves prototype-shaped owner ids without inherited config", () => {
+    const graph = createSpaGraph();
+    const home = graph.pages.home;
+    const route = graph.routes[0];
+    const document = graph.documents["app:default"];
+    if (!home || !route || !document) {
+      throw new Error("Expected the SPA Page, Route, and Document.");
+    }
+    graph.pages = {};
+    Object.defineProperty(graph.pages, "constructor", {
+      configurable: true,
+      enumerable: true,
+      value: { ...home, id: "constructor" },
+      writable: true,
+    });
+    graph.applications.default.pageIds = ["constructor"];
+    graph.applications.default.routeIds = ["constructor"];
+    graph.applications.default.documentIds = ["constructor"];
+    route.id = "constructor";
+    route.target = { kind: "page", pageId: "constructor" };
+    graph.documents = {};
+    Object.defineProperty(graph.documents, "constructor", {
+      configurable: true,
+      enumerable: true,
+      value: { ...document, id: "constructor" },
+      writable: true,
+    });
+
+    const plugin = definePlugin({
+      name: "prototype-shaped-owner-ids",
+      describe(ctx) {
+        ctx.pageExtension({
+          namespace: "@company/page-theme",
+          defaults: ({ pageId }) => ({ pageId, color: "blue" }),
+        });
+        ctx.routeExtension({
+          namespace: "@company/route-theme",
+          defaults: ({ routeId }) => ({ routeId, color: "blue" }),
+        });
+        ctx.documentExtension({
+          namespace: "@company/document-theme",
+          defaults: ({ documentId }) => ({ documentId, color: "blue" }),
+        });
+      },
+    });
+    const resolved = applyPluginExtensions(
+      graph,
+      collectPluginExtensionRegistry([plugin]),
+      {
+        canonicalPages: {},
+        routeExtensions: {},
+        documentExtensions: {},
+      },
+    );
+
+    expect(
+      Object.getOwnPropertyDescriptor(resolved.pages, "constructor")?.value
+        .extensions["@company/page-theme"],
+    ).toEqual({ pageId: "constructor", color: "blue" });
+    expect(resolved.routes[0]?.extensions["@company/route-theme"]).toEqual({
+      routeId: "constructor",
+      color: "blue",
+    });
+    expect(
+      Object.getOwnPropertyDescriptor(resolved.documents, "constructor")?.value
+        .extensions["@company/document-theme"],
+    ).toEqual({ documentId: "constructor", color: "blue" });
+  });
+
   it("validates an isolated deeply frozen snapshot", () => {
     type ExtensionValue = {
       nested: { enabled: boolean };

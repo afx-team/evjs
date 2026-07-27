@@ -329,10 +329,21 @@ flowchart TB
 | `buildEnd({ output, isRebuild })` | Emit final artifacts after build |
 | `dispose(ctx)` | Cleanup |
 
+In dev, `buildEnd()` runs after the initial linked output with
+`isRebuild: false` and after every later linked rebuild with
+`isRebuild: true`. `addWatchFile()` from either the `setup()` context or the
+`bundlerConfig()` context registers the dependency with the same framework dev
+watcher; changing it reruns framework analysis and applies the resulting plan
+update. If the selected adapter cannot safely replace its effective bundler
+configuration in place, the update fails closed with an explicit restart
+diagnostic instead of continuing with stale configuration.
+
 `buildOutput()` may adjust linked assets and add deployment metadata, but
 Application/Page/Route/Document identity remains CoreGraph-owned. In
-particular, a hook cannot add, remove, or rename a Document or change its
-static aliases; configure those values before graph linking.
+particular, a hook cannot add, remove, or rename Applications, Pages, Routes,
+or Documents; reorder Routes; change Page paths or Route ownership; or change
+Document file names and static aliases. Configure those values before graph
+linking.
 
 ## Generated Contributions
 
@@ -440,6 +451,12 @@ contributions(ctx) {
   });
 }
 ```
+
+For a generated SPA Application entry, `autoStart: false` creates and exports
+the framework `app` without mounting it. It also exports `start(container)`,
+which preserves the framework hydration-marker behavior for the first mount. A
+replacement entry owns that first `start()` call and later `app.render()`
+remounts. Other entry types cannot disable framework startup.
 
 Generated plugin paths are stable and readable. For example, a plugin named
 `@evjs/plugin-qiankun:slave` writes modules under

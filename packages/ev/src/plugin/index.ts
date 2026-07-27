@@ -672,6 +672,11 @@ export interface EmitApi {
     id: string;
     entry: FrameworkEntryView;
     scope?: GeneratedScope;
+    /**
+     * Disable framework-owned startup for a generated SPA Application facade.
+     * The replacing entry must call the exported app.render() itself.
+     */
+    autoStart?: boolean;
   }): GeneratedModuleRef;
 
   importOf(ref: GeneratedModuleRef): string;

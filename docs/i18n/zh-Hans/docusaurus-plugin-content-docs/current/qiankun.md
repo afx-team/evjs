@@ -234,7 +234,11 @@ interface QiankunSlaveRuntime {
 ```
 
 `ctx.loadEntry()` 会加载原始 app entry。内置 slave lifecycle 会在可选 runtime
-`mount()` hook 执行后，于 `mount()` 阶段调用它。
+`mount()` hook 执行后，于 `mount()` 阶段调用它。生成的原始 entry 在 lifecycle
+调用其导出的 `start(container)` 前不会自行挂载，因此即使在 `bootstrap()` 中提前
+加载，也不会误挂到 master document。首次 `mount()` 通过 `start()` 保留 hydration
+marker 语义；模块本身会被缓存，后续重新挂载只会在当前 qiankun container 内调用
+一次 `app.render()`。
 
 ## Qiankun 打包方式
 

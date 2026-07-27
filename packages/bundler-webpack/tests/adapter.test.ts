@@ -22,7 +22,9 @@ import {
   linkBuildOutput,
 } from "@evjs/shared/manifest";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Compiler } from "webpack";
 import { withPageRoutingDefaults } from "../../ev/esm/_internal/build/convention-config.js";
+import { createPageClientBuildEntryName } from "../../ev/src/_internal/build/build-entry-conventions.js";
 import {
   createClientRuntime,
   createFrameworkRuntime,
@@ -40,6 +42,8 @@ const WEBPACK_DEV_PORT_BASE = 31_000 + (process.pid % 1_000) * 10;
 const WEBPACK_DEV_TEST_NAMES = {
   starts: "starts webpack dev and emits framework manifest/html",
   apiRewrite: "does not rewrite API-like requests to application HTML",
+  concurrentDone:
+    "serializes concurrent client and server dev completion callbacks",
   htmlOnlyUpdate:
     "applies html-only plan updates without rebuilding webpack configs",
   rollback: "rolls back internal dev state when a plan update fails",
@@ -494,7 +498,10 @@ describe("webpackAdapter build", () => {
         path.join(cwd, "dist/home/index.html"),
         "utf-8",
       );
-      const bundle = await fs.readFile(path.join(cwd, "dist/home.js"), "utf-8");
+      const bundle = await fs.readFile(
+        path.join(cwd, "dist/page-client-home.js"),
+        "utf-8",
+      );
 
       expect(plan.entries[0]?.import).toBe("./src/pages/home/page.tsx");
       expect(plan.entries[0]?.metadata).toMatchObject({
@@ -507,7 +514,7 @@ describe("webpackAdapter build", () => {
         throw new Error("Expected MPA public manifest.");
       }
       expect(manifest.routing.pages.home).toMatchObject({
-        assets: { js: ["home.js"], css: [] },
+        assets: { js: ["page-client-home.js"], css: [] },
         render: "csr",
       });
       expect("module" in manifest.routing.pages.home).toBe(false);
@@ -515,18 +522,21 @@ describe("webpackAdapter build", () => {
         render: "csr",
         module: {
           type: "react-component",
-          href: "home.js",
+          href: "page-client-home.js",
         },
       });
       expect(html).toContain('data-evjs-kind="page"');
       expect(html).toContain('data-evjs-id="home"');
-      expect(html).toContain('src="/home.js"');
+      expect(html).toContain('src="/page-client-home.js"');
       expect(readEmbeddedClientRuntime(html)).toMatchObject({
         routing: {
           kind: "mpa",
           pages: {
             home: {
-              module: { type: "react-component", href: "home.js" },
+              module: {
+                type: "react-component",
+                href: "page-client-home.js",
+              },
               mount: "#root",
             },
           },
@@ -535,7 +545,7 @@ describe("webpackAdapter build", () => {
       expect(bundle).toContain("registerShellModule");
       expect(bundle).toContain("data-evjs-shell-load");
       await expect(
-        fs.access(path.join(cwd, ".ev/entries/home.ts")),
+        fs.access(path.join(cwd, ".ev/entries/page-client-home.ts")),
       ).resolves.toBeUndefined();
       await expect(fs.access(path.join(cwd, ".evjs"))).rejects.toThrow();
     },
@@ -627,8 +637,8 @@ describe("webpackAdapter build", () => {
         render: "ssr",
         methods: ["GET", "HEAD"],
       });
-      expect(output.assets["dashboard-server"]).toEqual({
-        js: ["dashboard-server.cjs"],
+      expect(output.assets["page-server-dashboard"]).toEqual({
+        js: ["page-server-dashboard.cjs"],
         css: [],
       });
       expect(deploymentMetadata.server?.entry).toBe("server.cjs");
@@ -798,8 +808,8 @@ describe("webpackAdapter build", () => {
       expect(plan.entries.map((entry) => entry.name)).toEqual(
         expect.arrayContaining([
           "evjs-rsc-client",
-          "insights_section-server",
-          "insights_section-rsc",
+          "page-server-insights__section",
+          "rsc-page-insights__section",
         ]),
       );
       expect("rsc" in deploymentMetadata).toBe(false);
@@ -811,35 +821,37 @@ describe("webpackAdapter build", () => {
       );
       expect(output.rsc?.pages?.insights_section).toEqual(
         expect.objectContaining({
-          renderer: "insights_section-rsc",
+          renderer: "rsc-page-insights__section",
         }),
       );
       expect(
-        output.server?.renderers?.["insights_section-server"],
+        output.server?.renderers?.["page-server-insights__section"],
       ).toMatchObject({
         kind: "page-server",
         assets: {
-          js: ["insights_section-server.cjs"],
-          css: ["insights_section-server.css"],
+          js: ["page-server-insights__section.cjs"],
+          css: ["page-server-insights__section.css"],
         },
       });
-      expect(output.server?.renderers?.["insights_section-rsc"]).toMatchObject({
+      expect(
+        output.server?.renderers?.["rsc-page-insights__section"],
+      ).toMatchObject({
         kind: "rsc-page",
         assets: {
-          js: ["insights_section-rsc.cjs"],
-          css: ["insights_section-rsc.css"],
+          js: ["rsc-page-insights__section.cjs"],
+          css: ["rsc-page-insights__section.css"],
         },
       });
       expect(output.pages.insights_section.assets).toEqual({
         js: ["evjs-rsc-client.js"],
         css: expect.arrayContaining([
-          "insights_section-server.css",
-          "insights_section-rsc.css",
+          "page-server-insights__section.css",
+          "rsc-page-insights__section.css",
         ]),
       });
       await expect(
         fs.readFile(
-          path.join(cwd, "dist/client/insights_section-rsc.css"),
+          path.join(cwd, "dist/client/rsc-page-insights__section.css"),
           "utf-8",
         ),
       ).resolves.toContain(".insights-page");
@@ -855,7 +867,7 @@ describe("webpackAdapter build", () => {
       expect(html).toContain("weekly");
       expect(html).toContain("overview");
       expect(html).toContain(
-        '<link rel="stylesheet" href="/insights_section-rsc.css">',
+        '<link rel="stylesheet" href="/rsc-page-insights__section.css">',
       );
 
       const flightResponse = await requestServerEntry(
@@ -927,12 +939,12 @@ describe("webpackAdapter build", () => {
       const campaignRegionId = getSinglePprRegionId(
         output.pages.campaign.ppr?.regions,
       );
-      const campaignRegionRenderer = `campaign-${campaignRegionId}-ppr-region`;
+      const campaignRegionRenderer = `ppr-region-campaign-${campaignRegionId.replaceAll("_", "__")}`;
       const campaignRegionAsset = `${campaignRegionRenderer}.cjs`;
 
       expect(output.pages.campaign.ppr).toMatchObject({
         delivery: "merge",
-        shell: { js: ["campaign-ppr-shell.cjs"], css: [] },
+        shell: { js: ["ppr-shell-campaign.cjs"], css: [] },
         regions: {
           [campaignRegionId]: {
             id: campaignRegionId,
@@ -941,10 +953,10 @@ describe("webpackAdapter build", () => {
           },
         },
       });
-      expect(output.server?.renderers?.["campaign-ppr-shell"]).toMatchObject({
+      expect(output.server?.renderers?.["ppr-shell-campaign"]).toMatchObject({
         kind: "ppr-shell",
         owner: { pageId: "campaign" },
-        assets: { js: ["campaign-ppr-shell.cjs"], css: [] },
+        assets: { js: ["ppr-shell-campaign.cjs"], css: [] },
       });
       expect(output.server?.renderers?.[campaignRegionRenderer]).toMatchObject({
         kind: "ppr-region",
@@ -1017,6 +1029,7 @@ describe("webpackAdapter dev", () => {
       hooks: [],
       callbacks: framework.callbacks,
     });
+    if (!controller) throw new Error("Expected webpack dev controller");
     try {
       const output = onBuildOutput.mock.calls.at(-1)?.[0];
       if (!output) throw new Error("Expected linked BuildOutput.");
@@ -1037,17 +1050,163 @@ describe("webpackAdapter dev", () => {
       if (!("routing" in manifest) || manifest.routing.kind !== "mpa") {
         throw new Error("Expected MPA public manifest.");
       }
-      expect(manifest.routing.pages.home.assets.js).toEqual(["home.js"]);
+      expect(manifest.routing.pages.home.assets.js).toEqual([
+        "page-client-home.js",
+      ]);
       expect(html).toContain('data-evjs-kind="page"');
       expect(html).toContain('data-evjs-id="home"');
-      expect(html).toContain('src="/home.js"');
+      expect(html).toContain('src="/page-client-home.js"');
       expect(legacyManifest.status).toBe(404);
       expect(legacyManifest.text).not.toContain("manifest not ready");
       await expect(
         fs.access(path.join(cwd, "dist/runtime.json")),
       ).rejects.toThrow();
+      await expect(
+        controller.updatePlan(diffBuildPlan(plan, plan, "config"), {
+          config,
+          configChanged: true,
+        }),
+      ).rejects.toThrow("Restart ev dev to apply the updated config");
     } finally {
+      await controller.close?.();
+    }
+  });
+
+  devIt(WEBPACK_DEV_TEST_NAMES.concurrentDone, async () => {
+    const port = await getAvailablePort();
+    const cwd = await createFixture({
+      "index.html":
+        '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
+      "src/pages/dashboard/page.ts": `
+        export default function Dashboard() {
+          return "dashboard";
+        }
+      `,
+      "src/pages/dashboard/page.config.ts":
+        'export default { render: "ssr", hydrate: "load" };',
+    });
+    const config = await resolveProjectConfig(cwd, {
+      dev: { port },
+      output: { client: "dist" },
+      routing: { mode: "spa" },
+    });
+    const analysis = await createCoreGraph(config, cwd);
+    const plan = await materializeTestPlan({
+      config,
+      cwd,
+      graph: analysis.graph,
+      plan: createBuildPlan(config, analysis.graph, {
+        mode: "development",
+      }),
+    });
+    expect(new Set(plan.entries.map((entry) => entry.environment))).toEqual(
+      new Set(["client", "server"]),
+    );
+
+    let doneCount = 0;
+    const completedCompilerNames = new Set<string>();
+    let releaseDoneBarrier!: () => void;
+    const doneBarrier = new Promise<void>((resolve) => {
+      releaseDoneBarrier = resolve;
+    });
+    const synchronizeDonePlugin = {
+      apply(compiler: Compiler) {
+        const compilerName = compiler.options.name ?? "unknown";
+        compiler.hooks.done.tapPromise(
+          { name: "EvjsTestConcurrentDoneBarrier", stage: -1_000 },
+          async () => {
+            doneCount += 1;
+            completedCompilerNames.add(compilerName);
+            if (
+              completedCompilerNames.has("client") &&
+              completedCompilerNames.has("server")
+            ) {
+              releaseDoneBarrier();
+            }
+            await doneBarrier;
+          },
+        );
+        compiler.hooks.done.tap(
+          { name: "EvjsTestInvalidateLiveStats", stage: 1_000 },
+          (stats) => {
+            const originalToJson = stats.toJson;
+            stats.toJson = () => {
+              throw new Error("live webpack Stats escaped the done hook");
+            };
+            queueMicrotask(() => {
+              stats.toJson = originalToJson;
+            });
+          },
+        );
+      },
+    };
+    const hooks: PluginHooks<WebpackConfig>[] = [
+      {
+        bundlerConfig(bundlerConfig) {
+          const configs = Array.isArray(bundlerConfig)
+            ? bundlerConfig
+            : [bundlerConfig];
+          for (const webpackConfig of configs) {
+            webpackConfig.plugins = [
+              ...(webpackConfig.plugins ?? []),
+              synchronizeDonePlugin,
+            ];
+          }
+        },
+      },
+    ];
+    const onBuildOutput = vi.fn();
+    const framework = createFrameworkCallbacks({
+      config,
+      cwd,
+      graph: analysis.graph,
+      hooks,
+      onBuildOutput,
+      plan,
+    });
+    const rebuildFlags: boolean[] = [];
+    let activeBuildFacts = 0;
+    let maxActiveBuildFacts = 0;
+    const callbacks = {
+      ...framework.callbacks,
+      async onBuildFacts(
+        facts: BundlerBuildFacts,
+        options?: { isRebuild?: boolean },
+      ) {
+        activeBuildFacts += 1;
+        maxActiveBuildFacts = Math.max(maxActiveBuildFacts, activeBuildFacts);
+        rebuildFlags.push(options?.isRebuild ?? false);
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          await framework.callbacks.onBuildFacts(facts, options);
+        } finally {
+          activeBuildFacts -= 1;
+        }
+      },
+    };
+
+    const controller = await webpackAdapter.dev({
+      config,
+      cwd,
+      plan,
+      hooks,
+      callbacks,
+    });
+    let closed = false;
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 150));
       await controller?.close?.();
+      closed = true;
+
+      expect(doneCount).toBeGreaterThanOrEqual(2);
+      expect(completedCompilerNames.has("client")).toBe(true);
+      expect(completedCompilerNames.has("server")).toBe(true);
+      expect(maxActiveBuildFacts).toBe(1);
+      expect(rebuildFlags.filter((isRebuild) => !isRebuild)).toHaveLength(1);
+      expect(rebuildFlags.slice(1).every(Boolean)).toBe(true);
+      expect(onBuildOutput).toHaveBeenCalledTimes(rebuildFlags.length);
+    } finally {
+      if (!closed) await controller?.close?.();
     }
   });
 
@@ -1204,7 +1363,7 @@ describe("webpackAdapter dev", () => {
       expect(update.entries.changed).toHaveLength(0);
       expect(update.html.changed.map((item) => item.id)).toEqual(["home"]);
       expect(html).toContain("next-shell");
-      expect(html).toContain('src="/home.js"');
+      expect(html).toContain('src="/page-client-home.js"');
     } finally {
       await controller?.close?.();
     }
@@ -1379,7 +1538,9 @@ describe("webpackAdapter dev", () => {
       const session = controller as unknown as {
         plan: { entries: Array<{ name: string }> };
       };
-      expect(session.plan.entries.map((entry) => entry.name)).toEqual(["home"]);
+      expect(session.plan.entries.map((entry) => entry.name)).toEqual([
+        createPageClientBuildEntryName("home"),
+      ]);
     } finally {
       await controller?.close?.();
     }
@@ -1475,16 +1636,18 @@ describe("webpackAdapter dev", () => {
       );
 
       expect(update.entries.added.map((entry) => entry.name)).toEqual([
-        "about",
+        createPageClientBuildEntryName("about"),
       ]);
       expect(manifest).not.toHaveProperty("assets");
       if (!("routing" in manifest) || manifest.routing.kind !== "mpa") {
         throw new Error("Expected MPA public manifest.");
       }
-      expect(manifest.routing.pages.about.assets.js).toEqual(["about.js"]);
+      expect(manifest.routing.pages.about.assets.js).toEqual([
+        "page-client-about.js",
+      ]);
       expect(html).toContain('data-evjs-kind="page"');
       expect(html).toContain('data-evjs-id="about"');
-      expect(html).toContain('src="/about.js"');
+      expect(html).toContain('src="/page-client-about.js"');
       expect(onBuildOutput.mock.calls.length).toBeGreaterThan(
         buildOutputCallsBeforeUpdate,
       );

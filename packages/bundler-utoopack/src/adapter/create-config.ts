@@ -113,6 +113,7 @@ export async function createUtoopackConfig(
   plan: BuildPlan,
   cwd: string,
   hooks: PluginHooks<ConfigComplete>[],
+  addWatchFile?: (file: string) => void,
 ): Promise<ConfigComplete> {
   validateUtoopackPlanSupport(plan);
 
@@ -215,7 +216,7 @@ export async function createUtoopackConfig(
     bundlerName: "utoopack",
     environment: finalServerEntry ? "mixed" : "client",
     logger,
-    addWatchFile() {},
+    addWatchFile: addWatchFile ?? missingFrameworkWatchCollector,
   };
 
   for (const h of hooks) {
@@ -232,6 +233,12 @@ export async function createUtoopackConfig(
   }
 
   return utoopackConfig;
+}
+
+function missingFrameworkWatchCollector(file: string): never {
+  throw new Error(
+    `[evjs] Cannot watch plugin dependency "${file}" because the Utoopack config was created without a framework watch collector.`,
+  );
 }
 
 function createResolveAlias(

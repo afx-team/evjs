@@ -439,11 +439,18 @@ class ContributionCollector<TBundlerCfg> {
             `[evjs] Plugin "${pluginName}" entry facade "${id}" can only target client entries.`,
           );
         }
+        if (input.autoStart === false && entry.metadata?.type !== "pages-app") {
+          throw new Error(
+            `[evjs] Plugin "${pluginName}" entry facade "${id}" can disable autoStart only for a generated SPA Application entry.`,
+          );
+        }
         return this.emitGeneratedModule(pluginName, {
           id,
           scope: input.scope ?? generatedScopeForEntry(entry),
           source: ({ importFile }) =>
-            createOriginalClientEntryFacadeSource(entry, importFile),
+            createOriginalClientEntryFacadeSource(entry, importFile, {
+              autoStart: input.autoStart,
+            }),
           extension: ".ts",
           keyKind: "entry facade",
         });

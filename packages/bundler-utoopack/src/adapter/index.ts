@@ -16,6 +16,7 @@ import type {
   BundlerBuildFacts,
   BundlerDevContext,
   BundlerDevController,
+  BundlerDevUpdateOptions,
 } from "@evjs/ev/_internal/build";
 import type { ResolvedConfig } from "@evjs/ev/config";
 import type { BuildPlan, BuildPlanUpdate } from "@evjs/shared/manifest";
@@ -85,9 +86,15 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
   async build(
     ctx: BundlerBuildContext<ConfigComplete>,
   ): Promise<BundlerBuildFacts> {
-    const { config, cwd, hooks, plan } = ctx;
+    const { addWatchFile, config, cwd, hooks, plan } = ctx;
     const { createUtoopackConfig } = await import("./create-config.js");
-    const utoopackConfig = await createUtoopackConfig(config, plan, cwd, hooks);
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      cwd,
+      hooks,
+      addWatchFile,
+    );
 
     logger.info`Building for production with utoopack...`;
 
@@ -105,11 +112,17 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
 
   async dev(
     ctx: BundlerDevContext<ConfigComplete>,
-  ): Promise<BundlerDevController> {
-    const { config, cwd, callbacks, hooks, plan } = ctx;
+  ): Promise<BundlerDevController<ConfigComplete>> {
+    const { addWatchFile, config, cwd, callbacks, hooks, plan } = ctx;
     const { createUtoopackConfig, updateSpaHistoryFallbackTarget } =
       await import("./create-config.js");
-    const utoopackConfig = await createUtoopackConfig(config, plan, cwd, hooks);
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      cwd,
+      hooks,
+      addWatchFile,
+    );
     let serverReadyWatcher: fs.FSWatcher | undefined;
 
     logger.info`Starting development server with utoopack...`;
@@ -211,7 +224,7 @@ function formatDevServerOrigin(
   return `${protocol}://${host}:${port}`;
 }
 
-class UtoopackDevController implements BundlerDevController {
+class UtoopackDevController implements BundlerDevController<ConfigComplete> {
   constructor(
     private options: {
       config: ResolvedConfig<ConfigComplete>;
@@ -226,7 +239,15 @@ class UtoopackDevController implements BundlerDevController {
     this.options.closeWatcher?.();
   }
 
-  async updatePlan(update: BuildPlanUpdate): Promise<void> {
+  async updatePlan(
+    update: BuildPlanUpdate,
+    options?: BundlerDevUpdateOptions<ConfigComplete>,
+  ): Promise<void> {
+    if (options?.configChanged) {
+      throw new Error(
+        "[evjs] Utoopack dev cannot safely replace framework, proxy, or plugin bundler configuration in place. Restart ev dev to apply the updated config.",
+      );
+    }
     if (isEmptyPlanUpdate(update)) return;
 
     if (!isArtifactOnlyUpdate(update)) {

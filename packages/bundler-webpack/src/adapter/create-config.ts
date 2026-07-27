@@ -49,7 +49,10 @@ export async function createWebpackConfigs(
   plan: BuildPlan,
   cwd: string,
   hooks: PluginHooks<WebpackConfig>[],
-  options: { clean?: boolean } = {},
+  options: {
+    clean?: boolean;
+    addWatchFile?: (file: string) => void;
+  } = {},
 ): Promise<Configuration[]> {
   const outputPaths = getOutputPaths(cwd, config.output, plan.distDir);
   const configs: Configuration[] = [];
@@ -190,7 +193,7 @@ export async function createWebpackConfigs(
           ? "client"
           : "server",
     logger,
-    addWatchFile() {},
+    addWatchFile: options.addWatchFile ?? missingFrameworkWatchCollector,
   };
 
   for (const h of hooks) {
@@ -200,6 +203,12 @@ export async function createWebpackConfigs(
   }
 
   return configs;
+}
+
+function missingFrameworkWatchCollector(file: string): never {
+  throw new Error(
+    `[evjs] Cannot watch plugin dependency "${file}" because the webpack config was created without a framework watch collector.`,
+  );
 }
 
 function createWebpackConfig(options: {

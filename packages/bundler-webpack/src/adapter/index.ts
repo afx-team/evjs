@@ -9,6 +9,7 @@ import type {
   BundlerBuildFacts,
   BundlerDevContext,
   BundlerDevController,
+  BundlerDevUpdateOptions,
 } from "@evjs/ev/_internal/build";
 import type { DevProxyRule, ResolvedConfig } from "@evjs/ev/config";
 import { pageRoutePathToRegExp } from "@evjs/shared";
@@ -42,6 +43,12 @@ interface WebpackDevServerInstance {
 
 interface WebpackWatching {
   close(callback: (error: Error | null) => void): void;
+}
+
+interface WebpackDevStatsSnapshot {
+  clientStats?: WebpackStatsLike;
+  serverStats?: WebpackStatsLike;
+  error?: string;
 }
 
 type WebpackDevProxyRule = DevProxyRule & {
@@ -80,7 +87,7 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
   async build(
     ctx: BundlerBuildContext<WebpackConfig>,
   ): Promise<BundlerBuildFacts> {
-    const { config, cwd, hooks, plan } = ctx;
+    const { addWatchFile, config, cwd, hooks, plan } = ctx;
     const outputPaths = getOutputPaths(cwd, config.output, plan.distDir);
 
     logger.info`Building for production with webpack...`;
@@ -90,7 +97,9 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
       force: true,
     });
 
-    const configs = await createWebpackConfigs(config, plan, cwd, hooks);
+    const configs = await createWebpackConfigs(config, plan, cwd, hooks, {
+      addWatchFile,
+    });
     const stats = await runWebpack(configs);
     const hasRuntimeServerEntries = plan.entries.some(
       (entry) => entry.environment === "server" && entry.phase !== "build",
@@ -130,16 +139,17 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
 
   async dev(
     ctx: BundlerDevContext<WebpackConfig>,
-  ): Promise<BundlerDevController> {
+  ): Promise<BundlerDevController<WebpackConfig>> {
     const session = new WebpackDevSession(ctx);
     await session.start();
     return session;
   },
 };
 
-class WebpackDevSession implements BundlerDevController {
+class WebpackDevSession implements BundlerDevController<WebpackConfig> {
   private config: ResolvedConfig<WebpackConfig>;
   private plan: BuildPlan;
+  private devWorkQueue: Promise<void> = Promise.resolve();
   private clientServer: WebpackDevServerInstance | undefined;
   private serverWatching: WebpackWatching | undefined;
   private latestClientStats: WebpackStatsLike | undefined;
@@ -185,7 +195,7 @@ class WebpackDevSession implements BundlerDevController {
       this.plan,
       this.ctx.cwd,
       this.ctx.hooks,
-      { clean: false },
+      { clean: false, addWatchFile: this.ctx.addWatchFile },
     );
     const clientConfigs = configs.filter((config) => config.name === "client");
     const serverConfigs = configs.filter(
@@ -198,9 +208,7 @@ class WebpackDevSession implements BundlerDevController {
     if (needsClient) {
       const compiler = createWebpackCompiler(clientConfigs);
       compiler.hooks.done.tap("EvjsWebpackDevClient", (stats) => {
-        void this.handleStats("client", generation, stats).catch((error) => {
-          this.failInitialBuild(error);
-        });
+        this.enqueueStats("client", generation, stats);
       });
       this.clientServer = new WebpackDevServer(
         createDevServerOptions(this.config, this.plan, outputPaths.clientDir),
@@ -212,9 +220,7 @@ class WebpackDevSession implements BundlerDevController {
     if (needsServer) {
       const compiler = createWebpackCompiler(serverConfigs);
       compiler.hooks.done.tap("EvjsWebpackDevServer", (stats) => {
-        void this.handleStats("server", generation, stats).catch((error) => {
-          this.failInitialBuild(error);
-        });
+        this.enqueueStats("server", generation, stats);
       });
       this.serverWatching = compiler.watch({}, (error) => {
         if (error) this.failInitialBuild(error);
@@ -239,7 +245,22 @@ class WebpackDevSession implements BundlerDevController {
     await this.stop();
   }
 
-  async updatePlan(update: BuildPlanUpdate): Promise<void> {
+  updatePlan(
+    update: BuildPlanUpdate,
+    options?: BundlerDevUpdateOptions<WebpackConfig>,
+  ): Promise<void> {
+    return this.enqueueDevWork(() => this.applyPlanUpdate(update, options));
+  }
+
+  private async applyPlanUpdate(
+    update: BuildPlanUpdate,
+    options?: BundlerDevUpdateOptions<WebpackConfig>,
+  ): Promise<void> {
+    if (options?.configChanged) {
+      throw new Error(
+        "[evjs] Webpack dev cannot safely replace framework, proxy, or plugin bundler configuration in place. Restart ev dev to apply the updated config.",
+      );
+    }
     const previousPlan = this.plan;
     const previousClientStats = this.latestClientStats;
     const previousServerStats = this.latestServerStats;
@@ -271,7 +292,7 @@ class WebpackDevSession implements BundlerDevController {
           incrementalPlan,
           this.ctx.cwd,
           this.ctx.hooks,
-          { clean: false },
+          { clean: false, addWatchFile: this.ctx.addWatchFile },
         );
         const stats = await runWebpack(configs);
         if (stats.clientStats) {
@@ -290,7 +311,7 @@ class WebpackDevSession implements BundlerDevController {
         this.plan,
         this.ctx.cwd,
         this.ctx.hooks,
-        { clean: false },
+        { clean: false, addWatchFile: this.ctx.addWatchFile },
       );
       const stats = await runWebpack(configs);
 
@@ -345,26 +366,60 @@ class WebpackDevSession implements BundlerDevController {
       }
     }
 
+    await this.devWorkQueue;
+
     if (errors.length > 0) {
       throw errors[0];
     }
   }
 
-  private async handleStats(
+  private enqueueStats(
     kind: "client" | "server",
     generation: number,
     stats: Stats | MultiStats,
+  ): void {
+    if (generation !== this.startGeneration) return;
+
+    let snapshot: WebpackDevStatsSnapshot;
+    try {
+      snapshot = createWebpackDevStatsSnapshot(stats);
+    } catch (error) {
+      this.failInitialBuild(error);
+      logger.error`Failed to snapshot webpack ${kind} dev build: ${error}`;
+      return;
+    }
+
+    void this.enqueueDevWork(() =>
+      this.handleStats(kind, generation, snapshot),
+    ).catch((error) => {
+      this.failInitialBuild(error);
+      logger.error`Failed to process webpack ${kind} dev build: ${error}`;
+    });
+  }
+
+  private enqueueDevWork<T>(work: () => Promise<T>): Promise<T> {
+    const result = this.devWorkQueue.then(work);
+    this.devWorkQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  private async handleStats(
+    kind: "client" | "server",
+    generation: number,
+    snapshot: WebpackDevStatsSnapshot,
   ): Promise<void> {
     if (generation !== this.startGeneration) return;
 
-    if (stats.hasErrors()) {
-      const error = new Error(formatWebpackErrors(stats));
+    if (snapshot.error) {
+      const error = new Error(snapshot.error);
       this.failInitialBuild(error);
       logger.error`${error.message}`;
       return;
     }
 
-    const split = splitStatsByName(stats);
     const outputPaths = getOutputPaths(
       this.ctx.cwd,
       this.config.output,
@@ -372,12 +427,12 @@ class WebpackDevSession implements BundlerDevController {
     );
 
     if (kind === "client") {
-      this.latestClientStats = split.clientStats
-        ? mergeWebpackStats(this.latestClientStats, split.clientStats)
+      this.latestClientStats = snapshot.clientStats
+        ? mergeWebpackStats(this.latestClientStats, snapshot.clientStats)
         : this.latestClientStats;
       await emitStats(outputPaths.clientDir, this.latestClientStats);
     } else {
-      this.latestServerStats = split.serverStats;
+      this.latestServerStats = snapshot.serverStats;
       await emitStats(outputPaths.serverDir, this.latestServerStats);
       await copyServerCssAssetsToClient(
         outputPaths.serverDir,
@@ -934,7 +989,24 @@ function splitStatsByName(stats: Stats | MultiStats): {
   clientStats?: WebpackStatsLike;
   serverStats?: WebpackStatsLike;
 } {
-  const json = stats.toJson({
+  return splitStatsJsonByName(readWebpackStatsJson(stats));
+}
+
+function createWebpackDevStatsSnapshot(
+  stats: Stats | MultiStats,
+): WebpackDevStatsSnapshot {
+  const hasErrors = stats.hasErrors();
+  const json = readWebpackStatsJson(stats);
+  return {
+    ...splitStatsJsonByName(json),
+    ...(hasErrors ? { error: formatWebpackJsonErrors(json) } : {}),
+  };
+}
+
+function readWebpackStatsJson(
+  stats: Stats | MultiStats,
+): WebpackMultiStatsJson | WebpackStatsJson {
+  return stats.toJson({
     all: false,
     assets: true,
     chunks: true,
@@ -943,7 +1015,12 @@ function splitStatsByName(stats: Stats | MultiStats): {
     modules: true,
     warnings: true,
   }) as WebpackMultiStatsJson | WebpackStatsJson;
+}
 
+function splitStatsJsonByName(json: WebpackMultiStatsJson | WebpackStatsJson): {
+  clientStats?: WebpackStatsLike;
+  serverStats?: WebpackStatsLike;
+} {
   const children = getStatsChildren(json);
   let clientStats: WebpackStatsLike | undefined;
   let serverStats: WebpackStatsLike | undefined;
@@ -1081,6 +1158,12 @@ function formatWebpackErrors(stats: Stats | MultiStats): string {
   const json = stats.toJson({ all: false, errors: true }) as
     | WebpackMultiStatsJson
     | WebpackStatsJson;
+  return formatWebpackJsonErrors(json);
+}
+
+function formatWebpackJsonErrors(
+  json: WebpackMultiStatsJson | WebpackStatsJson,
+): string {
   const children = getStatsChildren(json);
   const errors = children.flatMap((child) => child.errors ?? []);
   return [

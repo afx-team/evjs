@@ -379,6 +379,12 @@ describe("@evjs/plugin-qiankun plugin", () => {
     const importFile = (file: string) => toRelativeImport(sourceDir, file);
     const wrapperSource = renderModule(wrapper, captured.importOf, importFile);
     expect(original).toBeDefined();
+    expect(captured.entryFacades).toEqual([
+      expect.objectContaining({
+        id: "original-entry",
+        autoStart: false,
+      }),
+    ]);
     expect(wrapperSource).toContain(
       'loadEntry: () => import("virtual:original-entry")',
     );
@@ -446,6 +452,7 @@ function createContributionCapture(
   const watched: string[] = [];
   const modules: CapturedModule[] = [];
   const slots: CapturedSlot[] = [];
+  const entryFacades: Parameters<EmitApi["entryFacade"]>[0][] = [];
   const refs = new Map<GeneratedModuleRef, string>();
   const emit: EmitApi = {
     module(input) {
@@ -461,6 +468,7 @@ function createContributionCapture(
       return ref;
     },
     entryFacade(input) {
+      entryFacades.push(input);
       const ref = { id: input.id } as unknown as GeneratedModuleRef;
       refs.set(ref, input.id);
       modules.push({
@@ -485,7 +493,14 @@ function createContributionCapture(
       };
     },
   };
-  return { ctx, importOf: emit.importOf, modules, slots, watched };
+  return {
+    ctx,
+    importOf: emit.importOf,
+    modules,
+    slots,
+    watched,
+    entryFacades,
+  };
 }
 
 function renderModule(

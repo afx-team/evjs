@@ -18,6 +18,12 @@ import type {
 } from "@evjs/shared/manifest";
 import { clonePageMetadata } from "@evjs/shared/manifest";
 import {
+  createApplicationClientBuildEntryName,
+  createPageClientBuildEntryName,
+  createPageServerBuildEntryName,
+  createPprRegionBuildEntryName,
+  createPprShellBuildEntryName,
+  createRscPageBuildEntryName,
   GENERATED_PAGES_APP_BUILD_ENTRY,
   SERVER_RUNTIME_BUILD_ENTRY_NAME,
 } from "../build-entry-conventions.js";
@@ -39,6 +45,7 @@ const DEFAULT_RESOLVE_ALIAS = {
 
 interface BuildApplicationFacts {
   id: string;
+  documentId: string;
   html: string;
   documentOutput: string;
   documentAliases?: string[];
@@ -179,6 +186,7 @@ function deriveBuildPlanFacts(graph: CoreGraph): BuildPlanFacts {
     }
     apps[application.id] = {
       id: application.id,
+      documentId: document.id,
       html: document.template,
       documentOutput: document.output,
       ...(document.aliases ? { documentAliases: [...document.aliases] } : {}),
@@ -550,7 +558,7 @@ function createEntries(
     if (isClientlessStaticDocumentApp(graph, app.id)) continue;
 
     entries.push({
-      name: app.id === "default" ? "main" : app.id,
+      name: createApplicationClientBuildEntryName(app.id),
       import: GENERATED_PAGES_APP_BUILD_ENTRY,
       environment: "client",
       runtime: "browser",
@@ -570,7 +578,7 @@ function createEntries(
       const pageEntry = getPageClientEntry(page);
       if (pageEntry) {
         entries.push({
-          name: page.id,
+          name: createPageClientBuildEntryName(page.id),
           import: pageEntry.import,
           environment: "client",
           runtime: "browser",
@@ -727,14 +735,14 @@ function createServerRenderers(graph: BuildPlanFacts): ServerRenderPlan[] {
 
     if (isRscPage(page)) {
       renderers.push({
-        name: `${page.id}-server`,
+        name: createPageServerBuildEntryName(page.id),
         import: page.component,
         kind: "page-server",
         owner: pageOwner(page),
         metadata: createServerPageMetadata(page),
       });
       renderers.push({
-        name: `${page.id}-rsc`,
+        name: createRscPageBuildEntryName(page.id),
         import: page.component,
         kind: "rsc-page",
         owner: pageOwner(page),
@@ -742,7 +750,7 @@ function createServerRenderers(graph: BuildPlanFacts): ServerRenderPlan[] {
       });
     } else if (isPartialPrerenderPage(page)) {
       renderers.push({
-        name: `${page.id}-ppr-shell`,
+        name: createPprShellBuildEntryName(page.id),
         import: page.component,
         kind: "ppr-shell",
         owner: pageOwner(page),
@@ -750,7 +758,7 @@ function createServerRenderers(graph: BuildPlanFacts): ServerRenderPlan[] {
       });
     } else {
       renderers.push({
-        name: `${page.id}-server`,
+        name: createPageServerBuildEntryName(page.id),
         import: page.component,
         kind: "page-server",
         ...(isBuildOnlySsgPage(page) ? { phase: "build" as const } : {}),
@@ -761,7 +769,7 @@ function createServerRenderers(graph: BuildPlanFacts): ServerRenderPlan[] {
 
     for (const [regionId, region] of Object.entries(page.ppr?.regions ?? {})) {
       renderers.push({
-        name: `${page.id}-${sanitizePageId(regionId)}-ppr-region`,
+        name: createPprRegionBuildEntryName(page.id, regionId),
         import: region.component,
         kind: "ppr-region",
         owner: pageOwner(page, { regionId }),
@@ -838,7 +846,7 @@ function createHtmlPlans(graph: BuildPlanFacts): HtmlPlan[] {
   const pageDocuments: HtmlPlan[] = pages
     .filter(shouldEmitDocumentForPage)
     .map((page) => ({
-      id: page.id,
+      id: requirePageDocumentId(page),
       template: page.html,
       fileName: resolvePageDocumentOutput(page),
       ...(page.documentAliases ? { aliases: [...page.documentAliases] } : {}),
@@ -858,7 +866,7 @@ function createHtmlPlans(graph: BuildPlanFacts): HtmlPlan[] {
         return graph.pages[document.owner.pageId]?.applicationId === app.id;
       });
       return {
-        id: app.id === "default" ? "index" : app.id,
+        id: app.documentId,
         template: app.html,
         fileName: conflictsWithPage
           ? `${FRAMEWORK_SPA_FALLBACK_OUTPUT_DIR}/${sanitizePageId(app.id)}.html`
@@ -869,6 +877,13 @@ function createHtmlPlans(graph: BuildPlanFacts): HtmlPlan[] {
     });
 
   return [...applicationDocuments, ...pageDocuments];
+}
+
+function requirePageDocumentId(page: BuildPageFacts): string {
+  if (page.documentId) return page.documentId;
+  throw new Error(
+    `[evjs] Page "${page.id}" cannot emit HTML without a Core Document.`,
+  );
 }
 
 function resolvePageDocumentOutput(page: BuildPageFacts): string {

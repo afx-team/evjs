@@ -8,6 +8,11 @@ import {
 } from "@evjs/shared/manifest";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  createPageClientBuildEntryName,
+  createPageServerBuildEntryName,
+  createPprRegionBuildEntryName,
+  createPprShellBuildEntryName,
+  createRscPageBuildEntryName,
   GENERATED_PAGES_APP_BUILD_ENTRY,
   SERVER_RUNTIME_BUILD_ENTRY_NAME,
 } from "../src/_internal/build/build-entry-conventions.js";
@@ -294,12 +299,12 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
         })),
     ).toEqual([
       {
-        name: "index",
+        name: createPageClientBuildEntryName("index"),
         owner: { appId: "default", pageId: "index" },
         layers: [{ kind: "layout", module: "./src/pages/layout.tsx" }],
       },
       {
-        name: "about",
+        name: createPageClientBuildEntryName("about"),
         owner: { appId: "default", pageId: "about" },
         layers: [{ kind: "layout", module: "./src/pages/layout.tsx" }],
       },
@@ -330,8 +335,14 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       graph: mpa.graph,
       plan: mpaPlan,
       clientEntryAssets: {
-        index: { js: ["index.js"], css: [] },
-        about: { js: ["about.js"], css: ["about.css"] },
+        [createPageClientBuildEntryName("index")]: {
+          js: ["index.js"],
+          css: [],
+        },
+        [createPageClientBuildEntryName("about")]: {
+          js: ["about.js"],
+          css: ["about.css"],
+        },
       },
     });
     expect(output.apps).toEqual({});
@@ -387,7 +398,10 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       graph: analysis.graph,
       plan,
       clientEntryAssets: {
-        about: { js: ["about.js"], css: [] },
+        [createPageClientBuildEntryName("about")]: {
+          js: ["about.js"],
+          css: [],
+        },
       },
     });
     expect(output.pages.about.document).toEqual({
@@ -675,12 +689,12 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     expect(plan.entries).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          name: "ssr",
+          name: createPageClientBuildEntryName("ssr"),
           kind: "page-client",
           owner: { appId: "default", pageId: "ssr" },
         }),
         expect.objectContaining({
-          name: "ssr-server",
+          name: createPageServerBuildEntryName("ssr"),
           import: "./src/pages/ssr/page.tsx",
           environment: "server",
           runtime: "node",
@@ -702,7 +716,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
           },
         }),
         expect.objectContaining({
-          name: "ssg-server",
+          name: createPageServerBuildEntryName("ssg"),
           import: "./src/pages/ssg/page.tsx",
           environment: "server",
           runtime: "node",
@@ -711,7 +725,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
           owner: { pageId: "ssg", routeId: "ssg" },
         }),
         expect.objectContaining({
-          name: "rsc-rsc",
+          name: createRscPageBuildEntryName("rsc"),
           import: "./src/pages/rsc/page.tsx",
           environment: "server",
           runtime: "node",
@@ -719,7 +733,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
           owner: { pageId: "rsc", routeId: "rsc" },
         }),
         expect.objectContaining({
-          name: "ppr-ppr-shell",
+          name: createPprShellBuildEntryName("ppr"),
           import: "./src/pages/ppr/page.tsx",
           environment: "server",
           runtime: "node",
@@ -727,7 +741,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
           owner: { pageId: "ppr", routeId: "ppr" },
         }),
         {
-          name: `ppr-${pprRegionId}-ppr-region`,
+          name: createPprRegionBuildEntryName("ppr", pprRegionId),
           import: "./src/pages/ppr/Offer.region.tsx",
           environment: "server",
           runtime: "node",
@@ -860,7 +874,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     });
     expect(plan.html).toEqual([
       {
-        id: "index",
+        id: "page:index",
         template: "./index.html",
         fileName: "index.html",
         owner: { pageId: "index" },
@@ -874,7 +888,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     ]);
   });
 
-  it("relocates a mixed SPA Application shell when root SSG owns index.html", async () => {
+  it("keeps mixed SPA HTML identities distinct and reports root SSG removal", async () => {
     const cwd = await createFixture({
       "src/pages/page.tsx": "export default function Home() { return null; }",
       "src/pages/page.config.ts":
@@ -897,7 +911,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
         owner: { appId: "default" },
       },
       {
-        id: "index",
+        id: "page:index",
         template: "./index.html",
         fileName: "index.html",
         owner: { pageId: "index" },
@@ -920,6 +934,72 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     expect(output.pages.index?.document).toEqual({
       fileName: "index.html",
     });
+
+    await fs.rm(path.join(cwd, "src/pages/page.config.ts"));
+    const nextConfig = await createCanonicalConfig(cwd, "spa");
+    const nextAnalysis = await createCoreGraph(nextConfig, cwd);
+    const nextPlan = createBuildPlan(nextConfig, nextAnalysis.graph, {
+      mode: "production",
+    });
+    const update = diffBuildPlan(plan, nextPlan, "route-declaration");
+
+    expect(update.html.removed).toEqual([
+      {
+        id: "page:index",
+        template: "./index.html",
+        fileName: "index.html",
+        owner: { pageId: "index" },
+      },
+    ]);
+    expect(update.html.changed).toEqual([
+      {
+        id: "index",
+        template: "./index.html",
+        fileName: "index.html",
+        owner: { appId: "default" },
+      },
+    ]);
+  });
+
+  it("names MPA entries in disjoint owner and kind namespaces", async () => {
+    const cwd = await createFixture({
+      "src/pages/server/page.tsx":
+        "export default function ServerPage() { return null; }",
+      "src/pages/evjs-rsc-client/page.tsx":
+        "export default function RuntimeNamedPage() { return null; }",
+      "src/pages/report-server/page.tsx":
+        "export default function RendererNamedPage() { return null; }",
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "src/pages/report/page.config.ts":
+        'export default { render: "ssr", hydrate: "none", rsc: true };',
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "mpa");
+    const analysis = await createCoreGraph(config, cwd);
+    const plan = createBuildPlan(config, analysis.graph, {
+      mode: "production",
+    });
+    const names = plan.entries.map((entry) => entry.name);
+
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        createPageClientBuildEntryName("server"),
+        createPageClientBuildEntryName("evjs-rsc-client"),
+        createPageClientBuildEntryName("report-server"),
+        createPageServerBuildEntryName("report"),
+        createRscPageBuildEntryName("report"),
+        "evjs-rsc-client",
+        SERVER_RUNTIME_BUILD_ENTRY_NAME,
+      ]),
+    );
+  });
+
+  it("keeps composite PPR region entry names injective", () => {
+    expect(createPprRegionBuildEntryName("a-b", "c")).not.toBe(
+      createPprRegionBuildEntryName("a", "b-c"),
+    );
   });
 
   it("keeps hydrated SPA SSG client assets while treating its renderer and document as build-only", async () => {
@@ -945,7 +1025,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
           owner: { appId: "default" },
         }),
         expect.objectContaining({
-          name: "report-server",
+          name: createPageServerBuildEntryName("report"),
           kind: "page-server",
           phase: "build",
           owner: { pageId: "report", routeId: "report" },
@@ -1282,7 +1362,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
 
     expect(update.entries.added).toEqual([
       expect.objectContaining({
-        name: "orders",
+        name: createPageClientBuildEntryName("orders"),
         import: "./src/pages/orders/page.tsx",
         kind: "page-client",
         owner: { appId: "default", pageId: "orders" },

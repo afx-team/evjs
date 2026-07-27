@@ -28,6 +28,8 @@ export interface BundlerBuildContext<TBundlerCfg = DefaultBundlerConfig> {
   config: ResolvedFrameworkConfig<TBundlerCfg>;
   plan: BuildPlan;
   hooks: PluginHooks<TBundlerCfg>[];
+  /** Register a plugin-owned dependency with the framework dev watcher. */
+  addWatchFile?(file: string): void;
 }
 
 export interface BundlerDevContext<TBundlerCfg = DefaultBundlerConfig>
@@ -51,9 +53,22 @@ export interface BundlerDevContext<TBundlerCfg = DefaultBundlerConfig>
   };
 }
 
-export interface BundlerDevController {
+export interface BundlerDevUpdateOptions<TBundlerCfg = DefaultBundlerConfig> {
+  /** The resolved config that produced the next plan. */
+  config: ResolvedFrameworkConfig<TBundlerCfg>;
+  /**
+   * True when framework config or a `bundlerConfig()` dependency changed and
+   * the adapter must refresh its effective bundler configuration.
+   */
+  configChanged: boolean;
+}
+
+export interface BundlerDevController<TBundlerCfg = DefaultBundlerConfig> {
   close?(): void | Promise<void>;
-  updatePlan(update: BuildPlanUpdate): void | Promise<void>;
+  updatePlan(
+    update: BuildPlanUpdate,
+    options?: BundlerDevUpdateOptions<TBundlerCfg>,
+  ): void | Promise<void>;
 }
 
 export interface BundlerCapabilities {
@@ -114,7 +129,7 @@ export interface BundlerAdapter<TBundlerCfg = DefaultBundlerConfig> {
    */
   dev(
     ctx: BundlerDevContext<TBundlerCfg>,
-  ): Promise<BundlerDevController | undefined>;
+  ): Promise<BundlerDevController<TBundlerCfg> | undefined>;
 }
 
 export function getBundlerBuildCapabilityGaps(

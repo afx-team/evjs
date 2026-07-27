@@ -44,6 +44,33 @@ describe("createWebpackConfigs", () => {
     });
   });
 
+  it("forwards bundlerConfig watch files to the framework collector", async () => {
+    const config = createResolvedConfig();
+    const graph = createGraph(config);
+    const plan = await createGeneratedPlan(config, graph, "development");
+    const watchedFiles: string[] = [];
+
+    await createWebpackConfigs(
+      config,
+      plan,
+      process.cwd(),
+      [
+        {
+          bundlerConfig(_configs, ctx) {
+            ctx.addWatchFile("./webpack-plugin.config.ts");
+          },
+        },
+      ],
+      {
+        addWatchFile(file) {
+          watchedFiles.push(file);
+        },
+      },
+    );
+
+    expect(watchedFiles).toEqual(["./webpack-plugin.config.ts"]);
+  });
+
   it("resolves generated alias contributions directly to generated files", async () => {
     const plugin: Plugin<WebpackConfig> = {
       name: "generated-alias",
@@ -245,7 +272,7 @@ describe("createWebpackConfigs", () => {
     const configs = await createWebpackConfigs(config, plan, process.cwd(), []);
     const serializedEntries = JSON.stringify(configs[0]?.entry);
 
-    expect(serializedEntries).toContain("./.ev/entries/index.ts");
+    expect(serializedEntries).toContain("./.ev/entries/page-client-index.ts");
     expect(serializedEntries).not.toContain("createReactPageModule");
     expect(serializedEntries).not.toContain(
       "@evjs/ev/_internal/client/react-page",

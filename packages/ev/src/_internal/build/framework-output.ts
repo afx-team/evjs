@@ -47,6 +47,28 @@ interface BuildOutputDocumentIdentity {
   aliases?: string[];
 }
 
+interface BuildOutputPageIdentity extends BuildOutputDocumentIdentity {
+  path?: string;
+  routeId?: string;
+}
+
+interface BuildOutputRouteIdentity {
+  id: string;
+  path: string;
+  parentId?: string;
+  kind?: BuildOutput["routes"][number]["kind"];
+  appId?: string;
+  pageId?: string;
+}
+
+interface BuildOutputIdentitySnapshot {
+  appIds: string[];
+  pageIds: string[];
+  documents: Map<string, BuildOutputDocumentIdentity>;
+  pages: Map<string, BuildOutputPageIdentity>;
+  routes: BuildOutputRouteIdentity[];
+}
+
 export function validateHtmlTemplates<TBundlerCfg>(
   cwd: string,
   config: ResolvedConfig<TBundlerCfg>,
@@ -618,10 +640,10 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     serverModules: options.bundlerFacts.serverModules,
   });
 
-  const documentIdentities = snapshotBuildOutputDocumentIdentities(output);
+  const identities = snapshotBuildOutputIdentities(output);
   await runBuildOutputHooks(options.hooks, output, options.pluginCtx);
   assertFrameworkManifestShape(output, "BuildOutput after buildOutput hooks");
-  assertBuildOutputDocumentIdentitiesUnchanged(documentIdentities, output);
+  assertBuildOutputIdentitiesUnchanged(identities, output);
   const documentShells = await compileServerDocumentShells({
     cwd: options.cwd,
     config: options.config,
@@ -657,36 +679,80 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   return { output, frameworkRuntime };
 }
 
-function snapshotBuildOutputDocumentIdentities(
+function snapshotBuildOutputIdentities(
   output: BuildOutput,
-): Map<string, BuildOutputDocumentIdentity> {
-  const identities = new Map<string, BuildOutputDocumentIdentity>();
+): BuildOutputIdentitySnapshot {
+  const documents = new Map<string, BuildOutputDocumentIdentity>();
+  const pages = new Map<string, BuildOutputPageIdentity>();
   for (const [id, app] of Object.entries(output.apps)) {
-    identities.set(`app:${id}`, {
+    documents.set(`app:${id}`, {
       owner: `Application "${id}"`,
       ...(app.document ? { fileName: app.document.fileName } : {}),
       ...(app.document?.aliases ? { aliases: [...app.document.aliases] } : {}),
     });
   }
   for (const [id, page] of Object.entries(output.pages)) {
-    identities.set(`page:${id}`, {
+    const identity = {
       owner: `Page "${id}"`,
       ...(page.document ? { fileName: page.document.fileName } : {}),
       ...(page.document?.aliases
         ? { aliases: [...page.document.aliases] }
         : {}),
-    });
+      ...(page.path ? { path: page.path } : {}),
+      ...(page.routeId ? { routeId: page.routeId } : {}),
+    };
+    documents.set(`page:${id}`, identity);
+    pages.set(id, identity);
   }
-  return identities;
+  return {
+    appIds: Object.keys(output.apps).sort(),
+    pageIds: Object.keys(output.pages).sort(),
+    documents,
+    pages,
+    routes: output.routes.map((route) => ({
+      id: route.id,
+      path: route.path,
+      ...(route.parentId ? { parentId: route.parentId } : {}),
+      ...(route.kind ? { kind: route.kind } : {}),
+      ...(route.appId ? { appId: route.appId } : {}),
+      ...(route.pageId ? { pageId: route.pageId } : {}),
+    })),
+  };
 }
 
-function assertBuildOutputDocumentIdentitiesUnchanged(
-  expected: ReadonlyMap<string, BuildOutputDocumentIdentity>,
+function assertBuildOutputIdentitiesUnchanged(
+  expected: BuildOutputIdentitySnapshot,
   output: BuildOutput,
 ): void {
-  const actual = snapshotBuildOutputDocumentIdentities(output);
-  for (const [key, identity] of expected) {
-    const candidate = actual.get(key);
+  const actual = snapshotBuildOutputIdentities(output);
+  if (!arraysEqual(expected.appIds, actual.appIds)) {
+    throw new Error(
+      "[evjs] buildOutput hooks cannot add, remove, or rename Applications. Application identity is owned by the CoreGraph.",
+    );
+  }
+  if (!arraysEqual(expected.pageIds, actual.pageIds)) {
+    throw new Error(
+      "[evjs] buildOutput hooks cannot add, remove, or rename Pages. Page identity is owned by the CoreGraph.",
+    );
+  }
+  if (!routeIdentitiesEqual(expected.routes, actual.routes)) {
+    throw new Error(
+      "[evjs] buildOutput hooks cannot add, remove, reorder, or rename Routes, or change Route paths and ownership. Route identity is owned by the CoreGraph.",
+    );
+  }
+  for (const [id, identity] of expected.pages) {
+    const candidate = actual.pages.get(id);
+    if (
+      candidate?.path !== identity.path ||
+      candidate?.routeId !== identity.routeId
+    ) {
+      throw new Error(
+        `[evjs] buildOutput hooks cannot change Page "${id}" path or routeId. Page and Route identity is owned by the CoreGraph.`,
+      );
+    }
+  }
+  for (const [key, identity] of expected.documents) {
+    const candidate = actual.documents.get(key);
     if (
       candidate !== undefined &&
       candidate.fileName === identity.fileName &&
@@ -698,8 +764,9 @@ function assertBuildOutputDocumentIdentitiesUnchanged(
       `[evjs] buildOutput hooks cannot change ${identity.owner} Document fileName or aliases. Configure static Document identity in framework configuration before the CoreGraph is linked.`,
     );
   }
-  for (const [key, identity] of actual) {
-    if (expected.has(key) || identity.fileName === undefined) continue;
+  for (const [key, identity] of actual.documents) {
+    if (expected.documents.has(key) || identity.fileName === undefined)
+      continue;
     throw new Error(
       `[evjs] buildOutput hooks cannot add a Document to ${identity.owner}. Configure static Document identity in framework configuration before the CoreGraph is linked.`,
     );
@@ -711,8 +778,35 @@ function optionalArraysEqual(
   right: readonly string[] | undefined,
 ): boolean {
   if (!left || !right) return left === right;
+  return arraysEqual(left, right);
+}
+
+function arraysEqual(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
   return (
     left.length === right.length &&
     left.every((value, index) => value === right[index])
+  );
+}
+
+function routeIdentitiesEqual(
+  left: readonly BuildOutputRouteIdentity[],
+  right: readonly BuildOutputRouteIdentity[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((route, index) => {
+      const candidate = right[index];
+      return (
+        candidate?.id === route.id &&
+        candidate.path === route.path &&
+        candidate.parentId === route.parentId &&
+        candidate.kind === route.kind &&
+        candidate.appId === route.appId &&
+        candidate.pageId === route.pageId
+      );
+    })
   );
 }

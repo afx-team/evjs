@@ -311,10 +311,18 @@ flowchart TB
 | `buildEnd({ output, isRebuild })` | 构建后输出最终产物 |
 | `dispose(ctx)` | 清理资源 |
 
+在 dev 中，首次链接输出后会以 `isRebuild: false` 调用 `buildEnd()`，之后每次重新链接
+的构建都会以 `isRebuild: true` 调用。无论从 `setup()` context 还是
+`bundlerConfig()` context 调用 `addWatchFile()`，依赖都会注册到同一个框架 dev
+watcher；文件变化后框架会重新分析并应用对应的 plan update。如果所选 adapter
+无法安全地原地替换实际 bundler config，更新会 fail-closed 并明确提示重启，不会继续
+使用过期配置。
+
 `buildOutput()` 可以调整已链接 asset 并添加部署 metadata，但
 Application/Page/Route/Document identity 仍由 CoreGraph 持有。Hook 不能新增、
-删除或重命名 Document，也不能修改其静态 alias；这些值必须在 graph linking
-之前完成配置。
+删除或重命名 Application、Page、Route 或 Document，不能调整 Route 顺序、修改
+Page path 或 Route ownership，也不能修改 Document file name 和静态 alias；这些值
+必须在 graph linking 之前完成配置。
 
 ## Generated Contributions
 
@@ -418,6 +426,11 @@ contributions(ctx) {
   });
 }
 ```
+
+对于生成的 SPA Application entry，`autoStart: false` 会创建并导出 framework
+`app`，但不会挂载；同时会导出 `start(container)`，为首次挂载保留 framework
+hydration marker 语义。使用该选项的替换 entry 需要负责首次 `start()` 以及后续
+`app.render()` 重新挂载；其他 entry 类型不能关闭 framework startup。
 
 插件生成路径稳定且可读。例如名为 `@evjs/plugin-qiankun:slave` 的插件会写入
 `.ev/plugins/qiankun/slave/*`，并暴露类似

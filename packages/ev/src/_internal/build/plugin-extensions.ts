@@ -289,7 +289,7 @@ export function applyPluginExtensions(
 
   const pages = createRecord<CorePageNode>();
   for (const [pageId, page] of Object.entries(graph.pages)) {
-    const canonicalConfig = options.canonicalPages?.[pageId];
+    const canonicalConfig = getOwn(options.canonicalPages, pageId);
     const context = createPageContext(pageId, page, canonicalConfig);
     const configured = canonicalConfig?.extensions ?? {};
     const resolvedExtensions = resolvePageExtensions(
@@ -309,7 +309,7 @@ export function applyPluginExtensions(
   }
 
   const routes = graph.routes.map((route) => {
-    const configuredInput = routeExtensionInputs[route.id];
+    const configuredInput = getOwn(routeExtensionInputs, route.id);
     const context = createRouteContext(route);
     const resolvedExtensions = resolveRouteExtensions(
       extensionResolutionSession,
@@ -329,7 +329,7 @@ export function applyPluginExtensions(
 
   const documents = createRecord<CoreDocumentNode>();
   for (const [documentId, document] of Object.entries(graph.documents)) {
-    const configuredInput = documentExtensionInputs[documentId];
+    const configuredInput = getOwn(documentExtensionInputs, documentId);
     const context = createDocumentContext(documentId, document);
     const resolvedExtensions = resolveDocumentExtensions(
       extensionResolutionSession,
@@ -1165,6 +1165,13 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 
 function createRecord<T>(): Record<string, T> {
   return {};
+}
+
+function getOwn<T>(
+  record: Readonly<Record<string, T>> | undefined,
+  key: string,
+): T | undefined {
+  return record && Object.hasOwn(record, key) ? record[key] : undefined;
 }
 
 function defineRecordValue<T>(

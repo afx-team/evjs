@@ -58,6 +58,8 @@ export function formatInspectText(result: InspectFrameworkBuildResult): string {
       `application=${page.applicationId}`,
       `render=${page.render}`,
       `scope=${formatPageScope(page.source.scope)}`,
+      page.source.config ? `config=${page.source.config}` : undefined,
+      page.metadata ? `metadata=${JSON.stringify(page.metadata)}` : undefined,
       page.hydrate ? `hydrate=${page.hydrate}` : undefined,
       page.componentModel === "rsc" ? "rsc=true" : undefined,
       page.ppr ||

@@ -458,6 +458,7 @@ function emitOriginalEntryModule(ctx: ContributionContext): GeneratedModuleRef {
   return ctx.emit.entryFacade({
     id: "original-entry",
     entry,
+    autoStart: false,
   });
 }
 

@@ -7,6 +7,12 @@ import { PAGE_ANCHOR_PROVIDER_ID } from "@evjs/shared/manifest";
 import { configureSync, resetSync } from "@logtape/logtape";
 import { execa } from "execa";
 import { describe, expect, it } from "vitest";
+import {
+  createPageClientBuildEntryName,
+  createPageServerBuildEntryName,
+  createPprShellBuildEntryName,
+  createRscPageBuildEntryName,
+} from "../src/_internal/build/build-entry-conventions.js";
 import type {
   BundlerAdapter,
   BundlerBuildFacts,
@@ -291,6 +297,53 @@ async function waitForEvent(
     }
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
+}
+
+async function waitForFileContents(
+  file: string,
+  expected: Buffer,
+  timeoutMs = devUpdateTimeoutMs,
+): Promise<void> {
+  const startedAt = Date.now();
+  while (true) {
+    try {
+      const current = await fs.promises.readFile(file);
+      if (current.equals(expected)) return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error(`Timed out waiting for file contents: ${file}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+async function readDirectorySnapshot(
+  root: string,
+): Promise<Record<string, string>> {
+  const files: Array<[string, string]> = [];
+
+  async function visit(dir: string): Promise<void> {
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    for (const entry of entries.sort((left, right) =>
+      left.name.localeCompare(right.name),
+    )) {
+      const absolute = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await visit(absolute);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      files.push([
+        path.relative(root, absolute).split(path.sep).join("/"),
+        (await fs.promises.readFile(absolute)).toString("base64"),
+      ]);
+    }
+  }
+
+  await visit(root);
+  return Object.fromEntries(files);
 }
 
 describe("prepareFrameworkBuild", () => {
@@ -909,12 +962,16 @@ describe("prepareFrameworkBuild", () => {
       ];
       const entryMetadata = (name: string) =>
         manifest.entries.find((entry) => entry.name === name)?.metadata;
+      const ssrClientEntryName = createPageClientBuildEntryName("ssr");
+      const ssrServerEntryName = createPageServerBuildEntryName("ssr");
 
-      expect(entryMetadata("csr")).toMatchObject({
+      expect(
+        entryMetadata(createPageClientBuildEntryName("csr")),
+      ).toMatchObject({
         type: "react-component-page",
         layers: expectedLayers,
       });
-      expect(entryMetadata("ssr")).toMatchObject({
+      expect(entryMetadata(ssrClientEntryName)).toMatchObject({
         type: "react-component-page",
         layers: expectedLayers,
       });
@@ -924,11 +981,11 @@ describe("prepareFrameworkBuild", () => {
           .map((slot) => slot.runtime),
       ).toEqual(["all", "all"]);
       for (const name of [
-        "ssr-server",
-        "ssg-server",
-        "rsc-server",
-        "rsc-rsc",
-        "ppr-ppr-shell",
+        ssrServerEntryName,
+        createPageServerBuildEntryName("ssg"),
+        createPageServerBuildEntryName("rsc"),
+        createRscPageBuildEntryName("rsc"),
+        createPprShellBuildEntryName("ppr"),
       ]) {
         expect(entryMetadata(name)).toEqual({
           type: "react-server-page",
@@ -938,7 +995,7 @@ describe("prepareFrameworkBuild", () => {
       }
       expect(
         manifest.server.renderers?.find(
-          (renderer) => renderer.name === "rsc-rsc",
+          (renderer) => renderer.name === createRscPageBuildEntryName("rsc"),
         )?.metadata,
       ).toMatchObject({
         type: "react-server-page",
@@ -946,11 +1003,11 @@ describe("prepareFrameworkBuild", () => {
       });
 
       const clientSource = await fs.promises.readFile(
-        path.join(cwd, ".ev/entries/ssr.ts"),
+        path.join(cwd, `.ev/entries/${ssrClientEntryName}.ts`),
         "utf-8",
       );
       const serverSource = await fs.promises.readFile(
-        path.join(cwd, ".ev/entries/ssr-server.ts"),
+        path.join(cwd, `.ev/entries/${ssrServerEntryName}.ts`),
         "utf-8",
       );
       for (const source of [clientSource, serverSource]) {
@@ -958,8 +1015,8 @@ describe("prepareFrameworkBuild", () => {
           generatedImport(
             cwd,
             source === clientSource
-              ? ".ev/entries/ssr.ts"
-              : ".ev/entries/ssr-server.ts",
+              ? `.ev/entries/${ssrClientEntryName}.ts`
+              : `.ev/entries/${ssrServerEntryName}.ts`,
             second?.file ?? "",
           ),
         );
@@ -967,8 +1024,8 @@ describe("prepareFrameworkBuild", () => {
           generatedImport(
             cwd,
             source === clientSource
-              ? ".ev/entries/ssr.ts"
-              : ".ev/entries/ssr-server.ts",
+              ? `.ev/entries/${ssrClientEntryName}.ts`
+              : `.ev/entries/${ssrServerEntryName}.ts`,
             first?.file ?? "",
           ),
         );
@@ -1633,9 +1690,19 @@ describe("prepareFrameworkBuild", () => {
         (module) => module.id === "installer",
       );
       await expect(
-        fs.promises.readFile(path.join(cwd, ".ev/entries/home.ts"), "utf-8"),
+        fs.promises.readFile(
+          path.join(
+            cwd,
+            `.ev/entries/${createPageClientBuildEntryName("home")}.ts`,
+          ),
+          "utf-8",
+        ),
       ).resolves.toContain(
-        generatedImport(cwd, ".ev/entries/home.ts", installer?.file ?? ""),
+        generatedImport(
+          cwd,
+          `.ev/entries/${createPageClientBuildEntryName("home")}.ts`,
+          installer?.file ?? "",
+        ),
       );
     } finally {
       await prepared.dispose();
@@ -1803,6 +1870,11 @@ describe("prepareFrameworkBuild", () => {
           id: "original-entry",
           entry,
         });
+        ctx.emit.entryFacade({
+          id: "deferred-entry",
+          entry,
+          autoStart: false,
+        });
         const wrapper = ctx.emit.module({
           id: "wrapper",
           scope: { kind: "application" },
@@ -1835,13 +1907,21 @@ describe("prepareFrameworkBuild", () => {
       path.join(cwd, ".ev/plugins/entry-wrapper/wrapper.ts"),
       "utf-8",
     );
+    const deferredEntry = await fs.promises.readFile(
+      path.join(cwd, ".ev/plugins/entry-wrapper/deferred-entry.ts"),
+      "utf-8",
+    );
     const mainEntry = await fs.promises.readFile(
       path.join(cwd, ".ev/entries/main.ts"),
       "utf-8",
     );
 
     expect(originalEntry).toContain("createPagesApp");
+    expect(originalEntry).toContain("startPagesApp");
     expect(originalEntry).toContain("../../src/pages/page");
+    expect(deferredEntry).toContain("createPagesApp");
+    expect(deferredEntry).toContain("export const start =");
+    expect(deferredEntry).not.toContain('startPagesApp(app, "#app");');
     expect(wrapper).toContain('import("./original-entry")');
     expect(mainEntry).toContain(
       'export * from "../plugins/entry-wrapper/wrapper";',
@@ -2194,6 +2274,146 @@ describe("build", () => {
     ]);
   });
 
+  it("keeps CoreGraph Route identity immutable through buildOutput hooks", async () => {
+    const cwd = await createSpaProject();
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-route-output",
+      setup() {
+        return {
+          buildOutput(output) {
+            const route = output.routes[0];
+            if (!route) throw new Error("Expected the root Route.");
+            route.id = "renamed";
+          },
+        };
+      },
+    };
+
+    await expect(
+      build(
+        {
+          output: { client: "dist" },
+          plugins: [plugin],
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler: createMockBundler([]) },
+      ),
+    ).rejects.toThrow(
+      "[evjs] buildOutput hooks cannot add, remove, reorder, or rename Routes, or change Route paths and ownership.",
+    );
+  });
+
+  it("keeps CoreGraph Application identity immutable through buildOutput hooks", async () => {
+    const cwd = await createSpaProject();
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-application-output",
+      setup() {
+        return {
+          buildOutput(output) {
+            output.apps.extra = {
+              assets: { js: [], css: [] },
+            };
+          },
+        };
+      },
+    };
+
+    await expect(
+      build(
+        {
+          output: { client: "dist" },
+          plugins: [plugin],
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler: createMockBundler([]) },
+      ),
+    ).rejects.toThrow(
+      "[evjs] buildOutput hooks cannot add, remove, or rename Applications.",
+    );
+  });
+
+  it("keeps CoreGraph Page identity immutable through buildOutput hooks", async () => {
+    const cwd = await createSpaProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.config.ts"),
+      'export default { title: "Home" };',
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-page-output",
+      setup() {
+        return {
+          buildOutput(output) {
+            const page = output.pages.index;
+            if (!page) throw new Error("Expected the root Page.");
+            output.pages.extra = {
+              ...page,
+              path: "/extra",
+              routeId: "extra",
+            };
+            output.routes.push({
+              id: "extra",
+              path: "/extra",
+              appId: "default",
+              pageId: "extra",
+            });
+          },
+        };
+      },
+    };
+
+    await expect(
+      build(
+        {
+          output: { client: "dist" },
+          plugins: [plugin],
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler: createMockBundler([]) },
+      ),
+    ).rejects.toThrow(
+      "[evjs] buildOutput hooks cannot add, remove, or rename Pages.",
+    );
+  });
+
+  it("keeps CoreGraph Page and Route paths immutable through buildOutput hooks", async () => {
+    const cwd = await createSpaProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.config.ts"),
+      'export default { title: "Home" };',
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-page-path-output",
+      setup() {
+        return {
+          buildOutput(output) {
+            const page = output.pages.index;
+            const route = output.routes[0];
+            if (!page || !route) {
+              throw new Error("Expected the root Page and Route.");
+            }
+            page.path = "/renamed";
+            route.path = "/renamed";
+          },
+        };
+      },
+    };
+
+    await expect(
+      build(
+        {
+          output: { client: "dist" },
+          plugins: [plugin],
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler: createMockBundler([]) },
+      ),
+    ).rejects.toThrow(
+      "[evjs] buildOutput hooks cannot add, remove, reorder, or rename Routes, or change Route paths and ownership.",
+    );
+  });
+
   it("passes canonical result fields to plugin lifecycle hooks", async () => {
     const cwd = await createSpaProject();
     const events: string[] = [];
@@ -2532,7 +2752,9 @@ describe("build", () => {
         };
       },
     };
-    const clientEntryName = mode === "spa" ? "main" : "dashboard";
+    const clientEntryName =
+      mode === "spa" ? "main" : createPageClientBuildEntryName("dashboard");
+    const pageServerEntryName = createPageServerBuildEntryName("dashboard");
     const clientAssets = {
       js: [`${clientEntryName}.js`],
       css: [`${clientEntryName}.css`],
@@ -2608,7 +2830,7 @@ describe("build", () => {
     expect(html).toContain(">Plugin title</title>");
     expect(html).toContain(`<meta name="from-contribution" content="${mode}">`);
     expect(html).toContain(`href="/${clientEntryName}.css"`);
-    expect(html).toContain('href="/dashboard-server.css"');
+    expect(html).toContain(`href="/${pageServerEntryName}.css"`);
     expect(html).toContain(
       '<main id="app" data-evjs-hydrate="load">__PAGE_CONTENT__</main>',
     );
@@ -2786,12 +3008,16 @@ describe("build", () => {
     const adminModule = manifest.generated?.modules.find(
       (module) => module.id === "admin-runtime",
     );
+    const homeEntryName = createPageClientBuildEntryName("home");
+    const adminEntryName = createPageClientBuildEntryName("admin");
+    const homeEntryFile = `.ev/entries/${homeEntryName}.ts`;
+    const adminEntryFile = `.ev/entries/${adminEntryName}.ts`;
     const homeEntry = await fs.promises.readFile(
-      path.join(cwd, ".ev/entries/home.ts"),
+      path.join(cwd, homeEntryFile),
       "utf-8",
     );
     const adminEntry = await fs.promises.readFile(
-      path.join(cwd, ".ev/entries/admin.ts"),
+      path.join(cwd, adminEntryFile),
       "utf-8",
     );
     const homeHtml = await fs.promises.readFile(
@@ -2804,16 +3030,16 @@ describe("build", () => {
     );
 
     expect(homeEntry).toContain(
-      generatedImport(cwd, ".ev/entries/home.ts", homeModule?.file ?? ""),
+      generatedImport(cwd, homeEntryFile, homeModule?.file ?? ""),
     );
     expect(homeEntry).not.toContain(
-      generatedImport(cwd, ".ev/entries/home.ts", adminModule?.file ?? ""),
+      generatedImport(cwd, homeEntryFile, adminModule?.file ?? ""),
     );
     expect(adminEntry).toContain(
-      generatedImport(cwd, ".ev/entries/admin.ts", adminModule?.file ?? ""),
+      generatedImport(cwd, adminEntryFile, adminModule?.file ?? ""),
     );
     expect(adminEntry).not.toContain(
-      generatedImport(cwd, ".ev/entries/admin.ts", homeModule?.file ?? ""),
+      generatedImport(cwd, adminEntryFile, homeModule?.file ?? ""),
     );
     expect(homeHtml).toContain('name="page-scope"');
     expect(adminHtml).not.toContain('name="page-scope"');
@@ -3452,10 +3678,16 @@ describe("build", () => {
         );
         return {
           clientEntryAssets: {
-            index: { js: ["index.js"], css: [] },
-            about: { js: ["about.js"], css: [] },
+            [createPageClientBuildEntryName("index")]: {
+              js: ["page-client-index.js"],
+              css: [],
+            },
+            [createPageClientBuildEntryName("about")]: {
+              js: ["page-client-about.js"],
+              css: [],
+            },
           },
-          firstClientEntryAssets: { js: ["index.js"], css: [] },
+          firstClientEntryAssets: { js: ["page-client-index.js"], css: [] },
           ...serverBuildFacts(plan),
         };
       },
@@ -3476,7 +3708,7 @@ describe("build", () => {
     );
 
     expect(events).toEqual([
-      "entries:index:page-client,about:page-client",
+      "entries:page-client-index:page-client,page-client-about:page-client",
       "metadata:react-component-page,react-component-page",
       "html:index:./index.html,about:./src/pages/about/index.html",
     ]);
@@ -3510,9 +3742,15 @@ describe("build", () => {
         );
         return {
           clientEntryAssets: {
-            product: { js: ["product.js"], css: [] },
+            [createPageClientBuildEntryName("product")]: {
+              js: ["page-client-product.js"],
+              css: [],
+            },
           },
-          firstClientEntryAssets: { js: ["product.js"], css: [] },
+          firstClientEntryAssets: {
+            js: ["page-client-product.js"],
+            css: [],
+          },
           ...serverBuildFacts(plan),
         };
       },
@@ -3833,14 +4071,27 @@ describe("build", () => {
       capabilities: fullBundlerCapabilities,
       async build({ plan }) {
         const serverFacts = serverBuildFacts(plan);
+        const dashboardClientEntry =
+          createPageClientBuildEntryName("dashboard");
+        const dashboardServerEntry =
+          createPageServerBuildEntryName("dashboard");
         return {
           clientEntryAssets: {
-            dashboard: { js: ["dashboard.js"], css: [] },
+            [dashboardClientEntry]: {
+              js: [`${dashboardClientEntry}.js`],
+              css: [],
+            },
           },
-          firstClientEntryAssets: { js: ["dashboard.js"], css: [] },
+          firstClientEntryAssets: {
+            js: [`${dashboardClientEntry}.js`],
+            css: [],
+          },
           serverEntryAssets: {
             ...serverFacts.serverEntryAssets,
-            "dashboard-server": { js: ["dashboard-server.js"], css: [] },
+            [dashboardServerEntry]: {
+              js: [`${dashboardServerEntry}.js`],
+              css: [],
+            },
           },
           serverEntry: serverFacts.serverEntry,
           serverAssets: serverFacts.serverAssets,
@@ -3898,7 +4149,7 @@ describe("build", () => {
     expect(deploymentMetadata.server).not.toHaveProperty("renderers");
     expect(deploymentMetadata.server).not.toHaveProperty("functions");
     expect(frameworkRuntime?.server?.renderers).toHaveProperty(
-      "dashboard-server",
+      createPageServerBuildEntryName("dashboard"),
     );
     expect(deploymentMetadataText).not.toContain(
       "./src/pages/dashboard/page.tsx",
@@ -3946,15 +4197,19 @@ describe("build", () => {
       name: "ssg-mock",
       capabilities: fullBundlerCapabilities,
       async build() {
+        const reportServerEntry = createPageServerBuildEntryName("report");
         return {
           clientEntryAssets: {},
           firstClientEntryAssets: { js: [], css: [] },
           serverEntryAssets: {
-            "report-server": { js: ["report-server.js"], css: [] },
+            [reportServerEntry]: {
+              js: [`${reportServerEntry}.js`],
+              css: [],
+            },
           },
           serverAssets: { js: [], css: [] },
           async loadServerModule(asset) {
-            if (asset !== "report-server.js") {
+            if (asset !== `${reportServerEntry}.js`) {
               throw new Error(`Unexpected server module asset: ${asset}`);
             }
             return {
@@ -4026,16 +4281,24 @@ describe("build", () => {
       name: "hydrated-ssg-mock",
       capabilities: fullBundlerCapabilities,
       async build() {
+        const reportClientEntry = createPageClientBuildEntryName("report");
+        const reportServerEntry = createPageServerBuildEntryName("report");
         return {
           clientEntryAssets: {
-            report: { js: ["report.js"], css: [] },
+            [reportClientEntry]: {
+              js: [`${reportClientEntry}.js`],
+              css: [],
+            },
           },
           serverEntryAssets: {
             server: { js: ["server.js"], css: [] },
-            "report-server": { js: ["report-server.js"], css: [] },
+            [reportServerEntry]: {
+              js: [`${reportServerEntry}.js`],
+              css: [],
+            },
           },
           async loadServerModule(asset) {
-            if (asset !== "report-server.js") {
+            if (asset !== `${reportServerEntry}.js`) {
               throw new Error(`Unexpected server module asset: ${asset}`);
             }
             return {
@@ -4065,7 +4328,9 @@ describe("build", () => {
     expect(html).toContain(
       '<div id="app" data-evjs-hydrate="load"><h1>Hydrated Report</h1></div>',
     );
-    expect(html).toContain('src="/report.js"');
+    expect(html).toContain(
+      `src="/${createPageClientBuildEntryName("report")}.js"`,
+    );
     expect(html).toContain("__EVJS_CLIENT_RUNTIME__");
   });
 
@@ -4086,6 +4351,7 @@ describe("build", () => {
       name: "hydrated-spa-ssg-mock",
       capabilities: fullBundlerCapabilities,
       async build() {
+        const reportServerEntry = createPageServerBuildEntryName("report");
         return {
           clientEntryAssets: {
             main: { js: ["main.js"], css: ["main.css"] },
@@ -4095,10 +4361,13 @@ describe("build", () => {
             css: ["main.css"],
           },
           serverEntryAssets: {
-            "report-server": { js: ["report-server.js"], css: [] },
+            [reportServerEntry]: {
+              js: [`${reportServerEntry}.js`],
+              css: [],
+            },
           },
           async loadServerModule(asset) {
-            if (asset !== "report-server.js") {
+            if (asset !== `${reportServerEntry}.js`) {
               throw new Error(`Unexpected server module asset: ${asset}`);
             }
             return {
@@ -4156,6 +4425,7 @@ describe("build", () => {
       name: "mixed-root-spa-ssg-mock",
       capabilities: fullBundlerCapabilities,
       async build() {
+        const indexServerEntry = createPageServerBuildEntryName("index");
         return {
           clientEntryAssets: {
             main: { js: ["main.js"], css: [] },
@@ -4165,10 +4435,13 @@ describe("build", () => {
             css: [],
           },
           serverEntryAssets: {
-            "index-server": { js: ["index-server.js"], css: [] },
+            [indexServerEntry]: {
+              js: [`${indexServerEntry}.js`],
+              css: [],
+            },
           },
           async loadServerModule(asset) {
-            if (asset !== "index-server.js") {
+            if (asset !== `${indexServerEntry}.js`) {
               throw new Error(`Unexpected server module asset: ${asset}`);
             }
             return {
@@ -6307,6 +6580,262 @@ describe("dev", () => {
     expect(events).toEqual(["bundler.dev", "bundler.close", "dispose"]);
   });
 
+  it("runs buildEnd after initial dev output and rebuild output", async () => {
+    const cwd = await createSpaProject();
+    const rebuildFlags: boolean[] = [];
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ callbacks, plan }) {
+        const clientEntry = plan.entries.find(
+          (entry) => entry.environment === "client",
+        );
+        const facts: BundlerBuildFacts = clientEntry
+          ? {
+              clientEntryAssets: {
+                [clientEntry.name]: { js: ["main.js"], css: [] },
+              },
+              firstClientEntryAssets: { js: ["main.js"], css: [] },
+            }
+          : {};
+        await callbacks.onBuildFacts(facts, { isRebuild: false });
+        await callbacks.onBuildFacts(facts, { isRebuild: true });
+        process.emit("SIGINT");
+        return { async updatePlan() {} };
+      },
+    };
+
+    await dev(
+      {
+        output: { client: "dist" },
+        plugins: [
+          {
+            name: "dev-build-end",
+            setup() {
+              return {
+                buildEnd(result) {
+                  rebuildFlags.push(result.isRebuild);
+                },
+              };
+            },
+          },
+        ],
+      },
+      { cwd, bundler },
+    );
+
+    expect(rebuildFlags).toEqual([false, true]);
+  });
+
+  it("passes config-only dev reloads to the bundler controller", async () => {
+    const cwd = await createSpaProject();
+    const configPath = path.join(cwd, "ev.config.ts");
+    await writeFile(configPath, "export default {};", "utf-8");
+    const events: string[] = [];
+    let currentConfig: Config<Record<string, never>> = {
+      output: { client: "dist" },
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return {
+          async updatePlan(update, options) {
+            events.push(
+              [
+                "update",
+                options?.configChanged,
+                update.entries.added.length,
+                update.entries.removed.length,
+                update.entries.changed.length,
+                options?.config.dev.proxy[0]?.target,
+              ].join(":"),
+            );
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev(currentConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+    await waitForEvent(events, "bundler.dev");
+    currentConfig = {
+      ...currentConfig,
+      dev: {
+        proxy: [
+          {
+            context: ["/api"],
+            target: "https://example.com",
+          },
+        ],
+      },
+    };
+    await writeFile(configPath, "export default { dev: {} };", "utf-8");
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("dev config-only update timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual([
+      "bundler.dev",
+      "update:true:0:0:0:https://example.com",
+    ]);
+  });
+
+  it("fails closed when a bundlerConfig watch dependency changes", async () => {
+    const cwd = await createSpaProject();
+    const dependency = path.join(cwd, "bundler-plugin.config.json");
+    await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+    const events: string[] = [];
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ addWatchFile }) {
+        addWatchFile?.(dependency);
+        events.push("bundler.dev");
+        return {
+          async updatePlan(update, options) {
+            events.push(
+              [
+                "update",
+                options?.configChanged,
+                update.entries.added.length,
+                update.entries.removed.length,
+                update.entries.changed.length,
+              ].join(":"),
+            );
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev({ output: { client: "dist" } }, { cwd, bundler });
+    await waitForEvent(events, "bundler.dev");
+    await writeFile(dependency, '{"mode":"changed"}', "utf-8");
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("bundlerConfig dependency update timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual(["bundler.dev", "update:true:0:0:0"]);
+  });
+
+  it("uses the next plugin context for build facts emitted during a bundlerConfig reload", async () => {
+    const cwd = await createSpaProject();
+    const dependency = path.join(cwd, "bundler-plugin.config.json");
+    await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+    const events: string[] = [];
+    const plugin: Plugin<Record<string, never>> = {
+      name: "reload-context",
+      setup() {
+        return {
+          buildOutput(_output, ctx) {
+            events.push(`buildOutput:${ctx.config.dev.proxy[0]?.target}`);
+          },
+        };
+      },
+    };
+    let currentConfig: Config<Record<string, never>> = {
+      output: { client: "dist" },
+      plugins: [plugin],
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ addWatchFile, callbacks, plan }) {
+        addWatchFile?.(dependency);
+        const clientEntry = plan.entries.find(
+          (entry) => entry.environment === "client",
+        );
+        const facts: BundlerBuildFacts = clientEntry
+          ? {
+              clientEntryAssets: {
+                [clientEntry.name]: { js: ["main.js"], css: [] },
+              },
+              firstClientEntryAssets: { js: ["main.js"], css: [] },
+            }
+          : {};
+        events.push("bundler.dev");
+        return {
+          async updatePlan(_update, options) {
+            await callbacks.onBuildFacts(facts, { isRebuild: true });
+            events.push(`update:${options?.configChanged}`);
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev(currentConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+    await waitForEvent(events, "bundler.dev");
+    currentConfig = {
+      ...currentConfig,
+      dev: {
+        proxy: [
+          {
+            context: ["/api"],
+            target: "https://example.com",
+          },
+        ],
+      },
+    };
+    await writeFile(dependency, '{"mode":"changed"}', "utf-8");
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("bundlerConfig context update timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual([
+      "bundler.dev",
+      "buildOutput:https://example.com",
+      "update:true",
+    ]);
+  });
+
   it("writes generated SPA route types before starting the dev bundler", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
@@ -6652,7 +7181,7 @@ describe("dev", () => {
     ]);
   });
 
-  it("keeps plugin context on the committed config when a route update fails", async () => {
+  it("restores committed plugin and generated state when a route update fails", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await writeFile(
@@ -6682,6 +7211,13 @@ describe("dev", () => {
         events.push("bundler.dev");
         return {
           async updatePlan() {
+            const candidateRouteTypes = await fs.promises.readFile(
+              path.join(cwd, "src/route-types.d.ts"),
+              "utf-8",
+            );
+            events.push(
+              `candidate-types:${candidateRouteTypes.includes(JSON.stringify("/about"))}`,
+            );
             events.push("update:throw");
             throw new Error("mock update failure");
           },
@@ -6699,12 +7235,20 @@ describe("dev", () => {
     );
 
     await new Promise((resolve) => setTimeout(resolve, 100));
+    const routeTypesPath = path.join(cwd, "src/route-types.d.ts");
+    const generatedIrPath = path.join(cwd, ".ev");
+    const initialRouteTypes = await fs.promises.readFile(routeTypesPath);
+    const initialGeneratedIr = await readDirectorySnapshot(generatedIrPath);
     await writeFile(
       path.join(cwd, "src/pages/about/page.tsx"),
       "export default function About() { return null; }",
       "utf-8",
     );
     await waitForEvent(events, "update:throw");
+    await waitForFileContents(routeTypesPath, initialRouteTypes);
+    expect(await readDirectorySnapshot(generatedIrPath)).toEqual(
+      initialGeneratedIr,
+    );
     process.emit("SIGINT");
 
     await Promise.race([
@@ -6717,7 +7261,12 @@ describe("dev", () => {
       ),
     ]);
 
-    expect(events).toEqual(["bundler.dev", "update:throw", "dispose-routes:1"]);
+    expect(events).toEqual([
+      "bundler.dev",
+      "candidate-types:true",
+      "update:throw",
+      "dispose-routes:1",
+    ]);
   });
 
   it("updates the dev bundler when config changes add an MPA page", async () => {
@@ -6797,7 +7346,10 @@ describe("dev", () => {
       ),
     ]);
 
-    expect(events).toEqual(["bundler.dev", "update:orders"]);
+    expect(events).toEqual([
+      "bundler.dev",
+      `update:${createPageClientBuildEntryName("orders")}`,
+    ]);
   });
 
   it("updates the dev bundler when a Page extension only changes generated IR", async () => {
@@ -7283,7 +7835,7 @@ describe("dev", () => {
       "setup:v2",
       "buildStart:v2",
       "contribution:v2",
-      "update:orders",
+      `update:${createPageClientBuildEntryName("orders")}`,
       "dispose:v1",
       "dispose:v2",
     ]);
@@ -7517,7 +8069,10 @@ describe("dev", () => {
       "export default { routing: { mode: 'mpa', dir: './src/pages-v2' } };",
       "utf-8",
     );
-    await waitForEvent(events, "update:orders");
+    await waitForEvent(
+      events,
+      `update:${createPageClientBuildEntryName("orders")}`,
+    );
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     const loadCountBeforeNewWatch = loadCount;
@@ -7540,7 +8095,7 @@ describe("dev", () => {
         "setup:old",
         "bundler.dev",
         "setup:new",
-        "update:orders",
+        `update:${createPageClientBuildEntryName("orders")}`,
         "dispose:old",
         "dispose:new",
       ]),

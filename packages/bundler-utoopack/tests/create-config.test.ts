@@ -568,8 +568,14 @@ describe("createUtoopackConfig", () => {
     );
 
     expect(utoopackConfig.entry).toEqual([
-      { import: "./.ev/entries/home.ts", name: "home" },
-      { import: "./.ev/entries/about.ts", name: "about" },
+      {
+        import: "./.ev/entries/page-client-home.ts",
+        name: "page-client-home",
+      },
+      {
+        import: "./.ev/entries/page-client-about.ts",
+        name: "page-client-about",
+      },
     ]);
     expect(utoopackConfig.devServer?.proxy).toEqual([]);
   });
@@ -592,7 +598,7 @@ describe("createUtoopackConfig", () => {
     });
     const plan = await createPlan(config);
 
-    expect(plan.entries[0]?.import).toBe("./.ev/entries/home.ts");
+    expect(plan.entries[0]?.import).toBe("./.ev/entries/page-client-home.ts");
     expect(plan.entries[0]?.metadata).toMatchObject({
       type: "react-component-page",
       component: "./src/pages/home/page.tsx",
@@ -605,7 +611,10 @@ describe("createUtoopackConfig", () => {
     );
 
     expect(utoopackConfig.entry).toEqual([
-      { import: "./.ev/entries/home.ts", name: "home" },
+      {
+        import: "./.ev/entries/page-client-home.ts",
+        name: "page-client-home",
+      },
     ]);
   });
 
@@ -666,16 +675,26 @@ describe("createUtoopackConfig", () => {
       plan.entries
         .filter((entry) => entry.environment === "client")
         .map((entry) => entry.import),
-    ).toEqual(["./.ev/entries/index.ts", "./.ev/entries/about.ts"]);
+    ).toEqual([
+      "./.ev/entries/page-client-index.ts",
+      "./.ev/entries/page-client-about.ts",
+    ]);
     expect(utoopackConfig.entry).toEqual([
-      { import: "./.ev/entries/index.ts", name: "index" },
-      { import: "./.ev/entries/about.ts", name: "about" },
+      {
+        import: "./.ev/entries/page-client-index.ts",
+        name: "page-client-index",
+      },
+      {
+        import: "./.ev/entries/page-client-about.ts",
+        name: "page-client-about",
+      },
     ]);
   });
 
   it("awaits async bundlerConfig hooks before returning config", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config);
+    const watchedFiles: string[] = [];
 
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -687,14 +706,17 @@ describe("createUtoopackConfig", () => {
             await Promise.resolve();
             cfg.output ??= {};
             cfg.output.publicPath = "runtime";
+            ctx.addWatchFile("./utoopack-plugin.config.ts");
             expect(ctx.bundlerName).toBe("utoopack");
             expect(ctx.environment).toBe("client");
           },
         },
       ],
+      (file) => watchedFiles.push(file),
     );
 
     expect(utoopackConfig.output?.publicPath).toBe("runtime");
+    expect(watchedFiles).toEqual(["./utoopack-plugin.config.ts"]);
   });
 
   it("fails clearly when the plan contains framework server renderer entries", async () => {
@@ -726,14 +748,14 @@ describe("createUtoopackConfig", () => {
 
     expect(plan.entries.map((entry) => entry.name)).toEqual([
       "main",
-      "dashboard-server",
+      "page-server-dashboard",
       "server",
     ]);
     expect(plan.server).toMatchObject({
       entry: "@evjs/ev/_internal/server/fetch",
       renderers: [
         {
-          name: "dashboard-server",
+          name: "page-server-dashboard",
           import: "./src/pages/Dashboard.tsx",
           kind: "page-server",
           owner: { pageId: "dashboard", routeId: "dashboard" },
@@ -748,7 +770,7 @@ describe("createUtoopackConfig", () => {
       "Utoopack adapter cannot build framework server page entries yet",
     );
     expect(message).toContain(
-      'dashboard-server (page-server, page "dashboard", route "dashboard")',
+      'page-server-dashboard (page-server, page "dashboard", route "dashboard")',
     );
     expect(message).toContain("Unsupported entry kinds: page-server");
   });

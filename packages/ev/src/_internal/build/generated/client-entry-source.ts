@@ -9,9 +9,14 @@ type ImportFile = (file: string) => string;
 export function createOriginalClientEntryFacadeSource(
   entry: BuildEntry,
   importFile: ImportFile,
+  options: { autoStart?: boolean } = {},
 ): string {
   if (entry.metadata?.type === "pages-app") {
-    return createPagesAppEntryMainSource(entry.metadata, importFile).join("\n");
+    return createPagesAppEntryMainSource(
+      entry.metadata,
+      importFile,
+      options.autoStart,
+    ).join("\n");
   }
   if (entry.metadata?.type === "react-component-page") {
     return createReactComponentPageEntryMainSource(
@@ -25,6 +30,7 @@ export function createOriginalClientEntryFacadeSource(
 export function createPagesAppEntryMainSource(
   metadata: PagesAppEntryMetadata,
   importFile: ImportFile,
+  autoStart = true,
 ): string[] {
   const imports = [
     `import { createPagesApp, startPagesApp } from "@evjs/ev/_internal/client";`,
@@ -106,7 +112,9 @@ export function createPagesAppEntryMainSource(
     metadata.rootModule ? "  rootModule," : "",
     `  routes: [${routeDefinitions.join(", ")}],`,
     "});",
-    `startPagesApp(app, ${JSON.stringify(metadata.mount)});`,
+    autoStart
+      ? `startPagesApp(app, ${JSON.stringify(metadata.mount)});`
+      : `export const start = (container: string | HTMLElement = ${JSON.stringify(metadata.mount)}) => startPagesApp(app, container);`,
     "export { app };",
     "export default app;",
   ].filter(Boolean);

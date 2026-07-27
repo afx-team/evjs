@@ -246,7 +246,12 @@ interface QiankunSlaveRuntime {
 ```
 
 `ctx.loadEntry()` loads the original app entry. The built-in slave lifecycle
-calls it during `mount()` after the optional runtime `mount()` hook.
+calls it during `mount()` after the optional runtime `mount()` hook. The
+generated original entry is inert until the lifecycle calls its exported
+`start(container)`, so loading it early from `bootstrap()` cannot mount into the
+master document. The first `mount()` uses `start()` to preserve hydration-marker
+semantics; the module is cached, and later remounts call `app.render()` exactly
+once inside the current qiankun container.
 
 ## Bundling Qiankun
 

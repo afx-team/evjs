@@ -33,7 +33,11 @@ describe("inspect", () => {
           return null;
         }
       `,
-      "src/pages/page.config.ts": 'export default { render: "ssr" };',
+      "src/pages/page.config.ts": `export default {
+        render: "ssr",
+        title: "Home",
+        meta: { description: "Inspect metadata" },
+      };`,
       "src/pages/_card.tsx": "export function Card() { return null; }",
       "src/api/users.server.ts": `
         "use server";
@@ -77,8 +81,13 @@ describe("inspect", () => {
     expect(result.graph.pages.index).toMatchObject({
       id: "index",
       render: "ssr",
+      metadata: {
+        title: "Home",
+        meta: { description: "Inspect metadata" },
+      },
       source: {
         module: "./src/pages/page.tsx",
+        config: "./src/pages/page.config.ts",
         scope: { kind: "directory", root: "./src/pages" },
       },
     });
@@ -100,6 +109,11 @@ describe("inspect", () => {
       fn: "__evjs/fn",
       ppr: "__evjs/ppr",
     });
+    const text = formatInspectText(result);
+    expect(text).toContain("config=./src/pages/page.config.ts");
+    expect(text).toContain(
+      'metadata={"title":"Home","meta":{"description":"Inspect metadata"}}',
+    );
     await expectPathMissing(path.join(cwd, "dist"));
     await expectPathMissing(path.join(cwd, ".ev"));
     await expectPathMissing(path.join(cwd, "src/route-types.d.ts"));

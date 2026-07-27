@@ -154,7 +154,7 @@ describe("@evjs/plugin-qiankun runtime", () => {
     }
   });
 
-  it("loads slave entry during mount and lets runtime hooks extend lifecycle", async () => {
+  it("loads the slave entry once and remounts its app after unmount", async () => {
     const calls: string[] = [];
     let containerHtml = "<div></div>";
     const container = {
@@ -185,6 +185,10 @@ describe("@evjs/plugin-qiankun runtime", () => {
         calls.push("entry");
         return {
           app: {
+            render(target: Element) {
+              expect(target).toBe(container);
+              calls.push("entry-render");
+            },
             unmount() {
               calls.push("entry-unmount");
             },
@@ -196,16 +200,184 @@ describe("@evjs/plugin-qiankun runtime", () => {
     await slave.bootstrap({ container });
     await slave.mount({ container });
     await slave.unmount({ container });
+    await slave.mount({ container });
+    await slave.unmount({ container });
 
     expect(calls).toEqual([
       "bootstrap",
       "mount",
       "entry",
+      "entry-render",
+      "unmount",
+      "entry-unmount",
+      "clear",
+      "mount",
+      "entry-render",
       "unmount",
       "entry-unmount",
       "clear",
     ]);
     expect(containerHtml).toBe("");
+  });
+
+  it("uses the framework start export for a standalone first mount", async () => {
+    const originalDocument = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "document",
+    );
+    const calls: string[] = [];
+    const container = createElement();
+    Object.defineProperty(globalThis, "document", {
+      value: {
+        querySelector: vi.fn((selector: string) =>
+          selector === "#app" ? container : null,
+        ),
+      },
+      configurable: true,
+    });
+
+    try {
+      const slave = createQiankunSlaveLifecycles({
+        name: "catalog",
+        mount: "#app",
+        async loadEntry() {
+          return {
+            start(target: Element) {
+              expect(target).toBe(container);
+              calls.push("entry-start");
+            },
+            app: {
+              render(target: Element) {
+                expect(target).toBe(container);
+                calls.push("entry-render");
+              },
+              unmount() {
+                calls.push("entry-unmount");
+              },
+            },
+          };
+        },
+      });
+
+      await slave.standalone();
+      await slave.unmount();
+      await slave.standalone();
+
+      expect(calls).toEqual(["entry-start", "entry-unmount", "entry-render"]);
+    } finally {
+      if (originalDocument) {
+        Object.defineProperty(globalThis, "document", originalDocument);
+      } else {
+        delete (globalThis as { document?: unknown }).document;
+      }
+    }
+  });
+
+  it("renders an entry that was preloaded before the first mount", async () => {
+    const calls: string[] = [];
+    const container = createElement();
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      runtime: {
+        async bootstrap(_props, context) {
+          await context.loadEntry();
+        },
+      },
+      async loadEntry() {
+        calls.push("entry");
+        return {
+          app: {
+            render(target: Element) {
+              expect(target).toBe(container);
+              calls.push("entry-render");
+            },
+          },
+        };
+      },
+    });
+
+    await slave.bootstrap({ container });
+    await slave.mount({ container });
+
+    expect(calls).toEqual(["entry", "entry-render"]);
+  });
+
+  it("renders a preloaded entry once when its preload is still pending", async () => {
+    const calls: string[] = [];
+    let resolveEntry: ((entry: unknown) => void) | undefined;
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      runtime: {
+        bootstrap(_props, context) {
+          void context.loadEntry();
+        },
+      },
+      loadEntry: () =>
+        new Promise((resolve) => {
+          resolveEntry = resolve;
+        }),
+    });
+
+    await slave.bootstrap({ container: createElement() });
+    const mounting = slave.mount({ container: createElement() });
+    resolveEntry?.({
+      app: {
+        render() {
+          calls.push("entry-render");
+        },
+      },
+    });
+    await mounting;
+
+    expect(calls).toEqual(["entry-render"]);
+  });
+
+  it("resets mount state when multiple unmount steps fail", async () => {
+    const calls: string[] = [];
+    const container = createElement();
+    let failUnmount = true;
+    const slave = createQiankunSlaveLifecycles({
+      name: "catalog",
+      mount: "#app",
+      runtime: {
+        unmount() {
+          calls.push("runtime-unmount");
+          if (failUnmount) throw new Error("runtime cleanup failed");
+        },
+      },
+      async loadEntry() {
+        return {
+          app: {
+            render() {
+              calls.push("entry-render");
+            },
+            unmount() {
+              calls.push("entry-unmount");
+              if (failUnmount) throw new Error("entry cleanup failed");
+            },
+          },
+        };
+      },
+    });
+
+    await slave.mount({ container });
+    await expect(slave.unmount({ container })).rejects.toThrow(
+      "Multiple slave unmount steps failed.",
+    );
+    failUnmount = false;
+    await slave.mount({ container });
+    await slave.unmount({ container });
+
+    expect(calls).toEqual([
+      "entry-render",
+      "runtime-unmount",
+      "entry-unmount",
+      "entry-render",
+      "runtime-unmount",
+      "entry-unmount",
+    ]);
   });
 
   it("scopes slave document mount lookups to the qiankun container while loading entry", async () => {
@@ -236,9 +408,15 @@ describe("@evjs/plugin-qiankun runtime", () => {
       const slave = createQiankunSlaveLifecycles({
         name: "catalog",
         mount: "#app",
+        runtime: {
+          async mount(_props, context) {
+            await context.loadEntry();
+          },
+        },
         loadEntry: async () => {
           queryResult = globalThis.document.querySelector("#app");
           idResult = globalThis.document.getElementById("app");
+          return { app: { render() {} } };
         },
       });
 
