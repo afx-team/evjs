@@ -36,8 +36,8 @@ processes.
 
 The client and API development servers listen on IPv4 interfaces and can be
 opened through both `http://localhost:<port>` and
-`http://127.0.0.1:<port>`. Following Bigfish's convention, startup output lists
-the `Local` localhost URL and the machine's `Network` URL; the equivalent
+`http://127.0.0.1:<port>`. Startup output lists the `Local` localhost URL and
+the machine's `Network` URL; the equivalent
 `127.0.0.1` URL remains available without an extra log line. `localhost` and
 `127.0.0.1` are different browser origins, so cookies, local storage, and
 service workers are not shared between them. With custom HTTPS certificates,

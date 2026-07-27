@@ -79,6 +79,7 @@ import {
   runConfigHooks,
   runDisposeHooks,
 } from "./plugin-lifecycle.js";
+import { isInsideCwd, isRealPathInsideCwd } from "./utils.js";
 
 const logger = getLogger(["evjs", "ev"]);
 
@@ -390,13 +391,28 @@ function listConfigDependencyFiles(cwd: string): string[] {
 function watchFiles(
   files: string[],
   onChange: (file: string) => void,
+  recoverableMissingTargets: ReadonlySet<string> = new Set(),
 ): () => void {
   const watchers: fs.FSWatcher[] = [];
 
   for (const file of [...new Set(files)]) {
+    const targetExists = fs.existsSync(file);
+    const recoverMissingTarget = recoverableMissingTargets.has(file);
+    const watchTarget =
+      targetExists || !recoverMissingTarget
+        ? file
+        : findNearestExistingAncestor(file);
+    if (!watchTarget) continue;
     try {
       watchers.push(
-        fs.watch(file, () => {
+        fs.watch(watchTarget, (_eventType, filename) => {
+          if (
+            !targetExists &&
+            recoverMissingTarget &&
+            !watchEventCanCreateTarget(watchTarget, file, filename)
+          ) {
+            return;
+          }
           onChange(file);
         }),
       );
@@ -411,6 +427,97 @@ function watchFiles(
       watcher.close();
     }
   };
+}
+
+function findNearestExistingAncestor(target: string): string | undefined {
+  let current = path.dirname(target);
+  while (current !== path.dirname(current)) {
+    if (fs.existsSync(current)) return current;
+    current = path.dirname(current);
+  }
+  return fs.existsSync(current) ? current : undefined;
+}
+
+function watchEventCanCreateTarget(
+  watchedAncestor: string,
+  target: string,
+  filename: string | Buffer | null,
+): boolean {
+  if (filename === null) return true;
+  const changed = path.resolve(watchedAncestor, filename.toString());
+  return isInsideCwd(target, changed) || isInsideCwd(changed, target);
+}
+
+interface ServerRouteWatchState {
+  dependencies: string[];
+  unsafeBoundary?: string;
+}
+
+async function collectServerRouteWatchState<TBundlerCfg>(
+  cwd: string,
+  config: ResolvedConfig<TBundlerCfg>,
+): Promise<ServerRouteWatchState> {
+  if (!config.server.routing) return { dependencies: [] };
+  const root = path.resolve(cwd, config.server.routing.dir);
+  if (!isInsideCwd(cwd, root)) return { dependencies: [] };
+
+  const directories = new Set([root]);
+  try {
+    if (!(await isRealPathInsideCwd(cwd, root))) {
+      const fallback = await findSafeLexicalWatchFallback(cwd, root);
+      return {
+        dependencies: fallback ? [fallback.ancestor] : [],
+        ...(fallback ? { unsafeBoundary: fallback.boundary } : {}),
+      };
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+    return { dependencies: [...directories] };
+  }
+
+  async function visit(current: string): Promise<void> {
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.promises.readdir(current, { withFileTypes: true });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ENOTDIR") return;
+      throw error;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+      const absolute = path.join(current, entry.name);
+      directories.add(absolute);
+      await visit(absolute);
+    }
+  }
+
+  await visit(root);
+  return { dependencies: [...directories].sort() };
+}
+
+async function findSafeLexicalWatchFallback(
+  cwd: string,
+  target: string,
+): Promise<{ ancestor: string; boundary: string } | undefined> {
+  let boundary = target;
+  let current = path.dirname(target);
+  while (isInsideCwd(cwd, current)) {
+    try {
+      if (await isRealPathInsideCwd(cwd, current)) {
+        return { ancestor: current, boundary };
+      }
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+    }
+    if (current === cwd) return undefined;
+    boundary = current;
+    current = path.dirname(current);
+  }
+  return undefined;
 }
 
 async function prepareInternalFrameworkBuild<
@@ -691,8 +798,9 @@ async function runDev<TBundlerCfg = DefaultBundlerConfig>(
     cwd,
     flags,
   });
+  const baseResolvedConfig = resolveConfig(configuredConfig);
   const pageResolvedConfig = await withPageRoutingDefaults(
-    resolveConfig(configuredConfig),
+    baseResolvedConfig,
     configuredConfig,
     cwd,
   );
@@ -704,6 +812,10 @@ async function runDev<TBundlerCfg = DefaultBundlerConfig>(
   const conventionResolvedConfig = await withServerConventionDefaults(
     rawResolvedConfig,
     cwd,
+  );
+  const serverRouteWatchState = await collectServerRouteWatchState(
+    cwd,
+    baseResolvedConfig,
   );
   const requestedConfig = {
     ...conventionResolvedConfig,
@@ -727,6 +839,7 @@ async function runDev<TBundlerCfg = DefaultBundlerConfig>(
       flags,
       resolvedConfig,
       devPorts,
+      serverRouteWatchState,
     );
   } finally {
     try {
@@ -744,6 +857,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   flags: CliFlags | undefined,
   resolvedConfig: ResolvedConfig<TBundlerCfg>,
   devPorts: DevPortReservation,
+  initialServerRouteWatchState: ServerRouteWatchState,
 ): Promise<void> {
   logDevPortSelection(devPorts);
 
@@ -755,6 +869,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   let activeApplicationExtensions =
     initialPluginExtensionState.applicationExtensions;
   let activeConfig = initialPluginExtensionState.config;
+  let activeServerRouteWatchState = initialServerRouteWatchState;
 
   const pluginWatchFiles = new Set<string>();
   const bundlerConfigWatchFiles = new Set<string>();
@@ -909,7 +1024,9 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
     await restartQueue;
   };
 
-  const loadCurrentConfig = async () => {
+  const loadCurrentConfig = async (
+    onServerRouteWatchState: (state: ServerRouteWatchState) => void,
+  ) => {
     const nextUserConfig = options?.loadConfig
       ? await options.loadConfig(cwd)
       : userConfig;
@@ -919,8 +1036,14 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       cwd,
       flags,
     });
+    const nextBaseResolvedConfig = resolveConfig(nextConfiguredConfig);
+    const serverRouteWatchState = await collectServerRouteWatchState(
+      cwd,
+      nextBaseResolvedConfig,
+    );
+    onServerRouteWatchState(serverRouteWatchState);
     const nextPageResolvedConfig = await withPageRoutingDefaults(
-      resolveConfig(nextConfiguredConfig),
+      nextBaseResolvedConfig,
       nextConfiguredConfig,
       cwd,
     );
@@ -1018,14 +1141,24 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
 
   const refreshDevDependencyWatchers = () => {
     stopWatchingDevDependencies();
+    const unsafeBoundary = activeServerRouteWatchState.unsafeBoundary;
+    const serverRouteWatchDependencies =
+      activeServerRouteWatchState.dependencies;
+    const analysisFileDependencies = unsafeBoundary
+      ? activeAnalysis.fileDependencies.filter(
+          (file) => !isInsideCwd(unsafeBoundary, file),
+        )
+      : activeAnalysis.fileDependencies;
     stopWatchingDevDependencies = watchFiles(
       [
         ...listConfigDependencyFiles(cwd),
-        ...activeAnalysis.fileDependencies,
+        ...analysisFileDependencies,
+        ...serverRouteWatchDependencies,
         ...pluginWatchFiles,
         ...bundlerConfigWatchFiles,
       ],
       scheduleDevUpdate,
+      new Set(serverRouteWatchDependencies),
     );
   };
 
@@ -1055,7 +1188,10 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       ? "config"
       : "route-declaration";
 
-    const baseNextConfig = await loadCurrentConfig();
+    const baseNextConfig = await loadCurrentConfig((state) => {
+      activeServerRouteWatchState = state;
+      refreshDevDependencyWatchers();
+    });
     if (!hasSamePluginIdentity(activeConfig.plugins, baseNextConfig.plugins)) {
       logger.warn`Plugin configuration changed. Please restart ev dev to apply plugin additions, removals, or reordering.`;
       return;

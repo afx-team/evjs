@@ -660,6 +660,51 @@ describe("inspect", () => {
     await expectPathMissing(path.join(cwd, "dist"));
     await expectPathMissing(path.join(cwd, "src/route-types.d.ts"));
   });
+
+  it("returns server-route diagnostics and a failing exit code for an invalid api anchor", async () => {
+    const cwd = await createFixture({
+      "ev.config.ts": `
+        import { defineConfig } from "@evjs/ev";
+        export default defineConfig({
+          routing: { mode: "spa" },
+          output: { client: "dist" },
+        });
+      `,
+      "index.html": '<div id="app"></div>',
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "src/apis/users/api.ts":
+        "export const get = async () => Response.json({ ok: true });",
+    });
+
+    const result = await runInspectCommand({ cwd, json: true });
+    const output = JSON.parse(result.output);
+
+    expect(result.exitCode).toBe(1);
+    expect(output.graph.serverRoutes).toEqual([]);
+    expect(output.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: "error",
+          source: "server-routes",
+          file: "src/apis/users/api.ts",
+          message: expect.stringContaining(
+            "must export at least one uppercase HTTP method",
+          ),
+        }),
+        expect.objectContaining({
+          level: "error",
+          source: "server-routes",
+          file: "src/apis/users/api.ts",
+          message: expect.stringContaining(
+            'exports lowercase method "get". Use uppercase "GET"',
+          ),
+        }),
+      ]),
+    );
+    await expectPathMissing(path.join(cwd, "dist"));
+    await expectPathMissing(path.join(cwd, ".ev"));
+    await expectPathMissing(path.join(cwd, "src/route-types.d.ts"));
+  });
 });
 
 async function createFixture(files: Record<string, string>): Promise<string> {

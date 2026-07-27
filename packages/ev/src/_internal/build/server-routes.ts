@@ -21,7 +21,7 @@ import {
   SERVER_ROUTE_ENTRY_LABEL,
   serverRoutePathFromSegments,
 } from "./server-route-conventions.js";
-import { isInsideCwd, toPosixPath } from "./utils.js";
+import { isInsideCwd, isRealPathInsideCwd, toPosixPath } from "./utils.js";
 
 export interface DiscoverServerRoutesOptions {
   dir: string;
@@ -109,46 +109,63 @@ export async function discoverServerRoutes(
       });
       continue;
     }
+
+    const segmentViolation = findServerRouteSegmentConventionViolation(
+      anchor.segments,
+    );
+    if (segmentViolation) {
+      diagnostics.push({
+        level: "error",
+        file: anchor.diagnosticFile,
+        message: formatServerRouteSegmentConventionViolation(segmentViolation),
+      });
+      continue;
+    }
+
+    const routePath = serverRoutePathFromSegments(anchor.segments);
+    const previous = routeByPath.get(routePath);
+    let structuralDiagnostic: ServerRouteDiscoveryDiagnostic | undefined;
+    let shape: string | undefined;
+    if (previous) {
+      structuralDiagnostic = {
+        level: "error",
+        file: anchor.diagnosticFile,
+        message: createDuplicateServerRoutePathDiagnostic(routePath, previous),
+      };
+    } else {
+      routeByPath.set(routePath, anchor.sourceRel);
+      shape = serverRoutePathShapeFromPath(routePath);
+      const previousShapeOwner = routeByShape.get(shape);
+      if (previousShapeOwner) {
+        structuralDiagnostic = {
+          level: "error",
+          file: anchor.diagnosticFile,
+          message: createAmbiguousServerRouteShapeDiagnostic(
+            shape,
+            routePath,
+            previousShapeOwner,
+          ),
+        };
+      } else {
+        routeByShape.set(shape, {
+          file: anchor.sourceRel,
+          path: routePath,
+        });
+      }
+    }
+
     const fileDiagnostics = await analyzeServerRouteFile(
       anchor.file,
       anchor.segments,
       anchor.diagnosticFile,
+      routePath,
     );
     diagnostics.push(...fileDiagnostics.diagnostics);
-    if (!fileDiagnostics.route) continue;
-
-    const previous = routeByPath.get(fileDiagnostics.route.path);
-    if (previous) {
-      diagnostics.push({
-        level: "error",
-        file: anchor.diagnosticFile,
-        message: createDuplicateServerRoutePathDiagnostic(
-          fileDiagnostics.route.path,
-          previous,
-        ),
-      });
+    if (structuralDiagnostic) {
+      diagnostics.push(structuralDiagnostic);
       continue;
     }
-    routeByPath.set(fileDiagnostics.route.path, anchor.sourceRel);
-
-    const shape = serverRoutePathShapeFromPath(fileDiagnostics.route.path);
-    const previousShapeOwner = routeByShape.get(shape);
-    if (previousShapeOwner) {
-      diagnostics.push({
-        level: "error",
-        file: anchor.diagnosticFile,
-        message: createAmbiguousServerRouteShapeDiagnostic(
-          shape,
-          fileDiagnostics.route.path,
-          previousShapeOwner,
-        ),
-      });
-      continue;
-    }
-    routeByShape.set(shape, {
-      file: anchor.sourceRel,
-      path: fileDiagnostics.route.path,
-    });
+    if (!fileDiagnostics.route || !shape) continue;
     routeCandidates.push({ ...fileDiagnostics.route, shape });
   }
 
@@ -186,6 +203,7 @@ async function analyzeServerRouteFile(
   absolute: string,
   segments: string[],
   diagnosticFile: string,
+  routePath: string,
 ): Promise<ServerRouteFileAnalysis> {
   const diagnostics: ServerRouteDiscoveryDiagnostic[] = [];
   const source = await fs.readFile(absolute, "utf-8");
@@ -209,16 +227,6 @@ async function analyzeServerRouteFile(
   const routeModuleMiddlewareExports = exportNames.filter(
     (name) => name === "middleware" || name === "middlewares",
   );
-  const segmentViolation = findServerRouteSegmentConventionViolation(segments);
-  if (segmentViolation) {
-    diagnostics.push({
-      level: "error",
-      file: diagnosticFile,
-      message: formatServerRouteSegmentConventionViolation(segmentViolation),
-    });
-    return { diagnostics };
-  }
-
   if (methods.length === 0) {
     diagnostics.push({
       level: "error",
@@ -272,7 +280,6 @@ async function analyzeServerRouteFile(
 
   if (diagnostics.length > 0) return { diagnostics };
 
-  const routePath = serverRoutePathFromSegments(segments);
   return {
     diagnostics,
     route: {
@@ -319,6 +326,15 @@ async function validateServerRouteDirectory(
         message: `Server route directory not found: ${expected}.`,
       });
     }
+    return false;
+  }
+
+  if (!(await isRealPathInsideCwd(cwd, absoluteRouteDir))) {
+    diagnostics.push({
+      level: "error",
+      file: expected,
+      message: `Server route directory must resolve inside the project root. ${expected} points outside after resolving symlinks.`,
+    });
     return false;
   }
 

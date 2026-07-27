@@ -72,7 +72,7 @@ function useFeatures(): Array<{
       description: translate({
         id: "homepage.feature.rendering.description",
         message:
-          "Use page-level exports for CSR, SSR, SSG, PPR, and RSC integration points.",
+          "Configure CSR, SSR, SSG, PPR, and RSC through adjacent page.config.ts files.",
       }),
     },
     {

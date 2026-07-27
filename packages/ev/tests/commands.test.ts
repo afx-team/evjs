@@ -5598,6 +5598,26 @@ describe("build", () => {
     );
   });
 
+  it("fails on invalid default api anchors before running the bundler", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/apis/users/api.ts"),
+      "export const get = async () => Response.json({ ok: true });",
+      "utf-8",
+    );
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+
+    await expect(build({}, { cwd, bundler })).rejects.toThrow(
+      [
+        "[evjs] Server route discovery failed.",
+        "src/apis/users/api.ts - api.ts, api.tsx, api.js, or api.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
+        'src/apis/users/api.ts - Server route module exports lowercase method "get". Use uppercase "GET".',
+      ].join("\n"),
+    );
+    expect(events).not.toContain("bundler.build");
+  });
+
   it("does not fall back to src/server/routes for server file routes", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/apis"), {
@@ -6627,6 +6647,477 @@ describe("dev", () => {
     );
 
     expect(rebuildFlags).toEqual([false, true]);
+  });
+
+  it("discovers the first default api.* anchor when src/apis is created during dev", async () => {
+    const cwd = await createProject();
+    const events: string[] = [];
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ plan }) {
+        events.push(
+          `initial-server:${plan.entries.some((entry) => entry.kind === "server-runtime")}`,
+        );
+        return {
+          async updatePlan(update) {
+            const serverEntry = update.entries.added.find(
+              (entry) => entry.kind === "server-runtime",
+            );
+            const routes =
+              serverEntry?.metadata?.type === "server-app"
+                ? serverEntry.metadata.routes
+                : [];
+            events.push(
+              `added-server:${serverEntry !== undefined}:${routes.map((route) => route.path).join(",")}`,
+            );
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev({ output: { client: "dist" } }, { cwd, bundler });
+    await waitForEvent(events, "initial-server:false");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await writeFile(
+      path.join(cwd, "src/apis/health/api.ts"),
+      "export const GET = async () => Response.json({ ok: true });",
+      "utf-8",
+    );
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("first dev api route update timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual([
+      "initial-server:false",
+      "added-server:true:/health",
+    ]);
+  });
+
+  it("recovers when the optional api route root changes from a file to a directory", async () => {
+    const cwd = await createProject();
+    const routeRoot = path.join(cwd, "src/apis");
+    await writeFile(routeRoot, "not a directory", "utf-8");
+    const events: string[] = [];
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ plan }) {
+        events.push(
+          `initial-server:${plan.entries.some((entry) => entry.kind === "server-runtime")}`,
+        );
+        return {
+          async updatePlan(update) {
+            if (
+              !update.entries.added.some(
+                (entry) => entry.kind === "server-runtime",
+              )
+            ) {
+              return;
+            }
+            events.push("added-server");
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev({ output: { client: "dist" } }, { cwd, bundler });
+    await waitForEvent(events, "initial-server:false");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await fs.promises.rm(routeRoot);
+    await writeFile(
+      path.join(routeRoot, "health/api.ts"),
+      "export const GET = async () => Response.json({ ok: true });",
+      "utf-8",
+    );
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("file route root recovery timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual(["initial-server:false", "added-server"]);
+  });
+
+  it("keeps watching a newly created api route tree after invalid discovery", async () => {
+    const cwd = await createProject();
+    const routeFile = path.join(cwd, "src/apis/users/api.ts");
+    const events: string[] = [];
+    let configRuns = 0;
+    const plugin: Plugin<Record<string, never>> = {
+      name: "observe-api-refresh",
+      config(config) {
+        events.push(`config:${++configRuns}`);
+        return config;
+      },
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ plan }) {
+        events.push(
+          `initial-server:${plan.entries.some((entry) => entry.kind === "server-runtime")}`,
+        );
+        return {
+          async updatePlan(update) {
+            const serverEntry = update.entries.added.find(
+              (entry) => entry.kind === "server-runtime",
+            );
+            if (!serverEntry) return;
+            events.push("added-server");
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev(
+      { output: { client: "dist" }, plugins: [plugin] },
+      { cwd, bundler },
+    );
+    await waitForEvent(events, "initial-server:false");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await writeFile(
+      routeFile,
+      "export const get = async () => Response.json([]);",
+      "utf-8",
+    );
+    await waitForEvent(events, "config:2");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(events).not.toContain("added-server");
+
+    await writeFile(
+      routeFile,
+      "export const GET = async () => Response.json([]);",
+      "utf-8",
+    );
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("fixed dev api route update timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual([
+      "config:1",
+      "initial-server:false",
+      "config:2",
+      "config:3",
+      "added-server",
+    ]);
+  });
+
+  it("does not follow an api route root symlink outside cwd and recovers after replacement", async () => {
+    const cwd = await createProject();
+    const routeRoot = path.join(cwd, "src/apis");
+    await writeFile(
+      path.join(routeRoot, "initial/api.ts"),
+      "export const GET = async () => Response.json({ initial: true });",
+      "utf-8",
+    );
+    const externalRoot = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), "evjs-external-apis-"),
+    );
+    const externalRoute = path.join(externalRoot, "outside/api.ts");
+    await writeFile(
+      externalRoute,
+      "export const GET = async () => Response.json({ outside: true });",
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    let configRuns = 0;
+    const plugin: Plugin<Record<string, never>> = {
+      name: "observe-symlink-recovery",
+      config(config) {
+        events.push(`config:${++configRuns}`);
+        return config;
+      },
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return {
+          async updatePlan(update) {
+            const serverEntry = [
+              ...update.entries.added,
+              ...update.entries.changed,
+            ].find((entry) => entry.kind === "server-runtime");
+            const routes =
+              serverEntry?.metadata?.type === "server-app"
+                ? serverEntry.metadata.routes
+                : [];
+            if (!routes.some((route) => route.path === "/recovered")) return;
+            events.push("recovered-server");
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev(
+      { output: { client: "dist" }, plugins: [plugin] },
+      { cwd, bundler },
+    );
+    await waitForEvent(events, "bundler.dev");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await fs.promises.rm(routeRoot, { recursive: true });
+    await fs.promises.symlink(
+      externalRoot,
+      routeRoot,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    await waitForEvent(events, "config:2");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    const configRunsBeforeExternalEdit = configRuns;
+    await writeFile(
+      externalRoute,
+      "export const GET = async () => Response.json({ outside: false });",
+      "utf-8",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(configRuns).toBe(configRunsBeforeExternalEdit);
+
+    await fs.promises.rm(routeRoot);
+    await writeFile(
+      path.join(routeRoot, "recovered/api.ts"),
+      "export const GET = async () => Response.json({ recovered: true });",
+      "utf-8",
+    );
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("symlink route root recovery timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toContain("recovered-server");
+  });
+
+  it("filters page and api watchers below an escaped route-root ancestor", async () => {
+    const cwd = await createProject();
+    const sourceRoot = path.join(cwd, "src");
+    await writeFile(
+      path.join(sourceRoot, "pages/page.tsx"),
+      "export default function Page() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(sourceRoot, "apis/initial/api.ts"),
+      "export const GET = async () => Response.json({ initial: true });",
+      "utf-8",
+    );
+
+    const externalSourceRoot = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), "evjs-external-src-"),
+    );
+    const externalPage = path.join(externalSourceRoot, "pages/page.tsx");
+    const externalApi = path.join(externalSourceRoot, "apis/outside/api.ts");
+    await writeFile(
+      externalPage,
+      "export default function OutsidePage() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      externalApi,
+      "export const GET = async () => Response.json({ outside: true });",
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    let configRuns = 0;
+    const plugin: Plugin<Record<string, never>> = {
+      name: "observe-source-symlink-recovery",
+      config(config) {
+        events.push(`config:${++configRuns}`);
+        return config;
+      },
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return {
+          async updatePlan(update) {
+            const serverEntry = [
+              ...update.entries.added,
+              ...update.entries.changed,
+            ].find((entry) => entry.kind === "server-runtime");
+            const routes =
+              serverEntry?.metadata?.type === "server-app"
+                ? serverEntry.metadata.routes
+                : [];
+            if (!routes.some((route) => route.path === "/recovered")) return;
+            events.push("recovered-source");
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev(
+      {
+        output: { client: "dist" },
+        routing: { mode: "spa" },
+        plugins: [plugin],
+      },
+      { cwd, bundler },
+    );
+    await waitForEvent(events, "bundler.dev");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await fs.promises.rm(sourceRoot, { recursive: true });
+    await fs.promises.symlink(
+      externalSourceRoot,
+      sourceRoot,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    await waitForEvent(events, "config:2");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    const configRunsBeforeExternalEdits = configRuns;
+    await writeFile(
+      externalPage,
+      "export default function ChangedOutsidePage() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      externalApi,
+      "export const GET = async () => Response.json({ outside: false });",
+      "utf-8",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(configRuns).toBe(configRunsBeforeExternalEdits);
+
+    await fs.promises.rm(sourceRoot);
+    await writeFile(
+      path.join(sourceRoot, "pages/page.tsx"),
+      "export default function RecoveredPage() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(sourceRoot, "apis/recovered/api.ts"),
+      "export const GET = async () => Response.json({ recovered: true });",
+      "utf-8",
+    );
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("source symlink recovery timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toContain("recovered-source");
+  });
+
+  it("continues watching an empty api route directory after its last anchor is removed", async () => {
+    const cwd = await createProject();
+    const routeFile = path.join(cwd, "src/apis/users/api.ts");
+    await writeFile(
+      routeFile,
+      "export const GET = async () => Response.json([]);",
+      "utf-8",
+    );
+    const events: string[] = [];
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ plan }) {
+        events.push(
+          `initial-server:${plan.entries.some((entry) => entry.kind === "server-runtime")}`,
+        );
+        return {
+          async updatePlan(update) {
+            const removedServer = update.entries.removed.some(
+              (entry) => entry.kind === "server-runtime",
+            );
+            const addedServer = update.entries.added.some(
+              (entry) => entry.kind === "server-runtime",
+            );
+            if (removedServer) events.push("removed-server");
+            if (addedServer) {
+              events.push("restored-server");
+              process.emit("SIGINT");
+            }
+          },
+        };
+      },
+    };
+
+    const running = dev({ output: { client: "dist" } }, { cwd, bundler });
+    await waitForEvent(events, "initial-server:true");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await fs.promises.rm(routeFile);
+    await waitForEvent(events, "removed-server");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await writeFile(
+      routeFile,
+      "export const GET = async () => Response.json([{ id: 1 }]);",
+      "utf-8",
+    );
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("restored dev api route update timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual([
+      "initial-server:true",
+      "removed-server",
+      "restored-server",
+    ]);
   });
 
   it("passes config-only dev reloads to the bundler controller", async () => {

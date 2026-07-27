@@ -113,6 +113,41 @@ describe("discoverServerRoutes", () => {
     ]);
   });
 
+  it("rejects server route roots that resolve outside the project", async () => {
+    const cwd = await createFixture({});
+    const externalRoutes = await createFixture({
+      "api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+    });
+    await fs.mkdir(path.join(cwd, "src"), { recursive: true });
+    await fs.symlink(
+      externalRoutes,
+      path.join(cwd, "src/apis"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+
+    for (const required of [undefined, true]) {
+      const discovery = await discoverServerRoutes(cwd, {
+        dir: "./src/apis",
+        ...(required ? { required } : {}),
+      });
+
+      expect(discovery).toEqual({
+        routes: [],
+        files: [],
+        diagnostics: [
+          {
+            level: "error",
+            file: "src/apis",
+            message:
+              "Server route directory must resolve inside the project root. src/apis points outside after resolving symlinks.",
+          },
+        ],
+      });
+    }
+  });
+
   it("keeps non-anchor modules private while diagnosing anchored invalid segments", async () => {
     const cwd = await createFixture({
       "src/apis/_private/api.ts": `
@@ -249,8 +284,73 @@ describe("discoverServerRoutes", () => {
     ]);
   });
 
+  it("claims normalized paths and shapes before validating anchor contents", async () => {
+    const cwd = await createFixture({
+      "src/apis/(one)/health/api.ts": `
+        export const get = async () => Response.json({ ok: true });
+      `,
+      "src/apis/(two)/health/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/orders/$id/api.ts": `
+        export const GET = ;
+      `,
+      "src/apis/orders/$orderId/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+    });
+
+    const discovery = await discoverServerRoutes(cwd, {
+      dir: "./src/apis",
+    });
+
+    expect(discovery.routes).toEqual([]);
+    expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/apis/(one)/health/api.ts",
+        message:
+          "api.ts, api.tsx, api.js, or api.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
+      },
+      {
+        level: "error",
+        file: "src/apis/(one)/health/api.ts",
+        message:
+          'Server route module exports lowercase method "get". Use uppercase "GET".',
+      },
+      {
+        level: "error",
+        file: "src/apis/(two)/health/api.ts",
+        message:
+          'Duplicate api.* anchor for server route path "/health" also declared by src/apis/(one)/health/api.ts. Keep one api.* anchor per normalized URL path; pathless route groups must not collapse multiple directories onto the same path.',
+      },
+      {
+        level: "error",
+        file: "src/apis/orders/$id/api.ts",
+        message: expect.stringMatching(
+          /^Server route module could not be parsed:/,
+        ),
+      },
+      {
+        level: "error",
+        file: "src/apis/orders/$orderId/api.ts",
+        message:
+          'Ambiguous server route shape "/orders/:param" for path "/orders/:orderId" also matches src/apis/orders/$id/api.ts (/orders/:id). Use one dynamic param name for each URL shape.',
+      },
+    ]);
+  });
+
   it("validates path segments and exports only on api.* anchors", async () => {
     const cwd = await createFixture({
+      "src/apis/$/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/(broken/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/Upper/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
       "src/apis/foo.get.ts": `
         export const GET = async () => Response.json({ ok: true });
       `,
@@ -291,6 +391,12 @@ describe("discoverServerRoutes", () => {
         export const middlewares = [null];
         export const GET = async () => Response.json({ ok: true });
       `,
+      "src/apis/optional/$id?/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/repeat/$id/$id/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
     });
 
     const discovery = await discoverServerRoutes(cwd, {
@@ -299,6 +405,24 @@ describe("discoverServerRoutes", () => {
 
     expect(discovery.routes).toEqual([]);
     expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/apis/$/api.ts",
+        message:
+          'Dynamic server route segments must include a name after "$". Segment "$" is not supported.',
+      },
+      {
+        level: "error",
+        file: "src/apis/(broken/api.ts",
+        message:
+          'Server route group segment "(broken" must wrap a non-empty group name in parentheses, such as "(internal)".',
+      },
+      {
+        level: "error",
+        file: "src/apis/Upper/api.ts",
+        message:
+          'Static server route segment "Upper" must start with a lowercase letter or number and then use only lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~".',
+      },
       {
         level: "error",
         file: "src/apis/accounts/$constructor/api.ts",
@@ -358,6 +482,18 @@ describe("discoverServerRoutes", () => {
         file: "src/apis/middleware-singular/api.ts",
         message:
           'Server file routes must not export "middleware". Move middleware logic to a middleware.ts file in the route tree.',
+      },
+      {
+        level: "error",
+        file: "src/apis/optional/$id?/api.ts",
+        message:
+          'Optional server route segments are not supported. Split the route into explicit files instead of "$id?".',
+      },
+      {
+        level: "error",
+        file: "src/apis/repeat/$id/$id/api.ts",
+        message:
+          'Dynamic server route segment "$id" repeats a param name. Use unique dynamic param directories within one route path.',
       },
       {
         level: "error",

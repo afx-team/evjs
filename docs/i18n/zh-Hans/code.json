@@ -84,7 +84,7 @@
     "description": "Title for Rendering Modes feature"
   },
   "homepage.feature.rendering.description": {
-    "message": "通过页面级导出声明 CSR、SSR、SSG、PPR 和 RSC 集成点。",
+    "message": "通过相邻的 page.config.ts 配置 CSR、SSR、SSG、PPR 和 RSC。",
     "description": "Description for Rendering Modes feature"
   },
   "homepage.feature.plugins.title": {

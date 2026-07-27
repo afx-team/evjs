@@ -128,6 +128,20 @@ test.describe("api-routes", () => {
     );
   });
 
+  test("applies API route middleware", async ({ request, apiURL }) => {
+    const response = await request.get(`${apiURL}/api/health`);
+    expect(response.status()).toBe(200);
+    expect(response.headers()["x-api-scope"]).toBe("api");
+
+    const blockedResponse = await request.get(`${apiURL}/api/health`, {
+      headers: { "x-block-api": "true" },
+    });
+    expect(blockedResponse.status()).toBe(403);
+    await expect(blockedResponse.json()).resolves.toEqual({
+      error: "blocked by route middleware",
+    });
+  });
+
   test("calls server function", async ({ page, baseURL }) => {
     await page.goto(baseURL);
 

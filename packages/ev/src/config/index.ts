@@ -265,7 +265,10 @@ export interface ResolvedServerRscConfig {
 }
 
 export interface ServerRoutingConfig {
-  /** Directory containing server route modules. Default: "./src/apis". */
+  /**
+   * Directory containing `api.*` server request-route anchors at any depth.
+   * Default: "./src/apis".
+   */
   dir?: string;
 }
 

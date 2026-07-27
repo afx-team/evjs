@@ -352,8 +352,11 @@ src/apis/
 ```
 
 ```ts
-export function GET({ params }: { params: { userId: string } }) {
-  return Response.json({ id: params.userId });
+export function GET(
+  _request: Request,
+  ctx: { req: { param(name: string): string } },
+) {
+  return Response.json({ id: ctx.req.param("userId") });
 }
 ```
 
