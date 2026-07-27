@@ -61,7 +61,8 @@ Smallfish Page 目录本身已提供有价值的 private-code scope。迁移只�
 
 ```text
 src/pages/checkout/
-├── index.tsx       -> page.tsx
+├── index.tsx       # 保留为真实实现和 import 目标
+├── page.tsx        # 生成的 ./index 薄 re-export
 ├── config.json     -> page.config.ts
 ├── model.ts
 └── components/
@@ -238,7 +239,7 @@ Function、component、installer、middleware 与平台 client 不是 extension 
 1. 盘点每个 Page directory、显式 `pages` item、自定义 entry/root、
    `config.json`、`router`、HTML layout、mount、output filename 和
    Page-scoped plugin field。
-2. 先以 check mode 运行一次性迁移，并审核每个 rename 与 config conversion。
+2. 先以 check mode 运行一次性迁移，并审核每个 anchor 与 config conversion。
 
    ```bash
    # 默认只做 dry-run。
@@ -254,14 +255,36 @@ Function、component、installer、middleware 与平台 client 不是 extension 
    ev migrate smallfish --write
    ```
 
+   JSON 和文本结果都会输出准确的 `routingDir`。当 `--pages-dir` 不是
+   `src/pages` 时，必须显式配置同一目录：
+
+   ```ts
+   export default defineConfig({
+     routing: { mode: "mpa", dir: "app/screens" },
+   });
+   ```
+
    命令会先检查全部 Page，任何错误都会阻止所有写入。生成的薄 anchor 和 Page
-   config 都带有迁移 marker，因此已完成迁移后再次执行会成为 no-op。
-   Smallfish 的 `src/pages/index/index.*` 会保留为 private implementation，
-   再由生成的根 `src/pages/page.*` 薄 re-export 暴露，避免误发布成 `/index`。
-   项目配置永远不会被执行或 import：只有直接导出 object literal 的配置才能
-   自动完成静态验证。对象简写、spread、computed property、函数式配置以及
-   import 或其他间接配置都会作为 blocker。
-3. 把被选中的 `index.*` entry 改名为 `page.*`，其余 colocated file 原地保留。
+   config 都带有迁移 marker，因此已完成迁移后再次执行会成为 no-op，
+   包括含自定义静态 `router` alias 的 Page。每个被选中的 `index.*` 都保留为
+   真实实现和 import 目标，再由生成的 `page.*` 薄 re-export 暴露。根 Page 会由
+   `src/pages/page.*` re-export `src/pages/index/index.*`，避免误发布成 `/index`。
+
+   现有的递归 `page.*`、`layout.*`、`error.*`、`not-found.*` 和 Page
+   `index.html` 都是 blocker，因为 Core 0.3 会把它们激活为 Page、route facet 或
+   Document template。entry 和 config 候选项必须是直接 regular file；命令不会覆盖
+   symlink。项目配置永远不会被执行或 import：只有直接导出 object literal 的配置才能
+   自动完成静态验证。对象简写、spread、computed property、函数式配置、间接配置、
+   `plugins`、`presets` 和可见的 `SMALLFISH_CUSTOM_CONFIG` override 都是 blocker。
+   deprecated `baseDir`、`appBaseDir` 和 `pagesDir` 必须先审计 resolved directory，
+   再通过 `--pages-dir` 传入。`layout`、`layoutsDir`、`mountElementId` 和
+   `globalStylesDir` 也会阻断迁移，直到最终 layout 与 mount 已固化到包含 `#app` 的
+   regular 根 `index.html`，并把自动 global style 改成显式 import。同一个 fail-closed
+   检查也覆盖 resolved Pages 目录旁 Smallfish 默认隐式注入的
+   `global.{ts,tsx,js,jsx}` 与递归 `styles/**/*.{css,less}`。命令会在允许写入前同时
+   校验这些输入和共享 template。
+3. 保留被选中的 `index.*` entry，由命令新增薄 `page.*` re-export；其余非约定
+   colocated file 原地保留。
 4. 命令只为支持的 title/named metadata 生成 `page.config.ts`。插件持有的静态
    字段必须手工移入已注册 namespace；命令会阻止未知字段，不会猜测其 owner
    或映射方式。
@@ -273,8 +296,10 @@ Function、component、installer、middleware 与平台 client 不是 extension 
    的可执行配置必须作为 blocker，由显式 adapter 或源码改写处理。
 6. 把 Application/Page generated file、entry import、HTML hook 和 deployment
    逻辑迁到 structured plugin contribution。
-7. 只配置 `routing.mode: "mpa"`，逐个验证原始 request URL 与 emitted output；
-   不添加 Smallfish source switch。
+7. 配置 `routing.mode: "mpa"`；如果 Page root 是自定义目录，同时配置结果中的
+   `routing.dir`。写入后运行 `ev inspect --json`，确认每个生成 anchor 都解析到预期
+   Page、Route、Document output 和 alias，再执行构建。逐个验证原始 request URL 与
+   emitted output；不添加 Smallfish source switch。
 
 显式 Smallfish `pages` declaration 可以把相同 root/entry 暴露为多个公开 Page。
 Canonical source 用 import 共享实现的薄 Page anchor 表达，不引入第二个 Page

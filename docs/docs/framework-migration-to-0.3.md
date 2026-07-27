@@ -67,7 +67,8 @@ migration changes the positive anchor, not that ownership invariant:
 
 ```text
 src/pages/checkout/
-├── index.tsx       -> page.tsx
+├── index.tsx       # preserved implementation and import target
+├── page.tsx        # generated thin re-export of ./index
 ├── config.json     -> page.config.ts
 ├── model.ts
 └── components/
@@ -257,7 +258,7 @@ Page owner per canonical URL without duplicating business implementation.
 1. Inventory every Page directory, explicit `pages` item, custom entry/root,
    `config.json`, `router`, HTML layout, mount, output filename, and
    Page-scoped plugin field.
-2. Run the one-time migration in check mode and review every proposed rename
+2. Run the one-time migration in check mode and review every proposed anchor
    and config conversion.
 
    ```bash
@@ -274,16 +275,41 @@ Page owner per canonical URL without duplicating business implementation.
    ev migrate smallfish --write
    ```
 
+   The JSON and text results report the exact `routingDir`. When `--pages-dir`
+   is not `src/pages`, configure the same directory explicitly:
+
+   ```ts
+   export default defineConfig({
+     routing: { mode: "mpa", dir: "app/screens" },
+   });
+   ```
+
    The command preflights every Page before writing anything. Generated thin
    anchors and Page configs carry a migration marker, so rerunning a completed
-   migration is a no-op. Smallfish's `src/pages/index/index.*` remains private
-   implementation behind a generated root `src/pages/page.*` re-export; this
-   avoids accidentally publishing it as `/index`. Project config is never
-   executed or imported: only a direct object-literal export can be verified
-   automatically. Shorthand, spread, computed properties, function config, and
-   imported or otherwise indirect config are blockers.
-3. Rename the selected `index.*` entry to `page.*`; leave all other colocated
-   files in place.
+   migration is a no-op, including Pages with a custom static `router` alias.
+   Every selected `index.*` remains the implementation and import target behind
+   a generated `page.*` re-export. The root form re-exports
+   `src/pages/index/index.*` from `src/pages/page.*`, avoiding an accidental
+   `/index` publication.
+
+   Existing recursive `page.*`, `layout.*`, `error.*`, `not-found.*`, and Page
+   `index.html` files are blockers because Core 0.3 would activate them as
+   Pages, route facets, or Document templates. Candidate entries and configs
+   must be direct regular files; symlinks are never overwritten. Project config
+   is never executed or imported: only a direct object-literal export can be
+   verified automatically. Shorthand, spread, computed properties, function
+   config, imported or otherwise indirect config, `plugins`, `presets`, and a
+   visible `SMALLFISH_CUSTOM_CONFIG` override are blockers. Deprecated
+   `baseDir`, `appBaseDir`, and `pagesDir` require an audited resolved directory
+   passed through `--pages-dir`. `layout`, `layoutsDir`, `mountElementId`, and
+   `globalStylesDir` are also blockers until the final layout and mount have
+   been frozen into a regular root `index.html` containing `#app`, and automatic
+   global styles have become explicit imports. The same fail-closed check covers
+   Smallfish's default implicit entries: `global.{ts,tsx,js,jsx}` and recursive
+   `styles/**/*.{css,less}` beside the resolved Pages directory. The command
+   verifies both those inputs and the shared template before allowing writes.
+3. Keep the selected `index.*` entry in place and let the command add a thin
+   `page.*` re-export; leave all other non-convention colocated files in place.
 4. Let the command generate `page.config.ts` only for supported title/named
    metadata. Move plugin-owned static fields into registered namespaces
    manually; the command blocks unknown fields instead of guessing their
@@ -298,8 +324,11 @@ Page owner per canonical URL without duplicating business implementation.
    blockers requiring an explicit adapter or source rewrite.
 6. Migrate Application/Page generated files, entry imports, HTML hooks, and
    deployment logic to structured plugin contributions.
-7. Configure only `routing.mode: "mpa"` and validate every original request URL
-   and emitted output. Do not add a Smallfish source switch.
+7. Configure `routing.mode: "mpa"` and, for a custom Page root, the reported
+   `routing.dir`. Run `ev inspect --json` after writing and verify that every
+   generated anchor resolves to the expected Page, Route, Document output, and
+   alias before building. Validate every original request URL and emitted
+   output. Do not add a Smallfish source switch.
 
 Explicit Smallfish `pages` declarations can expose the same root/entry as
 multiple public Pages. Canonical source represents that case with thin Page

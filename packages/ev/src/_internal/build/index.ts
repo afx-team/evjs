@@ -13,6 +13,7 @@ export type {
   BundlerDevCapability,
   BundlerDevContext,
   BundlerDevController,
+  BundlerDevUpdateOptions,
 } from "./bundler.js";
 export {
   type BuildOptions,
@@ -54,10 +55,15 @@ export type { GeneratePageRouteTypesOptions } from "./page-route-types.js";
 export { generatePageRouteTypes } from "./page-route-types.js";
 export type {
   DiscoverPageRoutesOptions,
+  PageComponentExportAnalysis,
+  PageComponentExportKind,
   PageRouteDiscovery,
   PageRouteDiscoveryDiagnostic,
 } from "./page-routes.js";
-export { discoverPageRoutes } from "./page-routes.js";
+export {
+  analyzePageComponentExports,
+  discoverPageRoutes,
+} from "./page-routes.js";
 export type {
   BuildPlanConfig,
   CreateBuildPlanOptions,

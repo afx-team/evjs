@@ -208,6 +208,7 @@ const expectedBuildToolsRuntimeExports = [
   "GENERATED_IR_DIR",
   "GENERATED_IR_MANIFEST",
   "SERVER_FUNCTION_TRANSFORM_RUNTIME",
+  "analyzePageComponentExports",
   "applyHtmlTagContributions",
   "applyRouteScopedMiddlewares",
   "build",

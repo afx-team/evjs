@@ -57,6 +57,12 @@ export interface PageRouteDiscovery {
   diagnostics: PageRouteDiscoveryDiagnostic[];
 }
 
+export type PageComponentExportKind = "default" | "named-page";
+
+export type PageComponentExportAnalysis =
+  | { kind: PageComponentExportKind }
+  | { error: string };
+
 const SPA_ONLY_PAGE_EXPORTS = new Set([
   "beforeLoad",
   "loader",
@@ -65,6 +71,28 @@ const SPA_ONLY_PAGE_EXPORTS = new Set([
   "errorComponent",
   "notFoundComponent",
 ]);
+
+/** Find a component export that can be bridged into a canonical Page. */
+export function analyzePageComponentExports(
+  source: string,
+): PageComponentExportAnalysis {
+  const { ast, error } = parseRouteModuleWithError(source);
+  if (!ast) {
+    return {
+      error: `the module could not be parsed: ${formatParseErrorMessage(error, {
+        firstLine: true,
+      })}`,
+    };
+  }
+
+  const exportNames = new Set(collectModuleExportNames(ast.body));
+  if (exportNames.has("default")) return { kind: "default" };
+  if (exportNames.has("Page")) return { kind: "named-page" };
+  return {
+    error:
+      'the module must export a default component or a named "Page" component',
+  };
+}
 
 export async function discoverPageRoutes(
   cwd: string,

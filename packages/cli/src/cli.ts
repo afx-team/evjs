@@ -147,7 +147,7 @@ migrate
   )
   .option(
     "--pages-dir <dir>",
-    "Resolved Smallfish appBaseDir/pagesDir location relative to the project",
+    "Resolved Smallfish baseDir/appBaseDir/pagesDir Page root; emitted as evjs routing.dir",
   )
   .option("--write", "Apply the preflighted source changes")
   .option("--json", "Print machine-readable JSON")
