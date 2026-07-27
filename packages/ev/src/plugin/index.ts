@@ -439,7 +439,7 @@ export interface FrameworkIRView {
   readonly routes: readonly FrameworkRouteView[];
   /** Materialized HTML Documents from the normalized CoreGraph. */
   readonly documents: readonly FrameworkDocumentView[];
-  /** Server file routes discovered from `src/apis`. */
+  /** Server request Routes discovered from `api.*` anchors under `src/apis`. */
   readonly serverRoutes: readonly FrameworkServerRouteView[];
   /** Server functions discovered from `"use server"` modules. */
   readonly serverFunctions: readonly FrameworkServerFunctionView[];

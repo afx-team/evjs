@@ -205,8 +205,8 @@ describe("createWebpackConfigs", () => {
           dir: "./src/apis",
           routes: [
             {
-              id: "src/apis/health.ts:/health:GET",
-              module: "src/apis/health.ts",
+              id: "src/apis/health/api.ts:/health:GET",
+              module: "src/apis/health/api.ts",
               path: "/health",
               methods: ["GET"],
             },

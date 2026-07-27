@@ -1,8 +1,6 @@
-/**
- * Dynamic route handlers for /api/posts/:id.
- */
+/** Dynamic route handlers for /api/posts/:id. */
 
-import { posts } from "@/apis/api/posts-store";
+import { posts } from "@/apis/api/posts/posts-store";
 
 interface RouteContext {
   req: {

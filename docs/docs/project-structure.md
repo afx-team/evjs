@@ -2,10 +2,12 @@
 
 This page is the source of truth for evjs application conventions.
 
-Core 0.3 uses one positive Page-and-Route convention:
+Core 0.3 uses symmetric positive anchors for client Pages and server request
+Routes:
 
 - `src/pages/**/page.*` is the only canonical Page and client-route anchor;
-- the containing directory determines both the Page scope and URL;
+- `src/apis/**/api.*` is the only server request-route anchor;
+- each anchor's containing directory determines its scope and URL;
 - the same file tree produces the same semantic Pages and Routes in SPA and
   MPA;
 - `routing.mode` changes materialization, not Page or Route identity.
@@ -44,7 +46,8 @@ my-evjs-app/
     │   ├── middleware.ts
     │   ├── users.server.ts
     │   └── api/
-    │       └── health.ts
+    │       └── health/
+    │           └── api.ts            # /api/health
     ├── components/
     ├── features/
     ├── hooks/
@@ -76,7 +79,7 @@ export default defineConfig({
 ## Convention Discovery Boundary
 
 The top-level `conventions: false` switch disables the framework-owned
-filesystem convention as one unit: `page.*` anchors, server routes under
+filesystem convention as one unit: `page.*` anchors, `api.*` anchors under
 `src/apis`, global `src/middleware.ts`, and route-scoped
 `src/apis/**/middleware.ts`. It cannot be combined with an explicit `routing`
 or `server.routing` declaration. evjs does not expose switches for disabling
@@ -122,9 +125,10 @@ project root unless stated otherwise.
 | `src/route-types.d.ts` | SPA file-route navigation types, when emitted | Generated output | Ignore it; do not copy it into scaffolds or import it from app code. |
 | `**/*.server.{ts,tsx,js,jsx}` with `"use server";` | Server-function module | Reachability graph | Named callable exports only. There is no required directory. |
 | `server.routing: { dir }` | Server file-route root customization | Application | Defaults to `./src/apis` while conventions are enabled; this is not a disable switch. |
-| `src/apis/**/*.{ts,tsx,js,jsx}` | Server file route | Request URL | Uppercase HTTP method exports; URL comes from the file path. |
+| `<server.routing.dir>/**/api.{ts,tsx,js,jsx}` | Server request Route anchor | Entire containing directory | Exactly one source-extension variant per route directory. Export uppercase HTTP method handlers only. |
+| Other files below a server route directory | Route-private source | Nearest server Route | Helpers, schemas, stores, tests, and `index.*` do not create routes. |
 | `src/middleware.ts` | Global server middleware | Server runtime | Wraps framework-owned server requests. |
-| `src/apis/**/middleware.ts` | API route middleware | Descendant server file routes | Not itself a route. |
+| `<server.routing.dir>/**/middleware.ts` | API route middleware | Same-directory and descendant server file routes | Defaults to `src/apis/**/middleware.ts`; not itself a route. |
 | `public/**` | Static files | Client output | Copied according to output configuration. |
 | `components/`, `features/`, `hooks/`, `lib/` | Shared application source | Application/shared | Ordinary project organization, not framework conventions. |
 
@@ -326,34 +330,43 @@ when the Page shares a SPA Application Document or uses request-time rendering.
 
 Client Page routing and server request routing are separate systems.
 
-Server file routes use `src/apis`, `$param` dynamic filename segments, `index`
-for directory roots, and `(group)` for pathless organization:
+Server request Routes use a positive `api.*` anchor under `src/apis`. The
+anchor's complete containing directory determines its URL and scope; `$param`
+directories create dynamic segments and `(group)` directories provide pathless
+organization:
 
 ```text
 src/apis/
 ├── middleware.ts
 ├── api/
-│   ├── health.ts
+│   ├── health/
+│   │   └── api.ts
 │   └── users/
-│       ├── index.ts
-│       └── $userId.ts
+│       ├── api.ts
+│       ├── users-store.ts
+│       └── $userId/
+│           └── api.ts
 └── (internal)/
-    └── metrics.ts
+    └── metrics/
+        └── api.ts
 ```
 
 ```ts
-export function GET({ params }: { params: { userId: string } }) {
-  return Response.json({ id: params.userId });
+export function GET(
+  _request: Request,
+  ctx: { req: { param(name: string): string } },
+) {
+  return Response.json({ id: ctx.req.param("userId") });
 }
 ```
 
-Server route modules export uppercase HTTP methods only. Helper files without
-route exports remain ordinary source, including helpers inside an
-underscore-prefixed directory. `_private/health.ts` with a `GET` export is not
-a private escape hatch: it is diagnosed as an invalid static route segment.
-Do not introduce `route.ts` sentinels, method-suffix files, bracket routes,
-catch-all routes, optional params, route-module middleware exports, or a
-`server.entry` composition path.
+Only `api.*` is a server request-route anchor. Other basenames, including
+`index.ts`, `route.ts`, and method-suffix files, remain ordinary private source
+even if they export a name such as `GET`. An anchored `api.*` module exports
+uppercase HTTP methods only; default exports, helper exports, and route-module
+middleware exports are invalid. Anchors under bracket, catch-all, optional, or
+otherwise invalid path segments are rejected. Do not add another route anchor
+or a `server.entry` composition path.
 
 Server functions are different again: any reachable module that starts with
 `"use server";` and exports supported named callables can define them. See

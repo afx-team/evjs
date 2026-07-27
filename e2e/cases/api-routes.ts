@@ -9,7 +9,7 @@ test.describe("api-routes", () => {
 
     await expect(page.locator("h1")).toHaveText("Route Handlers Example");
     await expect(
-      page.getByText("REST endpoints discovered from src/apis"),
+      page.getByText("REST endpoints anchored by api.ts under src/apis"),
     ).toBeVisible({
       timeout: 10_000,
     });
@@ -126,6 +126,20 @@ test.describe("api-routes", () => {
         timestamp: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       }),
     );
+  });
+
+  test("applies API route middleware", async ({ request, apiURL }) => {
+    const response = await request.get(`${apiURL}/api/health`);
+    expect(response.status()).toBe(200);
+    expect(response.headers()["x-api-scope"]).toBe("api");
+
+    const blockedResponse = await request.get(`${apiURL}/api/health`, {
+      headers: { "x-block-api": "true" },
+    });
+    expect(blockedResponse.status()).toBe(403);
+    await expect(blockedResponse.json()).resolves.toEqual({
+      error: "blocked by route middleware",
+    });
   });
 
   test("calls server function", async ({ page, baseURL }) => {

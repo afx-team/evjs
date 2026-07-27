@@ -41,8 +41,9 @@ import { usersRoute } from "./routes/users.js";
 export const app = createApp({ routes: [usersRoute] });
 ```
 
-This programmatic API is independent from evjs Framework file routes under
-`src/apis`; the framework does not scan `createRoute()` declarations.
+This programmatic API is independent from evjs Framework file routes anchored
+at `src/apis/**/api.*`; the framework does not scan `createRoute()`
+declarations.
 
 ### 2. Server Functions
 

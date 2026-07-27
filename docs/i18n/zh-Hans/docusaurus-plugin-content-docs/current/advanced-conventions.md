@@ -1,8 +1,9 @@
 # 高级约定控制
 
-canonical client Page 与 Route 使用正向 `src/pages/**/page.*` 锚点，目录决定
-URL；服务端请求路由继续使用 `src/apis` 文件约定，middleware 来自
-`src/middleware.ts` 与 `src/apis/**/middleware.ts`。
+canonical client Page 与 Route 使用 positive `src/pages/**/page.*` 锚点，
+server request Route 使用 positive `src/apis/**/api.*` 锚点；两棵树都由所在
+目录决定 URL。Middleware 来自 `src/middleware.ts` 与
+`src/apis/**/middleware.ts`。
 
 只有当应用有意自己持有运行时组合，或需要使用显式 SPA route tree 时，才使用本页的控制项。
 
@@ -22,7 +23,7 @@ export default defineConfig({
 `conventions: false` 会一次性关闭所有框架文件发现：
 
 - `src/pages` 下的 Page 与客户端 route 锚点；
-- `src/apis` 下的 server file route；
+- `src/apis` 下的 server request-route `api.*` 锚点；
 - 全局 `src/middleware.ts` 与 route-scoped
   `src/apis/**/middleware.ts`。
 

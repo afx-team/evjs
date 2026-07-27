@@ -19,22 +19,22 @@ afterEach(async () => {
 });
 
 describe("discoverServerRoutes", () => {
-  it("maps server route files to root-mounted paths", async () => {
+  it("maps strict api.* anchors from their containing directories", async () => {
     const cwd = await createFixture({
-      "src/apis/index.ts": `
+      "src/apis/api.ts": `
         export const GET = async () => Response.json({ ok: true });
       `,
-      "src/apis/health.ts": `
+      "src/apis/health/api.tsx": `
         export const HEAD = async () => new Response(null);
         export const GET = async () => Response.json({ ok: true });
       `,
-      "src/apis/users/$userId.ts": `
+      "src/apis/users/$userId/api.js": `
         export const POST = async () => Response.json({ ok: true });
       `,
-      "src/apis/(internal)/metrics.ts": `
+      "src/apis/(internal)/metrics/api.jsx": `
         export const GET = async () => Response.json({ ok: true });
       `,
-      "src/apis/api/users.ts": `
+      "src/apis/api/users/api.ts": `
         export const DELETE = async () => new Response(null, { status: 204 });
         export const GET = async () => Response.json([]);
       `,
@@ -43,6 +43,21 @@ describe("discoverServerRoutes", () => {
       `,
       "src/apis/_helpers/db.ts": `
         export const database = {};
+      `,
+      "src/apis/ordinary.ts": `
+        export const GET = async () => Response.json({ ignored: true });
+      `,
+      "src/apis/users/index.ts": `
+        export const POST = async () => Response.json({ ignored: true });
+      `,
+      "src/apis/users/route.ts": `
+        export const PATCH = async () => Response.json({ ignored: true });
+      `,
+      "src/apis/users/handler.ts": `
+        export const PUT = async () => Response.json({ ignored: true });
+      `,
+      "src/apis/users/endpoint.ts": `
+        export const DELETE = async () => Response.json({ ignored: true });
       `,
       "src/apis/types.d.ts": `
         export interface User {}
@@ -61,36 +76,36 @@ describe("discoverServerRoutes", () => {
     expect(discovery.diagnostics).toEqual([]);
     expect(discovery.routes).toEqual([
       {
-        id: "src/apis/api/users.ts:/api/users:GET,DELETE",
-        module: "src/apis/api/users.ts",
+        id: "src/apis/api/users/api.ts:/api/users:GET,DELETE",
+        module: "src/apis/api/users/api.ts",
         path: "/api/users",
         methods: ["GET", "DELETE"],
-        moduleSegments: ["api"],
+        moduleSegments: ["api", "users"],
       },
       {
-        id: "src/apis/health.ts:/health:GET,HEAD",
-        module: "src/apis/health.ts",
+        id: "src/apis/health/api.tsx:/health:GET,HEAD",
+        module: "src/apis/health/api.tsx",
         path: "/health",
         methods: ["GET", "HEAD"],
-        moduleSegments: [],
+        moduleSegments: ["health"],
       },
       {
-        id: "src/apis/(internal)/metrics.ts:/metrics:GET",
-        module: "src/apis/(internal)/metrics.ts",
+        id: "src/apis/(internal)/metrics/api.jsx:/metrics:GET",
+        module: "src/apis/(internal)/metrics/api.jsx",
         path: "/metrics",
         methods: ["GET"],
-        moduleSegments: ["(internal)"],
+        moduleSegments: ["(internal)", "metrics"],
       },
       {
-        id: "src/apis/users/$userId.ts:/users/:userId:POST",
-        module: "src/apis/users/$userId.ts",
+        id: "src/apis/users/$userId/api.js:/users/:userId:POST",
+        module: "src/apis/users/$userId/api.js",
         path: "/users/:userId",
         methods: ["POST"],
-        moduleSegments: ["users"],
+        moduleSegments: ["users", "$userId"],
       },
       {
-        id: "src/apis/index.ts:/:GET",
-        module: "src/apis/index.ts",
+        id: "src/apis/api.ts:/:GET",
+        module: "src/apis/api.ts",
         path: "/",
         methods: ["GET"],
         moduleSegments: [],
@@ -98,13 +113,51 @@ describe("discoverServerRoutes", () => {
     ]);
   });
 
-  it("diagnoses underscore-prefixed HTTP routes instead of treating them as private", async () => {
+  it("rejects server route roots that resolve outside the project", async () => {
+    const cwd = await createFixture({});
+    const externalRoutes = await createFixture({
+      "api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+    });
+    await fs.mkdir(path.join(cwd, "src"), { recursive: true });
+    await fs.symlink(
+      externalRoutes,
+      path.join(cwd, "src/apis"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+
+    for (const required of [undefined, true]) {
+      const discovery = await discoverServerRoutes(cwd, {
+        dir: "./src/apis",
+        ...(required ? { required } : {}),
+      });
+
+      expect(discovery).toEqual({
+        routes: [],
+        files: [],
+        diagnostics: [
+          {
+            level: "error",
+            file: "src/apis",
+            message:
+              "Server route directory must resolve inside the project root. src/apis points outside after resolving symlinks.",
+          },
+        ],
+      });
+    }
+  });
+
+  it("keeps non-anchor modules private while diagnosing anchored invalid segments", async () => {
     const cwd = await createFixture({
-      "src/apis/_private/health.ts": `
+      "src/apis/_private/api.ts": `
         export const GET = async () => Response.json({ ok: true });
       `,
       "src/apis/_helpers/db.ts": `
         export const database = {};
+      `,
+      "src/apis/_helpers/route.ts": `
+        export const GET = async () => Response.json({ ignored: true });
       `,
     });
 
@@ -116,17 +169,32 @@ describe("discoverServerRoutes", () => {
     expect(discovery.diagnostics).toEqual([
       {
         level: "error",
-        file: "src/apis/_private/health.ts",
+        file: "src/apis/_private/api.ts",
         message:
           'Static server route segment "_private" must start with a lowercase letter or number and then use only lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~".',
       },
     ]);
   });
 
-  it("maps directory index routes", async () => {
+  it("rejects duplicate api.* extensions, paths, and dynamic shapes", async () => {
     const cwd = await createFixture({
-      "src/apis/users/index.ts": `
+      "src/apis/(one)/health/api.ts": `
         export const GET = async () => Response.json([]);
+      `,
+      "src/apis/(two)/health/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/orders/$id/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/orders/$orderId/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/users/api.js": `
+        export const GET = async () => Response.json([]);
+      `,
+      "src/apis/users/api.ts": `
+        export const POST = async () => Response.json({ ok: true });
       `,
     });
 
@@ -136,135 +204,57 @@ describe("discoverServerRoutes", () => {
 
     expect(discovery.routes).toEqual([
       {
-        id: "src/apis/users/index.ts:/users:GET",
-        module: "src/apis/users/index.ts",
+        id: "src/apis/(one)/health/api.ts:/health:GET",
+        module: "src/apis/(one)/health/api.ts",
+        path: "/health",
+        methods: ["GET"],
+        moduleSegments: ["(one)", "health"],
+      },
+      {
+        id: "src/apis/orders/$id/api.ts:/orders/:id:GET",
+        module: "src/apis/orders/$id/api.ts",
+        path: "/orders/:id",
+        methods: ["GET"],
+        moduleSegments: ["orders", "$id"],
+      },
+      {
+        id: "src/apis/users/api.js:/users:GET",
+        module: "src/apis/users/api.js",
         path: "/users",
         methods: ["GET"],
         moduleSegments: ["users"],
       },
     ]);
-  });
-
-  it("rejects route module middleware exports", async () => {
-    const cwd = await createFixture({
-      "src/apis/guarded.ts": `
-        export const middlewares = [];
-        export const GET = async () => Response.json({ ok: true });
-      `,
-      "src/apis/legacy.ts": `
-        export const middleware = async (_ctx, next) => next();
-        export const GET = async () => Response.json({ ok: true });
-      `,
-    });
-
-    const discovery = await discoverServerRoutes(cwd, {
-      dir: "./src/apis",
-    });
-
-    expect(discovery.routes).toEqual([]);
     expect(discovery.diagnostics).toEqual([
       {
         level: "error",
-        file: "src/apis/guarded.ts",
+        file: "src/apis/(two)/health/api.ts",
         message:
-          'Server file routes must not export "middlewares". Move middleware logic to a middleware.ts file in the route tree.',
+          'Duplicate api.* anchor for server route path "/health" also declared by src/apis/(one)/health/api.ts. Keep one api.* anchor per normalized URL path; pathless route groups must not collapse multiple directories onto the same path.',
       },
       {
         level: "error",
-        file: "src/apis/legacy.ts",
+        file: "src/apis/orders/$orderId/api.ts",
         message:
-          'Server file routes must not export "middleware". Move middleware logic to a middleware.ts file in the route tree.',
+          'Ambiguous server route shape "/orders/:param" for path "/orders/:orderId" also matches src/apis/orders/$id/api.ts (/orders/:id). Use one dynamic param name for each URL shape.',
+      },
+      {
+        level: "error",
+        file: "src/apis/users/api.ts",
+        message:
+          'Duplicate api.* anchor in server route directory "src/apis/users". src/apis/users/api.js already declares the anchor for this directory. Keep exactly one api.* source-extension variant (api.ts, api.tsx, api.js, or api.jsx) per server route directory.',
       },
     ]);
   });
 
-  it("rejects duplicate paths and duplicate dynamic shapes", async () => {
+  it("does not let invalid anchor contents hide duplicate api.* variants", async () => {
     const cwd = await createFixture({
-      "src/apis/users.ts": `
+      "src/apis/users/api.js": `
+        export const get = async () => Response.json([]);
+      `,
+      "src/apis/users/api.ts": `
         export const GET = async () => Response.json([]);
       `,
-      "src/apis/users/index.ts": `
-        export const POST = async () => Response.json({ ok: true });
-      `,
-      "src/apis/orders/$id.ts": `
-        export const GET = async () => Response.json({ ok: true });
-      `,
-      "src/apis/orders/$orderId.ts": `
-        export const GET = async () => Response.json({ ok: true });
-      `,
-    });
-
-    const discovery = await discoverServerRoutes(cwd, {
-      dir: "./src/apis",
-    });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "src/apis/orders/$id.ts:/orders/:id:GET",
-        module: "src/apis/orders/$id.ts",
-        path: "/orders/:id",
-        methods: ["GET"],
-        moduleSegments: ["orders"],
-      },
-      {
-        id: "src/apis/users.ts:/users:GET",
-        module: "src/apis/users.ts",
-        path: "/users",
-        methods: ["GET"],
-        moduleSegments: [],
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/apis/orders/$orderId.ts",
-        message:
-          'Ambiguous server route shape "/orders/:param" for path "/orders/:orderId" also matches src/apis/orders/$id.ts (/orders/:id). Use one dynamic param name for each URL shape.',
-      },
-      {
-        level: "error",
-        file: "src/apis/users/index.ts",
-        message:
-          'Duplicate server route path "/users" also declared by src/apis/users.ts. Keep one server route module per URL path; choose either a flat route file or a directory index route file.',
-      },
-    ]);
-  });
-
-  it("reports invalid server route modules", async () => {
-    const cwd = await createFixture({
-      "src/apis/foo.get.ts": `
-        export const GET = async () => Response.json({ ok: true });
-      `,
-      "src/apis/users/[id].ts": `
-        export const GET = async () => Response.json({ ok: true });
-      `,
-      "src/apis/files/$...path.ts": `
-        export const GET = async () => Response.json({ ok: true });
-      `,
-      "src/apis/accounts/$constructor.ts": `
-        export const GET = async () => Response.json({ ok: true });
-      `,
-      "src/apis/lowercase.ts": `
-        export const get = async () => Response.json({ ok: true });
-      `,
-      "src/apis/default.ts": `
-        export const GET = async () => Response.json({ ok: true });
-        export default {};
-      `,
-      "src/apis/schema.ts": `
-        export const GET = async () => Response.json({ ok: true });
-        export const schema = {};
-      `,
-      "src/apis/middleware-only.ts": `
-        export const middlewares = [];
-      `,
-      "src/apis/route.ts": `
-        export const GET = async () => Response.json({ ok: true });
-      `,
-      "src/apis/invalid-middlewares.ts": `
-        export const middlewares = [null];
-        export const GET = async () => Response.json({ ok: true });
-      `,
     });
 
     const discovery = await discoverServerRoutes(cwd, {
@@ -275,69 +265,247 @@ describe("discoverServerRoutes", () => {
     expect(discovery.diagnostics).toEqual([
       {
         level: "error",
-        file: "src/apis/accounts/$constructor.ts",
+        file: "src/apis/users/api.js",
         message:
-          'Dynamic server route segment "$constructor" uses a reserved param name. Use a safe application-specific name such as "$userId".',
+          "api.ts, api.tsx, api.js, or api.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
       },
       {
         level: "error",
-        file: "src/apis/default.ts",
-        message:
-          "Server route modules must not use default exports. Export uppercase HTTP methods instead.",
-      },
-      {
-        level: "error",
-        file: "src/apis/files/$...path.ts",
-        message:
-          'Catch-all server route segments are not supported. Split wildcard handling into explicit file routes instead of "$...path".',
-      },
-      {
-        level: "error",
-        file: "src/apis/foo.get.ts",
-        message:
-          'Server route method suffix files are not supported. Rename "foo.get.ts" so the URL path comes from the file path and HTTP methods come from uppercase exports such as "GET".',
-      },
-      {
-        level: "error",
-        file: "src/apis/invalid-middlewares.ts",
-        message:
-          'Server file routes must not export "middlewares". Move middleware logic to a middleware.ts file in the route tree.',
-      },
-      {
-        level: "error",
-        file: "src/apis/lowercase.ts",
-        message:
-          "Server route modules must export at least one uppercase HTTP method such as GET or POST.",
-      },
-      {
-        level: "error",
-        file: "src/apis/lowercase.ts",
+        file: "src/apis/users/api.js",
         message:
           'Server route module exports lowercase method "get". Use uppercase "GET".',
       },
       {
         level: "error",
-        file: "src/apis/middleware-only.ts",
+        file: "src/apis/users/api.ts",
+        message:
+          'Duplicate api.* anchor in server route directory "src/apis/users". src/apis/users/api.js already declares the anchor for this directory. Keep exactly one api.* source-extension variant (api.ts, api.tsx, api.js, or api.jsx) per server route directory.',
+      },
+    ]);
+  });
+
+  it("claims normalized paths and shapes before validating anchor contents", async () => {
+    const cwd = await createFixture({
+      "src/apis/(one)/health/api.ts": `
+        export const get = async () => Response.json({ ok: true });
+      `,
+      "src/apis/(two)/health/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/orders/$id/api.ts": `
+        export const GET = ;
+      `,
+      "src/apis/orders/$orderId/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+    });
+
+    const discovery = await discoverServerRoutes(cwd, {
+      dir: "./src/apis",
+    });
+
+    expect(discovery.routes).toEqual([]);
+    expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/apis/(one)/health/api.ts",
+        message:
+          "api.ts, api.tsx, api.js, or api.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
+      },
+      {
+        level: "error",
+        file: "src/apis/(one)/health/api.ts",
+        message:
+          'Server route module exports lowercase method "get". Use uppercase "GET".',
+      },
+      {
+        level: "error",
+        file: "src/apis/(two)/health/api.ts",
+        message:
+          'Duplicate api.* anchor for server route path "/health" also declared by src/apis/(one)/health/api.ts. Keep one api.* anchor per normalized URL path; pathless route groups must not collapse multiple directories onto the same path.',
+      },
+      {
+        level: "error",
+        file: "src/apis/orders/$id/api.ts",
+        message: expect.stringMatching(
+          /^Server route module could not be parsed:/,
+        ),
+      },
+      {
+        level: "error",
+        file: "src/apis/orders/$orderId/api.ts",
+        message:
+          'Ambiguous server route shape "/orders/:param" for path "/orders/:orderId" also matches src/apis/orders/$id/api.ts (/orders/:id). Use one dynamic param name for each URL shape.',
+      },
+    ]);
+  });
+
+  it("validates path segments and exports only on api.* anchors", async () => {
+    const cwd = await createFixture({
+      "src/apis/$/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/(broken/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/Upper/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/foo.get.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/route.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/users/[id]/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/files/$...path/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/accounts/$constructor/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/empty/api.ts": `
+        const ordinary = true;
+      `,
+      "src/apis/lowercase/api.ts": `
+        export const get = async () => Response.json({ ok: true });
+      `,
+      "src/apis/default/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+        export default {};
+      `,
+      "src/apis/schema/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+        export const schema = {};
+      `,
+      "src/apis/middleware-only/api.ts": `
+        export const middlewares = [];
+      `,
+      "src/apis/middleware-singular/api.ts": `
+        export const middleware = async (_ctx, next) => next();
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/invalid-middlewares/api.ts": `
+        export const middlewares = [null];
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/optional/$id?/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/repeat/$id/$id/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+    });
+
+    const discovery = await discoverServerRoutes(cwd, {
+      dir: "./src/apis",
+    });
+
+    expect(discovery.routes).toEqual([]);
+    expect(discovery.diagnostics).toEqual([
+      {
+        level: "error",
+        file: "src/apis/$/api.ts",
+        message:
+          'Dynamic server route segments must include a name after "$". Segment "$" is not supported.',
+      },
+      {
+        level: "error",
+        file: "src/apis/(broken/api.ts",
+        message:
+          'Server route group segment "(broken" must wrap a non-empty group name in parentheses, such as "(internal)".',
+      },
+      {
+        level: "error",
+        file: "src/apis/Upper/api.ts",
+        message:
+          'Static server route segment "Upper" must start with a lowercase letter or number and then use only lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~".',
+      },
+      {
+        level: "error",
+        file: "src/apis/accounts/$constructor/api.ts",
+        message:
+          'Dynamic server route segment "$constructor" uses a reserved param name. Use a safe application-specific name such as "$userId".',
+      },
+      {
+        level: "error",
+        file: "src/apis/default/api.ts",
+        message:
+          "Server route modules must not use default exports. Export uppercase HTTP methods instead.",
+      },
+      {
+        level: "error",
+        file: "src/apis/empty/api.ts",
+        message:
+          "api.ts, api.tsx, api.js, or api.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
+      },
+      {
+        level: "error",
+        file: "src/apis/files/$...path/api.ts",
+        message:
+          'Catch-all server route segments are not supported. Split wildcard handling into explicit file routes instead of "$...path".',
+      },
+      {
+        level: "error",
+        file: "src/apis/invalid-middlewares/api.ts",
         message:
           'Server file routes must not export "middlewares". Move middleware logic to a middleware.ts file in the route tree.',
       },
       {
         level: "error",
-        file: "src/apis/route.ts",
+        file: "src/apis/lowercase/api.ts",
         message:
-          'Server route sentinel files are not supported. Rename "route.ts" so the URL path comes from the file path; use "index.ts" for a directory root.',
+          "api.ts, api.tsx, api.js, or api.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
       },
       {
         level: "error",
-        file: "src/apis/schema.ts",
+        file: "src/apis/lowercase/api.ts",
         message:
-          'Server route module export "schema" is not supported. Move helpers to a non-route file or export only uppercase HTTP methods.',
+          'Server route module exports lowercase method "get". Use uppercase "GET".',
       },
       {
         level: "error",
-        file: "src/apis/users/[id].ts",
+        file: "src/apis/middleware-only/api.ts",
         message:
-          'Dynamic server route segments must use $param filenames. Bracket segment "[id]" is not supported. Rename the file to "$id" for a dynamic segment.',
+          "api.ts, api.tsx, api.js, or api.jsx anchor modules must export at least one uppercase HTTP method such as GET or POST.",
+      },
+      {
+        level: "error",
+        file: "src/apis/middleware-only/api.ts",
+        message:
+          'Server file routes must not export "middlewares". Move middleware logic to a middleware.ts file in the route tree.',
+      },
+      {
+        level: "error",
+        file: "src/apis/middleware-singular/api.ts",
+        message:
+          'Server file routes must not export "middleware". Move middleware logic to a middleware.ts file in the route tree.',
+      },
+      {
+        level: "error",
+        file: "src/apis/optional/$id?/api.ts",
+        message:
+          'Optional server route segments are not supported. Split the route into explicit files instead of "$id?".',
+      },
+      {
+        level: "error",
+        file: "src/apis/repeat/$id/$id/api.ts",
+        message:
+          'Dynamic server route segment "$id" repeats a param name. Use unique dynamic param directories within one route path.',
+      },
+      {
+        level: "error",
+        file: "src/apis/schema/api.ts",
+        message:
+          'Server route module export "schema" is not supported. Move helpers to an ordinary colocated module or export only uppercase HTTP methods from the api.* anchor.',
+      },
+      {
+        level: "error",
+        file: "src/apis/users/[id]/api.ts",
+        message:
+          'Dynamic server route segments must use $param directories. Bracket segment "[id]" is not supported. Rename the directory to "$id" and place an api.* anchor inside it.',
       },
     ]);
   });
@@ -367,17 +535,17 @@ describe("discoverServerConventions", () => {
       "src/apis/(admin)/middleware.ts": `
         export default async (_ctx, next) => next();
       `,
-      "src/apis/api/users.ts": `
+      "src/apis/api/api.ts": `
+        export const GET = async () => Response.json({ api: true });
+      `,
+      "src/apis/api/users/api.ts": `
         export const GET = async () => Response.json([]);
       `,
-      "src/apis/api/admin/index.ts": `
+      "src/apis/api/admin/api.ts": `
         export const GET = async () => Response.json([]);
       `,
-      "src/apis/(admin)/health.ts": `
+      "src/apis/(admin)/health/api.ts": `
         export const GET = async () => Response.json({ ok: true });
-      `,
-      "src/apis/api.ts": `
-        export const GET = async () => Response.json({ flat: true });
       `,
     });
 
@@ -445,6 +613,7 @@ describe("discoverServerConventions", () => {
     );
     expect(routes.find((route) => route.path === "/api")?.middlewares).toEqual([
       rootMiddleware,
+      apiMiddleware,
     ]);
     expect(
       routes.find((route) => route.path === "/api/users")?.middlewares,

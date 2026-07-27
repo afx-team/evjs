@@ -169,18 +169,18 @@ export default function HomePage() {
 
 ## Add A Server Route
 
-Server request routes remain a separate filesystem convention under
-`src/apis`:
+Server request Routes use a separate positive `api.*` anchor under `src/apis`:
 
 ```ts
-// src/apis/api/health.ts
+// src/apis/api/health/api.ts
 export function GET() {
   return Response.json({ ok: true });
 }
 ```
 
-This creates `/api/health`. Client `page.*` routes and server request routes
-are separate systems.
+The containing `api/health` directory creates `/api/health`. Client `page.*`
+routes and server request Routes are separate systems with symmetric positive
+anchors.
 
 ## Build
 

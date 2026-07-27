@@ -143,6 +143,31 @@ describe("create-app scaffolding", () => {
     ).toBe(false);
   });
 
+  it("uses directory-owned api.ts anchors for server request routes", () => {
+    const templateDir = path.join(templatesDir, "api-routes");
+
+    expect(
+      fs.existsSync(path.join(templateDir, "src/apis/api/health/api.ts")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(templateDir, "src/apis/api/posts/api.ts")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(templateDir, "src/apis/api/posts/$id/api.ts")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(templateDir, "src/apis/api/posts/posts-store.ts"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(templateDir, "src/apis/api/health.ts")),
+    ).toBe(false);
+    expect(fs.existsSync(path.join(templateDir, "src/apis/api/posts.ts"))).toBe(
+      false,
+    );
+  });
+
   it("each template ignores generated framework artifacts", () => {
     const templates = listTemplateNames();
 

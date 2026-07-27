@@ -16,6 +16,9 @@ or scaffolds, update the English and Chinese project-structure docs together.
 The canonical Page marker and route-path rules live in
 `packages/ev/src/_internal/build/page-route-conventions.ts`; discovery and
 diagnostics live in `packages/ev/src/_internal/build/page-routes.ts`.
+The canonical server request-route marker and path rules live in
+`packages/ev/src/_internal/build/server-route-conventions.ts`; discovery and
+diagnostics live in `packages/ev/src/_internal/build/server-routes.ts`.
 `packages/ev/src/config/index.ts` selects SPA or MPA materialization through
 `routing.mode`; `packages/ev/src/_internal/build/graph/core.ts` normalizes
 the canonical tree, with cross-mode coverage in
@@ -31,8 +34,8 @@ materialization.
   `src/pages/**/page.*` is the only canonical Page and client-route anchor; its
   containing directory determines both the Page scope and URL. The same tree
   produces the same semantic Pages and Routes in both modes, while
-  `routing.mode` selects SPA or MPA materialization. Server request routes
-  remain file conventions under `src/apis`, with middleware in
+  `routing.mode` selects SPA or MPA materialization. Server request routes use
+  strict positive `src/apis/**/api.*` anchors, with middleware in
   `src/middleware.ts` and `src/apis/**/middleware.ts`.
 - `@evjs/ev` is the config, plugin, graph, build-plan, manifest, and deployment
   control plane. It owns convention discovery and composes generated framework
@@ -78,14 +81,18 @@ materialization.
    must move or rename every published entry to `page.*`, move Page
    configuration to `page.config.ts`, and configure only `routing.mode`.
    Do not add a compatibility reader or infer routes from `index.*`.
-6. Server file route conventions are strict: `src/apis`, `$param` dynamic
-   segments, `index` for directory roots, `(group)` pathless route groups,
-   uppercase HTTP method exports only, ignored helper files without route
-   exports, and filesystem-scoped `middleware.ts`. Keep one server route module
-   per URL path and one parameter naming choice per dynamic URL shape. Do not
-   add `route.ts` sentinels, method suffix files, bracket routes, catch-all
-   routes, optional params, route-module middleware exports, or a `server.entry`
-   composition path.
+6. Server request Routes are strict positive anchors:
+   `<server.routing.dir>/**/api.{ts,tsx,js,jsx}`. The containing directory is
+   the Route scope, and its relative directory segments determine the request
+   URL. `$param` directories express dynamic segments and `(group)` directories
+   are pathless. Other colocated files—including `index.*`, `route.*`, and
+   method-suffix files—are private source and never create Routes. Keep exactly
+   one `api.*` extension variant per route directory and export uppercase HTTP
+   method handlers only. API route middleware remains filesystem-scoped
+   `middleware.ts`. Do not add a compatibility reader, infer Routes from
+   arbitrary method-exporting files, add catch-all/optional/bracket segments,
+   export middleware from a Route module, or add a `server.entry` composition
+   path.
 7. Server functions must start with `"use server";` and export named callable
    functions or supported named async values. No default exports or runtime
    re-exports.

@@ -12,7 +12,8 @@ The framework keeps a clear split between:
 - **application model**: positive `src/pages/**/page.*` anchors whose
   directories determine Page scope and URL, plus optional build-time
   `page.config.ts`;
-- **server file conventions**: `src/apis`, middleware, and server-only modules;
+- **server file conventions**: positive `src/apis/**/api.*` anchors,
+  middleware, and server-only modules;
 - **framework IR**: generated `.ev` entries, plugin artifacts, slots, and manifest data;
 - **bundlers**: Utoopack by default, with webpack available as a validation adapter;
 - **deployment output**: browser assets, optional server bundles, and deployment metadata.
@@ -27,7 +28,7 @@ the framework. MPA page routes use the page runtime without adding a router.
 - **SPA and MPA materialization** — `routing.mode` keeps the same semantic Page/Route tree while selecting a browser route tree or independent Page-owned Documents.
 - **Page rendering settings** — `page.config.ts` normalizes SSR, SSG, PPR, and RSC settings without changing canonical Page identity; Page components do not export rendering configuration.
 - **Server functions** — `"use server"` modules become browser-callable functions.
-- **Server routes** — standard Web `Request`/`Response` route handlers are discovered from `src/apis`.
+- **Server routes** — positive `src/apis/**/api.*` anchors expose standard Web `Request`/`Response` handlers; their directories determine URLs and private scope.
 - **Unified server runtime** — server functions, server routes, SSR, PPR, and RSC share the same server boundary.
 - **Agent-readable framework IR** — `.ev` records generated entries, plugin modules, slot attachments, import edges, and manifest data before bundling.
 - **Plugin system** — generated contributions for framework IR plus config, bundler, HTML, build output, and build lifecycle hooks.
@@ -39,7 +40,7 @@ the framework. MPA page routes use the page runtime without adding a router.
 flowchart TB
   subgraph Source["Application source"]
     Pages["Page directories\npage.tsx + page.config.ts"]
-    APIs["src/apis\nserver routes"]
+    APIs["src/apis/**/api.ts\nserver routes"]
     Functions["use server directive\nserver functions"]
     Config["ev.config.ts\nrouting.mode + plugins"]
   end
@@ -92,9 +93,9 @@ flowchart TB
 ## How It Fits Together
 
 evjs discovers positively anchored `page.*` routes and optional build-time
-`page.config.ts` from `src/pages`, server
-file routes from `src/apis`,
-and server functions from reachable `"use server"` modules. It then materializes
+`page.config.ts` from `src/pages`, positively anchored `api.*` server request
+Routes from `src/apis`, and server functions from reachable `"use server"`
+modules. It then materializes
 `.ev` as the framework IR: generated entry facades, plugin generated modules,
 structured slot attachments, and a manifest that agents and tools can inspect
 before any bundler-specific work.

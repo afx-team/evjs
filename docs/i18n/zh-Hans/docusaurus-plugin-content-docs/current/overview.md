@@ -10,7 +10,8 @@ evjs 是一个使用唯一 Page-and-Route 应用模型的 React 全栈框架，�
 - **应用代码**：React 页面、服务端函数、服务端路由；
 - **应用模型**：正向 `src/pages/**/page.*` 锚点，其目录决定 Page scope 与 URL，
   并可带构建期 `page.config.ts`；
-- **服务端文件约定**：`src/apis`、middleware 和服务端专用模块；
+- **服务端文件约定**：positive `src/apis/**/api.*` 锚点、middleware 与服务端
+  专用模块；
 - **框架 IR**：生成的 `.ev` entries、插件产物、slots 和 manifest 数据；
 - **构建器**：默认 Utoopack，webpack 可作为验证适配器；
 - **部署产物**：浏览器资源、可选服务端 bundle，以及部署元信息。
@@ -25,7 +26,8 @@ page runtime，不引入客户端路由器。
 - **SPA/MPA 物化** —— `routing.mode` 保留同一语义 Page/Route 树，只选择浏览器 route tree 或独立的 Page-owned Document。
 - **Page rendering setting** —— `page.config.ts` normalize SSR、SSG、PPR、RSC setting，但不改变 canonical Page identity；Page component 不读取这些 rendering export。
 - **服务端函数** —— `"use server"` 模块会变成浏览器可调用的函数。
-- **服务端路由** —— 从 `src/apis` 发现标准 Web `Request`/`Response` route handler。
+- **服务端路由** —— positive `src/apis/**/api.*` 锚点暴露标准 Web
+  `Request`/`Response` handler，所在目录决定 URL 与私有 scope。
 - **统一服务端运行时** —— 服务端函数、服务端路由、SSR、PPR、RSC 共用同一条服务端边界。
 - **Agent-readable framework IR** —— `.ev` 在 bundling 前记录生成 entry、插件模块、slot 挂载、import edges 和 manifest 数据。
 - **插件系统** —— 用 generated contributions 扩展 framework IR，并用 config、bundler、HTML、build output 和 build 生命周期 hooks 处理非 IR 能力。
@@ -37,7 +39,7 @@ page runtime，不引入客户端路由器。
 flowchart TB
   subgraph Source["应用源码"]
     Pages["Page directories\npage.tsx + page.config.ts"]
-    APIs["src/apis\n服务端路由"]
+    APIs["src/apis/**/api.ts\n服务端路由"]
     Functions["use server 指令\n服务端函数"]
     Config["ev.config.ts\nrouting.mode + plugins"]
   end
@@ -89,9 +91,9 @@ flowchart TB
 
 ## 如何组合
 
-evjs 从 `src/pages` 发现带 `page.*` 正向锚点的页面路由与可选构建期
-`page.config.ts`，从 `src/apis` 发现
-服务端文件路由，并从可达的
+evjs 从 `src/pages` 发现带 `page.*` positive anchor 的页面路由与可选构建期
+`page.config.ts`，从 `src/apis` 发现带 `api.*` positive anchor 的 server
+request Route，并从可达的
 `"use server"` 模块发现服务端函数。随后它会 materialize `.ev` 作为 framework IR：
 生成的 entry facade、插件 generated modules、结构化 slot 挂载，以及可供 agent 和工具在
 bundler 执行前检查的 manifest。

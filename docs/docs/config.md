@@ -42,8 +42,9 @@ export default defineConfig({
 });
 ```
 
-This disables `page.*` discovery under `src/pages`, server file-route discovery
-under `src/apis`, and both global and route-scoped middleware file discovery.
+This disables `page.*` discovery under `src/pages`, `api.*` server request-route
+discovery under `src/apis`, and both global and route-scoped middleware file
+discovery.
 It cannot be combined with an explicit `routing` or `server.routing`
 declaration. There are no narrower convention disable switches.
 
@@ -243,9 +244,9 @@ projection it needs.
 
 ### Server
 
-When file conventions are enabled, server routes under `src/apis` are
-discovered by default. Configure the directory only when it intentionally lives
-elsewhere:
+When file conventions are enabled, positive `api.*` server request-route
+anchors under `src/apis` are discovered by default. Configure the root only
+when it intentionally lives elsewhere:
 
 ```ts
 export default defineConfig({
@@ -265,11 +266,12 @@ public `server.functions.endpoint`.
 Server middleware conventions are:
 
 - `src/middleware.ts` for global server middleware;
-- `src/apis/**/middleware.ts` for middleware scoped to descendant server file
-  routes.
+- `<server.routing.dir>/**/middleware.ts` for middleware scoped to
+  same-directory and descendant server file routes; it defaults to
+  `src/apis/**/middleware.ts`.
 
-`server.routing: { dir }` customizes the discovery root; it is not a disable
-switch.
+`server.routing: { dir }` customizes the shared `api.*` and route-middleware
+discovery root; it is not a disable switch.
 
 Enable React Server Components per Page with `rsc: true` in `page.config.ts`.
 The Flight endpoint is derived from `server.basePath`; optionally override it

@@ -184,10 +184,11 @@ Page rendering fields without changing Page identity.
 Reachable modules beginning with `"use server";` contribute supported named
 server functions.
 
-Server request routes are discovered independently under `src/apis`:
+Server request Routes are discovered independently from positive `api.*`
+anchors under `src/apis`:
 
 ```ts
-// src/apis/api/health.ts
+// src/apis/api/health/api.ts
 export const GET = async () => Response.json({ ok: true });
 ```
 
@@ -209,7 +210,9 @@ Check user-controlled inputs first:
 - Page rendering metadata in `page.config.ts` uses supported values and
   combinations;
 - `"use server"` modules begin with the directive and export named callables;
-- `src/apis` route modules export uppercase HTTP methods.
+- each published server request Route uses exactly one `api.*` extension
+  variant in its URL directory;
+- `api.*` anchors export uppercase HTTP methods only.
 
 After source conversion, run `ev inspect` and review Page sources, Page config,
 routes, Documents, provenance, and diagnostics.

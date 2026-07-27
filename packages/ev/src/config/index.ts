@@ -235,7 +235,7 @@ export interface ServerConfig {
   /**
    * Framework-managed server file routing.
    *
-   * Defaults to enabled. evjs discovers Request/Response route modules from
+   * Defaults to enabled. evjs discovers Request/Response `api.*` anchors from
    * `src/apis` while top-level file conventions are enabled.
    */
   routing?: ServerRoutingConfig;
@@ -265,7 +265,10 @@ export interface ResolvedServerRscConfig {
 }
 
 export interface ServerRoutingConfig {
-  /** Directory containing server route modules. Default: "./src/apis". */
+  /**
+   * Directory containing `api.*` server request-route anchors at any depth.
+   * Default: "./src/apis".
+   */
   dir?: string;
 }
 

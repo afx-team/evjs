@@ -21,7 +21,7 @@ Page tree is materialized as an SPA or MPA:
 - Client dev server: port 3000
 - API server (dev): port 3001
 - Server functions auto-discovered via `"use server"` directive
-- Server request routes auto-discovered from `./src/apis`
+- Server request-route anchors auto-discovered from `./src/apis/**/api.*`
 
 `routing.mode` selects SPA or MPA materialization for the same semantic
 Page-and-Route tree. It does not select a different file convention.
@@ -110,7 +110,8 @@ my-app/
     │   └── users.server.ts            # reachable server functions
     ├── apis/
     │   └── api/
-    │       └── health.ts              # server request route
+    │       └── health/
+    │           └── api.ts             # /api/health server request route
     └── middleware.ts                  # optional server middleware
 ```
 
