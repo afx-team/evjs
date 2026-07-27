@@ -1,9 +1,9 @@
 # Advanced Convention Control
 
 Canonical client Pages and Routes use positive `src/pages/**/page.*` anchors;
-their directories determine URLs. Server request routes remain file
-conventions under `src/apis`, and middleware comes from `src/middleware.ts`
-plus `src/apis/**/middleware.ts`.
+server request Routes use positive `src/apis/**/api.*` anchors. In both trees,
+the containing directory determines the URL. Middleware comes from
+`src/middleware.ts` plus `src/apis/**/middleware.ts`.
 
 Use the control on this page only when the application intentionally owns its
 runtime composition or is migrating from a non-conventional structure.
@@ -24,7 +24,7 @@ export default defineConfig({
 `conventions: false` disables all framework filesystem discovery together:
 
 - Page and client-route anchors under `src/pages`;
-- server file routes under `src/apis`;
+- server request-route `api.*` anchors under `src/apis`;
 - global `src/middleware.ts` and route-scoped
   `src/apis/**/middleware.ts`.
 

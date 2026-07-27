@@ -69,7 +69,7 @@ flowchart TB
   end
 
   subgraph Updates["Framework updates"]
-    Files["src/pages\nsrc/apis\nev.config.ts"]
+    Files["src/pages/**/page.*\nsrc/apis/**/api.*\nev.config.ts"]
     Plan["refresh CoreGraph\nand .ev plan"]
   end
 

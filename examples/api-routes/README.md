@@ -17,20 +17,20 @@ npm run dev
 | `src/pages/layout.tsx` | File-convention root layout |
 | `src/middleware.ts` | Framework request middleware for all server requests |
 | `src/apis/api/middleware.ts` | API route middleware for `/api/**` file routes |
-| `src/apis/api/posts.ts` | List/create handlers for `/api/posts` |
-| `src/apis/api/posts/$id.ts` | Dynamic handlers for `/api/posts/:id` |
-| `src/apis/api/health.ts` | Health check endpoint |
-| `src/apis/api/posts-store.ts` | Colocated helper module ignored by route discovery |
+| `src/apis/api/posts/api.ts` | List/create handlers for `/api/posts` |
+| `src/apis/api/posts/$id/api.ts` | Dynamic handlers for `/api/posts/:id` |
+| `src/apis/api/health/api.ts` | Health check endpoint |
+| `src/apis/api/posts/posts-store.ts` | Private helper colocated in the `/api/posts` route scope |
 
 ## What It Demonstrates
 
-- Uppercase method exports (`GET`, `POST`, `PUT`, `DELETE`) for REST endpoints
-- Dynamic route files (`$id.ts` -> `:id`)
+- Directory-owned `api.ts` anchors with uppercase method exports (`GET`, `POST`, `PUT`, `DELETE`)
+- Dynamic route directories (`$id/api.ts` -> `:id`)
 - Query string parsing (`?limit=N`)
 - Custom status codes (201, 204, 404)
 - Auto `OPTIONS` and `405 Method Not Allowed`
 - Framework request and API route `middleware.ts` conventions
-- Colocated helper files without route exports
+- Colocated private helpers that are not named `api.ts`
 - A root `page.tsx` anchor mapped to `/` by file convention
 
 ## Try It

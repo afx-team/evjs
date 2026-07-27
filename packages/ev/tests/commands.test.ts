@@ -1933,9 +1933,8 @@ describe("prepareFrameworkBuild", () => {
 
   it("adds server.request.middleware contributions to the generated server entry", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/apis"), { recursive: true });
     await writeFile(
-      path.join(cwd, "src/apis/hello.ts"),
+      path.join(cwd, "src/apis/hello/api.ts"),
       "export function GET() { return new Response('ok'); }",
       "utf-8",
     );
@@ -2002,9 +2001,9 @@ describe("prepareFrameworkBuild", () => {
       )}";`,
     );
     expect(serverEntry).toContain(
-      'import * as routeModule0 from "../../src/apis/hello";',
+      'import * as routeModule0 from "../../src/apis/hello/api";',
     );
-    expect(serverEntry).not.toContain('from "src/apis/hello.ts"');
+    expect(serverEntry).not.toContain('from "src/apis/hello/api.ts"');
     expect(serverEntry).toContain(
       "const middlewares = [contributedMiddleware0];",
     );
@@ -3088,7 +3087,7 @@ describe("build", () => {
     const cwd = await createProject();
     await fs.promises.rm(path.join(cwd, "index.html"));
     await writeFile(
-      path.join(cwd, "src/apis/health.ts"),
+      path.join(cwd, "src/apis/health/api.ts"),
       "export const GET = () => Response.json({ ok: true });",
       "utf-8",
     );
@@ -3372,7 +3371,7 @@ describe("build", () => {
       "utf-8",
     );
     await writeFile(
-      path.join(cwd, "src/apis/admin/health.ts"),
+      path.join(cwd, "src/apis/admin/health/api.ts"),
       "export const GET = async () => Response.json({ ok: true });",
       "utf-8",
     );
@@ -5547,7 +5546,7 @@ describe("build", () => {
       "utf-8",
     );
     await writeFile(
-      path.join(cwd, "src/apis/api/health.ts"),
+      path.join(cwd, "src/apis/api/health/api.ts"),
       "export const GET = async () => Response.json({ ok: true });",
       "utf-8",
     );
@@ -5579,11 +5578,11 @@ describe("build", () => {
           ],
           routes: [
             {
-              id: "src/apis/api/health.ts:/api/health:GET",
-              module: "src/apis/api/health.ts",
+              id: "src/apis/api/health/api.ts:/api/health:GET",
+              module: "src/apis/api/health/api.ts",
               path: "/api/health",
               methods: ["GET"],
-              moduleSegments: ["api"],
+              moduleSegments: ["api", "health"],
               middlewares: [
                 {
                   id: "src/apis/api/middleware.ts:route-middleware",
@@ -5628,7 +5627,7 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      "[evjs] No server routes found in ./src/apis. Add a route module exporting GET or POST such as ./src/apis/index.ts or set conventions: false.",
+      "[evjs] No server routes found in ./src/apis. Add an api.* anchor exporting GET or POST such as ./src/apis/api.ts or set conventions: false.",
     );
     expect(events).not.toContain("bundler.build");
   });
@@ -5651,7 +5650,7 @@ describe("build", () => {
       "utf-8",
     );
     await writeFile(
-      path.join(cwd, "src/apis/health.ts"),
+      path.join(cwd, "src/apis/health/api.ts"),
       "export const GET = async () => Response.json({ ok: true });",
       "utf-8",
     );
@@ -5683,7 +5682,7 @@ describe("build", () => {
     expect(serverEntry?.metadata).toEqual(
       expect.objectContaining({
         type: "server-app",
-        routes: [expect.objectContaining({ module: "src/apis/health.ts" })],
+        routes: [expect.objectContaining({ module: "src/apis/health/api.ts" })],
       }),
     );
     expect(serverEntry?.metadata).not.toHaveProperty("middlewares");

@@ -164,16 +164,17 @@ export default function HomePage() {
 
 ## 添加服务端路由
 
-服务端请求路由继续使用独立的 `src/apis` 文件约定：
+Server request Route 使用 `src/apis` 下独立的 positive `api.*` 锚点：
 
 ```ts
-// src/apis/api/health.ts
+// src/apis/api/health/api.ts
 export function GET() {
   return Response.json({ ok: true });
 }
 ```
 
-它创建 `/api/health`。客户端 `page.*` 路由与 server request route 是独立系统。
+完整所在目录 `api/health` 创建 `/api/health`。客户端 `page.*` route 与 server
+request Route 是使用对称 positive anchor 的独立系统。
 
 ## 构建
 

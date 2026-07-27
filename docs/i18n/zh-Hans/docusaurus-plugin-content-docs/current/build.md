@@ -171,10 +171,10 @@ Page 必须省略 `hydrate` 或将其设为 `"none"`。RSC Page 使用 `render: 
 
 以 `"use server";` 开头的 reachable module 贡献受支持的命名 server function。
 
-服务端请求路由独立从 `src/apis` 发现：
+服务端 request Route 独立从 `src/apis` 下的 positive `api.*` 锚点发现：
 
 ```ts
-// src/apis/api/health.ts
+// src/apis/api/health/api.ts
 export const GET = async () => Response.json({ ok: true });
 ```
 
@@ -194,7 +194,8 @@ export const GET = async () => Response.json({ ok: true });
 - Page `title` 以及每个 `meta` name/content 都是合法 static string；
 - `page.config.ts` 中 Page rendering metadata 使用受支持的值与组合；
 - `"use server"` module 以 directive 开头并导出命名 callable；
-- `src/apis` route module 导出大写 HTTP method。
+- 每个发布的 server request Route 在其 URL 目录只使用一个 `api.*` 扩展名变体；
+- `api.*` 锚点只导出大写 HTTP method。
 
 运行 build 前应先完成源码转换，再运行 `ev inspect` 审核 Page source、Page config、
 route、Document、provenance 与 diagnostic。

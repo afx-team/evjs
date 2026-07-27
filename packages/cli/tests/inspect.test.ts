@@ -45,7 +45,7 @@ describe("inspect", () => {
           return [];
         }
       `,
-      "src/apis/api/health.ts": `
+      "src/apis/api/health/api.ts": `
         export const GET = () => Response.json({ ok: true });
       `,
     });
@@ -99,7 +99,7 @@ describe("inspect", () => {
     ]);
     expect(result.graph.serverRoutes).toEqual([
       expect.objectContaining({
-        module: "src/apis/api/health.ts",
+        module: "src/apis/api/health/api.ts",
         path: "/api/health",
         methods: ["GET"],
       }),
@@ -130,7 +130,7 @@ describe("inspect", () => {
         "export default async function middleware(_ctx, next) { await next(); }",
       "src/apis/middleware.ts":
         "export default async function middleware(_ctx, next) { await next(); }",
-      "src/apis/health.ts":
+      "src/apis/health/api.ts":
         "export const GET = async () => Response.json({ ok: true });",
     });
 

@@ -1239,9 +1239,9 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     };
     const cwd = await createFixture({
       "src/pages/page.tsx": "export default function Home() { return null; }",
-      "src/apis/health.ts":
+      "src/apis/health/api.ts":
         "export const GET = async () => Response.json({ ok: true });",
-      "src/apis/users/$userId.ts":
+      "src/apis/users/$userId/api.ts":
         "export const POST = async () => Response.json({ ok: true });",
       "src/middleware.ts":
         "export default async function middleware(_ctx, next) { await next(); }",
@@ -1260,17 +1260,17 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
         dir: "./src/apis",
         routes: [
           {
-            id: "src/apis/health.ts:/health:GET",
-            module: "src/apis/health.ts",
+            id: "src/apis/health/api.ts:/health:GET",
+            module: "src/apis/health/api.ts",
             path: "/health",
             methods: ["GET"],
           },
           {
-            id: "src/apis/users/$userId.ts:/users/:userId:POST",
-            module: "src/apis/users/$userId.ts",
+            id: "src/apis/users/$userId/api.ts:/users/:userId:POST",
+            module: "src/apis/users/$userId/api.ts",
             path: "/users/:userId",
             methods: ["POST"],
-            moduleSegments: ["users"],
+            moduleSegments: ["users", "$userId"],
             middlewares: [userMiddleware],
           },
         ],
@@ -1288,14 +1288,14 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     expect(analysis.diagnostics).toEqual([]);
     expect(analysis.graph.serverRoutes).toEqual([
       {
-        id: "src/apis/health.ts:/health:GET",
-        module: "src/apis/health.ts",
+        id: "src/apis/health/api.ts:/health:GET",
+        module: "src/apis/health/api.ts",
         path: "/health",
         methods: ["GET"],
       },
       {
-        id: "src/apis/users/$userId.ts:/users/:userId:POST",
-        module: "src/apis/users/$userId.ts",
+        id: "src/apis/users/$userId/api.ts:/users/:userId:POST",
+        module: "src/apis/users/$userId/api.ts",
         path: "/users/:userId",
         methods: ["POST"],
       },
@@ -1313,17 +1313,17 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
         type: "server-app",
         routes: [
           {
-            id: "src/apis/health.ts:/health:GET",
-            module: "src/apis/health.ts",
+            id: "src/apis/health/api.ts:/health:GET",
+            module: "src/apis/health/api.ts",
             path: "/health",
             methods: ["GET"],
           },
           {
-            id: "src/apis/users/$userId.ts:/users/:userId:POST",
-            module: "src/apis/users/$userId.ts",
+            id: "src/apis/users/$userId/api.ts:/users/:userId:POST",
+            module: "src/apis/users/$userId/api.ts",
             path: "/users/:userId",
             methods: ["POST"],
-            moduleSegments: ["users"],
+            moduleSegments: ["users", "$userId"],
             middlewares: [userMiddleware],
           },
         ],

@@ -7,10 +7,7 @@ import type {
 } from "@evjs/shared/manifest";
 import { collectModuleExportNames } from "./module-exports.js";
 import {
-  findPageRouteSegmentConventionViolation,
-  isPageRouteGroupSegment,
   isPageRouteSourceModuleFile,
-  normalizePageRouteConventionPath,
   type PageRouteSegmentConventionViolation,
 } from "./page-route-conventions.js";
 import {
@@ -18,7 +15,12 @@ import {
   hasDefaultExport,
   parseRouteModuleWithError,
 } from "./routes/shared.js";
-import { isServerMiddlewareConventionFileName } from "./server-conventions.js";
+import {
+  findServerRouteSegmentConventionViolation,
+  parseServerRouteAnchorFile,
+  SERVER_ROUTE_ENTRY_LABEL,
+  serverRoutePathFromSegments,
+} from "./server-route-conventions.js";
 import { isInsideCwd, toPosixPath } from "./utils.js";
 
 export interface DiscoverServerRoutesOptions {
@@ -43,6 +45,14 @@ export interface ServerRouteDiscovery {
   diagnostics: ServerRouteDiscoveryDiagnostic[];
 }
 
+interface ServerRouteAnchorCandidate {
+  file: string;
+  sourceRel: string;
+  diagnosticFile: string;
+  directory: string;
+  segments: string[];
+}
+
 const LOWERCASE_HTTP_METHODS = new Set(
   HTTP_METHODS.map((method) => method.toLowerCase()),
 );
@@ -64,23 +74,45 @@ export async function discoverServerRoutes(
   }
 
   const { files } = await collectServerRouteTree(cwd, absoluteDir);
+  const anchors = files.flatMap<ServerRouteAnchorCandidate>((file) => {
+    const sourceRel = toPosixPath(path.relative(cwd, file));
+    const routeRel = toPosixPath(path.relative(absoluteDir, file));
+    const convention = parseServerRouteAnchorFile(routeRel);
+    return convention
+      ? [
+          {
+            file,
+            sourceRel,
+            diagnosticFile: toDiagnosticPath(sourceRel),
+            directory: path.posix.dirname(sourceRel),
+            segments: convention.segments,
+          },
+        ]
+      : [];
+  });
+  const duplicateAnchorOwners = findDuplicateServerRouteAnchorOwners(anchors);
   const routeCandidates: Array<DiscoveredServerRouteNode & { shape: string }> =
     [];
   const routeByPath = new Map<string, string>();
   const routeByShape = new Map<string, { file: string; path: string }>();
 
-  for (const file of files) {
-    const sourceRel = toPosixPath(path.relative(cwd, file));
-    const routeRel = toPosixPath(path.relative(absoluteDir, file));
-    const routeFile = parseServerRouteFile(routeRel);
-    if (!routeFile) continue;
-
-    const diagnosticFile = toDiagnosticPath(sourceRel);
+  for (const anchor of anchors) {
+    const duplicateOwner = duplicateAnchorOwners.get(anchor.file);
+    if (duplicateOwner) {
+      diagnostics.push({
+        level: "error",
+        file: anchor.diagnosticFile,
+        message: createDuplicateServerRouteAnchorDiagnostic(
+          anchor.directory,
+          duplicateOwner,
+        ),
+      });
+      continue;
+    }
     const fileDiagnostics = await analyzeServerRouteFile(
-      file,
-      routeFile.segments,
-      routeFile.moduleSegments,
-      diagnosticFile,
+      anchor.file,
+      anchor.segments,
+      anchor.diagnosticFile,
     );
     diagnostics.push(...fileDiagnostics.diagnostics);
     if (!fileDiagnostics.route) continue;
@@ -89,7 +121,7 @@ export async function discoverServerRoutes(
     if (previous) {
       diagnostics.push({
         level: "error",
-        file: diagnosticFile,
+        file: anchor.diagnosticFile,
         message: createDuplicateServerRoutePathDiagnostic(
           fileDiagnostics.route.path,
           previous,
@@ -97,14 +129,14 @@ export async function discoverServerRoutes(
       });
       continue;
     }
-    routeByPath.set(fileDiagnostics.route.path, sourceRel);
+    routeByPath.set(fileDiagnostics.route.path, anchor.sourceRel);
 
     const shape = serverRoutePathShapeFromPath(fileDiagnostics.route.path);
     const previousShapeOwner = routeByShape.get(shape);
     if (previousShapeOwner) {
       diagnostics.push({
         level: "error",
-        file: diagnosticFile,
+        file: anchor.diagnosticFile,
         message: createAmbiguousServerRouteShapeDiagnostic(
           shape,
           fileDiagnostics.route.path,
@@ -114,7 +146,7 @@ export async function discoverServerRoutes(
       continue;
     }
     routeByShape.set(shape, {
-      file: sourceRel,
+      file: anchor.sourceRel,
       path: fileDiagnostics.route.path,
     });
     routeCandidates.push({ ...fileDiagnostics.route, shape });
@@ -129,9 +161,20 @@ export async function discoverServerRoutes(
   };
 }
 
-interface ServerRouteFileConvention {
-  segments: string[];
-  moduleSegments: string[];
+function findDuplicateServerRouteAnchorOwners(
+  anchors: ServerRouteAnchorCandidate[],
+): Map<string, string> {
+  const ownerByDirectory = new Map<string, string>();
+  const duplicateOwnerByFile = new Map<string, string>();
+  for (const anchor of anchors) {
+    const owner = ownerByDirectory.get(anchor.directory);
+    if (owner) {
+      duplicateOwnerByFile.set(anchor.file, owner);
+      continue;
+    }
+    ownerByDirectory.set(anchor.directory, anchor.sourceRel);
+  }
+  return duplicateOwnerByFile;
 }
 
 interface ServerRouteFileAnalysis {
@@ -139,28 +182,9 @@ interface ServerRouteFileAnalysis {
   diagnostics: ServerRouteDiscoveryDiagnostic[];
 }
 
-function parseServerRouteFile(
-  routeRel: string,
-): ServerRouteFileConvention | undefined {
-  const normalizedRouteRel = normalizePageRouteConventionPath(routeRel);
-  const basename = path.posix.basename(normalizedRouteRel);
-  if (!isPageRouteSourceModuleFile(basename)) return undefined;
-  if (isServerMiddlewareConventionFileName(basename)) return undefined;
-
-  const extension = path.posix.extname(normalizedRouteRel);
-  const withoutExt = normalizedRouteRel.slice(0, -extension.length);
-  const segments = withoutExt.split("/").filter(Boolean);
-  if (segments.length === 0) return undefined;
-
-  const name = segments[segments.length - 1] ?? "";
-  const routeSegments = name === "index" ? segments.slice(0, -1) : segments;
-  return { segments: routeSegments, moduleSegments: segments.slice(0, -1) };
-}
-
 async function analyzeServerRouteFile(
   absolute: string,
   segments: string[],
-  moduleSegments: string[],
   diagnosticFile: string,
 ): Promise<ServerRouteFileAnalysis> {
   const diagnostics: ServerRouteDiscoveryDiagnostic[] = [];
@@ -185,28 +209,7 @@ async function analyzeServerRouteFile(
   const routeModuleMiddlewareExports = exportNames.filter(
     (name) => name === "middleware" || name === "middlewares",
   );
-  const hasRouteExport =
-    methods.length > 0 ||
-    lowercaseMethods.length > 0 ||
-    routeModuleMiddlewareExports.length > 0;
-  if (!hasRouteExport) return { diagnostics };
-
-  const methodSuffix = getMethodSuffix(path.basename(absolute));
-  if (methodSuffix) {
-    diagnostics.push({
-      level: "error",
-      file: diagnosticFile,
-      message: `Server route method suffix files are not supported. Rename "${path.basename(
-        absolute,
-      )}" so the URL path comes from the file path and HTTP methods come from uppercase exports such as "${methodSuffix.toUpperCase()}".`,
-    });
-    return { diagnostics };
-  }
-
-  const segmentViolation = findPageRouteSegmentConventionViolation(segments, {
-    allowCasePreservingStatic: false,
-    allowCatchAll: false,
-  });
+  const segmentViolation = findServerRouteSegmentConventionViolation(segments);
   if (segmentViolation) {
     diagnostics.push({
       level: "error",
@@ -216,24 +219,11 @@ async function analyzeServerRouteFile(
     return { diagnostics };
   }
 
-  if (isRouteSentinelFilename(path.basename(absolute))) {
+  if (methods.length === 0) {
     diagnostics.push({
       level: "error",
       file: diagnosticFile,
-      message: `Server route sentinel files are not supported. Rename "${path.basename(
-        absolute,
-      )}" so the URL path comes from the file path; use "index${path.extname(
-        absolute,
-      )}" for a directory root.`,
-    });
-  }
-
-  if (methods.length === 0 && routeModuleMiddlewareExports.length === 0) {
-    diagnostics.push({
-      level: "error",
-      file: diagnosticFile,
-      message:
-        "Server route modules must export at least one uppercase HTTP method such as GET or POST.",
+      message: `${SERVER_ROUTE_ENTRY_LABEL} anchor modules must export at least one uppercase HTTP method such as GET or POST.`,
     });
   }
 
@@ -276,7 +266,7 @@ async function analyzeServerRouteFile(
     diagnostics.push({
       level: "error",
       file: diagnosticFile,
-      message: `Server route module export "${exportName}" is not supported. Move helpers to a non-route file or export only uppercase HTTP methods.`,
+      message: `Server route module export "${exportName}" is not supported. Move helpers to an ordinary colocated module or export only uppercase HTTP methods from the api.* anchor.`,
     });
   }
 
@@ -290,35 +280,13 @@ async function analyzeServerRouteFile(
       module: diagnosticFile,
       path: routePath,
       methods,
-      moduleSegments,
+      moduleSegments: segments,
     },
   };
 }
 
-function getMethodSuffix(filename: string): string | undefined {
-  const extension = path.extname(filename);
-  const stem = filename.slice(0, -extension.length);
-  const suffix = stem.split(".").pop();
-  return suffix && LOWERCASE_HTTP_METHODS.has(suffix) ? suffix : undefined;
-}
-
-function isRouteSentinelFilename(filename: string): boolean {
-  const extension = path.extname(filename);
-  return filename.slice(0, -extension.length) === "route";
-}
-
 function isLowercaseHttpMethod(exportName: string): boolean {
   return LOWERCASE_HTTP_METHODS.has(exportName);
-}
-
-function serverRoutePathFromSegments(segments: string[]): string {
-  const pathSegments = segments
-    .filter((segment) => !isPageRouteGroupSegment(segment))
-    .map((segment) =>
-      segment.startsWith("$") ? `:${segment.slice(1)}` : segment,
-    );
-  if (pathSegments.length === 0) return "/";
-  return `/${pathSegments.join("/")}`;
 }
 
 async function validateServerRouteDirectory(
@@ -417,9 +385,9 @@ function formatServerRouteSegmentConventionViolation(
     const name = violation.segment.replace(/^\[+/, "").replace(/\]+$/, "");
     const suggestion =
       name && !name.startsWith("...")
-        ? ` Rename the file to "$${name}" for a dynamic segment.`
+        ? ` Rename the directory to "$${name}" and place an api.* anchor inside it.`
         : " Split it into explicit file routes.";
-    return `Dynamic server route segments must use $param filenames. Bracket segment "${violation.segment}" is not supported.${suggestion}`;
+    return `Dynamic server route segments must use $param directories. Bracket segment "${violation.segment}" is not supported.${suggestion}`;
   }
   if (violation.kind === "unsupported-dynamic") {
     if (violation.segment === "$") {
@@ -440,7 +408,7 @@ function formatServerRouteSegmentConventionViolation(
     return `Dynamic server route segment "${violation.segment}" uses a reserved param name. Use a safe application-specific name such as "$userId".`;
   }
   if (violation.kind === "duplicate-dynamic") {
-    return `Dynamic server route segment "${violation.segment}" repeats a param name. Use unique dynamic param filenames within one route path.`;
+    return `Dynamic server route segment "${violation.segment}" repeats a param name. Use unique dynamic param directories within one route path.`;
   }
   return `Static server route segment "${violation.segment}" must start with a lowercase letter or number and then use only lowercase URL-safe characters: lowercase letters, numbers, ".", "_", "-", or "~".`;
 }
@@ -450,8 +418,19 @@ function createDuplicateServerRoutePathDiagnostic(
   previous: string,
 ): string {
   return [
-    `Duplicate server route path "${routePath}" also declared by ${previous}.`,
-    "Keep one server route module per URL path; choose either a flat route file or a directory index route file.",
+    `Duplicate api.* anchor for server route path "${routePath}" also declared by ${previous}.`,
+    "Keep one api.* anchor per normalized URL path; pathless route groups must not collapse multiple directories onto the same path.",
+  ].join(" ");
+}
+
+function createDuplicateServerRouteAnchorDiagnostic(
+  directory: string,
+  previous: string,
+): string {
+  return [
+    `Duplicate api.* anchor in server route directory "${directory}".`,
+    `${previous} already declares the anchor for this directory.`,
+    `Keep exactly one api.* source-extension variant (${SERVER_ROUTE_ENTRY_LABEL}) per server route directory.`,
   ].join(" ");
 }
 

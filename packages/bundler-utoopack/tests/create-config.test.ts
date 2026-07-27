@@ -185,8 +185,8 @@ describe("createUtoopackConfig", () => {
           dir: "./src/apis",
           routes: [
             {
-              id: "src/apis/health.ts:/health:GET",
-              module: "src/apis/health.ts",
+              id: "src/apis/health/api.ts:/health:GET",
+              module: "src/apis/health/api.ts",
               path: "/health",
               methods: ["GET"],
             },
@@ -408,20 +408,20 @@ describe("createUtoopackConfig", () => {
           dir: "./src/apis",
           routes: [
             {
-              id: "src/apis/health.ts:/health:GET",
-              module: "src/apis/health.ts",
+              id: "src/apis/health/api.ts:/health:GET",
+              module: "src/apis/health/api.ts",
               path: "/health",
               methods: ["GET"],
             },
             {
-              id: "src/apis/users/$userId.ts:/users/:userId:GET",
-              module: "src/apis/users/$userId.ts",
+              id: "src/apis/users/$userId/api.ts:/users/:userId:GET",
+              module: "src/apis/users/$userId/api.ts",
               path: "/users/:userId",
               methods: ["GET"],
             },
             {
-              id: "src/apis/index.ts:/:GET",
-              module: "src/apis/index.ts",
+              id: "src/apis/api.ts:/:GET",
+              module: "src/apis/api.ts",
               path: "/",
               methods: ["GET"],
             },
@@ -516,8 +516,8 @@ describe("createUtoopackConfig", () => {
           dir: "./src/apis",
           routes: [
             {
-              id: "src/apis/health.ts:/health:GET",
-              module: "src/apis/health.ts",
+              id: "src/apis/health/api.ts:/health:GET",
+              module: "src/apis/health/api.ts",
               path: "/health",
               methods: ["GET"],
             },

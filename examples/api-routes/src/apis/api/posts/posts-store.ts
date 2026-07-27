@@ -1,4 +1,4 @@
-/** Simulated post database shared by colocated server route modules. */
+/** Simulated post database private to the /api/posts route scope. */
 export interface Post {
   id: string;
   title: string;

@@ -1,7 +1,8 @@
 # 文件约定
 
-evjs 的文件约定保持少而明确。一个 positive `page.*` marker 同时定义客户端
-Page 与 file route；服务端请求路由继续使用独立约定。
+evjs 的文件约定保持少而明确。Positive `page.*` 锚点定义客户端 Page 及其
+file route，positive `api.*` 锚点定义 server request Route。两棵树都由锚点的
+完整所在目录持有 scope 并决定 URL。
 
 完整矩阵参见[项目结构](./project-structure)。
 
@@ -10,12 +11,12 @@ Page 与 file route；服务端请求路由继续使用独立约定。
 | 根 | 用途 |
 | --- | --- |
 | `src/pages` 或 `routing.dir` | canonical Page-and-Route 文件树。 |
-| `src/apis` 或 `server.routing.dir` | 服务端请求路由模块。 |
+| `src/apis` 或 `server.routing.dir` | Server request `api.*` 锚点树。 |
 | `src/middleware.ts` | 全局框架 server middleware。 |
-| `src/apis/**/middleware.ts` | 作用于后代 server file route 的 middleware。 |
+| `<server.routing.dir>/**/middleware.ts` | 作用于同目录及后代 server file route 的 middleware；默认为 `src/apis/**/middleware.ts`。 |
 | reachable 源码模块 | 以 `"use server";` 开头的 server function。 |
 
-Page 锚点、server file route 与两类 middleware root 共同组成一个框架持有的
+Page 锚点、server request-route 锚点与两类 middleware root 共同组成一个框架持有的
 发现单元。顶层 `conventions: false` 会整体关闭这个单元，框架不提供逐 root
 开关；该配置不能与显式 `routing` 或 `server.routing` 一起使用。文件约定保持
 启用时，`routing.dir` 与 `server.routing: { dir }` 只定制各自的 discovery
@@ -177,66 +178,70 @@ ownership。
 
 ## 服务端文件路由
 
-默认从 `src/apis` 发现服务端请求路由。该文件系统约定与客户端 `page.*`
-文件树有意分离。
+默认从 `src/apis` 下的 positive `api.*` 锚点发现 server request Route。该文件
+系统约定与客户端 `page.*` 树彼此独立，但采用相同的目录持有模型。
 
 ```text
 src/apis/
-├── index.ts                    # /
+├── api.ts                      # /
 ├── api/
-│   ├── health.ts              # /api/health
+│   ├── health/
+│   │   └── api.ts             # /api/health
 │   └── users/
-│       ├── index.ts           # /api/users
-│       └── $userId.ts         # /api/users/:userId
+│       ├── api.ts             # /api/users
+│       ├── schema.ts          # 私有源码
+│       └── $userId/
+│           └── api.ts         # /api/users/:userId
 └── (internal)/
-    └── metrics.ts             # /metrics
+    └── metrics/
+        └── api.ts             # /metrics
 ```
 
 ### 服务端路径段
 
-| 文件段 | URL 含义 |
+| 目录 segment | URL 含义 |
 | --- | --- |
-| `index` | 目录根。 |
 | `$userId` | 动态参数。 |
 | `(internal)` | Pathless 组织分组。 |
 | 普通安全名称 | 静态 URL segment。 |
 
-不支持 catch-all、optional、bracket 或 method-suffix 方言。
-Static segment 必须以小写字母或数字开头。下划线前缀不是私有 route 约定：
-没有 route export 的 helper 仍是普通源码，但带 `GET` export 的
-`_private/health.ts` 会产生诊断。
+`api.*` basename 不增加 URL segment。不支持 catch-all、optional 或 bracket
+目录方言。Static 目录 segment 必须以小写字母或数字开头；只有无效目录树中存在
+`api.*` 锚点或 route middleware 时才会产生诊断。
 
 ### Route export
 
-候选模块只有导出至少一个大写 HTTP method 才成为请求路由：
+只有 `<server.routing.dir>/**/api.{ts,tsx,js,jsx}` 才是 route candidate，每个
+route 目录只允许一个源码扩展名变体。锚点至少导出一个大写 HTTP method：
 
 ```ts
 export function GET() {
   return Response.json({ ok: true });
 }
 
-export async function POST({ request }: { request: Request }) {
+export async function POST(request: Request) {
   const body = await request.json();
   return Response.json(body, { status: 201 });
 }
 ```
 
-只支持框架文档定义的大写 HTTP handler。Default export、小写 method name 和
-route-module middleware export 无效。没有 route export 的文件保持为普通
-colocated helper。
+只支持框架文档定义的大写 HTTP handler。`api.*` 锚点中的 default export、
+小写 method name、helper export 与 route-module middleware export 都无效。
+其他任何 basename 都是普通 route 私有源码，无论导出什么都不会发布 Route。
 
 ### 服务端路由冲突
 
 构建会拒绝：
 
-- 两个模块对应同一 URL；
+- 两个锚点对应同一 normalized URL；
+- 同一 route 目录存在多个 `api.*` 源码扩展名变体；
 - 同一动态 shape 使用两个参数名，如 `$id` 与 `$userId`；
 - 不安全或格式错误的 group/dynamic segment；
 - 生成 route id 冲突；
 - route module 混入不支持的 route contract export。
 
-不要添加 `route.ts` sentinel、`foo.get.ts`、bracket route、optional param、
-catch-all 或 `server.entry`。
+`index.ts`、`route.ts` 与 `foo.get.ts` 都不是备选 route anchor。不要添加另一种
+route 方言或 `server.entry`。
 
 ## Server Middleware
 
@@ -249,11 +254,14 @@ src/
     ├── middleware.ts
     └── admin/
         ├── middleware.ts
-        └── users.ts
+        ├── api.ts
+        └── users/
+            └── api.ts
 ```
 
 - `src/middleware.ts` 全局包裹框架持有的 server 请求；
-- `src/apis/**/middleware.ts` 按文件 scope 包裹后代 server file route。
+- `<server.routing.dir>/**/middleware.ts` 按文件 scope 包裹同目录及后代
+  server file route；默认 root 为 `src/apis`。
 
 Middleware file 不是 route，不能由 route module export middleware 代替。
 

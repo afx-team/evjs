@@ -17,7 +17,8 @@ materialized. Top-level `config.extensions` is resolved into namespaced
 Application extensions before plugin setup; explicit route and document inputs
 may configure Route and Application-owned Document extensions. All four owners
 use one plugin extension registry, and runtime projection remains explicit.
-Server request routes come from `src/apis`, framework request middleware comes
+Server request Routes come from positive `src/apis/**/api.*` anchors whose
+directories determine URL and private scope. Framework request middleware comes
 from `src/middleware.ts`, API route middleware comes from
 `src/apis/**/middleware.ts`, and reachable `"use server"` modules provide
 server functions. `@evjs/ev` exposes curated file-convention authoring subpaths
@@ -175,10 +176,10 @@ sequenceDiagram
 Graph analysis may read static import closure for semantic discovery, but dev
 watching must remain narrower than that closure. `fileDependencies` should
 include explicit file-convention roots and framework marker files such as
-`src/pages`, `src/apis`, discovered framework/API middleware modules,
-`"use server"`, and `"use client"`. Programmatic `@evjs/server` route
-declarations are runtime code, not graph roots. Ordinary component and style
-edits stay in the bundler HMR path.
+`src/pages/**/page.*`, `src/apis/**/api.*`, discovered framework/API
+middleware modules, `"use server"`, and `"use client"`. Programmatic
+`@evjs/server` route declarations are runtime code, not graph roots. Ordinary
+component and style edits stay in the bundler HMR path.
 
 HTML-only dev plan updates can be relinked from existing bundler stats. Dynamic
 entry or server renderer changes require `BundlerDevController.updatePlan()`.

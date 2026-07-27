@@ -41,8 +41,8 @@ export default defineConfig({
 });
 ```
 
-该配置会关闭 `src/pages` 下的 `page.*` 发现、`src/apis` 下的 server
-file-route 发现，以及全局与 route-scoped middleware 文件发现。它不能和显式
+该配置会关闭 `src/pages` 下的 `page.*` 发现、`src/apis` 下的 `api.*` server
+request-route 发现，以及全局与 route-scoped middleware 文件发现。它不能和显式
 `routing` 或 `server.routing` 声明一起配置。框架不提供粒度更细的约定关闭
 开关。
 
@@ -230,7 +230,8 @@ projection。
 
 ### Server
 
-文件约定启用时，默认发现 `src/apis` 下的服务端文件路由。只有目录确实不同才配置：
+文件约定启用时，默认发现 `src/apis` 下 positive `api.*` server request-route
+锚点。只有 root 确实不同才配置：
 
 ```ts
 export default defineConfig({
@@ -250,9 +251,11 @@ export default defineConfig({
 服务端中间件约定：
 
 - `src/middleware.ts`：全局 server middleware；
-- `src/apis/**/middleware.ts`：只作用于后代 server file routes。
+- `<server.routing.dir>/**/middleware.ts`：作用于同目录及后代 server file
+  routes，默认为 `src/apis/**/middleware.ts`。
 
-`server.routing: { dir }` 只定制 discovery root，不是关闭开关。
+`server.routing: { dir }` 会同时定制 `api.*` 与 route middleware 的 discovery
+root，不是关闭开关。
 
 在 Page 的 `page.config.ts` 中用 `rsc: true` 启用 React Server Components。
 Flight endpoint 从 `server.basePath` 派生，也可以用

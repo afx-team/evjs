@@ -39,8 +39,8 @@ npx biome check --write
    `routing.mode`。
 4. Page 私有组件、hook、model、service、测试、样式放入 Page 目录，不需要 `_`。
 5. canonical client route 目录使用 `$param`、终止 `$...splat` 与
-   `(group)`。Server file route 继续位于 `src/apis` 并使用其文档规定的
-   filename 语法。
+   `(group)`。Server request Route 使用严格的 `src/apis/**/api.*` positive
+   anchor，URL 由目录派生。
 6. 新示例使用 canonical `page.*`、`page.config.ts` 与 `routing.mode`；显式
    `application.routes` 只用于覆盖 config-route normalizer 的聚焦 fixture。
 7. Server function 以 `"use server";` 开头，只导出命名 callable。
@@ -73,9 +73,9 @@ npx biome check --write
 
 ### 添加服务端文件路由
 
-1. 在 `src/apis` 下创建模块。
-2. 导出 `GET`、`POST` 等大写 HTTP handler。
-3. Helper 保持为普通 colocated module。
+1. 在 `src/apis` 下创建 URL 目录并添加 `api.ts` 锚点。
+2. 从锚点导出 `GET`、`POST` 等大写 HTTP handler。
+3. Helper 保持为普通 colocated 非 `api.*` module。
 4. Middleware 使用 `src/middleware.ts` 或
    `src/apis/**/middleware.ts`。
 

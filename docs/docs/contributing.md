@@ -40,8 +40,8 @@ npx biome check --write
 4. Keep Page-private components, hooks, models, services, tests, and styles
    inside that Page directory. They do not need `_`.
 5. Canonical client route directories use `$param`, terminal `$...splat`, and
-   `(group)`. Server file routes remain under `src/apis` and use their
-   documented filename syntax.
+   `(group)`. Server request Routes use strict `src/apis/**/api.*` positive
+   anchors with directory-derived URLs.
 6. New runnable examples use `page.*`, `page.config.ts`, and `routing.mode`.
    Keep explicit `application.routes` and noncanonical source cases in focused
    config-route or source-conversion fixtures.
@@ -77,9 +77,9 @@ npx biome check --write
 
 ### Add A Server File Route
 
-1. Create a module under `src/apis`.
-2. Export uppercase HTTP handlers such as `GET` or `POST`.
-3. Keep helpers in ordinary colocated modules.
+1. Create the URL directory under `src/apis` and add its `api.ts` anchor.
+2. Export uppercase HTTP handlers such as `GET` or `POST` from the anchor.
+3. Keep helpers in ordinary colocated non-`api.*` modules.
 4. Use `src/middleware.ts` or `src/apis/**/middleware.ts` for middleware.
 
 ### Add An Example

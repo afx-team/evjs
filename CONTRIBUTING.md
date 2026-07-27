@@ -33,8 +33,8 @@
   and URL, optional `page.config.ts` owns build-time Page capabilities, and
   `routing.mode` selects SPA/MPA output. Plugin-owned static data uses one
   namespaced CoreGraph registry across Application, Page, Route, and Document
-  owners. Server file routes remain under `src/apis`, framework request
-  middleware in `src/middleware.ts`, API route middleware in
+  owners. Server request Routes use positive `src/apis/**/api.*` anchors,
+  framework request middleware in `src/middleware.ts`, API route middleware in
   `src/apis/**/middleware.ts`, and server functions in reachable
   `"use server"` modules.
 - `@evjs/ev` owns config, plugins, convention discovery, graph/build planning,
@@ -106,8 +106,9 @@ and adapters depend on `@evjs/ev` instead of on each other.
    `@evjs/ev/_internal/*` subpaths.
 9. Use `server.basePath` for framework server runtime paths. Do not reintroduce public `server.functions.endpoint` config.
 10. Do not reintroduce `server.entry` or framework-side source extraction of
-    `createRoute()` calls. Server framework routes are file routes under
-    `src/apis`; `@evjs/server`'s `createRoute()` remains a runtime package API.
+    `createRoute()` calls. Server framework routes use positive
+    `src/apis/**/api.*` anchors; `@evjs/server`'s `createRoute()` remains a
+    runtime package API.
 
 ## Common Tasks
 
@@ -134,10 +135,11 @@ and adapters depend on `@evjs/ev` instead of on each other.
 
 ### Add a server file route
 
-1. Create a route module under `src/apis`.
-2. Export uppercase HTTP method handlers such as `GET` or `POST`.
+1. Create the URL directory under `src/apis` and add its `api.ts` anchor.
+2. Export uppercase HTTP method handlers such as `GET` or `POST` from the
+   anchor.
 3. Keep helper exports out of route candidates; place helpers in colocated
-   non-route modules and import them.
+   non-`api.*` modules and import them.
 4. Add framework request middleware with `src/middleware.ts` or API route
    middleware with `src/apis/**/middleware.ts`, not route-module middleware
    exports.

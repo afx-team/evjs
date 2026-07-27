@@ -30,7 +30,7 @@ materialize the same Page tree differently.
 |------|-------------|
 | **`basic`** | Basic full-stack SPA with routing, `page.config.ts`, and server functions. |
 | **`mpa`** | The same Page/config model materialized as separate documents. |
-| **`api-routes`** | REST API routes via default server file routes. |
+| **`api-routes`** | REST API routes via positive `src/apis/**/api.*` anchors. |
 | **`complex-routing`** | Advanced Page routes with a root layout, params, redirects, and nested paths. |
 | **`custom-ws-transport`** | Custom transport example using WebSockets. |
 | **`plugin-authoring`** | Starter focused on plugin authoring and bundler hooks. |

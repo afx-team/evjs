@@ -7,13 +7,14 @@ projections. Canonical `src/pages/**/page.*` anchors and explicit SPA route
 configuration normalize through the same CoreGraph model. BuildPlan is derived
 from that graph for planners and adapters.
 Each Page directory owns its private source and determines its client URL.
-`routing.mode` changes only SPA/MPA materialization. Server request routes
-remain under `src/apis`, with middleware in `src/middleware.ts` and
+`routing.mode` changes only SPA/MPA materialization. Server request Routes use
+positive `src/apis/**/api.*` anchors whose directories own their private source
+and determine request URLs, with middleware in `src/middleware.ts` and
 `src/apis/**/middleware.ts`.
 
 ```mermaid
 flowchart LR
-  Source["Owned source\nPage directories + src/apis + middleware"]
+  Source["Owned source\npage.* + api.* directories + middleware"]
   Config["ev.config.ts\nrouting.mode + plugins"]
   Resolve["Canonical resolver\nor explicit route normalizer"]
   Core["CoreGraph\nsemantic model"]
@@ -74,7 +75,7 @@ graph analysis, build-plan generation, and manifest validation; the runtime
 packages provide the capability primitives.
 Programmatic `@evjs/server` APIs such as `createApp()` and `createRoute()` are
 runtime primitives. evjs framework builds do not scan them as an alternate route
-declaration model; use `src/apis` for framework-managed server routes.
+declaration model; use `src/apis/**/api.*` for framework-managed server routes.
 
 | Role | Packages | Import guidance |
 |------|----------|-----------------|
@@ -395,7 +396,7 @@ Page-local page.config.ts / index.html
   build-time Page capabilities in both modes / MPA Page Document template
 
 server.routing
-  server file route source of truth: dir, discovered HTTP method modules
+  server request Route source of truth: dir + **/api.* positive anchors
 
 application.routes
   explicit SPA-only route configuration, not canonical file routing
@@ -422,13 +423,14 @@ path. MPA starts from the same semantic graph and creates Page-owned Documents
 for static Page paths. MPA rejects dynamic/catch-all paths and router-only
 boundaries during graph validation; layouts compose in both modes.
 
-`server.routing` points to `src/apis` by default. A server route file becomes a
-route only when it exports uppercase HTTP methods. Framework request middleware
-is discovered from `src/middleware.ts` and wraps framework-managed server
-requests. API route middleware is discovered by filesystem scope from
-`src/apis/**/middleware.ts` and only wraps descendant server file routes. Route
-modules do not export middleware and there is no `server.entry` composition
-path.
+`server.routing` points to `src/apis` by default. Only an `api.*` anchor creates
+a server request Route; its containing directory determines the URL and private
+scope, and the anchor exports uppercase HTTP methods only. Framework request
+middleware is discovered from `src/middleware.ts` and wraps framework-managed
+server requests. API route middleware is discovered by filesystem scope from
+`src/apis/**/middleware.ts` and wraps same-directory and descendant server file
+routes. Route modules do not export middleware and there is no `server.entry`
+composition path.
 
 Static title, supported named metadata, `render`, `hydrate`, `rsc`, and
 `prerender` settings belong in adjacent build-time `page.config.ts`, not Page

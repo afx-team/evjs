@@ -4,7 +4,7 @@
     "description": "The tagline on the homepage hero"
   },
   "homepage.hero.description": {
-    "message": "使用 src/pages 编写页面路由，使用 src/apis 编写服务端路由，使用 \"use server\" 模块编写服务端函数。先用约定开始，默认能力不够时再增加配置。",
+    "message": "使用 src/pages 下的 page.* 锚点编写页面路由，使用 src/apis 下的 api.* 锚点编写服务端路由，使用 \"use server\" 模块编写服务端函数。先用约定开始，默认能力不够时再增加配置。",
     "description": "The homepage hero description"
   },
   "homepage.getStarted": {
@@ -68,7 +68,7 @@
     "description": "Title for Server Routes feature"
   },
   "homepage.feature.serverRoutes.description": {
-    "message": "在 src/apis 中通过大写 HTTP method 导出标准 Request 和 Response handler。",
+    "message": "使用 positive src/apis/**/api.* 锚点与大写 HTTP method export 暴露标准 Request 和 Response handler。",
     "description": "Description for Server Routes feature"
   },
   "homepage.feature.serverFunctions.title": {

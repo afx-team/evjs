@@ -13,7 +13,7 @@ evjs is a React fullstack framework built on TanStack Query, Hono, Utoopack,
 and a framework-owned SPA router runtime. It provides:
 
 - **Server Functions** — write backend logic in files (we recommend using the `.server.ts` suffix), call from React as if local
-- **Server Routes** — build file-based REST endpoints under `src/apis` with uppercase HTTP method exports
+- **Server Routes** — build REST endpoints with positive `src/apis/**/api.*` anchors and uppercase HTTP method exports
 - **Query Integration** — type-safe `useQuery(getUsers)` with auto query keys and transport
 - **Page-and-Route Model** — use positive `src/pages/**/page.*` anchors; each
   containing directory owns one Page scope and derives its URL in SPA and MPA
@@ -61,8 +61,9 @@ For detailed guides on specific topics, see the docs:
 - `ServerError` on server → automatically mapped to `ServerFunctionError` on client
 
 **Server File Routes:**
-- Use `src/apis` for framework-managed REST endpoints and export uppercase HTTP method handlers such as `GET`, `POST`, `PUT`, and `DELETE`
-- Put API route middleware in `src/apis/**/middleware.ts`; it applies only to descendant server file routes
+- Use strict `src/apis/**/api.*` positive anchors for framework-managed REST endpoints; the containing directory determines the URL and private scope
+- Export uppercase HTTP method handlers such as `GET`, `POST`, `PUT`, and `DELETE` only from the `api.*` anchor; every other basename is private source
+- Put API route middleware in `src/apis/**/middleware.ts`; it applies to same-directory and descendant server file routes
 - Use `src/middleware.ts` only for framework request middleware that should also cover server functions, SSR, PPR, and RSC
 - Programmatic `createRoute()` remains a standalone `@evjs/server` runtime primitive, not an evjs file-route convention
 

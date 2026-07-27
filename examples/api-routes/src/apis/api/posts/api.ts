@@ -2,7 +2,7 @@
  * Route handlers for the /api/posts REST endpoint.
  *
  * Demonstrates:
- * - Multiple HTTP methods on a single file path
+ * - Multiple HTTP methods on one api.ts anchor
  * - JSON request/response
  * - Custom status codes
  */

@@ -22,7 +22,7 @@ client/server runtime cores.
 - **Server Functions** — `"use server"` directive, auto-discovered at build time.
 - **Pluggable Transport** — HTTP, WebSocket, or custom via `ServerTransport`.
 - **Plugin System** — extend the generated `.ev` framework IR through contributions, plus lifecycle hooks for config, bundler, HTML, and build output.
-- **Server File Routes** — `src/apis` maps Request/Response method modules to HTTP endpoints.
+- **Server File Routes** — positive `src/apis/**/api.*` anchors map directory-owned Request/Response handlers to HTTP endpoints.
 - **Typed Errors** — `ServerError` flows structured data server → client.
 - **Multi-Runtime** — [Hono](https://hono.dev/)-based server with Node, Deno, Bun, Edge adapters.
 - **CLI** — `ev dev` · `ev build` · `ev prepare` · `ev inspect`

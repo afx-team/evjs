@@ -32,8 +32,9 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
    Application-owned Document extensions. Plugins register all four owner kinds
    through one declarative mechanism and explicitly project any runtime
    behavior. Colocated files such as `components/index.tsx` stay Page-private
-   because only `page.*` is a Page anchor. `src/apis` plus `server.routing` owns
-   server file routes; `src/middleware.ts` owns framework request middleware;
+   because only `page.*` is a Page anchor. Positive `api.*` anchors under
+   `src/apis` plus `server.routing` own server request Routes;
+   `src/middleware.ts` owns framework request middleware;
    `src/apis/**/middleware.ts` owns API route middleware for server file routes.
 2. `@evjs/ev` is the framework control plane for config, plugin hooks, graph
    analysis, build plans, manifests, deployment helpers, and convention
@@ -62,9 +63,10 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
    framework implementation detail for SPA materialization. Canonical Core 0.3
    title, named metadata, and rendering metadata come from build-time
    `page.config.ts`, not static exports in the Page component.
-8. Server route code owned by the framework should use `src/apis` route modules
-   with uppercase HTTP method exports. Do not add `server.entry`, `route.ts`
-   sentinels, `foo.get.ts` method suffixes, or route-module middleware exports.
+8. Server route code owned by the framework uses strict positive
+   `<server.routing.dir>/**/api.*` anchors with directory-derived URLs and
+   uppercase HTTP method exports. Other basenames are private source. Do not
+   add a second anchor, `server.entry`, or route-module middleware exports.
 9. File-convention app source should import route data helpers from `@evjs/ev/route`,
    request helpers from `@evjs/ev/server-context`, and custom transport helpers from
    `@evjs/ev/transport`. Standalone/manual runtime code imports directly from
@@ -87,7 +89,7 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 | `definePageConfig()` + `page.config.ts` | `@evjs/ev` | Static title/named metadata, rendering settings, and namespaced Page/Route/Page-owned Document extensions |
 | `config.extensions` + `applicationExtension()` | `@evjs/ev`, `@evjs/ev/plugin` | Static namespaced Application configuration resolved before plugin setup |
 | `pageExtension()` / `routeExtension()` / `documentExtension()` | `@evjs/ev/plugin` | Register Page, Route, and Document owners in the same namespaced extension mechanism; values resolve into CoreGraph during graph analysis |
-| `src/apis` + `server.routing` | `@evjs/ev` | File-based server route source; users write Request/Response method modules |
+| `src/apis/**/api.*` + `server.routing` | `@evjs/ev` | Positive server request-route anchors; users write Request/Response method modules |
 | `createPagesApp()` | `@evjs/ev/_internal/client` | Internal/framework-managed page route runtime used by generated SPA entries |
 | `Link`, page hooks | `@evjs/ev/navigation`, `@evjs/ev/route` | Public Page authoring APIs for navigation, params, search, and loader data |
 | React page runtime | `@evjs/ev/_internal/client/react-page` | Framework-managed component page mount/hydration |
@@ -119,7 +121,7 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
    into static graph data; plugins explicitly project runtime data or code.
 6. Reintroducing alternate server composition paths. `server.entry` and
    programmatic `createRoute()` source extraction are not framework routing
-   inputs; use `src/apis` file routes.
+   inputs; use positive `src/apis/**/api.*` file-route anchors.
 7. Watching every source file for graph invalidation. `fileDependencies` should stay narrower than the analysis closure.
 8. Using `await import(href)` as the default browser shell loader. Shell modules are registered by scripts so lower browser targets and non-Vite bundlers are not tied to dynamic import comments.
 9. Treating `server.functions` manifest output as user config.
@@ -170,7 +172,7 @@ npm --workspace @evjs/ev test -- tests/build-tools-graph-plan.test.ts
 | Surface | Primary files | Focused validation |
 | --- | --- | --- |
 | File route convention and SPA/MPA graph | `packages/ev/src/_internal/build/page-route-conventions.ts`, `page-routes.ts`, `graph/index.ts`, `plan/index.ts` | `npx turbo run test --filter=@evjs/ev` |
-| Server file route and middleware conventions | `packages/ev/src/_internal/build/server-routes.ts`, `server-conventions.ts`, `generated-contributions.ts`, `graph/index.ts`, `plan/index.ts` | `npx turbo run test --filter=@evjs/ev` |
+| Server file route and middleware conventions | `packages/ev/src/_internal/build/server-route-conventions.ts`, `server-routes.ts`, `server-conventions.ts`, `generated-contributions.ts`, `graph/index.ts`, `plan/index.ts` | `npx turbo run test --filter=@evjs/ev` |
 | Config and package surface | `packages/ev/src/config/`, package manifests | `npx turbo run test --filter=@evjs/ev` |
 | Server functions and route handlers | `packages/server/src/app/`, `server-functions/`, `routes/*`, `packages/client/src/server-functions/`, `packages/ev/src/_internal/build/server-fns.ts` | `npx turbo run test --filter=@evjs/server` and `npx turbo run test --filter=@evjs/client` |
 | SSR, SSG, PPR, and RSC | `packages/ev/src/_internal/build/graph/index.ts`, `plan/index.ts`, `packages/server/src/framework-rendering/`, `packages/client/src/rsc/` | `npx turbo run test --filter=@evjs/ev`, `npx turbo run test --filter=@evjs/server`, and `npx turbo run test --filter=@evjs/client` |

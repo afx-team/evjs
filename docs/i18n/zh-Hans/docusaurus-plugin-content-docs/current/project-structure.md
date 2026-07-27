@@ -2,10 +2,11 @@
 
 本页是 evjs 应用文件约定的事实来源。
 
-Core 0.3 使用唯一的 positive Page-and-Route 约定：
+Core 0.3 为客户端 Page 与服务端 request Route 使用对称的 positive anchor：
 
 - `src/pages/**/page.*` 是唯一 canonical Page 与客户端 route 锚点；
-- 所在目录同时决定 Page scope 与 URL；
+- `src/apis/**/api.*` 是唯一 server request-route 锚点；
+- 每个锚点的完整所在目录同时决定 scope 与 URL；
 - 同一棵文件树在 SPA 和 MPA 中产生相同 semantic Page/Route；
 - `routing.mode` 只改变物化方式，不改变 Page 或 Route 身份。
 
@@ -43,7 +44,8 @@ my-evjs-app/
     │   ├── middleware.ts
     │   ├── users.server.ts
     │   └── api/
-    │       └── health.ts
+    │       └── health/
+    │           └── api.ts            # /api/health
     ├── components/
     ├── features/
     ├── hooks/
@@ -75,7 +77,7 @@ export default defineConfig({
 ## 约定发现边界
 
 顶层 `conventions: false` 会把框架持有的文件系统约定作为一个整体关闭：
-`page.*` 锚点、`src/apis` 下的 server route、全局 `src/middleware.ts`，以及
+`page.*` 锚点、`src/apis` 下的 `api.*` 锚点、全局 `src/middleware.ts`，以及
 route-scoped `src/apis/**/middleware.ts`。它不能和显式 `routing` 或
 `server.routing` 声明一起配置。evjs 不提供只关闭其中某个 root 或 facet 的开关。
 
@@ -116,9 +118,10 @@ reachable 的 `"use server";` 模块与插件生成的 contribution 是 graph �
 | `src/route-types.d.ts` | SPA 文件路由导航类型（生成时） | 生成产物 | 忽略且不要复制到 scaffold 或从应用源码 import。 |
 | 带 `"use server";` 的 `**/*.server.*` | Server-function 模块 | Reachability graph | 只支持命名可调用导出，不要求固定目录。 |
 | `server.routing: { dir }` | Server file-route root 定制 | Application | 文件约定启用时默认 `./src/apis`；它不是关闭开关。 |
-| `src/apis/**/*.{ts,tsx,js,jsx}` | Server file route | 请求 URL | 使用大写 HTTP method export，URL 来自文件路径。 |
+| `<server.routing.dir>/**/api.{ts,tsx,js,jsx}` | Server request Route 锚点 | 完整所在目录 | 每个 route 目录只允许一个源码扩展名变体；只导出大写 HTTP method handler。 |
+| Server route 目录下其他文件 | Route 私有源码 | 最近的 server Route | Helper、schema、store、测试与 `index.*` 都不会创建 route。 |
 | `src/middleware.ts` | 全局 server middleware | Server runtime | 包裹框架持有的 server 请求。 |
-| `src/apis/**/middleware.ts` | API route middleware | 后代 server file routes | 自身不是 route。 |
+| `<server.routing.dir>/**/middleware.ts` | API route middleware | 同目录及后代 server file routes | 默认为 `src/apis/**/middleware.ts`；自身不是 route。 |
 | `public/**` | 静态文件 | 客户端输出 | 按 output 配置复制。 |
 | `components/`、`features/`、`hooks/`、`lib/` | 共享应用源码 | Application/shared | 普通项目组织，不是框架约定。 |
 
@@ -303,19 +306,24 @@ Page-specific Document 配置会被拒绝。
 
 客户端 Page routing 与服务端 request routing 是独立系统。
 
-Server file route 使用 `src/apis`，动态文件段用 `$param`，目录根用 `index`，
-pathless 组织用 `(group)`：
+Server request Route 使用 `src/apis` 下的 positive `api.*` 锚点。锚点的完整
+所在目录决定 URL 与 scope；`$param` 目录表示动态 segment，`(group)` 目录用于
+pathless 组织：
 
 ```text
 src/apis/
 ├── middleware.ts
 ├── api/
-│   ├── health.ts
+│   ├── health/
+│   │   └── api.ts
 │   └── users/
-│       ├── index.ts
-│       └── $userId.ts
+│       ├── api.ts
+│       ├── users-store.ts
+│       └── $userId/
+│           └── api.ts
 └── (internal)/
-    └── metrics.ts
+    └── metrics/
+        └── api.ts
 ```
 
 ```ts
@@ -324,12 +332,12 @@ export function GET({ params }: { params: { userId: string } }) {
 }
 ```
 
-Server route module 只导出大写 HTTP method。没有 route export 的 helper file
-仍是普通源码，包括下划线前缀目录中的 helper。带 `GET` export 的
-`_private/health.ts` 不是私有逃生口；它会被报告为无效 static route segment。
-不要添加 `route.ts` sentinel、method suffix file、bracket route、catch-all、
-optional param、route-module middleware export 或 `server.entry` composition
-path。
+只有 `api.*` 才是 server request-route 锚点。包括 `index.ts`、`route.ts` 与
+method-suffix file 在内的其他 basename 都是普通私有源码，即使它们导出了
+`GET` 之类的名字也不会创建 route。锚定的 `api.*` module 只能导出大写 HTTP
+method；default export、helper export 与 route-module middleware export 都无效。
+位于 bracket、catch-all、optional 或其他无效 path segment 下的锚点会被拒绝。
+不要添加另一种 route anchor 或 `server.entry` composition path。
 
 Server function 又是另一套机制：任何 reachable、以 `"use server";` 开头并
 导出支持的命名 callable 的模块都可定义。参见

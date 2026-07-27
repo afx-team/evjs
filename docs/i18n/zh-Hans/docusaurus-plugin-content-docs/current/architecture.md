@@ -6,12 +6,13 @@ CoreGraph、bundler-independent BuildPlan，以及一份 private BuildOutput con
 `src/pages/**/page.*` 锚点直接 normalize 到 CoreGraph；显式 SPA route-tree
 配置也 normalize 到同一模型。BuildPlan 从该 graph 派生，供 planner 和
 adapter 消费。每个 Page 目录持有其私有源码并决定客户端 URL；`routing.mode` 只改变
-SPA/MPA 物化。服务端请求路由继续位于 `src/apis`，middleware 位于
-`src/middleware.ts` 与 `src/apis/**/middleware.ts`。
+SPA/MPA 物化。Server request Route 使用 positive `src/apis/**/api.*` 锚点，
+锚点目录持有私有源码并决定 request URL；middleware 位于 `src/middleware.ts`
+与 `src/apis/**/middleware.ts`。
 
 ```mermaid
 flowchart LR
-  Source["Owned source\nPage directories + src/apis + middleware"]
+  Source["Owned source\npage.* + api.* directories + middleware"]
   Config["ev.config.ts\nrouting.mode + plugins"]
   Resolve["Canonical resolver\nor explicit route normalizer"]
   Core["CoreGraph\nsemantic model"]
@@ -69,7 +70,7 @@ Subpath export 必须保持显式且有文档说明；新增 package export 是�
 build-plan 生成和 manifest 校验决定一个应用中能组合哪些 runtime 能力；
 runtime 包提供具体能力原语。`@evjs/server` 的 `createApp()`、`createRoute()`
 等编程式 API 是 runtime primitives，不是 evjs framework 的第二套路由声明模型；
-框架托管的 server routes 使用 `src/apis`。
+框架托管的 server routes 使用 `src/apis/**/api.*`。
 
 | 角色 | 包 | 导入建议 |
 |------|----|----------|
@@ -368,7 +369,7 @@ Page 同目录 page.config.ts / index.html
   两种 mode 的构建期 Page 能力 / MPA Page Document 模板
 
 server.routing
-  服务端文件路由事实来源：dir、发现到的 HTTP method modules
+  server request Route 事实来源：dir + **/api.* positive anchor
 
 application.routes
   显式、仅支持 SPA 的 route-tree 配置，normalize 到同一 CoreGraph
@@ -393,11 +394,12 @@ SSG Page 还会在语义 route path 物化 Page-owned Document。MPA 从相同�
 出发，为静态 Page path 创建 Page-owned Document。MPA 会在 graph 校验拒绝
 dynamic/catch-all path 与 router-only boundary；layout 在两种 mode 中都会组合。
 
-`server.routing` 默认指向 `src/apis`。服务端路由文件只有导出大写 HTTP methods
-时才会成为 route。Framework request middleware 从 `src/middleware.ts` 发现，并包裹
-framework-managed server requests。API route middleware 按文件系统作用域从
-`src/apis/**/middleware.ts` 发现，只包裹 descendant server file routes。Route module
-不导出 middleware，也不存在 `server.entry` 组合路径。
+`server.routing` 默认指向 `src/apis`。只有 `api.*` 锚点会创建 server request
+Route；其完整所在目录决定 URL 与私有 scope，锚点只导出大写 HTTP method。
+Framework request middleware 从 `src/middleware.ts` 发现，并包裹 framework-managed
+server requests。API route middleware 按文件系统作用域从
+`src/apis/**/middleware.ts` 发现，包裹同目录及 descendant server file route。
+Route module 不导出 middleware，也不存在 `server.entry` 组合路径。
 
 Page component 的静态 title、受支持 named metadata、`render`、`hydrate`、
 `rsc`、`prerender` 等 setting 必须写入同目录构建期

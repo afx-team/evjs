@@ -24,6 +24,7 @@ import {
   discoverServerConventions,
   type ServerConventionDiscovery,
 } from "./server-conventions.js";
+import { SERVER_ROUTE_ENTRY_BASENAME } from "./server-route-conventions.js";
 import {
   discoverServerRoutes,
   type ServerRouteDiscovery,
@@ -406,5 +407,5 @@ function reportServerConventionDiagnostics(
 }
 
 export function createNoServerRoutesFoundMessage(dir: string): string {
-  return `[evjs] No server routes found in ${dir}. Add a route module exporting GET or POST such as ${dir.replace(/\/+$/, "")}/index.ts or set conventions: false.`;
+  return `[evjs] No server routes found in ${dir}. Add an api.* anchor exporting GET or POST such as ${dir.replace(/\/+$/, "")}/${SERVER_ROUTE_ENTRY_BASENAME}.ts or set conventions: false.`;
 }
