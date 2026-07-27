@@ -47,10 +47,10 @@ under `src/apis`, and both global and route-scoped middleware file discovery.
 It cannot be combined with an explicit `routing` or `server.routing`
 declaration. There are no narrower convention disable switches.
 
-The SPA-only `application.routes` migration input does not depend on file
+SPA-only `application.routes` configuration does not depend on file
 conventions. Neither do reachable modules marked with `"use server";` nor
 modules emitted through plugin contributions. Removed `app`, `pages`, and
-top-level `routes` declarations produce migration errors.
+top-level `routes` declarations produce configuration errors.
 
 ## Routing
 
@@ -170,7 +170,7 @@ Every key must be registered by an active plugin
 `applicationExtension()` declaration. Core applies plugin defaults, merge, and
 validation before `setup()`, then stores the same value on the normalized
 Application. This contract is identical for canonical SPA, canonical MPA, and
-the temporary Bigfish `application.routes` input.
+explicit SPA `application.routes` configuration.
 
 Values must be strict static JSON. Put functions and other executable options
 in the plugin factory, for example `oneApiPlugin({ filter })`, or reference an
@@ -179,9 +179,8 @@ enter the build graph. They are not sent to the browser automatically; runtime
 projection remains an explicit plugin contribution.
 
 `application.extensions` is intentionally unsupported because `application`
-is only the temporary Bigfish SPA route-tree migration input. Top-level
-`extensions` remains valid after that route tree is migrated to canonical
-`page.*` routing.
+owns explicit SPA route configuration. Application-wide plugin values stay in
+top-level `extensions`, including after adopting canonical `page.*` routing.
 
 ## Page Scope And Configuration
 
@@ -342,8 +341,7 @@ export default defineConfig({
 Register plugins through `plugins`. A plugin may register namespaced
 Application, Page, Route, and Document configuration owners and target the
 normalized graph through the same `Plugin` interface that owns config, setup,
-contributions, and lifecycle hooks. See [Plugins](./plugins) and
-[Plugin Migration](./plugin-migration-0.2-to-0.3).
+contributions, and lifecycle hooks. See [Plugins](./plugins).
 
 ### Bundler
 
@@ -365,31 +363,31 @@ plus dev-plan update capabilities for HTML, entries, routes, server output, and
 resolution. `ev inspect` reports the selected adapter and any plan gaps; build
 and dev fail before adapter execution when a required capability is missing.
 
-## Migrating Existing Applications
+## Existing Source Adoption
 
 Canonical Page discovery is enabled by `routing.mode`. An unrelated
 `src/pages` directory is not interpreted as a route tree when `routing` is
-absent. Core 0.3 does not expose a Smallfish or evjs 0.2 reader switch; convert
-those source trees before starting the application.
+absent. Source trees that use other Page anchors must be converted before
+canonical discovery is enabled.
 
-### Bigfish SPA route configuration
+### Explicit SPA route configuration
 
-Bigfish-style nested `routes`, `component`, `layout`, `wrappers`, redirects,
-and document configuration can enter through the SPA-only migration
-normalizer. The historical `children` spelling is rejected because current
-Umi/Bigfish configuration uses `routes`. The normalizer also retains the
-documented access/menu metadata fields in the registered
-`@evjs/bigfish-route` Route extension. Each explicit Route may also carry a
-strict static, namespaced `extensions` bag; the owning plugin must register
-every namespace with `routeExtension()`. MPA materialization, alias conflicts,
-and component references outside the project are rejected.
+`application.routes` accepts nested `routes`, `component`, `layout`,
+`wrappers`, redirects, and Application Document configuration through the
+SPA-only config-route normalizer. The `children` spelling is rejected; nested
+declarations use `routes`. The normalizer retains the documented finite
+access/menu metadata set in a registered Route extension. Each explicit Route
+may also carry a strict static, namespaced `extensions` bag; the owning plugin
+must register every namespace with `routeExtension()`. MPA materialization,
+Document alias conflicts, and component references outside the project are
+rejected.
 
 An explicit component ending in `index.*` or `page.*` claims its containing
-directory as the migration Page scope. A flat component such as
+directory as the Page scope. A flat component such as
 `src/pages/403.tsx` remains module-scoped so it cannot accidentally claim
 other flat Pages in `src/pages`; a module-scoped Page does not discover an
-adjacent `page.config.ts`. For incremental Page-config migration, first move
-the flat component to a dedicated directory (an explicit route may temporarily
+adjacent `page.config.ts`. For incremental canonical adoption, first move the
+flat component to a dedicated directory (an explicit route may continue to
 reference `403/index.*`), then add `page.config.ts`, and finally rename the
 entry to `page.*` before enabling canonical `routing`.
 
@@ -398,18 +396,18 @@ entry to `page.*`. The corresponding directories encode the same path tree;
 after the tree is canonical, set `routing.mode: "spa"` and remove the explicit
 route declaration.
 
-### Smallfish applications
+### Directory-entry MPA sources
 
-Before running Core 0.3, keep or reshape each public URL directory, rename its
-`index.*` entry to `page.*`, map `config.json` title and supported
+Keep or reshape each public URL directory, rename its `index.*` entry to
+`page.*`, map `config.json` title and supported
 `<meta name>` entries to core `title` and `meta`, and move remaining
 plugin-owned values to namespaced `page.config.ts` extensions. Delete
 `config.json`, then configure only `routing.mode: "mpa"`.
 
-### evjs 0.2 applications
+### Filename-route sources
 
-Before running Core 0.3, move every published filename route into the
-directory for its URL and rename the entry to `page.*`. Move title, supported
+Move every published filename route into the directory for its URL and rename
+the entry to `page.*`. Move title, supported
 named metadata, rendering, and plugin-owned Page settings to adjacent
 `page.config.ts`, then configure only `routing.mode: "spa" | "mpa"`. Use
 `ev inspect` after conversion to verify the normalized Page/Route/Document
@@ -420,7 +418,7 @@ provenance. Normal `ev inspect` routing output hides them and reports
 normalized Page, route, source, and document information; providers are not a
 user-selectable routing architecture.
 
-The following obsolete fields remain unsupported:
+The following fields remain unsupported:
 
 - `app`
 - `pages`

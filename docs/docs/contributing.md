@@ -42,10 +42,9 @@ npx biome check --write
 5. Canonical client route directories use `$param`, terminal `$...splat`, and
    `(group)`. Server file routes remain under `src/apis` and use their
    documented filename syntax.
-6. Do not promote Bigfish route config or explicit `application.routes` into
-   new examples. Historical Smallfish or evjs 0.2 source snapshots may appear
-   only in source-migration fixtures; runnable applications must already use
-   `page.*`, `page.config.ts`, and `routing.mode`.
+6. New runnable examples use `page.*`, `page.config.ts`, and `routing.mode`.
+   Keep explicit `application.routes` and noncanonical source cases in focused
+   config-route or source-conversion fixtures.
 7. Server functions begin with `"use server";` and export named callables.
 8. Config/build imports stay on `@evjs/ev`; app source uses
    `@evjs/ev/route`, `/navigation`, `/query`, `/server-context`, and
@@ -90,15 +89,16 @@ npx biome check --write
 3. Add `index.html` and the required workspace dependencies.
 4. Add/update create-app mapping only when it is a supported user template.
 5. Add focused unit/e2e validation.
-6. Keep migration dialects in clearly named migration fixtures, not canonical
-   templates.
+6. Keep alternate source dialects in clearly named conversion fixtures, not
+   canonical templates.
 
 ### Change Page Or Route Conventions
 
 1. Update config resolution and graph normalization first.
 2. Update English and Chinese `project-structure`, `file-conventions`, config,
    and relevant examples together.
-3. Add graph, diagnostics, scaffold, and migration coverage.
+3. Add graph, diagnostics, scaffold, config-route, and source-conversion
+   coverage.
 4. Run the repository validation gates.
 
 ### Release A Version

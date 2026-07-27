@@ -131,13 +131,12 @@ no `_` prefix. The Page directory determines the URL in both SPA and MPA mode.
 6. **Import `defineConfig` and `definePageConfig` from `@evjs/ev`** — not from
    `@evjs/server`.
 
-Explicit `application.routes` and Bigfish-style route config remain SPA-only
-route-tree migration inputs in `@evjs/ev`; they normalize into the same Core
-graph, reject MPA materialization, and are not additional canonical routing models.
-Before running a Smallfish or evjs
-0.2 application, move or rename every published entry to `page.tsx`, move Page
-configuration to `page.config.ts`, and configure only
-`routing.mode: "spa" | "mpa"`. There is no compatibility-reader switch.
+Explicit `application.routes` and `component`/`routes` config are SPA-only
+route-tree inputs in `@evjs/ev`; their converters normalize into the same Core
+graph, reject MPA materialization, and do not define additional canonical
+routing models. File-convention applications must use `page.tsx` for every
+published Page, keep Page configuration in `page.config.ts`, and select only
+`routing.mode: "spa" | "mpa"`.
 
 ## Bundled Dependencies
 

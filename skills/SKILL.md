@@ -73,17 +73,17 @@ For detailed guides on specific topics, see the docs:
   ordinary Page-private source.
 - Select only the materialization with `routing: { mode: "spa" }` or
   `routing: { mode: "mpa" }`. Do not invent separate SPA and MPA Page trees.
-- Before opening a Smallfish or evjs 0.2 application with Core 0.3, perform a
-  one-time source migration: move or rename every published entry to
-  `page.tsx`, move Page configuration to adjacent `page.config.ts`, and then
-  configure only `routing.mode`. Do not add a compatibility reader.
-- Bigfish-style explicit `application.routes` may remain temporarily as an
-  SPA-only route-tree migration input. It must reject MPA materialization. Prefer
-  moving each component to its URL directory as `page.tsx`; do not introduce
-  another migration switch.
+- Source trees whose published entries use `index.tsx` require a one-time
+  conversion: move or rename every published entry to `page.tsx`, move Page
+  configuration to adjacent `page.config.ts`, and then configure only
+  `routing.mode`. Canonical discovery reads only positive `page.*` anchors.
+- Explicit `application.routes` and `component`/`routes` config are SPA-only
+  route-tree inputs. Their converters must reject MPA materialization and
+  normalize into the canonical graph. Prefer moving each component to its URL
+  directory as `page.tsx`; do not introduce another route-tree input.
 - The optional canonical root layout is `src/pages/layout.tsx`; nested layouts
-  use `layout.*` in route directories. Do not create `__root.tsx` or the evjs
-  0.2 external `src/layout/index.tsx` shape in a new application.
+  use `layout.*` in route directories. Do not create `__root.tsx` or an
+  external `src/layout/index.tsx` framework layout.
 - Put optional build-time Page settings in adjacent `page.config.ts` via
   `definePageConfig()`. Core fields include `title`, named `meta`, `render`,
   `hydrate`, `prerender`, and `rsc`; plugin-owned values go under namespaced

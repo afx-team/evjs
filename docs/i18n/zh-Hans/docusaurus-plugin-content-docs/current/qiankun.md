@@ -72,9 +72,9 @@ export default definePageConfig({
 
 master 插件通过 `routeExtension()` 注册该 namespace，校验它指向静态 Page Route，
 并从 normalized CoreGraph 生成 qiankun route mapping。app 未显式设置
-`activeRule` 时，插件在调用 `registerMicroApps` 时使用这份 mapping。旧的
-resolver-level `routes` 数组仅保留给渐进插件迁移；新应用不应在那里重复 canonical
-path。
+`activeRule` 时，插件在调用 `registerMicroApps` 时使用这份 mapping。
+resolver-level `routes` 数组只作为显式 resolver 输入；canonical path 不应在那里重复
+声明。
 
 Master 运行期间应由 shell 稳定提供 qiankun container；如果希望 container 跟随
 路由组件挂载，应由上层插件把 route 转换成 micro-app 组件。

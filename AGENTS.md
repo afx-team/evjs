@@ -21,8 +21,8 @@ diagnostics live in `packages/ev/src/_internal/build/page-routes.ts`.
 the canonical tree, with cross-mode coverage in
 `packages/ev/tests/build-tools-graph-plan.test.ts` and discovery coverage in
 `packages/ev/tests/build-tools-page-routes.test.ts`. Explicit
-`application.routes` and Bigfish-style route config are SPA-only route-tree
-migration inputs that normalize into the same graph. They never select MPA
+`application.routes` and explicit `component`/`routes` config are SPA-only
+route-tree inputs that normalize into the same graph. They never select MPA
 materialization.
 
 ## Core Principles
@@ -70,12 +70,12 @@ materialization.
    catch-all, and pathless segments. Other colocated files—including
    `index.*`—are private application source unless they are another documented
    route facet. Keep exactly one `page.*` extension variant per route directory.
-   `application.routes` and Bigfish `component`/`routes` are SPA-only
-   route-tree migration inputs that must normalize to the same CoreGraph, not
+   `application.routes` and explicit `component`/`routes` config are SPA-only
+   route-tree inputs that must normalize to the same CoreGraph, not
    additional canonical models. They must reject `routing.mode: "mpa"` because
-   the migration input is SPA-only. Reject the historical `children` spelling;
-   current Umi/Bigfish config uses `routes`. Before running a Smallfish or evjs 0.2
-   application on Core 0.3, move or rename every published entry to `page.*`, move Page
+   the route-tree input is SPA-only. Accept `routes` nesting and reject the
+   `children` spelling. Source trees whose published entries use `index.*`
+   must move or rename every published entry to `page.*`, move Page
    configuration to `page.config.ts`, and configure only `routing.mode`.
    Do not add a compatibility reader or infer routes from `index.*`.
 6. Server file route conventions are strict: `src/apis`, `$param` dynamic
@@ -106,7 +106,7 @@ materialization.
    `config.extensions` targets the Application; adjacent `page.config.ts`
    `extensions`, `route.extensions`, and `document.extensions` target the
    canonical Page and its uniquely owned Route or Document. Explicit
-   `application.routes` and `application.document` migration inputs may target
+   `application.routes` and `application.document` inputs may target
    Route and Document owners directly. Plugins register the corresponding owner
    with `applicationExtension()`, `pageExtension()`, `routeExtension()`, or
    `documentExtension()`. Application values resolve before `setup()`; the

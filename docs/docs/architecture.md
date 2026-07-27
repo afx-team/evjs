@@ -3,9 +3,9 @@
 evjs is a React framework built around one positive Page-and-Route convention,
 server file conventions, a normalized CoreGraph, a bundler-independent build
 plan, and one private build output contract with generated runtime
-projections. Canonical `src/pages/**/page.*` anchors normalize directly to
-CoreGraph; explicit route-tree migration inputs normalize through the same
-model. BuildPlan is derived from that graph for planners and adapters.
+projections. Canonical `src/pages/**/page.*` anchors and explicit SPA route
+configuration normalize through the same CoreGraph model. BuildPlan is derived
+from that graph for planners and adapters.
 Each Page directory owns its private source and determines its client URL.
 `routing.mode` changes only SPA/MPA materialization. Server request routes
 remain under `src/apis`, with middleware in `src/middleware.ts` and
@@ -128,8 +128,7 @@ runtime entries type-check. Application code imports public authoring APIs from
 `@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`, `@evjs/ev/server-context`, or `@evjs/ev/transport`; it must not
 import generated-only internal helpers. Examples include
 `@evjs/ev/_internal/client/route-types` for generated canonical Page-anchor
-route declarations (explicit Bigfish-style config routes do not currently
-promise them),
+route declarations (explicit config routes do not currently promise them),
 `@evjs/ev/_internal/client/server-functions` for generated `"use server"`
 client stubs, `@evjs/ev/_internal/server/server-functions` for generated
 `"use server"` server registrations, and
@@ -363,8 +362,8 @@ can fetch an internal FaaS endpoint without changing the public page protocol.
 
 PPR authoring uses React `Suspense`. Canonical `page.*` routes declare
 `render: "ssr"` and `prerender: { partial: true, delivery }` in
-`page.config.ts`; do not preserve those values as Page component exports during
-migration. Runtime postponed/resume for arbitrary Suspense boundaries is not
+`page.config.ts`, not as Page component exports. Runtime postponed/resume for
+arbitrary Suspense boundaries is not
 implemented yet, and the current splitter creates internal region renderers
 only for the limited `Suspense` + direct `lazy(() => import(...))` shape.
 Region ids are opaque framework details.
@@ -398,10 +397,10 @@ Page-local page.config.ts / index.html
 server.routing
   server file route source of truth: dir, discovered HTTP method modules
 
-application.routes / Bigfish routes
-  explicit SPA-only route-tree migration inputs, not canonical routing
+application.routes
+  explicit SPA-only route configuration, not canonical file routing
 
-Smallfish / evjs 0.2 source trees
+existing noncanonical source trees
   convert entries to page.* and settings to page.config.ts before resolution
 
 server.basePath
@@ -431,12 +430,12 @@ requests. API route middleware is discovered by filesystem scope from
 modules do not export middleware and there is no `server.entry` composition
 path.
 
-Source migration must move static title, supported named metadata, `render`,
-`hydrate`, `rsc`, and `prerender` settings from old Page components or Page
-configuration into adjacent build-time `page.config.ts`. Canonical `page.*`
-routes normalize the core fields into graph data and keep them independent from
-Page identity. Namespaced plugin extension values from the same config are
-graph data until the owning plugin explicitly projects runtime code/data.
+Static title, supported named metadata, `render`, `hydrate`, `rsc`, and
+`prerender` settings belong in adjacent build-time `page.config.ts`, not Page
+component exports. Canonical `page.*` routes normalize the core fields into
+graph data and keep them independent from Page identity. Namespaced plugin
+extension values from the same config are graph data until the owning plugin
+explicitly projects runtime code/data.
 For normalized routes, graph creation derives the required server
 renderers, PPR regions, assets, and manifest output.
 The in-memory BuildOutput keeps those renderer relationships explicit: SSR and
@@ -446,12 +445,11 @@ the production build to emit static HTML, then deployment metadata exposes them
 as `static-page` routes. PPR pages resolve through `ppr-shell` and `ppr-region`
 entries instead.
 
-`application.routes` and Bigfish route config remain explicit SPA-only
-route-tree migration inputs; MPA materialization is rejected. Smallfish and evjs 0.2
-source trees must be converted to
-`page.*` plus `page.config.ts` before resolution. Standalone/manual runtime
-composition remains outside this model. None of these define another framework
-Page authoring model.
+`application.routes` remains explicit SPA-only route configuration; MPA
+materialization is rejected. Source trees that do not use canonical anchors
+must be converted to `page.*` plus `page.config.ts` before file-convention
+resolution. Standalone/manual runtime composition remains outside this model.
+None of these define another framework Page authoring model.
 
 ## Server Function Pipeline
 

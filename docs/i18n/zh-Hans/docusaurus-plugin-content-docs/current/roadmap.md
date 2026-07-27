@@ -35,28 +35,27 @@
 
 ## 进行中
 
-- [Core 0.3](./core-0.3-rfc) 现已把唯一 canonical
-  `routing.mode + page.* + page.config.ts` 模型解析为 SPA/MPA 的 validated
-  CoreGraph，输出 `.ev/framework/core-graph.json`，并诊断非法
+- 唯一 canonical `routing.mode + page.* + page.config.ts` 模型会解析为 SPA/MPA
+  validated CoreGraph，输出 `.ev/framework/core-graph.json`，并诊断非法
   Page/Route/Document ownership 或 Page 配置。
-- [Bigfish、Smallfish 迁移矩阵](./framework-migration-to-0.3) 固定了源码审计
-  revision，区分 Core 与生态职责，并定义 URL、Page scope、Document 与插件迁移
-  门禁。
-- 继续加固 Bigfish 显式 route normalizer，以及 Smallfish/evjs 0.2 一次性源码
-  迁移指南，不把存量模型提升为 runtime reader。
+- 显式 `application.routes` 通过仅支持 SPA 的 config-route normalizer 进入同一
+  CoreGraph；它支持 component、嵌套 `routes`、layout、wrapper、redirect、
+  Route extension 与 Application-owned Document，同时拒绝 MPA 物化。
+- 继续加固显式 route normalizer 与 canonical 源码转换诊断，不增加额外的
+  runtime reader。
 - canonical MPA 已从静态语义 Route 生成 Page-owned Document，并组合
   file-convention layout；动态 route 和 router-only boundary facet 会被明确拒绝。
 - 插件 API 已落地按 dependency 排序、可安全 reload 的 `describe`，带 namespace
   的 Application/Page defaults/config/validation、严格 static serialization、
   resolved extension view，以及跨 runtime `page.wrapper` contribution。参见
-  [0.2 迁移指南](./plugin-migration-0.2-to-0.3)。
+  [插件](./plugins)。
 - 继续实现插件 API 的 owned Route/Document schema、graph transform/selector、
   更多 semantic facet、typed runtime hook 与 generic extension entry。
 
 ## 计划中
 
-- Bigfish route-normalizer 覆盖、Smallfish/evjs 0.2 源码 codemod、capability
-  report 和代表性插件迁移。
+- Config-route normalizer 覆盖、canonical source conversion、capability report
+  和代表性插件验证。
 - Generic extension entry、Document、request facet、manifest projection 就绪后，从 Core
   移除内建 SSR/PPR/RSC 分支。
 - Utoopack 下层能力补齐：generic dynamic entry、structured build fact，以及

@@ -3,8 +3,8 @@
 evjs 是围绕唯一正向 Page-and-Route 约定、server file convention、normalized
 CoreGraph、bundler-independent BuildPlan，以及一份 private BuildOutput contract
 和 generated runtime projection 构建的 React 框架。canonical
-`src/pages/**/page.*` 锚点直接 normalize 到 CoreGraph；显式 route-tree
-迁移输入也 normalize 到同一模型。BuildPlan 从该 graph 派生，供 planner 和
+`src/pages/**/page.*` 锚点直接 normalize 到 CoreGraph；显式 SPA route-tree
+配置也 normalize 到同一模型。BuildPlan 从该 graph 派生，供 planner 和
 adapter 消费。每个 Page 目录持有其私有源码并决定客户端 URL；`routing.mode` 只改变
 SPA/MPA 物化。服务端请求路由继续位于 `src/apis`，middleware 位于
 `src/middleware.ts` 与 `src/apis/**/middleware.ts`。
@@ -114,7 +114,7 @@ stub/registration 和 RSC runtime entry 完成类型检查。应用代码从
 `@evjs/ev/server-context` 或 `@evjs/ev/transport` 导入公开 authoring API，
 不要导入这些生成专用的 internal helper。
 例如，`@evjs/ev/_internal/client/route-types` 用于 canonical Page-anchor
-路由声明（显式 Bigfish-style config route 当前不承诺生成），
+路由声明（显式 config route 当前不承诺生成），
 `@evjs/ev/_internal/client/server-functions` 用于生成的 `"use server"` 客户端
 stub，`@evjs/ev/_internal/server/server-functions` 用于生成的 `"use server"`
 服务端 registration，`@evjs/ev/_internal/client/rsc-runtime` 用于 RSC page
@@ -338,8 +338,9 @@ flowchart TB
 
 PPR authoring 使用 React `Suspense`。canonical `page.*` route 在
 `page.config.ts` 中声明 `render: "ssr"` 与
-`prerender: { partial: true, delivery }`；迁移时不要把这些值继续保留为 Page
-component export。任意 Suspense boundary 的 runtime postponed/resume 尚未实现，
+`prerender: { partial: true, delivery }`；这些值只应写在 `page.config.ts`，不要
+继续保留为 Page component export。任意 Suspense boundary 的 runtime
+postponed/resume 尚未实现，
 当前 splitter 只会为受限的 `Suspense` + 直接
 `lazy(() => import(...))` 形态生成内部 region renderer。Region id 是框架内部
 opaque 细节。
@@ -369,11 +370,11 @@ Page 同目录 page.config.ts / index.html
 server.routing
   服务端文件路由事实来源：dir、发现到的 HTTP method modules
 
-application.routes / Bigfish routes
-  显式、仅支持 SPA 的 route-tree 迁移输入，不是 canonical routing
+application.routes
+  显式、仅支持 SPA 的 route-tree 配置，normalize 到同一 CoreGraph
 
-Smallfish / evjs 0.2 源码树
-  resolution 前把 entry 转换为 page.*，把 setting 转换为 page.config.ts
+非 canonical Page 源码
+  discovery 前把 entry 转换为 page.*，把 setting 转换为 page.config.ts
 
 server.basePath
   派生 fn、ppr、rsc 等框架服务端路径
@@ -398,8 +399,8 @@ framework-managed server requests。API route middleware 按文件系统作用�
 `src/apis/**/middleware.ts` 发现，只包裹 descendant server file routes。Route module
 不导出 middleware，也不存在 `server.entry` 组合路径。
 
-源码迁移必须把 Page component 或 Page 配置中的静态 title、受支持 named
-metadata、`render`、`hydrate`、`rsc`、`prerender` 等 setting 移到同目录构建期
+Page component 的静态 title、受支持 named metadata、`render`、`hydrate`、
+`rsc`、`prerender` 等 setting 必须写入同目录构建期
 `page.config.ts`。canonical `page.*` route 把这些 core 字段 normalize 为 graph
 data，并保持与 Page identity 独立。同一 config 中的 namespaced plugin extension
 value 是 graph data，直到能力所属插件显式投影 runtime code/data。对 normalized
@@ -411,11 +412,11 @@ output。
 renderer 产出静态 HTML，随后部署元信息中表现为 `static-page` route。PPR 页面改由
 `ppr-shell` 和 `ppr-region` entry 解析。
 
-`application.routes` 与 Bigfish route config 保留为显式、仅支持 SPA 的 route-tree
-迁移输入；MPA 物化模式会被拒绝。Smallfish 与 evjs 0.2 源码树必须在 resolution
-前转换为 `page.*` 与
-`page.config.ts`。Standalone/manual runtime composition 位于该模型之外；这些都不是
-另一套 framework Page authoring model。
+`application.routes` 是显式、仅支持 SPA 的 route-tree 配置；它 normalize 到同一
+CoreGraph，且会拒绝 MPA 物化模式。其他 Page 源码只有在 resolution 前转换为
+`page.*` 与 `page.config.ts` 才会参与 canonical discovery。Standalone/manual
+runtime composition 位于该模型之外；这些都不是另一套 framework Page authoring
+model。
 
 ## 服务端函数管线
 

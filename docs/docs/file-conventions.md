@@ -23,8 +23,8 @@ explicit `routing` or `server.routing`. When conventions remain enabled,
 `routing.dir` and `server.routing: { dir }` only customize their discovery
 roots.
 
-Reachable `"use server";` modules, the SPA-only `application.routes`
-migration input, and plugin contributions are graph/config inputs rather than
+Reachable `"use server";` modules, SPA-only `application.routes`
+configuration, and plugin contributions are graph/config inputs rather than
 file conventions. Removed `app`, `pages`, and top-level `routes` declarations
 are rejected.
 
@@ -279,38 +279,37 @@ The framework may generate:
 
 Do not edit or scaffold these files. Keep them ignored.
 
-## Migrating Existing Applications
+## Existing Source Adoption
 
 Canonical Page discovery does not ask users to select a route reader or
-provider. A new or migrated application declares `routing.mode`; the presence
-of `src/pages` alone has no client-routing effect.
+provider. A canonical application declares `routing.mode`; the presence of
+`src/pages` alone has no client-routing effect.
 
-### Bigfish SPA
+### Explicit SPA route configuration
 
-The migration normalizer accepts `application.routes` plus the `component`,
-nested `routes`, `layout`, `wrappers`, and `redirect` fields used by current
-Bigfish SPA trees. It rejects `children`, matching current Umi config-route
-behavior. The finite Bigfish access/menu metadata set is retained under the
-registered `@evjs/bigfish-route` Route extension. Shared template and mount
-values live under `application.document`. It does not accept a routing-mode
-selector, top-level `routes`, or top-level `html`. The canonical destination
-moves each component into the directory for its public URL as `page.*`.
+The config-route normalizer accepts `application.routes` plus `component`,
+nested `routes`, `layout`, `wrappers`, and `redirect`. It rejects `children`;
+nested declarations use `routes`. The documented finite access/menu metadata
+set is retained under a registered Route extension. Shared template, mount,
+and Document extension values live under `application.document`. This profile
+does not accept a routing-mode selector, top-level `routes`, or top-level
+`html`. Its canonical destination moves each component into the directory for
+its public URL as `page.*`.
 
-### Smallfish
+### Directory-entry MPA sources
 
-Before running Core 0.3, keep or reshape each public URL directory, rename its
-`index.*` component entry to `page.*`, map `config.json` title and supported
+Keep or reshape each public URL directory, rename its `index.*` component entry
+to `page.*`, map `config.json` title and supported
 named meta to core `title` and `meta`, and move remaining plugin-owned values
 into namespaced `page.config.ts` extensions. Delete `config.json`, then select
 only `routing.mode: "mpa"`.
 
-### evjs 0.2
+### Filename-route sources
 
-Before running Core 0.3, move each published filename route to the directory
-for its URL and rename the entry to `page.*`. Preserve `$param` and `(group)`
-directory segments as needed. Core 0.3 does not expose a source-reader or
-provider selector; after the source tree is converted, declare only
-`routing.mode`.
+Move each published filename route to the directory for its URL and rename the
+entry to `page.*`. Preserve `$param` and `(group)` directory segments as
+needed. Canonical discovery does not expose a source-reader or provider
+selector; after the source tree is converted, declare only `routing.mode`.
 
 For the canonical destination:
 

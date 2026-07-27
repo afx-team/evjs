@@ -156,10 +156,10 @@ safe-serialization and SPA cleanup behavior. Build-time `transformHtml` hooks
 do not post-process the arbitrary per-request string returned by a custom
 document renderer.
 
-## Migrating Rendering Settings
+## Page Rendering Settings
 
-Do not preserve literal `render`, `hydrate`, `prerender`, or `rsc` exports from
-an old Page component. During the one-time source migration, move those values
+Do not preserve literal `render`, `hydrate`, `prerender`, or `rsc` exports in a
+Page component. When adopting canonical Page configuration, move those values
 to adjacent `page.config.ts`:
 
 ```ts
@@ -211,9 +211,8 @@ Check user-controlled inputs first:
 - `"use server"` modules begin with the directive and export named callables;
 - `src/apis` route modules export uppercase HTTP methods.
 
-For a migrated app, complete the source conversion first, then run
-`ev inspect` and review Page sources, Page config, routes, Documents,
-provenance, and diagnostics.
+After source conversion, run `ev inspect` and review Page sources, Page config,
+routes, Documents, provenance, and diagnostics.
 
 ## Key Points
 

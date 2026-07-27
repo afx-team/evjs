@@ -111,7 +111,7 @@ export const analyticsPlugin = definePlugin({
 ```
 
 Application extension 在 `setup()` 之前解析，随后投影到 normalized
-Application。SPA、MPA 与 Bigfish route-tree migration input 使用相同合同。
+Application。SPA、MPA 与显式 `application.routes` 输入使用相同合同。
 
 Page 级配置仍与 canonical Page 同目录。
 
@@ -135,8 +135,8 @@ export default definePageConfig({
 同一份相邻配置还可以通过 `route.extensions` 配置该 Page 的唯一 semantic Route，
 或通过 `document.extensions` 配置 Page-owned Document。后者要求 canonical MPA、
 SPA SSG 等独立 Document 物化；CSR SPA Page 会共享 Application Document。显式
-`application.routes` migration input 通过每条 Route 自己的 `extensions` 字段配置
-Route，`application.document.extensions` 则配置 Application-owned Document。
+显式 `application.routes` 通过每条 Route 自己的 `extensions` 字段配置 Route，
+`application.document.extensions` 则配置 Application-owned Document。
 
 ```ts
 import { definePlugin } from "@evjs/ev/plugin";
@@ -196,7 +196,7 @@ Document owner 各注册一次同一 namespace，且全部 declaration 必须使
 owner 共用同一配置机制与 producer contract。
 
 Extension 与其他框架能力解析同一份 normalized CoreGraph。canonical
-`page.tsx` anchor 在两种 mode 中都会提供该 graph；显式 route-tree 迁移输入必须先
+`page.tsx` anchor 在两种 mode 中都会提供该 graph；显式 route-tree 配置也会先
 normalize 到该 graph。在
 `contributions()` 中，`ctx.framework.applications`、`.pages`、client `.routes`
 和 `.documents` 会暴露各自解析完成、只读的 `extensions` bag。

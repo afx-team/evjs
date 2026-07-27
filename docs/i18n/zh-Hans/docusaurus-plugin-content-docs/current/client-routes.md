@@ -280,22 +280,24 @@ mode 下，最深层 active Page 持有 title/meta，不继承父 Page metadata�
 元信息残留。需要 runtime extension data 的插件仍须显式生成并挂载最小
 projection。
 
-迁移后的 Page component 不应保留 literal `render`、`hydrate`、`prerender` 或
-`rsc` export。运行 Core 0.3 前把这些 setting 移到 `page.config.ts`。参见
-[构建](./build)与 [Core 0.3 RFC](./core-0.3-rfc)。
+Page component 不读取 literal `render`、`hydrate`、`prerender` 或 `rsc`
+export；这些 setting 统一写在 `page.config.ts`。参见[构建](./build)。
 
-## 迁移存量路由
+## 显式 SPA route tree
 
-显式 SPA route-tree 形式可以作为迁移输入归一化到 Core graph：
+`application.routes` 可以把显式 SPA route tree 归一化到 CoreGraph。它支持：
 
-- Bigfish 路由配置，包括嵌套 `routes`、`component`、layout、wrapper、
-  redirect，以及保留在 `@evjs/bigfish-route` 中的有限 access/menu
-  metadata；当前 Umi/Bigfish 已拒绝的 `children` 声明同样会被拒绝；
-- 早期显式 `application.routes` 声明。
+- 嵌套 `routes`、`component`、layout、wrapper 与 redirect；
+- `name`、`icon`、`title`、`hideInMenu`、`flatMenu`、`spmBPos`、`access`、
+  `menuKey` 与静态 `menuAssetOptions` 等受支持的 access/menu metadata；
+- 每条 Route 的 namespaced `extensions`，以及 Application-owned Document 配置。
 
-这些输入拒绝 MPA 物化模式，是迁移路径而不是另一套路由架构。Smallfish 与 evjs
-0.2 源码树不是 runtime
-reader 输入：把每个发布 entry 移到其 URL 对应目录，命名为 `page.*`，页面级
-配置移到 `page.config.ts`，Page 私有代码继续放在旁边，并只声明
-`routing.mode`。无关的 `src/pages` 目录不会发布路由，除非启用 canonical
-routing。
+`children`、`exact: false` 以及带嵌套路由的 `exact: true` 会被拒绝；
+`exact: true` 只作为 terminal-match 结构断言，不会复制到 graph。该配置自身表示
+SPA，不能与 `routing` 同时声明，也不能选择 MPA 物化。它会 normalize 到与
+canonical Page tree 相同的 CoreGraph，而不是定义另一套路由架构。
+
+要改用 canonical Page tree，应把每个发布 entry 移到其 URL 对应目录并命名为
+`page.*`，把页面级配置写入 `page.config.ts`，让 Page 私有代码与锚点 colocate，
+然后只声明 `routing.mode`。无关的 `src/pages` 目录不会发布路由，除非启用
+canonical routing。

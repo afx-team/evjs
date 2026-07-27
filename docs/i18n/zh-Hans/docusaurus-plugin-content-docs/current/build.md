@@ -146,10 +146,10 @@ assets 与 document structure。插入 `@evjs/server/react` 的
 行为。构建期 `transformHtml` hook 不会继续处理 custom document renderer
 逐请求返回的任意字符串。
 
-## 迁移 Rendering Setting
+## Page Rendering Setting
 
-不要保留旧 Page component 中 literal `render`、`hydrate`、`prerender` 或 `rsc`
-export。在一次性源码迁移中，把这些值移入同目录 `page.config.ts`：
+Page component 不读取 literal `render`、`hydrate`、`prerender` 或 `rsc` export。
+把这些值写入同目录 `page.config.ts`：
 
 ```ts
 import { definePageConfig } from "@evjs/ev";
@@ -196,7 +196,7 @@ export const GET = async () => Response.json({ ok: true });
 - `"use server"` module 以 directive 开头并导出命名 callable；
 - `src/apis` route module 导出大写 HTTP method。
 
-迁移应用应先完成源码转换，再运行 `ev inspect` 审核 Page source、Page config、
+运行 build 前应先完成源码转换，再运行 `ev inspect` 审核 Page source、Page config、
 route、Document、provenance 与 diagnostic。
 
 ## 要点

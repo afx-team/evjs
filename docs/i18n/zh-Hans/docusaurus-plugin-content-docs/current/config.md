@@ -46,9 +46,9 @@ file-route 发现，以及全局与 route-scoped middleware 文件发现。它�
 `routing` 或 `server.routing` 声明一起配置。框架不提供粒度更细的约定关闭
 开关。
 
-仅支持 SPA 的 `application.routes` migration input 不依赖文件约定。reachable
+仅支持 SPA 的 `application.routes` 显式 route-tree 配置不依赖文件约定。reachable
 且带 `"use server";` 的模块，以及插件 contribution 生成的模块也不依赖文件约定。
-已移除的 `app`、`pages` 与顶层 `routes` 声明会产生迁移错误。
+已移除的 `app`、`pages` 与顶层 `routes` 声明会产生配置错误。
 
 ## Routing
 
@@ -161,17 +161,16 @@ export default defineConfig({
 
 每个 key 都必须由当前插件的 `applicationExtension()` declaration 注册。Core 会在
 `setup()` 之前完成 default、merge 与 validation，然后把同一份值写入 normalized
-Application。canonical SPA、canonical MPA 与临时 Bigfish
-`application.routes` 输入使用完全相同的合同。
+Application。canonical SPA、canonical MPA 与显式 `application.routes` 输入使用
+完全相同的合同。
 
 value 必须是严格 static JSON。函数等可执行选项放入插件工厂，例如
 `oneApiPlugin({ filter })`，或引用显式 generated/runtime module。不要在这里存放
 secret：extension value 会进入 build graph。它们不会自动发送到浏览器；runtime
 投影仍必须由插件显式 contribution。
 
-不支持 `application.extensions`，因为 `application` 只是临时 Bigfish SPA
-route-tree migration input。路由树迁移到 canonical `page.*` 后，顶层
-`extensions` 仍然有效。
+不支持 `application.extensions`，因为 `application` 只描述显式 SPA route tree。
+改用 canonical `page.*` 后，顶层 `extensions` 仍然有效。
 
 ## Page Scope 与配置
 
@@ -321,8 +320,7 @@ export default defineConfig({
 
 通过 `plugins` 注册插件。同一个 `Plugin` interface 可以注册 namespaced
 Application、Page、Route、Document 配置 owner、定位 normalized graph，并承载
-config、setup、contributions 与 lifecycle hooks。参见[插件](./plugins)与
-[插件迁移](./plugin-migration-0.2-to-0.3)。
+config、setup、contributions 与 lifecycle hooks。参见[插件](./plugins)。
 
 ### Bundler
 
@@ -343,47 +341,48 @@ entry、route、server output、resolution 的 dev-plan update capability。
 `ev inspect` 会报告选中的 adapter 与 plan gap；缺少必要 capability 时，build/dev
 会在执行 adapter 前失败。
 
-## 迁移存量应用
+## 显式 route tree 与 canonical Page tree
 
 `routing.mode` 会启用 canonical Page discovery。缺少 `routing` 时，一个无关的
-`src/pages` 目录不会被解释为路由树。Core 0.3 不暴露 Smallfish 或 evjs 0.2
-reader 开关；启动应用前先转换这些源码树。
+`src/pages` 目录不会被解释为路由树。框架也不会通过 reader 开关识别其他 Page
+文件名；参与 discovery 的 entry 必须符合 `page.*` 约定。
 
-### Bigfish SPA 路由配置
+### 显式 SPA 路由配置
 
-Bigfish 风格的嵌套 `routes`、`component`、`layout`、`wrappers`、redirect 和
-document 配置可以进入仅支持 SPA 的迁移 normalizer。历史 `children` 拼写
-会被拒绝，因为当前 Umi/Bigfish 配置使用 `routes`。normalizer 还会把文档列明
-的 access/menu metadata 保留在已注册的 `@evjs/bigfish-route` Route extension
-中。每条显式 Route 还可以携带严格静态、namespaced 的 `extensions` bag；能力所属
-插件必须用 `routeExtension()` 注册每个 namespace。MPA 物化模式、Alias 冲突以及
-项目外部 component reference 会被拒绝。
+`application.routes` 的嵌套 `routes`、`component`、`layout`、`wrappers`、
+redirect 和 document 配置会进入仅支持 SPA 的 config-route normalizer。
+`children` 会被拒绝，嵌套结构只使用 `routes`。normalizer 会把 `name`、`icon`、
+`title`、`hideInMenu`、`flatMenu`、`spmBPos`、`access`、`menuKey` 与静态
+`menuAssetOptions` 保留为内置 Route extension 数据。每条显式 Route 还可以携带
+严格静态、namespaced 的 `extensions` bag；能力所属插件必须用
+`routeExtension()` 注册每个 namespace。MPA 物化模式、alias 冲突以及项目外部
+component reference 会被拒绝。
 
-显式 component 以 `index.*` 或 `page.*` 结尾时，其所在目录会成为 migration
-Page scope。`src/pages/403.tsx` 这类 flat component 仍是 module scope，避免它
-意外持有 `src/pages` 中的其他 flat Page；module-scoped Page 不会发现相邻
-`page.config.ts`。渐进迁移 Page config 时，应先把 flat component 移入独立目录
-（显式 route 可暂时引用 `403/index.*`），再添加 `page.config.ts`，最后在启用
-canonical `routing` 前把 entry 重命名为 `page.*`。
+显式 component 以 `index.*` 或 `page.*` 结尾时，其所在目录会成为 Page scope。
+`src/pages/403.tsx` 这类 flat component 仍是 module scope，避免它意外持有
+`src/pages` 中的其他 flat Page；module-scoped Page 不会发现相邻
+`page.config.ts`。需要相邻 Page config 时，先把 flat component 移入独立目录
+（显式 route 可以引用 `403/index.*`），再添加 `page.config.ts`。
 
-把 component 模块移动到对应路由目录，并把每个路由 entry 重命名为 `page.*`。
-目录会编码相同的路径树；文件树 canonical 后，设置
-`routing.mode: "spa"` 并删除显式 route 声明。
+要改用 canonical Page tree，应把每个 component 模块移到公开 URL 对应目录，
+把 route entry 命名为 `page.*`，并将 title、受支持 named metadata、rendering
+与插件持有的 Page setting 写入同目录 `page.config.ts`。目录会编码相同的路径树；
+完成转换后设置 `routing.mode: "spa"` 并删除显式 `application` 声明。
 
-### Smallfish 应用
+### 目录式 MPA 源码
 
-运行 Core 0.3 前，保留或调整每个公开 URL 目录，把其中的 `index.*` entry
-重命名为 `page.*`，把 `config.json` 的 title 与受支持 `<meta name>` 项映射到
-core `title` 和 `meta`，其余插件持有值移入 namespaced `page.config.ts`
-extension。删除 `config.json` 后，只配置 `routing.mode: "mpa"`。
+MPA 也使用同一套 canonical Page tree。保留或调整每个公开 URL 目录，把其中的
+`index.*` entry 重命名为 `page.*`，把 `config.json` 的 title 与受支持
+`<meta name>` 项映射到 core `title` 和 `meta`，其余插件持有值写入 namespaced
+`page.config.ts` extension。删除 `config.json` 后，只配置
+`routing.mode: "mpa"`。
 
-### evjs 0.2 应用
+### 其他 filename route
 
-运行 Core 0.3 前，把每个已发布 filename route 移到 URL 对应目录并把 entry
-重命名为 `page.*`。把 title、受支持 named metadata、rendering 与插件持有的
-Page setting 移到同目录 `page.config.ts`，然后只配置
-`routing.mode: "spa" | "mpa"`。转换完成后运行 `ev inspect`，验证 normalized
-Page/Route/Document graph。
+把每个已发布 filename route 移到 URL 对应目录并把 entry 命名为 `page.*`。
+保留受支持的 dynamic/group 目录段，把 Page setting 写入同目录
+`page.config.ts`，然后只配置 `routing.mode: "spa" | "mpa"`。转换完成后运行
+`ev inspect`，验证 normalized Page/Route/Document graph。
 
 Provider id 只可能出现在 raw CoreGraph/debug artifact 中作为内部 provenance。
 普通 `ev inspect` routing 输出隐藏它，并报告归一化的 Page、route、source 与

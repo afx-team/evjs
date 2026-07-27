@@ -147,8 +147,8 @@ and adapters depend on `@evjs/ev` instead of on each other.
 1. Put Application-wide static values in top-level `config.extensions`. Use
    adjacent `page.config.ts` for Page values and its `route.extensions` or
    `document.extensions` when that Page uniquely owns the target. Explicit
-   migration inputs may configure their declared Route and Application-owned
-   Document.
+   route and document inputs may configure their declared Route and
+   Application-owned Document.
 2. Register each owner through `applicationExtension()`, `pageExtension()`,
    `routeExtension()`, or `documentExtension()` from the plugin's synchronous
    `describe()` hook.
@@ -158,7 +158,7 @@ and adapters depend on `@evjs/ev` instead of on each other.
    read normalized Application/Page/Route/Document values from `ctx.framework`
    in `contributions()`. Runtime behavior requires explicit projection.
 
-### Migrate a stored Page application
+### Canonicalize a Page source tree
 
 1. Establish one directory for every published URL and move or rename its
    component entry to `page.tsx`.
@@ -168,11 +168,11 @@ and adapters depend on `@evjs/ev` instead of on each other.
 4. Configure only `routing.mode: "spa" | "mpa"` and use `ev inspect` to verify
    the resulting Page/Route/Document graph.
 
-This source conversion is required before running Smallfish or evjs 0.2
-applications on Core 0.3. Do not add a runtime compatibility switch.
-Explicit `application.routes` and Bigfish route config may remain temporarily
-as SPA-only route-tree migration inputs, but they cannot select MPA
-materialization and new examples use the canonical Page tree.
+This source conversion is required when published entries do not use the
+canonical `page.*` marker; Core discovery consumes only positive Page anchors.
+Explicit `application.routes` and `component`/`routes` config are supported as
+SPA-only route-tree inputs, but they cannot select MPA materialization and new
+examples use the canonical Page tree.
 
 ### Add an example
 

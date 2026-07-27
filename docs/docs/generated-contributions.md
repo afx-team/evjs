@@ -140,8 +140,8 @@ materializes one page-client entry and one Document per Page. An Application tar
 therefore expands `client.entry` to every Page entry and `html.tag` to every
 Page Document. `page.wrapper` instead expands through semantic Page ownership,
 so the same Application/Page target works in SPA and MPA. A Page target remains
-exact. This expansion is recorded in the generated plan. An explicit
-route-tree input must normalize to the same
+exact. This expansion is recorded in the generated plan. Explicit config-route
+input must normalize to the same
 Application/Page/Document ownership before using these semantics.
 
 ## Boundaries

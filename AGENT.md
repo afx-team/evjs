@@ -28,7 +28,7 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
    settings, and namespaced Page and Route extensions in both modes; its
    Document extensions target a Page-owned Document only when one is
    materialized. Top-level `config.extensions` provides namespaced Application
-   extensions; explicit migration inputs may configure Route and
+   extensions; explicit route and document inputs may configure Route and
    Application-owned Document extensions. Plugins register all four owner kinds
    through one declarative mechanism and explicitly project any runtime
    behavior. Colocated files such as `components/index.tsx` stay Page-private
@@ -108,14 +108,13 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
    files to application authors. The framework owns those details.
 4. Adding another canonical Page or route dialect. Pages use
    `<routing.dir>/**/page.*`; route directories use `$param`, terminal
-   `$...splat`, and `(group)`. Bigfish route config and explicit
-   `application.routes` are SPA-only route-tree migration inputs and must
+   `$...splat`, and `(group)`. Explicit `component`/`routes` config and
+   `application.routes` are SPA-only route-tree inputs and must
    normalize to the same Page/Route/Application/Document graph. They never
-   select MPA materialization. Accept current Umi/Bigfish `routes` nesting and
-   reject the historical `children` spelling. Smallfish and evjs 0.2
-   applications must first rename or move published entries to `page.*`, move
-   Page configuration to `page.config.ts`, and then configure only
-   `routing.mode`.
+   select MPA materialization. Accept `routes` nesting and reject the
+   `children` spelling. Source trees whose published entries use `index.*`
+   must rename or move those entries to `page.*`, move Page configuration to
+   `page.config.ts`, and then configure only `routing.mode`.
 5. Treating `page.config.ts` as a browser entry. It is synchronously evaluated
    into static graph data; plugins explicitly project runtime data or code.
 6. Reintroducing alternate server composition paths. `server.entry` and

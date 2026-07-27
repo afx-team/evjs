@@ -61,5 +61,5 @@ are preserved in `CHANGELOG.md`; this file should reflect active reality.
       them.
 - [ ] Further graph dependency narrowing once bundlers expose module/reference
       facts that can replace framework-side static import closure analysis.
-- [ ] Migration guides for external deployment adapters that still emit older
+- [ ] Adapter guidance for external deployment adapters that emit
       platform-specific split manifests.

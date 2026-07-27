@@ -50,9 +50,9 @@ npm run build
 - No `@evjs/client`, `@evjs/server`, or generated `route-types.d.ts`
   dependency is needed for this router-free client output
 
-When migrating a Smallfish application, rename each published `index.tsx`
-entry to `page.tsx`, map `config.json` title and supported named meta to
-`page.config.ts` core fields, and move remaining plugin-owned values to
-namespaced extensions. There is no Smallfish route reader or compatibility
-switch. Bigfish route config is a SPA-only migration input and is not accepted
-as an MPA authoring model.
+Source trees whose published entries use `index.tsx` must rename them to
+`page.tsx`, map static title and supported named meta to `page.config.ts` core
+fields, and move remaining plugin-owned values to namespaced extensions.
+Core discovers only canonical Page anchors. Explicit `component`/`routes`
+config remains a SPA-only route-tree input and is not accepted as an MPA
+authoring model.

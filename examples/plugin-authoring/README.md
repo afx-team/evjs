@@ -18,12 +18,10 @@ build-time extensions.
 For plugins that need to declare generated `.ev` artifacts and attach them to
 framework slots, see the generated contributions documentation.
 
-Existing lifecycle plugins remain supported by the same `Plugin` shape, so
-capabilities can move into `describe()` and semantic contributions
-incrementally. Typed runtime hooks and semantic facet attachment are not
-implemented yet; see the
-[plugin migration guide](../../docs/docs/plugin-migration-0.2-to-0.3.md)
-before porting those behaviors.
+Plugins use one `Plugin` shape: declare static capabilities in `describe()` and
+add semantic contributions through the corresponding framework APIs. Typed
+runtime hooks and semantic facet attachment are not implemented yet and remain
+outside this example's scope.
 
 The application itself uses the unified Core 0.3 model:
 `src/pages/page.tsx` defines `/`, `src/pages/layout.tsx` supplies the SPA root

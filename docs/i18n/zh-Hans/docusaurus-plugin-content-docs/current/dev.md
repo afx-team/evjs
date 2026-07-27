@@ -28,7 +28,7 @@ evjs 会在输出就绪日志前把 SPA fallback 同步到实际监听地址，�
 会在进程间协调端口预留。
 
 客户端和 API 开发服务器会监听 IPv4 地址，可以同时通过 `http://localhost:<port>` 和
-`http://127.0.0.1:<port>` 访问。启动日志遵循 Bigfish 的格式，显示 `Local` localhost URL
+`http://127.0.0.1:<port>` 访问。启动日志显示 `Local` localhost URL
 和本机的 `Network` URL；等价的 `127.0.0.1` URL 仍然可用，但不会额外打印。`localhost`
 和 `127.0.0.1` 属于不同的浏览器 origin，因此不会共享 cookie、local storage 和 service
 worker。使用自定义 HTTPS 证书且需要同时访问两个地址时，证书的 subject alternative names

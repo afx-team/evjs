@@ -4,7 +4,7 @@ canonical client Page 与 Route 使用正向 `src/pages/**/page.*` 锚点，目�
 URL；服务端请求路由继续使用 `src/apis` 文件约定，middleware 来自
 `src/middleware.ts` 与 `src/apis/**/middleware.ts`。
 
-只有当应用有意自己持有运行时组合，或正在从非约定式结构迁移时，才使用本页的控制项。
+只有当应用有意自己持有运行时组合，或需要使用显式 SPA route tree 时，才使用本页的控制项。
 
 ## 关闭文件约定
 
@@ -31,7 +31,7 @@ export default defineConfig({
 文件约定启用时仍可用 `server.routing: { dir }` 调整服务端路由目录；它只定制
 目录，不负责关闭发现。
 
-仅支持 SPA 的 `application.routes` migration input 是配置输入，不属于文件约定。
+仅支持 SPA 的 `application.routes` 是显式 route-tree 配置输入，不属于文件约定。
 reachable 且带 `"use server";` 的模块，以及插件 contribution 生成的模块，
 同样不属于文件约定；关闭文件发现后它们仍然可用。已移除的 `app`、`pages` 与
 顶层 `routes` 声明会被拒绝。

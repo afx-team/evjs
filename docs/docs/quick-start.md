@@ -215,10 +215,10 @@ Framework-owned Page applications import from `@evjs/ev` and its curated
 subpaths. Use `@evjs/client` and `@evjs/server` directly only for intentional
 standalone/manual runtime composition.
 
-## Migrating An Existing App
+## Existing Source Adoption
 
-Core 0.3 does not run a Smallfish or evjs 0.2 route reader. Convert those
-source trees once before starting the application. For each published Page:
+Core 0.3 uses one canonical file-convention reader. For each published Page
+that uses another source anchor:
 
 1. Move or rename its entry to the directory that represents its URL and name
    it `page.*`.
@@ -228,11 +228,10 @@ source trees once before starting the application. For each published Page:
 4. Declare only `routing.mode: "spa"` or `"mpa"`.
 5. Run `ev inspect` and verify the Page/Route structure.
 
-Bigfish route config is a separate, SPA-only transition lane. Its explicit
-`application.routes` tree may remain temporarily, but it cannot be combined
-with `routing` and it never selects MPA. After converting the files, replace
-`application` with `routing.mode: "spa"` in the same change, then run
-`ev inspect`.
+Explicit `application.routes` is a separate, SPA-only configuration input. It
+may remain while source files are converted, but it cannot be combined with
+`routing` and never selects MPA. After converting the files, replace
+`application` with `routing.mode: "spa"`, then run `ev inspect`.
 
 An unrelated `src/pages` directory alone does not publish client routes.
 

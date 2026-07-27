@@ -85,10 +85,10 @@ export default defineConfig({
 });
 ```
 
-仅支持 SPA 的 `application.routes` migration input 是配置输入，不是文件约定。
+仅支持 SPA 的 `application.routes` 是显式 route-tree 配置输入，不是文件约定。
 reachable 的 `"use server";` 模块与插件生成的 contribution 是 graph 输入，也
 不是文件系统约定；关闭约定发现后，这些输入仍然可用。已移除的 `app`、`pages`
-和顶层 `routes` 声明会产生迁移错误。
+和顶层 `routes` 声明会产生配置错误。
 
 文件约定启用时，可以通过 `server.routing: { dir }` 把 server file-route root
 从 `src/apis` 移到其他目录；该配置只定制 root，不关闭发现。
@@ -221,21 +221,21 @@ route 的 Route-owned 数据写在 `page.config.ts#route.extensions`，并通过
 semantic Route 持有，而不会被静默当成 Page 数据。
 
 所有 owner kind 共用同一个 CoreGraph extension registry。同一插件可以为多个
-owner kind 持有同一 namespace，但必须逐一声明。Bigfish 迁移期间，严格 static
-Route value 也可以写在 `application.routes[*].extensions`；迁到 canonical Page
-tree 后，把每个 Page route value 移到 `page.config.ts#route.extensions`。runtime
+owner kind 持有同一 namespace，但必须逐一声明。显式 SPA route tree 的严格
+static Route value 可以写在 `application.routes[*].extensions`；canonical Page
+tree 则把每个 Page route value 写在 `page.config.ts#route.extensions`。runtime
 投影始终需要显式声明。
 
 `page.config.ts#route.extensions` 要求该 Page 只被一个 semantic Route
-指向。如果显式 migration tree 用多个 Route 复用同一个 Page，需要继续在每个
+指向。如果显式 route tree 用多个 Route 复用同一个 Page，需要在每个
 `application.routes[*].extensions` 上分别配置，直到这些 Route 拥有各自的
 canonical Page anchor。componentless layout Route 不能借用后代 Page config；
 没有 Page 或 layout 的 pathless 目录也不会物化 Route。插件可以通过
 Route-extension default 处理这类结构 Route；否则应保留显式
-`application.routes` migration input，直到 componentless Route 数据拥有其他真实
+`application.routes`，直到 componentless Route 数据拥有其他真实
 owner。evjs 会诊断 orphan `page.config.ts`，而不是隐式继承。
 
-显式 migration profile 中 Application-owned Document 的值使用
+显式 route-tree 配置中 Application-owned Document 的值使用
 `application.document.extensions` 与 `documentExtension()`。canonical
 Page-owned Document 使用 `page.config.ts#document.extensions`；只有 Page 自己物化
 Document（例如 MPA 或 SPA SSG Page）时才有效。CSR SPA Page 会共享
@@ -351,23 +351,22 @@ manifest 输入。
 
 不要编辑或复制到模板。
 
-## 迁移存量应用
+## 路由输入与 canonical 转换
 
-Core 0.3 不会选择 Smallfish 或 evjs 0.2 runtime reader。启动应用前先一次性转换
-源码树。客户端 Page discovery 只在应用声明 `routing.mode` 后开始；仅存在无关的
-`src/pages` 目录不会发布 route。
+客户端 Page discovery 只在应用声明 `routing.mode` 后开始；仅存在无关的
+`src/pages` 目录不会发布 route。框架不会选择额外的 runtime reader，只有
+canonical `page.*` 锚点或显式 `application.routes` 会进入 CoreGraph。
 
-| 存量来源 | 迁移动作 | canonical 目标 |
+| 输入形式 | 当前行为 | canonical 形式 |
 | --- | --- | --- |
-| Bigfish SPA route config / `application.routes` | 显式 SPA tree 接受当前 Umi/Bigfish 的 `routes` 嵌套（不接受已被上游拒绝的 `children` 拼写）、`component`、layout/wrapper/redirect 结构，以及一组有限的 metadata。`name`、`icon`、`title`、`hideInMenu`、`flatMenu`、`spmBPos`、`access`、`menuKey` 和静态 `menuAssetOptions` 会保留在已注册的 `@evjs/bigfish-route` Route extension 中。`exact: true` 只是 terminal-match 结构断言，不会被复制；`exact: false` 或带嵌套路由的 `exact: true` 会被拒绝。该输入自身表示 SPA，不能与 `routing` 同时声明，也不能选择 MPA 物化。 | 把每个 route component 移到对应 URL 目录并命名为 `page.*`；把能力迁移到 core field 或插件持有的 `page.config.ts` extension；删除 `application` 后，只用 `routing.mode: "spa"` 启用 canonical tree |
-| Smallfish 直接子 Page 目录 | 运行 Core 0.3 前，保留或调整 URL 目录，把 `<page>/index.*` 重命名为 `page.*` | 保留 `routing.mode: "mpa"`；把 `config.json` 的 title 与受支持 named meta 映射到 core `title`/`meta`，其余插件持有值移入 namespaced extension |
-| evjs 0.2 递归路由 | 运行 Core 0.3 前，把每个已发布 filename route 移到 URL 对应目录并命名为 `page.*` | 保留 dynamic/group 目录段，把 Page setting 移到 `page.config.ts`，并且只配置 `routing.mode` |
+| 显式 SPA `application.routes` | 接受 `routes` 嵌套、`component`、layout/wrapper/redirect 结构以及受支持的 metadata；拒绝 `children`。`name`、`icon`、`title`、`hideInMenu`、`flatMenu`、`spmBPos`、`access`、`menuKey` 和静态 `menuAssetOptions` 会保留为内置 Route extension 数据。`exact: true` 只是 terminal-match 结构断言，不会被复制；`exact: false` 或带嵌套路由的 `exact: true` 会被拒绝。该配置自身表示 SPA，不能与 `routing` 同时声明，也不能选择 MPA 物化。 | 每个 route component 位于对应 URL 目录并命名为 `page.*`；core field 与插件持有值写入 `page.config.ts`；只用 `routing.mode: "spa"` 启用 canonical tree。 |
+| 目录式 MPA 源码 | `index.*` 不会被 canonical discovery 识别；`config.json` 也不是 Page config。 | 保留或调整 URL 目录，把 `<page>/index.*` 命名为 `page.*`；使用 `routing.mode: "mpa"`，把 title 与受支持 named meta 写入 core `title`/`meta`，其余插件持有值写入 namespaced extension。 |
+| 其他 filename route | 非 `page.*` 文件不会发布 route。 | 把每个公开 entry 移到 URL 对应目录并命名为 `page.*`；保留 dynamic/group 目录段，把 Page setting 写入 `page.config.ts`，并且只配置 `routing.mode`。 |
 
-Bigfish route-tree 迁移期间，显式 `index.*` 或 `page.*` component 持有所在目录。
-其他 basename 的 flat component 保持 module scope，不能消费同目录
-`page.config.ts`。添加 Page config 前，先把 flat component 移入独立 Page 目录；
-显式 route 可以暂时继续使用 `index.*`，但 canonical discovery 前必须最终重命名为
-`page.*`。
+显式 `index.*` 或 `page.*` component 持有所在目录。其他 basename 的 flat
+component 保持 module scope，不能消费同目录 `page.config.ts`。需要相邻 Page
+config 时，先把 flat component 移入独立 Page 目录；显式 route 可以继续引用
+`index.*`，但 canonical discovery 只识别 `page.*`。
 
 Provider name 只可能出现在 raw CoreGraph/debug artifact 中作为内部 provenance。
 普通 inspect routing 输出会隐藏它；应用不会选择 provider 作为架构模式。

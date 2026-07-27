@@ -106,12 +106,12 @@ SPA and MPA applications compose the same file-convention layouts. Router-only
 lifecycle and boundary facets are rejected in MPA until they have an explicit
 Document materialization contract.
 
-Explicit `application.routes` and Bigfish-style route config remain SPA-only
-route-tree migration inputs in `@evjs/ev`; they normalize into the same
-runtime Page contracts, reject MPA materialization, and are not additional
-`@evjs/client` APIs. Smallfish and evjs 0.2
-applications must first move or rename published entries to `page.tsx`, move
-Page configuration to `page.config.ts`, and configure only `routing.mode`.
+Explicit `application.routes` and `component`/`routes` config are SPA-only
+route-tree inputs in `@evjs/ev`; their converters normalize into the same
+runtime Page contracts, reject MPA materialization, and do not define
+additional `@evjs/client` APIs. File-convention applications use `page.tsx`
+for published Pages, keep Page configuration in `page.config.ts`, and select
+only `routing.mode`.
 
 ## Server Functions
 

@@ -41,9 +41,8 @@ npx biome check --write
 5. canonical client route 目录使用 `$param`、终止 `$...splat` 与
    `(group)`。Server file route 继续位于 `src/apis` 并使用其文档规定的
    filename 语法。
-6. 不要把 Bigfish route config 或显式 `application.routes` 写入新示例。
-   历史 Smallfish/evjs 0.2 源码快照只能出现在 source-migration fixture；可运行
-   应用必须已经使用 `page.*`、`page.config.ts` 与 `routing.mode`。
+6. 新示例使用 canonical `page.*`、`page.config.ts` 与 `routing.mode`；显式
+   `application.routes` 只用于覆盖 config-route normalizer 的聚焦 fixture。
 7. Server function 以 `"use server";` 开头，只导出命名 callable。
 8. Config/build import 保留在 `@evjs/ev`；应用源码使用
    `@evjs/ev/route`、`/navigation`、`/query`、`/server-context`、
@@ -87,13 +86,14 @@ npx biome check --write
 3. 添加 `index.html` 和所需 workspace dependency。
 4. 只有作为支持的用户模板时才新增/更新 create-app mapping。
 5. 添加聚焦 unit/e2e validation。
-6. Migration 方言放在名称清晰的 migration fixture，不进入 canonical template。
+6. 显式 route-tree 方言放在名称清晰的 config-route fixture，不进入 canonical
+   template。
 
 ### 修改 Page 或 Route 约定
 
 1. 先更新 config resolution 与 graph normalization。
 2. 同时更新中英文 `project-structure`、`file-conventions`、config 与相关 example。
-3. 补充 graph、diagnostic、scaffold 与 migration coverage。
+3. 补充 graph、diagnostic、scaffold 与 config-route coverage。
 4. 运行仓库 validation gate。
 
 ### 发布新版本

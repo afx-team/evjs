@@ -767,7 +767,7 @@ describe("workspace package surface", () => {
       "Do not add new distributed `@evjs/*` packages",
     );
     expect(normalizedAgentGuide).toContain(
-      "Before running a Smallfish or evjs 0.2 application on Core 0.3",
+      "Source trees whose published entries use `index.*`",
     );
     expect(normalizedAgentGuide).toContain(
       "move or rename every published entry to `page.*`",

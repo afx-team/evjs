@@ -79,8 +79,8 @@ The master plugin registers this namespace with `routeExtension()`, validates
 that it targets a static Page Route, and generates the qiankun route mapping
 from the normalized CoreGraph. When an app does not already define
 `activeRule`, the plugin uses that mapping while calling
-`registerMicroApps`. The older resolver-level `routes` array remains readable
-for incremental plugin migration, but new applications should not repeat
+`registerMicroApps`. The resolver-level `routes` array remains readable for
+existing plugin configurations, but new applications should not repeat
 canonical paths there.
 
 Keep the qiankun container mounted by the shell while the master is running;

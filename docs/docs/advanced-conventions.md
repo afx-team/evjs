@@ -33,11 +33,10 @@ switches. Do not combine `conventions: false` with an explicit `routing` or
 `server.routing` declaration. `server.routing: { dir }` remains available when
 file conventions are enabled and only changes the server route directory.
 
-The SPA-only `application.routes` migration input is configuration, not a file
-convention. Reachable modules marked with `"use server";` and modules emitted
-by plugin contributions are also not file conventions. They remain available
-when filesystem discovery is disabled. Removed `app`, `pages`, and top-level
-`routes` declarations are rejected.
+Explicit SPA `application.routes` configuration, reachable modules marked with
+`"use server";`, and modules emitted by plugin contributions are not file
+conventions. They remain available when filesystem discovery is disabled.
+Removed `app`, `pages`, and top-level `routes` declarations are rejected.
 
 Manual browser bootstrap uses the standalone runtime below; it is not a second
 canonical routing model.

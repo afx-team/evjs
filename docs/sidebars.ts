@@ -25,7 +25,6 @@ const sidebars: SidebarsConfig = {
       label: "Reference",
       items: [
         "architecture",
-        "core-0.3-rfc",
         "config",
         "qiankun",
         "advanced-conventions",
@@ -33,11 +32,6 @@ const sidebars: SidebarsConfig = {
         "build",
         "deploy",
       ],
-    },
-    {
-      type: "category",
-      label: "Migration",
-      items: ["framework-migration-to-0.3", "plugin-migration-0.2-to-0.3"],
     },
     {
       type: "category",

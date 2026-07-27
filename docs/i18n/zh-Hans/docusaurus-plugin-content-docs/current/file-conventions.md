@@ -21,8 +21,8 @@ Page 锚点、server file route 与两类 middleware root 共同组成一个框�
 启用时，`routing.dir` 与 `server.routing: { dir }` 只定制各自的 discovery
 root。
 
-reachable 的 `"use server";` 模块、仅支持 SPA 的 `application.routes`
-migration input，以及插件 contribution 是 graph/config 输入，不属于文件约定。
+reachable 的 `"use server";` 模块、仅支持 SPA 的 `application.routes` 显式
+route-tree 配置，以及插件 contribution 是 graph/config 输入，不属于文件约定。
 已移除的 `app`、`pages` 与顶层 `routes` 声明会被拒绝。
 
 每个 `page.*` 锚点的相对目录是客户端 URL 的事实来源。`routing.mode` 为同一
@@ -267,36 +267,40 @@ Middleware file 不是 route，不能由 route module export middleware 代替�
 
 不要编辑或 scaffold 任何生成文件，并保持 ignore。
 
-## 迁移存量应用
+## 显式 route tree 与源码转换
 
-canonical Page discovery 不要求用户选择 route reader 或 provider。新应用或迁移后
-应用声明 `routing.mode`；仅存在 `src/pages` 目录不会产生客户端路由。
+canonical Page discovery 不要求用户选择 route reader 或 provider。应用声明
+`routing.mode` 后，只有 `page.*` positive anchor 会产生客户端路由；仅存在
+`src/pages` 目录不会发布 Page。
 
-### Bigfish SPA
+### 显式 SPA route tree
 
-Migration normalizer 接受 `application.routes`，以及当前 Bigfish SPA route
-tree 使用的 `component`、嵌套 `routes`、`layout`、`wrappers` 与 `redirect`
-字段。它与当前 Umi config-route 行为一致，会拒绝 `children`。有限的 Bigfish
-access/menu metadata 会保留在已注册的 `@evjs/bigfish-route` Route extension
-中。共享 template 和 mount 值放在 `application.document` 下。它不接受
-routing mode selector、顶层 `routes` 或顶层 `html`。canonical 目标把每个
-component 移到公开 URL 对应目录并命名为 `page.*`。
+Config-route normalizer 接受 `application.routes` 中的 `component`、嵌套
+`routes`、`layout`、`wrappers` 与 `redirect` 字段，并拒绝 `children`。受支持的
+`name`、`icon`、`title`、`hideInMenu`、`flatMenu`、`spmBPos`、`access`、
+`menuKey` 与静态 `menuAssetOptions` 会保留为内置 Route extension 数据。
+共享 template 和 mount 值放在 `application.document` 下。该配置不接受 routing
+mode selector、顶层 `routes` 或顶层 `html`，并且只能物化 SPA。
 
-### Smallfish
+显式 component 以 `index.*` 或 `page.*` 结尾时，其所在目录会成为 Page scope；
+其他 basename 的 flat component 保持 module scope，不能消费相邻
+`page.config.ts`。要改用 canonical tree，应把每个 component 移到公开 URL 对应
+目录并命名为 `page.*`。
 
-运行 Core 0.3 前，保留或调整每个公开 URL 目录，把其中的 `index.*` component
-entry 重命名为 `page.*`，把 `config.json` 的 title 与受支持 named meta
-映射到 core `title` 和 `meta`，其余插件持有值移入 namespaced
-`page.config.ts` extension。删除 `config.json` 后，只选择
-`routing.mode: "mpa"`。
+### 目录式 MPA 源码
 
-### evjs 0.2
+保留或调整每个公开 URL 目录，把其中的 `index.*` component entry 重命名为
+`page.*`，把 `config.json` 的 title 与受支持 named meta 映射到 core `title`
+和 `meta`，其余插件持有值写入 namespaced `page.config.ts` extension。删除
+`config.json` 后，只选择 `routing.mode: "mpa"`。
 
-运行 Core 0.3 前，把每个已发布 filename route 移到 URL 对应目录并把 entry
-重命名为 `page.*`；按需保留 `$param` 与 `(group)` 目录段。Core 0.3 不提供
-source-reader 或 provider selector；源码树完成转换后，只声明 `routing.mode`。
+### 其他 filename route
 
-canonical 迁移目标：
+把每个已发布 filename route 移到 URL 对应目录并把 entry 命名为 `page.*`；
+按需保留 `$param` 与 `(group)` 目录段。框架不提供 source-reader 或 provider
+selector；源码树完成转换后，只声明 `routing.mode`。
+
+canonical 转换清单：
 
 1. 把每个 Page entry 移到 URL 对应目录并命名为 `page.*`；
 2. 把 title、受支持 named meta、rendering 与插件持有的 Page setting 移到

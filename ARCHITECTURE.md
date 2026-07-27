@@ -14,11 +14,11 @@ tree. Optional adjacent `page.config.ts` modules are synchronously evaluated
 into core title/named metadata/rendering data and namespaced Page and Route
 extensions; Document extensions target a Page-owned Document only when one is
 materialized. Top-level `config.extensions` is resolved into namespaced
-Application extensions before plugin setup; explicit migration inputs may
-configure Route and Application-owned Document extensions. All four owners use
-one plugin extension registry, and runtime projection remains explicit. Server request
-routes come from `src/apis`, framework request middleware comes from
-`src/middleware.ts`, API route middleware comes from
+Application extensions before plugin setup; explicit route and document inputs
+may configure Route and Application-owned Document extensions. All four owners
+use one plugin extension registry, and runtime projection remains explicit.
+Server request routes come from `src/apis`, framework request middleware comes
+from `src/middleware.ts`, API route middleware comes from
 `src/apis/**/middleware.ts`, and reachable `"use server"` modules provide
 server functions. `@evjs/ev` exposes curated file-convention authoring subpaths
 and generated-only internal bridges, while `@evjs/client` and `@evjs/server`
@@ -36,13 +36,13 @@ Page anchors + page.config.ts + route directories + server conventions + ev.conf
   -> DeploymentMetadata / lightweight manifests / deployment adapters
 ```
 
-Explicit `application.routes` and Bigfish-style route config are SPA-only
-route-tree migration inputs into that graph; they are not additional
-application authoring models and cannot select MPA materialization. Smallfish
-and evjs 0.2 source trees are converted to
-`page.*` plus `page.config.ts` before Core 0.3 discovery. Providers not yet
-migrated must normalize into the same CoreGraph. Framework semantics are owned
-by `@evjs/ev` and `@evjs/shared/manifest`.
+Explicit `application.routes` and `component`/`routes` config are SPA-only
+route-tree inputs into that graph; they are not additional application
+authoring models and cannot select MPA materialization. Source trees whose
+published entries use `index.*` are converted to `page.*` plus
+`page.config.ts` before Core discovery. Every provider must normalize into the
+same CoreGraph. Framework semantics are owned by `@evjs/ev` and
+`@evjs/shared/manifest`.
 Bundlers own module graphs, chunks, assets, dev HMR, and stats. Runtime packages
 consume generated runtime contracts rather than `BuildOutput` or manifest
 artifacts.

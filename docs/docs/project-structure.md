@@ -88,11 +88,11 @@ export default defineConfig({
 });
 ```
 
-The SPA-only `application.routes` migration input is configuration rather than
-a file convention. Reachable `"use server";` modules and plugin-generated
-contributions are graph inputs rather than filesystem conventions. Those
-inputs remain available when convention discovery is disabled. Removed
-`app`, `pages`, and top-level `routes` declarations produce migration errors.
+SPA-only `application.routes` is configuration rather than a file convention.
+Reachable `"use server";` modules and plugin-generated contributions are graph
+inputs rather than filesystem conventions. Those inputs remain available when
+convention discovery is disabled. Removed `app`, `pages`, and top-level
+`routes` declarations produce configuration errors.
 
 When conventions are enabled, `server.routing: { dir }` may move the server
 file-route root away from `src/apis`; it customizes the root and does not
@@ -238,23 +238,23 @@ the semantic Route rather than silently treating it as Page data.
 
 All owner kinds use the same CoreGraph extension registry. One plugin may own
 the same namespace for more than one owner kind as long as it declares each
-owner. During Bigfish migration, strict static Route values may instead be
-authored on `application.routes[*].extensions`; after moving to the canonical
-Page tree, move each Page route value to `page.config.ts#route.extensions`.
-Runtime projection is always explicit.
+owner. Explicit SPA Route values may be authored on
+`application.routes[*].extensions`; after adopting the canonical Page tree,
+move each Page route value to `page.config.ts#route.extensions`. Runtime
+projection is always explicit.
 
 `page.config.ts#route.extensions` requires exactly one semantic Route targeting
-that Page. If an explicit migration tree reuses one Page from multiple Routes,
-configure each `application.routes[*].extensions` value separately until the
-routes have distinct canonical Page anchors. A componentless layout Route
-cannot borrow a descendant Page config, and a pathless directory without a
-Page or layout does not materialize a Route at all. Plugins may apply
-Route-extension defaults to such structural Routes. Otherwise retain the
-explicit `application.routes` migration input until the componentless Route
-data has another real owner; evjs diagnoses an orphan `page.config.ts` instead
-of inheriting it.
+that Page. If an explicit config-route tree reuses one Page from multiple
+Routes, configure each `application.routes[*].extensions` value separately
+until the routes have distinct canonical Page anchors. A componentless layout
+Route cannot borrow a descendant Page config, and a pathless directory without
+a Page or layout does not materialize a Route at all. Plugins may apply
+Route-extension defaults to such structural Routes. Otherwise retain explicit
+`application.routes` configuration until the componentless Route data has
+another real owner; evjs diagnoses an orphan `page.config.ts` instead of
+inheriting it.
 
-Application-owned Document values in an explicit migration profile use
+Application-owned Document values in an explicit SPA profile use
 `application.document.extensions` and `documentExtension()`. A canonical
 Page-owned Document uses `page.config.ts#document.extensions`; this is valid
 only when that Page materializes its own Document, such as MPA or an SPA SSG
@@ -376,25 +376,25 @@ Treat these as generated:
 
 Do not edit them or copy them into templates.
 
-## Migrating Existing Applications
+## Existing Source Adoption
 
-Core 0.3 does not select a Smallfish or evjs 0.2 runtime reader. Convert those
-source trees once before starting the application. Client Page discovery begins
+Core 0.3 has one canonical file-convention reader. Client Page discovery begins
 only after the application declares `routing.mode`; an unrelated `src/pages`
-directory alone does not publish routes.
+directory alone does not publish routes. Explicit SPA route configuration
+normalizes into the same CoreGraph without becoming another file convention.
 
-| Existing source | Migration action | Canonical destination |
+| Source shape | Adoption action | Canonical destination |
 | --- | --- | --- |
-| Bigfish SPA route config / `application.routes` | The explicit SPA tree accepts current Umi/Bigfish `routes` nesting (not the rejected `children` spelling), `component`, layout/wrapper/redirect structure, and a finite metadata set. `name`, `icon`, `title`, `hideInMenu`, `flatMenu`, `spmBPos`, `access`, `menuKey`, and static `menuAssetOptions` are retained under the registered `@evjs/bigfish-route` Route extension. `exact: true` is a terminal-match structural assertion and is not copied; `exact: false`, or `exact: true` with nested routes, is rejected. The input implies SPA, cannot be combined with `routing`, and cannot select MPA materialization. | Move each route component to its URL directory as `page.*`; move capabilities to core fields or plugin-owned `page.config.ts` extensions; after removing `application`, enable the canonical tree with only `routing.mode: "spa"` |
-| Smallfish direct-child Page directories | Before running Core 0.3, keep or reshape each URL directory and rename `<page>/index.*` to `page.*` | Keep `routing.mode: "mpa"`; map `config.json` title and supported named meta to core `title`/`meta`, and move remaining plugin-owned values to namespaced extensions |
-| evjs 0.2 recursive routes | Before running Core 0.3, move each published filename route into its URL directory as `page.*` | Keep dynamic/group directory segments, move Page settings to `page.config.ts`, and configure only `routing.mode` |
+| Explicit SPA `application.routes` | The tree accepts `routes` nesting (not `children`), `component`, layout/wrapper/redirect structure, and a finite metadata set. `name`, `icon`, `title`, `hideInMenu`, `flatMenu`, `spmBPos`, `access`, `menuKey`, and static `menuAssetOptions` are retained under a registered Route extension. `exact: true` is a terminal-match structural assertion and is not copied; `exact: false`, or `exact: true` with nested routes, is rejected. The input implies SPA, cannot be combined with `routing`, and cannot select MPA materialization. | Move each route component to its URL directory as `page.*`; move capabilities to core fields or plugin-owned `page.config.ts` extensions; after removing `application`, enable the canonical tree with only `routing.mode: "spa"` |
+| Direct-child Page directories | Keep or reshape each URL directory and rename `<page>/index.*` to `page.*` | Keep `routing.mode: "mpa"`; map `config.json` title and supported named meta to core `title`/`meta`, and move remaining plugin-owned values to namespaced extensions |
+| Recursive filename routes | Move each published filename route into its URL directory as `page.*` | Keep dynamic/group directory segments, move Page settings to `page.config.ts`, and configure only `routing.mode` |
 
-During Bigfish route-tree migration, an explicit `index.*` or `page.*`
-component owns its containing directory. A flat component with another
-basename remains module-scoped and cannot consume a colocated
-`page.config.ts`. Move a flat component into its dedicated Page directory
-before adding Page config; the explicit route may keep using `index.*`
-temporarily, but canonical discovery requires the final `page.*` rename.
+For explicit config-route input, an `index.*` or `page.*` component owns its
+containing directory. A flat component with another basename remains
+module-scoped and cannot consume a colocated `page.config.ts`. Move a flat
+component into its dedicated Page directory before adding Page config; the
+explicit route may continue to use `index.*`, but canonical discovery requires
+the final `page.*` rename.
 
 Provider names may appear in raw CoreGraph/debug artifacts as internal
 provenance. Normal inspect routing output hides them; applications do not

@@ -115,8 +115,8 @@ export const analyticsPlugin = definePlugin({
 ```
 
 Application extensions resolve before `setup()` and then project to the
-normalized Application. The same contract applies to SPA, MPA, and the
-Bigfish route-tree migration input.
+normalized Application. The same contract applies to SPA, MPA, and explicit
+SPA route configuration.
 
 Page-specific configuration remains adjacent to its canonical Page.
 
@@ -141,8 +141,8 @@ The same adjacent config can target the Page's unique semantic Route through
 `route.extensions`, or a Page-owned Document through `document.extensions`.
 The latter requires materialization such as canonical MPA or SPA SSG; a CSR
 SPA Page shares the Application Document. Explicit `application.routes`
-migration input configures each declared Route through its `extensions` field,
-while `application.document.extensions` configures its Application-owned
+configuration targets each declared Route through its `extensions` field,
+while `application.document.extensions` targets its Application-owned
 Document.
 
 ```ts
@@ -209,7 +209,7 @@ one config mechanism and one producer contract.
 
 Extensions resolve against the same normalized CoreGraph as every other
 framework capability. Canonical `page.tsx` anchors provide that graph in both
-modes; explicit route-tree migration inputs must normalize into it first. In
+modes; explicit config-route input normalizes into it as well. In
 `contributions()`, `ctx.framework.applications`, `.pages`, client `.routes`,
 and `.documents` expose their resolved, read-only `extensions` bags.
 

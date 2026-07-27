@@ -291,26 +291,22 @@ remove values that the next Page does not declare, so metadata cannot leak
 between Pages. A plugin that needs extension data at runtime must explicitly
 generate and attach the minimal projection.
 
-Do not keep literal `render`, `hydrate`, `prerender`, or `rsc` exports in a
-migrated Page component. Move those settings to `page.config.ts` before
-running Core 0.3. See [Build](./build) and the
-[Core 0.3 RFC](./core-0.3-rfc).
+Page components do not export literal `render`, `hydrate`, `prerender`, or
+`rsc` settings. Put them in `page.config.ts`. See [Build](./build) and
+[Architecture](./architecture).
 
-## Migrating Existing Routes
+## Explicit SPA Route Configuration
 
-Explicit SPA route-tree forms can normalize into the Core graph as migration
-inputs:
+`application.routes` can normalize an explicit SPA route tree into the same
+Core graph. It accepts nested `routes`, `component`, layouts, wrappers,
+redirects, and the documented finite access/menu metadata set. The historical
+`children` spelling is rejected. Each declared Route keeps its own semantic
+identity and may carry registered namespaced extensions.
 
-- Bigfish route configuration, including nested `routes`, `component`,
-  layouts, wrappers, redirects, and the finite access/menu metadata retained
-  in `@evjs/bigfish-route`; current Umi/Bigfish `children` declarations are
-  rejected;
-- earlier explicit `application.routes` declarations.
-
-They reject MPA materialization and are migration paths, not another routing
-architecture. Smallfish and evjs
-0.2 source trees are not runtime reader inputs: migrate each published entry
-to the directory for its URL, name it `page.*`, move Page-level configuration
-to `page.config.ts`, keep Page-private code beside it, and declare only
+This configuration is SPA-only and rejects MPA materialization. It is an
+alternate input into the normalized graph, not a second canonical file
+convention. To adopt the canonical tree, move each published entry to the
+directory for its URL, name it `page.*`, move Page-level configuration to
+`page.config.ts`, keep Page-private code beside it, and declare only
 `routing.mode`. An unrelated `src/pages` directory does not publish routes
 unless canonical routing is enabled.

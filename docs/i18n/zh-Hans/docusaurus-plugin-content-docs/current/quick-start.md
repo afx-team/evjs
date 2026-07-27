@@ -207,10 +207,10 @@ npm run build
 standalone/manual runtime composition 才直接使用 `@evjs/client` 和
 `@evjs/server`。
 
-## 迁移存量应用
+## 准备 canonical Page tree
 
-Core 0.3 不运行 Smallfish 或 evjs 0.2 route reader。启动应用前先一次性转换这些
-源码树。对每个已发布 Page：
+Core 只发现 canonical `page.*` 锚点，不运行额外的 route reader。对于其他 Page
+源码形式，逐个完成以下转换：
 
 1. 把 entry 移动或重命名到表示其 URL 的目录，并命名为 `page.*`。
 2. 把 Page title、支持的 named metadata、rendering 与插件持有的 setting 移到
@@ -219,10 +219,10 @@ Core 0.3 不运行 Smallfish 或 evjs 0.2 route reader。启动应用前先一�
 4. 只声明 `routing.mode: "spa"` 或 `"mpa"`。
 5. 运行 `ev inspect`，确认 Page/Route 结构。
 
-Bigfish route config 属于另一条仅支持 SPA 的过渡路径。显式
-`application.routes` 可以暂时保留，但不能与 `routing` 同时配置，也不会选择
-MPA。文件转换完成后，在同一次变更中用 `routing.mode: "spa"` 替换
-`application`，再运行 `ev inspect`。
+显式 `application.routes` 是仅支持 SPA 的 config-route 输入，不能与 `routing`
+同时配置，也不会选择 MPA。要改用 canonical tree，应把 route component 转换为
+对应 URL 目录下的 `page.*`，用 `routing.mode: "spa"` 替换 `application`，再运行
+`ev inspect`。
 
 无关的 `src/pages` 目录本身不会发布客户端路由。
 
