@@ -3,13 +3,11 @@
  *
  * Shared manifest schemas for the ev framework build system.
  *
- * Bundler adapters emit framework metadata under the configured output
- * directories. By default, the lightweight client deployment manifest is
- * written to `dist/client/manifest.json`, the lightweight server deployment
- * manifest to `dist/server/manifest.json`, and canonical deployment metadata
- * to `dist/build-output.json`. `output.client` and `output.server` can point
- * to alternate directories when an adapter or deployment target needs a
- * different artifact layout.
+ * Core builds serialize canonical deployment metadata to
+ * `dist/deployment-metadata.json`. Lightweight client/server projections are
+ * available to explicit deployment adapters through `createPublicManifest()`
+ * and `createServerManifest()`; Core does not emit split compatibility
+ * manifests by default.
  */
 
 import {
@@ -37,6 +35,7 @@ import {
   getUrlStringValidationError,
   type UrlStringValidationError,
 } from "../url-validation.js";
+import { assertPageMetadata, type PageMetadata } from "./page-metadata.js";
 
 /** JavaScript and CSS assets emitted for a manifest entry. */
 export interface AssetGroup {
@@ -46,43 +45,9 @@ export interface AssetGroup {
   css: string[];
 }
 
-// ── Draft next-generation framework contracts ───────────────────────────
-
-/** Framework semantic graph before bundling. */
-export interface AppGraph {
-  version: 1;
-  rootDir: string;
-  apps: Record<string, AppNode>;
-  pages: Record<string, PageNode>;
-  routes: RouteNode[];
-  serverFunctions: ServerFunctionNode[];
-  serverRoutes: ServerRouteNode[];
-  clientReferences?: ClientReferenceNode[];
-  serverReferences?: ServerReferenceNode[];
-}
-
-export interface AppNode {
-  id: string;
-  entry: string;
-  html: string;
-  mount?: string;
-}
-
-export interface PageNode {
-  id: string;
-  path?: string;
-  routeId?: string;
-  entry?: string;
-  component?: string;
-  app?: string;
-  html: string;
-  render: RenderMode;
-  componentModel?: ComponentModel;
-  hydrate?: HydrationMode;
-  mount?: string;
-  prerender?: PrerenderConfig;
-  ppr?: PprConfig;
-}
+export type PageScope =
+  | { kind: "module"; file: string }
+  | { kind: "directory"; root: string };
 
 export interface PprConfig {
   delivery?: PprDeliveryMode;
@@ -100,20 +65,14 @@ export type PprCachePolicy = "no-store" | { revalidate: number };
 
 export type PprDeliveryMode = "merge" | "stream";
 
-export interface RouteNode {
-  id: string;
-  path: string;
-  parentId?: string;
-  kind?: PageRouteKind;
-  pageId?: string;
-  appId?: string;
-  module?: string;
-  errorModule?: string;
-  notFoundModule?: string;
-  render?: RenderMode;
-  hydrate?: HydrationMode;
-  runtime?: ServerRuntime;
-}
+export type AppRouteTarget =
+  | { kind: "page"; pageId: string }
+  | { kind: "group" }
+  | { kind: "redirect"; to: AppRouteLocation };
+
+export type AppRouteLocation =
+  | { kind: "path"; path: string }
+  | { kind: "url"; href: string };
 
 export interface ServerFunctionNode {
   id: string;
@@ -149,13 +108,13 @@ export type PrerenderConfig =
       delivery?: PprDeliveryMode;
       revalidate?: number | false;
     };
-export type HydrationMode = "none" | "load" | "visible" | "idle";
+export type HydrationMode = "none" | "load";
 export type BuildEnvironment = "client" | "server";
 export type ServerRuntime = "node" | "edge";
 export type PublicPathOutput = string;
 
 /**
- * Internal build-unit arrangement derived from ResolvedConfig + AppGraph.
+ * Internal build-unit arrangement derived from ResolvedConfig + CoreGraph.
  *
  * BuildPlan is not user config, not a second graph, and not a runtime
  * manifest. It lists concrete entries and HTML documents for bundler adapters
@@ -176,6 +135,23 @@ export interface BuildPlan {
   html: HtmlPlan[];
   server: ServerBuildPlan;
   runtime: RuntimePlan;
+  dev: DevBuildPlan;
+  rsc?: RscBuildPlan;
+}
+
+export interface DevBuildPlan {
+  clientRoutes: DevClientRoutePlan[];
+  serverRoutePaths: string[];
+  hasPpr: boolean;
+}
+
+export interface DevClientRoutePlan {
+  path: string;
+  target: { kind: "app"; appId: string } | { kind: "page"; pageId: string };
+}
+
+export interface RscBuildPlan {
+  clientReferenceModules: string[];
 }
 
 export interface ResolvePlan {
@@ -218,12 +194,15 @@ export interface BuildEntryOwner {
 
 export type BuildEntryMetadata =
   | ReactComponentPageEntryMetadata
+  | ReactServerPageEntryMetadata
   | PagesAppEntryMetadata
   | ServerAppEntryMetadata;
 
 export interface ReactComponentPageEntryMetadata {
   type: "react-component-page";
   component: string;
+  /** Outer-to-inner Page composition for an independent MPA Page. */
+  layers?: ReactPageLayer[];
   mount: string;
   hydrate: HydrationMode;
   render: RenderMode;
@@ -233,11 +212,40 @@ export interface ReactComponentPageEntryMetadata {
   };
 }
 
+export interface ReactServerPageEntryMetadata {
+  type: "react-server-page";
+  component: string;
+  /** Outer-to-inner route composition shared with the client Page tree. */
+  layers?: ReactPageLayer[];
+}
+
+export interface ReactPageLayer {
+  kind: "layout" | "wrapper";
+  module: string;
+}
+
 export interface PagesAppEntryMetadata {
   type: "pages-app";
-  routes: PageRouteNode[];
+  routes: PagesAppRouteNode[];
   mount: string;
   rootModule?: string;
+}
+
+/** Route input consumed only by the generated framework SPA bootstrap. */
+export interface PagesAppRouteNode {
+  id: string;
+  path: string;
+  parentId?: string;
+  kind?: PageRouteKind;
+  module?: string;
+  target?: AppRouteTarget;
+  wrappers?: string[];
+  /** Bypass the Application/root layout while this route branch matches. */
+  layout?: false;
+  errorModule?: string;
+  notFoundModule?: string;
+  /** Page-owned metadata projected into the generated SPA route runtime. */
+  metadata?: PageMetadata;
 }
 
 export interface ServerMiddlewareNode {
@@ -262,6 +270,8 @@ export interface PageRouteNode {
   id: string;
   path: string;
   module: string;
+  /** Page source boundary; Bigfish SPA migration may retain module scope. */
+  scope?: PageScope;
   html?: string;
   parentId?: string;
   kind?: PageRouteKind;
@@ -275,15 +285,58 @@ export interface HtmlPlan {
   id: string;
   template: string;
   fileName: string;
+  /** Additional static paths containing the same transformed HTML Document. */
+  aliases?: string[];
   owner: {
     appId?: string;
     pageId?: string;
   };
+  /** Page-owned metadata projected onto this concrete HTML document. */
+  metadata?: PageMetadata;
 }
 
 export interface ServerBuildPlan {
   entry?: string;
   renderers?: ServerRenderPlan[];
+  /**
+   * HTML templates compiled into request-time document shells for Pages that
+   * are rendered by the deployment server.
+   *
+   * These are build inputs, not emitted static documents. Keeping them on the
+   * server plan makes template ownership explicit and avoids reconstructing
+   * document semantics from the CoreGraph in the runtime emission phase.
+   */
+  documents?: ServerDocumentPlan[];
+}
+
+export interface ServerDocumentPlan {
+  /** Page whose request-time HTML is inserted into this document. */
+  pageId: string;
+  /** Core Document identity exposed to HTML plugin hooks. */
+  documentId: string;
+  /** Application identity exposed to application-scoped HTML contributions. */
+  applicationId: string;
+  /** Source HTML template path. */
+  template: string;
+  /** Logical document filename exposed to HTML plugin hooks; not emitted. */
+  fileName: string;
+  /** Mount selector whose contents are replaced by the server-rendered Page. */
+  mount: string;
+  /** Page-owned metadata applied before HTML plugin hooks run. */
+  metadata?: PageMetadata;
+}
+
+/**
+ * Serialized request-time document template split around values produced while
+ * rendering a Page request.
+ */
+export interface ServerDocumentShell {
+  /** Document bytes before the server-rendered Page HTML. */
+  beforeContent: string;
+  /** Document bytes between Page HTML and request-specific bootstrap data. */
+  betweenContentAndData: string;
+  /** Document bytes after request-specific bootstrap data. */
+  afterData: string;
 }
 
 export interface ServerRenderPlan {
@@ -292,6 +345,7 @@ export interface ServerRenderPlan {
   phase?: BuildEntryPhase;
   kind: "page-server" | "rsc-page" | "ppr-shell" | "ppr-region";
   owner?: BuildEntryOwner;
+  metadata?: ReactServerPageEntryMetadata;
 }
 
 export interface RuntimePlan {
@@ -314,6 +368,14 @@ export interface BuildPlanUpdate {
     removed: HtmlPlan[];
     changed: HtmlPlan[];
   };
+  /** Generated IR or CoreGraph semantics changed without changing entry identity. */
+  generatedChanged: boolean;
+  /** Bundler resolution inputs changed and require adapter reconfiguration. */
+  resolveChanged: boolean;
+  /** Runtime endpoints, public paths, or transport settings changed. */
+  runtimeChanged: boolean;
+  /** Config or hooks changed and framework-owned artifacts must be re-emitted. */
+  deliveryChanged: boolean;
   serverChanged: boolean;
 }
 
@@ -384,8 +446,10 @@ export interface PublicDocumentOutput {
   id: string;
   path: string;
   fileName: string;
+  aliases?: string[];
   render: Extract<RenderMode, "csr" | "ssg">;
   assets?: AssetGroup;
+  metadata?: PageMetadata;
 }
 
 export interface BuildOutputPaths {
@@ -430,6 +494,7 @@ export interface PageOutput {
   prerender?: PrerenderConfig;
   module?: RuntimeModuleOutput;
   ppr?: PprPageOutput;
+  metadata?: PageMetadata;
 }
 
 export interface PublicPageOutput {
@@ -438,10 +503,12 @@ export interface PublicPageOutput {
   path?: string;
   routeId?: string;
   render?: RenderMode;
+  metadata?: PageMetadata;
 }
 
 export interface HtmlDocumentOutput {
   fileName: string;
+  aliases?: string[];
 }
 
 export interface PageRenderingOutput {
@@ -488,6 +555,7 @@ export interface PublicRouteOutput {
   path: string;
   pageId?: string;
   render?: RenderMode;
+  metadata?: PageMetadata;
 }
 
 export interface DeploymentMetadata {
@@ -507,6 +575,7 @@ export type DeploymentDocumentOutput =
       kind: "app";
       id: string;
       fileName: string;
+      aliases?: string[];
       fallback?: string;
       assets?: AssetGroup;
     }
@@ -514,8 +583,7 @@ export type DeploymentDocumentOutput =
       kind: "page";
       id: string;
       fileName: string;
-      path?: string;
-      render?: Extract<DeploymentPageRenderOutput, "csr" | "ssg">;
+      aliases?: string[];
       assets?: AssetGroup;
     };
 
@@ -526,6 +594,14 @@ export type DeploymentServerPageRenderOutput = Extract<
 >;
 
 export type DeploymentRouteOutput =
+  | {
+      kind: "static-page";
+      path: string;
+      pageId: string;
+      documentId: string;
+      render: Extract<DeploymentPageRenderOutput, "csr" | "ssg">;
+      methods: ["GET", "HEAD"];
+    }
   | {
       kind: "server-page";
       path: string;
@@ -596,191 +672,6 @@ export interface RscPageOutput {
   routeId?: string;
 }
 
-// ── Route resolution ────────────────────────────────────────────────────
-
-/** Route metadata discovered from page files or configured pages. */
-export interface ExtractedRoute {
-  /** Route path (e.g. "/", "/posts/$postId"). */
-  path: string;
-  /** Stable route id derived from the file path or page id. */
-  id?: string;
-  /** Parent route id for framework-managed file route trees. */
-  parentId?: string;
-  /** Framework-managed file route node kind. */
-  kind?: PageRouteKind;
-  /** Static page/component module declared for this route. */
-  module?: string;
-  /** Scoped route error component module discovered from file conventions. */
-  errorModule?: string;
-  /** Scoped not-found component module discovered from file conventions. */
-  notFoundModule?: string;
-  /** Render mode declared by the route target module. */
-  render?: RenderMode;
-  /** Hydration mode declared by the route target module. */
-  hydrate?: HydrationMode;
-  /** Component execution model declared by the route target module. */
-  componentModel?: ComponentModel;
-  /** Prerender behavior declared by the route target module. */
-  prerender?: PrerenderConfig;
-  /** PPR config derived from the route target module. */
-  ppr?: PprConfig;
-  /** Server runtime declared in route metadata. */
-  runtime?: ServerRuntime;
-  /** Owning app id for framework-managed SPA routes. */
-  appId?: string;
-  /** Variable name of the parent route (e.g. "rootRoute", "postsRoute"). */
-  parentName?: string;
-  /** Variable name this route is assigned to (e.g. "homeRoute"). */
-  varName?: string;
-}
-
-/** Server route metadata extracted from an @evjs/server createRoute() export. */
-export interface ExtractedServerRoute {
-  /** Route path pattern passed to createRoute(). */
-  path: string;
-  /** HTTP methods declared on the route definition object. */
-  methods: string[];
-}
-
-/**
- * Resolve a flat list of extracted routes into de-duplicated full paths.
- *
- * Builds the parent-child hierarchy using `varName` / `parentName` and
- * walks the tree to construct full URL paths.
- *
- * Index routes (child `path: "/"` under a non-root parent) are excluded
- * since they resolve to the same URL as their parent route.
- *
- * @example
- * ```ts
- * resolveRoutes([
- *   { path: "/posts", varName: "postsRoute", parentName: "rootRoute" },
- *   { path: "/", varName: "postsIndexRoute", parentName: "postsRoute" },
- *   { path: "$postId", varName: "postDetailRoute", parentName: "postsRoute" },
- * ])
- * // => [{ path: "/posts" }, { path: "/posts/$postId" }]
- * ```
- */
-export function resolveRoutes(routes: ExtractedRoute[]): Array<{
-  path: string;
-  id?: string;
-  parentId?: string;
-  kind?: PageRouteKind;
-  module?: string;
-  errorModule?: string;
-  notFoundModule?: string;
-  render?: RenderMode;
-  hydrate?: HydrationMode;
-  componentModel?: ComponentModel;
-  prerender?: PrerenderConfig;
-  ppr?: PprConfig;
-  runtime?: ServerRuntime;
-  appId?: string;
-}> {
-  // Build a lookup: varName → ExtractedRoute
-  const byName = new Map<string, ExtractedRoute>();
-  for (const r of routes) {
-    if (r.varName) {
-      byName.set(r.varName, r);
-    }
-  }
-
-  /**
-   * Walk up the parent chain to build the full path prefix for a route.
-   * Returns the full resolved path of the given route variable.
-   */
-  function resolveParentPath(
-    route: ExtractedRoute,
-    visited = new Set<string>(),
-  ): string {
-    if (!route.parentName) return route.path;
-
-    // Guard against circular parent references
-    if (route.varName) {
-      if (visited.has(route.varName)) return route.path;
-      visited.add(route.varName);
-    }
-
-    const parent = byName.get(route.parentName);
-    if (!parent) {
-      // Parent not in the extracted set (e.g. rootRoute from createRootRoute)
-      // — treat as top-level, no prefix.
-      return route.path;
-    }
-
-    const parentPath = resolveParentPath(parent, visited);
-    return joinPaths(parentPath, route.path);
-  }
-
-  const seen = new Set<string>();
-  const result: Array<{
-    path: string;
-    id?: string;
-    parentId?: string;
-    kind?: PageRouteKind;
-    module?: string;
-    errorModule?: string;
-    notFoundModule?: string;
-    render?: RenderMode;
-    hydrate?: HydrationMode;
-    componentModel?: ComponentModel;
-    prerender?: PrerenderConfig;
-    ppr?: PprConfig;
-    runtime?: ServerRuntime;
-    appId?: string;
-  }> = [];
-
-  for (const r of routes) {
-    const fullPath = resolveParentPath(r);
-
-    // Skip index routes that resolve to the same path as their parent.
-    // An index route has path "/" and a parent that is not the root.
-    if (r.path === "/" && r.parentName) {
-      const parent = byName.get(r.parentName);
-      if (parent) {
-        // This is a non-root index route — it duplicates the parent path.
-        continue;
-      }
-    }
-
-    const routeKind = r.kind ?? "page";
-    const seenKey =
-      routeKind === "layout"
-        ? `${r.appId ?? ""}:layout:${r.id ?? fullPath}`
-        : `${r.appId ?? ""}:page:${fullPath}`;
-    if (!seen.has(seenKey)) {
-      seen.add(seenKey);
-      result.push({
-        path: fullPath,
-        id: r.id,
-        parentId: r.parentId,
-        kind: r.kind,
-        module: r.module,
-        errorModule: r.errorModule,
-        notFoundModule: r.notFoundModule,
-        render: r.render,
-        hydrate: r.hydrate,
-        componentModel: r.componentModel,
-        prerender: r.prerender,
-        ppr: r.ppr,
-        runtime: r.runtime,
-        appId: r.appId,
-      });
-    }
-  }
-
-  return result;
-}
-
-/** Join two path segments, normalizing double slashes. */
-function joinPaths(parent: string, child: string): string {
-  if (child === "/") return parent;
-  if (child.startsWith("/")) return child;
-
-  const base = parent.endsWith("/") ? parent : `${parent}/`;
-  return base + child;
-}
-
 export function assertFrameworkManifestShape(
   value: unknown,
   source: string,
@@ -809,6 +700,9 @@ export function assertFrameworkManifestShape(
   const requireRscRendererReferences =
     options.rscRendererReferences !== "optional";
   assertObject(value, source);
+  if (!requireServer) {
+    assertPublicManifestFields(value, source);
+  }
   if (value.version !== 1) {
     throw new Error(`[evjs] ${source}.version must be 1.`);
   }
@@ -857,6 +751,7 @@ export function assertFrameworkManifestShape(
     requireServer,
     apps,
   );
+  assertUniqueManifestDocumentOutputs(apps, pages, source);
   if (
     !requireServer &&
     value.assets !== undefined &&
@@ -952,13 +847,13 @@ export function assertFrameworkManifestShape(
 }
 
 export type GeneratedScope =
-  | { kind: "app" }
+  | { kind: "application" }
   | { kind: "page"; pageId: string }
   | { kind: "server" };
 
 export type FrameworkSlotName =
   | "client.entry"
-  | "client.runtime.plugin"
+  | "page.wrapper"
   | "server.request.middleware"
   | "html.tag"
   | "resolve.alias"
@@ -972,9 +867,10 @@ export type EntryContributionPosition =
   | "after-main";
 
 export type ContributionRuntime = "client" | "server" | "all";
+export type ClientContributionRuntime = "client";
 
 export type ContributionTarget =
-  | { kind: "app"; appId?: string }
+  | { kind: "application"; applicationId?: string }
   | { kind: "page"; pageId: string };
 
 export interface GeneratedFrameworkPlan {
@@ -988,10 +884,12 @@ export interface GeneratedFrameworkPlan {
   slots: FrameworkSlotPlanItem[];
   importEdges: GeneratedImportEdgePlan[];
   entries: GeneratedEntryPlan[];
+  /** Stable digest of the CoreGraph snapshot exposed to contribution hooks. */
+  coreGraphHash?: string;
 }
 
 export interface GeneratedFrameworkFilePlan {
-  id: "app-graph" | "build-plan";
+  id: "core-graph" | "build-plan";
   file: string;
 }
 
@@ -1003,6 +901,8 @@ export interface GeneratedModulePlan {
   file: string;
   specifier: string;
   extension: string;
+  /** Stable digest of the fully resolved generated module source. */
+  sourceHash: string;
 }
 
 export interface GeneratedEntryPlan {
@@ -1026,7 +926,7 @@ export interface GeneratedImportEdgePlan {
 
 export type FrameworkSlotPlanItem =
   | ClientEntrySlotPlanItem
-  | ClientRuntimePluginSlotPlanItem
+  | PageWrapperSlotPlanItem
   | ServerRequestMiddlewareSlotPlanItem
   | HtmlTagSlotPlanItem
   | ResolveAliasSlotPlanItem
@@ -1042,16 +942,15 @@ export interface ClientEntrySlotPlanItem extends FrameworkSlotPlanItemBase {
   slot: "client.entry";
   module: string;
   position: EntryContributionPosition;
-  runtime: ContributionRuntime;
+  runtime: ClientContributionRuntime;
   mode: "import" | "replace";
   target?: ContributionTarget;
 }
 
-export interface ClientRuntimePluginSlotPlanItem
-  extends FrameworkSlotPlanItemBase {
-  slot: "client.runtime.plugin";
+export interface PageWrapperSlotPlanItem extends FrameworkSlotPlanItemBase {
+  slot: "page.wrapper";
   module: string;
-  exportKeys?: string[];
+  runtime: ContributionRuntime;
   target?: ContributionTarget;
 }
 
@@ -1096,6 +995,7 @@ function assertPublicDocumentOutputs(value: unknown, source: string): void {
     throw new Error(`[evjs] ${source} must be an array.`);
   }
   const pathOwners = new Map<string, { path: string; source: string }>();
+  const outputOwners = new Map<string, string>();
   for (const [index, document] of value.entries()) {
     const documentSource = `${source}[${index}]`;
     assertObject(document, documentSource);
@@ -1106,13 +1006,26 @@ function assertPublicDocumentOutputs(value: unknown, source: string): void {
       `${documentSource}.path`,
       pathOwners,
     );
-    assertHtmlDocumentOutput(
-      { fileName: document.fileName },
-      `${documentSource}`,
-    );
+    assertHtmlDocumentOutput(document, documentSource);
+    for (const output of [
+      document.fileName,
+      ...(Array.isArray(document.aliases) ? document.aliases : []),
+    ]) {
+      if (typeof output !== "string") continue;
+      const previous = outputOwners.get(output);
+      if (previous) {
+        throw new Error(
+          `[evjs] ${documentSource} static output "${output}" conflicts with ${previous}. Document filenames and aliases must be globally unique.`,
+        );
+      }
+      outputOwners.set(output, documentSource);
+    }
     assertStaticDocumentRenderMode(document.render, `${documentSource}.render`);
     if (document.assets !== undefined) {
       assertAssetGroup(document.assets, `${documentSource}.assets`);
+    }
+    if (document.metadata !== undefined) {
+      assertPageMetadata(document.metadata, `${documentSource}.metadata`);
     }
   }
 }
@@ -1125,7 +1038,7 @@ function assertStaticDocumentRenderMode(value: unknown, source: string): void {
 function assertManifestRoutingProjection(
   value: Record<string, unknown>,
   source: string,
-  requireLegacyRouting: boolean,
+  requireBuildOutputRouting: boolean,
   apps: Record<string, unknown>,
 ): {
   pages: Record<string, unknown>;
@@ -1170,8 +1083,13 @@ function assertManifestRoutingProjection(
   }
 
   if (value.pages === undefined && value.routes === undefined) {
-    if (requireLegacyRouting) {
+    if (requireBuildOutputRouting) {
       throw new Error(`[evjs] ${source}.pages must be an object.`);
+    }
+    if (value.documents === undefined) {
+      throw new Error(
+        `[evjs] ${source} must define either routing or documents.`,
+      );
     }
     return { pages: {}, routes: [] };
   }
@@ -1183,6 +1101,30 @@ function assertManifestRoutingProjection(
   }
   assertRouteOutputs(value.routes, `${source}.routes`, value.pages, apps);
   return { pages: value.pages, routes: value.routes };
+}
+
+function assertPublicManifestFields(
+  value: Record<string, unknown>,
+  source: string,
+): void {
+  const supported = new Set([
+    "version",
+    "buildId",
+    "publicPath",
+    "assets",
+    "routing",
+    "documents",
+  ]);
+  for (const field of Reflect.ownKeys(value)) {
+    if (typeof field !== "string") {
+      throw new Error(`[evjs] ${source} contains an unsupported symbol field.`);
+    }
+    if (!supported.has(field)) {
+      throw new Error(
+        `[evjs] ${source}.${field} is not supported in public manifests.`,
+      );
+    }
+  }
 }
 
 function createRoutesFromManifestPages(
@@ -1199,6 +1141,7 @@ function createRoutesFromManifestPages(
         path: page.path,
         pageId,
         render: page.render,
+        metadata: page.metadata,
       },
     ];
   });
@@ -1213,7 +1156,12 @@ function createPagesFromPublicManifestRoutes(
       return [
         [
           route.pageId,
-          route.render === undefined ? {} : { render: route.render },
+          {
+            ...(route.render === undefined ? {} : { render: route.render }),
+            ...(route.metadata === undefined
+              ? {}
+              : { metadata: route.metadata }),
+          },
         ],
       ];
     }),
@@ -1513,6 +1461,9 @@ function assertPageOutputs(
     if (output.hydrate !== undefined) {
       assertHydrationMode(output.hydrate, `${source}.${name}.hydrate`);
     }
+    if (output.metadata !== undefined) {
+      assertPageMetadata(output.metadata, `${source}.${name}.metadata`);
+    }
     assertPageRenderingOutput(output.rendering, `${source}.${name}.rendering`);
     assertPprPageOutputContract(output, `${source}.${name}`);
     assertRscPageOutputContract(output, `${source}.${name}`);
@@ -1535,22 +1486,93 @@ function assertPublicPageOutputs(
     if (output.render !== undefined) {
       assertRenderMode(output.render, `${source}.${name}.render`);
     }
+    if (output.metadata !== undefined) {
+      assertPageMetadata(output.metadata, `${source}.${name}.metadata`);
+    }
   }
 }
 
 function assertHtmlDocumentOutput(value: unknown, source: string): void {
   if (value === undefined) return;
   assertObject(value, source);
-  assertManifestString(value.fileName, `${source}.fileName`);
+  assertHtmlOutputPath(value.fileName, `${source}.fileName`);
   const fileName = value.fileName as string;
+  if (value.aliases === undefined) return;
+  if (!Array.isArray(value.aliases)) {
+    throw new Error(`[evjs] ${source}.aliases must be an array.`);
+  }
+  const seen = new Set<string>();
+  for (const [index, alias] of value.aliases.entries()) {
+    assertHtmlOutputPath(alias, `${source}.aliases[${index}]`);
+    if (alias === fileName) {
+      throw new Error(
+        `[evjs] ${source}.aliases[${index}] must differ from fileName "${fileName}".`,
+      );
+    }
+    if (seen.has(alias as string)) {
+      throw new Error(
+        `[evjs] ${source}.aliases[${index}] duplicates alias "${alias}".`,
+      );
+    }
+    seen.add(alias as string);
+  }
+}
+
+function assertHtmlOutputPath(value: unknown, source: string): void {
+  assertManifestString(value, source);
+  const fileName = value as string;
   if (
+    fileName.trim() !== fileName ||
     fileName.startsWith("/") ||
+    /^[A-Za-z]:\//.test(fileName) ||
     fileName.includes("\\") ||
-    fileName.split("/").includes("..")
+    fileName.includes("?") ||
+    fileName.includes("#") ||
+    fileName.endsWith("/") ||
+    fileName
+      .split("/")
+      .some((segment) => segment === "" || segment === "." || segment === "..")
   ) {
     throw new Error(
-      `[evjs] ${source}.fileName must be a relative output file path.`,
+      `[evjs] ${source} must be a normalized relative output file path.`,
     );
+  }
+  if (!/\.html?$/i.test(fileName)) {
+    throw new Error(
+      `[evjs] ${source} must end with ".html" or ".htm" because a Document output contains HTML.`,
+    );
+  }
+}
+
+function assertUniqueManifestDocumentOutputs(
+  apps: Record<string, unknown>,
+  pages: Record<string, unknown>,
+  source: string,
+): void {
+  const outputs = new Map<string, string>();
+  const visit = (owner: string, value: unknown): void => {
+    if (!isRecord(value) || !isRecord(value.document)) return;
+    const document = value.document;
+    const candidates = [
+      document.fileName,
+      ...(Array.isArray(document.aliases) ? document.aliases : []),
+    ];
+    for (const candidate of candidates) {
+      if (typeof candidate !== "string") continue;
+      const previous = outputs.get(candidate);
+      if (previous) {
+        throw new Error(
+          `[evjs] ${source} static Document output "${candidate}" is owned by both ${previous} and ${owner}. Document filenames and aliases must be globally unique.`,
+        );
+      }
+      outputs.set(candidate, owner);
+    }
+  };
+  for (const [id, app] of Object.entries(apps)) {
+    visit(`Application "${id}"`, app);
+  }
+  for (const [id, page] of Object.entries(pages)) {
+    visit(`Page "${id}"`, page);
   }
 }
 
@@ -1622,17 +1644,8 @@ function assertPageRenderingPrerender(value: unknown, source: string): void {
 }
 
 function assertHydrationMode(value: unknown, source: string): void {
-  if (
-    value === "none" ||
-    value === "load" ||
-    value === "visible" ||
-    value === "idle"
-  ) {
-    return;
-  }
-  throw new Error(
-    `[evjs] ${source} must be "none", "load", "visible", or "idle".`,
-  );
+  if (value === "none" || value === "load") return;
+  throw new Error(`[evjs] ${source} must be "none" or "load".`);
 }
 
 function assertRscPageOutputContract(
@@ -1742,6 +1755,9 @@ function assertRouteOutputs(
     );
     if (route.render !== undefined) {
       assertRenderMode(route.render, `${routeSource}.render`);
+    }
+    if (route.metadata !== undefined) {
+      assertPageMetadata(route.metadata, `${routeSource}.metadata`);
     }
     assertOptionalRecordReference(
       route.appId,
@@ -2372,6 +2388,45 @@ function formatManifestPathnameError(
 }
 
 export {
+  assertBigfishRouteExtension,
+  BIGFISH_ROUTE_EXTENSION_ID,
+  type BigfishRouteExtension,
+  type BigfishRouteMappedString,
+  type BigfishRouteMenuKey,
+  type BigfishRouteStaticValue,
+} from "./bigfish-route-extension.js";
+export {
+  type ApplicationId,
+  assertCoreGraph,
+  CONFIG_ROUTE_PROVIDER_ID,
+  type CoreApplicationNode,
+  type CoreClientRouteNode,
+  type CoreClientRouteTarget,
+  type CoreDocumentBootstrap,
+  type CoreDocumentNode,
+  type CoreDocumentOwner,
+  type CoreExtensionBag,
+  type CoreExtensionNamespaceSnapshot,
+  type CoreExtensionOwnerKind,
+  type CoreExtensionRegistrySnapshot,
+  type CoreGraph,
+  type CoreNodeProvenance,
+  type CorePageNode,
+  type CorePageScope,
+  type CorePageSource,
+  type CoreProvenanceProducer,
+  type CoreRouteFacets,
+  type CoreRouteLocation,
+  type CoreRouteNode,
+  type CoreRoutePattern,
+  type CoreRouteSegment,
+  type DocumentId,
+  PAGE_ANCHOR_PROVIDER_ID,
+  type PageId,
+  type RouteId,
+  resolveCorePageOwner,
+} from "./core-graph.js";
+export {
   type BuildOutputLinkInput,
   type BuildOutputServerModule,
   createDeploymentMetadata,
@@ -2383,17 +2438,7 @@ export {
   type ServerManifestRouteOutput,
 } from "./linker.js";
 export {
-  type ClientRouteMatch,
-  type ClientRouteTarget,
-  getClientRouteMatches,
-  getClientRouteTarget,
-  getServerRenderedPagePaths,
-  getServerRenderedPaths,
-  getServerRenderedRoutePaths,
-  isRouteDerivedPage,
-  isServerRenderedPage,
-  type RouteDerivedPage,
-  type RouteRenderingPage,
-  type RouteRenderingRoute,
-  type RouteRenderingSource,
-} from "./routes.js";
+  assertPageMetadata,
+  clonePageMetadata,
+  type PageMetadata,
+} from "./page-metadata.js";

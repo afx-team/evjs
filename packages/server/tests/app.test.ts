@@ -2,8 +2,6 @@ import { ServerError } from "@evjs/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app/app.js";
 import type {
-  FrameworkPageRuntime,
-  FrameworkRouteRuntime,
   FrameworkRuntime,
   PprRegionCacheEntry,
   ServerRenderContext,
@@ -19,9 +17,8 @@ import {
   registry,
 } from "../src/server-functions/register.js";
 
-type LegacyFrameworkRuntime = FrameworkRuntime & {
-  pages: Record<string, FrameworkPageRuntime>;
-  routes: FrameworkRouteRuntime[];
+type SpaFrameworkRuntime = FrameworkRuntime & {
+  routing: Extract<FrameworkRuntime["routing"], { kind: "spa" }>;
 };
 
 describe("createApp", () => {
@@ -320,7 +317,7 @@ describe("createApp", () => {
       basePath: "/api",
       fn: "api/rpc",
     };
-    manifest.routes.push({
+    manifest.routing.routes.push({
       id: "rpc-page",
       path: "/api/rpc",
       pageId: "dashboard",
@@ -392,12 +389,32 @@ describe("createApp", () => {
     );
     expect(() =>
       createApp({
-        framework: { runtime: { ...manifest, pages: null } } as never,
+        framework: {
+          runtime: {
+            ...manifest,
+            routing: { ...manifest.routing, pages: null },
+          },
+        } as never,
       }),
-    ).toThrow("[evjs] createApp() framework.runtime.pages must be an object.");
+    ).toThrow(
+      "[evjs] createApp() framework.runtime.routing.pages must be an object.",
+    );
+    expect(() =>
+      createApp({
+        framework: {
+          runtime: {
+            ...manifest,
+            pages: manifest.routing.pages,
+            routes: manifest.routing.routes,
+          },
+        } as never,
+      }),
+    ).toThrow(
+      "[evjs] createApp() framework.runtime.pages and createApp() framework.runtime.routes are not supported. Use createApp() framework.runtime.routing.",
+    );
 
     const renderingManifest = createManifest();
-    renderingManifest.pages.dashboard.rendering = {
+    renderingManifest.routing.pages.dashboard.rendering = {
       component: "server",
       html: "server",
       streaming: "yes",
@@ -406,47 +423,90 @@ describe("createApp", () => {
     expect(() =>
       createApp({ framework: { runtime: renderingManifest } }),
     ).toThrow(
-      "[evjs] createApp() framework.runtime.pages.dashboard.rendering.streaming must be a boolean.",
+      "[evjs] createApp() framework.runtime.routing.pages.dashboard.rendering.streaming must be a boolean.",
+    );
+
+    const metadataManifest = createManifest();
+    metadataManifest.routing.pages.dashboard.metadata = {
+      title: 42,
+    } as never;
+    expect(() =>
+      createApp({ framework: { runtime: metadataManifest } }),
+    ).toThrow(
+      "[evjs] createApp() framework.runtime.routing.pages.dashboard.metadata.title must be a string.",
+    );
+
+    const metaManifest = createManifest();
+    metaManifest.routing.pages.dashboard.metadata = {
+      meta: { Description: "first", description: "second" },
+    };
+    expect(() => createApp({ framework: { runtime: metaManifest } })).toThrow(
+      '[evjs] createApp() framework.runtime.routing.pages.dashboard.metadata.meta keys "Description" and "description" conflict because HTML meta names are ASCII case-insensitive.',
+    );
+
+    const documentManifest = createManifest();
+    documentManifest.routing.pages.dashboard.document = {
+      beforeContent: 42,
+      betweenContentAndData: "",
+      afterData: "",
+    } as never;
+    expect(() =>
+      createApp({ framework: { runtime: documentManifest } }),
+    ).toThrow(
+      "[evjs] createApp() framework.runtime.routing.pages.dashboard.document.beforeContent must be a string.",
     );
 
     const pprManifest = createManifest();
-    pprManifest.pages.dashboard.ppr = {
+    pprManifest.routing.pages.dashboard.ppr = {
       delivery: "stream",
       shell: { js: "dashboard-ppr-shell.js", css: [] } as never,
       regions: {},
     };
     expect(() => createApp({ framework: { runtime: pprManifest } })).toThrow(
-      "[evjs] createApp() framework.runtime.pages.dashboard.ppr.shell.js must be an array.",
+      "[evjs] createApp() framework.runtime.routing.pages.dashboard.ppr.shell.js must be an array.",
     );
 
     expect(() =>
       createApp({
-        framework: { runtime: { ...manifest, routes: {} } } as never,
-      }),
-    ).toThrow("[evjs] createApp() framework.runtime.routes must be an array.");
-    expect(() =>
-      createApp({
         framework: {
           runtime: {
             ...manifest,
-            routes: [{ id: "dashboard", path: "dashboard" }],
+            routing: { ...manifest.routing, routes: {} },
           },
         } as never,
       }),
     ).toThrow(
-      '[evjs] createApp() framework.runtime.routes[0].path must start with "/".',
+      "[evjs] createApp() framework.runtime.routing.routes must be an array.",
     );
     expect(() =>
       createApp({
         framework: {
           runtime: {
             ...manifest,
-            routes: [{ id: "missing", path: "/missing", pageId: "missing" }],
+            routing: {
+              ...manifest.routing,
+              routes: [{ id: "dashboard", path: "dashboard" }],
+            },
           },
         } as never,
       }),
     ).toThrow(
-      '[evjs] createApp() framework.runtime.routes[0].pageId "missing" does not match any runtime.pages entry.',
+      '[evjs] createApp() framework.runtime.routing.routes[0].path must start with "/".',
+    );
+    expect(() =>
+      createApp({
+        framework: {
+          runtime: {
+            ...manifest,
+            routing: {
+              ...manifest.routing,
+              routes: [{ id: "missing", path: "/missing", pageId: "missing" }],
+            },
+          },
+        } as never,
+      }),
+    ).toThrow(
+      '[evjs] createApp() framework.runtime.routing.routes[0].pageId "missing" does not match any runtime.routing.pages entry.',
     );
     expect(() =>
       createApp({
@@ -1207,7 +1267,7 @@ describe("createApp", () => {
 
   it("matches dynamic runtime routes for framework rendering", async () => {
     const manifest = createManifest();
-    manifest.pages.orderDetail = {
+    manifest.routing.pages.orderDetail = {
       assets: { js: [], css: [] },
       render: "ssr",
       rendering: {
@@ -1217,7 +1277,7 @@ describe("createApp", () => {
         hydrate: "load",
       },
     };
-    manifest.routes.push({
+    manifest.routing.routes.push({
       id: "order.detail",
       path: "/orders/$orderId",
       pageId: "orderDetail",
@@ -1239,7 +1299,7 @@ describe("createApp", () => {
 
   it("prefers the most specific runtime route for framework rendering", async () => {
     const manifest = createManifest();
-    manifest.pages.user = {
+    manifest.routing.pages.user = {
       assets: { js: [], css: [] },
       render: "ssr",
       rendering: {
@@ -1249,7 +1309,7 @@ describe("createApp", () => {
         hydrate: "load",
       },
     };
-    manifest.pages.userSettings = {
+    manifest.routing.pages.userSettings = {
       assets: { js: [], css: [] },
       render: "ssr",
       rendering: {
@@ -1259,7 +1319,7 @@ describe("createApp", () => {
         hydrate: "load",
       },
     };
-    manifest.routes.push(
+    manifest.routing.routes.push(
       {
         id: "user",
         path: "/users/$userId",
@@ -1465,7 +1525,7 @@ describe("createApp", () => {
 
   it("uses the PPR shell renderer for PPR pages", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -1556,7 +1616,7 @@ describe("createApp", () => {
 
   it("passes and validates the source page URL for direct PPR region requests", async () => {
     const manifest = createManifest();
-    manifest.pages.order = {
+    manifest.routing.pages.order = {
       assets: { js: [], css: [] },
       render: "ssr",
       rendering: {
@@ -1578,7 +1638,7 @@ describe("createApp", () => {
         },
       },
     };
-    manifest.routes.push({
+    manifest.routing.routes.push({
       id: "order",
       path: "/orders/$orderId",
       pageId: "order",
@@ -1640,7 +1700,7 @@ describe("createApp", () => {
 
   it("leaves PPR page responses with non-html media types unchanged", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -1705,7 +1765,7 @@ describe("createApp", () => {
 
   it("merges PPR regions into React Suspense fallback boundaries", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -1760,7 +1820,7 @@ describe("createApp", () => {
 
   it("streams PPR page shells and patches Suspense fallback boundaries", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "stream",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -1828,7 +1888,7 @@ describe("createApp", () => {
 
   it("derives merged PPR page cache headers from region revalidate policies", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -1893,7 +1953,7 @@ describe("createApp", () => {
 
   it("sets no-store cache headers on PPR pages with dynamic regions", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -1946,7 +2006,7 @@ describe("createApp", () => {
 
   it("preserves explicit PPR shell cache headers", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2001,7 +2061,7 @@ describe("createApp", () => {
 
   it("derives streamed PPR page cache headers from region revalidate policies", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "stream",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2055,7 +2115,7 @@ describe("createApp", () => {
 
   it("adds stale-while-revalidate to PPR page cache headers when configured", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2105,7 +2165,7 @@ describe("createApp", () => {
 
   it("normalizes PPR region document responses into fragments", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2154,7 +2214,7 @@ describe("createApp", () => {
 
   it("leaves PPR region responses with non-html media types unchanged", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2205,7 +2265,7 @@ describe("createApp", () => {
 
   it("skips non-html PPR regions during merged page composition", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2260,7 +2320,7 @@ describe("createApp", () => {
 
   it("skips non-html PPR regions during streamed page composition", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "stream",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2317,7 +2377,7 @@ describe("createApp", () => {
 
   it("requires exact PPR region endpoint paths", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2395,7 +2455,7 @@ describe("createApp", () => {
 
   it("returns 405 for unsupported PPR region methods", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2430,7 +2490,7 @@ describe("createApp", () => {
 
   it("reports PPR region render coordinator match exceptions with evjs context", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2470,7 +2530,7 @@ describe("createApp", () => {
 
   it("reports PPR region render coordinator render exceptions with evjs context", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2507,7 +2567,7 @@ describe("createApp", () => {
 
   it("caches PPR regions with revalidate policy", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2550,7 +2610,7 @@ describe("createApp", () => {
 
   it("uses a custom PPR region cache when provided", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2602,7 +2662,7 @@ describe("createApp", () => {
 
   it("serves stale PPR regions while refreshing the cache", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2680,7 +2740,7 @@ describe("createApp", () => {
       .spyOn(console, "error")
       .mockImplementation(() => {});
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2733,7 +2793,7 @@ describe("createApp", () => {
 
   it("does not populate PPR region cache from HEAD misses", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2783,7 +2843,7 @@ describe("createApp", () => {
 
   it("serves cached PPR region HEAD requests without rerendering", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2831,7 +2891,7 @@ describe("createApp", () => {
 
   it("does not cache no-store PPR regions", async () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2872,7 +2932,7 @@ describe("createApp", () => {
 
   it("rejects invalid PPR region revalidate policies", () => {
     const manifest = createManifest();
-    manifest.pages.dashboard.ppr = {
+    manifest.routing.pages.dashboard.ppr = {
       delivery: "merge",
       shell: { js: ["dashboard-ppr-shell.js"], css: [] },
       regions: {
@@ -2891,7 +2951,7 @@ describe("createApp", () => {
     configurePprRendering(manifest);
 
     expect(() => createApp({ framework: { runtime: manifest } })).toThrow(
-      "[evjs] createApp() framework.runtime.pages.dashboard.ppr.regions.zero.cache.revalidate must be a positive integer number of seconds.",
+      "[evjs] createApp() framework.runtime.routing.pages.dashboard.ppr.regions.zero.cache.revalidate must be a positive integer number of seconds.",
     );
   });
 
@@ -2929,8 +2989,8 @@ describe("createApp", () => {
     const ctx: ServerRenderContext = {
       request: new Request("https://example.com/dashboard"),
       runtime: manifest,
-      route: manifest.routes[0],
-      page: manifest.pages.dashboard,
+      route: manifest.routing.routes[0],
+      page: manifest.routing.pages.dashboard,
       pageId: "dashboard",
     };
 
@@ -3009,11 +3069,14 @@ describe("createApp", () => {
     );
     expect(() =>
       createFrameworkRenderCoordinator({
-        runtime: { ...manifest, routes: {} },
+        runtime: {
+          ...manifest,
+          routing: { ...manifest.routing, routes: {} },
+        },
         loadModule: async () => ({}),
       } as never),
     ).toThrow(
-      "[evjs] createFrameworkRenderCoordinator() runtime.routes must be an array.",
+      "[evjs] createFrameworkRenderCoordinator() runtime.routing.routes must be an array.",
     );
     expect(() =>
       createFrameworkRenderCoordinator({
@@ -3150,17 +3213,23 @@ describe("createApp", () => {
     ).toThrow("[evjs] createReactFrameworkServer() runtime.version must be 1.");
     expect(() =>
       createReactFrameworkServer({
-        runtime: { ...manifest, pages: null } as never,
+        runtime: {
+          ...manifest,
+          routing: { ...manifest.routing, pages: null },
+        } as never,
       }),
     ).toThrow(
-      "[evjs] createReactFrameworkServer() runtime.pages must be an object.",
+      "[evjs] createReactFrameworkServer() runtime.routing.pages must be an object.",
     );
     expect(() =>
       createReactFrameworkServer({
-        runtime: { ...manifest, routes: {} } as never,
+        runtime: {
+          ...manifest,
+          routing: { ...manifest.routing, routes: {} },
+        } as never,
       }),
     ).toThrow(
-      "[evjs] createReactFrameworkServer() runtime.routes must be an array.",
+      "[evjs] createReactFrameworkServer() runtime.routing.routes must be an array.",
     );
     expect(() =>
       createReactFrameworkServer({
@@ -3601,8 +3670,8 @@ describe("createApp", () => {
       'RSC page "unknown" is not in the runtime',
     );
 
-    manifest.pages.dashboard.render = "ssr";
-    manifest.pages.dashboard.componentModel = "client";
+    manifest.routing.pages.dashboard.render = "ssr";
+    manifest.routing.pages.dashboard.componentModel = "client";
     const nonRscPage = await app.request("/__evjs/rsc?page=dashboard");
     expect(nonRscPage.status).toBe(404);
     await expect(nonRscPage.text()).resolves.toContain(
@@ -3803,7 +3872,7 @@ describe("createApp", () => {
   });
 });
 
-function createManifest(): LegacyFrameworkRuntime {
+function createManifest(): SpaFrameworkRuntime {
   return {
     version: 1,
     buildId: "test",
@@ -3815,25 +3884,28 @@ function createManifest(): LegacyFrameworkRuntime {
         rsc: "__evjs/rsc",
       },
     },
-    pages: {
-      dashboard: {
-        assets: { js: [], css: [] },
-        render: "ssr",
-        rendering: {
-          component: "server",
-          html: "server",
-          streaming: false,
-          hydrate: "load",
+    routing: {
+      kind: "spa",
+      pages: {
+        dashboard: {
+          assets: { js: [], css: [] },
+          render: "ssr",
+          rendering: {
+            component: "server",
+            html: "server",
+            streaming: false,
+            hydrate: "load",
+          },
         },
       },
+      routes: [
+        {
+          id: "dashboard",
+          path: "/dashboard",
+          pageId: "dashboard",
+        },
+      ],
     },
-    routes: [
-      {
-        id: "dashboard",
-        path: "/dashboard",
-        pageId: "dashboard",
-      },
-    ],
     server: {
       renderers: {
         "dashboard-server": {
@@ -3846,7 +3918,7 @@ function createManifest(): LegacyFrameworkRuntime {
   };
 }
 
-function configureRscManifest(manifest: LegacyFrameworkRuntime): void {
+function configureRscManifest(manifest: SpaFrameworkRuntime): void {
   configureRscPage(manifest);
   manifest.rsc = {
     pages: {
@@ -3873,7 +3945,7 @@ function configureRscManifest(manifest: LegacyFrameworkRuntime): void {
 }
 
 function addRscManifestPage(
-  manifest: LegacyFrameworkRuntime,
+  manifest: SpaFrameworkRuntime,
   options: {
     pageId: string;
     path: string;
@@ -3887,7 +3959,7 @@ function addRscManifestPage(
   }
 
   const rendererAssets = { js: [`${options.renderer}.js`], css: [] };
-  manifest.pages[options.pageId] = {
+  manifest.routing.pages[options.pageId] = {
     assets: { js: [], css: [] },
     render: "ssr",
     rendering: {
@@ -3898,7 +3970,7 @@ function addRscManifestPage(
     },
     componentModel: "rsc",
   };
-  manifest.routes.push({
+  manifest.routing.routes.push({
     id: options.pageId,
     path: options.path,
     pageId: options.pageId,
@@ -3919,10 +3991,10 @@ function addRscManifestPage(
   };
 }
 
-function configureRscPage(manifest: LegacyFrameworkRuntime): void {
-  manifest.pages.dashboard.render = "ssr";
-  manifest.pages.dashboard.componentModel = "rsc";
-  manifest.pages.dashboard.rendering = {
+function configureRscPage(manifest: SpaFrameworkRuntime): void {
+  manifest.routing.pages.dashboard.render = "ssr";
+  manifest.routing.pages.dashboard.componentModel = "rsc";
+  manifest.routing.pages.dashboard.rendering = {
     component: "rsc",
     html: "server",
     streaming: true,
@@ -3930,9 +4002,9 @@ function configureRscPage(manifest: LegacyFrameworkRuntime): void {
   };
 }
 
-function configurePprRendering(manifest: LegacyFrameworkRuntime): void {
-  const delivery = manifest.pages.dashboard.ppr?.delivery ?? "merge";
-  manifest.pages.dashboard.rendering = {
+function configurePprRendering(manifest: SpaFrameworkRuntime): void {
+  const delivery = manifest.routing.pages.dashboard.ppr?.delivery ?? "merge";
+  manifest.routing.pages.dashboard.rendering = {
     component: "server",
     html: "partial",
     prerender: "partial",

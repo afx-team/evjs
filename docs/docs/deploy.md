@@ -19,25 +19,23 @@ Typical output:
 ```txt
 dist/
 ├── client/
-│   ├── manifest.json
 │   └── ...
 ├── server/
-│   ├── manifest.json
 │   └── ...
-└── build-output.json
+└── deployment-metadata.json
 ```
 
 Important paths:
 
 - `dist/client/`: browser assets and generated HTML.
-- `dist/client/manifest.json`: browser-safe route and asset metadata for
-  deployment tooling.
 - `dist/server/`: server bundle and server metadata when the app uses server
   functions, server file routes, SSR, PPR, or RSC.
-- `dist/server/manifest.json`: lightweight server manifest with the server
-  entry and server-handled route projection for deployment compatibility.
-- `dist/build-output.json`: canonical deployment metadata for tooling and
-  deployment adapters. Application code should not import or edit it.
+- `dist/deployment-metadata.json`: canonical deployment metadata for tooling
+  and deployment adapters. Application code should not import or edit it.
+
+Core does not emit split client/server compatibility manifests. A deployment
+adapter that requires a platform-specific or legacy projection owns that
+artifact explicitly.
 
 Generated HTML embeds the browser `ClientRuntime`. The manual `@evjs/client`
 runtime URL APIs still support loading JSON from a configured URL, but CLI

@@ -1,33 +1,10 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { discoverPageRoutes } from "../src/_internal/build/index.js";
-import {
-  findInvalidRouteSegment,
-  findPageRouteSegmentConventionViolation,
-  formatPageRouteSegmentConventionViolation,
-  isHiddenPageRouteSegment,
-  isIgnoredPageRouteSegment,
-  isPageRouteSourceModuleFile,
-  normalizePageRouteConventionPath,
-  PAGE_ROUTE_CONVENTION_DOCS_URL,
-  PAGE_ROUTE_CONVENTION_RULES,
-  PAGE_ROUTE_CONVENTION_SUMMARY,
-  PAGE_ROUTE_SOURCE_EXTENSIONS,
-  parsePageRouteFile,
-  routeIdPathFromSegments,
-  routePathFromSegments,
-  routePathShapeFromPath,
-  routeShapeFromSegments,
-} from "../src/_internal/build/page-route-conventions.js";
 
 const tempDirs: string[] = [];
-const repoRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../..",
-);
 
 afterEach(async () => {
   await Promise.all(
@@ -38,1953 +15,590 @@ afterEach(async () => {
 });
 
 describe("discoverPageRoutes", () => {
-  it("centralizes the page route filename convention", () => {
-    expect(PAGE_ROUTE_SOURCE_EXTENSIONS).toEqual([
-      ".ts",
-      ".tsx",
-      ".js",
-      ".jsx",
-    ]);
-    expect(PAGE_ROUTE_CONVENTION_DOCS_URL).toBe(
-      "https://evaijs.github.io/evjs/docs/file-conventions#client-page-routes",
-    );
-    expect(PAGE_ROUTE_CONVENTION_RULES.map((rule) => rule.id)).toEqual([
-      "directory-index",
-      "dynamic-segment",
-      "unique-path",
-      "unique-dynamic-shape",
-      "unique-route-id",
-      "route-group",
-      "static-segment",
-      "private-module",
-      "hidden-module",
-      "declaration-module",
-      "test-module",
-      "story-module",
-      "client-module",
-      "server-module",
-      "root-layout",
-      "route-layout",
-      "error-boundary",
-      "not-found-boundary",
-      "mpa-html-template",
-    ]);
-    expect(PAGE_ROUTE_CONVENTION_RULES.map((rule) => rule.category)).toEqual([
-      "route",
-      "route",
-      "route",
-      "route",
-      "route",
-      "route",
-      "route",
-      "ignored",
-      "ignored",
-      "ignored",
-      "ignored",
-      "ignored",
-      "ignored",
-      "ignored",
-      "layout",
-      "layout",
-      "boundary",
-      "boundary",
-      "html",
-    ]);
-    expect(PAGE_ROUTE_CONVENTION_RULES).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: "dynamic-segment",
-          category: "route",
-          valid: expect.arrayContaining([
-            "users/$userId.tsx",
-            "files/$...splat.tsx",
-          ]),
-          invalid: expect.arrayContaining([
-            "users/[userId].tsx",
-            "files/$...123.tsx",
-            "files/$...path/edit.tsx",
-            "users/$__proto__.tsx",
-            "docs/$_splat.tsx",
-          ]),
-        }),
-        expect.objectContaining({
-          id: "unique-path",
-          category: "route",
-          invalid: expect.arrayContaining([
-            "users.tsx plus users/index.tsx for /users",
-          ]),
-        }),
-        expect.objectContaining({
-          id: "unique-dynamic-shape",
-          category: "route",
-          invalid: expect.arrayContaining([
-            "users/$id.tsx plus users/$userId.tsx",
-          ]),
-        }),
-        expect.objectContaining({
-          id: "unique-route-id",
-          category: "route",
-          invalid: expect.arrayContaining([
-            "admin/panel.tsx plus admin_panel.tsx",
-          ]),
-        }),
-        expect.objectContaining({
-          id: "route-group",
-          category: "route",
-          valid: expect.arrayContaining(["(marketing)/about.tsx"]),
-        }),
-        expect.objectContaining({
-          id: "client-module",
-          category: "ignored",
-          valid: expect.arrayContaining(["ClientCard.client.tsx"]),
-        }),
-        expect.objectContaining({
-          id: "hidden-module",
-          category: "ignored",
-          valid: expect.arrayContaining([".hidden/secret.tsx"]),
-        }),
-        expect.objectContaining({
-          id: "declaration-module",
-          category: "ignored",
-          valid: expect.arrayContaining(["route-types.d.ts"]),
-        }),
-        expect.objectContaining({
-          id: "test-module",
-          category: "ignored",
-          valid: expect.arrayContaining(["about.test.tsx"]),
-        }),
-        expect.objectContaining({
-          id: "story-module",
-          category: "ignored",
-          valid: expect.arrayContaining(["profile.stories.tsx"]),
-        }),
-        expect.objectContaining({
-          id: "server-module",
-          category: "ignored",
-          valid: expect.arrayContaining(["users.server.ts"]),
-        }),
-        expect.objectContaining({
-          id: "root-layout",
-          category: "layout",
-          valid: expect.arrayContaining(["src/layout/index.tsx"]),
-          invalid: expect.arrayContaining([
-            "src/layout.tsx",
-            "src/layout/index.jsx",
-            "src/pages/layout.tsx",
-          ]),
-        }),
-        expect.objectContaining({
-          id: "route-layout",
-          category: "layout",
-          valid: expect.arrayContaining(["src/pages/posts/layout.tsx"]),
-          invalid: expect.arrayContaining([
-            "src/pages/layout.tsx",
-            "src/pages/posts/layout/index.tsx",
-          ]),
-        }),
-        expect.objectContaining({
-          id: "error-boundary",
-          category: "boundary",
-          valid: expect.arrayContaining([
-            "src/pages/error.tsx",
-            "src/pages/posts/error.tsx",
-          ]),
-          invalid: expect.arrayContaining(["src/pages/error/index.tsx"]),
-        }),
-        expect.objectContaining({
-          id: "not-found-boundary",
-          category: "boundary",
-          valid: expect.arrayContaining([
-            "src/pages/not-found.tsx",
-            "src/pages/posts/not-found.tsx",
-          ]),
-          invalid: expect.arrayContaining(["src/pages/not-found/index.tsx"]),
-        }),
-        expect.objectContaining({
-          id: "mpa-html-template",
-          category: "html",
-          valid: expect.arrayContaining([
-            "about.html beside about.tsx",
-            "users/index.html beside users/index.tsx",
-          ]),
-        }),
-      ]),
-    );
-    expect(PAGE_ROUTE_CONVENTION_SUMMARY).toBe(
-      "Page route files use index files for directory roots, $param filenames for dynamic segments and terminal $...splat catch-alls, one page file per URL path, one dynamic param name per URL shape, unique generated route ids, route groups for pathless organization, and case-preserving URL-safe static segments; ignored colocated modules include _-prefixed private modules, dot-prefixed hidden modules, declaration files, test/spec modules, Storybook modules, client-only *.client.* modules, and server-only *.server.* modules; SPA root layout auto-discovery uses one layout/index.tsx module beside the route directory; nested SPA route layouts use layout source modules below a route; SPA error boundaries use error source modules scoped by directory; SPA not-found boundaries use not-found source modules scoped by directory; MPA page routes can use colocated HTML templates with the same basename",
-    );
-    expect(isPageRouteSourceModuleFile("index.tsx")).toBe(true);
-    expect(isPageRouteSourceModuleFile("index.d.ts")).toBe(false);
-    expect(isPageRouteSourceModuleFile("ClientCard.client.tsx")).toBe(false);
-    expect(isPageRouteSourceModuleFile("menu.client.js")).toBe(false);
-    expect(isPageRouteSourceModuleFile("users.server.ts")).toBe(false);
-    expect(isPageRouteSourceModuleFile("users.server.tsx")).toBe(false);
-    expect(isPageRouteSourceModuleFile("about.test.tsx")).toBe(false);
-    expect(isPageRouteSourceModuleFile("about.spec.tsx")).toBe(false);
-    expect(isPageRouteSourceModuleFile("about.story.tsx")).toBe(false);
-    expect(isPageRouteSourceModuleFile("about.stories.tsx")).toBe(false);
-
-    expect(parsePageRouteFile("index.tsx")?.segments).toEqual([]);
-    expect(parsePageRouteFile("users/$userId.tsx")?.segments).toEqual([
-      "users",
-      "$userId",
-    ]);
-    expect(parsePageRouteFile("docs/$...splat.tsx")?.segments).toEqual([
-      "docs",
-      "$...splat",
-    ]);
-    expect(normalizePageRouteConventionPath("users\\$userId.tsx")).toBe(
-      "users/$userId.tsx",
-    );
-    expect(parsePageRouteFile("users\\$userId.tsx")?.segments).toEqual([
-      "users",
-      "$userId",
-    ]);
-    expect(parsePageRouteFile("index.d.ts")).toBeUndefined();
-    expect(parsePageRouteFile("ClientCard.client.tsx")).toBeUndefined();
-    expect(parsePageRouteFile("users.server.ts")).toBeUndefined();
-    expect(parsePageRouteFile("about.test.tsx")).toBeUndefined();
-    expect(parsePageRouteFile("about.spec.tsx")).toBeUndefined();
-    expect(parsePageRouteFile("about.story.tsx")).toBeUndefined();
-    expect(parsePageRouteFile("about.stories.tsx")).toBeUndefined();
-    expect(parsePageRouteFile("global.ts")?.segments).toEqual(["global"]);
-    expect(parsePageRouteFile("error.tsx")).toBeUndefined();
-    expect(parsePageRouteFile("posts/error.tsx")).toBeUndefined();
-    expect(parsePageRouteFile("not-found.tsx")).toBeUndefined();
-    expect(parsePageRouteFile("posts/not-found.tsx")).toBeUndefined();
-    expect(parsePageRouteFile("posts/global.tsx")?.segments).toEqual([
-      "posts",
-      "global",
-    ]);
-    expect(parsePageRouteFile("_helpers/format.ts")).toBeUndefined();
-    expect(parsePageRouteFile(".draft.tsx")).toBeUndefined();
-    expect(parsePageRouteFile(".hidden/secret.tsx")).toBeUndefined();
-    expect(isIgnoredPageRouteSegment("_helpers")).toBe(true);
-    expect(isIgnoredPageRouteSegment(".draft")).toBe(true);
-    expect(isIgnoredPageRouteSegment("users")).toBe(false);
-    expect(isHiddenPageRouteSegment(".draft")).toBe(true);
-    expect(isHiddenPageRouteSegment("_helpers")).toBe(false);
-
-    expect(routePathFromSegments([])).toBe("/");
-    expect(routePathFromSegments(["users", "$userId"])).toBe("/users/$userId");
-    expect(routePathFromSegments(["docs", "$...splat"])).toBe("/docs/$");
-    expect(routePathFromSegments(["(marketing)", "about"])).toBe("/about");
-    expect(routeIdPathFromSegments(["docs", "$...splat"])).toBe("/docs/$splat");
-    expect(routeShapeFromSegments(["users", "$userId"])).toEqual({
-      key: "/users/:param",
-      label: "/users/:param",
-    });
-    expect(routeShapeFromSegments(["docs", "$...splat"])).toEqual({
-      key: "/docs/$",
-      label: "/docs/$",
-    });
-    expect(routePathShapeFromPath("/users/:userId")).toEqual({
-      key: "/users/:param",
-      label: "/users/:param",
-    });
-    expect(findInvalidRouteSegment(["Users"])).toBeUndefined();
-    expect(
-      findPageRouteSegmentConventionViolation(["(marketing)", "about"]),
-    ).toBeUndefined();
-    expect(
-      findPageRouteSegmentConventionViolation(["(marketing", "about"]),
-    ).toEqual({
-      kind: "route-group",
-      segment: "(marketing",
-    });
-    expect(
-      formatPageRouteSegmentConventionViolation({
-        kind: "route-group",
-        segment: "(marketing",
-      }),
-    ).toBe(
-      'Page route group segment "(marketing" must wrap a non-empty group name in parentheses, such as "(marketing)".',
-    );
-    expect(findPageRouteSegmentConventionViolation(["users", "[id]"])).toEqual({
-      kind: "bracket",
-      segment: "[id]",
-    });
-    expect(findPageRouteSegmentConventionViolation(["users", "[id"])).toEqual({
-      kind: "bracket",
-      segment: "[id",
-    });
-    expect(
-      formatPageRouteSegmentConventionViolation({
-        kind: "bracket",
-        segment: "[id]",
-      }),
-    ).toBe(
-      'Dynamic page route segments must use $param filenames. Bracket segment "[id]" is not supported. Rename the file to "$id" for a dynamic segment, or use explicit pages config for a custom URL.',
-    );
-    expect(
-      findPageRouteSegmentConventionViolation(["files", "$...path"]),
-    ).toBeUndefined();
-    expect(
-      formatPageRouteSegmentConventionViolation({
-        kind: "unsupported-dynamic",
-        segment: "$...path",
-      }),
-    ).toBe(
-      'Catch-all page route segments are not supported. Use explicit pages config for wildcard or custom URL shapes instead of "$...path".',
-    );
-    expect(
-      findPageRouteSegmentConventionViolation(["files", "$...123"]),
-    ).toEqual({
-      kind: "catch-all",
-      segment: "$...123",
-    });
-    expect(
-      formatPageRouteSegmentConventionViolation({
-        kind: "catch-all",
-        segment: "$...123",
-      }),
-    ).toBe(
-      'Catch-all page route segment "$...123" must use a JavaScript identifier after "$...", such as "$...splat".',
-    );
-    expect(
-      findPageRouteSegmentConventionViolation(["files", "$..._splat"]),
-    ).toEqual({
-      kind: "reserved-catch-all",
-      segment: "$..._splat",
-    });
-    expect(
-      formatPageRouteSegmentConventionViolation({
-        kind: "reserved-catch-all",
-        segment: "$..._splat",
-      }),
-    ).toBe(
-      'Catch-all page route segment "$..._splat" uses a reserved param name. Use a safe application-specific name such as "$...splat"; runtime wildcard params are exposed as "_splat".',
-    );
-    expect(
-      findPageRouteSegmentConventionViolation(["files", "$...path", "edit"]),
-    ).toEqual({
-      kind: "non-terminal-catch-all",
-      segment: "$...path",
-    });
-    expect(
-      findPageRouteSegmentConventionViolation([
-        "files",
-        "$...path",
-        "edit",
-        "$...path",
-      ]),
-    ).toEqual({
-      kind: "non-terminal-catch-all",
-      segment: "$...path",
-    });
-    expect(
-      formatPageRouteSegmentConventionViolation({
-        kind: "non-terminal-catch-all",
-        segment: "$...path",
-      }),
-    ).toBe(
-      'Catch-all page route segment "$...path" must be the final URL path segment. Move it to the end of the route path, or split the route into explicit files.',
-    );
-    expect(
-      formatPageRouteSegmentConventionViolation({
-        kind: "duplicate-catch-all",
-        segment: "$...rest",
-      }),
-    ).toBe(
-      'Catch-all page route segment "$...rest" repeats a wildcard route segment. Use at most one catch-all segment within one route path.',
-    );
-    expect(findPageRouteSegmentConventionViolation(["contact us"])).toEqual({
-      kind: "static",
-      segment: "contact us",
-    });
-    expect(
-      formatPageRouteSegmentConventionViolation({
-        kind: "static",
-        segment: "contact us",
-      }),
-    ).toBe(
-      'Static page route segment "contact us" must use URL-safe characters: letters, numbers, ".", "_", "-", or "~". Rename the file to a URL-safe segment, or use explicit pages config for custom paths.',
-    );
-    expect(findInvalidRouteSegment(["$__proto__"])).toEqual({
-      kind: "reserved-dynamic",
-      segment: "$__proto__",
-    });
-    expect(findInvalidRouteSegment(["$_splat"])).toEqual({
-      kind: "reserved-dynamic",
-      segment: "$_splat",
-    });
-    expect(
-      findInvalidRouteSegment(["teams", "$teamId", "users", "$teamId"]),
-    ).toEqual({
-      kind: "duplicate-dynamic",
-      segment: "$teamId",
-    });
-  });
-
-  it("discovers SPA page routes from src/pages", async () => {
-    const cwd = await createFixture({
-      "src/layout/index.tsx": "export default function Root() { return null; }",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/index.html": '<div id="app"></div>',
-      "src/pages/about.tsx": "export default function About() { return null; }",
-      "src/pages/about.html": '<div id="app"></div>',
-      "src/pages/users/$userId.tsx":
-        "export default function User() { return null; }",
-      "src/pages/posts/$postId.tsx":
-        "export default function Post() { return null; }",
-      "src/pages/_private.tsx":
-        "export default function Private() { return null; }",
-      "src/pages/_internal/index.tsx":
-        "export default function Internal() { return null; }",
-      "src/pages/posts/_draft.tsx":
-        "export default function DraftPost() { return null; }",
-      "src/pages/posts/_components/Card.tsx":
-        "export default function PostCard() { return null; }",
-      "src/pages/about.test.tsx":
-        "export default function Test() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.rootModule).toBe("./src/layout/index.tsx");
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-      {
-        id: "about",
-        path: "/about",
-        module: "./src/pages/about.tsx",
-      },
-      {
-        id: "posts_postId",
-        path: "/posts/$postId",
-        module: "./src/pages/posts/$postId.tsx",
-      },
-      {
-        id: "users_userId",
-        path: "/users/$userId",
-        module: "./src/pages/users/$userId.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("discovers case-preserving and catch-all SPA page routes", async () => {
-    const cwd = await createFixture({
-      "src/layout/index.tsx": "export default function Root() { return null; }",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/legacyCamelCase.tsx":
-        "export default function Legacy() { return null; }",
-      "src/pages/docs/layout.tsx":
-        "export default function DocsLayout() { return null; }",
-      "src/pages/docs/$...splat.tsx":
-        "export default function DocsCatchAll() { return null; }",
-      "src/pages/teams/$teamId/reports/$...path.tsx":
-        "export default function TeamReportsCatchAll() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/pages",
-      mode: "spa",
-    });
-
-    expect(discovery.rootModule).toBe("./src/layout/index.tsx");
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-      {
-        id: "docs_layout",
-        path: "/docs",
-        module: "./src/pages/docs/layout.tsx",
-        kind: "layout",
-      },
-      {
-        id: "docs_splat",
-        path: "/docs/$",
-        module: "./src/pages/docs/$...splat.tsx",
-        parentId: "docs_layout",
-      },
-      {
-        id: "legacyCamelCase",
-        path: "/legacyCamelCase",
-        module: "./src/pages/legacyCamelCase.tsx",
-      },
-      {
-        id: "teams_teamId_reports_path",
-        path: "/teams/$teamId/reports/$",
-        module: "./src/pages/teams/$teamId/reports/$...path.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("discovers colocated MPA HTML templates with the same basename", async () => {
-    const cwd = await createFixture({
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/index.html": '<div id="app"></div>',
-      "src/pages/about.tsx": "export default function About() { return null; }",
-      "src/pages/about.html": '<div id="app"></div>',
-      "src/pages/users/index.tsx":
-        "export default function Users() { return null; }",
-      "src/pages/users/index.html": '<div id="app"></div>',
-      "src/pages/users/$userId.tsx":
-        "export default function User() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/pages",
-      mode: "mpa",
-    });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-        html: "./src/pages/index.html",
-      },
-      {
-        id: "about",
-        path: "/about",
-        module: "./src/pages/about.tsx",
-        html: "./src/pages/about.html",
-      },
-      {
-        id: "users",
-        path: "/users",
-        module: "./src/pages/users/index.tsx",
-        html: "./src/pages/users/index.html",
-      },
-      {
-        id: "users_userId",
-        path: "/users/$userId",
-        module: "./src/pages/users/$userId.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("rejects catch-all page route segments in MPA mode", async () => {
-    const cwd = await createFixture({
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/docs/$...splat.tsx":
-        "export default function DocsCatchAll() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/pages",
-      mode: "mpa",
-    });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/pages/docs/$...splat.tsx",
-        message:
-          'Catch-all page route segments are not supported. Use explicit pages config for wildcard or custom URL shapes instead of "$...splat".',
-      },
-    ]);
-  });
-
-  it("does not treat routing.html as an MPA file-route convention", async () => {
-    const cwd = await createFixture({
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/routing.html": '<div id="app"></div>',
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/pages",
-      mode: "mpa",
-    });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("discovers supported page route source extensions", async () => {
-    const cwd = await createFixture({
-      "src/pages/index.ts": "export default function Home() { return null; }",
-      "src/pages/about.jsx": "export default function About() { return null; }",
-      "src/pages/admin.tsx": "export default function Admin() { return null; }",
-      "src/pages/legacy.js":
-        "export default function Legacy() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.ts",
-      },
-      {
-        id: "about",
-        path: "/about",
-        module: "./src/pages/about.jsx",
-      },
-      {
-        id: "admin",
-        path: "/admin",
-        module: "./src/pages/admin.tsx",
-      },
-      {
-        id: "legacy",
-        path: "/legacy",
-        module: "./src/pages/legacy.js",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("documents route filename convention examples", async () => {
-    const englishDoc = await fs.readFile(
-      path.join(repoRoot, "docs/docs/project-structure.md"),
-      "utf-8",
-    );
-    const chineseDoc = await fs.readFile(
-      path.join(
-        repoRoot,
-        "docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/project-structure.md",
-      ),
-      "utf-8",
-    );
-    const englishClientRoutesDoc = await fs.readFile(
-      path.join(repoRoot, "docs/docs/client-routes.md"),
-      "utf-8",
-    );
-    const chineseClientRoutesDoc = await fs.readFile(
-      path.join(
-        repoRoot,
-        "docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/client-routes.md",
-      ),
-      "utf-8",
-    );
-
-    for (const doc of [englishDoc, chineseDoc]) {
-      expect(doc).toContain("src/pages/users/$userId.tsx");
-      expect(doc).toContain("src/pages/users/[id].tsx");
-      expect(doc).toContain("src/pages/files/$...path.tsx");
-      expect(doc).toContain("src/pages/files/$...path/edit.tsx");
-      expect(doc).toContain("src/pages/users/$__proto__.tsx");
-      expect(doc).toContain("src/pages/users.tsx");
-      expect(doc).toContain("src/pages/users/index.tsx");
-      expect(doc).toContain("src/pages/layout.tsx");
-      expect(doc).toContain("src/pages/error.tsx");
-      expect(doc).toContain("src/pages/not-found.tsx");
-      expect(doc).toContain("src/pages/dashboard/error.tsx");
-      expect(doc).toContain("src/pages/.draft.tsx");
-      expect(doc).toContain("src/pages/ClientCard.client.tsx");
-      expect(doc).toContain("src/pages/users.server.ts");
-      expect(doc).toContain("src/pages/admin_panel.tsx");
-      expect(doc).toContain("src/pages/admin/panel.tsx");
-      expect(doc).toContain("src/pages/profile.stories.tsx");
-      expect(doc).toContain("src/pages/**/_*");
-      expect(doc).toContain("src/pages/**/.*");
-      expect(doc).toContain("src/pages/**/*.{client,server}.*");
-      expect(doc).toContain("admin_panel");
-      expect(doc).toContain("<routing-dir-parent>/route-types.d.ts");
-      expect(doc).toContain("src/app/route-types.d.ts");
-      expect(doc).not.toContain("Direct `routing.routes`");
-      expect(doc).not.toContain("直接传入的 `routing.routes`");
-    }
-    expect(englishDoc).toContain("one page module per URL path");
-    expect(englishDoc).toContain(
-      "one parameter naming choice per dynamic URL shape",
-    );
-    expect(englishDoc).toContain("unique generated route IDs");
-    expect(englishDoc).toContain("`@/components/Button` resolves to");
-    expect(englishDoc).toContain("Scoped SPA error boundary");
-    expect(chineseDoc).toContain("每个 URL path 只保留一个页面模块");
-    expect(chineseDoc).toContain("每个 dynamic URL shape 只保留一种参数命名");
-    expect(chineseDoc).toContain("生成的 route ID 必须唯一");
-    expect(chineseDoc).toContain("`@/components/Button` 解析到");
-    expect(chineseDoc).toContain("作用域 SPA error boundary");
-    expect(englishClientRoutesDoc).toContain(
-      "`routing.routes` is not a public",
-    );
-    expect(englishClientRoutesDoc).toContain("`routing.conventions.layout`");
-    expect(chineseClientRoutesDoc).toContain("`routing.routes` 不是公开的");
-    expect(chineseClientRoutesDoc).toContain(
-      "即使 `routing.conventions.layout` 显式指向其他模块",
-    );
-  });
-
-  it("orders static route siblings before dynamic route siblings", async () => {
-    const cwd = await createFixture({
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/users/$id.tsx":
-        "export default function User() { return null; }",
-      "src/pages/users/$id/details.tsx":
-        "export default function UserDetails() { return null; }",
-      "src/pages/users/index.tsx":
-        "export default function Users() { return null; }",
-      "src/pages/users/settings.tsx":
-        "export default function UserSettings() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.routes.map((route) => route.path)).toEqual([
-      "/",
-      "/users",
-      "/users/settings",
-      "/users/$id",
-      "/users/$id/details",
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("orders URL-safe static route siblings without locale-sensitive collation", async () => {
-    const cwd = await createFixture({
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/a_c.tsx":
-        "export default function AUnderscore() { return null; }",
-      "src/pages/a-b.tsx": "export default function ADash() { return null; }",
-      "src/pages/a.b.tsx": "export default function ADot() { return null; }",
-      "src/pages/a0.tsx": "export default function AZero() { return null; }",
-      "src/pages/aa.tsx": "export default function ALetter() { return null; }",
-      "src/pages/a~d.tsx": "export default function ATilde() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.routes.map((route) => route.path)).toEqual([
-      "/",
-      "/a-b",
-      "/a.b",
-      "/a0",
-      "/a_c",
-      "/aa",
-      "/a~d",
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("ignores declarations, tests, hidden files, client/server modules, and private route segments", async () => {
-    const cwd = await createFixture({
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/route-types.d.ts": "export {};",
-      "src/pages/about.test.tsx":
-        "export default function AboutTest() { return null; }",
-      "src/pages/about.spec.tsx":
-        "export default function AboutSpec() { return null; }",
-      "src/pages/profile.story.tsx":
-        "export default function ProfileStory() { return null; }",
-      "src/pages/profile.stories.tsx":
-        "export default function ProfileStories() { return null; }",
-      "src/pages/ClientCard.client.tsx":
-        '"use client";\nexport default function ClientCard() { return null; }',
-      "src/pages/menu.client.js":
-        '"use client";\nexport function Menu() { return null; }',
-      "src/pages/users.server.ts":
-        '"use server";\nexport async function getUser() { return null; }',
-      "src/pages/actions.server.tsx":
-        '"use server";\nexport async function saveAction() { return null; }',
-      "src/pages/.draft.tsx":
-        "export default function DotDraft() { return null; }",
-      "src/pages/.hidden/secret.tsx":
-        "export default function DotSecret() { return null; }",
-      "src/pages/_draft.tsx":
-        "export default function PrivateDraft() { return null; }",
-      "src/pages/_helpers/format.ts": "export const format = () => null;",
-      "src/pages/notes.md": "# notes",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("discovers SPA error and not-found convention modules", async () => {
-    const cwd = await createFixture({
-      "src/pages/error.tsx":
-        "export default function RootError() { return null; }",
-      "src/pages/not-found.tsx":
-        "export default function RootNotFound() { return null; }",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/posts/error.tsx":
-        "export default function PostsError() { return null; }",
-      "src/pages/posts/index.tsx":
-        "export default function Posts() { return null; }",
-      "src/pages/posts/$id/not-found.tsx":
-        "export default function PostNotFound() { return null; }",
-      "src/pages/posts/$id.tsx":
-        "export default function Post() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/pages",
-      mode: "spa",
-    });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-        errorModule: "./src/pages/error.tsx",
-        notFoundModule: "./src/pages/not-found.tsx",
-      },
-      {
-        id: "posts",
-        path: "/posts",
-        module: "./src/pages/posts/index.tsx",
-        errorModule: "./src/pages/posts/error.tsx",
-        notFoundModule: "./src/pages/not-found.tsx",
-      },
-      {
-        id: "posts_id",
-        path: "/posts/$id",
-        module: "./src/pages/posts/$id.tsx",
-        errorModule: "./src/pages/posts/error.tsx",
-        notFoundModule: "./src/pages/posts/$id/not-found.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("keeps MPA error, not-found, and global files as page routes", async () => {
-    const cwd = await createFixture({
-      "src/pages/global.tsx":
-        "export default function GlobalPage() { return null; }",
-      "src/pages/error.tsx":
-        "export default function ErrorPage() { return null; }",
-      "src/pages/not-found.tsx":
-        "export default function NotFoundPage() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/pages",
-      mode: "mpa",
-    });
-
-    expect(discovery.routes.map((route) => route.path)).toEqual([
-      "/error",
-      "/global",
-      "/not-found",
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("keeps SPA error and not-found files as page routes when conventions are disabled", async () => {
-    const cwd = await createFixture({
-      "src/pages/error.tsx":
-        "export default function ErrorPage() { return null; }",
-      "src/pages/not-found.tsx":
-        "export default function NotFoundPage() { return null; }",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/pages",
-      mode: "spa",
-      spaConventions: false,
-    });
-
-    expect(discovery.routes.map((route) => route.path)).toEqual([
-      "/",
-      "/error",
-      "/not-found",
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("reports SPA convention modules without required default exports", async () => {
-    const cwd = await createFixture({
-      "src/pages/error.tsx": "export function ErrorBoundary() { return null; }",
-      "src/pages/not-found.tsx":
-        "export function NotFoundBoundary() { return null; }",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/pages",
-      mode: "spa",
-    });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/pages/error.tsx",
-        message:
-          "SPA error boundary modules must default-export a React component.",
-      },
-      {
-        level: "error",
-        file: "src/pages/not-found.tsx",
-        message:
-          "SPA not-found boundary modules must default-export a React component.",
-      },
-    ]);
-  });
-
-  it("reports duplicate scoped SPA boundary convention modules", async () => {
-    const cwd = await createFixture({
-      "src/pages/posts/error.ts":
-        "export default function PostsErrorTs() { return null; }",
-      "src/pages/posts/error.tsx":
-        "export default function PostsErrorTsx() { return null; }",
-      "src/pages/posts/index.tsx":
-        "export default function Posts() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/pages",
-      mode: "spa",
-    });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "posts",
-        path: "/posts",
-        module: "./src/pages/posts/index.tsx",
-        errorModule: "./src/pages/posts/error.ts",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/pages/posts/error.tsx",
-        message:
-          'Duplicate SPA error boundary convention for route segment scope "posts". ./src/pages/posts/error.ts already owns this scope. Keep one error.* module per route directory.',
-      },
-    ]);
-  });
-
-  it("discovers the root layout beside a custom page route directory", async () => {
-    const cwd = await createFixture({
-      "src/layout/index.tsx": "export const NotTheAppLayout = true;",
-      "src/app/layout/index.tsx":
-        "export default function AppLayout() { return null; }",
-      "src/app/pages/index.tsx":
-        "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/app/pages",
-    });
-
-    expect(discovery.rootModule).toBe("./src/app/layout/index.tsx");
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/app/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("uses an explicit root layout module without checking convention aliases", async () => {
-    const cwd = await createFixture({
-      "src/layout.tsx": "export function LayoutAlias() { return null; }",
-      "src/shell/AppLayout.tsx":
-        "export default function AppLayout() { return null; }",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/pages",
-      rootLayout: "./src/shell/AppLayout.tsx",
-    });
-
-    expect(discovery.rootModule).toBe("./src/shell/AppLayout.tsx");
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("reports missing explicit root layout modules", async () => {
-    const cwd = await createFixture({
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/pages",
-      rootLayout: "./src/shell/AppLayout.tsx",
-    });
-
-    expect(discovery.rootModule).toBeUndefined();
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/shell/AppLayout.tsx",
-        message: "Root layout module not found: ./src/shell/AppLayout.tsx.",
-      },
-    ]);
-  });
-
-  it("reports explicit root layout directories", async () => {
-    const cwd = await createFixture({
-      "src/shell/index.tsx":
-        "export default function ShellIndex() { return null; }",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/pages",
-      rootLayout: "./src/shell",
-    });
-
-    expect(discovery.rootModule).toBeUndefined();
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/shell",
-        message: "Root layout module must be a file: ./src/shell.",
-      },
-    ]);
-  });
-
-  it("reports explicit root layout files with unsupported extensions", async () => {
-    const cwd = await createFixture({
-      "src/shell/Layout.md": "# layout",
-      "src/shell/AppLayout.client.tsx":
-        "export default function ClientLayout() { return null; }",
-      "src/shell/AppLayout.server.tsx":
-        "export default function ServerLayout() { return null; }",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-    });
-
-    for (const rootLayout of [
-      "./src/shell/Layout.md",
-      "./src/shell/AppLayout.client.tsx",
-      "./src/shell/AppLayout.server.tsx",
-    ]) {
-      const discovery = await discoverPageRoutes(cwd, {
+  it("requires an explicit SPA or MPA materialization mode", async () => {
+    await expect(
+      discoverPageRoutes(process.cwd(), {
         dir: "./src/pages",
-        rootLayout,
+      } as never),
+    ).rejects.toThrow(
+      '[evjs] Internal Page route discovery requires mode "spa" or "mpa".',
+    );
+  });
+
+  describe("page.* canonical convention", () => {
+    it("discovers only positive page anchors across supported route segments", async () => {
+      const cwd = await createFixture({
+        "src/pages/page.tsx": "export default function Home() { return null; }",
+        "src/pages/index.tsx":
+          "export default function OrdinaryIndex() { return null; }",
+        "src/pages/model.ts": "export const state = {};",
+        "src/pages/components/AppNotice.tsx":
+          "export default function AppNotice() { return null; }",
+        "src/pages/about/page.tsx":
+          "export default function About() { return null; }",
+        "src/pages/about/index.tsx":
+          "export default function OrdinaryAboutIndex() { return null; }",
+        "src/pages/users/$userId/page.tsx":
+          "export default function User() { return null; }",
+        "src/pages/users/$userId/components/Card.tsx":
+          "export default function Card() { return null; }",
+        "src/pages/docs/$...splat/page.tsx":
+          "export default function Docs() { return null; }",
+        "src/pages/(admin)/settings/page.tsx":
+          "export default function Settings() { return null; }",
       });
 
-      expect(discovery.rootModule).toBeUndefined();
+      const discovery = await discoverPageRoutes(cwd, {
+        dir: "./src/pages",
+        mode: "spa",
+      });
+
       expect(discovery.routes).toEqual([
         {
           id: "index",
           path: "/",
-          module: "./src/pages/index.tsx",
+          module: "./src/pages/page.tsx",
+          scope: { kind: "directory", root: "./src/pages" },
+        },
+        {
+          id: "about",
+          path: "/about",
+          module: "./src/pages/about/page.tsx",
+          scope: { kind: "directory", root: "./src/pages/about" },
+        },
+        {
+          id: "docs_splat",
+          path: "/docs/$",
+          module: "./src/pages/docs/$...splat/page.tsx",
+          scope: {
+            kind: "directory",
+            root: "./src/pages/docs/$...splat",
+          },
+        },
+        {
+          id: "settings",
+          path: "/settings",
+          module: "./src/pages/(admin)/settings/page.tsx",
+          scope: {
+            kind: "directory",
+            root: "./src/pages/(admin)/settings",
+          },
+        },
+        {
+          id: "users_userId",
+          path: "/users/$userId",
+          module: "./src/pages/users/$userId/page.tsx",
+          scope: {
+            kind: "directory",
+            root: "./src/pages/users/$userId",
+          },
+        },
+      ]);
+      expect(discovery.rootModule).toBeUndefined();
+      expect(discovery.diagnostics).toEqual([]);
+    });
+
+    it("keeps Page identity, layouts, and config metadata across SPA and MPA", async () => {
+      const cwd = await createFixture({
+        "src/pages/layout.tsx":
+          "export default function RootLayout() { return null; }",
+        "src/pages/about/layout.tsx":
+          "export default function AboutLayout() { return null; }",
+        "src/pages/about/page.tsx":
+          "export default function About() { return null; }",
+        "src/pages/about/index.tsx":
+          "export default function OrdinaryIndex() { return null; }",
+        "src/pages/about/index.html": '<div id="about"></div>',
+        "src/pages/about/page.config.ts": `
+          export default {
+            extensions: {
+              "@company/feature": { enabled: true },
+            },
+          };
+        `,
+        "src/pages/about/config.json": JSON.stringify({
+          title: "Compatibility input must stay inert",
+        }),
+      });
+
+      const spa = await discoverPageRoutes(cwd, {
+        dir: "./src/pages",
+        mode: "spa",
+      });
+      const mpa = await discoverPageRoutes(cwd, {
+        dir: "./src/pages",
+        mode: "mpa",
+      });
+
+      expect(spa.rootModule).toBe("./src/pages/layout.tsx");
+      expect(mpa.rootModule).toBe(spa.rootModule);
+      expect(spa.routes).toEqual([
+        expect.objectContaining({
+          id: "about_layout",
+          path: "/about",
+          module: "./src/pages/about/layout.tsx",
+          kind: "layout",
+        }),
+        expect.objectContaining({
+          id: "about",
+          path: "/about",
+          module: "./src/pages/about/page.tsx",
+          scope: {
+            kind: "directory",
+            root: "./src/pages/about",
+          },
+          parentId: "about_layout",
+        }),
+      ]);
+      expect(mpa.routes).toEqual([
+        spa.routes[0],
+        {
+          ...spa.routes[1],
+          html: "./src/pages/about/index.html",
+        },
+      ]);
+      expect(spa.metadata).toEqual({
+        pages: [
+          {
+            pageId: "about",
+            directory: "./src/pages/about",
+            entry: "./src/pages/about/page.tsx",
+            exportName: "default",
+            configModule: "./src/pages/about/page.config.ts",
+          },
+        ],
+      });
+      expect(mpa.metadata).toEqual(spa.metadata);
+      expect(spa.dependencies).toEqual([
+        path.join(cwd, "src/pages/about/page.config.ts"),
+      ]);
+      expect(mpa.dependencies).toEqual(spa.dependencies);
+      expect(mpa.files).toEqual(
+        expect.arrayContaining([
+          path.join(cwd, "src/pages/about/page.config.ts"),
+          path.join(cwd, "src/pages/about/index.html"),
+        ]),
+      );
+      expect(spa.diagnostics).toEqual([]);
+      expect(mpa.diagnostics).toEqual([]);
+    });
+
+    it("fails fast when MPA Pages declare SPA-only facets", async () => {
+      const cwd = await createFixture({
+        "src/pages/error.tsx":
+          "export default function RootError() { return null; }",
+        "src/pages/not-found.tsx":
+          "export default function RootNotFound() { return null; }",
+        "src/pages/page.tsx": `
+          export const beforeLoad = () => {};
+          export const loader = () => {};
+          export const validateSearch = () => {};
+          export const pendingComponent = () => null;
+          export const errorComponent = () => null;
+          export const notFoundComponent = () => null;
+          export default function Home() { return null; }
+        `,
+      });
+
+      const discovery = await discoverPageRoutes(cwd, {
+        dir: "./src/pages",
+        mode: "mpa",
+      });
+
+      expect(discovery.diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            level: "error",
+            message: expect.stringContaining(
+              'error boundary conventions are SPA-only and cannot be used with routing.mode "mpa"',
+            ),
+          }),
+          expect.objectContaining({
+            level: "error",
+            message: expect.stringContaining(
+              'not-found boundary conventions are SPA-only and cannot be used with routing.mode "mpa"',
+            ),
+          }),
+          expect.objectContaining({
+            level: "error",
+            message: expect.stringContaining(
+              'exports "beforeLoad", "loader", "validateSearch", "pendingComponent", "errorComponent", "notFoundComponent" are SPA router facets',
+            ),
+          }),
+        ]),
+      );
+      expect(discovery.routes).toEqual([]);
+    });
+
+    it("rejects orphan and multiple Page config modules without choosing one", async () => {
+      const cwd = await createFixture({
+        "src/pages/page.tsx": "export default function Home() { return null; }",
+        "src/pages/page.config.ts": "export default {};",
+        "src/pages/page.config.js": "export default {};",
+        "src/pages/about/page.tsx":
+          "export default function About() { return null; }",
+        "src/pages/about/page.config.js": "export default {};",
+        "src/pages/orphan/page.config.ts": "export default {};",
+      });
+
+      const discovery = await discoverPageRoutes(cwd, {
+        dir: "./src/pages",
+        mode: "spa",
+      });
+
+      expect(discovery.metadata).toEqual({
+        pages: [
+          {
+            pageId: "about",
+            directory: "./src/pages/about",
+            entry: "./src/pages/about/page.tsx",
+            exportName: "default",
+            configModule: "./src/pages/about/page.config.js",
+          },
+          {
+            pageId: "index",
+            directory: "./src/pages",
+            entry: "./src/pages/page.tsx",
+            exportName: "default",
+          },
+        ],
+      });
+      expect(discovery.dependencies).toEqual([
+        path.join(cwd, "src/pages/about/page.config.js"),
+      ]);
+      expect(discovery.diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            level: "error",
+            file: "src/pages/orphan/page.config.ts",
+            message: expect.stringContaining(
+              "must be colocated with a page.ts, page.tsx, page.js, or page.jsx anchor",
+            ),
+          }),
+          expect.objectContaining({
+            level: "error",
+            file: "src/pages/page.config.js",
+            message: expect.stringContaining(
+              "more than one Page config module",
+            ),
+          }),
+        ]),
+      );
+    });
+
+    it("does not treat componentless layout or group Routes as Page config owners", async () => {
+      const cwd = await createFixture({
+        "src/pages/admin/layout.tsx":
+          "export default function AdminLayout({ children }) { return children; }",
+        "src/pages/admin/page.config.ts": `
+          export default {
+            route: {
+              extensions: {
+                "@company/access": { policy: "admin" },
+              },
+            },
+          };
+        `,
+        "src/pages/admin/users/page.tsx":
+          "export default function Users() { return null; }",
+      });
+
+      const discovery = await discoverPageRoutes(cwd, {
+        dir: "./src/pages",
+        mode: "spa",
+      });
+
+      expect(discovery.diagnostics).toContainEqual(
+        expect.objectContaining({
+          level: "error",
+          file: "src/pages/admin/page.config.ts",
+          message: expect.stringContaining(
+            "A componentless layout or pathless group Route cannot own page.config.ts route extensions",
+          ),
+        }),
+      );
+    });
+
+    it("discovers a root layout and nested layout and boundary facets", async () => {
+      const cwd = await createFixture({
+        "src/pages/layout.tsx":
+          "export default function RootLayout() { return null; }",
+        "src/pages/error.tsx":
+          "export default function RootError() { return null; }",
+        "src/pages/not-found.tsx":
+          "export default function RootNotFound() { return null; }",
+        "src/pages/about/page.tsx":
+          "export default function About() { return null; }",
+        "src/pages/dashboard/layout.tsx":
+          "export default function DashboardLayout() { return null; }",
+        "src/pages/dashboard/error.tsx":
+          "export default function DashboardError() { return null; }",
+        "src/pages/dashboard/not-found.tsx":
+          "export default function DashboardNotFound() { return null; }",
+        "src/pages/dashboard/settings/page.tsx":
+          "export default function Settings() { return null; }",
+      });
+
+      const discovery = await discoverPageRoutes(cwd, {
+        dir: "./src/pages",
+        mode: "spa",
+      });
+
+      expect(discovery.rootModule).toBe("./src/pages/layout.tsx");
+      expect(discovery.routes).toEqual([
+        expect.objectContaining({
+          id: "about",
+          path: "/about",
+          module: "./src/pages/about/page.tsx",
+          errorModule: "./src/pages/error.tsx",
+          notFoundModule: "./src/pages/not-found.tsx",
+        }),
+        expect.objectContaining({
+          id: "dashboard_layout",
+          path: "/dashboard",
+          module: "./src/pages/dashboard/layout.tsx",
+          kind: "layout",
+        }),
+        expect.objectContaining({
+          id: "dashboard_settings",
+          path: "/dashboard/settings",
+          module: "./src/pages/dashboard/settings/page.tsx",
+          scope: {
+            kind: "directory",
+            root: "./src/pages/dashboard/settings",
+          },
+          parentId: "dashboard_layout",
+          errorModule: "./src/pages/dashboard/error.tsx",
+          notFoundModule: "./src/pages/dashboard/not-found.tsx",
+        }),
+      ]);
+      expect(discovery.diagnostics).toEqual([]);
+    });
+
+    it("reports duplicate page anchors in one directory", async () => {
+      const cwd = await createFixture({
+        "src/pages/page.ts":
+          "export default function HomeTs() { return null; }",
+        "src/pages/page.tsx":
+          "export default function HomeTsx() { return null; }",
+      });
+
+      const discovery = await discoverPageRoutes(cwd, {
+        dir: "./src/pages",
+        mode: "spa",
+      });
+
+      expect(discovery.routes).toEqual([
+        {
+          id: "index",
+          path: "/",
+          module: "./src/pages/page.ts",
+          scope: { kind: "directory", root: "./src/pages" },
         },
       ]);
       expect(discovery.diagnostics).toEqual([
+        expect.objectContaining({
+          level: "error",
+          file: "src/pages/page.tsx",
+          message: expect.stringContaining("Duplicate page.* anchor"),
+        }),
+      ]);
+    });
+
+    it("reports page anchors without a default export", async () => {
+      const cwd = await createFixture({
+        "src/pages/page.tsx": "export function Home() { return null; }",
+      });
+
+      const discovery = await discoverPageRoutes(cwd, {
+        dir: "./src/pages",
+        mode: "spa",
+      });
+
+      expect(discovery.routes).toEqual([]);
+      expect(discovery.diagnostics).toEqual([
+        expect.objectContaining({
+          level: "error",
+          file: "src/pages/page.tsx",
+          message: expect.stringContaining(
+            "page.* anchor modules must default-export",
+          ),
+        }),
+      ]);
+    });
+
+    it("accepts runtime default re-exports for page anchors and route facets", async () => {
+      const cwd = await createFixture({
+        "src/screens/AppLayout.tsx":
+          "export function AppLayout() { return null; }",
+        "src/screens/Home.tsx":
+          "export default function Home() { return null; }",
+        "src/screens/RootError.tsx":
+          "export default function RootError() { return null; }",
+        "src/screens/RootNotFound.tsx":
+          "export function RootNotFound() { return null; }",
+        "src/screens/User.tsx": "export function UserPage() { return null; }",
+        "src/screens/UsersLayout.tsx":
+          "export function UsersLayout() { return null; }",
+        "src/screens/UsersError.tsx":
+          "export default function UsersError() { return null; }",
+        "src/screens/UsersNotFound.tsx":
+          "export function UsersNotFound() { return null; }",
+        "src/pages/layout.tsx":
+          'export { AppLayout as default } from "../screens/AppLayout";',
+        "src/pages/error.tsx":
+          'export { default } from "../screens/RootError";',
+        "src/pages/not-found.tsx":
+          'export { RootNotFound as default } from "../screens/RootNotFound";',
+        "src/pages/page.tsx": 'export { default } from "../screens/Home";',
+        "src/pages/users/layout.tsx":
+          'export { UsersLayout as default } from "../../screens/UsersLayout";',
+        "src/pages/users/error.tsx":
+          'export { default } from "../../screens/UsersError";',
+        "src/pages/users/not-found.tsx":
+          'export { UsersNotFound as default } from "../../screens/UsersNotFound";',
+        "src/pages/users/page.tsx":
+          'export { UserPage as default } from "../../screens/User";',
+      });
+
+      const discovery = await discoverPageRoutes(cwd, {
+        dir: "./src/pages",
+        mode: "spa",
+      });
+
+      expect(discovery.rootModule).toBe("./src/pages/layout.tsx");
+      expect(discovery.routes).toEqual([
+        expect.objectContaining({
+          id: "index",
+          module: "./src/pages/page.tsx",
+          errorModule: "./src/pages/error.tsx",
+          notFoundModule: "./src/pages/not-found.tsx",
+        }),
+        expect.objectContaining({
+          id: "users_layout",
+          module: "./src/pages/users/layout.tsx",
+        }),
+        expect.objectContaining({
+          id: "users",
+          module: "./src/pages/users/page.tsx",
+          parentId: "users_layout",
+          errorModule: "./src/pages/users/error.tsx",
+          notFoundModule: "./src/pages/users/not-found.tsx",
+        }),
+      ]);
+      expect(discovery.diagnostics).toEqual([]);
+    });
+
+    it("rejects type-only and ambient-only default exports", async () => {
+      const cwd = await createFixture({
+        "src/pages/type-only/page.tsx":
+          'export type { Screen as default } from "../../../types";',
+        "src/pages/type-only/layout.tsx":
+          'export { type Screen as default } from "../../../types";',
+        "src/pages/specifier-type/page.tsx":
+          'export { type Screen as default } from "../../../types";',
+        "src/pages/interface/page.tsx": "export default interface Screen {}",
+        "src/pages/interface/not-found.tsx":
+          "export default interface NotFound {}",
+        "src/pages/ambient/page.tsx":
+          "declare const Screen: unknown; export { Screen as default };",
+        "src/pages/ambient/error.tsx":
+          "declare const Fallback: unknown; export { Fallback as default };",
+        "src/pages/ambient-default/page.tsx":
+          "declare const Screen: unknown; export default Screen;",
+        "src/pages/ambient-function/page.tsx":
+          "export default function Screen(): void;",
+      });
+
+      const discovery = await discoverPageRoutes(cwd, {
+        dir: "./src/pages",
+        mode: "spa",
+      });
+
+      expect(discovery.routes).toEqual([]);
+      expect(discovery.diagnostics).toHaveLength(9);
+      for (const file of [
+        "src/pages/ambient-default/page.tsx",
+        "src/pages/ambient-function/page.tsx",
+        "src/pages/ambient/page.tsx",
+        "src/pages/interface/page.tsx",
+        "src/pages/specifier-type/page.tsx",
+        "src/pages/type-only/page.tsx",
+      ]) {
+        expect(discovery.diagnostics).toContainEqual(
+          expect.objectContaining({
+            level: "error",
+            file,
+            message: expect.stringContaining(
+              "page.* anchor modules must default-export",
+            ),
+          }),
+        );
+      }
+      expect(discovery.diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            file: "src/pages/ambient/error.tsx",
+            message:
+              "SPA error boundary modules must default-export a React component.",
+          }),
+          expect.objectContaining({
+            file: "src/pages/interface/not-found.tsx",
+            message:
+              "SPA not-found boundary modules must default-export a React component.",
+          }),
+          expect.objectContaining({
+            file: "src/pages/type-only/layout.tsx",
+            message:
+              "Page-anchor layout modules must default-export a React component.",
+          }),
+        ]),
+      );
+    });
+
+    it("keeps non-anchor source files private", async () => {
+      const cwd = await createFixture({
+        "src/pages/index.tsx":
+          "export default function Home() { return null; }",
+        "src/pages/about.tsx":
+          "export default function About() { return null; }",
+        "src/pages/_components/Card.tsx":
+          "export default function Card() { return null; }",
+        "src/pages/users/$userId.tsx":
+          "export default function User() { return null; }",
+      });
+
+      const discovery = await discoverPageRoutes(cwd, {
+        dir: "./src/pages",
+        mode: "spa",
+      });
+
+      expect(discovery.routes).toEqual([]);
+      expect(discovery.rootModule).toBeUndefined();
+      expect(discovery.diagnostics).toEqual([]);
+    });
+
+    it("diagnoses an underscore-prefixed Page route instead of treating it as private", async () => {
+      const cwd = await createFixture({
+        "src/pages/_private/page.tsx":
+          "export default function Private() { return null; }",
+      });
+
+      const discovery = await discoverPageRoutes(cwd, {
+        dir: "./src/pages",
+        mode: "spa",
+      });
+
+      expect(discovery.routes).toEqual([]);
+      expect(discovery.diagnostics).toEqual([
         {
           level: "error",
-          file: rootLayout.replace(/^\.\//, ""),
-          message: `Root layout module must be a source module using .ts, .tsx, .js, or .jsx; declaration, test, spec, story, client-only, and server-only files are not supported. ${rootLayout} is not supported.`,
+          file: "src/pages/_private/page.tsx",
+          message:
+            'Static page route segment "_private" must start with a letter or number and then use only URL-safe characters: letters, numbers, ".", "_", "-", or "~". Rename the route directory to a URL-safe segment.',
         },
       ]);
-    }
-  });
-
-  it("ignores missing optional page route directories", async () => {
-    const cwd = await createFixture({});
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.rootModule).toBeUndefined();
-    expect(discovery.files).toEqual([]);
-    expect(discovery.routes).toEqual([]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("reports missing required page route directories", async () => {
-    const cwd = await createFixture({});
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/pages",
-      required: true,
     });
-
-    expect(discovery.rootModule).toBeUndefined();
-    expect(discovery.files).toEqual([]);
-    expect(discovery.routes).toEqual([]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/pages",
-        message: "Page route directory not found: ./src/pages.",
-      },
-    ]);
-  });
-
-  it("reports required page route directories that are files", async () => {
-    const cwd = await createFixture({
-      "src/pages": "not a directory",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/pages",
-      required: true,
-    });
-
-    expect(discovery.rootModule).toBeUndefined();
-    expect(discovery.files).toEqual([]);
-    expect(discovery.routes).toEqual([]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/pages",
-        message: "Page route directory must be a directory: ./src/pages.",
-      },
-    ]);
-  });
-
-  it("does not validate root layout aliases when there are no route candidates", async () => {
-    const cwd = await createFixture({
-      "src/layout.tsx": "export default function Layout() { return null; }",
-      "src/pages/_helpers/format.ts": "export const format = () => null;",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.rootModule).toBeUndefined();
-    expect(discovery.routes).toEqual([]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("rejects bracket dynamic route segments", async () => {
-    const cwd = await createFixture({
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/posts/[postId].tsx":
-        "export default function Post() { return null; }",
-      "src/pages/files/[...path].tsx":
-        "export default function FilePath() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/pages/files/[...path].tsx",
-        message:
-          'Dynamic page route segments must use $param filenames. Bracket segment "[...path]" is not supported. Use explicit pages config for catch-all or custom URL shapes.',
-      },
-      {
-        level: "error",
-        file: "src/pages/posts/[postId].tsx",
-        message:
-          'Dynamic page route segments must use $param filenames. Bracket segment "[postId]" is not supported. Rename the file to "$postId" for a dynamic segment, or use explicit pages config for a custom URL.',
-      },
-    ]);
-  });
-
-  it("discovers route group segments without adding URL segments", async () => {
-    const cwd = await createFixture({
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/(marketing)/about.tsx":
-        "export default function MarketingAbout() { return null; }",
-      "src/pages/shop/(checkout)/cart.tsx":
-        "export default function CheckoutCart() { return null; }",
-      "src/pages/(broken/about.tsx":
-        "export default function BrokenAbout() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-      {
-        id: "about",
-        path: "/about",
-        module: "./src/pages/(marketing)/about.tsx",
-      },
-      {
-        id: "shop_cart",
-        path: "/shop/cart",
-        module: "./src/pages/shop/(checkout)/cart.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/pages/(broken/about.tsx",
-        message:
-          'Page route group segment "(broken" must wrap a non-empty group name in parentheses, such as "(marketing)".',
-      },
-    ]);
-  });
-
-  it("rejects unsupported dynamic route segment syntax", async () => {
-    const cwd = await createFixture({
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/files/$.tsx":
-        "export default function EmptyDynamic() { return null; }",
-      "src/pages/files/$...123.tsx":
-        "export default function InvalidCatchAll() { return null; }",
-      "src/pages/files/$..._splat.tsx":
-        "export default function ReservedCatchAll() { return null; }",
-      "src/pages/files/$...path/archive.tsx":
-        "export default function NonTerminalCatchAll() { return null; }",
-      "src/pages/users/$id?.tsx":
-        "export default function OptionalUser() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/pages/files/$...123.tsx",
-        message:
-          'Catch-all page route segment "$...123" must use a JavaScript identifier after "$...", such as "$...splat".',
-      },
-      {
-        level: "error",
-        file: "src/pages/files/$..._splat.tsx",
-        message:
-          'Catch-all page route segment "$..._splat" uses a reserved param name. Use a safe application-specific name such as "$...splat"; runtime wildcard params are exposed as "_splat".',
-      },
-      {
-        level: "error",
-        file: "src/pages/files/$...path/archive.tsx",
-        message:
-          'Catch-all page route segment "$...path" must be the final URL path segment. Move it to the end of the route path, or split the route into explicit files.',
-      },
-      {
-        level: "error",
-        file: "src/pages/files/$.tsx",
-        message:
-          'Dynamic page route segments must include a name after "$". Segment "$" is not supported.',
-      },
-      {
-        level: "error",
-        file: "src/pages/users/$id?.tsx",
-        message:
-          'Optional page route segments are not supported. Split the route into explicit files or use explicit pages config instead of "$id?".',
-      },
-    ]);
-  });
-
-  it("preserves uppercase static route segments", async () => {
-    const cwd = await createFixture({
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/About.tsx": "export default function About() { return null; }",
-      "src/pages/docs/API.tsx":
-        "export default function ApiDocs() { return null; }",
-      "src/pages/legacyCamelCase.tsx":
-        "export default function Legacy() { return null; }",
-      "src/pages/users/$userId.tsx":
-        "export default function User() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-      {
-        id: "About",
-        path: "/About",
-        module: "./src/pages/About.tsx",
-      },
-      {
-        id: "docs_API",
-        path: "/docs/API",
-        module: "./src/pages/docs/API.tsx",
-      },
-      {
-        id: "legacyCamelCase",
-        path: "/legacyCamelCase",
-        module: "./src/pages/legacyCamelCase.tsx",
-      },
-      {
-        id: "users_userId",
-        path: "/users/$userId",
-        module: "./src/pages/users/$userId.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("rejects unsafe route segments and invalid dynamic parameter names", async () => {
-    const cwd = await createFixture({
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/contact us.tsx":
-        "export default function ContactUs() { return null; }",
-      "src/pages/orders/$order-id.tsx":
-        "export default function Order() { return null; }",
-      "src/pages/session/$__proto__.tsx":
-        "export default function Session() { return null; }",
-      "src/pages/settings?.tsx":
-        "export default function Settings() { return null; }",
-      "src/pages/docs/$_splat.tsx":
-        "export default function DocsSplat() { return null; }",
-      "src/pages/teams/$teamId/users/$teamId.tsx":
-        "export default function DuplicateTeamParam() { return null; }",
-      "src/pages/team/$constructor.tsx":
-        "export default function Team() { return null; }",
-      "src/pages/users/$123.tsx":
-        "export default function User() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/pages/contact us.tsx",
-        message:
-          'Static page route segment "contact us" must use URL-safe characters: letters, numbers, ".", "_", "-", or "~". Rename the file to a URL-safe segment, or use explicit pages config for custom paths.',
-      },
-      {
-        level: "error",
-        file: "src/pages/docs/$_splat.tsx",
-        message:
-          'Dynamic page route segment "$_splat" uses a reserved param name. Use a safe application-specific name such as "$userId".',
-      },
-      {
-        level: "error",
-        file: "src/pages/orders/$order-id.tsx",
-        message:
-          'Dynamic page route segment "$order-id" must use a JavaScript identifier after "$", such as "$userId".',
-      },
-      {
-        level: "error",
-        file: "src/pages/session/$__proto__.tsx",
-        message:
-          'Dynamic page route segment "$__proto__" uses a reserved param name. Use a safe application-specific name such as "$userId".',
-      },
-      {
-        level: "error",
-        file: "src/pages/settings?.tsx",
-        message:
-          'Static page route segment "settings?" must use URL-safe characters: letters, numbers, ".", "_", "-", or "~". Rename the file to a URL-safe segment, or use explicit pages config for custom paths.',
-      },
-      {
-        level: "error",
-        file: "src/pages/team/$constructor.tsx",
-        message:
-          'Dynamic page route segment "$constructor" uses a reserved param name. Use a safe application-specific name such as "$userId".',
-      },
-      {
-        level: "error",
-        file: "src/pages/teams/$teamId/users/$teamId.tsx",
-        message:
-          'Dynamic page route segment "$teamId" repeats a param name. Use unique dynamic param filenames within one route path.',
-      },
-      {
-        level: "error",
-        file: "src/pages/users/$123.tsx",
-        message:
-          'Dynamic page route segment "$123" must use a JavaScript identifier after "$", such as "$userId".',
-      },
-    ]);
-  });
-
-  it("discovers layout files inside the page route directory", async () => {
-    const cwd = await createFixture({
-      "src/layout/index.tsx":
-        "export default function Layout() { return null; }",
-      "src/pages/posts/layout.tsx":
-        "export default function PostsLayout() { return null; }",
-      "src/pages/admin/layout.jsx":
-        "export default function AdminLayout() { return null; }",
-      "src/pages/admin/settings.tsx":
-        "export default function AdminSettings() { return null; }",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/posts/$postId.tsx":
-        "export default function Post() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.rootModule).toBe("./src/layout/index.tsx");
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-      {
-        id: "admin_layout",
-        path: "/admin",
-        module: "./src/pages/admin/layout.jsx",
-        kind: "layout",
-      },
-      {
-        id: "admin_settings",
-        path: "/admin/settings",
-        module: "./src/pages/admin/settings.tsx",
-        parentId: "admin_layout",
-      },
-      {
-        id: "posts_layout",
-        path: "/posts",
-        module: "./src/pages/posts/layout.tsx",
-        kind: "layout",
-      },
-      {
-        id: "posts_postId",
-        path: "/posts/$postId",
-        module: "./src/pages/posts/$postId.tsx",
-        parentId: "posts_layout",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("discovers layout files inside a custom route directory", async () => {
-    const cwd = await createFixture({
-      "src/app/pages/posts/layout.tsx":
-        "export default function PostsLayout() { return null; }",
-      "src/app/pages/posts/$postId.tsx":
-        "export default function Post() { return null; }",
-      "src/app/pages/index.tsx":
-        "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/app/pages",
-    });
-
-    expect(discovery.rootModule).toBeUndefined();
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/app/pages/index.tsx",
-      },
-      {
-        id: "posts_layout",
-        path: "/posts",
-        module: "./src/app/pages/posts/layout.tsx",
-        kind: "layout",
-      },
-      {
-        id: "posts_postId",
-        path: "/posts/$postId",
-        module: "./src/app/pages/posts/$postId.tsx",
-        parentId: "posts_layout",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("uses configured root layout together with route-directory layouts", async () => {
-    const cwd = await createFixture({
-      "src/shell/AppLayout.tsx":
-        "export default function AppLayout() { return null; }",
-      "src/pages/posts/layout.tsx":
-        "export default function PostsLayout() { return null; }",
-      "src/pages/posts/$postId.tsx":
-        "export default function Post() { return null; }",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/pages",
-      rootLayout: "./src/shell/AppLayout.tsx",
-    });
-
-    expect(discovery.rootModule).toBe("./src/shell/AppLayout.tsx");
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-      {
-        id: "posts_layout",
-        path: "/posts",
-        module: "./src/pages/posts/layout.tsx",
-        kind: "layout",
-      },
-      {
-        id: "posts_postId",
-        path: "/posts/$postId",
-        module: "./src/pages/posts/$postId.tsx",
-        parentId: "posts_layout",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("keeps route-directory layouts when external root layout discovery is disabled", async () => {
-    const cwd = await createFixture({
-      "src/layout/index.tsx":
-        "export default function Layout() { return null; }",
-      "src/pages/posts/layout.tsx":
-        "export default function PostsLayout() { return null; }",
-      "src/pages/posts/$postId.tsx":
-        "export default function Post() { return null; }",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/pages",
-      rootLayout: false,
-    });
-
-    expect(discovery.rootModule).toBeUndefined();
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-      {
-        id: "posts_layout",
-        path: "/posts",
-        module: "./src/pages/posts/layout.tsx",
-        kind: "layout",
-      },
-      {
-        id: "posts_postId",
-        path: "/posts/$postId",
-        module: "./src/pages/posts/$postId.tsx",
-        parentId: "posts_layout",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("ignores layout directories without layout route modules", async () => {
-    const cwd = await createFixture({
-      "src/pages/layout/README.md": "# not a route",
-      "src/pages/posts/layout/README.md": "# not a route",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.rootModule).toBeUndefined();
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("rejects root layouts inside the page route directory", async () => {
-    const cwd = await createFixture({
-      "src/pages/layout.tsx":
-        "export default function Layout() { return null; }",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.rootModule).toBeUndefined();
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/pages/layout.tsx",
-        message:
-          "SPA route layouts must be nested below a route segment and named layout.{ts,tsx,js,jsx}. Use the external root layout convention layout/index.tsx beside the route directory for the app root layout. Move helper modules under an underscore-prefixed file or folder.",
-      },
-    ]);
-  });
-
-  it("rejects route layout directory aliases", async () => {
-    const cwd = await createFixture({
-      "src/pages/posts/layout/index.tsx":
-        "export default function PostsLayout() { return null; }",
-      "src/pages/posts/$postId.tsx":
-        "export default function Post() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.rootModule).toBeUndefined();
-    expect(discovery.routes).toEqual([
-      {
-        id: "posts_postId",
-        path: "/posts/$postId",
-        module: "./src/pages/posts/$postId.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/pages/posts/layout/index.tsx",
-        message:
-          "SPA route layouts must be nested below a route segment and named layout.{ts,tsx,js,jsx}. Use the external root layout convention layout/index.tsx beside the route directory for the app root layout. Move helper modules under an underscore-prefixed file or folder.",
-      },
-    ]);
-  });
-
-  it("reports unsupported root layout auto-discovery aliases", async () => {
-    const cwd = await createFixture({
-      "src/layout.jsx": "export default function LayoutJsx() { return null; }",
-      "src/layout.tsx": "export default function LayoutTsx() { return null; }",
-      "src/layout/index.js":
-        "export default function LayoutIndexJs() { return null; }",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.rootModule).toBeUndefined();
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/layout.tsx",
-        message:
-          "Unsupported SPA root layout convention: ./src/layout.tsx. Auto-discovery only supports ./src/layout/index.tsx; rename the file or configure routing.conventions.layout explicitly.",
-      },
-      {
-        level: "error",
-        file: "src/layout.jsx",
-        message:
-          "Unsupported SPA root layout convention: ./src/layout.jsx. Auto-discovery only supports ./src/layout/index.tsx; rename the file or configure routing.conventions.layout explicitly.",
-      },
-      {
-        level: "error",
-        file: "src/layout/index.js",
-        message:
-          "Unsupported SPA root layout convention: ./src/layout/index.js. Auto-discovery only supports ./src/layout/index.tsx; rename the file or configure routing.conventions.layout explicitly.",
-      },
-    ]);
-  });
-
-  it("discovers the root layout beside a custom page route directory", async () => {
-    const cwd = await createFixture({
-      "src/app/layout/index.tsx":
-        "export default function Layout() { return null; }",
-      "src/app/pages/index.tsx":
-        "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/app/pages",
-    });
-
-    expect(discovery.rootModule).toBe("./src/app/layout/index.tsx");
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/app/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("rejects route files without default exports", async () => {
-    const cwd = await createFixture({
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/about.tsx":
-        "export function About() { return null; }\nexport const loader = () => null;",
-      "src/pages/posts.tsx": "export const title = 'Posts';",
-      "src/pages/_helpers/format.ts": "export const format = () => null;",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/pages/about.tsx",
-        message:
-          "Page route modules must default-export a React component. Move non-route helpers under an underscore-prefixed file or folder.",
-      },
-      {
-        level: "error",
-        file: "src/pages/posts.tsx",
-        message:
-          "Page route modules must default-export a React component. Move non-route helpers under an underscore-prefixed file or folder.",
-      },
-    ]);
-  });
-
-  it("rejects root layout files without default exports", async () => {
-    const cwd = await createFixture({
-      "src/layout/index.tsx": "export function Layout() { return null; }",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.rootModule).toBeUndefined();
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/layout/index.tsx",
-        message: "Root layout must default-export a React component.",
-      },
-    ]);
-  });
-
-  it("rejects root layout directories at the convention path", async () => {
-    const cwd = await createFixture({
-      "src/layout/index.tsx/README.md": "# not a module",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.rootModule).toBeUndefined();
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      {
-        level: "error",
-        file: "src/layout/index.tsx",
-        message: "Root layout module must be a file: ./src/layout/index.tsx.",
-      },
-    ]);
-  });
-
-  it("rejects route files with syntax errors", async () => {
-    const cwd = await createFixture({
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-      "src/pages/broken.tsx": "export default function Broken( {",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      expect.objectContaining({
-        level: "error",
-        file: "src/pages/broken.tsx",
-        message: expect.stringContaining(
-          "Page route module could not be parsed:",
-        ),
-      }),
-    ]);
-  });
-
-  it("rejects root layout files with syntax errors", async () => {
-    const cwd = await createFixture({
-      "src/layout/index.tsx": "export default function Layout( {",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.rootModule).toBeUndefined();
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      expect.objectContaining({
-        level: "error",
-        file: "src/layout/index.tsx",
-        message: expect.stringContaining(
-          "Root layout module could not be parsed:",
-        ),
-      }),
-    ]);
-  });
-
-  it("does not consume root layout files when root layout discovery is disabled", async () => {
-    const cwd = await createFixture({
-      "src/layout.tsx": "export function Layout() { return null; }",
-      "src/layout/index.tsx":
-        "export default function Layout() { return null; }",
-      "src/pages/index.tsx": "export default function Home() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, {
-      dir: "./src/pages",
-      rootLayout: false,
-    });
-
-    expect(discovery.rootModule).toBeUndefined();
-    expect(discovery.routes).toEqual([
-      {
-        id: "index",
-        path: "/",
-        module: "./src/pages/index.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([]);
-  });
-
-  it("reports duplicate route paths", async () => {
-    const cwd = await createFixture({
-      "src/pages/users/$id.tsx": "export default function A() { return null; }",
-      "src/pages/users/$id/index.tsx":
-        "export default function B() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.routes).toHaveLength(1);
-    expect(discovery.diagnostics).toEqual([
-      expect.objectContaining({
-        level: "error",
-        file: "src/pages/users/$id/index.tsx",
-        message:
-          'Duplicate page route path "/users/$id" also declared by ./src/pages/users/$id.tsx. Keep one page module per URL path; choose either a flat route file or a directory index route file.',
-      }),
-    ]);
-  });
-
-  it("reports ambiguous dynamic route shapes", async () => {
-    const cwd = await createFixture({
-      "src/pages/users/$id.tsx":
-        "export default function UserById() { return null; }",
-      "src/pages/users/$userId.tsx":
-        "export default function UserByUserId() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "users_id",
-        path: "/users/$id",
-        module: "./src/pages/users/$id.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      expect.objectContaining({
-        level: "error",
-        file: "src/pages/users/$userId.tsx",
-        message:
-          'Ambiguous page route shape "/users/:param" for path "/users/$userId" also matches ./src/pages/users/$id.tsx (/users/$id). Use one dynamic param name for each URL shape or explicit pages config.',
-      }),
-    ]);
-  });
-
-  it("reports duplicate generated route ids", async () => {
-    const cwd = await createFixture({
-      "src/pages/admin/panel.tsx":
-        "export default function AdminPanel() { return null; }",
-      "src/pages/admin_panel.tsx":
-        "export default function AdminPanelFlat() { return null; }",
-    });
-
-    const discovery = await discoverPageRoutes(cwd, { dir: "./src/pages" });
-
-    expect(discovery.routes).toEqual([
-      {
-        id: "admin_panel",
-        path: "/admin/panel",
-        module: "./src/pages/admin/panel.tsx",
-      },
-    ]);
-    expect(discovery.diagnostics).toEqual([
-      expect.objectContaining({
-        level: "error",
-        file: "src/pages/admin_panel.tsx",
-        message:
-          'Duplicate page route id "admin_panel" for path "/admin_panel" also generated by ./src/pages/admin/panel.tsx (/admin/panel). Rename one route file so generated route ids are unique.',
-      }),
-    ]);
   });
 });
 

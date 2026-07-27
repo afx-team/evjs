@@ -1,147 +1,57 @@
 # Project Structure
 
-evjs applications should use page routes as the default client boundary. For
-documentation and new applications, use one complete structure and delete
-folders that the app does not need yet.
+This page is the source of truth for evjs application conventions.
+
+Core 0.3 uses one positive Page-and-Route convention:
+
+- `src/pages/**/page.*` is the only canonical Page and client-route anchor;
+- the containing directory determines both the Page scope and URL;
+- the same file tree produces the same semantic Pages and Routes in SPA and
+  MPA;
+- `routing.mode` changes materialization, not Page or Route identity.
 
 ## Recommended Structure
 
 ```text
 my-evjs-app/
-├── ev.config.ts                 # framework config
-├── index.html                   # shared HTML template with <div id="app">
+├── ev.config.ts
+├── index.html
 ├── package.json
-├── .gitignore                   # ignores evjs generated artifacts
-├── tsconfig.json                # includes @/* -> ./src/* path alias
-├── public/                      # copied static files
+├── tsconfig.json
+├── public/
 └── src/
-    ├── styles.css               # global CSS / Tailwind entry
-    ├── middleware.ts            # global server middleware
-    ├── layout/
-    │   └── index.tsx            # optional SPA root layout
-    ├── pages/                   # page routes
-    │   ├── error.tsx            # optional root SPA error boundary
-    │   ├── not-found.tsx        # optional root SPA not-found boundary
-    │   ├── index.tsx            # /
-    │   ├── (marketing)/
-    │   │   └── about.tsx        # /about
-    │   ├── dashboard/
-    │   │   ├── layout.tsx       # nested SPA route layout
-    │   │   └── index.tsx        # /dashboard
-    │   ├── campaign.tsx         # /campaign
-    │   ├── insights.tsx         # /insights
-    │   └── users/$userId.tsx    # /users/$userId
-    ├── apis/                    # server file routes
-    │   ├── middleware.ts        # API route middleware
-    │   ├── users.server.ts      # colocated server functions
+    ├── middleware.ts
+    ├── pages/
+    │   ├── page.tsx                 # /
+    │   ├── page.config.ts          # optional build-time config for /
+    │   ├── layout.tsx               # root layout in SPA and MPA
+    │   ├── about/
+    │   │   └── page.tsx             # /about
+    │   ├── users/
+    │   │   ├── page.tsx             # /users
+    │   │   ├── page.config.ts       # optional Page capabilities
+    │   │   ├── model.ts
+    │   │   ├── components/
+    │   │       ├── Hero.tsx
+    │   │       └── index.tsx       # private barrel/component, not a Page
+    │   │   └── $userId/
+    │   │       ├── page.tsx         # /users/:userId
+    │   │       └── services.ts
+    │   └── (account)/
+    │       └── settings/
+    │           └── page.tsx         # /settings
+    ├── apis/
+    │   ├── middleware.ts
+    │   ├── users.server.ts
     │   └── api/
-    │       └── health.ts        # /api/health server file route
-    ├── components/              # reusable UI
-    ├── features/                # domain modules
-    │   └── operations/
-    │       ├── components/
-    │       ├── hooks/
-    │       ├── model.ts
-    │       └── types.ts
-    ├── lib/                     # browser-safe shared helpers
-    └── hooks/                   # app-wide React hooks
+    │       └── health.ts
+    ├── components/
+    ├── features/
+    ├── hooks/
+    └── lib/
 ```
 
-This shape covers the complete framework surface:
-
-| Surface | Convention | Notes |
-| --- | --- | --- |
-| Config | `ev.config.ts` | Customize routing mode, server paths, plugins, or explicit page outputs only when defaults are not enough. |
-| Import alias | `tsconfig.json` `paths["@/*"]` | `@/components/Button` resolves to `src/components/Button`; evjs configures the bundler alias automatically and templates configure TypeScript for editor/type-checker support. |
-| Client routes | `src/pages` | Source of truth for SPA and MPA page routes. SPA mode maps it to one framework-owned app entry; MPA mode maps it to independent page entries. |
-| SPA root shell | `<routing-dir-parent>/layout/index.tsx` | The default `src/pages` route directory uses `src/layout/index.tsx`; `routing.dir: "./src/app/pages"` uses `src/app/layout/index.tsx`. Use `routing.conventions.layout` only for an intentional custom shell path. |
-| Nested SPA layouts | `src/pages/<segment>/layout.*` | Wrap descendants below a route segment. `src/pages/layout.tsx` and `src/pages/<segment>/layout/index.*` are rejected. MPA pages import shared components or share HTML templates instead. |
-| SPA route boundaries | `src/pages/**/error.*`, `src/pages/**/not-found.*` | Scoped SPA error and not-found boundaries. MPA pages treat these filenames as ordinary routes. |
-| Generated route types | `<routing-dir-parent>/route-types.d.ts` | SPA mode writes type-safe navigation declarations, such as `src/route-types.d.ts` or `src/app/route-types.d.ts`. Keep them ignored and do not import them from application code. |
-| Page metadata | Named exports in page modules | Rendering metadata lives with the page component. |
-| Server functions | `"use server";` in `*.server.*` modules | Server functions have no convention directory and can live beside pages, features, or server file routes. |
-| Server file routes | `src/apis` | Request/Response route modules discovered by default. Files without route exports stay ordinary colocated helpers. |
-| Server middleware | `src/middleware.ts`, `src/apis/**/middleware.ts` | Global server middleware wraps server runtime requests; API route middleware wraps descendant server file routes only. |
-| Manual server code | Ordinary files such as `server.ts` | Standalone/manual `@evjs/server` code is not discovered as a file convention and is unrelated to server file-route discovery. |
-| Domain code | `features/`, `components/`, `lib/`, `hooks/` | Keep business logic, reusable UI, browser-safe helpers, and React hooks out of route/page files. |
-
-## Convention Matrix
-
-Use this table as the source of truth when creating files. Only a few paths are
-framework conventions; the rest are ordinary project organization.
-For a dedicated filename and scope reference, see
-[File Conventions](./file-conventions).
-
-Quick rules:
-
-- Route files live under the configured `routing.dir` and use `.ts`, `.tsx`,
-  `.js`, or `.jsx`.
-- Directory roots use `index.*`; dynamic segments use `$param`; terminal SPA
-  catch-all segments use `$...splat`; static segments preserve URL-safe casing.
-- Route groups such as `(marketing)` are supported as pathless organization and
-  do not add URL segments. Malformed group segments are rejected. Dynamic param
-  names must be safe identifiers; reserved object-property names and `$_splat`
-  are rejected.
-- `_`-prefixed files and folders are private helpers, not URL routes.
-- Dot-prefixed files/folders, `.d.ts`, test/spec, Storybook,
-  `*.client.*`, and `*.server.*` files under the route directory are ignored so
-  colocated support files do not become routes.
-- SPA root layout auto-discovery accepts only `layout/index.tsx` beside the
-  route directory. Nested SPA route layouts use `layout.*` below a route
-  segment. Use `routing.conventions.layout` for a custom external root layout
-  module. MPA routes do not consume framework layouts.
-- SPA `src/pages/error.tsx`, `src/pages/not-found.tsx`, and scoped files such
-  as `src/pages/dashboard/error.tsx` are reserved in SPA mode. `error.*` and
-  `not-found.*` inherit by route directory scope.
-- If an output cannot follow the directory shape, use explicit `pages` config
-  instead of hand-writing `routing.routes`.
-
-Migration rules stay explicit rather than adding alternate filename dialects:
-
-- Rename bracket dynamic routes such as `[id].tsx` to `$id.tsx`.
-- Use route groups such as `(marketing)/about.tsx` only for pathless
-  organization; use a real URL segment such as `marketing/about.tsx` when the
-  group name should appear in the URL.
-- Model SPA nested layouts with route-directory layout modules. Use ordinary
-  components imported by a page when the wrapper should not participate in the
-  route tree.
-- Use `$...splat` only as the final URL path segment for existing SPA URLs
-  that need a catch-all route. New application routes should prefer explicit
-  static and `$param` segments with simple lowercase names.
-- Use explicit `pages` config for optional or other custom URL shapes that do
-  not map to the file convention.
-
-| File or folder | Framework meaning | Use it for | Do not use it for |
-| --- | --- | --- | --- |
-| `src/pages/**/*.{tsx,jsx,ts,js}` | SPA/MPA page route discovery | Thin page components with optional literal rendering metadata | Shared helpers, tests, bracket or optional routes, or hand-written SPA router/bootstrap code |
-| Same-basename `src/pages/**/*.html` beside a page route | MPA page HTML template | Page-specific document templates such as `about.html` beside `about.tsx` or `users/index.html` beside `users/index.tsx` | SPA layouts, route modules, or templates for unrelated routes |
-| Route paths, dynamic URL shapes, and generated route IDs under `src/pages` | Route collision checks before build output is generated | One page module per URL path, one parameter naming choice per dynamic URL shape, and unique generated route IDs | Parallel `users.tsx`/`users/index.tsx`, `users/$id.tsx`/`users/$userId.tsx`, or `admin/panel.tsx`/`admin_panel.tsx` routes |
-| `src/pages/(group)/**` | Pathless route group | Organizing page and layout modules without adding a URL segment | URL segments that should be visible in the browser path |
-| `src/pages/_*` and `src/pages/**/_*` | Ignored private route modules | Colocated helper components, utilities, fixtures, and page-local implementation details | URL routes, SPA root layouts, or generated files |
-| `src/pages/.*` and `src/pages/**/.*` | Ignored hidden route modules | Local scratch files or tool metadata that should stay invisible to route discovery | URL routes, generated route types, or source modules that should be imported by pages |
-| `src/pages/**/*.d.ts`, `src/pages/**/*.{test,spec,story,stories}.*`, `src/pages/**/*.{client,server}.*` | Ignored route support modules | Type declarations, tests, Storybook stories, client-only modules, and server-only modules colocated with pages | Route pages or files that should become URLs |
-| `<routing-dir-parent>/layout/index.tsx` | Optional external SPA root layout | One app shell around the discovered SPA route tree | MPA shared chrome, route-specific nested layouts, root layout aliases such as `src/layout.tsx`, or route-directory root layouts such as `src/pages/layout.tsx` |
-| `src/pages/<segment>/**/layout.{tsx,ts,jsx,js}` | Nested SPA route layout | Pathless layout routes that wrap child routes at the same URL prefix, such as `src/pages/posts/layout.tsx` | App-wide root shells, MPA shared chrome, `src/pages/layout.tsx`, `layout/index.*` aliases, or non-layout helper folders named `layout` |
-| `src/pages/**/error.{ts,tsx,js,jsx}` | Scoped SPA error boundary | React component fallback for errors in that route directory scope and descendants | URL routes, MPA behavior, server errors, or helper modules |
-| `src/pages/**/not-found.{ts,tsx,js,jsx}` | Scoped SPA not-found boundary | React component fallback for `notFound()` in that route directory scope and descendants | URL routes, MPA behavior, server 404 responses, or helper modules |
-| `<routing-dir-parent>/route-types.d.ts` | Generated SPA navigation types | Editor and type-checker support | Manual edits, imports from app code, template/scaffold source, or MPA mode |
-| `**/*.server.{ts,tsx,js,jsx}` with `"use server";` | Recommended server-function module naming | Reachable modules that export named callable server functions | Browser-only helpers, default exports, runtime re-exports, or relying on a directory name for discovery |
-| `src/apis/**/*.{ts,tsx,js,jsx}` | Default server file route discovery | Request/Response route modules exporting uppercase HTTP methods | `route.ts` sentinels, `foo.get.ts` method suffix files, bracket/catch-all/optional routes, `middleware`/`middlewares`, default exports, or helper exports from route candidates |
-| `src/middleware.{ts,tsx,js,jsx}` | Global server middleware | Hono-compatible middleware that runs before server runtime requests: server file routes, server functions, SSR, PPR, and RSC | API-route-only concerns, matcher config, route handlers, or helper exports |
-| `src/apis/**/middleware.{ts,tsx,js,jsx}` | API route middleware | Hono-compatible middleware for descendant server file routes in that directory tree | Flat sibling routes such as `api.ts`, global server middleware for server functions/SSR, or matcher config |
-| Server route paths and dynamic URL shapes under `src/apis` | Server route collision checks before build output is generated | One server route module per URL path and one parameter naming choice per dynamic URL shape | Parallel `users.ts`/`users/index.ts`, `users/$id.ts`/`users/$userId.ts`, or splitting methods for one path across files |
-| `src/features`, `src/components`, `src/lib`, `src/hooks` | No direct framework convention | Domain code, reusable UI, browser-safe helpers, and React hooks | Files that depend on route discovery by filename |
-
-Do not mix ownership models in one app unless you need the lower-level API:
-
-- Use `src/pages` plus `routing` for normal SPA/MPA page routes.
-- Use explicit `pages` config only when the output cannot be expressed by
-  `src/pages`.
-- Use `app.entry` only for a manually bootstrapped single browser app.
-
-## Matching Config
-
-The matching `ev.config.ts` can stay small:
+The matching SPA declaration is:
 
 ```ts
 import { defineConfig } from "@evjs/ev";
@@ -149,252 +59,357 @@ import { defineConfig } from "@evjs/ev";
 export default defineConfig({
   routing: {
     mode: "spa",
-    dir: "./src/pages",
-    mount: "#app",
-  },
-
-  server: {
-    rsc: true,
   },
 });
 ```
 
-Use `routing: { mode: "mpa" }` when every route should be emitted as its own
-HTML document without SPA router setup or framework layouts. MPA routes can
-use a same-basename colocated template, such as
-`src/pages/product/index.html` for `src/pages/product/index.tsx`, instead of
-the global `index.html` template. Use the lower-level `pages` config only for
-page outputs that do not map cleanly to `src/pages`.
+An MPA keeps the same Page tree and changes only the materialization mode:
+
+```ts
+export default defineConfig({
+  routing: {
+    mode: "mpa",
+  },
+});
+```
+
+## Convention Discovery Boundary
+
+The top-level `conventions: false` switch disables the framework-owned
+filesystem convention as one unit: `page.*` anchors, server routes under
+`src/apis`, global `src/middleware.ts`, and route-scoped
+`src/apis/**/middleware.ts`. It cannot be combined with an explicit `routing`
+or `server.routing` declaration. evjs does not expose switches for disabling
+only one of these roots or facets.
+
+```ts
+export default defineConfig({
+  conventions: false,
+});
+```
+
+SPA-only `application.routes` is configuration rather than a file convention.
+Reachable `"use server";` modules and plugin-generated contributions are graph
+inputs rather than filesystem conventions. Those inputs remain available when
+convention discovery is disabled. Removed `app`, `pages`, and top-level
+`routes` declarations produce configuration errors.
+
+When conventions are enabled, `server.routing: { dir }` may move the server
+file-route root away from `src/apis`; it customizes the root and does not
+disable discovery.
+
+## Convention Matrix
+
+Use this matrix when creating application files. Paths are relative to the
+project root unless stated otherwise.
+
+| Path or declaration | Framework meaning | Scope / output | Notes |
+| --- | --- | --- | --- |
+| `ev.config.ts` | Framework configuration | Whole project | Import `defineConfig` from `@evjs/ev`. |
+| `conventions: false` | Disable framework file discovery | Whole project | Disables Page/Route anchors, server file routes, and global/route middleware together. |
+| `routing.mode` | Output materialization | Application | `"spa"` creates Client Routes; `"mpa"` creates Page-owned Documents for static Page paths. It does not select a different route model. |
+| `routing.dir` | Page-route root | Application | Defaults to `./src/pages`; new applications normally omit it. |
+| `<routing.dir>/**/page.{ts,tsx,js,jsx}` | Canonical Page and Route anchor | Entire containing directory | Exactly one source-extension variant per route directory. Default-export the Page component. |
+| `<Page directory>/page.config.{ts,js}` | Optional canonical Page, Page-anchored Route, and Page-owned Document configuration | Build graph | Default-export static config. Top-level `extensions` belong to the Page; `route.extensions` belong to its unique semantic Route; `document.aliases` adds validated static output filenames without adding Routes. Prefer `definePageConfig()` and `page.config.ts`; exactly one variant per Page. |
+| `<routing.dir>/**/$param/` | Dynamic route segment | Route path | Produces a semantic `:param` segment. |
+| `<routing.dir>/**/$...splat/` | Catch-all route segment | Route path | Must be terminal. |
+| `<routing.dir>/**/(group)/` | Pathless route group | Source organization | Participates in scope but contributes no URL segment. |
+| `<routing.dir>/layout.*` and nested `layout.*` | Route layout facet | Semantic route tree | Composed around descendants in both SPA and MPA materialization. |
+| `<routing.dir>/**/error.*` and `not-found.*` | Route boundary facets | SPA route tree | MPA rejects these router-only facets until they have an explicit Document contract. |
+| Other files below a Page directory | Page-private source | Nearest Page | Components, hooks, models, services, tests, styles, assets, and `index.*` do not create routes. |
+| `<Page directory>/index.html` | Page Document template | MPA Page output | Overrides the shared template for that MPA Page. It is not a client Page entry. |
+| `index.html` / `routing.html` | Document template | Application output | `index.html` is the default template; it is unrelated to the Page entry filename. |
+| `src/route-types.d.ts` | SPA file-route navigation types, when emitted | Generated output | Ignore it; do not copy it into scaffolds or import it from app code. |
+| `**/*.server.{ts,tsx,js,jsx}` with `"use server";` | Server-function module | Reachability graph | Named callable exports only. There is no required directory. |
+| `server.routing: { dir }` | Server file-route root customization | Application | Defaults to `./src/apis` while conventions are enabled; this is not a disable switch. |
+| `src/apis/**/*.{ts,tsx,js,jsx}` | Server file route | Request URL | Uppercase HTTP method exports; URL comes from the file path. |
+| `src/middleware.ts` | Global server middleware | Server runtime | Wraps framework-owned server requests. |
+| `src/apis/**/middleware.ts` | API route middleware | Descendant server file routes | Not itself a route. |
+| `public/**` | Static files | Client output | Copied according to output configuration. |
+| `components/`, `features/`, `hooks/`, `lib/` | Shared application source | Application/shared | Ordinary project organization, not framework conventions. |
+
+### Canonical Page and Route resolution
+
+For this anchor:
+
+```text
+src/pages/people/$personId/page.tsx
+```
+
+evjs resolves:
+
+```text
+Page entry    src/pages/people/$personId/page.tsx
+Page scope    src/pages/people/$personId/
+URL           /people/:personId
+```
+
+There is no second route map to keep synchronized: the Page directory is the
+stable source of both identity and URL. Core derives build-safe internal ids
+separately. SPA and MPA normalize this source to the same semantic Page and
+Route nodes, then choose different runtime/output projections.
+
+### Page-private code
+
+Everything below a Page directory belongs to that Page unless a descendant
+directory contains another `page.*` anchor:
+
+```text
+src/pages/orders/$orderId/
+├── page.tsx
+├── page.config.ts
+├── index.ts
+├── loader.server.ts
+├── model.ts
+├── components/
+│   └── Summary.tsx
+└── __tests__/
+    └── detail.test.tsx
+```
+
+No `_` prefix is required for ordinary private code. Private scope is an
+ownership boundary, not access control: JavaScript imports are still governed
+by normal module rules and optional lint tooling. `index.*` has no client-route
+meaning. A descendant `page.*` intentionally creates another Page and its
+directory becomes a more specific scope.
+
+`_` has no private-route meaning. A directory such as `_components/` remains
+ordinary source only because it contains no `page.*` anchor. If
+`_private/page.tsx` exists, discovery reports an invalid static URL segment
+instead of silently hiding the Page; static segments must start with a letter
+or number.
+
+### Route tree
+
+Directory nesting is the route tree:
+
+```text
+src/pages/
+├── page.tsx                       # /
+└── admin/
+    ├── layout.tsx                 # /admin subtree layout in SPA and MPA
+    ├── page.tsx                   # /admin
+    ├── members/
+    │   └── $memberId/
+    │       └── page.tsx           # /admin/members/:memberId
+    └── (settings)/
+        └── profile/
+            └── page.tsx           # /admin/profile
+```
+
+Layouts compose around descendant Pages in both SPA and MPA materialization.
+SPA Page routes may additionally render `Outlet` from `@evjs/ev/navigation`.
+MPA rejects `$param` and terminal `$...splat` routes because a dynamic pattern
+does not identify one build-time HTML output. Router-only boundary facets are
+also SPA-only. `ev inspect` and `ev build` report these combinations rather
+than selecting another authoring convention.
 
 ## Page Modules
 
-Each discovered file under `src/pages` default-exports a React component.
-Keep the rules in four buckets:
-
-1. **Component contract**: route files default-export the page component.
-   Rendering metadata lives beside that component. Syntax errors and missing
-   default exports are reported during route discovery before the bundler runs.
-2. **Filename syntax**: `index.tsx` maps to the directory root. Dynamic segments
-   use `$param`; terminal SPA catch-all segments use `$...splat` and map to `$`.
-   Bracket segments such as `[id].tsx` and optional segments such as
-   `$slug?.tsx` are rejected.
-3. **URL segment safety**: dynamic names must be JavaScript identifiers after
-   `$`. Static segments must be URL-safe letters, numbers, `.`, `_`, `-`, or
-   `~`; lowercase names remain the recommended default for new application
-   routes, but stable existing URL casing can be preserved. Reserved names such
-   as `$__proto__.tsx`, `$constructor.tsx`, `$prototype.tsx`, and `$_splat.tsx`
-   are rejected.
-4. **Organization only**: route groups such as `(marketing)` are pathless, so
-   `src/pages/(marketing)/about.tsx` maps to `/about`. Malformed group segments
-   such as `(marketing` are rejected.
-
-Route discovery only considers `.tsx`, `.jsx`, `.ts`, and `.js` source files.
-These colocated files are ignored:
-
-- declarations;
-- test/spec files;
-- Storybook `*.story.*` and `*.stories.*` files;
-- hidden dot paths;
-- `*.client.*` client-only modules;
-- `*.server.*` server-only modules;
-- non-source files;
-- `_`-prefixed private route segments.
-
-Put non-route helpers in `_`-prefixed files/folders or outside `src/pages`.
-
-Collision and ordering rules are also deterministic:
-
-- Dynamic siblings cannot differ only by parameter name. Choose one of
-  `$id.tsx` or `$userId.tsx` for the same URL shape.
-- A route path cannot repeat the same dynamic param name, so
-  `teams/$teamId/users/$teamId.tsx` is rejected.
-- Flat route files and directory index route files cannot claim the same URL
-  path. Choose either `users.tsx` or `users/index.tsx` for `/users`.
-- SPA and MPA both order `/` first, parent routes before children, static
-  siblings before dynamic siblings, and catch-all siblings after dynamic
-  siblings. For example, `users/settings.tsx` ranks before `users/$id.tsx`.
-- Static siblings use locale-independent code-point ordering: `a-b.tsx`,
-  `a.b.tsx`, `a0.tsx`, `a_c.tsx`, `aa.tsx`, and `a~d.tsx` keep that order on
-  every machine.
-- Examples and config should use `/` separators. Filesystem `\` separators are
-  normalized before route parsing so paths and generated route IDs stay the same
-  across operating systems.
-
-Before build output is generated, evjs applies the same route checks to
-configured paths. It rejects duplicate paths, dynamic URL shapes, route IDs,
-empty dynamic params, reserved dynamic params, duplicate dynamic params,
-multiple wildcard segments, whitespace, query strings, and hashes.
-
-Generated route IDs come from URL paths and normalize separators and
-punctuation to underscores. That means `admin/panel.tsx` and
-`admin_panel.tsx` both produce `admin_panel` and cannot exist together.
-
-### Route Filename Examples
-
-| File | Result | Notes |
-| --- | --- | --- |
-| `src/pages/index.tsx` | `/` | Directory root route. |
-| `src/pages/docs/index.tsx` | `/docs` | Nested directory root route. |
-| `src/pages/users/$userId.tsx` | `/users/$userId` | Dynamic segment; the param name must be a JavaScript identifier. |
-| `src/pages/files/$...path.tsx` | `/files/$` | SPA catch-all route; runtime params expose the matched suffix as `_splat`. |
-| `src/pages/files/$...path/edit.tsx` | Rejected | Catch-all segments must be the final URL path segment. |
-| `src/pages/legacyCamelCase.tsx` | `/legacyCamelCase` | Case-preserving static segment for stable existing URLs. Prefer lowercase for new routes. |
-| `src/pages/users/settings.tsx` | `/users/settings` | Static sibling; it ranks before `users/$userId.tsx`. |
-| `src/pages/(marketing)/about.tsx` | `/about` | Pathless route group; `(marketing)` organizes files without adding a URL segment. |
-| `src/pages/posts/layout.tsx` | Layout route for `/posts` | SPA route layout that wraps descendants below `/posts`. |
-| `src/pages/_helpers/format.ts` | Ignored | `_`-prefixed files and folders are private to `src/pages`. |
-| `src/pages/.draft.tsx` | Ignored | Dot-prefixed files and folders are hidden from route discovery. |
-| `src/pages/profile.test.tsx` | Ignored | Test/spec files can be colocated with a page without becoming routes. |
-| `src/pages/profile.stories.tsx` | Ignored | Storybook files are never route pages. |
-| `src/pages/ClientCard.client.tsx` | Ignored | Client-only modules can be colocated without becoming URL routes. |
-| `src/pages/users.server.ts` | Ignored | Server-only modules are not page routes; imported server functions are still handled by the server-function transform. |
-| `src/pages/users/[id].tsx` | Rejected | Bracket route syntax is not supported; use `$id.tsx`. |
-| `src/pages/users/$__proto__.tsx` | Rejected | Reserved object-property names are not safe route param names. |
-| `src/pages/docs/$_splat.tsx` | Rejected | `_splat` is reserved for wildcard route params. |
-| `src/pages/layout.tsx` | Rejected | Use `src/layout/index.tsx` for the SPA root layout. Route layouts must be nested below a route segment. |
-| `src/pages/posts/layout/index.tsx` | Rejected | Route layout directory aliases are not part of the convention; use `src/pages/posts/layout.tsx`. |
-| `src/pages/teams/$teamId/users/$teamId.tsx` | Rejected | Dynamic param names must be unique within one route path. |
-| `src/pages/users.tsx` beside `src/pages/users/index.tsx` | Rejected | Both map to `/users`; keep one page module per URL path. |
-| `src/pages/admin_panel.tsx` beside `src/pages/admin/panel.tsx` | Rejected | Both generate the same route id `admin_panel`. |
+A React Page default-exports its component:
 
 ```tsx
-// src/pages/campaign.tsx
-import { Suspense } from "react";
-import { OfferRegion } from "./OfferRegion";
-import { OfferSkeleton } from "./OfferSkeleton";
-
-export const render = "ssr";
-export const hydrate = "none";
-export const prerender = {
-  partial: true,
-  delivery: "stream",
-} as const;
-
-export default function Campaign() {
-  return (
-    <main>
-      <Suspense fallback={<OfferSkeleton />}>
-        <OfferRegion />
-      </Suspense>
-    </main>
-  );
+export default function UserDetailPage() {
+  return <main>User detail</main>;
 }
 ```
 
-Page files should stay thin:
+Use the public authoring subpaths from Page code:
 
-- read params/search;
-- export page-local loaders or rendering metadata;
-- compose components from `features/` or `components/`;
-- keep business logic in domain modules.
+```tsx
+import { usePageParams } from "@evjs/ev/route";
+import { Link, useNavigate } from "@evjs/ev/navigation";
+import { useQuery } from "@evjs/ev/query";
+```
 
-Rendering metadata is literal-only:
+The exact exports are documented in [Client Routes](./client-routes) and
+[Server Functions](./server-functions).
 
-- `render` and `hydrate` are string literals;
-- `prerender` is `true` or an object literal with `partial`, `delivery`, or
-  `revalidate`;
-- `prerender.revalidate` is `false` or a positive integer number of seconds;
-- `rsc` is a boolean literal for RSC pages.
+### Application, Page, Route, and Document extension scopes
 
-Malformed page modules are reported with the file path and parser message before
-the bundler runs.
+Application-wide plugin data is authored once at top-level
+`ev.config.ts#extensions` and registered with
+`applicationExtension()`. Per-Page plugin data is authored under the adjacent
+`page.config.ts#extensions` and registered with `pageExtension()`. Route-owned
+data for a canonical Page route is authored under
+`page.config.ts#route.extensions` and registered with `routeExtension()`.
+This explicit nesting keeps menu, access, tracing, and micro-frontend data on
+the semantic Route rather than silently treating it as Page data.
+
+All owner kinds use the same CoreGraph extension registry. One plugin may own
+the same namespace for more than one owner kind as long as it declares each
+owner. Explicit SPA Route values may be authored on
+`application.routes[*].extensions`; after adopting the canonical Page tree,
+move each Page route value to `page.config.ts#route.extensions`. Runtime
+projection is always explicit.
+
+`page.config.ts#route.extensions` requires exactly one semantic Route targeting
+that Page. If an explicit config-route tree reuses one Page from multiple
+Routes, configure each `application.routes[*].extensions` value separately
+until the routes have distinct canonical Page anchors. A componentless layout
+Route cannot borrow a descendant Page config, and a pathless directory without
+a Page or layout does not materialize a Route at all. Plugins may apply
+Route-extension defaults to such structural Routes. Otherwise retain explicit
+`application.routes` configuration until the componentless Route data has
+another real owner; evjs diagnoses an orphan `page.config.ts` instead of
+inheriting it.
+
+Application-owned Document values in an explicit SPA profile use
+`application.document.extensions` and `documentExtension()`. A canonical
+Page-owned Document uses `page.config.ts#document.extensions`; this is valid
+only when that Page materializes its own Document, such as MPA or an SPA SSG
+Page. A CSR SPA Page shares the Application-owned Document, so Page-specific
+Document configuration is diagnosed instead of being applied globally.
+Plugins may register Document defaults for either materialization.
+
+### Page configuration and extensions
+
+An adjacent `page.config.ts` default-exports build-time Page configuration:
+
+```ts
+import { definePageConfig } from "@evjs/ev";
+
+export default definePageConfig({
+  title: "Orders",
+  meta: {
+    description: "Review and manage customer orders.",
+    keywords: "orders,payments",
+    viewport: "width=device-width, initial-scale=1",
+    "theme-color": "#ffffff",
+  },
+  render: "csr",
+  extensions: {
+    "@company/analytics": {
+      channel: "orders",
+    },
+  },
+  route: {
+    extensions: {
+      "@company/access": {
+        policy: "canReadOrders",
+      },
+    },
+  },
+});
+```
+
+Core fields include the static Page `title`, named `meta`, `render`, `hydrate`,
+`prerender`, and `rsc`. Each `meta` entry becomes
+`<meta name="key" content="value">`; it does not represent `property`,
+`charset`, `link`, `script`, dynamic metadata, or an arbitrary head DSL.
+Plugin-owned Page values live below top-level `extensions`; Route-owned values
+live below `route.extensions`. Both use registered namespaced keys, and the
+resolved config must be static JSON data. Core title and meta values are
+materialized for the active Page; extension values enter their corresponding
+normalized graph owners but require their plugin to explicitly project runtime
+data or behavior through generated contributions.
+
+When a Page owns a static Document (MPA CSR/SSG or SPA SSG), it may publish the
+same transformed HTML at additional validated paths:
+
+```ts
+export default definePageConfig({
+  document: {
+    aliases: ["orders.html", "legacy/orders.htm"],
+  },
+});
+```
+
+Aliases do not create Pages, Routes, or additional Documents. They must be
+normalized relative paths ending in `.html` or `.htm`, must differ from the
+canonical output, and must not collide with any other canonical output or
+alias. Restricting the suffix keeps framework HTML from overwriting JavaScript,
+CSS, or deployment metadata. Page-specific Document configuration is rejected
+when the Page shares a SPA Application Document or uses request-time rendering.
 
 ## Server Boundary
 
-Server functions have no convention directory. Put callable server functions in
-reachable modules that start with `"use server";`, and prefer `*.server.*`
-filenames so route discovery ignores colocated server-only files.
+Client Page routing and server request routing are separate systems.
+
+Server file routes use `src/apis`, `$param` dynamic filename segments, `index`
+for directory roots, and `(group)` for pathless organization:
+
+```text
+src/apis/
+├── middleware.ts
+├── api/
+│   ├── health.ts
+│   └── users/
+│       ├── index.ts
+│       └── $userId.ts
+└── (internal)/
+    └── metrics.ts
+```
 
 ```ts
-// src/apis/users.server.ts
-"use server";
-
-export async function listUsers() {
-  return [{ id: "ada", name: "Ada Lovelace" }];
+export function GET({ params }: { params: { userId: string } }) {
+  return Response.json({ id: params.userId });
 }
 ```
 
-```ts
-// src/apis/api/health.ts
-export const GET = async () => Response.json({ ok: true });
-```
+Server route modules export uppercase HTTP methods only. Helper files without
+route exports remain ordinary source, including helpers inside an
+underscore-prefixed directory. `_private/health.ts` with a `GET` export is not
+a private escape hatch: it is diagnosed as an invalid static route segment.
+Do not introduce `route.ts` sentinels, method-suffix files, bracket routes,
+catch-all routes, optional params, route-module middleware exports, or a
+`server.entry` composition path.
 
-The file path under `src/apis` is the URL path, so the example above
-maps to `/api/health`. A root route uses `src/apis/index.ts`; dynamic
-segments use `$param` filenames and map to Hono params such as `:userId`.
-Route groups are pathless. Server file routes reject bracket, catch-all,
-optional, uppercase static segments, duplicate path, and duplicate
-dynamic-shape routes.
+Server functions are different again: any reachable module that starts with
+`"use server";` and exports supported named callables can define them. See
+[Server Routes](./server-routes) and
+[Server Functions](./server-functions).
 
-A file under `src/apis` becomes a server route only after it exports an
-uppercase HTTP method such as `GET` or `POST`. Files with no route exports are
-ignored, so `schema.ts`, `db.ts`, and `types.ts` can be colocated with route
-modules. Once a file is a route candidate, it may export only uppercase HTTP
-methods; move helpers to plain non-route files, `_`-prefixed private files, or
-modules outside the route tree. `route.ts` sentinels, method suffix files such
-as `users.get.ts`, lowercase method exports, `middleware`/`middlewares`
-exports, default exports, and other helper exports from route candidates are
-reported before bundling.
+## Generated Structure
 
-Server file routes live under `src/apis` by default. Server middleware has two
-separate scopes and both use Hono's `MiddlewareHandler` signature.
+`ev prepare`, `ev dev`, and `ev build` materialize framework IR under `.ev`.
+It contains the normalized graph, generated entries, plugin contributions,
+framework slots, import edges, and the final manifest inputs.
 
-Global server middleware lives at `src/middleware.ts`. It runs before server
-runtime requests, including server file routes, server
-functions, SSR, PPR, and RSC:
+Treat these as generated:
 
-```ts
-// src/middleware.ts
-import type { MiddlewareHandler } from "@evjs/ev/server-context";
+- `.ev/`
+- `dist/`
+- `.turbo/`
+- `node_modules/`
+- `src/route-types.d.ts`
 
-const middleware: MiddlewareHandler = async (ctx, next) => {
-  await next();
-  ctx.header("x-server", "evjs");
-};
+Do not edit them or copy them into templates.
 
-export default middleware;
-```
+## Existing Source Adoption
 
-API route middleware lives inside the server file-route tree. `src/apis/middleware.ts`
-applies to every server file route under `src/apis`, and nested
-`src/apis/**/middleware.ts` files apply only to descendant routes. For example,
-`src/apis/api/middleware.ts` covers `src/apis/api/users.ts` and nested files
-under `src/apis/api/**`, but not the flat sibling route `src/apis/api.ts`:
+Core 0.3 has one canonical file-convention reader. Client Page discovery begins
+only after the application declares `routing.mode`; an unrelated `src/pages`
+directory alone does not publish routes. Explicit SPA route configuration
+normalizes into the same CoreGraph without becoming another file convention.
 
-```ts
-// src/apis/middleware.ts
-import type { MiddlewareHandler } from "@evjs/ev/server-context";
+| Source shape | Adoption action | Canonical destination |
+| --- | --- | --- |
+| Explicit SPA `application.routes` | The tree accepts `routes` nesting (not `children`), `component`, layout/wrapper/redirect structure, and a finite metadata set. `name`, `icon`, `title`, `hideInMenu`, `flatMenu`, `spmBPos`, `access`, `menuKey`, and static `menuAssetOptions` are retained under a registered Route extension. `exact: true` is a terminal-match structural assertion and is not copied; `exact: false`, or `exact: true` with nested routes, is rejected. The input implies SPA, cannot be combined with `routing`, and cannot select MPA materialization. | Move each route component to its URL directory as `page.*`; move capabilities to core fields or plugin-owned `page.config.ts` extensions; after removing `application`, enable the canonical tree with only `routing.mode: "spa"` |
+| Direct-child Page directories | Keep or reshape each URL directory and rename `<page>/index.*` to `page.*` | Keep `routing.mode: "mpa"`; map `config.json` title and supported named meta to core `title`/`meta`, and move remaining plugin-owned values to namespaced extensions |
+| Recursive filename routes | Move each published filename route into its URL directory as `page.*` | Keep dynamic/group directory segments, move Page settings to `page.config.ts`, and configure only `routing.mode` |
 
-const middleware: MiddlewareHandler = async (ctx, next) => {
-  if (!ctx.req.header("authorization")) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  await next();
-};
+For explicit config-route input, an `index.*` or `page.*` component owns its
+containing directory. A flat component with another basename remains
+module-scoped and cannot consume a colocated `page.config.ts`. Move a flat
+component into its dedicated Page directory before adding Page config; the
+explicit route may continue to use `index.*`, but canonical discovery requires
+the final `page.*` rename.
 
-export default middleware;
-```
-
-```ts
-// src/apis/users/$userId.ts
-export const GET = async (_req, ctx) => {
-  const userId = ctx.req.param("userId");
-  return Response.json({ id: userId });
-};
-```
+Provider names may appear in raw CoreGraph/debug artifacts as internal
+provenance. Normal inspect routing output hides them; applications do not
+choose a provider as an architectural mode.
 
 ## Naming Guidance
 
-- `pages/` is the page route source folder and can include SSR/PPR/RSC components.
-- `apis/` is the default server file route source folder. Use
-  `server.routing.dir` when the route tree intentionally lives in another
-  folder. `*.server.*` modules can be colocated there when server functions are
-  imported by reachable app code.
-- `middleware.ts` at `src/` is global server middleware. Nested
-  `apis/**/middleware.ts` files are API route middleware for descendant server
-  file routes.
-- `features/` owns business domains.
-- `components/` owns generic UI.
-- `lib/` contains browser-safe shared helpers.
-- Keep server secrets and Node-only APIs in `*.server.*`, `apis/`, or modules
-  imported only by server-only code.
+- Choose route directory names for stable public URLs.
+- Use lowercase URL segments unless an existing public URL requires casing.
+- Use `$param`, terminal `$...splat`, and `(group)` directory segments.
+- Keep Page-private code inside its Page directory.
+- Keep shared business modules outside `routing.dir` when several Pages own
+  them.
+- Put static document title and named meta in the core `title` and `meta`
+  fields. Keep product/plugin capability data behind namespaced
+  `page.config.ts` extensions.
+- Delete legacy `config.json` after mapping supported title/meta fields and
+  moving remaining owned values to `page.config.ts`.

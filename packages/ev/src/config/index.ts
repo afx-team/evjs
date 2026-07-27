@@ -1,30 +1,44 @@
 import {
   type AbsoluteHttpUrlValidationError,
-  BUILD_IDENTIFIER_DESCRIPTION,
   DEFAULT_SERVER_BASE_PATH,
   getAbsoluteHttpUrlValidationError,
-  getPageRouteParamSegmentValidationError,
   getPathPatternListValidationError,
   getPathPatternValidationError,
-  isBuildIdentifier,
-  type PageRouteParamSegmentValidationError,
   type PathPatternListValidationError,
   type PathPatternValidationError,
 } from "@evjs/shared";
 import type {
-  ComponentModel,
+  BigfishRouteExtension,
+  BigfishRouteMappedString,
+  BigfishRouteMenuKey,
+  BigfishRouteStaticValue,
   HydrationMode,
+  PageMetadata,
   PageRouteNode,
-  PprConfig,
   PrerenderConfig,
   RenderMode,
   ServerMiddlewareNode,
   ServerRouteNode,
 } from "@evjs/shared/manifest";
 import type { BundlerAdapter } from "../_internal/build/bundler.js";
-import { validatePageRenderingContract } from "../_internal/build/page-rendering-contract.js";
-import { routePathShapeFromPath } from "../_internal/build/page-route-conventions.js";
+import { isPluginLifecycleDescriptorField } from "../plugin/hook-names.js";
 import type { Plugin } from "../plugin/index.js";
+import { resolveBigfishRouteMetadata } from "./bigfish-route-metadata.js";
+import {
+  type ConfigExtensionValues,
+  type ResolvedApplicationExtensionValues,
+  resolveConfigExtensionValues,
+  type StaticConfigValue,
+} from "./extensions.js";
+
+export type { PageMetadata } from "@evjs/shared/manifest";
+export type {
+  ConfigExtensionNamespace,
+  ConfigExtensionValues,
+  ResolvedApplicationExtensionValues,
+  StaticConfigCompatible,
+  StaticConfigValue,
+} from "./extensions.js";
 
 /**
  * Default bundler config shape used by framework-core APIs.
@@ -33,30 +47,6 @@ import type { Plugin } from "../plugin/index.js";
  * a narrower generic or use the typed helper exported by that adapter.
  */
 export type DefaultBundlerConfig = import("@utoo/pack").ConfigComplete;
-
-export type {
-  BuildResult,
-  BundlerCtx,
-  ClientManifest,
-  EvBuildResult,
-  EvBundlerCtx,
-  EvDocument,
-  EvPlugin,
-  EvPluginConfigContext,
-  EvPluginContext,
-  EvPluginHooks,
-  HtmlDocument,
-  HtmlDocumentInfo,
-  HtmlTransformContext,
-  ManifestAssets,
-  PageManifestEntry,
-  Plugin,
-  PluginConfigContext,
-  PluginContext,
-  PluginHooks,
-  RouteEntry,
-  ServerManifest,
-} from "../plugin/index.js";
 
 export { type ConfigPatch, merge } from "./merge.js";
 
@@ -118,25 +108,20 @@ export interface ResolvedServerRuntimeConfig {
  * A version of Config where all fields with defaults are guaranteed.
  */
 export interface ResolvedConfig<TBundlerCfg = DefaultBundlerConfig> {
-  /** Client entry point (SPA mode). */
-  entry: string;
-  /** HTML template path (SPA mode). */
-  html: string;
+  /** Whether framework file conventions are enabled. */
+  conventions: boolean;
   /** Emitted HTML and asset-tag output options. */
   output: ResolvedOutputConfig;
-  /**
-   * Resolved pages for MPA mode.
-   *
-   * When set, the build produces one HTML file per page, each with its own
-   * entry bundle. The single-entry `entry` and `html` fields are ignored.
-   */
-  pages?: Record<string, ResolvedPageConfig>;
-  /** Resolved single SPA application declaration. */
-  app?: ResolvedAppConfig;
   /** Framework-managed page routing declaration, when enabled. */
   routing?: ResolvedPageRoutingConfig;
-  /** Internal application declarations. */
-  apps?: Record<string, ResolvedAppConfig>;
+  /** @internal Normalized Bigfish-style SPA migration input. */
+  application?: ResolvedConfigRouteApplication;
+  /**
+   * Statically validated Application extension input authored in ev.config.
+   *
+   * Plugin defaults, merge, and validation run later, before setup().
+   */
+  extensions: Readonly<Record<string, StaticConfigValue>>;
   /** Client dev server options. */
   dev: ResolvedDevConfig;
   /** Server configuration. */
@@ -150,11 +135,31 @@ export interface ResolvedConfig<TBundlerCfg = DefaultBundlerConfig> {
 }
 
 /**
+ * Framework config after plugin Application extensions have been materialized.
+ *
+ * This is the config snapshot exposed to setup, lifecycle, contribution, and
+ * bundler contexts.
+ */
+export type ResolvedFrameworkConfig<TBundlerCfg = DefaultBundlerConfig> = Omit<
+  ResolvedConfig<TBundlerCfg>,
+  "extensions"
+> & {
+  extensions: ResolvedApplicationExtensionValues;
+};
+
+/**
  * evjs framework configuration.
  */
 export interface Config<TBundlerCfg = DefaultBundlerConfig> {
-  /** HTML template path. Default: "./index.html". */
-  html?: string;
+  /**
+   * Enable framework file conventions.
+   *
+   * Defaults to `true`. Set to `false` only when the application owns all
+   * browser and server runtime composition explicitly. This is the only
+   * convention opt-out; individual Page, route, layout, and middleware
+   * conventions cannot be disabled independently.
+   */
+  conventions?: boolean;
 
   /** Emitted HTML and asset-tag output options. */
   output?: OutputConfig;
@@ -174,22 +179,32 @@ export interface Config<TBundlerCfg = DefaultBundlerConfig> {
   transport?: TransportConfig;
 
   /**
-   * Single SPA application declaration.
+   * Framework-managed Page routing.
    *
-   * Use this for an explicitly bootstrapped SPA entry. Framework render
-   * metadata is declared by imported page modules, not by a second route config
-   * field in `ev.config.ts`.
+   * Set only `mode` to choose SPA or MPA materialization. Both modes discover
+   * the same `page.*`-anchored Page tree under `src/pages`; changing the mode
+   * does not change Page identity or private directory scope.
+   *
+   * Discovery runs only when `routing` is explicitly present. Omission never
+   * scans `src/pages`.
    */
-  app?: AppConfig;
+  routing?: PageRoutingConfig;
 
   /**
-   * Framework-managed page routing.
-   *
-   * When enabled, evjs discovers React page modules from `src/pages`. SPA mode
-   * builds one framework-managed app internally; MPA mode emits independent
-   * router-free pages.
+   * Temporary migration input for an explicit Bigfish SPA route tree.
+   * It cannot be combined with canonical `routing`; remove it after moving
+   * each published Page to a `page.*` anchor.
    */
-  routing?: boolean | RoutingConfig;
+  application?: ConfigRouteApplication;
+
+  /**
+   * Namespaced, static Application configuration owned by active plugins.
+   *
+   * Values are validated and merged by the matching
+   * `applicationExtension()` declaration. Executable plugin options belong in
+   * the plugin factory instead of this CoreGraph-bound data.
+   */
+  extensions?: ConfigExtensionValues;
 
   /** Bundler adapter. When omitted, defaults to utoopack. */
   bundler?: BundlerAdapter<TBundlerCfg>;
@@ -198,33 +213,7 @@ export interface Config<TBundlerCfg = DefaultBundlerConfig> {
    * Framework plugins to extend behavior or modify the bundler config.
    */
   plugins?: Plugin<TBundlerCfg>[];
-
-  /**
-   * MPA (Multi-Page Application) configuration.
-   *
-   * Define multiple independent page outputs. A string page is shorthand for a
-   * React component module managed by the evjs page runtime. Use `{ entry }`
-   * only when the page owns its own bootstrap.
-   * When set, the build produces one HTML file per page. Top-level `html` is
-   * used as the default page template when a page does not provide one.
-   *
-   * @example
-   * ```ts
-   * pages: {
-   *   home: "./src/pages/Home.tsx",
-   *   about: {
-   *     entry: "./src/pages/about/main.tsx",
-   *     html: "./src/pages/about/index.html",
-   *   },
-   * }
-   * ```
-   */
-  pages?: Record<string, PageConfig>;
 }
-
-export type EvConfig<TBundlerCfg = DefaultBundlerConfig> = Config<TBundlerCfg>;
-export type ResolvedEvConfig<TBundlerCfg = DefaultBundlerConfig> =
-  ResolvedConfig<TBundlerCfg>;
 
 /** Client dev server options. */
 export interface DevConfig {
@@ -247,32 +236,28 @@ export interface ServerConfig {
    * Framework-managed server file routing.
    *
    * Defaults to enabled. evjs discovers Request/Response route modules from
-   * `src/apis` unless disabled.
+   * `src/apis` while top-level file conventions are enabled.
    */
-  routing?: boolean | ServerRoutingConfig;
-  /**
-   * Framework-managed server conventions.
-   *
-   * Defaults to enabled when server file routing is enabled.
-   */
-  conventions?: boolean | ServerConventionsConfig;
+  routing?: ServerRoutingConfig;
   /**
    * Framework server runtime base path. Defaults to "/__evjs".
    *
    * Server function, PPR, and RSC endpoints are derived from this path.
    */
   basePath?: string;
-  /** React Server Components Flight endpoint configuration. */
-  rsc?: boolean | ServerRscConfig;
+  /**
+   * Optional RSC Flight endpoint override.
+   *
+   * RSC is enabled by a Page's `page.config.ts`, not by server config.
+   */
+  rsc?: ServerRscConfig;
   /** Server dev options. */
   dev?: ServerDevConfig;
 }
 
 export interface ServerRscConfig {
-  /**
-   * RSC Flight endpoint path. Defaults to `${server.basePath}/rsc` when RSC is enabled.
-   */
-  endpoint?: string;
+  /** RSC Flight endpoint path override. */
+  endpoint: string;
 }
 
 export interface ResolvedServerRscConfig {
@@ -289,13 +274,7 @@ export interface ResolvedServerRoutingConfig {
   routes: ServerRouteNode[];
 }
 
-export interface ServerConventionsConfig {
-  /** Discover filesystem-scoped server middleware files. Default: true. */
-  middleware?: boolean;
-}
-
 export interface ResolvedServerConventionsConfig {
-  middleware: boolean;
   globalMiddlewares: ServerMiddlewareNode[];
   routeMiddlewares: ServerMiddlewareNode[];
 }
@@ -334,68 +313,177 @@ export interface ResolvedOutputConfig {
   crossOriginLoading: CrossOriginLoadingPolicy;
 }
 
-export type AppConfig = string | AppSourceConfig | AppEntryConfig;
-
-export interface AppSourceConfig {
-  source: string;
-}
-
-export interface AppEntryConfig {
-  entry: string;
-  html?: string;
-  mount?: string;
-}
-
-export interface ResolvedAppConfig {
-  source?: string;
-  entry?: string;
-  html?: string;
-  mount?: string;
-}
-
 export interface PageRoutingConfig {
   /**
-   * Page routing output mode.
+   * Page materialization mode.
    *
-   * `spa` builds one TanStack Router-backed application from the page tree.
-   * `mpa` builds one independent page output per file without a client router.
-   * Default: "spa".
+   * Both values use the same `page.*` Page tree. `spa` builds one client-routed
+   * application; `mpa` builds one independent document per Page.
    */
-  mode?: PageRoutingMode;
+  mode: PageRoutingMode;
   /** Directory containing page modules. Default: "./src/pages". */
   dir?: string;
-  /** HTML template for generated page routes. Defaults to top-level `html`. */
+  /** HTML template for generated page routes. Default: "./index.html". */
   html?: string;
   /** Mount selector for generated page routes. Default: "#app". */
   mount?: string;
-  /**
-   * Framework-managed page routing conventions.
-   *
-   * Defaults to enabled for SPA routing. `false` disables all page conventions.
-   */
-  conventions?: boolean | PageRoutingConventionsConfig;
 }
 
 export type PageRoutingMode = "spa" | "mpa";
-export type PageRoutingLayoutConvention = boolean | string;
 
-export interface PageRoutingConventionsConfig {
+/**
+ * Canonical configuration colocated with a `page.*` Page anchor.
+ *
+ * The module is evaluated by evjs at build time. Its resolved value must be
+ * static JSON data; plugins decide whether an extension is consumed while
+ * building or explicitly projected into generated runtime code.
+ */
+export interface PageFileConfig<
+  TExtensions extends ConfigExtensionValues = ConfigExtensionValues,
+> extends PageMetadata {
+  /** Framework document render mode. Defaults to "csr". */
+  readonly render?: RenderMode;
+  /** Framework hydration mode. Defaults to "load" except SSG defaults to "none". */
+  readonly hydrate?: HydrationMode;
+  /** Prerender behavior for SSR/SSG Pages. */
+  readonly prerender?: PrerenderConfig;
+  /** Enable React Server Components. Requires `render: "ssr"`. */
+  readonly rsc?: true;
+  /** Namespaced plugin-owned Page configuration. */
+  readonly extensions?: TExtensions;
   /**
-   * SPA root layout convention.
+   * Static HTML Document output owned by this Page.
    *
-   * `true` auto-discovers one `layout/index.tsx` source module beside the
-   * route directory, `false` disables root layout discovery, and a string
-   * points at an explicit root layout module. MPA mode does not use framework
-   * layouts.
+   * This is valid only when the Page materializes its own static Document.
    */
-  layout?: PageRoutingLayoutConvention;
+  readonly document?: PageFileDocumentConfig;
+  /**
+   * Configuration for the unique semantic Route anchored by this Page.
+   *
+   * Route-owned data remains separate from Page `extensions`.
+   */
+  readonly route?: PageFileRouteConfig;
 }
 
-export type RoutingConfig = PageRoutingConfig;
-export type RoutingMode = PageRoutingMode;
+export interface PageFileDocumentConfig {
+  /**
+   * Additional relative output files containing the same transformed HTML.
+   *
+   * Aliases do not create Routes or additional semantic Documents.
+   */
+  readonly aliases?: readonly string[];
+  /** Namespaced plugin-owned configuration for this Page-owned Document. */
+  readonly extensions?: ConfigExtensionValues;
+}
 
-export interface ResolvedPageRoutingConventionsConfig {
-  layout: PageRoutingLayoutConvention;
+export interface PageFileRouteConfig {
+  /** Namespaced plugin-owned Route configuration. */
+  readonly extensions?: ConfigExtensionValues;
+}
+
+export interface ConfigRouteApplication {
+  /** Directory containing `page.*`-anchored Page scopes. Default: "./src/pages". */
+  pageRoot?: string;
+  /** Application-owned Document defaults. */
+  document?: ConfigRouteApplicationDocument;
+  /** Project-local Application/root layout component. */
+  layout?: string;
+  /** Required non-empty Bigfish SPA route tree used only during source migration. */
+  routes: [ConfigRoute, ...ConfigRoute[]];
+}
+
+export interface ConfigRouteApplicationDocument {
+  /** HTML template shared by routes without an override. */
+  template?: string;
+  /** Default mount selector. */
+  mount?: string;
+  /** Namespaced plugin-owned Document configuration. */
+  extensions?: ConfigExtensionValues;
+}
+
+export interface ResolvedConfigRouteApplicationDocument {
+  template: string;
+  mount: string;
+  extensions?: Readonly<Record<string, StaticConfigValue>>;
+}
+
+export interface ResolvedConfigRouteApplication {
+  pageRoot: string;
+  document: ResolvedConfigRouteApplicationDocument;
+  layout?: string;
+  routes: ResolvedConfigRoute[];
+}
+
+export interface ConfigRoute {
+  /** Absolute, relative, empty, or omitted route path. */
+  path?: string;
+  /** Page directory id relative to `application.pageRoot`; "." selects its root. */
+  page?: string;
+  /** Bigfish component reference accepted by the SPA migration normalizer. */
+  component?: string;
+  /** Redirect destination. Relative destinations resolve from the parent. */
+  redirect?: string;
+  /** Ordered React wrapper modules around this route. */
+  wrappers?: string[];
+  /** Route layout module, or `false` to bypass the Application layout. */
+  layout?: string | false;
+  /** Nested Umi/Bigfish route declarations. */
+  routes?: ConfigRoute[];
+  /** Namespaced plugin-owned configuration for this semantic Route. */
+  extensions?: ConfigExtensionValues;
+  /** Menu or breadcrumb label retained for migration plugins. */
+  name?: string;
+  /** Static menu icon name retained for migration plugins. */
+  icon?: string;
+  /** Browser-title metadata retained for migration plugins. */
+  title?: string;
+  /** Hide this route from generated menus. */
+  hideInMenu?: boolean;
+  /** Promote child menu entries to this route's level. */
+  flatMenu?: boolean;
+  /** Bigfish B-position identifier, optionally keyed by site. */
+  spmBPos?: BigfishRouteMappedString;
+  /** Bigfish/Umi access policy name. */
+  access?: string;
+  /** BOP menu identifier, optionally keyed by site; null/empty disables it. */
+  menuKey?: BigfishRouteMenuKey;
+  /** Static BOP menu-switch options retained for the owning plugin. */
+  menuAssetOptions?: Record<string, BigfishRouteStaticValue>;
+  /**
+   * Acknowledges the exact terminal-match semantics already represented by
+   * the Core Route. `false` is not representable and is rejected.
+   */
+  exact?: true;
+}
+
+export interface ResolvedConfigRoute {
+  path?: string;
+  /** Resolved Page directory id relative to `application.pageRoot`. */
+  page?: string;
+  /** Resolved Page module retained by the SPA migration normalizer. */
+  component?: string;
+  redirect?: string;
+  wrappers?: string[];
+  layout?: string | false;
+  routes?: ResolvedConfigRoute[];
+  extensions?: Readonly<Record<string, StaticConfigValue>>;
+  /** @internal Strict Bigfish metadata projected to a registered Route extension. */
+  metadata?: BigfishRouteExtension;
+}
+
+/** Internal discovery metadata retained for a canonical `page.*` Page. */
+export interface PageAnchorMetadata {
+  pageId: string;
+  directory: string;
+  entry: string;
+  exportName: "default";
+  configModule?: string;
+}
+
+/** Internal provider metadata carried from discovery into graph analysis. */
+export interface PageRouteDiscoveryMetadata {
+  /** Canonical positive-anchor Pages. */
+  pages?: PageAnchorMetadata[];
 }
 
 export interface ResolvedPageRoutingConfig {
@@ -403,10 +491,12 @@ export interface ResolvedPageRoutingConfig {
   dir: string;
   html: string;
   mount: string;
-  conventions?: ResolvedPageRoutingConventionsConfig;
-  entry?: string;
   routes: PageRouteNode[];
   rootModule?: string;
+  /** Internal provider metadata; it does not activate page-level behavior. */
+  metadata?: PageRouteDiscoveryMetadata;
+  /** Absolute files that graph analysis and dev watch must track explicitly. */
+  dependencies?: string[];
 }
 
 /** Server dev options. */
@@ -421,7 +511,6 @@ export interface ServerDevConfig {
  * Default configuration values.
  */
 export const CONFIG_DEFAULTS = {
-  entry: "./src/main.tsx",
   html: "./index.html",
   port: 3000,
   serverPort: 3001,
@@ -430,56 +519,67 @@ export const CONFIG_DEFAULTS = {
   outputClientDir: "dist/client",
   outputServerDir: "dist/server",
   routingDir: "./src/pages",
-  routingMode: "spa",
   serverRoutingDir: "./src/apis",
   serverMiddlewareFile: "./src/middleware.ts",
   mount: "#app",
 } as const;
-const MPA_LAYOUT_UNSUPPORTED_MESSAGE =
-  "[evjs] routing.conventions.layout is only supported in SPA mode. MPA pages should import shared shell components directly or use shared HTML templates.";
 const PUBLIC_ROOT_CONFIG_KEYS = new Set([
-  "html",
+  "conventions",
   "output",
   "dev",
   "server",
   "transport",
-  "app",
   "routing",
+  "application",
+  "extensions",
   "bundler",
   "plugins",
-  "pages",
 ]);
 const PUBLIC_PAGE_ROUTING_CONFIG_KEYS = new Set([
   "mode",
   "dir",
   "html",
   "mount",
-  "conventions",
 ]);
-const PUBLIC_PAGE_ROUTING_CONVENTIONS_CONFIG_KEYS = new Set(["layout"]);
-const PUBLIC_APP_CONFIG_KEYS = new Set(["source", "entry", "html", "mount"]);
-const PUBLIC_PAGE_CONFIG_KEYS = new Set([
+const PUBLIC_CONFIG_ROUTE_APPLICATION_KEYS = new Set([
+  "pageRoot",
+  "document",
+  "routes",
+  "layout",
+]);
+const PUBLIC_CONFIG_ROUTE_KEYS = new Set([
   "path",
-  "entry",
+  "page",
   "component",
-  "app",
-  "html",
+  "redirect",
+  "wrappers",
+  "layout",
+  "routes",
+  "extensions",
+  "name",
+  "icon",
+  "title",
+  "hideInMenu",
+  "flatMenu",
+  "spmBPos",
+  "access",
+  "menuKey",
+  "menuAssetOptions",
+  "exact",
+]);
+const PUBLIC_CONFIG_ROUTE_APPLICATION_DOCUMENT_KEYS = new Set([
+  "template",
   "mount",
-  "render",
-  "hydrate",
-  "prerender",
-  "rsc",
+  "extensions",
 ]);
 const PUBLIC_DEV_CONFIG_KEYS = new Set(["port", "https", "proxy"]);
 const PUBLIC_SERVER_CONFIG_KEYS = new Set([
   "routing",
-  "conventions",
   "basePath",
   "rsc",
   "dev",
 ]);
 const PUBLIC_SERVER_ROUTING_CONFIG_KEYS = new Set(["dir"]);
-const PUBLIC_SERVER_CONVENTIONS_CONFIG_KEYS = new Set(["middleware"]);
 const PUBLIC_SERVER_DEV_CONFIG_KEYS = new Set(["port", "https"]);
 const PUBLIC_SERVER_RSC_CONFIG_KEYS = new Set(["endpoint"]);
 const PUBLIC_TRANSPORT_CONFIG_KEYS = new Set(["baseUrl"]);
@@ -496,7 +596,31 @@ const PUBLIC_DEV_PROXY_RULE_KEYS = new Set([
   "changeOrigin",
   "secure",
 ]);
-const PUBLIC_BUNDLER_CONFIG_KEYS = new Set(["name", "build", "dev"]);
+const PUBLIC_PLUGIN_CONFIG_KEYS = new Set([
+  "name",
+  "dependencies",
+  "optionalDependencies",
+  "enforce",
+  "describe",
+  "config",
+  "setup",
+  "contributions",
+]);
+const PUBLIC_BUNDLER_CONFIG_KEYS = new Set([
+  "name",
+  "capabilities",
+  "build",
+  "dev",
+]);
+const PUBLIC_BUNDLER_CAPABILITY_KEYS = new Set(["build", "dev"]);
+const PUBLIC_BUNDLER_BUILD_CAPABILITY_KEYS = new Set(["server", "rsc", "ppr"]);
+const PUBLIC_BUNDLER_DEV_CAPABILITY_KEYS = new Set([
+  "html",
+  "entries",
+  "routes",
+  "server",
+  "resolution",
+]);
 
 function toProxyContext(endpoint: string): string {
   return endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
@@ -517,18 +641,11 @@ function toRuntimeEndpoint(endpoint: string): string {
   return endpoint.startsWith("/") ? endpoint.slice(1) : endpoint;
 }
 
-function resolveRscEndpoint(
-  rsc: ServerConfig["rsc"],
-  shouldExposeDefaultEndpoint: boolean,
-  serverBasePath: string,
-): string | undefined {
-  if (!rsc && !shouldExposeDefaultEndpoint) return undefined;
-  if (typeof rsc === "object" && rsc.endpoint !== undefined) {
-    return toRuntimeEndpoint(
-      normalizePath(assertRoutePath(rsc.endpoint, "server.rsc.endpoint")),
-    );
-  }
-  return toRuntimeEndpoint(joinPath(serverBasePath, "rsc"));
+function resolveRscEndpoint(rsc: ServerConfig["rsc"]): string | undefined {
+  if (!rsc) return undefined;
+  return toRuntimeEndpoint(
+    normalizePath(assertRoutePath(rsc.endpoint, "server.rsc.endpoint")),
+  );
 }
 
 /**
@@ -538,55 +655,50 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
   userConfig?: Config<TBundlerCfg>,
 ): ResolvedConfig<TBundlerCfg> {
   const config = resolveRootConfig(userConfig);
-  const devConfig = resolveOptionalObjectConfig<DevConfig>(config.dev, "dev");
+  const conventions = resolveConventionsConfig(config.conventions);
+  const devConfig = resolveOptionalConfigRecord<DevConfig>(config.dev, "dev");
   validateDevConfigKeys(devConfig);
-  const serverConfig = resolveOptionalObjectConfig<ServerConfig>(
+  const serverConfig = resolveOptionalConfigRecord<ServerConfig>(
     config.server,
     "server",
   );
   validateServerConfigKeys(serverConfig);
   const serverRscConfig = resolveServerRscConfig(serverConfig.rsc);
-  const serverDevConfig = resolveOptionalObjectConfig<ServerDevConfig>(
+  const serverDevConfig = resolveOptionalConfigRecord<ServerDevConfig>(
     serverConfig.dev,
     "server.dev",
   );
   validateServerDevConfigKeys(serverDevConfig);
-  const transportConfig = resolveOptionalObjectConfig<TransportConfig>(
+  const transportConfig = resolveOptionalConfigRecord<TransportConfig>(
     config.transport,
     "transport",
   );
   validateTransportConfigKeys(transportConfig);
-  const outputConfig = resolveOptionalObjectConfig<OutputConfig>(
+  const outputConfig = resolveOptionalConfigRecord<OutputConfig>(
     config.output,
     "output",
   );
   validateOutputConfigKeys(outputConfig);
+  validateConventionSourceConflicts(config, serverConfig, conventions);
 
-  const entry = CONFIG_DEFAULTS.entry;
-  const defaultHtml =
-    config.html === undefined
-      ? CONFIG_DEFAULTS.html
-      : assertNonEmptyString(config.html, "html");
+  const defaultHtml = CONFIG_DEFAULTS.html;
 
-  const resolvedPages = resolvePagesConfig(config.pages, defaultHtml);
-
-  const resolvedApp =
-    config.app !== undefined
-      ? resolveAppConfig(config.app, defaultHtml)
+  const resolvedApplication = resolveConfigRouteProfile(config, defaultHtml);
+  const resolvedPageRouting =
+    resolvedApplication === undefined && conventions
+      ? resolvePageRoutingConfig(config.routing, defaultHtml)
       : undefined;
-  const resolvedPageRouting = resolvePageRoutingConfig(
-    config.routing,
-    defaultHtml,
-  );
-  const resolvedApps = resolvedApp ? { default: resolvedApp } : undefined;
 
-  const resolvedServerRouting = resolveServerRoutingConfig(
-    serverConfig.routing === undefined ? true : serverConfig.routing,
-  );
-  const resolvedServerConventions = resolveServerConventionsConfig(
-    serverConfig.conventions,
-    resolvedServerRouting !== undefined,
-  );
+  const resolvedServerRouting = conventions
+    ? resolveServerRoutingConfig(serverConfig.routing)
+    : undefined;
+  const resolvedServerConventions =
+    conventions && resolvedServerRouting
+      ? {
+          globalMiddlewares: [],
+          routeMiddlewares: [],
+        }
+      : undefined;
   const clientPort =
     devConfig.port === undefined
       ? CONFIG_DEFAULTS.port
@@ -602,7 +714,12 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
   );
   const serverEndpoint = toRuntimeEndpoint(joinPath(serverBasePath, "fn"));
   const pprEndpoint = toRuntimeEndpoint(joinPath(serverBasePath, "ppr"));
-  const rscEndpoint = resolveRscEndpoint(serverRscConfig, true, serverBasePath);
+  const rscEndpoint = resolveRscEndpoint(serverRscConfig);
+  // Page rendering enables RSC from the CoreGraph. Keep the derived path
+  // available to the dev proxy even when no endpoint override is configured;
+  // the resolved runtime only exposes RSC when the graph actually needs it.
+  const rscProxyEndpoint =
+    rscEndpoint ?? toRuntimeEndpoint(joinPath(serverBasePath, "rsc"));
   const devHttps = resolveDevHttpsConfig(devConfig.https);
   const serverHttps = resolveServerDevHttpsConfig(serverDevConfig.https);
   const serverTarget = new URL(
@@ -611,12 +728,17 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
   serverTarget.port = String(serverPort);
 
   return {
-    entry,
-    html: defaultHtml,
-    pages: resolvedPages,
-    app: resolvedApp,
+    conventions,
     routing: resolvedPageRouting,
-    apps: resolvedApps,
+    ...(resolvedApplication
+      ? {
+          application: resolvedApplication,
+        }
+      : {}),
+    extensions: resolveConfigExtensionValues(
+      config.extensions,
+      "config.extensions",
+    ),
     dev: {
       port: clientPort,
       https: devHttps,
@@ -628,7 +750,7 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
           context: [
             toProxyContext(serverEndpoint),
             toProxyContext(pprEndpoint),
-            ...(rscEndpoint ? [toProxyContext(rscEndpoint)] : []),
+            toProxyContext(rscProxyEndpoint),
           ],
           target: serverTarget.origin,
           changeOrigin: true,
@@ -680,6 +802,7 @@ export function resolvePluginsConfig<TBundlerCfg = DefaultBundlerConfig>(
   if (!Array.isArray(plugins)) {
     throw new Error("[evjs] plugins must be an array of plugin objects.");
   }
+  assertConfigArray(plugins, "plugins");
   return plugins.map((plugin, index) =>
     resolvePluginConfig<TBundlerCfg>(plugin, index),
   );
@@ -690,12 +813,23 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
   index: number,
 ): Plugin<TBundlerCfg> {
   const path = `plugins[${index}]`;
-  const pluginConfig = assertObjectConfig(plugin, path, "a plugin object");
+  const pluginConfig = assertPlainConfigRecord(plugin, path, "a plugin object");
+  assertKnownConfigKeys(
+    pluginConfig,
+    PUBLIC_PLUGIN_CONFIG_KEYS,
+    path,
+    "name, dependencies, optionalDependencies, enforce, describe, config, setup, or contributions",
+    (key) =>
+      isPluginLifecycleDescriptorField(key)
+        ? `[evjs] ${path}.${key} is not a Plugin descriptor field. Return the hook from ${path}.setup() instead.`
+        : undefined,
+  );
   const {
     name: rawName,
     dependencies: rawDependencies,
     optionalDependencies: rawOptionalDependencies,
     enforce: rawEnforce,
+    describe: rawDescribe,
     config: rawConfig,
     setup: rawSetup,
     contributions: rawContributions,
@@ -717,6 +851,12 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
     assertFunction<NonNullable<Plugin<TBundlerCfg>["contributions"]>>(
       rawContributions,
       `${path}.contributions`,
+    );
+  }
+  if (rawDescribe !== undefined) {
+    assertFunction<NonNullable<Plugin<TBundlerCfg>["describe"]>>(
+      rawDescribe,
+      `${path}.describe`,
     );
   }
   const dependencies =
@@ -743,6 +883,7 @@ function resolvePluginConfig<TBundlerCfg = DefaultBundlerConfig>(
           enforce: assertPluginEnforce(rawEnforce, `${path}.enforce`),
         }
       : {}),
+    ...(rawDescribe !== undefined ? { describe: rawDescribe } : {}),
     ...(rawConfig !== undefined ? { config: rawConfig } : {}),
     ...(rawSetup !== undefined ? { setup: rawSetup } : {}),
     ...(rawContributions !== undefined
@@ -780,13 +921,17 @@ function assertBundlerAdapter<TBundlerCfg = DefaultBundlerConfig>(
   value: unknown,
   path: string,
 ): asserts value is BundlerAdapter<TBundlerCfg> {
-  const bundlerConfig = assertObjectConfig(
+  const bundlerConfig = assertPlainConfigRecord(
     value,
     path,
     "a bundler adapter object",
   );
   validateBundlerConfigKeys(bundlerConfig, path);
   assertTrimmedNonEmptyString(bundlerConfig.name, `${path}.name`);
+  validateBundlerCapabilities(
+    bundlerConfig.capabilities,
+    `${path}.capabilities`,
+  );
   assertFunction<BundlerAdapter<TBundlerCfg>["build"]>(
     bundlerConfig.build,
     `${path}.build`,
@@ -805,22 +950,102 @@ function validateBundlerConfigKeys(
     bundler,
     PUBLIC_BUNDLER_CONFIG_KEYS,
     path,
-    "name, build, or dev",
+    "name, capabilities, build, or dev",
   );
+}
+
+function validateBundlerCapabilities(value: unknown, path: string): void {
+  const capabilities = assertPlainConfigRecord(
+    value,
+    path,
+    "a bundler capabilities object",
+  );
+  assertKnownConfigKeys(
+    capabilities,
+    PUBLIC_BUNDLER_CAPABILITY_KEYS,
+    path,
+    "build or dev",
+  );
+  const build = assertPlainConfigRecord(
+    capabilities.build,
+    `${path}.build`,
+    "a build capabilities object",
+  );
+  assertKnownConfigKeys(
+    build,
+    PUBLIC_BUNDLER_BUILD_CAPABILITY_KEYS,
+    `${path}.build`,
+    "server, rsc, or ppr",
+  );
+  for (const key of PUBLIC_BUNDLER_BUILD_CAPABILITY_KEYS) {
+    assertRequiredBoolean(build[key], `${path}.build.${key}`);
+  }
+  const dev = assertPlainConfigRecord(
+    capabilities.dev,
+    `${path}.dev`,
+    "a dev capabilities object",
+  );
+  assertKnownConfigKeys(
+    dev,
+    PUBLIC_BUNDLER_DEV_CAPABILITY_KEYS,
+    `${path}.dev`,
+    "html, entries, routes, server, or resolution",
+  );
+  for (const key of PUBLIC_BUNDLER_DEV_CAPABILITY_KEYS) {
+    assertRequiredBoolean(dev[key], `${path}.dev.${key}`);
+  }
+}
+
+function assertRequiredBoolean(
+  value: unknown,
+  path: string,
+): asserts value is boolean {
+  if (typeof value === "boolean") return;
+  throw new Error(`[evjs] ${path} must be a boolean.`);
 }
 
 function resolveRootConfig<TBundlerCfg = DefaultBundlerConfig>(
   config: Config<TBundlerCfg> | undefined,
 ): Config<TBundlerCfg> {
   if (config === undefined) return {};
-  const rootConfig = assertObjectConfig(config, "config", "a config object");
+  const rootConfig = assertPlainConfigRecord(
+    config,
+    "config",
+    "a config object",
+  );
   validateRootConfigKeys(rootConfig);
   return rootConfig as Config<TBundlerCfg>;
 }
 
-function resolveOptionalObjectConfig<T>(value: unknown, path: string): T {
+function resolveConventionsConfig(conventions: unknown): boolean {
+  if (conventions === undefined) return true;
+  if (typeof conventions === "boolean") return conventions;
+  throw new Error("[evjs] conventions must be a boolean.");
+}
+
+function validateConventionSourceConflicts<TBundlerCfg>(
+  config: Config<TBundlerCfg>,
+  server: ServerConfig,
+  conventions: boolean,
+): void {
+  if (conventions) return;
+
+  const conflicts = [
+    config.routing !== undefined ? "routing" : undefined,
+    server.routing !== undefined ? "server.routing" : undefined,
+  ].filter((value): value is string => value !== undefined);
+  if (conflicts.length === 0) return;
+
+  throw new Error(
+    `[evjs] conventions: false cannot be combined with ${conflicts.join(
+      " or ",
+    )}. Remove the file-convention declaration when using the global opt-out. application.routes remains available as an explicit Bigfish SPA migration input.`,
+  );
+}
+
+function resolveOptionalConfigRecord<T>(value: unknown, path: string): T {
   if (value === undefined) return {} as T;
-  return assertObjectConfig(value, path, "a config object") as T;
+  return assertPlainConfigRecord(value, path, "a config object") as T;
 }
 
 function assertKnownConfigKeys(
@@ -845,16 +1070,25 @@ function validateRootConfigKeys(config: Record<string, unknown>): void {
     config,
     PUBLIC_ROOT_CONFIG_KEYS,
     "config",
-    "html, output, dev, server, transport, app, routing, bundler, plugins, or pages",
+    "conventions, output, dev, server, transport, routing, application, extensions, bundler, or plugins",
     (key) => {
       if (key === "entry") {
-        return "[evjs] config.entry is not a public config field. Use app.entry for a manually bootstrapped SPA, routing for file routes, or pages for explicit page outputs.";
+        return "[evjs] config.entry has been removed from framework config. Use canonical routing with src/pages/**/page.*; standalone runtimes own their entry outside @evjs/ev config.";
       }
       if (key === "apps") {
-        return "[evjs] config.apps is resolved framework metadata and cannot be configured. Use app for one explicit SPA, routing for file routes, or pages for explicit page outputs.";
+        return "[evjs] config.apps has been removed from framework config. Use canonical routing with src/pages/**/page.*.";
+      }
+      if (key === "app") {
+        return "[evjs] config.app has been removed. Migrate the published entry to src/pages/**/page.* and configure routing.mode.";
+      }
+      if (key === "pages") {
+        return "[evjs] config.pages has been removed. Migrate every published Page to src/pages/**/page.* with adjacent page.config.ts files and configure routing.mode.";
       }
       if (key === "routes") {
-        return "[evjs] config.routes is not a public config field. Use routing for file routes or pages for explicit page outputs.";
+        return "[evjs] top-level config.routes has been removed. Bigfish SPA migration route trees must be declared once under application.routes.";
+      }
+      if (key === "html") {
+        return "[evjs] top-level config.html has been removed. Use routing.html or application.document.template.";
       }
       if (key === "functions" || key === "serverFunctions") {
         return `[evjs] config.${key} is not a public config field. Server functions are discovered from "use server" modules and endpoints are derived from server.basePath.`;
@@ -863,15 +1097,534 @@ function validateRootConfigKeys(config: Record<string, unknown>): void {
   );
 }
 
-function resolveServerRscConfig(rsc: ServerConfig["rsc"]): ServerConfig["rsc"] {
-  if (rsc === undefined || typeof rsc === "boolean") return rsc;
-  const rscConfig = assertObjectConfig(
+function resolveConfigRouteProfile<TBundlerCfg>(
+  config: Config<TBundlerCfg>,
+  defaultHtml: string,
+): ResolvedConfigRouteApplication | undefined {
+  if (config.application === undefined) {
+    return undefined;
+  }
+  if (config.routing !== undefined) {
+    throw new Error(
+      "[evjs] application.routes cannot be combined with routing. Use the Bigfish SPA migration input or canonical page.* routing, not both.",
+    );
+  }
+
+  const rawApplication = assertPlainConfigRecord(
+    config.application,
+    "application",
+    "an application object",
+  );
+  assertKnownConfigKeys(
+    rawApplication,
+    PUBLIC_CONFIG_ROUTE_APPLICATION_KEYS,
+    "application",
+    "pageRoot, document, layout, or routes",
+    (key) => {
+      if (key === "topology" || key === "mode") {
+        return `[evjs] application.${key} has been removed. Bigfish-style application.routes is a SPA-only migration input. To move a Bigfish application to canonical routing, migrate its routes to src/pages/**/page.* and use routing.mode "spa".`;
+      }
+      if (key === "html" || key === "mount") {
+        return `[evjs] application.${key} has been removed. Use application.document.${key === "html" ? "template" : "mount"}.`;
+      }
+      if (key === "extensions") {
+        return "[evjs] application.extensions is not supported. Use top-level config.extensions for plugin-owned Application configuration; application is only the Bigfish SPA route-tree migration input.";
+      }
+    },
+  );
+  const rawRoutes = rawApplication.routes;
+  const routesPath = "application.routes";
+  if (rawRoutes === undefined) {
+    throw new Error(
+      "[evjs] application requires a non-empty application.routes array.",
+    );
+  }
+  if (!Array.isArray(rawRoutes) || rawRoutes.length === 0) {
+    throw new Error(
+      `[evjs] ${routesPath} must be a non-empty array of route objects.`,
+    );
+  }
+  assertConfigArray(rawRoutes, routesPath);
+
+  const pageRoot = resolveConfigRoutePageRoot(rawApplication.pageRoot);
+  const document = resolveConfigRouteApplicationDocument(
+    rawApplication.document,
+    defaultHtml,
+  );
+  const routes = rawRoutes.map((route, index) =>
+    resolveConfigRoute(route, `${routesPath}[${index}]`, pageRoot),
+  );
+  return {
+    pageRoot,
+    document,
+    ...(rawApplication.layout === undefined
+      ? {}
+      : {
+          layout: normalizeConfigRouteModuleReference(
+            rawApplication.layout,
+            "application.layout",
+            "wrapper",
+          ),
+        }),
+    routes,
+  };
+}
+
+function resolveConfigRoutePageRoot(value: unknown): string {
+  const reference =
+    value === undefined
+      ? CONFIG_DEFAULTS.routingDir
+      : assertTrimmedNonEmptyString(value, "application.pageRoot");
+  const normalized = reference.startsWith("./")
+    ? reference.slice(2)
+    : reference;
+  const segments = normalized.split("/");
+  if (
+    reference.includes("\\") ||
+    reference.includes("?") ||
+    reference.includes("#") ||
+    hasConfigPathControlCharacter(reference) ||
+    reference.startsWith("/") ||
+    /^[A-Za-z]:/.test(reference) ||
+    normalized.length === 0 ||
+    segments.some(
+      (segment) => segment === "" || segment === "." || segment === "..",
+    )
+  ) {
+    throw new Error(
+      '[evjs] application.pageRoot must be a safe project-relative directory such as "./src/pages" and must not escape the project.',
+    );
+  }
+  return `./${normalized}`;
+}
+
+function resolveConfigRouteApplicationDocument(
+  value: unknown,
+  defaultHtml: string,
+): ResolvedConfigRouteApplicationDocument {
+  const document =
+    value === undefined
+      ? {}
+      : assertPlainConfigRecord(
+          value,
+          "application.document",
+          "a document object",
+        );
+  assertKnownConfigKeys(
+    document,
+    PUBLIC_CONFIG_ROUTE_APPLICATION_DOCUMENT_KEYS,
+    "application.document",
+    "template, mount, or extensions",
+  );
+  const extensions =
+    document.extensions === undefined
+      ? undefined
+      : resolveConfigExtensionValues(
+          document.extensions,
+          "application.document.extensions",
+        );
+  return {
+    template:
+      document.template === undefined
+        ? defaultHtml
+        : assertNonEmptyString(
+            document.template,
+            "application.document.template",
+          ),
+    mount:
+      document.mount === undefined
+        ? CONFIG_DEFAULTS.mount
+        : assertNonEmptyString(document.mount, "application.document.mount"),
+    ...(extensions ? { extensions } : {}),
+  };
+}
+
+function resolveConfigRoutePageId(value: unknown, path: string): string {
+  const pageId = assertTrimmedNonEmptyString(value, path);
+  if (pageId === ".") return pageId;
+  const segments = pageId.split("/");
+  if (
+    pageId.includes("\\") ||
+    pageId.includes("?") ||
+    pageId.includes("#") ||
+    hasConfigPathControlCharacter(pageId) ||
+    pageId.startsWith("/") ||
+    pageId.endsWith("/") ||
+    /^[A-Za-z]:/.test(pageId) ||
+    segments.some(
+      (segment) =>
+        segment === "" ||
+        segment === "." ||
+        segment === ".." ||
+        segment === "__proto__" ||
+        segment === "constructor" ||
+        segment === "prototype",
+    )
+  ) {
+    throw new Error(
+      `[evjs] ${path} must be a safe Page id relative to application.pageRoot and must not escape that directory.`,
+    );
+  }
+  return pageId;
+}
+
+function deriveConfigRoutePageIdFromComponent(
+  component: string,
+  pageRoot: string,
+): string {
+  if (component === pageRoot) return ".";
+  const prefix = `${pageRoot}/`;
+  if (!component.startsWith(prefix)) {
+    throw new Error(
+      `[evjs] component alias "${component}" must resolve inside application.pageRoot "${pageRoot}".`,
+    );
+  }
+  const relative = component
+    .slice(prefix.length)
+    .replace(/\.(?:tsx?|jsx?)$/, "");
+  let pageId = relative;
+  if (relative === "index" || relative === "page") {
+    pageId = ".";
+  } else if (relative.endsWith("/index")) {
+    pageId = relative.slice(0, -"/index".length);
+  } else if (relative.endsWith("/page")) {
+    pageId = relative.slice(0, -"/page".length);
+  }
+  return resolveConfigRoutePageId(pageId, "component Page id");
+}
+
+function hasConfigPathControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code < 32 || code === 127) return true;
+  }
+  return false;
+}
+
+function resolveConfigRoute(
+  value: unknown,
+  routePath: string,
+  pageRoot: string,
+): ResolvedConfigRoute {
+  const route = assertPlainConfigRecord(value, routePath, "a route object");
+  assertKnownConfigKeys(
+    route,
+    PUBLIC_CONFIG_ROUTE_KEYS,
+    routePath,
+    "path, page, component, redirect, wrappers, layout, routes, or documented Bigfish route metadata",
+    (key) => {
+      if (key === "children") {
+        return `[evjs] ${routePath}.children is not supported. Current Umi/Bigfish route config uses routes for nested declarations.`;
+      }
+    },
+  );
+
+  const pathValue = resolveOptionalConfigRoutePath(
+    route.path,
+    `${routePath}.path`,
+  );
+  if (route.page !== undefined && route.component !== undefined) {
+    throw new Error(
+      `[evjs] ${routePath} must declare only one of page or the deprecated component alias.`,
+    );
+  }
+  const componentAlias =
+    route.component === undefined
+      ? undefined
+      : normalizeConfigRouteModuleReference(
+          route.component,
+          `${routePath}.component`,
+          "component",
+          pageRoot,
+        );
+  let page: string | undefined;
+  if (route.page !== undefined) {
+    page = resolveConfigRoutePageId(route.page, `${routePath}.page`);
+  } else if (componentAlias !== undefined) {
+    page = deriveConfigRoutePageIdFromComponent(componentAlias, pageRoot);
+  }
+  const component = componentAlias;
+  const redirect =
+    route.redirect === undefined
+      ? undefined
+      : assertTrimmedNonEmptyString(route.redirect, `${routePath}.redirect`);
+  if (page && redirect) {
+    throw new Error(
+      `[evjs] ${routePath} must not declare both page and redirect.`,
+    );
+  }
+
+  const childValue = route.routes;
+  let routes: ResolvedConfigRoute[] | undefined;
+  if (childValue !== undefined) {
+    if (!Array.isArray(childValue)) {
+      throw new Error(
+        `[evjs] ${routePath}.routes must be a non-empty array of route objects.`,
+      );
+    }
+    const childPath = `${routePath}.routes`;
+    assertConfigArray(childValue, childPath);
+    if (childValue.length === 0) {
+      if (!page) {
+        throw new Error(
+          `[evjs] ${childPath} must be a non-empty array of route objects.`,
+        );
+      }
+    } else {
+      routes = childValue.map((child, index) =>
+        resolveConfigRoute(child, `${childPath}[${index}]`, pageRoot),
+      );
+    }
+  }
+  if (redirect && routes) {
+    throw new Error(
+      `[evjs] ${routePath} redirect routes cannot declare nested routes.`,
+    );
+  }
+  if (!page && !redirect && !routes) {
+    throw new Error(
+      `[evjs] ${routePath} must declare page, redirect, or nested routes.`,
+    );
+  }
+
+  let wrappers: string[] | undefined;
+  if (route.wrappers !== undefined) {
+    if (!Array.isArray(route.wrappers)) {
+      throw new Error(`[evjs] ${routePath}.wrappers must be an array.`);
+    }
+    assertConfigArray(route.wrappers, `${routePath}.wrappers`);
+    wrappers = route.wrappers.map((wrapper, index) =>
+      normalizeConfigRouteModuleReference(
+        wrapper,
+        `${routePath}.wrappers[${index}]`,
+        "wrapper",
+      ),
+    );
+  }
+  if (redirect && wrappers && wrappers.length > 0) {
+    throw new Error(
+      `[evjs] ${routePath} redirect routes cannot declare wrappers.`,
+    );
+  }
+  const layout =
+    route.layout === undefined || route.layout === false
+      ? route.layout
+      : normalizeConfigRouteModuleReference(
+          route.layout,
+          `${routePath}.layout`,
+          "wrapper",
+        );
+  if (redirect && layout === false) {
+    throw new Error(
+      `[evjs] ${routePath} redirect routes cannot declare layout: false because redirects do not render a Page.`,
+    );
+  }
+  if (redirect && typeof layout === "string") {
+    throw new Error(
+      `[evjs] ${routePath} redirect routes cannot declare layout because redirects do not render a Page.`,
+    );
+  }
+  if (route.exact !== undefined && route.exact !== true) {
+    throw new Error(
+      `[evjs] ${routePath}.exact only accepts true because Core Routes already use exact terminal-match semantics; exact: false cannot be represented by the normalized route tree.`,
+    );
+  }
+  if (route.exact === true && routes) {
+    throw new Error(
+      `[evjs] ${routePath}.exact: true is valid only on a terminal Route without nested routes.`,
+    );
+  }
+  const extensions =
+    route.extensions === undefined
+      ? undefined
+      : resolveConfigExtensionValues(
+          route.extensions,
+          `${routePath}.extensions`,
+        );
+  const metadata = resolveBigfishRouteMetadata(route, routePath);
+  return {
+    ...(pathValue !== undefined ? { path: pathValue } : {}),
+    ...(page
+      ? {
+          page,
+          ...(component ? { component } : {}),
+        }
+      : {}),
+    ...(redirect ? { redirect } : {}),
+    ...(wrappers ? { wrappers } : {}),
+    ...(layout !== undefined ? { layout } : {}),
+    ...(routes ? { routes } : {}),
+    ...(extensions ? { extensions } : {}),
+    ...(metadata ? { metadata } : {}),
+  };
+}
+
+function resolveOptionalConfigRoutePath(
+  value: unknown,
+  path: string,
+): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw new Error(`[evjs] ${path} must be a string.`);
+  }
+  if (value.trim() !== value) {
+    throw new Error(
+      `[evjs] ${path} must not contain leading or trailing whitespace.`,
+    );
+  }
+  return value;
+}
+
+function normalizeConfigRouteModuleReference(
+  value: unknown,
+  path: string,
+  kind: "component" | "wrapper",
+  pageRoot: string = CONFIG_DEFAULTS.routingDir,
+): string {
+  const reference = assertTrimmedNonEmptyString(value, path);
+  if (
+    reference.includes("\\") ||
+    reference.includes("?") ||
+    reference.includes("#") ||
+    reference.startsWith("/") ||
+    reference.startsWith("../") ||
+    reference.includes("/../") ||
+    reference.includes("/./") ||
+    reference.endsWith("/..") ||
+    reference.endsWith("/.") ||
+    reference.includes("//")
+  ) {
+    throw createConfigRouteModuleReferenceError(path, kind);
+  }
+
+  let projectPath: string;
+  if (kind === "component") {
+    if (reference.startsWith("@/pages/")) {
+      projectPath = `./src/pages/${reference.slice("@/pages/".length)}`;
+    } else if (reference.startsWith("./src/")) {
+      projectPath = reference;
+    } else if (reference.startsWith("src/")) {
+      projectPath = `./${reference}`;
+    } else if (reference.startsWith("./")) {
+      projectPath = `${pageRoot}/${reference.slice(2)}`;
+    } else if (!reference.startsWith(".") && !reference.startsWith("@")) {
+      projectPath = `${pageRoot}/${reference}`;
+    } else {
+      throw createConfigRouteModuleReferenceError(path, kind);
+    }
+  } else if (reference.startsWith("@/")) {
+    projectPath = `./src/${reference.slice(2)}`;
+  } else if (reference.startsWith("./src/")) {
+    projectPath = reference;
+  } else if (reference.startsWith("src/")) {
+    projectPath = `./${reference}`;
+  } else if (reference.startsWith("./")) {
+    projectPath = `./src/${reference.slice(2)}`;
+  } else if (!reference.startsWith(".") && !reference.startsWith("@")) {
+    projectPath = `./src/${reference}`;
+  } else {
+    throw createConfigRouteModuleReferenceError(path, kind);
+  }
+
+  if (projectPath.endsWith("/")) {
+    throw createConfigRouteModuleReferenceError(path, kind);
+  }
+  return projectPath;
+}
+
+function createConfigRouteModuleReferenceError(
+  path: string,
+  kind: "component" | "wrapper",
+): Error {
+  return kind === "component"
+    ? new Error(
+        `[evjs] ${path} must be a project page reference using "@/pages/...", "./src/pages/...", or a bare/"./" path relative to src/pages. Package, absolute, and parent-directory references cannot declare a traceable Page scope.`,
+      )
+    : new Error(
+        `[evjs] ${path} must be a project source reference using "@/...", "./src/...", or a bare/"./" path relative to src. Package, absolute, and parent-directory references are not supported by application.routes migration input.`,
+      );
+}
+
+function assertPlainConfigRecord(
+  value: unknown,
+  path: string,
+  description: string,
+): Record<string, unknown> {
+  if (isPlainConfigRecord(value)) {
+    assertEnumerableStringOwnKeys(value, path);
+    return value;
+  }
+  throw new Error(`[evjs] ${path} must be ${description}.`);
+}
+
+function assertEnumerableStringOwnKeys(value: object, path: string): void {
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") {
+      throw new Error(`[evjs] ${path} must not contain symbol fields.`);
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor?.enumerable || !("value" in descriptor)) {
+      throw new Error(
+        `[evjs] ${path}.${key} must be an enumerable data property so config resolution does not execute accessors or lose fields during serialization.`,
+      );
+    }
+  }
+}
+
+function assertConfigArray(value: unknown[], path: string): void {
+  for (let index = 0; index < value.length; index++) {
+    if (!Object.hasOwn(value, index)) {
+      throw new Error(
+        `[evjs] ${path} must not be sparse; index ${index} is missing.`,
+      );
+    }
+  }
+  for (const key of Reflect.ownKeys(value)) {
+    if (key === "length") continue;
+    if (typeof key !== "string" || !/^(?:0|[1-9][0-9]*)$/.test(key)) {
+      throw new Error(
+        `[evjs] ${path} arrays must not contain symbol or extra properties.`,
+      );
+    }
+    if (Number(key) >= value.length) {
+      throw new Error(`[evjs] ${path} array index ${key} is out of bounds.`);
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor?.enumerable || !("value" in descriptor)) {
+      throw new Error(
+        `[evjs] ${path}[${key}] must be an enumerable data property so config resolution does not execute accessors or lose fields during serialization.`,
+      );
+    }
+  }
+}
+
+function isPlainConfigRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function resolveServerRscConfig(rsc: unknown): ServerConfig["rsc"] {
+  if (rsc === undefined) return undefined;
+  if (typeof rsc === "boolean") {
+    throw new Error(
+      "[evjs] server.rsc is an endpoint override, not an enable switch. Enable RSC with rsc: true in page.config.ts, or provide server.rsc.endpoint to override its derived path.",
+    );
+  }
+  const rscConfig = assertPlainConfigRecord(
     rsc,
     "server.rsc",
     "a server RSC object",
   );
   validateServerRscConfigKeys(rscConfig);
-  return rscConfig as ServerRscConfig;
+  if (rscConfig.endpoint === undefined) {
+    throw new Error("[evjs] server.rsc.endpoint is required.");
+  }
+  return {
+    endpoint: rscConfig.endpoint as string,
+  };
 }
 
 function validateServerConfigKeys(server: ServerConfig): void {
@@ -879,8 +1632,11 @@ function validateServerConfigKeys(server: ServerConfig): void {
     server,
     PUBLIC_SERVER_CONFIG_KEYS,
     "server",
-    "routing, conventions, basePath, rsc, or dev",
+    "routing, basePath, rsc, or dev",
     (key) => {
+      if (key === "conventions") {
+        return "[evjs] server.conventions has been removed. Use top-level conventions: false to disable all file conventions.";
+      }
       if (key === "entry") {
         return "[evjs] server.entry is not supported. Use server.routing file conventions under src/apis instead.";
       }
@@ -897,64 +1653,27 @@ function validateServerConfigKeys(server: ServerConfig): void {
   );
 }
 
-function resolveServerConventionsConfig(
-  conventions: ServerConfig["conventions"],
-  defaultsEnabled: boolean,
-): ResolvedServerConventionsConfig | undefined {
-  if (conventions === undefined) {
-    return defaultsEnabled
-      ? { middleware: true, globalMiddlewares: [], routeMiddlewares: [] }
-      : undefined;
-  }
-  if (conventions === false) return undefined;
-
-  let options: ServerConventionsConfig;
-  if (conventions === true) {
-    options = {};
-  } else if (
-    conventions &&
-    typeof conventions === "object" &&
-    !Array.isArray(conventions)
-  ) {
-    options = conventions as ServerConventionsConfig;
-  } else {
-    throw new Error(
-      "[evjs] server.conventions must be true, false, or a server conventions object.",
-    );
-  }
-  validateServerConventionsConfigKeys(options);
-
-  const middleware = options.middleware ?? true;
-  if (typeof middleware !== "boolean") {
-    throw new Error("[evjs] server.conventions.middleware must be a boolean.");
-  }
-  if (!middleware) return undefined;
-
-  return {
-    middleware,
-    globalMiddlewares: [],
-    routeMiddlewares: [],
-  };
-}
-
 function resolveServerRoutingConfig(
-  routing: ServerConfig["routing"],
+  routing: ServerConfig["routing"] | boolean | null,
 ): ResolvedServerRoutingConfig | undefined {
-  if (routing === undefined || routing === false) return undefined;
-  let options: ServerRoutingConfig;
-  if (routing === true) {
-    options = {};
-  } else if (
-    routing &&
-    typeof routing === "object" &&
-    !Array.isArray(routing)
-  ) {
-    options = routing as ServerRoutingConfig;
-  } else {
+  if (routing === false) {
     throw new Error(
-      "[evjs] server.routing must be true, false, or a server routing object.",
+      "[evjs] server.routing: false has been removed. Use top-level conventions: false to disable all file conventions.",
     );
   }
+  if (routing === true) {
+    throw new Error(
+      "[evjs] server.routing: true has been removed. Use server.routing: {} to request the default src/apis directory, or omit server.routing for optional default discovery.",
+    );
+  }
+  const options =
+    routing === undefined
+      ? {}
+      : assertPlainConfigRecord(
+          routing,
+          "server.routing",
+          "a server routing object",
+        );
   validateServerRoutingConfigKeys(options);
   return {
     dir:
@@ -965,23 +1684,14 @@ function resolveServerRoutingConfig(
   };
 }
 
-function validateServerRoutingConfigKeys(routing: ServerRoutingConfig): void {
+function validateServerRoutingConfigKeys(
+  routing: Record<string, unknown>,
+): void {
   assertKnownConfigKeys(
     routing,
     PUBLIC_SERVER_ROUTING_CONFIG_KEYS,
     "server.routing",
     "dir",
-  );
-}
-
-function validateServerConventionsConfigKeys(
-  conventions: ServerConventionsConfig,
-): void {
-  assertKnownConfigKeys(
-    conventions,
-    PUBLIC_SERVER_CONVENTIONS_CONFIG_KEYS,
-    "server.conventions",
-    "middleware",
   );
 }
 
@@ -1031,28 +1741,27 @@ function validateOutputConfigKeys(output: OutputConfig): void {
 }
 
 function resolvePageRoutingConfig(
-  routing: Config["routing"] | null,
+  routing: Config["routing"] | boolean | null,
   defaultHtml: string,
 ): ResolvedPageRoutingConfig | undefined {
-  if (routing === undefined || routing === false) return undefined;
-  let options: PageRoutingConfig;
-  if (routing === true) {
-    options = {};
-  } else if (
-    routing &&
-    typeof routing === "object" &&
-    !Array.isArray(routing)
-  ) {
-    options = routing as PageRoutingConfig;
-  } else {
-    throw new Error("[evjs] routing must be true, false, or a routing object.");
+  if (routing === undefined) return undefined;
+  if (routing === false) {
+    throw new Error(
+      "[evjs] routing: false has been removed. Use top-level conventions: false to disable all file conventions.",
+    );
   }
+  if (routing === true) {
+    throw new Error(
+      '[evjs] routing: true has been removed. Use routing: { mode: "spa" } or routing: { mode: "mpa" } to enable canonical Page discovery.',
+    );
+  }
+  const options = assertPlainConfigRecord(
+    routing,
+    "routing",
+    "a routing object",
+  );
   validatePageRoutingConfigKeys(options);
   const mode = resolvePageRoutingMode(options.mode);
-  const conventions = resolvePageRoutingConventionsConfig(
-    options.conventions,
-    mode,
-  );
   return {
     mode,
     dir:
@@ -1067,305 +1776,44 @@ function resolvePageRoutingConfig(
       options.mount === undefined
         ? CONFIG_DEFAULTS.mount
         : assertNonEmptyString(options.mount, "routing.mount"),
-    ...(conventions ? { conventions } : {}),
     routes: [],
   };
 }
 
-function validatePageRoutingConfigKeys(routing: PageRoutingConfig): void {
+function validatePageRoutingConfigKeys(routing: Record<string, unknown>): void {
   assertKnownConfigKeys(
     routing,
     PUBLIC_PAGE_ROUTING_CONFIG_KEYS,
     "routing",
-    "mode, dir, html, mount, or conventions",
+    "mode, dir, html, or mount",
     (key) => {
+      if (key === "conventions") {
+        return "[evjs] routing.conventions has been removed. Canonical Page facets are discovered from positive files; use top-level conventions: false only to disable all file conventions.";
+      }
+      if (key === "compatibility") {
+        return "[evjs] routing.compatibility has been removed. Canonical routing discovers <routing.dir>/**/page.* anchors; migrate Page entries to page.* and Page settings to page.config.ts, then configure only routing.mode.";
+      }
+      if (key === "convention") {
+        return "[evjs] routing.convention has been removed. Canonical routing discovers <routing.dir>/**/page.* anchors; migrate Page entries to page.* and Page settings to page.config.ts, then configure only routing.mode.";
+      }
       if (key === "entry") {
-        return "[evjs] routing.entry is not a public config field. SPA routing creates its own page app entry; use app.entry only for a manually bootstrapped SPA.";
+        return "[evjs] routing.entry has been removed. SPA routing generates its framework bootstrap from the normalized Page-and-Route graph.";
       }
       if (key === "routes") {
-        return "[evjs] routing.routes is not a public config field. evjs discovers page routes from routing.dir; use pages for explicit non-conventional page declarations.";
+        return "[evjs] routing.routes is not a public config field. Canonical route URLs come from page.* anchor directories under routing.dir; use application.routes only as the Bigfish route-tree migration input.";
       }
     },
   );
 }
 
-function resolvePageRoutingMode(
-  mode: PageRoutingMode | undefined,
-): PageRoutingMode {
-  const resolved = mode ?? CONFIG_DEFAULTS.routingMode;
-  if (resolved === "spa" || resolved === "mpa") return resolved;
+function resolvePageRoutingMode(mode: unknown): PageRoutingMode {
+  if (mode === undefined) {
+    throw new Error(
+      '[evjs] routing.mode is required and must be "spa" or "mpa".',
+    );
+  }
+  if (mode === "spa" || mode === "mpa") return mode;
   throw new Error('[evjs] routing.mode must be "spa" or "mpa".');
-}
-
-function resolvePageRoutingConventionsConfig(
-  conventions: PageRoutingConfig["conventions"],
-  mode: PageRoutingMode,
-): ResolvedPageRoutingConventionsConfig | undefined {
-  if (conventions === false) return undefined;
-
-  let options: PageRoutingConventionsConfig;
-  if (conventions === undefined || conventions === true) {
-    options = {};
-  } else if (
-    conventions &&
-    typeof conventions === "object" &&
-    !Array.isArray(conventions)
-  ) {
-    options = conventions as PageRoutingConventionsConfig;
-  } else {
-    throw new Error(
-      "[evjs] routing.conventions must be true, false, or a routing conventions object.",
-    );
-  }
-  validatePageRoutingConventionsConfigKeys(options);
-
-  if (mode === "mpa") {
-    if (options.layout !== undefined && options.layout !== false) {
-      throw new Error(MPA_LAYOUT_UNSUPPORTED_MESSAGE);
-    }
-    return undefined;
-  }
-
-  return {
-    layout: resolvePageRoutingLayoutConvention(
-      options.layout ?? true,
-      "routing.conventions.layout",
-    ),
-  };
-}
-
-function validatePageRoutingConventionsConfigKeys(
-  conventions: PageRoutingConventionsConfig,
-): void {
-  assertKnownConfigKeys(
-    conventions,
-    PUBLIC_PAGE_ROUTING_CONVENTIONS_CONFIG_KEYS,
-    "routing.conventions",
-    "layout",
-  );
-}
-
-function resolvePageRoutingLayoutConvention(
-  layout: PageRoutingLayoutConvention,
-  path: string,
-): PageRoutingLayoutConvention {
-  if (layout === true || layout === false) return layout;
-  if (typeof layout === "string") return assertNonEmptyString(layout, path);
-  throw new Error(`[evjs] ${path} must be a boolean or a non-empty string.`);
-}
-
-function resolveAppConfig(
-  app: AppConfig,
-  defaultHtml: string,
-): ResolvedAppConfig {
-  if (typeof app === "string") {
-    return { source: assertNonEmptyString(app, "app") };
-  }
-  if (!app || typeof app !== "object" || Array.isArray(app)) {
-    throw new Error(
-      "[evjs] app must be a string module path or an app object.",
-    );
-  }
-  validateAppConfigKeys(app);
-
-  const hasSource = "source" in app;
-  const hasEntry = "entry" in app;
-  if (hasSource === hasEntry) {
-    throw new Error("[evjs] app must specify exactly one of source or entry.");
-  }
-  if (hasSource) {
-    return { source: assertNonEmptyString(app.source, "app.source") };
-  }
-  return {
-    entry: assertNonEmptyString(app.entry, "app.entry"),
-    html:
-      app.html === undefined
-        ? defaultHtml
-        : assertNonEmptyString(app.html, "app.html"),
-    mount:
-      app.mount === undefined
-        ? undefined
-        : assertNonEmptyString(app.mount, "app.mount"),
-  };
-}
-
-function resolvePagesConfig(
-  pages: Config["pages"],
-  defaultHtml: string,
-): ResolvedConfig["pages"] {
-  const entries =
-    pages === undefined
-      ? []
-      : Object.entries(assertObjectConfig(pages, "pages", "an object map"));
-  if (entries.length === 0) return undefined;
-
-  const resolved: NonNullable<ResolvedConfig["pages"]> = {};
-  const pagePathOwners = new Map<string, string>();
-  const pagePathShapeOwners = new Map<string, { name: string; path: string }>();
-
-  for (const [name, page] of entries) {
-    assertBuildIdentifierObjectKey(name, "pages");
-    const pageConfig = resolvePageObjectConfig(name, page);
-    validatePageConfig(name, pageConfig);
-
-    const routePath =
-      "path" in pageConfig && pageConfig.path !== undefined
-        ? assertPageRoutePath(pageConfig.path, `pages.${name}.path`)
-        : undefined;
-    if (routePath) {
-      const existing = pagePathOwners.get(routePath);
-      if (existing) {
-        throw new Error(
-          `[evjs] pages.${name}.path duplicates pages.${existing}.path "${routePath}". Page paths must be unique.`,
-        );
-      }
-      pagePathOwners.set(routePath, name);
-      const routeShape = routePathShapeFromPath(routePath).key;
-      const existingShapeOwner = pagePathShapeOwners.get(routeShape);
-      if (existingShapeOwner) {
-        throw new Error(
-          `[evjs] pages.${name}.path "${routePath}" has the same route shape as pages.${existingShapeOwner.name}.path "${existingShapeOwner.path}". Use one dynamic param name for each URL shape.`,
-        );
-      }
-      pagePathShapeOwners.set(routeShape, { name, path: routePath });
-    }
-
-    resolved[name] = {
-      path: routePath,
-      entry:
-        "entry" in pageConfig
-          ? assertNonEmptyString(pageConfig.entry, `pages.${name}.entry`)
-          : undefined,
-      component:
-        "component" in pageConfig
-          ? assertNonEmptyString(
-              pageConfig.component,
-              `pages.${name}.component`,
-            )
-          : undefined,
-      app:
-        "app" in pageConfig
-          ? assertNonEmptyString(pageConfig.app, `pages.${name}.app`)
-          : undefined,
-      html:
-        pageConfig.html === undefined
-          ? defaultHtml
-          : assertNonEmptyString(pageConfig.html, `pages.${name}.html`),
-      mount:
-        pageConfig.mount === undefined
-          ? undefined
-          : assertNonEmptyString(pageConfig.mount, `pages.${name}.mount`),
-      ...resolvePageRenderingConfig(name, pageConfig),
-    };
-  }
-
-  return resolved;
-}
-
-function resolvePageObjectConfig(
-  name: string,
-  page: unknown,
-): PageObjectConfig {
-  if (typeof page === "string") return { component: page };
-  if (page && typeof page === "object" && !Array.isArray(page)) {
-    validatePageConfigKeys(name, page);
-    return page as PageObjectConfig;
-  }
-  throw new Error(
-    `[evjs] pages.${name} must be a string module path or a page object.`,
-  );
-}
-
-function validateAppConfigKeys(app: object): void {
-  assertKnownConfigKeys(
-    app,
-    PUBLIC_APP_CONFIG_KEYS,
-    "app",
-    "source, entry, html, or mount",
-  );
-}
-
-function validatePageConfigKeys(name: string, page: object): void {
-  assertKnownConfigKeys(
-    page,
-    PUBLIC_PAGE_CONFIG_KEYS,
-    `pages.${name}`,
-    "path, entry, component, app, html, mount, render, hydrate, prerender, or rsc",
-  );
-}
-
-function resolvePageRenderingConfig(
-  name: string,
-  page: PageObjectConfig,
-): Pick<
-  ResolvedPageConfig,
-  "render" | "componentModel" | "hydrate" | "prerender" | "ppr"
-> {
-  const renderingKey = getPageRenderingConfigKey(page);
-  if (!renderingKey) return {};
-  if (!("component" in page)) {
-    throw new Error(
-      `[evjs] pages.${name}.${renderingKey} is only supported on component pages.`,
-    );
-  }
-
-  const prerender = resolvePagePrerenderConfig(
-    page.prerender,
-    `pages.${name}.prerender`,
-  );
-  const ppr = derivePagePprConfig(prerender);
-  const rsc = assertOptionalBoolean(page.rsc, `pages.${name}.rsc`);
-  const render =
-    page.render === undefined
-      ? undefined
-      : assertPageRenderMode(page.render, `pages.${name}.render`);
-  const hydrate =
-    page.hydrate === undefined
-      ? undefined
-      : assertPageHydrationMode(page.hydrate, `pages.${name}.hydrate`);
-  const resolved: Pick<
-    ResolvedPageConfig,
-    "render" | "componentModel" | "hydrate" | "prerender" | "ppr"
-  > = {
-    ...(render !== undefined ? { render } : {}),
-    ...(rsc ? { componentModel: "rsc" as const } : {}),
-    ...(hydrate !== undefined ? { hydrate } : {}),
-    ...(prerender !== undefined ? { prerender } : {}),
-    ...(ppr ? { ppr } : {}),
-  };
-
-  validatePageRenderingContract(`pages.${name}`, resolved, {
-    requireExplicitRenderForFullPrerender: true,
-  });
-  return resolved;
-}
-
-function getPageRenderingConfigKey(page: PageObjectConfig): string | undefined {
-  return ["render", "hydrate", "prerender", "rsc"].find((key) => key in page);
-}
-
-function assertPageRenderMode(value: unknown, path: string): RenderMode {
-  if (value === "csr" || value === "ssr" || value === "ssg") return value;
-  if (value === "ppr") {
-    throw new Error(
-      `[evjs] ${path} mode "ppr" is not supported. Use render: "ssr" with prerender: { partial: true }.`,
-    );
-  }
-  throw new Error(`[evjs] ${path} must be "csr", "ssr", or "ssg".`);
-}
-
-function assertPageHydrationMode(value: unknown, path: string): HydrationMode {
-  if (
-    value === "none" ||
-    value === "load" ||
-    value === "visible" ||
-    value === "idle"
-  ) {
-    return value;
-  }
-  throw new Error(
-    `[evjs] ${path} must be "none", "load", "visible", or "idle".`,
-  );
 }
 
 function assertCrossOriginPolicy(
@@ -1409,79 +1857,12 @@ function normalizeOutputDirectory(value: string): string {
   return value.replace(/\\/g, "/").replace(/\/+$/, "") || ".";
 }
 
-function resolvePagePrerenderConfig(
-  value: unknown,
-  path: string,
-): PrerenderConfig | undefined {
-  if (value === undefined) return undefined;
-  if (value === true) return true;
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`[evjs] ${path} must be true or an object.`);
-  }
-
-  const prerender = value as Exclude<PrerenderConfig, true>;
-  const known = new Set(["partial", "delivery", "revalidate"]);
-  const unknownKeys = Object.keys(prerender).filter((key) => !known.has(key));
-  if (unknownKeys.length > 0) {
-    throw new Error(
-      `[evjs] ${path} can only contain partial, delivery, or revalidate.`,
-    );
-  }
-  if (Object.keys(prerender).length === 0) {
-    throw new Error(
-      `[evjs] ${path} object must declare partial, delivery, or revalidate.`,
-    );
-  }
-
-  const config: Exclude<PrerenderConfig, true> = {};
-  if (prerender.partial !== undefined) {
-    if (typeof prerender.partial !== "boolean") {
-      throw new Error(`[evjs] ${path}.partial must be a boolean.`);
-    }
-    config.partial = prerender.partial;
-  }
-  if (prerender.delivery !== undefined) {
-    if (prerender.delivery !== "merge" && prerender.delivery !== "stream") {
-      throw new Error(`[evjs] ${path}.delivery must be "merge" or "stream".`);
-    }
-    config.delivery = prerender.delivery;
-  }
-  if (prerender.revalidate !== undefined) {
-    if (
-      prerender.revalidate !== false &&
-      (typeof prerender.revalidate !== "number" ||
-        !isPositiveInteger(prerender.revalidate))
-    ) {
-      throw new Error(
-        `[evjs] ${path}.revalidate must be a positive integer number of seconds or false.`,
-      );
-    }
-    config.revalidate = prerender.revalidate;
-  }
-
-  return config;
-}
-
-function derivePagePprConfig(
-  prerender: PrerenderConfig | undefined,
-): Pick<PprConfig, "delivery" | "revalidate"> | undefined {
-  if (!prerender || prerender === true || !prerender.partial) {
-    return undefined;
-  }
-  return {
-    delivery: prerender.delivery ?? "merge",
-    ...(prerender.revalidate !== undefined
-      ? { revalidate: prerender.revalidate }
-      : {}),
-  };
-}
-
 function resolveDevHttpsConfig(
   https: DevConfig["https"],
 ): ResolvedDevConfig["https"] {
   if (https === undefined) return false;
   if (typeof https === "boolean") return https;
-  const httpsConfig = assertObjectConfig(
+  const httpsConfig = assertPlainConfigRecord(
     https,
     "dev.https",
     "an HTTPS config object",
@@ -1497,7 +1878,7 @@ function resolveServerDevHttpsConfig(
   https: ServerDevConfig["https"],
 ): ResolvedServerDevConfig["https"] {
   if (https === undefined || https === false) return false;
-  const httpsConfig = assertObjectConfig(
+  const httpsConfig = assertPlainConfigRecord(
     https,
     "server.dev.https",
     "an HTTPS config object",
@@ -1521,12 +1902,13 @@ function resolveDevProxyRules(proxy: DevConfig["proxy"]): DevProxyRule[] {
   if (!Array.isArray(proxy)) {
     throw new Error("[evjs] dev.proxy must be an array of proxy rules.");
   }
+  assertConfigArray(proxy, "dev.proxy");
   return proxy.map((rule, index) => resolveDevProxyRule(rule, index));
 }
 
 function resolveDevProxyRule(rule: unknown, index: number): DevProxyRule {
   const path = `dev.proxy[${index}]`;
-  const ruleConfig = assertObjectConfig(rule, path, "a proxy rule object");
+  const ruleConfig = assertPlainConfigRecord(rule, path, "a proxy rule object");
   validateDevProxyRuleKeys(ruleConfig, path);
   const context = clonePathPatterns(ruleConfig.context, `${path}.context`);
   const pathRewrite = resolveDevProxyPathRewrite(
@@ -1557,7 +1939,7 @@ function resolveDevProxyPathRewrite(
     return value as (path: string) => string;
   }
 
-  const rules = assertObjectConfig(
+  const rules = assertPlainConfigRecord(
     value,
     path,
     "a path rewrite object or function",
@@ -1593,33 +1975,9 @@ function assertTcpPort(value: number, path: string): number {
   );
 }
 
-function assertNonEmptyObjectKey(key: string, path: string): void {
-  if (key.trim()) return;
-  throw new Error(`[evjs] ${path} must not contain empty keys.`);
-}
-
-function assertBuildIdentifierObjectKey(key: string, path: string): void {
-  assertNonEmptyObjectKey(key, path);
-  if (isBuildIdentifier(key)) return;
-  throw new Error(
-    `[evjs] ${path} key "${key}" must contain only ${BUILD_IDENTIFIER_DESCRIPTION}.`,
-  );
-}
-
 function assertNonEmptyString(value: unknown, path: string): string {
   if (typeof value === "string" && value.trim()) return value;
   throw new Error(`[evjs] ${path} must be a non-empty string.`);
-}
-
-function assertObjectConfig(
-  value: unknown,
-  path: string,
-  description: string,
-): Record<string, unknown> {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  throw new Error(`[evjs] ${path} must be ${description}.`);
 }
 
 function assertTrimmedNonEmptyString(value: unknown, path: string): string {
@@ -1661,17 +2019,6 @@ function assertRoutePath(value: unknown, path: string): string {
   throw new Error(`[evjs] ${path} ${formatRoutePathValidationError(error)}`);
 }
 
-function assertPageRoutePath(value: unknown, path: string): string {
-  const routePath = assertRoutePath(value, path);
-  const paramError = getPageRouteParamSegmentValidationError(routePath);
-  if (paramError) {
-    throw new Error(
-      `[evjs] ${path} ${formatPageRouteParamValidationError(paramError)}`,
-    );
-  }
-  return routePath;
-}
-
 function formatRoutePathValidationError(
   error: PathPatternValidationError,
 ): string {
@@ -1687,33 +2034,12 @@ function formatRoutePathValidationError(
   }
 }
 
-function formatPageRouteParamValidationError(
-  error: PageRouteParamSegmentValidationError,
-): string {
-  switch (error.error) {
-    case "empty":
-      return `contains dynamic segment "${error.segment}" without a param name.`;
-    case "reserved":
-      return `uses reserved dynamic param name "${error.name}" in segment "${error.segment}". Use a safe application-specific name.`;
-    case "duplicate":
-      return `uses duplicate dynamic param name "${error.name}" in segment "${error.segment}". Use unique param names within one route path.`;
-    case "duplicate-wildcard":
-      return `contains more than one wildcard segment "${error.segment}". Use at most one wildcard segment in a route path.`;
-    case "star-wildcard":
-      return 'uses "*" as a wildcard segment. Use "$" for page route splats.';
-  }
-}
-
 function assertOptionalBoolean(
   value: unknown,
   path: string,
 ): boolean | undefined {
   if (value === undefined || typeof value === "boolean") return value;
   throw new Error(`[evjs] ${path} must be a boolean when provided.`);
-}
-
-function isPositiveInteger(value: number): boolean {
-  return Number.isInteger(value) && value > 0;
 }
 
 function assertFunction<
@@ -1736,6 +2062,7 @@ function cloneStringArray(value: unknown, path: string): string[] {
   if (!Array.isArray(value)) {
     throw new Error(`[evjs] ${path} must be an array of plugin names.`);
   }
+  assertConfigArray(value, path);
   const seen = new Set<string>();
   return value.map((item, index) => {
     const pluginName = assertTrimmedNonEmptyString(item, `${path}[${index}]`);
@@ -1750,6 +2077,9 @@ function cloneStringArray(value: unknown, path: string): string[] {
 }
 
 function clonePathPatterns(value: unknown, path: string): string[] {
+  if (Array.isArray(value)) {
+    assertConfigArray(value, path);
+  }
   const error = getPathPatternListValidationError(value);
   if (error) throwPathPatternListError(error, path);
   return [...(value as string[])];
@@ -1807,90 +2137,11 @@ export function defineConfig<TBundlerCfg = DefaultBundlerConfig>(
 }
 
 /**
- * Configuration for a single page in MPA mode.
+ * Define the build-time configuration colocated with a canonical `page.*`
+ * anchor while preserving extension value inference.
  */
-export type PageConfig = string | PageObjectConfig;
-
-/**
- * Object form for a single page in MPA mode.
- */
-export type PageObjectConfig =
-  | PageEntryConfig
-  | PageComponentConfig
-  | PageAppConfig;
-
-export interface PageEntryConfig {
-  /** Optional URL pathname served by the framework server for this page. */
-  path?: string;
-  /** Client entry point for this page. */
-  entry: string;
-  /** HTML template path. If omitted, uses the top-level `html` default. */
-  html?: string;
-  mount?: string;
-}
-
-export interface PageComponentConfig {
-  /** Optional URL pathname served by the framework server for this page. */
-  path?: string;
-  /** React component module mounted by the evjs page runtime. */
-  component: string;
-  /** HTML template path. If omitted, uses the top-level `html` default. */
-  html?: string;
-  mount?: string;
-  /** Framework document render mode. Defaults to "csr". */
-  render?: RenderMode;
-  /** Framework hydration mode. Defaults to "load" except SSG defaults to "none". */
-  hydrate?: HydrationMode;
-  /** Prerender behavior for SSR/SSG component pages. */
-  prerender?: PrerenderConfig;
-  /** Enable React Server Components for this component page. */
-  rsc?: boolean;
-}
-
-export interface PageAppConfig {
-  /** Optional URL pathname served by the framework server for this page. */
-  path?: string;
-  /** Lifecycle module with mount/hydrate/unmount exports. */
-  app: string;
-  /** HTML template path. If omitted, uses the top-level `html` default. */
-  html?: string;
-  mount?: string;
-}
-
-export interface ResolvedPageConfig {
-  path?: string;
-  entry?: string;
-  component?: string;
-  app?: string;
-  html: string;
-  mount?: string;
-  render?: RenderMode;
-  componentModel?: ComponentModel;
-  hydrate?: HydrationMode;
-  prerender?: PrerenderConfig;
-  ppr?: PprConfig;
-}
-
-/**
- * Whether the resolved config is in MPA (multi-page) mode.
- */
-export function isMpa<T = unknown>(config: ResolvedConfig<T>): boolean {
-  return (
-    (config.pages !== undefined && Object.keys(config.pages).length > 0) ||
-    config.routing?.mode === "mpa"
-  );
-}
-
-function validatePageConfig(name: string, page: PageObjectConfig): void {
-  const entryLikeKeys = [
-    "entry" in page,
-    "component" in page,
-    "app" in page,
-  ].filter(Boolean);
-
-  if (entryLikeKeys.length !== 1) {
-    throw new Error(
-      `[evjs] Page "${name}" must specify exactly one of entry, component, or app.`,
-    );
-  }
+export function definePageConfig<const TConfig extends PageFileConfig>(
+  config: TConfig & Record<Exclude<keyof TConfig, keyof PageFileConfig>, never>,
+): TConfig {
+  return config;
 }

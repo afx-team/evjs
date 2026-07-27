@@ -1,248 +1,316 @@
 # 文件约定
 
-本页列出 evjs 会作为框架约定处理的文件名和目录。约定根目录之外的文件只是普通应用模块，除非它们被某个约定文件导入。
+evjs 的文件约定保持少而明确。一个 positive `page.*` marker 同时定义客户端
+Page 与 file route；服务端请求路由继续使用独立约定。
 
-## 约定入口
+完整矩阵参见[项目结构](./project-structure)。
 
-| 文件或目录 | 约定领域 | 含义 |
-| --- | --- | --- |
-| `src/pages/**/*.{ts,tsx,js,jsx}` | 客户端页面 | SPA 和 MPA 的客户端页面路由发现。 |
-| 与同 basename 页面路由相邻的 `src/pages/**/*.html` | MPA 页面 | MPA 页面专属 HTML 模板，例如 `about.tsx` 对应 `about.html`，`users/index.tsx` 对应 `users/index.html`。 |
-| `<routing-dir-parent>/layout/index.tsx` | SPA 布局 | 按约定自动发现的可选外部 SPA 根布局。 |
-| `src/pages/<segment>/**/layout.{ts,tsx,js,jsx}` | SPA 布局 | 页面路由树内的嵌套 SPA route layout。 |
-| `src/pages/**/error.{ts,tsx,js,jsx}` | SPA 边界 | 离当前路由目录作用域最近的 SPA error boundary。 |
-| `src/pages/**/not-found.{ts,tsx,js,jsx}` | SPA 边界 | 离当前路由目录作用域最近的 SPA not-found boundary。 |
-| `<routing-dir-parent>/route-types.d.ts` | 生成产物 | evjs 生成的 SPA 导航类型声明。 |
-| 带 `"use server";` 的 `*.server.{ts,tsx,js,jsx}` 文件 | server functions | 推荐的 server function 命名约定。 |
-| `src/apis/**/*.{ts,tsx,js,jsx}` | 服务端文件路由 | 默认发现的服务端文件路由。 |
-| `src/middleware.{ts,tsx,js,jsx}` | 服务端中间件 | 全局服务端中间件。 |
-| `src/apis/**/middleware.{ts,tsx,js,jsx}` | API route middleware | server file routes 的 API route middleware。 |
+## 约定根目录
 
-默认客户端路由目录是 `./src/pages`。默认服务端文件路由目录是
-`./src/apis`。需要更换客户端路由目录时配置 `routing.dir`；需要更换服务端文件路由目录时配置
-`server.routing.dir`。
-
-## 路径段规则
-
-页面路由、服务端文件路由和 API route middleware 共享一套核心路径段规则：
-
-| 模式 | 结果 |
+| 根 | 用途 |
 | --- | --- |
-| `index.*` | 目录根路由。 |
-| `$param.*` | 动态段。服务端文件路由会转换为 Hono `:param`。 |
-| `$...splat.*` | SPA 页面路由 catch-all 段。它会映射为 `$`，运行时暴露 `_splat`。 |
-| `(group)` | 用于组织目录的 pathless route group，不增加 URL segment。 |
-| `_private.*` 或 `_private/` | 忽略的私有模块或目录。 |
-| `.hidden.*` 或 `.hidden/` | 忽略的隐藏模块或目录。 |
+| `src/pages` 或 `routing.dir` | canonical Page-and-Route 文件树。 |
+| `src/apis` 或 `server.routing.dir` | 服务端请求路由模块。 |
+| `src/middleware.ts` | 全局框架 server middleware。 |
+| `src/apis/**/middleware.ts` | 作用于后代 server file route 的 middleware。 |
+| reachable 源码模块 | 以 `"use server";` 开头的 server function。 |
 
-页面路由的静态段必须使用 URL-safe 字母、数字、`.`、`_`、`-` 或 `~`，并为既有稳定
-URL 保留大小写。新应用路由仍建议使用小写命名。服务端文件路由和 API route
-middleware 作用域继续使用小写 URL-safe 静态段。动态参数名必须是 `$` 后的
-JavaScript 标识符，例如 `$userId` 或 `$team_id`。
+Page 锚点、server file route 与两类 middleware root 共同组成一个框架持有的
+发现单元。顶层 `conventions: false` 会整体关闭这个单元，框架不提供逐 root
+开关；该配置不能与显式 `routing` 或 `server.routing` 一起使用。文件约定保持
+启用时，`routing.dir` 与 `server.routing: { dir }` 只定制各自的 discovery
+root。
 
-以下写法会被拒绝：
+reachable 的 `"use server";` 模块、仅支持 SPA 的 `application.routes` 显式
+route-tree 配置，以及插件 contribution 是 graph/config 输入，不属于文件约定。
+已移除的 `app`、`pages` 与顶层 `routes` 声明会被拒绝。
 
-- `[id].tsx` 这类 bracket route；
-- `$...123.tsx` 这类格式错误的 catch-all 段；
-- 同一个页面路由路径中出现多个 catch-all 段；
-- `$slug?.tsx` 这类 optional param；
-- `$.tsx` 这类空动态参数；
-- `$__proto__.tsx`、`$constructor.tsx`、`$prototype.tsx` 或
-  `$_splat.tsx` 这类保留动态参数；
-- `teams/$teamId/users/$teamId.tsx` 这类同一路径中重复的动态参数；
-- `users.tsx` 和 `users/index.tsx` 这类重复 path；
-- `users/$id.tsx` 和 `users/$userId.tsx` 这类重复 dynamic shape。
+每个 `page.*` 锚点的相对目录是客户端 URL 的事实来源。`routing.mode` 为同一
+文件树选择 SPA 或 MPA 物化。
 
-路由必须遵循文件形状。evjs 不提供 optional 或 bracket routes 的替代文件名方言。
-Catch-all 文件路由只属于 SPA 页面路由约定；MPA 页面路由和服务端文件路由都会拒绝
-catch-all 段。
+## canonical Page 与 Route
 
-## 忽略的支撑文件
-
-在路由目录下，evjs 会忽略支撑文件，因此它们可以和路由就近放置：
-
-| 模式 | 含义 |
-| --- | --- |
-| `*.d.ts` | 类型声明。 |
-| `*.test.*` 和 `*.spec.*` | 测试。 |
-| `*.story.*` 和 `*.stories.*` | Storybook stories。 |
-| `*.client.*` | 客户端专用模块。 |
-| `*.server.*` | 服务端专用模块。 |
-| 不使用 `.ts`、`.tsx`、`.js` 或 `.jsx` 的文件 | 非源码资源或元信息；同 basename 的 MPA `.html` 模板除外。 |
-
-仍然使用源码扩展名的 route-local helper 可以放在 `_` 前缀文件或目录里。例如
-`src/pages/users/_format.ts` 和 `src/pages/users/_components/Card.tsx`
-都不会成为 URL 路由。
-
-## 客户端页面路由
-
-客户端页面路由放在 `routing.dir` 下：
+Page 与客户端 Route 共用一个 positive anchor：
 
 ```text
-src/pages/index.tsx              -> /
-src/pages/about.tsx              -> /about
-src/pages/users/index.tsx        -> /users
-src/pages/users/$userId.tsx      -> /users/$userId
-src/pages/docs/$...splat.tsx     -> /docs/$
-src/pages/legacyCamelCase.tsx    -> /legacyCamelCase
-src/pages/(marketing)/about.tsx  -> /about
+<routing.dir>/**/page.{ts,tsx,js,jsx}
 ```
-
-每个被发现的页面文件都必须默认导出 React 组件。页面模块也可以导出字面量渲染元信息，例如
-`render`、`hydrate`、`prerender` 和 `rsc`。
-
-SPA route layout 使用路由段下的 `layout.*` 文件：
-
-```text
-src/pages/dashboard/layout.tsx   -> 包裹 /dashboard 后代路由
-```
-
-外部 SPA 根布局只有一个自动发现约定：
-
-```text
-src/layout/index.tsx
-```
-
-`src/pages/layout.tsx`、`src/layout.tsx` 这类根布局别名，以及
-`src/pages/dashboard/layout/index.tsx` 这类 route layout 目录别名都会被约定拒绝。
-只有当应用 shell 明确放在其他位置时，才显式配置 `routing.conventions.layout`。
-MPA 模式不消费框架 layout。
-
-SPA route 边界使用专用约定文件：
-
-```text
-src/pages/error.tsx             -> 根 error boundary
-src/pages/not-found.tsx         -> 根 not-found boundary
-src/pages/dashboard/error.tsx   -> /dashboard 作用域 error boundary
-```
-
-`error.*` 和 `not-found.*` 按目录作用域生效，并被后代 page 和 layout routes
-继承，直到出现更近的边界文件。Boundary 模块必须默认导出 React 组件。这些 SPA
-router conventions 在 MPA 模式下不会被消费，相关文件名仍然是普通页面路由。
-
-MPA 模式下，页面路由可以使用同 basename 的 colocated HTML 模板：
-
-```text
-src/pages/about.tsx        -> /about，模板 src/pages/about.html
-src/pages/about.html
-src/pages/users/index.tsx  -> /users，模板 src/pages/users/index.html
-src/pages/users/index.html
-```
-
-没有 colocated 模板的路由默认使用全局 `index.html` 模板。如果每个 MPA 路由都有
-colocated 模板，则这些路由不要求存在 `index.html`。
-
-SPA 模式会把生成的路由类型写入 `<routing-dir-parent>/route-types.d.ts`。
-不要手工修改这个文件，不要从应用代码导入它，也不要把它复制进模板。
-
-## 服务端函数
-
-Server function 由 `"use server";` 指令发现，不依赖目录。使用 `.server.ts` 或
-`.server.tsx` 文件名，让路由发现忽略就近放置的 server-only 文件：
 
 ```ts
-// src/apis/users.server.ts
-"use server";
+export default defineConfig({
+  routing: {
+    mode: "spa",
+  },
+});
+```
 
-export async function listUsers() {
-  return [];
-}
+```text
+src/pages/
+├── page.tsx                       # /
+├── page.config.ts                # / 的可选构建期配置
+├── home/
+│   ├── page.tsx                   # /home
+│   └── components/
+│       ├── Hero.tsx
+│       └── index.tsx          # 私有源码，不是另一个 Page
+└── users/
+    └── $userId/
+        ├── page.tsx               # /users/:userId
+        ├── index.ts
+        ├── model.ts
+        └── components/Profile.tsx
 ```
 
 规则：
 
-- 指令必须位于模块顶部；
-- 模块必须导出至少一个命名 callable function；
-- 不支持默认导出、runtime re-export、generator、async generator，以及导出的非函数 runtime 值；
-- type-only export 会被 runtime transform 忽略；
-- 可达的 server function 可以通过内置传输层在浏览器代码中调用；应用代码不需要手写 endpoint 或 proxy 文件。
+- 一个 route 目录只能有一个受支持扩展名的 `page.*`；
+- 相对 `routing.dir` 的目录段决定 URL；
+- 完整所在目录是 Page 私有 scope；
+- 其他文件（包括 `index.*`）都是普通 Page 源码；
+- 后代 `page.*` 会有意创建 nested Page 和 Route；
+- 同一个 normalized URL shape 不能有两个 Page 锚点；
+- Page entry 默认导出组件。
+
+Page 私有代码不需要 `_`。Private 表示 ownership/discovery scope，不是安全边界。
+
+发现由 positive anchor 驱动。`src/pages/home/components/index.tsx` 因为不叫
+`page.*` 而保持私有；`src/pages/home/components/page.tsx` 则会有意创建
+`/home/components`。
+
+下划线不会创建私有 route segment。`_components/Card.tsx` 因为没有 Page
+锚点而属于普通源码；`_private/page.tsx` 不会被静默忽略，而会产生 invalid
+static segment diagnostic。Static URL segment 必须以字母或数字开头。
+
+### Page 配置
+
+canonical discovery 识别 anchored Page 同目录唯一可选的 `page.config.ts` 或
+`page.config.js`，推荐 TypeScript 形式：
+
+```ts
+import { definePageConfig } from "@evjs/ev";
+
+export default definePageConfig({
+  title: "首页",
+  meta: {
+    description: "应用首页。",
+    keywords: "首页,evjs",
+    viewport: "width=device-width, initial-scale=1",
+    "theme-color": "#ffffff",
+  },
+  render: "csr",
+  extensions: {
+    "@company/feature": {
+      enabled: true,
+    },
+  },
+});
+```
+
+该 module 在构建期同步求值，default-export 只包含 static JSON data 的 plain
+object。Core 持有 `title`、named `meta`、`render`、`hydrate`、`prerender`
+与 `rsc`；插件注册并持有 `extensions` 下的 namespaced value。`meta` 只把
+字符串 key/value 映射为 `<meta name="key" content="value">`，不提供
+`property`、`charset`、link、script、动态元信息或通用 head DSL。Core
+title/meta 会为 Page 物化；插件 extension value 在 runtime 使用前仍需插件显式
+投影。
+
+### Page HTML
+
+应用默认使用顶层 `index.html`；`routing.html` 可选择另一份共享模板。在 MPA
+mode 下，同一 Page 目录的 `index.html` 会覆盖该 Page 的 Document 模板。它
+不会成为客户端 Page entry，SPA mode 也不会把它当作路由锚点。Page `title`
+和 `meta` 会物化缺失 tag，并覆盖模板中匹配的 title 与 `meta[name]`；未声明值
+保留模板 baseline。
+
+## canonical 客户端路径
+
+客户端路径来自 route 目录：
+
+| 目录 segment | 含义 |
+| --- | --- |
+| `users` | 静态 segment。 |
+| `$userId` | 动态 `:userId` segment。 |
+| `$...splat` | 终止 catch-all。 |
+| `(account)` | Pathless 组织分组。 |
+
+```text
+src/pages/
+├── page.tsx                         # /
+├── users/
+│   ├── page.tsx                     # /users
+│   └── $userId/
+│       └── page.tsx                 # /users/:userId
+├── files/
+│   └── $...splat/
+│       └── page.tsx                 # /files/*
+└── (account)/
+    └── settings/
+        └── page.tsx                 # /settings
+```
+
+SPA 物化 Client Route；MPA 从相同 semantic Page/Route 出发物化 Page-owned
+Document。MPA 只接受静态 Page path；`$param`、终止 `$...splat` 与 router-only
+boundary facet 会显式失败，layout 在两种 mode 中都会组合。
+
+## 服务端函数
+
+Server function 没有约定根目录。构建从 Page、layout、wrapper 和 server code
+沿 reachable import 发现。
+
+一个 server-function module：
+
+- 以 `"use server";` 开头；
+- 导出命名 function declaration 或命名 `const` function expression；
+- 不使用 default export；
+- 不从其他模块 runtime re-export function。
+
+```ts
+"use server";
+
+export async function getUser(userId: string) {
+  return { id: userId };
+}
+```
+
+在 Page 目录同位放置时，推荐 `.server.ts` 或 `.server.tsx`，便于人和工具识别
+ownership。
 
 ## 服务端文件路由
 
-服务端文件路由默认启用。URL 来自 `server.routing.dir` 下的文件路径；这里没有
-`prefix` 选项。
+默认从 `src/apis` 发现服务端请求路由。该文件系统约定与客户端 `page.*`
+文件树有意分离。
 
 ```text
-src/apis/index.ts              -> /
-src/apis/health.ts             -> /health
-src/apis/users.ts              -> /users
-src/apis/users/index.ts        -> /users
-src/apis/users/$userId.ts      -> /users/:userId
-src/apis/(internal)/health.ts  -> /health
-src/apis/api/users.ts          -> /api/users
+src/apis/
+├── index.ts                    # /
+├── api/
+│   ├── health.ts              # /api/health
+│   └── users/
+│       ├── index.ts           # /api/users
+│       └── $userId.ts         # /api/users/:userId
+└── (internal)/
+    └── metrics.ts             # /metrics
 ```
 
-只有导出至少一个大写 HTTP method 的文件才会成为路由：
-`GET`、`POST`、`PUT`、`PATCH`、`DELETE`、`HEAD` 或 `OPTIONS`。
+### 服务端路径段
+
+| 文件段 | URL 含义 |
+| --- | --- |
+| `index` | 目录根。 |
+| `$userId` | 动态参数。 |
+| `(internal)` | Pathless 组织分组。 |
+| 普通安全名称 | 静态 URL segment。 |
+
+不支持 catch-all、optional、bracket 或 method-suffix 方言。
+Static segment 必须以小写字母或数字开头。下划线前缀不是私有 route 约定：
+没有 route export 的 helper 仍是普通源码，但带 `GET` export 的
+`_private/health.ts` 会产生诊断。
+
+### Route export
+
+候选模块只有导出至少一个大写 HTTP method 才成为请求路由：
 
 ```ts
-// src/apis/api/posts.ts
-export const GET = async () => Response.json([]);
+export function GET() {
+  return Response.json({ ok: true });
+}
 
-export const POST = async (request) => {
+export async function POST({ request }: { request: Request }) {
   const body = await request.json();
   return Response.json(body, { status: 201 });
-};
+}
 ```
 
-Server route candidate 只能导出大写 HTTP methods。共享 helper 应移到
-`_schema.ts` 这类被忽略的私有文件，或移到路由树外部的模块。
+只支持框架文档定义的大写 HTTP handler。Default export、小写 method name 和
+route-module middleware export 无效。没有 route export 的文件保持为普通
+colocated helper。
 
-服务端 route candidate 中的以下写法会被拒绝：
+### 服务端路由冲突
 
-- 默认导出；
-- `middleware` 或 `middlewares` 导出；
-- helper export 或其他不支持的 runtime export；
-- `get` 这类小写 HTTP method export；
-- `posts.get.ts` 这类 method suffix 文件；
-- `route.ts` sentinel 文件；
-- 重复 path 或重复 dynamic shape。
+构建会拒绝：
 
-没有 HTTP method exports 的文件会被忽略，因此 `schema.ts`、`db.ts` 和
-`types.ts` 这类 helper 可以放在路由树里。
+- 两个模块对应同一 URL；
+- 同一动态 shape 使用两个参数名，如 `$id` 与 `$userId`；
+- 不安全或格式错误的 group/dynamic segment；
+- 生成 route id 冲突；
+- route module 混入不支持的 route contract export。
 
-## 服务端中间件
+不要添加 `route.ts` sentinel、`foo.get.ts`、bracket route、optional param、
+catch-all 或 `server.entry`。
 
-evjs 有两个 server middleware 作用域。Middleware 文件 default-export 一个
-Hono-compatible middleware 函数，不能导出命名值或 matcher 配置。
+## Server Middleware
 
-全局服务端中间件会包裹服务端运行时请求，包括 server
-file routes、server functions、SSR、PPR 和 RSC：
-
-```ts
-// src/middleware.ts
-import type { MiddlewareHandler } from "@evjs/ev/server-context";
-
-const middleware: MiddlewareHandler = async (ctx, next) => {
-  await next();
-  ctx.header("x-server", "evjs");
-};
-
-export default middleware;
-```
-
-全局服务端中间件：
+存在两种 middleware 约定：
 
 ```text
-src/middleware.ts
+src/
+├── middleware.ts
+└── apis/
+    ├── middleware.ts
+    └── admin/
+        ├── middleware.ts
+        └── users.ts
 ```
 
-API route middleware：
+- `src/middleware.ts` 全局包裹框架持有的 server 请求；
+- `src/apis/**/middleware.ts` 按文件 scope 包裹后代 server file route。
 
-```text
-src/apis/middleware.ts
-src/apis/api/middleware.ts
-src/apis/api/admin/middleware.ts
-src/apis/(admin)/middleware.ts
-```
+Middleware file 不是 route，不能由 route module export middleware 代替。
 
-执行顺序是：
+## 生成文件
 
-1. 全局服务端中间件；
-2. 从父目录到子目录的 API route middleware；
-3. HTTP method handler。
+框架可能生成：
 
-API route middleware 只作用于后代 server file routes；例如
-`src/apis/api/middleware.ts` 覆盖
-`src/apis/api/users.ts`，但不覆盖 flat sibling
-`src/apis/api.ts`。
+- `.ev/**` framework IR 和 entry facade；
+- canonical SPA 文件路由在支持时生成的 `src/route-types.d.ts`；
+- `dist/**` 构建产物。
+
+不要编辑或 scaffold 任何生成文件，并保持 ignore。
+
+## 显式 route tree 与源码转换
+
+canonical Page discovery 不要求用户选择 route reader 或 provider。应用声明
+`routing.mode` 后，只有 `page.*` positive anchor 会产生客户端路由；仅存在
+`src/pages` 目录不会发布 Page。
+
+### 显式 SPA route tree
+
+Config-route normalizer 接受 `application.routes` 中的 `component`、嵌套
+`routes`、`layout`、`wrappers` 与 `redirect` 字段，并拒绝 `children`。受支持的
+`name`、`icon`、`title`、`hideInMenu`、`flatMenu`、`spmBPos`、`access`、
+`menuKey` 与静态 `menuAssetOptions` 会保留为内置 Route extension 数据。
+共享 template 和 mount 值放在 `application.document` 下。该配置不接受 routing
+mode selector、顶层 `routes` 或顶层 `html`，并且只能物化 SPA。
+
+显式 component 以 `index.*` 或 `page.*` 结尾时，其所在目录会成为 Page scope；
+其他 basename 的 flat component 保持 module scope，不能消费相邻
+`page.config.ts`。要改用 canonical tree，应把每个 component 移到公开 URL 对应
+目录并命名为 `page.*`。
+
+### 目录式 MPA 源码
+
+保留或调整每个公开 URL 目录，把其中的 `index.*` component entry 重命名为
+`page.*`，把 `config.json` 的 title 与受支持 named meta 映射到 core `title`
+和 `meta`，其余插件持有值写入 namespaced `page.config.ts` extension。删除
+`config.json` 后，只选择 `routing.mode: "mpa"`。
+
+### 其他 filename route
+
+把每个已发布 filename route 移到 URL 对应目录并把 entry 命名为 `page.*`；
+按需保留 `$param` 与 `(group)` 目录段。框架不提供 source-reader 或 provider
+selector；源码树完成转换后，只声明 `routing.mode`。
+
+canonical 转换清单：
+
+1. 把每个 Page entry 移到 URL 对应目录并命名为 `page.*`；
+2. 把 title、受支持 named meta、rendering 与插件持有的 Page setting 移到
+   `page.config.ts`；
+3. Page helper 任意放在其目录，无需 `_`；
+4. 参数使用 `$param`，终止 catch-all 使用 `$...splat`，pathless group 使用
+   `(group)`；
+5. 支持的 route facet 放在对应 route 目录；
+6. 只声明 `routing.mode`，运行 `ev inspect` 审核 normalized Page、Route、
+   Document、Page config 与 provenance。
+
+Provider id 只可能出现在 raw CoreGraph/debug artifact 中解释 provenance；普通
+inspect routing 输出会隐藏它。它不定义另一种公开路由模型。

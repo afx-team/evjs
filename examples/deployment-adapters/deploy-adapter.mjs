@@ -19,11 +19,17 @@ export function deploymentExampleAdapter() {
           };
         },
         transformHtml(doc, htmlCtx) {
-          const id = htmlCtx.kind === "page" ? htmlCtx.pageId : htmlCtx.appId;
+          const kind = htmlCtx.owner.kind;
+          const id =
+            kind === "page"
+              ? htmlCtx.owner.pageId
+              : kind === "extension"
+                ? htmlCtx.owner.extensionId
+                : htmlCtx.applicationId;
           doc.documentElement?.setAttribute("data-deployment-example-html", id);
           doc.head?.insertAdjacentHTML(
             "beforeend",
-            `<meta name="evjs-deployment-example-html" content="${htmlCtx.kind}:${id}">`,
+            `<meta name="evjs-deployment-example-html" content="${kind}:${id}">`,
           );
         },
         buildEnd({ output }) {

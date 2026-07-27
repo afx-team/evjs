@@ -1,60 +1,66 @@
 # Build
 
-## Command
-
-```bash
-ev build
-```
-
-`ev build` reads `ev.config.ts`, discovers configured page and server
-conventions, runs the active bundler, and writes production artifacts.
-
-Use `ev inspect` when you want a quick preflight without writing `dist` or
-`.ev`:
+## Commands
 
 ```bash
 ev inspect
 ev inspect --json
-```
-
-`ev inspect` reports the resolved routing mode, discovered page routes, server
-functions, server routes, render metadata, generated route type location, and
-diagnostics. Errors make the command exit non-zero.
-
-Use `ev prepare` when you want the generated framework IR but not a full build:
-
-```bash
 ev prepare
+ev build
 ```
 
-`ev prepare` writes `.ev/` with the discovered app graph, final build plan,
-generated entry facades, plugin generated artifacts, framework slots, and
-import edges. It does not run the bundler and does not write `dist`.
+- `ev inspect` validates and reports framework inputs without writing `.ev` or
+  `dist`.
+- `ev prepare` writes generated framework IR under `.ev` without running the
+  bundler.
+- `ev build` resolves config, builds the graph and plan, runs the selected
+  bundler, links build facts, and writes production output.
+
+## Inspect
+
+For a canonical application, the routing summary uses the public
+Page-and-Route vocabulary: mode, Page root, discovered `page.*` anchors,
+directory-derived route patterns, Documents, and diagnostics.
+
+Canonical inspect output does not present a provider, resolver implementation,
+or route-types path. It reports resolved Pages, Routes, Documents, server
+functions, server routes, rendering metadata, extension registry state, Page
+config sources, provenance, and diagnostics. Errors make inspect exit non-zero.
+
+## Generated IR
+
+`ev prepare` writes `.ev`, including:
+
+- normalized CoreGraph;
+- generated framework and plugin modules;
+- entry facades and framework slots;
+- import edges;
+- final BuildPlan;
+- manifest inputs and provenance.
+
+Canonical applications write the validated semantic graph to
+`.ev/framework/core-graph.json`. `.ev` is generated and must not be edited.
 
 ## Output
 
-By default evjs separates public browser files from server files:
+By default browser and server files are separated:
 
-```txt
+```text
 dist/
 ├── client/
 │   ├── index.html
 │   ├── main.[hash].js
-│   ├── [chunk].[hash].js
-│   └── manifest.json
+│   └── [chunk].[hash].js
 ├── server/
-│   ├── main.[hash].js
-│   └── manifest.json
-└── build-output.json
+│   └── main.[hash].js
+└── deployment-metadata.json
 ```
 
-Use `output.client` and `output.server` when your host expects public files in a
-different directory:
+Use `output.client` and `output.server` when the host requires another layout:
 
 ```ts
-import { defineConfig } from "@evjs/ev";
-
 export default defineConfig({
+  routing: { mode: "spa" },
   output: {
     client: "dist",
     server: "dist-server",
@@ -62,108 +68,123 @@ export default defineConfig({
 });
 ```
 
-That writes browser assets directly under `dist` and server artifacts under
-`dist-server`:
+Generated HTML embeds the `ClientRuntime` required by browser bootstrap.
+`deployment-metadata.json` is the canonical serialized deployment projection;
+the complete `BuildOutput` remains in memory. Core does not emit split
+client/server compatibility manifests. Application code must not import or
+edit deployment metadata.
 
-```txt
-dist/
-├── index.html
-├── main.[hash].js
-├── [chunk].[hash].js
-└── manifest.json
-dist-server/
-├── main.[hash].js
-└── manifest.json
+## SPA And MPA Output
+
+`routing.mode` controls route and Document materialization:
+
+| Routing mode | Route output | Document output |
+| --- | --- | --- |
+| `spa` | Client Routes in one browser route tree | One Application-owned shell, plus a Page-owned output for each static SSG Page |
+| `mpa` | Independent Page entries for static semantic routes | One Page-owned Document per static Page route |
+
+Both use the same `<routing.dir>/**/page.*` entry, directory scope, and
+semantic route pattern.
+
+Static SSG Pages use their semantic route as the output path in either mode:
+`/` writes `index.html`, while `/report` writes `report/index.html`. The output
+is never derived from the Page id. When a root SSG Page owns `index.html` in a
+mixed SPA that also needs a client-route fallback, Core keeps the Application
+shell separately at `__evjs/<application-id>.html`.
+
+MPA currently materializes only static Page routes. `$param` and terminal
+`$...splat` remain valid SPA route identities, but selecting MPA for either
+fails graph validation because one dynamic pattern does not identify one
+build-time HTML output. Route layouts compose in both modes; router-only
+boundary facets remain SPA-only and MPA rejects them explicitly.
+
+Place `index.html` beside an MPA Page when it needs a Page-specific Document
+template:
+
+```text
+src/pages/report/
+├── page.tsx
+└── index.html
 ```
 
-Generated HTML embeds the `ClientRuntime` needed by the browser bootstrap.
-`client/manifest.json` is lightweight deployment metadata: SPA manifests keep
-top-level public assets, while MPA manifests keep assets on each routing page.
-`server/manifest.json` preserves the server entry filename plus the server route
-projection. Runtime-only `FrameworkRuntime` data is injected into dev and
-deployment bootstraps instead of being emitted as JSON. `build-output.json` is
-canonical deployment metadata. Application code should not import or edit
-deployment metadata files.
-
-## Page Output
-
-`routing.mode` controls how page files under `src/pages` are emitted:
-
-| Mode | Output |
-| --- | --- |
-| `spa` | One browser app shell for the discovered page tree. |
-| `mpa` | One independent HTML document and client entry per discovered CSR page. |
-
-Page modules can opt into server rendering or static rendering with literal
-exports:
-
-```tsx
-export const render = "ssr";
-export const hydrate = "load";
-
-export default function ProductPage() {
-  return <main>Product</main>;
-}
-```
-
-For build-time static generation, use `render = "ssg"` on a statically
-addressable page. `ev build` renders that page into an emitted HTML document
-such as `dist/client/report.html`, and deployment metadata represents it as a
-`static-page` route. For server pages with partial prerendering, use
-`render = "ssr"` with `prerender = { partial: true }`.
-
-```tsx
-import { Suspense } from "react";
-
-export const render = "ssr";
-export const hydrate = "none";
-export const prerender = { partial: true } as const;
-
-export default function CampaignPage() {
-  return (
-    <Suspense fallback={<p>Loading...</p>}>
-      <CampaignContent />
-    </Suspense>
-  );
-}
-```
-
-Partial prerendering is experimental. Treat React `Suspense` plus the
-`prerender` export as the public authoring API; do not depend on generated
-internal region IDs or manifest details.
-
-RSC pages use SSR plus `rsc = true` and require `server.rsc`:
+Canonical SPA/MPA Pages both discover an optional `page.config.ts` from their
+Page directory:
 
 ```ts
-import { defineConfig } from "@evjs/ev";
+import { definePageConfig } from "@evjs/ev";
 
-export default defineConfig({
-  server: {
-    rsc: true,
+export default definePageConfig({
+  title: "Report",
+  meta: {
+    description: "A generated business report.",
+    keywords: "report,analytics",
+    viewport: "width=device-width, initial-scale=1",
+    "theme-color": "#ffffff",
+  },
+  render: "ssr",
+  hydrate: "load",
+  extensions: {
+    "@company/analytics": {
+      channel: "report",
+    },
   },
 });
 ```
 
-```tsx
-export const render = "ssr";
-export const rsc = true;
-export const hydrate = "none";
+The module is synchronously evaluated at graph-build time. Core rendering
+fields flow into the rendering BuildPlan. For emitted MPA/SSG Documents and
+compiled SSR/PPR/RSC request-time document shells, static `title` and named
+`meta` materialize missing tags and override matching template baseline
+values; omitted values preserve the baseline. Registered plugin extensions
+remain static graph data unless the owning plugin explicitly projects them
+into a generated runtime artifact. Plugin `transformHtml` hooks run after
+framework metadata, assets, and structured HTML contributions materialize and
+may explicitly override the result.
 
-export default function InsightsPage() {
-  return <main>Insights</main>;
-}
+For every server-rendered Page, evjs compiles its configured HTML template into
+a request-time document shell during the build. This preserves authored
+`<html>`, `<head>`, and `<body>` attributes and content while applying the same
+assets, Page metadata, `html.tag` contributions, and `transformHtml` hooks as a
+static Document. The default React renderer inserts the Page HTML and
+request-specific bootstrap data into that shell.
+
+Supplying a custom `renderDocument` completely replaces the compiled shell:
+`ctx.page.metadata` remains available, but the custom renderer owns the
+template baseline, assets, and document structure. Insert
+`renderReactPageMetadata(ctx)` from `@evjs/server/react` to retain the core
+safe-serialization and SPA cleanup behavior. Build-time `transformHtml` hooks
+do not post-process the arbitrary per-request string returned by a custom
+document renderer.
+
+## Page Rendering Settings
+
+Do not preserve literal `render`, `hydrate`, `prerender`, or `rsc` exports in a
+Page component. When adopting canonical Page configuration, move those values
+to adjacent `page.config.ts`:
+
+```ts
+import { definePageConfig } from "@evjs/ev";
+
+export default definePageConfig({
+  render: "ssr",
+  hydrate: "none",
+  prerender: { partial: true },
+});
 ```
 
-RSC pages cannot also use partial prerendering. Split those concerns into
-separate routes for now.
+Static generation uses the supported `"ssg"` rendering contract. RSC and
+partial-prerendered Pages must omit `hydrate` or set it to `"none"`. RSC Pages
+use `render: "ssr"` and `rsc: true`; their Flight endpoint is derived from
+`server.basePath` unless `server.rsc.endpoint` overrides it. RSC and partial
+prerendering cannot be combined on one Page. These settings normalize to Core
+Page rendering fields without changing Page identity.
 
 ## Server Functions And Routes
 
-Files with `"use server";` are included when they are imported by reachable app,
-page, server route, or middleware code. The build makes them callable from the
-browser through the server runtime.
+Reachable modules beginning with `"use server";` contribute supported named
+server functions.
 
-Server file routes are discovered from `src/apis` by default:
+Server request routes are discovered independently under `src/apis`:
 
 ```ts
 // src/apis/api/health.ts
@@ -172,26 +193,33 @@ export const GET = async () => Response.json({ ok: true });
 
 ## Build Checks
 
-When a build fails, check the inputs users control first:
+Check user-controlled inputs first:
 
-- `ev.config.ts` exports `defineConfig(...)` and uses public config keys.
-- HTML templates contain the configured mount element, usually
-  `<div id="app"></div>`.
-- `src/pages` routes follow the file conventions: `index.*` directory roots,
-  `$param` dynamic segments, `$...splat` SPA catch-alls, and URL-safe static
-  segments.
-- Page modules default-export a React component.
-- Page rendering metadata uses literal values.
-- `"use server"` modules start with the directive and export named functions.
-- `src/apis` route modules export uppercase HTTP methods such as `GET` or
-  `POST`.
+- `ev.config.ts` declares `routing.mode`;
+- every published client Page uses exactly one `page.*` extension variant;
+- each Page uses at most one `page.config.ts` or `page.config.js`, whose
+  default export is static JSON data;
+- Page entries default-export a component;
+- route directories use valid static, `$param`, terminal `$...splat`, and
+  `(group)` segments without normalized-path conflicts;
+- MPA does not use combinations that its current materializer reports as
+  unsupported;
+- templates contain the configured mount element;
+- Page `title` and each `meta` name/content value are valid static strings;
+- Page rendering metadata in `page.config.ts` uses supported values and
+  combinations;
+- `"use server"` modules begin with the directive and export named callables;
+- `src/apis` route modules export uppercase HTTP methods.
+
+After source conversion, run `ev inspect` and review Page sources, Page config,
+routes, Documents, provenance, and diagnostics.
 
 ## Key Points
 
-- `ev build` is the production build command.
-- `ev inspect` is the preflight command when you need diagnostics without
-  writing generated output.
-- Browser files and server files are split by default.
-- Use `output.client` / `output.server` to match a deployment platform's folder
-  layout.
-- Do not import generated manifest files from application code.
+- New SPA and MPA apps build from the same `page.*` Page-and-Route tree.
+- `ev inspect` reports `routingMode`, Page root, source, and Document defaults
+  without exposing an internal provider choice.
+- `.ev`, manifests, build output, and generated route-type declarations
+  are generated.
+- Bundler adapters consume BuildPlan and return build facts; they do not own
+  routing semantics.

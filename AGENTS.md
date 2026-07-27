@@ -9,21 +9,31 @@ Read this file first, then use the deeper guides when you need details:
 - [CONTRIBUTING.md](./CONTRIBUTING.md) for contributor workflow and coding rules.
 - [docs/docs/](./docs/docs) for user-facing API and framework behavior.
 
-The file-convention source of truth is the convention matrix in
+The Page-and-Route authoring source of truth is the convention matrix in
 [docs/docs/project-structure.md](./docs/docs/project-structure.md). When a
 change touches page routes, server functions, server routes, examples,
 or scaffolds, update the English and Chinese project-structure docs together.
-The implementation source for page-route file rules is
-`packages/ev/src/_internal/build/page-route-conventions.ts`; the discovery behavior
-and diagnostics live in `packages/ev/src/_internal/build/page-routes.ts`, with
-coverage in `packages/ev/tests/build-tools-page-routes.test.ts`.
+The canonical Page marker and route-path rules live in
+`packages/ev/src/_internal/build/page-route-conventions.ts`; discovery and
+diagnostics live in `packages/ev/src/_internal/build/page-routes.ts`.
+`packages/ev/src/config/index.ts` selects SPA or MPA materialization through
+`routing.mode`; `packages/ev/src/_internal/build/graph/core.ts` normalizes
+the canonical tree, with cross-mode coverage in
+`packages/ev/tests/build-tools-graph-plan.test.ts` and discovery coverage in
+`packages/ev/tests/build-tools-page-routes.test.ts`. Explicit
+`application.routes` and explicit `component`/`routes` config are SPA-only
+route-tree inputs that normalize into the same graph. They never select MPA
+materialization.
 
 ## Core Principles
 
-- Framework-owned app structure is file-convention first. Client routes are
-  discovered from `src/pages` through top-level `routing`; server request routes
-  are discovered from `src/apis` through `server.routing`; server middleware is
-  discovered from `src/middleware.ts` and `src/apis/**/middleware.ts`.
+- Framework-owned applications use one Page-and-Route file convention.
+  `src/pages/**/page.*` is the only canonical Page and client-route anchor; its
+  containing directory determines both the Page scope and URL. The same tree
+  produces the same semantic Pages and Routes in both modes, while
+  `routing.mode` selects SPA or MPA materialization. Server request routes
+  remain file conventions under `src/apis`, with middleware in
+  `src/middleware.ts` and `src/apis/**/middleware.ts`.
 - `@evjs/ev` is the config, plugin, graph, build-plan, manifest, and deployment
   control plane. It owns convention discovery and composes generated framework
   output; its runtime-facing subpaths are curated authoring and generated-only
@@ -53,14 +63,21 @@ coverage in `packages/ev/tests/build-tools-page-routes.test.ts`.
 4. Treat `src/route-types.d.ts`, `dist`, `.turbo`, and `node_modules` as
    generated output. Scaffolded apps and template packs should not copy generated
    route types.
-5. Page route conventions are strict: `src/pages`, `$param` dynamic segments,
-   `index` for directory roots, `(group)` pathless route groups, `_`-prefixed
-   private files, ignored colocated support files, external SPA root layout at
-   `<routing-dir-parent>/layout/index.tsx`, and nested SPA route layouts named
-   `layout.*` below a route segment. Keep one page file per URL path, one
-   parameter naming choice per dynamic URL shape, and unique generated route
-   IDs. Do not add alternate filename dialects unless the build graph, docs,
-   scaffolds, and generated route types are updated together.
+5. Canonical Pages are strict positive anchors:
+   `<routing.dir>/**/page.{ts,tsx,js,jsx}`. The containing directory is the Page
+   scope, and its relative directory segments determine the client URL.
+   `$param`, terminal `$...splat`, and `(group)` directories express dynamic,
+   catch-all, and pathless segments. Other colocated files—including
+   `index.*`—are private application source unless they are another documented
+   route facet. Keep exactly one `page.*` extension variant per route directory.
+   `application.routes` and explicit `component`/`routes` config are SPA-only
+   route-tree inputs that must normalize to the same CoreGraph, not
+   additional canonical models. They must reject `routing.mode: "mpa"` because
+   the route-tree input is SPA-only. Accept `routes` nesting and reject the
+   `children` spelling. Source trees whose published entries use `index.*`
+   must move or rename every published entry to `page.*`, move Page
+   configuration to `page.config.ts`, and configure only `routing.mode`.
+   Do not add a compatibility reader or infer routes from `index.*`.
 6. Server file route conventions are strict: `src/apis`, `$param` dynamic
    segments, `index` for directory roots, `(group)` pathless route groups,
    uppercase HTTP method exports only, ignored helper files without route
@@ -72,16 +89,37 @@ coverage in `packages/ev/tests/build-tools-page-routes.test.ts`.
 7. Server functions must start with `"use server";` and export named callable
    functions or supported named async values. No default exports or runtime
    re-exports.
-8. Non-CSR page rendering requires server output. PPR and RSC use
-   `render: "ssr"` component pages; PPR plus RSC on one page is unsupported
-   until the runtime explicitly supports it.
-9. `createApp({ framework })` consumes generated `BuildOutput` manifests. Do
+8. Canonical Core 0.3 static title, named metadata, and rendering settings come
+   from adjacent build-time `page.config.ts` modules and normalize into the
+   CoreGraph. `meta` emits only `<meta name="..." content="...">`; do not add a
+   general head DSL. In SPA, the deepest active Page owns metadata without
+   parent inheritance and navigation restores the template baseline. In
+   MPA/SSG, Page metadata materializes missing tags and overrides matching
+   template values; plugin
+   `transformHtml` hooks may override framework output afterward. Do not read
+   `render`, `hydrate`, `prerender`, or `rsc` exports from canonical Page
+   components. Non-CSR materialization requires server output; PPR and RSC use
+   `render: "ssr"`, and PPR plus RSC on one Page remains unsupported until the
+   runtime explicitly supports it.
+9. Plugin-owned static configuration uses one namespaced extension mechanism
+   across normalized Application, Page, Route, and Document owners. Top-level
+   `config.extensions` targets the Application; adjacent `page.config.ts`
+   `extensions`, `route.extensions`, and `document.extensions` target the
+   canonical Page and its uniquely owned Route or Document. Explicit
+   `application.routes` and `application.document` inputs may target
+   Route and Document owners directly. Plugins register the corresponding owner
+   with `applicationExtension()`, `pageExtension()`, `routeExtension()`, or
+   `documentExtension()`. Application values resolve before `setup()`; the
+   other owners resolve during graph analysis. Extension values are strict JSON
+   and enter the CoreGraph, so executable callbacks and secrets do not belong
+   there. Runtime projection remains an explicit plugin responsibility.
+10. `createApp({ framework })` consumes generated `BuildOutput` manifests. Do
    not pass ad hoc manifest objects; use `createReactFrameworkServer()` unless
    a deployment adapter intentionally owns that contract.
-10. Programmatic `@evjs/server` app and route APIs remain runtime primitives.
+11. Programmatic `@evjs/server` app and route APIs remain runtime primitives.
     evjs framework routing does not inspect or publish programmatic
     `createRoute()` declarations.
-11. Utoopack is the default user path. Webpack is the validation/fallback adapter
+12. Utoopack is the default user path. Webpack is the validation/fallback adapter
    for framework features still blocked on lower-level Utoopack APIs.
 
 ## Validation

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { BuildOutput } from "@evjs/shared/manifest";
 import { afterEach, describe, expect, it } from "vitest";
+import { createBuildResult } from "../src/_internal/build/build-result.js";
 import {
   createDeploymentArtifact,
   createEdgeDeploymentFiles,
@@ -12,7 +13,6 @@ import {
   nodeDeploymentAdapter,
   staticDeploymentAdapter,
 } from "../src/deployment/index.js";
-import { createBuildResult } from "../src/plugin/index.js";
 
 const tempDirs: string[] = [];
 
@@ -246,7 +246,7 @@ describe("createDeploymentArtifact", () => {
       "globalThis.__EVJS_FRAMEWORK_RUNTIME__ =",
     );
     expect(files.serverModule).toContain('"buildId": "build-1"');
-    expect(files.serverModule).toContain('"renderers": {}');
+    expect(files.serverModule).not.toContain('"renderers"');
     expect(files.serverModule).not.toContain("readJsonIfExists");
     expect(files.serverModule).toContain(
       "globalThis.__EVJS_SERVER_MODULE_LOADER__",

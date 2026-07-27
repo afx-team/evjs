@@ -15,10 +15,18 @@ and a framework-owned SPA router runtime. It provides:
 - **Server Functions** — write backend logic in files (we recommend using the `.server.ts` suffix), call from React as if local
 - **Server Routes** — build file-based REST endpoints under `src/apis` with uppercase HTTP method exports
 - **Query Integration** — type-safe `useQuery(getUsers)` with auto query keys and transport
-- **File-based Page Routing** — write default-exported React pages under
-  `src/pages`; evjs generates type-safe navigation and owns the router details
-- **Plugin System** — extend builds with `buildStart`, `bundlerConfig`, `transformHtml`, and `buildEnd` hooks
-- **Convention over Configuration** — works out of the box, optionally configure via `ev.config.ts`
+- **Page-and-Route Model** — use positive `src/pages/**/page.*` anchors; each
+  containing directory owns one Page scope and derives its URL in SPA and MPA
+- **Page Configuration** — use adjacent build-time `page.config.ts` for static
+  title/named metadata, core rendering settings, and namespaced plugin
+  extensions
+- **Application Configuration** — use top-level namespaced `extensions` for
+  plugin-owned static Application data
+- **Plugin System** — declare Application/Page extension ownership and extend
+  builds with `buildStart`, `bundlerConfig`, `transformHtml`, and `buildEnd`
+  hooks
+- **Minimal Routing Config** — `ev.config.ts` selects `routing.mode`; other
+  configuration is optional
 
 ## Quick Start
 
@@ -59,11 +67,32 @@ For detailed guides on specific topics, see the docs:
 - Programmatic `createRoute()` remains a standalone `@evjs/server` runtime primitive, not an evjs file-route convention
 
 **Page Routing:**
-- SPA page routes live in `src/pages` and use an optional root layout at
-  `src/layout/index.tsx`; do not create `__root.tsx`, `src/layout.tsx`, or
-  root-level layout files such as `src/pages/layout.tsx`.
-- MPA page routing uses `routing: { mode: "mpa" }`; pages are independent
-  router-free React entries and should use normal `<a href>` links.
+- Canonical SPA and MPA routes use one positive anchor:
+  `src/pages/**/page.{ts,tsx,js,jsx}`. The complete containing directory is the
+  Page scope and determines its URL; `index.*` and other colocated files are
+  ordinary Page-private source.
+- Select only the materialization with `routing: { mode: "spa" }` or
+  `routing: { mode: "mpa" }`. Do not invent separate SPA and MPA Page trees.
+- Source trees whose published entries use `index.tsx` require a one-time
+  conversion: move or rename every published entry to `page.tsx`, move Page
+  configuration to adjacent `page.config.ts`, and then configure only
+  `routing.mode`. Canonical discovery reads only positive `page.*` anchors.
+- Explicit `application.routes` and `component`/`routes` config are SPA-only
+  route-tree inputs. Their converters must reject MPA materialization and
+  normalize into the canonical graph. Prefer moving each component to its URL
+  directory as `page.tsx`; do not introduce another route-tree input.
+- The optional canonical root layout is `src/pages/layout.tsx`; nested layouts
+  use `layout.*` in route directories. Do not create `__root.tsx` or an
+  external `src/layout/index.tsx` framework layout.
+- Put optional build-time Page settings in adjacent `page.config.ts` via
+  `definePageConfig()`. Core fields include `title`, named `meta`, `render`,
+  `hydrate`, `prerender`, and `rsc`; plugin-owned values go under namespaced
+  `extensions`. `meta` emits only `<meta name="..." content="...">` entries.
+- `page.config.ts` is not a browser entry. Core title and named metadata are
+  materialized by the framework; plugins must explicitly project any extension
+  runtime data or code they need.
+- MPA Pages are independent router-free React entries and should use normal
+  `<a href>` links.
 - Page components are plain default exports. Do not wrap them in `definePage`
   and do not type props as framework route props.
 - Read route data with `usePageParams()`, `usePageSearch()`, and
@@ -81,6 +110,14 @@ For detailed guides on specific topics, see the docs:
 - Access server function metadata: `myFn.fnId`, `myFn.fnName`, `getFnQueryKey(myFn, ...args)`
 
 **Misc:**
-- Use `plugins` in config to extend the build pipeline via `buildStart`, `bundlerConfig`, `transformHtml`, and `buildEnd`
+- Put static plugin-owned Application values under top-level
+  `config.extensions`; plugins register them with `applicationExtension()`
+  before `setup()`. Page-local values remain under `page.config.ts`
+  `extensions` and use `pageExtension()`.
+- Extension values are strict JSON graph data. Keep functions and secrets out;
+  use typed plugin factory options or explicit module references for executable
+  behavior.
+- Use `plugins` in config to extend the build pipeline via `buildStart`,
+  `bundlerConfig`, `transformHtml`, and `buildEnd`
 - `ev dev` permits one active session per project directory and coordinates client/server port pairs across concurrently running projects; configured ports are preferred, may move when occupied, and the SPA fallback follows Utoopack's actual startup port
 - Client and API dev servers accept both `localhost` and `127.0.0.1`; treat them as separate browser origins for cookies, storage, and service workers

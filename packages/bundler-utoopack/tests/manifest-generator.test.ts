@@ -2,8 +2,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { BundlerBuildFacts } from "@evjs/ev/_internal/build";
-import type { AppGraph, BuildPlan } from "@evjs/ev/_internal/manifest";
-import { linkBuildOutput } from "@evjs/ev/_internal/manifest";
+import type {
+  BuildPlan,
+  CoreGraph,
+  CoreRoutePattern,
+  HydrationMode,
+  PprConfig,
+  PrerenderConfig,
+  RenderMode,
+} from "@evjs/shared/manifest";
+import { linkBuildOutput } from "@evjs/shared/manifest";
 import { afterEach, describe, expect, it } from "vitest";
 import { UtoopackManifestGenerator } from "../src/manifest-generator.js";
 
@@ -32,7 +40,7 @@ afterEach(async () => {
 });
 
 function linkTestManifest(
-  graph: AppGraph,
+  graph: CoreGraph,
   plan: BuildPlan,
   facts: BundlerBuildFacts,
 ) {
@@ -80,22 +88,14 @@ describe("UtoopackManifestGenerator", () => {
       }),
     );
 
-    const graph: AppGraph = {
-      version: 1,
-      rootDir: cwd,
-      apps: {
-        default: {
-          id: "default",
-          entry: "./src/main.tsx",
-          html: "./index.html",
-        },
-      },
-      pages: {},
-      routes: [
+    const graph = createGraph({
+      cwd,
+      routingMode: "spa",
+      pages: [
         {
           id: "home",
+          routeId: "home",
           path: "/",
-          appId: "default",
           module: "./pages/Home.tsx",
           render: "ssr",
         },
@@ -115,7 +115,7 @@ describe("UtoopackManifestGenerator", () => {
           methods: ["GET"],
         },
       ],
-    };
+    });
     const plan = createPlan(graph);
 
     const generator = new UtoopackManifestGenerator(cwd, plan);
@@ -139,6 +139,7 @@ describe("UtoopackManifestGenerator", () => {
         id: "home",
         path: "/",
         appId: "default",
+        pageId: "home",
       },
     ]);
     expect(manifest.server?.entry).toBe("server.js");
@@ -186,21 +187,19 @@ describe("UtoopackManifestGenerator", () => {
       }),
     );
 
-    const graph: AppGraph = {
-      version: 1,
-      rootDir: cwd,
-      apps: {
-        default: {
-          id: "default",
-          entry: "./src/main.tsx",
-          html: "./index.html",
+    const graph = createGraph({
+      cwd,
+      routingMode: "spa",
+      pages: [
+        {
+          id: "index",
+          routeId: "index",
+          path: "/",
+          module: "./src/pages/page.tsx",
+          render: "csr",
         },
-      },
-      pages: {},
-      routes: [],
-      serverFunctions: [],
-      serverRoutes: [],
-    };
+      ],
+    });
     const plan = createPlan(graph, { distDir: "custom-dist" });
 
     const generator = new UtoopackManifestGenerator(cwd, plan);
@@ -231,28 +230,26 @@ describe("UtoopackManifestGenerator", () => {
       }),
     );
 
-    const graph: AppGraph = {
-      version: 1,
-      rootDir: cwd,
-      apps: {},
-      pages: {
-        home: {
+    const graph = createGraph({
+      cwd,
+      routingMode: "mpa",
+      pages: [
+        {
           id: "home",
-          entry: "./src/home.tsx",
-          html: "./index.html",
+          routeId: "home",
+          path: "/home",
+          module: "./src/home.tsx",
           render: "csr",
         },
-        about: {
+        {
           id: "about",
-          entry: "./src/about.tsx",
-          html: "./index.html",
+          routeId: "about",
+          path: "/about",
+          module: "./src/about.tsx",
           render: "csr",
         },
-      },
-      routes: [],
-      serverFunctions: [],
-      serverRoutes: [],
-    };
+      ],
+    });
     const plan = createPlan(graph, { clientDir: "dist" });
 
     const generator = new UtoopackManifestGenerator(cwd, plan);
@@ -264,7 +261,7 @@ describe("UtoopackManifestGenerator", () => {
       assets: { js: ["home.js"], css: [] },
       render: "csr",
       module: {
-        type: "entry",
+        type: "react-component",
         href: "home.js",
       },
     });
@@ -272,7 +269,7 @@ describe("UtoopackManifestGenerator", () => {
       assets: { js: ["about.js"], css: [] },
       render: "csr",
       module: {
-        type: "entry",
+        type: "react-component",
         href: "about.js",
       },
     });
@@ -303,19 +300,18 @@ describe("UtoopackManifestGenerator", () => {
       }),
     );
 
-    const graph: AppGraph = {
-      version: 1,
-      rootDir: cwd,
-      apps: {},
-      pages: {
-        campaign: {
+    const graph = createGraph({
+      cwd,
+      routingMode: "mpa",
+      pages: [
+        {
           id: "campaign",
           routeId: "campaign-route",
-          component: "./src/campaign/Page.tsx",
-          html: "./index.html",
+          path: "/campaign",
+          module: "./src/campaign/Page.tsx",
           render: "ssr",
           prerender: { partial: true },
-          hydrate: "visible",
+          hydrate: "load",
           ppr: {
             regions: {
               offer: {
@@ -326,11 +322,8 @@ describe("UtoopackManifestGenerator", () => {
             },
           },
         },
-      },
-      routes: [],
-      serverFunctions: [],
-      serverRoutes: [],
-    };
+      ],
+    });
     const plan = createPlan(graph);
 
     const generator = new UtoopackManifestGenerator(cwd, plan);
@@ -341,7 +334,6 @@ describe("UtoopackManifestGenerator", () => {
       assets: { js: ["campaign.client.js"], css: [] },
       render: "ssr",
       prerender: { partial: true },
-      routeId: "campaign-route",
       ppr: {
         delivery: "merge",
         shell: { js: ["campaign.shell.js"], css: [] },
@@ -357,42 +349,166 @@ describe("UtoopackManifestGenerator", () => {
   });
 });
 
+interface TestPage {
+  id: string;
+  routeId: string;
+  path: string;
+  module: string;
+  render: RenderMode;
+  hydrate?: HydrationMode;
+  prerender?: PrerenderConfig;
+  ppr?: PprConfig;
+}
+
+function createGraph(options: {
+  cwd: string;
+  routingMode: "spa" | "mpa";
+  pages?: TestPage[];
+  serverFunctions?: CoreGraph["serverFunctions"];
+  serverRoutes?: CoreGraph["serverRoutes"];
+}): CoreGraph {
+  const pages = options.pages ?? [];
+  const pageIds = pages.map((page) => page.id);
+  const routeIds = pages.map((page) => page.routeId);
+  const documentIds = options.routingMode === "spa" ? ["index"] : pageIds;
+  const provenance = {
+    producer: {
+      kind: "provider" as const,
+      id: "@evjs/provider/page-anchor",
+    },
+  };
+
+  return {
+    rootDir: options.cwd,
+    applications: {
+      default: {
+        id: "default",
+        root: "./src/pages",
+        routingMode: options.routingMode,
+        pageIds,
+        routeIds,
+        documentIds,
+        extensions: {},
+        provenance,
+      },
+    },
+    pages: Object.fromEntries(
+      pages.map((page) => [
+        page.id,
+        {
+          id: page.id,
+          applicationId: "default",
+          source: {
+            module: page.module,
+            scope: {
+              kind: "directory" as const,
+              root: path.posix.dirname(page.module),
+            },
+            provider: "@evjs/provider/page-anchor",
+          },
+          render: page.render,
+          ...(page.hydrate ? { hydrate: page.hydrate } : {}),
+          ...(page.prerender ? { prerender: page.prerender } : {}),
+          ...(page.ppr ? { ppr: page.ppr } : {}),
+          extensions: {},
+          provenance,
+        },
+      ]),
+    ),
+    routes: pages.map((page) => ({
+      id: page.routeId,
+      applicationId: "default",
+      pattern: toRoutePattern(page.path),
+      target: { kind: "page" as const, pageId: page.id },
+      facets: { wrappers: [] },
+      extensions: {},
+      provenance,
+    })),
+    documents: Object.fromEntries(
+      options.routingMode === "spa"
+        ? [
+            [
+              "index",
+              {
+                id: "index",
+                template: "./index.html",
+                output: "index.html",
+                applicationId: "default",
+                owner: { kind: "application" as const },
+                mount: "#app",
+                bootstrap: { kind: "application" as const },
+                extensions: {},
+                provenance,
+              },
+            ],
+          ]
+        : pages.map((page) => [
+            page.id,
+            {
+              id: page.id,
+              template: "./index.html",
+              output: `${page.id}.html`,
+              applicationId: "default",
+              owner: { kind: "page" as const, pageId: page.id },
+              mount: "#app",
+              bootstrap: { kind: "page" as const, pageId: page.id },
+              extensions: {},
+              provenance,
+            },
+          ]),
+    ),
+    extensions: { namespaces: {} },
+    serverFunctions: options.serverFunctions ?? [],
+    serverRoutes: options.serverRoutes ?? [],
+  };
+}
+
 function createPlan(
-  graph: AppGraph,
+  graph: CoreGraph,
   options: { clientDir?: string; distDir?: string; serverDir?: string } = {},
 ): BuildPlan {
-  const pageEntries = Object.values(graph.pages).map((page) => ({
-    name: page.id,
-    import: page.entry ?? page.app ?? page.component ?? "",
-    environment: "client" as const,
-    runtime: "browser" as const,
-    kind: "page-client" as const,
-    owner: { pageId: page.id },
-    ...(page.component && !page.entry && !page.app
-      ? {
-          metadata: {
-            type: "react-component-page" as const,
-            component: page.component,
-            mount: page.mount ?? "#app",
-            hydrate: page.hydrate ?? "load",
-            render: page.render,
-          },
-        }
-      : {}),
-  }));
+  const pageEntries = Object.values(graph.pages)
+    .filter(
+      (page) => graph.applications[page.applicationId]?.routingMode === "mpa",
+    )
+    .map((page) => ({
+      name: page.id,
+      import: page.source.module,
+      environment: "client" as const,
+      runtime: "browser" as const,
+      kind: "page-client" as const,
+      owner: {
+        pageId: page.id,
+        ...(findPageRouteId(graph, page.id)
+          ? { routeId: findPageRouteId(graph, page.id) }
+          : {}),
+      },
+      metadata: {
+        type: "react-component-page" as const,
+        component: page.source.module,
+        mount: findPageDocument(graph, page.id)?.mount ?? "#app",
+        hydrate: page.hydrate ?? "load",
+        render: page.render,
+      },
+    }));
   const pprEntries = Object.values(graph.pages).flatMap((page) => [
     ...(page.prerender &&
     typeof page.prerender === "object" &&
     page.prerender.partial &&
-    page.component
+    page.source.module
       ? [
           {
             name: `${page.id}-ppr-shell`,
-            import: page.component,
+            import: page.source.module,
             environment: "server" as const,
             runtime: "node" as const,
             kind: "ppr-shell" as const,
-            owner: { pageId: page.id },
+            owner: {
+              pageId: page.id,
+              ...(findPageRouteId(graph, page.id)
+                ? { routeId: findPageRouteId(graph, page.id) }
+                : {}),
+            },
           },
         ]
       : []),
@@ -402,17 +518,30 @@ function createPlan(
       environment: "server" as const,
       runtime: "node" as const,
       kind: "ppr-region" as const,
-      owner: { pageId: page.id, regionId },
+      owner: {
+        pageId: page.id,
+        ...(findPageRouteId(graph, page.id)
+          ? { routeId: findPageRouteId(graph, page.id) }
+          : {}),
+        regionId,
+      },
     })),
   ]);
-  const appEntries = Object.values(graph.apps).map((app) => ({
-    name: app.id === "default" ? "main" : app.id,
-    import: app.entry,
-    environment: "client" as const,
-    runtime: "browser" as const,
-    kind: "app-client" as const,
-    owner: { appId: app.id },
-  }));
+  const appEntries = Object.values(graph.applications).flatMap((app) =>
+    app.routingMode === "spa" &&
+    graph.routes.some((route) => route.applicationId === app.id)
+      ? [
+          {
+            name: app.id === "default" ? "main" : app.id,
+            import: `./.ev/entries/${app.id === "default" ? "main" : app.id}.ts`,
+            environment: "client" as const,
+            runtime: "browser" as const,
+            kind: "app-client" as const,
+            owner: { appId: app.id },
+          },
+        ]
+      : [],
+  );
 
   return {
     version: 1,
@@ -435,22 +564,42 @@ function createPlan(
         kind: "server-runtime" as const,
       },
     ],
-    html: [
-      ...Object.values(graph.apps).map((app) => ({
-        id: app.id === "default" ? "index" : app.id,
-        template: app.html,
-        fileName: app.id === "default" ? "index.html" : `${app.id}.html`,
-        owner: { appId: app.id },
-      })),
-      ...Object.values(graph.pages).map((page) => ({
-        id: page.id,
-        template: page.html,
-        fileName: `${page.id}.html`,
-        owner: { pageId: page.id },
-      })),
-    ],
+    html: Object.values(graph.documents).map((document) => ({
+      id: document.id,
+      template: document.template,
+      fileName: document.output,
+      owner:
+        document.owner.kind === "page"
+          ? {
+              appId: document.applicationId,
+              pageId: document.owner.pageId,
+            }
+          : { appId: document.applicationId },
+    })),
     server: {
       entry: "@evjs/ev/_internal/server/fetch",
+    },
+    dev: {
+      clientRoutes: graph.routes.flatMap((route) =>
+        route.target.kind === "page"
+          ? [
+              {
+                path: formatRoutePattern(route.pattern),
+                target: {
+                  kind: "app" as const,
+                  appId: route.applicationId,
+                },
+              },
+            ]
+          : [],
+      ),
+      serverRoutePaths: graph.serverRoutes.map((route) => route.path),
+      hasPpr: Object.values(graph.pages).some(
+        (page) =>
+          Boolean(page.ppr) ||
+          (typeof page.prerender === "object" &&
+            page.prerender.partial === true),
+      ),
     },
     runtime: {
       publicPath: "/",
@@ -460,4 +609,41 @@ function createPlan(
       },
     },
   };
+}
+
+function findPageRouteId(graph: CoreGraph, pageId: string): string | undefined {
+  return graph.routes.find(
+    (route) => route.target.kind === "page" && route.target.pageId === pageId,
+  )?.id;
+}
+
+function findPageDocument(graph: CoreGraph, pageId: string) {
+  return Object.values(graph.documents).find(
+    (document) =>
+      document.owner.kind === "page" && document.owner.pageId === pageId,
+  );
+}
+
+function toRoutePattern(pathname: string): CoreRoutePattern {
+  return {
+    segments: pathname
+      .split("/")
+      .filter(Boolean)
+      .map((segment) =>
+        segment.startsWith(":")
+          ? { kind: "param" as const, name: segment.slice(1) }
+          : { kind: "static" as const, value: segment },
+      ),
+  };
+}
+
+function formatRoutePattern(pattern: CoreRoutePattern): string {
+  if (pattern.segments.length === 0) return "/";
+  return `/${pattern.segments
+    .map((segment) => {
+      if (segment.kind === "static") return segment.value;
+      if (segment.kind === "param") return `:${segment.name}`;
+      return `*${segment.name}`;
+    })
+    .join("/")}`;
 }

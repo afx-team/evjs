@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { shouldCopyTemplatePath } from "../src/index.js";
 
@@ -34,6 +34,28 @@ describe("create-app scaffolding", () => {
     }
   });
 
+  it("keeps complex-routing as the advanced file-route template", () => {
+    const templateDir = path.join(templatesDir, "complex-routing");
+    const configSource = fs.readFileSync(
+      path.join(templateDir, "ev.config.ts"),
+      "utf-8",
+    );
+
+    expect(configSource).toMatch(/routing:\s*{\s*mode:\s*"spa"\s*}/);
+    expect(configSource).not.toMatch(/\bapplication\s*:/);
+    expect(configSource).not.toMatch(/\broutes\s*:/);
+    expect(
+      fs.existsSync(
+        path.join(templateDir, "src", "pages", "posts", "page.tsx"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(templateDir, "src", "pages", "posts", "$postId", "page.tsx"),
+      ),
+    ).toBe(true);
+  });
+
   it("each template has required files", () => {
     const templates = listTemplateNames();
 
@@ -51,22 +73,74 @@ describe("create-app scaffolding", () => {
       ).toBe(true);
 
       const pagesDir = path.join(templateDir, "src", "pages");
-      const hasPageRoutes =
+      const hasPages =
         fs.existsSync(pagesDir) &&
         fs
           .readdirSync(pagesDir, { recursive: true })
           .some(
             (file) =>
               typeof file === "string" &&
-              /\.(?:tsx|ts|jsx|js)$/.test(file) &&
-              !file.endsWith(".d.ts"),
+              /(?:^|[/\\])page\.(?:tsx|ts|jsx|js)$/.test(file),
           );
 
       expect(
-        hasPageRoutes,
-        `${template} should have at least one source page route`,
+        hasPages,
+        `${template} should have at least one page.* anchor`,
       ).toBe(true);
     }
+  });
+
+  it("all templates use one Page authoring model selected only by mode", () => {
+    for (const template of listTemplateNames()) {
+      const templateDir = path.join(templatesDir, template);
+      const configSource = fs.readFileSync(
+        path.join(templateDir, "ev.config.ts"),
+        "utf-8",
+      );
+      const expectedMode = template === "mpa" ? "mpa" : "spa";
+
+      expect(configSource).toMatch(
+        new RegExp(`routing:\\s*{\\s*mode:\\s*["']${expectedMode}["']\\s*}`),
+      );
+      expect(configSource).not.toMatch(/\bapplication\s*:/);
+      expect(configSource).not.toMatch(/\btopology\s*:/);
+      expect(configSource).not.toMatch(/\bpageRoot\s*:/);
+      expect(configSource).not.toMatch(/\bdocument\s*:/);
+      expect(configSource).not.toMatch(/\broutes\s*:/);
+      expect(configSource).not.toMatch(/\bconvention\s*:/);
+    }
+  });
+
+  it("uses the same page.* convention for the MPA template", () => {
+    const templateDir = path.join(templatesDir, "mpa");
+    const config = fs.readFileSync(
+      path.join(templateDir, "ev.config.ts"),
+      "utf-8",
+    );
+
+    expect(config).toMatch(/routing:\s*{\s*mode:\s*"mpa"\s*}/);
+    expect(fs.existsSync(path.join(templateDir, "src/pages/page.tsx"))).toBe(
+      true,
+    );
+    expect(
+      fs.existsSync(path.join(templateDir, "src/pages/about/page.tsx")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(templateDir, "src/pages/about/index.html")),
+    ).toBe(true);
+    expect(config).not.toMatch(/\bapplication\s*:/);
+    expect(config).not.toContain("src/pages/about/index.html");
+  });
+
+  it("keeps nested index modules inside a Page private scope", () => {
+    const templateDir = path.join(templatesDir, "basic");
+
+    expect(
+      fs.existsSync(path.join(templateDir, "src/pages/components/index.tsx")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(templateDir, "src/pages/components/page.tsx")),
+    ).toBe(false);
   });
 
   it("each template ignores generated framework artifacts", () => {
@@ -148,6 +222,23 @@ describe("create-app scaffolding", () => {
     expect(shouldCopyTemplatePath("/some/path/src")).toBe(true);
     expect(shouldCopyTemplatePath("/some/path/package.json")).toBe(true);
     expect(shouldCopyTemplatePath("/some/path/index.html")).toBe(true);
+  });
+
+  it("prepack dereference excludes generated framework artifacts", async () => {
+    const derefScriptUrl = pathToFileURL(
+      path.resolve(__dirname, "../scripts/deref-templates.js"),
+    ).href;
+    const { shouldDerefTemplatePath } = (await import(derefScriptUrl)) as {
+      shouldDerefTemplatePath: (src: string) => boolean;
+    };
+
+    expect(shouldDerefTemplatePath("/some/path/.ev")).toBe(false);
+    expect(shouldDerefTemplatePath("/some/path/.ev/manifest.json")).toBe(false);
+    expect(shouldDerefTemplatePath("/some/path/.evjs")).toBe(false);
+    expect(shouldDerefTemplatePath("/some/path/src/route-types.d.ts")).toBe(
+      false,
+    );
+    expect(shouldDerefTemplatePath("/some/path/src/pages/page.tsx")).toBe(true);
   });
 });
 

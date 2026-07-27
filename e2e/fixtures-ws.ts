@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { createServer } from "node:net";
 import path from "node:path";
+import type { DeploymentMetadata } from "@evjs/shared/manifest";
 import { test as base, expect } from "@playwright/test";
 import { buildExample } from "./fixtures";
 
@@ -56,17 +57,16 @@ export function createWebSocketExampleTest() {
           );
         }
 
-        // 2. Read the server manifest for the bundle entry.
-        const serverManifestPath = path.join(
+        // 2. Read canonical deployment metadata for the bundle entry.
+        const deploymentMetadataPath = path.join(
           exampleDir,
           "dist",
-          "server",
-          "manifest.json",
+          "deployment-metadata.json",
         );
-        const serverManifest = JSON.parse(
-          fs.readFileSync(serverManifestPath, "utf-8"),
-        );
-        const serverEntry = serverManifest.entry;
+        const deploymentMetadata = JSON.parse(
+          fs.readFileSync(deploymentMetadataPath, "utf-8"),
+        ) as DeploymentMetadata;
+        const serverEntry = deploymentMetadata.server.entry;
         if (!serverEntry) {
           throw new Error(
             "Built WebSocket example did not emit a server entry.",

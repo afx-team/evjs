@@ -34,7 +34,7 @@ test.describe("deployment-adapters", () => {
     );
     await expect(
       page.locator('meta[name="evjs-deployment-example-html"]'),
-    ).toHaveAttribute("content", "app:default");
+    ).toHaveAttribute("content", "application:default");
 
     await expect(
       page.getByRole("heading", { name: "Acme Pay Deployment Console" }),
@@ -51,7 +51,11 @@ test.describe("deployment-adapters", () => {
   });
 
   test("emits manifest and deployment artifacts from BuildOutput", async () => {
-    const manifestPath = path.join(exampleDir, "dist", "build-output.json");
+    const manifestPath = path.join(
+      exampleDir,
+      "dist",
+      "deployment-metadata.json",
+    );
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
     const manifestText = JSON.stringify(manifest);
 

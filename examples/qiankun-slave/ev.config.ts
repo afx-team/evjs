@@ -2,6 +2,7 @@ import { defineConfig } from "@evjs/ev";
 import { evPluginQiankunSlave } from "@evjs/plugin-qiankun";
 
 export default defineConfig({
+  routing: { mode: "spa" },
   dev: {
     port: 3001,
   },

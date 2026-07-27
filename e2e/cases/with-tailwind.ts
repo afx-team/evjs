@@ -30,21 +30,31 @@ test.describe("with-tailwind", () => {
     expect(fontSize).toBe("48px");
   });
 
-  test("manifest contains routes and assets", async ({ baseURL }) => {
+  test("deployment metadata contains the SPA document and assets", async ({
+    baseURL,
+  }) => {
     expect(baseURL).toMatch(/^http:\/\/localhost:\d+$/);
 
-    const manifestPath = path.join(exampleDir, "dist", "manifest.json");
+    const manifestPath = path.join(
+      exampleDir,
+      "dist",
+      "deployment-metadata.json",
+    );
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
 
     expect(manifest.assets.main.js.length).toBeGreaterThan(0);
     expect(manifest).not.toHaveProperty("pages");
-    expect(manifest).not.toHaveProperty("routes");
-    expect(manifest.routing.kind).toBe("spa");
-    expect(manifest.routing.routes).toEqual([
+    expect(manifest).not.toHaveProperty("runtime");
+    expect(manifest.documents).toEqual([
       expect.objectContaining({
-        id: expect.any(String),
-        path: "/",
+        kind: "app",
+        id: "default",
+        fileName: "index.html",
+        fallback: "/",
       }),
     ]);
+    expect(fs.existsSync(path.join(exampleDir, "dist", "manifest.json"))).toBe(
+      false,
+    );
   });
 });

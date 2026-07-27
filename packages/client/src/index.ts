@@ -38,6 +38,7 @@ export {
 } from "./server-functions/query.js";
 export type {
   App,
+  AppRenderOptions,
   CreateAppOptions,
   CreateAppRouterOptions,
 } from "./standalone/app.js";

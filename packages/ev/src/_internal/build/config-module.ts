@@ -1,25 +1,16 @@
-import { randomBytes } from "node:crypto";
 import fs from "node:fs";
-import fsp from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import {
-  type Options as SwcOptions,
-  transform,
-  transformSync,
-} from "@swc/core";
+import { fileURLToPath } from "node:url";
+import { createJiti } from "jiti";
 import type { Config } from "../../config/index.js";
 
 const requireFromLoader = createRequire(import.meta.url);
-const nodeModule = requireFromLoader("node:module") as NodeModuleApi;
+const evPackageManifest = requireFromLoader("../../../package.json") as {
+  exports: Record<string, { import: string }>;
+};
+const currentEvPackageAliases = resolveCurrentEvPackageAliases();
 
-const TYPESCRIPT_CONFIG_EXTENSIONS = new Set([".ts", ".cts", ".mts"]);
-const TYPESCRIPT_TRANSPILE_EXTENSIONS = new Set([
-  ...TYPESCRIPT_CONFIG_EXTENSIONS,
-  ".tsx",
-]);
-const REQUIRE_HOOK_EXTENSIONS = [".ts", ".tsx", ".cts", ".mts", ".cjs", ".mjs"];
 const NODE_MODULES_SEGMENT = `${path.sep}node_modules${path.sep}`;
 
 export interface LoadConfigFileOptions {
@@ -32,9 +23,28 @@ export interface LoadConfigFileOptions {
   cache?: boolean;
 }
 
-export interface TranspileTypeScriptConfigOptions {
-  filename: string;
+export interface LoadedStaticConfigModule {
+  value: unknown;
+  hasDefaultExport: boolean;
+  /** Absolute project-local files in the evaluated module closure. */
+  dependencies: string[];
 }
+
+export interface LoadStaticConfigModuleOptions {
+  /** Reuse the current process cache after a caller performed batch clearing. */
+  cache?: boolean;
+}
+
+export interface ClearStaticConfigModuleCacheOptions {
+  /**
+   * Also clear dependency closures recorded for previous config roots in this
+   * project. This covers config files that were removed or renamed between
+   * discovery passes.
+   */
+  projectRoot?: string;
+}
+
+const staticConfigDependencies = new Map<string, string[]>();
 
 export async function loadConfigFile<TBundlerCfg = unknown>(
   configPath: string,
@@ -43,15 +53,11 @@ export async function loadConfigFile<TBundlerCfg = unknown>(
   const absoluteConfigPath = path.resolve(configPath);
 
   try {
-    if (options.cache !== true) {
-      clearConfigRequireCache(absoluteConfigPath);
-    }
-
-    const mod = TYPESCRIPT_CONFIG_EXTENSIONS.has(
-      path.extname(absoluteConfigPath),
-    )
-      ? await loadTypeScriptConfig(absoluteConfigPath)
-      : await importConfigModule(absoluteConfigPath, options);
+    const loader = createConfigLoader(
+      absoluteConfigPath,
+      options.cache === true,
+    );
+    const mod = loader(absoluteConfigPath);
     return resolveConfigExport<TBundlerCfg>(mod);
   } catch (error) {
     throw new Error(`Failed to load evjs config from ${absoluteConfigPath}`, {
@@ -60,55 +66,103 @@ export async function loadConfigFile<TBundlerCfg = unknown>(
   }
 }
 
-export async function transpileTypeScriptConfig(
-  source: string,
-  options: TranspileTypeScriptConfigOptions,
-): Promise<string> {
-  const result = await transform(source, {
-    filename: options.filename,
-    sourceMaps: false,
-    jsc: {
-      parser: {
-        syntax: "typescript",
-        tsx: true,
-      },
-      target: "esnext",
-    },
-    module: {
-      type: "es6",
-    },
-  });
-
-  return result.code;
-}
-
-async function loadTypeScriptConfig(configPath: string): Promise<unknown> {
-  const source = await fsp.readFile(configPath, "utf-8");
-  const { code } = await transform(source, createConfigSwcOptions(configPath));
-  const unregisterRequireHook = registerConfigRequireHook();
+/**
+ * Evaluate a build-only data module through the same TypeScript-capable loader
+ * as ev.config.ts while retaining its complete project-local dependency
+ * closure for dev invalidation.
+ */
+export async function loadStaticConfigModule(
+  configPath: string,
+  projectRoot: string,
+  options: LoadStaticConfigModuleOptions = {},
+): Promise<LoadedStaticConfigModule> {
+  const absoluteConfigPath = path.resolve(configPath);
+  const absoluteProjectRoot = path.resolve(projectRoot);
 
   try {
-    return requireFromString(code, configPath);
-  } finally {
-    unregisterRequireHook();
+    if (options.cache !== true) {
+      clearStaticConfigModuleCache([absoluteConfigPath]);
+    }
+    const loader = createConfigLoader(absoluteConfigPath, true);
+    let loaded: unknown;
+    try {
+      loaded = loader(absoluteConfigPath);
+    } catch (error) {
+      staticConfigDependencies.set(
+        absoluteConfigPath,
+        collectCachedProjectModules(
+          loader.cache,
+          absoluteConfigPath,
+          absoluteProjectRoot,
+        ),
+      );
+      throw error;
+    }
+
+    const rootModule = findCachedModule(loader.cache, absoluteConfigPath);
+    const dependencies = rootModule
+      ? collectProjectModuleDependencies(
+          rootModule,
+          absoluteConfigPath,
+          absoluteProjectRoot,
+        )
+      : collectCachedProjectModules(
+          loader.cache,
+          absoluteConfigPath,
+          absoluteProjectRoot,
+        );
+    staticConfigDependencies.set(absoluteConfigPath, dependencies);
+    const resolved = readOwnDefaultExport(loaded);
+    return {
+      value: resolved.value,
+      hasDefaultExport: resolved.hasDefaultExport,
+      dependencies,
+    };
+  } catch (error) {
+    throw new Error(
+      `Failed to load static config module from ${absoluteConfigPath}`,
+      { cause: error },
+    );
   }
 }
 
-async function importConfigModule(
-  absoluteConfigPath: string,
-  options: LoadConfigFileOptions,
-): Promise<unknown> {
-  const configUrl = pathToFileURL(absoluteConfigPath);
-  if (options.cache !== true) {
-    configUrl.searchParams.set("t", createCacheBust());
+export function clearStaticConfigModuleCache(
+  configPaths: string[],
+  options: ClearStaticConfigModuleCacheOptions = {},
+): void {
+  const configRoots = new Set(
+    configPaths.map((configPath) => path.resolve(configPath)),
+  );
+  if (options.projectRoot) {
+    const projectRoot = path.resolve(options.projectRoot);
+    for (const configPath of staticConfigDependencies.keys()) {
+      if (isPathInside(configPath, projectRoot)) {
+        configRoots.add(configPath);
+      }
+    }
   }
 
-  return import(configUrl.href);
+  const files = new Set<string>();
+  for (const configPath of configRoots) {
+    files.add(configPath);
+    for (const dependency of staticConfigDependencies.get(configPath) ?? []) {
+      files.add(dependency);
+    }
+    staticConfigDependencies.delete(configPath);
+  }
+  const realFiles = new Set([...files].map(safeRealpath));
+
+  for (const cachedFile of Object.keys(requireFromLoader.cache)) {
+    if (files.has(cachedFile) || realFiles.has(safeRealpath(cachedFile))) {
+      delete requireFromLoader.cache[cachedFile];
+    }
+  }
 }
 
 function resolveConfigExport<TBundlerCfg>(mod: unknown): Config<TBundlerCfg> {
-  if (isRecord(mod) && "default" in mod && mod.default !== undefined) {
-    return mod.default as Config<TBundlerCfg>;
+  const resolved = readOwnDefaultExport(mod);
+  if (resolved.hasDefaultExport && resolved.value !== undefined) {
+    return resolved.value as Config<TBundlerCfg>;
   }
 
   return mod as Config<TBundlerCfg>;
@@ -118,130 +172,92 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function registerConfigRequireHook(): () => void {
-  const extensions = requireFromLoader.extensions;
-  const previousHooks = new Map<string, RequireExtension | undefined>();
-  const previousResolveFilename = nodeModule._resolveFilename;
-
-  nodeModule._resolveFilename = function resolveConfigFilename(
-    this: unknown,
-    request,
-    parent,
-    isMain,
-    options,
-  ) {
-    try {
-      return previousResolveFilename.call(
-        this,
-        request,
-        parent,
-        isMain,
-        options,
-      );
-    } catch (error) {
-      if (isModuleNotFoundError(error)) {
-        const sourceModulePath = resolveTypeScriptSourceSpecifier(
-          request,
-          parent,
-        );
-        if (sourceModulePath) return sourceModulePath;
-
-        if (request === "@evjs/ev") {
-          return resolveCurrentEvPackageEntry();
-        }
-      }
-
-      throw error;
-    }
-  };
-
-  const previousJsHook = extensions[".js"];
-  extensions[".js"] = (mod, filename) => {
-    try {
-      return previousJsHook?.(mod, filename);
-    } catch (error) {
-      if (!isRequireEsmError(error)) throw error;
-      return compileConfigDependency(mod, filename);
-    }
-  };
-
-  for (const extension of REQUIRE_HOOK_EXTENSIONS) {
-    previousHooks.set(extension, extensions[extension]);
-    extensions[extension] = compileConfigDependency;
-  }
-
-  return () => {
-    nodeModule._resolveFilename = previousResolveFilename;
-    extensions[".js"] = previousJsHook;
-
-    for (const extension of REQUIRE_HOOK_EXTENSIONS) {
-      const previousHook = previousHooks.get(extension);
-      if (previousHook) {
-        extensions[extension] = previousHook;
-      } else {
-        delete extensions[extension];
-      }
-    }
-  };
+function createConfigLoader(configPath: string, moduleCache: boolean) {
+  return createJiti(configPath, {
+    alias: currentEvPackageAliases,
+    fsCache: false,
+    interopDefault: true,
+    moduleCache,
+    tryNative: false,
+  });
 }
 
-function compileConfigDependency(
-  mod: NodeJS.Module,
-  filename: string,
-): unknown {
-  const source = fs.readFileSync(filename, "utf-8");
-  const { code } = transformSync(source, createConfigSwcOptions(filename));
-  return (mod as CompilableModule)._compile(code, filename);
-}
+function collectProjectModuleDependencies(
+  root: NodeJS.Module,
+  configPath: string,
+  projectRoot: string,
+): string[] {
+  const dependencies = new Set<string>();
+  const visited = new Set<NodeJS.Module>();
+  const queue = [root];
 
-function requireFromString(code: string, filename: string): unknown {
-  const mod = new nodeModule.Module(filename) as CompilableModule;
-  mod.filename = filename;
-  mod.paths = nodeModule._nodeModulePaths(path.dirname(filename));
-  mod._compile(code, filename);
-  return mod.exports;
-}
+  while (queue.length > 0) {
+    const current = queue.pop();
+    if (!current || visited.has(current)) continue;
+    visited.add(current);
 
-function createConfigSwcOptions(filename: string): SwcOptions {
-  const extension = path.extname(filename);
-  const isTypeScript = TYPESCRIPT_TRANSPILE_EXTENSIONS.has(extension);
-
-  return {
-    filename,
-    sourceMaps: false,
-    jsc: {
-      parser: isTypeScript
-        ? {
-            syntax: "typescript",
-            tsx: extension === ".tsx",
-          }
-        : {
-            syntax: "ecmascript",
-            jsx: extension === ".jsx",
-          },
-      target: "esnext",
-    },
-    module: {
-      type: "commonjs",
-    },
-  };
-}
-
-function clearConfigRequireCache(configPath: string): void {
-  const configDir = path.dirname(configPath);
-  const realConfigDir = safeRealpath(configDir);
-
-  for (const cachedFile of Object.keys(requireFromLoader.cache)) {
-    const realCachedFile = safeRealpath(cachedFile);
+    const filename = current.filename && path.resolve(current.filename);
     if (
-      !isNodeModulesPath(realCachedFile) &&
-      (cachedFile === configPath ||
-        realCachedFile === configPath ||
-        isPathInside(realCachedFile, realConfigDir))
+      filename &&
+      !isNodeModulesPath(filename) &&
+      isPathInside(safeRealpath(filename), safeRealpath(projectRoot))
     ) {
-      delete requireFromLoader.cache[cachedFile];
+      dependencies.add(filename);
+    }
+    queue.push(...current.children);
+  }
+
+  dependencies.add(configPath);
+  return [...dependencies].sort();
+}
+
+function findCachedModule(
+  cache: NodeJS.Require["cache"],
+  filename: string,
+): NodeJS.Module | undefined {
+  const realFilename = safeRealpath(filename);
+  return Object.values(cache).find(
+    (candidate) =>
+      candidate?.filename && safeRealpath(candidate.filename) === realFilename,
+  );
+}
+
+function collectCachedProjectModules(
+  cache: NodeJS.Require["cache"],
+  configPath: string,
+  projectRoot: string,
+): string[] {
+  const realProjectRoot = safeRealpath(projectRoot);
+  const dependencies = new Set<string>([configPath]);
+  for (const candidate of Object.values(cache)) {
+    const filename = candidate?.filename && path.resolve(candidate.filename);
+    if (
+      filename &&
+      !isNodeModulesPath(filename) &&
+      isPathInside(safeRealpath(filename), realProjectRoot)
+    ) {
+      dependencies.add(filename);
     }
   }
+  return [...dependencies].sort();
+}
+
+/** Read the real export slot without triggering Jiti's default-interop fallback. */
+function readOwnDefaultExport(mod: unknown): {
+  value: unknown;
+  hasDefaultExport: boolean;
+} {
+  if (!isRecord(mod)) {
+    return { value: mod, hasDefaultExport: false };
+  }
+  const descriptor = Object.getOwnPropertyDescriptor(mod, "default");
+  if (!descriptor) {
+    return { value: mod, hasDefaultExport: false };
+  }
+  return {
+    value: "value" in descriptor ? descriptor.value : mod.default,
+    hasDefaultExport: true,
+  };
 }
 
 function isPathInside(file: string, dir: string): boolean {
@@ -275,88 +291,36 @@ function resolveCurrentEvPackageEntry(): string {
   return requireFromLoader.resolve("@evjs/ev");
 }
 
-function resolveTypeScriptSourceSpecifier(
-  request: string,
-  parent?: NodeJS.Module,
-): string | undefined {
-  if (!parent?.filename || !isRelativeOrAbsoluteSpecifier(request)) {
-    return undefined;
+function resolveCurrentEvPackageAliases(): Record<string, string> {
+  const packageEntry = resolveCurrentEvPackageEntry();
+  const packageVariantDir = path.dirname(packageEntry);
+  const useSource = path.extname(packageEntry) === ".ts";
+  const aliases: Record<string, string> = {};
+
+  for (const [subpath, target] of Object.entries(evPackageManifest.exports)) {
+    if (!target.import.startsWith("./esm/")) {
+      throw new Error(
+        `[evjs] Package export "${subpath}" must provide an import target under "./esm".`,
+      );
+    }
+    const builtRelativePath = target.import.slice("./esm/".length);
+    const relativePath = useSource
+      ? builtRelativePath.replace(/\.js$/, ".ts")
+      : builtRelativePath;
+    const specifier =
+      subpath === "." ? "@evjs/ev" : `@evjs/ev${subpath.slice(1)}`;
+    const resolved = path.resolve(packageVariantDir, relativePath);
+    if (!fs.existsSync(resolved)) {
+      throw new Error(
+        `[evjs] Package export "${specifier}" targets missing ${useSource ? "source" : "build"} module "${resolved}".`,
+      );
+    }
+    aliases[specifier] = resolved;
   }
 
-  const requestedPath = path.resolve(path.dirname(parent.filename), request);
-  const extension = path.extname(requestedPath);
-  const candidates = typescriptSourceCandidates(requestedPath, extension);
-
-  return candidates.find((candidate) => fs.existsSync(candidate));
-}
-
-function isRelativeOrAbsoluteSpecifier(specifier: string): boolean {
-  return (
-    specifier.startsWith("./") ||
-    specifier.startsWith("../") ||
-    path.isAbsolute(specifier)
-  );
-}
-
-function typescriptSourceCandidates(
-  requestedPath: string,
-  extension: string,
-): string[] {
-  if (extension === ".js") {
-    return [
-      replaceExtension(requestedPath, ".ts"),
-      replaceExtension(requestedPath, ".tsx"),
-    ];
-  }
-
-  if (extension === ".mjs") {
-    return [replaceExtension(requestedPath, ".mts")];
-  }
-
-  if (extension === ".cjs") {
-    return [replaceExtension(requestedPath, ".cts")];
-  }
-
-  return [];
-}
-
-function replaceExtension(file: string, extension: string): string {
-  return file.slice(0, -path.extname(file).length) + extension;
-}
-
-function isModuleNotFoundError(error: unknown): boolean {
-  return isRecord(error) && error.code === "MODULE_NOT_FOUND";
-}
-
-function isRequireEsmError(error: unknown): boolean {
-  return isRecord(error) && error.code === "ERR_REQUIRE_ESM";
+  return aliases;
 }
 
 function isFileNotFoundError(error: unknown): boolean {
   return isRecord(error) && error.code === "ENOENT";
-}
-
-function createCacheBust(): string {
-  return `${Date.now()}-${randomBytes(4).toString("hex")}`;
-}
-
-type RequireExtension = NonNullable<
-  NodeJS.Require["extensions"][keyof NodeJS.Require["extensions"]]
->;
-
-interface CompilableModule extends NodeJS.Module {
-  filename: string;
-  paths: string[];
-  _compile(code: string, filename: string): unknown;
-}
-
-interface NodeModuleApi {
-  Module: new (id: string) => NodeJS.Module;
-  _nodeModulePaths(from: string): string[];
-  _resolveFilename(
-    request: string,
-    parent?: NodeJS.Module,
-    isMain?: boolean,
-    options?: unknown,
-  ): string;
 }

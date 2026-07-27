@@ -6,10 +6,19 @@ and the current status matrix lives in [ROADMAP.md](./ROADMAP.md).
 
 ## Overview
 
-evjs is a React framework whose framework-managed application model is
-file-convention first. Client pages come from `src/pages`, server request
-routes come from `src/apis`, framework request middleware comes from
-`src/middleware.ts`, API route middleware comes from
+evjs is a React framework whose framework-managed application model uses one
+positive file-route anchor. Every `src/pages/**/page.*` defines a Page whose
+containing directory owns its scope and determines its URL. `routing.mode`
+selects SPA or MPA materialization without changing the semantic Page/Route
+tree. Optional adjacent `page.config.ts` modules are synchronously evaluated
+into core title/named metadata/rendering data and namespaced Page and Route
+extensions; Document extensions target a Page-owned Document only when one is
+materialized. Top-level `config.extensions` is resolved into namespaced
+Application extensions before plugin setup; explicit route and document inputs
+may configure Route and Application-owned Document extensions. All four owners
+use one plugin extension registry, and runtime projection remains explicit.
+Server request routes come from `src/apis`, framework request middleware comes
+from `src/middleware.ts`, API route middleware comes from
 `src/apis/**/middleware.ts`, and reachable `"use server"` modules provide
 server functions. `@evjs/ev` exposes curated file-convention authoring subpaths
 and generated-only internal bridges, while `@evjs/client` and `@evjs/server`
@@ -17,8 +26,8 @@ remain independent runtime cores that provide browser/server primitives without
 becoming alternate framework configuration modes.
 
 ```txt
-src/pages + src/apis + src/middleware.ts + ev.config.ts
-  -> AppGraph
+Page anchors + page.config.ts + route directories + server conventions + ev.config.ts
+  -> CoreGraph (Page / Route / Application / Document)
   -> BuildPlan
   -> .ev generated framework IR
   -> selected bundler adapter
@@ -27,7 +36,13 @@ src/pages + src/apis + src/middleware.ts + ev.config.ts
   -> DeploymentMetadata / lightweight manifests / deployment adapters
 ```
 
-Framework semantics are owned by `@evjs/ev` and `@evjs/shared/manifest`.
+Explicit `application.routes` and `component`/`routes` config are SPA-only
+route-tree inputs into that graph; they are not additional application
+authoring models and cannot select MPA materialization. Source trees whose
+published entries use `index.*` are converted to `page.*` plus
+`page.config.ts` before Core discovery. Every provider must normalize into the
+same CoreGraph. Framework semantics are owned by `@evjs/ev` and
+`@evjs/shared/manifest`.
 Bundlers own module graphs, chunks, assets, dev HMR, and stats. Runtime packages
 consume generated runtime contracts rather than `BuildOutput` or manifest
 artifacts.
@@ -119,6 +134,9 @@ downstream tooling; the repo's CLI and adapters use `@evjs/ev/_internal/build`.
 Manifest contracts are exported from `@evjs/shared/manifest`, and generated page/shell/server-function
 runtime primitives stay behind focused generated-only
 `@evjs/ev/_internal/*` subpaths.
+Framework packages share strict static-JSON boundary validation through
+`@evjs/shared/_internal/static-json`; that subpath is internal infrastructure,
+not an application or plugin authoring API.
 
 Before bundling, evjs writes `.ev` as the generated framework IR. It contains
 framework graph/plan snapshots, generated entry facades, plugin generated
@@ -137,9 +155,11 @@ sequenceDiagram
   participant Manifest as "@evjs/shared/manifest"
 
   CLI->>EV: load and resolve config
-  EV->>EV: run config/setup/buildStart hooks
-  EV->>Tools: createAppGraph(config)
-  Tools-->>EV: AppGraph, diagnostics, fileDependencies
+  EV->>EV: run config hooks and resolve framework defaults
+  EV->>EV: register the Application/Page/Route/Document extension owners and resolve Application values
+  EV->>EV: run setup/buildStart hooks
+  EV->>Tools: createCoreGraph(config)
+  Tools-->>EV: CoreGraph, diagnostics, fileDependencies
   EV->>Tools: createBuildPlan(config, graph)
   EV->>Bundler: build(plan)
   Bundler-->>EV: stats/assets/build facts
@@ -196,14 +216,12 @@ The framework output contract is the in-memory `BuildOutput`. Builds serialize
 the canonical deployment projection to:
 
 ```txt
-dist/build-output.json
+dist/deployment-metadata.json
 ```
 
-They also emit compatibility deployment manifests to `output.client` and
-`output.server`. The client manifest keeps public assets for SPA builds and
-page-level assets plus routing for MPA builds. The server manifest keeps the
-server entry and a lightweight projection of server-handled routes for existing
-deployment integrations. Generated HTML embeds `ClientRuntime`, and runtime-only
+Core does not emit split client/server compatibility manifests. A deployment
+adapter that still needs a legacy platform projection must own that artifact
+explicitly. Generated HTML embeds `ClientRuntime`, and runtime-only
 `FrameworkRuntime` data is injected into dev or deployment adapter bootstraps
 instead of being emitted as a default JSON artifact.
 
@@ -227,10 +245,12 @@ reading bundler config, stats, manifests, or runtime contracts.
 
 `prepareFrameworkBuild()` is the supported core API for tools that need
 framework semantics without running a bundler or emitting platform files. It
-resolves config, applies page-routing defaults, initializes plugins, runs
+resolves config, applies page-routing defaults, registers all extension owners,
+resolves Application extensions before plugin setup, resolves Page/Route/
+Document extensions during graph analysis, initializes plugins, runs
 `buildStart` hooks, reports graph diagnostics, and returns the resolved config,
 graph file dependencies, plugin watch files, and an explicit `dispose()`
-function. `AppGraph` and `BuildPlan` remain internal framework state.
+function. `CoreGraph` and `BuildPlan` remain internal framework state.
 
 This API intentionally stops before bundler execution, manifest emission, and
 deployment adapter output.

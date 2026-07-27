@@ -12,12 +12,9 @@ import path from "node:path";
 const require = createRequire(import.meta.url);
 
 import { SERVER_FUNCTION_TRANSFORM_RUNTIME } from "@evjs/ev/_internal/build";
-import type {
-  BuildPlan,
-  ServerAppEntryMetadata,
-} from "@evjs/ev/_internal/manifest";
 import type { ResolvedConfig } from "@evjs/ev/config";
 import type { BundlerCtx, PluginHooks } from "@evjs/ev/plugin";
+import type { BuildPlan, ServerAppEntryMetadata } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import type {
   ConfigComplete,
@@ -116,6 +113,7 @@ export async function createUtoopackConfig(
   plan: BuildPlan,
   cwd: string,
   hooks: PluginHooks<ConfigComplete>[],
+  addWatchFile?: (file: string) => void,
 ): Promise<ConfigComplete> {
   validateUtoopackPlanSupport(plan);
 
@@ -218,7 +216,7 @@ export async function createUtoopackConfig(
     bundlerName: "utoopack",
     environment: finalServerEntry ? "mixed" : "client",
     logger,
-    addWatchFile() {},
+    addWatchFile: addWatchFile ?? missingFrameworkWatchCollector,
   };
 
   for (const h of hooks) {
@@ -235,6 +233,12 @@ export async function createUtoopackConfig(
   }
 
   return utoopackConfig;
+}
+
+function missingFrameworkWatchCollector(file: string): never {
+  throw new Error(
+    `[evjs] Cannot watch plugin dependency "${file}" because the Utoopack config was created without a framework watch collector.`,
+  );
 }
 
 function createResolveAlias(

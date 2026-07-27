@@ -1,8 +1,21 @@
 import { describe, expect, it } from "vitest";
 import type {
-  AppGraph,
+  AppRouteTarget,
   BuildOutput,
+  BuildOutputLinkInput,
   BuildPlan,
+  ComponentModel,
+  CoreGraph,
+  HydrationMode,
+  PageMetadata,
+  PageRouteKind,
+  PageScope,
+  PprConfig,
+  PrerenderConfig,
+  RenderMode,
+  ServerFunctionNode,
+  ServerRouteNode,
+  ServerRuntime,
 } from "../src/manifest/index.js";
 import {
   assertFrameworkManifestShape,
@@ -81,13 +94,242 @@ function createDefaultServerEntryAssets(): {
   };
 }
 
+type TestBuildPlan = Omit<BuildPlan, "dev"> & {
+  dev?: BuildPlan["dev"];
+};
+
+interface LinkerFixture {
+  version: 1;
+  rootDir: string;
+  apps: Record<string, LinkerAppFixture>;
+  pages: Record<string, LinkerPageFixture>;
+  routes: LinkerRouteFixture[];
+  serverFunctions: ServerFunctionNode[];
+  serverRoutes: ServerRouteNode[];
+  clientReferences?: CoreGraph["clientReferences"];
+  serverReferences?: CoreGraph["serverReferences"];
+}
+
+interface LinkerAppFixture {
+  id: string;
+  entry: string;
+  html: string;
+  mount?: string;
+}
+
+interface LinkerPageFixture {
+  id: string;
+  scope?: PageScope;
+  path?: string;
+  routeId?: string;
+  component: string;
+  html: string;
+  output?: string;
+  render: RenderMode;
+  componentModel?: ComponentModel;
+  hydrate?: HydrationMode;
+  mount?: string;
+  prerender?: PrerenderConfig;
+  ppr?: PprConfig;
+  metadata?: PageMetadata;
+}
+
+interface LinkerRouteFixture {
+  id: string;
+  path: string;
+  parentId?: string;
+  kind?: PageRouteKind;
+  pageId?: string;
+  appId?: string;
+  module?: string;
+  errorModule?: string;
+  notFoundModule?: string;
+  render?: RenderMode;
+  hydrate?: HydrationMode;
+  runtime?: ServerRuntime;
+  target?: AppRouteTarget;
+  wrappers?: string[];
+  layout?: false;
+}
+
 function linkBuildOutput(
-  input: Parameters<typeof linkManifestBuildOutput>[0],
+  input: Omit<BuildOutputLinkInput, "graph" | "plan"> & {
+    graph: LinkerFixture;
+    plan: TestBuildPlan;
+  },
 ): ReturnType<typeof linkManifestBuildOutput> {
   return linkManifestBuildOutput({
     serverEntryAssets: createDefaultServerEntryAssets(),
     ...input,
+    graph: createCoreGraphFixture(input.graph),
+    plan: {
+      ...input.plan,
+      dev: input.plan.dev ?? {
+        clientRoutes: [],
+        serverRoutePaths: [],
+        hasPpr: false,
+      },
+    },
   });
+}
+
+function createCoreGraphFixture(fixture: LinkerFixture): CoreGraph {
+  const provider = "@evjs/provider/test";
+  const producer = { kind: "provider" as const, id: provider };
+  const applications: CoreGraph["applications"] = {};
+  const documents: CoreGraph["documents"] = {};
+  const pages: CoreGraph["pages"] = {};
+  const routes: CoreGraph["routes"] = [];
+
+  for (const app of Object.values(fixture.apps)) {
+    const documentId = app.id === "default" ? "index" : app.id;
+    applications[app.id] = {
+      id: app.id,
+      root: ".",
+      routingMode: "spa",
+      pageIds: [],
+      routeIds: [],
+      documentIds: [documentId],
+      extensions: {},
+      provenance: { producer, source: app.entry },
+    };
+    documents[documentId] = {
+      id: documentId,
+      template: app.html,
+      output: app.id === "default" ? "index.html" : `${app.id}.html`,
+      applicationId: app.id,
+      owner: { kind: "application" },
+      ...(app.mount ? { mount: app.mount } : {}),
+      bootstrap: { kind: "application" },
+      extensions: {},
+      provenance: { producer, source: app.html },
+    };
+  }
+  if (Object.keys(applications).length === 0) {
+    applications.default = {
+      id: "default",
+      root: ".",
+      routingMode: "mpa",
+      pageIds: [],
+      routeIds: [],
+      documentIds: [],
+      extensions: {},
+      provenance: { producer },
+    };
+  }
+
+  for (const page of Object.values(fixture.pages)) {
+    const route = fixture.routes.find(
+      (candidate) => candidate.pageId === page.id,
+    );
+    const applicationId = route?.appId ?? "default";
+    const module = page.component;
+    pages[page.id] = {
+      id: page.id,
+      applicationId,
+      source: {
+        module,
+        scope: page.scope ?? { kind: "module", file: module },
+        provider,
+      },
+      render: page.render,
+      ...(page.componentModel ? { componentModel: page.componentModel } : {}),
+      ...(page.hydrate ? { hydrate: page.hydrate } : {}),
+      ...(page.prerender ? { prerender: page.prerender } : {}),
+      ...(page.ppr ? { ppr: page.ppr } : {}),
+      ...(page.metadata ? { metadata: page.metadata } : {}),
+      extensions: {},
+      provenance: { producer, source: module },
+    };
+    applications[applicationId]?.pageIds.push(page.id);
+    if (page.path || !route?.appId) {
+      documents[page.id] = {
+        id: page.id,
+        template: page.html,
+        output: page.output ?? `${page.id}.html`,
+        applicationId,
+        owner: { kind: "page", pageId: page.id },
+        ...(page.mount ? { mount: page.mount } : {}),
+        bootstrap: { kind: "page", pageId: page.id },
+        extensions: {},
+        provenance: { producer, source: page.html },
+      };
+      applications[applicationId]?.documentIds.push(page.id);
+    }
+  }
+
+  for (const route of fixture.routes) {
+    const applicationId = route.appId ?? "default";
+    routes.push({
+      id: route.id,
+      applicationId,
+      ...(route.parentId ? { parentId: route.parentId } : {}),
+      pattern: toCorePattern(route.path),
+      target:
+        route.target?.kind === "redirect"
+          ? {
+              kind: "redirect",
+              to:
+                route.target.to.kind === "url"
+                  ? route.target.to
+                  : {
+                      kind: "route",
+                      pattern: toCorePattern(route.target.to.path),
+                    },
+            }
+          : route.target?.kind === "page"
+            ? route.target
+            : route.target?.kind === "group"
+              ? route.target
+              : route.pageId
+                ? { kind: "page", pageId: route.pageId }
+                : { kind: "group" },
+      facets: {
+        ...(route.errorModule ? { error: route.errorModule } : {}),
+        ...(route.notFoundModule ? { notFound: route.notFoundModule } : {}),
+        wrappers: [],
+      },
+      extensions: {},
+      provenance: {
+        producer,
+        ...(route.module ? { source: route.module } : {}),
+      },
+    });
+    applications[applicationId]?.routeIds.push(route.id);
+  }
+
+  return {
+    rootDir: fixture.rootDir,
+    applications,
+    pages,
+    routes,
+    documents,
+    extensions: { namespaces: {} },
+    serverFunctions: fixture.serverFunctions,
+    serverRoutes: fixture.serverRoutes,
+    ...(fixture.clientReferences
+      ? { clientReferences: fixture.clientReferences }
+      : {}),
+    ...(fixture.serverReferences
+      ? { serverReferences: fixture.serverReferences }
+      : {}),
+  };
+}
+
+function toCorePattern(
+  pathname: string,
+): CoreGraph["routes"][number]["pattern"] {
+  if (pathname === "/") return { segments: [] };
+  return {
+    segments: pathname
+      .replace(/^\/+|\/+$/g, "")
+      .split("/")
+      .map((segment) =>
+        segment.startsWith("$") || segment.startsWith(":")
+          ? { kind: "param" as const, name: segment.slice(1) }
+          : { kind: "static" as const, value: segment },
+      ),
+  };
 }
 
 describe("assertFrameworkManifestShape", () => {
@@ -213,7 +455,91 @@ describe("assertFrameworkManifestShape", () => {
         "manifest",
       ),
     ).toThrow(
-      "[evjs] manifest.apps.default.document.fileName must be a relative output file path.",
+      "[evjs] manifest.apps.default.document.fileName must be a normalized relative output file path.",
+    );
+
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...createMinimalBuildOutput(),
+          apps: {
+            default: {
+              assets: { js: [], css: [] },
+              document: {
+                fileName: "index.html",
+                aliases: ["../legacy.html"],
+              },
+            },
+          },
+        },
+        "manifest",
+      ),
+    ).toThrow(
+      "[evjs] manifest.apps.default.document.aliases[0] must be a normalized relative output file path.",
+    );
+
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...createMinimalBuildOutput(),
+          apps: {
+            default: {
+              assets: { js: [], css: [] },
+              document: {
+                fileName: "index.html",
+                aliases: ["main.js"],
+              },
+            },
+          },
+        },
+        "manifest",
+      ),
+    ).toThrow(
+      '[evjs] manifest.apps.default.document.aliases[0] must end with ".html" or ".htm" because a Document output contains HTML.',
+    );
+
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...createMinimalBuildOutput(),
+          apps: {
+            default: {
+              assets: { js: [], css: [] },
+              document: {
+                fileName: "index.html",
+                aliases: ["legacy.html", "legacy.html"],
+              },
+            },
+          },
+        },
+        "manifest",
+      ),
+    ).toThrow(
+      '[evjs] manifest.apps.default.document.aliases[1] duplicates alias "legacy.html".',
+    );
+
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...createMinimalBuildOutput(),
+          apps: {
+            default: {
+              assets: { js: [], css: [] },
+              document: {
+                fileName: "index.html",
+                aliases: ["admin.html"],
+              },
+            },
+            admin: {
+              assets: { js: [], css: [] },
+              document: { fileName: "admin.html" },
+            },
+          },
+        },
+        "manifest",
+      ),
+    ).toThrow(
+      'static Document output "admin.html" is owned by both Application "default" and Application "admin"',
     );
 
     expect(() =>
@@ -504,7 +830,7 @@ describe("assertFrameworkManifestShape", () => {
                 component: "server",
                 html: "server",
                 streaming: false,
-                hydrate: "viewport",
+                hydrate: "visible",
               },
             },
           },
@@ -512,7 +838,7 @@ describe("assertFrameworkManifestShape", () => {
         "manifest",
       ),
     ).toThrow(
-      '[evjs] manifest.pages.home.rendering.hydrate must be "none", "load", "visible", or "idle".',
+      '[evjs] manifest.pages.home.rendering.hydrate must be "none" or "load".',
     );
 
     expect(() =>
@@ -547,7 +873,7 @@ describe("assertFrameworkManifestShape", () => {
             home: {
               assets: { js: [], css: [] },
               render: "ssr",
-              hydrate: "viewport",
+              hydrate: "idle",
               rendering: {
                 component: "server",
                 html: "server",
@@ -559,9 +885,7 @@ describe("assertFrameworkManifestShape", () => {
         },
         "manifest",
       ),
-    ).toThrow(
-      '[evjs] manifest.pages.home.hydrate must be "none", "load", "visible", or "idle".',
-    );
+    ).toThrow('[evjs] manifest.pages.home.hydrate must be "none" or "load".');
 
     expect(() =>
       assertFrameworkManifestShape(
@@ -906,7 +1230,7 @@ describe("assertFrameworkManifestShape", () => {
                   offer: {
                     id: "offer",
                     assets: { js: [], css: [] },
-                    hydrate: "visible",
+                    hydrate: "load",
                   },
                 },
               },
@@ -2283,8 +2607,525 @@ describe("assertFrameworkManifestShape", () => {
 });
 
 describe("linkBuildOutput", () => {
+  it("keeps route-derived CSR pages out of the v1 runtime manifest", () => {
+    const graph: LinkerFixture = {
+      version: 1,
+      rootDir: "/repo",
+      apps: {
+        default: {
+          id: "default",
+          entry: "./src/main.tsx",
+          html: "./index.html",
+        },
+      },
+      pages: {
+        index: {
+          id: "index",
+          routeId: "index",
+          component: "./src/pages/index.tsx",
+          html: "./index.html",
+          render: "csr",
+        },
+      },
+      routes: [
+        {
+          id: "index",
+          path: "/",
+          appId: "default",
+          pageId: "index",
+          module: "./src/pages/index.tsx",
+        },
+      ],
+      serverFunctions: [],
+      serverRoutes: [],
+    };
+    const plan: TestBuildPlan = {
+      version: 1,
+      buildId: "build",
+      mode: "production",
+      distDir: "dist",
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
+      entries: [
+        createServerRuntimeEntry(),
+        {
+          name: "main",
+          import: "./src/main.tsx",
+          environment: "client",
+          runtime: "browser",
+          kind: "app-client",
+          owner: { appId: "default" },
+        },
+      ],
+      html: [
+        {
+          id: "index",
+          template: "./index.html",
+          fileName: "index.html",
+          owner: { appId: "default" },
+        },
+      ],
+      server: createServerPlan(),
+      runtime: createRuntimePlan(),
+    };
+
+    const output = linkBuildOutput({
+      graph,
+      plan,
+      clientEntryAssets: {
+        main: { js: ["main.js"], css: [] },
+      },
+    });
+
+    expect(output.pages).toEqual({});
+    expect(output.routes).toEqual([
+      { id: "index", path: "/", appId: "default" },
+    ]);
+    expect(() =>
+      assertFrameworkManifestShape(output, "manifest"),
+    ).not.toThrow();
+  });
+
+  it("retains and clones metadata-only CSR Pages for SPA route projection", () => {
+    const metadata = {
+      title: "Orders",
+      meta: {
+        description: "Order history",
+      },
+    };
+    const graph: LinkerFixture = {
+      version: 1,
+      rootDir: "/repo",
+      apps: {
+        default: {
+          id: "default",
+          entry: "./src/main.tsx",
+          html: "./index.html",
+        },
+      },
+      pages: {
+        orders: {
+          id: "orders",
+          routeId: "orders",
+          component: "./src/pages/orders/page.tsx",
+          html: "./index.html",
+          render: "csr",
+          metadata,
+        },
+      },
+      routes: [
+        {
+          id: "orders",
+          path: "/orders",
+          appId: "default",
+          pageId: "orders",
+          module: "./src/pages/orders/page.tsx",
+        },
+      ],
+      serverFunctions: [],
+      serverRoutes: [],
+    };
+    const plan: TestBuildPlan = {
+      version: 1,
+      buildId: "build",
+      mode: "production",
+      distDir: "dist",
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
+      entries: [
+        createServerRuntimeEntry(),
+        {
+          name: "main",
+          import: "./src/main.tsx",
+          environment: "client",
+          runtime: "browser",
+          kind: "app-client",
+          owner: { appId: "default" },
+        },
+      ],
+      html: [
+        {
+          id: "index",
+          template: "./index.html",
+          fileName: "index.html",
+          owner: { appId: "default" },
+        },
+      ],
+      server: createServerPlan(),
+      runtime: createRuntimePlan(),
+    };
+
+    const output = linkBuildOutput({
+      graph,
+      plan,
+      clientEntryAssets: {
+        main: { js: ["main.js"], css: [] },
+      },
+    });
+
+    expect(output.pages.orders.metadata).toEqual(metadata);
+    expect(output.pages.orders.metadata).not.toBe(metadata);
+    expect(output.pages.orders.metadata?.meta).not.toBe(metadata.meta);
+    expect(output.routes).toEqual([
+      {
+        id: "orders",
+        path: "/orders",
+        appId: "default",
+        pageId: "orders",
+      },
+    ]);
+    expect(createPublicManifest(output)).toMatchObject({
+      routing: {
+        kind: "spa",
+        routes: [
+          {
+            id: "orders",
+            path: "/orders",
+            pageId: "orders",
+            render: "csr",
+            metadata,
+          },
+        ],
+      },
+    });
+
+    metadata.title = "Mutated";
+    metadata.meta.description = "Mutated";
+    expect(output.pages.orders.metadata).toEqual({
+      title: "Orders",
+      meta: { description: "Order history" },
+    });
+
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...output,
+          pages: {
+            ...output.pages,
+            orders: {
+              ...output.pages.orders,
+              metadata: {
+                meta: {
+                  Description: "First",
+                  description: "Second",
+                },
+              },
+            },
+          },
+        },
+        "manifest",
+      ),
+    ).toThrow(
+      'manifest.pages.orders.metadata.meta keys "Description" and "description" conflict',
+    );
+  });
+
+  it("links SPA server-rendered Pages to the owning app hydration assets", () => {
+    const graph: LinkerFixture = {
+      version: 1,
+      rootDir: "/repo",
+      apps: {
+        default: {
+          id: "default",
+          entry: "./src/main.tsx",
+          html: "./index.html",
+        },
+      },
+      pages: {
+        dashboard: {
+          id: "dashboard",
+          component: "./src/pages/dashboard/page.tsx",
+          html: "./index.html",
+          render: "ssr",
+          hydrate: "load",
+        },
+        reports: {
+          id: "reports",
+          component: "./src/pages/reports/page.tsx",
+          html: "./index.html",
+          render: "ssr",
+          hydrate: "none",
+        },
+        snapshot: {
+          id: "snapshot",
+          component: "./src/pages/snapshot/page.tsx",
+          html: "./index.html",
+          render: "ssg",
+          hydrate: "load",
+        },
+      },
+      routes: [
+        {
+          id: "dashboard",
+          path: "/dashboard",
+          appId: "default",
+          pageId: "dashboard",
+          module: "./src/pages/dashboard/page.tsx",
+        },
+        {
+          id: "reports",
+          path: "/reports",
+          appId: "default",
+          pageId: "reports",
+          module: "./src/pages/reports/page.tsx",
+        },
+        {
+          id: "snapshot",
+          path: "/snapshot",
+          appId: "default",
+          pageId: "snapshot",
+          module: "./src/pages/snapshot/page.tsx",
+        },
+      ],
+      serverFunctions: [],
+      serverRoutes: [],
+    };
+    const plan: TestBuildPlan = {
+      version: 1,
+      buildId: "build",
+      mode: "production",
+      distDir: "dist",
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
+      entries: [
+        createServerRuntimeEntry(),
+        {
+          name: "main",
+          import: "./src/main.tsx",
+          environment: "client",
+          runtime: "browser",
+          kind: "app-client",
+          owner: { appId: "default" },
+        },
+      ],
+      html: [
+        {
+          id: "index",
+          template: "./index.html",
+          fileName: "index.html",
+          owner: { appId: "default" },
+        },
+      ],
+      server: createServerPlan(),
+      runtime: createRuntimePlan(),
+    };
+
+    const output = linkBuildOutput({
+      graph,
+      plan,
+      clientEntryAssets: {
+        main: { js: ["main.js"], css: ["main.css"] },
+      },
+    });
+
+    expect(output.pages.dashboard.assets).toEqual({
+      js: ["main.js"],
+      css: ["main.css"],
+    });
+    expect(output.pages.dashboard.module).toBeUndefined();
+    expect(output.pages.reports.assets).toEqual({ js: [], css: [] });
+    expect(output.pages.snapshot.assets).toEqual({
+      js: ["main.js"],
+      css: ["main.css"],
+    });
+  });
+
+  it("does not publish a logical MPA application as a runtime app", () => {
+    const graph: LinkerFixture = {
+      version: 1,
+      rootDir: "/repo",
+      apps: {},
+      pages: {
+        home: {
+          id: "home",
+          path: "/home",
+          routeId: "home",
+          component: "./src/pages/home.tsx",
+          html: "./index.html",
+          render: "csr",
+        },
+      },
+      routes: [
+        {
+          id: "home",
+          path: "/home",
+          appId: "default",
+          pageId: "home",
+          module: "./src/pages/home.tsx",
+        },
+      ],
+      serverFunctions: [],
+      serverRoutes: [],
+    };
+    const plan: TestBuildPlan = {
+      version: 1,
+      buildId: "build",
+      mode: "production",
+      distDir: "dist",
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
+      entries: [
+        createServerRuntimeEntry(),
+        {
+          name: "home",
+          import: "./src/pages/home.tsx",
+          environment: "client",
+          runtime: "browser",
+          kind: "page-client",
+          owner: { pageId: "home", routeId: "home" },
+        },
+      ],
+      html: [
+        {
+          id: "home",
+          template: "./index.html",
+          fileName: "home.html",
+          owner: { appId: "default", pageId: "home" },
+        },
+      ],
+      server: createServerPlan(),
+      runtime: createRuntimePlan(),
+    };
+
+    const output = linkBuildOutput({
+      graph,
+      plan,
+      clientEntryAssets: {
+        home: { js: ["home.js"], css: [] },
+      },
+    });
+
+    expect(output.apps).toEqual({});
+    expect(output.pages.home.module).toEqual({
+      type: "react-component",
+      href: "home.js",
+    });
+    expect(output.routes).toEqual([
+      { id: "home", path: "/home", pageId: "home" },
+    ]);
+    expect(() =>
+      assertFrameworkManifestShape(output, "manifest"),
+    ).not.toThrow();
+  });
+
+  it("projects terminal redirects to their SPA app while ignoring groups and stably deduplicating shapes", () => {
+    const graph: LinkerFixture = {
+      version: 1,
+      rootDir: "/repo",
+      apps: {
+        default: {
+          id: "default",
+          entry: "./src/main.tsx",
+          html: "./index.html",
+        },
+      },
+      pages: {
+        home: {
+          id: "home",
+          routeId: "home",
+          component: "./src/pages/home.tsx",
+          html: "./index.html",
+          render: "csr",
+        },
+      },
+      routes: [
+        {
+          id: "old-group",
+          path: "/old",
+          appId: "default",
+          target: { kind: "group" },
+        },
+        {
+          id: "old-redirect",
+          path: "/old",
+          appId: "default",
+          target: { kind: "redirect", to: { kind: "path", path: "/" } },
+        },
+        {
+          id: "legacy-group",
+          path: "/legacy/$groupId",
+          appId: "default",
+          target: { kind: "group" },
+        },
+        {
+          id: "legacy-redirect",
+          path: "/legacy/$legacyId",
+          appId: "default",
+          target: { kind: "redirect", to: { kind: "path", path: "/" } },
+        },
+        {
+          id: "home",
+          path: "/",
+          appId: "default",
+          pageId: "home",
+          module: "./src/pages/home.tsx",
+          target: { kind: "page", pageId: "home" },
+        },
+        {
+          id: "duplicate-dynamic-redirect",
+          path: "/legacy/$anotherId",
+          appId: "default",
+          target: { kind: "redirect", to: { kind: "path", path: "/" } },
+        },
+        {
+          id: "unused-group",
+          path: "/internal",
+          appId: "default",
+          target: { kind: "group" },
+        },
+      ],
+      serverFunctions: [],
+      serverRoutes: [],
+    };
+    const plan: TestBuildPlan = {
+      version: 1,
+      buildId: "build",
+      mode: "production",
+      distDir: "dist",
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
+      entries: [
+        createServerRuntimeEntry(),
+        {
+          name: "main",
+          import: "./src/main.tsx",
+          environment: "client",
+          runtime: "browser",
+          kind: "app-client",
+          owner: { appId: "default" },
+        },
+      ],
+      html: [
+        {
+          id: "index",
+          template: "./index.html",
+          fileName: "index.html",
+          owner: { appId: "default" },
+        },
+      ],
+      server: createServerPlan(),
+      runtime: createRuntimePlan(),
+    };
+
+    const output = linkBuildOutput({
+      graph,
+      plan,
+      clientEntryAssets: {
+        main: { js: ["main.js"], css: [] },
+      },
+    });
+
+    expect(output.routes).toEqual([
+      { id: "old-redirect", path: "/old", appId: "default" },
+      {
+        id: "legacy-redirect",
+        path: "/legacy/$legacyId",
+        appId: "default",
+      },
+      { id: "home", path: "/", appId: "default" },
+    ]);
+    expect(() =>
+      assertFrameworkManifestShape(output, "manifest"),
+    ).not.toThrow();
+  });
+
   it("does not expose metadata-only RSC source references", () => {
-    const graph: AppGraph = {
+    const graph: LinkerFixture = {
       version: 1,
       rootDir: "/repo",
       apps: {},
@@ -2300,7 +3141,7 @@ describe("linkBuildOutput", () => {
         },
       ],
     };
-    const plan: BuildPlan = {
+    const plan: TestBuildPlan = {
       version: 1,
       buildId: "build",
       mode: "production",
@@ -2321,7 +3162,7 @@ describe("linkBuildOutput", () => {
   });
 
   it("links app runtime modules only when the client entry produced JavaScript", () => {
-    const graph: AppGraph = {
+    const graph: LinkerFixture = {
       version: 1,
       rootDir: "/repo",
       apps: {
@@ -2336,7 +3177,7 @@ describe("linkBuildOutput", () => {
       serverFunctions: [],
       serverRoutes: [],
     };
-    const plan: BuildPlan = {
+    const plan: TestBuildPlan = {
       version: 1,
       buildId: "build",
       mode: "production",
@@ -2392,7 +3233,7 @@ describe("linkBuildOutput", () => {
   });
 
   it("fails when a page runtime module has no client JavaScript asset", () => {
-    const graph: AppGraph = {
+    const graph: LinkerFixture = {
       version: 1,
       rootDir: "/repo",
       apps: {},
@@ -2408,7 +3249,7 @@ describe("linkBuildOutput", () => {
       serverFunctions: [],
       serverRoutes: [],
     };
-    const plan: BuildPlan = {
+    const plan: TestBuildPlan = {
       version: 1,
       buildId: "build",
       mode: "production",
@@ -2451,7 +3292,7 @@ describe("linkBuildOutput", () => {
   });
 
   it("links server runtime output only when the server entry produced JavaScript", () => {
-    const graph: AppGraph = {
+    const graph: LinkerFixture = {
       version: 1,
       rootDir: "/repo",
       apps: {},
@@ -2460,7 +3301,7 @@ describe("linkBuildOutput", () => {
       serverFunctions: [],
       serverRoutes: [],
     };
-    const plan: BuildPlan = {
+    const plan: TestBuildPlan = {
       version: 1,
       buildId: "build",
       mode: "production",
@@ -2507,7 +3348,7 @@ describe("linkBuildOutput", () => {
   });
 
   it("marks non-partial prerendered server pages as full prerender output", () => {
-    const graph: AppGraph = {
+    const graph: LinkerFixture = {
       version: 1,
       rootDir: "/repo",
       apps: {},
@@ -2531,7 +3372,7 @@ describe("linkBuildOutput", () => {
       serverFunctions: [],
       serverRoutes: [],
     };
-    const plan: BuildPlan = {
+    const plan: TestBuildPlan = {
       version: 1,
       buildId: "build",
       mode: "production",
@@ -2603,7 +3444,7 @@ describe("linkBuildOutput", () => {
   });
 
   it("exposes PPR shell CSS through page assets", () => {
-    const graph: AppGraph = {
+    const graph: LinkerFixture = {
       version: 1,
       rootDir: "/repo",
       apps: {},
@@ -2613,7 +3454,7 @@ describe("linkBuildOutput", () => {
           component: "./src/Campaign.tsx",
           html: "./index.html",
           render: "ssr",
-          hydrate: "visible",
+          hydrate: "load",
           prerender: { partial: true },
           ppr: {
             delivery: "merge",
@@ -2631,7 +3472,7 @@ describe("linkBuildOutput", () => {
       serverFunctions: [],
       serverRoutes: [],
     };
-    const plan: BuildPlan = {
+    const plan: TestBuildPlan = {
       version: 1,
       buildId: "build",
       mode: "production",
@@ -2706,7 +3547,7 @@ describe("linkBuildOutput", () => {
   });
 
   it("fails when an RSC page has no Flight endpoint", () => {
-    const graph: AppGraph = {
+    const graph: LinkerFixture = {
       version: 1,
       rootDir: "/repo",
       apps: {},
@@ -2723,7 +3564,7 @@ describe("linkBuildOutput", () => {
       serverFunctions: [],
       serverRoutes: [],
     };
-    const plan: BuildPlan = {
+    const plan: TestBuildPlan = {
       version: 1,
       buildId: "build",
       mode: "production",
@@ -2766,7 +3607,7 @@ describe("linkBuildOutput", () => {
   });
 
   it("fails when an RSC page has no matching RSC server renderer", () => {
-    const graph: AppGraph = {
+    const graph: LinkerFixture = {
       version: 1,
       rootDir: "/repo",
       apps: {},
@@ -2783,7 +3624,7 @@ describe("linkBuildOutput", () => {
       serverFunctions: [],
       serverRoutes: [],
     };
-    const plan: BuildPlan = {
+    const plan: TestBuildPlan = {
       version: 1,
       buildId: "build",
       mode: "production",
@@ -2826,7 +3667,7 @@ describe("linkBuildOutput", () => {
   });
 
   it("fails when a PPR page has no matching PPR server renderers", () => {
-    const graph: AppGraph = {
+    const graph: LinkerFixture = {
       version: 1,
       rootDir: "/repo",
       apps: {},
@@ -2870,6 +3711,11 @@ describe("linkBuildOutput", () => {
       html: [],
       server: createServerPlan(),
       runtime: createRuntimePlan({ ppr: "__evjs/ppr" }),
+      dev: {
+        clientRoutes: [],
+        serverRoutePaths: [],
+        hasPpr: true,
+      },
     });
 
     expect(() =>
@@ -2921,7 +3767,7 @@ describe("linkBuildOutput", () => {
   });
 
   it("ignores server build facts when no server runtime entry is planned", () => {
-    const graph: AppGraph = {
+    const graph: LinkerFixture = {
       version: 1,
       rootDir: "/repo",
       apps: {},
@@ -2930,7 +3776,7 @@ describe("linkBuildOutput", () => {
       serverFunctions: [],
       serverRoutes: [],
     };
-    const plan: BuildPlan = {
+    const plan: TestBuildPlan = {
       version: 1,
       buildId: "build",
       mode: "production",
@@ -2984,6 +3830,10 @@ describe("createPublicManifest", () => {
           assets: { js: ["evjs-rsc-client.js"], css: ["insights.css"] },
           document: { fileName: "insights.html" },
           render: "ssr",
+          metadata: {
+            title: "Insights",
+            meta: { description: "Business insights" },
+          },
           componentModel: "rsc",
           rendering: {
             component: "rsc",
@@ -3000,7 +3850,10 @@ describe("createPublicManifest", () => {
         },
         landing: {
           assets: { js: ["landing.js"], css: ["landing.css"] },
-          document: { fileName: "landing.html" },
+          document: {
+            fileName: "landing.html",
+            aliases: ["legacy/landing.html"],
+          },
           render: "ssg",
           rendering: {
             component: "client",
@@ -3136,6 +3989,38 @@ describe("createPublicManifest", () => {
     ).toThrow(
       '[evjs] public manifest.assets must be omitted when routing.kind is "mpa".',
     );
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...manifest,
+          pages: {},
+          routes: [],
+        },
+        "public manifest",
+        {
+          server: "optional",
+          pageRendererReferences: "optional",
+          pprRendererReferences: "optional",
+          rscRendererReferences: "optional",
+        },
+      ),
+    ).toThrow(
+      "[evjs] public manifest.pages is not supported in public manifests.",
+    );
+    if (!("routing" in manifest)) {
+      throw new Error("Expected routed public manifest.");
+    }
+    const { routing: _routing, ...manifestWithoutRouting } = manifest;
+    expect(() =>
+      assertFrameworkManifestShape(manifestWithoutRouting, "public manifest", {
+        server: "optional",
+        pageRendererReferences: "optional",
+        pprRendererReferences: "optional",
+        rscRendererReferences: "optional",
+      }),
+    ).toThrow(
+      "[evjs] public manifest must define either routing or documents.",
+    );
     expect(serialized).not.toContain(".tsx");
     expect(serialized).not.toContain(".ts");
     expect(serialized).not.toContain("file://");
@@ -3149,7 +4034,15 @@ describe("createPublicManifest", () => {
       css: ["insights.css"],
     });
     expect(pages.insights.render).toBe("ssr");
+    expect(pages.insights.metadata).toEqual({
+      title: "Insights",
+      meta: { description: "Business insights" },
+    });
     expect(pages.landing.render).toBe("ssg");
+    expect(pages.landing.document).toEqual({
+      fileName: "landing.html",
+      aliases: ["legacy/landing.html"],
+    });
     expect("module" in pages.insights).toBe(false);
     expect("runtime" in manifest).toBe(false);
     expect("pages" in manifest).toBe(false);
@@ -3185,8 +4078,7 @@ describe("createPublicManifest", () => {
         kind: "page",
         id: "landing",
         fileName: "landing.html",
-        path: "/landing",
-        render: "ssg",
+        aliases: ["legacy/landing.html"],
         assets: { js: ["landing.js"], css: ["landing.css"] },
       },
       {
@@ -3202,6 +4094,14 @@ describe("createPublicManifest", () => {
         pageId: "insights",
         render: "ssr",
         rsc: true,
+        methods: ["GET", "HEAD"],
+      },
+      {
+        kind: "static-page",
+        path: "/landing",
+        pageId: "landing",
+        documentId: "landing",
+        render: "ssg",
         methods: ["GET", "HEAD"],
       },
       {
@@ -3312,6 +4212,10 @@ describe("createPublicManifest", () => {
           assets: { js: [], css: [] },
           document: { fileName: "report.html" },
           render: "ssg",
+          metadata: {
+            title: "Report",
+            meta: { description: "Annual report" },
+          },
           rendering: {
             component: "server",
             html: "static",
@@ -3345,6 +4249,10 @@ describe("createPublicManifest", () => {
             path: "/report",
             pageId: "report",
             render: "ssg",
+            metadata: {
+              title: "Report",
+              meta: { description: "Annual report" },
+            },
           },
         ],
       },
@@ -3365,6 +4273,10 @@ describe("createPublicManifest", () => {
           assets: { js: [], css: [] },
           document: { fileName: "report.html" },
           render: "ssg",
+          metadata: {
+            title: "Report",
+            meta: { robots: "noindex" },
+          },
           rendering: {
             component: "server",
             html: "static",
@@ -3409,6 +4321,10 @@ describe("createPublicManifest", () => {
           path: "/report",
           fileName: "report.html",
           render: "ssg",
+          metadata: {
+            title: "Report",
+            meta: { robots: "noindex" },
+          },
         },
       ],
     });
@@ -3426,11 +4342,18 @@ describe("createPublicManifest", () => {
           kind: "page",
           id: "report",
           fileName: "report.html",
-          path: "/report",
-          render: "ssg",
         },
       ],
-      routes: [],
+      routes: [
+        {
+          kind: "static-page",
+          path: "/report",
+          pageId: "report",
+          documentId: "report",
+          render: "ssg",
+          methods: ["GET", "HEAD"],
+        },
+      ],
       server: {},
     });
     expect(createServerManifest(output)).toEqual({

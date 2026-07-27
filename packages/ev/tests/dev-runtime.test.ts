@@ -7,6 +7,7 @@ import {
   type ApiProcess,
   acquireDevSessionLock,
   assertNoActiveDevSessionLock,
+  findDevServerEntry,
   reserveDevPorts,
   stopApiProcess,
   writeDevDistLock,
@@ -190,5 +191,33 @@ describe("stopApiProcess", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("findDevServerEntry", () => {
+  it("discovers the server entry from bundler stats without reading a split manifest", async () => {
+    const cwd = await createProject();
+    const serverDir = path.join(cwd, "dist/server");
+    await fs.promises.mkdir(serverDir, { recursive: true });
+    await Promise.all([
+      fs.promises.writeFile(path.join(serverDir, "server.cjs"), ""),
+      fs.promises.writeFile(path.join(serverDir, "legacy.cjs"), ""),
+      fs.promises.writeFile(
+        path.join(serverDir, "stats.json"),
+        JSON.stringify({
+          entrypoints: {
+            server: {
+              assets: [{ name: "server.cjs" }],
+            },
+          },
+        }),
+      ),
+      fs.promises.writeFile(
+        path.join(serverDir, "manifest.json"),
+        JSON.stringify({ entry: "legacy.cjs" }),
+      ),
+    ]);
+
+    await expect(findDevServerEntry(cwd, "dist")).resolves.toBe("server.cjs");
   });
 });

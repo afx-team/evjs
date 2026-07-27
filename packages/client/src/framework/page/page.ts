@@ -104,7 +104,11 @@ function resolveRuntimeUrl(
   if (options.runtimeUrl !== undefined) return options.runtimeUrl;
 
   const attribute = document.documentElement?.getAttribute("data-evjs-runtime");
-  if (attribute === null || attribute === undefined) return "/runtime.json";
+  if (attribute === null || attribute === undefined) {
+    throw new Error(
+      `[evjs] startPageRuntime() requires embedded runtime "${CLIENT_RUNTIME_SCRIPT_ID}" or an explicit runtimeUrl/data-evjs-runtime value.`,
+    );
+  }
   return assertRuntimeUrl(attribute, "data-evjs-runtime", "runtime URL");
 }
 

@@ -7,6 +7,7 @@
 
 export type { PageRuntimeOptions } from "./framework/page/page.js";
 export { startPageRuntime } from "./framework/page/page.js";
+export { startPagesApp } from "./framework/page/page-bootstrap.js";
 export type { PageProviderProps } from "./framework/page/page-context.js";
 export { PageProvider } from "./framework/page/page-context.js";
 export type {

@@ -1,5 +1,6 @@
 import { parseSync } from "@swc/core";
 import type { Expression, KeyValueProperty, MethodProperty } from "@swc/types";
+import { collectModuleExportNames } from "../module-exports.js";
 
 export type RouteAst = ReturnType<typeof parseSync>;
 
@@ -36,11 +37,7 @@ export function formatParseErrorMessage(
 }
 
 export function hasDefaultExport(ast: RouteAst): boolean {
-  return ast.body.some(
-    (item) =>
-      item.type === "ExportDefaultDeclaration" ||
-      item.type === "ExportDefaultExpression",
-  );
+  return collectModuleExportNames(ast.body).includes("default");
 }
 
 export function parseRouteModuleOrThrow(source: string): RouteAst {

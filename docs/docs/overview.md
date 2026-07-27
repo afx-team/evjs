@@ -2,14 +2,17 @@
 
 > **ev** = **Ev**aluation · **Ev**olution — evaluate across runtimes, evolve with AI tooling.
 
-evjs is a zero-config React fullstack framework with page-based client routes,
-server functions, route handlers, SSR, PPR, RSC integration points, and
+evjs is a React fullstack framework with one Page-and-Route application model,
+server functions, route handlers, rendering extension points, and
 deployment-oriented output.
 
 The framework keeps a clear split between:
 
 - **application code**: React pages, server functions, and server routes;
-- **file conventions**: `src/pages`, `src/apis`, middleware, and server-only modules;
+- **application model**: positive `src/pages/**/page.*` anchors whose
+  directories determine Page scope and URL, plus optional build-time
+  `page.config.ts`;
+- **server file conventions**: `src/apis`, middleware, and server-only modules;
 - **framework IR**: generated `.ev` entries, plugin artifacts, slots, and manifest data;
 - **bundlers**: Utoopack by default, with webpack available as a validation adapter;
 - **deployment output**: browser assets, optional server bundles, and deployment metadata.
@@ -19,9 +22,10 @@ the framework. MPA page routes use the page runtime without adding a router.
 
 ## Features
 
-- **Zero-config page routes** — `ev dev` / `ev build` discover `src/pages` unless the project declares explicit `app` or `pages` config.
-- **SPA and MPA modes** — `routing.mode: "spa"` builds one app; `"mpa"` builds independent router-free pages.
-- **Render modes** — page modules can declare CSR, SSR, SSG, PPR, or RSC behavior next to the component.
+- **One Page-and-Route model** — `src/pages/**/page.*` anchors Pages and Routes; each containing directory owns private code and determines its URL.
+- **One Page config model** — optional `page.config.ts` supplies static titles, named metadata, core rendering settings, and registered namespaced plugin extensions in both SPA and MPA.
+- **SPA and MPA materialization** — `routing.mode` keeps the same semantic Page/Route tree while selecting a browser route tree or independent Page-owned Documents.
+- **Page rendering settings** — `page.config.ts` normalizes SSR, SSG, PPR, and RSC settings without changing canonical Page identity; Page components do not export rendering configuration.
 - **Server functions** — `"use server"` modules become browser-callable functions.
 - **Server routes** — standard Web `Request`/`Response` route handlers are discovered from `src/apis`.
 - **Unified server runtime** — server functions, server routes, SSR, PPR, and RSC share the same server boundary.
@@ -34,14 +38,14 @@ the framework. MPA page routes use the page runtime without adding a router.
 ```mermaid
 flowchart TB
   subgraph Source["Application source"]
-    Pages["src/pages\nclient routes"]
+    Pages["Page directories\npage.tsx + page.config.ts"]
     APIs["src/apis\nserver routes"]
     Functions["use server directive\nserver functions"]
-    Config["ev.config.ts\nplugins"]
+    Config["ev.config.ts\nrouting.mode + plugins"]
   end
 
   subgraph Framework["Framework planning"]
-    Discovery["Convention discovery"]
+    Discovery["Resolve + normalize\nCoreGraph"]
     IR[".ev framework IR\nentries + plugin modules + slots"]
     Manifest["Manifest data\nruntime + deployment metadata"]
   end
@@ -87,7 +91,9 @@ flowchart TB
 
 ## How It Fits Together
 
-evjs discovers page routes from `src/pages`, server file routes from `src/apis`,
+evjs discovers positively anchored `page.*` routes and optional build-time
+`page.config.ts` from `src/pages`, server
+file routes from `src/apis`,
 and server functions from reachable `"use server"` modules. It then materializes
 `.ev` as the framework IR: generated entry facades, plugin generated modules,
 structured slot attachments, and a manifest that agents and tools can inspect

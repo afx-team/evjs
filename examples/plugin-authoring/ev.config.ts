@@ -1,5 +1,64 @@
 import { merge, utoopack } from "@evjs/bundler-utoopack";
 import { defineConfig } from "@evjs/ev";
+import { definePlugin } from "@evjs/ev/plugin";
+
+const metadataPlugin = definePlugin({
+  name: "example-metadata-plugin",
+  describe(api) {
+    api.applicationExtension<
+      { enabled: boolean; channel: string },
+      { enabled?: boolean }
+    >({
+      namespace: "@example/metadata",
+      schemaVersion: "1",
+      defaults: { enabled: false, channel: "web" },
+    });
+    api.pageExtension({
+      namespace: "@example/metadata",
+      schemaVersion: "1",
+      defaults: { label: "Plugin authoring Page" },
+    });
+    api.routeExtension({
+      namespace: "@example/metadata",
+      schemaVersion: "1",
+      defaults: ({ routeId }) => ({ label: `Route ${routeId}` }),
+    });
+    api.documentExtension({
+      namespace: "@example/metadata",
+      schemaVersion: "1",
+      defaults: ({ output }) => ({
+        label: `Document ${output}`,
+        theme: "light",
+      }),
+    });
+  },
+  setup(ctx) {
+    const metadata = ctx.config.extensions["@example/metadata"];
+    console.log(
+      `[example-metadata-plugin] Application value: ${JSON.stringify(metadata)}`,
+    );
+  },
+  contributions(ctx) {
+    for (const page of ctx.framework.pages) {
+      const metadata = page.extensions["@example/metadata"];
+      console.log(
+        `[example-metadata-plugin] Page ${page.id}: ${JSON.stringify(metadata)}`,
+      );
+    }
+    for (const route of ctx.framework.routes) {
+      const metadata = route.extensions["@example/metadata"];
+      console.log(
+        `[example-metadata-plugin] Route ${route.id}: ${JSON.stringify(metadata)}`,
+      );
+    }
+    for (const document of ctx.framework.documents) {
+      const metadata = document.extensions["@example/metadata"];
+      console.log(
+        `[example-metadata-plugin] Document ${document.id}: ${JSON.stringify(metadata)}`,
+      );
+    }
+  },
+});
 
 /**
  * Example: evjs plugin system.
@@ -12,7 +71,14 @@ import { defineConfig } from "@evjs/ev";
  * - `transformHtml` — modify the output HTML document after asset injection
  */
 export default defineConfig({
+  routing: { mode: "spa" },
+  extensions: {
+    "@example/metadata": {
+      enabled: true,
+    },
+  },
   plugins: [
+    metadataPlugin,
     {
       name: "example-txt-plugin",
       config(config) {

@@ -2,12 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createApp } from "@evjs/server/app";
-import type { AppGraph, BuildOutput, BuildPlan } from "@evjs/shared/manifest";
+import type { BuildOutput, BuildPlan, CoreGraph } from "@evjs/shared/manifest";
 import {
   assertFrameworkManifestShape,
   createDeploymentMetadata,
-  createPublicManifest,
-  createServerManifest,
   linkBuildOutput,
 } from "@evjs/shared/manifest";
 import type { ResolvedConfig } from "../../config/index.js";
@@ -17,24 +15,59 @@ import type {
   PluginHooks,
 } from "../../plugin/index.js";
 import type { BundlerBuildFacts } from "./bundler.js";
+import { createFrameworkHtmlDocument } from "./framework-html-document.js";
 import {
   createClientRuntime,
   createFrameworkRuntime,
 } from "./framework-runtime.js";
-import { applyHtmlTagContributions } from "./generated-contributions.js";
-import { generateHtml, type HtmlAsset, validateHtmlTemplate } from "./html.js";
+import { type generateHtml, validateHtmlTemplate } from "./html.js";
 import { buildHtml } from "./html-transform.js";
 import { runBuildOutputHooks } from "./plugin-lifecycle.js";
+import { compileServerDocumentShells } from "./server-document-shell.js";
 
-const MANIFEST_FILE = "manifest.json";
-const CLIENT_RUNTIME_SCRIPT_ID = "__EVJS_CLIENT_RUNTIME__";
-const LEGACY_RUNTIME_FILE = "runtime.json";
-const LEGACY_FRAMEWORK_RUNTIME_FILE = "framework-runtime.json";
-const BUILD_OUTPUT_FILE = "build-output.json";
+const DEPLOYMENT_METADATA_FILE = "deployment-metadata.json";
 const RUNTIME_ONLY_BUNDLER_MANIFEST_FILES = [
   "react-client-manifest.json",
   "react-ssr-manifest.json",
 ];
+
+interface PreviousFrameworkHtmlOutput {
+  buildId: string;
+  documents: Array<{
+    kind: "app" | "page";
+    id: string;
+    fileName: string;
+    aliases?: string[];
+  }>;
+}
+
+interface BuildOutputDocumentIdentity {
+  owner: string;
+  fileName?: string;
+  aliases?: string[];
+}
+
+interface BuildOutputPageIdentity extends BuildOutputDocumentIdentity {
+  path?: string;
+  routeId?: string;
+}
+
+interface BuildOutputRouteIdentity {
+  id: string;
+  path: string;
+  parentId?: string;
+  kind?: BuildOutput["routes"][number]["kind"];
+  appId?: string;
+  pageId?: string;
+}
+
+interface BuildOutputIdentitySnapshot {
+  appIds: string[];
+  pageIds: string[];
+  documents: Map<string, BuildOutputDocumentIdentity>;
+  pages: Map<string, BuildOutputPageIdentity>;
+  routes: BuildOutputRouteIdentity[];
+}
 
 export function validateHtmlTemplates<TBundlerCfg>(
   cwd: string,
@@ -114,29 +147,19 @@ function collectHtmlTemplates<TBundlerCfg>(
 ): HtmlTemplateValidation[] {
   const templates: HtmlTemplateValidation[] = [];
 
-  for (const [appId, app] of Object.entries(config.apps ?? {})) {
+  if (config.application) {
     templates.push({
-      path: app.html ?? config.html,
-      notFoundMessage: `[evjs] App "${appId}" html template not found`,
-      notFileMessage: `[evjs] App "${appId}" html template must be a file`,
-      mount: app.mount,
-      mountNotFoundMessage: `[evjs] App "${appId}" mount target was not found`,
-      mountInvalidMessage: `[evjs] App "${appId}" mount selector is invalid`,
+      path: config.application.document.template,
+      notFoundMessage: "[evjs] Application Document html template not found",
+      notFileMessage:
+        "[evjs] Application Document html template must be a file",
+      mount: config.application.document.mount,
+      mountNotFoundMessage:
+        "[evjs] Application Document mount target was not found",
+      mountInvalidMessage:
+        "[evjs] Application Document mount selector is invalid",
     });
-  }
-
-  for (const [pageId, page] of Object.entries(config.pages ?? {})) {
-    templates.push({
-      path: page.html,
-      notFoundMessage: `[evjs] MPA page "${pageId}" html template not found`,
-      notFileMessage: `[evjs] MPA page "${pageId}" html template must be a file`,
-      mount: page.mount,
-      mountNotFoundMessage: `[evjs] MPA page "${pageId}" mount target was not found`,
-      mountInvalidMessage: `[evjs] MPA page "${pageId}" mount selector is invalid`,
-    });
-  }
-
-  if (config.routing?.mode === "mpa") {
+  } else if (config.routing?.mode === "mpa") {
     let usesRoutingHtml = false;
     for (const route of config.routing.routes) {
       if (route.kind === "layout") continue;
@@ -174,14 +197,6 @@ function collectHtmlTemplates<TBundlerCfg>(
     });
   }
 
-  if (templates.length === 0) {
-    templates.push({
-      path: config.html,
-      notFoundMessage: "[evjs] HTML template not found",
-      notFileMessage: "[evjs] HTML template must be a file",
-    });
-  }
-
   return templates;
 }
 
@@ -202,83 +217,51 @@ function getFrameworkOutputPaths(
 async function emitFrameworkManifest(
   cwd: string,
   output: BuildOutput,
-): Promise<void> {
-  const { rootDir, clientDir, serverDir } = getFrameworkOutputPaths(
-    cwd,
-    output,
-  );
+): Promise<PreviousFrameworkHtmlOutput | undefined> {
+  const { rootDir, clientDir } = getFrameworkOutputPaths(cwd, output);
   await fs.promises.mkdir(rootDir, { recursive: true });
-  const serverManifest = createServerManifest(output);
-  if (serverManifest.entry || serverManifest.routes.length > 0) {
-    await fs.promises.mkdir(serverDir, { recursive: true });
-    await fs.promises.writeFile(
-      path.join(serverDir, MANIFEST_FILE),
-      JSON.stringify(serverManifest, null, 2),
-      "utf-8",
-    );
-  }
+  const previousHtmlOutput = await readPreviousFrameworkHtmlOutput(
+    cwd,
+    rootDir,
+    clientDir,
+  );
   await fs.promises.writeFile(
-    path.join(rootDir, BUILD_OUTPUT_FILE),
+    path.join(rootDir, DEPLOYMENT_METADATA_FILE),
     JSON.stringify(createDeploymentMetadata(output), null, 2),
     "utf-8",
   );
-  await fs.promises.rm(path.join(serverDir, BUILD_OUTPUT_FILE), {
-    force: true,
-  });
-  await removeFrameworkOutputFileIfInactive(rootDir, MANIFEST_FILE, [
-    clientDir,
-    serverDir,
-  ]);
-  await removeFrameworkOutputFileIfInactive(rootDir, LEGACY_RUNTIME_FILE, [
-    clientDir,
-    serverDir,
-  ]);
-  await removeFrameworkOutputFileIfInactive(
-    path.join(rootDir, "client"),
-    MANIFEST_FILE,
-    [clientDir, serverDir],
-  );
-  await removeFrameworkOutputFileIfInactive(
-    path.join(rootDir, "client"),
-    LEGACY_RUNTIME_FILE,
-    [clientDir, serverDir],
-  );
-  await removeFrameworkOutputFileIfInactive(
-    path.join(rootDir, "server"),
-    MANIFEST_FILE,
-    [clientDir, serverDir],
-  );
-  await removeFrameworkOutputFileIfInactive(
-    path.join(rootDir, "server"),
-    LEGACY_RUNTIME_FILE,
-    [clientDir, serverDir],
-  );
-  await removeFrameworkOutputFileIfInactive(
-    path.join(rootDir, "server"),
-    LEGACY_FRAMEWORK_RUNTIME_FILE,
-    [clientDir, serverDir],
-  );
-
-  const publicManifest = createPublicManifest(output);
-  await fs.promises.mkdir(clientDir, { recursive: true });
-  await fs.promises.writeFile(
-    path.join(clientDir, MANIFEST_FILE),
-    JSON.stringify(publicManifest, null, 2),
-    "utf-8",
-  );
-  await fs.promises.rm(path.join(clientDir, LEGACY_RUNTIME_FILE), {
-    force: true,
-  });
-  if (output.server.entry) {
-    await fs.promises.mkdir(serverDir, { recursive: true });
-    await fs.promises.rm(path.join(serverDir, LEGACY_RUNTIME_FILE), {
-      force: true,
-    });
-  }
-  await fs.promises.rm(path.join(serverDir, LEGACY_FRAMEWORK_RUNTIME_FILE), {
-    force: true,
-  });
   await removeRuntimeOnlyBundlerManifests(clientDir);
+  return previousHtmlOutput;
+}
+
+function isDeploymentMetadataSnapshot(value: Record<string, unknown>): boolean {
+  return (
+    hasFrameworkOutputHeader(value) &&
+    Array.isArray(value.documents) &&
+    Array.isArray(value.routes) &&
+    isRecord(value.server) &&
+    value.documents.every(isFrameworkDocumentRecord)
+  );
+}
+
+function hasFrameworkOutputHeader(value: Record<string, unknown>): boolean {
+  return (
+    value.version === 1 &&
+    isNonEmptyString(value.buildId) &&
+    isRecord(value.paths) &&
+    isNonEmptyString(value.paths.rootDir) &&
+    isNonEmptyString(value.paths.publicDir) &&
+    isNonEmptyString(value.paths.serverDir) &&
+    typeof value.publicPath === "string"
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
 }
 
 async function removeRuntimeOnlyBundlerManifests(
@@ -291,20 +274,58 @@ async function removeRuntimeOnlyBundlerManifests(
   );
 }
 
-async function removeFrameworkOutputFileIfInactive(
-  dir: string,
-  fileName: string,
-  activeDirs: string[],
-): Promise<void> {
-  const normalizedDir = path.resolve(dir);
-  if (
-    activeDirs.some((activeDir) => path.resolve(activeDir) === normalizedDir)
-  ) {
-    return;
+async function readPreviousFrameworkHtmlOutput(
+  cwd: string,
+  rootDir: string,
+  clientDir: string,
+): Promise<PreviousFrameworkHtmlOutput | undefined> {
+  let value: unknown;
+  try {
+    value = JSON.parse(
+      await fs.promises.readFile(
+        path.join(rootDir, DEPLOYMENT_METADATA_FILE),
+        "utf-8",
+      ),
+    );
+  } catch {
+    return undefined;
   }
-  await fs.promises.rm(path.join(normalizedDir, fileName), {
-    force: true,
-  });
+  if (!isRecord(value) || !isDeploymentMetadataSnapshot(value)) {
+    return undefined;
+  }
+  const paths = value.paths as Record<string, unknown>;
+  if (
+    path.resolve(cwd, paths.rootDir as string) !== rootDir ||
+    path.resolve(cwd, paths.publicDir as string) !== clientDir
+  ) {
+    return undefined;
+  }
+
+  return {
+    buildId: value.buildId as string,
+    documents: (value.documents as unknown[]).map((document) => {
+      const record = document as Record<string, unknown>;
+      return {
+        kind: record.kind as "app" | "page",
+        id: record.id as string,
+        fileName: record.fileName as string,
+        ...(Array.isArray(record.aliases)
+          ? { aliases: [...(record.aliases as string[])] }
+          : {}),
+      };
+    }),
+  };
+}
+
+function isFrameworkDocumentRecord(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value.kind === "app" || value.kind === "page") &&
+    isNonEmptyString(value.id) &&
+    isNonEmptyString(value.fileName) &&
+    (value.aliases === undefined ||
+      (Array.isArray(value.aliases) && value.aliases.every(isNonEmptyString)))
+  );
 }
 
 function getHtmlAssets(html: BuildPlan["html"][number], output: BuildOutput) {
@@ -326,9 +347,9 @@ function createHtmlDocumentInfo(
 
   if (html.owner.pageId) {
     return {
-      kind: "page",
-      htmlId: html.id,
-      pageId: html.owner.pageId,
+      documentId: html.id,
+      applicationId: html.owner.appId ?? "default",
+      owner: { kind: "page", pageId: html.owner.pageId },
       template: html.template,
       fileName: html.fileName,
       assets,
@@ -336,25 +357,18 @@ function createHtmlDocumentInfo(
   }
 
   return {
-    kind: "app",
-    htmlId: html.id,
-    appId: html.owner.appId ?? "default",
+    documentId: html.id,
+    applicationId: html.owner.appId ?? "default",
+    owner: { kind: "application" },
     template: html.template,
     fileName: html.fileName,
     assets,
   };
 }
 
-function withHtmlAssetCrossOrigin(
-  assets: string[],
-  crossOriginLoading: ResolvedConfig["output"]["crossOriginLoading"],
-): HtmlAsset[] {
-  if (!crossOriginLoading) return assets;
-  return assets.map((url) => ({
-    url,
-    attrs: { crossorigin: crossOriginLoading },
-  }));
-}
+type PageHtmlDocumentInfo = HtmlDocumentInfo & {
+  owner: { kind: "page"; pageId: string };
+};
 
 async function emitFrameworkHtml<TBundlerCfg>(
   cwd: string,
@@ -365,38 +379,25 @@ async function emitFrameworkHtml<TBundlerCfg>(
   plan: BuildPlan,
   frameworkRuntime: ReturnType<typeof createFrameworkRuntime>,
   isRebuild: boolean,
+  previousHtmlOutput?: PreviousFrameworkHtmlOutput,
   loadServerModule?: (asset: string) => Promise<unknown>,
 ): Promise<void> {
   const { clientDir, serverDir } = getFrameworkOutputPaths(cwd, output);
+  await removeStaleFrameworkHtml(clientDir, plan, previousHtmlOutput);
   const clientRuntime = createClientRuntime(output);
 
   for (const html of plan.html) {
     const htmlInfo = createHtmlDocumentInfo(html, output);
     if (!htmlInfo) continue;
 
-    const doc = generateHtml({
-      template: path.resolve(cwd, html.template),
-      js: withHtmlAssetCrossOrigin(
-        htmlInfo.assets.js,
-        config.output.crossOriginLoading,
-      ),
-      css: withHtmlAssetCrossOrigin(
-        htmlInfo.assets.css,
-        config.output.crossOriginLoading,
-      ),
+    const doc = createFrameworkHtmlDocument({
+      cwd,
+      config,
+      output,
+      plan,
+      html: htmlInfo,
+      clientRuntime,
     });
-    doc.documentElement?.setAttribute("data-evjs-build", output.buildId);
-    if (htmlInfo.kind === "page") {
-      doc.documentElement?.setAttribute("data-evjs-kind", "page");
-      doc.documentElement?.setAttribute("data-evjs-id", htmlInfo.pageId);
-    } else {
-      doc.documentElement?.setAttribute("data-evjs-kind", "app");
-      doc.documentElement?.setAttribute("data-evjs-id", htmlInfo.appId);
-    }
-    if (htmlInfo.assets.js.length > 0) {
-      embedClientRuntime(doc, clientRuntime);
-    }
-    applyHtmlTagContributions(doc, htmlInfo, plan);
     if (
       plan.mode === "production" &&
       shouldPrerenderStaticPage(output, htmlInfo)
@@ -420,18 +421,107 @@ async function emitFrameworkHtml<TBundlerCfg>(
       isRebuild,
     });
 
-    const outPath = path.join(clientDir, html.fileName);
-    await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
-    await fs.promises.writeFile(outPath, finalHtml, "utf-8");
+    for (const fileName of [html.fileName, ...(html.aliases ?? [])]) {
+      const outPath = resolveContainedFile(clientDir, fileName);
+      if (!outPath) {
+        throw new Error(
+          `[evjs] HTML Document "${html.id}" output "${fileName}" must resolve inside the client output directory.`,
+        );
+      }
+      await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
+      await fs.promises.writeFile(outPath, finalHtml, "utf-8");
+    }
+  }
+}
+
+async function removeStaleFrameworkHtml(
+  clientDir: string,
+  plan: BuildPlan,
+  previous: PreviousFrameworkHtmlOutput | undefined,
+): Promise<void> {
+  if (!previous) return;
+  const currentFiles = new Set(
+    plan.html.flatMap((html) =>
+      [html.fileName, ...(html.aliases ?? [])].map((fileName) =>
+        path.resolve(clientDir, fileName),
+      ),
+    ),
+  );
+  for (const document of previous.documents) {
+    for (const fileName of [document.fileName, ...(document.aliases ?? [])]) {
+      const file = resolveContainedFile(clientDir, fileName);
+      if (
+        file &&
+        !currentFiles.has(file) &&
+        (await isFrameworkOwnedHtmlFile(
+          clientDir,
+          file,
+          previous.buildId,
+          document,
+        ))
+      ) {
+        await fs.promises.rm(file, { force: true });
+      }
+    }
+  }
+}
+
+function resolveContainedFile(
+  directory: string,
+  fileName: string,
+): string | undefined {
+  const file = path.resolve(directory, fileName);
+  const relative = path.relative(directory, file);
+  if (
+    relative.length === 0 ||
+    relative.startsWith(`..${path.sep}`) ||
+    relative === ".." ||
+    path.isAbsolute(relative)
+  ) {
+    return undefined;
+  }
+  return file;
+}
+
+async function isFrameworkOwnedHtmlFile(
+  clientDir: string,
+  file: string,
+  buildId: string,
+  document: PreviousFrameworkHtmlOutput["documents"][number],
+): Promise<boolean> {
+  try {
+    const [realClientDir, realFile, stat] = await Promise.all([
+      fs.promises.realpath(clientDir),
+      fs.promises.realpath(file),
+      fs.promises.stat(file),
+    ]);
+    if (!stat.isFile()) return false;
+    const relative = path.relative(realClientDir, realFile);
+    if (
+      relative.startsWith(`..${path.sep}`) ||
+      relative === ".." ||
+      path.isAbsolute(relative)
+    ) {
+      return false;
+    }
+    const doc = validateHtmlTemplate({ template: file });
+    const root = doc.documentElement;
+    return (
+      root?.getAttribute("data-evjs-build") === buildId &&
+      root.getAttribute("data-evjs-kind") === document.kind &&
+      root.getAttribute("data-evjs-id") === document.id
+    );
+  } catch {
+    return false;
   }
 }
 
 function shouldPrerenderStaticPage(
   output: BuildOutput,
   html: HtmlDocumentInfo,
-): html is Extract<HtmlDocumentInfo, { kind: "page" }> {
-  if (html.kind !== "page") return false;
-  const page = output.pages[html.pageId];
+): html is PageHtmlDocumentInfo {
+  if (html.owner.kind !== "page") return false;
+  const page = output.pages[html.owner.pageId];
   return Boolean(
     page &&
       page.render === "ssg" &&
@@ -443,15 +533,16 @@ function shouldPrerenderStaticPage(
 async function prerenderStaticPageHtml(options: {
   doc: ReturnType<typeof generateHtml>;
   output: BuildOutput;
-  html: Extract<HtmlDocumentInfo, { kind: "page" }>;
+  html: PageHtmlDocumentInfo;
   frameworkRuntime: ReturnType<typeof createFrameworkRuntime>;
   serverDir: string;
   loadServerModule?: (asset: string) => Promise<unknown>;
 }): Promise<void> {
   const { doc, output, html, frameworkRuntime, serverDir, loadServerModule } =
     options;
-  const page = output.pages[html.pageId];
-  const pathname = findStaticPagePath(output, html.pageId, page);
+  const pageId = html.owner.pageId;
+  const page = output.pages[pageId];
+  const pathname = findStaticPagePath(output, pageId, page);
   if (!page || !pathname) return;
 
   const { createReactFrameworkServer } = await import("@evjs/server/react");
@@ -471,7 +562,7 @@ async function prerenderStaticPageHtml(options: {
   });
   if (!framework?.render) {
     throw new Error(
-      `[evjs] Unable to prerender SSG page "${html.pageId}" because no server renderer was emitted.`,
+      `[evjs] Unable to prerender SSG page "${pageId}" because no server renderer was emitted.`,
     );
   }
 
@@ -483,14 +574,14 @@ async function prerenderStaticPageHtml(options: {
   );
   if (!response.ok) {
     throw new Error(
-      `[evjs] Failed to prerender SSG page "${html.pageId}": ${response.status} ${response.statusText}`,
+      `[evjs] Failed to prerender SSG page "${pageId}": ${response.status} ${response.statusText}`,
     );
   }
 
   const mount = doc.querySelector(page.mount ?? "#app");
   if (!mount) {
     throw new Error(
-      `[evjs] Unable to prerender SSG page "${html.pageId}" because mount target "${page.mount ?? "#app"}" was not found.`,
+      `[evjs] Unable to prerender SSG page "${pageId}" because mount target "${page.mount ?? "#app"}" was not found.`,
     );
   }
   mount.innerHTML = await response.text();
@@ -525,31 +616,9 @@ function normalizeServerModule(mod: unknown): Record<string, unknown> {
     : (mod as Record<string, unknown>);
 }
 
-function embedClientRuntime(
-  doc: ReturnType<typeof generateHtml>,
-  runtime: ReturnType<typeof createClientRuntime>,
-): void {
-  const body = doc.body ?? doc.querySelector("body");
-  if (!body) return;
-  const json = JSON.stringify(runtime)
-    .replace(/</g, "\\u003c")
-    .replace(/\u2028/g, "\\u2028")
-    .replace(/\u2029/g, "\\u2029");
-  const script = doc.createElement("script");
-  script.id = CLIENT_RUNTIME_SCRIPT_ID;
-  script.setAttribute("type", "application/json");
-  script.textContent = json;
-  const firstScript = body.querySelector("script[src]");
-  if (firstScript) {
-    body.insertBefore(script, firstScript);
-    return;
-  }
-  body.appendChild(script);
-}
-
 export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   bundlerFacts: BundlerBuildFacts;
-  graph: AppGraph;
+  graph: CoreGraph;
   plan: BuildPlan;
   config: ResolvedConfig<TBundlerCfg>;
   cwd: string;
@@ -571,12 +640,29 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     serverModules: options.bundlerFacts.serverModules,
   });
 
+  const identities = snapshotBuildOutputIdentities(output);
   await runBuildOutputHooks(options.hooks, output, options.pluginCtx);
   assertFrameworkManifestShape(output, "BuildOutput after buildOutput hooks");
+  assertBuildOutputIdentitiesUnchanged(identities, output);
+  const documentShells = await compileServerDocumentShells({
+    cwd: options.cwd,
+    config: options.config,
+    hooks: options.hooks,
+    pluginCtx: options.pluginCtx,
+    output,
+    plan: options.plan,
+    isRebuild: options.isRebuild,
+  });
   const frameworkRuntime = createFrameworkRuntime(output, {
     rscManifests: options.bundlerFacts.rscManifests,
+    documentShells,
   });
-  await emitFrameworkManifest(options.cwd, output);
+  const buildFrameworkRuntime = createFrameworkRuntime(output, {
+    rscManifests: options.bundlerFacts.rscManifests,
+    documentShells,
+    includeBuildRenderers: true,
+  });
+  const previousHtmlOutput = await emitFrameworkManifest(options.cwd, output);
   await emitFrameworkHtml(
     options.cwd,
     options.config,
@@ -584,10 +670,143 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     options.pluginCtx,
     output,
     options.plan,
-    frameworkRuntime,
+    buildFrameworkRuntime,
     options.isRebuild,
+    previousHtmlOutput,
     options.bundlerFacts.loadServerModule,
   );
 
   return { output, frameworkRuntime };
+}
+
+function snapshotBuildOutputIdentities(
+  output: BuildOutput,
+): BuildOutputIdentitySnapshot {
+  const documents = new Map<string, BuildOutputDocumentIdentity>();
+  const pages = new Map<string, BuildOutputPageIdentity>();
+  for (const [id, app] of Object.entries(output.apps)) {
+    documents.set(`app:${id}`, {
+      owner: `Application "${id}"`,
+      ...(app.document ? { fileName: app.document.fileName } : {}),
+      ...(app.document?.aliases ? { aliases: [...app.document.aliases] } : {}),
+    });
+  }
+  for (const [id, page] of Object.entries(output.pages)) {
+    const identity = {
+      owner: `Page "${id}"`,
+      ...(page.document ? { fileName: page.document.fileName } : {}),
+      ...(page.document?.aliases
+        ? { aliases: [...page.document.aliases] }
+        : {}),
+      ...(page.path ? { path: page.path } : {}),
+      ...(page.routeId ? { routeId: page.routeId } : {}),
+    };
+    documents.set(`page:${id}`, identity);
+    pages.set(id, identity);
+  }
+  return {
+    appIds: Object.keys(output.apps).sort(),
+    pageIds: Object.keys(output.pages).sort(),
+    documents,
+    pages,
+    routes: output.routes.map((route) => ({
+      id: route.id,
+      path: route.path,
+      ...(route.parentId ? { parentId: route.parentId } : {}),
+      ...(route.kind ? { kind: route.kind } : {}),
+      ...(route.appId ? { appId: route.appId } : {}),
+      ...(route.pageId ? { pageId: route.pageId } : {}),
+    })),
+  };
+}
+
+function assertBuildOutputIdentitiesUnchanged(
+  expected: BuildOutputIdentitySnapshot,
+  output: BuildOutput,
+): void {
+  const actual = snapshotBuildOutputIdentities(output);
+  if (!arraysEqual(expected.appIds, actual.appIds)) {
+    throw new Error(
+      "[evjs] buildOutput hooks cannot add, remove, or rename Applications. Application identity is owned by the CoreGraph.",
+    );
+  }
+  if (!arraysEqual(expected.pageIds, actual.pageIds)) {
+    throw new Error(
+      "[evjs] buildOutput hooks cannot add, remove, or rename Pages. Page identity is owned by the CoreGraph.",
+    );
+  }
+  if (!routeIdentitiesEqual(expected.routes, actual.routes)) {
+    throw new Error(
+      "[evjs] buildOutput hooks cannot add, remove, reorder, or rename Routes, or change Route paths and ownership. Route identity is owned by the CoreGraph.",
+    );
+  }
+  for (const [id, identity] of expected.pages) {
+    const candidate = actual.pages.get(id);
+    if (
+      candidate?.path !== identity.path ||
+      candidate?.routeId !== identity.routeId
+    ) {
+      throw new Error(
+        `[evjs] buildOutput hooks cannot change Page "${id}" path or routeId. Page and Route identity is owned by the CoreGraph.`,
+      );
+    }
+  }
+  for (const [key, identity] of expected.documents) {
+    const candidate = actual.documents.get(key);
+    if (
+      candidate !== undefined &&
+      candidate.fileName === identity.fileName &&
+      optionalArraysEqual(candidate.aliases, identity.aliases)
+    ) {
+      continue;
+    }
+    throw new Error(
+      `[evjs] buildOutput hooks cannot change ${identity.owner} Document fileName or aliases. Configure static Document identity in framework configuration before the CoreGraph is linked.`,
+    );
+  }
+  for (const [key, identity] of actual.documents) {
+    if (expected.documents.has(key) || identity.fileName === undefined)
+      continue;
+    throw new Error(
+      `[evjs] buildOutput hooks cannot add a Document to ${identity.owner}. Configure static Document identity in framework configuration before the CoreGraph is linked.`,
+    );
+  }
+}
+
+function optionalArraysEqual(
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): boolean {
+  if (!left || !right) return left === right;
+  return arraysEqual(left, right);
+}
+
+function arraysEqual(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
+function routeIdentitiesEqual(
+  left: readonly BuildOutputRouteIdentity[],
+  right: readonly BuildOutputRouteIdentity[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((route, index) => {
+      const candidate = right[index];
+      return (
+        candidate?.id === route.id &&
+        candidate.path === route.path &&
+        candidate.parentId === route.parentId &&
+        candidate.kind === route.kind &&
+        candidate.appId === route.appId &&
+        candidate.pageId === route.pageId
+      );
+    })
+  );
 }

@@ -2,10 +2,17 @@ import fs from "node:fs";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
-import type { AppGraph, BuildPlan } from "@evjs/shared/manifest";
+import type { BuildOutput, BuildPlan, CoreGraph } from "@evjs/shared/manifest";
+import { PAGE_ANCHOR_PROVIDER_ID } from "@evjs/shared/manifest";
 import { configureSync, resetSync } from "@logtape/logtape";
 import { execa } from "execa";
 import { describe, expect, it } from "vitest";
+import {
+  createPageClientBuildEntryName,
+  createPageServerBuildEntryName,
+  createPprShellBuildEntryName,
+  createRscPageBuildEntryName,
+} from "../src/_internal/build/build-entry-conventions.js";
 import type {
   BundlerAdapter,
   BundlerBuildFacts,
@@ -15,15 +22,16 @@ import {
   dev,
   prepareFrameworkBuild,
 } from "../src/_internal/build/commands.js";
-import { PAGE_ROUTE_CONVENTION_SUMMARY } from "../src/_internal/build/page-route-conventions.js";
+import { PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY } from "../src/_internal/build/page-route-conventions.js";
 import type { Config } from "../src/config/index.js";
 import type {
   BuildResult,
-  EvBuildResult,
-  EvPlugin,
+  FrameworkPageView,
+  FrameworkRouteView,
   HtmlDocument,
   Plugin,
 } from "../src/plugin/index.js";
+import { definePlugin } from "../src/plugin/index.js";
 
 const repoRoot = path.resolve(process.cwd(), "../..");
 const generatedRouteTypesSource = [
@@ -34,6 +42,20 @@ const generatedRouteTypesSource = [
 const devStartupTimeoutMs = 10_000;
 const devUpdateTimeoutMs = 10_000;
 const routeTypeCheckTimeoutMs = 30_000;
+const fullBundlerCapabilities = {
+  build: {
+    server: true,
+    rsc: true,
+    ppr: true,
+  },
+  dev: {
+    html: true,
+    entries: true,
+    routes: true,
+    server: true,
+    resolution: true,
+  },
+} as const;
 
 interface EmbeddedClientRuntime {
   runtime: {
@@ -48,11 +70,30 @@ interface EmbeddedClientRuntime {
   [key: string]: unknown;
 }
 
+async function writeFile(
+  file: string,
+  data: string | NodeJS.ArrayBufferView,
+  options?: Parameters<typeof fs.promises.writeFile>[2],
+): Promise<void> {
+  await fs.promises.mkdir(path.dirname(file), { recursive: true });
+  await fs.promises.writeFile(file, data, options);
+}
+
 async function createProject() {
   const cwd = await fs.promises.mkdtemp(path.join(os.tmpdir(), "evjs-"));
-  await fs.promises.writeFile(
+  await writeFile(
     path.join(cwd, "index.html"),
     '<div id="app"></div>',
+    "utf-8",
+  );
+  return cwd;
+}
+
+async function createSpaProject() {
+  const cwd = await createProject();
+  await writeFile(
+    path.join(cwd, "src/pages/page.tsx"),
+    "export default function Page() { return null; }",
     "utf-8",
   );
   return cwd;
@@ -84,7 +125,7 @@ async function createWorkspaceProject() {
   const root = path.join(repoRoot, "test-results");
   await fs.promises.mkdir(root, { recursive: true });
   const cwd = await fs.promises.mkdtemp(path.join(root, "evjs-"));
-  await fs.promises.writeFile(
+  await writeFile(
     path.join(cwd, "index.html"),
     '<div id="app"></div>',
     "utf-8",
@@ -94,7 +135,7 @@ async function createWorkspaceProject() {
 
 async function writeRouteTypeCheckTsConfig(cwd: string) {
   await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
-  await fs.promises.writeFile(
+  await writeFile(
     path.join(cwd, "src/evjs-test-env.d.ts"),
     [
       'declare module "react-server-dom-webpack/client" {',
@@ -107,7 +148,7 @@ async function writeRouteTypeCheckTsConfig(cwd: string) {
     ].join("\n"),
     "utf-8",
   );
-  await fs.promises.writeFile(
+  await writeFile(
     path.join(cwd, "tsconfig.json"),
     JSON.stringify(
       {
@@ -150,6 +191,7 @@ function createMockBundler(
 ): BundlerAdapter<Record<string, never>> {
   return {
     name: "mock",
+    capabilities: fullBundlerCapabilities,
     async build({ config, plan }) {
       options.onBuildPlan?.(plan);
       events.push("bundler.build");
@@ -203,6 +245,7 @@ function createRouteUpdateBundler(
 ): BundlerAdapter<Record<string, never>> {
   return {
     name: "mock",
+    capabilities: fullBundlerCapabilities,
     async build() {
       return {};
     },
@@ -242,20 +285,6 @@ function recordPagesAppRoutes(
   );
 }
 
-function recordPagesAppRootModule(
-  label: string,
-  metadata:
-    | NonNullable<import("@evjs/shared/manifest").BuildEntry["metadata"]>
-    | undefined,
-  events: string[],
-): void {
-  if (metadata?.type !== "pages-app") {
-    events.push(`${label}:missing`);
-    return;
-  }
-  events.push(`${label}:${metadata.rootModule ?? "none"}`);
-}
-
 async function waitForEvent(
   events: string[],
   event: string,
@@ -268,6 +297,53 @@ async function waitForEvent(
     }
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
+}
+
+async function waitForFileContents(
+  file: string,
+  expected: Buffer,
+  timeoutMs = devUpdateTimeoutMs,
+): Promise<void> {
+  const startedAt = Date.now();
+  while (true) {
+    try {
+      const current = await fs.promises.readFile(file);
+      if (current.equals(expected)) return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error(`Timed out waiting for file contents: ${file}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+async function readDirectorySnapshot(
+  root: string,
+): Promise<Record<string, string>> {
+  const files: Array<[string, string]> = [];
+
+  async function visit(dir: string): Promise<void> {
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    for (const entry of entries.sort((left, right) =>
+      left.name.localeCompare(right.name),
+    )) {
+      const absolute = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await visit(absolute);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      files.push([
+        path.relative(root, absolute).split(path.sep).join("/"),
+        (await fs.promises.readFile(absolute)).toString("base64"),
+      ]);
+    }
+  }
+
+  await visit(root);
+  return Object.fromEntries(files);
 }
 
 describe("prepareFrameworkBuild", () => {
@@ -306,6 +382,7 @@ describe("prepareFrameworkBuild", () => {
           cwd,
           bundler: {
             name: "custom",
+            capabilities: fullBundlerCapabilities,
             build: async () => {},
             dev: "run" as never,
           } as never,
@@ -476,10 +553,10 @@ describe("prepareFrameworkBuild", () => {
 
   it("generates .ev framework IR and plugin contributions", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
-      "console.log('app');",
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Page() { return null; }",
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
@@ -490,15 +567,18 @@ describe("prepareFrameworkBuild", () => {
         const mainEntry = ctx.framework.getEntry("main");
         expect(mainEntry).toBeDefined();
         expect(Object.isFrozen(mainEntry)).toBe(true);
+        expect(mainEntry?.owner).toEqual({ applicationId: "default" });
+        expect(mainEntry?.owner).not.toHaveProperty("appId");
+        expect(ctx.framework.getApplicationEntry("default")).toBe(mainEntry);
 
         const runtime = ctx.emit.module({
           id: "runtime",
-          scope: { kind: "app" },
+          scope: { kind: "application" },
           source: "export const value = 1;",
         });
         const entryCode = ctx.emit.module({
           id: "entry-code",
-          scope: { kind: "app" },
+          scope: { kind: "application" },
           source: ({ importOf }) =>
             [
               `import { value } from ${JSON.stringify(importOf(runtime))};`,
@@ -528,6 +608,7 @@ describe("prepareFrameworkBuild", () => {
       {
         output: { client: "dist" },
         plugins: [plugin],
+        routing: { mode: "spa" },
       },
       { cwd },
     );
@@ -547,7 +628,7 @@ describe("prepareFrameworkBuild", () => {
     );
     const frameworkGraph = JSON.parse(
       await fs.promises.readFile(
-        path.join(cwd, ".ev/framework/app-graph.json"),
+        path.join(cwd, ".ev/framework/core-graph.json"),
         "utf-8",
       ),
     ) as { graph: { rootDir: string } };
@@ -570,8 +651,8 @@ describe("prepareFrameworkBuild", () => {
     expect(frameworkPlan.plan.entries[0]?.import).toBe("./.ev/entries/main.ts");
     expect(manifest.generated?.frameworkFiles).toEqual([
       {
-        id: "app-graph",
-        file: "./.ev/framework/app-graph.json",
+        id: "core-graph",
+        file: "./.ev/framework/core-graph.json",
       },
       {
         id: "build-plan",
@@ -629,17 +710,389 @@ describe("prepareFrameworkBuild", () => {
     );
     await expect(
       fs.promises.readFile(path.join(cwd, entry?.file ?? ""), "utf-8"),
-    ).resolves.toContain('import "../../src/main";');
+    ).resolves.toContain(
+      'import * as routeModule0 from "../../src/pages/page";',
+    );
 
     await prepared.dispose();
   });
 
+  it("projects Page wrappers into SPA routes in deterministic nesting order", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Page() { return null; }",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "spa-page-wrappers",
+      contributions(ctx) {
+        const first = ctx.emit.module({
+          id: "first-wrapper",
+          scope: { kind: "application" },
+          source:
+            "export default function First({ children }) { return children; }",
+          extension: ".tsx",
+        });
+        const second = ctx.emit.module({
+          id: "second-wrapper",
+          scope: { kind: "page", pageId: "index" },
+          source:
+            "export default function Second({ children }) { return children; }",
+          extension: ".tsx",
+        });
+        ctx.slot("page.wrapper").add({
+          id: "first-page-wrapper",
+          module: first,
+          runtime: "client",
+          target: { kind: "application", applicationId: "default" },
+        });
+        ctx.slot("page.wrapper").add({
+          id: "second-page-wrapper",
+          module: second,
+          runtime: "client",
+          target: { kind: "page", pageId: "index" },
+        });
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        output: { client: "dist" },
+        plugins: [plugin],
+        routing: { mode: "spa" },
+      },
+      { cwd },
+    );
+
+    try {
+      const manifest = JSON.parse(
+        await fs.promises.readFile(
+          path.join(cwd, ".ev/manifest.json"),
+          "utf-8",
+        ),
+      ) as BuildPlan;
+      const first = manifest.generated?.modules.find(
+        (module) => module.id === "first-wrapper",
+      );
+      const second = manifest.generated?.modules.find(
+        (module) => module.id === "second-wrapper",
+      );
+      const main = manifest.entries.find((entry) => entry.name === "main");
+      const route =
+        main?.metadata?.type === "pages-app"
+          ? main.metadata.routes.find(
+              (candidate) => candidate.target?.kind === "page",
+            )
+          : undefined;
+      const source = await fs.promises.readFile(
+        path.join(cwd, ".ev/entries/main.ts"),
+        "utf-8",
+      );
+
+      expect(route?.wrappers).toEqual([second?.file, first?.file]);
+      expect(manifest.generated?.slots).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            slot: "page.wrapper",
+            id: "first-page-wrapper",
+            module: first?.file,
+            runtime: "client",
+            target: {
+              kind: "application",
+              applicationId: "default",
+            },
+          }),
+          expect.objectContaining({
+            slot: "page.wrapper",
+            id: "second-page-wrapper",
+            module: second?.file,
+            runtime: "client",
+            target: { kind: "page", pageId: "index" },
+          }),
+        ]),
+      );
+      expect(source).toContain(
+        `import * as routeWrapperModule0_0 from "${generatedImport(
+          cwd,
+          ".ev/entries/main.ts",
+          second?.file ?? "",
+        )}";`,
+      );
+      expect(source).toContain(
+        `import * as routeWrapperModule0_1 from "${generatedImport(
+          cwd,
+          ".ev/entries/main.ts",
+          first?.file ?? "",
+        )}";`,
+      );
+      expect(source).toContain(
+        "wrappers: [routeWrapperModule0_0, routeWrapperModule0_1]",
+      );
+    } finally {
+      await prepared.dispose();
+    }
+  });
+
+  it("projects Page wrappers through MPA client and server Page entries", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/layout.tsx"),
+      "export default function Layout({ children }) { return children; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/csr/page.tsx"),
+      "export default function Csr() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ssr/page.tsx"),
+      "export default function Ssr() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ssr/page.config.ts"),
+      'export default { render: "ssr", hydrate: "load" };',
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ssg/page.tsx"),
+      "export default function Ssg() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ssg/page.config.ts"),
+      'export default { render: "ssg", hydrate: "none", prerender: true };',
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/rsc/page.tsx"),
+      "export default function Rsc() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/rsc/page.config.ts"),
+      'export default { render: "ssr", hydrate: "none", rsc: true };',
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ppr/page.tsx"),
+      `
+        import * as React from "react";
+        const Region = React.lazy(() => import("./Offer.region"));
+        export default function Ppr() {
+          return <React.Suspense fallback={null}><Region /></React.Suspense>;
+        }
+      `,
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ppr/Offer.region.tsx"),
+      "export default function Offer() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ppr/page.config.ts"),
+      `
+        export default {
+          render: "ssr",
+          hydrate: "none",
+          prerender: { partial: true },
+        };
+      `,
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "all-runtime-page-wrappers",
+      contributions(ctx) {
+        const first = ctx.emit.module({
+          id: "first-wrapper",
+          scope: { kind: "application" },
+          source:
+            "export default function First({ children }) { return children; }",
+          extension: ".tsx",
+        });
+        const second = ctx.emit.module({
+          id: "second-wrapper",
+          scope: { kind: "application" },
+          source:
+            "export default function Second({ children }) { return children; }",
+          extension: ".tsx",
+        });
+        ctx.slot("page.wrapper").add({
+          id: "first-page-wrapper",
+          module: first,
+          target: { kind: "application" },
+        });
+        ctx.slot("page.wrapper").add({
+          id: "second-page-wrapper",
+          module: second,
+          target: { kind: "application" },
+        });
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        output: { client: "dist" },
+        plugins: [plugin],
+        routing: { mode: "mpa" },
+      },
+      { cwd },
+    );
+
+    try {
+      const manifest = JSON.parse(
+        await fs.promises.readFile(
+          path.join(cwd, ".ev/manifest.json"),
+          "utf-8",
+        ),
+      ) as BuildPlan;
+      const first = manifest.generated?.modules.find(
+        (module) => module.id === "first-wrapper",
+      );
+      const second = manifest.generated?.modules.find(
+        (module) => module.id === "second-wrapper",
+      );
+      const expectedLayers = [
+        { kind: "layout", module: "./src/pages/layout.tsx" },
+        { kind: "wrapper", module: second?.file },
+        { kind: "wrapper", module: first?.file },
+      ];
+      const entryMetadata = (name: string) =>
+        manifest.entries.find((entry) => entry.name === name)?.metadata;
+      const ssrClientEntryName = createPageClientBuildEntryName("ssr");
+      const ssrServerEntryName = createPageServerBuildEntryName("ssr");
+
+      expect(
+        entryMetadata(createPageClientBuildEntryName("csr")),
+      ).toMatchObject({
+        type: "react-component-page",
+        layers: expectedLayers,
+      });
+      expect(entryMetadata(ssrClientEntryName)).toMatchObject({
+        type: "react-component-page",
+        layers: expectedLayers,
+      });
+      expect(
+        manifest.generated?.slots
+          .filter((slot) => slot.slot === "page.wrapper")
+          .map((slot) => slot.runtime),
+      ).toEqual(["all", "all"]);
+      for (const name of [
+        ssrServerEntryName,
+        createPageServerBuildEntryName("ssg"),
+        createPageServerBuildEntryName("rsc"),
+        createRscPageBuildEntryName("rsc"),
+        createPprShellBuildEntryName("ppr"),
+      ]) {
+        expect(entryMetadata(name)).toEqual({
+          type: "react-server-page",
+          component: expect.any(String),
+          layers: expectedLayers,
+        });
+      }
+      expect(
+        manifest.server.renderers?.find(
+          (renderer) => renderer.name === createRscPageBuildEntryName("rsc"),
+        )?.metadata,
+      ).toMatchObject({
+        type: "react-server-page",
+        layers: expectedLayers,
+      });
+
+      const clientSource = await fs.promises.readFile(
+        path.join(cwd, `.ev/entries/${ssrClientEntryName}.ts`),
+        "utf-8",
+      );
+      const serverSource = await fs.promises.readFile(
+        path.join(cwd, `.ev/entries/${ssrServerEntryName}.ts`),
+        "utf-8",
+      );
+      for (const source of [clientSource, serverSource]) {
+        expect(source).toContain(
+          generatedImport(
+            cwd,
+            source === clientSource
+              ? `.ev/entries/${ssrClientEntryName}.ts`
+              : `.ev/entries/${ssrServerEntryName}.ts`,
+            second?.file ?? "",
+          ),
+        );
+        expect(source).toContain(
+          generatedImport(
+            cwd,
+            source === clientSource
+              ? `.ev/entries/${ssrClientEntryName}.ts`
+              : `.ev/entries/${ssrServerEntryName}.ts`,
+            first?.file ?? "",
+          ),
+        );
+        expect(source.indexOf("createElement(Layer2")).toBeLessThan(
+          source.indexOf("createElement(Layer1"),
+        );
+        expect(source).not.toContain("Reflect.get(layerModule");
+      }
+
+      const pprRegion = manifest.generated?.entries.find(
+        (entry) => entry.kind === "ppr-region",
+      );
+      const pprRegionSource = await fs.promises.readFile(
+        path.join(cwd, pprRegion?.file ?? ""),
+        "utf-8",
+      );
+      expect(pprRegionSource).not.toContain(first?.file);
+      expect(pprRegionSource).not.toContain(second?.file);
+    } finally {
+      await prepared.dispose();
+    }
+  });
+
+  it("rejects Page wrappers without a matching requested runtime", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Page() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/ServerWrapper.tsx"),
+      "export default function Wrapper({ children }) { return children; }",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-page-wrapper-runtime",
+      contributions(ctx) {
+        ctx.slot("page.wrapper").add({
+          id: "server-wrapper",
+          module: "./src/ServerWrapper.tsx",
+          runtime: "server",
+          target: { kind: "page", pageId: "index" },
+        });
+      },
+    };
+
+    await expect(
+      prepareFrameworkBuild(
+        {
+          output: { client: "dist" },
+          plugins: [plugin],
+          routing: { mode: "spa" },
+        },
+        { cwd },
+      ),
+    ).rejects.toThrow(
+      'page.wrapper contribution "server-wrapper" targets Page "index", but no server Page runtime projection exists',
+    );
+  });
+
   it("models tmp module entry/runtime/html/resolution patterns as structured contributions", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
-      "console.log('app');",
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Page() { return null; }",
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
@@ -647,12 +1100,12 @@ describe("prepareFrameworkBuild", () => {
       contributions(ctx) {
         const config = ctx.emit.data({
           id: "ctoken-config",
-          scope: { kind: "app" },
+          scope: { kind: "application" },
           value: { appId: "demo" },
         });
         const ctokenRuntime = ctx.emit.module({
           id: "ctoken-runtime",
-          scope: { kind: "app" },
+          scope: { kind: "application" },
           source: ({ importOf }) =>
             [
               `import config from ${JSON.stringify(importOf(config))};`,
@@ -661,7 +1114,7 @@ describe("prepareFrameworkBuild", () => {
         });
         const themeRuntime = ctx.emit.module({
           id: "theme-runtime-plugin",
-          scope: { kind: "app" },
+          scope: { kind: "application" },
           source: [
             "export const theme = 'light';",
             "export function applyTheme() {}",
@@ -672,10 +1125,10 @@ describe("prepareFrameworkBuild", () => {
           module: ctokenRuntime,
           position: "before-main",
         });
-        ctx.slot("client.runtime.plugin").add({
+        ctx.slot("client.entry").add({
           id: "theme-plugin",
           module: themeRuntime,
-          exportKeys: ["applyTheme"],
+          position: "after-main-imports",
         });
         ctx.slot("html.tag").add({
           id: "external-react-cdn",
@@ -704,6 +1157,7 @@ describe("prepareFrameworkBuild", () => {
       {
         output: { client: "dist" },
         plugins: [plugin],
+        routing: { mode: "spa" },
       },
       { cwd },
     );
@@ -728,7 +1182,14 @@ describe("prepareFrameworkBuild", () => {
       path.join(cwd, ctokenModule?.file ?? ""),
       "utf-8",
     );
+    const configData = JSON.parse(
+      await fs.promises.readFile(
+        path.join(cwd, configModule?.file ?? ""),
+        "utf-8",
+      ),
+    );
 
+    expect(configData).toEqual({ appId: "demo" });
     expect(manifest.generated?.slots).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -738,10 +1199,10 @@ describe("prepareFrameworkBuild", () => {
           position: "before-main",
         }),
         expect.objectContaining({
-          slot: "client.runtime.plugin",
+          slot: "client.entry",
           id: "theme-plugin",
           module: themeModule?.file,
-          exportKeys: ["applyTheme"],
+          position: "after-main-imports",
         }),
         expect.objectContaining({
           slot: "html.tag",
@@ -801,43 +1262,547 @@ describe("prepareFrameworkBuild", () => {
       )}";`,
     );
     expect(mainEntry).toContain(
-      `import * as __evRuntimePlugin0 from "${generatedImport(
-        cwd,
-        ".ev/entries/main.ts",
-        themeModule?.file ?? "",
-      )}";`,
+      generatedImport(cwd, ".ev/entries/main.ts", themeModule?.file ?? ""),
     );
-    expect(mainEntry).toContain('exportKeys: ["applyTheme"]');
     expect(
       mainEntry.indexOf(
         generatedImport(cwd, ".ev/entries/main.ts", ctokenModule?.file ?? ""),
       ),
-    ).toBeLessThan(mainEntry.indexOf("../../src/main"));
+    ).toBeLessThan(
+      mainEntry.indexOf(
+        'import * as routeModule0 from "../../src/pages/page";',
+      ),
+    );
 
     await prepared.dispose();
   });
 
+  it.each([
+    [
+      "undefined",
+      (): unknown => undefined,
+      /generated data "payload" value must be JSON-serializable/,
+    ],
+    [
+      "a nested function",
+      () => ({ invalid: () => true }),
+      /value\.invalid must be JSON-serializable/,
+    ],
+    [
+      "a nested symbol",
+      () => ({ invalid: Symbol("invalid") }),
+      /value\.invalid must be JSON-serializable/,
+    ],
+    [
+      "NaN",
+      () => ({ invalid: Number.NaN }),
+      /value\.invalid must contain finite numbers/,
+    ],
+    [
+      "Infinity",
+      () => ({ invalid: Number.POSITIVE_INFINITY }),
+      /value\.invalid must contain finite numbers/,
+    ],
+    [
+      "bigint",
+      () => ({ invalid: 1n }),
+      /value\.invalid must be JSON-serializable/,
+    ],
+    [
+      "a cycle",
+      () => {
+        const value: Record<string, unknown> = {};
+        value.self = value;
+        return value;
+      },
+      /value\.self must not contain cycles/,
+    ],
+    [
+      "an accessor",
+      () => {
+        const value = {};
+        Object.defineProperty(value, "invalid", {
+          enumerable: true,
+          get() {
+            throw new Error("getter must not execute");
+          },
+        });
+        return value;
+      },
+      /value\.invalid must be an enumerable own data property/,
+    ],
+    [
+      "an unsafe object key",
+      () => {
+        const value = {};
+        Object.defineProperty(value, "__proto__", {
+          enumerable: true,
+          value: { polluted: true },
+        });
+        return value;
+      },
+      /value\.__proto__ is not a safe config field/,
+    ],
+    [
+      "a class instance",
+      () => ({ invalid: new Date(0) }),
+      /value\.invalid must contain only arrays and plain objects/,
+    ],
+    [
+      "a sparse array",
+      () => ({ invalid: new Array(1) }),
+      /value\.invalid\[0\] must not be a sparse array hole/,
+    ],
+  ] as const)("rejects emit.data values containing %s", async (_label, createValue, expected) => {
+    const cwd = await createProject();
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-generated-data",
+      contributions(ctx) {
+        ctx.emit.data({
+          id: "payload",
+          scope: { kind: "application" },
+          value: createValue(),
+        });
+      },
+    };
+
+    await expect(
+      prepareFrameworkBuild(
+        {
+          output: { client: "dist" },
+          plugins: [plugin],
+        },
+        { cwd },
+      ),
+    ).rejects.toThrow(expected);
+  });
+
+  it("exposes canonical SPA Pages without Route or Document projections", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+
+    let observedPages: Array<
+      Pick<FrameworkPageView, "id" | "applicationId" | "source" | "render"> & {
+        hasRelationshipProjection: boolean;
+      }
+    > = [];
+    const plugin: Plugin<Record<string, never>> = {
+      name: "observe-semantic-pages",
+      contributions(ctx) {
+        observedPages = ctx.framework.pages.map((page) => {
+          return {
+            id: page.id,
+            applicationId: page.applicationId,
+            source: page.source,
+            render: page.render,
+            hasRelationshipProjection: [
+              "path",
+              "routeId",
+              "html",
+              "mount",
+            ].some((key) => Object.hasOwn(page, key)),
+          };
+        });
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        output: { client: "dist" },
+        routing: { mode: "spa" },
+        plugins: [plugin],
+      },
+      { cwd },
+    );
+
+    expect(observedPages).toEqual([
+      {
+        id: "index",
+        applicationId: "default",
+        source: {
+          module: "./src/pages/page.tsx",
+          scope: { kind: "directory", root: "./src/pages" },
+          provider: PAGE_ANCHOR_PROVIDER_ID,
+        },
+        render: "csr",
+        hasRelationshipProjection: false,
+      },
+    ]);
+    await prepared.dispose();
+  });
+
+  it("discovers page.* anchors as directory-scoped semantic pages", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages/users/components"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/index.tsx"),
+      "export default function OrdinaryIndex() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/users/page.tsx"),
+      "export default function Users() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/users/model.ts"),
+      "export const model = {};",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/users/components/Table.tsx"),
+      "export default function Table() { return null; }",
+      "utf-8",
+    );
+
+    let observedPages: Array<Pick<FrameworkPageView, "id" | "source">> = [];
+    let observedRoutes: Array<
+      Pick<FrameworkRouteView, "id" | "pattern" | "target">
+    > = [];
+    let observedClientEntries: string[] = [];
+    const plugin: Plugin<Record<string, never>> = {
+      name: "observe-page-anchors",
+      contributions(ctx) {
+        observedPages = ctx.framework.pages.map((page) => ({
+          id: page.id,
+          source: page.source,
+        }));
+        observedRoutes = ctx.framework.routes.map((route) => ({
+          id: route.id,
+          pattern: route.pattern,
+          target: route.target,
+        }));
+        observedClientEntries = ctx.framework.entries
+          .filter((entry) => entry.environment === "client")
+          .map((entry) => entry.kind);
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        output: { client: "dist" },
+        routing: { mode: "spa" },
+        plugins: [plugin],
+      },
+      { cwd },
+    );
+
+    expect(observedPages).toEqual([
+      {
+        id: "index",
+        source: {
+          module: "./src/pages/page.tsx",
+          scope: { kind: "directory", root: "./src/pages" },
+          provider: PAGE_ANCHOR_PROVIDER_ID,
+        },
+      },
+      {
+        id: "users",
+        source: {
+          module: "./src/pages/users/page.tsx",
+          scope: { kind: "directory", root: "./src/pages/users" },
+          provider: PAGE_ANCHOR_PROVIDER_ID,
+        },
+      },
+    ]);
+    expect(observedRoutes).toEqual([
+      {
+        id: "index",
+        pattern: { segments: [] },
+        target: { kind: "page", pageId: "index" },
+      },
+      {
+        id: "users",
+        pattern: { segments: [{ kind: "static", value: "users" }] },
+        target: { kind: "page", pageId: "users" },
+      },
+    ]);
+    expect(observedClientEntries).toEqual(["application-client"]);
+    const routeTypes = await fs.promises.readFile(
+      path.join(cwd, "src/route-types.d.ts"),
+      "utf-8",
+    );
+    expect(routeTypes).toContain(PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY);
+    const coreGraphEnvelope = JSON.parse(
+      await fs.promises.readFile(
+        path.join(cwd, ".ev/framework/core-graph.json"),
+        "utf-8",
+      ),
+    ) as { generatedBy: "evjs"; graph: CoreGraph };
+    const generatedManifest = JSON.parse(
+      await fs.promises.readFile(path.join(cwd, ".ev/manifest.json"), "utf-8"),
+    ) as BuildPlan;
+    expect(coreGraphEnvelope.generatedBy).toBe("evjs");
+    expect(coreGraphEnvelope.graph.pages.users).toMatchObject({
+      source: {
+        module: "./src/pages/users/page.tsx",
+        scope: { kind: "directory", root: "./src/pages/users" },
+        provider: PAGE_ANCHOR_PROVIDER_ID,
+      },
+      provenance: {
+        producer: { kind: "provider", id: PAGE_ANCHOR_PROVIDER_ID },
+        source: "./src/pages/users/page.tsx",
+      },
+    });
+    await expect(
+      fs.promises.access(path.join(cwd, ".ev/framework/app-graph.json")),
+    ).rejects.toThrow();
+    expect(generatedManifest.generated?.frameworkFiles).toEqual([
+      {
+        id: "core-graph",
+        file: "./.ev/framework/core-graph.json",
+      },
+      {
+        id: "build-plan",
+        file: "./.ev/framework/build-plan.json",
+      },
+    ]);
+    await prepared.dispose();
+  });
+
+  it("rejects page entry contributions when an SPA page shares its application entry", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-spa-page-entry",
+      contributions(ctx) {
+        const pageModule = ctx.emit.module({
+          id: "page-entry",
+          scope: { kind: "page", pageId: "index" },
+          source: "window.__pageEntry = true;",
+        });
+        ctx.slot("client.entry").add({
+          id: "page-entry-slot",
+          module: pageModule,
+          position: "before-main",
+          target: { kind: "page", pageId: "index" },
+        });
+      },
+    };
+
+    await expect(
+      prepareFrameworkBuild(
+        {
+          output: { client: "dist" },
+          routing: { mode: "spa" },
+          plugins: [plugin],
+        },
+        { cwd },
+      ),
+    ).rejects.toThrow(
+      'client.entry contribution "page-entry-slot" targets semantic page "index", but that page does not own a client entry. It is served by shared SPA application "default".',
+    );
+  });
+
+  it("rejects page HTML contributions when an SPA page shares its application document", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-spa-page-document",
+      contributions(ctx) {
+        ctx.slot("html.tag").add({
+          id: "page-meta",
+          tag: "meta",
+          placement: "head-append",
+          attrs: { name: "page-only", content: "1" },
+          target: { kind: "page", pageId: "index" },
+        });
+      },
+    };
+
+    await expect(
+      prepareFrameworkBuild(
+        {
+          output: { client: "dist" },
+          routing: { mode: "spa" },
+          plugins: [plugin],
+        },
+        { cwd },
+      ),
+    ).rejects.toThrow(
+      'html.tag contribution "page-meta" targets semantic page "index", but that page does not own a Document. It shares the Document owned by SPA application "default".',
+    );
+  });
+
+  it("applies Application targets to their MPA Page entries", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await writeFile(
+      path.join(cwd, "src/pages/home/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "mpa-application-target",
+      contributions(ctx) {
+        const installer = ctx.emit.module({
+          id: "installer",
+          scope: { kind: "application" },
+          source: "window.__installed = true;",
+        });
+        ctx.slot("client.entry").add({
+          id: "application-installer",
+          module: installer,
+          position: "before-main",
+          target: { kind: "application" },
+        });
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        output: { client: "dist" },
+        routing: { mode: "mpa" },
+        plugins: [plugin],
+      },
+      { cwd },
+    );
+    try {
+      const manifest = JSON.parse(
+        await fs.promises.readFile(
+          path.join(cwd, ".ev/manifest.json"),
+          "utf-8",
+        ),
+      ) as BuildPlan;
+      const installer = manifest.generated?.modules.find(
+        (module) => module.id === "installer",
+      );
+      await expect(
+        fs.promises.readFile(
+          path.join(
+            cwd,
+            `.ev/entries/${createPageClientBuildEntryName("home")}.ts`,
+          ),
+          "utf-8",
+        ),
+      ).resolves.toContain(
+        generatedImport(
+          cwd,
+          `.ev/entries/${createPageClientBuildEntryName("home")}.ts`,
+          installer?.file ?? "",
+        ),
+      );
+    } finally {
+      await prepared.dispose();
+    }
+  });
+
+  it("rejects non-client runtime filters on client entry contributions", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Page() { return null; }",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-client-entry-runtime",
+      contributions(ctx) {
+        const installer = ctx.emit.module({
+          id: "installer",
+          scope: { kind: "application" },
+          source: "window.__installed = true;",
+        });
+        ctx.slot("client.entry").add({
+          id: "all-runtime-installer",
+          module: installer,
+          position: "before-main",
+          runtime: "all" as "client",
+        });
+      },
+    };
+
+    await expect(
+      prepareFrameworkBuild(
+        {
+          output: { client: "dist" },
+          routing: { mode: "spa" },
+          plugins: [plugin],
+        },
+        { cwd },
+      ),
+    ).rejects.toThrow('.runtime must be one of: "client".');
+  });
+
+  it("does not treat Object prototype keys as known generated page scopes", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "unknown-constructor-page",
+      contributions(ctx) {
+        ctx.emit.module({
+          id: "constructor-module",
+          scope: { kind: "page", pageId: "constructor" },
+          source: "export {};",
+        });
+      },
+    };
+
+    await expect(
+      prepareFrameworkBuild(
+        {
+          output: { client: "dist" },
+          routing: { mode: "spa" },
+          plugins: [plugin],
+        },
+        { cwd },
+      ),
+    ).rejects.toThrow(
+      'generated module "constructor-module" targets unknown page "constructor".',
+    );
+  });
+
   it("uses contributed source aliases during framework graph analysis", async () => {
     const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), {
+      recursive: true,
+    });
     await fs.promises.mkdir(path.join(cwd, "src/features/orders"), {
       recursive: true,
     });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       [
         'import { saveOrder } from "@features/orders/actions";',
         'import { saveProject } from "@project/src/project-actions";',
         "void saveOrder();",
         "void saveProject();",
+        "export default function Page() { return null; }",
       ].join("\n"),
       "utf-8",
     );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/features/orders/actions.ts"),
       '"use server"; export async function saveOrder() { return { ok: true }; }',
       "utf-8",
     );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/project-actions.ts"),
       '"use server"; export async function saveProject() { return { ok: true }; }',
       "utf-8",
@@ -861,16 +1826,17 @@ describe("prepareFrameworkBuild", () => {
     const prepared = await prepareFrameworkBuild(
       {
         output: { client: "dist" },
+        routing: { mode: "spa" },
         plugins: [plugin],
       },
       { cwd },
     );
     const generatedGraph = JSON.parse(
       await fs.promises.readFile(
-        path.join(cwd, ".ev/framework/app-graph.json"),
+        path.join(cwd, ".ev/framework/core-graph.json"),
         "utf-8",
       ),
-    ) as { graph: AppGraph };
+    ) as { graph: CoreGraph };
 
     expect(generatedGraph.graph.serverFunctions).toEqual(
       expect.arrayContaining([
@@ -890,23 +1856,28 @@ describe("prepareFrameworkBuild", () => {
   it("lets entry wrapper plugins preserve the original generated entry facade", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
       name: "entry-wrapper",
       contributions(ctx) {
-        const entry = ctx.framework.getPagesAppEntry();
-        if (!entry) throw new Error("missing pages app entry");
+        const entry = ctx.framework.getApplicationEntry();
+        if (!entry) throw new Error("missing Application entry");
         const original = ctx.emit.entryFacade({
           id: "original-entry",
           entry,
         });
+        ctx.emit.entryFacade({
+          id: "deferred-entry",
+          entry,
+          autoStart: false,
+        });
         const wrapper = ctx.emit.module({
           id: "wrapper",
-          scope: { kind: "app" },
+          scope: { kind: "application" },
           source: ({ importOf }) =>
             `export const load = () => import(${JSON.stringify(importOf(original))});`,
         });
@@ -936,13 +1907,21 @@ describe("prepareFrameworkBuild", () => {
       path.join(cwd, ".ev/plugins/entry-wrapper/wrapper.ts"),
       "utf-8",
     );
+    const deferredEntry = await fs.promises.readFile(
+      path.join(cwd, ".ev/plugins/entry-wrapper/deferred-entry.ts"),
+      "utf-8",
+    );
     const mainEntry = await fs.promises.readFile(
       path.join(cwd, ".ev/entries/main.ts"),
       "utf-8",
     );
 
     expect(originalEntry).toContain("createPagesApp");
-    expect(originalEntry).toContain("../../src/pages/index");
+    expect(originalEntry).toContain("startPagesApp");
+    expect(originalEntry).toContain("../../src/pages/page");
+    expect(deferredEntry).toContain("createPagesApp");
+    expect(deferredEntry).toContain("export const start =");
+    expect(deferredEntry).not.toContain('startPagesApp(app, "#app");');
     expect(wrapper).toContain('import("./original-entry")');
     expect(mainEntry).toContain(
       'export * from "../plugins/entry-wrapper/wrapper";',
@@ -955,7 +1934,7 @@ describe("prepareFrameworkBuild", () => {
   it("adds server.request.middleware contributions to the generated server entry", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/apis"), { recursive: true });
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/apis/hello.ts"),
       "export function GET() { return new Response('ok'); }",
       "utf-8",
@@ -982,7 +1961,7 @@ describe("prepareFrameworkBuild", () => {
     const prepared = await prepareFrameworkBuild(
       {
         output: { client: "dist" },
-        server: { routing: true },
+        server: { routing: {} },
         plugins: [plugin],
       },
       { cwd },
@@ -1047,7 +2026,7 @@ describe("prepareFrameworkBuild", () => {
       contributions(ctx) {
         ctx.emit.module({
           id: "same",
-          scope: { kind: "app" },
+          scope: { kind: "application" },
           source: "export {};",
         });
         ctx.slot("html.tag").add({
@@ -1079,7 +2058,7 @@ describe("prepareFrameworkBuild", () => {
       contributions(ctx) {
         const module = ctx.emit.module({
           id: "module",
-          scope: { kind: "app" },
+          scope: { kind: "application" },
           source: "export {};",
         });
         ctx.slot("client.entry").add({
@@ -1115,7 +2094,7 @@ describe("build", () => {
   it("disposes prepared plugin hooks when build stops before bundler execution", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "dist"), { recursive: true });
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "dist/.evjs-dev.lock"),
       JSON.stringify({
         command: "dev",
@@ -1153,7 +2132,7 @@ describe("build", () => {
   });
 
   it("runs framework orchestration around the injected bundler", async () => {
-    const cwd = await createProject();
+    const cwd = await createSpaProject();
     const events: string[] = [];
     const bundler = createMockBundler(events);
 
@@ -1181,7 +2160,11 @@ describe("build", () => {
     };
 
     await build(
-      { output: { client: "dist" }, plugins: [plugin] },
+      {
+        output: { client: "dist" },
+        plugins: [plugin],
+        routing: { mode: "spa" },
+      },
       {
         cwd,
         bundler,
@@ -1200,7 +2183,7 @@ describe("build", () => {
   });
 
   it("validates buildOutput hook mutations before emitting artifacts", async () => {
-    const cwd = await createProject();
+    const cwd = await createSpaProject();
     const events: string[] = [];
     const plugin: Plugin<Record<string, never>> = {
       name: "invalid-output",
@@ -1222,6 +2205,7 @@ describe("build", () => {
         {
           output: { client: "dist" },
           plugins: [plugin],
+          routing: { mode: "spa" },
         },
         {
           cwd,
@@ -1242,37 +2226,215 @@ describe("build", () => {
     ]);
   });
 
-  it("passes manifest result fields to plugin lifecycle hooks", async () => {
-    const cwd = await createProject();
+  it("keeps CoreGraph Document identity immutable through buildOutput hooks", async () => {
+    const cwd = await createSpaProject();
+    const events: string[] = [];
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-document-output",
+      setup() {
+        return {
+          buildOutput(output) {
+            events.push("buildOutput");
+            const document = output.apps.default?.document;
+            if (!document) throw new Error("Expected the SPA Document.");
+            document.aliases = ["legacy.html"];
+          },
+          dispose() {
+            events.push("dispose");
+          },
+        };
+      },
+    };
+
+    await expect(
+      build(
+        {
+          output: { client: "dist" },
+          plugins: [plugin],
+          routing: { mode: "spa" },
+        },
+        {
+          cwd,
+          bundler: createMockBundler(events),
+        },
+      ),
+    ).rejects.toThrow(
+      '[evjs] buildOutput hooks cannot change Application "default" Document fileName or aliases.',
+    );
+
+    expect(fs.existsSync(path.join(cwd, "dist/legacy.html"))).toBe(false);
+    expect(fs.existsSync(path.join(cwd, "dist/deployment-metadata.json"))).toBe(
+      false,
+    );
+    expect(events).toEqual([
+      "bundler.build",
+      "bundler.entries:main",
+      "buildOutput",
+      "dispose",
+    ]);
+  });
+
+  it("keeps CoreGraph Route identity immutable through buildOutput hooks", async () => {
+    const cwd = await createSpaProject();
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-route-output",
+      setup() {
+        return {
+          buildOutput(output) {
+            const route = output.routes[0];
+            if (!route) throw new Error("Expected the root Route.");
+            route.id = "renamed";
+          },
+        };
+      },
+    };
+
+    await expect(
+      build(
+        {
+          output: { client: "dist" },
+          plugins: [plugin],
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler: createMockBundler([]) },
+      ),
+    ).rejects.toThrow(
+      "[evjs] buildOutput hooks cannot add, remove, reorder, or rename Routes, or change Route paths and ownership.",
+    );
+  });
+
+  it("keeps CoreGraph Application identity immutable through buildOutput hooks", async () => {
+    const cwd = await createSpaProject();
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-application-output",
+      setup() {
+        return {
+          buildOutput(output) {
+            output.apps.extra = {
+              assets: { js: [], css: [] },
+            };
+          },
+        };
+      },
+    };
+
+    await expect(
+      build(
+        {
+          output: { client: "dist" },
+          plugins: [plugin],
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler: createMockBundler([]) },
+      ),
+    ).rejects.toThrow(
+      "[evjs] buildOutput hooks cannot add, remove, or rename Applications.",
+    );
+  });
+
+  it("keeps CoreGraph Page identity immutable through buildOutput hooks", async () => {
+    const cwd = await createSpaProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.config.ts"),
+      'export default { title: "Home" };',
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-page-output",
+      setup() {
+        return {
+          buildOutput(output) {
+            const page = output.pages.index;
+            if (!page) throw new Error("Expected the root Page.");
+            output.pages.extra = {
+              ...page,
+              path: "/extra",
+              routeId: "extra",
+            };
+            output.routes.push({
+              id: "extra",
+              path: "/extra",
+              appId: "default",
+              pageId: "extra",
+            });
+          },
+        };
+      },
+    };
+
+    await expect(
+      build(
+        {
+          output: { client: "dist" },
+          plugins: [plugin],
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler: createMockBundler([]) },
+      ),
+    ).rejects.toThrow(
+      "[evjs] buildOutput hooks cannot add, remove, or rename Pages.",
+    );
+  });
+
+  it("keeps CoreGraph Page and Route paths immutable through buildOutput hooks", async () => {
+    const cwd = await createSpaProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.config.ts"),
+      'export default { title: "Home" };',
+      "utf-8",
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-page-path-output",
+      setup() {
+        return {
+          buildOutput(output) {
+            const page = output.pages.index;
+            const route = output.routes[0];
+            if (!page || !route) {
+              throw new Error("Expected the root Page and Route.");
+            }
+            page.path = "/renamed";
+            route.path = "/renamed";
+          },
+        };
+      },
+    };
+
+    await expect(
+      build(
+        {
+          output: { client: "dist" },
+          plugins: [plugin],
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler: createMockBundler([]) },
+      ),
+    ).rejects.toThrow(
+      "[evjs] buildOutput hooks cannot add, remove, reorder, or rename Routes, or change Route paths and ownership.",
+    );
+  });
+
+  it("passes canonical result fields to plugin lifecycle hooks", async () => {
+    const cwd = await createSpaProject();
     const events: string[] = [];
     const bundler = createMockBundler(events);
-    const firstClientJs = (result: EvBuildResult) => {
-      const { clientManifest } = result;
-      if (
-        "routing" in clientManifest &&
-        clientManifest.routing.kind === "mpa"
-      ) {
-        return (
-          Object.values(clientManifest.routing.pages)[0]?.assets.js[0] ?? "none"
-        );
-      }
-      const assets = "assets" in clientManifest ? clientManifest.assets : {};
-      return Object.values(assets ?? {})[0]?.js[0] ?? "none";
+    const firstClientJs = (result: BuildResult) => {
+      return Object.values(result.output.assets)[0]?.js[0] ?? "none";
     };
-    const plugin: EvPlugin<Record<string, never>> = {
+    const plugin: Plugin<Record<string, never>> = {
       name: "manifest-result",
       setup() {
         return {
           buildStart() {
             events.push("manifest:buildStart");
           },
-          transformHtml(doc: HtmlDocument, result: EvBuildResult) {
+          transformHtml(doc: HtmlDocument, result: BuildResult) {
             events.push(`manifest:html:${firstClientJs(result)}`);
             doc.head?.appendChild(doc.createComment(" manifest html "));
           },
-          buildEnd(result: EvBuildResult) {
+          buildEnd(result: BuildResult) {
             events.push(
-              `manifest:buildEnd:${firstClientJs(result)}:${result.serverManifest.entry ?? "none"}`,
+              `manifest:buildEnd:${firstClientJs(result)}:${result.deploymentMetadata.server.entry ?? "none"}`,
             );
           },
         };
@@ -1280,7 +2442,11 @@ describe("build", () => {
     };
 
     await build(
-      { output: { client: "dist" }, plugins: [plugin] },
+      {
+        output: { client: "dist" },
+        plugins: [plugin],
+        routing: { mode: "spa" },
+      },
       {
         cwd,
         bundler,
@@ -1307,9 +2473,10 @@ describe("build", () => {
   });
 
   it("adds crossorigin to injected output HTML assets", async () => {
-    const cwd = await createProject();
+    const cwd = await createSpaProject();
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock-crossorigin-assets",
+      capabilities: fullBundlerCapabilities,
       async build({ plan }) {
         return {
           clientEntryAssets: {
@@ -1328,6 +2495,7 @@ describe("build", () => {
           client: "dist",
           crossOriginLoading: "anonymous",
         },
+        routing: { mode: "spa" },
       },
       {
         cwd,
@@ -1348,7 +2516,7 @@ describe("build", () => {
   });
 
   it("applies html.tag contributions before transformHtml hooks", async () => {
-    const cwd = await createProject();
+    const cwd = await createSpaProject();
     const events: string[] = [];
     let transformSawContribution = false;
     const plugin: Plugin<Record<string, never>> = {
@@ -1382,6 +2550,7 @@ describe("build", () => {
       {
         output: { client: "dist" },
         plugins: [plugin],
+        routing: { mode: "spa" },
       },
       {
         cwd,
@@ -1400,17 +2569,369 @@ describe("build", () => {
     );
   });
 
-  it("applies page-scoped entry runtime and html contributions to matching MPA pages", async () => {
+  it("applies Page metadata before html.tag and transformHtml hooks", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/home.tsx"),
-      "console.log('home');",
+    await writeFile(
+      path.join(cwd, "index.html"),
+      [
+        "<!doctype html>",
+        "<html>",
+        "<head>",
+        "<title>Template title</title>",
+        '<meta name="description" content="Template description">',
+        '<meta name="Description" content="Duplicate description">',
+        "</head>",
+        '<body><div id="app"></div></body>',
+        "</html>",
+      ].join(""),
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/admin.tsx"),
-      "console.log('admin');",
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/page.config.ts"),
+      [
+        "export default {",
+        '  title: "Configured title",',
+        "  meta: {",
+        '    description: "Configured description",',
+        "  },",
+        "};",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    let transformSawMetadata = false;
+    let runtimeMetadata: unknown;
+    let frameworkPageMetadata: unknown;
+    const plugin: Plugin<Record<string, never>> = {
+      name: "page-metadata-order",
+      contributions(ctx) {
+        frameworkPageMetadata = ctx.framework.pages.find(
+          (page) => page.id === "index",
+        )?.metadata;
+        ctx.slot("html.tag").add({
+          id: "page-metadata-order",
+          tag: "meta",
+          placement: "head-append",
+          attrs: { name: "from-contribution", content: "1" },
+        });
+      },
+      setup() {
+        return {
+          transformHtml(doc, ctx) {
+            if (ctx.owner.kind !== "page") return;
+            const title = doc.querySelector("title");
+            const description = doc.querySelector('meta[name="description"]');
+            transformSawMetadata =
+              title?.textContent === "Configured title" &&
+              description?.getAttribute("content") ===
+                "Configured description" &&
+              Boolean(doc.querySelector('meta[name="from-contribution"]'));
+            if (title) title.textContent = "Plugin title";
+            description?.setAttribute("content", "Plugin description");
+          },
+          buildEnd(result) {
+            const routing = result.frameworkRuntime?.routing;
+            runtimeMetadata =
+              routing?.kind === "mpa"
+                ? routing.pages.index?.metadata
+                : undefined;
+          },
+        };
+      },
+    };
+
+    await build(
+      {
+        output: { client: "dist" },
+        routing: { mode: "mpa" },
+        plugins: [plugin],
+      },
+      {
+        cwd,
+        bundler: createMockBundler([]),
+      },
+    );
+
+    const html = await fs.promises.readFile(
+      path.join(cwd, "dist/index.html"),
+      "utf-8",
+    );
+    expect(transformSawMetadata).toBe(true);
+    expect(runtimeMetadata).toEqual({
+      title: "Configured title",
+      meta: { description: "Configured description" },
+    });
+    expect(frameworkPageMetadata).toEqual({
+      title: "Configured title",
+      meta: { description: "Configured description" },
+    });
+    expect(html).toContain("<title>Plugin title</title>");
+    expect(html).toMatch(
+      /<meta[^>]*name="description"[^>]*content="Plugin description"/,
+    );
+    expect(
+      html.match(/<meta[^>]*name="description"[^>]*>/gi) ?? [],
+    ).toHaveLength(1);
+    expect(html).toMatch(/<meta[^>]*name="from-contribution"[^>]*content="1"/);
+  });
+
+  it.each([
+    "spa",
+    "mpa",
+  ] as const)("compiles the configured %s SSR template into the Page runtime shell", async (mode) => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "index.html"),
+      [
+        "<!doctype html>",
+        '<html lang="zh-CN" data-template="configured">',
+        "<head>",
+        '<meta name="viewport" content="width=device-width">',
+        "<title>Template title</title>",
+        "</head>",
+        '<body class="template-body">',
+        "<header>Template header</header>",
+        '<main id="app"><p>Template fallback</p></main>',
+        "<footer>Template footer</footer>",
+        "</body>",
+        "</html>",
+      ].join(""),
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/dashboard/page.tsx"),
+      "export default function Dashboard() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/dashboard/page.config.ts"),
+      [
+        "export default {",
+        '  render: "ssr",',
+        '  hydrate: "load",',
+        '  title: "Dashboard title",',
+        '  meta: { description: "Dashboard description" },',
+        "};",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    let frameworkRuntime: BuildResult["frameworkRuntime"];
+    const transformedFiles: string[] = [];
+    const plugin: Plugin<Record<string, never>> = {
+      name: "server-document-shell",
+      contributions(ctx) {
+        ctx.slot("html.tag").add({
+          id: "server-document-contribution",
+          target: { kind: "page", pageId: "dashboard" },
+          tag: "meta",
+          placement: "head-append",
+          attrs: { name: "from-contribution", content: mode },
+        });
+      },
+      setup() {
+        return {
+          transformHtml(doc, ctx) {
+            if (ctx.owner.kind !== "page" || ctx.owner.pageId !== "dashboard") {
+              return;
+            }
+            transformedFiles.push(ctx.fileName);
+            doc.documentElement?.setAttribute("data-plugin", mode);
+            doc.body?.setAttribute("data-transformed", "yes");
+            const title = doc.querySelector("title");
+            if (title) title.textContent = "Plugin title";
+          },
+          buildEnd(result) {
+            frameworkRuntime = result.frameworkRuntime;
+          },
+        };
+      },
+    };
+    const clientEntryName =
+      mode === "spa" ? "main" : createPageClientBuildEntryName("dashboard");
+    const pageServerEntryName = createPageServerBuildEntryName("dashboard");
+    const clientAssets = {
+      js: [`${clientEntryName}.js`],
+      css: [`${clientEntryName}.css`],
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: `server-document-${mode}`,
+      capabilities: fullBundlerCapabilities,
+      async build({ plan }) {
+        const serverEntries = Object.fromEntries(
+          plan.entries
+            .filter((entry) => entry.environment === "server")
+            .map((entry) => [
+              entry.name,
+              {
+                js: [`${entry.name}.js`],
+                css: entry.kind === "page-server" ? [`${entry.name}.css`] : [],
+              },
+            ]),
+        );
+        const serverRuntime = plan.entries.find(
+          (entry) => entry.kind === "server-runtime",
+        );
+        return {
+          clientEntryAssets: {
+            [clientEntryName]: clientAssets,
+          },
+          firstClientEntryAssets: clientAssets,
+          serverEntryAssets: serverEntries,
+          serverEntry: serverRuntime ? `${serverRuntime.name}.js` : undefined,
+          serverAssets: serverRuntime
+            ? { js: [`${serverRuntime.name}.js`], css: [] }
+            : undefined,
+        };
+      },
+      async dev() {},
+    };
+
+    await build(
+      {
+        output: { client: "dist" },
+        routing: { mode },
+        plugins: [plugin],
+      },
+      { cwd, bundler },
+    );
+
+    const page = frameworkRuntime?.routing.pages.dashboard;
+    const document = page?.document;
+    if (!document) {
+      throw new Error(`Expected ${mode} server document shell.`);
+    }
+    const html = [
+      document.beforeContent,
+      "__PAGE_CONTENT__",
+      document.betweenContentAndData,
+      "__REQUEST_DATA__",
+      document.afterData,
+    ].join("");
+
+    expect(transformedFiles).toEqual([
+      mode === "spa" ? "index.html" : "dashboard/index.html",
+    ]);
+    expect(html).toContain('<html lang="zh-CN"');
+    expect(html).toContain('data-template="configured"');
+    expect(html).toContain(`data-plugin="${mode}"`);
+    expect(html).toContain(
+      '<body class="template-body" data-transformed="yes">',
+    );
+    expect(html).toContain(
+      '<meta name="viewport" content="width=device-width">',
+    );
+    expect(html).toContain("<title");
+    expect(html).toContain(">Plugin title</title>");
+    expect(html).toContain(`<meta name="from-contribution" content="${mode}">`);
+    expect(html).toContain(`href="/${clientEntryName}.css"`);
+    expect(html).toContain(`href="/${pageServerEntryName}.css"`);
+    expect(html).toContain(
+      '<main id="app" data-evjs-hydrate="load">__PAGE_CONTENT__</main>',
+    );
+    expect(html).toContain("<footer>Template footer</footer>__REQUEST_DATA__");
+    expect(html).toContain('id="__EVJS_CLIENT_RUNTIME__"');
+    expect(html).toContain(`src="/${clientEntryName}.js"`);
+    expect(html).not.toContain("Template fallback");
+  });
+
+  it("rejects transformHtml hooks that remove server document markers", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/dashboard/page.tsx"),
+      "export default function Dashboard() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/dashboard/page.config.ts"),
+      'export default { render: "ssr" };',
+      "utf-8",
+    );
+
+    await expect(
+      build(
+        {
+          output: { client: "dist" },
+          routing: { mode: "spa" },
+          plugins: [
+            {
+              name: "removes-server-document-marker",
+              setup() {
+                return {
+                  transformHtml(doc, ctx) {
+                    if (
+                      ctx.owner.kind === "page" &&
+                      ctx.owner.pageId === "dashboard"
+                    ) {
+                      const mount = doc.querySelector("#app");
+                      if (mount) mount.innerHTML = "<p>Replaced</p>";
+                    }
+                  },
+                };
+              },
+            },
+          ],
+        },
+        {
+          cwd,
+          bundler: createMockBundler([]),
+        },
+      ),
+    ).rejects.toThrow(
+      'Server document for Page "dashboard" must preserve exactly one Page-content marker followed by exactly one request-data marker through transformHtml hooks.',
+    );
+  });
+
+  it("projects Page metadata into the generated SPA route facade", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/page.config.ts"),
+      [
+        "export default {",
+        '  title: "Home",',
+        '  meta: { description: "Home description" },',
+        "};",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const prepared = await prepareFrameworkBuild(
+      { routing: { mode: "spa" } },
+      { cwd, runLifecycleHooks: false },
+    );
+    try {
+      const source = await fs.promises.readFile(
+        path.join(cwd, ".ev/entries/main.ts"),
+        "utf-8",
+      );
+      expect(source).toContain(
+        'metadata: {"title":"Home","meta":{"description":"Home description"}}',
+      );
+    } finally {
+      await prepared.dispose();
+    }
+  });
+
+  it("applies page-scoped entry runtime and html contributions to matching MPA pages", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/home/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/admin/page.tsx"),
+      "export default function Admin() { return null; }",
       "utf-8",
     );
     const plugin: Plugin<Record<string, never>> = {
@@ -1432,9 +2953,10 @@ describe("build", () => {
           position: "before-main",
           target: { kind: "page", pageId: "home" },
         });
-        ctx.slot("client.runtime.plugin").add({
+        ctx.slot("client.entry").add({
           id: "admin-runtime-slot",
           module: adminRuntime,
+          position: "before-main",
           target: { kind: "page", pageId: "admin" },
         });
         ctx.slot("html.tag").add({
@@ -1448,6 +2970,7 @@ describe("build", () => {
     };
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock-pages",
+      capabilities: fullBundlerCapabilities,
       async build({ plan }) {
         const clientEntries = plan.entries.filter(
           (entry) => entry.environment === "client",
@@ -1471,18 +2994,7 @@ describe("build", () => {
       {
         output: { client: "dist" },
         plugins: [plugin],
-        pages: {
-          home: {
-            entry: "./src/home.tsx",
-            html: "./index.html",
-            mount: "#app",
-          },
-          admin: {
-            entry: "./src/admin.tsx",
-            html: "./index.html",
-            mount: "#app",
-          },
-        },
+        routing: { mode: "mpa" },
       },
       { cwd, bundler },
     );
@@ -1496,57 +3008,136 @@ describe("build", () => {
     const adminModule = manifest.generated?.modules.find(
       (module) => module.id === "admin-runtime",
     );
+    const homeEntryName = createPageClientBuildEntryName("home");
+    const adminEntryName = createPageClientBuildEntryName("admin");
+    const homeEntryFile = `.ev/entries/${homeEntryName}.ts`;
+    const adminEntryFile = `.ev/entries/${adminEntryName}.ts`;
     const homeEntry = await fs.promises.readFile(
-      path.join(cwd, ".ev/entries/home.ts"),
+      path.join(cwd, homeEntryFile),
       "utf-8",
     );
     const adminEntry = await fs.promises.readFile(
-      path.join(cwd, ".ev/entries/admin.ts"),
+      path.join(cwd, adminEntryFile),
       "utf-8",
     );
     const homeHtml = await fs.promises.readFile(
-      path.join(cwd, "dist/home.html"),
+      path.join(cwd, "dist/home/index.html"),
       "utf-8",
     );
     const adminHtml = await fs.promises.readFile(
-      path.join(cwd, "dist/admin.html"),
+      path.join(cwd, "dist/admin/index.html"),
       "utf-8",
     );
 
     expect(homeEntry).toContain(
-      generatedImport(cwd, ".ev/entries/home.ts", homeModule?.file ?? ""),
+      generatedImport(cwd, homeEntryFile, homeModule?.file ?? ""),
     );
     expect(homeEntry).not.toContain(
-      generatedImport(cwd, ".ev/entries/home.ts", adminModule?.file ?? ""),
+      generatedImport(cwd, homeEntryFile, adminModule?.file ?? ""),
     );
     expect(adminEntry).toContain(
-      generatedImport(cwd, ".ev/entries/admin.ts", adminModule?.file ?? ""),
+      generatedImport(cwd, adminEntryFile, adminModule?.file ?? ""),
     );
     expect(adminEntry).not.toContain(
-      generatedImport(cwd, ".ev/entries/admin.ts", homeModule?.file ?? ""),
+      generatedImport(cwd, adminEntryFile, homeModule?.file ?? ""),
     );
     expect(homeHtml).toContain('name="page-scope"');
     expect(adminHtml).not.toContain('name="page-scope"');
   });
 
-  it("builds a pages SPA without a user entry file", async () => {
+  it("does not infer Page routes or a fallback entry without explicit client routing", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages/home/components"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(cwd, "src/pages/home/index.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/home/components/index.tsx"),
+      "export default function NestedComponent() { return null; }",
+      "utf-8",
+    );
+    const events: string[] = [];
+
+    await build(
+      { output: { client: "dist" } },
+      {
+        cwd,
+        bundler: createMockBundler(events, {
+          onBuildPlan(plan) {
+            events.push(`entry:${plan.entries[0]?.import}`);
+            events.push(`metadata:${plan.entries[0]?.metadata?.type}`);
+          },
+        }),
+      },
+    );
+
+    expect(events).toEqual([
+      "entry:undefined",
+      "metadata:undefined",
+      "bundler.build",
+      "bundler.entries:",
+    ]);
+    expect(fs.existsSync(path.join(cwd, "src/route-types.d.ts"))).toBe(false);
+  });
+
+  it("does not require a default HTML template for a server-only build", async () => {
+    const cwd = await createProject();
+    await fs.promises.rm(path.join(cwd, "index.html"));
+    await writeFile(
+      path.join(cwd, "src/apis/health.ts"),
+      "export const GET = () => Response.json({ ok: true });",
+      "utf-8",
+    );
+    const events: string[] = [];
+    let observedPlan: BuildPlan | undefined;
+
+    await build(
+      {
+        output: { client: "dist" },
+        server: { routing: {} },
+      },
+      {
+        cwd,
+        bundler: createMockBundler(events, {
+          onBuildPlan(plan) {
+            observedPlan = plan;
+          },
+        }),
+      },
+    );
+
+    expect(observedPlan?.html).toEqual([]);
+    expect(observedPlan?.entries).toEqual([
+      expect.objectContaining({
+        kind: "server-runtime",
+        environment: "server",
+      }),
+    ]);
+    expect(events).toContain("bundler.build");
+  });
+
+  it("builds a canonical Page-anchor SPA without a user entry file", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
     await fs.promises.mkdir(path.join(cwd, "src/pages/docs"), {
       recursive: true,
     });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/docs/$...splat.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/docs/$...splat/page.tsx"),
       "export default function DocsCatchAll() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/legacyCamelCase.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/legacyCamelCase/page.tsx"),
       "export default function Legacy() { return null; }",
       "utf-8",
     );
@@ -1569,6 +3160,7 @@ describe("build", () => {
     await build(
       {
         output: { client: "dist" },
+        routing: { mode: "spa" },
       },
       {
         cwd,
@@ -1588,15 +3180,15 @@ describe("build", () => {
     await expect(
       fs.promises.readFile(path.join(cwd, "src/route-types.d.ts"), "utf-8"),
     ).resolves.toContain(
-      'import type * as EvPage_docs_splat from "./pages/docs/$...splat";',
+      'import type * as EvPage_docs_splat from "./pages/docs/$...splat/page";',
     );
   });
 
   it("does not rewrite unchanged generated SPA route types", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
@@ -1605,6 +3197,7 @@ describe("build", () => {
     await build(
       {
         output: { client: "dist" },
+        routing: { mode: "spa" },
       },
       {
         cwd,
@@ -1619,6 +3212,7 @@ describe("build", () => {
     await build(
       {
         output: { client: "dist" },
+        routing: { mode: "spa" },
       },
       {
         cwd,
@@ -1636,13 +3230,13 @@ describe("build", () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
     await fs.promises.mkdir(path.join(cwd, "app/pages"), { recursive: true });
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "app/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "app/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
@@ -1664,20 +3258,20 @@ describe("build", () => {
     expect(fs.existsSync(path.join(cwd, "src/route-types.d.ts"))).toBe(false);
     await expect(
       fs.promises.readFile(path.join(cwd, "app/route-types.d.ts"), "utf-8"),
-    ).resolves.toContain('import type * as EvPage_index from "./pages/index";');
+    ).resolves.toContain('import type * as EvPage_index from "./pages/page";');
   });
 
   it("removes stale custom route types when SPA routing returns to the default directory", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await fs.promises.mkdir(path.join(cwd, "app/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "app/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "app/pages/page.tsx"),
       "export default function AppHome() { return null; }",
       "utf-8",
     );
@@ -1700,6 +3294,7 @@ describe("build", () => {
     await build(
       {
         output: { client: "dist" },
+        routing: { mode: "spa" },
       },
       {
         cwd,
@@ -1710,19 +3305,19 @@ describe("build", () => {
     expect(fs.existsSync(path.join(cwd, "app/route-types.d.ts"))).toBe(false);
     await expect(
       fs.promises.readFile(path.join(cwd, "src/route-types.d.ts"), "utf-8"),
-    ).resolves.toContain('import type * as EvPage_index from "./pages/index";');
+    ).resolves.toContain('import type * as EvPage_index from "./pages/page";');
   });
 
   it("does not remove user-authored files that share the route types file name", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await fs.promises.mkdir(path.join(cwd, "types"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "types/route-types.d.ts"),
       "declare const userAuthoredRouteTypes: string;",
       "utf-8",
@@ -1731,6 +3326,7 @@ describe("build", () => {
     await build(
       {
         output: { client: "dist" },
+        routing: { mode: "spa" },
       },
       {
         cwd,
@@ -1743,67 +3339,101 @@ describe("build", () => {
     ).resolves.toBe("declare const userAuthoredRouteTypes: string;");
   });
 
-  it("removes generated route types when routing is disabled", async () => {
+  it("disables every file convention without creating a fallback application", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await fs.promises.mkdir(path.join(cwd, "src/apis/admin"), {
+      recursive: true,
+    });
     await fs.promises.mkdir(path.join(cwd, "app"), { recursive: true });
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "app/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
+    await writeFile(
+      path.join(cwd, "src/middleware.ts"),
+      "export default async function middleware(_ctx, next) { await next(); }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/apis/admin/middleware.ts"),
+      "export default async function middleware(_ctx, next) { await next(); }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/apis/admin/health.ts"),
+      "export const GET = async () => Response.json({ ok: true });",
+      "utf-8",
+    );
+
+    let observedPlan: BuildPlan | undefined;
 
     await build(
       {
+        conventions: false,
         output: { client: "dist" },
-        routing: false,
       },
       {
         cwd,
-        bundler: createMockBundler([]),
+        bundler: createMockBundler([], {
+          onBuildPlan(plan) {
+            observedPlan = plan;
+          },
+        }),
       },
     );
 
     expect(fs.existsSync(path.join(cwd, "src/route-types.d.ts"))).toBe(false);
     expect(fs.existsSync(path.join(cwd, "app/route-types.d.ts"))).toBe(false);
+    expect(observedPlan?.entries).toEqual([]);
+
+    const generatedGraph = JSON.parse(
+      await fs.promises.readFile(
+        path.join(cwd, ".ev/framework/core-graph.json"),
+        "utf-8",
+      ),
+    ) as { graph: CoreGraph };
+    expect(generatedGraph.graph.applications).toEqual({});
+    expect(generatedGraph.graph.pages).toEqual({});
+    expect(generatedGraph.graph.routes).toEqual([]);
+    expect(generatedGraph.graph.serverRoutes).toEqual([]);
   });
 
-  it("removes generated route types when explicit pages config replaces routing", async () => {
+  it("removes generated route types when conventions are disabled", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
     await fs.promises.mkdir(path.join(cwd, "app"), { recursive: true });
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "app/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/home.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/home/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
 
     await build(
       {
+        conventions: false,
         output: { client: "dist" },
-        pages: {
-          home: "./src/pages/home.tsx",
-        },
       },
       {
         cwd,
@@ -1822,13 +3452,13 @@ describe("build", () => {
       await fs.promises.mkdir(path.join(cwd, "src/pages/posts"), {
         recursive: true,
       });
-      await fs.promises.writeFile(
-        path.join(cwd, "src/pages/index.tsx"),
+      await writeFile(
+        path.join(cwd, "src/pages/page.tsx"),
         "export default function Home() { return null; }",
         "utf-8",
       );
-      await fs.promises.writeFile(
-        path.join(cwd, "src/pages/posts/$postId.tsx"),
+      await writeFile(
+        path.join(cwd, "src/pages/posts/$postId/page.tsx"),
         [
           "export async function loader() {",
           "  return { title: 'Post' };",
@@ -1837,8 +3467,8 @@ describe("build", () => {
         ].join("\n"),
         "utf-8",
       );
-      await fs.promises.writeFile(
-        path.join(cwd, "src/pages/search.tsx"),
+      await writeFile(
+        path.join(cwd, "src/pages/search/page.tsx"),
         [
           "export function validateSearch(search: Record<string, unknown>) {",
           "  return { q: String(search.q ?? ''), page: Number(search.page ?? 1) };",
@@ -1847,13 +3477,14 @@ describe("build", () => {
         ].join("\n"),
         "utf-8",
       );
-      await fs.promises.writeFile(
+      await writeFile(
         path.join(cwd, "src/check-links.tsx"),
         [
           'import { usePageLoaderData, usePageParams, usePageSearch } from "@evjs/ev/route";',
-          'import { Link, useLinkProps } from "@evjs/ev/navigation";',
+          'import { Link, Outlet, useLinkProps } from "@evjs/ev/navigation";',
           "",
           "export function CheckLinks() {",
+          "  <Outlet />;",
           '  <Link to="/posts/$postId" params={{ postId: "p1" }} />;',
           '  useLinkProps({ to: "/search", search: { q: "router", page: 1 } });',
           '  usePageParams("/posts/$postId").postId.toUpperCase();',
@@ -1885,6 +3516,7 @@ describe("build", () => {
       await build(
         {
           output: { client: "dist" },
+          routing: { mode: "spa" },
         },
         {
           cwd,
@@ -1906,17 +3538,17 @@ describe("build", () => {
       await fs.promises.mkdir(path.join(cwd, "src/app/pages/admin"), {
         recursive: true,
       });
-      await fs.promises.writeFile(
-        path.join(cwd, "src/app/pages/index.tsx"),
+      await writeFile(
+        path.join(cwd, "src/app/pages/page.tsx"),
         "export default function Home() { return null; }",
         "utf-8",
       );
-      await fs.promises.writeFile(
-        path.join(cwd, "src/app/pages/admin/$section.tsx"),
+      await writeFile(
+        path.join(cwd, "src/app/pages/admin/$section/page.tsx"),
         "export default function AdminSection() { return null; }",
         "utf-8",
       );
-      await fs.promises.writeFile(
+      await writeFile(
         path.join(cwd, "src/check-custom-dir-links.tsx"),
         [
           'import { useLinkProps } from "@evjs/ev/navigation";',
@@ -1957,7 +3589,7 @@ describe("build", () => {
           "utf-8",
         ),
       ).resolves.toContain(
-        'import type * as EvPage_admin_section from "./pages/admin/$section";',
+        'import type * as EvPage_admin_section from "./pages/admin/$section/page";',
       );
       await execa("npx", ["tsc", "-p", path.join(cwd, "tsconfig.json")], {
         cwd: repoRoot,
@@ -1966,16 +3598,11 @@ describe("build", () => {
     routeTypeCheckTimeoutMs,
   );
 
-  it("prefers discovered page routes over the default app entry", async () => {
+  it("uses discovered Page routes as the application entry", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
-      "console.log('old app entry');",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
@@ -1990,6 +3617,7 @@ describe("build", () => {
     await build(
       {
         output: { client: "dist" },
+        routing: { mode: "spa" },
       },
       {
         cwd,
@@ -2005,171 +3633,39 @@ describe("build", () => {
     ]);
   });
 
-  it("uses routing.conventions.layout as the SPA root layout module", async () => {
-    const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.mkdir(path.join(cwd, "src/shell"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/layout.tsx"),
-      "export function LayoutAlias() { return null; }",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/shell/AppLayout.tsx"),
-      "export default function AppLayout() { return null; }",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
-      "export default function Home() { return null; }",
-      "utf-8",
-    );
-    const events: string[] = [];
-    const bundler = createMockBundler(events, {
-      onBuildPlan(plan) {
-        const metadata = plan.entries.find(
-          (entry) => entry.metadata?.type === "pages-app",
-        )?.metadata;
-        recordPagesAppRootModule("root", metadata, events);
-      },
-    });
-
-    await build(
-      {
-        output: { client: "dist" },
-        routing: {
-          conventions: {
-            layout: "./src/shell/AppLayout.tsx",
-          },
-        },
-      },
-      {
-        cwd,
-        bundler,
-      },
-    );
-
-    expect(events).toContain("root:./src/shell/AppLayout.tsx");
-  });
-
-  it("disables SPA root layout discovery with routing.conventions.layout false", async () => {
-    const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/layout"), { recursive: true });
-    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/layout/index.tsx"),
-      "export default function Layout() { return null; }",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
-      "export default function Home() { return null; }",
-      "utf-8",
-    );
-    const events: string[] = [];
-    const bundler = createMockBundler(events, {
-      onBuildPlan(plan) {
-        const metadata = plan.entries.find(
-          (entry) => entry.metadata?.type === "pages-app",
-        )?.metadata;
-        recordPagesAppRootModule("root", metadata, events);
-      },
-    });
-
-    await build(
-      {
-        output: { client: "dist" },
-        routing: {
-          conventions: {
-            layout: false,
-          },
-        },
-      },
-      {
-        cwd,
-        bundler,
-      },
-    );
-
-    expect(events).toContain("root:none");
-  });
-
-  it("preserves SPA error and not-found pages with routing.conventions false", async () => {
-    const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
-      "export default function Home() { return null; }",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/error.tsx"),
-      "export default function ErrorPage() { return null; }",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/not-found.tsx"),
-      "export default function NotFoundPage() { return null; }",
-      "utf-8",
-    );
-    const events: string[] = [];
-    const bundler = createMockBundler(events, {
-      onBuildPlan(plan) {
-        const metadata = plan.entries.find(
-          (entry) => entry.metadata?.type === "pages-app",
-        )?.metadata;
-        recordPagesAppRoutes("routes", metadata, events);
-      },
-    });
-
-    await build(
-      {
-        output: { client: "dist" },
-        routing: {
-          conventions: false,
-        },
-      },
-      {
-        cwd,
-        bundler,
-      },
-    );
-
-    expect(events).toContain("routes:/,/error,/not-found");
-  });
-
   it("builds MPA pages without a router or generated route files", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
     await fs.promises.mkdir(path.join(cwd, "src/layout"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/layout/index.tsx"),
-      "export function Layout() { return null; }",
+    await writeFile(
+      path.join(cwd, "src/pages/layout.tsx"),
+      "export default function Layout() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/about.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/about/page.tsx"),
       "export default function About() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/about.html"),
+    await writeFile(
+      path.join(cwd, "src/pages/about/index.html"),
       '<div id="app"></div>',
       "utf-8",
     );
     const events: string[] = [];
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock-mpa",
+      capabilities: fullBundlerCapabilities,
       async build({ plan }) {
         events.push(
           `entries:${plan.entries.map((entry) => `${entry.name}:${entry.kind}`).join(",")}`,
@@ -2182,10 +3678,16 @@ describe("build", () => {
         );
         return {
           clientEntryAssets: {
-            index: { js: ["index.js"], css: [] },
-            about: { js: ["about.js"], css: [] },
+            [createPageClientBuildEntryName("index")]: {
+              js: ["page-client-index.js"],
+              css: [],
+            },
+            [createPageClientBuildEntryName("about")]: {
+              js: ["page-client-about.js"],
+              css: [],
+            },
           },
-          firstClientEntryAssets: { js: ["index.js"], css: [] },
+          firstClientEntryAssets: { js: ["page-client-index.js"], css: [] },
           ...serverBuildFacts(plan),
         };
       },
@@ -2206,9 +3708,9 @@ describe("build", () => {
     );
 
     expect(events).toEqual([
-      "entries:index:page-client,about:page-client",
+      "entries:page-client-index:page-client,page-client-about:page-client",
       "metadata:react-component-page,react-component-page",
-      "html:index:./index.html,about:./src/pages/about.html",
+      "html:index:./index.html,about:./src/pages/about/index.html",
     ]);
     expect(fs.existsSync(path.join(cwd, ".evjs"))).toBe(false);
     expect(fs.existsSync(path.join(cwd, "src/route-types.d.ts"))).toBe(false);
@@ -2220,12 +3722,12 @@ describe("build", () => {
     await fs.promises.mkdir(path.join(cwd, "src/pages/product"), {
       recursive: true,
     });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/product/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/product/page.tsx"),
       "export default function Product() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/pages/product/index.html"),
       '<html><body><main id="app"></main></body></html>',
       "utf-8",
@@ -2233,15 +3735,22 @@ describe("build", () => {
     const events: string[] = [];
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock-mpa-colocated-html",
+      capabilities: fullBundlerCapabilities,
       async build({ plan }) {
         events.push(
           `html:${plan.html.map((document) => `${document.id}:${document.template}`).join(",")}`,
         );
         return {
           clientEntryAssets: {
-            product: { js: ["product.js"], css: [] },
+            [createPageClientBuildEntryName("product")]: {
+              js: ["page-client-product.js"],
+              css: [],
+            },
           },
-          firstClientEntryAssets: { js: ["product.js"], css: [] },
+          firstClientEntryAssets: {
+            js: ["page-client-product.js"],
+            css: [],
+          },
           ...serverBuildFacts(plan),
         };
       },
@@ -2251,9 +3760,7 @@ describe("build", () => {
     await build(
       {
         output: { client: "dist" },
-        routing: {
-          mode: "mpa",
-        },
+        routing: { mode: "mpa" },
       },
       {
         cwd,
@@ -2263,26 +3770,134 @@ describe("build", () => {
 
     expect(events).toEqual(["html:product:./src/pages/product/index.html"]);
     await expect(
-      fs.promises.readFile(path.join(cwd, "dist/product.html"), "utf-8"),
+      fs.promises.readFile(path.join(cwd, "dist/product/index.html"), "utf-8"),
     ).resolves.toContain('<main id="app">');
+  });
+
+  it("emits one transformed Document to aliases and removes stale aliases", async () => {
+    const cwd = await createProject();
+    const pageConfigFile = path.join(cwd, "src/pages/about/page.config.ts");
+    await writeFile(
+      path.join(cwd, "src/pages/about/page.tsx"),
+      "export default function About() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      pageConfigFile,
+      `
+        export default {
+          document: {
+            aliases: ["about.html", "legacy/about.htm"],
+          },
+        };
+      `,
+      "utf-8",
+    );
+
+    let transformCalls = 0;
+    const frameworkAliases: Array<readonly string[] | undefined> = [];
+    const plugin = definePlugin<Record<string, never>>({
+      name: "document-alias-observer",
+      contributions(ctx) {
+        frameworkAliases.push(
+          ctx.framework.documents.find(
+            (document) =>
+              document.owner.kind === "page" &&
+              document.owner.pageId === "about",
+          )?.aliases,
+        );
+      },
+      setup() {
+        return {
+          transformHtml(doc, ctx) {
+            if (ctx.owner.kind !== "page" || ctx.owner.pageId !== "about") {
+              return;
+            }
+            transformCalls += 1;
+            doc.body?.appendChild(doc.createComment(" alias-transform "));
+          },
+        };
+      },
+    });
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "document-alias-output",
+      capabilities: fullBundlerCapabilities,
+      async build({ plan }) {
+        return {
+          clientEntryAssets: {
+            about: { js: ["about.js"], css: [] },
+          },
+          firstClientEntryAssets: { js: ["about.js"], css: [] },
+          ...serverBuildFacts(plan),
+        };
+      },
+      async dev() {},
+    };
+    const config: Config<Record<string, never>> = {
+      routing: { mode: "mpa" },
+      plugins: [plugin],
+    };
+
+    await build(config, { cwd, bundler });
+
+    const primaryPath = path.join(cwd, "dist/client/about/index.html");
+    const aliasPath = path.join(cwd, "dist/client/about.html");
+    const nestedAliasPath = path.join(cwd, "dist/client/legacy/about.htm");
+    const [primary, alias, nestedAlias] = await Promise.all([
+      fs.promises.readFile(primaryPath, "utf-8"),
+      fs.promises.readFile(aliasPath, "utf-8"),
+      fs.promises.readFile(nestedAliasPath, "utf-8"),
+    ]);
+    expect(alias).toBe(primary);
+    expect(nestedAlias).toBe(primary);
+    expect(primary).toContain("alias-transform");
+    expect(transformCalls).toBe(1);
+    expect(frameworkAliases).toEqual([["about.html", "legacy/about.htm"]]);
+    const firstDeployment = JSON.parse(
+      await fs.promises.readFile(
+        path.join(cwd, "dist/deployment-metadata.json"),
+        "utf-8",
+      ),
+    ) as { documents: unknown[] };
+    expect(firstDeployment.documents).toContainEqual({
+      kind: "page",
+      id: "about",
+      fileName: "about/index.html",
+      aliases: ["about.html", "legacy/about.htm"],
+      assets: { js: ["about.js"], css: [] },
+    });
+
+    await writeFile(pageConfigFile, "export default {};", "utf-8");
+    await build(config, { cwd, bundler });
+
+    expect(transformCalls).toBe(2);
+    expect(frameworkAliases).toEqual([
+      ["about.html", "legacy/about.htm"],
+      undefined,
+    ]);
+    await expect(fs.promises.access(aliasPath)).rejects.toThrow();
+    await expect(fs.promises.access(nestedAliasPath)).rejects.toThrow();
+    await expect(fs.promises.readFile(primaryPath, "utf-8")).resolves.toContain(
+      "alias-transform",
+    );
   });
 
   it("removes stale default route types when MPA routing uses a custom directory", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
     await fs.promises.mkdir(path.join(cwd, "app/pages"), { recursive: true });
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "app/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "app/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "app/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
@@ -2309,13 +3924,13 @@ describe("build", () => {
     const cwd = await createProject();
     const userAuthoredSource = "declare const userAuthoredRouteTypes: string;";
     await fs.promises.mkdir(path.join(cwd, "app/pages"), { recursive: true });
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "app/route-types.d.ts"),
       userAuthoredSource,
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "app/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "app/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
@@ -2339,11 +3954,12 @@ describe("build", () => {
     ).resolves.toBe(userAuthoredSource);
   });
 
-  it("passes linked BuildOutput to buildEnd and emits the framework manifest", async () => {
-    const cwd = await createProject();
+  it("passes linked BuildOutput to buildEnd and emits deployment metadata", async () => {
+    const cwd = await createSpaProject();
     const events: string[] = [];
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "memory-output",
+      capabilities: fullBundlerCapabilities,
       async build({ plan }) {
         return {
           clientEntryAssets: {
@@ -2359,6 +3975,7 @@ describe("build", () => {
     await build(
       {
         output: { client: "dist" },
+        routing: { mode: "spa" },
         plugins: [
           {
             name: "reads-memory-output",
@@ -2376,35 +3993,105 @@ describe("build", () => {
     );
 
     expect(events).toEqual(["memory.js"]);
-    expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(true);
+    expect(fs.existsSync(path.join(cwd, "dist/deployment-metadata.json"))).toBe(
+      true,
+    );
+    expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
   });
 
-  it("emits split public and server manifests", async () => {
+  it("keeps opt-in page semantic Pages out of the v1 linked BuildOutput", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/Dashboard.tsx"),
-      [
-        'export const render = "ssr";',
-        "export default function Dashboard() { return null; }",
-      ].join("\n"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+
+    let linkedOutput: BuildOutput | undefined;
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "page-output",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {
+          clientEntryAssets: {
+            main: { js: ["main.js"], css: [] },
+          },
+          firstClientEntryAssets: { js: ["main.js"], css: [] },
+        };
+      },
+      async dev() {},
+    };
+
+    await build(
+      {
+        output: { client: "dist" },
+        routing: { mode: "spa" },
+        plugins: [
+          {
+            name: "captures-page-output",
+            setup() {
+              return {
+                buildEnd(result) {
+                  linkedOutput = result.output;
+                },
+              };
+            },
+          },
+        ],
+      },
+      { cwd, bundler },
+    );
+
+    expect(linkedOutput?.pages).toEqual({});
+    expect(linkedOutput?.routes).toEqual([
+      { id: "index", path: "/", appId: "default" },
+    ]);
+  });
+
+  it("emits canonical deployment metadata without split manifests", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/dashboard/page.tsx"),
+      "export default function Dashboard() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/dashboard/page.config.ts"),
+      'export default { render: "ssr" };',
       "utf-8",
     );
 
     const rawOutputModules: Array<string | undefined> = [];
+    let linkedOutput: BuildOutput | undefined;
     let frameworkRuntime: BuildResult["frameworkRuntime"];
+    let deploymentMetadata: BuildResult["deploymentMetadata"] | undefined;
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "memory-output",
+      capabilities: fullBundlerCapabilities,
       async build({ plan }) {
         const serverFacts = serverBuildFacts(plan);
+        const dashboardClientEntry =
+          createPageClientBuildEntryName("dashboard");
+        const dashboardServerEntry =
+          createPageServerBuildEntryName("dashboard");
         return {
           clientEntryAssets: {
-            dashboard: { js: ["dashboard.js"], css: [] },
+            [dashboardClientEntry]: {
+              js: [`${dashboardClientEntry}.js`],
+              css: [],
+            },
           },
-          firstClientEntryAssets: { js: ["dashboard.js"], css: [] },
+          firstClientEntryAssets: {
+            js: [`${dashboardClientEntry}.js`],
+            css: [],
+          },
           serverEntryAssets: {
             ...serverFacts.serverEntryAssets,
-            "dashboard-server": { js: ["dashboard-server.js"], css: [] },
+            [dashboardServerEntry]: {
+              js: [`${dashboardServerEntry}.js`],
+              css: [],
+            },
           },
           serverEntry: serverFacts.serverEntry,
           serverAssets: serverFacts.serverAssets,
@@ -2415,23 +4102,19 @@ describe("build", () => {
 
     await build(
       {
-        pages: {
-          dashboard: {
-            path: "/dashboard",
-            component: "./src/pages/Dashboard.tsx",
-            html: "./index.html",
-          },
-        },
+        routing: { mode: "mpa" },
         plugins: [
           {
             name: "records-raw-output",
             setup() {
               return {
                 buildEnd(result) {
+                  linkedOutput = result.output;
                   rawOutputModules.push(
                     result.output.pages.dashboard.module?.type,
                   );
                   frameworkRuntime = result.frameworkRuntime;
+                  deploymentMetadata = result.deploymentMetadata;
                 },
               };
             },
@@ -2441,68 +4124,44 @@ describe("build", () => {
       { cwd, bundler },
     );
 
-    const publicManifest = fs.readFileSync(
-      path.join(cwd, "dist/client/manifest.json"),
+    if (!linkedOutput) throw new Error("Expected linked BuildOutput.");
+    if (!deploymentMetadata) {
+      throw new Error("Expected canonical deployment metadata.");
+    }
+    const deploymentMetadataText = fs.readFileSync(
+      path.join(cwd, "dist/deployment-metadata.json"),
       "utf-8",
     );
-    const serverManifest = fs.readFileSync(
-      path.join(cwd, "dist/server/manifest.json"),
-      "utf-8",
-    );
-    const buildOutput = fs.readFileSync(
-      path.join(cwd, "dist/build-output.json"),
-      "utf-8",
-    );
-    const publicManifestJson = JSON.parse(publicManifest);
-    const serverManifestJson = JSON.parse(serverManifest);
-    const buildOutputJson = JSON.parse(buildOutput);
+    const emittedDeploymentMetadata = JSON.parse(deploymentMetadataText);
 
     expect(rawOutputModules).toEqual(["react-component"]);
-    expect(publicManifest).not.toContain(".tsx");
-    expect(publicManifest).not.toContain("server.js");
-    expect(publicManifestJson).not.toHaveProperty("runtime");
-    expect(publicManifestJson).not.toHaveProperty("pages");
-    expect(publicManifestJson).not.toHaveProperty("routes");
-    expect(publicManifestJson).not.toHaveProperty("assets");
-    expect(publicManifestJson.routing.kind).toBe("mpa");
-    expect(
-      Object.values(publicManifestJson.routing.pages).flatMap((page) =>
-        Object.keys(page as Record<string, unknown>),
-      ),
-    ).not.toEqual(expect.arrayContaining(["component", "source", "runtime"]));
-    expect(serverManifestJson).toEqual({
-      version: 1,
-      entry: "server.js",
-      routes: [
-        {
-          kind: "server-page",
-          path: "/dashboard",
-          pageId: "dashboard",
-          render: "ssr",
-          methods: ["GET", "HEAD"],
-        },
-      ],
-    });
-    expect(serverManifestJson.server).toBeUndefined();
-    expect(serverManifestJson.assets).toBeUndefined();
-    expect(serverManifestJson.functions).toBeUndefined();
-    expect(serverManifestJson.renderers).toBeUndefined();
-    expect(serverManifest).not.toContain("./src/pages/Dashboard.tsx");
-    expect(buildOutputJson.server?.entry).toBe("server.js");
-    expect(buildOutputJson.routes).toContainEqual({
+    expect(emittedDeploymentMetadata).toEqual(deploymentMetadata);
+    expect(deploymentMetadata.server).toEqual({ entry: "server.js" });
+    expect(deploymentMetadata.routes).toContainEqual({
       kind: "server-page",
       path: "/dashboard",
       pageId: "dashboard",
       render: "ssr",
       methods: ["GET", "HEAD"],
     });
-    expect("renderers" in (buildOutputJson.server ?? {})).toBe(false);
+    expect(deploymentMetadata).not.toHaveProperty("runtime");
+    expect(deploymentMetadata).not.toHaveProperty("pages");
+    expect(deploymentMetadata.server).not.toHaveProperty("renderers");
+    expect(deploymentMetadata.server).not.toHaveProperty("functions");
     expect(frameworkRuntime?.server?.renderers).toHaveProperty(
-      "dashboard-server",
+      createPageServerBuildEntryName("dashboard"),
     );
-    expect(buildOutput).not.toContain("./src/pages/Dashboard.tsx");
-    expect(buildOutput).toContain("server.js");
+    expect(deploymentMetadataText).not.toContain(
+      "./src/pages/dashboard/page.tsx",
+    );
+    expect(deploymentMetadataText).toContain("server.js");
     expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
+    expect(fs.existsSync(path.join(cwd, "dist/client/manifest.json"))).toBe(
+      false,
+    );
+    expect(fs.existsSync(path.join(cwd, "dist/server/manifest.json"))).toBe(
+      false,
+    );
     expect(fs.existsSync(path.join(cwd, "dist/runtime.json"))).toBe(false);
     expect(fs.existsSync(path.join(cwd, "dist/client/runtime.json"))).toBe(
       false,
@@ -2513,36 +4172,44 @@ describe("build", () => {
     expect(
       fs.existsSync(path.join(cwd, "dist/server/framework-runtime.json")),
     ).toBe(false);
-    expect(fs.existsSync(path.join(cwd, "dist/build-output.json"))).toBe(true);
-    expect(fs.existsSync(path.join(cwd, "dist/server/build-output.json"))).toBe(
-      false,
+    expect(fs.existsSync(path.join(cwd, "dist/deployment-metadata.json"))).toBe(
+      true,
     );
+    expect(
+      fs.existsSync(path.join(cwd, "dist/server/deployment-metadata.json")),
+    ).toBe(false);
   });
 
   it("prerenders SSG page HTML during production builds", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/Report.tsx"),
-      [
-        'export const render = "ssg";',
-        "export default function Report() { return null; }",
-      ].join("\n"),
+    await writeFile(
+      path.join(cwd, "src/pages/report/page.tsx"),
+      "export default function Report() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/report/page.config.ts"),
+      'export default { render: "ssg" };',
       "utf-8",
     );
 
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "ssg-mock",
+      capabilities: fullBundlerCapabilities,
       async build() {
+        const reportServerEntry = createPageServerBuildEntryName("report");
         return {
           clientEntryAssets: {},
           firstClientEntryAssets: { js: [], css: [] },
           serverEntryAssets: {
-            "report-server": { js: ["report-server.js"], css: [] },
+            [reportServerEntry]: {
+              js: [`${reportServerEntry}.js`],
+              css: [],
+            },
           },
           serverAssets: { js: [], css: [] },
           async loadServerModule(asset) {
-            if (asset !== "report-server.js") {
+            if (asset !== `${reportServerEntry}.js`) {
               throw new Error(`Unexpected server module asset: ${asset}`);
             }
             return {
@@ -2560,73 +4227,334 @@ describe("build", () => {
 
     await build(
       {
-        pages: {
-          report: {
-            path: "/report",
-            component: "./src/pages/Report.tsx",
-            html: "./index.html",
-            mount: "#app",
-          },
-        },
+        routing: { mode: "mpa" },
       },
       { cwd, bundler },
     );
 
     const html = fs.readFileSync(
-      path.join(cwd, "dist/client/report.html"),
+      path.join(cwd, "dist/client/report/index.html"),
       "utf-8",
     );
     const buildOutput = JSON.parse(
-      fs.readFileSync(path.join(cwd, "dist/build-output.json"), "utf-8"),
+      fs.readFileSync(path.join(cwd, "dist/deployment-metadata.json"), "utf-8"),
     );
 
     expect(html).toContain("Prerendered Report");
     expect(html).toContain("http://evjs.local/report");
     expect(html).not.toMatch(/<script[^>]+src=/);
     expect(html).not.toContain("__EVJS_CLIENT_RUNTIME__");
+    expect(html).not.toContain("data-evjs-hydrate");
     expect(buildOutput.server).toEqual({});
     expect(buildOutput.documents).toContainEqual({
       kind: "page",
       id: "report",
-      fileName: "report.html",
-      path: "/report",
-      render: "ssg",
+      fileName: "report/index.html",
     });
-    expect(buildOutput.routes).toEqual([]);
+    expect(buildOutput.routes).toEqual([
+      {
+        kind: "static-page",
+        path: "/report",
+        pageId: "report",
+        documentId: "report",
+        render: "ssg",
+        methods: ["GET", "HEAD"],
+      },
+    ]);
     expect(fs.existsSync(path.join(cwd, "dist/server"))).toBe(false);
   });
 
-  it("removes stale split client manifests when rebuilding with flat client output", async () => {
+  it("marks hydrated SSG HTML for client bootstrap", async () => {
     const cwd = await createProject();
-    const events: string[] = [];
-    const bundler = createMockBundler(events);
+    await writeFile(
+      path.join(cwd, "src/pages/report/page.tsx"),
+      "export default function Report() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/report/page.config.ts"),
+      'export default { render: "ssg", hydrate: "load" };',
+      "utf-8",
+    );
 
-    await build({}, { cwd, bundler });
-    expect(fs.existsSync(path.join(cwd, "dist/client/manifest.json"))).toBe(
-      true,
-    );
-    expect(fs.existsSync(path.join(cwd, "dist/client/runtime.json"))).toBe(
-      false,
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "hydrated-ssg-mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        const reportClientEntry = createPageClientBuildEntryName("report");
+        const reportServerEntry = createPageServerBuildEntryName("report");
+        return {
+          clientEntryAssets: {
+            [reportClientEntry]: {
+              js: [`${reportClientEntry}.js`],
+              css: [],
+            },
+          },
+          serverEntryAssets: {
+            server: { js: ["server.js"], css: [] },
+            [reportServerEntry]: {
+              js: [`${reportServerEntry}.js`],
+              css: [],
+            },
+          },
+          async loadServerModule(asset) {
+            if (asset !== `${reportServerEntry}.js`) {
+              throw new Error(`Unexpected server module asset: ${asset}`);
+            }
+            return {
+              render() {
+                return "<h1>Hydrated Report</h1>";
+              },
+            };
+          },
+        };
+      },
+      async dev() {
+        return undefined;
+      },
+    };
+
+    await build(
+      {
+        routing: { mode: "mpa" },
+      },
+      { cwd, bundler },
     );
 
-    await build({ output: { client: "dist" } }, { cwd, bundler });
+    const html = fs.readFileSync(
+      path.join(cwd, "dist/client/report/index.html"),
+      "utf-8",
+    );
+    expect(html).toContain(
+      '<div id="app" data-evjs-hydrate="load"><h1>Hydrated Report</h1></div>',
+    );
+    expect(html).toContain(
+      `src="/${createPageClientBuildEntryName("report")}.js"`,
+    );
+    expect(html).toContain("__EVJS_CLIENT_RUNTIME__");
+  });
 
-    expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(true);
-    expect(fs.existsSync(path.join(cwd, "dist/runtime.json"))).toBe(false);
-    expect(fs.existsSync(path.join(cwd, "dist/client/manifest.json"))).toBe(
-      false,
+  it("emits hydrated SPA SSG HTML without duplicating the Application Document", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/report/page.tsx"),
+      "export default function Report() { return null; }",
+      "utf-8",
     );
-    expect(fs.existsSync(path.join(cwd, "dist/client/runtime.json"))).toBe(
-      false,
+    await writeFile(
+      path.join(cwd, "src/pages/report/page.config.ts"),
+      'export default { render: "ssg", hydrate: "load" };',
+      "utf-8",
     );
+
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "hydrated-spa-ssg-mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        const reportServerEntry = createPageServerBuildEntryName("report");
+        return {
+          clientEntryAssets: {
+            main: { js: ["main.js"], css: ["main.css"] },
+          },
+          firstClientEntryAssets: {
+            js: ["main.js"],
+            css: ["main.css"],
+          },
+          serverEntryAssets: {
+            [reportServerEntry]: {
+              js: [`${reportServerEntry}.js`],
+              css: [],
+            },
+          },
+          async loadServerModule(asset) {
+            if (asset !== `${reportServerEntry}.js`) {
+              throw new Error(`Unexpected server module asset: ${asset}`);
+            }
+            return {
+              render() {
+                return "<h1>Hydrated SPA Report</h1>";
+              },
+            };
+          },
+        };
+      },
+      async dev() {
+        return undefined;
+      },
+    };
+
+    await build(
+      {
+        routing: { mode: "spa" },
+      },
+      { cwd, bundler },
+    );
+
+    const html = fs.readFileSync(
+      path.join(cwd, "dist/client/report/index.html"),
+      "utf-8",
+    );
+    expect(html).toContain(
+      '<div id="app" data-evjs-hydrate="load"><h1>Hydrated SPA Report</h1></div>',
+    );
+    expect(html).toContain('href="/main.css"');
+    expect(html).toContain('src="/main.js"');
+    expect(html).toContain("__EVJS_CLIENT_RUNTIME__");
+    expect(fs.existsSync(path.join(cwd, "dist/client/index.html"))).toBe(false);
+  });
+
+  it("keeps root SPA SSG output separate from a mixed Application shell", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/page.config.ts"),
+      'export default { render: "ssg", hydrate: "none" };',
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/dashboard/page.tsx"),
+      "export default function Dashboard() { return null; }",
+      "utf-8",
+    );
+
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mixed-root-spa-ssg-mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        const indexServerEntry = createPageServerBuildEntryName("index");
+        return {
+          clientEntryAssets: {
+            main: { js: ["main.js"], css: [] },
+          },
+          firstClientEntryAssets: {
+            js: ["main.js"],
+            css: [],
+          },
+          serverEntryAssets: {
+            [indexServerEntry]: {
+              js: [`${indexServerEntry}.js`],
+              css: [],
+            },
+          },
+          async loadServerModule(asset) {
+            if (asset !== `${indexServerEntry}.js`) {
+              throw new Error(`Unexpected server module asset: ${asset}`);
+            }
+            return {
+              render() {
+                return "<h1>Static Home</h1>";
+              },
+            };
+          },
+        };
+      },
+      async dev() {
+        return undefined;
+      },
+    };
+
+    await build(
+      {
+        routing: { mode: "spa" },
+      },
+      { cwd, bundler },
+    );
+
+    const rootHtml = fs.readFileSync(
+      path.join(cwd, "dist/client/index.html"),
+      "utf-8",
+    );
+    const applicationHtml = fs.readFileSync(
+      path.join(cwd, "dist/client/__evjs/default.html"),
+      "utf-8",
+    );
+    expect(rootHtml).toContain('<div id="app"><h1>Static Home</h1></div>');
+    expect(rootHtml).not.toContain('src="/main.js"');
+    expect(applicationHtml).toContain('src="/main.js"');
+  });
+
+  it("removes stale framework HTML while preserving replaced and unrelated files", async () => {
+    const cwd = await createProject();
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock-mpa",
+      capabilities: fullBundlerCapabilities,
+      async build({ plan }) {
+        return {
+          clientEntryAssets: Object.fromEntries(
+            plan.entries
+              .filter((entry) => entry.environment === "client")
+              .map((entry) => [
+                entry.name,
+                { js: [`${entry.name}.js`], css: [] },
+              ]),
+          ),
+        };
+      },
+      async dev() {},
+    };
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const reportPage = path.join(cwd, "src/pages/report/page.tsx");
+    const archivePage = path.join(cwd, "src/pages/archive/page.tsx");
+    await writeFile(
+      reportPage,
+      "export default function Report() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      archivePage,
+      "export default function Archive() { return null; }",
+      "utf-8",
+    );
+
+    await build(
+      { output: { client: "dist/client" }, routing: { mode: "mpa" } },
+      { cwd, bundler },
+    );
+
+    const reportHtml = path.join(cwd, "dist/client/report/index.html");
+    const archiveHtml = path.join(cwd, "dist/client/archive/index.html");
+    const unrelatedHtml = path.join(cwd, "dist/client/manual.html");
+    expect(fs.existsSync(reportHtml)).toBe(true);
+    expect(fs.existsSync(archiveHtml)).toBe(true);
+    await writeFile(
+      archiveHtml,
+      "<!doctype html><html><head></head><body>plugin replacement</body></html>",
+      "utf-8",
+    );
+    await writeFile(
+      unrelatedHtml,
+      "<!doctype html><html><head></head><body>manual</body></html>",
+      "utf-8",
+    );
+    await fs.promises.rm(reportPage);
+    await fs.promises.rm(archivePage);
+
+    await build(
+      { output: { client: "dist/client" }, routing: { mode: "mpa" } },
+      { cwd, bundler },
+    );
+
+    expect(fs.existsSync(reportHtml)).toBe(false);
+    expect(fs.readFileSync(archiveHtml, "utf-8")).toContain(
+      "plugin replacement",
+    );
+    expect(fs.readFileSync(unrelatedHtml, "utf-8")).toContain("manual");
   });
 
   it("runs plugin config hooks before resolving config", async () => {
-    const cwd = await createProject();
+    const cwd = await createSpaProject();
     const events: string[] = [];
     const bundler = createMockBundler(events, { recordEndpoint: true });
 
-    const plugin: EvPlugin<Record<string, never>> = {
+    const plugin: Plugin<Record<string, never>> = {
       name: "sets-server-base-path",
       config(config, ctx) {
         events.push(`config:${ctx.mode}`);
@@ -2642,7 +4570,7 @@ describe("build", () => {
     };
 
     await build(
-      { plugins: [plugin] },
+      { plugins: [plugin], routing: { mode: "spa" } },
       {
         cwd,
         bundler,
@@ -2778,7 +4706,7 @@ describe("build", () => {
     expect(events).toEqual(["setup"]);
   });
 
-  it("ignores unknown lifecycle hook keys", async () => {
+  it("rejects unknown lifecycle hook keys with a migration hint", async () => {
     const cwd = await createProject();
     const events: string[] = [];
     const bundler = createMockBundler(events);
@@ -2796,23 +4724,27 @@ describe("build", () => {
       },
     };
 
-    await build(
-      { output: { client: "dist" }, plugins: [plugin] },
-      {
-        cwd,
-        bundler,
-      },
+    await expect(
+      build(
+        { output: { client: "dist" }, plugins: [plugin] },
+        {
+          cwd,
+          bundler,
+        },
+      ),
+    ).rejects.toThrow(
+      '[evjs] Plugin "typo-lifecycle-hook" setup hook returned unsupported hook "buildstart". Use "buildStart" instead.',
     );
-    expect(events).toEqual([
-      "setup",
-      "buildStart",
-      "bundler.build",
-      "bundler.entries:main",
-    ]);
+    expect(events).toEqual(["setup"]);
   });
 
-  it("fails on missing app html templates before running the bundler", async () => {
+  it("fails on missing Application Document templates before running the bundler", async () => {
     const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/home/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
     const events: string[] = [];
     const bundler = createMockBundler(events);
 
@@ -2820,9 +4752,9 @@ describe("build", () => {
       build(
         {
           output: { client: "dist" },
-          app: {
-            entry: "./src/main.tsx",
-            html: "./missing-app.html",
+          application: {
+            document: { template: "./missing-app.html" },
+            routes: [{ path: "/", page: "home" }],
           },
         },
         {
@@ -2831,7 +4763,7 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      '[evjs] App "default" html template not found: ./missing-app.html',
+      "[evjs] Application Document html template not found: ./missing-app.html",
     );
     expect(events).not.toContain("bundler.build");
   });
@@ -2839,8 +4771,8 @@ describe("build", () => {
   it("fails on missing routing html templates before running the bundler", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
@@ -2872,34 +4804,8 @@ describe("build", () => {
   it("fails on directory-valued html templates before running the bundler", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "templates"), { recursive: true });
-    const events: string[] = [];
-    const bundler = createMockBundler(events);
-
-    await expect(
-      build(
-        {
-          output: { client: "dist" },
-          html: "./templates",
-        },
-        {
-          cwd,
-          bundler,
-        },
-      ),
-    ).rejects.toThrow("[evjs] HTML template must be a file: ./templates");
-    expect(events).not.toContain("bundler.build");
-  });
-
-  it("fails when routing html lacks the mount target before running the bundler", async () => {
-    const cwd = await createProject();
-    await fs.promises.writeFile(
-      path.join(cwd, "index.html"),
-      '<main id="root"></main>',
-      "utf-8",
-    );
-    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
@@ -2910,7 +4816,40 @@ describe("build", () => {
       build(
         {
           output: { client: "dist" },
-          routing: true,
+          routing: { mode: "spa", html: "./templates" },
+        },
+        {
+          cwd,
+          bundler,
+        },
+      ),
+    ).rejects.toThrow(
+      "[evjs] Page routing html template must be a file: ./templates",
+    );
+    expect(events).not.toContain("bundler.build");
+  });
+
+  it("fails when routing html lacks the mount target before running the bundler", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "index.html"),
+      '<main id="root"></main>',
+      "utf-8",
+    );
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+
+    await expect(
+      build(
+        {
+          output: { client: "dist" },
+          routing: { mode: "spa" },
         },
         {
           cwd,
@@ -2923,22 +4862,21 @@ describe("build", () => {
     expect(events).not.toContain("bundler.build");
   });
 
-  it("validates every page mount when MPA pages share one html template before running the bundler", async () => {
+  it("validates the shared MPA mount before running the bundler", async () => {
     const cwd = await createProject();
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "index.html"),
       '<div id="home"></div>',
       "utf-8",
     );
-    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/home.tsx"),
-      "export const home = true;",
+    await writeFile(
+      path.join(cwd, "src/pages/home/page.tsx"),
+      "export default function Home() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/admin.tsx"),
-      "export const admin = true;",
+    await writeFile(
+      path.join(cwd, "src/pages/admin/page.tsx"),
+      "export default function Admin() { return null; }",
       "utf-8",
     );
     const events: string[] = [];
@@ -2948,16 +4886,7 @@ describe("build", () => {
       build(
         {
           output: { client: "dist" },
-          pages: {
-            home: {
-              entry: "./src/pages/home.tsx",
-              mount: "#home",
-            },
-            admin: {
-              entry: "./src/pages/admin.tsx",
-              mount: "#admin",
-            },
-          },
+          routing: { mode: "mpa", mount: "#admin" },
         },
         {
           cwd,
@@ -2965,7 +4894,7 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      '[evjs] MPA page "admin" mount target was not found "#admin" in html template: ./index.html',
+      '[evjs] Page routing mount target was not found "#admin" in html template: ./index.html',
     );
     expect(events).not.toContain("bundler.build");
   });
@@ -2979,7 +4908,7 @@ describe("build", () => {
       build(
         {
           output: { client: "dist" },
-          routing: true,
+          routing: { mode: "spa" },
         },
         {
           cwd,
@@ -2993,11 +4922,7 @@ describe("build", () => {
   it("fails on file-valued explicit page route directories before running the bundler", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages"),
-      "not a directory",
-      "utf-8",
-    );
+    await writeFile(path.join(cwd, "src/pages"), "not a directory", "utf-8");
     const events: string[] = [];
     const bundler = createMockBundler(events);
 
@@ -3005,7 +4930,7 @@ describe("build", () => {
       build(
         {
           output: { client: "dist" },
-          routing: true,
+          routing: { mode: "spa" },
         },
         {
           cwd,
@@ -3027,7 +4952,7 @@ describe("build", () => {
       await build(
         {
           output: { client: "dist" },
-          routing: true,
+          routing: { mode: "spa" },
         },
         {
           cwd,
@@ -3040,9 +4965,11 @@ describe("build", () => {
 
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain(
-      "No page routes found in ./src/pages. Add a default-exporting route module such as ./src/pages/index.tsx or set routing: false.",
+      "No page routes found in ./src/pages. Add a default-exporting Page anchor such as ./src/pages/page.tsx or set conventions: false.",
     );
-    expect((error as Error).message).toContain(PAGE_ROUTE_CONVENTION_SUMMARY);
+    expect((error as Error).message).toContain(
+      PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY,
+    );
     expect((error as Error).message).toContain(
       "See https://evaijs.github.io/evjs/docs/file-conventions#client-page-routes for the page route file convention.",
     );
@@ -3054,8 +4981,8 @@ describe("build", () => {
     await fs.promises.mkdir(path.join(cwd, "src/pages/users"), {
       recursive: true,
     });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/users/[id].tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/users/[id]/page.tsx"),
       "export default function UserByBracketParam() { return null; }",
       "utf-8",
     );
@@ -3068,7 +4995,7 @@ describe("build", () => {
       await build(
         {
           output: { client: "dist" },
-          routing: true,
+          routing: { mode: "spa" },
         },
         {
           cwd,
@@ -3083,11 +5010,13 @@ describe("build", () => {
     expect((error as Error).message).toContain(
       "[evjs] Page route discovery failed.",
     );
-    expect((error as Error).message).toContain("src/pages/users/[id].tsx");
+    expect((error as Error).message).toContain("src/pages/users/[id]/page.tsx");
     expect((error as Error).message).toContain(
-      'Dynamic page route segments must use $param filenames. Bracket segment "[id]" is not supported. Rename the file to "$id" for a dynamic segment, or use explicit pages config for a custom URL.',
+      'Dynamic page route segments must use $param directory names. Bracket segment "[id]" is not supported. Rename the route directory to "$id" for a dynamic segment.',
     );
-    expect((error as Error).message).toContain(PAGE_ROUTE_CONVENTION_SUMMARY);
+    expect((error as Error).message).toContain(
+      PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY,
+    );
     expect((error as Error).message).toContain(
       "See https://evaijs.github.io/evjs/docs/file-conventions#client-page-routes for the page route file convention.",
     );
@@ -3099,13 +5028,13 @@ describe("build", () => {
     await fs.promises.mkdir(path.join(cwd, "src/pages/users"), {
       recursive: true,
     });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/contact us.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/contact us/page.tsx"),
       "export default function ContactUs() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/users/$123.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/users/$123/page.tsx"),
       "export default function User() { return null; }",
       "utf-8",
     );
@@ -3118,7 +5047,7 @@ describe("build", () => {
       await build(
         {
           output: { client: "dist" },
-          routing: true,
+          routing: { mode: "spa" },
         },
         {
           cwd,
@@ -3133,11 +5062,11 @@ describe("build", () => {
     expect((error as Error).message).toContain(
       "[evjs] Page route discovery failed.",
     );
-    expect((error as Error).message).toContain("src/pages/contact us.tsx");
+    expect((error as Error).message).toContain("src/pages/contact us/page.tsx");
     expect((error as Error).message).toContain(
-      'Static page route segment "contact us" must use URL-safe characters: letters, numbers, ".", "_", "-", or "~". Rename the file to a URL-safe segment, or use explicit pages config for custom paths.',
+      'Static page route segment "contact us" must start with a letter or number and then use only URL-safe characters: letters, numbers, ".", "_", "-", or "~". Rename the route directory to a URL-safe segment.',
     );
-    expect((error as Error).message).toContain("src/pages/users/$123.tsx");
+    expect((error as Error).message).toContain("src/pages/users/$123/page.tsx");
     expect((error as Error).message).toContain(
       'Dynamic page route segment "$123" must use a JavaScript identifier after "$", such as "$userId".',
     );
@@ -3149,13 +5078,13 @@ describe("build", () => {
     await fs.promises.mkdir(path.join(cwd, "src/pages/users"), {
       recursive: true,
     });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/users/$id.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/users/$id/page.tsx"),
       "export default function UserById() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/users/$userId.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/users/$userId/page.tsx"),
       "export default function UserByUserId() { return null; }",
       "utf-8",
     );
@@ -3168,7 +5097,7 @@ describe("build", () => {
       await build(
         {
           output: { client: "dist" },
-          routing: true,
+          routing: { mode: "spa" },
         },
         {
           cwd,
@@ -3183,9 +5112,11 @@ describe("build", () => {
     expect((error as Error).message).toContain(
       "[evjs] Page route discovery failed.",
     );
-    expect((error as Error).message).toContain("src/pages/users/$userId.tsx");
     expect((error as Error).message).toContain(
-      'Ambiguous page route shape "/users/:param" for path "/users/$userId" also matches ./src/pages/users/$id.tsx (/users/$id). Use one dynamic param name for each URL shape or explicit pages config.',
+      "src/pages/users/$userId/page.tsx",
+    );
+    expect((error as Error).message).toContain(
+      'Ambiguous page route shape "/users/:param" for path "/users/$userId" also matches ./src/pages/users/$id/page.tsx (/users/$id). Use one dynamic parameter directory name for each URL shape.',
     );
     expect(events).not.toContain("bundler.build");
   });
@@ -3193,13 +5124,14 @@ describe("build", () => {
   it("fails on unsupported page render metadata before running the bundler", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/campaign.tsx"),
-      [
-        'export const render = "ppr";',
-        "export const prerender = { partial: true } as const;",
-        "export default function Campaign() { return null; }",
-      ].join("\n"),
+    await writeFile(
+      path.join(cwd, "src/pages/campaign/page.tsx"),
+      "export default function Campaign() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/campaign/page.config.ts"),
+      'export default { render: "ppr", prerender: { partial: true } };',
       "utf-8",
     );
 
@@ -3209,7 +5141,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          routing: true,
+          routing: { mode: "spa" },
         },
         {
           cwd,
@@ -3217,7 +5149,7 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      'Page render mode "ppr" is not supported. PPR is declared with render = "ssr" and prerender = { partial: true }.',
+      'Page "campaign" config "./src/pages/campaign/page.config.ts" render must be "csr", "ssr", or "ssg".',
     );
     expect(events).not.toContain("bundler.build");
   });
@@ -3225,13 +5157,14 @@ describe("build", () => {
   it("fails on unsupported page rsc metadata before running the bundler", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/campaign.tsx"),
-      [
-        'export const render = "ssr";',
-        'export const rsc = "yes";',
-        "export default function Campaign() { return null; }",
-      ].join("\n"),
+    await writeFile(
+      path.join(cwd, "src/pages/campaign/page.tsx"),
+      "export default function Campaign() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/campaign/page.config.ts"),
+      'export default { render: "ssr", rsc: "yes" };',
       "utf-8",
     );
 
@@ -3241,36 +5174,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          routing: true,
-        },
-        {
-          cwd,
-          bundler,
-        },
-      ),
-    ).rejects.toThrow("Page rsc must be a boolean literal.");
-    expect(events).not.toContain("bundler.build");
-  });
-
-  it("fails on invalid page rendering combinations before running the bundler", async () => {
-    const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/insights.tsx"),
-      [
-        "export const rsc = true;",
-        "export default function Insights() { return null; }",
-      ].join("\n"),
-      "utf-8",
-    );
-
-    const events: string[] = [];
-    const bundler = createMockBundler(events);
-
-    await expect(
-      build(
-        {
-          routing: true,
+          routing: { mode: "spa" },
         },
         {
           cwd,
@@ -3278,7 +5182,40 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      'Page "insights" uses RSC and must declare render: "ssr".',
+      'Page "campaign" config "./src/pages/campaign/page.config.ts" rsc must be true when provided.',
+    );
+    expect(events).not.toContain("bundler.build");
+  });
+
+  it("fails on invalid page rendering combinations before running the bundler", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await writeFile(
+      path.join(cwd, "src/pages/insights/page.tsx"),
+      "export default function Insights() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/insights/page.config.ts"),
+      "export default { rsc: true };",
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    const bundler = createMockBundler(events);
+
+    await expect(
+      build(
+        {
+          routing: { mode: "spa" },
+        },
+        {
+          cwd,
+          bundler,
+        },
+      ),
+    ).rejects.toThrow(
+      'Page "insights" config "./src/pages/insights/page.config.ts" uses RSC and must declare render: "ssr".',
     );
     expect(events).not.toContain("bundler.build");
   });
@@ -3286,14 +5223,14 @@ describe("build", () => {
   it("fails on RSC pages with partial prerendering before running the bundler", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/campaign.tsx"),
-      [
-        'export const render = "ssr";',
-        "export const rsc = true;",
-        "export const prerender = { partial: true } as const;",
-        "export default function Campaign() { return null; }",
-      ].join("\n"),
+    await writeFile(
+      path.join(cwd, "src/pages/campaign/page.tsx"),
+      "export default function Campaign() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/campaign/page.config.ts"),
+      'export default { render: "ssr", rsc: true, prerender: { partial: true } };',
       "utf-8",
     );
 
@@ -3303,7 +5240,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          routing: true,
+          routing: { mode: "spa" },
         },
         {
           cwd,
@@ -3311,50 +5248,55 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      'Page "campaign" combines RSC and partial prerendering, which is not supported yet. Choose either rsc: true or prerender: { partial: true }, or split them into separate page routes.',
+      'Page "campaign" config "./src/pages/campaign/page.config.ts" combines RSC and partial prerendering, which is not supported yet. Choose either rsc: true or prerender: { partial: true }, or split them into separate page routes.',
     );
     expect(events).not.toContain("bundler.build");
   });
 
-  it("warns but continues when page rsc metadata is explicitly disabled", async () => {
+  it("fails when canonical Page config explicitly disables RSC", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/campaign.tsx"),
-      [
-        'export const render = "ssr";',
-        "export const rsc = false;",
-        "export default function Campaign() { return null; }",
-      ].join("\n"),
+    await writeFile(
+      path.join(cwd, "src/pages/campaign/page.tsx"),
+      "export default function Campaign() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/campaign/page.config.ts"),
+      'export default { render: "ssr", rsc: false };',
       "utf-8",
     );
 
     const events: string[] = [];
     const bundler = createMockBundler(events);
 
-    await build(
-      {
-        routing: true,
-      },
-      {
-        cwd,
-        bundler,
-      },
+    await expect(
+      build(
+        {
+          routing: { mode: "spa" },
+        },
+        {
+          cwd,
+          bundler,
+        },
+      ),
+    ).rejects.toThrow(
+      'Page "campaign" config "./src/pages/campaign/page.config.ts" rsc must be true when provided.',
     );
-
-    expect(events).toContain("bundler.build");
+    expect(events).not.toContain("bundler.build");
   });
 
   it("fails on unsupported page prerender object metadata before running the bundler", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/campaign.tsx"),
-      [
-        'export const render = "ssr";',
-        "export const prerender = { revaidate: 60 };",
-        "export default function Campaign() { return null; }",
-      ].join("\n"),
+    await writeFile(
+      path.join(cwd, "src/pages/campaign/page.tsx"),
+      "export default function Campaign() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/campaign/page.config.ts"),
+      'export default { render: "ssr", prerender: { revaidate: 60 } };',
       "utf-8",
     );
 
@@ -3364,7 +5306,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          routing: true,
+          routing: { mode: "spa" },
         },
         {
           cwd,
@@ -3372,20 +5314,16 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      'Page prerender property "revaidate" is not supported. Expected partial, delivery, or revalidate.',
+      'Page "campaign" config "./src/pages/campaign/page.config.ts" prerender has unknown field "revaidate".',
     );
     expect(events).not.toContain("bundler.build");
   });
 
   it("fails on malformed configured page modules before running the bundler", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/campaign.tsx"),
-      [
-        'export const render = "ssr";',
-        "export default function Campaign( {",
-      ].join("\n"),
+    await writeFile(
+      path.join(cwd, "src/pages/campaign/page.tsx"),
+      ["export default function Campaign( {"].join("\n"),
       "utf-8",
     );
 
@@ -3395,44 +5333,37 @@ describe("build", () => {
     await expect(
       build(
         {
-          pages: {
-            campaign: {
-              path: "/campaign",
-              component: "./src/pages/campaign.tsx",
-              html: "./index.html",
-            },
-          },
+          routing: { mode: "spa" },
         },
         {
           cwd,
           bundler,
         },
       ),
-    ).rejects.toThrow("Page module metadata could not be parsed:");
+    ).rejects.toThrow("Page-anchor route module could not be parsed:");
     expect(events).not.toContain("bundler.build");
   });
 
   it("fails on malformed PPR region modules before running the bundler", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/campaign"), {
-      recursive: true,
-    });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/campaign/Page.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/campaign/page.tsx"),
       [
         'import * as React from "react";',
         'const OfferRegion = React.lazy(() => import("./Offer.region"));',
-        'export const render = "ssr";',
-        'export const hydrate = "none";',
-        "export const prerender = { partial: true } as const;",
         "export default function Page() {",
         "  return <React.Suspense fallback={null}><OfferRegion /></React.Suspense>;",
         "}",
       ].join("\n"),
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/campaign/Offer.region.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/campaign/page.config.ts"),
+      'export default { render: "ssr", hydrate: "none", prerender: { partial: true } };',
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/campaign/Offer.region.tsx"),
       [
         "export const cache = { revalidate: 30 };",
         "export default function Offer( {",
@@ -3446,12 +5377,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          pages: {
-            campaign: {
-              component: "./src/campaign/Page.tsx",
-              html: "./index.html",
-            },
-          },
+          routing: { mode: "spa" },
         },
         {
           cwd,
@@ -3464,15 +5390,14 @@ describe("build", () => {
 
   it("builds server-rendered pages in flat output mode", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/campaign.tsx"),
-      [
-        'export const render = "ssr";',
-        'export const hydrate = "none";',
-        "export const prerender = true;",
-        "export default function Campaign() { return null; }",
-      ].join("\n"),
+    await writeFile(
+      path.join(cwd, "src/pages/campaign/page.tsx"),
+      "export default function Campaign() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/campaign/page.config.ts"),
+      'export default { render: "ssr", hydrate: "none", prerender: true };',
       "utf-8",
     );
 
@@ -3482,13 +5407,7 @@ describe("build", () => {
     await build(
       {
         output: { client: "dist" },
-        pages: {
-          campaign: {
-            path: "/campaign",
-            component: "./src/pages/campaign.tsx",
-            html: "./index.html",
-          },
-        },
+        routing: { mode: "mpa" },
       },
       {
         cwd,
@@ -3496,14 +5415,17 @@ describe("build", () => {
       },
     );
     expect(events).toContain("bundler.build");
-    expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(true);
-    expect(fs.existsSync(path.join(cwd, "dist/runtime.json"))).toBe(false);
-    expect(fs.existsSync(path.join(cwd, "dist/server/manifest.json"))).toBe(
+    expect(fs.existsSync(path.join(cwd, "dist/deployment-metadata.json"))).toBe(
       true,
     );
+    expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
+    expect(fs.existsSync(path.join(cwd, "dist/runtime.json"))).toBe(false);
+    expect(fs.existsSync(path.join(cwd, "dist/server/manifest.json"))).toBe(
+      false,
+    );
   });
 
-  it("fails on invalid explicit page declarations before running the bundler", async () => {
+  it("fails on invalid explicit Application route declarations before running the bundler", async () => {
     const cwd = await createProject();
     const events: string[] = [];
     const bundler = createMockBundler(events);
@@ -3512,8 +5434,8 @@ describe("build", () => {
       build(
         {
           output: { client: "dist" },
-          pages: {
-            home: "",
+          application: {
+            routes: [{ path: "/", page: "" }],
           },
         },
         {
@@ -3522,23 +5444,30 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      "[evjs] pages.home.component must be a non-empty string.",
+      "[evjs] application.routes[0].page must be a non-empty string.",
     );
     expect(events).not.toContain("bundler.build");
+
+    await writeFile(
+      path.join(cwd, "src/pages/home/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/dashboard/page.tsx"),
+      "export default function Dashboard() { return null; }",
+      "utf-8",
+    );
 
     await expect(
       build(
         {
           output: { client: "dist" },
-          pages: {
-            home: {
-              path: "/dashboard",
-              component: "./src/Home.tsx",
-            },
-            dashboard: {
-              path: "/dashboard",
-              component: "./src/Dashboard.tsx",
-            },
+          application: {
+            routes: [
+              { path: "/dashboard", page: "home" },
+              { path: "/dashboard", page: "dashboard" },
+            ],
           },
         },
         {
@@ -3546,55 +5475,7 @@ describe("build", () => {
           bundler,
         },
       ),
-    ).rejects.toThrow(
-      '[evjs] pages.dashboard.path duplicates pages.home.path "/dashboard". Page paths must be unique.',
-    );
-    expect(events).not.toContain("bundler.build");
-  });
-
-  it("fails on invalid single app declarations before running the bundler", async () => {
-    const cwd = await createProject();
-    const events: string[] = [];
-    const bundler = createMockBundler(events);
-
-    await expect(
-      build(
-        {
-          output: { client: "dist" },
-          app: {
-            entry: "",
-          },
-        },
-        {
-          cwd,
-          bundler,
-        },
-      ),
-    ).rejects.toThrow("[evjs] app.entry must be a non-empty string.");
-    expect(events).not.toContain("bundler.build");
-  });
-
-  it("fails on missing app entries before running the bundler", async () => {
-    const cwd = await createProject();
-    const events: string[] = [];
-    const bundler = createMockBundler(events);
-
-    await expect(
-      build(
-        {
-          output: { client: "dist" },
-          app: {
-            entry: "./src/missing-main.tsx",
-          },
-        },
-        {
-          cwd,
-          bundler,
-        },
-      ),
-    ).rejects.toThrow(
-      'src/missing-main.tsx - App "default" entry source file not found.',
-    );
+    ).rejects.toThrow('page route "/dashboard" conflicts with sibling');
     expect(events).not.toContain("bundler.build");
   });
 
@@ -3608,6 +5489,7 @@ describe("build", () => {
         {
           output: { client: "dist" },
           routing: {
+            mode: "spa",
             dir: "",
           },
         },
@@ -3646,12 +5528,7 @@ describe("build", () => {
     await fs.promises.mkdir(path.join(cwd, "src/apis/api"), {
       recursive: true,
     });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
-      "export const clientEntry = true;",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/middleware.ts"),
       [
         "export default async function middleware(_ctx, next) {",
@@ -3660,7 +5537,7 @@ describe("build", () => {
       ].join("\n"),
       "utf-8",
     );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/apis/api/middleware.ts"),
       [
         "export default async function middleware(_ctx, next) {",
@@ -3669,7 +5546,7 @@ describe("build", () => {
       ].join("\n"),
       "utf-8",
     );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/apis/api/health.ts"),
       "export const GET = async () => Response.json({ ok: true });",
       "utf-8",
@@ -3730,7 +5607,7 @@ describe("build", () => {
     await fs.promises.mkdir(path.join(cwd, "src/server/routes"), {
       recursive: true,
     });
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/server/routes/health.ts"),
       "export const GET = async () => Response.json({ ok: true });",
       "utf-8",
@@ -3742,7 +5619,7 @@ describe("build", () => {
       build(
         {
           server: {
-            routing: true,
+            routing: {},
           },
         },
         {
@@ -3751,7 +5628,7 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      "[evjs] No server routes found in ./src/apis. Add a route module exporting GET or POST such as ./src/apis/index.ts or set server.routing: false.",
+      "[evjs] No server routes found in ./src/apis. Add a route module exporting GET or POST such as ./src/apis/index.ts or set conventions: false.",
     );
     expect(events).not.toContain("bundler.build");
   });
@@ -3764,12 +5641,7 @@ describe("build", () => {
     await fs.promises.mkdir(path.join(cwd, "src/server"), {
       recursive: true,
     });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
-      "export const clientEntry = true;",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/server/middleware.ts"),
       [
         "export default async function middleware(_ctx, next) {",
@@ -3778,7 +5650,7 @@ describe("build", () => {
       ].join("\n"),
       "utf-8",
     );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/apis/health.ts"),
       "export const GET = async () => Response.json({ ok: true });",
       "utf-8",
@@ -3795,7 +5667,7 @@ describe("build", () => {
     await build(
       {
         server: {
-          routing: true,
+          routing: {},
         },
       },
       {
@@ -3866,16 +5738,17 @@ describe("build", () => {
 
   it("builds reachable use-server modules in flat output mode", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
-      ['import { getUser } from "./api/user.server";', "void getUser;"].join(
-        "\n",
-      ),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      [
+        'import { getUser } from "../api/user.server";',
+        "void getUser;",
+        "export default function Page() { return null; }",
+      ].join("\n"),
       "utf-8",
     );
     await fs.promises.mkdir(path.join(cwd, "src/api"), { recursive: true });
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/api/user.server.ts"),
       [
         '"use server";',
@@ -3892,6 +5765,7 @@ describe("build", () => {
     await build(
       {
         output: { client: "dist" },
+        routing: { mode: "spa" },
       },
       {
         cwd,
@@ -3903,16 +5777,17 @@ describe("build", () => {
 
   it("builds reachable use-server modules with long headers in flat output mode", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
-      ['import { getUser } from "./api/user.server";', "void getUser;"].join(
-        "\n",
-      ),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      [
+        'import { getUser } from "../api/user.server";',
+        "void getUser;",
+        "export default function Page() { return null; }",
+      ].join("\n"),
       "utf-8",
     );
     await fs.promises.mkdir(path.join(cwd, "src/api"), { recursive: true });
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/api/user.server.ts"),
       [
         `/* ${"license ".repeat(80)} */`,
@@ -3930,6 +5805,7 @@ describe("build", () => {
     await build(
       {
         output: { client: "dist" },
+        routing: { mode: "spa" },
       },
       {
         cwd,
@@ -3941,13 +5817,16 @@ describe("build", () => {
 
   it("fails on unsupported use-server exports before running the bundler", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/api"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
-      ['import getUser from "./api/user.server";', "void getUser;"].join("\n"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      [
+        'import getUser from "../api/user.server";',
+        "void getUser;",
+        "export default function Page() { return null; }",
+      ].join("\n"),
       "utf-8",
     );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/api/user.server.ts"),
       [
         '"use server";',
@@ -3963,7 +5842,7 @@ describe("build", () => {
 
     await expect(
       build(
-        {},
+        { routing: { mode: "spa" } },
         {
           cwd,
           bundler,
@@ -3977,15 +5856,16 @@ describe("build", () => {
 
   it("fails on malformed use-server modules before running the bundler", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/api"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
-      ['import { getUser } from "./api/user.server";', "void getUser;"].join(
-        "\n",
-      ),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      [
+        'import { getUser } from "../api/user.server";',
+        "void getUser;",
+        "export default function Page() { return null; }",
+      ].join("\n"),
       "utf-8",
     );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/api/user.server.ts"),
       ['"use server";', "export async function getUser( {"].join("\n"),
       "utf-8",
@@ -3996,7 +5876,7 @@ describe("build", () => {
 
     await expect(
       build(
-        {},
+        { routing: { mode: "spa" } },
         {
           cwd,
           bundler,
@@ -4010,20 +5890,21 @@ describe("build", () => {
 
   it("fails on use-server runtime re-exports before running the bundler", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/api"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/main.tsx"),
-      ['import { saveUser } from "./api/user.server";', "void saveUser;"].join(
-        "\n",
-      ),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      [
+        'import { saveUser } from "../api/user.server";',
+        "void saveUser;",
+        "export default function Page() { return null; }",
+      ].join("\n"),
       "utf-8",
     );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/api/user.server.ts"),
       ['"use server";', 'export { saveUser } from "./user-impl";'].join("\n"),
       "utf-8",
     );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/api/user-impl.ts"),
       [
         "export async function saveUser() {",
@@ -4038,7 +5919,7 @@ describe("build", () => {
 
     await expect(
       build(
-        {},
+        { routing: { mode: "spa" } },
         {
           cwd,
           bundler,
@@ -4053,8 +5934,8 @@ describe("build", () => {
   it("fails when a page route has no default export", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export const title = 'Home';",
       "utf-8",
     );
@@ -4066,7 +5947,7 @@ describe("build", () => {
       build(
         {
           output: { client: "dist" },
-          routing: true,
+          routing: { mode: "spa" },
         },
         {
           cwd,
@@ -4074,7 +5955,7 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      "Page route modules must default-export a React component. Move non-route helpers under an underscore-prefixed file or folder.",
+      "page.* anchor modules must default-export a React component. Rename ordinary modules so only route anchors use the page.* basename.",
     );
     expect(events).not.toContain("bundler.build");
   });
@@ -4082,8 +5963,8 @@ describe("build", () => {
   it("fails when a page route cannot be parsed", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home( {",
       "utf-8",
     );
@@ -4095,27 +5976,27 @@ describe("build", () => {
       build(
         {
           output: { client: "dist" },
-          routing: true,
+          routing: { mode: "spa" },
         },
         {
           cwd,
           bundler,
         },
       ),
-    ).rejects.toThrow("Page route module could not be parsed:");
+    ).rejects.toThrow("Page-anchor route module could not be parsed:");
     expect(events).not.toContain("bundler.build");
   });
 
-  it("fails when the root layout is placed in the page route directory", async () => {
+  it("builds with a root layout in the routing root", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/pages/layout.tsx"),
       "export default function Layout() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
@@ -4127,48 +6008,7 @@ describe("build", () => {
       build(
         {
           output: { client: "dist" },
-          routing: true,
-        },
-        {
-          cwd,
-          bundler,
-        },
-      ),
-    ).rejects.toThrow(
-      "SPA route layouts must be nested below a route segment and named layout.{ts,tsx,js,jsx}. Use the external root layout convention layout/index.tsx beside the route directory for the app root layout.",
-    );
-    expect(events).not.toContain("bundler.build");
-  });
-
-  it("builds when a nested layout is placed in the page route directory", async () => {
-    const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/pages/posts"), {
-      recursive: true,
-    });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/posts/layout.tsx"),
-      "export default function PostsLayout() { return null; }",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/posts/$postId.tsx"),
-      "export default function Post() { return null; }",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
-      "export default function Home() { return null; }",
-      "utf-8",
-    );
-
-    const events: string[] = [];
-    const bundler = createMockBundler(events);
-
-    await expect(
-      build(
-        {
-          output: { client: "dist" },
-          routing: true,
+          routing: { mode: "spa" },
         },
         {
           cwd,
@@ -4179,16 +6019,23 @@ describe("build", () => {
     expect(events).toContain("bundler.build");
   });
 
-  it("fails when the root layout uses a file alias", async () => {
+  it("builds when a nested layout is placed in the page route directory", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/layout.tsx"),
-      "export default function Layout() { return null; }",
+    await fs.promises.mkdir(path.join(cwd, "src/pages/posts"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(cwd, "src/pages/posts/layout.tsx"),
+      "export default function PostsLayout() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/posts/$postId/page.tsx"),
+      "export default function Post() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
@@ -4200,17 +6047,15 @@ describe("build", () => {
       build(
         {
           output: { client: "dist" },
-          routing: true,
+          routing: { mode: "spa" },
         },
         {
           cwd,
           bundler,
         },
       ),
-    ).rejects.toThrow(
-      "Unsupported SPA root layout convention: ./src/layout.tsx. Auto-discovery only supports ./src/layout/index.tsx; rename the file or configure routing.conventions.layout explicitly.",
-    );
-    expect(events).not.toContain("bundler.build");
+    ).resolves.toBeUndefined();
+    expect(events).toContain("bundler.build");
   });
 
   it("orders plugin config and lifecycle hooks by dependencies", async () => {
@@ -4272,7 +6117,7 @@ describe("build", () => {
       "buildStart:a",
       "buildStart:b",
       "bundler.build",
-      "bundler.entries:main",
+      "bundler.entries:",
       "buildEnd:a",
       "buildEnd:b",
     ]);
@@ -4316,7 +6161,7 @@ describe("build", () => {
       "setup:plugin-c",
       "setup:plugin-a",
       "bundler.build",
-      "bundler.entries:main",
+      "bundler.entries:",
     ]);
   });
 
@@ -4362,7 +6207,7 @@ describe("build", () => {
       "setup:normal",
       "setup:post",
       "bundler.build",
-      "bundler.entries:main",
+      "bundler.entries:",
     ]);
   });
 
@@ -4410,7 +6255,7 @@ describe("build", () => {
       "setup:plugin-a",
       "setup:plugin-b",
       "bundler.build",
-      "bundler.entries:main",
+      "bundler.entries:",
     ]);
   });
 
@@ -4449,7 +6294,7 @@ describe("build", () => {
       "setup:plugin-c",
       "setup:plugin-b",
       "bundler.build",
-      "bundler.entries:main",
+      "bundler.entries:",
     ]);
   });
 
@@ -4564,6 +6409,7 @@ describe("dev", () => {
     });
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock",
+      capabilities: fullBundlerCapabilities,
       async build() {
         return {};
       },
@@ -4601,6 +6447,7 @@ describe("dev", () => {
     let receivedPorts: { client: number; server: number } | undefined;
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock",
+      capabilities: fullBundlerCapabilities,
       async build() {
         return {};
       },
@@ -4646,6 +6493,7 @@ describe("dev", () => {
           cwd,
           bundler: {
             name: "custom",
+            capabilities: fullBundlerCapabilities,
             build: "run" as never,
             dev: async () => {},
           } as never,
@@ -4691,6 +6539,7 @@ describe("dev", () => {
     const events: string[] = [];
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock",
+      capabilities: fullBundlerCapabilities,
       async build() {
         return {};
       },
@@ -4731,11 +6580,267 @@ describe("dev", () => {
     expect(events).toEqual(["bundler.dev", "bundler.close", "dispose"]);
   });
 
+  it("runs buildEnd after initial dev output and rebuild output", async () => {
+    const cwd = await createSpaProject();
+    const rebuildFlags: boolean[] = [];
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ callbacks, plan }) {
+        const clientEntry = plan.entries.find(
+          (entry) => entry.environment === "client",
+        );
+        const facts: BundlerBuildFacts = clientEntry
+          ? {
+              clientEntryAssets: {
+                [clientEntry.name]: { js: ["main.js"], css: [] },
+              },
+              firstClientEntryAssets: { js: ["main.js"], css: [] },
+            }
+          : {};
+        await callbacks.onBuildFacts(facts, { isRebuild: false });
+        await callbacks.onBuildFacts(facts, { isRebuild: true });
+        process.emit("SIGINT");
+        return { async updatePlan() {} };
+      },
+    };
+
+    await dev(
+      {
+        output: { client: "dist" },
+        plugins: [
+          {
+            name: "dev-build-end",
+            setup() {
+              return {
+                buildEnd(result) {
+                  rebuildFlags.push(result.isRebuild);
+                },
+              };
+            },
+          },
+        ],
+      },
+      { cwd, bundler },
+    );
+
+    expect(rebuildFlags).toEqual([false, true]);
+  });
+
+  it("passes config-only dev reloads to the bundler controller", async () => {
+    const cwd = await createSpaProject();
+    const configPath = path.join(cwd, "ev.config.ts");
+    await writeFile(configPath, "export default {};", "utf-8");
+    const events: string[] = [];
+    let currentConfig: Config<Record<string, never>> = {
+      output: { client: "dist" },
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return {
+          async updatePlan(update, options) {
+            events.push(
+              [
+                "update",
+                options?.configChanged,
+                update.entries.added.length,
+                update.entries.removed.length,
+                update.entries.changed.length,
+                options?.config.dev.proxy[0]?.target,
+              ].join(":"),
+            );
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev(currentConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+    await waitForEvent(events, "bundler.dev");
+    currentConfig = {
+      ...currentConfig,
+      dev: {
+        proxy: [
+          {
+            context: ["/api"],
+            target: "https://example.com",
+          },
+        ],
+      },
+    };
+    await writeFile(configPath, "export default { dev: {} };", "utf-8");
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("dev config-only update timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual([
+      "bundler.dev",
+      "update:true:0:0:0:https://example.com",
+    ]);
+  });
+
+  it("fails closed when a bundlerConfig watch dependency changes", async () => {
+    const cwd = await createSpaProject();
+    const dependency = path.join(cwd, "bundler-plugin.config.json");
+    await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+    const events: string[] = [];
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ addWatchFile }) {
+        addWatchFile?.(dependency);
+        events.push("bundler.dev");
+        return {
+          async updatePlan(update, options) {
+            events.push(
+              [
+                "update",
+                options?.configChanged,
+                update.entries.added.length,
+                update.entries.removed.length,
+                update.entries.changed.length,
+              ].join(":"),
+            );
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev({ output: { client: "dist" } }, { cwd, bundler });
+    await waitForEvent(events, "bundler.dev");
+    await writeFile(dependency, '{"mode":"changed"}', "utf-8");
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("bundlerConfig dependency update timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual(["bundler.dev", "update:true:0:0:0"]);
+  });
+
+  it("uses the next plugin context for build facts emitted during a bundlerConfig reload", async () => {
+    const cwd = await createSpaProject();
+    const dependency = path.join(cwd, "bundler-plugin.config.json");
+    await writeFile(dependency, '{"mode":"initial"}', "utf-8");
+    const events: string[] = [];
+    const plugin: Plugin<Record<string, never>> = {
+      name: "reload-context",
+      setup() {
+        return {
+          buildOutput(_output, ctx) {
+            events.push(`buildOutput:${ctx.config.dev.proxy[0]?.target}`);
+          },
+        };
+      },
+    };
+    let currentConfig: Config<Record<string, never>> = {
+      output: { client: "dist" },
+      plugins: [plugin],
+    };
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ addWatchFile, callbacks, plan }) {
+        addWatchFile?.(dependency);
+        const clientEntry = plan.entries.find(
+          (entry) => entry.environment === "client",
+        );
+        const facts: BundlerBuildFacts = clientEntry
+          ? {
+              clientEntryAssets: {
+                [clientEntry.name]: { js: ["main.js"], css: [] },
+              },
+              firstClientEntryAssets: { js: ["main.js"], css: [] },
+            }
+          : {};
+        events.push("bundler.dev");
+        return {
+          async updatePlan(_update, options) {
+            await callbacks.onBuildFacts(facts, { isRebuild: true });
+            events.push(`update:${options?.configChanged}`);
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev(currentConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+    await waitForEvent(events, "bundler.dev");
+    currentConfig = {
+      ...currentConfig,
+      dev: {
+        proxy: [
+          {
+            context: ["/api"],
+            target: "https://example.com",
+          },
+        ],
+      },
+    };
+    await writeFile(dependency, '{"mode":"changed"}', "utf-8");
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("bundlerConfig context update timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual([
+      "bundler.dev",
+      "buildOutput:https://example.com",
+      "update:true",
+    ]);
+  });
+
   it("writes generated SPA route types before starting the dev bundler", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
@@ -4743,6 +6848,7 @@ describe("dev", () => {
     const events: string[] = [];
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock",
+      capabilities: fullBundlerCapabilities,
       async build() {
         return {};
       },
@@ -4756,7 +6862,13 @@ describe("dev", () => {
     };
 
     await Promise.race([
-      dev({ output: { client: "dist" } }, { cwd, bundler }),
+      dev(
+        {
+          output: { client: "dist" },
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler },
+      ),
       new Promise((_, reject) =>
         setTimeout(
           () => reject(new Error("dev startup timed out")),
@@ -4768,19 +6880,19 @@ describe("dev", () => {
     expect(events).toEqual(["entry:./.ev/entries/main.ts", "routeTypes:true"]);
     await expect(
       fs.promises.readFile(path.join(cwd, "src/route-types.d.ts"), "utf-8"),
-    ).resolves.toContain('import type * as EvPage_index from "./pages/index";');
+    ).resolves.toContain('import type * as EvPage_index from "./pages/page";');
   });
 
   it("removes stale generated route types before starting MPA dev", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "src/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
@@ -4788,6 +6900,7 @@ describe("dev", () => {
     const events: string[] = [];
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock",
+      capabilities: fullBundlerCapabilities,
       async build() {
         return {};
       },
@@ -4827,26 +6940,28 @@ describe("dev", () => {
     await fs.promises.mkdir(path.join(cwd, "src/pages/users"), {
       recursive: true,
     });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/about.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/about/page.tsx"),
       "export default function About() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/report.tsx"),
-      [
-        'export const render = "ssr";',
-        "export default function Report() { return null; }",
-      ].join("\n"),
+    await writeFile(
+      path.join(cwd, "src/pages/report/page.tsx"),
+      "export default function Report() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/users/$id.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/report/page.config.ts"),
+      'export default { render: "ssr" };',
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/users/alice/page.tsx"),
       "export default function User() { return null; }",
       "utf-8",
     );
@@ -4867,6 +6982,7 @@ describe("dev", () => {
 
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock",
+      capabilities: fullBundlerCapabilities,
       async build() {
         return {};
       },
@@ -4904,9 +7020,11 @@ describe("dev", () => {
     expect(readyLog).not.toContain("Loopback:");
     expect(readyLog).toContain("  Pages:");
     expect(readyLog).toContain("    index: http://localhost:4123/index.html");
-    expect(readyLog).toContain("    about: http://localhost:4123/about.html");
     expect(readyLog).toContain(
-      "    users_id: http://localhost:4123/users_id.html",
+      "    about: http://localhost:4123/about/index.html",
+    );
+    expect(readyLog).toContain(
+      "    users_alice: http://localhost:4123/users/alice/index.html",
     );
     expect(readyLog).toContain("    report: http://localhost:4123/report");
 
@@ -4921,13 +7039,13 @@ describe("dev", () => {
     await fs.promises.mkdir(path.join(cwd, "src/pages/posts"), {
       recursive: true,
     });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/posts/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/posts/page.tsx"),
       "export default function Posts() { return null; }",
       "utf-8",
     );
@@ -4935,11 +7053,17 @@ describe("dev", () => {
     const events: string[] = [];
     const bundler = createRouteUpdateBundler(cwd, events, "/posts/$postId");
 
-    const running = dev({ output: { client: "dist" } }, { cwd, bundler });
+    const running = dev(
+      {
+        output: { client: "dist" },
+        routing: { mode: "spa" },
+      },
+      { cwd, bundler },
+    );
 
     await new Promise((resolve) => setTimeout(resolve, 100));
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/posts/$postId.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/posts/$postId/page.tsx"),
       "export default function Post() { return null; }",
       "utf-8",
     );
@@ -4964,8 +7088,8 @@ describe("dev", () => {
   it("updates generated SPA route types when a new nested route directory is populated during dev", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
@@ -4973,15 +7097,21 @@ describe("dev", () => {
     const events: string[] = [];
     const bundler = createRouteUpdateBundler(cwd, events, "/admin");
 
-    const running = dev({ output: { client: "dist" } }, { cwd, bundler });
+    const running = dev(
+      {
+        output: { client: "dist" },
+        routing: { mode: "spa" },
+      },
+      { cwd, bundler },
+    );
 
     await new Promise((resolve) => setTimeout(resolve, 100));
     await fs.promises.mkdir(path.join(cwd, "src/pages/admin"), {
       recursive: true,
     });
     await new Promise((resolve) => setTimeout(resolve, 150));
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/admin/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/admin/page.tsx"),
       "export default function Admin() { return null; }",
       "utf-8",
     );
@@ -5004,18 +7134,18 @@ describe("dev", () => {
     await fs.promises.mkdir(path.join(cwd, "src/pages/posts"), {
       recursive: true,
     });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/posts/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/posts/page.tsx"),
       "export default function Posts() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/posts/$postId.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/posts/$postId/page.tsx"),
       "export default function Post() { return null; }",
       "utf-8",
     );
@@ -5023,10 +7153,16 @@ describe("dev", () => {
     const events: string[] = [];
     const bundler = createRouteUpdateBundler(cwd, events, "/posts/$postId");
 
-    const running = dev({ output: { client: "dist" } }, { cwd, bundler });
+    const running = dev(
+      {
+        output: { client: "dist" },
+        routing: { mode: "spa" },
+      },
+      { cwd, bundler },
+    );
 
     await new Promise((resolve) => setTimeout(resolve, 100));
-    await fs.promises.rm(path.join(cwd, "src/pages/posts/$postId.tsx"));
+    await fs.promises.rm(path.join(cwd, "src/pages/posts/$postId/page.tsx"));
 
     await Promise.race([
       running,
@@ -5045,11 +7181,11 @@ describe("dev", () => {
     ]);
   });
 
-  it("keeps plugin context on the committed config when a route update fails", async () => {
+  it("restores committed plugin and generated state when a route update fails", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/index.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
@@ -5067,6 +7203,7 @@ describe("dev", () => {
     };
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock",
+      capabilities: fullBundlerCapabilities,
       async build() {
         return {};
       },
@@ -5074,6 +7211,13 @@ describe("dev", () => {
         events.push("bundler.dev");
         return {
           async updatePlan() {
+            const candidateRouteTypes = await fs.promises.readFile(
+              path.join(cwd, "src/route-types.d.ts"),
+              "utf-8",
+            );
+            events.push(
+              `candidate-types:${candidateRouteTypes.includes(JSON.stringify("/about"))}`,
+            );
             events.push("update:throw");
             throw new Error("mock update failure");
           },
@@ -5085,17 +7229,26 @@ describe("dev", () => {
       {
         output: { client: "dist" },
         plugins: [plugin],
+        routing: { mode: "spa" },
       },
       { cwd, bundler },
     );
 
     await new Promise((resolve) => setTimeout(resolve, 100));
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/about.tsx"),
+    const routeTypesPath = path.join(cwd, "src/route-types.d.ts");
+    const generatedIrPath = path.join(cwd, ".ev");
+    const initialRouteTypes = await fs.promises.readFile(routeTypesPath);
+    const initialGeneratedIr = await readDirectorySnapshot(generatedIrPath);
+    await writeFile(
+      path.join(cwd, "src/pages/about/page.tsx"),
       "export default function About() { return null; }",
       "utf-8",
     );
     await waitForEvent(events, "update:throw");
+    await waitForFileContents(routeTypesPath, initialRouteTypes);
+    expect(await readDirectorySnapshot(generatedIrPath)).toEqual(
+      initialGeneratedIr,
+    );
     process.emit("SIGINT");
 
     await Promise.race([
@@ -5108,38 +7261,46 @@ describe("dev", () => {
       ),
     ]);
 
-    expect(events).toEqual(["bundler.dev", "update:throw", "dispose-routes:1"]);
+    expect(events).toEqual([
+      "bundler.dev",
+      "candidate-types:true",
+      "update:throw",
+      "dispose-routes:1",
+    ]);
   });
 
   it("updates the dev bundler when config changes add an MPA page", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/Home.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages-v1/home/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/Orders.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages-v2/home/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages-v2/orders/page.tsx"),
       "export default function Orders() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "ev.config.ts"),
-      "export default {};",
+      "export default { routing: { mode: 'mpa', dir: './src/pages-v1' } };",
       "utf-8",
     );
 
     const events: string[] = [];
     let currentConfig: Config<Record<string, never>> = {
       output: { client: "dist" },
-      pages: {
-        home: "./src/pages/Home.tsx",
-      },
+      routing: { mode: "mpa", dir: "./src/pages-v1" },
     };
 
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock",
+      capabilities: fullBundlerCapabilities,
       async build() {
         return {};
       },
@@ -5167,119 +7328,11 @@ describe("dev", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     currentConfig = {
       ...currentConfig,
-      pages: {
-        ...currentConfig.pages,
-        orders: "./src/pages/Orders.tsx",
-      },
+      routing: { mode: "mpa", dir: "./src/pages-v2" },
     };
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "ev.config.ts"),
-      "export default { pages: { home: './src/pages/Home.tsx', orders: './src/pages/Orders.tsx' } };",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/Home.tsx"),
-      "export default function Home() { return <main>Home</main>; }",
-      "utf-8",
-    );
-
-    await Promise.race([
-      running,
-      new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new Error("dev update timed out")),
-          devUpdateTimeoutMs,
-        ),
-      ),
-    ]);
-
-    expect(events).toEqual(["bundler.dev", "update:orders"]);
-  });
-
-  it("recreates same-name plugin hooks when dev config changes", async () => {
-    const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/Home.tsx"),
-      "export default function Home() { return null; }",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/Orders.tsx"),
-      "export default function Orders() { return null; }",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "ev.config.ts"),
-      "export default {};",
-      "utf-8",
-    );
-
-    const events: string[] = [];
-    function createPlugin(label: string): Plugin<Record<string, never>> {
-      return {
-        name: "same-name-plugin",
-        setup() {
-          return {
-            dispose() {
-              events.push(`dispose:${label}`);
-            },
-          };
-        },
-      };
-    }
-
-    let currentConfig: Config<Record<string, never>> = {
-      output: { client: "dist" },
-      pages: {
-        home: "./src/pages/Home.tsx",
-      },
-      plugins: [createPlugin("v1")],
-    };
-
-    const bundler: BundlerAdapter<Record<string, never>> = {
-      name: "mock",
-      async build() {
-        return {};
-      },
-      async dev() {
-        events.push("bundler.dev");
-        return {
-          async updatePlan(update) {
-            events.push(
-              `update:${update.entries.added.map((entry) => entry.name).join(",")}`,
-            );
-            process.emit("SIGINT");
-          },
-        };
-      },
-    };
-
-    const running = dev(currentConfig, {
-      cwd,
-      bundler,
-      loadConfig() {
-        return currentConfig;
-      },
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    currentConfig = {
-      ...currentConfig,
-      pages: {
-        ...currentConfig.pages,
-        orders: "./src/pages/Orders.tsx",
-      },
-      plugins: [createPlugin("v2")],
-    };
-    await fs.promises.writeFile(
-      path.join(cwd, "ev.config.ts"),
-      "export default { pages: { home: './src/pages/Home.tsx', orders: './src/pages/Orders.tsx' } };",
-      "utf-8",
-    );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/Home.tsx"),
-      "export default function Home() { return <main>Updated</main>; }",
+      "export default { routing: { mode: 'mpa', dir: './src/pages-v2' } };",
       "utf-8",
     );
 
@@ -5295,40 +7348,661 @@ describe("dev", () => {
 
     expect(events).toEqual([
       "bundler.dev",
-      "update:orders",
+      `update:${createPageClientBuildEntryName("orders")}`,
+    ]);
+  });
+
+  it("updates the dev bundler when a Page extension only changes generated IR", async () => {
+    const cwd = await createProject();
+    const pageDir = path.join(cwd, "src/pages/home");
+    const configFile = path.join(pageDir, "page.config.ts");
+    await fs.promises.mkdir(pageDir, { recursive: true });
+    await writeFile(
+      path.join(pageDir, "page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      configFile,
+      'export default { extensions: { "@test/theme": "light" } };',
+      "utf-8",
+    );
+
+    const plugin = definePlugin<Record<string, never>>({
+      name: "page-theme",
+      describe(ctx) {
+        ctx.pageExtension<string>({
+          namespace: "@test/theme",
+        });
+      },
+      contributions(ctx) {
+        const theme = ctx.framework.pages.find((page) => page.id === "home")
+          ?.extensions?.["@test/theme"];
+        ctx.emit.data({
+          id: "page-theme-data",
+          scope: { kind: "page", pageId: "home" },
+          value: { theme },
+        });
+        ctx.slot("html.tag").add({
+          id: "page-theme-meta",
+          tag: "meta",
+          placement: "head-append",
+          attrs: { name: "theme", content: String(theme) },
+          target: { kind: "page", pageId: "home" },
+        });
+      },
+    });
+
+    const events: string[] = [];
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return {
+          async updatePlan(update) {
+            const tag = update.next.generated?.slots.find(
+              (item) =>
+                item.slot === "html.tag" && item.id === "page-theme-meta",
+            );
+            const previousModule = update.previous.generated?.modules.find(
+              (item) => item.id === "page-theme-data",
+            );
+            const nextModule = update.next.generated?.modules.find(
+              (item) => item.id === "page-theme-data",
+            );
+            events.push(
+              [
+                "update",
+                update.generatedChanged,
+                update.resolveChanged,
+                update.entries.changed.length,
+                update.html.changed.length,
+                tag?.slot === "html.tag" ? tag.attrs?.content : "missing",
+                previousModule?.sourceHash !== nextModule?.sourceHash,
+                update.previous.generated?.coreGraphHash !==
+                  update.next.generated?.coreGraphHash,
+              ].join(":"),
+            );
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev(
+      {
+        output: { client: "dist" },
+        routing: { mode: "mpa" },
+        plugins: [plugin],
+      },
+      { cwd, bundler },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await writeFile(
+      configFile,
+      'export default { extensions: { "@test/theme": "dark" } };',
+      "utf-8",
+    );
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("dev generated IR update timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual([
+      "bundler.dev",
+      "update:true:false:0:0:dark:true:true",
+    ]);
+  });
+
+  it("reuses the active Application extension snapshot for route updates", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages/home"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(cwd, "src/pages/home/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    let mergeCalls = 0;
+    const plugin = definePlugin<Record<string, never>>({
+      name: "stable-application-extension",
+      describe(ctx) {
+        ctx.applicationExtension<{ generation: number }, { enabled: boolean }>({
+          namespace: "@test/stable-application",
+          merge() {
+            mergeCalls += 1;
+            return { generation: mergeCalls };
+          },
+        });
+      },
+      setup(ctx) {
+        const value = ctx.config.extensions["@test/stable-application"] as {
+          generation: number;
+        };
+        events.push(`setup:${value.generation}`);
+        return {
+          dispose(disposeCtx) {
+            const disposed = disposeCtx.config.extensions[
+              "@test/stable-application"
+            ] as { generation: number };
+            events.push(`dispose:${disposed.generation}`);
+          },
+        };
+      },
+      contributions(ctx) {
+        const value = ctx.framework.applications[0]?.extensions[
+          "@test/stable-application"
+        ] as { generation: number };
+        events.push(`contribution:${value.generation}`);
+      },
+    });
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return {
+          async updatePlan() {
+            events.push("update");
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev(
+      {
+        extensions: {
+          "@test/stable-application": { enabled: true },
+        },
+        output: { client: "dist" },
+        plugins: [plugin],
+        routing: { mode: "mpa" },
+      },
+      { cwd, bundler },
+    );
+
+    await waitForEvent(events, "bundler.dev");
+    await fs.promises.mkdir(path.join(cwd, "src/pages/orders"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(cwd, "src/pages/orders/page.tsx"),
+      "export default function Orders() { return null; }",
+      "utf-8",
+    );
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("dev route update timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(mergeCalls).toBe(1);
+    expect(events).toEqual([
+      "setup:1",
+      "contribution:1",
+      "bundler.dev",
+      "contribution:1",
+      "update",
+      "dispose:1",
+    ]);
+  });
+
+  it("updates Page metadata when an adjacent page.config.ts changes during dev", async () => {
+    const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    const pageConfigPath = path.join(cwd, "src/pages/page.config.ts");
+    await writeFile(
+      pageConfigPath,
+      'export default { title: "Initial title", meta: { description: "Initial description" } };',
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return {
+          async updatePlan(update) {
+            const html = update.next.html.find((item) => item.id === "index");
+            events.push(
+              [
+                "update",
+                update.generatedChanged,
+                update.entries.changed.length,
+                update.html.changed.length,
+                html?.metadata?.title,
+                html?.metadata?.meta?.description,
+              ].join(":"),
+            );
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev(
+      {
+        output: { client: "dist" },
+        routing: { mode: "mpa" },
+      },
+      { cwd, bundler },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await writeFile(
+      pageConfigPath,
+      'export default { title: "Updated title", meta: { description: "Updated description" } };',
+      "utf-8",
+    );
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("dev Page metadata update timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual([
+      "bundler.dev",
+      "update:true:0:1:Updated title:Updated description",
+    ]);
+  });
+
+  it("adds and removes static Document aliases during dev updates", async () => {
+    const cwd = await createProject();
+    const pageConfigPath = path.join(cwd, "src/pages/about/page.config.ts");
+    await writeFile(
+      path.join(cwd, "src/pages/about/page.tsx"),
+      "export default function About() { return null; }",
+      "utf-8",
+    );
+    await writeFile(pageConfigPath, "export default {};", "utf-8");
+
+    const events: string[] = [];
+    let updateCount = 0;
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "document-alias-dev",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ plan, callbacks }) {
+        const facts: BundlerBuildFacts = {
+          clientEntryAssets: {
+            about: { js: ["about.js"], css: [] },
+          },
+          firstClientEntryAssets: { js: ["about.js"], css: [] },
+        };
+        await callbacks.onBuildFacts(facts);
+        const aliasPath = path.resolve(
+          cwd,
+          plan.output.clientDir,
+          "about.html",
+        );
+        events.push(`initial:${fs.existsSync(aliasPath)}`);
+        return {
+          async updatePlan(update) {
+            updateCount += 1;
+            const aliases = update.next.html[0]?.aliases?.join(",") ?? "none";
+            events.push(
+              `update:${updateCount}:${update.html.changed.length}:${aliases}`,
+            );
+            await callbacks.onBuildFacts(facts, { isRebuild: true });
+            events.push(`alias:${updateCount}:${fs.existsSync(aliasPath)}`);
+            if (updateCount === 1) {
+              await writeFile(pageConfigPath, "export default {};", "utf-8");
+            } else {
+              process.emit("SIGINT");
+            }
+          },
+        };
+      },
+    };
+
+    const running = dev(
+      {
+        routing: { mode: "mpa" },
+      },
+      { cwd, bundler },
+    );
+
+    await waitForEvent(events, "initial:false");
+    await writeFile(
+      pageConfigPath,
+      'export default { document: { aliases: ["about.html"] } };',
+      "utf-8",
+    );
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("dev Document alias update timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual([
+      "initial:false",
+      "update:1:1:about.html",
+      "alias:1:true",
+      "update:2:1:none",
+      "alias:2:false",
+    ]);
+  });
+
+  it("runs staged same-name plugin hooks before applying a dev config update", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages-v1/home/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages-v2/home/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages-v2/orders/page.tsx"),
+      "export default function Orders() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "ev.config.ts"),
+      "export default { routing: { mode: 'mpa', dir: './src/pages-v1' } };",
+      "utf-8",
+    );
+
+    const events: string[] = [];
+    function createPlugin(label: string): Plugin<Record<string, never>> {
+      return {
+        name: "same-name-plugin",
+        contributions() {
+          events.push(`contribution:${label}`);
+        },
+        setup() {
+          events.push(`setup:${label}`);
+          return {
+            buildStart() {
+              events.push(`buildStart:${label}`);
+            },
+            dispose() {
+              events.push(`dispose:${label}`);
+            },
+          };
+        },
+      };
+    }
+
+    let currentConfig: Config<Record<string, never>> = {
+      output: { client: "dist" },
+      routing: { mode: "mpa", dir: "./src/pages-v1" },
+      plugins: [createPlugin("v1")],
+    };
+
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return {
+          async updatePlan(update) {
+            events.push(
+              `update:${update.entries.added.map((entry) => entry.name).join(",")}`,
+            );
+            process.emit("SIGINT");
+          },
+        };
+      },
+    };
+
+    const running = dev(currentConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        return currentConfig;
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    currentConfig = {
+      ...currentConfig,
+      routing: { mode: "mpa", dir: "./src/pages-v2" },
+      plugins: [createPlugin("v2")],
+    };
+    await writeFile(
+      path.join(cwd, "ev.config.ts"),
+      "export default { routing: { mode: 'mpa', dir: './src/pages-v2' } };",
+      "utf-8",
+    );
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("dev update timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual([
+      "setup:v1",
+      "buildStart:v1",
+      "contribution:v1",
+      "bundler.dev",
+      "setup:v2",
+      "buildStart:v2",
+      "contribution:v2",
+      `update:${createPageClientBuildEntryName("orders")}`,
       "dispose:v1",
       "dispose:v2",
     ]);
   });
 
-  it("refreshes plugin watch files after committed plugin cleanup fails", async () => {
+  it("rolls back staged plugin hooks when reload buildStart fails", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/Home.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages-v1/home/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "src/pages/Orders.tsx"),
+    await writeFile(
+      path.join(cwd, "src/pages-v2/home/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages-v2/orders/page.tsx"),
       "export default function Orders() { return null; }",
       "utf-8",
     );
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "ev.config.ts"),
-      "export default {};",
+      "export default { routing: { mode: 'mpa', dir: './src/pages-v1' } };",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "old-watch.txt"),
-      "old",
+    await writeFile(path.join(cwd, "old-watch.txt"), "old", "utf-8");
+    await writeFile(path.join(cwd, "new-watch.txt"), "new", "utf-8");
+
+    const events: string[] = [];
+    function createPlugin(
+      label: string,
+      watchFile: string,
+      failBuildStart = false,
+    ): Plugin<Record<string, never>> {
+      let contributionCount = 0;
+      return {
+        name: "same-name-plugin",
+        contributions() {
+          contributionCount += 1;
+          events.push(`contribution:${label}:${contributionCount}`);
+        },
+        setup(ctx) {
+          events.push(`setup:${label}`);
+          ctx.addWatchFile(`./${watchFile}`);
+          return {
+            buildStart() {
+              events.push(`buildStart:${label}`);
+              if (failBuildStart) {
+                throw new Error(`${label} buildStart blocked`);
+              }
+            },
+            dispose(disposeCtx) {
+              events.push(
+                `dispose:${label}:${disposeCtx.config.routing?.dir ?? "missing"}`,
+              );
+            },
+          };
+        },
+      };
+    }
+
+    const oldPlugin = createPlugin("old", "old-watch.txt");
+    const oldConfig: Config<Record<string, never>> = {
+      output: { client: "dist" },
+      routing: { mode: "mpa", dir: "./src/pages-v1" },
+      plugins: [oldPlugin],
+    };
+    let currentConfig = oldConfig;
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev() {
+        events.push("bundler.dev");
+        return {
+          async updatePlan() {
+            events.push("update");
+          },
+        };
+      },
+    };
+    let loadCount = 0;
+    const running = dev(currentConfig, {
+      cwd,
+      bundler,
+      loadConfig() {
+        loadCount += 1;
+        events.push(`load:${loadCount}`);
+        return currentConfig;
+      },
+    });
+
+    await waitForEvent(events, "bundler.dev");
+    currentConfig = {
+      ...oldConfig,
+      routing: { mode: "mpa", dir: "./src/pages-v2" },
+      plugins: [createPlugin("new", "new-watch.txt", true)],
+    };
+    await writeFile(
+      path.join(cwd, "ev.config.ts"),
+      "export default { routing: { mode: 'mpa', dir: './src/pages-v2' } };",
       "utf-8",
     );
-    await fs.promises.writeFile(
-      path.join(cwd, "new-watch.txt"),
-      "new",
+    await waitForEvent(
+      events,
+      "dispose:new:./src/pages-v2",
+      devUpdateTimeoutMs,
+    );
+
+    currentConfig = oldConfig;
+    await writeFile(path.join(cwd, "old-watch.txt"), "changed", "utf-8");
+    await waitForEvent(events, "contribution:old:2");
+    process.emit("SIGINT");
+
+    await Promise.race([
+      running,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("dev shutdown timed out")),
+          devUpdateTimeoutMs,
+        ),
+      ),
+    ]);
+
+    expect(events).toEqual([
+      "setup:old",
+      "buildStart:old",
+      "contribution:old:1",
+      "bundler.dev",
+      "load:1",
+      "setup:new",
+      "buildStart:new",
+      "dispose:new:./src/pages-v2",
+      "load:2",
+      "contribution:old:2",
+      "dispose:old:./src/pages-v1",
+    ]);
+  });
+
+  it("refreshes plugin watch files after committed plugin cleanup fails", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages-v1/home/page.tsx"),
+      "export default function Home() { return null; }",
       "utf-8",
     );
+    await writeFile(
+      path.join(cwd, "src/pages-v2/home/page.tsx"),
+      "export default function Home() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages-v2/orders/page.tsx"),
+      "export default function Orders() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "ev.config.ts"),
+      "export default { routing: { mode: 'mpa', dir: './src/pages-v1' } };",
+      "utf-8",
+    );
+    await writeFile(path.join(cwd, "old-watch.txt"), "old", "utf-8");
+    await writeFile(path.join(cwd, "new-watch.txt"), "new", "utf-8");
 
     const events: string[] = [];
     function createPlugin(
@@ -5353,11 +8027,12 @@ describe("dev", () => {
 
     let currentConfig: Config<Record<string, never>> = {
       output: { client: "dist" },
-      pages: { home: "./src/pages/Home.tsx" },
+      routing: { mode: "mpa", dir: "./src/pages-v1" },
       plugins: [createPlugin("old", "old-watch.txt", true)],
     };
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock",
+      capabilities: fullBundlerCapabilities,
       async build() {
         return {};
       },
@@ -5386,26 +8061,22 @@ describe("dev", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     currentConfig = {
       ...currentConfig,
-      pages: {
-        ...currentConfig.pages,
-        orders: "./src/pages/Orders.tsx",
-      },
+      routing: { mode: "mpa", dir: "./src/pages-v2" },
       plugins: [createPlugin("new", "new-watch.txt")],
     };
-    await fs.promises.writeFile(
+    await writeFile(
       path.join(cwd, "ev.config.ts"),
-      "export default { pages: { home: './src/pages/Home.tsx', orders: './src/pages/Orders.tsx' } };",
+      "export default { routing: { mode: 'mpa', dir: './src/pages-v2' } };",
       "utf-8",
     );
-    await waitForEvent(events, "update:orders");
+    await waitForEvent(
+      events,
+      `update:${createPageClientBuildEntryName("orders")}`,
+    );
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     const loadCountBeforeNewWatch = loadCount;
-    await fs.promises.writeFile(
-      path.join(cwd, "new-watch.txt"),
-      "changed",
-      "utf-8",
-    );
+    await writeFile(path.join(cwd, "new-watch.txt"), "changed", "utf-8");
     await waitForEvent(events, `load:${loadCountBeforeNewWatch + 1}`);
     process.emit("SIGINT");
 
@@ -5424,7 +8095,7 @@ describe("dev", () => {
         "setup:old",
         "bundler.dev",
         "setup:new",
-        "update:orders",
+        `update:${createPageClientBuildEntryName("orders")}`,
         "dispose:old",
         "dispose:new",
       ]),

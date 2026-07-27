@@ -2,13 +2,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { PAGE_ROUTE_CONVENTION_SUMMARY } from "../src/_internal/build/page-route-conventions.js";
+import { PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY } from "../src/_internal/build/page-route-conventions.js";
 import {
   collectGeneratedPageRouteTypeFiles,
   generatePageRouteTypes,
   getPageRouteTypesPath,
   isGeneratedPageRouteTypesFile,
-  PAGE_ROUTE_TYPES_CONVENTION_HINT,
+  PAGE_ANCHOR_ROUTE_TYPES_CONVENTION_HINT,
   PAGE_ROUTE_TYPES_FILE,
   PAGE_ROUTE_TYPES_HELPER_MODULE,
   PAGE_ROUTE_TYPES_MARKER,
@@ -34,26 +34,26 @@ describe("generatePageRouteTypes", () => {
         {
           id: "posts_postId",
           path: "/posts/$postId",
-          module: "./src/pages/posts/$postId.tsx",
+          module: "./src/pages/posts/$postId/page.tsx",
         },
         {
           id: "index",
           path: "/",
-          module: "./src/pages/index.tsx",
+          module: "./src/pages/page.tsx",
         },
         {
           id: "search",
           path: "/search",
-          module: "./src/pages/search.tsx",
+          module: "./src/pages/search/page.tsx",
         },
       ],
     });
 
     expect(source).toContain(
-      'import type * as EvPage_index from "./src/pages/index";',
+      'import type * as EvPage_index from "./src/pages/page";',
     );
     expect(source).toContain(
-      'import type * as EvPage_posts_postId from "./src/pages/posts/$postId";',
+      'import type * as EvPage_posts_postId from "./src/pages/posts/$postId/page";',
     );
     expect(source).toContain(
       'EvRoute_posts_postId: { id: "posts_postId"; path: "/posts/$postId"; module: typeof EvPage_posts_postId };',
@@ -63,9 +63,9 @@ describe("generatePageRouteTypes", () => {
     );
     expect(source).toContain(PAGE_ROUTE_TYPES_MARKER);
     expect(source).toContain(PAGE_ROUTE_TYPES_USAGE_HINT);
-    expect(source).toContain(PAGE_ROUTE_TYPES_CONVENTION_HINT);
-    expect(PAGE_ROUTE_TYPES_CONVENTION_HINT).toContain(
-      PAGE_ROUTE_CONVENTION_SUMMARY,
+    expect(source).toContain(PAGE_ANCHOR_ROUTE_TYPES_CONVENTION_HINT);
+    expect(PAGE_ANCHOR_ROUTE_TYPES_CONVENTION_HINT).toContain(
+      PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY,
     );
     expect(source).not.toContain("@tanstack/react-router");
     expect(source).toContain(
@@ -82,7 +82,7 @@ describe("generatePageRouteTypes", () => {
         {
           id: "index",
           path: "/",
-          module: "./src/pages/index.tsx",
+          module: "./src/pages/page.tsx",
         },
       ],
     });
@@ -91,6 +91,23 @@ describe("generatePageRouteTypes", () => {
     expect(source).toContain(PAGE_ROUTE_TYPES_REGISTER_MODULE);
     expect(source).toContain("@evjs/ev/_internal/client/route-types");
     expect(source).not.toContain("@evjs/client/internal/route-types");
+  });
+
+  it("uses canonical page-anchor convention guidance", () => {
+    const source = generatePageRouteTypes({
+      routes: [
+        {
+          id: "users",
+          path: "/users",
+          module: "./src/pages/users/page.tsx",
+        },
+      ],
+    });
+
+    expect(source).toContain(PAGE_ANCHOR_ROUTE_TYPES_CONVENTION_HINT);
+    expect(PAGE_ANCHOR_ROUTE_TYPES_CONVENTION_HINT).toContain(
+      PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY,
+    );
   });
 
   it("rewrites page module imports relative to the generated declaration", () => {

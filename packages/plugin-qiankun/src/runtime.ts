@@ -83,14 +83,16 @@ export function resolveQiankunModuleExport<T>(
 
 export async function startQiankunMaster(
   resolver: QiankunMasterResolver,
+  graphRoutes: readonly QiankunMicroAppRoute[] = [],
 ): Promise<QiankunMasterOptions> {
   const masterOptions = await resolver();
   const {
     apps = [],
-    routes = [],
+    routes: resolverRoutes = [],
     appNameKeyAlias,
     ...frameworkOptions
   } = masterOptions;
+  const routes = mergeQiankunRouteMappings(graphRoutes, resolverRoutes);
   const qiankun = await importQiankun();
   const registeredApps = normalizeRegisteredApps(
     applyRouteActiveRules(apps, routes, appNameKeyAlias),
@@ -100,7 +102,40 @@ export async function startQiankunMaster(
     qiankun.registerMicroApps(registeredApps);
   }
   qiankun.start(frameworkOptions);
-  return masterOptions;
+  return graphRoutes.length > 0 ? { ...masterOptions, routes } : masterOptions;
+}
+
+function mergeQiankunRouteMappings(
+  graphRoutes: readonly QiankunMicroAppRoute[],
+  resolverRoutes: readonly QiankunMicroAppRoute[],
+): QiankunMicroAppRoute[] {
+  const routes = new Map<string, QiankunMicroAppRoute>();
+  for (const [source, values] of [
+    ["CoreGraph Route extensions", graphRoutes],
+    ["resolver.routes", resolverRoutes],
+  ] as const) {
+    for (const route of values) {
+      if (
+        !route ||
+        typeof route.path !== "string" ||
+        !route.path.startsWith("/") ||
+        typeof route.microApp !== "string" ||
+        !route.microApp.trim()
+      ) {
+        throw new Error(
+          `[evjs:plugin-qiankun] ${source} entries require an absolute path and a non-empty microApp.`,
+        );
+      }
+      const previous = routes.get(route.path);
+      if (previous && previous.microApp !== route.microApp) {
+        throw new Error(
+          `[evjs:plugin-qiankun] Route "${route.path}" maps to both micro-app "${previous.microApp}" and "${route.microApp}".`,
+        );
+      }
+      routes.set(route.path, route);
+    }
+  }
+  return [...routes.values()];
 }
 
 export function createQiankunSlaveLifecycles(options: {
@@ -113,6 +148,8 @@ export function createQiankunSlaveLifecycles(options: {
   let loadedEntry: Promise<unknown> | undefined;
   let loadedEntryModule: unknown;
   let currentContainer: Element | undefined;
+  let hasMountedEntry = false;
+  let entryMounted = false;
 
   const ctx = (): QiankunSlaveRuntimeContext => ({
     name: options.name,
@@ -128,19 +165,31 @@ export function createQiankunSlaveLifecycles(options: {
   }
 
   async function bootstrap(props: QiankunLifecycleProps = {}): Promise<void> {
+    currentContainer = resolveMountContainer(props, options.mount);
     await runtime.bootstrap?.(props, ctx());
   }
 
   async function mount(props: QiankunLifecycleProps = {}): Promise<void> {
+    if (entryMounted) return;
     currentContainer = resolveMountContainer(props, options.mount);
     const context = ctx();
-    await runtime.mount?.(props, context);
     const restoreDocumentLookup = scopeDocumentMountLookup(
       currentContainer,
       options.mount,
     );
     try {
-      await context.loadEntry();
+      await runtime.mount?.(props, context);
+      const entryModule = await context.loadEntry();
+      const start = hasMountedEntry
+        ? undefined
+        : resolveEntryStart(entryModule);
+      if (start) {
+        await start(currentContainer ?? options.mount);
+      } else {
+        await mountLoadedEntry(entryModule, currentContainer, options.mount);
+      }
+      hasMountedEntry = true;
+      entryMounted = true;
     } finally {
       restoreDocumentLookup();
     }
@@ -148,10 +197,25 @@ export function createQiankunSlaveLifecycles(options: {
 
   async function unmount(props: QiankunLifecycleProps = {}): Promise<void> {
     const context = ctx();
-    await runtime.unmount?.(props, context);
-    await unmountLoadedEntry(loadedEntryModule);
-    clearContainer(currentContainer);
+    const errors: unknown[] = [];
+    try {
+      await runtime.unmount?.(props, context);
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      await unmountLoadedEntry(loadedEntryModule);
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      clearContainer(currentContainer);
+    } catch (error) {
+      errors.push(error);
+    }
     currentContainer = undefined;
+    entryMounted = false;
+    throwQiankunCleanupErrors(errors);
   }
 
   async function update(props: QiankunLifecycleProps = {}): Promise<void> {
@@ -282,13 +346,64 @@ async function unmountLoadedEntry(entryModule: unknown): Promise<void> {
   await unmount?.();
 }
 
+function throwQiankunCleanupErrors(errors: unknown[]): void {
+  if (errors.length === 0) return;
+  if (errors.length === 1) throw errors[0];
+  throw new AggregateError(
+    errors,
+    "[evjs:plugin-qiankun] Multiple slave unmount steps failed.",
+  );
+}
+
+async function mountLoadedEntry(
+  entryModule: unknown,
+  container: Element | undefined,
+  mount: string,
+): Promise<void> {
+  const render = resolveEntryRender(entryModule);
+  if (!render) {
+    throw new Error(
+      "[evjs:plugin-qiankun] The generated slave entry does not expose an app.render() method required for mounting.",
+    );
+  }
+  await render(container ?? mount);
+}
+
+function resolveEntryRender(
+  entryModule: unknown,
+): ((container: Element | string) => MaybePromise<void>) | undefined {
+  if (!isRecord(entryModule)) return undefined;
+  for (const candidate of [entryModule.app, entryModule.default, entryModule]) {
+    if (isRecord(candidate) && typeof candidate.render === "function") {
+      return (container) =>
+        (
+          candidate.render as (target: Element | string) => MaybePromise<void>
+        ).call(candidate, container);
+    }
+  }
+  return undefined;
+}
+
+function resolveEntryStart(
+  entryModule: unknown,
+): ((container: Element | string) => MaybePromise<void>) | undefined {
+  if (!isRecord(entryModule) || typeof entryModule.start !== "function") {
+    return undefined;
+  }
+  return (container) =>
+    (
+      entryModule.start as (target: Element | string) => MaybePromise<void>
+    ).call(entryModule, container);
+}
+
 function resolveEntryUnmount(
   entryModule: unknown,
 ): (() => MaybePromise<void>) | undefined {
   if (!isRecord(entryModule)) return undefined;
   for (const candidate of [entryModule.app, entryModule.default, entryModule]) {
     if (isRecord(candidate) && typeof candidate.unmount === "function") {
-      return candidate.unmount as () => MaybePromise<void>;
+      return () =>
+        (candidate.unmount as () => MaybePromise<void>).call(candidate);
     }
   }
   return undefined;

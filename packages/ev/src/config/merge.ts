@@ -1,6 +1,8 @@
 type Primitive = string | number | boolean | bigint | symbol | null | undefined;
 type Builtin = Primitive | RegExp | ((...args: never[]) => unknown);
 
+const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
 export type ConfigPatch<T> = T extends Builtin
   ? T
   : T extends readonly unknown[]
@@ -17,16 +19,52 @@ export function merge<T extends object>(target: T, patch: ConfigPatch<T>): T {
 }
 
 function mergeObject(target: object, patch: object): void {
-  for (const [key, value] of Object.entries(patch)) {
-    const current = Reflect.get(target, key);
+  for (const key of Object.keys(patch)) {
+    if (UNSAFE_KEYS.has(key)) {
+      throw new Error(`[evjs] merge() patch field "${key}" is not safe.`);
+    }
+
+    const patchDescriptor = Object.getOwnPropertyDescriptor(patch, key);
+    if (!patchDescriptor || !("value" in patchDescriptor)) {
+      throw new Error(
+        `[evjs] merge() patch field "${key}" must be an enumerable own data property.`,
+      );
+    }
+
+    const value = patchDescriptor.value;
+    const targetDescriptor = Object.getOwnPropertyDescriptor(target, key);
+    const current =
+      targetDescriptor && "value" in targetDescriptor
+        ? targetDescriptor.value
+        : undefined;
 
     if (isPlainObject(current) && isPlainObject(value)) {
       mergeObject(current, value);
       continue;
     }
 
-    Reflect.set(target, key, value);
+    defineOwnDataProperty(target, key, value, targetDescriptor);
   }
+}
+
+function defineOwnDataProperty(
+  target: object,
+  key: string,
+  value: unknown,
+  current: PropertyDescriptor | undefined,
+): void {
+  Object.defineProperty(
+    target,
+    key,
+    current && "value" in current
+      ? { ...current, value }
+      : {
+          configurable: true,
+          enumerable: true,
+          value,
+          writable: true,
+        },
+  );
 }
 
 function isObject(value: unknown): value is object {

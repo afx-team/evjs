@@ -4,8 +4,13 @@ import {
   createBuildPlan,
   materializeFrameworkIR,
 } from "@evjs/ev/_internal/build";
-import type { AppGraph, BuildPlan } from "@evjs/ev/_internal/manifest";
 import type { Plugin } from "@evjs/ev/plugin";
+import type {
+  BuildPlan,
+  CoreGraph,
+  CoreRoutePattern,
+  RenderMode,
+} from "@evjs/shared/manifest";
 import type { ConfigComplete } from "@utoo/pack";
 import { describe, expect, it } from "vitest";
 import { createUtoopackConfig } from "../src/adapter/create-config.js";
@@ -16,9 +21,21 @@ describe("createUtoopackConfig", () => {
   function createResolvedConfig(
     overrides: Partial<Parameters<typeof createUtoopackConfig>[0]> = {},
   ): Parameters<typeof createUtoopackConfig>[0] {
-    return {
-      entry: "./src/main.tsx",
-      html: "./index.html",
+    const config: Parameters<typeof createUtoopackConfig>[0] = {
+      conventions: true,
+      routing: {
+        mode: "spa",
+        dir: "./src/pages",
+        html: "./index.html",
+        mount: "#app",
+        routes: [
+          {
+            id: "index",
+            path: "/",
+            module: "./src/pages/page.tsx",
+          },
+        ],
+      },
       output: {
         client: "dist/client",
         server: "dist/server",
@@ -42,9 +59,11 @@ describe("createUtoopackConfig", () => {
         },
       },
       transport: {},
+      extensions: {},
       plugins: [],
       ...overrides,
     };
+    return config;
   }
 
   it("passes resolved dev server options and SPA fallback to Utoopack", async () => {
@@ -59,7 +78,7 @@ describe("createUtoopackConfig", () => {
     );
 
     expect(utoopackConfig.entry).toEqual([
-      { import: "./src/main.tsx", name: "main" },
+      { import: "./.ev/entries/main.ts", name: "main" },
     ]);
     expect(utoopackConfig.output?.publicPath).toBe("auto");
     expect(utoopackConfig.output?.crossOriginLoading).toBe("anonymous");
@@ -88,7 +107,7 @@ describe("createUtoopackConfig", () => {
       contributions(ctx) {
         const configModule = ctx.emit.data({
           id: "config",
-          scope: { kind: "app" },
+          scope: { kind: "application" },
           value: { enabled: true },
         });
         ctx.slot("resolve.alias").add({
@@ -446,19 +465,17 @@ describe("createUtoopackConfig", () => {
 
   it("uses a generated pages app entry for framework-managed pages", async () => {
     const config = createResolvedConfig({
-      entry: "./src/pages/index.tsx",
       routing: {
         mode: "spa",
         dir: "./src/pages",
-        entry: "./src/pages/index.tsx",
         html: "./index.html",
         mount: "#app",
-        rootModule: "./src/layout/index.tsx",
+        rootModule: "./src/pages/layout.tsx",
         routes: [
           {
             id: "index",
             path: "/",
-            module: "./src/pages/index.tsx",
+            module: "./src/pages/page.tsx",
             errorModule: "./src/pages/error.tsx",
             notFoundModule: "./src/pages/not-found.tsx",
           },
@@ -522,12 +539,23 @@ describe("createUtoopackConfig", () => {
 
   it("does not add SPA history fallback for MPA builds", async () => {
     const config = createResolvedConfig({
-      pages: {
-        home: { entry: "./src/home.tsx", html: "./home.html" },
-        about: {
-          entry: "./src/about.tsx",
-          html: "./about.html",
-        },
+      routing: {
+        mode: "mpa",
+        dir: "./src/pages",
+        html: "./index.html",
+        mount: "#app",
+        routes: [
+          {
+            id: "home",
+            path: "/home",
+            module: "./src/pages/home/page.tsx",
+          },
+          {
+            id: "about",
+            path: "/about",
+            module: "./src/pages/about/page.tsx",
+          },
+        ],
       },
     });
     const plan = await createPlan(config);
@@ -540,28 +568,40 @@ describe("createUtoopackConfig", () => {
     );
 
     expect(utoopackConfig.entry).toEqual([
-      { import: "./src/home.tsx", name: "home" },
-      { import: "./src/about.tsx", name: "about" },
+      {
+        import: "./.ev/entries/page-client-home.ts",
+        name: "page-client-home",
+      },
+      {
+        import: "./.ev/entries/page-client-about.ts",
+        name: "page-client-about",
+      },
     ]);
     expect(utoopackConfig.devServer?.proxy).toEqual([]);
   });
 
   it("uses generated component page entries for framework-managed page entries", async () => {
     const config = createResolvedConfig({
-      pages: {
-        home: {
-          component: "./src/pages/Home.tsx",
-          html: "./index.html",
-          mount: "#app",
-        },
+      routing: {
+        mode: "mpa",
+        dir: "./src/pages",
+        html: "./index.html",
+        mount: "#app",
+        routes: [
+          {
+            id: "home",
+            path: "/home",
+            module: "./src/pages/home/page.tsx",
+          },
+        ],
       },
     });
     const plan = await createPlan(config);
 
-    expect(plan.entries[0]?.import).toBe("./.ev/entries/home.ts");
+    expect(plan.entries[0]?.import).toBe("./.ev/entries/page-client-home.ts");
     expect(plan.entries[0]?.metadata).toMatchObject({
       type: "react-component-page",
-      component: "./src/pages/Home.tsx",
+      component: "./src/pages/home/page.tsx",
     });
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -571,7 +611,10 @@ describe("createUtoopackConfig", () => {
     );
 
     expect(utoopackConfig.entry).toEqual([
-      { import: "./.ev/entries/home.ts", name: "home" },
+      {
+        import: "./.ev/entries/page-client-home.ts",
+        name: "page-client-home",
+      },
     ]);
   });
 
@@ -586,42 +629,17 @@ describe("createUtoopackConfig", () => {
           {
             id: "index",
             path: "/",
-            module: "./src/pages/index.tsx",
+            module: "./src/pages/page.tsx",
           },
           {
             id: "about",
             path: "/about",
-            module: "./src/pages/about.tsx",
+            module: "./src/pages/about/page.tsx",
           },
         ],
       },
     });
-    const graph: AppGraph = {
-      version: 1,
-      rootDir: process.cwd(),
-      apps: {},
-      pages: {
-        index: {
-          id: "index",
-          path: "/",
-          component: "./src/pages/index.tsx",
-          html: "./index.html",
-          render: "csr",
-          mount: "#app",
-        },
-        about: {
-          id: "about",
-          path: "/about",
-          component: "./src/pages/about.tsx",
-          html: "./index.html",
-          render: "csr",
-          mount: "#app",
-        },
-      },
-      routes: [],
-      serverFunctions: [],
-      serverRoutes: [],
-    };
+    const graph = createGraph(config);
     const plan = await materializeFrameworkIR({
       cwd: process.cwd(),
       mode: "development",
@@ -657,16 +675,26 @@ describe("createUtoopackConfig", () => {
       plan.entries
         .filter((entry) => entry.environment === "client")
         .map((entry) => entry.import),
-    ).toEqual(["./.ev/entries/index.ts", "./.ev/entries/about.ts"]);
+    ).toEqual([
+      "./.ev/entries/page-client-index.ts",
+      "./.ev/entries/page-client-about.ts",
+    ]);
     expect(utoopackConfig.entry).toEqual([
-      { import: "./.ev/entries/index.ts", name: "index" },
-      { import: "./.ev/entries/about.ts", name: "about" },
+      {
+        import: "./.ev/entries/page-client-index.ts",
+        name: "page-client-index",
+      },
+      {
+        import: "./.ev/entries/page-client-about.ts",
+        name: "page-client-about",
+      },
     ]);
   });
 
   it("awaits async bundlerConfig hooks before returning config", async () => {
     const config = createResolvedConfig();
     const plan = await createPlan(config);
+    const watchedFiles: string[] = [];
 
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -678,14 +706,17 @@ describe("createUtoopackConfig", () => {
             await Promise.resolve();
             cfg.output ??= {};
             cfg.output.publicPath = "runtime";
+            ctx.addWatchFile("./utoopack-plugin.config.ts");
             expect(ctx.bundlerName).toBe("utoopack");
             expect(ctx.environment).toBe("client");
           },
         },
       ],
+      (file) => watchedFiles.push(file),
     );
 
     expect(utoopackConfig.output?.publicPath).toBe("runtime");
+    expect(watchedFiles).toEqual(["./utoopack-plugin.config.ts"]);
   });
 
   it("fails clearly when the plan contains framework server renderer entries", async () => {
@@ -703,50 +734,28 @@ describe("createUtoopackConfig", () => {
         },
       },
     });
-    const graph: AppGraph = {
-      version: 1,
-      rootDir: process.cwd(),
-      apps: {
-        default: {
-          id: "default",
-          entry: "./src/main.tsx",
-          html: "./index.html",
-        },
-      },
-      pages: {
-        dashboard: {
-          id: "dashboard",
-          routeId: "dashboard",
-          component: "./src/pages/Dashboard.tsx",
-          html: "./index.html",
-          render: "ssr",
-        },
-      },
-      routes: [
+    const graph = createGraph(config, {
+      pages: [
         {
           id: "dashboard",
           path: "/dashboard",
-          appId: "default",
-          pageId: "dashboard",
           module: "./src/pages/Dashboard.tsx",
           render: "ssr",
         },
       ],
-      serverFunctions: [],
-      serverRoutes: [],
-    };
+    });
     const plan = createBuildPlan(config, graph, { mode: "development" });
 
     expect(plan.entries.map((entry) => entry.name)).toEqual([
       "main",
-      "dashboard-server",
+      "page-server-dashboard",
       "server",
     ]);
     expect(plan.server).toMatchObject({
       entry: "@evjs/ev/_internal/server/fetch",
       renderers: [
         {
-          name: "dashboard-server",
+          name: "page-server-dashboard",
           import: "./src/pages/Dashboard.tsx",
           kind: "page-server",
           owner: { pageId: "dashboard", routeId: "dashboard" },
@@ -761,7 +770,7 @@ describe("createUtoopackConfig", () => {
       "Utoopack adapter cannot build framework server page entries yet",
     );
     expect(message).toContain(
-      'dashboard-server (page-server, page "dashboard", route "dashboard")',
+      'page-server-dashboard (page-server, page "dashboard", route "dashboard")',
     );
     expect(message).toContain("Unsupported entry kinds: page-server");
   });
@@ -840,41 +849,7 @@ function createPlan(
   config: Parameters<typeof createUtoopackConfig>[0],
   options: { distDir?: string; mode?: "development" | "production" } = {},
 ): Promise<BuildPlan> {
-  const graph: AppGraph = {
-    version: 1,
-    rootDir: process.cwd(),
-    apps:
-      config.pages && Object.keys(config.pages).length > 0
-        ? {}
-        : {
-            default: {
-              id: "default",
-              entry: config.entry,
-              html: config.html,
-            },
-          },
-    pages: Object.fromEntries(
-      Object.entries(config.pages ?? {}).map(([id, page]) => [
-        id,
-        {
-          id,
-          entry: page.entry,
-          component: page.component,
-          app: page.app,
-          html: page.html,
-          render: "csr",
-          mount: page.mount,
-        },
-      ]),
-    ),
-    routes:
-      config.routing?.routes.map((route) => ({
-        ...route,
-        appId: "default",
-      })) ?? [],
-    serverFunctions: [],
-    serverRoutes: config.server.routing?.routes ?? [],
-  };
+  const graph = createGraph(config);
 
   const mode = options.mode ?? "development";
   return materializeFrameworkIR({
@@ -898,6 +873,144 @@ function createPlan(
     }),
     write: false,
   });
+}
+
+interface TestPage {
+  id: string;
+  path: string;
+  module: string;
+  render?: RenderMode;
+  template?: string;
+  mount?: string;
+}
+
+function createGraph(
+  config: Parameters<typeof createUtoopackConfig>[0],
+  options: { pages?: TestPage[] } = {},
+): CoreGraph {
+  const documentTemplate = config.routing?.html ?? "./index.html";
+  const routingPages = (config.routing?.routes ?? []).flatMap<TestPage>(
+    (route) =>
+      route.kind === "layout" || !route.module
+        ? []
+        : [
+            {
+              id: route.id,
+              path: route.path,
+              module: route.module,
+              render: "csr",
+              template: documentTemplate,
+              mount: config.routing?.mount,
+            },
+          ],
+  );
+  const pages = options.pages ?? routingPages;
+  const routingMode = config.routing?.mode ?? "spa";
+  const pageIds = pages.map((page) => page.id);
+  const routeIds = pages.map((page) => page.id);
+  const documentIds = routingMode === "spa" ? ["index"] : pageIds;
+  const provenance = {
+    producer: {
+      kind: "provider" as const,
+      id: "@evjs/provider/page-anchor",
+    },
+  };
+
+  return {
+    rootDir: process.cwd(),
+    applications: {
+      default: {
+        id: "default",
+        root: config.routing?.dir ?? "./src/pages",
+        routingMode,
+        pageIds,
+        routeIds,
+        documentIds,
+        extensions: {},
+        provenance,
+      },
+    },
+    pages: Object.fromEntries(
+      pages.map((page) => [
+        page.id,
+        {
+          id: page.id,
+          applicationId: "default",
+          source: {
+            module: page.module,
+            scope: {
+              kind: "directory" as const,
+              root: path.posix.dirname(page.module),
+            },
+            provider: "@evjs/provider/page-anchor",
+          },
+          render: page.render ?? "csr",
+          hydrate: "load" as const,
+          extensions: {},
+          provenance,
+        },
+      ]),
+    ),
+    routes: pages.map((page) => ({
+      id: page.id,
+      applicationId: "default",
+      pattern: toRoutePattern(page.path),
+      target: { kind: "page" as const, pageId: page.id },
+      facets: { wrappers: [] },
+      extensions: {},
+      provenance,
+    })),
+    documents: Object.fromEntries(
+      routingMode === "spa"
+        ? [
+            [
+              "index",
+              {
+                id: "index",
+                template: documentTemplate,
+                output: "index.html",
+                applicationId: "default",
+                owner: { kind: "application" as const },
+                mount: config.routing?.mount ?? "#app",
+                bootstrap: { kind: "application" as const },
+                extensions: {},
+                provenance,
+              },
+            ],
+          ]
+        : pages.map((page) => [
+            page.id,
+            {
+              id: page.id,
+              template: page.template ?? documentTemplate,
+              output:
+                page.path === "/" ? "index.html" : `${page.id}/index.html`,
+              applicationId: "default",
+              owner: { kind: "page" as const, pageId: page.id },
+              mount: page.mount ?? "#app",
+              bootstrap: { kind: "page" as const, pageId: page.id },
+              extensions: {},
+              provenance,
+            },
+          ]),
+    ),
+    extensions: { namespaces: {} },
+    serverFunctions: [],
+    serverRoutes: config.server.routing?.routes ?? [],
+  };
+}
+
+function toRoutePattern(pathname: string): CoreRoutePattern {
+  return {
+    segments: pathname
+      .split("/")
+      .filter(Boolean)
+      .map((segment) =>
+        segment.startsWith(":")
+          ? { kind: "param" as const, name: segment.slice(1) }
+          : { kind: "static" as const, value: segment },
+      ),
+  };
 }
 
 function getProxyRuleContexts(rule: { context: string | string[] }): string[] {

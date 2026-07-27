@@ -12,8 +12,9 @@ npm run dev
 
 | File | Purpose |
 |------|---------|
-| `src/layout/index.tsx` | SPA root layout |
-| `src/pages/index.tsx` | UI consuming both tRPC and evjs APIs |
+| `ev.config.ts` | Selects SPA routing mode |
+| `src/pages/layout.tsx` | File-convention root layout |
+| `src/pages/page.tsx` | UI consuming both tRPC and evjs APIs |
 | `src/apis/trpc.server.ts` | tRPC router and evjs server functions |
 
 ## What It Demonstrates

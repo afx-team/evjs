@@ -25,16 +25,18 @@ describe("loadConfig", () => {
 
   it("loads the first supported config file discovered in priority order", async () => {
     const cwd = await createFixture({
-      "ev.config.js": `export default { app: { entry: "./src/from-js.tsx" } };`,
+      "ev.config.js": `export default { routing: { mode: "mpa" } };`,
       "ev.config.ts": `
         import { defineConfig } from "@evjs/ev";
-        export default defineConfig({ app: { entry: "./src/from-ts.tsx" } });
+        export default defineConfig({
+          routing: { mode: "spa", dir: "./src/from-ts-pages" },
+        });
       `,
     });
 
     expect(path.basename(resolveConfigPath(cwd) ?? "")).toBe("ev.config.ts");
     await expect(loadConfig(cwd)).resolves.toMatchObject({
-      app: { entry: "./src/from-ts.tsx" },
+      routing: { mode: "spa", dir: "./src/from-ts-pages" },
     });
   });
 });

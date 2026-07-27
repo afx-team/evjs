@@ -20,12 +20,18 @@ npx @evjs/create-app [name] [options]
 
 ## Templates
 
+Every template uses the same Core 0.3 authoring model: `page.tsx` anchors,
+optional build-time `page.config.ts` for static title/named metadata and
+rendering, and directory-derived URLs.
+`routing.mode` is the only routing-mode configuration; SPA and MPA
+materialize the same Page tree differently.
+
 | Name | Description |
 |------|-------------|
-| **`basic`** | Basic full-stack example with routing and server functions. |
-| **`mpa`** | Multi-page application with separate page entries. |
+| **`basic`** | Basic full-stack SPA with routing, `page.config.ts`, and server functions. |
+| **`mpa`** | The same Page/config model materialized as separate documents. |
 | **`api-routes`** | REST API routes via default server file routes. |
-| **`complex-routing`** | Root layout, loaders, search params, and nested paths. |
+| **`complex-routing`** | Advanced Page routes with a root layout, params, redirects, and nested paths. |
 | **`custom-ws-transport`** | Custom transport example using WebSockets. |
 | **`plugin-authoring`** | Starter focused on plugin authoring and bundler hooks. |
 | **`with-sqlite`** | Full-stack CRUD example backed by SQLite. |
@@ -40,8 +46,12 @@ npx @evjs/create-app my-new-app
 
 Follow the interactive prompts to select your features and get started in seconds.
 
-Generated route type files such as `src/route-types.d.ts` are not copied
-from templates; `ev dev` and `ev build` recreate them for the new project.
+Generated framework files such as `src/route-types.d.ts` are never copied from
+templates and should remain ignored by source control.
+
+`page.config.ts` is evaluated by evjs during graph construction. It is not a
+browser entry: plugins must explicitly project any configured extension data
+that their runtime needs.
 
 ## License
 

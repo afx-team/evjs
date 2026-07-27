@@ -83,7 +83,6 @@ function createStaticServer(
     : undefined;
   const proxyPrefixes = options?.proxyPrefixes ?? [];
   const pathRewrites = options?.pathRewrites ?? {};
-  const publicManifestPath = resolvePublicManifestPath(distDir);
 
   return http.createServer((req, res) => {
     const url = req.url || "/";
@@ -120,12 +119,6 @@ function createStaticServer(
       }
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(indexHtml);
-      return;
-    }
-
-    if (pathname === "/manifest.json" && publicManifestPath) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      fs.createReadStream(publicManifestPath).pipe(res);
       return;
     }
 
@@ -188,14 +181,6 @@ function resolveStaticFilePath(
     : undefined;
 }
 
-function resolvePublicManifestPath(distDir: string): string | undefined {
-  const candidates = [
-    path.join(distDir, "manifest.json"),
-    path.join(path.dirname(distDir), "manifest.json"),
-  ];
-  return candidates.find((candidate) => fs.existsSync(candidate));
-}
-
 function getRequestPathname(url: string): string {
   try {
     return new URL(url, "http://localhost").pathname;
@@ -232,6 +217,9 @@ function getServerProxyPrefixes(output: RoutingFixture): string[] {
 }
 
 function getClientPathRewrites(output: RoutingFixture): Record<string, string> {
+  const documentsById = new Map(
+    output.documents.map((document) => [document.id, document]),
+  );
   return Object.fromEntries([
     ...output.documents.flatMap((document) => {
       if (document.kind !== "app" || !document.fallback?.startsWith("/")) {
@@ -239,11 +227,14 @@ function getClientPathRewrites(output: RoutingFixture): Record<string, string> {
       }
       return [[document.fallback, document.fileName]];
     }),
-    ...output.documents.flatMap((document) => {
-      if (document.kind !== "page" || !document.path?.startsWith("/")) {
+    ...output.routes.flatMap((route) => {
+      if (route.kind !== "static-page" || !route.path.startsWith("/")) {
         return [];
       }
-      return [[document.path, document.fileName]];
+      const document = documentsById.get(route.documentId);
+      return document?.kind === "page"
+        ? [[route.path, document.fileName] as const]
+        : [];
     }),
   ]);
 }
@@ -396,29 +387,20 @@ export function createExampleTest(exampleName: string) {
           throw new Error("Built example did not produce FrameworkRuntime.");
         }
 
-        // Read only the deployment manifest for the bundle entry; runtime-only
-        // FrameworkRuntime data comes from the buildEnd hook above.
-        const serverManifestPath = path.join(
+        // Read only canonical deployment metadata for the bundle entry;
+        // runtime-only FrameworkRuntime data comes from the buildEnd hook.
+        const deploymentMetadataPath = path.join(
           exampleDir,
           "dist",
-          "server",
-          "manifest.json",
+          "deployment-metadata.json",
         );
-        const serverManifest = JSON.parse(
-          fs.readFileSync(serverManifestPath, "utf-8"),
-        );
-        const serverEntry = serverManifest.entry;
+        const deploymentMetadata = JSON.parse(
+          fs.readFileSync(deploymentMetadataPath, "utf-8"),
+        ) as DeploymentMetadata;
+        const serverEntry = deploymentMetadata.server.entry;
         if (!serverEntry) {
           throw new Error("Built example did not emit a server entry.");
         }
-        const buildOutputPath = path.join(
-          exampleDir,
-          "dist",
-          "build-output.json",
-        );
-        const deploymentMetadata = JSON.parse(
-          fs.readFileSync(buildOutputPath, "utf-8"),
-        ) as DeploymentMetadata;
         const serverEntryPath = path.join(
           exampleDir,
           "dist",

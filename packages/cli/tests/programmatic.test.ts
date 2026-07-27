@@ -36,9 +36,25 @@ describe("programmatic API", () => {
 
   it("forwards build calls through the framework API", async () => {
     const cwd = await createProject();
+    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(cwd, "src/pages/page.tsx"),
+      "export default function Page() { return null; }",
+      "utf-8",
+    );
     const events: string[] = [];
     const bundler: BundlerAdapter<DefaultBundlerConfig> = {
       name: "mock",
+      capabilities: {
+        build: { server: true, rsc: true, ppr: true },
+        dev: {
+          html: true,
+          entries: true,
+          routes: true,
+          server: true,
+          resolution: true,
+        },
+      },
       async build({ cwd: buildCwd, plan }) {
         events.push(`build:${buildCwd}:${plan.entries[0]?.name}`);
         return {
@@ -58,7 +74,10 @@ describe("programmatic API", () => {
       },
     };
 
-    await build({ output: { client: "dist" } }, { cwd, bundler });
+    await build(
+      { routing: { mode: "spa" }, output: { client: "dist" } },
+      { cwd, bundler },
+    );
 
     expect(events).toEqual([`build:${cwd}:main`]);
   });
@@ -69,6 +88,16 @@ describe("programmatic API", () => {
     const events: string[] = [];
     const bundler: BundlerAdapter<CustomBundlerConfig> = {
       name: "custom",
+      capabilities: {
+        build: { server: true, rsc: true, ppr: true },
+        dev: {
+          html: true,
+          entries: true,
+          routes: true,
+          server: true,
+          resolution: true,
+        },
+      },
       async build({ config }) {
         events.push(String(config.bundler?.name));
         return {

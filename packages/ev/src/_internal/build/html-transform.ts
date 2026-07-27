@@ -5,7 +5,7 @@ import type {
   PluginContext,
   PluginHooks,
 } from "../../plugin/index.js";
-import { createBuildResult } from "../../plugin/index.js";
+import { createBuildResult } from "./build-result.js";
 
 export interface BuildHtmlOptions<TBundlerCfg = unknown> {
   /** Pre-parsed HTML document (from `generateHtml()`). */

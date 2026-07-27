@@ -8,7 +8,6 @@ import {
 import type {
   ClientRuntime,
   ClientRuntimePage,
-  ClientRuntimeRoute,
 } from "../src/shared/runtime-config.js";
 
 afterEach(() => {
@@ -80,6 +79,23 @@ describe("startPageRuntime", () => {
 
     expect(fetch).toHaveBeenCalledWith("/assets/runtime.json");
     expect(events).toEqual(["load:/home.js", "mount"]);
+  });
+
+  it("requires an explicit runtime source when metadata is not embedded", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const document = createDocument({
+      mountPoint: {} as Element,
+      attributes: {
+        "data-evjs-kind": "page",
+        "data-evjs-id": "home",
+      },
+    });
+
+    await expect(startPageRuntime({ document })).rejects.toThrow(
+      '[evjs] startPageRuntime() requires embedded runtime "__EVJS_CLIENT_RUNTIME__" or an explicit runtimeUrl/data-evjs-runtime value.',
+    );
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("rejects invalid framework HTML target attributes before runtime loading", async () => {
@@ -493,7 +509,7 @@ describe("startPageRuntime", () => {
         }),
       }),
     ).rejects.toThrow(
-      '[evjs] Loaded embedded runtime "__EVJS_CLIENT_RUNTIME__".pages must be an object.',
+      '[evjs] Loaded embedded runtime "__EVJS_CLIENT_RUNTIME__".pages and Loaded embedded runtime "__EVJS_CLIENT_RUNTIME__".routes are not supported.',
     );
   });
 
@@ -527,16 +543,19 @@ describe("startPageRuntime", () => {
         document,
         runtime: {
           ...createRuntime(),
-          pages: {
-            home: {
-              ...createRuntime().pages.home,
-              module: { type: "lifecycle", href: " /home.js " },
+          routing: {
+            kind: "mpa",
+            pages: {
+              home: {
+                ...getRuntimePages(createRuntime()).home,
+                module: { type: "lifecycle", href: " /home.js " },
+              },
             },
           },
         } as never,
       }),
     ).rejects.toThrow(
-      "[evjs] Loaded provided runtime.pages.home.module.href must not contain leading or trailing whitespace.",
+      "[evjs] Loaded provided runtime.routing.pages.home.module.href must not contain leading or trailing whitespace.",
     );
 
     await expect(
@@ -581,11 +600,11 @@ describe("startPageRuntime", () => {
         document,
         runtime: {
           ...createRuntime(),
-          routes: {},
+          routing: { kind: "spa", routes: {} },
         } as never,
       }),
     ).rejects.toThrow(
-      "[evjs] Loaded provided runtime.routes must be an array.",
+      "[evjs] Loaded provided runtime.routing.routes must be an array.",
     );
 
     await expect(
@@ -593,11 +612,14 @@ describe("startPageRuntime", () => {
         document,
         runtime: {
           ...createRuntime(),
-          routes: [{ id: "home", path: "home", pageId: "home" }],
+          routing: {
+            kind: "spa",
+            routes: [{ id: "home", path: "home", pageId: "home" }],
+          },
         } as never,
       }),
     ).rejects.toThrow(
-      '[evjs] Loaded provided runtime.routes[0].path must start with "/".',
+      '[evjs] Loaded provided runtime.routing.routes[0].path must start with "/".',
     );
   });
 
@@ -808,27 +830,30 @@ describe("startPageRuntime", () => {
   });
 });
 
-type LegacyClientRuntime = ClientRuntime & {
-  pages: Record<string, ClientRuntimePage>;
-  routes: ClientRuntimeRoute[];
-};
-
-function createRuntime(): LegacyClientRuntime {
+function createRuntime(): ClientRuntime {
   return {
     version: 1,
     buildId: "test",
     runtime: {},
-    pages: {
-      home: {
-        mount: "#root",
-        module: {
-          type: "lifecycle",
-          href: "/home.js",
+    routing: {
+      kind: "mpa",
+      pages: {
+        home: {
+          mount: "#root",
+          module: {
+            type: "lifecycle",
+            href: "/home.js",
+          },
         },
       },
     },
-    routes: [],
   };
+}
+
+function getRuntimePages(
+  runtime: ClientRuntime,
+): Record<string, ClientRuntimePage> {
+  return runtime.routing.kind === "mpa" ? runtime.routing.pages : {};
 }
 
 function createDocument(options: {
