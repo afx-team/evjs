@@ -44,12 +44,14 @@ describe("explicit SPA route graph", () => {
 
     expect(graph.pages.index).toMatchObject({
       id: "index",
+      render: "csr",
       source: {
         module: "./src/pages/page.tsx",
         scope: { kind: "directory", root: "./src/pages" },
       },
       metadata: { title: "Home" },
     });
+    expect(graph.pages.index).not.toHaveProperty("hydrate");
     expect(graph.routes).toContainEqual(
       expect.objectContaining({
         target: { kind: "page", pageId: "index" },
@@ -82,6 +84,8 @@ describe("explicit SPA route graph", () => {
       scope: { kind: "directory", root: "./app/pages/dashboard" },
       provider: CONFIG_ROUTE_PROVIDER_ID,
     });
+    expect(graph.pages.dashboard?.render).toBe("csr");
+    expect(graph.pages.dashboard).not.toHaveProperty("hydrate");
   });
 
   it("rejects a component symlink that escapes application.pageRoot", async () => {

@@ -212,6 +212,10 @@ export interface ReactComponentPageEntryMetadata {
   /** Outer-to-inner Page composition for an independent MPA Page. */
   layers?: ReactPageLayer[];
   mount: string;
+  /**
+   * Effective browser activation policy. `"load"` mounts a CSR Page, but
+   * hydrates a Page whose initial HTML came from SSR or SSG.
+   */
   hydrate: HydrationMode;
   render: RenderMode;
   route?: {
@@ -502,6 +506,7 @@ export interface PageOutput {
   path?: string;
   routeId?: string;
   componentModel?: ComponentModel;
+  /** Effective browser activation; CSR `"load"` means mount, not hydration. */
   hydrate?: HydrationMode;
   mount?: string;
   prerender?: PrerenderConfig;
@@ -533,7 +538,10 @@ export interface PageRenderingOutput {
   prerender?: "full" | "partial";
   /** Whether the page can stream server-rendered content after shell start. */
   streaming: boolean;
-  /** Browser hydration behavior for client-capable parts of the page. */
+  /**
+   * Effective browser activation policy. CSR `"load"` means mount; with
+   * server- or build-rendered HTML it means hydrate.
+   */
   hydrate: HydrationMode;
 }
 

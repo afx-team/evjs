@@ -196,6 +196,14 @@ digits, `.`, `_`, `~`, or `-`. Empty and standalone `.` or `..` segments,
 RSC and partial prerendering cannot be combined on one Page. These settings
 normalize to Core Page rendering fields without changing Page identity.
 
+Omitting `render` always normalizes the Page to `"csr"`. CSR mounts a new
+client tree and therefore must omit `hydrate`; only explicitly selected SSR or
+SSG Pages can configure `hydrate: "load" | "none"`. Ordinary SSR defaults to
+load hydration, SSG defaults to no hydration, and RSC/PPR remain unhydrated at
+the Page level. Generated runtime metadata still uses an effective `"load"`
+client activation for CSR bootstrap, but that internal value is not a Page
+authoring option.
+
 The server-function and active RSC endpoints are exact paths. An active PPR
 endpoint owns its rooted subtree. Build planning requires those active
 endpoints to be disjoint and rejects any Page, redirect, or server request

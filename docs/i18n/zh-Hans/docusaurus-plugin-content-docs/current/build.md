@@ -180,6 +180,13 @@ URL-safe segment 组成，每个 segment 只能包含字母、数字、`.`、`_`
 非 ASCII 字符都会被拒绝。同一 Page 不能组合 RSC 与 partial prerendering。这些
 setting normalize 到 Core Page rendering field，且不改变 Page identity。
 
+省略 `render` 时，Page 始终归一化为 `"csr"`。CSR 会在浏览器中 mount 一棵新的
+client tree，因此必须省略 `hydrate`；只有显式选择 SSR 或 SSG 的 Page 才能配置
+`hydrate: "load" | "none"`。普通 SSR 默认执行 load hydration，SSG 默认不执行
+hydration，RSC/PPR 则保持 Page 级不 hydration。生成的 runtime metadata 仍会
+用有效值 `"load"` 表示 CSR bootstrap 的 client activation，但该内部值不是
+Page authoring option。
+
 Server-function 与启用后的 RSC endpoint 是精确路径；启用后的 PPR endpoint 持有
 以自身为根的子树。BuildPlan 要求这些 active endpoint 互不相交，并拒绝任何可能
 匹配 reserved runtime path 的 Page、redirect 或 server request Route pattern。

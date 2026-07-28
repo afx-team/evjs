@@ -230,7 +230,9 @@ export default definePageConfig({
 The module is evaluated synchronously while evjs constructs the build graph.
 It must default-export a plain object containing static JSON data. Supported
 core fields are `title`, `meta`, `render`, `hydrate`, `prerender`, and `rsc`.
-`hydrate` accepts only `"none"` or `"load"`.
+Omitting `render` always selects CSR, and CSR must omit `hydrate`. Explicit SSR
+and SSG Pages may use `hydrate: "none" | "load"`; ordinary SSR defaults to
+`"load"`, SSG defaults to `"none"`, and RSC/PPR remain unhydrated at Page level.
 `meta` is a string record for `<meta name="key" content="value">`; it does not
 accept `property`, `charset`, links, scripts, functions, or a generic head
 tree. Plugin-owned values must use registered namespaced keys under

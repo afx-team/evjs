@@ -297,7 +297,9 @@ export default definePageConfig({
 ```
 
 Core fields include the static Page `title`, named `meta`, `render`, `hydrate`,
-`prerender`, and `rsc`. Each `meta` entry becomes
+`prerender`, and `rsc`. Omitted `render` always normalizes to CSR, which must
+omit `hydrate`; explicit SSR/SSG Pages may select `"load"` or `"none"`. Each
+`meta` entry becomes
 `<meta name="key" content="value">`; it does not represent `property`,
 `charset`, `link`, `script`, dynamic metadata, or an arbitrary head DSL.
 Plugin-owned Page values live below top-level `extensions`; Route-owned values

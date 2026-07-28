@@ -15,19 +15,23 @@ export interface PageRenderingContract {
 }
 
 export interface PageBuildContract extends PageRenderingContract {
+  render: RenderMode;
   component?: string;
 }
 
-export interface ValidatePageRenderingContractOptions {
-  requireExplicitRenderForFullPrerender?: boolean;
+export const DEFAULT_PAGE_RENDER_MODE = "csr" satisfies RenderMode;
+
+export function resolvePageRenderMode(
+  render: RenderMode | undefined,
+): RenderMode {
+  return render ?? DEFAULT_PAGE_RENDER_MODE;
 }
 
 export function validatePageRenderingContract(
   label: string,
   page: PageRenderingContract,
-  options: ValidatePageRenderingContractOptions = {},
 ): void {
-  const violation = getPageRenderingContractViolation(label, page, options);
+  const violation = getPageRenderingContractViolation(label, page);
   if (violation) throw new Error(`[evjs] ${violation}`);
 }
 
@@ -42,16 +46,13 @@ export function validatePageBuildContract(
 export function getPageRenderingContractViolation(
   label: string,
   page: PageRenderingContract,
-  options: ValidatePageRenderingContractOptions = {},
 ): string | undefined {
+  const render = resolvePageRenderMode(page.render);
   const rsc = isRscPage(page);
   const partial = isPartialPrerenderPage(page);
   const fullPrerender = isFullPrerenderPage(page);
-  const missingFullPrerenderRender =
-    options.requireExplicitRenderForFullPrerender === true &&
-    page.render === undefined;
 
-  if (fullPrerender && (page.render === "csr" || missingFullPrerenderRender)) {
+  if (fullPrerender && render === "csr") {
     return `${label} uses full prerendering and must declare render: "ssg" or "ssr".`;
   }
   if (rsc && page.render !== "ssr") {
@@ -69,6 +70,9 @@ export function getPageRenderingContractViolation(
   if (rsc && partial) {
     return `${label} combines RSC and partial prerendering, which is not supported yet. Choose either rsc: true or prerender: { partial: true }, or split them into separate page routes.`;
   }
+  if (render === "csr" && page.hydrate !== undefined) {
+    return `${label} resolves to render: "csr" and must omit hydrate. Hydration is only configurable for render: "ssr" or "ssg".`;
+  }
   return undefined;
 }
 
@@ -76,6 +80,9 @@ export function getPageBuildContractViolation(
   label: string,
   page: PageBuildContract,
 ): string | undefined {
+  if (page.render === undefined) {
+    return `${label} is missing its resolved render mode. Core Pages must resolve render before build planning.`;
+  }
   const rsc = isRscPage(page);
   const partial = isPartialPrerenderPage(page);
 

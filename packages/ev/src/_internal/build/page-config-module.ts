@@ -163,16 +163,12 @@ async function resolvePageConfigModule(
   );
   const document = resolvePageDocument(value.document, page);
   const routeExtensions = resolvePageRouteExtensions(value.route, page);
-  validatePageRenderingContract(
-    `Page "${page.pageId}" config "${source}"`,
-    {
-      ...(render ? { render } : {}),
-      ...(componentModel ? { componentModel } : {}),
-      ...(hydrate ? { hydrate } : {}),
-      ...(prerender ? { prerender } : {}),
-    },
-    { requireExplicitRenderForFullPrerender: true },
-  );
+  validatePageRenderingContract(`Page "${page.pageId}" config "${source}"`, {
+    ...(render ? { render } : {}),
+    ...(componentModel ? { componentModel } : {}),
+    ...(hydrate ? { hydrate } : {}),
+    ...(prerender ? { prerender } : {}),
+  });
 
   return {
     config: {

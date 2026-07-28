@@ -526,6 +526,40 @@ describe("page.config modules", () => {
 
   it.each([
     {
+      rendering: "default CSR with load hydration",
+      source: 'export default { hydrate: "load" };',
+    },
+    {
+      rendering: "default CSR with disabled hydration",
+      source: 'export default { hydrate: "none" };',
+    },
+    {
+      rendering: "explicit CSR with load hydration",
+      source: 'export default { render: "csr", hydrate: "load" };',
+    },
+    {
+      rendering: "explicit CSR with disabled hydration",
+      source: 'export default { render: "csr", hydrate: "none" };',
+    },
+  ])("rejects $rendering", async ({ source }) => {
+    const cwd = await createFixture({
+      "src/pages/home/page.tsx":
+        "export default function Home() { return null; }",
+      "src/pages/home/page.config.ts": source,
+    });
+
+    await expect(
+      resolvePageConfigModules(
+        cwd,
+        createPageMetadata("home", "./src/pages/home/page.config.ts"),
+      ),
+    ).rejects.toThrow(
+      'Page "home" config "./src/pages/home/page.config.ts" resolves to render: "csr" and must omit hydrate. Hydration is only configurable for render: "ssr" or "ssg".',
+    );
+  });
+
+  it.each([
+    {
       feature: "RSC",
       source: 'export default { render: "ssr", hydrate: "load", rsc: true };',
       message:

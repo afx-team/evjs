@@ -20,6 +20,7 @@ import {
 } from "@evjs/shared/manifest";
 import type { ResolvedPageFileConfig } from "../page-config-module.js";
 import { createStaticPageDocumentOutput } from "../page-document-output.js";
+import { resolvePageRenderMode } from "../page-rendering-contract.js";
 import { CANONICAL_PAGE_ROUTE_ROOT } from "../page-route-conventions.js";
 import type { GraphConfig } from "./index.js";
 
@@ -192,7 +193,7 @@ export function createPageAnchorGraph(
         scope: route.scope,
         provider: PAGE_ANCHOR_PROVIDER_ID,
       },
-      render: resolvedPageConfig?.render ?? "csr",
+      render: resolvePageRenderMode(resolvedPageConfig?.render),
       ...(resolvedPageConfig?.componentModel
         ? { componentModel: resolvedPageConfig.componentModel }
         : {}),

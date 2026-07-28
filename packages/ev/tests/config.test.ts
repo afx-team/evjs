@@ -4,6 +4,7 @@ import {
   createNoPageRoutesFoundMessage,
   withPageRoutingDefaults,
 } from "../src/_internal/build/convention-config.js";
+import type { PageFileConfig } from "../src/config/index.js";
 import {
   CONFIG_DEFAULTS,
   defineConfig,
@@ -71,6 +72,20 @@ describe("config authoring", () => {
       // @ts-expect-error arbitrary head DSLs are not Page config.
       head: [["meta", { name: "description", content: "Home" }]],
     });
+    // @ts-expect-error omitted render resolves to CSR, which cannot hydrate.
+    const invalidDefaultCsrHydration = definePageConfig({ hydrate: "load" });
+    const invalidCsrHydration = definePageConfig({
+      render: "csr",
+      // @ts-expect-error explicit CSR mounts instead of hydrating.
+      hydrate: "none",
+    });
+    // @ts-expect-error PageFileConfig also rejects bypassing definePageConfig.
+    const invalidDefaultCsrConfig: PageFileConfig = { hydrate: "none" };
+    const invalidCsrConfig: PageFileConfig = {
+      render: "csr",
+      // @ts-expect-error explicit CSR cannot declare any hydration mode.
+      hydrate: "load",
+    };
 
     expect(unsupportedApp).toHaveProperty("app");
     expect(unsupportedPages).toHaveProperty("pages");
@@ -78,6 +93,10 @@ describe("config authoring", () => {
     expect(missingApplicationRoutes).toHaveProperty("application");
     expect(emptyApplicationRoutes).toHaveProperty("application");
     expect(invalidPageConfig).toHaveProperty("head");
+    expect(invalidDefaultCsrHydration).toHaveProperty("hydrate");
+    expect(invalidCsrHydration).toHaveProperty("hydrate");
+    expect(invalidDefaultCsrConfig).toHaveProperty("hydrate");
+    expect(invalidCsrConfig).toHaveProperty("hydrate");
   });
 });
 

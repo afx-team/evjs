@@ -925,8 +925,15 @@ function createGraph(
             provider: "@evjs/provider/page-anchor",
           },
           render: page.render ?? "csr",
-          hydrate: page.rsc ? ("none" as const) : ("load" as const),
-          ...(page.rsc ? { componentModel: "rsc" as const } : {}),
+          ...(page.rsc
+            ? {
+                componentModel: "rsc" as const,
+                hydrate: "none" as const,
+              }
+            : {}),
+          ...(!page.rsc && page.render !== undefined && page.render !== "csr"
+            ? { hydrate: "load" as const }
+            : {}),
           extensions: {},
           provenance,
         },

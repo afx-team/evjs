@@ -338,20 +338,9 @@ export interface PageRoutingConfig {
 
 export type PageRoutingMode = "spa" | "mpa";
 
-/**
- * Canonical configuration colocated with a `page.*` Page anchor.
- *
- * The module is evaluated by evjs at build time. Its resolved value must be
- * static JSON data; plugins decide whether an extension is consumed while
- * building or explicitly projected into generated runtime code.
- */
-export interface PageFileConfig<
+interface PageFileConfigBase<
   TExtensions extends ConfigExtensionValues = ConfigExtensionValues,
 > extends PageMetadata {
-  /** Framework document render mode. Defaults to "csr". */
-  readonly render?: RenderMode;
-  /** Framework hydration mode. Defaults to "load" except SSG defaults to "none". */
-  readonly hydrate?: HydrationMode;
   /** Prerender behavior for SSR/SSG Pages. */
   readonly prerender?: PrerenderConfig;
   /** Enable React Server Components. Requires `render: "ssr"`. */
@@ -371,6 +360,33 @@ export interface PageFileConfig<
    */
   readonly route?: PageFileRouteConfig;
 }
+
+type PageFileRenderingConfig =
+  | {
+      /** Defaults to CSR when omitted. */
+      readonly render?: RenderMode;
+      /** Hydration must be omitted unless SSR/SSG is selected explicitly. */
+      readonly hydrate?: never;
+    }
+  | {
+      /** Hydration requires explicitly selected server or build-time HTML. */
+      readonly render: Exclude<RenderMode, "csr">;
+      /** Whether the browser hydrates the generated HTML. */
+      readonly hydrate: HydrationMode;
+    };
+
+/**
+ * Canonical configuration colocated with a `page.*` Page anchor.
+ *
+ * The module is evaluated by evjs at build time. Its resolved value must be
+ * static JSON data; plugins decide whether an extension is consumed while
+ * building or explicitly projected into generated runtime code. Omitting
+ * `render` always selects CSR. Hydration applies only to SSR/SSG Pages because
+ * CSR mounts a new client tree instead of adopting existing HTML.
+ */
+export type PageFileConfig<
+  TExtensions extends ConfigExtensionValues = ConfigExtensionValues,
+> = PageFileConfigBase<TExtensions> & PageFileRenderingConfig;
 
 export interface PageFileDocumentConfig {
   /**

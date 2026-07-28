@@ -104,6 +104,18 @@ describe("assertCoreGraph", () => {
     );
   });
 
+  it.each([
+    "load",
+    "none",
+  ])("rejects CSR with Page hydration mode %s", (hydrate) => {
+    const graph = createValidGraph();
+    Reflect.set(getPage(graph), "hydrate", hydrate);
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      '[evjs] coreGraph.pages.orders.hydrate must be omitted when render is "csr".',
+    );
+  });
+
   it("validates Server Function nodes and rejects duplicate ids", () => {
     const graph = createValidGraph();
     graph.serverFunctions = [
