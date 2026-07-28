@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { parentPort, workerData } from "node:worker_threads";
 import type { ConfigComplete, DevServerReadyContext } from "@utoo/pack";
+import { runUtoopackDevServer } from "./runtime.js";
 
 const PATH_REWRITE_HEADER_INTS = 3;
 const PATH_REWRITE_BUFFER_BYTES = 256 * 1024;
@@ -29,7 +30,7 @@ async function run(): Promise<void> {
     typeof import("@utoo/pack"),
     "serve"
   >;
-  await serve({ config: data.config }, data.cwd, data.cwd, {
+  await runUtoopackDevServer({ serve }, data.config, data.cwd, {
     ...data.server,
     async onReady(context: DevServerReadyContext) {
       const spaHistoryFallbackUpdated = updateSpaHistoryFallback(context);

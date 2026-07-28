@@ -35,6 +35,7 @@ import {
   type UtoopackDevWorkerHandle,
 } from "./dev-worker-client.js";
 import { assertSafeUtoopackCleanOutput } from "./output-paths.js";
+import { runUtoopackBuild } from "./runtime.js";
 import {
   readServerStatsVersion,
   startUtoopackServerStatsMonitor,
@@ -164,8 +165,7 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
 
     await assertSafeUtoopackCleanOutput(cwd, utoopackConfig, outputPaths);
 
-    const { build } = requireUtoopack();
-    await build({ config: utoopackConfig }, cwd, cwd);
+    await runUtoopackBuild(requireUtoopack(), utoopackConfig, cwd);
 
     logger.info`Collecting utoopack build facts...`;
     const generator = new UtoopackManifestGenerator(cwd, plan);
