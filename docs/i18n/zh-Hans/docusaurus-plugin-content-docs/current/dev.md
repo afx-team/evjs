@@ -23,9 +23,9 @@ ev dev
 evjs 会在输出就绪日志前把 SPA fallback 同步到实际监听地址，因此路由请求不会再落到仍监听
 原配置端口的其他应用。
 
-同一个项目目录同一时间只允许一个 dev session。对同一应用重复启动 `ev dev` 时，命令会立即退出
-并显示已有进程 ID，避免两个进程同时覆盖 `.ev` 和 `dist`。不同项目目录可以并行启动，evjs
-会在进程间协调端口预留。
+同一个项目目录同一时间只允许一个 dev session，也不能并发运行 `ev dev`、`ev prepare` 或
+`ev build`。竞争命令会显示当前 operation 与进程 ID 并立即退出，避免多个进程同时覆盖
+`.ev`、route type、`dist` 或部署产物。不同项目目录可以并行启动，evjs 会在进程间协调端口预留。
 
 客户端和 API 开发服务器会监听 IPv4 地址，可以同时通过 `http://localhost:<port>` 和
 `http://127.0.0.1:<port>` 访问。启动日志显示 `Local` localhost URL
@@ -34,11 +34,16 @@ evjs 会在输出就绪日志前把 SPA fallback 同步到实际监听地址，�
 worker。使用自定义 HTTPS 证书且需要同时访问两个地址时，证书的 subject alternative names
 必须包含这两个地址。
 
-客户端开发服务器会把服务端运行时路径代理到服务端开发运行时。默认情况下这些路径来自
-`server.basePath`，包括 `/__evjs/fn`、`/__evjs/ppr` 和 `/__evjs/rsc`。
+客户端开发服务器从当前 `BuildPlan` 派生代理边界，代理匹配已发现 server request
+Route pattern、request-time `render: "ssr"` Page pattern，以及该 plan 中实际存在的
+runtime endpoint。Full SSG Page 在开发态预渲染后，仍由静态开发服务器按 canonical
+route 提供。Server-function 与 RSC endpoint 都是精确路径；只有 PPR 启用时，PPR
+endpoint 才持有以它为根的 region 子树。`server.basePath` 自身以及精确 endpoint 下
+未匹配的后代仍可由 SPA 使用。
 
-SPA history fallback 不会接管 `/api` 或派生出的服务端运行时路径。因此拼错的服务端请求会返回
-服务端/代理 404，而不是应用 HTML。
+`/api` 没有隐式的服务端语义。只有已发现的 server route 或显式 `dev.proxy` 规则声明
+该路径时，它才会绕过 SPA history fallback；否则 `/api/*` 与其他 SPA 路径一样，仍可
+由客户端 route tree 使用。
 
 ```mermaid
 flowchart TB
@@ -47,7 +52,7 @@ flowchart TB
   subgraph ClientSide["客户端开发服务器 :3000"]
     HTML["HTML + browser bundle"]
     HMR["HMR websocket"]
-    Proxy["/__evjs/* 代理"]
+    Proxy["BuildPlan route + runtime 代理"]
   end
 
   subgraph ServerSide["服务端开发运行时 :3001"]
@@ -118,7 +123,8 @@ HTTP(S) URL `target`。Context pattern 必须以 `/` 开头，不能包含空白
 
 1. 客户端开发服务器提供浏览器代码和 HMR。
 2. 服务端函数、服务端文件路由、SSR、PPR 和 RSC 请求会进入服务端开发运行时。
-3. 从 `server.basePath` 派生的路径会自动代理。
+3. BuildPlan 中精确的 fn/RSC endpoint 与已启用的 PPR 子树会自动代理；
+   `server.basePath` 自身不是代理 namespace。
 4. 文件变化时会触发浏览器和服务端重建；修改配置化 entry 或路由根目录后需要重启 `ev dev`。
 
 ## 编程式 API
@@ -157,8 +163,8 @@ framework preflight 会对照 active BuildPlan 检查这些 capability。
 默认 HTTP 传输不需要应用代码配置。只有在需要定制内置 HTTP 适配器，或替换为自定义适配器时，
 才需要在应用启动时调用 `initTransport()`。
 
-- 在**开发模式**中，客户端开发服务器会把 `/__evjs/fn`、`/__evjs/ppr`、
-  `/__evjs/rsc` 等服务端运行时路径代理到服务端开发运行时。
+- 在**开发模式**中，客户端开发服务器会把精确的 server-function endpoint、
+  RSC 启用时的精确 RSC endpoint，以及 PPR 启用时的 PPR 子树代理到服务端开发运行时。
 - 在**生产模式**中，客户端和服务端通常在同一个源下。
 - 当浏览器发起的服务端函数请求需要访问另一个 origin 时，使用 `transport.baseUrl`。
 - 内置 HTTP 适配器通过 `credentials` 和 `headers` 配置；fetch `mode` 不提供配置。

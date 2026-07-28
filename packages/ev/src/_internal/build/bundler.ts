@@ -4,15 +4,26 @@ import type {
   BuildPlan,
   BuildPlanUpdate,
 } from "@evjs/shared/manifest";
+import { assertPortableRelativeBrowserArtifactPath } from "@evjs/shared/manifest";
 import type {
   DefaultBundlerConfig,
   ResolvedFrameworkConfig,
 } from "../../config/index.js";
 import type { PluginHooks } from "../../plugin/index.js";
 
+export interface BundlerEmittedFiles {
+  client?: readonly string[];
+  server?: readonly string[];
+}
+
 export interface BundlerBuildFacts {
+  /**
+   * Complete portable paths emitted under each physical output root when the
+   * bundler exposes a reliable inventory. An absent side means unknown, not an
+   * empty output.
+   */
+  emittedFiles?: BundlerEmittedFiles;
   clientEntryAssets?: Record<string, AssetGroup>;
-  firstClientEntryAssets?: AssetGroup;
   serverEntryAssets?: Record<string, AssetGroup>;
   serverEntry?: string;
   serverAssets?: AssetGroup;
@@ -21,6 +32,51 @@ export interface BundlerBuildFacts {
   rscManifests?: {
     clientReferenceManifest?: Record<string, unknown>;
   };
+}
+
+/**
+ * Normalize adapter-native client entrypoint names into the exact BuildPlan
+ * names consumed by the linker. A sole raw entrypoint may stand in for a sole
+ * planned entry, but that adapter compatibility does not escape into build
+ * facts.
+ */
+export function resolveBundlerClientEntryAssets(
+  plan: BuildPlan,
+  available: Record<string, AssetGroup>,
+  source: string,
+): Record<string, AssetGroup> {
+  const planned = plan.entries.filter(
+    (entry) => entry.environment === "client",
+  );
+  const rawEntries = Object.entries(available);
+  const soleFallback =
+    planned.length === 1 && rawEntries.length === 1 ? rawEntries[0] : undefined;
+  const resolved: Record<string, AssetGroup> = {};
+
+  for (const entry of planned) {
+    const assets = available[entry.name] ?? soleFallback?.[1];
+    if (!assets) {
+      const names = rawEntries.map(([name]) => JSON.stringify(name)).join(", ");
+      throw new Error(
+        `[evjs] ${source} do not identify client BuildPlan entrypoint "${entry.name}" uniquely; found entrypoints ${names || "<none>"}.`,
+      );
+    }
+    resolved[entry.name] = {
+      js: assets.js.map((asset, index) =>
+        assertPortableRelativeBrowserArtifactPath(
+          asset,
+          `${source} entrypoint "${entry.name}" JavaScript asset[${index}]`,
+        ),
+      ),
+      css: assets.css.map((asset, index) =>
+        assertPortableRelativeBrowserArtifactPath(
+          asset,
+          `${source} entrypoint "${entry.name}" CSS asset[${index}]`,
+        ),
+      ),
+    };
+  }
+  return resolved;
 }
 
 export interface BundlerBuildContext<TBundlerCfg = DefaultBundlerConfig> {
@@ -64,11 +120,58 @@ export interface BundlerDevUpdateOptions<TBundlerCfg = DefaultBundlerConfig> {
 }
 
 export interface BundlerDevController<TBundlerCfg = DefaultBundlerConfig> {
+  /** Settles if the adapter-owned dev service terminates independently. */
+  done?: Promise<void>;
   close?(): void | Promise<void>;
   updatePlan(
     update: BuildPlanUpdate,
     options?: BundlerDevUpdateOptions<TBundlerCfg>,
   ): void | Promise<void>;
+}
+
+/** Whether a plan update carries no observable build or delivery change. */
+export function isEmptyBuildPlanUpdate(update: BuildPlanUpdate): boolean {
+  return (
+    update.entries.added.length === 0 &&
+    update.entries.removed.length === 0 &&
+    update.entries.changed.length === 0 &&
+    update.html.added.length === 0 &&
+    update.html.removed.length === 0 &&
+    update.html.changed.length === 0 &&
+    !update.generatedChanged &&
+    !update.resolveChanged &&
+    !update.runtimeChanged &&
+    !update.deliveryChanged &&
+    !update.serverCompilationChanged &&
+    !update.serverDocumentsChanged &&
+    !update.devRoutingChanged
+  );
+}
+
+/**
+ * Whether persistent compiler and routing topology can stay in place while
+ * framework-owned HTML, manifests, or server document shells are refreshed.
+ */
+export function isArtifactOnlyBuildPlanUpdate(
+  update: BuildPlanUpdate,
+): boolean {
+  return (
+    !update.serverCompilationChanged &&
+    !update.devRoutingChanged &&
+    !update.runtimeChanged &&
+    !update.resolveChanged &&
+    update.previous.distDir === update.next.distDir &&
+    update.previous.output.clientDir === update.next.output.clientDir &&
+    update.entries.added.length === 0 &&
+    update.entries.removed.length === 0 &&
+    update.entries.changed.length === 0 &&
+    (update.deliveryChanged ||
+      update.generatedChanged ||
+      update.serverDocumentsChanged ||
+      update.html.added.length > 0 ||
+      update.html.removed.length > 0 ||
+      update.html.changed.length > 0)
+  );
 }
 
 export interface BundlerCapabilities {
@@ -179,6 +282,7 @@ export function getBundlerDevCapabilityGaps(
       required:
         update.deliveryChanged ||
         update.generatedChanged ||
+        update.serverDocumentsChanged ||
         update.html.added.length > 0 ||
         update.html.removed.length > 0 ||
         update.html.changed.length > 0,
@@ -195,22 +299,21 @@ export function getBundlerDevCapabilityGaps(
     },
     {
       capability: "routes",
-      required: !sameJson(update.previous.dev, update.next.dev),
+      required: update.devRoutingChanged,
       reason: "client or server route plans changed",
     },
     {
       capability: "server",
       required:
-        update.serverChanged ||
-        update.previous.output.serverDir !== update.next.output.serverDir ||
-        !sameJson(update.previous.server, update.next.server) ||
-        !sameJson(update.previous.rsc, update.next.rsc) ||
+        update.serverCompilationChanged ||
+        update.runtimeChanged ||
         [
           ...update.entries.added,
           ...update.entries.removed,
           ...update.entries.changed,
         ].some((entry) => entry.environment === "server"),
-      reason: "server entries, renderers, output, or RSC inputs changed",
+      reason:
+        "server compilation inputs, server output, or framework runtime changed",
     },
     {
       capability: "resolution",
@@ -270,8 +373,4 @@ function formatBuildEntryList(entries: BuildPlan["entries"]): string {
       return `"${entry.name}" (${entry.kind}${owners.length > 0 ? `, ${owners.join(", ")}` : ""})`;
     })
     .join(", ");
-}
-
-function sameJson(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
 }

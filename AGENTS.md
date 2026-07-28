@@ -67,7 +67,7 @@ materialization.
    generated output. Scaffolded apps and template packs should not copy generated
    route types.
 5. Canonical Pages are strict positive anchors:
-   `<routing.dir>/**/page.{ts,tsx,js,jsx}`. The containing directory is the Page
+   `src/pages/**/page.{ts,tsx,js,jsx}`. The containing directory is the Page
    scope, and its relative directory segments determine the client URL.
    `$param`, terminal `$...splat`, and `(group)` directories express dynamic,
    catch-all, and pathless segments. Other colocated files—including

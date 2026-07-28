@@ -1050,6 +1050,61 @@ describe("createShell", () => {
     ]);
   });
 
+  it("continues shell cleanup after driver and unmount failures", async () => {
+    const events: string[] = [];
+    const driverError = new Error("driver cleanup failed");
+    const unmountError = new Error("unmount failed");
+    const shell = createShell({
+      runtime,
+      drivers: [
+        {
+          current: () => ({ pageId: "home", hydrate: false }),
+          subscribe() {
+            return () => {
+              events.push("dispose:first");
+              throw driverError;
+            };
+          },
+        },
+        {
+          current: () => ({ pageId: "home", hydrate: false }),
+          subscribe() {
+            return () => {
+              events.push("dispose:second");
+            };
+          },
+        },
+      ],
+      resolveMountPoint: () => ({}) as Element,
+      async loadModule() {
+        return {
+          mount() {
+            events.push("mount");
+          },
+          unmount() {
+            events.push("unmount");
+            throw unmountError;
+          },
+        };
+      },
+    });
+
+    await shell.start({ pageId: "home", hydrate: false });
+    const disposal = shell.dispose();
+
+    await expect(disposal).rejects.toMatchObject({
+      errors: [driverError, unmountError],
+      message: "[evjs] Shell disposal failed.",
+    });
+    expect(events).toEqual([
+      "mount",
+      "dispose:first",
+      "dispose:second",
+      "unmount",
+    ]);
+    await expect(shell.dispose()).resolves.toBeUndefined();
+  });
+
   it("consumes rejected background driver transitions after reporting them", async () => {
     let notify: ((request: ActivationRequest) => void) | undefined;
     const errors: string[] = [];

@@ -2,6 +2,15 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  assertPortableRelativeArtifactPath,
+  assertSafeBuildOutputPaths,
+  assertSafeBuildOwnedOutputPath,
+  assertSafeBundlerCleanOutputPath,
+  canonicalPortableArtifactPathKey,
+  type ResolvedBuildOutputPaths,
+  resolveBuildOutputPaths,
+} from "@evjs/ev/_internal/build";
 import type { ResolvedConfig } from "@evjs/ev/config";
 import type { BundlerCtx, PluginHooks } from "@evjs/ev/plugin";
 import type {
@@ -13,7 +22,6 @@ import { getLogger } from "@logtape/logtape";
 import MiniCssExtractPlugin from "mini-css-extract-plugin";
 import type { Configuration, EntryObject } from "webpack";
 import webpack from "webpack";
-import { getOutputPaths } from "./output-paths.js";
 
 const logger = getLogger(["evjs", "bundler-webpack", "config"]);
 
@@ -54,7 +62,8 @@ export async function createWebpackConfigs(
     addWatchFile?: (file: string) => void;
   } = {},
 ): Promise<Configuration[]> {
-  const outputPaths = getOutputPaths(cwd, config.output, plan.distDir);
+  const outputPaths = resolveBuildOutputPaths(cwd, plan);
+  await assertSafeBuildOutputPaths(cwd, outputPaths);
   const configs: Configuration[] = [];
   const clientEntries = plan.entries.filter(
     (entry) => entry.environment === "client",
@@ -86,7 +95,7 @@ export async function createWebpackConfigs(
         publicPath: plan.runtime.publicPath,
         resolveAlias: plan.resolve?.alias,
         resolveExternal: plan.resolve?.external,
-        functionEndpoint: config.server.runtime.fn,
+        functionEndpoint: plan.runtime.server.fn,
         crossOriginLoading: config.output.crossOriginLoading,
         rscClientReferences: getRscClientReferenceModules(
           cwd,
@@ -116,7 +125,7 @@ export async function createWebpackConfigs(
         publicPath: plan.runtime.publicPath,
         resolveAlias: plan.resolve?.alias,
         resolveExternal: plan.resolve?.external,
-        functionEndpoint: config.server.runtime.fn,
+        functionEndpoint: plan.runtime.server.fn,
         crossOriginLoading: undefined,
         rscClientReferences: getRscClientReferenceModules(
           cwd,
@@ -141,7 +150,7 @@ export async function createWebpackConfigs(
         publicPath: plan.runtime.publicPath,
         resolveAlias: plan.resolve?.alias,
         resolveExternal: plan.resolve?.external,
-        functionEndpoint: config.server.runtime.fn,
+        functionEndpoint: plan.runtime.server.fn,
         crossOriginLoading: undefined,
         rscClientReferences: getRscClientReferenceModules(
           cwd,
@@ -166,7 +175,7 @@ export async function createWebpackConfigs(
         publicPath: plan.runtime.publicPath,
         resolveAlias: plan.resolve?.alias,
         resolveExternal: plan.resolve?.external,
-        functionEndpoint: config.server.runtime.fn,
+        functionEndpoint: plan.runtime.server.fn,
         crossOriginLoading: undefined,
         rscClientReferences: getRscClientReferenceModules(
           cwd,
@@ -179,6 +188,14 @@ export async function createWebpackConfigs(
       }),
     );
   }
+
+  const frameworkOutputExpectations = configs.flatMap((bundlerConfig) => {
+    const expectation = getFrameworkWebpackOutputExpectation(
+      bundlerConfig,
+      outputPaths,
+    );
+    return expectation ? [expectation] : [];
+  });
 
   const ctx: BundlerCtx<WebpackConfig> = {
     mode: plan.mode,
@@ -199,10 +216,454 @@ export async function createWebpackConfigs(
   for (const h of hooks) {
     if (h.bundlerConfig) {
       await h.bundlerConfig(configs, ctx);
+      await assertFrameworkWebpackOutputs(
+        cwd,
+        configs,
+        frameworkOutputExpectations,
+        outputPaths,
+      );
     }
   }
 
+  await assertFrameworkWebpackOutputs(
+    cwd,
+    configs,
+    frameworkOutputExpectations,
+    outputPaths,
+  );
+
+  const cleanOutputs: Array<{
+    configName: string;
+    field: string;
+    path: string;
+  }> = [];
+  for (const bundlerConfig of configs) {
+    if (!bundlerConfig.output?.clean) continue;
+    const outputPath = bundlerConfig.output.path;
+    const configName = bundlerConfig.name ?? "unnamed";
+    if (!outputPath) {
+      throw new Error(
+        `[evjs] Webpack config "${configName}" enables recursive output cleaning without an explicit output.path.`,
+      );
+    }
+    const field = getWebpackOutputField(bundlerConfig);
+    await assertSafeBundlerCleanOutputPath(
+      cwd,
+      field,
+      outputPaths.rootDir,
+      outputPath,
+    );
+    assertOwnedWebpackCleanOutput(
+      cwd,
+      { configName, field, path: outputPath },
+      outputPaths,
+      cleanOutputs,
+    );
+    cleanOutputs.push({ configName, field, path: outputPath });
+  }
+
   return configs;
+}
+
+async function assertFrameworkWebpackOutputs(
+  cwd: string,
+  configs: Configuration[],
+  expectations: FrameworkWebpackOutputExpectation[],
+  outputPaths: ResolvedBuildOutputPaths,
+): Promise<void> {
+  for (const expectation of expectations) {
+    const matches = configs.filter(
+      (config) => config.name === expectation.configName,
+    );
+    if (matches.length !== 1) {
+      throw new Error(
+        `[evjs] Webpack bundlerConfig hooks must preserve exactly one framework config named "${expectation.configName}"; found ${matches.length}.`,
+      );
+    }
+    await assertFrameworkWebpackOutput(
+      cwd,
+      matches[0] as Configuration,
+      expectation,
+      outputPaths,
+    );
+  }
+  assertPortableWebpackArtifactNames(configs);
+}
+
+interface FrameworkWebpackOutputExpectation {
+  configName: string;
+  field: "output.client" | "output.server" | "build-only output";
+  path: string;
+  entryNames: string[];
+  templates: WebpackOutputTemplateSnapshot;
+  cssPlugin?: MiniCssExtractPlugin;
+  cssTemplates?: MiniCssOutputTemplateSnapshot;
+}
+
+const WEBPACK_OUTPUT_TEMPLATE_FIELDS = [
+  "filename",
+  "chunkFilename",
+  "assetModuleFilename",
+  "webassemblyModuleFilename",
+  "sourceMapFilename",
+  "hotUpdateChunkFilename",
+  "hotUpdateMainFilename",
+] as const;
+
+type WebpackOutputTemplateField =
+  (typeof WEBPACK_OUTPUT_TEMPLATE_FIELDS)[number];
+type WebpackOutputTemplateSnapshot = Record<
+  WebpackOutputTemplateField,
+  unknown
+>;
+
+interface MiniCssOutputTemplateSnapshot {
+  filename: unknown;
+  chunkFilename: unknown;
+}
+
+function getFrameworkWebpackOutputExpectation(
+  config: Configuration,
+  outputPaths: ResolvedBuildOutputPaths,
+): FrameworkWebpackOutputExpectation | undefined {
+  const templates = snapshotWebpackOutputTemplates(config);
+  const cssPlugin = config.plugins?.find(
+    (plugin): plugin is MiniCssExtractPlugin =>
+      plugin instanceof MiniCssExtractPlugin,
+  );
+  const outputExpectation = {
+    entryNames: readExplicitWebpackEntryNames(config) ?? [],
+    templates,
+    ...(cssPlugin
+      ? {
+          cssPlugin,
+          cssTemplates: snapshotMiniCssOutputTemplates(cssPlugin),
+        }
+      : {}),
+  };
+  switch (config.name) {
+    case "client":
+      return {
+        ...outputExpectation,
+        configName: "client",
+        field: "output.client",
+        path: outputPaths.clientDir,
+      };
+    case "server":
+    case "server-rsc":
+      return {
+        ...outputExpectation,
+        configName: config.name,
+        field: "output.server",
+        path: outputPaths.serverDir,
+      };
+    case "server-build":
+      return {
+        ...outputExpectation,
+        configName: "server-build",
+        field: "build-only output",
+        path: path.join(outputPaths.rootDir, "__evjs_build_server"),
+      };
+    default:
+      return undefined;
+  }
+}
+
+async function assertFrameworkWebpackOutput(
+  cwd: string,
+  config: Configuration,
+  expectation: FrameworkWebpackOutputExpectation,
+  outputPaths: ResolvedBuildOutputPaths,
+): Promise<void> {
+  const actualPath = config.output?.path;
+  const expectedPath = expectation.path;
+  if (actualPath !== expectedPath) {
+    throw new Error(
+      `[evjs] Webpack config "${expectation.configName}" output.path "${actualPath ? formatProjectRelativeOutputPath(cwd, actualPath) : "<missing>"}" must remain the exact absolute BuildPlan ${expectation.field} directory "${formatProjectRelativeOutputPath(cwd, expectedPath)}". Framework-owned output paths cannot be overridden by bundlerConfig hooks.`,
+    );
+  }
+
+  assertFrameworkWebpackEntryNames(config, expectation);
+  assertWebpackOutputTemplates(config, expectation);
+  assertSelfContainedServerEntrypoints(config, expectation);
+
+  if (expectation.field === "build-only output") {
+    await assertSafeBuildOwnedOutputPath(
+      cwd,
+      `Webpack config "${expectation.configName}"`,
+      outputPaths.rootDir,
+      actualPath,
+    );
+  }
+}
+
+function assertSelfContainedServerEntrypoints(
+  config: Configuration,
+  expectation: FrameworkWebpackOutputExpectation,
+): void {
+  if (expectation.configName === "client") return;
+  const optimization = config.optimization;
+  if (!optimization) return;
+  if (
+    optimization.runtimeChunk !== undefined &&
+    optimization.runtimeChunk !== false
+  ) {
+    throw new Error(
+      `[evjs] Webpack config "${expectation.configName}" optimization.runtimeChunk must remain false because evjs server loaders import one self-contained entry asset.`,
+    );
+  }
+  if (
+    optimization.splitChunks !== undefined &&
+    optimization.splitChunks !== false
+  ) {
+    throw new Error(
+      `[evjs] Webpack config "${expectation.configName}" optimization.splitChunks must remain disabled because evjs server loaders import one self-contained entry asset.`,
+    );
+  }
+}
+
+function assertFrameworkWebpackEntryNames(
+  config: Configuration,
+  expectation: FrameworkWebpackOutputExpectation,
+): void {
+  const actualNames = readExplicitWebpackEntryNames(config);
+  if (!actualNames) {
+    throw new Error(
+      `[evjs] Webpack config "${expectation.configName}" must keep a static entry object so framework entry names can be validated after bundlerConfig hooks.`,
+    );
+  }
+
+  for (const expectedName of expectation.entryNames) {
+    if (actualNames.includes(expectedName)) continue;
+    throw new Error(
+      `[evjs] Webpack config "${expectation.configName}" must preserve framework entry name "${expectedName}" after bundlerConfig hooks.`,
+    );
+  }
+}
+
+function assertPortableWebpackArtifactNames(configs: Configuration[]): void {
+  for (const config of configs) {
+    const configName = config.name ?? "unnamed";
+    if (typeof config.entry === "function") {
+      throw new Error(
+        `[evjs] Webpack config "${configName}" must use static entries so evjs can validate emitted entry names after bundlerConfig hooks.`,
+      );
+    }
+
+    assertPortableWebpackNames(
+      readExplicitWebpackEntryNames(config) ?? [],
+      `Webpack config "${configName}" entry`,
+    );
+
+    const optimization = config.optimization;
+    if (!optimization || typeof optimization !== "object") continue;
+
+    const runtimeChunk = optimization.runtimeChunk;
+    if (runtimeChunk && typeof runtimeChunk === "object") {
+      assertStaticWebpackChunkName(
+        (runtimeChunk as { name?: unknown }).name,
+        `Webpack config "${configName}" runtime chunk name`,
+      );
+    }
+
+    const splitChunks = optimization.splitChunks;
+    if (!splitChunks || typeof splitChunks !== "object") continue;
+    const splitChunksConfig = splitChunks as {
+      name?: unknown;
+      cacheGroups?: Record<string, unknown>;
+    };
+    assertStaticWebpackChunkName(
+      splitChunksConfig.name,
+      `Webpack config "${configName}" split chunk name`,
+    );
+    for (const [groupName, group] of Object.entries(
+      splitChunksConfig.cacheGroups ?? {},
+    )) {
+      assertPortableRelativeArtifactPath(
+        groupName,
+        `Webpack config "${configName}" split chunk group name "${groupName}"`,
+      );
+      if (!group || typeof group !== "object") continue;
+      assertStaticWebpackChunkName(
+        (group as { name?: unknown }).name,
+        `Webpack config "${configName}" split chunk group "${groupName}" name`,
+      );
+    }
+  }
+}
+
+function assertPortableWebpackNames(names: string[], field: string): void {
+  const seen = new Map<string, string>();
+  for (const name of names) {
+    assertPortableRelativeArtifactPath(name, `${field} name "${name}"`);
+    const key = canonicalPortableArtifactPathKey(name);
+    const existing = seen.get(key);
+    if (existing !== undefined) {
+      throw new Error(
+        `[evjs] ${field} names "${existing}" and "${name}" resolve to the same portable artifact path.`,
+      );
+    }
+    seen.set(key, name);
+  }
+}
+
+function assertStaticWebpackChunkName(value: unknown, field: string): void {
+  if (value === undefined || value === false) return;
+  if (typeof value !== "string") {
+    throw new Error(
+      `[evjs] ${field} must be a static portable relative artifact path so evjs can validate it after bundlerConfig hooks.`,
+    );
+  }
+  assertPortableRelativeArtifactPath(value, field);
+}
+
+function readExplicitWebpackEntryNames(
+  config: Configuration,
+): string[] | undefined {
+  const entry = config.entry;
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    return undefined;
+  }
+  return Object.keys(entry);
+}
+
+function snapshotWebpackOutputTemplates(
+  config: Configuration,
+): WebpackOutputTemplateSnapshot {
+  return Object.fromEntries(
+    WEBPACK_OUTPUT_TEMPLATE_FIELDS.map((field) => [
+      field,
+      config.output?.[field],
+    ]),
+  ) as WebpackOutputTemplateSnapshot;
+}
+
+function assertWebpackOutputTemplates(
+  config: Configuration,
+  expectation: FrameworkWebpackOutputExpectation,
+): void {
+  for (const field of WEBPACK_OUTPUT_TEMPLATE_FIELDS) {
+    const actual = config.output?.[field];
+    const expected = expectation.templates[field];
+    if (Object.is(actual, expected)) continue;
+    throw new Error(
+      `[evjs] Webpack config "${expectation.configName}" output.${field} ${formatOutputTemplate(actual)} must remain the framework-owned template ${formatOutputTemplate(expected)}. bundlerConfig hooks cannot override framework output file templates.`,
+    );
+  }
+
+  if (!expectation.cssPlugin || !expectation.cssTemplates) return;
+  if (!config.plugins?.includes(expectation.cssPlugin)) {
+    throw new Error(
+      `[evjs] Webpack config "${expectation.configName}" must preserve the framework-owned MiniCssExtractPlugin instance.`,
+    );
+  }
+  const actualCssTemplates = snapshotMiniCssOutputTemplates(
+    expectation.cssPlugin,
+  );
+  for (const field of ["filename", "chunkFilename"] as const) {
+    if (Object.is(actualCssTemplates[field], expectation.cssTemplates[field])) {
+      continue;
+    }
+    throw new Error(
+      `[evjs] Webpack config "${expectation.configName}" MiniCssExtractPlugin ${field} ${formatOutputTemplate(actualCssTemplates[field])} must remain the framework-owned template ${formatOutputTemplate(expectation.cssTemplates[field])}. bundlerConfig hooks cannot override framework CSS output file templates.`,
+    );
+  }
+}
+
+function snapshotMiniCssOutputTemplates(
+  plugin: MiniCssExtractPlugin,
+): MiniCssOutputTemplateSnapshot {
+  const options = (
+    plugin as unknown as {
+      options?: { filename?: unknown; chunkFilename?: unknown };
+    }
+  ).options;
+  return {
+    filename: options?.filename,
+    chunkFilename: options?.chunkFilename,
+  };
+}
+
+function formatOutputTemplate(value: unknown): string {
+  if (value === undefined) return "<unset>";
+  if (typeof value === "function") return "<function>";
+  return JSON.stringify(value);
+}
+
+function assertOwnedWebpackCleanOutput(
+  cwd: string,
+  candidate: { configName: string; field: string; path: string },
+  outputPaths: ResolvedBuildOutputPaths,
+  previous: Array<{ configName: string; field: string; path: string }>,
+): void {
+  const candidatePath = path.resolve(cwd, candidate.path);
+  const candidateDisplayPath = formatProjectRelativeOutputPath(
+    cwd,
+    candidatePath,
+  );
+  const expectedPath =
+    candidate.field === "output.client"
+      ? path.resolve(cwd, outputPaths.clientDir)
+      : candidate.field === "output.server"
+        ? path.resolve(cwd, outputPaths.serverDir)
+        : undefined;
+  if (!expectedPath || candidatePath !== expectedPath) {
+    for (const [ownedField, ownedPath] of [
+      ["output.client", path.resolve(cwd, outputPaths.clientDir)],
+      ["output.server", path.resolve(cwd, outputPaths.serverDir)],
+    ] as const) {
+      if (!outputPathsOverlap(candidatePath, ownedPath)) continue;
+      throw new Error(
+        `[evjs] Webpack config "${candidate.configName}" clean output "${candidateDisplayPath}" must not overlap framework-owned ${ownedField} directory "${formatProjectRelativeOutputPath(cwd, ownedPath)}".`,
+      );
+    }
+  }
+
+  for (const existing of previous) {
+    const existingPath = path.resolve(cwd, existing.path);
+    if (!outputPathsOverlap(candidatePath, existingPath)) continue;
+    throw new Error(
+      `[evjs] Webpack config "${candidate.configName}" clean output "${candidateDisplayPath}" must not overlap Webpack config "${existing.configName}" clean output "${formatProjectRelativeOutputPath(cwd, existingPath)}".`,
+    );
+  }
+}
+
+function isStrictDescendantOutputPath(
+  root: string,
+  candidate: string,
+): boolean {
+  const relative = path.relative(root, candidate);
+  return (
+    relative !== "" &&
+    !path.isAbsolute(relative) &&
+    relative !== ".." &&
+    !relative.startsWith(`..${path.sep}`)
+  );
+}
+
+function outputPathsOverlap(left: string, right: string): boolean {
+  return (
+    left === right ||
+    isStrictDescendantOutputPath(left, right) ||
+    isStrictDescendantOutputPath(right, left)
+  );
+}
+
+function formatProjectRelativeOutputPath(
+  cwd: string,
+  outputPath: string,
+): string {
+  const relative = path.relative(path.resolve(cwd), path.resolve(outputPath));
+  if (path.isAbsolute(relative)) return "<outside-project>";
+  return (relative || ".").split(path.sep).join("/");
+}
+
+function getWebpackOutputField(config: Configuration): string {
+  if (config.name === "client") return "output.client";
+  if (config.name === "server" || config.name === "server-rsc") {
+    return "output.server";
+  }
+  return `Webpack config "${config.name ?? "unnamed"}" output.path`;
 }
 
 function missingFrameworkWatchCollector(file: string): never {
@@ -232,6 +693,8 @@ function createWebpackConfig(options: {
 }): Configuration {
   const isProduction = options.mode === "production";
   const outputExtension = options.target === "node" ? ".cjs" : ".js";
+  const chunkDirectory =
+    options.target === "node" ? `chunks/${options.name}` : undefined;
 
   return {
     name: options.name,
@@ -245,8 +708,8 @@ function createWebpackConfig(options: {
         ? `[name].[contenthash:8]${outputExtension}`
         : `[name]${outputExtension}`,
       chunkFilename: isProduction
-        ? `[name].[contenthash:8]${outputExtension}`
-        : `[name]${outputExtension}`,
+        ? `${chunkDirectory ? `${chunkDirectory}/` : ""}[name].[contenthash:8]${outputExtension}`
+        : `${chunkDirectory ? `${chunkDirectory}/` : ""}[name]${outputExtension}`,
       publicPath: webpackPublicPath(options.publicPath, options.target),
       crossOriginLoading:
         options.target === "web" ? options.crossOriginLoading : undefined,
@@ -338,11 +801,21 @@ function createWebpackConfig(options: {
         ),
         __EVJS_FUNCTION_ENDPOINT__: JSON.stringify(options.functionEndpoint),
       }),
-      new MiniCssExtractPlugin(
-        options.target === "web" && options.crossOriginLoading
+      new MiniCssExtractPlugin({
+        ...(options.target === "web" && options.crossOriginLoading
           ? { attributes: { crossorigin: options.crossOriginLoading } }
-          : undefined,
-      ),
+          : {}),
+        ...(chunkDirectory
+          ? {
+              filename: isProduction
+                ? "[name].[contenthash:8].css"
+                : "[name].css",
+              chunkFilename: isProduction
+                ? `${chunkDirectory}/[name].[contenthash:8].css`
+                : `${chunkDirectory}/[name].css`,
+            }
+          : {}),
+      }),
       ...createRscPlugins(options),
     ],
     stats: {

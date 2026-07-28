@@ -1,18 +1,24 @@
 import path from "node:path";
 import {
-  getPageRouteParamNameValidationError,
+  isReservedPageRouteParamName,
   pageRoutePathShapeFromPath,
 } from "@evjs/shared";
+import {
+  findRouteSegmentConventionViolation,
+  type InvalidRouteSegment,
+  isCatchAllRouteSegment,
+  isRouteGroupSegment,
+  isRouteSourceModuleFile,
+  normalizeRouteConventionPath,
+  ROUTE_SOURCE_EXTENSIONS,
+  type RouteSegmentConventionOptions,
+  type RouteSegmentConventionViolation,
+} from "./route-conventions.js";
 
-export const PAGE_ROUTE_SOURCE_EXTENSIONS = [
-  ".ts",
-  ".tsx",
-  ".js",
-  ".jsx",
-] as const;
-export const PAGE_ROUTE_SOURCE_EXTENSION_LABEL = ".ts, .tsx, .js, or .jsx";
 export const PAGE_ENTRY_BASENAME = "page";
-export const PAGE_ENTRY_FILES = PAGE_ROUTE_SOURCE_EXTENSIONS.map(
+/** Fixed root for the canonical Page-and-Route file convention. */
+export const CANONICAL_PAGE_ROUTE_ROOT = "./src/pages";
+export const PAGE_ENTRY_FILES = ROUTE_SOURCE_EXTENSIONS.map(
   (extension) => `${PAGE_ENTRY_BASENAME}${extension}`,
 );
 export const PAGE_ENTRY_LABEL = "page.ts, page.tsx, page.js, or page.jsx";
@@ -117,15 +123,6 @@ export const PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY =
     "Page-anchor routes use",
   );
 
-const PAGE_ROUTE_SOURCE_EXTENSION_SET = new Set<string>(
-  PAGE_ROUTE_SOURCE_EXTENSIONS,
-);
-const CASE_PRESERVING_STATIC_ROUTE_SEGMENT_PATTERN =
-  /^[A-Za-z0-9][A-Za-z0-9._~-]*$/;
-const LOWERCASE_STATIC_ROUTE_SEGMENT_PATTERN = /^[a-z0-9][a-z0-9._~-]*$/;
-const DYNAMIC_ROUTE_PARAM_PATTERN = /^\$[A-Za-z_][A-Za-z0-9_]*$/;
-const CATCH_ALL_ROUTE_PARAM_PATTERN = /^\$\.\.\.[A-Za-z_][A-Za-z0-9_]*$/;
-
 export interface PageRouteFileConvention {
   segments: string[];
 }
@@ -168,29 +165,13 @@ export interface PageRouteConventionRule {
   invalid: readonly string[];
 }
 
-export interface InvalidPageRouteSegment {
-  kind:
-    | "catch-all"
-    | "duplicate-catch-all"
-    | "duplicate-dynamic"
-    | "dynamic"
-    | "non-terminal-catch-all"
-    | "reserved-catch-all"
-    | "reserved-dynamic"
-    | "static";
-  segment: string;
-}
-
-export interface PageRouteSegmentConventionOptions {
-  allowCasePreservingStatic?: boolean;
-  allowCatchAll?: boolean;
-}
+export type PageRouteSegmentConventionOptions = Pick<
+  RouteSegmentConventionOptions,
+  "allowCasePreservingStatic" | "allowCatchAll"
+>;
 
 export type PageRouteSegmentConventionViolation =
-  | { kind: "route-group"; segment: string }
-  | { kind: "bracket"; segment: string }
-  | { kind: "unsupported-dynamic"; segment: string }
-  | InvalidPageRouteSegment;
+  RouteSegmentConventionViolation;
 
 function formatPageRouteConventionSummary(
   rules: readonly PageRouteConventionRule[],
@@ -239,22 +220,11 @@ function joinConventionSummaryList(items: readonly string[]): string {
   return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
 }
 
-export function isPageRouteSourceModuleFile(file: string): boolean {
-  if (file.endsWith(".d.ts")) return false;
-  if (/\.(client|server)\.[jt]sx?$/.test(file)) return false;
-  if (/\.(test|spec|story|stories)\.[cm]?[jt]sx?$/.test(file)) return false;
-  return PAGE_ROUTE_SOURCE_EXTENSION_SET.has(path.extname(file));
-}
-
-export function normalizePageRouteConventionPath(routeRel: string): string {
-  return routeRel.replaceAll("\\", "/");
-}
-
 export function parsePageAnchorRouteFile(
   routeRel: string,
 ): PageRouteFileConvention | undefined {
-  const normalizedRouteRel = normalizePageRouteConventionPath(routeRel);
-  if (!isPageRouteSourceModuleFile(path.posix.basename(normalizedRouteRel))) {
+  const normalizedRouteRel = normalizeRouteConventionPath(routeRel);
+  if (!isRouteSourceModuleFile(path.posix.basename(normalizedRouteRel))) {
     return undefined;
   }
 
@@ -269,124 +239,14 @@ export function isPageRouteConventionModuleName(name: string): boolean {
   return name === "error" || name === "not-found";
 }
 
-export function findRouteGroupSegment(segments: string[]): string | undefined {
-  return segments.find(
-    (segment) =>
-      (segment.startsWith("(") || segment.endsWith(")")) &&
-      !isPageRouteGroupSegment(segment),
-  );
-}
-
-export function isPageRouteGroupSegment(segment: string): boolean {
-  return /^\([^)]+\)$/.test(segment);
-}
-
-export function findBracketRouteSegment(
-  segments: string[],
-): string | undefined {
-  return segments.find(
-    (segment) => segment.startsWith("[") || segment.endsWith("]"),
-  );
-}
-
-export function findUnsupportedDynamicRouteSegment(
-  segments: string[],
-  options: PageRouteSegmentConventionOptions = {},
-): string | undefined {
-  const allowCatchAll = options.allowCatchAll !== false;
-  return segments.find(
-    (segment) =>
-      segment.startsWith("$") &&
-      (segment === "$" ||
-        (!allowCatchAll && isCatchAllPageRouteSegment(segment)) ||
-        segment.endsWith("?")),
-  );
-}
-
-export function findInvalidRouteSegment(
-  segments: string[],
-  options: PageRouteSegmentConventionOptions = {},
-): InvalidPageRouteSegment | undefined {
-  const dynamicNames = new Set<string>();
-  const staticSegmentPattern =
-    options.allowCasePreservingStatic === false
-      ? LOWERCASE_STATIC_ROUTE_SEGMENT_PATTERN
-      : CASE_PRESERVING_STATIC_ROUTE_SEGMENT_PATTERN;
-  let lastRouteSegmentIndex = -1;
-  for (let index = segments.length - 1; index >= 0; index -= 1) {
-    if (!isPageRouteGroupSegment(segments[index])) {
-      lastRouteSegmentIndex = index;
-      break;
-    }
-  }
-  let hasCatchAll = false;
-  for (const [index, segment] of segments.entries()) {
-    if (isPageRouteGroupSegment(segment)) continue;
-
-    if (isCatchAllPageRouteSegment(segment)) {
-      if (options.allowCatchAll === false) {
-        return { kind: "catch-all", segment };
-      }
-      if (!CATCH_ALL_ROUTE_PARAM_PATTERN.test(segment)) {
-        return { kind: "catch-all", segment };
-      }
-      const name = getCatchAllRouteParamName(segment);
-      if (getPageRouteParamNameValidationError(name) === "reserved") {
-        return { kind: "reserved-catch-all", segment };
-      }
-      if (index !== lastRouteSegmentIndex) {
-        return { kind: "non-terminal-catch-all", segment };
-      }
-      if (hasCatchAll) return { kind: "duplicate-catch-all", segment };
-      hasCatchAll = true;
-      continue;
-    }
-
-    if (segment.startsWith("$")) {
-      if (!DYNAMIC_ROUTE_PARAM_PATTERN.test(segment)) {
-        return { kind: "dynamic", segment };
-      }
-      const name = segment.slice(1);
-      if (getPageRouteParamNameValidationError(name) === "reserved") {
-        return { kind: "reserved-dynamic", segment };
-      }
-      if (dynamicNames.has(name)) return { kind: "duplicate-dynamic", segment };
-      dynamicNames.add(name);
-      continue;
-    }
-
-    if (!staticSegmentPattern.test(segment)) {
-      return { kind: "static", segment };
-    }
-  }
-
-  return undefined;
-}
-
 export function findPageRouteSegmentConventionViolation(
   segments: string[],
   options: PageRouteSegmentConventionOptions = {},
 ): PageRouteSegmentConventionViolation | undefined {
-  const routeGroupSegment = findRouteGroupSegment(segments);
-  if (routeGroupSegment) {
-    return { kind: "route-group", segment: routeGroupSegment };
-  }
-
-  const bracketSegment = findBracketRouteSegment(segments);
-  if (bracketSegment) return { kind: "bracket", segment: bracketSegment };
-
-  const unsupportedDynamicSegment = findUnsupportedDynamicRouteSegment(
-    segments,
-    options,
-  );
-  if (unsupportedDynamicSegment) {
-    return {
-      kind: "unsupported-dynamic",
-      segment: unsupportedDynamicSegment,
-    };
-  }
-
-  return findInvalidRouteSegment(segments, options);
+  return findRouteSegmentConventionViolation(segments, {
+    ...options,
+    isReservedParamName: isReservedPageRouteParamName,
+  });
 }
 
 export function formatPageRouteSegmentConventionViolation(
@@ -433,7 +293,7 @@ function formatUnsupportedDynamicRouteSegmentViolation(
 }
 
 function formatInvalidRouteSegmentViolation(
-  invalid: InvalidPageRouteSegment,
+  invalid: InvalidRouteSegment,
 ): string {
   if (invalid.kind === "catch-all") {
     return `Catch-all page route segment "${invalid.segment}" must use a JavaScript identifier after "$...", such as "$...splat".`;
@@ -462,7 +322,7 @@ function formatInvalidRouteSegmentViolation(
 
 export function routePathFromSegments(segments: string[]): string {
   const pathSegments = segments
-    .filter((segment) => !isPageRouteGroupSegment(segment))
+    .filter((segment) => !isRouteGroupSegment(segment))
     .map(routePathSegmentFromConventionSegment);
   if (pathSegments.length === 0) return "/";
   return `/${pathSegments.join("/")}`;
@@ -470,7 +330,7 @@ export function routePathFromSegments(segments: string[]): string {
 
 export function routeIdPathFromSegments(segments: string[]): string {
   const pathSegments = segments
-    .filter((segment) => !isPageRouteGroupSegment(segment))
+    .filter((segment) => !isRouteGroupSegment(segment))
     .map(routeIdSegmentFromConventionSegment);
   if (pathSegments.length === 0) return "/";
   return `/${pathSegments.join("/")}`;
@@ -488,16 +348,12 @@ export function routePathShapeFromPath(routePath: string): PageRouteShape {
   };
 }
 
-export function isCatchAllPageRouteSegment(segment: string): boolean {
-  return segment.startsWith("$...");
-}
-
 function routePathSegmentFromConventionSegment(segment: string): string {
-  return isCatchAllPageRouteSegment(segment) ? "$" : segment;
+  return isCatchAllRouteSegment(segment) ? "$" : segment;
 }
 
 function routeIdSegmentFromConventionSegment(segment: string): string {
-  return isCatchAllPageRouteSegment(segment)
+  return isCatchAllRouteSegment(segment)
     ? `$${getCatchAllRouteParamName(segment)}`
     : segment;
 }

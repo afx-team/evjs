@@ -41,8 +41,8 @@
 - 显式 `application.routes` 通过仅支持 SPA 的 config-route normalizer 进入同一
   CoreGraph；它支持 component、嵌套 `routes`、layout、wrapper、redirect、
   Route extension 与 Application-owned Document，同时拒绝 MPA 物化。
-- 继续加固显式 route normalizer 与 canonical 源码转换诊断，不增加额外的
-  runtime reader。
+- 继续加固显式 route normalizer，不增加额外 runtime reader 或 Page authoring
+  model。
 - canonical MPA 已从静态语义 Route 生成 Page-owned Document，并组合
   file-convention layout；动态 route 和 router-only boundary facet 会被明确拒绝。
 - 插件 API 已落地按 dependency 排序、可安全 reload 的 `describe`，带 namespace
@@ -54,8 +54,7 @@
 
 ## 计划中
 
-- Config-route normalizer 覆盖、canonical source conversion、capability report
-  和代表性插件验证。
+- Config-route normalizer 覆盖、capability report 和代表性插件验证。
 - Generic extension entry、Document、request facet、manifest projection 就绪后，从 Core
   移除内建 SSR/PPR/RSC 分支。
 - Utoopack 下层能力补齐：generic dynamic entry、structured build fact，以及

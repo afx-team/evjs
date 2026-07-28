@@ -3,8 +3,15 @@ import fs from "node:fs";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { assertPortableRelativeArtifactPath } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import type { execa } from "execa";
+import {
+  removeOwnedOutputFile,
+  removeOwnedOutputFileSync,
+  writeOwnedOutputFile,
+} from "./owned-file-output.js";
+import { isInsideCwd } from "./utils.js";
 
 export type ApiProcess = ReturnType<typeof execa>;
 
@@ -12,6 +19,9 @@ export const API_READY_MARKER = "__EVJS_API_READY__";
 
 const DEV_DIST_LOCK_FILE = ".evjs-dev.lock";
 const DEV_RUNTIME_DIR = `evjs-dev-${typeof process.getuid === "function" ? process.getuid() : "user"}`;
+const DEV_RUNTIME_LOCK_OWNER_FILE = "owner.json";
+const DEV_RUNTIME_LOCK_SETTLE_MS = 1_000;
+const DEV_RUNTIME_PRIVATE_MODE = 0o700;
 const DEV_PORT_SCAN_LIMIT = 1_000;
 const logger = getLogger(["evjs", "ev"]);
 
@@ -32,6 +42,12 @@ interface DevRuntimeLock {
 interface DevPortLock extends DevRuntimeLock {
   port: number;
   role: "client" | "server";
+}
+
+export type ProjectOperation = "build" | "dev" | "prepare";
+
+interface ProjectOperationLock extends DevRuntimeLock {
+  operation: ProjectOperation;
 }
 
 export interface DevPortReservation {
@@ -61,7 +77,13 @@ function getDevDistLockPath(cwd: string, distDir: string): string {
 }
 
 function getDevRuntimePath(...segments: string[]): string {
-  return path.join(os.tmpdir(), DEV_RUNTIME_DIR, ...segments);
+  let temporaryDirectory: string;
+  try {
+    temporaryDirectory = fs.realpathSync(os.tmpdir());
+  } catch {
+    temporaryDirectory = path.resolve(os.tmpdir());
+  }
+  return path.join(temporaryDirectory, DEV_RUNTIME_DIR, ...segments);
 }
 
 async function normalizeProjectPath(cwd: string): Promise<string> {
@@ -81,6 +103,11 @@ function getDevPortLockPath(port: number): string {
   return getDevRuntimePath("ports", `${port}.lock`);
 }
 
+function getProjectOperationLockPath(cwd: string): string {
+  const key = createHash("sha256").update(cwd).digest("hex");
+  return getDevRuntimePath("operations", `${key}.lock`);
+}
+
 function isProcessAlive(pid: number): boolean {
   if (!Number.isInteger(pid) || pid <= 0) return false;
 
@@ -92,13 +119,189 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
+function getCurrentUid(): number | undefined {
+  return typeof process.getuid === "function" ? process.getuid() : undefined;
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === "EEXIST" || code === "ENOTEMPTY";
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+}
+
+function describeRuntimePath(runtimePath: string): string {
+  return JSON.stringify(runtimePath);
+}
+
+function assertRuntimeDirectoryStats(
+  runtimePath: string,
+  stats: fs.Stats,
+): void {
+  if (stats.isSymbolicLink() || !stats.isDirectory()) {
+    throw new Error(
+      `[evjs] Dev runtime directory ${describeRuntimePath(runtimePath)} must be a real directory, not a symbolic link or another file type.`,
+    );
+  }
+
+  const uid = getCurrentUid();
+  if (uid !== undefined && stats.uid !== uid) {
+    throw new Error(
+      `[evjs] Dev runtime directory ${describeRuntimePath(runtimePath)} must be owned by the current user (uid ${uid}).`,
+    );
+  }
+
+  if (process.platform !== "win32" && (stats.mode & 0o022) !== 0) {
+    throw new Error(
+      `[evjs] Dev runtime directory ${describeRuntimePath(runtimePath)} must not be writable by group or other users.`,
+    );
+  }
+
+  if (process.platform !== "win32" && (stats.mode & 0o077) !== 0) {
+    throw new Error(
+      `[evjs] Dev runtime directory ${describeRuntimePath(runtimePath)} must use private permissions (0700).`,
+    );
+  }
+}
+
+function getPathAncestors(absolutePath: string): string[] {
+  const ancestors: string[] = [];
+  let current = path.resolve(absolutePath);
+  while (true) {
+    ancestors.push(current);
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return ancestors.reverse();
+}
+
+async function assertTrustedTemporaryDirectory(
+  temporaryDirectory: string,
+): Promise<void> {
+  for (const ancestor of getPathAncestors(temporaryDirectory)) {
+    assertTrustedTemporaryDirectoryAncestor(
+      temporaryDirectory,
+      await fs.promises.lstat(ancestor),
+    );
+  }
+}
+
+function assertTrustedTemporaryDirectoryAncestor(
+  temporaryDirectory: string,
+  stats: fs.Stats,
+): void {
+  if (stats.isSymbolicLink() || !stats.isDirectory()) {
+    throw new Error(
+      `[evjs] Dev runtime temporary path ${describeRuntimePath(temporaryDirectory)} must not traverse symbolic links or non-directory ancestors.`,
+    );
+  }
+
+  const uid = getCurrentUid();
+  if (uid !== undefined && stats.uid !== 0 && stats.uid !== uid) {
+    throw new Error(
+      `[evjs] Dev runtime temporary path ${describeRuntimePath(temporaryDirectory)} has an ancestor that is not owned by root or the current user.`,
+    );
+  }
+
+  if (process.platform === "win32" || (stats.mode & 0o022) === 0) return;
+
+  const isRootOwnedStickyDirectory =
+    uid !== undefined && stats.uid === 0 && (stats.mode & 0o1000) !== 0;
+  if (!isRootOwnedStickyDirectory) {
+    throw new Error(
+      `[evjs] Dev runtime temporary path ${describeRuntimePath(temporaryDirectory)} must not traverse an untrusted writable ancestor.`,
+    );
+  }
+}
+
+async function ensurePrivateRuntimeDirectory(
+  runtimePath: string,
+): Promise<void> {
+  try {
+    await fs.promises.mkdir(runtimePath, { mode: DEV_RUNTIME_PRIVATE_MODE });
+  } catch (error) {
+    if (!isAlreadyExistsError(error)) throw error;
+  }
+
+  const stats = await fs.promises.lstat(runtimePath);
+  if (
+    process.platform !== "win32" &&
+    stats.isDirectory() &&
+    !stats.isSymbolicLink() &&
+    stats.uid === getCurrentUid() &&
+    (stats.mode & 0o022) === 0 &&
+    (stats.mode & 0o077) !== 0
+  ) {
+    // Older evjs releases created these owner-only writable directories with
+    // the process umask. Tighten those safe legacy directories in place.
+    await fs.promises.chmod(runtimePath, DEV_RUNTIME_PRIVATE_MODE);
+  }
+  assertRuntimeDirectoryStats(
+    runtimePath,
+    await fs.promises.lstat(runtimePath),
+  );
+}
+
+async function ensureRuntimeLockParent(lockPath: string): Promise<void> {
+  const lockParent = path.dirname(lockPath);
+  const runtimeRoot = path.dirname(lockParent);
+  const temporaryDirectory = path.dirname(runtimeRoot);
+  if (
+    path.basename(runtimeRoot) !== DEV_RUNTIME_DIR ||
+    !["operations", "ports", "sessions"].includes(path.basename(lockParent))
+  ) {
+    throw new Error(
+      `[evjs] Invalid internal dev runtime lock path ${describeRuntimePath(lockPath)}.`,
+    );
+  }
+
+  await assertTrustedTemporaryDirectory(temporaryDirectory);
+  await ensurePrivateRuntimeDirectory(runtimeRoot);
+  await ensurePrivateRuntimeDirectory(lockParent);
+}
+
+function assertRuntimeLockParentSync(lockPath: string): void {
+  const lockParent = path.dirname(lockPath);
+  const runtimeRoot = path.dirname(lockParent);
+  const temporaryDirectory = path.dirname(runtimeRoot);
+  if (
+    path.basename(runtimeRoot) !== DEV_RUNTIME_DIR ||
+    !["operations", "ports", "sessions"].includes(path.basename(lockParent))
+  ) {
+    throw new Error(
+      `[evjs] Invalid internal dev runtime lock path ${describeRuntimePath(lockPath)}.`,
+    );
+  }
+
+  for (const ancestor of getPathAncestors(temporaryDirectory)) {
+    assertTrustedTemporaryDirectoryAncestor(
+      temporaryDirectory,
+      fs.lstatSync(ancestor),
+    );
+  }
+  assertRuntimeDirectoryStats(runtimeRoot, fs.lstatSync(runtimeRoot));
+  assertRuntimeDirectoryStats(lockParent, fs.lstatSync(lockParent));
+}
+
+function assertRuntimeLockDirectory(lockPath: string, stats: fs.Stats): void {
+  assertRuntimeDirectoryStats(lockPath, stats);
+}
+
 async function readRuntimeLock<T extends DevRuntimeLock>(
   lockPath: string,
 ): Promise<T | undefined> {
   try {
-    return JSON.parse(
-      await fs.promises.readFile(path.join(lockPath, "owner.json"), "utf-8"),
-    ) as T;
+    assertRuntimeLockDirectory(lockPath, await fs.promises.lstat(lockPath));
+    const lock = JSON.parse(
+      await fs.promises.readFile(
+        path.join(lockPath, DEV_RUNTIME_LOCK_OWNER_FILE),
+        "utf-8",
+      ),
+    ) as unknown;
+    return isDevRuntimeLock(lock) ? (lock as T) : undefined;
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (
@@ -113,38 +316,157 @@ async function readRuntimeLock<T extends DevRuntimeLock>(
   }
 }
 
+function isDevRuntimeLock(value: unknown): value is DevRuntimeLock {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<DevRuntimeLock>;
+  return (
+    typeof candidate.cwd === "string" &&
+    typeof candidate.pid === "number" &&
+    typeof candidate.startedAt === "string" &&
+    typeof candidate.token === "string"
+  );
+}
+
 async function writeRuntimeLock(
   lockPath: string,
   lock: DevRuntimeLock,
 ): Promise<boolean> {
-  await fs.promises.mkdir(path.dirname(lockPath), { recursive: true });
-
-  try {
-    await fs.promises.mkdir(lockPath, { mode: 0o700 });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "EEXIST") return false;
-    throw err;
+  await ensureRuntimeLockParent(lockPath);
+  const quarantined = await reconcileQuarantinedRuntimeLocks(lockPath);
+  if (quarantined.some((candidate) => candidate.token !== lock.token)) {
+    return false;
   }
 
+  const candidatePath = `${lockPath}.candidate-${process.pid}-${randomUUID()}`;
   try {
+    await fs.promises.mkdir(candidatePath, { mode: DEV_RUNTIME_PRIVATE_MODE });
     await fs.promises.writeFile(
-      path.join(lockPath, "owner.json"),
+      path.join(candidatePath, DEV_RUNTIME_LOCK_OWNER_FILE),
       `${JSON.stringify(lock, null, 2)}\n`,
-      { encoding: "utf-8", mode: 0o600 },
+      { encoding: "utf-8", flag: "wx", mode: 0o600 },
     );
+    try {
+      await fs.promises.rename(candidatePath, lockPath);
+    } catch (error) {
+      if (isAlreadyExistsError(error)) return false;
+      throw error;
+    }
+
+    const conflicts = await reconcileQuarantinedRuntimeLocks(lockPath);
+    if (conflicts.some((candidate) => candidate.token !== lock.token)) {
+      await removeRuntimeLock(lockPath, lock.token);
+      return false;
+    }
     return true;
-  } catch (err) {
-    await fs.promises.rm(lockPath, { recursive: true, force: true });
-    throw err;
+  } finally {
+    await fs.promises.rm(candidatePath, { recursive: true, force: true });
   }
+}
+
+function getRuntimeLockQuarantinePrefix(lockPath: string): string {
+  return `${path.basename(lockPath)}.quarantine-`;
+}
+
+function getRuntimeLockTokenKey(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function createRuntimeLockQuarantinePath(
+  lockPath: string,
+  expectedToken?: string,
+): string {
+  const intent =
+    expectedToken === undefined
+      ? "abandoned"
+      : getRuntimeLockTokenKey(expectedToken);
+  return `${lockPath}.quarantine-${intent}-${process.pid}-${randomUUID()}`;
+}
+
+function getQuarantinedRuntimeLockIntent(
+  lockPath: string,
+  quarantinedPath: string,
+): string | undefined {
+  const prefix = getRuntimeLockQuarantinePrefix(lockPath);
+  const name = path.basename(quarantinedPath);
+  if (!name.startsWith(prefix)) return undefined;
+  const [intent] = name.slice(prefix.length).split("-");
+  return intent || undefined;
+}
+
+async function listQuarantinedRuntimeLocks(
+  lockPath: string,
+): Promise<string[]> {
+  const parent = path.dirname(lockPath);
+  const prefix = getRuntimeLockQuarantinePrefix(lockPath);
+  const entries = await fs.promises.readdir(parent, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.name.startsWith(prefix))
+    .map((entry) => path.join(parent, entry.name));
+}
+
+async function restoreQuarantinedRuntimeLock(
+  quarantinedPath: string,
+  lockPath: string,
+): Promise<boolean> {
+  try {
+    await fs.promises.rename(quarantinedPath, lockPath);
+    return true;
+  } catch (error) {
+    if (isAlreadyExistsError(error) || isMissingPathError(error)) return false;
+    throw error;
+  }
+}
+
+async function removeUniqueRuntimeLockPath(lockPath: string): Promise<void> {
+  await fs.promises.rm(lockPath, { recursive: true, force: true });
+}
+
+async function reconcileQuarantinedRuntimeLocks<T extends DevRuntimeLock>(
+  lockPath: string,
+): Promise<T[]> {
+  const activeLocks: T[] = [];
+  for (const quarantinedPath of await listQuarantinedRuntimeLocks(lockPath)) {
+    const lock = await readRuntimeLock<T>(quarantinedPath);
+    const intent = getQuarantinedRuntimeLockIntent(lockPath, quarantinedPath);
+    if (lock && intent === getRuntimeLockTokenKey(lock.token)) {
+      // The owner token was verified by the process that atomically moved this
+      // exact lock. Its unique quarantine can be completed by any contender.
+      await removeUniqueRuntimeLockPath(quarantinedPath);
+      continue;
+    }
+    if (lock && isProcessAlive(lock.pid)) {
+      activeLocks.push(lock);
+      await restoreQuarantinedRuntimeLock(quarantinedPath, lockPath);
+      continue;
+    }
+
+    let oldEnoughToRemove = Boolean(lock);
+    if (!lock) {
+      try {
+        const stats = await fs.promises.lstat(quarantinedPath);
+        assertRuntimeLockDirectory(quarantinedPath, stats);
+        oldEnoughToRemove =
+          Date.now() - stats.mtimeMs >= DEV_RUNTIME_LOCK_SETTLE_MS;
+      } catch (error) {
+        if (isMissingPathError(error)) continue;
+        throw error;
+      }
+    }
+    if (oldEnoughToRemove) {
+      await removeUniqueRuntimeLockPath(quarantinedPath);
+    }
+  }
+  return activeLocks;
 }
 
 async function readSettledRuntimeLock<T extends DevRuntimeLock>(
   lockPath: string,
 ): Promise<T | undefined> {
   for (let attempt = 0; attempt < 10; attempt++) {
+    const quarantined = await reconcileQuarantinedRuntimeLocks<T>(lockPath);
     const lock = await readRuntimeLock<T>(lockPath);
     if (lock) return lock;
+    if (quarantined[0]) return quarantined[0];
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   return undefined;
@@ -152,56 +474,97 @@ async function readSettledRuntimeLock<T extends DevRuntimeLock>(
 
 async function removeRuntimeLock(
   lockPath: string,
-  expectedToken?: string,
+  expectedToken: string,
 ): Promise<boolean> {
-  if (expectedToken !== undefined) {
-    const lock = await readRuntimeLock(lockPath);
-    if (lock?.token !== expectedToken) return false;
-  }
-
-  const stalePath = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
+  await ensureRuntimeLockParent(lockPath);
+  const quarantinedPath = createRuntimeLockQuarantinePath(
+    lockPath,
+    expectedToken,
+  );
   try {
-    await fs.promises.rename(lockPath, stalePath);
+    await fs.promises.rename(lockPath, quarantinedPath);
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    if (isMissingPathError(err)) return false;
     throw err;
   }
-  await fs.promises.rm(stalePath, { recursive: true, force: true });
+
+  const lock = await readRuntimeLock(quarantinedPath);
+  if (lock?.token !== expectedToken) {
+    await restoreQuarantinedRuntimeLock(quarantinedPath, lockPath);
+    return false;
+  }
+  await removeUniqueRuntimeLockPath(quarantinedPath);
   return true;
 }
 
 function removeRuntimeLockSync(lockPath: string, expectedToken: string): void {
+  const quarantinedPath = createRuntimeLockQuarantinePath(
+    lockPath,
+    expectedToken,
+  );
   try {
+    assertRuntimeLockParentSync(lockPath);
+    fs.renameSync(lockPath, quarantinedPath);
     const lock = JSON.parse(
-      fs.readFileSync(path.join(lockPath, "owner.json"), "utf-8"),
+      fs.readFileSync(
+        path.join(quarantinedPath, DEV_RUNTIME_LOCK_OWNER_FILE),
+        "utf-8",
+      ),
     ) as DevRuntimeLock;
-    if (lock.token !== expectedToken) return;
-
-    const stalePath = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
-    fs.renameSync(lockPath, stalePath);
-    fs.rmSync(stalePath, { recursive: true, force: true });
+    if (lock.token === expectedToken) {
+      fs.rmSync(quarantinedPath, { recursive: true, force: true });
+      return;
+    }
+    try {
+      fs.renameSync(quarantinedPath, lockPath);
+    } catch (error) {
+      if (!isAlreadyExistsError(error) && !isMissingPathError(error)) {
+        throw error;
+      }
+    }
   } catch {
     // A crashed or externally modified lock is recovered on the next startup.
   }
 }
 
 async function removeAbandonedRuntimeLock(lockPath: string): Promise<boolean> {
+  await ensureRuntimeLockParent(lockPath);
   try {
-    const stat = await fs.promises.stat(lockPath);
-    if (Date.now() - stat.mtimeMs < 1_000) return false;
-    return removeRuntimeLock(lockPath);
+    const stats = await fs.promises.lstat(lockPath);
+    assertRuntimeLockDirectory(lockPath, stats);
+    if (Date.now() - stats.mtimeMs < DEV_RUNTIME_LOCK_SETTLE_MS) return false;
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return true;
+    if (isMissingPathError(err)) return true;
     throw err;
   }
+
+  const quarantinedPath = createRuntimeLockQuarantinePath(lockPath);
+  try {
+    await fs.promises.rename(lockPath, quarantinedPath);
+  } catch (error) {
+    if (isMissingPathError(error)) return true;
+    throw error;
+  }
+
+  const lock = await readRuntimeLock(quarantinedPath);
+  if (lock && isProcessAlive(lock.pid)) {
+    await restoreQuarantinedRuntimeLock(quarantinedPath, lockPath);
+    return false;
+  }
+  await removeUniqueRuntimeLockPath(quarantinedPath);
+  return true;
 }
 
 async function runtimeLockExists(lockPath: string): Promise<boolean> {
+  await ensureRuntimeLockParent(lockPath);
+  if ((await reconcileQuarantinedRuntimeLocks(lockPath)).length > 0) {
+    return true;
+  }
   try {
-    await fs.promises.access(lockPath);
+    await fs.promises.lstat(lockPath);
     return true;
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    if (isMissingPathError(err)) return false;
     throw err;
   }
 }
@@ -219,6 +582,33 @@ function createRuntimeLockRelease(
   return release;
 }
 
+async function acquireRuntimeLock<T extends DevRuntimeLock>(options: {
+  activeError(lock: T): Error;
+  initializingError(): Error;
+  lock: T;
+  lockPath: string;
+  unavailableError(): Error;
+}): Promise<DevRuntimeRelease> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (await writeRuntimeLock(options.lockPath, options.lock)) {
+      return createRuntimeLockRelease(options.lockPath, options.lock.token);
+    }
+
+    const activeLock = await readSettledRuntimeLock<T>(options.lockPath);
+    if (activeLock && isProcessAlive(activeLock.pid)) {
+      throw options.activeError(activeLock);
+    }
+    if (activeLock) {
+      await removeRuntimeLock(options.lockPath, activeLock.token);
+      continue;
+    }
+    if (await removeAbandonedRuntimeLock(options.lockPath)) continue;
+    throw options.initializingError();
+  }
+
+  throw options.unavailableError();
+}
+
 export async function acquireDevSessionLock(
   cwd: string,
 ): Promise<DevRuntimeRelease> {
@@ -230,51 +620,79 @@ export async function acquireDevSessionLock(
     startedAt: new Date().toISOString(),
     token: randomUUID(),
   };
-
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (await writeRuntimeLock(lockPath, lock)) {
-      return createRuntimeLockRelease(lockPath, lock.token);
-    }
-
-    const activeLock = await readSettledRuntimeLock(lockPath);
-    if (activeLock && isProcessAlive(activeLock.pid)) {
-      throw new Error(
+  return acquireRuntimeLock({
+    activeError: (activeLock) =>
+      new Error(
         `[evjs] Dev is already running for "${normalizedCwd}" in process ${activeLock.pid} (started ${activeLock.startedAt}). Stop that process before starting another dev session for the same app.`,
-      );
-    }
-    if (activeLock) {
-      await removeRuntimeLock(lockPath, activeLock.token);
-      continue;
-    }
-    if (await removeAbandonedRuntimeLock(lockPath)) continue;
-    throw new Error(
-      `[evjs] Another dev session is initializing for "${normalizedCwd}". Wait for it to finish starting or stop that process before trying again.`,
-    );
-  }
+      ),
+    initializingError: () =>
+      new Error(
+        `[evjs] Another dev session is initializing for "${normalizedCwd}". Wait for it to finish starting or stop that process before trying again.`,
+      ),
+    lock,
+    lockPath,
+    unavailableError: () =>
+      new Error(
+        `[evjs] Unable to acquire the dev session lock for "${normalizedCwd}". Try starting ev dev again.`,
+      ),
+  });
+}
 
-  throw new Error(
-    `[evjs] Unable to acquire the dev session lock for "${normalizedCwd}". Try starting ev dev again.`,
-  );
+export async function acquireProjectOperationLock(
+  cwd: string,
+  operation: ProjectOperation,
+): Promise<DevRuntimeRelease> {
+  const normalizedCwd = await normalizeProjectPath(cwd);
+  const lockPath = getProjectOperationLockPath(normalizedCwd);
+  const lock: ProjectOperationLock = {
+    cwd: normalizedCwd,
+    operation,
+    pid: process.pid,
+    startedAt: new Date().toISOString(),
+    token: randomUUID(),
+  };
+  return acquireRuntimeLock<ProjectOperationLock>({
+    activeError: (activeLock) =>
+      new Error(
+        `[evjs] Cannot start ${operation} for "${normalizedCwd}" because ${activeLock.operation} is already running in process ${activeLock.pid} (started ${activeLock.startedAt}). Wait for it to finish or stop that process before trying again.`,
+      ),
+    initializingError: () =>
+      new Error(
+        `[evjs] Another project operation is initializing for "${normalizedCwd}". Wait for it to finish or stop that process before starting ${operation}.`,
+      ),
+    lock,
+    lockPath,
+    unavailableError: () =>
+      new Error(
+        `[evjs] Unable to acquire the ${operation} operation lock for "${normalizedCwd}". Try starting ${operation} again.`,
+      ),
+  });
 }
 
 export async function assertNoActiveDevSessionLock(cwd: string): Promise<void> {
   const normalizedCwd = await normalizeProjectPath(cwd);
   const lockPath = getDevSessionLockPath(normalizedCwd);
-  if (!(await runtimeLockExists(lockPath))) return;
-  const lock = await readSettledRuntimeLock(lockPath);
-  if (!lock) {
-    if (await removeAbandonedRuntimeLock(lockPath)) return;
-    throw new Error(
-      `[evjs] Cannot build "${normalizedCwd}" while an ev dev session is initializing. Stop ev dev first or build in a separate workspace.`,
-    );
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (!(await runtimeLockExists(lockPath))) return;
+    const lock = await readSettledRuntimeLock(lockPath);
+    if (!lock) {
+      if (await removeAbandonedRuntimeLock(lockPath)) continue;
+      throw new Error(
+        `[evjs] Cannot build "${normalizedCwd}" while an ev dev session is initializing. Stop ev dev first or build in a separate workspace.`,
+      );
+    }
+
+    if (isProcessAlive(lock.pid)) {
+      throw new Error(
+        `[evjs] Cannot build "${normalizedCwd}" because ev dev is running in process ${lock.pid}. Stop ev dev first or build in a separate workspace.`,
+      );
+    }
+    if (await removeRuntimeLock(lockPath, lock.token)) return;
   }
 
-  if (isProcessAlive(lock.pid)) {
-    throw new Error(
-      `[evjs] Cannot build "${normalizedCwd}" because ev dev is running in process ${lock.pid}. Stop ev dev first or build in a separate workspace.`,
-    );
-  }
-  await removeRuntimeLock(lockPath, lock.token);
+  throw new Error(
+    `[evjs] Cannot build "${normalizedCwd}" because its dev session lock changed while being checked. Stop ev dev first or build in a separate workspace.`,
+  );
 }
 
 async function isPortAvailable(port: number): Promise<boolean> {
@@ -422,7 +840,11 @@ export async function assertNoActiveDevDistLock(
     );
   }
 
-  await fs.promises.rm(getDevDistLockPath(cwd, distDir), { force: true });
+  await removeOwnedOutputFile(
+    cwd,
+    getDevDistLockPath(cwd, distDir),
+    "Stale dev dist lock output",
+  );
 }
 
 export async function writeDevDistLock(
@@ -430,8 +852,8 @@ export async function writeDevDistLock(
   distDir: string,
 ): Promise<DevRuntimeRelease> {
   const lockPath = getDevDistLockPath(cwd, distDir);
-  await fs.promises.mkdir(path.dirname(lockPath), { recursive: true });
-  await fs.promises.writeFile(
+  await writeOwnedOutputFile(
+    cwd,
     lockPath,
     JSON.stringify(
       {
@@ -443,12 +865,13 @@ export async function writeDevDistLock(
       null,
       2,
     ),
+    "Dev dist lock output",
   );
 
   const release = async () => {
     const lock = await readDevDistLock(cwd, distDir);
     if (lock?.pid === process.pid) {
-      await fs.promises.rm(lockPath, { force: true });
+      await removeOwnedOutputFile(cwd, lockPath, "Dev dist lock output");
     }
   };
   release.sync = () => {
@@ -456,7 +879,9 @@ export async function writeDevDistLock(
       const lock = JSON.parse(
         fs.readFileSync(lockPath, "utf-8"),
       ) as DevDistLock;
-      if (lock.pid === process.pid) fs.rmSync(lockPath, { force: true });
+      if (lock.pid === process.pid) {
+        removeOwnedOutputFileSync(cwd, lockPath, "Dev dist lock output");
+      }
     } catch {
       // Stale or externally modified locks are recovered on the next startup.
     }
@@ -464,73 +889,49 @@ export async function writeDevDistLock(
   return release;
 }
 
-function readServerEntryFromStats(
-  cwd: string,
-  distDir: string,
-): string | undefined {
-  const statsPath = path.resolve(cwd, distDir, "server/stats.json");
-  if (!fs.existsSync(statsPath)) return undefined;
-
-  try {
-    const stats = JSON.parse(fs.readFileSync(statsPath, "utf-8")) as {
-      entrypoints?: Record<
-        string,
-        { assets?: Array<string | { name?: string }> }
-      >;
-    };
-    const entrypoints = stats.entrypoints ?? {};
-    const entrypointValues = Object.values(entrypoints);
-    const firstEntry =
-      entrypoints.server ??
-      (entrypointValues.length === 1 ? entrypointValues[0] : undefined);
-    const jsAsset = firstEntry?.assets?.find((asset) => {
-      const assetName = readStatsAssetName(asset);
-      return assetName ? isJavaScriptAsset(assetName) : false;
-    });
-    return normalizeAssetName(readStatsAssetName(jsAsset));
-  } catch (err) {
-    logger.warn`Failed to parse server stats.json: ${err}`;
-    return undefined;
-  }
-}
-
-function readStatsAssetName(
-  asset: string | { name?: string } | undefined,
-): string | undefined {
-  return typeof asset === "string" ? asset : asset?.name;
-}
-
 function isJavaScriptAsset(name: string): boolean {
   return /\.(?:cjs|mjs|js)$/.test(name);
 }
 
-function isExistingDevServerEntry(
+function resolveExistingDevServerBundlePath(
   cwd: string,
-  distDir: string,
+  serverOutputDir: string,
   entry: string,
-): boolean {
-  return fs.existsSync(path.resolve(cwd, distDir, "server", entry));
+): string | undefined {
+  const serverDir = path.resolve(cwd, serverOutputDir);
+  const bundlePath = path.resolve(serverDir, entry);
+  if (!isInsideCwd(serverDir, bundlePath) || bundlePath === serverDir) {
+    return undefined;
+  }
+  return fs.existsSync(bundlePath) ? bundlePath : undefined;
 }
 
-export async function findDevServerEntry(
+export async function findDevServerBundlePath(
   cwd: string,
-  distDir: string,
+  serverOutputDir: string,
+  serverEntry: string | undefined,
 ): Promise<string | undefined> {
-  const entryFromStats = readServerEntryFromStats(cwd, distDir);
-  if (
-    entryFromStats &&
-    isExistingDevServerEntry(cwd, distDir, entryFromStats)
-  ) {
-    return entryFromStats;
+  if (serverEntry === undefined) return undefined;
+  const entry = assertPortableRelativeArtifactPath(
+    normalizeAssetName(serverEntry) ?? "",
+    "Development server entry",
+  );
+  if (!isJavaScriptAsset(entry)) {
+    throw new Error(
+      `[evjs] Development server entry ${JSON.stringify(entry)} must be a JavaScript asset.`,
+    );
   }
-
-  const serverDir = path.resolve(cwd, distDir, "server");
-  const files: string[] = await fs.promises.readdir(serverDir).catch(() => []);
-  if (files.includes("server.cjs")) return "server.cjs";
-  if (files.includes("server.js")) return "server.js";
-
-  const jsFiles = files.filter(isJavaScriptAsset);
-  return jsFiles.length === 1 ? jsFiles[0] : undefined;
+  const bundlePath = resolveExistingDevServerBundlePath(
+    cwd,
+    serverOutputDir,
+    entry,
+  );
+  if (!bundlePath) {
+    throw new Error(
+      `[evjs] Development server entry ${JSON.stringify(entry)} was not emitted under ${JSON.stringify(serverOutputDir)}.`,
+    );
+  }
+  return bundlePath;
 }
 
 export async function stopApiProcess(

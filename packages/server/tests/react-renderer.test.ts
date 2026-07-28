@@ -6,7 +6,7 @@ import {
   Suspense,
   useContext,
 } from "react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertFrameworkRuntime,
   type FrameworkRuntime,
@@ -33,6 +33,11 @@ interface PageProviderProps {
 }
 
 const PageContext = createContext<PageProps | undefined>(undefined);
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
 
 function PageProvider({ value, children }: PageProviderProps) {
   return createElement(PageContext.Provider, { value }, children);
@@ -1239,6 +1244,67 @@ describe("createReactRscFlightAdapter", () => {
     await expect(response.text()).resolves.toContain("flight failed");
   });
 
+  it("redacts renderer exceptions in production while retaining diagnostics", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const manifest = createManifest();
+    const error = new Error("RSC adapter credential leaked");
+    const onError = vi.fn();
+    const adapter = createReactRscFlightAdapter({
+      onError,
+      renderFlight() {
+        throw error;
+      },
+    });
+
+    const response = await adapter.renderFlight({
+      request: new Request("https://example.com/__evjs/rsc?page=dashboard"),
+      runtime: manifest,
+      pageId: "dashboard",
+    });
+
+    expect(response.status).toBe(500);
+    await expect(response.text()).resolves.toBe("Internal server error");
+    expect(onError).toHaveBeenCalledWith(error, {
+      request: expect.any(Request),
+      runtime: manifest,
+      pageId: "dashboard",
+    });
+    expect(consoleError).toHaveBeenCalledWith(
+      "[evjs] RSC Flight render failed:",
+      error,
+    );
+  });
+
+  it("fails closed when the runtime does not expose a Node environment", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const error = new Error("edge runtime credential leaked");
+    const adapter = createReactRscFlightAdapter({
+      renderFlight() {
+        throw error;
+      },
+    });
+
+    vi.stubGlobal("process", undefined);
+    const response = await adapter.renderFlight({
+      request: new Request("https://example.com/__evjs/rsc?page=dashboard"),
+      runtime: createManifest(),
+      pageId: "dashboard",
+    });
+    vi.unstubAllGlobals();
+
+    expect(response.status).toBe(500);
+    await expect(response.text()).resolves.toBe("Internal server error");
+    expect(consoleError).toHaveBeenCalledWith(
+      "[evjs] RSC Flight render failed:",
+      error,
+    );
+  });
+
   it("reports non-object custom RSC render props", async () => {
     const manifest = createManifest();
     const renderer = {
@@ -1331,23 +1397,22 @@ describe("createReactRscFlightAdapter", () => {
     expect(text).not.toContain("Insights.tsx");
   });
 
-  it("redacts local paths from successful Flight streams", async () => {
+  it("passes successful Flight payloads through without rewriting business strings", async () => {
     const manifest = createManifest();
+    const body = [
+      'I["./src/pages/InsightsBadge.tsx",["insights-rsc.js"],"default"]\n',
+      'R0:{"address":"/home/customer/orders"}\n',
+      "E/file:///Users/example/repo/src/pages/Insights.tsx\n",
+    ].join("");
+    const upstreamResponse = new Response(body, {
+      headers: {
+        "Content-Type": "text/x-component; charset=utf-8",
+        "Content-Length": String(new TextEncoder().encode(body).byteLength),
+      },
+    });
     const adapter = createReactRscFlightAdapter({
       renderFlight() {
-        return new Response(
-          [
-            'I["./src/pages/InsightsBadge.tsx",["insights-rsc.js"],"default"]\n',
-            "E/file:///Users/example/repo/src/pages/Insights.tsx\n",
-            "E/Users/example/repo/dist/server/insights-rsc.js\n",
-          ].join(""),
-          {
-            headers: {
-              "Content-Type": "text/x-component; charset=utf-8",
-              "Content-Length": "200",
-            },
-          },
-        );
+        return upstreamResponse;
       },
     });
 
@@ -1356,15 +1421,41 @@ describe("createReactRscFlightAdapter", () => {
       runtime: manifest,
       pageId: "dashboard",
     });
-    const text = await response.text();
-
     expect(response.headers.get("Content-Type")).toContain("text/x-component");
-    expect(response.headers.has("Content-Length")).toBe(false);
-    expect(text).toContain("./src/pages/InsightsBadge.tsx");
-    expect(text).toContain("[redacted-file-url]");
-    expect(text).toContain("[redacted-path]");
-    expect(text).not.toContain("file://");
-    expect(text).not.toContain("/Users/");
+    expect(response.headers.get("Content-Length")).toBe(
+      String(new TextEncoder().encode(body).byteLength),
+    );
+    await expect(response.text()).resolves.toBe(body);
+  });
+
+  it("preserves exact bytes from streamed Flight typed-array chunks", async () => {
+    const manifest = createManifest();
+    const expected = Uint8Array.from([
+      0x52, 0x30, 0x3a, 0xff, 0x00, 0x2f, 0x68, 0x6f, 0x6d, 0x65, 0xfe, 0x0a,
+    ]);
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(expected.slice(0, 5));
+        controller.enqueue(expected.slice(5));
+        controller.close();
+      },
+    });
+    const upstreamResponse = new Response(body, {
+      headers: { "Content-Type": "text/x-component" },
+    });
+    const adapter = createReactRscFlightAdapter({
+      renderFlight() {
+        return upstreamResponse;
+      },
+    });
+
+    const response = await adapter.renderFlight({
+      request: new Request("https://example.com/__evjs/rsc?page=dashboard"),
+      runtime: manifest,
+      pageId: "dashboard",
+    });
+
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(expected);
   });
 });
 

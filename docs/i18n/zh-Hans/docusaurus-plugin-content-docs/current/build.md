@@ -14,6 +14,10 @@ ev build
 - `ev build` 解析配置、创建 graph/plan、运行 bundler、链接 build fact 并写入
   production output。
 
+`ev prepare`、`ev build` 与 `ev dev` 共用同一个项目级 operation lock。同一项目若再启动
+一个会写产物的命令，会携带当前 operation 与进程 ID 直接失败，而不是并发覆盖 `.ev`、
+route type、`dist` 或部署产物；不同项目目录仍可独立运行。
+
 ## Inspect
 
 canonical application 的 routing 摘要使用公开 Page-and-Route 词汇：mode、
@@ -54,17 +58,23 @@ dist/
 └── deployment-metadata.json
 ```
 
-部署平台需要其他目录时使用 `output.client` / `output.server`：
+部署平台需要其他目录时使用 `output.client` / `output.server`。两个目录都必须使用
+以 `/` 分隔的可移植 project-relative 路径，不得包含空、`.` 或 `..` segment；它们
+必须是 BuildPlan `distDir` 下不经过 symbolic link、互不相同且互不嵌套的严格子目录：
 
 ```ts
 export default defineConfig({
   routing: { mode: "spa" },
   output: {
-    client: "dist",
-    server: "dist-server",
+    client: "dist/public",
+    server: "dist/runtime",
   },
 });
 ```
+
+最终 BuildPlan 是 adapter cleanup、产物写入、stats 与 manifest 路径的唯一事实源。
+Plugin `bundlerConfig()` hook 可以修改受支持的底层 bundler setting，但不能覆盖
+framework 持有的 client 或 server 输出路径。
 
 生成 HTML 包含浏览器 bootstrap 所需 `ClientRuntime`。
 `deployment-metadata.json` 是 canonical serialized deployment projection；
@@ -80,7 +90,7 @@ manifest。应用代码不得 import 或编辑 deployment metadata。
 | `spa` | 一个浏览器 route tree 中的 Client Route | 一个 Application-owned shell，外加每个静态 SSG Page 的 Page-owned 输出 |
 | `mpa` | 静态语义 route 的独立 Page entry | 每条静态 Page route 一个 Page-owned Document |
 
-二者使用相同 `<routing.dir>/**/page.*` entry、目录 scope 与语义 route
+二者使用相同 `src/pages/**/page.*` entry、目录 scope 与语义 route
 pattern。
 
 两种 mode 下，静态 SSG Page 都按语义 route 决定输出路径：`/` 写入
@@ -164,8 +174,17 @@ export default definePageConfig({
 静态生成使用受支持的 `"ssg"` rendering contract。RSC 与 partial-prerendered
 Page 必须省略 `hydrate` 或将其设为 `"none"`。RSC Page 使用 `render: "ssr"` 与
 `rsc: true`；Flight endpoint 从 `server.basePath` 派生，除非用
-`server.rsc.endpoint` 覆盖。同一 Page 不能组合 RSC 与 partial prerendering。
-这些 setting normalize 到 Core Page rendering field，且不改变 Page identity。
+`server.rsc.endpoint` 覆盖。这两个 runtime path setting 都必须由非空 ASCII
+URL-safe segment 组成，每个 segment 只能包含字母、数字、`.`、`_`、`~` 或 `-`；
+空 segment、单独的 `.` 或 `..` segment、`:param`、`*`、percent escape 与原始
+非 ASCII 字符都会被拒绝。同一 Page 不能组合 RSC 与 partial prerendering。这些
+setting normalize 到 Core Page rendering field，且不改变 Page identity。
+
+Server-function 与启用后的 RSC endpoint 是精确路径；启用后的 PPR endpoint 持有
+以自身为根的子树。BuildPlan 要求这些 active endpoint 互不相交，并拒绝任何可能
+匹配 reserved runtime path 的 Page、redirect 或 server request Route pattern。
+`server.basePath` 只用于派生默认 endpoint，本身并不持有 request 子树；dev 与
+生成的 Node/Edge deployment routing 都保持这一边界。
 
 ## 服务端函数与路由
 
@@ -195,10 +214,14 @@ export const GET = async () => Response.json({ ok: true });
 - `page.config.ts` 中 Page rendering metadata 使用受支持的值与组合；
 - `"use server"` module 以 directive 开头并导出命名 callable；
 - 每个发布的 server request Route 在其 URL 目录只使用一个 `api.*` 扩展名变体；
-- `api.*` 锚点只导出大写 HTTP method。
+- `api.*` 锚点只导出大写 HTTP method；
+- 每个占用 URL 的客户端 Route（Page 或 redirect）都必须与 server request Route
+  pattern 互不相交，包括 static、dynamic 与终止 splat 之间的匹配。Static alias
+  按恰好一次 URL decode 后比较，因此 `/%75sers` 是 `/users` 的 alias，而双重编码
+  文本仍保持不同。
 
-运行 build 前应先完成源码转换，再运行 `ev inspect` 审核 Page source、Page config、
-route、Document、provenance 与 diagnostic。
+运行 build 前先用 `ev inspect` 审核 Page source、Page config、route、Document、
+provenance 与 diagnostic。
 
 ## 要点
 
@@ -206,4 +229,8 @@ route、Document、provenance 与 diagnostic。
 - `ev inspect` 报告 `routingMode`、Page root、source、Document 默认值，不暴露内部
   provider 选择；
 - `.ev`、manifest、build output 与生成的 route-type declaration 都是生成物；
-- Bundler adapter 消费 BuildPlan 并返回 build fact，不持有 routing semantic。
+- Bundler adapter 以 BuildPlan 作为 routing、runtime 与 output ownership 的事实源，
+  然后返回 build fact。
+- 当 stats 能提供可靠且完整的物理产物清单时，adapter 会通过
+  `BundlerBuildFacts.emittedFiles` 返回它。已返回的每一侧都是完整清单；省略 client 或
+  server 一侧表示未知，绝不表示空输出。

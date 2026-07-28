@@ -47,6 +47,13 @@ export const POST = async (req) => {
 };
 ```
 
+Discovery rejects handler values that the anchor AST proves are non-callable,
+without executing application code. Imported handlers, cross-module
+re-exports, factory results, and mutable bindings remain valid composition
+forms; the generated `createRoute()` definition validates their final values
+when the server module loads. Generator handlers are rejected during discovery
+because they return iterators rather than responses.
+
 Every other basename is ordinary private source, so `schema.ts`, `db.ts`,
 `types.ts`, `index.ts`, and `route.ts` can be colocated without publishing a
 Route. An `api.*` anchor may export only uppercase HTTP methods; move helpers to
@@ -55,6 +62,17 @@ lowercase method exports, unsupported runtime exports, duplicate paths,
 duplicate dynamic shapes, multiple anchor extension variants, and anchors
 under bracket, catch-all, optional, or otherwise invalid directory segments
 are rejected before bundling.
+
+Discovered routes use one shared segment-wise specificity order. Parent paths
+come before descendants, and a static segment precedes a dynamic segment at
+the first differing position. This keeps registration deterministic and
+prevents a dynamic route from shadowing a more specific static branch.
+
+Build planning also rejects a server request Route pattern that intersects a
+URL-owning Page or redirect pattern, or an active framework runtime endpoint.
+Static aliases use one-decode URL semantics: `/%75sers` aliases `/users`, but
+double-encoded text remains distinct and encoded `/` does not merge segment
+boundaries.
 
 ## Handler Signature
 

@@ -89,8 +89,8 @@ export default defineConfig({
 
 仅支持 SPA 的 `application.routes` 是显式 route-tree 配置输入，不是文件约定。
 reachable 的 `"use server";` 模块与插件生成的 contribution 是 graph 输入，也
-不是文件系统约定；关闭约定发现后，这些输入仍然可用。已移除的 `app`、`pages`
-和顶层 `routes` 声明会产生配置错误。
+不是文件系统约定；关闭约定发现后，这些输入仍然可用。`app`、`pages` 和顶层
+`routes` 不属于公共配置，会被拒绝。
 
 文件约定启用时，可以通过 `server.routing: { dir }` 把 server file-route root
 从 `src/apis` 移到其他目录；该配置只定制 root，不关闭发现。
@@ -104,21 +104,20 @@ reachable 的 `"use server";` 模块与插件生成的 contribution 是 graph �
 | `ev.config.ts` | 框架配置 | 整个项目 | 从 `@evjs/ev` 导入 `defineConfig`。 |
 | `conventions: false` | 关闭框架文件发现 | 整个项目 | 一次性关闭 Page/Route 锚点、server file route 与全局/route middleware。 |
 | `routing.mode` | 输出物化模式 | Application | `"spa"` 创建 Client Route；`"mpa"` 为静态 Page path 创建 Page-owned Document。它不选择另一套路由模型。 |
-| `routing.dir` | Page-route 根目录 | Application | 默认 `./src/pages`；新应用通常无需配置。 |
-| `<routing.dir>/**/page.{ts,tsx,js,jsx}` | canonical Page 与 Route 锚点 | 完整所在目录 | 每个 route 目录只允许一个源码扩展名变体；默认导出 Page 组件。 |
+| `src/pages/**/page.{ts,tsx,js,jsx}` | canonical Page 与 Route 锚点 | 完整所在目录 | Page 根目录固定；每个 route 目录只允许一个源码扩展名变体；默认导出 Page 组件。 |
 | `<Page 目录>/page.config.{ts,js}` | 可选 canonical Page、Page 锚定 Route 与 Page-owned Document 配置 | Build graph | Default-export static config；顶层 `extensions` 属于 Page，`route.extensions` 属于其唯一 semantic Route；`document.aliases` 增加经过校验的静态输出文件名，但不会增加 Route。推荐 `definePageConfig()` 与 `page.config.ts`，每个 Page 只能有一个变体。 |
-| `<routing.dir>/**/$param/` | 动态 route segment | Route path | 产生 semantic `:param` segment。 |
-| `<routing.dir>/**/$...splat/` | Catch-all route segment | Route path | 必须位于末尾。 |
-| `<routing.dir>/**/(group)/` | Pathless route group | 源码组织 | 参与 scope，但不增加 URL segment。 |
-| `<routing.dir>/layout.*` 与 nested `layout.*` | Route layout facet | Semantic route tree | SPA 与 MPA 物化都会为后代组合 layout。 |
-| `<routing.dir>/**/error.*` 与 `not-found.*` | Route boundary facet | SPA route tree | 在具备明确 Document contract 前，MPA 会拒绝这些 router-only facet。 |
+| `src/pages/**/$param/` | 动态 route segment | Route path | 产生 semantic `:param` segment。 |
+| `src/pages/**/$...splat/` | Catch-all route segment | Route path | 必须位于末尾。 |
+| `src/pages/**/(group)/` | Pathless route group | 源码组织 | 参与 scope，但不增加 URL segment。 |
+| `src/pages/layout.*` 与 nested `layout.*` | Route layout facet | Semantic route tree | SPA 与 MPA 物化都会为后代组合 layout。 |
+| `src/pages/**/error.*` 与 `not-found.*` | Route boundary facet | SPA route tree | 在具备明确 Document contract 前，MPA 会拒绝这些 router-only facet。 |
 | Page 目录下其他文件 | Page 私有源码 | 最近的 Page | 组件、hook、model、service、测试、样式、资源与 `index.*` 都不会创建 route。 |
 | `<Page 目录>/index.html` | Page Document 模板 | MPA Page 输出 | 覆盖该 MPA Page 的共享模板，不是客户端 Page entry。 |
 | `index.html` / `routing.html` | Document template | Application 输出 | `index.html` 是默认模板，与 Page entry 文件名无关。 |
 | `src/route-types.d.ts` | SPA 文件路由导航类型（生成时） | 生成产物 | 忽略且不要复制到 scaffold 或从应用源码 import。 |
 | 带 `"use server";` 的 `**/*.server.*` | Server-function 模块 | Reachability graph | 只支持命名可调用导出，不要求固定目录。 |
 | `server.routing: { dir }` | Server file-route root 定制 | Application | 文件约定启用时默认 `./src/apis`；它不是关闭开关。 |
-| `<server.routing.dir>/**/api.{ts,tsx,js,jsx}` | Server request Route 锚点 | 完整所在目录 | 每个 route 目录只允许一个源码扩展名变体；只导出大写 HTTP method handler。 |
+| `<server.routing.dir>/**/api.{ts,tsx,js,jsx}` | Server request Route 锚点 | 完整所在目录 | 每个 route 目录只允许一个源码扩展名变体；只导出 callable 的大写 HTTP method handler。注册顺序按 segment 逐段比较 specificity，在首个不同位置优先 static segment。 |
 | Server route 目录下其他文件 | Route 私有源码 | 最近的 server Route | Helper、schema、store、测试与 `index.*` 都不会创建 route。 |
 | `src/middleware.ts` | 全局 server middleware | Server runtime | 包裹框架持有的 server 请求。 |
 | `<server.routing.dir>/**/middleware.ts` | API route middleware | 同目录及后代 server file routes | 默认为 `src/apis/**/middleware.ts`；自身不是 route。 |
@@ -304,7 +303,15 @@ Page-specific Document 配置会被拒绝。
 
 ## Server 边界
 
-客户端 Page routing 与服务端 request routing 是独立系统。
+客户端 routing 与服务端 request routing 是独立系统，但共享 request pathname
+命名空间。每个占用 URL 的客户端 Route（Page 或 redirect）都必须与 server
+request Route pattern 互不相交：static segment 可能与 dynamic segment 相交，
+终止 client splat 也会与其 prefix 和后代相交；结构性的 group Route 不占用 URL。
+Percent-encoded static alias 按一次 decode 后的 URL 语义比较，因此 `/%75sers`
+同样与 `/users` 相交，而双重编码文本仍保持不同。编码后的 `/` 保留在原 segment
+内部，绝不会合并 path boundary。显式 client segment 在 decode 后为 `.` 或
+`..` 时也会被拒绝，因为 WHATWG URL 解析会在 routing 之前移除它。BuildPlan
+会拒绝这些冲突，因为 server request Route 在 runtime 中优先匹配。
 
 Server request Route 使用 `src/apis` 下的 positive `api.*` 锚点。锚点的完整
 所在目录决定 URL 与 scope；`$param` 目录表示动态 segment，`(group)` 目录用于
@@ -338,9 +345,12 @@ export function GET(
 只有 `api.*` 才是 server request-route 锚点。包括 `index.ts`、`route.ts` 与
 method-suffix file 在内的其他 basename 都是普通私有源码，即使它们导出了
 `GET` 之类的名字也不会创建 route。锚定的 `api.*` module 只能导出大写 HTTP
-method；default export、helper export 与 route-module middleware export 都无效。
-位于 bracket、catch-all、optional 或其他无效 path segment 下的锚点会被拒绝。
-不要添加另一种 route anchor 或 `server.entry` composition path。
+method。Local declaration、import/re-export 的 handler、factory 与可变 binding 都是
+合法的组合细节；静态已知为 non-callable 的值和 generator 会在 discovery 阶段被
+拒绝，求值后的 method value 则在生成的 route module 加载时校验。Default export、
+helper export 与 route-module middleware export 都无效。位于 bracket、catch-all、
+optional 或其他无效 path segment 下的锚点会被拒绝。不要添加另一种 route anchor
+或 `server.entry` composition path。
 
 Server function 又是另一套机制：任何 reachable、以 `"use server";` 开头并
 导出支持的命名 callable 的模块都可定义。参见
@@ -362,22 +372,17 @@ manifest 输入。
 
 不要编辑或复制到模板。
 
-## 路由输入与 canonical 转换
+## 路由输入边界
 
-客户端 Page discovery 只在应用声明 `routing.mode` 后开始；仅存在无关的
-`src/pages` 目录不会发布 route。框架不会选择额外的 runtime reader，只有
-canonical `page.*` 锚点或显式 `application.routes` 会进入 CoreGraph。
+Core 0.3 只有一个文件约定 reader。客户端 Page discovery 只在应用声明
+`routing.mode` 后开始；仅存在无关的 `src/pages` 目录不会发布 route。显式
+`application.routes` 是独立、仅支持 SPA 的配置输入，并归一化到同一 CoreGraph。
 
-| 输入形式 | 当前行为 | canonical 形式 |
+| 输入 | 当前语义 | 源码要求 |
 | --- | --- | --- |
-| 显式 SPA `application.routes` | 接受 `routes` 嵌套、`component`、layout/wrapper/redirect 结构以及受支持的 metadata；拒绝 `children`。`name`、`icon`、`title`、`hideInMenu`、`flatMenu`、`spmBPos`、`access`、`menuKey` 和静态 `menuAssetOptions` 会保留为内置 Route extension 数据。`exact: true` 只是 terminal-match 结构断言，不会被复制；`exact: false` 或带嵌套路由的 `exact: true` 会被拒绝。该配置自身表示 SPA，不能与 `routing` 同时声明，也不能选择 MPA 物化。 | 每个 route component 位于对应 URL 目录并命名为 `page.*`；core field 与插件持有值写入 `page.config.ts`；只用 `routing.mode: "spa"` 启用 canonical tree。 |
-| 目录式 MPA 源码 | `index.*` 不会被 canonical discovery 识别；`config.json` 也不是 Page config。 | 保留或调整 URL 目录，把 `<page>/index.*` 命名为 `page.*`；使用 `routing.mode: "mpa"`，把 title 与受支持 named meta 写入 core `title`/`meta`，其余插件持有值写入 namespaced extension。 |
-| 其他 filename route | 非 `page.*` 文件不会发布 route。 | 把每个公开 entry 移到 URL 对应目录并命名为 `page.*`；保留 dynamic/group 目录段，把 Page setting 写入 `page.config.ts`，并且只配置 `routing.mode`。 |
-
-显式 `index.*` 或 `page.*` component 持有所在目录。其他 basename 的 flat
-component 保持 module scope，不能消费同目录 `page.config.ts`。需要相邻 Page
-config 时，先把 flat component 移入独立 Page 目录；显式 route 可以继续引用
-`index.*`，但 canonical discovery 只识别 `page.*`。
+| `routing.mode` | 发现 canonical Page tree，并选择 SPA 或 MPA 物化。 | 只有 `src/pages/**/page.*` 发布 Page；包括 `index.*` 在内的其他文件都是私有源码。Page 设置放在相邻 `page.config.ts`。 |
+| `application.pageRoot` | 显式 SPA route tree 中 `page` 与 `component` 共用的 Page 源码根目录，默认值为 `./src/pages`。 | 只与 `application.routes` 配合使用，不会定制 canonical `src/pages` discovery；`@/pages/...` 指向该配置根目录。 |
+| `application.routes` | 接受 `routes` 嵌套（不接受 `children`）、`page` 或 `component`、layout/wrapper/redirect 结构及已注册的 namespaced `extensions`。`exact: true` 是 terminal-match 断言；`exact: false` 或带嵌套路由的 `exact: true` 会被拒绝。该输入不能与 `routing` 同时声明，也不能选择 MPA。 | `page` 必须解析到 `application.pageRoot` 下唯一的 `page.*` 锚点；`component` 的逻辑路径和 symlink 真实路径都必须留在同一根目录。`index.*` 或 `page.*` component 持有所在目录；其他 basename 只持有模块本身，且不会消费 `page.config.ts`。layout 与 wrapper 仍是项目源码 reference。 |
 
 Provider name 只可能出现在 raw CoreGraph/debug artifact 中作为内部 provenance。
 普通 inspect routing 输出会隐藏它；应用不会选择 provider 作为架构模式。
@@ -388,8 +393,8 @@ Provider name 只可能出现在 raw CoreGraph/debug artifact 中作为内部 pr
 - 新 URL segment 默认使用小写，除非必须保留已有公开 URL 大小写。
 - 使用 `$param`、终止 `$...splat` 与 `(group)` 目录段。
 - Page 私有代码放入 Page 目录。
-- 多个 Page 共用的业务模块放到 `routing.dir` 外。
+- 多个 Page 共用的业务模块放到各 Page 目录之外。
 - 静态文档标题和 named meta 放在 core `title` 与 `meta` 字段中；业务或插件能力
   数据放在 namespaced `page.config.ts` extension 中。
-- 映射受支持的 title/meta，并把其余 owner value 移入 `page.config.ts` 后，
-  删除旧 `config.json`。
+- 静态 title、named meta、渲染设置与 namespaced extension 统一放在相邻的
+  `page.config.ts` 模块中。

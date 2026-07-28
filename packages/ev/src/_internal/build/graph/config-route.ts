@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   getPageRouteParamNameValidationError,
   isBuildIdentifier,
+  isDotRouteSegment,
 } from "@evjs/shared";
 import type {
   CoreApplicationNode,
@@ -18,8 +19,10 @@ import type {
 } from "@evjs/shared/manifest";
 import {
   assertCoreGraph,
-  BIGFISH_ROUTE_EXTENSION_ID,
   CONFIG_ROUTE_PROVIDER_ID,
+  coreRoutePatternShape,
+  coreRoutePatternsEqual,
+  isCoreRoutePatternPrefix,
 } from "@evjs/shared/manifest";
 import type {
   ResolvedConfigRoute,
@@ -130,7 +133,7 @@ function formatConfigRouteAddress(address: readonly number[]): string {
   return `routes[${address.join("].routes[")}]`;
 }
 
-/** Normalize an explicit Bigfish-style migration route tree to CoreGraph. */
+/** Normalize an explicit SPA route tree to CoreGraph. */
 export async function createConfigRouteGraph(
   config: GraphConfig,
   cwd: string,
@@ -208,7 +211,7 @@ export async function createConfigRouteGraph(
     routes,
     documents,
     extensions: {
-      namespaces: createConfigRouteExtensionNamespaces(routes),
+      namespaces: {},
     },
     serverFunctions: [],
     serverRoutes: [],
@@ -382,7 +385,7 @@ async function materializeSpaConfigRoute(
       ...(layout === false ? { layout: false as const } : {}),
       wrappers,
     },
-    extensions: createBigfishRouteExtensions(declaration),
+    extensions: {},
     provenance: {
       producer: CONFIG_ROUTE_PRODUCER,
       ...(provenanceSource ? { source: provenanceSource } : {}),
@@ -392,74 +395,48 @@ async function materializeSpaConfigRoute(
   return contentRouteId;
 }
 
-function createBigfishRouteExtensions(
-  declaration: ResolvedConfigRoute,
-): Record<string, unknown> {
-  const extensions = createRecord<unknown>();
-  if (declaration.metadata) {
-    defineRecordValue(
-      extensions,
-      BIGFISH_ROUTE_EXTENSION_ID,
-      declaration.metadata,
-    );
-  }
-  return extensions;
-}
-
-function createConfigRouteExtensionNamespaces(
-  routes: CoreRouteNode[],
-): CoreGraph["extensions"]["namespaces"] {
-  const namespaces =
-    createRecord<CoreGraph["extensions"]["namespaces"][string]>();
-  if (
-    routes.some((route) =>
-      Object.hasOwn(route.extensions, BIGFISH_ROUTE_EXTENSION_ID),
-    )
-  ) {
-    defineRecordValue(namespaces, BIGFISH_ROUTE_EXTENSION_ID, {
-      producer: CONFIG_ROUTE_PROVIDER_ID,
-      owners: ["route"],
-    });
-  }
-  return namespaces;
-}
-
 async function defineConfigRoutePage(
   state: ConfigRouteBuildState,
   declaration: ResolvedConfigRoute,
   address: string,
 ): Promise<{ pageId: string; pageReference: string; module: string }> {
-  const canonicalReference = declaration.page;
-  if (canonicalReference !== undefined) {
-    assertSafeConfigRoutePageReference(canonicalReference, `${address}.page`);
+  const declaredPageReference = declaration.page;
+  if (declaredPageReference !== undefined) {
+    assertSafeConfigRoutePageReference(
+      declaredPageReference,
+      `${address}.page`,
+      state.config.application.pageRoot,
+    );
   }
-  const migrationModule = declaration.component
+  const explicitModule = declaration.component
     ? await resolveProjectSourceModule(
         state.cwd,
         declaration.component,
         `${address}.component`,
         "component",
+        state.config.application.pageRoot,
       )
     : undefined;
-  const canonicalModule =
-    migrationModule === undefined && canonicalReference
-      ? await resolveCanonicalPageModule(
+  const anchoredModule =
+    explicitModule === undefined && declaredPageReference
+      ? await resolveConfigRoutePageModule(
           state.cwd,
           state.config.application.pageRoot,
-          canonicalReference,
+          declaredPageReference,
           `${address}.page`,
         )
       : undefined;
-  const module = canonicalModule ?? migrationModule;
+  const module = anchoredModule ?? explicitModule;
   if (!module) {
     throw new Error(
-      `[evjs] ${address} Page route must declare page or its resolved component migration projection.`,
+      `[evjs] ${address} Page route must declare page or a resolved component.`,
     );
   }
   const scope = deriveConfigRoutePageScope(
     module,
     address,
-    migrationModule === undefined ? "canonical" : "migration",
+    explicitModule === undefined ? "anchor" : "component",
+    state.config.application.pageRoot,
   );
   const derivedReference = deriveConfigRoutePageReference(
     state.config.application.pageRoot,
@@ -467,15 +444,15 @@ async function defineConfigRoutePage(
     address,
   );
   if (
-    migrationModule !== undefined &&
-    canonicalReference !== undefined &&
-    canonicalReference !== derivedReference
+    explicitModule !== undefined &&
+    declaredPageReference !== undefined &&
+    declaredPageReference !== derivedReference
   ) {
     throw new Error(
-      `[evjs] ${address}.component resolves Page source "${derivedReference}", but its normalized Page reference is "${canonicalReference}". The migration alias must identify one Page source.`,
+      `[evjs] ${address}.component resolves Page source "${derivedReference}" under application.pageRoot "${state.config.application.pageRoot}", but its normalized Page reference is "${declaredPageReference}". The explicit reference must identify one Page source.`,
     );
   }
-  const pageReference = canonicalReference ?? derivedReference;
+  const pageReference = declaredPageReference ?? derivedReference;
   const existingId = state.pageIdByModule.get(module);
   if (existingId) {
     const existingReference = state.pageReferenceById.get(existingId);
@@ -602,7 +579,7 @@ async function assertNoOrphanConfigRoutePageConfigs(
   );
   if (!orphan) return;
   throw new Error(
-    `[evjs] Config-route Page config "${toProjectModulePath(state.cwd, orphan)}" is not colocated with a Page referenced by application.routes. Remove it or reference that Page directory from the explicit route tree.`,
+    `[evjs] Config-route Page config "${toProjectModulePath(state.cwd, orphan)}" under application.pageRoot "${state.config.application.pageRoot}" is not colocated with a Page referenced by application.routes. Remove it or reference that Page directory from the explicit route tree.`,
   );
 }
 
@@ -664,12 +641,13 @@ function deriveConfigRoutePageId(pageReference: string): string {
 function deriveConfigRoutePageScope(
   module: string,
   address: string,
-  source: "canonical" | "migration",
+  source: "anchor" | "component",
+  pageRoot: string,
 ): CorePageScope {
   const basename = path.posix.basename(module).replace(/\.(?:tsx?|jsx?)$/, "");
-  if (source === "canonical" && basename !== PAGE_ENTRY_BASENAME) {
+  if (source === "anchor" && basename !== PAGE_ENTRY_BASENAME) {
     throw new Error(
-      `[evjs] ${address} resolves to "${module}". Canonical Pages must use a Page directory with exactly one ${PAGE_ENTRY_LABEL} entry.`,
+      `[evjs] ${address}.page resolves to "${module}" under application.pageRoot "${pageRoot}". Page references must select a directory with exactly one ${PAGE_ENTRY_LABEL} entry.`,
     );
   }
   if (basename === PAGE_ENTRY_BASENAME || basename === "index") {
@@ -693,6 +671,7 @@ function formatConfigRoutePageScope(scope: CorePageScope): string {
 function assertSafeConfigRoutePageReference(
   value: string,
   source: string,
+  pageRoot: string,
 ): void {
   if (value === ".") return;
   if (
@@ -707,7 +686,7 @@ function assertSafeConfigRoutePageReference(
     value.split("/").some((segment) => segment === "." || segment === "..")
   ) {
     throw new Error(
-      `[evjs] ${source} must be a safe Page id relative to application.pageRoot.`,
+      `[evjs] ${source} must be a safe Page id relative to application.pageRoot "${pageRoot}".`,
     );
   }
 }
@@ -733,7 +712,11 @@ function deriveConfigRoutePageReference(
     );
   }
   if (relative === "" || relative === ".") return ".";
-  assertSafeConfigRoutePageReference(relative, `${address}.component`);
+  assertSafeConfigRoutePageReference(
+    relative,
+    `${address}.component`,
+    pageRoot,
+  );
   return relative;
 }
 
@@ -760,7 +743,7 @@ function parseConfigRoutePattern(
     requireNestedAbsolutePrefix &&
     value.startsWith("/") &&
     parentPattern.segments.length > 0 &&
-    !isRoutePatternPrefix(parentPattern.segments, localSegments)
+    !isCoreRoutePatternPrefix(parentPattern, { segments: localSegments })
   ) {
     throw new Error(
       `[evjs] ${source} absolute nested path "${value}" must equal or start with its parent route pattern "${formatPattern(parentPattern)}". Use a relative child path or preserve the parent prefix explicitly.`,
@@ -773,23 +756,6 @@ function parseConfigRoutePattern(
   };
 }
 
-function isRoutePatternPrefix(
-  prefix: CoreRouteSegment[],
-  value: CoreRouteSegment[],
-): boolean {
-  return prefix.every((segment, index) => {
-    const candidate = value[index];
-    if (!candidate) return false;
-    if (segment.kind === "static") {
-      return candidate.kind === "static" && candidate.value === segment.value;
-    }
-    if (segment.kind === "param") {
-      return candidate.kind === "param" && candidate.name === segment.name;
-    }
-    return candidate.kind === "splat" && candidate.name === segment.name;
-  });
-}
-
 function parseConfigRouteSegments(
   value: string,
   source: string,
@@ -798,13 +764,13 @@ function parseConfigRouteSegments(
   const rawSegments = value.replace(/^\//, "").split("/");
   const seenParams = new Set<string>();
   return rawSegments.map<CoreRouteSegment>((segment, index) => {
-    if (segment === "." || segment === "..") {
+    if (isDotRouteSegment(segment)) {
       throw new Error(`[evjs] ${source} must not contain dot segments.`);
     }
     if (segment === "*") {
       if (index !== rawSegments.length - 1) {
         throw new Error(
-          `[evjs] ${source} Bigfish migration/config-route wildcard "*" must be terminal. The target Page file convention uses a terminal "$...splat" directory.`,
+          `[evjs] ${source} application.routes wildcard "*" must be terminal. The Page file convention uses a terminal "$...splat" directory.`,
         );
       }
       return { kind: "splat", name: "_splat" };
@@ -813,7 +779,7 @@ function parseConfigRouteSegments(
       const name = segment.slice(1);
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
         throw new Error(
-          `[evjs] ${source} Bigfish migration/config-route dynamic segment "${segment}" must use a valid identifier name. Optional and regexp parameters are not supported; the target Page file convention uses a "$param" directory.`,
+          `[evjs] ${source} application.routes dynamic segment "${segment}" must use a valid identifier name. Optional and regexp parameters are not supported; the Page file convention uses a "$param" directory.`,
         );
       }
       const nameError = getPageRouteParamNameValidationError(name);
@@ -832,7 +798,7 @@ function parseConfigRouteSegments(
     }
     if (/^[$*]/.test(segment)) {
       throw new Error(
-        `[evjs] ${source} static segment "${segment}" conflicts with Bigfish migration/config-route syntax. Explicit route paths use ":param" and terminal "*"; the target Page file convention uses "$param" and terminal "$...splat" directories.`,
+        `[evjs] ${source} static segment "${segment}" conflicts with application.routes syntax. Explicit route paths use ":param" and terminal "*"; the Page file convention uses "$param" and terminal "$...splat" directories.`,
       );
     }
     return { kind: "static", value: segment };
@@ -883,14 +849,10 @@ function assertUniqueConfigRouteSiblingIdentity(
   address: string,
   kind: ConfigRouteSiblingIdentityOwner["kind"],
 ): void {
-  if (kind === "group" && isSameConfigRoutePattern(pattern, parentPattern)) {
+  if (kind === "group" && coreRoutePatternsEqual(pattern, parentPattern)) {
     return;
   }
-  const shape = JSON.stringify(
-    pattern.segments.map((segment) =>
-      segment.kind === "static" ? ["static", segment.value] : [segment.kind],
-    ),
-  );
+  const shape = coreRoutePatternShape(pattern);
   const previous = owners.get(shape);
   if (previous) {
     throw new Error(
@@ -904,22 +866,7 @@ function assertUniqueConfigRouteSiblingIdentity(
   });
 }
 
-function isSameConfigRoutePattern(
-  left: CoreRoutePattern,
-  right: CoreRoutePattern,
-): boolean {
-  if (left.segments.length !== right.segments.length) return false;
-  return left.segments.every((segment, index) => {
-    const candidate = right.segments[index];
-    if (!candidate || segment.kind !== candidate.kind) return false;
-    if (segment.kind === "static") {
-      return candidate.kind === "static" && segment.value === candidate.value;
-    }
-    return candidate.kind !== "static" && segment.name === candidate.name;
-  });
-}
-
-async function resolveCanonicalPageModule(
+async function resolveConfigRoutePageModule(
   cwd: string,
   pageRoot: string,
   pageReference: string,
@@ -951,7 +898,7 @@ async function resolveCanonicalPageModule(
     }
     if (!stat.isFile()) {
       throw new Error(
-        `[evjs] ${source} canonical Page entry "${toProjectModulePath(cwd, candidate)}" must be a regular file.`,
+        `[evjs] ${source} Page entry "${toProjectModulePath(cwd, candidate)}" under application.pageRoot "${pageRoot}" must be a regular file.`,
       );
     }
     resolvedCandidates.push(candidate);
@@ -959,18 +906,18 @@ async function resolveCanonicalPageModule(
 
   if (resolvedCandidates.length > 1) {
     throw new Error(
-      `[evjs] ${source} Page "${pageReference}" has multiple canonical Page entries: ${resolvedCandidates
+      `[evjs] ${source} Page "${pageReference}" has multiple Page entries under application.pageRoot "${pageRoot}": ${resolvedCandidates
         .map((candidate) => toProjectModulePath(cwd, candidate))
         .join(", ")}. Keep exactly one ${PAGE_ENTRY_LABEL}.`,
     );
   }
   if (resolvedCandidates.length === 0) {
-    const legacyCandidates: string[] = [];
+    const alternateCandidates: string[] = [];
     for (const extension of SOURCE_EXTENSIONS) {
       const candidate = path.join(absolutePageDirectory, `index${extension}`);
       try {
         if ((await fs.stat(candidate)).isFile())
-          legacyCandidates.push(candidate);
+          alternateCandidates.push(candidate);
       } catch (error) {
         if (
           !error ||
@@ -982,16 +929,16 @@ async function resolveCanonicalPageModule(
         }
       }
     }
-    const migrationHint =
-      legacyCandidates.length === 0
+    const explicitReferenceHint =
+      alternateCandidates.length === 0
         ? ""
-        : ` Found legacy ${legacyCandidates
+        : ` Found non-anchor Page modules ${alternateCandidates
             .map((candidate) => toProjectModulePath(cwd, candidate))
             .join(
               ", ",
-            )}; rename the Page entry to page.*, or reference the existing module explicitly from the Bigfish application.routes migration input (for example, "home/index").`;
+            )}; rename the Page entry to page.*, or reference the existing module explicitly from application.routes with a component relative to application.pageRoot (for example, "@/pages/${pageReference === "." ? "index" : `${pageReference}/index`}").`;
     throw new Error(
-      `[evjs] ${source} Page "${pageReference}" must resolve to exactly one ${PAGE_ENTRY_LABEL} inside "${toProjectModulePath(cwd, absolutePageDirectory)}".${migrationHint}`,
+      `[evjs] ${source} Page "${pageReference}" must resolve to exactly one ${PAGE_ENTRY_LABEL} inside application.pageRoot "${pageRoot}" at "${toProjectModulePath(cwd, absolutePageDirectory)}".${explicitReferenceHint}`,
     );
   }
 
@@ -999,7 +946,12 @@ async function resolveCanonicalPageModule(
   const module = toProjectModulePath(cwd, absolute);
   if (!(await isRealPathInsideCwd(cwd, absolute))) {
     throw new Error(
-      `[evjs] ${source} canonical Page module "${module}" must resolve inside the project root. It points outside after resolving symlinks.`,
+      `[evjs] ${source} Page module "${module}" under application.pageRoot "${pageRoot}" must resolve inside the project root after resolving symlinks.`,
+    );
+  }
+  if (!(await isRealPathInsideDirectory(pageRoot, absolute, cwd))) {
+    throw new Error(
+      `[evjs] ${source} Page module "${module}" must resolve inside application.pageRoot "${pageRoot}" after resolving symlinks.`,
     );
   }
   await assertConfigRouteReactModule(absolute, module, source, "component");
@@ -1015,6 +967,7 @@ async function resolveProjectSourceModule(
   module: string,
   source: string,
   kind: "component" | "wrapper" | "layout",
+  pageRoot?: string,
 ): Promise<string> {
   const base = path.resolve(cwd, module);
   if (!isInsideCwd(cwd, base)) {
@@ -1050,13 +1003,35 @@ async function resolveProjectSourceModule(
           `[evjs] ${source} ${kind} module "${resolved}" must resolve inside the project root. It points outside after resolving symlinks.`,
         );
       }
+      if (
+        pageRoot !== undefined &&
+        !(await isRealPathInsideDirectory(pageRoot, candidate, cwd))
+      ) {
+        throw new Error(
+          `[evjs] ${source} component module "${resolved}" must resolve inside application.pageRoot "${pageRoot}" after resolving symlinks.`,
+        );
+      }
       await assertConfigRouteReactModule(candidate, resolved, source, kind);
       return resolved;
     }
   }
   throw new Error(
-    `[evjs] ${source} reference "${module}" did not resolve to a project .ts, .tsx, .js, or .jsx module.`,
+    pageRoot === undefined
+      ? `[evjs] ${source} reference "${module}" did not resolve to a project .ts, .tsx, .js, or .jsx module.`
+      : `[evjs] ${source} reference "${module}" did not resolve to a .ts, .tsx, .js, or .jsx Page component inside application.pageRoot "${pageRoot}".`,
   );
+}
+
+async function isRealPathInsideDirectory(
+  directory: string,
+  candidate: string,
+  cwd: string,
+): Promise<boolean> {
+  const [realDirectory, realCandidate] = await Promise.all([
+    fs.realpath(path.resolve(cwd, directory)),
+    fs.realpath(candidate),
+  ]);
+  return isInsideCwd(realDirectory, realCandidate);
 }
 
 async function assertConfigRouteReactModule(
@@ -1095,7 +1070,7 @@ function assertConfigRouteGraphConfig(
 ): asserts config is ConfigRouteGraphConfig {
   if (!config.application || config.routing) {
     throw new Error(
-      "[evjs] CoreGraph application-route normalization requires one resolved Bigfish-style SPA application.routes declaration without canonical routing.",
+      "[evjs] CoreGraph application-route normalization requires one resolved SPA application.routes declaration without canonical routing.",
     );
   }
 }

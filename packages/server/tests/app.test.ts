@@ -28,6 +28,8 @@ describe("createApp", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
   it("uses the build-time endpoint define by default", async () => {
@@ -43,6 +45,28 @@ describe("createApp", () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ result: "ok" });
+  });
+
+  it("keeps server function endpoints exact without collapsing empty segments", async () => {
+    vi.stubGlobal("__EVJS_FUNCTION_ENDPOINT__", "/api/rpc");
+    const serverFunction = vi.fn(async () => "ok");
+    registerServerReference(serverFunction, "fn1");
+    const app = createApp();
+    const request = (path: string) =>
+      app.request(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fnId: "fn1", args: [] }),
+      });
+
+    const trailingSlash = await request("/api/rpc/");
+    const repeatedTrailingSlash = await request("/api/rpc//");
+    const descendant = await request("/api/rpc/child");
+
+    expect(trailingSlash.status).toBe(200);
+    expect(repeatedTrailingSlash.status).toBe(404);
+    expect(descendant.status).toBe(404);
+    expect(serverFunction).toHaveBeenCalledTimes(1);
   });
 
   it("uses the framework runtime server function endpoint when available", async () => {
@@ -731,6 +755,24 @@ describe("createApp", () => {
     );
   });
 
+  it("rejects ambiguous runtime path encodings before mounting handlers", () => {
+    const unicodeBasePath = createManifest();
+    unicodeBasePath.runtime.server.basePath = "/运行时";
+    expect(() =>
+      createApp({ framework: { runtime: unicodeBasePath } }),
+    ).toThrow(
+      "framework.runtime.runtime.server.basePath must use non-empty ASCII URL-safe segments",
+    );
+
+    const encodedEndpoint = createManifest();
+    encodedEndpoint.runtime.server.fn = "__evjs/%66n";
+    expect(() =>
+      createApp({ framework: { runtime: encodedEndpoint } }),
+    ).toThrow(
+      "framework.runtime.runtime.server.fn must use non-empty ASCII URL-safe segments",
+    );
+  });
+
   it("rejects invalid app route handler shapes", () => {
     expect(() => createApp({ routes: [null as never] })).toThrow(
       "[evjs] createApp() routes[0] must be a route handler object.",
@@ -989,6 +1031,26 @@ describe("createApp", () => {
     ).toThrow(
       '[evjs] createApp() routes[1].path has the same route shape as routes[0].path "/api/items/:id". Use one route handler per URL shape.',
     );
+    expect(() =>
+      createApp({
+        routes: [
+          {
+            path: "/users",
+            methods: { GET: async () => new Response("ok") },
+            middlewares: [],
+            allowedMethods: ["GET"],
+          },
+          {
+            path: "/%75sers",
+            methods: { POST: async () => new Response("ok") },
+            middlewares: [],
+            allowedMethods: ["POST"],
+          },
+        ],
+      }),
+    ).toThrow(
+      '[evjs] createApp() routes[1].path has the same route shape as routes[0].path "/users". Use one route handler per URL shape.',
+    );
   });
 
   it("logs server requests through the request logger middleware", async () => {
@@ -1047,6 +1109,31 @@ describe("createApp", () => {
     expect(await res.text()).toBe("<h1>dashboard:ssr</h1>");
   });
 
+  it("matches framework pages without collapsing empty path segments", async () => {
+    const manifest = createManifest();
+    const render = vi.fn(() => "<h1>dashboard</h1>");
+    const app = createApp({ framework: { runtime: manifest, render } });
+
+    const trailingSlash = await app.request("/dashboard/");
+    const repeatedTrailingSlash = await app.request("/dashboard//");
+
+    expect(trailingSlash.status).toBe(200);
+    expect(repeatedTrailingSlash.status).toBe(404);
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not infer framework pages without a canonical runtime route", async () => {
+    const manifest = createManifest();
+    manifest.routing.routes = [];
+    const render = vi.fn(() => "<h1>dashboard</h1>");
+    const app = createApp({ framework: { runtime: manifest, render } });
+
+    const response = await app.request("/dashboard");
+
+    expect(response.status).toBe(404);
+    expect(render).not.toHaveBeenCalled();
+  });
+
   it("reports page render request guard exceptions with evjs context", async () => {
     const manifest = createManifest();
     const app = createApp({
@@ -1070,6 +1157,72 @@ describe("createApp", () => {
     const head = await app.request("/dashboard", { method: "HEAD" });
     expect(head.status).toBe(500);
     expect(await head.text()).toBe("");
+  });
+
+  it("redacts SSR guard, match, and render exceptions in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const manifest = createManifest();
+    const guardError = new Error("guard credential leaked");
+    const matchError = new Error("match credential leaked");
+    const renderError = new Error("render credential leaked");
+    const guardApp = createApp({
+      framework: {
+        runtime: manifest,
+        allowPageRenderRequest() {
+          throw guardError;
+        },
+        render() {
+          return "<h1>unreachable</h1>";
+        },
+      },
+    });
+    const matchApp = createApp({
+      framework: {
+        runtime: manifest,
+        render: {
+          match() {
+            throw matchError;
+          },
+          render() {
+            return "<h1>unreachable</h1>";
+          },
+        },
+      },
+    });
+    const renderApp = createApp({
+      framework: {
+        runtime: manifest,
+        render() {
+          throw renderError;
+        },
+      },
+    });
+
+    const responses = [
+      await guardApp.request("/dashboard"),
+      await matchApp.request("/dashboard"),
+      await renderApp.request("/dashboard"),
+    ];
+
+    for (const response of responses) {
+      expect(response.status).toBe(500);
+      await expect(response.text()).resolves.toBe("Internal server error");
+    }
+    expect(consoleError).toHaveBeenCalledWith(
+      "[evjs] framework.allowPageRenderRequest failed:",
+      guardError,
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      "[evjs] Framework render coordinator match failed:",
+      matchError,
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      "[evjs] Framework render coordinator render failed:",
+      renderError,
+    );
   });
 
   it("uses explicit page render guard responses", async () => {
@@ -1886,6 +2039,130 @@ describe("createApp", () => {
     expect(html).toContain("</body></html>");
   });
 
+  it("redacts streamed PPR region failures in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const regionError = new Error("streamed region credential leaked");
+    const manifest = createManifest();
+    manifest.routing.pages.dashboard.ppr = {
+      delivery: "stream",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        hero: {
+          id: "hero",
+          assets: { js: ["dashboard-hero-ppr-region.js"], css: [] },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    const app = createApp({
+      framework: {
+        runtime: manifest,
+        render(ctx) {
+          if (!ctx.regionId) {
+            return [
+              "<!doctype html><html><body><main>",
+              '<div data-evjs-ppr-region="hero">fallback</div>',
+              "</main></body></html>",
+            ].join("");
+          }
+
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.error(regionError);
+              },
+            }),
+            { headers: { "Content-Type": "text/html" } },
+          );
+        },
+      },
+    });
+
+    const response = await app.request("/dashboard");
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-evjs-ppr")).toBe("stream");
+    expect(html).toContain("<!-- Internal server error -->");
+    expect(html).not.toContain("streamed region credential leaked");
+    expect(consoleError).toHaveBeenCalledWith(
+      '[evjs] PPR region "hero" failed:',
+      regionError,
+    );
+  });
+
+  it("contains non-Error failures while consuming PPR response bodies", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const manifest = createManifest();
+    manifest.routing.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        hero: {
+          id: "hero",
+          assets: { js: ["dashboard-hero-ppr-region.js"], css: [] },
+          cache: { revalidate: 60 },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    const shellFailure = "shell body credential leaked";
+    const regionFailure = "region body credential leaked";
+    const createFailingResponse = (reason: string, contentType: string) =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.error(reason);
+          },
+        }),
+        { headers: { "Content-Type": contentType } },
+      );
+    const shellApp = createApp({
+      framework: {
+        runtime: manifest,
+        render(ctx) {
+          return ctx.regionId
+            ? "<p>unreachable</p>"
+            : createFailingResponse(shellFailure, "text/html");
+        },
+      },
+    });
+    const regionApp = createApp({
+      framework: {
+        runtime: manifest,
+        render(ctx) {
+          return ctx.regionId
+            ? createFailingResponse(regionFailure, "application/octet-stream")
+            : "<p>shell</p>";
+        },
+      },
+    });
+
+    const shellResponse = await shellApp.request("/dashboard");
+    const regionResponse = await regionApp.request(
+      "/__evjs/ppr/dashboard/hero",
+    );
+
+    expect(shellResponse.status).toBe(500);
+    await expect(shellResponse.text()).resolves.toBe("Internal server error");
+    expect(regionResponse.status).toBe(500);
+    await expect(regionResponse.text()).resolves.toBe("Internal server error");
+    expect(consoleError).toHaveBeenCalledWith(
+      "[evjs] PPR page response composition failed:",
+      shellFailure,
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      "[evjs] PPR region response failed:",
+      regionFailure,
+    );
+  });
+
   it("derives merged PPR page cache headers from region revalidate policies", async () => {
     const manifest = createManifest();
     manifest.routing.pages.dashboard.ppr = {
@@ -2409,16 +2686,30 @@ describe("createApp", () => {
       },
     });
 
+    const trailingSlash = await app.request("/__evjs/ppr/dashboard/hero/");
+    expect(trailingSlash.status).toBe(200);
+    expect(renderCount).toBe(1);
+
+    const repeatedTrailingSlash = await app.request(
+      "/__evjs/ppr/dashboard/hero//",
+    );
+    expect(repeatedTrailingSlash.status).toBe(404);
+    expect(renderCount).toBe(1);
+
+    const emptySegment = await app.request("/__evjs/ppr/dashboard//hero");
+    expect(emptySegment.status).toBe(404);
+    expect(renderCount).toBe(1);
+
     const extraSegment = await app.request("/__evjs/ppr/dashboard/hero/extra");
     expect(extraSegment.status).toBe(404);
-    expect(renderCount).toBe(0);
+    expect(renderCount).toBe(1);
 
     const invalidEncoding = await app.request("/__evjs/ppr/dashboard/%E0%A4%A");
     expect(invalidEncoding.status).toBe(400);
     await expect(invalidEncoding.text()).resolves.toContain(
       "PPR region request path contains invalid URL encoding",
     );
-    expect(renderCount).toBe(0);
+    expect(renderCount).toBe(1);
 
     const encodedSeparator = await app.request(
       "/__evjs/ppr/dashboard/hero%2Fextra",
@@ -2427,7 +2718,7 @@ describe("createApp", () => {
     await expect(encodedSeparator.text()).resolves.toContain(
       "PPR region request region path segment must not contain separators",
     );
-    expect(renderCount).toBe(0);
+    expect(renderCount).toBe(1);
 
     const encodedWhitespace = await app.request(
       "/__evjs/ppr/dash%20board/hero",
@@ -2436,21 +2727,21 @@ describe("createApp", () => {
     await expect(encodedWhitespace.text()).resolves.toContain(
       "PPR region request page path segment must not contain separators",
     );
-    expect(renderCount).toBe(0);
+    expect(renderCount).toBe(1);
 
     const invalidPageId = await app.request("/__evjs/ppr/dash.board/hero");
     expect(invalidPageId.status).toBe(400);
     await expect(invalidPageId.text()).resolves.toContain(
       "PPR region request page path segment must contain only letters, numbers, underscores, or hyphens",
     );
-    expect(renderCount).toBe(0);
+    expect(renderCount).toBe(1);
 
     const invalidRegionId = await app.request("/__evjs/ppr/dashboard/hero.v1");
     expect(invalidRegionId.status).toBe(400);
     await expect(invalidRegionId.text()).resolves.toContain(
       "PPR region request region path segment must contain only letters, numbers, underscores, or hyphens",
     );
-    expect(renderCount).toBe(0);
+    expect(renderCount).toBe(1);
   });
 
   it("returns 405 for unsupported PPR region methods", async () => {
@@ -2563,6 +2854,43 @@ describe("createApp", () => {
     });
     expect(head.status).toBe(500);
     expect(await head.text()).toBe("");
+  });
+
+  it("redacts PPR region render exceptions in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const renderError = new Error("region credential leaked");
+    const manifest = createManifest();
+    manifest.routing.pages.dashboard.ppr = {
+      delivery: "merge",
+      shell: { js: ["dashboard-ppr-shell.js"], css: [] },
+      regions: {
+        hero: {
+          id: "hero",
+          assets: { js: ["dashboard-hero-ppr-region.js"], css: [] },
+        },
+      },
+    };
+    configurePprRendering(manifest);
+    const app = createApp({
+      framework: {
+        runtime: manifest,
+        render() {
+          throw renderError;
+        },
+      },
+    });
+
+    const response = await app.request("/__evjs/ppr/dashboard/hero");
+
+    expect(response.status).toBe(500);
+    await expect(response.text()).resolves.toBe("Internal server error");
+    expect(consoleError).toHaveBeenCalledWith(
+      "[evjs] PPR region render coordinator render failed:",
+      renderError,
+    );
   });
 
   it("caches PPR regions with revalidate policy", async () => {
@@ -3367,6 +3695,31 @@ describe("createApp", () => {
     expect(await res.text()).toBe("/dashboard?tab=stats");
   });
 
+  it("keeps RSC flight endpoints exact without collapsing empty segments", async () => {
+    const manifest = createManifest();
+    configureRscManifest(manifest);
+    const renderFlight = vi.fn(
+      () =>
+        new Response("flight", {
+          headers: { "Content-Type": "text/x-component" },
+        }),
+    );
+    const app = createApp({
+      framework: { runtime: manifest, rsc: renderFlight },
+    });
+
+    const trailingSlash = await app.request("/__evjs/rsc/?page=dashboard");
+    const repeatedTrailingSlash = await app.request(
+      "/__evjs/rsc//?page=dashboard",
+    );
+    const descendant = await app.request("/__evjs/rsc/child?page=dashboard");
+
+    expect(trailingSlash.status).toBe(200);
+    expect(repeatedTrailingSlash.status).toBe(404);
+    expect(descendant.status).toBe(404);
+    expect(renderFlight).toHaveBeenCalledTimes(1);
+  });
+
   it("does not mount RSC flight handling without a server runtime endpoint", async () => {
     const manifest = createManifest();
     configureRscManifest(manifest);
@@ -3545,6 +3898,58 @@ describe("createApp", () => {
     expect(throwingMatch.status).toBe(500);
     await expect(throwingMatch.text()).resolves.toContain(
       "[evjs] RSC Flight match failed: match exploded",
+    );
+  });
+
+  it("redacts RSC coordinator match and render exceptions in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const matchError = new Error("RSC match credential leaked");
+    const renderError = new Error("RSC render credential leaked");
+    const matchManifest = createManifest();
+    configureRscManifest(matchManifest);
+    const matchApp = createApp({
+      framework: {
+        runtime: matchManifest,
+        rsc: {
+          match() {
+            throw matchError;
+          },
+          renderFlight() {
+            throw new Error("renderFlight should not run");
+          },
+        },
+      },
+    });
+    const renderManifest = createManifest();
+    configureRscManifest(renderManifest);
+    const renderApp = createApp({
+      framework: {
+        runtime: renderManifest,
+        rsc() {
+          throw renderError;
+        },
+      },
+    });
+
+    const matchResponse = await matchApp.request("/__evjs/rsc?page=dashboard");
+    const renderResponse = await renderApp.request(
+      "/__evjs/rsc?page=dashboard",
+    );
+
+    expect(matchResponse.status).toBe(500);
+    await expect(matchResponse.text()).resolves.toBe("Internal server error");
+    expect(renderResponse.status).toBe(500);
+    await expect(renderResponse.text()).resolves.toBe("Internal server error");
+    expect(consoleError).toHaveBeenCalledWith(
+      "[evjs] RSC Flight match failed:",
+      matchError,
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      "[evjs] RSC Flight render failed:",
+      renderError,
     );
   });
 
@@ -3771,6 +4176,14 @@ describe("createApp", () => {
 
     expect(res.status).toBe(200);
     await expect(res.text()).resolves.toBe("/users/42");
+
+    const repeatedTrailingSlash = await app.request(
+      "/__evjs/rsc?page=user&url=%2Fusers%2F42%2F%2F",
+    );
+    expect(repeatedTrailingSlash.status).toBe(400);
+    await expect(repeatedTrailingSlash.text()).resolves.toContain(
+      'url does not match page "user"',
+    );
   });
 
   it("creates a default RSC coordinator from a React framework runtime", async () => {

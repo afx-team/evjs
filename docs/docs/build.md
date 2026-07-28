@@ -16,6 +16,12 @@ ev build
 - `ev build` resolves config, builds the graph and plan, runs the selected
   bundler, links build facts, and writes production output.
 
+`ev prepare`, `ev build`, and `ev dev` share one per-project operation lock.
+Starting a second output-mutating command for the same project fails with the
+active operation and process ID instead of racing writes to `.ev`, route types,
+`dist`, or deployment artifacts. Different project directories remain
+independent.
+
 ## Inspect
 
 For a canonical application, the routing summary uses the public
@@ -56,17 +62,25 @@ dist/
 └── deployment-metadata.json
 ```
 
-Use `output.client` and `output.server` when the host requires another layout:
+Use `output.client` and `output.server` when the host requires another layout.
+Both directories must use portable `/`-separated project-relative paths with no
+empty, `.`, or `..` segments. They must remain separate, non-nested, symlink-free
+strict descendants of the BuildPlan `distDir`:
 
 ```ts
 export default defineConfig({
   routing: { mode: "spa" },
   output: {
-    client: "dist",
-    server: "dist-server",
+    client: "dist/public",
+    server: "dist/runtime",
   },
 });
 ```
+
+The finalized BuildPlan is the single source of truth for adapter cleanup,
+emitted assets, stats, and manifest paths. A plugin `bundlerConfig()` hook may
+change supported low-level bundler settings, but it cannot override a
+framework-owned client or server output path.
 
 Generated HTML embeds the `ClientRuntime` required by browser bootstrap.
 `deployment-metadata.json` is the canonical serialized deployment projection;
@@ -83,7 +97,7 @@ edit deployment metadata.
 | `spa` | Client Routes in one browser route tree | One Application-owned shell, plus a Page-owned output for each static SSG Page |
 | `mpa` | Independent Page entries for static semantic routes | One Page-owned Document per static Page route |
 
-Both use the same `<routing.dir>/**/page.*` entry, directory scope, and
+Both use the same `src/pages/**/page.*` entry, directory scope, and
 semantic route pattern.
 
 Static SSG Pages use their semantic route as the output path in either mode:
@@ -175,9 +189,19 @@ export default definePageConfig({
 Static generation uses the supported `"ssg"` rendering contract. RSC and
 partial-prerendered Pages must omit `hydrate` or set it to `"none"`. RSC Pages
 use `render: "ssr"` and `rsc: true`; their Flight endpoint is derived from
-`server.basePath` unless `server.rsc.endpoint` overrides it. RSC and partial
-prerendering cannot be combined on one Page. These settings normalize to Core
-Page rendering fields without changing Page identity.
+`server.basePath` unless `server.rsc.endpoint` overrides it. Both runtime path
+settings must use non-empty ASCII URL-safe segments containing only letters,
+digits, `.`, `_`, `~`, or `-`. Empty and standalone `.` or `..` segments,
+`:param`, `*`, percent escapes, and raw non-ASCII characters are rejected.
+RSC and partial prerendering cannot be combined on one Page. These settings
+normalize to Core Page rendering fields without changing Page identity.
+
+The server-function and active RSC endpoints are exact paths. An active PPR
+endpoint owns its rooted subtree. Build planning requires those active
+endpoints to be disjoint and rejects any Page, redirect, or server request
+Route pattern that can match a reserved runtime path. `server.basePath` derives
+default endpoints but does not reserve a request subtree of its own; dev and
+generated Node/Edge deployment routing preserve that distinction.
 
 ## Server Functions And Routes
 
@@ -213,6 +237,10 @@ Check user-controlled inputs first:
 - each published server request Route uses exactly one `api.*` extension
   variant in its URL directory;
 - `api.*` anchors export uppercase HTTP methods only.
+- every URL-owning client Route (Page or redirect) is disjoint from server
+  request Route patterns, including across static, dynamic, and terminal splat
+  matches. Static aliases are compared after exactly one URL decode, so
+  `/%75sers` aliases `/users` while double-encoded text remains distinct.
 
 After source conversion, run `ev inspect` and review Page sources, Page config,
 routes, Documents, provenance, and diagnostics.
@@ -224,5 +252,8 @@ routes, Documents, provenance, and diagnostics.
   without exposing an internal provider choice.
 - `.ev`, manifests, build output, and generated route-type declarations
   are generated.
-- Bundler adapters consume BuildPlan and return build facts; they do not own
-  routing semantics.
+- Bundler adapters consume BuildPlan as the source of routing, runtime, and
+  output ownership, then return build facts.
+- When stats expose a reliable complete physical inventory, adapters return it
+  through `BundlerBuildFacts.emittedFiles`. Each reported side is complete;
+  an omitted client or server side means unknown, never an empty output.

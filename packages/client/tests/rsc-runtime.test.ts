@@ -639,6 +639,35 @@ describe("React RSC runtime", () => {
             version: 1,
             buildId: "test",
             pageId: "insights",
+            endpoint: "__evjs/%72sc",
+            mount: "#app",
+          },
+        }),
+      }),
+    ).rejects.toThrow("endpoint must use non-empty ASCII URL-safe segments");
+
+    await expect(
+      startReactRscPageRuntime({
+        document: createDocument({
+          bootstrap: {
+            version: 1,
+            buildId: "test",
+            pageId: "insights",
+            endpoint: "__evjs/rsc",
+            basePath: "/运行时",
+            mount: "#app",
+          },
+        }),
+      }),
+    ).rejects.toThrow("basePath must use non-empty ASCII URL-safe segments");
+
+    await expect(
+      startReactRscPageRuntime({
+        document: createDocument({
+          bootstrap: {
+            version: 1,
+            buildId: "test",
+            pageId: "insights",
             endpoint: "__evjs/rsc",
             publicPath: "",
             mount: "#app",

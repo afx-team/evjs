@@ -109,7 +109,7 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 3. Exposing generated TanStack route trees, `__root.tsx`, or `.evjs` route
    files to application authors. The framework owns those details.
 4. Adding another canonical Page or route dialect. Pages use
-   `<routing.dir>/**/page.*`; route directories use `$param`, terminal
+   `src/pages/**/page.*`; route directories use `$param`, terminal
    `$...splat`, and `(group)`. Explicit `component`/`routes` config and
    `application.routes` are SPA-only route-tree inputs and must
    normalize to the same Page/Route/Application/Document graph. They never

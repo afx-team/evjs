@@ -109,8 +109,13 @@ export function createShell(options: ShellOptions): Shell {
     async dispose() {
       if (disposed) return;
       disposed = true;
+      const errors: unknown[] = [];
       for (const dispose of driverDisposers.splice(0)) {
-        dispose();
+        try {
+          dispose();
+        } catch (error) {
+          errors.push(error);
+        }
       }
       await activationQueue.catch(() => {
         // The caller disposing the shell should still release current resources
@@ -119,17 +124,25 @@ export function createShell(options: ShellOptions): Shell {
       const current = active;
       if (current) {
         if (current.module.unmount && current.phase !== "none") {
-          await callShellPhase(
-            "unmount",
-            current.ctx,
-            () => current.module.unmount?.(current.mountPoint, current.ctx),
-            reportShellError,
-          );
+          try {
+            await callShellPhase(
+              "unmount",
+              current.ctx,
+              () => current.module.unmount?.(current.mountPoint, current.ctx),
+              reportShellError,
+            );
+          } catch (error) {
+            errors.push(error);
+          }
         }
       }
       active = undefined;
       moduleCache.clear();
       moduleInitCache.clear();
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) {
+        throw new AggregateError(errors, "[evjs] Shell disposal failed.");
+      }
     },
   };
 

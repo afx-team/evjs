@@ -34,7 +34,7 @@ Important paths:
   and deployment adapters. Application code should not import or edit it.
 
 Core does not emit split client/server compatibility manifests. A deployment
-adapter that requires a platform-specific or legacy projection owns that
+adapter that requires a platform-specific projection owns that
 artifact explicitly.
 
 Generated HTML embeds the browser `ClientRuntime`. The manual `@evjs/client`

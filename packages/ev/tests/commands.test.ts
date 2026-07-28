@@ -22,6 +22,7 @@ import {
   dev,
   prepareFrameworkBuild,
 } from "../src/_internal/build/commands.js";
+import { materializeFrameworkIR } from "../src/_internal/build/generated-contributions.js";
 import { PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY } from "../src/_internal/build/page-route-conventions.js";
 import type { Config } from "../src/config/index.js";
 import type {
@@ -56,6 +57,8 @@ const fullBundlerCapabilities = {
     resolution: true,
   },
 } as const;
+const BUILD_OUTPUT_HOOK_OWNERSHIP_ERROR =
+  "[evjs] buildOutput hooks cannot change non-asset BuildOutput fields. Hooks may only adjust existing AssetGroup contents or deployment metadata.";
 
 interface EmbeddedClientRuntime {
   runtime: {
@@ -94,6 +97,41 @@ async function createSpaProject() {
   await writeFile(
     path.join(cwd, "src/pages/page.tsx"),
     "export default function Page() { return null; }",
+    "utf-8",
+  );
+  return cwd;
+}
+
+async function createServerOutputProject() {
+  const cwd = await createSpaProject();
+  await writeFile(
+    path.join(cwd, "src/pages/page.tsx"),
+    [
+      'import { saveValue } from "../actions.server";',
+      "void saveValue;",
+      "export default function Page() { return null; }",
+    ].join("\n"),
+    "utf-8",
+  );
+  await writeFile(
+    path.join(cwd, "src/pages/page.config.ts"),
+    'export default { title: "Original", meta: { description: "One", keywords: "Two" } };',
+    "utf-8",
+  );
+  await writeFile(
+    path.join(cwd, "src/actions.server.ts"),
+    [
+      '"use server";',
+      "export async function saveValue() { return { ok: true }; }",
+    ].join("\n"),
+    "utf-8",
+  );
+  await writeFile(
+    path.join(cwd, "src/apis/health/api.ts"),
+    [
+      "export const GET = () => Response.json({ ok: true });",
+      "export const POST = () => Response.json({ ok: true });",
+    ].join("\n"),
     "utf-8",
   );
   return cwd;
@@ -202,10 +240,14 @@ function createMockBundler(
         events.push(`bundler.endpoint:${config.server.runtime.fn}`);
       }
       return {
-        clientEntryAssets: {
-          main: { js: ["main.js"], css: [] },
-        },
-        firstClientEntryAssets: { js: ["main.js"], css: [] },
+        clientEntryAssets: Object.fromEntries(
+          plan.entries
+            .filter((entry) => entry.environment === "client")
+            .map((entry) => [
+              entry.name,
+              { js: [`${entry.name}.js`], css: [] },
+            ]),
+        ),
         ...serverBuildFacts(plan),
       };
     },
@@ -221,18 +263,22 @@ function serverBuildFacts(
   BundlerBuildFacts,
   "serverEntryAssets" | "serverEntry" | "serverAssets"
 > {
+  const serverEntryAssets = Object.fromEntries(
+    plan.entries
+      .filter((entry) => entry.environment === "server")
+      .map((entry) => [entry.name, { js: [`${entry.name}.js`], css: [] }]),
+  );
   const serverRuntimeEntry = plan.entries.find(
     (entry) => entry.kind === "server-runtime",
   );
-  if (!serverRuntimeEntry) return {};
+  if (!serverRuntimeEntry) {
+    return Object.keys(serverEntryAssets).length > 0
+      ? { serverEntryAssets }
+      : {};
+  }
 
   return {
-    serverEntryAssets: {
-      [serverRuntimeEntry.name]: {
-        js: [`${serverRuntimeEntry.name}.js`],
-        css: [],
-      },
-    },
+    serverEntryAssets,
     serverEntry: `${serverRuntimeEntry.name}.js`,
     serverAssets: { js: [`${serverRuntimeEntry.name}.js`], css: [] },
   };
@@ -347,12 +393,46 @@ async function readDirectorySnapshot(
 }
 
 describe("prepareFrameworkBuild", () => {
+  it("releases its project operation lock before returning", async () => {
+    const cwd = await createSpaProject();
+    const prepared = await prepareFrameworkBuild(
+      { routing: { mode: "spa" } },
+      { cwd, runLifecycleHooks: false },
+    );
+
+    try {
+      await expect(
+        build(
+          { routing: { mode: "spa" } },
+          { cwd, bundler: createMockBundler([]) },
+        ),
+      ).resolves.toBeUndefined();
+    } finally {
+      await prepared.dispose();
+    }
+  });
+
+  it("rejects unsafe output directories before framework preparation", async () => {
+    const cwd = await createProject();
+    const events: string[] = [];
+
+    await expect(
+      prepareFrameworkBuild(
+        { output: { client: "dist", server: "dist/server" } },
+        { cwd, bundler: createMockBundler(events) },
+      ),
+    ).rejects.toThrow(
+      "[evjs] output.client and output.server must be separate, non-nested directories.",
+    );
+    expect(events).toEqual([]);
+  });
+
   it("rejects mismatched command and mode options", async () => {
     const cwd = await createProject();
 
     await expect(
       prepareFrameworkBuild(
-        { output: { client: "dist" } },
+        { output: { client: "dist/client", server: "dist/server" } },
         { cwd, command: "build", mode: "development" },
       ),
     ).rejects.toThrow(
@@ -365,7 +445,7 @@ describe("prepareFrameworkBuild", () => {
 
     await expect(
       prepareFrameworkBuild(
-        { output: { client: "dist" } },
+        { output: { client: "dist/client", server: "dist/server" } },
         {
           cwd,
           bundler: [] as never,
@@ -377,7 +457,7 @@ describe("prepareFrameworkBuild", () => {
 
     await expect(
       prepareFrameworkBuild(
-        { output: { client: "dist" } },
+        { output: { client: "dist/client", server: "dist/server" } },
         {
           cwd,
           bundler: {
@@ -417,13 +497,13 @@ describe("prepareFrameworkBuild", () => {
 
     const prepared = await prepareFrameworkBuild(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
       },
       { cwd },
     );
 
-    expect(prepared.config.output.client).toBe("dist");
+    expect(prepared.config.output.client).toBe("dist/client");
     expect("graph" in prepared).toBe(false);
     expect("plan" in prepared).toBe(false);
     expect("hooks" in prepared).toBe(false);
@@ -463,7 +543,7 @@ describe("prepareFrameworkBuild", () => {
 
     await prepareFrameworkBuild(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
       },
       {
@@ -485,7 +565,7 @@ describe("prepareFrameworkBuild", () => {
     await expect(
       prepareFrameworkBuild(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [
             {
               name: "first",
@@ -519,7 +599,7 @@ describe("prepareFrameworkBuild", () => {
     const events: string[] = [];
     const prepared = await prepareFrameworkBuild(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [
           {
             name: "first",
@@ -606,7 +686,7 @@ describe("prepareFrameworkBuild", () => {
 
     const prepared = await prepareFrameworkBuild(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
         routing: { mode: "spa" },
       },
@@ -717,6 +797,123 @@ describe("prepareFrameworkBuild", () => {
     await prepared.dispose();
   });
 
+  it("allocates portable generated module paths past a hash collision", async () => {
+    const cwd = await createSpaProject();
+    const collidingIds = ["runtime", "runtime*`=)", "runtime{`{+"];
+    const plugin: Plugin<Record<string, never>> = {
+      name: "collision",
+      contributions(ctx) {
+        for (const id of collidingIds) {
+          ctx.emit.module({
+            id,
+            scope: { kind: "application" },
+            source: `export const id = ${JSON.stringify(id)};`,
+          });
+        }
+      },
+    };
+
+    const prepared = await prepareFrameworkBuild(
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [plugin],
+        routing: { mode: "spa" },
+      },
+      { cwd },
+    );
+
+    try {
+      const manifest = JSON.parse(
+        await fs.promises.readFile(
+          path.join(cwd, ".ev/manifest.json"),
+          "utf-8",
+        ),
+      ) as BuildPlan;
+      const generatedFiles = collidingIds.map((id) => {
+        const generatedModule = manifest.generated?.modules.find(
+          (module) => module.id === id,
+        );
+        if (!generatedModule) {
+          throw new Error(`Expected generated module "${id}".`);
+        }
+        return generatedModule.file;
+      });
+
+      expect(generatedFiles).toEqual([
+        "./.ev/plugins/collision/runtime.ts",
+        "./.ev/plugins/collision/runtime-1344a0e3.ts",
+        "./.ev/plugins/collision/runtime-1344a0e3-2.ts",
+      ]);
+      expect(
+        new Set(
+          generatedFiles.map((file) => file.normalize("NFC").toLowerCase()),
+        ).size,
+      ).toBe(generatedFiles.length);
+      await Promise.all(
+        generatedFiles.map((file) => fs.promises.access(path.join(cwd, file))),
+      );
+    } finally {
+      await prepared.dispose();
+    }
+  });
+
+  it("allocates portable generated entry paths past a hash collision", async () => {
+    const cwd = await createProject();
+    const collidingNames = ["runtime", "runtime&^^(", "runtime[}=)"];
+    const plan: BuildPlan = {
+      version: 1,
+      buildId: "portable-entry-paths",
+      mode: "production",
+      distDir: "dist",
+      output: {
+        clientDir: "dist/client",
+        serverDir: "dist/server",
+      },
+      entries: collidingNames.map((name) => ({
+        name,
+        import: "./src/entry.ts",
+        environment: "client" as const,
+        runtime: "browser" as const,
+        kind: "runtime" as const,
+        metadata: {
+          type: "pages-app" as const,
+          routes: [],
+          mount: "#app",
+        },
+      })),
+      html: [],
+      server: {},
+      runtime: {
+        publicPath: "auto",
+        server: { basePath: "/__evjs", fn: "__evjs/fn" },
+      },
+      dev: {
+        clientRoutes: [],
+        serverRequestRoutePaths: [],
+        serverRenderedPagePaths: [],
+        hasPpr: false,
+      },
+    };
+
+    const materialized = await materializeFrameworkIR({
+      cwd,
+      mode: "production",
+      command: "build",
+      config: {} as never,
+      graph: {} as CoreGraph,
+      plan,
+      plugins: [],
+      pluginContext: {} as never,
+      write: false,
+    });
+
+    expect(materialized.generated?.entries.map((entry) => entry.file)).toEqual([
+      "./.ev/entries/runtime.ts",
+      "./.ev/entries/runtime-01a49654.ts",
+      "./.ev/entries/runtime-01a49654-2.ts",
+    ]);
+  });
+
   it("projects Page wrappers into SPA routes in deterministic nesting order", async () => {
     const cwd = await createProject();
     await writeFile(
@@ -758,7 +955,7 @@ describe("prepareFrameworkBuild", () => {
 
     const prepared = await prepareFrameworkBuild(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
         routing: { mode: "spa" },
       },
@@ -935,7 +1132,7 @@ describe("prepareFrameworkBuild", () => {
 
     const prepared = await prepareFrameworkBuild(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
         routing: { mode: "mpa" },
       },
@@ -1076,7 +1273,7 @@ describe("prepareFrameworkBuild", () => {
     await expect(
       prepareFrameworkBuild(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [plugin],
           routing: { mode: "spa" },
         },
@@ -1155,7 +1352,7 @@ describe("prepareFrameworkBuild", () => {
 
     const prepared = await prepareFrameworkBuild(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
         routing: { mode: "spa" },
       },
@@ -1369,7 +1566,7 @@ describe("prepareFrameworkBuild", () => {
     await expect(
       prepareFrameworkBuild(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [plugin],
         },
         { cwd },
@@ -1413,7 +1610,7 @@ describe("prepareFrameworkBuild", () => {
 
     const prepared = await prepareFrameworkBuild(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "spa" },
         plugins: [plugin],
       },
@@ -1492,7 +1689,7 @@ describe("prepareFrameworkBuild", () => {
 
     const prepared = await prepareFrameworkBuild(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "spa" },
         plugins: [plugin],
       },
@@ -1600,7 +1797,7 @@ describe("prepareFrameworkBuild", () => {
     await expect(
       prepareFrameworkBuild(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
           plugins: [plugin],
         },
@@ -1635,7 +1832,7 @@ describe("prepareFrameworkBuild", () => {
     await expect(
       prepareFrameworkBuild(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
           plugins: [plugin],
         },
@@ -1673,7 +1870,7 @@ describe("prepareFrameworkBuild", () => {
 
     const prepared = await prepareFrameworkBuild(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "mpa" },
         plugins: [plugin],
       },
@@ -1736,7 +1933,7 @@ describe("prepareFrameworkBuild", () => {
     await expect(
       prepareFrameworkBuild(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
           plugins: [plugin],
         },
@@ -1767,7 +1964,7 @@ describe("prepareFrameworkBuild", () => {
     await expect(
       prepareFrameworkBuild(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
           plugins: [plugin],
         },
@@ -1825,7 +2022,7 @@ describe("prepareFrameworkBuild", () => {
 
     const prepared = await prepareFrameworkBuild(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "spa" },
         plugins: [plugin],
       },
@@ -1893,7 +2090,7 @@ describe("prepareFrameworkBuild", () => {
     const prepared = await prepareFrameworkBuild(
       {
         routing: { mode: "spa" },
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
       },
       { cwd },
@@ -1959,7 +2156,7 @@ describe("prepareFrameworkBuild", () => {
 
     const prepared = await prepareFrameworkBuild(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         server: { routing: {} },
         plugins: [plugin],
       },
@@ -2040,7 +2237,7 @@ describe("prepareFrameworkBuild", () => {
     await expect(
       prepareFrameworkBuild(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [plugin],
         },
         { cwd },
@@ -2071,7 +2268,7 @@ describe("prepareFrameworkBuild", () => {
     await expect(
       prepareFrameworkBuild(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [plugin],
         },
         { cwd },
@@ -2083,10 +2280,55 @@ describe("prepareFrameworkBuild", () => {
 });
 
 describe("build", () => {
+  it("serializes concurrent project builds before a second bundler starts", async () => {
+    const cwd = await createSpaProject();
+    let continueFirstBuild: (() => void) | undefined;
+    let markFirstBuildStarted: (() => void) | undefined;
+    const firstBuildStarted = new Promise<void>((resolve) => {
+      markFirstBuildStarted = resolve;
+    });
+    const firstBuildCanFinish = new Promise<void>((resolve) => {
+      continueFirstBuild = resolve;
+    });
+    let bundlerStarts = 0;
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "serialized-build",
+      capabilities: fullBundlerCapabilities,
+      async build({ plan }) {
+        bundlerStarts += 1;
+        markFirstBuildStarted?.();
+        await firstBuildCanFinish;
+        return {
+          clientEntryAssets: {
+            main: { js: ["main.js"], css: [] },
+          },
+          ...serverBuildFacts(plan),
+        };
+      },
+      async dev() {},
+    };
+    const config = { routing: { mode: "spa" as const } };
+    const firstBuild = build(config, { cwd, bundler });
+    await firstBuildStarted;
+
+    try {
+      await expect(build(config, { cwd, bundler })).rejects.toThrow(
+        `Cannot start build for "${await fs.promises.realpath(cwd)}" because build is already running in process ${process.pid}`,
+      );
+      expect(bundlerStarts).toBe(1);
+    } finally {
+      continueFirstBuild?.();
+    }
+    await firstBuild;
+  });
+
   it("requires a bundler from config or options", async () => {
     const cwd = await createProject();
     await expect(
-      build({ output: { client: "dist" } }, { cwd }),
+      build(
+        { output: { client: "dist/client", server: "dist/server" } },
+        { cwd },
+      ),
     ).rejects.toThrow("No bundler configured");
   });
 
@@ -2108,7 +2350,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [
             {
               name: "cleanup",
@@ -2146,10 +2388,21 @@ describe("build", () => {
           },
           buildOutput(output) {
             events.push(`buildOutput:${Object.keys(output.assets).join(",")}`);
+            output.assets.main.css = ["main.patched.css"];
             output.apps.default.assets.js = ["main.patched.js"];
+            output.server.assets.js = ["server.patched.js"];
+            output.deployment = { platform: "test" };
           },
           buildEnd(result) {
-            events.push(`buildEnd:${result.output.apps.default.assets.js[0]}`);
+            events.push(
+              [
+                "buildEnd",
+                result.output.assets.main?.css[0],
+                result.output.apps.default.assets.js[0],
+                result.output.server.assets.js[0],
+                String(result.output.deployment?.platform),
+              ].join(":"),
+            );
           },
           dispose(ctx) {
             events.push(`dispose:${ctx.mode}`);
@@ -2160,7 +2413,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
         routing: { mode: "spa" },
       },
@@ -2176,9 +2429,123 @@ describe("build", () => {
       "bundler.build",
       "bundler.entries:main",
       "buildOutput:main",
-      "buildEnd:main.patched.js",
+      "buildEnd:main.patched.css:main.patched.js:server.patched.js:test",
       "dispose:production",
     ]);
+    await expect(
+      fs.promises.readFile(
+        path.join(cwd, "dist/deployment-metadata.json"),
+        "utf-8",
+      ),
+    ).resolves.toContain('"platform": "test"');
+  });
+
+  it("rejects framework HTML that overlaps the bundler output inventory", async () => {
+    const cwd = await createSpaProject();
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "html-output-conflict",
+      capabilities: fullBundlerCapabilities,
+      async build({ plan }) {
+        return {
+          emittedFiles: { client: ["index.html"] },
+          clientEntryAssets: {
+            main: { js: ["main.js"], css: [] },
+          },
+          ...serverBuildFacts(plan),
+        };
+      },
+      async dev() {},
+    };
+
+    await expect(
+      build({ routing: { mode: "spa" } }, { cwd, bundler }),
+    ).rejects.toThrow(
+      'HTML Document "index" output "index.html" conflicts with bundler-emitted client asset "index.html"',
+    );
+    await expect(
+      fs.promises.access(path.join(cwd, "dist/deployment-metadata.json")),
+    ).rejects.toThrow();
+  });
+
+  it("does not follow a deployment metadata output symlink", async () => {
+    const cwd = await createSpaProject();
+    const sentinel = path.join(cwd, "metadata-sentinel.json");
+    const metadataFile = path.join(cwd, "dist/deployment-metadata.json");
+    await writeFile(sentinel, "outside", "utf-8");
+    await fs.promises.mkdir(path.dirname(metadataFile), { recursive: true });
+    await fs.promises.symlink(sentinel, metadataFile);
+
+    await expect(
+      build(
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler: createMockBundler([]) },
+      ),
+    ).rejects.toThrow(
+      "deployment metadata output must not overwrite a symbolic-link output file",
+    );
+    await expect(fs.promises.readFile(sentinel, "utf-8")).resolves.toBe(
+      "outside",
+    );
+  });
+
+  it("does not follow an HTML Document output symlink", async () => {
+    const cwd = await createSpaProject();
+    const sentinel = path.join(cwd, "html-sentinel.html");
+    const htmlFile = path.join(cwd, "dist/client/index.html");
+    await writeFile(sentinel, "outside", "utf-8");
+    await fs.promises.mkdir(path.dirname(htmlFile), { recursive: true });
+    await fs.promises.symlink(sentinel, htmlFile);
+
+    await expect(
+      build(
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler: createMockBundler([]) },
+      ),
+    ).rejects.toThrow(
+      'HTML Document "index" output "index.html" must not overwrite a symbolic-link output file',
+    );
+    await expect(fs.promises.readFile(sentinel, "utf-8")).resolves.toBe(
+      "outside",
+    );
+  });
+
+  it("revalidates framework output paths after the bundler finishes", async () => {
+    const cwd = await createSpaProject();
+    const outsideDir = path.join(cwd, "outside-output");
+    const sentinel = path.join(outsideDir, "sentinel.txt");
+    await writeFile(sentinel, "outside", "utf-8");
+    const baseBundler = createMockBundler([]);
+    const buildMock = baseBundler.build;
+    if (!buildMock) throw new Error("Expected mock build implementation.");
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      ...baseBundler,
+      async build(context) {
+        const facts = await buildMock(context);
+        await fs.promises.symlink(outsideDir, path.join(cwd, "dist"), "dir");
+        return facts;
+      },
+    };
+
+    await expect(
+      build(
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler },
+      ),
+    ).rejects.toThrow(
+      'plan.distDir output directory "dist" must not traverse symbolic link "dist"',
+    );
+    await expect(fs.promises.readFile(sentinel, "utf-8")).resolves.toBe(
+      "outside",
+    );
   });
 
   it("validates buildOutput hook mutations before emitting artifacts", async () => {
@@ -2202,7 +2569,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [plugin],
           routing: { mode: "spa" },
         },
@@ -2211,9 +2578,7 @@ describe("build", () => {
           bundler: createMockBundler(events),
         },
       ),
-    ).rejects.toThrow(
-      "[evjs] BuildOutput after buildOutput hooks.version must be 1.",
-    );
+    ).rejects.toThrow(BUILD_OUTPUT_HOOK_OWNERSHIP_ERROR);
 
     expect(fs.existsSync(path.join(cwd, "dist/manifest.json"))).toBe(false);
     expect(fs.existsSync(path.join(cwd, "dist/runtime.json"))).toBe(false);
@@ -2248,7 +2613,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [plugin],
           routing: { mode: "spa" },
         },
@@ -2291,7 +2656,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [plugin],
           routing: { mode: "spa" },
         },
@@ -2320,7 +2685,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [plugin],
           routing: { mode: "spa" },
         },
@@ -2364,7 +2729,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [plugin],
           routing: { mode: "spa" },
         },
@@ -2402,7 +2767,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [plugin],
           routing: { mode: "spa" },
         },
@@ -2411,6 +2776,478 @@ describe("build", () => {
     ).rejects.toThrow(
       "[evjs] buildOutput hooks cannot add, remove, reorder, or rename Routes, or change Route paths and ownership.",
     );
+  });
+
+  it("rejects buildOutput path mutation before writing outside the project", async () => {
+    const cwd = await createSpaProject();
+    const outsideDir = path.join(
+      path.dirname(cwd),
+      `${path.basename(cwd)}-outside-output`,
+    );
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-output-path",
+      setup() {
+        return {
+          buildOutput(output) {
+            output.paths.rootDir = path.relative(cwd, outsideDir);
+          },
+        };
+      },
+    };
+
+    try {
+      await expect(
+        build(
+          {
+            output: { client: "dist/client", server: "dist/server" },
+            plugins: [plugin],
+            routing: { mode: "spa" },
+          },
+          { cwd, bundler: createMockBundler([]) },
+        ),
+      ).rejects.toThrow(BUILD_OUTPUT_HOOK_OWNERSHIP_ERROR);
+
+      expect(fs.existsSync(outsideDir)).toBe(false);
+      expect(
+        fs.existsSync(path.join(cwd, "dist/deployment-metadata.json")),
+      ).toBe(false);
+    } finally {
+      await fs.promises.rm(outsideDir, { force: true, recursive: true });
+    }
+  });
+
+  it("validates ownership after each buildOutput hook", async () => {
+    const cwd = await createSpaProject();
+    const events: string[] = [];
+    const plugins: Plugin<Record<string, never>>[] = [
+      {
+        name: "temporarily-mutates-runtime",
+        setup() {
+          return {
+            buildOutput(output) {
+              events.push("mutate");
+              output.runtime.server.fn = "temporary/fn";
+            },
+          };
+        },
+      },
+      {
+        name: "observes-temporary-runtime",
+        setup() {
+          return {
+            buildOutput(output) {
+              events.push("observe");
+              output.deployment = { observedFn: output.runtime.server.fn };
+            },
+          };
+        },
+      },
+      {
+        name: "restores-runtime",
+        setup() {
+          return {
+            buildOutput(output) {
+              events.push("restore");
+              output.runtime.server.fn = "__evjs/fn";
+            },
+          };
+        },
+      },
+    ];
+
+    await expect(
+      build(
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          plugins,
+          routing: { mode: "spa" },
+        },
+        { cwd, bundler: createMockBundler([]) },
+      ),
+    ).rejects.toThrow(BUILD_OUTPUT_HOOK_OWNERSHIP_ERROR);
+    expect(events).toEqual(["mutate"]);
+  });
+
+  it("isolates transformHtml manifest snapshots before framework writes", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/dashboard/page.tsx"),
+      "export default function Dashboard() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/dashboard/page.config.ts"),
+      'export default { render: "ssr" };',
+      "utf-8",
+    );
+    const outsideDir = path.join(
+      path.dirname(cwd),
+      `${path.basename(cwd)}-transform-output`,
+    );
+    const observedRootDirs: string[] = [];
+
+    try {
+      await build(
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          routing: { mode: "spa" },
+          plugins: [
+            {
+              name: "mutates-transform-snapshot",
+              setup() {
+                return {
+                  transformHtml(_doc, ctx) {
+                    ctx.output.paths.rootDir = path.relative(cwd, outsideDir);
+                    ctx.output.paths.publicDir = path.relative(
+                      cwd,
+                      path.join(outsideDir, "client"),
+                    );
+                    ctx.output.paths.serverDir = path.relative(
+                      cwd,
+                      path.join(outsideDir, "server"),
+                    );
+                  },
+                };
+              },
+            },
+            {
+              name: "observes-transform-snapshot",
+              setup() {
+                return {
+                  transformHtml(_doc, ctx) {
+                    observedRootDirs.push(ctx.output.paths.rootDir);
+                  },
+                };
+              },
+            },
+          ],
+        },
+        { cwd, bundler: createMockBundler([]) },
+      );
+
+      expect(observedRootDirs.length).toBeGreaterThan(0);
+      expect(new Set(observedRootDirs)).toEqual(new Set(["dist"]));
+      await expect(
+        fs.promises.readFile(
+          path.join(cwd, "dist/deployment-metadata.json"),
+          "utf-8",
+        ),
+      ).resolves.toContain('"rootDir": "dist"');
+      expect(fs.existsSync(outsideDir)).toBe(false);
+    } finally {
+      await fs.promises.rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    {
+      label: "build id",
+      mutate(output: BuildOutput) {
+        output.buildId = "changed-build";
+      },
+    },
+    {
+      label: "runtime endpoint",
+      mutate(output: BuildOutput) {
+        output.runtime.server.fn = "changed-fn";
+      },
+    },
+    {
+      label: "public path",
+      mutate(output: BuildOutput) {
+        output.publicPath = "/patched/";
+      },
+    },
+    {
+      label: "AssetGroup record key",
+      mutate(output: BuildOutput) {
+        output.assets.extra = { js: [], css: [] };
+      },
+    },
+    {
+      label: "Application mount",
+      mutate(output: BuildOutput) {
+        const application = output.apps.default;
+        if (!application) throw new Error("Expected one Application.");
+        application.mount = "#patched";
+      },
+    },
+    {
+      label: "Page metadata",
+      mutate(output: BuildOutput) {
+        const page = output.pages.index;
+        if (!page?.metadata) throw new Error("Expected one Page metadata.");
+        Reflect.set(page.metadata, "title", "Patched");
+      },
+    },
+    {
+      label: "Page metadata order",
+      mutate(output: BuildOutput) {
+        const meta = output.pages.index?.metadata?.meta;
+        if (!meta?.description) throw new Error("Expected Page meta entries.");
+        const description = meta.description;
+        Reflect.deleteProperty(meta, "description");
+        Reflect.set(meta, "description", description);
+      },
+    },
+    {
+      label: "server entry",
+      mutate(output: BuildOutput) {
+        output.server.entry = "changed-server.js";
+      },
+    },
+    {
+      label: "server Function id",
+      mutate(output: BuildOutput) {
+        const entry = Object.entries(output.server.functions)[0];
+        if (!entry) throw new Error("Expected one server Function.");
+        delete output.server.functions[entry[0]];
+        output.server.functions["renamed-function"] = entry[1];
+      },
+    },
+    {
+      label: "server Function export name",
+      mutate(output: BuildOutput) {
+        const serverFunction = Object.values(output.server.functions)[0];
+        if (!serverFunction) throw new Error("Expected one server Function.");
+        serverFunction.exportName = "renamedExport";
+      },
+    },
+    {
+      label: "server Route path",
+      mutate(output: BuildOutput) {
+        const route = output.server.routes[0];
+        if (!route) throw new Error("Expected one server Route.");
+        route.path = "/renamed";
+      },
+    },
+    {
+      label: "server Route method order",
+      mutate(output: BuildOutput) {
+        const route = output.server.routes[0];
+        if (!route) throw new Error("Expected one server Route.");
+        route.methods.reverse();
+      },
+    },
+  ] satisfies Array<{
+    label: string;
+    mutate: (output: BuildOutput) => void;
+  }>)("rejects buildOutput $label mutation", async ({ mutate }) => {
+    const cwd = await createServerOutputProject();
+    const plugin: Plugin<Record<string, never>> = {
+      name: "invalid-output-semantics",
+      setup() {
+        return {
+          buildOutput(output) {
+            mutate(output);
+          },
+        };
+      },
+    };
+
+    await expect(
+      build(
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          plugins: [plugin],
+          routing: { mode: "spa" },
+          server: { routing: {} },
+        },
+        { cwd, bundler: createMockBundler([]) },
+      ),
+    ).rejects.toThrow(BUILD_OUTPUT_HOOK_OWNERSHIP_ERROR);
+    expect(fs.existsSync(path.join(cwd, "dist/deployment-metadata.json"))).toBe(
+      false,
+    );
+  });
+
+  it("allows buildOutput hooks to adjust every nested AssetGroup and deployment", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/ssr/page.tsx"),
+      [
+        'import { saveValue } from "../../actions.server";',
+        "void saveValue;",
+        "export default function Ssr() { return null; }",
+      ].join("\n"),
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ssr/page.config.ts"),
+      'export default { render: "ssr", hydrate: "none" };',
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ppr/page.tsx"),
+      [
+        'import * as React from "react";',
+        'const Offer = React.lazy(() => import("./Offer.region"));',
+        "export default function Ppr() {",
+        "  return <React.Suspense fallback={null}><Offer /></React.Suspense>;",
+        "}",
+      ].join("\n"),
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ppr/Offer.region.tsx"),
+      "export default function Offer() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/ppr/page.config.ts"),
+      'export default { render: "ssr", hydrate: "none", prerender: { partial: true } };',
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/rsc/page.tsx"),
+      "export default function Rsc() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/rsc/page.config.ts"),
+      'export default { render: "ssr", hydrate: "none", rsc: true };',
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/actions.server.ts"),
+      [
+        '"use server";',
+        "export async function saveValue() { return { ok: true }; }",
+      ].join("\n"),
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/apis/health/api.ts"),
+      "export const GET = () => Response.json({ ok: true });",
+      "utf-8",
+    );
+
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "nested-asset-output",
+      capabilities: fullBundlerCapabilities,
+      async build({ plan }) {
+        const clientEntryAssets = Object.fromEntries(
+          plan.entries
+            .filter((entry) => entry.environment === "client")
+            .map((entry) => [
+              entry.name,
+              { js: [`${entry.name}.js`], css: [] },
+            ]),
+        );
+        const serverEntryAssets = Object.fromEntries(
+          plan.entries
+            .filter((entry) => entry.environment === "server")
+            .map((entry) => [
+              entry.name,
+              { js: [`${entry.name}.js`], css: [] },
+            ]),
+        );
+        const serverRuntime = plan.entries.find(
+          (entry) => entry.kind === "server-runtime",
+        );
+        return {
+          clientEntryAssets,
+          serverEntryAssets,
+          serverEntry: serverRuntime ? `${serverRuntime.name}.js` : undefined,
+          serverAssets: serverRuntime
+            ? { js: [`${serverRuntime.name}.js`], css: [] }
+            : undefined,
+        };
+      },
+      async dev() {},
+    };
+    const touched: string[] = [];
+    let linkedOutput: BuildOutput | undefined;
+    const patchAssets = (
+      label: string,
+      assets: BuildOutput["server"]["assets"],
+    ) => {
+      const index = touched.length;
+      assets.js = [`hook-${index}.js`];
+      assets.css = [`hook-${index}.css`];
+      touched.push(label);
+    };
+    const plugin: Plugin<Record<string, never>> = {
+      name: "nested-asset-output",
+      setup() {
+        return {
+          buildOutput(output) {
+            for (const [pageId, page] of Object.entries(output.pages)) {
+              patchAssets(`page:${pageId}`, page.assets);
+            }
+            const ppr = output.pages.ppr?.ppr;
+            if (!ppr) throw new Error("Expected PPR output.");
+            patchAssets("ppr:shell", ppr.shell);
+            const regions = Object.entries(ppr.regions);
+            if (regions.length === 0) throw new Error("Expected a PPR region.");
+            for (const [regionId, region] of regions) {
+              patchAssets(`ppr:region:${regionId}`, region.assets);
+            }
+            const renderers = Object.entries(output.server.renderers ?? {});
+            if (renderers.length === 0) {
+              throw new Error("Expected server renderers.");
+            }
+            for (const [rendererId, renderer] of renderers) {
+              patchAssets(`renderer:${rendererId}`, renderer.assets);
+            }
+            const serverFunctions = Object.entries(output.server.functions);
+            if (serverFunctions.length === 0) {
+              throw new Error("Expected a server Function.");
+            }
+            for (const [functionId, serverFunction] of serverFunctions) {
+              patchAssets(`function:${functionId}`, serverFunction.assets);
+            }
+            if (output.server.routes.length === 0) {
+              throw new Error("Expected a server Route.");
+            }
+            for (const [index, route] of output.server.routes.entries()) {
+              patchAssets(`route:${index}`, route.assets);
+            }
+            const rscPages = Object.entries(output.rsc?.pages ?? {});
+            if (rscPages.length === 0) throw new Error("Expected an RSC Page.");
+            for (const [pageId, page] of rscPages) {
+              patchAssets(`rsc:${pageId}`, page.assets);
+            }
+            output.deployment = { nestedAssetsPatched: true };
+          },
+          buildEnd(result) {
+            linkedOutput = result.output;
+          },
+        };
+      },
+    };
+
+    await build(
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [plugin],
+        routing: { mode: "mpa" },
+        server: { routing: {} },
+      },
+      { cwd, bundler },
+    );
+
+    expect(touched).toEqual(
+      expect.arrayContaining([
+        "page:ssr",
+        "page:ppr",
+        "page:rsc",
+        "ppr:shell",
+        expect.stringMatching(/^ppr:region:/),
+        expect.stringMatching(/^renderer:/),
+        expect.stringMatching(/^function:/),
+        "route:0",
+        "rsc:rsc",
+      ]),
+    );
+    expect(linkedOutput?.deployment).toEqual({ nestedAssetsPatched: true });
+    const deploymentMetadata = JSON.parse(
+      await fs.promises.readFile(
+        path.join(cwd, "dist/deployment-metadata.json"),
+        "utf-8",
+      ),
+    ) as { metadata?: Record<string, unknown> };
+    expect(deploymentMetadata.metadata).toEqual({ nestedAssetsPatched: true });
   });
 
   it("passes canonical result fields to plugin lifecycle hooks", async () => {
@@ -2442,7 +3279,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
         routing: { mode: "spa" },
       },
@@ -2453,7 +3290,7 @@ describe("build", () => {
     );
 
     const html = await fs.promises.readFile(
-      path.join(cwd, "dist/index.html"),
+      path.join(cwd, "dist/client/index.html"),
       "utf-8",
     );
     const clientRuntime = readEmbeddedClientRuntime(html);
@@ -2481,7 +3318,6 @@ describe("build", () => {
           clientEntryAssets: {
             main: { js: ["main.js"], css: ["main.css"] },
           },
-          firstClientEntryAssets: { js: ["main.js"], css: ["main.css"] },
           ...serverBuildFacts(plan),
         };
       },
@@ -2491,7 +3327,8 @@ describe("build", () => {
     await build(
       {
         output: {
-          client: "dist",
+          client: "dist/client",
+          server: "dist/server",
           crossOriginLoading: "anonymous",
         },
         routing: { mode: "spa" },
@@ -2503,7 +3340,7 @@ describe("build", () => {
     );
 
     const html = await fs.promises.readFile(
-      path.join(cwd, "dist/index.html"),
+      path.join(cwd, "dist/client/index.html"),
       "utf-8",
     );
     expect(html).toMatch(
@@ -2547,7 +3384,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
         routing: { mode: "spa" },
       },
@@ -2558,7 +3395,7 @@ describe("build", () => {
     );
 
     const html = await fs.promises.readFile(
-      path.join(cwd, "dist/index.html"),
+      path.join(cwd, "dist/client/index.html"),
       "utf-8",
     );
     expect(transformSawContribution).toBe(true);
@@ -2646,7 +3483,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "mpa" },
         plugins: [plugin],
       },
@@ -2657,7 +3494,7 @@ describe("build", () => {
     );
 
     const html = await fs.promises.readFile(
-      path.join(cwd, "dist/index.html"),
+      path.join(cwd, "dist/client/index.html"),
       "utf-8",
     );
     expect(transformSawMetadata).toBe(true);
@@ -2780,7 +3617,6 @@ describe("build", () => {
           clientEntryAssets: {
             [clientEntryName]: clientAssets,
           },
-          firstClientEntryAssets: clientAssets,
           serverEntryAssets: serverEntries,
           serverEntry: serverRuntime ? `${serverRuntime.name}.js` : undefined,
           serverAssets: serverRuntime
@@ -2793,7 +3629,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode },
         plugins: [plugin],
       },
@@ -2855,7 +3691,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
           plugins: [
             {
@@ -2982,7 +3818,6 @@ describe("build", () => {
         );
         return {
           clientEntryAssets,
-          firstClientEntryAssets: { js: ["home.js"], css: [] },
           ...serverBuildFacts(plan),
         };
       },
@@ -2991,7 +3826,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
         routing: { mode: "mpa" },
       },
@@ -3020,11 +3855,11 @@ describe("build", () => {
       "utf-8",
     );
     const homeHtml = await fs.promises.readFile(
-      path.join(cwd, "dist/home/index.html"),
+      path.join(cwd, "dist/client/home/index.html"),
       "utf-8",
     );
     const adminHtml = await fs.promises.readFile(
-      path.join(cwd, "dist/admin/index.html"),
+      path.join(cwd, "dist/client/admin/index.html"),
       "utf-8",
     );
 
@@ -3062,7 +3897,7 @@ describe("build", () => {
     const events: string[] = [];
 
     await build(
-      { output: { client: "dist" } },
+      { output: { client: "dist/client", server: "dist/server" } },
       {
         cwd,
         bundler: createMockBundler(events, {
@@ -3096,7 +3931,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         server: { routing: {} },
       },
       {
@@ -3158,7 +3993,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "spa" },
       },
       {
@@ -3195,7 +4030,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "spa" },
       },
       {
@@ -3210,7 +4045,7 @@ describe("build", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "spa" },
       },
       {
@@ -3223,88 +4058,6 @@ describe("build", () => {
       bigint: true,
     });
     expect(secondStat.mtimeNs).toBe(firstStat.mtimeNs);
-  });
-
-  it("removes stale default route types when SPA routing uses a custom directory", async () => {
-    const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
-    await fs.promises.mkdir(path.join(cwd, "app/pages"), { recursive: true });
-    await writeFile(
-      path.join(cwd, "src/route-types.d.ts"),
-      generatedRouteTypesSource,
-      "utf-8",
-    );
-    await writeFile(
-      path.join(cwd, "app/pages/page.tsx"),
-      "export default function Home() { return null; }",
-      "utf-8",
-    );
-
-    await build(
-      {
-        output: { client: "dist" },
-        routing: {
-          mode: "spa",
-          dir: "./app/pages",
-        },
-      },
-      {
-        cwd,
-        bundler: createMockBundler([]),
-      },
-    );
-
-    expect(fs.existsSync(path.join(cwd, "src/route-types.d.ts"))).toBe(false);
-    await expect(
-      fs.promises.readFile(path.join(cwd, "app/route-types.d.ts"), "utf-8"),
-    ).resolves.toContain('import type * as EvPage_index from "./pages/page";');
-  });
-
-  it("removes stale custom route types when SPA routing returns to the default directory", async () => {
-    const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.mkdir(path.join(cwd, "app/pages"), { recursive: true });
-    await writeFile(
-      path.join(cwd, "src/pages/page.tsx"),
-      "export default function Home() { return null; }",
-      "utf-8",
-    );
-    await writeFile(
-      path.join(cwd, "app/pages/page.tsx"),
-      "export default function AppHome() { return null; }",
-      "utf-8",
-    );
-
-    await build(
-      {
-        output: { client: "dist" },
-        routing: {
-          mode: "spa",
-          dir: "./app/pages",
-        },
-      },
-      {
-        cwd,
-        bundler: createMockBundler([]),
-      },
-    );
-    expect(fs.existsSync(path.join(cwd, "app/route-types.d.ts"))).toBe(true);
-
-    await build(
-      {
-        output: { client: "dist" },
-        routing: { mode: "spa" },
-      },
-      {
-        cwd,
-        bundler: createMockBundler([]),
-      },
-    );
-
-    expect(fs.existsSync(path.join(cwd, "app/route-types.d.ts"))).toBe(false);
-    await expect(
-      fs.promises.readFile(path.join(cwd, "src/route-types.d.ts"), "utf-8"),
-    ).resolves.toContain('import type * as EvPage_index from "./pages/page";');
   });
 
   it("does not remove user-authored files that share the route types file name", async () => {
@@ -3324,7 +4077,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "spa" },
       },
       {
@@ -3344,14 +4097,8 @@ describe("build", () => {
     await fs.promises.mkdir(path.join(cwd, "src/apis/admin"), {
       recursive: true,
     });
-    await fs.promises.mkdir(path.join(cwd, "app"), { recursive: true });
     await writeFile(
       path.join(cwd, "src/route-types.d.ts"),
-      generatedRouteTypesSource,
-      "utf-8",
-    );
-    await writeFile(
-      path.join(cwd, "app/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
@@ -3381,7 +4128,7 @@ describe("build", () => {
     await build(
       {
         conventions: false,
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
       },
       {
         cwd,
@@ -3394,7 +4141,6 @@ describe("build", () => {
     );
 
     expect(fs.existsSync(path.join(cwd, "src/route-types.d.ts"))).toBe(false);
-    expect(fs.existsSync(path.join(cwd, "app/route-types.d.ts"))).toBe(false);
     expect(observedPlan?.entries).toEqual([]);
 
     const generatedGraph = JSON.parse(
@@ -3412,14 +4158,8 @@ describe("build", () => {
   it("removes generated route types when conventions are disabled", async () => {
     const cwd = await createProject();
     await fs.promises.mkdir(path.join(cwd, "src/pages"), { recursive: true });
-    await fs.promises.mkdir(path.join(cwd, "app"), { recursive: true });
     await writeFile(
       path.join(cwd, "src/route-types.d.ts"),
-      generatedRouteTypesSource,
-      "utf-8",
-    );
-    await writeFile(
-      path.join(cwd, "app/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
@@ -3432,7 +4172,7 @@ describe("build", () => {
     await build(
       {
         conventions: false,
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
       },
       {
         cwd,
@@ -3441,7 +4181,6 @@ describe("build", () => {
     );
 
     expect(fs.existsSync(path.join(cwd, "src/route-types.d.ts"))).toBe(false);
-    expect(fs.existsSync(path.join(cwd, "app/route-types.d.ts"))).toBe(false);
   });
 
   it(
@@ -3514,7 +4253,7 @@ describe("build", () => {
 
       await build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
         },
         {
@@ -3523,73 +4262,6 @@ describe("build", () => {
         },
       );
 
-      await execa("npx", ["tsc", "-p", path.join(cwd, "tsconfig.json")], {
-        cwd: repoRoot,
-      });
-    },
-    routeTypeCheckTimeoutMs,
-  );
-
-  it(
-    "generates TypeScript-visible SPA route types for a custom route directory under src",
-    async () => {
-      const cwd = await createWorkspaceProject();
-      await fs.promises.mkdir(path.join(cwd, "src/app/pages/admin"), {
-        recursive: true,
-      });
-      await writeFile(
-        path.join(cwd, "src/app/pages/page.tsx"),
-        "export default function Home() { return null; }",
-        "utf-8",
-      );
-      await writeFile(
-        path.join(cwd, "src/app/pages/admin/$section/page.tsx"),
-        "export default function AdminSection() { return null; }",
-        "utf-8",
-      );
-      await writeFile(
-        path.join(cwd, "src/check-custom-dir-links.tsx"),
-        [
-          'import { useLinkProps } from "@evjs/ev/navigation";',
-          "",
-          "export function CheckCustomDirLinks() {",
-          '  useLinkProps({ to: "/admin/$section", params: { section: "users" } });',
-          "",
-          "  // @ts-expect-error unknown page route paths are rejected.",
-          '  useLinkProps({ to: "/missing" });',
-          "",
-          "  // @ts-expect-error dynamic page routes require their params.",
-          '  useLinkProps({ to: "/admin/$section" });',
-          "",
-          "  return null;",
-          "}",
-        ].join("\n"),
-        "utf-8",
-      );
-      await writeRouteTypeCheckTsConfig(cwd);
-
-      await build(
-        {
-          output: { client: "dist" },
-          routing: {
-            mode: "spa",
-            dir: "./src/app/pages",
-          },
-        },
-        {
-          cwd,
-          bundler: createMockBundler([]),
-        },
-      );
-
-      await expect(
-        fs.promises.readFile(
-          path.join(cwd, "src/app/route-types.d.ts"),
-          "utf-8",
-        ),
-      ).resolves.toContain(
-        'import type * as EvPage_admin_section from "./pages/admin/$section/page";',
-      );
       await execa("npx", ["tsc", "-p", path.join(cwd, "tsconfig.json")], {
         cwd: repoRoot,
       });
@@ -3615,7 +4287,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "spa" },
       },
       {
@@ -3686,7 +4358,6 @@ describe("build", () => {
               css: [],
             },
           },
-          firstClientEntryAssets: { js: ["page-client-index.js"], css: [] },
           ...serverBuildFacts(plan),
         };
       },
@@ -3695,7 +4366,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: {
           mode: "mpa",
         },
@@ -3746,10 +4417,6 @@ describe("build", () => {
               css: [],
             },
           },
-          firstClientEntryAssets: {
-            js: ["page-client-product.js"],
-            css: [],
-          },
           ...serverBuildFacts(plan),
         };
       },
@@ -3758,7 +4425,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "mpa" },
       },
       {
@@ -3769,7 +4436,10 @@ describe("build", () => {
 
     expect(events).toEqual(["html:product:./src/pages/product/index.html"]);
     await expect(
-      fs.promises.readFile(path.join(cwd, "dist/product/index.html"), "utf-8"),
+      fs.promises.readFile(
+        path.join(cwd, "dist/client/product/index.html"),
+        "utf-8",
+      ),
     ).resolves.toContain('<main id="app">');
   });
 
@@ -3822,11 +4492,11 @@ describe("build", () => {
       name: "document-alias-output",
       capabilities: fullBundlerCapabilities,
       async build({ plan }) {
+        const aboutEntry = createPageClientBuildEntryName("about");
         return {
           clientEntryAssets: {
-            about: { js: ["about.js"], css: [] },
+            [aboutEntry]: { js: [`${aboutEntry}.js`], css: [] },
           },
-          firstClientEntryAssets: { js: ["about.js"], css: [] },
           ...serverBuildFacts(plan),
         };
       },
@@ -3863,7 +4533,7 @@ describe("build", () => {
       id: "about",
       fileName: "about/index.html",
       aliases: ["about.html", "legacy/about.htm"],
-      assets: { js: ["about.js"], css: [] },
+      assets: { js: ["page-client-about.js"], css: [] },
     });
 
     await writeFile(pageConfigFile, "export default {};", "utf-8");
@@ -3881,33 +4551,23 @@ describe("build", () => {
     );
   });
 
-  it("removes stale default route types when MPA routing uses a custom directory", async () => {
+  it("removes stale generated route types in MPA mode", async () => {
     const cwd = await createProject();
-    await fs.promises.mkdir(path.join(cwd, "src"), { recursive: true });
-    await fs.promises.mkdir(path.join(cwd, "app/pages"), { recursive: true });
     await writeFile(
       path.join(cwd, "src/route-types.d.ts"),
       generatedRouteTypesSource,
       "utf-8",
     );
     await writeFile(
-      path.join(cwd, "app/route-types.d.ts"),
-      generatedRouteTypesSource,
-      "utf-8",
-    );
-    await writeFile(
-      path.join(cwd, "app/pages/page.tsx"),
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
 
     await build(
       {
-        output: { client: "dist" },
-        routing: {
-          mode: "mpa",
-          dir: "./app/pages",
-        },
+        output: { client: "dist/client", server: "dist/server" },
+        routing: { mode: "mpa" },
       },
       {
         cwd,
@@ -3916,31 +4576,26 @@ describe("build", () => {
     );
 
     expect(fs.existsSync(path.join(cwd, "src/route-types.d.ts"))).toBe(false);
-    expect(fs.existsSync(path.join(cwd, "app/route-types.d.ts"))).toBe(false);
   });
 
   it("does not remove user-authored route type declarations in MPA mode", async () => {
     const cwd = await createProject();
     const userAuthoredSource = "declare const userAuthoredRouteTypes: string;";
-    await fs.promises.mkdir(path.join(cwd, "app/pages"), { recursive: true });
     await writeFile(
-      path.join(cwd, "app/route-types.d.ts"),
+      path.join(cwd, "src/route-types.d.ts"),
       userAuthoredSource,
       "utf-8",
     );
     await writeFile(
-      path.join(cwd, "app/pages/page.tsx"),
+      path.join(cwd, "src/pages/page.tsx"),
       "export default function Home() { return null; }",
       "utf-8",
     );
 
     await build(
       {
-        output: { client: "dist" },
-        routing: {
-          mode: "mpa",
-          dir: "./app/pages",
-        },
+        output: { client: "dist/client", server: "dist/server" },
+        routing: { mode: "mpa" },
       },
       {
         cwd,
@@ -3949,7 +4604,7 @@ describe("build", () => {
     );
 
     await expect(
-      fs.promises.readFile(path.join(cwd, "app/route-types.d.ts"), "utf-8"),
+      fs.promises.readFile(path.join(cwd, "src/route-types.d.ts"), "utf-8"),
     ).resolves.toBe(userAuthoredSource);
   });
 
@@ -3964,7 +4619,6 @@ describe("build", () => {
           clientEntryAssets: {
             main: { js: ["memory.js"], css: [] },
           },
-          firstClientEntryAssets: { js: ["memory.js"], css: [] },
           ...serverBuildFacts(plan),
         };
       },
@@ -3973,7 +4627,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "spa" },
         plugins: [
           {
@@ -4016,7 +4670,6 @@ describe("build", () => {
           clientEntryAssets: {
             main: { js: ["main.js"], css: [] },
           },
-          firstClientEntryAssets: { js: ["main.js"], css: [] },
         };
       },
       async dev() {},
@@ -4024,7 +4677,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "spa" },
         plugins: [
           {
@@ -4080,10 +4733,6 @@ describe("build", () => {
               js: [`${dashboardClientEntry}.js`],
               css: [],
             },
-          },
-          firstClientEntryAssets: {
-            js: [`${dashboardClientEntry}.js`],
-            css: [],
           },
           serverEntryAssets: {
             ...serverFacts.serverEntryAssets,
@@ -4199,7 +4848,6 @@ describe("build", () => {
         const reportServerEntry = createPageServerBuildEntryName("report");
         return {
           clientEntryAssets: {},
-          firstClientEntryAssets: { js: [], css: [] },
           serverEntryAssets: {
             [reportServerEntry]: {
               js: [`${reportServerEntry}.js`],
@@ -4355,10 +5003,6 @@ describe("build", () => {
           clientEntryAssets: {
             main: { js: ["main.js"], css: ["main.css"] },
           },
-          firstClientEntryAssets: {
-            js: ["main.js"],
-            css: ["main.css"],
-          },
           serverEntryAssets: {
             [reportServerEntry]: {
               js: [`${reportServerEntry}.js`],
@@ -4429,10 +5073,6 @@ describe("build", () => {
           clientEntryAssets: {
             main: { js: ["main.js"], css: [] },
           },
-          firstClientEntryAssets: {
-            js: ["main.js"],
-            css: [],
-          },
           serverEntryAssets: {
             [indexServerEntry]: {
               js: [`${indexServerEntry}.js`],
@@ -4478,19 +5118,36 @@ describe("build", () => {
 
   it("removes stale framework HTML while preserving replaced and unrelated files", async () => {
     const cwd = await createProject();
+    let bundlerOwnedFile: string | undefined;
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock-mpa",
       capabilities: fullBundlerCapabilities,
       async build({ plan }) {
+        const clientEntryAssets = Object.fromEntries(
+          plan.entries
+            .filter((entry) => entry.environment === "client")
+            .map((entry) => [
+              entry.name,
+              { js: [`${entry.name}.js`], css: [] },
+            ]),
+        );
+        if (bundlerOwnedFile) {
+          await writeFile(
+            path.join(cwd, "dist/client", bundlerOwnedFile),
+            "bundler replacement",
+            "utf-8",
+          );
+        }
         return {
-          clientEntryAssets: Object.fromEntries(
-            plan.entries
-              .filter((entry) => entry.environment === "client")
-              .map((entry) => [
-                entry.name,
-                { js: [`${entry.name}.js`], css: [] },
-              ]),
-          ),
+          clientEntryAssets,
+          emittedFiles: {
+            client: [
+              ...Object.values(clientEntryAssets).flatMap(
+                (assets) => assets.js,
+              ),
+              ...(bundlerOwnedFile ? [bundlerOwnedFile] : []),
+            ],
+          },
         };
       },
       async dev() {},
@@ -4535,13 +5192,14 @@ describe("build", () => {
     );
     await fs.promises.rm(reportPage);
     await fs.promises.rm(archivePage);
+    bundlerOwnedFile = "report/index.html";
 
     await build(
       { output: { client: "dist/client" }, routing: { mode: "mpa" } },
       { cwd, bundler },
     );
 
-    expect(fs.existsSync(reportHtml)).toBe(false);
+    expect(fs.readFileSync(reportHtml, "utf-8")).toBe("bundler replacement");
     expect(fs.readFileSync(archiveHtml, "utf-8")).toContain(
       "plugin replacement",
     );
@@ -4664,7 +5322,10 @@ describe("build", () => {
 
     await expect(
       build(
-        { output: { client: "dist" }, plugins: [plugin] },
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          plugins: [plugin],
+        },
         {
           cwd,
           bundler,
@@ -4693,7 +5354,10 @@ describe("build", () => {
 
     await expect(
       build(
-        { output: { client: "dist" }, plugins: [plugin] },
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          plugins: [plugin],
+        },
         {
           cwd,
           bundler,
@@ -4705,7 +5369,7 @@ describe("build", () => {
     expect(events).toEqual(["setup"]);
   });
 
-  it("rejects unknown lifecycle hook keys with a migration hint", async () => {
+  it("suggests the current spelling for mis-cased lifecycle hooks", async () => {
     const cwd = await createProject();
     const events: string[] = [];
     const bundler = createMockBundler(events);
@@ -4725,7 +5389,10 @@ describe("build", () => {
 
     await expect(
       build(
-        { output: { client: "dist" }, plugins: [plugin] },
+        {
+          output: { client: "dist/client", server: "dist/server" },
+          plugins: [plugin],
+        },
         {
           cwd,
           bundler,
@@ -4750,7 +5417,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           application: {
             document: { template: "./missing-app.html" },
             routes: [{ path: "/", page: "home" }],
@@ -4781,10 +5448,9 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: {
             mode: "spa",
-            dir: "./src/pages",
             html: "./missing-routing.html",
             mount: "#app",
           },
@@ -4814,7 +5480,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa", html: "./templates" },
         },
         {
@@ -4847,7 +5513,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
         },
         {
@@ -4884,7 +5550,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "mpa", mount: "#admin" },
         },
         {
@@ -4906,7 +5572,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
         },
         {
@@ -4928,7 +5594,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
         },
         {
@@ -4950,7 +5616,7 @@ describe("build", () => {
     try {
       await build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
         },
         {
@@ -4993,7 +5659,7 @@ describe("build", () => {
     try {
       await build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
         },
         {
@@ -5045,7 +5711,7 @@ describe("build", () => {
     try {
       await build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
         },
         {
@@ -5095,7 +5761,7 @@ describe("build", () => {
     try {
       await build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
         },
         {
@@ -5405,7 +6071,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "mpa" },
       },
       {
@@ -5432,7 +6098,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           application: {
             routes: [{ path: "/", page: "" }],
           },
@@ -5461,7 +6127,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           application: {
             routes: [
               { path: "/dashboard", page: "home" },
@@ -5486,18 +6152,18 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: {
             mode: "spa",
             dir: "",
-          },
+          } as never,
         },
         {
           cwd,
           bundler,
         },
       ),
-    ).rejects.toThrow("[evjs] routing.dir must be a non-empty string.");
+    ).rejects.toThrow("[evjs] routing.dir is not supported.");
     expect(events).not.toContain("bundler.build");
   });
 
@@ -5783,7 +6449,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "spa" },
       },
       {
@@ -5823,7 +6489,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "spa" },
       },
       {
@@ -5965,7 +6631,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
         },
         {
@@ -5994,7 +6660,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
         },
         {
@@ -6026,7 +6692,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
         },
         {
@@ -6065,7 +6731,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
         },
         {
@@ -6121,7 +6787,10 @@ describe("build", () => {
     };
 
     await build(
-      { output: { client: "dist" }, plugins: [pluginB, pluginA] },
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [pluginB, pluginA],
+      },
       {
         cwd,
         bundler,
@@ -6162,7 +6831,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [
           plugin("plugin-a", ["plugin-c"]),
           plugin("plugin-b"),
@@ -6191,7 +6860,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [
           {
             name: "post",
@@ -6253,7 +6922,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [
           plugin("plugin-b", {
             dependencies: ["plugin-c"],
@@ -6285,7 +6954,7 @@ describe("build", () => {
 
     await build(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [
           {
             name: "plugin-b",
@@ -6325,7 +6994,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [{ name: "plugin-b", dependencies: ["plugin-a"] }],
         },
         { cwd, bundler },
@@ -6341,7 +7010,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [
             { name: "plugin-a", dependencies: ["plugin-b"] },
             { name: "plugin-b", dependencies: ["plugin-a"] },
@@ -6362,7 +7031,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [
             { name: "plugin-a", optionalDependencies: ["plugin-b"] },
             { name: "plugin-b", dependencies: ["plugin-a"] },
@@ -6383,7 +7052,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [{ name: "plugin-a" }, { name: "plugin-a" }],
         },
         { cwd, bundler },
@@ -6399,7 +7068,7 @@ describe("build", () => {
     await expect(
       build(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [
             {
               name: "",
@@ -6438,11 +7107,17 @@ describe("dev", () => {
       },
     };
 
-    const firstRun = dev({ output: { client: "dist" } }, { cwd, bundler });
+    const firstRun = dev(
+      { output: { client: "dist/client", server: "dist/server" } },
+      { cwd, bundler },
+    );
     await started;
 
     await expect(
-      dev({ output: { client: "dist" } }, { cwd, bundler }),
+      dev(
+        { output: { client: "dist/client", server: "dist/server" } },
+        { cwd, bundler },
+      ),
     ).rejects.toThrow("Dev is already running");
     expect(starts).toBe(1);
 
@@ -6482,7 +7157,7 @@ describe("dev", () => {
     try {
       await dev(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           dev: { port: address.port },
           server: { dev: { port: address.port } },
         },
@@ -6507,7 +7182,7 @@ describe("dev", () => {
 
     await expect(
       dev(
-        { output: { client: "dist" } },
+        { output: { client: "dist/client", server: "dist/server" } },
         {
           cwd,
           bundler: {
@@ -6529,7 +7204,7 @@ describe("dev", () => {
     await expect(
       dev(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [
             {
               name: "failing-start",
@@ -6578,7 +7253,7 @@ describe("dev", () => {
     await expect(
       dev(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           plugins: [
             {
               name: "cleanup",
@@ -6617,7 +7292,6 @@ describe("dev", () => {
               clientEntryAssets: {
                 [clientEntry.name]: { js: ["main.js"], css: [] },
               },
-              firstClientEntryAssets: { js: ["main.js"], css: [] },
             }
           : {};
         await callbacks.onBuildFacts(facts, { isRebuild: false });
@@ -6629,7 +7303,7 @@ describe("dev", () => {
 
     await dev(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [
           {
             name: "dev-build-end",
@@ -6647,6 +7321,96 @@ describe("dev", () => {
     );
 
     expect(rebuildFlags).toEqual([false, true]);
+  });
+
+  it("prerenders clientless SSG HTML during initial dev output and rebuilds", async () => {
+    const cwd = await createProject();
+    await writeFile(
+      path.join(cwd, "src/pages/report/page.tsx"),
+      "export default function Report() { return null; }",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(cwd, "src/pages/report/page.config.ts"),
+      'export default { render: "ssg" };',
+      "utf-8",
+    );
+
+    const emittedHtml: string[] = [];
+    const bundler: BundlerAdapter<Record<string, never>> = {
+      name: "ssg-dev-mock",
+      capabilities: fullBundlerCapabilities,
+      async build() {
+        return {};
+      },
+      async dev({ callbacks, plan }) {
+        const reportServerEntry = createPageServerBuildEntryName("report");
+        expect(plan.mode).toBe("development");
+        expect(plan.entries).toContainEqual(
+          expect.objectContaining({
+            name: reportServerEntry,
+            environment: "server",
+            kind: "page-server",
+          }),
+        );
+        expect(
+          plan.entries.some((entry) => entry.environment === "client"),
+        ).toBe(false);
+        let rendering = "Initial dev report";
+        const facts: BundlerBuildFacts = {
+          clientEntryAssets: {},
+          serverEntryAssets: {
+            [reportServerEntry]: {
+              js: [`${reportServerEntry}.js`],
+              css: [],
+            },
+          },
+          serverAssets: { js: [], css: [] },
+          async loadServerModule(asset) {
+            if (asset !== `${reportServerEntry}.js`) {
+              throw new Error(`Unexpected server module asset: ${asset}`);
+            }
+            const currentRendering = rendering;
+            return {
+              render() {
+                return `<h1>${currentRendering}</h1>`;
+              },
+            };
+          },
+        };
+        const htmlPath = path.join(cwd, "dist/client/report/index.html");
+
+        await callbacks.onBuildFacts(facts, { isRebuild: false });
+        emittedHtml.push(await fs.promises.readFile(htmlPath, "utf-8"));
+
+        rendering = "Rebuilt dev report";
+        await callbacks.onBuildFacts(facts, { isRebuild: true });
+        emittedHtml.push(await fs.promises.readFile(htmlPath, "utf-8"));
+
+        process.emit("SIGINT");
+        return { async updatePlan() {} };
+      },
+    };
+
+    await dev(
+      {
+        routing: { mode: "mpa" },
+      },
+      { cwd, bundler },
+    );
+
+    expect(emittedHtml).toHaveLength(2);
+    expect(emittedHtml[0]).toContain(
+      '<div id="app"><h1>Initial dev report</h1></div>',
+    );
+    expect(emittedHtml[1]).toContain(
+      '<div id="app"><h1>Rebuilt dev report</h1></div>',
+    );
+    for (const html of emittedHtml) {
+      expect(html).not.toMatch(/<script[^>]+src=/);
+      expect(html).not.toContain("__EVJS_CLIENT_RUNTIME__");
+      expect(html).not.toContain("data-evjs-hydrate");
+    }
   });
 
   it("discovers the first default api.* anchor when src/apis is created during dev", async () => {
@@ -6680,7 +7444,10 @@ describe("dev", () => {
       },
     };
 
-    const running = dev({ output: { client: "dist" } }, { cwd, bundler });
+    const running = dev(
+      { output: { client: "dist/client", server: "dist/server" } },
+      { cwd, bundler },
+    );
     await waitForEvent(events, "initial-server:false");
     await new Promise((resolve) => setTimeout(resolve, 100));
     await writeFile(
@@ -6736,7 +7503,10 @@ describe("dev", () => {
       },
     };
 
-    const running = dev({ output: { client: "dist" } }, { cwd, bundler });
+    const running = dev(
+      { output: { client: "dist/client", server: "dist/server" } },
+      { cwd, bundler },
+    );
     await waitForEvent(events, "initial-server:false");
     await new Promise((resolve) => setTimeout(resolve, 100));
     await fs.promises.rm(routeRoot);
@@ -6795,7 +7565,10 @@ describe("dev", () => {
     };
 
     const running = dev(
-      { output: { client: "dist" }, plugins: [plugin] },
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [plugin],
+      },
       { cwd, bundler },
     );
     await waitForEvent(events, "initial-server:false");
@@ -6888,7 +7661,10 @@ describe("dev", () => {
     };
 
     const running = dev(
-      { output: { client: "dist" }, plugins: [plugin] },
+      {
+        output: { client: "dist/client", server: "dist/server" },
+        plugins: [plugin],
+      },
       { cwd, bundler },
     );
     await waitForEvent(events, "bundler.dev");
@@ -6998,7 +7774,7 @@ describe("dev", () => {
 
     const running = dev(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "spa" },
         plugins: [plugin],
       },
@@ -7091,7 +7867,10 @@ describe("dev", () => {
       },
     };
 
-    const running = dev({ output: { client: "dist" } }, { cwd, bundler });
+    const running = dev(
+      { output: { client: "dist/client", server: "dist/server" } },
+      { cwd, bundler },
+    );
     await waitForEvent(events, "initial-server:true");
     await new Promise((resolve) => setTimeout(resolve, 100));
     await fs.promises.rm(routeFile);
@@ -7126,7 +7905,7 @@ describe("dev", () => {
     await writeFile(configPath, "export default {};", "utf-8");
     const events: string[] = [];
     let currentConfig: Config<Record<string, never>> = {
-      output: { client: "dist" },
+      output: { client: "dist/client", server: "dist/server" },
     };
     const bundler: BundlerAdapter<Record<string, never>> = {
       name: "mock",
@@ -7222,7 +8001,10 @@ describe("dev", () => {
       },
     };
 
-    const running = dev({ output: { client: "dist" } }, { cwd, bundler });
+    const running = dev(
+      { output: { client: "dist/client", server: "dist/server" } },
+      { cwd, bundler },
+    );
     await waitForEvent(events, "bundler.dev");
     await writeFile(dependency, '{"mode":"changed"}', "utf-8");
 
@@ -7255,7 +8037,7 @@ describe("dev", () => {
       },
     };
     let currentConfig: Config<Record<string, never>> = {
-      output: { client: "dist" },
+      output: { client: "dist/client", server: "dist/server" },
       plugins: [plugin],
     };
     const bundler: BundlerAdapter<Record<string, never>> = {
@@ -7274,7 +8056,6 @@ describe("dev", () => {
               clientEntryAssets: {
                 [clientEntry.name]: { js: ["main.js"], css: [] },
               },
-              firstClientEntryAssets: { js: ["main.js"], css: [] },
             }
           : {};
         events.push("bundler.dev");
@@ -7354,7 +8135,7 @@ describe("dev", () => {
     await Promise.race([
       dev(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: { mode: "spa" },
         },
         { cwd, bundler },
@@ -7406,7 +8187,7 @@ describe("dev", () => {
     await Promise.race([
       dev(
         {
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
           routing: {
             mode: "mpa",
           },
@@ -7488,7 +8269,7 @@ describe("dev", () => {
       await Promise.race([
         dev(
           {
-            output: { client: "dist" },
+            output: { client: "dist/client", server: "dist/server" },
             dev: { port: 4123 },
             routing: { mode: "mpa" },
           },
@@ -7545,7 +8326,7 @@ describe("dev", () => {
 
     const running = dev(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "spa" },
       },
       { cwd, bundler },
@@ -7589,7 +8370,7 @@ describe("dev", () => {
 
     const running = dev(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "spa" },
       },
       { cwd, bundler },
@@ -7645,7 +8426,7 @@ describe("dev", () => {
 
     const running = dev(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "spa" },
       },
       { cwd, bundler },
@@ -7717,7 +8498,7 @@ describe("dev", () => {
 
     const running = dev(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
         routing: { mode: "spa" },
       },
@@ -7762,30 +8543,20 @@ describe("dev", () => {
   it("updates the dev bundler when config changes add an MPA page", async () => {
     const cwd = await createProject();
     await writeFile(
-      path.join(cwd, "src/pages-v1/home/page.tsx"),
+      path.join(cwd, "src/pages/home/page.tsx"),
       "export default function Home() { return null; }",
-      "utf-8",
-    );
-    await writeFile(
-      path.join(cwd, "src/pages-v2/home/page.tsx"),
-      "export default function Home() { return null; }",
-      "utf-8",
-    );
-    await writeFile(
-      path.join(cwd, "src/pages-v2/orders/page.tsx"),
-      "export default function Orders() { return null; }",
       "utf-8",
     );
     await writeFile(
       path.join(cwd, "ev.config.ts"),
-      "export default { routing: { mode: 'mpa', dir: './src/pages-v1' } };",
+      "export default { routing: { mode: 'mpa' } };",
       "utf-8",
     );
 
     const events: string[] = [];
     let currentConfig: Config<Record<string, never>> = {
-      output: { client: "dist" },
-      routing: { mode: "mpa", dir: "./src/pages-v1" },
+      output: { client: "dist/client", server: "dist/server" },
+      routing: { mode: "mpa" },
     };
 
     const bundler: BundlerAdapter<Record<string, never>> = {
@@ -7816,13 +8587,18 @@ describe("dev", () => {
     });
 
     await new Promise((resolve) => setTimeout(resolve, 100));
+    await writeFile(
+      path.join(cwd, "src/pages/orders/page.tsx"),
+      "export default function Orders() { return null; }",
+      "utf-8",
+    );
     currentConfig = {
       ...currentConfig,
-      routing: { mode: "mpa", dir: "./src/pages-v2" },
+      routing: { mode: "mpa" },
     };
     await writeFile(
       path.join(cwd, "ev.config.ts"),
-      "export default { routing: { mode: 'mpa', dir: './src/pages-v2' } };",
+      "export default { routing: { mode: 'mpa' } }; // updated",
       "utf-8",
     );
 
@@ -7925,7 +8701,7 @@ describe("dev", () => {
 
     const running = dev(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "mpa" },
         plugins: [plugin],
       },
@@ -8022,7 +8798,7 @@ describe("dev", () => {
         extensions: {
           "@test/stable-application": { enabled: true },
         },
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
         routing: { mode: "mpa" },
       },
@@ -8105,7 +8881,7 @@ describe("dev", () => {
 
     const running = dev(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "mpa" },
       },
       { cwd, bundler },
@@ -8153,11 +8929,11 @@ describe("dev", () => {
         return {};
       },
       async dev({ plan, callbacks }) {
+        const aboutEntry = createPageClientBuildEntryName("about");
         const facts: BundlerBuildFacts = {
           clientEntryAssets: {
-            about: { js: ["about.js"], css: [] },
+            [aboutEntry]: { js: [`${aboutEntry}.js`], css: [] },
           },
-          firstClientEntryAssets: { js: ["about.js"], css: [] },
         };
         await callbacks.onBuildFacts(facts);
         const aliasPath = path.resolve(
@@ -8221,23 +8997,13 @@ describe("dev", () => {
   it("runs staged same-name plugin hooks before applying a dev config update", async () => {
     const cwd = await createProject();
     await writeFile(
-      path.join(cwd, "src/pages-v1/home/page.tsx"),
+      path.join(cwd, "src/pages/home/page.tsx"),
       "export default function Home() { return null; }",
-      "utf-8",
-    );
-    await writeFile(
-      path.join(cwd, "src/pages-v2/home/page.tsx"),
-      "export default function Home() { return null; }",
-      "utf-8",
-    );
-    await writeFile(
-      path.join(cwd, "src/pages-v2/orders/page.tsx"),
-      "export default function Orders() { return null; }",
       "utf-8",
     );
     await writeFile(
       path.join(cwd, "ev.config.ts"),
-      "export default { routing: { mode: 'mpa', dir: './src/pages-v1' } };",
+      "export default { routing: { mode: 'mpa' } };",
       "utf-8",
     );
 
@@ -8263,8 +9029,8 @@ describe("dev", () => {
     }
 
     let currentConfig: Config<Record<string, never>> = {
-      output: { client: "dist" },
-      routing: { mode: "mpa", dir: "./src/pages-v1" },
+      output: { client: "dist/client", server: "dist/server" },
+      routing: { mode: "mpa" },
       plugins: [createPlugin("v1")],
     };
 
@@ -8296,14 +9062,19 @@ describe("dev", () => {
     });
 
     await new Promise((resolve) => setTimeout(resolve, 100));
+    await writeFile(
+      path.join(cwd, "src/pages/orders/page.tsx"),
+      "export default function Orders() { return null; }",
+      "utf-8",
+    );
     currentConfig = {
       ...currentConfig,
-      routing: { mode: "mpa", dir: "./src/pages-v2" },
+      routing: { mode: "mpa" },
       plugins: [createPlugin("v2")],
     };
     await writeFile(
       path.join(cwd, "ev.config.ts"),
-      "export default { routing: { mode: 'mpa', dir: './src/pages-v2' } };",
+      "export default { routing: { mode: 'mpa' } }; // updated",
       "utf-8",
     );
 
@@ -8334,23 +9105,13 @@ describe("dev", () => {
   it("rolls back staged plugin hooks when reload buildStart fails", async () => {
     const cwd = await createProject();
     await writeFile(
-      path.join(cwd, "src/pages-v1/home/page.tsx"),
+      path.join(cwd, "src/pages/home/page.tsx"),
       "export default function Home() { return null; }",
-      "utf-8",
-    );
-    await writeFile(
-      path.join(cwd, "src/pages-v2/home/page.tsx"),
-      "export default function Home() { return null; }",
-      "utf-8",
-    );
-    await writeFile(
-      path.join(cwd, "src/pages-v2/orders/page.tsx"),
-      "export default function Orders() { return null; }",
       "utf-8",
     );
     await writeFile(
       path.join(cwd, "ev.config.ts"),
-      "export default { routing: { mode: 'mpa', dir: './src/pages-v1' } };",
+      "export default { routing: { mode: 'mpa' } };",
       "utf-8",
     );
     await writeFile(path.join(cwd, "old-watch.txt"), "old", "utf-8");
@@ -8381,7 +9142,7 @@ describe("dev", () => {
             },
             dispose(disposeCtx) {
               events.push(
-                `dispose:${label}:${disposeCtx.config.routing?.dir ?? "missing"}`,
+                `dispose:${label}:${disposeCtx.config.routing?.mode ?? "missing"}`,
               );
             },
           };
@@ -8391,8 +9152,8 @@ describe("dev", () => {
 
     const oldPlugin = createPlugin("old", "old-watch.txt");
     const oldConfig: Config<Record<string, never>> = {
-      output: { client: "dist" },
-      routing: { mode: "mpa", dir: "./src/pages-v1" },
+      output: { client: "dist/client", server: "dist/server" },
+      routing: { mode: "mpa" },
       plugins: [oldPlugin],
     };
     let currentConfig = oldConfig;
@@ -8425,19 +9186,15 @@ describe("dev", () => {
     await waitForEvent(events, "bundler.dev");
     currentConfig = {
       ...oldConfig,
-      routing: { mode: "mpa", dir: "./src/pages-v2" },
+      routing: { mode: "mpa" },
       plugins: [createPlugin("new", "new-watch.txt", true)],
     };
     await writeFile(
       path.join(cwd, "ev.config.ts"),
-      "export default { routing: { mode: 'mpa', dir: './src/pages-v2' } };",
+      "export default { routing: { mode: 'mpa' } }; // updated",
       "utf-8",
     );
-    await waitForEvent(
-      events,
-      "dispose:new:./src/pages-v2",
-      devUpdateTimeoutMs,
-    );
+    await waitForEvent(events, "dispose:new:mpa", devUpdateTimeoutMs);
 
     currentConfig = oldConfig;
     await writeFile(path.join(cwd, "old-watch.txt"), "changed", "utf-8");
@@ -8462,33 +9219,23 @@ describe("dev", () => {
       "load:1",
       "setup:new",
       "buildStart:new",
-      "dispose:new:./src/pages-v2",
+      "dispose:new:mpa",
       "load:2",
       "contribution:old:2",
-      "dispose:old:./src/pages-v1",
+      "dispose:old:mpa",
     ]);
   });
 
   it("refreshes plugin watch files after committed plugin cleanup fails", async () => {
     const cwd = await createProject();
     await writeFile(
-      path.join(cwd, "src/pages-v1/home/page.tsx"),
+      path.join(cwd, "src/pages/home/page.tsx"),
       "export default function Home() { return null; }",
-      "utf-8",
-    );
-    await writeFile(
-      path.join(cwd, "src/pages-v2/home/page.tsx"),
-      "export default function Home() { return null; }",
-      "utf-8",
-    );
-    await writeFile(
-      path.join(cwd, "src/pages-v2/orders/page.tsx"),
-      "export default function Orders() { return null; }",
       "utf-8",
     );
     await writeFile(
       path.join(cwd, "ev.config.ts"),
-      "export default { routing: { mode: 'mpa', dir: './src/pages-v1' } };",
+      "export default { routing: { mode: 'mpa' } };",
       "utf-8",
     );
     await writeFile(path.join(cwd, "old-watch.txt"), "old", "utf-8");
@@ -8516,8 +9263,8 @@ describe("dev", () => {
     }
 
     let currentConfig: Config<Record<string, never>> = {
-      output: { client: "dist" },
-      routing: { mode: "mpa", dir: "./src/pages-v1" },
+      output: { client: "dist/client", server: "dist/server" },
+      routing: { mode: "mpa" },
       plugins: [createPlugin("old", "old-watch.txt", true)],
     };
     const bundler: BundlerAdapter<Record<string, never>> = {
@@ -8549,14 +9296,19 @@ describe("dev", () => {
     });
 
     await new Promise((resolve) => setTimeout(resolve, 100));
+    await writeFile(
+      path.join(cwd, "src/pages/orders/page.tsx"),
+      "export default function Orders() { return null; }",
+      "utf-8",
+    );
     currentConfig = {
       ...currentConfig,
-      routing: { mode: "mpa", dir: "./src/pages-v2" },
+      routing: { mode: "mpa" },
       plugins: [createPlugin("new", "new-watch.txt")],
     };
     await writeFile(
       path.join(cwd, "ev.config.ts"),
-      "export default { routing: { mode: 'mpa', dir: './src/pages-v2' } };",
+      "export default { routing: { mode: 'mpa' } }; // updated",
       "utf-8",
     );
     await waitForEvent(

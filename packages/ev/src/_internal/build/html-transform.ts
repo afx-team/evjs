@@ -36,17 +36,24 @@ export async function buildHtml<TBundlerCfg = unknown>(
 ): Promise<string> {
   const { doc, hooks, html, output, pluginContext } = options;
 
-  // Run transformHtml plugin hooks in sequence (mutate doc in place)
-  const buildResult = createBuildResult(output, options.isRebuild ?? false);
-  const htmlContext = {
-    ...pluginContext,
-    ...html,
-    ...buildResult,
-    buildId: output.buildId,
-    publicPath: output.publicPath,
-  };
+  // The DOM composes across hooks, while manifest data is an isolated
+  // observation. A transform must never be able to redirect later framework
+  // writes or leak an in-place manifest mutation into another plugin.
   for (const h of hooks) {
     if (h.transformHtml) {
+      const outputSnapshot = structuredClone(output);
+      const htmlSnapshot = structuredClone(html);
+      const buildResult = createBuildResult(
+        outputSnapshot,
+        options.isRebuild ?? false,
+      );
+      const htmlContext = {
+        ...pluginContext,
+        ...htmlSnapshot,
+        ...buildResult,
+        buildId: outputSnapshot.buildId,
+        publicPath: outputSnapshot.publicPath,
+      };
       await h.transformHtml(doc, htmlContext);
     }
   }

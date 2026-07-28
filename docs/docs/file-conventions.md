@@ -11,7 +11,7 @@ For the complete matrix, see [Project Structure](./project-structure).
 
 | Root | Purpose |
 | --- | --- |
-| `src/pages` or `routing.dir` | Canonical Page-and-Route tree. |
+| `src/pages` | Canonical Page-and-Route tree. |
 | `src/apis` or `server.routing.dir` | Server request `api.*` anchor tree. |
 | `src/middleware.ts` | Global framework server middleware. |
 | `<server.routing.dir>/**/middleware.ts` | Middleware scoped to same-directory and descendant server file routes; defaults to `src/apis/**/middleware.ts`. |
@@ -20,14 +20,14 @@ For the complete matrix, see [Project Structure](./project-structure).
 Page anchors, server request-route anchors, and both middleware roots form one
 framework-owned discovery unit. Top-level `conventions: false` disables that
 unit together; there are no per-root switches. It cannot be combined with
-explicit `routing` or `server.routing`. When conventions remain enabled,
-`routing.dir` and `server.routing: { dir }` only customize their discovery
-roots.
+explicit `routing` or `server.routing`. When conventions remain enabled, the
+client Page root stays fixed at `src/pages`; only `server.routing: { dir }`
+customizes a discovery root.
 
 Reachable `"use server";` modules, SPA-only `application.routes`
 configuration, and plugin contributions are graph/config inputs rather than
-file conventions. Removed `app`, `pages`, and top-level `routes` declarations
-are rejected.
+file conventions. `app`, `pages`, and top-level `routes` are not public
+configuration fields and are rejected.
 
 The relative directory of each `page.*` anchor is the client URL source of
 truth. `routing.mode` chooses SPA or MPA materialization for that same tree.
@@ -37,7 +37,7 @@ truth. `routing.mode` chooses SPA or MPA materialization for that same tree.
 A Page and client Route share one positive anchor:
 
 ```text
-<routing.dir>/**/page.{ts,tsx,js,jsx}
+src/pages/**/page.{ts,tsx,js,jsx}
 ```
 
 ```ts
@@ -68,7 +68,7 @@ src/pages/
 Rules:
 
 - exactly one supported `page.*` variant is allowed in a route directory;
-- directory segments relative to `routing.dir` determine the URL;
+- directory segments relative to `src/pages` determine the URL;
 - the complete containing directory is the Page-private scope;
 - every other file, including `index.*`, is ordinary Page source;
 - a descendant `page.*` intentionally creates a nested Page and Route;
@@ -238,10 +238,13 @@ export async function POST(request: Request) {
 ```
 
 Supported methods are the framework's documented uppercase HTTP handlers.
-Default exports, lowercase method names, helper exports, and route-module
-middleware exports are invalid in an `api.*` anchor. Every other basename is
-ordinary route-private source and does not publish a Route, regardless of its
-exports.
+Handlers may be declared locally, imported from route-private modules,
+re-exported, or created by a factory. Discovery rejects values that are already
+statically known to be non-callable; the generated `createRoute()` definition
+validates every evaluated handler before the server starts. Generators, default
+exports, lowercase method names, helper exports, and route-module middleware
+exports are invalid in an `api.*` anchor. Every other basename is ordinary
+route-private source and does not publish a Route, regardless of its exports.
 
 ### Server route conflicts
 
@@ -252,7 +255,13 @@ The build rejects:
 - two parameter names for the same dynamic shape, such as `$id` and `$userId`;
 - unsafe or malformed group/dynamic segments;
 - generated route-id collisions;
-- route modules that mix unsupported exports into the route contract.
+- route modules that mix unsupported exports into the route contract;
+- a server request Route pattern that intersects a URL-owning Page or redirect
+  pattern, or an active framework runtime endpoint.
+
+Static route aliases are compared after exactly one URL decode during conflict
+checks. For example, `/%75sers` and `/users` claim the same request path, while
+double-encoded text remains distinct.
 
 `index.ts`, `route.ts`, and `foo.get.ts` are not alternate route anchors. Do
 not add another route dialect or a `server.entry`.
@@ -290,7 +299,7 @@ The framework may generate:
 
 Do not edit or scaffold these files. Keep them ignored.
 
-## Existing Source Adoption
+## Route Input Boundaries
 
 Canonical Page discovery does not ask users to select a route reader or
 provider. A canonical application declares `routing.mode`; the presence of
@@ -298,41 +307,27 @@ provider. A canonical application declares `routing.mode`; the presence of
 
 ### Explicit SPA route configuration
 
-The config-route normalizer accepts `application.routes` plus `component`,
-nested `routes`, `layout`, `wrappers`, and `redirect`. It rejects `children`;
-nested declarations use `routes`. The documented finite access/menu metadata
-set is retained under a registered Route extension. Shared template, mount,
-and Document extension values live under `application.document`. This profile
+The explicit route-tree normalizer accepts `application.routes` plus `page` or
+`component`, nested `routes`, `layout`, `wrappers`, and `redirect`.
+`application.pageRoot` controls only reference resolution for this explicit
+input and does not change the fixed `src/pages` convention root. It rejects `children`;
+nested declarations use `routes`. Route capability data uses registered,
+namespaced `extensions`. Shared template, mount, and Document extension values
+live under `application.document`. This profile
 does not accept a routing-mode selector, top-level `routes`, or top-level
-`html`. Its canonical destination moves each component into the directory for
-its public URL as `page.*`.
+`html`, and it can materialize only SPA. A `page` reference resolves to one
+canonical `page.*` anchor. An explicit `component` ending in `index.*` or
+`page.*` owns its containing directory; other component basenames are
+module-scoped and do not consume adjacent `page.config.ts`.
 
-### Directory-entry MPA sources
+### Canonical Page tree
 
-Keep or reshape each public URL directory, rename its `index.*` component entry
-to `page.*`, map `config.json` title and supported
-named meta to core `title` and `meta`, and move remaining plugin-owned values
-into namespaced `page.config.ts` extensions. Delete `config.json`, then select
-only `routing.mode: "mpa"`.
-
-### Filename-route sources
-
-Move each published filename route to the directory for its URL and rename the
-entry to `page.*`. Preserve `$param` and `(group)` directory segments as
-needed. Canonical discovery does not expose a source-reader or provider
-selector; after the source tree is converted, declare only `routing.mode`.
-
-For the canonical destination:
-
-1. move each Page entry to its URL directory as `page.*`;
-2. move title, supported named meta, rendering, and plugin-owned Page settings
-   to `page.config.ts`;
-3. keep Page-owned helpers anywhere in that directory without `_`;
-4. represent parameters with `$param`, terminal catch-alls with `$...splat`,
-   and pathless groups with `(group)`;
-5. keep supported route facets beside their route directories;
-6. declare only `routing.mode` and run `ev inspect` to review normalized Pages,
-   Routes, Documents, Page config, and provenance.
+`routing.mode` discovers only `page.*` anchors. Each Page entry lives in the
+directory for its URL; Page settings live in adjacent `page.config.ts` files.
+Page-private helpers may use any other basename, including `index.*`, without
+creating another route. Parameters, terminal catch-alls, and pathless groups
+use `$param`, `$...splat`, and `(group)` directories. Run `ev inspect` to
+review normalized Pages, Routes, Documents, Page config, and provenance.
 
 Provider ids may appear in raw CoreGraph/debug artifacts to explain provenance.
 Normal inspect routing output hides them. They do not define another public

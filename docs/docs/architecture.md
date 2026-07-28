@@ -135,7 +135,7 @@ client stubs, `@evjs/ev/_internal/server/server-functions` for generated
 `"use server"` server registrations, and
 `@evjs/ev/_internal/client/rsc-runtime` for RSC page bootstraps.
 
-Do not reintroduce legacy split packages such as `@evjs/build-tools`,
+Do not add split packages such as `@evjs/build-tools`,
 `@evjs/manifest`, or `@evjs/router-*`. The public `@evjs/ev/build-tools`
 subpath exposes the config loader for downstream tooling; the repo's CLI and
 adapters use `@evjs/ev/_internal/build`. Manifest contracts are exported from
@@ -389,7 +389,7 @@ metadata before it can run the same path.
 routing.mode
   selects SPA or MPA materialization
 
-routing.dir + src/pages/**/page.*
+src/pages/**/page.*
   client Page, private scope, and URL source of truth
 
 Page-local page.config.ts / index.html
@@ -400,9 +400,6 @@ server.routing
 
 application.routes
   explicit SPA-only route configuration, not canonical file routing
-
-existing noncanonical source trees
-  convert entries to page.* and settings to page.config.ts before resolution
 
 server.basePath
   derives framework server runtime paths: fn, ppr, rsc
@@ -416,7 +413,7 @@ plugins
 
 Each `page.*` anchor creates one Page and semantic Route. Static directories,
 `$param`, terminal `$...splat`, and `(group)` segments derive its URL relative
-to `routing.dir`; the complete containing directory is its private scope. SPA
+to `src/pages`; the complete containing directory is its private scope. SPA
 creates Client Routes and normally one Application Document; each static SSG
 Page additionally materializes a Page-owned Document at its semantic route
 path. MPA starts from the same semantic graph and creates Page-owned Documents
@@ -442,16 +439,16 @@ For normalized routes, graph creation derives the required server
 renderers, PPR regions, assets, and manifest output.
 The in-memory BuildOutput keeps those renderer relationships explicit: SSR and
 RSC document pages resolve through a `page-server` renderer owned by the page id
-or by one of that page's route ids. SSG pages use a `page-server` renderer during
-the production build to emit static HTML, then deployment metadata exposes them
-as `static-page` routes. PPR pages resolve through `ppr-shell` and `ppr-region`
-entries instead.
+or by one of that page's route ids. SSG pages use a build-phase `page-server`
+renderer to emit static HTML during both development builds and production
+builds; deployment metadata exposes them as `static-page` routes. PPR pages
+resolve through `ppr-shell` and `ppr-region` entries instead.
 
 `application.routes` remains explicit SPA-only route configuration; MPA
-materialization is rejected. Source trees that do not use canonical anchors
-must be converted to `page.*` plus `page.config.ts` before file-convention
-resolution. Standalone/manual runtime composition remains outside this model.
-None of these define another framework Page authoring model.
+materialization is rejected. Canonical discovery publishes only `page.*`
+anchors; every other basename is ordinary source. Standalone/manual runtime
+composition remains outside this model. None of these define another
+framework Page authoring model.
 
 ## Server Function Pipeline
 

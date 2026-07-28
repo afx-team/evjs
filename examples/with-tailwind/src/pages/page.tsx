@@ -65,7 +65,6 @@ export default function HomePage() {
         <pre className="text-sm text-slate-300 bg-black/30 rounded-lg p-4 overflow-x-auto">
           <code>{`export default defineConfig({
   routing: { mode: "spa" },
-  output: { client: "dist", server: "dist-server" },
 });`}</code>
         </pre>
       </div>

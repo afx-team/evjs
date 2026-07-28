@@ -127,22 +127,17 @@ describe("generatePageRouteTypes", () => {
     );
   });
 
-  it("places generated route declarations beside the route directory parent", () => {
+  it("places generated route declarations beside canonical src/pages", () => {
     const cwd = path.resolve("/workspace/app");
 
-    expect(getPageRouteTypesPath(cwd, "./src/pages")).toEqual({
+    expect(getPageRouteTypesPath(cwd)).toEqual({
       dir: path.join(cwd, "src"),
       file: path.join(cwd, "src", PAGE_ROUTE_TYPES_FILE),
       importBaseDir: "./src",
     });
-    expect(getPageRouteTypesPath(cwd, "./src/app/pages")).toEqual({
-      dir: path.join(cwd, "src/app"),
-      file: path.join(cwd, "src/app", PAGE_ROUTE_TYPES_FILE),
-      importBaseDir: "./src/app",
-    });
   });
 
-  it("collects only generated route declaration files outside cleanup skip directories", async () => {
+  it("collects only the canonical generated route declaration", async () => {
     const cwd = await createTempDir();
     const generatedSource = [
       "/* eslint-disable */",
@@ -188,6 +183,23 @@ describe("generatePageRouteTypes", () => {
     const secondStat = await fs.stat(file, { bigint: true });
 
     expect(secondStat.mtimeNs).toBe(firstStat.mtimeNs);
+  });
+
+  it("does not follow a route declaration output symlink", async () => {
+    const cwd = await createTempDir();
+    const file = path.join(cwd, "route-types.d.ts");
+    const sentinel = path.join(cwd, "sentinel.d.ts");
+    await fs.writeFile(sentinel, "declare const sentinel: true;", "utf-8");
+    await fs.symlink(sentinel, file);
+
+    await expect(
+      writePageRouteTypesIfChanged(file, PAGE_ROUTE_TYPES_MARKER),
+    ).rejects.toThrow(
+      "Page route types output must not overwrite a symbolic-link output file",
+    );
+    await expect(fs.readFile(sentinel, "utf-8")).resolves.toBe(
+      "declare const sentinel: true;",
+    );
   });
 
   it("uses the same static-before-dynamic route order as discovery", () => {

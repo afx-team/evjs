@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import type {
   BuildOutput,
@@ -7,12 +6,29 @@ import type {
   DeploymentRouteOutput,
   DeploymentServerOutput,
 } from "@evjs/shared/manifest";
-import { createDeploymentMetadata } from "@evjs/shared/manifest";
+import {
+  collectBuildOutputServerJavaScriptArtifacts,
+  createDeploymentMetadata,
+} from "@evjs/shared/manifest";
+import {
+  type DeploymentOutputReservation,
+  declareDeploymentOutputReservations,
+} from "../_internal/build/deployment-output-reservations.js";
 import {
   createFrameworkRuntime,
   type FrameworkRuntimeOutput,
 } from "../_internal/build/framework-runtime.js";
+import {
+  assertPortableRelativeArtifactPath,
+  FRAMEWORK_DEPLOYMENT_METADATA_FILE_NAME,
+} from "../_internal/build/portable-artifact-path.js";
 import type { Plugin } from "../plugin/index.js";
+import {
+  assertDeploymentFileNamesAvailable,
+  assertDistinctDeploymentFileNames,
+  resolveDeploymentFileName,
+  writeDeploymentFile,
+} from "./output-files.js";
 
 export interface DeploymentArtifactOptions {
   platform?: string;
@@ -74,6 +90,7 @@ export type DeploymentServer = DeploymentServerOutput;
 
 interface StaticDocumentRoute {
   path: string;
+  /** Physical BuildOutput document; never derived from a decoded request path. */
   fileName: string;
 }
 
@@ -108,14 +125,126 @@ function pruneUndefined<T extends Record<string, unknown>>(value: T): T {
   return value;
 }
 
+function assertRootDeploymentFileNamesAvailable(
+  adapterName: "nodeDeploymentAdapter" | "edgeDeploymentAdapter",
+  artifactFileName: string,
+  runtimeFileName: string | undefined,
+  output: BuildOutput,
+): void {
+  const runtimeField =
+    adapterName === "nodeDeploymentAdapter"
+      ? "serverFileName"
+      : "workerFileName";
+  assertDeploymentFileNamesAvailable(
+    [
+      {
+        field: `${adapterName}.artifactFileName`,
+        fileName: artifactFileName,
+      },
+      ...(runtimeFileName
+        ? [
+            {
+              field: `${adapterName}.${runtimeField}`,
+              fileName: runtimeFileName,
+            },
+          ]
+        : []),
+    ],
+    [
+      {
+        owner: "deployment metadata",
+        fileName: FRAMEWORK_DEPLOYMENT_METADATA_FILE_NAME,
+      },
+      {
+        owner: "public output directory",
+        fileName: getPublicDirRelativeToRoot(output),
+      },
+      {
+        owner: "server output directory",
+        fileName: getServerDirRelativeToRoot(output),
+      },
+    ],
+  );
+}
+
+function collectFrameworkPublicArtifacts(output: BuildOutput): Array<{
+  owner: string;
+  fileName: string;
+}> {
+  const artifacts: Array<{ owner: string; fileName: string }> = [];
+  for (const [applicationId, application] of Object.entries(output.apps)) {
+    for (const fileName of [
+      application.document?.fileName,
+      ...(application.document?.aliases ?? []),
+    ]) {
+      if (fileName) {
+        artifacts.push({
+          owner: `Application "${applicationId}" HTML Document`,
+          fileName,
+        });
+      }
+    }
+    collectPortableRelativeAssetArtifacts(
+      artifacts,
+      `Application "${applicationId}"`,
+      application.assets,
+    );
+  }
+  for (const [pageId, page] of Object.entries(output.pages)) {
+    for (const fileName of [
+      page.document?.fileName,
+      ...(page.document?.aliases ?? []),
+    ]) {
+      if (fileName) {
+        artifacts.push({
+          owner: `Page "${pageId}" HTML Document`,
+          fileName,
+        });
+      }
+    }
+    collectPortableRelativeAssetArtifacts(
+      artifacts,
+      `Page "${pageId}"`,
+      page.assets,
+    );
+  }
+  return artifacts;
+}
+
+function collectPortableRelativeAssetArtifacts(
+  artifacts: Array<{ owner: string; fileName: string }>,
+  owner: string,
+  assets: { js: string[]; css: string[] },
+): void {
+  for (const [kind, files] of [
+    ["JavaScript", assets.js],
+    ["CSS", assets.css],
+  ] as const) {
+    for (const fileName of files) {
+      if (!isPortableRelativeBrowserAsset(fileName)) continue;
+      artifacts.push({ owner: `${owner} ${kind} asset`, fileName });
+    }
+  }
+}
+
+function isPortableRelativeBrowserAsset(value: unknown): value is string {
+  try {
+    assertPortableRelativeArtifactPath(value, "browser asset");
+    return true;
+  } catch {
+    // Browser AssetGroups may contain absolute, root-relative, or data URLs.
+    return false;
+  }
+}
+
 export function createNodeDeploymentFiles(
   output: BuildOutput,
   options: NodeDeploymentAdapterOptions = {},
 ): NodeDeploymentFiles {
-  const artifactFileName = options.artifactFileName ?? "deployment.node.json";
-  const serverFileName = output.server.entry
-    ? (options.serverFileName ?? "server.mjs")
-    : undefined;
+  const { artifactFileName, serverFileName } = resolveNodeDeploymentFileNames(
+    output,
+    options,
+  );
 
   return {
     artifactFileName,
@@ -132,33 +261,95 @@ export function createNodeDeploymentFiles(
   };
 }
 
+function resolveNodeDeploymentFileNames(
+  output: BuildOutput,
+  options: NodeDeploymentAdapterOptions,
+): Pick<NodeDeploymentFiles, "artifactFileName" | "serverFileName"> {
+  const artifactFileName = resolveDeploymentFileName(
+    options.artifactFileName,
+    "deployment.node.json",
+    "nodeDeploymentAdapter.artifactFileName",
+  );
+  const serverFileName = output.server.entry
+    ? resolveDeploymentFileName(
+        options.serverFileName,
+        "server.mjs",
+        "nodeDeploymentAdapter.serverFileName",
+      )
+    : undefined;
+  assertDistinctDeploymentFileNames(
+    {
+      field: "nodeDeploymentAdapter.artifactFileName",
+      fileName: artifactFileName,
+    },
+    serverFileName
+      ? {
+          field: "nodeDeploymentAdapter.serverFileName",
+          fileName: serverFileName,
+        }
+      : undefined,
+  );
+  assertRootDeploymentFileNamesAvailable(
+    "nodeDeploymentAdapter",
+    artifactFileName,
+    serverFileName,
+    output,
+  );
+  return { artifactFileName, serverFileName };
+}
+
 export function nodeDeploymentAdapter(
   options: NodeDeploymentAdapterOptions = {},
 ): Plugin {
   return {
     name: "node-deployment-adapter",
-    setup() {
+    setup(ctx) {
       return {
-        async buildEnd({ output, frameworkRuntime }) {
-          const files = createNodeDeploymentFiles(output, {
-            ...options,
-            frameworkRuntime,
-          });
-          const rootDir = resolveOutputDir(output, "rootDir");
-          await fs.mkdir(rootDir, { recursive: true });
-          await fs.writeFile(
-            path.join(rootDir, files.artifactFileName),
-            JSON.stringify(files.artifact, null, 2),
-            "utf-8",
-          );
-          if (files.serverFileName && files.serverModule) {
-            await fs.writeFile(
-              path.join(rootDir, files.serverFileName),
-              files.serverModule,
-              "utf-8",
+        buildEnd: declareDeploymentOutputReservations(
+          ({ output }) => {
+            const files = resolveNodeDeploymentFileNames(output, options);
+            const rootDir = resolveOutputDir(ctx.cwd, output, "rootDir");
+            return [
+              deploymentOutput(
+                ctx.cwd,
+                rootDir,
+                "nodeDeploymentAdapter.artifactFileName",
+                files.artifactFileName,
+              ),
+              ...(files.serverFileName
+                ? [
+                    deploymentOutput(
+                      ctx.cwd,
+                      rootDir,
+                      "nodeDeploymentAdapter.serverFileName",
+                      files.serverFileName,
+                    ),
+                  ]
+                : []),
+            ];
+          },
+          async ({ output, frameworkRuntime }) => {
+            const files = createNodeDeploymentFiles(output, {
+              ...options,
+              frameworkRuntime,
+            });
+            const rootDir = resolveOutputDir(ctx.cwd, output, "rootDir");
+            await writeDeploymentFile(
+              ctx.cwd,
+              rootDir,
+              files.artifactFileName,
+              JSON.stringify(files.artifact, null, 2),
             );
-          }
-        },
+            if (files.serverFileName && files.serverModule) {
+              await writeDeploymentFile(
+                ctx.cwd,
+                rootDir,
+                files.serverFileName,
+                files.serverModule,
+              );
+            }
+          },
+        ),
       };
     },
   };
@@ -168,8 +359,8 @@ export function createStaticDeploymentFiles(
   output: BuildOutput,
   options: StaticDeploymentAdapterOptions = {},
 ): StaticDeploymentFiles {
-  const artifactFileName = options.artifactFileName ?? "deployment.static.json";
-  const redirectsFileName = options.redirectsFileName ?? "_redirects";
+  const { artifactFileName, redirectsFileName } =
+    resolveStaticDeploymentFileNames(output, options);
   const compatibility = analyzeStaticDeploymentCompatibility(output);
   const artifact = createDeploymentArtifact(output, {
     ...options,
@@ -189,28 +380,89 @@ export function createStaticDeploymentFiles(
   };
 }
 
+function resolveStaticDeploymentFileNames(
+  output: BuildOutput,
+  options: StaticDeploymentAdapterOptions,
+): Pick<StaticDeploymentFiles, "artifactFileName" | "redirectsFileName"> {
+  const artifactFileName = resolveDeploymentFileName(
+    options.artifactFileName,
+    "deployment.static.json",
+    "staticDeploymentAdapter.artifactFileName",
+  );
+  const redirectsFileName = resolveDeploymentFileName(
+    options.redirectsFileName,
+    "_redirects",
+    "staticDeploymentAdapter.redirectsFileName",
+  );
+  assertDistinctDeploymentFileNames(
+    {
+      field: "staticDeploymentAdapter.artifactFileName",
+      fileName: artifactFileName,
+    },
+    {
+      field: "staticDeploymentAdapter.redirectsFileName",
+      fileName: redirectsFileName,
+    },
+  );
+  assertDeploymentFileNamesAvailable(
+    [
+      {
+        field: "staticDeploymentAdapter.artifactFileName",
+        fileName: artifactFileName,
+      },
+      {
+        field: "staticDeploymentAdapter.redirectsFileName",
+        fileName: redirectsFileName,
+      },
+    ],
+    collectFrameworkPublicArtifacts(output),
+  );
+  return { artifactFileName, redirectsFileName };
+}
+
 export function staticDeploymentAdapter(
   options: StaticDeploymentAdapterOptions = {},
 ): Plugin {
   return {
     name: "static-deployment-adapter",
-    setup() {
+    setup(ctx) {
       return {
-        async buildEnd({ output }) {
-          const files = createStaticDeploymentFiles(output, options);
-          const publicDir = resolveOutputDir(output, "publicDir");
-          await fs.mkdir(publicDir, { recursive: true });
-          await fs.writeFile(
-            path.join(publicDir, files.artifactFileName),
-            JSON.stringify(files.artifact, null, 2),
-            "utf-8",
-          );
-          await fs.writeFile(
-            path.join(publicDir, files.redirectsFileName),
-            files.redirects,
-            "utf-8",
-          );
-        },
+        buildEnd: declareDeploymentOutputReservations(
+          ({ output }) => {
+            const files = resolveStaticDeploymentFileNames(output, options);
+            const publicDir = resolveOutputDir(ctx.cwd, output, "publicDir");
+            return [
+              deploymentOutput(
+                ctx.cwd,
+                publicDir,
+                "staticDeploymentAdapter.artifactFileName",
+                files.artifactFileName,
+              ),
+              deploymentOutput(
+                ctx.cwd,
+                publicDir,
+                "staticDeploymentAdapter.redirectsFileName",
+                files.redirectsFileName,
+              ),
+            ];
+          },
+          async ({ output }) => {
+            const files = createStaticDeploymentFiles(output, options);
+            const publicDir = resolveOutputDir(ctx.cwd, output, "publicDir");
+            await writeDeploymentFile(
+              ctx.cwd,
+              publicDir,
+              files.artifactFileName,
+              JSON.stringify(files.artifact, null, 2),
+            );
+            await writeDeploymentFile(
+              ctx.cwd,
+              publicDir,
+              files.redirectsFileName,
+              files.redirects,
+            );
+          },
+        ),
       };
     },
   };
@@ -220,10 +472,10 @@ export function createEdgeDeploymentFiles(
   output: BuildOutput,
   options: EdgeDeploymentAdapterOptions = {},
 ): EdgeDeploymentFiles {
-  const artifactFileName = options.artifactFileName ?? "deployment.edge.json";
-  const workerFileName = output.server.entry
-    ? (options.workerFileName ?? "worker.mjs")
-    : undefined;
+  const { artifactFileName, workerFileName } = resolveEdgeDeploymentFileNames(
+    output,
+    options,
+  );
 
   return {
     artifactFileName,
@@ -240,36 +492,107 @@ export function createEdgeDeploymentFiles(
   };
 }
 
+function resolveEdgeDeploymentFileNames(
+  output: BuildOutput,
+  options: EdgeDeploymentAdapterOptions,
+): Pick<EdgeDeploymentFiles, "artifactFileName" | "workerFileName"> {
+  const artifactFileName = resolveDeploymentFileName(
+    options.artifactFileName,
+    "deployment.edge.json",
+    "edgeDeploymentAdapter.artifactFileName",
+  );
+  const workerFileName = output.server.entry
+    ? resolveDeploymentFileName(
+        options.workerFileName,
+        "worker.mjs",
+        "edgeDeploymentAdapter.workerFileName",
+      )
+    : undefined;
+  assertDistinctDeploymentFileNames(
+    {
+      field: "edgeDeploymentAdapter.artifactFileName",
+      fileName: artifactFileName,
+    },
+    workerFileName
+      ? {
+          field: "edgeDeploymentAdapter.workerFileName",
+          fileName: workerFileName,
+        }
+      : undefined,
+  );
+  assertRootDeploymentFileNamesAvailable(
+    "edgeDeploymentAdapter",
+    artifactFileName,
+    workerFileName,
+    output,
+  );
+  return { artifactFileName, workerFileName };
+}
+
 export function edgeDeploymentAdapter(
   options: EdgeDeploymentAdapterOptions = {},
 ): Plugin {
   return {
     name: "edge-deployment-adapter",
-    setup() {
+    setup(ctx) {
       return {
-        async buildEnd({ output, frameworkRuntime }) {
-          const files = createEdgeDeploymentFiles(output, {
-            ...options,
-            frameworkRuntime,
-          });
-          const rootDir = resolveOutputDir(output, "rootDir");
-          await fs.mkdir(rootDir, { recursive: true });
-          await fs.writeFile(
-            path.join(rootDir, files.artifactFileName),
-            JSON.stringify(files.artifact, null, 2),
-            "utf-8",
-          );
-          if (files.workerFileName && files.workerModule) {
-            await fs.writeFile(
-              path.join(rootDir, files.workerFileName),
-              files.workerModule,
-              "utf-8",
+        buildEnd: declareDeploymentOutputReservations(
+          ({ output }) => {
+            const files = resolveEdgeDeploymentFileNames(output, options);
+            const rootDir = resolveOutputDir(ctx.cwd, output, "rootDir");
+            return [
+              deploymentOutput(
+                ctx.cwd,
+                rootDir,
+                "edgeDeploymentAdapter.artifactFileName",
+                files.artifactFileName,
+              ),
+              ...(files.workerFileName
+                ? [
+                    deploymentOutput(
+                      ctx.cwd,
+                      rootDir,
+                      "edgeDeploymentAdapter.workerFileName",
+                      files.workerFileName,
+                    ),
+                  ]
+                : []),
+            ];
+          },
+          async ({ output, frameworkRuntime }) => {
+            const files = createEdgeDeploymentFiles(output, {
+              ...options,
+              frameworkRuntime,
+            });
+            const rootDir = resolveOutputDir(ctx.cwd, output, "rootDir");
+            await writeDeploymentFile(
+              ctx.cwd,
+              rootDir,
+              files.artifactFileName,
+              JSON.stringify(files.artifact, null, 2),
             );
-          }
-        },
+            if (files.workerFileName && files.workerModule) {
+              await writeDeploymentFile(
+                ctx.cwd,
+                rootDir,
+                files.workerFileName,
+                files.workerModule,
+              );
+            }
+          },
+        ),
       };
     },
   };
+}
+
+function deploymentOutput(
+  cwd: string,
+  outputDir: string,
+  field: string,
+  fileName: string,
+): DeploymentOutputReservation {
+  return { cwd, outputDir, field, fileName };
 }
 
 function getDeploymentOutputPaths(
@@ -279,17 +602,29 @@ function getDeploymentOutputPaths(
 }
 
 function resolveOutputDir(
+  cwd: string,
   output: BuildOutput,
   key: keyof NonNullable<BuildOutput["paths"]>,
 ): string {
   const paths = getDeploymentOutputPaths(output);
-  return path.resolve(paths[key] ?? paths.rootDir);
+  return path.resolve(cwd, paths[key] ?? paths.rootDir);
 }
 
 function getPublicDirRelativeToRoot(output: BuildOutput): string {
+  return getOutputDirRelativeToRoot(output, "publicDir");
+}
+
+function getServerDirRelativeToRoot(output: BuildOutput): string {
+  return getOutputDirRelativeToRoot(output, "serverDir");
+}
+
+function getOutputDirRelativeToRoot(
+  output: BuildOutput,
+  key: "publicDir" | "serverDir",
+): string {
   const paths = getDeploymentOutputPaths(output);
-  const relative = path.relative(paths.rootDir, paths.publicDir);
-  return relative || ".";
+  const relative = path.relative(paths.rootDir, paths[key]);
+  return relative ? relative.split(path.sep).join(path.posix.sep) : ".";
 }
 
 function createNodeServerModule(
@@ -302,16 +637,24 @@ function createNodeServerModule(
     path: toNodeRoutePath(route.path),
     file: route.fileName,
   }));
-  const frameworkBasePath = output.runtime.server?.basePath ?? "/__evjs";
-  const frameworkEndpointPaths =
-    getFrameworkEndpointPaths(output).map(toNodeRoutePath);
+  const frameworkExactEndpointPaths = getFrameworkExactEndpointPaths(
+    output,
+  ).map(toAbsoluteNodeRoutePath);
+  const frameworkSubtreeEndpointPaths = getFrameworkSubtreeEndpointPaths(
+    output,
+  ).map(toAbsoluteNodeRoutePath);
   const frameworkRoutes = getFrameworkServerRoutes(output).map(toNodeRoutePath);
   const staticAssetPrefix = getStaticAssetPrefix(output.publicPath);
   const clientRoot = getPublicDirRelativeToRoot(output);
+  const serverRoot = getServerDirRelativeToRoot(output);
   const portEnv = options.portEnv ?? "PORT";
   const defaultPort = options.defaultPort ?? 3000;
   const frameworkRuntime =
     options.frameworkRuntime ?? createFrameworkRuntime(output);
+  const serverArtifacts = collectBuildOutputServerJavaScriptArtifacts(
+    output,
+    "Node deployment BuildOutput",
+  );
 
   return `import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -320,22 +663,23 @@ import { serve } from "@evjs/ev/_internal/server/node";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientRoot = path.join(__dirname, ${JSON.stringify(clientRoot)});
-const serverDir = path.join(__dirname, "server");
+const serverDir = path.join(__dirname, ${JSON.stringify(serverRoot)});
 const serverEntry = ${JSON.stringify(serverEntry ?? "")};
-const frameworkBasePath = ${JSON.stringify(frameworkBasePath)};
-const frameworkEndpointPaths = ${JSON.stringify(frameworkEndpointPaths, null, 2)};
+const serverArtifacts = new Set(${JSON.stringify(serverArtifacts)});
+const frameworkExactEndpointPaths = ${JSON.stringify(frameworkExactEndpointPaths, null, 2)};
+const frameworkSubtreeEndpointPaths = ${JSON.stringify(frameworkSubtreeEndpointPaths, null, 2)};
 const frameworkRoutes = ${JSON.stringify(frameworkRoutes, null, 2)};
 const staticRoutes = ${JSON.stringify(staticRoutes, null, 2)};
 const staticFallback = ${JSON.stringify(staticFallback ?? "")};
 const staticAssetPrefix = ${JSON.stringify(staticAssetPrefix ?? "")};
 globalThis.__EVJS_FRAMEWORK_RUNTIME__ = ${JSON.stringify(frameworkRuntime, null, 2)};
 globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => {
-  const mod = await import(pathToFileURL(path.resolve(serverDir, asset)).href);
+  const mod = await import(pathToFileURL(resolveServerArtifact(asset)).href);
   return normalizeServerModule(mod);
 };
 const serverHandler = serverEntry
   ? unwrapServerHandler(
-      await import(pathToFileURL(path.join(serverDir, serverEntry)).href),
+      await import(pathToFileURL(resolveServerArtifact(serverEntry)).href),
     )
   : undefined;
 if (serverEntry && typeof serverHandler?.fetch !== "function") {
@@ -371,8 +715,10 @@ serve(app, { port: Number(process.env[${JSON.stringify(portEnv)}] ?? ${defaultPo
 
 function isFrameworkRequest(pathname) {
   return (
-    pathIsAtOrBelow(pathname, frameworkBasePath) ||
-    frameworkEndpointPaths.some((endpointPath) =>
+    frameworkExactEndpointPaths.some((endpointPath) =>
+      routePathMatches(endpointPath, pathname)
+    ) ||
+    frameworkSubtreeEndpointPaths.some((endpointPath) =>
       pathIsAtOrBelow(pathname, endpointPath)
     ) ||
     frameworkRoutes.some((routePath) => routePathMatches(routePath, pathname))
@@ -423,6 +769,27 @@ async function serveFile(filePath) {
   } catch {
     return undefined;
   }
+}
+
+function resolveServerArtifact(asset) {
+  if (!serverArtifacts.has(asset)) {
+    throw new Error(
+      \`[evjs] Server artifact "\${String(asset)}" is not declared by BuildOutput.\`,
+    );
+  }
+  const artifactPath = path.resolve(serverDir, ...asset.split("/"));
+  const relativePath = path.relative(serverDir, artifactPath);
+  if (
+    !relativePath ||
+    relativePath === ".." ||
+    relativePath.startsWith(\`..\${path.sep}\`) ||
+    path.isAbsolute(relativePath)
+  ) {
+    throw new Error(
+      \`[evjs] Server artifact "\${String(asset)}" must resolve inside the server output directory.\`,
+    );
+  }
+  return artifactPath;
 }
 
 function normalizeServerModule(mod) {
@@ -476,27 +843,43 @@ function createEdgeWorkerModule(
 ): string {
   const serverEntry = output.server.entry;
   const staticFallback = getStaticFallbackHtml(output);
+  const staticFallbackUrl = staticFallback
+    ? encodeArtifactUrlPath(staticFallback)
+    : undefined;
   const staticRoutes = getStaticDocumentRoutes(output).map((route) => ({
     path: toNodeRoutePath(route.path),
-    file: route.fileName,
+    file: encodeArtifactUrlPath(route.fileName),
   }));
-  const frameworkBasePath = output.runtime.server?.basePath ?? "/__evjs";
-  const frameworkEndpointPaths =
-    getFrameworkEndpointPaths(output).map(toNodeRoutePath);
+  const frameworkExactEndpointPaths = getFrameworkExactEndpointPaths(
+    output,
+  ).map(toAbsoluteNodeRoutePath);
+  const frameworkSubtreeEndpointPaths = getFrameworkSubtreeEndpointPaths(
+    output,
+  ).map(toAbsoluteNodeRoutePath);
   const frameworkRoutes = getFrameworkServerRoutes(output).map(toNodeRoutePath);
   const staticAssetPrefix = getStaticAssetPrefix(output.publicPath);
   const assetsBinding = options.assetsBinding ?? "ASSETS";
-  const serverImportPath = serverEntry ? `./server/${serverEntry}` : undefined;
+  const serverRoot = getServerDirRelativeToRoot(output);
+  const serverAssetPrefix = `./${serverRoot === "." ? "" : `${encodeArtifactUrlPath(serverRoot)}/`}`;
+  const serverImportPath = serverEntry
+    ? `${serverAssetPrefix}${encodeArtifactUrlPath(serverEntry)}`
+    : undefined;
   const frameworkRequestCondition = serverEntry
     ? "isFrameworkRequest(url.pathname)"
     : "false";
   const frameworkRuntime =
     options.frameworkRuntime ?? createFrameworkRuntime(output);
+  const serverArtifacts = collectBuildOutputServerJavaScriptArtifacts(
+    output,
+    "Edge deployment BuildOutput",
+  );
 
   return [
+    `const serverAssetPrefix = ${JSON.stringify(serverAssetPrefix)};`,
+    `const serverArtifacts = new Set(${JSON.stringify(serverArtifacts)});`,
     `globalThis.__EVJS_FRAMEWORK_RUNTIME__ = ${JSON.stringify(frameworkRuntime, null, 2)};`,
     "globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => {",
-    '  return normalizeServerModule(await import("./server/" + asset));',
+    "  return normalizeServerModule(await import(resolveServerArtifact(asset)));",
     "};",
     serverImportPath
       ? `const serverHandler = unwrapServerHandler(await import(${JSON.stringify(serverImportPath)}));`
@@ -504,11 +887,11 @@ function createEdgeWorkerModule(
     'if (serverHandler && typeof serverHandler.fetch !== "function") {',
     '  throw new Error("[evjs] Server entry must export a fetch handler.");',
     "}",
-    `const frameworkBasePath = ${JSON.stringify(frameworkBasePath)};`,
-    `const frameworkEndpointPaths = ${JSON.stringify(frameworkEndpointPaths, null, 2)};`,
+    `const frameworkExactEndpointPaths = ${JSON.stringify(frameworkExactEndpointPaths, null, 2)};`,
+    `const frameworkSubtreeEndpointPaths = ${JSON.stringify(frameworkSubtreeEndpointPaths, null, 2)};`,
     `const frameworkRoutes = ${JSON.stringify(frameworkRoutes, null, 2)};`,
     `const staticRoutes = ${JSON.stringify(staticRoutes, null, 2)};`,
-    `const staticFallback = ${JSON.stringify(staticFallback ?? "")};`,
+    `const staticFallback = ${JSON.stringify(staticFallbackUrl ?? "")};`,
     `const staticAssetPrefix = ${JSON.stringify(staticAssetPrefix ?? "")};`,
     `const assetsBinding = ${JSON.stringify(assetsBinding)};`,
     "",
@@ -541,8 +924,10 @@ function createEdgeWorkerModule(
     "",
     "function isFrameworkRequest(pathname) {",
     "  return (",
-    "    pathIsAtOrBelow(pathname, frameworkBasePath) ||",
-    "    frameworkEndpointPaths.some((endpointPath) =>",
+    "    frameworkExactEndpointPaths.some((endpointPath) =>",
+    "      routePathMatches(endpointPath, pathname)",
+    "    ) ||",
+    "    frameworkSubtreeEndpointPaths.some((endpointPath) =>",
     "      pathIsAtOrBelow(pathname, endpointPath)",
     "    ) ||",
     "    frameworkRoutes.some((routePath) => routePathMatches(routePath, pathname))",
@@ -554,6 +939,13 @@ function createEdgeWorkerModule(
     "}",
     "",
     createGeneratedRouteMatcherModule(),
+    "",
+    "function resolveServerArtifact(asset) {",
+    "  if (!serverArtifacts.has(asset)) {",
+    '    throw new Error("[evjs] Server artifact \\"" + String(asset) + "\\" is not declared by BuildOutput.");',
+    "  }",
+    '  return serverAssetPrefix + asset.split("/").map(encodeURIComponent).join("/");',
+    "}",
     "",
     "function normalizeServerModule(mod) {",
     '  const nested = mod && typeof mod.default === "object" ? mod.default : undefined;',
@@ -609,38 +1001,62 @@ function createGeneratedRouteMatcherModule(): string {
     "function routePathMatches(routePath, pathname) {",
     "  const routeSegments = splitPath(routePath);",
     "  const pathSegments = splitPath(pathname);",
-    "  if (routeSegments.length !== pathSegments.length) {",
-    '    if (routePath.endsWith("/*")) {',
-    "      const prefix = routePath.slice(0, -2);",
-    '      return pathname === prefix || pathname.startsWith(prefix + "/");',
-    "    }",
-    "    return false;",
-    "  }",
+    '  if (pathSegments.some((segment) => segment === "")) return false;',
+    '  const hasTerminalWildcard = routeSegments.at(-1) === "*";',
+    "  const fixedSegments = hasTerminalWildcard",
+    "    ? routeSegments.slice(0, -1)",
+    "    : routeSegments;",
+    "  if (!hasTerminalWildcard && fixedSegments.length !== pathSegments.length) return false;",
+    "  if (hasTerminalWildcard && fixedSegments.length > pathSegments.length) return false;",
     "",
-    "  return routeSegments.every((segment, index) => {",
+    "  return fixedSegments.every((segment, index) => {",
     "    const value = pathSegments[index];",
-    '    return segment === value || isDynamicRouteSegment(segment) || segment === "*";',
+    '    return isDynamicRouteSegment(segment) ? value !== "" : staticRouteSegmentsEqual(segment, value);',
     "  });",
     "}",
     "",
     "function pathIsAtOrBelow(pathname, basePath) {",
-    "  const normalizedPathname = normalizePathname(pathname);",
-    "  const normalizedBasePath = normalizePathname(basePath);",
-    '  return normalizedPathname === normalizedBasePath || normalizedPathname.startsWith(normalizedBasePath + "/");',
+    "  const pathSegments = splitPath(pathname);",
+    "  const baseSegments = splitPath(basePath);",
+    '  if (pathSegments.some((segment) => segment === "")) return false;',
+    "  if (baseSegments.length > pathSegments.length) return false;",
+    "  return baseSegments.every((segment, index) =>",
+    "    staticRouteSegmentsEqual(segment, pathSegments[index])",
+    "  );",
     "}",
     "",
     "function isDynamicRouteSegment(segment) {",
     '  return segment.startsWith(":") || segment.startsWith("$");',
     "}",
     "",
+    "function staticRouteSegmentsEqual(left, right) {",
+    "  return canonicalizeStaticRouteSegment(left) === canonicalizeStaticRouteSegment(right);",
+    "}",
+    "",
+    "function canonicalizeStaticRouteSegment(segment) {",
+    "  return safeDecodeRouteSegment(segment)",
+    '    .replaceAll("%", "%25")',
+    '    .replaceAll("/", "%2F");',
+    "}",
+    "",
+    "function safeDecodeRouteSegment(segment) {",
+    "  try {",
+    "    return decodeURIComponent(segment);",
+    "  } catch {",
+    "    return segment;",
+    "  }",
+    "}",
+    "",
     "function splitPath(pathname) {",
-    '  return normalizePathname(pathname).split("/").filter(Boolean);',
+    "  const normalized = normalizePathname(pathname);",
+    '  if (pathname === "/" || pathname === "") return [];',
+    '  return normalized.slice(1).split("/");',
     "}",
     "",
     "function normalizePathname(pathname) {",
     '  if (!pathname.startsWith("/")) return normalizePathname("/" + pathname);',
     "  if (pathname.length === 1) return pathname;",
-    '  return pathname.replace(/\\/+$/, "");',
+    '  return pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;',
     "}",
   ].join("\n");
 }
@@ -694,14 +1110,14 @@ function createStaticRedirects(
     const staticRoute = getStaticDocumentRoute(output, route);
     if (staticRoute) {
       lines.add(
-        `${toStaticRoutePath(staticRoute.path)} /${staticRoute.fileName} 200`,
+        `${toStaticRoutePath(staticRoute.path)} /${encodeArtifactUrlPath(staticRoute.fileName)} 200`,
       );
     }
   }
 
   const fallback = getStaticFallbackHtml(output);
   if (fallback && compatibility.complete) {
-    lines.add(`/* /${fallback} 200`);
+    lines.add(`/* /${encodeArtifactUrlPath(fallback)} 200`);
   }
 
   return `${[...lines].join("\n")}\n`;
@@ -750,11 +1166,21 @@ function getStaticFallbackHtml(output: BuildOutput): string | undefined {
   return undefined;
 }
 
-function getFrameworkEndpointPaths(output: BuildOutput): string[] {
+function getFrameworkExactEndpointPaths(output: BuildOutput): string[] {
   const runtime = output.runtime.server;
   if (!runtime) return [];
 
-  return [runtime.fn, runtime.ppr, runtime.rsc].filter(
+  return [runtime.fn, runtime.rsc].filter(
+    (routePath): routePath is string =>
+      typeof routePath === "string" && routePath.length > 0,
+  );
+}
+
+function getFrameworkSubtreeEndpointPaths(output: BuildOutput): string[] {
+  const runtime = output.runtime.server;
+  if (!runtime) return [];
+
+  return [runtime.ppr].filter(
     (routePath): routePath is string =>
       typeof routePath === "string" && routePath.length > 0,
   );
@@ -790,6 +1216,10 @@ function getStaticAssetPrefix(
   return normalized;
 }
 
+function encodeArtifactUrlPath(fileName: string): string {
+  return fileName.split("/").map(encodeURIComponent).join("/");
+}
+
 function toNodeRoutePath(routePath: string): string {
   return routePath
     .split("/")
@@ -799,6 +1229,12 @@ function toNodeRoutePath(routePath: string): string {
       return segment;
     })
     .join("/");
+}
+
+function toAbsoluteNodeRoutePath(routePath: string): string {
+  return toNodeRoutePath(
+    routePath.startsWith("/") ? routePath : `/${routePath}`,
+  );
 }
 
 function toStaticRoutePath(routePath: string): string {

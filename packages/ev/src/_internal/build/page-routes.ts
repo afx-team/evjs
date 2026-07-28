@@ -8,11 +8,9 @@ import type {
 } from "../../config/index.js";
 import { collectModuleExportNames } from "./module-exports.js";
 import {
+  CANONICAL_PAGE_ROUTE_ROOT,
   findPageRouteSegmentConventionViolation,
   formatPageRouteSegmentConventionViolation,
-  isPageRouteGroupSegment,
-  isPageRouteSourceModuleFile,
-  normalizePageRouteConventionPath,
   PAGE_CONFIG_FILES,
   PAGE_CONFIG_LABEL,
   PAGE_ENTRY_LABEL,
@@ -22,7 +20,12 @@ import {
   routePathFromSegments,
   routeShapeFromSegments,
 } from "./page-route-conventions.js";
-import { sortPageRoutes } from "./page-route-order.js";
+import {
+  isRouteGroupSegment,
+  isRouteSourceModuleFile,
+  normalizeRouteConventionPath,
+} from "./route-conventions.js";
+import { sortRoutesBySpecificity } from "./route-order.js";
 import {
   formatParseErrorMessage,
   hasDefaultExport,
@@ -37,7 +40,6 @@ import {
 } from "./utils.js";
 
 export interface DiscoverPageRoutesOptions {
-  dir: string;
   mode: PageRoutingMode;
   required?: boolean;
 }
@@ -103,7 +105,7 @@ export async function discoverPageRoutes(
       '[evjs] Internal Page route discovery requires mode "spa" or "mpa".',
     );
   }
-  const absoluteDir = path.resolve(cwd, options.dir);
+  const absoluteDir = path.resolve(cwd, CANONICAL_PAGE_ROUTE_ROOT);
   const diagnostics: PageRouteDiscoveryDiagnostic[] = [];
   const validDirectory = await validatePageRouteDirectory(
     cwd,
@@ -423,7 +425,7 @@ async function discoverPageAnchorRoutes(
   );
 
   return {
-    routes: sortPageRoutes(
+    routes: sortRoutesBySpecificity(
       routeCandidates.map((route) => {
         const parentId = findParentLayoutRouteId(
           route,
@@ -637,8 +639,8 @@ interface PageRouteConventionModule {
 function parsePageRouteConventionFile(
   routeRel: string,
 ): PageRouteConventionFile | undefined {
-  const normalizedRouteRel = normalizePageRouteConventionPath(routeRel);
-  if (!isPageRouteSourceModuleFile(path.posix.basename(normalizedRouteRel))) {
+  const normalizedRouteRel = normalizeRouteConventionPath(routeRel);
+  if (!isRouteSourceModuleFile(path.posix.basename(normalizedRouteRel))) {
     return undefined;
   }
 
@@ -660,8 +662,8 @@ function parsePageRouteConventionFile(
 function parsePageLayoutRouteFile(
   routeRel: string,
 ): PageLayoutRouteFileConvention | undefined {
-  const normalizedRouteRel = normalizePageRouteConventionPath(routeRel);
-  if (!isPageRouteSourceModuleFile(path.posix.basename(normalizedRouteRel))) {
+  const normalizedRouteRel = normalizeRouteConventionPath(routeRel);
+  if (!isRouteSourceModuleFile(path.posix.basename(normalizedRouteRel))) {
     return undefined;
   }
 
@@ -691,7 +693,7 @@ function routeIdentityPathFromSegments(segments: string[]): string {
 }
 
 function routeIdentitySegment(segment: string): string {
-  if (!isPageRouteGroupSegment(segment)) return segment;
+  if (!isRouteGroupSegment(segment)) return segment;
   return `group_${segment.slice(1, -1)}`;
 }
 
@@ -906,7 +908,7 @@ async function collectPageRouteTree(
         continue;
       }
 
-      if (entry.isFile() && isPageRouteSourceModuleFile(entry.name)) {
+      if (entry.isFile() && isRouteSourceModuleFile(entry.name)) {
         files.push(absolute);
       }
     }

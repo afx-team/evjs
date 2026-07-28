@@ -144,7 +144,7 @@ describe("inspect", () => {
             { path: "/users/:userId", page: "users/detail" },
           ],
         },
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
       },
       { cwd },
     );
@@ -248,7 +248,7 @@ describe("inspect", () => {
     const result = await inspectFrameworkBuild(
       {
         routing: { mode: "spa" },
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
       },
       { cwd },
     );
@@ -341,7 +341,7 @@ describe("inspect", () => {
     );
   });
 
-  it("reports normalized Bigfish SPA route-tree migration input", async () => {
+  it("reports normalized explicit SPA route-tree input", async () => {
     const cwd = await createFixture({
       "index.html": '<div id="app"></div>',
       "src/pages/account/index.tsx":
@@ -361,7 +361,7 @@ describe("inspect", () => {
             { path: "/home", component: "home/index" },
           ],
         },
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
       },
       { cwd },
     );
@@ -446,7 +446,7 @@ describe("inspect", () => {
 
     const result = await inspectFrameworkBuild(
       {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
       },
       { cwd },
@@ -518,7 +518,7 @@ describe("inspect", () => {
     const result = await inspectFrameworkBuild(
       {
         routing: { mode: "spa" },
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
       },
       { cwd },
     );
@@ -564,7 +564,7 @@ describe("inspect", () => {
     const result = await inspectFrameworkBuild(
       {
         routing: { mode: "spa" },
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
       },
       { cwd, bundler },
     );
@@ -592,7 +592,7 @@ describe("inspect", () => {
     const result = await inspectFrameworkBuild(
       {
         routing: { mode: "spa" },
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
       },
       { cwd },
     );
@@ -628,7 +628,7 @@ describe("inspect", () => {
         import { defineConfig } from "@evjs/ev";
         export default defineConfig({
           routing: { mode: "spa" },
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
         });
       `,
       "index.html": '<div id="app"></div>',
@@ -667,7 +667,7 @@ describe("inspect", () => {
         import { defineConfig } from "@evjs/ev";
         export default defineConfig({
           routing: { mode: "spa" },
-          output: { client: "dist" },
+          output: { client: "dist/client", server: "dist/server" },
         });
       `,
       "index.html": '<div id="app"></div>',

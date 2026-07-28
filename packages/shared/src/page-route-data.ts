@@ -1,3 +1,11 @@
+import {
+  canonicalizeStaticRouteSegment,
+  safeDecodeRouteSegment,
+  staticRouteSegmentsEqual,
+  staticRouteSegmentToRegExpSource,
+} from "./route-segment.js";
+import { compareRoutePathsBySpecificity } from "./route-specificity.js";
+
 export type PageSearchParams = Record<string, string>;
 
 export type PageRouteParamNameValidationError = "empty" | "reserved";
@@ -24,23 +32,25 @@ export function findBestPageRoute<T extends { path: string; id?: string }>(
   routes: Iterable<T>,
   pathname: string,
 ): T | undefined {
-  let best: { route: T; match: PageRoutePathMatch } | undefined;
+  let best: T | undefined;
 
   for (const route of routes) {
-    const match = matchPageRoutePath(route.path, pathname);
-    if (match && isBetterPageRouteMatch(route, match, best)) {
-      best = { route, match };
+    if (
+      matchPageRoutePath(route.path, pathname) &&
+      isBetterPageRouteMatch(route, best)
+    ) {
+      best = route;
     }
   }
 
-  return best?.route;
+  return best;
 }
 
 export function pageRoutePathMatches(
   routePath: string,
   pathname: string,
 ): boolean {
-  return Boolean(matchPageRoutePath(routePath, pathname));
+  return matchPageRoutePath(routePath, pathname);
 }
 
 /** Compile the canonical Page route syntax to an anchored URL matcher. */
@@ -52,12 +62,16 @@ export function pageRoutePathToRegExp(routePath: string): RegExp {
   const fixedSegments = hasTerminalSplat ? segments.slice(0, -1) : segments;
   const prefix = fixedSegments
     .map((segment) =>
-      isDynamicRouteSegment(segment) ? "[^/]+" : escapeRegExp(segment),
+      isDynamicRouteSegment(segment)
+        ? "[^/]+"
+        : staticRouteSegmentToRegExpSource(segment),
     )
     .join("/");
 
   if (hasTerminalSplat) {
-    return prefix ? new RegExp(`^/${prefix}(?:/.*)?/?$`) : /^\/(?:.*)?$/;
+    return prefix
+      ? new RegExp(`^/${prefix}(?:/[^/]+)*/?$`)
+      : /^(?:\/[^/]+)*\/?$/;
   }
   return new RegExp(`^/${prefix}/?$`);
 }
@@ -79,8 +93,9 @@ export function matchPageRouteParams(
   pathname: string,
 ): Record<string, string> {
   const routeSegments = splitPath(routePath);
-  const pathSegments = splitPath(pathname);
+  const pathSegments = splitRequestPath(pathname);
   const params: Record<string, string> = {};
+  if (!pathSegments) return params;
 
   routeSegments.forEach((segment, index) => {
     if (isWildcardRouteSegment(segment)) {
@@ -97,7 +112,7 @@ export function matchPageRouteParams(
     defineRouteParam(
       params,
       name,
-      safeDecodeURIComponent(pathSegments[index] ?? ""),
+      safeDecodeRouteSegment(pathSegments[index] ?? ""),
     );
   });
 
@@ -161,7 +176,7 @@ function collectWildcardParam(
     index === routeSegments.length - 1
       ? pathSegments.slice(index)
       : [pathSegments[index] ?? ""];
-  return safeDecodeURIComponent(wildcardSegments.join("/"));
+  return safeDecodeRouteSegment(wildcardSegments.join("/"));
 }
 
 function defineRouteParam(
@@ -177,55 +192,29 @@ function defineRouteParam(
   });
 }
 
-interface PageRoutePathMatch {
-  exact: boolean;
-  staticSegments: number;
-  dynamicSegments: number;
-  wildcardSegments: number;
-  segmentCount: number;
-  routePath: string;
-}
-
-function matchPageRoutePath(
-  routePath: string,
-  pathname: string,
-): PageRoutePathMatch | undefined {
-  const normalizedRoutePath = normalizeRoutePathname(routePath);
-  const normalizedPathname = normalizeRoutePathname(pathname);
-  const routeSegments = splitPath(normalizedRoutePath);
-  const pathSegments = splitPath(normalizedPathname);
+function matchPageRoutePath(routePath: string, pathname: string): boolean {
+  const routeSegments = splitPath(routePath);
+  const pathSegments = splitRequestPath(pathname);
+  if (!pathSegments) return false;
   const prefixWildcard = isWildcardRouteSegment(routeSegments.at(-1) ?? "");
   const segmentsToMatch = prefixWildcard
     ? routeSegments.slice(0, -1)
     : routeSegments;
 
   if (!prefixWildcard && segmentsToMatch.length !== pathSegments.length) {
-    return undefined;
+    return false;
   }
   if (prefixWildcard && segmentsToMatch.length > pathSegments.length) {
-    return undefined;
+    return false;
   }
 
   for (let index = 0; index < segmentsToMatch.length; index++) {
     const routeSegment = segmentsToMatch[index] ?? "";
     const pathSegment = pathSegments[index] ?? "";
-    if (!routeSegmentMatches(routeSegment, pathSegment)) return undefined;
+    if (!routeSegmentMatches(routeSegment, pathSegment)) return false;
   }
 
-  return {
-    exact:
-      routeSegments.length === pathSegments.length &&
-      routeSegments.every((segment, index) =>
-        routeSegmentEquals(segment, pathSegments[index] ?? ""),
-      ),
-    staticSegments: segmentsToMatch.filter(isStaticRouteSegment).length,
-    dynamicSegments: segmentsToMatch.filter(isDynamicRouteSegment).length,
-    wildcardSegments:
-      segmentsToMatch.filter(isWildcardRouteSegment).length +
-      (prefixWildcard ? 1 : 0),
-    segmentCount: routeSegments.length,
-    routePath: normalizedRoutePath,
-  };
+  return true;
 }
 
 function routeSegmentMatches(
@@ -240,43 +229,18 @@ function routeSegmentMatches(
 }
 
 function routeSegmentEquals(left: string, right: string): boolean {
-  return safeDecodeURIComponent(left) === safeDecodeURIComponent(right);
+  return staticRouteSegmentsEqual(left, right);
 }
 
 function isBetterPageRouteMatch<T extends { path: string; id?: string }>(
   route: T,
-  match: PageRoutePathMatch,
-  current: { route: T; match: PageRoutePathMatch } | undefined,
+  current: T | undefined,
 ): boolean {
   if (!current) return true;
-  const comparison = comparePageRouteMatches(match, current.match);
-  if (comparison !== 0) return comparison > 0;
-  if (route.path !== current.route.path) return route.path < current.route.path;
-  return (route.id ?? "") < (current.route.id ?? "");
-}
-
-function comparePageRouteMatches(
-  left: PageRoutePathMatch,
-  right: PageRoutePathMatch,
-): number {
-  if (left.exact !== right.exact) return left.exact ? 1 : -1;
-  if (left.staticSegments !== right.staticSegments) {
-    return left.staticSegments - right.staticSegments;
-  }
-  if (left.wildcardSegments !== right.wildcardSegments) {
-    return right.wildcardSegments - left.wildcardSegments;
-  }
-  if (left.dynamicSegments !== right.dynamicSegments) {
-    return right.dynamicSegments - left.dynamicSegments;
-  }
-  if (left.segmentCount !== right.segmentCount) {
-    return left.segmentCount - right.segmentCount;
-  }
-  return left.routePath.length - right.routePath.length;
-}
-
-function isStaticRouteSegment(segment: string): boolean {
-  return !isDynamicRouteSegment(segment) && !isWildcardRouteSegment(segment);
+  const specificity = compareRoutePathsBySpecificity(route.path, current.path);
+  if (specificity !== 0) return specificity < 0;
+  if (route.path !== current.path) return route.path < current.path;
+  return (route.id ?? "") < (current.id ?? "");
 }
 
 function isDynamicRouteSegment(segment: string): boolean {
@@ -288,13 +252,11 @@ function isWildcardRouteSegment(segment: string): boolean {
   return segment === "$";
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function normalizeRouteShapeSegment(segment: string): string {
   if (isWildcardRouteSegment(segment)) return segment;
-  return isDynamicRouteSegment(segment) ? ":param" : segment;
+  return isDynamicRouteSegment(segment)
+    ? ":param"
+    : canonicalizeStaticRouteSegment(segment);
 }
 
 export function parsePageSearch(search: string): PageSearchParams {
@@ -334,14 +296,16 @@ function splitPath(value: string): string[] {
   return normalizeRoutePathname(value).split("/").filter(Boolean);
 }
 
-function decodeQueryValue(value: string): string {
-  return safeDecodeURIComponent(value.replace(/\+/g, " "));
+/** Split a request pathname without erasing empty URL segments. */
+function splitRequestPath(pathname: string): string[] | undefined {
+  const withLeadingSlash = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  if (withLeadingSlash === "/") return [];
+
+  const body = withLeadingSlash.slice(1).replace(/\/$/, "");
+  const segments = body.split("/");
+  return segments.some((segment) => segment === "") ? undefined : segments;
 }
 
-function safeDecodeURIComponent(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
+function decodeQueryValue(value: string): string {
+  return safeDecodeRouteSegment(value.replace(/\+/g, " "));
 }

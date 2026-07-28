@@ -197,7 +197,8 @@ test.describe("deployment-adapters", () => {
       path.join(exampleDir, "dist", "worker.mjs"),
       "utf-8",
     );
-    expect(edgeWorker).toContain('const frameworkBasePath = "/__evjs";');
+    expect(edgeWorker).toContain("const frameworkExactEndpointPaths = [");
+    expect(edgeWorker).not.toContain("frameworkBasePath");
     expect(edgeWorker).toContain('const assetsBinding = "ASSETS";');
   });
 });

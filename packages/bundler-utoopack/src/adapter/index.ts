@@ -17,24 +17,41 @@ import type {
   BundlerDevContext,
   BundlerDevController,
   BundlerDevUpdateOptions,
+  ResolvedBuildOutputPaths,
+} from "@evjs/ev/_internal/build";
+import {
+  assertSafeBuildOutputPaths,
+  isArtifactOnlyBuildPlanUpdate,
+  isEmptyBuildPlanUpdate,
+  resolveBuildOutputPaths,
 } from "@evjs/ev/_internal/build";
 import type { ResolvedConfig } from "@evjs/ev/config";
 import type { BuildPlan, BuildPlanUpdate } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import type { ConfigComplete } from "@utoo/pack";
 import { UtoopackManifestGenerator } from "../manifest-generator.js";
-import { getOutputPaths } from "./output-paths.js";
+import {
+  startUtoopackDevWorker,
+  type UtoopackDevWorkerHandle,
+} from "./dev-worker-client.js";
+import { assertSafeUtoopackCleanOutput } from "./output-paths.js";
+import {
+  readServerStatsVersion,
+  startUtoopackServerStatsMonitor,
+  type UtoopackServerStatsMonitor,
+} from "./server-stats-monitor.js";
 
 const logger = getLogger(["evjs", "bundler-utoopack"]);
 const require = createRequire(import.meta.url);
-type UtoopackRuntime = Pick<typeof import("@utoo/pack"), "build" | "serve">;
+type UtoopackRuntime = Pick<typeof import("@utoo/pack"), "build">;
+const INITIAL_DEV_STATS_TIMEOUT_MS = 10_000;
+const DEV_STATS_POLL_INTERVAL_MS = 25;
 
 async function cleanServerOutput(
   cwd: string,
-  output: ResolvedConfig<ConfigComplete>["output"],
-  distDir: string,
+  outputPaths: ResolvedBuildOutputPaths,
 ) {
-  const outputPaths = getOutputPaths(cwd, output, distDir);
+  await assertSafeBuildOutputPaths(cwd, outputPaths);
   await fs.promises.rm(outputPaths.serverDir, {
     recursive: true,
     force: true,
@@ -42,7 +59,6 @@ async function cleanServerOutput(
 }
 
 async function generateDevArtifacts(
-  config: ResolvedConfig<ConfigComplete>,
   cwd: string,
   plan: BuildPlan,
   onBuildFacts: (
@@ -50,16 +66,61 @@ async function generateDevArtifacts(
     options?: { isRebuild?: boolean },
   ) => void | Promise<void>,
   options: { isRebuild?: boolean } = {},
-): Promise<boolean> {
-  const outputPaths = getOutputPaths(cwd, config.output, plan.distDir);
-  const clientStatsPath = path.join(outputPaths.clientDir, "stats.json");
-  if (!fs.existsSync(clientStatsPath)) return false;
-
+  facts?: BundlerBuildFacts,
+): Promise<void> {
   logger.info`Generating development manifest and HTML...`;
-  const generator = new UtoopackManifestGenerator(cwd, plan);
-  const facts = await generator.collectBuildFacts();
-  await onBuildFacts(facts, options);
-  return true;
+  const buildFacts =
+    facts ??
+    (await new UtoopackManifestGenerator(cwd, plan).collectBuildFacts());
+  await onBuildFacts(buildFacts, options);
+}
+
+async function waitForReadableDevStats(
+  cwd: string,
+  plan: BuildPlan,
+  timeoutMs = INITIAL_DEV_STATS_TIMEOUT_MS,
+): Promise<BundlerBuildFacts> {
+  const outputPaths = resolveBuildOutputPaths(cwd, plan);
+  const requiredStats = [
+    ...(plan.entries.some((entry) => entry.environment === "client")
+      ? [path.join(outputPaths.clientDir, "stats.json")]
+      : []),
+    ...(hasRuntimeServerEntry(plan)
+      ? [path.join(outputPaths.serverDir, "stats.json")]
+      : []),
+  ];
+  if (requiredStats.length === 0) {
+    return new UtoopackManifestGenerator(cwd, plan).collectBuildFacts();
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  let lastError: unknown;
+  while (true) {
+    try {
+      return await new UtoopackManifestGenerator(cwd, plan).collectBuildFacts();
+    } catch (error) {
+      lastError = error;
+    }
+    if (Date.now() >= deadline) {
+      const paths = requiredStats
+        .map((statsPath) =>
+          JSON.stringify(
+            path
+              .relative(outputPaths.rootDir, statsPath)
+              .split(path.sep)
+              .join("/"),
+          ),
+        )
+        .join(", ");
+      throw new Error(
+        `[evjs] Timed out waiting for readable Utoopack development stats at ${paths}.`,
+        { cause: lastError },
+      );
+    }
+    await new Promise<void>((resolve) =>
+      setTimeout(resolve, DEV_STATS_POLL_INTERVAL_MS),
+    );
+  }
 }
 
 function requireUtoopack(): UtoopackRuntime {
@@ -98,10 +159,13 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
 
     logger.info`Building for production with utoopack...`;
 
-    await cleanServerOutput(cwd, config.output, plan.distDir);
+    const outputPaths = resolveBuildOutputPaths(cwd, plan);
+    await cleanServerOutput(cwd, outputPaths);
+
+    await assertSafeUtoopackCleanOutput(cwd, utoopackConfig, outputPaths);
 
     const { build } = requireUtoopack();
-    await build({ config: utoopackConfig });
+    await build({ config: utoopackConfig }, cwd, cwd);
 
     logger.info`Collecting utoopack build facts...`;
     const generator = new UtoopackManifestGenerator(cwd, plan);
@@ -113,99 +177,126 @@ export const utoopackAdapter: BundlerAdapter<ConfigComplete> = {
   async dev(
     ctx: BundlerDevContext<ConfigComplete>,
   ): Promise<BundlerDevController<ConfigComplete>> {
-    const { addWatchFile, config, cwd, callbacks, hooks, plan } = ctx;
-    const { createUtoopackConfig, updateSpaHistoryFallbackTarget } =
-      await import("./create-config.js");
-    const utoopackConfig = await createUtoopackConfig(
-      config,
-      plan,
-      cwd,
-      hooks,
-      addWatchFile,
-    );
-    let serverReadyWatcher: fs.FSWatcher | undefined;
+    return startUtoopackDev(ctx);
+  },
+};
 
-    logger.info`Starting development server with utoopack...`;
+async function startUtoopackDev(
+  ctx: BundlerDevContext<ConfigComplete>,
+  statsTimeoutMs = INITIAL_DEV_STATS_TIMEOUT_MS,
+): Promise<UtoopackDevController> {
+  const { addWatchFile, config, cwd, callbacks, hooks, plan } = ctx;
+  const { createUtoopackConfig, getSpaHistoryFallbackRuleIndex } = await import(
+    "./create-config.js"
+  );
+  const utoopackConfig = await createUtoopackConfig(
+    config,
+    plan,
+    cwd,
+    hooks,
+    addWatchFile,
+  );
+  const outputPaths = resolveBuildOutputPaths(cwd, plan);
 
-    const { serve } = requireUtoopack();
-    let devServerOrigin = formatDevServerOrigin(config, config.dev.port);
-    await serve({ config: utoopackConfig }, undefined, undefined, {
+  logger.info`Starting development server with utoopack...`;
+  await assertSafeUtoopackCleanOutput(cwd, utoopackConfig, outputPaths);
+
+  const worker = startUtoopackDevWorker({
+    cwd,
+    config: utoopackConfig,
+    spaHistoryFallbackRuleIndex: getSpaHistoryFallbackRuleIndex(utoopackConfig),
+    server: {
       port: config.dev.port,
       https: config.dev.https !== false,
       hostname: "0.0.0.0",
       logServerInfo: false,
-      onReady({ port, hostname }) {
-        devServerOrigin = formatDevServerOrigin(config, port, hostname);
-        const fallbackUpdated = updateSpaHistoryFallbackTarget(
-          utoopackConfig,
-          devServerOrigin,
-        );
-        if (port !== config.dev.port) {
-          const fallbackStatus = fallbackUpdated
-            ? " The SPA fallback now targets the actual dev server."
-            : "";
-          logger.warn`Reserved client port ${config.dev.port} became unavailable during startup; Utoopack is listening on ${port}.${fallbackStatus}`;
-        }
-      },
-    });
+    },
+  });
+  const controller = new UtoopackDevController({
+    cwd,
+    plan,
+    worker,
+    onBuildFacts: callbacks.onBuildFacts,
+    onServerBundleReady: callbacks.onServerBundleReady,
+  });
 
-    await generateDevArtifacts(config, cwd, plan, callbacks.onBuildFacts, {
-      isRebuild: false,
-    });
-    await callbacks.onDevServerReady?.({ origin: devServerOrigin });
-    if (!hasRuntimeServerEntry(plan)) {
-      return new UtoopackDevController({
-        config,
-        cwd,
-        onBuildFacts: callbacks.onBuildFacts,
-        onServerBundleReady: callbacks.onServerBundleReady,
-      });
-    }
-
-    const outDir = getOutputPaths(cwd, config.output, plan.distDir).serverDir;
-
-    if (!fs.existsSync(outDir)) {
-      fs.mkdirSync(outDir, { recursive: true });
-    }
-
-    let ready = false;
-    const checkReady = async (filename?: string) => {
-      if (ready) return;
-      const hasBundle = filename
-        ? filename === "stats.json" || filename.endsWith(".js")
-        : (await fs.promises.readdir(outDir).catch(() => [])).some(
-            (f) => f === "stats.json" || f.endsWith(".js"),
-          );
-
-      if (hasBundle) {
-        ready = true;
-        try {
-          await callbacks.onServerBundleReady();
-          serverReadyWatcher?.close();
-        } catch (err) {
-          logger.error`Server bundle ready callback failed: ${err}`;
-          ready = false;
-        }
-      }
-    };
-
-    serverReadyWatcher = fs.watch(outDir, (_eventType, filename) => {
-      if (filename) void checkReady(filename);
-    });
-
-    // Initial check in case it was written before the watcher attached
-    await checkReady();
-    return new UtoopackDevController({
+  try {
+    const ready = await Promise.race([worker.ready, worker.failure]);
+    const devServerOrigin = formatDevServerOrigin(
       config,
+      ready.port,
+      ready.hostname,
+    );
+    const fallbackUpdated = ready.spaHistoryFallbackUpdated;
+    if (ready.port !== config.dev.port) {
+      const fallbackStatus = fallbackUpdated
+        ? " The SPA fallback now targets the actual dev server."
+        : "";
+      logger.warn`Reserved client port ${config.dev.port} became unavailable during startup; Utoopack is listening on ${ready.port}.${fallbackStatus}`;
+    }
+
+    const initialFacts = await Promise.race([
+      waitForReadableDevStats(cwd, plan, statsTimeoutMs),
+      worker.failure,
+    ]);
+    const serverStatsPath = path.join(outputPaths.serverDir, "stats.json");
+    const initialServerStatsVersion = hasRuntimeServerEntry(plan)
+      ? await readServerStatsVersion(serverStatsPath)
+      : undefined;
+    await generateDevArtifacts(
       cwd,
-      onBuildFacts: callbacks.onBuildFacts,
-      onServerBundleReady: callbacks.onServerBundleReady,
-      closeWatcher() {
-        serverReadyWatcher?.close();
-      },
-    });
-  },
-};
+      plan,
+      callbacks.onBuildFacts,
+      { isRebuild: false },
+      initialFacts,
+    );
+    worker.throwIfFailed();
+
+    if (hasRuntimeServerEntry(plan)) {
+      await callbacks.onServerBundleReady();
+      worker.throwIfFailed();
+      const monitor = startUtoopackServerStatsMonitor({
+        statsPath: serverStatsPath,
+        initialVersion: initialServerStatsVersion,
+        async onChange() {
+          const activePlan = controller.getPlan();
+          const facts = await waitForReadableDevStats(
+            cwd,
+            activePlan,
+            statsTimeoutMs,
+          );
+          await generateDevArtifacts(
+            cwd,
+            activePlan,
+            callbacks.onBuildFacts,
+            { isRebuild: true },
+            facts,
+          );
+          await callbacks.onServerBundleReady();
+        },
+        onError(error) {
+          logger.error`Failed to process Utoopack server rebuild: ${error}`;
+        },
+      });
+      controller.attachServerStatsMonitor(monitor);
+    }
+
+    await callbacks.onDevServerReady?.({ origin: devServerOrigin });
+    worker.throwIfFailed();
+    return controller;
+  } catch (error) {
+    try {
+      await controller.close();
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        "[evjs] Utoopack development startup failed and cleanup also failed.",
+        { cause: error },
+      );
+    }
+    throw error;
+  }
+}
 
 function hasRuntimeServerEntry(plan: BuildPlan): boolean {
   return plan.entries.some(
@@ -225,18 +316,53 @@ function formatDevServerOrigin(
 }
 
 class UtoopackDevController implements BundlerDevController<ConfigComplete> {
+  private serverStatsMonitor: UtoopackServerStatsMonitor | undefined;
+  private closed = false;
+  readonly done: Promise<void>;
+
   constructor(
     private options: {
-      config: ResolvedConfig<ConfigComplete>;
       cwd: string;
+      plan: BuildPlan;
+      worker: UtoopackDevWorkerHandle;
       onBuildFacts: BundlerDevContext<ConfigComplete>["callbacks"]["onBuildFacts"];
       onServerBundleReady: BundlerDevContext<ConfigComplete>["callbacks"]["onServerBundleReady"];
-      closeWatcher?: () => void;
     },
-  ) {}
+  ) {
+    this.done = options.worker.done;
+  }
 
-  close(): void {
-    this.options.closeWatcher?.();
+  getPlan(): BuildPlan {
+    return this.options.plan;
+  }
+
+  attachServerStatsMonitor(monitor: UtoopackServerStatsMonitor): void {
+    if (this.serverStatsMonitor) {
+      throw new Error(
+        "[evjs] Utoopack server stats monitor was attached more than once.",
+      );
+    }
+    this.serverStatsMonitor = monitor;
+  }
+
+  async close(): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
+    const errors: unknown[] = [];
+    try {
+      await this.serverStatsMonitor?.close();
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      await this.options.worker.close();
+    } catch (error) {
+      errors.push(error);
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "[evjs] Failed to stop Utoopack dev.");
+    }
   }
 
   async updatePlan(
@@ -248,62 +374,35 @@ class UtoopackDevController implements BundlerDevController<ConfigComplete> {
         "[evjs] Utoopack dev cannot safely replace framework, proxy, or plugin bundler configuration in place. Restart ev dev to apply the updated config.",
       );
     }
-    if (isEmptyPlanUpdate(update)) return;
+    await assertSafeBuildOutputPaths(
+      this.options.cwd,
+      resolveBuildOutputPaths(this.options.cwd, update.next),
+    );
+    if (isEmptyBuildPlanUpdate(update)) return;
 
-    if (!isArtifactOnlyUpdate(update)) {
+    if (!isArtifactOnlyBuildPlanUpdate(update)) {
       throw new Error(
         `[evjs] Utoopack dev cannot apply framework plan changes without restarting ev dev (${formatUnsupportedPlanUpdate(update)}). HTML/generated-only framework plan updates are supported; entry additions, removals, resolution changes, server changes, and route metadata changes still require a lower-layer Utoopack update API.`,
       );
     }
 
-    const emitted = await generateDevArtifacts(
-      this.options.config,
-      this.options.cwd,
-      update.next,
-      this.options.onBuildFacts,
-      { isRebuild: true },
-    );
-    if (!emitted) {
-      throw new Error(
-        "[evjs] Utoopack dev cannot regenerate framework artifacts before client build stats are available.",
+    const previousPlan = this.options.plan;
+    this.options.plan = update.next;
+    try {
+      await generateDevArtifacts(
+        this.options.cwd,
+        update.next,
+        this.options.onBuildFacts,
+        { isRebuild: true },
       );
-    }
-    if (hasRuntimeServerEntry(update.next)) {
-      await this.options.onServerBundleReady();
+      if (hasRuntimeServerEntry(update.next)) {
+        await this.options.onServerBundleReady();
+      }
+    } catch (error) {
+      this.options.plan = previousPlan;
+      throw error;
     }
   }
-}
-
-function isEmptyPlanUpdate(update: BuildPlanUpdate): boolean {
-  return (
-    !update.serverChanged &&
-    update.entries.added.length === 0 &&
-    update.entries.removed.length === 0 &&
-    update.entries.changed.length === 0 &&
-    update.html.added.length === 0 &&
-    update.html.removed.length === 0 &&
-    update.html.changed.length === 0 &&
-    !update.generatedChanged &&
-    !update.resolveChanged &&
-    !update.runtimeChanged &&
-    !update.deliveryChanged
-  );
-}
-
-function isArtifactOnlyUpdate(update: BuildPlanUpdate): boolean {
-  return (
-    !update.serverChanged &&
-    !update.runtimeChanged &&
-    !update.resolveChanged &&
-    update.entries.added.length === 0 &&
-    update.entries.removed.length === 0 &&
-    update.entries.changed.length === 0 &&
-    (update.deliveryChanged ||
-      update.generatedChanged ||
-      update.html.added.length > 0 ||
-      update.html.removed.length > 0 ||
-      update.html.changed.length > 0)
-  );
 }
 
 function formatUnsupportedPlanUpdate(update: BuildPlanUpdate): string {
@@ -318,7 +417,17 @@ function formatUnsupportedPlanUpdate(update: BuildPlanUpdate): string {
     update.resolveChanged ? "module resolution changed" : undefined,
     update.runtimeChanged ? "framework runtime changed" : undefined,
     update.deliveryChanged ? "framework artifact delivery changed" : undefined,
-    update.serverChanged ? "server output changed" : undefined,
+    update.previous.distDir !== update.next.distDir
+      ? "framework output root changed"
+      : undefined,
+    update.previous.output.clientDir !== update.next.output.clientDir
+      ? "client output changed"
+      : undefined,
+    update.serverCompilationChanged
+      ? "server compilation topology changed"
+      : undefined,
+    update.serverDocumentsChanged ? "server documents changed" : undefined,
+    update.devRoutingChanged ? "development routing changed" : undefined,
   ].filter((change): change is string => Boolean(change));
 
   return changes.length > 0 ? changes.join("; ") : "unknown plan change";
@@ -340,3 +449,8 @@ function formatBuildEntry(entry: BuildPlan["entries"][number]): string {
 function formatHtmlPlan(html: BuildPlan["html"][number]): string {
   return `${html.id} -> ${html.fileName}`;
 }
+
+export const __testing = {
+  startUtoopackDev,
+  waitForReadableDevStats,
+};

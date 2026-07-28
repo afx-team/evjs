@@ -4,15 +4,15 @@ import type { ServerMiddlewareNode } from "@evjs/shared/manifest";
 import type { Expression, ModuleItem } from "@swc/types";
 import { collectModuleExportNames } from "./module-exports.js";
 import {
-  findPageRouteSegmentConventionViolation,
-  isPageRouteSourceModuleFile,
-  normalizePageRouteConventionPath,
-  type PageRouteSegmentConventionViolation,
-} from "./page-route-conventions.js";
+  isRouteSourceModuleFile,
+  normalizeRouteConventionPath,
+  type RouteSegmentConventionViolation,
+} from "./route-conventions.js";
 import {
   formatParseErrorMessage,
   parseRouteModuleWithError,
 } from "./routes/shared.js";
+import { findServerRouteSegmentConventionViolation } from "./server-route-conventions.js";
 import type { DiscoveredServerRouteNode } from "./server-routes.js";
 import { isInsideCwd, toPosixPath } from "./utils.js";
 
@@ -63,9 +63,9 @@ export async function discoverServerConventions(
 export function isServerMiddlewareConventionFileName(
   filename: string,
 ): boolean {
-  const normalized = normalizePageRouteConventionPath(filename);
+  const normalized = normalizeRouteConventionPath(filename);
   const extension = path.posix.extname(normalized);
-  if (!isPageRouteSourceModuleFile(path.posix.basename(normalized))) {
+  if (!isRouteSourceModuleFile(path.posix.basename(normalized))) {
     return false;
   }
   return normalized.slice(0, -extension.length) === "middleware";
@@ -164,9 +164,8 @@ async function discoverRouteMiddlewares(
     const convention = parseRouteMiddlewareFile(routeRel);
     if (!convention) continue;
 
-    const segmentViolation = findPageRouteSegmentConventionViolation(
+    const segmentViolation = findServerRouteSegmentConventionViolation(
       convention.scopeSegments,
-      { allowCasePreservingStatic: false, allowCatchAll: false },
     );
     if (segmentViolation) {
       diagnostics.push({
@@ -272,7 +271,7 @@ interface RouteMiddlewareFileConvention {
 function parseRouteMiddlewareFile(
   routeRel: string,
 ): RouteMiddlewareFileConvention | undefined {
-  const normalizedRouteRel = normalizePageRouteConventionPath(routeRel);
+  const normalizedRouteRel = normalizeRouteConventionPath(routeRel);
   const basename = path.posix.basename(normalizedRouteRel);
   if (!isServerMiddlewareConventionFileName(basename)) return undefined;
 
@@ -452,7 +451,7 @@ function formatScopeLabel(scopeSegments: string[]): string {
 }
 
 function formatServerMiddlewareSegmentConventionViolation(
-  violation: PageRouteSegmentConventionViolation,
+  violation: RouteSegmentConventionViolation,
 ): string {
   if (violation.kind === "route-group") {
     return `Server middleware route group segment "${violation.segment}" must wrap a non-empty group name in parentheses, such as "(internal)".`;

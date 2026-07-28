@@ -21,10 +21,12 @@ import {
   createPublicManifest,
   linkBuildOutput,
 } from "@evjs/shared/manifest";
+import { Volume } from "memfs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Compiler } from "webpack";
 import { withPageRoutingDefaults } from "../../ev/esm/_internal/build/convention-config.js";
 import { createPageClientBuildEntryName } from "../../ev/src/_internal/build/build-entry-conventions.js";
+import { linkAndEmitBuildOutput } from "../../ev/src/_internal/build/framework-output.js";
 import {
   createClientRuntime,
   createFrameworkRuntime,
@@ -32,8 +34,12 @@ import {
 } from "../../ev/src/_internal/build/framework-runtime.js";
 import type { WebpackConfig } from "../src/adapter/create-config.js";
 import { __testing as webpackAdapterTesting } from "../src/adapter/index.js";
+import { __testing as serverPublicAssetTesting } from "../src/adapter/server-public-assets.js";
 import { webpackAdapter } from "../src/index.js";
-import type { WebpackStatsLike } from "../src/manifest-generator.js";
+import {
+  WebpackManifestGenerator,
+  type WebpackStatsLike,
+} from "../src/manifest-generator.js";
 
 const tempDirs: string[] = [];
 const WEBPACK_BUILD_TEST_TIMEOUT = 20_000;
@@ -41,14 +47,14 @@ const WEBPACK_DEV_TEST_TIMEOUT = 20_000;
 const WEBPACK_DEV_PORT_BASE = 31_000 + (process.pid % 1_000) * 10;
 const WEBPACK_DEV_TEST_NAMES = {
   starts: "starts webpack dev and emits framework manifest/html",
-  apiRewrite: "does not rewrite API-like requests to application HTML",
+  unclaimedApiFallback: "serves unclaimed paths through SPA fallback",
   concurrentDone:
     "serializes concurrent client and server dev completion callbacks",
   htmlOnlyUpdate:
     "applies html-only plan updates without rebuilding webpack configs",
   rollback: "rolls back internal dev state when a plan update fails",
   pageAddition:
-    "applies page additions through updatePlan without restarting ev dev",
+    "rejects page additions that require persistent compiler replacement",
 } as const;
 const CLIENT_RUNTIME_SCRIPT_ID = "__EVJS_CLIENT_RUNTIME__";
 const allocatedDevPorts = new Set<number>();
@@ -216,7 +222,6 @@ async function emitFrameworkArtifacts(options: {
     graph: options.graph,
     plan: options.plan,
     clientEntryAssets: options.facts.clientEntryAssets,
-    firstClientEntryAssets: options.facts.firstClientEntryAssets,
     serverEntryAssets: options.facts.serverEntryAssets,
     serverEntry: options.facts.serverEntry,
     serverAssets: options.facts.serverAssets,
@@ -316,7 +321,7 @@ function embedClientRuntime(
 }
 
 describe("webpack stats ownership", () => {
-  it("bypasses resolved framework runtime paths from SPA dev fallback", () => {
+  it("bypasses only BuildPlan-owned routes and runtime endpoints", () => {
     const config = resolveConfig<WebpackConfig>({
       server: {
         basePath: "/_ev",
@@ -325,27 +330,124 @@ describe("webpack stats ownership", () => {
         },
       },
     });
+    const plan: BuildPlan = {
+      version: 1,
+      buildId: "test",
+      mode: "development",
+      distDir: "dist",
+      output: {
+        clientDir: "dist/client",
+        serverDir: "dist/server",
+      },
+      entries: [],
+      html: [],
+      server: {},
+      runtime: {
+        publicPath: "/",
+        server: {
+          basePath: config.server.basePath,
+          fn: config.server.runtime.fn,
+          ppr: "_ev/ppr",
+          rsc: config.server.runtime.rsc,
+        },
+      },
+      dev: {
+        clientRoutes: [],
+        serverRequestRoutePaths: ["/service/:id"],
+        serverRenderedPagePaths: ["/reports/:reportId"],
+        hasPpr: true,
+      },
+    };
     const rewrites =
-      webpackAdapterTesting.createHtmlFallbackBypassRewrites(config);
+      webpackAdapterTesting.createHtmlFallbackBypassRewrites(plan);
     const findBypass = (pathname: string) =>
       rewrites
         .find((rewrite) => rewrite.from.test(pathname))
         ?.to({ parsedUrl: { pathname } });
 
-    expect(findBypass("/api/users")).toBe("/api/users");
+    expect(findBypass("/api/users")).toBeUndefined();
+    expect(findBypass("/service/42")).toBe("/service/42");
+    expect(findBypass("/service/42/details")).toBeUndefined();
+    expect(findBypass("/reports/q2")).toBe("/reports/q2");
+    expect(findBypass("/reports/q2/details")).toBeUndefined();
     expect(findBypass("/_ev/fn")).toBe("/_ev/fn");
+    expect(findBypass("/%5F%65%76/%66%6E")).toBe("/%5F%65%76/%66%6E");
+    expect(findBypass("/_ev/fn/child")).toBeUndefined();
     expect(findBypass("/_ev/ppr/campaign/offer")).toBe(
       "/_ev/ppr/campaign/offer",
     );
+    expect(findBypass("/%5F%65%76/%70%70%72/campaign/offer")).toBe(
+      "/%5F%65%76/%70%70%72/campaign/offer",
+    );
     expect(findBypass("/flight")).toBe("/flight");
-    expect(findBypass("/flight/page")).toBe("/flight/page");
+    expect(findBypass("/%66%6C%69%67%68%74")).toBe("/%66%6C%69%67%68%74");
+    expect(findBypass("/flight/page")).toBeUndefined();
+    expect(findBypass("/_ev/unclaimed")).toBeUndefined();
     expect(findBypass("/dashboard")).toBeUndefined();
-    expect(webpackAdapterTesting.isApiLikeRequestPath("/flight", config)).toBe(
-      true,
+    expect(
+      webpackAdapterTesting.isFrameworkRuntimeRequestPath("/flight", plan),
+    ).toBe(true);
+    expect(
+      webpackAdapterTesting.isFrameworkRuntimeRequestPath(
+        "/%66%6C%69%67%68%74",
+        plan,
+      ),
+    ).toBe(true);
+    expect(
+      webpackAdapterTesting.isFrameworkRuntimeRequestPath("/dashboard", plan),
+    ).toBe(false);
+    expect(
+      webpackAdapterTesting.isServerRequestRoutePath("/service/42", plan),
+    ).toBe(true);
+    expect(
+      webpackAdapterTesting.isServerRequestRoutePath("/api/users", plan),
+    ).toBe(false);
+    expect(
+      webpackAdapterTesting.classifyFrameworkRequestPath("/service/42", plan),
+    ).toBe("server-request-route");
+    expect(
+      webpackAdapterTesting.classifyFrameworkRequestPath("/reports/q2", plan),
+    ).toBe("server-rendered-page");
+    expect(
+      webpackAdapterTesting.classifyFrameworkRequestPath("/flight", plan),
+    ).toBe("runtime");
+    expect(
+      webpackAdapterTesting.classifyFrameworkRequestPath("/flight/child", plan),
+    ).toBeUndefined();
+    const runtimeProxy = webpackAdapterTesting
+      .createDevProxyRules(config, plan)
+      .find((rule) => rule.contextFilter?.("/%5F%65%76/%66%6E"));
+    expect(runtimeProxy?.contextFilter?.("/%5F%65%76/%66%6E")).toBe(true);
+    expect(
+      runtimeProxy?.contextFilter?.("/%5F%65%76/%70%70%72/campaign/offer"),
+    ).toBe(true);
+    expect(runtimeProxy?.contextFilter?.("/%66%6C%69%67%68%74")).toBe(true);
+    expect(runtimeProxy?.contextFilter?.("/%5F%65%76/%66%6E/child")).toBe(
+      false,
     );
     expect(
-      webpackAdapterTesting.isApiLikeRequestPath("/dashboard", config),
-    ).toBe(false);
+      webpackAdapterTesting.createFrameworkNotFoundResponse(
+        "/service/42",
+        "server-request-route",
+      ),
+    ).toEqual({
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        error: {
+          code: "EVJS_API_NOT_FOUND",
+          message: "No API route matched /service/42.",
+        },
+      }),
+    });
+    expect(
+      webpackAdapterTesting.createFrameworkNotFoundResponse(
+        "/reports/q2",
+        "server-rendered-page",
+      ),
+    ).toEqual({
+      contentType: "text/plain; charset=utf-8",
+      body: "[evjs] No framework route matched /reports/q2.",
+    });
   });
 
   it("proxies a server-rendered root route without catching every asset", () => {
@@ -371,17 +473,58 @@ describe("webpack stats ownership", () => {
       },
       dev: {
         clientRoutes: [],
-        serverRoutePaths: ["/"],
+        serverRequestRoutePaths: [],
+        serverRenderedPagePaths: ["/"],
         hasPpr: false,
       },
     };
 
     const rules = webpackAdapterTesting.createDevProxyRules(config, plan);
-    const rootRule = rules.find((rule) => rule.contextFilter);
+    const rootRule = rules.find((rule) => rule.frameworkPageRender);
 
     expect(rootRule?.frameworkPageRender).toBe(true);
     expect(rootRule?.contextFilter?.("/")).toBe(true);
     expect(rootRule?.contextFilter?.("/favicon.ico")).toBe(false);
+  });
+
+  it("proxies a dynamic root request route without swallowing deeper SPA paths", () => {
+    const config = resolveConfig<WebpackConfig>();
+    const plan: BuildPlan = {
+      version: 1,
+      buildId: "test",
+      mode: "development",
+      distDir: "dist",
+      output: {
+        clientDir: "dist/client",
+        serverDir: "dist/server",
+      },
+      entries: [],
+      html: [],
+      server: {},
+      runtime: {
+        publicPath: "/",
+        server: {
+          basePath: config.server.basePath,
+          fn: config.server.runtime.fn,
+        },
+      },
+      dev: {
+        clientRoutes: [],
+        serverRequestRoutePaths: ["/:tenantId"],
+        serverRenderedPagePaths: [],
+        hasPpr: false,
+      },
+    };
+
+    const rules = webpackAdapterTesting.createDevProxyRules(config, plan);
+    const requestRouteRule = rules.find(
+      (rule) =>
+        !rule.frameworkPageRender && rule.contextFilter?.("/acme") === true,
+    );
+
+    expect(requestRouteRule?.contextFilter?.("/acme")).toBe(true);
+    expect(requestRouteRule?.contextFilter?.("/acme/settings")).toBe(false);
+    expect(requestRouteRule?.frameworkPageRender).toBeUndefined();
   });
 
   it("namespaces server-rsc chunks and de-dupes modules while merging server stats", () => {
@@ -459,9 +602,1149 @@ describe("webpack stats ownership", () => {
       },
     ]);
   });
+
+  it("reports complete portable asset inventories exposed by webpack stats", () => {
+    const plan: BuildPlan = {
+      version: 1,
+      buildId: "inventory",
+      mode: "production",
+      distDir: "dist",
+      output: {
+        clientDir: "dist/client",
+        serverDir: "dist/server",
+      },
+      entries: [
+        {
+          name: "main",
+          import: "./src/main.ts",
+          environment: "client",
+          runtime: "browser",
+          kind: "app-client",
+        },
+        {
+          name: "server",
+          import: "./src/server.ts",
+          environment: "server",
+          runtime: "node",
+          kind: "server-runtime",
+        },
+      ],
+      html: [],
+      server: { entry: "./src/server.ts" },
+      runtime: {
+        publicPath: "/",
+        server: { basePath: "/__evjs", fn: "__evjs/fn" },
+      },
+      dev: {
+        clientRoutes: [],
+        serverRequestRoutePaths: [],
+        serverRenderedPagePaths: [],
+        hasPpr: false,
+      },
+    };
+    const facts = new WebpackManifestGenerator(
+      process.cwd(),
+      plan,
+      {
+        assets: [
+          { name: "./main.js" },
+          { name: "chunks/lazy.js" },
+          { name: "assets/logo.svg" },
+        ],
+        entrypoints: { main: { assets: ["main.js"] } },
+      },
+      {
+        assets: [
+          { name: "./server.cjs" },
+          { name: "server.css" },
+          { name: "chunks/lazy.cjs" },
+        ],
+        entrypoints: {
+          server: { assets: ["server.cjs", "server.css"] },
+        },
+      },
+    ).collectBuildFacts();
+
+    expect(facts.emittedFiles).toEqual({
+      client: [
+        "main.js",
+        "chunks/lazy.js",
+        "assets/logo.svg",
+        "server.css",
+        "stats.json",
+      ],
+      server: ["server.cjs", "server.css", "chunks/lazy.cjs", "stats.json"],
+    });
+
+    expect(() =>
+      new WebpackManifestGenerator(process.cwd(), plan, undefined, {
+        entrypoints: { server: { assets: ["server.cjs"] } },
+      }).collectBuildFacts(),
+    ).toThrow(
+      'Webpack client stats do not identify client BuildPlan entrypoint "main" uniquely',
+    );
+    expect(() =>
+      new WebpackManifestGenerator(process.cwd(), plan, {
+        entrypoints: {
+          renderer: { assets: ["renderer.js"] },
+          vendor: { assets: ["vendor.js"] },
+        },
+      }).collectBuildFacts(),
+    ).toThrow(
+      'Webpack client stats do not identify client BuildPlan entrypoint "main" uniquely',
+    );
+    expect(() =>
+      new WebpackManifestGenerator(
+        process.cwd(),
+        plan,
+        { entrypoints: { main: { assets: ["main.js"] } } },
+        {
+          entrypoints: {
+            renderer: { assets: ["renderer.cjs"] },
+            plugin: { assets: ["plugin.cjs"] },
+          },
+        },
+      ).collectBuildFacts(),
+    ).toThrow(
+      'Webpack server stats do not identify BuildPlan entrypoint "server" uniquely',
+    );
+    expect(() =>
+      new WebpackManifestGenerator(
+        process.cwd(),
+        plan,
+        {
+          entrypoints: {
+            main: { assets: ["runtime.js", "vendor.js"] },
+          },
+        },
+        { entrypoints: { server: { assets: ["server.cjs"] } } },
+      ).collectBuildFacts(),
+    ).toThrow(
+      'client BuildPlan entry "main" do not identify one JavaScript entry asset',
+    );
+
+    expect(() =>
+      new WebpackManifestGenerator(
+        process.cwd(),
+        plan,
+        {
+          assets: ["assets", "assets-extra.js", "assets/main.js"],
+          entrypoints: { main: { assets: ["assets/main.js"] } },
+        },
+        { entrypoints: { server: { assets: ["server.cjs"] } } },
+      ).collectBuildFacts(),
+    ).toThrow(
+      'Bundler emittedFiles.client asset "assets/main.js" conflicts with "assets"',
+    );
+    expect(() =>
+      new WebpackManifestGenerator(
+        process.cwd(),
+        plan,
+        {
+          assets: ["chunks/Foo.js", "chunks/foo.js"],
+          entrypoints: { main: { assets: ["chunks/Foo.js"] } },
+        },
+        { entrypoints: { server: { assets: ["server.cjs"] } } },
+      ).collectBuildFacts(),
+    ).toThrow(
+      'Bundler emittedFiles.client asset "chunks/foo.js" conflicts with "chunks/Foo.js"',
+    );
+    for (const statsAsset of ["stats.json", "STATS.json"]) {
+      expect(() =>
+        new WebpackManifestGenerator(
+          process.cwd(),
+          plan,
+          {
+            assets: ["main.js", statsAsset],
+            entrypoints: { main: { assets: ["main.js"] } },
+          },
+          {
+            assets: ["server.cjs"],
+            entrypoints: { server: { assets: ["server.cjs"] } },
+          },
+        ).collectBuildFacts(),
+      ).toThrow(
+        `Webpack emitted asset "${statsAsset}" conflicts with adapter-owned "stats.json"`,
+      );
+    }
+  });
+
+  it("omits build-only memfs assets from the physical server inventory", () => {
+    const merged = webpackAdapterTesting.mergeWebpackStats(
+      {
+        assets: ["server.cjs"],
+        entrypoints: { server: { assets: ["server.cjs"] } },
+        chunks: [{ id: 1, files: ["server.cjs"] }],
+        modules: [{ name: "src/runtime.ts", chunks: [1] }],
+      },
+      {
+        assets: ["page-server.cjs", "chunks/lazy.cjs"],
+        entrypoints: {
+          "page-server": { assets: ["page-server.cjs"] },
+        },
+        chunks: [{ id: 1, files: ["page-server.cjs"] }],
+        modules: [{ name: "src/build-page.ts", chunks: [1] }],
+      },
+      "server-build",
+    );
+
+    expect(merged.assets).toEqual(["server.cjs"]);
+    expect(merged.entrypoints).toEqual({
+      server: { assets: ["server.cjs"] },
+      "page-server": { assets: ["page-server.cjs"] },
+    });
+    expect(merged.chunks).toEqual([
+      { id: 1, files: ["server.cjs"] },
+      { id: "server-build:1", files: ["page-server.cjs"] },
+    ]);
+
+    const plan: BuildPlan = {
+      version: 1,
+      buildId: "mixed-server-roots",
+      mode: "production",
+      distDir: "dist",
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
+      entries: [
+        {
+          name: "server",
+          import: "./src/server.ts",
+          environment: "server",
+          runtime: "node",
+          kind: "server-runtime",
+        },
+        {
+          name: "page-server",
+          import: "./src/build-page.ts",
+          environment: "server",
+          runtime: "node",
+          phase: "build",
+          kind: "page-server",
+        },
+      ],
+      html: [],
+      server: { entry: "./src/server.ts" },
+      runtime: {
+        publicPath: "/",
+        server: { basePath: "/__evjs", fn: "__evjs/fn" },
+      },
+      dev: {
+        clientRoutes: [],
+        serverRequestRoutePaths: [],
+        serverRenderedPagePaths: [],
+        hasPpr: false,
+      },
+    };
+    const facts = new WebpackManifestGenerator(
+      process.cwd(),
+      plan,
+      undefined,
+      merged,
+    ).collectBuildFacts();
+    expect(facts.serverModules).toEqual([
+      {
+        moduleId: "src/runtime.ts",
+        assets: { js: ["server.cjs"], css: [] },
+      },
+      {
+        moduleId: "src/build-page.ts",
+        assets: { js: ["page-server.cjs"], css: [] },
+      },
+    ]);
+  });
+
+  it("does not overwrite a stats.json symbolic link", async () => {
+    const cwd = await createFixture({});
+    const clientDir = path.join(cwd, "dist/client");
+    const outside = await fs.mkdtemp(
+      path.join(os.tmpdir(), "evjs-webpack-stats-outside-"),
+    );
+    tempDirs.push(outside);
+    const sentinel = path.join(outside, "sentinel.json");
+    await fs.mkdir(clientDir, { recursive: true });
+    await fs.writeFile(sentinel, "keep", "utf-8");
+    await fs.symlink(sentinel, path.join(clientDir, "stats.json"));
+
+    await expect(
+      webpackAdapterTesting.emitStats(cwd, clientDir, { entrypoints: {} }),
+    ).rejects.toThrow(
+      "Webpack stats output must not overwrite a symbolic-link output file",
+    );
+    await expect(fs.readFile(sentinel, "utf-8")).resolves.toBe("keep");
+  });
+
+  it("rejects exact and portable aliases of adapter-owned stats.json", async () => {
+    const cwd = await createFixture({});
+    const clientDir = path.join(cwd, "dist/client");
+
+    await expect(
+      webpackAdapterTesting.emitStats(cwd, clientDir, {
+        assets: ["stats.json"],
+      }),
+    ).rejects.toThrow(
+      'Webpack emitted asset "stats.json" conflicts with adapter-owned "stats.json"',
+    );
+    await expect(
+      webpackAdapterTesting.emitStats(cwd, clientDir, {
+        assets: ["STATS.json"],
+      }),
+    ).rejects.toThrow(
+      'Webpack emitted asset "STATS.json" conflicts with adapter-owned "stats.json"',
+    );
+    await expect(fs.access(clientDir)).rejects.toThrow();
+  });
+
+  it("rejects non-portable server public asset paths", async () => {
+    const cwd = await createFixture({});
+    const serverDir = path.join(cwd, "dist/server");
+    const clientDir = path.join(cwd, "dist/client");
+
+    await expect(
+      webpackAdapterTesting.copyServerPublicAssetsToClient(
+        cwd,
+        serverDir,
+        clientDir,
+        {
+          entrypoints: {
+            server: { assets: ["../escape.css"] },
+          },
+        },
+      ),
+    ).rejects.toThrow(
+      'Webpack emitted server CSS asset "../escape.css" must be a non-empty portable browser artifact path',
+    );
+  });
+
+  it("does not overwrite a client CSS symbolic link", async () => {
+    const cwd = await createFixture({});
+    const serverDir = path.join(cwd, "dist/server");
+    const clientDir = path.join(cwd, "dist/client");
+    const outside = await fs.mkdtemp(
+      path.join(os.tmpdir(), "evjs-webpack-css-outside-"),
+    );
+    tempDirs.push(outside);
+    const sentinel = path.join(outside, "sentinel.css");
+    await fs.mkdir(serverDir, { recursive: true });
+    await fs.mkdir(clientDir, { recursive: true });
+    await fs.writeFile(path.join(serverDir, "app.css"), "body{}", "utf-8");
+    await fs.writeFile(sentinel, "keep", "utf-8");
+    await fs.symlink(sentinel, path.join(clientDir, "app.css"));
+
+    await expect(
+      webpackAdapterTesting.copyServerPublicAssetsToClient(
+        cwd,
+        serverDir,
+        clientDir,
+        {
+          entrypoints: {
+            server: { assets: ["app.css"] },
+          },
+        },
+      ),
+    ).rejects.toThrow(
+      'Webpack server public asset "app.css" must be a regular file inside the project client output directory',
+    );
+    await expect(fs.readFile(sentinel, "utf-8")).resolves.toBe("keep");
+  });
+
+  it("does not read server CSS through a symbolic link", async () => {
+    const cwd = await createFixture({});
+    const serverDir = path.join(cwd, "dist/server");
+    const clientDir = path.join(cwd, "dist/client");
+    const outside = await fs.mkdtemp(
+      path.join(os.tmpdir(), "evjs-webpack-css-source-outside-"),
+    );
+    tempDirs.push(outside);
+    const sentinel = path.join(outside, "sentinel.css");
+    await fs.mkdir(serverDir, { recursive: true });
+    await fs.writeFile(sentinel, "secret", "utf-8");
+    await fs.symlink(sentinel, path.join(serverDir, "app.css"));
+
+    await expect(
+      webpackAdapterTesting.copyServerPublicAssetsToClient(
+        cwd,
+        serverDir,
+        clientDir,
+        {
+          entrypoints: {
+            server: { assets: ["app.css"] },
+          },
+        },
+      ),
+    ).rejects.toThrow(
+      'Webpack server public asset "app.css" must be a regular file inside the project server output directory',
+    );
+    await expect(fs.readFile(sentinel, "utf-8")).resolves.toBe("secret");
+  });
+
+  it("copies build-only CSS and binary auxiliary assets from memory", async () => {
+    const cwd = await createFixture({});
+    const serverDir = path.join(cwd, "dist/server");
+    const clientDir = path.join(cwd, "dist/client");
+    const logo = Buffer.from([0, 255, 1, 128, 42]);
+
+    await webpackAdapterTesting.copyServerPublicAssetsToClient(
+      cwd,
+      serverDir,
+      clientDir,
+      {
+        buildOnlyAssets: ["page.cjs", "page.css", "assets/logo.png"],
+      },
+      new Map([
+        ["page.cjs", Buffer.from("module.exports = {}")],
+        ["page.css", Buffer.from(".page{background:url(assets/logo.png)}")],
+        ["assets/logo.png", logo],
+      ]),
+    );
+
+    await expect(
+      fs.readFile(path.join(clientDir, "page.css")),
+    ).resolves.toEqual(Buffer.from(".page{background:url(assets/logo.png)}"));
+    await expect(
+      fs.readFile(path.join(clientDir, "assets/logo.png")),
+    ).resolves.toEqual(logo);
+    await expect(fs.access(path.join(clientDir, "page.cjs"))).rejects.toThrow();
+  });
+
+  it("reads each build-only memory asset once", async () => {
+    const cwd = await createFixture({});
+    const memoryFiles = new Map<string, Buffer>([
+      ["page.css", Buffer.from(".page{background:url(assets/logo.png)}")],
+      ["assets/logo.png", Buffer.from("logo")],
+    ]);
+    const get = vi.spyOn(memoryFiles, "get");
+
+    await webpackAdapterTesting.copyServerPublicAssetsToClient(
+      cwd,
+      path.join(cwd, "dist/server"),
+      path.join(cwd, "dist/client"),
+      { buildOnlyAssets: ["page.css", "assets/logo.png"] },
+      memoryFiles,
+    );
+
+    expect(get.mock.calls.map(([asset]) => asset)).toEqual([
+      "page.css",
+      "assets/logo.png",
+    ]);
+  });
+
+  it("ignores CSS comments, strings, fragments, data URLs, and external URLs", async () => {
+    const cwd = await createFixture({});
+    const clientDir = path.join(cwd, "dist/client");
+    const css = `
+      /* url(assets/comment.png) */
+      .label { content: "url(assets/string.png)"; }
+      .external { background: url(https://other.example/assets/external.png); }
+      .fragment { mask: url(#icon); }
+      .inline { background: url(data:image/png;base64,AAAA); }
+    `;
+    const candidates = [
+      "assets/comment.png",
+      "assets/string.png",
+      "assets/external.png",
+    ];
+    const memoryFiles = new Map<string, Buffer>([
+      ["page.css", Buffer.from(css)],
+      ...candidates.map(
+        (asset) => [asset, Buffer.from(asset)] as [string, Buffer],
+      ),
+    ]);
+
+    await expect(
+      webpackAdapterTesting.copyServerPublicAssetsToClient(
+        cwd,
+        path.join(cwd, "dist/server"),
+        clientDir,
+        { buildOnlyAssets: ["page.css", ...candidates] },
+        memoryFiles,
+      ),
+    ).resolves.toEqual(["page.css"]);
+    for (const candidate of candidates) {
+      await expect(
+        fs.access(path.join(clientDir, candidate)),
+      ).rejects.toThrow();
+    }
+  });
+
+  it("discovers string-form CSS imports and filters non-public references", async () => {
+    const cwd = await createFixture({});
+    const clientDir = path.join(cwd, "dist/client");
+    const memoryFiles = new Map<string, Buffer>([
+      ["page.css", Buffer.from('@import "assets/theme.resource";')],
+      ["assets/theme.resource", Buffer.from("theme")],
+    ]);
+
+    expect(
+      serverPublicAssetTesting.readCssUrlReferences(`
+        @import "theme.css";
+        @import "https://other.example/external.css";
+        @import "data:text/css,body{}";
+        @import "#fragment";
+      `),
+    ).toEqual(["theme.css", "https://other.example/external.css"]);
+    expect(
+      serverPublicAssetTesting.matchEmittedCssAsset(
+        "page.css",
+        "theme.css",
+        ["theme.css"],
+        "/",
+      ),
+    ).toBe("theme.css");
+    expect(
+      serverPublicAssetTesting.matchEmittedCssAsset(
+        "page.css",
+        "https://other.example/external.css",
+        ["external.css"],
+        "/",
+      ),
+    ).toBeUndefined();
+
+    await expect(
+      webpackAdapterTesting.copyServerPublicAssetsToClient(
+        cwd,
+        path.join(cwd, "dist/server"),
+        clientDir,
+        { buildOnlyAssets: ["page.css", "assets/theme.resource"] },
+        memoryFiles,
+      ),
+    ).resolves.toEqual(["page.css", "assets/theme.resource"]);
+    await expect(
+      fs.readFile(path.join(clientDir, "assets/theme.resource"), "utf-8"),
+    ).resolves.toBe("theme");
+  });
+
+  it("matches absolute CSS URLs only under the configured CDN publicPath", async () => {
+    const cwd = await createFixture({});
+    const clientDir = path.join(cwd, "dist/client");
+    const memoryFiles = new Map<string, Buffer>([
+      [
+        "styles/page.css",
+        Buffer.from(
+          ".page{background:url(https://cdn.example/static/assets/logo.png?v=1#icon)}",
+        ),
+      ],
+      ["assets/logo.png", Buffer.from("logo")],
+    ]);
+
+    await expect(
+      webpackAdapterTesting.copyServerPublicAssetsToClient(
+        cwd,
+        path.join(cwd, "dist/server"),
+        clientDir,
+        { buildOnlyAssets: ["styles/page.css", "assets/logo.png"] },
+        memoryFiles,
+        new Map(),
+        new Set(),
+        "https://cdn.example/static/",
+      ),
+    ).resolves.toEqual(["styles/page.css", "assets/logo.png"]);
+    await expect(
+      fs.readFile(path.join(clientDir, "assets/logo.png"), "utf-8"),
+    ).resolves.toBe("logo");
+  });
+
+  it("rejects public assets declared by stats but missing from both roots", async () => {
+    const cwd = await createFixture({});
+
+    await expect(
+      webpackAdapterTesting.copyServerPublicAssetsToClient(
+        cwd,
+        path.join(cwd, "dist/server"),
+        path.join(cwd, "dist/client"),
+        { buildOnlyAssets: ["page.css", "missing.svg"] },
+        new Map([
+          ["page.css", Buffer.from(".page{background:url(missing.svg)}")],
+        ]),
+      ),
+    ).rejects.toThrow(
+      'Webpack server public asset "missing.svg" was declared by stats but not emitted',
+    );
+  });
+
+  it("preserves previous files and ownership when next-state resolution fails", async () => {
+    const cwd = await createFixture({});
+    const serverDir = path.join(cwd, "dist/server");
+    const clientDir = path.join(cwd, "dist/client");
+    const ownedFiles = new Map<string, Buffer>();
+    await fs.mkdir(serverDir, { recursive: true });
+    await fs.writeFile(
+      path.join(serverDir, "old.css"),
+      "body{color:red}",
+      "utf-8",
+    );
+    await webpackAdapterTesting.copyServerPublicAssetsToClient(
+      cwd,
+      serverDir,
+      clientDir,
+      { entrypoints: { server: { assets: ["old.css"] } } },
+      new Map(),
+      ownedFiles,
+    );
+
+    await expect(
+      webpackAdapterTesting.copyServerPublicAssetsToClient(
+        cwd,
+        serverDir,
+        clientDir,
+        { buildOnlyAssets: ["next.css", "missing.svg"] },
+        new Map([
+          ["next.css", Buffer.from(".next{background:url(missing.svg)}")],
+        ]),
+        ownedFiles,
+      ),
+    ).rejects.toThrow('Webpack server public asset "missing.svg"');
+    await expect(
+      fs.readFile(path.join(clientDir, "old.css"), "utf-8"),
+    ).resolves.toBe("body{color:red}");
+    expect(ownedFiles).toEqual(
+      new Map([["old.css", Buffer.from("body{color:red}")]]),
+    );
+  });
+
+  it("preflights target ancestor symlinks before removing stale ownership", async () => {
+    const cwd = await createFixture({});
+    const serverDir = path.join(cwd, "dist/server");
+    const clientDir = path.join(cwd, "dist/client");
+    const outside = await fs.mkdtemp(
+      path.join(os.tmpdir(), "evjs-webpack-public-ancestor-"),
+    );
+    tempDirs.push(outside);
+    const ownedFiles = new Map<string, Buffer>();
+    await fs.mkdir(serverDir, { recursive: true });
+    await fs.writeFile(
+      path.join(serverDir, "old.css"),
+      "body{color:red}",
+      "utf-8",
+    );
+    await webpackAdapterTesting.copyServerPublicAssetsToClient(
+      cwd,
+      serverDir,
+      clientDir,
+      { entrypoints: { server: { assets: ["old.css"] } } },
+      new Map(),
+      ownedFiles,
+    );
+    await fs.symlink(outside, path.join(clientDir, "assets"));
+
+    await expect(
+      webpackAdapterTesting.copyServerPublicAssetsToClient(
+        cwd,
+        serverDir,
+        clientDir,
+        { buildOnlyAssets: ["page.css", "assets/logo.png"] },
+        new Map([
+          ["page.css", Buffer.from(".page{background:url(assets/logo.png)}")],
+          ["assets/logo.png", Buffer.from("logo")],
+        ]),
+        ownedFiles,
+      ),
+    ).rejects.toThrow(
+      'Webpack server public asset "assets/logo.png" must not traverse symbolic links',
+    );
+    await expect(
+      fs.readFile(path.join(clientDir, "old.css"), "utf-8"),
+    ).resolves.toBe("body{color:red}");
+    expect(ownedFiles.get("old.css")).toEqual(Buffer.from("body{color:red}"));
+    await expect(fs.readdir(outside)).resolves.toEqual([]);
+  });
+
+  it("does not publish unreferenced non-executable server assets", async () => {
+    const cwd = await createFixture({});
+    const clientDir = path.join(cwd, "dist/client");
+
+    await expect(
+      webpackAdapterTesting.copyServerPublicAssetsToClient(
+        cwd,
+        path.join(cwd, "dist/server"),
+        clientDir,
+        { buildOnlyAssets: ["private.pem"] },
+        new Map([["private.pem", Buffer.from("secret")]]),
+      ),
+    ).resolves.toEqual([]);
+    await expect(
+      fs.access(path.join(clientDir, "private.pem")),
+    ).rejects.toThrow();
+  });
+
+  it("rejects different runtime and build-only bytes for one public path", async () => {
+    const cwd = await createFixture({});
+    const serverDir = path.join(cwd, "dist/server");
+    await fs.mkdir(serverDir, { recursive: true });
+    await fs.writeFile(path.join(serverDir, "app.css"), "runtime", "utf-8");
+
+    await expect(
+      webpackAdapterTesting.copyServerPublicAssetsToClient(
+        cwd,
+        serverDir,
+        path.join(cwd, "dist/client"),
+        {
+          entrypoints: { server: { assets: ["app.css"] } },
+          buildOnlyAssets: ["app.css"],
+        },
+        new Map([["app.css", Buffer.from("build-only")]]),
+      ),
+    ).rejects.toThrow(
+      'Webpack server public asset "app.css" was emitted with different contents from runtime and build-only output roots',
+    );
+  });
+
+  it("reuses identical client assets but rejects different client bytes", async () => {
+    const cwd = await createFixture({});
+    const serverDir = path.join(cwd, "dist/server");
+    const clientDir = path.join(cwd, "dist/client");
+    await fs.mkdir(serverDir, { recursive: true });
+    await fs.mkdir(clientDir, { recursive: true });
+    await fs.writeFile(
+      path.join(serverDir, "shared.css"),
+      "body{color:red}",
+      "utf-8",
+    );
+    await fs.writeFile(
+      path.join(clientDir, "shared.css"),
+      "body{color:red}",
+      "utf-8",
+    );
+    const stats = { entrypoints: { server: { assets: ["shared.css"] } } };
+
+    await expect(
+      webpackAdapterTesting.copyServerPublicAssetsToClient(
+        cwd,
+        serverDir,
+        clientDir,
+        stats,
+        new Map(),
+        new Map(),
+        new Set(["shared.css"]),
+      ),
+    ).resolves.toEqual(["shared.css"]);
+
+    await fs.writeFile(path.join(clientDir, "shared.css"), "client", "utf-8");
+    await expect(
+      webpackAdapterTesting.copyServerPublicAssetsToClient(
+        cwd,
+        serverDir,
+        clientDir,
+        stats,
+        new Map(),
+        new Map(),
+        new Set(["shared.css"]),
+      ),
+    ).rejects.toThrow(
+      'Webpack server public asset "shared.css" conflicts with a client bundler asset at the same path and has different contents',
+    );
+  });
+
+  it("rejects portable aliases between server and client ownership", async () => {
+    const cwd = await createFixture({});
+
+    await expect(
+      webpackAdapterTesting.copyServerPublicAssetsToClient(
+        cwd,
+        path.join(cwd, "dist/server"),
+        path.join(cwd, "dist/client"),
+        { buildOnlyAssets: ["app.css"] },
+        new Map([["app.css", Buffer.from("body{}")]]),
+        new Map(),
+        new Set(["APP.css"]),
+      ),
+    ).rejects.toThrow(
+      'Webpack server public asset "app.css" conflicts with client bundler asset "APP.css" on portable file systems',
+    );
+  });
+
+  it("supports owned file-to-directory and directory-to-file transitions", async () => {
+    const cwd = await createFixture({});
+    const serverDir = path.join(cwd, "dist/server");
+    const clientDir = path.join(cwd, "dist/client");
+    const ownedFiles = new Map<string, Buffer>();
+
+    await webpackAdapterTesting.copyServerPublicAssetsToClient(
+      cwd,
+      serverDir,
+      clientDir,
+      { buildOnlyAssets: ["page.css", "assets"] },
+      new Map([
+        ["page.css", Buffer.from(".page{background:url(assets)}")],
+        ["assets", Buffer.from("flat")],
+      ]),
+      ownedFiles,
+    );
+    await webpackAdapterTesting.copyServerPublicAssetsToClient(
+      cwd,
+      serverDir,
+      clientDir,
+      { buildOnlyAssets: ["page.css", "assets/logo.png"] },
+      new Map([
+        ["page.css", Buffer.from(".page{background:url(assets/logo.png)}")],
+        ["assets/logo.png", Buffer.from("nested")],
+      ]),
+      ownedFiles,
+    );
+    await expect(
+      fs.readFile(path.join(clientDir, "assets/logo.png"), "utf-8"),
+    ).resolves.toBe("nested");
+
+    await webpackAdapterTesting.copyServerPublicAssetsToClient(
+      cwd,
+      serverDir,
+      clientDir,
+      { buildOnlyAssets: ["page.css", "assets"] },
+      new Map([
+        ["page.css", Buffer.from(".page{background:url(assets)}")],
+        ["assets", Buffer.from("flat-again")],
+      ]),
+      ownedFiles,
+    );
+    await expect(
+      fs.readFile(path.join(clientDir, "assets"), "utf-8"),
+    ).resolves.toBe("flat-again");
+    expect(ownedFiles.get("assets")).toEqual(Buffer.from("flat-again"));
+    expect(ownedFiles.has("assets/logo.png")).toBe(false);
+  });
+
+  it("updates and removes previously copied server-owned public assets", async () => {
+    const cwd = await createFixture({});
+    const serverDir = path.join(cwd, "dist/server");
+    const clientDir = path.join(cwd, "dist/client");
+    const ownedFiles = new Map<string, Buffer>();
+    const stats = { entrypoints: { server: { assets: ["app.css"] } } };
+    await fs.mkdir(serverDir, { recursive: true });
+    await fs.writeFile(
+      path.join(serverDir, "app.css"),
+      "body{color:red}",
+      "utf-8",
+    );
+
+    await webpackAdapterTesting.copyServerPublicAssetsToClient(
+      cwd,
+      serverDir,
+      clientDir,
+      stats,
+      new Map(),
+      ownedFiles,
+    );
+    await fs.writeFile(
+      path.join(serverDir, "app.css"),
+      "body{color:blue}",
+      "utf-8",
+    );
+    await webpackAdapterTesting.copyServerPublicAssetsToClient(
+      cwd,
+      serverDir,
+      clientDir,
+      stats,
+      new Map(),
+      ownedFiles,
+    );
+    await expect(
+      fs.readFile(path.join(clientDir, "app.css"), "utf-8"),
+    ).resolves.toBe("body{color:blue}");
+
+    await webpackAdapterTesting.copyServerPublicAssetsToClient(
+      cwd,
+      serverDir,
+      clientDir,
+      { entrypoints: {} },
+      new Map(),
+      ownedFiles,
+    );
+    await expect(fs.access(path.join(clientDir, "app.css"))).rejects.toThrow();
+  });
+
+  it("transfers a copied server asset to the client without later deleting it", async () => {
+    const cwd = await createFixture({});
+    const serverDir = path.join(cwd, "dist/server");
+    const clientDir = path.join(cwd, "dist/client");
+    const ownedFiles = new Map<string, Buffer>();
+    const serverStats = {
+      entrypoints: { server: { assets: ["shared.css"] } },
+    };
+    await fs.mkdir(serverDir, { recursive: true });
+    await fs.writeFile(
+      path.join(serverDir, "shared.css"),
+      "body{color:red}",
+      "utf-8",
+    );
+
+    await webpackAdapterTesting.copyServerPublicAssetsToClient(
+      cwd,
+      serverDir,
+      clientDir,
+      serverStats,
+      new Map(),
+      ownedFiles,
+    );
+    await webpackAdapterTesting.copyServerPublicAssetsToClient(
+      cwd,
+      serverDir,
+      clientDir,
+      serverStats,
+      new Map(),
+      ownedFiles,
+      new Set(["shared.css"]),
+    );
+    await webpackAdapterTesting.copyServerPublicAssetsToClient(
+      cwd,
+      serverDir,
+      clientDir,
+      { entrypoints: {} },
+      new Map(),
+      ownedFiles,
+      new Set(["shared.css"]),
+    );
+
+    expect(ownedFiles.has("shared.css")).toBe(false);
+    await expect(
+      fs.readFile(path.join(clientDir, "shared.css"), "utf-8"),
+    ).resolves.toBe("body{color:red}");
+  });
+});
+
+describe("webpack build-only memory modules", () => {
+  it("preserves output-relative paths and resolves colliding dynamic chunks", async () => {
+    const volume = new Volume();
+    volume.fromJSON({
+      "/memory/entries/a.cjs":
+        'module.exports = () => Promise.resolve().then(() => require("../chunks/a/lazy.cjs"));',
+      "/memory/entries/b.cjs":
+        'module.exports = () => Promise.resolve().then(() => require("../chunks/b/lazy.cjs"));',
+      "/memory/chunks/a/lazy.cjs": 'module.exports = { source: "a" };',
+      "/memory/chunks/b/lazy.cjs": 'module.exports = { source: "b" };',
+    });
+
+    const files = webpackAdapterTesting.collectMemoryFiles(
+      volume,
+      new Set(["/memory"]),
+    );
+    expect([...files.keys()].sort()).toEqual([
+      "chunks/a/lazy.cjs",
+      "chunks/b/lazy.cjs",
+      "entries/a.cjs",
+      "entries/b.cjs",
+    ]);
+
+    const load = webpackAdapterTesting.createMemoryServerModuleLoader(
+      process.cwd(),
+      files,
+    );
+    const loadA = (await load("entries/a.cjs")) as () => Promise<{
+      source: string;
+    }>;
+    const loadB = (await load("entries/b.cjs")) as () => Promise<{
+      source: string;
+    }>;
+
+    await expect(loadA()).resolves.toEqual({ source: "a" });
+    await expect(loadB()).resolves.toEqual({ source: "b" });
+  });
+
+  buildIt("loads webpack-generated dynamic chunks from memory", async () => {
+    const cwd = await createFixture({
+      "src/a/entry.ts": `
+        export async function load() {
+          const value = await import(
+            /* webpackChunkName: "chunks/a/lazy" */ "./lazy"
+          );
+          return value.default;
+        }
+      `,
+      "src/a/lazy.ts": 'export default "a";',
+      "src/b/entry.ts": `
+        export async function load() {
+          const value = await import(
+            /* webpackChunkName: "chunks/b/lazy" */ "./lazy"
+          );
+          return value.default;
+        }
+      `,
+      "src/b/lazy.ts": 'export default "b";',
+    });
+    const config = resolveConfig<WebpackConfig>({});
+    const plan: BuildPlan = {
+      version: 1,
+      buildId: "memory-chunks",
+      mode: "development",
+      distDir: "dist",
+      output: {
+        clientDir: "dist/client",
+        serverDir: "dist/server",
+      },
+      entries: [
+        {
+          name: "renderer-a",
+          import: "./src/a/entry.ts",
+          environment: "server",
+          runtime: "node",
+          kind: "page-server",
+          phase: "build",
+          owner: { pageId: "a" },
+        },
+        {
+          name: "renderer-b",
+          import: "./src/b/entry.ts",
+          environment: "server",
+          runtime: "node",
+          kind: "page-server",
+          phase: "build",
+          owner: { pageId: "b" },
+        },
+      ],
+      html: [],
+      server: {},
+      runtime: {
+        publicPath: "/",
+        server: { basePath: "/__evjs", fn: "__evjs/fn" },
+      },
+      dev: {
+        clientRoutes: [],
+        serverRequestRoutePaths: [],
+        serverRenderedPagePaths: [],
+        hasPpr: false,
+      },
+    };
+
+    const facts = await webpackAdapter.build({
+      config,
+      cwd,
+      plan,
+      hooks: [],
+    });
+    const loadModule = facts.loadServerModule;
+    expect(loadModule).toBeTypeOf("function");
+    const rendererA = (await loadModule?.("renderer-a.cjs")) as {
+      load(): Promise<string>;
+    };
+    const rendererB = (await loadModule?.("renderer-b.cjs")) as {
+      load(): Promise<string>;
+    };
+
+    await expect(rendererA.load()).resolves.toBe("a");
+    await expect(rendererB.load()).resolves.toBe("b");
+    expect(facts.emittedFiles?.server).toBeUndefined();
+  });
 });
 
 describe("webpackAdapter build", () => {
+  buildIt(
+    "preserves external files when the build root traverses a symlink",
+    async () => {
+      const cwd = await createFixture({
+        "index.html": '<main id="app"></main>',
+        "src/pages/page.tsx": "export default function Home() { return null; }",
+      });
+      const outside = await fs.mkdtemp(
+        path.join(os.tmpdir(), "evjs-output-outside-"),
+      );
+      tempDirs.push(outside);
+      const externalRootDir = path.join(outside, "root");
+      const sentinel = path.join(externalRootDir, "sentinel.txt");
+      await fs.mkdir(externalRootDir, { recursive: true });
+      await fs.writeFile(sentinel, "keep", "utf-8");
+      await fs.symlink(outside, path.join(cwd, "linked-output"), "dir");
+      const config = await resolveProjectConfig(cwd, {
+        output: {
+          client: "linked-output/root/client",
+          server: "linked-output/root/server",
+        },
+        routing: { mode: "spa" },
+      });
+      const analysis = await createCoreGraph(config, cwd);
+      const plan = createBuildPlan(config, analysis.graph, {
+        mode: "development",
+        distDir: "linked-output/root",
+      });
+
+      await expect(
+        webpackAdapter.build({ config, cwd, plan, hooks: [] }),
+      ).rejects.toThrow(
+        '[evjs] plan.distDir output directory "linked-output/root" must not traverse symbolic link "linked-output".',
+      );
+      await expect(fs.readFile(sentinel, "utf-8")).resolves.toBe("keep");
+    },
+  );
+
+  buildIt(
+    "preserves source files rejected as a plugin clean output",
+    async () => {
+      const cwd = await createFixture({
+        "index.html": '<main id="app"></main>',
+        "src/pages/page.tsx": "export default function Home() { return null; }",
+        "src/sentinel.ts": "export {};",
+      });
+      const config = await resolveProjectConfig(cwd, {
+        output: { client: "dist/client", server: "dist/server" },
+        routing: { mode: "spa" },
+      });
+      const analysis = await createCoreGraph(config, cwd);
+      const plan = createBuildPlan(config, analysis.graph, {
+        mode: "development",
+      });
+
+      await expect(
+        webpackAdapter.build({
+          config,
+          cwd,
+          plan,
+          hooks: [
+            {
+              bundlerConfig(configs) {
+                const items = Array.isArray(configs) ? configs : [configs];
+                const client = items.find((item) => item.name === "client");
+                if (client?.output) client.output.path = path.join(cwd, "src");
+              },
+            },
+          ],
+        }),
+      ).rejects.toThrow(
+        '[evjs] Webpack config "client" output.path "src" must remain the exact absolute BuildPlan output.client directory "dist/client".',
+      );
+      await expect(
+        fs.readFile(path.join(cwd, "src/sentinel.ts"), "utf-8"),
+      ).resolves.toBe("export {};");
+    },
+  );
+
+  buildIt(
+    "preserves project files rejected as an escaping output filename",
+    async () => {
+      const cwd = await createFixture({
+        "escape.js": "keep",
+        "index.html": '<main id="app"></main>',
+        "src/pages/page.tsx": "export default function Home() { return null; }",
+      });
+      const sentinel = path.join(cwd, "escape.js");
+      const config = await resolveProjectConfig(cwd, {
+        output: { client: "dist/client", server: "dist/server" },
+        routing: { mode: "spa" },
+      });
+      const analysis = await createCoreGraph(config, cwd);
+      const plan = createBuildPlan(config, analysis.graph, {
+        mode: "development",
+      });
+
+      await expect(
+        webpackAdapter.build({
+          config,
+          cwd,
+          plan,
+          hooks: [
+            {
+              bundlerConfig(configs) {
+                const items = Array.isArray(configs) ? configs : [configs];
+                const client = items.find((item) => item.name === "client");
+                if (client?.output) {
+                  client.output.filename = "../../escape.js";
+                }
+              },
+            },
+          ],
+        }),
+      ).rejects.toThrow(
+        '[evjs] Webpack config "client" output.filename "../../escape.js" must remain the framework-owned template "[name].js".',
+      );
+      await expect(fs.readFile(sentinel, "utf-8")).resolves.toBe("keep");
+    },
+  );
+
   buildIt(
     "builds framework-managed component pages without materializing .evjs files",
     async () => {
@@ -477,7 +1760,7 @@ describe("webpackAdapter build", () => {
       `,
       });
       const config = await resolveProjectConfig(cwd, {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "mpa", mount: "#root" },
       });
       const analysis = await createCoreGraph(config, cwd);
@@ -495,11 +1778,11 @@ describe("webpackAdapter build", () => {
 
       const manifest = createPublicManifest(output);
       const html = await fs.readFile(
-        path.join(cwd, "dist/home/index.html"),
+        path.join(cwd, "dist/client/home/index.html"),
         "utf-8",
       );
       const bundle = await fs.readFile(
-        path.join(cwd, "dist/page-client-home.js"),
+        path.join(cwd, "dist/client/page-client-home.js"),
         "utf-8",
       );
 
@@ -548,6 +1831,75 @@ describe("webpackAdapter build", () => {
         fs.access(path.join(cwd, ".ev/entries/page-client-home.ts")),
       ).resolves.toBeUndefined();
       await expect(fs.access(path.join(cwd, ".evjs"))).rejects.toThrow();
+    },
+  );
+
+  buildIt(
+    "publishes build-only SSG styles and only their referenced assets",
+    async () => {
+      const logo =
+        '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h1v1z"/></svg>';
+      const cwd = await createFixture({
+        "index.html":
+          '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
+        "src/pages/home/page.tsx": `
+          import { createElement } from "react";
+          import "./page.css";
+
+          export default function Home() {
+            return createElement("main", { className: "hero" }, "Home");
+          }
+        `,
+        "src/pages/home/page.config.ts":
+          'export default { render: "ssg", hydrate: "none" };',
+        "src/pages/home/page.css":
+          '.hero { background-image: url("./logo.svg"); }',
+        "src/pages/home/logo.svg": logo,
+        "src/pages/home/private.pem": "not-public",
+      });
+      const config = await resolveProjectConfig(cwd, {
+        output: { client: "dist/client", server: "dist/server" },
+        routing: { mode: "mpa", mount: "#root" },
+      });
+      const analysis = await createCoreGraph(config, cwd);
+      const plan = createBuildPlan(config, analysis.graph, {
+        mode: "production",
+      });
+
+      const output = await buildWithFrameworkArtifacts({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan,
+        hooks: [],
+      });
+      const [cssAsset] = output.pages.home.assets.css;
+      if (!cssAsset) throw new Error("Expected the SSG Page CSS asset.");
+      const clientDir = path.join(cwd, "dist/client");
+      const css = await fs.readFile(path.join(clientDir, cssAsset), "utf-8");
+      const referencedUrl = /url\((?:["']?)([^"')]+)(?:["']?)\)/u.exec(
+        css,
+      )?.[1];
+      if (!referencedUrl) throw new Error("Expected a CSS asset URL.");
+      const referencedPath = new URL(
+        referencedUrl,
+        `https://evjs.invalid/${cssAsset}`,
+      ).pathname.slice(1);
+      const html = await fs.readFile(
+        path.join(clientDir, "home/index.html"),
+        "utf-8",
+      );
+
+      expect(html).toContain(`href="/${cssAsset}"`);
+      await expect(
+        fs.readFile(path.join(clientDir, referencedPath), "utf-8"),
+      ).resolves.toBe(logo);
+      await expect(
+        fs.access(path.join(clientDir, "private.pem")),
+      ).rejects.toThrow();
+      await expect(
+        fs.access(path.join(cwd, "dist/server/page-server-home.cjs")),
+      ).rejects.toThrow();
     },
   );
 
@@ -984,6 +2336,122 @@ describe("webpackAdapter build", () => {
 });
 
 describe("webpackAdapter dev", () => {
+  devIt(
+    "cleans up a listening dev server when initial artifact linking fails",
+    async () => {
+      const port = await getAvailablePort();
+      const cwd = await createFixture({
+        "index.html":
+          '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
+        "src/pages/home/page.tsx":
+          "export default function Home() { return null; }",
+      });
+      const config = await resolveProjectConfig(cwd, {
+        dev: { port },
+        routing: { mode: "mpa", mount: "#root" },
+      });
+      const analysis = await createCoreGraph(config, cwd);
+      const plan = await materializeTestPlan({
+        config,
+        cwd,
+        graph: analysis.graph,
+        plan: createBuildPlan(config, analysis.graph, { mode: "development" }),
+      });
+
+      await expect(
+        webpackAdapter.dev({
+          config,
+          cwd,
+          plan,
+          hooks: [],
+          callbacks: {
+            async onBuildFacts() {
+              throw new Error("initial artifact failure");
+            },
+            async onServerBundleReady() {},
+          },
+        }),
+      ).rejects.toThrow("initial artifact failure");
+
+      await expectPortCanListen(port);
+    },
+  );
+
+  devIt("serves a no-client SSG plan through the static dev host", async () => {
+    const port = await getAvailablePort();
+    const cwd = await createFixture({
+      "index.html":
+        '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
+      "src/pages/home/page.tsx": `
+        import { createElement } from "react";
+        export default function Home() {
+          return createElement("h1", null, "Static home");
+        }
+      `,
+      "src/pages/home/page.config.ts":
+        'export default { render: "ssg", hydrate: "none" };',
+    });
+    const config = await resolveProjectConfig(cwd, {
+      dev: { port },
+      output: { client: "dist/client", server: "dist/server" },
+      routing: { mode: "mpa", mount: "#root" },
+    });
+    const analysis = await createCoreGraph(config, cwd);
+    const plan = await materializeTestPlan({
+      config,
+      cwd,
+      graph: analysis.graph,
+      plan: createBuildPlan(config, analysis.graph, { mode: "development" }),
+    });
+    const frameworkConfig = {
+      ...config,
+      bundler: undefined,
+      plugins: [],
+    };
+
+    const controller = await webpackAdapter.dev({
+      config,
+      cwd,
+      plan,
+      hooks: [],
+      callbacks: {
+        async onBuildFacts(facts, options) {
+          await linkAndEmitBuildOutput({
+            bundlerFacts: facts,
+            graph: analysis.graph,
+            plan,
+            config: frameworkConfig,
+            cwd,
+            hooks: [],
+            pluginCtx: {
+              mode: "development",
+              command: "dev",
+              cwd,
+              config: frameworkConfig,
+              logger: console as never,
+              addWatchFile() {},
+            },
+            isRebuild: options?.isRebuild ?? false,
+          });
+        },
+        async onServerBundleReady() {},
+      },
+    });
+    if (!controller) throw new Error("Expected webpack dev controller");
+    try {
+      const response = await fetchDevResponse(`http://127.0.0.1:${port}/home`);
+      expect(plan.entries.some((entry) => entry.environment === "client")).toBe(
+        false,
+      );
+      expect(plan.dev.serverRenderedPagePaths).toEqual([]);
+      expect(response.status).toBe(200);
+      expect(response.text).toContain("Static home");
+      expect(response.text).not.toContain("<script src=");
+    } finally {
+      await controller.close?.();
+    }
+  });
+
   devIt(WEBPACK_DEV_TEST_NAMES.starts, async () => {
     const port = await getAvailablePort();
     const cwd = await createFixture({
@@ -998,7 +2466,7 @@ describe("webpackAdapter dev", () => {
       `,
     });
     const config = await resolveProjectConfig(cwd, {
-      output: { client: "dist" },
+      output: { client: "dist/client", server: "dist/server" },
       dev: { port },
       routing: { mode: "mpa", mount: "#root" },
     });
@@ -1087,7 +2555,7 @@ describe("webpackAdapter dev", () => {
     });
     const config = await resolveProjectConfig(cwd, {
       dev: { port },
-      output: { client: "dist" },
+      output: { client: "dist/client", server: "dist/server" },
       routing: { mode: "spa" },
     });
     const analysis = await createCoreGraph(config, cwd);
@@ -1210,7 +2678,7 @@ describe("webpackAdapter dev", () => {
     }
   });
 
-  devIt(WEBPACK_DEV_TEST_NAMES.apiRewrite, async () => {
+  devIt(WEBPACK_DEV_TEST_NAMES.unclaimedApiFallback, async () => {
     const port = await getAvailablePort();
     const cwd = await createFixture({
       "index.html":
@@ -1218,7 +2686,7 @@ describe("webpackAdapter dev", () => {
       "src/pages/page.tsx": "export default function Home() { return null; }",
     });
     const config = await resolveProjectConfig(cwd, {
-      output: { client: "dist" },
+      output: { client: "dist/client", server: "dist/server" },
       dev: { port },
       routing: { mode: "spa" },
     });
@@ -1253,8 +2721,14 @@ describe("webpackAdapter dev", () => {
           headers: { Accept: "text/html" },
         },
       );
-      const frameworkApi = await fetchDevResponse(
+      const frameworkNamespacePage = await fetchDevResponse(
         `http://127.0.0.1:${port}/__evjs/unknown`,
+        {
+          headers: { Accept: "text/html" },
+        },
+      );
+      const functionChildPage = await fetchDevResponse(
+        `http://127.0.0.1:${port}/__evjs/fn/child`,
         {
           headers: { Accept: "text/html" },
         },
@@ -1262,19 +2736,12 @@ describe("webpackAdapter dev", () => {
 
       expect(page.status).toBe(200);
       expect(page.text).toContain("app shell");
-      expect(api.status).toBe(404);
-      expect(api.headers.get("Content-Type")).toContain("application/json");
-      expect(JSON.parse(api.text)).toEqual({
-        error: {
-          code: "EVJS_API_NOT_FOUND",
-          message: "No API route matched /api/unknown.",
-        },
-      });
-      expect(frameworkApi.status).toBe(404);
-      expect(frameworkApi.headers.get("Content-Type")).toContain("text/plain");
-      expect(frameworkApi.text).toContain(
-        "No framework route matched /__evjs/unknown.",
-      );
+      expect(api.status).toBe(200);
+      expect(api.text).toContain("app shell");
+      expect(frameworkNamespacePage.status).toBe(200);
+      expect(frameworkNamespacePage.text).toContain("app shell");
+      expect(functionChildPage.status).toBe(200);
+      expect(functionChildPage.text).toContain("app shell");
     } finally {
       await controller?.close?.();
     }
@@ -1296,7 +2763,7 @@ describe("webpackAdapter dev", () => {
       `,
     });
     const config = await resolveProjectConfig(cwd, {
-      output: { client: "dist" },
+      output: { client: "dist/client", server: "dist/server" },
       dev: { port },
       routing: { mode: "mpa", html: "./index.html", mount: "#root" },
     });
@@ -1336,7 +2803,7 @@ describe("webpackAdapter dev", () => {
     });
     try {
       const nextConfig = await resolveProjectConfig(cwd, {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         dev: { port },
         routing: { mode: "mpa", html: "./next.html", mount: "#root" },
       });
@@ -1386,7 +2853,7 @@ describe("webpackAdapter dev", () => {
         "src/pages/home/page.config.ts": 'export default { render: "ssr" };',
       });
       const config = await resolveProjectConfig(cwd, {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         dev: { port },
         routing: { mode: "mpa", mount: "#root" },
       });
@@ -1442,6 +2909,9 @@ describe("webpackAdapter dev", () => {
         expect(update.entries.changed).toHaveLength(0);
         expect(update.html.changed).toHaveLength(0);
         expect(update.generatedChanged).toBe(true);
+        expect(update.serverCompilationChanged).toBe(false);
+        expect(update.serverDocumentsChanged).toBe(true);
+        expect(update.devRoutingChanged).toBe(false);
         expect(onServerBundleReady).toHaveBeenCalled();
       } finally {
         await controller?.close?.();
@@ -1463,7 +2933,7 @@ describe("webpackAdapter dev", () => {
       `,
     });
     const config = await resolveProjectConfig(cwd, {
-      output: { client: "dist" },
+      output: { client: "dist/client", server: "dist/server" },
       dev: { port },
       routing: { mode: "mpa", mount: "#root" },
     });
@@ -1515,7 +2985,7 @@ describe("webpackAdapter dev", () => {
         "utf-8",
       );
       const nextConfig = await resolveProjectConfig(cwd, {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         dev: { port },
         routing: { mode: "mpa", mount: "#root" },
       });
@@ -1532,7 +3002,7 @@ describe("webpackAdapter dev", () => {
 
       failBundlerConfig = true;
       await expect(controller?.updatePlan(update)).rejects.toThrow(
-        "forced update failure",
+        "cannot safely replace persistent compiler entries",
       );
 
       const session = controller as unknown as {
@@ -1560,7 +3030,7 @@ describe("webpackAdapter dev", () => {
       `,
     });
     const config = await resolveProjectConfig(cwd, {
-      output: { client: "dist" },
+      output: { client: "dist/client", server: "dist/server" },
       dev: { port },
       routing: { mode: "mpa", mount: "#root" },
     });
@@ -1589,11 +3059,6 @@ describe("webpackAdapter dev", () => {
       hooks: [],
       callbacks: framework.callbacks,
     });
-    const stopSpy = vi.spyOn(
-      controller as unknown as { stop(): Promise<void> },
-      "stop",
-    );
-
     try {
       await fs.mkdir(path.join(cwd, "src/pages/about"), { recursive: true });
       await fs.writeFile(
@@ -1609,7 +3074,7 @@ describe("webpackAdapter dev", () => {
       );
 
       const nextConfig = await resolveProjectConfig(cwd, {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         dev: { port },
         routing: { mode: "mpa", mount: "#root" },
       });
@@ -1626,32 +3091,20 @@ describe("webpackAdapter dev", () => {
       const buildOutputCallsBeforeUpdate = onBuildOutput.mock.calls.length;
 
       framework.update(nextAnalysis.graph, nextPlan);
-      await controller?.updatePlan(update);
-
-      const output = onBuildOutput.mock.calls.at(-1)?.[0];
-      if (!output) throw new Error("Expected linked BuildOutput.");
-      const manifest = createPublicManifest(output);
-      const html = await fetchDevText(
-        `http://127.0.0.1:${port}/about/index.html`,
+      await expect(controller?.updatePlan(update)).rejects.toThrow(
+        "cannot safely replace persistent compiler entries",
       );
 
       expect(update.entries.added.map((entry) => entry.name)).toEqual([
         createPageClientBuildEntryName("about"),
       ]);
-      expect(manifest).not.toHaveProperty("assets");
-      if (!("routing" in manifest) || manifest.routing.kind !== "mpa") {
-        throw new Error("Expected MPA public manifest.");
-      }
-      expect(manifest.routing.pages.about.assets.js).toEqual([
-        "page-client-about.js",
+      expect(onBuildOutput).toHaveBeenCalledTimes(buildOutputCallsBeforeUpdate);
+      const session = controller as unknown as {
+        plan: { entries: Array<{ name: string }> };
+      };
+      expect(session.plan.entries.map((entry) => entry.name)).toEqual([
+        createPageClientBuildEntryName("home"),
       ]);
-      expect(html).toContain('data-evjs-kind="page"');
-      expect(html).toContain('data-evjs-id="about"');
-      expect(html).toContain('src="/page-client-about.js"');
-      expect(onBuildOutput.mock.calls.length).toBeGreaterThan(
-        buildOutputCallsBeforeUpdate,
-      );
-      expect(stopSpy).not.toHaveBeenCalled();
     } finally {
       await controller?.close?.();
     }
@@ -1705,6 +3158,10 @@ async function canListenOnPort(port: number): Promise<boolean> {
       server.close(() => resolve(true));
     });
   });
+}
+
+async function expectPortCanListen(port: number): Promise<void> {
+  await expect(canListenOnPort(port)).resolves.toBe(true);
 }
 
 interface DevResponse {

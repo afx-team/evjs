@@ -32,6 +32,7 @@ import {
 } from "./convention-config.js";
 import { validateHtmlTemplates } from "./framework-output.js";
 import { createCoreGraph } from "./graph/index.js";
+import { CANONICAL_PAGE_ROUTE_ROOT } from "./page-route-conventions.js";
 import { createPageRouteNodesFromCoreGraph } from "./page-route-types.js";
 import type { PageRouteDiscovery } from "./page-routes.js";
 import { resolvePluginExtensionState } from "./plugin-extensions.js";
@@ -179,7 +180,7 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
       allowEmptyRoutes: true,
       reportDiagnostics: false,
       syncRouteTypes: false,
-      onDiscovery(base, discovery) {
+      onDiscovery(_base, discovery) {
         pageRouteDiscovery = discovery;
         diagnostics.push(
           ...discovery.diagnostics.map((diagnostic) =>
@@ -196,7 +197,7 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
           diagnostics.push({
             level: "error",
             source: "page-routes",
-            message: createNoPageRoutesFoundMessage(base.dir),
+            message: createNoPageRoutesFoundMessage(),
           });
         }
       },
@@ -434,7 +435,7 @@ function createInspectRouting<TBundlerCfg>(
   if (config.routing) {
     return {
       routingMode: config.routing.mode,
-      pageRoot: config.routing.dir,
+      pageRoot: CANONICAL_PAGE_ROUTE_ROOT,
       document: {
         template: config.routing.html,
         mount: config.routing.mount,

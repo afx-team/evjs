@@ -83,7 +83,6 @@ describe.each(BUNDLERS)("build notifier plugin [%s]", (_name, bundler) => {
     };
 
     await build({
-      output: { client: "dist" },
       bundler,
       plugins: [buildNotifier],
     });
@@ -128,7 +127,6 @@ describe.each(BUNDLERS)("deployment manifest plugin [%s]", (_name, bundler) => {
     };
 
     await build({
-      output: { client: "dist" },
       bundler,
       plugins: [deployPlugin],
     });
@@ -208,14 +206,13 @@ describe.each(
     };
 
     await build({
-      output: { client: "dist" },
       bundler,
       plugins: [htmlPlugin],
     });
 
     // Read the emitted index.html and verify the meta tag
     const html = fs.readFileSync(
-      path.join(CSR_APP, "dist", "index.html"),
+      path.join(CSR_APP, "dist", "client", "index.html"),
       "utf-8",
     );
     expect(html).toContain('<meta name="generator" content="evjs">');
@@ -238,13 +235,12 @@ describe.each(
     };
 
     await build({
-      output: { client: "dist" },
       bundler,
       plugins: [commentPlugin],
     });
 
     const html = fs.readFileSync(
-      path.join(CSR_APP, "dist", "index.html"),
+      path.join(CSR_APP, "dist", "client", "index.html"),
       "utf-8",
     );
     expect(html).toMatch(/<!--\s+\d+ JS asset\(s\)\s+-->/);
@@ -284,13 +280,12 @@ describe.each(BUNDLERS)("transformHtml composition [%s]", (_name, bundler) => {
     };
 
     await build({
-      output: { client: "dist" },
       bundler,
       plugins: [plugin1, plugin2],
     });
 
     const html = fs.readFileSync(
-      path.join(CSR_APP, "dist", "index.html"),
+      path.join(CSR_APP, "dist", "client", "index.html"),
       "utf-8",
     );
     // Both plugins should have mutated the same document

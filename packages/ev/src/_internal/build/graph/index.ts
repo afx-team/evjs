@@ -32,8 +32,10 @@ import {
 } from "../page-config-module.js";
 import { analyzePageModuleExports } from "../page-module-config.js";
 import { getPageBuildContractViolation } from "../page-rendering-contract.js";
-import { routePathShapeFromPath } from "../page-route-conventions.js";
-import { sortPageRoutes } from "../page-route-order.js";
+import {
+  CANONICAL_PAGE_ROUTE_ROOT,
+  routePathShapeFromPath,
+} from "../page-route-conventions.js";
 import {
   applyPluginExtensions,
   type PluginExtensionRegistry,
@@ -43,6 +45,7 @@ import {
   extractPprRegionModuleConfig,
   extractPprRegions,
 } from "../ppr-regions.js";
+import { sortRoutesBySpecificity } from "../route-order.js";
 import {
   extractRscReferences,
   hasBlockingReferenceParseDiagnostic,
@@ -105,7 +108,6 @@ export interface GraphConfig {
   extensions?: Readonly<Record<string, unknown>>;
   routing?: {
     mode: "spa" | "mpa";
-    dir: string;
     html: string;
     mount: string;
     routes: PageRouteNode[];
@@ -181,8 +183,8 @@ export async function createCoreGraph(
   // watched framework graph set.
   const fileDependencies = new Set(sourceFiles.explicitDependencyFiles);
   if (config.routing) {
-    const routingDir = path.resolve(cwd, config.routing.dir);
-    for (const dir of await collectRouteDirectories(routingDir)) {
+    const pageRoot = path.resolve(cwd, CANONICAL_PAGE_ROUTE_ROOT);
+    for (const dir of await collectRouteDirectories(pageRoot)) {
       fileDependencies.add(dir);
     }
     for (const dependency of config.routing.dependencies ?? []) {
@@ -840,7 +842,7 @@ function validateConfiguredPageRoutes(
     validRoutes.push(normalizedRoute);
   }
 
-  return sortPageRoutes(
+  return sortRoutesBySpecificity(
     validRoutes.filter((route) => {
       if (!route.parentId) return true;
       const parent = routeById.get(route.parentId);

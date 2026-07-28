@@ -1,11 +1,12 @@
 import path from "node:path";
+import { isReservedServerRouteParamName } from "@evjs/shared";
 import {
-  findPageRouteSegmentConventionViolation,
-  isPageRouteGroupSegment,
-  isPageRouteSourceModuleFile,
-  normalizePageRouteConventionPath,
-  type PageRouteSegmentConventionViolation,
-} from "./page-route-conventions.js";
+  findRouteSegmentConventionViolation,
+  isRouteGroupSegment,
+  isRouteSourceModuleFile,
+  normalizeRouteConventionPath,
+  type RouteSegmentConventionViolation,
+} from "./route-conventions.js";
 
 export const SERVER_ROUTE_ENTRY_BASENAME = "api";
 export const SERVER_ROUTE_ENTRY_LABEL = "api.ts, api.tsx, api.js, or api.jsx";
@@ -23,9 +24,9 @@ export interface ServerRouteAnchorConvention {
 export function parseServerRouteAnchorFile(
   routeRel: string,
 ): ServerRouteAnchorConvention | undefined {
-  const normalizedRouteRel = normalizePageRouteConventionPath(routeRel);
+  const normalizedRouteRel = normalizeRouteConventionPath(routeRel);
   const basename = path.posix.basename(normalizedRouteRel);
-  if (!isPageRouteSourceModuleFile(basename)) return undefined;
+  if (!isRouteSourceModuleFile(basename)) return undefined;
 
   const extension = path.posix.extname(normalizedRouteRel);
   const withoutExtension = normalizedRouteRel.slice(0, -extension.length);
@@ -37,17 +38,18 @@ export function parseServerRouteAnchorFile(
 /** Validate the directory segments that own one Server Route anchor. */
 export function findServerRouteSegmentConventionViolation(
   segments: string[],
-): PageRouteSegmentConventionViolation | undefined {
-  return findPageRouteSegmentConventionViolation(segments, {
+): RouteSegmentConventionViolation | undefined {
+  return findRouteSegmentConventionViolation(segments, {
     allowCasePreservingStatic: false,
     allowCatchAll: false,
+    isReservedParamName: isReservedServerRouteParamName,
   });
 }
 
 /** Derive the request path from a validated Server Route directory. */
 export function serverRoutePathFromSegments(segments: string[]): string {
   const pathSegments = segments
-    .filter((segment) => !isPageRouteGroupSegment(segment))
+    .filter((segment) => !isRouteGroupSegment(segment))
     .map((segment) =>
       segment.startsWith("$") ? `:${segment.slice(1)}` : segment,
     );
