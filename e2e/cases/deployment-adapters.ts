@@ -163,11 +163,14 @@ test.describe("deployment-adapters", () => {
         }),
       }),
     );
-    expect(
-      fs.readFileSync(path.join(exampleDir, "dist", "server.mjs"), "utf-8"),
-    ).toMatch(
-      /await import\(pathToFileURL\(path\.join\(serverDir, serverEntry\)\)\.href\)/,
+    const nodeServerModule = fs.readFileSync(
+      path.join(exampleDir, "dist", "server.mjs"),
+      "utf-8",
     );
+    expect(nodeServerModule).toContain(
+      "await import(pathToFileURL(resolveServerArtifact(serverEntry)).href)",
+    );
+    expect(nodeServerModule).toContain("if (!serverArtifacts.has(asset))");
 
     const staticArtifact = JSON.parse(
       fs.readFileSync(
