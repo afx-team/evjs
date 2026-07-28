@@ -9,15 +9,8 @@ import {
 } from "../src/rsc/react.js";
 import type {
   ClientRuntime,
-  ClientRuntimePage,
-  ClientRuntimeRoute,
   RuntimeTransportOptions,
 } from "../src/shared/runtime-config.js";
-
-type LegacyClientRuntime = ClientRuntime & {
-  pages: Record<string, ClientRuntimePage>;
-  routes: ClientRuntimeRoute[];
-};
 
 const calls: string[] = [];
 const renderedElements: unknown[] = [];
@@ -117,64 +110,6 @@ describe("createReactPageModule", () => {
     expect(calls).toEqual(["hydrateRoot", "unmount"]);
   });
 
-  it("defers visible hydration until the mount point intersects", async () => {
-    calls.length = 0;
-    let notifyVisible:
-      | ((entries: IntersectionObserverEntry[]) => void)
-      | undefined;
-    const disconnect = vi.fn();
-    vi.stubGlobal(
-      "IntersectionObserver",
-      class {
-        constructor(callback: (entries: IntersectionObserverEntry[]) => void) {
-          notifyVisible = callback;
-        }
-        observe() {}
-        disconnect = disconnect;
-      },
-    );
-    const mountPoint = {} as Element;
-    const mod = createReactPageModule({
-      component: Component,
-      render: "ssr",
-      hydrate: "visible",
-    });
-
-    await mod.hydrate?.(mountPoint, {} as never);
-    expect(calls).toEqual([]);
-
-    notifyVisible?.([{ isIntersecting: true } as IntersectionObserverEntry]);
-    expect(calls).toEqual(["hydrateRoot"]);
-    expect(disconnect).toHaveBeenCalledOnce();
-  });
-
-  it("defers idle hydration and cancels pending work on unmount", async () => {
-    calls.length = 0;
-    let runIdle: (() => void) | undefined;
-    const cancelIdleCallback = vi.fn();
-    vi.stubGlobal("requestIdleCallback", (callback: () => void) => {
-      runIdle = callback;
-      return 7;
-    });
-    vi.stubGlobal("cancelIdleCallback", cancelIdleCallback);
-    const firstMount = {} as Element;
-    const secondMount = {} as Element;
-    const mod = createReactPageModule({
-      component: Component,
-      render: "ssr",
-      hydrate: "idle",
-    });
-
-    await mod.hydrate?.(firstMount, {} as never);
-    expect(calls).toEqual([]);
-    runIdle?.();
-    expect(calls).toEqual(["hydrateRoot"]);
-
-    await mod.hydrate?.(secondMount, {} as never);
-    await mod.unmount?.(secondMount, {} as never);
-    expect(cancelIdleCallback).toHaveBeenCalledWith(7);
-  });
-
   it("replaces an existing React page root on the same mount point", async () => {
     calls.length = 0;
     renderedElements.length = 0;
@@ -267,7 +202,7 @@ describe("createReactPageModule", () => {
         hydrate: "always" as never,
       }),
     ).toThrow(
-      '[evjs] createReactPageModule() hydrate must be "none", "load", "visible", or "idle".',
+      '[evjs] createReactPageModule() hydrate must be "none" or "load".',
     );
     expect(() =>
       createReactPageModule({
@@ -298,6 +233,20 @@ describe("createReactPageModule", () => {
       }),
     ).toThrow(
       "[evjs] createReactPageModule() route.path must not include leading or trailing whitespace.",
+    );
+  });
+
+  it.each([
+    "visible",
+    "idle",
+  ])("rejects the unsupported %s hydration mode", (hydrate) => {
+    expect(() =>
+      createReactPageModule({
+        component: Component,
+        hydrate: hydrate as never,
+      }),
+    ).toThrow(
+      '[evjs] createReactPageModule() hydrate must be "none" or "load".',
     );
   });
 
@@ -411,23 +360,23 @@ describe("createReactPageModule", () => {
       pathname: "/users/settings",
       search: "",
     });
-    const runtime: LegacyClientRuntime = {
+    const runtime: ClientRuntime = {
       ...createRscRuntime(),
-      pages: {
-        profile: {},
+      routing: {
+        kind: "spa",
+        routes: [
+          {
+            id: "user",
+            path: "/users/$userId",
+            pageId: "profile",
+          },
+          {
+            id: "settings",
+            path: "/users/settings",
+            pageId: "profile",
+          },
+        ],
       },
-      routes: [
-        {
-          id: "user",
-          path: "/users/$userId",
-          pageId: "profile",
-        },
-        {
-          id: "settings",
-          path: "/users/settings",
-          pageId: "profile",
-        },
-      ],
     };
     const mod = createReactPageModule({
       component: Component,
@@ -441,7 +390,7 @@ describe("createReactPageModule", () => {
         id: "profile",
         kind: "page",
         runtime,
-        output: runtime.pages.profile,
+        output: {},
         request: { url: "/users/settings" },
       } as never,
     );
@@ -647,8 +596,7 @@ describe("fetchRscFlight", () => {
             rsc: "__evjs/rsc",
           },
         },
-        pages: {},
-        routes: [],
+        routing: { kind: "spa", routes: [] },
       },
       pageId: "dashboard",
       url: "https://example.com/dashboard?tab=comments&tag=a&tag=b",
@@ -1227,7 +1175,6 @@ function createRscRuntime(): ClientRuntime {
         rsc: "__evjs/rsc",
       },
     },
-    pages: {},
-    routes: [],
+    routing: { kind: "spa", routes: [] },
   };
 }

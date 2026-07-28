@@ -6,8 +6,10 @@ import { describe, expect, it } from "vitest";
 describe("defineConfig", () => {
   it("returns the config object unchanged", () => {
     const config: Config = {
-      server: { routing: true },
-      app: { entry: "./src/app.tsx" },
+      conventions: false,
+      application: {
+        routes: [{ path: "/", page: "home" }],
+      },
     };
     expect(defineConfig(config)).toBe(config);
   });
@@ -24,8 +26,10 @@ describe("defineConfig", () => {
       dev: { port: 4000 },
     };
     const config: Config = {
-      app: { entry: "./src/main.tsx" },
-      html: "./public/index.html",
+      routing: {
+        mode: "spa",
+        html: "./public/index.html",
+      },
       dev: {
         port: 5000,
         https: true,
@@ -38,7 +42,6 @@ describe("defineConfig", () => {
 
 describe("CONFIG_DEFAULTS", () => {
   it("has expected default values", () => {
-    expect(CONFIG_DEFAULTS.entry).toBe("./src/main.tsx");
     expect(CONFIG_DEFAULTS.html).toBe("./index.html");
     expect(CONFIG_DEFAULTS.port).toBe(3000);
     expect(CONFIG_DEFAULTS.serverPort).toBe(3001);
@@ -52,7 +55,6 @@ describe("CONFIG_DEFAULTS", () => {
     // TypeScript enforces this via `as const`, but verify no accidental mutation
     expect(Object.isFrozen(CONFIG_DEFAULTS)).toBe(false); // as const doesn't freeze at runtime
     expect(CONFIG_DEFAULTS).toEqual({
-      entry: "./src/main.tsx",
       html: "./index.html",
       port: 3000,
       serverPort: 3001,
@@ -61,7 +63,6 @@ describe("CONFIG_DEFAULTS", () => {
       outputClientDir: "dist/client",
       outputServerDir: "dist/server",
       routingDir: "./src/pages",
-      routingMode: "spa",
       serverRoutingDir: "./src/apis",
       serverMiddlewareFile: "./src/middleware.ts",
       mount: "#app",

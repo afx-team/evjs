@@ -1,100 +1,134 @@
 # Quick Start
 
-## Create a New Project
+## Create A Project
 
 ```bash
 npx @evjs/create-app my-app
-cd my-app && npm install
+cd my-app
+npm install
+npm run dev
 ```
 
-Both arguments are optional — if omitted, the CLI prompts interactively.
+The development server prints the selected browser and server URLs.
 
-### Available Templates
+## Define The Application
 
-| Template | Description |
-|----------|-------------|
-| `basic` | Routing + server functions |
-| `mpa` | Multi-page application setup |
-| `api-routes` | REST API routes via default server file routes |
-| `complex-routing` | Params, search, root layout, loaders, nested paths |
-| `with-tailwind` | Tailwind CSS via PostCSS |
-| `with-trpc` | tRPC interop example |
-| `with-sqlite` | Full-stack CRUD with SQLite |
-| `custom-ws-transport` | Custom WebSocket transport |
-| `plugin-authoring` | Plugin lifecycle and bundler hook examples |
+Create `ev.config.ts` and choose the output mode:
 
-## Development
+```ts
+import { defineConfig } from "@evjs/ev";
 
-```bash
-ev dev
+export default defineConfig({
+  routing: {
+    mode: "spa",
+  },
+});
 ```
 
-The dev server runs at `http://localhost:3000` with Hot Module Replacement.
-Server functions in reachable `"use server"` modules are auto-discovered from
-app, page, server file-route, and server middleware convention import graphs.
+Create two Page routes:
 
-## Production Build
-
-```bash
-ev build
+```text
+src/pages/
+├── page.tsx                         # /
+└── about/
+    └── page.tsx                     # /about
 ```
-
-## Project Structure
-
-```
-my-app/
-├── .gitignore              # Ignores generated evjs type files
-├── index.html              # HTML template (must have <div id="app">)
-├── ev.config.ts            # Optional config
-├── src/
-│   ├── layout/
-│   │   └── index.tsx       # Optional SPA root layout
-│   ├── pages/              # Page routes
-│   │   ├── index.tsx       # /
-│   │   └── users/$id.tsx   # /users/$id
-│   ├── apis/               # Server file routes
-│   │   ├── users.server.ts # "use server" functions
-│   │   └── api/
-│   │       └── health.ts   # /api/health
-│   └── middleware.ts       # Global server middleware
-├── package.json
-└── tsconfig.json
-```
-
-## Pages
 
 ```tsx
-// src/pages/users/$id.tsx
-import { usePageParams } from "@evjs/ev/route";
-import { useQuery } from "@evjs/ev/query";
-import { getUser } from "../../apis/users.server";
+// src/pages/page.tsx
+import { Link } from "@evjs/ev/navigation";
 
-export default function UserPage() {
-  const { id } = usePageParams();
-  const { data } = useQuery(getUser, id);
-  return <main>{data?.name}</main>;
+export default function HomePage() {
+  return (
+    <main>
+      <h1>Home</h1>
+      <Link to="/about">About</Link>
+    </main>
+  );
 }
 ```
 
-When `src/pages` exists and the project does not declare explicit `app`,
-`pages` config, evjs automatically builds an SPA from the file
-tree. The generated routing glue stays inside the framework; SPA mode only
-writes `src/route-types.d.ts` for TypeScript and scaffolded apps ignore it
-by default.
+```tsx
+// src/pages/about/page.tsx
+export default function AboutPage() {
+  return <h1>About</h1>;
+}
+```
 
-SPA root layout discovery is optional. Use `src/layout/index.tsx` beside the
-default route directory, or set `routing.conventions.layout` to another module
-path when the shell intentionally lives elsewhere. Nested SPA route layouts can
-live below a route segment, such as `src/pages/posts/layout.tsx`.
+`page.*` is the Page and Route anchor. Its relative directory determines the
+URL, so there is no separate route declaration.
 
-## MPA Mode
-
-Use the same `src/pages` files for an MPA and switch the routing mode:
+When a Page needs build-time capabilities, add `page.config.ts` beside it:
 
 ```ts
-// ev.config.ts
-import { defineConfig } from "@evjs/ev";
+import { definePageConfig } from "@evjs/ev";
 
+export default definePageConfig({
+  title: "About",
+  meta: {
+    description: "About this application",
+    keywords: "evjs,about",
+    viewport: "width=device-width, initial-scale=1",
+    "theme-color": "#ffffff",
+  },
+  render: "csr",
+});
+```
+
+`title` and `meta` are static core Page metadata. `meta` emits only
+`<meta name="..." content="...">` entries. Plugin-owned values use registered
+namespaced keys under `extensions`; those extension values are not
+automatically sent to browser runtime.
+
+## Page-Private Code
+
+Keep components, hooks, models, services, tests, styles, and assets inside the
+Page directory:
+
+```text
+src/pages/about/
+├── page.tsx
+├── page.config.ts
+├── index.ts
+├── model.ts
+├── use-about.ts
+└── components/
+    └── Team.tsx
+```
+
+Only `page.*` creates a Page and Route. Every other file, including `index.*`,
+is ordinary private source and needs no `_` prefix.
+
+## Add A Dynamic Route
+
+Use a `$param` directory:
+
+```text
+src/pages/
+└── users/
+    └── $userId/
+        └── page.tsx                 # /users/:userId
+```
+
+```tsx
+// src/pages/users/$userId/page.tsx
+import { usePageParams } from "@evjs/ev/route";
+
+export default function UserDetailPage() {
+  const { userId } = usePageParams();
+  return <h1>User {userId}</h1>;
+}
+```
+
+Static directories create static URL segments. A terminal `$...splat`
+directory creates a catch-all, and `(group)` organizes routes without adding a
+URL segment.
+
+## Switch To MPA
+
+The Page tree does not move. Change only the materialization mode:
+
+```ts
 export default defineConfig({
   routing: {
     mode: "mpa",
@@ -102,75 +136,104 @@ export default defineConfig({
 });
 ```
 
-Each page is emitted as its own HTML document and client entry without
-SPA router setup. Framework layout conventions are SPA-only; MPA pages compose
-shared wrappers as normal components and do not accept
-`routing.conventions.layout`.
+SPA materializes the tree as browser Client Routes, normally under one shared
+Document. MPA starts from the same semantic Pages and Routes and materializes
+Page-owned Documents. A Page-local `index.html` can provide its MPA Document
+template. MPA currently accepts only static Page paths: `$param`, terminal
+`$...splat`, and router-only boundaries fail during inspect/build. Layouts
+compose in both modes.
 
-## Packages
+## Add A Server Function
 
-| Package | Purpose |
-|---------|---------|
-| [`@evjs/ev`](https://github.com/evaijs/evjs/tree/main/packages/ev) | Framework API, config, plugins, build orchestration, deployment helpers, and file-convention authoring subpaths |
-| [`@evjs/cli`](https://github.com/evaijs/evjs/tree/main/packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`, `ev prepare`, `ev inspect`) with the default bundler |
-| [`@evjs/create-app`](https://github.com/evaijs/evjs/tree/main/packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
-| [`@evjs/client`](https://github.com/evaijs/evjs/tree/main/packages/client) | Standalone/manual browser runtime core for apps that do not use evjs file conventions |
-| [`@evjs/server`](https://github.com/evaijs/evjs/tree/main/packages/server) | Standalone/manual server runtime core for hand-written Hono/fetch apps and route primitives |
-| [`@evjs/plugin-qiankun`](https://github.com/evaijs/evjs/tree/main/packages/plugin-qiankun) | Optional qiankun master/slave micro-frontend bridge plugin |
+Server functions can live beside the Page that calls them:
 
-Manifest schemas, build tools, generated page runtime, and shell internals are
-internal modules under the public packages above. Application config/build code
-imports framework composition APIs from `@evjs/ev`. File-convention application
-source imports route data helpers from `@evjs/ev/route`, navigation helpers from `@evjs/ev/navigation`, query helpers from `@evjs/ev/query`, request helpers from
-`@evjs/ev/server-context`, and custom server-function transport helpers from
-`@evjs/ev/transport`. Browser-only CSR apps that own their build pipeline can
-use `@evjs/client` without depending on `@evjs/ev`.
-The `@evjs/ev/*` subpaths are curated around evjs file-convention authoring
-semantics. They are not mirrors of `@evjs/client` or `@evjs/server`, which are
-lower-level standalone/manual runtime packages.
-Use `@evjs/cli` and `@evjs/create-app` as tools, not application imports.
-Bundler adapters such as `@evjs/bundler-utoopack` and shared contract modules
-such as `@evjs/shared` are only for custom framework tooling or adapter work.
+```ts
+// src/pages/get-message.server.ts
+"use server";
 
-Generated framework code resolves client and server runtime internals through
-`@evjs/ev/_internal/*`, so ordinary file-convention apps do not install
-`@evjs/client` or `@evjs/server` directly.
-
-## Required Dependencies
-
-```json
-{
-  "dependencies": {
-    "@evjs/ev": "<same version>",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
-  },
-  "devDependencies": {
-    "@evjs/cli": "<same version>",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "typescript": "^6.0.2"
-  }
+export async function getMessage() {
+  return "Hello from the server";
 }
 ```
 
-:::important
+```tsx
+// src/pages/page.tsx
+import { useQuery } from "@evjs/ev/query";
+import { getMessage } from "./get-message.server";
 
-Keep all `@evjs/*` packages in your app on the same version. Declare runtime
-packages only when application source imports the standalone/manual runtime
-surfaces directly. Scaffolded file-convention templates include `@evjs/ev` and
-`@evjs/cli`; `@evjs/client` and `@evjs/server` are runtime dependencies of
-`@evjs/ev` for generated framework code. If you add adapter packages, upgrade
-them together with the rest of the framework packages.
+export default function HomePage() {
+  const { data } = useQuery(getMessage);
+  return <h1>{data}</h1>;
+}
+```
 
-:::
+## Add A Server Route
 
-## Key Rules
+Server request Routes use a separate positive `api.*` anchor under `src/apis`:
 
-- Config file: `ev.config.ts` (not `evjs.config.ts`)
-- Import `defineConfig` from `@evjs/ev`.
-- HTML must have `<div id="app">` for the render target
-- Do NOT add `"type": "module"` to your **project's** `package.json` — the server bundle uses CJS format
-- Prefer `src/pages` as the route source of truth.
-- Keep `src/route-types.d.ts` generated and ignored; do not import it.
-- Use `routing.mode: "mpa"` for independent pages without a client router.
+```ts
+// src/apis/api/health/api.ts
+export function GET() {
+  return Response.json({ ok: true });
+}
+```
+
+The containing `api/health` directory creates `/api/health`. Client `page.*`
+routes and server request Routes are separate systems with symmetric positive
+anchors.
+
+## Build
+
+```bash
+npm run build
+```
+
+By default:
+
+- client output goes to `dist/client`;
+- server output goes to `dist/server`;
+- framework-generated IR lives under `.ev`.
+
+Treat `.ev`, `dist`, `src/route-types.d.ts`, and other generated artifacts as
+outputs. Do not edit them or copy them into templates.
+
+## Core Packages
+
+| Package | Purpose |
+| --- | --- |
+| `@evjs/cli` | `ev dev`, `ev build`, `ev inspect`, and related commands |
+| `@evjs/ev` | Config, plugins, build graph, deployment helpers, and app-facing subpaths |
+| `@evjs/ev/route` | Page params, search, and loader-data helpers |
+| `@evjs/ev/navigation` | `Link`, navigation, redirects, and outlets |
+| `@evjs/ev/query` | Server-function query and mutation helpers |
+| `@evjs/ev/server-context` | Request-context helpers |
+| `@evjs/ev/transport` | Custom client/server transport helpers |
+| `@evjs/client` | Standalone browser runtime primitives |
+| `@evjs/server` | Standalone server runtime primitives |
+
+Framework-owned Page applications import from `@evjs/ev` and its curated
+subpaths. Use `@evjs/client` and `@evjs/server` directly only for intentional
+standalone/manual runtime composition.
+
+## Existing Source Adoption
+
+Core 0.3 uses one canonical file-convention reader. For each published Page
+that uses another source anchor:
+
+1. Move or rename its entry to the directory that represents its URL and name
+   it `page.*`.
+2. Move Page title, supported named metadata, rendering, and plugin-owned
+   settings to adjacent `page.config.ts`.
+3. Keep Page-private code in that directory without `_` prefixes.
+4. Declare only `routing.mode: "spa"` or `"mpa"`.
+5. Run `ev inspect` and verify the Page/Route structure.
+
+Explicit `application.routes` is a separate, SPA-only configuration input. It
+may remain while source files are converted, but it cannot be combined with
+`routing` and never selects MPA. After converting the files, replace
+`application` with `routing.mode: "spa"`, then run `ev inspect`.
+
+An unrelated `src/pages` directory alone does not publish client routes.
+
+Next, read [Project Structure](./project-structure),
+[Client Routes](./client-routes), and [Configuration](./config).

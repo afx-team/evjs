@@ -1,16 +1,17 @@
+import { pageRoutePathShapeFromPath } from "../page-route-data.js";
 import type {
-  AppGraph,
   AssetGroup,
   BuildEntry,
   BuildOutput,
   BuildPlan,
+  CoreGraph,
+  CorePageNode,
   DeploymentDocumentOutput,
   DeploymentMetadata,
   DeploymentRouteOutput,
   DeploymentServerPageRenderOutput,
   HtmlDocumentOutput,
   HydrationMode,
-  PageNode,
   PageOutput,
   PageRenderingOutput,
   PublicDocumentOutput,
@@ -20,6 +21,7 @@ import type {
   ServerFunctionOutput,
   ServerRouteOutput,
 } from "./index.js";
+import { clonePageMetadata } from "./page-metadata.js";
 
 const EMPTY_ASSETS: AssetGroup = { js: [], css: [] };
 declare const URL: {
@@ -35,7 +37,7 @@ export interface BuildOutputServerModule {
 }
 
 export interface BuildOutputLinkInput {
-  graph: AppGraph;
+  graph: CoreGraph;
   plan: BuildPlan;
   clientEntryAssets?: Record<string, AssetGroup>;
   firstClientEntryAssets?: AssetGroup;
@@ -132,116 +134,145 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   }
 
   const apps = Object.fromEntries(
-    Object.entries(input.graph.apps).map(([id, app]) => {
-      const entry = findEntryByOwner({ appId: id }, "client");
-      const assets = entry ? clientAssetsForEntry(entry) : EMPTY_ASSETS;
-      const href = entry
-        ? assertClientRuntimeHref(entry, assets, `App "${id}"`)
-        : undefined;
-      return [
-        id,
-        {
-          assets,
-          document: cloneHtmlDocument(htmlDocuments.apps.get(id)),
-          mount: app.mount,
-          module: entry
-            ? {
-                type: "entry" as const,
-                href,
-              }
-            : undefined,
-        },
-      ];
-    }),
+    Object.entries(input.graph.applications)
+      .filter(([, app]) => shouldProjectApplicationToOutput(input.graph, app))
+      .map(([id, app]) => {
+        const entry = findEntryByOwner({ appId: id }, "client");
+        const assets = entry ? clientAssetsForEntry(entry) : EMPTY_ASSETS;
+        const href = entry
+          ? assertClientRuntimeHref(entry, assets, `App "${id}"`)
+          : undefined;
+        const document = app.documentIds
+          .map((documentId) => input.graph.documents[documentId])
+          .find((candidate) => candidate?.owner.kind === "application");
+        return [
+          id,
+          {
+            assets,
+            document: cloneHtmlDocument(htmlDocuments.apps.get(id)),
+            mount: document?.mount,
+            module: entry
+              ? {
+                  type: "entry" as const,
+                  href,
+                }
+              : undefined,
+          },
+        ] as const;
+      }),
   );
 
   const pages = Object.fromEntries(
-    Object.entries(input.graph.pages).map(([id, page]) => {
-      const entry = findEntryByOwner({ pageId: id }, "client");
-      const shellEntry = findEntryByOwner(
-        { pageId: id },
-        "server",
-        "ppr-shell",
-      );
-      const baseAssets = entry
-        ? clientAssetsForEntry(entry)
-        : isRscPage(page) && rscClientRuntimeEntry
-          ? clientAssetsForEntry(rscClientRuntimeEntry)
-          : EMPTY_ASSETS;
-      const href = entry
-        ? assertClientRuntimeHref(entry, baseAssets, `Page "${id}"`)
-        : undefined;
-      const serverCss = isRscPage(page)
-        ? [
-            ...serverCssForPage(id, "page-server"),
-            ...serverCssForPage(id, "rsc-page"),
-          ]
-        : isPartialPrerenderPage(page)
-          ? serverCssForPage(id, "ppr-shell")
-          : page.render === "ssr" || page.render === "ssg"
-            ? serverCssForPage(id, "page-server")
-            : [];
-      const assets = mergeAssetGroups(baseAssets, {
-        js: [],
-        css: serverCss,
-      });
-      return [
-        id,
-        {
-          assets,
-          document: cloneHtmlDocument(htmlDocuments.pages.get(id)),
-          render: page.render,
-          rendering: derivePageRendering(page),
-          path: page.path,
-          routeId: page.routeId,
-          componentModel: page.componentModel,
-          hydrate: effectivePageHydrate(page),
-          mount: page.mount,
-          prerender: page.prerender,
-          module: entry
-            ? {
-                type: page.component
-                  ? ("react-component" as const)
-                  : page.app
-                    ? ("lifecycle" as const)
-                    : ("entry" as const),
-                href,
-              }
-            : undefined,
-          ppr: isPartialPrerenderPage(page)
-            ? {
-                delivery: page.ppr?.delivery ?? "merge",
-                shell: serverAssetsForEntry(
-                  assertPprShellEntry(id, shellEntry),
-                ),
-                regions: Object.fromEntries(
-                  Object.entries(page.ppr?.regions ?? {}).map(
-                    ([regionId, region]) => {
-                      const regionEntry = assertPprRegionEntry(
-                        id,
-                        regionId,
-                        findEntryByOwner(
-                          { pageId: id, regionId },
-                          "server",
-                          "ppr-region",
-                        ),
-                      );
-                      return [
-                        regionId,
-                        {
-                          id: regionId,
-                          assets: serverAssetsForEntry(regionEntry),
-                          cache: region.cache,
-                        },
-                      ];
-                    },
+    Object.entries(input.graph.pages)
+      .filter(([, page]) => shouldProjectPageToOutput(input.graph, page))
+      .map(([id, page]) => {
+        const pageEntry = findEntryByOwner({ pageId: id }, "client");
+        const application = input.graph.applications[page.applicationId];
+        const applicationEntry =
+          application?.routingMode === "spa" &&
+          effectivePageHydrate(page) !== "none"
+            ? findEntryByOwner(
+                { appId: page.applicationId },
+                "client",
+                "app-client",
+              )
+            : undefined;
+        const entry = pageEntry ?? applicationEntry;
+        const shellEntry = findEntryByOwner(
+          { pageId: id },
+          "server",
+          "ppr-shell",
+        );
+        const baseAssets = entry
+          ? clientAssetsForEntry(entry)
+          : isRscPage(page) && rscClientRuntimeEntry
+            ? clientAssetsForEntry(rscClientRuntimeEntry)
+            : EMPTY_ASSETS;
+        const href = pageEntry
+          ? assertClientRuntimeHref(pageEntry, baseAssets, `Page "${id}"`)
+          : undefined;
+        const serverCss = isRscPage(page)
+          ? [
+              ...serverCssForPage(id, "page-server"),
+              ...serverCssForPage(id, "rsc-page"),
+            ]
+          : isPartialPrerenderPage(page)
+            ? serverCssForPage(id, "ppr-shell")
+            : page.render === "ssr" || page.render === "ssg"
+              ? serverCssForPage(id, "page-server")
+              : [];
+        const assets = mergeAssetGroups(baseAssets, {
+          js: [],
+          css: serverCss,
+        });
+        const route = input.graph.routes.find(
+          (candidate) =>
+            candidate.target.kind === "page" && candidate.target.pageId === id,
+        );
+        const document =
+          Object.values(input.graph.documents).find(
+            (candidate) =>
+              candidate.owner.kind === "page" && candidate.owner.pageId === id,
+          ) ??
+          Object.values(input.graph.documents).find(
+            (candidate) =>
+              candidate.applicationId === page.applicationId &&
+              candidate.owner.kind === "application",
+          );
+        return [
+          id,
+          {
+            assets,
+            document: cloneHtmlDocument(htmlDocuments.pages.get(id)),
+            render: page.render,
+            rendering: derivePageRendering(page),
+            path: route ? formatCoreRoutePattern(route.pattern) : undefined,
+            routeId: route?.id,
+            componentModel: page.componentModel,
+            hydrate: effectivePageHydrate(page),
+            metadata: clonePageMetadata(page.metadata),
+            mount: document?.mount,
+            prerender: page.prerender,
+            module: pageEntry
+              ? {
+                  type: "react-component" as const,
+                  href,
+                }
+              : undefined,
+            ppr: isPartialPrerenderPage(page)
+              ? {
+                  delivery: page.ppr?.delivery ?? "merge",
+                  shell: serverAssetsForEntry(
+                    assertPprShellEntry(id, shellEntry),
                   ),
-                ),
-              }
-            : undefined,
-        },
-      ];
-    }),
+                  regions: Object.fromEntries(
+                    Object.entries(page.ppr?.regions ?? {}).map(
+                      ([regionId, region]) => {
+                        const regionEntry = assertPprRegionEntry(
+                          id,
+                          regionId,
+                          findEntryByOwner(
+                            { pageId: id, regionId },
+                            "server",
+                            "ppr-region",
+                          ),
+                        );
+                        return [
+                          regionId,
+                          {
+                            id: regionId,
+                            assets: serverAssetsForEntry(regionEntry),
+                            cache: region.cache,
+                          },
+                        ];
+                      },
+                    ),
+                  ),
+                }
+              : undefined,
+          },
+        ];
+      }),
   );
 
   const serverFunctions: Record<string, ServerFunctionOutput> = {};
@@ -273,16 +304,7 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
     assets: entryAssets,
     apps,
     pages,
-    routes: input.graph.routes
-      .filter((route) => route.kind !== "layout")
-      .map((route) =>
-        pruneUndefined({
-          id: route.id,
-          path: route.path,
-          appId: route.appId,
-          pageId: route.pageId,
-        }),
-      ),
+    routes: createBuildOutputRoutes(input.graph, apps, pages),
     server: {
       entry: serverEntry,
       assets: serverAssets,
@@ -296,6 +318,76 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
     },
     ...(rsc ? { rsc } : {}),
   };
+}
+
+function shouldProjectPageToOutput(
+  graph: CoreGraph,
+  page: CorePageNode,
+): boolean {
+  return (
+    Object.values(graph.documents).some(
+      (document) =>
+        document.owner.kind === "page" && document.owner.pageId === page.id,
+    ) ||
+    page.render !== "csr" ||
+    page.metadata !== undefined
+  );
+}
+
+function shouldProjectApplicationToOutput(
+  graph: CoreGraph,
+  application: CoreGraph["applications"][string],
+): boolean {
+  return application.documentIds.some(
+    (documentId) => graph.documents[documentId]?.owner.kind === "application",
+  );
+}
+
+function createBuildOutputRoutes(
+  graph: CoreGraph,
+  apps: BuildOutput["apps"],
+  pages: Record<string, PageOutput>,
+): BuildOutput["routes"] {
+  const emittedShapes = new Set<string>();
+  const routes: BuildOutput["routes"] = [];
+
+  for (const route of graph.routes) {
+    if (route.target.kind === "group") continue;
+
+    const pathname = formatCoreRoutePattern(route.pattern);
+    const shape = pageRoutePathShapeFromPath(pathname);
+    if (emittedShapes.has(shape)) continue;
+    emittedShapes.add(shape);
+    routes.push(
+      pruneUndefined({
+        id: route.id,
+        path: pathname,
+        appId: Object.hasOwn(apps, route.applicationId)
+          ? route.applicationId
+          : undefined,
+        pageId:
+          route.target.kind === "page" &&
+          Object.hasOwn(pages, route.target.pageId)
+            ? route.target.pageId
+            : undefined,
+      }),
+    );
+  }
+
+  return routes;
+}
+
+function formatCoreRoutePattern(
+  pattern: CoreGraph["routes"][number]["pattern"],
+): string {
+  if (pattern.segments.length === 0) return "/";
+  return `/${pattern.segments
+    .map((segment) => {
+      if (segment.kind === "static") return segment.value;
+      if (segment.kind === "param") return `$${segment.name}`;
+      return "$";
+    })
+    .join("/")}`;
 }
 
 function assertPprShellEntry(
@@ -426,6 +518,9 @@ function createPublicManifestRouting(
         path: route.path,
         pageId: route.pageId,
         render: route.pageId ? output.pages[route.pageId]?.render : undefined,
+        metadata: route.pageId
+          ? clonePageMetadata(output.pages[route.pageId]?.metadata)
+          : undefined,
       }),
     ),
   };
@@ -441,7 +536,9 @@ function createPublicDocumentManifest(
       id: document.id,
       path: document.path,
       fileName: document.fileName,
+      ...(document.aliases ? { aliases: [...document.aliases] } : {}),
       render: document.render,
+      metadata: clonePageMetadata(document.metadata),
       assets: optionalAssetGroup(
         clonePublicAssets(document.assets, publicAssetFiles),
       ),
@@ -488,7 +585,9 @@ function createStaticSsgDocumentRecords(output: BuildOutput): Array<{
   id: string;
   path: string;
   fileName: string;
+  aliases?: string[];
   render: Extract<PageOutput["render"], "ssg">;
+  metadata?: PageOutput["metadata"];
   assets: AssetGroup;
 }> {
   return Object.entries(output.pages).flatMap(([id, page]) => {
@@ -509,7 +608,11 @@ function createStaticSsgDocumentRecords(output: BuildOutput): Array<{
         id,
         path,
         fileName: page.document.fileName,
+        ...(page.document.aliases
+          ? { aliases: [...page.document.aliases] }
+          : {}),
         render: page.render,
+        metadata: clonePageMetadata(page.metadata),
         assets: page.assets,
       },
     ];
@@ -587,6 +690,7 @@ function sanitizePageOutput(
     path: page.path ?? route?.path,
     routeId: page.routeId ?? route?.id,
     render: page.render,
+    metadata: clonePageMetadata(page.metadata),
   }) as PublicPageOutput;
 }
 
@@ -603,6 +707,7 @@ function createDeploymentDocuments(
         kind: "app" as const,
         id,
         fileName: app.document.fileName,
+        ...(app.document.aliases ? { aliases: [...app.document.aliases] } : {}),
         fallback: fallbackRoute?.path,
         assets: includeAssets ? optionalAssetGroup(app.assets) : undefined,
       }),
@@ -610,14 +715,14 @@ function createDeploymentDocuments(
   }
   for (const [id, page] of Object.entries(output.pages)) {
     if (!page.document) continue;
-    const route = findOutputRouteForPage(output, id);
-    const staticDocument = createStaticDocumentMetadata(page, route);
     documents.push(
       pruneUndefined({
         kind: "page" as const,
         id,
         fileName: page.document.fileName,
-        ...staticDocument,
+        ...(page.document.aliases
+          ? { aliases: [...page.document.aliases] }
+          : {}),
         assets: includeAssets ? optionalAssetGroup(page.assets) : undefined,
       }),
     );
@@ -632,6 +737,14 @@ function createDeploymentRoutes(output: BuildOutput): DeploymentRouteOutput[] {
       const page = output.pages[route.pageId];
       if (!page) continue;
       if (page.document && (page.render === "csr" || page.render === "ssg")) {
+        routes.push({
+          kind: "static-page",
+          path: route.path,
+          pageId: route.pageId,
+          documentId: route.pageId,
+          render: page.render,
+          methods: ["GET", "HEAD"],
+        });
         continue;
       }
       if (page.render !== "csr") {
@@ -688,19 +801,6 @@ function createDeploymentRoutes(output: BuildOutput): DeploymentRouteOutput[] {
   return routes;
 }
 
-function createStaticDocumentMetadata(
-  page: PageOutput,
-  route: BuildOutput["routes"][number] | undefined,
-): { path?: string; render?: Extract<PageOutput["render"], "csr" | "ssg"> } {
-  if (page.render !== "csr" && page.render !== "ssg") return {};
-  const path = route?.path ?? page.path;
-  if (!path) return {};
-  return {
-    path,
-    render: page.render,
-  };
-}
-
 function createDeploymentServerPageRendering(
   output: BuildOutput,
   pageId: string,
@@ -749,10 +849,16 @@ function createHtmlDocumentLookup(html: BuildPlan["html"]): {
 
   for (const document of html) {
     if (document.owner.appId) {
-      apps.set(document.owner.appId, { fileName: document.fileName });
+      apps.set(document.owner.appId, {
+        fileName: document.fileName,
+        ...(document.aliases ? { aliases: [...document.aliases] } : {}),
+      });
     }
     if (document.owner.pageId) {
-      pages.set(document.owner.pageId, { fileName: document.fileName });
+      pages.set(document.owner.pageId, {
+        fileName: document.fileName,
+        ...(document.aliases ? { aliases: [...document.aliases] } : {}),
+      });
     }
   }
 
@@ -762,7 +868,12 @@ function createHtmlDocumentLookup(html: BuildPlan["html"]): {
 function cloneHtmlDocument(
   document: HtmlDocumentOutput | undefined,
 ): HtmlDocumentOutput | undefined {
-  return document ? { fileName: document.fileName } : undefined;
+  return document
+    ? {
+        fileName: document.fileName,
+        ...(document.aliases ? { aliases: [...document.aliases] } : {}),
+      }
+    : undefined;
 }
 
 function clonePublicAssetRecord(
@@ -849,12 +960,17 @@ function linkRscOutput(
         ? Object.fromEntries(
             rscPages.map((page) => {
               const renderer = findRscRendererForPage(page.id, rscRenderers);
+              const route = input.graph.routes.find(
+                (candidate) =>
+                  candidate.target.kind === "page" &&
+                  candidate.target.pageId === page.id,
+              );
               return [
                 page.id,
                 {
                   renderer: renderer.name,
                   assets: serverAssetsForEntry(renderer),
-                  routeId: page.routeId,
+                  routeId: route?.id,
                 },
               ];
             }),
@@ -905,7 +1021,7 @@ function linkServerRenderers(
   );
 }
 
-function derivePageRendering(page: PageNode): PageRenderingOutput {
+function derivePageRendering(page: CorePageNode): PageRenderingOutput {
   const hydrate = effectivePageHydrate(page);
   const component = isRscPage(page)
     ? "rsc"
@@ -961,22 +1077,22 @@ function derivePageRendering(page: PageNode): PageRenderingOutput {
   }
 }
 
-function effectivePageHydrate(page: PageNode): HydrationMode {
+function effectivePageHydrate(page: CorePageNode): HydrationMode {
   return isPartialPrerenderPage(page) || isRscPage(page)
     ? "none"
     : (page.hydrate ?? defaultHydrate(page.render));
 }
 
-function defaultHydrate(render: PageNode["render"]): HydrationMode {
+function defaultHydrate(render: CorePageNode["render"]): HydrationMode {
   return render === "ssg" ? "none" : "load";
 }
 
-function isRscPage(page: Pick<PageNode, "componentModel">): boolean {
+function isRscPage(page: Pick<CorePageNode, "componentModel">): boolean {
   return page.componentModel === "rsc";
 }
 
 function isPartialPrerenderPage(
-  page: Pick<PageNode, "prerender" | "ppr">,
+  page: Pick<CorePageNode, "prerender" | "ppr">,
 ): boolean {
   return (
     (typeof page.prerender === "object" && page.prerender.partial === true) ||
@@ -985,7 +1101,7 @@ function isPartialPrerenderPage(
 }
 
 function isFullPrerenderPage(
-  page: Pick<PageNode, "render" | "prerender" | "ppr">,
+  page: Pick<CorePageNode, "render" | "prerender" | "ppr">,
 ): boolean {
   if (page.render === "ssg") return true;
   if (!page.prerender || isPartialPrerenderPage(page)) return false;

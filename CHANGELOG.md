@@ -6,6 +6,13 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### ⚠️ Breaking Changes
+
+- **Server request-route anchors** — Server request routes now require
+  `<server.routing.dir>/**/api.*` anchors, defaulting to `src/apis`. Each
+  anchor's containing directory defines its URL and middleware scope, while
+  every other basename remains private source.
+
 ---
 
 ## [0.2.16] — 2026-07-21

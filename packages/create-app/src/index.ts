@@ -56,7 +56,8 @@ export async function runCreateAppCli(argv = process.argv): Promise<void> {
                 value: "api-routes",
               },
               {
-                title: "Complex Routing (params, search, root layout, loaders)",
+                title:
+                  "Complex Routing (nested Pages, params, search, redirects)",
                 value: "complex-routing",
               },
               {

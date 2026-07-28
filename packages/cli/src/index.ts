@@ -20,24 +20,14 @@ export {
   CONFIG_DEFAULTS,
   type Config,
   defineConfig,
-  type EvConfig,
   type ResolvedConfig,
-  type ResolvedEvConfig,
   resolveConfig,
 } from "@evjs/ev/config";
 export type {
   BuildResult,
   BundlerCtx,
-  ClientManifest,
   ContributionContext,
   EmitApi,
-  EvBuildResult,
-  EvBundlerCtx,
-  EvDocument,
-  EvPlugin,
-  EvPluginConfigContext,
-  EvPluginContext,
-  EvPluginHooks,
   FrameworkIRView,
   FrameworkSlot,
   FrameworkSlotInput,
@@ -45,9 +35,19 @@ export type {
   Plugin,
   PluginContext,
   PluginHooks,
-  ServerManifest,
 } from "@evjs/ev/plugin";
 export { loadConfig } from "./load-config.js";
+export {
+  formatSmallfishMigrationResult,
+  migrateSmallfishProject,
+  type SmallfishDocumentAlias,
+  type SmallfishMigrationChange,
+  type SmallfishMigrationDiagnostic,
+  type SmallfishMigrationDiagnosticCode,
+  type SmallfishMigrationDiagnosticLevel,
+  type SmallfishMigrationOptions,
+  type SmallfishMigrationResult,
+} from "./migrate-smallfish.js";
 
 export type DefaultBundlerConfig =
   typeof utoopackAdapter extends BundlerAdapter<infer TBundlerCfg>

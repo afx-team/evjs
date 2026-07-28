@@ -3,9 +3,9 @@
 ## Completed Foundation
 
 - Zero-config React app build with `ev dev` and `ev build`.
-- Page route SPA discovery through `src/pages`.
-- Page route MPA output through `routing.mode: "mpa"`.
-- Explicit multi-page output through `pages`.
+- Canonical Page-and-Route convention with positive Page-directory `page.*`
+  anchors, optional build-time `page.config.ts`, directory-derived URLs, and
+  SPA/MPA `routing.mode`.
 - Server functions from `"use server"` modules.
 - Hono/fetch server runtime with explicit server routes.
 - Plugin system with config, bundler, output, HTML, and build hooks.
@@ -15,9 +15,9 @@
 - `ev inspect` CLI preflight for explaining page route discovery, server
   declarations, render metadata, runtime paths, planned entries, and diagnostics
   without running a bundler or writing `dist`.
-- Configurable framework metadata directories through `output.client` and
-  `output.server`, plus canonical deployment metadata at `dist/build-output.json`.
-- ClientRuntime-driven app/page activation through the public
+- Configurable client/server output directories plus canonical deployment
+  metadata at `dist/deployment-metadata.json`.
+- ClientRuntime-driven Application/Page activation through the public
   `@evjs/client` runtime package and generated framework bootstraps.
 - Framework-owned SPA page routes and router-free page runtime for MPA.
 - Webpack adapter for framework validation while Utoopack lower-layer APIs catch up.
@@ -26,8 +26,8 @@
 - Public manifest redaction so browser-visible output does not expose local
   source paths.
 - Built-in Node, static, and edge deployment adapter artifacts.
-- Route-specific page data hook types from generated SPA routes, covering
-  params, search, and loader data without exposing router internals.
+- Page data hooks for params, search, and loader data without exposing router
+  internals.
 - Unified server request context and middleware semantics across server
   functions, server routes, SSR, PPR, and RSC.
 - PPR page response cache headers derived from region policies for merged,
@@ -40,17 +40,30 @@
 
 ## In Progress
 
-- Utoopack parity priority 1: dynamic entry/server dev plan updates for
-  adding/removing entries without restarting `ev dev`.
-- Utoopack parity priority 2: generic entry wrapping/loadable entry facts for
-  framework-managed component pages.
-- Utoopack parity priority 3: multi server build-entry facts for SSR/PPR/RSC
-  renderers.
-- Utoopack parity priority 4: RSC client/server reference metadata.
+- Core 0.3 now resolves one canonical
+  `routing.mode + page.* + page.config.ts` model into a validated CoreGraph
+  for SPA and MPA, emits `.ev/framework/core-graph.json`, and diagnoses invalid
+  Page/Route/Document ownership or Page configuration.
+- Explicit SPA route configuration normalizes into the same CoreGraph while
+  remaining separate from canonical file discovery.
+- Continue hardening config-route normalization and one-time source-conversion
+  tooling without promoting alternate source models to runtime readers.
+- Canonical MPA emits Page-owned Documents from static semantic Routes and
+  composes file-convention layouts; dynamic routes and router-only boundary
+  facets are explicitly rejected.
+- The plugin API now has dependency-ordered, reload-safe `describe`,
+  namespaced Application and Page defaults/config/validation, strict static
+  serialization, resolved extension views, and cross-runtime `page.wrapper`
+  contributions.
+- Continue the plugin API with owned Route/Document schemas, graph
+  transforms/selectors, additional semantic facets, typed runtime hooks, and
+  generic extension entries.
 
 ## Planned
 
-- More production-grade PPR behavior for explicit client islands and deeper
-  React streaming renderer integration.
-- Utoopack lower-layer parity for dynamic entries, structured build results,
-  multiple server build-entry classes, and RSC/client reference metadata.
+- Config-route coverage, source-conversion tools, capability reports, and
+  representative plugin adoption.
+- Removal of built-in SSR/PPR/RSC branches from Core after generic extension
+  entries, Documents, request facets, and manifest projections are available.
+- Utoopack lower-layer parity for generic dynamic entries, structured build
+  facts, and extension-owned client/server/build environments.

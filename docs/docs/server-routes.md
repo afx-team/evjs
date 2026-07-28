@@ -13,26 +13,28 @@ For the complete server file route and middleware filename rules, see
 
 ## File Routes
 
-File-based server routes are enabled by default. evjs scans `./src/apis` and
-maps that directory to `/`. Object form currently supports only `dir`. There is
-no `prefix` option; put files under a folder such as `src/apis/api` when the URL
-should start with `/api`.
+File-based server routes are enabled by default. evjs scans
+`./src/apis/**/api.*`; each anchor's containing directory maps to its request
+URL. Object form currently supports only `dir`. There is no `prefix` option;
+put an anchor under a directory such as `src/apis/api/users` when its URL
+should start with `/api/users`.
 
 ```text
-src/apis/index.ts              -> /
-src/apis/health.ts             -> /health
-src/apis/users.ts              -> /users
-src/apis/users/index.ts        -> /users
-src/apis/users/$userId.ts      -> /users/:userId
-src/apis/(internal)/health.ts  -> /health
-src/apis/api/users.ts          -> /api/users
+src/apis/api.ts                       -> /
+src/apis/health/api.ts                -> /health
+src/apis/users/api.ts                 -> /users
+src/apis/users/$userId/api.ts         -> /users/:userId
+src/apis/(internal)/health/api.ts     -> /health
+src/apis/api/users/api.ts             -> /api/users
 ```
 
-A file becomes a route only when it exports at least one uppercase HTTP method:
-`GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, or `OPTIONS`:
+`api.{ts,tsx,js,jsx}` is the only request-route anchor, with exactly one
+source-extension variant allowed per route directory. An anchor exports at
+least one uppercase HTTP method: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`,
+`HEAD`, or `OPTIONS`:
 
 ```ts
-// src/apis/api/posts.ts
+// src/apis/api/posts/api.ts
 export const GET = async (req) => {
   const url = new URL(req.url);
   const limit = Number(url.searchParams.get("limit")) || 10;
@@ -45,13 +47,14 @@ export const POST = async (req) => {
 };
 ```
 
-Files with no route exports are ignored, so `schema.ts`, `db.ts`, and
-`types.ts` can be colocated. Route candidates may export only uppercase HTTP
-methods; move helpers to non-route files. `middleware`, `middlewares`, default
-exports, duplicate paths, duplicate dynamic shapes, bracket routes, catch-all
-routes, optional params, lowercase method exports, unsupported runtime exports
-in route candidates, and method suffix files such as `posts.get.ts` are
-rejected before bundling.
+Every other basename is ordinary private source, so `schema.ts`, `db.ts`,
+`types.ts`, `index.ts`, and `route.ts` can be colocated without publishing a
+Route. An `api.*` anchor may export only uppercase HTTP methods; move helpers to
+another file. Missing methods, `middleware`/`middlewares`, default exports,
+lowercase method exports, unsupported runtime exports, duplicate paths,
+duplicate dynamic shapes, multiple anchor extension variants, and anchors
+under bracket, catch-all, optional, or otherwise invalid directory segments
+are rejected before bundling.
 
 ## Handler Signature
 
@@ -73,7 +76,7 @@ The Hono `Context` (`ctx`) provides:
 | `ctx.json()` | Send a JSON response |
 
 ```ts
-// src/apis/users/$userId.ts
+// src/apis/users/$userId/api.ts
 export const GET = async (_req, ctx) => {
   const userId = ctx.req.param("userId");
   return Response.json({ id: userId });
@@ -102,21 +105,21 @@ export default middleware;
 ```
 
 API route middleware lives inside the server file-route tree and runs only for
-descendant server file routes:
+same-directory and descendant server file routes:
 
 ```text
-src/apis/middleware.ts            -> all file routes
-src/apis/api/middleware.ts        -> routes under api/**
-src/apis/api/admin/middleware.ts  -> routes under api/admin/**
-src/apis/(admin)/middleware.ts    -> routes under (admin)/**
+src/apis/middleware.ts            -> every anchored Route
+src/apis/api/middleware.ts        -> /api and descendants
+src/apis/api/admin/middleware.ts  -> /api/admin and descendants
+src/apis/(admin)/middleware.ts    -> the group and its descendants
 ```
 
 Execution order is global server middleware, then API route middleware from
 parent directory to child directory, then the HTTP method handler. Route groups
 do not add URL segments, but they do participate in filesystem scoping.
-`src/apis/api/middleware.ts` covers `src/apis/api/index.ts`,
-`src/apis/api/users.ts`, and nested files under `src/apis/api/**`; it does not
-cover the flat sibling `src/apis/api.ts`.
+`src/apis/api/middleware.ts` covers the `/api` anchor at
+`src/apis/api/api.ts`, plus anchors such as `src/apis/api/users/api.ts` and all
+other descendants.
 
 The signature follows Hono:
 

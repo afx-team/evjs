@@ -46,10 +46,20 @@ export function collectModuleExportNames(body: ModuleItem[]): string[] {
       continue;
     }
 
-    if (
-      item.type === "ExportDefaultDeclaration" ||
-      item.type === "ExportDefaultExpression"
-    ) {
+    if (item.type === "ExportDefaultDeclaration") {
+      if (item.decl.type === "TsInterfaceDeclaration") continue;
+      if (item.decl.type === "FunctionExpression" && !item.decl.body) continue;
+      names.add("default");
+      continue;
+    }
+
+    if (item.type === "ExportDefaultExpression") {
+      if (
+        item.expression.type === "Identifier" &&
+        ambientLocalNames.has(item.expression.value)
+      ) {
+        continue;
+      }
       names.add("default");
     }
   }

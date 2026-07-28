@@ -1,7 +1,7 @@
 # ev Render Modes Example
 
-This example focuses on the rendering surfaces that evjs owns. The app
-simulates a payment operations console with:
+This Core 0.3 example applies all rendering modes to one canonical
+Page-and-Route tree. The app simulates a payment operations console with:
 
 - a merchant KPI dashboard loaded through a server function;
 - a REST health route for operations service status;
@@ -11,23 +11,36 @@ simulates a payment operations console with:
 - a PPR campaign monitor with a dynamic offer region;
 - an RSC insights page with a client reference.
 
-It exercises the render-mode framework contracts with the webpack adapter:
+`src/pages/**/page.tsx` files are the only Page and client-route anchors. Their
+directories derive `/`, `/support`, `/dashboard`, `/settlement-report`,
+`/campaign`, and `/insights`; `ev.config.ts` only selects
+`routing.mode: "spa"`.
 
-- explicit app declaration;
-- app-owned route declarations that create route-derived SSR/PPR/RSC pages under
-  the app document;
-- `pages` declarations for standalone page outputs, with render metadata kept in
-  the referenced page modules;
-- framework-managed SSR React page;
-- framework-managed SSR React page with full prerender metadata;
-- framework-managed CSR component page;
-- PPR page shell plus Suspense-driven dynamic region renderer, delivered with
-  streamed shell/region patches in one document response;
-- RSC page renderer plus framework Flight endpoint;
-- server function transform and REST route;
-- split `dist/client/manifest.json`, `dist/server/manifest.json`, and
-  `dist/build-output.json` output.
+Each Page keeps its rendering settings in an adjacent build-time
+`page.config.ts`:
+
+- the root and support Pages use CSR;
+- dashboard uses SSR with load hydration;
+- settlement report uses fully prerendered SSR without hydration;
+- campaign uses partially prerendered SSR with streamed region patches;
+- insights uses SSR with the RSC component model.
+
+The same config contract also owns static Page metadata independently of the
+rendering mode:
+
+- the root CSR Page declares a title plus description, keywords, viewport, and
+  theme color;
+- the SSR dashboard and prerendered settlement report declare route-specific
+  title, description, and theme color values;
+- Pages without title/meta restore the shared HTML template baseline when they
+  become the deepest active SPA Page.
+
+Private source is colocated without route-name prefixes:
+`src/pages/components/RenderModePage.tsx`,
+`src/pages/campaign/OfferRegion.tsx`, and
+`src/pages/insights/InsightsBadge.tsx` are ordinary modules because only
+`page.tsx` creates a Page.
 
 Utoopack remains the default bundler for normal examples. This example uses
-webpack because it currently validates dynamic framework entries, component
-entry wrapping, and multiple server entries.
+webpack because it currently validates dynamic framework entries, rendering
+facades, and multiple server entries.

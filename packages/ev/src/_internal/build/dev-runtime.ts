@@ -13,7 +13,6 @@ export const API_READY_MARKER = "__EVJS_API_READY__";
 const DEV_DIST_LOCK_FILE = ".evjs-dev.lock";
 const DEV_RUNTIME_DIR = `evjs-dev-${typeof process.getuid === "function" ? process.getuid() : "user"}`;
 const DEV_PORT_SCAN_LIMIT = 1_000;
-const MANIFEST_FILE = "manifest.json";
 const logger = getLogger(["evjs", "ev"]);
 
 interface DevDistLock {
@@ -465,26 +464,6 @@ export async function writeDevDistLock(
   return release;
 }
 
-function readServerEntryFromManifest(
-  cwd: string,
-  distDir: string,
-): string | undefined {
-  const manifestPath = path.resolve(cwd, distDir, "server", MANIFEST_FILE);
-  if (!fs.existsSync(manifestPath)) return undefined;
-
-  try {
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as {
-      entry?: unknown;
-    };
-    return normalizeAssetName(
-      typeof manifest.entry === "string" ? manifest.entry : undefined,
-    );
-  } catch (err) {
-    logger.warn`Failed to parse build manifest for server entry: ${err}`;
-    return undefined;
-  }
-}
-
 function readServerEntryFromStats(
   cwd: string,
   distDir: string,
@@ -537,13 +516,6 @@ export async function findDevServerEntry(
   cwd: string,
   distDir: string,
 ): Promise<string | undefined> {
-  const entryFromManifest = readServerEntryFromManifest(cwd, distDir);
-  if (entryFromManifest) {
-    return isExistingDevServerEntry(cwd, distDir, entryFromManifest)
-      ? entryFromManifest
-      : undefined;
-  }
-
   const entryFromStats = readServerEntryFromStats(cwd, distDir);
   if (
     entryFromStats &&

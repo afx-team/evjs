@@ -102,7 +102,6 @@ export interface RscDebugPayloadMountOptions {
 }
 
 const rootByMountPoint = new WeakMap<Element, Root>();
-const pendingActivationByMountPoint = new WeakMap<Element, () => void>();
 
 export function createReactPageModule(
   options: ReactPageMountOptions,
@@ -111,10 +110,7 @@ export function createReactPageModule(
 
   return {
     mount(mountPoint, ctx) {
-      if (options.hydrate === "none") {
-        cancelPendingReactActivation(mountPoint);
-        return;
-      }
+      if (options.hydrate === "none") return;
       mountReactRoot(
         mountPoint,
         options.component,
@@ -123,19 +119,13 @@ export function createReactPageModule(
       );
     },
     hydrate(mountPoint, ctx) {
-      if (options.hydrate === "none") {
-        cancelPendingReactActivation(mountPoint);
+      if (options.hydrate === "none") return;
+      const props = resolvePageProps(options, ctx);
+      if (shouldHydrate(options)) {
+        hydrateReactRoot(mountPoint, options.component, props, options.route);
         return;
       }
-      const props = resolvePageProps(options, ctx);
-      scheduleReactActivation(mountPoint, options.hydrate ?? "load", () => {
-        if (shouldHydrate(options)) {
-          hydrateReactRoot(mountPoint, options.component, props, options.route);
-          return;
-        }
-
-        mountReactRoot(mountPoint, options.component, props, options.route);
-      });
+      mountReactRoot(mountPoint, options.component, props, options.route);
     },
     unmount(mountPoint) {
       unmountMountedReactRoot(mountPoint);
@@ -191,7 +181,6 @@ function hydrateReactRoot(
 }
 
 function unmountMountedReactRoot(mountPoint: Element): void {
-  cancelPendingReactActivation(mountPoint);
   const root = rootByMountPoint.get(mountPoint);
   if (!root) return;
   rootByMountPoint.delete(mountPoint);
@@ -202,93 +191,6 @@ function unmountMountedReactRoot(mountPoint: Element): void {
       `[evjs] React page root.unmount failed${formatErrorDetail(error)}`,
     );
   }
-}
-
-function scheduleReactActivation(
-  mountPoint: Element,
-  mode: Exclude<HydrationMode, "none">,
-  activate: () => void,
-): void {
-  cancelPendingReactActivation(mountPoint);
-  if (mode === "load") {
-    activate();
-    return;
-  }
-
-  let cancelled = false;
-  const run = () => {
-    if (cancelled) return;
-    pendingActivationByMountPoint.delete(mountPoint);
-    try {
-      activate();
-    } catch (error) {
-      reportScheduledHydrationError(error);
-    }
-  };
-
-  if (
-    mode === "visible" &&
-    typeof globalThis.IntersectionObserver === "function"
-  ) {
-    const observer = new globalThis.IntersectionObserver((entries) => {
-      if (!entries.some((entry) => entry.isIntersecting)) return;
-      observer.disconnect();
-      run();
-    });
-    pendingActivationByMountPoint.set(mountPoint, () => {
-      cancelled = true;
-      observer.disconnect();
-    });
-    try {
-      observer.observe(mountPoint);
-    } catch (error) {
-      pendingActivationByMountPoint.delete(mountPoint);
-      observer.disconnect();
-      throw error;
-    }
-    return;
-  }
-
-  const idleRuntime = globalThis as typeof globalThis & {
-    requestIdleCallback?: (callback: () => void) => number;
-    cancelIdleCallback?: (handle: number) => void;
-  };
-  if (mode === "idle" && idleRuntime.requestIdleCallback) {
-    let handle: number | undefined;
-    pendingActivationByMountPoint.set(mountPoint, () => {
-      cancelled = true;
-      if (handle !== undefined) idleRuntime.cancelIdleCallback?.(handle);
-    });
-    try {
-      handle = idleRuntime.requestIdleCallback(run);
-    } catch (error) {
-      pendingActivationByMountPoint.delete(mountPoint);
-      throw error;
-    }
-    return;
-  }
-
-  run();
-}
-
-function cancelPendingReactActivation(mountPoint: Element): void {
-  const cancel = pendingActivationByMountPoint.get(mountPoint);
-  if (!cancel) return;
-  pendingActivationByMountPoint.delete(mountPoint);
-  cancel();
-}
-
-function reportScheduledHydrationError(error: unknown): void {
-  const runtime = globalThis as typeof globalThis & {
-    reportError?: (error: unknown) => void;
-  };
-  if (runtime.reportError) {
-    runtime.reportError(error);
-    return;
-  }
-  setTimeout(() => {
-    throw error;
-  }, 0);
 }
 
 function tryUnmountReactRoot(root: Root): void {
@@ -351,16 +253,8 @@ function assertReactPageRenderMode(value: unknown, source: string): void {
 }
 
 function assertReactPageHydrationMode(value: unknown, source: string): void {
-  if (
-    value !== undefined &&
-    value !== "none" &&
-    value !== "load" &&
-    value !== "visible" &&
-    value !== "idle"
-  ) {
-    throw new Error(
-      `[evjs] ${source} hydrate must be "none", "load", "visible", or "idle".`,
-    );
+  if (value !== undefined && value !== "none" && value !== "load") {
+    throw new Error(`[evjs] ${source} hydrate must be "none" or "load".`);
   }
 }
 

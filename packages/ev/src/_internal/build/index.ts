@@ -4,10 +4,16 @@
 
 export type {
   BundlerAdapter,
+  BundlerBuildCapability,
   BundlerBuildContext,
   BundlerBuildFacts,
+  BundlerCapabilities,
+  BundlerCapability,
+  BundlerCapabilityGap,
+  BundlerDevCapability,
   BundlerDevContext,
   BundlerDevController,
+  BundlerDevUpdateOptions,
 } from "./bundler.js";
 export {
   type BuildOptions,
@@ -19,21 +25,15 @@ export {
   type InspectFrameworkBuildOptions,
   type InspectFrameworkBuildResult,
   type InspectHtmlDocument,
-  type InspectPageOutput,
   type InspectPageRoute,
   type InspectRouteFile,
-  type InspectServerFunction,
-  type InspectServerRoute,
   inspectFrameworkBuild,
   type PreparedFrameworkBuild,
   type PrepareFrameworkBuildOptions,
   prepareFrameworkBuild,
 } from "./commands.js";
-export type {
-  LoadConfigFileOptions,
-  TranspileTypeScriptConfigOptions,
-} from "./config-module.js";
-export { loadConfigFile, transpileTypeScriptConfig } from "./config-module.js";
+export type { LoadConfigFileOptions } from "./config-module.js";
+export { loadConfigFile } from "./config-module.js";
 export {
   applyHtmlTagContributions,
   GENERATED_IR_DIR,
@@ -41,12 +41,12 @@ export {
   materializeFrameworkIR,
 } from "./generated-contributions.js";
 export type {
-  CreateAppGraphOptions,
+  CreateCoreGraphOptions,
   Diagnostic,
   GraphAnalysisResult,
   GraphConfig,
 } from "./graph/index.js";
-export { createAppGraph } from "./graph/index.js";
+export { createCoreGraph } from "./graph/index.js";
 export type { GenerateHtmlOptions, HtmlAsset } from "./html.js";
 export { generateHtml, validateHtmlTemplate } from "./html.js";
 export type { BuildHtmlOptions } from "./html-transform.js";
@@ -55,17 +55,20 @@ export type { GeneratePageRouteTypesOptions } from "./page-route-types.js";
 export { generatePageRouteTypes } from "./page-route-types.js";
 export type {
   DiscoverPageRoutesOptions,
+  PageComponentExportAnalysis,
+  PageComponentExportKind,
   PageRouteDiscovery,
   PageRouteDiscoveryDiagnostic,
 } from "./page-routes.js";
-export { discoverPageRoutes } from "./page-routes.js";
+export {
+  analyzePageComponentExports,
+  discoverPageRoutes,
+} from "./page-routes.js";
 export type {
   BuildPlanConfig,
   CreateBuildPlanOptions,
 } from "./plan/index.js";
 export { createBuildPlan, diffBuildPlan } from "./plan/index.js";
-export type { ExtractedRoute } from "./routes.js";
-export { resolveRoutes } from "./routes.js";
 export type {
   RscReferenceAnalysis,
   TransformRscClientFileOptions,

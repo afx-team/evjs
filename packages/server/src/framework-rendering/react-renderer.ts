@@ -26,6 +26,10 @@ import type {
 } from "./framework.js";
 import { getFrameworkRuntimeRoutes } from "./framework.js";
 
+const PAGE_METADATA_ATTRIBUTE = "data-evjs-page-metadata";
+const PAGE_METADATA_CREATED_ATTRIBUTE = "data-evjs-page-metadata-created";
+const PAGE_HYDRATION_ATTRIBUTE = "data-evjs-hydrate";
+
 export interface PageProviderProps<
   TParams extends Record<string, string> = Record<string, string>,
   TSearch extends Record<string, unknown> = Record<string, unknown>,
@@ -64,6 +68,13 @@ export interface ReactServerRenderAdapterOptions {
   createProps?(
     ctx: ReactServerRenderContext,
   ): Record<string, unknown> | Promise<Record<string, unknown>>;
+  /**
+   * Replace the complete server-rendered HTML document.
+   *
+   * Custom documents own their head and template baseline. Use
+   * `renderReactPageMetadata(ctx)` to safely serialize the current Page
+   * metadata with the ownership markers required by SPA navigation.
+   */
   renderDocument?(
     appHtml: string,
     ctx: ReactServerRenderContext,
@@ -704,26 +715,37 @@ function renderDefaultDocument(
   props: Record<string, unknown>,
 ): string {
   const mount = resolveMount(ctx.page?.mount);
+  const runtimeData = renderRequestRuntimeData(ctx, props, mount);
+  const document = ctx.page?.document;
+  if (document) {
+    return [
+      document.beforeContent,
+      appHtml,
+      document.betweenContentAndData,
+      runtimeData,
+      document.afterData,
+    ].join("");
+  }
+
   const assets = ctx.page?.assets ?? emptyAssets();
-  const rscBootstrap = createRscBootstrap(ctx, mount);
+  const hydrationAttribute = renderPageHydrationAttribute(ctx.page, assets);
 
   return [
     "<!doctype html>",
     `<html data-evjs-kind="page" data-evjs-id="${escapeHtmlAttr(ctx.pageId ?? "")}" data-evjs-build="${escapeHtmlAttr(ctx.runtime.buildId)}">`,
     "<head>",
+    ...renderPageMetadata(
+      ctx.page?.metadata,
+      ctx.runtime.routing?.kind === "spa",
+    ),
     ...assets.css.map(
       (asset) =>
         `<link rel="stylesheet" href="${escapeHtmlAttr(assetHref(ctx.runtime, asset))}">`,
     ),
     "</head>",
     "<body>",
-    `<div ${mount.attribute}="${escapeHtmlAttr(mount.value)}">${appHtml}</div>`,
-    `<script id="__EVJS_PAGE_PROPS__" type="application/json">${serializePageProps(props)}</script>`,
-    ...(rscBootstrap
-      ? [
-          `<script id="__EVJS_RSC_BOOTSTRAP__" type="application/json">${serializePageProps(rscBootstrap)}</script>`,
-        ]
-      : []),
+    `<div ${mount.attribute}="${escapeHtmlAttr(mount.value)}"${hydrationAttribute}>${appHtml}</div>`,
+    runtimeData,
     ...assets.js.map(
       (asset) =>
         `<script defer src="${escapeHtmlAttr(assetHref(ctx.runtime, asset))}"></script>`,
@@ -731,6 +753,82 @@ function renderDefaultDocument(
     "</body>",
     "</html>",
   ].join("");
+}
+
+function renderRequestRuntimeData(
+  ctx: ReactServerRenderContext,
+  props: Record<string, unknown>,
+  mount: {
+    attribute: "id" | "data-evjs-mount";
+    value: string;
+  },
+): string {
+  const rscBootstrap = createRscBootstrap(ctx, mount);
+  return [
+    `<script id="__EVJS_PAGE_PROPS__" type="application/json">${serializePageProps(props)}</script>`,
+    ...(rscBootstrap
+      ? [
+          `<script id="__EVJS_RSC_BOOTSTRAP__" type="application/json">${serializePageProps(rscBootstrap)}</script>`,
+        ]
+      : []),
+  ].join("");
+}
+
+function renderPageHydrationAttribute(
+  page: FrameworkPageRuntime | undefined,
+  assets: FrameworkAssetGroup,
+): string {
+  if (
+    !page ||
+    page.render === "csr" ||
+    page.rendering.hydrate === "none" ||
+    assets.js.length === 0
+  ) {
+    return "";
+  }
+  return ` ${PAGE_HYDRATION_ATTRIBUTE}="${page.rendering.hydrate}"`;
+}
+
+/**
+ * Serialize the current Page's title and named meta values for a custom React
+ * server document, including SPA ownership markers when required.
+ */
+export function renderReactPageMetadata(
+  ctx: Pick<ReactServerRenderContext, "page" | "runtime">,
+): string {
+  return renderPageMetadata(
+    ctx.page?.metadata,
+    ctx.runtime.routing?.kind === "spa",
+  ).join("");
+}
+
+function renderPageMetadata(
+  metadata: FrameworkPageRuntime["metadata"],
+  markForSpaRuntime: boolean,
+): string[] {
+  if (!metadata) return [];
+
+  const head: string[] = [];
+  const titleMarker = markForSpaRuntime
+    ? ` ${PAGE_METADATA_ATTRIBUTE}="title" ${PAGE_METADATA_CREATED_ATTRIBUTE}=""`
+    : "";
+  const metaMarker = markForSpaRuntime
+    ? ` ${PAGE_METADATA_ATTRIBUTE}="meta" ${PAGE_METADATA_CREATED_ATTRIBUTE}=""`
+    : "";
+  if (metadata.title !== undefined) {
+    head.push(`<title${titleMarker}>${escapeHtmlText(metadata.title)}</title>`);
+  }
+
+  const metaByName = new Map<string, readonly [string, string]>();
+  for (const entry of Object.entries(metadata.meta ?? {})) {
+    metaByName.set(toAsciiLowerCase(entry[0]), entry);
+  }
+  for (const [name, content] of metaByName.values()) {
+    head.push(
+      `<meta name="${escapeHtmlAttr(name)}" content="${escapeHtmlAttr(content)}"${metaMarker}>`,
+    );
+  }
+  return head;
 }
 
 function createRscBootstrap(
@@ -833,4 +931,17 @@ function escapeHtmlAttr(value: string): string {
     .replaceAll('"', "&quot;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+}
+
+function escapeHtmlText(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function toAsciiLowerCase(value: string): string {
+  return value.replace(/[A-Z]/g, (character) =>
+    String.fromCharCode(character.charCodeAt(0) + 32),
+  );
 }

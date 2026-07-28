@@ -1,54 +1,50 @@
 # 高级约定控制
 
-evjs 默认使用文件约定：页面路由来自 `src/pages`，服务端文件路由来自
-`src/apis`，middleware 来自 `src/middleware.ts` 和
-`src/apis/**/middleware.ts`。多数应用应保持这些默认值。
+canonical client Page 与 Route 使用 positive `src/pages/**/page.*` 锚点，
+server request Route 使用 positive `src/apis/**/api.*` 锚点；两棵树都由所在
+目录决定 URL。Middleware 来自 `src/middleware.ts` 与
+`src/apis/**/middleware.ts`。
 
-只有当应用有意自己持有运行时组合，或正在从非约定式结构迁移时，才使用本页的控制项。
+只有当应用有意自己持有运行时组合，或需要使用显式 SPA route tree 时，才使用本页的控制项。
 
-## 关闭框架发现
+## 关闭文件约定
 
-关闭不再希望 evjs 发现的约定：
+文件约定发现只有一个项目级开关：
 
 ```ts
 // ev.config.ts
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  routing: false,
-  server: {
-    routing: false,
-    conventions: false,
-  },
+  conventions: false,
 });
 ```
 
-只替换其中一类约定时，可以单独使用这些开关：
+`conventions: false` 会一次性关闭所有框架文件发现：
 
-| 配置 | 作用 |
-| --- | --- |
-| `routing: false` | 停止从 `src/pages` 自动发现页面路由。 |
-| `server.routing: false` | 停止从 `src/apis` 发现服务端文件路由。 |
-| `server.conventions: false` | 停止服务端 middleware 约定发现。 |
-| `server.conventions.middleware: false` | 只停止 `src/middleware.ts` 和 `src/apis/**/middleware.ts` 发现。 |
-| `routing.conventions.layout: false` | 停止外部 SPA 根布局发现。嵌套 route layout 仍属于 SPA routing。 |
+- `src/pages` 下的 Page 与客户端 route 锚点；
+- `src/apis` 下的 server request-route `api.*` 锚点；
+- 全局 `src/middleware.ts` 与 route-scoped
+  `src/apis/**/middleware.ts`。
 
-如果应用仍需要 evjs 输出浏览器 bundle，请声明显式 app 或显式 pages：
+框架不提供 client、server、route、middleware 或 facet 级关闭开关。不要把
+`conventions: false` 与显式 `routing` 或 `server.routing` 声明一起配置。
+文件约定启用时仍可用 `server.routing: { dir }` 调整服务端路由目录；它只定制
+目录，不负责关闭发现。
 
-```ts
-export default defineConfig({
-  routing: false,
-  app: {
-    entry: "./src/main.tsx",
-    html: "./index.html",
-    mount: "#app",
-  },
-});
-```
+仅支持 SPA 的 `application.routes` 是显式 route-tree 配置输入，不属于文件约定。
+reachable 且带 `"use server";` 的模块，以及插件 contribution 生成的模块，
+同样不属于文件约定；关闭文件发现后它们仍然可用。已移除的 `app`、`pages` 与
+顶层 `routes` 声明会被拒绝。
+
+手动 browser bootstrap 使用下方 standalone runtime；它不是第二套 canonical
+routing model。
 
 ## 程序化浏览器应用
 
-当浏览器应用自己持有路由时，直接使用 standalone client runtime：
+当浏览器应用自己持有路由时，直接使用 standalone client runtime。该 entry 由应用
+自己的 standalone bundler 持有；evjs Framework config 不会发现或构建 magic
+`src/main.tsx`：
 
 ```tsx
 // src/main.tsx
@@ -88,7 +84,8 @@ declare module "@evjs/client" {
 app.render("#app");
 ```
 
-这条路径适合不希望 evjs 从 `src/pages` 派生 route modules 的应用。
+这条路径适合明确自行持有 browser router 与 bootstrap 的应用，与框架
+Page-and-Route 模型相互独立。
 
 ## 程序化服务端应用
 

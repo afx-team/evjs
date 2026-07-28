@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { CoreGraph } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import {
   CONFIG_DEFAULTS,
@@ -7,11 +8,12 @@ import {
   type ResolvedConfig,
 } from "../../config/index.js";
 import {
+  PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY,
   PAGE_ROUTE_CONVENTION_DOCS_URL,
-  PAGE_ROUTE_CONVENTION_SUMMARY,
 } from "./page-route-conventions.js";
 import {
   collectGeneratedPageRouteTypeFiles,
+  createPageRouteNodesFromCoreGraph,
   generatePageRouteTypes,
   getPageRouteTypesPath,
   writePageRouteTypesIfChanged,
@@ -22,14 +24,13 @@ import {
   discoverServerConventions,
   type ServerConventionDiscovery,
 } from "./server-conventions.js";
+import { SERVER_ROUTE_ENTRY_BASENAME } from "./server-route-conventions.js";
 import {
   discoverServerRoutes,
   type ServerRouteDiscovery,
 } from "./server-routes.js";
 
 const logger = getLogger(["evjs", "ev"]);
-const PAGE_ROUTE_CONVENTION_DOCS_HINT = `${PAGE_ROUTE_CONVENTION_SUMMARY}. See ${PAGE_ROUTE_CONVENTION_DOCS_URL} for the page route file convention.`;
-
 interface PageRoutingDefaultsOptions {
   syncRouteTypes?: boolean;
   reportDiagnostics?: boolean;
@@ -62,42 +63,33 @@ export async function withPageRoutingDefaults<TBundlerCfg>(
 ): Promise<ResolvedConfig<TBundlerCfg>> {
   const routingOption = readRoutingConfig(userConfig);
   const syncRouteTypes = options.syncRouteTypes !== false;
-  if (routingOption === false) {
+  if (config.conventions === false) {
     if (syncRouteTypes) {
       await removeAllPageRouteTypes(cwd);
     }
-    return { ...config, routing: undefined };
+    return config.application ? config : { ...config, routing: undefined };
+  }
+  if (config.application) {
+    return config;
   }
 
   const requested = routingOption !== undefined;
-  if ((config.pages || config.app) && requested) {
-    throw new Error(
-      "[evjs] routing cannot be combined with app or pages configuration.",
-    );
-  }
-  if (config.pages || config.app) {
+  if (!requested) {
     if (syncRouteTypes) {
       await removeAllPageRouteTypes(cwd);
     }
     return config;
   }
 
-  const base = config.routing ?? {
-    mode: CONFIG_DEFAULTS.routingMode,
-    dir: CONFIG_DEFAULTS.routingDir,
-    html: config.html,
-    mount: CONFIG_DEFAULTS.mount,
-    conventions: {
-      layout: true,
-    },
-    routes: [],
-  };
+  const base = config.routing;
+  if (!base) {
+    throw new Error(
+      "[evjs] Internal invariant: explicit routing config was not preserved by config resolution.",
+    );
+  }
   const discovery = await discoverPageRoutes(cwd, {
     dir: base.dir,
     mode: base.mode,
-    rootLayout:
-      base.mode === "spa" ? (base.conventions?.layout ?? false) : false,
-    spaConventions: base.mode === "spa" && base.conventions !== undefined,
     required: requested,
   });
   options.onDiscovery?.(base, discovery);
@@ -106,42 +98,43 @@ export async function withPageRoutingDefaults<TBundlerCfg>(
   }
 
   if (discovery.routes.length === 0) {
-    if (!requested) {
-      if (syncRouteTypes) {
-        await removeAllPageRouteTypes(cwd);
-      }
-      return config;
-    }
     if (options.allowEmptyRoutes) {
       return {
         ...config,
-        html: base.html,
         routing: {
           ...base,
           routes: [],
+          ...(discovery.metadata ? { metadata: discovery.metadata } : {}),
+          ...(discovery.dependencies.length > 0
+            ? { dependencies: discovery.dependencies }
+            : {}),
         },
       };
     }
-    throw new Error(
-      `[evjs] No page routes found in ${base.dir}. Add a default-exporting route module such as ${base.dir.replace(/\/+$/, "")}/index.tsx or set routing: false. ${PAGE_ROUTE_CONVENTION_DOCS_HINT}`,
-    );
-  }
-
-  if (syncRouteTypes) {
-    await syncPageRouteTypes(cwd, base.dir, base.mode, discovery.routes);
+    throw new Error(createNoPageRoutesFoundMessage(base.dir));
   }
 
   return {
     ...config,
-    html: base.html,
     routing: {
       ...base,
       routes: discovery.routes,
-      ...(base.mode === "spa" && discovery.rootModule
-        ? { rootModule: discovery.rootModule }
+      ...(discovery.metadata ? { metadata: discovery.metadata } : {}),
+      ...(discovery.dependencies.length > 0
+        ? { dependencies: discovery.dependencies }
         : {}),
+      ...(discovery.rootModule ? { rootModule: discovery.rootModule } : {}),
     },
   };
+}
+
+export function createNoPageRoutesFoundMessage(dir: string): string {
+  const normalizedDir = dir.replace(/\/+$/, "");
+  return `[evjs] No page routes found in ${dir}. Add a default-exporting Page anchor such as ${normalizedDir}/page.tsx or set conventions: false. ${getPageRouteSourceDocsHint()}`;
+}
+
+function getPageRouteSourceDocsHint(): string {
+  return `${PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY}. See ${PAGE_ROUTE_CONVENTION_DOCS_URL} for the page route file convention.`;
 }
 
 export async function withServerRoutingDefaults<TBundlerCfg>(
@@ -151,12 +144,13 @@ export async function withServerRoutingDefaults<TBundlerCfg>(
   options: ServerRoutingDefaultsOptions = {},
 ): Promise<ResolvedConfig<TBundlerCfg>> {
   const routingOption = readServerRoutingConfig(userConfig);
-  if (routingOption === false) {
+  if (config.conventions === false) {
     return {
       ...config,
       server: {
         ...config.server,
         routing: undefined,
+        conventions: undefined,
       },
     };
   }
@@ -216,8 +210,18 @@ export async function withServerConventionDefaults<TBundlerCfg>(
   cwd: string,
   options: ServerConventionDefaultsOptions = {},
 ): Promise<ResolvedConfig<TBundlerCfg>> {
+  if (config.conventions === false) {
+    return {
+      ...config,
+      server: {
+        ...config.server,
+        conventions: undefined,
+      },
+    };
+  }
+
   const conventions = config.server.conventions;
-  if (conventions?.middleware !== true) {
+  if (!conventions) {
     return {
       ...config,
       server: {
@@ -230,7 +234,6 @@ export async function withServerConventionDefaults<TBundlerCfg>(
   const discovery = await discoverServerConventions(cwd, {
     globalFile: CONFIG_DEFAULTS.serverMiddlewareFile,
     routingDir: config.server.routing?.dir,
-    middleware: conventions.middleware,
   });
   options.onDiscovery?.(discovery);
   if (options.reportDiagnostics !== false) {
@@ -277,21 +280,24 @@ type ServerRoutingConfigValue<TBundlerCfg> =
   | Exclude<Config<TBundlerCfg>["server"], undefined>["routing"]
   | undefined;
 
-async function syncPageRouteTypes(
+export async function syncPageRouteTypesFromCoreGraph(
   cwd: string,
   routingDir: string,
-  mode: NonNullable<ResolvedConfig["routing"]>["mode"],
-  routes: NonNullable<ResolvedConfig["routing"]>["routes"],
+  graph: CoreGraph,
 ): Promise<void> {
   const { dir, file, importBaseDir } = getPageRouteTypesPath(cwd, routingDir);
 
-  if (mode !== "spa") {
+  if (
+    !Object.values(graph.applications).some(
+      (application) => application.routingMode === "spa",
+    )
+  ) {
     await removeAllPageRouteTypes(cwd);
     return;
   }
 
   const source = generatePageRouteTypes({
-    routes,
+    routes: createPageRouteNodesFromCoreGraph(graph),
     importBaseDir,
   });
 
@@ -344,7 +350,7 @@ function reportPageRouteDiagnostics(
       [
         "[evjs] Page route discovery failed.",
         ...errors,
-        PAGE_ROUTE_CONVENTION_DOCS_HINT,
+        getPageRouteSourceDocsHint(),
       ].join("\n"),
     );
   }
@@ -401,5 +407,5 @@ function reportServerConventionDiagnostics(
 }
 
 export function createNoServerRoutesFoundMessage(dir: string): string {
-  return `[evjs] No server routes found in ${dir}. Add a route module exporting GET or POST such as ${dir.replace(/\/+$/, "")}/index.ts or set server.routing: false.`;
+  return `[evjs] No server routes found in ${dir}. Add an api.* anchor exporting GET or POST such as ${dir.replace(/\/+$/, "")}/${SERVER_ROUTE_ENTRY_BASENAME}.ts or set conventions: false.`;
 }

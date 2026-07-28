@@ -20,27 +20,25 @@ const storage = new AsyncLocalStorage<PageProps>();
 
 interface RscPageRuntime {
   buildId: string;
-  routing?: {
-    kind: "spa" | "mpa";
-    routes?: Array<{
-      id: string;
-      path: string;
-      pageId?: string;
-    }>;
-    pages?: Record<
-      string,
-      {
-        path?: string;
-        routeId?: string;
+  routing:
+    | {
+        kind: "spa";
+        routes: Array<{
+          id: string;
+          path: string;
+          pageId?: string;
+        }>;
       }
-    >;
-  };
-  /** @deprecated Use routing. */
-  routes?: Array<{
-    id: string;
-    path: string;
-    pageId?: string;
-  }>;
+    | {
+        kind: "mpa";
+        pages: Record<
+          string,
+          {
+            path?: string;
+            routeId?: string;
+          }
+        >;
+      };
   rsc?: {
     clientReferenceManifest?: Record<string, unknown>;
   };
@@ -158,16 +156,15 @@ function findRouteForPage(
 function getRuntimeRoutes(
   runtime: RscPageRuntime,
 ): Array<{ id: string; path: string; pageId?: string }> {
-  if (runtime.routing?.kind === "spa") return runtime.routing.routes ?? [];
-  if (runtime.routing?.kind === "mpa") {
-    return Object.entries(runtime.routing.pages ?? {}).flatMap(
-      ([pageId, page]) =>
-        page.path && page.routeId
-          ? [{ id: page.routeId, path: page.path, pageId }]
-          : [],
+  if (runtime.routing.kind === "spa") return runtime.routing.routes;
+  if (runtime.routing.kind === "mpa") {
+    return Object.entries(runtime.routing.pages).flatMap(([pageId, page]) =>
+      page.path && page.routeId
+        ? [{ id: page.routeId, path: page.path, pageId }]
+        : [],
     );
   }
-  return runtime.routes ?? [];
+  return [];
 }
 
 function createRscPageProps(ctx: RscPageFlightRenderContext): PageProps & {

@@ -2,14 +2,13 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ResolvedConfig } from "@evjs/ev/config";
+import type { BundlerCtx, PluginHooks } from "@evjs/ev/plugin";
 import type {
-  AppGraph,
   BuildEntry,
   BuildPlan,
   PublicPathOutput,
-} from "@evjs/ev/_internal/manifest";
-import type { ResolvedConfig } from "@evjs/ev/config";
-import type { BundlerCtx, PluginHooks } from "@evjs/ev/plugin";
+} from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import MiniCssExtractPlugin from "mini-css-extract-plugin";
 import type { Configuration, EntryObject } from "webpack";
@@ -48,10 +47,12 @@ export type WebpackConfig = Configuration | Configuration[];
 export async function createWebpackConfigs(
   config: ResolvedConfig<WebpackConfig>,
   plan: BuildPlan,
-  graph: AppGraph,
   cwd: string,
   hooks: PluginHooks<WebpackConfig>[],
-  options: { clean?: boolean } = {},
+  options: {
+    clean?: boolean;
+    addWatchFile?: (file: string) => void;
+  } = {},
 ): Promise<Configuration[]> {
   const outputPaths = getOutputPaths(cwd, config.output, plan.distDir);
   const configs: Configuration[] = [];
@@ -87,7 +88,10 @@ export async function createWebpackConfigs(
         resolveExternal: plan.resolve?.external,
         functionEndpoint: config.server.runtime.fn,
         crossOriginLoading: config.output.crossOriginLoading,
-        rscClientReferences: getRscClientReferenceModules(cwd, graph),
+        rscClientReferences: getRscClientReferenceModules(
+          cwd,
+          plan.rsc?.clientReferenceModules ?? [],
+        ),
         enableRscClientRuntime: plan.entries.some(
           (entry) =>
             entry.environment === "client" &&
@@ -114,7 +118,10 @@ export async function createWebpackConfigs(
         resolveExternal: plan.resolve?.external,
         functionEndpoint: config.server.runtime.fn,
         crossOriginLoading: undefined,
-        rscClientReferences: getRscClientReferenceModules(cwd, graph),
+        rscClientReferences: getRscClientReferenceModules(
+          cwd,
+          plan.rsc?.clientReferenceModules ?? [],
+        ),
         enableRscClientRuntime: false,
         clean: (options.clean ?? true) && rscServerEntries.length === 0,
         reactServerConditions: false,
@@ -136,7 +143,10 @@ export async function createWebpackConfigs(
         resolveExternal: plan.resolve?.external,
         functionEndpoint: config.server.runtime.fn,
         crossOriginLoading: undefined,
-        rscClientReferences: getRscClientReferenceModules(cwd, graph),
+        rscClientReferences: getRscClientReferenceModules(
+          cwd,
+          plan.rsc?.clientReferenceModules ?? [],
+        ),
         enableRscClientRuntime: false,
         clean: false,
         reactServerConditions: false,
@@ -158,7 +168,10 @@ export async function createWebpackConfigs(
         resolveExternal: plan.resolve?.external,
         functionEndpoint: config.server.runtime.fn,
         crossOriginLoading: undefined,
-        rscClientReferences: getRscClientReferenceModules(cwd, graph),
+        rscClientReferences: getRscClientReferenceModules(
+          cwd,
+          plan.rsc?.clientReferenceModules ?? [],
+        ),
         enableRscClientRuntime: false,
         clean: false,
         reactServerConditions: true,
@@ -180,7 +193,7 @@ export async function createWebpackConfigs(
           ? "client"
           : "server",
     logger,
-    addWatchFile() {},
+    addWatchFile: options.addWatchFile ?? missingFrameworkWatchCollector,
   };
 
   for (const h of hooks) {
@@ -190,6 +203,12 @@ export async function createWebpackConfigs(
   }
 
   return configs;
+}
+
+function missingFrameworkWatchCollector(file: string): never {
+  throw new Error(
+    `[evjs] Cannot watch plugin dependency "${file}" because the webpack config was created without a framework watch collector.`,
+  );
 }
 
 function createWebpackConfig(options: {
@@ -439,15 +458,13 @@ function webpackPublicPath(
 
 function getRscClientReferenceModules(
   cwd: string,
-  graph: AppGraph,
+  clientReferenceModules: string[],
 ): RscClientReferenceConfig[] {
   const modules = [
     ...new Set(
-      (graph.clientReferences ?? []).map((reference) =>
+      clientReferenceModules.map((module) =>
         normalizeRealPath(
-          path.isAbsolute(reference.module)
-            ? reference.module
-            : path.resolve(cwd, reference.module),
+          path.isAbsolute(module) ? module : path.resolve(cwd, module),
         ),
       ),
     ),

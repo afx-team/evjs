@@ -28,7 +28,7 @@ evjs 会在输出就绪日志前把 SPA fallback 同步到实际监听地址，�
 会在进程间协调端口预留。
 
 客户端和 API 开发服务器会监听 IPv4 地址，可以同时通过 `http://localhost:<port>` 和
-`http://127.0.0.1:<port>` 访问。启动日志遵循 Bigfish 的格式，显示 `Local` localhost URL
+`http://127.0.0.1:<port>` 访问。启动日志显示 `Local` localhost URL
 和本机的 `Network` URL；等价的 `127.0.0.1` URL 仍然可用，但不会额外打印。`localhost`
 和 `127.0.0.1` 属于不同的浏览器 origin，因此不会共享 cookie、local storage 和 service
 worker。使用自定义 HTTPS 证书且需要同时访问两个地址时，证书的 subject alternative names
@@ -57,8 +57,8 @@ flowchart TB
   end
 
   subgraph Updates["Framework updates"]
-    Files["src/pages\nsrc/apis\nev.config.ts"]
-    Plan["refresh AppGraph\nand .ev plan"]
+    Files["src/pages/**/page.*\nsrc/apis/**/api.*\nev.config.ts"]
+    Plan["refresh CoreGraph\nand .ev plan"]
   end
 
   Browser --> HTML
@@ -129,15 +129,25 @@ HTTP(S) URL `target`。Context pattern 必须以 `/` 开头，不能包含空白
 import { dev, build } from "@evjs/cli";
 import { utoopackAdapter } from "@evjs/bundler-utoopack";
 
-// 使用显式构建器适配器启动开发服务器
-await dev({ dev: { port: 3000 } }, { cwd: "./my-app", bundler: utoopackAdapter });
+const appConfig = {
+  routing: {
+    mode: "spa" as const,
+  },
+};
 
-// 为约定式页面路由运行生产构建
-await build({ routing: { mode: "spa" } }, { cwd: "./my-app", bundler: utoopackAdapter });
+// 使用显式构建器适配器启动开发服务器
+await dev(
+  { ...appConfig, dev: { port: 3000 } },
+  { cwd: "./my-app", bundler: utoopackAdapter },
+);
+
+// 运行 canonical Page-and-Route production build
+await build(appConfig, { cwd: "./my-app", bundler: utoopackAdapter });
 ```
 
-`bundler` option 和 `ev.config.ts` 中的 adapter 契约一致：必须是 object，且包含非空
-`name` 以及 `build` / `dev` 函数。
+`bundler` option 和 `ev.config.ts` 中的 adapter 契约一致：必须包含非空 `name`、
+声明过的 build/dev `capabilities`，以及 `build` / `dev` 函数。启动 adapter 前，
+framework preflight 会对照 active BuildPlan 检查这些 capability。
 
 `@evjs/cli` 也导出兼容包装函数，会自动注入默认的 Utoopack 适配器，与 `ev dev`
 和 `ev build` 命令保持一致。

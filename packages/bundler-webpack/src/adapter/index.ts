@@ -9,18 +9,11 @@ import type {
   BundlerBuildFacts,
   BundlerDevContext,
   BundlerDevController,
+  BundlerDevUpdateOptions,
 } from "@evjs/ev/_internal/build";
-import type {
-  AppGraph,
-  BuildPlan,
-  BuildPlanUpdate,
-  ClientRouteTarget,
-} from "@evjs/ev/_internal/manifest";
-import {
-  getClientRouteMatches,
-  getServerRenderedPaths,
-} from "@evjs/ev/_internal/manifest";
 import type { DevProxyRule, ResolvedConfig } from "@evjs/ev/config";
+import { pageRoutePathToRegExp } from "@evjs/shared";
+import type { BuildPlan, BuildPlanUpdate } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
 import { createFsFromVolume, Volume } from "memfs";
 import type {
@@ -52,6 +45,12 @@ interface WebpackWatching {
   close(callback: (error: Error | null) => void): void;
 }
 
+interface WebpackDevStatsSnapshot {
+  clientStats?: WebpackStatsLike;
+  serverStats?: WebpackStatsLike;
+  error?: string;
+}
+
 type WebpackDevProxyRule = DevProxyRule & {
   pathRewrite?: Record<string, string> | ((path: string) => string);
   contextFilter?: (pathname: string) => boolean;
@@ -70,11 +69,25 @@ interface DevFallbackResponse {
 
 export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
   name: "webpack",
+  capabilities: {
+    build: {
+      server: true,
+      rsc: true,
+      ppr: true,
+    },
+    dev: {
+      html: true,
+      entries: true,
+      routes: true,
+      server: true,
+      resolution: true,
+    },
+  },
 
   async build(
     ctx: BundlerBuildContext<WebpackConfig>,
   ): Promise<BundlerBuildFacts> {
-    const { config, cwd, graph, hooks, plan } = ctx;
+    const { addWatchFile, config, cwd, hooks, plan } = ctx;
     const outputPaths = getOutputPaths(cwd, config.output, plan.distDir);
 
     logger.info`Building for production with webpack...`;
@@ -84,7 +97,9 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
       force: true,
     });
 
-    const configs = await createWebpackConfigs(config, plan, graph, cwd, hooks);
+    const configs = await createWebpackConfigs(config, plan, cwd, hooks, {
+      addWatchFile,
+    });
     const stats = await runWebpack(configs);
     const hasRuntimeServerEntries = plan.entries.some(
       (entry) => entry.environment === "server" && entry.phase !== "build",
@@ -124,17 +139,17 @@ export const webpackAdapter: BundlerAdapter<WebpackConfig> = {
 
   async dev(
     ctx: BundlerDevContext<WebpackConfig>,
-  ): Promise<BundlerDevController> {
+  ): Promise<BundlerDevController<WebpackConfig>> {
     const session = new WebpackDevSession(ctx);
     await session.start();
     return session;
   },
 };
 
-class WebpackDevSession implements BundlerDevController {
+class WebpackDevSession implements BundlerDevController<WebpackConfig> {
   private config: ResolvedConfig<WebpackConfig>;
-  private graph: AppGraph;
   private plan: BuildPlan;
+  private devWorkQueue: Promise<void> = Promise.resolve();
   private clientServer: WebpackDevServerInstance | undefined;
   private serverWatching: WebpackWatching | undefined;
   private latestClientStats: WebpackStatsLike | undefined;
@@ -153,7 +168,6 @@ class WebpackDevSession implements BundlerDevController {
 
   constructor(private ctx: BundlerDevContext<WebpackConfig>) {
     this.config = ctx.config;
-    this.graph = ctx.graph;
     this.plan = ctx.plan;
   }
 
@@ -179,10 +193,9 @@ class WebpackDevSession implements BundlerDevController {
     const configs = await createWebpackConfigs(
       this.config,
       this.plan,
-      this.graph,
       this.ctx.cwd,
       this.ctx.hooks,
-      { clean: false },
+      { clean: false, addWatchFile: this.ctx.addWatchFile },
     );
     const clientConfigs = configs.filter((config) => config.name === "client");
     const serverConfigs = configs.filter(
@@ -195,17 +208,10 @@ class WebpackDevSession implements BundlerDevController {
     if (needsClient) {
       const compiler = createWebpackCompiler(clientConfigs);
       compiler.hooks.done.tap("EvjsWebpackDevClient", (stats) => {
-        void this.handleStats("client", generation, stats).catch((error) => {
-          this.failInitialBuild(error);
-        });
+        this.enqueueStats("client", generation, stats);
       });
       this.clientServer = new WebpackDevServer(
-        createDevServerOptions(
-          this.config,
-          this.plan,
-          this.graph,
-          outputPaths.clientDir,
-        ),
+        createDevServerOptions(this.config, this.plan, outputPaths.clientDir),
         compiler,
       );
       await this.clientServer.start();
@@ -214,9 +220,7 @@ class WebpackDevSession implements BundlerDevController {
     if (needsServer) {
       const compiler = createWebpackCompiler(serverConfigs);
       compiler.hooks.done.tap("EvjsWebpackDevServer", (stats) => {
-        void this.handleStats("server", generation, stats).catch((error) => {
-          this.failInitialBuild(error);
-        });
+        this.enqueueStats("server", generation, stats);
       });
       this.serverWatching = compiler.watch({}, (error) => {
         if (error) this.failInitialBuild(error);
@@ -241,20 +245,27 @@ class WebpackDevSession implements BundlerDevController {
     await this.stop();
   }
 
-  async updatePlan(update: BuildPlanUpdate, graph?: AppGraph): Promise<void> {
-    if (!graph) {
+  updatePlan(
+    update: BuildPlanUpdate,
+    options?: BundlerDevUpdateOptions<WebpackConfig>,
+  ): Promise<void> {
+    return this.enqueueDevWork(() => this.applyPlanUpdate(update, options));
+  }
+
+  private async applyPlanUpdate(
+    update: BuildPlanUpdate,
+    options?: BundlerDevUpdateOptions<WebpackConfig>,
+  ): Promise<void> {
+    if (options?.configChanged) {
       throw new Error(
-        "[evjs] webpack dev updates require the next AppGraph to relink manifest and HTML output.",
+        "[evjs] Webpack dev cannot safely replace framework, proxy, or plugin bundler configuration in place. Restart ev dev to apply the updated config.",
       );
     }
-
     const previousPlan = this.plan;
-    const previousGraph = this.graph;
     const previousClientStats = this.latestClientStats;
     const previousServerStats = this.latestServerStats;
 
     this.plan = update.next;
-    this.graph = graph;
 
     try {
       const outputPaths = getOutputPaths(
@@ -262,8 +273,11 @@ class WebpackDevSession implements BundlerDevController {
         this.config.output,
         this.plan.distDir,
       );
-      if (isHtmlOnlyUpdate(update)) {
-        await this.generateDevArtifacts();
+      if (isArtifactOnlyUpdate(update)) {
+        const emitted = await this.generateDevArtifacts();
+        if (emitted && hasRuntimeServerEntry(this.plan)) {
+          await this.ctx.callbacks.onServerBundleReady();
+        }
         return;
       }
 
@@ -276,10 +290,9 @@ class WebpackDevSession implements BundlerDevController {
         const configs = await createWebpackConfigs(
           this.config,
           incrementalPlan,
-          this.graph,
           this.ctx.cwd,
           this.ctx.hooks,
-          { clean: false },
+          { clean: false, addWatchFile: this.ctx.addWatchFile },
         );
         const stats = await runWebpack(configs);
         if (stats.clientStats) {
@@ -296,10 +309,9 @@ class WebpackDevSession implements BundlerDevController {
       const configs = await createWebpackConfigs(
         this.config,
         this.plan,
-        this.graph,
         this.ctx.cwd,
         this.ctx.hooks,
-        { clean: false },
+        { clean: false, addWatchFile: this.ctx.addWatchFile },
       );
       const stats = await runWebpack(configs);
 
@@ -323,7 +335,6 @@ class WebpackDevSession implements BundlerDevController {
       }
     } catch (error) {
       this.plan = previousPlan;
-      this.graph = previousGraph;
       this.latestClientStats = previousClientStats;
       this.latestServerStats = previousServerStats;
       throw error;
@@ -355,26 +366,60 @@ class WebpackDevSession implements BundlerDevController {
       }
     }
 
+    await this.devWorkQueue;
+
     if (errors.length > 0) {
       throw errors[0];
     }
   }
 
-  private async handleStats(
+  private enqueueStats(
     kind: "client" | "server",
     generation: number,
     stats: Stats | MultiStats,
+  ): void {
+    if (generation !== this.startGeneration) return;
+
+    let snapshot: WebpackDevStatsSnapshot;
+    try {
+      snapshot = createWebpackDevStatsSnapshot(stats);
+    } catch (error) {
+      this.failInitialBuild(error);
+      logger.error`Failed to snapshot webpack ${kind} dev build: ${error}`;
+      return;
+    }
+
+    void this.enqueueDevWork(() =>
+      this.handleStats(kind, generation, snapshot),
+    ).catch((error) => {
+      this.failInitialBuild(error);
+      logger.error`Failed to process webpack ${kind} dev build: ${error}`;
+    });
+  }
+
+  private enqueueDevWork<T>(work: () => Promise<T>): Promise<T> {
+    const result = this.devWorkQueue.then(work);
+    this.devWorkQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  private async handleStats(
+    kind: "client" | "server",
+    generation: number,
+    snapshot: WebpackDevStatsSnapshot,
   ): Promise<void> {
     if (generation !== this.startGeneration) return;
 
-    if (stats.hasErrors()) {
-      const error = new Error(formatWebpackErrors(stats));
+    if (snapshot.error) {
+      const error = new Error(snapshot.error);
       this.failInitialBuild(error);
       logger.error`${error.message}`;
       return;
     }
 
-    const split = splitStatsByName(stats);
     const outputPaths = getOutputPaths(
       this.ctx.cwd,
       this.config.output,
@@ -382,12 +427,12 @@ class WebpackDevSession implements BundlerDevController {
     );
 
     if (kind === "client") {
-      this.latestClientStats = split.clientStats
-        ? mergeWebpackStats(this.latestClientStats, split.clientStats)
+      this.latestClientStats = snapshot.clientStats
+        ? mergeWebpackStats(this.latestClientStats, snapshot.clientStats)
         : this.latestClientStats;
       await emitStats(outputPaths.clientDir, this.latestClientStats);
     } else {
-      this.latestServerStats = split.serverStats;
+      this.latestServerStats = snapshot.serverStats;
       await emitStats(outputPaths.serverDir, this.latestServerStats);
       await copyServerCssAssetsToClient(
         outputPaths.serverDir,
@@ -457,22 +502,40 @@ class WebpackDevSession implements BundlerDevController {
   }
 }
 
-function isHtmlOnlyUpdate(update: BuildPlanUpdate): boolean {
+function isArtifactOnlyUpdate(update: BuildPlanUpdate): boolean {
   return (
     !update.serverChanged &&
+    !update.runtimeChanged &&
+    !update.resolveChanged &&
     update.entries.added.length === 0 &&
     update.entries.removed.length === 0 &&
     update.entries.changed.length === 0 &&
-    (update.html.added.length > 0 ||
+    (update.deliveryChanged ||
+      update.generatedChanged ||
+      update.html.added.length > 0 ||
       update.html.removed.length > 0 ||
       update.html.changed.length > 0)
+  );
+}
+
+function hasRuntimeServerEntry(plan: BuildPlan): boolean {
+  return plan.entries.some(
+    (entry) =>
+      entry.environment === "server" && entry.kind === "server-runtime",
   );
 }
 
 function getIncrementalClientEntries(
   update: BuildPlanUpdate,
 ): BuildPlan["entries"] | undefined {
-  if (update.serverChanged || update.entries.removed.length > 0) {
+  if (
+    update.serverChanged ||
+    update.runtimeChanged ||
+    update.deliveryChanged ||
+    update.generatedChanged ||
+    update.resolveChanged ||
+    update.entries.removed.length > 0
+  ) {
     return undefined;
   }
 
@@ -535,7 +598,6 @@ function createWebpackCompiler(
 function createDevServerOptions(
   config: ResolvedConfig<WebpackConfig>,
   plan: BuildPlan,
-  graph: AppGraph,
   clientDir: string,
 ): ConstructorParameters<typeof WebpackDevServer>[0] {
   return {
@@ -559,24 +621,7 @@ function createDevServerOptions(
       writeToDisk: true,
       stats: "errors-warnings",
     },
-    setupMiddlewares(middlewares, devServer) {
-      devServer.app?.use((request, response, next) => {
-        if (request.url?.split("?")[0] !== "/manifest.json") {
-          next();
-          return;
-        }
-
-        const manifestPath = path.join(clientDir, "manifest.json");
-        if (!fs.existsSync(manifestPath)) {
-          response.statusCode = 404;
-          response.setHeader("Content-Type", "text/plain; charset=utf-8");
-          response.end("manifest not ready");
-          return;
-        }
-        response.statusCode = 200;
-        response.setHeader("Content-Type", "application/json; charset=utf-8");
-        response.end(fs.readFileSync(manifestPath));
-      });
+    setupMiddlewares(middlewares) {
       middlewares.push({
         name: "evjs-api-fallback",
         middleware(
@@ -613,8 +658,8 @@ function createDevServerOptions(
       });
       return middlewares;
     },
-    historyApiFallback: createHistoryFallback(config, plan, graph),
-    proxy: createDevProxyRules(config, graph).map(toWebpackDevProxy),
+    historyApiFallback: createHistoryFallback(config, plan),
+    proxy: createDevProxyRules(config, plan).map(toWebpackDevProxy),
     client: {
       overlay: {
         errors: true,
@@ -626,7 +671,7 @@ function createDevServerOptions(
 
 function createDevProxyRules(
   config: ResolvedConfig<WebpackConfig>,
-  graph: AppGraph,
+  plan: BuildPlan,
 ): WebpackDevProxyRule[] {
   const serverTarget = `${config.server.dev.https ? "https" : "http"}://localhost:${config.server.dev.port}`;
   const rules = [...config.dev.proxy];
@@ -634,7 +679,7 @@ function createDevProxyRules(
 
   const runtimeContexts = createFrameworkRuntimeProxyContexts(
     config,
-    graph,
+    plan,
   ).filter((context) => !configuredContexts.has(context));
   if (runtimeContexts.length > 0) {
     rules.push({
@@ -648,10 +693,7 @@ function createDevProxyRules(
     }
   }
 
-  const serverRoutePaths = [
-    ...graph.serverRoutes.map((route) => route.path),
-    ...getServerRenderedPaths(graph),
-  ];
+  const serverRoutePaths = plan.dev.serverRoutePaths;
   const explicitServerRouteContexts =
     toUniqueDevProxyContexts(serverRoutePaths);
   const contexts = explicitServerRouteContexts.filter(
@@ -690,18 +732,11 @@ function createDevProxyRules(
 
 function createFrameworkRuntimeProxyContexts(
   config: ResolvedConfig<WebpackConfig>,
-  graph: AppGraph,
+  plan: BuildPlan,
 ): string[] {
   const contexts: string[] = [];
 
-  if (
-    Object.values(graph.pages).some(
-      (page) =>
-        (typeof page.prerender === "object" &&
-          page.prerender.partial === true) ||
-        page.ppr,
-    )
-  ) {
+  if (plan.dev.hasPpr) {
     contexts.push(config.server.runtime.ppr);
   }
 
@@ -759,7 +794,6 @@ function readHttpsValue(value: string): string | Buffer {
 function createHistoryFallback(
   config: ResolvedConfig<WebpackConfig>,
   plan: BuildPlan,
-  graph: AppGraph,
 ): ConstructorParameters<typeof WebpackDevServer>[0]["historyApiFallback"] {
   const appHtmlByAppId = new Map(
     plan.html
@@ -779,14 +813,13 @@ function createHistoryFallback(
         from: new RegExp(`^/${escapeRegExp(html.fileName)}$`),
         to: `/${html.fileName}`,
       })),
-      ...createClientRouteRewrites(plan, graph, appHtmlByAppId),
+      ...createClientRouteRewrites(plan, appHtmlByAppId),
     ],
   };
 }
 
 function createClientRouteRewrites(
   plan: BuildPlan,
-  graph: AppGraph,
   appHtmlByAppId: Map<string, string>,
 ): Array<{ from: RegExp; to: string }> {
   const htmlByPageId = new Map(
@@ -795,7 +828,7 @@ function createClientRouteRewrites(
       .map((html) => [html.owner.pageId as string, html.fileName]),
   );
 
-  return getClientRouteMatches(graph).flatMap(({ path, target }) => {
+  return plan.dev.clientRoutes.flatMap(({ path, target }) => {
     const fileName = getClientRouteHtmlFileName(
       target,
       htmlByPageId,
@@ -808,7 +841,7 @@ function createClientRouteRewrites(
 }
 
 function getClientRouteHtmlFileName(
-  target: ClientRouteTarget,
+  target: BuildPlan["dev"]["clientRoutes"][number]["target"],
   htmlByPageId: Map<string, string>,
   appHtmlByAppId: Map<string, string>,
 ): string | undefined {
@@ -873,28 +906,7 @@ function getRequestPathname(url: string | undefined): string | undefined {
 }
 
 function routePathToRegExp(routePath: string): RegExp {
-  const normalized = normalizeRoutePath(routePath);
-  if (normalized === "/") return /^\/?$/;
-
-  const expression = normalized
-    .split("/")
-    .filter(Boolean)
-    .map((segment) => {
-      if (
-        segment === "*" ||
-        segment.startsWith(":") ||
-        segment.startsWith("$")
-      ) {
-        return "[^/]+";
-      }
-      if (segment.endsWith("*")) {
-        return `${escapeRegExp(segment.slice(0, -1))}.*`;
-      }
-      return escapeRegExp(segment);
-    })
-    .join("/");
-
-  return new RegExp(`^/${expression}/?$`);
+  return pageRoutePathToRegExp(normalizeRoutePath(routePath));
 }
 
 function normalizeRoutePath(routePath: string): string {
@@ -977,7 +989,24 @@ function splitStatsByName(stats: Stats | MultiStats): {
   clientStats?: WebpackStatsLike;
   serverStats?: WebpackStatsLike;
 } {
-  const json = stats.toJson({
+  return splitStatsJsonByName(readWebpackStatsJson(stats));
+}
+
+function createWebpackDevStatsSnapshot(
+  stats: Stats | MultiStats,
+): WebpackDevStatsSnapshot {
+  const hasErrors = stats.hasErrors();
+  const json = readWebpackStatsJson(stats);
+  return {
+    ...splitStatsJsonByName(json),
+    ...(hasErrors ? { error: formatWebpackJsonErrors(json) } : {}),
+  };
+}
+
+function readWebpackStatsJson(
+  stats: Stats | MultiStats,
+): WebpackMultiStatsJson | WebpackStatsJson {
+  return stats.toJson({
     all: false,
     assets: true,
     chunks: true,
@@ -986,7 +1015,12 @@ function splitStatsByName(stats: Stats | MultiStats): {
     modules: true,
     warnings: true,
   }) as WebpackMultiStatsJson | WebpackStatsJson;
+}
 
+function splitStatsJsonByName(json: WebpackMultiStatsJson | WebpackStatsJson): {
+  clientStats?: WebpackStatsLike;
+  serverStats?: WebpackStatsLike;
+} {
   const children = getStatsChildren(json);
   let clientStats: WebpackStatsLike | undefined;
   let serverStats: WebpackStatsLike | undefined;
@@ -1124,6 +1158,12 @@ function formatWebpackErrors(stats: Stats | MultiStats): string {
   const json = stats.toJson({ all: false, errors: true }) as
     | WebpackMultiStatsJson
     | WebpackStatsJson;
+  return formatWebpackJsonErrors(json);
+}
+
+function formatWebpackJsonErrors(
+  json: WebpackMultiStatsJson | WebpackStatsJson,
+): string {
   const children = getStatsChildren(json);
   const errors = children.flatMap((child) => child.errors ?? []);
   return [

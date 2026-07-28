@@ -10,12 +10,6 @@ export default defineQiankunMasterResolver(async () => ({
       container: "#slave-container",
     },
   ],
-  routes: [
-    {
-      path: "/catalog",
-      microApp: "catalog",
-    },
-  ],
   sandbox: true,
   prefetch: true,
 }));

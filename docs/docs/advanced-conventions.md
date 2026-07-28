@@ -1,57 +1,51 @@
 # Advanced Convention Control
 
-evjs defaults to file conventions: page routes come from `src/pages`, server
-file routes come from `src/apis`, and middleware comes from `src/middleware.ts`
-plus `src/apis/**/middleware.ts`. Most applications should keep those defaults.
+Canonical client Pages and Routes use positive `src/pages/**/page.*` anchors;
+server request Routes use positive `src/apis/**/api.*` anchors. In both trees,
+the containing directory determines the URL. Middleware comes from
+`src/middleware.ts` plus `src/apis/**/middleware.ts`.
 
-Use the controls on this page only when the application intentionally owns its
+Use the control on this page only when the application intentionally owns its
 runtime composition or is migrating from a non-conventional structure.
 
-## Disable Framework Discovery
+## Disable File Conventions
 
-Turn off the conventions you no longer want evjs to discover:
+File-convention discovery has one project-wide switch:
 
 ```ts
 // ev.config.ts
 import { defineConfig } from "@evjs/ev";
 
 export default defineConfig({
-  routing: false,
-  server: {
-    routing: false,
-    conventions: false,
-  },
+  conventions: false,
 });
 ```
 
-Use the switches independently when only one convention is being replaced:
+`conventions: false` disables all framework filesystem discovery together:
 
-| Config | Effect |
-| --- | --- |
-| `routing: false` | Stops automatic page-route discovery from `src/pages`. |
-| `server.routing: false` | Stops server file-route discovery from `src/apis`. |
-| `server.conventions: false` | Stops server middleware convention discovery. |
-| `server.conventions.middleware: false` | Stops only `src/middleware.ts` and `src/apis/**/middleware.ts` discovery. |
-| `routing.conventions.layout: false` | Stops external SPA root layout discovery. Nested route layouts remain part of SPA routing. |
+- Page and client-route anchors under `src/pages`;
+- server request-route `api.*` anchors under `src/apis`;
+- global `src/middleware.ts` and route-scoped
+  `src/apis/**/middleware.ts`.
 
-If the app still needs evjs to emit a browser bundle, declare an explicit app or
-explicit pages:
+There are no client-, server-, route-, middleware-, or facet-level disable
+switches. Do not combine `conventions: false` with an explicit `routing` or
+`server.routing` declaration. `server.routing: { dir }` remains available when
+file conventions are enabled and only changes the server route directory.
 
-```ts
-export default defineConfig({
-  routing: false,
-  app: {
-    entry: "./src/main.tsx",
-    html: "./index.html",
-    mount: "#app",
-  },
-});
-```
+Explicit SPA `application.routes` configuration, reachable modules marked with
+`"use server";`, and modules emitted by plugin contributions are not file
+conventions. They remain available when filesystem discovery is disabled.
+Removed `app`, `pages`, and top-level `routes` declarations are rejected.
+
+Manual browser bootstrap uses the standalone runtime below; it is not a second
+canonical routing model.
 
 ## Programmatic Browser Apps
 
 When the browser app owns routing itself, use the standalone client runtime
-directly:
+directly. This entry is owned by the application's standalone bundler; evjs
+Framework config does not discover or build a magic `src/main.tsx`:
 
 ```tsx
 // src/main.tsx
@@ -91,8 +85,8 @@ declare module "@evjs/client" {
 app.render("#app");
 ```
 
-This path is for apps that do not want evjs to derive route modules from
-`src/pages`.
+This path is for applications that intentionally own their browser router and
+bootstrap. It is independent from the framework Page-and-Route model.
 
 ## Programmatic Server Apps
 

@@ -4,11 +4,11 @@
 
 ## Project Identity
 
-- **Name**: evjs (fullstack framework), `@evjs/*` (package scope)
+- **Name**: evjs, package scope `@evjs/*`
 - **Repository**: [evaijs/evjs](https://github.com/evaijs/evjs)
-- **CLI command**: `ev` (binary from `@evjs/cli`)
-- **Linter**: Biome (`npx biome check --write`)
-- **Module type**: ESM-only (`"type": "module"` in all packages)
+- **CLI**: `ev` from `@evjs/cli`
+- **Linter**: Biome
+- **Modules**: ESM-only
 
 ## Setup
 
@@ -21,67 +21,88 @@ npm install
 ## Commands
 
 ```bash
-npm run build              # Build all packages + examples
-npm run test               # Unit tests (vitest)
-npm run test:e2e           # E2E tests (playwright)
-npm run dev                # Dev mode (turborepo)
-npx biome check --write    # Fix lint/format
+npm run build
+npm run test
+npm run test:e2e
+npm run check-types
+npm run lint
+npx biome check --write
 ```
 
 ## Coding Rules
 
-1. **Imports** — All imports at top of file. Use `import type` for type-only imports
-2. **Linting** — Biome enforced; no `any`, no `import * as` unless necessary
-3. **Page routes** — Source of truth is `src/pages` by default. Route files use
-   `.tsx`, `.jsx`, `.ts`, or `.js`; dynamic segments use `$param`; `index` maps
-   to the directory root; `(group)` segments are pathless; `_`-prefixed
-   files/folders are private; bracket, catch-all, empty, and optional segments
-   are unsupported
-4. **Layouts** — SPA root layouts are auto-discovered only from
-   `layout/index.tsx` beside the route directory. Nested SPA route layouts live
-   below a route segment as `layout.*` source modules. MPA routing does not
-   consume framework layouts
-5. **Server functions** — Must start with `"use server";` and use
-   `.server.ts` or `.server.tsx` filenames; there is no server-function
-   convention directory
-6. **Server function exports** — Named callable exports only: function
-   declarations or `const` arrow/function expressions. No default exports,
-   cross-module re-exports, or exported non-function values
-7. **Config file** — Named `ev.config.ts` (not `evjs.config.ts`)
-8. **Package boundaries** — Config/build imports stay on `@evjs/ev`.
-   File-convention app source imports route data helpers from `@evjs/ev/route`, navigation helpers from `@evjs/ev/navigation`, query helpers from `@evjs/ev/query`,
-   request helpers from `@evjs/ev/server-context`, and custom transport helpers from
-   `@evjs/ev/transport`; standalone/manual runtime imports use `@evjs/client`
-   and `@evjs/server`. Use subpath exports on the package that owns the
-   behavior before adding another distributed package. Subpath exports stay
-   intentional and documented; do not add convenience aliases. `@evjs/cli` owns
-   the default Utoopack adapter; `@evjs/shared` is a shared contract package,
-   not an app API
-9. **Rendering contracts** — Non-CSR render modes require `server` output. PPR
-   and RSC require component page modules with `render: "ssr"`, and PPR + RSC on
-   the same page is unsupported until the runtime supports that combination
+1. Keep imports at the top and use `import type` for type-only imports.
+2. Use Biome formatting and linting. Avoid `any` and broad namespace imports
+   without a concrete reason.
+3. New applications use one Page-and-Route model:
+   `<routing.dir>/**/page.*`, optional build-time `page.config.ts`,
+   directory-derived URLs, and `routing.mode`.
+4. Keep Page-private components, hooks, models, services, tests, and styles
+   inside that Page directory. They do not need `_`.
+5. Canonical client route directories use `$param`, terminal `$...splat`, and
+   `(group)`. Server request Routes use strict `src/apis/**/api.*` positive
+   anchors with directory-derived URLs.
+6. New runnable examples use `page.*`, `page.config.ts`, and `routing.mode`.
+   Keep explicit `application.routes` and noncanonical source cases in focused
+   config-route or source-conversion fixtures.
+7. Server functions begin with `"use server";` and export named callables.
+8. Config/build imports stay on `@evjs/ev`; app source uses
+   `@evjs/ev/route`, `/navigation`, `/query`, `/server-context`, and
+   `/transport`. Standalone runtimes import `@evjs/client` or `@evjs/server`.
+9. Keep framework semantics in `@evjs/ev` build internals and normalized
+   contracts in `@evjs/shared/manifest`. Bundler adapters consume BuildPlan and
+   return facts.
+10. `.ev`, `dist`, `.turbo`, `node_modules`, and route-type declarations are
+    generated output.
+
 ## Common Tasks
 
-### Add a new server function
-1. Create a reachable `[name].server.ts` module, colocated with the caller or
-   related server route
-2. Add `"use server";` at the top
-3. Export named function declarations or `const` async function expressions
-4. Import and use in client with `useQuery(fn)` or `useMutation(fn)`
+### Add A Page Route
 
-### Add a new route
-1. Add a page file under `src/pages`
-2. Use `$param` for dynamic segments and `index.tsx` for directory roots
-3. Put page-local loader/search/render metadata next to the default component export
+1. Create `src/pages/<url-segments>/page.tsx`.
+2. Default-export the Page component.
+3. Use `$param`, terminal `$...splat`, or `(group)` directories when needed.
+4. Put Page-private source in the same directory; no `_` prefix is required.
+5. Add `page.config.ts` when the Page needs a static title, supported named
+   metadata, core rendering fields, or a registered namespaced plugin
+   extension. Runtime use of extension values requires explicit plugin
+   projection.
 
-### Add a new example
-1. Create directory under `examples/`
-2. Add `package.json` with `"@evjs/cli": "*"` as devDep
-3. Add `src/pages/index.tsx` + `index.html`
-4. Create symlink in `packages/create-app/templates/`
-5. Add an e2e test in `e2e/cases/`
+### Add A Server Function
 
-### Release a new version
-1. Create a GitHub Release with a tag like `v0.1.0`
-2. The release workflow automatically syncs versions and publishes to npm
-3. **Do NOT bump versions locally** — the codebase uses `"*"` for internal deps
+1. Create a reachable `[name].server.ts` beside its caller or domain code.
+2. Add `"use server";` at the top.
+3. Export named async callables.
+4. Consume them through `@evjs/ev/query`.
+
+### Add A Server File Route
+
+1. Create the URL directory under `src/apis` and add its `api.ts` anchor.
+2. Export uppercase HTTP handlers such as `GET` or `POST` from the anchor.
+3. Keep helpers in ordinary colocated non-`api.*` modules.
+4. Use `src/middleware.ts` or `src/apis/**/middleware.ts` for middleware.
+
+### Add An Example
+
+1. Add a private workspace package under `examples/`.
+2. Use canonical `routing.mode` and `page.*` route directories.
+3. Add `index.html` and the required workspace dependencies.
+4. Add/update create-app mapping only when it is a supported user template.
+5. Add focused unit/e2e validation.
+6. Keep alternate source dialects in clearly named conversion fixtures, not
+   canonical templates.
+
+### Change Page Or Route Conventions
+
+1. Update config resolution and graph normalization first.
+2. Update English and Chinese `project-structure`, `file-conventions`, config,
+   and relevant examples together.
+3. Add graph, diagnostics, scaffold, config-route, and source-conversion
+   coverage.
+4. Run the repository validation gates.
+
+### Release A Version
+
+1. Create a GitHub Release with a tag such as `v0.3.0`.
+2. Release automation synchronizes internal package versions and publishes.
+3. Do not bump workspace-internal `"*"` dependencies locally.

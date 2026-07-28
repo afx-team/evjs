@@ -48,7 +48,7 @@ function useFeatures(): Array<{
       description: translate({
         id: "homepage.feature.serverRoutes.description",
         message:
-          "Expose Request and Response handlers from src/apis using uppercase HTTP method exports.",
+          "Expose Request and Response handlers with positive src/apis/**/api.* anchors and uppercase HTTP method exports.",
       }),
     },
     {
@@ -72,7 +72,7 @@ function useFeatures(): Array<{
       description: translate({
         id: "homepage.feature.rendering.description",
         message:
-          "Use page-level exports for CSR, SSR, SSG, PPR, and RSC integration points.",
+          "Configure CSR, SSR, SSG, PPR, and RSC through adjacent page.config.ts files.",
       }),
     },
     {
@@ -169,9 +169,10 @@ function HeroSection() {
         </p>
         <p className={styles.heroDescription}>
           <Translate id="homepage.hero.description">
-            Use src/pages for page routes, src/apis for server routes, and "use
-            server" modules for server functions. Start with conventions and add
-            configuration only when the defaults are not enough.
+            Use page.* anchors under src/pages for page routes, api.* anchors
+            under src/apis for server routes, and "use server" modules for
+            server functions. Start with conventions and add configuration only
+            when the defaults are not enough.
           </Translate>
         </p>
         <div className={styles.heroButtons}>

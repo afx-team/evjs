@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app/app.js";
-import type {
-  FrameworkPageRuntime,
-  FrameworkRouteRuntime,
-  FrameworkRuntime,
-} from "../src/framework-rendering/framework.js";
+import type { FrameworkRuntime } from "../src/framework-rendering/framework.js";
 import {
   deleteCookie,
   getContext,
@@ -20,9 +16,8 @@ import {
   registry,
 } from "../src/server-functions/register.js";
 
-type LegacyFrameworkRuntime = FrameworkRuntime & {
-  pages: Record<string, FrameworkPageRuntime>;
-  routes: FrameworkRouteRuntime[];
+type SpaFrameworkRuntime = FrameworkRuntime & {
+  routing: Extract<FrameworkRuntime["routing"], { kind: "spa" }>;
 };
 
 describe("Server Request Context", () => {
@@ -234,7 +229,7 @@ describe("Server Request Context", () => {
   });
 });
 
-function createFrameworkManifest(): LegacyFrameworkRuntime {
+function createFrameworkManifest(): SpaFrameworkRuntime {
   return {
     version: 1,
     buildId: "test",
@@ -246,25 +241,28 @@ function createFrameworkManifest(): LegacyFrameworkRuntime {
         rsc: "__evjs/rsc",
       },
     },
-    pages: {
-      dashboard: {
-        assets: { js: [], css: [] },
-        render: "ssr",
-        rendering: {
-          component: "server",
-          html: "server",
-          streaming: false,
-          hydrate: "load",
+    routing: {
+      kind: "spa",
+      pages: {
+        dashboard: {
+          assets: { js: [], css: [] },
+          render: "ssr",
+          rendering: {
+            component: "server",
+            html: "server",
+            streaming: false,
+            hydrate: "load",
+          },
         },
       },
+      routes: [
+        {
+          id: "dashboard",
+          path: "/dashboard",
+          pageId: "dashboard",
+        },
+      ],
     },
-    routes: [
-      {
-        id: "dashboard",
-        path: "/dashboard",
-        pageId: "dashboard",
-      },
-    ],
     server: {
       renderers: {
         "dashboard-server": {
@@ -277,8 +275,8 @@ function createFrameworkManifest(): LegacyFrameworkRuntime {
   };
 }
 
-function configurePprManifest(manifest: LegacyFrameworkRuntime): void {
-  manifest.pages.dashboard.ppr = {
+function configurePprManifest(manifest: SpaFrameworkRuntime): void {
+  manifest.routing.pages.dashboard.ppr = {
     delivery: "merge",
     shell: { js: ["dashboard-ppr-shell.js"], css: [] },
     regions: {
@@ -288,7 +286,7 @@ function configurePprManifest(manifest: LegacyFrameworkRuntime): void {
       },
     },
   };
-  manifest.pages.dashboard.rendering = {
+  manifest.routing.pages.dashboard.rendering = {
     component: "server",
     html: "partial",
     prerender: "partial",
@@ -297,9 +295,9 @@ function configurePprManifest(manifest: LegacyFrameworkRuntime): void {
   };
 }
 
-function configureRscManifest(manifest: LegacyFrameworkRuntime): void {
-  manifest.pages.dashboard.componentModel = "rsc";
-  manifest.pages.dashboard.rendering = {
+function configureRscManifest(manifest: SpaFrameworkRuntime): void {
+  manifest.routing.pages.dashboard.componentModel = "rsc";
+  manifest.routing.pages.dashboard.rendering = {
     component: "rsc",
     html: "server",
     streaming: true,

@@ -11,7 +11,8 @@ import {
   RouterProvider,
   stringifySearchWith,
 } from "@tanstack/react-router";
-import { createRoot } from "react-dom/client";
+import type { ReactNode } from "react";
+import { createRoot, hydrateRoot } from "react-dom/client";
 import { formatErrorDetail } from "../shared/validation.js";
 import type { AppRouteContext } from "./context.js";
 
@@ -71,6 +72,12 @@ export interface CreateAppOptions<
   queryClient?: QueryClient;
 }
 
+/** Options for mounting or hydrating a standalone application. */
+export interface AppRenderOptions {
+  /** Reuse server-rendered DOM after the router's initial data load. */
+  hydrate?: boolean;
+}
+
 /**
  * An initialized standalone or framework-owned SPA runtime.
  */
@@ -82,8 +89,12 @@ export interface App<TRouter = unknown> {
   /**
    * Mount the application into the DOM.
    * @param container - A CSS selector string or an HTMLElement.
+   * @param options - Select hydration when the server already rendered the app.
    */
-  render(container: string | HTMLElement): void;
+  render(
+    container: string | HTMLElement,
+    options?: AppRenderOptions,
+  ): void | Promise<void>;
   /**
    * Unmount the application from the DOM.
    */
@@ -144,19 +155,41 @@ export function createApp<
   });
 
   let root: ReturnType<typeof createRoot> | undefined;
+  let renderGeneration = 0;
 
-  function render(container: string | HTMLElement): void {
+  function render(
+    container: string | HTMLElement,
+    renderOptions: AppRenderOptions = {},
+  ): void | Promise<void> {
     const el = resolveAppContainer(container);
-
-    root = createRoot(el);
-    root.render(
+    assertAppRenderOptions(renderOptions);
+    const generation = ++renderGeneration;
+    const tree = (
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
-      </QueryClientProvider>,
+      </QueryClientProvider>
     );
+
+    if (renderOptions.hydrate) {
+      return hydrateAfterRouterLoad(el, tree, generation);
+    }
+
+    root = createRoot(el);
+    root.render(tree);
+  }
+
+  async function hydrateAfterRouterLoad(
+    element: HTMLElement,
+    tree: ReactNode,
+    generation: number,
+  ): Promise<void> {
+    await router.load();
+    if (generation !== renderGeneration) return;
+    root = hydrateRoot(element, tree);
   }
 
   function unmount(): void {
+    renderGeneration += 1;
     root?.unmount();
     root = undefined;
   }
@@ -164,7 +197,10 @@ export function createApp<
   return { router, queryClient, render, unmount };
 }
 
-function resolveAppContainer(container: string | HTMLElement): HTMLElement {
+/** @internal */
+export function resolveAppContainer(
+  container: string | HTMLElement,
+): HTMLElement {
   if (typeof container === "string") {
     const selector = assertAppContainerSelector(container);
     const doc = resolveAppDocument(selector);
@@ -190,6 +226,17 @@ function resolveAppContainer(container: string | HTMLElement): HTMLElement {
     );
   }
   return container;
+}
+
+function assertAppRenderOptions(options: AppRenderOptions): void {
+  if (!options || typeof options !== "object" || Array.isArray(options)) {
+    throw new Error("[evjs] App render options must be an object.");
+  }
+  if (options.hydrate !== undefined && typeof options.hydrate !== "boolean") {
+    throw new Error(
+      "[evjs] App render options.hydrate must be a boolean when provided.",
+    );
+  }
 }
 
 function assertAppContainerSelector(selector: string): string {

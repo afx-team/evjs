@@ -39,4 +39,5 @@ export {
   PageProvider,
   registerShellModule,
   startPageRuntime,
+  startPagesApp,
 } from "@evjs/client/internal";

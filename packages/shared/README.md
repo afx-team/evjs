@@ -20,7 +20,7 @@ The package intentionally exposes only two subpaths:
   URL string validation, server-function ID validation, and RSC Flight page URL
   normalization. It also exposes shared error classes used internally by `@evjs/client` and
   `@evjs/server`.
-- `@evjs/shared/manifest` for `AppGraph`, `BuildPlan`, `BuildOutput`, and
+- `@evjs/shared/manifest` for `CoreGraph`, `BuildPlan`, `BuildOutput`, and
   manifest types consumed by framework tooling and deployment adapters.
 
 When adding new framework contracts, prefer extending one of these subpaths

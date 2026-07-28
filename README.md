@@ -5,22 +5,24 @@
 [![DeepWiki](https://img.shields.io/badge/DeepWiki-evaijs%2Fevjs-blue?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTQgMTkuNXYtMTVBMi41IDIuNSAwIDAgMSA2LjUgMkgxOXYyMEg2LjVhMi41IDIuNSAwIDAgMS0yLjUtMi41eiIvPjxwYXRoIGQ9Ik04IDdoOCIvPjxwYXRoIGQ9Ik04IDExaDgiLz48cGF0aCBkPSJNOCAxNWg1Ii8+PC9zdmc+)](https://deepwiki.com/evaijs/evjs)
 [![Vibe Coding](https://img.shields.io/badge/vibe-coding-ff69b4?style=flat-square)](https://en.wikipedia.org/wiki/Vibe_coding)
 
-React fullstack framework with file-based SPA/MPA pages, server file routes,
-server functions, and independent client/server runtime cores.
+React fullstack framework with one Page-and-Route model for SPA/MPA
+applications, server file routes, server functions, and independent
+client/server runtime cores.
 
 > **ev** = **Ev**aluation · **Ev**olution — evaluate across runtimes, evolve with AI tooling.
 
 
 ## ⚡ Features
 
-- **Convention over Configuration** — `ev dev` / `ev build`, no boilerplate needed.
-- **Page Routes** — `src/pages` is the client route source of truth.
-- **SPA and MPA Modes** — SPA is generated from `src/pages` with typed page hooks; MPA emits independent router-free pages.
+- **One Page-and-Route Model** — each `src/pages/**/page.*` anchor owns its directory scope and derives its URL from that directory.
+- **One Page Config Contract** — optional `page.config.ts` supplies static titles, named metadata, build-time rendering settings, and namespaced plugin capabilities in SPA and MPA.
+- **No Accidental Pages** — colocated files such as `components/index.tsx` stay private because only `page.*` creates a Page.
+- **SPA and MPA Modes** — the same semantic Page/Route tree materializes as SPA Client Routes or MPA Documents through `routing.mode`.
 - **Data Fetching** — [TanStack Query](https://tanstack.com/query) with built-in proxies.
 - **Server Functions** — `"use server"` directive, auto-discovered at build time.
 - **Pluggable Transport** — HTTP, WebSocket, or custom via `ServerTransport`.
 - **Plugin System** — extend the generated `.ev` framework IR through contributions, plus lifecycle hooks for config, bundler, HTML, and build output.
-- **Server File Routes** — `src/apis` maps Request/Response method modules to HTTP endpoints.
+- **Server File Routes** — positive `src/apis/**/api.*` anchors map directory-owned Request/Response handlers to HTTP endpoints.
 - **Typed Errors** — `ServerError` flows structured data server → client.
 - **Multi-Runtime** — [Hono](https://hono.dev/)-based server with Node, Deno, Bun, Edge adapters.
 - **CLI** — `ev dev` · `ev build` · `ev prepare` · `ev inspect`
@@ -40,15 +42,14 @@ config needed.
 ## 🧭 Framework IR
 
 evjs materializes framework-owned code under `.ev/` before bundling. This
-agent-readable IR records file-convention discovery, generated entry facades,
-plugin generated modules, slot attachments, import edges, and the final
-manifest.
+agent-readable IR records normalized Applications, Pages, Routes, Documents,
+generated entry facades, plugin modules, slot attachments, import edges, and
+the final manifest.
 
 Use `ev prepare` to generate `.ev/` without writing `dist`, and use
 `ev inspect --json` when you want a preflight report without writing generated
-files. Plugin authors should use `contributions()` for generated modules,
-entry/runtime/HTML/resolution slots, and constrained route additions; keep
-loaders for real bundler transforms.
+files. Plugin authors should use `contributions()` for generated modules and
+entry/runtime/HTML/resolution slots; keep loaders for real bundler transforms.
 
 ## 🏗️ Packages
 
@@ -56,7 +57,7 @@ loaders for real bundler transforms.
 
 | Package | Purpose |
 |---------|---------|
-| [`@evjs/ev`](./packages/ev) | Framework API, config, plugins, build orchestration, deployment helpers, and file-convention authoring subpaths |
+| [`@evjs/ev`](./packages/ev) | Framework API, Page-and-Route config, plugins, build orchestration, deployment helpers, and authoring subpaths |
 | [`@evjs/cli`](./packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`, `ev prepare`, `ev inspect`) with the default bundler |
 | [`@evjs/create-app`](./packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
 | [`@evjs/client`](./packages/client) | Standalone/manual browser runtime core |

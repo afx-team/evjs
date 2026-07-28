@@ -20,9 +20,21 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 
 ## Core Principles
 
-1. File conventions are the framework ownership model. `src/pages` plus
-   `routing` owns client SPA/MPA routes; `src/apis` plus `server.routing` owns
-   server file routes; `src/middleware.ts` owns framework request middleware;
+1. Page directories are the framework ownership and routing model. Canonical
+   applications define Pages with `src/pages/**/page.*`; the containing
+   directory determines Page scope and URL. `routing.mode` selects SPA or MPA
+   output without changing semantic Page or Route identity. Optional adjacent
+   `page.config.ts` provides static title/named metadata, build-time rendering
+   settings, and namespaced Page and Route extensions in both modes; its
+   Document extensions target a Page-owned Document only when one is
+   materialized. Top-level `config.extensions` provides namespaced Application
+   extensions; explicit route and document inputs may configure Route and
+   Application-owned Document extensions. Plugins register all four owner kinds
+   through one declarative mechanism and explicitly project any runtime
+   behavior. Colocated files such as `components/index.tsx` stay Page-private
+   because only `page.*` is a Page anchor. Positive `api.*` anchors under
+   `src/apis` plus `server.routing` own server request Routes;
+   `src/middleware.ts` owns framework request middleware;
    `src/apis/**/middleware.ts` owns API route middleware for server file routes.
 2. `@evjs/ev` is the framework control plane for config, plugin hooks, graph
    analysis, build plans, manifests, deployment helpers, and convention
@@ -46,12 +58,15 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
    entry loaders out of file-convention semantics.
 5. Keep `@evjs/bundler-*` adapters semantic-free: they consume `BuildPlan` and return build facts.
 6. `server.functions.endpoint` is not a public config option. Use `server.basePath`; runtime paths are derived into `BuildOutput.runtime.server`.
-7. Page route code should use `src/pages`, page hooks, `Link`, and static page
-   exports. TanStack route trees are a framework implementation detail for
-   file-based SPA routing.
-8. Server route code owned by the framework should use `src/apis` route modules
-   with uppercase HTTP method exports. Do not add `server.entry`, `route.ts`
-   sentinels, `foo.get.ts` method suffixes, or route-module middleware exports.
+7. Page code should use Page directories, page hooks, and `Link`. Application
+   route declarations reference Page ids; TanStack route trees remain a
+   framework implementation detail for SPA materialization. Canonical Core 0.3
+   title, named metadata, and rendering metadata come from build-time
+   `page.config.ts`, not static exports in the Page component.
+8. Server route code owned by the framework uses strict positive
+   `<server.routing.dir>/**/api.*` anchors with directory-derived URLs and
+   uppercase HTTP method exports. Other basenames are private source. Do not
+   add a second anchor, `server.entry`, or route-module middleware exports.
 9. File-convention app source should import route data helpers from `@evjs/ev/route`,
    request helpers from `@evjs/ev/server-context`, and custom transport helpers from
    `@evjs/ev/transport`. Standalone/manual runtime code imports directly from
@@ -70,10 +85,13 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 | API | Package | Purpose |
 | --- | --- | --- |
 | `defineConfig(config)` | `@evjs/ev` | Type-safe `ev.config.ts` helper |
-| `src/pages` + `routing` | `@evjs/ev` | File-based SPA/MPA route source; users write page modules, not route trees |
-| `src/apis` + `server.routing` | `@evjs/ev` | File-based server route source; users write Request/Response method modules |
+| `routing.mode` + `src/pages/**/page.*` | `@evjs/ev` | Unified SPA/MPA Page ownership, file routing, and materialization |
+| `definePageConfig()` + `page.config.ts` | `@evjs/ev` | Static title/named metadata, rendering settings, and namespaced Page/Route/Page-owned Document extensions |
+| `config.extensions` + `applicationExtension()` | `@evjs/ev`, `@evjs/ev/plugin` | Static namespaced Application configuration resolved before plugin setup |
+| `pageExtension()` / `routeExtension()` / `documentExtension()` | `@evjs/ev/plugin` | Register Page, Route, and Document owners in the same namespaced extension mechanism; values resolve into CoreGraph during graph analysis |
+| `src/apis/**/api.*` + `server.routing` | `@evjs/ev` | Positive server request-route anchors; users write Request/Response method modules |
 | `createPagesApp()` | `@evjs/ev/_internal/client` | Internal/framework-managed page route runtime used by generated SPA entries |
-| `Link`, page hooks, page metadata exports | `@evjs/ev/route` / page modules | Public page authoring API for params, search, loader data, navigation, and render metadata |
+| `Link`, page hooks | `@evjs/ev/navigation`, `@evjs/ev/route` | Public Page authoring APIs for navigation, params, search, and loader data |
 | React page runtime | `@evjs/ev/_internal/client/react-page` | Framework-managed component page mount/hydration |
 | Server-function stubs | `@evjs/ev/_internal/client/server-functions` | Generated client references for `"use server"` modules |
 | Shell runtime | `@evjs/ev/_internal/client` | Manifest-driven app/page activation and generated module registration |
@@ -85,30 +103,41 @@ There is no longer a public `@evjs/build-tools` or `@evjs/manifest` workspace pa
 ## Common Mistakes
 
 1. Using old `@evjs/build-tools` or `@evjs/manifest` imports. Use internal `@evjs/ev` helpers or `@evjs/shared/manifest`.
-2. Putting route ownership in plugin options. Use `src/pages` for
-   framework-managed SPA/MPA routes and `pages.*.path` only for lower-level
-   standalone page outputs.
+2. Creating a second source of Page or Route identity. Use one `page.*` anchor
+   per route directory; the directory supplies both scope and URL, while
+   `routing.mode` only changes materialization.
 3. Exposing generated TanStack route trees, `__root.tsx`, or `.evjs` route
    files to application authors. The framework owns those details.
-4. Adding extra page filename dialects. Dynamic segments use `$param`, route
-   groups use `(group)` pathless segments, the external SPA root layout uses
-   `<routing-dir-parent>/layout/index.tsx`, nested SPA route layouts use
-   `layout.*` below a route segment, and non-route support files in `src/pages`
-   must follow the ignored private/hidden/test/story/client/server conventions.
-5. Reintroducing alternate server composition paths. `server.entry` and
+4. Adding another canonical Page or route dialect. Pages use
+   `<routing.dir>/**/page.*`; route directories use `$param`, terminal
+   `$...splat`, and `(group)`. Explicit `component`/`routes` config and
+   `application.routes` are SPA-only route-tree inputs and must
+   normalize to the same Page/Route/Application/Document graph. They never
+   select MPA materialization. Accept `routes` nesting and reject the
+   `children` spelling. Source trees whose published entries use `index.*`
+   must rename or move those entries to `page.*`, move Page configuration to
+   `page.config.ts`, and then configure only `routing.mode`.
+5. Treating `page.config.ts` as a browser entry. It is synchronously evaluated
+   into static graph data; plugins explicitly project runtime data or code.
+6. Reintroducing alternate server composition paths. `server.entry` and
    programmatic `createRoute()` source extraction are not framework routing
-   inputs; use `src/apis` file routes.
-6. Watching every source file for graph invalidation. `fileDependencies` should stay narrower than the analysis closure.
-7. Using `await import(href)` as the default browser shell loader. Shell modules are registered by scripts so lower browser targets and non-Vite bundlers are not tied to dynamic import comments.
-8. Treating `server.functions` manifest output as user config.
-9. Passing loose objects to `createApp({ framework })`. Framework server
+   inputs; use positive `src/apis/**/api.*` file-route anchors.
+7. Watching every source file for graph invalidation. `fileDependencies` should stay narrower than the analysis closure.
+8. Using `await import(href)` as the default browser shell loader. Shell modules are registered by scripts so lower browser targets and non-Vite bundlers are not tied to dynamic import comments.
+9. Treating `server.functions` manifest output as user config.
+10. Passing loose objects to `createApp({ framework })`. Framework server
    manifests must be generated `BuildOutput` shapes, and shared manifest shape
    validation belongs in `@evjs/shared/manifest`; use
    `createReactFrameworkServer()` unless an adapter intentionally owns that
    contract.
-10. Reintroducing public packages for build tools, manifest helpers, router
-   glue, or runtime internals. Prefer top-level public APIs or subpath exports
-   on the existing package that owns the behavior.
+11. Reintroducing public packages for build tools, manifest helpers, router
+    glue, or runtime internals. Prefer top-level public APIs or subpath exports
+    on the existing package that owns the behavior.
+12. Putting executable callbacks or secrets in Application, Page, Route, or
+    Document extension values. CoreGraph extensions are strict static JSON; use
+    typed plugin factory options or explicit module references for executable
+    behavior, and explicitly project graph values into runtime contracts when
+    needed.
 
 ## Testing
 
@@ -143,7 +172,7 @@ npm --workspace @evjs/ev test -- tests/build-tools-graph-plan.test.ts
 | Surface | Primary files | Focused validation |
 | --- | --- | --- |
 | File route convention and SPA/MPA graph | `packages/ev/src/_internal/build/page-route-conventions.ts`, `page-routes.ts`, `graph/index.ts`, `plan/index.ts` | `npx turbo run test --filter=@evjs/ev` |
-| Server file route and middleware conventions | `packages/ev/src/_internal/build/server-routes.ts`, `server-conventions.ts`, `generated-contributions.ts`, `graph/index.ts`, `plan/index.ts` | `npx turbo run test --filter=@evjs/ev` |
+| Server file route and middleware conventions | `packages/ev/src/_internal/build/server-route-conventions.ts`, `server-routes.ts`, `server-conventions.ts`, `generated-contributions.ts`, `graph/index.ts`, `plan/index.ts` | `npx turbo run test --filter=@evjs/ev` |
 | Config and package surface | `packages/ev/src/config/`, package manifests | `npx turbo run test --filter=@evjs/ev` |
 | Server functions and route handlers | `packages/server/src/app/`, `server-functions/`, `routes/*`, `packages/client/src/server-functions/`, `packages/ev/src/_internal/build/server-fns.ts` | `npx turbo run test --filter=@evjs/server` and `npx turbo run test --filter=@evjs/client` |
 | SSR, SSG, PPR, and RSC | `packages/ev/src/_internal/build/graph/index.ts`, `plan/index.ts`, `packages/server/src/framework-rendering/`, `packages/client/src/rsc/` | `npx turbo run test --filter=@evjs/ev`, `npx turbo run test --filter=@evjs/server`, and `npx turbo run test --filter=@evjs/client` |

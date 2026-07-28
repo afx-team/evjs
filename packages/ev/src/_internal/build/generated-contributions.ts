@@ -3,14 +3,14 @@ import { existsSync, readdirSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { assertStaticJsonValue } from "@evjs/shared/_internal/static-json";
 import type {
-  AppGraph,
   BuildEntry,
   BuildPlan,
   ClientEntrySlotPlanItem,
-  ClientRuntimePluginSlotPlanItem,
   ContributionRuntime,
   ContributionTarget,
+  CoreGraph,
   EntryContributionPosition,
   FrameworkSlotName,
   FrameworkSlotPlanItem,
@@ -22,25 +22,35 @@ import type {
   HtmlTagName,
   HtmlTagPlacement,
   HtmlTagSlotPlanItem,
-  PagesAppEntryMetadata,
-  ReactComponentPageEntryMetadata,
+  PageWrapperSlotPlanItem,
   ServerAppEntryMetadata,
   ServerMiddlewareNode,
 } from "@evjs/shared/manifest";
-import type { ResolvedConfig } from "../../config/index.js";
+import type { ResolvedFrameworkConfig } from "../../config/index.js";
 import type {
   ContributionContext,
   EmitApi,
+  FrameworkApplicationEntryView,
+  FrameworkApplicationView,
+  FrameworkEntryOwner,
   FrameworkEntryView,
   FrameworkIRView,
-  FrameworkPagesAppEntryView,
+  FrameworkRouteView,
   FrameworkSlot,
   FrameworkSlotInput,
   GeneratedModuleRef,
   HtmlDocument,
+  HtmlDocumentInfo,
   Plugin,
   PluginContext,
 } from "../../plugin/index.js";
+import {
+  createOriginalClientEntryFacadeSource,
+  createPagesAppEntryMainSource,
+  createReactComponentPageEntryMainSource,
+} from "./generated/client-entry-source.js";
+import { applyPageWrapperContributions } from "./generated/page-wrapper-contribution.js";
+import { createReactServerPageEntrySource } from "./generated/react-server-page-source.js";
 import { toPosixPath } from "./utils.js";
 
 export const GENERATED_IR_DIR = ".ev";
@@ -54,7 +64,7 @@ const GLOBAL_IMPORT_MIXIN_FILE = "global-import-mixin.less";
 const generatedModuleRefSymbol = Symbol.for("evjs.generated.module.ref");
 const FRAMEWORK_SLOT_NAMES = [
   "client.entry",
-  "client.runtime.plugin",
+  "page.wrapper",
   "server.request.middleware",
   "html.tag",
   "resolve.alias",
@@ -72,6 +82,7 @@ const CONTRIBUTION_RUNTIMES = [
   "server",
   "all",
 ] as const satisfies readonly ContributionRuntime[];
+const CLIENT_ENTRY_RUNTIMES = ["client"] as const;
 const CLIENT_ENTRY_MODES = ["import", "replace"] as const;
 const HTML_TAG_NAMES = [
   "meta",
@@ -126,12 +137,17 @@ interface InternalGeneratedModuleRef {
   readonly key: string;
 }
 
+type TargetedSlotPlanItem =
+  | ClientEntrySlotPlanItem
+  | PageWrapperSlotPlanItem
+  | HtmlTagSlotPlanItem;
+
 interface MaterializeFrameworkIROptions<TBundlerCfg> {
   cwd: string;
   mode: "development" | "production";
   command: "dev" | "build";
-  config: ResolvedConfig<TBundlerCfg>;
-  graph: AppGraph;
+  config: ResolvedFrameworkConfig<TBundlerCfg>;
+  graph: CoreGraph;
   plan: BuildPlan;
   plugins: Plugin<TBundlerCfg>[];
   pluginContext: PluginContext<TBundlerCfg>;
@@ -157,10 +173,13 @@ export async function materializeFrameworkIR<TBundlerCfg>(
     await collector.run(plugin);
   }
   collector.resolveModuleSources();
+  collector.validateTargets();
 
   const generated = collector.toGeneratedPlan();
+  applyPageWrapperContributions(plan, options.graph, generated);
   applyResolveContributions(plan, generated);
   ensureServerEntryForMiddlewareContributions(plan, generated);
+  assertUniqueBuildEntryNames(plan.entries);
   plan.generated = generated;
   const hasGlobalStyles = hasGlobalStylesDir(options.cwd);
   const globalImportMixinPath = resolveGlobalImportMixinPath(options.cwd);
@@ -186,7 +205,7 @@ export async function materializeFrameworkIR<TBundlerCfg>(
 
 export function applyHtmlTagContributions(
   doc: HtmlDocument,
-  html: { kind: "app"; appId: string } | { kind: "page"; pageId: string },
+  html: Pick<HtmlDocumentInfo, "applicationId" | "owner">,
   plan: BuildPlan,
 ): void {
   const tags = getSlotItems<HtmlTagSlotPlanItem>(plan, "html.tag").filter(
@@ -225,8 +244,8 @@ class ContributionCollector<TBundlerCfg> {
       cwd: string;
       mode: "development" | "production";
       command: "dev" | "build";
-      config: ResolvedConfig<TBundlerCfg>;
-      graph: AppGraph;
+      config: ResolvedFrameworkConfig<TBundlerCfg>;
+      graph: CoreGraph;
       plan: BuildPlan;
       pluginContext: PluginContext<TBundlerCfg>;
     },
@@ -273,6 +292,106 @@ class ContributionCollector<TBundlerCfg> {
     }
   }
 
+  validateTargets(): void {
+    for (const module of this.modules) {
+      if (
+        module.scope.kind === "page" &&
+        !Object.hasOwn(this.options.graph.pages, module.scope.pageId)
+      ) {
+        throw new Error(
+          `[evjs] Plugin "${module.pluginName}" generated module "${module.id}" targets unknown page "${module.scope.pageId}".`,
+        );
+      }
+    }
+
+    for (const slot of this.slots) {
+      if (!isTargetedSlotPlanItem(slot) || !slot.target) continue;
+      const target = slot.target;
+      this.validateKnownTarget(slot);
+
+      if (
+        slot.slot === "client.entry" &&
+        !this.options.plan.entries.some(
+          (entry) =>
+            entry.environment === "client" && targetMatchesEntry(target, entry),
+        )
+      ) {
+        if (target.kind === "application") {
+          const application = target.applicationId
+            ? `application "${target.applicationId}"`
+            : "an application";
+          throw new Error(
+            `[evjs] Plugin "${slot.pluginName}" ${slot.slot} contribution "${slot.id}" targets ${application}, but no client entry matches that target.`,
+          );
+        }
+        const pageId = target.pageId;
+        const route = this.options.graph.routes.find(
+          (candidate) =>
+            candidate.target.kind === "page" &&
+            candidate.target.pageId === pageId,
+        );
+        const sharedOwner = route?.applicationId
+          ? ` It is served by shared SPA application "${route.applicationId}".`
+          : "";
+        throw new Error(
+          `[evjs] Plugin "${slot.pluginName}" ${slot.slot} contribution "${slot.id}" targets semantic page "${pageId}", but that page does not own a client entry.${sharedOwner} Target the owning application; page-module and route-runtime facets are not available in this contribution slot.`,
+        );
+      }
+
+      if (
+        slot.slot === "html.tag" &&
+        ![
+          ...this.options.plan.html.map((document) => document.owner),
+          ...(this.options.plan.server.documents ?? []).map((document) => ({
+            appId: document.applicationId,
+            pageId: document.pageId,
+          })),
+        ].some((owner) => targetMatchesHtmlOwner(target, owner))
+      ) {
+        if (target.kind === "application") {
+          const application = target.applicationId
+            ? `application "${target.applicationId}"`
+            : "an application";
+          throw new Error(
+            `[evjs] Plugin "${slot.pluginName}" html.tag contribution "${slot.id}" targets ${application}, but no Document matches that target.`,
+          );
+        }
+        const pageId = target.pageId;
+        const route = this.options.graph.routes.find(
+          (candidate) =>
+            candidate.target.kind === "page" &&
+            candidate.target.pageId === pageId,
+        );
+        const sharedOwner = route?.applicationId
+          ? ` It shares the Document owned by SPA application "${route.applicationId}".`
+          : "";
+        throw new Error(
+          `[evjs] Plugin "${slot.pluginName}" html.tag contribution "${slot.id}" targets semantic page "${pageId}", but that page does not own a Document.${sharedOwner} Target the owning application; route-aware head facets are not available in this contribution slot.`,
+        );
+      }
+    }
+  }
+
+  private validateKnownTarget(slot: TargetedSlotPlanItem): void {
+    const target = slot.target;
+    if (!target) return;
+    if (target.kind === "page") {
+      if (Object.hasOwn(this.options.graph.pages, target.pageId)) return;
+      throw new Error(
+        `[evjs] Plugin "${slot.pluginName}" ${slot.slot} contribution "${slot.id}" targets unknown page "${target.pageId}".`,
+      );
+    }
+    if (
+      target.applicationId === undefined ||
+      Object.hasOwn(this.options.graph.applications, target.applicationId)
+    ) {
+      return;
+    }
+    throw new Error(
+      `[evjs] Plugin "${slot.pluginName}" ${slot.slot} contribution "${slot.id}" targets unknown application "${target.applicationId}".`,
+    );
+  }
+
   toGeneratedPlan(): GeneratedFrameworkPlan {
     return {
       version: 1,
@@ -285,6 +404,7 @@ class ContributionCollector<TBundlerCfg> {
       slots: this.slots,
       importEdges: this.importEdges,
       entries: [],
+      coreGraphHash: hashStableValue(this.options.graph),
     };
   }
 
@@ -301,8 +421,12 @@ class ContributionCollector<TBundlerCfg> {
         });
       },
       data: (input) => {
-        const source = `${JSON.stringify(input.value, null, 2)}\n`;
         const id = validateContributionId(input.id, pluginName);
+        assertStaticJsonValue(
+          input.value,
+          `Plugin "${pluginName}" generated data "${id}" value`,
+        );
+        const source = `${JSON.stringify(input.value, null, 2)}\n`;
         return this.emitGeneratedModule(pluginName, {
           id,
           scope: input.scope,
@@ -324,11 +448,18 @@ class ContributionCollector<TBundlerCfg> {
             `[evjs] Plugin "${pluginName}" entry facade "${id}" can only target client entries.`,
           );
         }
+        if (input.autoStart === false && entry.metadata?.type !== "pages-app") {
+          throw new Error(
+            `[evjs] Plugin "${pluginName}" entry facade "${id}" can disable autoStart only for a generated SPA Application entry.`,
+          );
+        }
         return this.emitGeneratedModule(pluginName, {
           id,
           scope: input.scope ?? generatedScopeForEntry(entry),
           source: ({ importFile }) =>
-            createOriginalClientEntryFacadeSource(entry, importFile),
+            createOriginalClientEntryFacadeSource(entry, importFile, {
+              autoStart: input.autoStart,
+            }),
           extension: ".ts",
           keyKind: "entry facade",
         });
@@ -420,7 +551,7 @@ class ContributionCollector<TBundlerCfg> {
           ),
           runtime: validateEnum(
             item.runtime ?? "client",
-            CONTRIBUTION_RUNTIMES,
+            CLIENT_ENTRY_RUNTIMES,
             `${base.key}.runtime`,
           ),
           mode: validateEnum(
@@ -433,8 +564,8 @@ class ContributionCollector<TBundlerCfg> {
             : {}),
         };
       }
-      case "client.runtime.plugin": {
-        const item = input as FrameworkSlotInput<"client.runtime.plugin">;
+      case "page.wrapper": {
+        const item = input as FrameworkSlotInput<"page.wrapper">;
         assertGeneratedModuleOrString(pluginName, item.id, item.module);
         return {
           ...base,
@@ -447,14 +578,11 @@ class ContributionCollector<TBundlerCfg> {
             },
             "file",
           ),
-          ...(item.exportKeys
-            ? {
-                exportKeys: validateStringArray(
-                  item.exportKeys,
-                  `${base.key}.exportKeys`,
-                ),
-              }
-            : {}),
+          runtime: validateEnum(
+            item.runtime ?? "all",
+            CONTRIBUTION_RUNTIMES,
+            `${base.key}.runtime`,
+          ),
           ...(item.target
             ? { target: validateContributionTarget(item.target) }
             : {}),
@@ -540,6 +668,9 @@ class ContributionCollector<TBundlerCfg> {
         };
       }
     }
+    throw new Error(
+      `[evjs] Plugin "${pluginName}" requested unsupported slot "${String(name)}".`,
+    );
   }
 
   private createSlotBase(
@@ -665,9 +796,19 @@ class ContributionCollector<TBundlerCfg> {
   }
 }
 
+function isTargetedSlotPlanItem(
+  slot: FrameworkSlotPlanItem,
+): slot is TargetedSlotPlanItem {
+  return (
+    slot.slot === "client.entry" ||
+    slot.slot === "page.wrapper" ||
+    slot.slot === "html.tag"
+  );
+}
+
 async function writeGeneratedIR(
   cwd: string,
-  graph: AppGraph,
+  graph: CoreGraph,
   plan: BuildPlan,
   modules: InternalGeneratedModule[],
   generated: GeneratedFrameworkPlan,
@@ -697,14 +838,13 @@ async function writeGeneratedIR(
 
 function writeGeneratedFrameworkFiles(
   cwd: string,
-  graph: AppGraph,
+  graph: CoreGraph,
   plan: BuildPlan,
 ): Promise<void>[] {
   return [
     writeJsonFile(
-      path.resolve(cwd, `./${GENERATED_IR_DIR}/framework/app-graph.json`),
+      path.resolve(cwd, `./${GENERATED_IR_DIR}/framework/core-graph.json`),
       {
-        version: 1,
         generatedBy: "evjs",
         graph,
       },
@@ -813,7 +953,7 @@ async function writeGeneratedEntry(
   );
 }
 
-function createManifestView(plan: BuildPlan, graph: AppGraph): unknown {
+function createManifestView(plan: BuildPlan, graph: CoreGraph): unknown {
   return {
     version: 1,
     buildId: plan.buildId,
@@ -830,35 +970,140 @@ function createManifestView(plan: BuildPlan, graph: AppGraph): unknown {
   };
 }
 
-function createFrameworkIRView(
-  graph: AppGraph,
+export function createFrameworkIRView(
+  graph: CoreGraph,
   plan: BuildPlan,
 ): FrameworkIRView {
   const entries = plan.entries.map(createFrameworkEntryView);
   return deepFreeze({
-    apps: Object.values(graph.apps).map(cloneJson),
-    pages: Object.values(graph.pages).map(cloneJson),
-    routes: graph.routes.map(cloneJson),
+    applications: createFrameworkApplicationViews(graph),
+    pages: Object.values(graph.pages).map(createFrameworkPageView),
+    routes: createFrameworkRouteViews(graph),
+    documents: Object.values(graph.documents).map(cloneJson),
     serverRoutes: graph.serverRoutes.map(cloneJson),
     serverFunctions: graph.serverFunctions.map(cloneJson),
     entries,
     getEntry(name) {
       return entries.find((entry) => entry.name === name);
     },
-    getPagesAppEntry() {
-      return entries.find(isFrameworkPagesAppEntryView);
+    getApplicationEntry(applicationId) {
+      const candidates = entries.filter(isFrameworkApplicationEntryView);
+      if (applicationId) {
+        return candidates.find(
+          (entry) => entry.owner?.applicationId === applicationId,
+        );
+      }
+      return candidates.length === 1 ? candidates[0] : undefined;
     },
   });
 }
 
-function createFrameworkEntryView(entry: BuildEntry): FrameworkEntryView {
-  return cloneJson(entry) as FrameworkEntryView;
+function createFrameworkRouteViews(
+  graph: CoreGraph,
+): FrameworkIRView["routes"] {
+  return graph.routes.map(
+    (route): FrameworkRouteView => ({
+      id: route.id,
+      applicationId: route.applicationId,
+      ...(route.parentId !== undefined ? { parentId: route.parentId } : {}),
+      pattern: cloneJson(route.pattern),
+      target: cloneJson(route.target),
+      facets: cloneJson(route.facets),
+      provenance: cloneJson(route.provenance),
+      extensions: cloneJson(route.extensions),
+    }),
+  );
 }
 
-function isFrameworkPagesAppEntryView(
+function createFrameworkApplicationViews(
+  graph: CoreGraph,
+): FrameworkApplicationView[] {
+  return Object.values(graph.applications).map(createCoreApplicationView);
+}
+
+function createCoreApplicationView(
+  application: CoreGraph["applications"][string],
+): FrameworkApplicationView {
+  return {
+    id: application.id,
+    root: application.root,
+    routingMode: application.routingMode,
+    ...(application.layout ? { layout: application.layout } : {}),
+    pageIds: [...application.pageIds],
+    routeIds: [...application.routeIds],
+    documentIds: [...application.documentIds],
+    extensions: cloneJson(application.extensions),
+    provenance: cloneJson(application.provenance),
+  };
+}
+
+function createFrameworkPageView(
+  page: CoreGraph["pages"][string],
+): FrameworkIRView["pages"][number] {
+  return {
+    id: page.id,
+    applicationId: page.applicationId,
+    source: {
+      module: page.source.module,
+      scope: cloneJson(page.source.scope),
+      provider: page.source.provider,
+      ...(page.source.config ? { config: page.source.config } : {}),
+    },
+    extensions: cloneJson(page.extensions),
+    render: page.render,
+    ...(page.componentModel ? { componentModel: page.componentModel } : {}),
+    ...(page.hydrate ? { hydrate: page.hydrate } : {}),
+    ...(page.prerender ? { prerender: cloneJson(page.prerender) } : {}),
+    ...(page.ppr ? { ppr: cloneJson(page.ppr) } : {}),
+    ...(page.metadata ? { metadata: cloneJson(page.metadata) } : {}),
+    provenance: cloneJson(page.provenance),
+  };
+}
+
+function createFrameworkEntryView(entry: BuildEntry): FrameworkEntryView {
+  const { owner: buildOwner, ...view } = cloneJson(entry);
+  const owner = createFrameworkEntryOwner(buildOwner);
+  if (view.kind === "app-client") {
+    if (view.metadata?.type !== "pages-app") {
+      throw new Error(
+        `[evjs] Application client entry "${view.name}" is missing normalized Application metadata.`,
+      );
+    }
+    return {
+      ...view,
+      kind: "application-client",
+      ...(owner ? { owner } : {}),
+      metadata: {
+        ...view.metadata,
+        type: "application",
+      },
+    };
+  }
+  return {
+    ...view,
+    ...(owner ? { owner } : {}),
+  } as FrameworkEntryView;
+}
+
+function createFrameworkEntryOwner(
+  owner: BuildEntry["owner"],
+): FrameworkEntryOwner | undefined {
+  if (!owner) return undefined;
+  return {
+    ...(owner.appId ? { applicationId: owner.appId } : {}),
+    ...(owner.pageId ? { pageId: owner.pageId } : {}),
+    ...(owner.routeId ? { routeId: owner.routeId } : {}),
+    ...(owner.regionId ? { regionId: owner.regionId } : {}),
+  };
+}
+
+function isFrameworkApplicationEntryView(
   entry: FrameworkEntryView,
-): entry is FrameworkPagesAppEntryView {
-  return entry.metadata?.type === "pages-app";
+): entry is FrameworkApplicationEntryView {
+  return (
+    entry.kind === "application-client" &&
+    entry.metadata?.type === "application"
+  );
 }
 
 function findFrameworkEntry(
@@ -881,7 +1126,7 @@ function generatedScopeForEntry(entry: BuildEntry): GeneratedScope {
   if (entry.environment === "server") {
     return { kind: "server" };
   }
-  return { kind: "app" };
+  return { kind: "application" };
 }
 
 function withGeneratedHeader(
@@ -959,8 +1204,26 @@ function ensureServerEntryForMiddlewareContributions(
   ) {
     return;
   }
-  if (plan.entries.some((entry) => entry.metadata?.type === "server-app"))
+  const serverEntries = plan.entries.filter(
+    (entry) => entry.kind === "server-runtime",
+  );
+  if (serverEntries.length > 1) {
+    throw new Error(
+      `[evjs] Framework plan has multiple server-runtime entries: ${serverEntries
+        .map((entry) => `"${entry.name}"`)
+        .join(", ")}.`,
+    );
+  }
+  const existing = serverEntries[0];
+  if (existing) {
+    if (existing.metadata?.type !== "server-app") {
+      existing.metadata = {
+        type: "server-app",
+        routes: [],
+      };
+    }
     return;
+  }
 
   plan.entries.push({
     name: "server",
@@ -977,6 +1240,18 @@ function ensureServerEntryForMiddlewareContributions(
     ...plan.server,
     entry: "./.ev/entries/server.ts",
   };
+}
+
+function assertUniqueBuildEntryNames(entries: BuildEntry[]): void {
+  const names = new Set<string>();
+  for (const entry of entries) {
+    if (names.has(entry.name)) {
+      throw new Error(
+        `[evjs] Framework plan contains duplicate build entry name "${entry.name}" after applying plugin contributions.`,
+      );
+    }
+    names.add(entry.name);
+  }
 }
 
 function createGeneratedEntryPlans(
@@ -1020,7 +1295,6 @@ function shouldGenerateEntry(
     return (
       hasGlobalStyles ||
       getMatchingClientEntrySlots(plan, entry).length > 0 ||
-      getMatchingRuntimePluginSlots(plan, entry).length > 0 ||
       getSlotItemsFromGenerated<ClientEntrySlotPlanItem>(
         generated,
         "client.entry",
@@ -1066,13 +1340,17 @@ function createEntrySource(
   plan: BuildPlan,
 ): string {
   const fromFile = path.resolve(cwd, generatedEntry.file);
+  function importFile(file: string): string {
+    return toGeneratedImportSpecifier(cwd, fromFile, file);
+  }
+
   if (entry.metadata?.type === "pages-app") {
     return createClientEntrySource({
       cwd,
       entry,
       fromFile,
       plan,
-      mainSource: createPagesAppMainSource(cwd, fromFile, entry.metadata),
+      mainSource: createPagesAppEntryMainSource(entry.metadata, importFile),
     });
   }
   if (entry.metadata?.type === "react-component-page") {
@@ -1081,22 +1359,24 @@ function createEntrySource(
       entry,
       fromFile,
       plan,
-      mainSource: createReactComponentPageMainSource(
-        cwd,
-        fromFile,
+      mainSource: createReactComponentPageEntryMainSource(
         entry.metadata,
+        importFile,
       ),
     });
+  }
+  if (entry.metadata?.type === "react-server-page") {
+    return createReactServerPageEntrySource(
+      entry.metadata,
+      entry.kind,
+      importFile,
+    );
   }
   if (entry.metadata?.type === "server-app") {
     return createServerAppEntrySource(cwd, fromFile, entry.metadata, plan);
   }
   if (entry.environment === "client") {
-    const original = toGeneratedImportSpecifier(
-      cwd,
-      fromFile,
-      generatedEntry.originalImport,
-    );
+    const original = importFile(generatedEntry.originalImport);
     return createClientEntrySource({
       cwd,
       entry,
@@ -1143,10 +1423,6 @@ function createClientEntrySource(options: {
     options.fromFile,
   );
   const entrySlots = getMatchingClientEntrySlots(options.plan, options.entry);
-  const runtimePlugins = getMatchingRuntimePluginSlots(
-    options.plan,
-    options.entry,
-  );
   const replacement = entrySlots.filter((slot) => slot.mode === "replace");
   if (replacement.length > 1) {
     throw new Error(
@@ -1162,30 +1438,6 @@ function createClientEntrySource(options: {
       .map((slot) =>
         importSlotModule(options.cwd, options.fromFile, slot.module, position),
       );
-  const runtimeImports = runtimePlugins.flatMap((slot, index) => [
-    `import * as __evRuntimePlugin${index} from ${JSON.stringify(
-      toGeneratedImportSpecifier(options.cwd, options.fromFile, slot.module),
-    )};`,
-  ]);
-  const runtimeRegistry =
-    runtimePlugins.length > 0
-      ? [
-          `const __evRuntimePlugins = [${runtimePlugins
-            .map((slot, index) => {
-              const properties = [
-                `key: ${JSON.stringify(slot.key)}`,
-                `module: __evRuntimePlugin${index}`,
-                slot.exportKeys
-                  ? `exportKeys: ${JSON.stringify(slot.exportKeys)}`
-                  : "",
-              ].filter(Boolean);
-              return `{ ${properties.join(", ")} }`;
-            })
-            .join(", ")}];`,
-          "void __evRuntimePlugins;",
-        ]
-      : [];
-
   const replacementSlot = replacement[0];
   const mainSource = replacementSlot
     ? [
@@ -1203,8 +1455,6 @@ function createClientEntrySource(options: {
     ...globalStyleImports,
     ...importsFor("polyfill"),
     ...importsFor("before-main-imports"),
-    ...runtimeImports,
-    ...runtimeRegistry,
     ...importsFor("before-main"),
     ...mainSource,
     ...importsFor("after-main-imports"),
@@ -1212,155 +1462,6 @@ function createClientEntrySource(options: {
   ]
     .filter(Boolean)
     .join("\n");
-}
-
-function hasGlobalStylesDir(cwd: string): boolean {
-  const stylesDir = path.resolve(cwd, GLOBAL_STYLES_DIR);
-  if (!existsSync(stylesDir)) return false;
-  return readdirSync(stylesDir).some((file) =>
-    GLOBAL_STYLES_EXTENSIONS.some((ext) => file.endsWith(ext)),
-  );
-}
-
-function resolveGlobalImportMixinPath(cwd: string): string | undefined {
-  const mixinFile = path.resolve(
-    cwd,
-    GLOBAL_STYLES_DIR,
-    GLOBAL_IMPORT_MIXIN_FILE,
-  );
-  return existsSync(mixinFile) ? mixinFile : undefined;
-}
-
-function collectGlobalStyleImports(cwd: string, fromFile: string): string[] {
-  const stylesDir = path.resolve(cwd, GLOBAL_STYLES_DIR);
-  if (!existsSync(stylesDir)) return [];
-  const styleFiles = readdirSync(stylesDir)
-    .filter((file) =>
-      GLOBAL_STYLES_EXTENSIONS.some((ext) => file.endsWith(ext)),
-    )
-    .sort();
-  return styleFiles.map((file) => {
-    const specifier = toGeneratedImportSpecifier(
-      cwd,
-      fromFile,
-      path.join(stylesDir, file),
-    );
-    return `import ${JSON.stringify(specifier)};`;
-  });
-}
-
-function createOriginalClientEntryFacadeSource(
-  entry: BuildEntry,
-  importFile: (file: string) => string,
-): string {
-  if (entry.metadata?.type === "pages-app") {
-    return createPagesAppMainSourceFromImportFile(
-      entry.metadata,
-      importFile,
-    ).join("\n");
-  }
-  if (entry.metadata?.type === "react-component-page") {
-    return createReactComponentPageMainSourceFromImportFile(
-      entry.metadata,
-      importFile,
-    ).join("\n");
-  }
-  return `import ${JSON.stringify(importFile(entry.import))};`;
-}
-
-function createPagesAppMainSource(
-  cwd: string,
-  fromFile: string,
-  metadata: PagesAppEntryMetadata,
-): string[] {
-  return createPagesAppMainSourceFromImportFile(metadata, (file) =>
-    toGeneratedImportSpecifier(cwd, fromFile, file),
-  );
-}
-
-function createPagesAppMainSourceFromImportFile(
-  metadata: PagesAppEntryMetadata,
-  importFile: (file: string) => string,
-): string[] {
-  const imports = [
-    `import { createPagesApp } from "@evjs/ev/_internal/client";`,
-    metadata.rootModule
-      ? `import * as rootModule from ${JSON.stringify(
-          importFile(metadata.rootModule),
-        )};`
-      : "",
-    ...metadata.routes.map(
-      (route, index) =>
-        `import * as routeModule${index} from ${JSON.stringify(
-          importFile(route.module),
-        )};`,
-    ),
-    ...metadata.routes.flatMap((route, index) => [
-      route.errorModule
-        ? `import * as routeErrorModule${index} from ${JSON.stringify(
-            importFile(route.errorModule),
-          )};`
-        : "",
-      route.notFoundModule
-        ? `import * as routeNotFoundModule${index} from ${JSON.stringify(
-            importFile(route.notFoundModule),
-          )};`
-        : "",
-    ]),
-  ].filter(Boolean);
-
-  const routeDefinitions = metadata.routes.map((route, index) => {
-    const properties = [
-      route.id ? `id: ${JSON.stringify(route.id)}` : "",
-      `path: ${JSON.stringify(route.path)}`,
-      route.parentId ? `parentId: ${JSON.stringify(route.parentId)}` : "",
-      route.kind ? `kind: ${JSON.stringify(route.kind)}` : "",
-      `module: ${createRouteModuleExpression(route, index)}`,
-    ].filter(Boolean);
-    return `{ ${properties.join(", ")} }`;
-  });
-
-  return [
-    ...imports,
-    "",
-    "const { app } = createPagesApp({",
-    metadata.rootModule ? "  rootModule," : "",
-    `  routes: [${routeDefinitions.join(", ")}],`,
-    "});",
-    `app.render(${JSON.stringify(metadata.mount)});`,
-    "export { app };",
-    "export default app;",
-  ].filter(Boolean);
-}
-
-function createReactComponentPageMainSource(
-  cwd: string,
-  fromFile: string,
-  metadata: ReactComponentPageEntryMetadata,
-): string[] {
-  return createReactComponentPageMainSourceFromImportFile(metadata, (file) =>
-    toGeneratedImportSpecifier(cwd, fromFile, file),
-  );
-}
-
-function createReactComponentPageMainSourceFromImportFile(
-  metadata: ReactComponentPageEntryMetadata,
-  importFile: (file: string) => string,
-): string[] {
-  const component = importFile(metadata.component);
-  const entryOptions = {
-    mount: metadata.mount,
-    hydrate: metadata.hydrate,
-    render: metadata.render,
-    ...(metadata.route ? { route: metadata.route } : {}),
-  };
-  return [
-    `import Component from ${JSON.stringify(component)};`,
-    `import { createGeneratedReactPageEntry } from "@evjs/ev/_internal/client/react-page";`,
-    "",
-    `const mod = createGeneratedReactPageEntry(Component, ${JSON.stringify(entryOptions)}, import.meta.url);`,
-    "export default mod;",
-  ];
 }
 
 function createServerAppEntrySource(
@@ -1465,43 +1566,13 @@ function createServerAppEntrySource(
   ].join("\n");
 }
 
-function createRouteModuleExpression(
-  route: PagesAppEntryMetadata["routes"][number],
-  index: number,
-): string {
-  const properties = [];
-  if (route.errorModule) {
-    properties.push(
-      `errorComponent: routeErrorModule${index}.default ?? routeErrorModule${index}.errorComponent`,
-    );
-  }
-  if (route.notFoundModule) {
-    properties.push(
-      `notFoundComponent: routeNotFoundModule${index}.default ?? routeNotFoundModule${index}.notFoundComponent`,
-    );
-  }
-  if (properties.length === 0) return `routeModule${index}`;
-  return `{ ${properties.join(", ")}, ...routeModule${index} }`;
-}
-
 function getMatchingClientEntrySlots(
   plan: BuildPlan,
   entry: BuildEntry,
 ): ClientEntrySlotPlanItem[] {
   return getSlotItems<ClientEntrySlotPlanItem>(plan, "client.entry").filter(
-    (slot) =>
-      slot.runtime !== "server" && targetMatchesEntry(slot.target, entry),
+    (slot) => targetMatchesEntry(slot.target, entry),
   );
-}
-
-function getMatchingRuntimePluginSlots(
-  plan: BuildPlan,
-  entry: BuildEntry,
-): ClientRuntimePluginSlotPlanItem[] {
-  return getSlotItems<ClientRuntimePluginSlotPlanItem>(
-    plan,
-    "client.runtime.plugin",
-  ).filter((slot) => targetMatchesEntry(slot.target, entry));
 }
 
 function getSlotItems<T extends FrameworkSlotPlanItem>(
@@ -1525,24 +1596,42 @@ function targetMatchesEntry(
   entry: BuildEntry,
 ): boolean {
   if (!target) return true;
-  if (target.kind === "app") {
+  if (target.kind === "application") {
     if (!entry.owner?.appId) return false;
-    return target.appId === undefined || target.appId === entry.owner.appId;
+    return (
+      target.applicationId === undefined ||
+      target.applicationId === entry.owner.appId
+    );
   }
   return target.pageId === entry.owner?.pageId;
 }
 
 function targetMatchesHtml(
   target: ContributionTarget | undefined,
-  html: { kind: "app"; appId: string } | { kind: "page"; pageId: string },
+  html: Pick<HtmlDocumentInfo, "applicationId" | "owner">,
 ): boolean {
   if (!target) return true;
-  if (target.kind === "app") {
+  if (target.kind === "application") {
     return (
-      html.kind === "app" && (!target.appId || target.appId === html.appId)
+      target.applicationId === undefined ||
+      target.applicationId === html.applicationId
     );
   }
-  return html.kind === "page" && target.pageId === html.pageId;
+  return html.owner.kind === "page" && target.pageId === html.owner.pageId;
+}
+
+function targetMatchesHtmlOwner(
+  target: ContributionTarget,
+  owner: { appId?: string; pageId?: string },
+): boolean {
+  if (target.kind === "application") {
+    return Boolean(
+      owner.appId &&
+        (target.applicationId === undefined ||
+          target.applicationId === owner.appId),
+    );
+  }
+  return target.pageId === owner.pageId;
 }
 
 function importSlotModule(
@@ -1648,7 +1737,7 @@ function validateGeneratedScope(
       `[evjs] Plugin "${pluginName}" generated module "${id}" must declare a valid scope.`,
     );
   }
-  if (scope.kind === "app" || scope.kind === "server") return;
+  if (scope.kind === "application" || scope.kind === "server") return;
   if (
     scope.kind === "page" &&
     typeof scope.pageId === "string" &&
@@ -1664,16 +1753,19 @@ function validateGeneratedScope(
 function validateContributionTarget(
   target: ContributionTarget,
 ): ContributionTarget {
-  if (target.kind === "app") {
-    if (target.appId !== undefined)
-      assertTrimmedString(target.appId, "target.appId");
-    return target.appId === undefined ? { kind: "app" } : { ...target };
+  if (target.kind === "application") {
+    if (target.applicationId !== undefined) {
+      assertTrimmedString(target.applicationId, "target.applicationId");
+    }
+    return target.applicationId === undefined
+      ? { kind: "application" }
+      : { ...target };
   }
   if (target.kind === "page") {
     assertTrimmedString(target.pageId, "target.pageId");
     return { ...target };
   }
-  throw new Error('[evjs] target.kind must be "app" or "page".');
+  throw new Error('[evjs] target.kind must be "application" or "page".');
 }
 
 function assertGeneratedModuleOrString(
@@ -1701,23 +1793,11 @@ function validateEnum<T extends string>(
   );
 }
 
-function validateString(value: unknown, label: string): string {
-  assertTrimmedString(value as string, label);
-  return value as string;
-}
-
 function validateRawString(value: unknown, label: string): string {
   if (typeof value !== "string") {
     throw new Error(`[evjs] ${label} must be a string.`);
   }
   return value;
-}
-
-function validateStringArray(value: unknown, label: string): string[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`[evjs] ${label} must be an array of strings.`);
-  }
-  return value.map((item, index) => validateString(item, `${label}[${index}]`));
 }
 
 function validateHtmlAttrs(
@@ -1774,6 +1854,11 @@ function assertGeneratedModuleRef(
 function toGeneratedModulePlan(
   module: InternalGeneratedModule,
 ): GeneratedModulePlan {
+  if (module.resolvedSource === undefined) {
+    throw new Error(
+      `[evjs] Generated module "${module.key}" source must be resolved before creating the generated plan.`,
+    );
+  }
   return {
     key: module.key,
     id: module.id,
@@ -1782,14 +1867,37 @@ function toGeneratedModulePlan(
     file: module.file,
     specifier: module.specifier,
     extension: module.extension,
+    sourceHash: hashText(module.resolvedSource),
   };
+}
+
+function hashStableValue(value: unknown): string {
+  return hashText(JSON.stringify(sortStableValue(value)));
+}
+
+function hashText(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function sortStableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortStableValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => {
+        if (left < right) return -1;
+        if (left > right) return 1;
+        return 0;
+      })
+      .map(([key, nested]) => [key, sortStableValue(nested)]),
+  );
 }
 
 function createGeneratedFrameworkFiles(): GeneratedFrameworkPlan["frameworkFiles"] {
   return [
     {
-      id: "app-graph",
-      file: `./${GENERATED_IR_DIR}/framework/app-graph.json`,
+      id: "core-graph",
+      file: `./${GENERATED_IR_DIR}/framework/core-graph.json`,
     },
     {
       id: "build-plan",

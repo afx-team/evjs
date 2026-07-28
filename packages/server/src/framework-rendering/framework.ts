@@ -21,6 +21,11 @@ import {
   TEXT_HTML_UTF8_CONTENT_TYPE,
   type UrlStringValidationError,
 } from "@evjs/shared";
+import {
+  assertPageMetadata,
+  type PageMetadata,
+  type ServerDocumentShell,
+} from "@evjs/shared/manifest";
 import { tryGetContext } from "hono/context-storage";
 import { textResponse } from "../shared/responses.js";
 import { formatUnknownError, isRecord } from "../shared/validation.js";
@@ -33,11 +38,7 @@ export interface FrameworkRuntime {
     server: FrameworkRuntimeServer;
     transport?: FrameworkRuntimeTransport;
   };
-  routing?: FrameworkRuntimeRouting;
-  /** @deprecated Use routing.kind === "mpa".pages. */
-  pages?: Record<string, FrameworkPageRuntime>;
-  /** @deprecated Use routing.kind === "spa".routes or page route metadata. */
-  routes?: FrameworkRouteRuntime[];
+  routing: FrameworkRuntimeRouting;
   server: FrameworkServerRuntime;
   rsc?: FrameworkRscRuntime;
 }
@@ -60,13 +61,15 @@ export interface FrameworkAssetGroup {
 
 export interface FrameworkPageRuntime {
   assets: FrameworkAssetGroup;
+  document?: ServerDocumentShell;
+  metadata?: PageMetadata;
   render: "csr" | "ssr" | "ssg";
   rendering: {
     component: "client" | "server" | "rsc";
     html: "client" | "server" | "static" | "partial";
     prerender?: "full" | "partial";
     streaming: boolean;
-    hydrate: "none" | "load" | "visible" | "idle";
+    hydrate: "none" | "load";
   };
   path?: string;
   routeId?: string;
@@ -98,6 +101,7 @@ export interface FrameworkRouteRuntime {
 export type FrameworkRuntimeRouting =
   | {
       kind: "spa";
+      pages: Record<string, FrameworkPageRuntime>;
       routes: FrameworkRouteRuntime[];
     }
   | {
@@ -527,18 +531,17 @@ export function assertFrameworkRuntime(
 export function getFrameworkRuntimePages(
   runtime: FrameworkRuntime,
 ): Record<string, FrameworkPageRuntime> {
-  if (runtime.routing?.kind === "mpa") return runtime.routing.pages;
-  return runtime.pages ?? {};
+  return runtime.routing.pages;
 }
 
 export function getFrameworkRuntimeRoutes(
   runtime: FrameworkRuntime,
 ): FrameworkRouteRuntime[] {
-  if (runtime.routing?.kind === "spa") return runtime.routing.routes;
-  if (runtime.routing?.kind === "mpa") {
+  if (runtime.routing.kind === "spa") return runtime.routing.routes;
+  if (runtime.routing.kind === "mpa") {
     return createRoutesFromFrameworkPages(runtime.routing.pages);
   }
-  return runtime.routes ?? [];
+  return [];
 }
 
 function assertFrameworkRuntimeRouting(
@@ -548,72 +551,39 @@ function assertFrameworkRuntimeRouting(
   pages: Record<string, unknown>;
   routes: FrameworkRouteRuntime[];
 } {
-  if (value.routing !== undefined) {
-    if (value.routes !== undefined) {
-      throw new Error(
-        `[evjs] ${source} must not define both routing and routes.`,
-      );
-    }
-    assertObject(value.routing, `${source}.routing`);
-    if (value.routing.kind === "spa") {
-      const pages =
-        value.pages === undefined
-          ? {}
-          : assertFrameworkRuntimePageRecord(value.pages, `${source}.pages`);
-      if (!Array.isArray(value.routing.routes)) {
-        throw new Error(`[evjs] ${source}.routing.routes must be an array.`);
-      }
-      assertFrameworkRuntimeRoutes(
-        value.routing.routes,
-        `${source}.routing.routes`,
-        pages,
-      );
-      return {
-        pages,
-        routes: value.routing.routes as FrameworkRouteRuntime[],
-      };
-    }
-    if (value.routing.kind === "mpa") {
-      if (value.pages !== undefined) {
-        throw new Error(
-          `[evjs] ${source} must not define both routing.kind "mpa" and pages.`,
-        );
-      }
-      assertObject(value.routing.pages, `${source}.routing.pages`);
-      assertFrameworkRuntimePages(
-        value.routing.pages,
-        `${source}.routing.pages`,
-      );
-      const routes = createRoutesFromFrameworkPages(value.routing.pages);
-      assertFrameworkRuntimeRoutes(
-        routes,
-        `${source}.routing.pages`,
-        value.routing.pages,
-      );
-      return { pages: value.routing.pages, routes };
-    }
-    throw new Error(`[evjs] ${source}.routing.kind must be "spa" or "mpa".`);
+  if (value.pages !== undefined || value.routes !== undefined) {
+    throw new Error(
+      `[evjs] ${source}.pages and ${source}.routes are not supported. Use ${source}.routing.`,
+    );
   }
 
-  assertObject(value.pages, `${source}.pages`);
-  assertFrameworkRuntimePages(value.pages, `${source}.pages`);
-  if (!Array.isArray(value.routes)) {
-    throw new Error(`[evjs] ${source}.routes must be an array.`);
+  assertObject(value.routing, `${source}.routing`);
+  assertObject(value.routing.pages, `${source}.routing.pages`);
+  assertFrameworkRuntimePages(value.routing.pages, `${source}.routing.pages`);
+  if (value.routing.kind === "spa") {
+    if (!Array.isArray(value.routing.routes)) {
+      throw new Error(`[evjs] ${source}.routing.routes must be an array.`);
+    }
+    assertFrameworkRuntimeRoutes(
+      value.routing.routes,
+      `${source}.routing.routes`,
+      value.routing.pages,
+    );
+    return {
+      pages: value.routing.pages,
+      routes: value.routing.routes as FrameworkRouteRuntime[],
+    };
   }
-  assertFrameworkRuntimeRoutes(value.routes, `${source}.routes`, value.pages);
-  return {
-    pages: value.pages,
-    routes: value.routes as FrameworkRouteRuntime[],
-  };
-}
-
-function assertFrameworkRuntimePageRecord(
-  value: unknown,
-  source: string,
-): Record<string, unknown> {
-  assertObject(value, source);
-  assertFrameworkRuntimePages(value, source);
-  return value;
+  if (value.routing.kind === "mpa") {
+    const routes = createRoutesFromFrameworkPages(value.routing.pages);
+    assertFrameworkRuntimeRoutes(
+      routes,
+      `${source}.routing.pages`,
+      value.routing.pages,
+    );
+    return { pages: value.routing.pages, routes };
+  }
+  throw new Error(`[evjs] ${source}.routing.kind must be "spa" or "mpa".`);
 }
 
 function assertBuildIdentifier(value: unknown, source: string): void {
@@ -652,6 +622,12 @@ function assertFrameworkRuntimePages(
     const pageSource = `${source}.${name}`;
     assertObject(page, pageSource);
     assertAssetGroup(page.assets, `${pageSource}.assets`);
+    if (page.metadata !== undefined) {
+      assertPageMetadata(page.metadata, `${pageSource}.metadata`);
+    }
+    if (page.document !== undefined) {
+      assertFrameworkDocumentShell(page.document, `${pageSource}.document`);
+    }
     assertRenderMode(page.render, `${pageSource}.render`);
     assertPageRendering(page.rendering, `${pageSource}.rendering`);
     if (page.path !== undefined) {
@@ -669,6 +645,19 @@ function assertFrameworkRuntimePages(
     if (page.ppr !== undefined) {
       assertPprPageRuntime(page.ppr, `${pageSource}.ppr`);
       assertPprPageRuntimeContract(page, pageSource);
+    }
+  }
+}
+
+function assertFrameworkDocumentShell(value: unknown, source: string): void {
+  assertObject(value, source);
+  for (const key of [
+    "beforeContent",
+    "betweenContentAndData",
+    "afterData",
+  ] as const) {
+    if (typeof value[key] !== "string") {
+      throw new Error(`[evjs] ${source}.${key} must be a string.`);
     }
   }
 }
@@ -842,7 +831,7 @@ function assertFrameworkRuntimeRsc(
         frameworkPage.rendering.component !== "rsc"
       ) {
         throw new Error(
-          `[evjs] ${pageSource} requires ${source.replace(/\.rsc$/, "")}.pages.${name}.componentModel to be "rsc".`,
+          `[evjs] ${pageSource} requires ${source.replace(/\.rsc$/, "")}.routing.pages.${name}.componentModel to be "rsc".`,
         );
       }
       assertRuntimeString(page.renderer, `${pageSource}.renderer`);
@@ -868,7 +857,7 @@ function assertOptionalPageReference(
   assertRuntimeString(value, source);
   if (!Object.hasOwn(pages, value)) {
     throw new Error(
-      `[evjs] ${source} "${value}" does not match any runtime.pages entry.`,
+      `[evjs] ${source} "${value}" does not match any runtime.routing.pages entry.`,
     );
   }
   const page = pages[value];
@@ -886,7 +875,7 @@ function assertPageRouteContract(
       normalizeRoutePathname(page.path)
   ) {
     throw new Error(
-      `[evjs] ${routeSource}.path "${route.path as string}" must match runtime.pages.${route.pageId as string}.path "${page.path}".`,
+      `[evjs] ${routeSource}.path "${route.path as string}" must match runtime.routing.pages.${route.pageId as string}.path "${page.path}".`,
     );
   }
 }
@@ -1002,7 +991,7 @@ function assertServerRendererOwner(
     const route = routesById.get(value.routeId);
     if (!route) {
       throw new Error(
-        `[evjs] ${source}.routeId "${value.routeId}" does not match any runtime.routes entry.`,
+        `[evjs] ${source}.routeId "${value.routeId}" does not match any runtime.routing.routes entry.`,
       );
     }
   }
@@ -1063,17 +1052,8 @@ function assertPrerenderMode(value: unknown, source: string): void {
 }
 
 function assertHydrationMode(value: unknown, source: string): void {
-  if (
-    value === "none" ||
-    value === "load" ||
-    value === "visible" ||
-    value === "idle"
-  ) {
-    return;
-  }
-  throw new Error(
-    `[evjs] ${source} must be "none", "load", "visible", or "idle".`,
-  );
+  if (value === "none" || value === "load") return;
+  throw new Error(`[evjs] ${source} must be "none" or "load".`);
 }
 
 function assertPprDeliveryMode(value: unknown, source: string): void {

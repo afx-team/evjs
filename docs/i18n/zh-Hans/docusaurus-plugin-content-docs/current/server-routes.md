@@ -11,25 +11,25 @@ evjs framework routing 也不会分析编程式 route 声明。
 
 ## 文件路由
 
-文件化服务端路由默认启用。evjs 扫描 `./src/apis`，并把该目录映射到 `/`。
-Object 形式目前只支持 `dir`。没有 `prefix` 选项；如果 URL 需要以 `/api`
-开头，把文件放在 `src/apis/api` 这类目录下。
+文件化服务端路由默认启用。evjs 扫描 `./src/apis/**/api.*`，每个锚点的所在
+目录映射为 request URL。Object 形式目前只支持 `dir`。没有 `prefix` 选项；
+如果 URL 需要以 `/api/users` 开头，把锚点放在 `src/apis/api/users` 这类目录下。
 
 ```text
-src/apis/index.ts              -> /
-src/apis/health.ts             -> /health
-src/apis/users.ts              -> /users
-src/apis/users/index.ts        -> /users
-src/apis/users/$userId.ts      -> /users/:userId
-src/apis/(internal)/health.ts  -> /health
-src/apis/api/users.ts          -> /api/users
+src/apis/api.ts                       -> /
+src/apis/health/api.ts                -> /health
+src/apis/users/api.ts                 -> /users
+src/apis/users/$userId/api.ts         -> /users/:userId
+src/apis/(internal)/health/api.ts     -> /health
+src/apis/api/users/api.ts             -> /api/users
 ```
 
-文件只有导出至少一个大写 HTTP method 时才会成为路由：`GET`、`POST`、`PUT`、
+`api.{ts,tsx,js,jsx}` 是唯一 request-route 锚点，每个 route 目录只允许一个
+源码扩展名变体。锚点至少导出一个大写 HTTP method：`GET`、`POST`、`PUT`、
 `PATCH`、`DELETE`、`HEAD` 或 `OPTIONS`：
 
 ```ts
-// src/apis/api/posts.ts
+// src/apis/api/posts/api.ts
 export const GET = async (req) => {
   const url = new URL(req.url);
   const limit = Number(url.searchParams.get("limit")) || 10;
@@ -42,12 +42,12 @@ export const POST = async (req) => {
 };
 ```
 
-没有 route exports 的文件会被忽略，因此 `schema.ts`、`db.ts`、`types.ts` 可以和路由就近放置。
-Route candidate 只能导出大写 HTTP methods；helper 应移到非 route 文件。
-`middleware`、`middlewares`、默认导出、重复 path、重复 dynamic shape、bracket
-routes、catch-all routes、optional params、小写 method exports、route candidate
-中的不受支持 runtime exports，以及 `posts.get.ts` 这类 method suffix 文件，都会在
-bundling 之前被拒绝。
+其他任何 basename 都是普通私有源码，因此 `schema.ts`、`db.ts`、`types.ts`、
+`index.ts` 与 `route.ts` 可以就近放置而不会发布 Route。`api.*` 锚点只能导出
+大写 HTTP methods，helper 应移到其他文件。缺少 method、`middleware`/
+`middlewares`、default export、小写 method export、不受支持的 runtime export、
+重复 path、重复 dynamic shape、多个锚点扩展名变体，以及位于 bracket、catch-all、
+optional 或其他无效目录 segment 下的锚点，都会在 bundling 前被拒绝。
 
 ## 处理器签名
 
@@ -68,7 +68,7 @@ Hono `Context` (`ctx`) 提供：
 | `ctx.json()` | 发送 JSON 响应 |
 
 ```ts
-// src/apis/users/$userId.ts
+// src/apis/users/$userId/api.ts
 export const GET = async (_req, ctx) => {
   const userId = ctx.req.param("userId");
   return Response.json({ id: userId });
@@ -96,20 +96,20 @@ const middleware: MiddlewareHandler = async (ctx, next) => {
 export default middleware;
 ```
 
-API route middleware 位于 server file-route tree 内，只作用于 descendant server
-file routes：
+API route middleware 位于 server file-route tree 内，只作用于同目录及 descendant
+server file routes：
 
 ```text
-src/apis/middleware.ts            -> 所有文件路由
-src/apis/api/middleware.ts        -> api/** 下的路由
-src/apis/api/admin/middleware.ts  -> api/admin/** 下的路由
-src/apis/(admin)/middleware.ts    -> (admin)/** 下的路由
+src/apis/middleware.ts            -> 所有锚定 Route
+src/apis/api/middleware.ts        -> /api 与后代 Route
+src/apis/api/admin/middleware.ts  -> /api/admin 与后代 Route
+src/apis/(admin)/middleware.ts    -> group 及其后代 Route
 ```
 
 执行顺序是全局服务端中间件、从父目录到子目录的 API route middleware、
 最后是 HTTP method handler。Route group 不增加 URL segment，但参与文件系统作用域划分。
-`src/apis/api/middleware.ts` 覆盖 `src/apis/api/index.ts`、`src/apis/api/users.ts`
-以及 `src/apis/api/**` 下的嵌套文件；不覆盖 flat sibling `src/apis/api.ts`。
+`src/apis/api/middleware.ts` 会覆盖 `src/apis/api/api.ts` 的 `/api` 锚点，以及
+`src/apis/api/users/api.ts` 等所有后代锚点。
 
 函数签名遵循 Hono：
 

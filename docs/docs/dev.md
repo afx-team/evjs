@@ -36,8 +36,8 @@ processes.
 
 The client and API development servers listen on IPv4 interfaces and can be
 opened through both `http://localhost:<port>` and
-`http://127.0.0.1:<port>`. Following Bigfish's convention, startup output lists
-the `Local` localhost URL and the machine's `Network` URL; the equivalent
+`http://127.0.0.1:<port>`. Startup output lists the `Local` localhost URL and
+the machine's `Network` URL; the equivalent
 `127.0.0.1` URL remains available without an extra log line. `localhost` and
 `127.0.0.1` are different browser origins, so cookies, local storage, and
 service workers are not shared between them. With custom HTTPS certificates,
@@ -69,8 +69,8 @@ flowchart TB
   end
 
   subgraph Updates["Framework updates"]
-    Files["src/pages\nsrc/apis\nev.config.ts"]
-    Plan["refresh AppGraph\nand .ev plan"]
+    Files["src/pages/**/page.*\nsrc/apis/**/api.*\nev.config.ts"]
+    Plan["refresh CoreGraph\nand .ev plan"]
   end
 
   Browser --> HTML
@@ -147,15 +147,26 @@ paths, so app-specific API proxies can keep their own routing behavior.
 import { dev, build } from "@evjs/cli";
 import { utoopackAdapter } from "@evjs/bundler-utoopack";
 
-// Start dev server with an explicit bundler adapter
-await dev({ dev: { port: 3000 } }, { cwd: "./my-app", bundler: utoopackAdapter });
+const appConfig = {
+  routing: {
+    mode: "spa" as const,
+  },
+};
 
-// Run production build for conventional page routes
-await build({ routing: { mode: "spa" } }, { cwd: "./my-app", bundler: utoopackAdapter });
+// Start dev server with an explicit bundler adapter
+await dev(
+  { ...appConfig, dev: { port: 3000 } },
+  { cwd: "./my-app", bundler: utoopackAdapter },
+);
+
+// Run a canonical Page-and-Route production build
+await build(appConfig, { cwd: "./my-app", bundler: utoopackAdapter });
 ```
 
 The `bundler` option follows the same adapter contract as `ev.config.ts`: it
-must be an object with a non-empty `name` and `build` / `dev` functions.
+must have a non-empty `name`, declared build/dev `capabilities`, and `build` /
+`dev` functions. Framework preflight compares the active BuildPlan with those
+capabilities before starting the adapter.
 
 `@evjs/cli` also exports programmatic helpers that inject the default Utoopack
 adapter, matching the `ev dev` and `ev build` commands.

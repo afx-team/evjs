@@ -37,8 +37,8 @@ Implemented capabilities:
 - production build through webpack;
 - dev mode through webpack-dev-server for client entries;
 - server watch builds for SSR/PPR/server runtime entries;
-- manifest and HTML relinking from `BuildPlan` + `AppGraph` + webpack stats;
-- in-process `updatePlan(update, graph)` support for configured page additions
+- manifest and HTML relinking from `BuildPlan` + webpack stats;
+- in-process `updatePlan(update)` support for configured page additions
   without stopping the running webpack dev server;
 - finer dev updates: HTML-only changes relink manifest/HTML without invoking
   webpack, and added/changed client entries compile as an entry subset when no

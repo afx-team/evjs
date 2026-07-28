@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { generateHtml } from "../src/_internal/build/html.js";
+import { applyPageMetadataToHtmlDocument } from "../src/_internal/build/page-metadata-html.js";
 
 const FIXTURES_DIR = path.join(import.meta.dirname, "__fixtures__");
 const TEMPLATE_PATH = path.join(FIXTURES_DIR, "template.html");
@@ -211,5 +212,131 @@ describe("generateHtml", () => {
 
     const result = doc.toString();
     expect(result).toContain("<!-- injected by plugin -->");
+  });
+
+  it("upserts Page metadata over template defaults without duplicate names", () => {
+    fs.writeFileSync(
+      TEMPLATE_PATH,
+      `<!DOCTYPE html>
+      <html>
+        <head>
+          <title>Template title</title>
+          <title>Duplicate title</title>
+          <meta name="Description" content="template">
+          <meta name="description" content="duplicate">
+          <meta name="viewport" content="width=device-width">
+        </head>
+        <body><div id="app"></div></body>
+      </html>`,
+    );
+    const doc = generateHtml({ template: TEMPLATE_PATH, js: [], css: [] });
+
+    applyPageMetadataToHtmlDocument(doc, {
+      title: "Configured <title>",
+      meta: {
+        description: 'Configured "description"',
+        "theme-color": "#fff",
+      },
+    });
+
+    expect(doc.querySelectorAll("title")).toHaveLength(1);
+    expect(doc.querySelector("title")?.textContent).toBe("Configured <title>");
+    const descriptions = doc
+      .querySelectorAll("meta[name]")
+      .filter(
+        (meta) => meta.getAttribute("name")?.toLowerCase() === "description",
+      );
+    expect(descriptions).toHaveLength(1);
+    expect(descriptions[0]?.getAttribute("name")).toBe("Description");
+    expect(descriptions[0]?.getAttribute("content")).toBe(
+      'Configured "description"',
+    );
+    expect(
+      doc.querySelector('meta[name="viewport"]')?.getAttribute("content"),
+    ).toBe("width=device-width");
+    expect(
+      doc.querySelector('meta[name="theme-color"]')?.getAttribute("content"),
+    ).toBe("#fff");
+  });
+
+  it("preserves template metadata omitted by the Page", () => {
+    const doc = generateHtml({ template: TEMPLATE_PATH, js: [], css: [] });
+
+    applyPageMetadataToHtmlDocument(doc, {
+      meta: { description: "Page description" },
+    });
+
+    expect(doc.querySelector("title")?.textContent).toBe("Test App");
+    expect(
+      doc.querySelector('meta[name="viewport"]')?.getAttribute("content"),
+    ).toBe("width=device-width, initial-scale=1.0");
+  });
+
+  it("records SPA template baselines without overwriting them on a second upsert", () => {
+    const doc = generateHtml({ template: TEMPLATE_PATH, js: [], css: [] });
+    const robots = doc.createElement("meta");
+    robots.setAttribute("name", "robots");
+    doc.head?.appendChild(robots);
+
+    applyPageMetadataToHtmlDocument(
+      doc,
+      {
+        title: "First Page",
+        meta: {
+          viewport: "first",
+          description: "created",
+          robots: "index",
+        },
+      },
+      { preserveBaseline: true },
+    );
+    applyPageMetadataToHtmlDocument(
+      doc,
+      {
+        title: "Second Page",
+        meta: {
+          VIEWPORT: "second",
+          DESCRIPTION: "updated",
+          ROBOTS: "noindex",
+        },
+      },
+      { preserveBaseline: true },
+    );
+
+    const title = doc.querySelector("title");
+    expect(title?.getAttribute("data-evjs-page-metadata")).toBe("title");
+    expect(title?.getAttribute("data-evjs-page-metadata-baseline")).toBe(
+      "Test App",
+    );
+    expect(title?.hasAttribute("data-evjs-page-metadata-created")).toBe(false);
+
+    const viewport = doc.querySelector('meta[name="viewport"]');
+    expect(viewport?.getAttribute("data-evjs-page-metadata")).toBe("meta");
+    expect(viewport?.getAttribute("data-evjs-page-metadata-baseline")).toBe(
+      "width=device-width, initial-scale=1.0",
+    );
+    expect(viewport?.getAttribute("content")).toBe("second");
+
+    expect(robots.getAttribute("data-evjs-page-metadata")).toBe("meta");
+    expect(robots.hasAttribute("data-evjs-page-metadata-baseline")).toBe(false);
+    expect(robots.hasAttribute("data-evjs-page-metadata-created")).toBe(false);
+    expect(robots.getAttribute("content")).toBe("noindex");
+
+    const descriptions = doc
+      .querySelectorAll("meta[name]")
+      .filter(
+        (meta) => meta.getAttribute("name")?.toLowerCase() === "description",
+      );
+    expect(descriptions).toHaveLength(1);
+    expect(descriptions[0]?.getAttribute("data-evjs-page-metadata")).toBe(
+      "meta",
+    );
+    expect(
+      descriptions[0]?.getAttribute("data-evjs-page-metadata-created"),
+    ).toBe("");
+    expect(
+      descriptions[0]?.hasAttribute("data-evjs-page-metadata-baseline"),
+    ).toBe(false);
+    expect(descriptions[0]?.getAttribute("content")).toBe("updated");
   });
 });

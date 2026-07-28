@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import fs from "node:fs/promises";
 import path from "node:path";
 
 const ID_UNSAFE_CHARACTERS = /[^a-zA-Z0-9_-]+/g;
@@ -81,6 +82,18 @@ export function isInsideCwd(cwd: string, candidate: string): boolean {
     relative === "" ||
     (!relative.startsWith("..") && !path.isAbsolute(relative))
   );
+}
+
+/** Check containment after resolving symlinks on both the project root and input. */
+export async function isRealPathInsideCwd(
+  cwd: string,
+  candidate: string,
+): Promise<boolean> {
+  const [realCwd, realCandidate] = await Promise.all([
+    fs.realpath(cwd),
+    fs.realpath(candidate),
+  ]);
+  return isInsideCwd(realCwd, realCandidate);
 }
 
 export type FrameworkDirective = "use client" | "use server";

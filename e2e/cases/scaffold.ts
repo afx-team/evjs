@@ -56,7 +56,10 @@ test.describe("Scaffolding CLI E2E", () => {
 
     expect(fs.existsSync(path.join(targetDir, "package.json"))).toBe(true);
     expect(
-      fs.existsSync(path.join(targetDir, "src", "pages", "index.tsx")),
+      fs.existsSync(path.join(targetDir, "src", "pages", "page.tsx")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(targetDir, "src", "pages", "page.config.ts")),
     ).toBe(true);
     expect(fs.existsSync(path.join(targetDir, "index.html"))).toBe(true);
 
@@ -124,7 +127,7 @@ test.describe("Scaffolding CLI E2E", () => {
     const serverDevPort = await getAvailablePort();
     fs.writeFileSync(
       path.join(targetDir, "ev.config.ts"),
-      `export default { dev: { port: ${devPort} }, server: { dev: { port: ${serverDevPort} } } };\n`,
+      `export default { routing: { mode: "spa" }, dev: { port: ${devPort} }, server: { dev: { port: ${serverDevPort} } } };\n`,
     );
 
     // 4. Test production build

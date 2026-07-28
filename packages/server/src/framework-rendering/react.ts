@@ -24,10 +24,12 @@ export type {
   ReactRscDebugPayload,
   ReactRscFlightAdapterOptions,
   ReactServerRenderAdapterOptions,
+  ReactServerRenderContext,
 } from "./react-renderer.js";
 export {
   createReactRscFlightAdapter,
   createReactServerRenderAdapter,
+  renderReactPageMetadata,
 } from "./react-renderer.js";
 
 declare global {

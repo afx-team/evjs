@@ -43,6 +43,25 @@ export function pageRoutePathMatches(
   return Boolean(matchPageRoutePath(routePath, pathname));
 }
 
+/** Compile the canonical Page route syntax to an anchored URL matcher. */
+export function pageRoutePathToRegExp(routePath: string): RegExp {
+  const segments = splitPath(normalizeRoutePathname(routePath));
+  if (segments.length === 0) return /^\/?$/;
+
+  const hasTerminalSplat = isWildcardRouteSegment(segments.at(-1) ?? "");
+  const fixedSegments = hasTerminalSplat ? segments.slice(0, -1) : segments;
+  const prefix = fixedSegments
+    .map((segment) =>
+      isDynamicRouteSegment(segment) ? "[^/]+" : escapeRegExp(segment),
+    )
+    .join("/");
+
+  if (hasTerminalSplat) {
+    return prefix ? new RegExp(`^/${prefix}(?:/.*)?/?$`) : /^\/(?:.*)?$/;
+  }
+  return new RegExp(`^/${prefix}/?$`);
+}
+
 export function pageRoutePathShapeFromPath(routePath: string): string {
   const segments = splitPath(routePath);
   if (segments.length === 0) return "/";
@@ -267,6 +286,10 @@ function isDynamicRouteSegment(segment: string): boolean {
 
 function isWildcardRouteSegment(segment: string): boolean {
   return segment === "$";
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function normalizeRouteShapeSegment(segment: string): string {

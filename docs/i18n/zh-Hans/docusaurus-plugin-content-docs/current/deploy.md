@@ -18,22 +18,21 @@ npm run build
 ```txt
 dist/
 ├── client/
-│   ├── manifest.json
 │   └── ...
 ├── server/
-│   ├── manifest.json
 │   └── ...
-└── build-output.json
+└── deployment-metadata.json
 ```
 
 重要路径：
 
 - `dist/client/`：浏览器资源和生成的 HTML。
-- `dist/client/manifest.json`：给部署工具消费的浏览器安全路由和资源元信息。
 - `dist/server/`：应用使用服务端函数、服务端文件路由、SSR、PPR 或 RSC 时生成的服务端 bundle 和服务端元信息。
-- `dist/server/manifest.json`：为了部署兼容保留的轻量 server manifest，包含 server entry
-  和服务端处理的 route projection。
-- `dist/build-output.json`：面向工具和部署 adapter 的 canonical deployment metadata。应用代码不应导入或修改它。
+- `dist/deployment-metadata.json`：面向工具和部署 adapter 的 canonical deployment
+  metadata。应用代码不应导入或修改它。
+
+Core 不输出 split client/server compatibility manifest。需要平台专属或旧格式投影时，
+由 deployment adapter 显式持有该产物。
 
 生成的 HTML 会内嵌浏览器 `ClientRuntime`。手动使用 `@evjs/client` runtime URL API 时仍可从配置的 URL 加载 JSON，但 CLI build 默认不再输出 `dist/client/runtime.json`。
 Runtime-only 的 `FrameworkRuntime` 数据通过 build/plugin result 传递，并注入 dev 或 deployment

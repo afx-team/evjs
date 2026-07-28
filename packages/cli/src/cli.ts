@@ -11,6 +11,10 @@ import {
   formatInspectCommandErrorJson,
   runInspectCommand,
 } from "./inspect-command.js";
+import {
+  formatSmallfishMigrationResult,
+  migrateSmallfishProject,
+} from "./migrate-smallfish.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -131,5 +135,58 @@ program
       process.exit(1);
     }
   });
+
+const migrate = program
+  .command("migrate")
+  .description("Run one-time source migrations");
+
+migrate
+  .command("smallfish")
+  .description(
+    "Migrate Smallfish Page anchors, metadata, and static Document aliases",
+  )
+  .option(
+    "--pages-dir <dir>",
+    "Resolved Smallfish baseDir/appBaseDir/pagesDir Page root; emitted as evjs routing.dir",
+  )
+  .option("--write", "Apply the preflighted source changes")
+  .option("--json", "Print machine-readable JSON")
+  .action(
+    async (options: { pagesDir?: string; write?: boolean; json?: boolean }) => {
+      const cwd = process.cwd();
+      try {
+        const result = await migrateSmallfishProject({
+          cwd,
+          ...(options.pagesDir ? { pagesDir: options.pagesDir } : {}),
+          write: Boolean(options.write),
+        });
+        process.stdout.write(
+          options.json
+            ? `${JSON.stringify(result, null, 2)}\n`
+            : formatSmallfishMigrationResult(result),
+        );
+        if (
+          result.diagnostics.some((diagnostic) => diagnostic.level === "error")
+        ) {
+          process.exit(1);
+        }
+      } catch (err) {
+        if (options.json) {
+          process.stdout.write(
+            `${JSON.stringify(
+              {
+                error: err instanceof Error ? err.message : String(err),
+              },
+              null,
+              2,
+            )}\n`,
+          );
+        } else {
+          logger.error`Smallfish migration failed: ${err}`;
+        }
+        process.exit(1);
+      }
+    },
+  );
 
 program.parse();
