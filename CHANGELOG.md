@@ -6,22 +6,32 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.3.0] — 2026-07-28
+
 ### ⚠️ Breaking Changes
 
-- **Current-only authoring surface** — Removed the obsolete source-migration
-  CLI and `@evjs/cli` migration exports. evjs now documents only `page.*` plus
-  `page.config.ts` file conventions and the current explicit
-  `application.routes` input; it does not expose an alternate Page config
-  reader. Product-specific Route metadata is no longer built into explicit
-  route configuration; plugins own capability data through registered,
-  namespaced `route.extensions`.
-- **One canonical Page root** — Removed client `routing.dir`; file-convention
-  Pages now always use `src/pages/**/page.*`. Generic source adapters can still
-  normalize existing applications through explicit SPA-only
-  `application.routes`, `application.pageRoot`, and namespaced extensions
-  without creating a second file-convention dialect. For that explicit input,
-  `application.pageRoot` is the single source boundary for both `page` and
-  `component` references; it never changes canonical discovery.
+- **Canonical Page-and-Route model** — `src/pages/**/page.*` is the only
+  file-convention Page and client Route anchor. Its containing directory defines
+  Page identity, scope, and URL. The same semantic tree serves SPA and MPA;
+  `routing.mode` selects only its materialization. Client `routing.dir` is no
+  longer configurable.
+- **Page configuration contract** — Static Page `title`, named `meta`, rendering
+  settings, and namespaced extensions now come from adjacent build-time
+  `page.config.ts` modules rather than Page component exports or alternate
+  config readers.
+- **Explicit SPA route trees** — `application.routes` remains a SPA-only input,
+  accepts `routes` rather than `children` for nesting, and uses
+  `application.pageRoot` as the source boundary for both `page` and `component`
+  references. It cannot be combined with canonical `routing.mode` discovery.
+- **CSR hydration boundary** — Pages default to CSR and CSR must omit
+  `hydrate`. Explicit SSR and SSG Pages may select `"load"` or `"none"`; RSC and
+  partial prerendering remain unhydrated at Page level.
+- **Current-only authoring surface** — evjs exposes only the canonical `page.*`
+  plus `page.config.ts` conventions and the explicit SPA route-tree input.
+  Route capability data is no longer a built-in field; plugins own it through
+  registered, namespaced `route.extensions`.
 - **Server request-route anchors** — Server request routes now require
   `<server.routing.dir>/**/api.*` anchors, defaulting to `src/apis`. Each
   anchor's containing directory defines its URL and middleware scope, while
@@ -54,6 +64,14 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ### ✨ Improvements
 
+- **Unified framework graph** — Applications, Pages, Routes, and Documents now
+  normalize through one CoreGraph and BuildPlan into generated `.ev` framework
+  IR, giving convention discovery, plugins, bundlers, manifests, and deployment
+  one semantic source of truth.
+- **Owner-scoped plugin extensions** — Plugins can register strict JSON
+  extension namespaces for Application, Page, Route, and Document owners.
+  Application values resolve before `setup()`, while graph analysis resolves
+  Page, Route, and Document values without adding framework-specific fields.
 - **Deterministic route semantics** — Page and server route discovery now share
   segment-wise specificity ordering, with static segments taking precedence at
   the first differing position. CoreGraph uniqueness and runtime matching use
@@ -73,7 +91,7 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
   output. Dev session and port locks use the same atomic, owner-verified lock
   lifecycle.
 - **Explicit dev update semantics** — BuildPlan updates distinguish server
-  compilation topology, request-time Documents, and development routing.
+  compilation inputs, request-time Documents, and development routing.
   Metadata and Document-only changes can refresh framework output without
   claiming that persistent compiler inputs changed; unsupported structural
   changes still fail closed and request a dev restart.
@@ -122,6 +140,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 - **Shell disposal** — Client shell disposal now attempts every driver cleanup
   and Page unmount, always clears active state and caches, and reports one or
   multiple cleanup failures without leaving the shell half-disposed.
+- **Convention watcher recovery** — Development watches safe project ancestors
+  when a Page or server Route root is missing or temporarily invalid, ignores
+  sources reached through escaping symlinks, and resumes discovery when a valid
+  local root is restored.
 
 ### 🧹 Code Quality
 
