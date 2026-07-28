@@ -8,8 +8,9 @@ import type {
   GraphConfig,
 } from "../src/_internal/build/index.js";
 import {
-  createAppGraph,
   createBuildPlan,
+  createCoreGraph,
+  discoverPageRoutes,
   materializeFrameworkIR,
 } from "../src/_internal/build/index.js";
 import type { ResolvedConfig } from "../src/config/index.js";
@@ -24,29 +25,31 @@ afterEach(async () => {
   );
 });
 
+type TestConfig = BuildPlanConfig & GraphConfig;
+
 describe("global style entry injection", () => {
   it("injects imports for every .less and .css file in src/styles/ into each client entry", async () => {
     const cwd = await createFixture({
-      "src/main.tsx": "console.log('app');",
+      "src/pages/page.tsx": "export default function Home() { return null; }",
       "index.html": '<div id="app"></div>',
       "src/styles/global.less": "body { margin: 0; }",
       "src/styles/theme.css": ":root { --color: red; }",
     });
 
-    const config = createConfig();
-    const analysis = await createAppGraph(config, cwd);
+    const config = await createConfig(cwd, "spa");
+    const analysis = await createCoreGraph(config, cwd);
     const plan = await materializeFrameworkIR({
       cwd,
       mode: "development",
       command: "dev",
-      config: config as ResolvedConfig,
+      config: config as unknown as ResolvedConfig,
       graph: analysis.graph,
       plugins: [],
       pluginContext: {
         cwd,
         mode: "development",
         command: "dev",
-        config: config as ResolvedConfig,
+        config: config as unknown as ResolvedConfig,
         logger: {} as never,
         addWatchFile() {},
       },
@@ -78,39 +81,39 @@ describe("global style entry injection", () => {
     expect(styleImports[1]).toContain("theme.css");
 
     const lines = source.split("\n");
-    const mainImportIndex = lines.findIndex((line) =>
-      /\/src\/main["']/.test(line),
+    const pageImportIndex = lines.findIndex((line) =>
+      /src\/pages\/page["']/.test(line),
     );
-    expect(mainImportIndex).toBeGreaterThan(0);
+    expect(pageImportIndex).toBeGreaterThan(0);
     const styleImportLineNumbers = lines
       .map((line, i) => ({ i, line }))
       .filter(({ line }) => /\.(less|css)["']/.test(line))
       .map(({ i }) => i);
     for (const lineNum of styleImportLineNumbers) {
-      expect(lineNum).toBeLessThan(mainImportIndex);
+      expect(lineNum).toBeLessThan(pageImportIndex);
     }
   });
 
   it("does not inject style imports when src/styles/ does not exist", async () => {
     const cwd = await createFixture({
-      "src/main.tsx": "console.log('app');",
+      "src/pages/page.tsx": "export default function Home() { return null; }",
       "index.html": '<div id="app"></div>',
     });
 
-    const config = createConfig();
-    const analysis = await createAppGraph(config, cwd);
+    const config = await createConfig(cwd, "spa");
+    const analysis = await createCoreGraph(config, cwd);
     const plan = await materializeFrameworkIR({
       cwd,
       mode: "development",
       command: "dev",
-      config: config as ResolvedConfig,
+      config: config as unknown as ResolvedConfig,
       graph: analysis.graph,
       plugins: [],
       pluginContext: {
         cwd,
         mode: "development",
         command: "dev",
-        config: config as ResolvedConfig,
+        config: config as unknown as ResolvedConfig,
         logger: {} as never,
         addWatchFile() {},
       },
@@ -133,31 +136,28 @@ describe("global style entry injection", () => {
 
   it("injects global styles into MPA page entries", async () => {
     const cwd = await createFixture({
-      "src/pages/Home.tsx": "export default () => <div>Home</div>;",
-      "src/pages/About.tsx": "export default () => <div>About</div>;",
+      "src/pages/home/page.tsx":
+        "export default function Home() { return null; }",
+      "src/pages/about/page.tsx":
+        "export default function About() { return null; }",
       "index.html": '<div id="app"></div>',
       "src/styles/reset.less": "* { box-sizing: border-box; }",
     });
 
-    const config = createConfig({
-      pages: {
-        home: { component: "./src/pages/Home.tsx", html: "./index.html" },
-        about: { component: "./src/pages/About.tsx", html: "./index.html" },
-      },
-    });
-    const analysis = await createAppGraph(config, cwd);
+    const config = await createConfig(cwd, "mpa");
+    const analysis = await createCoreGraph(config, cwd);
     const plan = await materializeFrameworkIR({
       cwd,
       mode: "development",
       command: "dev",
-      config: config as ResolvedConfig,
+      config: config as unknown as ResolvedConfig,
       graph: analysis.graph,
       plugins: [],
       pluginContext: {
         cwd,
         mode: "development",
         command: "dev",
-        config: config as ResolvedConfig,
+        config: config as unknown as ResolvedConfig,
         logger: {} as never,
         addWatchFile() {},
       },
@@ -167,7 +167,8 @@ describe("global style entry injection", () => {
 
     for (const pageId of ["home", "about"]) {
       const entry = plan.entries.find(
-        (e) => e.environment === "client" && e.name === pageId,
+        (e) =>
+          e.environment === "client" && e.name === `page-client-${pageId}`,
       );
       expect(entry).toBeDefined();
       if (!entry) throw new Error("Expected client entry");
@@ -179,35 +180,27 @@ describe("global style entry injection", () => {
   });
 });
 
-async function createFixture(files: Record<string, string>): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "evjs-global-styles-"));
-  tempDirs.push(dir);
-  for (const [file, content] of Object.entries(files)) {
-    const absolute = path.join(dir, file);
-    await fs.mkdir(path.dirname(absolute), { recursive: true });
-    await fs.writeFile(absolute, content);
-  }
-  return dir;
-}
-
-type TestConfig = BuildPlanConfig &
-  Pick<GraphConfig, "apps"> & {
-    dev: unknown;
-    transport: unknown;
-    plugins: unknown[];
-  };
-type TestConfigOverrides = Partial<Omit<TestConfig, "output" | "server">> & {
-  output?: Partial<TestConfig["output"]>;
-  server?: Partial<Omit<TestConfig["server"], "runtime">> & {
-    runtime?: Partial<TestConfig["server"]["runtime"]>;
-  };
-};
-
-function createConfig(overrides: TestConfigOverrides = {}): TestConfig {
-  const base: TestConfig = {
-    entry: "./src/main.tsx",
-    html: "./index.html",
-    pages: undefined,
+async function createConfig(
+  cwd: string,
+  mode: "spa" | "mpa" = "spa",
+): Promise<TestConfig> {
+  const discovery = await discoverPageRoutes(cwd, {
+    dir: "./src/pages",
+    mode,
+    required: true,
+  });
+  expect(discovery.diagnostics).toEqual([]);
+  return {
+    routing: {
+      mode,
+      dir: "./src/pages",
+      html: "./index.html",
+      mount: "#app",
+      routes: discovery.routes,
+      ...(discovery.rootModule ? { rootModule: discovery.rootModule } : {}),
+      ...(discovery.metadata ? { metadata: discovery.metadata } : {}),
+      dependencies: discovery.dependencies,
+    },
     output: {
       client: "dist/client",
       server: "dist/server",
@@ -219,21 +212,16 @@ function createConfig(overrides: TestConfigOverrides = {}): TestConfig {
         ppr: "__evjs/ppr",
       },
     },
-    dev: {},
-    transport: {},
-    plugins: [],
   };
-  return {
-    ...base,
-    ...overrides,
-    output: { ...base.output, ...overrides.output },
-    server: {
-      ...base.server,
-      ...overrides.server,
-      runtime: {
-        ...base.server.runtime,
-        ...overrides.server?.runtime,
-      },
-    },
-  };
+}
+
+async function createFixture(files: Record<string, string>): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "evjs-global-styles-"));
+  tempDirs.push(dir);
+  for (const [file, content] of Object.entries(files)) {
+    const absolute = path.join(dir, file);
+    await fs.mkdir(path.dirname(absolute), { recursive: true });
+    await fs.writeFile(absolute, content);
+  }
+  return dir;
 }

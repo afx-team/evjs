@@ -896,6 +896,7 @@ function createPlan(
 ): Promise<BuildPlan> {
   const graph = createGraph(config);
 
+  const cwd = options.cwd ?? process.cwd();
   const mode = options.mode ?? "development";
   return materializeFrameworkIR({
     cwd,
