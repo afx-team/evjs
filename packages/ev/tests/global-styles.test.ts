@@ -167,8 +167,7 @@ describe("global style entry injection", () => {
 
     for (const pageId of ["home", "about"]) {
       const entry = plan.entries.find(
-        (e) =>
-          e.environment === "client" && e.name === `page-client-${pageId}`,
+        (e) => e.environment === "client" && e.name === `page-client-${pageId}`,
       );
       expect(entry).toBeDefined();
       if (!entry) throw new Error("Expected client entry");
@@ -178,9 +177,7 @@ describe("global style entry injection", () => {
       const resetImport = source
         .split("\n")
         .map((line) => line.trim())
-        .filter((line) =>
-          /^import\s*["'][^"']*reset\.less["'];?$/.test(line),
-        );
+        .filter((line) => /^import\s*["'][^"']*reset\.less["'];?$/.test(line));
       expect(resetImport).toHaveLength(1);
     }
   });
