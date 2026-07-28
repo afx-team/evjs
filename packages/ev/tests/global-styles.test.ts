@@ -175,7 +175,13 @@ describe("global style entry injection", () => {
       const entryFile = path.resolve(cwd, entry.import);
       expect(existsSync(entryFile)).toBe(true);
       const source = await fs.readFile(entryFile, "utf-8");
-      expect(source).toContain("reset.less");
+      const resetImport = source
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) =>
+          /^import\s*["'][^"']*reset\.less["'];?$/.test(line),
+        );
+      expect(resetImport).toHaveLength(1);
     }
   });
 });
@@ -185,7 +191,6 @@ async function createConfig(
   mode: "spa" | "mpa" = "spa",
 ): Promise<TestConfig> {
   const discovery = await discoverPageRoutes(cwd, {
-    dir: "./src/pages",
     mode,
     required: true,
   });
@@ -193,7 +198,6 @@ async function createConfig(
   return {
     routing: {
       mode,
-      dir: "./src/pages",
       html: "./index.html",
       mount: "#app",
       routes: discovery.routes,

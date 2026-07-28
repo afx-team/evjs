@@ -42,9 +42,6 @@ const lessTextTransformPlugin = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../less-text-transform-plugin",
 );
-// Utoopack reads each proxy rule object on every request, so its target can be
-// synchronized after the server reports the final listening port.
-const spaHistoryFallbackRules = new WeakMap<ConfigComplete, ProxyRule>();
 const spaHistoryFallbackRuleIndexes = new WeakMap<ConfigComplete, number>();
 
 export function getSpaHistoryFallbackRuleIndex(
@@ -547,10 +544,6 @@ function createSubtreeProxyContext(routePath: string): string {
 function normalizeRoutePath(routePath: string): string {
   if (!routePath.startsWith("/")) return `/${routePath}`;
   return routePath.replace(/\/+$/, "") || "/";
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function createGlobalImportMixinPlugins(
