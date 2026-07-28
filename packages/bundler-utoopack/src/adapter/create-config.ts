@@ -8,6 +8,7 @@
 
 import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 
@@ -37,6 +38,10 @@ import {
 const logger = getLogger(["evjs", "bundler-utoopack", "config"]);
 const lessImplementation = require.resolve("less");
 const lessLoader = require.resolve("less-loader");
+const lessTextTransformPlugin = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../less-text-transform-plugin",
+);
 const spaHistoryFallbackRuleIndexes = new WeakMap<ConfigComplete, number>();
 
 export function getSpaHistoryFallbackRuleIndex(
@@ -142,6 +147,7 @@ export async function createUtoopackConfig(
       less: {
         loader: lessLoader,
         implementation: lessImplementation,
+        ...createGlobalImportMixinPlugins(plan),
       },
     },
     define: {
@@ -538,4 +544,31 @@ function createSubtreeProxyContext(routePath: string): string {
 function normalizeRoutePath(routePath: string): string {
   if (!routePath.startsWith("/")) return `/${routePath}`;
   return routePath.replace(/\/+$/, "") || "/";
+}
+
+function createGlobalImportMixinPlugins(
+  plan: BuildPlan,
+): Record<string, unknown> | undefined {
+  const mixinFile = plan.styles?.globalImportMixinPath;
+  if (!mixinFile) return undefined;
+
+  const pluginOptions = {
+    prependText: `@import ${JSON.stringify(mixinFile)};\n`,
+    exclude: path.dirname(mixinFile),
+  };
+  const serializedOptions = JSON.stringify(pluginOptions);
+  const pluginModulePath = lessTextTransformPlugin;
+
+  return {
+    plugins: [
+      {
+        filename: pluginModulePath,
+        fileContent: [
+          `const mod = require(${JSON.stringify(pluginModulePath)});`,
+          "const Plugin = mod && (mod.default || mod.TextTransform);",
+          `module.exports = typeof Plugin === 'function' ? new Plugin(${serializedOptions}) : Plugin;`,
+        ].join("\n"),
+      },
+    ],
+  };
 }
