@@ -1664,6 +1664,41 @@ function toGeneratedImportSpecifier(
   return stripScriptImportExtension(relative);
 }
 
+function hasGlobalStylesDir(cwd: string): boolean {
+  const stylesDir = path.resolve(cwd, GLOBAL_STYLES_DIR);
+  if (!existsSync(stylesDir)) return false;
+  return readdirSync(stylesDir).some((file) =>
+    GLOBAL_STYLES_EXTENSIONS.some((ext) => file.endsWith(ext)),
+  );
+}
+
+function resolveGlobalImportMixinPath(cwd: string): string | undefined {
+  const mixinFile = path.resolve(
+    cwd,
+    GLOBAL_STYLES_DIR,
+    GLOBAL_IMPORT_MIXIN_FILE,
+  );
+  return existsSync(mixinFile) ? mixinFile : undefined;
+}
+
+function collectGlobalStyleImports(cwd: string, fromFile: string): string[] {
+  const stylesDir = path.resolve(cwd, GLOBAL_STYLES_DIR);
+  if (!existsSync(stylesDir)) return [];
+  const styleFiles = readdirSync(stylesDir)
+    .filter((file) =>
+      GLOBAL_STYLES_EXTENSIONS.some((ext) => file.endsWith(ext)),
+    )
+    .sort();
+  return styleFiles.map((file) => {
+    const specifier = toGeneratedImportSpecifier(
+      cwd,
+      fromFile,
+      path.join(stylesDir, file),
+    );
+    return `import ${JSON.stringify(specifier)};`;
+  });
+}
+
 function stripScriptImportExtension(specifier: string): string {
   if (/\.d\.[cm]?ts$/.test(specifier)) return specifier;
   return specifier.replace(/\.(?:[cm]?[jt]sx?)$/, "");
