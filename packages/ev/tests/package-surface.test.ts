@@ -211,8 +211,15 @@ const expectedBuildToolsRuntimeExports = [
   "analyzePageComponentExports",
   "applyHtmlTagContributions",
   "applyRouteScopedMiddlewares",
+  "assertBundlerEmittedFiles",
+  "assertPortableRelativeArtifactPath",
+  "assertPortableRelativeBrowserArtifactPath",
+  "assertSafeBuildOutputPaths",
+  "assertSafeBuildOwnedOutputPath",
+  "assertSafeBundlerCleanOutputPath",
   "build",
   "buildHtml",
+  "canonicalPortableArtifactPathKey",
   "createBuildPlan",
   "createCoreGraph",
   "detectUseClient",
@@ -226,12 +233,19 @@ const expectedBuildToolsRuntimeExports = [
   "generateHtml",
   "generatePageRouteTypes",
   "inspectFrameworkBuild",
+  "isArtifactOnlyBuildPlanUpdate",
+  "isEmptyBuildPlanUpdate",
   "loadConfigFile",
   "materializeFrameworkIR",
+  "portableArtifactPathsConflict",
   "prepareFrameworkBuild",
+  "removeOwnedOutputFile",
+  "resolveBuildOutputPaths",
+  "resolveBundlerClientEntryAssets",
   "transformRscClientFile",
   "transformServerFile",
   "validateHtmlTemplate",
+  "writeOwnedOutputFile",
 ] as const;
 
 const privateBuildToolsRuntimeExports = [
@@ -241,6 +255,7 @@ const privateBuildToolsRuntimeExports = [
   "makeFnId",
   "makeModuleId",
   "parseModuleRef",
+  "removeOwnedOutputFileSync",
 ] as const;
 
 const expectedServerSubpathExports = [
@@ -850,7 +865,7 @@ describe("workspace package surface", () => {
       "Subpath exports stay explicit and documented",
     );
     expect(rootArchitecture).toContain(
-      "Do not reintroduce legacy split packages",
+      "Do not add split packages for build or manifest ownership",
     );
     expect(rootContributing).toContain(
       "Internal `@evjs/*` runtime dependency versions stay",

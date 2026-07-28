@@ -62,7 +62,7 @@ describe("CONFIG_DEFAULTS", () => {
       crossOriginLoading: "anonymous",
       outputClientDir: "dist/client",
       outputServerDir: "dist/server",
-      routingDir: "./src/pages",
+      pageRoot: "./src/pages",
       serverRoutingDir: "./src/apis",
       serverMiddlewareFile: "./src/middleware.ts",
       mount: "#app",

@@ -10,8 +10,4 @@ import { defineConfig } from "@evjs/ev";
  */
 export default defineConfig({
   routing: { mode: "spa" },
-  output: {
-    client: "dist",
-    server: "dist-server",
-  },
 });

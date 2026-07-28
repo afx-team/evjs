@@ -166,8 +166,8 @@ export default defineQiankunSlaveRuntime({
 ```
 
 In qiankun mode the plugin mounts into `props.container`; outside qiankun it
-automatically renders the canonical framework entry. The plugin does not read
-legacy `app.entry` or magic `src/main.tsx` configuration. Standalone
+automatically renders the canonical framework entry. The plugin does not
+support an alternate entry field or infer a magic `src/main.tsx`. Standalone
 `@evjs/client` applications own their qiankun/container integration directly.
 
 ## Module References

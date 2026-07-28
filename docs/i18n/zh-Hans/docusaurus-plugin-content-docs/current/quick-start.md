@@ -208,24 +208,17 @@ npm run build
 standalone/manual runtime composition 才直接使用 `@evjs/client` 和
 `@evjs/server`。
 
-## 准备 canonical Page tree
+## 选择一种路由输入
 
-Core 只发现 canonical `page.*` 锚点，不运行额外的 route reader。对于其他 Page
-源码形式，逐个完成以下转换：
+使用文件约定时，每个公开 Page 位于其 URL 对应目录，entry 命名为 `page.*`，Page
+设置放在相邻 `page.config.ts`，并声明 `routing.mode: "spa" | "mpa"`。
 
-1. 把 entry 移动或重命名到表示其 URL 的目录，并命名为 `page.*`。
-2. 把 Page title、支持的 named metadata、rendering 与插件持有的 setting 移到
-   同目录 `page.config.ts`。
-3. Page 私有代码继续放在该目录且无需 `_` 前缀。
-4. 只声明 `routing.mode: "spa"` 或 `"mpa"`。
-5. 运行 `ev inspect`，确认 Page/Route 结构。
+显式 `application.routes` 是独立、仅支持 SPA 的配置输入。它支持 `page` 或
+`component`、嵌套 `routes`、layout、wrapper、redirect 与已注册的 namespaced
+Route extension；不能与 `routing` 同时配置，也不会选择 MPA。
 
-显式 `application.routes` 是仅支持 SPA 的 config-route 输入，不能与 `routing`
-同时配置，也不会选择 MPA。要改用 canonical tree，应把 route component 转换为
-对应 URL 目录下的 `page.*`，用 `routing.mode: "spa"` 替换 `application`，再运行
-`ev inspect`。
-
-无关的 `src/pages` 目录本身不会发布客户端路由。
+无关的 `src/pages` 目录本身不会发布客户端路由。运行 `ev inspect` 可确认
+normalized Page/Route 结构。
 
 接下来阅读[项目结构](./project-structure)、[客户端路由](./client-routes)和
 [配置](./config)。

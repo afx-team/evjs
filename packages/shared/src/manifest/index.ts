@@ -25,6 +25,10 @@ import {
   getPathPatternValidationError,
   type PathPatternValidationError,
 } from "../path-pattern.js";
+import {
+  formatConcreteRuntimePathSegmentValidationError,
+  getConcreteRuntimePathSegmentValidationError,
+} from "../runtime-path.js";
 import { isServerFunctionId } from "../server-function-id.js";
 import {
   getServerRouteParamSegmentValidationError,
@@ -36,6 +40,7 @@ import {
   type UrlStringValidationError,
 } from "../url-validation.js";
 import { assertPageMetadata, type PageMetadata } from "./page-metadata.js";
+import { assertBuildOutputServerArtifacts } from "./server-artifacts.js";
 
 /** JavaScript and CSS assets emitted for a manifest entry. */
 export interface AssetGroup {
@@ -146,7 +151,10 @@ export interface BuildPlanStyles {
 
 export interface DevBuildPlan {
   clientRoutes: DevClientRoutePlan[];
-  serverRoutePaths: string[];
+  /** Canonical request Route patterns handled by server file routes. */
+  serverRequestRoutePaths: string[];
+  /** Canonical Page route patterns whose rendering requires the dev server. */
+  serverRenderedPagePaths: string[];
   hasPpr: boolean;
 }
 
@@ -275,7 +283,7 @@ export interface PageRouteNode {
   id: string;
   path: string;
   module: string;
-  /** Page source boundary; Bigfish SPA migration may retain module scope. */
+  /** Page source boundary; explicit route input may retain module scope. */
   scope?: PageScope;
   html?: string;
   parentId?: string;
@@ -381,7 +389,12 @@ export interface BuildPlanUpdate {
   runtimeChanged: boolean;
   /** Config or hooks changed and framework-owned artifacts must be re-emitted. */
   deliveryChanged: boolean;
-  serverChanged: boolean;
+  /** Server compiler output, renderers, or RSC compilation inputs changed. */
+  serverCompilationChanged: boolean;
+  /** Request-time server Document inputs changed and must be re-emitted. */
+  serverDocumentsChanged: boolean;
+  /** Development routing or proxy topology changed. */
+  devRoutingChanged: boolean;
 }
 
 export interface BuildOutput {
@@ -775,6 +788,10 @@ export function assertFrameworkManifestShape(
       `${source}.runtime.server.basePath`,
       true,
     );
+    assertConcreteRuntimePathSegments(
+      value.runtime.server.basePath,
+      `${source}.runtime.server.basePath`,
+    );
     assertManifestEndpoint(
       value.runtime.server.fn,
       `${source}.runtime.server.fn`,
@@ -848,6 +865,9 @@ export function assertFrameworkManifestShape(
       routes,
       requireRscRendererReferences,
     );
+  }
+  if (requireServer) {
+    assertBuildOutputServerArtifacts(value as unknown as BuildOutput, source);
   }
 }
 
@@ -2349,6 +2369,25 @@ function assertManifestEndpoint(
   if (error) {
     throw new Error(`[evjs] ${source} ${formatManifestPathnameError(error)}`);
   }
+  const segmentError = getConcreteRuntimePathSegmentValidationError(value);
+  if (segmentError) {
+    throw new Error(
+      `[evjs] ${source} ${formatConcreteRuntimePathSegmentValidationError(segmentError)}`,
+    );
+  }
+}
+
+function assertConcreteRuntimePathSegments(
+  value: unknown,
+  source: string,
+): void {
+  if (typeof value !== "string") return;
+  const segmentError = getConcreteRuntimePathSegmentValidationError(value);
+  if (segmentError) {
+    throw new Error(
+      `[evjs] ${source} ${formatConcreteRuntimePathSegmentValidationError(segmentError)}`,
+    );
+  }
 }
 
 function assertManifestTransportBaseUrl(value: unknown, source: string): void {
@@ -2393,13 +2432,11 @@ function formatManifestPathnameError(
 }
 
 export {
-  assertBigfishRouteExtension,
-  BIGFISH_ROUTE_EXTENSION_ID,
-  type BigfishRouteExtension,
-  type BigfishRouteMappedString,
-  type BigfishRouteMenuKey,
-  type BigfishRouteStaticValue,
-} from "./bigfish-route-extension.js";
+  assertPortableRelativeArtifactPath,
+  assertPortableRelativeBrowserArtifactPath,
+  canonicalPortableArtifactPathKey,
+  portableArtifactPathsConflict,
+} from "./artifact-path.js";
 export {
   type ApplicationId,
   assertCoreGraph,
@@ -2432,6 +2469,12 @@ export {
   resolveCorePageOwner,
 } from "./core-graph.js";
 export {
+  coreRoutePatternShape,
+  coreRoutePatternsEqual,
+  isCoreRoutePatternPrefix,
+} from "./core-route-pattern.js";
+export {
+  assertBuildOutputLinkInputClientAssets,
   type BuildOutputLinkInput,
   type BuildOutputServerModule,
   createDeploymentMetadata,
@@ -2447,3 +2490,8 @@ export {
   clonePageMetadata,
   type PageMetadata,
 } from "./page-metadata.js";
+export {
+  assertBuildOutputServerArtifacts,
+  assertServerRelativeArtifactPath,
+  collectBuildOutputServerJavaScriptArtifacts,
+} from "./server-artifacts.js";

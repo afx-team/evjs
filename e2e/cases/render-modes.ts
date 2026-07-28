@@ -14,6 +14,9 @@ const exampleDir = path.resolve(
 
 const test = createExampleTest("render-modes");
 const insightsRscEntryName = createRscPageBuildEntryName("insights");
+const insightsRscCssAssetPattern = new RegExp(
+  `^${insightsRscEntryName}\\.[a-f0-9]{8}\\.css$`,
+);
 
 interface RenderModesPublicPage {
   document?: unknown;
@@ -547,7 +550,9 @@ test.describe("render-modes", () => {
         renderer: insightsRscEntryName,
         routeId: "insights",
         assets: expect.objectContaining({
-          css: expect.arrayContaining([`${insightsRscEntryName}.css`]),
+          css: expect.arrayContaining([
+            expect.stringMatching(insightsRscCssAssetPattern),
+          ]),
         }),
       }),
     );

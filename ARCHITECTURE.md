@@ -39,10 +39,12 @@ Page anchors + page.config.ts + route directories + server conventions + ev.conf
 
 Explicit `application.routes` and `component`/`routes` config are SPA-only
 route-tree inputs into that graph; they are not additional application
-authoring models and cannot select MPA materialization. Source trees whose
-published entries use `index.*` are converted to `page.*` plus
-`page.config.ts` before Core discovery. Every provider must normalize into the
-same CoreGraph. Framework semantics are owned by `@evjs/ev` and
+authoring models and cannot select MPA materialization. The file convention
+never discovers `index.*`. An external source adapter that starts from
+differently named published entries must either convert them to `page.*` plus
+`page.config.ts` before Core discovery or provide the explicit SPA route-tree
+input. Every provider must normalize into the same CoreGraph. Framework
+semantics are owned by `@evjs/ev` and
 `@evjs/shared/manifest`.
 Bundlers own module graphs, chunks, assets, dev HMR, and stats. Runtime packages
 consume generated runtime contracts rather than `BuildOutput` or manifest
@@ -123,7 +125,7 @@ publishing.
 config/plugin utilities, deployment helpers, and build tooling entries stay on
 their own subpaths.
 
-Do not reintroduce legacy split packages:
+Do not add split packages for build or manifest ownership:
 
 ```txt
 @evjs/build-tools  -> packages/ev/src/_internal/build
@@ -221,7 +223,7 @@ dist/deployment-metadata.json
 ```
 
 Core does not emit split client/server compatibility manifests. A deployment
-adapter that still needs a legacy platform projection must own that artifact
+adapter that needs a platform-specific projection must own that artifact
 explicitly. Generated HTML embeds `ClientRuntime`, and runtime-only
 `FrameworkRuntime` data is injected into dev or deployment adapter bootstraps
 instead of being emitted as a default JSON artifact.

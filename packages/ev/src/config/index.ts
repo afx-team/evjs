@@ -1,17 +1,15 @@
 import {
   type AbsoluteHttpUrlValidationError,
   DEFAULT_SERVER_BASE_PATH,
+  formatConcreteRuntimePathSegmentValidationError,
   getAbsoluteHttpUrlValidationError,
+  getConcreteRuntimePathSegmentValidationError,
   getPathPatternListValidationError,
   getPathPatternValidationError,
   type PathPatternListValidationError,
   type PathPatternValidationError,
 } from "@evjs/shared";
 import type {
-  BigfishRouteExtension,
-  BigfishRouteMappedString,
-  BigfishRouteMenuKey,
-  BigfishRouteStaticValue,
   HydrationMode,
   PageMetadata,
   PageRouteNode,
@@ -21,9 +19,13 @@ import type {
   ServerRouteNode,
 } from "@evjs/shared/manifest";
 import type { BundlerAdapter } from "../_internal/build/bundler.js";
+import {
+  assertFrameworkOutputDirectory,
+  assertSeparateFrameworkOutputDirectories,
+} from "../_internal/build/output-path-conventions.js";
+import { CANONICAL_PAGE_ROUTE_ROOT } from "../_internal/build/page-route-conventions.js";
 import { isPluginLifecycleDescriptorField } from "../plugin/hook-names.js";
 import type { Plugin } from "../plugin/index.js";
-import { resolveBigfishRouteMetadata } from "./bigfish-route-metadata.js";
 import {
   type ConfigExtensionValues,
   type ResolvedApplicationExtensionValues,
@@ -114,7 +116,7 @@ export interface ResolvedConfig<TBundlerCfg = DefaultBundlerConfig> {
   output: ResolvedOutputConfig;
   /** Framework-managed page routing declaration, when enabled. */
   routing?: ResolvedPageRoutingConfig;
-  /** @internal Normalized Bigfish-style SPA migration input. */
+  /** @internal Normalized explicit SPA route-tree input. */
   application?: ResolvedConfigRouteApplication;
   /**
    * Statically validated Application extension input authored in ev.config.
@@ -191,9 +193,10 @@ export interface Config<TBundlerCfg = DefaultBundlerConfig> {
   routing?: PageRoutingConfig;
 
   /**
-   * Temporary migration input for an explicit Bigfish SPA route tree.
-   * It cannot be combined with canonical `routing`; remove it after moving
-   * each published Page to a `page.*` anchor.
+   * Explicit SPA route-tree input.
+   *
+   * It cannot be combined with file-convention `routing`; both inputs
+   * normalize into the same CoreGraph model.
    */
   application?: ConfigRouteApplication;
 
@@ -222,10 +225,9 @@ export interface DevConfig {
   /** Enable HTTPS. If an object is provided, it can be explicit key/cert PEM strings or file paths. */
   https?: boolean | { key: string; cert: string };
   /**
-   * Dev proxy configuration.
-   * Configures the client dev server to proxy requests to backend services.
-   * Defaults to forwarding the derived framework server function endpoint to
-   * the local API dev server.
+   * User-defined client dev server proxy rules for backend services.
+   * Framework routes and runtime endpoints are derived from the BuildPlan and
+   * are not included here.
    */
   proxy?: DevProxyRule[];
 }
@@ -295,11 +297,15 @@ export type CrossOriginLoadingPolicy = false | "anonymous" | "use-credentials";
 
 export interface OutputConfig {
   /**
-   * Directory for browser/public build artifacts. Default: "dist/client".
+   * Project-relative directory for browser/public build artifacts. It must be
+   * a strict descendant of the BuildPlan distDir, must not contain dot
+   * segments, and must not overlap `server`. Default: "dist/client".
    */
   client?: string;
   /**
-   * Directory for framework server build artifacts. Default: "dist/server".
+   * Project-relative directory for framework server build artifacts. It must
+   * be a strict descendant of the BuildPlan distDir, must not contain dot
+   * segments, and must not overlap `client`. Default: "dist/server".
    */
   server?: string;
   /**
@@ -324,8 +330,6 @@ export interface PageRoutingConfig {
    * application; `mpa` builds one independent document per Page.
    */
   mode: PageRoutingMode;
-  /** Directory containing page modules. Default: "./src/pages". */
-  dir?: string;
   /** HTML template for generated page routes. Default: "./index.html". */
   html?: string;
   /** Mount selector for generated page routes. Default: "#app". */
@@ -385,13 +389,18 @@ export interface PageFileRouteConfig {
 }
 
 export interface ConfigRouteApplication {
-  /** Directory containing `page.*`-anchored Page scopes. Default: "./src/pages". */
+  /**
+   * Page source root for this explicit SPA route tree. Default: "./src/pages".
+   *
+   * Both `page` and `component` references resolve inside this directory.
+   * This does not change canonical `src/pages` discovery through `routing`.
+   */
   pageRoot?: string;
   /** Application-owned Document defaults. */
   document?: ConfigRouteApplicationDocument;
   /** Project-local Application/root layout component. */
   layout?: string;
-  /** Required non-empty Bigfish SPA route tree used only during source migration. */
+  /** Required non-empty explicit SPA route tree. */
   routes: [ConfigRoute, ...ConfigRoute[]];
 }
 
@@ -411,6 +420,7 @@ export interface ResolvedConfigRouteApplicationDocument {
 }
 
 export interface ResolvedConfigRouteApplication {
+  /** Resolved Page source root for this explicit SPA route tree. */
   pageRoot: string;
   document: ResolvedConfigRouteApplicationDocument;
   layout?: string;
@@ -418,11 +428,16 @@ export interface ResolvedConfigRouteApplication {
 }
 
 export interface ConfigRoute {
-  /** Absolute, relative, empty, or omitted route path. */
+  /** Absolute, relative, empty, or omitted URL route path. */
   path?: string;
-  /** Page directory id relative to `application.pageRoot`; "." selects its root. */
+  /** `page.*`-anchored directory id relative to `application.pageRoot`; `.` selects the root. */
   page?: string;
-  /** Bigfish component reference accepted by the SPA migration normalizer. */
+  /**
+   * Page component module inside `application.pageRoot`.
+   *
+   * `@/pages/...` aliases the configured Page root; bare and `./` references
+   * are relative to it. This does not affect layout or wrapper resolution.
+   */
   component?: string;
   /** Redirect destination. Relative destinations resolve from the parent. */
   redirect?: string;
@@ -430,28 +445,10 @@ export interface ConfigRoute {
   wrappers?: string[];
   /** Route layout module, or `false` to bypass the Application layout. */
   layout?: string | false;
-  /** Nested Umi/Bigfish route declarations. */
+  /** Nested explicit Route declarations. */
   routes?: ConfigRoute[];
   /** Namespaced plugin-owned configuration for this semantic Route. */
   extensions?: ConfigExtensionValues;
-  /** Menu or breadcrumb label retained for migration plugins. */
-  name?: string;
-  /** Static menu icon name retained for migration plugins. */
-  icon?: string;
-  /** Browser-title metadata retained for migration plugins. */
-  title?: string;
-  /** Hide this route from generated menus. */
-  hideInMenu?: boolean;
-  /** Promote child menu entries to this route's level. */
-  flatMenu?: boolean;
-  /** Bigfish B-position identifier, optionally keyed by site. */
-  spmBPos?: BigfishRouteMappedString;
-  /** Bigfish/Umi access policy name. */
-  access?: string;
-  /** BOP menu identifier, optionally keyed by site; null/empty disables it. */
-  menuKey?: BigfishRouteMenuKey;
-  /** Static BOP menu-switch options retained for the owning plugin. */
-  menuAssetOptions?: Record<string, BigfishRouteStaticValue>;
   /**
    * Acknowledges the exact terminal-match semantics already represented by
    * the Core Route. `false` is not representable and is rejected.
@@ -461,17 +458,15 @@ export interface ConfigRoute {
 
 export interface ResolvedConfigRoute {
   path?: string;
-  /** Resolved Page directory id relative to `application.pageRoot`. */
+  /** Resolved Page source id relative to `application.pageRoot`. */
   page?: string;
-  /** Resolved Page module retained by the SPA migration normalizer. */
+  /** Resolved Page module inside `application.pageRoot`. */
   component?: string;
   redirect?: string;
   wrappers?: string[];
   layout?: string | false;
   routes?: ResolvedConfigRoute[];
   extensions?: Readonly<Record<string, StaticConfigValue>>;
-  /** @internal Strict Bigfish metadata projected to a registered Route extension. */
-  metadata?: BigfishRouteExtension;
 }
 
 /** Internal discovery metadata retained for a canonical `page.*` Page. */
@@ -491,7 +486,6 @@ export interface PageRouteDiscoveryMetadata {
 
 export interface ResolvedPageRoutingConfig {
   mode: PageRoutingMode;
-  dir: string;
   html: string;
   mount: string;
   routes: PageRouteNode[];
@@ -521,7 +515,7 @@ export const CONFIG_DEFAULTS = {
   crossOriginLoading: "anonymous",
   outputClientDir: "dist/client",
   outputServerDir: "dist/server",
-  routingDir: "./src/pages",
+  pageRoot: CANONICAL_PAGE_ROUTE_ROOT,
   serverRoutingDir: "./src/apis",
   serverMiddlewareFile: "./src/middleware.ts",
   mount: "#app",
@@ -538,12 +532,7 @@ const PUBLIC_ROOT_CONFIG_KEYS = new Set([
   "bundler",
   "plugins",
 ]);
-const PUBLIC_PAGE_ROUTING_CONFIG_KEYS = new Set([
-  "mode",
-  "dir",
-  "html",
-  "mount",
-]);
+const PUBLIC_PAGE_ROUTING_CONFIG_KEYS = new Set(["mode", "html", "mount"]);
 const PUBLIC_CONFIG_ROUTE_APPLICATION_KEYS = new Set([
   "pageRoot",
   "document",
@@ -559,15 +548,6 @@ const PUBLIC_CONFIG_ROUTE_KEYS = new Set([
   "layout",
   "routes",
   "extensions",
-  "name",
-  "icon",
-  "title",
-  "hideInMenu",
-  "flatMenu",
-  "spmBPos",
-  "access",
-  "menuKey",
-  "menuAssetOptions",
   "exact",
 ]);
 const PUBLIC_CONFIG_ROUTE_APPLICATION_DOCUMENT_KEYS = new Set([
@@ -625,10 +605,6 @@ const PUBLIC_BUNDLER_DEV_CAPABILITY_KEYS = new Set([
   "resolution",
 ]);
 
-function toProxyContext(endpoint: string): string {
-  return endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
-}
-
 function normalizePath(value: string): string {
   const withLeadingSlash = value.startsWith("/") ? value : `/${value}`;
   return withLeadingSlash.length > 1
@@ -647,7 +623,9 @@ function toRuntimeEndpoint(endpoint: string): string {
 function resolveRscEndpoint(rsc: ServerConfig["rsc"]): string | undefined {
   if (!rsc) return undefined;
   return toRuntimeEndpoint(
-    normalizePath(assertRoutePath(rsc.endpoint, "server.rsc.endpoint")),
+    normalizePath(
+      assertConcreteRuntimePath(rsc.endpoint, "server.rsc.endpoint"),
+    ),
   );
 }
 
@@ -713,22 +691,13 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
   const serverBasePath = normalizePath(
     serverConfig.basePath === undefined
       ? CONFIG_DEFAULTS.serverBasePath
-      : assertRoutePath(serverConfig.basePath, "server.basePath"),
+      : assertConcreteRuntimePath(serverConfig.basePath, "server.basePath"),
   );
   const serverEndpoint = toRuntimeEndpoint(joinPath(serverBasePath, "fn"));
   const pprEndpoint = toRuntimeEndpoint(joinPath(serverBasePath, "ppr"));
   const rscEndpoint = resolveRscEndpoint(serverRscConfig);
-  // Page rendering enables RSC from the CoreGraph. Keep the derived path
-  // available to the dev proxy even when no endpoint override is configured;
-  // the resolved runtime only exposes RSC when the graph actually needs it.
-  const rscProxyEndpoint =
-    rscEndpoint ?? toRuntimeEndpoint(joinPath(serverBasePath, "rsc"));
   const devHttps = resolveDevHttpsConfig(devConfig.https);
   const serverHttps = resolveServerDevHttpsConfig(serverDevConfig.https);
-  const serverTarget = new URL(
-    serverHttps ? "https://localhost" : "http://localhost",
-  );
-  serverTarget.port = String(serverPort);
 
   return {
     conventions,
@@ -745,21 +714,7 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
     dev: {
       port: clientPort,
       https: devHttps,
-      proxy: [
-        // User-defined proxies take precedence
-        ...resolveDevProxyRules(devConfig.proxy),
-        // Framework runtime paths proxy to the API dev server.
-        {
-          context: [
-            toProxyContext(serverEndpoint),
-            toProxyContext(pprEndpoint),
-            toProxyContext(rscProxyEndpoint),
-          ],
-          target: serverTarget.origin,
-          changeOrigin: true,
-          secure: false,
-        },
-      ],
+      proxy: resolveDevProxyRules(devConfig.proxy),
     },
     server: {
       basePath: serverBasePath,
@@ -1042,7 +997,7 @@ function validateConventionSourceConflicts<TBundlerCfg>(
   throw new Error(
     `[evjs] conventions: false cannot be combined with ${conflicts.join(
       " or ",
-    )}. Remove the file-convention declaration when using the global opt-out. application.routes remains available as an explicit Bigfish SPA migration input.`,
+    )}. Remove the file-convention declaration when using the global opt-out. application.routes remains available as an explicit SPA route-tree input.`,
   );
 }
 
@@ -1075,24 +1030,6 @@ function validateRootConfigKeys(config: Record<string, unknown>): void {
     "config",
     "conventions, output, dev, server, transport, routing, application, extensions, bundler, or plugins",
     (key) => {
-      if (key === "entry") {
-        return "[evjs] config.entry has been removed from framework config. Use canonical routing with src/pages/**/page.*; standalone runtimes own their entry outside @evjs/ev config.";
-      }
-      if (key === "apps") {
-        return "[evjs] config.apps has been removed from framework config. Use canonical routing with src/pages/**/page.*.";
-      }
-      if (key === "app") {
-        return "[evjs] config.app has been removed. Migrate the published entry to src/pages/**/page.* and configure routing.mode.";
-      }
-      if (key === "pages") {
-        return "[evjs] config.pages has been removed. Migrate every published Page to src/pages/**/page.* with adjacent page.config.ts files and configure routing.mode.";
-      }
-      if (key === "routes") {
-        return "[evjs] top-level config.routes has been removed. Bigfish SPA migration route trees must be declared once under application.routes.";
-      }
-      if (key === "html") {
-        return "[evjs] top-level config.html has been removed. Use routing.html or application.document.template.";
-      }
       if (key === "functions" || key === "serverFunctions") {
         return `[evjs] config.${key} is not a public config field. Server functions are discovered from "use server" modules and endpoints are derived from server.basePath.`;
       }
@@ -1109,7 +1046,7 @@ function resolveConfigRouteProfile<TBundlerCfg>(
   }
   if (config.routing !== undefined) {
     throw new Error(
-      "[evjs] application.routes cannot be combined with routing. Use the Bigfish SPA migration input or canonical page.* routing, not both.",
+      "[evjs] application.routes cannot be combined with routing. Choose either the explicit SPA route tree or canonical page.* discovery.",
     );
   }
 
@@ -1124,14 +1061,11 @@ function resolveConfigRouteProfile<TBundlerCfg>(
     "application",
     "pageRoot, document, layout, or routes",
     (key) => {
-      if (key === "topology" || key === "mode") {
-        return `[evjs] application.${key} has been removed. Bigfish-style application.routes is a SPA-only migration input. To move a Bigfish application to canonical routing, migrate its routes to src/pages/**/page.* and use routing.mode "spa".`;
-      }
       if (key === "html" || key === "mount") {
-        return `[evjs] application.${key} has been removed. Use application.document.${key === "html" ? "template" : "mount"}.`;
+        return `[evjs] application.${key} is not supported. Use application.document.${key === "html" ? "template" : "mount"}.`;
       }
       if (key === "extensions") {
-        return "[evjs] application.extensions is not supported. Use top-level config.extensions for plugin-owned Application configuration; application is only the Bigfish SPA route-tree migration input.";
+        return "[evjs] application.extensions is not supported. Use top-level config.extensions for plugin-owned Application configuration.";
       }
     },
   );
@@ -1176,7 +1110,7 @@ function resolveConfigRouteProfile<TBundlerCfg>(
 function resolveConfigRoutePageRoot(value: unknown): string {
   const reference =
     value === undefined
-      ? CONFIG_DEFAULTS.routingDir
+      ? CONFIG_DEFAULTS.pageRoot
       : assertTrimmedNonEmptyString(value, "application.pageRoot");
   const normalized = reference.startsWith("./")
     ? reference.slice(2)
@@ -1242,7 +1176,11 @@ function resolveConfigRouteApplicationDocument(
   };
 }
 
-function resolveConfigRoutePageId(value: unknown, path: string): string {
+function resolveConfigRoutePageId(
+  value: unknown,
+  path: string,
+  pageRoot: string,
+): string {
   const pageId = assertTrimmedNonEmptyString(value, path);
   if (pageId === ".") return pageId;
   const segments = pageId.split("/");
@@ -1265,7 +1203,7 @@ function resolveConfigRoutePageId(value: unknown, path: string): string {
     )
   ) {
     throw new Error(
-      `[evjs] ${path} must be a safe Page id relative to application.pageRoot and must not escape that directory.`,
+      `[evjs] ${path} must be a safe Page id relative to application.pageRoot "${pageRoot}" and must not escape that directory.`,
     );
   }
   return pageId;
@@ -1274,12 +1212,13 @@ function resolveConfigRoutePageId(value: unknown, path: string): string {
 function deriveConfigRoutePageIdFromComponent(
   component: string,
   pageRoot: string,
+  path: string,
 ): string {
   if (component === pageRoot) return ".";
   const prefix = `${pageRoot}/`;
   if (!component.startsWith(prefix)) {
     throw new Error(
-      `[evjs] component alias "${component}" must resolve inside application.pageRoot "${pageRoot}".`,
+      `[evjs] ${path} resolves to "${component}", outside application.pageRoot "${pageRoot}". Page components must resolve inside the configured Page source root.`,
     );
   }
   const relative = component
@@ -1293,7 +1232,7 @@ function deriveConfigRoutePageIdFromComponent(
   } else if (relative.endsWith("/page")) {
     pageId = relative.slice(0, -"/page".length);
   }
-  return resolveConfigRoutePageId(pageId, "component Page id");
+  return resolveConfigRoutePageId(pageId, `${path} Page id`, pageRoot);
 }
 
 function hasConfigPathControlCharacter(value: string): boolean {
@@ -1314,10 +1253,10 @@ function resolveConfigRoute(
     route,
     PUBLIC_CONFIG_ROUTE_KEYS,
     routePath,
-    "path, page, component, redirect, wrappers, layout, routes, or documented Bigfish route metadata",
+    "path, page, component, redirect, wrappers, layout, routes, extensions, or exact",
     (key) => {
       if (key === "children") {
-        return `[evjs] ${routePath}.children is not supported. Current Umi/Bigfish route config uses routes for nested declarations.`;
+        return `[evjs] ${routePath}.children is not supported. Use routes for nested declarations.`;
       }
     },
   );
@@ -1328,10 +1267,10 @@ function resolveConfigRoute(
   );
   if (route.page !== undefined && route.component !== undefined) {
     throw new Error(
-      `[evjs] ${routePath} must declare only one of page or the deprecated component alias.`,
+      `[evjs] ${routePath} must declare only one of page or component.`,
     );
   }
-  const componentAlias =
+  const component =
     route.component === undefined
       ? undefined
       : normalizeConfigRouteModuleReference(
@@ -1342,11 +1281,14 @@ function resolveConfigRoute(
         );
   let page: string | undefined;
   if (route.page !== undefined) {
-    page = resolveConfigRoutePageId(route.page, `${routePath}.page`);
-  } else if (componentAlias !== undefined) {
-    page = deriveConfigRoutePageIdFromComponent(componentAlias, pageRoot);
+    page = resolveConfigRoutePageId(route.page, `${routePath}.page`, pageRoot);
+  } else if (component !== undefined) {
+    page = deriveConfigRoutePageIdFromComponent(
+      component,
+      pageRoot,
+      `${routePath}.component`,
+    );
   }
-  const component = componentAlias;
   const redirect =
     route.redirect === undefined
       ? undefined
@@ -1444,7 +1386,6 @@ function resolveConfigRoute(
           route.extensions,
           `${routePath}.extensions`,
         );
-  const metadata = resolveBigfishRouteMetadata(route, routePath);
   return {
     ...(pathValue !== undefined ? { path: pathValue } : {}),
     ...(page
@@ -1458,7 +1399,6 @@ function resolveConfigRoute(
     ...(layout !== undefined ? { layout } : {}),
     ...(routes ? { routes } : {}),
     ...(extensions ? { extensions } : {}),
-    ...(metadata ? { metadata } : {}),
   };
 }
 
@@ -1482,7 +1422,7 @@ function normalizeConfigRouteModuleReference(
   value: unknown,
   path: string,
   kind: "component" | "wrapper",
-  pageRoot: string = CONFIG_DEFAULTS.routingDir,
+  pageRoot: string = CONFIG_DEFAULTS.pageRoot,
 ): string {
   const reference = assertTrimmedNonEmptyString(value, path);
   if (
@@ -1497,13 +1437,13 @@ function normalizeConfigRouteModuleReference(
     reference.endsWith("/.") ||
     reference.includes("//")
   ) {
-    throw createConfigRouteModuleReferenceError(path, kind);
+    throw createConfigRouteModuleReferenceError(path, kind, pageRoot);
   }
 
   let projectPath: string;
   if (kind === "component") {
     if (reference.startsWith("@/pages/")) {
-      projectPath = `./src/pages/${reference.slice("@/pages/".length)}`;
+      projectPath = `${pageRoot}/${reference.slice("@/pages/".length)}`;
     } else if (reference.startsWith("./src/")) {
       projectPath = reference;
     } else if (reference.startsWith("src/")) {
@@ -1513,7 +1453,7 @@ function normalizeConfigRouteModuleReference(
     } else if (!reference.startsWith(".") && !reference.startsWith("@")) {
       projectPath = `${pageRoot}/${reference}`;
     } else {
-      throw createConfigRouteModuleReferenceError(path, kind);
+      throw createConfigRouteModuleReferenceError(path, kind, pageRoot);
     }
   } else if (reference.startsWith("@/")) {
     projectPath = `./src/${reference.slice(2)}`;
@@ -1526,11 +1466,11 @@ function normalizeConfigRouteModuleReference(
   } else if (!reference.startsWith(".") && !reference.startsWith("@")) {
     projectPath = `./src/${reference}`;
   } else {
-    throw createConfigRouteModuleReferenceError(path, kind);
+    throw createConfigRouteModuleReferenceError(path, kind, pageRoot);
   }
 
   if (projectPath.endsWith("/")) {
-    throw createConfigRouteModuleReferenceError(path, kind);
+    throw createConfigRouteModuleReferenceError(path, kind, pageRoot);
   }
   return projectPath;
 }
@@ -1538,13 +1478,14 @@ function normalizeConfigRouteModuleReference(
 function createConfigRouteModuleReferenceError(
   path: string,
   kind: "component" | "wrapper",
+  pageRoot: string = CONFIG_DEFAULTS.pageRoot,
 ): Error {
   return kind === "component"
     ? new Error(
-        `[evjs] ${path} must be a project page reference using "@/pages/...", "./src/pages/...", or a bare/"./" path relative to src/pages. Package, absolute, and parent-directory references cannot declare a traceable Page scope.`,
+        `[evjs] ${path} must reference a Page component inside application.pageRoot "${pageRoot}". Use "@/pages/..." as an alias for that root, a bare/"./" path relative to it, or a project source path that stays inside it.`,
       )
     : new Error(
-        `[evjs] ${path} must be a project source reference using "@/...", "./src/...", or a bare/"./" path relative to src. Package, absolute, and parent-directory references are not supported by application.routes migration input.`,
+        `[evjs] ${path} must be a project source reference using "@/...", "./src/...", or a bare/"./" path relative to src. Package, absolute, and parent-directory references are not supported by application.routes.`,
       );
 }
 
@@ -1638,7 +1579,7 @@ function validateServerConfigKeys(server: ServerConfig): void {
     "routing, basePath, rsc, or dev",
     (key) => {
       if (key === "conventions") {
-        return "[evjs] server.conventions has been removed. Use top-level conventions: false to disable all file conventions.";
+        return "[evjs] server.conventions is not supported. Use top-level conventions: false to disable all file conventions.";
       }
       if (key === "entry") {
         return "[evjs] server.entry is not supported. Use server.routing file conventions under src/apis instead.";
@@ -1661,12 +1602,12 @@ function resolveServerRoutingConfig(
 ): ResolvedServerRoutingConfig | undefined {
   if (routing === false) {
     throw new Error(
-      "[evjs] server.routing: false has been removed. Use top-level conventions: false to disable all file conventions.",
+      "[evjs] server.routing must be a routing object. Use top-level conventions: false to disable all file conventions.",
     );
   }
   if (routing === true) {
     throw new Error(
-      "[evjs] server.routing: true has been removed. Use server.routing: {} to request the default src/apis directory, or omit server.routing for optional default discovery.",
+      "[evjs] server.routing must be a routing object. Use server.routing: {} to request the default src/apis directory, or omit server.routing for optional default discovery.",
     );
   }
   const options =
@@ -1750,12 +1691,12 @@ function resolvePageRoutingConfig(
   if (routing === undefined) return undefined;
   if (routing === false) {
     throw new Error(
-      "[evjs] routing: false has been removed. Use top-level conventions: false to disable all file conventions.",
+      "[evjs] routing must be an object with mode. Use top-level conventions: false to disable all file conventions.",
     );
   }
   if (routing === true) {
     throw new Error(
-      '[evjs] routing: true has been removed. Use routing: { mode: "spa" } or routing: { mode: "mpa" } to enable canonical Page discovery.',
+      '[evjs] routing must be an object. Use routing: { mode: "spa" } or routing: { mode: "mpa" } to enable canonical Page discovery.',
     );
   }
   const options = assertPlainConfigRecord(
@@ -1767,10 +1708,6 @@ function resolvePageRoutingConfig(
   const mode = resolvePageRoutingMode(options.mode);
   return {
     mode,
-    dir:
-      options.dir === undefined
-        ? CONFIG_DEFAULTS.routingDir
-        : assertNonEmptyString(options.dir, "routing.dir"),
     html:
       options.html === undefined
         ? defaultHtml
@@ -1788,22 +1725,13 @@ function validatePageRoutingConfigKeys(routing: Record<string, unknown>): void {
     routing,
     PUBLIC_PAGE_ROUTING_CONFIG_KEYS,
     "routing",
-    "mode, dir, html, or mount",
+    "mode, html, or mount",
     (key) => {
       if (key === "conventions") {
-        return "[evjs] routing.conventions has been removed. Canonical Page facets are discovered from positive files; use top-level conventions: false only to disable all file conventions.";
-      }
-      if (key === "compatibility") {
-        return "[evjs] routing.compatibility has been removed. Canonical routing discovers <routing.dir>/**/page.* anchors; migrate Page entries to page.* and Page settings to page.config.ts, then configure only routing.mode.";
-      }
-      if (key === "convention") {
-        return "[evjs] routing.convention has been removed. Canonical routing discovers <routing.dir>/**/page.* anchors; migrate Page entries to page.* and Page settings to page.config.ts, then configure only routing.mode.";
-      }
-      if (key === "entry") {
-        return "[evjs] routing.entry has been removed. SPA routing generates its framework bootstrap from the normalized Page-and-Route graph.";
+        return "[evjs] routing.conventions is not supported. Canonical Page facets are discovered from positive files; use top-level conventions: false only to disable all file conventions.";
       }
       if (key === "routes") {
-        return "[evjs] routing.routes is not a public config field. Canonical route URLs come from page.* anchor directories under routing.dir; use application.routes only as the Bigfish route-tree migration input.";
+        return "[evjs] routing.routes is not a public config field. Canonical route URLs come from page.* anchor directories under src/pages; use application.routes for an explicit SPA route tree.";
       }
     },
   );
@@ -1837,27 +1765,15 @@ function resolveOutputDirectories(
   const client =
     outputConfig.client === undefined
       ? CONFIG_DEFAULTS.outputClientDir
-      : assertOutputDirectory(outputConfig.client, "output.client");
+      : assertFrameworkOutputDirectory(outputConfig.client, "output.client");
   const server =
     outputConfig.server === undefined
       ? CONFIG_DEFAULTS.outputServerDir
-      : assertOutputDirectory(outputConfig.server, "output.server");
+      : assertFrameworkOutputDirectory(outputConfig.server, "output.server");
 
-  if (normalizeOutputDirectory(client) === normalizeOutputDirectory(server)) {
-    throw new Error(
-      "[evjs] output.client and output.server must point to different directories.",
-    );
-  }
+  assertSeparateFrameworkOutputDirectories({ client, server });
 
   return { client, server };
-}
-
-function assertOutputDirectory(value: unknown, path: string): string {
-  return assertNonEmptyString(value, path);
-}
-
-function normalizeOutputDirectory(value: string): string {
-  return value.replace(/\\/g, "/").replace(/\/+$/, "") || ".";
 }
 
 function resolveDevHttpsConfig(
@@ -2020,6 +1936,17 @@ function assertRoutePath(value: unknown, path: string): string {
   const error = getPathPatternValidationError(value);
   if (!error) return value as string;
   throw new Error(`[evjs] ${path} ${formatRoutePathValidationError(error)}`);
+}
+
+function assertConcreteRuntimePath(value: unknown, field: string): string {
+  const pathname = assertRoutePath(value, field);
+  const error = getConcreteRuntimePathSegmentValidationError(pathname);
+  if (error) {
+    throw new Error(
+      `[evjs] ${field} ${formatConcreteRuntimePathSegmentValidationError(error)}`,
+    );
+  }
+  return pathname;
 }
 
 function formatRoutePathValidationError(

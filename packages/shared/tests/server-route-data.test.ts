@@ -75,5 +75,8 @@ describe("server route data helpers", () => {
     expect(serverRoutePathShapeFromPath("/api//users/:id/")).toBe(
       "/api//users/:param/",
     );
+    expect(serverRoutePathShapeFromPath("/api/%75sers/:userId")).toBe(
+      "/api/users/:param",
+    );
   });
 });

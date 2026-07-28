@@ -20,6 +20,7 @@ import {
 } from "@evjs/shared/manifest";
 import type { ResolvedPageFileConfig } from "../page-config-module.js";
 import { createStaticPageDocumentOutput } from "../page-document-output.js";
+import { CANONICAL_PAGE_ROUTE_ROOT } from "../page-route-conventions.js";
 import type { GraphConfig } from "./index.js";
 
 const PAGE_ANCHOR_PRODUCER = {
@@ -153,7 +154,7 @@ export function createPageAnchorGraph(
 ): CoreGraph {
   if (!isPageAnchorGraphConfig(config)) {
     throw new Error(
-      "[evjs] CoreGraph page-anchor normalization requires canonical page.* discovery without an application.routes migration input.",
+      "[evjs] CoreGraph page-anchor normalization requires canonical page.* discovery without explicit application.routes input.",
     );
   }
   const pageConfig = config as PageAnchorGraphConfig;
@@ -348,7 +349,7 @@ function createPageAnchorApplication(
       extensions: {},
       provenance: {
         producer: PAGE_ANCHOR_PRODUCER,
-        source: config.routing.dir,
+        source: CANONICAL_PAGE_ROUTE_ROOT,
       },
     });
     return;
@@ -365,7 +366,7 @@ function createPageAnchorApplication(
     extensions: {},
     provenance: {
       producer: PAGE_ANCHOR_PRODUCER,
-      source: config.routing.dir,
+      source: CANONICAL_PAGE_ROUTE_ROOT,
     },
   });
   defineRecordValue(documents, "index", {

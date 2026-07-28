@@ -249,6 +249,25 @@ function compactUnique(values: Array<string | undefined>): string[] {
   ];
 }
 
+export function getExampleDeploymentMetadataPath(exampleDir: string): string {
+  return path.join(exampleDir, "dist", "deployment-metadata.json");
+}
+
+export function readExampleDeploymentMetadata(
+  exampleDir: string,
+): DeploymentMetadata {
+  return JSON.parse(
+    fs.readFileSync(getExampleDeploymentMetadataPath(exampleDir), "utf-8"),
+  ) as DeploymentMetadata;
+}
+
+function resolveExampleOutputPath(
+  exampleDir: string,
+  outputPath: string,
+): string {
+  return path.resolve(exampleDir, outputPath);
+}
+
 /**
  * Load evjs config from an example directory's ev.config.ts.
  *
@@ -389,27 +408,23 @@ export function createExampleTest(exampleName: string) {
 
         // Read only canonical deployment metadata for the bundle entry;
         // runtime-only FrameworkRuntime data comes from the buildEnd hook.
-        const deploymentMetadataPath = path.join(
-          exampleDir,
-          "dist",
-          "deployment-metadata.json",
-        );
-        const deploymentMetadata = JSON.parse(
-          fs.readFileSync(deploymentMetadataPath, "utf-8"),
-        ) as DeploymentMetadata;
+        const deploymentMetadata = readExampleDeploymentMetadata(exampleDir);
         const serverEntry = deploymentMetadata.server.entry;
         if (!serverEntry) {
           throw new Error("Built example did not emit a server entry.");
         }
-        const serverEntryPath = path.join(
+        const outputRoot = resolveExampleOutputPath(
           exampleDir,
-          "dist",
-          "server",
-          serverEntry,
+          deploymentMetadata.paths.rootDir,
         );
+        const serverDir = resolveExampleOutputPath(
+          exampleDir,
+          deploymentMetadata.paths.serverDir,
+        );
+        const serverEntryPath = path.join(serverDir, serverEntry);
 
         // Match the runtime loader path so package ESM scopes are covered.
-        const bootstrapPath = path.join(exampleDir, "dist", "_e2e_start.cjs");
+        const bootstrapPath = path.join(outputRoot, "_e2e_start.cjs");
         fs.writeFileSync(
           bootstrapPath,
           [
@@ -458,8 +473,11 @@ export function createExampleTest(exampleName: string) {
         });
 
         // Serve the client bundle with API proxy
-        const distDir = path.join(exampleDir, "dist", "client");
-        const staticServer = createStaticServer(distDir, {
+        const publicDir = resolveExampleOutputPath(
+          exampleDir,
+          deploymentMetadata.paths.publicDir,
+        );
+        const staticServer = createStaticServer(publicDir, {
           apiPort,
           proxyPrefixes: getServerProxyPrefixes(deploymentMetadata),
           pathRewrites: getClientPathRewrites(deploymentMetadata),
@@ -501,7 +519,7 @@ export function createExampleTest(exampleName: string) {
 /**
  * Create a test fixture for a static client example.
  *
- * Builds with the specified bundler and serves static files from dist/.
+ * Builds with the specified bundler and serves its declared public output.
  */
 export function createCsrExampleTest(exampleName: string) {
   const exampleDir = path.resolve(
@@ -521,8 +539,12 @@ export function createCsrExampleTest(exampleName: string) {
 
         await buildExample(exampleDir, bundlerName);
 
-        const distDir = path.join(exampleDir, "dist");
-        const staticServer = createStaticServer(distDir);
+        const deploymentMetadata = readExampleDeploymentMetadata(exampleDir);
+        const publicDir = resolveExampleOutputPath(
+          exampleDir,
+          deploymentMetadata.paths.publicDir,
+        );
+        const staticServer = createStaticServer(publicDir);
 
         await new Promise<void>((resolve) => {
           staticServer.listen(0, resolve);

@@ -76,14 +76,8 @@ export async function analyzeAndMaterializeFrameworkIR<TBundlerCfg>(
     const plan = await materialize(analysis);
     const nextAliases = getFrameworkSourceAliases(options.cwd, plan);
     if (haveSameAliases(aliases, nextAliases)) {
-      const pageRoot =
-        options.config.routing?.dir ?? options.config.application?.pageRoot;
-      if (options.write !== false && pageRoot) {
-        await syncPageRouteTypesFromCoreGraph(
-          options.cwd,
-          pageRoot,
-          analysis.graph,
-        );
+      if (options.write !== false && options.config.routing) {
+        await syncPageRouteTypesFromCoreGraph(options.cwd, analysis.graph);
       }
       return { analysis, plan };
     }

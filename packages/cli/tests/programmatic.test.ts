@@ -26,7 +26,10 @@ describe("programmatic API", () => {
       "utf-8",
     );
 
-    await prepare({ output: { client: "dist" } }, { cwd });
+    await prepare(
+      { output: { client: "dist/client", server: "dist/server" } },
+      { cwd },
+    );
 
     await expect(
       fs.promises.access(path.join(cwd, ".ev/manifest.json")),
@@ -61,7 +64,6 @@ describe("programmatic API", () => {
           clientEntryAssets: {
             main: { js: ["main.js"], css: [] },
           },
-          firstClientEntryAssets: { js: ["main.js"], css: [] },
           serverEntryAssets: {
             server: { js: ["server.js"], css: [] },
           },
@@ -75,7 +77,10 @@ describe("programmatic API", () => {
     };
 
     await build(
-      { routing: { mode: "spa" }, output: { client: "dist" } },
+      {
+        routing: { mode: "spa" },
+        output: { client: "dist/client", server: "dist/server" },
+      },
       { cwd, bundler },
     );
 
@@ -104,7 +109,6 @@ describe("programmatic API", () => {
           clientEntryAssets: {
             main: { js: ["main.js"], css: [] },
           },
-          firstClientEntryAssets: { js: ["main.js"], css: [] },
           serverEntryAssets: {
             server: { js: ["server.js"], css: [] },
           },
@@ -118,7 +122,7 @@ describe("programmatic API", () => {
     };
 
     await build<CustomBundlerConfig>(
-      { output: { client: "dist" } },
+      { output: { client: "dist/client", server: "dist/server" } },
       { cwd, bundler },
     );
 

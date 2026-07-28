@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  compareRoutePathsBySpecificity,
   findBestPageRoute,
   getPageRouteParamNameValidationError,
   getPageRouteParamSegmentValidationError,
@@ -35,11 +36,46 @@ describe("page route data helpers", () => {
     expect(param.test("/docs/a/b")).toBe(false);
   });
 
+  it("keeps imperative and regexp matching aligned around empty segments", () => {
+    const cases = [
+      ["/", "/", true],
+      ["/", "//", false],
+      ["/users/profile", "/users/profile", true],
+      ["/users/profile", "/users/profile/", true],
+      ["/users/profile", "/users/profile//", false],
+      ["/users/profile", "/users//profile", false],
+      ["/users/$id", "/users/42", true],
+      ["/users/$id", "/users//", false],
+      ["/docs/$", "/docs", true],
+      ["/docs/$", "/docs/", true],
+      ["/docs/$", "/docs/a/b", true],
+      ["/docs/$", "/docs//b", false],
+      ["/docs/$", "/docs/a//", false],
+    ] as const;
+
+    for (const [routePath, pathname, expected] of cases) {
+      expect(pageRoutePathMatches(routePath, pathname)).toBe(expected);
+      expect(pageRoutePathToRegExp(routePath).test(pathname)).toBe(expected);
+    }
+
+    expect(matchPageRouteParams("/users/$id", "/users//")).toEqual({});
+  });
+
   it("matches encoded and decoded Unicode static route segments", () => {
     expect(pageRoutePathMatches("/你好", "/%E4%BD%A0%E5%A5%BD")).toBe(true);
     expect(pageRoutePathMatches("/%E4%BD%A0%E5%A5%BD", "/你好")).toBe(true);
     expect(pageRoutePathMatches("/a%2Fb", "/a%2Fb")).toBe(true);
     expect(pageRoutePathMatches("/a%2Fb", "/a/b")).toBe(false);
+
+    const decodedPattern = pageRoutePathToRegExp("/你好");
+    expect(decodedPattern.test("/你好")).toBe(true);
+    expect(decodedPattern.test("/%E4%BD%A0%E5%A5%BD")).toBe(true);
+    expect(decodedPattern.test("/%e4%bd%a0%e5%a5%bd")).toBe(true);
+
+    const encodedSlashPattern = pageRoutePathToRegExp("/a%2Fb");
+    expect(encodedSlashPattern.test("/a%2Fb")).toBe(true);
+    expect(encodedSlashPattern.test("/a%2fb")).toBe(true);
+    expect(encodedSlashPattern.test("/a/b")).toBe(false);
   });
 
   it("finds the most specific matching page route independent of route order", () => {
@@ -52,6 +88,67 @@ describe("page route data helpers", () => {
     expect(findBestPageRoute(routes, "/users/settings")?.id).toBe("settings");
     expect(findBestPageRoute(routes, "/users/42")?.id).toBe("user");
     expect(findBestPageRoute(routes, "/users/42/details")?.id).toBe("catchall");
+  });
+
+  it("uses segment-wise specificity for crossing static and dynamic branches", () => {
+    const routes = [
+      { id: "dynamic-first", path: "/users/$identifier/profile" },
+      { id: "static-first", path: "/users/x/$section" },
+    ];
+
+    expect(findBestPageRoute(routes, "/users/x/profile")?.id).toBe(
+      "static-first",
+    );
+    expect(
+      compareRoutePathsBySpecificity(routes[0].path, routes[1].path),
+    ).toBeGreaterThan(0);
+  });
+
+  it("ignores parameter names until a later segment decides specificity", () => {
+    const routes = [
+      { id: "dynamic-tail", path: "/users/$a/$rest" },
+      { id: "static-tail", path: "/users/$z/profile" },
+    ];
+
+    expect(findBestPageRoute(routes, "/users/x/profile")?.id).toBe(
+      "static-tail",
+    );
+    expect(
+      compareRoutePathsBySpecificity(routes[0].path, routes[1].path),
+    ).toBeGreaterThan(0);
+  });
+
+  it("compares encoded static aliases before later route specificity", () => {
+    const routes = [
+      { id: "dynamic-tail", path: "/users/%61/$rest" },
+      { id: "static-tail", path: "/users/a/profile" },
+    ];
+
+    expect(findBestPageRoute(routes, "/users/a/profile")?.id).toBe(
+      "static-tail",
+    );
+    expect(
+      compareRoutePathsBySpecificity(routes[0].path, routes[1].path),
+    ).toBeGreaterThan(0);
+  });
+
+  it("continues after URL-equivalent static segments", () => {
+    const routes = [
+      { id: "encoded-wildcard", path: "/users/%61/$" },
+      { id: "decoded-static", path: "/users/a/profile" },
+    ];
+
+    expect(findBestPageRoute(routes, "/users/a/profile")?.id).toBe(
+      "decoded-static",
+    );
+    expect(
+      findBestPageRoute([...routes].reverse(), "/users/a/profile")?.id,
+    ).toBe("decoded-static");
+    expect(
+      compareRoutePathsBySpecificity(routes[0].path, routes[1].path),
+    ).toBeGreaterThan(0);
+
+    expect(compareRoutePathsBySpecificity("/a%2F/$", "/a/$")).not.toBe(0);
   });
 
   it("matches dynamic page route params from encoded pathnames", () => {
@@ -167,6 +264,26 @@ describe("page route data helpers", () => {
     );
     expect(pageRoutePathShapeFromPath("/docs/$")).toBe("/docs/$");
     expect(pageRoutePathShapeFromPath("/users/$id/")).toBe("/users/:param");
+    expect(pageRoutePathShapeFromPath("/%75sers/$userId")).toBe(
+      "/users/:param",
+    );
+    expect(pageRoutePathShapeFromPath("/a%2Fb/$id")).not.toBe(
+      pageRoutePathShapeFromPath("/a/b/$id"),
+    );
+  });
+
+  it("aligns regexp matching for encoded static aliases", () => {
+    const users = pageRoutePathToRegExp("/users");
+    expect(users.test("/%75sers")).toBe(true);
+    expect(users.test("/u%73e%72s")).toBe(true);
+
+    expect(pageRoutePathMatches("/files/%252F", "/files/%2F")).toBe(false);
+    expect(pageRoutePathToRegExp("/files/%252F").test("/files/%2F")).toBe(
+      false,
+    );
+    expect(pageRoutePathToRegExp("/files/a%2Fb").test("/files/a/b")).toBe(
+      false,
+    );
   });
 
   it("normalizes route pathnames for shared route matching", () => {

@@ -35,7 +35,7 @@ npx biome check --write
 2. 使用 Biome formatting/linting。没有具体理由时避免 `any` 与宽泛 namespace
    import。
 3. 新应用只使用一种 Page-and-Route 模型：
-   `<routing.dir>/**/page.*`、可选构建期 `page.config.ts`、目录派生 URL 与
+   `src/pages/**/page.*`、可选构建期 `page.config.ts`、目录派生 URL 与
    `routing.mode`。
 4. Page 私有组件、hook、model、service、测试、样式放入 Page 目录，不需要 `_`。
 5. canonical client route 目录使用 `$param`、终止 `$...splat` 与

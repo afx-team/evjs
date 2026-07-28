@@ -804,7 +804,10 @@ export interface PluginHooks<TBundlerCfg = DefaultBundlerConfig> {
     ctx: BundlerCtx<TBundlerCfg>,
   ) => void | Promise<void>;
 
-  /** Called after compilation completes. Receives the canonical build result. */
+  /**
+   * Called after compilation completes. Receives an isolated snapshot of the
+   * canonical build result; mutations do not affect later hooks or artifacts.
+   */
   buildEnd?: (result: BuildResult) => void | Promise<void>;
 
   /** Called when the command is shutting down or after a build finishes. */

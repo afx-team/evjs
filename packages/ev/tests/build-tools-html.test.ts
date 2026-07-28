@@ -71,6 +71,26 @@ describe("generateHtml", () => {
     expect(result).toContain('href="/main.abc12345.css"');
   });
 
+  it("preserves explicit asset URLs and applies publicPath only to relatives", () => {
+    const doc = generateHtml({
+      template: TEMPLATE_PATH,
+      publicPath: "/static/",
+      js: [
+        "main.js?v=1#boot",
+        "https://cdn.example.com/vendor.js",
+        "data:text/javascript,export%20default%201",
+      ],
+      css: ["theme.css", "//cdn.example.com/reset.css"],
+    });
+    const result = doc.toString();
+
+    expect(result).toContain('src="/static/main.js?v=1#boot"');
+    expect(result).toContain('src="https://cdn.example.com/vendor.js"');
+    expect(result).toContain('src="data:text/javascript,export%20default%201"');
+    expect(result).toContain('href="/static/theme.css"');
+    expect(result).toContain('href="//cdn.example.com/reset.css"');
+  });
+
   it("preserves original template content", () => {
     const doc = generateHtml({
       template: TEMPLATE_PATH,

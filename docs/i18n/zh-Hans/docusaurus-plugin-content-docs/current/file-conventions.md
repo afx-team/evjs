@@ -10,7 +10,7 @@ file route，positive `api.*` 锚点定义 server request Route。两棵树都�
 
 | 根 | 用途 |
 | --- | --- |
-| `src/pages` 或 `routing.dir` | canonical Page-and-Route 文件树。 |
+| `src/pages` | canonical Page-and-Route 文件树。 |
 | `src/apis` 或 `server.routing.dir` | Server request `api.*` 锚点树。 |
 | `src/middleware.ts` | 全局框架 server middleware。 |
 | `<server.routing.dir>/**/middleware.ts` | 作用于同目录及后代 server file route 的 middleware；默认为 `src/apis/**/middleware.ts`。 |
@@ -19,12 +19,12 @@ file route，positive `api.*` 锚点定义 server request Route。两棵树都�
 Page 锚点、server request-route 锚点与两类 middleware root 共同组成一个框架持有的
 发现单元。顶层 `conventions: false` 会整体关闭这个单元，框架不提供逐 root
 开关；该配置不能与显式 `routing` 或 `server.routing` 一起使用。文件约定保持
-启用时，`routing.dir` 与 `server.routing: { dir }` 只定制各自的 discovery
-root。
+启用时，客户端 Page 根目录固定为 `src/pages`；只有 `server.routing: { dir }`
+可以定制 discovery root。
 
 reachable 的 `"use server";` 模块、仅支持 SPA 的 `application.routes` 显式
 route-tree 配置，以及插件 contribution 是 graph/config 输入，不属于文件约定。
-已移除的 `app`、`pages` 与顶层 `routes` 声明会被拒绝。
+`app`、`pages` 与顶层 `routes` 不属于公共配置，会被拒绝。
 
 每个 `page.*` 锚点的相对目录是客户端 URL 的事实来源。`routing.mode` 为同一
 文件树选择 SPA 或 MPA 物化。
@@ -34,7 +34,7 @@ route-tree 配置，以及插件 contribution 是 graph/config 输入，不属�
 Page 与客户端 Route 共用一个 positive anchor：
 
 ```text
-<routing.dir>/**/page.{ts,tsx,js,jsx}
+src/pages/**/page.{ts,tsx,js,jsx}
 ```
 
 ```ts
@@ -65,7 +65,7 @@ src/pages/
 规则：
 
 - 一个 route 目录只能有一个受支持扩展名的 `page.*`；
-- 相对 `routing.dir` 的目录段决定 URL；
+- 相对 `src/pages` 的目录段决定 URL；
 - 完整所在目录是 Page 私有 scope；
 - 其他文件（包括 `index.*`）都是普通 Page 源码；
 - 后代 `page.*` 会有意创建 nested Page 和 Route；
@@ -225,9 +225,12 @@ export async function POST(request: Request) {
 }
 ```
 
-只支持框架文档定义的大写 HTTP handler。`api.*` 锚点中的 default export、
-小写 method name、helper export 与 route-module middleware export 都无效。
-其他任何 basename 都是普通 route 私有源码，无论导出什么都不会发布 Route。
+只支持框架文档定义的大写 HTTP handler。Handler 可以在本地声明，也可以从 route
+私有 module import、re-export 或由 factory 创建。Discovery 会拒绝静态已知为
+non-callable 的值；生成的 `createRoute()` definition 会在 server 启动前校验每个
+求值后的 handler。Generator、default export、小写 method name、helper export 与
+route-module middleware export 都无效。其他任何 basename 都是普通 route 私有源码，
+无论导出什么都不会发布 Route。
 
 ### 服务端路由冲突
 
@@ -238,7 +241,12 @@ export async function POST(request: Request) {
 - 同一动态 shape 使用两个参数名，如 `$id` 与 `$userId`；
 - 不安全或格式错误的 group/dynamic segment；
 - 生成 route id 冲突；
-- route module 混入不支持的 route contract export。
+- route module 混入不支持的 route contract export；
+- server request Route pattern 与占用 URL 的 Page/redirect pattern 或 active
+  framework runtime endpoint 相交。
+
+冲突检查会按恰好一次 URL decode 后比较 static route alias。例如，`/%75sers` 与
+`/users` 占用同一个 request path，而双重编码文本仍保持不同。
 
 `index.ts`、`route.ts` 与 `foo.get.ts` 都不是备选 route anchor。不要添加另一种
 route 方言或 `server.entry`。
@@ -275,7 +283,7 @@ Middleware file 不是 route，不能由 route module export middleware 代替�
 
 不要编辑或 scaffold 任何生成文件，并保持 ignore。
 
-## 显式 route tree 与源码转换
+## 路由输入边界
 
 canonical Page discovery 不要求用户选择 route reader 或 provider。应用声明
 `routing.mode` 后，只有 `page.*` positive anchor 会产生客户端路由；仅存在
@@ -283,42 +291,24 @@ canonical Page discovery 不要求用户选择 route reader 或 provider。应�
 
 ### 显式 SPA route tree
 
-Config-route normalizer 接受 `application.routes` 中的 `component`、嵌套
-`routes`、`layout`、`wrappers` 与 `redirect` 字段，并拒绝 `children`。受支持的
-`name`、`icon`、`title`、`hideInMenu`、`flatMenu`、`spmBPos`、`access`、
-`menuKey` 与静态 `menuAssetOptions` 会保留为内置 Route extension 数据。
-共享 template 和 mount 值放在 `application.document` 下。该配置不接受 routing
-mode selector、顶层 `routes` 或顶层 `html`，并且只能物化 SPA。
+显式 route-tree normalizer 接受 `application.routes` 中的 `page` 或 `component`、
+嵌套 `routes`、`layout`、`wrappers` 与 `redirect` 字段。
+`application.pageRoot` 只控制该显式输入的 reference 解析，不会改变固定的
+`src/pages` 文件约定根目录；`children` 会被拒绝。Route
+能力数据使用已注册的 namespaced `extensions`。共享 template 和 mount 值放在
+`application.document` 下。该配置不接受 routing
+mode selector、顶层 `routes` 或顶层 `html`，并且只能物化 SPA。`page` reference
+必须解析到唯一 canonical `page.*` 锚点。显式 component 以 `index.*` 或
+`page.*` 结尾时持有所在目录；其他 basename 只持有模块本身，不消费相邻
+`page.config.ts`。
 
-显式 component 以 `index.*` 或 `page.*` 结尾时，其所在目录会成为 Page scope；
-其他 basename 的 flat component 保持 module scope，不能消费相邻
-`page.config.ts`。要改用 canonical tree，应把每个 component 移到公开 URL 对应
-目录并命名为 `page.*`。
+### Canonical Page tree
 
-### 目录式 MPA 源码
-
-保留或调整每个公开 URL 目录，把其中的 `index.*` component entry 重命名为
-`page.*`，把 `config.json` 的 title 与受支持 named meta 映射到 core `title`
-和 `meta`，其余插件持有值写入 namespaced `page.config.ts` extension。删除
-`config.json` 后，只选择 `routing.mode: "mpa"`。
-
-### 其他 filename route
-
-把每个已发布 filename route 移到 URL 对应目录并把 entry 命名为 `page.*`；
-按需保留 `$param` 与 `(group)` 目录段。框架不提供 source-reader 或 provider
-selector；源码树完成转换后，只声明 `routing.mode`。
-
-canonical 转换清单：
-
-1. 把每个 Page entry 移到 URL 对应目录并命名为 `page.*`；
-2. 把 title、受支持 named meta、rendering 与插件持有的 Page setting 移到
-   `page.config.ts`；
-3. Page helper 任意放在其目录，无需 `_`；
-4. 参数使用 `$param`，终止 catch-all 使用 `$...splat`，pathless group 使用
-   `(group)`；
-5. 支持的 route facet 放在对应 route 目录；
-6. 只声明 `routing.mode`，运行 `ev inspect` 审核 normalized Page、Route、
-   Document、Page config 与 provenance。
+`routing.mode` 只发现 `page.*` 锚点。每个 Page entry 位于其 URL 对应目录，Page
+设置放在相邻 `page.config.ts`。Page-private helper 可以使用包括 `index.*` 在内的
+其他 basename，而不会创建 route。参数、终止 catch-all 与 pathless group 分别
+使用 `$param`、`$...splat` 与 `(group)` 目录。运行 `ev inspect` 可审核 normalized
+Page、Route、Document、Page config 与 provenance。
 
 Provider id 只可能出现在 raw CoreGraph/debug artifact 中解释 provenance；普通
 inspect routing 输出会隐藏它。它不定义另一种公开路由模型。

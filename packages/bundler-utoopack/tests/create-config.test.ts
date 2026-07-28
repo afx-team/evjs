@@ -27,7 +27,6 @@ describe("createUtoopackConfig", () => {
       conventions: true,
       routing: {
         mode: "spa",
-        dir: "./src/pages",
         html: "./index.html",
         mount: "#app",
         routes: [
@@ -93,14 +92,28 @@ describe("createUtoopackConfig", () => {
     });
     expect(utoopackConfig.devServer?.port).toBe(41234);
     expect(utoopackConfig.devServer?.https).toBe(true);
-    expect(utoopackConfig.devServer?.proxy).toContainEqual(
-      expect.objectContaining({
-        context: [
-          "^/(?!api(?:/|$))(?!__evjs(?:/|$))(?!__evjs/fn(?:/|$))(?!__evjs/ppr(?:/|$))(?!turbopack-hmr$)(?!.*\\.[^/]+$).+",
-        ],
-        target: "https://localhost:41234",
-      }),
+    const runtimeRule = utoopackConfig.devServer?.proxy?.find((rule) =>
+      proxyRuleMatchesPath(rule, "/__evjs/fn"),
     );
+    const fallbackRule = utoopackConfig.devServer?.proxy?.find((rule) =>
+      getProxyRuleContexts(rule).some((context) =>
+        context.includes("turbopack-hmr"),
+      ),
+    );
+
+    expect(runtimeRule).toMatchObject({
+      target: "http://localhost:3001",
+      changeOrigin: true,
+      secure: false,
+    });
+    expect(proxyRuleMatchesPath(runtimeRule, "/__evjs/fn/child")).toBe(false);
+    expect(fallbackRule).toMatchObject({
+      target: "https://localhost:41234",
+      pathRewrite: { "^/.*$": "/" },
+    });
+    expect(proxyRuleMatchesPath(fallbackRule, "/__evjs/fn")).toBe(false);
+    expect(proxyRuleMatchesPath(fallbackRule, "/__evjs/fn/child")).toBe(true);
+    expect(proxyRuleMatchesPath(fallbackRule, "/__evjs/unclaimed")).toBe(true);
   });
 
   it("resolves generated alias contributions directly to generated files", async () => {
@@ -235,7 +248,7 @@ describe("createUtoopackConfig", () => {
       },
     });
     const cwd = process.cwd();
-    const plan = await createPlan(config);
+    const plan = await createPlan(config, { distDir: "custom-dist" });
 
     const utoopackConfig = await createUtoopackConfig(config, plan, cwd, []);
 
@@ -243,6 +256,68 @@ describe("createUtoopackConfig", () => {
       path.resolve(cwd, "custom-dist/client"),
     );
     expect(utoopackConfig.server).toBeUndefined();
+  });
+
+  it("uses active BuildPlan outputs and function endpoint when config differs", async () => {
+    const config = createResolvedConfig({
+      server: {
+        basePath: "/__evjs",
+        runtime: {
+          basePath: "/__evjs",
+          fn: "__evjs/fn",
+          ppr: "__evjs/ppr",
+        },
+        dev: {
+          port: 3001,
+          https: false,
+        },
+        routing: {
+          dir: "./src/apis",
+          routes: [
+            {
+              id: "src/apis/health/api.ts:/health:GET",
+              module: "src/apis/health/api.ts",
+              path: "/health",
+              methods: ["GET"],
+            },
+          ],
+        },
+      },
+    });
+    const generatedPlan = await createPlan(config);
+    const plan: BuildPlan = {
+      ...generatedPlan,
+      distDir: "plan-dist",
+      output: {
+        clientDir: "plan-dist/browser",
+        serverDir: "plan-dist/runtime",
+      },
+      runtime: {
+        ...generatedPlan.runtime,
+        server: {
+          ...generatedPlan.runtime.server,
+          fn: "plan-runtime/fn",
+        },
+      },
+    };
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+
+    expect(utoopackConfig.output?.path).toBe(
+      path.resolve(process.cwd(), "plan-dist/browser"),
+    );
+    expect(utoopackConfig.server?.output?.path).toBe(
+      path.resolve(process.cwd(), "plan-dist/runtime"),
+    );
+    expect(utoopackConfig.define).toMatchObject({
+      "process.env.EVJS_FUNCTION_ENDPOINT": JSON.stringify("plan-runtime/fn"),
+      __EVJS_FUNCTION_ENDPOINT__: JSON.stringify("plan-runtime/fn"),
+    });
   });
 
   it("uses the build plan mode instead of NODE_ENV", async () => {
@@ -384,7 +459,7 @@ describe("createUtoopackConfig", () => {
     expect(utoopackConfig.output?.crossOriginLoading).toBe("use-credentials");
   });
 
-  it("keeps SPA history fallback away from custom framework runtime paths", async () => {
+  it("keeps SPA history fallback away from BuildPlan runtime paths", async () => {
     const config = createResolvedConfig({
       server: {
         basePath: "/rpc",
@@ -402,10 +477,25 @@ describe("createUtoopackConfig", () => {
       },
     });
     const plan = await createPlan(config);
+    const activeRuntimePlan: BuildPlan = {
+      ...plan,
+      runtime: {
+        ...plan.runtime,
+        server: {
+          ...plan.runtime.server,
+          ppr: "rpc/ppr",
+          rsc: "rpc/rsc",
+        },
+      },
+      dev: {
+        ...plan.dev,
+        hasPpr: true,
+      },
+    };
 
     const utoopackConfig = await createUtoopackConfig(
       config,
-      plan,
+      activeRuntimePlan,
       process.cwd(),
       [],
     );
@@ -418,18 +508,65 @@ describe("createUtoopackConfig", () => {
       ? getProxyRuleContexts(fallbackRule)
       : [];
     const fallbackPattern = new RegExp(fallbackContexts[0] ?? "");
+    const runtimeRule = utoopackConfig.devServer?.proxy?.find((rule) =>
+      proxyRuleMatchesPath(rule, "/rpc/fn"),
+    );
 
-    expect(fallbackContexts).toEqual([
-      "^/(?!api(?:/|$))(?!rpc(?:/|$))(?!rpc/fn(?:/|$))(?!rpc/ppr(?:/|$))(?!rpc/rsc(?:/|$))(?!turbopack-hmr$)(?!.*\\.[^/]+$).+",
-    ]);
+    expect(runtimeRule && getProxyRuleContexts(runtimeRule)).toHaveLength(3);
+    expect(proxyRuleMatchesPath(runtimeRule, "/rpc")).toBe(false);
+    expect(proxyRuleMatchesPath(runtimeRule, "/rpc/fn")).toBe(true);
+    expect(proxyRuleMatchesPath(runtimeRule, "/%72%70%63/%66%6E")).toBe(true);
+    expect(proxyRuleMatchesPath(runtimeRule, "/rpc/fn/child")).toBe(false);
+    expect(proxyRuleMatchesPath(runtimeRule, "/rpc/ppr/campaign")).toBe(true);
+    expect(
+      proxyRuleMatchesPath(runtimeRule, "/%72%70%63/%70%70%72/campaign"),
+    ).toBe(true);
+    expect(proxyRuleMatchesPath(runtimeRule, "/rpc/rsc")).toBe(true);
+    expect(proxyRuleMatchesPath(runtimeRule, "/%72%70%63/%72%73%63")).toBe(
+      true,
+    );
+    expect(proxyRuleMatchesPath(runtimeRule, "/rpc/rsc/child")).toBe(false);
     expect(fallbackPattern.test("/dashboard")).toBe(true);
     expect(fallbackPattern.test("/users/123")).toBe(true);
-    expect(fallbackPattern.test("/api/users")).toBe(false);
+    expect(fallbackPattern.test("/rpc")).toBe(true);
     expect(fallbackPattern.test("/rpc/fn")).toBe(false);
+    expect(fallbackPattern.test("/%72%70%63/%66%6E")).toBe(false);
+    expect(fallbackPattern.test("/rpc/fn/child")).toBe(true);
     expect(fallbackPattern.test("/rpc/ppr/campaign/offer")).toBe(false);
-    expect(fallbackPattern.test("/rpc/rsc?page=dashboard")).toBe(false);
+    expect(fallbackPattern.test("/%72%70%63/%70%70%72/campaign/offer")).toBe(
+      false,
+    );
+    expect(fallbackPattern.test("/rpc/rsc")).toBe(false);
+    expect(fallbackPattern.test("/%72%70%63/%72%73%63")).toBe(false);
+    expect(fallbackPattern.test("/rpc/rsc/child")).toBe(true);
     expect(fallbackPattern.test("/main.js")).toBe(false);
     expect(fallbackPattern.test("/turbopack-hmr")).toBe(false);
+  });
+
+  it("allows unclaimed /api paths through SPA history fallback", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+
+    const utoopackConfig = await createUtoopackConfig(
+      config,
+      plan,
+      process.cwd(),
+      [],
+    );
+    const fallbackRule = utoopackConfig.devServer?.proxy?.find((rule) =>
+      getProxyRuleContexts(rule).some((context) =>
+        context.includes("turbopack-hmr"),
+      ),
+    );
+    const fallbackPattern = new RegExp(
+      getProxyRuleContexts(fallbackRule as { context: string | string[] })[0] ??
+        "",
+    );
+
+    expect(plan.dev.serverRequestRoutePaths).toEqual([]);
+    expect(plan.dev.serverRenderedPagePaths).toEqual([]);
+    expect(fallbackPattern.test("/api")).toBe(true);
+    expect(fallbackPattern.test("/api/users")).toBe(true);
   });
 
   it("proxies server file routes and keeps them out of SPA fallback", async () => {
@@ -461,9 +598,9 @@ describe("createUtoopackConfig", () => {
               methods: ["GET"],
             },
             {
-              id: "src/apis/api.ts:/:GET",
-              module: "src/apis/api.ts",
-              path: "/",
+              id: "src/apis/$tenantId/api.ts:/:tenantId:GET",
+              module: "src/apis/$tenantId/api.ts",
+              path: "/:tenantId",
               methods: ["GET"],
             },
           ],
@@ -479,7 +616,7 @@ describe("createUtoopackConfig", () => {
       [],
     );
     const serverRouteRule = utoopackConfig.devServer?.proxy?.find((rule) =>
-      getProxyRuleContexts(rule).includes("/health"),
+      proxyRuleMatchesPath(rule, "/health"),
     );
     const fallbackRule = utoopackConfig.devServer?.proxy?.find((rule) =>
       getProxyRuleContexts(rule).some((context) =>
@@ -491,24 +628,35 @@ describe("createUtoopackConfig", () => {
         "",
     );
 
-    expect(
-      getProxyRuleContexts(serverRouteRule as { context: string | string[] }),
-    ).toEqual(["/health", "/users", "^/$"]);
     expect(serverRouteRule).toMatchObject({
       target: "http://localhost:3001",
       changeOrigin: true,
       secure: false,
     });
-    expect(fallbackPattern.test("/dashboard")).toBe(true);
+    expect(proxyRuleMatchesPath(serverRouteRule, "/health")).toBe(true);
+    expect(proxyRuleMatchesPath(serverRouteRule, "/health/details")).toBe(
+      false,
+    );
+    expect(proxyRuleMatchesPath(serverRouteRule, "/users/123")).toBe(true);
+    expect(proxyRuleMatchesPath(serverRouteRule, "/users/123/details")).toBe(
+      false,
+    );
+    expect(proxyRuleMatchesPath(serverRouteRule, "/")).toBe(false);
+    expect(proxyRuleMatchesPath(serverRouteRule, "/acme")).toBe(true);
+    expect(proxyRuleMatchesPath(serverRouteRule, "/acme/settings")).toBe(false);
+    expect(fallbackPattern.test("/dashboard/settings")).toBe(true);
     expect(fallbackPattern.test("/health")).toBe(false);
+    expect(fallbackPattern.test("/health/details")).toBe(true);
     expect(fallbackPattern.test("/users/123")).toBe(false);
+    expect(fallbackPattern.test("/users/123/details")).toBe(true);
+    expect(fallbackPattern.test("/acme")).toBe(false);
+    expect(fallbackPattern.test("/acme/settings")).toBe(true);
   });
 
   it("uses a generated pages app entry for framework-managed pages", async () => {
     const config = createResolvedConfig({
       routing: {
         mode: "spa",
-        dir: "./src/pages",
         html: "./index.html",
         mount: "#app",
         rootModule: "./src/pages/layout.tsx",
@@ -582,7 +730,6 @@ describe("createUtoopackConfig", () => {
     const config = createResolvedConfig({
       routing: {
         mode: "mpa",
-        dir: "./src/pages",
         html: "./index.html",
         mount: "#app",
         routes: [
@@ -618,14 +765,16 @@ describe("createUtoopackConfig", () => {
         name: "page-client-about",
       },
     ]);
-    expect(utoopackConfig.devServer?.proxy).toEqual([]);
+    expect(utoopackConfig.devServer?.proxy).toHaveLength(1);
+    expect(
+      proxyRuleMatchesPath(utoopackConfig.devServer?.proxy?.[0], "/__evjs/fn"),
+    ).toBe(true);
   });
 
   it("uses generated component page entries for framework-managed page entries", async () => {
     const config = createResolvedConfig({
       routing: {
         mode: "mpa",
-        dir: "./src/pages",
         html: "./index.html",
         mount: "#app",
         routes: [
@@ -663,7 +812,6 @@ describe("createUtoopackConfig", () => {
     const config = createResolvedConfig({
       routing: {
         mode: "mpa",
-        dir: "./src/pages",
         html: "./index.html",
         mount: "#app",
         routes: [
@@ -758,6 +906,266 @@ describe("createUtoopackConfig", () => {
 
     expect(utoopackConfig.output?.publicPath).toBe("runtime");
     expect(watchedFiles).toEqual(["./utoopack-plugin.config.ts"]);
+  });
+
+  it("rejects a plugin output override that targets the canonical server output", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), [
+        {
+          bundlerConfig(utoopackConfig) {
+            if (utoopackConfig.output) {
+              utoopackConfig.output.path = path.resolve(
+                process.cwd(),
+                "dist/server",
+              );
+            }
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      '[evjs] Utoopack output.path "dist/server" must remain the exact absolute BuildPlan output.client directory "dist/client".',
+    );
+  });
+
+  it("validates output ownership after each bundlerConfig hook", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+    const events: string[] = [];
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), [
+        {
+          bundlerConfig(utoopackConfig) {
+            events.push("mutate");
+            if (utoopackConfig.output) {
+              utoopackConfig.output.path = path.resolve(
+                process.cwd(),
+                "dist/server",
+              );
+            }
+          },
+        },
+        {
+          bundlerConfig(utoopackConfig) {
+            events.push("restore");
+            if (utoopackConfig.output) {
+              utoopackConfig.output.path = path.resolve(
+                process.cwd(),
+                "dist/client",
+              );
+            }
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      '[evjs] Utoopack output.path "dist/server" must remain the exact absolute BuildPlan output.client directory "dist/client".',
+    );
+    expect(events).toEqual(["mutate"]);
+  });
+
+  it("validates output file templates after each bundlerConfig hook", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+    const events: string[] = [];
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), [
+        {
+          bundlerConfig(utoopackConfig) {
+            events.push("mutate");
+            if (utoopackConfig.output) {
+              utoopackConfig.output.filename = "../../escape.js";
+            }
+          },
+        },
+        {
+          bundlerConfig(utoopackConfig) {
+            events.push("restore");
+            if (utoopackConfig.output) {
+              utoopackConfig.output.filename = "[name].js";
+            }
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      '[evjs] Utoopack output.filename "../../escape.js" must remain the framework-owned template "[name].js".',
+    );
+    expect(events).toEqual(["mutate"]);
+  });
+
+  it("rejects portable artifact escapes in added entry names after each bundlerConfig hook", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+    const events: string[] = [];
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), [
+        {
+          bundlerConfig(utoopackConfig) {
+            events.push("mutate");
+            utoopackConfig.entry.push({
+              import: "./src/plugin-entry.ts",
+              name: "../../escape",
+            });
+          },
+        },
+        {
+          bundlerConfig() {
+            events.push("restore");
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      'Utoopack entry name "../../escape" must be a non-empty portable relative artifact path',
+    );
+    expect(events).toEqual(["mutate"]);
+  });
+
+  it("validates entry names even when no bundlerConfig hook runs", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+    const [entry] = plan.entries;
+    if (entry) entry.name = "../../escape";
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), []),
+    ).rejects.toThrow(
+      'Utoopack entry name "../../escape" must be a non-empty portable relative artifact path',
+    );
+  });
+
+  it("rejects portable artifact escapes in configured split chunk names", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+    const splitChunks: NonNullable<
+      NonNullable<ConfigComplete["optimization"]>["splitChunks"]
+    > = {
+      js: {},
+      css: {},
+    };
+    Object.assign(splitChunks, { "../../escape": {} });
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), [
+        {
+          bundlerConfig(utoopackConfig) {
+            utoopackConfig.optimization = {
+              ...utoopackConfig.optimization,
+              splitChunks,
+            };
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      'Utoopack split chunk name "../../escape" must be a non-empty portable relative artifact path',
+    );
+  });
+
+  it("preserves framework entry names across bundlerConfig hooks", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), [
+        {
+          bundlerConfig(utoopackConfig) {
+            utoopackConfig.entry = utoopackConfig.entry.filter(
+              (entry) => entry.name !== "main",
+            );
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      'Utoopack bundlerConfig hooks must preserve framework entry name "main" exactly once; found 0',
+    );
+  });
+
+  it("rejects a relative spelling of the BuildPlan output path", async () => {
+    const config = createResolvedConfig();
+    const plan = await createPlan(config);
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), [
+        {
+          bundlerConfig(utoopackConfig) {
+            if (utoopackConfig.output) {
+              utoopackConfig.output.clean = false;
+              utoopackConfig.output.path = "dist/client";
+            }
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      '[evjs] Utoopack output.path "dist/client" must remain the exact absolute BuildPlan output.client directory "dist/client".',
+    );
+  });
+
+  it("rejects client and server output overrides when client cleaning is disabled", async () => {
+    const config = createResolvedConfig({
+      server: {
+        basePath: "/__evjs",
+        runtime: {
+          basePath: "/__evjs",
+          fn: "__evjs/fn",
+          ppr: "__evjs/ppr",
+        },
+        dev: {
+          port: 3001,
+          https: false,
+        },
+        routing: {
+          dir: "./src/apis",
+          routes: [
+            {
+              id: "src/apis/health/api.ts:/health:GET",
+              module: "src/apis/health/api.ts",
+              path: "/health",
+              methods: ["GET"],
+            },
+          ],
+        },
+      },
+    });
+    const plan = await createPlan(config);
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), [
+        {
+          bundlerConfig(utoopackConfig) {
+            if (utoopackConfig.output) {
+              utoopackConfig.output.clean = false;
+              utoopackConfig.output.path = path.resolve(
+                process.cwd(),
+                "dist/plugin-client",
+              );
+            }
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      '[evjs] Utoopack output.path "dist/plugin-client" must remain the exact absolute BuildPlan output.client directory "dist/client".',
+    );
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), [
+        {
+          bundlerConfig(utoopackConfig) {
+            if (utoopackConfig.output) utoopackConfig.output.clean = false;
+            if (utoopackConfig.server?.output) {
+              utoopackConfig.server.output.path = path.resolve(
+                process.cwd(),
+                "dist/plugin-server",
+              );
+            }
+          },
+        },
+      ]),
+    ).rejects.toThrow(
+      '[evjs] Utoopack server.output.path "dist/plugin-server" must remain the exact absolute BuildPlan output.server directory "dist/server".',
+    );
   });
 
   it("fails clearly when the plan contains framework server renderer entries", async () => {
@@ -967,7 +1375,7 @@ function createGraph(
     applications: {
       default: {
         id: "default",
-        root: config.routing?.dir ?? "./src/pages",
+        root: "./src/pages",
         routingMode,
         pageIds,
         routeIds,
@@ -1061,6 +1469,18 @@ function toRoutePattern(pathname: string): CoreRoutePattern {
 
 function getProxyRuleContexts(rule: { context: string | string[] }): string[] {
   return Array.isArray(rule.context) ? rule.context : [rule.context];
+}
+
+function proxyRuleMatchesPath(
+  rule: { context: string | string[] } | undefined,
+  pathname: string,
+): boolean {
+  if (!rule) return false;
+  return getProxyRuleContexts(rule).some((context) =>
+    context.startsWith("^")
+      ? new RegExp(context).test(pathname)
+      : pathname === context || pathname.startsWith(`${context}/`),
+  );
 }
 
 async function expectRejectedMessage(action: () => Promise<unknown>) {

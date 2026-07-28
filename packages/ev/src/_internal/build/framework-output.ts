@@ -5,6 +5,7 @@ import { createApp } from "@evjs/server/app";
 import type { BuildOutput, BuildPlan, CoreGraph } from "@evjs/shared/manifest";
 import {
   assertFrameworkManifestShape,
+  assertServerRelativeArtifactPath,
   createDeploymentMetadata,
   linkBuildOutput,
 } from "@evjs/shared/manifest";
@@ -14,7 +15,15 @@ import type {
   PluginContext,
   PluginHooks,
 } from "../../plugin/index.js";
+import {
+  assertBuildOutputOwnershipUnchanged,
+  snapshotBuildOutputOwnership,
+} from "./build-output-ownership.js";
+import { resolveBuildOutputPaths } from "./build-output-paths.js";
+import { createBuildResult } from "./build-result.js";
 import type { BundlerBuildFacts } from "./bundler.js";
+import { assertFrameworkHtmlOutputsAvailable } from "./bundler-output-files.js";
+import { assertBuildEndDeploymentOutputsAvailable } from "./deployment-output-reservations.js";
 import { createFrameworkHtmlDocument } from "./framework-html-document.js";
 import {
   createClientRuntime,
@@ -22,10 +31,18 @@ import {
 } from "./framework-runtime.js";
 import { type generateHtml, validateHtmlTemplate } from "./html.js";
 import { buildHtml } from "./html-transform.js";
+import { assertSafeBuildOutputPaths } from "./output-path-safety.js";
+import {
+  removeOwnedOutputFile,
+  writeOwnedOutputFile,
+} from "./owned-file-output.js";
 import { runBuildOutputHooks } from "./plugin-lifecycle.js";
+import {
+  FRAMEWORK_DEPLOYMENT_METADATA_FILE_NAME,
+  portableArtifactPathsConflict,
+} from "./portable-artifact-path.js";
 import { compileServerDocumentShells } from "./server-document-shell.js";
 
-const DEPLOYMENT_METADATA_FILE = "deployment-metadata.json";
 const RUNTIME_ONLY_BUNDLER_MANIFEST_FILES = [
   "react-client-manifest.json",
   "react-ssr-manifest.json",
@@ -39,34 +56,6 @@ interface PreviousFrameworkHtmlOutput {
     fileName: string;
     aliases?: string[];
   }>;
-}
-
-interface BuildOutputDocumentIdentity {
-  owner: string;
-  fileName?: string;
-  aliases?: string[];
-}
-
-interface BuildOutputPageIdentity extends BuildOutputDocumentIdentity {
-  path?: string;
-  routeId?: string;
-}
-
-interface BuildOutputRouteIdentity {
-  id: string;
-  path: string;
-  parentId?: string;
-  kind?: BuildOutput["routes"][number]["kind"];
-  appId?: string;
-  pageId?: string;
-}
-
-interface BuildOutputIdentitySnapshot {
-  appIds: string[];
-  pageIds: string[];
-  documents: Map<string, BuildOutputDocumentIdentity>;
-  pages: Map<string, BuildOutputPageIdentity>;
-  routes: BuildOutputRouteIdentity[];
 }
 
 export function validateHtmlTemplates<TBundlerCfg>(
@@ -219,18 +208,18 @@ async function emitFrameworkManifest(
   output: BuildOutput,
 ): Promise<PreviousFrameworkHtmlOutput | undefined> {
   const { rootDir, clientDir } = getFrameworkOutputPaths(cwd, output);
-  await fs.promises.mkdir(rootDir, { recursive: true });
   const previousHtmlOutput = await readPreviousFrameworkHtmlOutput(
     cwd,
     rootDir,
     clientDir,
   );
-  await fs.promises.writeFile(
-    path.join(rootDir, DEPLOYMENT_METADATA_FILE),
+  await writeOwnedOutputFile(
+    cwd,
+    path.join(rootDir, FRAMEWORK_DEPLOYMENT_METADATA_FILE_NAME),
     JSON.stringify(createDeploymentMetadata(output), null, 2),
-    "utf-8",
+    "deployment metadata output",
   );
-  await removeRuntimeOnlyBundlerManifests(clientDir);
+  await removeRuntimeOnlyBundlerManifests(cwd, clientDir);
   return previousHtmlOutput;
 }
 
@@ -265,11 +254,16 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 async function removeRuntimeOnlyBundlerManifests(
+  cwd: string,
   clientDir: string,
 ): Promise<void> {
   await Promise.all(
     RUNTIME_ONLY_BUNDLER_MANIFEST_FILES.map((fileName) =>
-      fs.promises.rm(path.join(clientDir, fileName), { force: true }),
+      removeOwnedOutputFile(
+        cwd,
+        path.join(clientDir, fileName),
+        `Runtime-only bundler manifest "${fileName}"`,
+      ),
     ),
   );
 }
@@ -283,7 +277,7 @@ async function readPreviousFrameworkHtmlOutput(
   try {
     value = JSON.parse(
       await fs.promises.readFile(
-        path.join(rootDir, DEPLOYMENT_METADATA_FILE),
+        path.join(rootDir, FRAMEWORK_DEPLOYMENT_METADATA_FILE_NAME),
         "utf-8",
       ),
     );
@@ -380,10 +374,17 @@ async function emitFrameworkHtml<TBundlerCfg>(
   frameworkRuntime: ReturnType<typeof createFrameworkRuntime>,
   isRebuild: boolean,
   previousHtmlOutput?: PreviousFrameworkHtmlOutput,
+  bundlerClientFiles?: readonly string[],
   loadServerModule?: (asset: string) => Promise<unknown>,
 ): Promise<void> {
   const { clientDir, serverDir } = getFrameworkOutputPaths(cwd, output);
-  await removeStaleFrameworkHtml(clientDir, plan, previousHtmlOutput);
+  await removeStaleFrameworkHtml(
+    cwd,
+    clientDir,
+    plan,
+    previousHtmlOutput,
+    bundlerClientFiles,
+  );
   const clientRuntime = createClientRuntime(output);
 
   for (const html of plan.html) {
@@ -398,10 +399,7 @@ async function emitFrameworkHtml<TBundlerCfg>(
       html: htmlInfo,
       clientRuntime,
     });
-    if (
-      plan.mode === "production" &&
-      shouldPrerenderStaticPage(output, htmlInfo)
-    ) {
+    if (shouldPrerenderStaticPage(output, htmlInfo)) {
       await prerenderStaticPageHtml({
         doc,
         output,
@@ -428,31 +426,36 @@ async function emitFrameworkHtml<TBundlerCfg>(
           `[evjs] HTML Document "${html.id}" output "${fileName}" must resolve inside the client output directory.`,
         );
       }
-      await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
-      await fs.promises.writeFile(outPath, finalHtml, "utf-8");
+      await writeOwnedOutputFile(
+        cwd,
+        outPath,
+        finalHtml,
+        `HTML Document "${html.id}" output "${fileName}"`,
+      );
     }
   }
 }
 
 async function removeStaleFrameworkHtml(
+  cwd: string,
   clientDir: string,
   plan: BuildPlan,
   previous: PreviousFrameworkHtmlOutput | undefined,
+  bundlerClientFiles: readonly string[] | undefined,
 ): Promise<void> {
   if (!previous) return;
-  const currentFiles = new Set(
-    plan.html.flatMap((html) =>
-      [html.fileName, ...(html.aliases ?? [])].map((fileName) =>
-        path.resolve(clientDir, fileName),
-      ),
-    ),
-  );
+  const protectedFiles = [
+    ...plan.html.flatMap((html) => [html.fileName, ...(html.aliases ?? [])]),
+    ...(bundlerClientFiles ?? []),
+  ];
   for (const document of previous.documents) {
     for (const fileName of [document.fileName, ...(document.aliases ?? [])]) {
       const file = resolveContainedFile(clientDir, fileName);
       if (
         file &&
-        !currentFiles.has(file) &&
+        !protectedFiles.some((protectedFile) =>
+          portableArtifactPathsConflict(fileName, protectedFile),
+        ) &&
         (await isFrameworkOwnedHtmlFile(
           clientDir,
           file,
@@ -460,7 +463,11 @@ async function removeStaleFrameworkHtml(
           document,
         ))
       ) {
-        await fs.promises.rm(file, { force: true });
+        await removeOwnedOutputFile(
+          cwd,
+          file,
+          `Stale HTML Document "${document.id}" output "${fileName}"`,
+        );
       }
     }
   }
@@ -548,12 +555,20 @@ async function prerenderStaticPageHtml(options: {
   const { createReactFrameworkServer } = await import("@evjs/server/react");
   const framework = createReactFrameworkServer({
     runtime: frameworkRuntime,
-    loadModule: async (asset) =>
-      normalizeServerModule(
+    loadModule: async (asset) => {
+      const safeAsset = assertServerRelativeArtifactPath(
+        asset,
+        `SSG Page "${pageId}" renderer artifact`,
+      );
+      return normalizeServerModule(
         loadServerModule
-          ? await loadServerModule(asset)
-          : await import(pathToFileURL(path.resolve(serverDir, asset)).href),
-      ),
+          ? await loadServerModule(safeAsset)
+          : await import(
+              pathToFileURL(path.resolve(serverDir, ...safeAsset.split("/")))
+                .href
+            ),
+      );
+    },
     react: {
       renderDocument(appHtml) {
         return appHtml;
@@ -629,21 +644,39 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   output: BuildOutput;
   frameworkRuntime: ReturnType<typeof createFrameworkRuntime>;
 }> {
-  const output = linkBuildOutput({
-    graph: options.graph,
-    plan: options.plan,
-    clientEntryAssets: options.bundlerFacts.clientEntryAssets,
-    firstClientEntryAssets: options.bundlerFacts.firstClientEntryAssets,
-    serverEntryAssets: options.bundlerFacts.serverEntryAssets,
-    serverEntry: options.bundlerFacts.serverEntry,
-    serverAssets: options.bundlerFacts.serverAssets,
-    serverModules: options.bundlerFacts.serverModules,
-  });
+  await assertSafeBuildOutputPaths(
+    options.cwd,
+    resolveBuildOutputPaths(options.cwd, options.plan),
+  );
+  assertFrameworkHtmlOutputsAvailable(
+    options.plan,
+    options.bundlerFacts.emittedFiles,
+  );
+  const output = structuredClone(
+    linkBuildOutput({
+      graph: options.graph,
+      plan: options.plan,
+      clientEntryAssets: options.bundlerFacts.clientEntryAssets,
+      serverEntryAssets: options.bundlerFacts.serverEntryAssets,
+      serverEntry: options.bundlerFacts.serverEntry,
+      serverAssets: options.bundlerFacts.serverAssets,
+      serverModules: options.bundlerFacts.serverModules,
+    }),
+  );
 
-  const identities = snapshotBuildOutputIdentities(output);
-  await runBuildOutputHooks(options.hooks, output, options.pluginCtx);
-  assertFrameworkManifestShape(output, "BuildOutput after buildOutput hooks");
-  assertBuildOutputIdentitiesUnchanged(identities, output);
+  assertFrameworkManifestShape(output, "linked BuildOutput");
+  const ownership = snapshotBuildOutputOwnership(output);
+  const assertBuildOutputHookResult = () => {
+    assertBuildOutputOwnershipUnchanged(ownership, output);
+    assertFrameworkManifestShape(output, "BuildOutput after buildOutput hooks");
+  };
+  await runBuildOutputHooks(
+    options.hooks,
+    output,
+    options.pluginCtx,
+    assertBuildOutputHookResult,
+  );
+  assertBuildOutputHookResult();
   const documentShells = await compileServerDocumentShells({
     cwd: options.cwd,
     config: options.config,
@@ -662,6 +695,11 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     documentShells,
     includeBuildRenderers: true,
   });
+  assertBuildEndDeploymentOutputsAvailable(
+    options.hooks,
+    createBuildResult(output, options.isRebuild, { frameworkRuntime }),
+    { cwd: options.cwd, emittedFiles: options.bundlerFacts.emittedFiles },
+  );
   const previousHtmlOutput = await emitFrameworkManifest(options.cwd, output);
   await emitFrameworkHtml(
     options.cwd,
@@ -673,140 +711,9 @@ export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
     buildFrameworkRuntime,
     options.isRebuild,
     previousHtmlOutput,
+    options.bundlerFacts.emittedFiles?.client,
     options.bundlerFacts.loadServerModule,
   );
 
   return { output, frameworkRuntime };
-}
-
-function snapshotBuildOutputIdentities(
-  output: BuildOutput,
-): BuildOutputIdentitySnapshot {
-  const documents = new Map<string, BuildOutputDocumentIdentity>();
-  const pages = new Map<string, BuildOutputPageIdentity>();
-  for (const [id, app] of Object.entries(output.apps)) {
-    documents.set(`app:${id}`, {
-      owner: `Application "${id}"`,
-      ...(app.document ? { fileName: app.document.fileName } : {}),
-      ...(app.document?.aliases ? { aliases: [...app.document.aliases] } : {}),
-    });
-  }
-  for (const [id, page] of Object.entries(output.pages)) {
-    const identity = {
-      owner: `Page "${id}"`,
-      ...(page.document ? { fileName: page.document.fileName } : {}),
-      ...(page.document?.aliases
-        ? { aliases: [...page.document.aliases] }
-        : {}),
-      ...(page.path ? { path: page.path } : {}),
-      ...(page.routeId ? { routeId: page.routeId } : {}),
-    };
-    documents.set(`page:${id}`, identity);
-    pages.set(id, identity);
-  }
-  return {
-    appIds: Object.keys(output.apps).sort(),
-    pageIds: Object.keys(output.pages).sort(),
-    documents,
-    pages,
-    routes: output.routes.map((route) => ({
-      id: route.id,
-      path: route.path,
-      ...(route.parentId ? { parentId: route.parentId } : {}),
-      ...(route.kind ? { kind: route.kind } : {}),
-      ...(route.appId ? { appId: route.appId } : {}),
-      ...(route.pageId ? { pageId: route.pageId } : {}),
-    })),
-  };
-}
-
-function assertBuildOutputIdentitiesUnchanged(
-  expected: BuildOutputIdentitySnapshot,
-  output: BuildOutput,
-): void {
-  const actual = snapshotBuildOutputIdentities(output);
-  if (!arraysEqual(expected.appIds, actual.appIds)) {
-    throw new Error(
-      "[evjs] buildOutput hooks cannot add, remove, or rename Applications. Application identity is owned by the CoreGraph.",
-    );
-  }
-  if (!arraysEqual(expected.pageIds, actual.pageIds)) {
-    throw new Error(
-      "[evjs] buildOutput hooks cannot add, remove, or rename Pages. Page identity is owned by the CoreGraph.",
-    );
-  }
-  if (!routeIdentitiesEqual(expected.routes, actual.routes)) {
-    throw new Error(
-      "[evjs] buildOutput hooks cannot add, remove, reorder, or rename Routes, or change Route paths and ownership. Route identity is owned by the CoreGraph.",
-    );
-  }
-  for (const [id, identity] of expected.pages) {
-    const candidate = actual.pages.get(id);
-    if (
-      candidate?.path !== identity.path ||
-      candidate?.routeId !== identity.routeId
-    ) {
-      throw new Error(
-        `[evjs] buildOutput hooks cannot change Page "${id}" path or routeId. Page and Route identity is owned by the CoreGraph.`,
-      );
-    }
-  }
-  for (const [key, identity] of expected.documents) {
-    const candidate = actual.documents.get(key);
-    if (
-      candidate !== undefined &&
-      candidate.fileName === identity.fileName &&
-      optionalArraysEqual(candidate.aliases, identity.aliases)
-    ) {
-      continue;
-    }
-    throw new Error(
-      `[evjs] buildOutput hooks cannot change ${identity.owner} Document fileName or aliases. Configure static Document identity in framework configuration before the CoreGraph is linked.`,
-    );
-  }
-  for (const [key, identity] of actual.documents) {
-    if (expected.documents.has(key) || identity.fileName === undefined)
-      continue;
-    throw new Error(
-      `[evjs] buildOutput hooks cannot add a Document to ${identity.owner}. Configure static Document identity in framework configuration before the CoreGraph is linked.`,
-    );
-  }
-}
-
-function optionalArraysEqual(
-  left: readonly string[] | undefined,
-  right: readonly string[] | undefined,
-): boolean {
-  if (!left || !right) return left === right;
-  return arraysEqual(left, right);
-}
-
-function arraysEqual(
-  left: readonly string[],
-  right: readonly string[],
-): boolean {
-  return (
-    left.length === right.length &&
-    left.every((value, index) => value === right[index])
-  );
-}
-
-function routeIdentitiesEqual(
-  left: readonly BuildOutputRouteIdentity[],
-  right: readonly BuildOutputRouteIdentity[],
-): boolean {
-  return (
-    left.length === right.length &&
-    left.every((route, index) => {
-      const candidate = right[index];
-      return (
-        candidate?.id === route.id &&
-        candidate.path === route.path &&
-        candidate.parentId === route.parentId &&
-        candidate.kind === route.kind &&
-        candidate.appId === route.appId &&
-        candidate.pageId === route.pageId
-      );
-    })
-  );
 }

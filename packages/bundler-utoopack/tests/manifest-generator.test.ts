@@ -24,7 +24,23 @@ async function makeProject() {
   tempDirs.push(cwd);
   await fs.promises.mkdir(path.join(cwd, "dist/client"), { recursive: true });
   await fs.promises.mkdir(path.join(cwd, "dist/server"), { recursive: true });
+  await fs.promises.writeFile(
+    path.join(cwd, "dist/client/stats.json"),
+    JSON.stringify({
+      entrypoints: {
+        main: { assets: [{ name: "main.js" }] },
+      },
+    }),
+  );
   await fs.promises.writeFile(path.join(cwd, "dist/server/server.js"), "");
+  await fs.promises.writeFile(
+    path.join(cwd, "dist/server/stats.json"),
+    JSON.stringify({
+      entrypoints: {
+        server: { assets: [{ name: "server.js" }] },
+      },
+    }),
+  );
   return cwd;
 }
 
@@ -48,7 +64,6 @@ function linkTestManifest(
     graph,
     plan,
     clientEntryAssets: facts.clientEntryAssets,
-    firstClientEntryAssets: facts.firstClientEntryAssets,
     serverEntryAssets: facts.serverEntryAssets,
     serverEntry: facts.serverEntry,
     serverAssets: facts.serverAssets,
@@ -57,11 +72,236 @@ function linkTestManifest(
 }
 
 describe("UtoopackManifestGenerator", () => {
+  it("fails when client stats are missing for a client BuildPlan entry", async () => {
+    const cwd = await makeProject();
+    await fs.promises.rm(path.join(cwd, "dist/client/stats.json"));
+    const graph = createSpaClientGraph(cwd);
+
+    await expect(
+      new UtoopackManifestGenerator(cwd, createPlan(graph)).build(),
+    ).rejects.toThrow(
+      'Utoopack did not emit client stats for BuildPlan entry "main"',
+    );
+  });
+
+  it("fails when client stats contain malformed JSON", async () => {
+    const cwd = await makeProject();
+    await fs.promises.writeFile(path.join(cwd, "dist/client/stats.json"), "{");
+    const graph = createSpaClientGraph(cwd);
+
+    await expect(
+      new UtoopackManifestGenerator(cwd, createPlan(graph)).build(),
+    ).rejects.toThrow("Failed to read Utoopack client stats");
+  });
+
+  it("rejects ambiguous client stats when the planned name is absent", async () => {
+    const cwd = await makeProject();
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/client/stats.json"),
+      JSON.stringify({
+        entrypoints: {
+          renderer: { assets: [{ name: "renderer.js" }] },
+          vendor: { assets: [{ name: "vendor.js" }] },
+        },
+      }),
+    );
+    const graph = createSpaClientGraph(cwd);
+
+    await expect(
+      new UtoopackManifestGenerator(cwd, createPlan(graph)).build(),
+    ).rejects.toThrow(
+      'Utoopack client stats do not identify client BuildPlan entrypoint "main" uniquely',
+    );
+  });
+
+  it("does not infer the server entry from arbitrary JavaScript files", async () => {
+    const cwd = await makeProject();
+    await fs.promises.rm(path.join(cwd, "dist/server/stats.json"));
+    await fs.promises.writeFile(path.join(cwd, "dist/server/unrelated.js"), "");
+    const graph = createGraph({
+      cwd,
+      routingMode: "spa",
+      pages: [],
+    });
+    const plan = createPlan(graph);
+
+    await expect(
+      new UtoopackManifestGenerator(cwd, plan).build(),
+    ).rejects.toThrow(
+      'Utoopack did not emit server stats for BuildPlan entry "server"',
+    );
+  });
+
+  it("rejects ambiguous stats entrypoints when the BuildPlan name is absent", async () => {
+    const cwd = await makeProject();
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/server/stats.json"),
+      JSON.stringify({
+        entrypoints: {
+          first: { assets: [{ name: "first.js" }] },
+          second: { assets: [{ name: "second.js" }] },
+        },
+      }),
+    );
+    const graph = createGraph({
+      cwd,
+      routingMode: "spa",
+      pages: [],
+    });
+    const plan = createPlan(graph);
+
+    await expect(
+      new UtoopackManifestGenerator(cwd, plan).build(),
+    ).rejects.toThrow(
+      'Utoopack server stats do not identify BuildPlan entrypoint "server" uniquely',
+    );
+  });
+
+  it("uses the only server stats entrypoint when its name differs", async () => {
+    const cwd = await makeProject();
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/server/stats.json"),
+      JSON.stringify({
+        entrypoints: {
+          runtime: { assets: [{ name: "runtime.js" }] },
+        },
+      }),
+    );
+    const graph = createGraph({
+      cwd,
+      routingMode: "spa",
+      pages: [],
+    });
+
+    const output = await new UtoopackManifestGenerator(
+      cwd,
+      createPlan(graph),
+    ).build();
+
+    expect(output.serverEntry).toBe("runtime.js");
+  });
+
+  it("rejects a server entrypoint without a JavaScript asset", async () => {
+    const cwd = await makeProject();
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/server/stats.json"),
+      JSON.stringify({
+        entrypoints: {
+          server: { assets: [{ name: "server.css" }] },
+        },
+      }),
+    );
+    const graph = createGraph({
+      cwd,
+      routingMode: "spa",
+      pages: [],
+    });
+    const plan = createPlan(graph);
+
+    await expect(
+      new UtoopackManifestGenerator(cwd, plan).build(),
+    ).rejects.toThrow(
+      'Utoopack server entrypoint "server" must emit exactly one self-contained JavaScript entry asset',
+    );
+  });
+
+  it("does not choose the first of multiple unidentifiable JavaScript assets", async () => {
+    const cwd = await makeProject();
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/server/stats.json"),
+      JSON.stringify({
+        entrypoints: {
+          server: {
+            assets: [{ name: "runtime.js" }, { name: "vendor.js" }],
+          },
+        },
+      }),
+    );
+    const graph = createGraph({
+      cwd,
+      routingMode: "spa",
+      pages: [],
+    });
+
+    await expect(
+      new UtoopackManifestGenerator(cwd, createPlan(graph)).build(),
+    ).rejects.toThrow(
+      'Utoopack server entrypoint "server" must emit exactly one self-contained JavaScript entry asset; found 2',
+    );
+  });
+
+  it("rejects non-portable emitted asset inventory paths", async () => {
+    const cwd = await makeProject();
+    await fs.promises.writeFile(
+      path.join(cwd, "dist/client/stats.json"),
+      JSON.stringify({
+        assets: [{ name: "../escape.js" }],
+        entrypoints: {
+          main: { assets: [{ name: "main.js" }] },
+        },
+      }),
+    );
+    const graph = createGraph({
+      cwd,
+      routingMode: "spa",
+      pages: [],
+    });
+
+    await expect(
+      new UtoopackManifestGenerator(cwd, createPlan(graph)).build(),
+    ).rejects.toThrow(
+      'Utoopack emitted asset "../escape.js" must be a non-empty portable relative artifact path',
+    );
+  });
+
+  it("rejects portable aliases and file-directory overlaps in inventories", async () => {
+    const cwd = await makeProject();
+    const graph = createGraph({
+      cwd,
+      routingMode: "spa",
+      pages: [],
+    });
+    const plan = createPlan(graph);
+    const conflicts = [
+      {
+        assets: ["main.js", "assets", "assets-extra.js", "assets/main.js"],
+        message:
+          'Bundler emittedFiles.client asset "assets/main.js" conflicts with "assets"',
+      },
+      {
+        assets: ["main.js", "chunks/Foo.js", "chunks/foo.js"],
+        message:
+          'Bundler emittedFiles.client asset "chunks/foo.js" conflicts with "chunks/Foo.js"',
+      },
+    ];
+
+    for (const conflict of conflicts) {
+      await fs.promises.writeFile(
+        path.join(cwd, "dist/client/stats.json"),
+        JSON.stringify({
+          assets: conflict.assets.map((name) => ({ name })),
+          entrypoints: {
+            main: { assets: [{ name: "main.js" }] },
+          },
+        }),
+      );
+      await expect(
+        new UtoopackManifestGenerator(cwd, plan).build(),
+      ).rejects.toThrow(conflict.message);
+    }
+  });
+
   it("collects build facts that can be linked into BuildOutput", async () => {
     const cwd = await makeProject();
     await fs.promises.writeFile(
       path.join(cwd, "dist/client/stats.json"),
       JSON.stringify({
+        assets: [
+          { name: "./main.js" },
+          { name: "main.css" },
+          { name: "chunks/lazy.js" },
+          { name: "assets/logo.svg" },
+        ],
         entrypoints: {
           main: {
             assets: [{ name: "main.js" }, { name: "main.css" }],
@@ -72,6 +312,11 @@ describe("UtoopackManifestGenerator", () => {
     await fs.promises.writeFile(
       path.join(cwd, "dist/server/stats.json"),
       JSON.stringify({
+        assets: [
+          { name: "./server.js" },
+          { name: "server.css" },
+          { name: "chunks/server-lazy.js" },
+        ],
         entrypoints: {
           server: { assets: [{ name: "server.js" }, { name: "server.css" }] },
         },
@@ -125,6 +370,21 @@ describe("UtoopackManifestGenerator", () => {
     expect(output.clientEntryAssets?.main).toEqual({
       js: ["main.js"],
       css: ["main.css"],
+    });
+    expect(output.emittedFiles).toEqual({
+      client: [
+        "main.js",
+        "main.css",
+        "chunks/lazy.js",
+        "assets/logo.svg",
+        "stats.json",
+      ],
+      server: [
+        "server.js",
+        "server.css",
+        "chunks/server-lazy.js",
+        "stats.json",
+      ],
     });
     expect(manifest.apps.default.assets).toEqual({
       js: ["main.js"],
@@ -211,6 +471,7 @@ describe("UtoopackManifestGenerator", () => {
       css: [],
     });
     expect(output.serverEntry).toBe("server.js");
+    expect(output.emittedFiles).toBeUndefined();
     expect(manifest.paths.rootDir).toBe("custom-dist");
   });
 
@@ -358,6 +619,22 @@ interface TestPage {
   hydrate?: HydrationMode;
   prerender?: PrerenderConfig;
   ppr?: PprConfig;
+}
+
+function createSpaClientGraph(cwd: string): CoreGraph {
+  return createGraph({
+    cwd,
+    routingMode: "spa",
+    pages: [
+      {
+        id: "home",
+        routeId: "home",
+        path: "/",
+        module: "./src/pages/page.tsx",
+        render: "csr",
+      },
+    ],
+  });
 }
 
 function createGraph(options: {
@@ -593,7 +870,14 @@ function createPlan(
             ]
           : [],
       ),
-      serverRoutePaths: graph.serverRoutes.map((route) => route.path),
+      serverRequestRoutePaths: graph.serverRoutes.map((route) => route.path),
+      serverRenderedPagePaths: graph.routes.flatMap((route) => {
+        if (route.target.kind !== "page") return [];
+        const page = graph.pages[route.target.pageId];
+        return page?.render !== "csr"
+          ? [formatRoutePattern(route.pattern)]
+          : [];
+      }),
       hasPpr: Object.values(graph.pages).some(
         (page) =>
           Boolean(page.ppr) ||

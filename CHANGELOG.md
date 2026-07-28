@@ -8,10 +8,137 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ### ⚠️ Breaking Changes
 
+- **Current-only authoring surface** — Removed the obsolete source-migration
+  CLI and `@evjs/cli` migration exports. evjs now documents only `page.*` plus
+  `page.config.ts` file conventions and the current explicit
+  `application.routes` input; it does not expose an alternate Page config
+  reader. Product-specific Route metadata is no longer built into explicit
+  route configuration; plugins own capability data through registered,
+  namespaced `route.extensions`.
+- **One canonical Page root** — Removed client `routing.dir`; file-convention
+  Pages now always use `src/pages/**/page.*`. Generic source adapters can still
+  normalize existing applications through explicit SPA-only
+  `application.routes`, `application.pageRoot`, and namespaced extensions
+  without creating a second file-convention dialect. For that explicit input,
+  `application.pageRoot` is the single source boundary for both `page` and
+  `component` references; it never changes canonical discovery.
 - **Server request-route anchors** — Server request routes now require
   `<server.routing.dir>/**/api.*` anchors, defaulting to `src/apis`. Each
   anchor's containing directory defines its URL and middleware scope, while
   every other basename remains private source.
+- **Owned output directories** — `output.client` and `output.server` must now
+  use portable `/`-separated project-relative paths without empty, `.`, `..`,
+  platform-reserved, or cross-platform aliasing segments, and resolve as
+  separate, non-nested, symlink-free strict descendants of the BuildPlan
+  `distDir`. Build entry names, HTML paths, generated files, and deployment
+  artifact names follow the same portable identity rules. The BuildPlan is
+  authoritative for framework output; `bundlerConfig()` hooks can no longer
+  override client or server paths.
+- **Concrete runtime endpoints** — Server runtime paths now accept only
+  concrete ASCII URL-safe segments without empty, `.`, or `..` segments. Active
+  server-function and RSC exact endpoints must be distinct and stay outside the
+  active PPR subtree; Page, redirect, and server request Route patterns cannot
+  claim reserved runtime paths.
+- **Disjoint request Routes** — URL-owning Page and redirect patterns must be
+  disjoint from server request Route patterns. Conflict checks cover static,
+  dynamic, and terminal splat intersections and compare static percent aliases
+  after exactly one URL decode.
+- **Explicit dev route ownership** — `DevBuildPlan.serverRoutePaths` is replaced
+  by `serverRequestRoutePaths` and `serverRenderedPagePaths`, so bundler adapters
+  can distinguish request Routes from Pages that require server rendering.
+- **Framework-owned BuildOutput semantics** — `buildOutput()` hooks may now
+  change only contents of existing `AssetGroup` values and add `deployment`
+  metadata. Build ids, paths, runtime settings, server identities, graph
+  semantics, record keys, and array order remain owned by the finalized graph
+  and BuildPlan.
+
+### ✨ Improvements
+
+- **Deterministic route semantics** — Page and server route discovery now share
+  segment-wise specificity ordering, with static segments taking precedence at
+  the first differing position. CoreGraph uniqueness and runtime matching use
+  the same one-decode identity for raw, percent-encoded, and Unicode static
+  aliases without collapsing encoded path separators or double encodings;
+  explicit segments that decode to `.` or `..` are rejected, and request
+  matching no longer erases internal empty segments or repeated trailing `/`.
+- **Server handler diagnostics** — `api.*` discovery rejects statically known
+  non-callable and generator handlers early while preserving imported,
+  re-exported, factory-produced, and mutable callable composition forms.
+- **Plan-driven dev routing** — Dev proxies now come only from the active
+  BuildPlan: server-function and RSC endpoints match exactly, PPR owns only its
+  active subtree, and `/api` has no implicit server or SPA-fallback meaning.
+- **Project operation coordination** — `prepare`, `build`, and `dev` now use one
+  secure per-project cross-process operation lock, so concurrent commands
+  cannot race while materializing `.ev`, route types, manifests, or deployment
+  output. Dev session and port locks use the same atomic, owner-verified lock
+  lifecycle.
+- **Explicit dev update semantics** — BuildPlan updates distinguish server
+  compilation topology, request-time Documents, and development routing.
+  Metadata and Document-only changes can refresh framework output without
+  claiming that persistent compiler inputs changed; unsupported structural
+  changes still fail closed and request a dev restart.
+
+### 🐛 Bug Fixes
+
+- **Adapter output consistency** — Webpack and Utoopack now use BuildPlan output
+  and runtime data consistently for bundling, cleanup, stats, manifests, and
+  dev server-bundle discovery, including custom `output.server` layouts.
+- **Adapter lifecycle safety** — Utoopack development runs its process-owned
+  server in a stoppable worker, propagates unexpected exits, preserves
+  function-valued proxy rewrites, and monitors server stats across atomic file
+  replacement. Webpack cleans up failed startup, keeps compiler-owned chunks
+  disjoint, and serves plans without client entries through its static host.
+  Dev API replacement terminates failed candidates and restores the last ready
+  runtime when a framework plan refresh rolls back.
+- **Build-only browser resources** — Webpack publishes build-phase CSS and only
+  the emitted resources that its parsed URLs actually reference. Copying is
+  portable-path aware and transactional across rebuilds, so private server
+  artifacts, client-owned aliases, or a failed refresh cannot corrupt the
+  active public output.
+- **Development SSG output** — Clientless fully static Pages are prerendered on
+  initial development output and rebuilds, keeping their HTML useful without a
+  browser entry while preserving production-equivalent Page semantics. Their
+  canonical routes stay on the static dev host rather than entering the
+  request-time server proxy.
+- **Server artifact containment** — Server-relative bundle artifacts are
+  validated before linking, after each output hook, before prerendering, and
+  again at deployment load boundaries. The server entry must be declared by
+  its JavaScript asset group, and generated Node/Edge loaders accept only the
+  declared server JavaScript allowlist.
+- **Collision-free deployment output** — HTML and deployment artifact
+  reservations now reject case, Unicode, exact-path, and file-versus-directory
+  overlaps before framework or adapter writes begin. Webpack and Utoopack
+  expose complete emitted-file inventories when their stats support it, so
+  unlinked async chunks are included in the same preflight; an absent inventory
+  remains explicitly unknown rather than pretending the output is empty.
+- **Deployment route parity** — Generated Node and Edge matchers now use the
+  same one-decode segment identity as client and dev routing, preserve planned
+  static document filenames, and do not collapse internal repeated slashes.
+  Server-function and RSC endpoints match exactly, only PPR owns a subtree,
+  and `server.basePath` is no longer treated as a catch-all namespace.
+- **Rendering failure safety** — Framework rendering reports detailed errors
+  server-side while production responses stay generic, and successful RSC
+  Flight responses preserve their original bytes and content length.
+- **Shell disposal** — Client shell disposal now attempts every driver cleanup
+  and Page unmount, always clears active state and caches, and reports one or
+  multiple cleanup failures without leaving the shell half-disposed.
+
+### 🧹 Code Quality
+
+- **Focused build modules** — Extracted shared route conventions and ordering,
+  runtime-server planning, output ownership/safety, dev watching, and CLI
+  program orchestration into focused modules with boundary-level tests.
+- **Physical output ownership** — Removed the obsolete physical
+  `client/manifest.json` reservation. Deployment collision checks now describe
+  only files actually emitted by the framework, linked output, or the bundler
+  inventory.
+- **Independent output owners** — Linked Applications, Pages, server
+  functions, and server Routes receive distinct mutable asset groups, so a
+  permitted `buildOutput()` content change cannot leak into another owner or a
+  later rebuild.
+- **Shared validation contracts** — Centralized route specificity,
+  one-decode static segment semantics, and concrete runtime path validation
+  across graph planning, manifests, browser bootstrap, and server runtime.
 
 ---
 
@@ -24,7 +151,7 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 ### ✨ Improvements
 
 - **Concurrent dev sessions** — Added per-project dev session locking and cross-process client/server port coordination so duplicate starts fail clearly while different apps select predictable available port pairs.
-- **Dev server addresses** — Made both `localhost` and `127.0.0.1` available for client and API development servers and aligned startup output with Bigfish's `Local` and `Network` labels.
+- **Dev server addresses** — Made both `localhost` and `127.0.0.1` available for client and API development servers and standardized startup output with `Local` and `Network` labels.
 
 ### 🐛 Bug Fixes
 

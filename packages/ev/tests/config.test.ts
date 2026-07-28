@@ -25,7 +25,7 @@ const fullBundlerCapabilities = {
 describe("config authoring", () => {
   it("preserves Config and Page config identity", () => {
     const config = defineConfig({
-      routing: { mode: "spa", dir: "./src/pages" },
+      routing: { mode: "spa" },
     });
     const pageConfig = definePageConfig({
       title: "Orders",
@@ -39,23 +39,23 @@ describe("config authoring", () => {
     } as const);
 
     expect(config).toEqual({
-      routing: { mode: "spa", dir: "./src/pages" },
+      routing: { mode: "spa" },
     });
     expect(pageConfig.title).toBe("Orders");
   });
 
-  it("keeps removed config lanes out of the authoring type", () => {
-    const legacyApp = defineConfig({
+  it("keeps unsupported config lanes out of the authoring type", () => {
+    const unsupportedApp = defineConfig({
       // @ts-expect-error app is not part of Core 0.3 Config.
       app: { entry: "./src/main.tsx" },
     });
-    const legacyPages = defineConfig({
+    const unsupportedPages = defineConfig({
       // @ts-expect-error pages are authored with src/pages/**/page.*.
       pages: { home: "./src/pages/home.tsx" },
     });
     const missingMode = defineConfig({
       // @ts-expect-error routing.mode is required.
-      routing: { dir: "./src/pages" },
+      routing: {},
     });
     const missingApplicationRoutes = defineConfig({
       // @ts-expect-error application.routes is required.
@@ -72,8 +72,8 @@ describe("config authoring", () => {
       head: [["meta", { name: "description", content: "Home" }]],
     });
 
-    expect(legacyApp).toHaveProperty("app");
-    expect(legacyPages).toHaveProperty("pages");
+    expect(unsupportedApp).toHaveProperty("app");
+    expect(unsupportedPages).toHaveProperty("pages");
     expect(missingMode).toHaveProperty("routing");
     expect(missingApplicationRoutes).toHaveProperty("application");
     expect(emptyApplicationRoutes).toHaveProperty("application");
@@ -104,12 +104,7 @@ describe("resolveConfig", () => {
       server: "dist/server",
       crossOriginLoading: "anonymous",
     });
-    expect(resolved.dev.proxy).toContainEqual({
-      context: ["/__evjs/fn", "/__evjs/ppr", "/__evjs/rsc"],
-      target: "http://localhost:3001",
-      changeOrigin: true,
-      secure: false,
-    });
+    expect(resolved.dev.proxy).toEqual([]);
   });
 
   it("accepts only plain config records at root and nested boundaries", () => {
@@ -283,25 +278,22 @@ describe("resolveConfig", () => {
 
     expect(resolveConfig({ routing: { mode: "spa" } }).routing).toEqual({
       mode: "spa",
-      dir: "./src/pages",
       html: "./index.html",
       mount: "#app",
       routes: [],
     });
     expect(resolveConfig({ routing: { mode: "mpa" } }).routing).toEqual({
       mode: "mpa",
-      dir: "./src/pages",
       html: "./index.html",
       mount: "#app",
       routes: [],
     });
   });
 
-  it("resolves canonical routing overrides without a source discriminator", () => {
+  it("resolves canonical routing document overrides", () => {
     const resolved = resolveConfig({
       routing: {
         mode: "spa",
-        dir: "./app/pages",
         html: "./app.html",
         mount: "#root",
       },
@@ -309,7 +301,6 @@ describe("resolveConfig", () => {
 
     expect(resolved.routing).toEqual({
       mode: "spa",
-      dir: "./app/pages",
       html: "./app.html",
       mount: "#root",
       routes: [],
@@ -318,7 +309,7 @@ describe("resolveConfig", () => {
     expect(resolved.routing).not.toHaveProperty("entry");
   });
 
-  it("normalizes one Bigfish SPA migration profile", () => {
+  it("normalizes one explicit SPA route-tree profile", () => {
     const resolved = resolveConfig({
       application: {
         pageRoot: "./app/pages",
@@ -363,12 +354,16 @@ describe("resolveConfig", () => {
     expect(resolved.routing).toBeUndefined();
   });
 
-  it("normalizes the application Page root and empty leaf routes", () => {
+  it("uses application.pageRoot for page and component references", () => {
     const resolved = resolveConfig({
       application: {
+        pageRoot: "./app/pages",
         routes: [
           { path: "/", page: ".", routes: [] },
-          { path: "/legacy", component: "@/pages/page" },
+          {
+            path: "/component",
+            component: "@/pages/dashboard/page",
+          },
         ],
       },
     });
@@ -376,33 +371,20 @@ describe("resolveConfig", () => {
     expect(resolved.application?.routes).toEqual([
       { path: "/", page: "." },
       {
-        path: "/legacy",
-        page: ".",
-        component: "./src/pages/page",
+        path: "/component",
+        page: "dashboard",
+        component: "./app/pages/dashboard/page",
       },
     ]);
   });
 
-  it("retains only documented Bigfish route metadata", () => {
+  it("treats exact as a terminal structural assertion", () => {
     const resolved = resolveConfig({
       application: {
         routes: [
           {
             path: "/home",
             page: "home",
-            name: "首页",
-            icon: "home",
-            title: "Home",
-            hideInMenu: false,
-            flatMenu: true,
-            spmBPos: { a226: "b1", a1853: "b2" },
-            access: "canReadHome",
-            menuKey: { spcenter: null, merchant_b: "" },
-            menuAssetOptions: {
-              source: "route",
-              nested: { enabled: true },
-              positions: [1, "two", null],
-            },
             exact: true,
           },
         ],
@@ -413,26 +395,11 @@ describe("resolveConfig", () => {
       {
         path: "/home",
         page: "home",
-        metadata: {
-          name: "首页",
-          icon: "home",
-          title: "Home",
-          hideInMenu: false,
-          flatMenu: true,
-          spmBPos: { a226: "b1", a1853: "b2" },
-          access: "canReadHome",
-          menuKey: { spcenter: null, merchant_b: "" },
-          menuAssetOptions: {
-            source: "route",
-            nested: { enabled: true },
-            positions: [1, "two", null],
-          },
-        },
       },
     ]);
   });
 
-  it("rejects removed children routes and non-structural exact matching", () => {
+  it("rejects children routes and non-structural exact matching", () => {
     expect(() =>
       resolveConfig({
         application: {
@@ -444,16 +411,12 @@ describe("resolveConfig", () => {
           ],
         },
       }),
-    ).toThrow(
-      "application.routes[0].children is not supported. Current Umi/Bigfish route config uses routes",
-    );
+    ).toThrow("application.routes[0].children is not supported. Use routes");
 
     expect(() =>
       resolveConfig({
         application: {
-          routes: [
-            { path: "/legacy-prefix", page: "legacy", exact: false } as never,
-          ],
+          routes: [{ path: "/prefix", page: "prefix", exact: false } as never],
         },
       }),
     ).toThrow(
@@ -478,24 +441,7 @@ describe("resolveConfig", () => {
     );
   });
 
-  it("validates Bigfish route metadata without accepting an open JSON bag", () => {
-    for (const route of [
-      { page: "home", hideInMenu: "yes" },
-      { page: "home", spmBPos: {} },
-      { page: "home", spmBPos: { a226: false } },
-      { page: "home", menuKey: 42 },
-      { page: "home", menuAssetOptions: [] },
-      { page: "home", menuAssetOptions: { transform: () => undefined } },
-    ]) {
-      expect(() =>
-        resolveConfig({
-          application: { routes: [route as never] },
-        }),
-      ).toThrow();
-    }
-  });
-
-  it("keeps the Bigfish migration input SPA-only and singular", () => {
+  it("keeps the explicit route-tree input SPA-only and singular", () => {
     expect(() =>
       resolveConfig({
         application: {
@@ -503,9 +449,7 @@ describe("resolveConfig", () => {
           topology: "mpa",
         } as never,
       }),
-    ).toThrow(
-      'Bigfish-style application.routes is a SPA-only migration input. To move a Bigfish application to canonical routing, migrate its routes to src/pages/**/page.* and use routing.mode "spa".',
-    );
+    ).toThrow("application.topology is not supported");
 
     expect(() =>
       resolveConfig({
@@ -514,9 +458,7 @@ describe("resolveConfig", () => {
           mode: "mpa",
         } as never,
       }),
-    ).toThrow(
-      'Bigfish-style application.routes is a SPA-only migration input. To move a Bigfish application to canonical routing, migrate its routes to src/pages/**/page.* and use routing.mode "spa".',
-    );
+    ).toThrow("application.mode is not supported");
 
     expect(() =>
       resolveConfig({
@@ -528,15 +470,15 @@ describe("resolveConfig", () => {
     ).toThrow("application.routes cannot be combined with routing");
   });
 
-  it("rejects removed application and route migration fields", () => {
+  it("rejects unsupported application and Route fields", () => {
     for (const application of [
       {
         routes: [{ page: "home" }],
-        html: "./legacy.html",
+        html: "./alternate.html",
       },
       {
         routes: [{ page: "home" }],
-        mount: "#legacy",
+        mount: "#alternate",
       },
       {
         routes: [{ page: "home" }],
@@ -545,7 +487,7 @@ describe("resolveConfig", () => {
     ]) {
       expect(() =>
         resolveConfig({ application: application as never }),
-      ).toThrow(/has been removed|not supported/);
+      ).toThrow(/not supported/);
     }
 
     expect(() =>
@@ -604,7 +546,7 @@ describe("resolveConfig", () => {
     ).toThrow("must be JSON-serializable");
   });
 
-  it("validates Bigfish Page references and route-tree targets", () => {
+  it("validates explicit Page references and route-tree targets", () => {
     expect(() =>
       resolveConfig({
         application: {} as never,
@@ -624,6 +566,18 @@ describe("resolveConfig", () => {
         },
       }),
     ).toThrow("must be a safe Page id relative to application.pageRoot");
+    expect(() =>
+      resolveConfig({
+        application: {
+          pageRoot: "./app/pages",
+          routes: [
+            {
+              component: "./src/pages/outside/page",
+            },
+          ],
+        },
+      }),
+    ).toThrow('outside application.pageRoot "./app/pages"');
     expect(() =>
       resolveConfig({
         application: {
@@ -668,37 +622,42 @@ describe("resolveConfig", () => {
     ).toBeDefined();
   });
 
-  it("rejects every removed root routing and application lane", () => {
-    const removed = [
+  it("rejects unsupported root routing and application keys", () => {
+    const unsupported = [
       ["entry", "./src/main.tsx"],
       ["app", { entry: "./src/main.tsx" }],
       ["apps", { main: "./src/main.tsx" }],
       ["pages", { home: "./src/pages/home.tsx" }],
       ["routes", [{ page: "home" }]],
-      ["html", "./legacy.html"],
+      ["html", "./alternate.html"],
     ] as const;
 
-    for (const [key, value] of removed) {
+    for (const [key, value] of unsupported) {
       expect(() => resolveConfig({ [key]: value } as never)).toThrow(
         `config.${key}`,
       );
     }
   });
 
-  it("rejects removed routing readers and manual entries", () => {
+  it("rejects unsupported routing shapes and fields", () => {
     expect(() => resolveConfig({ routing: true as never })).toThrow(
-      "routing: true has been removed",
+      "routing must be an object",
     );
     expect(() =>
       resolveConfig({
-        routing: { mode: "spa", compatibility: { source: "smallfish" } },
+        routing: { mode: "spa", dir: "./app/pages" },
       } as never),
-    ).toThrow("routing.compatibility has been removed");
+    ).toThrow("routing.dir is not supported");
+    expect(() =>
+      resolveConfig({
+        routing: { mode: "spa", compatibility: { source: "external" } },
+      } as never),
+    ).toThrow("routing.compatibility is not supported");
     expect(() =>
       resolveConfig({
         routing: { mode: "spa", entry: "./src/main.tsx" },
       } as never),
-    ).toThrow("routing.entry has been removed");
+    ).toThrow("routing.entry is not supported");
     expect(() =>
       resolveConfig({
         routing: { mode: "spa", routes: [] },
@@ -719,7 +678,7 @@ describe("resolveConfig", () => {
         proxy: [{ context: ["/api"], target: "https://api.example.com" }],
       },
       server: {
-        basePath: "/_ev/",
+        basePath: "/_ev",
         routing: { dir: "./src/http" },
         dev: {
           port: 4200,
@@ -759,6 +718,49 @@ describe("resolveConfig", () => {
     expect(resolved.transport.baseUrl).toBe("https://runtime.example.com");
   });
 
+  it("rejects output directories that can escape or alias the project root", () => {
+    const unsafeDirectories = [
+      ".",
+      "..",
+      "./build",
+      "build/./client",
+      "build/../client",
+      "build//client",
+      "build/client/",
+      "build\\client",
+      "../outside",
+      "/tmp/evjs-output",
+      "C:\\temp\\evjs-output",
+      "\\\\server\\share\\evjs-output",
+    ];
+
+    for (const directory of unsafeDirectories) {
+      expect(() =>
+        resolveConfig({
+          output: { client: directory, server: "safe-server-output" },
+        }),
+      ).toThrow(/\[evjs\] output\.client must/);
+      expect(() =>
+        resolveConfig({
+          output: { client: "safe-client-output", server: directory },
+        }),
+      ).toThrow(/\[evjs\] output\.server must/);
+    }
+  });
+
+  it("rejects equal or nested client and server output directories", () => {
+    for (const output of [
+      { client: "build/client", server: "build/client" },
+      { client: "build", server: "build/server" },
+      { client: "build/client", server: "build" },
+      { client: "BUILD/client", server: "build/client" },
+    ]) {
+      expect(() => resolveConfig({ output })).toThrow(
+        "[evjs] output.client and output.server must be separate, non-nested directories.",
+      );
+    }
+  });
+
   it("treats server.rsc only as an endpoint override", () => {
     expect(() =>
       resolveConfig({
@@ -779,12 +781,30 @@ describe("resolveConfig", () => {
     });
     expect(resolved.server.rsc).toEqual({ endpoint: "flight" });
     expect(resolved.server.runtime.rsc).toBe("flight");
-    expect(resolved.dev.proxy).toContainEqual({
-      context: ["/_ev/fn", "/_ev/ppr", "/flight"],
-      target: "http://localhost:3001",
-      changeOrigin: true,
-      secure: false,
-    });
+    expect(resolved.dev.proxy).toEqual([]);
+  });
+
+  it("requires concrete static framework runtime pathnames", () => {
+    const invalidPaths = [
+      "/runtime/:tenant",
+      "/runtime/*",
+      "/runtime/%66n",
+      "/runtime/航班",
+      "/runtime//fn",
+      "/runtime/./fn",
+      "/runtime/../fn",
+      "/",
+    ] as const;
+    for (const basePath of invalidPaths) {
+      expect(() => resolveConfig({ server: { basePath } })).toThrow(
+        "[evjs] server.basePath must use non-empty ASCII URL-safe segments",
+      );
+    }
+    for (const endpoint of invalidPaths) {
+      expect(() => resolveConfig({ server: { rsc: { endpoint } } })).toThrow(
+        "[evjs] server.rsc.endpoint must use non-empty ASCII URL-safe segments",
+      );
+    }
   });
 
   it("validates the full bundler capability matrix", () => {
@@ -864,16 +884,6 @@ describe("resolveConfig", () => {
         ],
       }),
     ).toThrow("Return the hook from plugins[0].setup() instead");
-    expect(() =>
-      resolveConfig({
-        plugins: [
-          {
-            name: "test-plugin",
-            onBuildComplete() {},
-          } as never,
-        ],
-      }),
-    ).toThrow("Return the hook from plugins[0].setup() instead");
   });
 
   it("does not share resolved mutable state between calls", () => {
@@ -891,13 +901,11 @@ describe("resolveConfig", () => {
     });
 
     expect(second.routing?.routes).toEqual([]);
-    expect(second.dev.proxy).toHaveLength(1);
+    expect(second.dev.proxy).toEqual([]);
   });
 
   it("keeps the empty Page tree hint anchored on page.tsx", () => {
-    expect(createNoPageRoutesFoundMessage("./src/pages")).toContain(
-      "./src/pages/page.tsx",
-    );
+    expect(createNoPageRoutesFoundMessage()).toContain("./src/pages/page.tsx");
   });
 
   it("rejects an explicit routing request missing from resolved config", async () => {
@@ -916,7 +924,7 @@ describe("resolveConfig", () => {
   it("keeps stable exported defaults for remaining config concepts", () => {
     expect(CONFIG_DEFAULTS).not.toHaveProperty("entry");
     expect(CONFIG_DEFAULTS).not.toHaveProperty("routingMode");
-    expect(CONFIG_DEFAULTS.routingDir).toBe("./src/pages");
+    expect(CONFIG_DEFAULTS.pageRoot).toBe("./src/pages");
     expect(CONFIG_DEFAULTS.mount).toBe("#app");
   });
 });

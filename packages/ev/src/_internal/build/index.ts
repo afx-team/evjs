@@ -2,19 +2,25 @@
  * Bundler-agnostic build utilities for the ev framework.
  */
 
-export type {
-  BundlerAdapter,
-  BundlerBuildCapability,
-  BundlerBuildContext,
-  BundlerBuildFacts,
-  BundlerCapabilities,
-  BundlerCapability,
-  BundlerCapabilityGap,
-  BundlerDevCapability,
-  BundlerDevContext,
-  BundlerDevController,
-  BundlerDevUpdateOptions,
+export { resolveBuildOutputPaths } from "./build-output-paths.js";
+export {
+  type BundlerAdapter,
+  type BundlerBuildCapability,
+  type BundlerBuildContext,
+  type BundlerBuildFacts,
+  type BundlerCapabilities,
+  type BundlerCapability,
+  type BundlerCapabilityGap,
+  type BundlerDevCapability,
+  type BundlerDevContext,
+  type BundlerDevController,
+  type BundlerDevUpdateOptions,
+  type BundlerEmittedFiles,
+  isArtifactOnlyBuildPlanUpdate,
+  isEmptyBuildPlanUpdate,
+  resolveBundlerClientEntryAssets,
 } from "./bundler.js";
+export { assertBundlerEmittedFiles } from "./bundler-output-files.js";
 export {
   type BuildOptions,
   build,
@@ -51,6 +57,16 @@ export type { GenerateHtmlOptions, HtmlAsset } from "./html.js";
 export { generateHtml, validateHtmlTemplate } from "./html.js";
 export type { BuildHtmlOptions } from "./html-transform.js";
 export { buildHtml } from "./html-transform.js";
+export type { ResolvedBuildOutputPaths } from "./output-path-safety.js";
+export {
+  assertSafeBuildOutputPaths,
+  assertSafeBuildOwnedOutputPath,
+  assertSafeBundlerCleanOutputPath,
+} from "./output-path-safety.js";
+export {
+  removeOwnedOutputFile,
+  writeOwnedOutputFile,
+} from "./owned-file-output.js";
 export type { GeneratePageRouteTypesOptions } from "./page-route-types.js";
 export { generatePageRouteTypes } from "./page-route-types.js";
 export type {
@@ -69,6 +85,12 @@ export type {
   CreateBuildPlanOptions,
 } from "./plan/index.js";
 export { createBuildPlan, diffBuildPlan } from "./plan/index.js";
+export {
+  assertPortableRelativeArtifactPath,
+  assertPortableRelativeBrowserArtifactPath,
+  canonicalPortableArtifactPathKey,
+  portableArtifactPathsConflict,
+} from "./portable-artifact-path.js";
 export type {
   RscReferenceAnalysis,
   TransformRscClientFileOptions,

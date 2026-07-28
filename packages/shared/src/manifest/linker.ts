@@ -1,4 +1,8 @@
 import { pageRoutePathShapeFromPath } from "../page-route-data.js";
+import {
+  assertPortableRelativeBrowserArtifactPath,
+  portableArtifactPathsConflict,
+} from "./artifact-path.js";
 import type {
   AssetGroup,
   BuildEntry,
@@ -22,6 +26,12 @@ import type {
   ServerRouteOutput,
 } from "./index.js";
 import { clonePageMetadata } from "./page-metadata.js";
+import {
+  assertBuildOutputServerArtifacts,
+  assertServerArtifactGroups,
+  assertServerRelativeArtifactPath,
+  type ServerArtifactGroupReference,
+} from "./server-artifacts.js";
 
 const EMPTY_ASSETS: AssetGroup = { js: [], css: [] };
 declare const URL: {
@@ -40,7 +50,6 @@ export interface BuildOutputLinkInput {
   graph: CoreGraph;
   plan: BuildPlan;
   clientEntryAssets?: Record<string, AssetGroup>;
-  firstClientEntryAssets?: AssetGroup;
   serverEntryAssets?: Record<string, AssetGroup>;
   serverEntry?: string;
   serverAssets?: AssetGroup;
@@ -61,21 +70,31 @@ export type ServerManifestRouteOutput =
   | Extract<DeploymentRouteOutput, { kind: "api-route" }>;
 
 export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
-  const clientEntryAssets = input.clientEntryAssets ?? {};
-  const firstClientEntryAssets = input.firstClientEntryAssets ?? EMPTY_ASSETS;
+  assertBuildOutputLinkInputServerArtifacts(input);
   const serverEntryAssets = input.serverEntryAssets ?? {};
   const fallbackServerAssets = input.serverAssets ?? EMPTY_ASSETS;
   const serverModules = input.serverModules ?? [];
-  const clientEntries = input.plan.entries.filter(
-    (entry) => entry.environment === "client",
+  const resolvedClientEntryAssets = resolveClientEntryAssets(
+    input.plan,
+    input.clientEntryAssets,
   );
-  const shouldUseSingleClientFallback = clientEntries.length === 1;
 
   const clientAssetsForEntry = (entry: BuildEntry) =>
-    clientEntryAssets[entry.name] ??
-    (shouldUseSingleClientFallback ? firstClientEntryAssets : EMPTY_ASSETS);
-  const serverAssetsForEntry = (entry: BuildEntry) =>
-    serverEntryAssets[entry.name] ?? fallbackServerAssets;
+    cloneAssetGroup(resolvedClientEntryAssets.get(entry.name) ?? EMPTY_ASSETS);
+  const serverAssetsForEntry = (entry: BuildEntry) => {
+    const assets =
+      serverEntryAssets[entry.name] ??
+      (entry.kind === "server-runtime" && input.serverAssets
+        ? input.serverAssets
+        : undefined);
+    if (!assets) {
+      throw new Error(
+        `[evjs] Bundler build facts are missing server BuildPlan entry "${entry.name}" (${entry.kind}).`,
+      );
+    }
+    assertExecutableServerEntryAssets(entry, assets);
+    return cloneAssetGroup(assets);
+  };
   const serverRuntimeEntry = input.plan.entries.find(
     (entry) =>
       entry.environment === "server" && entry.kind === "server-runtime",
@@ -91,7 +110,9 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
         serverRuntimeEntry,
       )
     : undefined;
-  const serverAssets = serverRuntimeEntry ? serverRuntimeAssets : EMPTY_ASSETS;
+  const serverAssets = serverRuntimeEntry
+    ? serverRuntimeAssets
+    : cloneAssetGroup(EMPTY_ASSETS);
 
   const findEntryByOwner = (
     owner: BuildEntry["owner"],
@@ -122,8 +143,11 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   };
 
   const assetsForSource = (sourceRel: string) =>
-    serverModules.find((mod) => moduleIdMatchesSource(mod.moduleId, sourceRel))
-      ?.assets ?? serverAssets;
+    cloneAssetGroup(
+      serverModules.find((mod) =>
+        moduleIdMatchesSource(mod.moduleId, sourceRel),
+      )?.assets ?? serverAssets,
+    );
 
   const entryAssets: Record<string, AssetGroup> = {};
   for (const entry of input.plan.entries) {
@@ -138,7 +162,9 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
       .filter(([, app]) => shouldProjectApplicationToOutput(input.graph, app))
       .map(([id, app]) => {
         const entry = findEntryByOwner({ appId: id }, "client");
-        const assets = entry ? clientAssetsForEntry(entry) : EMPTY_ASSETS;
+        const assets = entry
+          ? clientAssetsForEntry(entry)
+          : cloneAssetGroup(EMPTY_ASSETS);
         const href = entry
           ? assertClientRuntimeHref(entry, assets, `App "${id}"`)
           : undefined;
@@ -292,7 +318,7 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   );
   const rsc = linkRscOutput(input, serverAssetsForEntry);
 
-  return {
+  const output: BuildOutput = {
     version: 1,
     buildId: input.plan.buildId,
     paths: createBuildOutputPaths(input.plan),
@@ -308,16 +334,125 @@ export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
     server: {
       entry: serverEntry,
       assets: serverAssets,
-      renderers: linkServerRenderers(
-        input.plan,
-        serverAssetsForEntry,
-        assetsForSource,
-      ),
+      renderers: linkServerRenderers(input.plan, serverAssetsForEntry),
       functions: serverFunctions,
       routes: serverRoutes,
     },
     ...(rsc ? { rsc } : {}),
   };
+  assertBuildOutputServerArtifacts(output, "linked BuildOutput");
+  return output;
+}
+
+/** Require every client BuildPlan entry to have exact named JavaScript facts. */
+export function assertBuildOutputLinkInputClientAssets(
+  input: Pick<BuildOutputLinkInput, "plan" | "clientEntryAssets">,
+): void {
+  resolveClientEntryAssets(input.plan, input.clientEntryAssets);
+}
+
+function resolveClientEntryAssets(
+  plan: BuildPlan,
+  clientEntryAssets: Record<string, AssetGroup> | undefined,
+): Map<string, AssetGroup> {
+  const plannedEntries = plan.entries.filter(
+    (entry) => entry.environment === "client",
+  );
+  const facts = clientEntryAssets ?? {};
+  const resolved = new Map<string, AssetGroup>();
+  const claimedFiles: Array<{ entryName: string; fileName: string }> = [];
+
+  for (const entry of plannedEntries) {
+    const assets = facts[entry.name];
+    if (!assets) {
+      const available = Object.keys(facts)
+        .map((name) => `"${name}"`)
+        .join(", ");
+      throw new Error(
+        available
+          ? `[evjs] Bundler build facts do not identify client BuildPlan entry "${entry.name}". Available stats entrypoints: ${available}.`
+          : `[evjs] Bundler build facts are missing client BuildPlan entry "${entry.name}".`,
+      );
+    }
+    assertClientEntryAssetGroup(entry, assets);
+    for (const fileName of [...assets.js, ...assets.css]) {
+      const conflict = claimedFiles.find(
+        (claim) =>
+          claim.fileName !== fileName &&
+          portableArtifactPathsConflict(claim.fileName, fileName),
+      );
+      if (conflict) {
+        throw new Error(
+          `[evjs] Bundler build facts for client BuildPlan entry "${entry.name}" asset ${JSON.stringify(fileName)} conflicts with entry "${conflict.entryName}" asset ${JSON.stringify(conflict.fileName)} on portable file systems. Use one case- and Unicode-stable spelling, and do not overlap file and directory paths.`,
+        );
+      }
+      if (!claimedFiles.some((claim) => claim.fileName === fileName)) {
+        claimedFiles.push({ entryName: entry.name, fileName });
+      }
+    }
+    resolved.set(entry.name, assets);
+  }
+  return resolved;
+}
+
+function assertClientEntryAssetGroup(
+  entry: BuildEntry,
+  assets: AssetGroup,
+): void {
+  if (
+    !assets ||
+    typeof assets !== "object" ||
+    !Array.isArray(assets.js) ||
+    !Array.isArray(assets.css)
+  ) {
+    throw new Error(
+      `[evjs] Bundler build facts for client BuildPlan entry "${entry.name}" must provide an AssetGroup with JavaScript and CSS arrays.`,
+    );
+  }
+  if (assets.js.length === 0) {
+    throw new Error(
+      `[evjs] Bundler build facts for client BuildPlan entry "${entry.name}" must declare at least one JavaScript asset.`,
+    );
+  }
+  for (const [kind, files] of [
+    ["JavaScript", assets.js],
+    ["CSS", assets.css],
+  ] as const) {
+    for (const [index, fileName] of files.entries()) {
+      assertPortableRelativeBrowserArtifactPath(
+        fileName,
+        `Bundler build facts for client BuildPlan entry "${entry.name}" ${kind} asset[${index}]`,
+      );
+    }
+  }
+  selectClientEntryJavaScriptAsset(entry, assets);
+}
+
+function assertExecutableServerEntryAssets(
+  entry: BuildEntry,
+  assets: AssetGroup,
+): void {
+  if (
+    !assets ||
+    typeof assets !== "object" ||
+    !Array.isArray(assets.js) ||
+    !Array.isArray(assets.css)
+  ) {
+    throw new Error(
+      `[evjs] Bundler build facts for server BuildPlan entry "${entry.name}" must provide an AssetGroup with JavaScript and CSS arrays.`,
+    );
+  }
+  if (assets.js.length !== 1) {
+    throw new Error(
+      `[evjs] Bundler build facts for server BuildPlan entry "${entry.name}" (${entry.kind}) must declare exactly one self-contained JavaScript entry asset; found ${assets.js.length}.`,
+    );
+  }
+  for (const [index, fileName] of assets.css.entries()) {
+    assertPortableRelativeBrowserArtifactPath(
+      fileName,
+      `Bundler build facts for server BuildPlan entry "${entry.name}" CSS asset[${index}]`,
+    );
+  }
 }
 
 function shouldProjectPageToOutput(
@@ -416,20 +551,27 @@ function assertClientRuntimeHref(
   assets: AssetGroup,
   label: string,
 ): string {
-  const href = getClientRuntimeHref(entry, assets);
-  if (href) return href;
-  throw new Error(
-    `[evjs] ${label} did not produce a client JavaScript asset for build entry "${entry.name}".`,
-  );
+  try {
+    return selectClientEntryJavaScriptAsset(entry, assets);
+  } catch (error) {
+    throw new Error(
+      `[evjs] ${label} did not produce one identifiable client JavaScript entry asset for build entry "${entry.name}".`,
+      { cause: error },
+    );
+  }
 }
 
-function getClientRuntimeHref(
+function selectClientEntryJavaScriptAsset(
   entry: BuildEntry,
   assets: AssetGroup,
-): string | undefined {
-  return (
-    assets.js.find((asset) => isNamedEntryAsset(entry.name, asset)) ??
-    assets.js[0]
+): string {
+  if (assets.js.length === 1) return assets.js[0] as string;
+  const candidates = assets.js.filter((asset) =>
+    isNamedEntryAsset(entry.name, asset),
+  );
+  if (candidates.length === 1) return candidates[0] as string;
+  throw new Error(
+    `[evjs] Bundler build facts for client BuildPlan entry "${entry.name}" do not identify one JavaScript entry asset; found ${assets.js.length}.`,
   );
 }
 
@@ -448,10 +590,57 @@ function assertServerRuntimeEntry(
       "[evjs] Server build did not declare a server runtime entry.",
     );
   }
-  if (serverEntry && assets.js.length > 0) return serverEntry;
+  if (serverEntry && assets.js.includes(serverEntry)) return serverEntry;
+  if (serverEntry && assets.js.length > 0) {
+    throw new Error(
+      `[evjs] Server runtime entry "${serverEntry}" must exactly match one JavaScript artifact emitted for build entry "${runtimeEntry.name}".`,
+    );
+  }
   throw new Error(
     `[evjs] Server runtime entry "${runtimeEntry.name}" did not produce a server JavaScript asset.`,
   );
+}
+
+function assertBuildOutputLinkInputServerArtifacts(
+  input: BuildOutputLinkInput,
+): void {
+  const runtimeGroups: ServerArtifactGroupReference[] = [];
+  const buildGroups: ServerArtifactGroupReference[] = [];
+  for (const [entryName, assets] of Object.entries(
+    input.serverEntryAssets ?? {},
+  )) {
+    const entry = input.plan.entries.find(
+      (candidate) =>
+        candidate.environment === "server" && candidate.name === entryName,
+    );
+    const groups = entry?.phase === "build" ? buildGroups : runtimeGroups;
+    groups.push({
+      assets,
+      source: `BuildOutput link input.serverEntryAssets.${entryName}`,
+    });
+  }
+  if (input.serverAssets) {
+    runtimeGroups.push({
+      assets: input.serverAssets,
+      source: "BuildOutput link input.serverAssets",
+    });
+  }
+  input.serverModules?.forEach((serverModule, index) => {
+    assertServerArtifactGroups([
+      {
+        assets: serverModule.assets,
+        source: `BuildOutput link input.serverModules[${index}].assets`,
+      },
+    ]);
+  });
+  assertServerArtifactGroups(runtimeGroups);
+  assertServerArtifactGroups(buildGroups);
+  if (input.serverEntry !== undefined) {
+    assertServerRelativeArtifactPath(
+      input.serverEntry,
+      "BuildOutput link input.serverEntry",
+    );
+  }
 }
 
 /**
@@ -622,6 +811,7 @@ function createStaticSsgDocumentRecords(output: BuildOutput): Array<{
 export function createServerManifest(
   output: BuildOutput,
 ): ServerManifestOutput {
+  assertBuildOutputServerArtifacts(output, "BuildOutput");
   return {
     version: 1,
     ...(output.server.entry ? { entry: output.server.entry } : {}),
@@ -649,6 +839,7 @@ export function createDeploymentMetadata(
   output: BuildOutput,
   options: DeploymentMetadataOptions = {},
 ): DeploymentMetadata {
+  assertBuildOutputServerArtifacts(output, "BuildOutput");
   const includeAssets = options.includeAssets ?? true;
   const publicAssetFiles = collectPublicAssetFiles(output);
   const assets = includeAssets
@@ -929,6 +1120,13 @@ function mergeAssetGroups(...groups: AssetGroup[]): AssetGroup {
   };
 }
 
+function cloneAssetGroup(assets: AssetGroup): AssetGroup {
+  return {
+    js: [...assets.js],
+    css: [...assets.css],
+  };
+}
+
 function pruneUndefined<T extends Record<string, unknown>>(value: T): T {
   for (const key of Object.keys(value)) {
     if (value[key] === undefined) delete value[key];
@@ -994,7 +1192,6 @@ function findRscRendererForPage(
 function linkServerRenderers(
   plan: BuildPlan,
   serverAssetsForEntry: (entry: BuildEntry) => AssetGroup,
-  assetsForSource: (sourceRel: string) => AssetGroup,
 ) {
   const renderers = plan.server.renderers ?? [];
   if (renderers.length === 0) return undefined;
@@ -1006,15 +1203,18 @@ function linkServerRenderers(
           candidate.environment === "server" &&
           candidate.name === renderer.name,
       );
+      if (!entry) {
+        throw new Error(
+          `[evjs] Server renderer "${renderer.name}" does not match a server BuildPlan entry.`,
+        );
+      }
       return [
         renderer.name,
         pruneUndefined({
           kind: renderer.kind,
           phase: renderer.phase,
           owner: renderer.owner,
-          assets: entry
-            ? serverAssetsForEntry(entry)
-            : assetsForSource(renderer.import),
+          assets: serverAssetsForEntry(entry),
         }),
       ];
     }),

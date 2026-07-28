@@ -43,7 +43,7 @@ A canonical Page:
 - default-exports its component;
 - owns its complete containing directory as private source scope;
 - receives its semantic identity and URL from its directory relative to
-  `routing.dir`.
+  `src/pages`.
 
 ```tsx
 // src/pages/users/$userId/page.tsx
@@ -298,15 +298,11 @@ Page components do not export literal `render`, `hydrate`, `prerender`, or
 ## Explicit SPA Route Configuration
 
 `application.routes` can normalize an explicit SPA route tree into the same
-Core graph. It accepts nested `routes`, `component`, layouts, wrappers,
-redirects, and the documented finite access/menu metadata set. The historical
-`children` spelling is rejected. Each declared Route keeps its own semantic
-identity and may carry registered namespaced extensions.
+Core graph. It accepts nested `routes`, `page` or `component`, layouts,
+wrappers, redirects, and registered namespaced extensions. The `children`
+spelling is rejected. Each declared Route keeps its own semantic identity.
 
 This configuration is SPA-only and rejects MPA materialization. It is an
 alternate input into the normalized graph, not a second canonical file
-convention. To adopt the canonical tree, move each published entry to the
-directory for its URL, name it `page.*`, move Page-level configuration to
-`page.config.ts`, keep Page-private code beside it, and declare only
-`routing.mode`. An unrelated `src/pages` directory does not publish routes
-unless canonical routing is enabled.
+convention. An unrelated `src/pages` directory does not publish routes unless
+canonical routing is enabled.

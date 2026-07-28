@@ -1,9 +1,6 @@
 import type { BuildOutput } from "@evjs/shared/manifest";
 import { type Config, resolvePluginsConfig } from "../../config/index.js";
-import {
-  LEGACY_PLUGIN_HOOK_REPLACEMENTS,
-  PLUGIN_HOOK_NAMES,
-} from "../../plugin/hook-names.js";
+import { PLUGIN_HOOK_NAMES } from "../../plugin/hook-names.js";
 import type {
   BuildResult,
   Plugin,
@@ -11,6 +8,8 @@ import type {
   PluginContext,
   PluginHooks,
 } from "../../plugin/index.js";
+import type { BundlerEmittedFiles } from "./bundler.js";
+import { assertBuildEndDeploymentOutputsAvailable } from "./deployment-output-reservations.js";
 
 const typedPluginHookNames: readonly (keyof PluginHooks)[] = PLUGIN_HOOK_NAMES;
 
@@ -222,11 +221,9 @@ function isPluginHookName(value: string): value is keyof PluginHooks {
 }
 
 function throwUnknownPluginHook(pluginName: string, hookName: string): never {
-  const replacement =
-    LEGACY_PLUGIN_HOOK_REPLACEMENTS.get(hookName) ??
-    PLUGIN_HOOK_NAMES.find(
-      (candidate) => candidate.toLowerCase() === hookName.toLowerCase(),
-    );
+  const replacement = PLUGIN_HOOK_NAMES.find(
+    (candidate) => candidate.toLowerCase() === hookName.toLowerCase(),
+  );
   if (replacement) {
     throw new Error(
       `[evjs] Plugin "${pluginName}" setup hook returned unsupported hook "${hookName}". Use "${replacement}" instead.`,
@@ -282,15 +279,30 @@ export async function runBuildOutputHooks<TBundlerCfg>(
   hooks: PluginHooks<TBundlerCfg>[],
   output: BuildOutput,
   ctx: PluginContext<TBundlerCfg>,
+  validate?: () => void,
 ): Promise<void> {
-  for (const hook of hooks) await hook.buildOutput?.(output, ctx);
+  for (const hook of hooks) {
+    if (!hook.buildOutput) continue;
+    await hook.buildOutput(output, ctx);
+    validate?.();
+  }
 }
 
 export async function runBuildEndHooks<TBundlerCfg>(
   hooks: PluginHooks<TBundlerCfg>[],
   result: BuildResult,
+  options: { cwd?: string; emittedFiles?: BundlerEmittedFiles } = {},
 ): Promise<void> {
-  for (const hook of hooks) await hook.buildEnd?.(result);
+  const buildEndHooks = hooks.flatMap((hook) =>
+    hook.buildEnd ? [hook.buildEnd] : [],
+  );
+  if (buildEndHooks.length === 0) return;
+
+  const snapshot = structuredClone(result);
+  assertBuildEndDeploymentOutputsAvailable(hooks, snapshot, options);
+  for (const buildEnd of buildEndHooks) {
+    await buildEnd(structuredClone(snapshot));
+  }
 }
 
 export async function runDisposeHooks<TBundlerCfg>(

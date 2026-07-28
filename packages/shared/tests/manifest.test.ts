@@ -110,6 +110,49 @@ interface LinkerFixture {
   serverReferences?: CoreGraph["serverReferences"];
 }
 
+function createGraphWithApps(ids: string[]): LinkerFixture {
+  return {
+    version: 1,
+    rootDir: "/repo",
+    apps: Object.fromEntries(
+      ids.map((id) => [
+        id,
+        { id, entry: `./src/${id}.tsx`, html: "./index.html" },
+      ]),
+    ),
+    pages: {},
+    routes: [],
+    serverFunctions: [],
+    serverRoutes: [],
+  };
+}
+
+function createPlanWithClientApps(ids: string[]): TestBuildPlan {
+  return {
+    version: 1,
+    buildId: "client-apps",
+    mode: "production",
+    distDir: "dist",
+    output: { clientDir: "dist/client", serverDir: "dist/server" },
+    entries: ids.map((id) => ({
+      name: id,
+      import: `./src/${id}.tsx`,
+      environment: "client" as const,
+      runtime: "browser" as const,
+      kind: "app-client" as const,
+      owner: { appId: id },
+    })),
+    html: ids.map((id) => ({
+      id,
+      template: "./index.html",
+      fileName: `${id}.html`,
+      owner: { appId: id },
+    })),
+    server: {},
+    runtime: createRuntimePlan(),
+  };
+}
+
 interface LinkerAppFixture {
   id: string;
   entry: string;
@@ -166,7 +209,8 @@ function linkBuildOutput(
       ...input.plan,
       dev: input.plan.dev ?? {
         clientRoutes: [],
-        serverRoutePaths: [],
+        serverRequestRoutePaths: [],
+        serverRenderedPagePaths: [],
         hasPpr: false,
       },
     },
@@ -337,6 +381,24 @@ describe("assertFrameworkManifestShape", () => {
     expect(() =>
       assertFrameworkManifestShape(createMinimalBuildOutput(), "manifest"),
     ).not.toThrow();
+  });
+
+  it("rejects ambiguous runtime path encodings at the manifest boundary", () => {
+    const unicodeBasePath = createMinimalBuildOutput();
+    unicodeBasePath.runtime.server.basePath = "/运行时";
+    expect(() =>
+      assertFrameworkManifestShape(unicodeBasePath, "manifest"),
+    ).toThrow(
+      "[evjs] manifest.runtime.server.basePath must use non-empty ASCII URL-safe segments",
+    );
+
+    const encodedEndpoint = createMinimalBuildOutput();
+    encodedEndpoint.runtime.server.fn = "__evjs/%66n";
+    expect(() =>
+      assertFrameworkManifestShape(encodedEndpoint, "manifest"),
+    ).toThrow(
+      "[evjs] manifest.runtime.server.fn must use non-empty ASCII URL-safe segments",
+    );
   });
 
   it("reports framework manifest shape errors with source paths", () => {
@@ -1652,6 +1714,133 @@ describe("assertFrameworkManifestShape", () => {
         {
           ...createMinimalBuildOutput(),
           server: {
+            entry: "../../outside.js",
+            assets: { js: ["server.js"], css: [] },
+            functions: {},
+            routes: [],
+          },
+        },
+        "manifest",
+      ),
+    ).toThrow(
+      "manifest.server.entry must be a non-empty portable server-relative artifact path",
+    );
+
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...createMinimalBuildOutput(),
+          server: {
+            entry: "server.js",
+            assets: { js: ["server.js", "../outside.js"], css: [] },
+            functions: {},
+            routes: [],
+          },
+        },
+        "manifest",
+      ),
+    ).toThrow(
+      "manifest.server.assets.js[1] must be a non-empty portable server-relative artifact path",
+    );
+
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...createMinimalBuildOutput(),
+          server: {
+            entry: "other.js",
+            assets: { js: ["server.js"], css: [] },
+            functions: {},
+            routes: [],
+          },
+        },
+        "manifest",
+      ),
+    ).toThrow(
+      'manifest.server.entry "other.js" must exactly match one manifest.server.assets.js artifact.',
+    );
+
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...createMinimalBuildOutput(),
+          server: {
+            entry: "chunks/Runtime.js",
+            assets: { js: ["chunks/Runtime.js"], css: [] },
+            functions: {
+              work: {
+                exportName: "work",
+                assets: { js: ["chunks/runtime.js"], css: [] },
+              },
+            },
+            routes: [],
+          },
+        },
+        "manifest",
+      ),
+    ).toThrow(
+      'manifest.server.functions.work.assets.js[0] "chunks/runtime.js" conflicts with manifest.server.assets.js[0] "chunks/Runtime.js"',
+    );
+
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...createMinimalBuildOutput(),
+          server: {
+            entry: "chunks/runtime.js",
+            assets: { js: ["chunks/runtime.js"], css: [] },
+            functions: {
+              work: {
+                exportName: "work",
+                assets: { js: ["chunks/cafe\u0301.js"], css: [] },
+              },
+            },
+            routes: [],
+          },
+        },
+        "manifest",
+      ),
+    ).toThrow(
+      "manifest.server.functions.work.assets.js[0] must be a non-empty portable server-relative artifact path",
+    );
+
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...createMinimalBuildOutput(),
+          server: {
+            entry: "chunks",
+            assets: { js: ["chunks", "chunks/runtime.js"], css: [] },
+            functions: {},
+            routes: [],
+          },
+        },
+        "manifest",
+      ),
+    ).toThrow(
+      'manifest.server.assets.js[1] "chunks/runtime.js" conflicts with manifest.server.assets.js[0] "chunks"',
+    );
+
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...createMinimalBuildOutput(),
+          assets: {
+            browser: {
+              js: ["https://cdn.example.com/app.js", "../browser-entry.js"],
+              css: ["/assets/app.css"],
+            },
+          },
+        },
+        "manifest",
+      ),
+    ).not.toThrow();
+
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...createMinimalBuildOutput(),
+          server: {
             assets: { js: [], css: [] },
             renderers: {
               dashboard: {
@@ -2158,6 +2347,33 @@ describe("assertFrameworkManifestShape", () => {
       ),
     ).toThrow(
       '[evjs] manifest.server.routes[1].path has the same route shape as manifest.server.routes[0].path "/api/users/:id". Use one server route per URL shape.',
+    );
+
+    expect(() =>
+      assertFrameworkManifestShape(
+        {
+          ...createMinimalBuildOutput(),
+          server: {
+            assets: { js: [], css: [] },
+            functions: {},
+            routes: [
+              {
+                path: "/users",
+                methods: ["GET"],
+                assets: { js: [], css: [] },
+              },
+              {
+                path: "/%75sers",
+                methods: ["POST"],
+                assets: { js: [], css: [] },
+              },
+            ],
+          },
+        },
+        "manifest",
+      ),
+    ).toThrow(
+      '[evjs] manifest.server.routes[1].path has the same route shape as manifest.server.routes[0].path "/users". Use one server route per URL shape.',
     );
 
     expect(() =>
@@ -3219,6 +3435,20 @@ describe("linkBuildOutput", () => {
     });
     expect(output.apps.admin.document).toEqual({ fileName: "admin.html" });
 
+    expect(() => linkBuildOutput({ graph, plan })).toThrow(
+      '[evjs] Bundler build facts are missing client BuildPlan entry "admin".',
+    );
+    expect(() =>
+      linkBuildOutput({
+        graph,
+        plan,
+        clientEntryAssets: {
+          renderer: { js: ["renderer.js"], css: [] },
+        },
+      }),
+    ).toThrow(
+      '[evjs] Bundler build facts do not identify client BuildPlan entry "admin". Available stats entrypoints: "renderer".',
+    );
     expect(() =>
       linkBuildOutput({
         graph,
@@ -3228,7 +3458,134 @@ describe("linkBuildOutput", () => {
         },
       }),
     ).toThrow(
-      '[evjs] App "admin" did not produce a client JavaScript asset for build entry "admin".',
+      '[evjs] Bundler build facts for client BuildPlan entry "admin" must declare at least one JavaScript asset.',
+    );
+    expect(() =>
+      linkBuildOutput({
+        graph,
+        plan,
+        clientEntryAssets: {
+          admin: { js: ["runtime.js", "vendor.js"], css: [] },
+        },
+      }),
+    ).toThrow(
+      '[evjs] Bundler build facts for client BuildPlan entry "admin" do not identify one JavaScript entry asset; found 2.',
+    );
+
+    const namedOutput = linkBuildOutput({
+      graph,
+      plan,
+      clientEntryAssets: {
+        admin: { js: ["runtime.js", "admin.123.js"], css: [] },
+      },
+    });
+    expect(namedOutput.apps.admin.module?.href).toBe("admin.123.js");
+  });
+
+  it("isolates empty assets across clientless apps and consecutive links", () => {
+    const graph = createGraphWithApps(["admin", "shop"]);
+    const plan = {
+      ...createPlanWithClientApps(["admin", "shop"]),
+      entries: [],
+    };
+
+    const first = linkBuildOutput({ graph, plan });
+    expect(first.apps.admin.assets).not.toBe(first.apps.shop.assets);
+
+    first.apps.admin.assets.css.push("admin.css");
+
+    expect(first.apps.admin.assets.css).toEqual(["admin.css"]);
+    expect(first.apps.shop.assets).toEqual({ js: [], css: [] });
+
+    const second = linkBuildOutput({ graph, plan });
+    expect(second.apps.admin.assets).toEqual({ js: [], css: [] });
+    expect(second.apps.shop.assets).toEqual({ js: [], css: [] });
+    expect(second.apps.admin.assets).not.toBe(first.apps.admin.assets);
+  });
+
+  it("rejects portable aliases across client entry asset groups", () => {
+    const graph = createGraphWithApps(["admin", "shop"]);
+    const plan = createPlanWithClientApps(["admin", "shop"]);
+
+    expect(() =>
+      linkBuildOutput({
+        graph,
+        plan,
+        clientEntryAssets: {
+          admin: { js: ["chunks/App.js"], css: [] },
+          shop: { js: ["chunks/app.js"], css: [] },
+        },
+      }),
+    ).toThrow(
+      'client BuildPlan entry "shop" asset "chunks/app.js" conflicts with entry "admin" asset "chunks/App.js"',
+    );
+  });
+
+  it("rejects lone surrogate code points in physical artifact paths", () => {
+    const graph = createGraphWithApps(["admin"]);
+    const plan = createPlanWithClientApps(["admin"]);
+
+    expect(() =>
+      linkBuildOutput({
+        graph,
+        plan,
+        clientEntryAssets: {
+          admin: { js: ["asset-\ud800.js"], css: [] },
+        },
+      }),
+    ).toThrow("without empty");
+  });
+
+  it("rejects non-ASCII case and compatibility aliases while allowing caseless Unicode", () => {
+    const graph = createGraphWithApps(["admin"]);
+    const plan = createPlanWithClientApps(["admin"]);
+    const linkAsset = (asset: string) =>
+      linkBuildOutput({
+        graph,
+        plan,
+        clientEntryAssets: { admin: { js: [asset], css: [] } },
+      });
+
+    for (const asset of ["Σ.js", "ς.js", "straße.js", "ﬃ.js"]) {
+      expect(() => linkAsset(asset)).toThrow(
+        "non-ASCII case variants or compatibility-normalized characters",
+      );
+    }
+    expect(linkAsset("资源.js").apps.admin.module?.href).toBe("资源.js");
+  });
+
+  it("requires named facts for an RSC-only client runtime entry", () => {
+    const graph: LinkerFixture = {
+      version: 1,
+      rootDir: "/repo",
+      apps: {},
+      pages: {},
+      routes: [],
+      serverFunctions: [],
+      serverRoutes: [],
+    };
+    const plan: TestBuildPlan = {
+      version: 1,
+      buildId: "rsc-runtime",
+      mode: "production",
+      distDir: "dist",
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
+      entries: [
+        {
+          name: "evjs-rsc-client",
+          import: "@evjs/client/rsc",
+          environment: "client",
+          runtime: "browser",
+          kind: "runtime",
+        },
+      ],
+      html: [],
+      server: createServerPlan(),
+      runtime: createRuntimePlan(),
+    };
+
+    expect(() => linkBuildOutput({ graph, plan })).toThrow(
+      '[evjs] Bundler build facts are missing client BuildPlan entry "evjs-rsc-client".',
     );
   });
 
@@ -3287,7 +3644,7 @@ describe("linkBuildOutput", () => {
         },
       }),
     ).toThrow(
-      '[evjs] Page "home" did not produce a client JavaScript asset for build entry "home".',
+      '[evjs] Bundler build facts for client BuildPlan entry "home" must declare at least one JavaScript asset.',
     );
   });
 
@@ -3343,8 +3700,148 @@ describe("linkBuildOutput", () => {
         },
       }),
     ).toThrow(
-      '[evjs] Server runtime entry "server" did not produce a server JavaScript asset.',
+      '[evjs] Bundler build facts for server BuildPlan entry "server" (server-runtime) must declare exactly one self-contained JavaScript entry asset; found 0.',
     );
+
+    expect(() =>
+      linkBuildOutput({
+        graph,
+        plan,
+        serverEntry: "../../outside.js",
+        serverEntryAssets: {
+          server: { js: ["server.js"], css: [] },
+        },
+      }),
+    ).toThrow(
+      "BuildOutput link input.serverEntry must be a non-empty portable server-relative artifact path",
+    );
+
+    expect(() =>
+      linkBuildOutput({
+        graph,
+        plan,
+        serverEntry: "other.js",
+        serverEntryAssets: {
+          server: { js: ["server.js"], css: [] },
+        },
+      }),
+    ).toThrow(
+      '[evjs] Server runtime entry "other.js" must exactly match one JavaScript artifact emitted for build entry "server".',
+    );
+
+    expect(() =>
+      linkBuildOutput({
+        graph,
+        plan,
+        serverEntryAssets: {
+          server: { js: ["server.js"], css: [] },
+        },
+        serverModules: [
+          {
+            moduleId: "./src/api.ts",
+            assets: { js: ["../../outside.js"], css: [] },
+          },
+        ],
+      }),
+    ).toThrow(
+      "BuildOutput link input.serverModules[0].assets.js[0] must be a non-empty portable server-relative artifact path",
+    );
+
+    const buildEntry: BuildPlan["entries"][number] = {
+      name: "report-server",
+      import: "./src/Report.tsx",
+      environment: "server",
+      runtime: "node",
+      phase: "build",
+      kind: "page-server",
+      owner: { pageId: "report" },
+    };
+    const mixedRootPlan: TestBuildPlan = {
+      ...plan,
+      entries: [...plan.entries, buildEntry],
+      server: {
+        ...plan.server,
+        renderers: [
+          {
+            name: buildEntry.name,
+            import: buildEntry.import,
+            phase: "build",
+            kind: "page-server",
+            owner: buildEntry.owner,
+          },
+        ],
+      },
+    };
+    const mixedRootOutput = linkBuildOutput({
+      graph,
+      plan: mixedRootPlan,
+      serverEntryAssets: {
+        server: { js: ["chunks/runtime.js"], css: [] },
+        "report-server": { js: ["CHUNKS/runtime.js"], css: [] },
+      },
+    });
+    expect(mixedRootOutput.server.entry).toBe("chunks/runtime.js");
+    expect(mixedRootOutput.server.renderers?.["report-server"]).toMatchObject({
+      phase: "build",
+      assets: { js: ["CHUNKS/runtime.js"], css: [] },
+    });
+  });
+
+  it("isolates AssetGroups projected to distinct server owners", () => {
+    const graph: LinkerFixture = {
+      version: 1,
+      rootDir: "/repo",
+      apps: {},
+      pages: {},
+      routes: [],
+      serverFunctions: [
+        {
+          id: "work",
+          module: "./src/work.ts",
+          exportName: "work",
+        },
+      ],
+      serverRoutes: [
+        {
+          id: "health",
+          module: "./src/health.ts",
+          path: "/health",
+          methods: ["GET"],
+        },
+      ],
+    };
+    const plan: TestBuildPlan = {
+      version: 1,
+      buildId: "build",
+      mode: "production",
+      distDir: "dist",
+      output: { clientDir: "dist/client", serverDir: "dist/server" },
+      entries: [createServerRuntimeEntry()],
+      html: [],
+      server: createServerPlan(),
+      runtime: createRuntimePlan(),
+    };
+
+    const output = linkBuildOutput({ graph, plan });
+    const functionAssets = output.server.functions.work?.assets;
+    const routeAssets = output.server.routes[0]?.assets;
+    if (!functionAssets || !routeAssets) {
+      throw new Error("Expected linked server Function and Route assets.");
+    }
+
+    expect(functionAssets).not.toBe(output.server.assets);
+    expect(routeAssets).not.toBe(output.server.assets);
+    expect(routeAssets).not.toBe(functionAssets);
+
+    functionAssets.css.push("work.css");
+
+    expect(functionAssets.css).toEqual(["work.css"]);
+    expect(routeAssets.css).toEqual([]);
+    expect(output.server.assets).toEqual({ js: ["server.js"], css: [] });
+    expect(output.server.entry).toBe("server.js");
+    expect(() =>
+      assertFrameworkManifestShape(output, "linked output"),
+    ).not.toThrow();
   });
 
   it("marks non-partial prerendered server pages as full prerender output", () => {
@@ -3713,7 +4210,8 @@ describe("linkBuildOutput", () => {
       runtime: createRuntimePlan({ ppr: "__evjs/ppr" }),
       dev: {
         clientRoutes: [],
-        serverRoutePaths: [],
+        serverRequestRoutePaths: [],
+        serverRenderedPagePaths: [],
         hasPpr: true,
       },
     });

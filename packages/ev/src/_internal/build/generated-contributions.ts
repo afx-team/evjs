@@ -51,6 +51,10 @@ import {
 } from "./generated/client-entry-source.js";
 import { applyPageWrapperContributions } from "./generated/page-wrapper-contribution.js";
 import { createReactServerPageEntrySource } from "./generated/react-server-page-source.js";
+import {
+  reserveUniquePortableArtifactPath,
+  sanitizePortableArtifactPathSegment,
+} from "./portable-artifact-path.js";
 import { toPosixPath } from "./utils.js";
 
 export const GENERATED_IR_DIR = ".ev";
@@ -238,6 +242,7 @@ class ContributionCollector<TBundlerCfg> {
   private readonly seenImportEdges = new Set<string>();
   private readonly refs = new Map<string, InternalGeneratedModule>();
   private readonly seenKeys = new Map<string, string>();
+  private readonly usedGeneratedModulePathKeys = new Set<string>();
 
   constructor(
     private readonly options: {
@@ -694,19 +699,15 @@ class ContributionCollector<TBundlerCfg> {
     extension: string;
   }): InternalGeneratedModule {
     const pluginSlug = sanitizePluginPathSegment(input.pluginName);
-    const idSlug = sanitizePathSegment(input.id);
-    let specifierSlug = idSlug;
-    let file = `./${GENERATED_IR_DIR}/plugins/${pluginSlug}/${specifierSlug}${input.extension}`;
-    let specifier = `evjs:generated/${pluginSlug}/${specifierSlug}`;
-    if (
-      this.modules.some(
-        (module) => module.file === file || module.specifier === specifier,
-      )
-    ) {
-      specifierSlug = `${idSlug}-${shortHash(input.key)}`;
-      file = `./${GENERATED_IR_DIR}/plugins/${pluginSlug}/${specifierSlug}${input.extension}`;
-      specifier = `evjs:generated/${pluginSlug}/${specifierSlug}`;
-    }
+    const idSlug = sanitizePortableArtifactPathSegment(input.id);
+    const specifierPath = reserveUniquePortableArtifactPath(
+      this.usedGeneratedModulePathKeys,
+      (attempt) =>
+        `${pluginSlug}/${collisionSafeArtifactStem(idSlug, input.key, attempt)}`,
+      `Plugin "${input.pluginName}" generated module "${input.id}" artifact path`,
+    );
+    const file = `./${GENERATED_IR_DIR}/plugins/${specifierPath}${input.extension}`;
+    const specifier = `evjs:generated/${specifierPath}`;
     return {
       key: input.key,
       id: input.id,
@@ -1712,22 +1713,22 @@ function isPathLikeSpecifier(cwd: string, specifier: string): boolean {
 }
 
 function uniqueEntryFileName(name: string, used: Set<string>): string {
-  const base = sanitizePathSegment(name);
-  let fileName = `${base}.ts`;
-  if (!used.has(fileName)) {
-    used.add(fileName);
-    return fileName;
-  }
-  fileName = `${base}-${shortHash(name)}.ts`;
-  used.add(fileName);
-  return fileName;
+  const base = sanitizePortableArtifactPathSegment(name);
+  return reserveUniquePortableArtifactPath(
+    used,
+    (attempt) => `${collisionSafeArtifactStem(base, name, attempt)}.ts`,
+    `Generated entry "${name}" artifact path`,
+  );
 }
 
-function sanitizePathSegment(value: string): string {
-  const sanitized = value
-    .replace(/[^a-zA-Z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  return sanitized || "generated";
+function collisionSafeArtifactStem(
+  base: string,
+  identity: string,
+  attempt: number,
+): string {
+  if (attempt === 0) return base;
+  const suffix = shortHash(identity);
+  return attempt === 1 ? `${base}-${suffix}` : `${base}-${suffix}-${attempt}`;
 }
 
 function sanitizePluginPathSegment(value: string): string {
@@ -1739,7 +1740,7 @@ function sanitizePluginPathSegment(value: string): string {
   const segments = normalized
     .replace(/:/g, "/")
     .split(/[\\/]+/)
-    .map(sanitizePathSegment)
+    .map(sanitizePortableArtifactPathSegment)
     .filter(Boolean);
   return segments.join("/") || "generated";
 }

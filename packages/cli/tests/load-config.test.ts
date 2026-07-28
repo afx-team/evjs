@@ -29,14 +29,14 @@ describe("loadConfig", () => {
       "ev.config.ts": `
         import { defineConfig } from "@evjs/ev";
         export default defineConfig({
-          routing: { mode: "spa", dir: "./src/from-ts-pages" },
+          routing: { mode: "spa", mount: "#root" },
         });
       `,
     });
 
     expect(path.basename(resolveConfigPath(cwd) ?? "")).toBe("ev.config.ts");
     await expect(loadConfig(cwd)).resolves.toMatchObject({
-      routing: { mode: "spa", dir: "./src/from-ts-pages" },
+      routing: { mode: "spa", mount: "#root" },
     });
   });
 });

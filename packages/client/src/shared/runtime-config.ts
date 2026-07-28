@@ -1,5 +1,7 @@
 import {
   BUILD_IDENTIFIER_DESCRIPTION,
+  formatConcreteRuntimePathSegmentValidationError,
+  getConcreteRuntimePathSegmentValidationError,
   getPathPatternValidationError,
   getUrlStringValidationError,
   isBuildIdentifier,
@@ -482,6 +484,12 @@ function assertRuntimeEndpoint(
   const error = getPathPatternValidationError(`/${value}`);
   if (error) {
     throw new Error(`[evjs] ${source} ${formatRuntimePathnameError(error)}`);
+  }
+  const segmentError = getConcreteRuntimePathSegmentValidationError(value);
+  if (segmentError) {
+    throw new Error(
+      `[evjs] ${source} ${formatConcreteRuntimePathSegmentValidationError(segmentError)}`,
+    );
   }
 }
 

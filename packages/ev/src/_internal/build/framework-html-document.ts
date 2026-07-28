@@ -21,6 +21,7 @@ export function createFrameworkHtmlDocument<TBundlerCfg>(options: {
   const { cwd, config, output, plan, html, clientRuntime } = options;
   const doc = generateHtml({
     template: path.resolve(cwd, html.template),
+    publicPath: output.publicPath,
     js: withHtmlAssetCrossOrigin(
       html.assets.js,
       config.output.crossOriginLoading,

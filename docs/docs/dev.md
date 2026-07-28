@@ -28,11 +28,12 @@ retargets the SPA fallback to the actual listener before reporting readiness,
 so requests cannot fall through to another app still listening on the
 configured port.
 
-Only one dev session can own a project directory at a time. Starting `ev dev`
-twice for the same app exits early with the existing process ID instead of
-letting both processes overwrite `.ev` and `dist`. Different project
-directories can run concurrently and coordinate their port reservations across
-processes.
+Only one dev session can own a project directory at a time. The same project
+also cannot run `ev dev`, `ev prepare`, or `ev build` concurrently. A competing
+command exits early with the active operation and process ID instead of letting
+the processes overwrite `.ev`, route types, `dist`, or deployment artifacts.
+Different project directories can run concurrently and coordinate their port
+reservations across processes.
 
 The client and API development servers listen on IPv4 interfaces and can be
 opened through both `http://localhost:<port>` and
@@ -44,13 +45,19 @@ service workers are not shared between them. With custom HTTPS certificates,
 include both addresses in the certificate's subject alternative names when
 both URLs are needed.
 
-The client dev server proxies server runtime paths to the server dev runtime.
-By default those paths come from `server.basePath`, including `/__evjs/fn`,
-`/__evjs/ppr`, and `/__evjs/rsc`.
+The client dev server derives its proxy boundary from the active `BuildPlan`.
+It proxies requests matching discovered server request Route patterns and
+request-time `render: "ssr"` Page patterns, plus only the runtime endpoints
+present in that plan. Full SSG Pages stay on the static dev host at their
+canonical route after development prerendering. The server-function and RSC
+endpoints are exact paths; the PPR endpoint owns its rooted region subtree only
+while PPR is active. `server.basePath` itself and unmatched descendants of an
+exact endpoint remain available to the SPA.
 
-SPA history fallback does not catch `/api` or the derived server runtime
-paths. A mistyped server request therefore returns a server/proxy 404 instead of
-the app HTML.
+`/api` has no implicit server meaning. It bypasses SPA history fallback only
+when a discovered server route or an explicit `dev.proxy` rule claims it;
+otherwise `/api/*` remains available to the client route tree like any other
+SPA path.
 
 ```mermaid
 flowchart TB
@@ -59,7 +66,7 @@ flowchart TB
   subgraph ClientSide["Client dev server :3000"]
     HTML["HTML + browser bundle"]
     HMR["HMR websocket"]
-    Proxy["/__evjs/* proxy"]
+    Proxy["BuildPlan route + runtime proxy"]
   end
 
   subgraph ServerSide["Server dev runtime :3001"]
@@ -135,7 +142,8 @@ paths, so app-specific API proxies can keep their own routing behavior.
 1. The client dev server serves browser code and HMR.
 2. Server functions, server file routes, SSR, PPR, and RSC requests are routed
    to the server dev runtime.
-3. Paths derived from `server.basePath` are proxied automatically.
+3. Exact fn/RSC endpoints and active PPR subtrees from the BuildPlan are proxied
+   automatically; `server.basePath` is not itself a proxy namespace.
 4. Browser and server rebuilds happen as files change; restart `ev dev` after
    changing configured entries or route roots.
 
@@ -177,8 +185,9 @@ The default HTTP transport works without app code. Call `initTransport()` at app
 startup only when you need to customize the built-in HTTP adapter or replace it
 with a custom adapter.
 
-- In **dev mode**, the client dev server proxies server runtime paths such as
-  `/__evjs/fn`, `/__evjs/ppr`, and `/__evjs/rsc` to the server dev runtime.
+- In **dev mode**, the client dev server proxies the exact server-function
+  endpoint, the exact RSC endpoint when RSC is active, and the PPR subtree when
+  PPR is active to the server dev runtime.
 - In **production**, client and server are typically on the same origin.
 - Use `transport.baseUrl` when browser-initiated server function requests should
   target a different origin.

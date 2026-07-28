@@ -110,79 +110,89 @@ export function createApp(options?: CreateAppOptions): Hono {
 
   // Mount server function endpoint. Request size policy can move to
   // user/deployment middleware when an app needs a different limit.
-  app.post(
-    endpoint,
-    bodyLimit({
-      maxSize: maxServerFunctionBodySize,
-      onError: (c) => c.json(createServerFunctionBodyTooLargeResponse(), 413),
-    }),
-    async (c) => {
-      if (!isServerFunctionJsonRequest(c.req.raw)) {
-        return c.json(createUnsupportedServerFunctionMediaTypeResponse(), 415);
-      }
-
-      let body: unknown;
-
-      try {
-        body = await c.req.json();
-      } catch (err) {
-        if (isBodyLimitError(err)) {
-          return c.json(createServerFunctionBodyTooLargeResponse(), 413);
+  for (const endpointPath of exactRuntimePathVariants(endpoint)) {
+    app.post(
+      endpointPath,
+      bodyLimit({
+        maxSize: maxServerFunctionBodySize,
+        onError: (c) => c.json(createServerFunctionBodyTooLargeResponse(), 413),
+      }),
+      async (c) => {
+        if (!isServerFunctionJsonRequest(c.req.raw)) {
+          return c.json(
+            createUnsupportedServerFunctionMediaTypeResponse(),
+            415,
+          );
         }
-        return c.json(createMalformedServerFunctionRequestBodyResponse(), 400);
+
+        let body: unknown;
+
+        try {
+          body = await c.req.json();
+        } catch (err) {
+          if (isBodyLimitError(err)) {
+            return c.json(createServerFunctionBodyTooLargeResponse(), 413);
+          }
+          return c.json(
+            createMalformedServerFunctionRequestBodyResponse(),
+            400,
+          );
+        }
+
+        const response = isRecord(body)
+          ? await dispatch(body.fnId, readServerFunctionArgs(body))
+          : createInvalidServerFunctionRequest();
+
+        const status = "error" in response ? response.status : 200;
+        const payload =
+          "error" in response
+            ? {
+                error: response.error,
+                fnId: response.fnId,
+                status: response.status,
+                data: response.data,
+              }
+            : { result: response.result };
+
+        return createServerFunctionJsonResponse(
+          c,
+          payload,
+          status,
+          "error" in response
+            ? response.fnId
+            : isRecord(body)
+              ? getRequestFnId(body.fnId)
+              : "",
+        );
+      },
+    );
+    app.all(endpointPath, (c) => {
+      const payload = createServerFunctionMethodNotAllowedResponse();
+      if (c.req.method === "HEAD") {
+        return new Response(null, {
+          status: 405,
+          headers: {
+            Allow: "POST",
+            "Content-Type": APPLICATION_JSON_CONTENT_TYPE,
+          },
+        });
       }
-
-      const response = isRecord(body)
-        ? await dispatch(body.fnId, readServerFunctionArgs(body))
-        : createInvalidServerFunctionRequest();
-
-      const status = "error" in response ? response.status : 200;
-      const payload =
-        "error" in response
-          ? {
-              error: response.error,
-              fnId: response.fnId,
-              status: response.status,
-              data: response.data,
-            }
-          : { result: response.result };
-
-      return createServerFunctionJsonResponse(
-        c,
-        payload,
-        status,
-        "error" in response
-          ? response.fnId
-          : isRecord(body)
-            ? getRequestFnId(body.fnId)
-            : "",
-      );
-    },
-  );
-  app.all(endpoint, (c) => {
-    const payload = createServerFunctionMethodNotAllowedResponse();
-    if (c.req.method === "HEAD") {
-      return new Response(null, {
-        status: 405,
-        headers: {
-          Allow: "POST",
-          "Content-Type": APPLICATION_JSON_CONTENT_TYPE,
-        },
-      });
-    }
-    return c.json(payload, 405, { Allow: "POST" });
-  });
+      return c.json(payload, 405, { Allow: "POST" });
+    });
+  }
 
   const rscPath =
     framework?.rsc && framework.runtime.runtime.server.rsc
       ? toRuntimePathname(framework.runtime.runtime.server.rsc)
       : undefined;
   if (framework?.rsc && rscPath) {
-    app.all(rscPath, async (c, next) => {
-      const response = await handleRscFlightRequest(framework, c.req.raw);
-      if (!response) return next();
-      return response;
-    });
+    for (const endpointPath of exactRuntimePathVariants(rscPath)) {
+      app.all(endpointPath, async (c, next) => {
+        const response = await handleRscFlightRequest(framework, c.req.raw);
+        if (!response) return next();
+        return response;
+      });
+    }
   }
 
   if (framework?.render) {
@@ -535,6 +545,11 @@ function assertRouteHandler(route: RouteHandler, index: number): void {
 
 function toRuntimePathname(endpoint: string): string {
   return endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+}
+
+/** One optional trailing slash is part of the shared exact-path semantics. */
+function exactRuntimePathVariants(pathname: string): string[] {
+  return pathname === "/" ? [pathname] : [pathname, `${pathname}/`];
 }
 
 function formatRoutePathError(error: PathPatternValidationError): string {

@@ -28,6 +28,7 @@ import { createBuildResult } from "./build-result.js";
 import {
   type BundlerAdapter,
   type BundlerDevController,
+  isEmptyBuildPlanUpdate,
   preflightBundlerBuild,
   preflightBundlerDevUpdate,
 } from "./bundler.js";
@@ -37,21 +38,30 @@ import {
   withServerConventionDefaults,
   withServerRoutingDefaults,
 } from "./convention-config.js";
+import { DevApiProcessController } from "./dev-api-process.js";
 import {
   API_READY_MARKER,
   type ApiProcess,
   acquireDevSessionLock,
+  acquireProjectOperationLock,
   assertNoActiveDevDistLock,
   assertNoActiveDevSessionLock,
   type DevPortReservation,
   type DevRuntimeRelease,
-  findDevServerEntry,
+  findDevServerBundlePath,
   forwardApiOutput,
+  type ProjectOperation,
   reserveDevPorts,
   stopApiProcess,
   waitForApiReady,
   writeDevDistLock,
 } from "./dev-runtime.js";
+import {
+  collectServerRouteWatchState,
+  listConfigDependencyFiles,
+  type ServerRouteWatchState,
+  watchFiles,
+} from "./dev-watch.js";
 import {
   linkAndEmitBuildOutput,
   validateHtmlTemplates,
@@ -59,6 +69,10 @@ import {
 import type { createFrameworkRuntime } from "./framework-runtime.js";
 import { GENERATED_IR_DIR } from "./generated-contributions.js";
 import type { createCoreGraph } from "./graph/index.js";
+import {
+  removeOwnedOutputFile,
+  writeOwnedOutputFile,
+} from "./owned-file-output.js";
 import {
   collectGeneratedPageRouteTypeFiles,
   getPageRouteTypesPath,
@@ -79,30 +93,85 @@ import {
   runConfigHooks,
   runDisposeHooks,
 } from "./plugin-lifecycle.js";
-import { isInsideCwd, isRealPathInsideCwd } from "./utils.js";
+import { isInsideCwd } from "./utils.js";
 
 const logger = getLogger(["evjs", "ev"]);
 
 const DEV_PAGE_RENDER_PROXY_HEADER = "x-evjs-dev-page-render";
 const DEV_DIST_DIR = "dist";
-const devExitCleanups = new Set<() => void>();
+const runtimeExitCleanups = new Set<() => void>();
 
-function runDevExitCleanups(): void {
-  for (const cleanup of devExitCleanups) cleanup();
+function runRuntimeExitCleanups(): void {
+  for (const cleanup of [...runtimeExitCleanups].reverse()) cleanup();
 }
 
-function registerDevExitCleanup(cleanup: () => void): () => void {
-  if (devExitCleanups.size === 0) {
-    process.once("exit", runDevExitCleanups);
+function registerRuntimeExitCleanup(cleanup: () => void): () => void {
+  if (runtimeExitCleanups.size === 0) {
+    process.once("exit", runRuntimeExitCleanups);
   }
-  devExitCleanups.add(cleanup);
+  runtimeExitCleanups.add(cleanup);
 
   return () => {
-    devExitCleanups.delete(cleanup);
-    if (devExitCleanups.size === 0) {
-      process.off("exit", runDevExitCleanups);
+    runtimeExitCleanups.delete(cleanup);
+    if (runtimeExitCleanups.size === 0) {
+      process.off("exit", runRuntimeExitCleanups);
     }
   };
+}
+
+async function releaseRegisteredRuntimeLock(
+  release: DevRuntimeRelease,
+  unregisterExitCleanup: () => void,
+): Promise<void> {
+  try {
+    await release();
+  } finally {
+    unregisterExitCleanup();
+  }
+}
+
+async function withRegisteredRuntimeLock<T>(options: {
+  release: DevRuntimeRelease;
+  unregisterExitCleanup: () => void;
+  run: () => Promise<T>;
+  cleanupErrorMessage: string;
+}): Promise<T> {
+  let result: T;
+  try {
+    result = await options.run();
+  } catch (error) {
+    return rethrowAfterCleanup(
+      error,
+      () =>
+        releaseRegisteredRuntimeLock(
+          options.release,
+          options.unregisterExitCleanup,
+        ),
+      options.cleanupErrorMessage,
+    );
+  }
+  await releaseRegisteredRuntimeLock(
+    options.release,
+    options.unregisterExitCleanup,
+  );
+  return result;
+}
+
+async function withProjectOperationLock<T>(
+  cwd: string,
+  operation: ProjectOperation,
+  run: () => Promise<T>,
+): Promise<T> {
+  const release = await acquireProjectOperationLock(cwd, operation);
+  const unregisterExitCleanup = registerRuntimeExitCleanup(() =>
+    release.sync(),
+  );
+  return withRegisteredRuntimeLock({
+    release,
+    unregisterExitCleanup,
+    run,
+    cleanupErrorMessage: `[evjs] ${operation} failed and its project operation lock cleanup also failed.`,
+  });
 }
 
 export interface DevOptions<TBundlerCfg = DefaultBundlerConfig> {
@@ -170,30 +239,20 @@ interface InternalPreparedFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>
   pluginContext: PluginContext<TBundlerCfg>;
 }
 
-function isEmptyPlanUpdate(update: BuildPlanUpdate): boolean {
-  return (
-    update.entries.added.length === 0 &&
-    update.entries.removed.length === 0 &&
-    update.entries.changed.length === 0 &&
-    update.html.added.length === 0 &&
-    update.html.removed.length === 0 &&
-    update.html.changed.length === 0 &&
-    !update.generatedChanged &&
-    !update.resolveChanged &&
-    !update.runtimeChanged &&
-    !update.deliveryChanged &&
-    !update.serverChanged
-  );
-}
-
 interface GeneratedDevStateSnapshot {
   commit(): Promise<void>;
   restore(): Promise<void>;
 }
 
+interface DevApiRuntimeState<TBundlerCfg> {
+  config: ResolvedFrameworkConfig<TBundlerCfg>;
+  frameworkRuntime: ReturnType<typeof createFrameworkRuntime> | undefined;
+  plan: BuildPlan;
+  serverEntry: string | undefined;
+}
+
 async function createGeneratedDevStateSnapshot(
   cwd: string,
-  nextPageRoot: string | undefined,
 ): Promise<GeneratedDevStateSnapshot> {
   const snapshotRoot = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), "evjs-dev-state-"),
@@ -210,21 +269,8 @@ async function createGeneratedDevStateSnapshot(
       });
     }
 
-    const generatedRouteTypeFiles =
-      await collectGeneratedPageRouteTypeFiles(cwd);
-    for (const file of generatedRouteTypeFiles) {
-      routeTypeFiles.set(file, await fs.promises.readFile(file));
-    }
-
-    if (nextPageRoot) {
-      const nextRouteTypesFile = getPageRouteTypesPath(cwd, nextPageRoot).file;
-      if (!routeTypeFiles.has(nextRouteTypesFile)) {
-        routeTypeFiles.set(
-          nextRouteTypesFile,
-          await readFileIfExists(nextRouteTypesFile),
-        );
-      }
-    }
+    const routeTypesFile = getPageRouteTypesPath(cwd).file;
+    routeTypeFiles.set(routeTypesFile, await readFileIfExists(routeTypesFile));
 
     let settled = false;
     return {
@@ -294,15 +340,15 @@ async function restorePageRouteTypes(
     ...routeTypeFiles.keys(),
   ]);
   await Promise.all(
-    [...filesToRemove].map((file) => fs.promises.rm(file, { force: true })),
+    [...filesToRemove].map((file) =>
+      removeOwnedOutputFile(cwd, file, "Page route types rollback"),
+    ),
   );
   await Promise.all(
     [...routeTypeFiles].flatMap(([file, source]) => {
       if (!source) return [];
       return [
-        fs.promises
-          .mkdir(path.dirname(file), { recursive: true })
-          .then(() => fs.promises.writeFile(file, source)),
+        writeOwnedOutputFile(cwd, file, source, "Page route types rollback"),
       ];
     }),
   );
@@ -380,144 +426,6 @@ function formatGraphDiagnostic(diagnostic: {
     .join(":");
 
   return location ? `${location} - ${diagnostic.message}` : diagnostic.message;
-}
-
-function listConfigDependencyFiles(cwd: string): string[] {
-  return ["ev.config.ts", "ev.config.js", "ev.config.mjs"]
-    .map((file) => path.resolve(cwd, file))
-    .filter((file) => fs.existsSync(file));
-}
-
-function watchFiles(
-  files: string[],
-  onChange: (file: string) => void,
-  recoverableMissingTargets: ReadonlySet<string> = new Set(),
-): () => void {
-  const watchers: fs.FSWatcher[] = [];
-
-  for (const file of [...new Set(files)]) {
-    const targetExists = fs.existsSync(file);
-    const recoverMissingTarget = recoverableMissingTargets.has(file);
-    const watchTarget =
-      targetExists || !recoverMissingTarget
-        ? file
-        : findNearestExistingAncestor(file);
-    if (!watchTarget) continue;
-    try {
-      watchers.push(
-        fs.watch(watchTarget, (_eventType, filename) => {
-          if (
-            !targetExists &&
-            recoverMissingTarget &&
-            !watchEventCanCreateTarget(watchTarget, file, filename)
-          ) {
-            return;
-          }
-          onChange(file);
-        }),
-      );
-    } catch {
-      // The file may have been removed between graph analysis and watcher
-      // setup. The next config or graph change will rebuild the watch list.
-    }
-  }
-
-  return () => {
-    for (const watcher of watchers) {
-      watcher.close();
-    }
-  };
-}
-
-function findNearestExistingAncestor(target: string): string | undefined {
-  let current = path.dirname(target);
-  while (current !== path.dirname(current)) {
-    if (fs.existsSync(current)) return current;
-    current = path.dirname(current);
-  }
-  return fs.existsSync(current) ? current : undefined;
-}
-
-function watchEventCanCreateTarget(
-  watchedAncestor: string,
-  target: string,
-  filename: string | Buffer | null,
-): boolean {
-  if (filename === null) return true;
-  const changed = path.resolve(watchedAncestor, filename.toString());
-  return isInsideCwd(target, changed) || isInsideCwd(changed, target);
-}
-
-interface ServerRouteWatchState {
-  dependencies: string[];
-  unsafeBoundary?: string;
-}
-
-async function collectServerRouteWatchState<TBundlerCfg>(
-  cwd: string,
-  config: ResolvedConfig<TBundlerCfg>,
-): Promise<ServerRouteWatchState> {
-  if (!config.server.routing) return { dependencies: [] };
-  const root = path.resolve(cwd, config.server.routing.dir);
-  if (!isInsideCwd(cwd, root)) return { dependencies: [] };
-
-  const directories = new Set([root]);
-  try {
-    if (!(await isRealPathInsideCwd(cwd, root))) {
-      const fallback = await findSafeLexicalWatchFallback(cwd, root);
-      return {
-        dependencies: fallback ? [fallback.ancestor] : [],
-        ...(fallback ? { unsafeBoundary: fallback.boundary } : {}),
-      };
-    }
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
-    return { dependencies: [...directories] };
-  }
-
-  async function visit(current: string): Promise<void> {
-    let entries: fs.Dirent[];
-    try {
-      entries = await fs.promises.readdir(current, { withFileTypes: true });
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === "ENOENT" || code === "ENOTDIR") return;
-      throw error;
-    }
-
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-      const absolute = path.join(current, entry.name);
-      directories.add(absolute);
-      await visit(absolute);
-    }
-  }
-
-  await visit(root);
-  return { dependencies: [...directories].sort() };
-}
-
-async function findSafeLexicalWatchFallback(
-  cwd: string,
-  target: string,
-): Promise<{ ancestor: string; boundary: string } | undefined> {
-  let boundary = target;
-  let current = path.dirname(target);
-  while (isInsideCwd(cwd, current)) {
-    try {
-      if (await isRealPathInsideCwd(cwd, current)) {
-        return { ancestor: current, boundary };
-      }
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
-    }
-    if (current === cwd) return undefined;
-    boundary = current;
-    current = path.dirname(current);
-  }
-  return undefined;
 }
 
 async function prepareInternalFrameworkBuild<
@@ -644,16 +552,19 @@ export async function prepareFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
   userConfig?: Config<TBundlerCfg>,
   options: PrepareFrameworkBuildOptions<TBundlerCfg> = {},
 ): Promise<PreparedFrameworkBuild<TBundlerCfg>> {
-  const prepared = await prepareInternalFrameworkBuild(userConfig, options);
-  return {
-    cwd: prepared.cwd,
-    mode: prepared.mode,
-    command: prepared.command,
-    config: prepared.config,
-    fileDependencies: prepared.fileDependencies,
-    pluginWatchFiles: prepared.pluginWatchFiles,
-    dispose: prepared.dispose,
-  };
+  const cwd = options.cwd ?? process.cwd();
+  return withProjectOperationLock(cwd, "prepare", async () => {
+    const prepared = await prepareInternalFrameworkBuild(userConfig, options);
+    return {
+      cwd: prepared.cwd,
+      mode: prepared.mode,
+      command: prepared.command,
+      config: prepared.config,
+      fileDependencies: prepared.fileDependencies,
+      pluginWatchFiles: prepared.pluginWatchFiles,
+      dispose: prepared.dispose,
+    };
+  });
 }
 
 function formatDevServerReady(
@@ -771,18 +682,17 @@ export async function dev<TBundlerCfg = DefaultBundlerConfig>(
 ): Promise<void> {
   const cwd = options?.cwd ?? process.cwd();
   const releaseDevSessionLock = await acquireDevSessionLock(cwd);
-  const unregisterDevSessionExitCleanup = registerDevExitCleanup(() =>
+  const unregisterDevSessionExitCleanup = registerRuntimeExitCleanup(() =>
     releaseDevSessionLock.sync(),
   );
-  try {
-    await runDev(userConfig, options);
-  } finally {
-    try {
-      await releaseDevSessionLock();
-    } finally {
-      unregisterDevSessionExitCleanup();
-    }
-  }
+  return withRegisteredRuntimeLock({
+    release: releaseDevSessionLock,
+    unregisterExitCleanup: unregisterDevSessionExitCleanup,
+    run: () =>
+      withProjectOperationLock(cwd, "dev", () => runDev(userConfig, options)),
+    cleanupErrorMessage:
+      "[evjs] Dev failed and its session lock cleanup also failed.",
+  });
 }
 
 async function runDev<TBundlerCfg = DefaultBundlerConfig>(
@@ -827,7 +737,7 @@ async function runDev<TBundlerCfg = DefaultBundlerConfig>(
     requestedConfig.server.dev.port,
   );
   const resolvedConfig = withReservedDevPorts(requestedConfig, devPorts);
-  const unregisterDevPortsExitCleanup = registerDevExitCleanup(() =>
+  const unregisterDevPortsExitCleanup = registerRuntimeExitCleanup(() =>
     devPorts.releaseSync(),
   );
 
@@ -915,7 +825,6 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       "[evjs] Dev initialization failed and plugin cleanup also failed.",
     );
   }
-  let apiProcess: ApiProcess | null = null;
   let restartQueue: Promise<void> = Promise.resolve();
   let devUpdateQueue: Promise<void> = Promise.resolve();
   let devController: BundlerDevController<TBundlerCfg> | undefined;
@@ -927,100 +836,110 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
   let activeFrameworkRuntime:
     | ReturnType<typeof createFrameworkRuntime>
     | undefined;
+  let activeServerEntry: string | undefined;
   const expectedApiExits = new WeakSet<ApiProcess>();
+  const apiProcessController = new DevApiProcessController<ApiProcess>({
+    expectExit(process) {
+      expectedApiExits.add(process);
+    },
+    requestStop(process) {
+      process.kill();
+    },
+    stop: stopApiProcess,
+  });
   let resolveShutdown: (() => void) | undefined;
   const waitForShutdown = new Promise<void>((resolve) => {
     resolveShutdown = resolve;
   });
 
   const stopApiOnParentShutdown = () => {
-    if (apiProcess) {
-      expectedApiExits.add(apiProcess);
-      apiProcess.kill();
-      apiProcess = null;
-    }
+    apiProcessController.requestStop();
     resolveShutdown?.();
   };
 
   process.once("SIGINT", stopApiOnParentShutdown);
   process.once("SIGTERM", stopApiOnParentShutdown);
 
-  const restartApiServer = async () => {
-    const serverEntry = await findDevServerEntry(cwd, activePlan.distDir);
-    if (!serverEntry) return;
+  const captureApiRuntimeState = (): DevApiRuntimeState<TBundlerCfg> => ({
+    config: activeConfig,
+    frameworkRuntime: activeFrameworkRuntime,
+    plan: activePlan,
+    serverEntry: activeServerEntry,
+  });
 
-    if (apiProcess) {
-      logger.info`Restarting API server...`;
-      const oldProcess = apiProcess;
-      expectedApiExits.add(oldProcess);
-      try {
-        await stopApiProcess(oldProcess);
-      } catch {}
-      if (apiProcess === oldProcess) {
-        apiProcess = null;
-      }
-    }
+  const restartApiServer = async (
+    state: DevApiRuntimeState<TBundlerCfg>,
+  ): Promise<boolean> => {
+    const serverBundlePath = await findDevServerBundlePath(
+      cwd,
+      state.plan.output.serverDir,
+      state.serverEntry,
+    );
+    if (!serverBundlePath) return false;
 
     const serverPort =
-      activeConfig.server?.dev?.port ?? CONFIG_DEFAULTS.serverPort;
-    logger.info`Server bundle detected, starting API...`;
+      state.config.server?.dev?.port ?? CONFIG_DEFAULTS.serverPort;
 
-    const devRootDir = path.resolve(cwd, activePlan.distDir);
+    const devRootDir = path.resolve(cwd, state.plan.distDir);
     const bootstrapPath = path.join(devRootDir, "_dev_start.cjs");
     try {
-      const serverBundlePath = path.join(devRootDir, "server", serverEntry);
-
-      if (!fs.existsSync(path.dirname(bootstrapPath))) {
-        fs.mkdirSync(path.dirname(bootstrapPath), { recursive: true });
-      }
-      fs.writeFileSync(
+      await writeOwnedOutputFile(
+        cwd,
         bootstrapPath,
         [
           `(async () => {`,
           `const path = require("node:path");`,
           `const { pathToFileURL } = require("node:url");`,
-          `globalThis.__EVJS_FRAMEWORK_RUNTIME__ = ${JSON.stringify(activeFrameworkRuntime, null, 2)};`,
+          `globalThis.__EVJS_FRAMEWORK_RUNTIME__ = ${JSON.stringify(state.frameworkRuntime, null, 2)};`,
           `globalThis.__EVJS_DEV_PAGE_RENDER_PROXY_HEADER__ = ${JSON.stringify(DEV_PAGE_RENDER_PROXY_HEADER)};`,
           `const serverDir = path.dirname(${JSON.stringify(serverBundlePath)});`,
           `globalThis.__EVJS_SERVER_MODULE_LOADER__ = async (asset) => { const mod = await import(pathToFileURL(path.resolve(serverDir, asset)).href); const nested = mod && typeof mod.default === "object" ? mod.default : undefined; return nested && ("default" in nested || "render" in nested) ? nested : mod; };`,
           `const serverModule = await import(${JSON.stringify(pathToFileURL(serverBundlePath).href)});`,
           `const handler = serverModule.default?.default ?? serverModule.default ?? serverModule;`,
           `const { serve } = require("@evjs/ev/_internal/server/node");`,
-          `const server = serve({ fetch: handler.fetch }, { port: ${serverPort}, host: "0.0.0.0", https: ${JSON.stringify(activeConfig.server?.dev?.https ?? false)} });`,
+          `const server = serve({ fetch: handler.fetch }, { port: ${serverPort}, host: "0.0.0.0", https: ${JSON.stringify(state.config.server?.dev?.https ?? false)} });`,
           `const ready = () => console.log(${JSON.stringify(API_READY_MARKER)});`,
           `if (server.listening) ready(); else server.once("listening", ready);`,
           `server.once("error", (err) => { console.error(err); process.exit(1); });`,
           `})().catch((err) => { console.error(err); process.exit(1); });`,
         ].join("\n"),
+        "Dev server bootstrap output",
       );
 
-      const child = execa("node", [bootstrapPath], {
-        stdio: ["inherit", "pipe", "pipe"],
-        env: { ...process.env, NODE_ENV: "development" },
-      });
-      apiProcess = child;
-      forwardApiOutput(child);
-
-      child.catch((err) => {
-        if (expectedApiExits.has(child)) return;
-        if (apiProcess === child) {
-          apiProcess = null;
-          logger.error`API server process exited unexpectedly: ${err}`;
-        }
-      });
-      await waitForApiReady(child);
-      const serverProtocol = activeConfig.server.dev.https ? "https" : "http";
+      if (apiProcessController.process) {
+        logger.info`Restarting API server...`;
+      }
+      logger.info`Server bundle detected, starting API...`;
+      await apiProcessController.replace(() => {
+        const child = execa("node", [bootstrapPath], {
+          stdio: ["inherit", "pipe", "pipe"],
+          env: { ...process.env, NODE_ENV: "development" },
+        });
+        forwardApiOutput(child);
+        child.catch((err) => {
+          if (expectedApiExits.has(child)) return;
+          if (apiProcessController.clearUnexpectedExit(child)) {
+            logger.error`API server process exited unexpectedly: ${err}`;
+          }
+        });
+        return child;
+      }, waitForApiReady);
+      const serverProtocol = state.config.server.dev.https ? "https" : "http";
       const serverOrigin = `${serverProtocol}://localhost:${serverPort}`;
       logger.info`${["API server listening at:", ...formatDevServerAddresses(serverOrigin)].join("\n")}`;
+      return true;
     } catch (err) {
       logger.error`Server runtime failed: ${err}`;
-      apiProcess = null;
       throw err;
     }
   };
 
   const handleServerBundleReady = async () => {
-    restartQueue = restartQueue.catch(() => {}).then(restartApiServer);
+    const state = captureApiRuntimeState();
+    restartQueue = restartQueue
+      .catch(() => {})
+      .then(() => restartApiServer(state))
+      .then(() => {});
     await restartQueue;
   };
 
@@ -1230,10 +1149,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       ]);
 
     try {
-      generatedStateSnapshot = await createGeneratedDevStateSnapshot(
-        cwd,
-        nextConfig.routing?.dir ?? nextConfig.application?.pageRoot,
-      );
+      generatedStateSnapshot = await createGeneratedDevStateSnapshot(cwd);
       const { analysis: nextAnalysis, plan: nextPlan } =
         await analyzeAndMaterializeFrameworkIR({
           cwd,
@@ -1250,7 +1166,7 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
           onAnalysis: reportGraphDiagnostics,
         });
       const update = diffBuildPlan(activePlan, nextPlan, reason);
-      if (isEmptyPlanUpdate(update) && !requiresBundlerConfigReload) {
+      if (isEmptyBuildPlanUpdate(update) && !requiresBundlerConfigReload) {
         activeConfig = nextConfig;
         activePluginExtensions = nextPluginExtensions;
         activeApplicationExtensions = nextApplicationExtensions;
@@ -1273,6 +1189,15 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       const previousApplicationExtensions = activeApplicationExtensions;
       const previousAnalysis = activeAnalysis;
       const previousPlan = activePlan;
+      const previousFrameworkRuntime = activeFrameworkRuntime;
+      const previousServerEntry = activeServerEntry;
+      const previousApiRuntimeState: DevApiRuntimeState<TBundlerCfg> = {
+        config: previousConfig,
+        frameworkRuntime: previousFrameworkRuntime,
+        plan: previousPlan,
+        serverEntry: previousServerEntry,
+      };
+      const previousApiProcess = apiProcessController.checkpoint();
 
       preflightBundlerBuild(bundler, nextPlan);
       preflightBundlerDevUpdate(bundler, update);
@@ -1295,13 +1220,28 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
         activeApplicationExtensions = previousApplicationExtensions;
         activeAnalysis = previousAnalysis;
         activePlan = previousPlan;
+        activeFrameworkRuntime = previousFrameworkRuntime;
+        activeServerEntry = previousServerEntry;
         pluginCtx.config = previousConfig;
         try {
-          await rollbackCandidateState();
+          await runCleanupTasks([
+            rollbackCandidateState,
+            () =>
+              apiProcessController.rollback(previousApiProcess, async () => {
+                const restarted = await restartApiServer(
+                  previousApiRuntimeState,
+                );
+                if (!restarted) {
+                  throw new Error(
+                    "[evjs] Unable to restore the previous API server because its development bundle is no longer available.",
+                  );
+                }
+              }),
+          ]);
         } catch (rollbackError) {
           throw new AggregateError(
             [err, rollbackError],
-            "[evjs] Framework plan update failed and generated dev state rollback also failed.",
+            "[evjs] Framework plan update failed and dev state rollback also failed.",
             { cause: err },
           );
         }
@@ -1340,6 +1280,9 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
     pendingDevChanges.clear();
     await runCleanupTasks([
       () => stopWatchingDevDependencies(),
+      () => devUpdateQueue.catch(() => {}),
+      () => restartQueue.catch(() => {}),
+      () => apiProcessController.stop(),
       () => devController?.close?.(),
       async () => {
         try {
@@ -1385,21 +1328,25 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
               pluginCtx,
               isRebuild,
             });
-            activeFrameworkRuntime = frameworkRuntime;
             await runBuildEndHooks(
               hooks,
               createBuildResult(output, isRebuild, { frameworkRuntime }),
+              { cwd, emittedFiles: bundlerFacts.emittedFiles },
             );
+            activeFrameworkRuntime = frameworkRuntime;
+            activeServerEntry = output.server.entry;
           },
           onServerBundleReady: handleServerBundleReady,
         },
       })) ?? undefined;
     releaseDevDistLock = await writeDevDistLock(cwd, activePlan.distDir);
-    unregisterDevDistExitCleanup = registerDevExitCleanup(() =>
+    unregisterDevDistExitCleanup = registerRuntimeExitCleanup(() =>
       releaseDevDistLock?.sync(),
     );
     refreshDevDependencyWatchers();
-    await waitForShutdown;
+    await (devController?.done
+      ? Promise.race([waitForShutdown, devController.done])
+      : waitForShutdown);
   } catch (error) {
     return rethrowAfterCleanup(
       error,
@@ -1416,6 +1363,16 @@ export async function build<TBundlerCfg = DefaultBundlerConfig>(
 ): Promise<void> {
   const cwd = options?.cwd ?? process.cwd();
   await assertNoActiveDevSessionLock(cwd);
+  return withProjectOperationLock(cwd, "build", () =>
+    runBuild(userConfig, options, cwd),
+  );
+}
+
+async function runBuild<TBundlerCfg = DefaultBundlerConfig>(
+  userConfig: Config<TBundlerCfg> | undefined,
+  options: BuildOptions<TBundlerCfg> | undefined,
+  cwd: string,
+): Promise<void> {
   process.env.NODE_ENV ??= "production";
   const prepared = await prepareInternalFrameworkBuild(userConfig, {
     cwd,
@@ -1456,6 +1413,7 @@ export async function build<TBundlerCfg = DefaultBundlerConfig>(
     await runBuildEndHooks(
       prepared.hooks,
       createBuildResult(output, false, { frameworkRuntime }),
+      { cwd, emittedFiles: bundlerFacts.emittedFiles },
     );
   } catch (error) {
     return rethrowAfterCleanup(

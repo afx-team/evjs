@@ -41,7 +41,7 @@ canonical Page：
 - 是一个 `page.{ts,tsx,js,jsx}` 模块；
 - 默认导出组件；
 - 持有完整所在目录作为私有源码 scope；
-- 由相对 `routing.dir` 的目录获得语义身份与 URL。
+- 由相对 `src/pages` 的目录获得语义身份与 URL。
 
 ```tsx
 // src/pages/users/$userId/page.tsx
@@ -287,9 +287,7 @@ export；这些 setting 统一写在 `page.config.ts`。参见[构建](./build)�
 
 `application.routes` 可以把显式 SPA route tree 归一化到 CoreGraph。它支持：
 
-- 嵌套 `routes`、`component`、layout、wrapper 与 redirect；
-- `name`、`icon`、`title`、`hideInMenu`、`flatMenu`、`spmBPos`、`access`、
-  `menuKey` 与静态 `menuAssetOptions` 等受支持的 access/menu metadata；
+- 嵌套 `routes`、`page` 或 `component`、layout、wrapper 与 redirect；
 - 每条 Route 的 namespaced `extensions`，以及 Application-owned Document 配置。
 
 `children`、`exact: false` 以及带嵌套路由的 `exact: true` 会被拒绝；
@@ -297,7 +295,4 @@ export；这些 setting 统一写在 `page.config.ts`。参见[构建](./build)�
 SPA，不能与 `routing` 同时声明，也不能选择 MPA 物化。它会 normalize 到与
 canonical Page tree 相同的 CoreGraph，而不是定义另一套路由架构。
 
-要改用 canonical Page tree，应把每个发布 entry 移到其 URL 对应目录并命名为
-`page.*`，把页面级配置写入 `page.config.ts`，让 Page 私有代码与锚点 colocate，
-然后只声明 `routing.mode`。无关的 `src/pages` 目录不会发布路由，除非启用
-canonical routing。
+无关的 `src/pages` 目录不会发布路由，除非启用 canonical routing。

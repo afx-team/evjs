@@ -1,7 +1,9 @@
 import {
   BUILD_IDENTIFIER_DESCRIPTION,
   findBestPageRoute,
+  formatConcreteRuntimePathSegmentValidationError,
   formatContentTypeHeaderValue,
+  getConcreteRuntimePathSegmentValidationError,
   getPageRouteParamSegmentValidationError,
   getPathPatternValidationError,
   getUrlStringValidationError,
@@ -29,6 +31,10 @@ import {
 import { tryGetContext } from "hono/context-storage";
 import { textResponse } from "../shared/responses.js";
 import { formatUnknownError, isRecord } from "../shared/validation.js";
+import {
+  createFrameworkErrorResponse,
+  reportFrameworkError,
+} from "./errors.js";
 
 export interface FrameworkRuntime {
   version: 1;
@@ -486,6 +492,10 @@ export function assertFrameworkRuntime(
     value.runtime.server.basePath,
     `${source}.runtime.server.basePath`,
     true,
+  );
+  assertConcreteRuntimePathSegments(
+    value.runtime.server.basePath,
+    `${source}.runtime.server.basePath`,
   );
   assertRuntimeEndpoint(
     value.runtime.server.fn,
@@ -1163,6 +1173,25 @@ function assertRuntimeEndpoint(
   if (error) {
     throw new Error(`[evjs] ${source} ${formatRuntimePathnameError(error)}`);
   }
+  const segmentError = getConcreteRuntimePathSegmentValidationError(value);
+  if (segmentError) {
+    throw new Error(
+      `[evjs] ${source} ${formatConcreteRuntimePathSegmentValidationError(segmentError)}`,
+    );
+  }
+}
+
+function assertConcreteRuntimePathSegments(
+  value: unknown,
+  source: string,
+): void {
+  if (typeof value !== "string") return;
+  const segmentError = getConcreteRuntimePathSegmentValidationError(value);
+  if (segmentError) {
+    throw new Error(
+      `[evjs] ${source} ${formatConcreteRuntimePathSegmentValidationError(segmentError)}`,
+    );
+  }
 }
 
 function assertRuntimeTransportBaseUrl(value: unknown, source: string): void {
@@ -1222,7 +1251,7 @@ export async function handleFrameworkRenderRequest(
   const routes = getFrameworkRuntimeRoutes(options.runtime);
   const pages = getFrameworkRuntimePages(options.runtime);
   const route = matchRoute(routes, url.pathname);
-  const pageId = route?.pageId ?? inferPageId(options.runtime, url.pathname);
+  const pageId = route?.pageId;
   const page = pageId ? pages[pageId] : undefined;
 
   if (!route && !page) return undefined;
@@ -1269,9 +1298,9 @@ async function runPageRenderRequestGuard(
       500,
     );
   } catch (error) {
-    return textResponse(
-      `[evjs] framework.allowPageRenderRequest failed: ${formatUnknownError(error)}`,
-      500,
+    return createFrameworkErrorResponse(
+      "framework.allowPageRenderRequest failed",
+      error,
     );
   }
 }
@@ -1287,10 +1316,7 @@ async function runServerRenderMatch(
       source,
     );
   } catch (error) {
-    return textResponse(
-      `[evjs] ${source} match failed: ${formatUnknownError(error)}`,
-      500,
-    );
+    return createFrameworkErrorResponse(`${source} match failed`, error);
   }
 }
 
@@ -1302,10 +1328,7 @@ async function runServerRender(
   try {
     return toResponse(await coordinator.render(ctx), source);
   } catch (error) {
-    return textResponse(
-      `[evjs] ${source} render failed: ${formatUnknownError(error)}`,
-      500,
-    );
+    return createFrameworkErrorResponse(`${source} render failed`, error);
   }
 }
 
@@ -1339,12 +1362,20 @@ export async function handlePprRegionRequest(
   const region = page.ppr?.regions[match.regionId];
   if (!region) return undefined;
   const coordinator = normalizeRenderCoordinator(options.render);
-  const response = await renderPprRegionResponse(
-    options,
-    request,
-    match,
-    coordinator,
-  );
+  let response: Response | undefined;
+  try {
+    response = await renderPprRegionResponse(
+      options,
+      request,
+      match,
+      coordinator,
+    );
+  } catch (error) {
+    response = createFrameworkErrorResponse(
+      "PPR region response failed",
+      error,
+    );
+  }
   return request.method === "HEAD" && response
     ? withoutResponseBody(response)
     : response;
@@ -1382,21 +1413,29 @@ async function renderPprPageResponse(
     });
   }
 
-  return page.ppr.delivery === "stream"
-    ? renderPprStreamingPageResponse(
-        options,
-        request,
-        pageId,
-        response,
-        coordinator,
-      )
-    : renderPprMergedPageResponse(
+  try {
+    if (page.ppr.delivery === "stream") {
+      return await renderPprStreamingPageResponse(
         options,
         request,
         pageId,
         response,
         coordinator,
       );
+    }
+    return await renderPprMergedPageResponse(
+      options,
+      request,
+      pageId,
+      response,
+      coordinator,
+    );
+  } catch (error) {
+    return createFrameworkErrorResponse(
+      "PPR page response composition failed",
+      error,
+    );
+  }
 }
 
 async function renderPprMergedPageResponse(
@@ -1492,9 +1531,9 @@ async function renderPprStreamingPageResponse(
         } catch (error) {
           controller.enqueue(
             encoder.encode(
-              `<!-- evjs ppr region ${escapeHtmlCommentText(
-                regionId,
-              )} failed: ${escapeHtmlCommentText(formatUnknownError(error))} -->`,
+              `<!-- ${escapeHtmlCommentText(
+                reportFrameworkError(`PPR region "${regionId}" failed`, error),
+              )} -->`,
             ),
           );
         }
@@ -1627,9 +1666,7 @@ export async function handleRscFlightRequest(
   const rscPath = toRuntimePathname(rscEndpoint);
 
   const url = new URL(request.url);
-  if (
-    normalizeRoutePathname(url.pathname) !== normalizeRoutePathname(rscPath)
-  ) {
+  if (!pageRoutePathMatches(rscPath, url.pathname)) {
     return undefined;
   }
 
@@ -1672,9 +1709,9 @@ export async function handleRscFlightRequest(
         "RSC Flight coordinator",
       );
     } catch (error) {
-      const response = textResponse(
-        `[evjs] RSC Flight match failed: ${formatUnknownError(error)}`,
-        500,
+      const response = createFrameworkErrorResponse(
+        "RSC Flight match failed",
+        error,
       );
       return request.method === "HEAD"
         ? withoutResponseBody(response)
@@ -1699,9 +1736,9 @@ export async function handleRscFlightRequest(
       ? withoutResponseBody(cacheSafeResponse)
       : cacheSafeResponse;
   } catch (error) {
-    const response = textResponse(
-      `[evjs] RSC Flight render failed: ${formatUnknownError(error)}`,
-      500,
+    const response = createFrameworkErrorResponse(
+      "RSC Flight render failed",
+      error,
     );
     return request.method === "HEAD" ? withoutResponseBody(response) : response;
   }
@@ -1902,7 +1939,7 @@ function pageUrlMatchesPage(
   page: FrameworkPageRuntime | undefined,
   pageUrl: string,
 ): boolean {
-  const pathname = normalizeRoutePathname(new URL(pageUrl).pathname);
+  const pathname = new URL(pageUrl).pathname;
   const pageRoutes = getFrameworkRuntimeRoutes(runtime).filter(
     (route) => route.pageId === pageId,
   );
@@ -2188,44 +2225,37 @@ function matchRoute(
   return findBestPageRoute(routes, pathname);
 }
 
-function inferPageId(
-  runtime: FrameworkRuntime,
-  pathname: string,
-): string | undefined {
-  const normalized = normalizeRoutePathname(pathname);
-  const directId = normalized === "/" ? "index" : normalized.slice(1);
-  const withoutHtml = directId.replace(/\.html$/, "");
-  const pages = getFrameworkRuntimePages(runtime);
-
-  if (pages[withoutHtml]) return withoutHtml;
-  if (pages[directId]) return directId;
-
-  const dotted = withoutHtml.replaceAll("/", ".");
-  return pages[dotted] ? dotted : undefined;
-}
-
 function matchPprRegion(
   runtime: FrameworkRuntime,
   pathname: string,
 ): PprRegionMatch | undefined {
-  const endpoint = normalizeRoutePathname(
-    toRuntimePathname(
-      runtime.runtime.server?.ppr ??
-        joinPath(runtime.runtime.server?.basePath ?? "/__evjs", "ppr"),
-    ),
+  const endpoint = toRuntimePathname(
+    runtime.runtime.server?.ppr ??
+      joinPath(runtime.runtime.server?.basePath ?? "/__evjs", "ppr"),
   );
-  const normalized = normalizeRoutePathname(pathname);
-  if (normalized === endpoint || !normalized.startsWith(`${endpoint}/`)) {
+  if (!pageRoutePathMatches(`${endpoint}/$pageId/$regionId`, pathname)) {
     return undefined;
   }
 
-  const segments = normalized.slice(endpoint.length + 1).split("/");
-  if (segments.length !== 2) return undefined;
+  const endpointSegmentCount = splitMatchedRequestPath(endpoint).length;
+  const segments =
+    splitMatchedRequestPath(pathname).slice(endpointSegmentCount);
 
   const pageId = decodePprRegionPathSegment(segments[0], "page");
   const regionId = decodePprRegionPathSegment(segments[1], "region");
   if (!pageId || !regionId) return undefined;
   return { pageId, regionId };
+}
+
+/** Split a pathname after the shared matcher has validated its segment shape. */
+function splitMatchedRequestPath(pathname: string): string[] {
+  const withoutLeadingSlash = pathname.startsWith("/")
+    ? pathname.slice(1)
+    : pathname;
+  const withoutTrailingSlash = withoutLeadingSlash.endsWith("/")
+    ? withoutLeadingSlash.slice(0, -1)
+    : withoutLeadingSlash;
+  return withoutTrailingSlash ? withoutTrailingSlash.split("/") : [];
 }
 
 function decodePprRegionPathSegment(

@@ -39,6 +39,213 @@ afterEach(async () => {
 });
 
 describe("canonical CoreGraph and BuildPlan integration", () => {
+  it("keeps recursively cleaned outputs inside the BuildPlan distDir", async () => {
+    const cwd = await createFixture({
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa");
+    const analysis = await createCoreGraph(config, cwd);
+
+    for (const unsafeOutput of [
+      { client: "src", server: "dist/server" },
+      { client: "dist", server: "dist/server" },
+      { client: "dist/client", server: "server-output" },
+    ]) {
+      expect(() =>
+        createBuildPlan({ ...config, output: unsafeOutput }, analysis.graph),
+      ).toThrow('must be a strict descendant of plan.distDir "dist"');
+    }
+
+    expect(() =>
+      createBuildPlan(
+        {
+          ...config,
+          output: { client: "custom/client", server: "custom/server" },
+        },
+        analysis.graph,
+        { distDir: "custom" },
+      ),
+    ).not.toThrow();
+
+    expect(() =>
+      createBuildPlan(
+        {
+          ...config,
+          output: { client: "dist/client", server: "dist/server" },
+        },
+        analysis.graph,
+        { distDir: "DIST" },
+      ),
+    ).toThrow('must be a strict descendant of plan.distDir "DIST"');
+
+    expect(() =>
+      createBuildPlan(
+        {
+          ...config,
+          output: { client: "dist\\client", server: "dist/server" },
+        },
+        analysis.graph,
+      ),
+    ).toThrow("output.client must be a non-empty portable output directory");
+
+    for (const client of [
+      "dist/client.",
+      "dist/AUX",
+      "dist/client?",
+      "dist/client//nested",
+    ]) {
+      expect(() =>
+        createBuildPlan(
+          {
+            ...config,
+            output: { client, server: "dist/server" },
+          },
+          analysis.graph,
+        ),
+      ).toThrow("output.client must be a non-empty portable output directory");
+    }
+
+    expect(() =>
+      createBuildPlan(
+        {
+          ...config,
+          output: {
+            client: "dist/caf\u00e9",
+            server: "dist/cafe\u0301",
+          },
+        },
+        analysis.graph,
+      ),
+    ).toThrow("output.client must be a non-empty portable output directory");
+  });
+
+  it("revalidates concrete runtime endpoint grammar at the BuildPlan boundary", async () => {
+    const cwd = await createFixture({
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa");
+    const analysis = await createCoreGraph(config, cwd);
+
+    expect(() =>
+      createBuildPlan(
+        {
+          ...config,
+          server: { ...config.server, basePath: "/运行" },
+        },
+        analysis.graph,
+      ),
+    ).toThrow("runtime.server.basePath must use non-empty ASCII URL-safe");
+    expect(() =>
+      createBuildPlan(
+        {
+          ...config,
+          server: { ...config.server, basePath: "__evjs" },
+        },
+        analysis.graph,
+      ),
+    ).toThrow('runtime.server.basePath must start with "/"');
+    expect(() =>
+      createBuildPlan(
+        {
+          ...config,
+          server: {
+            ...config.server,
+            runtime: { ...config.server.runtime, fn: "__evjs/%66n" },
+          },
+        },
+        analysis.graph,
+      ),
+    ).toThrow("runtime.server.fn must use non-empty ASCII URL-safe");
+    expect(() =>
+      createBuildPlan(
+        {
+          ...config,
+          server: {
+            ...config.server,
+            runtime: { ...config.server.runtime, fn: "/__evjs/fn" },
+          },
+        },
+        analysis.graph,
+      ),
+    ).toThrow('runtime.server.fn must not start with "/"');
+
+    const rscGraph: CoreGraph = {
+      ...analysis.graph,
+      pages: {
+        ...analysis.graph.pages,
+        index: {
+          ...analysis.graph.pages.index,
+          render: "ssr",
+          hydrate: "none",
+          componentModel: "rsc",
+        },
+      },
+    };
+    expect(() =>
+      createBuildPlan(
+        {
+          ...config,
+          server: {
+            ...config.server,
+            runtime: { ...config.server.runtime, rsc: "flight/航班" },
+          },
+        },
+        rscGraph,
+      ),
+    ).toThrow("runtime.server.rsc must use non-empty ASCII URL-safe");
+    expect(() =>
+      createBuildPlan(
+        {
+          ...config,
+          server: {
+            ...config.server,
+            runtime: { ...config.server.runtime, rsc: "/flight" },
+          },
+        },
+        rscGraph,
+      ),
+    ).toThrow('runtime.server.rsc must not start with "/"');
+
+    const pprGraph: CoreGraph = {
+      ...analysis.graph,
+      pages: {
+        ...analysis.graph.pages,
+        index: {
+          ...analysis.graph.pages.index,
+          render: "ssr",
+          hydrate: "none",
+          prerender: { partial: true },
+        },
+      },
+    };
+    expect(() =>
+      createBuildPlan(
+        {
+          ...config,
+          server: {
+            ...config.server,
+            runtime: { ...config.server.runtime, ppr: "__evjs/%70pr" },
+          },
+        },
+        pprGraph,
+      ),
+    ).toThrow("runtime.server.ppr must use non-empty ASCII URL-safe");
+    expect(() =>
+      createBuildPlan(
+        {
+          ...config,
+          server: {
+            ...config.server,
+            runtime: { ...config.server.runtime, ppr: "/__evjs/ppr" },
+          },
+        },
+        pprGraph,
+      ),
+    ).toThrow('runtime.server.ppr must not start with "/"');
+  });
+
   it("normalizes one SPA Page tree and keeps the generated router out of CoreGraph", async () => {
     const cwd = await createFixture({
       "src/pages/layout.tsx":
@@ -509,6 +716,55 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     );
   });
 
+  it("rejects non-portable HTML outputs and cross-platform aliases", async () => {
+    const cwd = await createFixture({
+      "src/pages/report/page.tsx":
+        "export default function Report() { return null; }",
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "mpa");
+    const analysis = await createCoreGraph(config, cwd);
+    const document = analysis.graph.documents.report;
+    if (!document) throw new Error("Expected the report Document.");
+
+    const originalOutput = document.output;
+    document.output = "nested/../report.html";
+    expect(() => createBuildPlan(config, analysis.graph)).toThrow(
+      "must be a non-empty portable relative artifact path",
+    );
+    document.output = originalOutput;
+
+    for (const alias of [
+      String.raw`nested\report.html`,
+      "nested//report.html",
+      "./report.html",
+      "NUL/report.html",
+      "nested/report.",
+      "nested/report?.html",
+      "nested/\u001f.html",
+    ]) {
+      document.aliases = [alias];
+      expect(() => createBuildPlan(config, analysis.graph)).toThrow(
+        "must be a non-empty portable relative artifact path",
+      );
+    }
+
+    document.aliases = ["REPORT/INDEX.HTML"];
+    expect(() => createBuildPlan(config, analysis.graph)).toThrow(
+      'Duplicate HTML output file "REPORT/INDEX.HTML"',
+    );
+
+    document.aliases = [`${originalOutput}/nested.html`];
+    expect(() => createBuildPlan(config, analysis.graph)).toThrow(
+      `Duplicate HTML output file "${originalOutput}/nested.html"`,
+    );
+
+    document.aliases = ["cafe\u0301.html"];
+    expect(() => createBuildPlan(config, analysis.graph)).toThrow(
+      "must be a non-empty portable relative artifact path",
+    );
+  });
+
   it("diffs alias additions and removals as HTML Document changes", async () => {
     const cwd = await createFixture({
       "src/pages/about/page.tsx":
@@ -686,6 +942,11 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       ppr: "__evjs/ppr",
       rsc: "__evjs/rsc",
     });
+    expect(plan.dev.serverRequestRoutePaths).toEqual([]);
+    expect(new Set(plan.dev.serverRenderedPagePaths)).toEqual(
+      new Set(["/ssr", "/rsc", "/ppr"]),
+    );
+    expect(plan.dev.serverRenderedPagePaths).not.toContain("/ssg");
     expect(plan.entries).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -927,6 +1188,12 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       clientEntryAssets: {
         main: { js: ["main.js"], css: [] },
       },
+      serverEntryAssets: {
+        [createPageServerBuildEntryName("index")]: {
+          js: ["page-server-index.js"],
+          css: [],
+        },
+      },
     });
     expect(output.apps.default?.document).toEqual({
       fileName: "__evjs/default.html",
@@ -993,6 +1260,49 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
         "evjs-rsc-client",
         SERVER_RUNTIME_BUILD_ENTRY_NAME,
       ]),
+    );
+  });
+
+  it("rejects BuildEntry names that alias on case-insensitive file systems", async () => {
+    const cwd = await createFixture({
+      "src/pages/foo/page.tsx":
+        "export default function Foo() { return null; }",
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "mpa");
+    const analysis = await createCoreGraph(config, cwd);
+    const graph = structuredClone(analysis.graph);
+    const page = graph.pages.foo;
+    const route = graph.routes.find(
+      (candidate) =>
+        candidate.target.kind === "page" && candidate.target.pageId === "foo",
+    );
+    const document = graph.documents.foo;
+    const application = graph.applications.default;
+    if (!page || !route || !document || !application) {
+      throw new Error("Expected the canonical MPA fixture graph.");
+    }
+
+    graph.pages.FOO = { ...page, id: "FOO" };
+    graph.routes.push({
+      ...route,
+      id: "FOO",
+      pattern: { segments: [{ kind: "static", value: "FOO" }] },
+      target: { kind: "page", pageId: "FOO" },
+    });
+    graph.documents.FOO = {
+      ...document,
+      id: "FOO",
+      output: "FOO/index.html",
+      owner: { kind: "page", pageId: "FOO" },
+      bootstrap: { kind: "page", pageId: "FOO" },
+    };
+    application.pageIds.push("FOO");
+    application.routeIds.push("FOO");
+    application.documentIds.push("FOO");
+
+    expect(() => createBuildPlan(config, graph)).toThrow(
+      'Duplicate build entry name "page-client-FOO" from page "foo" and page "FOO"',
     );
   });
 
@@ -1303,6 +1613,11 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     expect(analysis.graph.serverRoutes).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ path: "/ignored" })]),
     );
+    expect(plan.dev.serverRequestRoutePaths).toEqual([
+      "/health",
+      "/users/:userId",
+    ]);
+    expect(plan.dev.serverRenderedPagePaths).toEqual([]);
     expect(plan.entries).toContainEqual({
       name: SERVER_RUNTIME_BUILD_ENTRY_NAME,
       import: "@evjs/ev/_internal/server/fetch",
@@ -1331,6 +1646,611 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       },
     });
     expect(plan.server.entry).toBe("@evjs/ev/_internal/server/fetch");
+  });
+
+  it("rejects server file routes that can match framework runtime endpoints", async () => {
+    const cwd = await createFixture({
+      "src/pages/rsc/page.tsx":
+        "export default function Rsc() { return null; }",
+      "src/pages/rsc/page.config.ts":
+        'export default { render: "ssr", hydrate: "none", rsc: true };',
+      "src/pages/ppr/page.tsx": `
+        import * as React from "react";
+        const Offer = React.lazy(() => import("./Offer.region"));
+        export default function Ppr() {
+          return <React.Suspense fallback={null}><Offer /></React.Suspense>;
+        }
+      `,
+      "src/pages/ppr/Offer.region.tsx":
+        "export default function Offer() { return null; }",
+      "src/pages/ppr/page.config.ts": `
+        export default {
+          render: "ssr",
+          hydrate: "none",
+          prerender: { partial: true, delivery: "stream" },
+        };
+      `,
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "mpa", {
+      rscEndpoint: "internal/flight",
+    });
+    const analysis = await createCoreGraph(config, cwd);
+    expect(analysis.diagnostics).toEqual([]);
+
+    const conflicts = [
+      {
+        module: "./src/apis/__evjs/fn/api.ts",
+        path: "/__evjs/fn",
+        reserved: 'server function endpoint "/__evjs/fn"',
+      },
+      {
+        module: "./src/apis/__evjs/$endpoint/api.ts",
+        path: "/__evjs/:endpoint",
+        reserved: 'server function endpoint "/__evjs/fn"',
+      },
+      {
+        module: "./src/apis/encoded-runtime/api.ts",
+        path: "/%5F%5Fevjs/%66n",
+        reserved: 'server function endpoint "/__evjs/fn"',
+      },
+      {
+        module: "./src/apis/internal/flight/api.ts",
+        path: "/internal/flight",
+        reserved: 'RSC endpoint "/internal/flight"',
+      },
+      {
+        module: "./src/apis/internal/$endpoint/api.ts",
+        path: "/internal/:endpoint",
+        reserved: 'RSC endpoint "/internal/flight"',
+      },
+      {
+        module: "./src/apis/__evjs/ppr/api.ts",
+        path: "/__evjs/ppr",
+        reserved: 'PPR endpoint subtree rooted at "/__evjs/ppr"',
+      },
+      {
+        module: "./src/apis/__evjs/ppr/region/api.ts",
+        path: "/__evjs/ppr/region",
+        reserved: 'PPR endpoint subtree rooted at "/__evjs/ppr"',
+      },
+      {
+        module: "./src/apis/$scope/ppr/region/api.ts",
+        path: "/:scope/ppr/region",
+        reserved: 'PPR endpoint subtree rooted at "/__evjs/ppr"',
+      },
+    ];
+
+    for (const conflict of conflicts) {
+      const graph: CoreGraph = {
+        ...analysis.graph,
+        serverRoutes: [
+          {
+            id: `${conflict.module}:${conflict.path}:GET`,
+            module: conflict.module,
+            path: conflict.path,
+            methods: ["GET"],
+          },
+        ],
+      };
+      expect(() => createBuildPlan(config, graph)).toThrow(
+        `[evjs] Server file route module "${conflict.module}" with path "${conflict.path}" conflicts with the reserved framework ${conflict.reserved}.`,
+      );
+    }
+
+    const adjacentGraph: CoreGraph = {
+      ...analysis.graph,
+      serverRoutes: [
+        {
+          id: "framework-parent",
+          module: "./src/apis/__evjs/api.ts",
+          path: "/__evjs",
+          methods: ["GET"],
+        },
+        {
+          id: "ppr-similar-prefix",
+          module: "./src/apis/__evjs/pprish/$region/api.ts",
+          path: "/__evjs/pprish/:region",
+          methods: ["GET"],
+        },
+        {
+          id: "rsc-descendant",
+          module: "./src/apis/internal/flight/details/api.ts",
+          path: "/internal/flight/details",
+          methods: ["GET"],
+        },
+      ],
+    };
+    expect(() => createBuildPlan(config, adjacentGraph)).not.toThrow();
+  });
+
+  it("rejects intersecting client and server request Route patterns", async () => {
+    const cwd = await createFixture({
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "src/pages/health/page.tsx":
+        "export default function Health() { return null; }",
+      "src/pages/users/$userId/page.tsx":
+        "export default function User() { return null; }",
+      "src/pages/users/admin/page.tsx":
+        "export default function Admin() { return null; }",
+      "src/pages/docs/$...splat/page.tsx":
+        "export default function Docs() { return null; }",
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa");
+    const analysis = await createCoreGraph(config, cwd);
+    expect(analysis.diagnostics).toEqual([]);
+
+    const conflicts = [
+      { pageId: "index", pagePath: "/", serverPath: "/" },
+      { pageId: "health", pagePath: "/health", serverPath: "/health" },
+      {
+        pageId: "users_userId",
+        pagePath: "/users/$userId",
+        serverPath: "/users/admin",
+      },
+      {
+        pageId: "users_admin",
+        pagePath: "/users/admin",
+        serverPath: "/users/:userId",
+      },
+      {
+        pageId: "users_userId",
+        pagePath: "/users/$userId",
+        serverPath: "/users/:accountId",
+      },
+      {
+        pageId: "docs_splat",
+        pagePath: "/docs/$",
+        serverPath: "/docs",
+      },
+      {
+        pageId: "docs_splat",
+        pagePath: "/docs/$",
+        serverPath: "/docs/reference/api",
+      },
+    ] as const;
+
+    for (const conflict of conflicts) {
+      const pageRoute = analysis.graph.routes.find(
+        (route) =>
+          route.target.kind === "page" &&
+          route.target.pageId === conflict.pageId,
+      );
+      if (!pageRoute) {
+        throw new Error(`Expected a Route for Page "${conflict.pageId}".`);
+      }
+      const serverRoute = {
+        id: `server:${conflict.serverPath}`,
+        module: `./src/apis${conflict.serverPath}/api.ts`,
+        path: conflict.serverPath,
+        methods: ["GET"],
+      };
+      const graph: CoreGraph = {
+        ...analysis.graph,
+        routes: [pageRoute],
+        serverRoutes: [serverRoute],
+      };
+
+      expect(() => createBuildPlan(config, graph)).toThrow(
+        `[evjs] Page Route "${pageRoute.id}" targeting Page "${conflict.pageId}" with path "${conflict.pagePath}" conflicts with server request Route module "${serverRoute.module}" with path "${conflict.serverPath}". Client and server request Route patterns must be disjoint because server request Routes take precedence at runtime.`,
+      );
+    }
+
+    const healthRoute = analysis.graph.routes.find(
+      (route) =>
+        route.target.kind === "page" && route.target.pageId === "health",
+    );
+    if (!healthRoute) throw new Error('Expected a Route for Page "health".');
+    const encodedHealthRoute: CoreGraph["routes"][number] = {
+      ...healthRoute,
+      pattern: {
+        segments: [{ kind: "static", value: "%68ealth" }],
+      },
+    };
+    const encodedAliasConflicts = [
+      {
+        route: encodedHealthRoute,
+        clientPath: "/%68ealth",
+        serverPath: "/health",
+      },
+      {
+        route: healthRoute,
+        clientPath: "/health",
+        serverPath: "/%68ealth",
+      },
+    ];
+    for (const conflict of encodedAliasConflicts) {
+      const serverRoute = {
+        id: `encoded:${conflict.serverPath}`,
+        module: "./src/apis/encoded-health/api.ts",
+        path: conflict.serverPath,
+        methods: ["GET"],
+      };
+      expect(() =>
+        createBuildPlan(config, {
+          ...analysis.graph,
+          routes: [conflict.route],
+          serverRoutes: [serverRoute],
+        }),
+      ).toThrow(
+        `[evjs] Page Route "${conflict.route.id}" targeting Page "health" with path "${conflict.clientPath}" conflicts with server request Route module "${serverRoute.module}" with path "${conflict.serverPath}". Client and server request Route patterns must be disjoint because server request Routes take precedence at runtime.`,
+      );
+    }
+
+    const redirectRoute: CoreGraph["routes"][number] = {
+      ...healthRoute,
+      id: "legacy-health",
+      pattern: {
+        segments: [
+          { kind: "static", value: "legacy" },
+          { kind: "param", name: "slug" },
+        ],
+      },
+      target: { kind: "redirect", to: { kind: "url", href: "/health" } },
+    };
+    const redirectServerRoute = {
+      id: "legacy-current",
+      module: "./src/apis/legacy/current/api.ts",
+      path: "/legacy/current",
+      methods: ["GET"],
+    };
+    expect(() =>
+      createBuildPlan(config, {
+        ...analysis.graph,
+        routes: [redirectRoute],
+        serverRoutes: [redirectServerRoute],
+      }),
+    ).toThrow(
+      `[evjs] Redirect Route "legacy-health" with path "/legacy/$slug" conflicts with server request Route module "${redirectServerRoute.module}" with path "/legacy/current". Client and server request Route patterns must be disjoint because server request Routes take precedence at runtime.`,
+    );
+
+    const adjacentGraph: CoreGraph = {
+      ...analysis.graph,
+      serverRoutes: [
+        {
+          id: "healthy",
+          module: "./src/apis/healthy/api.ts",
+          path: "/healthy",
+          methods: ["GET"],
+        },
+        {
+          id: "users-root",
+          module: "./src/apis/users/api.ts",
+          path: "/users",
+          methods: ["GET"],
+        },
+        {
+          id: "users-descendant",
+          module: "./src/apis/users/$userId/details/api.ts",
+          path: "/users/:userId/details",
+          methods: ["GET"],
+        },
+        {
+          id: "document",
+          module: "./src/apis/document/$slug/api.ts",
+          path: "/document/:slug",
+          methods: ["GET"],
+        },
+        {
+          id: "layout-only",
+          module: "./src/apis/layout-only/api.ts",
+          path: "/layout-only",
+          methods: ["GET"],
+        },
+      ],
+      routes: [
+        ...analysis.graph.routes,
+        {
+          ...healthRoute,
+          id: "layout-only",
+          pattern: {
+            segments: [{ kind: "static", value: "layout-only" }],
+          },
+          target: { kind: "group" },
+        },
+      ],
+    };
+    expect(() => createBuildPlan(config, adjacentGraph)).not.toThrow();
+  });
+
+  it("rejects overlapping active framework runtime endpoints", async () => {
+    const cwd = await createFixture({
+      "src/pages/rsc/page.tsx":
+        "export default function Rsc() { return null; }",
+      "src/pages/rsc/page.config.ts":
+        'export default { render: "ssr", hydrate: "none", rsc: true };',
+      "src/pages/ppr/page.tsx": `
+        import * as React from "react";
+        const Offer = React.lazy(() => import("./Offer.region"));
+        export default function Ppr() {
+          return <React.Suspense fallback={null}><Offer /></React.Suspense>;
+        }
+      `,
+      "src/pages/ppr/Offer.region.tsx":
+        "export default function Offer() { return null; }",
+      "src/pages/ppr/page.config.ts": `
+        export default {
+          render: "ssr",
+          hydrate: "none",
+          prerender: { partial: true, delivery: "stream" },
+        };
+      `,
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "mpa", {
+      rscEndpoint: "internal/flight",
+    });
+    const analysis = await createCoreGraph(config, cwd);
+    expect(analysis.diagnostics).toEqual([]);
+
+    const conflicts = [
+      {
+        runtime: { rsc: "__evjs/fn" },
+        message:
+          '[evjs] Framework runtime server function endpoint "/__evjs/fn" conflicts with the RSC endpoint "/__evjs/fn". Active framework runtime endpoints must not match the same request path.',
+      },
+      {
+        runtime: { rsc: "__evjs/ppr/flight" },
+        message:
+          '[evjs] Framework runtime RSC endpoint "/__evjs/ppr/flight" conflicts with the reserved framework PPR endpoint subtree rooted at "/__evjs/ppr". Active exact endpoints must stay outside the PPR subtree.',
+      },
+      {
+        runtime: { fn: "__evjs/ppr/action" },
+        message:
+          '[evjs] Framework runtime server function endpoint "/__evjs/ppr/action" conflicts with the reserved framework PPR endpoint subtree rooted at "/__evjs/ppr". Active exact endpoints must stay outside the PPR subtree.',
+      },
+      {
+        runtime: { ppr: "internal/flight" },
+        message:
+          '[evjs] Framework runtime RSC endpoint "/internal/flight" conflicts with the reserved framework PPR endpoint subtree rooted at "/internal/flight". Active exact endpoints must stay outside the PPR subtree.',
+      },
+    ];
+
+    for (const conflict of conflicts) {
+      const conflictConfig: TestConfig = {
+        ...config,
+        server: {
+          ...config.server,
+          runtime: { ...config.server.runtime, ...conflict.runtime },
+        },
+      };
+      expect(() => createBuildPlan(conflictConfig, analysis.graph)).toThrow(
+        conflict.message,
+      );
+    }
+
+    expect(() => createBuildPlan(config, analysis.graph)).not.toThrow();
+  });
+
+  it("rejects server-rendered Page routes that can match framework runtime endpoints", async () => {
+    const cwd = await createFixture({
+      "src/pages/rsc/page.tsx":
+        "export default function Rsc() { return null; }",
+      "src/pages/rsc/page.config.ts":
+        'export default { render: "ssr", hydrate: "none", rsc: true };',
+      "src/pages/ppr/page.tsx": `
+        import * as React from "react";
+        const Offer = React.lazy(() => import("./Offer.region"));
+        export default function Ppr() {
+          return <React.Suspense fallback={null}><Offer /></React.Suspense>;
+        }
+      `,
+      "src/pages/ppr/Offer.region.tsx":
+        "export default function Offer() { return null; }",
+      "src/pages/ppr/page.config.ts": `
+        export default {
+          render: "ssr",
+          hydrate: "none",
+          prerender: { partial: true, delivery: "stream" },
+        };
+      `,
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "mpa", {
+      rscEndpoint: "internal/flight",
+    });
+    const analysis = await createCoreGraph(config, cwd);
+    expect(analysis.diagnostics).toEqual([]);
+
+    const conflicts: Array<{
+      pageId: string;
+      path: string;
+      segments: CoreGraph["routes"][number]["pattern"]["segments"];
+      reserved: string;
+    }> = [
+      {
+        pageId: "rsc",
+        path: "/__evjs/fn",
+        segments: [
+          { kind: "static", value: "__evjs" },
+          { kind: "static", value: "fn" },
+        ],
+        reserved: 'server function endpoint "/__evjs/fn"',
+      },
+      {
+        pageId: "rsc",
+        path: "/internal/flight",
+        segments: [
+          { kind: "static", value: "internal" },
+          { kind: "static", value: "flight" },
+        ],
+        reserved: 'RSC endpoint "/internal/flight"',
+      },
+      {
+        pageId: "ppr",
+        path: "/__evjs/ppr/region",
+        segments: [
+          { kind: "static", value: "__evjs" },
+          { kind: "static", value: "ppr" },
+          { kind: "static", value: "region" },
+        ],
+        reserved: 'PPR endpoint subtree rooted at "/__evjs/ppr"',
+      },
+      {
+        pageId: "rsc",
+        path: "/__evjs/$endpoint",
+        segments: [
+          { kind: "static", value: "__evjs" },
+          { kind: "param", name: "endpoint" },
+        ],
+        reserved: 'server function endpoint "/__evjs/fn"',
+      },
+    ];
+
+    for (const conflict of conflicts) {
+      const sourceRoute = analysis.graph.routes.find(
+        (route) =>
+          route.target.kind === "page" &&
+          route.target.pageId === conflict.pageId,
+      );
+      if (!sourceRoute) {
+        throw new Error(`Expected a Route for Page "${conflict.pageId}".`);
+      }
+      const graph = replacePageRoutePattern(
+        analysis.graph,
+        conflict.pageId,
+        conflict.segments,
+      );
+      expect(() => createBuildPlan(config, graph)).toThrow(
+        `[evjs] Page Route "${sourceRoute.id}" targeting Page "${conflict.pageId}" with path "${conflict.path}" conflicts with the reserved framework ${conflict.reserved}.`,
+      );
+    }
+
+    const adjacentGraph = replacePageRoutePattern(
+      replacePageRoutePattern(analysis.graph, "rsc", [
+        { kind: "static", value: "internal" },
+        { kind: "static", value: "flight" },
+        { kind: "static", value: "details" },
+      ]),
+      "ppr",
+      [
+        { kind: "static", value: "__evjs" },
+        { kind: "static", value: "pprish" },
+        { kind: "static", value: "region" },
+      ],
+    );
+    expect(() => createBuildPlan(config, adjacentGraph)).not.toThrow();
+  });
+
+  it("reserves only active runtime endpoints for URL-owning client routes", async () => {
+    const cwd = await createFixture({
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa", {
+      rscEndpoint: "internal/flight",
+    });
+    const analysis = await createCoreGraph(config, cwd);
+
+    const functionEndpointGraph = replacePageRoutePattern(
+      analysis.graph,
+      "index",
+      [
+        { kind: "static", value: "__evjs" },
+        { kind: "static", value: "fn" },
+      ],
+    );
+    const sourceRoute = analysis.graph.routes.find(
+      (route) =>
+        route.target.kind === "page" && route.target.pageId === "index",
+    );
+    if (!sourceRoute) throw new Error('Expected a Route for Page "index".');
+    expect(() => createBuildPlan(config, functionEndpointGraph)).toThrow(
+      `[evjs] Page Route "${sourceRoute.id}" targeting Page "index" with path "/__evjs/fn" conflicts with the reserved framework server function endpoint "/__evjs/fn".`,
+    );
+
+    const redirectEndpointGraph: CoreGraph = {
+      ...functionEndpointGraph,
+      routes: functionEndpointGraph.routes.map((route) =>
+        route.target.kind === "page" && route.target.pageId === "index"
+          ? {
+              ...route,
+              target: {
+                kind: "redirect" as const,
+                to: { kind: "url" as const, href: "/" },
+              },
+            }
+          : route,
+      ),
+    };
+    expect(() => createBuildPlan(config, redirectEndpointGraph)).toThrow(
+      `[evjs] Redirect Route "${sourceRoute.id}" with path "/__evjs/fn" conflicts with the reserved framework server function endpoint "/__evjs/fn".`,
+    );
+
+    const encodedEndpointGraph = replacePageRoutePattern(
+      analysis.graph,
+      "index",
+      [
+        { kind: "static", value: "%5F%5Fevjs" },
+        { kind: "static", value: "%66n" },
+      ],
+    );
+    expect(() => createBuildPlan(config, encodedEndpointGraph)).toThrow(
+      `[evjs] Page Route "${sourceRoute.id}" targeting Page "index" with path "/%5F%5Fevjs/%66n" conflicts with the reserved framework server function endpoint "/__evjs/fn".`,
+    );
+
+    const groupEndpointGraph: CoreGraph = {
+      ...functionEndpointGraph,
+      routes: functionEndpointGraph.routes.map((route) =>
+        route.target.kind === "page" && route.target.pageId === "index"
+          ? { ...route, target: { kind: "group" as const } }
+          : route,
+      ),
+    };
+    expect(() => createBuildPlan(config, groupEndpointGraph)).not.toThrow();
+
+    const inactiveEndpointPatterns: CoreGraph["routes"][number]["pattern"]["segments"][] =
+      [
+        [
+          { kind: "static", value: "internal" },
+          { kind: "static", value: "flight" },
+        ],
+        [
+          { kind: "static", value: "__evjs" },
+          { kind: "static", value: "ppr" },
+          { kind: "static", value: "region" },
+        ],
+      ];
+
+    for (const segments of inactiveEndpointPatterns) {
+      const graph = replacePageRoutePattern(analysis.graph, "index", segments);
+      expect(() => createBuildPlan(config, graph)).not.toThrow();
+    }
+  });
+
+  it("does not reserve inactive RSC and PPR runtime endpoints", async () => {
+    const cwd = await createFixture({
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa", {
+      rscEndpoint: "internal/flight",
+    });
+    const analysis = await createCoreGraph(config, cwd);
+    const graph: CoreGraph = {
+      ...analysis.graph,
+      serverRoutes: [
+        {
+          id: "rsc-placeholder",
+          module: "./src/apis/internal/$endpoint/api.ts",
+          path: "/internal/:endpoint",
+          methods: ["GET"],
+        },
+        {
+          id: "ppr-placeholder",
+          module: "./src/apis/__evjs/ppr/$region/api.ts",
+          path: "/__evjs/ppr/:region",
+          methods: ["GET"],
+        },
+      ],
+    };
+
+    const plan = createBuildPlan(config, graph);
+    expect(plan.runtime.server).toEqual({
+      basePath: "/__evjs",
+      fn: "__evjs/fn",
+    });
   });
 
   it("diffs canonical MPA Page and Document additions", async () => {
@@ -1377,7 +2297,9 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
         owner: { appId: "default", pageId: "orders" },
       },
     ]);
-    expect(update.serverChanged).toBe(true);
+    expect(update.serverCompilationChanged).toBe(false);
+    expect(update.serverDocumentsChanged).toBe(false);
+    expect(update.devRoutingChanged).toBe(true);
   });
 
   it("reports runtime and config-delivery changes explicitly", async () => {
@@ -1399,11 +2321,41 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     const runtimeUpdate = diffBuildPlan(previous, next, "route-declaration");
     expect(runtimeUpdate.runtimeChanged).toBe(true);
     expect(runtimeUpdate.deliveryChanged).toBe(false);
-    expect(runtimeUpdate.serverChanged).toBe(true);
+    expect(runtimeUpdate.serverCompilationChanged).toBe(false);
+    expect(runtimeUpdate.serverDocumentsChanged).toBe(false);
+    expect(runtimeUpdate.devRoutingChanged).toBe(false);
 
     const configUpdate = diffBuildPlan(previous, previous, "config");
     expect(configUpdate.runtimeChanged).toBe(false);
     expect(configUpdate.deliveryChanged).toBe(true);
+  });
+
+  it("separates server Document refreshes from server compilation changes", async () => {
+    const cwd = await createFixture({
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "src/pages/page.config.ts": 'export default { render: "ssr" };',
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "mpa");
+    const analysis = await createCoreGraph(config, cwd);
+    const previous = createBuildPlan(config, analysis.graph);
+    const nextGraph = structuredClone(analysis.graph);
+    const page = nextGraph.pages.index;
+    if (!page) throw new Error("Expected index Page.");
+    page.metadata = {
+      title: "Updated home",
+      meta: { description: "Updated description" },
+    };
+    const next = createBuildPlan(config, nextGraph);
+
+    const update = diffBuildPlan(previous, next, "route-declaration");
+
+    expect(update.entries).toEqual({ added: [], removed: [], changed: [] });
+    expect(update.html).toEqual({ added: [], removed: [], changed: [] });
+    expect(update.serverCompilationChanged).toBe(false);
+    expect(update.serverDocumentsChanged).toBe(true);
+    expect(update.devRoutingChanged).toBe(false);
+    expect(update.runtimeChanged).toBe(false);
   });
 
   it("derives the RSC endpoint only for RSC Pages and honors a resolved override", async () => {
@@ -1446,7 +2398,6 @@ async function createCanonicalConfig(
   options: CanonicalConfigOptions = {},
 ): Promise<TestConfig> {
   const discovery = await discoverPageRoutes(cwd, {
-    dir: "./src/pages",
     mode,
     required: true,
   });
@@ -1455,7 +2406,6 @@ async function createCanonicalConfig(
   return {
     routing: {
       mode,
-      dir: "./src/pages",
       html: "./index.html",
       mount: "#app",
       routes: discovery.routes,
@@ -1514,6 +2464,23 @@ function formatGraphRoutePath(route: CoreGraph["routes"][number]): string {
       return "$";
     })
     .join("/")}`;
+}
+
+function replacePageRoutePattern(
+  graph: CoreGraph,
+  pageId: string,
+  segments: CoreGraph["routes"][number]["pattern"]["segments"],
+): CoreGraph {
+  let replaced = false;
+  const routes = graph.routes.map((route) => {
+    if (route.target.kind !== "page" || route.target.pageId !== pageId) {
+      return route;
+    }
+    replaced = true;
+    return { ...route, pattern: { segments } };
+  });
+  if (!replaced) throw new Error(`Expected a Route for Page "${pageId}".`);
+  return { ...graph, routes };
 }
 
 function getSinglePprRegionId(

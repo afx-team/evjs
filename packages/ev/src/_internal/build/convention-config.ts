@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 import type { CoreGraph } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
@@ -7,7 +6,9 @@ import {
   type Config,
   type ResolvedConfig,
 } from "../../config/index.js";
+import { removeOwnedOutputFile } from "./owned-file-output.js";
 import {
+  CANONICAL_PAGE_ROUTE_ROOT,
   PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY,
   PAGE_ROUTE_CONVENTION_DOCS_URL,
 } from "./page-route-conventions.js";
@@ -70,6 +71,9 @@ export async function withPageRoutingDefaults<TBundlerCfg>(
     return config.application ? config : { ...config, routing: undefined };
   }
   if (config.application) {
+    if (syncRouteTypes) {
+      await removeAllPageRouteTypes(cwd);
+    }
     return config;
   }
 
@@ -88,7 +92,6 @@ export async function withPageRoutingDefaults<TBundlerCfg>(
     );
   }
   const discovery = await discoverPageRoutes(cwd, {
-    dir: base.dir,
     mode: base.mode,
     required: requested,
   });
@@ -111,7 +114,7 @@ export async function withPageRoutingDefaults<TBundlerCfg>(
         },
       };
     }
-    throw new Error(createNoPageRoutesFoundMessage(base.dir));
+    throw new Error(createNoPageRoutesFoundMessage());
   }
 
   return {
@@ -128,9 +131,8 @@ export async function withPageRoutingDefaults<TBundlerCfg>(
   };
 }
 
-export function createNoPageRoutesFoundMessage(dir: string): string {
-  const normalizedDir = dir.replace(/\/+$/, "");
-  return `[evjs] No page routes found in ${dir}. Add a default-exporting Page anchor such as ${normalizedDir}/page.tsx or set conventions: false. ${getPageRouteSourceDocsHint()}`;
+export function createNoPageRoutesFoundMessage(): string {
+  return `[evjs] No page routes found in ${CANONICAL_PAGE_ROUTE_ROOT}. Add a default-exporting Page anchor such as ${CANONICAL_PAGE_ROUTE_ROOT}/page.tsx or set conventions: false. ${getPageRouteSourceDocsHint()}`;
 }
 
 function getPageRouteSourceDocsHint(): string {
@@ -282,10 +284,9 @@ type ServerRoutingConfigValue<TBundlerCfg> =
 
 export async function syncPageRouteTypesFromCoreGraph(
   cwd: string,
-  routingDir: string,
   graph: CoreGraph,
 ): Promise<void> {
-  const { dir, file, importBaseDir } = getPageRouteTypesPath(cwd, routingDir);
+  const { file, importBaseDir } = getPageRouteTypesPath(cwd);
 
   if (
     !Object.values(graph.applications).some(
@@ -301,8 +302,7 @@ export async function syncPageRouteTypesFromCoreGraph(
     importBaseDir,
   });
 
-  await fs.promises.mkdir(dir, { recursive: true });
-  await writePageRouteTypesIfChanged(file, source);
+  await writePageRouteTypesIfChanged(file, source, cwd);
   await removeStalePageRouteTypes(cwd, file);
 }
 
@@ -315,14 +315,16 @@ async function removeStalePageRouteTypes(
   await Promise.all(
     staleFiles
       .filter((file) => path.resolve(file) !== active)
-      .map((file) => fs.promises.rm(file, { force: true })),
+      .map((file) =>
+        removeOwnedOutputFile(cwd, file, "Stale Page route types output"),
+      ),
   );
 }
 
 async function removeAllPageRouteTypes(cwd: string): Promise<void> {
   await Promise.all(
     (await collectGeneratedPageRouteTypeFiles(cwd)).map((file) =>
-      fs.promises.rm(file, { force: true }),
+      removeOwnedOutputFile(cwd, file, "Stale Page route types output"),
     ),
   );
 }

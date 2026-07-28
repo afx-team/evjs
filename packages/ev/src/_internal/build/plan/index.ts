@@ -27,14 +27,27 @@ import {
   GENERATED_PAGES_APP_BUILD_ENTRY,
   SERVER_RUNTIME_BUILD_ENTRY_NAME,
 } from "../build-entry-conventions.js";
+import { assertFrameworkOutputOwnership } from "../output-path-conventions.js";
 import { createStaticPageDocumentOutput } from "../page-document-output.js";
 import {
   isPartialPrerenderPage,
   isRscPage,
   validatePageBuildContract,
 } from "../page-rendering-contract.js";
+import {
+  assertPortableArtifactFileName,
+  assertPortableRelativeArtifactPath,
+  canonicalPortableArtifactPathKey,
+  portableArtifactPathsConflict,
+} from "../portable-artifact-path.js";
 import type { DiscoveredServerRouteNode } from "../server-routes.js";
 import { sanitizePageId } from "../utils.js";
+import { formatCoreRoutePattern } from "./route-pattern.js";
+import {
+  createRuntimeServerPlan,
+  validateClientServerRouteConflicts,
+  validateRuntimeEndpointConflicts,
+} from "./runtime-server.js";
 
 const DEFAULT_PUBLIC_PATH: RuntimePlan["publicPath"] = "auto";
 const FRAMEWORK_SERVER_FETCH_ENTRY = "@evjs/ev/_internal/server/fetch";
@@ -335,19 +348,6 @@ function deriveBuildPlanFacts(graph: CoreGraph): BuildPlanFacts {
   };
 }
 
-function formatCoreRoutePattern(
-  pattern: CoreGraph["routes"][number]["pattern"],
-): string {
-  if (pattern.segments.length === 0) return "/";
-  return `/${pattern.segments
-    .map((segment) => {
-      if (segment.kind === "static") return segment.value;
-      if (segment.kind === "param") return `$${segment.name}`;
-      return "$";
-    })
-    .join("/")}`;
-}
-
 function collectPageComposition(
   application: CoreApplicationNode,
   routesById: ReadonlyMap<string, CoreClientRouteNode>,
@@ -438,7 +438,9 @@ function createServerRenderedRoutePaths(graph: CoreGraph): string[] {
   const paths = graph.routes.flatMap((route) => {
     if (route.target.kind !== "page") return [];
     const page = graph.pages[route.target.pageId];
-    return page && page.render !== "csr"
+    // Full SSG renderers run only while emitting HTML. Their canonical route
+    // must stay on the static dev host instead of being proxied to the server.
+    return page?.render === "ssr"
       ? [formatCoreRoutePattern(route.pattern)]
       : [];
   });
@@ -450,8 +452,18 @@ export function createBuildPlan(
   coreGraph: CoreGraph,
   options: CreateBuildPlanOptions = {},
 ): BuildPlan {
+  const distDir = options.distDir ?? "dist";
+  assertFrameworkOutputOwnership(config.output, distDir);
   const graph = deriveBuildPlanFacts(coreGraph);
   const mode = options.mode ?? readBuildMode();
+  const hasPpr = hasPprPages(graph);
+  const hasRsc = hasRscPages(graph);
+  const runtimeServer = createRuntimeServerPlan(config.server, {
+    hasPpr,
+    hasRsc,
+  });
+  validateClientServerRouteConflicts(coreGraph);
+  validateRuntimeEndpointConflicts(coreGraph, runtimeServer);
   validatePageBuildContracts(graph);
   const serverRenderers = createServerRenderers(graph);
   const entries = createEntries(config, graph, serverRenderers);
@@ -463,7 +475,7 @@ export function createBuildPlan(
     version: 1,
     buildId: options.buildId ?? mode,
     mode,
-    distDir: options.distDir ?? "dist",
+    distDir,
     output: {
       clientDir: config.output.client,
       serverDir: config.output.server,
@@ -478,29 +490,16 @@ export function createBuildPlan(
     server,
     runtime: {
       publicPath: options.publicPath ?? DEFAULT_PUBLIC_PATH,
-      server: {
-        basePath: config.server.basePath,
-        fn: config.server.runtime.fn,
-        ppr: hasPprPages(graph)
-          ? (config.server.runtime.ppr ??
-            toRuntimeEndpoint(joinPath(config.server.basePath, "ppr")))
-          : undefined,
-        rsc: hasRscPages(graph)
-          ? (config.server.runtime.rsc ??
-            toRuntimeEndpoint(joinPath(config.server.basePath, "rsc")))
-          : config.server.runtime.rsc,
-      },
+      server: runtimeServer,
       transport: config.transport,
     },
     dev: {
       clientRoutes: graph.devClientRoutes,
-      serverRoutePaths: [
-        ...new Set([
-          ...graph.serverRoutes.map((route) => route.path),
-          ...graph.serverRenderedRoutePaths,
-        ]),
+      serverRequestRoutePaths: [
+        ...new Set(graph.serverRoutes.map((route) => route.path)),
       ],
-      hasPpr: hasPprPages(graph),
+      serverRenderedPagePaths: graph.serverRenderedRoutePaths,
+      hasPpr,
     },
     ...((graph.clientReferences?.length ?? 0) > 0
       ? {
@@ -523,6 +522,14 @@ export function diffBuildPlan(
 ): BuildPlanUpdate {
   const runtimeChanged =
     stableStringify(previous.runtime) !== stableStringify(next.runtime);
+  const previousServerCompilation = {
+    entry: previous.server.entry,
+    renderers: previous.server.renderers,
+  };
+  const nextServerCompilation = {
+    entry: next.server.entry,
+    renderers: next.server.renderers,
+  };
   return {
     reason,
     previous,
@@ -535,13 +542,16 @@ export function diffBuildPlan(
       stableStringify(previous.resolve) !== stableStringify(next.resolve),
     runtimeChanged,
     deliveryChanged: reason === "config",
-    serverChanged:
-      runtimeChanged ||
-      previous.output.clientDir !== next.output.clientDir ||
+    serverCompilationChanged:
       previous.output.serverDir !== next.output.serverDir ||
-      stableStringify(previous.server) !== stableStringify(next.server) ||
-      stableStringify(previous.dev) !== stableStringify(next.dev) ||
+      stableStringify(previousServerCompilation) !==
+        stableStringify(nextServerCompilation) ||
       stableStringify(previous.rsc) !== stableStringify(next.rsc),
+    serverDocumentsChanged:
+      stableStringify(previous.server.documents) !==
+      stableStringify(next.server.documents),
+    devRoutingChanged:
+      stableStringify(previous.dev) !== stableStringify(next.dev),
   };
 }
 
@@ -687,21 +697,33 @@ function validateBuildOutputNames(
 ): void {
   const entriesByName = new Map<string, BuildEntry>();
   for (const entry of entries) {
-    const existing = entriesByName.get(entry.name);
+    assertPortableArtifactFileName(
+      entry.name,
+      `Build entry name "${entry.name}"`,
+    );
+    const entryNameKey = canonicalPortableArtifactPathKey(entry.name);
+    const existing = entriesByName.get(entryNameKey);
     if (existing) {
       throw new Error(
         `[evjs] Duplicate build entry name "${entry.name}" from ${describeBuildEntryOwner(
           existing,
-        )} and ${describeBuildEntryOwner(entry)}. Build entry names are manifest asset keys and must be globally unique.`,
+        )} and ${describeBuildEntryOwner(entry)}. Build entry names are manifest asset keys and physical bundler entry names, so they must be globally unique across platforms.`,
       );
     }
-    entriesByName.set(entry.name, entry);
+    entriesByName.set(entryNameKey, entry);
   }
 
   const htmlByFileName = new Map<string, HtmlPlan>();
   for (const document of html) {
     for (const fileName of [document.fileName, ...(document.aliases ?? [])]) {
-      const existing = htmlByFileName.get(fileName);
+      assertPortableRelativeArtifactPath(
+        fileName,
+        `HTML Document "${document.id}" output "${fileName}"`,
+      );
+      const fileNameKey = canonicalPortableArtifactPathKey(fileName);
+      const existing = [...htmlByFileName.entries()].find(([existingKey]) =>
+        portableArtifactPathsConflict(existingKey, fileNameKey),
+      )?.[1];
       if (existing) {
         throw new Error(
           `[evjs] Duplicate HTML output file "${fileName}" from ${describeHtmlOwner(
@@ -709,17 +731,17 @@ function validateBuildOutputNames(
           )} and ${describeHtmlOwner(document)}. Canonical HTML outputs and aliases must be globally unique.`,
         );
       }
-      htmlByFileName.set(fileName, document);
+      htmlByFileName.set(fileNameKey, document);
     }
   }
 }
 
 function describeBuildEntryOwner(entry: BuildEntry): string {
-  if (entry.owner?.appId) return `app "${entry.owner.appId}"`;
   if (entry.owner?.pageId && entry.owner.regionId) {
     return `page "${entry.owner.pageId}" PPR region "${entry.owner.regionId}"`;
   }
   if (entry.owner?.pageId) return `page "${entry.owner.pageId}"`;
+  if (entry.owner?.appId) return `app "${entry.owner.appId}"`;
   return `${entry.kind} entry`;
 }
 
@@ -1068,14 +1090,6 @@ function hasPprPages(graph: BuildPlanFacts): boolean {
 
 function hasRscPages(graph: BuildPlanFacts): boolean {
   return Object.values(graph.pages).some(isRscPage);
-}
-
-function joinPath(base: string, segment: string): string {
-  return `${base.replace(/\/+$/, "")}/${segment.replace(/^\/+/, "")}`;
-}
-
-function toRuntimeEndpoint(pathname: string): string {
-  return pathname.startsWith("/") ? pathname.slice(1) : pathname;
 }
 
 function buildEntryKey(entry: BuildEntry): string {
