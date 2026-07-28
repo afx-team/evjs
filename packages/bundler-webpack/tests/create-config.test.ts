@@ -652,17 +652,14 @@ describe("createWebpackConfigs", () => {
       ...base,
       server: {
         ...base.server,
-        routing: {
-          dir: "./src/apis",
-          routes: [
-            {
-              id: "src/apis/health/api.ts:/health:GET",
-              module: "src/apis/health/api.ts",
-              path: "/health",
-              methods: ["GET"],
-            },
-          ],
-        },
+        routes: [
+          {
+            id: "src/apis/health/api.ts:/health:GET",
+            module: "src/apis/health/api.ts",
+            path: "/health",
+            methods: ["GET"],
+          },
+        ],
       },
     };
     const graph = createGraph(config);
@@ -984,7 +981,7 @@ function createGraph(
     ),
     extensions: { namespaces: {} },
     serverFunctions: [],
-    serverRoutes: config.server.routing?.routes ?? [],
+    serverRoutes: config.server.routes ?? [],
   };
 }
 

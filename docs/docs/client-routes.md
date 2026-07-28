@@ -97,10 +97,9 @@ export default function UserDetailPage() {
 
 CSR SPA Pages may expose supported route lifecycle exports such as `loader`,
 `beforeLoad`, `validateSearch`, `pendingComponent`, `errorComponent`, and
-`notFoundComponent`. These hooks currently execute in the browser route tree;
-SSR and SSG Pages reject them until the framework defines an equivalent server
-route lifecycle and initial-data transport. MPA does not run a browser route
-tree, so these lifecycle hooks are not an MPA data-loading model.
+`notFoundComponent`. These hooks execute in the browser route tree;
+SSR and SSG Pages reject them. MPA does not run a browser route tree, so these
+lifecycle hooks are not an MPA data-loading model.
 
 ## Directory Route Tree
 
@@ -191,8 +190,7 @@ src/pages/
 
 Layouts wrap descendants in both SPA and MPA materialization. Error and
 not-found facets define SPA router boundaries. MPA rejects those router-only
-facets until they have an explicit Document contract, rather than silently
-ignoring them.
+facets rather than silently ignoring them.
 
 ## Navigation
 
@@ -245,7 +243,7 @@ export default defineConfig({
 ```
 
 MPA discovers the same Pages and semantic route patterns, then materializes
-Page-owned Documents without requiring a browser router. It currently accepts
+Page-owned Documents without requiring a browser router. It accepts
 only static Page paths; `$param`, terminal `$...splat`, and router-only
 boundaries fail graph validation. Layouts compose around Pages in both modes.
 `ev inspect` and `ev build` reject unsupported combinations instead of asking
@@ -299,10 +297,12 @@ Page components do not export literal `render`, `hydrate`, `prerender`, or
 
 `application.routes` can normalize an explicit SPA route tree into the same
 Core graph. It accepts nested `routes`, `page` or `component`, layouts,
-wrappers, redirects, and registered namespaced extensions. The `children`
-spelling is rejected. Each declared Route keeps its own semantic identity.
+wrappers, redirects, and registered namespaced extensions. `children`,
+`exact: false`, and nested routes below `exact: true` are rejected;
+`exact: true` is a terminal-match structural assertion and is not copied into
+the graph. Each declared Route keeps its own semantic identity.
 
-This configuration is SPA-only and rejects MPA materialization. It is an
-alternate input into the normalized graph, not a second canonical file
-convention. An unrelated `src/pages` directory does not publish routes unless
-canonical routing is enabled.
+This configuration is SPA-only, cannot be combined with `routing`, and rejects
+MPA materialization. It is an alternate input into the normalized graph, not a
+second canonical file convention. An unrelated `src/pages` directory does not
+publish routes unless canonical routing is enabled.

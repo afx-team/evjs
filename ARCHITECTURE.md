@@ -1,259 +1,175 @@
 # Architecture
 
-This file summarizes the current implementation. User-facing architecture
-documentation lives in [docs/docs/architecture.md](./docs/docs/architecture.md)
-and the current status matrix lives in [ROADMAP.md](./ROADMAP.md).
+This file describes the implementation that exists in the repository. The
+user-facing explanation lives in
+[docs/docs/architecture.md](./docs/docs/architecture.md), and active adapter
+gaps live in [ROADMAP.md](./ROADMAP.md).
 
-## Overview
+## System Model
 
-evjs is a React framework whose framework-managed application model uses one
-positive file-route anchor. Every `src/pages/**/page.*` defines a Page whose
-containing directory owns its scope and determines its URL. `routing.mode`
-selects SPA or MPA materialization without changing the semantic Page/Route
-tree. Optional adjacent `page.config.ts` modules are synchronously evaluated
-into core title/named metadata/rendering data and namespaced Page and Route
-extensions; Document extensions target a Page-owned Document only when one is
-materialized. Top-level `config.extensions` is resolved into namespaced
-Application extensions before plugin setup; explicit route and document inputs
-may configure Route and Application-owned Document extensions. All four owners
-use one plugin extension registry, and runtime projection remains explicit.
-Server request Routes come from positive `src/apis/**/api.*` anchors whose
-directories determine URL and private scope. Framework request middleware comes
-from `src/middleware.ts`, API route middleware comes from
-`src/apis/**/middleware.ts`, and reachable `"use server"` modules provide
-server functions. `@evjs/ev` exposes curated file-convention authoring subpaths
-and generated-only internal bridges, while `@evjs/client` and `@evjs/server`
-remain independent runtime cores that provide browser/server primitives without
-becoming alternate framework configuration modes.
+Framework-managed applications normalize authored source into one semantic
+graph before bundling:
 
 ```txt
-Page anchors + page.config.ts + route directories + server conventions + ev.config.ts
-  -> CoreGraph (Page / Route / Application / Document)
+ev.config.ts + Page tree + server conventions + plugin extension declarations
+  -> ResolvedFrameworkConfig
+  -> CoreGraph (Application / Page / Route / Document)
   -> BuildPlan
   -> .ev generated framework IR
-  -> selected bundler adapter
-  -> in-memory BuildOutput
-  -> ClientRuntime / FrameworkRuntime contracts
-  -> DeploymentMetadata / lightweight manifests / deployment adapters
+  -> BundlerBuildFacts
+  -> BuildOutput
+  -> ClientRuntime / FrameworkRuntime / DeploymentMetadata
+  -> deployment adapter artifacts
 ```
 
-Explicit `application.routes` and `component`/`routes` config are SPA-only
-route-tree inputs into that graph; they are not additional application
-authoring models and cannot select MPA materialization. The file convention
-never discovers `index.*`. An external source adapter that starts from
-differently named published entries must either convert them to `page.*` plus
-`page.config.ts` before Core discovery or provide the explicit SPA route-tree
-input. Every provider must normalize into the same CoreGraph. Framework
-semantics are owned by `@evjs/ev` and
-`@evjs/shared/manifest`.
-Bundlers own module graphs, chunks, assets, dev HMR, and stats. Runtime packages
-consume generated runtime contracts rather than `BuildOutput` or manifest
-artifacts.
+The semantic inputs are:
 
-## Package Shape
+- `routing: { mode: "spa" | "mpa" }` enables canonical Page discovery from
+  `src/pages/**/page.*`. The containing directory owns the Page scope and
+  determines its URL.
+- adjacent `page.config.ts` modules provide static title, named metadata,
+  rendering settings, and namespaced Page, Route, or Page-owned Document
+  extensions.
+- `application.routes` is an explicit SPA-only route tree. It normalizes into
+  the same graph and cannot be combined with canonical `routing` discovery.
+- `src/apis/**/api.*` defines framework-managed request Routes.
+- `src/middleware.ts` is global framework middleware;
+  `src/apis/**/middleware.ts` is scoped request-route middleware.
+- reachable modules beginning with `"use server";` define server functions.
 
-```txt
-@evjs/cli
-  CLI and programmatic command entrypoints
+`routing.mode` changes materialization, not Page identity. SPA normally owns
+one Application Document and a browser route tree. MPA owns an independent
+Document and client entry per static Page. SSR, SSG, PPR, and RSC requirements
+are derived from Page config into the same graph and build plan.
 
-@evjs/create-app
-  project scaffolding and template restoration
+## Ownership Boundaries
 
-@evjs/plugin-qiankun
-  optional qiankun master/slave micro-frontend bridge plugin
+| Owner | Responsibility |
+| --- | --- |
+| `@evjs/ev` | Config resolution, plugin lifecycle, convention discovery, CoreGraph analysis, BuildPlan creation, generated `.ev` IR, output linking, HTML, and deployment helpers. |
+| `@evjs/shared` | Shared runtime helpers and the `@evjs/shared/manifest` graph, plan, output, runtime, and deployment contracts. |
+| `@evjs/client` | Standalone browser runtime plus the client primitives used behind generated framework entries. |
+| `@evjs/server` | Standalone Hono/Fetch runtime plus server functions, request routes, request context, and framework rendering coordination. |
+| `@evjs/bundler-utoopack` | Default bundler adapter selected by the CLI. |
+| `@evjs/bundler-webpack` | Validation/fallback adapter for server rendering, RSC, and PPR builds. |
+| `@evjs/cli` | Command parsing and selection of the default bundler. |
+| `@evjs/create-app` | Project scaffolding from repository templates. |
+| `@evjs/plugin-qiankun` | Optional qiankun integration through plugin extensions and generated contributions. |
 
-@evjs/ev
-  composition/control plane for config, plugins, graph analysis, build
-  planning, HTML, capability validation, deployment helpers, and bundler
-  adapter contracts, plus curated file-convention authoring subpaths
+Bundler adapters consume `BuildPlan` and return build facts. They own module
+graphs, chunks, assets, stats, and HMR; they do not rediscover framework
+semantics. Deployment adapters consume `BuildOutput` or its canonical
+`DeploymentMetadata` projection; they do not infer routing from bundler stats.
 
-@evjs/shared
-  runtime shared helpers and @evjs/shared/manifest schemas/linkers
+## Public Imports
 
-@evjs/client
-  standalone/manual browser runtime core, framework-managed page runtime,
-  server-function transport, navigation primitives, and RSC client runtime
+The `@evjs/ev` root is the minimal config-authoring entry. Other responsibilities
+use explicit subpaths:
 
-@evjs/server
-  standalone/manual server runtime core for server functions, REST routes,
-  request context, SSR/PPR/RSC request coordination, and runtime adapters such
-  as @evjs/server/node
+| Import | Intended consumer |
+| --- | --- |
+| `@evjs/ev` | `defineConfig`, `definePageConfig`, and their basic types. |
+| `@evjs/ev/config` | Advanced config utilities and resolved config types. |
+| `@evjs/ev/plugin` | Plugin declarations, hooks, extension owners, and the read-only framework view. |
+| `@evjs/ev/deployment` | Built-in deployment adapters and artifact helpers. |
+| `@evjs/ev/route`, `/navigation`, `/query` | File-convention Page data, navigation, and query APIs. |
+| `@evjs/ev/server-context`, `/transport` | Framework request context and browser-to-server transport APIs. |
+| `@evjs/ev/build-tools` | Config loading for downstream tooling. |
+| `@evjs/ev/_internal/*` | CLI, bundler adapters, and generated framework code only. |
 
-@evjs/bundler-utoopack
-  default Utoopack adapter
+Standalone applications may use `@evjs/client` and `@evjs/server` directly.
+Programmatic `createApp()`, client route trees, and server `createRoute()`
+declarations are runtime primitives; framework convention discovery does not
+scan them.
 
-@evjs/bundler-webpack
-  validation/fallback adapter for architecture features blocked on Utoopack APIs
-```
-
-`@evjs/ev` owns config and plugin authoring APIs, with the root export limited
-to minimal config authoring. Advanced config/plugin utilities, deployment
-adapters, build tooling entries, and generated runtime bridges live on explicit
-subpaths, and runtime capabilities are composed through graph analysis, build
-plans, and manifest validation.
-File-convention application source imports curated authoring APIs from
-`@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`, `@evjs/ev/server-context`, and `@evjs/ev/transport`; generated
-framework code resolves runtime internals through `@evjs/ev/_internal/*`.
-Runtime APIs in `@evjs/client` and `@evjs/server` remain standalone/manual
-surfaces for applications that intentionally own those primitives directly.
-Plugin authoring details, including generated contribution types and the public
-framework IR view, live under `@evjs/ev/plugin`; plugin packages should not
-import `@evjs/ev/_internal/*`.
-Other packages are tooling, bundler adapters, or shared contracts for framework
-packages. When a new capability needs a boundary, prefer adding a subpath export
-to the package that owns the behavior before creating another distributed
-package.
-`@evjs/plugin-qiankun` is an explicit plugin-package boundary for qiankun
-micro-frontend integration because it carries an optional third-party runtime
-dependency and generated bridge behavior that should not become part of the
-core framework surface.
-
-Subpath exports stay explicit and documented; adding a new package export is a
-public API decision, not a convenience alias.
-
-Internal `@evjs/*` runtime dependencies are kept explicit and workspace-local.
-`@evjs/ev` consumes `@evjs/client`, `@evjs/server`, and shared contracts so
-file-convention apps can install one framework package while generated code
-still reaches the runtime cores. `@evjs/server` consumes `@evjs/client` for
-shared runtime types.
-`@evjs/cli` owns the default Utoopack adapter dependency, and bundler adapters
-depend on `@evjs/ev` instead of depending on each other. Internal runtime
-dependency versions stay `"*"` in source manifests for workspace development,
-then release automation rewrites them to the concrete release version before
-publishing.
-`@evjs/ev` root exports stay limited to minimal config authoring; advanced
-config/plugin utilities, deployment helpers, and build tooling entries stay on
-their own subpaths.
-
-Do not add split packages for build or manifest ownership:
-
-```txt
-@evjs/build-tools  -> packages/ev/src/_internal/build
-@evjs/manifest     -> packages/shared/src/manifest
-```
-
-The public `@evjs/ev/build-tools` subpath exposes the config loader for
-downstream tooling; the repo's CLI and adapters use `@evjs/ev/_internal/build`.
-Manifest contracts are exported from `@evjs/shared/manifest`, and generated page/shell/server-function
-runtime primitives stay behind focused generated-only
-`@evjs/ev/_internal/*` subpaths.
-Framework packages share strict static-JSON boundary validation through
-`@evjs/shared/_internal/static-json`; that subpath is internal infrastructure,
-not an application or plugin authoring API.
-
-Before bundling, evjs writes `.ev` as the generated framework IR. It contains
-framework graph/plan snapshots, generated entry facades, plugin generated
-artifacts, framework slot items, import edges, and the final manifest. That IR
-is the source of truth for file-convention entry composition and plugin
-entry/runtime/html/resolution injection.
-
-## Build-Time Flow
+## Build Flow
 
 ```mermaid
 sequenceDiagram
-  participant CLI as "@evjs/cli"
-  participant EV as "@evjs/ev"
-  participant Tools as "ev build-tools"
-  participant Bundler as "BundlerAdapter"
-  participant Manifest as "@evjs/shared/manifest"
+  participant CLI as @evjs/cli
+  participant EV as @evjs/ev
+  participant Plugin as Plugins
+  participant Bundler as BundlerAdapter
+  participant Shared as @evjs/shared/manifest
 
-  CLI->>EV: load and resolve config
-  EV->>EV: run config hooks and resolve framework defaults
-  EV->>EV: register the Application/Page/Route/Document extension owners and resolve Application values
-  EV->>EV: run setup/buildStart hooks
-  EV->>Tools: createCoreGraph(config)
-  Tools-->>EV: CoreGraph, diagnostics, fileDependencies
-  EV->>Tools: createBuildPlan(config, graph)
-  EV->>Bundler: build(plan)
-  Bundler-->>EV: stats/assets/build facts
-  EV->>Manifest: linkBuildOutput(plan, bundlerFacts)
-  Manifest-->>EV: BuildOutput
-  EV->>EV: run buildOutput hooks
-  EV->>EV: emit manifest and HTML documents
-  EV->>EV: run buildEnd({ output })
+  CLI->>EV: load config and select bundler
+  EV->>Plugin: config() and describe()
+  EV->>EV: resolve config and Application extensions
+  EV->>Plugin: setup() and buildStart()
+  EV->>EV: create CoreGraph and BuildPlan
+  EV->>Plugin: contributions(framework view)
+  EV->>EV: materialize .ev IR
+  EV->>Plugin: bundlerConfig()
+  EV->>Bundler: build(BuildPlan)
+  Bundler-->>EV: BundlerBuildFacts
+  EV->>Shared: link BuildOutput
+  EV->>Plugin: buildOutput()
+  EV->>EV: emit deployment metadata and HTML
+  EV->>Plugin: transformHtml() and buildEnd()
 ```
 
-## Dev-Time Rule
+`buildOutput()` may change asset-group contents and add plugin deployment
+metadata, but graph identity, runtime paths, routes, output paths, and owner
+relationships remain framework-owned.
 
-Graph analysis may read static import closure for semantic discovery, but dev
-watching must remain narrower than that closure. `fileDependencies` should
-include explicit file-convention roots and framework marker files such as
-`src/pages/**/page.*`, `src/apis/**/api.*`, discovered framework/API
-middleware modules, `"use server"`, and `"use client"`. Programmatic
-`@evjs/server` route declarations are runtime code, not graph roots. Ordinary
-component and style edits stay in the bundler HMR path.
+## Generated IR
 
-HTML-only dev plan updates can be relinked from existing bundler stats. Dynamic
-entry or server renderer changes require `BundlerDevController.updatePlan()`.
-Webpack implements this validation path. Utoopack still needs the lower-layer
-entry/server update API before it can support those changes without restarting
-the bundler dev instance.
-
-## Runtime Ownership
+`ev prepare` materializes `.ev` without invoking a bundler. The directory is a
+reviewable intermediate representation containing:
 
 ```txt
-@evjs/client
-  mounts standalone CSR apps and framework-managed React pages
-
-@evjs/client/internal
-  reads generated ClientRuntime, activates app/page modules, preloads modules,
-  and disposes lifecycles
-
-@evjs/server
-  owns server functions, standalone REST route primitives, SSR document
-  rendering, PPR region rendering, and RSC Flight endpoint routing
-
-deployment adapters
-  translate BuildOutput/DeploymentMetadata to platform artifacts and injected
-  FrameworkRuntime bootstraps
+.ev/
+  framework/core-graph.json
+  framework/build-plan.json
+  entries/
+  plugins/
+  manifest.json
 ```
 
-TanStack Router is available through the `@evjs/client` standalone CSR surface
-for manual browser apps. In framework-managed apps, `@evjs/ev` owns file-route
-discovery and generated bootstraps, so page code uses `src/pages`, page hooks,
-and navigation helpers instead of constructing route trees directly.
+The manifest links generated modules, import edges, slot contributions, and
+final entry facades. Bundlers compile those concrete entries. `.ev`,
+`src/route-types.d.ts`, and `dist` are generated output and are not application
+source.
 
-## Manifest
+## Runtime And Deployment Contracts
 
-The framework output contract is the in-memory `BuildOutput`. Builds serialize
-the canonical deployment projection to:
+`BuildOutput` is the complete in-memory linked result. It is consumed by
+plugins and deployment composition but is not serialized wholesale.
+
+Core serializes the deployment projection to:
 
 ```txt
 dist/deployment-metadata.json
 ```
 
-Core does not emit split client/server compatibility manifests. A deployment
-adapter that needs a platform-specific projection must own that artifact
-explicitly. Generated HTML embeds `ClientRuntime`, and runtime-only
-`FrameworkRuntime` data is injected into dev or deployment adapter bootstraps
-instead of being emitted as a default JSON artifact.
+Generated HTML embeds the minimal `ClientRuntime` needed to boot and navigate.
+Server-capable dev and deployment bootstraps receive `FrameworkRuntime`, which
+contains request-time rendering coordination and RSC reference data.
+`DeploymentMetadata` describes public assets, Documents, the server entry, and
+deployable route rows.
 
-Deployment plugins and platform adapters should consume
-`deploymentMetadata`/`createDeploymentArtifact()` for post-build routing and
-assets. Plugins that need the complete graph can still inspect the in-memory
-`BuildOutput`. Generated runtimes consume minimal `ClientRuntime` and
-`FrameworkRuntime` contracts rather than manifest or build-output files.
+Built-in adapters under `@evjs/ev/deployment` can additionally emit:
 
-## Deployment
+- Node: `deployment.node.json` and `server.mjs`;
+- static hosting: `deployment.static.json` and `_redirects`;
+- edge: `deployment.edge.json` and, when needed, `worker.mjs`.
 
-`@evjs/ev` exposes platform-neutral deployment artifact helpers plus
-`nodeDeploymentAdapter()`, `staticDeploymentAdapter()`, and
-`edgeDeploymentAdapter()`. The Node adapter emits a production
-`dist/server.mjs` that imports only Node built-ins, `@evjs/server/node`, and
-the generated server bundle. Platform-specific adapters should derive platform
-routes from `DeploymentMetadata` and the in-memory `BuildOutput` instead of
-reading bundler config, stats, manifests, or runtime contracts.
+## Development Updates
+
+Normal component, style, and asset edits stay on the bundler HMR/watch path.
+Changes to config, Page anchors/config, layouts and boundaries, server-route
+anchors, middleware, or framework markers recreate the graph and plan.
+`diffBuildPlan()` classifies entry, HTML, resolution, runtime, server,
+Document, and dev-routing changes for `BundlerDevController.updatePlan()`.
+
+Both built-in adapters apply generated/HTML-only updates in process. Entry,
+route, server-topology, resolution, and bundler-config changes report that
+`ev dev` must restart.
 
 ## Programmatic Preparation
 
-`prepareFrameworkBuild()` is the supported core API for tools that need
-framework semantics without running a bundler or emitting platform files. It
-resolves config, applies page-routing defaults, registers all extension owners,
-resolves Application extensions before plugin setup, resolves Page/Route/
-Document extensions during graph analysis, initializes plugins, runs
-`buildStart` hooks, reports graph diagnostics, and returns the resolved config,
-graph file dependencies, plugin watch files, and an explicit `dispose()`
-function. `CoreGraph` and `BuildPlan` remain internal framework state.
-
-This API intentionally stops before bundler execution, manifest emission, and
-deployment adapter output.
+`prepareFrameworkBuild()` is the supported pre-bundler API for tooling. It
+loads and resolves config, runs plugin preflight hooks, analyzes the graph,
+reports diagnostics, and returns resolved config, file dependencies, plugin
+watch files, and `dispose()`. It does not run a bundler or emit deployment
+artifacts.

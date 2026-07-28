@@ -2505,7 +2505,7 @@ describe("webpackAdapter dev", () => {
       const html = await fetchDevText(
         `http://127.0.0.1:${port}/home/index.html`,
       );
-      const legacyManifest = await fetchDevResponse(
+      const unsupportedManifestResponse = await fetchDevResponse(
         `http://127.0.0.1:${port}/manifest.json`,
       );
 
@@ -2524,8 +2524,10 @@ describe("webpackAdapter dev", () => {
       expect(html).toContain('data-evjs-kind="page"');
       expect(html).toContain('data-evjs-id="home"');
       expect(html).toContain('src="/page-client-home.js"');
-      expect(legacyManifest.status).toBe(404);
-      expect(legacyManifest.text).not.toContain("manifest not ready");
+      expect(unsupportedManifestResponse.status).toBe(404);
+      expect(unsupportedManifestResponse.text).not.toContain(
+        "manifest not ready",
+      );
       await expect(
         fs.access(path.join(cwd, "dist/runtime.json")),
       ).rejects.toThrow();

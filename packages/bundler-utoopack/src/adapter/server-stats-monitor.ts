@@ -28,13 +28,11 @@ export async function readServerStatsVersion(
 }
 
 /**
- * Temporary compatibility bridge for Utoopack development builds.
+ * Track completed Utoopack server rebuilds.
  *
- * `@utoo/pack` currently exposes `onReady` only for the initial build and
- * server startup, with no lifecycle callback for subsequent completed server
- * rebuilds. Until that callback exists, poll the authoritative server
- * `stats.json` so evjs can relink build facts and refresh its server runtime.
- * Remove this monitor once Utoopack provides that rebuild signal directly.
+ * `@utoo/pack` invokes `onReady` for the initial build and server startup, not
+ * later completed server rebuilds. Poll the authoritative server `stats.json`
+ * so evjs can relink build facts and refresh its server runtime.
  */
 export function startUtoopackServerStatsMonitor(
   options: StartUtoopackServerStatsMonitorOptions,

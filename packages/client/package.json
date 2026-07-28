@@ -78,11 +78,6 @@
       "types": "./esm/rsc/rsc-runtime.d.ts",
       "import": "./esm/rsc/rsc-runtime.js",
       "default": "./esm/rsc/rsc-runtime.js"
-    },
-    "./internal/route-types": {
-      "types": "./esm/framework/page/route-types.d.ts",
-      "import": "./esm/framework/page/route-types.js",
-      "default": "./esm/framework/page/route-types.js"
     }
   },
   "scripts": {

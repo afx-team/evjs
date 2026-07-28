@@ -8,7 +8,7 @@
     "description": "The homepage hero description"
   },
   "homepage.getStarted": {
-    "message": "快速开始 →",
+    "message": "快速开始",
     "description": "The Get Started button on the homepage"
   },
   "homepage.workflow.label": {
@@ -40,7 +40,7 @@
     "description": "Description for the second homepage flow step"
   },
   "homepage.flow.bundle.title": {
-    "message": "统一构建",
+    "message": "构建入口",
     "description": "Title for the third homepage flow step"
   },
   "homepage.flow.bundle.description": {
@@ -52,7 +52,7 @@
     "description": "Title for the fourth homepage flow step"
   },
   "homepage.flow.output.description": {
-    "message": "写入浏览器文件、服务端产物、manifests 和部署元信息。",
+    "message": "写入浏览器文件、服务端产物和部署元信息。",
     "description": "Description for the fourth homepage flow step"
   },
   "homepage.feature.pages.title": {
@@ -100,7 +100,7 @@
     "description": "Title for Deployment Output feature"
   },
   "homepage.feature.deployment.description": {
-    "message": "输出浏览器资源、可选服务端 bundle、manifests 和部署元信息。",
+    "message": "输出浏览器资源、可选服务端 bundle 和规范化部署元信息。",
     "description": "Description for Deployment Output feature"
   },
   "homepage.features.label": {

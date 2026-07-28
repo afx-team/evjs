@@ -1,6 +1,6 @@
 # complex-routing
 
-Advanced SPA routing through the same Core 0.3 Page-and-Route file convention
+Advanced SPA routing through the same Page-and-Route file convention
 used by the basic example.
 
 ## Run
@@ -29,7 +29,7 @@ npm run dev
 - Redirects through the `/old-blog` Page lifecycle
 - Page hooks such as `usePageParams()` and `usePageSearch()`
 
-This example intentionally uses SPA mode because its dynamic route and React
-route facets are not yet materialized by the MPA runtime. Canonical SPA and MPA
-apps still share the same `page.tsx` Page-anchor convention; `routing.mode`
-selects how supported Pages are materialized.
+This example uses SPA mode because MPA rejects its dynamic route and
+router-only React facets. Canonical SPA and MPA apps share the same `page.tsx`
+Page-anchor convention; `routing.mode` selects how supported Pages are
+materialized.

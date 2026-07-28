@@ -28,14 +28,12 @@ export default defineConfig({
   `src/apis/**/middleware.ts`。
 
 框架不提供 client、server、route、middleware 或 facet 级关闭开关。不要把
-`conventions: false` 与显式 `routing` 或 `server.routing` 声明一起配置。
-文件约定启用时仍可用 `server.routing: { dir }` 调整服务端路由目录；它只定制
-目录，不负责关闭发现。
+`conventions: false` 与显式客户端 `routing` 声明一起配置。文件约定启用时，
+服务端路由目录固定为 `src/apis`。
 
 仅支持 SPA 的 `application.routes` 是显式 route-tree 配置输入，不属于文件约定。
 reachable 且带 `"use server";` 的模块，以及插件 contribution 生成的模块，
-同样不属于文件约定；关闭文件发现后它们仍然可用。`app`、`pages` 与顶层
-`routes` 不属于公共配置，会被拒绝。
+同样不属于文件约定；关闭文件发现后它们仍然可用。
 
 手动 browser bootstrap 使用下方 standalone runtime；它不是第二套 canonical
 routing model。
@@ -108,5 +106,5 @@ const app = createApp({
 serve(app, { port: 3001 });
 ```
 
-不要使用 `server.entry`。它不是框架配置字段。如果服务端运行时是程序化的，
-请把它作为普通 Node、Fetch、Bun、Deno 或平台入口运行在服务端文件路由发现之外。
+如果服务端运行时是程序化的，请把它作为普通 Node、Fetch、Bun、Deno 或平台入口
+运行在服务端文件路由发现之外。

@@ -95,9 +95,8 @@ export default function UserDetailPage() {
 
 CSR SPA Page 可导出受支持的 route lifecycle，如 `loader`、`beforeLoad`、
 `validateSearch`、`pendingComponent`、`errorComponent` 和
-`notFoundComponent`。这些 hook 当前只在浏览器 route tree 中执行；在框架定义
-对等的服务端 route lifecycle 与首屏数据传输前，SSR 和 SSG Page 会拒绝这些
-export。MPA 不运行浏览器 route tree，因此这些 lifecycle 不是 MPA
+`notFoundComponent`。这些 hook 只在浏览器 route tree 中执行；SSR 和 SSG Page
+会拒绝这些 export。MPA 不运行浏览器 route tree，因此这些 lifecycle 不是 MPA
 data-loading 模型。
 
 ## 目录路由树
@@ -185,8 +184,8 @@ src/pages/
 ```
 
 Layout 在 SPA 与 MPA materialization 中都会包裹后代；error 与 not-found
-切面定义 SPA router boundary。在具备明确 Document contract 前，MPA 会拒绝
-这些 router-only facet，而不是静默忽略。
+切面定义 SPA router boundary。MPA 会拒绝这些 router-only facet，而不是静默
+忽略。
 
 ## 导航
 
@@ -238,7 +237,7 @@ export default defineConfig({
 ```
 
 MPA 发现相同的 Page 与语义 route pattern，再物化 Page-owned Document，无需
-浏览器 router。它当前只接受静态 Page path；`$param`、终止 `$...splat` 与
+浏览器 router。它只接受静态 Page path；`$param`、终止 `$...splat` 与
 router-only boundary 会在 graph 校验失败。Layout 在两种 mode 中都会为 Page
 组合。`ev inspect` 和 `ev build` 会拒绝不支持的组合，而不是要求应用改用第二套
 路由模型。同一 Page 目录的 `index.html` 可以作为该 MPA Page 的 Document 模板。
@@ -281,7 +280,8 @@ mode 下，最深层 active Page 持有 title/meta，不继承父 Page metadata�
 projection。
 
 Page component 不读取 literal `render`、`hydrate`、`prerender` 或 `rsc`
-export；这些 setting 统一写在 `page.config.ts`。参见[构建](./build)。
+export；这些 setting 统一写在 `page.config.ts`。参见[构建](./build)与
+[架构](./architecture)。
 
 ## 显式 SPA route tree
 

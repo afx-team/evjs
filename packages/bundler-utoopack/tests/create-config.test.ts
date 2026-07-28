@@ -114,6 +114,38 @@ describe("createUtoopackConfig", () => {
     expect(proxyRuleMatchesPath(fallbackRule, "/__evjs/unclaimed")).toBe(true);
   });
 
+  it("rejects custom client certificates in development", async () => {
+    const config = createResolvedConfig({
+      dev: {
+        port: 41234,
+        https: { key: "./certs/dev.key", cert: "./certs/dev.crt" },
+        proxy: [],
+      },
+    });
+    const plan = await createPlan(config);
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), []),
+    ).rejects.toThrow(
+      "The Utoopack dev server accepts dev.https only as a boolean",
+    );
+  });
+
+  it("allows development-only certificate config for a production plan", async () => {
+    const config = createResolvedConfig({
+      dev: {
+        port: 41234,
+        https: { key: "./certs/dev.key", cert: "./certs/dev.crt" },
+        proxy: [],
+      },
+    });
+    const plan = await createPlan(config, { mode: "production" });
+
+    await expect(
+      createUtoopackConfig(config, plan, process.cwd(), []),
+    ).resolves.toMatchObject({ mode: "production" });
+  });
+
   it("resolves generated alias contributions directly to generated files", async () => {
     const plugin: Plugin<ConfigComplete> = {
       name: "generated-alias",
@@ -194,17 +226,14 @@ describe("createUtoopackConfig", () => {
           port: 3001,
           https: false,
         },
-        routing: {
-          dir: "./src/apis",
-          routes: [
-            {
-              id: "src/apis/health/api.ts:/health:GET",
-              module: "src/apis/health/api.ts",
-              path: "/health",
-              methods: ["GET"],
-            },
-          ],
-        },
+        routes: [
+          {
+            id: "src/apis/health/api.ts:/health:GET",
+            module: "src/apis/health/api.ts",
+            path: "/health",
+            methods: ["GET"],
+          },
+        ],
       },
     });
     const plan = await createPlan(config);
@@ -269,17 +298,14 @@ describe("createUtoopackConfig", () => {
           port: 3001,
           https: false,
         },
-        routing: {
-          dir: "./src/apis",
-          routes: [
-            {
-              id: "src/apis/health/api.ts:/health:GET",
-              module: "src/apis/health/api.ts",
-              path: "/health",
-              methods: ["GET"],
-            },
-          ],
-        },
+        routes: [
+          {
+            id: "src/apis/health/api.ts:/health:GET",
+            module: "src/apis/health/api.ts",
+            path: "/health",
+            methods: ["GET"],
+          },
+        ],
       },
     });
     const generatedPlan = await createPlan(config);
@@ -541,29 +567,26 @@ describe("createUtoopackConfig", () => {
           port: 3001,
           https: false,
         },
-        routing: {
-          dir: "./src/apis",
-          routes: [
-            {
-              id: "src/apis/health/api.ts:/health:GET",
-              module: "src/apis/health/api.ts",
-              path: "/health",
-              methods: ["GET"],
-            },
-            {
-              id: "src/apis/users/$userId/api.ts:/users/:userId:GET",
-              module: "src/apis/users/$userId/api.ts",
-              path: "/users/:userId",
-              methods: ["GET"],
-            },
-            {
-              id: "src/apis/$tenantId/api.ts:/:tenantId:GET",
-              module: "src/apis/$tenantId/api.ts",
-              path: "/:tenantId",
-              methods: ["GET"],
-            },
-          ],
-        },
+        routes: [
+          {
+            id: "src/apis/health/api.ts:/health:GET",
+            module: "src/apis/health/api.ts",
+            path: "/health",
+            methods: ["GET"],
+          },
+          {
+            id: "src/apis/users/$userId/api.ts:/users/:userId:GET",
+            module: "src/apis/users/$userId/api.ts",
+            path: "/users/:userId",
+            methods: ["GET"],
+          },
+          {
+            id: "src/apis/$tenantId/api.ts:/:tenantId:GET",
+            module: "src/apis/$tenantId/api.ts",
+            path: "/:tenantId",
+            methods: ["GET"],
+          },
+        ],
       },
     });
     const plan = await createPlan(config);
@@ -660,17 +683,14 @@ describe("createUtoopackConfig", () => {
           port: 3001,
           https: false,
         },
-        routing: {
-          dir: "./src/apis",
-          routes: [
-            {
-              id: "src/apis/health/api.ts:/health:GET",
-              module: "src/apis/health/api.ts",
-              path: "/health",
-              methods: ["GET"],
-            },
-          ],
-        },
+        routes: [
+          {
+            id: "src/apis/health/api.ts:/health:GET",
+            module: "src/apis/health/api.ts",
+            path: "/health",
+            methods: ["GET"],
+          },
+        ],
       },
     });
     const plan = await createPlan(config);
@@ -1075,17 +1095,14 @@ describe("createUtoopackConfig", () => {
           port: 3001,
           https: false,
         },
-        routing: {
-          dir: "./src/apis",
-          routes: [
-            {
-              id: "src/apis/health/api.ts:/health:GET",
-              module: "src/apis/health/api.ts",
-              path: "/health",
-              methods: ["GET"],
-            },
-          ],
-        },
+        routes: [
+          {
+            id: "src/apis/health/api.ts:/health:GET",
+            module: "src/apis/health/api.ts",
+            path: "/health",
+            methods: ["GET"],
+          },
+        ],
       },
     });
     const plan = await createPlan(config);
@@ -1175,7 +1192,7 @@ describe("createUtoopackConfig", () => {
     );
 
     expect(message).toContain(
-      "Utoopack adapter cannot build framework server page entries yet",
+      "Utoopack adapter cannot build framework server page entries",
     );
     expect(message).toContain(
       'page-server-dashboard (page-server, page "dashboard", route "dashboard")',
@@ -1183,7 +1200,7 @@ describe("createUtoopackConfig", () => {
     expect(message).toContain("Unsupported entry kinds: page-server");
   });
 
-  it("fails clearly for framework server page entries until Utoopack supports them", async () => {
+  it("rejects framework server page entries without multi-entry support", async () => {
     const config = createResolvedConfig({
       server: {
         basePath: "/__evjs",
@@ -1403,7 +1420,7 @@ function createGraph(
     ),
     extensions: { namespaces: {} },
     serverFunctions: [],
-    serverRoutes: config.server.routing?.routes ?? [],
+    serverRoutes: config.server.routes ?? [],
   };
 }
 

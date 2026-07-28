@@ -12,8 +12,8 @@ evjs framework routing 也不会分析编程式 route 声明。
 ## 文件路由
 
 文件化服务端路由默认启用。evjs 扫描 `./src/apis/**/api.*`，每个锚点的所在
-目录映射为 request URL。Object 形式目前只支持 `dir`。没有 `prefix` 选项；
-如果 URL 需要以 `/api/users` 开头，把锚点放在 `src/apis/api/users` 这类目录下。
+目录映射为 request URL。该根目录固定，且没有 prefix 配置；如果 URL 需要以
+`/api/users` 开头，把锚点放在 `src/apis/api/users` 这类目录下。
 
 ```text
 src/apis/api.ts                       -> /

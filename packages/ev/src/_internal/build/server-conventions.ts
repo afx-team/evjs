@@ -14,7 +14,10 @@ import {
 } from "./routes/shared.js";
 import { findServerRouteSegmentConventionViolation } from "./server-route-conventions.js";
 import type { DiscoveredServerRouteNode } from "./server-routes.js";
-import { isInsideCwd, toPosixPath } from "./utils.js";
+import { isInsideCwd, isRealPathInsideCwd, toPosixPath } from "./utils.js";
+
+/** Fixed global middleware anchor for framework server conventions. */
+export const CANONICAL_SERVER_MIDDLEWARE_FILE = "./src/middleware.ts";
 
 export interface DiscoverServerConventionsOptions {
   globalFile: string;
@@ -106,6 +109,25 @@ async function discoverGlobalMiddlewares(
   }
 
   const directory = path.dirname(absoluteConfigured);
+  try {
+    if (!(await isRealPathInsideCwd(cwd, directory))) {
+      diagnostics.push({
+        level: "error",
+        file: toDiagnosticPath(
+          toPosixPath(path.relative(cwd, absoluteConfigured)),
+        ),
+        message: "Server middleware file must resolve inside the project root.",
+      });
+      return { middlewares: [], files: [] };
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return { middlewares: [], files: [] };
+    }
+    throw error;
+  }
+
   const files = await collectMiddlewareFilesInDirectory(cwd, directory);
   if (files.length === 0) return { middlewares: [], files: [] };
 
@@ -152,6 +174,18 @@ async function discoverRouteMiddlewares(
         "Server route middleware directory must be inside the project root.",
     });
     return { middlewares: [], files: [] };
+  }
+
+  try {
+    if (!(await isRealPathInsideCwd(cwd, absoluteRoutingDir))) {
+      return { middlewares: [], files: [] };
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return { middlewares: [], files: [] };
+    }
+    throw error;
   }
 
   const files = await collectMiddlewareFilesInTree(cwd, absoluteRoutingDir);
@@ -214,7 +248,8 @@ async function collectMiddlewareFilesInDirectory(
   try {
     entries = await fs.readdir(directory, { withFileTypes: true });
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return [];
     throw err;
   }
 
@@ -239,7 +274,8 @@ async function collectMiddlewareFilesInTree(
     try {
       entries = await fs.readdir(current, { withFileTypes: true });
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ENOTDIR") return;
       throw err;
     }
 

@@ -37,7 +37,7 @@ export function buildServerOutput(
     const fnId = JSON.stringify(
       makeFnId(options.rootContext, options.resourcePath, exportName),
     );
-    return `${runtime.registerServerReference}(${localName}, ${fnId}, ${JSON.stringify(exportName)});`;
+    return `${runtime.registerServerReference}(${localName}, ${fnId});`;
   });
 
   const injectCode = [

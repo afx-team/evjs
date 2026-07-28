@@ -394,7 +394,7 @@ describe("createRoute", () => {
     expect(await res.json()).toEqual(["a", "b"]);
   });
 
-  it("rejects legacy route option names (type check)", async () => {
+  it("rejects unsupported route option names (type check)", async () => {
     const items = createRoute("/items", {
       GET: async () => Response.json(["a", "b"]),
     });

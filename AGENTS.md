@@ -2,136 +2,98 @@
 
 > Entry point for coding agents working in the evjs monorepo.
 
-Read this file first, then use the deeper guides when you need details:
+Read this file first, then use the focused guides when needed:
 
-- [AGENT.md](./AGENT.md) for package ownership, common mistakes, and focused test commands.
-- [ARCHITECTURE.md](./ARCHITECTURE.md) for build graph, manifest, runtime, and deployment ownership.
+- [AGENT.md](./AGENT.md) for package ownership, common mistakes, and tests.
+- [ARCHITECTURE.md](./ARCHITECTURE.md) for graph, build, runtime, and deployment ownership.
 - [CONTRIBUTING.md](./CONTRIBUTING.md) for contributor workflow and coding rules.
-- [docs/docs/](./docs/docs) for user-facing API and framework behavior.
+- [docs/docs/](./docs/docs) for user-facing framework behavior.
 
 The Page-and-Route authoring source of truth is the convention matrix in
-[docs/docs/project-structure.md](./docs/docs/project-structure.md). When a
-change touches page routes, server functions, server routes, examples,
-or scaffolds, update the English and Chinese project-structure docs together.
-The canonical Page marker and route-path rules live in
-`packages/ev/src/_internal/build/page-route-conventions.ts`; discovery and
-diagnostics live in `packages/ev/src/_internal/build/page-routes.ts`.
-The canonical server request-route marker and path rules live in
-`packages/ev/src/_internal/build/server-route-conventions.ts`; discovery and
-diagnostics live in `packages/ev/src/_internal/build/server-routes.ts`.
-`packages/ev/src/config/index.ts` selects SPA or MPA materialization through
-`routing.mode`; `packages/ev/src/_internal/build/graph/core.ts` normalizes
-the canonical tree, with cross-mode coverage in
-`packages/ev/tests/build-tools-graph-plan.test.ts` and discovery coverage in
-`packages/ev/tests/build-tools-page-routes.test.ts`. Explicit
-`application.routes` and explicit `component`/`routes` config are SPA-only
-route-tree inputs that normalize into the same graph. They never select MPA
-materialization.
+[docs/docs/project-structure.md](./docs/docs/project-structure.md). Update its
+English and Chinese versions together whenever page routes, server functions,
+server routes, examples, or scaffolds change.
 
-## Core Principles
+## Source Of Truth
 
-- Framework-owned applications use one Page-and-Route file convention.
-  `src/pages/**/page.*` is the only canonical Page and client-route anchor; its
-  containing directory determines both the Page scope and URL. The same tree
-  produces the same semantic Pages and Routes in both modes, while
-  `routing.mode` selects SPA or MPA materialization. Server request routes use
-  strict positive `src/apis/**/api.*` anchors, with middleware in
-  `src/middleware.ts` and `src/apis/**/middleware.ts`.
-- `@evjs/ev` is the config, plugin, graph, build-plan, manifest, and deployment
-  control plane. It owns convention discovery and composes generated framework
-  output; its runtime-facing subpaths are curated authoring and generated-only
-  entries, not generic runtime mirrors.
-- `.ev` is the generated framework IR for convention results, entry facades,
-  plugin generated artifacts, framework slots, import edges, and the final
-  manifest. Do not reintroduce adapter-specific virtual entry loaders for
-  file-convention entry composition.
-- `@evjs/client` and `@evjs/server` are independent runtime cores. Public
-  client/server APIs live there and stay usable outside evjs file conventions.
-  Their runtime APIs are not a second framework routing/configuration mode.
+| Concern | Canonical implementation | Discovery / coverage |
+| --- | --- | --- |
+| Page markers and URL segments | `packages/ev/src/_internal/build/page-route-conventions.ts` | `page-routes.ts`, `packages/ev/tests/build-tools-page-routes.test.ts` |
+| Server request-route markers and URL segments | `packages/ev/src/_internal/build/server-route-conventions.ts` | `server-routes.ts`, `packages/ev/tests/build-tools-server-routes.test.ts` |
+| Public config and SPA/MPA selection | `packages/ev/src/config/index.ts` | `packages/ev/tests/config.test.ts` |
+| Semantic graph and build plan | `packages/ev/src/_internal/build/graph/*`, `plan/*` | `packages/ev/tests/build-tools-graph-plan.test.ts` |
+| Shared graph/output contracts | `packages/shared/src/manifest` | `packages/shared/tests/manifest.test.ts` |
+
+## Architecture Rules
+
+1. Framework-owned Pages use positive `src/pages/**/page.*` anchors. The
+   containing directory owns the Page scope and determines its URL.
+   `routing.mode` selects SPA or MPA materialization for the same semantic
+   Page/Route tree.
+2. Server request Routes use positive
+   `src/apis/**/api.{ts,tsx,js,jsx}` anchors. Their directories
+   determine request paths and filesystem middleware scope.
+3. `@evjs/ev` is the framework control plane for config, plugins, graph
+   analysis, build planning, generated IR, HTML, output linking, and deployment
+   helpers. Framework semantics belong in
+   `packages/ev/src/_internal/build`; shared contracts belong in
+   `packages/shared/src/manifest`.
+4. Bundler adapters consume `BuildPlan` and return build facts. They do not own
+   route discovery, rendering semantics, or output identity.
+5. `@evjs/client` and `@evjs/server` are independent runtime cores.
+   Programmatic client route trees and server `createRoute()` declarations are
+   runtime APIs, not file-convention inputs.
+6. `.ev` is generated framework IR for graph/plan snapshots, entry facades,
+   plugin artifacts, slots, import edges, and the final IR manifest.
 
 ## Working Rules
 
-1. Keep simple config imports on `@evjs/ev`. Advanced config utilities use
-   `@evjs/ev/config`, plugin authoring details use `@evjs/ev/plugin`, and
-   CLI/adapter/generated code uses `@evjs/ev/_internal/*`. File-convention app source
-   imports route data helpers from `@evjs/ev/route`, navigation helpers from `@evjs/ev/navigation`, query helpers from `@evjs/ev/query`, request helpers from
-   `@evjs/ev/server-context`, and custom transport helpers from `@evjs/ev/transport`.
-   Standalone/manual runtime imports use `@evjs/client` and `@evjs/server`;
-   `@evjs/ev` root does not re-export client or server runtime packages.
-2. Do not add new distributed `@evjs/*` packages without first trying a subpath
-   export on an existing package.
-3. Keep framework semantics in `packages/ev/src/_internal/build` and manifest
-   contracts in `packages/shared/src/manifest`; bundler adapters consume
-   `BuildPlan` and return build facts.
-4. Treat `src/route-types.d.ts`, `dist`, `.turbo`, and `node_modules` as
-   generated output. Scaffolded apps and template packs should not copy generated
-   route types.
-5. Canonical Pages are strict positive anchors:
-   `src/pages/**/page.{ts,tsx,js,jsx}`. The containing directory is the Page
-   scope, and its relative directory segments determine the client URL.
-   `$param`, terminal `$...splat`, and `(group)` directories express dynamic,
-   catch-all, and pathless segments. Other colocated files—including
-   `index.*`—are private application source unless they are another documented
-   route facet. Keep exactly one `page.*` extension variant per route directory.
-   `application.routes` and explicit `component`/`routes` config are SPA-only
-   route-tree inputs that must normalize to the same CoreGraph, not
-   additional canonical models. They must reject `routing.mode: "mpa"` because
-   the route-tree input is SPA-only. Accept `routes` nesting and reject the
-   `children` spelling. Source trees whose published entries use `index.*`
-   must move or rename every published entry to `page.*`, move Page
-   configuration to `page.config.ts`, and configure only `routing.mode`.
-   Do not add a compatibility reader or infer routes from `index.*`.
-6. Server request Routes are strict positive anchors:
-   `<server.routing.dir>/**/api.{ts,tsx,js,jsx}`. The containing directory is
-   the Route scope, and its relative directory segments determine the request
-   URL. `$param` directories express dynamic segments and `(group)` directories
-   are pathless. Other colocated files—including `index.*`, `route.*`, and
-   method-suffix files—are private source and never create Routes. Keep exactly
-   one `api.*` extension variant per route directory and export uppercase HTTP
-   method handlers only. API route middleware remains filesystem-scoped
-   `middleware.ts`. Do not add a compatibility reader, infer Routes from
-   arbitrary method-exporting files, add catch-all/optional/bracket segments,
-   export middleware from a Route module, or add a `server.entry` composition
-   path.
-7. Server functions must start with `"use server";` and export named callable
-   functions or supported named async values. No default exports or runtime
-   re-exports.
-8. Canonical Core 0.3 static title, named metadata, and rendering settings come
-   from adjacent build-time `page.config.ts` modules and normalize into the
-   CoreGraph. `meta` emits only `<meta name="..." content="...">`; do not add a
-   general head DSL. In SPA, the deepest active Page owns metadata without
-   parent inheritance and navigation restores the template baseline. In
-   MPA/SSG, Page metadata materializes missing tags and overrides matching
-   template values; plugin
-   `transformHtml` hooks may override framework output afterward. Do not read
-   `render`, `hydrate`, `prerender`, or `rsc` exports from canonical Page
-   components. Non-CSR materialization requires server output; PPR and RSC use
-   `render: "ssr"`, and PPR plus RSC on one Page remains unsupported until the
-   runtime explicitly supports it.
-9. Plugin-owned static configuration uses one namespaced extension mechanism
-   across normalized Application, Page, Route, and Document owners. Top-level
-   `config.extensions` targets the Application; adjacent `page.config.ts`
-   `extensions`, `route.extensions`, and `document.extensions` target the
-   canonical Page and its uniquely owned Route or Document. Explicit
-   `application.routes` and `application.document` inputs may target
-   Route and Document owners directly. Plugins register the corresponding owner
-   with `applicationExtension()`, `pageExtension()`, `routeExtension()`, or
-   `documentExtension()`. Application values resolve before `setup()`; the
-   other owners resolve during graph analysis. Extension values are strict JSON
-   and enter the CoreGraph, so executable callbacks and secrets do not belong
-   there. Runtime projection remains an explicit plugin responsibility.
-10. `createApp({ framework })` consumes generated `BuildOutput` manifests. Do
-   not pass ad hoc manifest objects; use `createReactFrameworkServer()` unless
-   a deployment adapter intentionally owns that contract.
-11. Programmatic `@evjs/server` app and route APIs remain runtime primitives.
-    evjs framework routing does not inspect or publish programmatic
-    `createRoute()` declarations.
-12. Utoopack is the default user path. Webpack is the validation/fallback adapter
-   for framework features still blocked on lower-level Utoopack APIs.
+1. Keep simple config imports on `@evjs/ev`. Use `@evjs/ev/config` for advanced
+   config utilities, `@evjs/ev/plugin` for plugin authoring,
+   `@evjs/ev/deployment` for deployment helpers, and focused public authoring
+   subpaths (`route`, `navigation`, `query`, `server-context`, `transport`) in
+   file-convention application source. CLI, adapters, and generated code use
+   `@evjs/ev/_internal/*`.
+2. Prefer a subpath export on the package that owns a capability before adding
+   another distributed package.
+3. Keep exactly one supported `page.*` variant per Page directory. Static,
+   `$param`, terminal `$...splat`, and `(group)` directories define client path
+   segments. Other colocated files are ordinary Page source.
+4. Explicit `application.routes` and `component`/`routes` configuration are
+   SPA-only inputs into the same CoreGraph. They cannot be combined with
+   canonical `routing`, cannot select MPA, and use `routes` rather than
+   `children` for nesting.
+5. Keep exactly one supported `api.*` variant per server Route directory and
+   export uppercase HTTP method handlers. Framework middleware lives in
+   `src/middleware.ts`; scoped request-route middleware lives in
+   `src/apis/**/middleware.ts`.
+6. Server functions start with `"use server";` and export named callable
+   functions or supported named async values. They do not default-export or
+   runtime re-export functions.
+7. Adjacent build-time `page.config.ts` owns static title, named `meta`,
+   `render`, `hydrate`, `prerender`, `rsc`, and namespaced extensions. `meta`
+   emits only `<meta name="..." content="...">`. CSR omits `hydrate`; PPR and
+   RSC use `render: "ssr"` without Page-level hydration.
+8. Plugin static configuration uses one namespaced extension registry across
+   Application, Page, Route, and Document owners. Values are strict JSON and
+   runtime projection is explicit plugin behavior.
+9. Treat `.ev`, `src/route-types.d.ts`, `dist`, `.turbo`, and `node_modules` as
+   generated output. Scaffolds and templates must not copy generated route
+   types.
+10. `createApp({ framework })` consumes validated generated output contracts.
+    Use the generated React framework server bridge unless a deployment adapter
+    intentionally owns the runtime integration.
+11. Utoopack is the default user path. Webpack is the validation/fallback
+    adapter for capabilities that require its broader build or dev-update
+    support.
+12. Keep English and Chinese documentation behaviorally equivalent. Prefer
+    declarative current behavior over migration history or speculative future
+    design; release history belongs in `CHANGELOG.md` and active gaps belong in
+    `ROADMAP.md`.
 
 ## Validation
 
-Use focused package checks while editing, then finish with the repo gates:
+Use focused package checks while editing, then finish with:
 
 ```bash
 npm run check-types
@@ -140,5 +102,6 @@ npm test
 git diff --check
 ```
 
-For changes touching docs only, still run `npm run lint` and `git diff --check`;
-run focused tests when the docs encode behavior covered by tests.
+For documentation-only changes, run `npm run lint`, build the documentation,
+and run `git diff --check`. Add focused tests when the prose encodes a runtime
+contract or a diagnostic URL.

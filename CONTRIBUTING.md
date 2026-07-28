@@ -1,234 +1,163 @@
 # Contributing to evjs
 
-> Internal guide for developing the evjs monorepo.
+> Development guide for the evjs monorepo.
 
 ## Project Identity
 
-- **Name**: evjs, `@evjs/*` package scope
-- **Repository**: evaijs/evjs
-- **CLI command**: `ev` from `@evjs/cli`
-- **Linter**: Biome via `npm run lint` or `npx biome check --write`
-- **Node packages**: ESM-only package output
+- **Repository**: `afx-team/evjs`
+- **Package scope**: `@evjs/*`
+- **CLI command**: `ev`
+- **Modules**: ESM-only package output
+- **Formatting and linting**: Biome
 
-## Package Map
+## Package Ownership
 
-| Package | Path | Purpose |
-| --- | --- | --- |
-| `@evjs/cli` | `packages/cli` | CLI binary and programmatic command entrypoints |
-| `@evjs/ev` | `packages/ev` | Config, plugin lifecycle, graph analysis, build planning, HTML, deployment helpers, and bundler adapter contracts |
-| `@evjs/create-app` | `packages/create-app` | Project scaffolding from examples/templates |
-| `@evjs/plugin-qiankun` | `packages/plugin-qiankun` | Optional qiankun master/slave micro-frontend bridge plugin |
-| `@evjs/shared` | `packages/shared` | Runtime shared helpers plus `@evjs/shared/manifest` graph/plan/output schemas |
-| `@evjs/client` | `packages/client` | Browser runtime core for standalone CSR, transport, page hooks, navigation helpers, and RSC client |
-| `@evjs/server` | `packages/server` | Server runtime core for server functions, REST routes, SSR/PPR/RSC request coordination, and Node/fetch runtimes |
-| `@evjs/bundler-utoopack` | `packages/bundler-utoopack` | Default Utoopack adapter; consumes `BuildPlan` and links `BuildOutput` where supported |
-| `@evjs/bundler-webpack` | `packages/bundler-webpack` | Validation/fallback adapter for new architecture features that Utoopack cannot build yet |
+| Package | Responsibility |
+| --- | --- |
+| `@evjs/cli` | CLI commands and default Utoopack selection. |
+| `@evjs/ev` | Framework config, plugins, graph/build planning, generated IR, HTML, output linking, and deployment helpers. |
+| `@evjs/create-app` | Project scaffolding. |
+| `@evjs/plugin-qiankun` | Optional qiankun integration. |
+| `@evjs/shared` | Shared helpers and manifest contracts. |
+| `@evjs/client` | Browser and framework client runtime primitives. |
+| `@evjs/server` | Hono/Fetch and framework server runtime primitives. |
+| `@evjs/bundler-utoopack` | Default bundler adapter. |
+| `@evjs/bundler-webpack` | Validation/fallback bundler adapter. |
 
-`packages/build-tools` and `packages/manifest` no longer exist as public workspace packages. Build-tool helpers live in `packages/ev/src/_internal/build`; downstream tooling that only needs config loading can use `@evjs/ev/build-tools`. Manifest schemas/linkers live under `packages/shared/src/manifest`.
-
-## Core Principles
-
-- Framework-owned applications use one Page-and-Route file convention. Pages
-  live at `src/pages/**/page.*`; the containing directory determines Page scope
-  and URL, optional `page.config.ts` owns build-time Page capabilities, and
-  `routing.mode` selects SPA/MPA output. Plugin-owned static data uses one
-  namespaced CoreGraph registry across Application, Page, Route, and Document
-  owners. Server request Routes use positive `src/apis/**/api.*` anchors,
-  framework request middleware in `src/middleware.ts`, API route middleware in
-  `src/apis/**/middleware.ts`, and server functions in reachable
-  `"use server"` modules.
-- `@evjs/ev` owns config, plugins, convention discovery, graph/build planning,
-  manifest/deployment helpers, and bundler contracts. It should not expose
-  client or server runtime mirrors; its runtime-facing subpaths are curated
-  file-convention authoring and generated-only entries.
-- `@evjs/client` and `@evjs/server` are runtime core packages. Their APIs can
-  be used independently from evjs file conventions; do not treat programmatic
-  server runtime APIs as framework route declarations.
-
-## Dependency Graph
+The workspace dependency graph is intentionally one-directional:
 
 ```txt
 @evjs/cli
-  -> @evjs/ev
-  -> @evjs/bundler-utoopack
+  ├─> @evjs/ev
+  └─> @evjs/bundler-utoopack
 
 @evjs/ev
-  -> @evjs/shared
-
-@evjs/bundler-utoopack
-  -> @evjs/ev
-  -> @utoo/pack
-
-@evjs/bundler-webpack
-  -> @evjs/ev
-  -> webpack
+  ├─> @evjs/client
+  ├─> @evjs/server
+  └─> @evjs/shared
 
 @evjs/client
   -> @evjs/shared
-  -> @tanstack/react-router
-  -> @tanstack/react-query
 
 @evjs/server
-  -> @evjs/client
   -> @evjs/shared
-  -> hono
-  -> @hono/node-server
+
+@evjs/bundler-utoopack / @evjs/bundler-webpack
+  ├─> @evjs/ev
+  └─> @evjs/shared
+
+@evjs/plugin-qiankun
+  -> @evjs/ev
 ```
 
-Internal `@evjs/*` runtime dependency versions stay `"*"` in source manifests
-for workspace development. Release automation rewrites those dependencies to the
-concrete release version before publishing, so app-facing packages move together
-and adapters depend on `@evjs/ev` instead of on each other.
+Internal workspace dependency versions remain `"*"` in source manifests.
+Release automation replaces them with the release version before publishing.
 
 ## Coding Rules
 
-1. Keep imports at the top of files and use `import type` for type-only imports.
-2. Use Biome formatting and linting. Avoid `any` and broad namespace imports unless there is a concrete reason.
-3. Do not add hidden production source files such as `.evjs/server/entry.ts`.
-   Framework-owned entry composition belongs in the generated `.ev` IR, not in
-   adapter-specific virtual entry loaders or ad hoc hidden source trees.
-4. Keep framework semantics out of bundler adapters. Adapters consume `BuildPlan` and return build facts.
-5. Server function files must start with `"use server";`, use `.server.*`
-   filenames when colocated with route convention files, and export named
-   functions or supported named async values.
-6. Use `ev.config.ts`; new docs should import `defineConfig` from `@evjs/ev`.
-7. Simple config imports stay on `@evjs/ev`. Advanced config utilities use
-   `@evjs/ev/config`, plugin authoring details use `@evjs/ev/plugin`, config-loading tooling can use `@evjs/ev/build-tools`, and
-   CLI/adapter/generated code uses `@evjs/ev/_internal/*`. File-convention app source imports
-   route data helpers from `@evjs/ev/route`, navigation helpers from `@evjs/ev/navigation`, query helpers from `@evjs/ev/query`, request helpers from `@evjs/ev/server-context`,
-   and custom transport helpers from `@evjs/ev/transport`; standalone/manual
-   runtime imports use `@evjs/client` and `@evjs/server`. Prefer a subpath
-   export on the package that owns the behavior before adding another
-   distributed package. Subpath exports stay intentional and documented; do not
-   add convenience aliases.
-8. Keep generated page bootstrap, server-function stubs, server runtime
-   bootstrap, and shell runtime primitives behind focused generated-only
-   `@evjs/ev/_internal/*` subpaths.
-9. Use `server.basePath` for framework server runtime paths. Do not reintroduce public `server.functions.endpoint` config.
-10. Do not reintroduce `server.entry` or framework-side source extraction of
-    `createRoute()` calls. Server framework routes use positive
-    `src/apis/**/api.*` anchors; `@evjs/server`'s `createRoute()` remains a
-    runtime package API.
+1. Keep imports at the top, use `import type` for type-only imports, and include
+   `.js` on relative imports that survive compilation.
+2. Keep framework semantics in `packages/ev/src/_internal/build` and shared
+   contracts in `packages/shared/src/manifest`. Bundler adapters consume
+   `BuildPlan` and return facts.
+3. Keep the `@evjs/ev` root small. Use `@evjs/ev/config`, `/plugin`,
+   `/deployment`, and the public application-authoring subpaths for their
+   documented responsibilities. Reserve `@evjs/ev/_internal/*` for the CLI,
+   adapters, and generated code.
+4. Framework Pages use `src/pages/**/page.*`; server request Routes use
+   `src/apis/**/api.*`. The containing directory owns scope and URL
+   in both trees.
+5. Put Page metadata, rendering settings, and namespaced Page/Route/Document
+   extensions in adjacent `page.config.ts`.
+6. Server-function modules begin with `"use server";` and export named callable
+   values. Use `.server.*` when colocation makes the boundary easier to see.
+7. Keep `.ev`, `src/route-types.d.ts`, `dist`, `.turbo`, and `node_modules` out
+   of authored source and scaffold templates.
+8. Prefer a subpath export on the package that owns a capability before adding
+   a distributed package.
+9. Update English and Chinese docs together when behavior changes. Keep release
+   history in `CHANGELOG.md` and active implementation gaps in `ROADMAP.md`.
 
 ## Common Tasks
 
+### Add a Page
+
+1. Create `src/pages/<route>/page.tsx` and default-export the component.
+2. Use `$param`, terminal `$...splat`, and `(group)` directories for dynamic,
+   catch-all, and pathless segments.
+3. Keep components, hooks, models, services, tests, styles, and assets in the
+   Page directory; only `page.*` creates another Page.
+4. Add adjacent `page.config.ts` for static metadata, rendering, or registered
+   plugin extensions.
+
 ### Add a server function
 
-1. Create a reachable `[name].server.ts` module, colocated with the caller or
-   related server route.
-2. Add `"use server";` at the top.
-3. Export named async functions.
-4. Import and use them in client code with `useQuery(fn, ...args)`, `useMutation(fn)`, or `getFnQueryOptions(fn, ...args)`.
+1. Create a reachable module that begins with `"use server";`.
+2. Export named functions or supported named async values.
+3. Call generated references through the public query or transport APIs.
 
-### Add a page route
+### Add a server request Route
 
-1. Create `src/pages/<route>/page.tsx` and default-export a React component.
-2. Use directory segments to express the URL: `$param` for a dynamic segment,
-   terminal `$...splat` for a catch-all, and `(group)` for pathless grouping.
-3. Keep Page-private components, hooks, models, and services inside that Page
-   directory. A nested `components/index.tsx` stays private because only
-   `page.*` is a Page anchor.
-4. Put static Page title, supported named metadata, rendering fields, and
-   namespaced plugin extensions in an adjacent `page.config.ts`; do not put
-   them in component exports. Plugins explicitly project extension values
-   needed at runtime.
-
-### Add a server file route
-
-1. Create the URL directory under `src/apis` and add its `api.ts` anchor.
-2. Export uppercase HTTP method handlers such as `GET` or `POST` from the
-   anchor.
-3. Keep helper exports out of route candidates; place helpers in colocated
-   non-`api.*` modules and import them.
-4. Add framework request middleware with `src/middleware.ts` or API route
-   middleware with `src/apis/**/middleware.ts`, not route-module middleware
-   exports.
+1. Create the URL directory below `src/apis`.
+2. Add one `api.ts`, `api.tsx`, `api.js`, or `api.jsx` anchor.
+3. Export uppercase HTTP method handlers.
+4. Put helpers in other colocated modules and scoped middleware in
+   `middleware.ts`.
 
 ### Add plugin-owned configuration
 
-1. Put Application-wide static values in top-level `config.extensions`. Use
-   adjacent `page.config.ts` for Page values and its `route.extensions` or
-   `document.extensions` when that Page uniquely owns the target. Explicit
-   route and document inputs may configure their declared Route and
-   Application-owned Document.
-2. Register each owner through `applicationExtension()`, `pageExtension()`,
-   `routeExtension()`, or `documentExtension()` from the plugin's synchronous
-   `describe()` hook.
-3. Keep extension values strict JSON. Pass callbacks through typed plugin
-   factory options or explicit module references instead.
-4. Read resolved Application values from `ctx.config.extensions` in `setup()`;
-   read normalized Application/Page/Route/Document values from `ctx.framework`
-   in `contributions()`. Runtime behavior requires explicit projection.
-
-### Canonicalize a Page source tree
-
-1. Establish one directory for every published URL and move or rename its
-   component entry to `page.tsx`.
-2. Move `title`, supported named metadata, `render`, `hydrate`, `rsc`,
-   `prerender`, and plugin-owned Page settings into adjacent `page.config.ts`.
-3. Keep Page-private code in the Page directory; `_` prefixes are not required.
-4. Configure only `routing.mode: "spa" | "mpa"` and use `ev inspect` to verify
-   the resulting Page/Route/Document graph.
-
-This source conversion is required when published entries do not use the
-canonical `page.*` marker; Core discovery consumes only positive Page anchors.
-Explicit `application.routes` and `component`/`routes` config are supported as
-SPA-only route-tree inputs, but they cannot select MPA materialization and new
-examples use the canonical Page tree.
+1. Register the namespace and allowed owner kinds from `describe()`.
+2. Author Application values in top-level `extensions`; author Page, Route,
+   and Page-owned Document values in `page.config.ts`.
+3. Keep values strict JSON. Pass callbacks through plugin factory options or
+   explicit module references.
+4. Project runtime behavior explicitly through contributions or another
+   runtime contract.
 
 ### Add an example
 
-1. Create a directory under `examples/`.
-2. Add a private `package.json` with workspace `@evjs/*` dependencies.
-3. Add `ev.config.ts`, source files, and `index.html` as needed.
-4. Add or update the create-app template mapping when the example is user-facing.
-5. Add an e2e case under `e2e/cases/`.
+1. Create a private workspace under `examples/`.
+2. Add `ev.config.ts`, source files, and an HTML template when needed.
+3. Add or update create-app template mappings for user-facing starters.
+4. Add an e2e case for behavior that crosses build/runtime boundaries.
 
-## Build System Internals
+## Build Pipeline
 
-### `ev build`
-
-```txt
-load ev.config.ts
-run config hooks and resolve framework defaults
-register Application/Page/Route/Document extensions and resolve Application values
-run setup hooks
-createCoreGraph()
-resolve Page/Route/Document extensions
-createBuildPlan()
-selected bundler builds the BuildPlan
-linkBuildOutput()
-run buildOutput hooks
-emit dist/deployment-metadata.json and HTML documents
-run buildEnd({ output })
-```
-
-### `ev dev`
+`ev prepare`, `ev build`, and `ev dev` share the same semantic preparation:
 
 ```txt
-start from the same graph and BuildPlan pipeline
-start selected bundler dev controller
-serve HTML and manifest from framework state
-component/style edits stay in bundler HMR
-config/page-route/server-file-route/middleware convention edits rebuild graph and diff BuildPlan
-call bundlerDevController.updatePlan(update) when the adapter supports it
+load config
+run config hooks and resolve Application extensions
+run setup/buildStart hooks
+create CoreGraph while resolving Page/Route/Document extensions
+derive BuildPlan
+collect generated contributions
+materialize .ev
 ```
 
-Utoopack is still the default adapter. It supports HTML-only dev plan relinking;
-some broader architecture features are currently validated through the webpack
-adapter until Utoopack exposes the required lower-layer APIs.
+`ev build` then asks the selected bundler for build facts, links `BuildOutput`,
+runs output and HTML hooks, writes deployment metadata and Documents, and runs
+`buildEnd`.
 
-## Monorepo Commands
+`ev dev` keeps normal source edits on the bundler watch/HMR path. Framework
+input changes recreate and diff the graph/plan, then call the adapter's
+`updatePlan()` capability when needed.
+
+## Commands
 
 ```bash
+npm install
 npm run build
-npm run test
-npm run test:e2e
 npm run check-types
 npm run lint
-npx biome check --write
+npm test
+npm run test:e2e
+git diff --check
 ```
 
-## Agent Skills
+Use focused Turbo filters while editing; run the repository gates before
+submitting. Documentation changes should also build the docs workspace:
 
-The local evjs skill and docs should be updated whenever CLI commands, config options, plugin hooks, runtime APIs, examples, or templates change.
+```bash
+npm --workspace evjs-docs run build
+```

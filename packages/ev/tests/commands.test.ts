@@ -2157,7 +2157,6 @@ describe("prepareFrameworkBuild", () => {
     const prepared = await prepareFrameworkBuild(
       {
         output: { client: "dist/client", server: "dist/server" },
-        server: { routing: {} },
         plugins: [plugin],
       },
       { cwd },
@@ -3051,7 +3050,6 @@ describe("build", () => {
           output: { client: "dist/client", server: "dist/server" },
           plugins: [plugin],
           routing: { mode: "spa" },
-          server: { routing: {} },
         },
         { cwd, bundler: createMockBundler([]) },
       ),
@@ -3222,7 +3220,6 @@ describe("build", () => {
         output: { client: "dist/client", server: "dist/server" },
         plugins: [plugin],
         routing: { mode: "mpa" },
-        server: { routing: {} },
       },
       { cwd, bundler },
     );
@@ -3932,7 +3929,6 @@ describe("build", () => {
     await build(
       {
         output: { client: "dist/client", server: "dist/server" },
-        server: { routing: {} },
       },
       {
         cwd,
@@ -5636,7 +5632,7 @@ describe("build", () => {
       PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY,
     );
     expect((error as Error).message).toContain(
-      "See https://evaijs.github.io/evjs/docs/file-conventions#client-page-routes for the page route file convention.",
+      "See https://afx-team.github.io/evjs/docs/file-conventions#client-page-routes for the page route file convention.",
     );
     expect(events).not.toContain("bundler.build");
   });
@@ -5683,7 +5679,7 @@ describe("build", () => {
       PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY,
     );
     expect((error as Error).message).toContain(
-      "See https://evaijs.github.io/evjs/docs/file-conventions#client-page-routes for the page route file convention.",
+      "See https://afx-team.github.io/evjs/docs/file-conventions#client-page-routes for the page route file convention.",
     );
     expect(events).not.toContain("bundler.build");
   });
@@ -5913,7 +5909,7 @@ describe("build", () => {
         },
       ),
     ).rejects.toThrow(
-      'Page "campaign" config "./src/pages/campaign/page.config.ts" combines RSC and partial prerendering, which is not supported yet. Choose either rsc: true or prerender: { partial: true }, or split them into separate page routes.',
+      'Page "campaign" config "./src/pages/campaign/page.config.ts" combines RSC and partial prerendering, which is unsupported. Choose either rsc: true or prerender: { partial: true }, or split them into separate page routes.',
     );
     expect(events).not.toContain("bundler.build");
   });
@@ -6155,7 +6151,7 @@ describe("build", () => {
           output: { client: "dist/client", server: "dist/server" },
           routing: {
             mode: "spa",
-            dir: "",
+            unknown: true,
           } as never,
         },
         {
@@ -6163,7 +6159,7 @@ describe("build", () => {
           bundler,
         },
       ),
-    ).rejects.toThrow("[evjs] routing.dir is not supported.");
+    ).rejects.toThrow("[evjs] routing.unknown is not supported.");
     expect(events).not.toContain("bundler.build");
   });
 
@@ -6298,24 +6294,19 @@ describe("build", () => {
       "utf-8",
     );
     const events: string[] = [];
-    const bundler = createMockBundler(events);
+    let observedPlan: BuildPlan | undefined;
+    const bundler = createMockBundler(events, {
+      onBuildPlan(plan) {
+        observedPlan = plan;
+      },
+    });
 
-    await expect(
-      build(
-        {
-          server: {
-            routing: {},
-          },
-        },
-        {
-          cwd,
-          bundler,
-        },
-      ),
-    ).rejects.toThrow(
-      "[evjs] No server routes found in ./src/apis. Add an api.* anchor exporting GET or POST such as ./src/apis/api.ts or set conventions: false.",
+    await build({}, { cwd, bundler });
+
+    expect(events).toContain("bundler.build");
+    expect(observedPlan?.entries).not.toContainEqual(
+      expect.objectContaining({ name: "server" }),
     );
-    expect(events).not.toContain("bundler.build");
   });
 
   it("does not fall back to src/server/middleware for global server middleware", async () => {
@@ -6349,17 +6340,7 @@ describe("build", () => {
       },
     });
 
-    await build(
-      {
-        server: {
-          routing: {},
-        },
-      },
-      {
-        cwd,
-        bundler,
-      },
-    );
+    await build({}, { cwd, bundler });
 
     expect(events).toContain("bundler.build");
     const serverEntry = observedPlan?.entries.find(
@@ -6374,7 +6355,7 @@ describe("build", () => {
     expect(serverEntry?.metadata).not.toHaveProperty("middlewares");
   });
 
-  it("fails on unsupported server.entry config before running the bundler", async () => {
+  it("fails on an unknown server config field before running the bundler", async () => {
     const cwd = await createProject();
     const events: string[] = [];
     const bundler = createMockBundler(events);
@@ -6384,7 +6365,7 @@ describe("build", () => {
         {
           server: {
             // @ts-expect-error runtime config loading can still produce unknown keys.
-            entry: "./src/missing-server.ts",
+            unknown: true,
           },
         },
         {
@@ -6392,9 +6373,7 @@ describe("build", () => {
           bundler,
         },
       ),
-    ).rejects.toThrow(
-      "[evjs] server.entry is not supported. Use server.routing file conventions under src/apis instead.",
-    );
+    ).rejects.toThrow("[evjs] server.unknown is not supported");
     expect(events).not.toContain("bundler.build");
   });
 

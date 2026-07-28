@@ -3,7 +3,7 @@
 Demonstrates an evjs qiankun master application using
 `@evjs/plugin-qiankun`.
 
-The application uses the unified Core 0.3 SPA model. `src/pages/page.tsx` and
+The application uses the canonical SPA model. `src/pages/page.tsx` and
 `src/pages/catalog/page.tsx` define `/` and `/catalog`, while
 `src/pages/layout.tsx` is the root layout.
 `src/pages/catalog/page.config.ts#route.extensions` associates that canonical

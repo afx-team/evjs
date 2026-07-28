@@ -2,9 +2,13 @@
 
 The default utoopack (`@utoo/pack`) bundler adapter for the evjs framework.
 
-This package provides the internal `utoopackAdapter` that implements the `BundlerAdapter` interface for `ev build` and `ev dev`.
+This package exports `utoopackAdapter`, which implements the `BundlerAdapter`
+interface for `ev build` and `ev dev`.
 
-Unlike webpack, utoopack natively supports `"use server"` directives through its unified module graph without needing a custom child compiler. This adapter directly integrates with utoopack's programmatic API to emit client and server manifests.
+The adapter integrates with Utoopack's programmatic API, compiles the concrete
+entries in `BuildPlan`, and returns build facts for framework output linking.
+Its declared capabilities are the authoritative boundary: plans that require
+unsupported server rendering, RSC, or PPR fail during framework preflight.
 
 ## Usage
 

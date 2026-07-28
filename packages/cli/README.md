@@ -20,7 +20,7 @@ Page tree is materialized as an SPA or MPA:
 - Shared HTML template: `./index.html`
 - Client dev server: port 3000
 - API server (dev): port 3001
-- Server functions auto-discovered via `"use server"` directive
+- Reachable server functions discovered via the `"use server"` directive
 - Server request-route anchors auto-discovered from `./src/apis/**/api.*`
 
 `routing.mode` selects SPA or MPA materialization for the same semantic
@@ -39,15 +39,17 @@ Page-and-Route tree. It does not select a different file convention.
 
 ### `ev dev`
 
-Uses the default bundler adapter directly (no temp config files):
-1. **dev server** (port 3000) — client bundle with HMR.
-2. **Node API Server** (port 3001) — auto-starts when server bundle is emitted, uses `node --watch`.
+Uses the default bundler adapter directly:
+
+1. **browser dev server** (preferred port 3000) — client bundle with HMR;
+2. **framework server** (preferred port 3001) — starts when the active
+   BuildPlan emits a server runtime.
 
 ### `ev build`
 
 Runs the production build through `@evjs/ev` with `NODE_ENV=production`:
 - `dist/client/` — optimized client assets with content hashes.
-- `dist/server/main.[hash].js` — server bundle.
+- `dist/server/` — server artifacts when the BuildPlan requires them.
 - `dist/deployment-metadata.json` — canonical deployment metadata for tooling
   and adapters.
 
@@ -86,8 +88,8 @@ export default defineConfig({
 
 The `dev` and `server.dev` fields accept extra options that are merged with
 defaults. Change only `routing.mode` to `"mpa"` to materialize the same Page
-tree as Page-owned Documents. Dynamic-route output and React route facets in
-MPA remain staged; `ev inspect` and `ev build` report unsupported combinations.
+tree as Page-owned Documents. MPA accepts static Page paths and rejects
+dynamic/catch-all paths and router-only boundary facets.
 
 ## Project Structure
 
@@ -119,25 +121,17 @@ Only `page.*` creates a canonical client Page and Route. Other files below a
 Page directory, including `index.*`, are ordinary Page-private source and need
 no `_` prefix. The Page directory determines the URL in both SPA and MPA mode.
 
-## Common Mistakes
+## Authoring Boundaries
 
-1. **Do not create `src/main.tsx` or top-level `entry` for a canonical app** —
-   add `src/pages/**/page.tsx` anchors and declare `routing.mode`.
-2. **Do not use `index.tsx` as a new Page anchor** — it is ordinary private
-   source in the canonical model.
-3. **Do not create a custom bundler config file** — use `ev.config.ts` instead.
-4. **Do not install bundler internals manually** — the default adapter is
-   provided by `@evjs/cli`.
-5. **Config file must be `ev.config.ts`** — not `evjs.config.ts`.
-6. **Import `defineConfig` and `definePageConfig` from `@evjs/ev`** — not from
-   `@evjs/server`.
+1. Canonical apps publish Pages through `src/pages/**/page.*` and declare
+   `routing.mode`; colocated `index.*` files remain ordinary source.
+2. Configure the framework in `ev.config.ts`; the CLI supplies the default
+   bundler adapter.
+3. Import `defineConfig` and `definePageConfig` from `@evjs/ev`.
 
 Explicit `application.routes` and `component`/`routes` config are SPA-only
-route-tree inputs in `@evjs/ev`; their converters normalize into the same Core
-graph, reject MPA materialization, and do not define additional canonical
-routing models. File-convention applications must use `page.tsx` for every
-published Page, keep Page configuration in `page.config.ts`, and select only
-`routing.mode: "spa" | "mpa"`.
+route-tree inputs in `@evjs/ev`; they normalize into the same CoreGraph and
+cannot be combined with canonical `routing` discovery.
 
 ## Bundled Dependencies
 

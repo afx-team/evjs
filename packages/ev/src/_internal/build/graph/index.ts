@@ -30,7 +30,7 @@ import {
   resolveCorePageConfigModules,
   resolvePageConfigModules,
 } from "../page-config-module.js";
-import { analyzePageModuleExports } from "../page-module-config.js";
+import { analyzePageModuleExports } from "../page-module-exports.js";
 import { getPageBuildContractViolation } from "../page-rendering-contract.js";
 import {
   CANONICAL_PAGE_ROUTE_ROOT,
@@ -54,11 +54,13 @@ import {
   analyzeServerFunctionExports,
   type ServerFunctionExportAnalysis,
 } from "../server-fns.js";
+import { CANONICAL_SERVER_ROUTE_ROOT } from "../server-route-conventions.js";
 import type { DiscoveredServerRouteNode } from "../server-routes.js";
 import {
   detectUseServer,
   hashServerFunction,
   isInsideCwd,
+  isRealPathInsideCwd,
   toPosixPath,
 } from "../utils.js";
 import {
@@ -116,10 +118,7 @@ export interface GraphConfig {
     dependencies?: string[];
   };
   server: {
-    routing?: {
-      dir: string;
-      routes: DiscoveredServerRouteNode[];
-    };
+    routes?: DiscoveredServerRouteNode[];
     conventions?: {
       globalMiddlewares: ServerMiddlewareNode[];
       routeMiddlewares: ServerMiddlewareNode[];
@@ -184,7 +183,7 @@ export async function createCoreGraph(
   const fileDependencies = new Set(sourceFiles.explicitDependencyFiles);
   if (config.routing) {
     const pageRoot = path.resolve(cwd, CANONICAL_PAGE_ROUTE_ROOT);
-    for (const dir of await collectRouteDirectories(pageRoot)) {
+    for (const dir of await collectRouteDirectories(cwd, pageRoot)) {
       fileDependencies.add(dir);
     }
     for (const dependency of config.routing.dependencies ?? []) {
@@ -194,9 +193,9 @@ export async function createCoreGraph(
   for (const dependency of pageConfigs.dependencies) {
     fileDependencies.add(dependency);
   }
-  if (config.server.routing) {
-    const routingDir = path.resolve(cwd, config.server.routing.dir);
-    for (const dir of await collectRouteDirectories(routingDir)) {
+  if (config.server.routes) {
+    const routingDir = path.resolve(cwd, CANONICAL_SERVER_ROUTE_ROOT);
+    for (const dir of await collectRouteDirectories(cwd, routingDir)) {
       fileDependencies.add(dir);
     }
   }
@@ -210,7 +209,7 @@ export async function createCoreGraph(
   const serverRoutePathOwners = new Map<string, ServerRouteNode>();
   const serverRouteShapeOwners = new Map<string, ServerRouteNode>();
   const serverFileRouteModules = new Set(
-    (config.server.routing?.routes ?? []).map((route) =>
+    (config.server.routes ?? []).map((route) =>
       path.resolve(cwd, route.module),
     ),
   );
@@ -224,7 +223,7 @@ export async function createCoreGraph(
   const clientReferences = new Map<string, ClientReferenceNode>();
   const serverReferences = new Map<string, ServerReferenceNode>();
   const configuredServerRoutePublication = validateServerRouteNodePublication(
-    config.server.routing?.routes ?? [],
+    config.server.routes ?? [],
     serverRoutePathOwners,
     serverRouteShapeOwners,
   );
@@ -327,7 +326,7 @@ export async function createCoreGraph(
     options.resolve?.alias,
   );
   validateCoreGraphPageContracts(graph, diagnostics);
-  await diagnoseRemovedPageModuleConfigExports(
+  await diagnosePageModuleRouteLifecycleExports(
     graph,
     cwd,
     sourceCache,
@@ -526,7 +525,7 @@ function validateServerRouteNodePublication(
   return { nodes, diagnostics };
 }
 
-async function diagnoseRemovedPageModuleConfigExports(
+async function diagnosePageModuleRouteLifecycleExports(
   graph: CoreGraph,
   cwd: string,
   sourceCache: Map<string, string>,
@@ -549,18 +548,18 @@ async function diagnoseRemovedPageModuleConfigExports(
     }
 
     const exports = analyzePageModuleExports(source);
-    if (exports.removedConfig.length > 0) {
+    if (exports.renderingConfig.length > 0) {
       diagnostics.push({
         level: "error",
         file: toPosixPath(path.relative(cwd, absolute)),
-        message: `Page "${page.id}" declares render, hydrate, prerender, or rsc from its component module. Component rendering exports have been removed; move these fields to the adjacent page.config.ts module.`,
+        message: `Page "${page.id}" exports rendering configuration ${exports.renderingConfig.map((name) => `"${name}"`).join(", ")} from its component module. Define these fields in the adjacent page.config.ts module; Page component exports are runtime values, not build configuration.`,
       });
     }
     if (page.render !== "csr" && exports.routeLifecycle.length > 0) {
       diagnostics.push({
         level: "error",
         file: toPosixPath(path.relative(cwd, absolute)),
-        message: `Page "${page.id}" uses render "${page.render}" and exports browser-only route lifecycle ${exports.routeLifecycle.map((name) => `"${name}"`).join(", ")}. Non-CSR Pages require a server route lifecycle projection, which Core 0.3 does not define. Remove these exports or use render: "csr".`,
+        message: `Page "${page.id}" uses render "${page.render}" and exports browser-only route lifecycle ${exports.routeLifecycle.map((name) => `"${name}"`).join(", ")}. Non-CSR Pages cannot use browser-only route lifecycle exports. Remove these exports or use render: "csr".`,
       });
     }
   }
@@ -925,15 +924,27 @@ function toDiagnosticModulePath(module: string): string {
   return module.replace(/^\.\//, "");
 }
 
-async function collectRouteDirectories(root: string): Promise<string[]> {
+async function collectRouteDirectories(
+  cwd: string,
+  root: string,
+): Promise<string[]> {
   const dirs = new Set([root]);
+
+  try {
+    if (!(await isRealPathInsideCwd(cwd, root))) return [...dirs];
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return [...dirs];
+    throw error;
+  }
 
   async function visit(current: string) {
     let entries: import("node:fs").Dirent[];
     try {
       entries = await fs.readdir(current, { withFileTypes: true });
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ENOTDIR") return;
       throw err;
     }
 
@@ -998,7 +1009,7 @@ async function collectFrameworkSourceFiles(
       explicitDependencyRoots,
     );
   }
-  for (const route of config.server.routing?.routes ?? []) {
+  for (const route of config.server.routes ?? []) {
     await addConfiguredSource(
       roots,
       cwd,

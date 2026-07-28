@@ -134,7 +134,7 @@ export default defineConfig({
 
 SPA 把文件树物化为浏览器 Client Route，通常共享一个 Document。MPA 从相同
 语义 Page 与 Route 出发，物化 Page-owned Document。同一 Page 目录的
-`index.html` 可以提供 MPA Document 模板。MPA 当前只接受静态 Page path：
+`index.html` 可以提供 MPA Document 模板。MPA 只接受静态 Page path：
 `$param`、终止 `$...splat` 与 router-only boundary 会在 inspect/build 中失败；
 layout 在两种 mode 中都会组合。
 

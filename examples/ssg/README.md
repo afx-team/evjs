@@ -1,6 +1,6 @@
 # ev SSG Example
 
-This Core 0.3 example demonstrates true static generation with the canonical
+This example demonstrates static generation with the canonical
 Page-and-Route convention:
 
 - `src/pages/report/page.tsx`, `src/pages/forecast/page.tsx`, and

@@ -78,8 +78,8 @@ framework 持有的 client 或 server 输出路径。
 
 生成 HTML 包含浏览器 bootstrap 所需 `ClientRuntime`。
 `deployment-metadata.json` 是 canonical serialized deployment projection；
-完整 `BuildOutput` 只存在于内存中。Core 不输出 split client/server compatibility
-manifest。应用代码不得 import 或编辑 deployment metadata。
+完整 `BuildOutput` 只存在于内存中。应用代码不得 import 或编辑 deployment
+metadata。
 
 ## SPA 与 MPA 输出
 
@@ -99,7 +99,7 @@ pattern。
 fallback，Core 会把 Application shell 单独保留在
 `__evjs/<application-id>.html`。
 
-MPA 当前只物化静态 Page route。`$param` 与终止 `$...splat` 仍是有效的 SPA
+MPA 只物化静态 Page route。`$param` 与终止 `$...splat` 仍是有效的 SPA
 route 身份，但为它们选择 MPA 会在 graph 校验失败，因为一个动态 pattern
 不能唯一对应一个构建期 HTML 输出。Route layout 在两种 mode 中都会组合；
 router-only boundary facet 仍仅支持 SPA，MPA 会显式拒绝。
@@ -215,7 +215,7 @@ export const GET = async () => Response.json({ ok: true });
 - Page entry 默认导出组件；
 - route 目录使用合法 static、`$param`、终止 `$...splat` 与 `(group)`
   segment，且没有 normalized-path 冲突；
-- MPA 不使用当前 materializer 报告为不支持的组合；
+- MPA 不使用不受支持的动态路径或 router-only boundary facet；
 - template 包含配置的 mount element；
 - Page `title` 以及每个 `meta` name/content 都是合法 static string；
 - `page.config.ts` 中 Page rendering metadata 使用受支持的值与组合；
@@ -232,7 +232,7 @@ provenance 与 diagnostic。
 
 ## 要点
 
-- 新 SPA/MPA 从同一棵 `page.*` Page-and-Route 树构建；
+- SPA/MPA 从同一棵 `page.*` Page-and-Route 树构建；
 - `ev inspect` 报告 `routingMode`、Page root、source、Document 默认值，不暴露内部
   provider 选择；
 - `.ev`、manifest、build output 与生成的 route-type declaration 都是生成物；

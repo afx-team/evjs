@@ -36,7 +36,7 @@ import { resolveBundler, withActiveBundler } from "./bundler-config.js";
 import {
   withPageRoutingDefaults,
   withServerConventionDefaults,
-  withServerRoutingDefaults,
+  withServerRouteDiscovery,
 } from "./convention-config.js";
 import { DevApiProcessController } from "./dev-api-process.js";
 import {
@@ -457,9 +457,8 @@ async function prepareInternalFrameworkBuild<
     configuredConfig,
     cwd,
   );
-  const rawResolvedConfig = await withServerRoutingDefaults(
+  const rawResolvedConfig = await withServerRouteDiscovery(
     pageResolvedConfig,
-    configuredConfig,
     cwd,
   );
   const conventionResolvedConfig = await withServerConventionDefaults(
@@ -714,9 +713,8 @@ async function runDev<TBundlerCfg = DefaultBundlerConfig>(
     configuredConfig,
     cwd,
   );
-  const rawResolvedConfig = await withServerRoutingDefaults(
+  const rawResolvedConfig = await withServerRouteDiscovery(
     pageResolvedConfig,
-    configuredConfig,
     cwd,
   );
   const conventionResolvedConfig = await withServerConventionDefaults(
@@ -966,9 +964,8 @@ async function runDevSession<TBundlerCfg = DefaultBundlerConfig>(
       nextConfiguredConfig,
       cwd,
     );
-    const nextRawResolvedConfig = await withServerRoutingDefaults(
+    const nextRawResolvedConfig = await withServerRouteDiscovery(
       nextPageResolvedConfig,
-      nextConfiguredConfig,
       cwd,
     );
     const nextConventionResolvedConfig = await withServerConventionDefaults(

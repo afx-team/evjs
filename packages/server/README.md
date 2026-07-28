@@ -26,7 +26,7 @@ Create standard REST endpoints using the `createRoute()` factory:
 import { createRoute } from "@evjs/server";
 
 export const usersRoute = createRoute("/api/users", {
-  GET: async (c) => Response.json([{ id: 1, name: "Alice" }]),
+  GET: async (_request) => Response.json([{ id: 1, name: "Alice" }]),
 });
 ```
 
@@ -47,7 +47,8 @@ declarations.
 
 ### 2. Server Functions
 
-Use the `"use server"` directive in `*.server.ts` files:
+Use the `"use server"` directive in reachable modules. `.server.ts` is the
+recommended naming convention, not a discovery rule:
 
 ```ts
 // src/posts.server.ts

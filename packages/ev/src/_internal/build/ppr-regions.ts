@@ -44,7 +44,7 @@ const PPR_REGION_METADATA_EXPORTS = ["cache"] as const;
 const PPR_REGION_METADATA_PARSE_DIAGNOSTIC_PREFIX =
   "PPR region metadata could not be parsed:";
 const UNSUPPORTED_PPR_SUSPENSE_DIAGNOSTIC =
-  'PPR Suspense boundary was not split into an internal region renderer. Partial prerendering is experimental; evjs currently recognizes only a direct React.lazy(() => import("./...")) component child for compatibility, and other Suspense boundaries render as part of the shell until runtime postponed/resume support lands.';
+  'PPR Suspense boundary was not split into an internal region renderer. Region extraction requires a direct React.lazy(() => import("./...")) component child; other Suspense boundaries render as part of the shell.';
 
 interface LazyComponentReference {
   module: string;

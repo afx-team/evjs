@@ -84,9 +84,8 @@ framework-owned client or server output path.
 
 Generated HTML embeds the `ClientRuntime` required by browser bootstrap.
 `deployment-metadata.json` is the canonical serialized deployment projection;
-the complete `BuildOutput` remains in memory. Core does not emit split
-client/server compatibility manifests. Application code must not import or
-edit deployment metadata.
+the complete `BuildOutput` remains in memory. Application code must not import
+or edit deployment metadata.
 
 ## SPA And MPA Output
 
@@ -106,7 +105,7 @@ is never derived from the Page id. When a root SSG Page owns `index.html` in a
 mixed SPA that also needs a client-route fallback, Core keeps the Application
 shell separately at `__evjs/<application-id>.html`.
 
-MPA currently materializes only static Page routes. `$param` and terminal
+MPA materializes only static Page routes. `$param` and terminal
 `$...splat` remain valid SPA route identities, but selecting MPA for either
 fails graph validation because one dynamic pattern does not identify one
 build-time HTML output. Route layouts compose in both modes; router-only
@@ -172,9 +171,8 @@ document renderer.
 
 ## Page Rendering Settings
 
-Do not preserve literal `render`, `hydrate`, `prerender`, or `rsc` exports in a
-Page component. When adopting canonical Page configuration, move those values
-to adjacent `page.config.ts`:
+Page components do not export literal `render`, `hydrate`, `prerender`, or
+`rsc` settings. Put those values in adjacent `page.config.ts`:
 
 ```ts
 import { definePageConfig } from "@evjs/ev";
@@ -235,8 +233,7 @@ Check user-controlled inputs first:
 - Page entries default-export a component;
 - route directories use valid static, `$param`, terminal `$...splat`, and
   `(group)` segments without normalized-path conflicts;
-- MPA does not use combinations that its current materializer reports as
-  unsupported;
+- MPA does not use unsupported dynamic paths or router-only boundary facets;
 - templates contain the configured mount element;
 - Page `title` and each `meta` name/content value are valid static strings;
 - Page rendering metadata in `page.config.ts` uses supported values and
@@ -250,12 +247,12 @@ Check user-controlled inputs first:
   matches. Static aliases are compared after exactly one URL decode, so
   `/%75sers` aliases `/users` while double-encoded text remains distinct.
 
-After source conversion, run `ev inspect` and review Page sources, Page config,
-routes, Documents, provenance, and diagnostics.
+Before building, run `ev inspect` and review Page sources, Page config, routes,
+Documents, provenance, and diagnostics.
 
 ## Key Points
 
-- New SPA and MPA apps build from the same `page.*` Page-and-Route tree.
+- SPA and MPA apps build from the same `page.*` Page-and-Route tree.
 - `ev inspect` reports `routingMode`, Page root, source, and Document defaults
   without exposing an internal provider choice.
 - `.ev`, manifests, build output, and generated route-type declarations

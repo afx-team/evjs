@@ -33,20 +33,20 @@ describe("server function ID helpers", () => {
     expect(getRequestFnId(42)).toBe("");
   });
 
-  it("validates server function export names for generated registration metadata", () => {
+  it("validates export names for generated server-reference metadata", () => {
     expect(isServerFunctionExportName("getUser")).toBe(true);
     expect(isServerFunctionExportName("save-user")).toBe(true);
     expect(() =>
-      assertServerFunctionExportName("save-user", "registerServerReference()"),
+      assertServerFunctionExportName("save-user", "createServerReference()"),
     ).not.toThrow();
 
     const message =
-      "[evjs] registerServerReference() exportName must be a non-empty string without leading or trailing whitespace.";
+      "[evjs] createServerReference() exportName must be a non-empty string without leading or trailing whitespace.";
 
     for (const value of ["", " save", "save ", "   ", 42, null, undefined]) {
       expect(isServerFunctionExportName(value)).toBe(false);
       expect(() =>
-        assertServerFunctionExportName(value, "registerServerReference()"),
+        assertServerFunctionExportName(value, "createServerReference()"),
       ).toThrow(message);
     }
   });

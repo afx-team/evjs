@@ -1,6 +1,6 @@
 # ev Render Modes Example
 
-This Core 0.3 example applies all rendering modes to one canonical
+This example applies all rendering modes to one canonical
 Page-and-Route tree. The app simulates a payment operations console with:
 
 - a merchant KPI dashboard loaded through a server function;
@@ -41,6 +41,6 @@ Private source is colocated without route-name prefixes:
 `src/pages/insights/InsightsBadge.tsx` are ordinary modules because only
 `page.tsx` creates a Page.
 
-Utoopack remains the default bundler for normal examples. This example uses
-webpack because it currently validates dynamic framework entries, rendering
-facades, and multiple server entries.
+Utoopack remains the default bundler for client-only examples. This example
+uses webpack because its declared build capabilities cover server rendering,
+PPR, and RSC.

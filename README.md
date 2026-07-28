@@ -1,16 +1,10 @@
 # evjs
 
 [![npm](https://img.shields.io/npm/v/@evjs/cli?style=flat-square&label=npm)](https://www.npmjs.com/package/@evjs/cli)
-[![CI](https://img.shields.io/github/actions/workflow/status/evaijs/evjs/ci.yml?style=flat-square&label=CI)](https://github.com/evaijs/evjs/actions)
-[![DeepWiki](https://img.shields.io/badge/DeepWiki-evaijs%2Fevjs-blue?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTQgMTkuNXYtMTVBMi41IDIuNSAwIDAgMSA2LjUgMkgxOXYyMEg2LjVhMi41IDIuNSAwIDAgMS0yLjUtMi41eiIvPjxwYXRoIGQ9Ik04IDdoOCIvPjxwYXRoIGQ9Ik04IDExaDgiLz48cGF0aCBkPSJNOCAxNWg1Ii8+PC9zdmc+)](https://deepwiki.com/evaijs/evjs)
-[![Vibe Coding](https://img.shields.io/badge/vibe-coding-ff69b4?style=flat-square)](https://en.wikipedia.org/wiki/Vibe_coding)
+[![CI](https://img.shields.io/github/actions/workflow/status/afx-team/evjs/ci.yml?style=flat-square&label=CI)](https://github.com/afx-team/evjs/actions)
 
-React fullstack framework with one Page-and-Route model for SPA/MPA
-applications, server file routes, server functions, and independent
-client/server runtime cores.
-
-> **ev** = **Ev**aluation · **Ev**olution — evaluate across runtimes, evolve with AI tooling.
-
+React fullstack framework with one Page-and-Route model for SPA and MPA
+applications, server file routes, server functions, rendering, and deployment.
 
 ## ⚡ Features
 
@@ -18,13 +12,13 @@ client/server runtime cores.
 - **One Page Config Contract** — optional `page.config.ts` supplies static titles, named metadata, build-time rendering settings, and namespaced plugin capabilities in SPA and MPA.
 - **No Accidental Pages** — colocated files such as `components/index.tsx` stay private because only `page.*` creates a Page.
 - **SPA and MPA Modes** — the same semantic Page/Route tree materializes as SPA Client Routes or MPA Documents through `routing.mode`.
-- **Data Fetching** — [TanStack Query](https://tanstack.com/query) with built-in proxies.
-- **Server Functions** — `"use server"` directive, auto-discovered at build time.
-- **Pluggable Transport** — HTTP, WebSocket, or custom via `ServerTransport`.
+- **Data Fetching** — [TanStack Query](https://tanstack.com/query) integration for server functions.
+- **Server Functions** — reachable `"use server"` modules are transformed into typed client references.
+- **Pluggable Transport** — HTTP, WebSocket, or custom protocols via a `TransportAdapter`.
 - **Plugin System** — extend the generated `.ev` framework IR through contributions, plus lifecycle hooks for config, bundler, HTML, and build output.
 - **Server File Routes** — positive `src/apis/**/api.*` anchors map directory-owned Request/Response handlers to HTTP endpoints.
 - **Typed Errors** — `ServerError` flows structured data server → client.
-- **Multi-Runtime** — [Hono](https://hono.dev/)-based server with Node, Deno, Bun, Edge adapters.
+- **Runtime Targets** — [Hono](https://hono.dev/)-based server APIs for Node and standard Fetch runtimes.
 - **CLI** — `ev dev` · `ev build` · `ev prepare` · `ev inspect`
 
 ## 🚀 Quick Start
@@ -32,12 +26,13 @@ client/server runtime cores.
 ```bash
 npx @evjs/create-app my-app
 cd my-app && npm install
-ev dev
+npm run dev
 ```
 
-After `ev dev`, your browser opens to `http://localhost:3000` with hot module
-replacement. Server functions in `*.server.ts` files are auto-discovered — no
-config needed.
+The development command prints the selected browser and framework-server URLs.
+Server-function modules are discovered through the `"use server"` directive
+when they are reachable from the application graph; `.server.ts` is a naming
+recommendation, not a discovery rule.
 
 ## 🧭 Framework IR
 
@@ -61,12 +56,11 @@ entry/runtime/HTML/resolution slots; keep loaders for real bundler transforms.
 | [`@evjs/cli`](./packages/cli) | Thin CLI wrapper (`ev dev`, `ev build`, `ev prepare`, `ev inspect`) with the default bundler |
 | [`@evjs/create-app`](./packages/create-app) | Project scaffolding (`npx @evjs/create-app`) |
 | [`@evjs/client`](./packages/client) | Standalone/manual browser runtime core |
-| [`@evjs/server`](./packages/server) | Standalone/manual server runtime core for Hono/fetch apps and route primitives |
+| [`@evjs/server`](./packages/server) | Standalone/manual server runtime core for Hono and Fetch apps |
+| [`@evjs/plugin-qiankun`](./packages/plugin-qiankun) | Optional qiankun integration |
 | [`examples/`](./examples) | Starter templates |
 
-Internal modules such as manifest schemas, build tools, page runtime, and shell
-live inside the public packages above instead of separate application-facing
-packages. Application code imports framework composition APIs from `@evjs/ev`
+Application code imports framework composition APIs from `@evjs/ev`
 and file-convention authoring APIs from `@evjs/ev/route`, `@evjs/ev/navigation`,
 `@evjs/ev/query`, `@evjs/ev/server-context`, or `@evjs/ev/transport`. `@evjs/client` and `@evjs/server` remain independent
 standalone/manual runtime packages for apps that intentionally own those
@@ -81,6 +75,8 @@ npm install          # deps
 npm run build        # all packages + examples
 npm run test         # vitest
 npm run test:e2e     # playwright
+npm run check-types  # TypeScript
+npm run lint         # Biome
 ```
 
 ## 📄 License

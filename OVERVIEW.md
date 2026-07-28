@@ -1,72 +1,40 @@
 # evjs Overview
 
-> High-level conceptual map of evjs features.
-
-## Full-Stack Architecture
-
-This graph maps out the **Client Side** and **Server Side**, illustrating how Rendering (SSR/RSC) and APIs (Server Functions/Route Handlers) operate within the backend before accessing your Data Layer.
+evjs separates application semantics from bundler and runtime details. The
+framework normalizes Page routes, server routes, server functions, rendering
+settings, and plugin extensions before it asks a bundler to emit files.
 
 ```mermaid
 flowchart LR
-    %% Client Nodes
-    subgraph ClientSide ["💻 Client Side (evjs Frontend)"]
-        UI["React Application (Client Components)"]
-        RPC["RPC Client (Auto-generated)"]
-        FETCH["Standard HTTP Clients (fetch, cURL)"]
-    end
+  Source["Application source\npage.* + page.config.ts + api.* + middleware"]
+  Config["ev.config.ts\nrouting + server + plugins"]
+  Graph["CoreGraph\nApplication + Page + Route + Document"]
+  Plan["BuildPlan\nentries + HTML + server + runtime"]
+  IR[".ev framework IR\ngenerated modules + slots + manifest"]
+  Bundler["Bundler adapter\nUtoopack or webpack"]
+  Output["BuildOutput\nlinked assets + runtime + routes"]
+  Deployment["DeploymentMetadata\nand adapter artifacts"]
 
-    %% Server Nodes
-    subgraph ServerSide ["⚙️ Server Side (evjs Backend)"]
-        subgraph RenderingLayer ["🖼️ Rendering Layer"]
-            SSR["Server-Side Rendering (SSR HTML)"]
-            RSC["React Server Components (RSC Virtual DOM)"]
-        end
-        
-        subgraph APILayer ["🔌 APIs and Endpoints"]
-            SF["⚡ Server Functions (Invisible RPC bridge)"]
-            RH["🌐 Server File Routes (Public API Endpoints)"]
-        end
-
-        subgraph DataLayer ["🗄️ Data Layer"]
-            DB[("Relational or Document DB")]
-            KV[("Key-Value Store")]
-        end
-    end
-
-    %% Internal Data Flow
-    SSR -->|"Read"| DB
-    SSR -->|"Read"| KV
-    
-    RSC -->|"Read"| DB
-    RSC -->|"Read"| KV
-    
-    SF -->|"Read/Write"| DB
-    SF -->|"Read/Write"| KV
-    
-    RH -->|"Read/Write"| DB
-    RH -->|"Read/Write"| KV
-
-    %% Network Flow
-    UI --> RPC
-    UI --> FETCH
-    
-    UI -.->|"Initial Request"| SSR
-    UI -.->|"RSC Fetch"| RSC
-    
-    RPC -->|"POST /__evjs/fn"| SF
-    FETCH -->|"GET/POST /api/*"| RH
-
-    %% Styling
-    style UI fill:#6366f1,color:#fff
-    style FETCH fill:#6366f1,color:#fff
-    style RPC fill:#6366f1,color:#fff
-    
-    style SSR fill:#8b5cf6,color:#fff
-    style RSC fill:#8b5cf6,color:#fff
-    
-    style SF fill:#10b981,color:#fff
-    style RH fill:#10b981,color:#fff
-    
-    style DB fill:#ec4899,color:#fff
-    style KV fill:#ec4899,color:#fff
+  Source --> Graph
+  Config --> Graph
+  Graph --> Plan --> IR --> Bundler --> Output --> Deployment
 ```
+
+The main ownership rules are:
+
+- `src/pages/**/page.*` defines canonical Pages and client Routes. The
+  containing directory owns the Page scope and determines its URL.
+- adjacent `page.config.ts` supplies static metadata, rendering settings, and
+  namespaced Page, Route, or Page-owned Document extensions.
+- `src/apis/**/api.*` defines framework-managed request Routes. Its directory
+  determines the request path and middleware scope.
+- reachable `"use server"` modules define server functions; their filename is
+  not a discovery rule.
+- `@evjs/ev` owns framework configuration, graph analysis, build planning,
+  generated IR, and deployment composition.
+- `@evjs/client` and `@evjs/server` provide independent runtime primitives for
+  applications that intentionally manage those runtimes directly.
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for implementation ownership and
+[the documentation overview](./docs/docs/overview.md) for the user-facing
+guide.

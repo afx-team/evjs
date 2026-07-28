@@ -221,11 +221,6 @@ entry or HTML Document merely because it has Page config. Functions and other
 executable options belong in a typed plugin factory or explicit module
 reference, and secrets must not enter graph extensions.
 
-The plugin API does not yet implement `transformGraph`, typed runtime-hook
-registration, semantic facet APIs, or generic extension-owned entries. Those
-remain Core 0.3 targets; use the existing generated-contribution and lifecycle
-APIs for currently supported behavior.
-
 ## Config Hook
 
 Use `config()` for framework configuration that must be visible before defaults,
@@ -522,7 +517,7 @@ shell, so page-targeted `html.tag` contributions and `transformHtml` handling
 apply to that shell.
 
 `resolve.external` accepts `runtime: "client" | "server" | "all"`. The
-Webpack adapter applies that filter per target. The current Utoopack adapter
+Webpack adapter applies that filter per target. The Utoopack adapter
 only exposes a top-level externals config, so client/all externals are mapped
 there and server-only externals fail fast when client entries are present.
 

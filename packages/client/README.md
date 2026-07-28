@@ -102,9 +102,8 @@ export default defineConfig({
 The Page directory may contain components, hooks, models, and services without
 private filename prefixes; those files never become routes. Change only
 `routing.mode` to materialize the same semantic Page/Route tree as an MPA.
-SPA and MPA applications compose the same file-convention layouts. Router-only
-lifecycle and boundary facets are rejected in MPA until they have an explicit
-Document materialization contract.
+SPA and MPA applications compose the same file-convention layouts. MPA rejects
+router-only lifecycle and boundary facets.
 
 Explicit `application.routes` and `component`/`routes` config are SPA-only
 route-tree inputs in `@evjs/ev`; their converters normalize into the same
@@ -115,8 +114,10 @@ only `routing.mode`.
 
 ## Server Functions
 
-Use the `"use server"` directive in reachable `*.server.ts` files. In
-file-convention apps, import the route data hooks from `@evjs/ev/route` and query hooks from `@evjs/ev/query`:
+Use the `"use server"` directive in reachable modules; `.server.ts` is the
+recommended naming convention, not a discovery rule. In file-convention apps,
+import the route data hooks from `@evjs/ev/route` and query hooks from
+`@evjs/ev/query`:
 
 ```tsx
 // src/pages/posts/page.tsx
@@ -154,8 +155,7 @@ Standalone/manual clients can import the same query hooks directly from
   framework runtime metadata; application `initTransport()` calls still take
   priority for server functions.
 - Runtime transport is for framework-managed browser requests to evjs server
-  endpoints. Current consumers are server functions and RSC Flight; future
-  client helpers for server routes or PPR should use the same runtime transport.
+  endpoints. It is consumed by server functions and RSC Flight.
   It does not control runtime metadata loading, static assets, dynamic imports,
   or application-authored `fetch()` calls.
 - `@evjs/client/transport`: Public subpath for low-level transport APIs such as `createServerReference`, `getFnId`, `getFnName`, and `initTransport`.

@@ -527,7 +527,7 @@ function toModuleImport(
 function assertSupportedBundler(bundlerName: string): void {
   if (bundlerName === "webpack" || bundlerName === "utoopack") return;
   throw new Error(
-    `[evjs:plugin-qiankun] Unsupported bundler "${bundlerName}". qiankun currently supports webpack and utoopack.`,
+    `[evjs:plugin-qiankun] Unsupported bundler "${bundlerName}". qiankun supports only webpack and utoopack.`,
   );
 }
 

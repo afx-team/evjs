@@ -1,7 +1,7 @@
 import { collectModuleExportNames } from "./module-exports.js";
 import { parseRouteModuleWithError } from "./routes/shared.js";
 
-const REMOVED_PAGE_MODULE_CONFIG_EXPORTS = [
+const PAGE_RENDERING_CONFIG_EXPORTS = [
   "render",
   "hydrate",
   "prerender",
@@ -17,28 +17,15 @@ const PAGE_ROUTE_LIFECYCLE_EXPORTS = [
   "notFoundComponent",
 ] as const;
 
-export type RemovedPageModuleConfigExport =
-  (typeof REMOVED_PAGE_MODULE_CONFIG_EXPORTS)[number];
+export type PageRenderingConfigExport =
+  (typeof PAGE_RENDERING_CONFIG_EXPORTS)[number];
 
 export type PageRouteLifecycleExport =
   (typeof PAGE_ROUTE_LIFECYCLE_EXPORTS)[number];
 
 export interface PageModuleExportAnalysis {
-  removedConfig: RemovedPageModuleConfigExport[];
+  renderingConfig: PageRenderingConfigExport[];
   routeLifecycle: PageRouteLifecycleExport[];
-}
-
-/**
- * Find rendering configuration that is still exported from a Page component.
- *
- * Rendering configuration is evaluated only from adjacent `page.config.*`
- * modules. This check deliberately looks at export names without interpreting
- * their values so component modules cannot become a second config source.
- */
-export function findRemovedPageModuleConfigExports(
-  source: string,
-): RemovedPageModuleConfigExport[] {
-  return analyzePageModuleExports(source).removedConfig;
 }
 
 /** Collect Page exports whose runtime meaning depends on the render contract. */
@@ -47,15 +34,12 @@ export function analyzePageModuleExports(
 ): PageModuleExportAnalysis {
   const { ast } = parseRouteModuleWithError(source);
   if (!ast) {
-    return {
-      removedConfig: [],
-      routeLifecycle: [],
-    };
+    return { renderingConfig: [], routeLifecycle: [] };
   }
 
   const exportedNames = new Set(collectModuleExportNames(ast.body));
   return {
-    removedConfig: REMOVED_PAGE_MODULE_CONFIG_EXPORTS.filter((name) =>
+    renderingConfig: PAGE_RENDERING_CONFIG_EXPORTS.filter((name) =>
       exportedNames.has(name),
     ),
     routeLifecycle: PAGE_ROUTE_LIFECYCLE_EXPORTS.filter((name) =>

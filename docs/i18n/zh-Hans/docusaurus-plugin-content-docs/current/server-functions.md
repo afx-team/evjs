@@ -173,8 +173,21 @@ export const saveTags = async (...tags: string[]) => {};
 一个参数。如果数组本身应该作为一个参数，请声明一个必填参数，例如上面的 `saveRoles()`。
 
 调用 `useMutation(serverFn, options)` 时不要提供 `mutationFn`；evjs 会从服务端函数
-推导它。只有非服务端函数才使用标准 TanStack 的 `useMutation({ mutationFn })`
-对象形式。
+推导它，并保留服务端函数的参数序列化 metadata。标准 TanStack
+`useMutation({ mutationFn })` 对象形式是通用 passthrough，也可以接收 callable
+server-function stub，但不会应用 direct overload 的多参数 variable 处理。
+
+### 原始 fetch / 非 Server Function
+
+非 Server Function 使用标准 TanStack Query API：
+
+```tsx
+const { data } = useQuery({
+  queryKey: ["github-user", username],
+  queryFn: () =>
+    fetch(`https://api.github.com/users/${username}`).then((r) => r.json()),
+});
+```
 
 ## 传输配置
 
@@ -202,7 +215,7 @@ initTransport({
 
 对于 evjs 构建，如果浏览器需要访问另一个 origin 上的服务端运行时，
 优先在 `ev.config.ts` 中配置 `transport.baseUrl`。这个值会被浏览器发起的请求共享，
-例如 server functions、RSC Flight，以及面向 server routes 的客户端 helper。
+例如 server functions 与 RSC Flight。
 
 Fetch `mode` 不提供配置。服务端函数请求使用浏览器默认 CORS 行为；跨域
 cookie 应通过 `credentials` 和服务端 CORS 响应头配合控制。
@@ -228,7 +241,20 @@ initTransport({ adapter: wsAdapter });
 ```
 
 自定义适配器自行管理协议配置。传给 `send(fnId, args, context)` 的可选
-`context` 只包含单次调用级别的值，目前是 `signal`。
+`context` 只包含单次调用级别的 `signal` 值。
+
+### Server 配置
+
+```ts
+// ev.config.ts
+import { defineConfig } from "@evjs/ev";
+
+export default defineConfig({
+  server: {
+    basePath: "/__evjs", // 服务端函数使用 /__evjs/fn
+  },
+});
+```
 
 ## 错误处理
 

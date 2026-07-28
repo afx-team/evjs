@@ -33,16 +33,14 @@ Important paths:
 - `dist/deployment-metadata.json`: canonical deployment metadata for tooling
   and deployment adapters. Application code should not import or edit it.
 
-Core does not emit split client/server compatibility manifests. A deployment
-adapter that requires a platform-specific projection owns that
-artifact explicitly.
+`deployment-metadata.json` is the only serialized core deployment projection.
+Deployment adapters own any additional platform-specific artifacts.
 
-Generated HTML embeds the browser `ClientRuntime`. The manual `@evjs/client`
-runtime URL APIs still support loading JSON from a configured URL, but CLI
-builds no longer emit `dist/client/runtime.json` by default.
+Generated HTML embeds the browser `ClientRuntime`. Manual `@evjs/client`
+runtime URL APIs can load JSON from an explicitly configured URL; there is no
+default standalone runtime JSON artifact.
 Runtime-only `FrameworkRuntime` data is passed through build/plugin results and
-injected into dev or deployment adapter bootstraps; it is not emitted as a
-default JSON artifact.
+injected into dev or deployment adapter bootstraps.
 
 ## Choose A Target
 
@@ -214,8 +212,8 @@ CMD ["node", "dist/server.mjs"]
 ## Custom Deployment Plugins
 
 Deployment plugins can use `buildEnd({ deploymentMetadata })` to emit platform
-files. For platform-specific compatibility fields, wrap that metadata before
-writing files:
+files. For platform-specific schema fields, wrap that metadata before writing
+files:
 
 ```ts
 export function deployAdapter() {

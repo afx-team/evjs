@@ -1,12 +1,17 @@
 # custom-ws-transport
 
-Custom WebSocket transport for server function calls.
+Client-side `TransportAdapter` example for sending server-function calls over
+WebSocket. This repository does not provide the matching WebSocket server.
 
 ## Run
 
 ```bash
 npm run dev
 ```
+
+The page shell runs locally, but server-function calls require a same-origin
+`/ws` endpoint that accepts the documented `{ id, fnId, args }` messages and
+returns `{ id, result }` or `{ id, error }`.
 
 ## Key Files
 
@@ -22,6 +27,6 @@ npm run dev
 
 - Custom `TransportAdapter` over WebSocket
 - `initTransport({ adapter: { send } })` extension
-- `dispatch()` for protocol-agnostic server-side handling
-- Same server functions work over HTTP and WebSocket
+- Request correlation and pending-call cleanup for a custom client protocol
+- The client message contract a matching WebSocket server must implement
 - Transport setup inside the root Page scope

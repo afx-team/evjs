@@ -309,7 +309,6 @@ const expectedPackageExportSubpaths = {
     "./internal",
     "./internal/page-context",
     "./internal/react-page",
-    "./internal/route-types",
     "./internal/rsc-page-context",
     "./internal/rsc-runtime",
     "./internal/server-functions",
@@ -670,28 +669,6 @@ describe("workspace package surface", () => {
     expect(imports.filter(isForbiddenBuildToolsLoadTimeImport)).toEqual([]);
   });
 
-  it("does not keep @evjs/ev source shims for runtime packages", async () => {
-    const removedFacadeFiles = [
-      "packages/ev/src/client.ts",
-      "packages/ev/src/client-internal.ts",
-      "packages/ev/src/client-internal-page-context.ts",
-      "packages/ev/src/client-internal-react-page.ts",
-      "packages/ev/src/client-internal-route-types.ts",
-      "packages/ev/src/client-internal-rsc-page-context.ts",
-      "packages/ev/src/client-internal-rsc-runtime.ts",
-      "packages/ev/src/server.ts",
-      "packages/ev/src/server-fetch.ts",
-      "packages/ev/src/server-node.ts",
-      "packages/ev/src/server-react.ts",
-      "packages/ev/src/server-register.ts",
-      "packages/ev/src/_internal/manifest/index.ts",
-    ];
-
-    for (const removedFile of removedFacadeFiles) {
-      expect(await fileExists(path.join(repoRoot, removedFile))).toBe(false);
-    }
-  });
-
   it("keeps shared as a contract package instead of a feature package", async () => {
     const sharedPackageJson = await readPackageJson("shared");
     expect(runtimeDependencyNames(sharedPackageJson)).toEqual([]);
@@ -722,28 +699,18 @@ describe("workspace package surface", () => {
     for (const packageName of expectedPackageNames) {
       expect(architectureDoc).toContain(packageName);
     }
+    expect(architectureDoc).toContain("## Package Ownership");
+    expect(architectureDoc).toContain("Minimal config authoring");
     expect(architectureDoc).toContain(
-      "Application config files import the minimal config authoring API through",
+      "`@evjs/ev/route`, `/navigation`, `/query`",
     );
+    expect(architectureDoc).toContain("`@evjs/ev/_internal/*`");
+    expect(architectureDoc).toContain("CoreGraph");
+    expect(architectureDoc).toContain("BuildPlan");
+    expect(architectureDoc).toContain("BuildOutput");
+    expect(architectureDoc).toContain("DeploymentMetadata");
     expect(architectureDoc).toContain(
-      "`@evjs/ev/route`, `@evjs/ev/navigation`, `@evjs/ev/query`, `@evjs/ev/server-context`, and `@evjs/ev/transport`",
-    );
-    expect(architectureDoc).toContain("`@evjs/ev` consumes");
-    expect(architectureDoc).toContain("`@evjs/client`, `@evjs/server`");
-    expect(architectureDoc).toContain("@evjs/ev/_internal/client/*");
-    expect(architectureDoc).toContain("@evjs/ev/_internal/client/route-types");
-    expect(architectureDoc).toContain("generated-only internal helpers");
-    expect(architectureDoc).toContain(
-      "Published package manifests stay ESM-only and intentionally narrow",
-    );
-    expect(architectureDoc).toContain(
-      "Subpath exports stay explicit and documented",
-    );
-    expect(architectureDoc).toContain(
-      "Internal `@evjs/*` runtime dependencies are kept explicit",
-    );
-    expect(architectureDoc).toContain(
-      "Documentation code examples follow the same package boundary",
+      "are not scanned by framework conventions",
     );
   });
 
@@ -753,46 +720,33 @@ describe("workspace package surface", () => {
       path.join(repoRoot, "AGENTS.md"),
       "utf-8",
     );
-    const normalizedAgentGuide = agentGuide.replace(/\s+/g, " ");
-
     expect(readme).toContain("[AGENTS.md](./AGENTS.md)");
     expect(agentGuide).toContain("[AGENT.md](./AGENT.md)");
     expect(agentGuide).toContain("[ARCHITECTURE.md](./ARCHITECTURE.md)");
     expect(agentGuide).toContain("[CONTRIBUTING.md](./CONTRIBUTING.md)");
     expect(agentGuide).toContain("Keep simple config imports on `@evjs/ev`");
-    expect(agentGuide).toContain("`@evjs/ev/route`");
-    expect(agentGuide).toContain("`@evjs/ev/navigation`");
-    expect(agentGuide).toContain("`@evjs/ev/query`");
-    expect(agentGuide).toContain("`@evjs/ev/server-context`");
-    expect(agentGuide).toContain("`@evjs/ev/transport`");
+    expect(agentGuide).toContain(
+      "subpaths (`route`, `navigation`, `query`, `server-context`, `transport`)",
+    );
     expect(agentGuide).toContain("packages/ev/src/config/index.ts");
-    expect(agentGuide).toContain(
-      "packages/ev/src/_internal/build/graph/core.ts",
-    );
-    expect(agentGuide).toContain(
-      "packages/ev/src/_internal/build/page-routes.ts",
-    );
+    expect(agentGuide).toContain("packages/ev/src/_internal/build/graph/*");
+    expect(agentGuide).toContain("page-routes.ts");
     expect(agentGuide).toContain(
       "packages/ev/tests/build-tools-graph-plan.test.ts",
     );
     expect(agentGuide).toContain(
       "packages/ev/tests/build-tools-page-routes.test.ts",
     );
+    expect(agentGuide).toContain("src/pages/**/page.*");
+    expect(agentGuide).toContain("src/apis/**/api.{ts,tsx,js,jsx}");
+    expect(agentGuide).toContain("same CoreGraph");
+    expect(agentGuide).toContain("`.ev` is generated framework IR");
     expect(agentGuide).toContain(
-      "Do not add new distributed `@evjs/*` packages",
+      "Prefer a subpath export on the package that owns a capability",
     );
-    expect(normalizedAgentGuide).toContain(
-      "Source trees whose published entries use `index.*`",
+    expect(agentGuide).toContain(
+      "declarative current behavior over migration history",
     );
-    expect(normalizedAgentGuide).toContain(
-      "move or rename every published entry to `page.*`",
-    );
-    expect(normalizedAgentGuide).toContain(
-      "move Page configuration to `page.config.ts`",
-    );
-    expect(normalizedAgentGuide).toContain("configure only `routing.mode`");
-    expect(agentGuide).not.toContain("routing.compatibility");
-    expect(agentGuide).toContain("Scaffolded apps and template packs");
   });
 
   it("keeps public package guidance on default app and standalone runtime packages", async () => {
@@ -801,7 +755,7 @@ describe("workspace package surface", () => {
       "docs/docs/quick-start.md",
       "docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/quick-start.md",
     ];
-    const facadeGuidanceDocs = [
+    const docsWithoutLegacyFacadeGuidance = [
       ...packageTableDocs,
       "docs/docs/roadmap.md",
       "docs/i18n/zh-Hans/docusaurus-plugin-content-docs/current/roadmap.md",
@@ -822,9 +776,8 @@ describe("workspace package surface", () => {
       expect(source).not.toMatch(/@evjs\/ev\/server(?:[`"',\s]|$)/);
     }
 
-    for (const doc of facadeGuidanceDocs) {
+    for (const doc of docsWithoutLegacyFacadeGuidance) {
       const source = await fs.readFile(path.join(repoRoot, doc), "utf-8");
-      expect(source).toContain("@evjs/client");
       expect(source).not.toContain(
         "Direct `@evjs/client` and `@evjs/server` imports remain supported runtime",
       );
@@ -850,37 +803,25 @@ describe("workspace package surface", () => {
       expect(rootArchitecture).toContain(packageName);
       expect(rootContributing).toContain(packageName);
     }
-    expect(rootArchitecture).toContain(
-      "`@evjs/ev` owns config and plugin authoring APIs",
-    );
+    expect(rootArchitecture).toContain("## Ownership Boundaries");
     expect(rootArchitecture).toContain("`@evjs/client`");
     expect(rootArchitecture).toContain(
-      "`@evjs/ev` root exports stay limited to minimal config",
+      "The `@evjs/ev` root is the minimal config-authoring entry",
     );
-    expect(rootArchitecture).toContain("Advanced config/plugin utilities");
+    expect(rootArchitecture).toContain("`@evjs/ev/config`");
+    expect(rootArchitecture).toContain("Bundler adapters consume `BuildPlan`");
     expect(rootArchitecture).toContain(
-      "Internal `@evjs/*` runtime dependencies are kept explicit",
-    );
-    expect(rootArchitecture).toContain(
-      "Subpath exports stay explicit and documented",
-    );
-    expect(rootArchitecture).toContain(
-      "Do not add split packages for build or manifest ownership",
+      "Deployment adapters consume `BuildOutput`",
     );
     expect(rootContributing).toContain(
-      "Internal `@evjs/*` runtime dependency versions stay",
+      'Internal workspace dependency versions remain `"*"`',
     );
-    expect(rootContributing).toContain(
-      "Simple config imports stay on `@evjs/ev`.",
-    );
-    expect(rootContributing).toContain("File-convention app source imports");
-    expect(rootContributing).toContain("`@evjs/ev/route`");
-    expect(rootContributing).toContain("`@evjs/ev/navigation`");
-    expect(rootContributing).toContain("`@evjs/ev/query`");
+    expect(rootContributing).toContain("Keep the `@evjs/ev` root small");
+    expect(rootContributing).toContain("public application-authoring subpaths");
     expect(rootContributing).toContain("`@evjs/ev/_internal/*`");
-    expect(rootContributing).toContain("intentional and documented");
-    expect(rootContributing).toContain("generated page bootstrap");
-    expect(rootContributing).toContain("shell runtime primitives behind");
+    expect(rootContributing).toContain("create CoreGraph");
+    expect(rootContributing).toContain("derive BuildPlan");
+    expect(rootContributing).toContain("materialize .ev");
   });
 
   it("keeps examples and templates on declared public packages", async () => {
@@ -1151,7 +1092,6 @@ describe("workspace package surface", () => {
       "./internal",
       "./internal/page-context",
       "./internal/react-page",
-      "./internal/route-types",
       "./internal/rsc-page-context",
       "./internal/rsc-runtime",
       "./internal/server-functions",

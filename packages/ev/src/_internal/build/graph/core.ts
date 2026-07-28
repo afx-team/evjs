@@ -29,7 +29,11 @@ const PAGE_ANCHOR_PRODUCER = {
   id: PAGE_ANCHOR_PROVIDER_ID,
 } as const;
 
-/** Apply adjacent Page config to normalized Core Page fields. */
+/**
+ * Apply build-time Page configuration without changing semantic Page or Route
+ * identity. SPA SSG configuration may add a Page-owned Document, after which
+ * the complete graph is validated again.
+ */
 export function applyResolvedPageConfigs(
   graph: CoreGraph,
   pageConfigs: Record<string, ResolvedPageFileConfig>,
@@ -141,12 +145,13 @@ export interface PageAnchorGraphFacts {
 }
 
 /**
- * Normalize the canonical page-anchor provider into the Core 0.3 graph.
+ * Normalize canonical page-anchor discovery into the CoreGraph.
  *
- * Page and semantic Route identity are materialization-neutral. SPA materializes one
- * Application-owned Document; MPA materializes one Page-owned Document for
- * every static Page Route while retaining the same semantic client Routes for
- * plugin inspection.
+ * Page and semantic Route identity are materialization-neutral. Routing mode
+ * changes Document ownership and the later entry materialization, while server
+ * functions, request Routes, and module references remain analysis facts for
+ * later planning. Bundler-specific entry and asset decisions are deliberately
+ * outside this normalization boundary.
  */
 export function createPageAnchorGraph(
   config: GraphConfig,
@@ -220,6 +225,10 @@ export function createPageAnchorGraph(
     );
   }
 
+  // A directory may contain both a layout anchor and a Page anchor at the same
+  // URL. The Page Route becomes the semantic node for that URL: it inherits the
+  // layout facets, the synthetic layout Route is removed, and descendants are
+  // reparented to the surviving Page Route.
   const layoutRoutesById = new Map(
     routeFacts
       .filter((route) => route.kind === "layout")
@@ -403,6 +412,11 @@ function createPageAnchorRouteFacts(
   }));
 }
 
+/**
+ * Materialize one Page-owned Document for each canonical MPA Page Route.
+ * Every Page must resolve to exactly one static URL; per-Page templates and
+ * aliases refine that output without creating additional semantic Routes.
+ */
 function materializePageAnchorMpaDocuments(
   config: PageAnchorGraphConfig,
   routeFacts: PageAnchorRouteFact[],
@@ -519,6 +533,11 @@ function materializeSpaPageDocuments(
   };
 }
 
+/**
+ * Materialize Page-owned Documents only for static SPA SSG Pages. They inherit
+ * the Application template and mount, while an output collision relocates the
+ * shared Application fallback to a framework-owned path.
+ */
 function materializeSpaPageDocumentsInPlace(options: {
   applications: Record<string, CoreApplicationNode>;
   pages: Record<string, CorePageNode>;

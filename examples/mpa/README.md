@@ -1,6 +1,6 @@
 # Unified MPA
 
-Minimal Core 0.3 multi-page application using the same `page.tsx` file
+Minimal multi-page application using the same `page.tsx` file
 convention as SPA applications.
 
 ## Run
@@ -50,9 +50,5 @@ npm run build
 - No `@evjs/client`, `@evjs/server`, or generated `route-types.d.ts`
   dependency is needed for this router-free client output
 
-Source trees whose published entries use `index.tsx` must rename them to
-`page.tsx`, map static title and supported named meta to `page.config.ts` core
-fields, and move remaining plugin-owned values to namespaced extensions.
-Core discovers only canonical Page anchors. Explicit `component`/`routes`
-config remains a SPA-only route-tree input and is not accepted as an MPA
-authoring model.
+Explicit `component`/`routes` config is a SPA-only route-tree input and is not
+accepted as an MPA authoring model.

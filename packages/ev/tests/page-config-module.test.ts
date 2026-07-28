@@ -5,10 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { GraphConfig } from "../src/_internal/build/graph/index.js";
 import { createCoreGraph } from "../src/_internal/build/graph/index.js";
 import { resolvePageConfigModules } from "../src/_internal/build/page-config-module.js";
-import {
-  analyzePageModuleExports,
-  findRemovedPageModuleConfigExports,
-} from "../src/_internal/build/page-module-config.js";
+import { analyzePageModuleExports } from "../src/_internal/build/page-module-exports.js";
 import type {
   PageAnchorMetadata,
   PageRouteDiscoveryMetadata,
@@ -25,22 +22,24 @@ afterEach(async () => {
 });
 
 describe("page.config modules", () => {
-  it("detects removed component rendering exports without evaluating values", () => {
+  it("collects Page rendering config exports without evaluating values", () => {
     expect(
-      findRemovedPageModuleConfigExports(`
+      analyzePageModuleExports(`
         export function render() {}
-        class LegacyHydration {}
-        export { LegacyHydration as hydrate };
-        export { legacy as prerender } from "./legacy.js";
+        class HydrationMode {}
+        export { HydrationMode as hydrate };
+        export { staticPaths as prerender } from "./static-paths.js";
         export const rsc = getRuntimeValue();
       `),
-    ).toEqual(["render", "hydrate", "prerender", "rsc"]);
+    ).toMatchObject({
+      renderingConfig: ["render", "hydrate", "prerender", "rsc"],
+    });
 
     expect(
-      findRemovedPageModuleConfigExports(`
+      analyzePageModuleExports(`
         export type { render, hydrate, prerender, rsc } from "./types.js";
       `),
-    ).toEqual([]);
+    ).toMatchObject({ renderingConfig: [] });
   });
 
   it("collects browser route lifecycle exports without evaluating values", () => {
@@ -53,7 +52,7 @@ describe("page.config modules", () => {
         export type { pendingComponent } from "./types.js";
       `),
     ).toEqual({
-      removedConfig: [],
+      renderingConfig: [],
       routeLifecycle: ["beforeLoad", "loader", "validateSearch"],
     });
   });
@@ -673,7 +672,7 @@ describe("page.config modules", () => {
     ]);
   });
 
-  it("does not consume legacy rendering exports from canonical page anchors", async () => {
+  it("rejects Page rendering configuration exported by a component", async () => {
     const cwd = await createFixture({
       "index.html": '<div id="app"></div>',
       "src/pages/home/page.tsx": `
@@ -693,7 +692,7 @@ describe("page.config modules", () => {
         level: "error",
         file: "src/pages/home/page.tsx",
         message:
-          'Page "home" declares render, hydrate, prerender, or rsc from its component module. Component rendering exports have been removed; move these fields to the adjacent page.config.ts module.',
+          'Page "home" exports rendering configuration "render", "hydrate", "prerender", "rsc" from its component module. Define these fields in the adjacent page.config.ts module; Page component exports are runtime values, not build configuration.',
       },
     ]);
     expect(analysis.graph.pages.home).toMatchObject({
@@ -703,7 +702,7 @@ describe("page.config modules", () => {
     expect(analysis.graph.pages.home).not.toHaveProperty("hydrate");
     expect(analysis.graph.pages.home).not.toHaveProperty("prerender");
     expect(analysis.graph.pages.home).not.toHaveProperty("componentModel");
-    expect(analysis.graph?.pages.home.extensions).toEqual({});
+    expect(analysis.graph.pages.home.extensions).toEqual({});
   });
 });
 

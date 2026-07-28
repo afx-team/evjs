@@ -1,6 +1,6 @@
 # Configuration
 
-evjs Core 0.3 has one application authoring model for SPA and MPA:
+evjs has one application authoring model for SPA and MPA:
 
 - `src/pages/**/page.*` is the canonical Page and client-route anchor;
 - its containing directory determines Page scope and URL;
@@ -45,13 +45,12 @@ export default defineConfig({
 This disables `page.*` discovery under `src/pages`, `api.*` server request-route
 discovery under `src/apis`, and both global and route-scoped middleware file
 discovery.
-It cannot be combined with an explicit `routing` or `server.routing`
-declaration. There are no narrower convention disable switches.
+It cannot be combined with an explicit client `routing` declaration. There are
+no narrower convention disable switches.
 
 SPA-only `application.routes` configuration does not depend on file
 conventions. Neither do reachable modules marked with `"use server";` nor
-modules emitted through plugin contributions. `app`, `pages`, and top-level
-`routes` are not public configuration fields and are rejected.
+modules emitted through plugin contributions.
 
 ## Routing
 
@@ -181,9 +180,8 @@ explicit generated/runtime module. Do not place secrets here: extension values
 enter the build graph. They are not sent to the browser automatically; runtime
 projection remains an explicit plugin contribution.
 
-`application.extensions` is intentionally unsupported because `application`
-owns explicit SPA route configuration. Application-wide plugin values stay in
-top-level `extensions`, including after adopting canonical `page.*` routing.
+Application-wide plugin values use top-level `extensions`. `application` owns
+explicit SPA route configuration and does not contain an `extensions` field.
 
 ## Page Scope And Configuration
 
@@ -249,17 +247,13 @@ projection it needs.
 ### Server
 
 When file conventions are enabled, positive `api.*` server request-route
-anchors under `src/apis` are discovered by default. Configure the root only
-when it intentionally lives elsewhere:
+anchors are discovered under the fixed `src/apis` root:
 
 ```ts
 export default defineConfig({
   routing: { mode: "spa" },
   server: {
     basePath: "/__evjs",
-    routing: {
-      dir: "./src/apis",
-    },
   },
 });
 ```
@@ -269,18 +263,13 @@ an absolute pathname using non-empty ASCII URL-safe segments containing only
 letters, digits, `.`, `_`, `~`, or `-`. Empty and standalone `.` or `..`
 segments, dynamic `:param` and
 wildcard `*` segments, percent escapes, and raw non-ASCII characters are not
-valid runtime endpoint configuration. There is no public
-`server.functions.endpoint`.
+valid runtime endpoint configuration.
 
 Server middleware conventions are:
 
 - `src/middleware.ts` for global server middleware;
-- `<server.routing.dir>/**/middleware.ts` for middleware scoped to
-  same-directory and descendant server file routes; it defaults to
-  `src/apis/**/middleware.ts`.
-
-`server.routing: { dir }` customizes the shared `api.*` and route-middleware
-discovery root; it is not a disable switch.
+- `src/apis/**/middleware.ts` for middleware scoped to same-directory and
+  descendant server file routes.
 
 Enable React Server Components per Page with `rsc: true` in `page.config.ts`.
 The Flight endpoint is derived from `server.basePath`; optionally override it
@@ -317,7 +306,10 @@ export default defineConfig({
 });
 ```
 
-`dev.https` accepts `false`, `true`, or a `{ key, cert }` object.
+`dev.https` accepts `false`, `true`, or a `{ key, cert }` object. The default
+Utoopack adapter accepts only the boolean forms and rejects an explicit
+certificate instead of discarding it; select the Webpack adapter when custom
+client-dev certificates are required.
 `server.dev.https` accepts `false` or an explicit `{ key, cert }` object; the
 framework server does not synthesize a certificate for `true`.
 
@@ -398,7 +390,8 @@ absent. Only `page.*` anchors participate in this file convention.
 
 ### Explicit SPA route configuration
 
-`application.routes` accepts nested `routes`, `page` or `component`, `layout`,
+`application` and `routing` are mutually exclusive. `application.routes`
+accepts nested `routes`, `page` or `component`, `layout`,
 `wrappers`, redirects, and Application Document configuration through the
 SPA-only explicit route-tree normalizer. `application.pageRoot` is the Page
 source root for both `page` and `component` references in this explicit input;
@@ -409,7 +402,10 @@ alias for the configured `application.pageRoot`, while bare and `./` component
 references are relative to it. Component paths and resolved symbolic links
 cannot escape the configured Page source root. Layout and wrapper references
 keep their project-source resolution semantics. The `children` spelling is
-rejected; nested declarations use `routes`. Each explicit Route may carry a strict static,
+rejected; nested declarations use `routes`. `exact: true` is accepted only as
+a terminal-match structural assertion; `exact: false` and nested routes below
+an exact Route are rejected, and `exact` is not copied into the graph. Each
+explicit Route may carry a strict static,
 namespaced `extensions` bag; the owning plugin must register every namespace
 with `routeExtension()`. MPA materialization,
 Document alias conflicts, and component references outside the Page root are
@@ -434,21 +430,6 @@ terminal catch-all, and pathless segments use `$param`, `$...splat`, and
 `(group)` directories. Run `ev inspect` to review the normalized
 Page/Route/Document graph.
 
-Provider ids may appear in raw CoreGraph/debug artifacts as internal
-provenance. Normal `ev inspect` routing output hides them and reports
-normalized Page, route, source, and document information; providers are not a
-user-selectable routing architecture.
-
-The following fields are not part of the public configuration:
-
-- `app`
-- `pages`
-- top-level `routes`
-- top-level `html`
-- `application.topology` or `application.mode`
-- `server.entry`
-- `server.functions`
-- `server.functionRuntime`
-- `routing.routes`
-- `routing.entry`
-- top-level `functions` or `serverFunctions`
+The public configuration surface is the schema described above. Use
+`ev inspect` to review normalized Page, Route, source, Document, and diagnostic
+information.
