@@ -1,3 +1,5 @@
+import { canonicalizeStaticRouteSegment } from "./route-segment.js";
+
 export type ServerRouteParamNameValidationError = "empty" | "reserved";
 export type ServerRouteParamSegmentValidationErrorKind =
   | ServerRouteParamNameValidationError
@@ -18,7 +20,11 @@ const RESERVED_SERVER_ROUTE_PARAM_NAMES = new Set([
 export function serverRoutePathShapeFromPath(routePath: string): string {
   return routePath
     .split("/")
-    .map((segment) => (segment.startsWith(":") ? ":param" : segment))
+    .map((segment) =>
+      segment.startsWith(":")
+        ? ":param"
+        : canonicalizeStaticRouteSegment(segment),
+    )
     .join("/");
 }
 

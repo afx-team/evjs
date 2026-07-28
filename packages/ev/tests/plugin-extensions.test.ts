@@ -721,7 +721,7 @@ describe("plugin Application extensions", () => {
     });
   });
 
-  it("exposes one Application extension contract across SPA, MPA, and route-tree migration", async () => {
+  it("exposes one Application extension contract across SPA, MPA, and explicit route trees", async () => {
     const cwd = await fs.mkdtemp(
       path.join(os.tmpdir(), "evjs-application-extension-"),
     );
@@ -1475,7 +1475,7 @@ describe("plugin Page extensions", () => {
     });
   });
 
-  it("rejects namespace conflicts and removed compatibility fields", () => {
+  it("rejects namespace conflicts and unknown declaration fields", () => {
     const plugin = (name: string, namespace: ConfigExtensionNamespace) =>
       definePlugin({
         name,
@@ -1498,7 +1498,7 @@ describe("plugin Page extensions", () => {
           describe(ctx) {
             ctx.pageExtension({
               namespace: "@company/removed",
-              // @ts-expect-error raw Smallfish config claims were removed.
+              // @ts-expect-error raw config claims are not supported.
               rawKey: "legacy",
             });
           },
@@ -1513,7 +1513,7 @@ describe("plugin Page extensions", () => {
           describe(ctx) {
             ctx.pageExtension({
               namespace: "@company/removed",
-              // @ts-expect-error inert invalidation declarations were removed.
+              // @ts-expect-error inert invalidation declarations are unsupported.
               change: "graph-refresh",
             });
           },

@@ -1,6 +1,8 @@
 import {
   BUILD_IDENTIFIER_DESCRIPTION,
+  formatConcreteRuntimePathSegmentValidationError,
   formatContentTypeHeaderValue,
+  getConcreteRuntimePathSegmentValidationError,
   getPathPatternValidationError,
   isBuildIdentifier,
   isRscFlightContentType,
@@ -451,6 +453,12 @@ function assertBootstrapPathname(value: unknown, path: string): string {
   if (error) {
     throw new Error(`[evjs] ${path} ${formatBootstrapPathnameError(error)}`);
   }
+  const segmentError = getConcreteRuntimePathSegmentValidationError(pathname);
+  if (segmentError) {
+    throw new Error(
+      `[evjs] ${path} ${formatConcreteRuntimePathSegmentValidationError(segmentError)}`,
+    );
+  }
   return pathname;
 }
 
@@ -463,6 +471,12 @@ function assertBootstrapEndpoint(value: unknown, path: string): string {
   const error = getPathPatternValidationError(`/${endpoint}`);
   if (error) {
     throw new Error(`[evjs] ${path} ${formatBootstrapPathnameError(error)}`);
+  }
+  const segmentError = getConcreteRuntimePathSegmentValidationError(endpoint);
+  if (segmentError) {
+    throw new Error(
+      `[evjs] ${path} ${formatConcreteRuntimePathSegmentValidationError(segmentError)}`,
+    );
   }
   return endpoint;
 }

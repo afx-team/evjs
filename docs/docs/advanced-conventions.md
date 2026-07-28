@@ -36,7 +36,8 @@ file conventions are enabled and only changes the server route directory.
 Explicit SPA `application.routes` configuration, reachable modules marked with
 `"use server";`, and modules emitted by plugin contributions are not file
 conventions. They remain available when filesystem discovery is disabled.
-Removed `app`, `pages`, and top-level `routes` declarations are rejected.
+`app`, `pages`, and top-level `routes` are not public configuration fields and
+are rejected.
 
 Manual browser bootstrap uses the standalone runtime below; it is not a second
 canonical routing model.

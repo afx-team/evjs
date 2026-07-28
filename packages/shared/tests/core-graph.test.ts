@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { CoreGraph } from "../src/manifest/index.js";
 import {
   assertCoreGraph,
-  BIGFISH_ROUTE_EXTENSION_ID,
   CONFIG_ROUTE_PROVIDER_ID,
+  coreRoutePatternShape,
+  coreRoutePatternsEqual,
+  isCoreRoutePatternPrefix,
   PAGE_ANCHOR_PROVIDER_ID,
   resolveCorePageOwner,
 } from "../src/manifest/index.js";
@@ -678,64 +680,6 @@ describe("assertCoreGraph", () => {
     );
   });
 
-  it("validates the built-in Bigfish Route extension schema and owner", () => {
-    const graph = createValidGraph();
-    graph.extensions.namespaces[BIGFISH_ROUTE_EXTENSION_ID] = {
-      producer: CONFIG_ROUTE_PROVIDER_ID,
-      owners: ["route"],
-    };
-    getClientRoute(graph).extensions[BIGFISH_ROUTE_EXTENSION_ID] = {
-      name: "Orders",
-      icon: "orders",
-      title: "Orders",
-      hideInMenu: false,
-      flatMenu: true,
-      spmBPos: { a226: "b1" },
-      access: "canReadOrders",
-      menuKey: { spcenter: null, merchant_b: "" },
-      menuAssetOptions: {
-        source: "route",
-        nested: { enabled: true },
-      },
-    };
-
-    expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
-
-    graph.extensions.namespaces[BIGFISH_ROUTE_EXTENSION_ID] = {
-      producer: CONFIG_ROUTE_PROVIDER_ID,
-      owners: ["page"],
-    };
-    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
-      `namespaces.${BIGFISH_ROUTE_EXTENSION_ID}.owners must be exactly ["route"]`,
-    );
-
-    graph.extensions.namespaces[BIGFISH_ROUTE_EXTENSION_ID] = {
-      producer: "example-plugin",
-      owners: ["route"],
-    };
-    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
-      `namespaces.${BIGFISH_ROUTE_EXTENSION_ID}.producer must be "${CONFIG_ROUTE_PROVIDER_ID}"`,
-    );
-  });
-
-  it.each([
-    ["an empty value", {}],
-    ["an unknown field", { label: "Orders" }],
-    ["a non-boolean menu flag", { hideInMenu: "yes" }],
-    ["an empty spm map", { spmBPos: {} }],
-    ["a non-string spm map value", { spmBPos: { a226: false } }],
-    ["a non-map menu asset value", { menuAssetOptions: [] }],
-  ])("rejects %s in the Bigfish Route extension", (_label, value) => {
-    const graph = createValidGraph();
-    graph.extensions.namespaces[BIGFISH_ROUTE_EXTENSION_ID] = {
-      producer: CONFIG_ROUTE_PROVIDER_ID,
-      owners: ["route"],
-    };
-    getClientRoute(graph).extensions[BIGFISH_ROUTE_EXTENSION_ID] = value;
-
-    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow();
-  });
-
   it.each([
     ["undefined", undefined],
     ["non-finite number", Number.NaN],
@@ -1045,6 +989,83 @@ describe("assertCoreGraph", () => {
     );
   });
 
+  it.each([
+    ["raw ASCII", "users", "%75sers"],
+    ["raw Unicode", "你好", "%E4%BD%A0%E5%A5%BD"],
+  ])("rejects terminal Route shapes that differ only by a %s encoding alias", (_label, raw, encoded) => {
+    const graph = createValidGraph();
+    getClientRoute(graph).pattern.segments = [{ kind: "static", value: raw }];
+    addClientRoute(graph, {
+      id: "encoded-alias",
+      pattern: { segments: [{ kind: "static", value: encoded }] },
+      target: { kind: "redirect", to: { kind: "url", href: "/login" } },
+    });
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).toThrow(
+      'conflicts with Route "orders" in application "default"',
+    );
+  });
+
+  it("keeps encoded slash boundaries and double encoding distinct", () => {
+    const graph = createValidGraph();
+    for (const [id, segments] of [
+      ["encoded-slash", ["files", "a%2Fb"]],
+      ["path-boundary", ["files", "a", "b"]],
+      ["single-encoding", ["tokens", "%2F"]],
+      ["double-encoding", ["tokens", "%252F"]],
+    ] as const) {
+      addClientRoute(graph, {
+        id,
+        pattern: {
+          segments: segments.map((value) => ({ kind: "static", value })),
+        },
+        target: { kind: "redirect", to: { kind: "url", href: "/login" } },
+      });
+    }
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
+  });
+
+  it("uses one shared canonical Route pattern identity and prefix", () => {
+    const raw = { segments: [{ kind: "static" as const, value: "users" }] };
+    const encoded = {
+      segments: [{ kind: "static" as const, value: "%75sers" }],
+    };
+    const encodedChild = {
+      segments: [
+        ...encoded.segments,
+        { kind: "static" as const, value: "settings" },
+      ],
+    };
+
+    expect(coreRoutePatternShape(raw)).toBe(coreRoutePatternShape(encoded));
+    expect(coreRoutePatternsEqual(raw, encoded)).toBe(true);
+    expect(isCoreRoutePatternPrefix(raw, encodedChild)).toBe(true);
+    expect(
+      isCoreRoutePatternPrefix(
+        {
+          segments: [
+            { kind: "static", value: "files" },
+            { kind: "static", value: "a%2Fb" },
+          ],
+        },
+        {
+          segments: [
+            { kind: "static", value: "files" },
+            { kind: "static", value: "a" },
+            { kind: "static", value: "b" },
+          ],
+        },
+      ),
+    ).toBe(false);
+    expect(
+      coreRoutePatternsEqual(
+        { segments: [{ kind: "static", value: "%2F" }] },
+        { segments: [{ kind: "static", value: "%252F" }] },
+      ),
+    ).toBe(false);
+  });
+
   it("allows a group parent and terminal empty child to share one pattern", () => {
     const graph = createValidGraph();
     const route = getClientRoute(graph);
@@ -1091,6 +1112,9 @@ describe("assertCoreGraph", () => {
     "",
     ".",
     "..",
+    "%2E",
+    ".%2e",
+    "%2E%2E",
     "a/b",
     "a\\b",
     "white space",
@@ -1101,6 +1125,16 @@ describe("assertCoreGraph", () => {
     getClientRoute(graph).pattern.segments = [{ kind: "static", value }];
 
     expect(() => assertCoreGraph(graph, "coreGraph")).toThrow();
+  });
+
+  it.each([
+    "%252E",
+    "%252E%252E",
+  ])('keeps double-encoded static dot segment "%s" distinct', (value) => {
+    const graph = createValidGraph();
+    getClientRoute(graph).pattern.segments = [{ kind: "static", value }];
+
+    expect(() => assertCoreGraph(graph, "coreGraph")).not.toThrow();
   });
 
   it("keeps structured static $literal segments distinct from params", () => {

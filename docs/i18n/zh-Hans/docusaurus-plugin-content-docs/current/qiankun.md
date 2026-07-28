@@ -156,8 +156,8 @@ export default defineQiankunSlaveRuntime({
 ```
 
 在 qiankun 环境中，插件会挂载到 `props.container`；在非 qiankun 环境中会自动
-渲染 canonical framework entry。插件不读取 legacy `app.entry` 或 magic
-`src/main.tsx` 配置。Standalone `@evjs/client` 应用自行持有 qiankun/container
+渲染 canonical framework entry。插件不支持另一套 entry 字段，也不会推断 magic
+`src/main.tsx`。Standalone `@evjs/client` 应用自行持有 qiankun/container
 集成。
 
 ## 模块引用

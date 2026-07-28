@@ -1,0 +1,132 @@
+import type { Config } from "@evjs/ev/config";
+import type { CliFlags } from "@evjs/ev/plugin";
+import { Command, CommanderError } from "commander";
+import { parseCliFlags } from "./cli-options.js";
+import type { DefaultBundlerConfig } from "./index.js";
+import {
+  formatInspectCommandErrorJson,
+  type InspectCommandOptions,
+  type InspectCommandResult,
+} from "./inspect-command.js";
+
+type FrameworkCommand = (
+  config: Config<DefaultBundlerConfig> | undefined,
+  options: { cwd: string; flags: CliFlags },
+) => Promise<void>;
+
+export interface CliProgramDependencies {
+  version: string;
+  cwd(): string;
+  loadConfig(cwd: string): Promise<Config<DefaultBundlerConfig> | undefined>;
+  dev: FrameworkCommand;
+  build: FrameworkCommand;
+  prepare: FrameworkCommand;
+  inspect(options: InspectCommandOptions): Promise<InspectCommandResult>;
+  writeStdout(output: string): void;
+  writeStderr(output: string): void;
+  reportError(summary: string, error: unknown): void;
+}
+
+export async function runCliProgram(
+  argv: readonly string[],
+  dependencies: CliProgramDependencies,
+): Promise<number> {
+  let exitCode = 0;
+  const fail = () => {
+    exitCode = 1;
+  };
+  const runCommand = async (
+    errorSummary: string,
+    command: () => Promise<void>,
+  ) => {
+    try {
+      await command();
+    } catch (error) {
+      dependencies.reportError(errorSummary, error);
+      fail();
+    }
+  };
+
+  const program = new Command()
+    .name("ev")
+    .description("CLI for the evjs framework")
+    .version(dependencies.version)
+    .exitOverride()
+    .configureOutput({
+      writeOut: dependencies.writeStdout,
+      writeErr: dependencies.writeStderr,
+    });
+
+  program
+    .command("dev")
+    .description("Start development server")
+    .allowUnknownOption(true)
+    .action(async (_options: unknown, command: Command) => {
+      await runCommand("Failed to start dev server", async () => {
+        const cwd = dependencies.cwd();
+        const flags = parseCliFlags(command.args);
+        const config = await dependencies.loadConfig(cwd);
+        await dependencies.dev(config, { cwd, flags });
+      });
+    });
+
+  program
+    .command("build")
+    .description("Build project for production")
+    .allowUnknownOption(true)
+    .action(async (_options: unknown, command: Command) => {
+      await runCommand("Build failed", async () => {
+        const cwd = dependencies.cwd();
+        const flags = parseCliFlags(command.args);
+        const config = await dependencies.loadConfig(cwd);
+        await dependencies.build(config, { cwd, flags });
+      });
+    });
+
+  program
+    .command("prepare")
+    .description("Generate .ev framework IR without running a bundler")
+    .allowUnknownOption(true)
+    .action(async (_options: unknown, command: Command) => {
+      await runCommand("Prepare failed", async () => {
+        const cwd = dependencies.cwd();
+        const flags = parseCliFlags(command.args);
+        const config = await dependencies.loadConfig(cwd);
+        await dependencies.prepare(config, { cwd, flags });
+      });
+    });
+
+  program
+    .command("inspect")
+    .description("Inspect evjs framework discovery without running a bundler")
+    .option("--json", "Print machine-readable JSON")
+    .action(async (options: { json?: boolean }) => {
+      try {
+        const result = await dependencies.inspect({
+          cwd: dependencies.cwd(),
+          json: Boolean(options.json),
+        });
+        dependencies.writeStdout(result.output);
+        if (result.exitCode !== 0) fail();
+      } catch (error) {
+        if (options.json) {
+          dependencies.writeStdout(formatInspectCommandErrorJson(error));
+        } else {
+          dependencies.reportError("Inspect failed", error);
+        }
+        fail();
+      }
+    });
+
+  try {
+    await program.parseAsync([...argv]);
+  } catch (error) {
+    if (error instanceof CommanderError) {
+      return error.exitCode;
+    }
+    dependencies.reportError("CLI failed", error);
+    return 1;
+  }
+
+  return exitCode;
+}

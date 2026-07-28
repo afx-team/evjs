@@ -215,25 +215,19 @@ Framework-owned Page applications import from `@evjs/ev` and its curated
 subpaths. Use `@evjs/client` and `@evjs/server` directly only for intentional
 standalone/manual runtime composition.
 
-## Existing Source Adoption
+## Choose One Route Input
 
-Core 0.3 uses one canonical file-convention reader. For each published Page
-that uses another source anchor:
+For file-convention routing, put each published Page in the directory for its
+URL, name the entry `page.*`, keep Page settings in adjacent
+`page.config.ts`, and declare `routing.mode: "spa" | "mpa"`.
 
-1. Move or rename its entry to the directory that represents its URL and name
-   it `page.*`.
-2. Move Page title, supported named metadata, rendering, and plugin-owned
-   settings to adjacent `page.config.ts`.
-3. Keep Page-private code in that directory without `_` prefixes.
-4. Declare only `routing.mode: "spa"` or `"mpa"`.
-5. Run `ev inspect` and verify the Page/Route structure.
+Explicit `application.routes` is a separate SPA-only configuration input. It
+supports `page` or `component`, nested `routes`, layouts, wrappers, redirects,
+and registered namespaced Route extensions. It cannot be combined with `routing` and never
+selects MPA.
 
-Explicit `application.routes` is a separate, SPA-only configuration input. It
-may remain while source files are converted, but it cannot be combined with
-`routing` and never selects MPA. After converting the files, replace
-`application` with `routing.mode: "spa"`, then run `ev inspect`.
-
-An unrelated `src/pages` directory alone does not publish client routes.
+An unrelated `src/pages` directory alone does not publish client routes. Run
+`ev inspect` to verify the normalized Page/Route structure.
 
 Next, read [Project Structure](./project-structure),
 [Client Routes](./client-routes), and [Configuration](./config).

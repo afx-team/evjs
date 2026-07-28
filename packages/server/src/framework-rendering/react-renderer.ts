@@ -6,15 +6,13 @@ import {
   isRscFlightContentType,
   matchPageRouteParams,
   parsePageSearch,
+  resolveBrowserAssetHref,
 } from "@evjs/shared";
 import { type ComponentType, createElement, type ReactNode } from "react";
 import * as ReactDomServer from "react-dom/server";
 import { textResponse } from "../shared/responses.js";
-import {
-  formatUnknownError,
-  isRecord,
-  sanitizeDiagnosticText,
-} from "../shared/validation.js";
+import { isRecord } from "../shared/validation.js";
+import { createFrameworkErrorResponse } from "./errors.js";
 import type {
   FrameworkAssetGroup,
   FrameworkPageRuntime,
@@ -218,12 +216,12 @@ export function createReactRscFlightAdapter(
             response,
             "createReactRscFlightAdapter() renderFlight()",
           );
-          return await validateFlightResponse(response, options);
+          return validateFlightResponse(response, options);
         }
 
         const rendered = await renderDefaultRscDebugPayload(ctx, options);
         if (rendered instanceof Response) {
-          return await validateFlightResponse(rendered, options);
+          return validateFlightResponse(rendered, options);
         }
 
         return textResponse(
@@ -232,22 +230,19 @@ export function createReactRscFlightAdapter(
         );
       } catch (error) {
         await options.onError?.(error, ctx);
-        return textResponse(
-          `[evjs] RSC Flight render failed: ${formatUnknownError(error)}`,
-          500,
-        );
+        return createFrameworkErrorResponse("RSC Flight render failed", error);
       }
     },
   };
 }
 
-async function validateFlightResponse(
+function validateFlightResponse(
   response: Response,
   options: ReactRscFlightAdapterOptions,
-): Promise<Response> {
+): Response {
   const contentType = response.headers.get("Content-Type");
   if (isRscFlightContentType(contentType)) {
-    return sanitizeFlightResponse(response);
+    return response;
   }
 
   if (options.validateContentType === false || response.status >= 400) {
@@ -340,52 +335,6 @@ function assertOptionalBoolean(value: unknown, source: string): void {
   if (value !== undefined && typeof value !== "boolean") {
     throw new Error(`[evjs] ${source} must be a boolean.`);
   }
-}
-
-async function sanitizeFlightResponse(response: Response): Promise<Response> {
-  if (!response.body) return response;
-
-  const headers = new Headers(response.headers);
-  headers.delete("Content-Length");
-
-  if (typeof TransformStream === "undefined") {
-    return new Response(sanitizeDiagnosticText(await response.text()), {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
-  }
-
-  const decoder = new TextDecoder();
-  const encoder = new TextEncoder();
-  let carry = "";
-  const tailLength = 64 * 1024;
-  const transform = new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk, controller) {
-      const text = carry + decoder.decode(chunk, { stream: true });
-      const emitUntil = Math.max(0, text.length - tailLength);
-      if (emitUntil > 0) {
-        controller.enqueue(
-          encoder.encode(sanitizeDiagnosticText(text.slice(0, emitUntil))),
-        );
-        carry = text.slice(emitUntil);
-      } else {
-        carry = text;
-      }
-    },
-    flush(controller) {
-      const text = carry + decoder.decode();
-      if (text) {
-        controller.enqueue(encoder.encode(sanitizeDiagnosticText(text)));
-      }
-    },
-  });
-
-  return new Response(response.body.pipeThrough(transform), {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
 }
 
 async function renderDefaultRscDebugPayload(
@@ -910,15 +859,7 @@ function serializePageProps(props: Record<string, unknown>): string {
 }
 
 function assetHref(runtime: FrameworkRuntime, asset: string): string {
-  const publicPath = runtime.publicPath;
-  if (publicPath === "auto") {
-    return /^(?:https?:)?\/\//.test(asset) || asset.startsWith("/")
-      ? asset
-      : `/${asset}`;
-  }
-  if (/^(?:https?:)?\/\//.test(asset) || asset.startsWith("/")) return asset;
-  const base = publicPath.endsWith("/") ? publicPath : `${publicPath}/`;
-  return `${base}${asset}`;
+  return resolveBrowserAssetHref(asset, runtime.publicPath);
 }
 
 function emptyAssets(): FrameworkAssetGroup {

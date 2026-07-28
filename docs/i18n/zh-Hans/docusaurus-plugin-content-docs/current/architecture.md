@@ -362,7 +362,7 @@ client/server reference manifests；Utoopack 仍需要等价的下层 metadata �
 routing.mode
   选择 SPA 或 MPA 物化
 
-routing.dir + src/pages/**/page.*
+src/pages/**/page.*
   客户端 Page、私有 scope 与 URL 事实来源
 
 Page 同目录 page.config.ts / index.html
@@ -373,9 +373,6 @@ server.routing
 
 application.routes
   显式、仅支持 SPA 的 route-tree 配置，normalize 到同一 CoreGraph
-
-非 canonical Page 源码
-  discovery 前把 entry 转换为 page.*，把 setting 转换为 page.config.ts
 
 server.basePath
   派生 fn、ppr、rsc 等框架服务端路径
@@ -388,7 +385,7 @@ plugins
 ```
 
 每个 `page.*` 锚点创建一个 Page 与语义 Route。Static 目录、`$param`、终止
-`$...splat` 与 `(group)` segment 相对 `routing.dir` 派生 URL；完整所在目录是
+`$...splat` 与 `(group)` segment 相对 `src/pages` 派生 URL；完整所在目录是
 其私有 scope。SPA 创建 Client Route，通常一个 Application Document；每个静态
 SSG Page 还会在语义 route path 物化 Page-owned Document。MPA 从相同语义 graph
 出发，为静态 Page path 创建 Page-owned Document。MPA 会在 graph 校验拒绝
@@ -410,15 +407,14 @@ route，graph creation 继续派生 server renderer、PPR region、asset 与 man
 output。
 内存中的 BuildOutput 会显式保留这些 renderer 关系：SSR 和 RSC document page
 通过由 page id 拥有的 `page-server` renderer 解析，或通过该 page 的某个 route id
-拥有的 `page-server` renderer 解析。SSG 页面在 production build 阶段使用 `page-server`
-renderer 产出静态 HTML，随后部署元信息中表现为 `static-page` route。PPR 页面改由
-`ppr-shell` 和 `ppr-region` entry 解析。
+拥有的 `page-server` renderer 解析。SSG 页面在开发构建与生产构建中都使用 build
+phase 的 `page-server` renderer 产出静态 HTML，随后部署元信息中表现为
+`static-page` route。PPR 页面改由 `ppr-shell` 和 `ppr-region` entry 解析。
 
 `application.routes` 是显式、仅支持 SPA 的 route-tree 配置；它 normalize 到同一
-CoreGraph，且会拒绝 MPA 物化模式。其他 Page 源码只有在 resolution 前转换为
-`page.*` 与 `page.config.ts` 才会参与 canonical discovery。Standalone/manual
-runtime composition 位于该模型之外；这些都不是另一套 framework Page authoring
-model。
+CoreGraph，且会拒绝 MPA 物化模式。Canonical discovery 只发布 `page.*` 锚点，
+其他 basename 都是普通源码。Standalone/manual runtime composition 位于该模型
+之外；这些都不是另一套 framework Page authoring model。
 
 ## 服务端函数管线
 

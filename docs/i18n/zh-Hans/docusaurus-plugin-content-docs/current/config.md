@@ -48,7 +48,7 @@ request-route 发现，以及全局与 route-scoped middleware 文件发现。�
 
 仅支持 SPA 的 `application.routes` 显式 route-tree 配置不依赖文件约定。reachable
 且带 `"use server";` 的模块，以及插件 contribution 生成的模块也不依赖文件约定。
-已移除的 `app`、`pages` 与顶层 `routes` 声明会产生配置错误。
+`app`、`pages` 与顶层 `routes` 不属于公共配置，会被拒绝。
 
 ## Routing
 
@@ -57,9 +57,11 @@ request-route 发现，以及全局与 route-scoped middleware 文件发现。�
 | 字段 | 含义 |
 | --- | --- |
 | `mode` | `"spa"` 或 `"mpa"`，只改变物化方式。 |
-| `dir` | 项目相对 Page 路由根目录，默认 `./src/pages`。 |
 | `html` | 共享 HTML 模板，默认 `./index.html`。 |
 | `mount` | 共享挂载选择器，默认 `#app`。 |
+
+Canonical Page discovery 始终读取 `src/pages`；`routing` 不提供客户端根目录
+覆盖项。
 
 请显式声明 mode，避免框架把一个与路由无关的 `src/pages` 目录误识别为
 Page 路由树：
@@ -115,7 +117,7 @@ segment。
 | Page | `page.*` 及所在目录 scope | 相同的 Page 与 scope |
 | Route | 同一浏览器路由树中的 Client Route | 相同的语义 Route，用来选择独立 Page entry |
 | Document | Application-owned shell，外加静态 SSG Page 的 Page-owned Document | 每条静态 Page route 一个 Page-owned HTML Document |
-| 源路径 | 相对 `routing.dir` 的路由目录 | 相同的源路径 |
+| 源路径 | 相对 `src/pages` 的路由目录 | 相同的源路径 |
 
 ### SPA
 
@@ -165,7 +167,7 @@ Application。canonical SPA、canonical MPA 与显式 `application.routes` 输�
 完全相同的合同。
 
 value 必须是严格 static JSON。函数等可执行选项放入插件工厂，例如
-`oneApiPlugin({ filter })`，或引用显式 generated/runtime module。不要在这里存放
+`featurePlugin({ filter })`，或引用显式 generated/runtime module。不要在这里存放
 secret：extension value 会进入 build graph。它们不会自动发送到浏览器；runtime
 投影仍必须由插件显式 contribution。
 
@@ -245,8 +247,12 @@ export default defineConfig({
 });
 ```
 
-`server.basePath` 统一控制 server function、PPR 和 RSC runtime 路径。没有
-公开的 `server.functions.endpoint`。
+`server.basePath` 统一控制 server function、PPR 和 RSC runtime 路径。它必须是
+absolute pathname，由非空 ASCII URL-safe segment 组成；每个 segment 只能包含
+字母、数字、`.`、`_`、`~` 或 `-`；空 segment、单独的 `.` 或 `..` segment、
+动态 `:param`、通配 `*`、
+percent escape 与原始非 ASCII 字符都无效。没有公开的
+`server.functions.endpoint`。
 
 服务端中间件约定：
 
@@ -259,7 +265,13 @@ root，不是关闭开关。
 
 在 Page 的 `page.config.ts` 中用 `rsc: true` 启用 React Server Components。
 Flight endpoint 从 `server.basePath` 派生，也可以用
-`server.rsc: { endpoint: "/custom/flight" }` 覆盖；`server.rsc` 不是启用开关。
+`server.rsc: { endpoint: "/custom/flight" }` 覆盖；override 同样必须遵循
+absolute ASCII 静态 pathname 规则，且 `server.rsc` 不是启用开关。
+
+Server-function endpoint 是精确路径；只有存在 RSC Page 时才添加另一个精确的
+RSC endpoint，也只有 PPR 启用时才保留以 PPR endpoint 为根的子树。BuildPlan
+会拒绝 active endpoint 之间的冲突，以及 reserved endpoint 与 Page、redirect 或
+server request Route pattern 之间的冲突。
 
 ### Dev Server
 
@@ -291,17 +303,25 @@ export default defineConfig({
 
 ### Output
 
-浏览器产物默认写入 `dist/client`，server 产物默认写入 `dist/server`。
+浏览器产物默认写入 `dist/client`，server 产物默认写入 `dist/server`。两个值都必须
+是 BuildPlan `distDir`（framework 命令中为 `dist`）下的严格子目录，必须使用 `/`
+作为可移植的分隔符，不得包含空、`.` 或 `..` path segment，并且必须在不经过
+symbolic link 的前提下解析为互不相同、互不嵌套的目录，从而保证 adapter 写入与
+cleanup 只作用于 framework 持有的输出树。
 
 ```ts
 export default defineConfig({
   routing: { mode: "spa" },
   output: {
-    client: "dist",
-    server: "dist-server",
+    client: "dist/public",
+    server: "dist/runtime",
   },
 });
 ```
+
+Config 与 plugin setup 完成后，解析出的输出路径归 BuildPlan 持有。Adapter 使用
+这些路径执行 cleanup、写入产物、生成 stats 与 manifest；`bundlerConfig()` hook
+不能覆盖 framework 持有的 client 或 server 输出路径。
 
 `output.crossOriginLoading` 接受 `false`、`"anonymous"` 或
 `"use-credentials"`。
@@ -344,7 +364,7 @@ entry、route、server output、resolution 的 dev-plan update capability。
 `ev inspect` 会报告选中的 adapter 与 plan gap；缺少必要 capability 时，build/dev
 会在执行 adapter 前失败。
 
-## 显式 route tree 与 canonical Page tree
+## 路由输入
 
 `routing.mode` 会启用 canonical Page discovery。缺少 `routing` 时，一个无关的
 `src/pages` 目录不会被解释为路由树。框架也不会通过 reader 开关识别其他 Page
@@ -352,46 +372,41 @@ entry、route、server output、resolution 的 dev-plan update capability。
 
 ### 显式 SPA 路由配置
 
-`application.routes` 的嵌套 `routes`、`component`、`layout`、`wrappers`、
-redirect 和 document 配置会进入仅支持 SPA 的 config-route normalizer。
-`children` 会被拒绝，嵌套结构只使用 `routes`。normalizer 会把 `name`、`icon`、
-`title`、`hideInMenu`、`flatMenu`、`spmBPos`、`access`、`menuKey` 与静态
-`menuAssetOptions` 保留为内置 Route extension 数据。每条显式 Route 还可以携带
-严格静态、namespaced 的 `extensions` bag；能力所属插件必须用
-`routeExtension()` 注册每个 namespace。MPA 物化模式、alias 冲突以及项目外部
-component reference 会被拒绝。
+`application.routes` 的嵌套 `routes`、`page` 或 `component`、`layout`、`wrappers`、
+redirect 和 document 配置会进入仅支持 SPA 的显式 route-tree normalizer。
+`application.pageRoot` 是该显式输入中 `page` 与 `component` 共用的 Page 源码
+根目录，默认值为 `./src/pages`；它不会改变 canonical 文件发现根目录。
+`page` 值选择相对该根目录的 `page.*` 锚点目录；`component` 选择同一根目录内
+的模块。`@/pages/...` 是指向已配置 `application.pageRoot` 的逻辑别名，bare 与
+`./` component reference 也相对该根目录解析。component 逻辑路径以及解析
+symlink 后的真实路径都不能逃逸该 Page 源码根目录；layout 与 wrapper 仍保持
+项目源码 reference 的解析语义。`children` 会被拒绝，嵌套结构只使用
+`routes`。每条显式 Route 可以携带严格静态、
+namespaced 的 `extensions` bag；能力所属插件必须用
+`routeExtension()` 注册每个 namespace。MPA 物化模式、alias 冲突以及 Page
+根目录外的 component reference 会被拒绝。
+静态 segment identity 按恰好一次 URL decode 后比较，因此 raw 与
+percent-encoded alias 不能并存；decode 后为 `.` 或 `..` 的 segment 也会被拒绝，
+因为 WHATWG URL 解析会在 route matching 之前移除它。
 
 显式 component 以 `index.*` 或 `page.*` 结尾时，其所在目录会成为 Page scope。
-`src/pages/403.tsx` 这类 flat component 仍是 module scope，避免它意外持有
-`src/pages` 中的其他 flat Page；module-scoped Page 不会发现相邻
-`page.config.ts`。需要相邻 Page config 时，先把 flat component 移入独立目录
-（显式 route 可以引用 `403/index.*`），再添加 `page.config.ts`。
+`<application.pageRoot>/403.tsx` 这类 flat component 仍是 module scope，避免
+它意外持有已配置根目录中的其他 flat Page；module-scoped Page 不会发现相邻
+`page.config.ts`。
 
-要改用 canonical Page tree，应把每个 component 模块移到公开 URL 对应目录，
-把 route entry 命名为 `page.*`，并将 title、受支持 named metadata、rendering
-与插件持有的 Page setting 写入同目录 `page.config.ts`。目录会编码相同的路径树；
-完成转换后设置 `routing.mode: "spa"` 并删除显式 `application` 声明。
+### Canonical Page tree
 
-### 目录式 MPA 源码
-
-MPA 也使用同一套 canonical Page tree。保留或调整每个公开 URL 目录，把其中的
-`index.*` entry 重命名为 `page.*`，把 `config.json` 的 title 与受支持
-`<meta name>` 项映射到 core `title` 和 `meta`，其余插件持有值写入 namespaced
-`page.config.ts` extension。删除 `config.json` 后，只配置
-`routing.mode: "mpa"`。
-
-### 其他 filename route
-
-把每个已发布 filename route 移到 URL 对应目录并把 entry 命名为 `page.*`。
-保留受支持的 dynamic/group 目录段，把 Page setting 写入同目录
-`page.config.ts`，然后只配置 `routing.mode: "spa" | "mpa"`。转换完成后运行
-`ev inspect`，验证 normalized Page/Route/Document graph。
+使用 `routing.mode` 时，每个公开 Page 位于其 URL 对应目录并使用 `page.*`。
+静态 title、named metadata、rendering setting 与 plugin-owned Page value 放在
+相邻 `page.config.ts`。Dynamic、终止 catch-all 与 pathless segment 分别使用
+`$param`、`$...splat` 与 `(group)` 目录。运行 `ev inspect` 可审核 normalized
+Page/Route/Document graph。
 
 Provider id 只可能出现在 raw CoreGraph/debug artifact 中作为内部 provenance。
 普通 `ev inspect` routing 输出隐藏它，并报告归一化的 Page、route、source 与
 document 信息；provider 不是用户可选择的路由架构。
 
-以下旧字段仍不支持：
+以下字段不属于公共配置：
 
 - `app`
 - `pages`

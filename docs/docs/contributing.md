@@ -35,7 +35,7 @@ npx biome check --write
 2. Use Biome formatting and linting. Avoid `any` and broad namespace imports
    without a concrete reason.
 3. New applications use one Page-and-Route model:
-   `<routing.dir>/**/page.*`, optional build-time `page.config.ts`,
+   `src/pages/**/page.*`, optional build-time `page.config.ts`,
    directory-derived URLs, and `routing.mode`.
 4. Keep Page-private components, hooks, models, services, tests, and styles
    inside that Page directory. They do not need `_`.
@@ -43,8 +43,7 @@ npx biome check --write
    `(group)`. Server request Routes use strict `src/apis/**/api.*` positive
    anchors with directory-derived URLs.
 6. New runnable examples use `page.*`, `page.config.ts`, and `routing.mode`.
-   Keep explicit `application.routes` and noncanonical source cases in focused
-   config-route or source-conversion fixtures.
+   Keep explicit `application.routes` cases in focused config-route fixtures.
 7. Server functions begin with `"use server";` and export named callables.
 8. Config/build imports stay on `@evjs/ev`; app source uses
    `@evjs/ev/route`, `/navigation`, `/query`, `/server-context`, and
@@ -89,7 +88,7 @@ npx biome check --write
 3. Add `index.html` and the required workspace dependencies.
 4. Add/update create-app mapping only when it is a supported user template.
 5. Add focused unit/e2e validation.
-6. Keep alternate source dialects in clearly named conversion fixtures, not
+6. Keep explicit route-tree cases in clearly named config-route fixtures, not
    canonical templates.
 
 ### Change Page Or Route Conventions
@@ -97,8 +96,7 @@ npx biome check --write
 1. Update config resolution and graph normalization first.
 2. Update English and Chinese `project-structure`, `file-conventions`, config,
    and relevant examples together.
-3. Add graph, diagnostics, scaffold, config-route, and source-conversion
-   coverage.
+3. Add graph, diagnostics, scaffold, and config-route coverage.
 4. Run the repository validation gates.
 
 ### Release A Version

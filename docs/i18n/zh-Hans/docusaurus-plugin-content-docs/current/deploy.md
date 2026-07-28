@@ -31,7 +31,7 @@ dist/
 - `dist/deployment-metadata.json`：面向工具和部署 adapter 的 canonical deployment
   metadata。应用代码不应导入或修改它。
 
-Core 不输出 split client/server compatibility manifest。需要平台专属或旧格式投影时，
+Core 不输出 split client/server compatibility manifest。需要平台专属投影时，
 由 deployment adapter 显式持有该产物。
 
 生成的 HTML 会内嵌浏览器 `ClientRuntime`。手动使用 `@evjs/client` runtime URL API 时仍可从配置的 URL 加载 JSON，但 CLI build 默认不再输出 `dist/client/runtime.json`。

@@ -2,8 +2,11 @@ import { execSync } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import type { DeploymentMetadata } from "@evjs/shared/manifest";
 import { test as base, expect } from "@playwright/test";
+import {
+  getExampleDeploymentMetadataPath,
+  readExampleDeploymentMetadata,
+} from "../fixtures";
 
 const exampleDir = path.resolve(
   import.meta.dirname,
@@ -11,6 +14,11 @@ const exampleDir = path.resolve(
   "examples",
   "mpa",
 );
+
+function getMpaPublicDir(): string {
+  const metadata = readExampleDeploymentMetadata(exampleDir);
+  return path.resolve(exampleDir, metadata.paths.publicDir);
+}
 
 const test = base.extend<{ baseURL: string }, { _app: { port: number } }>({
   _app: [
@@ -21,7 +29,7 @@ const test = base.extend<{ baseURL: string }, { _app: { port: number } }>({
         stdio: "pipe",
       });
 
-      const distDir = path.join(exampleDir, "dist");
+      const publicDir = getMpaPublicDir();
 
       const server = http.createServer((req, res) => {
         const requestPath = new URL(req.url ?? "/", "http://localhost")
@@ -32,7 +40,7 @@ const test = base.extend<{ baseURL: string }, { _app: { port: number } }>({
             : path.extname(requestPath)
               ? requestPath
               : `${requestPath.replace(/\/$/, "")}/index.html`;
-        const filePath = path.join(distDir, pathname);
+        const filePath = path.join(publicDir, pathname);
 
         if (fs.existsSync(filePath)) {
           const ext = path.extname(filePath);
@@ -65,7 +73,7 @@ const test = base.extend<{ baseURL: string }, { _app: { port: number } }>({
 
       server.close();
     },
-    { scope: "worker" },
+    { scope: "worker", auto: true },
   ],
   baseURL: async ({ _app }, use) => {
     await use(`http://localhost:${_app.port}`);
@@ -114,8 +122,9 @@ test.describe("mpa", () => {
   });
 
   test("materializes Page metadata in emitted HTML", async () => {
+    const publicDir = getMpaPublicDir();
     const homeHtml = fs.readFileSync(
-      path.join(exampleDir, "dist", "index.html"),
+      path.join(publicDir, "index.html"),
       "utf-8",
     );
     expect(homeHtml).toContain("<title>evjs MPA Home</title>");
@@ -124,7 +133,7 @@ test.describe("mpa", () => {
     );
 
     const aboutHtml = fs.readFileSync(
-      path.join(exampleDir, "dist", "about", "index.html"),
+      path.join(publicDir, "about", "index.html"),
       "utf-8",
     );
     expect(aboutHtml).toContain("<title>evjs MPA About</title>");
@@ -134,14 +143,8 @@ test.describe("mpa", () => {
   });
 
   test("emits MPA pages in deployment metadata", async () => {
-    const metadataPath = path.join(
-      exampleDir,
-      "dist",
-      "deployment-metadata.json",
-    );
-    const metadata = JSON.parse(
-      fs.readFileSync(metadataPath, "utf-8"),
-    ) as DeploymentMetadata;
+    const metadataPath = getExampleDeploymentMetadataPath(exampleDir);
+    const metadata = readExampleDeploymentMetadata(exampleDir);
 
     expect(metadata).not.toHaveProperty("pages");
     expect(metadata).not.toHaveProperty("runtime");

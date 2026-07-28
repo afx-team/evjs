@@ -163,11 +163,14 @@ test.describe("deployment-adapters", () => {
         }),
       }),
     );
-    expect(
-      fs.readFileSync(path.join(exampleDir, "dist", "server.mjs"), "utf-8"),
-    ).toMatch(
-      /await import\(pathToFileURL\(path\.join\(serverDir, serverEntry\)\)\.href\)/,
+    const nodeServerModule = fs.readFileSync(
+      path.join(exampleDir, "dist", "server.mjs"),
+      "utf-8",
     );
+    expect(nodeServerModule).toContain(
+      "await import(pathToFileURL(resolveServerArtifact(serverEntry)).href)",
+    );
+    expect(nodeServerModule).toContain("if (!serverArtifacts.has(asset))");
 
     const staticArtifact = JSON.parse(
       fs.readFileSync(
@@ -197,7 +200,8 @@ test.describe("deployment-adapters", () => {
       path.join(exampleDir, "dist", "worker.mjs"),
       "utf-8",
     );
-    expect(edgeWorker).toContain('const frameworkBasePath = "/__evjs";');
+    expect(edgeWorker).toContain("const frameworkExactEndpointPaths = [");
+    expect(edgeWorker).not.toContain("frameworkBasePath");
     expect(edgeWorker).toContain('const assetsBinding = "ASSETS";');
   });
 });

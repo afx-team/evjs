@@ -7,9 +7,10 @@ import type {
 } from "@evjs/shared/manifest";
 import { collectModuleExportNames } from "./module-exports.js";
 import {
-  isPageRouteSourceModuleFile,
-  type PageRouteSegmentConventionViolation,
-} from "./page-route-conventions.js";
+  isRouteSourceModuleFile,
+  type RouteSegmentConventionViolation,
+} from "./route-conventions.js";
+import { sortRoutesBySpecificity } from "./route-order.js";
 import {
   formatParseErrorMessage,
   hasDefaultExport,
@@ -21,6 +22,7 @@ import {
   SERVER_ROUTE_ENTRY_LABEL,
   serverRoutePathFromSegments,
 } from "./server-route-conventions.js";
+import { validateServerRouteMethodExports } from "./server-route-exports.js";
 import { isInsideCwd, isRealPathInsideCwd, toPosixPath } from "./utils.js";
 
 export interface DiscoverServerRoutesOptions {
@@ -170,7 +172,7 @@ export async function discoverServerRoutes(
   }
 
   return {
-    routes: sortServerRoutes(routeCandidates).map(
+    routes: sortRoutesBySpecificity(routeCandidates).map(
       ({ shape: _shape, ...route }) => route,
     ),
     files,
@@ -232,6 +234,14 @@ async function analyzeServerRouteFile(
       level: "error",
       file: diagnosticFile,
       message: `${SERVER_ROUTE_ENTRY_LABEL} anchor modules must export at least one uppercase HTTP method such as GET or POST.`,
+    });
+  }
+
+  for (const message of validateServerRouteMethodExports(ast.body, methods)) {
+    diagnostics.push({
+      level: "error",
+      file: diagnosticFile,
+      message,
     });
   }
 
@@ -381,7 +391,7 @@ async function collectServerRouteTree(
         continue;
       }
 
-      if (entry.isFile() && isPageRouteSourceModuleFile(entry.name)) {
+      if (entry.isFile() && isRouteSourceModuleFile(entry.name)) {
         files.push(absolute);
       }
     }
@@ -392,7 +402,7 @@ async function collectServerRouteTree(
 }
 
 function formatServerRouteSegmentConventionViolation(
-  violation: PageRouteSegmentConventionViolation,
+  violation: RouteSegmentConventionViolation,
 ): string {
   if (violation.kind === "route-group") {
     return `Server route group segment "${violation.segment}" must wrap a non-empty group name in parentheses, such as "(internal)".`;
@@ -460,21 +470,6 @@ function createAmbiguousServerRouteShapeDiagnostic(
     `also matches ${previous.file} (${previous.path}).`,
     "Use one dynamic param name for each URL shape.",
   ].join(" ");
-}
-
-function sortServerRoutes<T extends ServerRouteNode>(routes: T[]): T[] {
-  return [...routes].sort((left, right) => {
-    const leftStatic = countStaticSegments(left.path);
-    const rightStatic = countStaticSegments(right.path);
-    if (leftStatic !== rightStatic) return rightStatic - leftStatic;
-    return left.path.localeCompare(right.path);
-  });
-}
-
-function countStaticSegments(routePath: string): number {
-  return routePath
-    .split("/")
-    .filter((segment) => segment && !segment.startsWith(":")).length;
 }
 
 function toDiagnosticPath(projectPath: string): string {

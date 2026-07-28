@@ -46,8 +46,8 @@
   Page/Route/Document ownership or Page configuration.
 - Explicit SPA route configuration normalizes into the same CoreGraph while
   remaining separate from canonical file discovery.
-- Continue hardening config-route normalization and one-time source-conversion
-  tooling without promoting alternate source models to runtime readers.
+- Continue hardening config-route normalization without adding alternate
+  runtime readers or Page authoring models.
 - Canonical MPA emits Page-owned Documents from static semantic Routes and
   composes file-convention layouts; dynamic routes and router-only boundary
   facets are explicitly rejected.
@@ -61,8 +61,8 @@
 
 ## Planned
 
-- Config-route coverage, source-conversion tools, capability reports, and
-  representative plugin adoption.
+- Config-route coverage, capability reports, and representative plugin
+  adoption.
 - Removal of built-in SSR/PPR/RSC branches from Core after generic extension
   entries, Documents, request facets, and manifest projections are available.
 - Utoopack lower-layer parity for generic dynamic entries, structured build

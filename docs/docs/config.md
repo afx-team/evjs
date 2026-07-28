@@ -50,8 +50,8 @@ declaration. There are no narrower convention disable switches.
 
 SPA-only `application.routes` configuration does not depend on file
 conventions. Neither do reachable modules marked with `"use server";` nor
-modules emitted through plugin contributions. Removed `app`, `pages`, and
-top-level `routes` declarations produce configuration errors.
+modules emitted through plugin contributions. `app`, `pages`, and top-level
+`routes` are not public configuration fields and are rejected.
 
 ## Routing
 
@@ -60,9 +60,11 @@ top-level `routes` declarations produce configuration errors.
 | Field | Meaning |
 | --- | --- |
 | `mode` | `"spa"` or `"mpa"`. This changes materialization only. |
-| `dir` | Project-relative Page-route root. Defaults to `./src/pages`. |
 | `html` | Shared HTML template. Defaults to `./index.html`. |
 | `mount` | Shared mount selector. Defaults to `#app`. |
+
+Canonical Page discovery always reads `src/pages`; `routing` has no client
+root override.
 
 Declare the mode explicitly so an unrelated `src/pages` directory is never
 mistaken for a framework route tree:
@@ -121,7 +123,7 @@ The same file tree changes materialization according to `routing.mode`.
 | Page | `page.*` with its containing-directory scope | The same Page and scope |
 | Route | Client Route in one browser route tree | The same semantic Route, used to select an independent Page entry |
 | Document | Application-owned shell plus Page-owned Documents for static SSG Pages | One Page-owned HTML Document per static Page route |
-| Source path | Route directory relative to `routing.dir` | The same source path |
+| Source path | Route directory relative to `src/pages` | The same source path |
 
 ### SPA
 
@@ -174,7 +176,7 @@ Application. This contract is identical for canonical SPA, canonical MPA, and
 explicit SPA `application.routes` configuration.
 
 Values must be strict static JSON. Put functions and other executable options
-in the plugin factory, for example `oneApiPlugin({ filter })`, or reference an
+in the plugin factory, for example `featurePlugin({ filter })`, or reference an
 explicit generated/runtime module. Do not place secrets here: extension values
 enter the build graph. They are not sent to the browser automatically; runtime
 projection remains an explicit plugin contribution.
@@ -260,8 +262,13 @@ export default defineConfig({
 });
 ```
 
-`server.basePath` owns server-function, PPR, and RSC runtime paths. There is no
-public `server.functions.endpoint`.
+`server.basePath` owns server-function, PPR, and RSC runtime paths. It must be
+an absolute pathname using non-empty ASCII URL-safe segments containing only
+letters, digits, `.`, `_`, `~`, or `-`. Empty and standalone `.` or `..`
+segments, dynamic `:param` and
+wildcard `*` segments, percent escapes, and raw non-ASCII characters are not
+valid runtime endpoint configuration. There is no public
+`server.functions.endpoint`.
 
 Server middleware conventions are:
 
@@ -276,7 +283,13 @@ discovery root; it is not a disable switch.
 Enable React Server Components per Page with `rsc: true` in `page.config.ts`.
 The Flight endpoint is derived from `server.basePath`; optionally override it
 with `server.rsc: { endpoint: "/custom/flight" }`. `server.rsc` is not an
-enable switch.
+enable switch, and its endpoint override follows the same absolute ASCII static
+pathname rule.
+
+The server-function endpoint is exact. RSC adds another exact endpoint only
+when an RSC Page exists, and PPR reserves a rooted subtree only when PPR is
+active. The BuildPlan rejects collisions among active endpoints and between a
+reserved endpoint and any Page, redirect, or server request Route pattern.
 
 ### Dev Server
 
@@ -309,17 +322,27 @@ framework server does not synthesize a certificate for `true`.
 ### Output
 
 Browser assets default to `dist/client`; server artifacts default to
-`dist/server`.
+`dist/server`. Both values must be project-relative strict descendants of the
+BuildPlan `distDir` (`dist` for framework commands), must use `/` as the
+portable separator, and must not contain empty, `.` or `..` path segments.
+They must resolve without symbolic links to separate, non-nested directories.
+This keeps adapter writes and cleanup scoped to one framework-owned output
+tree.
 
 ```ts
 export default defineConfig({
   routing: { mode: "spa" },
   output: {
-    client: "dist",
-    server: "dist-server",
+    client: "dist/public",
+    server: "dist/runtime",
   },
 });
 ```
+
+After config and plugin setup finish, the BuildPlan owns the resolved output
+paths. Adapters use those paths for cleanup, emitted assets, stats, and
+manifests; `bundlerConfig()` hooks cannot override framework-owned client or
+server output paths.
 
 `output.crossOriginLoading` accepts `false`, `"anonymous"`, or
 `"use-credentials"`.
@@ -365,62 +388,56 @@ plus dev-plan update capabilities for HTML, entries, routes, server output, and
 resolution. `ev inspect` reports the selected adapter and any plan gaps; build
 and dev fail before adapter execution when a required capability is missing.
 
-## Existing Source Adoption
+## Route Inputs
 
 Canonical Page discovery is enabled by `routing.mode`. An unrelated
 `src/pages` directory is not interpreted as a route tree when `routing` is
-absent. Source trees that use other Page anchors must be converted before
-canonical discovery is enabled.
+absent. Only `page.*` anchors participate in this file convention.
 
 ### Explicit SPA route configuration
 
-`application.routes` accepts nested `routes`, `component`, `layout`,
+`application.routes` accepts nested `routes`, `page` or `component`, `layout`,
 `wrappers`, redirects, and Application Document configuration through the
-SPA-only config-route normalizer. The `children` spelling is rejected; nested
-declarations use `routes`. The normalizer retains the documented finite
-access/menu metadata set in a registered Route extension. Each explicit Route
-may also carry a strict static, namespaced `extensions` bag; the owning plugin
-must register every namespace with `routeExtension()`. MPA materialization,
-Document alias conflicts, and component references outside the project are
+SPA-only explicit route-tree normalizer. `application.pageRoot` is the Page
+source root for both `page` and `component` references in this explicit input;
+it defaults to `./src/pages` and never changes canonical file discovery.
+A `page` value selects a `page.*`-anchored directory relative to that root.
+A `component` selects a module inside the same root: `@/pages/...` is a logical
+alias for the configured `application.pageRoot`, while bare and `./` component
+references are relative to it. Component paths and resolved symbolic links
+cannot escape the configured Page source root. Layout and wrapper references
+keep their project-source resolution semantics. The `children` spelling is
+rejected; nested declarations use `routes`. Each explicit Route may carry a strict static,
+namespaced `extensions` bag; the owning plugin must register every namespace
+with `routeExtension()`. MPA materialization,
+Document alias conflicts, and component references outside the Page root are
 rejected.
+Static segment identity is compared after exactly one URL decode. Raw and
+percent-encoded aliases therefore cannot coexist, and a segment that decodes
+to `.` or `..` is rejected because WHATWG URL parsing removes it before route
+matching.
 
 An explicit component ending in `index.*` or `page.*` claims its containing
 directory as the Page scope. A flat component such as
-`src/pages/403.tsx` remains module-scoped so it cannot accidentally claim
-other flat Pages in `src/pages`; a module-scoped Page does not discover an
-adjacent `page.config.ts`. For incremental canonical adoption, first move the
-flat component to a dedicated directory (an explicit route may continue to
-reference `403/index.*`), then add `page.config.ts`, and finally rename the
-entry to `page.*` before enabling canonical `routing`.
+`<application.pageRoot>/403.tsx` remains module-scoped so it cannot
+accidentally claim other flat Pages in the configured root; a module-scoped
+Page does not discover an adjacent `page.config.ts`.
 
-Move those component modules into route directories and rename each route
-entry to `page.*`. The corresponding directories encode the same path tree;
-after the tree is canonical, set `routing.mode: "spa"` and remove the explicit
-route declaration.
+### Canonical Page tree
 
-### Directory-entry MPA sources
-
-Keep or reshape each public URL directory, rename its `index.*` entry to
-`page.*`, map `config.json` title and supported
-`<meta name>` entries to core `title` and `meta`, and move remaining
-plugin-owned values to namespaced `page.config.ts` extensions. Delete
-`config.json`, then configure only `routing.mode: "mpa"`.
-
-### Filename-route sources
-
-Move every published filename route into the directory for its URL and rename
-the entry to `page.*`. Move title, supported
-named metadata, rendering, and plugin-owned Page settings to adjacent
-`page.config.ts`, then configure only `routing.mode: "spa" | "mpa"`. Use
-`ev inspect` after conversion to verify the normalized Page/Route/Document
-graph.
+With `routing.mode`, each published Page lives in the directory for its public
+URL and uses `page.*`. Static title, named metadata, rendering settings, and
+plugin-owned Page values live in the adjacent `page.config.ts`. Dynamic,
+terminal catch-all, and pathless segments use `$param`, `$...splat`, and
+`(group)` directories. Run `ev inspect` to review the normalized
+Page/Route/Document graph.
 
 Provider ids may appear in raw CoreGraph/debug artifacts as internal
 provenance. Normal `ev inspect` routing output hides them and reports
 normalized Page, route, source, and document information; providers are not a
 user-selectable routing architecture.
 
-The following fields remain unsupported:
+The following fields are not part of the public configuration:
 
 - `app`
 - `pages`

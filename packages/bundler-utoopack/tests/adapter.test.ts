@@ -25,9 +25,69 @@ import type { ConfigComplete } from "@utoo/pack";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { withPageRoutingDefaults } from "../../ev/esm/_internal/build/convention-config.js";
 import { createClientRuntime } from "../../ev/src/_internal/build/framework-runtime.js";
-import { utoopackAdapter } from "../src/adapter/index.js";
+import {
+  utoopackAdapter,
+  __testing as utoopackAdapterTesting,
+} from "../src/adapter/index.js";
 
 const utoopackMock = vi.hoisted(() => ({
+  clientStatsDelayMs: 0,
+  initialClientStats: undefined as string | undefined,
+  clientStats: undefined as string | undefined,
+  omitClientStats: false,
+  workerClose: vi.fn(async () => {}),
+  startUtoopackDevWorker: vi.fn(
+    ({ config, server }: { config: ConfigComplete; server: unknown }) => {
+      let resolveReady!: (context: {
+        port: number;
+        hostname: string;
+        clientPaths: string[];
+        spaHistoryFallbackUpdated: boolean;
+      }) => void;
+      let rejectReady!: (error: unknown) => void;
+      const ready = new Promise<{
+        port: number;
+        hostname: string;
+        clientPaths: string[];
+        spaHistoryFallbackUpdated: boolean;
+      }>((resolve, reject) => {
+        resolveReady = resolve;
+        rejectReady = reject;
+      });
+      const runtime = utoopackMock.requireUtoopack();
+      void runtime
+        .serve({ config }, undefined, undefined, {
+          ...(server as object),
+          onReady(context: {
+            port: number;
+            hostname: string;
+            clientPaths?: string[];
+          }) {
+            const fallbackRule = config.devServer?.proxy?.find(
+              (candidate) =>
+                typeof candidate.pathRewrite === "object" &&
+                candidate.pathRewrite?.["^/.*$"] === "/",
+            );
+            if (fallbackRule) {
+              fallbackRule.target = `http://localhost:${context.port}`;
+            }
+            resolveReady({
+              clientPaths: [],
+              ...context,
+              spaHistoryFallbackUpdated: Boolean(fallbackRule),
+            });
+          },
+        })
+        .catch(rejectReady);
+      return {
+        ready,
+        done: new Promise<void>(() => {}),
+        failure: new Promise<never>(() => {}),
+        throwIfFailed() {},
+        close: utoopackMock.workerClose,
+      };
+    },
+  ),
   requireUtoopack: vi.fn(() => ({
     serve: vi.fn(async ({ config }, _projectPath, _rootPath, serverOptions) => {
       const fs = await import("node:fs");
@@ -37,27 +97,44 @@ const utoopackMock = vi.hoisted(() => ({
       await fs.promises.mkdir(clientOutDir, { recursive: true });
       await fs.promises.writeFile(path.join(clientOutDir, "main.js"), "");
       await fs.promises.writeFile(path.join(clientOutDir, "main.css"), "");
-      await fs.promises.writeFile(
-        path.join(clientOutDir, "stats.json"),
-        JSON.stringify({
-          entrypoints: {
-            main: {
-              assets: [{ name: "main.js" }, { name: "main.css" }],
-            },
-          },
-        }),
-      );
+      const writeClientStats = () =>
+        fs.promises.writeFile(
+          path.join(clientOutDir, "stats.json"),
+          utoopackMock.clientStats ??
+            JSON.stringify({
+              entrypoints: {
+                main: {
+                  assets: [{ name: "main.js" }, { name: "main.css" }],
+                },
+              },
+            }),
+        );
+      if (utoopackMock.initialClientStats !== undefined) {
+        await fs.promises.writeFile(
+          path.join(clientOutDir, "stats.json"),
+          utoopackMock.initialClientStats,
+        );
+      }
+      if (!utoopackMock.omitClientStats) {
+        if (utoopackMock.clientStatsDelayMs > 0) {
+          setTimeout(() => {
+            void writeClientStats();
+          }, utoopackMock.clientStatsDelayMs);
+        } else {
+          await writeClientStats();
+        }
+      }
 
       if (config.server) {
         const serverOutDir = config.server.output.path;
         await fs.promises.mkdir(serverOutDir, { recursive: true });
-        await fs.promises.writeFile(path.join(serverOutDir, "index.js"), "");
+        await fs.promises.writeFile(path.join(serverOutDir, "server.js"), "");
         await fs.promises.writeFile(
           path.join(serverOutDir, "stats.json"),
           JSON.stringify({
             entrypoints: {
-              main: {
-                assets: [{ name: "index.js" }],
+              server: {
+                assets: [{ name: "server.js" }],
               },
             },
           }),
@@ -70,6 +147,10 @@ const utoopackMock = vi.hoisted(() => ({
     }),
     build: vi.fn(),
   })),
+}));
+
+vi.mock("../src/adapter/dev-worker-client.js", () => ({
+  startUtoopackDevWorker: utoopackMock.startUtoopackDevWorker,
 }));
 
 vi.mock("node:module", async (importOriginal) => {
@@ -127,6 +208,12 @@ async function resolveProjectConfig(
 }
 
 afterEach(async () => {
+  utoopackMock.clientStatsDelayMs = 0;
+  utoopackMock.initialClientStats = undefined;
+  utoopackMock.clientStats = undefined;
+  utoopackMock.omitClientStats = false;
+  utoopackMock.workerClose.mockClear();
+  utoopackMock.startUtoopackDevWorker.mockClear();
   await Promise.all(
     tempDirs.splice(0).map((dir) =>
       fs.promises.rm(dir, {
@@ -160,7 +247,6 @@ function createFrameworkCallbacks(options: {
         graph,
         plan,
         clientEntryAssets: facts.clientEntryAssets,
-        firstClientEntryAssets: facts.firstClientEntryAssets,
         serverEntryAssets: facts.serverEntryAssets,
         serverEntry: facts.serverEntry,
         serverAssets: facts.serverAssets,
@@ -268,11 +354,92 @@ async function expectRejectedMessage(action: () => void | Promise<void>) {
   return (thrown as Error).message;
 }
 
+describe("utoopackAdapter output safety", () => {
+  it("preserves external files when the server output traverses a symlink", async () => {
+    const cwd = await makeProject();
+    const outside = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), "evjs-output-outside-"),
+    );
+    tempDirs.push(outside);
+    const externalServerDir = path.join(outside, "server");
+    const sentinel = path.join(externalServerDir, "sentinel.txt");
+    await fs.promises.mkdir(externalServerDir, { recursive: true });
+    await fs.promises.writeFile(sentinel, "keep", "utf-8");
+    await fs.promises.mkdir(path.join(cwd, "dist"), { recursive: true });
+    await fs.promises.symlink(
+      outside,
+      path.join(cwd, "dist/linked-output"),
+      "dir",
+    );
+    const config = await resolveProjectConfig(cwd, {
+      output: {
+        client: "dist/client",
+        server: "dist/linked-output/server",
+      },
+      routing: { mode: "spa" },
+    });
+    const buildContext = await createBuildContext(config, cwd);
+
+    await expect(
+      utoopackAdapter.build({
+        config,
+        cwd,
+        plan: buildContext.plan,
+        hooks: [],
+      }),
+    ).rejects.toThrow(
+      '[evjs] output.server output directory "dist/linked-output/server" must not traverse symbolic link "dist/linked-output".',
+    );
+    await expect(fs.promises.readFile(sentinel, "utf-8")).resolves.toBe("keep");
+  });
+});
+
 describe("utoopackAdapter dev", () => {
-  it("emits flat CSR deployment metadata and index.html in flat output mode", async () => {
+  it("fails explicitly when initial development stats never appear", async () => {
     const cwd = await makeProject();
     const config = await resolveProjectConfig(cwd, {
-      output: { client: "dist" },
+      routing: { mode: "spa" },
+    });
+    const buildContext = await createBuildContext(config, cwd);
+
+    await expect(
+      utoopackAdapterTesting.waitForReadableDevStats(
+        cwd,
+        buildContext.plan,
+        75,
+      ),
+    ).rejects.toThrow(
+      "Timed out waiting for readable Utoopack development stats",
+    );
+  });
+
+  it("fails explicitly when initial development stats stay malformed", async () => {
+    const cwd = await makeProject();
+    const config = await resolveProjectConfig(cwd, {
+      routing: { mode: "spa" },
+    });
+    const buildContext = await createBuildContext(config, cwd);
+    const clientDir = path.resolve(cwd, buildContext.plan.output.clientDir);
+    await fs.promises.mkdir(clientDir, { recursive: true });
+    await fs.promises.writeFile(path.join(clientDir, "stats.json"), "null");
+
+    await expect(
+      utoopackAdapterTesting.waitForReadableDevStats(
+        cwd,
+        buildContext.plan,
+        75,
+      ),
+    ).rejects.toThrow(
+      "Timed out waiting for readable Utoopack development stats",
+    );
+  });
+
+  it("emits CSR deployment metadata and nested client output", async () => {
+    const cwd = await makeProject();
+    utoopackMock.initialClientStats = "{}";
+    utoopackMock.clientStatsDelayMs = 75;
+    const config = await resolveProjectConfig(cwd, {
+      output: { client: "dist/client", server: "dist/server" },
       routing: { mode: "spa" },
     });
 
@@ -318,7 +485,7 @@ describe("utoopackAdapter dev", () => {
       throw new Error("Expected a public SPA manifest.");
     }
     const html = await fs.promises.readFile(
-      path.join(cwd, "dist/index.html"),
+      path.join(cwd, "dist/client/index.html"),
       "utf-8",
     );
 
@@ -359,7 +526,7 @@ describe("utoopackAdapter dev", () => {
     expect(html).toContain('data-evjs-kind="app"');
     expect(html).toContain('data-evjs-id="default"');
     expect(html).toContain('<meta name="mode" content="dev">');
-    expect(fs.existsSync(path.join(cwd, "dist/client"))).toBe(false);
+    expect(fs.existsSync(path.join(cwd, "dist/client"))).toBe(true);
     expect(controller).toBeDefined();
     if (!controller) throw new Error("Expected Utoopack dev controller");
     await expect(
@@ -379,7 +546,10 @@ describe("utoopackAdapter dev", () => {
   it("emits dev artifacts under the configured client output directory", async () => {
     const cwd = await makeProject();
     const config = await resolveProjectConfig(cwd, {
-      output: { client: "custom-dist", server: "custom-dist/server" },
+      output: {
+        client: "custom-dist/client",
+        server: "custom-dist/server",
+      },
       routing: { mode: "spa" },
     });
     const buildContext = await createBuildContext(config, cwd, {
@@ -399,7 +569,7 @@ describe("utoopackAdapter dev", () => {
     });
 
     const metadataPath = path.join(cwd, "custom-dist/deployment-metadata.json");
-    const htmlPath = path.join(cwd, "custom-dist/index.html");
+    const htmlPath = path.join(cwd, "custom-dist/client/index.html");
 
     expect(fs.existsSync(metadataPath)).toBe(true);
     expect(fs.existsSync(htmlPath)).toBe(true);
@@ -419,7 +589,7 @@ describe("utoopackAdapter dev", () => {
       "utf-8",
     );
     const config = await resolveProjectConfig(cwd, {
-      output: { client: "dist" },
+      output: { client: "dist/client", server: "dist/server" },
       routing: { mode: "mpa", html: "./index.html" },
     });
     const buildContext = await createBuildContext(config, cwd);
@@ -447,7 +617,7 @@ describe("utoopackAdapter dev", () => {
         "utf-8",
       );
       const nextConfig = await resolveProjectConfig(cwd, {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "mpa", html: "./next.html" },
       });
       const nextAnalysis = await createCoreGraph(nextConfig, cwd);
@@ -460,7 +630,7 @@ describe("utoopackAdapter dev", () => {
       await controller.updatePlan(update);
 
       const html = await fs.promises.readFile(
-        path.join(cwd, "dist/home/index.html"),
+        path.join(cwd, "dist/client/home/index.html"),
         "utf-8",
       );
       const output = onBuildOutput.mock.calls.at(-1)?.[0];
@@ -486,10 +656,70 @@ describe("utoopackAdapter dev", () => {
     }
   });
 
+  it("revalidates output symlinks before applying a dev plan update", async () => {
+    const cwd = await makeProject();
+    const outside = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), "evjs-output-outside-"),
+    );
+    tempDirs.push(outside);
+    const sentinel = path.join(outside, "client", "sentinel.txt");
+    await fs.promises.mkdir(path.dirname(sentinel), { recursive: true });
+    await fs.promises.writeFile(sentinel, "keep", "utf-8");
+    const config = await resolveProjectConfig(cwd, {
+      output: {
+        client: "dist/client-output/client",
+        server: "dist/server-output",
+      },
+      routing: { mode: "spa" },
+    });
+    const buildContext = await createBuildContext(config, cwd);
+    const controller = await utoopackAdapter.dev({
+      config,
+      cwd,
+      plan: buildContext.plan,
+      callbacks: createFrameworkCallbacks({
+        config,
+        cwd,
+        ...buildContext,
+      }),
+      hooks: [],
+    });
+    if (!controller) throw new Error("Expected Utoopack dev controller");
+
+    try {
+      await fs.promises.rm(path.join(cwd, "dist/client-output"), {
+        recursive: true,
+        force: true,
+      });
+      await fs.promises.symlink(
+        outside,
+        path.join(cwd, "dist/client-output"),
+        "dir",
+      );
+
+      await expect(
+        controller.updatePlan(
+          diffBuildPlan(
+            buildContext.plan,
+            buildContext.plan,
+            "route-declaration",
+          ),
+        ),
+      ).rejects.toThrow(
+        '[evjs] output.client output directory "dist/client-output/client" must not traverse symbolic link "dist/client-output".',
+      );
+      await expect(fs.promises.readFile(sentinel, "utf-8")).resolves.toBe(
+        "keep",
+      );
+    } finally {
+      await controller.close?.();
+    }
+  });
+
   it("refreshes the server runtime after page metadata-only plan updates", async () => {
     const cwd = await makeProject("home");
     const config = await resolveProjectConfig(cwd, {
-      output: { client: "dist" },
+      output: { client: "dist/client", server: "dist/server" },
       routing: { mode: "mpa", html: "./index.html" },
     });
     const baseContext = await createBuildContext(config, cwd);
@@ -550,6 +780,9 @@ describe("utoopackAdapter dev", () => {
       expect(update.entries.removed).toHaveLength(0);
       expect(update.entries.changed).toHaveLength(0);
       expect(update.html.changed.map((item) => item.id)).toEqual(["home"]);
+      expect(update.serverCompilationChanged).toBe(false);
+      expect(update.serverDocumentsChanged).toBe(false);
+      expect(update.devRoutingChanged).toBe(false);
       expect(onBuildOutput).toHaveBeenCalledTimes(2);
       expect(onServerBundleReady).toHaveBeenCalledTimes(1);
       expect(onBuildOutput.mock.calls.at(-1)?.[0].pages.home.metadata).toEqual({
@@ -564,7 +797,7 @@ describe("utoopackAdapter dev", () => {
   it("fails clearly for entry-changing dev plan updates", async () => {
     const cwd = await makeProject("home");
     const config = await resolveProjectConfig(cwd, {
-      output: { client: "dist" },
+      output: { client: "dist/client", server: "dist/server" },
       routing: { mode: "mpa", html: "./index.html" },
     });
     const buildContext = await createBuildContext(config, cwd);
@@ -591,7 +824,7 @@ describe("utoopackAdapter dev", () => {
         "utf-8",
       );
       const nextConfig = await resolveProjectConfig(cwd, {
-        output: { client: "dist" },
+        output: { client: "dist/client", server: "dist/server" },
         routing: { mode: "mpa", html: "./index.html" },
       });
       const nextAnalysis = await createCoreGraph(nextConfig, cwd);
@@ -618,7 +851,7 @@ describe("utoopackAdapter dev", () => {
   it("reports server-changing dev plan updates", async () => {
     const cwd = await makeProject();
     const config = await resolveProjectConfig(cwd, {
-      output: { client: "dist", server: "custom-server" },
+      output: { client: "dist/client", server: "dist/custom-server" },
       routing: { mode: "spa" },
     });
     const buildContext = await createBuildContext(config, cwd);
@@ -651,7 +884,7 @@ describe("utoopackAdapter dev", () => {
       expect(message).toContain(
         "Utoopack dev cannot apply framework plan changes",
       );
-      expect(message).toContain("server output changed");
+      expect(message).toContain("server compilation topology changed");
     } finally {
       await controller.close?.();
     }

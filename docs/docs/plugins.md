@@ -275,7 +275,7 @@ interface PluginContext<TBundlerConfig = DefaultBundlerConfig> {
 Use `setup()` to allocate shared state and return lifecycle hooks. Return a
 hooks object or `undefined`; `null`, arrays, and non-function hook fields are
 rejected before lifecycle hooks run. Unknown hook keys are rejected so
-misspelled or legacy hooks cannot become silent no-ops. Put package-local
+misspelled hooks cannot become silent no-ops. Put package-local
 metadata outside the hooks object.
 
 ## Lifecycle
@@ -324,10 +324,14 @@ flowchart TB
 |------|---------|
 | `buildStart(ctx)` | Build setup before route discovery and bundling |
 | `bundlerConfig(config, ctx)` | Mutate selected bundler config |
-| `buildOutput(output, ctx)` | Add deployment/runtime metadata to the build output |
+| `buildOutput(output, ctx)` | Adjust linked `AssetGroup` contents or add deployment metadata |
 | `transformHtml(doc, ctx)` | Mutate one HTML document at a time; receives the current manifest result fields |
 | `buildEnd({ output, isRebuild })` | Emit final artifacts after build |
 | `dispose(ctx)` | Cleanup |
+
+Each `buildEnd()` hook receives an isolated snapshot of the canonical build
+result. Mutating that snapshot is local to the hook and cannot change the input
+seen by later hooks or deployment adapters.
 
 In dev, `buildEnd()` runs after the initial linked output with
 `isRebuild: false` and after every later linked rebuild with
@@ -338,8 +342,11 @@ update. If the selected adapter cannot safely replace its effective bundler
 configuration in place, the update fails closed with an explicit restart
 diagnostic instead of continuing with stale configuration.
 
-`buildOutput()` may adjust linked assets and add deployment metadata, but
-Application/Page/Route/Document identity remains CoreGraph-owned. In
+`buildOutput()` may adjust only linked `AssetGroup` contents and `deployment`
+metadata. Every other BuildOutput field remains framework-owned, including the
+build id, output paths, public path, runtime endpoints and transport, server
+entry/renderers/functions/routes, and Application/Page/RSC/PPR semantics.
+Hooks cannot add, remove, or reorder framework records or arrays. In
 particular, a hook cannot add, remove, or rename Applications, Pages, Routes,
 or Documents; reorder Routes; change Page paths or Route ownership; or change
 Document file names and static aliases. Configure those values before graph
@@ -598,6 +605,14 @@ fields plus document-specific fields such as `ctx.owner`, `ctx.fileName`, and
 
 `Plugin` defaults to the Utoopack config type, matching the default bundler.
 Use adapter helpers for type-safe low-level changes.
+
+The finalized BuildPlan remains authoritative for framework runtime endpoints
+and output ownership. A `bundlerConfig()` hook may customize supported loader,
+resolution, optimization, and similar low-level settings, but it cannot
+override framework client/server output paths. Adapters validate those paths
+against the BuildPlan after hooks run, even when recursive cleaning is disabled;
+any plugin-owned clean output must also stay inside the framework-owned
+`distDir` without overlapping client or server output.
 
 For Utoopack:
 

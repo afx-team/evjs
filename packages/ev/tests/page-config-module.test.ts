@@ -700,7 +700,6 @@ function createCanonicalGraphConfig(
   return {
     routing: {
       mode: "spa",
-      dir: "./src/pages",
       html: "./index.html",
       mount: "#app",
       routes: [

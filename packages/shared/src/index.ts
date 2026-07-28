@@ -2,6 +2,7 @@
  * @evjs/shared — runtime types and utilities shared by @evjs/client and @evjs/server.
  */
 
+export { resolveBrowserAssetHref } from "./browser-asset-url.js";
 export {
   BUILD_IDENTIFIER_DESCRIPTION,
   isBuildIdentifier,
@@ -65,6 +66,11 @@ export {
   isPathPattern,
   pathPatternMatches,
 } from "./path-pattern.js";
+export {
+  isDotRouteSegment,
+  staticRouteSegmentsEqual,
+} from "./route-segment.js";
+export { compareRoutePathsBySpecificity } from "./route-specificity.js";
 export type {
   RscFlightClientPageUrlParamError,
   RscFlightClientPageUrlParamOptions,
@@ -78,6 +84,11 @@ export {
   getRscFlightClientPageUrlParam,
   resolveRscFlightRequestPageUrl,
 } from "./rsc-flight-url.js";
+export type { ConcreteRuntimePathSegmentValidationError } from "./runtime-path.js";
+export {
+  formatConcreteRuntimePathSegmentValidationError,
+  getConcreteRuntimePathSegmentValidationError,
+} from "./runtime-path.js";
 export {
   assertServerFunctionExportName,
   assertServerFunctionId,

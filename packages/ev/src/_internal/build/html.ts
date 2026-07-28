@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { resolveBrowserAssetHref } from "@evjs/shared";
 import { DOMParser } from "domparser-rs";
 import type { HtmlDocument } from "../../plugin/index.js";
 
@@ -27,6 +28,8 @@ export interface GenerateHtmlOptions {
   js: HtmlAsset[];
   /** CSS assets to inject. */
   css: HtmlAsset[];
+  /** Base used for relative browser assets. Defaults to root-relative output. */
+  publicPath?: string;
 }
 
 const parser = new DOMParser();
@@ -86,14 +89,14 @@ function normalizeAsset(asset: HtmlAsset): {
  * Returns the parsed DOM document. Call `doc.toString()` to serialize.
  */
 export function generateHtml(options: GenerateHtmlOptions): HtmlDocument {
-  const { template, js, css } = options;
+  const { template, js, css, publicPath = "auto" } = options;
 
   const { body, doc, head } = parseHtmlTemplate({ template });
 
   // Inject CSS <link> tags into <head>
   for (const cssAsset of css) {
     const { url, attrs } = normalizeAsset(cssAsset);
-    const href = escapeAttr(url.startsWith("/") ? url : `/${url}`);
+    const href = escapeAttr(resolveBrowserAssetHref(url, publicPath));
     head.insertAdjacentHTML(
       "beforeend",
       `<link rel="stylesheet" href="${href}"${renderAttrs(attrs)}>`,
@@ -103,7 +106,7 @@ export function generateHtml(options: GenerateHtmlOptions): HtmlDocument {
   // Inject JS <script defer> tags into <body>
   for (const jsAsset of js) {
     const { url, attrs } = normalizeAsset(jsAsset);
-    const src = escapeAttr(url.startsWith("/") ? url : `/${url}`);
+    const src = escapeAttr(resolveBrowserAssetHref(url, publicPath));
     // defer is default; user can override via attrs (e.g. { defer: false, async: true })
     const hasLoadStrategy = "async" in attrs || "defer" in attrs;
     const defaultAttrs = hasLoadStrategy ? "" : " defer";

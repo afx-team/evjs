@@ -124,7 +124,11 @@ describe("bundler capability preflight", () => {
       html: { added: [], removed: [], changed: ["index"] },
       generatedChanged: true,
       resolveChanged: true,
-      serverChanged: true,
+      runtimeChanged: true,
+      deliveryChanged: false,
+      serverCompilationChanged: true,
+      serverDocumentsChanged: true,
+      devRoutingChanged: true,
     } as unknown as BuildPlanUpdate;
 
     expect(
@@ -150,5 +154,59 @@ describe("bundler capability preflight", () => {
         update,
       ),
     ).not.toThrow();
+  });
+
+  it("treats server Document changes as artifact delivery, not compilation", () => {
+    const plan = {
+      distDir: "dist",
+      output: { clientDir: "client", serverDir: "server" },
+    } as unknown as BuildPlan;
+    const update = {
+      reason: "route-declaration",
+      previous: plan,
+      next: plan,
+      entries: { added: [], removed: [], changed: [] },
+      html: { added: [], removed: [], changed: [] },
+      generatedChanged: false,
+      resolveChanged: false,
+      runtimeChanged: false,
+      deliveryChanged: false,
+      serverCompilationChanged: false,
+      serverDocumentsChanged: true,
+      devRoutingChanged: false,
+    } as BuildPlanUpdate;
+
+    expect(
+      getBundlerDevCapabilityGaps({ capabilities: noCapabilities }, update).map(
+        (gap) => gap.capability,
+      ),
+    ).toEqual(["dev.html"]);
+  });
+
+  it("keeps runtime and development routing changes fail-closed", () => {
+    const plan = {
+      distDir: "dist",
+      output: { clientDir: "client", serverDir: "server" },
+    } as unknown as BuildPlan;
+    const update = {
+      reason: "route-declaration",
+      previous: plan,
+      next: plan,
+      entries: { added: [], removed: [], changed: [] },
+      html: { added: [], removed: [], changed: [] },
+      generatedChanged: false,
+      resolveChanged: false,
+      runtimeChanged: true,
+      deliveryChanged: false,
+      serverCompilationChanged: false,
+      serverDocumentsChanged: false,
+      devRoutingChanged: true,
+    } as BuildPlanUpdate;
+
+    expect(
+      getBundlerDevCapabilityGaps({ capabilities: noCapabilities }, update).map(
+        (gap) => gap.capability,
+      ),
+    ).toEqual(["dev.routes", "dev.server"]);
   });
 });

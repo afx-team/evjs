@@ -3,190 +3,71 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { configure, getConsoleSink, getLogger } from "@logtape/logtape";
-import { Command } from "commander";
-import { parseCliFlags } from "./cli-options.js";
+import { runCliProgram } from "./cli-program.js";
 import type { DefaultBundlerConfig } from "./index.js";
 import { build, dev, prepare } from "./index.js";
-import {
-  formatInspectCommandErrorJson,
-  runInspectCommand,
-} from "./inspect-command.js";
-import {
-  formatSmallfishMigrationResult,
-  migrateSmallfishProject,
-} from "./migrate-smallfish.js";
+import { runInspectCommand } from "./inspect-command.js";
+import { loadConfig } from "./load-config.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-await configure({
-  sinks: {
-    console: getConsoleSink({
-      formatter: (record) => {
-        const time = new Date(record.timestamp).toLocaleTimeString("en-US", {
-          hour12: false,
-        });
-        const levelColor =
-          record.level === "info"
-            ? "\x1b[36m"
-            : record.level === "warning"
-              ? "\x1b[33m"
-              : record.level === "error" || record.level === "fatal"
-                ? "\x1b[31m"
-                : "\x1b[32m";
-        const reset = "\x1b[0m";
-        const cat = record.category[1]
-          ? `\x1b[90m[${record.category[1]}]\x1b[0m `
-          : "";
-        const msg = record.message.map(String).join("");
-        return `${levelColor}${time}${reset} ${cat}${msg}\n`;
-      },
-    }),
-  },
-  loggers: [
-    { category: ["logtape", "meta"], lowestLevel: "warning" },
-    { category: ["evjs"], sinks: ["console"], lowestLevel: "info" },
-  ],
-});
-
 const pkg = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, "../package.json"), "utf-8"),
-);
-const program = new Command();
+) as { version: string };
 
-program
-  .name("ev")
-  .description("CLI for the evjs framework")
-  .version(pkg.version);
+let configureLoggingPromise: Promise<void> | undefined;
 
-const logger = getLogger(["evjs", "cli"]);
+function getLevelColor(level: string): string {
+  if (level === "info") return "\x1b[36m";
+  if (level === "warning") return "\x1b[33m";
+  if (level === "error" || level === "fatal") return "\x1b[31m";
+  return "\x1b[32m";
+}
 
-program
-  .command("dev")
-  .description("Start development server")
-  .allowUnknownOption(true)
-  .action(async (_options: unknown, command: Command) => {
-    const cwd = process.cwd();
-    const flags = parseCliFlags(command.args);
-    const { loadConfig } = await import("./load-config.js");
-    const config = await loadConfig<DefaultBundlerConfig>(cwd);
-    try {
-      await dev(config ?? undefined, { cwd, flags });
-    } catch (err) {
-      logger.error`Failed to start dev server: ${err}`;
-      process.exit(1);
-    }
-  });
-
-program
-  .command("build")
-  .description("Build project for production")
-  .allowUnknownOption(true)
-  .action(async (_options: unknown, command: Command) => {
-    const cwd = process.cwd();
-    const flags = parseCliFlags(command.args);
-    const { loadConfig } = await import("./load-config.js");
-    const config = await loadConfig<DefaultBundlerConfig>(cwd);
-    try {
-      await build(config ?? undefined, { cwd, flags });
-    } catch (err) {
-      logger.error`Build failed: ${err}`;
-      process.exit(1);
-    }
-  });
-
-program
-  .command("prepare")
-  .description("Generate .ev framework IR without running a bundler")
-  .allowUnknownOption(true)
-  .action(async (_options: unknown, command: Command) => {
-    const cwd = process.cwd();
-    const flags = parseCliFlags(command.args);
-    const { loadConfig } = await import("./load-config.js");
-    const config = await loadConfig<DefaultBundlerConfig>(cwd);
-    try {
-      await prepare(config ?? undefined, { cwd, flags });
-    } catch (err) {
-      logger.error`Prepare failed: ${err}`;
-      process.exit(1);
-    }
-  });
-
-program
-  .command("inspect")
-  .description("Inspect evjs framework discovery without running a bundler")
-  .option("--json", "Print machine-readable JSON")
-  .action(async (options: { json?: boolean }) => {
-    const cwd = process.cwd();
-    try {
-      const result = await runInspectCommand({
-        cwd,
-        json: Boolean(options.json),
-      });
-      process.stdout.write(result.output);
-      if (result.exitCode !== 0) {
-        process.exit(result.exitCode);
-      }
-    } catch (err) {
-      if (options.json) {
-        process.stdout.write(formatInspectCommandErrorJson(err));
-      } else {
-        logger.error`Inspect failed: ${err}`;
-      }
-      process.exit(1);
-    }
-  });
-
-const migrate = program
-  .command("migrate")
-  .description("Run one-time source migrations");
-
-migrate
-  .command("smallfish")
-  .description(
-    "Migrate Smallfish Page anchors, metadata, and static Document aliases",
-  )
-  .option(
-    "--pages-dir <dir>",
-    "Resolved Smallfish baseDir/appBaseDir/pagesDir Page root; emitted as evjs routing.dir",
-  )
-  .option("--write", "Apply the preflighted source changes")
-  .option("--json", "Print machine-readable JSON")
-  .action(
-    async (options: { pagesDir?: string; write?: boolean; json?: boolean }) => {
-      const cwd = process.cwd();
-      try {
-        const result = await migrateSmallfishProject({
-          cwd,
-          ...(options.pagesDir ? { pagesDir: options.pagesDir } : {}),
-          write: Boolean(options.write),
-        });
-        process.stdout.write(
-          options.json
-            ? `${JSON.stringify(result, null, 2)}\n`
-            : formatSmallfishMigrationResult(result),
-        );
-        if (
-          result.diagnostics.some((diagnostic) => diagnostic.level === "error")
-        ) {
-          process.exit(1);
-        }
-      } catch (err) {
-        if (options.json) {
-          process.stdout.write(
-            `${JSON.stringify(
-              {
-                error: err instanceof Error ? err.message : String(err),
-              },
-              null,
-              2,
-            )}\n`,
-          );
-        } else {
-          logger.error`Smallfish migration failed: ${err}`;
-        }
-        process.exit(1);
-      }
+function configureLogging(): Promise<void> {
+  configureLoggingPromise ??= configure({
+    sinks: {
+      console: getConsoleSink({
+        formatter: (record) => {
+          const time = new Date(record.timestamp).toLocaleTimeString("en-US", {
+            hour12: false,
+          });
+          const levelColor = getLevelColor(record.level);
+          const reset = "\x1b[0m";
+          const cat = record.category[1]
+            ? `\x1b[90m[${record.category[1]}]\x1b[0m `
+            : "";
+          const msg = record.message.map(String).join("");
+          return `${levelColor}${time}${reset} ${cat}${msg}\n`;
+        },
+      }),
     },
-  );
+    loggers: [
+      { category: ["logtape", "meta"], lowestLevel: "warning" },
+      { category: ["evjs"], sinks: ["console"], lowestLevel: "info" },
+    ],
+  });
+  return configureLoggingPromise;
+}
 
-program.parse();
+export async function runCli(
+  argv: readonly string[] = process.argv,
+): Promise<number> {
+  await configureLogging();
+  const logger = getLogger(["evjs", "cli"]);
+
+  return runCliProgram(argv, {
+    version: pkg.version,
+    cwd: () => process.cwd(),
+    loadConfig: (cwd) => loadConfig<DefaultBundlerConfig>(cwd),
+    dev,
+    build,
+    prepare,
+    inspect: runInspectCommand,
+    writeStdout: (output) => process.stdout.write(output),
+    writeStderr: (output) => process.stderr.write(output),
+    reportError(summary, error) {
+      logger.error`${summary}: ${error}`;
+    },
+  });
+}

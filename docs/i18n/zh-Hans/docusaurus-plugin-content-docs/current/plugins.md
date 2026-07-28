@@ -257,7 +257,7 @@ interface PluginContext<TBundlerConfig = DefaultBundlerConfig> {
 
 在 `setup()` 中初始化共享状态并返回生命周期 hooks。返回值必须是 hooks object 或
 `undefined`；`null`、array 和非函数 hook 字段会在生命周期 hooks 运行前被拒绝。
-未知 hook key 也会被拒绝，避免拼写错误或旧 hook 静默 no-op。插件包自有 metadata
+未知 hook key 也会被拒绝，避免拼写错误静默 no-op。插件包自有 metadata
 应放在 hooks object 之外。
 
 ## 生命周期
@@ -306,10 +306,13 @@ flowchart TB
 |------|------|
 | `buildStart(ctx)` | 路由发现和 bundling 前的构建准备 |
 | `bundlerConfig(config, ctx)` | 修改当前 bundler 配置 |
-| `buildOutput(output, ctx)` | 向构建输出添加部署/runtime metadata |
+| `buildOutput(output, ctx)` | 调整已链接的 `AssetGroup` 内容或添加 deployment metadata |
 | `transformHtml(doc, ctx)` | 逐个 HTML 文档修改输出；接收当前 manifest result 字段 |
 | `buildEnd({ output, isRebuild })` | 构建后输出最终产物 |
 | `dispose(ctx)` | 清理资源 |
+
+每个 `buildEnd()` 钩子都会收到规范构建结果的一份隔离快照。对该快照的修改仅在
+当前钩子内可见，不会改变后续钩子或部署适配器收到的输入。
 
 在 dev 中，首次链接输出后会以 `isRebuild: false` 调用 `buildEnd()`，之后每次重新链接
 的构建都会以 `isRebuild: true` 调用。无论从 `setup()` context 还是
@@ -318,11 +321,13 @@ watcher；文件变化后框架会重新分析并应用对应的 plan update。�
 无法安全地原地替换实际 bundler config，更新会 fail-closed 并明确提示重启，不会继续
 使用过期配置。
 
-`buildOutput()` 可以调整已链接 asset 并添加部署 metadata，但
-Application/Page/Route/Document identity 仍由 CoreGraph 持有。Hook 不能新增、
-删除或重命名 Application、Page、Route 或 Document，不能调整 Route 顺序、修改
-Page path 或 Route ownership，也不能修改 Document file name 和静态 alias；这些值
-必须在 graph linking 之前完成配置。
+`buildOutput()` 只能调整已链接的 `AssetGroup` 内容和 `deployment` metadata。
+其他 BuildOutput 字段仍由 framework 持有，包括 build id、输出路径、public path、
+runtime endpoint 与 transport、server entry/renderers/functions/routes，以及
+Application/Page/RSC/PPR 语义。Hook 不能新增、删除或重排 framework record 或数组。
+具体来说，Hook 不能新增、删除或重命名 Application、Page、Route 或 Document，不能
+调整 Route 顺序、修改 Page path 或 Route ownership，也不能修改 Document file name
+和静态 alias；这些值必须在 graph linking 之前完成配置。
 
 ## Generated Contributions
 
@@ -562,6 +567,12 @@ client/server manifest。HTML hook 会收到同一组结果字段，并额外包
 
 `Plugin` 默认使用 Utoopack 配置类型，和默认 bundler 保持一致。底层 bundler
 修改应使用 adapter helper。
+
+最终 BuildPlan 始终是 framework runtime endpoint 与 output ownership 的事实源。
+`bundlerConfig()` hook 可以定制受支持的 loader、resolution、optimization 等底层
+setting，但不能覆盖 framework client/server 输出路径。即使关闭 recursive clean，
+adapter 也会在 hook 运行后按 BuildPlan 校验这些路径；plugin 持有的 clean output
+同样必须保留在 framework 持有的 `distDir` 内，并且不能与 client 或 server 输出重叠。
 
 Utoopack 示例：
 

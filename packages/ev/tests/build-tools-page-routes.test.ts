@@ -17,9 +17,7 @@ afterEach(async () => {
 describe("discoverPageRoutes", () => {
   it("requires an explicit SPA or MPA materialization mode", async () => {
     await expect(
-      discoverPageRoutes(process.cwd(), {
-        dir: "./src/pages",
-      } as never),
+      discoverPageRoutes(process.cwd(), {} as never),
     ).rejects.toThrow(
       '[evjs] Internal Page route discovery requires mode "spa" or "mpa".',
     );
@@ -49,7 +47,6 @@ describe("discoverPageRoutes", () => {
       });
 
       const discovery = await discoverPageRoutes(cwd, {
-        dir: "./src/pages",
         mode: "spa",
       });
 
@@ -116,17 +113,15 @@ describe("discoverPageRoutes", () => {
             },
           };
         `,
-        "src/pages/about/config.json": JSON.stringify({
-          title: "Compatibility input must stay inert",
+        "src/pages/about/notes.json": JSON.stringify({
+          title: "Private colocated data must stay inert",
         }),
       });
 
       const spa = await discoverPageRoutes(cwd, {
-        dir: "./src/pages",
         mode: "spa",
       });
       const mpa = await discoverPageRoutes(cwd, {
-        dir: "./src/pages",
         mode: "mpa",
       });
 
@@ -201,7 +196,6 @@ describe("discoverPageRoutes", () => {
       });
 
       const discovery = await discoverPageRoutes(cwd, {
-        dir: "./src/pages",
         mode: "mpa",
       });
 
@@ -242,7 +236,6 @@ describe("discoverPageRoutes", () => {
       });
 
       const discovery = await discoverPageRoutes(cwd, {
-        dir: "./src/pages",
         mode: "spa",
       });
 
@@ -304,7 +297,6 @@ describe("discoverPageRoutes", () => {
       });
 
       const discovery = await discoverPageRoutes(cwd, {
-        dir: "./src/pages",
         mode: "spa",
       });
 
@@ -340,7 +332,6 @@ describe("discoverPageRoutes", () => {
       });
 
       const discovery = await discoverPageRoutes(cwd, {
-        dir: "./src/pages",
         mode: "spa",
       });
 
@@ -384,7 +375,6 @@ describe("discoverPageRoutes", () => {
       });
 
       const discovery = await discoverPageRoutes(cwd, {
-        dir: "./src/pages",
         mode: "spa",
       });
 
@@ -411,7 +401,6 @@ describe("discoverPageRoutes", () => {
       });
 
       const discovery = await discoverPageRoutes(cwd, {
-        dir: "./src/pages",
         mode: "spa",
       });
 
@@ -462,7 +451,6 @@ describe("discoverPageRoutes", () => {
       });
 
       const discovery = await discoverPageRoutes(cwd, {
-        dir: "./src/pages",
         mode: "spa",
       });
 
@@ -511,7 +499,6 @@ describe("discoverPageRoutes", () => {
       });
 
       const discovery = await discoverPageRoutes(cwd, {
-        dir: "./src/pages",
         mode: "spa",
       });
 
@@ -569,7 +556,6 @@ describe("discoverPageRoutes", () => {
       });
 
       const discovery = await discoverPageRoutes(cwd, {
-        dir: "./src/pages",
         mode: "spa",
       });
 
@@ -585,7 +571,6 @@ describe("discoverPageRoutes", () => {
       });
 
       const discovery = await discoverPageRoutes(cwd, {
-        dir: "./src/pages",
         mode: "spa",
       });
 

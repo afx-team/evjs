@@ -42,12 +42,27 @@ export const POST = async (req) => {
 };
 ```
 
+Discovery 会在不执行应用代码的前提下拒绝 anchor AST 可明确证明为 non-callable
+的 handler。Imported handler、跨 module re-export、factory 结果与可变 binding
+仍是合法的组合方式；生成的 `createRoute()` definition 会在 server module 加载时
+校验它们的最终值。Generator handler 会在 discovery 阶段被拒绝，因为它返回
+iterator 而不是 response。
+
 其他任何 basename 都是普通私有源码，因此 `schema.ts`、`db.ts`、`types.ts`、
 `index.ts` 与 `route.ts` 可以就近放置而不会发布 Route。`api.*` 锚点只能导出
 大写 HTTP methods，helper 应移到其他文件。缺少 method、`middleware`/
 `middlewares`、default export、小写 method export、不受支持的 runtime export、
 重复 path、重复 dynamic shape、多个锚点扩展名变体，以及位于 bracket、catch-all、
 optional 或其他无效目录 segment 下的锚点，都会在 bundling 前被拒绝。
+
+发现到的 route 统一按 segment 逐段比较 specificity：父路径排在后代之前，并在
+首个不同位置优先 static segment，再处理 dynamic segment。这样注册顺序稳定，
+dynamic route 也不会遮蔽更具体的 static 分支。
+
+BuildPlan 还会拒绝与占用 URL 的 Page/redirect pattern 或 active framework
+runtime endpoint 相交的 server request Route pattern。Static alias 使用一次 decode
+后的 URL 语义：`/%75sers` 是 `/users` 的 alias，但双重编码文本仍保持不同，编码后的
+`/` 也不会合并 segment boundary。
 
 ## 处理器签名
 

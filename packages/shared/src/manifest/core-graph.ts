@@ -9,15 +9,16 @@ import {
   getPathPatternValidationError,
   type PathPatternValidationError,
 } from "../path-pattern.js";
+import { isDotRouteSegment } from "../route-segment.js";
 import {
   getServerRouteParamSegmentValidationError,
   type ServerRouteParamSegmentValidationError,
   serverRoutePathShapeFromPath,
 } from "../server-route-data.js";
 import {
-  assertBigfishRouteExtension,
-  BIGFISH_ROUTE_EXTENSION_ID,
-} from "./bigfish-route-extension.js";
+  coreRoutePatternShape,
+  isCoreRoutePatternPrefix,
+} from "./core-route-pattern.js";
 import type {
   ClientReferenceNode,
   ComponentModel,
@@ -34,7 +35,7 @@ import { assertPageMetadata, type PageMetadata } from "./page-metadata.js";
 /** Built-in source provider for materialization-neutral positive `page.*` anchors. */
 export const PAGE_ANCHOR_PROVIDER_ID = "@evjs/provider/page-anchor";
 
-/** Built-in source provider for Bigfish-style explicit SPA route-tree migration. */
+/** Built-in source provider for explicit SPA route-tree input. */
 export const CONFIG_ROUTE_PROVIDER_ID = "@evjs/provider/config-route";
 
 export type ApplicationId = string;
@@ -891,7 +892,7 @@ function assertUniqueTerminalRoutePatterns(
   for (const [index, route] of routes.entries()) {
     const target = route.target as Record<string, unknown>;
     if (target.kind === "group") continue;
-    const shape = formatRoutePatternShape(route.pattern as CoreRoutePattern);
+    const shape = coreRoutePatternShape(route.pattern as CoreRoutePattern);
     const key = `${route.applicationId as string}\0${shape}`;
     const previous = owners.get(key);
     if (previous) {
@@ -1375,31 +1376,10 @@ function assertClientRouteParentPattern(
   parentId: string,
   source: string,
 ): void {
-  if (
-    parent.segments.length <= child.segments.length &&
-    parent.segments.every((segment, index) =>
-      routeSegmentsEqual(segment, child.segments[index]),
-    )
-  ) {
-    return;
-  }
+  if (isCoreRoutePatternPrefix(parent, child)) return;
   throw new Error(
     `[evjs] ${source}.pattern must start with parent Route "${parentId}" pattern.`,
   );
-}
-
-function routeSegmentsEqual(
-  left: CoreRouteSegment,
-  right: CoreRouteSegment | undefined,
-): boolean {
-  if (!right || left.kind !== right.kind) return false;
-  if (left.kind === "static" && right.kind === "static") {
-    return left.value === right.value;
-  }
-  if (left.kind === "param" && right.kind === "param") {
-    return left.name === right.name;
-  }
-  return left.kind === "splat" && right.kind === "splat";
 }
 
 function assertExtensionBag(value: unknown, source: string): void {
@@ -1410,12 +1390,6 @@ function assertExtensionBag(value: unknown, source: string): void {
     }
     assertNonEmptyString(namespace, `${source} namespace`);
     assertStaticJsonValue(bag[namespace], `${source}.${namespace}`);
-    if (namespace === BIGFISH_ROUTE_EXTENSION_ID) {
-      assertBigfishRouteExtension(
-        bag[namespace],
-        `${source}.${BIGFISH_ROUTE_EXTENSION_ID}`,
-      );
-    }
   }
 }
 
@@ -1464,18 +1438,6 @@ function assertExtensionRegistry(value: unknown, source: string): void {
         schemaVersion,
         `${source}.namespaces.${namespace}.schemaVersion`,
       );
-    }
-    if (namespace === BIGFISH_ROUTE_EXTENSION_ID) {
-      if (definition.producer !== CONFIG_ROUTE_PROVIDER_ID) {
-        throw new Error(
-          `[evjs] ${source}.namespaces.${namespace}.producer must be "${CONFIG_ROUTE_PROVIDER_ID}".`,
-        );
-      }
-      if (definition.owners.length !== 1 || definition.owners[0] !== "route") {
-        throw new Error(
-          `[evjs] ${source}.namespaces.${namespace}.owners must be exactly ["route"].`,
-        );
-      }
     }
   }
 }
@@ -1534,8 +1496,8 @@ function assertRouteParamName(value: unknown, source: string): void {
 function assertStaticRouteSegment(value: unknown, source: string): void {
   assertNonEmptyString(value, source);
   const segment = value as string;
-  if (segment === "." || segment === "..") {
-    throw new Error(`[evjs] ${source} must not be "." or "..".`);
+  if (isDotRouteSegment(segment)) {
+    throw new Error(`[evjs] ${source} must not be or decode to "." or "..".`);
   }
   if (segment.includes("/") || segment.includes("\\")) {
     throw new Error(`[evjs] ${source} must not contain a slash or backslash.`);
@@ -1644,16 +1606,6 @@ function isPathWithinDirectory(sourcePath: string, root: string): boolean {
 
 function getProjectPathDepth(projectPath: string): number {
   return projectPath === "." ? 0 : projectPath.slice(2).split("/").length;
-}
-
-function formatRoutePatternShape(pattern: CoreRoutePattern): string {
-  return JSON.stringify(
-    pattern.segments.map((segment) => {
-      if (segment.kind === "static") return ["static", segment.value];
-      if (segment.kind === "param") return ["param"];
-      return ["splat"];
-    }),
-  );
 }
 
 function assertNodeId(value: unknown, expected: string, source: string): void {

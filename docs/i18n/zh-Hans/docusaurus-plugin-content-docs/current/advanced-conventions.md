@@ -34,8 +34,8 @@ export default defineConfig({
 
 仅支持 SPA 的 `application.routes` 是显式 route-tree 配置输入，不属于文件约定。
 reachable 且带 `"use server";` 的模块，以及插件 contribution 生成的模块，
-同样不属于文件约定；关闭文件发现后它们仍然可用。已移除的 `app`、`pages` 与
-顶层 `routes` 声明会被拒绝。
+同样不属于文件约定；关闭文件发现后它们仍然可用。`app`、`pages` 与顶层
+`routes` 不属于公共配置，会被拒绝。
 
 手动 browser bootstrap 使用下方 standalone runtime；它不是第二套 canonical
 routing model。

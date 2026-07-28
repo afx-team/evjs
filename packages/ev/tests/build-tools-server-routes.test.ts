@@ -76,6 +76,13 @@ describe("discoverServerRoutes", () => {
     expect(discovery.diagnostics).toEqual([]);
     expect(discovery.routes).toEqual([
       {
+        id: "src/apis/api.ts:/:GET",
+        module: "src/apis/api.ts",
+        path: "/",
+        methods: ["GET"],
+        moduleSegments: [],
+      },
+      {
         id: "src/apis/api/users/api.ts:/api/users:GET,DELETE",
         module: "src/apis/api/users/api.ts",
         path: "/api/users",
@@ -103,13 +110,161 @@ describe("discoverServerRoutes", () => {
         methods: ["POST"],
         moduleSegments: ["users", "$userId"],
       },
+    ]);
+  });
+
+  it("accepts local and composed callable handler forms", async () => {
+    const cwd = await createFixture({
+      "src/apis/declaration/api.ts": `
+        export async function GET() {
+          return Response.json({ ok: true });
+        }
+      `,
+      "src/apis/function-expression/api.ts": `
+        export const POST = async function post() {
+          return Response.json({ ok: true });
+        };
+      `,
+      "src/apis/local-function/api.ts": `
+        function update() {
+          return Response.json({ ok: true });
+        }
+        export { update as PUT };
+      `,
+      "src/apis/local-const/api.ts": `
+        const update = async () => Response.json({ ok: true });
+        export { update as PATCH };
+      `,
+      "src/apis/local-alias/api.ts": `
+        const remove = async () => new Response(null, { status: 204 });
+        const handler = remove;
+        export const DELETE = handler;
+      `,
+      "src/apis/typed-alias/api.ts": `
+        type Handler = () => Response;
+        const inspect = () => new Response(null);
+        const handler = (inspect satisfies Handler);
+        export { handler as HEAD };
+      `,
+      "src/apis/arrow/api.ts": `
+        export const OPTIONS = () => new Response(null);
+      `,
+      "src/apis/factory/api.ts": `
+        function createHandler() {
+          return () => Response.json({ ok: true });
+        }
+        export const GET = createHandler();
+      `,
+      "src/apis/handler.ts": `
+        export const handler = () => Response.json({ ok: true });
+      `,
+      "src/apis/imported/api.ts": `
+        import { handler } from "../handler";
+        export { handler as POST };
+      `,
+      "src/apis/mutable/api.ts": `
+        export let DELETE = () => new Response(null, { status: 204 });
+      `,
+      "src/apis/overload/api.ts": `
+        export function GET(request: Request): Response;
+        export function GET(_request: Request) {
+          return Response.json({ ok: true });
+        }
+      `,
+      "src/apis/reexport/api.ts": `
+        export { handler as PUT } from "../handler";
+      `,
+    });
+
+    const discovery = await discoverServerRoutes(cwd, {
+      dir: "./src/apis",
+    });
+
+    expect(discovery.diagnostics).toEqual([]);
+    expect(
+      Object.fromEntries(
+        discovery.routes.map((route) => [route.path, route.methods]),
+      ),
+    ).toEqual({
+      "/arrow": ["OPTIONS"],
+      "/declaration": ["GET"],
+      "/factory": ["GET"],
+      "/function-expression": ["POST"],
+      "/imported": ["POST"],
+      "/local-alias": ["DELETE"],
+      "/local-const": ["PATCH"],
+      "/local-function": ["PUT"],
+      "/mutable": ["DELETE"],
+      "/overload": ["GET"],
+      "/reexport": ["PUT"],
+      "/typed-alias": ["HEAD"],
+    });
+  });
+
+  it("rejects method values that are statically known to be non-callable", async () => {
+    const cwd = await createFixture({
+      "src/apis/class/api.ts": `
+        export class OPTIONS {}
+      `,
+      "src/apis/generator/api.ts": `
+        export async function* HEAD() {
+          yield new Response(null);
+        }
+      `,
+      "src/apis/literal/api.ts": `
+        export const PATCH = "not a handler";
+      `,
+    });
+
+    const discovery = await discoverServerRoutes(cwd, {
+      dir: "./src/apis",
+    });
+
+    expect(discovery.routes).toEqual([]);
+    expect(discovery.diagnostics).toEqual([
       {
-        id: "src/apis/api.ts:/:GET",
-        module: "src/apis/api.ts",
-        path: "/",
-        methods: ["GET"],
-        moduleSegments: [],
+        level: "error",
+        file: "src/apis/class/api.ts",
+        message:
+          'Server route method "OPTIONS" must resolve to a function. Non-callable values such as strings, objects, and classes are not valid HTTP handlers.',
       },
+      {
+        level: "error",
+        file: "src/apis/generator/api.ts",
+        message:
+          'Server route method "HEAD" cannot be a generator function. HTTP method handlers must return a Response or Promise<Response>, not an iterator.',
+      },
+      {
+        level: "error",
+        file: "src/apis/literal/api.ts",
+        message:
+          'Server route method "PATCH" must resolve to a function. Non-callable values such as strings, objects, and classes are not valid HTTP handlers.',
+      },
+    ]);
+  });
+
+  it("uses server param policy and segment-wise route specificity", async () => {
+    const cwd = await createFixture({
+      "src/apis/files/$_splat/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/users/$userId/profile/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+      "src/apis/users/settings/$section/api.ts": `
+        export const GET = async () => Response.json({ ok: true });
+      `,
+    });
+
+    const discovery = await discoverServerRoutes(cwd, {
+      dir: "./src/apis",
+    });
+
+    expect(discovery.diagnostics).toEqual([]);
+    expect(discovery.routes.map((route) => route.path)).toEqual([
+      "/files/:_splat",
+      "/users/settings/:section",
+      "/users/:userId/profile",
     ]);
   });
 
