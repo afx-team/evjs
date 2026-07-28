@@ -29,6 +29,21 @@ route-tree 配置，以及插件 contribution 是 graph/config 输入，不属�
 每个 `page.*` 锚点的相对目录是客户端 URL 的事实来源。`routing.mode` 为同一
 文件树选择 SPA 或 MPA 物化。
 
+## 全局样式
+
+全局样式是普通源码 module，没有特殊的文件名或目录约定。请在根 layout、
+Application layout、Page 或共享组件中显式导入：
+
+```ts
+import "./global.css";
+```
+
+Less 变量与 mixin 也遵循同样规则。每个使用它们的 Less module 都需要显式导入：
+
+```less
+@import "./tokens.less";
+```
+
 ## canonical Page 与 Route
 
 Page 与客户端 Route 共用一个 positive anchor：

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -60,10 +60,6 @@ import { toPosixPath } from "./utils.js";
 export const GENERATED_IR_DIR = ".ev";
 export const GENERATED_IR_MANIFEST = "manifest.json";
 export const GENERATED_IR_TYPES = "types.d.ts";
-
-const GLOBAL_STYLES_DIR = path.join("src", "styles");
-const GLOBAL_STYLES_EXTENSIONS = [".less", ".css"];
-const GLOBAL_IMPORT_MIXIN_FILE = "global-import-mixin.less";
 
 const generatedModuleRefSymbol = Symbol.for("evjs.generated.module.ref");
 const FRAMEWORK_SLOT_NAMES = [
@@ -185,12 +181,7 @@ export async function materializeFrameworkIR<TBundlerCfg>(
   ensureServerEntryForMiddlewareContributions(plan, generated);
   assertUniqueBuildEntryNames(plan.entries);
   plan.generated = generated;
-  const hasGlobalStyles = hasGlobalStylesDir(options.cwd);
-  const globalImportMixinPath = resolveGlobalImportMixinPath(options.cwd);
-  if (globalImportMixinPath) {
-    plan.styles = { globalImportMixinPath };
-  }
-  const entries = createGeneratedEntryPlans(plan, generated, hasGlobalStyles);
+  const entries = createGeneratedEntryPlans(plan, generated);
   generated.entries = entries;
   rewritePlanEntriesToGeneratedFiles(plan, entries);
 
@@ -1258,13 +1249,10 @@ function assertUniqueBuildEntryNames(entries: BuildEntry[]): void {
 function createGeneratedEntryPlans(
   plan: BuildPlan,
   generated: GeneratedFrameworkPlan,
-  hasGlobalStyles: boolean,
 ): GeneratedEntryPlan[] {
   const used = new Set<string>();
   return plan.entries
-    .filter((entry) =>
-      shouldGenerateEntry(entry, plan, generated, hasGlobalStyles),
-    )
+    .filter((entry) => shouldGenerateEntry(entry, plan, generated))
     .map((entry) => {
       const fileName = uniqueEntryFileName(entry.name, used);
       return {
@@ -1281,7 +1269,6 @@ function shouldGenerateEntry(
   entry: BuildEntry,
   plan: BuildPlan,
   generated: GeneratedFrameworkPlan,
-  hasGlobalStyles: boolean,
 ): boolean {
   if (entry.metadata) return true;
   if (
@@ -1294,7 +1281,6 @@ function shouldGenerateEntry(
   }
   if (entry.environment === "client") {
     return (
-      hasGlobalStyles ||
       getMatchingClientEntrySlots(plan, entry).length > 0 ||
       getSlotItemsFromGenerated<ClientEntrySlotPlanItem>(
         generated,
@@ -1419,10 +1405,6 @@ function createClientEntrySource(options: {
   plan: BuildPlan;
   mainSource: string[];
 }): string {
-  const globalStyleImports = collectGlobalStyleImports(
-    options.cwd,
-    options.fromFile,
-  );
   const entrySlots = getMatchingClientEntrySlots(options.plan, options.entry);
   const replacement = entrySlots.filter((slot) => slot.mode === "replace");
   if (replacement.length > 1) {
@@ -1453,7 +1435,6 @@ function createClientEntrySource(options: {
     : options.mainSource;
 
   return [
-    ...globalStyleImports,
     ...importsFor("polyfill"),
     ...importsFor("before-main-imports"),
     ...importsFor("before-main"),
@@ -1663,41 +1644,6 @@ function toGeneratedImportSpecifier(
   let relative = toPosixPath(path.relative(path.dirname(fromFile), absolute));
   if (!relative.startsWith(".")) relative = `./${relative}`;
   return stripScriptImportExtension(relative);
-}
-
-function hasGlobalStylesDir(cwd: string): boolean {
-  const stylesDir = path.resolve(cwd, GLOBAL_STYLES_DIR);
-  if (!existsSync(stylesDir)) return false;
-  return readdirSync(stylesDir).some((file) =>
-    GLOBAL_STYLES_EXTENSIONS.some((ext) => file.endsWith(ext)),
-  );
-}
-
-function resolveGlobalImportMixinPath(cwd: string): string | undefined {
-  const mixinFile = path.resolve(
-    cwd,
-    GLOBAL_STYLES_DIR,
-    GLOBAL_IMPORT_MIXIN_FILE,
-  );
-  return existsSync(mixinFile) ? mixinFile : undefined;
-}
-
-function collectGlobalStyleImports(cwd: string, fromFile: string): string[] {
-  const stylesDir = path.resolve(cwd, GLOBAL_STYLES_DIR);
-  if (!existsSync(stylesDir)) return [];
-  const styleFiles = readdirSync(stylesDir)
-    .filter((file) =>
-      GLOBAL_STYLES_EXTENSIONS.some((ext) => file.endsWith(ext)),
-    )
-    .sort();
-  return styleFiles.map((file) => {
-    const specifier = toGeneratedImportSpecifier(
-      cwd,
-      fromFile,
-      path.join(stylesDir, file),
-    );
-    return `import ${JSON.stringify(specifier)};`;
-  });
 }
 
 function stripScriptImportExtension(specifier: string): string {

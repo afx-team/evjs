@@ -32,6 +32,23 @@ configuration fields and are rejected.
 The relative directory of each `page.*` anchor is the client URL source of
 truth. `routing.mode` chooses SPA or MPA materialization for that same tree.
 
+## Global Styles
+
+Global styles are ordinary source modules, with no special filename or
+directory convention. Import them explicitly from the root or Application
+layout, a Page, or a shared component:
+
+```ts
+import "./global.css";
+```
+
+Less variables and mixins follow the same rule. Import their module explicitly
+from each Less module that consumes them:
+
+```less
+@import "./tokens.less";
+```
+
 ## Canonical Pages and Routes
 
 A Page and client Route share one positive anchor:

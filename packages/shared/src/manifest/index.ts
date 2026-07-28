@@ -140,13 +140,8 @@ export interface BuildPlan {
   html: HtmlPlan[];
   server: ServerBuildPlan;
   runtime: RuntimePlan;
-  styles?: BuildPlanStyles;
   dev: DevBuildPlan;
   rsc?: RscBuildPlan;
-}
-
-export interface BuildPlanStyles {
-  globalImportMixinPath?: string;
 }
 
 export interface DevBuildPlan {

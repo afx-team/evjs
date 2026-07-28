@@ -28,6 +28,7 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "sync-release-dependencies": "node scripts/sync-internal-dependency-versions.mjs",
+
     "check-types": "turbo check-types && tsc -p tsconfig.test.json --noEmit",
     "prepare": "husky"
   },
