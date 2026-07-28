@@ -217,7 +217,10 @@ export default definePageConfig({
 
 evjs 构建 graph 时同步求值该 module。它必须 default-export plain object，且只
 包含 static JSON data。支持的 core 字段是 `title`、`meta`、`render`、
-`hydrate`、`prerender` 与 `rsc`。`hydrate` 只接受 `"none"` 或 `"load"`。
+`hydrate`、`prerender` 与 `rsc`。省略 `render` 时始终选择 CSR，且 CSR 必须
+省略 `hydrate`。显式 SSR 与 SSG Page 可以使用 `hydrate: "none" | "load"`；
+普通 SSR 默认值是 `"load"`，SSG 默认值是 `"none"`，RSC/PPR 保持 Page 级
+不 hydration。
 `meta` 是生成
 `<meta name="key" content="value">` 的字符串 record；它不接受 `property`、
 `charset`、link、script、函数或通用 head tree。插件持有的值必须放在

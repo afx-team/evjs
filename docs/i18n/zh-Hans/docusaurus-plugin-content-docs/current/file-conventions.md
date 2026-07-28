@@ -109,7 +109,9 @@ export default definePageConfig({
 
 该 module 在构建期同步求值，default-export 只包含 static JSON data 的 plain
 object。Core 持有 `title`、named `meta`、`render`、`hydrate`、`prerender`
-与 `rsc`；插件注册并持有 `extensions` 下的 namespaced value。`meta` 只把
+与 `rsc`；插件注册并持有 `extensions` 下的 namespaced value。省略 `render`
+始终表示 CSR，且必须省略 `hydrate`；显式 SSR/SSG Page 可以选择 `"load"` 或
+`"none"`。`meta` 只把
 字符串 key/value 映射为 `<meta name="key" content="value">`，不提供
 `property`、`charset`、link、script、动态元信息或通用 head DSL。Core
 title/meta 会为 Page 物化；插件 extension value 在 runtime 使用前仍需插件显式

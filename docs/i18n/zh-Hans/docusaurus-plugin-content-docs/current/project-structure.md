@@ -276,7 +276,9 @@ export default definePageConfig({
 ```
 
 Core 字段包括静态 Page `title`、named `meta`、`render`、`hydrate`、
-`prerender` 与 `rsc`。每个 `meta` 项都会生成
+`prerender` 与 `rsc`。省略 `render` 时始终归一化为 CSR，且必须省略
+`hydrate`；显式 SSR/SSG Page 可以选择 `"load"` 或 `"none"`。每个 `meta`
+项都会生成
 `<meta name="key" content="value">`；它不表示 `property`、`charset`、
 `link`、`script`、动态元信息或任意 head DSL。Plugin 持有的 Page value 放在
 顶层 `extensions`，Route-owned value 放在 `route.extensions`；两者都使用已注册

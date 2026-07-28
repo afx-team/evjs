@@ -75,6 +75,7 @@ export interface CorePageNode {
   source: CorePageSource;
   render: RenderMode;
   componentModel?: ComponentModel;
+  /** Author-selected hydration policy. CSR Pages must omit this field. */
   hydrate?: HydrationMode;
   prerender?: PrerenderConfig;
   ppr?: PprConfig;
@@ -448,6 +449,11 @@ function assertPageNode(value: unknown, id: string, source: string): void {
     page.hydrate !== "load"
   ) {
     throw new Error(`[evjs] ${source}.hydrate must be "none" or "load".`);
+  }
+  if (page.render === "csr" && page.hydrate !== undefined) {
+    throw new Error(
+      `[evjs] ${source}.hydrate must be omitted when render is "csr".`,
+    );
   }
   const prerender = getOwn(page, "prerender");
   if (prerender !== undefined) {

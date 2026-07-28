@@ -1353,7 +1353,6 @@ function createGraph(
             provider: "@evjs/provider/page-anchor",
           },
           render: page.render ?? "csr",
-          hydrate: "load" as const,
           extensions: {},
           provenance,
         },

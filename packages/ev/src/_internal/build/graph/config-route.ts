@@ -28,6 +28,7 @@ import type {
   ResolvedConfigRoute,
   ResolvedConfigRouteApplication,
 } from "../../../config/index.js";
+import { DEFAULT_PAGE_RENDER_MODE } from "../page-rendering-contract.js";
 import {
   PAGE_CONFIG_FILES,
   PAGE_CONFIG_LABEL,
@@ -495,7 +496,7 @@ async function defineConfigRoutePage(
       scope,
       provider: CONFIG_ROUTE_PROVIDER_ID,
     },
-    render: "csr",
+    render: DEFAULT_PAGE_RENDER_MODE,
     extensions: {},
     provenance: {
       producer: CONFIG_ROUTE_PRODUCER,

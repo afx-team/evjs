@@ -457,6 +457,12 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     expect(spa.diagnostics).toEqual([]);
     expect(mpa.diagnostics).toEqual([]);
     expect(mpa.graph.pages).toEqual(spa.graph.pages);
+    expect(spa.graph.pages).toMatchObject({
+      index: { render: "csr" },
+      about: { render: "csr" },
+    });
+    expect(spa.graph.pages.index).not.toHaveProperty("hydrate");
+    expect(spa.graph.pages.about).not.toHaveProperty("hydrate");
     expect(clientRouteProjection(mpa.graph)).toEqual(
       clientRouteProjection(spa.graph),
     );
@@ -503,17 +509,29 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
             entry.metadata?.type === "react-component-page"
               ? entry.metadata.layers
               : undefined,
+          render:
+            entry.metadata?.type === "react-component-page"
+              ? entry.metadata.render
+              : undefined,
+          hydrate:
+            entry.metadata?.type === "react-component-page"
+              ? entry.metadata.hydrate
+              : undefined,
         })),
     ).toEqual([
       {
         name: createPageClientBuildEntryName("index"),
         owner: { appId: "default", pageId: "index" },
         layers: [{ kind: "layout", module: "./src/pages/layout.tsx" }],
+        render: "csr",
+        hydrate: "load",
       },
       {
         name: createPageClientBuildEntryName("about"),
         owner: { appId: "default", pageId: "about" },
         layers: [{ kind: "layout", module: "./src/pages/layout.tsx" }],
+        render: "csr",
+        hydrate: "load",
       },
     ]);
     expect(mpaPlan.html).toEqual([
@@ -1389,6 +1407,41 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
 
     await expect(createCoreGraph(config, cwd)).rejects.toThrow(
       'Page "report" config "./src/pages/report/page.config.ts" combines RSC and partial prerendering',
+    );
+  });
+
+  it.each([
+    "load",
+    "none",
+  ] as const)("rejects manually injected CSR hydrate %s before build planning", async (hydrate) => {
+    const cwd = await createFixture({
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa");
+    const analysis = await createCoreGraph(config, cwd);
+    const page = analysis.graph.pages.index;
+    if (!page) throw new Error("Expected the root Page.");
+    page.hydrate = hydrate;
+
+    expect(() => createBuildPlan(config, analysis.graph)).toThrow(
+      'Page "index" resolves to render: "csr" and must omit hydrate. Hydration is only configurable for render: "ssr" or "ssg".',
+    );
+  });
+
+  it("rejects a Core Page without a resolved render mode", async () => {
+    const cwd = await createFixture({
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "index.html": '<main id="app"></main>',
+    });
+    const config = await createCanonicalConfig(cwd, "spa");
+    const analysis = await createCoreGraph(config, cwd);
+    const page = analysis.graph.pages.index;
+    if (!page) throw new Error("Expected the root Page.");
+    Object.defineProperty(page, "render", { value: undefined });
+
+    expect(() => createBuildPlan(config, analysis.graph)).toThrow(
+      'Page "index" is missing its resolved render mode. Core Pages must resolve render before build planning.',
     );
   });
 
