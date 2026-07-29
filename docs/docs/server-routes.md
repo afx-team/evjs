@@ -15,9 +15,9 @@ For the complete server file route and middleware filename rules, see
 
 File-based server routes are enabled by default. evjs scans
 `./src/apis/**/api.*`; each anchor's containing directory maps to its request
-URL. Object form currently supports only `dir`. There is no `prefix` option;
-put an anchor under a directory such as `src/apis/api/users` when its URL
-should start with `/api/users`.
+URL. The root is fixed and there is no prefix configuration; put an anchor
+under a directory such as `src/apis/api/users` when its URL should start with
+`/api/users`.
 
 ```text
 src/apis/api.ts                       -> /

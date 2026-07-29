@@ -37,8 +37,7 @@ export interface BundlerBuildFacts {
 /**
  * Normalize adapter-native client entrypoint names into the exact BuildPlan
  * names consumed by the linker. A sole raw entrypoint may stand in for a sole
- * planned entry, but that adapter compatibility does not escape into build
- * facts.
+ * planned entry while adapter-native identity remains outside build facts.
  */
 export function resolveBundlerClientEntryAssets(
   plan: BuildPlan,

@@ -1,13 +1,10 @@
 /**
  * @evjs/shared/manifest
  *
- * Shared manifest schemas for the ev framework build system.
- *
- * Core builds serialize canonical deployment metadata to
- * `dist/deployment-metadata.json`. Lightweight client/server projections are
- * available to explicit deployment adapters through `createPublicManifest()`
- * and `createServerManifest()`; Core does not emit split compatibility
- * manifests by default.
+ * Shared contracts for the evjs control plane: semantic CoreGraph, concrete
+ * BuildPlan, linked BuildOutput, and their runtime and deployment projections.
+ * Core serializes DeploymentMetadata; public and server manifests are explicit
+ * consumer-specific projections.
  */
 
 import {
@@ -119,11 +116,9 @@ export type ServerRuntime = "node" | "edge";
 export type PublicPathOutput = string;
 
 /**
- * Internal build-unit arrangement derived from ResolvedConfig + CoreGraph.
- *
- * BuildPlan is not user config, not a second graph, and not a runtime
- * manifest. It lists concrete entries and HTML documents for bundler adapters
- * and dev-time diffing.
+ * Concrete compilation and materialization units derived from resolved config
+ * and CoreGraph. Semantic ownership remains in CoreGraph; bundler adapters
+ * consume this plan and return build facts for linking.
  */
 export interface BuildPlan {
   version: 1;
@@ -386,7 +381,7 @@ export interface BuildPlanUpdate {
   resolveChanged: boolean;
   /** Runtime endpoints, public paths, or transport settings changed. */
   runtimeChanged: boolean;
-  /** Config or hooks changed and framework-owned artifacts must be re-emitted. */
+  /** Config changed and framework-owned delivery artifacts must be re-emitted. */
   deliveryChanged: boolean;
   /** Server compiler output, renderers, or RSC compilation inputs changed. */
   serverCompilationChanged: boolean;
@@ -396,6 +391,11 @@ export interface BuildPlanUpdate {
   devRoutingChanged: boolean;
 }
 
+/**
+ * Complete in-memory link of CoreGraph ownership, BuildPlan units, and bundler
+ * asset facts. Plugins, runtime projection, and deployment projection consume
+ * this contract; it is not serialized wholesale as the deployment artifact.
+ */
 export interface BuildOutput {
   version: 1;
   buildId: string;
@@ -411,6 +411,11 @@ export interface BuildOutput {
   deployment?: Record<string, unknown>;
 }
 
+/**
+ * Select the manifest contract and cross-reference strictness to validate.
+ * `server: "optional"` selects a PublicManifest shape; it does not make the
+ * server field optional on an otherwise complete BuildOutput.
+ */
 export interface FrameworkManifestValidationOptions {
   server?: "required" | "optional";
   pageRendererReferences?: "required" | "optional";
@@ -579,6 +584,10 @@ export interface PublicRouteOutput {
   metadata?: PageMetadata;
 }
 
+/**
+ * Canonical serializable deployment projection of public assets, Documents,
+ * request routes, the server entry, and plugin-owned deployment metadata.
+ */
 export interface DeploymentMetadata {
   version: 1;
   buildId: string;

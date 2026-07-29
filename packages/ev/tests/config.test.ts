@@ -45,14 +45,10 @@ describe("config authoring", () => {
     expect(pageConfig.title).toBe("Orders");
   });
 
-  it("keeps unsupported config lanes out of the authoring type", () => {
-    const unsupportedApp = defineConfig({
-      // @ts-expect-error app is not part of Core 0.3 Config.
-      app: { entry: "./src/main.tsx" },
-    });
-    const unsupportedPages = defineConfig({
-      // @ts-expect-error pages are authored with src/pages/**/page.*.
-      pages: { home: "./src/pages/home.tsx" },
+  it("keeps authoring config types closed", () => {
+    const unsupportedConfig = defineConfig({
+      // @ts-expect-error Config rejects fields outside its public schema.
+      unknown: true,
     });
     const missingMode = defineConfig({
       // @ts-expect-error routing.mode is required.
@@ -87,8 +83,7 @@ describe("config authoring", () => {
       hydrate: "load",
     };
 
-    expect(unsupportedApp).toHaveProperty("app");
-    expect(unsupportedPages).toHaveProperty("pages");
+    expect(unsupportedConfig).toHaveProperty("unknown");
     expect(missingMode).toHaveProperty("routing");
     expect(missingApplicationRoutes).toHaveProperty("application");
     expect(emptyApplicationRoutes).toHaveProperty("application");
@@ -114,10 +109,7 @@ describe("resolveConfig", () => {
       ppr: "__evjs/ppr",
     });
     expect(resolved.server.rsc).toBeUndefined();
-    expect(resolved.server.routing).toEqual({
-      dir: "./src/apis",
-      routes: [],
-    });
+    expect(resolved.server.routes).toEqual([]);
     expect(resolved.output).toEqual({
       client: "dist/client",
       server: "dist/server",
@@ -430,7 +422,7 @@ describe("resolveConfig", () => {
           ],
         },
       }),
-    ).toThrow("application.routes[0].children is not supported. Use routes");
+    ).toThrow("application.routes[0].children is not supported");
 
     expect(() =>
       resolveConfig({
@@ -617,7 +609,7 @@ describe("resolveConfig", () => {
     const resolved = resolveConfig({ conventions: false });
     expect(resolved.conventions).toBe(false);
     expect(resolved.routing).toBeUndefined();
-    expect(resolved.server.routing).toBeUndefined();
+    expect(resolved.server.routes).toBeUndefined();
     expect(resolved.server.conventions).toBeUndefined();
 
     expect(() =>
@@ -626,13 +618,6 @@ describe("resolveConfig", () => {
         routing: { mode: "spa" },
       }),
     ).toThrow("conventions: false cannot be combined with routing");
-    expect(() =>
-      resolveConfig({
-        conventions: false,
-        server: { routing: {} },
-      }),
-    ).toThrow("conventions: false cannot be combined with server.routing");
-
     expect(
       resolveConfig({
         conventions: false,
@@ -641,47 +626,27 @@ describe("resolveConfig", () => {
     ).toBeDefined();
   });
 
-  it("rejects unsupported root routing and application keys", () => {
-    const unsupported = [
-      ["entry", "./src/main.tsx"],
-      ["app", { entry: "./src/main.tsx" }],
-      ["apps", { main: "./src/main.tsx" }],
-      ["pages", { home: "./src/pages/home.tsx" }],
-      ["routes", [{ page: "home" }]],
-      ["html", "./alternate.html"],
-    ] as const;
-
-    for (const [key, value] of unsupported) {
-      expect(() => resolveConfig({ [key]: value } as never)).toThrow(
-        `config.${key}`,
-      );
-    }
-  });
-
-  it("rejects unsupported routing shapes and fields", () => {
-    expect(() => resolveConfig({ routing: true as never })).toThrow(
-      "routing must be an object",
+  it("rejects unknown fields at every authoring boundary", () => {
+    expect(() => resolveConfig({ unknown: true } as never)).toThrow(
+      "config.unknown is not supported",
     );
     expect(() =>
       resolveConfig({
-        routing: { mode: "spa", dir: "./app/pages" },
+        application: { routes: [{ page: "home" }], unknown: true },
       } as never),
-    ).toThrow("routing.dir is not supported");
+    ).toThrow("application.unknown is not supported");
     expect(() =>
-      resolveConfig({
-        routing: { mode: "spa", compatibility: { source: "external" } },
-      } as never),
-    ).toThrow("routing.compatibility is not supported");
-    expect(() =>
-      resolveConfig({
-        routing: { mode: "spa", entry: "./src/main.tsx" },
-      } as never),
-    ).toThrow("routing.entry is not supported");
-    expect(() =>
-      resolveConfig({
-        routing: { mode: "spa", routes: [] },
-      } as never),
-    ).toThrow("routing.routes is not a public config field");
+      resolveConfig({ routing: { mode: "spa", unknown: true } } as never),
+    ).toThrow("routing.unknown is not supported");
+    expect(() => resolveConfig({ server: { unknown: true } } as never)).toThrow(
+      "server.unknown is not supported",
+    );
+  });
+
+  it("rejects unsupported routing shapes", () => {
+    expect(() => resolveConfig({ routing: true as never })).toThrow(
+      "routing must be an object",
+    );
   });
 
   it("resolves output, dev, server, and transport settings", () => {
@@ -698,7 +663,6 @@ describe("resolveConfig", () => {
       },
       server: {
         basePath: "/_ev",
-        routing: { dir: "./src/http" },
         dev: {
           port: 4200,
           https: { key: "server.key", cert: "server.cert" },
@@ -729,7 +693,7 @@ describe("resolveConfig", () => {
       fn: "_ev/fn",
       ppr: "_ev/ppr",
     });
-    expect(resolved.server.routing?.dir).toBe("./src/http");
+    expect(resolved.server.routes).toEqual([]);
     expect(resolved.server.dev).toEqual({
       port: 4200,
       https: { key: "server.key", cert: "server.cert" },

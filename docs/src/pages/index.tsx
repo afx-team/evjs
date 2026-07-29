@@ -96,7 +96,7 @@ function useFeatures(): Array<{
       description: translate({
         id: "homepage.feature.deployment.description",
         message:
-          "Emit browser assets, optional server bundles, manifests, and deployment metadata.",
+          "Emit browser assets, optional server bundles, and canonical deployment metadata.",
       }),
     },
   ];
@@ -132,7 +132,7 @@ function useFlowSteps(): FlowStep[] {
       label: "03",
       title: translate({
         id: "homepage.flow.bundle.title",
-        message: "Bundle once",
+        message: "Build entries",
       }),
       description: translate({
         id: "homepage.flow.bundle.description",
@@ -148,8 +148,7 @@ function useFlowSteps(): FlowStep[] {
       }),
       description: translate({
         id: "homepage.flow.output.description",
-        message:
-          "Write browser files, server output, manifests, and deployment metadata.",
+        message: "Write browser files, server output, and deployment metadata.",
       }),
     },
   ];
@@ -182,7 +181,7 @@ function HeroSection() {
           </Link>
           <Link
             className={styles.btnSecondary}
-            href="https://github.com/evaijs/evjs"
+            href="https://github.com/afx-team/evjs"
           >
             <GitHubIcon />
             GitHub

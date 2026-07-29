@@ -12,22 +12,21 @@ For the complete matrix, see [Project Structure](./project-structure).
 | Root | Purpose |
 | --- | --- |
 | `src/pages` | Canonical Page-and-Route tree. |
-| `src/apis` or `server.routing.dir` | Server request `api.*` anchor tree. |
+| `src/apis` | Fixed server request `api.*` anchor tree. |
 | `src/middleware.ts` | Global framework server middleware. |
-| `<server.routing.dir>/**/middleware.ts` | Middleware scoped to same-directory and descendant server file routes; defaults to `src/apis/**/middleware.ts`. |
+| `src/apis/**/middleware.ts` | Middleware scoped to same-directory and descendant server file routes. |
 | Reachable source modules | Server functions that begin with `"use server";`. |
 
 Page anchors, server request-route anchors, and both middleware roots form one
 framework-owned discovery unit. Top-level `conventions: false` disables that
 unit together; there are no per-root switches. It cannot be combined with
-explicit `routing` or `server.routing`. When conventions remain enabled, the
-client Page root stays fixed at `src/pages`; only `server.routing: { dir }`
-customizes a discovery root.
+an explicit client `routing` declaration. When conventions remain enabled,
+the client Page root is fixed at `src/pages` and the server Route root is fixed
+at `src/apis`.
 
 Reachable `"use server";` modules, SPA-only `application.routes`
 configuration, and plugin contributions are graph/config inputs rather than
-file conventions. `app`, `pages`, and top-level `routes` are not public
-configuration fields and are rejected.
+file conventions.
 
 The relative directory of each `page.*` anchor is the client URL source of
 truth. `routing.mode` chooses SPA or MPA materialization for that same tree.
@@ -206,8 +205,8 @@ Page directory so its ownership is obvious to humans and tooling.
 
 ## Server File Routes
 
-Server request Routes are discovered from positive `api.*` anchors under
-`src/apis` by default. This filesystem convention is separate from the client
+Server request Routes are discovered from positive `api.*` anchors under the
+fixed `src/apis` root. This filesystem convention is separate from the client
 `page.*` tree but follows the same directory-owned model.
 
 ```text
@@ -241,7 +240,7 @@ when their tree contains an `api.*` anchor or route middleware.
 
 ### Route exports
 
-Only `<server.routing.dir>/**/api.{ts,tsx,js,jsx}` is a route candidate, and
+Only `src/apis/**/api.{ts,tsx,js,jsx}` is a route candidate, and
 each route directory may contain exactly one source-extension variant. The
 anchor exports at least one uppercase HTTP method:
 
@@ -282,8 +281,7 @@ Static route aliases are compared after exactly one URL decode during conflict
 checks. For example, `/%75sers` and `/users` claim the same request path, while
 double-encoded text remains distinct.
 
-`index.ts`, `route.ts`, and `foo.get.ts` are not alternate route anchors. Do
-not add another route dialect or a `server.entry`.
+`index.ts`, `route.ts`, and `foo.get.ts` are not alternate route anchors.
 
 ## Server Middleware
 
@@ -302,8 +300,8 @@ src/
 ```
 
 - `src/middleware.ts` wraps framework-owned server requests globally.
-- `<server.routing.dir>/**/middleware.ts` wraps same-directory and descendant
-  server file routes by filesystem scope; the default root is `src/apis`.
+- `src/apis/**/middleware.ts` wraps same-directory and descendant server file
+  routes by filesystem scope.
 
 Middleware files are not routes and cannot be replaced by exporting middleware
 from a route module.
@@ -326,15 +324,17 @@ provider. A canonical application declares `routing.mode`; the presence of
 
 ### Explicit SPA route configuration
 
-The explicit route-tree normalizer accepts `application.routes` plus `page` or
+`application` cannot be combined with `routing`. The explicit route-tree
+normalizer accepts `application.routes` plus `page` or
 `component`, nested `routes`, `layout`, `wrappers`, and `redirect`.
 `application.pageRoot` controls only reference resolution for this explicit
-input and does not change the fixed `src/pages` convention root. It rejects `children`;
-nested declarations use `routes`. Route capability data uses registered,
-namespaced `extensions`. Shared template, mount, and Document extension values
-live under `application.document`. This profile
-does not accept a routing-mode selector, top-level `routes`, or top-level
-`html`, and it can materialize only SPA. A `page` reference resolves to one
+input and does not change the fixed `src/pages` convention root. It rejects
+`children`; nested declarations use `routes`. `exact: true` is accepted only
+as a terminal-match assertion; `exact: false` and nested routes below an exact
+Route are rejected. Route capability data uses registered, namespaced
+`extensions`. Shared template, mount, and Document extension values live under
+`application.document`. This profile can materialize only SPA. A `page`
+reference resolves to one
 canonical `page.*` anchor. An explicit `component` ending in `index.*` or
 `page.*` owns its containing directory; other component basenames are
 module-scoped and do not consume adjacent `page.config.ts`.
@@ -346,8 +346,4 @@ directory for its URL; Page settings live in adjacent `page.config.ts` files.
 Page-private helpers may use any other basename, including `index.*`, without
 creating another route. Parameters, terminal catch-alls, and pathless groups
 use `$param`, `$...splat`, and `(group)` directories. Run `ev inspect` to
-review normalized Pages, Routes, Documents, Page config, and provenance.
-
-Provider ids may appear in raw CoreGraph/debug artifacts to explain provenance.
-Normal inspect routing output hides them. They do not define another public
-routing model.
+review normalized Pages, Routes, Documents, Page config, and diagnostics.

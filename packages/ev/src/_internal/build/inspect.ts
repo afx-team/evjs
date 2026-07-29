@@ -23,12 +23,10 @@ import {
 import { withActiveBundler } from "./bundler-config.js";
 import {
   createNoPageRoutesFoundMessage,
-  createNoServerRoutesFoundMessage,
   readRoutingConfig,
-  readServerRoutingConfig,
   withPageRoutingDefaults,
   withServerConventionDefaults,
-  withServerRoutingDefaults,
+  withServerRouteDiscovery,
 } from "./convention-config.js";
 import { validateHtmlTemplates } from "./framework-output.js";
 import { createCoreGraph } from "./graph/index.js";
@@ -203,32 +201,17 @@ export async function inspectFrameworkBuild<TBundlerCfg = DefaultBundlerConfig>(
       },
     },
   );
-  const rawResolvedConfig = await withServerRoutingDefaults(
+  const rawResolvedConfig = await withServerRouteDiscovery(
     pageResolvedConfig,
-    configuredConfig,
     cwd,
     {
-      allowEmptyRoutes: true,
       reportDiagnostics: false,
-      onDiscovery(base, discovery) {
+      onDiscovery(discovery) {
         diagnostics.push(
           ...discovery.diagnostics.map((diagnostic) =>
             toInspectDiagnostic("server-routes", diagnostic),
           ),
         );
-        if (
-          discovery.routes.length === 0 &&
-          readServerRoutingConfig(configuredConfig) !== undefined &&
-          !discovery.diagnostics.some(
-            (diagnostic) => diagnostic.level === "error",
-          )
-        ) {
-          diagnostics.push({
-            level: "error",
-            source: "server-routes",
-            message: createNoServerRoutesFoundMessage(base.dir),
-          });
-        }
       },
     },
   );

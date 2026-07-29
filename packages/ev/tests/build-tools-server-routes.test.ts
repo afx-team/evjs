@@ -667,6 +667,78 @@ describe("discoverServerRoutes", () => {
 });
 
 describe("discoverServerConventions", () => {
+  it("does not read global middleware through a source-root symlink", async () => {
+    const outside = await createFixture({
+      "middleware.ts":
+        "export default async function middleware(_ctx, next) { await next(); }",
+    });
+    const cwd = await createFixture({});
+    await fs.symlink(
+      outside,
+      path.join(cwd, "src"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+
+    await expect(
+      discoverServerConventions(cwd, {
+        globalFile: "./src/middleware.ts",
+      }),
+    ).resolves.toEqual({
+      globalMiddlewares: [],
+      routeMiddlewares: [],
+      files: [],
+      diagnostics: [
+        {
+          level: "error",
+          file: "src/middleware.ts",
+          message:
+            "Server middleware file must resolve inside the project root.",
+        },
+      ],
+    });
+  });
+
+  it("ignores unavailable or unsafe route-middleware roots", async () => {
+    const missingRoot = await createFixture({});
+    await expect(
+      discoverServerConventions(missingRoot, {
+        globalFile: "./src/middleware.ts",
+        routingDir: "./src/apis",
+      }),
+    ).resolves.toMatchObject({ routeMiddlewares: [], diagnostics: [] });
+
+    const fileRoot = await createFixture({ "src/apis": "not a directory" });
+    await expect(
+      discoverServerConventions(fileRoot, {
+        globalFile: "./src/middleware.ts",
+        routingDir: "./src/apis",
+      }),
+    ).resolves.toMatchObject({ routeMiddlewares: [], diagnostics: [] });
+
+    const outside = await fs.mkdtemp(
+      path.join(os.tmpdir(), "evjs-server-middleware-outside-"),
+    );
+    tempDirs.push(outside);
+    await fs.mkdir(path.join(outside, "admin"), { recursive: true });
+    await fs.writeFile(
+      path.join(outside, "admin/middleware.ts"),
+      "export default async function middleware(_ctx, next) { await next(); }",
+    );
+    const symlinkRoot = await createFixture({});
+    await fs.mkdir(path.join(symlinkRoot, "src"), { recursive: true });
+    await fs.symlink(
+      outside,
+      path.join(symlinkRoot, "src/apis"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    await expect(
+      discoverServerConventions(symlinkRoot, {
+        globalFile: "./src/middleware.ts",
+        routingDir: "./src/apis",
+      }),
+    ).resolves.toMatchObject({ routeMiddlewares: [], diagnostics: [] });
+  });
+
   it("discovers global and route-scoped middleware in filesystem order", async () => {
     const cwd = await createFixture({
       "src/middleware.ts": `

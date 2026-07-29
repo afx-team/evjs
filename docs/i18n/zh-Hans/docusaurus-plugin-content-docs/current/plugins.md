@@ -207,10 +207,6 @@ Extension bag 是 build-time graph data，不是自动 runtime payload。需要�
 client entry 或 HTML Document。函数等可执行选项属于 typed plugin factory 或显式
 module reference，secret 不能进入 graph extension。
 
-插件 API 尚未实现 `transformGraph`、typed runtime-hook 注册、semantic facet API
-或 generic extension-owned entry。这些仍是 Core 0.3 的目标能力；当前支持的行为继续
-使用已有 generated-contribution 和 lifecycle API。
-
 ## Config Hook
 
 `config()` 用于修改必须早于默认值解析、路由发现、dev proxy 或运行时路径派生的框架配置。
@@ -489,7 +485,7 @@ Document，所以拒绝 page-targeted HTML contribution。SSR/PPR/RSC SPA Page
 `html.tag` contribution 与 `transformHtml` 处理会应用到该 shell。
 
 `resolve.external` 支持 `runtime: "client" | "server" | "all"`。Webpack
-adapter 会按 target 过滤。当前 Utoopack adapter 只有 top-level externals 配置，因此会映射
+adapter 会按 target 过滤。Utoopack adapter 只有 top-level externals 配置，因此会映射
 client/all externals；当存在 client entries 时，server-only externals 会快速报错。
 
 `contributions()` 和生命周期 hooks 是两个维度。已有的 `config()`、`setup()`、

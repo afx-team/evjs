@@ -1445,35 +1445,6 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     );
   });
 
-  it("diagnoses removed rendering exports without consuming them", async () => {
-    const cwd = await createFixture({
-      "src/pages/page.tsx": `
-        export const render = "ssr";
-        export const hydrate = "none";
-        export const prerender = true;
-        export const rsc = true;
-        export default function Home() { return null; }
-      `,
-      "index.html": '<main id="app"></main>',
-    });
-    const config = await createCanonicalConfig(cwd, "spa");
-    const analysis = await createCoreGraph(config, cwd);
-
-    expect(analysis.graph.pages.index).toMatchObject({
-      render: "csr",
-      source: { module: "./src/pages/page.tsx" },
-    });
-    expect(analysis.graph.pages.index).not.toHaveProperty("hydrate");
-    expect(analysis.graph.pages.index).not.toHaveProperty("prerender");
-    expect(analysis.graph.pages.index).not.toHaveProperty("componentModel");
-    expect(analysis.diagnostics).toContainEqual({
-      level: "error",
-      file: "src/pages/page.tsx",
-      message:
-        'Page "index" declares render, hydrate, prerender, or rsc from its component module. Component rendering exports have been removed; move these fields to the adjacent page.config.ts module.',
-    });
-  });
-
   it("rejects browser-only route lifecycle exports from non-CSR Pages", async () => {
     const cwd = await createFixture({
       "src/pages/report/page.tsx": `
@@ -1494,7 +1465,7 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       level: "error",
       file: "src/pages/report/page.tsx",
       message:
-        'Page "report" uses render "ssr" and exports browser-only route lifecycle "beforeLoad", "loader". Non-CSR Pages require a server route lifecycle projection, which Core 0.3 does not define. Remove these exports or use render: "csr".',
+        'Page "report" uses render "ssr" and exports browser-only route lifecycle "beforeLoad", "loader". Non-CSR Pages cannot use browser-only route lifecycle exports. Remove these exports or use render: "csr".',
     });
   });
 
@@ -1587,6 +1558,53 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
     );
   });
 
+  it("keeps canonical server route dependencies safe when the root is unavailable", async () => {
+    const fileRootCwd = await createFixture({
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "src/apis": "not a directory",
+      "index.html": '<main id="app"></main>',
+    });
+    const fileRootConfig = await createCanonicalConfig(fileRootCwd, "spa", {
+      serverRoutes: [],
+    });
+
+    await expect(
+      createCoreGraph(fileRootConfig, fileRootCwd),
+    ).resolves.toMatchObject({
+      fileDependencies: expect.arrayContaining([
+        path.join(fileRootCwd, "src/apis"),
+      ]),
+    });
+
+    const externalRoot = await createFixture({
+      "nested/api.ts":
+        "export const GET = async () => Response.json({ outside: true });",
+    });
+    const symlinkRootCwd = await createFixture({
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+      "index.html": '<main id="app"></main>',
+    });
+    await fs.mkdir(path.join(symlinkRootCwd, "src"), { recursive: true });
+    await fs.symlink(
+      externalRoot,
+      path.join(symlinkRootCwd, "src/apis"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    const symlinkRootConfig = await createCanonicalConfig(
+      symlinkRootCwd,
+      "spa",
+      { serverRoutes: [] },
+    );
+    const analysis = await createCoreGraph(symlinkRootConfig, symlinkRootCwd);
+
+    expect(analysis.fileDependencies).toContain(
+      path.join(symlinkRootCwd, "src/apis"),
+    );
+    expect(analysis.fileDependencies).not.toContain(
+      path.join(symlinkRootCwd, "src/apis/nested"),
+    );
+  });
+
   it("publishes only configured server file routes and middleware", async () => {
     const globalMiddleware = {
       id: "src/middleware.ts:global-middleware",
@@ -1619,25 +1637,22 @@ describe("canonical CoreGraph and BuildPlan integration", () => {
       "index.html": '<main id="app"></main>',
     });
     const config = await createCanonicalConfig(cwd, "spa", {
-      serverRouting: {
-        dir: "./src/apis",
-        routes: [
-          {
-            id: "src/apis/health/api.ts:/health:GET",
-            module: "src/apis/health/api.ts",
-            path: "/health",
-            methods: ["GET"],
-          },
-          {
-            id: "src/apis/users/$userId/api.ts:/users/:userId:POST",
-            module: "src/apis/users/$userId/api.ts",
-            path: "/users/:userId",
-            methods: ["POST"],
-            moduleSegments: ["users", "$userId"],
-            middlewares: [userMiddleware],
-          },
-        ],
-      },
+      serverRoutes: [
+        {
+          id: "src/apis/health/api.ts:/health:GET",
+          module: "src/apis/health/api.ts",
+          path: "/health",
+          methods: ["GET"],
+        },
+        {
+          id: "src/apis/users/$userId/api.ts:/users/:userId:POST",
+          module: "src/apis/users/$userId/api.ts",
+          path: "/users/:userId",
+          methods: ["POST"],
+          moduleSegments: ["users", "$userId"],
+          middlewares: [userMiddleware],
+        },
+      ],
       serverConventions: {
         globalMiddlewares: [globalMiddleware],
         routeMiddlewares: [userMiddleware],
@@ -2441,7 +2456,7 @@ type TestConfig = BuildPlanConfig & GraphConfig;
 
 interface CanonicalConfigOptions {
   rscEndpoint?: string;
-  serverRouting?: NonNullable<GraphConfig["server"]["routing"]>;
+  serverRoutes?: NonNullable<GraphConfig["server"]["routes"]>;
   serverConventions?: NonNullable<GraphConfig["server"]["conventions"]>;
 }
 
@@ -2477,7 +2492,7 @@ async function createCanonicalConfig(
         ppr: "__evjs/ppr",
         ...(options.rscEndpoint ? { rsc: options.rscEndpoint } : {}),
       },
-      ...(options.serverRouting ? { routing: options.serverRouting } : {}),
+      ...(options.serverRoutes ? { routes: options.serverRoutes } : {}),
       ...(options.serverConventions
         ? { conventions: options.serverConventions }
         : {}),

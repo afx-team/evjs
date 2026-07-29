@@ -147,8 +147,8 @@ Application/Page/Document ownership before using these semantics.
 ## Boundaries
 
 Generated contributions are the source of truth for file-convention entry
-composition and plugin entry/runtime/html/resolution injection. Old virtual
-entry loaders should not be reintroduced for those jobs.
+composition and plugin entry/runtime/html/resolution injection. Bundler loaders
+remain responsible only for transformations of real source modules.
 
 The contribution layer does not replace plugin lifecycles:
 

@@ -9,6 +9,8 @@ import {
 } from "./route-conventions.js";
 
 export const SERVER_ROUTE_ENTRY_BASENAME = "api";
+/** Fixed root for the canonical server request-route file convention. */
+export const CANONICAL_SERVER_ROUTE_ROOT = "./src/apis";
 export const SERVER_ROUTE_ENTRY_LABEL = "api.ts, api.tsx, api.js, or api.jsx";
 
 export interface ServerRouteAnchorConvention {

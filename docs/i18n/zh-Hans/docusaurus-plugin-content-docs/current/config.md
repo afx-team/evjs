@@ -1,6 +1,6 @@
 # 配置
 
-evjs Core 0.3 为 SPA 和 MPA 提供同一种应用创作模型：
+evjs 为 SPA 和 MPA 提供同一种应用创作模型：
 
 - `src/pages/**/page.*` 是 canonical Page 与客户端路由锚点；
 - Page 所在目录同时决定其 scope 与 URL；
@@ -43,12 +43,10 @@ export default defineConfig({
 
 该配置会关闭 `src/pages` 下的 `page.*` 发现、`src/apis` 下的 `api.*` server
 request-route 发现，以及全局与 route-scoped middleware 文件发现。它不能和显式
-`routing` 或 `server.routing` 声明一起配置。框架不提供粒度更细的约定关闭
-开关。
+客户端 `routing` 声明一起配置。框架不提供粒度更细的约定关闭开关。
 
 仅支持 SPA 的 `application.routes` 显式 route-tree 配置不依赖文件约定。reachable
 且带 `"use server";` 的模块，以及插件 contribution 生成的模块也不依赖文件约定。
-`app`、`pages` 与顶层 `routes` 不属于公共配置，会被拒绝。
 
 ## Routing
 
@@ -171,8 +169,8 @@ value 必须是严格 static JSON。函数等可执行选项放入插件工厂�
 secret：extension value 会进入 build graph。它们不会自动发送到浏览器；runtime
 投影仍必须由插件显式 contribution。
 
-不支持 `application.extensions`，因为 `application` 只描述显式 SPA route tree。
-改用 canonical `page.*` 后，顶层 `extensions` 仍然有效。
+Application-wide 插件值使用顶层 `extensions`。`application` 只描述显式 SPA
+route tree，不包含 `extensions` 字段。
 
 ## Page Scope 与配置
 
@@ -235,17 +233,14 @@ projection。
 
 ### Server
 
-文件约定启用时，默认发现 `src/apis` 下 positive `api.*` server request-route
-锚点。只有 root 确实不同才配置：
+文件约定启用时，positive `api.*` server request-route 锚点固定从 `src/apis`
+发现：
 
 ```ts
 export default defineConfig({
   routing: { mode: "spa" },
   server: {
     basePath: "/__evjs",
-    routing: {
-      dir: "./src/apis",
-    },
   },
 });
 ```
@@ -254,17 +249,12 @@ export default defineConfig({
 absolute pathname，由非空 ASCII URL-safe segment 组成；每个 segment 只能包含
 字母、数字、`.`、`_`、`~` 或 `-`；空 segment、单独的 `.` 或 `..` segment、
 动态 `:param`、通配 `*`、
-percent escape 与原始非 ASCII 字符都无效。没有公开的
-`server.functions.endpoint`。
+percent escape 与原始非 ASCII 字符都无效。
 
 服务端中间件约定：
 
 - `src/middleware.ts`：全局 server middleware；
-- `<server.routing.dir>/**/middleware.ts`：作用于同目录及后代 server file
-  routes，默认为 `src/apis/**/middleware.ts`。
-
-`server.routing: { dir }` 会同时定制 `api.*` 与 route middleware 的 discovery
-root，不是关闭开关。
+- `src/apis/**/middleware.ts`：作用于同目录及后代 server file routes。
 
 在 Page 的 `page.config.ts` 中用 `rsc: true` 启用 React Server Components。
 Flight endpoint 从 `server.basePath` 派生，也可以用
@@ -300,7 +290,9 @@ export default defineConfig({
 });
 ```
 
-`dev.https` 接受 `false`、`true` 或 `{ key, cert }`。
+`dev.https` 接受 `false`、`true` 或 `{ key, cert }`。默认 Utoopack adapter
+只接受 boolean 形式；遇到显式证书时会直接报错而不是静默丢弃。需要自定义 client
+dev 证书时应选择 Webpack adapter。
 `server.dev.https` 只接受 `false` 或显式 `{ key, cert }`；framework server 不会为
 `true` 自动生成证书。
 
@@ -375,7 +367,8 @@ entry、route、server output、resolution 的 dev-plan update capability。
 
 ### 显式 SPA 路由配置
 
-`application.routes` 的嵌套 `routes`、`page` 或 `component`、`layout`、`wrappers`、
+`application` 与 `routing` 不能同时声明。`application.routes` 的嵌套 `routes`、
+`page` 或 `component`、`layout`、`wrappers`、
 redirect 和 document 配置会进入仅支持 SPA 的显式 route-tree normalizer。
 `application.pageRoot` 是该显式输入中 `page` 与 `component` 共用的 Page 源码
 根目录，默认值为 `./src/pages`；它不会改变 canonical 文件发现根目录。
@@ -384,7 +377,9 @@ redirect 和 document 配置会进入仅支持 SPA 的显式 route-tree normaliz
 `./` component reference 也相对该根目录解析。component 逻辑路径以及解析
 symlink 后的真实路径都不能逃逸该 Page 源码根目录；layout 与 wrapper 仍保持
 项目源码 reference 的解析语义。`children` 会被拒绝，嵌套结构只使用
-`routes`。每条显式 Route 可以携带严格静态、
+`routes`。`exact: true` 只接受为 terminal-match 结构断言；`exact: false` 与
+exact Route 下的嵌套路由都会被拒绝，且 `exact` 不会写入 graph。每条显式
+Route 可以携带严格静态、
 namespaced 的 `extensions` bag；能力所属插件必须用
 `routeExtension()` 注册每个 namespace。MPA 物化模式、alias 冲突以及 Page
 根目录外的 component reference 会被拒绝。
@@ -405,20 +400,5 @@ percent-encoded alias 不能并存；decode 后为 `.` 或 `..` 的 segment 也�
 `$param`、`$...splat` 与 `(group)` 目录。运行 `ev inspect` 可审核 normalized
 Page/Route/Document graph。
 
-Provider id 只可能出现在 raw CoreGraph/debug artifact 中作为内部 provenance。
-普通 `ev inspect` routing 输出隐藏它，并报告归一化的 Page、route、source 与
-document 信息；provider 不是用户可选择的路由架构。
-
-以下字段不属于公共配置：
-
-- `app`
-- `pages`
-- 顶层 `routes`
-- 顶层 `html`
-- `application.topology` 或 `application.mode`
-- `server.entry`
-- `server.functions`
-- `server.functionRuntime`
-- `routing.routes`
-- `routing.entry`
-- 顶层 `functions` 或 `serverFunctions`
+公共配置面以本页描述的 schema 为准。使用 `ev inspect` 查看归一化后的 Page、
+Route、source、Document 与 diagnostic。

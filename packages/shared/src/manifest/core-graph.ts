@@ -1,3 +1,9 @@
+/**
+ * Materialization-neutral semantic graph contracts and validation. Providers
+ * normalize authoring inputs here before build planning chooses concrete
+ * entries, Documents, and runtime delivery.
+ */
+
 import { assertStaticJsonValue } from "../_internal/static-json.js";
 import {
   BUILD_IDENTIFIER_DESCRIPTION,
@@ -43,6 +49,11 @@ export type PageId = string;
 export type RouteId = string;
 export type DocumentId = string;
 
+/**
+ * Canonical semantic source of truth for Applications, Pages, client Routes,
+ * Documents, extensions, and server analysis facts. Record keys match node ids
+ * and each Application stores complete inverse indexes for its owned nodes.
+ */
 export interface CoreGraph {
   rootDir: string;
   applications: Record<ApplicationId, CoreApplicationNode>;
@@ -110,7 +121,11 @@ export interface CoreClientRouteNode {
 }
 
 export interface CoreRoutePattern {
-  /** Root is represented by an empty segment list. */
+  /**
+   * Absolute semantic route pattern. Root is an empty list, splats are
+   * terminal, and terminal patterns are unique per Application by shape rather
+   * than parameter name.
+   */
   segments: CoreRouteSegment[];
 }
 
@@ -135,6 +150,11 @@ export interface CoreRouteFacets {
   wrappers: string[];
 }
 
+/**
+ * A materialized HTML Document. Ownership determines which output projection
+ * receives it; bootstrap independently selects the client entry it starts.
+ * Outputs and aliases are globally unique across Documents.
+ */
 export interface CoreDocumentNode {
   id: DocumentId;
   template: string;
@@ -164,6 +184,11 @@ export type CoreDocumentBootstrap =
 
 export type CoreExtensionBag = Record<string, unknown>;
 
+/**
+ * Namespaced extension declarations captured with the graph. Each namespace
+ * identifies its producer and allowed owner kinds; extension bags contain only
+ * strict JSON values validated against this registry.
+ */
 export interface CoreExtensionRegistrySnapshot {
   namespaces: Record<string, CoreExtensionNamespaceSnapshot>;
 }
@@ -230,8 +255,10 @@ export function resolveCorePageOwner(
 }
 
 /**
- * Validate the normalized CoreGraph, including all ownership references and
- * the inverse indexes stored on each Application.
+ * Validate the complete normalized CoreGraph contract: strict data shape,
+ * project paths, ids and inverse indexes, Page scope ownership, Route hierarchy
+ * and terminal-shape uniqueness, Document output ownership, extension
+ * registration, provenance, and server analysis facts.
  */
 export function assertCoreGraph(
   value: unknown,

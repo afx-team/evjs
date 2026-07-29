@@ -93,6 +93,11 @@ export async function createUtoopackConfig(
 
   const mode = plan.mode;
   const isProduction = mode === "production";
+  if (!isProduction && typeof config.dev.https === "object") {
+    throw new Error(
+      "[evjs] The Utoopack dev server accepts dev.https only as a boolean and cannot consume custom key/cert values. Use dev.https: true for its generated certificate, or select the Webpack adapter for an explicit certificate.",
+    );
+  }
   const spaHistoryFallbackRule = hasAppClientEntry(plan)
     ? createSpaHistoryFallbackRule(config, plan)
     : undefined;
@@ -411,7 +416,7 @@ function assertSupportedResolveExternals(plan: BuildPlan): void {
   if (serverOnly.length === 0) return;
 
   throw new Error(
-    `[evjs] The current Utoopack adapter cannot map server-only resolve.external contributions while client entries are present: ${serverOnly.join(", ")}. Use runtime "client" or "all", switch bundlers, or configure the lower-level bundler directly until Utoopack exposes server-scoped externals.`,
+    `[evjs] The Utoopack adapter cannot map server-only resolve.external contributions while client entries are present: ${serverOnly.join(", ")}. Use runtime "client" or "all", switch to a bundler with server-scoped externals, or configure the lower-level bundler directly.`,
   );
 }
 
@@ -440,7 +445,7 @@ function validateUtoopackPlanSupport(plan: BuildPlan): void {
     ...new Set(unsupportedServerEntries.map((entry) => entry.kind)),
   ].join(", ");
   throw new Error(
-    `[evjs] The current Utoopack adapter cannot build framework server page entries yet (${details}). Unsupported entry kinds: ${kinds}. Utoopack needs multi server entry support; use another bundler adapter for SSR/PPR/RSC validation until that lower-layer API is available.`,
+    `[evjs] The Utoopack adapter cannot build framework server page entries (${details}). Unsupported entry kinds: ${kinds}. Use a bundler adapter that supports multiple server entries for SSR/PPR/RSC validation.`,
   );
 }
 

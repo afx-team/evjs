@@ -145,7 +145,7 @@ paths, so app-specific API proxies can keep their own routing behavior.
 3. Exact fn/RSC endpoints and active PPR subtrees from the BuildPlan are proxied
    automatically; `server.basePath` is not itself a proxy namespace.
 4. Browser and server rebuilds happen as files change; restart `ev dev` after
-   changing configured entries or route roots.
+   changing configured entries or route topology.
 
 ## Programmatic API
 

@@ -1,3 +1,10 @@
+/**
+ * Built-in deployment projections for linked BuildOutput. Pure helpers create
+ * artifact contents; adapter factories reserve their output paths before
+ * buildEnd writes files. Neither layer rediscovers routes from source files or
+ * bundler statistics.
+ */
+
 import path from "node:path";
 import type {
   BuildOutput,
@@ -41,6 +48,10 @@ export interface NodeDeploymentAdapterOptions
   serverFileName?: string;
   portEnv?: string;
   defaultPort?: number;
+  /**
+   * Linked runtime snapshot, including compiled Document shells and RSC
+   * manifests.
+   */
   frameworkRuntime?: FrameworkRuntimeOutput;
 }
 
@@ -55,6 +66,10 @@ export interface EdgeDeploymentAdapterOptions
   artifactFileName?: string;
   workerFileName?: string;
   assetsBinding?: string;
+  /**
+   * Linked runtime snapshot, including compiled Document shells and RSC
+   * manifests.
+   */
   frameworkRuntime?: FrameworkRuntimeOutput;
 }
 
@@ -106,6 +121,10 @@ export interface StaticDeploymentCompatibility {
   unsupportedCapabilities: StaticDeploymentUnsupportedCapability[];
 }
 
+/**
+ * Wrap canonical DeploymentMetadata with adapter identity and optional public
+ * asset omission while preserving plugin-owned deployment metadata.
+ */
 export function createDeploymentArtifact(
   output: BuildOutput,
   options: DeploymentArtifactOptions = {},
@@ -237,6 +256,7 @@ function isPortableRelativeBrowserAsset(value: unknown): value is string {
   }
 }
 
+/** Plan Node deployment file names and contents without performing I/O. */
 export function createNodeDeploymentFiles(
   output: BuildOutput,
   options: NodeDeploymentAdapterOptions = {},
@@ -355,6 +375,7 @@ export function nodeDeploymentAdapter(
   };
 }
 
+/** Plan static-host deployment file names and contents without performing I/O. */
 export function createStaticDeploymentFiles(
   output: BuildOutput,
   options: StaticDeploymentAdapterOptions = {},
@@ -468,6 +489,7 @@ export function staticDeploymentAdapter(
   };
 }
 
+/** Plan edge deployment file names and contents without performing I/O. */
 export function createEdgeDeploymentFiles(
   output: BuildOutput,
   options: EdgeDeploymentAdapterOptions = {},
@@ -627,6 +649,11 @@ function getOutputDirRelativeToRoot(
   return relative ? relative.split(path.sep).join(path.posix.sep) : ".";
 }
 
+/**
+ * Generate a Node dispatcher with fixed precedence: framework requests first,
+ * then browser assets, exact static Documents, the SPA fallback, and finally a
+ * 404. Server modules are loadable only when declared by BuildOutput.
+ */
 function createNodeServerModule(
   output: BuildOutput,
   options: NodeDeploymentAdapterOptions,
@@ -837,6 +864,10 @@ function contentTypeFor(filePath) {
 `;
 }
 
+/**
+ * Generate the edge equivalent of the Node dispatcher, preserving the same
+ * framework, asset, Document, fallback, and 404 precedence.
+ */
 function createEdgeWorkerModule(
   output: BuildOutput,
   options: EdgeDeploymentAdapterOptions,
@@ -1061,6 +1092,11 @@ function createGeneratedRouteMatcherModule(): string {
   ].join("\n");
 }
 
+/**
+ * Report capabilities that require a server without preventing emission of the
+ * static artifact. The metadata records whether the resulting static projection
+ * covers the complete application.
+ */
 function analyzeStaticDeploymentCompatibility(
   output: BuildOutput,
 ): StaticDeploymentCompatibility {
@@ -1098,6 +1134,11 @@ function analyzeStaticDeploymentCompatibility(
   };
 }
 
+/**
+ * Emit exact rewrites for materialized static Documents. The global SPA
+ * fallback is emitted only when the static compatibility projection is
+ * complete.
+ */
 function createStaticRedirects(
   output: BuildOutput,
   compatibility: StaticDeploymentCompatibility = analyzeStaticDeploymentCompatibility(

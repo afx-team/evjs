@@ -1,3 +1,9 @@
+/**
+ * Link semantic graph ownership and concrete build units with adapter-emitted
+ * assets, then derive the in-memory output projections consumed by runtimes,
+ * plugins, and deployment helpers.
+ */
+
 import { pageRoutePathShapeFromPath } from "../page-route-data.js";
 import {
   assertPortableRelativeBrowserArtifactPath,
@@ -69,6 +75,13 @@ export type ServerManifestRouteOutput =
   | Extract<DeploymentRouteOutput, { kind: "rsc-endpoint" }>
   | Extract<DeploymentRouteOutput, { kind: "api-route" }>;
 
+/**
+ * Join CoreGraph, BuildPlan, and bundler facts into one validated BuildOutput.
+ * Bundler facts must identify planned entries by name, and every executable
+ * server entry must resolve to one self-contained JavaScript asset. Semantic
+ * ownership and routing are projected from graph and plan rather than inferred
+ * from emitted filenames or module stats.
+ */
 export function linkBuildOutput(input: BuildOutputLinkInput): BuildOutput {
   assertBuildOutputLinkInputServerArtifacts(input);
   const serverEntryAssets = input.serverEntryAssets ?? {};
@@ -455,6 +468,11 @@ function assertExecutableServerEntryAssets(
   }
 }
 
+/**
+ * Keep independently materialized or externally observable Pages in
+ * BuildOutput. A pure CSR SPA Page without its own Document or metadata remains
+ * represented by the owning Application and Route projection.
+ */
 function shouldProjectPageToOutput(
   graph: CoreGraph,
   page: CorePageNode,
@@ -478,6 +496,11 @@ function shouldProjectApplicationToOutput(
   );
 }
 
+/**
+ * Create the intentionally compact runtime route lookup. It retains normalized
+ * paths and materialized Application/Page associations, while semantic targets,
+ * facets, and group-only Routes remain available only in CoreGraph.
+ */
 function createBuildOutputRoutes(
   graph: CoreGraph,
   apps: BuildOutput["apps"],
@@ -644,12 +667,11 @@ function assertBuildOutputLinkInputServerArtifacts(
 }
 
 /**
- * Project the internal build output into a lightweight public manifest that is
- * safe for deployment tooling to read.
+ * Project BuildOutput into a browser-safe routing and asset summary.
  *
- * The public manifest keeps browser-safe assets plus SPA/MPA routing metadata.
- * Runtime startup data stays in the generated ClientRuntime contract, and
- * framework endpoints stay in FrameworkRuntime/deployment metadata.
+ * Runtime startup data stays in ClientRuntime, while framework endpoints and
+ * the canonical deployment plan stay in FrameworkRuntime and
+ * DeploymentMetadata respectively.
  */
 export function createPublicManifest(
   output: BuildOutput,
@@ -835,6 +857,11 @@ export interface DeploymentMetadataOptions {
   includeAssets?: boolean;
 }
 
+/**
+ * Create the canonical deployment projection from linked output. Public asset
+ * filtering, Document ownership, request routes, server capability endpoints,
+ * and the server entry are all derived once at this boundary.
+ */
 export function createDeploymentMetadata(
   output: BuildOutput,
   options: DeploymentMetadataOptions = {},
@@ -921,6 +948,12 @@ function createDeploymentDocuments(
   return documents;
 }
 
+/**
+ * Project linked routes into deployment behavior. Static Page Documents become
+ * rewrites, request-time Pages become server routes, framework endpoints are
+ * emitted only when their capability exists, and API Routes come from the
+ * linked server output. Deployment Document ids use their Page owner id.
+ */
 function createDeploymentRoutes(output: BuildOutput): DeploymentRouteOutput[] {
   const routes: DeploymentRouteOutput[] = [];
   for (const route of output.routes) {
@@ -1221,6 +1254,11 @@ function linkServerRenderers(
   );
 }
 
+/**
+ * Normalize authoring fields into the rendering contract shared by runtime and
+ * deployment consumers. PPR and RSC disable Page hydration; full SSG is static
+ * HTML produced by a build-phase renderer.
+ */
 function derivePageRendering(page: CorePageNode): PageRenderingOutput {
   const hydrate = effectivePageHydrate(page);
   const component = isRscPage(page)

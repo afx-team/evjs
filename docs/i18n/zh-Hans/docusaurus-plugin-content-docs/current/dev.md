@@ -125,7 +125,7 @@ HTTP(S) URL `target`。Context pattern 必须以 `/` 开头，不能包含空白
 2. 服务端函数、服务端文件路由、SSR、PPR 和 RSC 请求会进入服务端开发运行时。
 3. BuildPlan 中精确的 fn/RSC endpoint 与已启用的 PPR 子树会自动代理；
    `server.basePath` 自身不是代理 namespace。
-4. 文件变化时会触发浏览器和服务端重建；修改配置化 entry 或路由根目录后需要重启 `ev dev`。
+4. 文件变化时会触发浏览器和服务端重建；修改配置化 entry 或路由 topology 后需要重启 `ev dev`。
 
 ## 编程式 API
 
@@ -155,7 +155,7 @@ await build(appConfig, { cwd: "./my-app", bundler: utoopackAdapter });
 声明过的 build/dev `capabilities`，以及 `build` / `dev` 函数。启动 adapter 前，
 framework preflight 会对照 active BuildPlan 检查这些 capability。
 
-`@evjs/cli` 也导出兼容包装函数，会自动注入默认的 Utoopack 适配器，与 `ev dev`
+`@evjs/cli` 也导出 programmatic helper，会自动注入默认的 Utoopack 适配器，与 `ev dev`
 和 `ev build` 命令保持一致。
 
 ## 传输层

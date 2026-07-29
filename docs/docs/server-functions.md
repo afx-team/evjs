@@ -190,8 +190,10 @@ If an array should be one argument, declare exactly one required parameter, as i
 `saveRoles()` above.
 
 When you call `useMutation(serverFn, options)`, do not provide `mutationFn`;
-evjs derives it from the server function. Use the standard TanStack
-`useMutation({ mutationFn })` object form only for non-server functions.
+evjs derives it and preserves the server function's argument-serialization
+metadata. The standard TanStack `useMutation({ mutationFn })` object form is a
+generic pass-through and may also receive a callable server-function stub, but
+it does not apply the direct overload's multi-argument variable handling.
 
 ### Raw fetch / Non-Server Functions
 
@@ -232,8 +234,7 @@ hosted on another origin:
 
 For evjs builds, prefer `transport.baseUrl` in `ev.config.ts` when the
 browser talks to the server runtime on another origin. That value is shared by
-browser-initiated requests such as server functions, RSC Flight, and client
-helpers for server routes.
+browser-initiated requests such as server functions and RSC Flight.
 The built-in adapter owns `Content-Type: application/json`; use `headers` only
 for additional headers such as auth, tracing, or CSRF tokens.
 
@@ -262,8 +263,7 @@ initTransport({ adapter: wsAdapter });
 ```
 
 Custom adapters own their protocol configuration. The optional `context` passed
-to `send(fnId, args, context)` only contains per-call values, currently
-`signal`.
+to `send(fnId, args, context)` contains only the per-call `signal` value.
 
 ### Server Config
 

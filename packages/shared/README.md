@@ -13,7 +13,7 @@ packages instead:
 
 ## Contract Surface
 
-The package intentionally exposes only two subpaths:
+The package has two supported public contract entries:
 
 - `@evjs/shared` for runtime constants, page/server route helpers, HTTP method
   helpers, build identifier validation, path pattern validation and matching,
@@ -22,6 +22,9 @@ The package intentionally exposes only two subpaths:
   `@evjs/server`.
 - `@evjs/shared/manifest` for `CoreGraph`, `BuildPlan`, `BuildOutput`, and
   manifest types consumed by framework tooling and deployment adapters.
+
+`@evjs/shared/_internal/*` entries are framework implementation details and
+are not supported application or third-party tooling APIs.
 
 When adding new framework contracts, prefer extending one of these subpaths
 instead of creating another distributed package.

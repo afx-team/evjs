@@ -124,8 +124,7 @@ route layout 与 wrapper 仍位于 plugin Page wrapper 外层。
 
 显式 Application/Page target 必须为 `client.entry` 匹配实际 client entry，或为
 `html.tag` 匹配 HTML Document。SPA 的 semantic Page 通常与 Application 共享二者，
-因此 page-targeted entry、HTML contribution 会给出诊断，
-不再静默 no-op。
+因此 page-targeted entry、HTML contribution 会给出诊断，而不是静默 no-op。
 
 canonical MPA 会暴露一个逻辑 `default` Application，即使它最终为每个 Page 分别
 物化 page-client entry 与 Document。因此 Application target 会把 `client.entry` 展开到
@@ -137,13 +136,13 @@ route-tree 输入必须先 normalize 到相同 Application/Page/Document ownersh
 ## 边界
 
 Generated contributions 是 file-convention entry 组合，以及插件 entry/runtime/html/resolution
-注入的 source of truth。不要为了这些职责重新引入旧的 virtual entry loader。
+注入的 source of truth。Bundler loader 只负责转换真实源码 module。
 
 Contribution 层不替代插件生命周期：
 
 - 用 `config()` 处理 framework config 默认值或需要早期校验的配置。
 - 用 `setup()` 初始化插件状态并返回 lifecycle hooks。
-- 用 `bundlerConfig()` 处理尚未被 slot 建模的底层 bundler 能力。
+- 用 `bundlerConfig()` 处理不由 slot 建模的底层 bundler 能力。
 - 用 `transformHtml()` 处理 AST 级 HTML 改写。
 - 用 `buildOutput()` 和 `buildEnd()` 处理部署 metadata 和最终文件。
 

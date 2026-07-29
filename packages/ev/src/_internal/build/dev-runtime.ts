@@ -235,8 +235,8 @@ async function ensurePrivateRuntimeDirectory(
     (stats.mode & 0o022) === 0 &&
     (stats.mode & 0o077) !== 0
   ) {
-    // Older evjs releases created these owner-only writable directories with
-    // the process umask. Tighten those safe legacy directories in place.
+    // Tighten a trusted user-owned directory whose extra permissions are
+    // read/execute-only.
     await fs.promises.chmod(runtimePath, DEV_RUNTIME_PRIVATE_MODE);
   }
   assertRuntimeDirectoryStats(

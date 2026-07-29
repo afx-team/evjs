@@ -2,7 +2,7 @@
 
 本页是 evjs 应用文件约定的事实来源。
 
-Core 0.3 为客户端 Page 与服务端 request Route 使用对称的 positive anchor：
+evjs 为客户端 Page 与服务端 request Route 使用对称的 positive anchor：
 
 - `src/pages/**/page.*` 是唯一 canonical Page 与客户端 route 锚点；
 - `src/apis/**/api.*` 是唯一 server request-route 锚点；
@@ -78,8 +78,8 @@ export default defineConfig({
 
 顶层 `conventions: false` 会把框架持有的文件系统约定作为一个整体关闭：
 `page.*` 锚点、`src/apis` 下的 `api.*` 锚点、全局 `src/middleware.ts`，以及
-route-scoped `src/apis/**/middleware.ts`。它不能和显式 `routing` 或
-`server.routing` 声明一起配置。evjs 不提供只关闭其中某个 root 或 facet 的开关。
+route-scoped `src/apis/**/middleware.ts`。它不能和显式客户端 `routing` 声明一起
+配置。evjs 不提供只关闭其中某个 root 或 facet 的开关。
 
 ```ts
 export default defineConfig({
@@ -89,11 +89,9 @@ export default defineConfig({
 
 仅支持 SPA 的 `application.routes` 是显式 route-tree 配置输入，不是文件约定。
 reachable 的 `"use server";` 模块与插件生成的 contribution 是 graph 输入，也
-不是文件系统约定；关闭约定发现后，这些输入仍然可用。`app`、`pages` 和顶层
-`routes` 不属于公共配置，会被拒绝。
+不是文件系统约定；关闭约定发现后，这些输入仍然可用。
 
-文件约定启用时，可以通过 `server.routing: { dir }` 把 server file-route root
-从 `src/apis` 移到其他目录；该配置只定制 root，不关闭发现。
+文件约定启用时，server file-route root 固定为 `src/apis`。
 
 ## 约定矩阵
 
@@ -110,17 +108,16 @@ reachable 的 `"use server";` 模块与插件生成的 contribution 是 graph �
 | `src/pages/**/$...splat/` | Catch-all route segment | Route path | 必须位于末尾。 |
 | `src/pages/**/(group)/` | Pathless route group | 源码组织 | 参与 scope，但不增加 URL segment。 |
 | `src/pages/layout.*` 与 nested `layout.*` | Route layout facet | Semantic route tree | SPA 与 MPA 物化都会为后代组合 layout。 |
-| `src/pages/**/error.*` 与 `not-found.*` | Route boundary facet | SPA route tree | 在具备明确 Document contract 前，MPA 会拒绝这些 router-only facet。 |
+| `src/pages/**/error.*` 与 `not-found.*` | Route boundary facet | SPA route tree | MPA 会拒绝这些 router-only facet。 |
 | Page 目录下其他文件 | Page 私有源码 | 最近的 Page | 组件、hook、model、service、测试、样式、资源与 `index.*` 都不会创建 route。 |
 | `<Page 目录>/index.html` | Page Document 模板 | MPA Page 输出 | 覆盖该 MPA Page 的共享模板，不是客户端 Page entry。 |
 | `index.html` / `routing.html` | Document template | Application 输出 | `index.html` 是默认模板，与 Page entry 文件名无关。 |
 | `src/route-types.d.ts` | SPA 文件路由导航类型（生成时） | 生成产物 | 忽略且不要复制到 scaffold 或从应用源码 import。 |
-| 带 `"use server";` 的 `**/*.server.*` | Server-function 模块 | Reachability graph | 只支持命名可调用导出，不要求固定目录。 |
-| `server.routing: { dir }` | Server file-route root 定制 | Application | 文件约定启用时默认 `./src/apis`；它不是关闭开关。 |
-| `<server.routing.dir>/**/api.{ts,tsx,js,jsx}` | Server request Route 锚点 | 完整所在目录 | 每个 route 目录只允许一个源码扩展名变体；只导出 callable 的大写 HTTP method handler。注册顺序按 segment 逐段比较 specificity，在首个不同位置优先 static segment。 |
+| 带 `"use server";` 的 reachable 源码 module | Server-function 模块 | Reachability graph | 只支持命名可调用导出，不要求固定目录或文件后缀；推荐用 `.server.*` 提高可读性。 |
+| `src/apis/**/api.{ts,tsx,js,jsx}` | Server request Route 锚点 | 完整所在目录 | Server route root 固定；每个 route 目录只允许一个源码扩展名变体；只导出 callable 的大写 HTTP method handler。注册顺序按 segment 逐段比较 specificity，在首个不同位置优先 static segment。 |
 | Server route 目录下其他文件 | Route 私有源码 | 最近的 server Route | Helper、schema、store、测试与 `index.*` 都不会创建 route。 |
 | `src/middleware.ts` | 全局 server middleware | Server runtime | 包裹框架持有的 server 请求。 |
-| `<server.routing.dir>/**/middleware.ts` | API route middleware | 同目录及后代 server file routes | 默认为 `src/apis/**/middleware.ts`；自身不是 route。 |
+| `src/apis/**/middleware.ts` | API route middleware | 同目录及后代 server file routes | 自身不是 route。 |
 | `public/**` | 静态文件 | 客户端输出 | 按 output 配置复制。 |
 | `components/`、`features/`、`hooks/`、`lib/` | 共享应用源码 | Application/shared | 普通项目组织，不是框架约定。 |
 
@@ -140,7 +137,7 @@ Page scope    src/pages/people/$personId/
 URL           /people/:personId
 ```
 
-不再有需要同步维护的第二份 route map：Page 目录同时是身份与 URL 的稳定来源。
+没有需要同步维护的第二份 route map：Page 目录同时是身份与 URL 的稳定来源。
 Core 会另外派生 build-safe 内部 id。SPA 与 MPA 先把这份源码 normalize 为
 相同 semantic Page/Route 节点，再选择不同 runtime/output projection。
 
@@ -292,7 +289,7 @@ transformed HTML 发布到额外的已校验路径：
 ```ts
 export default definePageConfig({
   document: {
-    aliases: ["orders.html", "legacy/orders.htm"],
+    aliases: ["orders.html", "archive/orders.htm"],
   },
 });
 ```
@@ -351,8 +348,8 @@ method。Local declaration、import/re-export 的 handler、factory 与可变 bi
 合法的组合细节；静态已知为 non-callable 的值和 generator 会在 discovery 阶段被
 拒绝，求值后的 method value 则在生成的 route module 加载时校验。Default export、
 helper export 与 route-module middleware export 都无效。位于 bracket、catch-all、
-optional 或其他无效 path segment 下的锚点会被拒绝。不要添加另一种 route anchor
-或 `server.entry` composition path。
+optional 或其他无效 path segment 下的锚点会被拒绝。`api.*` 是唯一 server
+request-route anchor。
 
 Server function 又是另一套机制：任何 reachable、以 `"use server";` 开头并
 导出支持的命名 callable 的模块都可定义。参见
@@ -376,7 +373,7 @@ manifest 输入。
 
 ## 路由输入边界
 
-Core 0.3 只有一个文件约定 reader。客户端 Page discovery 只在应用声明
+客户端 Page discovery 只在应用声明
 `routing.mode` 后开始；仅存在无关的 `src/pages` 目录不会发布 route。显式
 `application.routes` 是独立、仅支持 SPA 的配置输入，并归一化到同一 CoreGraph。
 
@@ -385,9 +382,6 @@ Core 0.3 只有一个文件约定 reader。客户端 Page discovery 只在应用
 | `routing.mode` | 发现 canonical Page tree，并选择 SPA 或 MPA 物化。 | 只有 `src/pages/**/page.*` 发布 Page；包括 `index.*` 在内的其他文件都是私有源码。Page 设置放在相邻 `page.config.ts`。 |
 | `application.pageRoot` | 显式 SPA route tree 中 `page` 与 `component` 共用的 Page 源码根目录，默认值为 `./src/pages`。 | 只与 `application.routes` 配合使用，不会定制 canonical `src/pages` discovery；`@/pages/...` 指向该配置根目录。 |
 | `application.routes` | 接受 `routes` 嵌套（不接受 `children`）、`page` 或 `component`、layout/wrapper/redirect 结构及已注册的 namespaced `extensions`。`exact: true` 是 terminal-match 断言；`exact: false` 或带嵌套路由的 `exact: true` 会被拒绝。该输入不能与 `routing` 同时声明，也不能选择 MPA。 | `page` 必须解析到 `application.pageRoot` 下唯一的 `page.*` 锚点；`component` 的逻辑路径和 symlink 真实路径都必须留在同一根目录。`index.*` 或 `page.*` component 持有所在目录；其他 basename 只持有模块本身，且不会消费 `page.config.ts`。layout 与 wrapper 仍是项目源码 reference。 |
-
-Provider name 只可能出现在 raw CoreGraph/debug artifact 中作为内部 provenance。
-普通 inspect routing 输出会隐藏它；应用不会选择 provider 作为架构模式。
 
 ## 命名建议
 

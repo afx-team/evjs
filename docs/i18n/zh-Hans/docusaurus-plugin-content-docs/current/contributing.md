@@ -5,7 +5,7 @@
 ## 项目信息
 
 - **名称**：evjs，包 scope `@evjs/*`
-- **仓库**：[evaijs/evjs](https://github.com/evaijs/evjs)
+- **仓库**：[afx-team/evjs](https://github.com/afx-team/evjs)
 - **CLI**：`@evjs/cli` 提供的 `ev`
 - **Linter**：Biome
 - **模块**：仅 ESM
@@ -13,7 +13,7 @@
 ## 设置
 
 ```bash
-git clone https://github.com/evaijs/evjs.git
+git clone https://github.com/afx-team/evjs.git
 cd evjs
 npm install
 ```
@@ -98,6 +98,6 @@ npx biome check --write
 
 ### 发布新版本
 
-1. 创建 `v0.3.0` 等 tag 的 GitHub Release。
+1. 使用待发布版本的 `vX.Y.Z` tag 创建 GitHub Release。
 2. Release automation 同步内部 package version 并发布。
 3. 不要在本地修改 workspace internal `"*"` dependency。

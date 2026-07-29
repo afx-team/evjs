@@ -1,11 +1,7 @@
 import path from "node:path";
 import type { CoreGraph } from "@evjs/shared/manifest";
 import { getLogger } from "@logtape/logtape";
-import {
-  CONFIG_DEFAULTS,
-  type Config,
-  type ResolvedConfig,
-} from "../../config/index.js";
+import type { Config, ResolvedConfig } from "../../config/index.js";
 import { removeOwnedOutputFile } from "./owned-file-output.js";
 import {
   CANONICAL_PAGE_ROUTE_ROOT,
@@ -22,10 +18,11 @@ import {
 import { discoverPageRoutes, type PageRouteDiscovery } from "./page-routes.js";
 import {
   applyRouteScopedMiddlewares,
+  CANONICAL_SERVER_MIDDLEWARE_FILE,
   discoverServerConventions,
   type ServerConventionDiscovery,
 } from "./server-conventions.js";
-import { SERVER_ROUTE_ENTRY_BASENAME } from "./server-route-conventions.js";
+import { CANONICAL_SERVER_ROUTE_ROOT } from "./server-route-conventions.js";
 import {
   discoverServerRoutes,
   type ServerRouteDiscovery,
@@ -42,13 +39,9 @@ interface PageRoutingDefaultsOptions {
   ) => void;
 }
 
-interface ServerRoutingDefaultsOptions {
+interface ServerRouteDiscoveryOptions {
   reportDiagnostics?: boolean;
-  allowEmptyRoutes?: boolean;
-  onDiscovery?: (
-    base: NonNullable<ResolvedConfig["server"]["routing"]>,
-    discovery: ServerRouteDiscovery,
-  ) => void;
+  onDiscovery?: (discovery: ServerRouteDiscovery) => void;
 }
 
 interface ServerConventionDefaultsOptions {
@@ -139,70 +132,36 @@ function getPageRouteSourceDocsHint(): string {
   return `${PAGE_ANCHOR_ROUTE_CONVENTION_SUMMARY}. See ${PAGE_ROUTE_CONVENTION_DOCS_URL} for the page route file convention.`;
 }
 
-export async function withServerRoutingDefaults<TBundlerCfg>(
+/** Discover the one canonical request-route tree into resolved build state. */
+export async function withServerRouteDiscovery<TBundlerCfg>(
   config: ResolvedConfig<TBundlerCfg>,
-  userConfig: Config<TBundlerCfg> | undefined,
   cwd: string,
-  options: ServerRoutingDefaultsOptions = {},
+  options: ServerRouteDiscoveryOptions = {},
 ): Promise<ResolvedConfig<TBundlerCfg>> {
-  const routingOption = readServerRoutingConfig(userConfig);
   if (config.conventions === false) {
     return {
       ...config,
       server: {
         ...config.server,
-        routing: undefined,
+        routes: undefined,
         conventions: undefined,
       },
     };
   }
 
-  if (!config.server.routing) return config;
-
-  const requested = routingOption !== undefined;
-  const base = config.server.routing;
   const discovery = await discoverServerRoutes(cwd, {
-    dir: base.dir,
-    required: requested,
+    dir: CANONICAL_SERVER_ROUTE_ROOT,
   });
-  options.onDiscovery?.(base, discovery);
+  options.onDiscovery?.(discovery);
   if (options.reportDiagnostics !== false) {
     reportServerRouteDiagnostics(discovery.diagnostics);
-  }
-
-  if (discovery.routes.length === 0) {
-    if (!requested) {
-      return {
-        ...config,
-        server: {
-          ...config.server,
-          routing: undefined,
-        },
-      };
-    }
-    if (options.allowEmptyRoutes) {
-      return {
-        ...config,
-        server: {
-          ...config.server,
-          routing: {
-            ...base,
-            routes: [],
-          },
-        },
-      };
-    }
-    throw new Error(createNoServerRoutesFoundMessage(base.dir));
   }
 
   return {
     ...config,
     server: {
       ...config.server,
-      routing: {
-        ...base,
-        routes: discovery.routes,
-      },
+      routes: discovery.routes,
     },
   };
 }
@@ -234,29 +193,24 @@ export async function withServerConventionDefaults<TBundlerCfg>(
   }
 
   const discovery = await discoverServerConventions(cwd, {
-    globalFile: CONFIG_DEFAULTS.serverMiddlewareFile,
-    routingDir: config.server.routing?.dir,
+    globalFile: CANONICAL_SERVER_MIDDLEWARE_FILE,
+    routingDir: CANONICAL_SERVER_ROUTE_ROOT,
   });
   options.onDiscovery?.(discovery);
   if (options.reportDiagnostics !== false) {
     reportServerConventionDiagnostics(discovery.diagnostics);
   }
 
-  const nextRouting = config.server.routing
-    ? {
-        ...config.server.routing,
-        routes: applyRouteScopedMiddlewares(
-          config.server.routing.routes,
-          discovery.routeMiddlewares,
-        ),
-      }
-    : undefined;
+  const routes = applyRouteScopedMiddlewares(
+    config.server.routes ?? [],
+    discovery.routeMiddlewares,
+  );
 
   return {
     ...config,
     server: {
       ...config.server,
-      ...(nextRouting ? { routing: nextRouting } : { routing: undefined }),
+      routes,
       conventions: {
         ...conventions,
         globalMiddlewares: discovery.globalMiddlewares,
@@ -271,16 +225,6 @@ export function readRoutingConfig<TBundlerCfg>(
 ): Config<TBundlerCfg>["routing"] {
   return config?.routing;
 }
-
-export function readServerRoutingConfig<TBundlerCfg>(
-  config: Config<TBundlerCfg> | undefined,
-): ServerRoutingConfigValue<TBundlerCfg> {
-  return config?.server?.routing;
-}
-
-type ServerRoutingConfigValue<TBundlerCfg> =
-  | Exclude<Config<TBundlerCfg>["server"], undefined>["routing"]
-  | undefined;
 
 export async function syncPageRouteTypesFromCoreGraph(
   cwd: string,
@@ -406,8 +350,4 @@ function reportServerConventionDiagnostics(
       ["[evjs] Server convention discovery failed.", ...errors].join("\n"),
     );
   }
-}
-
-export function createNoServerRoutesFoundMessage(dir: string): string {
-  return `[evjs] No server routes found in ${dir}. Add an api.* anchor exporting GET or POST such as ${dir.replace(/\/+$/, "")}/${SERVER_ROUTE_ENTRY_BASENAME}.ts or set conventions: false.`;
 }

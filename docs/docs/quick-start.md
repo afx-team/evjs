@@ -139,7 +139,7 @@ export default defineConfig({
 SPA materializes the tree as browser Client Routes, normally under one shared
 Document. MPA starts from the same semantic Pages and Routes and materializes
 Page-owned Documents. A Page-local `index.html` can provide its MPA Document
-template. MPA currently accepts only static Page paths: `$param`, terminal
+template. MPA accepts only static Page paths: `$param`, terminal
 `$...splat`, and router-only boundaries fail during inspect/build. Layouts
 compose in both modes.
 

@@ -705,6 +705,45 @@ describe("inspect", () => {
     await expectPathMissing(path.join(cwd, ".ev"));
     await expectPathMissing(path.join(cwd, "src/route-types.d.ts"));
   });
+
+  it("reports an external api-root symlink without traversing it", async () => {
+    const outside = await createFixture({
+      "nested/api.ts":
+        "export const GET = async () => Response.json({ outside: true });",
+    });
+    const cwd = await createFixture({
+      "index.html": '<div id="app"></div>',
+      "src/pages/page.tsx": "export default function Home() { return null; }",
+    });
+    await fs.symlink(
+      outside,
+      path.join(cwd, "src/apis"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+
+    const result = await inspectFrameworkBuild(
+      { routing: { mode: "spa" } },
+      { cwd },
+    );
+
+    expect(result.graph.serverRoutes).toEqual([]);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: "error",
+          source: "server-routes",
+          file: "src/apis",
+          message: expect.stringContaining(
+            "must resolve inside the project root",
+          ),
+        }),
+      ]),
+    );
+    expect(result.fileDependencies).toContain(path.join(cwd, "src/apis"));
+    expect(result.fileDependencies).not.toContain(
+      path.join(cwd, "src/apis/nested"),
+    );
+  });
 });
 
 async function createFixture(files: Record<string, string>): Promise<string> {

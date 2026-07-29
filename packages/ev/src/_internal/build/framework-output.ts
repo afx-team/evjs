@@ -203,6 +203,11 @@ function getFrameworkOutputPaths(
   };
 }
 
+/**
+ * Emit canonical deployment metadata and remove bundler-only runtime
+ * manifests. The returned ownership snapshot is derived from the previous
+ * canonical metadata and is used only for guarded stale-HTML cleanup.
+ */
 async function emitFrameworkManifest(
   cwd: string,
   output: BuildOutput,
@@ -436,6 +441,12 @@ async function emitFrameworkHtml<TBundlerCfg>(
   }
 }
 
+/**
+ * Remove only HTML proven to belong to the previous framework build. A file is
+ * preserved when it conflicts with current plan or bundler output, escapes the
+ * client directory through its real path, or lacks the matching ownership
+ * marker from the validated previous metadata snapshot.
+ */
 async function removeStaleFrameworkHtml(
   cwd: string,
   clientDir: string,
@@ -537,6 +548,11 @@ function shouldPrerenderStaticPage(
   );
 }
 
+/**
+ * Render an SSG Page through the framework server with a synthetic GET, then
+ * place only the rendered Page HTML into the selected Document mount. Normal
+ * asset injection and plugin HTML transforms run afterward on the same DOM.
+ */
 async function prerenderStaticPageHtml(options: {
   doc: ReturnType<typeof generateHtml>;
   output: BuildOutput;
@@ -631,6 +647,16 @@ function normalizeServerModule(mod: unknown): Record<string, unknown> {
     : (mod as Record<string, unknown>);
 }
 
+/**
+ * Complete the post-bundler control-plane phase. Bundler facts are linked to
+ * graph and plan ownership, buildOutput hooks may adjust asset groups and
+ * deployment metadata without changing that ownership, and request-time
+ * Document shells are compiled before runtime projection.
+ *
+ * The deployed runtime excludes build-only renderers; a separate build runtime
+ * includes them for SSG emission. Deployment output reservations are validated
+ * before canonical metadata and transformed HTML are written.
+ */
 export async function linkAndEmitBuildOutput<TBundlerCfg>(options: {
   bundlerFacts: BundlerBuildFacts;
   graph: CoreGraph;

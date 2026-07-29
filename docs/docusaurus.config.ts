@@ -7,14 +7,13 @@ const config: Config = {
   tagline: "React fullstack framework for file-based pages and Hono servers",
   favicon: "img/favicon.ico",
 
-  url: "https://evaijs.github.io",
+  url: "https://afx-team.github.io",
   baseUrl: "/evjs/",
 
-  organizationName: "evaijs",
+  organizationName: "afx-team",
   projectName: "evjs",
 
   onBrokenLinks: "throw",
-  onBrokenMarkdownLinks: "warn",
 
   future: {
     faster: {
@@ -37,6 +36,9 @@ const config: Config = {
 
   markdown: {
     mermaid: true,
+    hooks: {
+      onBrokenMarkdownLinks: "warn",
+    },
   },
 
   themes: ["@docusaurus/theme-mermaid"],
@@ -48,7 +50,7 @@ const config: Config = {
         docs: {
           routeBasePath: "docs",
           sidebarPath: "./sidebars.ts",
-          editUrl: "https://github.com/evaijs/evjs/edit/main/docs/",
+          editUrl: "https://github.com/afx-team/evjs/edit/main/docs/",
         },
         blog: false,
         theme: {
@@ -74,7 +76,7 @@ const config: Config = {
           position: "right",
         },
         {
-          href: "https://github.com/evaijs/evjs",
+          href: "https://github.com/afx-team/evjs",
           label: "GitHub",
           position: "right",
         },

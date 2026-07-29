@@ -11,6 +11,7 @@ import type {
   CoreGraph,
   CoreRoutePattern,
   RenderMode,
+  ServerRouteNode,
 } from "@evjs/shared/manifest";
 import { describe, expect, it } from "vitest";
 import {
@@ -647,25 +648,17 @@ describe("createWebpackConfigs", () => {
   });
 
   it("uses a generated server entry for framework-managed server routes", async () => {
-    const base = createResolvedConfig();
-    const config: ResolvedConfig<WebpackConfig> = {
-      ...base,
-      server: {
-        ...base.server,
-        routing: {
-          dir: "./src/apis",
-          routes: [
-            {
-              id: "src/apis/health/api.ts:/health:GET",
-              module: "src/apis/health/api.ts",
-              path: "/health",
-              methods: ["GET"],
-            },
-          ],
+    const config = createResolvedConfig();
+    const graph = createGraph(config, {
+      serverRoutes: [
+        {
+          id: "src/apis/health/api.ts:/health:GET",
+          module: "src/apis/health/api.ts",
+          path: "/health",
+          methods: ["GET"],
         },
-      },
-    };
-    const graph = createGraph(config);
+      ],
+    });
     const plan = await createGeneratedPlan(config, graph, "development");
 
     const configs = await createWebpackConfigs(config, plan, process.cwd(), []);
@@ -838,6 +831,13 @@ async function createGeneratedPlan(
   graph: CoreGraph,
   mode: "development" | "production",
 ) {
+  const buildConfig = {
+    ...config,
+    server: {
+      ...config.server,
+      routes: graph.serverRoutes,
+    },
+  };
   return materializeFrameworkIR({
     cwd: process.cwd(),
     mode,
@@ -853,7 +853,7 @@ async function createGeneratedPlan(
       logger: {} as never,
       addWatchFile() {},
     },
-    plan: createBuildPlan(config, graph, { mode }),
+    plan: createBuildPlan(buildConfig, graph, { mode }),
     write: false,
   });
 }
@@ -868,7 +868,7 @@ interface TestPage {
 
 function createGraph(
   config: ResolvedConfig<WebpackConfig>,
-  options: { pages?: TestPage[] } = {},
+  options: { pages?: TestPage[]; serverRoutes?: ServerRouteNode[] } = {},
 ): CoreGraph {
   const documentTemplate = config.routing?.html ?? "./index.html";
   const routingMode = config.routing?.mode ?? "spa";
@@ -984,7 +984,7 @@ function createGraph(
     ),
     extensions: { namespaces: {} },
     serverFunctions: [],
-    serverRoutes: config.server.routing?.routes ?? [],
+    serverRoutes: options.serverRoutes ?? [],
   };
 }
 

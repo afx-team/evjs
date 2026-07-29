@@ -25,7 +25,7 @@ export const PAGE_ENTRY_LABEL = "page.ts, page.tsx, page.js, or page.jsx";
 export const PAGE_CONFIG_FILES = ["page.config.ts", "page.config.js"] as const;
 export const PAGE_CONFIG_LABEL = "page.config.ts or page.config.js";
 export const PAGE_ROUTE_CONVENTION_DOCS_URL =
-  "https://evaijs.github.io/evjs/docs/file-conventions#client-page-routes";
+  "https://afx-team.github.io/evjs/docs/file-conventions#client-page-routes";
 export const PAGE_ANCHOR_ROUTE_CONVENTION_RULES = [
   {
     id: "page-anchor",

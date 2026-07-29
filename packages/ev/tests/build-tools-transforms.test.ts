@@ -643,11 +643,20 @@ describe("transformServerFile", () => {
         },
       );
 
-      expect(result.code).toContain(
-        `${runtime.registerServerReference}(saveUser,`,
-      );
-      expect(result.code).toContain('"updateUser"');
-      expect(result.code).toContain('"save-user"');
+      const registrations = [
+        ...result.code.matchAll(
+          new RegExp(
+            `${runtime.registerServerReference}\\(saveUser, "([a-f0-9]{16})"\\);`,
+            "g",
+          ),
+        ),
+      ];
+      expect(registrations).toHaveLength(2);
+      expect(
+        new Set(registrations.map((registration) => registration[1])).size,
+      ).toBe(2);
+      expect(result.code).toContain("export { saveUser as updateUser };");
+      expect(result.code).toContain('export { saveUser as "save-user" };');
       expect(result.code).not.toContain(
         `${runtime.registerServerReference}(updateUser,`,
       );

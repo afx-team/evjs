@@ -1,65 +1,46 @@
-# ev Framework Roadmap
+# evjs Implementation Status
 
-This roadmap tracks the current architecture direction. Historical milestones
-are preserved in `CHANGELOG.md`; this file should reflect active reality.
+Release history lives in [CHANGELOG.md](./CHANGELOG.md). This file records only
+active architecture boundaries that are enforced by the current code.
 
-## Completed Core Architecture
+## Framework Core
 
-- [x] File-convention-first framework model for apps, pages, server functions,
-      server file routes, middleware, SSR/PPR/RSC render metadata, with
-      `@evjs/client` and `@evjs/server` kept as independent runtime cores.
-- [x] `CoreGraph`, `BuildPlan`, and `BuildOutput` schemas under
-      `@evjs/shared/manifest`.
-- [x] Graph analysis and build planning under
-      `@evjs/ev/src/_internal/build`.
-- [x] Single serialized deployment contract at
-      `dist/deployment-metadata.json`; the complete `BuildOutput` stays in
-      memory.
-- [x] Stage-based plugin hooks: `buildStart`, `bundlerConfig`, `buildOutput`,
-      per-document `transformHtml`, `buildEnd({ output })`, and `dispose`.
-- [x] Programmatic `prepareFrameworkBuild()` API for resolving config,
-      running framework preflight hooks, reporting graph diagnostics, and
-      returning resolved config, graph file dependencies, plugin watch files,
-      and `dispose()` without invoking a bundler or platform adapter.
-- [x] `ev inspect` CLI preflight for explaining file-route discovery, server
-      conventions, render metadata, runtime paths, planned entries, and
-      diagnostics without invoking a bundler or writing `dist`.
-- [x] Consolidated package shape around `@evjs/ev`, `@evjs/client`,
-      `@evjs/server`, `@evjs/shared`, `@evjs/cli`, and `@evjs/create-app`.
-- [x] Single top-level `@evjs/client` entry with framework-managed page,
-      navigation, shell, RSC, and static route APIs.
-- [x] RSC client runtime exports remain available from `@evjs/client`, while
-      `react-server-dom-webpack/client` is loaded only when RSC APIs are used.
-- [x] React page runtime, shell runtime, and framework-managed page activation.
-- [x] `@evjs/server` framework rendering boundary for SSR, PPR, and RSC Flight.
-- [x] Production Node deployment adapter driven by `BuildOutput`.
-- [x] Focused render-mode and deployment-adapter examples plus e2e coverage on
-      the webpack validation path.
+- Canonical `src/pages/**/page.*` Pages and explicit SPA route trees normalize
+  into one Application/Page/Route/Document CoreGraph.
+- Adjacent `page.config.ts` owns static metadata, rendering settings, and
+  namespaced Page, Route, and Page-owned Document extensions.
+- Positive `src/apis/**/api.*` anchors own request Routes and
+  filesystem-scoped middleware.
+- `BuildPlan` drives generated `.ev` entries, bundler adapters, dev routing,
+  output ownership, and deployment linking.
+- `BuildOutput` is the complete in-memory result;
+  `dist/deployment-metadata.json` is the canonical serialized deployment
+  projection.
+- Plugin extension ownership covers Application, Page, Route, and Document;
+  generated contributions cover entry, wrapper, middleware, HTML, alias, and
+  external slots.
+- Node, static, and edge deployment adapters consume the linked output model.
 
-## Adapter Status
+## Bundler Capability Matrix
 
-- [x] `@evjs/bundler-utoopack` remains the default adapter and consumes
-      `BuildPlan` where its lower-layer APIs are sufficient.
-- [x] `@evjs/bundler-webpack` validates the complete new architecture path.
-- [x] Bundler capability declarations and preflight diagnostics report
-      unsupported build and dev-plan requirements before adapter execution.
-- [ ] Priority 1: Utoopack dynamic dev entry/server update API for configured
-      page additions/removals.
-- [ ] Priority 2: Utoopack generic entry wrapping/loadable entry facts for
-      component pages.
-- [ ] Priority 3: Utoopack multi server-entry support and structured build facts
-      for SSR/PPR/RSC renderers.
-- [ ] Priority 4: Utoopack RSC client/server reference to chunk metadata.
-- [ ] Priority 5: Utoopack structured dev build callbacks and stats delivery.
+The adapters declare these capabilities in code and framework preflight
+enforces them:
 
-## Remaining Product Work
+| Capability | Utoopack | Webpack |
+| --- | --- | --- |
+| Client build | Yes | Yes |
+| Server rendering build | No | Yes |
+| RSC build | No | Yes |
+| PPR build | No | Yes |
+| Generated/HTML-only dev plan update | Yes | Yes |
+| Entry/Route/server/resolution dev plan update | Restart required | Restart required |
 
-- [ ] Platform-specific deployment adapters after runtime contracts are concrete
-      for each platform.
-- [ ] RSC server actions beyond the current `"use server"` RPC/action transport.
-- [ ] More granular internal `BuildPlanUpdate` reasons if real adapters need
-      them.
-- [ ] Further graph dependency narrowing once bundlers expose module/reference
-      facts that can replace framework-side static import closure analysis.
-- [ ] Adapter guidance for external deployment adapters that emit
-      platform-specific split manifests.
+## Open Adapter Gaps
+
+- Utoopack build facts and entry APIs for server rendering, PPR, and RSC.
+- In-process structural dev-plan updates for entries, Routes, server topology,
+  module resolution, and bundler configuration.
+
+These gaps should be closed by changing adapter capabilities and their focused
+tests together. User-facing docs should describe the declared capability
+matrix rather than a planned implementation.

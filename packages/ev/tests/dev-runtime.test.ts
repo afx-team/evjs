@@ -604,7 +604,7 @@ describe("findDevServerBundlePath", () => {
     await fs.promises.mkdir(defaultServerDir, { recursive: true });
     await Promise.all([
       fs.promises.writeFile(path.join(serverDir, "server.cjs"), ""),
-      fs.promises.writeFile(path.join(serverDir, "legacy.cjs"), ""),
+      fs.promises.writeFile(path.join(serverDir, "stale.cjs"), ""),
       fs.promises.writeFile(path.join(defaultServerDir, "server.cjs"), ""),
       fs.promises.writeFile(
         path.join(serverDir, "stats.json"),
@@ -618,7 +618,7 @@ describe("findDevServerBundlePath", () => {
       ),
       fs.promises.writeFile(
         path.join(serverDir, "manifest.json"),
-        JSON.stringify({ entry: "legacy.cjs" }),
+        JSON.stringify({ entry: "stale.cjs" }),
       ),
     ]);
 

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ResolvedConfig } from "../../config/index.js";
+import { CANONICAL_SERVER_ROUTE_ROOT } from "./server-route-conventions.js";
 import { isInsideCwd, isRealPathInsideCwd } from "./utils.js";
 
 export interface ServerRouteWatchState {
@@ -59,8 +60,8 @@ export async function collectServerRouteWatchState<TBundlerCfg>(
   cwd: string,
   config: ResolvedConfig<TBundlerCfg>,
 ): Promise<ServerRouteWatchState> {
-  if (!config.server.routing) return { dependencies: [] };
-  const root = path.resolve(cwd, config.server.routing.dir);
+  if (!config.conventions) return { dependencies: [] };
+  const root = path.resolve(cwd, CANONICAL_SERVER_ROUTE_ROOT);
   if (!isInsideCwd(cwd, root)) return { dependencies: [] };
 
   const directories = new Set([root]);

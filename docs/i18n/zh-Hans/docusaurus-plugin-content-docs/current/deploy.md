@@ -31,12 +31,13 @@ dist/
 - `dist/deployment-metadata.json`：面向工具和部署 adapter 的 canonical deployment
   metadata。应用代码不应导入或修改它。
 
-Core 不输出 split client/server compatibility manifest。需要平台专属投影时，
-由 deployment adapter 显式持有该产物。
+`deployment-metadata.json` 是 core 唯一序列化的 deployment projection。
+其他平台专属产物由 deployment adapter 持有。
 
-生成的 HTML 会内嵌浏览器 `ClientRuntime`。手动使用 `@evjs/client` runtime URL API 时仍可从配置的 URL 加载 JSON，但 CLI build 默认不再输出 `dist/client/runtime.json`。
-Runtime-only 的 `FrameworkRuntime` 数据通过 build/plugin result 传递，并注入 dev 或 deployment
-adapter bootstrap，不再作为默认 JSON artifact 输出。
+生成的 HTML 会内嵌浏览器 `ClientRuntime`。手动使用 `@evjs/client` runtime URL
+API 时，可以从显式配置的 URL 加载 JSON；框架没有默认的独立 runtime JSON 产物。
+Runtime-only 的 `FrameworkRuntime` 数据通过 build/plugin result 传递，并注入 dev
+或 deployment adapter bootstrap。
 
 ## 选择部署目标
 
@@ -195,8 +196,8 @@ CMD ["node", "dist/server.mjs"]
 
 ## 自定义部署插件
 
-部署插件可以使用 `buildEnd({ deploymentMetadata })` 输出平台文件。需要平台专属兼容字段时，
-可以在写文件前包装这份 metadata：
+部署插件可以使用 `buildEnd({ deploymentMetadata })` 输出平台文件。需要平台专属
+schema 字段时，可以在写文件前包装这份 metadata：
 
 ```ts
 export function deployAdapter() {

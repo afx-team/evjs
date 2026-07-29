@@ -37,15 +37,6 @@ export function assertAppModule(
   assertOptionalLifecycleHook(value.unmount, prefix, "unmount");
 }
 
-export function assertRenderableAppModule(
-  value: AppModule,
-  prefix: string,
-): void {
-  if (!value.mount && !value.hydrate) {
-    throw new Error(`${prefix} must export mount or hydrate to render.`);
-  }
-}
-
 function assertOptionalLifecycleHook(
   value: unknown,
   prefix: string,

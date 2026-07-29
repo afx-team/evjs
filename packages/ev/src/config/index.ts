@@ -91,8 +91,8 @@ export interface ResolvedServerConfig {
   runtime: ResolvedServerRuntimeConfig;
   /** RSC Flight endpoint configuration when enabled. */
   rsc?: ResolvedServerRscConfig;
-  /** Framework-managed server file routing declaration, when enabled. */
-  routing?: ResolvedServerRoutingConfig;
+  /** @internal Request Routes discovered from the canonical `src/apis` tree. */
+  routes?: ServerRouteNode[];
   /** Framework-managed server conventions, when enabled. */
   conventions?: ResolvedServerConventionsConfig;
   /** Server dev options. */
@@ -156,10 +156,11 @@ export interface Config<TBundlerCfg = DefaultBundlerConfig> {
   /**
    * Enable framework file conventions.
    *
-   * Defaults to `true`. Set to `false` only when the application owns all
-   * browser and server runtime composition explicitly. This is the only
-   * convention opt-out; individual Page, route, layout, and middleware
-   * conventions cannot be disabled independently.
+   * Defaults to `true`. Set to `false` to disable framework filesystem
+   * discovery as one unit. Explicit `application.routes`, reachable
+   * `"use server"` modules, and plugin contributions remain graph inputs.
+   * Individual Page, route, layout, and middleware conventions cannot be
+   * disabled independently.
    */
   conventions?: boolean;
 
@@ -222,7 +223,10 @@ export interface Config<TBundlerCfg = DefaultBundlerConfig> {
 export interface DevConfig {
   /** Client dev server port. Default: 3000. */
   port?: number;
-  /** Enable HTTPS. If an object is provided, it can be explicit key/cert PEM strings or file paths. */
+  /**
+   * Enable HTTPS. An explicit key/cert pair may contain PEM strings or file
+   * paths when the selected bundler adapter supports custom certificates.
+   */
   https?: boolean | { key: string; cert: string };
   /**
    * User-defined client dev server proxy rules for backend services.
@@ -234,13 +238,6 @@ export interface DevConfig {
 
 /** Server configuration. */
 export interface ServerConfig {
-  /**
-   * Framework-managed server file routing.
-   *
-   * Defaults to enabled. evjs discovers Request/Response `api.*` anchors from
-   * `src/apis` while top-level file conventions are enabled.
-   */
-  routing?: ServerRoutingConfig;
   /**
    * Framework server runtime base path. Defaults to "/__evjs".
    *
@@ -266,26 +263,13 @@ export interface ResolvedServerRscConfig {
   endpoint: string;
 }
 
-export interface ServerRoutingConfig {
-  /**
-   * Directory containing `api.*` server request-route anchors at any depth.
-   * Default: "./src/apis".
-   */
-  dir?: string;
-}
-
-export interface ResolvedServerRoutingConfig {
-  dir: string;
-  routes: ServerRouteNode[];
-}
-
 export interface ResolvedServerConventionsConfig {
   globalMiddlewares: ServerMiddlewareNode[];
   routeMiddlewares: ServerMiddlewareNode[];
 }
 
 export interface TransportConfig {
-  /** Absolute or relative server origin used by the browser runtime. */
+  /** Absolute HTTP(S) server URL used by the browser runtime. */
   baseUrl?: string;
 }
 
@@ -532,8 +516,6 @@ export const CONFIG_DEFAULTS = {
   outputClientDir: "dist/client",
   outputServerDir: "dist/server",
   pageRoot: CANONICAL_PAGE_ROUTE_ROOT,
-  serverRoutingDir: "./src/apis",
-  serverMiddlewareFile: "./src/middleware.ts",
   mount: "#app",
 } as const;
 const PUBLIC_ROOT_CONFIG_KEYS = new Set([
@@ -572,13 +554,7 @@ const PUBLIC_CONFIG_ROUTE_APPLICATION_DOCUMENT_KEYS = new Set([
   "extensions",
 ]);
 const PUBLIC_DEV_CONFIG_KEYS = new Set(["port", "https", "proxy"]);
-const PUBLIC_SERVER_CONFIG_KEYS = new Set([
-  "routing",
-  "basePath",
-  "rsc",
-  "dev",
-]);
-const PUBLIC_SERVER_ROUTING_CONFIG_KEYS = new Set(["dir"]);
+const PUBLIC_SERVER_CONFIG_KEYS = new Set(["basePath", "rsc", "dev"]);
 const PUBLIC_SERVER_DEV_CONFIG_KEYS = new Set(["port", "https"]);
 const PUBLIC_SERVER_RSC_CONFIG_KEYS = new Set(["endpoint"]);
 const PUBLIC_TRANSPORT_CONFIG_KEYS = new Set(["baseUrl"]);
@@ -646,7 +622,10 @@ function resolveRscEndpoint(rsc: ServerConfig["rsc"]): string | undefined {
 }
 
 /**
- * Deeply merge user configuration with defaults.
+ * Strictly validate author config and apply scalar defaults.
+ *
+ * Source discovery and plugin extension resolution happen in later build
+ * phases; this function only produces their normalized input state.
  */
 export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
   userConfig?: Config<TBundlerCfg>,
@@ -676,7 +655,7 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
     "output",
   );
   validateOutputConfigKeys(outputConfig);
-  validateConventionSourceConflicts(config, serverConfig, conventions);
+  validateConventionSourceConflicts(config, conventions);
 
   const defaultHtml = CONFIG_DEFAULTS.html;
 
@@ -686,16 +665,12 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
       ? resolvePageRoutingConfig(config.routing, defaultHtml)
       : undefined;
 
-  const resolvedServerRouting = conventions
-    ? resolveServerRoutingConfig(serverConfig.routing)
+  const resolvedServerConventions = conventions
+    ? {
+        globalMiddlewares: [],
+        routeMiddlewares: [],
+      }
     : undefined;
-  const resolvedServerConventions =
-    conventions && resolvedServerRouting
-      ? {
-          globalMiddlewares: [],
-          routeMiddlewares: [],
-        }
-      : undefined;
   const clientPort =
     devConfig.port === undefined
       ? CONFIG_DEFAULTS.port
@@ -741,7 +716,7 @@ export function resolveConfig<TBundlerCfg = DefaultBundlerConfig>(
         ...(rscEndpoint ? { rsc: rscEndpoint } : {}),
       },
       rsc: rscEndpoint ? { endpoint: rscEndpoint } : undefined,
-      routing: resolvedServerRouting,
+      routes: conventions ? [] : undefined,
       conventions: resolvedServerConventions,
       dev: {
         port: serverPort,
@@ -999,14 +974,12 @@ function resolveConventionsConfig(conventions: unknown): boolean {
 
 function validateConventionSourceConflicts<TBundlerCfg>(
   config: Config<TBundlerCfg>,
-  server: ServerConfig,
   conventions: boolean,
 ): void {
   if (conventions) return;
 
   const conflicts = [
     config.routing !== undefined ? "routing" : undefined,
-    server.routing !== undefined ? "server.routing" : undefined,
   ].filter((value): value is string => value !== undefined);
   if (conflicts.length === 0) return;
 
@@ -1045,11 +1018,6 @@ function validateRootConfigKeys(config: Record<string, unknown>): void {
     PUBLIC_ROOT_CONFIG_KEYS,
     "config",
     "conventions, output, dev, server, transport, routing, application, extensions, bundler, or plugins",
-    (key) => {
-      if (key === "functions" || key === "serverFunctions") {
-        return `[evjs] config.${key} is not a public config field. Server functions are discovered from "use server" modules and endpoints are derived from server.basePath.`;
-      }
-    },
   );
 }
 
@@ -1076,14 +1044,6 @@ function resolveConfigRouteProfile<TBundlerCfg>(
     PUBLIC_CONFIG_ROUTE_APPLICATION_KEYS,
     "application",
     "pageRoot, document, layout, or routes",
-    (key) => {
-      if (key === "html" || key === "mount") {
-        return `[evjs] application.${key} is not supported. Use application.document.${key === "html" ? "template" : "mount"}.`;
-      }
-      if (key === "extensions") {
-        return "[evjs] application.extensions is not supported. Use top-level config.extensions for plugin-owned Application configuration.";
-      }
-    },
   );
   const rawRoutes = rawApplication.routes;
   const routesPath = "application.routes";
@@ -1270,11 +1230,6 @@ function resolveConfigRoute(
     PUBLIC_CONFIG_ROUTE_KEYS,
     routePath,
     "path, page, component, redirect, wrappers, layout, routes, extensions, or exact",
-    (key) => {
-      if (key === "children") {
-        return `[evjs] ${routePath}.children is not supported. Use routes for nested declarations.`;
-      }
-    },
   );
 
   const pathValue = resolveOptionalConfigRoutePath(
@@ -1592,66 +1547,7 @@ function validateServerConfigKeys(server: ServerConfig): void {
     server,
     PUBLIC_SERVER_CONFIG_KEYS,
     "server",
-    "routing, basePath, rsc, or dev",
-    (key) => {
-      if (key === "conventions") {
-        return "[evjs] server.conventions is not supported. Use top-level conventions: false to disable all file conventions.";
-      }
-      if (key === "entry") {
-        return "[evjs] server.entry is not supported. Use server.routing file conventions under src/apis instead.";
-      }
-      if (key === "functions") {
-        return "[evjs] server.functions is not a public config field. Server function, PPR, and RSC endpoints are derived from server.basePath.";
-      }
-      if (key === "runtime") {
-        return `[evjs] server.${key} is resolved framework metadata and cannot be configured. Use server.basePath to change framework endpoint paths.`;
-      }
-      if (key === "functionRuntime") {
-        return "[evjs] server.functionRuntime is internal build metadata and cannot be configured. Use server.basePath to change framework endpoint paths.";
-      }
-    },
-  );
-}
-
-function resolveServerRoutingConfig(
-  routing: ServerConfig["routing"] | boolean | null,
-): ResolvedServerRoutingConfig | undefined {
-  if (routing === false) {
-    throw new Error(
-      "[evjs] server.routing must be a routing object. Use top-level conventions: false to disable all file conventions.",
-    );
-  }
-  if (routing === true) {
-    throw new Error(
-      "[evjs] server.routing must be a routing object. Use server.routing: {} to request the default src/apis directory, or omit server.routing for optional default discovery.",
-    );
-  }
-  const options =
-    routing === undefined
-      ? {}
-      : assertPlainConfigRecord(
-          routing,
-          "server.routing",
-          "a server routing object",
-        );
-  validateServerRoutingConfigKeys(options);
-  return {
-    dir:
-      options.dir === undefined
-        ? CONFIG_DEFAULTS.serverRoutingDir
-        : assertNonEmptyString(options.dir, "server.routing.dir"),
-    routes: [],
-  };
-}
-
-function validateServerRoutingConfigKeys(
-  routing: Record<string, unknown>,
-): void {
-  assertKnownConfigKeys(
-    routing,
-    PUBLIC_SERVER_ROUTING_CONFIG_KEYS,
-    "server.routing",
-    "dir",
+    "basePath, rsc, or dev",
   );
 }
 
@@ -1742,14 +1638,6 @@ function validatePageRoutingConfigKeys(routing: Record<string, unknown>): void {
     PUBLIC_PAGE_ROUTING_CONFIG_KEYS,
     "routing",
     "mode, html, or mount",
-    (key) => {
-      if (key === "conventions") {
-        return "[evjs] routing.conventions is not supported. Canonical Page facets are discovered from positive files; use top-level conventions: false only to disable all file conventions.";
-      }
-      if (key === "routes") {
-        return "[evjs] routing.routes is not a public config field. Canonical route URLs come from page.* anchor directories under src/pages; use application.routes for an explicit SPA route tree.";
-      }
-    },
   );
 }
 

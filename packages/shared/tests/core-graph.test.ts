@@ -842,14 +842,14 @@ describe("assertCoreGraph", () => {
     );
   });
 
-  it("rejects removed raw extension claims", () => {
+  it("rejects unsupported raw extension claims", () => {
     const graph = createValidGraph();
     graph.extensions.namespaces["@company/feature"] = {
       producer: "feature-plugin",
       owners: ["page"],
     };
     Reflect.set(graph.extensions.namespaces["@company/feature"], "raw", {
-      namespace: "@evjs/compat/raw",
+      namespace: "@company/raw",
       key: "feature",
     });
 

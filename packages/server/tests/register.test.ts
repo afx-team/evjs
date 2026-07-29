@@ -51,25 +51,6 @@ describe("registerServerReference", () => {
     );
   });
 
-  it("rejects invalid generated export name metadata", () => {
-    const invalidExportNameError =
-      "[evjs] registerServerReference() exportName must be a non-empty string without leading or trailing whitespace.";
-
-    expect(() =>
-      registerServerReference(async () => "result", "fn", ""),
-    ).toThrow(invalidExportNameError);
-
-    expect(() =>
-      registerServerReference(async () => "result", "fn", " exportName"),
-    ).toThrow(invalidExportNameError);
-
-    expect(() =>
-      registerServerReference(async () => "result", "fn", "exportName "),
-    ).toThrow(invalidExportNameError);
-
-    expect(registry.size).toBe(0);
-  });
-
   it("rejects duplicate registrations", () => {
     const fn1: ServerFn = async () => "first";
     const fn2: ServerFn = async () => "second";

@@ -62,7 +62,7 @@ describe("@evjs/plugin-qiankun runtime", () => {
     });
   });
 
-  it("merges CoreGraph route mappings with legacy resolver routes", async () => {
+  it("merges CoreGraph route mappings with resolver-declared routes", async () => {
     qiankun.registerMicroApps.mockClear();
     qiankun.start.mockClear();
     const container = createElement();
@@ -76,7 +76,7 @@ describe("@evjs/plugin-qiankun runtime", () => {
             container,
           },
         ],
-        routes: [{ path: "/legacy-catalog", microApp: "catalog" }],
+        routes: [{ path: "/resolver-catalog", microApp: "catalog" }],
       }),
       [{ path: "/catalog", microApp: "catalog" }],
     );
@@ -86,12 +86,12 @@ describe("@evjs/plugin-qiankun runtime", () => {
         name: "catalog",
         entry: "https://example.com/catalog/",
         container,
-        activeRule: ["/catalog", "/legacy-catalog"],
+        activeRule: ["/catalog", "/resolver-catalog"],
       },
     ]);
     expect(options.routes).toEqual([
       { path: "/catalog", microApp: "catalog" },
-      { path: "/legacy-catalog", microApp: "catalog" },
+      { path: "/resolver-catalog", microApp: "catalog" },
     ]);
 
     await expect(

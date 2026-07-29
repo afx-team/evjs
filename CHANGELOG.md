@@ -6,6 +6,26 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+### ⚠️ Breaking Changes
+
+- **Fixed server request-route root** — Framework request Routes are always
+  discovered from `src/apis/**/api.*` while file conventions are enabled. The
+  public `server.routing` object and its `dir` override are removed; use
+  top-level `conventions: false` to disable the complete framework filesystem
+  convention set.
+- **Narrower internal runtime surface** — The unused
+  `@evjs/client/internal/route-types` export is removed, and
+  `registerServerReference()` now accepts only the function and function id.
+
+### 🐛 Bug Fixes
+
+- **Convention-root containment** — Graph inspection and middleware discovery
+  tolerate missing or non-directory convention roots and do not traverse
+  source or API-root symlinks that resolve outside the project.
+- **Utoopack HTTPS validation** — Utoopack development rejects unsupported
+  custom `dev.https` certificates instead of silently treating them as
+  `true`; Webpack remains the explicit-certificate path.
+
 ---
 
 ## [0.3.0] — 2026-07-28

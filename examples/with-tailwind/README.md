@@ -1,6 +1,6 @@
 # with-tailwind
 
-Tailwind CSS v4 through the evjs PostCSS pipeline and unified Core 0.3 Page
+Tailwind CSS v4 through the evjs PostCSS pipeline and canonical Page
 model.
 
 ## Run

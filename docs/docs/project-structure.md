@@ -2,7 +2,7 @@
 
 This page is the source of truth for evjs application conventions.
 
-Core 0.3 uses symmetric positive anchors for client Pages and server request
+evjs uses symmetric positive anchors for client Pages and server request
 Routes:
 
 - `src/pages/**/page.*` is the only canonical Page and client-route anchor;
@@ -81,9 +81,9 @@ export default defineConfig({
 The top-level `conventions: false` switch disables the framework-owned
 filesystem convention as one unit: `page.*` anchors, `api.*` anchors under
 `src/apis`, global `src/middleware.ts`, and route-scoped
-`src/apis/**/middleware.ts`. It cannot be combined with an explicit `routing`
-or `server.routing` declaration. evjs does not expose switches for disabling
-only one of these roots or facets.
+`src/apis/**/middleware.ts`. It cannot be combined with an explicit client
+`routing` declaration. evjs does not expose switches for disabling only one of
+these roots or facets.
 
 ```ts
 export default defineConfig({
@@ -94,12 +94,10 @@ export default defineConfig({
 SPA-only `application.routes` is configuration rather than a file convention.
 Reachable `"use server";` modules and plugin-generated contributions are graph
 inputs rather than filesystem conventions. Those inputs remain available when
-convention discovery is disabled. `app`, `pages`, and top-level `routes` are
-not public configuration fields and are rejected.
+convention discovery is disabled.
 
-When conventions are enabled, `server.routing: { dir }` may move the server
-file-route root away from `src/apis`; it customizes the root and does not
-disable discovery.
+When conventions are enabled, the server file-route root is fixed at
+`src/apis`.
 
 ## Convention Matrix
 
@@ -117,17 +115,16 @@ project root unless stated otherwise.
 | `src/pages/**/$...splat/` | Catch-all route segment | Route path | Must be terminal. |
 | `src/pages/**/(group)/` | Pathless route group | Source organization | Participates in scope but contributes no URL segment. |
 | `src/pages/layout.*` and nested `layout.*` | Route layout facet | Semantic route tree | Composed around descendants in both SPA and MPA materialization. |
-| `src/pages/**/error.*` and `not-found.*` | Route boundary facets | SPA route tree | MPA rejects these router-only facets until they have an explicit Document contract. |
+| `src/pages/**/error.*` and `not-found.*` | Route boundary facets | SPA route tree | MPA rejects these router-only facets. |
 | Other files below a Page directory | Page-private source | Nearest Page | Components, hooks, models, services, tests, styles, assets, and `index.*` do not create routes. |
 | `<Page directory>/index.html` | Page Document template | MPA Page output | Overrides the shared template for that MPA Page. It is not a client Page entry. |
 | `index.html` / `routing.html` | Document template | Application output | `index.html` is the default template; it is unrelated to the Page entry filename. |
 | `src/route-types.d.ts` | SPA file-route navigation types, when emitted | Generated output | Ignore it; do not copy it into scaffolds or import it from app code. |
-| `**/*.server.{ts,tsx,js,jsx}` with `"use server";` | Server-function module | Reachability graph | Named callable exports only. There is no required directory. |
-| `server.routing: { dir }` | Server file-route root customization | Application | Defaults to `./src/apis` while conventions are enabled; this is not a disable switch. |
-| `<server.routing.dir>/**/api.{ts,tsx,js,jsx}` | Server request Route anchor | Entire containing directory | Exactly one source-extension variant per route directory. Export callable uppercase HTTP method handlers only. Registration uses segment-wise specificity: static segments precede dynamic segments at the first differing position. |
+| Reachable source module with `"use server";` | Server-function module | Reachability graph | Named callable exports only. There is no required directory or filename suffix; `.server.*` is recommended for clarity. |
+| `src/apis/**/api.{ts,tsx,js,jsx}` | Server request Route anchor | Entire containing directory | The server route root is fixed. Exactly one source-extension variant is allowed per route directory. Export callable uppercase HTTP method handlers only. Registration uses segment-wise specificity: static segments precede dynamic segments at the first differing position. |
 | Other files below a server route directory | Route-private source | Nearest server Route | Helpers, schemas, stores, tests, and `index.*` do not create routes. |
 | `src/middleware.ts` | Global server middleware | Server runtime | Wraps framework-owned server requests. |
-| `<server.routing.dir>/**/middleware.ts` | API route middleware | Same-directory and descendant server file routes | Defaults to `src/apis/**/middleware.ts`; not itself a route. |
+| `src/apis/**/middleware.ts` | API route middleware | Same-directory and descendant server file routes | Not itself a route. |
 | `public/**` | Static files | Client output | Copied according to output configuration. |
 | `components/`, `features/`, `hooks/`, `lib/` | Shared application source | Application/shared | Ordinary project organization, not framework conventions. |
 
@@ -241,10 +238,9 @@ the semantic Route rather than silently treating it as Page data.
 
 All owner kinds use the same CoreGraph extension registry. One plugin may own
 the same namespace for more than one owner kind as long as it declares each
-owner. Explicit SPA Route values may be authored on
-`application.routes[*].extensions`; after adopting the canonical Page tree,
-move each Page route value to `page.config.ts#route.extensions`. Runtime
-projection is always explicit.
+owner. Explicit SPA Route values are authored on
+`application.routes[*].extensions`; canonical Page Route values are authored
+on `page.config.ts#route.extensions`. Runtime projection is always explicit.
 
 `page.config.ts#route.extensions` requires exactly one semantic Route targeting
 that Page. If an explicit config-route tree reuses one Page from multiple
@@ -315,7 +311,7 @@ same transformed HTML at additional validated paths:
 ```ts
 export default definePageConfig({
   document: {
-    aliases: ["orders.html", "legacy/orders.htm"],
+    aliases: ["orders.html", "archive/orders.htm"],
   },
 });
 ```
@@ -380,8 +376,7 @@ non-callable values and generators are rejected during discovery, and the
 evaluated method values are validated when the generated route module loads.
 Default exports, helper exports, and route-module middleware exports are
 invalid. Anchors under bracket, catch-all, optional, or otherwise invalid path
-segments are rejected. Do not add another route anchor or a `server.entry`
-composition path.
+segments are rejected. `api.*` is the only server request-route anchor.
 
 Server functions are different again: any reachable module that starts with
 `"use server";` and exports supported named callables can define them. See
@@ -406,7 +401,7 @@ Do not edit them or copy them into templates.
 
 ## Route Input Boundaries
 
-Core 0.3 has one file-convention reader. Client Page discovery begins only
+Client Page discovery begins only
 after the application declares `routing.mode`; an unrelated `src/pages`
 directory alone does not publish routes. Explicit `application.routes` is a
 separate SPA-only configuration input that normalizes into the same CoreGraph.
@@ -416,10 +411,6 @@ separate SPA-only configuration input that normalizes into the same CoreGraph.
 | `routing.mode` | Discovers the canonical Page tree and selects SPA or MPA materialization. | Only `src/pages/**/page.*` publishes a Page. Other files, including `index.*`, remain private source. Page settings live in adjacent `page.config.ts` modules. |
 | `application.pageRoot` | Page source root for both `page` and `component` references in the explicit SPA route tree; defaults to `./src/pages`. | Applies only with `application.routes`; it does not customize canonical `src/pages` discovery. `@/pages/...` aliases this configured root. |
 | `application.routes` | Accepts `routes` nesting (not `children`), `page` or `component`, layout/wrapper/redirect structure, and registered namespaced `extensions`. `exact: true` is a terminal-match assertion; `exact: false`, or `exact: true` with nested routes, is rejected. This input cannot be combined with `routing` and cannot select MPA. | A `page` resolves to exactly one `page.*` anchor below `application.pageRoot`. A `component` must remain below the same root, including after resolving symbolic links. An `index.*` or `page.*` component owns its containing directory; other component basenames are module-scoped and do not consume `page.config.ts`. Layouts and wrappers remain project-source references. |
-
-Provider names may appear in raw CoreGraph/debug artifacts as internal
-provenance. Normal inspect routing output hides them; applications do not
-choose a provider as an architectural mode.
 
 ## Naming Guidance
 

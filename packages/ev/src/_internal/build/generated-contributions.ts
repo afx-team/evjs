@@ -154,6 +154,12 @@ interface MaterializeFrameworkIROptions<TBundlerCfg> {
   write?: boolean;
 }
 
+/**
+ * Collect deterministic plugin contributions against an immutable view of the
+ * same pre-contribution graph and plan, then apply the resolved slots to a
+ * cloned BuildPlan. Physical `.ev` files are written only after module refs,
+ * targets, and entry identities have been resolved and validated.
+ */
 export async function materializeFrameworkIR<TBundlerCfg>(
   options: MaterializeFrameworkIROptions<TBundlerCfg>,
 ): Promise<BuildPlan> {
@@ -226,6 +232,12 @@ export function applyHtmlTagContributions(
   }
 }
 
+/**
+ * Build-local linker for generated modules and framework slots. Contribution
+ * ids are unique per plugin across modules and slots, refs cannot escape their
+ * build, and target validation distinguishes semantic graph nodes from the
+ * entries and Documents that were actually materialized for them.
+ */
 class ContributionCollector<TBundlerCfg> {
   readonly modules: InternalGeneratedModule[] = [];
   private readonly slots: FrameworkSlotPlanItem[] = [];
@@ -798,6 +810,11 @@ function isTargetedSlotPlanItem(
   );
 }
 
+/**
+ * Replace the framework-owned `.ev` tree with one validated IR snapshot. The
+ * complete BuildPlan has its own framework snapshot, while the compact manifest
+ * links graph, generated artifacts, and final entry projections for inspection.
+ */
 async function writeGeneratedIR(
   cwd: string,
   graph: CoreGraph,
@@ -945,6 +962,7 @@ async function writeGeneratedEntry(
   );
 }
 
+/** Compact index for inspecting linked generated artifacts and plan entries. */
 function createManifestView(plan: BuildPlan, graph: CoreGraph): unknown {
   return {
     version: 1,
@@ -962,6 +980,11 @@ function createManifestView(plan: BuildPlan, graph: CoreGraph): unknown {
   };
 }
 
+/**
+ * Create the cloned, deeply frozen graph/plan projection exposed to plugins.
+ * Callers can inspect semantic ownership and materialized entries but cannot
+ * mutate framework IR.
+ */
 export function createFrameworkIRView(
   graph: CoreGraph,
   plan: BuildPlan,
@@ -1152,6 +1175,11 @@ function withGeneratedHeader(
     .join("\n");
 }
 
+/**
+ * Fold generated-module aliases and ordered resolve slots into the plan. Slot
+ * order is precedence order, so a later contribution replaces an earlier value
+ * for the same specifier.
+ */
 function applyResolveContributions(
   plan: BuildPlan,
   generated: GeneratedFrameworkPlan,
@@ -1186,6 +1214,11 @@ function applyResolveContributions(
   };
 }
 
+/**
+ * A request-middleware slot is itself a server runtime capability. Ensure it
+ * has the same single server-runtime entry used by discovered routes,
+ * functions, and request-time renderers.
+ */
 function ensureServerEntryForMiddlewareContributions(
   plan: BuildPlan,
   generated: GeneratedFrameworkPlan,
@@ -1246,6 +1279,10 @@ function assertUniqueBuildEntryNames(entries: BuildEntry[]): void {
   }
 }
 
+/**
+ * Select entries that need framework facades while retaining each original
+ * import as the source behind its generated `.ev` entry.
+ */
 function createGeneratedEntryPlans(
   plan: BuildPlan,
   generated: GeneratedFrameworkPlan,
@@ -1291,6 +1328,10 @@ function shouldGenerateEntry(
   return false;
 }
 
+/**
+ * Make generated facades the concrete compiler inputs and keep the server
+ * runtime and renderer projections synchronized with those rewritten imports.
+ */
 function rewritePlanEntriesToGeneratedFiles(
   plan: BuildPlan,
   entries: GeneratedEntryPlan[],
@@ -1398,6 +1439,12 @@ function createEntrySource(
   ].join("\n");
 }
 
+/**
+ * Compose client-entry slots around the framework facade. Only `after-main`
+ * adds runtime sequencing through dynamic import; every other position emits a
+ * static ESM dependency. A replacement substitutes the main facade regardless
+ * of its declared position.
+ */
 function createClientEntrySource(options: {
   cwd: string;
   entry: BuildEntry;

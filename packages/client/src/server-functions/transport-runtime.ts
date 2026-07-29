@@ -43,10 +43,6 @@ export type { RuntimeTransportOptions } from "../shared/runtime-config.js";
  *
  * Keep this limited to per-call controls. HTTP request defaults such as
  * headers and credentials belong on TransportOptions.
- *
- * Future SSR/RSC header forwarding should be derived from the real incoming
- * Request, or from a dedicated SSR request context, with explicit allow-listing
- * instead of adding generic headers here.
  */
 export interface RequestContext {
   /** Signal for aborting the request. */

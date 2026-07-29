@@ -84,7 +84,7 @@ interface BuildPageFacts
   routeId?: string;
   component: string;
   documentId?: string;
-  /** Logical filename of the selected Page or Application Document. */
+  /** Source template of the selected Page or Application Document. */
   html: string;
   documentOutput?: string;
   documentAliases?: string[];
@@ -119,10 +119,7 @@ export interface BuildPlanConfig {
     server: string;
   };
   server: {
-    routing?: {
-      dir: string;
-      routes: DiscoveredServerRouteNode[];
-    };
+    routes?: DiscoveredServerRouteNode[];
     conventions?: {
       globalMiddlewares: ServerMiddlewareNode[];
       routeMiddlewares: ServerMiddlewareNode[];
@@ -143,6 +140,11 @@ export interface CreateBuildPlanOptions {
   publicPath?: RuntimePlan["publicPath"];
 }
 
+/**
+ * Project semantic graph nodes into the build-only facts needed to create
+ * concrete entries and Documents. This projection enforces materialization
+ * constraints, but CoreGraph remains the source of semantic identity.
+ */
 function deriveBuildPlanFacts(graph: CoreGraph): BuildPlanFacts {
   const apps: Record<string, BuildApplicationFacts> = {};
   const pages: Record<string, BuildPageFacts> = {};
@@ -348,6 +350,11 @@ function deriveBuildPlanFacts(graph: CoreGraph): BuildPlanFacts {
   };
 }
 
+/**
+ * Resolve Page composition from the owning Route's parent chain, ordered from
+ * the Application layout through outer-to-inner Route layouts and wrappers.
+ * `layout: false` suppresses only the Application layout.
+ */
 function collectPageComposition(
   application: CoreApplicationNode,
   routesById: ReadonlyMap<string, CoreClientRouteNode>,
@@ -447,6 +454,12 @@ function createServerRenderedRoutePaths(graph: CoreGraph): string[] {
   return [...new Set(paths)];
 }
 
+/**
+ * Derive the complete bundler-independent compilation plan from CoreGraph.
+ * The plan owns concrete entries, HTML outputs, renderer units, runtime
+ * endpoints, and dev routing; adapters consume it without rediscovering source
+ * conventions or semantic ownership.
+ */
 export function createBuildPlan(
   config: BuildPlanConfig,
   coreGraph: CoreGraph,
@@ -515,6 +528,12 @@ export function createBuildPlan(
   };
 }
 
+/**
+ * Classify a plan transition for incremental adapters. Identity-based entry and
+ * Document diffs are reported separately from generated IR, resolution,
+ * runtime, reason-driven delivery, server compilation, server Document, and
+ * dev-routing changes.
+ */
 export function diffBuildPlan(
   previous: BuildPlan,
   next: BuildPlan,
@@ -981,7 +1000,7 @@ function shouldEmitDocumentForPage(page: BuildPageFacts): boolean {
     return true;
   }
 
-  // Static SSG Pages emit route-owned Documents in either mode. CSR Page
+  // Static SSG Pages emit Page-owned Documents in either mode. CSR Page
   // Documents are emitted only by canonical MPA materialization.
   return page.routingMode === "mpa" && page.render === "csr";
 }
@@ -1031,6 +1050,11 @@ function createServerDocumentPlans(
     });
 }
 
+/**
+ * Create the single deployed server entry only when request-time capabilities
+ * need it. Build-only SSG renderers do not by themselves create a server
+ * runtime.
+ */
 function createServerRuntimeEntry(
   config: BuildPlanConfig,
   graph: BuildPlanFacts,
@@ -1067,7 +1091,7 @@ function getConfiguredServerRoutes(
   config: BuildPlanConfig,
   graph: BuildPlanFacts,
 ): DiscoveredServerRouteNode[] {
-  const configured = config.server.routing?.routes ?? [];
+  const configured = config.server.routes ?? [];
   if (configured.length === 0) return [];
   const graphIds = new Set(graph.serverRoutes.map((route) => route.id));
   return configured.filter((route) => graphIds.has(route.id));

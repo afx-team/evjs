@@ -6,7 +6,7 @@ the containing directory determines the URL. Middleware comes from
 `src/middleware.ts` plus `src/apis/**/middleware.ts`.
 
 Use the control on this page only when the application intentionally owns its
-runtime composition or is migrating from a non-conventional structure.
+runtime composition or uses an explicit SPA route tree.
 
 ## Disable File Conventions
 
@@ -29,15 +29,13 @@ export default defineConfig({
   `src/apis/**/middleware.ts`.
 
 There are no client-, server-, route-, middleware-, or facet-level disable
-switches. Do not combine `conventions: false` with an explicit `routing` or
-`server.routing` declaration. `server.routing: { dir }` remains available when
-file conventions are enabled and only changes the server route directory.
+switches. Do not combine `conventions: false` with an explicit client `routing`
+declaration. The server route directory is fixed at `src/apis` when file
+conventions are enabled.
 
 Explicit SPA `application.routes` configuration, reachable modules marked with
 `"use server";`, and modules emitted by plugin contributions are not file
 conventions. They remain available when filesystem discovery is disabled.
-`app`, `pages`, and top-level `routes` are not public configuration fields and
-are rejected.
 
 Manual browser bootstrap uses the standalone runtime below; it is not a second
 canonical routing model.
@@ -111,6 +109,5 @@ const app = createApp({
 serve(app, { port: 3001 });
 ```
 
-Do not use `server.entry` for this. It is not a framework config field. If the
-server runtime is programmatic, run it as a normal Node, Fetch, Bun, Deno, or
+Run a programmatic server runtime as a normal Node, Fetch, Bun, Deno, or
 platform entry outside server file-route discovery.

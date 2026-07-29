@@ -21,7 +21,6 @@ describe("defineConfig", () => {
 
   it("handles full config", () => {
     const server: ServerConfig = {
-      routing: { dir: "./src/apis" },
       basePath: "/api",
       dev: { port: 4000 },
     };
@@ -47,8 +46,6 @@ describe("CONFIG_DEFAULTS", () => {
     expect(CONFIG_DEFAULTS.serverPort).toBe(3001);
     expect(CONFIG_DEFAULTS.serverBasePath).toBe("/__evjs");
     expect(CONFIG_DEFAULTS.crossOriginLoading).toBe("anonymous");
-    expect(CONFIG_DEFAULTS.serverRoutingDir).toBe("./src/apis");
-    expect(CONFIG_DEFAULTS.serverMiddlewareFile).toBe("./src/middleware.ts");
   });
 
   it("is readonly", () => {
@@ -63,8 +60,6 @@ describe("CONFIG_DEFAULTS", () => {
       outputClientDir: "dist/client",
       outputServerDir: "dist/server",
       pageRoot: "./src/pages",
-      serverRoutingDir: "./src/apis",
-      serverMiddlewareFile: "./src/middleware.ts",
       mount: "#app",
     });
   });

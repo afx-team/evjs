@@ -90,7 +90,6 @@ describe("generatePageRouteTypes", () => {
     expect(source).toContain(PAGE_ROUTE_TYPES_HELPER_MODULE);
     expect(source).toContain(PAGE_ROUTE_TYPES_REGISTER_MODULE);
     expect(source).toContain("@evjs/ev/_internal/client/route-types");
-    expect(source).not.toContain("@evjs/client/internal/route-types");
   });
 
   it("uses canonical page-anchor convention guidance", () => {

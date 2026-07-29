@@ -1,7 +1,7 @@
 # basic
 
 The standard starting point for an evjs application. It demonstrates the
-unified Core 0.3 Page-and-Route file convention alongside server functions.
+Page-and-Route file convention alongside server functions.
 
 ## Run
 
@@ -38,9 +38,6 @@ npm run dev
 - `useMutation({ mutationFn: createUser })` for server-side mutations
 - `getFnQueryKey(getUsers)` for cache invalidation
 
-For source using explicit route configuration, this SPA Page tree is the
-canonical file-convention form. The `application.routes` converter accepts a
-SPA-only route tree and normalizes it into the same graph; after moving each
-route component to its URL directory as `page.tsx`, use
-`routing.mode: "spa"`. Explicit `component`/`routes` config does not define an
-MPA materialization mode.
+This example uses the canonical `routing.mode: "spa"` file-convention profile.
+Explicit `application.routes` is a separate SPA-only input into the same
+normalized graph.

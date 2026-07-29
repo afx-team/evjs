@@ -294,7 +294,7 @@ export default defineConfig({
 });
 ```
 
-resolver 指向代理后的 HTML entry。qiankun 3 消费的是 HTML entry URL，不再是
+resolver 指向代理后的 HTML entry。qiankun 3 使用 HTML entry URL，而不是
 `{ scripts, styles, html }` 对象。`evPluginQiankunSlave()` 会为 qiankun 3 标记产物
 HTML 中的 entry script，并把生成的根路径 JS/CSS 资源 URL 改成相对 URL，因此同一份
 slave HTML 可以挂在 `/__qiankun_slave` 这样的路径前缀下被 master 消费：

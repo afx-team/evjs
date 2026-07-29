@@ -5,7 +5,7 @@
 ## Project Identity
 
 - **Name**: evjs, package scope `@evjs/*`
-- **Repository**: [evaijs/evjs](https://github.com/evaijs/evjs)
+- **Repository**: [afx-team/evjs](https://github.com/afx-team/evjs)
 - **CLI**: `ev` from `@evjs/cli`
 - **Linter**: Biome
 - **Modules**: ESM-only
@@ -13,7 +13,7 @@
 ## Setup
 
 ```bash
-git clone https://github.com/evaijs/evjs.git
+git clone https://github.com/afx-team/evjs.git
 cd evjs
 npm install
 ```
@@ -101,6 +101,6 @@ npx biome check --write
 
 ### Release A Version
 
-1. Create a GitHub Release with a tag such as `v0.3.0`.
+1. Create a GitHub Release with the `vX.Y.Z` tag for the version being released.
 2. Release automation synchronizes internal package versions and publishes.
 3. Do not bump workspace-internal `"*"` dependencies locally.
