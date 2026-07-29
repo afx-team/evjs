@@ -6,6 +6,10 @@ All notable changes to evjs are documented here. Releases follow [Semantic Versi
 
 ## [Unreleased]
 
+---
+
+## [0.3.1] — 2026-07-29
+
 ### ⚠️ Breaking Changes
 
 - **Fixed server request-route root** — Framework request Routes are always
