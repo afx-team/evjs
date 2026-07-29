@@ -10,6 +10,7 @@ import type {
   CoreGraph,
   CoreRoutePattern,
   RenderMode,
+  ServerRouteNode,
 } from "@evjs/shared/manifest";
 import type { ConfigComplete } from "@utoo/pack";
 import { describe, expect, it } from "vitest";
@@ -214,29 +215,17 @@ describe("createUtoopackConfig", () => {
   });
 
   it("rejects server-only resolve.external contributions for mixed Utoopack plans", async () => {
-    const config = createResolvedConfig({
-      server: {
-        basePath: "/__evjs",
-        runtime: {
-          basePath: "/__evjs",
-          fn: "__evjs/fn",
-          ppr: "__evjs/ppr",
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, {
+      serverRoutes: [
+        {
+          id: "src/apis/health/api.ts:/health:GET",
+          module: "src/apis/health/api.ts",
+          path: "/health",
+          methods: ["GET"],
         },
-        dev: {
-          port: 3001,
-          https: false,
-        },
-        routes: [
-          {
-            id: "src/apis/health/api.ts:/health:GET",
-            module: "src/apis/health/api.ts",
-            path: "/health",
-            methods: ["GET"],
-          },
-        ],
-      },
+      ],
     });
-    const plan = await createPlan(config);
     plan.resolve = {
       ...plan.resolve,
       external: {
@@ -286,29 +275,17 @@ describe("createUtoopackConfig", () => {
   });
 
   it("uses active BuildPlan outputs and function endpoint when config differs", async () => {
-    const config = createResolvedConfig({
-      server: {
-        basePath: "/__evjs",
-        runtime: {
-          basePath: "/__evjs",
-          fn: "__evjs/fn",
-          ppr: "__evjs/ppr",
+    const config = createResolvedConfig();
+    const generatedPlan = await createPlan(config, {
+      serverRoutes: [
+        {
+          id: "src/apis/health/api.ts:/health:GET",
+          module: "src/apis/health/api.ts",
+          path: "/health",
+          methods: ["GET"],
         },
-        dev: {
-          port: 3001,
-          https: false,
-        },
-        routes: [
-          {
-            id: "src/apis/health/api.ts:/health:GET",
-            module: "src/apis/health/api.ts",
-            path: "/health",
-            methods: ["GET"],
-          },
-        ],
-      },
+      ],
     });
-    const generatedPlan = await createPlan(config);
     const plan: BuildPlan = {
       ...generatedPlan,
       distDir: "plan-dist",
@@ -555,41 +532,29 @@ describe("createUtoopackConfig", () => {
   });
 
   it("proxies server file routes and keeps them out of SPA fallback", async () => {
-    const config = createResolvedConfig({
-      server: {
-        basePath: "/__evjs",
-        runtime: {
-          basePath: "/__evjs",
-          fn: "__evjs/fn",
-          ppr: "__evjs/ppr",
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, {
+      serverRoutes: [
+        {
+          id: "src/apis/health/api.ts:/health:GET",
+          module: "src/apis/health/api.ts",
+          path: "/health",
+          methods: ["GET"],
         },
-        dev: {
-          port: 3001,
-          https: false,
+        {
+          id: "src/apis/users/$userId/api.ts:/users/:userId:GET",
+          module: "src/apis/users/$userId/api.ts",
+          path: "/users/:userId",
+          methods: ["GET"],
         },
-        routes: [
-          {
-            id: "src/apis/health/api.ts:/health:GET",
-            module: "src/apis/health/api.ts",
-            path: "/health",
-            methods: ["GET"],
-          },
-          {
-            id: "src/apis/users/$userId/api.ts:/users/:userId:GET",
-            module: "src/apis/users/$userId/api.ts",
-            path: "/users/:userId",
-            methods: ["GET"],
-          },
-          {
-            id: "src/apis/$tenantId/api.ts:/:tenantId:GET",
-            module: "src/apis/$tenantId/api.ts",
-            path: "/:tenantId",
-            methods: ["GET"],
-          },
-        ],
-      },
+        {
+          id: "src/apis/$tenantId/api.ts:/:tenantId:GET",
+          module: "src/apis/$tenantId/api.ts",
+          path: "/:tenantId",
+          methods: ["GET"],
+        },
+      ],
     });
-    const plan = await createPlan(config);
 
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -671,29 +636,17 @@ describe("createUtoopackConfig", () => {
   });
 
   it("uses a generated server entry for framework-managed server routes", async () => {
-    const config = createResolvedConfig({
-      server: {
-        basePath: "/__evjs",
-        runtime: {
-          basePath: "/__evjs",
-          fn: "__evjs/fn",
-          ppr: "__evjs/ppr",
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, {
+      serverRoutes: [
+        {
+          id: "src/apis/health/api.ts:/health:GET",
+          module: "src/apis/health/api.ts",
+          path: "/health",
+          methods: ["GET"],
         },
-        dev: {
-          port: 3001,
-          https: false,
-        },
-        routes: [
-          {
-            id: "src/apis/health/api.ts:/health:GET",
-            module: "src/apis/health/api.ts",
-            path: "/health",
-            methods: ["GET"],
-          },
-        ],
-      },
+      ],
     });
-    const plan = await createPlan(config);
 
     const utoopackConfig = await createUtoopackConfig(
       config,
@@ -1083,29 +1036,17 @@ describe("createUtoopackConfig", () => {
   });
 
   it("rejects client and server output overrides when client cleaning is disabled", async () => {
-    const config = createResolvedConfig({
-      server: {
-        basePath: "/__evjs",
-        runtime: {
-          basePath: "/__evjs",
-          fn: "__evjs/fn",
-          ppr: "__evjs/ppr",
+    const config = createResolvedConfig();
+    const plan = await createPlan(config, {
+      serverRoutes: [
+        {
+          id: "src/apis/health/api.ts:/health:GET",
+          module: "src/apis/health/api.ts",
+          path: "/health",
+          methods: ["GET"],
         },
-        dev: {
-          port: 3001,
-          https: false,
-        },
-        routes: [
-          {
-            id: "src/apis/health/api.ts:/health:GET",
-            module: "src/apis/health/api.ts",
-            path: "/health",
-            methods: ["GET"],
-          },
-        ],
-      },
+      ],
     });
-    const plan = await createPlan(config);
 
     await expect(
       createUtoopackConfig(config, plan, process.cwd(), [
@@ -1272,9 +1213,22 @@ describe("createUtoopackConfig", () => {
 
 function createPlan(
   config: Parameters<typeof createUtoopackConfig>[0],
-  options: { distDir?: string; mode?: "development" | "production" } = {},
+  options: {
+    distDir?: string;
+    mode?: "development" | "production";
+    serverRoutes?: ServerRouteNode[];
+  } = {},
 ): Promise<BuildPlan> {
-  const graph = createGraph(config);
+  const graph = createGraph(config, {
+    serverRoutes: options.serverRoutes,
+  });
+  const buildConfig = {
+    ...config,
+    server: {
+      ...config.server,
+      routes: options.serverRoutes,
+    },
+  };
 
   const mode = options.mode ?? "development";
   return materializeFrameworkIR({
@@ -1292,7 +1246,7 @@ function createPlan(
       logger: {} as never,
       addWatchFile() {},
     },
-    plan: createBuildPlan(config, graph, {
+    plan: createBuildPlan(buildConfig, graph, {
       mode,
       distDir: options.distDir,
     }),
@@ -1311,7 +1265,7 @@ interface TestPage {
 
 function createGraph(
   config: Parameters<typeof createUtoopackConfig>[0],
-  options: { pages?: TestPage[] } = {},
+  options: { pages?: TestPage[]; serverRoutes?: ServerRouteNode[] } = {},
 ): CoreGraph {
   const documentTemplate = config.routing?.html ?? "./index.html";
   const routingPages = (config.routing?.routes ?? []).flatMap<TestPage>(
@@ -1420,7 +1374,7 @@ function createGraph(
     ),
     extensions: { namespaces: {} },
     serverFunctions: [],
-    serverRoutes: config.server.routes ?? [],
+    serverRoutes: options.serverRoutes ?? [],
   };
 }
 
